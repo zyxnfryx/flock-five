@@ -14,15 +14,25 @@ Tap a branch, tap a destination. Same-color tip runs hop. Undo / Restart sit on 
 
 ## Gameplay now
 
-- Six gardens, one after another. Clear a garden and the next one loads. Restart stays on the current garden.
+- Fifteen gardens, one after another. Clear a garden and the next one loads. Restart stays on the current garden.
 - Level 1 **Dawn Garden**: 8 branches, 5 seats, 4 colors (palette cap is 5 for future stages). Live Ruby + Gold.
 - Level 2 **Bee Thicket**: shorter stacks, more bees. Live Gold + Teal.
 - Level 3 **Noon Queue**: dawn's rows with the feeders flipped. Live Teal + Violet.
 - Level 4 **Dusk Scatter**: mixed stacks, three empty perches. Live Ruby + Violet.
 - Level 5 **Moonrise Nap**: pair stacks and a mixed row. Live Gold + Violet.
 - Level 6 **Night Lattice**: six occupied limbs, heavier bees. Live Teal + Ruby.
-- Two live feeders, rest in a queue. Completing five of a live color flocks them.
+- Level 7 **Dew Arcade**: five fours, cyclic mix, denser bees. Live Gold + Violet.
+- Level 8 **Pollen Court**: six occupied limbs, pair-runs. Live Teal + Gold.
+- Level 9 **Hive Porch**: first stubborn tip. Bees sit on Gold until Ruby flocks and the breeze lifts them.
+- Level 10 **Amber Grove**: two stubborn tips. Live Ruby + Teal.
+- Level 11 **Sun Hive**: two stubborn mixed tips, denser bees. Live Gold + Teal.
+- Level 12 **Thistle Well**: pinched nectar — one live feeder. The rest wait in the queue.
+- Level 13 **Nectar Pinch**: one feeder and one stubborn Gold tip.
+- Level 14 **Twin Swarm**: one feeder, two stubborn tips. Live Gold.
+- Level 15 **Last Light**: both mechanics, mixed fours. Live Violet.
+- Two live feeders, rest in a queue. Completing five of a live color flocks them. Late gardens may hang only one feeder.
 - Inner birds can be bee-shrouded (black silhouettes). Bees lift only when a shrouded bird is actually at the tip.
+- **Stubborn bees** can sit on a tip. That branch cannot hop until another color flocks and the flock's breeze lifts them.
 - A full flock with no matching feeder naps (snore). Completing a live color can hang their feeder and chain a **combo**.
 - Combo = two or more feeders paid in one move: extra whoosh, harder camera punch.
 
