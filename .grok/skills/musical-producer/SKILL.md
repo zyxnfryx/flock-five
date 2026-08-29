@@ -19,11 +19,11 @@ You are the record producer. Every new sound must earn its seat in a three-layer
 |---|---|---|---|
 | **Lead** | Player action | hop, chirp, takeoff/land, whoosh, branch crunch, combo, deny, unveil, finale | Always heard. Marks a quiet window after. |
 | **Mid** | Garden creatures | wingbeats, one bee hum, snooze | Play only if lead is not hot. Soften, never chorus. |
-| **Bed** | Place | MixDesk BedBus: day / dusk / night sine stems, quiet moon lift | Continuous and quiet. Duck under lead. Never a melody-loop. No chimes. |
+| **Bed** | Place | MixDesk BedBus: day / dusk / night place stems, combo fifth, quiet moon lift | Continuous and quiet. Duck under lead. Never a melody-loop. No chimes. |
 
 Gameplay must never wait on music. Lead wins.
 
-The ban on a "looping song" is carnival melody-loops (tunes, drum loops, chord pads that sing). It is not a ban on a reactive stem score. Multiple non-melodic stems may loop behind **one Bed seat** on MixDesk's BedBus. That is still one place occupant. "More than one looping bed" as a carnival fail means more than one looping **melody**, not day+dusk+night air.
+The ban on a "looping song" is carnival melody-loops (tunes, drum loops, chord pads that sing). It is not a ban on a reactive stem score. Multiple non-melodic stems may loop behind **one Bed seat** on MixDesk's BedBus. Place (day/dusk/night) is one exclusive occupant; the combo fifth sits on the same seat, ducked with it. "More than one looping bed" as a carnival fail means more than one looping **melody**, not place air plus combo warmth.
 
 ## Carnival test
 
@@ -54,12 +54,12 @@ The player has flagged the mix as too squeaky. Treat that as a standing mix note
 
 - **Selection chips:** real hummingbird bank of 12 unique chips (`Sfx.Chirp` / `Audio/Select` `hum_sel_00–11`). One shot per tap, never the same clip twice in a row. Do not synthesize replacements. Do not pitch them up.
 - **Flock pickup:** no bell. Birds take off, feeder whooshes out, then the branch crunch lands. That crunch is the reward.
-- **Combo:** two or more feeders paid in one move (`Sfx.Combo`). Extra whooshes and a harder camera punch — never stacked gongs, never a new melody. No combo music stem yet.
+- **Combo:** two or more feeders paid in one move (`Sfx.Combo`). Extra whooshes and a harder camera punch — never stacked gongs, never a new melody. MixDesk `ComboWarm` fades in a quiet fifth (78+117 Hz, no tune), recedes ~4s after last collect, ≤ 0.04 × duck.
 - **Unmatched nap:** 12 brief snores when a full flock sits without a matching feeder (`Sfx.Sleep` / `Audio/Snooze`). Lead, so it is heard after the hop. Never the same clip twice.
 - **Branch break:** THE player reward (`Sfx.Break` / `Audio/Break`, 12 clips). Fresh celery snap — hollow tick, pith tear, then splinters flying outward. ~5ms attack, mid-band crack, almost no energy above 4 kHz. Never a gunshot. If anything else is speaking, the crunch still wins.
 - **Feeder leave:** 12 satisfying receding whooshes (`Sfx.FeederDone` / `Audio/Whoosh`). Unhook + falling swoop + silk air. Motion of an object leaving, never coarse blowing wind, never a bell.
 - **Bee/mid:** low buzz, no melody, no raw noise. Scatter is buzz/whoosh, never a bell or pip train.
-- **Bed:** MixDesk BedBus place stems only. No wind-chime. No hash crackle. No song.
+- **Bed:** MixDesk BedBus place stems plus optional combo fifth. No wind-chime. No hash crackle. No song.
 
 ## Where the mix lives
 
@@ -67,7 +67,7 @@ Runtime mixer: `Assets/_Project/Scripts/App/MixDesk.cs` via `Sfx`.
 
 - New one-shots go through `Sfx` with a layer (`Lead` / `Mid` / `Bed`).
 - Do not add a second `AudioSource` loop from `Sfx`. All loops live on MixDesk's BedBus.
-- Place stems (day / dusk / night) crossfade from `SkyCycle.Dusk` as one Bed occupant. Combined place ≤ 0.06.
+- Place stems (day / dusk / night) crossfade from `SkyCycle.Dusk` as one Bed occupant. Combined place ≤ 0.06. Combo stem is extra warmth on the same seat, ≤ 0.04 × duck, not a second place bed.
 - Hard duck under lead: hop/chirp 0.18, whoosh 0.15, break 0.08 (`MixDesk.DuckChirp` / `DuckWhoosh` / `DuckBreak`).
 - Bee presence: one garden-wide hum, not one per swarm.
 - Idle ruffles: MixDesk may refuse the sample; the wing visual can still play.
