@@ -1,9 +1,8 @@
 # Audio credits
 
 Selection chips are real hummingbird recordings, sliced and mastered
-(highpass ~420 Hz, denoise, pitched down so peak energy sits ~3.5–4.2 kHz,
-lowpass ~5.2 kHz, loudness match). Not synthesized. Never pitched up.
-The bank is 12 unique chips (`hum_sel_00–11`).
+(highpass 500 Hz, denoise, asetrate 0.84, lowpass 5.2 kHz, loudness match).
+Not synthesized. The bank is 12 unique chips (`hum_sel_00–11`).
 
 | Clip | Source | License |
 |---|---|---|

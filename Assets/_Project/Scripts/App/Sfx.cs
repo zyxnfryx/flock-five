@@ -103,8 +103,8 @@ namespace FlockFive
         {
             Ensure();
             int i = Next(_chirps.Length, ref _lastChirp);
-            // Baked low; never pitch up at play time.
-            Shot(_chirps[i], Random.Range(0.97f, 1.00f), 0.68f, MixLayer.Lead);
+            // Real hummingbird chips: do not pitch them up.
+            Shot(_chirps[i], Random.Range(0.99f, 1.01f), 0.66f, MixLayer.Lead);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.7f);
         }
 
