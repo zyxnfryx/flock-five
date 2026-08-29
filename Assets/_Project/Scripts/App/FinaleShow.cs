@@ -49,7 +49,6 @@ namespace FlockFive
             var row1 = PlaceWord("FLOCK", flockY, 28, hold, 1f);
             var row2 = PlaceWord("FIVE", fiveY, 28, hold, -1f);
 
-            // Four mascots off the wordmark: above FLOCK, outboard of FIVE.
             var ruby = Mascot(BirdColor.Ruby, new Vector3(-2.48f, flockY + CapH * 0.82f, 0f), false, 24, hold);
             var gold = Mascot(BirdColor.Gold, new Vector3(2.48f, flockY + CapH * 0.82f, 0f), true, 24, hold);
             var teal = Mascot(BirdColor.Teal, new Vector3(-3.42f, fiveY - CapH * 0.08f, 0f), false, 24, hold);
@@ -77,7 +76,6 @@ namespace FlockFive
 
             Settle(all, restScale, restPos);
 
-            // Whole-mark slam, then hard rest so no leftover squash.
             float slam = 0f;
             const float slamDur = 0.22f;
             while (slam < slamDur)
@@ -116,7 +114,6 @@ namespace FlockFive
         static float Inflate(int i, int n)
         {
             if (n <= 1) return 1f;
-            // Near-flat pillow. A fat middle used to starve F and K.
             float u = i / (float)(n - 1);
             return 1.20f + 0.02f * Mathf.Sin(u * Mathf.PI);
         }
@@ -134,6 +131,28 @@ namespace FlockFive
             }
         }
 
+        static Sprite Glyph(char c)
+        {
+            if (c == 'V') return PointedV();
+            return SpriteCatalog.Letter(c);
+        }
+
+        static Sprite _pointedV;
+
+        // Pointed V in the FLOCK family. Loaded from FinaleVBytes so FIVE does not use the old bucket glyph.
+        static Sprite PointedV()
+        {
+            if (_pointedV != null) return _pointedV;
+            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            if (!tex.LoadImage(FinaleVBytes.Png))
+                return SpriteCatalog.Letter('V');
+            _pointedV = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 200f);
+            _pointedV.name = "FinaleV";
+            return _pointedV;
+        }
+
         static Transform[] PlaceWord(string word, float centerY, int order, Transform parent, float curve)
         {
             var letters = new Transform[word.Length];
@@ -142,7 +161,7 @@ namespace FlockFive
             float total = 0f;
             for (int i = 0; i < word.Length; i++)
             {
-                var spr = SpriteCatalog.Letter(word[i]);
+                var spr = Glyph(word[i]);
                 float h = spr != null ? Mathf.Max(0.01f, spr.bounds.size.y) : 1f;
                 float w = spr != null ? spr.bounds.size.x : 1f;
                 float inf = Inflate(i, word.Length) * Optical(word[i]);
@@ -156,7 +175,7 @@ namespace FlockFive
                 x += widths[i] * 0.5f;
                 float u = word.Length <= 1 ? 0.5f : i / (float)(word.Length - 1);
                 float y = centerY + curve * Smile * Mathf.Sin(u * Mathf.PI);
-                var go = WorldBuilder.Sprite("L" + word[i] + i, SpriteCatalog.Letter(word[i]), parent.position, 1f, order, parent);
+                var go = WorldBuilder.Sprite("L" + word[i] + i, Glyph(word[i]), parent.position, 1f, order, parent);
                 go.transform.localRotation = Quaternion.identity;
                 go.transform.localScale = Vector3.one * scales[i];
                 go.transform.localPosition = new Vector3(x, y, 0f);
@@ -247,13 +266,11 @@ namespace FlockFive
                 float peak;
                 if (n % 3 == 0)
                 {
-                    // Burst above the mark, not on the letters.
                     x = Random.Range(-1.6f, 1.6f);
                     peak = Random.Range(5.0f, 7.0f);
                 }
                 else
                 {
-                    // Burst outboard of F and E.
                     float side = (n % 2 == 0) ? -1f : 1f;
                     x = side * Random.Range(3.35f, 4.15f);
                     peak = Random.Range(2.4f, 5.8f);
