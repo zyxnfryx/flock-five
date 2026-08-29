@@ -39,7 +39,7 @@ Fail conditions (any one is enough):
 
 The player has flagged the mix as too squeaky. Treat that as a standing mix note.
 
-- **Selection is real hummingbirds.** `Sfx.Chirp` plays a bank of recorded chips (`Resources/Audio/Select`, 24 unique). Do not replace them with sine chirps. Do not pitch them up. The bank is mastered down so peak energy sits around 3.5–4.2 kHz — warm garden, not a dog-whistle. Playback pitch stays ≤ 1.00.
+- **Selection is real hummingbirds.** `Sfx.Chirp` plays a bank of recorded chips (`Resources/Audio/Select`, 12 unique). Do not replace them with sine chirps. Do not pitch them up. The bank is mastered down so peak energy sits around 3.5–4.2 kHz — warm garden, not a dog-whistle. Playback pitch stays ≤ 1.00.
 - Synthesized voices (deny, bed, bees) stay around 380–720 Hz, dove-like, not piccolo.
 - No playback pitch above ~1.04 on any clip. Pitching a recording up is how a hummingbird turns into a whistle.
 - Synthesized clips go through a gentle lowpass (~2 kHz). Real hummingbird chips already sit near 6–8 kHz — leave that band, only roll off above ~8 kHz so phone speakers don't hash.
@@ -49,7 +49,7 @@ The player has flagged the mix as too squeaky. Treat that as a standing mix note
 
 ## Flock Five key
 
-- **Selection chips:** real hummingbird bank of 24 unique chips (`Sfx.Chirp` / `Audio/Select` `hum_sel_00–23`). One shot per tap, never the same clip twice in a row. Do not synthesize replacements. Do not pitch them up.
+- **Selection chips:** real hummingbird bank of 12 unique chips (`Sfx.Chirp` / `Audio/Select` `hum_sel_00–11`). One shot per tap, never the same clip twice in a row. Do not synthesize replacements. Do not pitch them up.
 - **Flock pickup:** no bell. Birds take off, feeder whooshes out, then the branch crunch lands. That crunch is the reward.
 - **Combo:** two or more feeders paid in one move (`Sfx.Combo`). Extra whooshes and a harder camera punch — never stacked gongs, never a new melody.
 - **Unmatched nap:** 12 brief snores when a full flock sits without a matching feeder (`Sfx.Sleep` / `Audio/Snooze`). Lead, so it is heard after the hop. Never the same clip twice.
