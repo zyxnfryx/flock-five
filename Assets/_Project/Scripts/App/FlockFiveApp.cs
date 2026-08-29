@@ -259,14 +259,12 @@ namespace FlockFive
                 _won = true;
                 float dusk = SkyCycle.Dusk;
                 if (dusk < 0.35f)
-                {
                     _toast = combo >= 2 ? "COMBO x" + combo + " — you raced the sunset." : "You raced the sunset.";
-                    yield return FinaleShow.Play(_garden, this);
-                }
                 else if (dusk > 0.62f)
                     _toast = combo >= 2 ? "COMBO x" + combo + " under the moon." : "Every bird found a feeder. The moon kept you company.";
                 else
                     _toast = combo >= 2 ? "COMBO x" + combo + "!" : "Every bird found a feeder.";
+                yield return FinaleShow.Play(_garden, this);
                 yield return new WaitForSeconds(0.45f);
                 yield return Ads.Interstitial();
                 if (LevelData.HasNext)
