@@ -15,9 +15,13 @@ namespace FlockFive
         float _leadUntil;
         float _leadDuck = 1f;
         float _moonLiftUntil;
+        float _comboUntil = -99f;
         const int Rate = 44100;
         const float PlaceCap = 0.045f;
         const float PlaceMax = 0.06f;
+        const float ComboCap = 0.04f;
+        const float ComboWindow = 4f;
+        const float ComboIn = 0.35f;
 
         public static void Boot(GameObject host)
         {
@@ -48,12 +52,18 @@ namespace FlockFive
             _moonLiftUntil = Time.unscaledTime + Mathf.Max(0.4f, seconds);
         }
 
+        public void ComboWarm()
+        {
+            _comboUntil = Time.unscaledTime + ComboWindow;
+        }
+
         void Build()
         {
-            _stems = new AudioSource[3];
+            _stems = new AudioSource[4];
             _stems[0] = MakeLoop(MakePlace("place-day", 52f, 78f, 104f, 0.6f, 0.28f, 0.1f));
             _stems[1] = MakeLoop(MakePlace("place-dusk", 41f, 62f, 82f, 0.62f, 0.26f, 0.08f));
             _stems[2] = MakeLoop(MakeNight());
+            _stems[3] = MakeLoop(MakeCombo());
         }
 
         AudioSource MakeLoop(AudioClip clip)
@@ -90,6 +100,15 @@ namespace FlockFive
             SetStem(0, day * cap * duck);
             SetStem(1, dusk * cap * duck);
             SetStem(2, night * cap * duck);
+            SetStem(3, ComboGain() * ComboCap * duck);
+        }
+
+        float ComboGain()
+        {
+            float age = Time.unscaledTime - (_comboUntil - ComboWindow);
+            if (age < 0f || Time.unscaledTime >= _comboUntil) return 0f;
+            if (age < ComboIn) return age / ComboIn;
+            return 1f - (age - ComboIn) / (ComboWindow - ComboIn);
         }
 
         void SetStem(int i, float vol)
@@ -131,6 +150,24 @@ namespace FlockFive
                 data[i] = s * env * 0.08f;
             }
             var clip = AudioClip.Create("place-night", n, 1, Rate, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
+        static AudioClip MakeCombo()
+        {
+            const float dur = 8f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float s = Mathf.Sin(2f * Mathf.PI * 78f * t) * 0.55f;
+                s += Mathf.Sin(2f * Mathf.PI * 117f * t) * 0.38f;
+                float env = 0.92f + 0.08f * Mathf.Sin(t * 0.4f);
+                data[i] = s * env * 0.08f;
+            }
+            var clip = AudioClip.Create("combo-fifth", n, 1, Rate, false);
             clip.SetData(data, 0);
             return clip;
         }
