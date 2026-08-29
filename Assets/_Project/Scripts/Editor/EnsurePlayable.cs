@@ -18,6 +18,7 @@ namespace FlockFive.Editor
         {
             EditorApplication.delayCall += Pin;
             EditorApplication.delayCall += EnsureUrp;
+            EditorApplication.delayCall += PinIosPackaging;
             EditorApplication.delayCall += MaybePlayCmd;
             EditorApplication.update += TickPlayCmd;
         }
@@ -27,6 +28,7 @@ namespace FlockFive.Editor
         {
             Pin();
             EnsureUrp();
+            PinIosPackaging();
         }
 
         static void EnsureUrp()
@@ -86,6 +88,72 @@ namespace FlockFive.Editor
             p.intValue = 1;
             so.ApplyModifiedPropertiesWithoutUndo();
             Debug.Log("Flock Five: Active Input Handling set to Input System package.");
+        }
+
+        static void PinIosPackaging()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+
+            const string boot = "Assets/_Recovery/0.unity";
+            var scenes = EditorBuildSettings.scenes;
+            bool have = false;
+            for (int i = 0; i < scenes.Length; i++)
+            {
+                if (scenes[i].path == boot && scenes[i].enabled) { have = true; break; }
+            }
+            if (!have)
+            {
+                EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(boot, true) };
+                Debug.Log("Flock Five: boot scene added to build settings.");
+            }
+
+            PlayerSettings.iOS.appleEnableAutomaticSigning = true;
+
+            const string dest = "Assets/_Project/Art/Icons/app-icon-1024.png";
+            var src = Path.GetFullPath(Path.Combine(Application.dataPath, "../Store/AppStore/app-icon-1024.png"));
+            if (!File.Exists(src))
+            {
+                Debug.LogWarning("Flock Five: Store/AppStore/app-icon-1024.png missing.");
+                return;
+            }
+            var destDir = Path.GetDirectoryName(dest);
+            if (!Directory.Exists(destDir)) Directory.CreateDirectory(destDir);
+            if (!File.Exists(dest) || File.GetLastWriteTimeUtc(src) > File.GetLastWriteTimeUtc(dest))
+            {
+                File.Copy(src, dest, true);
+                AssetDatabase.ImportAsset(dest);
+            }
+            var imp = AssetImporter.GetAtPath(dest) as TextureImporter;
+            if (imp != null)
+            {
+                bool dirty = false;
+                if (imp.textureType != TextureImporterType.Default) { imp.textureType = TextureImporterType.Default; dirty = true; }
+                if (imp.mipmapEnabled) { imp.mipmapEnabled = false; dirty = true; }
+                if (imp.npotScale != TextureImporterNPOTScale.None) { imp.npotScale = TextureImporterNPOTScale.None; dirty = true; }
+                if (imp.maxTextureSize < 1024) { imp.maxTextureSize = 1024; dirty = true; }
+                if (imp.textureCompression != TextureImporterCompression.Uncompressed)
+                {
+                    imp.textureCompression = TextureImporterCompression.Uncompressed;
+                    dirty = true;
+                }
+                if (dirty) imp.SaveAndReimport();
+            }
+            var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(dest);
+            if (tex == null) return;
+
+            var kinds = PlayerSettings.GetSupportedIconKinds(NamedBuildTarget.iOS);
+            for (int k = 0; k < kinds.Length; k++)
+            {
+                var icons = PlayerSettings.GetPlatformIcons(NamedBuildTarget.iOS, kinds[k]);
+                for (int i = 0; i < icons.Length; i++)
+                {
+                    var layers = new Texture2D[Mathf.Max(1, icons[i].maxLayerCount)];
+                    layers[0] = tex;
+                    icons[i].SetTextures(layers);
+                }
+                PlayerSettings.SetPlatformIcons(NamedBuildTarget.iOS, kinds[k], icons);
+            }
+            AssetDatabase.SaveAssets();
         }
 
         [MenuItem("Flock Five/Preview Finale")]

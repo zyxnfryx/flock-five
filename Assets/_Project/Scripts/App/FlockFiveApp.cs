@@ -463,12 +463,16 @@ namespace FlockFive
         static void HudLayout(out float scale, out float top, out float bot, out Rect undo, out Rect restart)
         {
             scale = Mathf.Max(Screen.height / 720f, 1f);
-            top = 72f * scale;
-            bot = 72f * scale;
+            var safe = Screen.safeArea;
+            float safeTop = Screen.height - safe.yMax;
+            float safeBot = safe.yMin;
+            top = 72f * scale + safeTop;
+            bot = 72f * scale + safeBot;
             float y = Screen.height - bot - 8f;
             float h = 56f * scale;
-            undo = new Rect(16f, y, 160f * scale, h);
-            restart = new Rect(16f + 160f * scale + 4f, y, 180f * scale, h);
+            float x = Mathf.Max(16f, safe.xMin + 8f);
+            undo = new Rect(x, y, 160f * scale, h);
+            restart = new Rect(x + 160f * scale + 4f, y, 180f * scale, h);
         }
 
         bool HitHud(Vector2 screen)
@@ -498,7 +502,7 @@ namespace FlockFive
             var lab = new GUIStyle(GUI.skin.label) { fontSize = Mathf.RoundToInt(22 * s) };
             lab.normal.textColor = Color.white;
             var btn = new GUIStyle(GUI.skin.button) { fontSize = Mathf.RoundToInt(22 * s) };
-            GUILayout.BeginArea(new Rect(16, 8, Screen.width - 32, top));
+            GUILayout.BeginArea(new Rect(16, Mathf.Max(8f, Screen.height - Screen.safeArea.yMax), Screen.width - 32, top));
             string lv = LevelData.Current != null
                 ? LevelData.Current.Number + "  " + LevelData.Current.Title + "    "
                 : "";
