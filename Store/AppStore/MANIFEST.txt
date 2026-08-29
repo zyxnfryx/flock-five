@@ -1,0 +1,38 @@
+FLOCK FIVE — App Store image package
+Logo: Impact FLOCK FIVE with ruby, gold, teal, violet hummingbirds.
+Icon is RGB, no transparency, no baked rounded corners (App Store applies the mask).
+
+App icon
+  app-icon-1024.png     1024x1024  iOS App Store / Xcode 1024 listing icon
+  app-icon-512.png       512x512   listings / web
+  app-icon-180.png       180x180   iPhone @3x home (preview)
+  app-profile-1024.png   1024x1024  profile / store listing avatar
+  thumbnail-square-1080.png 1080x1080  square thumbnail
+
+Feature
+  feature-1920x1080.png  1920x1080  landscape feature / YouTube / social
+  promo-wide-1600x500.png 1600x500  wide banner / header
+
+iPhone screenshots (portrait)
+  screenshot-iphone-6-7-1290x2796-*.png   6.7" (15/16 Pro Max class)
+  screenshot-iphone-6-9-1320x2868-*.png   6.9" (16 Pro Max / 17 class)
+  screenshot-iphone-6-5-1242x2688-*.png   6.5" (11/XS Max class)
+  slots: play (garden puzzle), finale (logo celebration), night (moon)
+
+Files:
+  app-icon-1024.png                                1024x1024    1205231 bytes
+  app-icon-180.png                                 180x180      59193 bytes
+  app-icon-512.png                                 512x512     374679 bytes
+  app-profile-1024.png                             1024x1024    1205231 bytes
+  feature-1920x1080.png                            1920x1080    2280517 bytes
+  promo-wide-1600x500.png                          1600x500    1038512 bytes
+  screenshot-iphone-6-5-1242x2688-finale.png       1242x2688    3806789 bytes
+  screenshot-iphone-6-5-1242x2688-night.png        1242x2688    4209781 bytes
+  screenshot-iphone-6-5-1242x2688-play.png         1242x2688    4599173 bytes
+  screenshot-iphone-6-7-1290x2796-finale.png       1290x2796    4026794 bytes
+  screenshot-iphone-6-7-1290x2796-night.png        1290x2796    4453443 bytes
+  screenshot-iphone-6-7-1290x2796-play.png         1290x2796    4874318 bytes
+  screenshot-iphone-6-9-1320x2868-finale.png       1320x2868    4165350 bytes
+  screenshot-iphone-6-9-1320x2868-night.png        1320x2868    4607559 bytes
+  screenshot-iphone-6-9-1320x2868-play.png         1320x2868    5047854 bytes
+  thumbnail-square-1080.png                        1080x1080    1329054 bytes
