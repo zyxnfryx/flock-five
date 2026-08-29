@@ -7,9 +7,17 @@ namespace FlockFive
     public sealed class MixDesk : MonoBehaviour
     {
         public static MixDesk Live;
-        AudioSource _air;
+        public const float DuckChirp = 0.18f;
+        public const float DuckWhoosh = 0.15f;
+        public const float DuckBreak = 0.08f;
+
+        AudioSource[] _stems;
         float _leadUntil;
+        float _leadDuck = 1f;
+        float _moonLiftUntil;
         const int Rate = 44100;
+        const float PlaceCap = 0.045f;
+        const float PlaceMax = 0.06f;
 
         public static void Boot(GameObject host)
         {
@@ -25,32 +33,71 @@ namespace FlockFive
 
         public bool AllowBed => Time.unscaledTime >= _leadUntil + 1.6f;
 
-        public float BedDuck => LeadHot ? 0.28f : 1f;
+        public float BedDuck => LeadHot ? _leadDuck : 1f;
 
-        public void MarkLead(float seconds)
+        public void MarkLead(float seconds, float duckRemain = DuckChirp)
         {
+            bool wasHot = LeadHot;
             float until = Time.unscaledTime + Mathf.Max(0.05f, seconds);
             if (until > _leadUntil) _leadUntil = until;
+            _leadDuck = wasHot ? Mathf.Min(_leadDuck, duckRemain) : duckRemain;
+        }
+
+        public void MoonLift(float seconds = 2.4f)
+        {
+            _moonLiftUntil = Time.unscaledTime + Mathf.Max(0.4f, seconds);
         }
 
         void Build()
         {
-            _air = gameObject.AddComponent<AudioSource>();
-            _air.playOnAwake = false;
-            _air.loop = true;
-            _air.spatialBlend = 0f;
-            _air.clip = MakeAir();
-            _air.volume = 0.045f;
-            _air.Play();
+            _stems = new AudioSource[3];
+            _stems[0] = MakeLoop(MakePlace("place-day", 52f, 78f, 104f, 0.6f, 0.28f, 0.1f));
+            _stems[1] = MakeLoop(MakePlace("place-dusk", 41f, 62f, 82f, 0.62f, 0.26f, 0.08f));
+            _stems[2] = MakeLoop(MakeNight());
+        }
+
+        AudioSource MakeLoop(AudioClip clip)
+        {
+            var a = gameObject.AddComponent<AudioSource>();
+            a.playOnAwake = false;
+            a.loop = true;
+            a.spatialBlend = 0f;
+            a.clip = clip;
+            a.volume = 0f;
+            a.Play();
+            return a;
         }
 
         void LateUpdate()
         {
-            if (_air != null)
-                _air.volume = 0.045f * BedDuck;
+            if (!LeadHot) _leadDuck = 1f;
+            if (_stems == null) return;
+
+            float d = SkyCycle.Dusk;
+            float day = 1f - Mathf.SmoothStep(0f, 0.42f, d);
+            float night = Mathf.SmoothStep(0.38f, 1f, d);
+            float dusk = Mathf.Clamp01(1f - Mathf.Abs(d - 0.5f) * 2.15f);
+            bool moon = Time.unscaledTime < _moonLiftUntil;
+            if (moon) night += 0.35f;
+            float sum = day + dusk + night;
+            if (sum < 0.001f) { day = 1f; sum = 1f; }
+            day /= sum;
+            dusk /= sum;
+            night /= sum;
+
+            float cap = moon ? PlaceMax : PlaceCap;
+            float duck = BedDuck;
+            SetStem(0, day * cap * duck);
+            SetStem(1, dusk * cap * duck);
+            SetStem(2, night * cap * duck);
         }
 
-        static AudioClip MakeAir()
+        void SetStem(int i, float vol)
+        {
+            if (_stems[i] != null) _stems[i].volume = vol;
+        }
+
+        static AudioClip MakePlace(string name, float a, float b, float c, float wa, float wb, float wc)
         {
             const float dur = 6f;
             int n = Mathf.CeilToInt(Rate * dur);
@@ -58,15 +105,34 @@ namespace FlockFive
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
-                float s = Mathf.Sin(2f * Mathf.PI * 52f * t) * 0.6f;
-                s += Mathf.Sin(2f * Mathf.PI * 78f * t) * 0.28f;
-                s += Mathf.Sin(2f * Mathf.PI * 104f * t) * 0.1f;
+                float s = Mathf.Sin(2f * Mathf.PI * a * t) * wa;
+                s += Mathf.Sin(2f * Mathf.PI * b * t) * wb;
+                s += Mathf.Sin(2f * Mathf.PI * c * t) * wc;
                 float env = 0.92f + 0.08f * Mathf.Sin(t * 0.55f);
                 data[i] = s * env * 0.09f;
             }
-            var c = AudioClip.Create("air", n, 1, Rate, false);
-            c.SetData(data, 0);
-            return c;
+            var clip = AudioClip.Create(name, n, 1, Rate, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
+        static AudioClip MakeNight()
+        {
+            const float dur = 8f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float s = Mathf.Sin(2f * Mathf.PI * 36f * t) * 0.55f;
+                s += Mathf.Sin(2f * Mathf.PI * 54f * t) * 0.32f;
+                s += Mathf.Sin(2f * Mathf.PI * 72f * t) * 0.12f;
+                float env = 0.9f + 0.1f * Mathf.Sin(t * 0.28f);
+                data[i] = s * env * 0.08f;
+            }
+            var clip = AudioClip.Create("place-night", n, 1, Rate, false);
+            clip.SetData(data, 0);
+            return clip;
         }
     }
 }
