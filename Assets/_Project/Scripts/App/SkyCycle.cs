@@ -67,6 +67,19 @@ namespace FlockFive
             _welcomed = false;
             _rushing = false;
             _heldNight = false;
+            SeedGarden();
+        }
+
+        // Each Load() rebuilds the sky, which would otherwise restart at dawn.
+        // Walk dusk from Dawn Garden (0) to Last Light (1) across the 15 gardens.
+        void SeedGarden()
+        {
+            int n = LevelData.Count;
+            int i = LevelData.Index;
+            if (n <= 1) return;
+            float u = i / (float)(n - 1);
+            _t0 = Time.unscaledTime - u * Duration;
+            if (u > 0.5f) _welcomed = true;
         }
 
         void OnDisable()
