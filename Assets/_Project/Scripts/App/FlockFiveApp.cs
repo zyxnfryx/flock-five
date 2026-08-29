@@ -253,10 +253,11 @@ namespace FlockFive
                     _toast = combo >= 2 ? "COMBO x" + combo + " under the moon." : "Every bird found a feeder. The moon kept you company.";
                 else
                     _toast = combo >= 2 ? "COMBO x" + combo + "!" : "Every bird found a feeder.";
+                yield return new WaitForSeconds(0.45f);
+                yield return Ads.Interstitial();
                 if (LevelData.HasNext)
                 {
                     _toast = (LevelData.Current != null ? LevelData.Current.Title : "Garden") + " clear.";
-                    yield return new WaitForSeconds(1.15f);
                     Load(LevelData.Index + 1);
                     yield break;
                 }

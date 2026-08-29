@@ -108,6 +108,9 @@ namespace FlockFive.Editor
             }
 
             PlayerSettings.iOS.appleEnableAutomaticSigning = true;
+            const string att = "Ads help keep Flock Five free.";
+            if (PlayerSettings.iOS.userTrackingUsageDescription != att)
+                PlayerSettings.iOS.userTrackingUsageDescription = att;
 
             const string dest = "Assets/_Project/Art/Icons/app-icon-1024.png";
             var src = Path.GetFullPath(Path.Combine(Application.dataPath, "../Store/AppStore/app-icon-1024.png"));
