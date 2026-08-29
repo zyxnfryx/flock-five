@@ -46,11 +46,11 @@ namespace FlockFive
             _won = false;
             _sel = -1;
             _undo.Clear();
+            _board = LevelData.Open(index);
             if (_garden.Root != null) Destroy(_garden.Root.gameObject);
             if (_garden.Cam != null) Destroy(_garden.Cam.gameObject);
             SpriteCatalog.ForgetBirds();
             _garden = WorldBuilder.Build(transform);
-            _board = LevelData.Open(index);
             var title = LevelData.Current != null ? LevelData.Current.Title : "Flock Five";
             _toast = title + ". Tap a branch with birds, then tap where they should go.";
             SyncAll();
