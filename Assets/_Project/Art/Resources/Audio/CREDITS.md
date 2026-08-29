@@ -8,9 +8,10 @@ Not synthesized. The bank is 12 unique chips (`hum_sel_00–11`).
 |---|---|---|
 | `Select/hum_sel_00–01` | Ruby-throated Hummingbird call, U.S. National Park Service | Public domain |
 | `Select/hum_sel_02` | Black-chinned Hummingbird vocalization, Francis, Ortega & Cruz 2011, *PLOS ONE* 10.1371/journal.pone.0027052 | CC BY |
-| `Select/hum_sel_03–11` | Ruby-throated Hummingbird natural calls, Jonathon Jongsma, [xeno-canto XC109598](https://xeno-canto.org/109598) | CC BY-SA 3.0 |
+| `Select/hum_sel_03–05` | Broad-tailed Hummingbird call, Fern Lake Trail, Rocky Mountain National Park, National Park Service (J. Job, 2015-06-10). [Page](https://www.nps.gov/romo/learn/photosmultimedia/sounds-broadtailedhummingbird.htm), [mp3](https://www.nps.gov/nps-audiovideo/legacy/mp3/imr/avElement/romo-BTAHROMO6102015FernLakeTrail.mp3) | Public domain |
+| `Select/hum_sel_06–11` | Broad-tailed Hummingbird call, Cow Creek Trail, Rocky Mountain National Park, National Park Service (J. Job, 2016-05-25). [Page](https://www.nps.gov/romo/learn/photosmultimedia/sounds-broadtailedhummingbird.htm), [mp3](https://www.nps.gov/nps-audiovideo/legacy/mp3/imr/avElement/romo-BTAHROMO5252016CowCreekTrail.mp3) | Public domain |
 
-Processed for Flock Five. Share-alike clips remain CC BY-SA.
+Processed for Flock Five.
 
 Sleep snores (`Audio/Snooze/snore_00–11`) are an original synthesized bank
 for Flock Five. Not third-party recordings.
