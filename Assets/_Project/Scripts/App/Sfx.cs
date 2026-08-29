@@ -851,7 +851,7 @@ namespace FlockFive
                 float f = notes[k];
                 float start = at[k];
                 for (int i = 0; i < n; i++)
-            {
+                {
                     float t = i / (float)Rate - start;
                     if (t < 0f) continue;
                     float env = Mathf.Exp(-t * 1.8f) * (t < 0.02f ? t / 0.02f : 1f);
