@@ -159,7 +159,7 @@ namespace FlockFive
             {
                 _welcomed = true;
                 Courtesy = "The moon is visiting. Stay as long as you like.";
-                Sfx.Moonrise();
+                Sfx.Moonrise(); // MixDesk night swell, not a Lead arpeggio.
             }
 
         }
