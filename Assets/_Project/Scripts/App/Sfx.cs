@@ -11,7 +11,7 @@ namespace FlockFive
         static AudioClip[] _celebrates;
         static AudioClip[] _breaks;
         static AudioClip[] _lifts;
-        static AudioClip _deny, _moon;
+        static AudioClip _deny;
         static AudioClip[] _booms;
         static AudioClip[] _snoozes;
         static AudioClip[] _hums;
@@ -56,7 +56,6 @@ namespace FlockFive
             _lifts = LoadBank("Audio/Whoosh", 12, i => MakeLift(i, 4700 + i * 43));
             _deny = MakeDeny();
             _snoozes = LoadBank("Audio/Snooze", 12, i => MakeSnooze(i, 5100 + i * 53));
-            _moon = MakeMoonrise();
             _hums = new AudioClip[8];
             for (int i = 0; i < _hums.Length; i++)
                 _hums[i] = MakeHum(i, 6200 + i * 41);
@@ -76,12 +75,12 @@ namespace FlockFive
             return a;
         }
 
-        static void Shot(AudioClip clip, float pitch, float vol, MixLayer layer)
+        static void Shot(AudioClip clip, float pitch, float vol, MixLayer layer, float leadDuck = MixDesk.DuckChirp)
         {
             if (clip == null) return;
             if (layer == MixLayer.Lead)
             {
-                if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.55f);
+                if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.55f, leadDuck);
             }
             else if (layer == MixLayer.Mid)
             {
@@ -105,7 +104,7 @@ namespace FlockFive
             int i = Next(_chirps.Length, ref _lastChirp);
             // Real hummingbird chips: do not pitch them up.
             Shot(_chirps[i], Random.Range(0.99f, 1.01f), 0.66f, MixLayer.Lead);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.7f);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.7f, MixDesk.DuckChirp);
         }
 
         public static void Flap() => FlapAt(0.32f, Random.Range(0.94f, 1.03f), 0.02f, MixLayer.Mid);
@@ -135,7 +134,7 @@ namespace FlockFive
             Ensure();
             n = Mathf.Clamp(n, 1, 5);
             if (_host == null) return;
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.22f + 0.05f * n);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.22f + 0.05f * n, MixDesk.DuckChirp);
             _host.StartCoroutine(FlapTrainCo(n, gap, vol));
         }
 
@@ -183,7 +182,7 @@ namespace FlockFive
         public static void Deny()
         {
             Ensure();
-            Shot(_deny, Random.Range(0.92f, 1.05f), 0.72f, MixLayer.Lead);
+            Shot(_deny, Random.Range(0.92f, 1.04f), 0.72f, MixLayer.Lead);
         }
 
         public static void Crack() => Break();
@@ -192,8 +191,8 @@ namespace FlockFive
         {
             Ensure();
             int i = Next(_breaks.Length, ref _lastBreak);
-            Shot(_breaks[i], Random.Range(0.98f, 1.02f), 1f, MixLayer.Lead);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.9f);
+            Shot(_breaks[i], Random.Range(0.98f, 1.02f), 1f, MixLayer.Lead, MixDesk.DuckBreak);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.9f, MixDesk.DuckBreak);
             Rumble();
         }
 
@@ -201,8 +200,8 @@ namespace FlockFive
         {
             Ensure();
             int i = Next(_lifts.Length, ref _lastLift);
-            Shot(_lifts[i], Random.Range(0.98f, 1.02f), 0.64f, MixLayer.Lead);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.32f);
+            Shot(_lifts[i], Random.Range(0.98f, 1.02f), 0.64f, MixLayer.Lead, MixDesk.DuckWhoosh);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.32f, MixDesk.DuckWhoosh);
         }
 
         public static void Sleep()
@@ -210,7 +209,7 @@ namespace FlockFive
             Ensure();
             int i = Next(_snoozes.Length, ref _lastSnooze);
             Shot(_snoozes[i], Random.Range(0.98f, 1.02f), 0.64f, MixLayer.Lead);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.5f);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.5f, MixDesk.DuckChirp);
         }
 
         public static void Snooze(float vol = 0.28f)
@@ -226,8 +225,7 @@ namespace FlockFive
         public static void Moonrise()
         {
             Ensure();
-            Shot(_moon, 1f, 0.5f, MixLayer.Lead);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(1.1f);
+            if (MixDesk.Live != null) MixDesk.Live.MoonLift();
         }
 
         public static void Firework()
@@ -259,7 +257,7 @@ namespace FlockFive
         public static void BeeScatter()
         {
             Ensure();
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.55f);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.55f, MixDesk.DuckChirp);
             int n = 2;
             for (int k = 0; k < n; k++)
             {
@@ -796,25 +794,23 @@ namespace FlockFive
                         s += Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(f0 * 0.8f, f0 * 1.05f, u) * t) * 0.7f;
                         env = Mathf.Sin(Mathf.PI * u);
                         break;
-                    case 4: // little bell
-                        s = Mathf.Sin(2f * Mathf.PI * 392f * t);
-                        s += 0.14f * Mathf.Sin(2f * Mathf.PI * 523.25f * t);
-                        env = Mathf.Exp(-u * 3.2f) * (u < 0.04f ? u / 0.04f : 1f);
+                    case 4: // low buzz recede
+                        s = noise * 0.18f;
+                        s += Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(f0 * 0.45f, f0 * 0.28f, u) * t) * 0.7f;
+                        env = Mathf.Pow(1f - u, 1.1f) * (u < 0.08f ? u / 0.08f : 1f);
                         break;
                     case 5: // zip away
                         s = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(f0 * 0.75f, f0 * 1.1f, u * u) * t);
                         s += noise * 0.1f * (1f - u);
                         break;
-                    case 6: // tiny pips
-                    {
-                        float local = (u * 4f) % 1f;
-                        env = Mathf.Sin(Mathf.PI * local) * (1f - u);
-                        s = Mathf.Sin(2f * Mathf.PI * f0 * t);
+                    case 6: // whoosh away
+                        s = noise * 0.16f * (1f - u);
+                        s += Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(f0 * 0.55f, f0 * 0.32f, u) * t) * 0.68f;
+                        env = Mathf.Sin(Mathf.PI * Mathf.Pow(u, 0.65f)) * Mathf.Exp(-u * 1.4f);
                         break;
-                    }
-                    default: // warm major third
-                        s = Mathf.Sin(2f * Mathf.PI * 392f * t) * 0.5f;
-                        s += Mathf.Sin(2f * Mathf.PI * 494f * t) * 0.42f;
+                    default: // round drone
+                        s = Mathf.Sin(2f * Mathf.PI * (f0 * 0.4f + 8f * Mathf.Sin(t * 7f)) * t) * 0.7f;
+                        s += noise * 0.14f;
                         env = Mathf.Pow(Mathf.Sin(Mathf.PI * u), 1.1f);
                         break;
                 }
