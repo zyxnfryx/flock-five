@@ -18,7 +18,9 @@ namespace FlockFive
             new Level { Number = 1, Id = "dawn-garden", Title = "Dawn Garden", Make = DawnGarden },
             new Level { Number = 2, Id = "bee-thicket", Title = "Bee Thicket", Make = BeeThicket },
             new Level { Number = 3, Id = "noon-queue", Title = "Noon Queue", Make = NoonQueue },
-            new Level { Number = 4, Id = "dusk-scatter", Title = "Dusk Scatter", Make = DuskScatter }
+            new Level { Number = 4, Id = "dusk-scatter", Title = "Dusk Scatter", Make = DuskScatter },
+            new Level { Number = 5, Id = "moonrise-nap", Title = "Moonrise Nap", Make = MoonriseNap },
+            new Level { Number = 6, Id = "night-lattice", Title = "Night Lattice", Make = NightLattice }
         };
 
         public static int Count => All.Length;
@@ -55,9 +57,6 @@ namespace FlockFive
             return b;
         }
 
-        // Combo seed: live feeders are Ruby + Gold, queue is Teal then Violet.
-        // Completing Teal or Violet first puts them to sleep. Collecting Ruby
-        // (or Gold) then hangs the next feeder and those nappers fly — combo.
         static Board DawnGarden()
         {
             var b = Eight(
@@ -78,8 +77,6 @@ namespace FlockFive
             return Prep(b);
         }
 
-        // Shorter stacks, more bees. Live Gold + Teal so the obvious Ruby/Violet
-        // five-stacks are naps until a feeder hangs.
         static Board BeeThicket()
         {
             var b = Eight(
@@ -102,8 +99,6 @@ namespace FlockFive
             return Prep(b);
         }
 
-        // Same almost-full rows as dawn, feeders flipped: live Teal + Violet.
-        // Ruby/Gold flocks nap first; hanging Teal/Violet can combo them awake.
         static Board NoonQueue()
         {
             var b = Eight(
@@ -124,8 +119,6 @@ namespace FlockFive
             return Prep(b);
         }
 
-        // No almost-full color rows. Mixed stacks, two bees on the first two limbs,
-        // three empty perches. Live Ruby + Violet.
         static Board DuskScatter()
         {
             var b = Eight(
@@ -143,6 +136,53 @@ namespace FlockFive
             b.Queue.Add(BirdColor.Teal);
             HideInner(b.Branches[0], 2);
             HideInner(b.Branches[1], 2);
+            return Prep(b);
+        }
+
+        // Pair stacks plus a mixed row. Two empties. Live Gold + Violet so
+        // finishing Ruby/Teal first puts them to sleep until a feeder hangs.
+        static Board MoonriseNap()
+        {
+            var b = Eight(
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Gold, BirdColor.Gold),
+                Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Violet, BirdColor.Violet),
+                Row(BirdColor.Ruby, BirdColor.Teal, BirdColor.Ruby, BirdColor.Teal),
+                Row(BirdColor.Gold, BirdColor.Violet, BirdColor.Gold, BirdColor.Violet),
+                Row(BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet),
+                new BranchState(),
+                new BranchState(),
+                new BranchState());
+            b.Live[0] = BirdColor.Gold;
+            b.Live[1] = BirdColor.Violet;
+            b.Queue.Add(BirdColor.Ruby);
+            b.Queue.Add(BirdColor.Teal);
+            HideInner(b.Branches[0], 2);
+            HideInner(b.Branches[1], 2);
+            HideInner(b.Branches[2], 2);
+            HideInner(b.Branches[3], 2);
+            return Prep(b);
+        }
+
+        // Six occupied limbs, two empty. Mixed threes and fours. Live Teal + Ruby.
+        static Board NightLattice()
+        {
+            var b = Eight(
+                Row(BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet),
+                Row(BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet),
+                Row(BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal),
+                Row(BirdColor.Violet, BirdColor.Ruby, BirdColor.Gold),
+                Row(BirdColor.Teal, BirdColor.Violet, BirdColor.Ruby),
+                Row(BirdColor.Gold, BirdColor.Teal, BirdColor.Violet),
+                new BranchState(),
+                new BranchState());
+            b.Live[0] = BirdColor.Teal;
+            b.Live[1] = BirdColor.Ruby;
+            b.Queue.Add(BirdColor.Gold);
+            b.Queue.Add(BirdColor.Violet);
+            HideInner(b.Branches[0], 3);
+            HideInner(b.Branches[1], 3);
+            HideInner(b.Branches[2], 2);
+            HideInner(b.Branches[3], 2);
             return Prep(b);
         }
 
