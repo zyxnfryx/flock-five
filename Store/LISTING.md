@@ -6,7 +6,7 @@ Age rating: 9+ (not Kids). See RATING.md.
 Flock Five
 
 ## Subtitle (30)
-Hummingbird branch puzzle
+Hummingbird Sorting Puzzle
 
 ## Promotional text (170)
 Tap a branch, land a flock. Five hummingbirds of a color and they take off. Dawn, bees, noon, dusk. A quiet garden, not a carnival.
