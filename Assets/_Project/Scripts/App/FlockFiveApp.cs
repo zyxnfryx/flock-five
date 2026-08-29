@@ -38,21 +38,23 @@ namespace FlockFive
             catch (System.Exception e) { Debug.LogException(e); }
         }
 
-        void Restart()
+        void Restart() => Load(LevelData.Index);
+
+        void Load(int index)
         {
             _busy = false;
             _won = false;
             _sel = -1;
             _undo.Clear();
-            _toast = "Tap a branch with birds, then tap where they should go.";
             if (_garden.Root != null) Destroy(_garden.Root.gameObject);
             if (_garden.Cam != null) Destroy(_garden.Cam.gameObject);
             SpriteCatalog.ForgetBirds();
             _garden = WorldBuilder.Build(transform);
-            _board = LevelData.Open(LevelData.Index);
+            _board = LevelData.Open(index);
+            var title = LevelData.Current != null ? LevelData.Current.Title : "Flock Five";
+            _toast = title + ". Tap a branch with birds, then tap where they should go.";
             SyncAll();
             Sfx.GardenWake();
-            Shot("flock-capture.png");
             if (WantFinalePreview())
                 StartCoroutine(PreviewFinale());
         }
@@ -251,6 +253,13 @@ namespace FlockFive
                     _toast = combo >= 2 ? "COMBO x" + combo + " under the moon." : "Every bird found a feeder. The moon kept you company.";
                 else
                     _toast = combo >= 2 ? "COMBO x" + combo + "!" : "Every bird found a feeder.";
+                if (LevelData.HasNext)
+                {
+                    _toast = (LevelData.Current != null ? LevelData.Current.Title : "Garden") + " clear.";
+                    yield return new WaitForSeconds(1.15f);
+                    Load(LevelData.Index + 1);
+                    yield break;
+                }
             }
             else if (combo >= 2)
                 _toast = combo == 2
