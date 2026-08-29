@@ -163,6 +163,7 @@ namespace FlockFive
         {
             Ensure();
             size = Mathf.Clamp(size, 2, Palette.Max);
+            if (MixDesk.Live != null) MixDesk.Live.ComboWarm();
             if (_host == null) return;
             _host.StartCoroutine(ComboCo(size));
             if (size >= 3) Rumble();
@@ -850,7 +851,7 @@ namespace FlockFive
                 float f = notes[k];
                 float start = at[k];
                 for (int i = 0; i < n; i++)
-                {
+            {
                     float t = i / (float)Rate - start;
                     if (t < 0f) continue;
                     float env = Mathf.Exp(-t * 1.8f) * (t < 0.02f ? t / 0.02f : 1f);
