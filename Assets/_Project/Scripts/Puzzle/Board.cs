@@ -82,6 +82,7 @@ namespace FlockFive
         public readonly BirdColor?[] Live = new BirdColor?[2];
         public readonly List<BirdColor> Queue = new List<BirdColor>();
         public bool JustUnveiled;
+        public bool BreezeOnCollect;
 
         public Board Clone()
         {
@@ -91,6 +92,7 @@ namespace FlockFive
             n.Live[0] = Live[0];
             n.Live[1] = Live[1];
             n.Queue.AddRange(Queue);
+            n.BreezeOnCollect = BreezeOnCollect;
             return n;
         }
 
@@ -157,6 +159,19 @@ namespace FlockFive
             return -1;
         }
 
+        public int Breeze()
+        {
+            int n = 0;
+            for (int i = 0; i < Branches.Count; i++)
+            {
+                var br = Branches[i];
+                if (br.Broken || br.Count == 0) continue;
+                if (!br.IsShrouded(br.Count - 1)) continue;
+                if (br.RevealExposed() > 0) n++;
+            }
+            return n;
+        }
+
         public int ApplyCollect(int branchIndex)
         {
             var br = Branches[branchIndex];
@@ -173,6 +188,7 @@ namespace FlockFive
                 }
                 else Live[slot] = null;
             }
+            if (BreezeOnCollect) Breeze();
             return slot;
         }
 
