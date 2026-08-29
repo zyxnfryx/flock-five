@@ -170,6 +170,12 @@ namespace FlockFive
                     _toast = "They're napping until a matching feeder hangs.";
                     return;
                 }
+                if (TipHeldByBees(hit))
+                {
+                    _garden.Branches[hit].Shake();
+                    _toast = "Bees have the tip. Flock another color and the breeze lifts them.";
+                    return;
+                }
                 Select(hit);
                 return;
             }
@@ -192,6 +198,12 @@ namespace FlockFive
                     _garden.Branches[hit].Shake();
                     Sfx.Sleep();
                     _toast = "They're napping until a matching feeder hangs.";
+                    return;
+                }
+                if (TipHeldByBees(hit))
+                {
+                    _garden.Branches[hit].Shake();
+                    _toast = "Bees have the tip. Flock another color and the breeze lifts them.";
                     return;
                 }
                 Select(hit);
@@ -232,6 +244,7 @@ namespace FlockFive
             yield return Hop(from, to, run, fromCount, toCount);
             SyncAll();
 
+            int shroudedBefore = _board.BreezeOnCollect ? ShroudedTips() : 0;
             int combo = 0;
             int collect = _board.FindCollect();
             while (collect >= 0)
@@ -240,6 +253,7 @@ namespace FlockFive
                 yield return Collect(collect, combo);
                 collect = _board.FindCollect();
             }
+            bool breezeLifted = _board.BreezeOnCollect && ShroudedTips() < shroudedBefore;
             if (_board.Won)
             {
                 _won = true;
@@ -266,6 +280,8 @@ namespace FlockFive
                 _toast = combo == 2
                     ? "COMBO! Two flocks in one move."
                     : "COMBO x" + combo + "!";
+            else if (breezeLifted)
+                _toast = "The flock's breeze lifted the bees.";
             else if (_board.IsSleeping(to) && _board.Branches[to].IsFullMatch(out var nap))
             {
                 Sfx.Sleep();
@@ -368,6 +384,24 @@ namespace FlockFive
             _board.ApplyCollect(branch);
             SyncAll();
             _toast = col + " flocked — wow!";
+        }
+
+        bool TipHeldByBees(int i)
+        {
+            var br = _board.Branches[i];
+            return br.Count > 0 && br.TipRun() == 0;
+        }
+
+        int ShroudedTips()
+        {
+            int n = 0;
+            for (int i = 0; i < _board.Branches.Count; i++)
+            {
+                var br = _board.Branches[i];
+                if (br.Broken || br.Count == 0) continue;
+                if (br.IsShrouded(br.Count - 1)) n++;
+            }
+            return n;
         }
 
         static IEnumerator FlyTo(Transform tr, Vector3 dest, float delay, float dur)
