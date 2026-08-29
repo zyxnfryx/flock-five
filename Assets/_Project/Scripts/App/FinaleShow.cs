@@ -26,10 +26,10 @@ namespace FlockFive
 
         static IEnumerator RumbleTrain()
         {
-            for (int i = 0; i < 7; i++)
+            for (int i = 0; i < 3; i++)
             {
                 Sfx.Rumble();
-                yield return new WaitForSeconds(i < 3 ? 0.18f : 0.32f);
+                yield return new WaitForSeconds(0.4f);
             }
         }
 
@@ -68,12 +68,9 @@ namespace FlockFive
                 all[i].localScale = Vector3.zero;
             }
 
+            Sfx.Chirp();
             for (int i = 0; i < all.Length; i++)
-            {
-                Sfx.Chirp();
-                if (i % 2 == 0) Sfx.Rumble();
                 yield return Popcorn(all[i], restScale[i], restPos[i]);
-            }
 
             Settle(all, restScale, restPos);
 
@@ -201,9 +198,7 @@ namespace FlockFive
 
         static IEnumerator PopBird(Transform tr, float scale)
         {
-            Sfx.Chirp();
             Sfx.FlapHard();
-            Sfx.Flap();
             float t = 0f;
             while (t < 0.22f)
             {
@@ -219,17 +214,17 @@ namespace FlockFive
         static IEnumerator Fireworks(Transform parent, MonoBehaviour host)
         {
             var colors = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet };
-            for (int n = 0; n < 14; n++)
+            for (int n = 0; n < 3; n++)
             {
                 var col = colors[n % 4];
-                float x = Random.Range(-3.2f, 3.2f);
-                host.StartCoroutine(Rocket(parent, new Vector3(x, -7.2f, 0f), Random.Range(3.2f, 6.4f), col));
-                yield return new WaitForSeconds(0.16f);
+                float x = Random.Range(-2.4f, 2.4f);
+                host.StartCoroutine(Rocket(parent, new Vector3(x, -7.2f, 0f), Random.Range(3.6f, 5.6f), col, n == 0 || n == 2));
+                yield return new WaitForSeconds(0.55f);
             }
             yield return new WaitForSeconds(1.1f);
         }
 
-        static IEnumerator Rocket(Transform parent, Vector3 from, float peakY, BirdColor col)
+        static IEnumerator Rocket(Transform parent, Vector3 from, float peakY, BirdColor col, bool boom)
         {
             var spark = WorldBuilder.Sprite("Rocket", SpriteCatalog.Glow, from, 0.22f, 19, parent);
             var sr = spark.GetComponent<SpriteRenderer>();
@@ -245,8 +240,7 @@ namespace FlockFive
             }
             var pos = spark.transform.position;
             Object.Destroy(spark);
-            Sfx.Firework();
-            if (nEven()) Sfx.Rumble();
+            if (boom) Sfx.Firework();
             int bits = 16;
             var rs = new SpriteRenderer[bits];
             var vel = new Vector3[bits];
@@ -282,7 +276,5 @@ namespace FlockFive
                 if (rs[i] != null) Object.Destroy(rs[i].gameObject);
         }
 
-        static int _boom;
-        static bool nEven() => (++_boom % 2) == 0;
     }
 }
