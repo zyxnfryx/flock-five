@@ -132,6 +132,13 @@ namespace FlockFive
             }
         }
 
+        // Slight unsmoosh: K sprite reads squat at lockup size. A hair wider opens the arms, a hair taller lifts the squat.
+        static Vector3 LetterScale(char c, float s)
+        {
+            if (c == 'K') return new Vector3(s * 1.06f, s * 1.04f, 1f);
+            return new Vector3(s, s, 1f);
+        }
+
         static Sprite Glyph(char c)
         {
             if (c == 'V') return PointedV();
@@ -154,10 +161,17 @@ namespace FlockFive
             return _pointedV;
         }
 
+        static readonly Color ExtrudeNear = new Color(8f / 255f, 14f / 255f, 36f / 255f, 1f);
+        static readonly Color ExtrudeFar = new Color(4f / 255f, 7f / 255f, 18f / 255f, 1f);
+        static readonly Color DropShadow = new Color(3f / 255f, 5f / 255f, 12f / 255f, 0.55f);
+        const int ExtrudeLayers = 8;
+        const float ExtrudeStep = 0.018f;
+        const float ExtrudeX = 0.85f;
+
         static Transform[] PlaceWord(string word, float centerY, int order, Transform parent, float curve)
         {
             var letters = new Transform[word.Length];
-            var scales = new float[word.Length];
+            var scales = new Vector3[word.Length];
             var widths = new float[word.Length];
             float total = 0f;
             for (int i = 0; i < word.Length; i++)
@@ -166,8 +180,8 @@ namespace FlockFive
                 float h = spr != null ? Mathf.Max(0.01f, spr.bounds.size.y) : 1f;
                 float w = spr != null ? spr.bounds.size.x : 1f;
                 float inf = Inflate(i, word.Length) * Optical(word[i]);
-                scales[i] = CapH / h * inf;
-                widths[i] = w * scales[i];
+                scales[i] = LetterScale(word[i], CapH / h * inf);
+                widths[i] = w * scales[i].x;
                 total += widths[i] + (i > 0 ? Tracking : 0f);
             }
             float x = -total * 0.5f;
@@ -176,14 +190,38 @@ namespace FlockFive
                 x += widths[i] * 0.5f;
                 float u = word.Length <= 1 ? 0.5f : i / (float)(word.Length - 1);
                 float y = centerY + curve * Smile * Mathf.Sin(u * Mathf.PI);
-                var go = WorldBuilder.Sprite("L" + word[i] + i, Glyph(word[i]), parent.position, 1f, order, parent);
+                var spr = Glyph(word[i]);
+                var go = WorldBuilder.Sprite("L" + word[i] + i, spr, parent.position, 1f, order, parent);
                 go.transform.localRotation = Quaternion.identity;
-                go.transform.localScale = Vector3.one * scales[i];
+                go.transform.localScale = scales[i];
                 go.transform.localPosition = new Vector3(x, y, 0f);
+                Extrude(go, spr, order);
                 letters[i] = go.transform;
                 x += widths[i] * 0.5f + Tracking;
             }
             return letters;
+        }
+
+        // Navy extrusion + drop shadow parented to the face so popcorn/settle/slam carry the 3D stack. Face stays order; layers sit behind.
+        static void Extrude(GameObject face, Sprite spr, int order)
+        {
+            if (spr == null) return;
+            var t = face.transform;
+            var sh = WorldBuilder.Sprite("Sh", spr, t.position, 1f, order - ExtrudeLayers - 1, t);
+            sh.transform.localRotation = Quaternion.identity;
+            sh.transform.localScale = Vector3.one;
+            float depth = (ExtrudeLayers + 4) * ExtrudeStep;
+            sh.transform.localPosition = new Vector3(depth * ExtrudeX, -depth, 0f);
+            sh.GetComponent<SpriteRenderer>().color = DropShadow;
+            for (int d = ExtrudeLayers; d >= 1; d--)
+            {
+                var go = WorldBuilder.Sprite("Ex" + d, spr, t.position, 1f, order - d, t);
+                go.transform.localRotation = Quaternion.identity;
+                go.transform.localScale = Vector3.one;
+                go.transform.localPosition = new Vector3(d * ExtrudeStep * ExtrudeX, -d * ExtrudeStep, 0f);
+                float u = d / (float)ExtrudeLayers;
+                go.GetComponent<SpriteRenderer>().color = Color.Lerp(ExtrudeNear, ExtrudeFar, u);
+            }
         }
 
         static void Settle(Transform[] letters, Vector3[] restScale, Vector3[] restPos)
