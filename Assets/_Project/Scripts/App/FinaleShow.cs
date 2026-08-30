@@ -126,7 +126,8 @@ namespace FlockFive
                 case 'K': return 1.12f;
                 case 'E':
                 case 'L': return 1.08f;
-                case 'I': return 1.10f;
+                case 'I':
+                case 'V': return 1.10f;
                 default: return 1f;
             }
         }
