@@ -16,12 +16,15 @@ namespace FlockFive
             var fx = new GameObject("Finale").transform;
             fx.SetParent(root, false);
 
+            Live = true;
             host.StartCoroutine(Fireworks(fx, host));
             host.StartCoroutine(RumbleTrain());
 
             yield return new WaitForSeconds(0.28f);
             yield return SlamLogo(fx, host);
             yield return new WaitForSeconds(3.2f);
+            Live = false;
+            SweepSparkles(fx);
         }
 
         static IEnumerator RumbleTrain()
@@ -31,6 +34,35 @@ namespace FlockFive
                 Sfx.Rumble();
                 yield return new WaitForSeconds(0.4f);
             }
+        }
+
+        static bool Live;
+
+        // Logo / halo / mascots stay. Sparkle leftovers do not.
+        static void SweepSparkles(Transform root)
+        {
+            if (root == null) return;
+            var kids = root.GetComponentsInChildren<Transform>(true);
+            var drop = new GameObject[kids.Length];
+            int n = 0;
+            for (int i = 0; i < kids.Length; i++)
+            {
+                if (kids[i] == null) continue;
+                if (!IsLeftoverSparkle(kids[i].name)) continue;
+                drop[n++] = kids[i].gameObject;
+            }
+            for (int i = 0; i < n; i++)
+                if (drop[i] != null) Object.Destroy(drop[i]);
+        }
+
+        static bool IsLeftoverSparkle(string name)
+        {
+            return name.StartsWith("Glint")
+                || name.StartsWith("Fly")
+                || name.StartsWith("Burst")
+                || name.StartsWith("Boom")
+                || name == "Rocket"
+                || name == "Shine";
         }
 
         const float CapH = 1.96f;
@@ -223,7 +255,7 @@ namespace FlockFive
                 srs[i].color = tint[i % 4];
             }
             float t = 0f;
-            while (hold != null && t < 6f)
+            while (hold != null && Live && t < 6f)
             {
                 t += Time.deltaTime;
                 for (int i = 0; i < n; i++)
@@ -237,6 +269,8 @@ namespace FlockFive
                 }
                 yield return null;
             }
+            for (int i = 0; i < n; i++)
+                if (flies[i] != null) Object.Destroy(flies[i]);
         }
 
         static IEnumerator Twinkle(Transform hold, float dur)
@@ -447,6 +481,7 @@ namespace FlockFive
             var colors = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet };
             for (int n = 0; n < 18; n++)
             {
+                if (!Live) yield break;
                 var col = colors[n % 4];
                 float x;
                 float peak;
@@ -469,6 +504,7 @@ namespace FlockFive
 
         static IEnumerator Rocket(Transform parent, Vector3 from, float peakY, BirdColor col, bool boom)
         {
+            if (!Live || parent == null) yield break;
             var spark = WorldBuilder.Sprite("Rocket", SpriteCatalog.Glow, from, 0.22f, 17, parent);
             var sr = spark.GetComponent<SpriteRenderer>();
             sr.color = Wow.Of(col);
@@ -476,11 +512,13 @@ namespace FlockFive
             const float up = 0.42f;
             while (t < up)
             {
+                if (spark == null || !Live) yield break;
                 t += Time.deltaTime;
                 float u = t / up;
                 spark.transform.position = Vector3.Lerp(from, new Vector3(from.x, peakY, 0f), u * u);
                 yield return null;
             }
+            if (spark == null || !Live) yield break;
             var pos = spark.transform.position;
             Object.Destroy(spark);
             if (boom) Sfx.Firework();
