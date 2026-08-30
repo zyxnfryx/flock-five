@@ -20,7 +20,7 @@ namespace FlockFive
             host.StartCoroutine(RumbleTrain());
 
             yield return new WaitForSeconds(0.28f);
-            yield return SlamLogo(fx);
+            yield return SlamLogo(fx, host);
             yield return new WaitForSeconds(3.2f);
         }
 
@@ -34,25 +34,27 @@ namespace FlockFive
         }
 
         const float CapH = 1.96f;
-        const float RowGap = 0.10f;
-        const float Tracking = -0.10f;
-        const float Smile = 0.045f;
+        const float RowGap = 0.38f;
+        const float Tracking = -0.04f;
+        const float Smile = 0.055f;
 
-        static IEnumerator SlamLogo(Transform parent)
+        static IEnumerator SlamLogo(Transform parent, MonoBehaviour host)
         {
             var hold = new GameObject("LogoHold").transform;
             hold.SetParent(parent, false);
             hold.position = new Vector3(0f, 1.18f, 0f);
+            Stage(hold);
+            host.StartCoroutine(Fireflies(hold));
 
             float flockY = 0.98f;
             float fiveY = flockY - CapH - RowGap;
             var row1 = PlaceWord("FLOCK", flockY, 28, hold, 1f);
             var row2 = PlaceWord("FIVE", fiveY, 28, hold, -1f);
 
-            var ruby = Mascot(BirdColor.Ruby, new Vector3(-2.48f, flockY + CapH * 0.82f, 0f), false, 24, hold);
-            var gold = Mascot(BirdColor.Gold, new Vector3(2.48f, flockY + CapH * 0.82f, 0f), true, 24, hold);
-            var teal = Mascot(BirdColor.Teal, new Vector3(-3.42f, fiveY - CapH * 0.08f, 0f), false, 24, hold);
-            var violet = Mascot(BirdColor.Violet, new Vector3(3.42f, fiveY - CapH * 0.08f, 0f), true, 24, hold);
+            var ruby = Mascot(BirdColor.Ruby, new Vector3(-2.62f, flockY + CapH * 0.82f, 0f), false, 24, hold);
+            var gold = Mascot(BirdColor.Gold, new Vector3(2.62f, flockY + CapH * 0.82f, 0f), true, 24, hold);
+            var teal = Mascot(BirdColor.Teal, new Vector3(-3.55f, fiveY - CapH * 0.08f, 0f), false, 24, hold);
+            var violet = Mascot(BirdColor.Violet, new Vector3(3.55f, fiveY - CapH * 0.08f, 0f), true, 24, hold);
             ruby.transform.localScale = Vector3.zero;
             gold.transform.localScale = Vector3.zero;
             teal.transform.localScale = Vector3.zero;
@@ -83,13 +85,16 @@ namespace FlockFive
                 slam += Time.deltaTime;
                 float u = Mathf.Clamp01(slam / slamDur);
                 float k = u < 0.45f
-                    ? Mathf.SmoothStep(1f, 1.10f, u / 0.45f)
-                    : Mathf.SmoothStep(1.10f, 1f, (u - 0.45f) / 0.55f);
+                    ? Mathf.SmoothStep(1f, 1.16f, u / 0.45f)
+                    : Mathf.SmoothStep(1.16f, 1f, (u - 0.45f) / 0.55f);
                 hold.localScale = Vector3.one * k;
                 yield return null;
             }
             hold.localScale = Vector3.one;
             Settle(all, restScale, restPos);
+            host.StartCoroutine(Shine(hold));
+            host.StartCoroutine(Burst(hold));
+            host.StartCoroutine(Twinkle(hold, 2.2f));
 
             Sfx.Takeoff(4);
             Sfx.Rumble();
@@ -103,12 +108,154 @@ namespace FlockFive
             while (pulse < 1.6f)
             {
                 pulse += Time.deltaTime;
-                float b = 1f + 0.028f * Mathf.Sin(pulse * 6.5f);
+                float b = 1f + 0.04f * Mathf.Sin(pulse * 6.5f);
                 hold.localScale = Vector3.one * b;
                 yield return null;
             }
             hold.localScale = Vector3.one;
             Settle(all, restScale, restPos);
+        }
+
+        static void Stage(Transform hold)
+        {
+            var halo = WorldBuilder.Sprite("Halo", SpriteCatalog.Glow, hold.position, 1f, 8, hold);
+            halo.transform.localPosition = new Vector3(0f, -0.12f, 0f);
+            halo.transform.localScale = new Vector3(16f, 12f, 1f);
+            halo.GetComponent<SpriteRenderer>().color = new Color(1f, 0.66f, 0.18f, 0.72f);
+
+            var core = WorldBuilder.Sprite("HaloCore", SpriteCatalog.Glow, hold.position, 1f, 9, hold);
+            core.transform.localPosition = new Vector3(0f, 0.08f, 0f);
+            core.transform.localScale = new Vector3(8.5f, 6.6f, 1f);
+            core.GetComponent<SpriteRenderer>().color = new Color(1f, 0.92f, 0.62f, 0.78f);
+
+            var floor = WorldBuilder.Sprite("Floor", SpriteCatalog.Glow, hold.position, 1f, 7, hold);
+            floor.transform.localPosition = new Vector3(0f, -2.45f, 0f);
+            floor.transform.localScale = new Vector3(12f, 4.2f, 1f);
+            floor.GetComponent<SpriteRenderer>().color = new Color(1f, 0.55f, 0.16f, 0.48f);
+        }
+
+        static void Glints(GameObject face, int order)
+        {
+            float[] xs = { -0.22f, 0.18f };
+            float[] ys = { 0.30f, -0.06f };
+            float[] sc = { 0.20f, 0.13f };
+            for (int i = 0; i < 2; i++)
+            {
+                var go = WorldBuilder.Sprite("Glint" + i, SpriteCatalog.Sparkle, face.transform.position, sc[i], order + 3, face.transform);
+                go.transform.localPosition = new Vector3(xs[i], ys[i], 0f);
+                go.transform.localRotation = Quaternion.identity;
+                go.GetComponent<SpriteRenderer>().color = new Color(1f, 0.96f, 0.82f, 0.95f);
+            }
+        }
+
+        static IEnumerator Shine(Transform hold)
+        {
+            var go = WorldBuilder.Sprite("Shine", SpriteCatalog.Glow, hold.position, 1f, 40, hold);
+            go.transform.localScale = new Vector3(2.2f, 7.5f, 1f);
+            var sr = go.GetComponent<SpriteRenderer>();
+            float t = 0f;
+            const float dur = 0.58f;
+            while (t < dur)
+            {
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                go.transform.localPosition = new Vector3(Mathf.Lerp(-4.6f, 4.6f, u), 0.05f, 0f);
+                sr.color = new Color(1f, 0.98f, 0.86f, Mathf.Sin(u * Mathf.PI) * 0.55f);
+                yield return null;
+            }
+            Object.Destroy(go);
+        }
+
+        static IEnumerator Burst(Transform parent)
+        {
+            const int n = 16;
+            var rs = new SpriteRenderer[n];
+            var vel = new Vector3[n];
+            var origin = parent.position + Vector3.up * 0.15f;
+            for (int i = 0; i < n; i++)
+            {
+                float ang = (i / (float)n) * Mathf.PI * 2f;
+                vel[i] = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang), 0f) * Random.Range(2.8f, 5.2f);
+                var go = WorldBuilder.Sprite("Burst", SpriteCatalog.Sparkle, origin, 0.18f, 36, parent);
+                rs[i] = go.GetComponent<SpriteRenderer>();
+                rs[i].color = Color.white;
+            }
+            float b = 0f;
+            while (b < 0.7f)
+            {
+                b += Time.deltaTime;
+                float u = b / 0.7f;
+                for (int i = 0; i < n; i++)
+                {
+                    if (rs[i] == null) continue;
+                    rs[i].transform.position += vel[i] * Time.deltaTime;
+                    vel[i] *= 0.96f;
+                    var c = rs[i].color;
+                    c.a = 1f - u;
+                    rs[i].color = c;
+                }
+                yield return null;
+            }
+            for (int i = 0; i < n; i++)
+                if (rs[i] != null) Object.Destroy(rs[i].gameObject);
+        }
+
+        static IEnumerator Fireflies(Transform hold)
+        {
+            const int n = 8;
+            var flies = new GameObject[n];
+            var srs = new SpriteRenderer[n];
+            var home = new Vector3[n];
+            var tint = new[]
+            {
+                new Color(1f, 0.32f, 0.36f, 0.9f),
+                new Color(1f, 0.78f, 0.25f, 0.9f),
+                new Color(0.2f, 0.86f, 0.78f, 0.9f),
+                new Color(0.7f, 0.42f, 1f, 0.9f)
+            };
+            for (int i = 0; i < n; i++)
+            {
+                float a = i / (float)n * Mathf.PI * 2f;
+                home[i] = new Vector3(Mathf.Cos(a) * 3.4f, Mathf.Sin(a) * 2.1f - 0.15f, 0f);
+                flies[i] = WorldBuilder.Sprite("Fly" + i, SpriteCatalog.Firefly, hold.position, 0.22f, 21, hold);
+                flies[i].transform.localPosition = home[i];
+                srs[i] = flies[i].GetComponent<SpriteRenderer>();
+                srs[i].color = tint[i % 4];
+            }
+            float t = 0f;
+            while (hold != null && t < 6f)
+            {
+                t += Time.deltaTime;
+                for (int i = 0; i < n; i++)
+                {
+                    if (flies[i] == null) yield break;
+                    float wob = t * (1.1f + i * 0.17f);
+                    flies[i].transform.localPosition = home[i] + new Vector3(Mathf.Sin(wob) * 0.22f, Mathf.Cos(wob * 0.8f) * 0.18f, 0f);
+                    var c = srs[i].color;
+                    c.a = 0.55f + 0.4f * Mathf.Sin(t * 6f + i);
+                    srs[i].color = c;
+                }
+                yield return null;
+            }
+        }
+
+        static IEnumerator Twinkle(Transform hold, float dur)
+        {
+            var srs = hold.GetComponentsInChildren<SpriteRenderer>(true);
+            float t = 0f;
+            while (t < dur && hold != null)
+            {
+                t += Time.deltaTime;
+                for (int i = 0; i < srs.Length; i++)
+                {
+                    if (srs[i] == null) continue;
+                    if (!srs[i].name.StartsWith("Glint")) continue;
+                    var c = srs[i].color;
+                    c.a = 0.4f + 0.6f * Mathf.Abs(Mathf.Sin(t * 8f + i * 1.7f));
+                    srs[i].color = c;
+                }
+                yield return null;
+            }
         }
 
         static float Inflate(int i, int n)
@@ -132,10 +279,9 @@ namespace FlockFive
             }
         }
 
-        // Slight unsmoosh: K sprite reads squat at lockup size. A hair wider opens the arms, a hair taller lifts the squat.
         static Vector3 LetterScale(char c, float s)
         {
-            if (c == 'K') return new Vector3(s * 1.06f, s * 1.04f, 1f);
+            if (c == 'K') return new Vector3(s * 1.10f, s * 1.06f, 1f);
             return new Vector3(s, s, 1f);
         }
 
@@ -147,7 +293,6 @@ namespace FlockFive
 
         static Sprite _pointedV;
 
-        // Pointed V in the FLOCK family. Loaded from FinaleVBytes so FIVE does not use the old bucket glyph.
         static Sprite PointedV()
         {
             if (_pointedV != null) return _pointedV;
@@ -161,12 +306,12 @@ namespace FlockFive
             return _pointedV;
         }
 
-        static readonly Color ExtrudeNear = new Color(8f / 255f, 14f / 255f, 36f / 255f, 1f);
+        static readonly Color ExtrudeNear = new Color(28f / 255f, 44f / 255f, 102f / 255f, 1f);
         static readonly Color ExtrudeFar = new Color(4f / 255f, 7f / 255f, 18f / 255f, 1f);
-        static readonly Color DropShadow = new Color(3f / 255f, 5f / 255f, 12f / 255f, 0.55f);
-        const int ExtrudeLayers = 8;
-        const float ExtrudeStep = 0.018f;
-        const float ExtrudeX = 0.85f;
+        static readonly Color DropShadow = new Color(3f / 255f, 5f / 255f, 12f / 255f, 0.62f);
+        const int ExtrudeLayers = 12;
+        const float ExtrudeStep = 0.026f;
+        const float ExtrudeX = 0.78f;
 
         static Transform[] PlaceWord(string word, float centerY, int order, Transform parent, float curve)
         {
@@ -196,21 +341,23 @@ namespace FlockFive
                 go.transform.localScale = scales[i];
                 go.transform.localPosition = new Vector3(x, y, 0f);
                 Extrude(go, spr, order);
+                Glints(go, order);
                 letters[i] = go.transform;
                 x += widths[i] * 0.5f + Tracking;
             }
             return letters;
         }
 
-        // Navy extrusion + drop shadow parented to the face so popcorn/settle/slam carry the 3D stack. Face stays order; layers sit behind.
         static void Extrude(GameObject face, Sprite spr, int order)
         {
             if (spr == null) return;
             var t = face.transform;
+            var faceSr = face.GetComponent<SpriteRenderer>();
+            if (faceSr != null) faceSr.sortingOrder = order + 1;
             var sh = WorldBuilder.Sprite("Sh", spr, t.position, 1f, order - ExtrudeLayers - 1, t);
             sh.transform.localRotation = Quaternion.identity;
             sh.transform.localScale = Vector3.one;
-            float depth = (ExtrudeLayers + 4) * ExtrudeStep;
+            float depth = (ExtrudeLayers + 6) * ExtrudeStep;
             sh.transform.localPosition = new Vector3(depth * ExtrudeX, -depth, 0f);
             sh.GetComponent<SpriteRenderer>().color = DropShadow;
             for (int d = ExtrudeLayers; d >= 1; d--)
