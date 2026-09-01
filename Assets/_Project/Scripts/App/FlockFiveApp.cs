@@ -170,10 +170,10 @@ namespace FlockFive
                     _toast = "They're napping until a matching feeder hangs.";
                     return;
                 }
-                if (TipHeldByBees(hit))
+                if (TipLocked(hit))
                 {
                     _garden.Branches[hit].Shake();
-                    _toast = "Bees have the tip. Flock another color and the breeze lifts them.";
+                    _toast = "Leaves cover this perch. Flock another color and the breeze lifts them.";
                     return;
                 }
                 Select(hit);
@@ -200,10 +200,10 @@ namespace FlockFive
                     _toast = "They're napping until a matching feeder hangs.";
                     return;
                 }
-                if (TipHeldByBees(hit))
+                if (TipLocked(hit))
                 {
                     _garden.Branches[hit].Shake();
-                    _toast = "Bees have the tip. Flock another color and the breeze lifts them.";
+                    _toast = "Leaves cover this perch. Flock another color and the breeze lifts them.";
                     return;
                 }
                 Select(hit);
@@ -279,7 +279,7 @@ namespace FlockFive
                     ? "COMBO! Two flocks in one move."
                     : "COMBO x" + combo + "!";
             else if (breezeLifted)
-                _toast = "The flock's breeze lifted the bees.";
+                _toast = "The flock's breeze lifted the leaves.";
             else if (_board.IsSleeping(to) && _board.Branches[to].IsFullMatch(out var nap))
             {
                 Sfx.Sleep();
@@ -384,10 +384,10 @@ namespace FlockFive
             _toast = col + " flocked — wow!";
         }
 
-        bool TipHeldByBees(int i)
+        bool TipLocked(int i)
         {
             var br = _board.Branches[i];
-            return br.Count > 0 && br.TipRun() == 0;
+            return br.TipLocked;
         }
 
         int ShroudedTips()
