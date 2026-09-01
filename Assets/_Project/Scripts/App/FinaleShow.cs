@@ -37,6 +37,8 @@ namespace FlockFive
         }
 
         static bool Live;
+        static bool Glow;
+        const float PulseDur = 1.6f;
 
         // Logo / halo / mascots stay. Sparkle leftovers do not.
         static void SweepSparkles(Transform root)
@@ -76,7 +78,6 @@ namespace FlockFive
             hold.SetParent(parent, false);
             hold.position = new Vector3(0f, 1.18f, 0f);
             Stage(hold);
-            host.StartCoroutine(Fireflies(hold));
 
             float flockY = 0.98f;
             float fiveY = flockY - CapH - RowGap;
@@ -124,9 +125,6 @@ namespace FlockFive
             }
             hold.localScale = Vector3.one;
             Settle(all, restScale, restPos);
-            host.StartCoroutine(Shine(hold));
-            host.StartCoroutine(Burst(hold));
-            host.StartCoroutine(Twinkle(hold, 2.2f));
 
             Sfx.Takeoff(4);
             Sfx.Rumble();
@@ -136,8 +134,16 @@ namespace FlockFive
             yield return PopBird(violet, 0.52f);
             Sfx.Takeoff(4);
 
+            Glow = true;
+            for (int i = 0; i < all.Length; i++)
+                if (all[i] != null) Glints(all[i].gameObject, 28);
+            host.StartCoroutine(Fireflies(hold));
+            host.StartCoroutine(Shine(hold));
+            host.StartCoroutine(Burst(hold));
+            host.StartCoroutine(Twinkle(hold, PulseDur));
+
             float pulse = 0f;
-            while (pulse < 1.6f)
+            while (pulse < PulseDur)
             {
                 pulse += Time.deltaTime;
                 float b = 1f + 0.04f * Mathf.Sin(pulse * 6.5f);
@@ -146,6 +152,8 @@ namespace FlockFive
             }
             hold.localScale = Vector3.one;
             Settle(all, restScale, restPos);
+            Glow = false;
+            SweepSparkles(hold);
         }
 
         static void Stage(Transform hold)
@@ -255,7 +263,7 @@ namespace FlockFive
                 srs[i].color = tint[i % 4];
             }
             float t = 0f;
-            while (hold != null && Live && t < 6f)
+            while (hold != null && Glow && t < PulseDur)
             {
                 t += Time.deltaTime;
                 for (int i = 0; i < n; i++)
@@ -277,7 +285,7 @@ namespace FlockFive
         {
             var srs = hold.GetComponentsInChildren<SpriteRenderer>(true);
             float t = 0f;
-            while (t < dur && hold != null)
+            while (t < dur && hold != null && Glow)
             {
                 t += Time.deltaTime;
                 for (int i = 0; i < srs.Length; i++)
@@ -375,7 +383,6 @@ namespace FlockFive
                 go.transform.localScale = scales[i];
                 go.transform.localPosition = new Vector3(x, y, 0f);
                 Extrude(go, spr, order);
-                Glints(go, order);
                 letters[i] = go.transform;
                 x += widths[i] * 0.5f + Tracking;
             }
