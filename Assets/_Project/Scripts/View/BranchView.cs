@@ -20,6 +20,7 @@ namespace FlockFive
         bool _sleeping;
         float _nextSnooze;
         BeeSwarm _swarm;
+        LeafCover _leaves;
         readonly Transform[] _zz = new Transform[3];
         readonly SpriteRenderer[] _zzSr = new SpriteRenderer[3];
 
@@ -48,6 +49,8 @@ namespace FlockFive
         {
             if (state.Broken)
             {
+                if (_swarm != null) _swarm.Cover(false, Seats, -1, 0);
+                if (_leaves != null) _leaves.Cover(false, Seats, 0);
                 gameObject.SetActive(false);
                 ShowZzz(false);
                 return;
@@ -58,15 +61,18 @@ namespace FlockFive
                 _nextSnooze = Time.unscaledTime + Random.Range(0.25f, 0.9f);
             _sleeping = sleeping;
             int lastHid = -1;
+            bool tipLocked = state.TipLocked;
             for (int i = 0; i < BranchState.Cap; i++)
             {
                 var bird = Birds[i];
                 if (bird == null) continue;
-                var leftover = bird.GetComponent<BeeSwarm>();
-                if (leftover != null) Destroy(leftover);
+                var leftoverBee = bird.GetComponent<BeeSwarm>();
+                if (leftoverBee != null) Destroy(leftoverBee);
+                var leftoverLeaf = bird.GetComponent<LeafCover>();
+                if (leftoverLeaf != null) Destroy(leftoverLeaf);
                 bool show = i < state.Count;
                 bool hid = show && state.IsShrouded(i);
-                if (hid) lastHid = i;
+                if (hid && !tipLocked) lastHid = i;
                 bird.gameObject.SetActive(show);
                 bird.enabled = show;
                 bird.sortingOrder = hid ? 7 : 12;
@@ -101,7 +107,13 @@ namespace FlockFive
             if (_swarm == null) _swarm = gameObject.GetComponent<BeeSwarm>();
             if (_swarm == null) _swarm = gameObject.AddComponent<BeeSwarm>();
             _swarm.TrunkDir = FromRight ? 1f : -1f;
-            if (lastHid >= 0)
+            if (_leaves == null) _leaves = gameObject.GetComponent<LeafCover>();
+            if (_leaves == null) _leaves = gameObject.AddComponent<LeafCover>();
+            _leaves.TrunkDir = FromRight ? 1f : -1f;
+            _leaves.Cover(tipLocked, Seats, state.Count);
+            if (tipLocked)
+                _swarm.Cover(false, Seats, -1, state.Count);
+            else if (lastHid >= 0)
                 _swarm.Cover(true, Seats, lastHid, state.Count);
             else
                 _swarm.Cover(false, Seats, -1, state.Count);
