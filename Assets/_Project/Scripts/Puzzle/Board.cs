@@ -17,6 +17,8 @@ namespace FlockFive
         public bool IsShrouded(int i) =>
             i >= 0 && i < Shrouded.Count && Shrouded[i];
 
+        public bool TipLocked => Count > 0 && IsShrouded(Count - 1);
+
         public int TipRun()
         {
             if (Count == 0) return 0;
@@ -120,6 +122,8 @@ namespace FlockFive
             var b = Branches[to];
             if (a.Broken || b.Broken || a.Empty) return false;
             if (a.IsFullMatch(out var wait) && !LiveHas(wait)) return false;
+            // Leaf-locked limb: unusable until a feeder collect breeze lifts the tip.
+            if (a.TipLocked || b.TipLocked) return false;
             if (b.Free <= 0) return false;
             if (!b.Empty && b.Tip != a.Tip) return false;
             run = a.TipRun();
