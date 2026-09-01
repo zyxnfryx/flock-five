@@ -25,3 +25,8 @@ for Flock Five. Not third-party recordings.
 Feeder whooshes (`Audio/Whoosh/whoosh_00–11`) and branch crunches
 (`Audio/Break/break_00–11`) are original synthesized banks: receding
 swoops (object leaving), and celery-snap wood with outward splinters.
+
+Garden beds (`Audio/Bed/dawn-garden`, `mid-climb`, `last-light`) and feeder ching
+(`Audio/Ching/ching_00–11`) are original synthesized Flock Five banks,
+commercially clear. Runtime C# ports match the signed-off D-major garden mixes
+when wavs are not in Resources.
