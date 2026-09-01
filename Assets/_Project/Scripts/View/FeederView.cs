@@ -33,6 +33,7 @@ namespace FlockFive
         public IEnumerator Cheer()
         {
             _held = true;
+            Sfx.FeederDone();
             float t = 0f;
             while (t < 0.55f)
             {
