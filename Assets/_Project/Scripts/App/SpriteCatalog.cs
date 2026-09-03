@@ -68,7 +68,6 @@ namespace FlockFive
             }
         }
 
-        // Dense elongated puff: opaque through most of the ellipse, tiny soft rim.
         public static Sprite Smoke
         {
             get
@@ -98,7 +97,6 @@ namespace FlockFive
             }
         }
 
-        // Round blackout disc for a single bird. Opaque almost to the edge.
         public static Sprite Blanket
         {
             get
@@ -159,6 +157,7 @@ namespace FlockFive
                 case BirdColor.Ruby: return "ruby";
                 case BirdColor.Gold: return "gold";
                 case BirdColor.Teal: return "teal";
+                case BirdColor.Peach: return "peach";
                 default: return "violet";
             }
         }
@@ -166,7 +165,17 @@ namespace FlockFive
         static Sprite Slot(ref Sprite[] arr, int i, string path, float ppu)
         {
             if (arr == null) arr = new Sprite[Palette.Max];
-            if (arr[i] == null) arr[i] = LoadNew(path, ppu);
+            if (arr[i] == null)
+            {
+                arr[i] = TryLoad(path, ppu);
+                if (arr[i] == null && i == (int)BirdColor.Peach)
+                {
+                    string goldPath = path.Replace("peach", "gold");
+                    var gold = Slot(ref arr, (int)BirdColor.Gold, goldPath, ppu);
+                    arr[i] = Recolor(gold, new Color(1.18f, 0.58f, 0.52f, 1f));
+                }
+                if (arr[i] == null) arr[i] = Fallback(ppu);
+            }
             return arr[i];
         }
 
@@ -178,20 +187,61 @@ namespace FlockFive
 
         static Sprite LoadNew(string path, float ppu)
         {
+            var got = TryLoad(path, ppu);
+            if (got != null) return got;
+            Debug.LogWarning("Missing sprite " + path);
+            return Fallback(ppu);
+        }
+
+        static Sprite TryLoad(string path, float ppu)
+        {
             var ready = Resources.Load<Sprite>(path);
             if (ready != null) return ready;
             var tex = Resources.Load<Texture2D>(path);
-            if (tex == null)
-            {
-                Debug.LogWarning("Missing sprite " + path);
-                return Fallback(ppu);
-            }
+            if (tex == null) return null;
             tex.filterMode = FilterMode.Bilinear;
             tex.wrapMode = TextureWrapMode.Clamp;
             var pivot = new Vector2(0.5f, 0.5f);
             if (path.Contains("fx_vine")) pivot = new Vector2(0.5f, 0.94f);
             else if (path.Contains("fx_leaf")) pivot = new Vector2(0.5f, 0.08f);
             return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), pivot, ppu, 0, SpriteMeshType.FullRect);
+        }
+
+        static Sprite Recolor(Sprite src, Color mul)
+        {
+            if (src == null) return Fallback(100f);
+            var rect = src.rect;
+            int w = Mathf.Max(1, Mathf.RoundToInt(rect.width));
+            int h = Mathf.Max(1, Mathf.RoundToInt(rect.height));
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            try
+            {
+                var pix = src.texture.GetPixels(
+                    Mathf.RoundToInt(rect.x),
+                    Mathf.RoundToInt(rect.y),
+                    w, h);
+                for (int i = 0; i < pix.Length; i++)
+                {
+                    var p = pix[i];
+                    pix[i] = new Color(
+                        Mathf.Clamp01(p.r * mul.r),
+                        Mathf.Clamp01(p.g * mul.g),
+                        Mathf.Clamp01(p.b * mul.b),
+                        p.a);
+                }
+                tex.SetPixels(pix);
+            }
+            catch (System.Exception)
+            {
+                return src;
+            }
+            tex.Apply();
+            var pivot = new Vector2(
+                src.pivot.x / Mathf.Max(1f, rect.width),
+                src.pivot.y / Mathf.Max(1f, rect.height));
+            return Sprite.Create(tex, new Rect(0, 0, w, h), pivot, src.pixelsPerUnit);
         }
 
         static Sprite Fallback(float ppu)

@@ -12,6 +12,7 @@ namespace FlockFive
                 case BirdColor.Ruby: return new Color(1f, 0.28f, 0.32f);
                 case BirdColor.Gold: return new Color(1f, 0.82f, 0.22f);
                 case BirdColor.Teal: return new Color(0.15f, 0.9f, 0.78f);
+                case BirdColor.Peach: return new Color(1f, 0.52f, 0.42f);
                 default: return new Color(0.72f, 0.38f, 1f);
             }
         }

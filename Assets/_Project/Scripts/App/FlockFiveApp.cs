@@ -170,10 +170,10 @@ namespace FlockFive
                     _toast = "They're napping until a matching feeder hangs.";
                     return;
                 }
-                if (TipHeldByBees(hit))
+                if (TipLocked(hit))
                 {
                     _garden.Branches[hit].Shake();
-                    _toast = "Bees have the tip. Flock another color and the breeze lifts them.";
+                    _toast = "Leaves cover this perch. Flock another color and the breeze lifts them.";
                     return;
                 }
                 Select(hit);
@@ -200,10 +200,10 @@ namespace FlockFive
                     _toast = "They're napping until a matching feeder hangs.";
                     return;
                 }
-                if (TipHeldByBees(hit))
+                if (TipLocked(hit))
                 {
                     _garden.Branches[hit].Shake();
-                    _toast = "Bees have the tip. Flock another color and the breeze lifts them.";
+                    _toast = "Leaves cover this perch. Flock another color and the breeze lifts them.";
                     return;
                 }
                 Select(hit);
@@ -220,7 +220,7 @@ namespace FlockFive
             _sel = hit;
             _garden.Branches[hit].SetReady(true);
             _toast = "Ready to fly. Tap a matching bird, empty matching perch, or its branch.";
-            Sfx.Chirp();
+            Sfx.Chirp(_board.Branches[hit].Tip.Value);
         }
 
         IEnumerator DoMove(int from, int to)
@@ -240,8 +240,9 @@ namespace FlockFive
             int fromCount = _board.Branches[from].Count;
             int toCount = _board.Branches[to].Count;
             int wanted = _board.Branches[from].TipRun();
+            var hopCol = _board.Branches[from].Tip.Value;
             _board.TryMove(from, to, out run);
-            yield return Hop(from, to, run, fromCount, toCount);
+            yield return Hop(from, to, run, fromCount, toCount, hopCol);
             SyncAll();
 
             int shroudedBefore = _board.BreezeOnCollect ? ShroudedTips() : 0;
@@ -279,7 +280,7 @@ namespace FlockFive
                     ? "COMBO! Two flocks in one move."
                     : "COMBO x" + combo + "!";
             else if (breezeLifted)
-                _toast = "The flock's breeze lifted the bees.";
+                _toast = "The flock's breeze lifted the leaves.";
             else if (_board.IsSleeping(to) && _board.Branches[to].IsFullMatch(out var nap))
             {
                 Sfx.Sleep();
@@ -294,18 +295,18 @@ namespace FlockFive
                 else
                     _toast = "The bees flew off. A bird is in the clear.";
                 _garden.Branches[from].FlutterTip();
-                Sfx.Chirp();
+                Sfx.Chirp(unveiled.Tip.Value);
             }
             else if (run < wanted)
                 _toast = "Only " + run + " could fit on that perch.";
             _busy = false;
         }
 
-        IEnumerator Hop(int from, int to, int run, int fromCount, int toCount)
+        IEnumerator Hop(int from, int to, int run, int fromCount, int toCount, BirdColor col)
         {
             var src = _garden.Branches[from];
             var dst = _garden.Branches[to];
-            Sfx.Chirp();
+            Sfx.Chirp(col);
             Sfx.Takeoff(run);
             var movers = new SpriteRenderer[run];
             var starts = new Vector3[run];
@@ -384,10 +385,10 @@ namespace FlockFive
             _toast = col + " flocked — wow!";
         }
 
-        bool TipHeldByBees(int i)
+        bool TipLocked(int i)
         {
             var br = _board.Branches[i];
-            return br.Count > 0 && br.TipRun() == 0;
+            return br.TipLocked;
         }
 
         int ShroudedTips()

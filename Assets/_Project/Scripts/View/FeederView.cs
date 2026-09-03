@@ -33,6 +33,7 @@ namespace FlockFive
         public IEnumerator Cheer()
         {
             _held = true;
+            Sfx.FeederDone();
             float t = 0f;
             while (t < 0.55f)
             {
@@ -51,7 +52,7 @@ namespace FlockFive
         public IEnumerator PullAway()
         {
             _held = true;
-            Sfx.FeederDone();
+            Sfx.FeederLeave();
             float t = 0f;
             var start = transform.position;
             var want = start + new Vector3(0f, 2.8f, 0f);
