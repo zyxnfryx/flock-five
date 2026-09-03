@@ -45,6 +45,13 @@ namespace FlockFive
                         Squash = 0.045f, Scale = 1f, HeadX = 0.12f, HeadY = 0.19f,
                         FaceScale = 0.36f, BlinkEvery = 1.8f
                     };
+                case BirdColor.Peach:
+                    return new Pose
+                    {
+                        BobHz = 6.8f, BobAmp = 0.022f, Tilt = 6.5f, Lean = -3f,
+                        Squash = 0.05f, Scale = 1.02f, HeadX = 0.10f, HeadY = 0.19f,
+                        FaceScale = 0.33f, BlinkEvery = 2.8f
+                    };
                 default:
                     return new Pose
                     {
@@ -84,6 +91,9 @@ namespace FlockFive
                 case BirdColor.Teal:
                     Curious(pix, n);
                     break;
+                case BirdColor.Peach:
+                    Sweet(pix, n);
+                    break;
                 default:
                     Dreamy(pix, n);
                     break;
@@ -98,7 +108,6 @@ namespace FlockFive
 
         static void Eager(Color[] pix, int n)
         {
-            // Fierce lean: V-brows, small intense pupils aimed forward.
             Oval(pix, n, 30, 58, 11, 9, Color.white);
             Oval(pix, n, 58, 58, 11, 9, Color.white);
             Oval(pix, n, 33, 56, 5, 6, new Color(0.12f, 0.04f, 0.06f, 1f));
@@ -111,7 +120,6 @@ namespace FlockFive
 
         static void Smug(Color[] pix, int n)
         {
-            // Half-lidded, pleased, one fat catchlight.
             Oval(pix, n, 30, 56, 12, 7, Color.white);
             Oval(pix, n, 62, 56, 12, 7, Color.white);
             Oval(pix, n, 31, 54, 7, 4.2f, new Color(0.18f, 0.10f, 0.04f, 1f));
@@ -123,7 +131,6 @@ namespace FlockFive
 
         static void Curious(Color[] pix, int n)
         {
-            // Big round look-around eyes.
             Oval(pix, n, 30, 56, 13, 13, Color.white);
             Oval(pix, n, 64, 56, 13, 13, Color.white);
             Oval(pix, n, 34, 58, 6.5f, 6.5f, new Color(0.06f, 0.16f, 0.18f, 1f));
@@ -134,9 +141,22 @@ namespace FlockFive
             Oval(pix, n, 64, 73, 5, 2.2f, new Color(0.08f, 0.22f, 0.24f, 0.85f));
         }
 
+        static void Sweet(Color[] pix, int n)
+        {
+            Oval(pix, n, 30, 57, 11, 10, Color.white);
+            Oval(pix, n, 62, 57, 11, 10, Color.white);
+            Oval(pix, n, 32, 56, 5.5f, 6f, new Color(0.28f, 0.10f, 0.12f, 1f));
+            Oval(pix, n, 64, 56, 5.5f, 6f, new Color(0.28f, 0.10f, 0.12f, 1f));
+            Dot(pix, n, 34, 59, 2f, new Color(1f, 0.88f, 0.82f, 1f));
+            Dot(pix, n, 66, 59, 2f, new Color(1f, 0.88f, 0.82f, 1f));
+            Oval(pix, n, 22, 42, 7, 4.5f, new Color(1f, 0.55f, 0.52f, 0.55f));
+            Oval(pix, n, 74, 42, 7, 4.5f, new Color(1f, 0.55f, 0.52f, 0.55f));
+            Stroke(pix, n, 36, 28, 48, 22, 2.1f, new Color(0.32f, 0.10f, 0.12f, 0.95f));
+            Stroke(pix, n, 48, 22, 60, 28, 2.1f, new Color(0.32f, 0.10f, 0.12f, 0.95f));
+        }
+
         static void Dreamy(Color[] pix, int n)
         {
-            // Soft lids, long lash, tiny sparkle.
             Oval(pix, n, 31, 55, 11, 10, Color.white);
             Oval(pix, n, 62, 55, 11, 10, Color.white);
             Oval(pix, n, 32, 53, 6, 6.5f, new Color(0.16f, 0.08f, 0.28f, 1f));
