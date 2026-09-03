@@ -220,7 +220,7 @@ namespace FlockFive
             _sel = hit;
             _garden.Branches[hit].SetReady(true);
             _toast = "Ready to fly. Tap a matching bird, empty matching perch, or its branch.";
-            Sfx.Chirp();
+            Sfx.Chirp(_board.Branches[hit].Tip.Value);
         }
 
         IEnumerator DoMove(int from, int to)
@@ -240,8 +240,9 @@ namespace FlockFive
             int fromCount = _board.Branches[from].Count;
             int toCount = _board.Branches[to].Count;
             int wanted = _board.Branches[from].TipRun();
+            var hopCol = _board.Branches[from].Tip.Value;
             _board.TryMove(from, to, out run);
-            yield return Hop(from, to, run, fromCount, toCount);
+            yield return Hop(from, to, run, fromCount, toCount, hopCol);
             SyncAll();
 
             int shroudedBefore = _board.BreezeOnCollect ? ShroudedTips() : 0;
@@ -294,18 +295,18 @@ namespace FlockFive
                 else
                     _toast = "The bees flew off. A bird is in the clear.";
                 _garden.Branches[from].FlutterTip();
-                Sfx.Chirp();
+                Sfx.Chirp(unveiled.Tip.Value);
             }
             else if (run < wanted)
                 _toast = "Only " + run + " could fit on that perch.";
             _busy = false;
         }
 
-        IEnumerator Hop(int from, int to, int run, int fromCount, int toCount)
+        IEnumerator Hop(int from, int to, int run, int fromCount, int toCount, BirdColor col)
         {
             var src = _garden.Branches[from];
             var dst = _garden.Branches[to];
-            Sfx.Chirp();
+            Sfx.Chirp(col);
             Sfx.Takeoff(run);
             var movers = new SpriteRenderer[run];
             var starts = new Vector3[run];
