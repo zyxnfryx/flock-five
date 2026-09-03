@@ -17,7 +17,6 @@ namespace FlockFive
         static AudioClip[] _snoozes;
         static AudioClip[] _hums;
         static AudioClip[] _scatters;
-        static int _lastChirp = -1;
         static int _lastFlap = -1;
         static int _lastSnooze = -1;
         static int _lastHum = -1;
@@ -49,7 +48,7 @@ namespace FlockFive
                 a.volume = 1f;
                 _voices[i] = a;
             }
-            _chirps = LoadBank("Audio/Select", 10, i => MakeChirp(1100 + i * 97));
+            _chirps = LoadVoices();
             _flaps = new AudioClip[14];
             for (int i = 0; i < _flaps.Length; i++)
                 _flaps[i] = MakeFlap(i, 2200 + i * 131);
@@ -101,13 +100,71 @@ namespace FlockFive
 
         public static bool QuietMid => MixDesk.Live == null || MixDesk.Live.AllowMid;
 
-        public static void Chirp()
+        public static void Chirp() => Chirp(BirdColor.Ruby);
+
+        public static void Chirp(BirdColor c)
         {
             Ensure();
-            int i = Next(_chirps.Length, ref _lastChirp);
-            // Real hummingbird chips: do not pitch them up.
-            Shot(_chirps[i], Random.Range(0.99f, 1.01f), 0.66f, MixLayer.Lead);
+            int i = (int)c;
+            if (i < 0 || i >= _chirps.Length) i = 0;
+            Shot(_chirps[i], 1f, 0.66f, MixLayer.Lead);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.7f, MixDesk.DuckChirp);
+        }
+
+        static AudioClip[] LoadVoices()
+        {
+            var clips = new AudioClip[Palette.Max];
+            var bank = Resources.LoadAll<AudioClip>("Audio/Select");
+            if (bank != null && bank.Length > 0)
+                System.Array.Sort(bank, (a, b) => string.CompareOrdinal(a.name, b.name));
+            for (int i = 0; i < clips.Length; i++)
+            {
+                var col = (BirdColor)i;
+                string n = VoiceName(col);
+                clips[i] = Resources.Load<AudioClip>("Audio/Select/" + n)
+                        ?? Resources.Load<AudioClip>("Audio/Chirp/" + n);
+                if (clips[i] == null && bank != null)
+                {
+                    for (int k = 0; k < bank.Length; k++)
+                    {
+                        if (bank[k] == null) continue;
+                        if (bank[k].name.ToLowerInvariant().Contains(n))
+                        {
+                            clips[i] = bank[k];
+                            break;
+                        }
+                    }
+                }
+                if (clips[i] == null && bank != null && i < bank.Length && col != BirdColor.Peach)
+                    clips[i] = bank[i];
+                if (clips[i] == null)
+                    clips[i] = MakeChirp(VoiceSeed(col));
+            }
+            return clips;
+        }
+
+        static string VoiceName(BirdColor c)
+        {
+            switch (c)
+            {
+                case BirdColor.Ruby: return "ruby";
+                case BirdColor.Gold: return "gold";
+                case BirdColor.Teal: return "teal";
+                case BirdColor.Peach: return "peach";
+                default: return "violet";
+            }
+        }
+
+        static int VoiceSeed(BirdColor c)
+        {
+            switch (c)
+            {
+                case BirdColor.Ruby: return 1100;
+                case BirdColor.Gold: return 1310;
+                case BirdColor.Teal: return 1540;
+                case BirdColor.Peach: return 1888;
+                default: return 980;
+            }
         }
 
         public static void Flap() => FlapAt(0.32f, Random.Range(0.94f, 1.03f), 0.02f, MixLayer.Mid);
