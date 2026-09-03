@@ -8,7 +8,7 @@ namespace FlockFive
         public System.Func<Board> Make;
     }
 
-    public static class LevelData
+    public static partial class LevelData
     {
         public static int Index { get; private set; }
         public static Level Current { get; private set; }
@@ -42,7 +42,7 @@ namespace FlockFive
             if (All.Length == 0) return new Board();
             Index = index < 0 ? 0 : (index >= All.Length ? All.Length - 1 : index);
             Current = All[Index];
-            return Current.Make();
+            return Pack(Current.Make());
         }
 
         static Board Eight(params BranchState[] filled)
