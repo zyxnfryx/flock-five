@@ -3,8 +3,9 @@ namespace FlockFive
     public static partial class LevelData
     {
         // Seed puzzles stay 8 limbs. Drop one trailing empty, clone the rest
-        // with a +1 color shift so Violet's copy is Peach, then offer a Peach
-        // feeder if she landed on the board.
+        // with a +1 color shift so Violet's copy is Peach. Clone flocks need
+        // their own feeder visits, so the shifted live+queue is appended.
+        // Never stuff Peach into an empty Live slot (pinched stays pinched).
         static Board Pack(Board src)
         {
             var b = new Board();
@@ -23,6 +24,7 @@ namespace FlockFive
             for (int i = 0; i < keep; i++)
                 b.Branches.Add(ShiftClone(src.Branches[i]));
 
+            EnqueueShiftedFeeders(src, b);
             OfferPeach(b);
             return b;
         }
@@ -44,14 +46,27 @@ namespace FlockFive
             return (BirdColor)(((int)c + 1) % n);
         }
 
+        static void EnqueueShiftedFeeders(Board src, Board b)
+        {
+            Extra(src.Live[0], b);
+            Extra(src.Live[1], b);
+            for (int i = 0; i < src.Queue.Count; i++)
+                Extra(src.Queue[i], b);
+        }
+
+        static void Extra(BirdColor? c, Board b)
+        {
+            if (!c.HasValue) return;
+            b.Queue.Add(Shift(c.Value));
+        }
+
         static void OfferPeach(Board b)
         {
             if (!HasColor(b, BirdColor.Peach)) return;
             if (b.LiveHas(BirdColor.Peach)) return;
             for (int i = 0; i < b.Queue.Count; i++)
                 if (b.Queue[i] == BirdColor.Peach) return;
-            if (b.Live[1] == null) b.Live[1] = BirdColor.Peach;
-            else b.Queue.Add(BirdColor.Peach);
+            b.Queue.Add(BirdColor.Peach);
         }
 
         static bool HasColor(Board b, BirdColor c)
