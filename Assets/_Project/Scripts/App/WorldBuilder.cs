@@ -5,7 +5,7 @@ namespace FlockFive
     public static class WorldBuilder
     {
         public const float PortraitAspect = 9f / 16f;
-        const int Rows = 4;
+        const int Rows = 7;
         const int Cols = 2;
 
         public struct Garden
@@ -23,29 +23,29 @@ namespace FlockFive
 
             var cam = MakeCamera(parent);
 
-            var bg = Sprite("Bg", SpriteCatalog.GardenBg, new Vector3(0f, 0.25f, 8f), 1f, -20, root);
+            var bg = Sprite("Bg", SpriteCatalog.GardenBg, new Vector3(0f, -0.15f, 8f), 1f, -20, root);
             var fit = bg.AddComponent<BackgroundFitter>();
             fit.Cam = cam;
             fit.FollowCamera = false;
-            fit.WorldCenter = new Vector3(0f, 0.35f, 8f);
-            fit.WorldSize = new Vector2(10.2f, 18.2f);
+            fit.WorldCenter = new Vector3(0f, -0.15f, 8f);
+            fit.WorldSize = new Vector2(10.2f, 22.4f);
             fit.Apply();
             SkyCycle.Attach(root, cam);
             GardenLife.Attach(root);
 
-            // One limb from the off-screen left tree and one from the off-screen
-            // right tree at each row. Index = row * 2 + (right ? 1 : 0).
             var branches = new BranchView[Rows * Cols];
-            float[] ys = { 2.95f, 0.45f, -2.05f, -4.55f };
+            const float y0 = 3.42f;
+            const float gap = 1.42f;
             for (int row = 0; row < Rows; row++)
             {
-                branches[row * 2] = MakeBranch(row * 2, new Vector2(-2.38f, ys[row]), false, root);
-                branches[row * 2 + 1] = MakeBranch(row * 2 + 1, new Vector2(2.38f, ys[row]), true, root);
+                float y = y0 - row * gap;
+                branches[row * 2] = MakeBranch(row * 2, new Vector2(-2.38f, y), false, root);
+                branches[row * 2 + 1] = MakeBranch(row * 2 + 1, new Vector2(2.38f, y), true, root);
             }
 
             var feeders = new FeederView[2];
-            feeders[0] = MakeFeeder(0, new Vector3(-1.22f, 6.88f, 0f), root);
-            feeders[1] = MakeFeeder(1, new Vector3(1.22f, 6.88f, 0f), root);
+            feeders[0] = MakeFeeder(0, new Vector3(-1.22f, 8.12f, 0f), root);
+            feeders[1] = MakeFeeder(1, new Vector3(1.22f, 8.12f, 0f), root);
 
             return new Garden
             {
@@ -64,7 +64,7 @@ namespace FlockFive
 
             var woodGo = Sprite("Wood", SpriteCatalog.Branch, go.transform.position, 1f, 2, go.transform);
             woodGo.transform.localPosition = Vector3.zero;
-            woodGo.transform.localScale = new Vector3(0.48f, 0.58f, 1f);
+            woodGo.transform.localScale = new Vector3(0.42f, 0.50f, 1f);
             var wood = woodGo.GetComponent<SpriteRenderer>();
             wood.flipX = fromRight;
 
@@ -74,10 +74,9 @@ namespace FlockFive
             view.Wood = wood;
 
             var col = go.AddComponent<BoxCollider2D>();
-            col.size = new Vector2(4.4f, 2.3f);
-            col.offset = new Vector2(fromRight ? 0.15f : -0.15f, 0.55f);
+            col.size = new Vector2(4.2f, 1.85f);
+            col.offset = new Vector2(fromRight ? 0.15f : -0.15f, 0.48f);
 
-            // Seat 0 is the trunk (off-screen tree); last seat is the tip at the aisle.
             float outer = fromRight ? 1.95f : -1.95f;
             float inner = fromRight ? -1.72f : 1.72f;
             for (int s = 0; s < BranchState.Cap; s++)
@@ -137,14 +136,14 @@ namespace FlockFive
             go.transform.SetParent(parent, false);
             var cam = go.AddComponent<Camera>();
             cam.orthographic = true;
-            cam.orthographicSize = 8.2f;
+            cam.orthographicSize = 10.6f;
             cam.aspect = PortraitAspect;
             cam.rect = new Rect(0f, 0f, 1f, 1f);
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = new Color(0.07f, 0.12f, 0.08f);
             cam.nearClipPlane = -10f;
             cam.farClipPlane = 50f;
-            cam.transform.position = new Vector3(0f, 0.35f, -10f);
+            cam.transform.position = new Vector3(0f, -0.45f, -10f);
             cam.transform.rotation = Quaternion.identity;
             go.AddComponent<AudioListener>();
             go.AddComponent<PortraitLock>();

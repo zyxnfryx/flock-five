@@ -5,13 +5,13 @@ namespace FlockFive
         Ruby = 0,
         Gold = 1,
         Teal = 2,
-        Violet = 3
-        // Fifth palette slot is reserved. Flock Five never ships more than Palette.Max colors.
+        Violet = 3,
+        Peach = 4
     }
 
     public static class Palette
     {
         public const int Max = 5;
-        public const int Shipped = 4;
+        public const int Shipped = 5;
     }
 }
