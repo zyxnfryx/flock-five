@@ -5,6 +5,19 @@ Selection chips are real hummingbird recordings, sliced and mastered
 then a gentle high shelf −5 dB above ~4.5 kHz so phone speakers don't whistle).
 Not synthesized. The bank is 12 unique chips (`hum_sel_00–11`).
 
+Color voices (one real chip each; a named `Audio/Select/{ruby,gold,teal,violet,peach}`
+or `Audio/Chirp/{name}` file overrides). Assigned from the same NPS bank:
+
+| Color | Clip |
+|---|---|
+| Ruby | `Select/hum_sel_00` |
+| Gold | `Select/hum_sel_01` |
+| Teal | `Select/hum_sel_02` |
+| Violet | `Select/hum_sel_03` |
+| Peach | `Select/hum_sel_04` |
+
+`hum_sel_05–11` stay in the folder unused. Selection is never synthesized.
+
 | Clip | Source | License |
 |---|---|---|
 | `Select/hum_sel_00–01` | Ruby-throated Hummingbird call, U.S. National Park Service | Public domain |

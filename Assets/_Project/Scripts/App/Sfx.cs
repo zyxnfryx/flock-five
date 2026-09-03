@@ -135,10 +135,10 @@ namespace FlockFive
                         }
                     }
                 }
-                if (clips[i] == null && bank != null && i < bank.Length && col != BirdColor.Peach)
+                // One real chip per color from the 12-clip NPS bank.
+                // Ruby 00, Gold 01, Teal 02, Violet 03, Peach 04. Never synth.
+                if (clips[i] == null && bank != null && i < bank.Length)
                     clips[i] = bank[i];
-                if (clips[i] == null)
-                    clips[i] = MakeChirp(VoiceSeed(col));
             }
             return clips;
         }
@@ -152,18 +152,6 @@ namespace FlockFive
                 case BirdColor.Teal: return "teal";
                 case BirdColor.Peach: return "peach";
                 default: return "violet";
-            }
-        }
-
-        static int VoiceSeed(BirdColor c)
-        {
-            switch (c)
-            {
-                case BirdColor.Ruby: return 1100;
-                case BirdColor.Gold: return 1310;
-                case BirdColor.Teal: return 1540;
-                case BirdColor.Peach: return 1888;
-                default: return 980;
             }
         }
 
