@@ -435,6 +435,9 @@ namespace FlockFive
             return br;
         }
 
+        // Inner shrouds are bees. They may sit under a leaf tip (HideTip) until
+        // a feeder collect breeze lifts the leaf; then only the exposed tip bee
+        // (or a hidden same-color run) leaves.
         static void HideInner(BranchState br, int count)
         {
             br.AlignShroud();
@@ -445,6 +448,7 @@ namespace FlockFive
                 br.Shrouded[i] = true;
         }
 
+        // Leaf lock on the tip. Locks the limb until BreezeOnCollect.
         static void HideTip(BranchState br)
         {
             br.AlignShroud();

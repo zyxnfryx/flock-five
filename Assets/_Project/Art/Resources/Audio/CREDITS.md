@@ -35,6 +35,9 @@ iPhone (still not a gunshot); snooze bank pitched so the dove-range
 Sleep snores (`Audio/Snooze/snore_00–11`) are an original synthesized bank
 for Flock Five. Not third-party recordings.
 
+Combo is the wood-pluck jingle only (`Sfx.Combo`). The spoken announcer
+bank is unused.
+
 Feeder whooshes (`Audio/Whoosh/whoosh_00–11`) and branch crunches
 (`Audio/Break/break_00–11`) are original synthesized banks: receding
 swoops (object leaving), and celery-snap wood with outward splinters.

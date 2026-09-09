@@ -34,8 +34,8 @@ namespace FlockFive
         public static void Combo(int size)
         {
             if (Live == null) return;
-            size = Mathf.Clamp(size, 1, Palette.Max);
-            float n = size - 1;
+            size = Mathf.Clamp(size, 1, Palette.ComboMax);
+            float n = Mathf.Min(size - 1, 10);
             Live.Punch(0.16f + 0.07f * n, 0.09f + 0.07f * n, 1.5f + 1.2f * n, 0.10f + 0.05f * n);
         }
 

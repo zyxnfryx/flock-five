@@ -13,5 +13,6 @@ namespace FlockFive
     {
         public const int Max = 5;
         public const int Shipped = 5;
+        public const int ComboMax = 16;
     }
 }

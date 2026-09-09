@@ -7,13 +7,15 @@ namespace FlockFive
     public sealed class MixDesk : MonoBehaviour
     {
         public static MixDesk Live;
-        public const float DuckChirp = 0.18f;
-        public const float DuckWhoosh = 0.15f;
-        public const float DuckBreak = 0.08f;
+        // Chirps live 6–8 kHz; beds sit under ~1.2 kHz. Do not dip the garden.
+        public const float DuckChirp = 1f;
+        public const float DuckWhoosh = 0.88f;
+        public const float DuckBreak = 0.78f;
 
         AudioSource[] _stems;
         float _leadUntil;
         float _leadDuck = 1f;
+        float _duckSlew = 1f;
         float _moonLiftUntil;
         float _comboUntil = -99f;
         const int Rate = 22050;
@@ -24,14 +26,23 @@ namespace FlockFive
         const float ComboIn = 0.35f;
         const float Bpm = 84f;
         const float Beat = 60f / Bpm;
-        const int NBars = 8;
+        const int NBars = 16;
+        const int TeaseBar = 5;
+        const int PayoffBar = 11;
 
         public static void Boot(GameObject host)
         {
-            if (Live != null) return;
-            Live = host.GetComponent<MixDesk>();
-            if (Live == null) Live = host.AddComponent<MixDesk>();
+            if (Live == null)
+            {
+                Live = host.GetComponent<MixDesk>();
+                if (Live == null) Live = host.AddComponent<MixDesk>();
+            }
             Live.Build();
+        }
+
+        void OnDestroy()
+        {
+            if (Live == this) Live = null;
         }
 
         public bool LeadHot => Time.unscaledTime < _leadUntil;
@@ -62,11 +73,35 @@ namespace FlockFive
 
         void Build()
         {
-            _stems = new AudioSource[4];
-            _stems[0] = MakeLoop(LoadBed("Audio/Bed/dawn-garden", MakeDawn));
-            _stems[1] = MakeLoop(LoadBed("Audio/Bed/mid-climb", MakeMid));
-            _stems[2] = MakeLoop(LoadBed("Audio/Bed/last-light", MakeLast));
-            _stems[3] = MakeLoop(MakeCombo());
+            var dawn = LoadBed("Audio/Bed/dawn-garden", MakeDawn);
+            var mid = LoadBed("Audio/Bed/mid-climb", MakeMid);
+            var last = LoadBed("Audio/Bed/last-light", MakeLast);
+            var combo = MakeCombo();
+            if (_stems == null)
+            {
+                _stems = new AudioSource[4];
+                _stems[0] = MakeLoop(dawn);
+                _stems[1] = MakeLoop(mid);
+                _stems[2] = MakeLoop(last);
+                _stems[3] = MakeLoop(combo);
+                return;
+            }
+            SwapClip(0, dawn);
+            SwapClip(1, mid);
+            SwapClip(2, last);
+            SwapClip(3, combo);
+        }
+
+        void SwapClip(int i, AudioClip clip)
+        {
+            var a = _stems[i];
+            if (a == null)
+            {
+                _stems[i] = MakeLoop(clip);
+                return;
+            }
+            a.clip = clip;
+            if (!a.isPlaying) a.Play();
         }
 
         static AudioClip LoadBed(string path, System.Func<AudioClip> make)
@@ -93,10 +128,15 @@ namespace FlockFive
             if (!LeadHot) _leadDuck = 1f;
             if (_stems == null) return;
 
+            float target = BedDuck;
+            float rate = target < _duckSlew ? 10f : 4f;
+            _duckSlew = Mathf.MoveTowards(_duckSlew, target, Time.unscaledDeltaTime * rate);
+
             float d = SkyCycle.Dusk;
-            float day = 1f - Mathf.SmoothStep(0f, 0.42f, d);
-            float night = Mathf.SmoothStep(0.38f, 1f, d);
-            float dusk = Mathf.Clamp01(1f - Mathf.Abs(d - 0.5f) * 2.15f);
+            // One bed occupant; short handoff so two flute lines never sit together.
+            float day = 1f - Mathf.SmoothStep(0.12f, 0.32f, d);
+            float dusk = Mathf.SmoothStep(0.18f, 0.38f, d) * (1f - Mathf.SmoothStep(0.55f, 0.75f, d));
+            float night = Mathf.SmoothStep(0.62f, 0.82f, d);
             bool moon = Time.unscaledTime < _moonLiftUntil;
             if (moon) night += 0.35f;
             float sum = day + dusk + night;
@@ -106,7 +146,7 @@ namespace FlockFive
             night /= sum;
 
             float cap = moon ? PlaceMax : PlaceCap;
-            float duck = BedDuck;
+            float duck = _duckSlew;
             SetStem(0, day * cap * duck);
             SetStem(1, dusk * cap * duck);
             SetStem(2, night * cap * duck);
@@ -165,139 +205,79 @@ namespace FlockFive
 
         static float[] Flute(int n, float midi)
         {
+            // Hollow tube + brief chiff. Tongued, not an organ pad.
             var y = new float[n];
             float f0 = Hz(midi);
             float phase = 0f;
-            float a = OnePoleA(1180f);
-            float lp = 0f;
+            float a = OnePoleA(1080f);
+            float aAir = OnePoleA(1400f);
+            float lp = 0f, air = 0f;
             float dur = n / (float)Rate;
-            float rel = Mathf.Min(0.22f, dur * 0.35f);
-            for (int i = 0; i < n; i++)
-            {
-                float t = i / (float)Rate;
-                float u = t / dur;
-                float env;
-                if (u < 0.018f / dur) env = u / (0.018f / dur);
-                else if (t < 0.018f + 0.12f)
-                {
-                    float d = (t - 0.018f) / 0.12f;
-                    env = Mathf.Lerp(1f, 0.72f, d);
-                }
-                else if (t > dur - rel) env = 0.72f * (1f - (t - (dur - rel)) / rel);
-                else env = 0.72f;
-                env *= 0.88f + 0.12f * Mathf.Sin(2f * Mathf.PI * 1.7f * t + 0.4f);
-                float vib = 1f + 0.00347f * Mathf.Sin(2f * Mathf.PI * 4.6f * t);
-                phase += 2f * Mathf.PI * f0 * vib / Rate;
-                float s = Mathf.Sin(phase) + 0.16f * Mathf.Sin(2f * phase) + 0.03f * Mathf.Sin(3f * phase);
-                lp += a * (s * env - lp);
-                y[i] = lp;
-            }
-            return y;
-        }
-
-        static float[] PadVoice(int n, float cutoff, float amp, float air)
-        {
-            var y = new float[n];
-            float[] fs = { Hz(50f), Hz(54f), Hz(57f), Hz(62f), Hz(45f) };
-            float[] am = { 0.55f, 0.38f, 0.50f, 0.22f, 0.18f };
-            float[] det = { 0.997f, 1.003f, 0.9985f, 1.002f, 1.001f };
-            float a = OnePoleA(cutoff);
-            float a2 = OnePoleA(2400f);
-            float lp = 0f, lp2 = 0f;
-            for (int i = 0; i < n; i++)
-            {
-                float t = i / (float)Rate;
-                float s = 0f;
-                for (int k = 0; k < 5; k++)
-                {
-                    float f = fs[k] * det[k];
-                    s += am[k] * Mathf.Sin(2f * Mathf.PI * f * t);
-                    s += am[k] * 0.07f * Mathf.Sin(2f * Mathf.PI * f * 2f * t);
-                }
-                s *= 0.78f + 0.22f * Mathf.Sin(2f * Mathf.PI * 0.055f * t + 0.3f);
-                if (air > 0f)
-                {
-                    float airS = 0.6f * Mathf.Sin(2f * Mathf.PI * Hz(62f) * t)
-                        + 0.4f * Mathf.Sin(2f * Mathf.PI * Hz(57f) * t);
-                    s += air * airS * (0.85f + 0.15f * Mathf.Sin(2f * Mathf.PI * 0.08f * t));
-                }
-                lp += a * (s - lp);
-                lp2 += a2 * (lp - lp2);
-                y[i] = lp2;
-            }
-            float peak = 1e-6f;
-            for (int i = 0; i < n; i++)
-            {
-                float v = Mathf.Abs(y[i]);
-                if (v > peak) peak = v;
-            }
-            float g = amp / peak;
-            for (int i = 0; i < n; i++) y[i] *= g;
-            return y;
-        }
-
-        static float[] BassNote(int n, float midi)
-        {
-            var y = new float[n];
-            float f0 = Hz(midi);
-            float a = OnePoleA(420f);
-            float lp = 0f;
-            float dur = n / (float)Rate;
-            float rel = Mathf.Min(0.18f, dur * 0.25f);
+            float rel = Mathf.Min(0.20f, dur * 0.28f);
+            int h = Mathf.RoundToInt(midi * 913f + 17f);
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
                 float env;
                 if (t < 0.012f) env = t / 0.012f;
-                else if (t < 0.092f) env = Mathf.Lerp(1f, 0.82f, (t - 0.012f) / 0.08f);
-                else if (t > dur - rel) env = 0.82f * Mathf.Max(0f, 1f - (t - (dur - rel)) / rel);
-                else env = 0.82f;
-                float s = Mathf.Sin(2f * Mathf.PI * f0 * t) + 0.12f * Mathf.Sin(4f * Mathf.PI * f0 * t);
-                lp += a * (s * env - lp);
+                else if (t < 0.16f) env = Mathf.Lerp(1f, 0.58f, (t - 0.012f) / 0.148f);
+                else if (t > dur - rel) env = 0.58f * Mathf.Max(0f, 1f - (t - (dur - rel)) / rel);
+                else env = 0.58f;
+                env *= 0.94f + 0.06f * Mathf.Sin(2f * Mathf.PI * 1.6f * t);
+                float vib = 1f + 0.0031f * Mathf.Sin(2f * Mathf.PI * 4.7f * t);
+                phase += 2f * Mathf.PI * f0 * vib / Rate;
+                float s = Mathf.Sin(phase) + 0.07f * Mathf.Sin(2f * phase) + 0.025f * Mathf.Sin(3f * phase);
+                h = (h * 1103515245 + 12345) & 0x7fffffff;
+                float nz = (h / 1073741824f) - 1f;
+                air += aAir * (nz - air);
+                float chiff = t < 0.018f ? air * (1f - t / 0.018f) * 0.22f : 0f;
+                lp += a * ((s + chiff) * env - lp);
                 y[i] = lp;
             }
             return y;
         }
 
-        static float[] Kick()
+        static float[] Pizz(float midi)
         {
-            int n = Mathf.CeilToInt(0.22f * Rate);
+            // Karplus–Strong plucked string. Not a sine pad, not a xylophone bar.
+            float f0 = Hz(midi);
+            int delay = Mathf.Clamp(Mathf.RoundToInt(Rate / f0), 6, Rate / 30);
+            float dur = midi < 50f ? 0.30f : midi < 62f ? 0.20f : 0.15f;
+            int n = Mathf.CeilToInt(dur * Rate);
             var y = new float[n];
-            float a = OnePoleA(380f);
+            int h = Mathf.RoundToInt(midi * 1103f + 91f);
+            int exc = Mathf.Min(delay, Mathf.RoundToInt(0.0035f * Rate));
+            for (int i = 0; i < delay && i < n; i++)
+            {
+                h = (h * 1103515245 + 12345) & 0x7fffffff;
+                float nz = (h / 1073741824f) - 1f;
+                y[i] = i < exc ? nz : 0f;
+            }
+            float damp = midi < 48f ? 0.9968f : midi < 60f ? 0.9942f : 0.9915f;
+            for (int i = delay; i < n; i++)
+            {
+                float a = y[i - delay];
+                float b = i - delay - 1 >= 0 ? y[i - delay - 1] : a;
+                y[i] = 0.5f * (a + b) * damp;
+            }
+            float bodyA = OnePoleA(midi < 48f ? 620f : 920f);
             float lp = 0f;
             float phase = 0f;
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
-                float freq = 68f * Mathf.Exp(-t * 16f) + 36f;
-                phase += 2f * Mathf.PI * freq / Rate;
-                float env = Mathf.Exp(-t * 11f);
-                lp += a * (Mathf.Sin(phase) * env - lp);
+                float env = t < 0.0018f ? t / 0.0018f : Mathf.Exp(-(t - 0.0018f) * (midi < 48f ? 8.5f : 13f));
+                phase += 2f * Mathf.PI * f0 / Rate;
+                float body = Mathf.Sin(phase) * env * 0.18f;
+                lp += bodyA * (y[i] * 0.88f + body - lp);
                 y[i] = lp;
             }
             return y;
         }
 
-        static float[] WoodTick(int seed)
+        static void PlacePizz(float[] bus, float midi, float tSec, float pan, float gain)
         {
-            int n = Mathf.CeilToInt(0.048f * Rate);
-            var y = new float[n];
-            float a = OnePoleA(1280f);
-            float an = OnePoleA(750f);
-            float lp = 0f, nz = 0f;
-            int h = seed;
-            for (int i = 0; i < n; i++)
-            {
-                float t = i / (float)Rate;
-                float env = Mathf.Exp(-t * 105f);
-                h = (h * 1103515245 + 12345) & 0x7fffffff;
-                float noise = (h / 1073741824f) - 1f;
-                nz += an * (noise - nz);
-                float s = Mathf.Sin(2f * Mathf.PI * 485f * t) + 0.55f * nz;
-                lp += a * (s * env - lp);
-                y[i] = lp;
-            }
-            return y;
+            Place(bus, Pizz(midi), tSec, pan, gain);
         }
 
         struct Note { public float Start, Dur, Midi; public Note(float s, float d, float m) { Start = s; Dur = d; Midi = m; } }
@@ -314,38 +294,6 @@ namespace FlockFive
         {
             new Note(0f, 2f, 62f), new Note(2f, 1f, 64f), new Note(3f, 1f, 66f), new Note(4f, 2f, 69f)
         };
-
-        static readonly Note[] CounterOnce =
-        {
-            new Note(8f, 1.5f, 54f), new Note(9.5f, 1.5f, 57f)
-        };
-
-        static readonly Note[] CounterFull =
-        {
-            new Note(4.5f, 1f, 54f), new Note(5.5f, 1.5f, 57f),
-            new Note(9f, 1.5f, 59f), new Note(10.5f, 1.5f, 57f),
-            new Note(12.5f, 1.5f, 54f), new Note(14f, 2f, 50f)
-        };
-
-        static float ThirdAbove(float m)
-        {
-            if (m == 62f) return 66f;
-            if (m == 64f) return 67f;
-            if (m == 66f) return 69f;
-            if (m == 69f) return 73f;
-            if (m == 57f) return 61f;
-            return m;
-        }
-
-        static float SixthBelow(float m)
-        {
-            if (m == 62f) return 54f;
-            if (m == 64f) return 55f;
-            if (m == 66f) return 57f;
-            if (m == 69f) return 61f;
-            if (m == 57f) return 49f;
-            return m;
-        }
 
         static void MixNotes(float[] bus, Note[] notes, float gain, float pan, params float[] phraseBeats)
         {
@@ -364,8 +312,8 @@ namespace FlockFive
         static void ApplyFades(float[] stereo)
         {
             int frames = stereo.Length / 2;
-            int ni = Mathf.Min(Mathf.RoundToInt(0.3f * Rate), frames);
-            int no = Mathf.Min(Mathf.RoundToInt(0.8f * Rate), frames);
+            int ni = Mathf.Min(Mathf.RoundToInt(0.4f * Rate), frames);
+            int no = Mathf.Min(Mathf.RoundToInt(0.55f * Rate), frames);
             for (int i = 0; i < ni; i++)
             {
                 float w = i / (float)ni;
@@ -398,96 +346,115 @@ namespace FlockFive
             return clip;
         }
 
+        enum Climb { Dawn, Mid, Last }
+
+        static readonly float[] Walk = { 38f, 45f, 42f, 45f };
+
+        static void PizzWalk(float[] bus, Climb climb)
+        {
+            for (int bar = 0; bar < NBars; bar++)
+            {
+                float tBar = bar * 4f * Beat;
+                bool tease = bar >= TeaseBar;
+                bool pay = bar >= PayoffBar;
+                if (climb == Climb.Dawn)
+                {
+                    float dawnG = pay ? 0.28f : tease ? 0.20f : 0.15f;
+                    PlacePizz(bus, 38f, tBar, -0.18f, dawnG);
+                    PlacePizz(bus, 45f, tBar + 2f * Beat, 0.16f, dawnG * 0.92f);
+                    if (pay) PlacePizz(bus, 50f, tBar + 3f * Beat, 0.22f, dawnG * 0.55f);
+                    continue;
+                }
+
+                float walkG = !tease ? 0.18f : pay ? 0.30f : 0.24f;
+                for (int q = 0; q < 4; q++)
+                    PlacePizz(bus, Walk[q], tBar + q * Beat, q % 2 == 0 ? -0.22f : 0.20f, walkG);
+
+                if (climb == Climb.Mid && pay)
+                    PlacePizz(bus, 57f, tBar + 2f * Beat, 0.30f, 0.14f);
+
+                if (climb == Climb.Last)
+                {
+                    float ge = pay ? 0.20f : tease ? 0.14f : 0.09f;
+                    for (int q = 0; q < 4; q++)
+                        PlacePizz(bus, Walk[(q + 2) % 4] + 12f, tBar + (q + 0.5f) * Beat, 0.28f, ge);
+                    if (pay)
+                    {
+                        PlacePizz(bus, 50f, tBar, -0.08f, 0.24f);
+                        PlacePizz(bus, 54f, tBar, 0.12f, 0.18f);
+                        PlacePizz(bus, 57f, tBar, 0.32f, 0.14f);
+                    }
+                }
+            }
+        }
+
+        static void Bloom(float[] bus, Climb climb)
+        {
+            float teaseAt = TeaseBar * 4f;
+            float payAt = PayoffBar * 4f;
+            if (climb == Climb.Dawn)
+            {
+                MixNotes(bus, FirstFour, 0.38f, -0.08f, payAt);
+                return;
+            }
+
+            MixNotes(bus, FirstFour, climb == Climb.Mid ? 0.26f : 0.20f, -0.1f, teaseAt);
+            float leadG = climb == Climb.Mid ? 0.34f : 0.40f;
+            MixNotes(bus, Motif, leadG, -0.06f, payAt);
+            if (climb == Climb.Last)
+            {
+                // Answer in pizzicato, not a second flute tune.
+                PlacePizz(bus, 54f, (payAt + 8f) * Beat, 0.38f, 0.20f);
+                PlacePizz(bus, 57f, (payAt + 9.5f) * Beat, 0.34f, 0.18f);
+                PlacePizz(bus, 50f, (payAt + 14f) * Beat, -0.12f, 0.24f);
+                PlacePizz(bus, 38f, (payAt + 14f) * Beat, -0.28f, 0.20f);
+            }
+        }
+
         static AudioClip MakeDawn()
         {
             int n = LoopN();
             var bus = new float[n * 2];
-            var pad = PadVoice(n, 340f, 0.22f, 0f);
-            Place(bus, pad, 0f, -0.25f, 1f);
-            Place(bus, pad, 0f, 0.28f, 0.85f);
-            MixNotes(bus, FirstFour, 0.30f, -0.12f, 0f);
-            MixNotes(bus, FirstFour, 0.24f, -0.12f, 16f);
-            MixNotes(bus, CounterOnce, 0.055f, 0.35f, 0f);
+            PizzWalk(bus, Climb.Dawn);
+            Bloom(bus, Climb.Dawn);
             ApplyFades(bus);
-            return PeakClip("dawn-garden", bus, 0.38f);
+            return PeakClip("dawn-garden", bus, 0.40f);
         }
 
         static AudioClip MakeMid()
         {
             int n = LoopN();
             var bus = new float[n * 2];
-            var pad = PadVoice(n, 500f, 0.10f, 0.10f);
-            Place(bus, pad, 0f, -0.22f, 1f);
-            Place(bus, pad, 0f, 0.24f, 0.9f);
-            MixNotes(bus, Motif, 0.20f, -0.08f, 0f, 16f);
-            int half = Mathf.RoundToInt(2f * Beat * Rate);
-            var d2 = BassNote(half, 38f);
-            var a2 = BassNote(half, 45f);
-            var k = Kick();
-            for (int bar = 0; bar < NBars; bar++)
-            {
-                float tBar = bar * 4f * Beat;
-                Place(bus, d2, tBar, 0f, 0.28f);
-                Place(bus, a2, tBar + 2f * Beat, 0f, 0.24f);
-                Place(bus, k, tBar, 0f, 0.18f);
-                Place(bus, WoodTick(11 + bar * 17), tBar + 2f * Beat, 0.18f, 0.08f);
-            }
+            PizzWalk(bus, Climb.Mid);
+            Bloom(bus, Climb.Mid);
             ApplyFades(bus);
-            return PeakClip("mid-climb", bus, 0.45f);
+            return PeakClip("mid-climb", bus, 0.48f);
         }
 
         static AudioClip MakeLast()
         {
             int n = LoopN();
             var bus = new float[n * 2];
-            var pad = PadVoice(n, 500f, 0.11f, 0.10f);
-            Place(bus, pad, 0f, -0.22f, 1f);
-            Place(bus, pad, 0f, 0.24f, 0.9f);
-            MixNotes(bus, Motif, 0.22f, -0.08f, 0f, 16f);
-            var thirds = new Note[Motif.Length];
-            var sixths = new Note[Motif.Length];
-            for (int i = 0; i < Motif.Length; i++)
-            {
-                thirds[i] = new Note(Motif[i].Start, Motif[i].Dur, ThirdAbove(Motif[i].Midi));
-                sixths[i] = new Note(Motif[i].Start, Motif[i].Dur, SixthBelow(Motif[i].Midi));
-            }
-            MixNotes(bus, thirds, 0.10f, 0.30f, 0f, 16f);
-            MixNotes(bus, sixths, 0.07f, -0.34f, 0f, 16f);
-            MixNotes(bus, CounterFull, 0.12f, 0.42f, 0f, 16f);
-            int half = Mathf.RoundToInt(2f * Beat * Rate);
-            var d2 = BassNote(half, 38f);
-            var a2 = BassNote(half, 45f);
-            var k = Kick();
-            for (int bar = 0; bar < NBars; bar++)
-            {
-                float tBar = bar * 4f * Beat;
-                Place(bus, d2, tBar, 0f, 0.24f);
-                Place(bus, a2, tBar + 2f * Beat, 0f, 0.20f);
-                Place(bus, k, tBar, 0f, 0.16f);
-                Place(bus, k, tBar + 2f * Beat, 0f, 0.12f);
-                Place(bus, WoodTick(23 + bar * 19), tBar + 1.5f * Beat, 0.18f, 0.11f);
-                Place(bus, WoodTick(41 + bar * 13), tBar + 3.5f * Beat, 0.18f, 0.11f);
-            }
+            PizzWalk(bus, Climb.Last);
+            Bloom(bus, Climb.Last);
             ApplyFades(bus);
             return PeakClip("last-light", bus, 0.56f);
         }
 
         static AudioClip MakeCombo()
         {
-            const float dur = 8f;
-            int n = Mathf.CeilToInt(44100 * dur);
-            var data = new float[n];
-            for (int i = 0; i < n; i++)
+            // Quiet pizz fifth on the same seat — never a pad drone.
+            int bars = 4;
+            int n = Mathf.RoundToInt(bars * 4f * Beat * Rate);
+            var bus = new float[n * 2];
+            for (int q = 0; q < bars * 4; q++)
             {
-                float t = i / 44100f;
-                float s = Mathf.Sin(2f * Mathf.PI * 78f * t) * 0.55f;
-                s += Mathf.Sin(2f * Mathf.PI * 117f * t) * 0.38f;
-                float env = 0.92f + 0.08f * Mathf.Sin(t * 0.4f);
-                data[i] = s * env * 0.08f;
+                float t = q * Beat;
+                PlacePizz(bus, 38f, t, -0.12f, 0.16f);
+                PlacePizz(bus, 45f, t, 0.14f, 0.12f);
             }
-            var clip = AudioClip.Create("combo-fifth", n, 1, 44100, false);
-            clip.SetData(data, 0);
-            return clip;
+            ApplyFades(bus);
+            return PeakClip("combo-fifth", bus, 0.28f);
         }
     }
 }

@@ -49,8 +49,9 @@ namespace FlockFive
         {
             AlignShroud();
             if (Count == 0) return 0;
-            // Bees lift only when a buried bird is now the tip. A leftover
-            // outer bird of the same color still covers the swarm.
+            // Only the furthest bee lifts when the tip is newly exposed.
+            // A hidden run (consecutive same-color shrouded bees at the tip)
+            // lifts together. Inner bees behind a different color stay.
             if (!IsShrouded(Count - 1)) return 0;
             var c = Birds[Count - 1];
             int n = 0;
@@ -61,6 +62,15 @@ namespace FlockFive
                 n++;
             }
             return n;
+        }
+
+        // Leaves sit on the tip. Bees may wait underneath (inner shrouds).
+        public bool LiftLeaf()
+        {
+            AlignShroud();
+            if (Count == 0 || !IsShrouded(Count - 1)) return false;
+            Shrouded[Count - 1] = false;
+            return true;
         }
 
         public void AlignShroud()
@@ -170,8 +180,8 @@ namespace FlockFive
             {
                 var br = Branches[i];
                 if (br.Broken || br.Count == 0) continue;
-                if (!br.IsShrouded(br.Count - 1)) continue;
-                if (br.RevealExposed() > 0) n++;
+                // Leaves only. Bees under the leaf stay until that tip is exposed.
+                if (br.LiftLeaf()) n++;
             }
             return n;
         }

@@ -5,14 +5,18 @@ namespace FlockFive
     public static class WorldBuilder
     {
         public const float PortraitAspect = 9f / 16f;
-        const int Rows = 7;
-        const int Cols = 2;
+        public const int Rows = 7;
+        public const int Cols = 2;
+        public const float LimbX = 2.38f;
+        public const float RowY0 = 3.42f;
+        public const float RowGap = 1.42f;
 
         public struct Garden
         {
             public Transform Root;
             public BranchView[] Branches;
             public FeederView[] Feeders;
+            public HiveView Hive;
             public Camera Cam;
         }
 
@@ -34,24 +38,24 @@ namespace FlockFive
             GardenLife.Attach(root);
 
             var branches = new BranchView[Rows * Cols];
-            const float y0 = 3.42f;
-            const float gap = 1.42f;
             for (int row = 0; row < Rows; row++)
             {
-                float y = y0 - row * gap;
-                branches[row * 2] = MakeBranch(row * 2, new Vector2(-2.38f, y), false, root);
-                branches[row * 2 + 1] = MakeBranch(row * 2 + 1, new Vector2(2.38f, y), true, root);
+                float y = RowY0 - row * RowGap;
+                branches[row * 2] = MakeBranch(row * 2, new Vector2(-LimbX, y), false, root);
+                branches[row * 2 + 1] = MakeBranch(row * 2 + 1, new Vector2(LimbX, y), true, root);
             }
 
             var feeders = new FeederView[2];
             feeders[0] = MakeFeeder(0, new Vector3(-1.22f, 8.12f, 0f), root);
             feeders[1] = MakeFeeder(1, new Vector3(1.22f, 8.12f, 0f), root);
+            var hive = HiveView.Attach(root);
 
             return new Garden
             {
                 Root = root,
                 Branches = branches,
                 Feeders = feeders,
+                Hive = hive,
                 Cam = cam
             };
         }
@@ -74,8 +78,8 @@ namespace FlockFive
             view.Wood = wood;
 
             var col = go.AddComponent<BoxCollider2D>();
-            col.size = new Vector2(4.2f, 1.85f);
-            col.offset = new Vector2(fromRight ? 0.15f : -0.15f, 0.48f);
+            col.size = new Vector2(5.1f, 2.7f);
+            col.offset = new Vector2(fromRight ? 0.08f : -0.08f, 0.62f);
 
             float outer = fromRight ? 1.95f : -1.95f;
             float inner = fromRight ? -1.72f : 1.72f;

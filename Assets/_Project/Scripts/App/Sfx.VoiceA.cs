@@ -28,51 +28,102 @@ namespace FlockFive
 
         static AudioClip MakeFlap(int kind, int seed)
         {
-            float dur = Mathf.Lerp(0.07f, 0.16f, (Hash(seed) + 1f) * 0.5f);
-            float thump = Mathf.Lerp(88f, 190f, (Hash(seed + 2) + 1f) * 0.5f);
+            float dur = Mathf.Lerp(0.10f, 0.16f, (Hash(seed) + 1f) * 0.5f);
+            float thump = Mathf.Lerp(180f, 260f, (Hash(seed + 2) + 1f) * 0.5f);
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
-            float lp = 0f;
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
                 float u = t / dur;
-                float noise = Soft(ref lp, seed * 17, i, 0.12f);
-                float s;
-                switch (kind % 4)
-                {
-                    case 0:
-                    {
-                        float e1 = Mathf.Exp(-u * 14f) * Mathf.Sin(Mathf.PI * Mathf.Clamp01(u / 0.45f));
-                        float e2 = Mathf.Exp(-(u - 0.38f) * 16f) * Mathf.Max(0f, Mathf.Sin(Mathf.PI * Mathf.Clamp01((u - 0.32f) / 0.5f)));
-                        float env = e1 * 0.7f + e2 * 0.55f;
-                        s = noise * env * 0.22f + Mathf.Sin(2f * Mathf.PI * thump * t) * env * 0.72f;
-                        break;
-                    }
-                    case 1:
-                    {
-                        float a = Mathf.Exp(-u * 16f) * Mathf.Sin(Mathf.PI * Mathf.Clamp01(u / 0.32f));
-                        float b = Mathf.Max(0f, Mathf.Sin(Mathf.PI * Mathf.Clamp01((u - 0.36f) / 0.4f))) * Mathf.Exp(-(u - 0.36f) * 14f);
-                        float env = a * 0.75f + b * 0.7f;
-                        s = noise * env * 0.18f + Mathf.Sin(2f * Mathf.PI * thump * 1.15f * t) * env * 0.75f;
-                        break;
-                    }
-                    case 2:
-                    {
-                        float env = Mathf.Pow(Mathf.Sin(Mathf.PI * u), 0.7f) * Mathf.Exp(-u * 6f);
-                        s = noise * env * 0.28f + Mathf.Sin(2f * Mathf.PI * (thump * 0.55f) * t) * env * 0.55f;
-                        break;
-                    }
-                    default:
-                    {
-                        float env = Mathf.Exp(-u * 22f) * (u < 0.05f ? u / 0.05f : 1f);
-                        s = noise * env * 0.2f + Mathf.Sin(2f * Mathf.PI * (thump * 1.4f) * t) * env * 0.72f;
-                        break;
-                    }
-                }
-                data[i] = s * 0.34f;
+                float env = Stroke(u, 0f, 0.55f);
+                float body = Mathf.Sin(2f * Mathf.PI * thump * t);
+                data[i] = body * env * 0.45f;
             }
-            return Clip("flap" + seed, data);
+            return ClipPunch("flap" + seed, data);
+        }
+
+        // Bird wing: irregular air whooshes + gated rustle. No rotor thump, no coo.
+        static AudioClip MakeFlutter(int kind, int seed)
+        {
+            int beats = 3;
+            float t0 = 0.010f;
+            float dur = t0;
+            var at = new float[beats];
+            for (int b = 0; b < beats; b++)
+            {
+                at[b] = dur;
+                float gap = 0.100f + 0.022f * ((Hash(seed + 11 + b) + 1f) * 0.5f);
+                dur += gap;
+            }
+            dur += 0.08f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            for (int b = 0; b < beats; b++)
+                PutWingBeat(data, at[b], 0.88f * (1f - b * 0.12f), seed + b * 19);
+            return ClipFeather("flutter" + seed, data);
+        }
+
+        static void PutWingBeat(float[] data, float start, float amp, int seed)
+        {
+            const float len = 0.088f;
+            int n = data.Length;
+            float bpLo = 0f, bpHi = 0f, air = 0f;
+            float aLo = 1f - Mathf.Exp(-2f * Mathf.PI * 280f / Rate);
+            float aHi = 1f - Mathf.Exp(-2f * Mathf.PI * 1400f / Rate);
+            int h = seed * 1103515245 + 12345;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate - start;
+                if (t < 0f || t > len) continue;
+                float u = t / len;
+                float hit = u < 0.16f ? u / 0.16f : 1f;
+                float env = hit * Mathf.Exp(-u * 10f) * Mathf.Sin(Mathf.PI * Mathf.Clamp01(u / 0.92f));
+                h = (h * 1103515245 + 12345) & 0x7fffffff;
+                float nz = (h / 1073741824f) - 1f;
+                float aAir = 1f - Mathf.Exp(-2f * Mathf.PI * Mathf.Lerp(780f, 260f, u) / Rate);
+                bpLo += aLo * (nz - bpLo);
+                bpHi += aHi * (nz - bpHi);
+                air += aAir * (nz - air);
+                float rustle = (bpHi - bpLo) * env * env;
+                float whoosh = air * env;
+                data[i] += (whoosh * 1.00f + rustle * 0.38f) * amp;
+            }
+        }
+
+        static AudioClip ClipFeather(string name, float[] data)
+        {
+            float y = 0f;
+            const float a = 0.30f;
+            float p = 1e-6f;
+            for (int i = 0; i < data.Length; i++)
+            {
+                y += a * (data[i] - y);
+                data[i] = y;
+                float v = Mathf.Abs(y);
+                if (v > p) p = v;
+            }
+            float g = 0.58f / p;
+            int fade = Mathf.Min(Mathf.RoundToInt(0.012f * Rate), data.Length / 10);
+            for (int i = 0; i < data.Length; i++)
+            {
+                float w = 1f;
+                if (i < fade) w = i / (float)fade;
+                int back = data.Length - 1 - i;
+                if (back < fade) w = Mathf.Min(w, back / (float)fade);
+                data[i] = Mathf.Clamp(data[i] * g * w, -0.93f, 0.93f);
+            }
+            var c = AudioClip.Create(name, data.Length, 1, Rate, false);
+            c.SetData(data, 0);
+            return c;
+        }
+
+        static float Stroke(float u, float at, float span)
+        {
+            float x = (u - at) / span;
+            if (x < 0f || x > 1f) return 0f;
+            float hit = x < 0.18f ? x / 0.18f : 1f;
+            return hit * Mathf.Exp(-x * 7.5f) * Mathf.Sin(Mathf.PI * Mathf.Clamp01(x / 0.85f));
         }
 
         static float Pulse(float freq, float t, float duty)
@@ -228,72 +279,107 @@ namespace FlockFive
 
         static AudioClip MakeBreak(int kind, int seed)
         {
-            float dur = Mathf.Lerp(0.28f, 0.48f, (Hash(seed) + 1f) * 0.5f);
-            if (kind % 4 == 2) dur += 0.12f;
+            // Thick branch: three snappy splits, then a meaty pith CRUNCH.
+            float dur = 0.38f + 0.03f * (kind % 3);
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
-            float thunk = Mathf.Lerp(42f, 78f, (Hash(seed + 2) + 1f) * 0.5f);
-            float snap = Mathf.Lerp(160f, 280f, (Hash(seed + 5) + 1f) * 0.5f);
-            float lp = 0f;
+            float t0 = 0.005f + 0.002f * (kind % 3);
+            float t1 = t0 + 0.012f + 0.004f * ((kind + 1) % 3);
+            float t2 = t1 + 0.014f + 0.005f * ((kind + 2) % 3);
+            float f0 = Mathf.Lerp(78f, 110f, (Hash(seed + 2) + 1f) * 0.5f);
+            float f1 = Mathf.Lerp(118f, 160f, (Hash(seed + 5) + 1f) * 0.5f);
+            float f2 = Mathf.Lerp(165f, 210f, (Hash(seed + 8) + 1f) * 0.5f);
+            float bodyF = Mathf.Lerp(52f, 74f, (Hash(seed + 11) + 1f) * 0.5f);
+            float aLo = 1f - Mathf.Exp(-2f * Mathf.PI * 280f / Rate);
+            float aHi = 1f - Mathf.Exp(-2f * Mathf.PI * 2200f / Rate);
+            float pLoA = 1f - Mathf.Exp(-2f * Mathf.PI * 160f / Rate);
+            float pHiA = 1f - Mathf.Exp(-2f * Mathf.PI * 780f / Rate);
+            float bpLo = 0f, bpHi = 0f, pithLo = 0f, pithHi = 0f;
+            int h = seed * 17 + 91;
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
-                float u = Mathf.Clamp01(t / dur);
-                float air = Soft(ref lp, seed, i, 0.08f);
-                float s;
-                switch (kind % 6)
-                {
-                    case 0:
-                    {
-                        float body = Mathf.Sin(2f * Mathf.PI * thunk * t * (1f - u * 0.35f)) * Mathf.Exp(-u * 6.5f);
-                        float crack = Mathf.Sin(2f * Mathf.PI * snap * t) * Mathf.Exp(-(u - 0.08f) * 18f) * (u > 0.06f ? 1f : 0f);
-                        s = body * 0.85f + crack * 0.45f + air * 0.12f * Mathf.Exp(-u * 10f);
-                        break;
-                    }
-                    case 1:
-                    {
-                        float a = Mathf.Sin(2f * Mathf.PI * snap * t) * Mathf.Exp(-u * 16f);
-                        float b = Mathf.Sin(2f * Mathf.PI * (snap * 0.78f) * t) * Mathf.Exp(-(u - 0.09f) * 14f) * (u > 0.08f ? 1f : 0f);
-                        float body = Mathf.Sin(2f * Mathf.PI * thunk * t) * Mathf.Exp(-u * 8f);
-                        s = body * 0.7f + a * 0.5f + b * 0.4f + air * 0.1f * Mathf.Exp(-u * 9f);
-                        break;
-                    }
-                    case 2:
-                    {
-                        float creak = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(140f, 70f, u) * t) * (u < 0.45f ? 0.45f : 0f);
-                        float body = Mathf.Sin(2f * Mathf.PI * thunk * t) * Mathf.Exp(-(u - 0.38f) * 7f) * (u > 0.35f ? 1f : 0f);
-                        float crack = Mathf.Sin(2f * Mathf.PI * snap * t) * Mathf.Exp(-(u - 0.4f) * 16f) * (u > 0.38f ? 1f : 0f);
-                        s = creak + body * 0.8f + crack * 0.5f + air * 0.1f * Mathf.Exp(-u * 8f);
-                        break;
-                    }
-                    case 3:
-                    {
-                        float h0 = Mathf.Exp(-u * 18f);
-                        float h1 = Mathf.Exp(-(u - 0.07f) * 16f) * (u > 0.06f ? 1f : 0f);
-                        float h2 = Mathf.Exp(-(u - 0.15f) * 12f) * (u > 0.14f ? 1f : 0f);
-                        s = Mathf.Sin(2f * Mathf.PI * thunk * t) * (h0 * 0.7f + h1 * 0.55f + h2 * 0.4f);
-                        s += Mathf.Sin(2f * Mathf.PI * snap * t) * h1 * 0.35f;
-                        s += air * 0.1f * Mathf.Exp(-u * 9f);
-                        break;
-                    }
-                    case 4:
-                    {
-                        float body = Mathf.Sin(2f * Mathf.PI * (thunk * 0.85f) * t * (1f - u * 0.5f)) * Mathf.Exp(-u * 5.5f);
-                        float pop = Mathf.Sin(2f * Mathf.PI * (snap * 0.7f) * t) * Mathf.Exp(-u * 11f);
-                        s = body * 0.9f + pop * 0.4f + air * 0.14f * Mathf.Exp(-u * 7f);
-                        break;
-                    }
-                    default:
-                    {
-                        float body = Mathf.Sin(2f * Mathf.PI * thunk * t) * Mathf.Exp(-u * 7f);
-                        float crack = Mathf.Sin(2f * Mathf.PI * snap * 1.1f * t) * Mathf.Abs(Mathf.Sin(t * 28f)) * Mathf.Exp(-u * 13f);
-                        s = body * 0.75f + crack * 0.4f + air * 0.16f * Mathf.Exp(-u * 8f);
-                        break;
-                    }
-                }
-                data[i] = Mathf.Clamp(s * 0.48f, -0.95f, 0.95f);
+                h = (h * 1103515245 + 12345) & 0x7fffffff;
+                float nz = (h / 1073741824f) - 1f;
+                bpLo += aLo * (nz - bpLo);
+                bpHi += aHi * (nz - bpHi);
+                pithLo += pLoA * (nz - pithLo);
+                pithHi += pHiA * (nz - pithHi);
+                float band = bpHi - bpLo;
+                float pith = (pithHi - pithLo) * Mathf.Exp(-t * 7.2f);
+                float body = Mathf.Sin(2f * Mathf.PI * bodyF * t * (1f - t * 1.8f)) * Mathf.Exp(-t * 8.5f);
+                float s = body * 0.78f + pith * 0.52f;
+                s += TwigSnap(t, t0, band, f0, 1.00f, 32f);
+                s += TwigSnap(t, t1, band, f1, 0.78f, 38f);
+                s += TwigSnap(t, t2, band, f2, 0.62f, 44f);
+                data[i] = s;
             }
-            return Clip("break" + seed, data);
+            return ClipTwig("break" + seed, data);
+        }
+
+        static float TwigSnap(float t, float at, float band, float woodF, float amp, float decay)
+        {
+            float d = t - at;
+            if (d < 0f) return 0f;
+            float hit = d < 0.0016f ? d / 0.0016f : 1f;
+            float env = hit * Mathf.Exp(-d * decay);
+            float knock = Mathf.Sin(2f * Mathf.PI * woodF * d) * Mathf.Exp(-d * 36f);
+            return (band * 1.35f + knock * 0.48f) * env * amp;
+        }
+
+        static AudioClip ClipTwig(string name, float[] data)
+        {
+            float y = 0f;
+            const float a = 0.36f;
+            float p = 1e-6f;
+            for (int i = 0; i < data.Length; i++)
+            {
+                y += a * (data[i] - y);
+                data[i] = y;
+                float v = Mathf.Abs(y);
+                if (v > p) p = v;
+            }
+            float g = 0.92f / p;
+            int fadeIn = Mathf.Min(Mathf.RoundToInt(0.0008f * Rate), 32);
+            int fadeOut = Mathf.Min(Mathf.RoundToInt(0.028f * Rate), data.Length / 6);
+            for (int i = 0; i < data.Length; i++)
+            {
+                float w = 1f;
+                if (i < fadeIn) w = i / (float)fadeIn;
+                int back = data.Length - 1 - i;
+                if (back < fadeOut) w = Mathf.Min(w, back / (float)fadeOut);
+                data[i] = Mathf.Clamp(data[i] * g * w, -0.94f, 0.94f);
+            }
+            var c = AudioClip.Create(name, data.Length, 1, Rate, false);
+            c.SetData(data, 0);
+            return c;
+        }
+
+        static AudioClip MakePop(int kind, int seed)
+        {
+            float dur = 0.11f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float f = 205f + 24f * (kind % 5);
+            float aLo = 1f - Mathf.Exp(-2f * Mathf.PI * 600f / Rate);
+            float aHi = 1f - Mathf.Exp(-2f * Mathf.PI * 2200f / Rate);
+            float bpLo = 0f, bpHi = 0f;
+            int h = seed * 13 + 7;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float hit = t < 0.002f ? t / 0.002f : 1f;
+                float env = hit * Mathf.Exp(-t * 28f);
+                float body = Mathf.Sin(2f * Mathf.PI * f * t * (1f - t * 1.4f));
+                body += 0.18f * Mathf.Sin(4f * Mathf.PI * f * t);
+                h = (h * 1103515245 + 12345) & 0x7fffffff;
+                float nz = (h / 1073741824f) - 1f;
+                bpLo += aLo * (nz - bpLo);
+                bpHi += aHi * (nz - bpHi);
+                float click = (bpHi - bpLo) * Mathf.Exp(-t * 90f) * 0.28f;
+                data[i] = (body * 0.82f + click) * env;
+            }
+            return ClipLp("pop" + seed, data, 0.34f);
         }
 
         static AudioClip MakeLift(int kind, int seed)

@@ -82,12 +82,15 @@ namespace FlockFive
             {
                 _sr.flipX = FaceLeft;
                 _sr.sprite = SpriteCatalog.BirdFrame(Color, Time.time * (fly ? 16f : 0.9f) + _phase, fly);
-                _sr.color = Shrouded ? new Color(0.04f, 0.03f, 0.05f, 1f) : UnityEngine.Color.white;
-                _sr.sortingOrder = Shrouded ? 7 : 12;
+                if (!Frozen)
+                {
+                    _sr.color = Shrouded ? new Color(0.04f, 0.03f, 0.05f, 1f) : UnityEngine.Color.white;
+                    _sr.sortingOrder = Shrouded ? 7 : (Lift > 0.05f ? 40 : 12);
+                }
             }
             PlaceFace(mood, show && !Shrouded);
-            if (fly) BeatWings();
-            else if (show && !Sleeping && !Shrouded) MaybeRuffle();
+            if (fly && !Frozen) BeatWings();
+            else if (show && !Sleeping && !Shrouded && !Frozen) MaybeRuffle();
 
             if (Frozen) return;
             if (Shrouded)
@@ -139,10 +142,10 @@ namespace FlockFive
             _face.transform.localPosition = new Vector3(x, y, 0f);
             _face.transform.localRotation = Quaternion.identity;
             _face.flipX = FaceLeft;
-            _face.sortingOrder = 13;
+            _face.sortingOrder = _sr != null ? _sr.sortingOrder + 1 : 13;
             float fs = mood.FaceScale * (blink ? 1f : 1f);
             _face.transform.localScale = new Vector3(fs, blink ? fs * 0.18f : fs, 1f);
-            _face.color = UnityEngine.Color.white;
+            if (!Frozen) _face.color = UnityEngine.Color.white;
         }
 
         void BeatWings()

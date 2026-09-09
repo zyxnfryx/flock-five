@@ -4,8 +4,9 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap;
+        static Sprite _bg, _branch, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather;
         static Sprite[] _letters;
+        static Sprite[] _digits;
         static Sprite[] _birds;
         static Sprite[] _flap1;
         static Sprite[] _flap2;
@@ -17,12 +18,12 @@ namespace FlockFive
         public static Sprite Vine => Load(ref _vine, "Sprites/fx_vine", 200f);
         public static Sprite PetalPink => Load(ref _petalPink, "Sprites/fx_petal_pink", 200f);
         public static Sprite PetalPeach => Load(ref _petalPeach, "Sprites/fx_petal_peach", 200f);
+        public static Sprite Feather => Load(ref _feather, "Sprites/fx_feather", 200f);
         public static Sprite Firefly => Load(ref _firefly, "Sprites/fx_firefly", 200f);
         public static Sprite Zee => Load(ref _zee, "Sprites/fx_z", 200f);
         public static Sprite Sparkle => Load(ref _sparkle, "Sprites/fx_sparkle", 200f);
         public static Sprite Moon => Load(ref _moon, "Sprites/fx_moon", 240f);
         public static Sprite Logo => Load(ref _logo, "Sprites/fx_logo", 180f);
-
         public static Sprite Letter(char c)
         {
             c = char.ToUpperInvariant(c);
@@ -32,6 +33,21 @@ namespace FlockFive
             if (_letters[i] == null)
                 _letters[i] = LoadNew("Sprites/fx_let_" + c, 150f);
             return _letters[i];
+        }
+
+        public static Sprite Digit(int d)
+        {
+            d = Mathf.Clamp(d, 0, 9);
+            if (_digits == null) _digits = new Sprite[10];
+            if (_digits[d] == null)
+                _digits[d] = LoadNew("Sprites/fx_let_" + d, 150f);
+            return _digits[d];
+        }
+
+        public static Sprite Glyph(char c)
+        {
+            if (c >= '0' && c <= '9') return Digit(c - '0');
+            return Letter(c);
         }
         public static Sprite Bee => Load(ref _bee, "Sprites/fx_bee", 520f);
 

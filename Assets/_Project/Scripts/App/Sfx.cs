@@ -8,10 +8,12 @@ namespace FlockFive
         static int _v;
         static AudioClip[] _chirps;
         static AudioClip[] _flaps;
-        static AudioClip[] _celebrates;
+        static AudioClip[] _flutters;
         static AudioClip[] _breaks;
         static AudioClip[] _lifts;
         static AudioClip[] _chings;
+        static AudioClip[] _pops;
+        static AudioClip[] _jingles;
         static AudioClip _deny;
         static AudioClip[] _booms;
         static AudioClip[] _snoozes;
@@ -21,7 +23,6 @@ namespace FlockFive
         static int _lastSnooze = -1;
         static int _lastHum = -1;
         static int _lastScatter = -1;
-        static int _lastCelebrate = -1;
         static int _lastBreak = -1;
         static int _lastLift = -1;
         static int _lastChing = -1;
@@ -49,19 +50,27 @@ namespace FlockFive
                 _voices[i] = a;
             }
             _chirps = LoadVoices();
-            _flaps = new AudioClip[14];
+            _flaps = new AudioClip[8];
             for (int i = 0; i < _flaps.Length; i++)
                 _flaps[i] = MakeFlap(i, 2200 + i * 131);
-            _celebrates = null;
+            _flutters = new AudioClip[10];
+            for (int i = 0; i < _flutters.Length; i++)
+                _flutters[i] = MakeFlutter(i, 3300 + i * 47);
             _breaks = LoadBank("Audio/Break", 12, i => MakeBreak(i, 4100 + i * 47));
             _lifts = LoadBank("Audio/Whoosh", 12, i => MakeLift(i, 4700 + i * 43));
             _chings = LoadBank("Audio/Ching", 12, MakeChing);
+            _pops = new AudioClip[5];
+            for (int i = 0; i < _pops.Length; i++)
+                _pops[i] = MakePop(i, 8800 + i * 29);
+            _jingles = new AudioClip[7];
+            for (int i = 0; i < _jingles.Length; i++)
+                _jingles[i] = MakeComboJingle(i + 2);
             _deny = MakeDeny();
             _snoozes = LoadBank("Audio/Snooze", 12, i => MakeSnooze(i, 5100 + i * 53));
             _hums = new AudioClip[8];
             for (int i = 0; i < _hums.Length; i++)
                 _hums[i] = MakeHum(i, 6200 + i * 41);
-            _scatters = new AudioClip[8];
+            _scatters = new AudioClip[12];
             for (int i = 0; i < _scatters.Length; i++)
                 _scatters[i] = MakeScatter(i, 7300 + i * 37);
             _booms = new AudioClip[5];
@@ -105,10 +114,10 @@ namespace FlockFive
         public static void Chirp(BirdColor c)
         {
             Ensure();
+            if (_chirps == null || _chirps.Length == 0) return;
             int i = (int)c;
             if (i < 0 || i >= _chirps.Length) i = 0;
-            Shot(_chirps[i], 1f, 0.66f, MixLayer.Lead);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.7f, MixDesk.DuckChirp);
+            Shot(_chirps[i], 1f, 0.72f, MixLayer.Lead);
         }
 
         static AudioClip[] LoadVoices()
@@ -159,7 +168,7 @@ namespace FlockFive
 
         public static void FlapSoft() => FlapAt(0.18f, Random.Range(0.95f, 1.02f), 0.03f, MixLayer.Mid);
 
-        public static void FlapHard() => FlapAt(0.62f, Random.Range(0.92f, 1.03f), 0.012f, MixLayer.Lead);
+        public static void FlapHard() => PlayFlap(1f, Random.Range(0.97f, 1.03f), MixLayer.Lead);
 
         static void FlapAt(float vol, float pitch, float gate, MixLayer layer)
         {
@@ -167,39 +176,65 @@ namespace FlockFive
             if (Time.unscaledTime - _flapGate < gate) return;
             if (layer == MixLayer.Mid && MixDesk.Live != null && !MixDesk.Live.AllowMid) return;
             _flapGate = Time.unscaledTime;
-            int i = Next(_flaps.Length, ref _lastFlap);
-            Shot(_flaps[i], pitch, vol, layer);
+            PlayFlap(vol, pitch, layer);
         }
 
-        public static void Flaps(int n) => FlapTrain(n, 0.05f, 0.5f);
-
-        public static void Takeoff(int n) => FlapTrain(n, 0.042f, 0.66f);
-
-        public static void Land(int n) => FlapTrain(n, 0.058f, 0.58f);
-
-        static void FlapTrain(int n, float gap, float vol)
+        static void PlayFlap(float vol, float pitch, MixLayer layer)
         {
             Ensure();
-            n = Mathf.Clamp(n, 1, 5);
-            if (_host == null) return;
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.22f + 0.05f * n, MixDesk.DuckChirp);
-            _host.StartCoroutine(FlapTrainCo(n, gap, vol));
+            if (_flaps == null || _flaps.Length == 0) return;
+            int i = Next(_flaps.Length, ref _lastFlap);
+            Shot(_flaps[i], pitch, vol, layer, MixDesk.DuckWhoosh);
         }
 
-        static System.Collections.IEnumerator FlapTrainCo(int n, float gap, float vol)
+        public static void Flaps(int n) => FlockFlutter(n);
+
+        public static void Takeoff(int n) => FlockFlutter(n);
+
+        public static void Land(int n) { }
+
+        public static void FlockFlutter(int birds, bool settle = false)
         {
-            for (int k = 0; k < n; k++)
+            Ensure();
+            birds = Mathf.Clamp(birds, 1, 5);
+            if (_host == null) return;
+            if (MixDesk.Live != null)
+                MixDesk.Live.MarkLead(0.4f + 0.05f * birds, 0.84f);
+            _host.StartCoroutine(FlockFlutterCo(birds, settle));
+        }
+
+        static System.Collections.IEnumerator FlockFlutterCo(int birds, bool settle)
+        {
+            float stagger = 0.12f;
+            float vol = settle ? 0.48f : 0.66f;
+            for (int b = 0; b < birds; b++)
             {
-                FlapAt(vol + 0.03f * k, Random.Range(0.93f, 1.03f), 0.01f, MixLayer.Lead);
-                if (k < n - 1) yield return new WaitForSeconds(gap);
+                PlayFlutter(vol, Random.Range(0.93f, 0.98f));
+                if (b < birds - 1) yield return new WaitForSeconds(stagger);
             }
+        }
+
+        static void PlayFlutter(float vol, float pitch)
+        {
+            Ensure();
+            if (_flutters == null || _flutters.Length == 0) return;
+            int i = Next(_flutters.Length, ref _lastFlap);
+            Shot(_flutters[i], pitch, vol, MixLayer.Lead, 0.84f);
         }
 
         public static void GardenWake()
         {
             Ensure();
             if (_host == null) return;
-            _host.StartCoroutine(FlapTrainCo(4, 0.07f, 0.38f));
+            _host.StartCoroutine(WakeFlaps());
+        }
+
+        static System.Collections.IEnumerator WakeFlaps()
+        {
+            yield return new WaitForSeconds(0.18f);
+            PlayFlap(0.22f, 1f, MixLayer.Mid);
+            yield return new WaitForSeconds(0.14f);
+            PlayFlap(0.16f, 1.02f, MixLayer.Mid);
         }
 
         public static void Celebrate()
@@ -210,22 +245,17 @@ namespace FlockFive
         public static void Combo(int size)
         {
             Ensure();
-            size = Mathf.Clamp(size, 2, Palette.Max);
+            size = Mathf.Clamp(size, 2, Palette.ComboMax);
             if (MixDesk.Live != null) MixDesk.Live.ComboWarm();
-            if (_host == null) return;
-            _host.StartCoroutine(ComboCo(size));
-            if (size >= 3) Rumble();
-        }
-
-        static System.Collections.IEnumerator ComboCo(int size)
-        {
-            yield return new WaitForSeconds(0.06f);
-            FeederLeave();
-            if (size >= 3)
+            int i = Mathf.Min(size, 8) - 2;
+            float pitch = size <= 8 ? 1f : Mathf.Min(1.04f, 1f + 0.008f * (size - 8));
+            if (_jingles != null && i >= 0 && i < _jingles.Length)
             {
-                yield return new WaitForSeconds(0.1f);
-                FeederLeave();
+                Shot(_jingles[i], pitch, 0.76f, MixLayer.Lead, MixDesk.DuckWhoosh);
+                if (MixDesk.Live != null)
+                    MixDesk.Live.MarkLead(0.42f + 0.14f * i, MixDesk.DuckWhoosh);
             }
+            if (size >= 3) Rumble();
         }
 
         public static void Deny()
@@ -253,6 +283,15 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.4f, MixDesk.DuckChirp);
         }
 
+        public static void ScorePop(int i)
+        {
+            Ensure();
+            if (_pops == null || _pops.Length == 0) return;
+            int k = Mathf.Clamp(i, 0, _pops.Length - 1);
+            Shot(_pops[k], 1f, 0.70f, MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.2f, MixDesk.DuckChirp);
+        }
+
         public static void FeederLeave()
         {
             Ensure();
@@ -265,11 +304,11 @@ namespace FlockFive
         {
             Ensure();
             int i = Next(_snoozes.Length, ref _lastSnooze);
-            Shot(_snoozes[i], Random.Range(0.98f, 1.02f), 0.64f, MixLayer.Lead);
+            Shot(_snoozes[i], Random.Range(0.98f, 1.02f), 0.82f, MixLayer.Lead);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.5f, MixDesk.DuckChirp);
         }
 
-        public static void Snooze(float vol = 0.28f)
+        public static void Snooze(float vol = 0.40f)
         {
             Ensure();
             if (MixDesk.Live != null && !MixDesk.Live.AllowMid) return;
@@ -308,19 +347,16 @@ namespace FlockFive
             if (Time.unscaledTime - _humGate < 2.6f) return;
             _humGate = Time.unscaledTime;
             int i = Next(_hums.Length, ref _lastHum);
-            Shot(_hums[i], Random.Range(0.94f, 1.03f), Random.Range(0.12f, 0.18f), MixLayer.Mid);
+            Shot(_hums[i], Random.Range(0.94f, 1.03f), Random.Range(0.28f, 0.36f), MixLayer.Mid);
         }
 
         public static void BeeScatter()
         {
             Ensure();
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.55f, MixDesk.DuckChirp);
-            int n = 2;
-            for (int k = 0; k < n; k++)
-            {
-                int i = Next(_scatters.Length, ref _lastScatter);
-                Shot(_scatters[i], Random.Range(0.94f, 1.03f), 0.32f + 0.04f * k, MixLayer.Lead);
-            }
+            if (_scatters == null || _scatters.Length == 0) return;
+            int i = Next(_scatters.Length, ref _lastScatter);
+            Shot(_scatters[i], Random.Range(0.98f, 1.02f), 0.70f, MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.32f, MixDesk.DuckChirp);
         }
 
         static int Next(int n, ref int last)

@@ -30,14 +30,14 @@ namespace FlockFive
             var rng = new System.Random(17);
             var list = new System.Collections.Generic.List<Bit>(40);
 
-            for (int k = 0; k < 18; k++)
+            for (int k = 0; k < 8; k++)
             {
                 float x = Mathf.Lerp(-3.6f, 3.6f, (float)rng.NextDouble());
                 float y = Mathf.Lerp(-6.2f, 7.1f, (float)rng.NextDouble());
-                bool bug = k < 4;
+                bool bug = k < 2;
                 var spr = bug ? SpriteCatalog.Firefly : SpriteCatalog.Glow;
-                float sc = bug ? 0.11f : Mathf.Lerp(0.18f, 0.38f, (float)rng.NextDouble());
-                var tint = Color.Lerp(new Color(1f, 0.92f, 0.55f, 0.9f), new Color(0.72f, 1f, 0.52f, 0.72f), (float)rng.NextDouble());
+                float sc = bug ? 0.09f : Mathf.Lerp(0.12f, 0.22f, (float)rng.NextDouble());
+                var tint = Color.Lerp(new Color(1f, 0.92f, 0.55f, 0.45f), new Color(0.72f, 1f, 0.52f, 0.32f), (float)rng.NextDouble());
                 var b = Make("Fly" + k, spr, new Vector3(x, y, 0f), sc, 1, tint, 0, rng);
                 b.AmpX = 0.35f + 0.5f * (float)rng.NextDouble();
                 b.AmpY = 0.28f + 0.42f * (float)rng.NextDouble();
@@ -46,12 +46,12 @@ namespace FlockFive
             }
 
             Sprite[] petals = { SpriteCatalog.PetalPink, SpriteCatalog.PetalPeach };
-            for (int k = 0; k < 7; k++)
+            for (int k = 0; k < 3; k++)
             {
                 float x = Mathf.Lerp(-3.8f, 3.8f, (float)rng.NextDouble());
                 float y = Mathf.Lerp(-7f, 8f, (float)rng.NextDouble());
-                float sc = Mathf.Lerp(0.14f, 0.24f, (float)rng.NextDouble());
-                var b = Make("Petal" + k, petals[k % 2], new Vector3(x, y, 0f), sc, 0, new Color(1f, 1f, 1f, 0.9f), 2, rng);
+                float sc = Mathf.Lerp(0.10f, 0.16f, (float)rng.NextDouble());
+                var b = Make("Petal" + k, petals[k % 2], new Vector3(x, y, 0f), sc, 0, new Color(1f, 1f, 1f, 0.42f), 2, rng);
                 b.AmpX = 0.45f + 0.5f * (float)rng.NextDouble();
                 b.Fall = 0.26f + 0.24f * (float)rng.NextDouble();
                 b.Spin = Mathf.Lerp(-38f, 38f, (float)rng.NextDouble());
@@ -101,7 +101,7 @@ namespace FlockFive
             {
                 float x = Mathf.Lerp(-1.35f, 1.35f, k / 2f);
                 var b = Make("Shaft" + k, SpriteCatalog.Glow, new Vector3(x, 3.5f, 0f), 1f, -12,
-                    new Color(1f, 0.78f, 0.42f, 0.10f), 5, rng);
+                    new Color(1f, 0.78f, 0.42f, 0.045f), 5, rng);
                 b.T.localScale = new Vector3(0.5f + 0.12f * k, 7.4f, 1f);
                 b.Planted = Mathf.Lerp(-8f, 8f, k / 2f);
                 b.RotAmp = 2.4f;

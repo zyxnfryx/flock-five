@@ -32,9 +32,9 @@ namespace FlockFive
             transform.position = WorldCenter;
             transform.localScale = new Vector3(WorldSize.x / size.x, WorldSize.y / size.y, 1f);
             float dusk = SkyCycle.Dusk;
-            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 0.28f);
-            var sunset = Color.Lerp(Color.white, new Color(1f, 0.9f, 0.72f), pulse * 0.14f);
-            var night = new Color(0.62f, 0.58f, 0.82f, 1f);
+            var wash = new Color(0.78f, 0.82f, 0.80f, 1f);
+            var sunset = Color.Lerp(wash, new Color(0.86f, 0.84f, 0.78f, 1f), 0.35f);
+            var night = new Color(0.52f, 0.54f, 0.68f, 1f);
             _sr.color = Color.Lerp(sunset, night, dusk);
         }
     }

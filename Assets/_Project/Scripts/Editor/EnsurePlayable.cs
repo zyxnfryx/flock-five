@@ -21,6 +21,14 @@ namespace FlockFive.Editor
             EditorApplication.delayCall += PinIosPackaging;
             EditorApplication.delayCall += MaybePlayCmd;
             EditorApplication.update += TickPlayCmd;
+            EditorApplication.playModeStateChanged += ClearEnterQueued;
+        }
+
+        static void ClearEnterQueued(PlayModeStateChange change)
+        {
+            if (change == PlayModeStateChange.EnteredPlayMode ||
+                change == PlayModeStateChange.EnteredEditMode)
+                _enterQueued = false;
         }
 
         [MenuItem("Flock Five/Ensure Project Setup")]
@@ -31,19 +39,24 @@ namespace FlockFive.Editor
             PinIosPackaging();
         }
 
+        static bool Busy() =>
+            EditorApplication.isCompiling || EditorApplication.isPlayingOrWillChangePlaymode;
+
         static void EnsureUrp()
         {
-            if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+            if (Busy()) return;
             const string dir = "Assets/Settings";
             const string pipePath = dir + "/ParadiceURP.asset";
             const string rendPath = dir + "/ParadiceRenderer.asset";
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
+            bool created = false;
             var renderer = AssetDatabase.LoadAssetAtPath<UniversalRendererData>(rendPath);
             if (renderer == null)
             {
                 renderer = ScriptableObject.CreateInstance<UniversalRendererData>();
                 AssetDatabase.CreateAsset(renderer, rendPath);
+                created = true;
             }
 
             var asset = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(pipePath);
@@ -51,16 +64,26 @@ namespace FlockFive.Editor
             {
                 asset = UniversalRenderPipelineAsset.Create(renderer);
                 AssetDatabase.CreateAsset(asset, pipePath);
+                created = true;
             }
 
-            GraphicsSettings.defaultRenderPipeline = asset;
-            QualitySettings.renderPipeline = asset;
-            AssetDatabase.SaveAssets();
+            bool dirty = created;
+            if (GraphicsSettings.defaultRenderPipeline != asset)
+            {
+                GraphicsSettings.defaultRenderPipeline = asset;
+                dirty = true;
+            }
+            if (QualitySettings.renderPipeline != asset)
+            {
+                QualitySettings.renderPipeline = asset;
+                dirty = true;
+            }
+            if (dirty) AssetDatabase.SaveAssets();
         }
 
         static void Pin()
         {
-            if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+            if (Busy()) return;
             if (PlayerSettings.companyName != "zfxgames")
                 PlayerSettings.companyName = "zfxgames";
             if (PlayerSettings.productName != "Flock Five")
@@ -68,13 +91,20 @@ namespace FlockFive.Editor
             const string id = "com.zfxgames.flockfive";
             if (PlayerSettings.GetApplicationIdentifier(NamedBuildTarget.iOS) != id)
                 PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS, id);
-            PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
-            PlayerSettings.allowedAutorotateToPortrait = true;
-            PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
-            PlayerSettings.allowedAutorotateToLandscapeLeft = false;
-            PlayerSettings.allowedAutorotateToLandscapeRight = false;
-            PlayerSettings.defaultScreenWidth = 1080;
-            PlayerSettings.defaultScreenHeight = 1920;
+            if (PlayerSettings.defaultInterfaceOrientation != UIOrientation.Portrait)
+                PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
+            if (!PlayerSettings.allowedAutorotateToPortrait)
+                PlayerSettings.allowedAutorotateToPortrait = true;
+            if (PlayerSettings.allowedAutorotateToPortraitUpsideDown)
+                PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
+            if (PlayerSettings.allowedAutorotateToLandscapeLeft)
+                PlayerSettings.allowedAutorotateToLandscapeLeft = false;
+            if (PlayerSettings.allowedAutorotateToLandscapeRight)
+                PlayerSettings.allowedAutorotateToLandscapeRight = false;
+            if (PlayerSettings.defaultScreenWidth != 1080)
+                PlayerSettings.defaultScreenWidth = 1080;
+            if (PlayerSettings.defaultScreenHeight != 1920)
+                PlayerSettings.defaultScreenHeight = 1920;
             UseInputSystemOnly();
         }
 
@@ -92,7 +122,7 @@ namespace FlockFive.Editor
 
         static void PinIosPackaging()
         {
-            if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+            if (Busy()) return;
 
             const string boot = "Assets/_Recovery/0.unity";
             var scenes = EditorBuildSettings.scenes;
@@ -107,10 +137,15 @@ namespace FlockFive.Editor
                 Debug.Log("Flock Five: boot scene added to build settings.");
             }
 
-            PlayerSettings.iOS.appleEnableAutomaticSigning = true;
+            if (!PlayerSettings.iOS.appleEnableAutomaticSigning)
+                PlayerSettings.iOS.appleEnableAutomaticSigning = true;
             const string att = "Ads help keep Flock Five free.";
-            if (PlayerSettings.iOS.userTrackingUsageDescription != att)
-                PlayerSettings.iOS.userTrackingUsageDescription = att;
+            var attProp = typeof(PlayerSettings.iOS).GetProperty("userTrackingUsageDescription");
+            if (attProp != null && attProp.CanWrite)
+            {
+                var cur = attProp.GetValue(null) as string;
+                if (cur != att) attProp.SetValue(null, att);
+            }
 
             const string dest = "Assets/_Project/Art/Icons/app-icon-1024.png";
             var src = Path.GetFullPath(Path.Combine(Application.dataPath, "../Store/AppStore/app-icon-1024.png"));
@@ -166,16 +201,21 @@ namespace FlockFive.Editor
             EnterPlay();
         }
 
+        static bool _enterQueued;
+
         [MenuItem("Flock Five/Play Slice")]
         public static void EnterPlay()
         {
             ForcePortraitGameView();
             if (EditorApplication.isPlaying)
             {
+                if (_enterQueued) return;
                 EditorApplication.playModeStateChanged += RestartPlay;
                 EditorApplication.isPlaying = false;
                 return;
             }
+            _enterQueued = true;
+            AssetDatabase.Refresh();
             if (EditorApplication.isCompiling)
             {
                 EditorApplication.delayCall += WaitThenPlay;
@@ -198,7 +238,14 @@ namespace FlockFive.Editor
                 EditorApplication.delayCall += WaitThenPlay;
                 return;
             }
+            AssetDatabase.Refresh();
+            if (EditorApplication.isCompiling)
+            {
+                EditorApplication.delayCall += WaitThenPlay;
+                return;
+            }
             ForcePortraitGameView();
+            _enterQueued = false;
             if (!EditorApplication.isPlaying)
                 EditorApplication.isPlaying = true;
         }

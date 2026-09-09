@@ -11,6 +11,14 @@ namespace FlockFive
         public readonly Transform[] Seats = new Transform[BranchState.Cap];
         public readonly SpriteRenderer[] Birds = new SpriteRenderer[BranchState.Cap];
         public static readonly Vector3 BirdScale = new Vector3(0.42f, 0.42f, 1f);
+        public Vector3 Planted => _planted;
+
+        public void Fit(Vector3 planted, Vector3 scale)
+        {
+            _planted = planted;
+            transform.localScale = scale;
+            if (!_breaking) transform.position = planted;
+        }
         // Seat is the wood; this lifts the sprite so gripping toes sit on the limb.
         public const float RestLift = 0.41f;
         int _count;
@@ -37,12 +45,23 @@ namespace FlockFive
                 if (idle == null || idle.Shrouded || idle.Sleeping) continue;
                 idle.Flutter(0.7f);
             }
-            Sfx.Flaps(run);
         }
 
         public Vector3 SeatWorld(int seat)
         {
             return Seats[seat] != null ? Seats[seat].position : transform.position;
+        }
+
+        public float NearestPadSqr(Vector2 world)
+        {
+            float best = ((Vector2)transform.position - world).sqrMagnitude;
+            for (int s = 0; s < Seats.Length; s++)
+            {
+                if (Seats[s] == null) continue;
+                float d = ((Vector2)Seats[s].position - world).sqrMagnitude;
+                if (d < best) best = d;
+            }
+            return best;
         }
 
         public void Sync(BranchState state, bool sleeping = false)
@@ -72,7 +91,9 @@ namespace FlockFive
                 if (leftoverLeaf != null) Destroy(leftoverLeaf);
                 bool show = i < state.Count;
                 bool hid = show && state.IsShrouded(i);
-                if (hid && !tipLocked) lastHid = i;
+                // Inner bees stay visible under a leaf lock. Tip shroud is the leaf.
+                if (hid && i < state.Count - 1) lastHid = i;
+                else if (hid && !tipLocked) lastHid = i;
                 bird.gameObject.SetActive(show);
                 bird.enabled = show;
                 bird.sortingOrder = hid ? 7 : 12;
@@ -111,9 +132,7 @@ namespace FlockFive
             if (_leaves == null) _leaves = gameObject.AddComponent<LeafCover>();
             _leaves.TrunkDir = FromRight ? 1f : -1f;
             _leaves.Cover(tipLocked, Seats, state.Count);
-            if (tipLocked)
-                _swarm.Cover(false, Seats, -1, state.Count);
-            else if (lastHid >= 0)
+            if (lastHid >= 0)
                 _swarm.Cover(true, Seats, lastHid, state.Count);
             else
                 _swarm.Cover(false, Seats, -1, state.Count);
@@ -127,8 +146,6 @@ namespace FlockFive
             if (_sleeping) on = false;
             Highlight(on);
             int run = on ? ReadyRun() : 0;
-            if (on && run > 0) Sfx.Flaps(run);
-            else if (!on && !_sleeping && _count > 0) Sfx.FlapSoft();
             for (int i = 0; i < BranchState.Cap; i++)
             {
                 if (Birds[i] == null) continue;
@@ -143,6 +160,8 @@ namespace FlockFive
                 bool tip = on && i >= _count - run && i < _count;
                 idle.Lift = tip ? 1.15f : 0f;
                 idle.Flapping = tip;
+                if (tip)
+                    StartCoroutine(Wow.Shed(Birds[i].transform.position, idle.Color, transform.parent));
             }
         }
 
@@ -236,27 +255,60 @@ namespace FlockFive
         {
             _breaking = true;
             Sfx.Break();
+            float dir = FromRight ? 1f : -1f;
+            SpriteRenderer fly = null;
+            GameObject flyGo = null;
+            Vector3 stubScale = Wood != null ? Wood.transform.localScale : Vector3.one;
+            Vector3 stubPos = Wood != null ? Wood.transform.localPosition : Vector3.zero;
+            if (Wood != null)
+            {
+                flyGo = Object.Instantiate(Wood.gameObject, transform);
+                fly = flyGo.GetComponent<SpriteRenderer>();
+                var ls = Wood.transform.localScale;
+                Wood.transform.localScale = new Vector3(ls.x * 0.52f, ls.y, ls.z);
+                flyGo.transform.localScale = new Vector3(ls.x * 0.52f, ls.y, ls.z);
+                Wood.transform.localPosition = new Vector3(-dir * 0.62f, 0f, 0f);
+                flyGo.transform.localPosition = new Vector3(dir * 0.62f, 0.04f, 0f);
+            }
+
             float t = 0f;
+            const float dur = 0.62f;
             var start = transform.position;
-            while (t < 0.55f)
+            while (t < dur)
             {
                 t += Time.deltaTime;
-                float u = t / 0.55f;
-                float kick = u < 0.12f ? Mathf.Sin(u / 0.12f * Mathf.PI) * 0.18f : 0f;
-                transform.position = start + new Vector3(kick, -4.8f * u * u, 0f);
-                transform.rotation = Quaternion.Euler(0f, 0f, -36f * u * u);
+                float u = Mathf.Clamp01(t / dur);
+                float k = u * u;
+                if (Wood != null)
+                    Wood.transform.localRotation = Quaternion.Euler(0f, 0f, dir * -32f * k);
+                if (fly != null)
+                {
+                    fly.transform.localPosition += new Vector3(dir * 6.2f, -9.5f, 0f) * Time.deltaTime * (0.35f + u);
+                    fly.transform.Rotate(0f, 0f, dir * 260f * Time.deltaTime);
+                    var c = fly.color;
+                    c.a = 1f - u;
+                    fly.color = c;
+                }
                 if (Wood != null)
                 {
                     var c = Wood.color;
-                    c.a = 1f - u;
+                    c.a = 1f - u * 0.85f;
                     Wood.color = c;
                 }
+                transform.position = start + new Vector3(0f, -1.15f * k, 0f);
                 yield return null;
             }
+            if (flyGo != null) Object.Destroy(flyGo);
             gameObject.SetActive(false);
             transform.position = _planted;
             transform.rotation = Quaternion.identity;
-            if (Wood != null) Wood.color = Color.white;
+            if (Wood != null)
+            {
+                Wood.color = Color.white;
+                Wood.transform.localScale = stubScale;
+                Wood.transform.localPosition = stubPos;
+                Wood.transform.localRotation = Quaternion.identity;
+            }
             _breaking = false;
         }
     }

@@ -18,6 +18,7 @@ namespace FlockFive
         public void Show(BirdColor? color)
         {
             if (Art == null) return;
+            if (_held) return;
             if (color == null)
             {
                 Art.enabled = false;
@@ -30,10 +31,31 @@ namespace FlockFive
 
         public Vector3 Mouth => transform.position + new Vector3(0f, -1.08f, 0f);
 
+        public void Hold() => _held = true;
+
+        public void Pulse()
+        {
+            _held = true;
+            StartCoroutine(PulseCo());
+        }
+
+        IEnumerator PulseCo()
+        {
+            float t = 0f;
+            const float dur = 0.14f;
+            while (t < dur)
+            {
+                t += Time.deltaTime;
+                float u = Mathf.Sin(Mathf.Clamp01(t / dur) * Mathf.PI);
+                transform.localScale = Vector3.one * (Scale * (1f + 0.18f * u));
+                yield return null;
+            }
+            transform.localScale = Vector3.one * Scale;
+        }
+
         public IEnumerator Cheer()
         {
             _held = true;
-            Sfx.FeederDone();
             float t = 0f;
             while (t < 0.55f)
             {
