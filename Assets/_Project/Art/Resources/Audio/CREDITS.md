@@ -47,11 +47,11 @@ Garden beds (`Audio/Bed/dawn-garden`, `mid-climb`, `last-light`) and feeder chin
 commercially clear. Runtime C# ports match the signed-off D-major garden mixes
 when wavs are not in Resources.
 
-Splash title (`Audio/Bed/splash-theme`, MixDesk `MakeSplash`) is a proud ~29s
-D-major title piece (10 bars at 84 BPM): intro → statement → bridge → payoff →
-cadence. Same flute + pizzicato family as the garden beds, with low-D bass floor,
-pizz harmony (thirds/sixths/answers), and a real bar-6 bloom — one flute melody,
-never a second tune. Sole bed occupant on the splash; garden stems mute until play.
+Splash title (`Audio/Bed/splash-theme`) Phase 1 Genesis-FM prototype: original soft-FM
+(YM2612-approx) stem, same D-major motif DNA and intro→statement→bridge→payoff→cadence
+arc as the flute+pizz MakeSplash fallback. Sonic 3 title craft / Shining Force II heart —
+not a ROM rip. LoadBed prefers the WAV; C# MakeSplash remains fallback until signed off.
+Sole bed occupant on the splash; garden stems mute until play. Chirps stay real hummingbirds.
 
 Gate activate (`Sfx.GateGo`) is an original chevron-lock + watery vortex whoosh
 for the splash flower. Inspired by the *gesture* of a Stargate kawoosh, not a
