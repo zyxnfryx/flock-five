@@ -13,8 +13,10 @@ namespace FlockFive
         public bool Shrouded;
         public bool FaceLeft;
         public BirdColor Color;
+        public BirdSex Sex;
         SpriteRenderer _sr;
         SpriteRenderer _face;
+        SpriteRenderer _kit;
         float _phase;
         float _liftShown;
         float _nextWing;
@@ -33,9 +35,13 @@ namespace FlockFive
             _nextBlink = Time.time + Random.Range(0.6f, 2.4f);
         }
 
-        public void Bind(BirdColor color, Vector3 restLocal)
+        public void Bind(BirdColor color, Vector3 restLocal) =>
+            Bind(new Bird(color, BirdSex.Female), restLocal);
+
+        public void Bind(Bird bird, Vector3 restLocal)
         {
-            Color = color;
+            Color = bird.Color;
+            Sex = bird.Sex;
             RestLocal = restLocal;
             Frozen = false;
             Flapping = false;
@@ -43,6 +49,7 @@ namespace FlockFive
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
             if (_sr != null) _sr.flipX = FaceLeft;
             EnsureFace();
+            if (_kit != null) _kit.enabled = false;
         }
 
         public void Flutter(float seconds)
@@ -81,7 +88,7 @@ namespace FlockFive
             if (show)
             {
                 _sr.flipX = FaceLeft;
-                _sr.sprite = SpriteCatalog.BirdFrame(Color, Time.time * (fly ? 16f : 0.9f) + _phase, fly);
+                _sr.sprite = SpriteCatalog.BirdFrame(Color, Time.time * (fly ? 16f : 0.9f) + _phase, fly, Sex);
                 if (!Frozen)
                 {
                     _sr.color = Shrouded ? new Color(0.04f, 0.03f, 0.05f, 1f) : UnityEngine.Color.white;
@@ -89,6 +96,7 @@ namespace FlockFive
                 }
             }
             PlaceFace(mood, show && !Shrouded);
+            if (_kit != null) _kit.enabled = false;
             if (fly && !Frozen) BeatWings();
             else if (show && !Sleeping && !Shrouded && !Frozen) MaybeRuffle();
 
@@ -146,6 +154,48 @@ namespace FlockFive
             float fs = mood.FaceScale * (blink ? 1f : 1f);
             _face.transform.localScale = new Vector3(fs, blink ? fs * 0.18f : fs, 1f);
             if (!Frozen) _face.color = UnityEngine.Color.white;
+        }
+
+        void EnsureKit()
+        {
+            if (Sex == BirdSex.Neutral)
+            {
+                if (_kit != null) _kit.enabled = false;
+                return;
+            }
+            var spr = Sex == BirdSex.Female ? SpriteCatalog.Bow : SpriteCatalog.Crown;
+            if (_kit != null)
+            {
+                _kit.sprite = spr;
+                _kit.enabled = true;
+                return;
+            }
+            var go = WorldBuilder.Sprite("Kit", spr, transform.position, 0.3f, 14, transform);
+            go.transform.localRotation = Quaternion.identity;
+            _kit = go.GetComponent<SpriteRenderer>();
+            _kit.sortingOrder = 14;
+        }
+
+        void PlaceKit(BirdMood.Pose mood, bool on)
+        {
+            if (Sex == BirdSex.Neutral)
+            {
+                if (_kit != null) _kit.enabled = false;
+                return;
+            }
+            if (_kit == null) return;
+            _kit.enabled = on;
+            if (!on) return;
+            bool girl = Sex == BirdSex.Female;
+            float x = FaceLeft ? -mood.HeadX : mood.HeadX;
+            float y = girl ? mood.HeadY + 0.22f : mood.HeadY + 0.24f;
+            _kit.transform.localPosition = new Vector3(x * 0.12f, y, 0f);
+            _kit.transform.localRotation = Quaternion.identity;
+            _kit.flipX = FaceLeft;
+            _kit.sortingOrder = _sr != null ? _sr.sortingOrder + 2 : 14;
+            float ks = girl ? 0.36f : 0.30f;
+            _kit.transform.localScale = new Vector3(ks, ks, 1f);
+            if (!Frozen) _kit.color = UnityEngine.Color.white;
         }
 
         void BeatWings()

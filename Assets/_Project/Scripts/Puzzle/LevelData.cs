@@ -34,6 +34,77 @@ namespace FlockFive
 
         public static int Count => All.Length;
         public static bool HasNext => Index + 1 < All.Length;
+        const string PrefNext = "flockfive.next";
+
+        public static int NextPlay
+        {
+            get
+            {
+                int n = UnityEngine.PlayerPrefs.GetInt(PrefNext, 0);
+                if (n < 0) n = 0;
+                if (n >= All.Length) n = 0;
+                return n;
+            }
+        }
+
+        public static Level Peek(int index)
+        {
+            if (All.Length == 0) return null;
+            int i = index < 0 ? 0 : (index >= All.Length ? All.Length - 1 : index);
+            return All[i];
+        }
+
+        public static void RememberClear()
+        {
+            int n = Index + 1;
+            if (n >= All.Length) n = 0;
+            UnityEngine.PlayerPrefs.SetInt(PrefNext, n);
+            UnityEngine.PlayerPrefs.Save();
+        }
+
+        const string PrefJoke = "flockfive.joke.v2.";
+        static readonly string[] JokeIntro =
+        {
+            "",
+            "Easy",
+            "",
+            "Super Easy",
+            "",
+            "Super Duper Easy"
+        };
+        static readonly string[] JokePool =
+        {
+            "Easy",
+            "Super Easy",
+            "Super Duper Easy"
+        };
+
+        public static string JokeEase(int index)
+        {
+            if (index < 0) index = 0;
+            if (index < JokeIntro.Length) return JokeIntro[index];
+            string key = PrefJoke + index;
+            if (UnityEngine.PlayerPrefs.HasKey(key))
+                return UnityEngine.PlayerPrefs.GetString(key, "");
+            string prev = JokeEase(index - 1);
+            string prev2 = JokeEase(index - 2);
+            string pick = RollJoke(prev, prev2);
+            UnityEngine.PlayerPrefs.SetString(key, pick);
+            UnityEngine.PlayerPrefs.Save();
+            return pick;
+        }
+
+        static string RollJoke(string prev, string prev2)
+        {
+            bool blank = UnityEngine.Random.value < 0.55f;
+            string pick = blank ? "" : JokePool[UnityEngine.Random.Range(0, JokePool.Length)];
+            if (pick.Length > 0 && pick == prev && pick == prev2)
+            {
+                int k = UnityEngine.Random.Range(0, JokePool.Length);
+                pick = JokePool[k] == pick ? "" : JokePool[k];
+            }
+            return pick;
+        }
 
         public static Board Slice() => Open(0);
 
@@ -63,7 +134,87 @@ namespace FlockFive
                 if (!keepTipShrouds && b.Branches[i].Count > 0)
                     b.Branches[i].Shrouded[b.Branches[i].Count - 1] = false;
             }
+            StampFlocks(b);
             return b;
+        }
+
+        // Same-sex flocks: hops need color AND sex, so every bird of a color
+        // shares a sex (otherwise a 5-stack can never gather). Colors cycle
+        // Female / Male / Neutral so a stage is never all one gender.
+        static BirdSex SexOf(BirdColor c)
+        {
+            switch (c)
+            {
+                case BirdColor.Ruby: return BirdSex.Female;
+                case BirdColor.Gold: return BirdSex.Male;
+                case BirdColor.Teal: return BirdSex.Neutral;
+                case BirdColor.Violet: return BirdSex.Female;
+                default: return BirdSex.Male;
+            }
+        }
+
+        static void StampFlocks(Board b)
+        {
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var br = b.Branches[i];
+                for (int k = 0; k < br.Birds.Count; k++)
+                {
+                    var c = br.Birds[k].Color;
+                    br.Birds[k] = new Bird(c, SexOf(c));
+                }
+            }
+            MixGenders(b);
+        }
+
+        static void MixGenders(Board b)
+        {
+            bool hasF = false, hasM = false, hasN = false;
+            var seen = new bool[Palette.Max];
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var br = b.Branches[i];
+                for (int k = 0; k < br.Birds.Count; k++)
+                {
+                    var bird = br.Birds[k];
+                    int ci = (int)bird.Color;
+                    if ((uint)ci < (uint)seen.Length) seen[ci] = true;
+                    if (bird.Sex == BirdSex.Female) hasF = true;
+                    else if (bird.Sex == BirdSex.Male) hasM = true;
+                    else hasN = true;
+                }
+            }
+            int kinds = 0;
+            if (hasF) kinds++;
+            if (hasM) kinds++;
+            if (hasN) kinds++;
+            if (kinds >= 2) return;
+
+            int colors = 0;
+            int flip = -1;
+            for (int c = 0; c < seen.Length; c++)
+            {
+                if (!seen[c]) continue;
+                colors++;
+                flip = c;
+            }
+            if (colors < 2 || flip < 0) return;
+
+            var want = hasF ? BirdSex.Male : BirdSex.Female;
+            PaintColor(b, (BirdColor)flip, want);
+        }
+
+        static void PaintColor(Board b, BirdColor color, BirdSex sex)
+        {
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var br = b.Branches[i];
+                for (int k = 0; k < br.Birds.Count; k++)
+                {
+                    if (br.Birds[k].Color != color) continue;
+                    br.Birds[k] = new Bird(color, sex);
+                }
+            }
         }
 
         static Board DawnGarden()
@@ -429,7 +580,7 @@ namespace FlockFive
             var br = new BranchState();
             for (int i = 0; i < birds.Length; i++)
             {
-                br.Birds.Add(birds[i]);
+                br.Birds.Add(new Bird(birds[i], SexOf(birds[i])));
                 br.Shrouded.Add(false);
             }
             return br;

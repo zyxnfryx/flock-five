@@ -4,7 +4,8 @@ namespace FlockFive
 {
     public sealed class SkyCycle : MonoBehaviour
     {
-        public const float Duration = 200f;
+        // Dawn to last-light inside one garden. Load() rebuilds the sky at dawn.
+        public const float Duration = 66f;
         public static SkyCycle Instance { get; private set; }
         public static string Courtesy;
 
@@ -67,19 +68,6 @@ namespace FlockFive
             _welcomed = false;
             _rushing = false;
             _heldNight = false;
-            SeedGarden();
-        }
-
-        // Each Load() rebuilds the sky, which would otherwise restart at dawn.
-        // Walk dusk from Dawn Garden (0) to Last Light (1) across the 15 gardens.
-        void SeedGarden()
-        {
-            int n = LevelData.Count;
-            int i = LevelData.Index;
-            if (n <= 1) return;
-            float u = i / (float)(n - 1);
-            _t0 = Time.unscaledTime - u * Duration;
-            if (u > 0.5f) _welcomed = true;
         }
 
         void OnDisable()
@@ -151,6 +139,8 @@ namespace FlockFive
             {
                 var duskCol = Color.Lerp(new Color(0.42f, 0.18f, 0.16f, 0f), new Color(0.14f, 0.12f, 0.34f, 0.36f), d);
                 duskCol.a = Mathf.Lerp(0f, 0.36f, d);
+                float wet = GardenStorm.Wet;
+                duskCol = Color.Lerp(duskCol, new Color(0.10f, 0.12f, 0.18f, Mathf.Max(duskCol.a, 0.34f)), wet * 0.55f);
                 _veil.color = duskCol;
             }
             if (_stars != null)
@@ -166,7 +156,10 @@ namespace FlockFive
                 }
             }
             if (_cam != null)
-                _cam.backgroundColor = Color.Lerp(new Color(0.07f, 0.12f, 0.08f), new Color(0.05f, 0.06f, 0.14f), d);
+            {
+                var bg = Color.Lerp(new Color(0.07f, 0.12f, 0.08f), new Color(0.05f, 0.06f, 0.14f), d);
+                _cam.backgroundColor = Color.Lerp(bg, new Color(0.05f, 0.07f, 0.10f), GardenStorm.Wet * 0.45f);
+            }
 
             if (!_welcomed && moonIn > 0.55f)
             {

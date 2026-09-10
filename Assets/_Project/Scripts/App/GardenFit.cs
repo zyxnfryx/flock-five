@@ -22,9 +22,7 @@ namespace FlockFive
                     liveRows.Add(row);
             }
             int r = liveRows.Count;
-            if (r <= 0) yield break;
-
-            float fill = 1f - r / (float)rows;
+            float fill = r <= 0 ? 1f : 1f - r / (float)rows;
             float s = Mathf.Lerp(1f, 1.58f, fill);
             float gap = Mathf.Lerp(WorldBuilder.RowGap, 2.72f, fill);
             float used = (rows - 1) * WorldBuilder.RowGap;
@@ -45,13 +43,24 @@ namespace FlockFive
                 TryAdd(garden, board, src * 2, new Vector3(-x, y, 0f), views, fromPos, fromS, toPos);
                 TryAdd(garden, board, src * 2 + 1, new Vector3(x, y, 0f), views, fromPos, fromS, toPos);
             }
+            int extras = 0;
+            for (int i = WorldBuilder.GiftIndex; i < board.Branches.Count; i++)
+                if (Alive(board, garden, i)) extras++;
+            int slot = 0;
+            for (int i = WorldBuilder.GiftIndex; i < board.Branches.Count; i++)
+            {
+                if (!Alive(board, garden, i)) continue;
+                float gx = extras <= 1 ? 0f : (slot - (extras - 1) * 0.5f) * 2.55f;
+                TryAdd(garden, board, i, new Vector3(gx, WorldBuilder.GiftY, 0f), views, fromPos, fromS, toPos);
+                slot++;
+            }
 
             int n = views.Count;
             if (n <= 0) yield break;
             if (instant)
             {
                 for (int i = 0; i < n; i++)
-                    views[i].Fit(toPos[i], scale);
+                    views[i].Fit(toPos[i], ScaleOf(views[i], scale));
                 yield break;
             }
 
@@ -62,11 +71,20 @@ namespace FlockFive
                 u += Time.deltaTime / dur;
                 float k = u * u * (3f - 2f * u);
                 for (int i = 0; i < n; i++)
-                    views[i].Fit(Vector3.Lerp(fromPos[i], toPos[i], k), Vector3.Lerp(fromS[i], scale, k));
+                {
+                    var sc = ScaleOf(views[i], scale);
+                    views[i].Fit(Vector3.Lerp(fromPos[i], toPos[i], k), Vector3.Lerp(fromS[i], sc, k));
+                }
                 yield return null;
             }
             for (int i = 0; i < n; i++)
-                views[i].Fit(toPos[i], scale);
+                views[i].Fit(toPos[i], ScaleOf(views[i], scale));
+        }
+
+        static Vector3 ScaleOf(BranchView v, Vector3 packed)
+        {
+            if (v != null && v.IsGift) return new Vector3(1.22f, 1.22f, 1f);
+            return packed;
         }
 
         static bool Alive(Board board, WorldBuilder.Garden garden, int i)

@@ -46,3 +46,12 @@ Garden beds (`Audio/Bed/dawn-garden`, `mid-climb`, `last-light`) and feeder chin
 (`Audio/Ching/ching_00–11`) are original synthesized Flock Five banks,
 commercially clear. Runtime C# ports match the signed-off D-major garden mixes
 when wavs are not in Resources.
+
+Splash title (`Audio/Bed/splash-theme`, MixDesk `MakeSplash`) is the same D-major
+flute + pizzicato family as a ~29s looping title (10 bars at 84 BPM). It is the
+sole bed occupant on the splash; garden stems mute until play. Not a second
+gameplay melody.
+
+Gate activate (`Sfx.GateGo`) is an original chevron-lock + watery vortex whoosh
+for the splash flower. Inspired by the *gesture* of a Stargate kawoosh, not a
+copy of any recording.

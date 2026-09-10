@@ -4,21 +4,39 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin;
         static Sprite[] _letters;
         static Sprite[] _digits;
         static Sprite[] _birds;
         static Sprite[] _flap1;
         static Sprite[] _flap2;
+        static Sprite[] _kitRest;
+        static Sprite[] _kitUp;
+        static Sprite[] _kitMid;
         static Sprite[] _feeders;
 
         public static Sprite GardenBg => Load(ref _bg, "Sprites/bg_garden", 96f);
         public static Sprite Branch => Load(ref _branch, "Sprites/branch", 140f);
+        public static Sprite BranchGift => Load(ref _branchGift, "Sprites/branch_gift", 140f);
+        public static Sprite AdSign => Load(ref _adSign, "Sprites/fx_ad_sign", 200f);
+        public static Sprite AdBulb => Load(ref _adBulb, "Sprites/fx_ad_bulb", 200f);
+        public static Sprite AdCard => Load(ref _adCard, "Sprites/fx_ad_card", 200f);
+        public static Sprite IceA => Load(ref _iceA, "Sprites/fx_ice_a", 96f);
+        public static Sprite IceB => Load(ref _iceB, "Sprites/fx_ice_b", 96f);
+        public static Sprite IceShard => Load(ref _iceShard, "Sprites/fx_ice_shard", 200f);
+        public static Sprite Restart => Load(ref _restart, "Sprites/fx_restart", 200f);
+        public static Sprite Piggy => Load(ref _piggy, "Sprites/fx_piggy", 200f);
+        public static Sprite Coin => Load(ref _coin, "Sprites/fx_coin", 200f);
         public static Sprite Leaf => Load(ref _leaf, "Sprites/fx_leaf", 200f);
         public static Sprite Vine => Load(ref _vine, "Sprites/fx_vine", 200f);
         public static Sprite PetalPink => Load(ref _petalPink, "Sprites/fx_petal_pink", 200f);
         public static Sprite PetalPeach => Load(ref _petalPeach, "Sprites/fx_petal_peach", 200f);
         public static Sprite Feather => Load(ref _feather, "Sprites/fx_feather", 200f);
+        public static Sprite Bow => Load(ref _bow, "Sprites/fx_bow", 200f);
+        public static Sprite Bowtie => Load(ref _bowtie, "Sprites/fx_bowtie", 200f);
+        public static Sprite Crown => Load(ref _crown, "Sprites/fx_crown", 200f);
+        public static Sprite Hive => Load(ref _hive, "Sprites/fx_hive", 200f);
+        public static Sprite PlayFlower => Load(ref _playFlower, "Sprites/fx_play_flower", 200f);
         public static Sprite Firefly => Load(ref _firefly, "Sprites/fx_firefly", 200f);
         public static Sprite Zee => Load(ref _zee, "Sprites/fx_z", 200f);
         public static Sprite Sparkle => Load(ref _sparkle, "Sprites/fx_sparkle", 200f);
@@ -84,6 +102,32 @@ namespace FlockFive
             }
         }
 
+        public static Sprite RainStreak
+        {
+            get
+            {
+                if (_rain != null) return _rain;
+                const int w = 12, h = 96;
+                var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+                tex.filterMode = FilterMode.Bilinear;
+                tex.wrapMode = TextureWrapMode.Clamp;
+                float mx = (w - 1) * 0.5f;
+                for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    float dx = Mathf.Abs((x - mx) / mx);
+                    float along = y / (float)(h - 1);
+                    float a = Mathf.Clamp01(1f - dx);
+                    a *= a;
+                    a *= Mathf.Sin(along * Mathf.PI);
+                    tex.SetPixel(x, y, new Color(0.78f, 0.86f, 0.95f, a));
+                }
+                tex.Apply();
+                _rain = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 96f);
+                return _rain;
+            }
+        }
+
         public static Sprite Smoke
         {
             get
@@ -146,18 +190,36 @@ namespace FlockFive
             _birds = null;
             _flap1 = null;
             _flap2 = null;
+            _kitRest = null;
+            _kitUp = null;
+            _kitMid = null;
         }
 
         public static Sprite Bird(BirdColor c) => Slot(ref _birds, (int)c, "Sprites/bird_" + Name(c), 280f);
+        public static Sprite Bird(BirdColor c, BirdSex sex)
+        {
+            if (sex == BirdSex.Neutral) return Bird(c);
+            string tag = sex == BirdSex.Female ? "_f" : "_m";
+            var got = SlotWide(ref _kitRest, KitIx(c, sex), "Sprites/bird_" + Name(c) + tag, 280f);
+            return got != null ? got : Bird(c);
+        }
         public static Sprite Feeder(BirdColor c) => Slot(ref _feeders, (int)c, "Sprites/feeder_" + Name(c), 180f);
 
-        public static Sprite BirdFrame(BirdColor c, float t, bool flap)
+        public static Sprite BirdFrame(BirdColor c, float t, bool flap) =>
+            BirdFrame(c, t, flap, BirdSex.Neutral);
+
+        public static Sprite BirdFrame(BirdColor c, float t, bool flap, BirdSex sex)
         {
-            var rest = Bird(c);
+            var rest = Bird(c, sex);
             if (!flap) return rest;
-            int i = (int)c;
-            var up = Slot(ref _flap1, i, "Sprites/bird_" + Name(c) + "_1", 280f);
-            var mid = Slot(ref _flap2, i, "Sprites/bird_" + Name(c) + "_2", 280f);
+            string tag = sex == BirdSex.Female ? "_f" : sex == BirdSex.Male ? "_m" : "";
+            int ix = KitIx(c, sex);
+            var up = tag.Length == 0
+                ? Slot(ref _flap1, (int)c, "Sprites/bird_" + Name(c) + "_1", 280f)
+                : SlotWide(ref _kitUp, ix, "Sprites/bird_" + Name(c) + tag + "_1", 280f);
+            var mid = tag.Length == 0
+                ? Slot(ref _flap2, (int)c, "Sprites/bird_" + Name(c) + "_2", 280f)
+                : SlotWide(ref _kitMid, ix, "Sprites/bird_" + Name(c) + tag + "_2", 280f);
             int k = Mathf.FloorToInt(Mathf.Abs(t) * 16f) % 4;
             if (k == 0) return rest;
             if (k == 2) return mid != null ? mid : up;
@@ -165,6 +227,8 @@ namespace FlockFive
         }
 
         public static Sprite BirdFrame(BirdColor c, float t) => BirdFrame(c, t, false);
+
+        static int KitIx(BirdColor c, BirdSex s) => (int)s * Palette.Max + (int)c;
 
         static string Name(BirdColor c)
         {
@@ -192,6 +256,16 @@ namespace FlockFive
                 }
                 if (arr[i] == null) arr[i] = Fallback(ppu);
             }
+            return arr[i];
+        }
+
+        static Sprite SlotWide(ref Sprite[] arr, int i, string path, float ppu)
+        {
+            int n = Palette.Max * 3;
+            if (arr == null) arr = new Sprite[n];
+            if (i < 0 || i >= arr.Length) return null;
+            if (arr[i] == null)
+                arr[i] = TryLoad(path, ppu);
             return arr[i];
         }
 

@@ -15,6 +15,7 @@ namespace FlockFive
         }
 
         Bit[] _bits;
+        float _grow;
 
         public static GardenLife Attach(Transform root)
         {
@@ -109,6 +110,26 @@ namespace FlockFive
                 list.Add(b);
             }
 
+            Vector3[] shootAt =
+            {
+                new Vector3(-3.55f, -7.15f, 0f),
+                new Vector3(3.45f, -7.05f, 0f),
+                new Vector3(-4.15f, -5.35f, 0f),
+                new Vector3(4.22f, -5.55f, 0f),
+                new Vector3(-3.92f, 3.85f, 0f),
+                new Vector3(3.88f, 3.55f, 0f)
+            };
+            for (int k = 0; k < shootAt.Length; k++)
+            {
+                float sc = 0.22f + 0.06f * (k % 3);
+                var b = Make("Shoot" + k, SpriteCatalog.Leaf, shootAt[k], sc, -5, Color.white, 6, rng);
+                b.Planted = shootAt[k].x > 0f ? -18f : 18f;
+                b.RotAmp = 4.2f + 1.6f * (float)rng.NextDouble();
+                b.Speed = 0.48f + 0.22f * (float)rng.NextDouble();
+                if (shootAt[k].x > 0f) b.Sr.flipX = true;
+                list.Add(b);
+            }
+
             _bits = list.ToArray();
         }
 
@@ -135,6 +156,9 @@ namespace FlockFive
             if (_bits == null) return;
             float t = Time.time;
             float dt = Time.deltaTime;
+            float want = GardenStorm.Wet > 0.2f ? 1f : 0f;
+            _grow = Mathf.MoveTowards(_grow, want, dt / 46f);
+            var lush = new Color(0.72f, 1f, 0.68f, 1f);
             for (int i = 0; i < _bits.Length; i++)
             {
                 var b = _bits[i];
@@ -155,8 +179,9 @@ namespace FlockFive
                 else if (b.Kind == 2)
                 {
                     var p = b.T.position;
-                    p.y -= b.Fall * dt;
-                    p.x = b.Home.x + Mathf.Sin(u) * b.AmpX;
+                    float fall = b.Fall * (1f - 0.35f * _grow);
+                    p.y -= fall * dt;
+                    p.x = b.Home.x + Mathf.Sin(u) * b.AmpX * (1f + 0.25f * _grow);
                     if (p.y < -8.2f)
                     {
                         p.y = 8.3f;
@@ -164,10 +189,24 @@ namespace FlockFive
                     }
                     b.T.position = p;
                     b.T.localRotation = Quaternion.Euler(0f, 0f, t * b.Spin + b.Phase);
+                    float sc = b.Scale * (1f + 0.45f * _grow);
+                    b.T.localScale = new Vector3(sc, sc, 1f);
+                    var c = b.Tint;
+                    c.a = Mathf.Lerp(b.Tint.a, 0.78f, _grow);
+                    b.Sr.color = c;
                 }
-                else if (b.Kind == 3 || b.Kind == 4)
+                else if (b.Kind == 3 || b.Kind == 4 || b.Kind == 6)
                 {
-                    b.T.localRotation = Quaternion.Euler(0f, 0f, b.Planted + Mathf.Sin(u) * b.RotAmp);
+                    float wind = 1f + 1.15f * GardenStorm.Wet;
+                    float open = b.Kind == 6 ? Mathf.Lerp(0.55f, 1f, _grow) : 1f;
+                    b.T.localRotation = Quaternion.Euler(0f, 0f, b.Planted * open + Mathf.Sin(u) * b.RotAmp * wind);
+                    float swell = 1f + 0.28f * _grow;
+                    if (b.Kind == 6) swell = 0.42f + 0.88f * _grow;
+                    float sx = b.Scale * swell;
+                    float sy = b.Scale * swell;
+                    if (b.Kind == 4) sy *= 1f + 0.22f * _grow;
+                    b.T.localScale = new Vector3(sx, sy, 1f);
+                    b.Sr.color = Color.Lerp(Color.white, lush, 0.45f * _grow);
                 }
                 else if (b.Kind == 5)
                 {

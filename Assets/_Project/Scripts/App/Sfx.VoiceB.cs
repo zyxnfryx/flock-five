@@ -224,6 +224,36 @@ namespace FlockFive
             return Clip("moon", data);
         }
 
+        static AudioClip MakeThunder(int kind, int seed)
+        {
+            float dur = 1.85f + 0.55f * kind;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float f0 = Mathf.Lerp(38f, 56f, (Hash(seed) + 1f) * 0.5f);
+            float f1 = f0 * 1.38f;
+            float knock = Mathf.Lerp(92f, 128f, (Hash(seed + 4) + 1f) * 0.5f);
+            float lp = 0f;
+            int h = seed | 1;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float u = t / dur;
+                float roll = Mathf.Sin(u * Mathf.PI);
+                roll *= roll;
+                roll *= Mathf.Exp(-u * 1.05f);
+                float hit = Mathf.Exp(-((t - 0.018f) * (t - 0.018f)) / 0.00055f);
+                float hit2 = 0.55f * Mathf.Exp(-((t - 0.095f) * (t - 0.095f)) / 0.0011f);
+                float body = Mathf.Sin(2f * Mathf.PI * f0 * t * (1f - u * 0.2f));
+                body += 0.42f * Mathf.Sin(2f * Mathf.PI * f1 * t * (1f - u * 0.16f));
+                float tap = Mathf.Sin(2f * Mathf.PI * knock * t) * (hit + hit2);
+                h = (h * 1103515245 + 12345) & 0x7fffffff;
+                float nz = (h / 1073741824f) - 1f;
+                lp += 0.05f * (nz - lp);
+                data[i] = (body * 0.72f * roll + tap * 0.38f + lp * 0.10f * roll) * 0.48f;
+            }
+            return ClipLp("thunder" + seed, data, 0.11f);
+        }
+
         static AudioClip Clip(string name, float[] data) => ClipLp(name, data, 0.2f);
 
         static AudioClip ClipPunch(string name, float[] data) => ClipLp(name, data, 0.42f);

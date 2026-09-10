@@ -26,14 +26,24 @@ namespace FlockFive
 
             EnqueueShiftedFeeders(src, b);
             OfferPeach(b);
+            StampFlocks(b);
+            OfferGift(b);
             return b;
+        }
+
+        static void OfferGift(Board b)
+        {
+            b.Branches.Add(new BranchState { AdLocked = true });
         }
 
         static BranchState ShiftClone(BranchState src)
         {
             var br = new BranchState { Broken = src.Broken };
             for (int i = 0; i < src.Birds.Count; i++)
-                br.Birds.Add(Shift(src.Birds[i]));
+            {
+                var bird = src.Birds[i];
+                br.Birds.Add(new Bird(Shift(bird.Color), bird.Sex));
+            }
             br.Shrouded.AddRange(src.Shrouded);
             br.AlignShroud();
             return br;
@@ -75,7 +85,7 @@ namespace FlockFive
             {
                 var br = b.Branches[i];
                 for (int k = 0; k < br.Birds.Count; k++)
-                    if (br.Birds[k] == c) return true;
+                    if (br.Birds[k].Color == c) return true;
             }
             return false;
         }

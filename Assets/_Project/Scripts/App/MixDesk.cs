@@ -18,15 +18,20 @@ namespace FlockFive
         float _duckSlew = 1f;
         float _moonLiftUntil;
         float _comboUntil = -99f;
+        bool _splash;
+        float _splashMix;
         const int Rate = 22050;
         const float PlaceCap = 0.24f;
         const float PlaceMax = 0.28f;
         const float ComboCap = 0.04f;
+        const float SplashCap = 0.36f;
+        const float RainCap = 0.11f;
         const float ComboWindow = 4f;
         const float ComboIn = 0.35f;
         const float Bpm = 84f;
         const float Beat = 60f / Bpm;
         const int NBars = 16;
+        const int SplashBars = 10;
         const int TeaseBar = 5;
         const int PayoffBar = 11;
 
@@ -71,25 +76,33 @@ namespace FlockFive
             _comboUntil = Time.unscaledTime + ComboWindow;
         }
 
+        public void SetSplash(bool on)
+        {
+            _splash = on;
+        }
+
         void Build()
         {
             var dawn = LoadBed("Audio/Bed/dawn-garden", MakeDawn);
             var mid = LoadBed("Audio/Bed/mid-climb", MakeMid);
             var last = LoadBed("Audio/Bed/last-light", MakeLast);
             var combo = MakeCombo();
-            if (_stems == null)
+            var theme = LoadBed("Audio/Bed/splash-theme", MakeSplash);
+            var rain = MakeRain();
+            if (_stems == null || _stems.Length < 6)
             {
-                _stems = new AudioSource[4];
-                _stems[0] = MakeLoop(dawn);
-                _stems[1] = MakeLoop(mid);
-                _stems[2] = MakeLoop(last);
-                _stems[3] = MakeLoop(combo);
-                return;
+                var old = _stems;
+                _stems = new AudioSource[6];
+                if (old != null)
+                    for (int i = 0; i < old.Length && i < 6; i++)
+                        _stems[i] = old[i];
             }
             SwapClip(0, dawn);
             SwapClip(1, mid);
             SwapClip(2, last);
             SwapClip(3, combo);
+            SwapClip(4, theme);
+            SwapClip(5, rain);
         }
 
         void SwapClip(int i, AudioClip clip)
@@ -147,10 +160,17 @@ namespace FlockFive
 
             float cap = moon ? PlaceMax : PlaceCap;
             float duck = _duckSlew;
-            SetStem(0, day * cap * duck);
-            SetStem(1, dusk * cap * duck);
-            SetStem(2, night * cap * duck);
-            SetStem(3, ComboGain() * ComboCap * duck);
+            float splashT = _splash ? 1f : 0f;
+            float splashRate = splashT > _splashMix ? 1.7f : 2.8f;
+            _splashMix = Mathf.MoveTowards(_splashMix, splashT, Time.unscaledDeltaTime * splashRate);
+            float garden = 1f - _splashMix;
+            SetStem(0, day * cap * duck * garden);
+            SetStem(1, dusk * cap * duck * garden);
+            SetStem(2, night * cap * duck * garden);
+            SetStem(3, ComboGain() * ComboCap * duck * garden);
+            SetStem(4, _splashMix * SplashCap * duck);
+            // Non-melodic place air. Not a fourth flute bed.
+            SetStem(5, GardenStorm.Wet * RainCap * duck * garden);
         }
 
         float ComboGain()
@@ -411,6 +431,119 @@ namespace FlockFive
             }
         }
 
+        static AudioClip MakeRain()
+        {
+            // Steady garden rain: dense leaf-hits, no wind whoosh, no loop swell.
+            int n = Mathf.RoundToInt(8.0f * Rate);
+            var bus = new float[n * 2];
+            var hiss = new float[n];
+            int h = 91331;
+            float hp = 0f, lp = 0f, bp = 0f;
+            float aHp = OnePoleA(820f);
+            float aLp = OnePoleA(1680f);
+            float aBp = OnePoleA(1100f);
+            for (int i = 0; i < n; i++)
+            {
+                h = (h * 1103515245 + 12345) & 0x7fffffff;
+                float nz = (h / 1073741824f) - 1f;
+                hp += aHp * (nz - hp);
+                float hi = nz - hp;
+                lp += aLp * (hi - lp);
+                bp += aBp * (lp - bp);
+                hiss[i] = lp - 0.35f * bp;
+            }
+            for (int i = 0; i < n; i++)
+            {
+                bus[i * 2] += hiss[i] * 0.22f;
+                bus[i * 2 + 1] += hiss[(i * 17 + n / 3) % n] * 0.22f;
+            }
+
+            int drops = 980;
+            int hh = 44117;
+            for (int d = 0; d < drops; d++)
+            {
+                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
+                int at = (int)((hh / 2147483647f) * n);
+                if (at < 0) at = 0;
+                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
+                int len = 90 + (hh % 220);
+                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
+                float pan = (hh / 1073741824f) - 1f;
+                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
+                float amp = 0.10f + 0.16f * (hh / 2147483647f);
+                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
+                int src = hh % n;
+                float gl = Mathf.Cos((pan + 1f) * 0.5f * Mathf.PI * 0.5f);
+                float gr = Mathf.Sin((pan + 1f) * 0.5f * Mathf.PI * 0.5f);
+                for (int k = 0; k < len; k++)
+                {
+                    float e = Mathf.Exp(-k / 38f) * Mathf.Clamp01(k / 4f);
+                    float s = hiss[(src + k) % n] * e * amp;
+                    int o = ((at + k) % n) * 2;
+                    bus[o] += s * gl;
+                    bus[o + 1] += s * gr;
+                }
+            }
+
+            FlattenRms(bus, 0.12f);
+            LoopSeam(bus, 0.028f);
+            return PeakClip("garden-rain", bus, 0.38f);
+        }
+
+        static void FlattenRms(float[] stereo, float target)
+        {
+            int frames = stereo.Length / 2;
+            int win = Mathf.Max(32, Rate / 40);
+            float acc = 0f;
+            for (int i = 0; i < win && i < frames; i++)
+            {
+                float l = stereo[i * 2], r = stereo[i * 2 + 1];
+                acc += l * l + r * r;
+            }
+            for (int i = 0; i < frames; i++)
+            {
+                int add = i + win;
+                int rem = i - win;
+                if (add < frames)
+                {
+                    float l = stereo[add * 2], r = stereo[add * 2 + 1];
+                    acc += l * l + r * r;
+                }
+                if (rem >= 0)
+                {
+                    float l = stereo[rem * 2], r = stereo[rem * 2 + 1];
+                    acc -= l * l + r * r;
+                }
+                float rms = Mathf.Sqrt(Mathf.Max(1e-8f, acc / (2f * win)));
+                float g = target / rms;
+                if (g > 2.4f) g = 2.4f;
+                if (g < 0.45f) g = 0.45f;
+                stereo[i * 2] *= g;
+                stereo[i * 2 + 1] *= g;
+            }
+        }
+
+        static void LoopSeam(float[] stereo, float seconds)
+        {
+            int frames = stereo.Length / 2;
+            int m = Mathf.Min(Mathf.RoundToInt(seconds * Rate), frames / 8);
+            if (m < 4) return;
+            for (int i = 0; i < m; i++)
+            {
+                float w = i / (float)(m - 1);
+                float a = Mathf.Sin(w * Mathf.PI * 0.5f);
+                float b = Mathf.Cos(w * Mathf.PI * 0.5f);
+                int head = i;
+                int tail = frames - m + i;
+                float l = stereo[head * 2] * a + stereo[tail * 2] * b;
+                float r = stereo[head * 2 + 1] * a + stereo[tail * 2 + 1] * b;
+                stereo[head * 2] = l;
+                stereo[head * 2 + 1] = r;
+                stereo[tail * 2] = l;
+                stereo[tail * 2 + 1] = r;
+            }
+        }
+
         static AudioClip MakeDawn()
         {
             int n = LoopN();
@@ -455,6 +588,35 @@ namespace FlockFive
             }
             ApplyFades(bus);
             return PeakClip("combo-fifth", bus, 0.28f);
+        }
+
+        static AudioClip MakeSplash()
+        {
+            // Title version of the garden theme: same D-major flute + pizz,
+            // full motif twice, ~10 bars at 84 BPM (~29s). One occupant.
+            int n = Mathf.RoundToInt(SplashBars * 4f * Beat * Rate);
+            var bus = new float[n * 2];
+            for (int bar = 0; bar < SplashBars; bar++)
+            {
+                float tBar = bar * 4f * Beat;
+                float walkG = bar < 2 ? 0.22f : 0.30f;
+                for (int q = 0; q < 4; q++)
+                    PlacePizz(bus, Walk[q], tBar + q * Beat, q % 2 == 0 ? -0.22f : 0.20f, walkG);
+                float ge = bar < 2 ? 0.08f : 0.14f;
+                for (int q = 0; q < 4; q++)
+                    PlacePizz(bus, Walk[(q + 2) % 4] + 12f, tBar + (q + 0.5f) * Beat, 0.26f, ge);
+                if (bar >= 2)
+                {
+                    PlacePizz(bus, 50f, tBar, -0.08f, 0.22f);
+                    PlacePizz(bus, 54f, tBar, 0.12f, 0.16f);
+                    PlacePizz(bus, 57f, tBar, 0.30f, 0.12f);
+                }
+            }
+            MixNotes(bus, FirstFour, 0.34f, -0.08f, 0f);
+            MixNotes(bus, Motif, 0.44f, -0.06f, 8f);
+            MixNotes(bus, Motif, 0.50f, -0.04f, 24f);
+            LoopSeam(bus, 0.48f);
+            return PeakClip("splash-theme", bus, 0.56f);
         }
     }
 }

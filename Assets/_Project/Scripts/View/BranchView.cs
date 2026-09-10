@@ -7,7 +7,9 @@ namespace FlockFive
     {
         public int Index;
         public bool FromRight;
+        public bool IsGift;
         public SpriteRenderer Wood;
+        public Transform Sign;
         public readonly Transform[] Seats = new Transform[BranchState.Cap];
         public readonly SpriteRenderer[] Birds = new SpriteRenderer[BranchState.Cap];
         public static readonly Vector3 BirdScale = new Vector3(0.42f, 0.42f, 1f);
@@ -59,6 +61,11 @@ namespace FlockFive
             {
                 if (Seats[s] == null) continue;
                 float d = ((Vector2)Seats[s].position - world).sqrMagnitude;
+                if (d < best) best = d;
+            }
+            if (Sign != null && Sign.gameObject.activeInHierarchy)
+            {
+                float d = ((Vector2)Sign.position - world).sqrMagnitude;
                 if (d < best) best = d;
             }
             return best;
@@ -113,7 +120,7 @@ namespace FlockFive
                     idle.Bind(state.Birds[i], rest);
                     idle.Sleeping = sleeping;
                     idle.Shrouded = hid;
-                    bird.sprite = SpriteCatalog.Bird(state.Birds[i]);
+                    bird.sprite = SpriteCatalog.Bird(state.Birds[i].Color, state.Birds[i].Sex);
                     bird.color = hid ? new Color(0.04f, 0.03f, 0.05f, 1f) : Color.white;
                 }
                 else
@@ -171,11 +178,12 @@ namespace FlockFive
             var idle = Birds[_count - 1] != null ? Birds[_count - 1].GetComponent<BirdIdle>() : null;
             if (idle == null || idle.Shrouded) return 0;
             var c = idle.Color;
+            var sex = idle.Sex;
             int n = 1;
             for (int i = _count - 2; i >= 0; i--)
             {
                 var o = Birds[i] != null ? Birds[i].GetComponent<BirdIdle>() : null;
-                if (o == null || o.Shrouded || o.Color != c) break;
+                if (o == null || o.Shrouded || o.Color != c || o.Sex != sex) break;
                 n++;
             }
             return n;
@@ -310,6 +318,21 @@ namespace FlockFive
                 Wood.transform.localRotation = Quaternion.identity;
             }
             _breaking = false;
+        }
+
+        public void Revive()
+        {
+            _breaking = false;
+            _shake = 0f;
+            gameObject.SetActive(true);
+            transform.rotation = Quaternion.identity;
+            transform.position = _planted;
+            if (Wood != null)
+            {
+                Wood.color = Color.white;
+                Wood.transform.localRotation = Quaternion.identity;
+                Wood.transform.localPosition = Vector3.zero;
+            }
         }
     }
 }

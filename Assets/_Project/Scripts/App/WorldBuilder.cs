@@ -10,6 +10,8 @@ namespace FlockFive
         public const float LimbX = 2.38f;
         public const float RowY0 = 3.42f;
         public const float RowGap = 1.42f;
+        public const int GiftIndex = Rows * Cols;
+        public const float GiftY = -7.52f;
 
         public struct Garden
         {
@@ -18,6 +20,7 @@ namespace FlockFive
             public FeederView[] Feeders;
             public HiveView Hive;
             public Camera Cam;
+            public GardenIce Ice;
         }
 
         public static Garden Build(Transform parent)
@@ -36,19 +39,22 @@ namespace FlockFive
             fit.Apply();
             SkyCycle.Attach(root, cam);
             GardenLife.Attach(root);
+            GardenStorm.Attach(root);
 
-            var branches = new BranchView[Rows * Cols];
+            var branches = new BranchView[Rows * Cols + 1];
             for (int row = 0; row < Rows; row++)
             {
                 float y = RowY0 - row * RowGap;
                 branches[row * 2] = MakeBranch(row * 2, new Vector2(-LimbX, y), false, root);
                 branches[row * 2 + 1] = MakeBranch(row * 2 + 1, new Vector2(LimbX, y), true, root);
             }
+            branches[GiftIndex] = MakeGift(root);
 
             var feeders = new FeederView[2];
             feeders[0] = MakeFeeder(0, new Vector3(-1.22f, 8.12f, 0f), root);
             feeders[1] = MakeFeeder(1, new Vector3(1.22f, 8.12f, 0f), root);
             var hive = HiveView.Attach(root);
+            var ice = GardenIce.Attach(root, cam);
 
             return new Garden
             {
@@ -56,8 +62,88 @@ namespace FlockFive
                 Branches = branches,
                 Feeders = feeders,
                 Hive = hive,
-                Cam = cam
+                Cam = cam,
+                Ice = ice
             };
+        }
+
+        public static BranchView MakeSpare(int index, Vector2 pos, Transform parent)
+        {
+            var view = MakeBranch(index, pos, false, parent);
+            view.IsGift = true;
+            if (view.Wood != null)
+            {
+                view.Wood.sprite = SpriteCatalog.BranchGift;
+                view.Wood.transform.localScale = new Vector3(0.58f, 0.66f, 1f);
+                view.Wood.sortingOrder = 3;
+            }
+            return view;
+        }
+
+        static BranchView MakeGift(Transform parent)
+        {
+            var view = MakeBranch(GiftIndex, new Vector2(0f, GiftY), false, parent);
+            view.IsGift = true;
+            if (view.Wood != null)
+            {
+                view.Wood.sprite = SpriteCatalog.BranchGift;
+                view.Wood.transform.localScale = new Vector3(0.58f, 0.66f, 1f);
+                view.Wood.sortingOrder = 3;
+            }
+
+            var glowGo = Sprite("GiftGlow", SpriteCatalog.Glow, view.transform.position, 1f, 1, view.transform);
+            glowGo.transform.localPosition = new Vector3(0f, 0.18f, 0f);
+            var glow = glowGo.GetComponent<SpriteRenderer>();
+            glow.color = new Color(1f, 0.86f, 0.42f, 0.32f);
+
+            // Sit off the spare perch, arrow pointing at the limb — not hanging over it.
+            var signGo = Sprite("GiftSign", SpriteCatalog.AdSign, view.transform.position, 1f, 11, view.transform);
+            signGo.transform.localPosition = new Vector3(-3.12f, 0.70f, 0f);
+            signGo.transform.localScale = new Vector3(0.42f, 0.42f, 1f);
+            view.Sign = signGo.transform;
+            var signCol = signGo.AddComponent<BoxCollider2D>();
+            signCol.size = new Vector2(5.4f, 2.4f);
+            signCol.offset = new Vector2(-0.35f, 0f);
+
+            var bulbs = PinBulbs(signGo.transform);
+
+            var want = view.gameObject.AddComponent<GiftWant>();
+            want.Glow = glow;
+            want.Sign = view.Sign;
+            want.Bulbs = bulbs;
+            return view;
+        }
+
+        static SpriteRenderer[] PinBulbs(Transform sign)
+        {
+            // Chase around the plank and arrowhead only — no trail onto the spare.
+            var spots = new Vector2[]
+            {
+                new Vector2(-2.35f, 1.02f),
+                new Vector2(-0.55f, 1.08f),
+                new Vector2(1.05f, 1.00f),
+                new Vector2(2.05f, 0.72f),
+                new Vector2(2.58f, 0.08f),
+                new Vector2(2.05f, -0.72f),
+                new Vector2(1.05f, -1.00f),
+                new Vector2(-0.55f, -1.08f),
+                new Vector2(-2.35f, -1.02f)
+            };
+            var bulbs = new SpriteRenderer[spots.Length];
+            for (int i = 0; i < spots.Length; i++)
+            {
+                var go = Sprite("GiftBulb" + i, SpriteCatalog.AdBulb, sign.position, 1f, 13, sign);
+                go.transform.localPosition = new Vector3(spots[i].x, spots[i].y, 0f);
+                go.transform.localScale = new Vector3(0.20f, 0.20f, 1f);
+                var sr = go.GetComponent<SpriteRenderer>();
+                bulbs[i] = sr;
+                var halo = Sprite("Halo", SpriteCatalog.Glow, go.transform.position, 1f, 12, go.transform);
+                halo.transform.localPosition = Vector3.zero;
+                halo.transform.localScale = new Vector3(2.4f, 2.4f, 1f);
+                var hr = halo.GetComponent<SpriteRenderer>();
+                hr.color = new Color(1f, 0.82f, 0.32f, 0.55f);
+            }
+            return bulbs;
         }
 
         static BranchView MakeBranch(int index, Vector2 pos, bool fromRight, Transform parent)

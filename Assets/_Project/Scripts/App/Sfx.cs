@@ -12,6 +12,7 @@ namespace FlockFive
         static AudioClip[] _breaks;
         static AudioClip[] _lifts;
         static AudioClip[] _chings;
+        static AudioClip[] _clinks;
         static AudioClip[] _pops;
         static AudioClip[] _jingles;
         static AudioClip _deny;
@@ -19,6 +20,7 @@ namespace FlockFive
         static AudioClip[] _snoozes;
         static AudioClip[] _hums;
         static AudioClip[] _scatters;
+        static AudioClip[] _thunders;
         static int _lastFlap = -1;
         static int _lastSnooze = -1;
         static int _lastHum = -1;
@@ -26,6 +28,7 @@ namespace FlockFive
         static int _lastBreak = -1;
         static int _lastLift = -1;
         static int _lastChing = -1;
+        static int _lastClink = -1;
         static float _humGate;
         static float _flapGate;
         static SfxHost _host;
@@ -59,6 +62,7 @@ namespace FlockFive
             _breaks = LoadBank("Audio/Break", 12, i => MakeBreak(i, 4100 + i * 47));
             _lifts = LoadBank("Audio/Whoosh", 12, i => MakeLift(i, 4700 + i * 43));
             _chings = LoadBank("Audio/Ching", 12, MakeChing);
+            _clinks = LoadBank("Audio/Coin", 12, MakeCoin);
             _pops = new AudioClip[5];
             for (int i = 0; i < _pops.Length; i++)
                 _pops[i] = MakePop(i, 8800 + i * 29);
@@ -76,6 +80,11 @@ namespace FlockFive
             _booms = new AudioClip[5];
             for (int i = 0; i < _booms.Length; i++)
                 _booms[i] = MakeBoom(3400 + i * 71);
+            _thunders = new AudioClip[4];
+            for (int i = 0; i < _thunders.Length; i++)
+                _thunders[i] = MakeThunder(i, 2800 + i * 67);
+            var gated = Resources.Load<AudioClip>("Audio/Gate/gate_go");
+            _gate = gated != null ? gated : MakeGate();
         }
 
         static AudioSource Voice()
@@ -283,6 +292,15 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.4f, MixDesk.DuckChirp);
         }
 
+        public static void Clink()
+        {
+            Ensure();
+            if (_clinks == null || _clinks.Length == 0) return;
+            int i = Next(_clinks.Length, ref _lastClink);
+            Shot(_clinks[i], Random.Range(0.97f, 1.03f), 0.72f, MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.22f, MixDesk.DuckChirp);
+        }
+
         public static void ScorePop(int i)
         {
             Ensure();
@@ -336,6 +354,17 @@ namespace FlockFive
             if (!Application.isMobilePlatform) return;
             try { Handheld.Vibrate(); }
             catch (System.Exception) { }
+        }
+
+        // Distant garden rumble. Mid, never Lead. Skips if a hop is speaking.
+        public static bool Thunder()
+        {
+            Ensure();
+            if (MixDesk.Live != null && !MixDesk.Live.AllowMid) return false;
+            if (_thunders == null || _thunders.Length == 0) return false;
+            int i = Random.Range(0, _thunders.Length);
+            Shot(_thunders[i], Random.Range(0.94f, 1.02f), Random.Range(0.38f, 0.52f), MixLayer.Mid);
+            return true;
         }
 
         public static void Buzz() => BeeScatter();

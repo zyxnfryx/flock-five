@@ -101,6 +101,16 @@ namespace FlockFive
             _held = false;
         }
 
+        public void SnapHome()
+        {
+            StopAllCoroutines();
+            _held = false;
+            transform.position = _planted;
+            transform.localRotation = Quaternion.identity;
+            transform.localScale = Vector3.one * Scale;
+            if (Art != null) Art.color = Color.white;
+        }
+
         void LateUpdate()
         {
             if (_held) return;

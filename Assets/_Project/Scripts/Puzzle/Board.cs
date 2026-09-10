@@ -5,14 +5,15 @@ namespace FlockFive
     public sealed class BranchState
     {
         public const int Cap = 5;
-        public readonly List<BirdColor> Birds = new List<BirdColor>(Cap);
+        public readonly List<Bird> Birds = new List<Bird>(Cap);
         public readonly List<bool> Shrouded = new List<bool>(Cap);
         public bool Broken;
+        public bool AdLocked;
 
         public int Count => Birds.Count;
         public int Free => Cap - Count;
         public bool Empty => Count == 0;
-        public BirdColor? Tip => Count == 0 ? (BirdColor?)null : Birds[Count - 1];
+        public Bird? Tip => Count == 0 ? (Bird?)null : Birds[Count - 1];
 
         public bool IsShrouded(int i) =>
             i >= 0 && i < Shrouded.Count && Shrouded[i];
@@ -27,7 +28,7 @@ namespace FlockFive
             int n = 1;
             for (int i = Count - 2; i >= 0; i--)
             {
-                if (IsShrouded(i) || Birds[i] != c) break;
+                if (IsShrouded(i) || !Birds[i].SameFlock(c)) break;
                 n++;
             }
             return n;
@@ -39,9 +40,9 @@ namespace FlockFive
             if (Broken || Count != Cap) return false;
             for (int i = 0; i < Count; i++)
                 if (IsShrouded(i)) return false;
-            color = Birds[0];
+            color = Birds[0].Color;
             for (int i = 1; i < Cap; i++)
-                if (Birds[i] != color) return false;
+                if (Birds[i].Color != color) return false;
             return true;
         }
 
@@ -53,11 +54,11 @@ namespace FlockFive
             // A hidden run (consecutive same-color shrouded bees at the tip)
             // lifts together. Inner bees behind a different color stay.
             if (!IsShrouded(Count - 1)) return 0;
-            var c = Birds[Count - 1];
+            var c = Birds[Count - 1].Color;
             int n = 0;
             for (int i = Count - 1; i >= 0; i--)
             {
-                if (Birds[i] != c || !Shrouded[i]) break;
+                if (Birds[i].Color != c || !Shrouded[i]) break;
                 Shrouded[i] = false;
                 n++;
             }
@@ -81,7 +82,7 @@ namespace FlockFive
 
         public BranchState Clone()
         {
-            var b = new BranchState { Broken = Broken };
+            var b = new BranchState { Broken = Broken, AdLocked = AdLocked };
             b.Birds.AddRange(Birds);
             b.Shrouded.AddRange(Shrouded);
             return b;
@@ -130,15 +131,29 @@ namespace FlockFive
             if ((uint)from >= (uint)Branches.Count || (uint)to >= (uint)Branches.Count) return false;
             var a = Branches[from];
             var b = Branches[to];
-            if (a.Broken || b.Broken || a.Empty) return false;
+            if (a.Broken || b.Broken || a.AdLocked || b.AdLocked || a.Empty) return false;
             if (a.IsFullMatch(out var wait) && !LiveHas(wait)) return false;
             // Leaf-locked limb: unusable until a feeder collect breeze lifts the tip.
             if (a.TipLocked || b.TipLocked) return false;
             if (b.Free <= 0) return false;
-            if (!b.Empty && b.Tip != a.Tip) return false;
+            if (!b.Empty && !b.Tip.Value.SameFlock(a.Tip.Value)) return false;
             run = a.TipRun();
             if (run > b.Free) run = b.Free;
             return run > 0;
+        }
+
+        public bool HasHop()
+        {
+            int n = Branches.Count;
+            for (int from = 0; from < n; from++)
+            {
+                var a = Branches[from];
+                if (a.Broken || a.Empty || a.TipLocked) continue;
+                if (a.IsFullMatch(out var wait) && !LiveHas(wait)) continue;
+                for (int to = 0; to < n; to++)
+                    if (CanMove(from, to, out _)) return true;
+            }
+            return false;
         }
 
         public bool TryMove(int from, int to, out int run)
