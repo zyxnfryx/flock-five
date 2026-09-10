@@ -963,14 +963,7 @@ namespace FlockFive
             }
             if (_board == null) return;
             HudLayout(out float s, out float top, out _, out var restart, out var hive);
-            var lab = new GUIStyle(GUI.skin.label) { fontSize = Mathf.RoundToInt(22 * s) };
-            lab.normal.textColor = Color.white;
-            GUILayout.BeginArea(new Rect(16, Mathf.Max(8f, Screen.height - Screen.safeArea.yMax), Screen.width - 32, top));
-            string lv = LevelData.Current != null
-                ? LevelData.Current.Number + "  " + LevelData.Current.Title + "    "
-                : "";
-            GUILayout.Label("FLOCK FIVE    " + lv + _board.RemainingBirds + " birds", lab);
-            GUILayout.EndArea();
+            DrawRemainingBirds(s);
             var arrow = SpriteCatalog.Restart;
             if (arrow != null && arrow.texture != null)
                 GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
@@ -1101,6 +1094,35 @@ namespace FlockFive
             GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01(vis));
             StampOutlined(streakR, streak, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
             GUI.color = prev;
+        }
+
+        void DrawRemainingBirds(float s)
+        {
+            if (_board == null) return;
+            float safeTop = Mathf.Max(8f, Screen.height - Screen.safeArea.yMax);
+            float icon = 36f * s;
+            float pad = 10f * s;
+            var st = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = false
+            };
+            string tx = "×" + _board.RemainingBirds;
+            st.fontSize = Mathf.RoundToInt(28 * s);
+            float tw = st.CalcSize(new GUIContent(tx)).x;
+            float x = Mathf.Max(16f * s, Screen.safeArea.xMin + 12f * s);
+            float y = safeTop + 4f * s;
+            var bird = SpriteCatalog.Bird(BirdColor.Gold);
+            if (bird != null && bird.texture != null)
+                GUI.DrawTexture(new Rect(x, y, icon, icon), bird.texture, ScaleMode.ScaleToFit, true);
+            else
+            {
+                // Fallback if bird art missing — still readable chip.
+                st.alignment = TextAnchor.MiddleCenter;
+                StampOutlined(new Rect(x, y, icon, icon), "🦅", st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
+            }
+            StampOutlined(new Rect(x + icon + pad * 0.4f, y, tw + 8f, icon), tx, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
         }
 
         void DrawHudPurse(float s)
