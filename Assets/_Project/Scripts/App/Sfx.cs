@@ -378,7 +378,7 @@ namespace FlockFive
             // Far rolls quieter; close cracks a touch hotter — still under chirps.
             float near = (i % 3 == 0) ? 1f : 0f;
             float vol = Mathf.Lerp(0.42f, 0.72f, near * 0.55f + Random.value * 0.45f);
-            float pitch = Random.Range(0.88f, 1.08f);
+            float pitch = Random.Range(0.88f, 1.04f); // skill: no pitch-up past ~1.04
             Shot(_thunders[i], pitch, vol, MixLayer.Mid);
             return true;
         }
