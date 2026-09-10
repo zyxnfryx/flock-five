@@ -29,6 +29,9 @@ namespace FlockFive
             public float T, Delay, Spin;
         }
         readonly System.Collections.Generic.List<CoinFly> _flies = new System.Collections.Generic.List<CoinFly>();
+        // Splash streak toast: <0 idle; 0..1 in+hold+out.
+        float _streakSlide = -1f;
+        int _streakAnnounced = -1;
         readonly HashSet<int> _locked = new HashSet<int>();
         int _combo;
         float _comboUntil = -99f;
@@ -110,6 +113,7 @@ namespace FlockFive
             WorldBuilder.MakeCamera(transform);
             if (MixDesk.Live != null) MixDesk.Live.SetSplash(true);
             Purse.Boot();
+            ArmStreakSlide();
         }
 
         void Load(int index)
@@ -999,6 +1003,19 @@ namespace FlockFive
             return new Rect(hive.x, hive.y - size - gap, size, size);
         }
 
+        void ArmStreakSlide()
+        {
+            if (Purse.Streak <= 0)
+            {
+                _streakSlide = -1f;
+                _streakAnnounced = 0;
+                return;
+            }
+            // Re-arm when the streak value changes, or every splash return.
+            _streakAnnounced = Purse.Streak;
+            _streakSlide = 0f;
+        }
+
         void DrawStreakRewards(float s)
         {
             var pig = PiggyRect(s);
@@ -1010,23 +1027,79 @@ namespace FlockFive
                 GUI.color = Color.white;
                 GUI.DrawTexture(pig, spr.texture, ScaleMode.ScaleToFit, true);
             }
+
+            // Bigger persistent balance: "$12" + coin sprite on the right.
+            DrawCoinBalance(s, pig);
+
+            // Streak pops in from the right, holds, then dismisses — frees room for coins.
+            DrawStreakToast(s, pig);
+            DrawCoinFly(pig);
+        }
+
+        void DrawCoinBalance(float s, Rect pig)
+        {
             var st = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleRight,
                 wordWrap = false
             };
-            // Streak + coins sit left of the pig/hive rail so the icons stay clean.
-            float labelW = Mathf.Max(120f, pig.x - 28f);
-            var streakR = new Rect(16f, pig.y + pig.height * 0.08f, labelW, pig.height * 0.42f);
-            string streak = "STREAK  ×" + Purse.Streak;
-            st.fontSize = FitFont(st, streak, streakR.width * 0.95f, streakR.height, 16, 32);
-            StampOutlined(streakR, streak, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
-            string coins = Purse.Coins.ToString();
-            var coinR = new Rect(16f, pig.y + pig.height * 0.50f, labelW, pig.height * 0.42f);
-            st.fontSize = FitFont(st, coins, coinR.width * 0.7f, coinR.height, 16, 34);
+            string coins = "$" + Purse.Coins;
+            float icon = Mathf.Clamp(pig.height * 0.48f, 36f * s, 64f * s);
+            float gap = 8f * s;
+            float labelW = Mathf.Max(140f * s, pig.x - 28f - icon - gap);
+            float h = Mathf.Max(pig.height * 0.55f, 48f * s);
+            var coinR = new Rect(pig.x - 12f - icon - gap - labelW, pig.y + (pig.height - h) * 0.5f, labelW, h);
+            st.fontSize = FitFont(st, coins, coinR.width * 0.98f, coinR.height, 28, 56);
             StampOutlined(coinR, coins, st, new Color(0.42f, 0.26f, 0.08f), 2, 1);
-            DrawCoinFly(pig);
+
+            var coinSpr = SpriteCatalog.Coin;
+            if (coinSpr != null && coinSpr.texture != null)
+            {
+                var ir = new Rect(coinR.xMax + gap, coinR.y + (coinR.height - icon) * 0.5f, icon, icon);
+                GUI.DrawTexture(ir, coinSpr.texture, ScaleMode.ScaleToFit, true);
+            }
+        }
+
+        void DrawStreakToast(float s, Rect pig)
+        {
+            if (_streakSlide < 0f) return;
+            if (Purse.Streak <= 0)
+            {
+                _streakSlide = -1f;
+                return;
+            }
+
+            // 0–0.22 in, 0.22–0.72 hold, 0.72–1 out (~2.4s total).
+            const float dur = 2.4f;
+            _streakSlide = Mathf.Min(1f, _streakSlide + Time.unscaledDeltaTime / dur);
+            float u = _streakSlide;
+            float vis;
+            if (u < 0.22f) vis = Mathf.SmoothStep(0f, 1f, u / 0.22f);
+            else if (u < 0.72f) vis = 1f;
+            else
+            {
+                vis = 1f - Mathf.SmoothStep(0f, 1f, (u - 0.72f) / 0.28f);
+                if (u >= 1f) _streakSlide = -1f;
+            }
+
+            var st = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleRight,
+                wordWrap = false
+            };
+            string streak = "STREAK  ×" + Purse.Streak;
+            float h = Mathf.Max(pig.height * 0.38f, 36f * s);
+            float w = Mathf.Max(160f * s, pig.x - 24f);
+            float restX = pig.x - 12f - w;
+            float off = (1f - vis) * (Screen.width * 0.55f);
+            var streakR = new Rect(restX + off, pig.y - h - 6f * s, w, h);
+            st.fontSize = FitFont(st, streak, streakR.width * 0.95f, streakR.height, 18, 36);
+            var prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01(vis));
+            StampOutlined(streakR, streak, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
+            GUI.color = prev;
         }
 
         void DrawHudPurse(float s)
@@ -1040,11 +1113,22 @@ namespace FlockFive
             var st = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleLeft
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = false
             };
-            string tx = "×" + Purse.Streak + "   " + Purse.Coins;
-            st.fontSize = Mathf.RoundToInt(20 * s);
-            StampOutlined(new Rect(pig.xMax + 6f, pig.y, 220f * s, size), tx, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
+            string coins = "$" + Purse.Coins;
+            float icon = 28f * s;
+            float gap = 6f * s;
+            st.fontSize = Mathf.RoundToInt(26 * s);
+            var textR = new Rect(pig.xMax + 6f, pig.y, 160f * s, size);
+            StampOutlined(textR, coins, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
+            float tw = st.CalcSize(new GUIContent(coins)).x;
+            var coinSpr = SpriteCatalog.Coin;
+            if (coinSpr != null && coinSpr.texture != null)
+            {
+                var ir = new Rect(textR.x + tw + gap, pig.y + (size - icon) * 0.5f, icon, icon);
+                GUI.DrawTexture(ir, coinSpr.texture, ScaleMode.ScaleToFit, true);
+            }
         }
 
         void ArmCoinFly()
