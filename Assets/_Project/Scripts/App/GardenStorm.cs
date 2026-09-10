@@ -10,7 +10,7 @@ namespace FlockFive
         public const float StormLen = 75f;
         public const float ClearLen = 90f;
         const float Fade = 2.1f;
-        const int Drops = 118;
+        const int Drops = 177; // ~50% denser than 118
 
         public static GardenStorm Instance { get; private set; }
         public static float Wet { get; private set; }
