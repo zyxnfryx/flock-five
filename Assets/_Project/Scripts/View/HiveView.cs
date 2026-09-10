@@ -15,10 +15,23 @@ namespace FlockFive
         {
             var go = new GameObject("Hive");
             go.transform.SetParent(parent, false);
-            go.transform.position = new Vector3(-2.85f, 7.35f, 0f);
+            // Park under the bottom-right stage hive HUD (FlockFiveApp tracks exact rect).
+            go.transform.position = new Vector3(2.75f, -8.35f, 0f);
+            go.transform.localScale = Vector3.one * 0.72f;
             var view = go.AddComponent<HiveView>();
             view.Build();
             return view;
+        }
+
+        // Snap the mouth under the on-screen hive button so visitors never head for the feeders.
+        public void TrackHud(Camera cam, Rect hiveGui)
+        {
+            if (cam == null) return;
+            float sx = hiveGui.center.x;
+            float sy = Screen.height - hiveGui.center.y;
+            var w = cam.ScreenToWorldPoint(new Vector3(sx, sy, 0f));
+            w.z = 0f;
+            transform.position = w;
         }
 
         public Vector3 Mouth => transform.position + Vector3.up * 0.12f;
