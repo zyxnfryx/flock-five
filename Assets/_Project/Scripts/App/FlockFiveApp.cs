@@ -1235,7 +1235,7 @@ namespace FlockFive
                     alignment = TextAnchor.LowerCenter,
                     wordWrap = false
                 };
-                joke.fontSize = FitFont(joke, ease, easeR.width, easeR.height, 16, 28);
+                joke.fontSize = FitFont(joke, ease, easeR.width, easeR.height, 18, 32);
                 StampOutlined(easeR, ease, joke, new Color(0.34f, 0.18f, 0.07f), 2, 1);
             }
 
