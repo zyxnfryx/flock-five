@@ -363,7 +363,7 @@ namespace FlockFive
             if (MixDesk.Live != null && !MixDesk.Live.AllowMid) return false;
             if (_thunders == null || _thunders.Length == 0) return false;
             int i = Random.Range(0, _thunders.Length);
-            Shot(_thunders[i], Random.Range(0.94f, 1.02f), Random.Range(0.38f, 0.52f), MixLayer.Mid);
+            Shot(_thunders[i], Random.Range(0.92f, 1.04f), Random.Range(0.48f, 0.64f), MixLayer.Mid);
             return true;
         }
 
