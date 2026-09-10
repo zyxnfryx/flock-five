@@ -74,7 +74,7 @@ namespace FlockFive
             if (view.Wood != null)
             {
                 view.Wood.sprite = SpriteCatalog.BranchGift;
-                view.Wood.transform.localScale = new Vector3(0.58f, 0.66f, 1f);
+                view.Wood.transform.localScale = new Vector3(0.46f, 0.52f, 1f);
                 view.Wood.sortingOrder = 3;
             }
             return view;
@@ -87,22 +87,23 @@ namespace FlockFive
             if (view.Wood != null)
             {
                 view.Wood.sprite = SpriteCatalog.BranchGift;
-                view.Wood.transform.localScale = new Vector3(0.58f, 0.66f, 1f);
+                view.Wood.transform.localScale = new Vector3(0.46f, 0.52f, 1f);
                 view.Wood.sortingOrder = 3;
             }
 
             var glowGo = Sprite("GiftGlow", SpriteCatalog.Glow, view.transform.position, 1f, 1, view.transform);
-            glowGo.transform.localPosition = new Vector3(0f, 0.18f, 0f);
+            glowGo.transform.localPosition = new Vector3(0f, 0.14f, 0f);
+            glowGo.transform.localScale = new Vector3(0.72f, 0.55f, 1f);
             var glow = glowGo.GetComponent<SpriteRenderer>();
-            glow.color = new Color(1f, 0.86f, 0.42f, 0.32f);
+            glow.color = new Color(1f, 0.86f, 0.42f, 0.28f);
 
-            // Sit off the spare perch, arrow pointing at the limb — not hanging over it.
+            // Sit farther off the spare perch, arrow still pointing at the limb.
             var signGo = Sprite("GiftSign", SpriteCatalog.AdSign, view.transform.position, 1f, 11, view.transform);
-            signGo.transform.localPosition = new Vector3(-3.12f, 0.70f, 0f);
-            signGo.transform.localScale = new Vector3(0.42f, 0.42f, 1f);
+            signGo.transform.localPosition = new Vector3(-3.95f, 0.92f, 0f);
+            signGo.transform.localScale = new Vector3(0.38f, 0.38f, 1f);
             view.Sign = signGo.transform;
             var signCol = signGo.AddComponent<BoxCollider2D>();
-            signCol.size = new Vector2(5.4f, 2.4f);
+            signCol.size = new Vector2(5.6f, 2.5f);
             signCol.offset = new Vector2(-0.35f, 0f);
 
             var bulbs = PinBulbs(signGo.transform);
