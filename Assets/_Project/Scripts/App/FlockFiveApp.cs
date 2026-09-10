@@ -2159,7 +2159,7 @@ namespace FlockFive
             };
             string head = _keepStreak
                 ? "Keep the streak?"
-                : (_freezeOffer ? "Iced over" : "A spare perch");
+                : (_freezeOffer ? "Garden frozen" : "Bonus branch");
             title.fontSize = FitFont(title, head, face.width, face.height * 0.38f, 28, 56);
             StampOutlined(new Rect(face.x, face.y, face.width, face.height * 0.40f), head, title, new Color(1f, 0.94f, 0.78f), 3, 2);
 
@@ -2170,10 +2170,10 @@ namespace FlockFive
                 wordWrap = true
             };
             string copy = _keepStreak
-                ? "Watch this little movie to hold ×" + Purse.Streak + "."
+                ? "Watch a short video to keep ×" + Purse.Streak + "."
                 : (_freezeOffer
-                    ? "Hey — watch this little movie and an extra branch thaws the garden."
-                    : "Hey — watch this little movie and this extra branch is yours.");
+                    ? "Watch a short video to thaw an extra branch."
+                    : "Watch a short video to claim this perch.");
             body.fontSize = FitFont(body, copy, face.width, face.height * 0.48f, 20, 34);
             StampOutlined(new Rect(face.x, face.y + face.height * 0.40f, face.width, face.height * 0.52f), copy, body, new Color(0.98f, 0.90f, 0.70f), 3, 2);
 
@@ -2260,7 +2260,7 @@ namespace FlockFive
                 wordWrap = true
             };
             st.fontSize = Mathf.RoundToInt(26 * s);
-            StampOutlined(stage, "A short garden movie…", st, new Color(1f, 0.92f, 0.72f), 2, 1);
+            StampOutlined(stage, "Playing…", st, new Color(1f, 0.92f, 0.72f), 2, 1);
         }
 
         void DrawGiftThanks(float s)
