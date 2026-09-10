@@ -40,7 +40,10 @@ namespace FlockFive.Editor
         }
 
         static bool Busy() =>
-            EditorApplication.isCompiling || EditorApplication.isPlayingOrWillChangePlaymode;
+            EditorApplication.isCompiling
+            || EditorApplication.isPlaying
+            || EditorApplication.isPlayingOrWillChangePlaymode
+            || EditorApplication.isUpdating;
 
         static void EnsureUrp()
         {
@@ -180,18 +183,24 @@ namespace FlockFive.Editor
             if (tex == null) return;
 
             var kinds = PlayerSettings.GetSupportedIconKinds(NamedBuildTarget.iOS);
+            bool iconsDirty = false;
             for (int k = 0; k < kinds.Length; k++)
             {
                 var icons = PlayerSettings.GetPlatformIcons(NamedBuildTarget.iOS, kinds[k]);
+                bool kindDirty = false;
                 for (int i = 0; i < icons.Length; i++)
                 {
+                    if (icons[i].GetTexture(0) == tex) continue;
                     var layers = new Texture2D[Mathf.Max(1, icons[i].maxLayerCount)];
                     layers[0] = tex;
                     icons[i].SetTextures(layers);
+                    kindDirty = true;
                 }
+                if (!kindDirty) continue;
                 PlayerSettings.SetPlatformIcons(NamedBuildTarget.iOS, kinds[k], icons);
+                iconsDirty = true;
             }
-            AssetDatabase.SaveAssets();
+            if (iconsDirty) AssetDatabase.SaveAssets();
         }
 
         [MenuItem("Flock Five/Preview Finale")]
@@ -215,7 +224,6 @@ namespace FlockFive.Editor
                 return;
             }
             _enterQueued = true;
-            AssetDatabase.Refresh();
             if (EditorApplication.isCompiling)
             {
                 EditorApplication.delayCall += WaitThenPlay;
@@ -233,12 +241,6 @@ namespace FlockFive.Editor
 
         static void WaitThenPlay()
         {
-            if (EditorApplication.isCompiling)
-            {
-                EditorApplication.delayCall += WaitThenPlay;
-                return;
-            }
-            AssetDatabase.Refresh();
             if (EditorApplication.isCompiling)
             {
                 EditorApplication.delayCall += WaitThenPlay;
