@@ -656,6 +656,8 @@ namespace FlockFive
                 yield return null;
             }
             tr.gameObject.SetActive(false);
+            var sr = tr.GetComponent<SpriteRenderer>();
+            if (sr != null) sr.enabled = false;
         }
 
         void CheckOver()

@@ -77,6 +77,33 @@ namespace FlockFive
             {
                 if (_swarm != null) _swarm.Cover(false, Seats, -1, 0);
                 if (_leaves != null) _leaves.Cover(false, Seats, 0);
+                // Collect/hop reparents seat birds to the garden root. Reclaim and
+                // hide them here so a leftover same-color sprite cannot flash at
+                // feeder/world coords (looks like an off-screen stray bird).
+                for (int i = 0; i < BranchState.Cap; i++)
+                {
+                    var bird = Birds[i];
+                    if (bird == null) continue;
+                    var rest = Seats[i] != null
+                        ? Seats[i].localPosition + new Vector3(0f, RestLift, 0f)
+                        : Vector3.zero;
+                    bird.transform.SetParent(transform, false);
+                    bird.transform.localPosition = rest;
+                    bird.transform.localRotation = Quaternion.identity;
+                    bird.transform.localScale = BirdScale;
+                    bird.gameObject.SetActive(false);
+                    bird.enabled = false;
+                    var idle = bird.GetComponent<BirdIdle>();
+                    if (idle != null)
+                    {
+                        idle.Frozen = false;
+                        idle.Flapping = false;
+                        idle.Lift = 0f;
+                        idle.Sleeping = false;
+                        idle.Shrouded = false;
+                        idle.RestLocal = rest;
+                    }
+                }
                 gameObject.SetActive(false);
                 ShowZzz(false);
                 return;
@@ -106,7 +133,11 @@ namespace FlockFive
                 bird.sortingOrder = hid ? 7 : 12;
                 bird.transform.SetParent(transform, false);
                 var rest = Seats[i].localPosition + new Vector3(0f, RestLift, 0f);
+                // SetParent(..., false) keeps local coords — snap to the seat so a
+                // bird that flew under the garden root cannot reappear off-screen.
+                bird.transform.localPosition = rest;
                 bird.transform.localRotation = Quaternion.identity;
+                bird.transform.localScale = BirdScale;
                 var idle = bird.GetComponent<BirdIdle>();
                 if (idle == null) idle = bird.gameObject.AddComponent<BirdIdle>();
                 idle.RestScale = BirdScale;
