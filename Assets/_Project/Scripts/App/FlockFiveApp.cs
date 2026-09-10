@@ -445,8 +445,12 @@ namespace FlockFive
             {
                 var visit = Hive.TakeVisitor();
                 _levelBees.Add(visit);
+                _levelHive = true;
                 if (_garden.Hive != null)
+                {
+                    SnapHiveToHud();
                     StartCoroutine(_garden.Hive.Welcome(visit, _garden.Branches[from].transform.position + Vector3.up * 0.7f));
+                }
                 _garden.Branches[from].FlutterTip();
             }
             if (kicked == 0)
@@ -901,6 +905,20 @@ namespace FlockFive
             restart = new Rect(x, y, h, h);
             float hiveW = 170f * scale;
             hive = new Rect(Mathf.Min(Screen.width - hiveW - 16f, safe.xMax - hiveW - 8f), y, hiveW, h);
+        }
+
+        void SnapHiveToHud()
+        {
+            if (_splash || _garden.Hive == null) return;
+            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
+            if (cam == null) return;
+            HudLayout(out _, out _, out _, out _, out var hive);
+            _garden.Hive.TrackHud(cam, hive);
+        }
+
+        void LateUpdate()
+        {
+            SnapHiveToHud();
         }
 
         bool HitHud(Vector2 screen)
