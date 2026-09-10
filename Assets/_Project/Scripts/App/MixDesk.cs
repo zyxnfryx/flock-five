@@ -24,7 +24,7 @@ namespace FlockFive
         const float PlaceCap = 0.24f;
         const float PlaceMax = 0.28f;
         const float ComboCap = 0.04f;
-        const float SplashCap = 0.36f;
+        const float SplashCap = 0.40f;
         const float RainCap = 0.17f;
         const float ComboWindow = 4f;
         const float ComboIn = 0.35f;
@@ -592,31 +592,68 @@ namespace FlockFive
 
         static AudioClip MakeSplash()
         {
-            // Title version of the garden theme: same D-major flute + pizz,
-            // full motif twice, ~10 bars at 84 BPM (~29s). One occupant.
+            // Title climb: same D-major flute + pizz family, one flute melody,
+            // bass floor + bar-6 bloom. ~10 bars @ 84 BPM (~29s). One occupant.
             int n = Mathf.RoundToInt(SplashBars * 4f * Beat * Rate);
             var bus = new float[n * 2];
             for (int bar = 0; bar < SplashBars; bar++)
             {
                 float tBar = bar * 4f * Beat;
-                float walkG = bar < 2 ? 0.22f : 0.30f;
+                bool open = bar < 2;
+                bool full = bar >= 6;
+                // Bass floor: low D root (midi 26) on downs + mid-bar; gain climbs.
+                float bassG = open ? 0.22f : (full ? 0.48f : 0.34f);
+                PlacePizz(bus, 26f, tBar, -0.32f, bassG);
+                PlacePizz(bus, 26f, tBar + 2f * Beat, -0.28f, bassG * (full ? 0.92f : 0.78f));
+
+                float walkG = open ? 0.14f : (full ? 0.38f : 0.24f);
                 for (int q = 0; q < 4; q++)
                     PlacePizz(bus, Walk[q], tBar + q * Beat, q % 2 == 0 ? -0.22f : 0.20f, walkG);
-                float ge = bar < 2 ? 0.08f : 0.14f;
+
+                float ge = open ? 0.04f : (full ? 0.20f : 0.10f);
                 for (int q = 0; q < 4; q++)
                     PlacePizz(bus, Walk[(q + 2) % 4] + 12f, tBar + (q + 0.5f) * Beat, 0.26f, ge);
-                if (bar >= 2)
+
+                if (!open)
                 {
-                    PlacePizz(bus, 50f, tBar, -0.08f, 0.22f);
-                    PlacePizz(bus, 54f, tBar, 0.12f, 0.16f);
-                    PlacePizz(bus, 57f, tBar, 0.30f, 0.12f);
+                    // Chord on bar down; full section also blooms mid-bar.
+                    float cg = full ? 0.28f : 0.16f;
+                    PlacePizz(bus, 50f, tBar, -0.08f, cg);
+                    PlacePizz(bus, 54f, tBar, 0.12f, cg * 0.72f);
+                    PlacePizz(bus, 57f, tBar, 0.30f, cg * 0.55f);
+                    if (full)
+                    {
+                        PlacePizz(bus, 50f, tBar + 2f * Beat, -0.06f, cg * 0.75f);
+                        PlacePizz(bus, 54f, tBar + 2f * Beat, 0.14f, cg * 0.55f);
+                        PlacePizz(bus, 57f, tBar + 2f * Beat, 0.28f, cg * 0.42f);
+                        // Extra low weight on full downs (root octave above floor).
+                        PlacePizz(bus, 38f, tBar, -0.24f, 0.22f);
+                    }
                 }
             }
-            MixNotes(bus, FirstFour, 0.34f, -0.08f, 0f);
-            MixNotes(bus, Motif, 0.44f, -0.06f, 8f);
-            MixNotes(bus, Motif, 0.50f, -0.04f, 24f);
-            LoopSeam(bus, 0.48f);
-            return PeakClip("splash-theme", bus, 0.56f);
+
+            // One flute melody only — FirstFour open, Motif mid, Motif payoff.
+            MixNotes(bus, FirstFour, 0.32f, -0.08f, 0f);
+            MixNotes(bus, Motif, 0.42f, -0.06f, 8f);
+            MixNotes(bus, Motif, 0.54f, -0.04f, 24f);
+
+            // Under second motif: pizz answers (Last Light style), not a second flute.
+            float m2 = 24f;
+            PlacePizz(bus, 54f, (m2 + 8f) * Beat, 0.38f, 0.22f);
+            PlacePizz(bus, 57f, (m2 + 9.5f) * Beat, 0.34f, 0.20f);
+            PlacePizz(bus, 50f, (m2 + 14f) * Beat, -0.12f, 0.26f);
+            PlacePizz(bus, 38f, (m2 + 14f) * Beat, -0.28f, 0.22f);
+            PlacePizz(bus, 26f, (m2 + 14f) * Beat, -0.34f, 0.28f);
+
+            // Cadence into loop on last bar: root + fifth land.
+            float tLast = 9f * 4f * Beat;
+            PlacePizz(bus, 38f, tLast + 3f * Beat, -0.20f, 0.28f);
+            PlacePizz(bus, 45f, tLast + 3f * Beat, 0.18f, 0.22f);
+            PlacePizz(bus, 26f, tLast + 3f * Beat, -0.34f, 0.30f);
+
+            LoopSeam(bus, 0.55f);
+            return PeakClip("splash-theme", bus, 0.60f);
         }
+
     }
 }

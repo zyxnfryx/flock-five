@@ -48,9 +48,9 @@ commercially clear. Runtime C# ports match the signed-off D-major garden mixes
 when wavs are not in Resources.
 
 Splash title (`Audio/Bed/splash-theme`, MixDesk `MakeSplash`) is the same D-major
-flute + pizzicato family as a ~29s looping title (10 bars at 84 BPM). It is the
-sole bed occupant on the splash; garden stems mute until play. Not a second
-gameplay melody.
+flute + pizzicato family as a ~29s looping title (10 bars at 84 BPM) with a deeper
+title climb (bass floor + bar-6 bloom). Sole bed occupant on the splash; garden
+stems mute until play. Not a second gameplay melody.
 
 Gate activate (`Sfx.GateGo`) is an original chevron-lock + watery vortex whoosh
 for the splash flower. Inspired by the *gesture* of a Stargate kawoosh, not a
