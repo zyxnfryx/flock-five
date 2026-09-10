@@ -25,7 +25,7 @@ namespace FlockFive
         const float PlaceMax = 0.28f;
         const float ComboCap = 0.04f;
         const float SplashCap = 0.36f;
-        const float RainCap = 0.11f;
+        const float RainCap = 0.17f;
         const float ComboWindow = 4f;
         const float ComboIn = 0.35f;
         const float Bpm = 84f;
@@ -454,11 +454,11 @@ namespace FlockFive
             }
             for (int i = 0; i < n; i++)
             {
-                bus[i * 2] += hiss[i] * 0.22f;
-                bus[i * 2 + 1] += hiss[(i * 17 + n / 3) % n] * 0.22f;
+                bus[i * 2] += hiss[i] * 0.30f;
+                bus[i * 2 + 1] += hiss[(i * 17 + n / 3) % n] * 0.30f;
             }
 
-            int drops = 980;
+            int drops = 1480;
             int hh = 44117;
             for (int d = 0; d < drops; d++)
             {
@@ -470,7 +470,7 @@ namespace FlockFive
                 hh = (hh * 1103515245 + 12345) & 0x7fffffff;
                 float pan = (hh / 1073741824f) - 1f;
                 hh = (hh * 1103515245 + 12345) & 0x7fffffff;
-                float amp = 0.10f + 0.16f * (hh / 2147483647f);
+                float amp = 0.13f + 0.20f * (hh / 2147483647f);
                 hh = (hh * 1103515245 + 12345) & 0x7fffffff;
                 int src = hh % n;
                 float gl = Mathf.Cos((pan + 1f) * 0.5f * Mathf.PI * 0.5f);
@@ -487,7 +487,7 @@ namespace FlockFive
 
             FlattenRms(bus, 0.12f);
             LoopSeam(bus, 0.028f);
-            return PeakClip("garden-rain", bus, 0.38f);
+            return PeakClip("garden-rain", bus, 0.46f);
         }
 
         static void FlattenRms(float[] stereo, float target)
