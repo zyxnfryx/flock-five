@@ -286,8 +286,10 @@ namespace FlockFive
             if (parent == null || combo < 2) yield break;
             int n = Mathf.Clamp(combo, 2, Palette.ComboMax);
             bool upRight = combo % 2 == 0;
-            var a = upRight ? new Vector3(-7.2f, -3.6f, 0f) : new Vector3(-7.2f, 7.4f, 0f);
-            var b = upRight ? new Vector3(7.2f, 7.4f, 0f) : new Vector3(7.2f, -3.6f, 0f);
+            // Start well past the portrait frustum (~±6 world x) so fanfare birds
+            // never peek in as a stray same-color bird at the screen edge.
+            var a = upRight ? new Vector3(-11.5f, -4.2f, 0f) : new Vector3(-11.5f, 8.0f, 0f);
+            var b = upRight ? new Vector3(11.5f, 8.0f, 0f) : new Vector3(11.5f, -4.2f, 0f);
             var dir = (b - a).normalized;
             var perp = new Vector3(-dir.y, dir.x, 0f);
             float ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
@@ -366,7 +368,11 @@ namespace FlockFive
                 {
                     if (srs[i] == null) continue;
                     float u = Mathf.Clamp01((t - i * stagger) / dur);
-                    bool on = u > 0.02f && u < 0.98f;
+                    float ease = u * u * (3f - 2f * u);
+                    var pos = Vector3.Lerp(a, b, ease) + off[i];
+                    // Hide until inside the playfield so an off-screen spawn cannot
+                    // read as an unrelated flock bird during collect.
+                    bool on = u > 0.02f && u < 0.98f && Mathf.Abs(pos.x) < 6.1f;
                     srs[i].enabled = on;
                     if (!on)
                     {
@@ -379,8 +385,6 @@ namespace FlockFive
                             }
                         continue;
                     }
-                    float ease = u * u * (3f - 2f * u);
-                    var pos = Vector3.Lerp(a, b, ease) + off[i];
                     gos[i].transform.position = pos;
                     gos[i].transform.rotation = Quaternion.Euler(0f, 0f, ang);
                     gos[i].transform.localScale = new Vector3(0.50f, 0.28f, 1f);
