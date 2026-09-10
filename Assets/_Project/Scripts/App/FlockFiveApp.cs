@@ -116,7 +116,11 @@ namespace FlockFive
             _garden = default;
             _board = null;
             WorldBuilder.MakeCamera(transform);
-            if (MixDesk.Live != null) MixDesk.Live.SetSplash(true);
+            if (MixDesk.Live != null)
+            {
+                MixDesk.Live.SetPoker(false);
+                MixDesk.Live.SetSplash(true);
+            }
             Purse.Boot();
             BirdPoker.Boot();
             ArmStreakSlide();
@@ -137,7 +141,11 @@ namespace FlockFive
             _frozen = false;
             _freezeOffer = false;
             _splash = false;
-            if (MixDesk.Live != null) MixDesk.Live.SetSplash(false);
+            if (MixDesk.Live != null)
+            {
+                MixDesk.Live.SetPoker(false);
+                MixDesk.Live.SetSplash(false);
+            }
             _board = LevelData.Open(index);
             _seed = _board.Clone();
             Purse.BeginStage();
@@ -1310,6 +1318,11 @@ namespace FlockFive
                 BirdPoker.Boot();
                 BirdPoker.ResetRound();
                 _home = HomeFace.Poker;
+                if (MixDesk.Live != null)
+                {
+                    MixDesk.Live.SetSplash(false);
+                    MixDesk.Live.SetPoker(true);
+                }
             }
             DrawSplashPokerButton(pokerR);
 
@@ -1576,6 +1589,11 @@ namespace FlockFive
                 BirdPoker.ResetRound();
                 _pokerMotion = PokerMotion.None;
                 _home = HomeFace.Splash;
+                if (MixDesk.Live != null)
+                {
+                    MixDesk.Live.SetPoker(false);
+                    MixDesk.Live.SetSplash(true);
+                }
             }
             GUI.color = new Color(0.10f, 0.08f, 0.05f, backHeld ? 0.88f : 0.72f);
             GUI.DrawTexture(back, Texture2D.whiteTexture);

@@ -53,6 +53,14 @@ Same D-major motif DNA and intro→statement→bridge→payoff→cadence arc. No
 LoadBed prefers the WAV; C# MakeSplash remains fallback until signed off. Sole bed
 occupant on the splash; garden stems mute until play. Chirps stay real hummingbirds.
 
+Bird Poker casino bed (`Audio/Bed/poker-casino`) is an original Genesis-FM soft-FM
+loop (YM2612-approx) — third music identity for the Bird Poker page. C-major chip-leap
+swagger (dotted G–E → C5 leap → walk down; C–E–G–C ladder response) at 108 BPM /
+12 bars ≈ 26.7s. Not a ROM rip; not the splash A–B–A–F# title; not the garden
+D–E–F#–A flute motif. LoadBed prefers the WAV; C# MakePoker is a short soft-FM/sine
+fallback so the page is never silent. Sole bed occupant on poker (splash + garden +
+rain mute while poker mix is up). Chirp banks unchanged.
+
 Gate activate (`Sfx.GateGo`) is an original chevron-lock + watery vortex whoosh
 for the splash flower. Inspired by the *gesture* of a Stargate kawoosh, not a
 copy of any recording.
