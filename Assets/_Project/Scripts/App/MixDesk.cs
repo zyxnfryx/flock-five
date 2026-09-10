@@ -24,7 +24,7 @@ namespace FlockFive
         const float PlaceCap = 0.24f;
         const float PlaceMax = 0.28f;
         const float ComboCap = 0.04f;
-        const float SplashCap = 0.42f;
+        const float SplashCap = 0.52f;
         const float RainCap = 0.17f;
         const float ComboWindow = 4f;
         const float ComboIn = 0.35f;
@@ -83,9 +83,7 @@ namespace FlockFive
 
         void Build()
         {
-            var dawn = LoadBed("Audio/Bed/dawn-garden", MakeDawn);
-            var mid = LoadBed("Audio/Bed/mid-climb", MakeMid);
-            var last = LoadBed("Audio/Bed/last-light", MakeLast);
+            var garden = LoadBed("Audio/Bed/garden-theme", MakeDawn);
             var combo = MakeCombo();
             var theme = LoadBed("Audio/Bed/splash-theme", MakeSplash);
             var rain = MakeRain();
@@ -99,9 +97,9 @@ namespace FlockFive
             }
             for (int i = 0; i < _stems.Length; i++)
                 if (_stems[i] == null) _stems[i] = null;
-            SwapClip(0, dawn);
-            SwapClip(1, mid);
-            SwapClip(2, last);
+            SwapClip(0, garden);
+            SwapClip(1, garden);
+            SwapClip(2, garden);
             SwapClip(3, combo);
             SwapClip(4, theme);
             SwapClip(5, rain);
@@ -148,32 +146,22 @@ namespace FlockFive
             float rate = target < _duckSlew ? 10f : 4f;
             _duckSlew = Mathf.MoveTowards(_duckSlew, target, Time.unscaledDeltaTime * rate);
 
-            float d = SkyCycle.Dusk;
-            // One bed occupant; short handoff so two flute lines never sit together.
-            float day = 1f - Mathf.SmoothStep(0.12f, 0.32f, d);
-            float dusk = Mathf.SmoothStep(0.18f, 0.38f, d) * (1f - Mathf.SmoothStep(0.55f, 0.75f, d));
-            float night = Mathf.SmoothStep(0.62f, 0.82f, d);
             bool moon = Time.unscaledTime < _moonLiftUntil;
-            if (moon) night += 0.35f;
-            float sum = day + dusk + night;
-            if (sum < 0.001f) { day = 1f; sum = 1f; }
-            day /= sum;
-            dusk /= sum;
-            night /= sum;
-
             float cap = moon ? PlaceMax : PlaceCap;
             float duck = _duckSlew;
             float splashT = _splash ? 1f : 0f;
             float splashRate = splashT > _splashMix ? 1.7f : 2.8f;
             _splashMix = Mathf.MoveTowards(_splashMix, splashT, Time.unscaledDeltaTime * splashRate);
-            float garden = 1f - _splashMix;
-            SetStem(0, day * cap * duck * garden);
-            SetStem(1, dusk * cap * duck * garden);
-            SetStem(2, night * cap * duck * garden);
-            SetStem(3, ComboGain() * ComboCap * duck * garden);
+            float gardenMix = 1f - _splashMix;
+            // One garden occupant: the soft porch theme. Dawn/mid/last stay
+            // loaded as fallbacks but silent so two tunes never sit together.
+            SetStem(0, cap * duck * gardenMix);
+            SetStem(1, 0f);
+            SetStem(2, 0f);
+            SetStem(3, ComboGain() * ComboCap * duck * gardenMix);
             SetStem(4, _splashMix * SplashCap * duck);
             // Non-melodic place air. Not a fourth flute bed.
-            SetStem(5, GardenStorm.Wet * RainCap * duck * garden);
+            SetStem(5, GardenStorm.Wet * RainCap * duck * gardenMix);
         }
 
         float ComboGain()

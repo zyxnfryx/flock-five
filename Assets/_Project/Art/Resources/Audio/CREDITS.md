@@ -42,18 +42,23 @@ Feeder whooshes (`Audio/Whoosh/whoosh_00–11`) and branch crunches
 (`Audio/Break/break_00–11`) are original synthesized banks: receding
 swoops (object leaving), and celery-snap wood with outward splinters.
 
-Garden beds (`Audio/Bed/dawn-garden`, `mid-climb`, `last-light`) and feeder ching
-(`Audio/Ching/ching_00–11`) are original synthesized Flock Five banks,
-commercially clear. Runtime C# ports match the signed-off D-major garden mixes
-when wavs are not in Resources.
+Garden bed (`Audio/Bed/garden-theme.wav`) is the splash porch theme’s soft
+inverse: same original notes, 16 bars @ 96 BPM (40s), guitar + quiet bass,
+no kit. Peak ~0.52 so MixDesk PlaceCap (~0.24) sits it under play. C# dawn
+flute remains fallback if the wav is missing. Feeder ching (`Audio/Ching/ching_00–11`)
+is an original synthesized Flock Five bank. Runtime C# ports match the
+signed-off D-major garden mixes when wavs are not in Resources.
 
-Splash title (`Audio/Bed/splash-theme`) Phase 1 Genesis-FM kalimba + go-time drive: original soft-FM
-(YM2612-approx) stem — kalimba-ish plucked FM lead (metallic/wood pluck) over energetic
-title-card forward pocket @ 84 BPM D major. Keeps distinct A–B–A–F# call + rising-fifth
-response title melody (≠ garden MixDesk MOTIF). Supersedes #24 soft flute/EP pep-bounce.
-Not a ROM rip. LoadBed prefers the WAV; C# MakeSplash remains fallback until signed off.
-Sole bed occupant on the splash; garden stems mute until play. Dawn parked. Chirps stay
-real hummingbirds.
+Splash title (`Audio/Bed/splash-theme.wav`) is an original 30s loop @ 128 BPM
+(16 bars). Acoustic porch welcome: guitar alone 4 bars, then a fatter bass,
+a little acoustic kit (kick/snare, ghost hats), an extra bass-drum pulse, and a little cowbell on 2
+and 4 (extra off-8ths in the hook). Original notes — not a cover. Guitar is
+a real steel-string acoustic, sampled (FreePats FSS Steel-String / FlameStudios
+Seagull, GPL-3+ with FreePats composition exception); MIDI only hits recorded
+pitches (E2–C6). Fluidsynth chorus/reverb off. Bass: sampled Yamaha RBX
+(FreePats FingerBass YR, CC0). Drums: MuldjordKit (Lars Muldjord / FreePats,
+CC-BY-4.0). Cowbell original. C# `MakeSplash` is fallback only. Sole splash
+bed occupant. Chirps stay real hummingbirds.
 
 Gate activate (`Sfx.GateGo`) is an original chevron-lock + watery vortex whoosh
 for the splash flower. Inspired by the *gesture* of a Stargate kawoosh, not a

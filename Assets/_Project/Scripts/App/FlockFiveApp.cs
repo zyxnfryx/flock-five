@@ -1029,24 +1029,31 @@ namespace FlockFive
 
         static float SplashRailSize() => SplashRailAnchor() * 1.22f;
 
+        static float SplashRailGap() => Mathf.Max(26f, SplashRailSize() * 0.34f);
+
         static Rect SplashHiveRect() => HomeRailRect(true, SplashRailSize());
 
         static Rect SplashPokerRect()
         {
             float size = SplashRailSize();
             var hive = SplashHiveRect();
-            float gap = Mathf.Max(18f, size * 0.22f);
-            return new Rect(hive.x, hive.yMax + gap, size, size);
+            return new Rect(hive.x, hive.yMax + SplashRailGap(), size, size);
         }
 
         static Rect PiggyRect(float s)
         {
-            // Top-right, stacked above the hive; same bumped size as the hive.
             float size = SplashRailSize();
             var hive = SplashHiveRect();
-            // Extra air between pig and hive so they don't kiss.
-            float gap = Mathf.Max(18f, size * 0.22f);
-            return new Rect(hive.x, hive.y - size - gap, size, size);
+            return new Rect(hive.x, hive.y - size - SplashRailGap(), size, size);
+        }
+
+        static void DrawRailIcon(Rect r, Sprite spr)
+        {
+            if (spr == null || spr.texture == null) return;
+            GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.32f);
+            GUI.DrawTexture(new Rect(r.x + 3f, r.y + 6f, r.width, r.height), spr.texture, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+            GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
         }
 
         void ArmStreakSlide()
@@ -1065,14 +1072,7 @@ namespace FlockFive
         void DrawStreakRewards(float s)
         {
             var pig = PiggyRect(s);
-            var spr = SpriteCatalog.Piggy;
-            if (spr != null && spr.texture != null)
-            {
-                GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.30f);
-                GUI.DrawTexture(new Rect(pig.x + 3f, pig.y + 5f, pig.width, pig.height), spr.texture, ScaleMode.ScaleToFit, true);
-                GUI.color = Color.white;
-                GUI.DrawTexture(pig, spr.texture, ScaleMode.ScaleToFit, true);
-            }
+            DrawRailIcon(pig, SpriteCatalog.Piggy);
 
             // Bigger persistent balance: "$12" + coin sprite on the right.
             DrawCoinBalance(s, pig);
@@ -1318,14 +1318,7 @@ namespace FlockFive
             var hiveR = SplashHiveRect();
             if (HitPad(hiveR, out _))
                 _home = HomeFace.Hive;
-            var hiveSpr = SpriteCatalog.Hive;
-            if (hiveSpr != null && hiveSpr.texture != null)
-            {
-                GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.35f);
-                GUI.DrawTexture(new Rect(hiveR.x + 3f, hiveR.y + 6f, hiveR.width, hiveR.height), hiveSpr.texture, ScaleMode.ScaleToFit, true);
-                GUI.color = Color.white;
-                GUI.DrawTexture(hiveR, hiveSpr.texture, ScaleMode.ScaleToFit, true);
-            }
+            DrawRailIcon(hiveR, SpriteCatalog.Hive);
 
             // Third rail button: bird video poker.
             var pokerR = SplashPokerRect();
@@ -1555,28 +1548,15 @@ namespace FlockFive
 
         void DrawSplashPokerButton(Rect r)
         {
-            var bird = SpriteCatalog.Bird(BirdColor.Gold, BirdSex.Male);
-            if (bird != null && bird.texture != null)
+            var spr = SpriteCatalog.Poker;
+            if (spr != null && spr.texture != null && spr.rect.width > 32f)
             {
-                GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.35f);
-                GUI.DrawTexture(new Rect(r.x + 3f, r.y + 6f, r.width, r.height), bird.texture, ScaleMode.ScaleToFit, true);
-                GUI.color = Color.white;
-                GUI.DrawTexture(r, bird.texture, ScaleMode.ScaleToFit, true);
+                DrawRailIcon(r, spr);
+                return;
             }
-            else
-            {
-                GUI.color = new Color(0.12f, 0.10f, 0.07f, 0.82f);
-                GUI.DrawTexture(r, Texture2D.whiteTexture);
-                GUI.color = Color.white;
-            }
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
-            st.fontSize = FitFont(st, "POKER", r.width * 0.9f, r.height * 0.28f, 12, 22);
-            StampOutlined(new Rect(r.x, r.yMax - r.height * 0.32f, r.width, r.height * 0.30f), "POKER", st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
+            GUI.color = new Color(0.12f, 0.10f, 0.07f, 0.82f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = Color.white;
         }
 
         void DrawPokerPage()
@@ -1710,7 +1690,6 @@ namespace FlockFive
         void DrawPokerPunchCard(float y, float s)
         {
             int cols = 5;
-            int rows = 3;
             float cell = Mathf.Min((Screen.width - 48f * s) / cols, 52f * s);
             float gap = 6f * s;
             float gridW = cols * cell + (cols - 1) * gap;
