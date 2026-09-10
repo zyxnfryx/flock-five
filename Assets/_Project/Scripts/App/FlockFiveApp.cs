@@ -1621,9 +1621,12 @@ namespace FlockFive
                         : "No pay  ·  try again");
             GUI.Label(new Rect(16f, rowY + cardH + 12f * s, Screen.width - 32f, 36f * s), line, info);
 
+            float punchY = rowY + cardH + 52f * s;
+            DrawPokerPunchCard(punchY, s);
+
             float btnW = Mathf.Min(Screen.width * 0.42f, 220f * s);
             float btnH = 56f * s;
-            float btnY = Screen.height - Mathf.Max(24f, safe.yMin + 16f) - btnH * 2.4f;
+            float btnY = Mathf.Max(punchY + 78f * s, Screen.height - Mathf.Max(24f, safe.yMin + 16f) - btnH * 2.4f);
             var betR = new Rect(Screen.width * 0.5f - btnW - 8f * s, btnY, btnW, btnH);
             var actR = new Rect(Screen.width * 0.5f + 8f * s, btnY, btnW, btnH);
             var againR = new Rect((Screen.width - btnW) * 0.5f, btnY + btnH + 10f * s, btnW, btnH);
@@ -1645,7 +1648,8 @@ namespace FlockFive
                 if (DrawPokerBtn(actR, "DRAW", s))
                 {
                     BirdPoker.Draw();
-                    if (BirdPoker.LastWin > 0) Sfx.Clink();
+                    if (BirdPoker.LastPunchFresh) Sfx.Combo(3);
+                    else if (BirdPoker.LastWin > 0) Sfx.Clink();
                     else Sfx.Deny();
                 }
             }
@@ -1655,6 +1659,56 @@ namespace FlockFive
                 {
                     BirdPoker.Collect();
                     Sfx.Chirp(BirdColor.Teal);
+                }
+            }
+        }
+
+        void DrawPokerPunchCard(float y, float s)
+        {
+            int cols = 5;
+            int rows = 3;
+            float cell = Mathf.Min((Screen.width - 48f * s) / cols, 52f * s);
+            float gap = 6f * s;
+            float gridW = cols * cell + (cols - 1) * gap;
+            float x0 = (Screen.width - gridW) * 0.5f;
+            var lab = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = Mathf.RoundToInt(12 * s)
+            };
+            lab.normal.textColor = new Color(1f, 0.94f, 0.72f);
+            GUI.Label(new Rect(16f, y - 22f * s, Screen.width - 32f, 20f * s),
+                "PUNCH CARD  " + BirdPoker.PunchFound() + " / " + BirdPoker.PunchKinds, lab);
+
+            for (int i = 0; i < BirdPoker.PunchKinds; i++)
+            {
+                int col = i % cols;
+                int row = i / cols;
+                var r = new Rect(x0 + col * (cell + gap), y + row * (cell + gap), cell, cell);
+                bool on = BirdPoker.IsPunched(i);
+                GUI.color = on ? new Color(0.20f, 0.16f, 0.08f, 0.92f) : new Color(0.10f, 0.08f, 0.05f, 0.72f);
+                GUI.DrawTexture(r, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                BirdColor c;
+                BirdSex sex;
+                BirdPoker.KindParts(i, out c, out sex);
+                var spr = SpriteCatalog.Bird(c, sex);
+                if (spr != null && spr.texture != null)
+                {
+                    float pad = cell * 0.12f;
+                    var ir = new Rect(r.x + pad, r.y + pad, cell - pad * 2f, cell - pad * 2f);
+                    if (!on) GUI.color = new Color(1f, 1f, 1f, 0.28f);
+                    GUI.DrawTexture(ir, spr.texture, ScaleMode.ScaleToFit, true);
+                    GUI.color = Color.white;
+                }
+                if (on)
+                {
+                    // Punch hole mark.
+                    GUI.color = new Color(1f, 0.86f, 0.35f, 0.85f);
+                    float hole = cell * 0.22f;
+                    GUI.DrawTexture(new Rect(r.xMax - hole - 4f * s, r.y + 4f * s, hole, hole), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
                 }
             }
         }

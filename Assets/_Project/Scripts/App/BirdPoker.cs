@@ -10,6 +10,11 @@ namespace FlockFive
         public const int CopiesEach = 5;
         public const int WildCount = 5;
         public const int DeckSize = Palette.Max * 3 * CopiesEach + WildCount; // 80
+        public const int PunchKinds = Palette.Max * 3; // 15 looks
+        const string PrefPunch = "flockfive.poker.punch.v1";
+
+        static bool[] _punched;
+        static bool _punchReady;
 
         public enum Phase { Idle, Dealt, Drawn }
 
@@ -40,6 +45,7 @@ namespace FlockFive
         public static int Bet { get; private set; } = 5;
         public static int LastWin { get; private set; }
         public static Rank LastRank { get; private set; }
+        public static bool LastPunchFresh { get; private set; }
         public static readonly Card[] Hand = new Card[HandSize];
         public static readonly bool[] Hold = new bool[HandSize];
 
@@ -51,6 +57,7 @@ namespace FlockFive
 
         public static void Boot()
         {
+            WarmPunch();
             if (_deck.Count == DeckSize) return;
             _deck.Clear();
             for (int c = 0; c < Palette.Max; c++)
@@ -114,6 +121,9 @@ namespace FlockFive
             LastRank = Evaluate(Hand, out bool natural);
             LastWin = PayFor(LastRank, Bet);
             if (LastWin > 0) Purse.Credit(LastWin);
+            LastPunchFresh = false;
+            if (LastRank == Rank.NaturalFive || LastRank == Rank.FiveWild)
+                LastPunchFresh = TryPunch(Hand);
             PhaseNow = Phase.Drawn;
             return true;
         }
@@ -156,6 +166,100 @@ namespace FlockFive
             return bet * mult;
         }
 
+        public static int PunchFound()
+        {
+            WarmPunch();
+            int n = 0;
+            for (int i = 0; i < _punched.Length; i++)
+                if (_punched[i]) n++;
+            return n;
+        }
+
+        public static bool IsPunched(int kind)
+        {
+            WarmPunch();
+            if ((uint)kind >= (uint)_punched.Length) return false;
+            return _punched[kind];
+        }
+
+        public static int KindId(BirdColor c, BirdSex s) => (int)c * 3 + (int)s;
+
+        public static void KindParts(int kind, out BirdColor c, out BirdSex s)
+        {
+            c = (BirdColor)(kind / 3);
+            s = (BirdSex)(kind % 3);
+        }
+
+        static void WarmPunch()
+        {
+            if (_punchReady) return;
+            _punched = new bool[PunchKinds];
+            string raw = PlayerPrefs.GetString(PrefPunch, "");
+            if (!string.IsNullOrEmpty(raw))
+            {
+                var parts = raw.Split(',');
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    int k;
+                    if (int.TryParse(parts[i], out k) && (uint)k < (uint)_punched.Length)
+                        _punched[k] = true;
+                }
+            }
+            _punchReady = true;
+        }
+
+        static void SavePunch()
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < _punched.Length; i++)
+            {
+                if (!_punched[i]) continue;
+                if (sb.Length > 0) sb.Append(',');
+                sb.Append(i);
+            }
+            PlayerPrefs.SetString(PrefPunch, sb.ToString());
+            PlayerPrefs.Save();
+        }
+
+        static bool TryPunch(Card[] hand)
+        {
+            WarmPunch();
+            int kind;
+            if (!ResolveFiveKind(hand, out kind)) return false;
+            if (_punched[kind]) return false;
+            _punched[kind] = true;
+            SavePunch();
+            return true;
+        }
+
+        // Which bird look the five-of-a-kind landed on (wilds fill that look).
+        static bool ResolveFiveKind(Card[] hand, out int kind)
+        {
+            kind = -1;
+            var counts = new int[PunchKinds];
+            int wilds = 0;
+            for (int i = 0; i < hand.Length; i++)
+            {
+                if (hand[i].Wild) { wilds++; continue; }
+                counts[KindId(hand[i].Color, hand[i].Sex)]++;
+            }
+            int best = 0;
+            int bestId = -1;
+            for (int i = 0; i < counts.Length; i++)
+            {
+                if (counts[i] > best)
+                {
+                    best = counts[i];
+                    bestId = i;
+                }
+            }
+            if (bestId < 0) return false;
+            if (best + wilds < 5) return false;
+            kind = bestId;
+            return true;
+        }
+
+        public static Rank Evaluate(Card[] hand, out bool naturalFive)
         public static Rank Evaluate(Card[] hand, out bool naturalFive)
         {
             naturalFive = false;
