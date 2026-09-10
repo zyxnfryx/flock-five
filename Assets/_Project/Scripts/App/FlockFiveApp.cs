@@ -976,7 +976,6 @@ namespace FlockFive
                 GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
             else
                 GUI.Box(restart, "↩");
-            DrawHudPurse(s);
             var hiveSpr = SpriteCatalog.Hive;
             if (hiveSpr != null && hiveSpr.texture != null)
                 GUI.DrawTexture(hive, hiveSpr.texture, ScaleMode.ScaleToFit, true);
@@ -1146,19 +1145,7 @@ namespace FlockFive
 
         void DrawHudPurse(float s)
         {
-            // In-garden: $ only — no piggy, no coin sprite.
-            HudLayout(out _, out _, out _, out var restart, out _);
-            float size = restart.height;
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleLeft,
-                wordWrap = false
-            };
-            string coins = "$" + Purse.Coins;
-            st.fontSize = Mathf.RoundToInt(26 * s);
-            var textR = new Rect(restart.xMax + 10f * s, restart.y, 160f * s, size);
-            StampOutlined(textR, coins, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
+            // In-garden: restart arrow only — purse $ lives on splash / poker.
         }
 
         void ArmCoinFly()
