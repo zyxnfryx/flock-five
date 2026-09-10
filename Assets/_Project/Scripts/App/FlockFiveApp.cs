@@ -993,7 +993,8 @@ namespace FlockFive
             // Top-right, stacked above the hive; same bumped size as the hive.
             float size = SplashRailSize();
             var hive = SplashHiveRect();
-            float gap = Mathf.Max(8f, size * 0.10f);
+            // Extra air between pig and hive so they don't kiss.
+            float gap = Mathf.Max(18f, size * 0.22f);
             return new Rect(hive.x, hive.y - size - gap, size, size);
         }
 
@@ -1039,12 +1040,15 @@ namespace FlockFive
                 wordWrap = false
             };
             string coins = "$" + Purse.Coins;
-            float icon = Mathf.Clamp(pig.height * 0.48f, 36f * s, 64f * s);
+            // ~20% smaller coin; $ text FitFont tracks the icon height.
+            float icon = Mathf.Clamp(pig.height * 0.48f * 0.80f, 29f * s, 51f * s);
             float gap = 8f * s;
-            float labelW = Mathf.Max(140f * s, pig.x - 28f - icon - gap);
-            float h = Mathf.Max(pig.height * 0.55f, 48f * s);
+            float labelW = Mathf.Max(120f * s, pig.x - 28f - icon - gap);
+            float h = icon;
             var coinR = new Rect(pig.x - 12f - icon - gap - labelW, pig.y + (pig.height - h) * 0.5f, labelW, h);
-            st.fontSize = FitFont(st, coins, coinR.width * 0.98f, coinR.height, 28, 56);
+            int lo = Mathf.Max(18, Mathf.RoundToInt(icon * 0.55f));
+            int hi = Mathf.Max(lo + 2, Mathf.RoundToInt(icon * 0.92f));
+            st.fontSize = FitFont(st, coins, coinR.width * 0.98f, coinR.height, lo, hi);
             StampOutlined(coinR, coins, st, new Color(0.42f, 0.26f, 0.08f), 2, 1);
 
             var coinSpr = SpriteCatalog.Coin;
