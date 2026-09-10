@@ -53,5 +53,23 @@ namespace FlockFive
             PlayerPrefs.SetInt(PrefStreak, 0);
             PlayerPrefs.Save();
         }
+
+        public static bool TrySpend(int amount)
+        {
+            if (amount <= 0) return true;
+            if (Coins < amount) return false;
+            Coins -= amount;
+            PlayerPrefs.SetInt(PrefCoins, Coins);
+            PlayerPrefs.Save();
+            return true;
+        }
+
+        public static void Credit(int amount)
+        {
+            if (amount <= 0) return;
+            Coins += amount;
+            PlayerPrefs.SetInt(PrefCoins, Coins);
+            PlayerPrefs.Save();
+        }
     }
 }
