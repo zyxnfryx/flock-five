@@ -47,11 +47,12 @@ Garden beds (`Audio/Bed/dawn-garden`, `mid-climb`, `last-light`) and feeder chin
 commercially clear. Runtime C# ports match the signed-off D-major garden mixes
 when wavs are not in Resources.
 
-Splash title (`Audio/Bed/splash-theme`) Phase 1 Genesis-FM warm revise: original soft-FM
-(YM2612-approx) stem biased toward Shining Force II heart (softer EP/flute-op, less brass).
-Same D-major motif DNA and intro→statement→bridge→payoff→cadence arc. Not a ROM rip.
-LoadBed prefers the WAV; C# MakeSplash remains fallback until signed off. Sole bed
-occupant on the splash; garden stems mute until play. Chirps stay real hummingbirds.
+Splash title (`Audio/Bed/splash-theme`) Phase 1 Genesis-FM distinct title: original soft-FM
+(YM2612-approx) stem — warm SF2 heart with pep/punch. NEW original melody (syncopated
+A–B–A–F# call + rising-fifth response), not MixDesk garden motif DNA; D major for cohesion
+only. Intro→statement→bridge→payoff→cadence. Not a ROM rip. LoadBed prefers the WAV;
+C# MakeSplash remains fallback until signed off. Sole bed occupant on the splash; garden
+stems mute until play. Dawn parked. Chirps stay real hummingbirds.
 
 Gate activate (`Sfx.GateGo`) is an original chevron-lock + watery vortex whoosh
 for the splash flower. Inspired by the *gesture* of a Stargate kawoosh, not a
