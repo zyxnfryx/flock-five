@@ -1595,7 +1595,7 @@ namespace FlockFive
             // Film+play is painted into fx_ad_sign art — no GUI sticker overlay.
         }
 
-        void DrawGiftOffer        void DrawGiftOffer(float s)
+        void DrawGiftOffer(float s)
         {
             GUI.color = new Color(0.08f, 0.06f, 0.04f, _gift == GiftFace.Card ? 0.62f : 0.78f);
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
