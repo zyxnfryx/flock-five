@@ -19,6 +19,7 @@ namespace FlockFive
         SpriteRenderer[] _dropSr;
         float[] _spd;
         float[] _len;
+        float[] _phase;
         SpriteRenderer _veil;
         SpriteRenderer _flash;
         float _t0;
@@ -45,7 +46,7 @@ namespace FlockFive
             }
             Wet = 0f;
             _wet = 0f;
-            _nextBoom = 1.1f;
+            _nextBoom = 6.5f;
             _flashT = 99f;
             _flashPower = 0f;
         }
@@ -74,16 +75,19 @@ namespace FlockFive
             _dropSr = new SpriteRenderer[Drops];
             _spd = new float[Drops];
             _len = new float[Drops];
+            _phase = new float[Drops];
             var rng = new System.Random(29);
             for (int i = 0; i < Drops; i++)
             {
                 float x = Mathf.Lerp(-5.4f, 5.4f, (float)rng.NextDouble());
-                float y = Mathf.Lerp(-8.4f, 9.2f, (float)rng.NextDouble());
+                // Spread starts over a taller column so sheets don't fall in lockstep.
+                float y = Mathf.Lerp(-8.4f, 14.5f, (float)rng.NextDouble());
                 _len[i] = Mathf.Lerp(0.70f, 1.45f, (float)rng.NextDouble());
-                _spd[i] = Mathf.Lerp(13.5f, 23.5f, (float)rng.NextDouble());
+                _spd[i] = Mathf.Lerp(8.5f, 26.5f, (float)rng.NextDouble());
+                _phase[i] = (float)rng.NextDouble() * 2.8f;
                 var go = WorldBuilder.Sprite("Drop" + i, SpriteCatalog.RainStreak, new Vector3(x, y, 0.4f), 1f, 15, transform);
                 go.transform.localScale = new Vector3(0.82f, _len[i], 1f);
-                go.transform.localRotation = Quaternion.Euler(0f, 0f, 11f);
+                go.transform.localRotation = Quaternion.Euler(0f, 0f, 9f + (float)rng.NextDouble() * 6f);
                 _drop[i] = go.transform;
                 _dropSr[i] = go.GetComponent<SpriteRenderer>();
                 _dropSr[i].color = new Color(0.78f, 0.86f, 0.95f, 0f);
@@ -114,18 +118,29 @@ namespace FlockFive
                 for (int i = 0; i < _drop.Length; i++)
                 {
                     if (_drop[i] == null) continue;
+                    // Per-drop hold so the curtain doesn't reset as one sheet.
+                    if (_phase[i] > 0f)
+                    {
+                        _phase[i] -= dt;
+                        if (_dropSr[i] != null)
+                            _dropSr[i].color = new Color(0.78f, 0.86f, 0.94f, 0f);
+                        continue;
+                    }
                     var p = _drop[i].position;
-                    p.y -= _spd[i] * dt * Mathf.Lerp(0.22f, 1f, _wet);
-                    p.x -= 1.85f * dt * _wet;
+                    float fall = _spd[i] * dt * Mathf.Lerp(0.18f, 1f, _wet);
+                    p.y -= fall;
+                    p.x -= (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * dt * _wet;
                     if (p.y < -8.6f)
                     {
-                        p.y = 9.3f;
+                        p.y = Random.Range(9.2f, 16.5f);
                         p.x = Random.Range(-5.4f, 5.4f);
+                        _phase[i] = Random.Range(0.05f, 1.35f);
+                        _spd[i] = Random.Range(8.5f, 26.5f);
                     }
                     _drop[i].position = p;
                     if (_dropSr[i] != null)
                     {
-                        float a = _wet * Mathf.Lerp(0.38f, 0.78f, (i % 7) / 6f);
+                        float a = _wet * Mathf.Lerp(0.34f, 0.76f, (i % 11) / 10f);
                         _dropSr[i].color = new Color(0.78f, 0.86f, 0.94f, a);
                     }
                 }
@@ -146,24 +161,20 @@ namespace FlockFive
                 _flashT += Time.unscaledDeltaTime;
             }
 
-            if (_wet > 0.28f)
+            if (_wet > 0.45f)
             {
                 _nextBoom -= Time.unscaledDeltaTime;
                 if (_nextBoom <= 0f)
                 {
-                    float power = Random.value < 0.28f
-                        ? Random.Range(0.88f, 1f)
-                        : Random.value < 0.45f
-                            ? Random.Range(0.62f, 0.84f)
-                            : Random.Range(0.40f, 0.60f);
-                    // Storms talk more — close cracks often, big rolls less often.
-                    _nextBoom = power > 0.85f ? Random.Range(5.5f, 10f)
-                        : power > 0.6f ? Random.Range(2.8f, 6.2f)
-                        : Random.Range(1.6f, 4.0f);
+                    // Fewer strikes — favor a solid roll over chatter.
+                    float power = Random.value < 0.55f
+                        ? Random.Range(0.82f, 1f)
+                        : Random.Range(0.55f, 0.78f);
+                    _nextBoom = power > 0.8f ? Random.Range(11f, 20f) : Random.Range(14f, 24f);
                     Boom(power);
-                    // Occasional double-strike after a beat.
-                    if (power > 0.7f && Random.value < 0.38f)
-                        _nextBoom = Mathf.Min(_nextBoom, Random.Range(0.35f, 0.85f));
+                    // Rare echo only — not a rumble loop.
+                    if (power > 0.9f && Random.value < 0.12f)
+                        _nextBoom = Mathf.Min(_nextBoom, Random.Range(1.8f, 3.2f));
                 }
             }
         }
