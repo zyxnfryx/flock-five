@@ -20,11 +20,14 @@ namespace FlockFive
         float _comboUntil = -99f;
         bool _splash;
         float _splashMix;
+        bool _poker;
+        float _pokerMix;
         const int Rate = 22050;
         const float PlaceCap = 0.24f;
         const float PlaceMax = 0.28f;
         const float ComboCap = 0.04f;
         const float SplashCap = 0.42f;
+        const float PokerCap = 0.40f;
         const float RainCap = 0.17f;
         const float ComboWindow = 4f;
         const float ComboIn = 0.35f;
@@ -81,6 +84,11 @@ namespace FlockFive
             _splash = on;
         }
 
+        public void SetPoker(bool on)
+        {
+            _poker = on;
+        }
+
         void Build()
         {
             var dawn = LoadBed("Audio/Bed/dawn-garden", MakeDawn);
@@ -89,12 +97,13 @@ namespace FlockFive
             var combo = MakeCombo();
             var theme = LoadBed("Audio/Bed/splash-theme", MakeSplash);
             var rain = MakeRain();
-            if (_stems == null || _stems.Length < 6)
+            var poker = LoadBed("Audio/Bed/poker-casino", MakePoker);
+            if (_stems == null || _stems.Length < 7)
             {
                 var old = _stems;
-                _stems = new AudioSource[6];
+                _stems = new AudioSource[7];
                 if (old != null)
-                    for (int i = 0; i < old.Length && i < 6; i++)
+                    for (int i = 0; i < old.Length && i < 7; i++)
                         _stems[i] = old[i];
             }
             for (int i = 0; i < _stems.Length; i++)
@@ -105,6 +114,7 @@ namespace FlockFive
             SwapClip(3, combo);
             SwapClip(4, theme);
             SwapClip(5, rain);
+            SwapClip(6, poker);
         }
 
         void SwapClip(int i, AudioClip clip)
@@ -163,17 +173,22 @@ namespace FlockFive
 
             float cap = moon ? PlaceMax : PlaceCap;
             float duck = _duckSlew;
-            float splashT = _splash ? 1f : 0f;
+            float pokerT = _poker ? 1f : 0f;
+            float pokerRate = pokerT > _pokerMix ? 1.7f : 2.8f;
+            _pokerMix = Mathf.MoveTowards(_pokerMix, pokerT, Time.unscaledDeltaTime * pokerRate);
+            // Splash only when not on poker; poker overrides splash+garden.
+            float splashT = (_splash && !_poker) ? 1f : 0f;
             float splashRate = splashT > _splashMix ? 1.7f : 2.8f;
             _splashMix = Mathf.MoveTowards(_splashMix, splashT, Time.unscaledDeltaTime * splashRate);
-            float garden = 1f - _splashMix;
+            float garden = (1f - _splashMix) * (1f - _pokerMix);
             SetStem(0, day * cap * duck * garden);
             SetStem(1, dusk * cap * duck * garden);
             SetStem(2, night * cap * duck * garden);
             SetStem(3, ComboGain() * ComboCap * duck * garden);
-            SetStem(4, _splashMix * SplashCap * duck);
-            // Non-melodic place air. Not a fourth flute bed.
+            SetStem(4, _splashMix * SplashCap * duck * (1f - _pokerMix));
+            // Non-melodic place air. Mute with garden when poker is up.
             SetStem(5, GardenStorm.Wet * RainCap * duck * garden);
+            SetStem(6, _pokerMix * PokerCap * duck);
         }
 
         float ComboGain()
@@ -694,6 +709,81 @@ namespace FlockFive
 
             LoopSeam(bus, 0.58f);
             return PeakClip("splash-theme", bus, 0.62f);
+        }
+
+        static AudioClip MakePoker()
+        {
+            // Short quiet soft-FM / sine fallback so Bird Poker is never silent
+            // if poker-casino.wav is missing. C-major chip-leap tease only.
+            const float pokerBpm = 108f;
+            float beat = 60f / pokerBpm;
+            int n = Mathf.RoundToInt(4f * 4f * beat * Rate); // 4 bars
+            var bus = new float[n * 2];
+            // Soft C pedal
+            int frames = n;
+            float fC = Hz(36f);
+            float phase = 0f;
+            for (int i = 0; i < frames; i++)
+            {
+                float t = i / (float)Rate;
+                phase += 2f * Mathf.PI * fC / Rate;
+                float env = 0.22f;
+                float s = Mathf.Sin(phase) * env;
+                bus[i * 2] += s * 0.7f;
+                bus[i * 2 + 1] += s * 0.7f;
+            }
+            // Chip-leap tease: G4 E4 C5 (not splash A–B–A–F#, not garden D–E–F#–A)
+            float[] teaseMidi = { 67f, 64f, 72f, 67f };
+            float[] teaseDur = { 0.75f, 0.25f, 0.5f, 1.0f };
+            float[] teaseAt = { 0f, 0.75f, 1f, 2f };
+            for (int k = 0; k < teaseMidi.Length; k++)
+            {
+                int nn = Mathf.RoundToInt(teaseDur[k] * beat * Rate);
+                if (nn < 8) continue;
+                var mono = new float[nn];
+                float f0 = Hz(teaseMidi[k]);
+                float ph = 0f;
+                float a = OnePoleA(1600f);
+                float lp = 0f;
+                float dur = nn / (float)Rate;
+                for (int i = 0; i < nn; i++)
+                {
+                    float tt = i / (float)Rate;
+                    float env = tt < 0.01f ? tt / 0.01f : (tt > dur - 0.08f ? Mathf.Max(0f, (dur - tt) / 0.08f) * 0.55f : 0.55f);
+                    ph += 2f * Mathf.PI * f0 / Rate;
+                    // Soft 2-op-ish: carrier + quiet modulator
+                    float mod = Mathf.Sin(2f * ph) * 0.35f;
+                    float s = Mathf.Sin(ph + mod) * env;
+                    lp += a * (s - lp);
+                    mono[i] = lp;
+                }
+                Place(bus, mono, teaseAt[k] * beat, -0.06f, 0.34f);
+            }
+            // Repeat tease on bar 2
+            for (int k = 0; k < teaseMidi.Length; k++)
+            {
+                int nn = Mathf.RoundToInt(teaseDur[k] * beat * Rate);
+                if (nn < 8) continue;
+                var mono = new float[nn];
+                float f0 = Hz(teaseMidi[k]);
+                float ph = 0f;
+                float a = OnePoleA(1600f);
+                float lp = 0f;
+                float dur = nn / (float)Rate;
+                for (int i = 0; i < nn; i++)
+                {
+                    float tt = i / (float)Rate;
+                    float env = tt < 0.01f ? tt / 0.01f : (tt > dur - 0.08f ? Mathf.Max(0f, (dur - tt) / 0.08f) * 0.55f : 0.55f);
+                    ph += 2f * Mathf.PI * f0 / Rate;
+                    float mod = Mathf.Sin(2f * ph) * 0.35f;
+                    float s = Mathf.Sin(ph + mod) * env;
+                    lp += a * (s - lp);
+                    mono[i] = lp;
+                }
+                Place(bus, mono, (8f + teaseAt[k]) * beat, -0.04f, 0.40f);
+            }
+            LoopSeam(bus, 0.35f);
+            return PeakClip("poker-casino", bus, 0.42f);
         }
 
 
