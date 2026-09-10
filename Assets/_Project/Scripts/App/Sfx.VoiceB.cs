@@ -227,44 +227,95 @@ namespace FlockFive
         static AudioClip MakeThunder(int kind, int seed)
         {
             // 12-clip array: 0 close crack, 1 mid roll, 2 far growl — cycle families.
+            // Crack → body → roll: layered band-limited noise + sub rumble + brief mid snap.
+            // Original synth only (no sample rips). Soft LP on far; close keeps mid-band crack.
             int family = kind % 3;
-            float dur = family == 0 ? 0.95f + 0.22f * (kind % 4)
-                : family == 1 ? 1.65f + 0.35f * (kind % 4)
-                : 2.35f + 0.45f * (kind % 4);
+            float dur = family == 0 ? 1.05f + 0.25f * (kind % 4)
+                : family == 1 ? 1.85f + 0.40f * (kind % 4)
+                : 2.55f + 0.50f * (kind % 4);
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
-            float f0 = Mathf.Lerp(34f, 62f, (Hash(seed) + 1f) * 0.5f);
-            float f1 = f0 * Mathf.Lerp(1.22f, 1.55f, (Hash(seed + 2) + 1f) * 0.5f);
-            float knock = Mathf.Lerp(78f, 168f, (Hash(seed + 4) + 1f) * 0.5f);
-            float crackHi = Mathf.Lerp(220f, 480f, (Hash(seed + 6) + 1f) * 0.5f);
-            float lp = 0f;
-            float lp2 = 0f;
+
+            float subF = Mathf.Lerp(26f, 46f, (Hash(seed) + 1f) * 0.5f);
+            float bodyF = Mathf.Lerp(48f, 86f, (Hash(seed + 2) + 1f) * 0.5f);
+            float body2 = bodyF * Mathf.Lerp(1.32f, 1.68f, (Hash(seed + 4) + 1f) * 0.5f);
+            // Mid snap stays under ~420 Hz fundamental — no squeaky 1 kHz+ hash.
+            float snapF = Mathf.Lerp(170f, 400f, (Hash(seed + 6) + 1f) * 0.5f);
+            float knockF = Mathf.Lerp(88f, 155f, (Hash(seed + 8) + 1f) * 0.5f);
+            float flutterF = Mathf.Lerp(3.2f, 7.2f, (Hash(seed + 17) + 1f) * 0.5f);
+
+            float crackAmt = family == 0 ? 1.00f : family == 1 ? 0.40f : 0.14f;
+            float rollAmt = family == 0 ? 0.46f : family == 1 ? 0.88f : 1.00f;
+            float subAmt = family == 0 ? 0.52f : family == 1 ? 0.80f : 0.96f;
+
+            // Noise band cuts: close allows brief mid snap; far is dark growl.
+            float crackCut = family == 0 ? 680f : family == 1 ? 380f : 210f;
+            float bodyCut = family == 0 ? 260f : family == 1 ? 170f : 110f;
+            float rumbleCut = family == 0 ? 85f : family == 1 ? 65f : 48f;
+            float aCrack = 1f - Mathf.Exp(-2f * Mathf.PI * crackCut / Rate);
+            float aBodyN = 1f - Mathf.Exp(-2f * Mathf.PI * bodyCut / Rate);
+            float aRumble = 1f - Mathf.Exp(-2f * Mathf.PI * rumbleCut / Rate);
+            float aHp = 1f - Mathf.Exp(-2f * Mathf.PI * 48f / Rate);
+
+            float lpC = 0f, lpB = 0f, lpR = 0f, hp = 0f;
             int h = seed | 1;
-            float crackAmt = family == 0 ? 0.72f : family == 1 ? 0.38f : 0.18f;
-            float rollAmt = family == 0 ? 0.42f : family == 1 ? 0.78f : 0.92f;
+
+            float tCrack = 0.008f + 0.010f * ((Hash(seed + 11) + 1f) * 0.5f);
+            float tEcho = 0.052f + 0.048f * ((Hash(seed + 13) + 1f) * 0.5f);
+            float tEcho2 = 0.115f + 0.085f * ((Hash(seed + 15) + 1f) * 0.5f);
+
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
                 float u = t / dur;
-                float roll = Mathf.Sin(u * Mathf.PI);
+
+                float crackEnv = Mathf.Exp(-((t - tCrack) * (t - tCrack)) / 0.00020f);
+                float echoEnv = 0.58f * Mathf.Exp(-((t - tEcho) * (t - tEcho)) / 0.00082f);
+                float echo2Env = 0.30f * Mathf.Exp(-((t - tEcho2) * (t - tEcho2)) / 0.0026f);
+                if (family == 2) { echoEnv *= 0.32f; echo2Env *= 0.18f; }
+                else if (family == 1) { echo2Env *= 0.50f; }
+                float snapBurst = crackEnv + echoEnv + echo2Env * (family == 0 ? 1f : 0.42f);
+
+                // Body rises just after the crack, then yields to the roll.
+                float bodyGate = 1f - Mathf.Exp(-t * (family == 0 ? 30f : 18f));
+                float bodyDecay = Mathf.Exp(-u * (family == 2 ? 1.00f : family == 1 ? 1.50f : 2.35f));
+                float bodyShape = Mathf.Sin(Mathf.PI * Mathf.Clamp01(u * (family == 2 ? 0.82f : 1.05f)));
+                float bodyEnv = bodyGate * bodyDecay * bodyShape;
+
+                float roll = Mathf.Sin(Mathf.PI * Mathf.Clamp01(u * 0.92f + 0.04f));
                 roll *= roll;
-                roll *= Mathf.Exp(-u * (family == 2 ? 0.72f : 1.15f));
-                float hit = Mathf.Exp(-((t - 0.012f) * (t - 0.012f)) / 0.00038f);
-                float hit2 = 0.62f * Mathf.Exp(-((t - 0.078f) * (t - 0.078f)) / 0.00095f);
-                float hit3 = 0.35f * Mathf.Exp(-((t - 0.16f) * (t - 0.16f)) / 0.0024f);
-                float body = Mathf.Sin(2f * Mathf.PI * f0 * t * (1f - u * 0.22f));
-                body += 0.48f * Mathf.Sin(2f * Mathf.PI * f1 * t * (1f - u * 0.18f));
-                float tap = Mathf.Sin(2f * Mathf.PI * knock * t) * (hit + hit2 + hit3 * (family == 0 ? 1f : 0.4f));
-                float zap = Mathf.Sin(2f * Mathf.PI * crackHi * t) * hit * (family == 0 ? 1f : 0.35f);
+                roll *= Mathf.Exp(-u * (family == 2 ? 0.52f : family == 1 ? 0.92f : 1.50f));
+
                 h = (h * 1103515245 + 12345) & 0x7fffffff;
                 float nz = (h / 1073741824f) - 1f;
-                lp += 0.055f * (nz - lp);
-                lp2 += 0.018f * (nz - lp2);
-                float rumble = body * 0.70f * roll * rollAmt;
-                float noise = (lp * 0.14f + lp2 * 0.08f) * roll;
-                data[i] = (rumble + tap * crackAmt * 0.42f + zap * crackAmt * 0.22f + noise) * 0.50f;
+                lpC += aCrack * (nz - lpC);
+                lpB += aBodyN * (nz - lpB);
+                lpR += aRumble * (nz - lpR);
+                hp += aHp * (lpC - hp);
+                float crackNoise = lpC - hp;
+
+                float subPitch = subF * (1f - u * 0.30f);
+                float sub = Mathf.Sin(2f * Mathf.PI * subPitch * t);
+                sub = Mathf.Clamp(sub * 1.32f, -1f, 1f) * 0.88f;
+
+                float body = Mathf.Sin(2f * Mathf.PI * bodyF * t * (1f - u * 0.22f));
+                body += 0.44f * Mathf.Sin(2f * Mathf.PI * body2 * t * (1f - u * 0.17f));
+
+                float snap = Mathf.Sin(2f * Mathf.PI * snapF * t) * crackEnv;
+                snap += 0.58f * Mathf.Sin(2f * Mathf.PI * knockF * t) * (crackEnv + 0.42f * echoEnv);
+                snap = Mathf.Clamp(snap * 1.18f, -1f, 1f);
+
+                float flutter = 0.70f + 0.30f * Mathf.Sin(2f * Mathf.PI * flutterF * t);
+
+                float crackLayer = (snap * 0.52f + crackNoise * 0.95f) * snapBurst * crackAmt;
+                float bodyLayer = (body * 0.58f + lpB * 0.48f) * bodyEnv * rollAmt;
+                float rumbleLayer = (sub * 0.64f + lpR * 0.58f * flutter) * roll * subAmt;
+
+                data[i] = (crackLayer * 0.74f + bodyLayer * 0.86f + rumbleLayer * 0.96f) * 0.46f;
             }
-            float soft = family == 2 ? 0.08f : 0.12f;
+
+            // Soft LP: far growls darker; close keeps a touch of mid snap (still Mid, never Lead).
+            float soft = family == 2 ? 0.052f : family == 1 ? 0.092f : 0.135f;
             return ClipLp("thunder" + seed, data, soft);
         }
 
