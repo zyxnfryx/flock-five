@@ -260,7 +260,6 @@ namespace FlockFive
         }
 
         public static Rank Evaluate(Card[] hand, out bool naturalFive)
-        public static Rank Evaluate(Card[] hand, out bool naturalFive)
         {
             naturalFive = false;
             int wilds = 0;
