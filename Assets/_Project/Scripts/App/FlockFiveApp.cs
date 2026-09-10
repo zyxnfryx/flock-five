@@ -962,10 +962,21 @@ namespace FlockFive
             if (_gift != GiftFace.None) DrawGiftOffer(s);
         }
 
+        // Original splash hive size — pig matches this, then both bump together.
+        static float SplashRailAnchor() =>
+            Mathf.Clamp(Screen.width * 0.11f, 52f, 108f);
+
+        static float SplashRailSize() => SplashRailAnchor() * 1.22f;
+
+        static Rect SplashHiveRect() => HomeRailRect(true, SplashRailSize());
+
         static Rect PiggyRect(float s)
         {
-            float size = Mathf.Clamp(Screen.width * 0.38f, 140f * s, 280f * s);
-            return new Rect((Screen.width - size) * 0.5f, Screen.height * 0.22f, size, size);
+            // Top-right, stacked above the hive; same bumped size as the hive.
+            float size = SplashRailSize();
+            var hive = SplashHiveRect();
+            float gap = Mathf.Max(8f, size * 0.10f);
+            return new Rect(hive.x, hive.y - size - gap, size, size);
         }
 
         void DrawStreakRewards(float s)
@@ -973,20 +984,27 @@ namespace FlockFive
             var pig = PiggyRect(s);
             var spr = SpriteCatalog.Piggy;
             if (spr != null && spr.texture != null)
+            {
+                GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.30f);
+                GUI.DrawTexture(new Rect(pig.x + 3f, pig.y + 5f, pig.width, pig.height), spr.texture, ScaleMode.ScaleToFit, true);
+                GUI.color = Color.white;
                 GUI.DrawTexture(pig, spr.texture, ScaleMode.ScaleToFit, true);
+            }
             var st = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
+                alignment = TextAnchor.MiddleRight,
                 wordWrap = false
             };
+            // Streak + coins sit left of the pig/hive rail so the icons stay clean.
+            float labelW = Mathf.Max(120f, pig.x - 28f);
+            var streakR = new Rect(16f, pig.y + pig.height * 0.08f, labelW, pig.height * 0.42f);
             string streak = "STREAK  ×" + Purse.Streak;
-            var streakR = new Rect(20f, pig.yMax - 8f * s, Screen.width - 40f, 40f * s);
-            st.fontSize = FitFont(st, streak, streakR.width * 0.8f, streakR.height, 18, 36);
+            st.fontSize = FitFont(st, streak, streakR.width * 0.95f, streakR.height, 16, 32);
             StampOutlined(streakR, streak, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
             string coins = Purse.Coins.ToString();
-            var coinR = new Rect(20f, streakR.yMax - 4f, Screen.width - 40f, 36f * s);
-            st.fontSize = FitFont(st, coins, coinR.width * 0.5f, coinR.height, 16, 32);
+            var coinR = new Rect(16f, pig.y + pig.height * 0.50f, labelW, pig.height * 0.42f);
+            st.fontSize = FitFont(st, coins, coinR.width * 0.7f, coinR.height, 16, 34);
             StampOutlined(coinR, coins, st, new Color(0.42f, 0.26f, 0.08f), 2, 1);
             DrawCoinFly(pig);
         }
@@ -1138,8 +1156,8 @@ namespace FlockFive
             int next = LevelData.NextPlay;
             var peek = LevelData.Peek(next);
 
-            float hiveSize = Mathf.Clamp(Screen.width * 0.11f, 52f, 108f);
-            var hiveR = HomeRailRect(true, hiveSize);
+            // Hive stays on the right rail; pig stacks above it (see PiggyRect).
+            var hiveR = SplashHiveRect();
             if (HitPad(hiveR, out _))
                 _home = HomeFace.Hive;
             var hiveSpr = SpriteCatalog.Hive;
