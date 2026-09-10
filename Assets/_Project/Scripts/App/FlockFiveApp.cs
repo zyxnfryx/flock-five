@@ -1554,30 +1554,10 @@ namespace FlockFive
 
         void DrawGiftSign(float s)
         {
-            if (_board == null || _gift != GiftFace.None || _frozen) return;
-            int i = WorldBuilder.GiftIndex;
-            if (!GiftLocked(i)) return;
-            var v = _garden.Branches[i];
-            if (v == null || v.Sign == null || _garden.Cam == null) return;
-            var face = v.Sign.position + v.Sign.rotation * new Vector3(-0.72f, 0.04f, 0f);
-            var sp = _garden.Cam.WorldToScreenPoint(face);
-            if (sp.z < 0f) return;
-            float w = 198f * s;
-            float h = 44f * s;
-            // Nudge toward the plank face so cream stitch sits on the wood, not the arrow tip.
-            var r = new Rect(sp.x - w * 0.58f, Screen.height - sp.y - h * 0.52f, w, h);
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
-            st.fontSize = FitFont(st, "WATCH AD", r.width * 0.94f, r.height * 0.92f, 16, 34);
-            // Cream sewing on dark plank — thick white stitch, soft black bite.
-            StampOutlined(r, "WATCH AD", st, new Color(1f, 0.94f, 0.76f), 3, 2);
+            // Film+play is painted into fx_ad_sign art — no GUI sticker overlay.
         }
 
-        void DrawGiftOffer(float s)
+        void DrawGiftOffer        void DrawGiftOffer(float s)
         {
             GUI.color = new Color(0.08f, 0.06f, 0.04f, _gift == GiftFace.Card ? 0.62f : 0.78f);
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
