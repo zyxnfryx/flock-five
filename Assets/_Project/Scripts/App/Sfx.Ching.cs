@@ -196,31 +196,34 @@ namespace FlockFive
 
         static AudioClip MakeCoin(int kind)
         {
+            // Piggy collect: bright brass plink + soft ceramic seat. Clear attack, short sweet decay.
             int k = ((kind % 12) + 12) % 12;
-            float[] durs = { 0.16f, 0.17f, 0.15f, 0.18f, 0.16f, 0.19f, 0.17f, 0.15f, 0.18f, 0.16f, 0.17f, 0.19f };
-            float[] peaks = { 0.52f, 0.48f, 0.55f, 0.50f, 0.46f, 0.54f, 0.49f, 0.53f, 0.47f, 0.51f, 0.56f, 0.50f };
-            float[] taps = { 1174f, 1318f, 1480f, 1568f, 1760f, 1318f, 1174f, 1480f, 1661f, 1396f, 1568f, 1760f };
-            float[] woods = { 220f, 293.66f, 246.94f, 329.63f, 220f, 277.18f, 293.66f, 246.94f, 329.63f, 220f, 293.66f, 246.94f };
+            float[] durs = { 0.19f, 0.20f, 0.18f, 0.21f, 0.19f, 0.22f, 0.20f, 0.18f, 0.21f, 0.19f, 0.20f, 0.22f };
+            float[] peaks = { 0.58f, 0.54f, 0.60f, 0.56f, 0.52f, 0.59f, 0.55f, 0.58f, 0.53f, 0.57f, 0.61f, 0.56f };
+            float[] taps = { 1244f, 1396f, 1568f, 1661f, 1864f, 1396f, 1244f, 1568f, 1760f, 1480f, 1661f, 1864f };
+            float[] seats = { 392f, 440f, 349.23f, 523.25f, 392f, 466.16f, 440f, 349.23f, 523.25f, 392f, 440f, 349.23f };
             float dur = durs[k];
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
             int seed = 22021 + k * 911;
             float tap = taps[k];
-            float wood = woods[k];
+            float seat = seats[k];
             float lp = 0f;
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
-                float e = Mathf.Exp(-t / 0.042f) * Mathf.Clamp01(t / 0.0016f);
+                float atk = Mathf.Clamp01(t / 0.0011f);
+                float e = Mathf.Exp(-t / 0.055f) * atk;
                 float ding = Mathf.Sin(2f * Mathf.PI * tap * t);
-                ding += 0.32f * Mathf.Sin(2f * Mathf.PI * tap * 1.83f * t) * Mathf.Exp(-t / 0.028f);
-                ding += 0.12f * Mathf.Sin(2f * Mathf.PI * tap * 2.41f * t) * Mathf.Exp(-t / 0.018f);
-                float body = Mathf.Sin(2f * Mathf.PI * wood * t * (1f - 0.08f * t)) * Mathf.Exp(-t / 0.055f);
-                float nz = Soft(ref lp, seed, i, 0.22f) * Mathf.Exp(-t / 0.008f);
-                data[i] = (ding * 0.62f + body * 0.28f + nz * 0.18f) * e;
+                ding += 0.38f * Mathf.Sin(2f * Mathf.PI * tap * 2.01f * t) * Mathf.Exp(-t / 0.032f);
+                ding += 0.16f * Mathf.Sin(2f * Mathf.PI * tap * 2.74f * t) * Mathf.Exp(-t / 0.016f);
+                ding += 0.08f * Mathf.Sin(2f * Mathf.PI * tap * 3.35f * t) * Mathf.Exp(-t / 0.010f);
+                float body = Mathf.Sin(2f * Mathf.PI * seat * t * (1f - 0.05f * t)) * Mathf.Exp(-t / 0.070f);
+                float nz = Soft(ref lp, seed, i, 0.16f) * Mathf.Exp(-t / 0.0065f);
+                data[i] = (ding * 0.72f + body * 0.18f + nz * 0.12f) * e;
             }
-            float ahp = 1f - Mathf.Exp(-2f * Mathf.PI * 160f / Rate);
-            float alp = 1f - Mathf.Exp(-2f * Mathf.PI * 2100f / Rate);
+            float ahp = 1f - Mathf.Exp(-2f * Mathf.PI * 220f / Rate);
+            float alp = 1f - Mathf.Exp(-2f * Mathf.PI * 3200f / Rate);
             float hp = 0f, lo = 0f;
             for (int i = 0; i < n; i++)
             {

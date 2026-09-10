@@ -7,7 +7,7 @@ namespace FlockFive
         const string PrefCoins = "flockfive.coins";
         const string PrefStreak = "flockfive.streak";
         const string PrefStage = "flockfive.instage";
-        const int Pay = 8;
+        const int Pay = 16;
 
         public static int Coins { get; private set; }
         public static int Streak { get; private set; }

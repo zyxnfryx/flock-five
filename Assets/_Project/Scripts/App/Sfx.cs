@@ -297,8 +297,8 @@ namespace FlockFive
             Ensure();
             if (_clinks == null || _clinks.Length == 0) return;
             int i = Next(_clinks.Length, ref _lastClink);
-            Shot(_clinks[i], Random.Range(0.97f, 1.03f), 0.72f, MixLayer.Lead, MixDesk.DuckChirp);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.22f, MixDesk.DuckChirp);
+            Shot(_clinks[i], Random.Range(0.98f, 1.04f), 0.78f, MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.18f, MixDesk.DuckChirp);
         }
 
         public static void ScorePop(int i)
