@@ -99,8 +99,9 @@ namespace FlockFive
 
             // Sit farther off the spare perch, arrow still pointing at the limb.
             var signGo = Sprite("GiftSign", SpriteCatalog.AdSign, view.transform.position, 1f, 11, view.transform);
-            signGo.transform.localPosition = new Vector3(-3.95f, 0.92f, 0f);
-            signGo.transform.localScale = new Vector3(0.38f, 0.38f, 1f);
+            // Keep the full plank on-screen (was cropping the left edge).
+            signGo.transform.localPosition = new Vector3(-2.55f, 0.92f, 0f);
+            signGo.transform.localScale = new Vector3(0.36f, 0.36f, 1f);
             view.Sign = signGo.transform;
             var signCol = signGo.AddComponent<BoxCollider2D>();
             signCol.size = new Vector2(5.6f, 2.5f);

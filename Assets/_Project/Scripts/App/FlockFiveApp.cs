@@ -908,7 +908,7 @@ namespace FlockFive
             bot = 88f * scale + safeBot;
             float y = Screen.height - bot - 12f * scale;
             float h = 64f * scale;
-            float x = Mathf.Max(28f * scale, safe.xMin + 20f * scale);
+            float x = Mathf.Max(40f * scale, safe.xMin + 32f * scale);
             restart = new Rect(x, y, h, h);
             float hiveW = 170f * scale;
             hive = new Rect(Mathf.Min(Screen.width - hiveW - 16f, safe.xMax - hiveW - 8f), y, hiveW, h);
@@ -1131,7 +1131,7 @@ namespace FlockFive
 
         void DrawHudPurse(float s)
         {
-            // In-garden: no piggy — just $ balance + coin, parked right of the restart arrow.
+            // In-garden: $ only — no piggy, no coin sprite.
             HudLayout(out _, out _, out _, out var restart, out _);
             float size = restart.height;
             var st = new GUIStyle(GUI.skin.label)
@@ -1141,18 +1141,9 @@ namespace FlockFive
                 wordWrap = false
             };
             string coins = "$" + Purse.Coins;
-            float icon = 28f * s;
-            float gap = 6f * s;
             st.fontSize = Mathf.RoundToInt(26 * s);
             var textR = new Rect(restart.xMax + 10f * s, restart.y, 160f * s, size);
             StampOutlined(textR, coins, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
-            float tw = st.CalcSize(new GUIContent(coins)).x;
-            var coinSpr = SpriteCatalog.Coin;
-            if (coinSpr != null && coinSpr.texture != null)
-            {
-                var ir = new Rect(textR.x + tw + gap, restart.y + (size - icon) * 0.5f, icon, icon);
-                GUI.DrawTexture(ir, coinSpr.texture, ScaleMode.ScaleToFit, true);
-            }
         }
 
         void ArmCoinFly()
