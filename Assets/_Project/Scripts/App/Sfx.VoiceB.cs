@@ -226,32 +226,46 @@ namespace FlockFive
 
         static AudioClip MakeThunder(int kind, int seed)
         {
-            float dur = 1.85f + 0.55f * kind;
+            // 12-clip array: 0 close crack, 1 mid roll, 2 far growl — cycle families.
+            int family = kind % 3;
+            float dur = family == 0 ? 0.95f + 0.22f * (kind % 4)
+                : family == 1 ? 1.65f + 0.35f * (kind % 4)
+                : 2.35f + 0.45f * (kind % 4);
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
-            float f0 = Mathf.Lerp(38f, 56f, (Hash(seed) + 1f) * 0.5f);
-            float f1 = f0 * 1.38f;
-            float knock = Mathf.Lerp(92f, 128f, (Hash(seed + 4) + 1f) * 0.5f);
+            float f0 = Mathf.Lerp(34f, 62f, (Hash(seed) + 1f) * 0.5f);
+            float f1 = f0 * Mathf.Lerp(1.22f, 1.55f, (Hash(seed + 2) + 1f) * 0.5f);
+            float knock = Mathf.Lerp(78f, 168f, (Hash(seed + 4) + 1f) * 0.5f);
+            float crackHi = Mathf.Lerp(220f, 480f, (Hash(seed + 6) + 1f) * 0.5f);
             float lp = 0f;
+            float lp2 = 0f;
             int h = seed | 1;
+            float crackAmt = family == 0 ? 0.72f : family == 1 ? 0.38f : 0.18f;
+            float rollAmt = family == 0 ? 0.42f : family == 1 ? 0.78f : 0.92f;
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
                 float u = t / dur;
                 float roll = Mathf.Sin(u * Mathf.PI);
                 roll *= roll;
-                roll *= Mathf.Exp(-u * 1.05f);
-                float hit = Mathf.Exp(-((t - 0.018f) * (t - 0.018f)) / 0.00055f);
-                float hit2 = 0.55f * Mathf.Exp(-((t - 0.095f) * (t - 0.095f)) / 0.0011f);
-                float body = Mathf.Sin(2f * Mathf.PI * f0 * t * (1f - u * 0.2f));
-                body += 0.42f * Mathf.Sin(2f * Mathf.PI * f1 * t * (1f - u * 0.16f));
-                float tap = Mathf.Sin(2f * Mathf.PI * knock * t) * (hit + hit2);
+                roll *= Mathf.Exp(-u * (family == 2 ? 0.72f : 1.15f));
+                float hit = Mathf.Exp(-((t - 0.012f) * (t - 0.012f)) / 0.00038f);
+                float hit2 = 0.62f * Mathf.Exp(-((t - 0.078f) * (t - 0.078f)) / 0.00095f);
+                float hit3 = 0.35f * Mathf.Exp(-((t - 0.16f) * (t - 0.16f)) / 0.0024f);
+                float body = Mathf.Sin(2f * Mathf.PI * f0 * t * (1f - u * 0.22f));
+                body += 0.48f * Mathf.Sin(2f * Mathf.PI * f1 * t * (1f - u * 0.18f));
+                float tap = Mathf.Sin(2f * Mathf.PI * knock * t) * (hit + hit2 + hit3 * (family == 0 ? 1f : 0.4f));
+                float zap = Mathf.Sin(2f * Mathf.PI * crackHi * t) * hit * (family == 0 ? 1f : 0.35f);
                 h = (h * 1103515245 + 12345) & 0x7fffffff;
                 float nz = (h / 1073741824f) - 1f;
-                lp += 0.05f * (nz - lp);
-                data[i] = (body * 0.72f * roll + tap * 0.38f + lp * 0.10f * roll) * 0.48f;
+                lp += 0.055f * (nz - lp);
+                lp2 += 0.018f * (nz - lp2);
+                float rumble = body * 0.70f * roll * rollAmt;
+                float noise = (lp * 0.14f + lp2 * 0.08f) * roll;
+                data[i] = (rumble + tap * crackAmt * 0.42f + zap * crackAmt * 0.22f + noise) * 0.50f;
             }
-            return ClipLp("thunder" + seed, data, 0.11f);
+            float soft = family == 2 ? 0.08f : 0.12f;
+            return ClipLp("thunder" + seed, data, soft);
         }
 
         static AudioClip Clip(string name, float[] data) => ClipLp(name, data, 0.2f);

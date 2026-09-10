@@ -25,6 +25,7 @@ namespace FlockFive
         static int _lastSnooze = -1;
         static int _lastHum = -1;
         static int _lastScatter = -1;
+        static int _lastThunder = -1;
         static int _lastBreak = -1;
         static int _lastLift = -1;
         static int _lastChing = -1;
@@ -91,7 +92,7 @@ namespace FlockFive
             _booms = new AudioClip[5];
             for (int i = 0; i < _booms.Length; i++)
                 _booms[i] = MakeBoom(3400 + i * 71);
-            _thunders = new AudioClip[4];
+            _thunders = new AudioClip[12];
             for (int i = 0; i < _thunders.Length; i++)
                 _thunders[i] = MakeThunder(i, 2800 + i * 67);
             var gated = Resources.Load<AudioClip>("Audio/Gate/gate_go");
@@ -367,14 +368,18 @@ namespace FlockFive
             catch (System.Exception) { }
         }
 
-        // Distant garden rumble. Mid, never Lead. Skips if a hop is speaking.
+        // Distant garden rumble + crack variety. Mid, never Lead. Skips if a hop is speaking.
         public static bool Thunder()
         {
             Ensure();
             if (MixDesk.Live != null && !MixDesk.Live.AllowMid) return false;
             if (_thunders == null || _thunders.Length == 0) return false;
-            int i = Random.Range(0, _thunders.Length);
-            Shot(_thunders[i], Random.Range(0.92f, 1.04f), Random.Range(0.48f, 0.64f), MixLayer.Mid);
+            int i = Next(_thunders.Length, ref _lastThunder);
+            // Far rolls quieter; close cracks a touch hotter — still under chirps.
+            float near = (i % 3 == 0) ? 1f : 0f;
+            float vol = Mathf.Lerp(0.42f, 0.72f, near * 0.55f + Random.value * 0.45f);
+            float pitch = Random.Range(0.88f, 1.08f);
+            Shot(_thunders[i], pitch, vol, MixLayer.Mid);
             return true;
         }
 

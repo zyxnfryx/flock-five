@@ -904,10 +904,11 @@ namespace FlockFive
             float safeTop = Screen.height - safe.yMax;
             float safeBot = safe.yMin;
             top = 72f * scale + safeTop;
-            bot = 72f * scale + safeBot;
-            float y = Screen.height - bot - 8f;
+            // Extra bottom inset so the wood restart arrow clears home-indicator / clipped edge.
+            bot = 88f * scale + safeBot;
+            float y = Screen.height - bot - 12f * scale;
             float h = 64f * scale;
-            float x = Mathf.Max(16f, safe.xMin + 8f);
+            float x = Mathf.Max(28f * scale, safe.xMin + 20f * scale);
             restart = new Rect(x, y, h, h);
             float hiveW = 170f * scale;
             hive = new Rect(Mathf.Min(Screen.width - hiveW - 16f, safe.xMax - hiveW - 8f), y, hiveW, h);
@@ -1104,12 +1105,9 @@ namespace FlockFive
 
         void DrawHudPurse(float s)
         {
-            var safe = Screen.safeArea;
-            float size = 52f * s;
-            var pig = new Rect(Mathf.Max(16f, safe.xMin + 8f) + 72f * s, Screen.height - 72f * s - Mathf.Max(8f, Screen.safeArea.yMin) - 8f, size, size);
-            var spr = SpriteCatalog.Piggy;
-            if (spr != null && spr.texture != null)
-                GUI.DrawTexture(pig, spr.texture, ScaleMode.ScaleToFit, true);
+            // In-garden: no piggy — just $ balance + coin, parked right of the restart arrow.
+            HudLayout(out _, out _, out _, out var restart, out _);
+            float size = restart.height;
             var st = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
@@ -1120,13 +1118,13 @@ namespace FlockFive
             float icon = 28f * s;
             float gap = 6f * s;
             st.fontSize = Mathf.RoundToInt(26 * s);
-            var textR = new Rect(pig.xMax + 6f, pig.y, 160f * s, size);
+            var textR = new Rect(restart.xMax + 10f * s, restart.y, 160f * s, size);
             StampOutlined(textR, coins, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
             float tw = st.CalcSize(new GUIContent(coins)).x;
             var coinSpr = SpriteCatalog.Coin;
             if (coinSpr != null && coinSpr.texture != null)
             {
-                var ir = new Rect(textR.x + tw + gap, pig.y + (size - icon) * 0.5f, icon, icon);
+                var ir = new Rect(textR.x + tw + gap, restart.y + (size - icon) * 0.5f, icon, icon);
                 GUI.DrawTexture(ir, coinSpr.texture, ScaleMode.ScaleToFit, true);
             }
         }

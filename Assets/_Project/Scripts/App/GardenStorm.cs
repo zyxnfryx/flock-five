@@ -45,7 +45,7 @@ namespace FlockFive
             }
             Wet = 0f;
             _wet = 0f;
-            _nextBoom = 2.8f;
+            _nextBoom = 1.1f;
             _flashT = 99f;
             _flashPower = 0f;
         }
@@ -146,16 +146,24 @@ namespace FlockFive
                 _flashT += Time.unscaledDeltaTime;
             }
 
-            if (_wet > 0.42f)
+            if (_wet > 0.28f)
             {
                 _nextBoom -= Time.unscaledDeltaTime;
                 if (_nextBoom <= 0f)
                 {
-                    float power = Random.value < 0.34f
-                        ? Random.Range(0.86f, 1f)
-                        : Random.Range(0.52f, 0.80f);
-                    _nextBoom = power > 0.8f ? Random.Range(7.5f, 13f) : Random.Range(4.2f, 9.5f);
+                    float power = Random.value < 0.28f
+                        ? Random.Range(0.88f, 1f)
+                        : Random.value < 0.45f
+                            ? Random.Range(0.62f, 0.84f)
+                            : Random.Range(0.40f, 0.60f);
+                    // Storms talk more — close cracks often, big rolls less often.
+                    _nextBoom = power > 0.85f ? Random.Range(5.5f, 10f)
+                        : power > 0.6f ? Random.Range(2.8f, 6.2f)
+                        : Random.Range(1.6f, 4.0f);
                     Boom(power);
+                    // Occasional double-strike after a beat.
+                    if (power > 0.7f && Random.value < 0.38f)
+                        _nextBoom = Mathf.Min(_nextBoom, Random.Range(0.35f, 0.85f));
                 }
             }
         }
