@@ -36,9 +36,20 @@ namespace FlockFive
 
         public static void Warm() => Ensure();
 
+        static bool VoicesAlive()
+        {
+            if (_voices == null || _host == null) return false;
+            for (int i = 0; i < _voices.Length; i++)
+                if (_voices[i] == null) return false;
+            return true;
+        }
+
         static void Ensure()
         {
-            if (_voices != null) return;
+            // Domain-reload-off: static array can outlive destroyed AudioSources.
+            if (VoicesAlive()) return;
+            _voices = null;
+            _host = null;
             var go = new GameObject("Sfx");
             Object.DontDestroyOnLoad(go);
             _host = go.AddComponent<SfxHost>();

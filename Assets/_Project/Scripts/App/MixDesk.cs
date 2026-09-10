@@ -97,6 +97,8 @@ namespace FlockFive
                     for (int i = 0; i < old.Length && i < 6; i++)
                         _stems[i] = old[i];
             }
+            for (int i = 0; i < _stems.Length; i++)
+                if (_stems[i] == null) _stems[i] = null;
             SwapClip(0, dawn);
             SwapClip(1, mid);
             SwapClip(2, last);
@@ -108,6 +110,7 @@ namespace FlockFive
         void SwapClip(int i, AudioClip clip)
         {
             var a = _stems[i];
+            // Destroyed Unity objects compare == null; clear the slot and remake.
             if (a == null)
             {
                 _stems[i] = MakeLoop(clip);
@@ -183,7 +186,13 @@ namespace FlockFive
 
         void SetStem(int i, float vol)
         {
-            if (_stems[i] != null) _stems[i].volume = vol;
+            var a = _stems[i];
+            if (a == null)
+            {
+                _stems[i] = null;
+                return;
+            }
+            a.volume = vol;
         }
 
         static int LoopN() => Mathf.RoundToInt(NBars * 4f * Beat * Rate);
