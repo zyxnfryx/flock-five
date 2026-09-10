@@ -2,15 +2,15 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Gameplay weather. First storm after 90s, 60s of rain, 120s clear, repeat.
+    // Gameplay weather. First storm after 70s, 75s of denser rain, 90s clear, repeat.
     // Rain is place air on MixDesk. Thunder is a distant Mid rumble, never Lead.
     public sealed class GardenStorm : MonoBehaviour
     {
-        public const float FirstWait = 90f;
-        public const float StormLen = 60f;
-        public const float ClearLen = 120f;
-        const float Fade = 2.8f;
-        const int Drops = 72;
+        public const float FirstWait = 70f;
+        public const float StormLen = 75f;
+        public const float ClearLen = 90f;
+        const float Fade = 2.1f;
+        const int Drops = 118;
 
         public static GardenStorm Instance { get; private set; }
         public static float Wet { get; private set; }
@@ -45,7 +45,7 @@ namespace FlockFive
             }
             Wet = 0f;
             _wet = 0f;
-            _nextBoom = 4.5f;
+            _nextBoom = 2.8f;
             _flashT = 99f;
             _flashPower = 0f;
         }
@@ -63,7 +63,7 @@ namespace FlockFive
             var veilGo = WorldBuilder.Sprite("StormVeil", SpriteCatalog.Glow, new Vector3(0f, 0.2f, 6.8f), 1f, 16, transform);
             veilGo.transform.localScale = new Vector3(24f, 30f, 1f);
             _veil = veilGo.GetComponent<SpriteRenderer>();
-            _veil.color = new Color(0.10f, 0.12f, 0.16f, 0f);
+            _veil.color = new Color(0.07f, 0.09f, 0.13f, 0f);
 
             var flashGo = WorldBuilder.Sprite("Flash", SpriteCatalog.Glow, new Vector3(0f, 1.2f, 6.7f), 1f, 17, transform);
             flashGo.transform.localScale = new Vector3(22f, 28f, 1f);
@@ -79,10 +79,10 @@ namespace FlockFive
             {
                 float x = Mathf.Lerp(-5.4f, 5.4f, (float)rng.NextDouble());
                 float y = Mathf.Lerp(-8.4f, 9.2f, (float)rng.NextDouble());
-                _len[i] = Mathf.Lerp(0.55f, 1.15f, (float)rng.NextDouble());
-                _spd[i] = Mathf.Lerp(10.5f, 18.5f, (float)rng.NextDouble());
+                _len[i] = Mathf.Lerp(0.70f, 1.45f, (float)rng.NextDouble());
+                _spd[i] = Mathf.Lerp(13.5f, 23.5f, (float)rng.NextDouble());
                 var go = WorldBuilder.Sprite("Drop" + i, SpriteCatalog.RainStreak, new Vector3(x, y, 0.4f), 1f, 15, transform);
-                go.transform.localScale = new Vector3(0.72f, _len[i], 1f);
+                go.transform.localScale = new Vector3(0.82f, _len[i], 1f);
                 go.transform.localRotation = Quaternion.Euler(0f, 0f, 11f);
                 _drop[i] = go.transform;
                 _dropSr[i] = go.GetComponent<SpriteRenderer>();
@@ -106,7 +106,7 @@ namespace FlockFive
             Wet = _wet;
 
             if (_veil != null)
-                _veil.color = new Color(0.08f, 0.10f, 0.14f, 0.46f * _wet);
+                _veil.color = new Color(0.06f, 0.08f, 0.12f, 0.62f * _wet);
 
             if (_drop != null)
             {
@@ -115,8 +115,8 @@ namespace FlockFive
                 {
                     if (_drop[i] == null) continue;
                     var p = _drop[i].position;
-                    p.y -= _spd[i] * dt * Mathf.Lerp(0.15f, 1f, _wet);
-                    p.x -= 1.35f * dt * _wet;
+                    p.y -= _spd[i] * dt * Mathf.Lerp(0.22f, 1f, _wet);
+                    p.x -= 1.85f * dt * _wet;
                     if (p.y < -8.6f)
                     {
                         p.y = 9.3f;
@@ -125,7 +125,7 @@ namespace FlockFive
                     _drop[i].position = p;
                     if (_dropSr[i] != null)
                     {
-                        float a = _wet * Mathf.Lerp(0.28f, 0.62f, (i % 7) / 6f);
+                        float a = _wet * Mathf.Lerp(0.38f, 0.78f, (i % 7) / 6f);
                         _dropSr[i].color = new Color(0.78f, 0.86f, 0.94f, a);
                     }
                 }
@@ -146,15 +146,15 @@ namespace FlockFive
                 _flashT += Time.unscaledDeltaTime;
             }
 
-            if (_wet > 0.55f)
+            if (_wet > 0.42f)
             {
                 _nextBoom -= Time.unscaledDeltaTime;
                 if (_nextBoom <= 0f)
                 {
-                    float power = Random.value < 0.22f
-                        ? Random.Range(0.82f, 1f)
-                        : Random.Range(0.46f, 0.74f);
-                    _nextBoom = power > 0.8f ? Random.Range(11f, 18f) : Random.Range(6.5f, 13.5f);
+                    float power = Random.value < 0.34f
+                        ? Random.Range(0.86f, 1f)
+                        : Random.Range(0.52f, 0.80f);
+                    _nextBoom = power > 0.8f ? Random.Range(7.5f, 13f) : Random.Range(4.2f, 9.5f);
                     Boom(power);
                 }
             }
