@@ -1574,28 +1574,10 @@ namespace FlockFive
 
         void DrawGiftSign(float s)
         {
-            if (_board == null || _gift != GiftFace.None || _frozen) return;
-            int i = WorldBuilder.GiftIndex;
-            if (!GiftLocked(i)) return;
-            var v = _garden.Branches[i];
-            if (v == null || v.Sign == null || _garden.Cam == null) return;
-            var face = v.Sign.position + v.Sign.rotation * new Vector3(-0.38f, 0.02f, 0f);
-            var sp = _garden.Cam.WorldToScreenPoint(face);
-            if (sp.z < 0f) return;
-            float w = 168f * s;
-            float h = 36f * s;
-            var r = new Rect(sp.x - w * 0.5f, Screen.height - sp.y - h * 0.52f, w, h);
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
-            st.fontSize = FitFont(st, "WATCH AD", r.width * 0.92f, r.height * 0.9f, 12, 28);
-            StampOutlined(r, "WATCH AD", st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
+            // Film+play is painted into fx_ad_sign art — no GUI sticker overlay.
         }
 
-        void DrawGiftOffer(float s)
+        void DrawGiftOffer        void DrawGiftOffer(float s)
         {
             GUI.color = new Color(0.08f, 0.06f, 0.04f, _gift == GiftFace.Card ? 0.62f : 0.78f);
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
@@ -1634,8 +1616,8 @@ namespace FlockFive
             string head = _keepStreak
                 ? "Keep the streak?"
                 : (_freezeOffer ? "Iced over" : "A spare perch");
-            title.fontSize = FitFont(title, head, face.width, face.height * 0.38f, 26, 52);
-            StampOutlined(new Rect(face.x, face.y, face.width, face.height * 0.40f), head, title, new Color(0.34f, 0.16f, 0.07f), 2, 1);
+            title.fontSize = FitFont(title, head, face.width, face.height * 0.38f, 28, 56);
+            StampOutlined(new Rect(face.x, face.y, face.width, face.height * 0.40f), head, title, new Color(1f, 0.94f, 0.78f), 3, 2);
 
             var body = new GUIStyle(GUI.skin.label)
             {
@@ -1648,8 +1630,8 @@ namespace FlockFive
                 : (_freezeOffer
                     ? "Hey — watch this little movie and an extra branch thaws the garden."
                     : "Hey — watch this little movie and this extra branch is yours.");
-            body.fontSize = FitFont(body, copy, face.width, face.height * 0.48f, 18, 32);
-            StampOutlined(new Rect(face.x, face.y + face.height * 0.40f, face.width, face.height * 0.52f), copy, body, new Color(0.38f, 0.20f, 0.08f), 2, 1);
+            body.fontSize = FitFont(body, copy, face.width, face.height * 0.48f, 20, 34);
+            StampOutlined(new Rect(face.x, face.y + face.height * 0.40f, face.width, face.height * 0.52f), copy, body, new Color(0.98f, 0.90f, 0.70f), 3, 2);
 
             float flower = Mathf.Min(Screen.width * 0.62f, 340f * s);
             var cta = new Rect((Screen.width - flower) * 0.5f, card.yMax - flower * 0.18f, flower, flower);
@@ -1672,8 +1654,9 @@ namespace FlockFive
                     alignment = TextAnchor.MiddleCenter,
                     wordWrap = false
                 };
-                watchSt.fontSize = FitFont(watchSt, "WATCH", disc.width * 0.84f, disc.height * 0.7f, 22, 64);
-                StampOutlined(disc, "WATCH", watchSt, new Color(0.36f, 0.18f, 0.07f), 2, 1);
+                watchSt.fontSize = FitFont(watchSt, "WATCH", disc.width * 0.86f, disc.height * 0.72f, 26, 68);
+                int stitch = Mathf.Max(3, Mathf.RoundToInt(watchSt.fontSize * 0.06f));
+                StampOutlined(disc, "WATCH", watchSt, new Color(1f, 0.95f, 0.78f), stitch, 2);
             }
             if (watch)
             {
