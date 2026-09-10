@@ -375,9 +375,9 @@ namespace FlockFive
             if (MixDesk.Live != null && !MixDesk.Live.AllowMid) return false;
             if (_thunders == null || _thunders.Length == 0) return false;
             int i = Next(_thunders.Length, ref _lastThunder);
-            // Far rolls quieter; close cracks a touch hotter — still under chirps.
-            float near = (i % 3 == 0) ? 1f : 0f;
-            float vol = Mathf.Lerp(0.42f, 0.72f, near * 0.55f + Random.value * 0.45f);
+            // Close cracks read; mid/far stay distant — still Mid, under chirps.
+            float near = (i % 3 == 0) ? 1f : (i % 3 == 1) ? 0.42f : 0f;
+            float vol = Mathf.Lerp(0.36f, 0.76f, near * 0.62f + Random.value * 0.38f);
             float pitch = Random.Range(0.88f, 1.04f); // skill: no pitch-up past ~1.04
             Shot(_thunders[i], pitch, vol, MixLayer.Mid);
             return true;
