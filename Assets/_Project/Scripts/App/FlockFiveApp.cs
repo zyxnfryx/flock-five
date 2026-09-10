@@ -1490,7 +1490,8 @@ namespace FlockFive
             bool keep = _keepStreak;
             _gift = GiftFace.Movie;
             _busy = true;
-            Sfx.GateGo();
+            // GateGo is splash-only (long Lead). Ad start gets a short leave whoosh.
+            Sfx.FeederLeave();
             yield return Ads.Rewarded();
             if (keep)
             {
