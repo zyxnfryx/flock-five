@@ -10,6 +10,7 @@ namespace FlockFive
         float[] _phase;
         bool _pulse;
         float _pulseT;
+        float _baseScale = 0.72f;
 
         public static HiveView Attach(Transform parent)
         {
@@ -19,6 +20,7 @@ namespace FlockFive
             go.transform.position = new Vector3(2.75f, -8.35f, 0f);
             go.transform.localScale = Vector3.one * 0.72f;
             var view = go.AddComponent<HiveView>();
+            view._baseScale = 0.72f;
             view.Build();
             return view;
         }
@@ -29,7 +31,10 @@ namespace FlockFive
             if (cam == null) return;
             float sx = hiveGui.center.x;
             float sy = Screen.height - hiveGui.center.y;
-            var w = cam.ScreenToWorldPoint(new Vector3(sx, sy, 0f));
+            // Ortho cams need distance-from-camera as z, not world z=0 (that parks on the lens).
+            float depth = Mathf.Abs(cam.transform.position.z);
+            if (depth < 0.01f) depth = 10f;
+            var w = cam.ScreenToWorldPoint(new Vector3(sx, sy, depth));
             w.z = 0f;
             transform.position = w;
         }
@@ -39,15 +44,16 @@ namespace FlockFive
         void Build()
         {
             Home = transform;
+            // Soft glow only — the wood hive art is the OnGUI button; this is the fly-to target.
             var comb = WorldBuilder.Sprite("Comb", SpriteCatalog.Glow, transform.position, 1f, 9, transform);
             comb.transform.localPosition = Vector3.zero;
             comb.transform.localScale = new Vector3(1.35f, 1.05f, 1f);
-            comb.GetComponent<SpriteRenderer>().color = new Color(0.92f, 0.62f, 0.18f, 0.55f);
+            comb.GetComponent<SpriteRenderer>().color = new Color(0.92f, 0.62f, 0.18f, 0.20f);
 
             var core = WorldBuilder.Sprite("CombCore", SpriteCatalog.Glow, transform.position, 1f, 10, transform);
             core.transform.localPosition = new Vector3(0f, 0.06f, 0f);
             core.transform.localScale = new Vector3(0.72f, 0.58f, 1f);
-            core.GetComponent<SpriteRenderer>().color = new Color(1f, 0.82f, 0.32f, 0.7f);
+            core.GetComponent<SpriteRenderer>().color = new Color(1f, 0.82f, 0.32f, 0.28f);
 
             _residents = new SpriteRenderer[3];
             _phase = new float[3];
@@ -65,21 +71,22 @@ namespace FlockFive
             RefreshResidents();
             _pulse = true;
             _pulseT = 0f;
-            var go = WorldBuilder.Sprite("Visitor", SpriteCatalog.Bee, from, 0.18f, 17, transform.parent);
+            var go = WorldBuilder.Sprite("Visitor", SpriteCatalog.Bee, from, 0.22f, 48, transform.parent);
             var sr = go.GetComponent<SpriteRenderer>();
             sr.color = visit.Kind.Tint;
-            var dest = Mouth;
             float t = 0f;
-            const float dur = 0.72f;
+            const float dur = 0.85f;
             Sfx.BeeHum();
             while (t < dur)
             {
                 t += Time.deltaTime;
                 float u = Mathf.SmoothStep(0f, 1f, t / dur);
+                // Live Mouth — LateUpdate keeps snapping the hive under the HUD button.
+                var dest = Mouth;
                 var p = Vector3.Lerp(from, dest, u);
-                p.y += Mathf.Sin(u * Mathf.PI) * 1.35f;
+                p.y += Mathf.Sin(u * Mathf.PI) * 1.55f;
                 go.transform.position = p;
-                go.transform.localScale = Vector3.one * Mathf.Lerp(0.20f, 0.12f, u);
+                go.transform.localScale = Vector3.one * Mathf.Lerp(0.26f, 0.12f, u);
                 sr.sprite = SpriteCatalog.BeeFrame(Time.time * 18f);
                 sr.flipX = dest.x < from.x;
                 yield return null;
@@ -118,12 +125,12 @@ namespace FlockFive
             {
                 _pulseT += Time.deltaTime;
                 float u = Mathf.Clamp01(_pulseT / 0.4f);
-                float k = 1f + 0.08f * Mathf.Sin(u * Mathf.PI);
+                float k = _baseScale * (1f + 0.08f * Mathf.Sin(u * Mathf.PI));
                 transform.localScale = Vector3.one * k;
                 if (u >= 1f)
                 {
                     _pulse = false;
-                    transform.localScale = Vector3.one;
+                    transform.localScale = Vector3.one * _baseScale;
                 }
             }
             for (int i = 0; i < _residents.Length; i++)
