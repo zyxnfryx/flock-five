@@ -15,6 +15,7 @@ namespace FlockFive
         static AudioClip[] _clinks;
         static AudioClip[] _rattles;
         static AudioClip[] _yells;
+        static AudioClip[] _hawks;
         static AudioClip[] _pops;
         static AudioClip[] _jingles;
         static AudioClip _deny;
@@ -35,6 +36,7 @@ namespace FlockFive
         static int _lastClink = -1;
         static int _lastRattle = -1;
         static int _lastYell = -1;
+        static int _lastHawk = -1;
         static float _humGate;
         static float _flapGate;
         static SfxHost _host;
@@ -82,6 +84,7 @@ namespace FlockFive
             _clinks = LoadBank("Audio/Coin", 12, MakeCoin);
             _rattles = LoadBank("Audio/Rattle", 20, MakeFeederRattle);
             _yells = LoadBank("Audio/Yell", 6, MakeSparrowYell);
+            _hawks = LoadBank("Audio/Hawk", 8, MakeHawkCry);
             _pops = new AudioClip[5];
             for (int i = 0; i < _pops.Length; i++)
                 _pops[i] = MakePop(i, 8800 + i * 29);
@@ -347,8 +350,15 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.28f, MixDesk.DuckChirp);
         }
 
-        // Hawk cry stub — reuse SparrowYell bank for now (MP: deeper hawk cry later).
-        public static void HawkCry() => SparrowYell();
+        // Hawk pest cry — deeper / longer bank than SparrowYell (Audio/Hawk).
+        public static void HawkCry()
+        {
+            Ensure();
+            if (_hawks == null || _hawks.Length == 0) return;
+            int i = Next(_hawks.Length, ref _lastHawk);
+            Shot(_hawks[i], Random.Range(0.98f, 1.04f), Random.Range(0.78f, 0.88f), MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(Random.Range(0.32f, 0.40f), MixDesk.DuckChirp);
+        }
 
         public static void ScorePop(int i)
         {
