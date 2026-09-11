@@ -315,6 +315,12 @@ namespace FlockFive
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot("/tmp/paradice/splash-easy.png");
             yield return new WaitForSecondsRealtime(0.4f);
+            PlayerPrefs.SetInt("flockfive.next", 3);
+            PlayerPrefs.Save();
+            yield return null;
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot("/tmp/paradice/splash-super-easy.png");
+            yield return new WaitForSecondsRealtime(0.4f);
             PlayerPrefs.SetInt("flockfive.next", 5);
             PlayerPrefs.Save();
             yield return null;
