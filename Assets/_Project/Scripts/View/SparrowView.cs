@@ -9,8 +9,8 @@ namespace FlockFive
     {
         public static SparrowView Live { get; private set; }
 
-        const float Scale = 0.42f;
-        const float HitPad = 0.85f;
+        const float Scale = 0.78f; // bigger pest than hummingbirds (0.42)
+        const float HitPad = 1.15f;
 
         SpriteRenderer _art;
         bool _scared;
@@ -221,11 +221,11 @@ namespace FlockFive
         {
             if (_art == null) return;
             _flap += Time.deltaTime * (hard ? 22f : 14f);
-            // Placeholder: tinted hummingbird frames when using Bird fallback.
+            _art.sprite = SpriteCatalog.SparrowFrame(_flap);
             if (SpriteCatalog.SparrowIsPlaceholder)
-                _art.sprite = SpriteCatalog.BirdFrame(BirdColor.Violet, _flap, true);
+                _art.color = _tint;
             else
-                _art.sprite = SpriteCatalog.Sparrow;
+                _art.color = Color.white;
         }
 
         void OnDisable()

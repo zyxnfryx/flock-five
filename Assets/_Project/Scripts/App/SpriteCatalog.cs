@@ -39,7 +39,7 @@ namespace FlockFive
             get
             {
                 if (_sparrow != null) return _sparrow;
-                _sparrow = TryLoad("Sprites/fx_sparrow", 280f);
+                _sparrow = TryLoad("Sprites/fx_sparrow", 200f);
                 if (_sparrow != null)
                 {
                     _sparrowPlaceholder = false;
@@ -50,6 +50,19 @@ namespace FlockFive
                 _sparrow = Recolor(Bird(BirdColor.Violet), new Color(0.62f, 0.55f, 0.48f, 1f));
                 return _sparrow;
             }
+        }
+
+        public static Sprite SparrowFrame(float t)
+        {
+            var rest = Sparrow;
+            if (_sparrowPlaceholder) return BirdFrame(BirdColor.Violet, t, true);
+            var up = Load(ref _sparrowFlap1, "Sprites/fx_sparrow_1", 200f);
+            var mid = Load(ref _sparrowFlap2, "Sprites/fx_sparrow_2", 200f);
+            int k = Mathf.FloorToInt(Mathf.Abs(t) * 16f) % 4;
+            if (k == 1) return up != null ? up : rest;
+            if (k == 2) return mid != null ? mid : rest;
+            if (k == 3) return up != null ? up : rest;
+            return rest;
         }
         public static Sprite Bow => Load(ref _bow, "Sprites/fx_bow", 200f);
         public static Sprite Bowtie => Load(ref _bowtie, "Sprites/fx_bowtie", 200f);
