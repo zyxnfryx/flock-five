@@ -2406,21 +2406,26 @@ namespace FlockFive
         {
             var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
-            // Joke rides the top of the gold plate; LEVEL sits in the bowl below it.
+            // Joke on the upper gold rim; LEVEL in the bowl with clear air under the arc.
             var lvR = hasEase
-                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.48f, disc.width * 0.92f, disc.height * 0.44f)
+                ? new Rect(disc.x + disc.width * 0.05f, disc.y + disc.height * 0.52f, disc.width * 0.90f, disc.height * 0.42f)
                 : new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.84f);
 
             if (hasEase)
             {
                 var joke = new GUIStyle(GUI.skin.label)
                 {
-                    fontStyle = FontStyle.BoldAndItalic,
+                    fontStyle = FontStyle.Bold,
                     alignment = TextAnchor.MiddleCenter,
                     wordWrap = false
                 };
-                joke.fontSize = Mathf.Clamp(Mathf.RoundToInt(disc.height * 0.185f), 22, 42);
-                StampArced(disc, ease, joke, new Color(0.34f, 0.18f, 0.07f), 2, 1);
+                // One family for Easy / Super Easy / Super Duper Easy: shrink the long
+                // string so the bow stays gentle instead of steep and jittery.
+                int n = ease.Length;
+                float maxArcW = disc.width * (n <= 6 ? 0.58f : (n <= 12 ? 0.76f : 0.90f));
+                joke.fontSize = FitFont(joke, ease, maxArcW, disc.height * 0.20f, 20, 40);
+                int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.10f));
+                StampArced(disc, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
             }
 
             var lv = new GUIStyle(GUI.skin.label)
@@ -2432,9 +2437,9 @@ namespace FlockFive
             string level = "LEVEL " + number;
             lv.fontSize = FitFont(
                 lv, level,
-                lvR.width * (hasEase ? 0.80f : 0.88f),
-                lvR.height * (hasEase ? 0.66f : 0.80f),
-                32, hasEase ? 80 : 96);
+                lvR.width * (hasEase ? 0.82f : 0.88f),
+                lvR.height * (hasEase ? 0.70f : 0.80f),
+                32, hasEase ? 78 : 96);
             int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
             int black = 1;
             StampOutlined(lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, black);
@@ -2484,23 +2489,31 @@ namespace FlockFive
             int n = text.Length;
             var widths = new float[n];
             float total = 0f;
+            // Light tracking so Bold glyphs don't crush on the long joke.
+            float tracking = st.fontSize * (n >= 14 ? 0.055f : (n >= 10 ? 0.035f : 0.02f));
             for (int i = 0; i < n; i++)
             {
                 float w = st.CalcSize(new GUIContent(text[i].ToString())).x;
-                if (text[i] == ' ') w = Mathf.Max(w, st.fontSize * 0.38f);
-                widths[i] = Mathf.Max(2f, w);
+                if (text[i] == ' ') w = Mathf.Max(w, st.fontSize * 0.42f);
+                widths[i] = Mathf.Max(2f, w) + tracking;
                 total += widths[i];
             }
             if (total < 1f) return;
 
-            // Concentric with the gold plate. Radius tracks the string so letters
-            // keep their spacing and the bow stays on the disc (not the petals).
-            float want = Mathf.Lerp(0.50f, 1.65f, Mathf.InverseLerp(4f, 16f, n));
-            float rx = Mathf.Min(disc.width * 0.38f, total / Mathf.Max(want, 0.45f));
-            float span = Mathf.Clamp(total / Mathf.Max(rx, 1f), 0.40f, 1.72f);
-            float ry = rx * (disc.height / Mathf.Max(disc.width, 1f));
+            // Plate-concentric radius; keep span gentle so letters stay even
+            // (steep bows + outline rings read as jitter on the tan plate).
+            float rx = disc.width * 0.40f;
+            float span = total / Mathf.Max(rx, 1f);
+            if (span > 1.28f)
+            {
+                rx = Mathf.Min(disc.width * 0.44f, total / 1.18f);
+                span = total / Mathf.Max(rx, 1f);
+            }
+            span = Mathf.Clamp(span, 0.50f, 1.28f);
+            float aspect = Mathf.Clamp(disc.height / Mathf.Max(disc.width, 1f), 0.55f, 0.82f);
+            float ry = rx * aspect;
             float cx = disc.center.x;
-            float cy = disc.y + disc.height * 0.20f + ry;
+            float cy = disc.y + disc.height * 0.16f + ry;
             float start = -span * 0.5f;
             float acc = 0f;
             float h = st.CalcSize(new GUIContent("Ag")).y;
@@ -2511,7 +2524,7 @@ namespace FlockFive
                 float ang = start + u * span;
                 float x = cx + rx * Mathf.Sin(ang);
                 float y = cy - ry * Mathf.Cos(ang);
-                var r = new Rect(x - widths[i] * 0.5f, y - h * 0.50f, widths[i], h);
+                var r = new Rect(x - widths[i] * 0.5f, y - h * 0.52f, widths[i], h);
                 GUI.matrix = prev;
                 GUIUtility.RotateAroundPivot(ang * Mathf.Rad2Deg, new Vector2(x, y));
                 StampOutlined(r, text[i].ToString(), st, fill, whitePx, blackPx);
