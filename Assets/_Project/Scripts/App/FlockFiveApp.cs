@@ -74,6 +74,7 @@ namespace FlockFive
         bool _hiveInspectClosing;
         Rect _hiveInspectFrom; // sleeve rect when opened (for lerp)
         bool _pokerPlayrun;
+        Coroutine _sparrowRun;
 
         void Start()
         {
@@ -139,6 +140,7 @@ namespace FlockFive
             _frozen = false;
             _freezeOffer = false;
             _sel = -1;
+            StopSparrow();
             if (_garden.Root != null) Destroy(_garden.Root.gameObject);
             if (_garden.Cam != null) Destroy(_garden.Cam.gameObject);
             _garden = default;
@@ -176,9 +178,26 @@ namespace FlockFive
             SyncAll();
             StartCoroutine(GardenFit.Tween(_garden, _board, true));
             Sfx.GardenWake();
+            StopSparrow();
+            _sparrowRun = StartCoroutine(SparrowView.Patrol(CanSparrowVisit, _garden.Feeders, _garden.Root));
             if (WantFinalePreview())
                 StartCoroutine(PreviewFinale());
         }
+
+        void StopSparrow()
+        {
+            if (_sparrowRun != null)
+            {
+                StopCoroutine(_sparrowRun);
+                _sparrowRun = null;
+            }
+            if (SparrowView.Live != null)
+                Destroy(SparrowView.Live.gameObject);
+        }
+
+        bool CanSparrowVisit() =>
+            !_splash && !_busy && !_won && !_frozen && !_levelHive
+            && _gift == GiftFace.None && _board != null && !_board.Won;
 
         bool WantFinalePreview() =>
             !_finalePreview && System.IO.File.Exists("/tmp/flock-five-finale");
@@ -441,6 +460,12 @@ namespace FlockFive
             if (_busy || _won || _board == null) return;
             if (Time.unscaledTime < _nextTap) return;
             _nextTap = Time.unscaledTime + 0.10f;
+
+            if (SparrowView.Live != null && SparrowView.Live.TryHit(world))
+            {
+                SparrowView.Live.Scare();
+                return;
+            }
 
             int feeder = HitFeeder(world);
             if (feeder >= 0)

@@ -16,6 +16,7 @@ namespace FlockFive
         static AudioClip[] _pops;
         static AudioClip[] _jingles;
         static AudioClip _deny;
+        static AudioClip _sparrowYell;
         static AudioClip _pageTurn;
         static AudioClip[] _booms;
         static AudioClip[] _snoozes;
@@ -83,6 +84,7 @@ namespace FlockFive
             for (int i = 0; i < _jingles.Length; i++)
                 _jingles[i] = MakeComboJingle(i + 2);
             _deny = MakeDeny();
+            _sparrowYell = MakeSparrowYell();
             _pageTurn = MakePageTurn();
             _snoozes = LoadBank("Audio/Snooze", 12, i => MakeSnooze(i, 5100 + i * 53));
             _hums = new AudioClip[8];
@@ -285,6 +287,12 @@ namespace FlockFive
         {
             Ensure();
             Shot(_deny, Random.Range(0.92f, 1.04f), 0.72f, MixLayer.Lead);
+        }
+
+        public static void SparrowYell()
+        {
+            Ensure();
+            Shot(_sparrowYell, Random.Range(0.97f, 1.04f), 0.82f, MixLayer.Lead);
         }
 
         public static void PageTurn()

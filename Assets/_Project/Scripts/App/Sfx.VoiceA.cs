@@ -262,6 +262,35 @@ namespace FlockFive
             return ClipPunch("neshop" + kind, data);
         }
 
+
+        static AudioClip MakeSparrowYell()
+        {
+            // Short harsh squawk — placeholder for MP remaster.
+            float dur = 0.18f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float lp = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float u = t / dur;
+                float f = Mathf.Lerp(520f, 180f, u * u);
+                float env = u < 0.08f ? (u / 0.08f) : Mathf.Pow(1f - (u - 0.08f) / 0.92f, 1.6f);
+                float buzz = Mathf.Sin(2f * Mathf.PI * f * t);
+                buzz += 0.45f * Mathf.Sin(2f * Mathf.PI * f * 1.7f * t);
+                buzz += 0.22f * Mathf.Sin(2f * Mathf.PI * f * 2.4f * t);
+                float noise = Soft(ref lp, 9401, i, 0.55f);
+                float rasp = noise * (0.7f + 0.3f * Mathf.Sin(2f * Mathf.PI * 55f * t));
+                data[i] = (buzz * 0.55f + rasp * 0.7f) * env * 0.9f;
+            }
+            for (int i = 0; i < n; i++)
+            {
+                float x = data[i] * 1.6f;
+                data[i] = x / (1f + Mathf.Abs(x));
+            }
+            return ClipPunch("sparrow-yell", data);
+        }
+
         static AudioClip MakeDeny()
         {
             int n = Mathf.CeilToInt(Rate * 0.16f);
