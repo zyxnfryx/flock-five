@@ -347,6 +347,9 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.28f, MixDesk.DuckChirp);
         }
 
+        // Hawk cry stub — reuse SparrowYell bank for now (MP: deeper hawk cry later).
+        public static void HawkCry() => SparrowYell();
+
         public static void ScorePop(int i)
         {
             Ensure();
