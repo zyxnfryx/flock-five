@@ -2671,6 +2671,7 @@ namespace FlockFive
                         _hiveInspectClosing = true;
                         _hiveInspectT = 0f;
                         _hiveFlip = -1;
+                        Sfx.PageTurn();
                     }
                 }
                 else
@@ -2939,7 +2940,7 @@ namespace FlockFive
                 {
                     _hiveFlip = ix;
                     _hiveFlipT = 0f;
-                    Sfx.Chirp(BirdColor.Gold);
+                    Sfx.PageTurn();
                 }
             }
 
@@ -2951,6 +2952,7 @@ namespace FlockFive
                 _hiveInspectClosing = true;
                 _hiveInspectT = 0f;
                 _hiveFlip = -1;
+                Sfx.PageTurn();
             }
 
             if (_hiveInspectClosing && u >= 1f)
@@ -3178,7 +3180,7 @@ namespace FlockFive
                 _hiveInspectClosing = false;
                 _hiveInspectFrom = card;
                 _hiveFlip = -1;
-                Sfx.Chirp(BirdColor.Gold);
+                Sfx.PageTurn();
             }
         }
 
