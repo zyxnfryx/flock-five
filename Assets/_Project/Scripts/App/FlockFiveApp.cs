@@ -2442,7 +2442,7 @@ namespace FlockFive
             bool hasEase = !string.IsNullOrEmpty(ease);
             // Joke on the upper gold rim; LEVEL in the bowl with clear air under the arc.
             var lvR = hasEase
-                ? new Rect(disc.x + disc.width * 0.05f, disc.y + disc.height * 0.52f, disc.width * 0.90f, disc.height * 0.42f)
+                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.50f, disc.width * 0.92f, disc.height * 0.44f)
                 : new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.84f);
 
             if (hasEase)
@@ -2465,15 +2465,18 @@ namespace FlockFive
             var lv = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = hasEase ? TextAnchor.UpperCenter : TextAnchor.MiddleCenter,
+                alignment = hasEase ? TextAnchor.MiddleCenter : TextAnchor.MiddleCenter,
                 wordWrap = false
             };
             string level = "LEVEL " + number;
+            // With a joke arc, size to a two-digit probe so LEVEL 6 and LEVEL 24
+            // share one sit on the gold disc (one-digit must not blow up and crowd).
+            string fitProbe = hasEase ? "LEVEL 88" : level;
             lv.fontSize = FitFont(
-                lv, level,
-                lvR.width * (hasEase ? 0.82f : 0.88f),
-                lvR.height * (hasEase ? 0.70f : 0.80f),
-                32, hasEase ? 78 : 96);
+                lv, fitProbe,
+                lvR.width * (hasEase ? 0.86f : 0.88f),
+                lvR.height * (hasEase ? 0.68f : 0.80f),
+                32, hasEase ? 72 : 96);
             int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
             int black = 1;
             StampOutlined(lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, black);
