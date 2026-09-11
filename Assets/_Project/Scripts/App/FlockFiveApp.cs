@@ -1176,6 +1176,9 @@ namespace FlockFive
             if (tr != null) tr.position = dest;
         }
 
+        // After a pest scrap the flock hops onto remaining limbs. Redistribute
+        // must never land an auto-clear: skip any perch that would fill a
+        // same-color Cap match (KickCollects would fire). No safe seat → scatter.
         IEnumerator PerchOnRemain(SpriteRenderer[] birds, int n, Bird[] flock, int broken)
         {
             if (n <= 0) yield break;
@@ -1183,12 +1186,13 @@ namespace FlockFive
             var parked = new bool[n];
             for (int i = 0; i < n; i++)
             {
-                int home = FindParkBranch(broken);
+                var bird = i < flock.Length ? flock[i] : new Bird(BirdColor.Gold, BirdSex.Neutral);
+                int home = FindParkBranch(broken, bird);
                 if (home < 0 || _garden.Branches == null || home >= _garden.Branches.Length)
                     continue;
                 var st = _board.Branches[home];
                 int seat = st.Count;
-                st.Birds.Add(i < flock.Length ? flock[i] : new Bird(BirdColor.Gold, BirdSex.Neutral));
+                st.Birds.Add(bird);
                 st.AlignShroud();
                 var br = _garden.Branches[home];
                 dests[i] = br.SeatWorld(seat) + br.transform.TransformVector(new Vector3(0f, BranchView.RestLift, 0f));
@@ -1211,9 +1215,18 @@ namespace FlockFive
                 }
             }
             yield return new WaitForSeconds(wait);
+            // Fight sprites were parented to Root for the scrap; SyncAll owns
+            // parked seat visuals, so drop the temps. Scattered birds already
+            // fade/hide via ScatterOne.
+            for (int i = 0; i < n; i++)
+            {
+                if (!parked[i] || birds[i] == null) continue;
+                Destroy(birds[i].gameObject);
+                birds[i] = null;
+            }
         }
 
-        int FindParkBranch(int broken)
+        int FindParkBranch(int broken, Bird bird)
         {
             if (_board == null) return -1;
             int best = -1;
@@ -1227,6 +1240,7 @@ namespace FlockFive
                 if (_garden.Branches == null || b >= _garden.Branches.Length) continue;
                 var view = _garden.Branches[b];
                 if (view == null) continue;
+                if (WouldFullMatchAfterAdd(st, bird)) continue;
                 if (st.Free > bestFree)
                 {
                     bestFree = st.Free;
@@ -1234,6 +1248,19 @@ namespace FlockFive
                 }
             }
             return best;
+        }
+
+        // Same rules as BranchState.IsFullMatch, hypothetically after one add.
+        static bool WouldFullMatchAfterAdd(BranchState st, Bird bird)
+        {
+            if (st == null || st.Broken) return false;
+            if (st.Count + 1 != BranchState.Cap) return false;
+            for (int i = 0; i < st.Count; i++)
+            {
+                if (st.IsShrouded(i)) return false;
+                if (st.Birds[i].Color != bird.Color) return false;
+            }
+            return true;
         }
 
         static IEnumerator PerchOne(Transform tr, Vector3 dest, float delay)
