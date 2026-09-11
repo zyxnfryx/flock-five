@@ -336,6 +336,18 @@ namespace FlockFive
             if (Time.unscaledTime < _nextTap) return;
             _nextTap = Time.unscaledTime + 0.10f;
 
+            int feeder = HitFeeder(world);
+            if (feeder >= 0)
+            {
+                if (_sel >= 0)
+                {
+                    _garden.Branches[_sel].SetReady(false);
+                    _sel = -1;
+                }
+                _garden.Feeders[feeder].Poke();
+                return;
+            }
+
             int hit = HitBranch(world);
             if (hit >= 0 && GiftLocked(hit))
             {
@@ -840,6 +852,29 @@ namespace FlockFive
             }
             SyncAll();
             StartCoroutine(GardenFit.Tween(_garden, _board, true));
+        }
+
+        int HitFeeder(Vector2 world)
+        {
+            if (_garden.Feeders == null) return -1;
+            float best = 1.35f * 1.35f;
+            int idx = -1;
+            for (int i = 0; i < _garden.Feeders.Length; i++)
+            {
+                var f = _garden.Feeders[i];
+                if (f == null || f.Art == null || !f.Art.enabled) continue;
+                float d = ((Vector2)f.transform.position - world).sqrMagnitude;
+                float dMouth = ((Vector2)f.Mouth - world).sqrMagnitude;
+                float m = Mathf.Min(d, dMouth);
+                if (f.Art.sprite != null)
+                {
+                    var b = f.Art.bounds;
+                    if (b.Contains(new Vector3(world.x, world.y, b.center.z)))
+                        m = 0f;
+                }
+                if (m < best) { best = m; idx = i; }
+            }
+            return idx;
         }
 
         int HitBranch(Vector2 world)
