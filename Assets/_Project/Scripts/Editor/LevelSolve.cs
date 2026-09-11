@@ -13,7 +13,8 @@ namespace FlockFive.Editor
         const string Cmd = "/tmp/flock-five-solve";
         const string Out = "/tmp/flock-five-solve.txt";
         const int NodeCap = 250000;
-        const int Trials = 24;
+        const int Trials = 48;
+        const int ParkTrials = 64;
 
         static LevelSolve()
         {
@@ -43,7 +44,8 @@ namespace FlockFive.Editor
                 bool split = ColorSplit(board);
                 var result = GardenSolve.Search(board, NodeCap);
                 int tangle = RandomTangles(i, Trials);
-                bool ok = result.Outlook == GardenSolve.Outlook.Winnable && mixed && !split;
+                int parkFail = FuzzPestPark(i, ParkTrials);
+                bool ok = result.Outlook == GardenSolve.Outlook.Winnable && mixed && !split && parkFail == 0;
                 if (!ok) all = false;
                 sb.Append(level.Number).Append(' ').Append(level.Id);
                 sb.Append(ok ? " OK" : " FAIL");
@@ -52,11 +54,13 @@ namespace FlockFive.Editor
                 sb.Append(" mixed=").Append(mixed);
                 sb.Append(" split=").Append(split);
                 sb.Append(" random-tangle=").Append(tangle).Append('/').Append(Trials);
+                sb.Append(" pest-park-fail=").Append(parkFail);
                 sb.Append(" | ").Append(flocks);
                 sb.Append('\n');
                 Debug.Log("Flock Five solve " + level.Number + " " + level.Id +
                     (ok ? " OK" : " FAIL") + " " + result.Outlook +
-                    " tangle " + tangle + "/" + Trials);
+                    " tangle " + tangle + "/" + Trials +
+                    " park " + parkFail);
             }
             sb.Append(all ? "ALL OK\n" : "SOME FAILED\n");
             File.WriteAllText(Out, sb.ToString());
@@ -86,6 +90,88 @@ namespace FlockFive.Editor
                 if (froze) n++;
             }
             return n;
+        }
+
+        // Pest scrap parks survivors onto remaining limbs. Must never fill a
+        // same-color Cap (that auto-clears) or overflow a perch.
+        static int FuzzPestPark(int index, int trials)
+        {
+            int fails = 0;
+            for (int t = 0; t < trials; t++)
+            {
+                var b = LevelData.Open(index);
+                GardenSolve.Drain(b);
+                for (int step = 0; step < 100; step++)
+                {
+                    if (b.Won) break;
+                    int c = b.FindCollect();
+                    if (c >= 0)
+                    {
+                        var flock = b.Branches[c].Birds.ToArray();
+                        b.ApplyCollect(c);
+                        if (!ParkFlockSafe(b, flock, c)) fails++;
+                        continue;
+                    }
+                    if (!RandomHop(b)) break;
+                    GardenSolve.Drain(b);
+                }
+            }
+            return fails;
+        }
+
+        static bool ParkFlockSafe(Board b, Bird[] flock, int broken)
+        {
+            if (flock == null) return true;
+            var parkedOnto = new HashSet<int>();
+            for (int i = 0; i < flock.Length; i++)
+            {
+                int home = FindPark(b, broken, flock[i]);
+                if (home < 0) continue;
+                var st = b.Branches[home];
+                if (st.Free <= 0) return false;
+                if (WouldFullMatchAfterAdd(st, flock[i])) return false;
+                st.Birds.Add(flock[i]);
+                st.AlignShroud();
+                parkedOnto.Add(home);
+                if (st.Count > BranchState.Cap) return false;
+                if (st.IsFullMatch(out _)) return false;
+            }
+            int collect = b.FindCollect();
+            if (collect >= 0 && parkedOnto.Contains(collect))
+                return false;
+            return true;
+        }
+
+        static int FindPark(Board b, int broken, Bird bird)
+        {
+            int best = -1;
+            int bestFree = -1;
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                if (i == broken) continue;
+                var st = b.Branches[i];
+                if (st.Broken || st.AdLocked || st.Free <= 0) continue;
+                if (b.IsSleeping(i)) continue;
+                if (WouldFullMatchAfterAdd(st, bird)) continue;
+                if (st.Free > bestFree)
+                {
+                    bestFree = st.Free;
+                    best = i;
+                }
+            }
+            return best;
+        }
+
+        static bool WouldFullMatchAfterAdd(BranchState st, Bird bird)
+        {
+            if (st == null || st.Broken) return false;
+            if (st.Count + 1 != BranchState.Cap) return false;
+            for (int i = 0; i < st.Count; i++)
+            {
+                if (st.IsShrouded(i)) return false;
+                if (st.Birds[i].Color != bird.Color) return false;
+            }
+            return true;
         }
 
         static bool RandomHop(Board b)
