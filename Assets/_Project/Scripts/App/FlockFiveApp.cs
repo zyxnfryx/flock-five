@@ -57,6 +57,10 @@ namespace FlockFive
         bool _frozen;
         bool _freezeOffer;
         readonly List<BeeVisit> _levelBees = new List<BeeVisit>();
+        int _hiveFlip = -1;
+        float _hiveFlipT;
+        float _hiveScroll;
+        readonly bool[] _hiveFaceBack = new bool[Hive.Kinds];
 
         void Start()
         {
@@ -2065,7 +2069,10 @@ namespace FlockFive
             float top = Mathf.Max(20f, Screen.height - safe.yMax + 10f);
             var back = new Rect(Mathf.Max(16f, safe.xMin + 10f), top, 132f * Mathf.Min(s, 1.6f), 44f * Mathf.Min(s, 1.6f));
             if (HitPad(back, out bool backHeld))
+            {
+                _hiveFlip = -1;
                 _home = HomeFace.Splash;
+            }
             GUI.color = new Color(0.10f, 0.08f, 0.05f, backHeld ? 0.88f : 0.72f);
             GUI.DrawTexture(back, Texture2D.whiteTexture);
             GUI.color = Color.white;
@@ -2076,34 +2083,180 @@ namespace FlockFive
             if (hiveSpr != null && hiveSpr.texture != null)
                 GUI.DrawTexture(new Rect((Screen.width - hiveSize) * 0.5f, top + 8f, hiveSize, hiveSize), hiveSpr.texture, ScaleMode.ScaleToFit, true);
 
-            float boxY = top + hiveSize + 16f;
-            float rowH = 34f * Mathf.Min(s, 1.65f);
-            float boxH = 56f * s + Hive.Kinds * rowH + 24f;
-            float maxH = Screen.height - boxY - 20f;
-            var box = new Rect(20f * s, boxY, Screen.width - 40f * s, Mathf.Min(boxH, maxH));
-            GUI.color = new Color(0.12f, 0.10f, 0.07f, 0.82f);
-            GUI.DrawTexture(box, Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            GUILayout.BeginArea(new Rect(box.x + 18f, box.y + 12f, box.width - 36f, box.height - 24f));
-            GUILayout.Label("Your hive  " + Hive.Found + " of " + Hive.Kinds, title);
-            GUILayout.Space(8f);
+            float boxY = top + hiveSize + 8f * s;
+            var head = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+            string album = "Bee Album  " + Hive.Found + " / " + Hive.Kinds;
+            head.fontSize = FitFont(head, album, Screen.width * 0.7f, 36f * s, 18, 32);
+            StampOutlined(new Rect(0f, boxY, Screen.width, 36f * s), album, head, new Color(1f, 0.94f, 0.72f), 2, 1);
+            var tip = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Italic,
+                alignment = TextAnchor.MiddleCenter
+            };
+            tip.fontSize = Mathf.RoundToInt(14 * s);
+            StampOutlined(new Rect(0f, boxY + 30f * s, Screen.width, 22f * s), "Tap a card to flip", tip, new Color(0.92f, 0.82f, 0.58f), 1, 1);
+
+            if (_hiveFlip >= 0)
+            {
+                _hiveFlipT += Time.unscaledDeltaTime;
+                if (_hiveFlipT >= 0.28f)
+                {
+                    _hiveFaceBack[_hiveFlip] = !_hiveFaceBack[_hiveFlip];
+                    _hiveFlip = -1;
+                    _hiveFlipT = 0f;
+                }
+            }
+
+            float gridTop = boxY + 56f * s;
+            float pad = 14f * s;
+            float gap = 12f * s;
+            float cardW = (Screen.width - pad * 2f - gap) * 0.5f;
+            float cardH = cardW * 1.28f;
+            int cols = 2;
+            int rows = (Hive.Kinds + cols - 1) / cols;
+            float contentH = rows * (cardH + gap) + pad;
+            float viewH = Screen.height - gridTop - 16f * s;
+            float maxScroll = Mathf.Max(0f, contentH - viewH);
+            // Drag / wheel scroll
+            var e = Event.current;
+            if (e != null && e.type == EventType.ScrollWheel)
+            {
+                _hiveScroll = Mathf.Clamp(_hiveScroll + e.delta.y * 12f, 0f, maxScroll);
+                e.Use();
+            }
+            if (e != null && e.type == EventType.MouseDrag && e.button == 0)
+            {
+                _hiveScroll = Mathf.Clamp(_hiveScroll - e.delta.y, 0f, maxScroll);
+                e.Use();
+            }
+
             for (int i = 0; i < Hive.Kinds; i++)
             {
-                int n = Hive.CountOf(i);
-                var c = n > 0 ? Hive.Roster[i].Tint : new Color(0.70f, 0.66f, 0.55f, 0.85f);
-                if (n > 0)
-                {
-                    float lum = 0.22f * c.r + 0.72f * c.g + 0.06f * c.b;
-                    if (lum < 0.40f) c = Color.Lerp(c, new Color(0.94f, 0.88f, 0.74f), 0.55f);
-                }
-                row.normal.textColor = c;
-                string line = n > 0
-                    ? Hive.Roster[i].Name + (n > 1 ? "  ×" + n : "")
-                    : "—  still out in the garden";
-                GUILayout.Label(line, row);
+                int col = i % cols;
+                int row = i / cols;
+                float x = pad + col * (cardW + gap);
+                float y = gridTop + row * (cardH + gap) - _hiveScroll;
+                if (y + cardH < gridTop - 4f || y > Screen.height) continue;
+                var card = new Rect(x, y, cardW, cardH);
+                DrawBeeAlbumCard(card, i, s);
             }
-            GUILayout.EndArea();
         }
+
+        void DrawBeeAlbumCard(Rect card, int i, float s)
+        {
+            int n = Hive.CountOf(i);
+            bool owned = n > 0;
+            bool flipping = _hiveFlip == i;
+            float flipU = flipping ? Mathf.Clamp01(_hiveFlipT / 0.28f) : 0f;
+            float squash = flipping ? Mathf.Abs(Mathf.Cos(flipU * Mathf.PI)) : 1f;
+            bool showBack = flipping ? (flipU >= 0.5f ? !_hiveFaceBack[i] : _hiveFaceBack[i]) : _hiveFaceBack[i];
+
+            float cx = card.center.x;
+            float w = card.width * Mathf.Max(0.08f, squash);
+            var r = new Rect(cx - w * 0.5f, card.y, w, card.height);
+
+            var kind = Hive.Roster[i];
+            Color wood = owned
+                ? Color.Lerp(new Color(0.28f, 0.16f, 0.07f), kind.Tint, 0.35f)
+                : new Color(0.14f, 0.12f, 0.10f, 0.92f);
+            GUI.color = new Color(0f, 0f, 0f, 0.35f);
+            GUI.DrawTexture(new Rect(r.x + 4f, r.y + 6f, r.width, r.height), Texture2D.whiteTexture);
+            GUI.color = wood;
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            // Inner face
+            var face = new Rect(r.x + r.width * 0.06f, r.y + r.height * 0.05f, r.width * 0.88f, r.height * 0.90f);
+            GUI.color = owned
+                ? Color.Lerp(new Color(0.98f, 0.92f, 0.72f), kind.Tint, 0.18f)
+                : new Color(0.22f, 0.20f, 0.18f, 0.95f);
+            GUI.DrawTexture(face, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            if (!owned)
+            {
+                var mystery = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter
+                };
+                mystery.fontSize = FitFont(mystery, "?", face.width * 0.5f, face.height * 0.35f, 28, 64);
+                StampOutlined(new Rect(face.x, face.y + face.height * 0.18f, face.width, face.height * 0.4f), "?", mystery, new Color(0.55f, 0.48f, 0.38f), 2, 1);
+                var lockSt = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Italic,
+                    alignment = TextAnchor.UpperCenter,
+                    wordWrap = true
+                };
+                lockSt.fontSize = FitFont(lockSt, "Still out buzzing", face.width * 0.9f, face.height * 0.2f, 12, 18);
+                StampOutlined(new Rect(face.x + face.width * 0.05f, face.yMax - face.height * 0.28f, face.width * 0.9f, face.height * 0.22f), "Still out buzzing", lockSt, new Color(0.62f, 0.56f, 0.45f), 1, 1);
+            }
+            else if (!showBack)
+            {
+                var bee = SpriteCatalog.Bee;
+                if (bee != null && bee.texture != null)
+                {
+                    float bh = face.height * 0.42f;
+                    float bw = bh;
+                    var br = new Rect(face.center.x - bw * 0.5f, face.y + face.height * 0.08f, bw, bh);
+                    GUI.color = kind.Tint;
+                    GUI.DrawTexture(br, bee.texture, ScaleMode.ScaleToFit, true);
+                    GUI.color = Color.white;
+                }
+                var nameSt = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.UpperCenter,
+                    wordWrap = true
+                };
+                nameSt.fontSize = FitFont(nameSt, kind.Name, face.width * 0.92f, face.height * 0.16f, 14, 24);
+                StampOutlined(new Rect(face.x + face.width * 0.04f, face.y + face.height * 0.52f, face.width * 0.92f, face.height * 0.18f), kind.Name, nameSt, new Color(0.32f, 0.16f, 0.06f), 2, 1);
+                var frontSt = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Italic,
+                    alignment = TextAnchor.UpperCenter,
+                    wordWrap = true
+                };
+                frontSt.fontSize = FitFont(frontSt, kind.Front, face.width * 0.9f, face.height * 0.22f, 11, 16);
+                StampOutlined(new Rect(face.x + face.width * 0.05f, face.y + face.height * 0.70f, face.width * 0.9f, face.height * 0.24f), kind.Front, frontSt, new Color(0.42f, 0.24f, 0.10f), 1, 1);
+                if (n > 1)
+                {
+                    var cnt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperRight };
+                    cnt.fontSize = Mathf.RoundToInt(13 * s);
+                    StampOutlined(new Rect(face.xMax - 48f * s, face.y + 4f * s, 44f * s, 20f * s), "×" + n, cnt, new Color(0.36f, 0.18f, 0.07f), 1, 1);
+                }
+            }
+            else
+            {
+                var backTitle = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.UpperCenter,
+                    wordWrap = true
+                };
+                backTitle.fontSize = FitFont(backTitle, kind.Name, face.width * 0.9f, face.height * 0.18f, 13, 22);
+                StampOutlined(new Rect(face.x + face.width * 0.05f, face.y + face.height * 0.08f, face.width * 0.9f, face.height * 0.2f), kind.Name, backTitle, new Color(0.32f, 0.16f, 0.06f), 2, 1);
+                var blip = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.BoldAndItalic,
+                    alignment = TextAnchor.UpperCenter,
+                    wordWrap = true
+                };
+                blip.fontSize = FitFont(blip, kind.Back, face.width * 0.88f, face.height * 0.55f, 12, 18);
+                StampOutlined(new Rect(face.x + face.width * 0.06f, face.y + face.height * 0.32f, face.width * 0.88f, face.height * 0.55f), kind.Back, blip, new Color(0.40f, 0.22f, 0.08f), 1, 1);
+            }
+
+            if (owned && !flipping && HitPad(card, out _))
+            {
+                _hiveFlip = i;
+                _hiveFlipT = 0f;
+                Sfx.Chirp(BirdColor.Gold);
+            }
 
         void DrawLevelHive(float s)
         {
