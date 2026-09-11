@@ -79,6 +79,8 @@ namespace FlockFive
         bool _pokerPlayrun;
         Coroutine _sparrowRun;
         Coroutine _hawkRun;
+        int _shotLevelNumber;
+        string _shotEase;
 
         void Start()
         {
@@ -125,6 +127,11 @@ namespace FlockFive
             {
                 try { System.IO.File.Delete("/tmp/flock-five-sparrow-shot"); } catch { }
                 StartCoroutine(ShotSparrow());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-level6"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-level6"); } catch { }
+                StartCoroutine(ShotSplashButtons());
             }
         }
 
@@ -387,6 +394,33 @@ namespace FlockFive
             yield return new WaitForSecondsRealtime(1.35f);
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(dir + "/sparrow-perch.png");
+        }
+
+        IEnumerator ShotSplashButtons()
+        {
+            const string dir = "/tmp/paradice";
+            System.IO.Directory.CreateDirectory(dir);
+            yield return ShotSplashLevel(6, 5, "Super Duper Easy", dir + "/splash-level6.png");
+            yield return ShotSplashLevel(24, 23, "Super Duper Easy", dir + "/splash-level24.png");
+            _shotLevelNumber = 6;
+            _shotEase = "Super Duper Easy";
+            PlayerPrefs.SetInt("flockfive.next", 5);
+            PlayerPrefs.Save();
+            try { System.IO.File.Copy(dir + "/splash-level6.png", dir + "/splash-sde.png", true); } catch { }
+        }
+
+        IEnumerator ShotSplashLevel(int number, int next, string ease, string path)
+        {
+            _shotLevelNumber = number;
+            _shotEase = ease;
+            PlayerPrefs.SetInt("flockfive.next", next);
+            PlayerPrefs.Save();
+            _home = HomeFace.Splash;
+            _splash = true;
+            yield return new WaitForSecondsRealtime(0.55f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(path);
+            yield return new WaitForSecondsRealtime(0.4f);
         }
 
         IEnumerator PokerPlayrun()
@@ -2335,8 +2369,8 @@ namespace FlockFive
             }
             DrawSplashPokerButton(pokerR);
 
-            string ease = LevelData.JokeEase(next);
-            int number = peek != null ? peek.Number : next + 1;
+            string ease = _shotEase ?? LevelData.JokeEase(next);
+            int number = _shotLevelNumber > 0 ? _shotLevelNumber : (peek != null ? peek.Number : next + 1);
             if (DrawFlowerPlay(s, ease, number))
             {
                 Sfx.GateGo();
