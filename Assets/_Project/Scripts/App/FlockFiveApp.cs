@@ -52,6 +52,9 @@ namespace FlockFive
         float _pokerMotionT = 99f;
         readonly bool[] _pokerRedraw = new bool[BirdPoker.HandSize];
         readonly BirdPoker.Card[] _pokerPrev = new BirdPoker.Card[BirdPoker.HandSize];
+        bool _pokerStamp;
+        float _pokerStampT;
+        int _pokerStampKind = -1;
         enum GiftFace { None, Card, Movie, Thanks }
         GiftFace _gift;
         bool _frozen;
@@ -1689,6 +1692,7 @@ namespace FlockFive
             {
                 BirdPoker.ResetRound();
                 _pokerMotion = PokerMotion.None;
+                _pokerStamp = false;
                 _home = HomeFace.Splash;
             }
             GUI.color = new Color(0.10f, 0.08f, 0.05f, backHeld ? 0.88f : 0.72f);
@@ -1754,7 +1758,9 @@ namespace FlockFive
             var actR = new Rect(Screen.width * 0.5f + 8f * s, btnY, btnW, btnH);
             var againR = new Rect((Screen.width - btnW) * 0.5f, btnY + btnH + 10f * s, btnW, btnH);
 
-            bool busy = PokerMotionBusy();
+            bool busy = PokerMotionBusy() || _pokerStamp;
+            TickPokerStamp();
+            if (_pokerStamp) DrawPokerStampCeremony(s);
             if (BirdPoker.PhaseNow == BirdPoker.Phase.Idle)
             {
                 if (!busy && DrawPokerBtn(betR, "BET $" + BirdPoker.Bet, s))
@@ -1781,7 +1787,11 @@ namespace FlockFive
                     }
                     BirdPoker.Draw();
                     BeginPokerDraw();
-                    if (BirdPoker.LastPunchFresh) Sfx.Combo(3);
+                    if (BirdPoker.LastPunchFresh)
+                    {
+                        BeginPokerStamp(BirdPoker.LastPunchKind);
+                        Sfx.Combo(3);
+                    }
                     else if (BirdPoker.LastWin > 0) Sfx.Clink();
                     else Sfx.Deny();
                 }
@@ -1794,6 +1804,165 @@ namespace FlockFive
                     BeginPokerShuffle();
                     Sfx.Chirp(BirdColor.Teal);
                 }
+            }
+        }
+
+        void BeginPokerStamp(int kind)
+        {
+            _pokerStamp = true;
+            _pokerStampT = 0f;
+            _pokerStampKind = kind;
+            if (CamShake.Live != null) CamShake.Live.Punch(0.22f, 0.12f, 2.4f, 0.10f);
+            Sfx.Rumble();
+        }
+
+        void TickPokerStamp()
+        {
+            if (!_pokerStamp) return;
+            _pokerStampT += Time.unscaledDeltaTime;
+            // Stamp impact rumble
+            if (_pokerStampT >= 1.05f && _pokerStampT - Time.unscaledDeltaTime < 1.05f)
+            {
+                if (CamShake.Live != null) CamShake.Live.Punch(0.34f, 0.16f, 2.8f, 0.12f);
+                Sfx.Rumble();
+                Sfx.Crack();
+            }
+            bool tap = Event.current != null && Event.current.type == EventType.MouseDown;
+            if (_pokerStampT >= 2.6f || (_pokerStampT >= 1.35f && tap))
+                _pokerStamp = false;
+        }
+
+        void DrawPokerStampCeremony(float s)
+        {
+            float t = _pokerStampT;
+            // Dim table
+            float veil = Mathf.Clamp01(t / 0.12f) * 0.72f;
+            GUI.color = new Color(0.04f, 0.03f, 0.02f, veil);
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            // Clipboard slam onto the table
+            float boardW = Mathf.Min(Screen.width * 0.88f, 520f * s);
+            float boardH = boardW * 1.22f;
+            float slamU = Mathf.Clamp01(t / 0.38f);
+            float ease = 1f - Mathf.Pow(1f - slamU, 3f);
+            float yOff = Mathf.Lerp(-Screen.height * 0.55f, 0f, ease);
+            // Impact squash
+            float squash = slamU >= 1f && t < 0.55f
+                ? 1f + 0.06f * Mathf.Sin((t - 0.38f) / 0.17f * Mathf.PI)
+                : 1f;
+            float cx = Screen.width * 0.5f;
+            float cy = Screen.height * 0.48f + yOff;
+            var board = new Rect(cx - boardW * 0.5f, cy - boardH * 0.5f * squash, boardW, boardH * squash);
+
+            // Clipboard body (wood) + paper
+            GUI.color = new Color(0.42f, 0.28f, 0.12f, 0.98f);
+            GUI.DrawTexture(board, Texture2D.whiteTexture);
+            var clip = new Rect(board.center.x - boardW * 0.12f, board.y - 18f * s, boardW * 0.24f, 36f * s);
+            GUI.color = new Color(0.55f, 0.55f, 0.58f, 1f);
+            GUI.DrawTexture(clip, Texture2D.whiteTexture);
+            GUI.color = new Color(0.96f, 0.93f, 0.82f, 1f);
+            var paper = new Rect(board.x + boardW * 0.07f, board.y + boardH * 0.08f, boardW * 0.86f, boardH * 0.84f);
+            GUI.DrawTexture(paper, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            var title = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+            title.fontSize = FitFont(title, "FLOCK FIVE  PUNCH CARD", paper.width * 0.92f, 28f * s, 14, 26);
+            StampOutlined(new Rect(paper.x, paper.y + 8f * s, paper.width, 28f * s), "FLOCK FIVE  PUNCH CARD", title, new Color(0.28f, 0.14f, 0.06f), 2, 1);
+
+            // Bird grid on the paper
+            int cols = 5;
+            float pad = 10f * s;
+            float gridTop = paper.y + 42f * s;
+            float gridH = paper.height - 70f * s;
+            float cell = Mathf.Min((paper.width - pad * 2f - (cols - 1) * 6f * s) / cols, gridH / 3f - 6f * s);
+            float gap = 6f * s;
+            float gridW = cols * cell + (cols - 1) * gap;
+            float x0 = paper.center.x - gridW * 0.5f;
+            for (int i = 0; i < BirdPoker.PunchKinds; i++)
+            {
+                int col = i % cols;
+                int row = i / cols;
+                var r = new Rect(x0 + col * (cell + gap), gridTop + row * (cell + gap), cell, cell);
+                bool on = BirdPoker.IsPunched(i);
+                bool focus = i == _pokerStampKind;
+                GUI.color = focus
+                    ? new Color(1f, 0.92f, 0.55f, 0.95f)
+                    : (on ? new Color(0.88f, 0.84f, 0.72f, 0.95f) : new Color(0.82f, 0.80f, 0.74f, 0.85f));
+                GUI.DrawTexture(r, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                BirdColor c;
+                BirdSex sex;
+                BirdPoker.KindParts(i, out c, out sex);
+                var spr = SpriteCatalog.Bird(c, sex);
+                if (spr != null && spr.texture != null)
+                {
+                    float ip = cell * 0.1f;
+                    GUI.color = on || focus ? Color.white : new Color(1f, 1f, 1f, 0.35f);
+                    GUI.DrawTexture(new Rect(r.x + ip, r.y + ip, cell - ip * 2f, cell - ip * 2f), spr.texture, ScaleMode.ScaleToFit, true);
+                    GUI.color = Color.white;
+                }
+            }
+
+            // Red COMPLETED stamp — drops after clipboard lands
+            if (t >= 0.55f && _pokerStampKind >= 0)
+            {
+                int col = _pokerStampKind % cols;
+                int row = _pokerStampKind / cols;
+                var cellR = new Rect(x0 + col * (cell + gap), gridTop + row * (cell + gap), cell, cell);
+                float stampU = Mathf.Clamp01((t - 0.55f) / 0.50f);
+                float drop = 1f - Mathf.Pow(1f - stampU, 2.4f);
+                float stampSize = cell * 1.55f;
+                float stampY = Mathf.Lerp(cellR.y - Screen.height * 0.35f, cellR.center.y - stampSize * 0.5f, drop);
+                float rot = Mathf.Lerp(-18f, -8f, drop);
+                float pop = stampU >= 1f ? 1f + 0.12f * Mathf.Sin(Mathf.Clamp01((t - 1.05f) / 0.18f) * Mathf.PI) : 1f;
+                stampSize *= pop;
+                var stamp = new Rect(cellR.center.x - stampSize * 0.5f, stampY, stampSize, stampSize);
+
+                // Draw rotated stamp via GUI matrix
+                var prev = GUI.matrix;
+                Vector2 pivot = stamp.center;
+                GUIUtility.RotateAroundPivot(rot, pivot);
+                // Outer red ring (cutthrough circle)
+                GUI.color = new Color(0.82f, 0.08f, 0.10f, 0.92f * Mathf.Clamp01(stampU * 1.4f));
+                GUI.DrawTexture(stamp, Texture2D.whiteTexture);
+                // Hollow center — draw paper-colored disc
+                float inset = stampSize * 0.14f;
+                GUI.color = new Color(0.96f, 0.93f, 0.82f, 0.92f * Mathf.Clamp01(stampU * 1.4f));
+                GUI.DrawTexture(new Rect(stamp.x + inset, stamp.y + inset, stampSize - inset * 2f, stampSize - inset * 2f), Texture2D.whiteTexture);
+                // Inner red ring edge
+                float inset2 = stampSize * 0.20f;
+                GUI.color = new Color(0.82f, 0.08f, 0.10f, 0.88f * Mathf.Clamp01(stampU * 1.4f));
+                // Approximate ring with thick border via four strips is heavy — use text as the cutthrough brand
+                GUI.color = new Color(0.78f, 0.06f, 0.08f, 0.95f * Mathf.Clamp01(stampU * 1.4f));
+                var st = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = true
+                };
+                st.fontSize = FitFont(st, "COMPLETED", stamp.width * 0.82f, stamp.height * 0.45f, 11, 28);
+                // Red lettering cutthrough look: stamp label over the hollow
+                GUI.Label(new Rect(stamp.x + stamp.width * 0.08f, stamp.y + stamp.height * 0.28f, stamp.width * 0.84f, stamp.height * 0.44f), "COMPLETED", st);
+                // Force red via StampOutlined
+                StampOutlined(new Rect(stamp.x + stamp.width * 0.08f, stamp.y + stamp.height * 0.28f, stamp.width * 0.84f, stamp.height * 0.44f), "COMPLETED", st, new Color(0.78f, 0.06f, 0.08f, 1f), 2, 1);
+                GUI.matrix = prev;
+                GUI.color = Color.white;
+            }
+
+            if (t >= 1.4f)
+            {
+                var hint = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Italic,
+                    alignment = TextAnchor.MiddleCenter,
+                    fontSize = Mathf.RoundToInt(14 * s)
+                };
+                StampOutlined(new Rect(0f, board.yMax + 12f * s, Screen.width, 24f * s), "tap to continue", hint, new Color(1f, 0.92f, 0.7f), 1, 1);
             }
         }
 
