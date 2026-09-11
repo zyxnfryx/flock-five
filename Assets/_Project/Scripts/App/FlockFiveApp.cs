@@ -39,6 +39,7 @@ namespace FlockFive
         int _streakAnnounced = -1;
         bool _streakChirped;
         float _pigBurst;
+        float _pigJiggle;
         readonly HashSet<int> _locked = new HashSet<int>();
         int _combo;
         float _comboUntil = -99f;
@@ -149,6 +150,7 @@ namespace FlockFive
             WorldBuilder.MakeCamera(transform);
             if (MixDesk.Live != null) MixDesk.Live.SetSplash(true);
             Purse.Boot();
+            PigPoke.Boot();
             BirdPoker.Boot();
             ArmStreakSlide();
         }
@@ -332,6 +334,7 @@ namespace FlockFive
             _home = HomeFace.Poker;
             BirdPoker.Boot();
             Purse.Boot();
+            PigPoke.Boot();
             if (Purse.Coins < 40) Purse.Credit(40 - Purse.Coins);
             Line("coins " + Purse.Coins + " bet " + BirdPoker.Bet);
             yield return new WaitForSecondsRealtime(0.5f);
@@ -1598,7 +1601,19 @@ namespace FlockFive
         void DrawStreakRewards(float s)
         {
             var pig = PiggyRect(s);
+            var prevM = GUI.matrix;
+            if (_pigJiggle > 0f)
+            {
+                _pigJiggle = Mathf.Max(0f, _pigJiggle - Time.unscaledDeltaTime / 0.30f);
+                float j = _pigJiggle;
+                float wobble = Mathf.Sin(j * Mathf.PI * 3.2f) * 7f * j;
+                float sx = 1f + 0.14f * Mathf.Sin(j * Mathf.PI);
+                float sy = 1f - 0.18f * Mathf.Sin(j * Mathf.PI);
+                GUIUtility.RotateAroundPivot(wobble, pig.center);
+                GUIUtility.ScaleAroundPivot(new Vector2(sx, sy), pig.center);
+            }
             DrawRailIcon(pig, SpriteCatalog.Piggy);
+            GUI.matrix = prevM;
 
             // Bigger persistent balance: "$12" + coin sprite on the right.
             DrawCoinBalance(s, pig);
@@ -1958,6 +1973,19 @@ namespace FlockFive
             return new Rect(lx, y, size, size);
         }
 
+        void TryPigPoke()
+        {
+            Sfx.Oink();
+            _pigJiggle = 1f;
+            _pigBurst = Mathf.Max(_pigBurst, 0.85f);
+            var award = PigPoke.Poke();
+            if (award.Coins > 0)
+            {
+                Sfx.Clink();
+                _pigBurst = 1f;
+            }
+        }
+
         static bool HitPad(Rect r, out bool held)
         {
             int id = GUIUtility.GetControlID(FocusType.Passive);
@@ -2008,6 +2036,11 @@ namespace FlockFive
 
             int next = LevelData.NextPlay;
             var peek = LevelData.Peek(next);
+
+            // Pig above hive: hit-test first so taps don't open the album.
+            var pigR = PiggyRect(s);
+            if (HitPad(pigR, out _))
+                TryPigPoke();
 
             // Hive stays on the right rail; pig stacks above it (see PiggyRect).
             var hiveR = SplashHiveRect();
