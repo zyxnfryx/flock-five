@@ -6,11 +6,15 @@ namespace FlockFive
     {
         public string Id;
         public string Name;
+        public string Front;   // short face-side blurb
+        public string Back;    // reverse-side groaner
         public Color Tint;
-        public BeeKind(string id, string name, Color tint)
+        public BeeKind(string id, string name, string front, string back, Color tint)
         {
             Id = id;
             Name = name;
+            Front = front;
+            Back = back;
             Tint = tint;
         }
     }
@@ -28,20 +32,57 @@ namespace FlockFive
         const char Pair = ';';
         const char Kv = ':';
 
+        // Pun density: high. Emotional damage: intentional.
         public static readonly BeeKind[] Roster =
         {
-            new BeeKind("honey", "Honey Gold", new Color(1.00f, 0.78f, 0.22f)),
-            new BeeKind("ginger", "Garden Ginger", new Color(0.92f, 0.48f, 0.18f)),
-            new BeeKind("dusk", "Dusk Stripe", new Color(0.42f, 0.26f, 0.12f)),
-            new BeeKind("clover", "Clover Nap", new Color(0.48f, 0.72f, 0.24f)),
-            new BeeKind("pollen", "Pollen Fog", new Color(0.96f, 0.88f, 0.52f)),
-            new BeeKind("moon", "Moon Dust", new Color(0.72f, 0.78f, 0.92f)),
-            new BeeKind("rust", "Rust Belt", new Color(0.74f, 0.30f, 0.14f)),
-            new BeeKind("ink", "Ink Band", new Color(0.20f, 0.16f, 0.14f)),
-            new BeeKind("amber", "Amber Nap", new Color(0.95f, 0.62f, 0.16f)),
-            new BeeKind("thistle", "Thistle", new Color(0.56f, 0.38f, 0.72f)),
-            new BeeKind("dew", "Dew Cap", new Color(0.52f, 0.82f, 0.76f)),
-            new BeeKind("coal", "Coal Stripe", new Color(0.30f, 0.24f, 0.18f)),
+            new BeeKind("honey", "Honey Gold",
+                "Sweetest sting in the yard.",
+                "The gold standard of buzzness. Diversified in nectar futures.",
+                new Color(1.00f, 0.78f, 0.22f)),
+            new BeeKind("ginger", "Garden Ginger",
+                "Spicy little garden pest.",
+                "Root of all buzzness. Leaves a warm aftertaste and a welt.",
+                new Color(0.92f, 0.48f, 0.18f)),
+            new BeeKind("dusk", "Dusk Stripe",
+                "Works the late shift.",
+                "Night owl with a day job: pollen. Clock out at moonrise.",
+                new Color(0.42f, 0.26f, 0.12f)),
+            new BeeKind("clover", "Clover Nap",
+                "Lucky and sleepy.",
+                "Four leaves, zero alarms. Dreams in soft landings.",
+                new Color(0.48f, 0.72f, 0.24f)),
+            new BeeKind("pollen", "Pollen Fog",
+                "Hard to see, easy to sneeze.",
+                "Allergy season's MVP. Comes with free congestion.",
+                new Color(0.96f, 0.88f, 0.52f)),
+            new BeeKind("moon", "Moon Dust",
+                "Lunar powered.",
+                "One small step for bee, one giant leap for buzzkind.",
+                new Color(0.72f, 0.78f, 0.92f)),
+            new BeeKind("rust", "Rust Belt",
+                "Industrial strength.",
+                "Still making honey in a tough hive market. Union dues: pollen.",
+                new Color(0.74f, 0.30f, 0.14f)),
+            new BeeKind("ink", "Ink Band",
+                "Writes its own buzz.",
+                "Black-and-yellow press. Extra! Extra! Read all about the comb!",
+                new Color(0.20f, 0.16f, 0.14f)),
+            new BeeKind("amber", "Amber Nap",
+                "Preserved energy.",
+                "Stuck in a good way. Fossilized FOMO optional.",
+                new Color(0.95f, 0.62f, 0.16f)),
+            new BeeKind("thistle", "Thistle",
+                "Prickly but popular.",
+                "Handles rejection well — and spines. Soft hearts, hard edges.",
+                new Color(0.56f, 0.38f, 0.72f)),
+            new BeeKind("dew", "Dew Cap",
+                "Morning person.",
+                "Keeps it fresh. Literally. Condensation is a lifestyle.",
+                new Color(0.52f, 0.82f, 0.76f)),
+            new BeeKind("coal", "Coal Stripe",
+                "Old-school grind.",
+                "Burns the midnight pollen. Ashtrays not included.",
+                new Color(0.30f, 0.24f, 0.18f)),
         };
 
         static int[] _counts;
