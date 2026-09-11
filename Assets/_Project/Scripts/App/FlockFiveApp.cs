@@ -461,12 +461,6 @@ namespace FlockFive
             if (Time.unscaledTime < _nextTap) return;
             _nextTap = Time.unscaledTime + 0.10f;
 
-            if (SparrowView.Live != null && SparrowView.Live.TryHit(world))
-            {
-                SparrowView.Live.Scare();
-                return;
-            }
-
             int feeder = HitFeeder(world);
             if (feeder >= 0)
             {
