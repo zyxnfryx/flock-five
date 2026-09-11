@@ -2166,7 +2166,23 @@ namespace FlockFive
 
             float flower = Mathf.Min(Screen.width * 0.62f, 340f * s);
             var cta = new Rect((Screen.width - flower) * 0.5f, card.yMax - flower * 0.18f, flower, flower);
-            bool watch = HitPad(cta, out bool held);
+            // [x] lives under the flower so it is never inside the Watch hit pad.
+            var later = new Rect((Screen.width - 96f * s) * 0.5f, cta.yMax + 6f * s, 96f * s, 40f * s);
+            bool dismiss = !_freezeOffer && HitPad(later, out _);
+            if (dismiss)
+            {
+                if (_keepStreak)
+                {
+                    Purse.BreakStreak();
+                    StartCoroutine(SnapRound());
+                }
+                else CloseGift();
+                return;
+            }
+
+            // Watch only on the wood disc — not the whole flower sprite (petals used to eat [x]).
+            var discHit = FlowerDisc(cta, 0f);
+            bool watch = HitPad(discHit, out bool held);
             var bloom = SpriteCatalog.PlayFlower;
             if (bloom != null && bloom.texture != null)
             {
@@ -2196,7 +2212,6 @@ namespace FlockFive
             }
 
             if (_freezeOffer) return;
-            var later = new Rect((Screen.width - 80f * s) * 0.5f, cta.y + cta.height * 0.82f, 80f * s, 36f * s);
             var laterSt = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Normal,
@@ -2207,15 +2222,6 @@ namespace FlockFive
             laterSt.hover.textColor = laterSt.normal.textColor;
             laterSt.active.textColor = laterSt.normal.textColor;
             GUI.Label(later, "[x]", laterSt);
-            if (HitPad(later, out _))
-            {
-                if (_keepStreak)
-                {
-                    Purse.BreakStreak();
-                    StartCoroutine(SnapRound());
-                }
-                else CloseGift();
-            }
         }
 
         void DrawGiftMovie(float s)
