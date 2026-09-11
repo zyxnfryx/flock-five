@@ -116,6 +116,16 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-storm-shot"); } catch { }
                 StartCoroutine(ShotStorm());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-hive-inspect"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-hive-inspect"); } catch { }
+                StartCoroutine(ShotHiveInspect());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-sparrow-shot"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-sparrow-shot"); } catch { }
+                StartCoroutine(ShotSparrow());
+            }
         }
 
         void Restart()
@@ -319,6 +329,58 @@ namespace FlockFive
             _home = HomeFace.Splash;
             PlayerPrefs.SetInt("flockfive.next", keep);
             PlayerPrefs.Save();
+        }
+
+        IEnumerator ShotHiveInspect()
+        {
+            const string dir = "/tmp/paradice";
+            System.IO.Directory.CreateDirectory(dir);
+            _home = HomeFace.Hive;
+            if (Hive.Found == 0)
+            {
+                for (int n = 0; n < 4; n++) Hive.TakeVisitor();
+            }
+            int ix = 0;
+            for (int k = 0; k < Hive.AlbumSlots; k++)
+            {
+                if (Hive.CountOfSlot(k) > 0) { ix = k; break; }
+            }
+            yield return new WaitForSecondsRealtime(0.45f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/hive-page.png");
+            _hiveInspect = ix;
+            _hiveInspectT = 0f;
+            _hiveInspectClosing = false;
+            _hiveFaceBack[ix] = false;
+            _hiveFlip = -1;
+            _hiveInspectFrom = new Rect(Screen.width * 0.35f, Screen.height * 0.42f, Screen.width * 0.22f, Screen.height * 0.18f);
+            yield return new WaitForSecondsRealtime(0.45f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/hive-inspect-front.png");
+            yield return new WaitForSecondsRealtime(0.2f);
+            _hiveFlip = ix;
+            _hiveFlipT = 0f;
+            yield return new WaitForSecondsRealtime(0.40f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/hive-inspect-back.png");
+            yield return new WaitForSecondsRealtime(0.2f);
+            BeginPutAwayInspect();
+            yield return new WaitForSecondsRealtime(0.45f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/hive-after-putaway.png");
+        }
+
+        IEnumerator ShotSparrow()
+        {
+            const string dir = "/tmp/paradice";
+            System.IO.Directory.CreateDirectory(dir);
+            Load(0);
+            yield return new WaitForSecondsRealtime(1.05f);
+            if (_garden.Feeders != null && _garden.Root != null)
+                StartCoroutine(SparrowView.Visit(_garden.Feeders, _garden.Root));
+            yield return new WaitForSecondsRealtime(1.35f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/sparrow-perch.png");
         }
 
         IEnumerator PokerPlayrun()
@@ -732,6 +794,12 @@ namespace FlockFive
                 bird.sortingOrder = 42;
                 birds[n++] = bird;
             }
+            var flock = new Bird[n];
+            for (int i = 0; i < n; i++)
+            {
+                var idle = birds[i] != null ? birds[i].GetComponent<BirdIdle>() : null;
+                flock[i] = idle != null ? new Bird(idle.Color, idle.Sex) : new Bird(col, BirdSex.Neutral);
+            }
             _board.ApplyCollect(branch);
 
             float haste = Mathf.Lerp(1f, 0.52f, Mathf.Clamp01((combo - 1) / 7f));
@@ -740,9 +808,9 @@ namespace FlockFive
             bool vsHawk = HawkView.Live != null && HawkView.Live.BlockingSlot == slot;
             bool vsSparrow = !vsHawk && SparrowView.Live != null && SparrowView.Live.BlockingSlot == slot;
             if (vsHawk)
-                yield return CollectVsHawk(birds, n, feeder, mouth, view, col, haste, step, fly, combo);
+                yield return CollectVsHawk(birds, n, feeder, mouth, view, col, haste, step, fly, combo, flock, branch);
             else if (vsSparrow)
-                yield return CollectVsSparrow(birds, n, feeder, mouth, view, col, haste, step, fly, combo);
+                yield return CollectVsSparrow(birds, n, feeder, mouth, view, col, haste, step, fly, combo, flock, branch);
             else
             {
                 if (feeder != null) feeder.Hold();
@@ -776,7 +844,8 @@ namespace FlockFive
         // Collect into a sparrow-blocked feeder: dive arcs, five dive-strikes, zigzag flee, scatter.
         IEnumerator CollectVsSparrow(
             SpriteRenderer[] birds, int n, FeederView feeder, Vector3 mouth,
-            BranchView view, BirdColor col, float haste, float step, float fly, int combo)
+            BranchView view, BirdColor col, float haste, float step, float fly, int combo,
+            Bird[] flock, int broken)
         {
             if (SparrowView.Live != null)
                 SparrowView.Live.BeginEvict();
@@ -819,17 +888,19 @@ namespace FlockFive
             if (SparrowView.Live != null)
                 yield return SparrowView.Live.PanicFlee();
 
-            yield return ScatterBirds(birds, n);
+            yield return ScatterUp(birds, n);
 
             if (feeder != null) yield return feeder.PullAway();
             yield return view.BreakAway();
+            yield return PerchOnRemain(birds, n, flock, broken);
         }
 
         // Collect into a hawk-blocked feeder. Same dive scrap as sparrow, but two
         // full collects to clear: first wounds (hawk stays perched), second flees.
         IEnumerator CollectVsHawk(
             SpriteRenderer[] birds, int n, FeederView feeder, Vector3 mouth,
-            BranchView view, BirdColor col, float haste, float step, float fly, int combo)
+            BranchView view, BirdColor col, float haste, float step, float fly, int combo,
+            Bird[] flock, int broken)
         {
             var hawk = HawkView.Live;
             if (hawk != null) hawk.BeginScrap();
@@ -873,7 +944,7 @@ namespace FlockFive
             else if (hawk != null)
                 hawk.EndScrap();
 
-            yield return ScatterBirds(birds, n);
+            yield return ScatterUp(birds, n);
 
             if (cleared)
             {
@@ -885,6 +956,7 @@ namespace FlockFive
                 feeder.SnapHome();
             }
             yield return view.BreakAway();
+            yield return PerchOnRemain(birds, n, flock, broken);
         }
 
         IEnumerator DiveApproach(Transform tr, Vector3 hold, float delay, float dur, int pop)
@@ -1039,6 +1111,176 @@ namespace FlockFive
                 StartCoroutine(ScatterOne(birds[i].transform, dest, delay));
             }
             yield return new WaitForSeconds(0.58f + n * 0.04f);
+        }
+
+        // Panic lift after a pest scrap — stay visible until the broken limb is gone.
+        IEnumerator ScatterUp(SpriteRenderer[] birds, int n)
+        {
+            if (n <= 0) yield break;
+            Sfx.Takeoff(n);
+            Sfx.FlockFlutter(Mathf.Min(3, Mathf.Max(1, n)));
+            for (int i = 0; i < n; i++)
+            {
+                if (birds[i] == null) continue;
+                var p = birds[i].transform.position;
+                var hold = p + new Vector3(
+                    Random.Range(-1.15f, 1.15f),
+                    Random.Range(0.85f, 1.7f),
+                    0f);
+                float delay = i * Random.Range(0.02f, 0.05f);
+                StartCoroutine(ScatterHold(birds[i].transform, hold, delay));
+            }
+            yield return new WaitForSeconds(0.40f + n * 0.03f);
+        }
+
+        static IEnumerator ScatterHold(Transform tr, Vector3 dest, float delay)
+        {
+            if (tr == null) yield break;
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            if (tr == null) yield break;
+            var start = tr.position;
+            var scale = BranchView.BirdScale;
+            float side = dest.x >= start.x ? 1f : -1f;
+            float lift = Random.Range(0.55f, 1.05f);
+            float dur = Random.Range(0.28f, 0.40f);
+            var idle = tr.GetComponent<BirdIdle>();
+            if (idle != null)
+            {
+                idle.FaceLeft = dest.x < start.x;
+                idle.Flapping = true;
+                idle.Frozen = true;
+            }
+            var sr = tr.GetComponent<SpriteRenderer>();
+            if (sr != null)
+            {
+                sr.flipX = dest.x < start.x;
+                var c = sr.color;
+                c.a = 1f;
+                sr.color = c;
+                sr.enabled = true;
+            }
+            tr.gameObject.SetActive(true);
+            float t = 0f;
+            while (t < dur)
+            {
+                if (tr == null) yield break;
+                t += Time.deltaTime;
+                float u = Mathf.SmoothStep(0f, 1f, t / dur);
+                var p = Vector3.Lerp(start, dest, u);
+                p.y += Mathf.Sin(u * Mathf.PI) * lift;
+                p.x += Mathf.Sin(u * Mathf.PI * 2.1f) * side * 0.22f * (1f - u);
+                tr.position = p;
+                tr.localScale = scale;
+                yield return null;
+            }
+            if (tr != null) tr.position = dest;
+        }
+
+        IEnumerator PerchOnRemain(SpriteRenderer[] birds, int n, Bird[] flock, int broken)
+        {
+            if (n <= 0) yield break;
+            var dests = new Vector3[n];
+            var parked = new bool[n];
+            for (int i = 0; i < n; i++)
+            {
+                int home = FindParkBranch(broken);
+                if (home < 0 || _garden.Branches == null || home >= _garden.Branches.Length)
+                    continue;
+                var st = _board.Branches[home];
+                int seat = st.Count;
+                st.Birds.Add(i < flock.Length ? flock[i] : new Bird(BirdColor.Gold, BirdSex.Neutral));
+                st.AlignShroud();
+                var br = _garden.Branches[home];
+                dests[i] = br.SeatWorld(seat) + br.transform.TransformVector(new Vector3(0f, BranchView.RestLift, 0f));
+                parked[i] = true;
+            }
+
+            Sfx.FlockFlutter(Mathf.Max(1, n));
+            float wait = 0.48f;
+            for (int i = 0; i < n; i++)
+            {
+                if (birds[i] == null) continue;
+                float delay = i * 0.035f;
+                wait = Mathf.Max(wait, delay + 0.52f);
+                if (parked[i])
+                    StartCoroutine(PerchOne(birds[i].transform, dests[i], delay));
+                else
+                {
+                    var off = ScatterDests(1);
+                    StartCoroutine(ScatterOne(birds[i].transform, off[0], delay));
+                }
+            }
+            yield return new WaitForSeconds(wait);
+        }
+
+        int FindParkBranch(int broken)
+        {
+            if (_board == null) return -1;
+            int best = -1;
+            int bestFree = -1;
+            for (int b = 0; b < _board.Branches.Count; b++)
+            {
+                if (b == broken) continue;
+                var st = _board.Branches[b];
+                if (st.Broken || st.AdLocked || st.Free <= 0) continue;
+                if (_board.IsSleeping(b)) continue;
+                if (_garden.Branches == null || b >= _garden.Branches.Length) continue;
+                var view = _garden.Branches[b];
+                if (view == null) continue;
+                if (st.Free > bestFree)
+                {
+                    bestFree = st.Free;
+                    best = b;
+                }
+            }
+            return best;
+        }
+
+        static IEnumerator PerchOne(Transform tr, Vector3 dest, float delay)
+        {
+            if (tr == null) yield break;
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            if (tr == null) yield break;
+            var start = tr.position;
+            var scale = BranchView.BirdScale;
+            float dur = 0.48f;
+            var idle = tr.GetComponent<BirdIdle>();
+            if (idle != null)
+            {
+                idle.FaceLeft = dest.x < start.x;
+                idle.Flapping = true;
+                idle.Frozen = true;
+            }
+            var sr = tr.GetComponent<SpriteRenderer>();
+            if (sr != null)
+            {
+                sr.enabled = true;
+                sr.flipX = dest.x < start.x;
+                var c = sr.color;
+                c.a = 1f;
+                sr.color = c;
+            }
+            tr.gameObject.SetActive(true);
+            float t = 0f;
+            while (t < dur)
+            {
+                if (tr == null) yield break;
+                t += Time.deltaTime;
+                float u = Mathf.SmoothStep(0f, 1f, t / dur);
+                var p = Vector3.Lerp(start, dest, u);
+                p.y += Mathf.Sin(u * Mathf.PI) * 2.45f;
+                tr.position = p;
+                tr.localScale = scale;
+                yield return null;
+            }
+            if (tr == null) yield break;
+            tr.position = dest;
+            tr.localScale = scale;
+            if (idle != null)
+            {
+                idle.Frozen = false;
+                idle.Flapping = false;
+            }
         }
 
         Vector3[] ScatterDests(int need)
@@ -2131,9 +2373,9 @@ namespace FlockFive
         {
             var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
-            var easeR = new Rect(disc.x + disc.width * 0.06f, disc.y + disc.height * 0.04f, disc.width * 0.88f, disc.height * 0.34f);
+            // Joke rides the top of the gold plate; LEVEL sits in the bowl below it.
             var lvR = hasEase
-                ? new Rect(disc.x + disc.width * 0.02f, disc.y + disc.height * 0.40f, disc.width * 0.96f, disc.height * 0.52f)
+                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.48f, disc.width * 0.92f, disc.height * 0.44f)
                 : new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.84f);
 
             if (hasEase)
@@ -2141,11 +2383,11 @@ namespace FlockFive
                 var joke = new GUIStyle(GUI.skin.label)
                 {
                     fontStyle = FontStyle.BoldAndItalic,
-                    alignment = TextAnchor.LowerCenter,
+                    alignment = TextAnchor.MiddleCenter,
                     wordWrap = false
                 };
-                joke.fontSize = FitFont(joke, ease, easeR.width, easeR.height, 24, 52);
-                StampOutlined(easeR, ease, joke, new Color(0.34f, 0.18f, 0.07f), 2, 1);
+                joke.fontSize = Mathf.Clamp(Mathf.RoundToInt(disc.height * 0.185f), 22, 42);
+                StampArced(disc, ease, joke, new Color(0.34f, 0.18f, 0.07f), 2, 1);
             }
 
             var lv = new GUIStyle(GUI.skin.label)
@@ -2155,7 +2397,11 @@ namespace FlockFive
                 wordWrap = false
             };
             string level = "LEVEL " + number;
-            lv.fontSize = FitFont(lv, level, lvR.width * 0.88f, lvR.height * 0.80f, 32, 96);
+            lv.fontSize = FitFont(
+                lv, level,
+                lvR.width * (hasEase ? 0.80f : 0.88f),
+                lvR.height * (hasEase ? 0.66f : 0.80f),
+                32, hasEase ? 80 : 96);
             int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
             int black = 1;
             StampOutlined(lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, black);
@@ -2174,6 +2420,20 @@ namespace FlockFive
             return lo;
         }
 
+        static int FitFontWrapped(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi)
+        {
+            if (string.IsNullOrEmpty(text) || maxW < 8f || maxH < 8f) return lo;
+            var st = new GUIStyle(proto) { wordWrap = true };
+            var content = new GUIContent(text);
+            for (int fs = hi; fs >= lo; fs--)
+            {
+                st.fontSize = fs;
+                float h = st.CalcHeight(content, maxW);
+                if (h <= maxH) return fs;
+            }
+            return lo;
+        }
+
         static void Paint(GUIStyle st, Color c)
         {
             st.normal.textColor = c;
@@ -2183,6 +2443,48 @@ namespace FlockFive
             st.onNormal.textColor = c;
             st.onHover.textColor = c;
             st.onActive.textColor = c;
+        }
+
+        static void StampArced(Rect disc, string text, GUIStyle st, Color fill, int whitePx, int blackPx)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            int n = text.Length;
+            var widths = new float[n];
+            float total = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float w = st.CalcSize(new GUIContent(text[i].ToString())).x;
+                if (text[i] == ' ') w = Mathf.Max(w, st.fontSize * 0.38f);
+                widths[i] = Mathf.Max(2f, w);
+                total += widths[i];
+            }
+            if (total < 1f) return;
+
+            // Concentric with the gold plate. Radius tracks the string so letters
+            // keep their spacing and the bow stays on the disc (not the petals).
+            float want = Mathf.Lerp(0.50f, 1.65f, Mathf.InverseLerp(4f, 16f, n));
+            float rx = Mathf.Min(disc.width * 0.38f, total / Mathf.Max(want, 0.45f));
+            float span = Mathf.Clamp(total / Mathf.Max(rx, 1f), 0.40f, 1.72f);
+            float ry = rx * (disc.height / Mathf.Max(disc.width, 1f));
+            float cx = disc.center.x;
+            float cy = disc.y + disc.height * 0.20f + ry;
+            float start = -span * 0.5f;
+            float acc = 0f;
+            float h = st.CalcSize(new GUIContent("Ag")).y;
+            var prev = GUI.matrix;
+            for (int i = 0; i < n; i++)
+            {
+                float u = (acc + widths[i] * 0.5f) / total;
+                float ang = start + u * span;
+                float x = cx + rx * Mathf.Sin(ang);
+                float y = cy - ry * Mathf.Cos(ang);
+                var r = new Rect(x - widths[i] * 0.5f, y - h * 0.50f, widths[i], h);
+                GUI.matrix = prev;
+                GUIUtility.RotateAroundPivot(ang * Mathf.Rad2Deg, new Vector2(x, y));
+                StampOutlined(r, text[i].ToString(), st, fill, whitePx, blackPx);
+                acc += widths[i];
+            }
+            GUI.matrix = prev;
         }
 
         static void StampOutlined(Rect r, string text, GUIStyle st, Color fill, int whitePx, int blackPx)
@@ -2975,18 +3277,13 @@ namespace FlockFive
             {
                 if (_hiveInspect >= 0)
                 {
-                    if (!_hiveInspectClosing)
-                    {
-                        _hiveInspectClosing = true;
-                        _hiveInspectT = 0f;
-                        _hiveFlip = -1;
-                        Sfx.PageTurn();
-                    }
+                    BeginPutAwayInspect();
                 }
                 else
                 {
                     _hiveFlip = -1;
                     _hivePageTurn = 99f;
+                    for (int k = 0; k < _hiveFaceBack.Length; k++) _hiveFaceBack[k] = false;
                     _hiveInspect = -1;
                     _hiveInspectT = 0f;
                     _hiveInspectClosing = false;
@@ -3183,9 +3480,9 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // Large portrait card ~1:1.4, near-fullscreen
-            float maxW = Screen.width * 0.86f;
-            float maxH = Screen.height * 0.62f;
+            // Large portrait card ~1:1.4, fill the screen for 55+ reading
+            float maxW = Screen.width * 0.92f;
+            float maxH = Screen.height * 0.74f;
             float bigW, bigH;
             if (maxW * 1.4f <= maxH)
             {
@@ -3215,12 +3512,14 @@ namespace FlockFive
             // Hint under card
             var hint = new GUIStyle(GUI.skin.label)
             {
-                fontStyle = FontStyle.Italic,
+                fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter,
-                fontSize = Mathf.RoundToInt(14 * s)
+                wordWrap = false
             };
-            float hintY = big.yMax + 10f * s;
-            StampOutlined(new Rect(0f, hintY, Screen.width, 22f * s), "Tap card to flip  ·  tap outside to put back", hint, new Color(0.92f, 0.82f, 0.58f, Mathf.Clamp01(t * 1.4f)), 1, 1);
+            string hintCopy = "Tap card to flip  ·  tap outside to put back";
+            hint.fontSize = FitFont(hint, hintCopy, Screen.width * 0.86f, 28f * s, 16, 26);
+            float hintY = big.yMax + 8f * s;
+            StampOutlined(new Rect(0f, hintY, Screen.width, 32f * s), hintCopy, hint, new Color(0.96f, 0.90f, 0.70f, Mathf.Clamp01(t * 1.4f)), 2, 1);
 
             // Close X top-right of overlay
             var safe = Screen.safeArea;
@@ -3257,20 +3556,50 @@ namespace FlockFive
             var full = new Rect(0f, 0f, Screen.width, Screen.height);
             bool outside = !_hiveInspectClosing && u > 0.85f && HitPad(full, out _);
             if ((outside || xHit) && !_hiveInspectClosing)
-            {
-                _hiveInspectClosing = true;
-                _hiveInspectT = 0f;
-                _hiveFlip = -1;
-                Sfx.PageTurn();
-            }
+                BeginPutAwayInspect();
 
             if (_hiveInspectClosing && u >= 1f)
+                FinishPutAwayInspect();
+        }
+
+        void BeginPutAwayInspect()
+        {
+            if (_hiveInspect < 0 || _hiveInspectClosing) return;
+            int ix = _hiveInspect;
+            _hiveInspectClosing = true;
+            _hiveInspectT = 0f;
+            Sfx.PageTurn();
+            if ((uint)ix >= (uint)_hiveFaceBack.Length)
             {
-                _hiveInspect = -1;
-                _hiveInspectClosing = false;
-                _hiveInspectT = 0f;
                 _hiveFlip = -1;
+                _hiveFlipT = 0f;
+                return;
             }
+            if (_hiveFaceBack[ix])
+            {
+                if (_hiveFlip != ix)
+                {
+                    _hiveFlip = ix;
+                    _hiveFlipT = 0f;
+                }
+            }
+            else
+            {
+                _hiveFlip = -1;
+                _hiveFlipT = 0f;
+            }
+        }
+
+        void FinishPutAwayInspect()
+        {
+            int ix = _hiveInspect;
+            if ((uint)ix < (uint)_hiveFaceBack.Length)
+                _hiveFaceBack[ix] = false;
+            _hiveInspect = -1;
+            _hiveInspectClosing = false;
+            _hiveInspectT = 0f;
+            _hiveFlip = -1;
+            _hiveFlipT = 0f;
         }
 
         void DrawFoilSheen(Rect face, BeeFinish finish, int slot, bool inspectView)
@@ -3360,7 +3689,9 @@ namespace FlockFive
             bool flipping = _hiveFlip == i;
             float flipU = flipping ? Mathf.Clamp01(_hiveFlipT / 0.28f) : 0f;
             float squash = flipping ? Mathf.Abs(Mathf.Cos(flipU * Mathf.PI)) : 1f;
-            bool showBack = flipping ? (flipU >= 0.5f ? !_hiveFaceBack[i] : _hiveFaceBack[i]) : _hiveFaceBack[i];
+            // Sleeves always show the front; the back only lives in inspect.
+            bool faceBack = inspectView && _hiveFaceBack[i];
+            bool showBack = inspectView && (flipping ? (flipU >= 0.5f ? !faceBack : faceBack) : faceBack);
 
             float cx = card.center.x;
             float w = card.width * Mathf.Max(0.08f, squash);
@@ -3376,8 +3707,8 @@ namespace FlockFive
             GUI.DrawTexture(r, Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // Inner face
-            var face = new Rect(r.x + r.width * 0.06f, r.y + r.height * 0.05f, r.width * 0.88f, r.height * 0.90f);
+            // Inner face — use the plate; type needs every pixel for 55+ reading
+            var face = new Rect(r.x + r.width * 0.045f, r.y + r.height * 0.035f, r.width * 0.91f, r.height * 0.93f);
             GUI.color = owned
                 ? Color.Lerp(new Color(0.98f, 0.92f, 0.72f), kind.Tint, 0.18f)
                 : new Color(0.22f, 0.20f, 0.18f, 0.95f);
@@ -3395,25 +3726,28 @@ namespace FlockFive
                     fontStyle = FontStyle.Bold,
                     alignment = TextAnchor.MiddleCenter
                 };
-                mystery.fontSize = FitFont(mystery, "?", face.width * 0.5f, face.height * 0.35f, 28, 64);
-                StampOutlined(new Rect(face.x, face.y + face.height * 0.18f, face.width, face.height * 0.4f), "?", mystery, new Color(0.55f, 0.48f, 0.38f), 2, 1);
+                mystery.fontSize = FitFont(mystery, "?", face.width * 0.55f, face.height * 0.40f, inspectView ? 48 : 28, inspectView ? 96 : 64);
+                StampOutlined(new Rect(face.x, face.y + face.height * 0.16f, face.width, face.height * 0.42f), "?", mystery, new Color(0.55f, 0.48f, 0.38f), 2, 1);
                 var lockSt = new GUIStyle(GUI.skin.label)
                 {
-                    fontStyle = FontStyle.Italic,
+                    fontStyle = FontStyle.Bold,
                     alignment = TextAnchor.UpperCenter,
                     wordWrap = true
                 };
-                lockSt.fontSize = FitFont(lockSt, "Still out buzzing", face.width * 0.9f, face.height * 0.2f, 12, 18);
-                StampOutlined(new Rect(face.x + face.width * 0.05f, face.yMax - face.height * 0.28f, face.width * 0.9f, face.height * 0.22f), "Still out buzzing", lockSt, new Color(0.62f, 0.56f, 0.45f), 1, 1);
+                string locked = "Still out buzzing";
+                var lockBox = new Rect(face.x + face.width * 0.04f, face.yMax - face.height * 0.30f, face.width * 0.92f, face.height * 0.26f);
+                lockSt.fontSize = FitFontWrapped(lockSt, locked, lockBox.width, lockBox.height, inspectView ? 18 : 12, inspectView ? 36 : 20);
+                StampOutlined(lockBox, locked, lockSt, new Color(0.50f, 0.42f, 0.30f), inspectView ? 2 : 1, 1);
             }
             else if (!showBack)
             {
                 var bee = SpriteCatalog.Bee;
+                float beeShare = inspectView ? 0.24f : 0.38f;
                 if (bee != null && bee.texture != null)
                 {
-                    float bh = face.height * 0.42f;
+                    float bh = face.height * beeShare;
                     float bw = bh;
-                    var br = new Rect(face.center.x - bw * 0.5f, face.y + face.height * 0.08f, bw, bh);
+                    var br = new Rect(face.center.x - bw * 0.5f, face.y + face.height * 0.03f, bw, bh);
                     GUI.color = kind.Tint;
                     GUI.DrawTexture(br, bee.texture, ScaleMode.ScaleToFit, true);
                     GUI.color = Color.white;
@@ -3421,24 +3755,39 @@ namespace FlockFive
                 var nameSt = new GUIStyle(GUI.skin.label)
                 {
                     fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.UpperCenter,
+                    alignment = TextAnchor.MiddleCenter,
                     wordWrap = true
                 };
-                nameSt.fontSize = FitFont(nameSt, kind.Name, face.width * 0.92f, face.height * 0.16f, 14, 24);
-                StampOutlined(new Rect(face.x + face.width * 0.04f, face.y + face.height * 0.52f, face.width * 0.92f, face.height * 0.18f), kind.Name, nameSt, new Color(0.32f, 0.16f, 0.06f), 2, 1);
+                float nameTop = inspectView ? 0.28f : 0.50f;
+                float nameH = inspectView ? 0.18f : 0.18f;
+                var nameBox = new Rect(face.x + face.width * 0.03f, face.y + face.height * nameTop, face.width * 0.94f, face.height * nameH);
+                int nameHi = inspectView
+                    ? Mathf.Clamp(Mathf.RoundToInt(nameBox.height * 0.88f), 32, 88)
+                    : Mathf.Clamp(Mathf.RoundToInt(nameBox.height * 0.72f), 16, 28);
+                nameSt.fontSize = FitFontWrapped(nameSt, kind.Name, nameBox.width, nameBox.height, inspectView ? 28 : 14, nameHi);
+                int nameStroke = inspectView ? Mathf.Max(2, Mathf.RoundToInt(nameSt.fontSize * 0.06f)) : 2;
+                StampOutlined(nameBox, kind.Name, nameSt, new Color(0.16f, 0.07f, 0.02f), nameStroke, 1);
                 var frontSt = new GUIStyle(GUI.skin.label)
                 {
-                    fontStyle = FontStyle.Italic,
+                    fontStyle = FontStyle.Bold,
                     alignment = TextAnchor.UpperCenter,
                     wordWrap = true
                 };
-                frontSt.fontSize = FitFont(frontSt, kind.Front, face.width * 0.9f, face.height * 0.22f, 11, 16);
-                StampOutlined(new Rect(face.x + face.width * 0.05f, face.y + face.height * 0.70f, face.width * 0.9f, face.height * 0.24f), kind.Front, frontSt, new Color(0.42f, 0.24f, 0.10f), 1, 1);
+                var frontBox = new Rect(
+                    face.x + face.width * 0.03f,
+                    face.y + face.height * (nameTop + nameH + 0.01f),
+                    face.width * 0.94f,
+                    face.height * (0.96f - nameTop - nameH));
+                int frontHi = inspectView
+                    ? Mathf.Clamp(Mathf.RoundToInt(frontBox.height * 0.42f), 28, 88)
+                    : Mathf.Clamp(Mathf.RoundToInt(frontBox.height * 0.36f), 13, 22);
+                frontSt.fontSize = FitFontWrapped(frontSt, kind.Front, frontBox.width, frontBox.height, inspectView ? 22 : 13, frontHi);
+                StampOutlined(frontBox, kind.Front, frontSt, new Color(0.20f, 0.09f, 0.03f), inspectView ? 2 : 1, 1);
                 if (n > 1)
                 {
                     var cnt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperRight };
-                    cnt.fontSize = Mathf.RoundToInt(13 * s);
-                    StampOutlined(new Rect(face.xMax - 48f * s, face.y + 4f * s, 44f * s, 20f * s), "×" + n, cnt, new Color(0.36f, 0.18f, 0.07f), 1, 1);
+                    cnt.fontSize = Mathf.Max(inspectView ? 22 : 13, Mathf.RoundToInt((inspectView ? 20f : 13f) * s));
+                    StampOutlined(new Rect(face.xMax - 56f * s, face.y + 4f * s, 52f * s, inspectView ? 32f * s : 20f * s), "×" + n, cnt, new Color(0.16f, 0.07f, 0.02f), inspectView ? 2 : 1, 1);
                 }
                 if (finish != BeeFinish.Normal)
                 {
@@ -3456,28 +3805,41 @@ namespace FlockFive
                 var backTitle = new GUIStyle(GUI.skin.label)
                 {
                     fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.UpperCenter,
+                    alignment = TextAnchor.MiddleCenter,
                     wordWrap = true
                 };
-                backTitle.fontSize = FitFont(backTitle, kind.Name, face.width * 0.9f, face.height * 0.18f, 13, 22);
-                StampOutlined(new Rect(face.x + face.width * 0.05f, face.y + face.height * 0.08f, face.width * 0.9f, face.height * 0.2f), kind.Name, backTitle, new Color(0.32f, 0.16f, 0.06f), 2, 1);
+                var titleBox = new Rect(face.x + face.width * 0.03f, face.y + face.height * 0.03f, face.width * 0.94f, face.height * 0.18f);
+                int titleHi = inspectView
+                    ? Mathf.Clamp(Mathf.RoundToInt(titleBox.height * 0.80f), 30, 80)
+                    : Mathf.Clamp(Mathf.RoundToInt(titleBox.height * 0.70f), 14, 26);
+                backTitle.fontSize = FitFontWrapped(backTitle, kind.Name, titleBox.width, titleBox.height, inspectView ? 26 : 14, titleHi);
+                StampOutlined(titleBox, kind.Name, backTitle, new Color(0.16f, 0.07f, 0.02f), inspectView ? Mathf.Max(2, Mathf.RoundToInt(backTitle.fontSize * 0.06f)) : 2, 1);
                 var blip = new GUIStyle(GUI.skin.label)
                 {
-                    fontStyle = FontStyle.BoldAndItalic,
+                    fontStyle = FontStyle.Bold,
                     alignment = TextAnchor.UpperCenter,
                     wordWrap = true
                 };
-                blip.fontSize = FitFont(blip, kind.Back, face.width * 0.88f, face.height * 0.55f, 12, 18);
-                StampOutlined(new Rect(face.x + face.width * 0.06f, face.y + face.height * 0.32f, face.width * 0.88f, face.height * 0.55f), kind.Back, blip, new Color(0.40f, 0.22f, 0.08f), 1, 1);
+                float foilH = finish != BeeFinish.Normal ? 0.10f : 0f;
+                var bodyBox = new Rect(
+                    face.x + face.width * 0.04f,
+                    face.y + face.height * 0.23f,
+                    face.width * 0.92f,
+                    face.height * (0.72f - foilH));
+                int bodyHi = inspectView
+                    ? Mathf.Clamp(Mathf.RoundToInt(bodyBox.height * 0.28f), 28, 96)
+                    : Mathf.Clamp(Mathf.RoundToInt(bodyBox.height * 0.18f), 13, 20);
+                blip.fontSize = FitFontWrapped(blip, kind.Back, bodyBox.width, bodyBox.height, inspectView ? 22 : 13, bodyHi);
+                StampOutlined(bodyBox, kind.Back, blip, new Color(0.18f, 0.08f, 0.03f), inspectView ? 2 : 1, 1);
                 if (finish != BeeFinish.Normal)
                 {
                     string foil = finish == BeeFinish.Holo ? "Holo" : "Inverse Rainbow";
                     var foilSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.LowerCenter };
-                    foilSt.fontSize = Mathf.RoundToInt(12 * s);
+                    foilSt.fontSize = Mathf.Max(inspectView ? 18 : 12, Mathf.RoundToInt((inspectView ? 16f : 12f) * s));
                     Color foilCol = finish == BeeFinish.Holo
                         ? new Color(0.15f, 0.48f, 0.92f)
                         : new Color(0.82f, 0.22f, 0.68f);
-                    StampOutlined(new Rect(face.x, face.yMax - face.height * 0.12f, face.width, face.height * 0.1f), foil, foilSt, foilCol, 1, 1);
+                    StampOutlined(new Rect(face.x, face.yMax - face.height * 0.12f, face.width, face.height * 0.1f), foil, foilSt, foilCol, inspectView ? 2 : 1, 1);
                 }
             }
 
@@ -3488,7 +3850,9 @@ namespace FlockFive
                 _hiveInspectT = 0f;
                 _hiveInspectClosing = false;
                 _hiveInspectFrom = card;
+                _hiveFaceBack[i] = false;
                 _hiveFlip = -1;
+                _hiveFlipT = 0f;
                 Sfx.PageTurn();
             }
         }

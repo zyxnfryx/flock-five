@@ -254,6 +254,12 @@ namespace FlockFive
             _kitRest = null;
             _kitUp = null;
             _kitMid = null;
+            _sparrow = null;
+            _sparrowFlap1 = null;
+            _sparrowFlap2 = null;
+            _sparrowPlaceholder = false;
+            _hawk = null;
+            _hawkPlaceholder = false;
         }
 
         public static Sprite Bird(BirdColor c) => Slot(ref _birds, (int)c, "Sprites/bird_" + Name(c), 280f);
