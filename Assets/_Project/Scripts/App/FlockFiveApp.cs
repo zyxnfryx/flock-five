@@ -2677,6 +2677,72 @@ namespace FlockFive
             }
         }
 
+        void DrawFoilSheen(Rect face, BeeFinish finish, int slot, bool inspectView)
+        {
+            float t = Time.unscaledTime;
+            float phase = slot * 0.37f;
+            float amp = inspectView ? 1.15f : 1f;
+
+            // Soft wash so the finish reads even mid-sweep
+            float wash = (0.06f + 0.04f * Mathf.Sin(t * 2.1f + phase)) * amp;
+            if (finish == BeeFinish.Holo)
+                GUI.color = new Color(0.70f, 0.90f, 1f, wash);
+            else
+            {
+                float h = Mathf.Repeat(t * 0.22f + phase * 0.05f, 1f);
+                Color c = Color.HSVToRGB(h, 0.55f, 1f);
+                c.a = wash * 1.25f;
+                GUI.color = c;
+            }
+            GUI.DrawTexture(face, Texture2D.whiteTexture);
+
+            // Traveling specular band (coin-style sweep)
+            float speed = finish == BeeFinish.Holo ? 0.42f : 0.55f;
+            float sheenU = Mathf.Repeat(t * speed + phase, 1.55f);
+            if (sheenU < 1f)
+            {
+                float fade = Mathf.Sin(sheenU * Mathf.PI);
+                float bandW = face.width * (finish == BeeFinish.Holo ? 0.22f : 0.28f);
+                float x = face.x + face.width * (sheenU * 1.25f - 0.2f);
+                var band = new Rect(x, face.y, bandW, face.height);
+                if (finish == BeeFinish.Holo)
+                    GUI.color = new Color(0.85f, 0.95f, 1f, 0.22f * fade * amp);
+                else
+                {
+                    float h2 = Mathf.Repeat(sheenU * 0.85f + t * 0.15f + phase, 1f);
+                    Color c2 = Color.HSVToRGB(h2, 0.65f, 1f);
+                    c2.a = 0.30f * fade * amp;
+                    GUI.color = c2;
+                }
+                GUI.DrawTexture(band, Texture2D.whiteTexture);
+
+                // Second thinner flash for InverseRainbow "high texture"
+                if (finish == BeeFinish.InverseRainbow)
+                {
+                    float x2 = face.x + face.width * (Mathf.Repeat(sheenU + 0.33f, 1f) * 1.2f - 0.15f);
+                    GUI.color = new Color(1f, 1f, 1f, 0.16f * fade * amp);
+                    GUI.DrawTexture(new Rect(x2, face.y, face.width * 0.10f, face.height), Texture2D.whiteTexture);
+                }
+            }
+
+            // Prism rim
+            float rim = (inspectView ? 3.2f : 2.2f);
+            float rimA = (0.18f + 0.10f * Mathf.Sin(t * 3.0f + phase)) * amp;
+            if (finish == BeeFinish.Holo)
+                GUI.color = new Color(0.55f, 0.82f, 1f, rimA);
+            else
+            {
+                Color rc = Color.HSVToRGB(Mathf.Repeat(t * 0.35f + phase, 1f), 0.7f, 1f);
+                rc.a = rimA * 1.2f;
+                GUI.color = rc;
+            }
+            GUI.DrawTexture(new Rect(face.x, face.y, face.width, rim), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(face.x, face.yMax - rim, face.width, rim), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(face.x, face.y, rim, face.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(face.xMax - rim, face.y, rim, face.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+
         void DrawBeeAlbumCard(Rect card, int i, float s) => DrawBeeAlbumCard(card, i, s, false);
 
         void DrawBeeAlbumCard(Rect card, int i, float s, bool inspectView)
@@ -2722,17 +2788,9 @@ namespace FlockFive
             GUI.DrawTexture(face, Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // Subtle foil sheen for owned non-Normal finishes (locked stays grey)
+            // Foil sheen: traveling band + rim (Holo cool silver; InverseRainbow hue-shift)
             if (owned && finish != BeeFinish.Normal && squash > 0.2f)
-            {
-                float sheen = 0.10f + 0.06f * Mathf.Sin(Time.unscaledTime * 2.4f + i * 0.35f);
-                if (finish == BeeFinish.Holo)
-                    GUI.color = new Color(0.55f, 0.85f, 1f, sheen);
-                else
-                    GUI.color = new Color(0.95f, 0.55f, 0.85f, sheen * 1.15f);
-                GUI.DrawTexture(new Rect(face.x, face.y, face.width * 0.35f, face.height), Texture2D.whiteTexture);
-                GUI.color = Color.white;
-            }
+                DrawFoilSheen(face, finish, i, inspectView);
 
             if (!owned)
             {
@@ -2792,8 +2850,8 @@ namespace FlockFive
                     var foilSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperLeft };
                     foilSt.fontSize = Mathf.RoundToInt(11 * s);
                     Color foilCol = finish == BeeFinish.Holo
-                        ? new Color(0.25f, 0.55f, 0.85f)
-                        : new Color(0.72f, 0.28f, 0.62f);
+                        ? new Color(0.15f, 0.48f, 0.92f)
+                        : new Color(0.82f, 0.22f, 0.68f);
                     StampOutlined(new Rect(face.x + 4f * s, face.y + 4f * s, face.width * 0.7f, 18f * s), foil, foilSt, foilCol, 1, 1);
                 }
             }
@@ -2821,8 +2879,8 @@ namespace FlockFive
                     var foilSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.LowerCenter };
                     foilSt.fontSize = Mathf.RoundToInt(12 * s);
                     Color foilCol = finish == BeeFinish.Holo
-                        ? new Color(0.25f, 0.55f, 0.85f)
-                        : new Color(0.72f, 0.28f, 0.62f);
+                        ? new Color(0.15f, 0.48f, 0.92f)
+                        : new Color(0.82f, 0.22f, 0.68f);
                     StampOutlined(new Rect(face.x, face.yMax - face.height * 0.12f, face.width, face.height * 0.1f), foil, foilSt, foilCol, 1, 1);
                 }
             }
