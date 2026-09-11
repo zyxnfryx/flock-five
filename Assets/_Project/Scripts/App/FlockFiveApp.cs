@@ -398,15 +398,17 @@ namespace FlockFive
 
         IEnumerator ShotSplashButtons()
         {
+            // Primary compare: Levels 2 / 4 / 6 joke lengths (not digit-width pairs).
             const string dir = "/tmp/paradice";
             System.IO.Directory.CreateDirectory(dir);
-            yield return ShotSplashLevel(6, 5, "Super Duper Easy", dir + "/splash-level6.png");
-            yield return ShotSplashLevel(24, 23, "Super Duper Easy", dir + "/splash-level24.png");
+            yield return ShotSplashLevel(2, 1, "Easy", dir + "/splash-joke-easy.png");
+            yield return ShotSplashLevel(4, 3, "Super Easy", dir + "/splash-joke-super-easy.png");
+            yield return ShotSplashLevel(6, 5, "Super Duper Easy", dir + "/splash-joke-super-duper-easy.png");
             _shotLevelNumber = 6;
             _shotEase = "Super Duper Easy";
             PlayerPrefs.SetInt("flockfive.next", 5);
             PlayerPrefs.Save();
-            try { System.IO.File.Copy(dir + "/splash-level6.png", dir + "/splash-sde.png", true); } catch { }
+            try { System.IO.File.Copy(dir + "/splash-joke-super-duper-easy.png", dir + "/splash-sde.png", true); } catch { }
         }
 
         IEnumerator ShotSplashLevel(int number, int next, string ease, string path)
@@ -2469,14 +2471,14 @@ namespace FlockFive
                 wordWrap = false
             };
             string level = "LEVEL " + number;
-            // With a joke arc, size to a two-digit probe so LEVEL 6 and LEVEL 24
-            // share one sit on the gold disc (one-digit must not blow up and crowd).
-            string fitProbe = hasEase ? "LEVEL 88" : level;
+            // With a joke arc, size to a three-digit probe so LEVEL 2/4/6 and 100+
+            // share one sit under StampArced (short numbers must not inflate into the bow).
+            string fitProbe = hasEase ? "LEVEL 888" : level;
             lv.fontSize = FitFont(
                 lv, fitProbe,
-                lvR.width * (hasEase ? 0.86f : 0.88f),
-                lvR.height * (hasEase ? 0.68f : 0.80f),
-                32, hasEase ? 72 : 96);
+                lvR.width * 0.88f,
+                lvR.height * (hasEase ? 0.66f : 0.80f),
+                28, hasEase ? 68 : 96);
             int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
             int black = 1;
             StampOutlined(lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, black);
