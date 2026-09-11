@@ -65,8 +65,12 @@ namespace FlockFive
         int _hivePage;
         int _hivePageFrom;
         float _hivePageTurn = 99f;
-        readonly bool[] _hiveFaceBack = new bool[Hive.Kinds];
+        readonly bool[] _hiveFaceBack = new bool[Hive.AlbumSlots];
         const int HivePageSize = 9;
+        int _hiveInspect = -1; // album slot (kind×finish), -1 = closed
+        float _hiveInspectT; // 0..1 pull animation (open), also used for close
+        bool _hiveInspectClosing;
+        Rect _hiveInspectFrom; // sleeve rect when opened (for lerp)
 
         void Start()
         {
@@ -2242,9 +2246,24 @@ namespace FlockFive
             var back = new Rect(Mathf.Max(16f, safe.xMin + 10f), top, 132f * Mathf.Min(s, 1.6f), 44f * Mathf.Min(s, 1.6f));
             if (HitPad(back, out bool backHeld))
             {
-                _hiveFlip = -1;
-                _hivePageTurn = 99f;
-                _home = HomeFace.Splash;
+                if (_hiveInspect >= 0)
+                {
+                    if (!_hiveInspectClosing)
+                    {
+                        _hiveInspectClosing = true;
+                        _hiveInspectT = 0f;
+                        _hiveFlip = -1;
+                    }
+                }
+                else
+                {
+                    _hiveFlip = -1;
+                    _hivePageTurn = 99f;
+                    _hiveInspect = -1;
+                    _hiveInspectT = 0f;
+                    _hiveInspectClosing = false;
+                    _home = HomeFace.Splash;
+                }
             }
             GUI.color = new Color(0.10f, 0.08f, 0.05f, backHeld ? 0.88f : 0.72f);
             GUI.DrawTexture(back, Texture2D.whiteTexture);
@@ -2263,9 +2282,9 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap = false
             };
-            int pages = Mathf.Max(1, (Hive.Kinds + HivePageSize - 1) / HivePageSize);
+            int pages = Mathf.Max(1, (Hive.AlbumSlots + HivePageSize - 1) / HivePageSize);
             _hivePage = Mathf.Clamp(_hivePage, 0, pages - 1);
-            string album = "Bee Album  " + Hive.Found + " / " + Hive.Kinds;
+            string album = "Bee Album  " + Hive.Found + " / " + Hive.AlbumSlots;
             head.fontSize = FitFont(head, album, Screen.width * 0.72f, 32f * s, 16, 28);
             StampOutlined(new Rect(0f, boxY, Screen.width, 30f * s), album, head, new Color(1f, 0.94f, 0.72f), 2, 1);
             var tip = new GUIStyle(GUI.skin.label)
@@ -2274,7 +2293,7 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleCenter
             };
             tip.fontSize = Mathf.RoundToInt(13 * s);
-            StampOutlined(new Rect(0f, boxY + 26f * s, Screen.width, 20f * s), "Tap a card to flip  ·  tabs turn the page", tip, new Color(0.92f, 0.82f, 0.58f), 1, 1);
+            StampOutlined(new Rect(0f, boxY + 26f * s, Screen.width, 20f * s), "Tap a card to pull it out  ·  tabs turn the page", tip, new Color(0.92f, 0.82f, 0.58f), 1, 1);
 
             if (_hiveFlip >= 0)
             {
@@ -2336,7 +2355,7 @@ namespace FlockFive
                 for (int slot = 0; slot < HivePageSize; slot++)
                 {
                     int i = baseIx + slot;
-                    if (i >= Hive.Kinds) break;
+                    if (i >= Hive.AlbumSlots) break;
                     int col = slot % 3;
                     int row = slot / 3;
                     float cx = gx0 + col * (cellW + gap) + cellW * 0.5f + xShift;
@@ -2401,7 +2420,8 @@ namespace FlockFive
             {
                 var tab = new Rect(tabX0 + p * (tabW + tabGap), tabY, tabW, tabH);
                 bool on = p == _hivePage && !turning;
-                bool hit = !turning && HitPad(tab, out bool held);
+                bool held = false;
+                bool hit = !turning && _hiveInspect < 0 && HitPad(tab, out held);
                 GUI.color = on
                     ? new Color(0.92f, 0.72f, 0.28f, held ? 0.95f : 0.88f)
                     : new Color(0.18f, 0.14f, 0.10f, held ? 0.90f : 0.72f);
@@ -2417,11 +2437,130 @@ namespace FlockFive
                     Sfx.PageTurn();
                 }
             }
+
+            if (_hiveInspect >= 0)
+                DrawHiveInspect(s);
         }
 
-        void DrawBeeAlbumCard(Rect card, int i, float s)
+        void DrawHiveInspect(float s)
         {
-            int n = Hive.CountOf(i);
+            const float dur = 0.28f;
+            _hiveInspectT += Time.unscaledDeltaTime;
+            float u = Mathf.Clamp01(_hiveInspectT / dur);
+            float ease = 1f - (1f - u) * (1f - u); // easeOut quad
+            float t = _hiveInspectClosing ? (1f - ease) : ease;
+
+            // Dim overlay
+            GUI.color = new Color(0.02f, 0.02f, 0.04f, 0.72f * t);
+            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            // Large portrait card ~1:1.4, near-fullscreen
+            float maxW = Screen.width * 0.86f;
+            float maxH = Screen.height * 0.62f;
+            float bigW, bigH;
+            if (maxW * 1.4f <= maxH)
+            {
+                bigW = maxW;
+                bigH = maxW * 1.4f;
+            }
+            else
+            {
+                bigH = maxH;
+                bigW = maxH / 1.4f;
+            }
+            var to = new Rect(
+                (Screen.width - bigW) * 0.5f,
+                (Screen.height - bigH) * 0.40f,
+                bigW,
+                bigH);
+            var from = _hiveInspectFrom;
+            var big = new Rect(
+                Mathf.Lerp(from.x, to.x, t),
+                Mathf.Lerp(from.y, to.y, t),
+                Mathf.Lerp(from.width, to.width, t),
+                Mathf.Lerp(from.height, to.height, t));
+
+            int ix = _hiveInspect;
+            DrawBeeAlbumCard(big, ix, s, true);
+
+            // Hint under card
+            var hint = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Italic,
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = Mathf.RoundToInt(14 * s)
+            };
+            float hintY = big.yMax + 10f * s;
+            StampOutlined(new Rect(0f, hintY, Screen.width, 22f * s), "Tap card to flip  ·  tap outside to put back", hint, new Color(0.92f, 0.82f, 0.58f, Mathf.Clamp01(t * 1.4f)), 1, 1);
+
+            // Close X top-right of overlay
+            var safe = Screen.safeArea;
+            float top = Mathf.Max(20f, Screen.height - safe.yMax + 10f);
+            float xSz = 44f * Mathf.Min(s, 1.6f);
+            var xBtn = new Rect(Screen.width - Mathf.Max(16f, Screen.width - safe.xMax + 10f) - xSz, top, xSz, xSz);
+            bool xHeld;
+            bool xHit = HitPad(xBtn, out xHeld);
+            GUI.color = new Color(0.10f, 0.08f, 0.05f, (xHeld ? 0.92f : 0.78f) * Mathf.Clamp01(t + 0.15f));
+            GUI.DrawTexture(xBtn, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var xLab = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = Mathf.RoundToInt(22 * s),
+                alignment = TextAnchor.MiddleCenter,
+                fontStyle = FontStyle.Bold
+            };
+            xLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
+            GUI.Label(xBtn, "X", xLab);
+
+            bool fullyOpen = !_hiveInspectClosing && u >= 1f;
+            // Always hit-test the card when open so taps don't fall through to "outside"
+            if (fullyOpen && HitPad(big, out _))
+            {
+                if (_hiveFlip < 0)
+                {
+                    _hiveFlip = ix;
+                    _hiveFlipT = 0f;
+                    Sfx.Chirp(BirdColor.Gold);
+                }
+            }
+
+            // Tap dim outside card closes (after card/X so they win hit tests)
+            var full = new Rect(0f, 0f, Screen.width, Screen.height);
+            bool outside = !_hiveInspectClosing && u > 0.85f && HitPad(full, out _);
+            if ((outside || xHit) && !_hiveInspectClosing)
+            {
+                _hiveInspectClosing = true;
+                _hiveInspectT = 0f;
+                _hiveFlip = -1;
+            }
+
+            if (_hiveInspectClosing && u >= 1f)
+            {
+                _hiveInspect = -1;
+                _hiveInspectClosing = false;
+                _hiveInspectT = 0f;
+                _hiveFlip = -1;
+            }
+        }
+
+        void DrawBeeAlbumCard(Rect card, int i, float s) => DrawBeeAlbumCard(card, i, s, false);
+
+        void DrawBeeAlbumCard(Rect card, int i, float s, bool inspectView)
+        {
+            // Pulled-out sleeve: faint ghost so the card looks removed
+            if (!inspectView && i == _hiveInspect)
+            {
+                GUI.color = new Color(0.95f, 0.92f, 0.85f, 0.14f);
+                GUI.DrawTexture(card, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                return;
+            }
+
+            if ((uint)i >= (uint)Hive.AlbumSlots) return;
+            int kindIx = Hive.KindOfSlot(i);
+            BeeFinish finish = Hive.FinishOfSlot(i);
+            int n = Hive.CountOf(kindIx, finish);
             bool owned = n > 0;
             bool flipping = _hiveFlip == i;
             float flipU = flipping ? Mathf.Clamp01(_hiveFlipT / 0.28f) : 0f;
@@ -2432,7 +2571,7 @@ namespace FlockFive
             float w = card.width * Mathf.Max(0.08f, squash);
             var r = new Rect(cx - w * 0.5f, card.y, w, card.height);
 
-            var kind = Hive.Roster[i];
+            var kind = Hive.Roster[kindIx];
             Color wood = owned
                 ? Color.Lerp(new Color(0.28f, 0.16f, 0.07f), kind.Tint, 0.35f)
                 : new Color(0.14f, 0.12f, 0.10f, 0.92f);
@@ -2449,6 +2588,18 @@ namespace FlockFive
                 : new Color(0.22f, 0.20f, 0.18f, 0.95f);
             GUI.DrawTexture(face, Texture2D.whiteTexture);
             GUI.color = Color.white;
+
+            // Subtle foil sheen for owned non-Normal finishes (locked stays grey)
+            if (owned && finish != BeeFinish.Normal && squash > 0.2f)
+            {
+                float sheen = 0.10f + 0.06f * Mathf.Sin(Time.unscaledTime * 2.4f + i * 0.35f);
+                if (finish == BeeFinish.Holo)
+                    GUI.color = new Color(0.55f, 0.85f, 1f, sheen);
+                else
+                    GUI.color = new Color(0.95f, 0.55f, 0.85f, sheen * 1.15f);
+                GUI.DrawTexture(new Rect(face.x, face.y, face.width * 0.35f, face.height), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
 
             if (!owned)
             {
@@ -2502,6 +2653,16 @@ namespace FlockFive
                     cnt.fontSize = Mathf.RoundToInt(13 * s);
                     StampOutlined(new Rect(face.xMax - 48f * s, face.y + 4f * s, 44f * s, 20f * s), "×" + n, cnt, new Color(0.36f, 0.18f, 0.07f), 1, 1);
                 }
+                if (finish != BeeFinish.Normal)
+                {
+                    string foil = finish == BeeFinish.Holo ? "Holo" : "Inverse Rainbow";
+                    var foilSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperLeft };
+                    foilSt.fontSize = Mathf.RoundToInt(11 * s);
+                    Color foilCol = finish == BeeFinish.Holo
+                        ? new Color(0.25f, 0.55f, 0.85f)
+                        : new Color(0.72f, 0.28f, 0.62f);
+                    StampOutlined(new Rect(face.x + 4f * s, face.y + 4f * s, face.width * 0.7f, 18f * s), foil, foilSt, foilCol, 1, 1);
+                }
             }
             else
             {
@@ -2521,12 +2682,26 @@ namespace FlockFive
                 };
                 blip.fontSize = FitFont(blip, kind.Back, face.width * 0.88f, face.height * 0.55f, 12, 18);
                 StampOutlined(new Rect(face.x + face.width * 0.06f, face.y + face.height * 0.32f, face.width * 0.88f, face.height * 0.55f), kind.Back, blip, new Color(0.40f, 0.22f, 0.08f), 1, 1);
+                if (finish != BeeFinish.Normal)
+                {
+                    string foil = finish == BeeFinish.Holo ? "Holo" : "Inverse Rainbow";
+                    var foilSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.LowerCenter };
+                    foilSt.fontSize = Mathf.RoundToInt(12 * s);
+                    Color foilCol = finish == BeeFinish.Holo
+                        ? new Color(0.25f, 0.55f, 0.85f)
+                        : new Color(0.72f, 0.28f, 0.62f);
+                    StampOutlined(new Rect(face.x, face.yMax - face.height * 0.12f, face.width, face.height * 0.1f), foil, foilSt, foilCol, 1, 1);
+                }
             }
 
-            if (owned && !flipping && _hivePageTurn >= 0.55f && HitPad(card, out _))
+            // Binder sleeve tap opens fullscreen inspect (flip lives inside inspect)
+            if (!inspectView && owned && !flipping && _hivePageTurn >= 0.55f && _hiveInspect < 0 && HitPad(card, out _))
             {
-                _hiveFlip = i;
-                _hiveFlipT = 0f;
+                _hiveInspect = i;
+                _hiveInspectT = 0f;
+                _hiveInspectClosing = false;
+                _hiveInspectFrom = card;
+                _hiveFlip = -1;
                 Sfx.Chirp(BirdColor.Gold);
             }
         }
@@ -2552,7 +2727,10 @@ namespace FlockFive
                 {
                     var v = _levelBees[i];
                     row.normal.textColor = v.Kind.Tint;
-                    GUILayout.Label(v.Kind.Name, row);
+                    string label = v.Kind.Name;
+                    if (v.Finish == BeeFinish.Holo) label += " · Holo";
+                    else if (v.Finish == BeeFinish.InverseRainbow) label += " · Inverse Rainbow";
+                    GUILayout.Label(label, row);
                 }
             }
             GUILayout.EndArea();
