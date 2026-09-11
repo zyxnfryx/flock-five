@@ -4,7 +4,8 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _sparrow;
+        static bool _sparrowPlaceholder;
         static Sprite[] _letters;
         static Sprite[] _digits;
         static Sprite[] _birds;
@@ -32,6 +33,24 @@ namespace FlockFive
         public static Sprite PetalPink => Load(ref _petalPink, "Sprites/fx_petal_pink", 200f);
         public static Sprite PetalPeach => Load(ref _petalPeach, "Sprites/fx_petal_peach", 200f);
         public static Sprite Feather => Load(ref _feather, "Sprites/fx_feather", 200f);
+        public static bool SparrowIsPlaceholder => _sparrowPlaceholder;
+        public static Sprite Sparrow
+        {
+            get
+            {
+                if (_sparrow != null) return _sparrow;
+                _sparrow = TryLoad("Sprites/fx_sparrow", 280f);
+                if (_sparrow != null)
+                {
+                    _sparrowPlaceholder = false;
+                    return _sparrow;
+                }
+                // No sparrow art yet — brown/grey-tint a hummingbird as placeholder.
+                _sparrowPlaceholder = true;
+                _sparrow = Recolor(Bird(BirdColor.Violet), new Color(0.62f, 0.55f, 0.48f, 1f));
+                return _sparrow;
+            }
+        }
         public static Sprite Bow => Load(ref _bow, "Sprites/fx_bow", 200f);
         public static Sprite Bowtie => Load(ref _bowtie, "Sprites/fx_bowtie", 200f);
         public static Sprite Crown => Load(ref _crown, "Sprites/fx_crown", 200f);
