@@ -46,6 +46,7 @@ namespace FlockFive
         public static int LastWin { get; private set; }
         public static Rank LastRank { get; private set; }
         public static bool LastPunchFresh { get; private set; }
+        public static int LastPunchKind { get; private set; } = -1;
         public static readonly Card[] Hand = new Card[HandSize];
         public static readonly bool[] Hold = new bool[HandSize];
 
@@ -122,8 +123,13 @@ namespace FlockFive
             LastWin = PayFor(LastRank, Bet);
             if (LastWin > 0) Purse.Credit(LastWin);
             LastPunchFresh = false;
+            LastPunchKind = -1;
             if (LastRank == Rank.NaturalFive || LastRank == Rank.FiveWild)
-                LastPunchFresh = TryPunch(Hand);
+            {
+                int kind;
+                LastPunchFresh = TryPunch(Hand, out kind);
+                if (LastPunchFresh) LastPunchKind = kind;
+            }
             PhaseNow = Phase.Drawn;
             return true;
         }
@@ -221,10 +227,10 @@ namespace FlockFive
             PlayerPrefs.Save();
         }
 
-        static bool TryPunch(Card[] hand)
+        static bool TryPunch(Card[] hand, out int kind)
         {
             WarmPunch();
-            int kind;
+            kind = -1;
             if (!ResolveFiveKind(hand, out kind)) return false;
             if (_punched[kind]) return false;
             _punched[kind] = true;
