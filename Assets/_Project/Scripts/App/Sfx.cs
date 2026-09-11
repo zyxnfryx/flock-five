@@ -337,7 +337,7 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(Random.Range(0.22f, 0.30f), MixDesk.DuckChirp);
         }
 
-        // Tap-scare on the sparrow: harsh short yell, then bird flees (visual elsewhere).
+        // Collect smack / sparrow yell — harsh short squawk (visual elsewhere).
         public static void SparrowYell()
         {
             Ensure();

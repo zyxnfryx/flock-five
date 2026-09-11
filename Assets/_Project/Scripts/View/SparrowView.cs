@@ -4,19 +4,16 @@ using UnityEngine;
 namespace FlockFive
 {
     // Garden pest: flies in, perches on one feeder (blocking it), stays until
-    // tap-scared or collect-evicted with five enjoyable smacks. Never sets _busy.
+    // collect-evicted with five enjoyable smacks. Never sets _busy.
     public sealed class SparrowView : MonoBehaviour
     {
         public static SparrowView Live { get; private set; }
 
         public int BlockingSlot { get; private set; } = -1;
-        public bool IsBlocking => Live != null && BlockingSlot >= 0 && !_scared && !_done;
+        public bool IsBlocking => Live != null && BlockingSlot >= 0 && !_done;
 
         const float Scale = 0.78f; // bigger pest than hummingbirds (0.42)
-        const float HitPad = 1.15f;
-
         SpriteRenderer _art;
-        bool _scared;
         bool _done;
         bool _evict;
         bool _fleeing;
@@ -69,7 +66,6 @@ namespace FlockFive
             bool chirped = false;
             while (t < inDur)
             {
-                if (view._scared) break;
                 if (parent == null || go == null) yield break;
                 t += Time.deltaTime;
                 float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / inDur));
@@ -85,15 +81,15 @@ namespace FlockFive
                 yield return null;
             }
 
-            // Land + perch (block feeder) until tap-scare or collect eviction.
-            if (!view._scared && go != null && target != null)
+            // Land + perch (block feeder) until collect eviction (or feeder vanishes).
+            if (go != null && target != null)
             {
                 go.transform.position = target.Mouth + new Vector3(0f, 0.35f, 0f);
                 view.BlockingSlot = target.Slot;
                 target.Poke();
 
                 float settle = 0f;
-                while (settle < 0.22f && !view._scared && !view._evict)
+                while (settle < 0.22f && !view._evict)
                 {
                     settle += Time.deltaTime;
                     if (go == null) yield break;
@@ -105,7 +101,7 @@ namespace FlockFive
                     yield return null;
                 }
 
-                while (!view._scared && !view._evict)
+                while (!view._evict)
                 {
                     if (parent == null || go == null || target == null) yield break;
                     if (!IsOn(target))
@@ -126,12 +122,10 @@ namespace FlockFive
 
             if (view._evict)
             {
-                // Collect owns TakeHits / PanicFlee; wait until retired.
+                // Collect owns Smack / PanicFlee; wait until retired.
                 while (go != null && !view._done)
                     yield return null;
             }
-            else if (view._scared && go != null)
-                yield return view.ScareFlee(parent);
             else if (go != null)
                 yield return view.FlyOut(exitX);
 
@@ -218,73 +212,6 @@ namespace FlockFive
             _done = true;
         }
 
-        public bool TryHit(Vector2 world)
-        {
-            if (_done || _evict || _fleeing || _art == null || !_art.enabled) return false;
-            var b = _art.bounds;
-            b.Expand(HitPad);
-            return b.Contains(new Vector3(world.x, world.y, b.center.z));
-        }
-
-        public void Scare()
-        {
-            if (_done || _scared || _evict || _fleeing) return;
-            _scared = true;
-            BlockingSlot = -1;
-        }
-
-        IEnumerator ScareFlee(Transform parent)
-        {
-            _fleeing = true;
-            BlockingSlot = -1;
-            var pos = transform.position;
-            Sfx.SparrowYell();
-            if (CamShake.Live != null)
-                CamShake.Live.Punch(0.22f, 0.18f, 4.5f, 0.16f);
-            SparrowBits.Burst(pos, parent, _tint);
-
-            // BAM squash / flash.
-            float bam = 0f;
-            const float bamDur = 0.14f;
-            var baseScale = Vector3.one * Scale;
-            while (bam < bamDur)
-            {
-                bam += Time.deltaTime;
-                float u = Mathf.Clamp01(bam / bamDur);
-                float squash = 1f + 0.55f * Mathf.Sin(u * Mathf.PI);
-                transform.localScale = new Vector3(baseScale.x * (1.35f - 0.55f * u), baseScale.y * (0.45f + 0.7f * u), 1f) * squash;
-                if (_art != null)
-                    _art.color = Color.Lerp(Color.white, _tint, u);
-                yield return null;
-            }
-
-            // Panicked flee — opposite side, fast, high arc.
-            var from = transform.position;
-            var dest = new Vector3(_exitX, from.y + Random.Range(1.2f, 2.6f), 0f);
-            if (_art != null) _art.flipX = dest.x < from.x;
-            float t = 0f;
-            const float fleeDur = 0.48f;
-            while (t < fleeDur)
-            {
-                t += Time.deltaTime;
-                float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / fleeDur));
-                var p = Vector3.Lerp(from, dest, u);
-                p.y += Mathf.Sin(u * Mathf.PI) * 2.1f;
-                transform.position = p;
-                transform.localScale = Vector3.one * (Scale * Mathf.Lerp(1.15f, 0.7f, u));
-                transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(u * Mathf.PI * 3f) * 18f * (1f - u));
-                Flap(true);
-                if (_art != null)
-                {
-                    var c = _art.color;
-                    c.a = 1f - u * 0.15f;
-                    _art.color = c;
-                }
-                yield return null;
-            }
-            _done = true;
-        }
-
         IEnumerator FlyOut(float exitX)
         {
             _fleeing = true;
@@ -348,7 +275,7 @@ namespace FlockFive
             f != null && f.Art != null && f.Art.enabled;
     }
 
-    // Self-cleaning feather burst so scare FX outlive the sparrow GO.
+    // Self-cleaning feather burst so smack/flee FX outlive the sparrow GO.
     sealed class SparrowBits : MonoBehaviour
     {
         public static void Burst(Vector3 pos, Transform parent, Color tint)

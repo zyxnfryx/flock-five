@@ -134,7 +134,7 @@ namespace FlockFive
             return c;
         }
 
-        // Tap-scare sparrow squawk — harsh short dove/yell family, not hum_sel chirp.
+        // Sparrow collect-smack squawk — harsh short dove/yell family, not hum_sel chirp.
         static AudioClip MakeSparrowYell(int kind)
         {
             int k = ((kind % 6) + 6) % 6;
