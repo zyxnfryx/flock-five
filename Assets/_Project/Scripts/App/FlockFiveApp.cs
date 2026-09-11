@@ -2257,6 +2257,7 @@ namespace FlockFive
                 _hiveFlipT = 0f;
                 Sfx.Chirp(BirdColor.Gold);
             }
+        }
 
         void DrawLevelHive(float s)
         {
