@@ -714,22 +714,28 @@ namespace FlockFive
             float haste = Mathf.Lerp(1f, 0.52f, Mathf.Clamp01((combo - 1) / 7f));
             float step = 0.192f * haste;
             float fly = 0.432f * haste;
-            if (feeder != null) feeder.Hold();
-            for (int i = 0; i < n; i++)
+            bool vsSparrow = SparrowView.Live != null && SparrowView.Live.BlockingSlot == slot;
+            if (vsSparrow)
+                yield return CollectVsSparrow(birds, n, feeder, mouth, view, col, haste, step, fly, combo);
+            else
             {
-                float u = n <= 1 ? 0f : i / (float)(n - 1) - 0.5f;
-                var land = mouth + new Vector3(u * 0.95f, 0.06f * Mathf.Sin((i + 1) * 1.2f), 0f);
-                StartCoroutine(FlyHit(birds[i].transform, land, step * i, fly, i, feeder));
-            }
-            if (n > 0)
-            {
-                yield return new WaitForSeconds(fly * 0.92f);
-                StartCoroutine(Wow.Burst(mouth + Vector3.up * 0.2f, col, _garden.Root, combo));
-            }
-            yield return new WaitForSeconds((n > 0 ? (n - 1) * step : 0f) + 0.216f * haste);
+                if (feeder != null) feeder.Hold();
+                for (int i = 0; i < n; i++)
+                {
+                    float u = n <= 1 ? 0f : i / (float)(n - 1) - 0.5f;
+                    var land = mouth + new Vector3(u * 0.95f, 0.06f * Mathf.Sin((i + 1) * 1.2f), 0f);
+                    StartCoroutine(FlyHit(birds[i].transform, land, step * i, fly, i, feeder));
+                }
+                if (n > 0)
+                {
+                    yield return new WaitForSeconds(fly * 0.92f);
+                    StartCoroutine(Wow.Burst(mouth + Vector3.up * 0.2f, col, _garden.Root, combo));
+                }
+                yield return new WaitForSeconds((n > 0 ? (n - 1) * step : 0f) + 0.216f * haste);
 
-            if (feeder != null) yield return feeder.PullAway();
-            yield return view.BreakAway();
+                if (feeder != null) yield return feeder.PullAway();
+                yield return view.BreakAway();
+            }
             Unlock(branch);
             _collecting = false;
             int more = KickCollects();
@@ -739,6 +745,154 @@ namespace FlockFive
             if (more != 0) yield break;
             yield return SettleIfIdle();
             CheckOver();
+        }
+
+        // Collect into a sparrow-blocked feeder: fly in, five smacks, sparrow flees, birds scatter.
+        IEnumerator CollectVsSparrow(
+            SpriteRenderer[] birds, int n, FeederView feeder, Vector3 mouth,
+            BranchView view, BirdColor col, float haste, float step, float fly, int combo)
+        {
+            if (SparrowView.Live != null)
+                SparrowView.Live.BeginEvict();
+            if (feeder != null) feeder.Hold();
+
+            int hits = Mathf.Min(5, Mathf.Max(1, n));
+            for (int i = 0; i < n; i++)
+            {
+                float u = n <= 1 ? 0f : i / (float)(n - 1) - 0.5f;
+                var land = mouth + new Vector3(u * 0.95f, 0.28f + 0.06f * Mathf.Sin((i + 1) * 1.2f), 0f);
+                bool smack = i < hits;
+                StartCoroutine(FlyHitSparrow(birds[i].transform, land, step * i, fly, i, smack));
+            }
+            if (n > 0)
+            {
+                yield return new WaitForSeconds(fly * 0.92f);
+                StartCoroutine(Wow.Burst(mouth + Vector3.up * 0.2f, col, _garden.Root, combo));
+            }
+            // Wait through staggered arrivals so all five smacks land.
+            yield return new WaitForSeconds((n > 0 ? (n - 1) * step : 0f) + fly + 0.10f * haste);
+
+            if (SparrowView.Live != null)
+                yield return SparrowView.Live.PanicFlee();
+
+            yield return ScatterBirds(birds, n);
+
+            if (feeder != null) yield return feeder.PullAway();
+            yield return view.BreakAway();
+        }
+
+        IEnumerator FlyHitSparrow(Transform tr, Vector3 dest, float delay, float dur, int pop, bool smack)
+        {
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            if (tr == null) yield break;
+            Sfx.FlockFlutter(1);
+            var start = tr.position;
+            var scale = tr.localScale;
+            float t = 0f;
+            while (t < dur)
+            {
+                t += Time.deltaTime;
+                float u = Mathf.SmoothStep(0f, 1f, t / dur);
+                var p = Vector3.Lerp(start, dest, u);
+                p.y += Mathf.Sin(u * Mathf.PI) * 1.85f;
+                tr.position = p;
+                tr.localScale = scale;
+                yield return null;
+            }
+            tr.position = dest;
+            Sfx.ScorePop(pop);
+            if (smack && SparrowView.Live != null)
+                SparrowView.Live.Smack();
+        }
+
+        IEnumerator ScatterBirds(SpriteRenderer[] birds, int n)
+        {
+            if (n <= 0) yield break;
+            Sfx.Takeoff(n);
+            var dests = ScatterDests(n);
+            for (int i = 0; i < n; i++)
+            {
+                if (birds[i] == null) continue;
+                var dest = dests[i % dests.Length];
+                float delay = i * 0.035f;
+                StartCoroutine(ScatterOne(birds[i].transform, dest, delay));
+            }
+            yield return new WaitForSeconds(0.55f + n * 0.035f);
+        }
+
+        Vector3[] ScatterDests(int need)
+        {
+            var list = new System.Collections.Generic.List<Vector3>(16);
+            if (_garden.Branches != null)
+            {
+                for (int b = 0; b < _garden.Branches.Length; b++)
+                {
+                    var br = _garden.Branches[b];
+                    if (br == null) continue;
+                    if (_board != null && b < _board.Branches.Count && _board.Branches[b].Broken)
+                        continue;
+                    for (int s = 0; s < BranchState.Cap; s++)
+                    {
+                        var seat = br.SeatWorld(s);
+                        if (seat.sqrMagnitude > 0.01f)
+                            list.Add(seat + new Vector3(Random.Range(-0.15f, 0.15f), Random.Range(0.05f, 0.25f), 0f));
+                    }
+                }
+            }
+            while (list.Count < need)
+            {
+                float ang = Random.Range(0f, Mathf.PI * 2f);
+                float rad = Random.Range(3.2f, 6.4f);
+                list.Add(new Vector3(Mathf.Cos(ang) * rad, 2.5f + Mathf.Abs(Mathf.Sin(ang)) * 3.5f, 0f));
+            }
+            // Shuffle lightly.
+            for (int i = 0; i < list.Count; i++)
+            {
+                int j = Random.Range(i, list.Count);
+                var tmp = list[i];
+                list[i] = list[j];
+                list[j] = tmp;
+            }
+            return list.ToArray();
+        }
+
+        static IEnumerator ScatterOne(Transform tr, Vector3 dest, float delay)
+        {
+            if (tr == null) yield break;
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            if (tr == null) yield break;
+            var start = tr.position;
+            var scale = tr.localScale;
+            float side = dest.x >= start.x ? 1f : -1f;
+            float lift = Random.Range(1.4f, 2.6f);
+            float sway = Random.Range(0.15f, 0.45f);
+            float dur = Random.Range(0.42f, 0.58f);
+            float t = 0f;
+            while (t < dur)
+            {
+                if (tr == null) yield break;
+                t += Time.deltaTime;
+                float u = Mathf.SmoothStep(0f, 1f, t / dur);
+                var p = Vector3.Lerp(start, dest, u);
+                p.y += Mathf.Sin(u * Mathf.PI) * lift;
+                p.x += Mathf.Sin(u * Mathf.PI) * side * sway * (1f - u);
+                tr.position = p;
+                tr.localScale = scale * Mathf.Lerp(1f, 0.72f, u);
+                var sr = tr.GetComponent<SpriteRenderer>();
+                if (sr != null)
+                {
+                    var c = sr.color;
+                    c.a = 1f - u * 0.85f;
+                    sr.color = c;
+                }
+                yield return null;
+            }
+            if (tr != null)
+            {
+                tr.gameObject.SetActive(false);
+                var sr = tr.GetComponent<SpriteRenderer>();
+                if (sr != null) sr.enabled = false;
+            }
         }
 
         IEnumerator SettleIfIdle()

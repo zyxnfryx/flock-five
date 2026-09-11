@@ -3,11 +3,14 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Placeholder garden pest: flies in, rattles a feeder via Poke(), flies out.
-    // Tap while on-screen for BAM + feathers + yell + panicked flee. Never sets _busy.
+    // Garden pest: flies in, perches on one feeder (blocking it), stays until
+    // tap-scared or collect-evicted with five enjoyable smacks. Never sets _busy.
     public sealed class SparrowView : MonoBehaviour
     {
         public static SparrowView Live { get; private set; }
+
+        public int BlockingSlot { get; private set; } = -1;
+        public bool IsBlocking => Live != null && BlockingSlot >= 0 && !_scared && !_done;
 
         const float Scale = 0.78f; // bigger pest than hummingbirds (0.42)
         const float HitPad = 1.15f;
@@ -15,6 +18,9 @@ namespace FlockFive
         SpriteRenderer _art;
         bool _scared;
         bool _done;
+        bool _evict;
+        bool _fleeing;
+        float _exitX;
         Color _tint = new Color(0.58f, 0.52f, 0.46f, 1f);
         float _flap;
 
@@ -54,6 +60,7 @@ namespace FlockFive
             view._art = go.GetComponent<SpriteRenderer>();
             view._art.color = view._tint;
             view._art.flipX = !fromLeft;
+            view._exitX = exitX;
             Live = view;
 
             // Fly in.
@@ -78,54 +85,53 @@ namespace FlockFive
                 yield return null;
             }
 
-            // Hover + poke (skip if scared mid-arrival).
-            if (!view._scared && go != null)
+            // Land + perch (block feeder) until tap-scare or collect eviction.
+            if (!view._scared && go != null && target != null)
             {
-                go.transform.position = mouth;
-                float hover = 0f;
-                const float hoverDur = 0.28f;
-                while (hover < hoverDur && !view._scared)
+                go.transform.position = target.Mouth + new Vector3(0f, 0.35f, 0f);
+                view.BlockingSlot = target.Slot;
+                target.Poke();
+
+                float settle = 0f;
+                while (settle < 0.22f && !view._scared && !view._evict)
                 {
-                    hover += Time.deltaTime;
-                    go.transform.position = mouth + new Vector3(
-                        Mathf.Sin(Time.time * 14f) * 0.04f,
-                        Mathf.Sin(Time.time * 11f) * 0.05f,
+                    settle += Time.deltaTime;
+                    if (go == null) yield break;
+                    go.transform.position = target.Mouth + new Vector3(
+                        Mathf.Sin(Time.time * 9f) * 0.03f,
+                        0.35f + Mathf.Sin(Time.time * 7f) * 0.04f,
                         0f);
                     view.Flap(true);
                     yield return null;
                 }
 
-                if (!view._scared)
+                while (!view._scared && !view._evict)
                 {
-                    target.Poke();
-                    if (Random.value < 0.30f)
+                    if (parent == null || go == null || target == null) yield break;
+                    if (!IsOn(target))
                     {
-                        var other = OtherEnabled(feeders, target);
-                        if (other != null)
-                        {
-                            float stagger = 0f;
-                            while (stagger < 0.15f && !view._scared)
-                            {
-                                stagger += Time.deltaTime;
-                                view.Flap(true);
-                                yield return null;
-                            }
-                            if (!view._scared) other.Poke();
-                        }
+                        // Feeder vanished — leave quietly.
+                        break;
                     }
-
-                    float linger = 0f;
-                    while (linger < 0.18f && !view._scared)
-                    {
-                        linger += Time.deltaTime;
-                        view.Flap(true);
-                        yield return null;
-                    }
+                    go.transform.position = target.Mouth + new Vector3(
+                        Mathf.Sin(Time.time * 6.5f) * 0.045f,
+                        0.35f + Mathf.Sin(Time.time * 5.2f) * 0.055f,
+                        0f);
+                    view.Flap(Mathf.Sin(Time.time * 3.1f) > 0.35f);
+                    yield return null;
                 }
             }
 
-            if (view._scared && go != null)
-                yield return view.ScareFlee(exitX, parent);
+            view.BlockingSlot = -1;
+
+            if (view._evict)
+            {
+                // Collect owns TakeHits / PanicFlee; wait until retired.
+                while (go != null && !view._done)
+                    yield return null;
+            }
+            else if (view._scared && go != null)
+                yield return view.ScareFlee(parent);
             else if (go != null)
                 yield return view.FlyOut(exitX);
 
@@ -133,9 +139,88 @@ namespace FlockFive
             if (go != null) Object.Destroy(go);
         }
 
+        public void BeginEvict()
+        {
+            if (_done || _evict) return;
+            _evict = true;
+            BlockingSlot = -1;
+        }
+
+        // One enjoyable smack: BAM squash + feathers + yell.
+        public void Smack()
+        {
+            if (_done || _fleeing || _art == null) return;
+            StartCoroutine(SmackCo());
+        }
+
+        IEnumerator SmackCo()
+        {
+            var pos = transform.position;
+            var parent = transform.parent;
+            Sfx.SparrowYell();
+            if (CamShake.Live != null)
+                CamShake.Live.Punch(0.16f, 0.12f, 3.6f, 0.12f);
+            SparrowBits.Burst(pos, parent, _tint);
+
+            float bam = 0f;
+            const float bamDur = 0.12f;
+            var baseScale = Vector3.one * Scale;
+            while (bam < bamDur && !_fleeing)
+            {
+                bam += Time.deltaTime;
+                float u = Mathf.Clamp01(bam / bamDur);
+                float squash = 1f + 0.5f * Mathf.Sin(u * Mathf.PI);
+                transform.localScale = new Vector3(
+                    baseScale.x * (1.3f - 0.5f * u),
+                    baseScale.y * (0.5f + 0.65f * u),
+                    1f) * squash;
+                if (_art != null)
+                    _art.color = Color.Lerp(Color.white, SpriteCatalog.SparrowIsPlaceholder ? _tint : Color.white, u);
+                Flap(true);
+                yield return null;
+            }
+            if (!_fleeing)
+                transform.localScale = Vector3.one * Scale;
+        }
+
+        // Panic fly-off after five hits (no opening yell — hits already yelled).
+        public IEnumerator PanicFlee()
+        {
+            if (_done || _fleeing) yield break;
+            _fleeing = true;
+            BlockingSlot = -1;
+            var parent = transform.parent;
+            var from = transform.position;
+            var dest = new Vector3(_exitX, from.y + Random.Range(1.2f, 2.6f), 0f);
+            if (_art != null) _art.flipX = dest.x < from.x;
+            transform.localScale = Vector3.one * Scale;
+
+            float t = 0f;
+            const float fleeDur = 0.48f;
+            while (t < fleeDur)
+            {
+                t += Time.deltaTime;
+                float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / fleeDur));
+                var p = Vector3.Lerp(from, dest, u);
+                p.y += Mathf.Sin(u * Mathf.PI) * 2.1f;
+                transform.position = p;
+                transform.localScale = Vector3.one * (Scale * Mathf.Lerp(1.15f, 0.7f, u));
+                transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(u * Mathf.PI * 3f) * 18f * (1f - u));
+                Flap(true);
+                if (_art != null)
+                {
+                    var c = _art.color;
+                    c.a = 1f - u * 0.15f;
+                    _art.color = c;
+                }
+                yield return null;
+            }
+            _done = true;
+        }
+
         public bool TryHit(Vector2 world)
         {
-            if (_done || _art == null || !_art.enabled) return false;
+            if (_done || _evict || _fleeing || _art == null || !_art.enabled) return false;
             var b = _art.bounds;
             b.Expand(HitPad);
             return b.Contains(new Vector3(world.x, world.y, b.center.z));
@@ -143,13 +228,15 @@ namespace FlockFive
 
         public void Scare()
         {
-            if (_done || _scared) return;
+            if (_done || _scared || _evict || _fleeing) return;
             _scared = true;
+            BlockingSlot = -1;
         }
 
-        IEnumerator ScareFlee(float exitX, Transform parent)
+        IEnumerator ScareFlee(Transform parent)
         {
-            _done = true;
+            _fleeing = true;
+            BlockingSlot = -1;
             var pos = transform.position;
             Sfx.SparrowYell();
             if (CamShake.Live != null)
@@ -173,7 +260,7 @@ namespace FlockFive
 
             // Panicked flee — opposite side, fast, high arc.
             var from = transform.position;
-            var dest = new Vector3(exitX, from.y + Random.Range(1.2f, 2.6f), 0f);
+            var dest = new Vector3(_exitX, from.y + Random.Range(1.2f, 2.6f), 0f);
             if (_art != null) _art.flipX = dest.x < from.x;
             float t = 0f;
             const float fleeDur = 0.48f;
@@ -195,11 +282,12 @@ namespace FlockFive
                 }
                 yield return null;
             }
+            _done = true;
         }
 
         IEnumerator FlyOut(float exitX)
         {
-            _done = true;
+            _fleeing = true;
             var from = transform.position;
             var dest = new Vector3(exitX, from.y + Random.Range(0.4f, 1.6f), 0f);
             if (_art != null) _art.flipX = dest.x < from.x;
@@ -215,6 +303,7 @@ namespace FlockFive
                 Flap(true);
                 yield return null;
             }
+            _done = true;
         }
 
         void Flap(bool hard)
@@ -231,6 +320,8 @@ namespace FlockFive
         void OnDisable()
         {
             if (Live == this) Live = null;
+            BlockingSlot = -1;
+            _done = true;
         }
 
         static bool HasEnabled(FeederView[] feeders)
@@ -251,13 +342,6 @@ namespace FlockFive
             for (int i = 0; i < feeders.Length; i++)
                 if (IsOn(feeders[i])) got[w++] = feeders[i];
             return got;
-        }
-
-        static FeederView OtherEnabled(FeederView[] feeders, FeederView skip)
-        {
-            for (int i = 0; i < feeders.Length; i++)
-                if (feeders[i] != skip && IsOn(feeders[i])) return feeders[i];
-            return null;
         }
 
         static bool IsOn(FeederView f) =>
