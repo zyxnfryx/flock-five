@@ -75,6 +75,7 @@ namespace FlockFive
         Rect _hiveInspectFrom; // sleeve rect when opened (for lerp)
         bool _pokerPlayrun;
         Coroutine _sparrowRun;
+        Coroutine _hawkRun;
 
         void Start()
         {
@@ -140,7 +141,7 @@ namespace FlockFive
             _frozen = false;
             _freezeOffer = false;
             _sel = -1;
-            StopSparrow();
+            StopPests();
             if (_garden.Root != null) Destroy(_garden.Root.gameObject);
             if (_garden.Cam != null) Destroy(_garden.Cam.gameObject);
             _garden = default;
@@ -178,8 +179,9 @@ namespace FlockFive
             SyncAll();
             StartCoroutine(GardenFit.Tween(_garden, _board, true));
             Sfx.GardenWake();
-            StopSparrow();
+            StopPests();
             _sparrowRun = StartCoroutine(SparrowView.Patrol(CanSparrowVisit, _garden.Feeders, _garden.Root));
+            _hawkRun = StartCoroutine(HawkView.Patrol(CanHawkVisit, _garden.Feeders, _garden.Root));
             if (WantFinalePreview())
                 StartCoroutine(PreviewFinale());
         }
@@ -195,7 +197,29 @@ namespace FlockFive
                 Destroy(SparrowView.Live.gameObject);
         }
 
+        void StopHawk()
+        {
+            if (_hawkRun != null)
+            {
+                StopCoroutine(_hawkRun);
+                _hawkRun = null;
+            }
+            if (HawkView.Live != null)
+                Destroy(HawkView.Live.gameObject);
+        }
+
+        void StopPests()
+        {
+            StopSparrow();
+            StopHawk();
+        }
+
         bool CanSparrowVisit() =>
+            !_splash && !_busy && !_won && !_frozen && !_levelHive
+            && _gift == GiftFace.None && _board != null && !_board.Won
+            && (HawkView.Live == null || !HawkView.Live.IsBlocking);
+
+        bool CanHawkVisit() =>
             !_splash && !_busy && !_won && !_frozen && !_levelHive
             && _gift == GiftFace.None && _board != null && !_board.Won;
 
@@ -708,8 +732,11 @@ namespace FlockFive
             float haste = Mathf.Lerp(1f, 0.52f, Mathf.Clamp01((combo - 1) / 7f));
             float step = 0.192f * haste;
             float fly = 0.432f * haste;
-            bool vsSparrow = SparrowView.Live != null && SparrowView.Live.BlockingSlot == slot;
-            if (vsSparrow)
+            bool vsHawk = HawkView.Live != null && HawkView.Live.BlockingSlot == slot;
+            bool vsSparrow = !vsHawk && SparrowView.Live != null && SparrowView.Live.BlockingSlot == slot;
+            if (vsHawk)
+                yield return CollectVsHawk(birds, n, feeder, mouth, view, col, haste, step, fly, combo);
+            else if (vsSparrow)
                 yield return CollectVsSparrow(birds, n, feeder, mouth, view, col, haste, step, fly, combo);
             else
             {
@@ -793,6 +820,68 @@ namespace FlockFive
             yield return view.BreakAway();
         }
 
+        // Collect into a hawk-blocked feeder. Same dive scrap as sparrow, but two
+        // full collects to clear: first wounds (hawk stays perched), second flees.
+        IEnumerator CollectVsHawk(
+            SpriteRenderer[] birds, int n, FeederView feeder, Vector3 mouth,
+            BranchView view, BirdColor col, float haste, float step, float fly, int combo)
+        {
+            var hawk = HawkView.Live;
+            if (hawk != null) hawk.BeginScrap();
+            if (feeder != null) feeder.Hold();
+
+            Vector3 Body() =>
+                HawkView.Live != null
+                    ? HawkView.Live.transform.position
+                    : mouth + new Vector3(0f, 0.42f, 0f);
+
+            int hits = Mathf.Min(5, Mathf.Max(1, n));
+            float approachSpan = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                if (birds[i] == null) continue;
+                float delay = i == 0 ? 0f : approachSpan + Random.Range(0.04f, 0.11f);
+                approachSpan = delay;
+                float bank = (i % 2 == 0 ? 1f : -1f) * Random.Range(0.55f, 1.05f);
+                var hold = Body() + new Vector3(
+                    bank * Random.Range(0.55f, 0.95f),
+                    Random.Range(0.55f, 1.05f),
+                    0f);
+                StartCoroutine(DiveApproach(birds[i].transform, hold, delay, fly * Random.Range(0.78f, 1.05f), i));
+            }
+            yield return new WaitForSeconds(approachSpan + fly * 0.85f);
+            if (n > 0)
+                StartCoroutine(Wow.Burst(Body() + Vector3.up * 0.15f, col, _garden.Root, combo));
+
+            for (int h = 0; h < hits; h++)
+            {
+                if (h > 0)
+                    yield return new WaitForSeconds(Random.Range(0.12f, 0.22f) * haste);
+                int striker = h % Mathf.Max(1, n);
+                if (birds[striker] == null) continue;
+                yield return DiveStrike(birds[striker].transform, Body, h);
+            }
+
+            bool cleared = hawk != null && hawk.AbsorbCollect();
+            if (cleared && HawkView.Live != null)
+                yield return HawkView.Live.PanicFlee();
+            else if (hawk != null)
+                hawk.EndScrap();
+
+            yield return ScatterBirds(birds, n);
+
+            if (cleared)
+            {
+                if (feeder != null) yield return feeder.PullAway();
+            }
+            else if (feeder != null)
+            {
+                // Keep feeder planted so wounded hawk stays blocking for next collect.
+                feeder.SnapHome();
+            }
+            yield return view.BreakAway();
+        }
+
         IEnumerator DiveApproach(Transform tr, Vector3 hold, float delay, float dur, int pop)
         {
             if (delay > 0f) yield return new WaitForSeconds(delay);
@@ -872,7 +961,12 @@ namespace FlockFive
                 if (!struck && u >= 0.55f)
                 {
                     struck = true;
-                    if (SparrowView.Live != null)
+                    // Hawk scrap keeps IsBlocking true through dive hits; sparrow fight
+                    // clears BlockingSlot via BeginEvict so prefer Live sparrow only when
+                    // no hawk is blocking.
+                    if (HawkView.Live != null && HawkView.Live.IsBlocking)
+                        HawkView.Live.TakeHit(hit);
+                    else if (SparrowView.Live != null)
                         SparrowView.Live.TakeHit(hit);
                     // Brief contact squash on the hummer.
                     tr.localScale = scale * 1.12f;

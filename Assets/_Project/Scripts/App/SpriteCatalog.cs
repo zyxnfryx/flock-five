@@ -4,8 +4,9 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _sparrow;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk;
         static bool _sparrowPlaceholder;
+        static bool _hawkPlaceholder;
         static Sprite[] _letters;
         static Sprite[] _digits;
         static Sprite[] _birds;
@@ -62,6 +63,32 @@ namespace FlockFive
             if (k == 1) return up != null ? up : rest;
             if (k == 2) return mid != null ? mid : rest;
             if (k == 3) return up != null ? up : rest;
+            return rest;
+        }
+        public static bool HawkIsPlaceholder => _hawkPlaceholder;
+        public static Sprite Hawk
+        {
+            get
+            {
+                if (_hawk != null) return _hawk;
+                _hawk = TryLoad("Sprites/fx_hawk", 200f);
+                if (_hawk != null)
+                {
+                    _hawkPlaceholder = false;
+                    return _hawk;
+                }
+                // No hawk art yet — dark rust-tint a hummingbird as placeholder.
+                _hawkPlaceholder = true;
+                _hawk = Recolor(Bird(BirdColor.Ruby), new Color(0.55f, 0.38f, 0.28f, 1f));
+                return _hawk;
+            }
+        }
+
+        public static Sprite HawkFrame(float t)
+        {
+            var rest = Hawk;
+            if (_hawkPlaceholder) return BirdFrame(BirdColor.Ruby, t, true);
+            // Single-frame art for now (no flap sheet yet).
             return rest;
         }
         public static Sprite Bow => Load(ref _bow, "Sprites/fx_bow", 200f);
