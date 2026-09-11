@@ -140,6 +140,18 @@ namespace FlockFive
             ResetRound();
         }
 
+        // Paying ranks high→low — single source for UI pay table + PayFor.
+        public static readonly Rank[] PayTableRows =
+        {
+            Rank.NaturalFive,
+            Rank.FiveWild,
+            Rank.Quads,
+            Rank.FullHouse,
+            Rank.Trips,
+            Rank.TwoPair,
+            Rank.Pair
+        };
+
         public static string RankLabel(Rank r)
         {
             switch (r)
@@ -155,22 +167,23 @@ namespace FlockFive
             }
         }
 
-        static int PayFor(Rank r, int bet)
+        // Bet multiplier for a rank (0 = no pay). Shared by PayFor and the pay-table UI.
+        public static int Multiplier(Rank r)
         {
-            int mult;
             switch (r)
             {
-                case Rank.NaturalFive: mult = 250; break;
-                case Rank.FiveWild: mult = 50; break;
-                case Rank.Quads: mult = 25; break;
-                case Rank.FullHouse: mult = 9; break;
-                case Rank.Trips: mult = 3; break;
-                case Rank.TwoPair: mult = 2; break;
-                case Rank.Pair: mult = 1; break;
+                case Rank.NaturalFive: return 250;
+                case Rank.FiveWild: return 50;
+                case Rank.Quads: return 25;
+                case Rank.FullHouse: return 9;
+                case Rank.Trips: return 3;
+                case Rank.TwoPair: return 2;
+                case Rank.Pair: return 1;
                 default: return 0;
             }
-            return bet * mult;
         }
+
+        static int PayFor(Rank r, int bet) => bet * Multiplier(r);
 
         public static int PunchFound()
         {

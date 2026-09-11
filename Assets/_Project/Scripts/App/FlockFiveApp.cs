@@ -58,6 +58,8 @@ namespace FlockFive
         bool _pokerStamp;
         float _pokerStampT;
         int _pokerStampKind = -1;
+        bool _pokerPayOpen;
+        float _pokerPayAnim;
         enum GiftFace { None, Card, Movie, Thanks }
         GiftFace _gift;
         bool _frozen;
@@ -2308,6 +2310,8 @@ namespace FlockFive
                 BirdPoker.ResetRound();
                 _pokerMotion = PokerMotion.None;
                 _pokerStamp = false;
+                _pokerPayOpen = false;
+                _pokerPayAnim = 0f;
                 _home = HomeFace.Splash;
             }
             GUI.color = new Color(0.10f, 0.08f, 0.05f, backHeld ? 0.88f : 0.72f);
@@ -2324,6 +2328,9 @@ namespace FlockFive
             title.normal.textColor = new Color(1f, 0.94f, 0.72f);
             GUI.Label(new Rect(20f, top, Screen.width - 40f, 40f * s), "BIRD POKER", title);
             DrawPokerPurse(top, s);
+            // Hit-test pay-table tab / dismiss early so overlay blocks cards & Deal.
+            if (!_pokerStamp)
+                TickPokerPayTable(top, s);
 
             float cardW = Mathf.Min(Screen.width * 0.176f, 118f * s);
             float cardH = cardW * 1.42f;
@@ -2348,9 +2355,9 @@ namespace FlockFive
             var actR = new Rect(Screen.width * 0.5f + 8f * s, btnY, btnSize, btnSize);
             var dealR = new Rect((Screen.width - btnSize) * 0.5f, btnY, btnSize, btnSize);
 
-            bool busy = PokerMotionBusy() || _pokerStamp;
+            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f;
+            bool busy = PokerMotionBusy() || _pokerStamp || payBlocked;
             TickPokerStamp();
-            if (_pokerStamp) DrawPokerStampCeremony(s);
             if (BirdPoker.PhaseNow == BirdPoker.Phase.Idle)
             {
                 if (!busy && DrawFloralBtn(betR, "BET $" + BirdPoker.Bet, s))
@@ -2383,10 +2390,185 @@ namespace FlockFive
                 BirdPoker.Collect();
                 TryPokerDeal();
             }
+
+            // Stamp ceremony above everything; else pay-table overlay / jewel tab on top.
+            if (_pokerStamp) DrawPokerStampCeremony(s);
+            else DrawPokerPayTable(top, s);
+        }
+
+
+        Rect PokerPayTabRect(float top, float s)
+        {
+            float tabW = Mathf.Clamp(132f * s, 112f, 168f);
+            float tabH = Mathf.Clamp(38f * s, 34f, 48f);
+            float right = Screen.width - Mathf.Max(6f, Screen.width - Screen.safeArea.xMax + 4f);
+            float tabY = top + 46f * s;
+            return new Rect(right - tabW, tabY, tabW, tabH);
+        }
+
+        void TickPokerPayTable(float top, float s)
+        {
+            float target = _pokerPayOpen ? 1f : 0f;
+            _pokerPayAnim = Mathf.MoveTowards(_pokerPayAnim, target, Time.unscaledDeltaTime * 7f);
+
+            var tab = PokerPayTabRect(top, s);
+            if (HitPad(tab, out _))
+            {
+                _pokerPayOpen = !_pokerPayOpen;
+                Sfx.Chirp(BirdColor.Gold);
+            }
+            else if (_pokerPayOpen && _pokerPayAnim > 0.55f)
+            {
+                // Full-screen dismiss (tab already handled above).
+                var outside = new Rect(0f, 0f, Screen.width, Screen.height);
+                if (HitPad(outside, out _))
+                {
+                    _pokerPayOpen = false;
+                    Sfx.Chirp(BirdColor.Gold);
+                }
+            }
+        }
+
+        void DrawPokerPayTable(float top, float s)
+        {
+            if (_pokerPayAnim <= 0.01f && !_pokerPayOpen)
+            {
+                DrawPokerPayJewel(PokerPayTabRect(top, s), s);
+                return;
+            }
+
+            float u = _pokerPayAnim;
+            if (u > 0.02f)
+            {
+                GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.55f * u);
+                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
+
+            var tab = PokerPayTabRect(top, s);
+            if (u > 0.01f)
+            {
+                float panelW = Mathf.Min(Screen.width * 0.92f, 420f * s);
+                float rowH = Mathf.Clamp(36f * s, 30f, 44f);
+                int rows = BirdPoker.PayTableRows.Length;
+                float headH = 36f * s;
+                float pad = 14f * s;
+                float panelH = headH + rows * rowH + pad * 2f;
+                float cx = Screen.width * 0.5f;
+                float panelTop = tab.yMax + 10f * s;
+                float ease = 1f - Mathf.Pow(1f - u, 2.4f);
+                float y = Mathf.Lerp(panelTop - 24f * s, panelTop, ease);
+                var panel = new Rect(cx - panelW * 0.5f, y, panelW, panelH * Mathf.Lerp(0.92f, 1f, ease));
+
+                GUI.color = new Color(0.10f, 0.07f, 0.04f, 0.55f * u);
+                GUI.DrawTexture(new Rect(panel.x + 4f, panel.y + 6f, panel.width, panel.height), Texture2D.whiteTexture);
+                GUI.color = new Color(0.42f, 0.28f, 0.12f, 0.98f * u);
+                GUI.DrawTexture(panel, Texture2D.whiteTexture);
+                GUI.color = new Color(0.72f, 0.52f, 0.22f, 0.95f * u);
+                GUI.DrawTexture(new Rect(panel.x + 3f * s, panel.y + 3f * s, panel.width - 6f * s, panel.height - 6f * s), Texture2D.whiteTexture);
+                var paper = new Rect(panel.x + 7f * s, panel.y + 7f * s, panel.width - 14f * s, panel.height - 14f * s);
+                GUI.color = new Color(0.96f, 0.93f, 0.82f, 0.98f * u);
+                GUI.DrawTexture(paper, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+
+                var head = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter
+                };
+                string headTx = "PAY TABLE  ·  BET $" + BirdPoker.Bet;
+                head.fontSize = FitFont(head, headTx, paper.width * 0.92f, headH * 0.85f, 13, 22);
+                StampOutlined(new Rect(paper.x, paper.y + 2f * s, paper.width, headH), headTx, head, new Color(0.28f, 0.14f, 0.06f), 2, 1);
+
+                var nameSt = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleLeft,
+                    wordWrap = false
+                };
+                var paySt = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleRight,
+                    wordWrap = false
+                };
+                float yRow = paper.y + headH + 2f * s;
+                for (int i = 0; i < rows; i++)
+                {
+                    var rank = BirdPoker.PayTableRows[i];
+                    int mult = BirdPoker.Multiplier(rank);
+                    int dollars = mult * BirdPoker.Bet;
+                    string name = BirdPoker.RankLabel(rank);
+                    string pay = mult + "×   $" + dollars;
+                    var row = new Rect(paper.x + 8f * s, yRow, paper.width - 16f * s, rowH);
+
+                    bool jackpot = rank == BirdPoker.Rank.NaturalFive;
+                    if (jackpot)
+                    {
+                        GUI.color = new Color(1f, 0.88f, 0.45f, 0.42f * u);
+                        GUI.DrawTexture(row, Texture2D.whiteTexture);
+                    }
+                    else if ((i & 1) == 1)
+                    {
+                        GUI.color = new Color(0.78f, 0.68f, 0.48f, 0.22f * u);
+                        GUI.DrawTexture(row, Texture2D.whiteTexture);
+                    }
+                    GUI.color = Color.white;
+
+                    float nameH = jackpot ? rowH * 0.82f : rowH * 0.72f;
+                    int lo = jackpot ? 15 : 13;
+                    int hi = jackpot ? 26 : 22;
+                    nameSt.fontSize = FitFont(nameSt, name, row.width * 0.58f, nameH, lo, hi);
+                    paySt.fontSize = FitFont(paySt, pay, row.width * 0.38f, nameH, lo, hi);
+                    var fill = jackpot
+                        ? new Color(0.55f, 0.28f, 0.06f)
+                        : new Color(0.32f, 0.16f, 0.06f);
+                    StampOutlined(new Rect(row.x, row.y, row.width * 0.58f, row.height), name, nameSt, fill, 2, 1);
+                    StampOutlined(new Rect(row.x + row.width * 0.55f, row.y, row.width * 0.45f, row.height), pay, paySt, fill, 2, 1);
+                    yRow += rowH;
+                }
+            }
+
+            DrawPokerPayJewel(tab, s);
+        }
+
+        void DrawPokerPayJewel(Rect tab, float s)
+        {
+            bool held = false;
+            var e = Event.current;
+            if (e != null && tab.Contains(e.mousePosition) && Input.GetMouseButton(0))
+                held = true;
+
+            float sink = held ? 2f : 0f;
+            var chip = new Rect(tab.x, tab.y + sink, tab.width, tab.height - sink);
+            GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.45f);
+            GUI.DrawTexture(new Rect(chip.x + 2f, chip.y + 3f, chip.width, chip.height), Texture2D.whiteTexture);
+            GUI.color = new Color(0.78f, 0.58f, 0.18f, held ? 0.98f : 0.92f);
+            GUI.DrawTexture(chip, Texture2D.whiteTexture);
+            GUI.color = new Color(0.62f, 0.12f, 0.16f, 0.96f);
+            GUI.DrawTexture(new Rect(chip.x + 3f * s, chip.y + 3f * s, chip.width - 6f * s, chip.height - 6f * s), Texture2D.whiteTexture);
+            GUI.color = new Color(0.88f, 0.28f, 0.32f, 0.55f);
+            GUI.DrawTexture(new Rect(chip.x + 5f * s, chip.y + 4f * s, chip.width - 10f * s, chip.height * 0.38f), Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 0.92f, 0.55f, 0.55f);
+            GUI.DrawTexture(new Rect(chip.x + 4f * s, chip.y + 3f * s, chip.width - 8f * s, 3f * s), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            string arrow = _pokerPayOpen ? "▼" : "▶";
+            string lab = "PAY TABLE " + arrow;
+            var labSt = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+            labSt.fontSize = FitFont(labSt, lab, chip.width * 0.90f, chip.height * 0.70f, 11, 16);
+            StampOutlined(chip, lab, labSt, new Color(1f, 0.94f, 0.72f), 1, 1);
         }
 
         void BeginPokerStamp(int kind)
         {
+            _pokerPayOpen = false;
+            _pokerPayAnim = 0f;
             _pokerStamp = true;
             _pokerStampT = 0f;
             _pokerStampKind = kind;
@@ -2612,7 +2794,7 @@ namespace FlockFive
         void DrawPokerCard(Rect seat, int i, float s, float holdH)
         {
             bool dealt = BirdPoker.PhaseNow == BirdPoker.Phase.Dealt;
-            bool canHold = !PokerMotionBusy() && dealt;
+            bool canHold = !PokerMotionBusy() && !(_pokerPayOpen || _pokerPayAnim > 0.35f) && dealt;
             var holdR = new Rect(seat.x, seat.yMax + 6f * s, seat.width, holdH);
             if (canHold && (HitPad(seat, out _) || HitPad(holdR, out _)))
             {
