@@ -741,7 +741,7 @@ namespace FlockFive
             CheckOver();
         }
 
-        // Collect into a sparrow-blocked feeder: fly in, five smacks, sparrow flees, birds scatter.
+        // Collect into a sparrow-blocked feeder: dive arcs, five dive-strikes, zigzag flee, scatter.
         IEnumerator CollectVsSparrow(
             SpriteRenderer[] birds, int n, FeederView feeder, Vector3 mouth,
             BranchView view, BirdColor col, float haste, float step, float fly, int combo)
@@ -750,21 +750,39 @@ namespace FlockFive
                 SparrowView.Live.BeginEvict();
             if (feeder != null) feeder.Hold();
 
+            Vector3 Body() =>
+                SparrowView.Live != null
+                    ? SparrowView.Live.transform.position
+                    : mouth + new Vector3(0f, 0.35f, 0f);
+
             int hits = Mathf.Min(5, Mathf.Max(1, n));
+            // Staggered dive approaches — not a neat landing line.
+            float approachSpan = 0f;
             for (int i = 0; i < n; i++)
             {
-                float u = n <= 1 ? 0f : i / (float)(n - 1) - 0.5f;
-                var land = mouth + new Vector3(u * 0.95f, 0.28f + 0.06f * Mathf.Sin((i + 1) * 1.2f), 0f);
-                bool smack = i < hits;
-                StartCoroutine(FlyHitSparrow(birds[i].transform, land, step * i, fly, i, smack));
+                if (birds[i] == null) continue;
+                float delay = i == 0 ? 0f : approachSpan + Random.Range(0.04f, 0.11f);
+                approachSpan = delay;
+                float bank = (i % 2 == 0 ? 1f : -1f) * Random.Range(0.55f, 1.05f);
+                var hold = Body() + new Vector3(
+                    bank * Random.Range(0.55f, 0.95f),
+                    Random.Range(0.55f, 1.05f),
+                    0f);
+                StartCoroutine(DiveApproach(birds[i].transform, hold, delay, fly * Random.Range(0.78f, 1.05f), i));
             }
+            yield return new WaitForSeconds(approachSpan + fly * 0.85f);
             if (n > 0)
+                StartCoroutine(Wow.Burst(Body() + Vector3.up * 0.15f, col, _garden.Root, combo));
+
+            // Five dive-strikes; irregular gaps between contacts; strikers loop back for more.
+            for (int h = 0; h < hits; h++)
             {
-                yield return new WaitForSeconds(fly * 0.92f);
-                StartCoroutine(Wow.Burst(mouth + Vector3.up * 0.2f, col, _garden.Root, combo));
+                if (h > 0)
+                    yield return new WaitForSeconds(Random.Range(0.12f, 0.22f) * haste);
+                int striker = h % Mathf.Max(1, n);
+                if (birds[striker] == null) continue;
+                yield return DiveStrike(birds[striker].transform, Body, h);
             }
-            // Wait through staggered arrivals so all five smacks land.
-            yield return new WaitForSeconds((n > 0 ? (n - 1) * step : 0f) + fly + 0.10f * haste);
 
             if (SparrowView.Live != null)
                 yield return SparrowView.Live.PanicFlee();
@@ -775,43 +793,153 @@ namespace FlockFive
             yield return view.BreakAway();
         }
 
-        IEnumerator FlyHitSparrow(Transform tr, Vector3 dest, float delay, float dur, int pop, bool smack)
+        IEnumerator DiveApproach(Transform tr, Vector3 hold, float delay, float dur, int pop)
         {
             if (delay > 0f) yield return new WaitForSeconds(delay);
             if (tr == null) yield break;
             Sfx.FlockFlutter(1);
             var start = tr.position;
             var scale = tr.localScale;
+            // Slight overshoot past hold, then settle.
+            var delta = hold - start;
+            var dir = delta.sqrMagnitude > 0.0001f ? delta.normalized : Vector3.up;
+            var over = hold + dir * Random.Range(0.18f, 0.42f);
+            over.y += Random.Range(0.05f, 0.2f);
+            FaceToward(tr, hold.x >= start.x);
+            float lift = Random.Range(1.2f, 1.9f);
             float t = 0f;
             while (t < dur)
             {
+                if (tr == null) yield break;
                 t += Time.deltaTime;
-                float u = Mathf.SmoothStep(0f, 1f, t / dur);
-                var p = Vector3.Lerp(start, dest, u);
-                p.y += Mathf.Sin(u * Mathf.PI) * 1.85f;
-                tr.position = p;
+                float u = Mathf.Clamp01(t / dur);
+                // Accelerate into the dive (ease-in), soft land.
+                float dive = u * u * (1.6f - 0.6f * u);
+                var mid = Vector3.Lerp(start, over, Mathf.Clamp01(dive));
+                mid.y += Mathf.Sin(Mathf.Clamp01(dive) * Mathf.PI) * lift;
+                // Bank flip mid-arc.
+                if (u > 0.45f && u < 0.55f)
+                    FaceToward(tr, hold.x < start.x);
+                tr.position = mid;
                 tr.localScale = scale;
+                var idle = tr.GetComponent<BirdIdle>();
+                if (idle != null) idle.Flapping = true;
                 yield return null;
             }
-            tr.position = dest;
+            // Ease back from overshoot to hold.
+            if (tr == null) yield break;
+            var from = tr.position;
+            float back = 0f;
+            const float backDur = 0.10f;
+            while (back < backDur)
+            {
+                if (tr == null) yield break;
+                back += Time.deltaTime;
+                float u = Mathf.SmoothStep(0f, 1f, back / backDur);
+                tr.position = Vector3.Lerp(from, hold, u);
+                yield return null;
+            }
+            if (tr != null) tr.position = hold;
             Sfx.ScorePop(pop);
-            if (smack && SparrowView.Live != null)
-                SparrowView.Live.Smack();
+        }
+
+        IEnumerator DiveStrike(Transform tr, System.Func<Vector3> bodyFn, int hit)
+        {
+            if (tr == null) yield break;
+            Sfx.FlockFlutter(1);
+            var start = tr.position;
+            var scale = tr.localScale;
+            var body = bodyFn();
+            // Aim at body with slight overshoot past the sparrow.
+            var aim = body + new Vector3(Random.Range(-0.08f, 0.08f), Random.Range(-0.02f, 0.1f), 0f);
+            var delta = aim - start;
+            var dir = delta.sqrMagnitude > 0.0001f ? delta.normalized : Vector3.right;
+            var over = aim + dir * Random.Range(0.35f, 0.65f);
+            FaceToward(tr, aim.x >= start.x);
+
+            float dur = Random.Range(0.14f, 0.22f);
+            float t = 0f;
+            bool struck = false;
+            while (t < dur)
+            {
+                if (tr == null) yield break;
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                // Accelerate hard into contact.
+                float dive = u * u;
+                tr.position = Vector3.Lerp(start, over, dive);
+                tr.localScale = scale * (u < 0.7f ? 1f : Mathf.Lerp(1f, 0.92f, (u - 0.7f) / 0.3f));
+                if (!struck && u >= 0.55f)
+                {
+                    struck = true;
+                    if (SparrowView.Live != null)
+                        SparrowView.Live.TakeHit(hit);
+                    // Brief contact squash on the hummer.
+                    tr.localScale = scale * 1.12f;
+                }
+                var idle = tr.GetComponent<BirdIdle>();
+                if (idle != null) idle.Flapping = true;
+                yield return null;
+            }
+
+            // Glance-off tight loop, then hover nearby for a possible return pass.
+            if (tr == null) yield break;
+            var loopFrom = tr.position;
+            float side = loopFrom.x >= body.x ? 1f : -1f;
+            FaceToward(tr, side < 0f);
+            float loop = 0f;
+            float loopDur = Random.Range(0.16f, 0.24f);
+            float rad = Random.Range(0.28f, 0.48f);
+            var hover = body + new Vector3(
+                side * Random.Range(0.7f, 1.15f),
+                Random.Range(0.45f, 0.95f),
+                0f);
+            while (loop < loopDur)
+            {
+                if (tr == null) yield break;
+                loop += Time.deltaTime;
+                float u = Mathf.Clamp01(loop / loopDur);
+                float ang = u * Mathf.PI * 1.35f;
+                var arc = loopFrom + new Vector3(
+                    side * Mathf.Sin(ang) * rad,
+                    Mathf.Cos(ang * 0.85f) * rad * 0.65f + u * 0.2f,
+                    0f);
+                tr.position = Vector3.Lerp(arc, hover, u * u);
+                tr.localScale = scale;
+                if (u > 0.5f) FaceToward(tr, hover.x >= tr.position.x);
+                yield return null;
+            }
+            if (tr != null) tr.position = hover;
+        }
+
+        static void FaceToward(Transform tr, bool faceRight)
+        {
+            if (tr == null) return;
+            var idle = tr.GetComponent<BirdIdle>();
+            if (idle != null)
+            {
+                idle.FaceLeft = !faceRight;
+                idle.Flapping = true;
+            }
+            var sr = tr.GetComponent<SpriteRenderer>();
+            if (sr != null) sr.flipX = !faceRight;
         }
 
         IEnumerator ScatterBirds(SpriteRenderer[] birds, int n)
         {
             if (n <= 0) yield break;
             Sfx.Takeoff(n);
+            Sfx.FlockFlutter(Mathf.Min(3, Mathf.Max(1, n)));
             var dests = ScatterDests(n);
             for (int i = 0; i < n; i++)
             {
                 if (birds[i] == null) continue;
                 var dest = dests[i % dests.Length];
-                float delay = i * 0.035f;
+                // Messy flock stagger — irregular, not a metronome.
+                float delay = i * Random.Range(0.02f, 0.055f) + Random.Range(0f, 0.04f);
                 StartCoroutine(ScatterOne(birds[i].transform, dest, delay));
             }
-            yield return new WaitForSeconds(0.55f + n * 0.035f);
+            yield return new WaitForSeconds(0.58f + n * 0.04f);
         }
 
         Vector3[] ScatterDests(int need)
@@ -858,9 +986,18 @@ namespace FlockFive
             var start = tr.position;
             var scale = tr.localScale;
             float side = dest.x >= start.x ? 1f : -1f;
-            float lift = Random.Range(1.4f, 2.6f);
-            float sway = Random.Range(0.15f, 0.45f);
-            float dur = Random.Range(0.42f, 0.58f);
+            float lift = Random.Range(1.5f, 2.9f);
+            float sway = Random.Range(0.28f, 0.72f);
+            float wobble = Random.Range(1.6f, 2.8f);
+            float dur = Random.Range(0.44f, 0.66f);
+            var idle = tr.GetComponent<BirdIdle>();
+            if (idle != null)
+            {
+                idle.FaceLeft = dest.x < start.x;
+                idle.Flapping = true;
+            }
+            var srFace = tr.GetComponent<SpriteRenderer>();
+            if (srFace != null) srFace.flipX = dest.x < start.x;
             float t = 0f;
             while (t < dur)
             {
@@ -869,14 +1006,14 @@ namespace FlockFive
                 float u = Mathf.SmoothStep(0f, 1f, t / dur);
                 var p = Vector3.Lerp(start, dest, u);
                 p.y += Mathf.Sin(u * Mathf.PI) * lift;
-                p.x += Mathf.Sin(u * Mathf.PI) * side * sway * (1f - u);
+                p.x += Mathf.Sin(u * Mathf.PI * wobble) * side * sway * (1f - u * 0.65f);
                 tr.position = p;
-                tr.localScale = scale * Mathf.Lerp(1f, 0.72f, u);
+                tr.localScale = scale * Mathf.Lerp(1f, 0.68f, u);
                 var sr = tr.GetComponent<SpriteRenderer>();
                 if (sr != null)
                 {
                     var c = sr.color;
-                    c.a = 1f - u * 0.85f;
+                    c.a = 1f - u * 0.88f;
                     sr.color = c;
                 }
                 yield return null;
