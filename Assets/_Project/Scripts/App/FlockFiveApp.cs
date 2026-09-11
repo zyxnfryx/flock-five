@@ -67,6 +67,10 @@ namespace FlockFive
         float _hivePageTurn = 99f;
         readonly bool[] _hiveFaceBack = new bool[Hive.Kinds];
         const int HivePageSize = 9;
+        int _hiveInspect = -1; // roster index, -1 = closed
+        float _hiveInspectT; // 0..1 pull animation (open), also used for close
+        bool _hiveInspectClosing;
+        Rect _hiveInspectFrom; // sleeve rect when opened (for lerp)
 
         void Start()
         {
@@ -2242,9 +2246,24 @@ namespace FlockFive
             var back = new Rect(Mathf.Max(16f, safe.xMin + 10f), top, 132f * Mathf.Min(s, 1.6f), 44f * Mathf.Min(s, 1.6f));
             if (HitPad(back, out bool backHeld))
             {
-                _hiveFlip = -1;
-                _hivePageTurn = 99f;
-                _home = HomeFace.Splash;
+                if (_hiveInspect >= 0)
+                {
+                    if (!_hiveInspectClosing)
+                    {
+                        _hiveInspectClosing = true;
+                        _hiveInspectT = 0f;
+                        _hiveFlip = -1;
+                    }
+                }
+                else
+                {
+                    _hiveFlip = -1;
+                    _hivePageTurn = 99f;
+                    _hiveInspect = -1;
+                    _hiveInspectT = 0f;
+                    _hiveInspectClosing = false;
+                    _home = HomeFace.Splash;
+                }
             }
             GUI.color = new Color(0.10f, 0.08f, 0.05f, backHeld ? 0.88f : 0.72f);
             GUI.DrawTexture(back, Texture2D.whiteTexture);
@@ -2274,7 +2293,7 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleCenter
             };
             tip.fontSize = Mathf.RoundToInt(13 * s);
-            StampOutlined(new Rect(0f, boxY + 26f * s, Screen.width, 20f * s), "Tap a card to flip  ·  tabs turn the page", tip, new Color(0.92f, 0.82f, 0.58f), 1, 1);
+            StampOutlined(new Rect(0f, boxY + 26f * s, Screen.width, 20f * s), "Tap a card to pull it out  ·  tabs turn the page", tip, new Color(0.92f, 0.82f, 0.58f), 1, 1);
 
             if (_hiveFlip >= 0)
             {
@@ -2401,7 +2420,8 @@ namespace FlockFive
             {
                 var tab = new Rect(tabX0 + p * (tabW + tabGap), tabY, tabW, tabH);
                 bool on = p == _hivePage && !turning;
-                bool hit = !turning && HitPad(tab, out bool held);
+                bool held = false;
+                bool hit = !turning && _hiveInspect < 0 && HitPad(tab, out held);
                 GUI.color = on
                     ? new Color(0.92f, 0.72f, 0.28f, held ? 0.95f : 0.88f)
                     : new Color(0.18f, 0.14f, 0.10f, held ? 0.90f : 0.72f);
@@ -2417,10 +2437,126 @@ namespace FlockFive
                     Sfx.PageTurn();
                 }
             }
+
+            if (_hiveInspect >= 0)
+                DrawHiveInspect(s);
         }
 
-        void DrawBeeAlbumCard(Rect card, int i, float s)
+        void DrawHiveInspect(float s)
         {
+            const float dur = 0.28f;
+            _hiveInspectT += Time.unscaledDeltaTime;
+            float u = Mathf.Clamp01(_hiveInspectT / dur);
+            float ease = 1f - (1f - u) * (1f - u); // easeOut quad
+            float t = _hiveInspectClosing ? (1f - ease) : ease;
+
+            // Dim overlay
+            GUI.color = new Color(0.02f, 0.02f, 0.04f, 0.72f * t);
+            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            // Large portrait card ~1:1.4, near-fullscreen
+            float maxW = Screen.width * 0.86f;
+            float maxH = Screen.height * 0.62f;
+            float bigW, bigH;
+            if (maxW * 1.4f <= maxH)
+            {
+                bigW = maxW;
+                bigH = maxW * 1.4f;
+            }
+            else
+            {
+                bigH = maxH;
+                bigW = maxH / 1.4f;
+            }
+            var to = new Rect(
+                (Screen.width - bigW) * 0.5f,
+                (Screen.height - bigH) * 0.40f,
+                bigW,
+                bigH);
+            var from = _hiveInspectFrom;
+            var big = new Rect(
+                Mathf.Lerp(from.x, to.x, t),
+                Mathf.Lerp(from.y, to.y, t),
+                Mathf.Lerp(from.width, to.width, t),
+                Mathf.Lerp(from.height, to.height, t));
+
+            int ix = _hiveInspect;
+            DrawBeeAlbumCard(big, ix, s, true);
+
+            // Hint under card
+            var hint = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Italic,
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = Mathf.RoundToInt(14 * s)
+            };
+            float hintY = big.yMax + 10f * s;
+            StampOutlined(new Rect(0f, hintY, Screen.width, 22f * s), "Tap card to flip  ·  tap outside to put back", hint, new Color(0.92f, 0.82f, 0.58f, Mathf.Clamp01(t * 1.4f)), 1, 1);
+
+            // Close X top-right of overlay
+            var safe = Screen.safeArea;
+            float top = Mathf.Max(20f, Screen.height - safe.yMax + 10f);
+            float xSz = 44f * Mathf.Min(s, 1.6f);
+            var xBtn = new Rect(Screen.width - Mathf.Max(16f, Screen.width - safe.xMax + 10f) - xSz, top, xSz, xSz);
+            bool xHeld;
+            bool xHit = HitPad(xBtn, out xHeld);
+            GUI.color = new Color(0.10f, 0.08f, 0.05f, (xHeld ? 0.92f : 0.78f) * Mathf.Clamp01(t + 0.15f));
+            GUI.DrawTexture(xBtn, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var xLab = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = Mathf.RoundToInt(22 * s),
+                alignment = TextAnchor.MiddleCenter,
+                fontStyle = FontStyle.Bold
+            };
+            xLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
+            GUI.Label(xBtn, "X", xLab);
+
+            bool fullyOpen = !_hiveInspectClosing && u >= 1f;
+            // Always hit-test the card when open so taps don't fall through to "outside"
+            if (fullyOpen && HitPad(big, out _))
+            {
+                if (_hiveFlip < 0)
+                {
+                    _hiveFlip = ix;
+                    _hiveFlipT = 0f;
+                    Sfx.Chirp(BirdColor.Gold);
+                }
+            }
+
+            // Tap dim outside card closes (after card/X so they win hit tests)
+            var full = new Rect(0f, 0f, Screen.width, Screen.height);
+            bool outside = !_hiveInspectClosing && u > 0.85f && HitPad(full, out _);
+            if ((outside || xHit) && !_hiveInspectClosing)
+            {
+                _hiveInspectClosing = true;
+                _hiveInspectT = 0f;
+                _hiveFlip = -1;
+            }
+
+            if (_hiveInspectClosing && u >= 1f)
+            {
+                _hiveInspect = -1;
+                _hiveInspectClosing = false;
+                _hiveInspectT = 0f;
+                _hiveFlip = -1;
+            }
+        }
+
+        void DrawBeeAlbumCard(Rect card, int i, float s) => DrawBeeAlbumCard(card, i, s, false);
+
+        void DrawBeeAlbumCard(Rect card, int i, float s, bool inspectView)
+        {
+            // Pulled-out sleeve: faint ghost so the card looks removed
+            if (!inspectView && i == _hiveInspect)
+            {
+                GUI.color = new Color(0.95f, 0.92f, 0.85f, 0.14f);
+                GUI.DrawTexture(card, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                return;
+            }
+
             int n = Hive.CountOf(i);
             bool owned = n > 0;
             bool flipping = _hiveFlip == i;
@@ -2523,10 +2659,14 @@ namespace FlockFive
                 StampOutlined(new Rect(face.x + face.width * 0.06f, face.y + face.height * 0.32f, face.width * 0.88f, face.height * 0.55f), kind.Back, blip, new Color(0.40f, 0.22f, 0.08f), 1, 1);
             }
 
-            if (owned && !flipping && _hivePageTurn >= 0.55f && HitPad(card, out _))
+            // Binder sleeve tap opens fullscreen inspect (flip lives inside inspect)
+            if (!inspectView && owned && !flipping && _hivePageTurn >= 0.55f && _hiveInspect < 0 && HitPad(card, out _))
             {
-                _hiveFlip = i;
-                _hiveFlipT = 0f;
+                _hiveInspect = i;
+                _hiveInspectT = 0f;
+                _hiveInspectClosing = false;
+                _hiveInspectFrom = card;
+                _hiveFlip = -1;
                 Sfx.Chirp(BirdColor.Gold);
             }
         }
