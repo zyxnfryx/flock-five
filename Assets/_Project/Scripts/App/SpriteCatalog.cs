@@ -4,7 +4,7 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack;
         static Sprite[] _letters;
         static Sprite[] _digits;
         static Sprite[] _birds;
@@ -37,6 +37,7 @@ namespace FlockFive
         public static Sprite Crown => Load(ref _crown, "Sprites/fx_crown", 200f);
         public static Sprite Hive => Load(ref _hive, "Sprites/fx_hive", 200f);
         public static Sprite Poker => Load(ref _poker, "Sprites/fx_poker", 200f);
+        public static Sprite CardBack => Load(ref _cardBack, "Sprites/fx_card_back", 200f);
         public static Sprite PlayFlower => Load(ref _playFlower, "Sprites/fx_play_flower", 200f);
         public static Sprite Firefly => Load(ref _firefly, "Sprites/fx_firefly", 200f);
         public static Sprite Zee => Load(ref _zee, "Sprites/fx_z", 200f);
