@@ -105,6 +105,7 @@ namespace FlockFive
                 _thunders[i] = MakeThunder(i, 2800 + i * 67);
             var gated = Resources.Load<AudioClip>("Audio/Gate/gate_go");
             _gate = gated != null ? gated : MakeGate();
+            _oink = MakeOink();
         }
 
         static AudioSource Voice()
