@@ -277,6 +277,39 @@ namespace FlockFive
             return Clip("deny", data);
         }
 
+        static AudioClip MakePageTurn()
+        {
+            // Soft paper whoosh + brief rustle — Ultra Pro binder flip.
+            float dur = 0.38f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float lp = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float u = t / dur;
+                float whoosh = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(420f, 180f, u) * t);
+                whoosh *= Mathf.Sin(Mathf.PI * u) * 0.22f;
+                float noise = Soft(ref lp, 9100 + i, i, 0.35f);
+                float rustle = noise * (0.55f + 0.45f * Mathf.Sin(2f * Mathf.PI * 28f * t));
+                float env = u < 0.15f ? (u / 0.15f) : Mathf.Pow(1f - (u - 0.15f) / 0.85f, 1.4f);
+                rustle *= env * 0.55f;
+                float flap = 0f;
+                if (u > 0.08f && u < 0.22f)
+                {
+                    float v = (u - 0.08f) / 0.14f;
+                    flap = Mathf.Sin(Mathf.PI * v) * 0.18f * Mathf.Sin(2f * Mathf.PI * 90f * t);
+                }
+                data[i] = whoosh + rustle + flap;
+            }
+            for (int i = 0; i < n; i++)
+            {
+                float x = data[i] * 1.35f;
+                data[i] = x / (1f + Mathf.Abs(x));
+            }
+            return Clip("page-turn", data);
+        }
+
         static AudioClip MakeBreak(int kind, int seed)
         {
             // Thick branch: three snappy splits, then a meaty pith CRUNCH.
