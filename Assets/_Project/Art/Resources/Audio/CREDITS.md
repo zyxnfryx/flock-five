@@ -49,6 +49,15 @@ flute remains fallback if the wav is missing. Feeder ching (`Audio/Ching/ching_0
 is an original synthesized Flock Five bank. Runtime C# ports match the
 signed-off D-major garden mixes when wavs are not in Resources.
 
+Feeder rattle (`Audio/Rattle`, procedural `MakeFeederRattle`) is an original
+Flock Five bank: soft glass/metal feeder shake plus wood bump for poke and
+sparrow perch taps. Commercially clear. Distinct from Ching score payoff and
+Coin/piggy clink — not a ding, gong, or alarm.
+
+Sparrow yell (`Audio/Yell`, procedural `MakeSparrowYell`) is an original harsh
+short squawk for tap-scare flee. Dove/yell family, not hummingbird select chips
+(`hum_sel_*` / Chirp) and not pitched-up chirps.
+
 Splash title: `splash-theme.wav` loops the band (12 bars @ 128 BPM, 22.5s)
 once the splash page is on screen — no guitar/harp/crash one-shot. Original
 notes — not a cover.
