@@ -4,7 +4,7 @@ using UnityEngine;
 namespace FlockFive
 {
     // Garden pest: flies in, perches on one feeder (blocking it), stays until
-    // collect-evicted with five enjoyable smacks. Never sets _busy.
+    // collect-evicted by a lifelike five-hit hummingbird scrap. Never sets _busy.
     public sealed class SparrowView : MonoBehaviour
     {
         public static SparrowView Live { get; private set; }
@@ -122,7 +122,7 @@ namespace FlockFive
 
             if (view._evict)
             {
-                // Collect owns Smack / PanicFlee; wait until retired.
+                // Collect owns TakeHit / PanicFlee; wait until retired.
                 while (go != null && !view._done)
                     yield return null;
             }
@@ -140,74 +140,142 @@ namespace FlockFive
             BlockingSlot = -1;
         }
 
-        // One enjoyable smack: BAM squash + feathers + yell.
-        public void Smack()
+        // Compat alias — collect dive-strikes call TakeHit.
+        public void Smack() => TakeHit(0);
+
+        // Lifelike hit: brief contact squash, crouch→hop flinch, wing flutter, yell, feather puff.
+        public void TakeHit(int index = 0)
         {
             if (_done || _fleeing || _art == null) return;
-            StartCoroutine(SmackCo());
+            StartCoroutine(TakeHitCo(index));
         }
 
-        IEnumerator SmackCo()
+        IEnumerator TakeHitCo(int index)
         {
             var pos = transform.position;
             var parent = transform.parent;
-            Sfx.SparrowYell();
-            if (CamShake.Live != null)
-                CamShake.Live.Punch(0.16f, 0.12f, 3.6f, 0.12f);
-            SparrowBits.Burst(pos, parent, _tint);
-
-            float bam = 0f;
-            const float bamDur = 0.12f;
             var baseScale = Vector3.one * Scale;
-            while (bam < bamDur && !_fleeing)
+            float side = Random.value < 0.5f ? -1f : 1f;
+            float hopX = side * Random.Range(0.08f, 0.18f);
+            float hopY = Random.Range(0.14f, 0.28f);
+
+            Sfx.SparrowYell();
+            if (index == 0 || index == 3)
+                Sfx.FeederRattle();
+            if (CamShake.Live != null)
+                CamShake.Live.Punch(0.10f, 0.07f + 0.01f * index, 2.4f, 0.08f);
+            SparrowBits.Burst(pos + new Vector3(0f, 0.08f, 0f), parent, _tint);
+
+            // Contact flash / squash.
+            float flash = 0f;
+            const float flashDur = 0.055f;
+            while (flash < flashDur && !_fleeing)
             {
-                bam += Time.deltaTime;
-                float u = Mathf.Clamp01(bam / bamDur);
-                float squash = 1f + 0.5f * Mathf.Sin(u * Mathf.PI);
+                flash += Time.deltaTime;
+                float u = Mathf.Clamp01(flash / flashDur);
                 transform.localScale = new Vector3(
-                    baseScale.x * (1.3f - 0.5f * u),
-                    baseScale.y * (0.5f + 0.65f * u),
-                    1f) * squash;
+                    baseScale.x * Mathf.Lerp(1.22f, 1.05f, u),
+                    baseScale.y * Mathf.Lerp(0.62f, 0.88f, u),
+                    1f);
                 if (_art != null)
                     _art.color = Color.Lerp(Color.white, SpriteCatalog.SparrowIsPlaceholder ? _tint : Color.white, u);
                 Flap(true);
                 yield return null;
             }
+
+            // Crouch then recoil hop with wing flutter.
+            float crouch = 0f;
+            const float crouchDur = 0.07f;
+            while (crouch < crouchDur && !_fleeing)
+            {
+                crouch += Time.deltaTime;
+                float u = Mathf.Clamp01(crouch / crouchDur);
+                transform.localScale = new Vector3(
+                    baseScale.x * Mathf.Lerp(1.08f, 1.18f, u),
+                    baseScale.y * Mathf.Lerp(0.78f, 0.58f, u),
+                    1f);
+                transform.position = pos + new Vector3(0f, -0.04f * u, 0f);
+                Flap(true);
+                yield return null;
+            }
+
+            float hop = 0f;
+            const float hopDur = 0.16f;
+            float tilt = side * Random.Range(8f, 14f);
+            while (hop < hopDur && !_fleeing)
+            {
+                hop += Time.deltaTime;
+                float u = Mathf.Clamp01(hop / hopDur);
+                float arc = Mathf.Sin(u * Mathf.PI);
+                transform.position = pos + new Vector3(hopX * u, hopY * arc - 0.02f * (1f - arc), 0f);
+                transform.localScale = new Vector3(
+                    baseScale.x * Mathf.Lerp(1.12f, 0.95f, u),
+                    baseScale.y * Mathf.Lerp(0.62f, 1.08f, arc),
+                    1f);
+                transform.localRotation = Quaternion.Euler(0f, 0f, tilt * arc);
+                Flap(true);
+                yield return null;
+            }
+
             if (!_fleeing)
-                transform.localScale = Vector3.one * Scale;
+            {
+                transform.localScale = baseScale;
+                transform.localRotation = Quaternion.identity;
+                // Settle slightly off perch — Visit loop no longer owns position while _evict.
+                transform.position = pos + new Vector3(hopX * 0.45f, 0.02f, 0f);
+            }
         }
 
-        // Panic fly-off after five hits (no opening yell — hits already yelled).
+        // Panic zigzag bolt after five hits (no opening yell — hits already yelled).
         public IEnumerator PanicFlee()
         {
             if (_done || _fleeing) yield break;
             _fleeing = true;
             BlockingSlot = -1;
-            var parent = transform.parent;
             var from = transform.position;
-            var dest = new Vector3(_exitX, from.y + Random.Range(1.2f, 2.6f), 0f);
-            if (_art != null) _art.flipX = dest.x < from.x;
+            float dir = Mathf.Sign(_exitX - from.x);
+            if (dir == 0f) dir = _exitX >= 0f ? 1f : -1f;
+            var dest = new Vector3(_exitX, from.y + Random.Range(1.6f, 3.2f), 0f);
             transform.localScale = Vector3.one * Scale;
+            transform.localRotation = Quaternion.identity;
+            if (_art != null) _art.flipX = dest.x < from.x;
+            Sfx.FlockFlutter(1);
 
-            float t = 0f;
-            const float fleeDur = 0.48f;
-            while (t < fleeDur)
+            // Three zigzag legs — panicked, not a straight arc.
+            var a = from + new Vector3(dir * Random.Range(0.55f, 0.95f), Random.Range(0.55f, 1.05f), 0f);
+            var b = a + new Vector3(-dir * Random.Range(0.7f, 1.2f), Random.Range(0.45f, 0.95f), 0f);
+            var legs = new[] { a, b, dest };
+            var durs = new[] { 0.16f, 0.18f, 0.28f };
+            var prev = from;
+            for (int leg = 0; leg < legs.Length; leg++)
             {
-                t += Time.deltaTime;
-                float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / fleeDur));
-                var p = Vector3.Lerp(from, dest, u);
-                p.y += Mathf.Sin(u * Mathf.PI) * 2.1f;
-                transform.position = p;
-                transform.localScale = Vector3.one * (Scale * Mathf.Lerp(1.15f, 0.7f, u));
-                transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(u * Mathf.PI * 3f) * 18f * (1f - u));
-                Flap(true);
-                if (_art != null)
+                var next = legs[leg];
+                if (_art != null) _art.flipX = next.x < prev.x;
+                float t = 0f;
+                float dur = durs[leg];
+                float sway = (leg % 2 == 0 ? 1f : -1f) * Random.Range(0.22f, 0.42f);
+                while (t < dur)
                 {
-                    var c = _art.color;
-                    c.a = 1f - u * 0.15f;
-                    _art.color = c;
+                    t += Time.deltaTime;
+                    float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / dur));
+                    // Accelerate out of each turn.
+                    float ease = u * u * (3f - 2f * u);
+                    var p = Vector3.Lerp(prev, next, ease);
+                    p.x += Mathf.Sin(u * Mathf.PI) * sway;
+                    p.y += Mathf.Sin(u * Mathf.PI) * (0.35f + 0.2f * leg);
+                    transform.position = p;
+                    transform.localScale = Vector3.one * (Scale * Mathf.Lerp(1.12f, 0.68f, (leg + u) / 3f));
+                    transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(u * Mathf.PI * 2.4f) * 22f * (1f - u * 0.5f));
+                    Flap(true);
+                    if (_art != null)
+                    {
+                        var c = _art.color;
+                        c.a = 1f - ((leg + u) / 3f) * 0.2f;
+                        _art.color = c;
+                    }
+                    yield return null;
                 }
-                yield return null;
+                prev = next;
             }
             _done = true;
         }
@@ -288,7 +356,7 @@ namespace FlockFive
 
         static IEnumerator Run(GameObject host, Vector3 pos, Color tint)
         {
-            int n = Random.Range(8, 15);
+            int n = Random.Range(5, 10);
             var bits = new SpriteRenderer[n];
             var vel = new Vector3[n];
             var spin = new float[n];
