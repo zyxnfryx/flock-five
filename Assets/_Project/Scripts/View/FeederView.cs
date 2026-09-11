@@ -33,6 +33,40 @@ namespace FlockFive
 
         public void Hold() => _held = true;
 
+        public void Poke()
+        {
+            if (Art == null || !Art.enabled) return;
+            if (_held) return;
+            StopAllCoroutines();
+            StartCoroutine(PokeCo());
+        }
+
+        IEnumerator PokeCo()
+        {
+            _held = true;
+            Sfx.Deny();
+            Sfx.Clink();
+            var basePos = _planted;
+            float t = 0f;
+            const float dur = 0.42f;
+            while (t < dur)
+            {
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                float kick = (1f - u) * (1f - u);
+                float wobble = Mathf.Sin(u * Mathf.PI * 7f) * 14f * kick;
+                float bob = Mathf.Sin(u * Mathf.PI * 5f) * 0.12f * kick;
+                transform.localRotation = Quaternion.Euler(0f, 0f, wobble);
+                transform.position = basePos + new Vector3(Mathf.Sin(u * Mathf.PI * 6f) * 0.08f * kick, bob, 0f);
+                transform.localScale = Vector3.one * (Scale * (1f + 0.14f * Mathf.Sin(u * Mathf.PI) * kick));
+                yield return null;
+            }
+            transform.position = _planted;
+            transform.localRotation = Quaternion.identity;
+            transform.localScale = Vector3.one * Scale;
+            _held = false;
+        }
+
         public void Pulse()
         {
             _held = true;
