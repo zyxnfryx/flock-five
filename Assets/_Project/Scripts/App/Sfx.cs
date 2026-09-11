@@ -16,6 +16,7 @@ namespace FlockFive
         static AudioClip[] _rattles;
         static AudioClip[] _yells;
         static AudioClip[] _hawks;
+        static AudioClip[] _oinks;
         static AudioClip[] _pops;
         static AudioClip[] _jingles;
         static AudioClip _deny;
@@ -37,6 +38,7 @@ namespace FlockFive
         static int _lastRattle = -1;
         static int _lastYell = -1;
         static int _lastHawk = -1;
+        static int _lastOink = -1;
         static float _humGate;
         static float _flapGate;
         static SfxHost _host;
@@ -85,6 +87,7 @@ namespace FlockFive
             _rattles = LoadBank("Audio/Rattle", 20, MakeFeederRattle);
             _yells = LoadBank("Audio/Yell", 6, MakeSparrowYell);
             _hawks = LoadBank("Audio/Hawk", 8, MakeHawkCry);
+            _oinks = LoadBank("Audio/Oink", 8, MakeOink);
             _pops = new AudioClip[5];
             for (int i = 0; i < _pops.Length; i++)
                 _pops[i] = MakePop(i, 8800 + i * 29);
@@ -358,6 +361,16 @@ namespace FlockFive
             int i = Next(_hawks.Length, ref _lastHawk);
             Shot(_hawks[i], Random.Range(0.98f, 1.04f), Random.Range(0.78f, 0.88f), MixLayer.Lead, MixDesk.DuckChirp);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(Random.Range(0.32f, 0.40f), MixDesk.DuckChirp);
+        }
+
+        // Splash pig poke — cute soft snort-oink (Audio/Oink). Not Clink coin.
+        public static void Oink()
+        {
+            Ensure();
+            if (_oinks == null || _oinks.Length == 0) return;
+            int i = Next(_oinks.Length, ref _lastOink);
+            Shot(_oinks[i], Random.Range(0.98f, 1.04f), Random.Range(0.70f, 0.82f), MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(Random.Range(0.18f, 0.28f), MixDesk.DuckChirp);
         }
 
         public static void ScorePop(int i)
