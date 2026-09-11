@@ -13,6 +13,8 @@ namespace FlockFive
         static AudioClip[] _lifts;
         static AudioClip[] _chings;
         static AudioClip[] _clinks;
+        static AudioClip[] _rattles;
+        static AudioClip[] _yells;
         static AudioClip[] _pops;
         static AudioClip[] _jingles;
         static AudioClip _deny;
@@ -32,6 +34,8 @@ namespace FlockFive
         static int _lastLift = -1;
         static int _lastChing = -1;
         static int _lastClink = -1;
+        static int _lastRattle = -1;
+        static int _lastYell = -1;
         static float _humGate;
         static float _flapGate;
         static SfxHost _host;
@@ -77,6 +81,8 @@ namespace FlockFive
             _lifts = LoadBank("Audio/Whoosh", 12, i => MakeLift(i, 4700 + i * 43));
             _chings = LoadBank("Audio/Ching", 12, MakeChing);
             _clinks = LoadBank("Audio/Coin", 12, MakeCoin);
+            _rattles = LoadBank("Audio/Rattle", 20, MakeFeederRattle);
+            _yells = LoadBank("Audio/Yell", 6, MakeSparrowYell);
             _pops = new AudioClip[5];
             for (int i = 0; i < _pops.Length; i++)
                 _pops[i] = MakePop(i, 8800 + i * 29);
@@ -327,6 +333,26 @@ namespace FlockFive
             int i = Next(_clinks.Length, ref _lastClink);
             Shot(_clinks[i], Random.Range(0.98f, 1.04f), 0.78f, MixLayer.Lead, MixDesk.DuckChirp);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.18f, MixDesk.DuckChirp);
+        }
+
+        // Feeder poke / sparrow perch rattle — glass+wood pool, not Deny/Clink/Ching.
+        public static void FeederRattle()
+        {
+            Ensure();
+            if (_rattles == null || _rattles.Length == 0) return;
+            int i = Next(_rattles.Length, ref _lastRattle);
+            Shot(_rattles[i], Random.Range(0.98f, 1.04f), Random.Range(0.70f, 0.78f), MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(Random.Range(0.22f, 0.30f), MixDesk.DuckChirp);
+        }
+
+        // Tap-scare on the sparrow: harsh short yell, then bird flees (visual elsewhere).
+        public static void SparrowYell()
+        {
+            Ensure();
+            if (_yells == null || _yells.Length == 0) return;
+            int i = Next(_yells.Length, ref _lastYell);
+            Shot(_yells[i], Random.Range(0.98f, 1.04f), Random.Range(0.75f, 0.85f), MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.28f, MixDesk.DuckChirp);
         }
 
         public static void ScorePop(int i)

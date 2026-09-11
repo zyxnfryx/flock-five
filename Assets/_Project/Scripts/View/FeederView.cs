@@ -44,8 +44,7 @@ namespace FlockFive
         IEnumerator PokeCo()
         {
             _held = true;
-            Sfx.Deny();
-            Sfx.Clink();
+            Sfx.FeederRattle();
             var basePos = _planted;
             float t = 0f;
             const float dur = 0.42f;
