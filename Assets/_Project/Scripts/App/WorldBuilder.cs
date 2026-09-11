@@ -109,8 +109,16 @@ namespace FlockFive
 
             var bulbs = PinBulbs(signGo.transform);
 
+            // Soft wash behind the plank so the Watch sign reads lit from the back.
+            var backGo = Sprite("SignBacklight", SpriteCatalog.Glow, signGo.transform.position, 1f, 10, signGo.transform);
+            backGo.transform.localPosition = new Vector3(-0.25f, 0.05f, 0f);
+            backGo.transform.localScale = new Vector3(5.8f, 3.15f, 1f);
+            var backlight = backGo.GetComponent<SpriteRenderer>();
+            backlight.color = new Color(1f, 0.80f, 0.32f, 0.48f);
+
             var want = view.gameObject.AddComponent<GiftWant>();
             want.Glow = glow;
+            want.Backlight = backlight;
             want.Sign = view.Sign;
             want.Bulbs = bulbs;
             return view;

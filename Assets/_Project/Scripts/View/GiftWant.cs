@@ -6,6 +6,7 @@ namespace FlockFive
     public sealed class GiftWant : MonoBehaviour
     {
         public SpriteRenderer Glow;
+        public SpriteRenderer Backlight;
         public Transform Sign;
         public SpriteRenderer[] Bulbs;
         public bool On = true;
@@ -29,6 +30,7 @@ namespace FlockFive
             if (!On)
             {
                 if (Glow != null) Glow.enabled = false;
+                if (Backlight != null) Backlight.enabled = false;
                 if (Sign != null) Sign.gameObject.SetActive(false);
                 enabled = false;
                 return;
@@ -38,9 +40,18 @@ namespace FlockFive
             if (Glow != null)
             {
                 Glow.enabled = true;
-                Glow.color = new Color(1f, 0.86f, 0.42f, 0.22f + 0.16f * breathe);
-                float s = 2.55f + 0.22f * breathe;
-                Glow.transform.localScale = new Vector3(s, s * 0.48f, 1f);
+                Glow.color = new Color(1f, 0.88f, 0.45f, 0.30f + 0.20f * breathe);
+                float s = 2.85f + 0.28f * breathe;
+                Glow.transform.localScale = new Vector3(s, s * 0.52f, 1f);
+            }
+            if (Backlight != null)
+            {
+                Backlight.enabled = true;
+                // Warm back-fill — brighter toward the center, breathing with the marquee.
+                Backlight.color = new Color(1f, 0.82f, 0.34f, 0.40f + 0.26f * breathe);
+                float sx = 5.7f + 0.45f * breathe;
+                float sy = 3.05f + 0.28f * breathe;
+                Backlight.transform.localScale = new Vector3(sx, sy, 1f);
             }
             if (Sign != null)
             {
@@ -77,8 +88,10 @@ namespace FlockFive
                     {
                         halo.enabled = true;
                         halo.color = on
-                            ? new Color(1f, 0.86f, 0.38f, 0.72f)
-                            : new Color(1f, 0.70f, 0.22f, 0.16f);
+                            ? new Color(1f, 0.88f, 0.40f, 0.82f)
+                            : new Color(1f, 0.72f, 0.24f, 0.22f);
+                        float hs = on ? 2.8f : 2.2f;
+                        halo.transform.localScale = new Vector3(hs, hs, 1f);
                     }
                 }
             }
