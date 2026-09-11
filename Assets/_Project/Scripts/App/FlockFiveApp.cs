@@ -62,8 +62,11 @@ namespace FlockFive
         readonly List<BeeVisit> _levelBees = new List<BeeVisit>();
         int _hiveFlip = -1;
         float _hiveFlipT;
-        float _hiveScroll;
+        int _hivePage;
+        int _hivePageFrom;
+        float _hivePageTurn = 99f;
         readonly bool[] _hiveFaceBack = new bool[Hive.Kinds];
+        const int HivePageSize = 9;
 
         void Start()
         {
@@ -2240,6 +2243,7 @@ namespace FlockFive
             if (HitPad(back, out bool backHeld))
             {
                 _hiveFlip = -1;
+                _hivePageTurn = 99f;
                 _home = HomeFace.Splash;
             }
             GUI.color = new Color(0.10f, 0.08f, 0.05f, backHeld ? 0.88f : 0.72f);
@@ -2252,23 +2256,25 @@ namespace FlockFive
             if (hiveSpr != null && hiveSpr.texture != null)
                 GUI.DrawTexture(new Rect((Screen.width - hiveSize) * 0.5f, top + 8f, hiveSize, hiveSize), hiveSpr.texture, ScaleMode.ScaleToFit, true);
 
-            float boxY = top + hiveSize + 8f * s;
+            float boxY = top + hiveSize + 4f * s;
             var head = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap = false
             };
+            int pages = Mathf.Max(1, (Hive.Kinds + HivePageSize - 1) / HivePageSize);
+            _hivePage = Mathf.Clamp(_hivePage, 0, pages - 1);
             string album = "Bee Album  " + Hive.Found + " / " + Hive.Kinds;
-            head.fontSize = FitFont(head, album, Screen.width * 0.7f, 36f * s, 18, 32);
-            StampOutlined(new Rect(0f, boxY, Screen.width, 36f * s), album, head, new Color(1f, 0.94f, 0.72f), 2, 1);
+            head.fontSize = FitFont(head, album, Screen.width * 0.72f, 32f * s, 16, 28);
+            StampOutlined(new Rect(0f, boxY, Screen.width, 30f * s), album, head, new Color(1f, 0.94f, 0.72f), 2, 1);
             var tip = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Italic,
                 alignment = TextAnchor.MiddleCenter
             };
-            tip.fontSize = Mathf.RoundToInt(14 * s);
-            StampOutlined(new Rect(0f, boxY + 30f * s, Screen.width, 22f * s), "Tap a card to flip", tip, new Color(0.92f, 0.82f, 0.58f), 1, 1);
+            tip.fontSize = Mathf.RoundToInt(13 * s);
+            StampOutlined(new Rect(0f, boxY + 26f * s, Screen.width, 20f * s), "Tap a card to flip  ·  tabs turn the page", tip, new Color(0.92f, 0.82f, 0.58f), 1, 1);
 
             if (_hiveFlip >= 0)
             {
@@ -2281,38 +2287,135 @@ namespace FlockFive
                 }
             }
 
-            float gridTop = boxY + 56f * s;
-            float pad = 14f * s;
-            float gap = 12f * s;
-            float cardW = (Screen.width - pad * 2f - gap) * 0.5f;
-            float cardH = cardW * 1.28f;
-            int cols = 2;
-            int rows = (Hive.Kinds + cols - 1) / cols;
-            float contentH = rows * (cardH + gap) + pad;
-            float viewH = Screen.height - gridTop - 16f * s;
-            float maxScroll = Mathf.Max(0f, contentH - viewH);
-            // Drag / wheel scroll
-            var e = Event.current;
-            if (e != null && e.type == EventType.ScrollWheel)
+            bool turning = _hivePageTurn < 0.55f;
+            if (turning) _hivePageTurn += Time.unscaledDeltaTime;
+
+            // Ultra Pro clear page: 3×3 sleeves on a binder sheet
+            float tabH = 40f * s;
+            float pageBottom = Screen.height - 16f * s - tabH - 8f * s;
+            float pageTop = boxY + 50f * s;
+            float pageH = pageBottom - pageTop;
+            float pagePad = 16f * s;
+            float pageW = Screen.width - pagePad * 2f;
+            var sheet = new Rect(pagePad, pageTop, pageW, pageH);
+
+            // Binder spine shadow + clear sheet
+            GUI.color = new Color(0.08f, 0.06f, 0.04f, 0.55f);
+            GUI.DrawTexture(new Rect(sheet.x - 6f * s, sheet.y + 8f * s, 14f * s, sheet.height), Texture2D.whiteTexture);
+            GUI.color = new Color(0.78f, 0.88f, 0.92f, 0.22f);
+            GUI.DrawTexture(sheet, Texture2D.whiteTexture);
+            GUI.color = new Color(0.55f, 0.62f, 0.68f, 0.35f);
+            // Sleeve grid lines
+            float gap = 8f * s;
+            float cellW = (sheet.width - pagePad * 0.5f - gap * 2f) / 3f;
+            float cellH = (sheet.height - pagePad * 0.5f - gap * 2f) / 3f;
+            // Keep cards portrait-ish inside sleeves
+            float cardW = cellW - 6f * s;
+            float cardH = Mathf.Min(cellH - 6f * s, cardW * 1.35f);
+            float gridW = 3f * cellW + 2f * gap;
+            float gridH = 3f * cellH + 2f * gap;
+            float gx0 = sheet.x + (sheet.width - gridW) * 0.5f;
+            float gy0 = sheet.y + (sheet.height - gridH) * 0.5f;
+
+            int showPage = turning ? _hivePageFrom : _hivePage;
+            int startIx = showPage * HivePageSize;
+
+            // During turn: draw outgoing page curling away, then incoming
+            float turnU = turning ? Mathf.Clamp01(_hivePageTurn / 0.52f) : 1f;
+            bool forward = _hivePage >= _hivePageFrom;
+
+            void DrawPageCards(int pageIndex, float curl)
             {
-                _hiveScroll = Mathf.Clamp(_hiveScroll + e.delta.y * 12f, 0f, maxScroll);
-                e.Use();
-            }
-            if (e != null && e.type == EventType.MouseDrag && e.button == 0)
-            {
-                _hiveScroll = Mathf.Clamp(_hiveScroll - e.delta.y, 0f, maxScroll);
-                e.Use();
+                int baseIx = pageIndex * HivePageSize;
+                // curl 0 = flat, 1 = fully turned (edge-on then gone)
+                float widthScale = Mathf.Max(0.04f, Mathf.Abs(Mathf.Cos(curl * Mathf.PI * 0.5f)));
+                float xShift = forward
+                    ? Mathf.Lerp(0f, sheet.width * 0.55f, curl)
+                    : Mathf.Lerp(0f, -sheet.width * 0.55f, curl);
+                float shade = 1f - 0.35f * curl;
+                for (int slot = 0; slot < HivePageSize; slot++)
+                {
+                    int i = baseIx + slot;
+                    if (i >= Hive.Kinds) break;
+                    int col = slot % 3;
+                    int row = slot / 3;
+                    float cx = gx0 + col * (cellW + gap) + cellW * 0.5f + xShift;
+                    float cy = gy0 + row * (cellH + gap) + cellH * 0.5f;
+                    float w = cardW * widthScale;
+                    var card = new Rect(cx - w * 0.5f, cy - cardH * 0.5f, w, cardH);
+                    // Sleeve pocket
+                    var sleeve = new Rect(cx - cellW * 0.5f * widthScale + xShift * 0f, cy - cellH * 0.5f, cellW * widthScale, cellH);
+                    // recompute sleeve with shift
+                    sleeve = new Rect(
+                        gx0 + col * (cellW + gap) + (cellW - cellW * widthScale) * 0.5f + xShift,
+                        gy0 + row * (cellH + gap),
+                        cellW * widthScale,
+                        cellH);
+                    GUI.color = new Color(0.90f, 0.94f, 0.96f, 0.40f * shade);
+                    GUI.DrawTexture(sleeve, Texture2D.whiteTexture);
+                    GUI.color = new Color(1f, 1f, 1f, shade);
+                    if (widthScale > 0.12f)
+                        DrawBeeAlbumCard(card, i, s);
+                    GUI.color = Color.white;
+                }
             }
 
-            for (int i = 0; i < Hive.Kinds; i++)
+            if (turning)
             {
-                int col = i % cols;
-                int row = i / cols;
-                float x = pad + col * (cardW + gap);
-                float y = gridTop + row * (cardH + gap) - _hiveScroll;
-                if (y + cardH < gridTop - 4f || y > Screen.height) continue;
-                var card = new Rect(x, y, cardW, cardH);
-                DrawBeeAlbumCard(card, i, s);
+                // Old page curls away first half; new page settles second half
+                if (turnU < 0.55f)
+                {
+                    float curl = turnU / 0.55f;
+                    DrawPageCards(_hivePageFrom, curl);
+                }
+                else
+                {
+                    float curl = 1f - (turnU - 0.55f) / 0.45f;
+                    DrawPageCards(_hivePage, Mathf.Clamp01(curl));
+                }
+                // Soft page sheet overlay during flip
+                float wipe = forward ? turnU : (1f - turnU);
+                float wipeX = sheet.x + sheet.width * wipe;
+                GUI.color = new Color(0.95f, 0.93f, 0.88f, 0.35f * Mathf.Sin(turnU * Mathf.PI));
+                GUI.DrawTexture(new Rect(wipeX - 18f * s, sheet.y, 36f * s, sheet.height), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
+            else
+            {
+                DrawPageCards(_hivePage, 0f);
+            }
+
+            // Page tabs along the bottom
+            float tabY = pageBottom + 6f * s;
+            float tabGap = 6f * s;
+            float tabW = Mathf.Min(56f * s, (Screen.width - 32f * s - (pages - 1) * tabGap) / pages);
+            float tabsW = pages * tabW + (pages - 1) * tabGap;
+            float tabX0 = (Screen.width - tabsW) * 0.5f;
+            var tabLab = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = Mathf.RoundToInt(14 * s)
+            };
+            for (int p = 0; p < pages; p++)
+            {
+                var tab = new Rect(tabX0 + p * (tabW + tabGap), tabY, tabW, tabH);
+                bool on = p == _hivePage && !turning;
+                bool hit = !turning && HitPad(tab, out bool held);
+                GUI.color = on
+                    ? new Color(0.92f, 0.72f, 0.28f, held ? 0.95f : 0.88f)
+                    : new Color(0.18f, 0.14f, 0.10f, held ? 0.90f : 0.72f);
+                GUI.DrawTexture(tab, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                StampOutlined(tab, (p + 1).ToString(), tabLab, on ? new Color(0.28f, 0.14f, 0.05f) : new Color(1f, 0.94f, 0.72f), 1, 1);
+                if (hit && p != _hivePage)
+                {
+                    _hivePageFrom = _hivePage;
+                    _hivePage = p;
+                    _hivePageTurn = 0f;
+                    _hiveFlip = -1;
+                    Sfx.PageTurn();
+                }
             }
         }
 
@@ -2420,7 +2523,7 @@ namespace FlockFive
                 StampOutlined(new Rect(face.x + face.width * 0.06f, face.y + face.height * 0.32f, face.width * 0.88f, face.height * 0.55f), kind.Back, blip, new Color(0.40f, 0.22f, 0.08f), 1, 1);
             }
 
-            if (owned && !flipping && HitPad(card, out _))
+            if (owned && !flipping && _hivePageTurn >= 0.55f && HitPad(card, out _))
             {
                 _hiveFlip = i;
                 _hiveFlipT = 0f;
