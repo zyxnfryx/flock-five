@@ -73,7 +73,11 @@ namespace FlockFive
             _pulseT = 0f;
             var go = WorldBuilder.Sprite("Visitor", SpriteCatalog.Bee, from, 0.22f, 48, transform.parent);
             var sr = go.GetComponent<SpriteRenderer>();
-            sr.color = visit.Kind.Tint;
+            // Keep Kind.Tint; bump brightness a touch for foil finishes.
+            var tint = visit.Kind.Tint;
+            if (visit.Finish != BeeFinish.Normal)
+                tint = Color.Lerp(tint, Color.white, visit.Finish == BeeFinish.Holo ? 0.18f : 0.28f);
+            sr.color = tint;
             float t = 0f;
             const float dur = 0.85f;
             Sfx.BeeHum();

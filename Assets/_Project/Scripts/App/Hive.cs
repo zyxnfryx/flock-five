@@ -2,6 +2,13 @@ using UnityEngine;
 
 namespace FlockFive
 {
+    public enum BeeFinish
+    {
+        Normal = 0,
+        Holo = 1,
+        InverseRainbow = 2,
+    }
+
     public struct BeeKind
     {
         public string Id;
@@ -22,15 +29,18 @@ namespace FlockFive
     public struct BeeVisit
     {
         public BeeKind Kind;
+        public BeeFinish Finish;
         public bool Fresh;
         public int Count;
     }
 
     public static class Hive
     {
-        const string Pref = "flockfive.hive.v1";
+        const string PrefV1 = "flockfive.hive.v1";
+        const string Pref = "flockfive.hive.v2";
         const char Pair = ';';
         const char Kv = ':';
+        public const int Finishes = 3;
 
         // Pun density: high. Emotional damage: intentional.
         public static readonly BeeKind[] Roster =
@@ -156,48 +166,188 @@ namespace FlockFive
                 "Reflects poorly on rivals.",
                 "Polished finish, unfinished business. Mirror, mirror, who's the buzz?",
                 new Color(0.82f, 0.86f, 0.90f)),
+            // Batch B — CoP punch-ups (+24 → 54)
+            new BeeKind("salt", "Salt Spray",
+                "Seasoned wings.",
+                "Briny and brief. Leaves a crunch; keeps the receipt.",
+                new Color(0.72f, 0.84f, 0.86f)),
+            new BeeKind("coral", "Coral Reef",
+                "Builds the neighborhood.",
+                "Builds slowly, stings suddenly. Underwater HOA president.",
+                new Color(1.00f, 0.48f, 0.52f)),
+            new BeeKind("tide", "Tide Pool",
+                "Comes and goes.",
+                "Schedule: moon. Attitude: wet. Lost flip-flops sold separately.",
+                new Color(0.22f, 0.55f, 0.68f)),
+            new BeeKind("pearl", "Pearl Drop",
+                "Smooth operator.",
+                "Irritation optional, glow included. Worth the dive.",
+                new Color(0.92f, 0.94f, 0.98f)),
+            new BeeKind("jade", "Jade Sting",
+                "Lucky strike.",
+                "Cool to the touch, warm to the welt. Fortune favors the bold.",
+                new Color(0.28f, 0.62f, 0.42f)),
+            new BeeKind("ruby", "Ruby Wing",
+                "Hard shine.",
+                "Cut above the rest. Clarity: perfect. Patience: zero.",
+                new Color(0.82f, 0.12f, 0.22f)),
+            new BeeKind("onyx", "Onyx Shade",
+                "Dark mode bee.",
+                "Absorbs light and small talk. Formal wear for the hive.",
+                new Color(0.12f, 0.12f, 0.14f)),
+            new BeeKind("topaz", "Topaz Gleam",
+                "Golden glance.",
+                "Warm stone, warmer sting. Jewelry with opinions.",
+                new Color(0.95f, 0.72f, 0.22f)),
+            new BeeKind("maple", "Maple Turn",
+                "Leaves early.",
+                "Turns early, sticks around. Syrup for the soul; leaf for the lawn.",
+                new Color(0.78f, 0.32f, 0.12f)),
+            new BeeKind("pine", "Pine Needle",
+                "Evergreen attitude.",
+                "Sharp year-round. Scent: forest. Handshake: poke.",
+                new Color(0.28f, 0.48f, 0.32f)),
+            new BeeKind("harvest", "Harvest Hum",
+                "Peak season.",
+                "Brings the basket. Shares the credit. Keeps the last apple.",
+                new Color(0.88f, 0.62f, 0.18f)),
+            new BeeKind("blizzard", "Blizzard Buzz",
+                "White-out wings.",
+                "Visibility: none. Vibes: many. Bundle up or buzz off.",
+                new Color(0.88f, 0.94f, 1.00f)),
+            new BeeKind("bass", "Bass Note",
+                "Low frequency.",
+                "Felt more than heard. Subwoofer of the garden.",
+                new Color(0.22f, 0.22f, 0.38f)),
+            new BeeKind("treble", "Treble Hook",
+                "High and mighty.",
+                "Hits the high notes and your ear. Sheet music optional.",
+                new Color(0.95f, 0.90f, 0.55f)),
+            new BeeKind("tempo", "Tempo Mark",
+                "On the beat.",
+                "Metronome with a mean streak. Don't rush the nectar.",
+                new Color(0.55f, 0.78f, 0.92f)),
+            new BeeKind("encore", "Encore Bee",
+                "One more song.",
+                "Crowd favorite. Always has another sting in the setlist.",
+                new Color(0.72f, 0.28f, 0.48f)),
+            new BeeKind("pretzel", "Pretzel Twist",
+                "Salted and sorted.",
+                "Tied in knots, still flying. Snack break, forever.",
+                new Color(0.72f, 0.48f, 0.28f)),
+            new BeeKind("pickle", "Pickle Jar",
+                "Brined personality.",
+                "Sour when it counts. Crunch included; lid optional.",
+                new Color(0.55f, 0.72f, 0.28f)),
+            new BeeKind("waffle", "Waffle Iron",
+                "Grid locked.",
+                "Breakfast architecture. Syrup optional; opinions required.",
+                new Color(0.92f, 0.72f, 0.32f)),
+            new BeeKind("chili", "Chili Flake",
+                "Heat check.",
+                "Scoville with wings. Glass of milk not included.",
+                new Color(0.90f, 0.22f, 0.12f)),
+            new BeeKind("fleece", "Fleece Cloud",
+                "Looks laundry-soft.",
+                "Looks hug-ready. Is not. Cozy until the sting.",
+                new Color(0.90f, 0.90f, 0.94f)),
+            new BeeKind("marsh", "Marshmallow",
+                "Toasty temper.",
+                "Puffs up under pressure. Campfire credentialed.",
+                new Color(0.98f, 0.92f, 0.88f)),
+            new BeeKind("cotton", "Cotton Candy",
+                "Spun sugar.",
+                "Melts in the rain; sticks in the memory. Fairground royalty.",
+                new Color(0.98f, 0.62f, 0.78f)),
+            new BeeKind("plush", "Plush Puff",
+                "Soft spoken.",
+                "Looks nap-ready. Answers in welts. Quiet hours optional.",
+                new Color(0.78f, 0.72f, 0.88f)),
         };
 
         static int[] _counts;
         static bool _ready;
 
         public static int Kinds => Roster.Length;
+        public static int AlbumSlots => Kinds * Finishes;
         public static int Found => CountFound();
         public static int Visitors => CountAll();
 
-        public static int CountOf(int i)
+        public static int SlotOf(int kind, BeeFinish finish) => kind * Finishes + (int)finish;
+        public static int KindOfSlot(int slot) => slot / Finishes;
+        public static BeeFinish FinishOfSlot(int slot) => (BeeFinish)(slot % Finishes);
+
+        /// <summary>Total owned copies of a kind across all finishes.</summary>
+        public static int CountOf(int kind)
         {
             Warm();
-            if ((uint)i >= (uint)_counts.Length) return 0;
-            return _counts[i];
+            if ((uint)kind >= (uint)Kinds) return 0;
+            int n = 0;
+            int baseIx = kind * Finishes;
+            for (int f = 0; f < Finishes; f++)
+                n += _counts[baseIx + f];
+            return n;
+        }
+
+        public static int CountOf(int kind, BeeFinish finish)
+        {
+            Warm();
+            int ix = SlotOf(kind, finish);
+            if ((uint)ix >= (uint)_counts.Length) return 0;
+            return _counts[ix];
+        }
+
+        public static int CountOfSlot(int slot)
+        {
+            Warm();
+            if ((uint)slot >= (uint)_counts.Length) return 0;
+            return _counts[slot];
         }
 
         public static BeeVisit TakeVisitor()
         {
             Warm();
-            int pick = Pick();
-            bool fresh = _counts[pick] == 0;
-            _counts[pick]++;
+            int kind = PickKind();
+            BeeFinish finish = PickFinish();
+            int ix = SlotOf(kind, finish);
+            bool fresh = _counts[ix] == 0;
+            _counts[ix]++;
             Save();
-            return new BeeVisit { Kind = Roster[pick], Fresh = fresh, Count = _counts[pick] };
+            return new BeeVisit
+            {
+                Kind = Roster[kind],
+                Finish = finish,
+                Fresh = fresh,
+                Count = _counts[ix],
+            };
         }
 
-        static int Pick()
+        static BeeFinish PickFinish()
         {
+            // Mostly Normal, uncommon Holo, rare InverseRainbow.
+            float roll = Random.value;
+            if (roll < 0.78f) return BeeFinish.Normal;
+            if (roll < 0.95f) return BeeFinish.Holo;
+            return BeeFinish.InverseRainbow;
+        }
+
+        static int PickKind()
+        {
+            // Prefer kinds with no copies of any finish (album holes).
             int holes = 0;
-            for (int i = 0; i < _counts.Length; i++)
-                if (_counts[i] == 0) holes++;
+            for (int k = 0; k < Kinds; k++)
+                if (CountOf(k) == 0) holes++;
             if (holes > 0 && Random.value < 0.74f)
             {
                 int skip = Random.Range(0, holes);
-                for (int i = 0; i < _counts.Length; i++)
+                for (int k = 0; k < Kinds; k++)
                 {
-                    if (_counts[i] != 0) continue;
-                    if (skip == 0) return i;
+                    if (CountOf(k) != 0) continue;
+                    if (skip == 0) return k;
                     skip--;
                 }
             }
-            return Random.Range(0, _counts.Length);
+            return Random.Range(0, Kinds);
         }
 
         static int CountFound()
@@ -219,12 +369,21 @@ namespace FlockFive
 
         static void Warm()
         {
-            if (_ready && _counts != null && _counts.Length == Roster.Length) return;
-            _counts = new int[Roster.Length];
+            if (_ready && _counts != null && _counts.Length == AlbumSlots) return;
+            _counts = new int[AlbumSlots];
             _ready = true;
+
             var raw = PlayerPrefs.GetString(Pref, "");
-            if (string.IsNullOrEmpty(raw)) return;
-            var parts = raw.Split(Pair);
+            if (!string.IsNullOrEmpty(raw))
+            {
+                LoadFlat(raw);
+                return;
+            }
+
+            // Migrate v1 kind-only counts into Normal finish slots.
+            var v1 = PlayerPrefs.GetString(PrefV1, "");
+            if (string.IsNullOrEmpty(v1)) return;
+            var parts = v1.Split(Pair);
             for (int p = 0; p < parts.Length; p++)
             {
                 var bit = parts[p];
@@ -232,8 +391,38 @@ namespace FlockFive
                 if (cut <= 0) continue;
                 var id = bit.Substring(0, cut);
                 if (!int.TryParse(bit.Substring(cut + 1), out int n) || n <= 0) continue;
-                int i = IndexOf(id);
-                if (i >= 0) _counts[i] = n;
+                int kind = IndexOf(id);
+                if (kind >= 0) _counts[SlotOf(kind, BeeFinish.Normal)] = n;
+            }
+            Save();
+        }
+
+        // v2 format: id|finish:count  (finish is 0/1/2); also accepts legacy id:count as Normal.
+        static void LoadFlat(string raw)
+        {
+            var parts = raw.Split(Pair);
+            for (int p = 0; p < parts.Length; p++)
+            {
+                var bit = parts[p];
+                int cut = bit.IndexOf(Kv);
+                if (cut <= 0) continue;
+                var key = bit.Substring(0, cut);
+                if (!int.TryParse(bit.Substring(cut + 1), out int n) || n <= 0) continue;
+
+                int kind;
+                BeeFinish finish = BeeFinish.Normal;
+                int bar = key.IndexOf('|');
+                if (bar > 0)
+                {
+                    kind = IndexOf(key.Substring(0, bar));
+                    if (int.TryParse(key.Substring(bar + 1), out int f) && f >= 0 && f < Finishes)
+                        finish = (BeeFinish)f;
+                }
+                else
+                {
+                    kind = IndexOf(key);
+                }
+                if (kind >= 0) _counts[SlotOf(kind, finish)] = n;
             }
         }
 
@@ -247,11 +436,15 @@ namespace FlockFive
         static void Save()
         {
             var sb = new System.Text.StringBuilder();
-            for (int i = 0; i < Roster.Length; i++)
+            for (int kind = 0; kind < Kinds; kind++)
             {
-                if (_counts[i] <= 0) continue;
-                if (sb.Length > 0) sb.Append(Pair);
-                sb.Append(Roster[i].Id).Append(Kv).Append(_counts[i]);
+                for (int f = 0; f < Finishes; f++)
+                {
+                    int n = _counts[SlotOf(kind, (BeeFinish)f)];
+                    if (n <= 0) continue;
+                    if (sb.Length > 0) sb.Append(Pair);
+                    sb.Append(Roster[kind].Id).Append('|').Append(f).Append(Kv).Append(n);
+                }
             }
             PlayerPrefs.SetString(Pref, sb.ToString());
             PlayerPrefs.Save();
