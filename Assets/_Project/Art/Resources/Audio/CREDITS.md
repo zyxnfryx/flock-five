@@ -58,6 +58,14 @@ Sparrow yell (`Audio/Yell`, procedural `MakeSparrowYell`) is an original harsh
 short squawk for tap-scare flee. Dove/yell family, not hummingbird select chips
 (`hum_sel_*` / Chirp) and not pitched-up chirps.
 
+Hawk cry (`Audio/Hawk`, procedural `MakeHawkCry`) is an original deeper raptor
+kee/scream bank for the hawk pest — longer and lower than SparrowYell, not
+hummingbird select chips (`hum_sel_*` / Chirp). Soft band-limited grit; commercially clear.
+
+Pig oink (`Audio/Oink`, procedural `MakeOink`) is an original cute soft snort-oink
+bank for splash pig poke. Low-mid body (~150–350 Hz) + soft nasal chiff; not coin
+Clink, Ching, gong, alarm, SparrowYell, or HawkCry. Commercially clear.
+
 Splash title: `splash-theme.wav` loops the band (12 bars @ 128 BPM, 22.5s)
 once the splash page is on screen — no guitar/harp/crash one-shot. Original
 notes — not a cover.
