@@ -453,9 +453,10 @@ namespace FlockFive
                 Sfx.Sleep();
             else if (kicked == 0 && _board.JustUnveiled)
             {
+                // Record the visitor + fly-in, but do NOT auto-open the visitors sheet —
+                // that was popping over play (and endgame) on every unveil. Tap hive to peek.
                 var visit = Hive.TakeVisitor();
                 _levelBees.Add(visit);
-                _levelHive = true;
                 if (_garden.Hive != null)
                 {
                     SnapHiveToHud();
@@ -602,6 +603,7 @@ namespace FlockFive
             if (_locked.Count > 0 || _won || _board == null || !_board.Won) yield break;
             _won = true;
             _busy = true;
+            _levelHive = false;
             yield return FinaleShow.Play(_garden, this);
             yield return new WaitForSeconds(0.45f);
             yield return Ads.Interstitial();
