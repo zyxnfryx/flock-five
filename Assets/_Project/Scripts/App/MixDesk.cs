@@ -20,6 +20,9 @@ namespace FlockFive
         float _comboUntil = -99f;
         bool _splash;
         float _splashMix;
+        float _splashGate = -1f;
+        bool _splashLoopOn;
+        const float SplashPageHold = 0.45f;
         const int Rate = 22050;
         const float PlaceCap = 0.24f;
         const float PlaceMax = 0.28f;
@@ -78,7 +81,32 @@ namespace FlockFive
 
         public void SetSplash(bool on)
         {
+            if (on && !_splash) ArmSplashWelcome();
+            if (!on) CutSplashWelcome();
             _splash = on;
+        }
+
+        void ArmSplashWelcome()
+        {
+            _splashMix = 1f; // mute garden immediately — no stray bed before the band
+            _splashGate = Time.unscaledTime + SplashPageHold;
+            _splashLoopOn = false;
+            if (_stems != null && _stems.Length > 4 && _stems[4] != null)
+            {
+                _stems[4].Stop();
+                _stems[4].time = 0f;
+            }
+        }
+
+        void CutSplashWelcome()
+        {
+            _splashGate = -1f;
+            _splashLoopOn = false;
+            if (_stems != null && _stems.Length > 4 && _stems[4] != null)
+            {
+                _stems[4].Stop();
+                _stems[4].time = 0f;
+            }
         }
 
         void Build()
@@ -102,6 +130,11 @@ namespace FlockFive
             SwapClip(2, garden);
             SwapClip(3, combo);
             SwapClip(4, theme);
+            if (_stems[4] != null)
+            {
+                _stems[4].Stop();
+                _stems[4].time = 0f;
+            }
             SwapClip(5, rain);
         }
 
@@ -153,15 +186,30 @@ namespace FlockFive
             float splashRate = splashT > _splashMix ? 1.7f : 2.8f;
             _splashMix = Mathf.MoveTowards(_splashMix, splashT, Time.unscaledDeltaTime * splashRate);
             float gardenMix = 1f - _splashMix;
+            TickSplashWelcome();
             // One garden occupant: the soft porch theme. Dawn/mid/last stay
             // loaded as fallbacks but silent so two tunes never sit together.
             SetStem(0, cap * duck * gardenMix);
             SetStem(1, 0f);
             SetStem(2, 0f);
             SetStem(3, ComboGain() * ComboCap * duck * gardenMix);
-            SetStem(4, _splashMix * SplashCap * duck);
+            float splashVol = _splashMix * SplashCap * duck;
+            SetStem(4, _splashLoopOn ? splashVol : 0f);
             // Non-melodic place air. Not a fourth flute bed.
             SetStem(5, GardenStorm.Wet * RainCap * duck * gardenMix);
+        }
+
+        void TickSplashWelcome()
+        {
+            if (!_splash) return;
+            if (_splashGate <= 0f || Time.unscaledTime < _splashGate) return;
+            _splashGate = -1f;
+            if (_stems != null && _stems.Length > 4 && _stems[4] != null)
+            {
+                _stems[4].time = 0f;
+                _stems[4].Play();
+                _splashLoopOn = true;
+            }
         }
 
         float ComboGain()

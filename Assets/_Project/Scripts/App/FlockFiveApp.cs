@@ -29,6 +29,11 @@ namespace FlockFive
             public float T, Delay, Spin;
         }
         readonly System.Collections.Generic.List<CoinFly> _flies = new System.Collections.Generic.List<CoinFly>();
+        // Piggy coin: hold with random wait, then a slow Y-flip.
+        float _coinSpinT = -1f;
+        float _coinHoldLeft;
+        float _coinHoldAge;
+        bool _coinArmed;
         // Splash streak toast: <0 idle; 0..1 in+hold+out.
         float _streakSlide = -1f;
         int _streakAnnounced = -1;
@@ -1029,15 +1034,18 @@ namespace FlockFive
 
         static float SplashRailSize() => SplashRailAnchor() * 1.22f;
 
-        static float SplashRailGap() => Mathf.Max(26f, SplashRailSize() * 0.34f);
+        static float SplashRailGap() => Mathf.Max(24f, SplashRailSize() * 0.30f);
 
         static Rect SplashHiveRect() => HomeRailRect(true, SplashRailSize());
 
         static Rect SplashPokerRect()
         {
-            float size = SplashRailSize();
+            // A touch larger than hive/piggy so the chip reads as the poker button,
+            // still a sibling on the rail — not a second play flower.
+            float size = SplashRailSize() * 1.22f;
             var hive = SplashHiveRect();
-            return new Rect(hive.x, hive.yMax + SplashRailGap(), size, size);
+            float x = hive.x + hive.width * 0.5f - size * 0.5f;
+            return new Rect(x, hive.yMax + SplashRailGap(), size, size);
         }
 
         static Rect PiggyRect(float s)
@@ -1106,8 +1114,106 @@ namespace FlockFive
             if (coinSpr != null && coinSpr.texture != null)
             {
                 var ir = new Rect(coinR.xMax + gap, coinR.y + (coinR.height - icon) * 0.5f, icon, icon);
-                GUI.DrawTexture(ir, coinSpr.texture, ScaleMode.ScaleToFit, true);
+                DrawIdleCoin(ir, coinSpr.texture);
             }
+        }
+
+        static readonly Vector2[] CoinGlints =
+        {
+            new Vector2(0.18f, 0.22f),
+            new Vector2(0.82f, 0.18f),
+            new Vector2(0.12f, 0.58f),
+            new Vector2(0.88f, 0.52f),
+            new Vector2(0.50f, -0.08f),
+            new Vector2(0.50f, 1.08f)
+        };
+
+        void ArmCoinIdle()
+        {
+            _coinArmed = true;
+            _coinSpinT = -1f;
+            _coinHoldAge = 0f;
+            _coinHoldLeft = Random.Range(4.5f, 9.0f);
+        }
+
+        // Slow Y-axis flip, then a random wait with shimmer + sparkle.
+        void DrawIdleCoin(Rect ir, Texture tex)
+        {
+            if (!_coinArmed) ArmCoinIdle();
+            const float spinDur = 2.6f;
+            float dt = Time.unscaledDeltaTime;
+            bool spinning = _coinSpinT >= 0f;
+            float yaw = 0f;
+            if (spinning)
+            {
+                _coinSpinT += dt / spinDur;
+                if (_coinSpinT >= 1f)
+                {
+                    _coinSpinT = -1f;
+                    _coinHoldAge = 0f;
+                    _coinHoldLeft = Random.Range(5.5f, 12.0f);
+                    spinning = false;
+                }
+                else
+                {
+                    float s = Mathf.SmoothStep(0f, 1f, _coinSpinT);
+                    yaw = s * 360f;
+                }
+            }
+            else
+            {
+                _coinHoldAge += dt;
+                _coinHoldLeft -= dt;
+                if (_coinHoldLeft <= 0f)
+                    _coinSpinT = 0f;
+            }
+
+            // Cosine width: face-on → edge → mirrored face. Height stays put.
+            float sx = Mathf.Cos(yaw * Mathf.Deg2Rad);
+            if (Mathf.Abs(sx) < 0.06f)
+                sx = 0.06f * Mathf.Sign(sx == 0f ? 1f : sx);
+
+            var glow = GlowTex();
+            var prevM = GUI.matrix;
+            GUIUtility.ScaleAroundPivot(new Vector2(sx, 1f), ir.center);
+
+            GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.32f);
+            GUI.DrawTexture(new Rect(ir.x + 2f, ir.y + 3f, ir.width, ir.height), tex, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+            GUI.DrawTexture(ir, tex, ScaleMode.ScaleToFit, true);
+
+            if (!spinning)
+            {
+                float sheenU = Mathf.Repeat(_coinHoldAge * 0.55f, 1.35f);
+                if (sheenU < 1f)
+                {
+                    float fade = Mathf.Sin(sheenU * Mathf.PI);
+                    float x = ir.x + ir.width * (sheenU * 1.2f - 0.2f);
+                    GUI.color = new Color(1f, 0.96f, 0.72f, 0.42f * fade);
+                    GUI.DrawTexture(new Rect(x, ir.y + ir.height * 0.08f, ir.width * 0.22f, ir.height * 0.84f), glow, ScaleMode.ScaleToFit, true);
+                }
+            }
+
+            GUI.matrix = prevM;
+            GUI.color = Color.white;
+
+            if (spinning) return;
+            for (int i = 0; i < CoinGlints.Length; i++)
+            {
+                float tw = Mathf.Sin(_coinHoldAge * 2.05f + i * 1.07f);
+                tw = Mathf.Max(0f, tw);
+                tw = tw * tw;
+                if (tw < 0.10f) continue;
+                var uv = CoinGlints[i];
+                float sz = ir.width * (0.22f + 0.38f * tw);
+                var r = new Rect(
+                    ir.x + ir.width * uv.x - sz * 0.5f,
+                    ir.y + ir.height * uv.y - sz * 0.5f,
+                    sz, sz);
+                GUI.color = new Color(1f, 0.95f, 0.70f, 0.22f + 0.70f * tw);
+                GUI.DrawTexture(r, glow, ScaleMode.ScaleToFit, true);
+            }
+            GUI.color = Color.white;
         }
 
         void DrawStreakToast(float s, Rect pig)
@@ -1256,10 +1362,10 @@ namespace FlockFive
             float y = Screen.height * 0.30f;
             if (right)
             {
-                float x = Mathf.Min(Screen.width, safe.xMax) - 14f - size;
+                float x = Mathf.Min(Screen.width, safe.xMax) - 20f - size;
                 return new Rect(x, y, size, size);
             }
-            float lx = Mathf.Max(14f, safe.xMin + 10f);
+            float lx = Mathf.Max(20f, safe.xMin + 12f);
             return new Rect(lx, y, size, size);
         }
 

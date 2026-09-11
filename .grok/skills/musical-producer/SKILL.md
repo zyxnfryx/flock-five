@@ -5,8 +5,9 @@ description: >
   gameplay SFX so a human player hears a garden, not a carnival. Use when
   adding or changing sounds, music, chirps, flaps, bees, feeders, mix,
   volume, ducking, or anything audio; when the user mentions clash, busy,
-  loud, carnival, squeaky, sharp, harsh, or ensemble; or when running
-  /musical-producer.
+  loud, carnival, squeaky, sharp, harsh, ensemble, acoustic, splash,
+  garden theme, cowbell, bass drum, or a quieter slower inverse; or when
+  running /musical-producer.
 ---
 
 # Musical producer — Flock Five
@@ -19,7 +20,7 @@ You are the record producer. Every new sound must earn its seat in a three-layer
 |---|---|---|---|
 | **Lead** | Player action | hop, chirp, takeoff/land, whoosh, branch crunch, combo, deny, unveil, finale | Always heard. Marks a quiet window after. |
 | **Mid** | Garden creatures | wingbeats, one bee hum, snooze | Play only if lead is not hot. Soften, never chorus. |
-| **Bed** | Place | MixDesk BedBus: dawn-garden / mid-climb / last-light D mixes, combo fifth, quiet moon lift | Continuous garden score. Chirps do not duck it (frequency split). One looping melody family, not a carnival second tune. |
+| **Bed** | Place | MixDesk BedBus: garden-theme (stems 0–2) / splash-theme (stem 4); dawn-garden / mid-climb / last-light C# mixes silent fallbacks; combo fifth, quiet moon lift | Continuous garden/splash score. Chirps do not duck it (frequency split). One looping melody family, not a carnival second tune. |
 
 Gameplay must never wait on music. Lead wins.
 
