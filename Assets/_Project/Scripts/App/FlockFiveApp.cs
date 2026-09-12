@@ -425,7 +425,7 @@ namespace FlockFive
             System.IO.Directory.CreateDirectory(frames);
             _recordSmash = true;
             var rec = StartCoroutine(RecordSmashFrames(frames));
-            yield return new WaitForSecondsRealtime(4.0f);
+            yield return new WaitForSecondsRealtime(4.2f);
             _recordSmash = false;
             yield return rec;
             EncodeSmashVideo(frames, dir + "/splash-birds.mp4");
@@ -440,7 +440,6 @@ namespace FlockFive
             {
                 yield return new WaitForEndOfFrame();
                 if (Time.unscaledTime < next) continue;
-                next += step;
                 var tex = ScreenCapture.CaptureScreenshotAsTexture();
                 if (tex == null) continue;
                 try
@@ -449,6 +448,7 @@ namespace FlockFive
                         frames + "/" + i.ToString("D4") + ".jpg",
                         tex.EncodeToJPG(82));
                     i++;
+                    next = Time.unscaledTime + step;
                 }
                 catch { }
                 Destroy(tex);
