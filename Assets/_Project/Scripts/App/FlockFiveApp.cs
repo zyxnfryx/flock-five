@@ -2824,7 +2824,7 @@ namespace FlockFive
                 _splashFlutters[i] = new SplashFlutter
                 {
                     Angle = i * (Mathf.PI * 2f / 3f) + Random.Range(-0.15f, 0.15f),
-                    Speed = Random.Range(0.36f, 0.50f), // slower so front/behind weave reads on short clips
+                    Speed = Random.Range(0.42f, 0.58f),
                     RadiusX = rx * (0.88f + 0.08f * i),
                     RadiusY = ry * (0.90f + 0.06f * i),
                     BobPhase = Random.Range(0f, Mathf.PI * 2f),
@@ -2845,8 +2845,7 @@ namespace FlockFive
             return new Rect(padX, Mathf.Max(4f, top - padY * 0.35f), Screen.width - padX * 2f, titleH + padY);
         }
 
-        // behind=true: birds on the far half of the halo (drawn under letters).
-        // Every bird completes a full ellipse — each spends ~half the orbit behind AND in front.
+        // behind=true: draw birds whose orbit is in the "back" half (weave under letters).
         void DrawAmbientSplashBirds(float s, bool behind)
         {
             EnsureSplashFlutters();
@@ -2865,27 +2864,20 @@ namespace FlockFive
                     f.Angle += speed * dt;
                     _splashFlutters[i] = f;
                 }
-                // y-down GUI: Sin<0 is above title center = behind letters; Sin>0 below = in front.
-                // Dead-zone keeps the handoff soft (no flicker at the equator).
-                float depth = Mathf.Sin(f.Angle);
-                bool isBehind = depth < -0.12f;
-                bool isFront = depth > 0.12f;
-                if (behind && !isBehind) continue;
-                if (!behind && !isFront) continue;
+                // sin(angle)>0 ≈ lower/front of ellipse in our y-down GUI; weave opposite.
+                bool isBehind = Mathf.Cos(f.Angle) > 0.08f; // "top/back" of orbit
+                if (behind != isBehind) continue;
 
                 float x = c.x + Mathf.Cos(f.Angle) * f.RadiusX;
                 float y = c.y + Mathf.Sin(f.Angle) * f.RadiusY;
                 y += Mathf.Sin(Time.unscaledTime * 2.1f + f.BobPhase) * (4.5f * s);
-                // Slight scale punch: behind birds a hair smaller, front a hair larger.
-                float scale = behind ? 0.90f : 1.06f;
-                float iw = icon * scale;
                 float vx = -Mathf.Sin(f.Angle) * f.RadiusX;
                 bool faceLeft = vx < 0f;
                 var spr = SpriteCatalog.BirdFrame(f.Col, Time.unscaledTime * 11f + i * 2.1f, true);
                 if (spr == null || spr.texture == null) continue;
-                var r = new Rect(x - iw * 0.5f, y - iw * 0.5f, iw, iw);
-                float dim = behind ? 0.72f : 1f;
-                GUI.color = new Color(dim, dim, dim, behind ? 0.78f : 0.96f);
+                var r = new Rect(x - icon * 0.5f, y - icon * 0.5f, icon, icon);
+                float dim = behind ? 0.78f : 0.94f;
+                GUI.color = new Color(dim, dim, dim, behind ? 0.82f : 0.94f);
                 if (faceLeft)
                 {
                     var m = GUI.matrix;
