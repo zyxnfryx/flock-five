@@ -91,6 +91,7 @@ namespace FlockFive
             public bool FaceLeft;
         }
         SplashFlutter[] _splashFlutters;
+        static Sprite _splashPointedV;
 
         void Start()
         {
@@ -2711,15 +2712,19 @@ namespace FlockFive
             bool any = false;
             for (int i = 0; i < n; i++)
             {
-                sprs[i] = SpriteCatalog.Letter(word[i]);
-                if (sprs[i] != null && sprs[i].texture != null)
+                // V: Resources fx_let_V is missing/magenta — use Finale pointed V bytes (same as FinaleShow).
+                sprs[i] = word[i] == 'V' ? SplashPointedV() : SpriteCatalog.Letter(word[i]);
+                if (sprs[i] != null && sprs[i].texture != null && !IsMagentaPlaceholder(sprs[i]))
                 {
                     any = true;
                     float aspect = sprs[i].rect.width / Mathf.Max(1f, sprs[i].rect.height);
                     widths[i] = capH * Mathf.Clamp(aspect, 0.45f, 1.15f);
                 }
                 else
+                {
+                    sprs[i] = null;
                     widths[i] = capH * 0.72f;
+                }
                 total += widths[i];
             }
             total += tracking * capH * (n - 1);
@@ -2779,6 +2784,33 @@ namespace FlockFive
                 cursor += w + tracking * h;
             }
             GUI.color = prev;
+        }
+
+        static bool IsMagentaPlaceholder(Sprite spr)
+        {
+            if (spr == null || spr.texture == null) return true;
+            // LoadNew missing art is a solid magenta tex — reject it for title glyphs.
+            try
+            {
+                var tex = spr.texture;
+                if (!tex.isReadable) return spr.name != null && spr.name.IndexOf("missing", System.StringComparison.OrdinalIgnoreCase) >= 0;
+                var c = tex.GetPixel(tex.width / 2, tex.height / 2);
+                return c.r > 0.9f && c.g < 0.15f && c.b > 0.9f;
+            }
+            catch { return false; }
+        }
+
+        static Sprite SplashPointedV()
+        {
+            if (_splashPointedV != null) return _splashPointedV;
+            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            if (!tex.LoadImage(FinaleVBytes.Png))
+                return SpriteCatalog.Letter('V');
+            _splashPointedV = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 200f);
+            _splashPointedV.name = "SplashFinaleV";
+            return _splashPointedV;
         }
 
         void EnsureSplashFlutters()
