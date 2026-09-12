@@ -2442,44 +2442,46 @@ namespace FlockFive
         {
             var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
-            // Straight Bold stack — StampArced was crunching the long jokes.
-            // Joke band on top, LEVEL tight under it; same family for Easy → Super Duper Easy.
-            var jokeR = new Rect(disc.x + disc.width * 0.06f, disc.y + disc.height * 0.14f, disc.width * 0.88f, disc.height * 0.22f);
+            // Straight Bold stack lower in the bowl: LEVEL on top, joke underneath.
+            // Three-digit probe keeps LEVEL 100+ from crowding the joke.
             var lvR = hasEase
-                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.34f, disc.width * 0.92f, disc.height * 0.50f)
+                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.28f, disc.width * 0.92f, disc.height * 0.34f)
                 : new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.84f);
-
-            if (hasEase)
-            {
-                var joke = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                    wordWrap = false
-                };
-                int n = ease.Length;
-                float maxW = jokeR.width * (n <= 6 ? 0.70f : (n <= 12 ? 0.92f : 0.98f));
-                joke.fontSize = FitFont(joke, ease, maxW, jokeR.height * 0.90f, 16, n >= 14 ? 32 : 38);
-                int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.10f));
-                StampOutlined(jokeR, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
-            }
+            var jokeR = new Rect(disc.x + disc.width * 0.06f, disc.y + disc.height * 0.58f, disc.width * 0.88f, disc.height * 0.24f);
 
             var lv = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = hasEase ? TextAnchor.UpperCenter : TextAnchor.MiddleCenter,
+                alignment = hasEase ? TextAnchor.LowerCenter : TextAnchor.MiddleCenter,
                 wordWrap = false
             };
             string level = "LEVEL " + number;
-            // Three-digit probe so LEVEL 2/4/6 and 100+ share one sit under the joke.
-            string fitProbe = hasEase ? "LEVEL 888" : level;
+            bool triple = number >= 100;
+            string fitProbe = (hasEase || triple) ? "LEVEL 888" : level;
+            int lvHi = hasEase ? (triple ? 52 : 64) : (triple ? 78 : 96);
             lv.fontSize = FitFont(
                 lv, fitProbe,
-                lvR.width * 0.88f,
-                lvR.height * (hasEase ? 0.70f : 0.80f),
-                28, hasEase ? 68 : 96);
+                lvR.width * (triple ? 0.92f : 0.88f),
+                lvR.height * (hasEase ? 0.88f : 0.80f),
+                triple ? 24 : 28, lvHi);
             int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
             StampOutlined(lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, 1);
+
+            if (!hasEase) return;
+
+            var joke = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.UpperCenter,
+                wordWrap = false
+            };
+            int n = ease.Length;
+            float maxW = jokeR.width * (n <= 6 ? 0.70f : (n <= 12 ? 0.92f : 0.98f));
+            int jHi = n >= 14 ? 30 : 36;
+            if (triple) jHi = Mathf.Min(jHi, 28);
+            joke.fontSize = FitFont(joke, ease, maxW, jokeR.height * 0.88f, 16, jHi);
+            int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.10f));
+            StampOutlined(jokeR, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
         }
 
         static int FitFont(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi)
