@@ -67,8 +67,8 @@ namespace FlockFive
         }
 
         const float CapH = 1.78f;
-        const float RowGap = 0.34f;
-        const float Tracking = -0.055f;
+        const float RowGap = 0.38f;
+        const float Tracking = -0.04f;
         const float Smile = 0.05f;
         const float MaxWordW = 7.5f;
 
@@ -125,6 +125,7 @@ namespace FlockFive
             host.StartCoroutine(PopBird(violet, 0.52f, 0.2f));
 
             yield return new WaitForSeconds(lettersDone * 0.38f + 0.08f);
+            Settle(all, restScale, restPos);
             yield return Breathe(hold, 0.62f, 1.035f);
             Sfx.Takeoff(4);
 
@@ -708,7 +709,8 @@ namespace FlockFive
                 float inf = Inflate(i, word.Length) * Optical(word[i]);
                 scales[i] = LetterScale(word[i], CapH / h * inf);
                 widths[i] = w * scales[i].x;
-                total += widths[i] + (i > 0 ? Tracking : 0f);
+                float gap = i > 0 ? Tracking + PairGap(word[i - 1], word[i]) : 0f;
+                total += widths[i] + gap;
             }
             if (total > MaxWordW)
             {
@@ -733,9 +735,19 @@ namespace FlockFive
                 go.transform.localPosition = new Vector3(x, y, 0f);
                 Extrude(go, spr, order);
                 letters[i] = go.transform;
-                x += widths[i] * 0.5f + Tracking;
+                float nextGap = i + 1 < word.Length ? Tracking + PairGap(word[i], word[i + 1]) : 0f;
+                x += widths[i] * 0.5f + nextGap;
             }
             return letters;
+        }
+
+        static float PairGap(char a, char b)
+        {
+            // Tip still: FI crushed, hole before V — open those pairs a hair.
+            if (a == 'F' && b == 'I') return 0.045f;
+            if (a == 'I' && b == 'V') return -0.02f;
+            if (a == 'L' && b == 'O') return 0.02f;
+            return 0f;
         }
 
         static void Extrude(GameObject face, Sprite spr, int order)
@@ -784,7 +796,7 @@ namespace FlockFive
                 float u = Mathf.Clamp01(t / dur);
                 float pop = EaseOutBack(u, 0.58f);
                 float drop = 1f - EaseOutCubic(u);
-                float spin = (1f - Smooth01(u)) * 4.2f * Mathf.Sin(u * Mathf.PI);
+                float spin = (1f - Smooth01(u)) * 2.0f * Mathf.Sin(u * Mathf.PI);
                 tr.localScale = restScale * pop;
                 tr.localPosition = restPos + Vector3.up * drop * 0.42f;
                 tr.localRotation = Quaternion.Euler(0f, 0f, spin);
@@ -807,7 +819,8 @@ namespace FlockFive
             idle.Lift = 0.12f;
             idle.Frozen = true;
             idle.Flapping = false;
-            idle.Bind(col, local);
+            // Clear celebration: plain birds — no bow/crown kits.
+            idle.Bind(new Bird(col, BirdSex.Neutral), local);
             idle.Frozen = true;
             idle.Flapping = false;
             var sr = go.GetComponent<SpriteRenderer>();
