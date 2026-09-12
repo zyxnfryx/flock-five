@@ -2442,9 +2442,11 @@ namespace FlockFive
         {
             var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
-            // Joke on the upper gold rim; LEVEL hugged up under the bow (post-#64 stills: gap still open).
+            // Straight Bold stack — StampArced was crunching the long jokes.
+            // Joke band on top, LEVEL tight under it; same family for Easy → Super Duper Easy.
+            var jokeR = new Rect(disc.x + disc.width * 0.06f, disc.y + disc.height * 0.14f, disc.width * 0.88f, disc.height * 0.22f);
             var lvR = hasEase
-                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.32f, disc.width * 0.92f, disc.height * 0.52f)
+                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.34f, disc.width * 0.92f, disc.height * 0.50f)
                 : new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.84f);
 
             if (hasEase)
@@ -2455,15 +2457,11 @@ namespace FlockFive
                     alignment = TextAnchor.MiddleCenter,
                     wordWrap = false
                 };
-                // One family for Easy / Super Easy / Super Duper Easy.
-                // Long string: track out + flatter bow; don't shrink so hard it reads thin.
                 int n = ease.Length;
-                float maxArcW = disc.width * (n <= 6 ? 0.62f : (n <= 12 ? 0.78f : 0.74f));
-                float maxArcH = disc.height * (n >= 14 ? 0.17f : 0.20f);
-                int hi = n >= 14 ? 34 : 40;
-                joke.fontSize = FitFont(joke, ease, maxArcW, maxArcH, 18, hi);
+                float maxW = jokeR.width * (n <= 6 ? 0.70f : (n <= 12 ? 0.92f : 0.98f));
+                joke.fontSize = FitFont(joke, ease, maxW, jokeR.height * 0.90f, 16, n >= 14 ? 32 : 38);
                 int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.10f));
-                StampArced(disc, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
+                StampOutlined(jokeR, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
             }
 
             var lv = new GUIStyle(GUI.skin.label)
@@ -2473,17 +2471,15 @@ namespace FlockFive
                 wordWrap = false
             };
             string level = "LEVEL " + number;
-            // With a joke arc, size to a three-digit probe so LEVEL 2/4/6 and 100+
-            // share one sit under StampArced (short numbers must not inflate into the bow).
+            // Three-digit probe so LEVEL 2/4/6 and 100+ share one sit under the joke.
             string fitProbe = hasEase ? "LEVEL 888" : level;
             lv.fontSize = FitFont(
                 lv, fitProbe,
                 lvR.width * 0.88f,
-                lvR.height * (hasEase ? 0.62f : 0.80f),
+                lvR.height * (hasEase ? 0.70f : 0.80f),
                 28, hasEase ? 68 : 96);
             int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
-            int black = 1;
-            StampOutlined(lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, black);
+            StampOutlined(lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, 1);
         }
 
         static int FitFont(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi)
