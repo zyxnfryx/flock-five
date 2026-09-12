@@ -2455,7 +2455,8 @@ namespace FlockFive
             {
                 float padX = disc.width * 0.04f;
                 float stackH = disc.height * 0.56f;
-                float stackY = disc.y + (disc.height - stackH) * 0.62f;
+                // Hairline: joke stack down a smidge vs be47453.
+                float stackY = disc.y + (disc.height - stackH) * 0.68f;
                 float gap = disc.height * 0.005f;
                 float lvH = stackH * 0.52f;
                 float jokeH = stackH - lvH - gap;
@@ -2467,7 +2468,8 @@ namespace FlockFive
             {
                 float padX = disc.width * 0.04f;
                 float aloneH = disc.height * 0.55f;
-                float aloneY = disc.y + (disc.height - aloneH) * 0.5f + disc.height * 0.045f;
+                // Hairline: blank LEVEL up a smidge (was +0.045f).
+                float aloneY = disc.y + (disc.height - aloneH) * 0.5f + disc.height * 0.018f;
                 float aloneX = disc.x + padX + disc.width * 0.035f;
                 lvR = new Rect(aloneX, aloneY, disc.width - padX * 2f - disc.width * 0.035f, aloneH);
                 jokeR = default;
@@ -2484,16 +2486,17 @@ namespace FlockFive
             bool quad = number >= 1000;
             bool triple = number >= 100;
             string fitProbe = level;
-            if (quad) fitProbe = "LEVEL 8888";
+            // 1000: shrink less — probe actual level, milder hi/lo so type stays nearer 2/4/6.
+            if (quad) fitProbe = level;
             else if (hasEase || triple) fitProbe = "LEVEL 888";
             int lvHi = hasEase
-                ? (quad ? 56 : (triple ? 64 : 84))
-                : (quad ? 68 : (triple ? 78 : 96));
+                ? (quad ? 72 : (triple ? 64 : 84))
+                : (quad ? 82 : (triple ? 78 : 96));
             lv.fontSize = FitFont(
                 lv, fitProbe,
                 lvR.width * (quad ? 0.98f : (triple ? 0.96f : 0.94f)),
                 lvR.height * (hasEase ? 0.95f : 0.80f),
-                quad ? 22 : (triple ? 26 : 30), lvHi);
+                quad ? 30 : (triple ? 26 : 30), lvHi);
             int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
             StampOutlined(lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, 1);
 
