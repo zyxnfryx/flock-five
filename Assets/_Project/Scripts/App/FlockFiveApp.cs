@@ -2414,8 +2414,9 @@ namespace FlockFive
 
             // Home title: stacked FLOCK / FIVE via letter sprites + navy block extrude
             // (same mark family as FinaleShow smash hold — correlate, not shatter).
+            DrawAmbientSplashBirds(s, behind: true);
             DrawSplashTitleMark(s);
-            DrawAmbientSplashBirds(s);
+            DrawAmbientSplashBirds(s, behind: false);
             DrawStreakRewards(s);
 
             int next = LevelData.NextPlay;
@@ -2809,24 +2810,25 @@ namespace FlockFive
 
         void EnsureSplashFlutters()
         {
-            if (_splashFlutters != null && _splashFlutters.Length == 2) return;
-            _splashFlutters = new SplashFlutter[2];
+            if (_splashFlutters != null && _splashFlutters.Length == 3) return;
+            _splashFlutters = new SplashFlutter[3];
             var h = SplashTitleHalo();
             // Ellipse just outside the stacked wordmark (avoid cutting through glyph holes).
-            float rx = h.width * 0.52f;
-            float ry = h.height * 0.62f;
-            var cols = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet };
-            for (int i = 0; i < 2; i++)
+            float rx = h.width * 0.54f;
+            float ry = h.height * 0.68f;
+            // Match clip cast: gold / violet / teal.
+            var cols = new[] { BirdColor.Gold, BirdColor.Violet, BirdColor.Teal };
+            for (int i = 0; i < 3; i++)
             {
-                float dir = (i % 2 == 0) ? 1f : -1f;
+                // Same sweep direction — no opposing hard reverse; phase-offset only.
                 _splashFlutters[i] = new SplashFlutter
                 {
-                    Angle = i * Mathf.PI + Random.Range(-0.25f, 0.25f),
-                    Speed = dir * Random.Range(0.48f, 0.72f),
-                    RadiusX = rx * Random.Range(0.92f, 1.06f),
-                    RadiusY = ry * Random.Range(0.90f, 1.08f),
+                    Angle = i * (Mathf.PI * 2f / 3f) + Random.Range(-0.15f, 0.15f),
+                    Speed = Random.Range(0.42f, 0.58f),
+                    RadiusX = rx * (0.88f + 0.08f * i),
+                    RadiusY = ry * (0.90f + 0.06f * i),
                     BobPhase = Random.Range(0f, Mathf.PI * 2f),
-                    Col = cols[i % cols.Length]
+                    Col = cols[i]
                 };
             }
         }
@@ -2843,34 +2845,39 @@ namespace FlockFive
             return new Rect(padX, Mathf.Max(4f, top - padY * 0.35f), Screen.width - padX * 2f, titleH + padY);
         }
 
-        void DrawAmbientSplashBirds(float s)
+        // behind=true: draw birds whose orbit is in the "back" half (weave under letters).
+        void DrawAmbientSplashBirds(float s, bool behind)
         {
             EnsureSplashFlutters();
             var h = SplashTitleHalo();
             Vector2 c = h.center;
-            float icon = 32f * s;
+            float icon = 30f * s;
             var prev = GUI.color;
-            float dt = Time.unscaledDeltaTime;
+            float dt = behind ? Time.unscaledDeltaTime : 0f; // advance once per frame (behind pass)
             for (int i = 0; i < _splashFlutters.Length; i++)
             {
                 var f = _splashFlutters[i];
-                // Gentle speed breathe so orbits feel alive, not mechanical.
-                float speed = f.Speed * (0.92f + 0.08f * Mathf.Sin(Time.unscaledTime * 0.7f + f.BobPhase));
-                f.Angle += speed * dt;
+                if (behind)
+                {
+                    // Smooth continuous sweep — no direction flips.
+                    float speed = f.Speed * (0.94f + 0.06f * Mathf.Sin(Time.unscaledTime * 0.55f + f.BobPhase));
+                    f.Angle += speed * dt;
+                    _splashFlutters[i] = f;
+                }
+                // sin(angle)>0 ≈ lower/front of ellipse in our y-down GUI; weave opposite.
+                bool isBehind = Mathf.Cos(f.Angle) > 0.08f; // "top/back" of orbit
+                if (behind != isBehind) continue;
+
                 float x = c.x + Mathf.Cos(f.Angle) * f.RadiusX;
                 float y = c.y + Mathf.Sin(f.Angle) * f.RadiusY;
-                y += Mathf.Sin(Time.unscaledTime * 2.4f + f.BobPhase) * (5.5f * s);
-                // Face along tangent (velocity).
-                float vx = -Mathf.Sin(f.Angle) * f.RadiusX * Mathf.Sign(speed == 0f ? f.Speed : speed);
+                y += Mathf.Sin(Time.unscaledTime * 2.1f + f.BobPhase) * (4.5f * s);
+                float vx = -Mathf.Sin(f.Angle) * f.RadiusX;
                 bool faceLeft = vx < 0f;
                 var spr = SpriteCatalog.BirdFrame(f.Col, Time.unscaledTime * 11f + i * 2.1f, true);
-                if (spr == null || spr.texture == null)
-                {
-                    _splashFlutters[i] = f;
-                    continue;
-                }
+                if (spr == null || spr.texture == null) continue;
                 var r = new Rect(x - icon * 0.5f, y - icon * 0.5f, icon, icon);
-                GUI.color = new Color(1f, 1f, 1f, 0.92f);
+                float dim = behind ? 0.78f : 0.94f;
+                GUI.color = new Color(dim, dim, dim, behind ? 0.82f : 0.94f);
                 if (faceLeft)
                 {
                     var m = GUI.matrix;
@@ -2880,7 +2887,6 @@ namespace FlockFive
                 }
                 else
                     GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
-                _splashFlutters[i] = f;
             }
             GUI.color = prev;
         }
