@@ -2455,11 +2455,13 @@ namespace FlockFive
                     alignment = TextAnchor.MiddleCenter,
                     wordWrap = false
                 };
-                // One family for Easy / Super Easy / Super Duper Easy: shrink the long
-                // string so the bow stays gentle instead of steep and jittery.
+                // One family for Easy / Super Easy / Super Duper Easy.
+                // Long "Super Duper Easy" must shrink + track out — not crunch on the rim.
                 int n = ease.Length;
-                float maxArcW = disc.width * (n <= 6 ? 0.58f : (n <= 12 ? 0.76f : 0.90f));
-                joke.fontSize = FitFont(joke, ease, maxArcW, disc.height * 0.20f, 20, 40);
+                float maxArcW = disc.width * (n <= 6 ? 0.62f : (n <= 12 ? 0.78f : 0.68f));
+                float maxArcH = disc.height * (n >= 14 ? 0.155f : 0.20f);
+                int hi = n >= 14 ? 30 : 40;
+                joke.fontSize = FitFont(joke, ease, maxArcW, maxArcH, 18, hi);
                 int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.10f));
                 StampArced(disc, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
             }
@@ -2528,31 +2530,33 @@ namespace FlockFive
             int n = text.Length;
             var widths = new float[n];
             float total = 0f;
-            // Light tracking so Bold glyphs don't crush on the long joke.
-            float tracking = st.fontSize * (n >= 14 ? 0.055f : (n >= 10 ? 0.035f : 0.02f));
+            // Extra tracking on the long joke so glyphs don't crunch together.
+            float tracking = st.fontSize * (n >= 14 ? 0.10f : (n >= 10 ? 0.05f : 0.025f));
             for (int i = 0; i < n; i++)
             {
                 float w = st.CalcSize(new GUIContent(text[i].ToString())).x;
-                if (text[i] == ' ') w = Mathf.Max(w, st.fontSize * 0.42f);
+                if (text[i] == ' ') w = Mathf.Max(w, st.fontSize * 0.48f);
                 widths[i] = Mathf.Max(2f, w) + tracking;
                 total += widths[i];
             }
             if (total < 1f) return;
 
-            // Plate-concentric radius; keep span gentle so letters stay even
-            // (steep bows + outline rings read as jitter on the tan plate).
-            float rx = disc.width * 0.40f;
+            // Longer strings: wider, flatter bow on the plate rim (less inward lean).
+            float spanMax = n >= 14 ? 1.02f : (n >= 10 ? 1.18f : 1.28f);
+            float rx = disc.width * (n >= 14 ? 0.48f : 0.40f);
             float span = total / Mathf.Max(rx, 1f);
-            if (span > 1.28f)
+            if (span > spanMax)
             {
-                rx = Mathf.Min(disc.width * 0.44f, total / 1.18f);
+                rx = Mathf.Min(disc.width * (n >= 14 ? 0.52f : 0.44f), total / (spanMax * 0.92f));
                 span = total / Mathf.Max(rx, 1f);
             }
-            span = Mathf.Clamp(span, 0.50f, 1.28f);
-            float aspect = Mathf.Clamp(disc.height / Mathf.Max(disc.width, 1f), 0.55f, 0.82f);
+            span = Mathf.Clamp(span, 0.48f, spanMax);
+            float aspect = n >= 14
+                ? 0.56f
+                : Mathf.Clamp(disc.height / Mathf.Max(disc.width, 1f), 0.55f, 0.82f);
             float ry = rx * aspect;
             float cx = disc.center.x;
-            float cy = disc.y + disc.height * 0.16f + ry;
+            float cy = disc.y + disc.height * (n >= 14 ? 0.14f : 0.16f) + ry;
             float start = -span * 0.5f;
             float acc = 0f;
             float h = st.CalcSize(new GUIContent("Ag")).y;
