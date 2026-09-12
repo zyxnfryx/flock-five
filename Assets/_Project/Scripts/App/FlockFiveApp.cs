@@ -398,7 +398,7 @@ namespace FlockFive
 
         IEnumerator ShotSplashButtons()
         {
-            // Stills: blank, 2/4/6 joke lengths, and LEVEL 999 FitFont stress.
+            // Stills: blank, 2/4/6 joke lengths, and LEVEL 1000 FitFont stress.
             // Brandon copies /tmp/paradice → Playtest/splash-buttons/ with these names.
             const string dir = "/tmp/paradice";
             System.IO.Directory.CreateDirectory(dir);
@@ -406,7 +406,7 @@ namespace FlockFive
             yield return ShotSplashLevel(2, 1, "Easy", dir + "/splash-joke-easy.png");
             yield return ShotSplashLevel(4, 3, "Super Easy", dir + "/splash-joke-super-easy.png");
             yield return ShotSplashLevel(6, 5, "Super Duper Easy", dir + "/splash-joke-super-duper-easy.png");
-            yield return ShotSplashLevel(999, 5, "Super Duper Easy", dir + "/splash-level-999.png");
+            yield return ShotSplashLevel(1000, 5, "Super Duper Easy", dir + "/splash-level-1000.png");
             _shotLevelNumber = 6;
             _shotEase = "Super Duper Easy";
             PlayerPrefs.SetInt("flockfive.next", 5);
@@ -2446,29 +2446,30 @@ namespace FlockFive
         {
             var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
-            // One centered field: LEVEL over joke. Nudge LEVEL down within the field.
-            // No-joke: LEVEL alone stays dead-centered on the disc. 100+ probe kept.
+            // LEVEL over joke as one field, biased down off the top rim.
+            // Blank: LEVEL alone slightly down + right. Text Y-squashed to sit flush on the angled plate.
             Rect lvR;
             Rect jokeR;
             TextAnchor lvAlign;
             if (hasEase)
             {
                 float padX = disc.width * 0.04f;
-                float stackH = disc.height * 0.58f;
-                float stackY = disc.y + (disc.height - stackH) * 0.5f;
+                float stackH = disc.height * 0.56f;
+                float stackY = disc.y + (disc.height - stackH) * 0.62f; // drop off top rim
                 float gap = disc.height * 0.005f;
                 float lvH = stackH * 0.52f;
                 float jokeH = stackH - lvH - gap;
                 lvR = new Rect(disc.x + padX, stackY, disc.width - padX * 2f, lvH);
                 jokeR = new Rect(disc.x + padX, stackY + lvH + gap, disc.width - padX * 2f, jokeH);
-                lvAlign = TextAnchor.LowerCenter; // bring LEVEL down toward the joke
+                lvAlign = TextAnchor.LowerCenter;
             }
             else
             {
                 float padX = disc.width * 0.04f;
                 float aloneH = disc.height * 0.55f;
-                float aloneY = disc.y + (disc.height - aloneH) * 0.5f;
-                lvR = new Rect(disc.x + padX, aloneY, disc.width - padX * 2f, aloneH);
+                float aloneY = disc.y + (disc.height - aloneH) * 0.5f + disc.height * 0.045f; // down a little
+                float aloneX = disc.x + padX + disc.width * 0.035f; // right a little
+                lvR = new Rect(aloneX, aloneY, disc.width - padX * 2f - disc.width * 0.035f, aloneH);
                 jokeR = default;
                 lvAlign = TextAnchor.MiddleCenter;
             }
@@ -2480,16 +2481,21 @@ namespace FlockFive
                 wordWrap = false
             };
             string level = "LEVEL " + number;
+            bool quad = number >= 1000;
             bool triple = number >= 100;
-            string fitProbe = (hasEase || triple) ? "LEVEL 888" : level;
-            int lvHi = hasEase ? (triple ? 64 : 84) : (triple ? 78 : 96);
+            string fitProbe = level;
+            if (quad) fitProbe = "LEVEL 8888";
+            else if (hasEase || triple) fitProbe = "LEVEL 888";
+            int lvHi = hasEase
+                ? (quad ? 56 : (triple ? 64 : 84))
+                : (quad ? 68 : (triple ? 78 : 96));
             lv.fontSize = FitFont(
                 lv, fitProbe,
-                lvR.width * (triple ? 0.96f : 0.94f),
+                lvR.width * (quad ? 0.98f : (triple ? 0.96f : 0.94f)),
                 lvR.height * (hasEase ? 0.95f : 0.80f),
-                triple ? 26 : 30, lvHi);
+                quad ? 22 : (triple ? 26 : 30), lvHi);
             int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
-            StampOutlined(lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, 1);
+            StampOnDisc(disc, lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, 1);
 
             if (!hasEase) return;
 
@@ -2502,10 +2508,19 @@ namespace FlockFive
             int n = ease.Length;
             float maxW = jokeR.width * (n <= 6 ? 0.78f : (n <= 12 ? 0.96f : 0.99f));
             int jHi = n >= 14 ? 40 : 48;
-            if (triple) jHi = Mathf.Min(jHi, 32);
+            if (triple || quad) jHi = Mathf.Min(jHi, quad ? 28 : 32);
             joke.fontSize = FitFont(joke, ease, maxW, jokeR.height * 0.95f, 18, jHi);
             int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.10f));
-            StampOutlined(jokeR, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
+            StampOnDisc(disc, jokeR, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
+        }
+
+        // Squash Y around the disc center so OnGUI type sits flush on the foreshortened plate.
+        static void StampOnDisc(Rect disc, Rect r, string text, GUIStyle st, Color fill, int whitePx, int blackPx)
+        {
+            var prev = GUI.matrix;
+            GUIUtility.ScaleAroundPivot(new Vector2(1f, 0.84f), disc.center);
+            StampOutlined(r, text, st, fill, whitePx, blackPx);
+            GUI.matrix = prev;
         }
 
         static int FitFont(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi)
