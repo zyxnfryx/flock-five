@@ -2451,7 +2451,7 @@ namespace FlockFive
                 float padX = disc.width * 0.04f;
                 float stackH = disc.height * 0.58f;
                 float stackY = disc.y + (disc.height - stackH) * 0.5f;
-                float gap = disc.height * 0.012f;
+                float gap = disc.height * 0.006f; // nit: tiny closer LEVEL–joke; sizes/center unchanged
                 float lvH = stackH * 0.54f;
                 float jokeH = stackH - lvH - gap;
                 lvR = new Rect(disc.x + padX, stackY, disc.width - padX * 2f, lvH);
