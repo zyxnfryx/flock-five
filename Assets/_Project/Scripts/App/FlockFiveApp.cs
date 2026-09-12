@@ -82,6 +82,15 @@ namespace FlockFive
         int _shotLevelNumber;
         string _shotEase;
         bool _recordSmash;
+        // Home splash ambient flutters (1–2 birds; draw-only, no hit targets).
+        struct SplashFlutter
+        {
+            public Vector2 From, To;
+            public float T, Dur;
+            public BirdColor Col;
+            public bool FaceLeft;
+        }
+        SplashFlutter[] _splashFlutters;
 
         void Start()
         {
@@ -2408,26 +2417,10 @@ namespace FlockFive
             float s = Mathf.Max(Screen.height / 720f, 1f);
             DrawHomeWash(0.18f);
 
-            // Home title: stacked FLOCK / FIVE — OnGUI cousin of FinaleShow slam lockup
-            // (banana face, thin black stroke, chunky navy block extrude down-right).
-            float top = Mathf.Max(16f, Screen.height - Screen.safeArea.yMax + 6f);
-            float lineH = 58f * s;
-            var title = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Mathf.RoundToInt(56 * s),
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter
-            };
-            var fill = new Color(1f, 0.92f, 0.42f); // banana yellow face
-            var stroke = new Color(0.02f, 0.02f, 0.04f, 1f); // thin black
-            var extrude = new Color(28f / 255f, 44f / 255f, 102f / 255f, 1f); // ExtrudeNear
-            int strokePx = Mathf.Max(2, Mathf.RoundToInt(2.2f * s));
-            int extrudeSteps = Mathf.Max(5, Mathf.RoundToInt(6f * s));
-            float extrudeStep = 1.15f * s;
-            var flockR = new Rect(8f, top, Screen.width - 16f, lineH);
-            var fiveR = new Rect(8f, top + lineH * 0.72f, Screen.width - 16f, lineH); // tight stack
-            StampMark(flockR, "FLOCK", title, fill, stroke, strokePx, extrude, extrudeSteps, extrudeStep);
-            StampMark(fiveR, "FIVE", title, fill, stroke, strokePx, extrude, extrudeSteps, extrudeStep);
+            // Home title: stacked FLOCK / FIVE via letter sprites + navy block extrude
+            // (same mark family as FinaleShow smash hold — correlate, not shatter).
+            DrawSplashTitleMark(s);
+            DrawAmbientSplashBirds(s);
             DrawStreakRewards(s);
 
             int next = LevelData.NextPlay;
@@ -2697,21 +2690,170 @@ namespace FlockFive
             GUI.Label(r, text, st);
         }
 
-        // Finale-family wordmark: banana face, thin black stroke, chunky navy block extrude (down + right).
-        static void StampMark(Rect r, string text, GUIStyle st, Color fill, Color stroke, int strokePx, Color extrude, int extrudeSteps, float extrudeStep)
+        // Finale-family wordmark via letter sprites (yellow faces + navy ExtrudeNear/Far block).
+        void DrawSplashTitleMark(float s)
         {
-            // Solid block extrusion (opaque navy), down-right — matches FinaleShow Extrude layers.
-            Paint(st, extrude);
-            for (int d = extrudeSteps; d >= 1; d--)
+            float top = Mathf.Max(10f, Screen.height - Screen.safeArea.yMax + 2f);
+            float maxW = Screen.width * 0.90f;
+            float capH = 78f * s;
+            float rowGap = 6f * s; // tight hold spacing
+            float tracking = -0.05f;
+            DrawSplashWord("FLOCK", top, maxW, capH, tracking, s);
+            DrawSplashWord("FIVE", top + capH + rowGap, maxW, capH, tracking, s);
+        }
+
+        void DrawSplashWord(string word, float y, float maxW, float capH, float tracking, float s)
+        {
+            int n = word.Length;
+            var sprs = new Sprite[n];
+            var widths = new float[n];
+            float total = 0f;
+            bool any = false;
+            for (int i = 0; i < n; i++)
             {
-                float ox = d * extrudeStep * 0.78f;
-                float oy = d * extrudeStep;
-                GUI.Label(new Rect(r.x + ox, r.y + oy, r.width, r.height), text, st);
+                sprs[i] = SpriteCatalog.Letter(word[i]);
+                if (sprs[i] != null && sprs[i].texture != null)
+                {
+                    any = true;
+                    float aspect = sprs[i].rect.width / Mathf.Max(1f, sprs[i].rect.height);
+                    widths[i] = capH * Mathf.Clamp(aspect, 0.45f, 1.15f);
+                }
+                else
+                    widths[i] = capH * 0.72f;
+                total += widths[i];
             }
-            Paint(st, stroke);
-            Ring(r, text, st, strokePx);
-            Paint(st, fill);
-            GUI.Label(r, text, st);
+            total += tracking * capH * (n - 1);
+            float scale = Mathf.Min(1f, maxW / Mathf.Max(1f, total));
+            float h = capH * scale;
+            float tw = total * scale;
+            float x = (Screen.width - tw) * 0.5f;
+
+            // Fallback: Bold stamp if letter art missing.
+            if (!any)
+            {
+                var st = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = Mathf.RoundToInt(h * 0.92f),
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter
+                };
+                var fill = new Color(1f, 0.92f, 0.42f);
+                var stroke = new Color(0.02f, 0.02f, 0.04f, 1f);
+                var near = new Color(28f / 255f, 44f / 255f, 102f / 255f, 1f);
+                int steps = Mathf.Max(8, Mathf.RoundToInt(10f * s));
+                float step = 1.35f * s * scale;
+                var r = new Rect(x, y, tw, h);
+                Paint(st, near);
+                for (int d = steps; d >= 1; d--)
+                    GUI.Label(new Rect(r.x + d * step * 0.78f, r.y + d * step, r.width, r.height), word, st);
+                Paint(st, stroke);
+                Ring(r, word, st, Mathf.Max(2, Mathf.RoundToInt(2.4f * s)));
+                Paint(st, fill);
+                GUI.Label(r, word, st);
+                return;
+            }
+
+            var extrudeNear = new Color(28f / 255f, 44f / 255f, 102f / 255f, 1f);
+            var extrudeFar = new Color(4f / 255f, 7f / 255f, 18f / 255f, 1f);
+            int layers = 12;
+            float stepPx = 1.45f * s * scale;
+            float cursor = x;
+            var prev = GUI.color;
+            for (int i = 0; i < n; i++)
+            {
+                float w = widths[i] * scale;
+                var face = new Rect(cursor, y, w, h);
+                if (sprs[i] != null && sprs[i].texture != null)
+                {
+                    for (int d = layers; d >= 1; d--)
+                    {
+                        float u = d / (float)layers;
+                        GUI.color = Color.Lerp(extrudeNear, extrudeFar, u);
+                        GUI.DrawTexture(
+                            new Rect(face.x + d * stepPx * 0.78f, face.y + d * stepPx, w, h),
+                            sprs[i].texture, ScaleMode.ScaleToFit, true);
+                    }
+                    GUI.color = Color.white;
+                    GUI.DrawTexture(face, sprs[i].texture, ScaleMode.ScaleToFit, true);
+                }
+                cursor += w + tracking * h;
+            }
+            GUI.color = prev;
+        }
+
+        void EnsureSplashFlutters()
+        {
+            if (_splashFlutters != null && _splashFlutters.Length == 2) return;
+            _splashFlutters = new SplashFlutter[2];
+            for (int i = 0; i < 2; i++)
+                RetargetSplashFlutter(i, true);
+        }
+
+        void RetargetSplashFlutter(int i, bool spawn)
+        {
+            float margin = 48f;
+            float yLo = Screen.height * 0.18f;
+            float yHi = Screen.height * 0.52f; // stay above flower play disc
+            Vector2 a = spawn
+                ? new Vector2(Random.Range(margin, Screen.width - margin), Random.Range(yLo, yHi))
+                : _splashFlutters[i].To;
+            Vector2 b;
+            int guard = 0;
+            do
+            {
+                b = new Vector2(Random.Range(margin, Screen.width - margin), Random.Range(yLo, yHi));
+                guard++;
+            } while (Vector2.Distance(a, b) < Screen.width * 0.22f && guard < 8);
+
+            var cols = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet };
+            _splashFlutters[i] = new SplashFlutter
+            {
+                From = a,
+                To = b,
+                T = 0f,
+                Dur = Random.Range(2.6f, 4.8f),
+                Col = cols[(i + Random.Range(0, cols.Length)) % cols.Length],
+                FaceLeft = b.x < a.x
+            };
+        }
+
+        void DrawAmbientSplashBirds(float s)
+        {
+            EnsureSplashFlutters();
+            float icon = 44f * s;
+            var prev = GUI.color;
+            for (int i = 0; i < _splashFlutters.Length; i++)
+            {
+                var f = _splashFlutters[i];
+                f.T += Time.unscaledDeltaTime / Mathf.Max(0.2f, f.Dur);
+                if (f.T >= 1f)
+                {
+                    RetargetSplashFlutter(i, false);
+                    f = _splashFlutters[i];
+                }
+                float u = f.T * f.T * (3f - 2f * f.T); // smoothstep
+                Vector2 p = Vector2.Lerp(f.From, f.To, u);
+                p.y += Mathf.Sin(u * Mathf.PI) * (-36f * s);
+                var spr = SpriteCatalog.BirdFrame(f.Col, Time.unscaledTime * 9f + i * 1.7f, true);
+                if (spr == null || spr.texture == null)
+                {
+                    _splashFlutters[i] = f;
+                    continue;
+                }
+                var r = new Rect(p.x - icon * 0.5f, p.y - icon * 0.5f, icon, icon);
+                GUI.color = new Color(1f, 1f, 1f, 0.90f);
+                if (f.FaceLeft)
+                {
+                    var m = GUI.matrix;
+                    GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), r.center);
+                    GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
+                    GUI.matrix = m;
+                }
+                else
+                    GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
+                _splashFlutters[i] = f;
+            }
+            GUI.color = prev;
         }
 
         static void Ring(Rect r, string text, GUIStyle st, int px)
