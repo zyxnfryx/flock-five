@@ -2693,11 +2693,11 @@ namespace FlockFive
         // Finale-family wordmark via letter sprites (yellow faces + navy ExtrudeNear/Far block).
         void DrawSplashTitleMark(float s)
         {
-            float top = Mathf.Max(10f, Screen.height - Screen.safeArea.yMax + 2f);
-            float maxW = Screen.width * 0.90f;
-            float capH = 78f * s;
-            float rowGap = 6f * s; // tight hold spacing
-            float tracking = -0.05f;
+            float top = Mathf.Max(8f, Screen.height - Screen.safeArea.yMax + 2f);
+            float maxW = Screen.width * 0.92f;
+            float capH = 84f * s; // closer to finale hold scale
+            float rowGap = 4f * s; // tighter FLOCK/FIVE sit
+            float tracking = -0.055f;
             DrawSplashWord("FLOCK", top, maxW, capH, tracking, s);
             DrawSplashWord("FIVE", top + capH + rowGap, maxW, capH, tracking, s);
         }
@@ -2755,8 +2755,8 @@ namespace FlockFive
 
             var extrudeNear = new Color(28f / 255f, 44f / 255f, 102f / 255f, 1f);
             var extrudeFar = new Color(4f / 255f, 7f / 255f, 18f / 255f, 1f);
-            int layers = 12;
-            float stepPx = 1.45f * s * scale;
+            int layers = 14;
+            float stepPx = 1.65f * s * scale;
             float cursor = x;
             var prev = GUI.color;
             for (int i = 0; i < n; i++)
@@ -2789,21 +2789,54 @@ namespace FlockFive
                 RetargetSplashFlutter(i, true);
         }
 
+        // Wander points in a soft halo around the stacked title mark (not whole homepage).
+        static Rect SplashTitleHalo()
+        {
+            float top = Mathf.Max(10f, Screen.height - Screen.safeArea.yMax + 2f);
+            float capH = 78f * Mathf.Max(Screen.height / 720f, 1f);
+            float rowGap = 6f * Mathf.Max(Screen.height / 720f, 1f);
+            float titleH = capH * 2f + rowGap;
+            float padX = Screen.width * 0.08f;
+            float padY = 28f * Mathf.Max(Screen.height / 720f, 1f);
+            return new Rect(padX, Mathf.Max(4f, top - padY * 0.35f), Screen.width - padX * 2f, titleH + padY);
+        }
+
+        static Vector2 RandomInTitleHalo()
+        {
+            var h = SplashTitleHalo();
+            // Prefer edges/corners of the halo so birds orbit the wordmark, not sit on glyphs.
+            float u = Random.value;
+            float x, y;
+            if (u < 0.35f) // left band
+            {
+                x = Mathf.Lerp(h.xMin, h.xMin + h.width * 0.22f, Random.value);
+                y = Mathf.Lerp(h.yMin, h.yMax, Random.value);
+            }
+            else if (u < 0.70f) // right band
+            {
+                x = Mathf.Lerp(h.xMax - h.width * 0.22f, h.xMax, Random.value);
+                y = Mathf.Lerp(h.yMin, h.yMax, Random.value);
+            }
+            else // top/bottom band
+            {
+                x = Mathf.Lerp(h.xMin, h.xMax, Random.value);
+                y = Random.value < 0.5f
+                    ? Mathf.Lerp(h.yMin, h.yMin + h.height * 0.28f, Random.value)
+                    : Mathf.Lerp(h.yMax - h.height * 0.28f, h.yMax, Random.value);
+            }
+            return new Vector2(x, y);
+        }
+
         void RetargetSplashFlutter(int i, bool spawn)
         {
-            float margin = 48f;
-            float yLo = Screen.height * 0.18f;
-            float yHi = Screen.height * 0.52f; // stay above flower play disc
-            Vector2 a = spawn
-                ? new Vector2(Random.Range(margin, Screen.width - margin), Random.Range(yLo, yHi))
-                : _splashFlutters[i].To;
+            Vector2 a = spawn ? RandomInTitleHalo() : _splashFlutters[i].To;
             Vector2 b;
             int guard = 0;
             do
             {
-                b = new Vector2(Random.Range(margin, Screen.width - margin), Random.Range(yLo, yHi));
+                b = RandomInTitleHalo();
                 guard++;
-            } while (Vector2.Distance(a, b) < Screen.width * 0.22f && guard < 8);
+            } while (Vector2.Distance(a, b) < Screen.width * 0.10f && guard < 10);
 
             var cols = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet };
             _splashFlutters[i] = new SplashFlutter
@@ -2811,7 +2844,7 @@ namespace FlockFive
                 From = a,
                 To = b,
                 T = 0f,
-                Dur = Random.Range(2.6f, 4.8f),
+                Dur = Random.Range(2.2f, 3.8f),
                 Col = cols[(i + Random.Range(0, cols.Length)) % cols.Length],
                 FaceLeft = b.x < a.x
             };
@@ -2820,7 +2853,7 @@ namespace FlockFive
         void DrawAmbientSplashBirds(float s)
         {
             EnsureSplashFlutters();
-            float icon = 44f * s;
+            float icon = 36f * s; // subtle companions around the logo
             var prev = GUI.color;
             for (int i = 0; i < _splashFlutters.Length; i++)
             {
@@ -2833,7 +2866,7 @@ namespace FlockFive
                 }
                 float u = f.T * f.T * (3f - 2f * f.T); // smoothstep
                 Vector2 p = Vector2.Lerp(f.From, f.To, u);
-                p.y += Mathf.Sin(u * Mathf.PI) * (-36f * s);
+                p.y += Mathf.Sin(u * Mathf.PI) * (-18f * s);
                 var spr = SpriteCatalog.BirdFrame(f.Col, Time.unscaledTime * 9f + i * 1.7f, true);
                 if (spr == null || spr.texture == null)
                 {
