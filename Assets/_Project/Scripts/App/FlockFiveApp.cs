@@ -82,6 +82,7 @@ namespace FlockFive
         int _shotLevelNumber;
         string _shotEase;
         bool _recordSmash;
+        int _recordFrameCount;
         // Home splash ambient flutters (1–2 birds; draw-only, no hit targets).
         struct SplashFlutter
         {
@@ -428,12 +429,15 @@ namespace FlockFive
             yield return new WaitForSecondsRealtime(4.2f);
             _recordSmash = false;
             yield return rec;
-            EncodeSmashVideo(frames, dir + "/splash-birds.mp4");
+            float fps = _recordFrameCount / 4.2f;
+            if (fps < 5f) fps = 15f;
+            EncodeSmashVideo(frames, dir + "/splash-birds.mp4", fps);
         }
 
         IEnumerator RecordSmashFrames(string frames)
         {
             int i = 0;
+            _recordFrameCount = 0;
             float next = Time.unscaledTime;
             const float step = 1f / 30f;
             while (_recordSmash)
@@ -448,6 +452,7 @@ namespace FlockFive
                         frames + "/" + i.ToString("D4") + ".jpg",
                         tex.EncodeToJPG(82));
                     i++;
+                    _recordFrameCount = i;
                     next = Time.unscaledTime + step;
                 }
                 catch { }
@@ -455,12 +460,13 @@ namespace FlockFive
             }
         }
 
-        static void EncodeSmashVideo(string frames, string mp4)
+        static void EncodeSmashVideo(string frames, string mp4, float fps)
         {
+            string rate = fps.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "/opt/homebrew/bin/ffmpeg",
-                Arguments = "-y -framerate 30 -i \"" + frames + "/%04d.jpg\" -c:v libx264 -pix_fmt yuv420p -crf 23 -movflags +faststart \"" + mp4 + "\"",
+                Arguments = "-y -framerate " + rate + " -i \"" + frames + "/%04d.jpg\" -c:v libx264 -pix_fmt yuv420p -crf 23 -movflags +faststart \"" + mp4 + "\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardError = true,
