@@ -2408,16 +2408,25 @@ namespace FlockFive
             float s = Mathf.Max(Screen.height / 720f, 1f);
             DrawHomeWash(0.18f);
 
+            // Home title: stacked FLOCK / FIVE in the finale mark family
+            // (cream fill + navy outline + soft drop) — OnGUI cousin of FinaleShow lockup.
+            float top = Mathf.Max(20f, Screen.height - Screen.safeArea.yMax + 8f);
+            float lineH = 54f * s;
             var title = new GUIStyle(GUI.skin.label)
             {
-                fontSize = Mathf.RoundToInt(44 * s),
+                fontSize = Mathf.RoundToInt(52 * s),
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter
             };
-            title.normal.textColor = new Color(1f, 0.94f, 0.72f);
-
-            float top = Mathf.Max(24f, Screen.height - Screen.safeArea.yMax + 12f);
-            GUI.Label(new Rect(20, top, Screen.width - 40, 70 * s), "FLOCK FIVE", title);
+            var fill = new Color(1f, 0.94f, 0.72f);
+            var outline = new Color(28f / 255f, 44f / 255f, 102f / 255f, 1f); // Finale ExtrudeNear
+            var shadow = new Color(3f / 255f, 5f / 255f, 12f / 255f, 0.62f);
+            int ox = Mathf.Max(3, Mathf.RoundToInt(3.5f * s));
+            var shadowOff = new Vector2(2.8f * s, 3.6f * s);
+            var flockR = new Rect(12f, top, Screen.width - 24f, lineH);
+            var fiveR = new Rect(12f, top + lineH * 0.82f, Screen.width - 24f, lineH);
+            StampMark(flockR, "FLOCK", title, fill, outline, ox, shadow, shadowOff);
+            StampMark(fiveR, "FIVE", title, fill, outline, ox, shadow, shadowOff);
             DrawStreakRewards(s);
 
             int next = LevelData.NextPlay;
@@ -2683,6 +2692,20 @@ namespace FlockFive
             Ring(r, text, st, whitePx + blackPx);
             Paint(st, Color.white);
             Ring(r, text, st, whitePx);
+            Paint(st, fill);
+            GUI.Label(r, text, st);
+        }
+
+        // Finale-family wordmark stamp: navy outline + cream face + soft drop (no white halo).
+        static void StampMark(Rect r, string text, GUIStyle st, Color fill, Color outline, int outlinePx, Color shadow, Vector2 shadowOff)
+        {
+            if (shadow.a > 0.01f)
+            {
+                Paint(st, shadow);
+                GUI.Label(new Rect(r.x + shadowOff.x, r.y + shadowOff.y, r.width, r.height), text, st);
+            }
+            Paint(st, outline);
+            Ring(r, text, st, outlinePx);
             Paint(st, fill);
             GUI.Label(r, text, st);
         }
