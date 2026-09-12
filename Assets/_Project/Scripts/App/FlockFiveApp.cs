@@ -404,6 +404,7 @@ namespace FlockFive
             yield return ShotSplashLevel(2, 1, "Easy", dir + "/splash-joke-easy.png");
             yield return ShotSplashLevel(4, 3, "Super Easy", dir + "/splash-joke-super-easy.png");
             yield return ShotSplashLevel(6, 5, "Super Duper Easy", dir + "/splash-joke-super-duper-easy.png");
+            yield return ShotSplashLevel(1, 0, "", dir + "/splash-joke-none.png");
             _shotLevelNumber = 6;
             _shotEase = "Super Duper Easy";
             PlayerPrefs.SetInt("flockfive.next", 5);
@@ -2442,31 +2443,37 @@ namespace FlockFive
         {
             var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
-            // Nit: max type, center LEVEL+joke on the gold disc, tiny tighter gap.
-            // LEVEL over joke; 100+ probe kept.
+            // One centered field: LEVEL over joke. Nudge LEVEL down within the field.
+            // No-joke: LEVEL alone stays dead-centered on the disc. 100+ probe kept.
             Rect lvR;
             Rect jokeR;
+            TextAnchor lvAlign;
             if (hasEase)
             {
                 float padX = disc.width * 0.04f;
                 float stackH = disc.height * 0.58f;
                 float stackY = disc.y + (disc.height - stackH) * 0.5f;
-                float gap = disc.height * 0.006f; // nit: tiny closer LEVEL–joke; sizes/center unchanged
-                float lvH = stackH * 0.54f;
+                float gap = disc.height * 0.005f;
+                float lvH = stackH * 0.52f;
                 float jokeH = stackH - lvH - gap;
                 lvR = new Rect(disc.x + padX, stackY, disc.width - padX * 2f, lvH);
                 jokeR = new Rect(disc.x + padX, stackY + lvH + gap, disc.width - padX * 2f, jokeH);
+                lvAlign = TextAnchor.LowerCenter; // bring LEVEL down toward the joke
             }
             else
             {
-                lvR = new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.84f);
+                float padX = disc.width * 0.04f;
+                float aloneH = disc.height * 0.55f;
+                float aloneY = disc.y + (disc.height - aloneH) * 0.5f;
+                lvR = new Rect(disc.x + padX, aloneY, disc.width - padX * 2f, aloneH);
                 jokeR = default;
+                lvAlign = TextAnchor.MiddleCenter;
             }
 
             var lv = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
+                alignment = lvAlign,
                 wordWrap = false
             };
             string level = "LEVEL " + number;
@@ -2486,7 +2493,7 @@ namespace FlockFive
             var joke = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
+                alignment = TextAnchor.UpperCenter,
                 wordWrap = false
             };
             int n = ease.Length;
