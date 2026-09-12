@@ -409,40 +409,26 @@ namespace FlockFive
 
         IEnumerator ShotSplashButtons()
         {
-            // Home still is LEVEL 1 (blank). Finale clip is end-of-play through peach smash.
+            // Quick home splash clip so bots can proof birds around the title.
             const string dir = "/tmp/paradice";
             System.IO.Directory.CreateDirectory(dir);
-            yield return ShotSplashLevel(1, 0, "", dir + "/splash-joke-blank.png");
-            try { System.IO.File.Copy(dir + "/splash-joke-blank.png", dir + "/splash-joke-none.png", true); } catch { }
-            yield return ShotFinaleSmash(dir);
             _shotLevelNumber = 1;
             _shotEase = "";
             PlayerPrefs.SetInt("flockfive.next", 0);
             PlayerPrefs.Save();
-        }
+            _home = HomeFace.Splash;
+            _splash = true;
+            yield return new WaitForSecondsRealtime(0.55f);
 
-        IEnumerator ShotFinaleSmash(string dir)
-        {
-            Load(0);
-            yield return new WaitForSecondsRealtime(1.15f);
-            if (_garden.Root == null) yield break;
-
-            string frames = dir + "/finale-frames";
+            string frames = dir + "/splash-frames";
             try { if (System.IO.Directory.Exists(frames)) System.IO.Directory.Delete(frames, true); } catch { }
             System.IO.Directory.CreateDirectory(frames);
-
-            StopPests();
             _recordSmash = true;
             var rec = StartCoroutine(RecordSmashFrames(frames));
-            yield return new WaitForSecondsRealtime(0.28f);
-            _busy = true;
-            _won = true;
-            yield return FinaleShow.Play(_garden, this);
-            yield return new WaitForSecondsRealtime(0.40f);
+            yield return new WaitForSecondsRealtime(4.0f);
             _recordSmash = false;
             yield return rec;
-            EncodeSmashVideo(frames, dir + "/finale-smash.mp4");
-            _busy = false;
+            EncodeSmashVideo(frames, dir + "/splash-birds.mp4");
         }
 
         IEnumerator RecordSmashFrames(string frames)
