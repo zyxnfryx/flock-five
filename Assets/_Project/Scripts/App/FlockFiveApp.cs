@@ -2447,7 +2447,7 @@ namespace FlockFive
             var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
             // LEVEL over joke as one field, biased down off the top rim.
-            // Blank: LEVEL alone slightly down + right. Text Y-squashed to sit flush on the angled plate.
+            // Blank: LEVEL alone slightly down + right. Flat type (no plate tilt squash).
             Rect lvR;
             Rect jokeR;
             TextAnchor lvAlign;
@@ -2455,7 +2455,7 @@ namespace FlockFive
             {
                 float padX = disc.width * 0.04f;
                 float stackH = disc.height * 0.56f;
-                float stackY = disc.y + (disc.height - stackH) * 0.62f; // drop off top rim
+                float stackY = disc.y + (disc.height - stackH) * 0.62f;
                 float gap = disc.height * 0.005f;
                 float lvH = stackH * 0.52f;
                 float jokeH = stackH - lvH - gap;
@@ -2467,8 +2467,8 @@ namespace FlockFive
             {
                 float padX = disc.width * 0.04f;
                 float aloneH = disc.height * 0.55f;
-                float aloneY = disc.y + (disc.height - aloneH) * 0.5f + disc.height * 0.045f; // down a little
-                float aloneX = disc.x + padX + disc.width * 0.035f; // right a little
+                float aloneY = disc.y + (disc.height - aloneH) * 0.5f + disc.height * 0.045f;
+                float aloneX = disc.x + padX + disc.width * 0.035f;
                 lvR = new Rect(aloneX, aloneY, disc.width - padX * 2f - disc.width * 0.035f, aloneH);
                 jokeR = default;
                 lvAlign = TextAnchor.MiddleCenter;
@@ -2495,32 +2495,23 @@ namespace FlockFive
                 lvR.height * (hasEase ? 0.95f : 0.80f),
                 quad ? 22 : (triple ? 26 : 30), lvHi);
             int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
-            StampOnDisc(disc, lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, 1);
+            StampOutlined(lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, 1);
 
             if (!hasEase) return;
 
+            // Joke keeps full size; width tracks LEVEL+digits (not shrunk by high level counts).
             var joke = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.UpperCenter,
                 wordWrap = false
             };
-            int n = ease.Length;
-            float maxW = jokeR.width * (n <= 6 ? 0.78f : (n <= 12 ? 0.96f : 0.99f));
-            int jHi = n >= 14 ? 40 : 48;
-            if (triple || quad) jHi = Mathf.Min(jHi, quad ? 28 : 32);
-            joke.fontSize = FitFont(joke, ease, maxW, jokeR.height * 0.95f, 18, jHi);
+            float levelW = lv.CalcSize(new GUIContent(level)).x;
+            float jokeMaxW = Mathf.Min(jokeR.width * 0.99f, Mathf.Max(levelW, jokeR.width * 0.55f));
+            int jHi = ease.Length >= 14 ? 40 : 48;
+            joke.fontSize = FitFont(joke, ease, jokeMaxW, jokeR.height * 0.95f, 18, jHi);
             int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.10f));
-            StampOnDisc(disc, jokeR, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
-        }
-
-        // Squash Y around the disc center so OnGUI type sits flush on the foreshortened plate.
-        static void StampOnDisc(Rect disc, Rect r, string text, GUIStyle st, Color fill, int whitePx, int blackPx)
-        {
-            var prev = GUI.matrix;
-            GUIUtility.ScaleAroundPivot(new Vector2(1f, 0.84f), disc.center);
-            StampOutlined(r, text, st, fill, whitePx, blackPx);
-            GUI.matrix = prev;
+            StampOutlined(jokeR, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
         }
 
         static int FitFont(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi)
