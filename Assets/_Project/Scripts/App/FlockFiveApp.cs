@@ -2442,28 +2442,29 @@ namespace FlockFive
         {
             var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
-            // Pass 2: drop stack lower — post-#68 stills still left empty plate under the joke.
-            // Three-digit probe keeps LEVEL 100+ from crowding the joke.
+            // Brandon pass-2 notes on post-#68 stills: lift stack, bigger type, more line gap.
+            // LEVEL over joke; 100+ probe kept. (#69 lower-drop was the wrong direction.)
             var lvR = hasEase
-                ? new Rect(disc.x + disc.width * 0.05f, disc.y + disc.height * 0.44f, disc.width * 0.90f, disc.height * 0.24f)
+                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.26f, disc.width * 0.92f, disc.height * 0.28f)
                 : new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.84f);
-            var jokeR = new Rect(disc.x + disc.width * 0.06f, disc.y + disc.height * 0.66f, disc.width * 0.88f, disc.height * 0.20f);
+            // Extra air between LEVEL band and joke band.
+            var jokeR = new Rect(disc.x + disc.width * 0.05f, disc.y + disc.height * 0.60f, disc.width * 0.90f, disc.height * 0.22f);
 
             var lv = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = hasEase ? TextAnchor.LowerCenter : TextAnchor.MiddleCenter,
+                alignment = hasEase ? TextAnchor.MiddleCenter : TextAnchor.MiddleCenter,
                 wordWrap = false
             };
             string level = "LEVEL " + number;
             bool triple = number >= 100;
             string fitProbe = (hasEase || triple) ? "LEVEL 888" : level;
-            int lvHi = hasEase ? (triple ? 48 : 58) : (triple ? 78 : 96);
+            int lvHi = hasEase ? (triple ? 56 : 72) : (triple ? 78 : 96);
             lv.fontSize = FitFont(
                 lv, fitProbe,
-                lvR.width * (triple ? 0.94f : 0.90f),
+                lvR.width * (triple ? 0.94f : 0.92f),
                 lvR.height * (hasEase ? 0.92f : 0.80f),
-                triple ? 22 : 26, lvHi);
+                triple ? 24 : 28, lvHi);
             int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
             StampOutlined(lvR, level, lv, new Color(0.36f, 0.18f, 0.07f), white, 1);
 
@@ -2472,14 +2473,14 @@ namespace FlockFive
             var joke = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.UpperCenter,
+                alignment = TextAnchor.MiddleCenter,
                 wordWrap = false
             };
             int n = ease.Length;
-            float maxW = jokeR.width * (n <= 6 ? 0.70f : (n <= 12 ? 0.92f : 0.98f));
-            int jHi = n >= 14 ? 28 : 34;
-            if (triple) jHi = Mathf.Min(jHi, 24);
-            joke.fontSize = FitFont(joke, ease, maxW, jokeR.height * 0.92f, 15, jHi);
+            float maxW = jokeR.width * (n <= 6 ? 0.72f : (n <= 12 ? 0.94f : 0.98f));
+            int jHi = n >= 14 ? 34 : 40;
+            if (triple) jHi = Mathf.Min(jHi, 28);
+            joke.fontSize = FitFont(joke, ease, maxW, jokeR.height * 0.90f, 16, jHi);
             int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.10f));
             StampOutlined(jokeR, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
         }
