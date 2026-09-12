@@ -81,6 +81,7 @@ namespace FlockFive
         Coroutine _hawkRun;
         int _shotLevelNumber;
         string _shotEase;
+        bool _recordSmash;
 
         void Start()
         {
@@ -398,21 +399,89 @@ namespace FlockFive
 
         IEnumerator ShotSplashButtons()
         {
-            // Stills: blank, 2/4/6 joke lengths, and LEVEL 1000 FitFont stress.
-            // Brandon copies /tmp/paradice → Playtest/splash-buttons/ with these names.
+            // Home still is LEVEL 1 (blank). Finale clip is end-of-play through peach smash.
             const string dir = "/tmp/paradice";
             System.IO.Directory.CreateDirectory(dir);
             yield return ShotSplashLevel(1, 0, "", dir + "/splash-joke-blank.png");
-            yield return ShotSplashLevel(2, 1, "Easy", dir + "/splash-joke-easy.png");
-            yield return ShotSplashLevel(4, 3, "Super Easy", dir + "/splash-joke-super-easy.png");
-            yield return ShotSplashLevel(6, 5, "Super Duper Easy", dir + "/splash-joke-super-duper-easy.png");
-            yield return ShotSplashLevel(1000, 5, "Super Duper Easy", dir + "/splash-level-1000.png");
-            _shotLevelNumber = 6;
-            _shotEase = "Super Duper Easy";
-            PlayerPrefs.SetInt("flockfive.next", 5);
-            PlayerPrefs.Save();
-            try { System.IO.File.Copy(dir + "/splash-joke-super-duper-easy.png", dir + "/splash-sde.png", true); } catch { }
             try { System.IO.File.Copy(dir + "/splash-joke-blank.png", dir + "/splash-joke-none.png", true); } catch { }
+            yield return ShotFinaleSmash(dir);
+            _shotLevelNumber = 1;
+            _shotEase = "";
+            PlayerPrefs.SetInt("flockfive.next", 0);
+            PlayerPrefs.Save();
+        }
+
+        IEnumerator ShotFinaleSmash(string dir)
+        {
+            Load(0);
+            yield return new WaitForSecondsRealtime(1.15f);
+            if (_garden.Root == null) yield break;
+
+            string frames = dir + "/finale-frames";
+            try { if (System.IO.Directory.Exists(frames)) System.IO.Directory.Delete(frames, true); } catch { }
+            System.IO.Directory.CreateDirectory(frames);
+
+            StopPests();
+            _recordSmash = true;
+            var rec = StartCoroutine(RecordSmashFrames(frames));
+            yield return new WaitForSecondsRealtime(0.28f);
+            _busy = true;
+            _won = true;
+            yield return FinaleShow.Play(_garden, this);
+            yield return new WaitForSecondsRealtime(0.40f);
+            _recordSmash = false;
+            yield return rec;
+            EncodeSmashVideo(frames, dir + "/finale-smash.mp4");
+            _busy = false;
+        }
+
+        IEnumerator RecordSmashFrames(string frames)
+        {
+            int i = 0;
+            float next = Time.unscaledTime;
+            const float step = 1f / 30f;
+            while (_recordSmash)
+            {
+                yield return new WaitForEndOfFrame();
+                if (Time.unscaledTime < next) continue;
+                next += step;
+                var tex = ScreenCapture.CaptureScreenshotAsTexture();
+                if (tex == null) continue;
+                try
+                {
+                    System.IO.File.WriteAllBytes(
+                        frames + "/" + i.ToString("D4") + ".jpg",
+                        tex.EncodeToJPG(82));
+                    i++;
+                }
+                catch { }
+                Destroy(tex);
+            }
+        }
+
+        static void EncodeSmashVideo(string frames, string mp4)
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "/opt/homebrew/bin/ffmpeg",
+                Arguments = "-y -framerate 30 -i \"" + frames + "/%04d.jpg\" -c:v libx264 -pix_fmt yuv420p -crf 23 -movflags +faststart \"" + mp4 + "\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true
+            };
+            try
+            {
+                using (var p = System.Diagnostics.Process.Start(psi))
+                {
+                    if (p == null) return;
+                    p.WaitForExit(120000);
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("finale smash encode: " + e.Message);
+            }
         }
 
         IEnumerator ShotSplashLevel(int number, int next, string ease, string path)
