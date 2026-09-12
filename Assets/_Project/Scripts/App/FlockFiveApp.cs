@@ -2447,13 +2447,13 @@ namespace FlockFive
             var lvR = hasEase
                 ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.26f, disc.width * 0.92f, disc.height * 0.28f)
                 : new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.84f);
-            // Extra air between LEVEL band and joke band.
-            var jokeR = new Rect(disc.x + disc.width * 0.05f, disc.y + disc.height * 0.60f, disc.width * 0.90f, disc.height * 0.22f);
+            // Pass 3: cut #70 line gap by ~2/3 (was ~0.06 disc → ~0.02).
+            var jokeR = new Rect(disc.x + disc.width * 0.05f, disc.y + disc.height * 0.56f, disc.width * 0.90f, disc.height * 0.22f);
 
             var lv = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = hasEase ? TextAnchor.MiddleCenter : TextAnchor.MiddleCenter,
+                alignment = hasEase ? TextAnchor.LowerCenter : TextAnchor.MiddleCenter,
                 wordWrap = false
             };
             string level = "LEVEL " + number;
@@ -2473,7 +2473,7 @@ namespace FlockFive
             var joke = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
+                alignment = TextAnchor.UpperCenter,
                 wordWrap = false
             };
             int n = ease.Length;
