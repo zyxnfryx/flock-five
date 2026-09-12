@@ -398,18 +398,21 @@ namespace FlockFive
 
         IEnumerator ShotSplashButtons()
         {
-            // Primary compare: Levels 2 / 4 / 6 joke lengths (not digit-width pairs).
+            // Stills: blank, 2/4/6 joke lengths, and LEVEL 999 FitFont stress.
+            // Brandon copies /tmp/paradice → Playtest/splash-buttons/ with these names.
             const string dir = "/tmp/paradice";
             System.IO.Directory.CreateDirectory(dir);
+            yield return ShotSplashLevel(1, 0, "", dir + "/splash-joke-blank.png");
             yield return ShotSplashLevel(2, 1, "Easy", dir + "/splash-joke-easy.png");
             yield return ShotSplashLevel(4, 3, "Super Easy", dir + "/splash-joke-super-easy.png");
             yield return ShotSplashLevel(6, 5, "Super Duper Easy", dir + "/splash-joke-super-duper-easy.png");
-            yield return ShotSplashLevel(1, 0, "", dir + "/splash-joke-none.png");
+            yield return ShotSplashLevel(999, 5, "Super Duper Easy", dir + "/splash-level-999.png");
             _shotLevelNumber = 6;
             _shotEase = "Super Duper Easy";
             PlayerPrefs.SetInt("flockfive.next", 5);
             PlayerPrefs.Save();
             try { System.IO.File.Copy(dir + "/splash-joke-super-duper-easy.png", dir + "/splash-sde.png", true); } catch { }
+            try { System.IO.File.Copy(dir + "/splash-joke-blank.png", dir + "/splash-joke-none.png", true); } catch { }
         }
 
         IEnumerator ShotSplashLevel(int number, int next, string ease, string path)
