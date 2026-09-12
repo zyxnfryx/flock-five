@@ -2810,23 +2810,22 @@ namespace FlockFive
 
         void EnsureSplashFlutters()
         {
-            if (_splashFlutters != null && _splashFlutters.Length == 3) return;
-            _splashFlutters = new SplashFlutter[3];
+            // Pass 3: two companions only (Brandon ~1–2); recreate if still on the old trio.
+            if (_splashFlutters != null && _splashFlutters.Length == 2) return;
+            _splashFlutters = new SplashFlutter[2];
             var h = SplashTitleHalo();
-            // Ellipse just outside the stacked wordmark (avoid cutting through glyph holes).
-            float rx = h.width * 0.54f;
-            float ry = h.height * 0.68f;
-            // Match clip cast: gold / violet / teal.
-            var cols = new[] { BirdColor.Gold, BirdColor.Violet, BirdColor.Teal };
-            for (int i = 0; i < 3; i++)
+            // TIGHT ellipse — stay in logo halo (do not expand like #89).
+            float rx = h.width * 0.38f;
+            float ry = h.height * 0.46f;
+            var cols = new[] { BirdColor.Gold, BirdColor.Teal };
+            for (int i = 0; i < 2; i++)
             {
-                // Same sweep direction — no opposing hard reverse; phase-offset only.
                 _splashFlutters[i] = new SplashFlutter
                 {
-                    Angle = i * (Mathf.PI * 2f / 3f) + Random.Range(-0.15f, 0.15f),
-                    Speed = Random.Range(0.42f, 0.58f),
-                    RadiusX = rx * (0.88f + 0.08f * i),
-                    RadiusY = ry * (0.90f + 0.06f * i),
+                    Angle = i * Mathf.PI + Random.Range(-0.12f, 0.12f),
+                    Speed = Random.Range(0.40f, 0.52f),
+                    RadiusX = rx * (0.96f + 0.04f * i),
+                    RadiusY = ry * (0.96f + 0.04f * i),
                     BobPhase = Random.Range(0f, Mathf.PI * 2f),
                     Col = cols[i]
                 };
@@ -2840,44 +2839,54 @@ namespace FlockFive
             float capH = 56f * Mathf.Max(Screen.height / 720f, 1f);
             float rowGap = 4f * Mathf.Max(Screen.height / 720f, 1f);
             float titleH = capH * 2f + rowGap;
-            float padX = Screen.width * 0.14f;
-            float padY = 22f * Mathf.Max(Screen.height / 720f, 1f);
+            float padX = Screen.width * 0.18f; // tighter logo halo
+            float padY = 16f * Mathf.Max(Screen.height / 720f, 1f);
             return new Rect(padX, Mathf.Max(4f, top - padY * 0.35f), Screen.width - padX * 2f, titleH + padY);
         }
 
-        // behind=true: draw birds whose orbit is in the "back" half (weave under letters).
+        // behind=true: upper half of ellipse draws under letter faces (true z-weave).
+        // Radii stay tight + positions clamped to halo — no #89 wander regress.
         void DrawAmbientSplashBirds(float s, bool behind)
         {
             EnsureSplashFlutters();
             var h = SplashTitleHalo();
             Vector2 c = h.center;
-            float icon = 30f * s;
+            float icon = 26f * s;
             var prev = GUI.color;
-            float dt = behind ? Time.unscaledDeltaTime : 0f; // advance once per frame (behind pass)
+            float dt = behind ? Time.unscaledDeltaTime : 0f;
+            float pad = icon * 0.55f;
             for (int i = 0; i < _splashFlutters.Length; i++)
             {
                 var f = _splashFlutters[i];
                 if (behind)
                 {
-                    // Smooth continuous sweep — no direction flips.
-                    float speed = f.Speed * (0.94f + 0.06f * Mathf.Sin(Time.unscaledTime * 0.55f + f.BobPhase));
+                    float speed = f.Speed * (0.95f + 0.05f * Mathf.Sin(Time.unscaledTime * 0.5f + f.BobPhase));
                     f.Angle += speed * dt;
                     _splashFlutters[i] = f;
                 }
-                // sin(angle)>0 ≈ lower/front of ellipse in our y-down GUI; weave opposite.
-                bool isBehind = Mathf.Cos(f.Angle) > 0.08f; // "top/back" of orbit
-                if (behind != isBehind) continue;
+                // y-down: Sin<0 = above title = behind letters; Sin>0 = below = in front.
+                float depth = Mathf.Sin(f.Angle);
+                bool isBehind = depth < -0.10f;
+                bool isFront = depth > 0.10f;
+                if (behind && !isBehind) continue;
+                if (!behind && !isFront) continue;
 
                 float x = c.x + Mathf.Cos(f.Angle) * f.RadiusX;
                 float y = c.y + Mathf.Sin(f.Angle) * f.RadiusY;
-                y += Mathf.Sin(Time.unscaledTime * 2.1f + f.BobPhase) * (4.5f * s);
+                y += Mathf.Sin(Time.unscaledTime * 2.0f + f.BobPhase) * (3.0f * s);
+                // Hard clamp into logo halo so birds never wander to screen edge / LEVEL.
+                x = Mathf.Clamp(x, h.xMin + pad, h.xMax - pad);
+                y = Mathf.Clamp(y, h.yMin + pad, h.yMax - pad);
+
+                float scale = behind ? 0.92f : 1.04f;
+                float iw = icon * scale;
                 float vx = -Mathf.Sin(f.Angle) * f.RadiusX;
                 bool faceLeft = vx < 0f;
                 var spr = SpriteCatalog.BirdFrame(f.Col, Time.unscaledTime * 11f + i * 2.1f, true);
                 if (spr == null || spr.texture == null) continue;
-                var r = new Rect(x - icon * 0.5f, y - icon * 0.5f, icon, icon);
-                float dim = behind ? 0.78f : 0.94f;
-                GUI.color = new Color(dim, dim, dim, behind ? 0.82f : 0.94f);
+                var r = new Rect(x - iw * 0.5f, y - iw * 0.5f, iw, iw);
+                float dim = behind ? 0.74f : 0.98f;
+                GUI.color = new Color(dim, dim, dim, behind ? 0.80f : 0.95f);
                 if (faceLeft)
                 {
                     var m = GUI.matrix;
