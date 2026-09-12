@@ -2442,9 +2442,9 @@ namespace FlockFive
         {
             var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
-            // Joke on the upper gold rim; LEVEL in the bowl with clear air under the arc.
+            // Joke on the upper gold rim; LEVEL pulled up to close the air under the arc.
             var lvR = hasEase
-                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.50f, disc.width * 0.92f, disc.height * 0.44f)
+                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.40f, disc.width * 0.92f, disc.height * 0.50f)
                 : new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.84f);
 
             if (hasEase)
@@ -2469,7 +2469,7 @@ namespace FlockFive
             var lv = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = hasEase ? TextAnchor.MiddleCenter : TextAnchor.MiddleCenter,
+                alignment = hasEase ? TextAnchor.UpperCenter : TextAnchor.MiddleCenter,
                 wordWrap = false
             };
             string level = "LEVEL " + number;
@@ -2556,7 +2556,8 @@ namespace FlockFive
                 : Mathf.Clamp(disc.height / Mathf.Max(disc.width, 1f), 0.55f, 0.82f);
             float ry = rx * aspect;
             float cx = disc.center.x;
-            float cy = disc.y + disc.height * (n >= 14 ? 0.14f : 0.16f) + ry;
+            // Drop the bow a hair so it sits closer to LEVEL.
+            float cy = disc.y + disc.height * (n >= 14 ? 0.20f : 0.22f) + ry;
             float start = -span * 0.5f;
             float acc = 0f;
             float h = st.CalcSize(new GUIContent("Ag")).y;
