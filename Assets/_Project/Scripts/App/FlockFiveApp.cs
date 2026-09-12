@@ -2442,12 +2442,12 @@ namespace FlockFive
         {
             var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
-            // Tight LEVEL-over-joke stack mid-low on the disc — maximize open plate.
+            // Pass 2: drop stack lower — post-#68 stills still left empty plate under the joke.
             // Three-digit probe keeps LEVEL 100+ from crowding the joke.
             var lvR = hasEase
-                ? new Rect(disc.x + disc.width * 0.05f, disc.y + disc.height * 0.36f, disc.width * 0.90f, disc.height * 0.26f)
+                ? new Rect(disc.x + disc.width * 0.05f, disc.y + disc.height * 0.44f, disc.width * 0.90f, disc.height * 0.24f)
                 : new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.84f);
-            var jokeR = new Rect(disc.x + disc.width * 0.06f, disc.y + disc.height * 0.60f, disc.width * 0.88f, disc.height * 0.20f);
+            var jokeR = new Rect(disc.x + disc.width * 0.06f, disc.y + disc.height * 0.66f, disc.width * 0.88f, disc.height * 0.20f);
 
             var lv = new GUIStyle(GUI.skin.label)
             {
@@ -2477,9 +2477,9 @@ namespace FlockFive
             };
             int n = ease.Length;
             float maxW = jokeR.width * (n <= 6 ? 0.70f : (n <= 12 ? 0.92f : 0.98f));
-            int jHi = n >= 14 ? 26 : 32;
+            int jHi = n >= 14 ? 28 : 34;
             if (triple) jHi = Mathf.Min(jHi, 24);
-            joke.fontSize = FitFont(joke, ease, maxW, jokeR.height * 0.90f, 14, jHi);
+            joke.fontSize = FitFont(joke, ease, maxW, jokeR.height * 0.92f, 15, jHi);
             int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.10f));
             StampOutlined(jokeR, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
         }
