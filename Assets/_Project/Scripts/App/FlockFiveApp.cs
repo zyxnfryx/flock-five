@@ -2442,9 +2442,9 @@ namespace FlockFive
         {
             var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
-            // Joke on the upper gold rim; LEVEL pulled up to close the air under the arc.
+            // Joke on the upper gold rim; LEVEL hugged up under the bow (post-#64 stills: gap still open).
             var lvR = hasEase
-                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.40f, disc.width * 0.92f, disc.height * 0.50f)
+                ? new Rect(disc.x + disc.width * 0.04f, disc.y + disc.height * 0.32f, disc.width * 0.92f, disc.height * 0.52f)
                 : new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.84f);
 
             if (hasEase)
@@ -2456,11 +2456,11 @@ namespace FlockFive
                     wordWrap = false
                 };
                 // One family for Easy / Super Easy / Super Duper Easy.
-                // Long "Super Duper Easy" must shrink + track out — not crunch on the rim.
+                // Long string: track out + flatter bow; don't shrink so hard it reads thin.
                 int n = ease.Length;
-                float maxArcW = disc.width * (n <= 6 ? 0.62f : (n <= 12 ? 0.78f : 0.68f));
-                float maxArcH = disc.height * (n >= 14 ? 0.155f : 0.20f);
-                int hi = n >= 14 ? 30 : 40;
+                float maxArcW = disc.width * (n <= 6 ? 0.62f : (n <= 12 ? 0.78f : 0.74f));
+                float maxArcH = disc.height * (n >= 14 ? 0.17f : 0.20f);
+                int hi = n >= 14 ? 34 : 40;
                 joke.fontSize = FitFont(joke, ease, maxArcW, maxArcH, 18, hi);
                 int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.10f));
                 StampArced(disc, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 1);
@@ -2479,7 +2479,7 @@ namespace FlockFive
             lv.fontSize = FitFont(
                 lv, fitProbe,
                 lvR.width * 0.88f,
-                lvR.height * (hasEase ? 0.66f : 0.80f),
+                lvR.height * (hasEase ? 0.62f : 0.80f),
                 28, hasEase ? 68 : 96);
             int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
             int black = 1;
@@ -2556,8 +2556,8 @@ namespace FlockFive
                 : Mathf.Clamp(disc.height / Mathf.Max(disc.width, 1f), 0.55f, 0.82f);
             float ry = rx * aspect;
             float cx = disc.center.x;
-            // Drop the bow a hair so it sits closer to LEVEL.
-            float cy = disc.y + disc.height * (n >= 14 ? 0.20f : 0.22f) + ry;
+            // Drop the bow further toward LEVEL (post-#64 stills still had open air).
+            float cy = disc.y + disc.height * (n >= 14 ? 0.26f : 0.28f) + ry;
             float start = -span * 0.5f;
             float acc = 0f;
             float h = st.CalcSize(new GUIContent("Ag")).y;
