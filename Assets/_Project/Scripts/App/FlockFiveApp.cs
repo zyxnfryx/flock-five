@@ -83,13 +83,15 @@ namespace FlockFive
         string _shotEase;
         bool _recordSmash;
         int _recordFrameCount;
-        // Home splash ambient flutters (1–2 birds; draw-only, no hit targets).
+        // Home splash logo-halo orbits (1–2 birds; draw-only, no hit targets).
         struct SplashFlutter
         {
-            public Vector2 From, To;
-            public float T, Dur;
+            public float Angle;     // radians around title center
+            public float Speed;     // rad/sec (sign = direction)
+            public float RadiusX;   // ellipse radii (outside glyphs)
+            public float RadiusY;
+            public float BobPhase;
             public BirdColor Col;
-            public bool FaceLeft;
         }
         SplashFlutter[] _splashFlutters;
         static Sprite _splashPointedV;
@@ -2809,14 +2811,30 @@ namespace FlockFive
         {
             if (_splashFlutters != null && _splashFlutters.Length == 2) return;
             _splashFlutters = new SplashFlutter[2];
+            var h = SplashTitleHalo();
+            // Ellipse just outside the stacked wordmark (avoid cutting through glyph holes).
+            float rx = h.width * 0.52f;
+            float ry = h.height * 0.62f;
+            var cols = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet };
             for (int i = 0; i < 2; i++)
-                RetargetSplashFlutter(i, true);
+            {
+                float dir = (i % 2 == 0) ? 1f : -1f;
+                _splashFlutters[i] = new SplashFlutter
+                {
+                    Angle = i * Mathf.PI + Random.Range(-0.25f, 0.25f),
+                    Speed = dir * Random.Range(0.48f, 0.72f),
+                    RadiusX = rx * Random.Range(0.92f, 1.06f),
+                    RadiusY = ry * Random.Range(0.90f, 1.08f),
+                    BobPhase = Random.Range(0f, Mathf.PI * 2f),
+                    Col = cols[i % cols.Length]
+                };
+            }
         }
 
-        // Wander points in a soft halo around the stacked title mark (not whole homepage).
+        // Soft bounds around the stacked title mark (logo companions only).
         static Rect SplashTitleHalo()
         {
-            float top = Mathf.Max(10f, Screen.height - Screen.safeArea.yMax + 2f);
+            float top = Mathf.Max(12f, Screen.height - Screen.safeArea.yMax + 6f);
             float capH = 56f * Mathf.Max(Screen.height / 720f, 1f);
             float rowGap = 4f * Mathf.Max(Screen.height / 720f, 1f);
             float titleH = capH * 2f + rowGap;
@@ -2825,81 +2843,35 @@ namespace FlockFive
             return new Rect(padX, Mathf.Max(4f, top - padY * 0.35f), Screen.width - padX * 2f, titleH + padY);
         }
 
-        static Vector2 RandomInTitleHalo()
-        {
-            var h = SplashTitleHalo();
-            // Prefer edges/corners of the halo so birds orbit the wordmark, not sit on glyphs.
-            float u = Random.value;
-            float x, y;
-            if (u < 0.35f) // left band
-            {
-                x = Mathf.Lerp(h.xMin, h.xMin + h.width * 0.22f, Random.value);
-                y = Mathf.Lerp(h.yMin, h.yMax, Random.value);
-            }
-            else if (u < 0.70f) // right band
-            {
-                x = Mathf.Lerp(h.xMax - h.width * 0.22f, h.xMax, Random.value);
-                y = Mathf.Lerp(h.yMin, h.yMax, Random.value);
-            }
-            else // top/bottom band
-            {
-                x = Mathf.Lerp(h.xMin, h.xMax, Random.value);
-                y = Random.value < 0.5f
-                    ? Mathf.Lerp(h.yMin, h.yMin + h.height * 0.28f, Random.value)
-                    : Mathf.Lerp(h.yMax - h.height * 0.28f, h.yMax, Random.value);
-            }
-            return new Vector2(x, y);
-        }
-
-        void RetargetSplashFlutter(int i, bool spawn)
-        {
-            Vector2 a = spawn ? RandomInTitleHalo() : _splashFlutters[i].To;
-            Vector2 b;
-            int guard = 0;
-            do
-            {
-                b = RandomInTitleHalo();
-                guard++;
-            } while (Vector2.Distance(a, b) < Screen.width * 0.10f && guard < 10);
-
-            var cols = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet };
-            _splashFlutters[i] = new SplashFlutter
-            {
-                From = a,
-                To = b,
-                T = 0f,
-                Dur = Random.Range(2.2f, 3.8f),
-                Col = cols[(i + Random.Range(0, cols.Length)) % cols.Length],
-                FaceLeft = b.x < a.x
-            };
-        }
-
         void DrawAmbientSplashBirds(float s)
         {
             EnsureSplashFlutters();
-            float icon = 36f * s; // subtle companions around the logo
+            var h = SplashTitleHalo();
+            Vector2 c = h.center;
+            float icon = 32f * s;
             var prev = GUI.color;
+            float dt = Time.unscaledDeltaTime;
             for (int i = 0; i < _splashFlutters.Length; i++)
             {
                 var f = _splashFlutters[i];
-                f.T += Time.unscaledDeltaTime / Mathf.Max(0.2f, f.Dur);
-                if (f.T >= 1f)
-                {
-                    RetargetSplashFlutter(i, false);
-                    f = _splashFlutters[i];
-                }
-                float u = f.T * f.T * (3f - 2f * f.T); // smoothstep
-                Vector2 p = Vector2.Lerp(f.From, f.To, u);
-                p.y += Mathf.Sin(u * Mathf.PI) * (-18f * s);
-                var spr = SpriteCatalog.BirdFrame(f.Col, Time.unscaledTime * 9f + i * 1.7f, true);
+                // Gentle speed breathe so orbits feel alive, not mechanical.
+                float speed = f.Speed * (0.92f + 0.08f * Mathf.Sin(Time.unscaledTime * 0.7f + f.BobPhase));
+                f.Angle += speed * dt;
+                float x = c.x + Mathf.Cos(f.Angle) * f.RadiusX;
+                float y = c.y + Mathf.Sin(f.Angle) * f.RadiusY;
+                y += Mathf.Sin(Time.unscaledTime * 2.4f + f.BobPhase) * (5.5f * s);
+                // Face along tangent (velocity).
+                float vx = -Mathf.Sin(f.Angle) * f.RadiusX * Mathf.Sign(speed == 0f ? f.Speed : speed);
+                bool faceLeft = vx < 0f;
+                var spr = SpriteCatalog.BirdFrame(f.Col, Time.unscaledTime * 11f + i * 2.1f, true);
                 if (spr == null || spr.texture == null)
                 {
                     _splashFlutters[i] = f;
                     continue;
                 }
-                var r = new Rect(p.x - icon * 0.5f, p.y - icon * 0.5f, icon, icon);
-                GUI.color = new Color(1f, 1f, 1f, 0.90f);
-                if (f.FaceLeft)
+                var r = new Rect(x - icon * 0.5f, y - icon * 0.5f, icon, icon);
+                GUI.color = new Color(1f, 1f, 1f, 0.92f);
+                if (faceLeft)
                 {
                     var m = GUI.matrix;
                     GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), r.center);
