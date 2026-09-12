@@ -2694,10 +2694,10 @@ namespace FlockFive
         // Finale-family wordmark via letter sprites (yellow faces + navy ExtrudeNear/Far block).
         void DrawSplashTitleMark(float s)
         {
-            float top = Mathf.Max(8f, Screen.height - Screen.safeArea.yMax + 2f);
-            float maxW = Screen.width * 0.92f;
-            float capH = 84f * s; // closer to finale hold scale
-            float rowGap = 4f * s; // tighter FLOCK/FIVE sit
+            float top = Mathf.Max(12f, Screen.height - Screen.safeArea.yMax + 6f);
+            float maxW = Screen.width * 0.72f; // Brandon: reduce home logo size
+            float capH = 56f * s;
+            float rowGap = 4f * s;
             float tracking = -0.055f;
             DrawSplashWord("FLOCK", top, maxW, capH, tracking, s);
             DrawSplashWord("FIVE", top + capH + rowGap, maxW, capH, tracking, s);
@@ -2760,8 +2760,8 @@ namespace FlockFive
 
             var extrudeNear = new Color(28f / 255f, 44f / 255f, 102f / 255f, 1f);
             var extrudeFar = new Color(4f / 255f, 7f / 255f, 18f / 255f, 1f);
-            int layers = 14;
-            float stepPx = 1.65f * s * scale;
+            int layers = 11;
+            float stepPx = 1.25f * s * scale;
             float cursor = x;
             var prev = GUI.color;
             for (int i = 0; i < n; i++)
@@ -2825,11 +2825,11 @@ namespace FlockFive
         static Rect SplashTitleHalo()
         {
             float top = Mathf.Max(10f, Screen.height - Screen.safeArea.yMax + 2f);
-            float capH = 78f * Mathf.Max(Screen.height / 720f, 1f);
-            float rowGap = 6f * Mathf.Max(Screen.height / 720f, 1f);
+            float capH = 56f * Mathf.Max(Screen.height / 720f, 1f);
+            float rowGap = 4f * Mathf.Max(Screen.height / 720f, 1f);
             float titleH = capH * 2f + rowGap;
-            float padX = Screen.width * 0.08f;
-            float padY = 28f * Mathf.Max(Screen.height / 720f, 1f);
+            float padX = Screen.width * 0.14f;
+            float padY = 22f * Mathf.Max(Screen.height / 720f, 1f);
             return new Rect(padX, Mathf.Max(4f, top - padY * 0.35f), Screen.width - padX * 2f, titleH + padY);
         }
 
