@@ -83,7 +83,7 @@ namespace FlockFive
         string _shotEase;
         bool _recordSmash;
         int _recordFrameCount;
-        // Home splash logo-halo orbits (1–2 birds; draw-only, no hit targets).
+        // Home splash logo-halo orbits (five birds; draw-only, no hit targets).
         struct SplashFlutter
         {
             public float Angle;     // radians around title center
@@ -2810,23 +2810,25 @@ namespace FlockFive
 
         void EnsureSplashFlutters()
         {
-            // Pass 3: two companions only (Brandon ~1–2); recreate if still on the old trio.
-            if (_splashFlutters != null && _splashFlutters.Length == 2) return;
-            _splashFlutters = new SplashFlutter[2];
+            const int n = 5;
+            if (_splashFlutters != null && _splashFlutters.Length == n) return;
+            _splashFlutters = new SplashFlutter[n];
             var h = SplashTitleHalo();
             // TIGHT ellipse — stay in logo halo (do not expand like #89).
             float rx = h.width * 0.38f;
             float ry = h.height * 0.46f;
-            var cols = new[] { BirdColor.Gold, BirdColor.Teal };
-            for (int i = 0; i < 2; i++)
+            var cols = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet, BirdColor.Peach };
+            float step = Mathf.PI * 2f / n;
+            for (int i = 0; i < n; i++)
             {
+                float k = 0.90f + 0.025f * i;
                 _splashFlutters[i] = new SplashFlutter
                 {
-                    Angle = i * Mathf.PI + Random.Range(-0.12f, 0.12f),
+                    Angle = i * step,
                     Speed = Random.Range(0.40f, 0.52f),
-                    RadiusX = rx * (0.96f + 0.04f * i),
-                    RadiusY = ry * (0.96f + 0.04f * i),
-                    BobPhase = Random.Range(0f, Mathf.PI * 2f),
+                    RadiusX = rx * k,
+                    RadiusY = ry * k,
+                    BobPhase = i * 1.17f,
                     Col = cols[i]
                 };
             }
