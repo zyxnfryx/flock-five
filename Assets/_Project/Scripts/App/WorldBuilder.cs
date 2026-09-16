@@ -8,6 +8,24 @@ namespace FlockFive
         public const int Rows = 7;
         public const int Cols = 2;
         public const float LimbX = 2.38f;
+        // Wood sprite 1280px @ 140 PPU. X scale is long enough that Cap (5) birds sit on the limb.
+        public const float WoodScaleX = 0.64f;
+        public const float GiftWoodScaleX = 0.46f;
+        public const float WoodHalf = 1280f / 140f * WoodScaleX * 0.5f;
+
+        public static float WoodHalfOf(float woodScaleX) => 1280f / 140f * woodScaleX * 0.5f;
+
+        public static float EdgeX(Camera cam, float packScale) => EdgeX(cam, packScale, WoodScaleX);
+
+        public static float EdgeX(Camera cam, float packScale, float woodScaleX)
+        {
+            float halfW = cam != null
+                ? cam.orthographicSize * Mathf.Max(0.05f, cam.aspect)
+                : 10.6f * PortraitAspect;
+            float s = Mathf.Max(0.2f, packScale);
+            // Sit the outer bark on the bezel so limbs grow out of the screen edge.
+            return halfW - WoodHalfOf(woodScaleX) * s + 0.62f;
+        }
         public const float RowY0 = 3.42f;
         public const float RowGap = 1.42f;
         public const int GiftIndex = Rows * Cols;
@@ -29,6 +47,7 @@ namespace FlockFive
             root.SetParent(parent, false);
 
             var cam = MakeCamera(parent);
+            float limbX = EdgeX(cam, 1f);
 
             var bg = Sprite("Bg", SpriteCatalog.GardenBg, new Vector3(0f, -0.15f, 8f), 1f, -20, root);
             var fit = bg.AddComponent<BackgroundFitter>();
@@ -45,8 +64,8 @@ namespace FlockFive
             for (int row = 0; row < Rows; row++)
             {
                 float y = RowY0 - row * RowGap;
-                branches[row * 2] = MakeBranch(row * 2, new Vector2(-LimbX, y), false, root);
-                branches[row * 2 + 1] = MakeBranch(row * 2 + 1, new Vector2(LimbX, y), true, root);
+                branches[row * 2] = MakeBranch(row * 2, new Vector2(-limbX, y), false, root);
+                branches[row * 2 + 1] = MakeBranch(row * 2 + 1, new Vector2(limbX, y), true, root);
             }
             branches[GiftIndex] = MakeGift(root);
 
@@ -69,12 +88,12 @@ namespace FlockFive
 
         public static BranchView MakeSpare(int index, Vector2 pos, Transform parent)
         {
-            var view = MakeBranch(index, pos, false, parent);
+            var view = MakeBranch(index, pos, true, parent, GiftWoodScaleX);
             view.IsGift = true;
             if (view.Wood != null)
             {
                 view.Wood.sprite = SpriteCatalog.BranchGift;
-                view.Wood.transform.localScale = new Vector3(0.46f, 0.52f, 1f);
+                view.Wood.transform.localScale = new Vector3(GiftWoodScaleX, 0.52f, 1f);
                 view.Wood.sortingOrder = 3;
             }
             return view;
@@ -82,12 +101,12 @@ namespace FlockFive
 
         static BranchView MakeGift(Transform parent)
         {
-            var view = MakeBranch(GiftIndex, new Vector2(0f, GiftY), false, parent);
+            var view = MakeBranch(GiftIndex, new Vector2(EdgeX(null, 1.22f, GiftWoodScaleX), GiftY), true, parent, GiftWoodScaleX);
             view.IsGift = true;
             if (view.Wood != null)
             {
                 view.Wood.sprite = SpriteCatalog.BranchGift;
-                view.Wood.transform.localScale = new Vector3(0.46f, 0.52f, 1f);
+                view.Wood.transform.localScale = new Vector3(GiftWoodScaleX, 0.52f, 1f);
                 view.Wood.sortingOrder = 3;
             }
 
@@ -97,24 +116,24 @@ namespace FlockFive
             var glow = glowGo.GetComponent<SpriteRenderer>();
             glow.color = new Color(1f, 0.86f, 0.42f, 0.28f);
 
-            // Sit farther off the spare perch, arrow still pointing at the limb.
+            // Hang the plank on the inner bark, arrow pointing into the spare perch.
             var signGo = Sprite("GiftSign", SpriteCatalog.AdSign, view.transform.position, 1f, 11, view.transform);
-            // Keep the full plank on-screen (was cropping the left edge).
-            signGo.transform.localPosition = new Vector3(-2.55f, 0.92f, 0f);
-            signGo.transform.localScale = new Vector3(0.36f, 0.36f, 1f);
+            signGo.transform.localPosition = new Vector3(-1.08f, 0.48f, 0f);
+            signGo.transform.localScale = new Vector3(0.26f, 0.26f, 1f);
+            signGo.transform.localRotation = Quaternion.Euler(0f, 0f, -6f);
             view.Sign = signGo.transform;
             var signCol = signGo.AddComponent<BoxCollider2D>();
             signCol.size = new Vector2(5.6f, 2.5f);
-            signCol.offset = new Vector2(-0.35f, 0f);
+            signCol.offset = new Vector2(-0.15f, 0f);
 
             var bulbs = PinBulbs(signGo.transform);
 
             // Soft wash behind the plank so the Watch sign reads lit from the back.
             var backGo = Sprite("SignBacklight", SpriteCatalog.Glow, signGo.transform.position, 1f, 10, signGo.transform);
             backGo.transform.localPosition = new Vector3(-0.25f, 0.05f, 0f);
-            backGo.transform.localScale = new Vector3(5.8f, 3.15f, 1f);
+            backGo.transform.localScale = new Vector3(4.2f, 2.2f, 1f);
             var backlight = backGo.GetComponent<SpriteRenderer>();
-            backlight.color = new Color(1f, 0.80f, 0.32f, 0.48f);
+            backlight.color = new Color(1f, 0.80f, 0.32f, 0.36f);
 
             var want = view.gameObject.AddComponent<GiftWant>();
             want.Glow = glow;
@@ -156,7 +175,7 @@ namespace FlockFive
             return bulbs;
         }
 
-        static BranchView MakeBranch(int index, Vector2 pos, bool fromRight, Transform parent)
+        static BranchView MakeBranch(int index, Vector2 pos, bool fromRight, Transform parent, float woodScaleX = WoodScaleX)
         {
             var go = new GameObject("Branch" + index);
             go.transform.SetParent(parent, false);
@@ -164,7 +183,7 @@ namespace FlockFive
 
             var woodGo = Sprite("Wood", SpriteCatalog.Branch, go.transform.position, 1f, 2, go.transform);
             woodGo.transform.localPosition = Vector3.zero;
-            woodGo.transform.localScale = new Vector3(0.42f, 0.50f, 1f);
+            woodGo.transform.localScale = new Vector3(woodScaleX, 0.50f, 1f);
             var wood = woodGo.GetComponent<SpriteRenderer>();
             wood.flipX = fromRight;
 
@@ -173,12 +192,14 @@ namespace FlockFive
             view.FromRight = fromRight;
             view.Wood = wood;
 
+            float half = WoodHalfOf(woodScaleX);
             var col = go.AddComponent<BoxCollider2D>();
-            col.size = new Vector2(5.1f, 2.7f);
+            col.size = new Vector2(half * 2.6f, 2.7f);
             col.offset = new Vector2(fromRight ? 0.08f : -0.08f, 0.62f);
 
-            float outer = fromRight ? 1.95f : -1.95f;
-            float inner = fromRight ? -1.72f : 1.72f;
+            // Outer seats stay inside the visible wood — 0.98 sat on the bezel and peeked off-screen.
+            float outer = fromRight ? half * 0.48f : -half * 0.48f;
+            float inner = fromRight ? -half * 0.86f : half * 0.86f;
             for (int s = 0; s < BranchState.Cap; s++)
             {
                 float u = BranchState.Cap <= 1 ? 0.5f : s / (float)(BranchState.Cap - 1);
@@ -295,3 +316,6 @@ namespace FlockFive
         }
     }
 }
+
+
+

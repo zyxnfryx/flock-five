@@ -11,6 +11,7 @@ namespace FlockFive
         public SpriteRenderer[] Bulbs;
         public bool On = true;
         Vector3 _signRest;
+        Quaternion _signRestRot = Quaternion.identity;
         Vector3[] _bulbRest;
         bool _rested;
 
@@ -19,6 +20,7 @@ namespace FlockFive
             if (Sign != null && !_rested)
             {
                 _signRest = Sign.localPosition;
+                _signRestRot = Sign.localRotation;
                 if (Bulbs != null)
                 {
                     _bulbRest = new Vector3[Bulbs.Length];
@@ -49,15 +51,15 @@ namespace FlockFive
                 Backlight.enabled = true;
                 // Warm back-fill — brighter toward the center, breathing with the marquee.
                 Backlight.color = new Color(1f, 0.82f, 0.34f, 0.40f + 0.26f * breathe);
-                float sx = 5.7f + 0.45f * breathe;
-                float sy = 3.05f + 0.28f * breathe;
+                float sx = 4.1f + 0.28f * breathe;
+                float sy = 2.15f + 0.18f * breathe;
                 Backlight.transform.localScale = new Vector3(sx, sy, 1f);
             }
             if (Sign != null)
             {
                 Sign.gameObject.SetActive(true);
                 Sign.localPosition = _signRest + new Vector3(0f, Mathf.Sin(t * 1.35f) * 0.028f, 0f);
-                Sign.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(t * 1.12f) * 3.4f);
+                Sign.localRotation = _signRestRot * Quaternion.Euler(0f, 0f, Mathf.Sin(t * 1.12f) * 3.4f);
             }
             Blink(t);
         }
@@ -98,3 +100,4 @@ namespace FlockFive
         }
     }
 }
+

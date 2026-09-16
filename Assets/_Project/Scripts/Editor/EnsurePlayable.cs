@@ -29,6 +29,18 @@ namespace FlockFive.Editor
             if (change == PlayModeStateChange.EnteredPlayMode ||
                 change == PlayModeStateChange.EnteredEditMode)
                 _enterQueued = false;
+            if (change == PlayModeStateChange.EnteredPlayMode)
+                EditorApplication.delayCall += EnsureAppInPlay;
+        }
+
+        static void EnsureAppInPlay()
+        {
+            if (!EditorApplication.isPlaying) return;
+            EditorApplication.isPaused = false;
+            if (Object.FindAnyObjectByType<FlockFive.FlockFiveApp>() != null) return;
+            var go = new GameObject("FlockFiveApp");
+            Object.DontDestroyOnLoad(go);
+            go.AddComponent<FlockFive.FlockFiveApp>();
         }
 
         [MenuItem("Flock Five/Ensure Project Setup")]
@@ -108,6 +120,8 @@ namespace FlockFive.Editor
                 PlayerSettings.defaultScreenWidth = 1080;
             if (PlayerSettings.defaultScreenHeight != 1920)
                 PlayerSettings.defaultScreenHeight = 1920;
+            if (!PlayerSettings.runInBackground)
+                PlayerSettings.runInBackground = true;
             UseInputSystemOnly();
         }
 
@@ -140,6 +154,8 @@ namespace FlockFive.Editor
                 Debug.Log("Flock Five: boot scene added to build settings.");
             }
 
+            if (PlayerSettings.insecureHttpOption != InsecureHttpOption.NotAllowed)
+                PlayerSettings.insecureHttpOption = InsecureHttpOption.NotAllowed;
             if (!PlayerSettings.iOS.appleEnableAutomaticSigning)
                 PlayerSettings.iOS.appleEnableAutomaticSigning = true;
             const string att = "Ads help keep Flock Five free.";
@@ -248,12 +264,52 @@ namespace FlockFive.Editor
             }
             ForcePortraitGameView();
             _enterQueued = false;
+            EditorApplication.isPaused = false;
             if (!EditorApplication.isPlaying)
                 EditorApplication.isPlaying = true;
         }
 
         static void TickPlayCmd()
         {
+            if (File.Exists("/tmp/flock-five-unpause")
+                || File.Exists("/tmp/flock-five-poker-faces")
+                || FlockFive.FlockFiveApp.EditorShotLive)
+            {
+                EditorApplication.isPaused = false;
+                try { if (File.Exists("/tmp/flock-five-unpause")) File.Delete("/tmp/flock-five-unpause"); } catch { }
+            }
+            if (File.Exists("/tmp/flock-five-poker-faces")
+                || File.Exists("/tmp/flock-five-streak-shot"))
+            {
+                EditorApplication.isPaused = false;
+                if (!EditorApplication.isPlaying)
+                {
+                    if (!EditorApplication.isCompiling) EnterPlay();
+                }
+                else
+                {
+                    EnsureAppInPlay();
+                    var app = Object.FindAnyObjectByType<FlockFive.FlockFiveApp>();
+                    if (app != null)
+                    {
+                        if (File.Exists("/tmp/flock-five-poker-faces"))
+                        {
+                            try { File.Delete("/tmp/flock-five-poker-faces"); } catch { }
+                            app.StartCoroutine("ShotPokerFaces");
+                        }
+                        if (File.Exists("/tmp/flock-five-streak-shot"))
+                        {
+                            try { File.Delete("/tmp/flock-five-streak-shot"); } catch { }
+                            app.StartCoroutine("ShotStreak");
+                        }
+                        if (File.Exists("/tmp/flock-five-gift-shot"))
+                        {
+                            try { File.Delete("/tmp/flock-five-gift-shot"); } catch { }
+                            app.StartCoroutine("ShotGift");
+                        }
+                    }
+                }
+            }
             if (!File.Exists(PlayCmd)) return;
             MaybePlayCmd();
         }
@@ -361,3 +417,5 @@ namespace FlockFive.Editor
     }
 }
 #endif
+
+

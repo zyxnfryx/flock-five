@@ -44,8 +44,11 @@ namespace FlockFive
         int _combo;
         float _comboUntil = -99f;
         bool _collecting;
+        bool _pestsArmed;
         float _nextTap;
+#if UNITY_EDITOR
         bool _finalePreview;
+#endif
         bool _splash = true;
         bool _levelHive;
         enum HomeFace { Splash, Hive, Poker }
@@ -55,11 +58,38 @@ namespace FlockFive
         float _pokerMotionT = 99f;
         readonly bool[] _pokerRedraw = new bool[BirdPoker.HandSize];
         readonly BirdPoker.Card[] _pokerPrev = new BirdPoker.Card[BirdPoker.HandSize];
+        bool _pokerFan;
+        float _pokerKickT;
+        float _pokerKickDur = 0.12f;
+        float _pokerKickAmp;
+        float _pokerKickTwist;
+        Vector2 _pokerKick;
+        int _pokerPluckN;
+        readonly int[] _pokerPluckIx = new int[BirdPoker.HandSize];
+        readonly int[] _pokerDrawOrder = new int[BirdPoker.HandSize];
+        float _pokerPluckEnd;
+        float _pokerReplaceEnd;
+        float _pokerRowEnd;
+        float _pokerDash;
+        bool _pokerChained;
+        float _pokerChainBreak = -1f;
+        readonly float[] _pokerHoldSlide = new float[BirdPoker.HandSize];
+        readonly Rect[] _pokerPoseR = new Rect[BirdPoker.HandSize];
+        readonly float[] _pokerPoseRoll = new float[BirdPoker.HandSize];
+        readonly Rect[] _pokerHoldFrom = new Rect[BirdPoker.HandSize];
+        readonly Rect[] _pokerDrawFrom = new Rect[BirdPoker.HandSize];
+        int _pokerHover = -1;
+        bool _pokerKeepHint;
+        bool _pokerShowPay;
+        bool _pokerPendingStamp;
+        int _pokerResultCue;
         bool _pokerStamp;
         float _pokerStampT;
         int _pokerStampKind = -1;
         bool _pokerPayOpen;
         float _pokerPayAnim;
+        bool _pokerPayJewelHeld;
+        bool _pokerBingo;
         enum GiftFace { None, Card, Movie, Thanks }
         GiftFace _gift;
         bool _frozen;
@@ -76,13 +106,17 @@ namespace FlockFive
         float _hiveInspectT; // 0..1 pull animation (open), also used for close
         bool _hiveInspectClosing;
         Rect _hiveInspectFrom; // sleeve rect when opened (for lerp)
+#if UNITY_EDITOR
         bool _pokerPlayrun;
+#endif
         Coroutine _sparrowRun;
         Coroutine _hawkRun;
+#if UNITY_EDITOR
         int _shotLevelNumber;
         string _shotEase;
         bool _recordSmash;
         int _recordFrameCount;
+#endif
         // Home splash logo-halo orbits (five birds; draw-only, no hit targets).
         struct SplashFlutter
         {
@@ -94,18 +128,27 @@ namespace FlockFive
             public BirdColor Col;
         }
         SplashFlutter[] _splashFlutters;
+        SplashFlutter[] _pokerFlutters;
         static Sprite _splashPointedV;
 
         void Start()
         {
+            Application.runInBackground = true;
             Screen.orientation = ScreenOrientation.Portrait;
             Screen.autorotateToPortrait = true;
             Screen.autorotateToPortraitUpsideDown = false;
             Screen.autorotateToLandscapeLeft = false;
             Screen.autorotateToLandscapeRight = false;
             Sfx.Warm();
+            SpriteCatalog.DropPokerArt();
             try { ShowSplash(); }
-            catch (System.Exception e) { Debug.LogException(e); }
+            catch (System.Exception e)
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                Debug.LogException(e);
+#endif
+            }
+#if UNITY_EDITOR
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
@@ -127,6 +170,21 @@ namespace FlockFive
                 _pokerPlayrun = true;
                 StartCoroutine(PokerPlayrun());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-poker-punches"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-poker-punches"); } catch { }
+                StartCoroutine(ShotPokerPunches());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-poker-faces"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-poker-faces"); } catch { }
+                StartCoroutine(ShotPokerFaces());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-poker-stamp"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-poker-stamp"); } catch { }
+                StartCoroutine(ShotPokerStamp());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-storm-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-storm-shot"); } catch { }
@@ -147,6 +205,12 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-level6"); } catch { }
                 StartCoroutine(ShotSplashButtons());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-streak-shot"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-streak-shot"); } catch { }
+                StartCoroutine(ShotStreak());
+            }
+#endif
         }
 
         void Restart()
@@ -193,6 +257,7 @@ namespace FlockFive
             _busy = false;
             _won = false;
             _sel = -1;
+            _pestsArmed = false;
             _combo = 0;
             _comboUntil = -99f;
             _collecting = false;
@@ -215,10 +280,14 @@ namespace FlockFive
             StartCoroutine(GardenFit.Tween(_garden, _board, true));
             Sfx.GardenWake();
             StopPests();
-            _sparrowRun = StartCoroutine(SparrowView.Patrol(CanSparrowVisit, _garden.Feeders, _garden.Root));
-            _hawkRun = StartCoroutine(HawkView.Patrol(CanHawkVisit, _garden.Feeders, _garden.Root));
+            _sparrowRun = StartCoroutine(SparrowView.Patrol(
+                CanSparrowVisit, PestsArmed, LevelData.SparrowVisits, _garden.Feeders, _garden.Root));
+            _hawkRun = StartCoroutine(HawkView.Patrol(
+                CanHawkVisit, PestsArmed, LevelData.HawkVisits, _garden.Feeders, _garden.Root));
+#if UNITY_EDITOR
             if (WantFinalePreview())
                 StartCoroutine(PreviewFinale());
+#endif
         }
 
         void StopSparrow()
@@ -258,6 +327,14 @@ namespace FlockFive
             !_splash && !_busy && !_won && !_frozen && !_levelHive
             && _gift == GiftFace.None && _board != null && !_board.Won;
 
+        bool PestsArmed() => _pestsArmed;
+
+        void ArmPests()
+        {
+            _pestsArmed = true;
+        }
+
+#if UNITY_EDITOR
         bool WantFinalePreview() =>
             !_finalePreview && System.IO.File.Exists("/tmp/flock-five-finale");
 
@@ -436,6 +513,39 @@ namespace FlockFive
             EncodeSmashVideo(frames, dir + "/splash-birds.mp4", fps);
         }
 
+        IEnumerator ShotStreak()
+        {
+#if UNITY_EDITOR
+            EditorShotLive = true;
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+#endif
+            const string dir = "/tmp/paradice";
+            System.IO.Directory.CreateDirectory(dir);
+            PrefGuard.SetInt("flockfive.streak", 5);
+            PlayerPrefs.SetInt("flockfive.instage", 0);
+            PlayerPrefs.Save();
+            ShowSplash();
+            Purse.Pending = 80;
+            ArmStreakSlide();
+            yield return new WaitForSecondsRealtime(0.85f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/streak-peek.png");
+            yield return new WaitForSecondsRealtime(1.55f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/streak-pop.png");
+            yield return new WaitForSecondsRealtime(1.45f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/streak-hold.png");
+            yield return new WaitForSecondsRealtime(1.7f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/streak-tuck.png");
+            Debug.Log("Flock Five: ShotStreak done");
+#if UNITY_EDITOR
+            EditorShotLive = false;
+#endif
+        }
+
         IEnumerator RecordSmashFrames(string frames)
         {
             int i = 0;
@@ -462,13 +572,18 @@ namespace FlockFive
             }
         }
 
-        static void EncodeSmashVideo(string frames, string mp4, float fps)
+        static void EncodeSmashVideo(string frames, string mp4, float fps, string wav = null)
         {
             string rate = fps.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+            string args = "-y -framerate " + rate + " -i \"" + frames + "/%04d.jpg\" ";
+            if (!string.IsNullOrEmpty(wav) && System.IO.File.Exists(wav))
+                args += "-i \"" + wav + "\" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -crf 23 -movflags +faststart \"" + mp4 + "\"";
+            else
+                args += "-c:v libx264 -pix_fmt yuv420p -crf 23 -movflags +faststart \"" + mp4 + "\"";
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "/opt/homebrew/bin/ffmpeg",
-                Arguments = "-y -framerate " + rate + " -i \"" + frames + "/%04d.jpg\" -c:v libx264 -pix_fmt yuv420p -crf 23 -movflags +faststart \"" + mp4 + "\"",
+                Arguments = args,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardError = true,
@@ -488,6 +603,310 @@ namespace FlockFive
             }
         }
 
+        class MixTap : MonoBehaviour
+        {
+            public volatile bool On;
+            readonly System.Collections.Generic.List<float> Buf = new System.Collections.Generic.List<float>(44100 * 8);
+            public void Clear() { lock (Buf) Buf.Clear(); }
+            public float[] Dump() { lock (Buf) return Buf.ToArray(); }
+            void OnAudioFilterRead(float[] data, int channels)
+            {
+                if (!On) return;
+                lock (Buf)
+                {
+                    for (int i = 0; i < data.Length; i++) Buf.Add(data[i]);
+                }
+            }
+        }
+
+        MixTap EnsureMixTap()
+        {
+            var cam = Camera.main;
+            if (cam == null) return null;
+            var tap = cam.GetComponent<MixTap>();
+            if (tap == null) tap = cam.gameObject.AddComponent<MixTap>();
+            return tap;
+        }
+
+        static void WriteWav(string path, float[] samples, int channels, int rate)
+        {
+            if (samples == null || samples.Length < channels) return;
+            int frames = samples.Length / channels;
+            short[] pcm = new short[samples.Length];
+            for (int i = 0; i < samples.Length; i++)
+            {
+                float v = Mathf.Clamp(samples[i], -1f, 1f);
+                pcm[i] = (short)Mathf.RoundToInt(v * 32767f);
+            }
+            using (var fs = new System.IO.FileStream(path, System.IO.FileMode.Create, System.IO.FileAccess.Write))
+            using (var bw = new System.IO.BinaryWriter(fs))
+            {
+                int dataBytes = pcm.Length * 2;
+                bw.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));
+                bw.Write(36 + dataBytes);
+                bw.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+                bw.Write(System.Text.Encoding.ASCII.GetBytes("fmt "));
+                bw.Write(16);
+                bw.Write((short)1);
+                bw.Write((short)channels);
+                bw.Write(rate);
+                bw.Write(rate * channels * 2);
+                bw.Write((short)(channels * 2));
+                bw.Write((short)16);
+                bw.Write(System.Text.Encoding.ASCII.GetBytes("data"));
+                bw.Write(dataBytes);
+                for (int i = 0; i < pcm.Length; i++) bw.Write(pcm[i]);
+            }
+        }
+
+        IEnumerator ShotPokerPunches()
+        {
+            const string dir = "/tmp/paradice/poker-punches";
+            const string seedPath = "/tmp/flock-five-poker-seeds.txt";
+            System.IO.Directory.CreateDirectory(dir);
+            _home = HomeFace.Poker;
+            _splash = true;
+            BirdPoker.Boot();
+            Purse.Boot();
+            if (Purse.Coins < 200000) Purse.Credit(200000 - Purse.Coins);
+            EnsureMixTap();
+
+            var seeds = new int[BirdPoker.PunchKinds];
+            var ranks = new string[BirdPoker.PunchKinds];
+            int bingoKind = 0, bingoSeed = -1;
+            if (System.IO.File.Exists(seedPath))
+            {
+                var lines = System.IO.File.ReadAllLines(seedPath);
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    var p = lines[i].Trim().Split(' ');
+                    if (p.Length < 3) continue;
+                    if (p[0] == "bingo")
+                    {
+                        int.TryParse(p[1], out bingoKind);
+                        int.TryParse(p[2], out bingoSeed);
+                        continue;
+                    }
+                    int k, s;
+                    if (!int.TryParse(p[0], out k) || !int.TryParse(p[1], out s)) continue;
+                    if ((uint)k >= (uint)seeds.Length) continue;
+                    seeds[k] = s;
+                    ranks[k] = p[2];
+                }
+            }
+
+            int keepFull = BirdPoker.FullcardCount;
+            int keepCoins = Purse.Coins;
+            var clips = new System.Collections.Generic.List<string>();
+            // Fast review set: regular, bow, crown, wilds — then fullcard.
+            int[] review =
+            {
+                BirdPoker.KindId(BirdColor.Ruby, BirdSex.Neutral),
+                BirdPoker.KindId(BirdColor.Ruby, BirdSex.Female),
+                BirdPoker.KindId(BirdColor.Ruby, BirdSex.Male),
+                BirdPoker.WildKind
+            };
+            string[] reviewName = { "regular", "bow", "crown", "wilds" };
+            for (int n = 0; n < review.Length; n++)
+            {
+                int k = review[n];
+                string mp4 = dir + "/poker-punch-" + reviewName[n] + ".mp4";
+                BirdPoker.ClearPunches();
+                if (k == BirdPoker.WildKind && seeds[k] <= 0)
+                    yield return ShotForcedWildPunch(mp4, 3.2f);
+                else if (seeds[k] > 0)
+                    yield return ShotOnePokerPunch(k, seeds[k], mp4, 3.2f);
+                else if (k == BirdPoker.WildKind)
+                    yield return ShotForcedWildPunch(mp4, 3.2f);
+                else
+                    continue;
+                if (System.IO.File.Exists(mp4)) clips.Add(mp4);
+            }
+            int bk = bingoKind;
+            int bs = bingoSeed;
+            if (bs <= 0)
+            {
+                for (int k = 0; k < seeds.Length; k++)
+                    if (seeds[k] > 0) { bk = k; bs = seeds[k]; break; }
+            }
+            string bingoMp4 = dir + "/poker-punch-bingo.mp4";
+            if (bs > 0)
+            {
+                BirdPoker.FillPunchesExcept(bk);
+                yield return ShotOnePokerPunch(bk, bs, bingoMp4, 5.8f);
+            }
+            else
+            {
+                BirdPoker.FillPunchesExcept(BirdPoker.WildKind);
+                yield return ShotForcedWildPunch(bingoMp4, 5.8f);
+            }
+            if (System.IO.File.Exists(bingoMp4)) clips.Add(bingoMp4);
+            BirdPoker.RestoreFullcardCount(keepFull);
+            int delta = Purse.Coins - keepCoins;
+            if (delta > 0) Purse.TrySpend(delta);
+            else if (delta < 0) Purse.Credit(-delta);
+            string reel = dir + "/flock-five-poker-achievements.mp4";
+            string playtest = System.IO.Path.GetFullPath(
+                System.IO.Path.Combine(Application.dataPath, "../Playtest/poker-punches/flock-five-poker-achievements.mp4"));
+            AssemblePunchReel(clips, reel);
+            if (System.IO.File.Exists(reel))
+            {
+                try
+                {
+                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(playtest));
+                    System.IO.File.Copy(reel, playtest, true);
+                }
+                catch { }
+                PlayReviewReel(System.IO.File.Exists(playtest) ? playtest : reel);
+            }
+            System.IO.File.WriteAllText("/tmp/paradice/poker-punches-done", "1");
+        }
+
+        IEnumerator ShotForcedWildPunch(string mp4, float seconds)
+        {
+            if (Purse.Coins < 50) Purse.Credit(80);
+            BirdPoker.ResetRound();
+            BirdPoker.ForceFiveWilds();
+            string frames = "/tmp/paradice/poker-frames";
+            try { if (System.IO.Directory.Exists(frames)) System.IO.Directory.Delete(frames, true); } catch { }
+            System.IO.Directory.CreateDirectory(frames);
+            var tap = EnsureMixTap();
+            if (tap != null) { tap.Clear(); tap.On = true; }
+            _recordSmash = true;
+            _recordFrameCount = 0;
+            var rec = StartCoroutine(RecordSmashFrames(frames));
+            yield return new WaitForSecondsRealtime(0.45f);
+            if (BirdPoker.LastPunchFresh)
+                BeginPokerStamp(BirdPoker.LastPunchKind);
+            yield return new WaitForSecondsRealtime(Mathf.Max(0.8f, seconds - 0.45f));
+            _recordSmash = false;
+            if (tap != null) tap.On = false;
+            yield return rec;
+            float fps = _recordFrameCount / Mathf.Max(0.4f, seconds);
+            if (fps < 5f) fps = 12f;
+            string wav = mp4.Replace(".mp4", ".wav");
+            if (tap != null)
+            {
+                var samples = tap.Dump();
+                int ch = AudioSettings.speakerMode == AudioSpeakerMode.Mono ? 1 : 2;
+                WriteWav(wav, samples, ch, AudioSettings.outputSampleRate);
+            }
+            EncodeSmashVideo(frames, mp4, fps, System.IO.File.Exists(wav) ? wav : null);
+            _pokerStamp = false;
+            _pokerBingo = false;
+        }
+
+        static void AssemblePunchReel(System.Collections.Generic.List<string> clips, string dest)
+        {
+            if (clips == null || clips.Count == 0) return;
+            string list = "/tmp/paradice/poker-punches/concat.txt";
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < clips.Count; i++)
+            {
+                if (!System.IO.File.Exists(clips[i])) continue;
+                sb.Append("file '").Append(clips[i].Replace("'", "'\\''")).Append("'\n");
+            }
+            System.IO.File.WriteAllText(list, sb.ToString());
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "/opt/homebrew/bin/ffmpeg",
+                Arguments = "-y -f concat -safe 0 -i \"" + list + "\" -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart \"" + dest + "\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true
+            };
+            try
+            {
+                using (var p = System.Diagnostics.Process.Start(psi))
+                {
+                    if (p != null) p.WaitForExit(180000);
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("punch reel concat: " + e.Message);
+            }
+        }
+
+        static void PlayReviewReel(string mp4)
+        {
+            if (string.IsNullOrEmpty(mp4) || !System.IO.File.Exists(mp4)) return;
+            string scpt = "/tmp/flock-five-play-reel.scpt";
+            string body =
+                "tell application \"QuickTime Player\"\n" +
+                "activate\n" +
+                "open POSIX file \"" + mp4 + "\"\n" +
+                "delay 0.4\n" +
+                "try\n" +
+                "set looping of document 1 to false\n" +
+                "end try\n" +
+                "play document 1\n" +
+                "end tell\n";
+            try
+            {
+                System.IO.File.WriteAllText(scpt, body);
+                var qt = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "/usr/bin/osascript",
+                    Arguments = scpt,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using (var p = System.Diagnostics.Process.Start(qt))
+                {
+                    if (p != null) p.WaitForExit(8000);
+                    if (p != null && p.ExitCode == 0) return;
+                }
+            }
+            catch { }
+            try
+            {
+                System.Diagnostics.Process.Start("open", "\"" + mp4 + "\"");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("play reel: " + e.Message);
+            }
+        }
+
+        IEnumerator ShotOnePokerPunch(int kind, int seed, string mp4, float seconds)
+        {
+            if (Purse.Coins < 50) Purse.Credit(80);
+            BirdPoker.ResetRound();
+            BirdPoker.SeedRng(seed);
+            if (!BirdPoker.Deal()) yield break;
+            BirdPoker.HoldForKind(kind);
+            BirdPoker.Draw();
+            string frames = "/tmp/paradice/poker-frames";
+            try { if (System.IO.Directory.Exists(frames)) System.IO.Directory.Delete(frames, true); } catch { }
+            System.IO.Directory.CreateDirectory(frames);
+            var tap = EnsureMixTap();
+            if (tap != null) { tap.Clear(); tap.On = true; }
+            _recordSmash = true;
+            _recordFrameCount = 0;
+            var rec = StartCoroutine(RecordSmashFrames(frames));
+            yield return new WaitForSecondsRealtime(0.45f);
+            if (BirdPoker.LastPunchFresh)
+                BeginPokerStamp(BirdPoker.LastPunchKind);
+            yield return new WaitForSecondsRealtime(Mathf.Max(0.8f, seconds - 0.45f));
+            _recordSmash = false;
+            if (tap != null) tap.On = false;
+            yield return rec;
+            float fps = _recordFrameCount / Mathf.Max(0.4f, seconds);
+            if (fps < 5f) fps = 12f;
+            string wav = mp4.Replace(".mp4", ".wav");
+            if (tap != null)
+            {
+                var samples = tap.Dump();
+                int ch = AudioSettings.speakerMode == AudioSpeakerMode.Mono ? 1 : 2;
+                WriteWav(wav, samples, ch, AudioSettings.outputSampleRate);
+            }
+            EncodeSmashVideo(frames, mp4, fps, System.IO.File.Exists(wav) ? wav : null);
+            _pokerStamp = false;
+            _pokerBingo = false;
+        }
+
         IEnumerator ShotSplashLevel(int number, int next, string ease, string path)
         {
             _shotLevelNumber = number;
@@ -500,6 +919,124 @@ namespace FlockFive
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(path);
             yield return new WaitForSecondsRealtime(0.4f);
+        }
+
+#if UNITY_EDITOR
+        public static bool EditorShotLive;
+#endif
+
+        IEnumerator ShotPokerFaces()
+        {
+#if UNITY_EDITOR
+            EditorShotLive = true;
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+            Time.timeScale = 1f;
+#endif
+            const string dir = "/tmp/paradice";
+            System.IO.Directory.CreateDirectory(dir);
+            Debug.Log("Flock Five: ShotPokerFaces start");
+            _home = HomeFace.Poker;
+            _splash = true;
+            _pokerPayOpen = false;
+            _pokerPayAnim = 0f;
+            _pokerFan = false;
+            _pokerMotion = PokerMotion.None;
+            _pokerKeepHint = true;
+            _pokerHover = -1;
+            BirdPoker.Boot();
+            Purse.Boot();
+            if (Purse.Coins < 400) Purse.Credit(400 - Purse.Coins);
+            BirdPoker.BeginVisit();
+            for (int i = 0; i < 18; i++)
+            {
+#if UNITY_EDITOR
+                UnityEditor.EditorApplication.isPaused = false;
+#endif
+                yield return null;
+            }
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-backs.png");
+            Debug.Log("Flock Five: captured poker-backs");
+            if (!BirdPoker.Deal()) yield break;
+            BirdPoker.Hand[0] = BirdPoker.Card.Of(BirdColor.Ruby, BirdSex.Neutral);
+            BirdPoker.Hand[1] = BirdPoker.Card.MakeWild();
+            BirdPoker.Hand[2] = BirdPoker.Card.Of(BirdColor.Teal, BirdSex.Female);
+            BirdPoker.Hand[3] = BirdPoker.Card.MakeWild();
+            BirdPoker.Hand[4] = BirdPoker.Card.Of(BirdColor.Gold, BirdSex.Male);
+            BeginPokerDeal();
+            yield return new WaitForSecondsRealtime(1.85f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-fan.png");
+            _pokerHover = 2;
+            yield return new WaitForSecondsRealtime(0.20f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-fan-hover.png");
+            ApplyPokerHold(0);
+            ApplyPokerHold(2);
+            _pokerHover = -1;
+            yield return new WaitForSecondsRealtime(0.45f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-fan-hold.png");
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+            {
+                _pokerRedraw[i] = !BirdPoker.Hold[i];
+                _pokerPrev[i] = BirdPoker.Hand[i];
+            }
+            BirdPoker.Draw();
+            BeginPokerDraw();
+            yield return new WaitForSecondsRealtime(0.28f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-chain-break.png");
+            yield return new WaitForSecondsRealtime(1.15f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-row.png");
+            _pokerMotion = PokerMotion.None;
+            _pokerFan = false;
+            yield return new WaitForSecondsRealtime(0.35f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-faces-paper.png");
+            yield return new WaitForSecondsRealtime(0.45f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-faces-sparkle.png");
+            _pokerPayOpen = true;
+            _pokerPayAnim = 1f;
+            yield return new WaitForSecondsRealtime(0.40f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-faces-pay.png");
+            System.IO.File.WriteAllText("/tmp/paradice/poker-faces-done", "1");
+#if UNITY_EDITOR
+            EditorShotLive = false;
+            Debug.Log("Flock Five: ShotPokerFaces done");
+#endif
+        }
+
+        IEnumerator ShotPokerStamp()
+        {
+            const string dir = "/tmp/paradice";
+            System.IO.Directory.CreateDirectory(dir);
+            _home = HomeFace.Poker;
+            _splash = true;
+            _pokerPayOpen = false;
+            _pokerPayAnim = 0f;
+            BirdPoker.Boot();
+            Purse.Boot();
+            if (Purse.Coins < 80) Purse.Credit(80 - Purse.Coins);
+            BirdPoker.ResetRound();
+            BirdPoker.ForceFiveWilds();
+            int kind = BirdPoker.LastPunchKind;
+            if (kind < 0) kind = BirdPoker.WildKind;
+            BeginPokerStamp(kind);
+            yield return new WaitForSecondsRealtime(0.82f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-stamp-drop.png");
+            yield return new WaitForSecondsRealtime(0.28f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-stamp-hit.png");
+            yield return new WaitForSecondsRealtime(0.42f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/poker-stamp-mark.png");
+            System.IO.File.WriteAllText("/tmp/paradice/poker-stamp-done", "1");
         }
 
         IEnumerator PokerPlayrun()
@@ -545,8 +1082,8 @@ namespace FlockFive
                 ScreenCapture.CaptureScreenshot(dir + "/poker-hand" + round + "-deal.png");
                 yield return new WaitForSecondsRealtime(0.25f);
 
-                BirdPoker.ToggleHold(0);
-                BirdPoker.ToggleHold(2);
+                ApplyPokerHold(0);
+                ApplyPokerHold(2);
                 Line("hold 0 and 2");
                 yield return new WaitForSecondsRealtime(0.2f);
 
@@ -609,6 +1146,7 @@ namespace FlockFive
             Destroy(tex);
             Debug.Log("Wrote /tmp/paradice/" + file + " " + w + "x" + h);
         }
+#endif
 
         void SyncAll()
         {
@@ -651,11 +1189,13 @@ namespace FlockFive
             }
             if (!_busy && !_won && SkyCycle.Courtesy != null)
                 SkyCycle.Courtesy = null;
+#if UNITY_EDITOR
             if (WantFinalePreview() && !_busy)
             {
                 StartCoroutine(PreviewFinale());
                 return;
             }
+#endif
             if (!Pressed(out var screen)) return;
             if (HitHud(screen)) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
@@ -663,7 +1203,12 @@ namespace FlockFive
             HandleTap(cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f)));
         }
 
-        public void ShotNow(string file) => Shot(file);
+        public void ShotNow(string file)
+        {
+#if UNITY_EDITOR
+            Shot(file);
+#endif
+        }
 
         void HandleTap(Vector2 world)
         {
@@ -786,6 +1331,7 @@ namespace FlockFive
             var hopCol = _board.Branches[from].Tip.Value.Color;
             Lock(from);
             Lock(to);
+            ArmPests();
             _board.TryMove(from, to, out run);
             yield return Hop(from, to, run, fromCount, toCount, hopCol);
             Unlock(from);
@@ -1871,12 +2417,24 @@ namespace FlockFive
 
         void LateUpdate()
         {
+#if UNITY_EDITOR
             if (!_pokerPlayrun && System.IO.File.Exists("/tmp/flock-five-poker-run"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-poker-run"); } catch { }
                 _pokerPlayrun = true;
                 StartCoroutine(PokerPlayrun());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-poker-faces"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-poker-faces"); } catch { }
+                StartCoroutine(ShotPokerFaces());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-poker-stamp"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-poker-stamp"); } catch { }
+                StartCoroutine(ShotPokerStamp());
+            }
+#endif
             SnapHiveToHud();
         }
 
@@ -2031,7 +2589,7 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleRight,
                 wordWrap = false
             };
-            string coins = "$" + Purse.Coins;
+            string coins = Purse.Cash;
             // ~20% smaller coin; $ text FitFont tracks the icon height.
             float icon = Mathf.Clamp(pig.height * 0.48f * 0.80f, 29f * s, 51f * s);
             float gap = 8f * s;
@@ -2158,33 +2716,38 @@ namespace FlockFive
                 return;
             }
 
-            const float dur = 6.4f;
+            const float dur = 5.6f;
             _streakSlide = Mathf.Min(1f, _streakSlide + Time.unscaledDeltaTime / dur);
             float u = _streakSlide;
             float reveal;
             float scale = 1f;
-            if (u < 0.10f)
+            float mulPunch = 1f;
+            if (u < 0.07f)
                 reveal = 0f;
+            else if (u < 0.18f)
+                reveal = Mathf.SmoothStep(0f, 0.38f, (u - 0.07f) / 0.11f);
             else if (u < 0.26f)
-                reveal = Mathf.SmoothStep(0f, 0.42f, (u - 0.10f) / 0.16f);
-            else if (u < 0.36f)
-                reveal = Mathf.Lerp(0.42f, 0.06f, Mathf.SmoothStep(0f, 1f, (u - 0.26f) / 0.10f));
-            else if (u < 0.54f)
+                reveal = Mathf.Lerp(0.38f, 0.10f, Mathf.SmoothStep(0f, 1f, (u - 0.18f) / 0.08f));
+            else if (u < 0.46f)
             {
-                float t = Mathf.SmoothStep(0f, 1f, (u - 0.36f) / 0.18f);
-                reveal = Mathf.Lerp(0.06f, 1.10f, t);
-                scale = Mathf.Lerp(0.88f, 1.16f, t);
+                float t = Mathf.SmoothStep(0f, 1f, (u - 0.26f) / 0.20f);
+                reveal = Mathf.Lerp(0.10f, 1f, t);
+                scale = Mathf.Lerp(0.90f, 1.10f, t);
+                mulPunch = Mathf.Lerp(0.82f, 1.18f, t);
             }
-            else if (u < 0.62f)
+            else if (u < 0.56f)
             {
-                float t = (u - 0.54f) / 0.08f;
-                reveal = Mathf.Lerp(1.10f, 1f, t);
-                scale = Mathf.Lerp(1.16f, 1f, t);
+                float t = (u - 0.46f) / 0.10f;
+                reveal = 1f;
+                scale = Mathf.Lerp(1.10f, 1f, t);
+                mulPunch = Mathf.Lerp(1.18f, 1f, t);
             }
             else if (u < 0.82f)
             {
                 reveal = 1f;
-                scale = 1f + 0.04f * Mathf.Sin(Time.unscaledTime * 3.2f);
+                float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.4f);
+                scale = 1f + 0.025f * breathe;
+                mulPunch = 1f + 0.04f * breathe;
             }
             else
             {
@@ -2192,19 +2755,33 @@ namespace FlockFive
                 if (u >= 1f) _streakSlide = -1f;
             }
 
-            if (!_streakChirped && u >= 0.54f)
+            if (!_streakChirped && u >= 0.44f)
             {
                 _streakChirped = true;
-                Sfx.Chirp(BirdColor.Gold);
+                Sfx.Clink();
             }
 
-            string streak = "STREAK  ×" + Purse.Streak;
-            float h = Mathf.Max(pig.height * 0.48f, 44f * s);
-            float w = Mathf.Max(188f * s, pig.x - 20f);
-            float restX = pig.x - 10f - w;
-            float hideX = pig.x - w * 0.18f;
+            var lab = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = false
+            };
+            var num = new GUIStyle(lab) { alignment = TextAnchor.MiddleRight };
+            string tag = "STREAK";
+            string mul = "×" + Purse.Streak;
+            lab.fontSize = Mathf.RoundToInt(Mathf.Clamp(20f * s, 16f, 26f));
+            num.fontSize = Mathf.RoundToInt(Mathf.Clamp(32f * s, 24f, 40f));
+            float tagW = lab.CalcSize(new GUIContent(tag)).x;
+            float mulW = num.CalcSize(new GUIContent(mul)).x;
+            float h = Mathf.Clamp(52f * s, 46f, 62f * s);
+            float w = tagW + mulW + 36f * s;
+            w = Mathf.Clamp(w, 168f * s, Screen.width * 0.72f);
+            float restX = (Screen.width - w) * 0.5f;
+            float hideX = pig.x - w * 0.12f;
             float x = Mathf.Lerp(hideX, restX, Mathf.Clamp01(reveal));
-            float y = pig.y - h - 8f * s;
+            float titleTop = Mathf.Max(12f, Screen.height - Screen.safeArea.yMax + 6f);
+            float y = titleTop + 56f * s * 2f + 10f * s;
             var streakR = new Rect(x, y, w, h);
             var c = streakR.center;
             streakR.width *= scale;
@@ -2212,27 +2789,54 @@ namespace FlockFive
             streakR.x = c.x - streakR.width * 0.5f;
             streakR.y = c.y - streakR.height * 0.5f;
 
-            float alpha = Mathf.Clamp01(0.2f + reveal * 0.85f);
+            float alpha = Mathf.Clamp01(reveal);
+            if (alpha < 0.02f) return;
             var glow = GlowTex();
             var prev = GUI.color;
-            GUI.color = new Color(1f, 0.86f, 0.42f, 0.22f * alpha);
-            float pad = 10f * s;
+            float glowA = 0.28f + 0.22f * Mathf.Sin(Time.unscaledTime * 2.4f);
+            GUI.color = new Color(1f, 0.86f, 0.38f, glowA * alpha);
+            float pad = 14f * s;
             GUI.DrawTexture(new Rect(streakR.x - pad, streakR.y - pad, streakR.width + pad * 2f, streakR.height + pad * 2f), glow, ScaleMode.ScaleToFit, true);
-            GUI.color = new Color(0.16f, 0.10f, 0.04f, 0.38f * alpha);
-            GUI.DrawTexture(new Rect(streakR.x + 3f, streakR.y + 5f, streakR.width, streakR.height), Texture2D.whiteTexture);
-            GUI.color = new Color(0.92f, 0.72f, 0.32f, 0.92f * alpha);
+
+            GUI.color = new Color(0.12f, 0.07f, 0.03f, 0.40f * alpha);
+            GUI.DrawTexture(new Rect(streakR.x + 3f, streakR.y + 4f, streakR.width, streakR.height), Texture2D.whiteTexture);
+            GUI.color = new Color(0.78f, 0.56f, 0.18f, 0.96f * alpha);
             GUI.DrawTexture(streakR, Texture2D.whiteTexture);
-            GUI.color = new Color(0.99f, 0.93f, 0.70f, 0.96f * alpha);
-            GUI.DrawTexture(new Rect(streakR.x + 4f * s, streakR.y + 4f * s, streakR.width - 8f * s, streakR.height - 8f * s), Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 1f, 1f, alpha);
-            var st = new GUIStyle(GUI.skin.label)
+            GUI.color = new Color(0.98f, 0.90f, 0.58f, 0.98f * alpha);
+            GUI.DrawTexture(new Rect(streakR.x + 3f * s, streakR.y + 3f * s, streakR.width - 6f * s, streakR.height - 6f * s), Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 0.96f, 0.78f, 0.35f * alpha);
+            GUI.DrawTexture(new Rect(streakR.x + 5f * s, streakR.y + 4f * s, streakR.width - 10f * s, streakR.height * 0.38f), Texture2D.whiteTexture);
+
+            float pop = Mathf.Clamp01((u - 0.40f) / 0.18f);
+            if (pop > 0.02f && pop < 1f)
             {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
-            st.fontSize = FitFont(st, streak, streakR.width * 0.90f, streakR.height * 0.78f, 22, 44);
-            StampOutlined(streakR, streak, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
+                float burst = Mathf.Sin(pop * Mathf.PI);
+                float ring = h * (1.1f + 1.8f * pop);
+                GUI.color = new Color(1f, 0.88f, 0.40f, 0.45f * burst * alpha);
+                GUI.DrawTexture(new Rect(c.x - ring * 0.5f, c.y - ring * 0.5f, ring, ring), glow, ScaleMode.ScaleToFit, true);
+                for (int i = 0; i < 8; i++)
+                {
+                    float ang = i * 0.785f + pop * 0.6f;
+                    float dist = (h * 0.35f + h * 0.85f * pop);
+                    float sz = h * (0.22f + 0.18f * burst) * (0.7f + 0.3f * (i % 3) / 2f);
+                    var sp = new Rect(
+                        c.x + Mathf.Cos(ang) * dist - sz * 0.5f,
+                        c.y + Mathf.Sin(ang) * dist * 0.62f - sz * 0.5f,
+                        sz, sz);
+                    GUI.color = new Color(1f, 0.92f, 0.55f, 0.70f * burst * alpha);
+                    GUI.DrawTexture(sp, glow, ScaleMode.ScaleToFit, true);
+                }
+            }
+
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            var tagR = new Rect(streakR.x + 12f * s, streakR.y, tagW + 4f * s, streakR.height);
+            var mulR = new Rect(streakR.xMax - 12f * s - mulW, streakR.y, mulW + 2f * s, streakR.height);
+            var gold = new Color(0.42f, 0.22f, 0.06f, alpha);
+            StampOutlined(tagR, tag, lab, gold, 2, 1);
+            var mulPrev = GUI.matrix;
+            GUIUtility.ScaleAroundPivot(new Vector2(mulPunch, mulPunch), mulR.center);
+            StampOutlined(mulR, mul, num, new Color(0.55f, 0.24f, 0.06f, alpha), 3, 2);
+            GUI.matrix = mulPrev;
             GUI.color = prev;
         }
 
@@ -2438,13 +3042,21 @@ namespace FlockFive
             if (HitPad(pokerR, out _))
             {
                 BirdPoker.Boot();
-                BirdPoker.ResetRound();
+                BirdPoker.BeginVisit();
+                _pokerKeepHint = true;
+                _pokerHover = -1;
+                for (int i = 0; i < _pokerHoldSlide.Length; i++) _pokerHoldSlide[i] = 0f;
                 _home = HomeFace.Poker;
             }
             DrawSplashPokerButton(pokerR);
 
+#if UNITY_EDITOR
             string ease = _shotEase ?? LevelData.JokeEase(next);
             int number = _shotLevelNumber > 0 ? _shotLevelNumber : (peek != null ? peek.Number : next + 1);
+#else
+            string ease = LevelData.JokeEase(next);
+            int number = peek != null ? peek.Number : next + 1;
+#endif
             if (DrawFlowerPlay(s, ease, number))
             {
                 Sfx.GateGo();
@@ -2698,6 +3310,27 @@ namespace FlockFive
             DrawSplashWord("FIVE", top + capH + rowGap, maxW, capH, tracking, s);
         }
 
+        // Same yellow-navy letter family as the splash mark, with POKER as the third row.
+        float PokerTitleHeight(float s)
+        {
+            float capSmall = 22f * s;
+            float capPoker = 30f * s;
+            float gap = 1.5f * s;
+            return capSmall * 2f + capPoker + gap * 2f;
+        }
+
+        float DrawPokerTitleMark(float top, float s)
+        {
+            float maxW = Mathf.Min(Screen.width * 0.62f, 280f * s);
+            float capSmall = 22f * s;
+            float capPoker = 30f * s;
+            float gap = 1.5f * s;
+            DrawSplashWord("FLOCK", top, maxW, capSmall, -0.055f, s);
+            DrawSplashWord("FIVE", top + capSmall + gap, maxW, capSmall, -0.055f, s);
+            DrawSplashWord("POKER", top + capSmall * 2f + gap * 2f, maxW, capPoker, -0.05f, s);
+            return PokerTitleHeight(s);
+        }
+
         void DrawSplashWord(string word, float y, float maxW, float capH, float tracking, float s)
         {
             int n = word.Length;
@@ -2707,6 +3340,13 @@ namespace FlockFive
             bool any = false;
             for (int i = 0; i < n; i++)
             {
+                if (word[i] == ' ')
+                {
+                    sprs[i] = null;
+                    widths[i] = capH * 0.28f;
+                    total += widths[i];
+                    continue;
+                }
                 // V: Resources fx_let_V is missing/magenta — use Finale pointed V bytes (same as FinaleShow).
                 sprs[i] = word[i] == 'V' ? SplashPointedV() : SpriteCatalog.Letter(word[i]);
                 if (sprs[i] != null && sprs[i].texture != null && !IsMagentaPlaceholder(sprs[i]))
@@ -2808,21 +3448,31 @@ namespace FlockFive
             return _splashPointedV;
         }
 
-        void EnsureSplashFlutters()
+        void EnsureSplashFlutters() => EnsureHaloFlutters(ref _splashFlutters, SplashTitleHalo());
+
+        void EnsureHaloFlutters(ref SplashFlutter[] flutters, Rect h)
         {
             const int n = 5;
-            if (_splashFlutters != null && _splashFlutters.Length == n) return;
-            _splashFlutters = new SplashFlutter[n];
-            var h = SplashTitleHalo();
             // TIGHT ellipse — stay in logo halo (do not expand like #89).
             float rx = h.width * 0.38f;
             float ry = h.height * 0.46f;
+            if (flutters != null && flutters.Length == n)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    float k = 0.90f + 0.025f * i;
+                    flutters[i].RadiusX = rx * k;
+                    flutters[i].RadiusY = ry * k;
+                }
+                return;
+            }
+            flutters = new SplashFlutter[n];
             var cols = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet, BirdColor.Peach };
             float step = Mathf.PI * 2f / n;
             for (int i = 0; i < n; i++)
             {
                 float k = 0.90f + 0.025f * i;
-                _splashFlutters[i] = new SplashFlutter
+                flutters[i] = new SplashFlutter
                 {
                     Angle = i * step,
                     Speed = Random.Range(0.40f, 0.52f),
@@ -2851,27 +3501,32 @@ namespace FlockFive
         void DrawAmbientSplashBirds(float s, bool behind)
         {
             EnsureSplashFlutters();
-            var h = SplashTitleHalo();
+            DrawHaloBirds(ref _splashFlutters, SplashTitleHalo(), s, behind, HaloBirdIcon(s));
+        }
+
+        static float HaloBirdIcon(float s) => 36f * s;
+
+        void DrawHaloBirds(ref SplashFlutter[] flutters, Rect h, float s, bool behind, float icon)
+        {
+            if (flutters == null || flutters.Length == 0) return;
             Vector2 c = h.center;
-            float icon = 26f * s;
             var prev = GUI.color;
             float dt = behind ? Time.unscaledDeltaTime : 0f;
             float pad = icon * 0.55f;
-            for (int i = 0; i < _splashFlutters.Length; i++)
+            for (int i = 0; i < flutters.Length; i++)
             {
-                var f = _splashFlutters[i];
+                var f = flutters[i];
                 if (behind)
                 {
                     float speed = f.Speed * (0.95f + 0.05f * Mathf.Sin(Time.unscaledTime * 0.5f + f.BobPhase));
                     f.Angle += speed * dt;
-                    _splashFlutters[i] = f;
+                    flutters[i] = f;
                 }
-                // y-down: Sin<0 = above title = behind letters; Sin>0 = below = in front.
+                // y-down: Sin<0 = above title = behind letters; Sin>=0 = below = in front.
+                // Split at 0 with no dead band — a ±0.10 gap made birds blink out at the sides.
                 float depth = Mathf.Sin(f.Angle);
-                bool isBehind = depth < -0.10f;
-                bool isFront = depth > 0.10f;
-                if (behind && !isBehind) continue;
-                if (!behind && !isFront) continue;
+                bool isBehind = depth < 0f;
+                if (behind != isBehind) continue;
 
                 float x = c.x + Mathf.Cos(f.Angle) * f.RadiusX;
                 float y = c.y + Mathf.Sin(f.Angle) * f.RadiusY;
@@ -3016,65 +3671,101 @@ namespace FlockFive
             {
                 BirdPoker.ResetRound();
                 _pokerMotion = PokerMotion.None;
+                _pokerFan = false;
+                _pokerChained = false;
+                _pokerShowPay = false;
+                _pokerDash = 0f;
                 _pokerStamp = false;
                 _pokerPayOpen = false;
                 _pokerPayAnim = 0f;
+                _pokerKeepHint = false;
+                _pokerHover = -1;
                 _home = HomeFace.Splash;
             }
             GUI.color = new Color(0.10f, 0.08f, 0.05f, backHeld ? 0.88f : 0.72f);
             GUI.DrawTexture(back, Texture2D.whiteTexture);
             GUI.color = Color.white;
             GUI.Label(back, "Back", backLab);
-
-            var title = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Mathf.RoundToInt(30 * s),
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter
-            };
-            title.normal.textColor = new Color(1f, 0.94f, 0.72f);
-            GUI.Label(new Rect(20f, top, Screen.width - 40f, 40f * s), "BIRD POKER", title);
             DrawPokerPurse(top, s);
+
+            float logoTop = top + back.height + 4f * s;
+            float logoH = PokerTitleHeight(s);
+            float markW = Mathf.Min(Screen.width * 0.50f, 240f * s);
+            float haloW = Mathf.Min(Screen.width * 0.82f, markW * 1.28f);
+            var halo = new Rect(
+                (Screen.width - haloW) * 0.5f,
+                Mathf.Max(4f, logoTop - 8f * s),
+                haloW,
+                logoH + 14f * s);
+            EnsureHaloFlutters(ref _pokerFlutters, halo);
+            DrawHaloBirds(ref _pokerFlutters, halo, s, true, HaloBirdIcon(s));
+            DrawPokerTitleMark(logoTop, s);
+            DrawHaloBirds(ref _pokerFlutters, halo, s, false, HaloBirdIcon(s));
+            float below = logoTop + logoH;
+
             // Hit-test pay-table tab / dismiss early so overlay blocks cards & Deal.
             if (!_pokerStamp)
-                TickPokerPayTable(top, s);
+                TickPokerPayTable(below, s);
 
-            float cardW = Mathf.Min(Screen.width * 0.176f, 118f * s);
+            float gap = 5f * s;
+            float maxRow = Screen.width - 24f * s;
+            float cardW = Mathf.Min(Screen.width * 0.205f, 138f * s);
+            cardW = Mathf.Min(cardW, (maxRow - (BirdPoker.HandSize - 1) * gap) / BirdPoker.HandSize);
             float cardH = cardW * 1.42f;
-            float gap = 8f * s;
             float holdH = 32f * s;
             float rowW = BirdPoker.HandSize * cardW + (BirdPoker.HandSize - 1) * gap;
             float rowX = (Screen.width - rowW) * 0.5f;
-            float btnSize = Mathf.Min(Screen.width * 0.40f, 168f * s);
+            float btnSize = Mathf.Min(Screen.width * 0.46f, 200f * s);
             float botPad = Mathf.Max(12f, safe.yMin + 6f);
             float btnY = Screen.height - botPad - btnSize;
-            float head = top + 52f * s;
-            float floor = btnY - holdH - 16f * s;
-            float rowY = head + Mathf.Max(0f, floor - head - cardH) * 0.62f;
+            float meterH = 36f * s;
+            float head = below + 8f * s;
+            float floor = btnY - holdH - meterH - 8f * s;
+            float rowY = head + Mathf.Max(0f, floor - head - cardH) * 0.28f;
+            TickPokerKick();
             TickPokerMotion();
-            for (int i = 0; i < BirdPoker.HandSize; i++)
+            TickHoldSlide();
+            var rowBox = new Rect(rowX, rowY, rowW, cardH);
+            bool payBlockedEarly = _pokerPayOpen || _pokerPayAnim > 0.35f;
+            bool canHold = !PokerMotionBusy() && !payBlockedEarly && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt;
+            HitPokerCards(canHold, rowBox, rowX, rowY, cardW, cardH, gap);
+            DrawPokerFanHand(rowBox, cardW, cardH, s, false);
+            int[] order = PokerDrawOrder();
+            bool frontDone = false;
+            for (int o = 0; o < order.Length; o++)
             {
+                int i = order[o];
+                bool lifted = BirdPoker.Hold[i] && _pokerHoldSlide[i] > 0.22f;
+                if (lifted && !frontDone)
+                {
+                    DrawPokerFanHand(rowBox, cardW, cardH, s, true);
+                    frontDone = true;
+                }
                 var seat = new Rect(rowX + i * (cardW + gap), rowY, cardW, cardH);
-                DrawPokerCard(seat, i, s, holdH);
+                DrawPokerCard(seat, i, s, holdH, rowBox);
             }
+            if (!frontDone) DrawPokerFanHand(rowBox, cardW, cardH, s, true);
+            DrawPokerKeepHint(rowBox, s);
+            DrawPokerFlames(rowBox, cardH, s);
+            DrawPokerDealHand(rowBox, cardW, cardH, s);
 
-            var betR = new Rect(Screen.width * 0.5f - btnSize - 8f * s, btnY, btnSize, btnSize);
-            var actR = new Rect(Screen.width * 0.5f + 8f * s, btnY, btnSize, btnSize);
-            var dealR = new Rect((Screen.width - btnSize) * 0.5f, btnY, btnSize, btnSize);
+            float actX = Screen.width - Mathf.Max(10f, Screen.width - safe.xMax + 8f) - btnSize;
+            var actR = new Rect(actX, btnY, btnSize, btnSize);
+            float clusterL = Mathf.Max(12f, safe.xMin + 10f);
+            var betR = new Rect(clusterL, btnY, Mathf.Max(80f, actR.x - 10f * s - clusterL), btnSize);
 
             bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f;
             bool busy = PokerMotionBusy() || _pokerStamp || payBlocked;
+            TickPokerDash(s);
             TickPokerStamp();
-            if (BirdPoker.PhaseNow == BirdPoker.Phase.Idle)
+            string act = BirdPoker.PhaseNow == BirdPoker.Phase.Dealt ? "DRAW" : "DEAL";
+            bool steppers = BirdPoker.PhaseNow == BirdPoker.Phase.Idle;
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Idle) BirdPoker.SyncBet();
+            if (DrawPokerDash(betR, actR, s, busy, steppers, act) && !busy)
             {
-                if (!busy && DrawFloralBtn(betR, "BET $" + BirdPoker.Bet, s))
-                    BirdPoker.CycleBet();
-                if (!busy && DrawFloralBtn(actR, "DEAL", s))
+                if (BirdPoker.PhaseNow == BirdPoker.Phase.Idle)
                     TryPokerDeal();
-            }
-            else if (BirdPoker.PhaseNow == BirdPoker.Phase.Dealt)
-            {
-                if (!busy && DrawFloralBtn(dealR, "DRAW", s))
+                else if (BirdPoker.PhaseNow == BirdPoker.Phase.Dealt)
                 {
                     for (int i = 0; i < BirdPoker.HandSize; i++)
                     {
@@ -3083,33 +3774,28 @@ namespace FlockFive
                     }
                     BirdPoker.Draw();
                     BeginPokerDraw();
-                    if (BirdPoker.LastPunchFresh)
-                    {
-                        BeginPokerStamp(BirdPoker.LastPunchKind);
-                        Sfx.Combo(3);
-                    }
-                    else if (BirdPoker.LastWin > 0) Sfx.Clink();
-                    else Sfx.Deny();
+                    _pokerPendingStamp = BirdPoker.LastPunchFresh;
+                    _pokerResultCue = BirdPoker.LastPunchFresh ? 3 : (BirdPoker.LastWin > 0 ? 2 : 1);
                 }
-            }
-            else if (!busy && DrawFloralBtn(dealR, "DEAL", s))
-            {
-                BirdPoker.Collect();
-                TryPokerDeal();
+                else
+                {
+                    BirdPoker.Collect();
+                    TryPokerDeal();
+                }
             }
 
             // Stamp ceremony above everything; else pay-table overlay / jewel tab on top.
             if (_pokerStamp) DrawPokerStampCeremony(s);
-            else DrawPokerPayTable(top, s);
+            else DrawPokerPayTable(below, s);
         }
 
 
         Rect PokerPayTabRect(float top, float s)
         {
-            float tabW = Mathf.Clamp(132f * s, 112f, 168f);
-            float tabH = Mathf.Clamp(38f * s, 34f, 48f);
+            float tabW = Mathf.Clamp(176f * s, 148f, 220f);
+            float tabH = Mathf.Clamp(52f * s, 46f, 64f);
             float right = Screen.width - Mathf.Max(6f, Screen.width - Screen.safeArea.xMax + 4f);
-            float tabY = top + 46f * s;
+            float tabY = top + 4f * s;
             return new Rect(right - tabW, tabY, tabW, tabH);
         }
 
@@ -3119,7 +3805,7 @@ namespace FlockFive
             _pokerPayAnim = Mathf.MoveTowards(_pokerPayAnim, target, Time.unscaledDeltaTime * 7f);
 
             var tab = PokerPayTabRect(top, s);
-            if (HitPad(tab, out _))
+            if (HitPad(tab, out bool tabHeld))
             {
                 _pokerPayOpen = !_pokerPayOpen;
                 Sfx.Chirp(BirdColor.Gold);
@@ -3134,6 +3820,7 @@ namespace FlockFive
                     Sfx.Chirp(BirdColor.Gold);
                 }
             }
+            _pokerPayJewelHeld = tabHeld;
         }
 
         void DrawPokerPayTable(float top, float s)
@@ -3155,14 +3842,23 @@ namespace FlockFive
             var tab = PokerPayTabRect(top, s);
             if (u > 0.01f)
             {
-                float panelW = Mathf.Min(Screen.width * 0.92f, 420f * s);
-                float rowH = Mathf.Clamp(36f * s, 30f, 44f);
+                float panelW = Screen.width * 0.90f;
                 int rows = BirdPoker.PayTableRows.Length;
-                float headH = 36f * s;
+                var safe = Screen.safeArea;
+                float btnSize = Mathf.Min(Screen.width * 0.46f, 200f * s);
+                float botPad = Mathf.Max(12f, safe.yMin + 6f);
+                float btnY = Screen.height - botPad - btnSize;
+                float panelTop = tab.yMax + 8f * s;
+                float floor = btnY - 12f * s;
+                float avail = Mathf.Max(320f, floor - panelTop);
+                float headH = Mathf.Clamp(avail * 0.13f, 52f * s, 78f * s);
                 float pad = 14f * s;
+                float rowH = (avail - headH - pad * 2f) / rows;
+                rowH = Mathf.Clamp(rowH, 52f, 96f);
                 float panelH = headH + rows * rowH + pad * 2f;
+                if (panelTop + panelH > floor)
+                    panelH = floor - panelTop;
                 float cx = Screen.width * 0.5f;
-                float panelTop = tab.yMax + 10f * s;
                 float ease = 1f - Mathf.Pow(1f - u, 2.4f);
                 float y = Mathf.Lerp(panelTop - 24f * s, panelTop, ease);
                 var panel = new Rect(cx - panelW * 0.5f, y, panelW, panelH * Mathf.Lerp(0.92f, 1f, ease));
@@ -3171,11 +3867,10 @@ namespace FlockFive
                 GUI.DrawTexture(new Rect(panel.x + 4f, panel.y + 6f, panel.width, panel.height), Texture2D.whiteTexture);
                 GUI.color = new Color(0.42f, 0.28f, 0.12f, 0.98f * u);
                 GUI.DrawTexture(panel, Texture2D.whiteTexture);
-                GUI.color = new Color(0.72f, 0.52f, 0.22f, 0.95f * u);
+                GUI.color = new Color(0.78f, 0.58f, 0.22f, 0.95f * u);
                 GUI.DrawTexture(new Rect(panel.x + 3f * s, panel.y + 3f * s, panel.width - 6f * s, panel.height - 6f * s), Texture2D.whiteTexture);
                 var paper = new Rect(panel.x + 7f * s, panel.y + 7f * s, panel.width - 14f * s, panel.height - 14f * s);
-                GUI.color = new Color(0.96f, 0.93f, 0.82f, 0.98f * u);
-                GUI.DrawTexture(paper, Texture2D.whiteTexture);
+                DrawCardPaper(paper, false, 0.98f * u);
                 GUI.color = Color.white;
 
                 var head = new GUIStyle(GUI.skin.label)
@@ -3183,9 +3878,17 @@ namespace FlockFive
                     fontStyle = FontStyle.Bold,
                     alignment = TextAnchor.MiddleCenter
                 };
-                string headTx = "PAY TABLE  ·  BET $" + BirdPoker.Bet;
-                head.fontSize = FitFont(head, headTx, paper.width * 0.92f, headH * 0.85f, 13, 22);
-                StampOutlined(new Rect(paper.x, paper.y + 2f * s, paper.width, headH), headTx, head, new Color(0.28f, 0.14f, 0.06f), 2, 1);
+                string headTx = "PAY TABLE";
+                head.fontSize = FitFont(head, headTx, paper.width * 0.80f, headH * 0.52f, 24, 44);
+                StampOutlined(new Rect(paper.x, paper.y + 2f * s, paper.width, headH * 0.58f), headTx, head,
+                    new Color(0.28f, 0.14f, 0.06f), 2, 1);
+                var sub = new GUIStyle(head) { fontSize = Mathf.Max(16, head.fontSize - 6) };
+                StampOutlined(new Rect(paper.x, paper.y + headH * 0.52f, paper.width, headH * 0.40f),
+                    "BET " + Purse.Compact(BirdPoker.Bet), sub, new Color(0.62f, 0.28f, 0.08f), 1, 1);
+                GUI.color = new Color(0.72f, 0.52f, 0.22f, 0.85f * u);
+                float ruleY = paper.y + headH - 2f * s;
+                GUI.DrawTexture(new Rect(paper.x + 10f * s, ruleY, paper.width - 20f * s, 2f * s), Texture2D.whiteTexture);
+                GUI.color = Color.white;
 
                 var nameSt = new GUIStyle(GUI.skin.label)
                 {
@@ -3193,12 +3896,14 @@ namespace FlockFive
                     alignment = TextAnchor.MiddleLeft,
                     wordWrap = false
                 };
-                var paySt = new GUIStyle(GUI.skin.label)
+                var numSt = new GUIStyle(GUI.skin.label)
                 {
                     fontStyle = FontStyle.Bold,
                     alignment = TextAnchor.MiddleRight,
                     wordWrap = false
                 };
+                int body = Mathf.RoundToInt(Mathf.Clamp(rowH * 0.46f, 22f, 40f));
+                int jack = body + 4;
                 float yRow = paper.y + headH + 2f * s;
                 for (int i = 0; i < rows; i++)
                 {
@@ -3206,32 +3911,32 @@ namespace FlockFive
                     int mult = BirdPoker.Multiplier(rank);
                     int dollars = mult * BirdPoker.Bet;
                     string name = BirdPoker.RankLabel(rank);
-                    string pay = mult + "×   $" + dollars;
-                    var row = new Rect(paper.x + 8f * s, yRow, paper.width - 16f * s, rowH);
+                    var row = new Rect(paper.x + 10f * s, yRow, paper.width - 20f * s, rowH);
 
                     bool jackpot = rank == BirdPoker.Rank.NaturalFive;
                     if (jackpot)
                     {
-                        GUI.color = new Color(1f, 0.88f, 0.45f, 0.42f * u);
+                        GUI.color = new Color(1f, 0.84f, 0.32f, 0.38f * u);
                         GUI.DrawTexture(row, Texture2D.whiteTexture);
                     }
                     else if ((i & 1) == 1)
                     {
-                        GUI.color = new Color(0.78f, 0.68f, 0.48f, 0.22f * u);
+                        GUI.color = new Color(0.62f, 0.48f, 0.28f, 0.16f * u);
                         GUI.DrawTexture(row, Texture2D.whiteTexture);
                     }
                     GUI.color = Color.white;
 
-                    float nameH = jackpot ? rowH * 0.82f : rowH * 0.72f;
-                    int lo = jackpot ? 15 : 13;
-                    int hi = jackpot ? 26 : 22;
-                    nameSt.fontSize = FitFont(nameSt, name, row.width * 0.58f, nameH, lo, hi);
-                    paySt.fontSize = FitFont(paySt, pay, row.width * 0.38f, nameH, lo, hi);
+                    nameSt.fontSize = jackpot ? jack : body;
+                    numSt.fontSize = jackpot ? jack : body;
                     var fill = jackpot
-                        ? new Color(0.55f, 0.28f, 0.06f)
-                        : new Color(0.32f, 0.16f, 0.06f);
-                    StampOutlined(new Rect(row.x, row.y, row.width * 0.58f, row.height), name, nameSt, fill, 2, 1);
-                    StampOutlined(new Rect(row.x + row.width * 0.55f, row.y, row.width * 0.45f, row.height), pay, paySt, fill, 2, 1);
+                        ? new Color(0.52f, 0.26f, 0.06f)
+                        : new Color(0.30f, 0.15f, 0.06f);
+                    float nameW = row.width * 0.52f;
+                    float multW = row.width * 0.18f;
+                    float cashW = row.width * 0.30f;
+                    StampOutlined(new Rect(row.x, row.y, nameW, row.height), name, nameSt, fill, 2, 1);
+                    StampOutlined(new Rect(row.x + nameW, row.y, multW, row.height), mult + "×", numSt, fill, 2, 1);
+                    StampOutlined(new Rect(row.x + nameW + multW, row.y, cashW, row.height), Purse.Compact(dollars), numSt, fill, 2, 1);
                     yRow += rowH;
                 }
             }
@@ -3241,10 +3946,8 @@ namespace FlockFive
 
         void DrawPokerPayJewel(Rect tab, float s)
         {
-            bool held = false;
-            var e = Event.current;
-            if (e != null && tab.Contains(e.mousePosition) && Input.GetMouseButton(0))
-                held = true;
+            // Input System only — do not call UnityEngine.Input.GetMouseButton.
+            bool held = _pokerPayJewelHeld;
 
             float sink = held ? 2f : 0f;
             var chip = new Rect(tab.x, tab.y + sink, tab.width, tab.height - sink);
@@ -3268,7 +3971,7 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap = false
             };
-            labSt.fontSize = FitFont(labSt, lab, chip.width * 0.90f, chip.height * 0.70f, 11, 16);
+            labSt.fontSize = FitFont(labSt, lab, chip.width * 0.90f, chip.height * 0.72f, 14, 22);
             StampOutlined(chip, lab, labSt, new Color(1f, 0.94f, 0.72f), 1, 1);
         }
 
@@ -3279,38 +3982,182 @@ namespace FlockFive
             _pokerStamp = true;
             _pokerStampT = 0f;
             _pokerStampKind = kind;
-            if (CamShake.Live != null) CamShake.Live.Punch(0.22f, 0.12f, 2.4f, 0.10f);
+            _pokerBingo = BirdPoker.LastPunchBingo;
+            if (CamShake.Live != null) CamShake.Live.Punch(_pokerBingo ? 0.38f : 0.22f, _pokerBingo ? 0.18f : 0.12f, 2.4f, 0.10f);
             Sfx.Rumble();
+            if (_pokerBingo) Sfx.Combo(4);
         }
 
         void TickPokerStamp()
         {
             if (!_pokerStamp) return;
             _pokerStampT += Time.unscaledDeltaTime;
-            // Stamp impact rumble
+            // Stamper hits the clipboard — shake the IMGUI overlay and the garden.
             if (_pokerStampT >= 1.05f && _pokerStampT - Time.unscaledDeltaTime < 1.05f)
             {
-                if (CamShake.Live != null) CamShake.Live.Punch(0.34f, 0.16f, 2.8f, 0.12f);
+                PunchPoker(_pokerBingo ? 0.34f : 0.26f, _pokerBingo ? 28f : 20f, _pokerBingo ? 12f : 8f);
                 Sfx.Rumble();
                 Sfx.Crack();
+                if (_pokerBingo) Sfx.Combo(5);
             }
             bool tap = Event.current != null && Event.current.type == EventType.MouseDown;
-            if (_pokerStampT >= 2.6f || (_pokerStampT >= 1.35f && tap))
+            float hold = _pokerBingo ? 5.2f : 2.6f;
+            float tapAt = _pokerBingo ? 2.4f : 1.35f;
+            if (_pokerStampT >= hold || (_pokerStampT >= tapAt && tap))
+            {
                 _pokerStamp = false;
+                _pokerBingo = false;
+            }
+        }
+
+        static void DrawInkStamp(Rect r, float rot, float alpha, bool word)
+        {
+            if (alpha <= 0.02f) return;
+            var ring = SpriteCatalog.StampRing;
+            var prev = GUI.matrix;
+            GUIUtility.RotateAroundPivot(rot, r.center);
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            if (ring != null && ring.texture != null)
+                GUI.DrawTexture(r, ring.texture, ScaleMode.ScaleToFit, true);
+            else
+            {
+                GUI.color = new Color(0.82f, 0.08f, 0.10f, alpha);
+                GUI.DrawTexture(r, Texture2D.whiteTexture);
+            }
+            if (word)
+            {
+                // Ink bar through the diameter, word riding it.
+                float barH = Mathf.Max(10f, r.height * 0.22f);
+                var bar = new Rect(r.x + r.width * 0.08f, r.center.y - barH * 0.5f, r.width * 0.84f, barH);
+                GUI.color = new Color(0.82f, 0.08f, 0.10f, 0.92f * alpha);
+                GUI.DrawTexture(bar, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                var st = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = false
+                };
+                string lab = "COMPLETED";
+                st.fontSize = FitFont(st, lab, bar.width * 0.96f, bar.height * 0.92f, 8, 28);
+                StampOutlined(bar, lab, st, new Color(1f, 0.95f, 0.88f, alpha), 1, 1);
+            }
+            GUI.matrix = prev;
+            GUI.color = Color.white;
+        }
+
+        static Rect DrawPokerClipboard(Rect board, float s, Texture clipTex)
+        {
+            GUI.color = new Color(0.04f, 0.02f, 0.01f, 0.42f);
+            var shadow = new Rect(board.x + 10f * s, board.y + 14f * s, board.width, board.height);
+            if (clipTex != null)
+                GUI.DrawTexture(shadow, clipTex, ScaleMode.ScaleToFit, true);
+            else
+                GUI.DrawTexture(shadow, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            if (clipTex != null)
+            {
+                GUI.DrawTexture(board, clipTex, ScaleMode.ScaleToFit, true);
+                // Paper sheet below the steel clip jaw, inside the painted board.
+                return new Rect(
+                    board.x + board.width * 0.18f,
+                    board.y + board.height * 0.295f,
+                    board.width * 0.64f,
+                    board.height * 0.57f);
+            }
+
+            GUI.color = new Color(0.22f, 0.12f, 0.05f, 1f);
+            GUI.DrawTexture(board, Texture2D.whiteTexture);
+            var body = new Rect(board.x + 4f * s, board.y + 4f * s, board.width - 8f * s, board.height - 8f * s);
+            GUI.color = new Color(0.50f, 0.32f, 0.14f, 1f);
+            GUI.DrawTexture(body, Texture2D.whiteTexture);
+            GUI.color = new Color(0.72f, 0.52f, 0.26f, 0.55f);
+            GUI.DrawTexture(new Rect(body.x + 3f * s, body.y + 3f * s, body.width - 6f * s, 5f * s), Texture2D.whiteTexture);
+            GUI.color = new Color(0.28f, 0.16f, 0.06f, 0.35f);
+            GUI.DrawTexture(new Rect(body.x + 3f * s, body.yMax - 6f * s, body.width - 6f * s, 4f * s), Texture2D.whiteTexture);
+            for (int i = 0; i < 11; i++)
+            {
+                float x = body.x + body.width * (0.10f + i * 0.075f);
+                GUI.color = new Color(0.28f, 0.14f, 0.05f, 0.16f + (i % 3) * 0.04f);
+                GUI.DrawTexture(new Rect(x, body.y + 8f * s, 2.2f * s, body.height - 16f * s), Texture2D.whiteTexture);
+            }
+            float screw = 7f * s;
+            Vector2[] screws =
+            {
+                new Vector2(body.x + 10f * s, body.y + 10f * s),
+                new Vector2(body.xMax - 10f * s - screw, body.y + 10f * s),
+                new Vector2(body.x + 10f * s, body.yMax - 10f * s - screw),
+                new Vector2(body.xMax - 10f * s - screw, body.yMax - 10f * s - screw)
+            };
+            for (int i = 0; i < screws.Length; i++)
+            {
+                GUI.color = new Color(0.72f, 0.55f, 0.22f, 1f);
+                GUI.DrawTexture(new Rect(screws[i].x, screws[i].y, screw, screw), Texture2D.whiteTexture);
+                GUI.color = new Color(0.38f, 0.26f, 0.08f, 0.85f);
+                GUI.DrawTexture(new Rect(screws[i].x + screw * 0.28f, screws[i].y + screw * 0.28f, screw * 0.44f, screw * 0.44f), Texture2D.whiteTexture);
+            }
+
+            var paper = new Rect(
+                board.x + board.width * 0.11f,
+                board.y + board.height * 0.16f,
+                board.width * 0.78f,
+                board.height * 0.74f);
+            GUI.color = new Color(0.22f, 0.14f, 0.08f, 0.28f);
+            GUI.DrawTexture(new Rect(paper.x + 3f * s, paper.y + 4f * s, paper.width, paper.height), Texture2D.whiteTexture);
+            GUI.color = new Color(0.96f, 0.92f, 0.80f, 1f);
+            GUI.DrawTexture(paper, Texture2D.whiteTexture);
+            GUI.color = new Color(0.78f, 0.70f, 0.52f, 0.35f);
+            int rules = 14;
+            for (int i = 1; i < rules; i++)
+            {
+                float y = paper.y + paper.height * (i / (float)rules);
+                GUI.DrawTexture(new Rect(paper.x + 8f * s, y, paper.width - 16f * s, 1.2f * s), Texture2D.whiteTexture);
+            }
+
+            float clipW = board.width * 0.30f;
+            float clipH = 40f * s;
+            var clip = new Rect(board.center.x - clipW * 0.5f, board.y - 8f * s, clipW, clipH);
+            GUI.color = new Color(0.32f, 0.32f, 0.34f, 1f);
+            GUI.DrawTexture(clip, Texture2D.whiteTexture);
+            GUI.color = new Color(0.72f, 0.74f, 0.76f, 1f);
+            GUI.DrawTexture(new Rect(clip.x + 3f * s, clip.y + 3f * s, clip.width - 6f * s, clip.height - 8f * s), Texture2D.whiteTexture);
+            GUI.color = new Color(0.92f, 0.93f, 0.94f, 0.70f);
+            GUI.DrawTexture(new Rect(clip.x + 6f * s, clip.y + 4f * s, clip.width - 12f * s, 5f * s), Texture2D.whiteTexture);
+            float hole = 8f * s;
+            GUI.color = new Color(0.10f, 0.10f, 0.12f, 1f);
+            GUI.DrawTexture(new Rect(clip.center.x - hole * 0.5f, clip.y + 5f * s, hole, hole), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            return paper;
         }
 
         void DrawPokerStampCeremony(float s)
         {
             float t = _pokerStampT;
+            var prevGui = GUI.matrix;
+            GUI.matrix = Matrix4x4.Translate(new Vector3(_pokerKick.x, _pokerKick.y, 0f)) * GUI.matrix;
             // Dim table
-            float veil = Mathf.Clamp01(t / 0.12f) * 0.72f;
-            GUI.color = new Color(0.04f, 0.03f, 0.02f, veil);
+            float veil = Mathf.Clamp01(t / 0.12f) * (_pokerBingo ? 0.58f : 0.72f);
+            GUI.color = _pokerBingo
+                ? new Color(0.28f, 0.14f, 0.02f, veil)
+                : new Color(0.04f, 0.03f, 0.02f, veil);
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
             // Clipboard slam onto the table
+            var clipSpr = SpriteCatalog.Clipboard;
+            var clipTex = clipSpr != null ? clipSpr.texture : null;
             float boardW = Mathf.Min(Screen.width * 0.88f, 520f * s);
-            float boardH = boardW * 1.22f;
+            float aspect = clipTex != null
+                ? clipTex.height / Mathf.Max(1f, (float)clipTex.width)
+                : 1.33f;
+            float boardH = boardW * aspect;
+            float maxH = Screen.height * 0.78f;
+            if (boardH > maxH)
+            {
+                boardH = maxH;
+                boardW = boardH / aspect;
+            }
             float slamU = Mathf.Clamp01(t / 0.38f);
             float ease = 1f - Mathf.Pow(1f - slamU, 3f);
             float yOff = Mathf.Lerp(-Screen.height * 0.55f, 0f, ease);
@@ -3321,33 +4168,32 @@ namespace FlockFive
             float cx = Screen.width * 0.5f;
             float cy = Screen.height * 0.48f + yOff;
             var board = new Rect(cx - boardW * 0.5f, cy - boardH * 0.5f * squash, boardW, boardH * squash);
-
-            // Clipboard body (wood) + paper
-            GUI.color = new Color(0.42f, 0.28f, 0.12f, 0.98f);
-            GUI.DrawTexture(board, Texture2D.whiteTexture);
-            var clip = new Rect(board.center.x - boardW * 0.12f, board.y - 18f * s, boardW * 0.24f, 36f * s);
-            GUI.color = new Color(0.55f, 0.55f, 0.58f, 1f);
-            GUI.DrawTexture(clip, Texture2D.whiteTexture);
-            GUI.color = new Color(0.96f, 0.93f, 0.82f, 1f);
-            var paper = new Rect(board.x + boardW * 0.07f, board.y + boardH * 0.08f, boardW * 0.86f, boardH * 0.84f);
-            GUI.DrawTexture(paper, Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            var paper = DrawPokerClipboard(board, s, clipTex);
 
             var title = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter
             };
-            title.fontSize = FitFont(title, "FLOCK FIVE  PUNCH CARD", paper.width * 0.92f, 28f * s, 14, 26);
-            StampOutlined(new Rect(paper.x, paper.y + 8f * s, paper.width, 28f * s), "FLOCK FIVE  PUNCH CARD", title, new Color(0.28f, 0.14f, 0.06f), 2, 1);
+            string boardTitle = _pokerBingo ? "FLOCK COMPLETE" : "FLOCK FIVE  PUNCH CARD";
+            title.fontSize = FitFont(title, boardTitle, paper.width * 0.92f, 28f * s, 14, 26);
+            StampOutlined(new Rect(paper.x, paper.y + 6f * s, paper.width, 26f * s), boardTitle, title,
+                _pokerBingo ? new Color(0.55f, 0.28f, 0.06f) : new Color(0.28f, 0.14f, 0.06f), 2, 1);
+            if (BirdPoker.FullcardCount > 0 || _pokerBingo)
+            {
+                var life = new GUIStyle(title) { fontStyle = FontStyle.Bold };
+                string lifeTx = "FULLCARDS  " + BirdPoker.FullcardCount;
+                life.fontSize = FitFont(life, lifeTx, paper.width * 0.80f, 16f * s, 10, 16);
+                StampOutlined(new Rect(paper.x, paper.y + 30f * s, paper.width, 16f * s), lifeTx, life, new Color(0.42f, 0.22f, 0.06f), 1, 1);
+            }
 
-            // Bird grid on the paper
-            int cols = 5;
-            float pad = 10f * s;
-            float gridTop = paper.y + 42f * s;
-            float gridH = paper.height - 70f * s;
-            float cell = Mathf.Min((paper.width - pad * 2f - (cols - 1) * 6f * s) / cols, gridH / 3f - 6f * s);
-            float gap = 6f * s;
+            // 4×4 grid: 15 birds + five-wilds.
+            int cols = 4;
+            float pad = 8f * s;
+            float gridTop = paper.y + 48f * s;
+            float gridH = paper.height - 78f * s;
+            float gap = 5f * s;
+            float cell = Mathf.Min((paper.width - pad * 2f - (cols - 1) * gap) / cols, (gridH - 3f * gap) / 4f);
             float gridW = cols * cell + (cols - 1) * gap;
             float x0 = paper.center.x - gridW * 0.5f;
             for (int i = 0; i < BirdPoker.PunchKinds; i++)
@@ -3357,15 +4203,28 @@ namespace FlockFive
                 var r = new Rect(x0 + col * (cell + gap), gridTop + row * (cell + gap), cell, cell);
                 bool on = BirdPoker.IsPunched(i);
                 bool focus = i == _pokerStampKind;
+                bool wildCell = BirdPoker.IsWildKind(i);
                 GUI.color = focus
-                    ? new Color(1f, 0.92f, 0.55f, 0.95f)
-                    : (on ? new Color(0.88f, 0.84f, 0.72f, 0.95f) : new Color(0.82f, 0.80f, 0.74f, 0.85f));
+                    ? new Color(1f, 0.90f, 0.45f, 0.62f)
+                    : (wildCell
+                        ? new Color(0.18f, 0.28f, 0.72f, on || focus ? 0.42f : 0.22f)
+                        : (on ? new Color(0.96f, 0.92f, 0.78f, 0.38f) : new Color(0.22f, 0.14f, 0.08f, 0.16f)));
                 GUI.DrawTexture(r, Texture2D.whiteTexture);
+                GUI.color = new Color(0.36f, 0.22f, 0.10f, focus ? 0.70f : 0.28f);
+                GUI.DrawTexture(new Rect(r.x, r.y, r.width, 1.5f * s), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(r.x, r.yMax - 1.5f * s, r.width, 1.5f * s), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(r.x, r.y, 1.5f * s, r.height), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(r.xMax - 1.5f * s, r.y, 1.5f * s, r.height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                BirdColor c;
-                BirdSex sex;
-                BirdPoker.KindParts(i, out c, out sex);
-                var spr = SpriteCatalog.Bird(c, sex);
+                Sprite spr;
+                if (wildCell) spr = SpriteCatalog.Joker;
+                else
+                {
+                    BirdColor c;
+                    BirdSex sex;
+                    BirdPoker.KindParts(i, out c, out sex);
+                    spr = SpriteCatalog.Bird(c, sex);
+                }
                 if (spr != null && spr.texture != null)
                 {
                     float ip = cell * 0.1f;
@@ -3373,52 +4232,35 @@ namespace FlockFive
                     GUI.DrawTexture(new Rect(r.x + ip, r.y + ip, cell - ip * 2f, cell - ip * 2f), spr.texture, ScaleMode.ScaleToFit, true);
                     GUI.color = Color.white;
                 }
+                bool covering = focus && t >= 0.55f && t < 1.05f;
+                if (on && !covering)
+                    DrawInkStamp(r, -10f, 0.92f, true);
             }
 
-            // Red COMPLETED stamp — drops after clipboard lands
-            if (t >= 0.55f && _pokerStampKind >= 0)
-            {
-                int col = _pokerStampKind % cols;
-                int row = _pokerStampKind / cols;
-                var cellR = new Rect(x0 + col * (cell + gap), gridTop + row * (cell + gap), cell, cell);
-                float stampU = Mathf.Clamp01((t - 0.55f) / 0.50f);
-                float drop = 1f - Mathf.Pow(1f - stampU, 2.4f);
-                float stampSize = cell * 1.55f;
-                float stampY = Mathf.Lerp(cellR.y - Screen.height * 0.35f, cellR.center.y - stampSize * 0.5f, drop);
-                float rot = Mathf.Lerp(-18f, -8f, drop);
-                float pop = stampU >= 1f ? 1f + 0.12f * Mathf.Sin(Mathf.Clamp01((t - 1.05f) / 0.18f) * Mathf.PI) : 1f;
-                stampSize *= pop;
-                var stamp = new Rect(cellR.center.x - stampSize * 0.5f, stampY, stampSize, stampSize);
+            DrawPokerStamper(x0, gridTop, cell, gap, cols, t, s);
 
-                // Draw rotated stamp via GUI matrix
-                var prev = GUI.matrix;
-                Vector2 pivot = stamp.center;
-                GUIUtility.RotateAroundPivot(rot, pivot);
-                // Outer red ring (cutthrough circle)
-                GUI.color = new Color(0.82f, 0.08f, 0.10f, 0.92f * Mathf.Clamp01(stampU * 1.4f));
-                GUI.DrawTexture(stamp, Texture2D.whiteTexture);
-                // Hollow center — draw paper-colored disc
-                float inset = stampSize * 0.14f;
-                GUI.color = new Color(0.96f, 0.93f, 0.82f, 0.92f * Mathf.Clamp01(stampU * 1.4f));
-                GUI.DrawTexture(new Rect(stamp.x + inset, stamp.y + inset, stampSize - inset * 2f, stampSize - inset * 2f), Texture2D.whiteTexture);
-                // Inner red ring edge
-                float inset2 = stampSize * 0.20f;
-                GUI.color = new Color(0.82f, 0.08f, 0.10f, 0.88f * Mathf.Clamp01(stampU * 1.4f));
-                // Approximate ring with thick border via four strips is heavy — use text as the cutthrough brand
-                GUI.color = new Color(0.78f, 0.06f, 0.08f, 0.95f * Mathf.Clamp01(stampU * 1.4f));
-                var st = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                    wordWrap = true
-                };
-                st.fontSize = FitFont(st, "COMPLETED", stamp.width * 0.82f, stamp.height * 0.45f, 11, 28);
-                // Red lettering cutthrough look: stamp label over the hollow
-                GUI.Label(new Rect(stamp.x + stamp.width * 0.08f, stamp.y + stamp.height * 0.28f, stamp.width * 0.84f, stamp.height * 0.44f), "COMPLETED", st);
-                // Force red via StampOutlined
-                StampOutlined(new Rect(stamp.x + stamp.width * 0.08f, stamp.y + stamp.height * 0.28f, stamp.width * 0.84f, stamp.height * 0.44f), "COMPLETED", st, new Color(0.78f, 0.06f, 0.08f, 1f), 2, 1);
-                GUI.matrix = prev;
+            if (_pokerBingo && t >= 1.35f)
+            {
+                var glow = GlowTex();
+                float burst = 0.35f + 0.65f * Mathf.Abs(Mathf.Sin(t * 3.1f));
+                GUI.color = new Color(1f, 0.82f, 0.28f, 0.22f * burst);
+                float halo = boardW * (1.08f + 0.08f * burst);
+                GUI.DrawTexture(new Rect(board.center.x - halo * 0.5f, board.center.y - halo * 0.5f, halo, halo), glow, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
+                float cascade = t - 1.35f;
+                for (int i = 0; i < BirdPoker.PunchKinds; i++)
+                {
+                    if (i == _pokerStampKind) continue;
+                    float at = i * 0.06f;
+                    if (cascade < at) continue;
+                    int col = i % cols;
+                    int row = i / cols;
+                    var cellR = new Rect(x0 + col * (cell + gap), gridTop + row * (cell + gap), cell, cell);
+                    float u = Mathf.Clamp01((cascade - at) / 0.16f);
+                    float sz = cell * Mathf.Lerp(1.45f, 1.0f, u);
+                    var mark = new Rect(cellR.center.x - sz * 0.5f, cellR.center.y - sz * 0.5f, sz, sz);
+                    DrawInkStamp(mark, Mathf.Lerp(-16f, -8f, u), 0.55f + 0.40f * u, u > 0.35f);
+                }
             }
 
             if (t >= 1.4f)
@@ -3429,13 +4271,81 @@ namespace FlockFive
                     alignment = TextAnchor.MiddleCenter,
                     fontSize = Mathf.RoundToInt(14 * s)
                 };
-                StampOutlined(new Rect(0f, board.yMax + 12f * s, Screen.width, 24f * s), "tap to continue", hint, new Color(1f, 0.92f, 0.7f), 1, 1);
+                string hintTx = _pokerBingo
+                    ? "FULLCARD  " + Purse.Compact(BirdPoker.FullcardPrize) + "   ·   lifetime " + BirdPoker.FullcardCount
+                    : "tap to continue";
+                StampOutlined(new Rect(0f, board.yMax + 12f * s, Screen.width, 24f * s), hintTx, hint, new Color(1f, 0.92f, 0.7f), 1, 1);
             }
+            GUI.matrix = prevGui;
+        }
+
+        const float StampDropAt = 0.55f;
+        const float StampHitAt = 1.05f;
+        const float StampToolU = 0.41f;
+        const float StampToolV = 0.82f;
+        const float StampToolAspect = 0.61f;
+
+        void DrawPokerStamper(float x0, float gridTop, float cell, float gap, int cols, float t, float s)
+        {
+            if (t < StampDropAt || _pokerStampKind < 0) return;
+            int col = _pokerStampKind % cols;
+            int row = _pokerStampKind / cols;
+            var cellR = new Rect(x0 + col * (cell + gap), gridTop + row * (cell + gap), cell, cell);
+            float contactX = cellR.center.x;
+            float contactY = cellR.center.y;
+            float startY = contactY - Screen.height * 0.70f;
+            float rubberX, rubberY, rot, squash;
+            float liftEnd = StampHitAt + 0.55f;
+            if (t < StampHitAt)
+            {
+                float u = Mathf.Clamp01((t - StampDropAt) / (StampHitAt - StampDropAt));
+                float drop = 1f - Mathf.Pow(1f - u, 2.8f);
+                rubberX = Mathf.Lerp(contactX + cell * 0.42f, contactX, drop);
+                rubberY = Mathf.Lerp(startY, contactY, drop);
+                rot = Mathf.Lerp(16f, -6f, drop);
+                squash = 1f;
+            }
+            else
+            {
+                float u = Mathf.Clamp01((t - StampHitAt) / 0.50f);
+                float peel = u < 0.16f ? 0f : (u - 0.16f) / 0.84f;
+                peel = peel * peel;
+                rubberX = contactX + peel * cell * 0.22f;
+                rubberY = Mathf.Lerp(contactY, startY - 30f * s, peel);
+                rot = Mathf.Lerp(-6f, 12f, peel);
+                squash = t < StampHitAt + 0.10f
+                    ? 1f - 0.13f * Mathf.Sin(Mathf.Clamp01((t - StampHitAt) / 0.10f) * Mathf.PI)
+                    : 1f;
+            }
+            var tool = SpriteCatalog.StampTool;
+            float a = 1f;
+            if (t > liftEnd - 0.14f)
+                a = Mathf.Clamp01((liftEnd - t) / 0.14f);
+            if (a < 0.02f) return;
+            if (tool != null && tool.texture != null)
+            {
+                float toolH = cell * 4.8f;
+                float toolW = toolH * StampToolAspect;
+                float x = rubberX - toolW * StampToolU;
+                float y = rubberY - toolH * StampToolV * squash;
+                var prev = GUI.matrix;
+                GUIUtility.RotateAroundPivot(rot, new Vector2(rubberX, rubberY));
+                GUI.color = new Color(1f, 1f, 1f, a);
+                GUI.DrawTexture(new Rect(x, y, toolW, toolH * squash), tool.texture, ScaleMode.ScaleToFit, true);
+                GUI.color = Color.white;
+                GUI.matrix = prev;
+                return;
+            }
+            float stampU = Mathf.Clamp01((t - StampDropAt) / (StampHitAt - StampDropAt));
+            float dropInk = 1f - Mathf.Pow(1f - stampU, 2.6f);
+            float stampSize = Mathf.Lerp(cell * 2.15f, cell * 1.08f, dropInk);
+            var stamp = new Rect(cellR.center.x - stampSize * 0.5f, rubberY - stampSize * 0.5f, stampSize, stampSize);
+            DrawInkStamp(stamp, rot, Mathf.Clamp01(stampU * 1.5f) * a, true);
         }
 
         void DrawPokerPurse(float top, float s)
         {
-            string coins = "$" + Purse.Coins;
+            string coins = Purse.Cash;
             float icon = Mathf.Clamp(38f * s, 30f, 48f);
             float gap = 6f * s;
             var st = new GUIStyle(GUI.skin.label)
@@ -3456,14 +4366,24 @@ namespace FlockFive
                 DrawIdleCoin(ir, coinSpr.texture);
         }
 
+        const float DealGatherT = 0.32f;
+        const float DealRiffleT = 0.56f;
+        const float DealFanT = 0.50f;
+        const float DealBumpT = 0.24f;
+        const float PokerFanScale = 1.42f;
+        const float PokerFanSpan = 0.52f;
+        const float PokerFanPinchU = 0.24f;
+        const float PokerFanPinchV = 0.20f;
+        const float PokerFanHandAspect = 0.80f;
+
         void TryPokerDeal()
         {
-            if (!BirdPoker.Deal())
+            if (!BirdPoker.CanDeal() || !BirdPoker.Deal())
                 Sfx.Deny();
             else
             {
                 BeginPokerDeal();
-                Sfx.Chirp(BirdColor.Gold);
+                Sfx.CardRustle();
             }
         }
 
@@ -3472,92 +4392,878 @@ namespace FlockFive
 
         float PokerMotionDur()
         {
-            if (_pokerMotion == PokerMotion.Deal) return 0.08f * (BirdPoker.HandSize - 1) + 0.34f;
-            if (_pokerMotion == PokerMotion.Draw) return 0.08f * (BirdPoker.HandSize - 1) + 0.40f;
+            if (_pokerMotion == PokerMotion.Deal)
+                return DealGatherT + DealRiffleT + DealFanT + DealBumpT;
+            if (_pokerMotion == PokerMotion.Draw)
+                return _pokerRowEnd;
             return 0f;
         }
 
         void TickPokerMotion()
         {
             if (_pokerMotion == PokerMotion.None) return;
+            float prev = _pokerMotionT;
             _pokerMotionT += Time.unscaledDeltaTime;
+            FirePokerCineSfx(prev, _pokerMotionT);
             if (_pokerMotionT >= PokerMotionDur())
+            {
+                if (_pokerMotion == PokerMotion.Deal) _pokerFan = true;
+                if (_pokerMotion == PokerMotion.Draw)
+                {
+                    _pokerFan = false;
+                    _pokerChained = false;
+                    _pokerShowPay = true;
+                    if (_pokerPendingStamp)
+                    {
+                        BeginPokerStamp(BirdPoker.LastPunchKind);
+                        _pokerPendingStamp = false;
+                    }
+                    if (BirdPoker.LastRank >= BirdPoker.Rank.FullHouse) Sfx.Celebrate();
+                    else if (_pokerResultCue == 2) Sfx.Clink();
+                    else if (_pokerResultCue == 1) Sfx.Deny();
+                    _pokerResultCue = 0;
+                }
                 _pokerMotion = PokerMotion.None;
+            }
         }
 
         void BeginPokerDeal()
         {
             _pokerMotion = PokerMotion.Deal;
             _pokerMotionT = 0f;
-            for (int i = 0; i < _pokerRedraw.Length; i++) _pokerRedraw[i] = true;
+            _pokerFan = false;
+            _pokerChained = false;
+            _pokerShowPay = false;
+            _pokerChainBreak = -1f;
+            _pokerHover = -1;
+            for (int i = 0; i < _pokerRedraw.Length; i++)
+            {
+                _pokerRedraw[i] = true;
+                _pokerHoldSlide[i] = 0f;
+            }
         }
 
         void BeginPokerDraw()
         {
             _pokerMotion = PokerMotion.Draw;
             _pokerMotionT = 0f;
+            _pokerPluckN = 0;
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+            {
+                _pokerDrawFrom[i] = _pokerPoseR[i];
+                if (!BirdPoker.Hold[i]) continue;
+                _pokerPluckIx[_pokerPluckN] = i;
+                _pokerPluckN++;
+            }
+            _pokerChainBreak = _pokerChained ? 0f : -1f;
+            _pokerShowPay = false;
+            int disc = 0;
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+                if (_pokerRedraw[i]) disc++;
+            _pokerPluckEnd = 0.38f;
+            _pokerReplaceEnd = _pokerPluckEnd + 0.16f * Mathf.Max(1, disc);
+            _pokerRowEnd = _pokerReplaceEnd + 0.15f * Mathf.Max(1, disc) + 0.42f;
+            PunchPoker(0.16f, 4.2f, 1.0f);
         }
 
-        void DrawPokerCard(Rect seat, int i, float s, float holdH)
+        void TickHoldSlide()
         {
-            bool dealt = BirdPoker.PhaseNow == BirdPoker.Phase.Dealt;
-            bool canHold = !PokerMotionBusy() && !(_pokerPayOpen || _pokerPayAnim > 0.35f) && dealt;
-            var holdR = new Rect(seat.x, seat.yMax + 6f * s, seat.width, holdH);
-            if (canHold && (HitPad(seat, out _) || HitPad(holdR, out _)))
+            float sp = Time.unscaledDeltaTime * 4.6f;
+            for (int i = 0; i < BirdPoker.HandSize; i++)
             {
-                BirdPoker.ToggleHold(i);
-                Sfx.Chirp(BirdColor.Gold);
+                float want = BirdPoker.Hold[i] ? 1f : 0f;
+                _pokerHoldSlide[i] = Mathf.MoveTowards(_pokerHoldSlide[i], want, sp);
+            }
+        }
+
+        void PunchPoker(float dur, float amp, float twist)
+        {
+            _pokerKickDur = Mathf.Max(0.08f, dur);
+            _pokerKickAmp = amp;
+            _pokerKickTwist = twist;
+            _pokerKickT = _pokerKickDur;
+            if (CamShake.Live != null)
+                CamShake.Live.Punch(dur, amp * 0.012f, twist * 0.45f, amp * 0.004f);
+        }
+
+        void TickPokerKick()
+        {
+            if (_pokerKickT <= 0f)
+            {
+                _pokerKick = Vector2.zero;
+                return;
+            }
+            _pokerKickT -= Time.unscaledDeltaTime;
+            if (_pokerKickT <= 0f)
+            {
+                _pokerKick = Vector2.zero;
+                return;
+            }
+            float u = Mathf.Clamp01(_pokerKickT / _pokerKickDur);
+            float decay = u * u;
+            float w = Time.unscaledTime * 58f;
+            _pokerKick = new Vector2(
+                Mathf.Sin(w) * _pokerKickAmp * decay + Mathf.Cos(w * 1.31f) * _pokerKickTwist * 0.35f * decay,
+                Mathf.Cos(w * 1.19f) * _pokerKickAmp * 0.72f * decay);
+        }
+
+        void FirePokerCineSfx(float prev, float now)
+        {
+            if (_pokerMotion == PokerMotion.Deal)
+            {
+                if (prev < DealGatherT && now >= DealGatherT)
+                {
+                    Sfx.Riffle();
+                    PunchPoker(0.28f, 5.5f, 1.4f);
+                }
+                float fanAt = DealGatherT + DealRiffleT;
+                if (prev < fanAt && now >= fanAt)
+                {
+                    Sfx.CardRustle();
+                    PunchPoker(0.16f, 3.2f, 0.8f);
+                }
+                for (int i = 0; i < BirdPoker.HandSize; i++)
+                {
+                    float slap = fanAt + 0.08f + i * 0.07f;
+                    if (prev < slap && now >= slap) Sfx.CardSlap();
+                }
+                float bumpAt = fanAt + DealFanT;
+                if (prev < bumpAt && now >= bumpAt)
+                {
+                    Sfx.CardBump();
+                    PunchPoker(0.22f, 9.5f, 2.2f);
+                }
+            }
+            else if (_pokerMotion == PokerMotion.Draw)
+            {
+                if (prev < 0.04f && now >= 0.04f && _pokerChainBreak >= 0f)
+                {
+                    Sfx.ChainSnap();
+                    PunchPoker(0.28f, 10.5f, 2.4f);
+                }
+                int fi = 0;
+                for (int i = 0; i < BirdPoker.HandSize; i++)
+                {
+                    if (!_pokerRedraw[i]) continue;
+                    float at = _pokerPluckEnd + fi * 0.16f;
+                    if (prev < at + 0.12f && now >= at + 0.12f)
+                    {
+                        Sfx.CardPop();
+                        PunchPoker(0.12f, 5.2f, 1.1f);
+                    }
+                    fi++;
+                }
+                int di = 0;
+                for (int i = 0; i < BirdPoker.HandSize; i++)
+                {
+                    if (!_pokerRedraw[i]) continue;
+                    float at = _pokerReplaceEnd + di * 0.15f;
+                    if (prev < at && now >= at) Sfx.CardSlap();
+                    di++;
+                }
+                if (prev < _pokerRowEnd - 0.08f && now >= _pokerRowEnd - 0.08f)
+                {
+                    Sfx.CardBump();
+                    PunchPoker(0.20f, 6.8f, 1.5f);
+                }
+            }
+        }
+
+        int[] PokerDrawOrder()
+        {
+            var order = _pokerDrawOrder;
+            int n = 0;
+            bool fan = _pokerFan || _pokerMotion == PokerMotion.Deal || _pokerMotion == PokerMotion.Draw;
+            if (!fan)
+            {
+                for (int i = 0; i < order.Length; i++) order[i] = i;
+                return order;
+            }
+            // Unheld fan, left→right, hovered last so it sits on top.
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+            {
+                if (PokerCardLifted(i)) continue;
+                if (i == _pokerHover) continue;
+                order[n++] = i;
+            }
+            if (_pokerHover >= 0 && _pokerHover < BirdPoker.HandSize && !PokerCardLifted(_pokerHover))
+                order[n++] = _pokerHover;
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+            {
+                if (!PokerCardLifted(i)) continue;
+                order[n++] = i;
+            }
+            while (n < order.Length)
+            {
+                for (int i = 0; i < BirdPoker.HandSize && n < order.Length; i++)
+                {
+                    bool seen = false;
+                    for (int k = 0; k < n; k++)
+                        if (order[k] == i) { seen = true; break; }
+                    if (!seen) order[n++] = i;
+                }
+            }
+            return order;
+        }
+
+        bool PokerCardLifted(int i) =>
+            BirdPoker.Hold[i] && _pokerHoldSlide[i] > 0.22f;
+
+        int PokerFanSlot(int card, out int fanCount)
+        {
+            fanCount = 0;
+            int slot = 0;
+            for (int k = 0; k < BirdPoker.HandSize; k++)
+            {
+                if (BirdPoker.Hold[k]) continue;
+                if (k == card) slot = fanCount;
+                fanCount++;
+            }
+            return slot;
+        }
+
+        Rect PokerFanSeat(int i, Rect row, float bump)
+        {
+            int fanCount;
+            int slot = PokerFanSlot(i, out fanCount);
+            if (BirdPoker.Hold[i] || fanCount <= 0)
+            {
+                slot = i;
+                fanCount = BirdPoker.HandSize;
+            }
+            return PokerFanSeatAt(slot, Mathf.Max(1, fanCount), row, bump);
+        }
+
+        Rect PokerFanSeatAt(int fanIndex, int fanCount, Rect row, float bump)
+        {
+            float t = fanCount <= 1 ? 0.5f : fanIndex / (float)(fanCount - 1);
+            float cardH = row.height * PokerFanScale;
+            float cardW = cardH / 1.42f;
+            float span = row.width * PokerFanSpan * Mathf.Lerp(0.46f, 1f, (fanCount - 1) / 4f);
+            float x = row.center.x - span * 0.5f + span * t - cardW * 0.5f;
+            float mid = 1f - Mathf.Abs(t * 2f - 1f);
+            float extra = fanCount < BirdPoker.HandSize ? (BirdPoker.HandSize - fanCount) * row.height * 0.20f : 0f;
+            float y = row.y + row.height - cardH + row.height * 1.38f - mid * 8f + bump + extra;
+            float life = Mathf.Sin(Time.unscaledTime * 1.55f + fanIndex * 1.27f) * 3.4f;
+            float sway = Mathf.Sin(Time.unscaledTime * 0.82f + fanIndex * 0.91f) * 2.0f;
+            return new Rect(x + sway, y + life, cardW, cardH);
+        }
+
+        float PokerFanRoll(int i)
+        {
+            int fanCount;
+            int slot = PokerFanSlot(i, out fanCount);
+            if (BirdPoker.Hold[i] || fanCount <= 0)
+                return PokerFanRollAt(i / (float)(BirdPoker.HandSize - 1));
+            float t = fanCount <= 1 ? 0.5f : slot / (float)(fanCount - 1);
+            return PokerFanRollAt(t) + Mathf.Sin(Time.unscaledTime * 1.18f + i * 0.73f) * 1.8f;
+        }
+
+        float PokerFanRollAt(float t) => Mathf.Lerp(-32f, 32f, t);
+
+        Rect PokerStackSeat(Rect row)
+        {
+            float w = row.height / 1.42f;
+            return new Rect(row.center.x - w * 0.5f, row.y + 18f, w, row.height);
+        }
+
+        void PokerPose(int i, Rect classic, Rect row, out Rect r, out float yaw, out float roll, out bool showFace, out BirdPoker.Card face, out bool sparkle)
+        {
+            r = classic;
+            yaw = 0f;
+            roll = 0f;
+            face = BirdPoker.Hand[i];
+            showFace = BirdPoker.PhaseNow != BirdPoker.Phase.Idle;
+            sparkle = false;
+            var stack = PokerStackSeat(row);
+
+            if (_pokerMotion == PokerMotion.Deal)
+            {
+                float t = _pokerMotionT;
+                if (t < DealGatherT)
+                {
+                    float u = Mathf.Clamp01(t / DealGatherT);
+                    u = u * u * (3f - 2f * u);
+                    r = LerpRect(classic, stack, u);
+                    showFace = false;
+                }
+                else if (t < DealGatherT + DealRiffleT)
+                {
+                    float u = Mathf.Clamp01((t - DealGatherT) / DealRiffleT);
+                    int pkt = i & 1;
+                    float split = (pkt == 0 ? -1f : 1f) * classic.width * 0.62f;
+                    var splitR = new Rect(stack.x + split, stack.y - 6f, stack.width, stack.height);
+                    if (u < 0.30f)
+                    {
+                        float s = u / 0.30f;
+                        r = LerpRect(stack, splitR, s * s * (3f - 2f * s));
+                    }
+                    else
+                    {
+                        float d = (u - 0.30f) / 0.70f;
+                        float drop = Mathf.Sin(d * Mathf.PI) * 36f * (1f - d);
+                        float jitter = Mathf.Sin((d * 9f + i) * 3.1f) * 5f * (1f - d);
+                        r = new Rect(Mathf.Lerp(splitR.x, stack.x, d) + jitter, stack.y - drop, stack.width, stack.height);
+                        roll = Mathf.Sin(d * Mathf.PI * 3f) * (pkt == 0 ? -10f : 10f);
+                    }
+                    showFace = false;
+                }
+                else if (t < DealGatherT + DealRiffleT + DealFanT)
+                {
+                    float u = Mathf.Clamp01((t - DealGatherT - DealRiffleT) / DealFanT);
+                    u = u * u * (3f - 2f * u);
+                    var fan = PokerFanSeat(i, row, 0f);
+                    r = LerpRect(stack, fan, u);
+                    yaw = u * 180f;
+                    showFace = u >= 0.5f;
+                    roll = Mathf.Lerp(0f, PokerFanRoll(i), u);
+                    face = BirdPoker.Hand[i];
+                }
+                else
+                {
+                    float u = Mathf.Clamp01((t - DealGatherT - DealRiffleT - DealFanT) / DealBumpT);
+                    float bump = 18f * Mathf.Sin(Mathf.Clamp01(u / 0.55f) * Mathf.PI)
+                        - 6f * Mathf.Sin(Mathf.Clamp01((u - 0.45f) / 0.55f) * Mathf.PI);
+                    r = PokerFanSeat(i, row, bump);
+                    roll = PokerFanRoll(i);
+                    showFace = true;
+                    yaw = 0f;
+                }
+            }
+            else if (_pokerMotion == PokerMotion.Draw)
+            {
+                bool keep = !_pokerRedraw[i];
+                var from = _pokerDrawFrom[i].width > 2f ? _pokerDrawFrom[i] : PokerFanSeat(i, row, 0f);
+                int discSlot = 0;
+                for (int k = 0; k < i; k++)
+                    if (_pokerRedraw[k]) discSlot++;
+                if (keep)
+                {
+                    r = classic;
+                    roll = 0f;
+                    showFace = true;
+                    face = BirdPoker.Hand[i];
+                }
+                else if (_pokerMotionT < _pokerPluckEnd)
+                {
+                    r = from;
+                    roll = PokerFanRoll(i);
+                    showFace = true;
+                    face = _pokerPrev[i];
+                }
+                else if (_pokerMotionT < _pokerReplaceEnd)
+                {
+                    float at = _pokerPluckEnd + discSlot * 0.16f;
+                    float u = Mathf.Clamp01((_pokerMotionT - at) / 0.28f);
+                    float twirl = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(u / 0.52f));
+                    float pop = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - 0.42f) / 0.30f));
+                    float sc = Mathf.Lerp(1f, 1.10f, twirl * (1f - pop)) * (1f - pop);
+                    float lift = -18f * twirl + 10f * pop;
+                    float nw = from.width * Mathf.Max(0.02f, sc);
+                    float nh = from.height * Mathf.Max(0.02f, sc);
+                    r = new Rect(from.center.x - nw * 0.5f, from.center.y - nh * 0.5f + lift, nw, nh);
+                    yaw = twirl * 420f * (i % 2 == 0 ? 1f : -1f);
+                    roll = PokerFanRoll(i) + twirl * 160f * (i % 2 == 0 ? -1f : 1f);
+                    showFace = pop < 0.82f;
+                    face = _pokerPrev[i];
+                }
+                else
+                {
+                    float at = _pokerReplaceEnd + discSlot * 0.15f;
+                    float u = Mathf.Clamp01((_pokerMotionT - at) / 0.22f);
+                    u = u * u * (3f - 2f * u);
+                    var inbound = new Rect(-classic.width * 1.2f, classic.y - 20f, classic.width, classic.height);
+                    r = LerpRect(inbound, classic, u);
+                    yaw = (1f - u) * 180f;
+                    showFace = u >= 0.45f;
+                    roll = 0f;
+                    face = u < 0.45f ? default : BirdPoker.Hand[i];
+                }
+            }
+            else if (_pokerFan && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt)
+            {
+                float slide = _pokerHoldSlide[i];
+                Rect fan;
+                if (BirdPoker.Hold[i] && _pokerHoldFrom[i].width > 2f)
+                    fan = _pokerHoldFrom[i];
+                else
+                    fan = PokerFanSeat(i, row, 0f);
+                r = LerpRect(fan, classic, slide);
+                roll = PokerFanRoll(i) * (1f - slide);
+                showFace = true;
             }
 
-            bool showFace;
-            float yaw;
+            r = new Rect(r.x + _pokerKick.x, r.y + _pokerKick.y, r.width, r.height);
+            if (i == _pokerHover && !BirdPoker.Hold[i] && _pokerHoldSlide[i] < 0.35f
+                && _pokerFan && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt)
+            {
+                float puff = 1.12f;
+                float nw = r.width * puff;
+                float nh = r.height * puff;
+                r = new Rect(r.center.x - nw * 0.5f, r.y - 18f * Mathf.Max(1f, r.height / 180f), nw, nh);
+            }
+            float sx = Mathf.Abs(Mathf.Cos(yaw * Mathf.Deg2Rad));
+            sparkle = showFace && face.Wild && sx > 0.88f && Mathf.Abs(roll) < 36f;
+            if (_pokerMotion == PokerMotion.Deal)
+            {
+                float fanAt = DealGatherT + DealRiffleT;
+                if (_pokerMotionT < fanAt + DealFanT * 0.55f) sparkle = false;
+            }
+            if (_pokerMotion == PokerMotion.Draw && _pokerRedraw[i] && _pokerMotionT < _pokerReplaceEnd && yaw > 20f && yaw < 160f)
+                sparkle = false;
+        }
+
+        static Rect LerpRect(Rect a, Rect b, float u)
+        {
+            return new Rect(
+                Mathf.Lerp(a.x, b.x, u),
+                Mathf.Lerp(a.y, b.y, u),
+                Mathf.Lerp(a.width, b.width, u),
+                Mathf.Lerp(a.height, b.height, u));
+        }
+
+        void DrawPokerFanHand(Rect row, float cardW, float cardH, float s, bool front)
+        {
+            int fanLeft = 0;
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+                if (!BirdPoker.Hold[i]) fanLeft++;
+            if (front && fanLeft == 0 && _pokerMotion != PokerMotion.Deal) return;
+            float u = 0f;
+            float bump = 0f;
+            bool show = false;
+            if (_pokerMotion == PokerMotion.Deal)
+            {
+                float fanAt = DealGatherT + DealRiffleT;
+                if (_pokerMotionT >= fanAt)
+                {
+                    show = true;
+                    u = Mathf.Clamp01((_pokerMotionT - fanAt) / DealFanT);
+                    if (_pokerMotionT >= fanAt + DealFanT)
+                    {
+                        u = 1f;
+                        float b = Mathf.Clamp01((_pokerMotionT - fanAt - DealFanT) / DealBumpT);
+                        bump = 18f * Mathf.Sin(Mathf.Clamp01(b / 0.55f) * Mathf.PI)
+                            - 6f * Mathf.Sin(Mathf.Clamp01((b - 0.45f) / 0.55f) * Mathf.PI);
+                    }
+                }
+            }
+            else if (_pokerFan && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt && _pokerMotion == PokerMotion.None)
+            {
+                show = true;
+                u = 1f;
+            }
+            else if (_pokerMotion == PokerMotion.Draw)
+            {
+                show = true;
+                u = 1f - Mathf.Clamp01(_pokerMotionT / 0.20f);
+            }
+            if (!show || u < 0.02f) return;
+            var spr = front ? SpriteCatalog.HandFanFront : SpriteCatalog.HandFan;
+            if (spr == null || spr.texture == null) return;
+            float extra = fanLeft < BirdPoker.HandSize
+                ? (BirdPoker.HandSize - Mathf.Max(1, fanLeft)) * row.height * 0.20f
+                : 0f;
+            float fanH = row.height * PokerFanScale;
+            float h = Mathf.Max(fanH * 2.35f, Screen.height * 0.78f);
+            float w = h * PokerFanHandAspect;
+            float alive = u;
+            float breathe = Mathf.Sin(Time.unscaledTime * 1.32f);
+            float tick = Mathf.Sin(Time.unscaledTime * 2.55f);
+            float pinchX = row.center.x + _pokerKick.x + 2.2f * breathe * alive;
+            float pinchY = row.y + row.height * 1.95f + extra + bump * 0.25f + _pokerKick.y
+                + (5.5f * breathe + 2.2f * tick) * alive;
+            float x = pinchX - w * PokerFanPinchU;
+            float y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
+            float ang = 5.5f + 2.4f * breathe * alive;
+            float squash = 1f + 0.016f * breathe * alive;
+            var prev = GUI.matrix;
+            GUIUtility.RotateAroundPivot(ang, new Vector2(pinchX, pinchY));
+            GUIUtility.ScaleAroundPivot(new Vector2(squash, 2f - squash), new Vector2(pinchX, pinchY));
+            GUI.color = new Color(1f, 1f, 1f, u);
+            GUI.DrawTexture(new Rect(x, y, w, h), spr.texture, ScaleMode.ScaleToFit, true);
+            GUI.matrix = prev;
+            GUI.color = Color.white;
+        }
+
+        void TickPokerDash(float s)
+        {
+            if (_pokerChainBreak >= 0f)
+                _pokerChainBreak += Time.unscaledDeltaTime / 0.72f;
+            float want = 0f;
+            if (BirdPoker.PhaseNow != BirdPoker.Phase.Idle)
+                want = 1f;
+            if (_pokerMotion == PokerMotion.Deal)
+            {
+                float fanAt = DealGatherT + DealRiffleT;
+                want = _pokerMotionT >= fanAt ? 1f : 0f;
+            }
+            _pokerDash = Mathf.MoveTowards(_pokerDash, want, Time.unscaledDeltaTime * 3.4f);
+        }
+
+        bool DrawPokerDash(Rect betR, Rect actR, float s, bool busy, bool steppers, string act)
+        {
+            float lift = _pokerDash * (betR.height + 48f * s);
+            var bet = new Rect(betR.x, betR.y + lift, betR.width, betR.height);
+            var actBox = actR;
+            DrawPokerBetBar(bet, s, busy, steppers);
+            DrawPokerWinBanner(betR, actR, s);
+            bool fire = DrawFloralBtn(actBox, act, s, true);
+            return fire;
+        }
+
+        void DrawPokerWinBanner(Rect betR, Rect actR, float s)
+        {
+            if (!_pokerShowPay || BirdPoker.LastWin <= 0) return;
+            string win = "WIN " + Purse.Compact(BirdPoker.LastWin);
+            float h = Mathf.Clamp(42f * s, 36f, 56f);
+            float w = Mathf.Min(betR.width + actR.width * 0.15f, Screen.width * 0.52f);
+            var r = new Rect(betR.x, betR.y - h - 8f * s, w, h);
+            if (r.y < 8f) r.y = 8f;
+            var st = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = false
+            };
+            st.fontSize = Mathf.RoundToInt(h * 0.62f);
+            int stroke = Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.10f));
+            StampOutlined(r, win, st, new Color(0.94f, 0.12f, 0.14f, 1f), stroke, 2);
+        }
+
+        void DrawPokerChain(Rect wrap, float s)
+        {
+            if (_pokerChainBreak >= 1f) return;
+            if (!_pokerChained && _pokerChainBreak < 0f) return;
+            var spr = SpriteCatalog.Chain;
+            var tex = spr != null ? spr.texture : null;
+            float h = Mathf.Clamp(wrap.height * 0.28f, 28f * s, 52f * s);
+            var chain = new Rect(wrap.x - wrap.width * 0.08f, wrap.center.y - h * 0.15f, wrap.width * 1.16f, h);
+            if (_pokerChainBreak < 0f)
+            {
+                GUI.color = Color.white;
+                if (tex != null) GUI.DrawTexture(chain, tex, ScaleMode.ScaleToFit, true);
+                else
+                {
+                    GUI.color = new Color(0.72f, 0.55f, 0.16f, 0.95f);
+                    GUI.DrawTexture(chain, Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                }
+                return;
+            }
+            float u = Mathf.Clamp01(_pokerChainBreak);
+            float taut = Mathf.Clamp01(u / 0.18f);
+            float flyU = Mathf.Clamp01((u - 0.16f) / 0.84f);
+            flyU = flyU * flyU;
+            // Taut flash before the snap.
+            if (taut < 1f)
+            {
+                float pulse = 1f + 0.12f * Mathf.Sin(taut * Mathf.PI);
+                var tautR = new Rect(
+                    chain.center.x - chain.width * 0.5f * pulse,
+                    chain.center.y - chain.height * 0.5f * pulse,
+                    chain.width * pulse, chain.height * pulse);
+                GUI.color = new Color(1f, 0.92f, 0.55f, 1f);
+                if (tex != null) GUI.DrawTexture(tautR, tex, ScaleMode.ScaleToFit, true);
+                var glow = GlowTex();
+                GUI.color = new Color(1f, 0.86f, 0.35f, 0.55f * Mathf.Sin(taut * Mathf.PI));
+                float gsz = h * (1.6f + 1.8f * taut);
+                GUI.DrawTexture(new Rect(chain.center.x - gsz * 0.5f, chain.center.y - gsz * 0.5f, gsz, gsz), glow, ScaleMode.ScaleToFit, true);
+                GUI.color = Color.white;
+                if (flyU <= 0f) return;
+            }
+            // Four tumbling shards + lock drop.
+            float grav = flyU * flyU * 140f * s;
+            DrawChainShard(tex, chain, 0.00f, 0.28f, -1.15f, -0.15f, -48f, grav * 0.85f, flyU, s);
+            DrawChainShard(tex, chain, 0.22f, 0.28f, -0.45f, 0.25f, -22f, grav * 1.05f, flyU, s);
+            DrawChainShard(tex, chain, 0.50f, 0.28f, 0.50f, 0.20f, 26f, grav * 1.10f, flyU, s);
+            DrawChainShard(tex, chain, 0.72f, 0.28f, 1.20f, -0.10f, 52f, grav * 0.90f, flyU, s);
+            // Spark burst at the snap.
+            var spark = SpriteCatalog.Sparkle;
+            var sp = spark != null && spark.texture != null ? spark.texture : GlowTex();
+            float burst = Mathf.Sin(Mathf.Clamp01(flyU * 2.2f) * Mathf.PI);
+            if (burst > 0.02f)
+            {
+                for (int k = 0; k < 6; k++)
+                {
+                    float ang = k * 1.047f + flyU * 2.4f;
+                    float dist = (18f + k * 10f) * s * (0.35f + flyU);
+                    float sz = h * (0.55f - 0.28f * flyU);
+                    GUI.color = new Color(1f, 0.92f, 0.55f, 0.85f * burst);
+                    GUI.DrawTexture(new Rect(
+                        chain.center.x + Mathf.Cos(ang) * dist - sz * 0.5f,
+                        chain.center.y + Mathf.Sin(ang) * dist - sz * 0.5f,
+                        sz, sz), sp, ScaleMode.ScaleToFit, true);
+                }
+                GUI.color = Color.white;
+            }
+        }
+
+        static void DrawChainShard(Texture tex, Rect chain, float u0, float uW, float dirX, float dirY, float spin, float drop, float fly, float s)
+        {
+            if (tex == null) return;
+            float w = chain.width * uW;
+            var shard = new Rect(chain.x + chain.width * u0, chain.y, w, chain.height);
+            shard.x += dirX * fly * 110f * s;
+            shard.y += dirY * fly * 36f * s + drop;
+            float a = 1f - fly * 0.72f;
+            var prev = GUI.matrix;
+            GUIUtility.RotateAroundPivot(spin * fly, shard.center);
+            GUI.color = new Color(1f, 1f, 1f, a);
+            GUI.DrawTexture(shard, tex, ScaleMode.ScaleToFit, true);
+            GUI.matrix = prev;
+            GUI.color = Color.white;
+        }
+
+        void DrawPokerFlames(Rect row, float cardH, float s)
+        {
+            if (_pokerMotion != PokerMotion.Draw) return;
+            if (_pokerMotionT < _pokerPluckEnd || _pokerMotionT > _pokerReplaceEnd + 0.18f) return;
+            var glow = GlowTex();
+            int slot = 0;
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+            {
+                if (!_pokerRedraw[i]) continue;
+                float at = _pokerPluckEnd + slot * 0.16f;
+                float u = Mathf.Clamp01((_pokerMotionT - at) / 0.28f);
+                slot++;
+                if (u < 0.38f || u > 1.05f) continue;
+                float pop = Mathf.Clamp01((u - 0.42f) / 0.58f);
+                Rect r;
+                float yaw, roll;
+                bool showFace, sparkle;
+                var face = _pokerPrev[i];
+                var classic = new Rect(row.x, row.y, row.height / 1.42f, row.height);
+                PokerPose(i, classic, row, out r, out yaw, out roll, out showFace, out face, out sparkle);
+                Vector2 c = r.center;
+                var pip = PokerPip(face.Wild ? BirdColor.Gold : face.Color);
+                const int bits = 18;
+                var prev = GUI.matrix;
+                for (int b = 0; b < bits; b++)
+                {
+                    float h = (b * 17 + i * 31) * 0.137f;
+                    h = h - Mathf.Floor(h);
+                    float ang = h * Mathf.PI * 2f + i * 0.4f;
+                    float speed = 70f + 110f * h;
+                    float grav = 140f * pop * pop;
+                    float px = c.x + Mathf.Cos(ang) * speed * pop * s;
+                    float py = c.y + Mathf.Sin(ang) * speed * 0.72f * pop * s + grav * s;
+                    float sz = Mathf.Lerp(cardH * 0.16f, cardH * 0.04f, pop) * (0.55f + 0.7f * h);
+                    float spin = (b % 2 == 0 ? 220f : -180f) * pop;
+                    float a = (1f - pop) * (0.55f + 0.45f * Mathf.Sin(pop * Mathf.PI));
+                    if (a < 0.02f) continue;
+                    var bit = new Rect(px - sz * 0.5f, py - sz * 0.5f, sz, sz);
+                    GUI.matrix = prev;
+                    GUIUtility.RotateAroundPivot(spin, bit.center);
+                    bool paper = (b % 3) != 0;
+                    if (paper)
+                    {
+                        GUI.color = Color.Lerp(new Color(0.98f, 0.94f, 0.84f, a), new Color(0.22f, 0.18f, 0.12f, a * 0.7f), pop);
+                        GUI.DrawTexture(bit, Texture2D.whiteTexture);
+                        GUI.color = new Color(pip.r, pip.g, pip.b, a * 0.85f);
+                        GUI.DrawTexture(new Rect(bit.x + sz * 0.18f, bit.y + sz * 0.18f, sz * 0.64f, sz * 0.64f), Texture2D.whiteTexture);
+                    }
+                    else if (glow != null)
+                    {
+                        GUI.color = new Color(1f, 0.86f, 0.42f, a * 0.65f);
+                        GUI.DrawTexture(bit, glow, ScaleMode.ScaleToFit, true);
+                    }
+                }
+                GUI.matrix = prev;
+                GUI.color = Color.white;
+            }
+        }
+
+        void DrawPokerDealHand(Rect row, float cardW, float cardH, float s)
+        {
+            if (_pokerMotion != PokerMotion.Draw) return;
+            if (_pokerMotionT < _pokerReplaceEnd || _pokerMotionT > _pokerRowEnd) return;
+            var spr = SpriteCatalog.HandPluck;
+            if (spr == null || spr.texture == null) return;
+            int slot = 0;
+            int cur = 0;
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+            {
+                if (!_pokerRedraw[i]) continue;
+                float at = _pokerReplaceEnd + slot * 0.15f;
+                if (_pokerMotionT >= at) cur = i;
+                slot++;
+            }
+            int n = 0;
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+                if (_pokerRedraw[i]) n++;
+            if (n == 0) return;
+            float last = _pokerReplaceEnd + (n - 1) * 0.15f + 0.22f;
+            float enter = Mathf.Clamp01((_pokerMotionT - _pokerReplaceEnd) / 0.10f);
+            float exit = 1f - Mathf.Clamp01((_pokerMotionT - last) / 0.16f);
+            float a = enter * exit;
+            if (a < 0.02f) return;
+            var seat = new Rect(row.x + cur * (cardW + 8f * s), row.y, cardW, cardH);
+            float w = cardH * 2.2f;
+            var hr = new Rect(seat.x - w * 0.72f + _pokerKick.x, seat.y + seat.height * 0.15f + _pokerKick.y, w, w);
+            GUI.color = new Color(1f, 1f, 1f, a);
+            GUI.DrawTexture(hr, spr.texture, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+        }
+
+        void DrawPokerCard(Rect seat, int i, float s, float holdH, Rect rowBox) // holdH reserved for row layout
+        {
+            bool dealt = BirdPoker.PhaseNow == BirdPoker.Phase.Dealt;
+            Rect r;
+            float yaw, roll;
+            bool showFace, sparkle;
             var face = BirdPoker.Hand[i];
-            PokerFlip(i, out showFace, out yaw, ref face);
+            PokerPose(i, seat, rowBox, out r, out yaw, out roll, out showFace, out face, out sparkle);
+            bool fanCard = dealt && _pokerFan && !PokerCardLifted(i) && _pokerHoldSlide[i] < 0.40f;
+            _pokerPoseRoll[i] = roll;
+            if (fanCard)
+                _pokerPoseR[i] = new Rect(r.x - r.width * 0.03f, r.y - r.height * 0.16f, r.width * 1.06f, r.height * 1.16f);
+            else
+                _pokerPoseR[i] = r;
+
+            bool held = BirdPoker.Hold[i] && _pokerHoldSlide[i] > 0.45f;
+            bool chainLive = _pokerChainBreak < 1f
+                && (dealt || (_pokerMotion == PokerMotion.Draw && _pokerChainBreak >= 0f));
 
             float sx = Mathf.Cos(yaw * Mathf.Deg2Rad);
             if (Mathf.Abs(sx) < 0.07f)
                 sx = 0.07f * Mathf.Sign(sx == 0f ? 1f : sx);
             var prevM = GUI.matrix;
-            GUIUtility.ScaleAroundPivot(new Vector2(sx, 1f), seat.center);
-            if (showFace) DrawPokerFace(seat, face, s);
-            else DrawPokerBack(seat);
+            Vector2 rollPivot = new Vector2(r.center.x, r.yMax);
+            if (Mathf.Abs(roll) > 0.2f)
+                GUIUtility.RotateAroundPivot(roll, rollPivot);
+            GUIUtility.ScaleAroundPivot(new Vector2(sx, 1f), r.center);
+            if (fanCard)
+                GUIUtility.ScaleAroundPivot(new Vector2(1.05f, 1.16f), rollPivot);
+            if (showFace) DrawPokerFace(r, face, s, sparkle);
+            else DrawPokerBack(r);
             GUI.matrix = prevM;
-
-            bool held = dealt && BirdPoker.Hold[i] && !PokerMotionBusy();
-            GUI.color = new Color(0.12f, 0.08f, 0.04f, 0.35f);
-            GUI.DrawTexture(new Rect(holdR.x + 2f, holdR.y + 3f, holdR.width, holdR.height), Texture2D.whiteTexture);
-            GUI.color = held ? new Color(0.86f, 0.62f, 0.28f, 0.96f) : new Color(0.78f, 0.58f, 0.32f, 0.55f);
-            GUI.DrawTexture(holdR, Texture2D.whiteTexture);
-            GUI.color = held ? new Color(0.98f, 0.90f, 0.62f, 1f) : new Color(0.94f, 0.84f, 0.58f, 0.72f);
-            GUI.DrawTexture(new Rect(holdR.x + 3f * s, holdR.y + 3f * s, holdR.width - 6f * s, holdR.height - 6f * s), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            var holdSt = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter
-            };
-            holdSt.fontSize = Mathf.RoundToInt(13 * s);
-            StampOutlined(holdR, "HOLD", holdSt, new Color(0.36f, 0.18f, 0.07f, held ? 1f : 0.45f), 1, 1);
+            if (held && showFace && chainLive)
+                DrawPokerChain(r, s);
         }
 
-        void PokerFlip(int i, out bool showFace, out float yaw, ref BirdPoker.Card face)
+        static bool PointInRolled(Vector2 p, Rect r, float roll)
         {
-            yaw = 0f;
-            showFace = BirdPoker.PhaseNow != BirdPoker.Phase.Idle;
-            if (_pokerMotion == PokerMotion.Deal)
+            if (r.width < 2f || r.height < 2f) return false;
+            Vector2 pivot = new Vector2(r.center.x, r.yMax);
+            Vector2 d = p - pivot;
+            float rad = -roll * Mathf.Deg2Rad;
+            float cs = Mathf.Cos(rad);
+            float sn = Mathf.Sin(rad);
+            var q = new Vector2(pivot.x + cs * d.x - sn * d.y, pivot.y + sn * d.x + cs * d.y);
+            return r.Contains(q);
+        }
+
+        void HitPokerCards(bool canHold, Rect rowBox, float rowX, float rowY, float cardW, float cardH, float gap)
+        {
+            var e = Event.current;
+            var mouse = e.mousePosition;
+            _pokerHover = -1;
+            if (canHold)
             {
-                float u = Mathf.Clamp01((_pokerMotionT - i * 0.08f) / 0.32f);
-                yaw = u * 180f;
-                showFace = u >= 0.5f;
-                face = BirdPoker.Hand[i];
+                for (int i = BirdPoker.HandSize - 1; i >= 0; i--)
+                {
+                    if (PokerCardLifted(i)) continue;
+                    if (PointInRolled(mouse, _pokerPoseR[i], _pokerPoseRoll[i]))
+                    {
+                        _pokerHover = i;
+                        break;
+                    }
+                }
             }
-            else if (_pokerMotion == PokerMotion.Draw && _pokerRedraw[i])
+
+            int top = -1;
+            if (canHold)
             {
-                float u = Mathf.Clamp01((_pokerMotionT - i * 0.08f) / 0.38f);
-                yaw = u * 180f;
-                showFace = u >= 0.5f;
-                face = u < 0.5f ? _pokerPrev[i] : BirdPoker.Hand[i];
+                for (int i = BirdPoker.HandSize - 1; i >= 0; i--)
+                {
+                    if (!PokerCardLifted(i)) continue;
+                    if (PointInRolled(mouse, _pokerPoseR[i], _pokerPoseRoll[i]))
+                    { top = i; break; }
+                }
+                if (top < 0) top = _pokerHover;
             }
+
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+            {
+                int id = GUIUtility.GetControlID(FocusType.Passive);
+                switch (e.GetTypeForControl(id))
+                {
+                    case EventType.MouseDown:
+                        if (canHold && i == top && e.button == 0)
+                        {
+                            GUIUtility.hotControl = id;
+                            e.Use();
+                        }
+                        break;
+                    case EventType.MouseUp:
+                        if (GUIUtility.hotControl == id)
+                        {
+                            GUIUtility.hotControl = 0;
+                            e.Use();
+                            if (canHold && i == top)
+                                ApplyPokerHold(i);
+                        }
+                        break;
+                    case EventType.MouseDrag:
+                        if (GUIUtility.hotControl == id) e.Use();
+                        break;
+                }
+            }
+        }
+
+        void ApplyPokerHold(int i)
+        {
+            _pokerHoldFrom[i] = _pokerPoseR[i].width > 2f ? _pokerPoseR[i] : _pokerHoldFrom[i];
+            bool was = BirdPoker.Hold[i];
+            BirdPoker.ToggleHold(i);
+            if (BirdPoker.Hold[i] == was) return;
+            _pokerKeepHint = false;
+            bool any = false;
+            for (int k = 0; k < BirdPoker.HandSize; k++)
+                if (BirdPoker.Hold[k]) any = true;
+            _pokerChained = any;
+            if (!any) _pokerChainBreak = -1f;
+            if (BirdPoker.Hold[i]) Sfx.ChainLock();
+            else Sfx.CardTap();
+        }
+
+        void DrawPokerKeepHint(Rect row, float s)
+        {
+            if (!_pokerKeepHint) return;
+            if (!_pokerFan || BirdPoker.PhaseNow != BirdPoker.Phase.Dealt) return;
+            if (_pokerMotion != PokerMotion.None) return;
+            float cap = Mathf.Clamp(28f * s, 24f, 36f);
+            float y = row.y - cap * 2.20f - 8f * s;
+            if (y < 44f * s) y = 44f * s;
+            var st = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+            st.fontSize = Mathf.RoundToInt(cap * 0.78f);
+            var fill = new Color(1f, 0.92f, 0.42f, 1f);
+            int stroke = Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.10f));
+            StampOutlined(new Rect(0f, y, Screen.width, cap), "TAP A CARD", st, fill, stroke, 2);
+            StampOutlined(new Rect(0f, y + cap * 0.92f, Screen.width, cap), "TO KEEP", st, fill, stroke, 2);
+        }
+
+        static void DrawPokerKeptMark(Rect r, float s)
+        {
+            float t = Mathf.Max(2f, 2.2f * s);
+            var gold = new Color(0.86f, 0.68f, 0.22f, 0.92f);
+            GUI.color = gold;
+            GUI.DrawTexture(new Rect(r.x, r.y, r.width, t), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(r.x, r.yMax - t, r.width, t), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(r.x, r.y, t, r.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(r.xMax - t, r.y, t, r.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var leaf = SpriteCatalog.Leaf;
+            if (leaf == null || leaf.texture == null) return;
+            float w = r.width * 0.38f;
+            float h = w * 1.55f;
+            var pin = new Rect(r.center.x - w * 0.5f, r.y - h * 0.42f, w, h);
+            GUI.DrawTexture(pin, leaf.texture, ScaleMode.ScaleToFit, true);
         }
 
         static void DrawPokerBack(Rect r)
@@ -3574,23 +5280,65 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        static void DrawPokerFace(Rect r, BirdPoker.Card card, float s)
+        static void DrawCardPaper(Rect inner, bool wild, float alpha = 1f)
         {
-            GUI.color = new Color(0.22f, 0.12f, 0.08f, 1f);
-            GUI.DrawTexture(r, Texture2D.whiteTexture);
-            var inner = new Rect(r.x + 2f * s, r.y + 2f * s, r.width - 4f * s, r.height - 4f * s);
-            GUI.color = new Color(0.99f, 0.96f, 0.90f, 1f);
+            var paper = SpriteCatalog.CardPaper;
+            if (paper != null && paper.texture != null)
+            {
+                GUI.color = wild
+                    ? new Color(1f, 0.90f, 0.58f, alpha)
+                    : new Color(1f, 1f, 1f, alpha);
+                GUI.DrawTexture(inner, paper.texture, ScaleMode.ScaleAndCrop, true);
+                GUI.color = Color.white;
+                return;
+            }
+            GUI.color = wild
+                ? new Color(1f, 0.94f, 0.78f, alpha)
+                : new Color(0.99f, 0.96f, 0.90f, alpha);
             GUI.DrawTexture(inner, Texture2D.whiteTexture);
             GUI.color = Color.white;
-            if (card.Wild)
+        }
+
+        static readonly Vector2[] WildGlints =
+        {
+            new Vector2(0.12f, 0.10f),
+            new Vector2(0.88f, 0.12f),
+            new Vector2(0.08f, 0.46f),
+            new Vector2(0.92f, 0.50f),
+            new Vector2(0.16f, 0.88f),
+            new Vector2(0.84f, 0.86f),
+            new Vector2(0.50f, 0.07f),
+            new Vector2(0.74f, 0.28f)
+        };
+
+        static void DrawPokerFace(Rect r, BirdPoker.Card card, float s, bool sparkle = true)
+        {
+            bool wild = card.Wild;
+            float phase = r.x * 0.013f + r.y * 0.007f;
+            if (wild && sparkle) DrawWildHalo(r, phase);
+            GUI.color = wild
+                ? new Color(0.42f, 0.26f, 0.08f, 1f)
+                : new Color(0.22f, 0.12f, 0.08f, 1f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            if (wild)
             {
-                var st = new GUIStyle(GUI.skin.label)
+                GUI.color = new Color(0.86f, 0.68f, 0.22f, 1f);
+                GUI.DrawTexture(new Rect(r.x + 1.6f * s, r.y + 1.6f * s, r.width - 3.2f * s, r.height - 3.2f * s), Texture2D.whiteTexture);
+            }
+            var inner = new Rect(r.x + 2.6f * s, r.y + 2.6f * s, r.width - 5.2f * s, r.height - 5.2f * s);
+            DrawCardPaper(inner, wild);
+            if (wild)
+            {
+                var joker = SpriteCatalog.Joker;
+                if (joker != null && joker.texture != null)
                 {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter
-                };
-                st.fontSize = FitFont(st, "WILD", inner.width * 0.88f, inner.height * 0.32f, 14, 32);
-                StampOutlined(inner, "WILD", st, new Color(0.95f, 0.75f, 0.2f), 2, 1);
+                    float pad = inner.width * 0.02f;
+                    GUI.DrawTexture(
+                        new Rect(inner.x + pad, inner.y + pad, inner.width - pad * 2f, inner.height - pad * 2f),
+                        joker.texture, ScaleMode.ScaleToFit, true);
+                }
+                DrawWildBanner(inner, s, phase, sparkle);
+                if (sparkle) DrawWildSparkles(r, inner, phase);
                 return;
             }
             var spr = SpriteCatalog.Bird(card.Color, card.Sex);
@@ -3599,12 +5347,118 @@ namespace FlockFive
                 float pad = inner.width * 0.03f;
                 GUI.DrawTexture(new Rect(inner.x + pad, inner.y + pad, inner.width - pad * 2f, inner.height - pad * 2f), spr.texture, ScaleMode.ScaleToFit, true);
             }
+            DrawCardSheen(inner, phase);
             var pip = PokerPip(card.Color);
-            float pr = r.width * 0.16f;
-            GUI.color = new Color(0.99f, 0.96f, 0.90f, 0.92f);
-            GUI.DrawTexture(new Rect(inner.x + 3f * s, inner.y + 3f * s, pr + 4f * s, pr + 4f * s), Texture2D.whiteTexture);
+            float pr2 = r.width * 0.16f;
+            GUI.color = new Color(0.99f, 0.96f, 0.88f, 0.55f);
+            GUI.DrawTexture(new Rect(inner.x + 3f * s, inner.y + 3f * s, pr2 + 4f * s, pr2 + 4f * s), Texture2D.whiteTexture);
             GUI.color = pip;
-            GUI.DrawTexture(new Rect(inner.x + 5f * s, inner.y + 5f * s, pr, pr), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(inner.x + 5f * s, inner.y + 5f * s, pr2, pr2), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+
+        static void DrawCardSheen(Rect inner, float phase)
+        {
+            float t = Mathf.Repeat(Time.unscaledTime * 0.22f + phase * 0.15f, 1.8f);
+            if (t > 1f) return;
+            float fade = Mathf.Sin(t * Mathf.PI);
+            var glow = GlowTex();
+            float x = inner.x + inner.width * (t * 1.15f - 0.18f);
+            var band = new Rect(x, inner.y + inner.height * 0.06f, inner.width * 0.22f, inner.height * 0.88f);
+            GUI.color = new Color(1f, 0.97f, 0.88f, 0.16f * fade);
+            GUI.DrawTexture(band, glow, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+        }
+
+        static void DrawWildHalo(Rect r, float phase)
+        {
+            float t = Time.unscaledTime;
+            float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.15f + phase);
+            float pad = r.width * (0.10f + 0.06f * breathe);
+            var glow = GlowTex();
+            GUI.color = new Color(1f, 0.84f, 0.38f, 0.22f + 0.20f * breathe);
+            GUI.DrawTexture(new Rect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f), glow, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+        }
+
+        static void DrawWildSparkles(Rect r, Rect inner, float phase)
+        {
+            float t = Time.unscaledTime;
+            var glow = GlowTex();
+            GUI.BeginGroup(inner);
+            float sheenU = Mathf.Repeat(t * 0.36f + phase, 1.75f);
+            if (sheenU < 1f)
+            {
+                float fade = Mathf.Sin(sheenU * Mathf.PI);
+                float x = inner.width * (sheenU * 1.25f - 0.22f);
+                var band = new Rect(x, inner.height * 0.02f, inner.width * 0.30f, inner.height * 0.96f);
+                GUI.color = new Color(1f, 0.96f, 0.78f, 0.36f * fade);
+                GUI.DrawTexture(band, glow, ScaleMode.ScaleToFit, true);
+            }
+            GUI.EndGroup();
+
+            var spark = SpriteCatalog.Sparkle;
+            var tex = spark != null && spark.texture != null ? spark.texture : glow;
+            float baseSz = r.width * 0.22f;
+            for (int i = 0; i < WildGlints.Length; i++)
+            {
+                float tw = Mathf.Sin(t * 2.4f + phase + i * 1.17f);
+                tw = Mathf.Max(0f, tw);
+                tw = tw * tw;
+                if (tw < 0.10f) continue;
+                var uv = WildGlints[i];
+                float sz = baseSz * (0.45f + 0.85f * tw);
+                var gr = new Rect(
+                    r.x + r.width * uv.x - sz * 0.5f,
+                    r.y + r.height * uv.y - sz * 0.5f,
+                    sz, sz);
+                GUI.color = new Color(1f, 0.95f, 0.72f, 0.35f + 0.55f * tw);
+                GUI.DrawTexture(gr, tex, ScaleMode.ScaleToFit, true);
+            }
+            GUI.color = Color.white;
+        }
+
+        static void DrawWildBanner(Rect inner, float s, float phase, bool sheen = true)
+        {
+            if (!sheen) return;
+            float bandH = Mathf.Max(24f * s, inner.height * 0.32f);
+            // Sprawl out from the middle: scale X from a tight fold to full ribbon.
+            float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 1.15f + phase);
+            float sprawl = 0.82f + 0.18f * breathe;
+            var prev = GUI.matrix;
+            var c = inner.center;
+            GUIUtility.ScaleAroundPivot(new Vector2(sprawl, 1f), c);
+            float bandW = inner.width * 1.18f;
+            var band = new Rect(c.x - bandW * 0.5f, c.y - bandH * 0.5f, bandW, bandH);
+            var spr = SpriteCatalog.WildBanner;
+            if (spr != null && spr.texture != null)
+            {
+                GUI.color = Color.white;
+                GUI.DrawTexture(band, spr.texture, ScaleMode.ScaleToFit, true);
+            }
+            else
+            {
+                GUI.color = new Color(0.10f, 0.16f, 0.42f, 1f);
+                GUI.DrawTexture(new Rect(band.x - 2f * s, band.y - 2f * s, band.width + 4f * s, band.height + 4f * s), Texture2D.whiteTexture);
+                GUI.color = new Color(0.86f, 0.68f, 0.18f, 1f);
+                GUI.DrawTexture(band, Texture2D.whiteTexture);
+                GUI.color = new Color(0.12f, 0.22f, 0.62f, 1f);
+                GUI.DrawTexture(new Rect(band.x + 3f * s, band.y + 3f * s, band.width - 6f * s, band.height - 6f * s), Texture2D.whiteTexture);
+            }
+            GUI.matrix = prev;
+
+            var st = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+            string lab = "WILD";
+            var textR = new Rect(inner.x, band.y, inner.width, bandH);
+            st.fontSize = FitFont(st, lab, textR.width * 0.78f, textR.height * 0.62f, 16, 36);
+            int stroke = Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.16f));
+            var gold = new Color(1f, 0.86f, 0.28f, 1f);
+            StampOutlined(textR, lab, st, gold, stroke, Mathf.Max(2, stroke - 1));
             GUI.color = Color.white;
         }
 
@@ -3620,7 +5474,82 @@ namespace FlockFive
             }
         }
 
-        bool DrawFloralBtn(Rect r, string label, float s)
+        void DrawPokerBetBar(Rect slot, float s, bool busy, bool steppers)
+        {
+            // Compact stepper: [−] $xx [+] aligned with DEAL's ochre disc.
+            // BET $XXX type stays fixed; chip size is independent so shrinking +/− does not shrink the label.
+            float side = Mathf.Clamp(30f * s, 26f, 36f * s);
+            float gap = 6f * s;
+            float betW = Mathf.Clamp(slot.width - side * 2f - gap * 2f, 110f * s, 240f * s);
+            float clusterW = side + gap + betW + gap + side;
+            if (clusterW > slot.width)
+            {
+                betW = Mathf.Max(80f * s, slot.width - side * 2f - gap * 2f);
+                clusterW = side + gap + betW + gap + side;
+            }
+            int type = Mathf.RoundToInt(17.5f * s);
+            float amountH = Mathf.Max(side, type * 1.35f);
+            float x0 = slot.x;
+            float midY = slot.y + slot.height * 0.29f;
+            var minus = new Rect(x0, midY - side * 0.5f, side, side);
+            var amount = new Rect(minus.xMax + gap, midY - amountH * 0.5f, betW, amountH);
+            var plus = new Rect(amount.xMax + gap, minus.y, side, side);
+            if (plus.xMax > slot.xMax)
+                plus.x = slot.xMax - plus.width;
+
+            var led = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+            var red = new Color(0.94f, 0.12f, 0.14f, 1f);
+            led.fontSize = type;
+            int betStroke = Mathf.Max(2, Mathf.RoundToInt(type * 0.08f));
+            StampOutlined(amount, "BET " + Purse.Compact(BirdPoker.Bet), led, red, betStroke, 2);
+
+            bool live = steppers && !busy;
+            if (DrawBetStepper(minus, "−", live && BirdPoker.CanNudge(-1)) && live)
+            {
+                if (BirdPoker.NudgeBet(-1)) Sfx.BetDown();
+                else Sfx.Deny();
+            }
+            if (DrawBetStepper(plus, "+", live && BirdPoker.CanNudge(1)) && live)
+            {
+                if (BirdPoker.NudgeBet(1)) Sfx.BetUp();
+                else Sfx.Deny();
+            }
+        }
+
+        bool DrawBetStepper(Rect r, string glyph, bool on)
+        {
+            bool fire = HitPad(r, out bool held);
+            float sink = held && on ? 2f : 0f;
+            // Keep the drop shadow inside the hit rect so the chip does not clip the DEAL disc or screen edge.
+            float shadow = 2f;
+            var chip = new Rect(r.x, r.y + sink, r.width - shadow, r.height - sink - shadow);
+            float a = on ? 1f : 0.38f;
+            GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.40f * a);
+            GUI.DrawTexture(new Rect(chip.x + shadow, chip.y + shadow, chip.width, chip.height), Texture2D.whiteTexture);
+            GUI.color = new Color(0.78f, 0.58f, 0.18f, (held ? 0.98f : 0.92f) * a);
+            GUI.DrawTexture(chip, Texture2D.whiteTexture);
+            float inset = Mathf.Max(2f, chip.width * 0.10f);
+            GUI.color = new Color(0.96f, 0.90f, 0.62f, (held ? 1f : 0.94f) * a);
+            GUI.DrawTexture(new Rect(chip.x + inset, chip.y + inset, chip.width - inset * 2f, chip.height - inset * 2f), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var st = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+            st.fontSize = Mathf.RoundToInt(chip.height * 0.56f);
+            StampOutlined(chip, glyph, st, new Color(0.36f, 0.18f, 0.07f, a), 2, 1);
+            return fire;
+        }
+
+        bool DrawFloralBtn(Rect r, string label, float s) => DrawFloralBtn(r, label, s, false);
+
+        bool DrawFloralBtn(Rect r, string label, float s, bool hero)
         {
             bool fire = HitPad(r, out bool held);
             float sink = held ? r.height * 0.04f : 0f;
@@ -3649,8 +5578,11 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap = false
             };
-            st.fontSize = FitFont(st, label, disc.width * 0.84f, disc.height * 0.62f, 14, 28);
-            StampOutlined(disc, label, st, new Color(0.36f, 0.18f, 0.07f), 2, 1);
+            int lo = hero ? 22 : 14;
+            int hi = hero ? 48 : 28;
+            st.fontSize = FitFont(st, label, disc.width * (hero ? 0.92f : 0.84f), disc.height * (hero ? 0.72f : 0.62f), lo, hi);
+            int stroke = hero ? Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.06f)) : 2;
+            StampOutlined(disc, label, st, new Color(0.36f, 0.18f, 0.07f), stroke, 1);
             return fire;
         }
 
@@ -4379,7 +6311,7 @@ namespace FlockFive
             int i = _board.Branches.Count;
             _board.Branches.Add(new BranchState());
             var list = new System.Collections.Generic.List<BranchView>(_garden.Branches);
-            var v = WorldBuilder.MakeSpare(i, new Vector2(0f, WorldBuilder.GiftY), _garden.Root);
+            var v = WorldBuilder.MakeSpare(i, new Vector2(WorldBuilder.EdgeX(_garden.Cam, 1.22f, WorldBuilder.GiftWoodScaleX), WorldBuilder.GiftY), _garden.Root);
             list.Add(v);
             _garden.Branches = list.ToArray();
             return i;
@@ -4419,23 +6351,35 @@ namespace FlockFive
                 GUI.DrawTexture(card, tex, ScaleMode.ScaleToFit, true);
             }
 
-            var face = new Rect(card.x + card.width * 0.12f, card.y + card.height * 0.24f, card.width * 0.76f, card.height * 0.62f);
+            var plate = new Rect(
+                card.x + card.width * 0.16f,
+                card.y + card.height * 0.22f,
+                card.width * 0.68f,
+                card.height * 0.50f);
+            GUI.color = new Color(0.16f, 0.09f, 0.04f, 0.78f);
+            GUI.DrawTexture(plate, Texture2D.whiteTexture);
+            GUI.color = new Color(0.42f, 0.26f, 0.10f, 0.55f);
+            GUI.DrawTexture(new Rect(plate.x + 3f * s, plate.y + 3f * s, plate.width - 6f * s, plate.height - 6f * s), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
             var title = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.UpperCenter,
+                alignment = TextAnchor.MiddleCenter,
                 wordWrap = true
             };
             string head = _keepStreak
-                ? "Keep the streak?"
-                : (_freezeOffer ? "Garden frozen" : "Bonus branch");
-            title.fontSize = FitFont(title, head, face.width, face.height * 0.38f, 28, 56);
-            StampOutlined(new Rect(face.x, face.y, face.width, face.height * 0.40f), head, title, new Color(1f, 0.94f, 0.78f), 3, 2);
+                ? "KEEP THE STREAK?"
+                : (_freezeOffer ? "GARDEN FROZEN" : "BONUS BRANCH");
+            var headR = new Rect(plate.x + 8f * s, plate.y + 6f * s, plate.width - 16f * s, plate.height * 0.42f);
+            title.fontSize = FitFont(title, head, headR.width, headR.height * 0.92f, 32, 64);
+            int headStroke = Mathf.Max(3, Mathf.RoundToInt(title.fontSize * 0.10f));
+            StampOutlined(headR, head, title, new Color(1f, 0.86f, 0.32f), headStroke, 2);
 
             var body = new GUIStyle(GUI.skin.label)
             {
-                fontStyle = FontStyle.BoldAndItalic,
-                alignment = TextAnchor.UpperCenter,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
                 wordWrap = true
             };
             string copy = _keepStreak
@@ -4443,13 +6387,15 @@ namespace FlockFive
                 : (_freezeOffer
                     ? "Watch a short video to thaw an extra branch."
                     : "Watch a short video to claim this perch.");
-            body.fontSize = FitFont(body, copy, face.width, face.height * 0.48f, 20, 34);
-            StampOutlined(new Rect(face.x, face.y + face.height * 0.40f, face.width, face.height * 0.52f), copy, body, new Color(0.98f, 0.90f, 0.70f), 3, 2);
+            var copyR = new Rect(plate.x + 10f * s, plate.y + plate.height * 0.44f, plate.width - 20f * s, plate.height * 0.50f);
+            body.fontSize = FitFont(body, copy, copyR.width, copyR.height * 0.92f, 24, 44);
+            int bodyStroke = Mathf.Max(3, Mathf.RoundToInt(body.fontSize * 0.12f));
+            StampOutlined(copyR, copy, body, new Color(1f, 0.94f, 0.78f), bodyStroke, 2);
 
             float flower = Mathf.Min(Screen.width * 0.62f, 340f * s);
             var cta = new Rect((Screen.width - flower) * 0.5f, card.yMax - flower * 0.18f, flower, flower);
-            // [x] lives under the flower so it is never inside the Watch hit pad.
-            var later = new Rect((Screen.width - 96f * s) * 0.5f, cta.yMax + 6f * s, 96f * s, 40f * s);
+            float laterW = Mathf.Clamp(168f * s, 140f, 220f);
+            var later = new Rect((Screen.width - laterW) * 0.5f, cta.yMax + 8f * s, laterW, 48f * s);
             bool dismiss = !_freezeOffer && HitPad(later, out _);
             if (dismiss)
             {
@@ -4494,16 +6440,21 @@ namespace FlockFive
             }
 
             if (_freezeOffer) return;
+            GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.45f);
+            GUI.DrawTexture(new Rect(later.x + 2f, later.y + 3f, later.width, later.height), Texture2D.whiteTexture);
+            GUI.color = new Color(0.72f, 0.52f, 0.18f, 0.96f);
+            GUI.DrawTexture(later, Texture2D.whiteTexture);
+            GUI.color = new Color(0.96f, 0.88f, 0.58f, 0.96f);
+            GUI.DrawTexture(new Rect(later.x + 3f * s, later.y + 3f * s, later.width - 6f * s, later.height - 6f * s), Texture2D.whiteTexture);
+            GUI.color = Color.white;
             var laterSt = new GUIStyle(GUI.skin.label)
             {
-                fontStyle = FontStyle.Normal,
-                fontSize = Mathf.RoundToInt(18 * s),
-                alignment = TextAnchor.MiddleCenter
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
             };
-            laterSt.normal.textColor = new Color(0.55f, 0.42f, 0.28f);
-            laterSt.hover.textColor = laterSt.normal.textColor;
-            laterSt.active.textColor = laterSt.normal.textColor;
-            GUI.Label(later, "[x]", laterSt);
+            laterSt.fontSize = FitFont(laterSt, "LATER", later.width * 0.86f, later.height * 0.70f, 16, 28);
+            StampOutlined(later, "LATER", laterSt, new Color(0.36f, 0.18f, 0.07f), 2, 1);
         }
 
         void DrawGiftMovie(float s)
@@ -4551,3 +6502,19 @@ namespace FlockFive
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

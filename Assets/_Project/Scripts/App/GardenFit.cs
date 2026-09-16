@@ -6,53 +6,47 @@ namespace FlockFive
 {
     public static class GardenFit
     {
-        // Playfield is rows of a left limb and a right limb. A row stays
-        // until BOTH sides are gone. Surviving limbs never swap columns.
+        // Left and right columns pack independently so a missing limb never
+        // leaves a hole in the middle of the other side. Bonus perches stack
+        // on the right under that column.
         public static IEnumerator Tween(WorldBuilder.Garden garden, Board board, bool instant)
         {
             if (garden.Branches == null || board == null) yield break;
 
-            var liveRows = new List<int>();
+            var left = Column(board, garden, false);
+            var right = Column(board, garden, true);
+            int extras = 0;
+            for (int i = WorldBuilder.GiftIndex; i < board.Branches.Count; i++)
+                if (Alive(board, garden, i)) extras++;
             int rows = WorldBuilder.Rows;
-            for (int row = 0; row < rows; row++)
-            {
-                int L = row * 2;
-                int R = L + 1;
-                if (Alive(board, garden, L) || Alive(board, garden, R))
-                    liveRows.Add(row);
-            }
-            int r = liveRows.Count;
-            float fill = r <= 0 ? 1f : 1f - r / (float)rows;
+            int slots = Mathf.Max(left.Count, right.Count + extras);
+            float fill = slots <= 0 ? 1f : 1f - Mathf.Min(slots, rows) / (float)rows;
             float s = Mathf.Lerp(1f, 1.58f, fill);
+            // Length stays near 1 so five birds still fit; only puff height when sparse.
+            float sx = Mathf.Lerp(1f, 1.06f, fill);
             float gap = Mathf.Lerp(WorldBuilder.RowGap, 2.72f, fill);
             float used = (rows - 1) * WorldBuilder.RowGap;
-            float pack = Mathf.Max(0f, r - 1) * gap;
+            float pack = Mathf.Max(0f, slots - 1) * gap;
             float yTop = WorldBuilder.RowY0 - 0.5f * (used - pack) * fill;
-            float x = WorldBuilder.LimbX;
-            var scale = new Vector3(s, s, 1f);
+            float x = WorldBuilder.EdgeX(garden.Cam, sx);
+            var scale = new Vector3(sx, s, 1f);
 
             var views = new List<BranchView>();
             var fromPos = new List<Vector3>();
             var fromS = new List<Vector3>();
             var toPos = new List<Vector3>();
 
-            for (int i = 0; i < r; i++)
-            {
-                int src = liveRows[i];
-                float y = yTop - i * gap;
-                TryAdd(garden, board, src * 2, new Vector3(-x, y, 0f), views, fromPos, fromS, toPos);
-                TryAdd(garden, board, src * 2 + 1, new Vector3(x, y, 0f), views, fromPos, fromS, toPos);
-            }
-            int extras = 0;
-            for (int i = WorldBuilder.GiftIndex; i < board.Branches.Count; i++)
-                if (Alive(board, garden, i)) extras++;
-            int slot = 0;
+            for (int i = 0; i < left.Count; i++)
+                TryAdd(garden, board, left[i], new Vector3(-x, yTop - i * gap, 0f), views, fromPos, fromS, toPos);
+            int ri = 0;
+            for (int i = 0; i < right.Count; i++, ri++)
+                TryAdd(garden, board, right[i], new Vector3(x, yTop - ri * gap, 0f), views, fromPos, fromS, toPos);
+            float giftX = WorldBuilder.EdgeX(garden.Cam, 1.22f, WorldBuilder.GiftWoodScaleX);
             for (int i = WorldBuilder.GiftIndex; i < board.Branches.Count; i++)
             {
                 if (!Alive(board, garden, i)) continue;
-                float gx = extras <= 1 ? 0f : (slot - (extras - 1) * 0.5f) * 2.55f;
-                TryAdd(garden, board, i, new Vector3(gx, WorldBuilder.GiftY, 0f), views, fromPos, fromS, toPos);
-                slot++;
+                TryAdd(garden, board, i, new Vector3(giftX, yTop - ri * gap, 0f), views, fromPos, fromS, toPos);
+                ri++;
             }
 
             int n = views.Count;
@@ -87,6 +81,17 @@ namespace FlockFive
             return packed;
         }
 
+        static List<int> Column(Board board, WorldBuilder.Garden garden, bool right)
+        {
+            var live = new List<int>();
+            for (int row = 0; row < WorldBuilder.Rows; row++)
+            {
+                int i = row * 2 + (right ? 1 : 0);
+                if (Alive(board, garden, i)) live.Add(i);
+            }
+            return live;
+        }
+
         static bool Alive(Board board, WorldBuilder.Garden garden, int i)
         {
             if (i < 0 || i >= board.Branches.Count || i >= garden.Branches.Length) return false;
@@ -106,3 +111,5 @@ namespace FlockFive
         }
     }
 }
+
+

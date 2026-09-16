@@ -116,6 +116,31 @@ namespace FlockFive
             return Pack(Current.Make());
         }
 
+        // Predetermined pest budget. Hops stay winnable with a feeder blocked
+        // (a collect evicts); LevelSolve fuzzes scrap-parking so a pest fight
+        // cannot overflow a perch or auto-clear a same-color Cap.
+        public static int SparrowVisits
+        {
+            get
+            {
+                int n = Current != null ? Current.Number : 1;
+                if (n <= 2) return 0;
+                if (n <= 6) return 1;
+                if (n <= 10) return 2;
+                if (n <= 13) return 2;
+                return 3;
+            }
+        }
+
+        public static int HawkVisits
+        {
+            get
+            {
+                int n = Current != null ? Current.Number : 1;
+                return n <= 10 ? 0 : 1;
+            }
+        }
+
         static Board Eight(params BranchState[] filled)
         {
             var b = new Board();

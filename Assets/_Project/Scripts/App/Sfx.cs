@@ -18,9 +18,12 @@ namespace FlockFive
         static AudioClip[] _hawks;
         static AudioClip[] _oinks;
         static AudioClip[] _pops;
+        static AudioClip _celebrate;
         static AudioClip[] _jingles;
         static AudioClip _deny;
         static AudioClip _pageTurn;
+        static AudioClip[] _betIn;
+        static AudioClip[] _betOut;
         static AudioClip[] _booms;
         static AudioClip[] _snoozes;
         static AudioClip[] _hums;
@@ -39,6 +42,9 @@ namespace FlockFive
         static int _lastYell = -1;
         static int _lastHawk = -1;
         static int _lastOink = -1;
+        static int _lastPop = -1;
+        static int _lastBetIn = -1;
+        static int _lastBetOut = -1;
         static float _humGate;
         static float _flapGate;
         static SfxHost _host;
@@ -88,14 +94,18 @@ namespace FlockFive
             _yells = LoadBank("Audio/Yell", 6, MakeSparrowYell);
             _hawks = LoadBank("Audio/Hawk", 8, MakeHawkCry);
             _oinks = LoadBank("Audio/Oink", 8, MakeOink);
-            _pops = new AudioClip[5];
-            for (int i = 0; i < _pops.Length; i++)
-                _pops[i] = MakePop(i, 8800 + i * 29);
+            _pops = LoadBank("Audio/Pop", 12, i => MakePop(i, 8800 + i * 29));
             _jingles = new AudioClip[7];
             for (int i = 0; i < _jingles.Length; i++)
                 _jingles[i] = MakeComboJingle(i + 2);
             _deny = MakeDeny();
             _pageTurn = MakePageTurn();
+            _betIn = new AudioClip[6];
+            for (int i = 0; i < _betIn.Length; i++)
+                _betIn[i] = MakeCoinIn(i);
+            _betOut = new AudioClip[6];
+            for (int i = 0; i < _betOut.Length; i++)
+                _betOut[i] = MakeCoinOut(i);
             _snoozes = LoadBank("Audio/Snooze", 12, i => MakeSnooze(i, 5100 + i * 53));
             _hums = new AudioClip[8];
             for (int i = 0; i < _hums.Length; i++)
@@ -274,7 +284,11 @@ namespace FlockFive
 
         public static void Celebrate()
         {
-            // No gong / Pavlov bell. Flock payoff is whoosh + wood crunch.
+            // Poker full-house+ sting. Wood-pluck D-major cadence, not a gong.
+            Ensure();
+            if (_celebrate == null) _celebrate = MakeCelebrate();
+            Shot(_celebrate, 1f, 0.80f, MixLayer.Lead, MixDesk.DuckWhoosh);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.72f, MixDesk.DuckWhoosh);
         }
 
         public static void Combo(int size)
@@ -333,6 +347,40 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.18f, MixDesk.DuckChirp);
         }
 
+        static void WarmBetClips()
+        {
+            if (_betIn == null)
+            {
+                _betIn = new AudioClip[6];
+                for (int k = 0; k < _betIn.Length; k++)
+                    _betIn[k] = MakeCoinIn(k);
+            }
+            if (_betOut == null)
+            {
+                _betOut = new AudioClip[6];
+                for (int k = 0; k < _betOut.Length; k++)
+                    _betOut[k] = MakeCoinOut(k);
+            }
+        }
+
+        public static void BetUp()
+        {
+            Ensure();
+            WarmBetClips();
+            int i = Next(_betIn.Length, ref _lastBetIn);
+            Shot(_betIn[i], Random.Range(0.98f, 1.02f), 0.82f, MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.22f, MixDesk.DuckChirp);
+        }
+
+        public static void BetDown()
+        {
+            Ensure();
+            WarmBetClips();
+            int i = Next(_betOut.Length, ref _lastBetOut);
+            Shot(_betOut[i], Random.Range(0.98f, 1.02f), 0.78f, MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.24f, MixDesk.DuckChirp);
+        }
+
         // Feeder poke / sparrow perch rattle — glass+wood pool, not Deny/Clink/Ching.
         public static void FeederRattle()
         {
@@ -380,6 +428,15 @@ namespace FlockFive
             int k = Mathf.Clamp(i, 0, _pops.Length - 1);
             Shot(_pops[k], 1f, 0.70f, MixLayer.Lead, MixDesk.DuckChirp);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.2f, MixDesk.DuckChirp);
+        }
+
+        public static void CardPop()
+        {
+            Ensure();
+            if (_pops == null || _pops.Length == 0) return;
+            int i = Next(_pops.Length, ref _lastPop);
+            Shot(_pops[i], Random.Range(0.98f, 1.03f), 0.78f, MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.16f, MixDesk.DuckChirp);
         }
 
         public static void FeederLeave()
@@ -501,3 +558,4 @@ namespace FlockFive
 
     sealed class SfxHost : MonoBehaviour { }
 }
+

@@ -275,9 +275,10 @@ namespace FlockFive
                 if (_zz[i] == null || !_zz[i].gameObject.activeSelf) continue;
                 float u = Time.time * (0.55f + 0.12f * i) + i * 1.7f;
                 float rise = Mathf.Repeat(u, 1f);
-                float along = FromRight
-                    ? Mathf.Lerp(0.85f, -0.15f, i / 2f)
-                    : Mathf.Lerp(-0.85f, 0.15f, i / 2f);
+                float baseX = 0f;
+                if (_count > 0 && Seats[_count - 1] != null)
+                    baseX = Seats[_count - 1].localPosition.x;
+                float along = baseX + (FromRight ? -0.22f : 0.22f) * i;
                 _zz[i].localPosition = new Vector3(along, 1.08f + rise * 0.55f, 0f);
                 float pulse = 0.10f + 0.028f * i + 0.012f * Mathf.Sin(u * 6f);
                 _zz[i].localScale = Vector3.one * pulse;
@@ -367,3 +368,4 @@ namespace FlockFive
         }
     }
 }
+

@@ -391,29 +391,26 @@ namespace FlockFive
 
         static AudioClip MakePop(int kind, int seed)
         {
-            float dur = 0.11f;
+            // Cork / paper pop pool — short, warm, no fire whoosh, no whistle.
+            int family = kind % 4;
+            float dur = family == 0 ? 0.09f : family == 1 ? 0.11f : family == 2 ? 0.08f : 0.13f;
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
-            float f = 205f + 24f * (kind % 5);
-            float aLo = 1f - Mathf.Exp(-2f * Mathf.PI * 600f / Rate);
-            float aHi = 1f - Mathf.Exp(-2f * Mathf.PI * 2200f / Rate);
-            float bpLo = 0f, bpHi = 0f;
-            int h = seed * 13 + 7;
+            float f = Mathf.Lerp(92f, 168f, (Hash(seed) + 1f) * 0.5f) + 8f * (kind % 6);
+            float clickF = Mathf.Lerp(240f, 420f, (Hash(seed + 3) + 1f) * 0.5f);
+            float lp = 0f;
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
-                float hit = t < 0.002f ? t / 0.002f : 1f;
-                float env = hit * Mathf.Exp(-t * 28f);
-                float body = Mathf.Sin(2f * Mathf.PI * f * t * (1f - t * 1.4f));
-                body += 0.18f * Mathf.Sin(4f * Mathf.PI * f * t);
-                h = (h * 1103515245 + 12345) & 0x7fffffff;
-                float nz = (h / 1073741824f) - 1f;
-                bpLo += aLo * (nz - bpLo);
-                bpHi += aHi * (nz - bpHi);
-                float click = (bpHi - bpLo) * Mathf.Exp(-t * 90f) * 0.28f;
-                data[i] = (body * 0.82f + click) * env;
+                float hit = t < 0.0016f ? t / 0.0016f : 1f;
+                float env = hit * Mathf.Exp(-t * Mathf.Lerp(22f, 34f, family / 3f));
+                float body = Mathf.Sin(2f * Mathf.PI * f * t * (1f - t * 1.15f));
+                body += 0.16f * Mathf.Sin(4f * Mathf.PI * f * t);
+                float grain = Soft(ref lp, seed, i, 0.14f) * 0.10f * Mathf.Exp(-t * 70f);
+                float click = Mathf.Sin(2f * Mathf.PI * clickF * t) * Mathf.Exp(-t * 90f) * 0.22f;
+                data[i] = (body * 0.78f + click + grain) * env;
             }
-            return ClipLp("pop" + seed, data, 0.34f);
+            return ClipLp("pop" + seed, data, 0.32f);
         }
 
         static AudioClip MakeLift(int kind, int seed)
@@ -456,3 +453,4 @@ namespace FlockFive
         }
     }
 }
+

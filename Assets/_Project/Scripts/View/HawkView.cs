@@ -25,13 +25,24 @@ namespace FlockFive
         Color _tint = new Color(0.42f, 0.30f, 0.20f, 1f);
         float _flap;
 
-        public static IEnumerator Patrol(System.Func<bool> allow, FeederView[] feeders, Transform parent)
+        public static IEnumerator Patrol(System.Func<bool> allow, System.Func<bool> armed, int visits, FeederView[] feeders, Transform parent)
         {
+            if (visits <= 0) yield break;
+            while (armed != null && !armed())
+            {
+                if (parent == null) yield break;
+                yield return null;
+            }
             yield return new WaitForSeconds(Random.Range(40f, 70f));
-            while (parent != null)
+            int left = visits;
+            while (parent != null && left > 0)
             {
                 if (allow != null && allow() && HasEnabled(feeders) && Live == null)
+                {
                     yield return Visit(feeders, parent);
+                    left--;
+                    if (left <= 0) yield break;
+                }
                 float wait = Random.Range(50f, 90f);
                 float t = 0f;
                 while (t < wait)
@@ -380,3 +391,4 @@ namespace FlockFive
             f != null && f.Art != null && f.Art.enabled;
     }
 }
+

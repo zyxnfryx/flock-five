@@ -55,6 +55,7 @@ namespace FlockFive.Editor
                 sb.Append(" split=").Append(split);
                 sb.Append(" random-tangle=").Append(tangle).Append('/').Append(Trials);
                 sb.Append(" pest-park-fail=").Append(parkFail);
+                sb.Append(" pests=s").Append(LevelData.SparrowVisits).Append("/h").Append(LevelData.HawkVisits);
                 sb.Append(" | ").Append(flocks);
                 sb.Append('\n');
                 Debug.Log("Flock Five solve " + level.Number + " " + level.Id +

@@ -244,5 +244,99 @@ namespace FlockFive
             c.SetData(data, 0);
             return c;
         }
+
+        static AudioClip MakeCoinIn(int kind)
+        {
+            // Slot insert: muted metal CHA then wooden CHUNK. Lead, short, no bell.
+            int k = ((kind % 6) + 6) % 6;
+            float dur = 0.20f + 0.012f * k;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            int seed = 44011 + k * 173;
+            float metal = 560f + k * 22f;
+            float thud = 168f + k * 8f;
+            float clack = 214f + k * 6f;
+            float lp = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float chaAtk = Mathf.Clamp01(t / 0.0035f);
+                float cha = Mathf.Sin(2f * Mathf.PI * metal * t);
+                cha += 0.22f * Mathf.Sin(2f * Mathf.PI * metal * 1.97f * t) * Mathf.Exp(-t / 0.018f);
+                cha *= chaAtk * Mathf.Exp(-t / 0.028f);
+                float scrape = Soft(ref lp, seed, i, 0.14f) * Mathf.Exp(-t / 0.007f) * chaAtk;
+                float t2 = t - 0.046f;
+                float chunk = 0f;
+                if (t2 > 0f)
+                {
+                    float e2 = Mathf.Clamp01(t2 / 0.0028f) * Mathf.Exp(-t2 / 0.048f);
+                    chunk = Mathf.Sin(2f * Mathf.PI * thud * t2 * (1f - 0.14f * t2)) * e2 * 0.78f;
+                    chunk += Mathf.Sin(2f * Mathf.PI * clack * t2) * Mathf.Exp(-t2 / 0.020f) * e2 * 0.26f;
+                }
+                float t3 = t - 0.092f;
+                if (t3 > 0f)
+                    chunk += Mathf.Sin(2f * Mathf.PI * (thud * 0.84f) * t3)
+                        * Mathf.Clamp01(t3 / 0.0022f) * Mathf.Exp(-t3 / 0.032f) * 0.32f;
+                data[i] = cha * 0.42f + scrape * 0.16f + chunk;
+            }
+            return FinishMech("bet-in" + k, data, 0.64f);
+        }
+
+        static AudioClip MakeCoinOut(int kind)
+        {
+            // Mechanical reverse: unlatch thud, coin slides back (falling body).
+            int k = ((kind % 6) + 6) % 6;
+            float dur = 0.24f + 0.012f * k;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            int seed = 55127 + k * 191;
+            float thud = 154f + k * 7f;
+            float lp = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float e1 = Mathf.Clamp01(t / 0.003f) * Mathf.Exp(-t / 0.055f);
+                float unlatch = Mathf.Sin(2f * Mathf.PI * thud * t * (1f - 0.18f * t)) * e1 * 0.72f;
+                unlatch += Mathf.Sin(2f * Mathf.PI * (thud * 1.36f) * t) * Mathf.Exp(-t / 0.018f) * e1 * 0.22f;
+                float t2 = t - 0.040f;
+                float slide = 0f;
+                if (t2 > 0f)
+                {
+                    float u = Mathf.Clamp01(t2 / 0.18f);
+                    float f = Mathf.Lerp(620f, 210f, u);
+                    float e2 = Mathf.Clamp01(t2 / 0.006f) * Mathf.Exp(-t2 / 0.070f);
+                    slide = Mathf.Sin(2f * Mathf.PI * f * t2) * e2 * 0.48f;
+                    slide += Soft(ref lp, seed, i, 0.12f) * Mathf.Exp(-t2 / 0.014f) * e2 * 0.22f;
+                }
+                data[i] = unlatch + slide;
+            }
+            return FinishMech("bet-out" + k, data, 0.60f);
+        }
+
+        static AudioClip FinishMech(string name, float[] data, float peak)
+        {
+            float alp = 1f - Mathf.Exp(-2f * Mathf.PI * 1900f / Rate);
+            float ahp = 1f - Mathf.Exp(-2f * Mathf.PI * 90f / Rate);
+            float lo = 0f, hp = 0f;
+            for (int i = 0; i < data.Length; i++)
+            {
+                hp += ahp * (data[i] - hp);
+                float high = data[i] - hp;
+                lo += alp * (high - lo);
+                data[i] = lo;
+            }
+            float p = 1e-6f;
+            for (int i = 0; i < data.Length; i++)
+            {
+                float v = Mathf.Abs(data[i]);
+                if (v > p) p = v;
+            }
+            float g = peak / p;
+            for (int i = 0; i < data.Length; i++)
+                data[i] = Mathf.Clamp(data[i] * g, -0.95f, 0.95f);
+            var c = AudioClip.Create(name, data.Length, 1, Rate, false);
+            c.SetData(data, 0);
+            return c;
+        }
     }
 }

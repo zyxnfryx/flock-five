@@ -4,7 +4,8 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _wildBanner, _dash, _chain, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk;
+        static Sprite[] _flames;
         static bool _sparrowPlaceholder;
         static bool _hawkPlaceholder;
         static Sprite[] _letters;
@@ -97,6 +98,93 @@ namespace FlockFive
         public static Sprite Hive => Load(ref _hive, "Sprites/fx_hive", 200f);
         public static Sprite Poker => Load(ref _poker, "Sprites/fx_poker", 200f);
         public static Sprite CardBack => Load(ref _cardBack, "Sprites/fx_card_back", 200f);
+        public static void DropPokerArt()
+        {
+            _cardBack = null;
+            _handFan = null;
+            _handFanFront = null;
+            _stampTool = null;
+            _wildBanner = null;
+        }
+        public static Sprite CardPaper
+        {
+            get
+            {
+                if (_cardPaper == null) _cardPaper = TryLoad("Sprites/fx_card_paper", 200f);
+                return _cardPaper;
+            }
+        }
+        public static Sprite HandFan
+        {
+            get
+            {
+                if (_handFan == null) _handFan = TryLoad("Sprites/fx_hand_fan", 200f);
+                return _handFan;
+            }
+        }
+        public static Sprite HandFanFront
+        {
+            get
+            {
+                if (_handFanFront == null) _handFanFront = TryLoad("Sprites/fx_hand_fan_front", 200f);
+                return _handFanFront;
+            }
+        }
+        public static Sprite HandPluck
+        {
+            get
+            {
+                if (_handPluck == null) _handPluck = TryLoad("Sprites/fx_hand_pluck", 200f);
+                return _handPluck;
+            }
+        }
+        public static Sprite WildBanner
+        {
+            get
+            {
+                if (_wildBanner == null) _wildBanner = TryLoad("Sprites/fx_wild_banner", 200f);
+                return _wildBanner;
+            }
+        }
+        public static Sprite Dash
+        {
+            get
+            {
+                if (_dash == null) _dash = TryLoad("Sprites/fx_dash", 200f);
+                return _dash;
+            }
+        }
+        public static Sprite Chain
+        {
+            get
+            {
+                if (_chain == null) _chain = TryLoad("Sprites/fx_chain", 200f);
+                return _chain;
+            }
+        }
+        public static Sprite Flame(int i)
+        {
+            if (_flames == null) _flames = new Sprite[6];
+            int k = ((i % 6) + 6) % 6;
+            if (_flames[k] == null) _flames[k] = TryLoad("Sprites/fx_flame_" + k, 200f);
+            return _flames[k];
+        }
+        public static Sprite Joker
+        {
+            get
+            {
+                if (_joker == null) _joker = TryLoad("Sprites/fx_joker", 200f);
+                return _joker;
+            }
+        }
+        public static Sprite Clipboard
+        {
+            get
+            {
+                if (_clipboard == null) _clipboard = TryLoad("Sprites/fx_clipboard", 200f);
+                return _clipboard;
+            }
+        }
         public static Sprite PlayFlower => Load(ref _playFlower, "Sprites/fx_play_flower", 200f);
         public static Sprite Firefly => Load(ref _firefly, "Sprites/fx_firefly", 200f);
         public static Sprite Zee => Load(ref _zee, "Sprites/fx_z", 200f);
@@ -135,6 +223,51 @@ namespace FlockFive
             var a = Bee;
             var b = Load(ref _beeFlap, "Sprites/fx_bee_1", 520f);
             return (Mathf.FloorToInt(Mathf.Abs(t)) % 2 == 0) ? a : b;
+        }
+
+        public static Sprite StampTool
+        {
+            get
+            {
+                if (_stampTool == null) _stampTool = TryLoad("Sprites/fx_stamp_tool", 200f);
+                return _stampTool;
+            }
+        }
+        public static Sprite StampRing
+        {
+            get
+            {
+                if (_stampRing != null) return _stampRing;
+                const int n = 160;
+                var tex = new Texture2D(n, n, TextureFormat.RGBA32, false);
+                tex.filterMode = FilterMode.Bilinear;
+                tex.wrapMode = TextureWrapMode.Clamp;
+                float m = (n - 1) * 0.5f;
+                for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    float dx = (x - m) / m;
+                    float dy = (y - m) / m;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    float a = 0f;
+                    if (d > 0.72f && d < 1.02f)
+                    {
+                        float inner = Mathf.InverseLerp(0.72f, 0.80f, d);
+                        float outer = 1f - Mathf.InverseLerp(0.94f, 1.02f, d);
+                        a = Mathf.Clamp01(inner) * Mathf.Clamp01(outer);
+                    }
+                    else if (d > 0.50f && d < 0.62f)
+                    {
+                        float inner = Mathf.InverseLerp(0.50f, 0.54f, d);
+                        float outer = 1f - Mathf.InverseLerp(0.58f, 0.62f, d);
+                        a = Mathf.Clamp01(inner) * Mathf.Clamp01(outer) * 0.92f;
+                    }
+                    tex.SetPixel(x, y, new Color(0.82f, 0.08f, 0.10f, a));
+                }
+                tex.Apply();
+                _stampRing = Sprite.Create(tex, new Rect(0, 0, n, n), new Vector2(0.5f, 0.5f), 128f);
+                return _stampRing;
+            }
         }
 
         public static Sprite Glow
@@ -346,7 +479,9 @@ namespace FlockFive
         {
             var got = TryLoad(path, ppu);
             if (got != null) return got;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.LogWarning("Missing sprite " + path);
+#endif
             return Fallback(ppu);
         }
 

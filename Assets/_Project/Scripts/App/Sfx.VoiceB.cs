@@ -200,6 +200,34 @@ namespace FlockFive
             return ClipPunch("combo" + size, data);
         }
 
+        static AudioClip MakeCelebrate()
+        {
+            // Full-house+ cadence in D major. Resolves; not a gong or Zelda climb.
+            float[] notes = { 293.66f, 369.99f, 440.00f, 587.33f, 440.00f, 293.66f };
+            float[] at = { 0.00f, 0.08f, 0.16f, 0.28f, 0.40f, 0.52f };
+            float dur = 0.92f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            for (int k = 0; k < notes.Length; k++)
+            {
+                float f = notes[k];
+                float start = at[k];
+                float decay = k == notes.Length - 1 ? 6.5f : 11f - 0.6f * k;
+                float amp = k == notes.Length - 1 ? 0.50f : 0.36f;
+                for (int i = 0; i < n; i++)
+                {
+                    float t = i / (float)Rate - start;
+                    if (t < 0f) continue;
+                    float hit = t < 0.003f ? t / 0.003f : 1f;
+                    float env = hit * Mathf.Exp(-t * decay);
+                    float s = Mathf.Sin(2f * Mathf.PI * f * t);
+                    s += 0.13f * Mathf.Sin(4f * Mathf.PI * f * t);
+                    data[i] += s * env * amp;
+                }
+            }
+            return ClipPunch("celebrate", data);
+        }
+
         static AudioClip MakeMoonrise()
         {
             float dur = 1.35f;
@@ -286,3 +314,4 @@ namespace FlockFive
         }
     }
 }
+

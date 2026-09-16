@@ -39,11 +39,13 @@ namespace FlockFive
         {
             Instance = this;
             _t0 = Time.unscaledTime;
+#if UNITY_EDITOR
             if (System.IO.File.Exists("/tmp/flock-five-storm-now"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-storm-now"); } catch { }
                 _t0 = Time.unscaledTime - FirstWait - 1.2f;
             }
+#endif
             Wet = 0f;
             _wet = 0f;
             _nextBoom = 6.5f;
