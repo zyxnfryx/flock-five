@@ -18,8 +18,8 @@ namespace FlockFive
         public const string AppKey = "282d0b97d";
         public const string RewardedUnitId = "kjzd8hybcb9wklmz";
 #elif UNITY_ANDROID
-        public const string AppKey = "";
-        public const string RewardedUnitId = "";
+        public const string AppKey = "282d36bdd";
+        public const string RewardedUnitId = "dakjzwgzszpcx3k2";
 #else
         // Editor / standalone: same iOS app so Play Mode can init.
         public const string AppKey = "282d0b97d";
