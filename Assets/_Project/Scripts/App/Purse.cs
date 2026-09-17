@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using UnityEngine;
 
@@ -8,11 +9,19 @@ namespace FlockFive
         const string PrefCoins = "flockfive.coins";
         const string PrefStreak = "flockfive.streak";
         const string PrefStage = "flockfive.instage";
-        const int Pay = 16;
+        const string PrefLoginDay = "flockfive.login.day";
+        const string PrefLoginN = "flockfive.login.n";
+        public const int StagePay = 16;
 
         public static int Coins { get; private set; }
         public static int Streak { get; private set; }
         public static int Pending { get; set; }
+        public static int LoginDays { get; private set; }
+        public static int LoginMul => Mathf.Clamp(LoginDays, 1, 3);
+        public static int LastStagePay { get; private set; }
+        public static int LastStreak { get; private set; }
+        public static int LastLogin { get; private set; }
+        public static int LastWin { get; private set; }
         public static int Multiplier => Streak < 1 ? 1 : Streak;
         public static string Cash => Coins >= 1000000 ? Compact(Coins) : Dollars(Coins);
 
@@ -49,6 +58,8 @@ namespace FlockFive
         {
             Coins = Mathf.Max(0, PrefGuard.GetInt(PrefCoins, 0));
             Streak = Mathf.Max(0, PrefGuard.GetInt(PrefStreak, 0));
+            LoginDays = Mathf.Max(1, PrefGuard.GetInt(PrefLoginN, 1));
+            TickLogin();
             bool inStage = PlayerPrefs.GetInt(PrefStage, 0) == 1;
             if (inStage)
             {
@@ -59,6 +70,30 @@ namespace FlockFive
             }
         }
 
+        static void TickLogin()
+        {
+            string today = DateTime.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+            string last = PrefGuard.GetString(PrefLoginDay, "");
+            if (last == today)
+            {
+                LoginDays = Mathf.Max(1, PrefGuard.GetInt(PrefLoginN, 1));
+                return;
+            }
+            int days = 1;
+            DateTime prev;
+            if (last.Length == 8
+                && DateTime.TryParseExact(last, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out prev))
+            {
+                double gap = (DateTime.UtcNow.Date - prev.Date).TotalDays;
+                if (gap >= 0.5 && gap < 1.85)
+                    days = Mathf.Min(PrefGuard.GetInt(PrefLoginN, 1) + 1, 7);
+            }
+            LoginDays = days;
+            PrefGuard.SetString(PrefLoginDay, today);
+            PrefGuard.SetInt(PrefLoginN, LoginDays);
+            PlayerPrefs.Save();
+        }
+
         public static void BeginStage()
         {
             PlayerPrefs.SetInt(PrefStage, 1);
@@ -67,8 +102,13 @@ namespace FlockFive
 
         public static int AwardClear()
         {
+            TickLogin();
             Streak = Streak + 1;
-            int pay = Pay * Streak;
+            LastStagePay = StagePay;
+            LastStreak = Streak;
+            LastLogin = LoginMul;
+            int pay = StagePay * Streak * LastLogin;
+            LastWin = pay;
             Coins += pay;
             Pending = pay;
             PrefGuard.SetInt(PrefCoins, Coins);
@@ -76,6 +116,16 @@ namespace FlockFive
             PlayerPrefs.SetInt(PrefStage, 0);
             PlayerPrefs.Save();
             return pay;
+        }
+
+        public static void CueWin(int streak, int win)
+        {
+            Streak = Mathf.Max(1, streak);
+            LastStagePay = StagePay;
+            LastStreak = Streak;
+            LastLogin = LoginMul;
+            LastWin = win > 0 ? win : StagePay * Streak * LastLogin;
+            Pending = LastWin;
         }
 
         public static void BreakStreak()

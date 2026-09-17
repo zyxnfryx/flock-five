@@ -7,6 +7,13 @@ namespace FlockFive
     public sealed class MixDesk : MonoBehaviour
     {
         public static MixDesk Live;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            Live = null;
+        }
+
         // Chirps live 6–8 kHz; beds sit under ~1.2 kHz. Do not dip the garden.
         public const float DuckChirp = 1f;
         public const float DuckWhoosh = 0.88f;
@@ -40,16 +47,101 @@ namespace FlockFive
 
         public static void Boot(GameObject host)
         {
-            if (Live == null)
-            {
-                Live = host.GetComponent<MixDesk>();
-                if (Live == null) Live = host.AddComponent<MixDesk>();
-            }
+            Reclaim(host);
+            if (Live == null) return;
             Live.Build();
+            KillForeignLoops();
+        }
+
+        static void Reclaim(GameObject host)
+        {
+            var desks = Object.FindObjectsByType<MixDesk>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            MixDesk keep = null;
+            if (Live != null) keep = Live;
+            if (keep == null && host != null) keep = host.GetComponent<MixDesk>();
+            if (keep == null && desks != null)
+            {
+                for (int i = 0; i < desks.Length; i++)
+                {
+                    if (desks[i] == null) continue;
+                    keep = desks[i];
+                    break;
+                }
+            }
+            if (keep == null && host != null)
+                keep = host.AddComponent<MixDesk>();
+            Live = keep;
+            if (desks == null) return;
+            for (int i = 0; i < desks.Length; i++)
+            {
+                var d = desks[i];
+                if (d == null || d == keep) continue;
+                d.Hush();
+                if (keep != null && d.gameObject == keep.gameObject)
+                    Object.Destroy(d);
+                else
+                    Object.Destroy(d.gameObject);
+            }
+        }
+
+        void Hush()
+        {
+            if (_stems == null) return;
+            for (int i = 0; i < _stems.Length; i++)
+            {
+                var a = _stems[i];
+                if (a == null) continue;
+                a.Stop();
+                a.volume = 0f;
+            }
+        }
+
+        void PruneExtraLoops()
+        {
+            var all = GetComponents<AudioSource>();
+            for (int i = 0; i < all.Length; i++)
+            {
+                var s = all[i];
+                if (s == null || !s.loop) continue;
+                bool ours = false;
+                if (_stems != null)
+                {
+                    for (int k = 0; k < _stems.Length; k++)
+                    {
+                        if (_stems[k] == s) { ours = true; break; }
+                    }
+                }
+                if (ours) continue;
+                s.Stop();
+                s.volume = 0f;
+                Object.Destroy(s);
+            }
+        }
+
+        static void KillForeignLoops()
+        {
+            var all = Object.FindObjectsByType<AudioSource>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < all.Length; i++)
+            {
+                var s = all[i];
+                if (s == null || !s.loop) continue;
+                bool ours = false;
+                if (Live != null && Live._stems != null)
+                {
+                    for (int k = 0; k < Live._stems.Length; k++)
+                    {
+                        if (Live._stems[k] == s) { ours = true; break; }
+                    }
+                }
+                if (ours) continue;
+                s.Stop();
+                s.volume = 0f;
+            }
         }
 
         void OnDestroy()
         {
+            Hush();
             if (Live == this) Live = null;
         }
 
@@ -125,30 +217,41 @@ namespace FlockFive
             }
             for (int i = 0; i < _stems.Length; i++)
                 if (_stems[i] == null) _stems[i] = null;
-            SwapClip(0, garden);
-            SwapClip(1, garden);
-            SwapClip(2, garden);
-            SwapClip(3, combo);
-            SwapClip(4, theme);
+            SwapClip(0, garden, true);
+            SwapClip(1, garden, false);
+            SwapClip(2, garden, false);
+            SwapClip(3, combo, true);
+            SwapClip(4, theme, false);
             if (_stems[4] != null)
             {
                 _stems[4].Stop();
                 _stems[4].time = 0f;
+                _stems[4].volume = 0f;
             }
-            SwapClip(5, rain);
+            SwapClip(5, rain, true);
+            PruneExtraLoops();
         }
 
-        void SwapClip(int i, AudioClip clip)
+        void SwapClip(int i, AudioClip clip, bool start)
         {
             var a = _stems[i];
             // Destroyed Unity objects compare == null; clear the slot and remake.
             if (a == null)
             {
-                _stems[i] = MakeLoop(clip);
+                _stems[i] = TakeOrMakeLoop(clip, start);
                 return;
             }
-            a.clip = clip;
-            if (!a.isPlaying) a.Play();
+            if (a.clip != clip)
+            {
+                a.Stop();
+                a.clip = clip;
+            }
+            if (start)
+            {
+                if (!a.isPlaying) a.Play();
+            }
+            else if (a.isPlaying)
+                a.Stop();
         }
 
         static AudioClip LoadBed(string path, System.Func<AudioClip> make)
@@ -158,16 +261,52 @@ namespace FlockFive
             return make();
         }
 
-        AudioSource MakeLoop(AudioClip clip)
+        AudioSource TakeOrMakeLoop(AudioClip clip, bool start)
+        {
+            var all = GetComponents<AudioSource>();
+            for (int i = 0; i < all.Length; i++)
+            {
+                var s = all[i];
+                if (s == null || !s.loop) continue;
+                bool used = false;
+                if (_stems != null)
+                {
+                    for (int k = 0; k < _stems.Length; k++)
+                    {
+                        if (_stems[k] == s) { used = true; break; }
+                    }
+                }
+                if (used) continue;
+                BindLoop(s, clip, start);
+                return s;
+            }
+            return MakeLoop(clip, start);
+        }
+
+        AudioSource MakeLoop(AudioClip clip, bool start)
         {
             var a = gameObject.AddComponent<AudioSource>();
+            BindLoop(a, clip, start);
+            return a;
+        }
+
+        static void BindLoop(AudioSource a, AudioClip clip, bool start)
+        {
             a.playOnAwake = false;
             a.loop = true;
             a.spatialBlend = 0f;
-            a.clip = clip;
             a.volume = 0f;
-            a.Play();
-            return a;
+            if (a.clip != clip)
+            {
+                if (a.isPlaying) a.Stop();
+                a.clip = clip;
+            }
+            if (start)
+            {
+                if (!a.isPlaying) a.Play();
+            }
+            else if (a.isPlaying)
+                a.Stop();
         }
 
         void LateUpdate()
@@ -735,3 +874,4 @@ namespace FlockFive
 
     }
 }
+

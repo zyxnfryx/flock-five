@@ -52,6 +52,14 @@ namespace FlockFive
 
         public static void Warm() => Ensure();
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            _voices = null;
+            _host = null;
+            _v = 0;
+        }
+
         static bool VoicesAlive()
         {
             if (_voices == null || _host == null) return false;
@@ -62,23 +70,43 @@ namespace FlockFive
 
         static void Ensure()
         {
-            // Domain-reload-off: static array can outlive destroyed AudioSources.
-            if (VoicesAlive()) return;
-            _voices = null;
-            _host = null;
-            var go = new GameObject("Sfx");
-            Object.DontDestroyOnLoad(go);
-            _host = go.AddComponent<SfxHost>();
-            MixDesk.Boot(go);
-            _voices = new AudioSource[20];
-            for (int i = 0; i < _voices.Length; i++)
+            // Domain-reload-off: statics and leftover DDOL Sfx GOs can both survive a bounce.
+            if (!VoicesAlive())
             {
-                var a = go.AddComponent<AudioSource>();
-                a.playOnAwake = false;
-                a.spatialBlend = 0f;
-                a.volume = 1f;
-                _voices[i] = a;
+                RebuildHost();
+                if (_host != null) MixDesk.Boot(_host.gameObject);
+                return;
             }
+            if (MixDesk.Live == null && _host != null)
+                MixDesk.Boot(_host.gameObject);
+        }
+
+        static void RebuildHost()
+        {
+            _voices = null;
+            var found = Object.FindObjectsByType<SfxHost>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            SfxHost keep = null;
+            if (found != null)
+            {
+                for (int i = 0; i < found.Length; i++)
+                {
+                    var h = found[i];
+                    if (h == null) continue;
+                    if (keep == null) keep = h;
+                    else Object.Destroy(h.gameObject);
+                }
+            }
+            if (keep == null)
+            {
+                var go = new GameObject("Sfx");
+                Object.DontDestroyOnLoad(go);
+                keep = go.AddComponent<SfxHost>();
+            }
+            else
+                Object.DontDestroyOnLoad(keep.gameObject);
+            _host = keep;
+            BindVoices();
+            if (_chirps != null) return;
             _chirps = LoadVoices();
             _flaps = new AudioClip[8];
             for (int i = 0; i < _flaps.Length; i++)
@@ -121,6 +149,36 @@ namespace FlockFive
                 _thunders[i] = MakeThunder(i, 2800 + i * 67);
             var gated = Resources.Load<AudioClip>("Audio/Gate/gate_go");
             _gate = gated != null ? gated : MakeGate();
+        }
+
+        static void BindVoices()
+        {
+            var go = _host.gameObject;
+            var all = go.GetComponents<AudioSource>();
+            var list = new System.Collections.Generic.List<AudioSource>(20);
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] == null || all[i].loop) continue;
+                list.Add(all[i]);
+            }
+            while (list.Count < 20)
+            {
+                var a = go.AddComponent<AudioSource>();
+                a.playOnAwake = false;
+                a.loop = false;
+                a.spatialBlend = 0f;
+                a.volume = 1f;
+                list.Add(a);
+            }
+            _voices = new AudioSource[20];
+            for (int i = 0; i < 20; i++)
+            {
+                var a = list[i];
+                a.playOnAwake = false;
+                a.loop = false;
+                a.spatialBlend = 0f;
+                _voices[i] = a;
+            }
         }
 
         static AudioSource Voice()
@@ -305,6 +363,14 @@ namespace FlockFive
                     MixDesk.Live.MarkLead(0.42f + 0.14f * i, MixDesk.DuckWhoosh);
             }
             if (size >= 3) Rumble();
+        }
+
+        public static void BeeFound()
+        {
+            Ensure();
+            if (_jingles == null || _jingles.Length == 0) return;
+            Shot(_jingles[0], 1f, 0.52f, MixLayer.Lead, MixDesk.DuckWhoosh);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.28f, MixDesk.DuckWhoosh);
         }
 
         public static void Deny()
@@ -554,8 +620,29 @@ namespace FlockFive
             y += a * (Hash(seed + i) - y);
             return y;
         }
+
+        internal static bool OwnsHost(SfxHost h) => _host == h;
+
+        internal static void DropHost()
+        {
+            _host = null;
+            _voices = null;
+        }
     }
 
-    sealed class SfxHost : MonoBehaviour { }
+    sealed class SfxHost : MonoBehaviour
+    {
+        void OnDestroy()
+        {
+            var srcs = GetComponents<AudioSource>();
+            for (int i = 0; i < srcs.Length; i++)
+            {
+                if (srcs[i] == null) continue;
+                srcs[i].Stop();
+                srcs[i].volume = 0f;
+            }
+            if (Sfx.OwnsHost(this)) Sfx.DropHost();
+        }
+    }
 }
 

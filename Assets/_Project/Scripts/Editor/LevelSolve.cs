@@ -42,10 +42,11 @@ namespace FlockFive.Editor
                 string flocks = FlockSummary(board);
                 bool mixed = SexKinds(board) >= 2;
                 bool split = ColorSplit(board);
+                bool fakeHide = SameColorUnderBees(board);
                 var result = GardenSolve.Search(board, NodeCap);
                 int tangle = RandomTangles(i, Trials);
                 int parkFail = FuzzPestPark(i, ParkTrials);
-                bool ok = result.Outlook == GardenSolve.Outlook.Winnable && mixed && !split && parkFail == 0;
+                bool ok = result.Outlook == GardenSolve.Outlook.Winnable && mixed && !split && !fakeHide && parkFail == 0;
                 if (!ok) all = false;
                 sb.Append(level.Number).Append(' ').Append(level.Id);
                 sb.Append(ok ? " OK" : " FAIL");
@@ -53,6 +54,7 @@ namespace FlockFive.Editor
                 sb.Append(" moves=").Append(result.Moves);
                 sb.Append(" mixed=").Append(mixed);
                 sb.Append(" split=").Append(split);
+                sb.Append(" fake-hide=").Append(fakeHide);
                 sb.Append(" random-tangle=").Append(tangle).Append('/').Append(Trials);
                 sb.Append(" pest-park-fail=").Append(parkFail);
                 sb.Append(" pests=s").Append(LevelData.SparrowVisits).Append("/h").Append(LevelData.HawkVisits);
@@ -207,6 +209,25 @@ namespace FlockFive.Editor
             if (m) kinds++;
             if (n) kinds++;
             return kinds;
+        }
+
+        static bool SameColorUnderBees(Board b)
+        {
+            if (b == null) return false;
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var br = b.Branches[i];
+                for (int k = 0; k < br.Count - 1; k++)
+                {
+                    if (!br.IsShrouded(k)) continue;
+                    for (int j = k + 1; j < br.Count; j++)
+                    {
+                        if (br.IsShrouded(j)) continue;
+                        if (br.Birds[k].SameFlock(br.Birds[j])) return true;
+                    }
+                }
+            }
+            return false;
         }
 
         static bool ColorSplit(Board b)

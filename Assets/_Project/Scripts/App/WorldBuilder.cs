@@ -23,11 +23,11 @@ namespace FlockFive
                 ? cam.orthographicSize * Mathf.Max(0.05f, cam.aspect)
                 : 10.6f * PortraitAspect;
             float s = Mathf.Max(0.2f, packScale);
-            // Sit the outer bark on the bezel so limbs grow out of the screen edge.
-            return halfW - WoodHalfOf(woodScaleX) * s + 0.62f;
+            // Bark kisses the bezel so the outer bird can sit at the screen edge.
+            return halfW - WoodHalfOf(woodScaleX) * s + 0.18f;
         }
         public const float RowY0 = 3.42f;
-        public const float RowGap = 1.42f;
+        public const float RowGap = 1.50f;
         public const int GiftIndex = Rows * Cols;
         public const float GiftY = -7.52f;
 
@@ -54,7 +54,7 @@ namespace FlockFive
             fit.Cam = cam;
             fit.FollowCamera = false;
             fit.WorldCenter = new Vector3(0f, -0.15f, 8f);
-            fit.WorldSize = new Vector2(10.2f, 22.4f);
+            fit.WorldSize = new Vector2(13.6f, 24.0f);
             fit.Apply();
             SkyCycle.Attach(root, cam);
             GardenLife.Attach(root);
@@ -197,8 +197,10 @@ namespace FlockFive
             col.size = new Vector2(half * 2.6f, 2.7f);
             col.offset = new Vector2(fromRight ? 0.08f : -0.08f, 0.62f);
 
-            // Outer seats stay inside the visible wood — 0.98 sat on the bezel and peeked off-screen.
-            float outer = fromRight ? half * 0.48f : -half * 0.48f;
+            // Outer bird sits at the bark / screen edge without the sprite spilling.
+            // Inner uses the rest of the limb so five pads have air; a 4-stack
+            // still leaves the inner tip. Bees may fly off-screen.
+            float outer = fromRight ? half * 0.70f : -half * 0.70f;
             float inner = fromRight ? -half * 0.86f : half * 0.86f;
             for (int s = 0; s < BranchState.Cap; s++)
             {
@@ -261,7 +263,7 @@ namespace FlockFive
             cam.aspect = PortraitAspect;
             cam.rect = new Rect(0f, 0f, 1f, 1f);
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0.07f, 0.12f, 0.08f);
+            cam.backgroundColor = new Color(0.22f, 0.18f, 0.10f);
             cam.nearClipPlane = -10f;
             cam.farClipPlane = 50f;
             cam.transform.position = new Vector3(0f, -0.45f, -10f);
@@ -316,6 +318,3 @@ namespace FlockFive
         }
     }
 }
-
-
-

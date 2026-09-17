@@ -269,17 +269,40 @@ namespace FlockFive.Editor
                 EditorApplication.isPlaying = true;
         }
 
+        static readonly string[] LiveShotCmds =
+        {
+            "/tmp/flock-five-poker-faces",
+            "/tmp/flock-five-streak-shot",
+            "/tmp/flock-five-gift-shot",
+            "/tmp/flock-five-consumer-tour",
+            "/tmp/flock-five-shot",
+            "/tmp/flock-five-hand-qa"
+        };
+
+        static bool AnyShotCmd()
+        {
+            for (int i = 0; i < LiveShotCmds.Length; i++)
+                if (File.Exists(LiveShotCmds[i])) return true;
+            return false;
+        }
+
+        static void TryStartShot(FlockFive.FlockFiveApp app, string cmd, string method)
+        {
+            if (!File.Exists(cmd)) return;
+            try { File.Delete(cmd); } catch { return; }
+            app.StartCoroutine(method);
+        }
+
         static void TickPlayCmd()
         {
             if (File.Exists("/tmp/flock-five-unpause")
-                || File.Exists("/tmp/flock-five-poker-faces")
+                || AnyShotCmd()
                 || FlockFive.FlockFiveApp.EditorShotLive)
             {
                 EditorApplication.isPaused = false;
                 try { if (File.Exists("/tmp/flock-five-unpause")) File.Delete("/tmp/flock-five-unpause"); } catch { }
             }
-            if (File.Exists("/tmp/flock-five-poker-faces")
-                || File.Exists("/tmp/flock-five-streak-shot"))
+            if (AnyShotCmd())
             {
                 EditorApplication.isPaused = false;
                 if (!EditorApplication.isPlaying)
@@ -292,21 +315,12 @@ namespace FlockFive.Editor
                     var app = Object.FindAnyObjectByType<FlockFive.FlockFiveApp>();
                     if (app != null)
                     {
-                        if (File.Exists("/tmp/flock-five-poker-faces"))
-                        {
-                            try { File.Delete("/tmp/flock-five-poker-faces"); } catch { }
-                            app.StartCoroutine("ShotPokerFaces");
-                        }
-                        if (File.Exists("/tmp/flock-five-streak-shot"))
-                        {
-                            try { File.Delete("/tmp/flock-five-streak-shot"); } catch { }
-                            app.StartCoroutine("ShotStreak");
-                        }
-                        if (File.Exists("/tmp/flock-five-gift-shot"))
-                        {
-                            try { File.Delete("/tmp/flock-five-gift-shot"); } catch { }
-                            app.StartCoroutine("ShotGift");
-                        }
+                        TryStartShot(app, "/tmp/flock-five-poker-faces", "ShotPokerFaces");
+                        TryStartShot(app, "/tmp/flock-five-streak-shot", "ShotStreak");
+                        TryStartShot(app, "/tmp/flock-five-gift-shot", "ShotGift");
+                        TryStartShot(app, "/tmp/flock-five-consumer-tour", "ShotConsumerTour");
+                        TryStartShot(app, "/tmp/flock-five-shot", "ShotHome");
+                        TryStartShot(app, "/tmp/flock-five-hand-qa", "ShotHandQa");
                     }
                 }
             }
@@ -417,5 +431,10 @@ namespace FlockFive.Editor
     }
 }
 #endif
+
+
+
+
+
 
 

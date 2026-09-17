@@ -55,11 +55,11 @@ namespace FlockFive
             core.transform.localScale = new Vector3(0.72f, 0.58f, 1f);
             core.GetComponent<SpriteRenderer>().color = new Color(1f, 0.82f, 0.32f, 0.28f);
 
-            _residents = new SpriteRenderer[3];
-            _phase = new float[3];
-            for (int i = 0; i < 3; i++)
+            _residents = new SpriteRenderer[6];
+            _phase = new float[6];
+            for (int i = 0; i < 6; i++)
             {
-                var go = WorldBuilder.Sprite("HiveBee" + i, SpriteCatalog.Bee, transform.position, 0.13f, 11, transform);
+                var go = WorldBuilder.Sprite("HiveBee" + i, SpriteCatalog.Bee, transform.position, 0.16f, 11, transform);
                 _residents[i] = go.GetComponent<SpriteRenderer>();
                 _phase[i] = Random.Range(0f, 20f);
             }
@@ -141,9 +141,10 @@ namespace FlockFive
             {
                 var sr = _residents[i];
                 if (sr == null || !sr.enabled) continue;
-                float a = t * (3.6f + i * 0.4f) + _phase[i];
-                float x = (i - 1) * 0.22f + Mathf.Cos(a) * 0.10f;
-                float y = 0.08f + Mathf.Sin(a * 1.3f) * 0.10f;
+                float a = t * (1.55f + i * 0.22f) + _phase[i];
+                float orbit = 0.42f + (i % 3) * 0.12f;
+                float x = Mathf.Cos(a) * orbit;
+                float y = 0.28f + Mathf.Sin(a * 1.15f) * (orbit * 0.62f);
                 sr.transform.localPosition = new Vector3(x, y, 0f);
                 sr.sprite = SpriteCatalog.BeeFrame(t * 16f + _phase[i]);
                 sr.flipX = Mathf.Cos(a) < 0f;

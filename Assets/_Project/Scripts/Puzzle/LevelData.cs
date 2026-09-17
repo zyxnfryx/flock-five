@@ -159,8 +159,39 @@ namespace FlockFive
                 if (!keepTipShrouds && b.Branches[i].Count > 0)
                     b.Branches[i].Shrouded[b.Branches[i].Count - 1] = false;
             }
+            UnhideSameColorBees(b);
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                if (b.Branches[i].IsFullMatch(out _))
+                    b.Branches[i].Birds.RemoveAt(b.Branches[i].Birds.Count - 1);
+                b.Branches[i].AlignShroud();
+            }
             StampFlocks(b);
             return b;
+        }
+
+        // Bees hide a different color, never a same-color completion under a
+        // visible run. Hopping 3 gold off a limb should not unveil 2 more gold
+        // that you then hop back. Tip leaves (HideTip) stay — those are locked.
+        static void UnhideSameColorBees(Board b)
+        {
+            if (b == null) return;
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var br = b.Branches[i];
+                br.AlignShroud();
+                for (int k = 0; k < br.Count - 1; k++)
+                {
+                    if (!br.IsShrouded(k)) continue;
+                    for (int j = k + 1; j < br.Count; j++)
+                    {
+                        if (br.IsShrouded(j)) continue;
+                        if (!br.Birds[k].SameFlock(br.Birds[j])) continue;
+                        br.Shrouded[k] = false;
+                        break;
+                    }
+                }
+            }
         }
 
         // Same-sex flocks: hops need color AND sex, so every bird of a color
@@ -611,9 +642,10 @@ namespace FlockFive
             return br;
         }
 
-        // Inner shrouds are bees. They may sit under a leaf tip (HideTip) until
-        // a feeder collect breeze lifts the leaf; then only the exposed tip bee
-        // (or a hidden same-color run) leaves.
+        // Inner shrouds are bees. They hide a different color than the visible
+        // birds sitting on them. Same-color under a visible run is stripped in
+        // Prep (UnhideSameColorBees). They may sit under a leaf tip (HideTip)
+        // until a feeder collect breeze lifts the leaf.
         static void HideInner(BranchState br, int count)
         {
             br.AlignShroud();

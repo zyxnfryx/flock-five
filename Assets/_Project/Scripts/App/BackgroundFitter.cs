@@ -20,17 +20,21 @@ namespace FlockFive
             var size = _sr.sprite.bounds.size;
             if (size.x < 0.01f || size.y < 0.01f) return;
 
-            if (FollowCamera && Cam != null)
+            if (Cam != null)
             {
-                float h = Cam.orthographicSize * 2.16f;
-                float w = h * Cam.aspect;
-                transform.position = new Vector3(Cam.transform.position.x, Cam.transform.position.y, 8f);
+                // Bleed past the frustum so the garden painting, not the clear color, hits the bezel.
+                float h = Cam.orthographicSize * 2.24f;
+                float w = h * Mathf.Max(0.05f, Cam.aspect);
+                float x = FollowCamera ? Cam.transform.position.x : WorldCenter.x;
+                float y = FollowCamera ? Cam.transform.position.y : WorldCenter.y;
+                transform.position = new Vector3(x, y, WorldCenter.z);
                 transform.localScale = new Vector3(w / size.x, h / size.y, 1f);
-                return;
             }
-
-            transform.position = WorldCenter;
-            transform.localScale = new Vector3(WorldSize.x / size.x, WorldSize.y / size.y, 1f);
+            else
+            {
+                transform.position = WorldCenter;
+                transform.localScale = new Vector3(WorldSize.x / size.x, WorldSize.y / size.y, 1f);
+            }
             float dusk = SkyCycle.Dusk;
             float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 0.28f);
             var sunset = Color.Lerp(new Color(0.96f, 0.93f, 0.86f, 1f), new Color(1f, 0.86f, 0.68f, 1f), pulse * 0.28f);
@@ -40,3 +44,4 @@ namespace FlockFive
         }
     }
 }
+
