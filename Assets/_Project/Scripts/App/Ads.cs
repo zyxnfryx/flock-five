@@ -15,14 +15,15 @@ namespace FlockFive
         public const string PlacementBonus = "bonus_branch";
 
 #if UNITY_IOS
-        public const string AppKey = "";
-        public const string RewardedUnitId = "";
+        public const string AppKey = "282d0b97d";
+        public const string RewardedUnitId = "kjzd8hybcb9wklmz";
 #elif UNITY_ANDROID
         public const string AppKey = "";
         public const string RewardedUnitId = "";
 #else
-        public const string AppKey = "";
-        public const string RewardedUnitId = "";
+        // Editor / standalone: same iOS app so Play Mode can init.
+        public const string AppKey = "282d0b97d";
+        public const string RewardedUnitId = "kjzd8hybcb9wklmz";
 #endif
 
         public static bool HasKeys =>

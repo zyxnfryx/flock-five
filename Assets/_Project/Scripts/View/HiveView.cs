@@ -6,6 +6,7 @@ namespace FlockFive
     public sealed class HiveView : MonoBehaviour
     {
         public Transform Home;
+        public static float GuiPulse;
         SpriteRenderer[] _residents;
         float[] _phase;
         bool _pulse;
@@ -61,6 +62,7 @@ namespace FlockFive
             {
                 var go = WorldBuilder.Sprite("HiveBee" + i, SpriteCatalog.Bee, transform.position, 0.16f, 11, transform);
                 _residents[i] = go.GetComponent<SpriteRenderer>();
+                _residents[i].enabled = false;
                 _phase[i] = Random.Range(0f, 20f);
             }
             RefreshResidents();
@@ -101,23 +103,13 @@ namespace FlockFive
 
         void RefreshResidents()
         {
+            // World residents sit under the OnGUI skep, so the visible halo
+            // is drawn in FlockFiveApp. Keep these off so they cannot stack.
             if (_residents == null) return;
-            int shown = Mathf.Min(_residents.Length, Mathf.Max(1, Hive.Found));
-            int slot = 0;
-            for (int k = 0; k < Hive.Kinds && slot < shown; k++)
-            {
-                if (Hive.CountOf(k) <= 0) continue;
-                if (_residents[slot] == null) { slot++; continue; }
-                _residents[slot].enabled = true;
-                _residents[slot].color = Hive.Roster[k].Tint;
-                slot++;
-            }
-            for (int i = slot; i < _residents.Length; i++)
+            for (int i = 0; i < _residents.Length; i++)
             {
                 if (_residents[i] == null) continue;
-                bool empty = Hive.Found == 0 && i == 0;
-                _residents[i].enabled = empty;
-                if (empty) _residents[i].color = new Color(1f, 0.78f, 0.22f, 0.85f);
+                _residents[i].enabled = false;
             }
         }
 
@@ -129,14 +121,17 @@ namespace FlockFive
             {
                 _pulseT += Time.deltaTime;
                 float u = Mathf.Clamp01(_pulseT / 0.4f);
-                float k = _baseScale * (1f + 0.08f * Mathf.Sin(u * Mathf.PI));
+                GuiPulse = Mathf.Sin(u * Mathf.PI);
+                float k = _baseScale * (1f + 0.08f * GuiPulse);
                 transform.localScale = Vector3.one * k;
                 if (u >= 1f)
                 {
                     _pulse = false;
+                    GuiPulse = 0f;
                     transform.localScale = Vector3.one * _baseScale;
                 }
             }
+            else GuiPulse = 0f;
             for (int i = 0; i < _residents.Length; i++)
             {
                 var sr = _residents[i];
@@ -152,3 +147,4 @@ namespace FlockFive
         }
     }
 }
+

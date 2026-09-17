@@ -133,7 +133,19 @@ namespace FlockFive
         }
         SplashFlutter[] _splashFlutters;
         SplashFlutter[] _pokerFlutters;
+        struct HiveHaloBee
+        {
+            public float Angle, Speed, RadiusK, BobPhase;
+            public Color Tint;
+        }
+        HiveHaloBee[] _hiveHalo;
+        int _hiveHaloFound = -1;
         static Sprite _splashPointedV;
+
+        public void InviteShareDone(string ok)
+        {
+            if (ok == "1") Invite.OnShared();
+        }
 
         void Start()
         {
@@ -145,6 +157,7 @@ namespace FlockFive
             Screen.autorotateToLandscapeRight = false;
             Sfx.Warm();
             Ads.Warm();
+            Invite.Warm();
             SpriteCatalog.DropPokerArt();
             try { ShowSplash(); }
             catch (System.Exception e)
@@ -262,6 +275,7 @@ namespace FlockFive
             WorldBuilder.MakeCamera(transform);
             if (MixDesk.Live != null) MixDesk.Live.SetSplash(true);
             Purse.Boot();
+            Invite.Warm();
             PigPoke.Boot();
             BirdPoker.Boot();
             ArmStreakSlide();
@@ -473,6 +487,20 @@ namespace FlockFive
         {
             const string dir = "/tmp/paradice";
             System.IO.Directory.CreateDirectory(dir);
+            ShowSplash();
+            _home = HomeFace.Splash;
+            yield return new WaitForSecondsRealtime(0.35f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/splash-home.png");
+            yield return new WaitForSecondsRealtime(0.35f);
+            Load(0);
+            yield return new WaitForSecondsRealtime(0.85f);
+            SeedGardenFive();
+            yield return new WaitForSecondsRealtime(0.30f);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(dir + "/garden-hive.png");
+            yield return new WaitForSecondsRealtime(0.35f);
+            ShowSplash();
             _home = HomeFace.Hive;
             if (Hive.Found == 0)
             {
@@ -2601,8 +2629,11 @@ namespace FlockFive
             float h = 64f * scale;
             float x = Mathf.Max(40f * scale, safe.xMin + 32f * scale);
             restart = new Rect(x, y, h, h);
-            float hiveW = 170f * scale;
-            hive = new Rect(Mathf.Min(Screen.width - hiveW - 16f, safe.xMax - hiveW - 8f), y, hiveW, h);
+            float hiveS = 80f * scale;
+            float hiveY = y + h - hiveS;
+            hive = new Rect(
+                Mathf.Min(Screen.width - hiveS - 10f, safe.xMax - hiveS - 8f),
+                hiveY, hiveS, hiveS);
         }
 
         void SnapHiveToHud()
@@ -2694,11 +2725,7 @@ namespace FlockFive
                 GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
             else
                 GUI.Box(restart, "↩");
-            var hiveSpr = SpriteCatalog.Hive;
-            if (hiveSpr != null && hiveSpr.texture != null)
-                GUI.DrawTexture(hive, hiveSpr.texture, ScaleMode.ScaleToFit, true);
-            else
-                GUI.Box(hive, "Hive");
+            DrawHiveButton(hive, s);
             if (_levelHive) DrawLevelHive(s);
             DrawGiftSign(s);
             if (_gift != GiftFace.None) DrawGiftOffer(s);
@@ -2713,6 +2740,14 @@ namespace FlockFive
         static float SplashRailGap() => Mathf.Max(24f, SplashRailSize() * 0.30f);
 
         static Rect SplashHiveRect() => HomeRailRect(true, SplashRailSize());
+
+        static Rect SplashShareRect()
+        {
+            float size = SplashRailSize() * 0.70f;
+            var hive = SplashHiveRect();
+            var left = HomeRailRect(false, size);
+            return new Rect(left.x, hive.y + (hive.height - size) * 0.5f, size, size);
+        }
 
         static Rect SplashPokerRect()
         {
@@ -2738,6 +2773,178 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(r.x + 3f, r.y + 6f, r.width, r.height), spr.texture, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
             GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
+        }
+
+        void DrawHiveButton(Rect hive, float s)
+        {
+            float pulse = HiveView.GuiPulse;
+            Rect draw = hive;
+            if (pulse > 0.01f)
+            {
+                float k = 1f + 0.10f * pulse;
+                float cx = hive.center.x, cy = hive.center.y;
+                draw = new Rect(cx - hive.width * 0.5f * k, cy - hive.height * 0.5f * k,
+                    hive.width * k, hive.height * k);
+            }
+            DrawHiveHalo(draw, s, true);
+            var spr = SpriteCatalog.Hive;
+            if (spr != null && spr.texture != null)
+            {
+                GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.32f);
+                GUI.DrawTexture(new Rect(draw.x + 3f, draw.y + 6f, draw.width, draw.height), spr.texture, ScaleMode.ScaleToFit, true);
+                GUI.color = Color.white;
+                GUI.DrawTexture(draw, spr.texture, ScaleMode.ScaleToFit, true);
+            }
+            else
+                GUI.Box(draw, "Hive");
+            DrawHiveHalo(draw, s, false);
+        }
+
+        float DrawHiveTally(Rect hive, float s)
+        {
+            int have = Hive.Found;
+            int cap = Mathf.Max(1, Hive.AlbumSlots);
+            float u = Mathf.Clamp01(have / (float)cap);
+            float h = Mathf.Clamp(hive.height * 0.20f, 16f * s, 26f * s);
+            float w = hive.width * 0.88f;
+            var plate = new Rect(hive.center.x - w * 0.5f, hive.yMax + 3f * s, w, h);
+            GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.84f);
+            GUI.DrawTexture(plate, Texture2D.whiteTexture);
+            if (u > 0.008f)
+            {
+                GUI.color = new Color(0.90f, 0.66f, 0.18f, 0.90f);
+                GUI.DrawTexture(new Rect(plate.x, plate.y, plate.width * u, plate.height), Texture2D.whiteTexture);
+            }
+            GUI.color = new Color(1f, 0.82f, 0.28f, 0.62f);
+            float t = Mathf.Max(1.5f, 2f * s);
+            GUI.DrawTexture(new Rect(plate.x, plate.y, plate.width, t), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(plate.x, plate.yMax - t, plate.width, t), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            string n = have.ToString();
+            var st = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+            st.fontSize = FitFont(st, n, plate.width * 0.82f, plate.height * 0.80f, 11, 22);
+            StampOutlined(plate, n, st, new Color(1f, 0.95f, 0.78f), 1, 1);
+            return plate.yMax;
+        }
+
+        void EnsureHiveHalo()
+        {
+            int found = Hive.Found;
+            int n = Mathf.Clamp(found > 0 ? Mathf.Min(6, found) : 2, 2, 6);
+            if (_hiveHalo != null && _hiveHalo.Length == n && _hiveHaloFound == found) return;
+            var tints = new Color[n];
+            int slot = 0;
+            for (int k = 0; k < Hive.Kinds && slot < n; k++)
+            {
+                if (Hive.CountOf(k) <= 0) continue;
+                tints[slot++] = Hive.Roster[k].Tint;
+            }
+            while (slot < n)
+            {
+                tints[slot] = new Color(1f, 0.78f, 0.22f, 1f);
+                slot++;
+            }
+            var prev = _hiveHalo;
+            _hiveHalo = new HiveHaloBee[n];
+            float step = Mathf.PI * 2f / n;
+            for (int i = 0; i < n; i++)
+            {
+                float ang = prev != null && i < prev.Length ? prev[i].Angle : i * step;
+                _hiveHalo[i] = new HiveHaloBee
+                {
+                    Angle = ang,
+                    Speed = 0.55f + i * 0.07f,
+                    RadiusK = 0.78f + 0.06f * (i % 3),
+                    BobPhase = i * 1.13f,
+                    Tint = tints[i]
+                };
+            }
+            _hiveHaloFound = found;
+        }
+
+        void DrawHiveHalo(Rect hive, float s, bool behind)
+        {
+            EnsureHiveHalo();
+            if (_hiveHalo == null) return;
+            Vector2 c = hive.center;
+            c.y -= hive.height * 0.08f;
+            // Corner hives sit on the right bezel — keep the ring on-screen.
+            float padR = Mathf.Max(6f, Screen.width - hive.xMax);
+            if (padR < hive.width * 0.45f)
+                c.x -= hive.width * 0.10f;
+            float rx = hive.width * 0.58f;
+            float ry = hive.height * 0.50f;
+            float icon = Mathf.Clamp(hive.width * 0.32f, 16f * s, 36f * s);
+            var prev = GUI.color;
+            float dt = behind ? Time.unscaledDeltaTime : 0f;
+            for (int i = 0; i < _hiveHalo.Length; i++)
+            {
+                var b = _hiveHalo[i];
+                if (behind)
+                {
+                    b.Angle = Mathf.Repeat(b.Angle + b.Speed * dt, Mathf.PI * 2f);
+                    _hiveHalo[i] = b;
+                }
+                float depth = Mathf.Sin(b.Angle);
+                bool isBehind = depth < 0f;
+                if (behind != isBehind) continue;
+                float x = c.x + Mathf.Cos(b.Angle) * rx * b.RadiusK;
+                float y = c.y + Mathf.Sin(b.Angle) * ry * b.RadiusK;
+                y += Mathf.Sin(Time.unscaledTime * 2.2f + b.BobPhase) * (2.4f * s);
+                x = Mathf.Clamp(x, icon * 0.55f, Screen.width - icon * 0.55f);
+                y = Mathf.Clamp(y, icon * 0.55f, Screen.height - icon * 0.45f);
+                float scale = isBehind ? 0.86f : 1.06f;
+                float iw = icon * scale;
+                var spr = SpriteCatalog.BeeFrame(Time.unscaledTime * 14f + i * 2.4f);
+                if (spr == null || spr.texture == null) continue;
+                var r = new Rect(x - iw * 0.5f, y - iw * 0.5f, iw, iw);
+                var tint = b.Tint;
+                float dim = isBehind ? 0.78f : 1f;
+                GUI.color = new Color(tint.r * dim, tint.g * dim, tint.b * dim, isBehind ? 0.82f : 0.96f);
+                bool faceLeft = Mathf.Cos(b.Angle) < 0f;
+                if (faceLeft)
+                {
+                    var m = GUI.matrix;
+                    GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), r.center);
+                    GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
+                    GUI.matrix = m;
+                }
+                else
+                    GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
+            }
+            GUI.color = prev;
+        }
+
+        void DrawShareButton(Rect r, bool held, float s)
+        {
+            float sink = held ? r.height * 0.03f : 0f;
+            var disc = new Rect(r.x, r.y + sink, r.width, r.height);
+            var glow = GlowTex();
+            GUI.color = new Color(1f, 0.82f, 0.28f, held ? 0.34f : 0.18f);
+            GUI.DrawTexture(new Rect(disc.x - 8f, disc.y - 8f, disc.width + 16f, disc.height + 16f), glow, ScaleMode.ScaleToFit, true);
+            GUI.color = new Color(0.18f, 0.10f, 0.04f, held ? 0.88f : 0.72f);
+            GUI.DrawTexture(disc, Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 0.84f, 0.32f, 0.85f);
+            float t = 4f * s;
+            GUI.DrawTexture(new Rect(disc.x + t, disc.y + t, disc.width - t * 2f, 3f * s), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(disc.x + t, disc.yMax - t - 3f * s, disc.width - t * 2f, 3f * s), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(disc.x + t, disc.y + t, 3f * s, disc.height - t * 2f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(disc.xMax - t - 3f * s, disc.y + t, 3f * s, disc.height - t * 2f), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var st = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true
+            };
+            string lab = "Invite";
+            st.fontSize = FitFont(st, lab, disc.width * 0.78f, disc.height * 0.55f, 14, 28);
+            StampOutlined(disc, lab, st, new Color(1f, 0.92f, 0.62f), 1, Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.08f)));
         }
 
         void ArmStreakSlide()
@@ -3310,7 +3517,15 @@ namespace FlockFive
             var hiveR = SplashHiveRect();
             if (HitPad(hiveR, out _))
                 _home = HomeFace.Hive;
-            DrawRailIcon(hiveR, SpriteCatalog.Hive);
+            DrawHiveButton(hiveR, s);
+
+            var shareR = SplashShareRect();
+            if (HitPad(shareR, out bool shareHeld))
+            {
+                Sfx.Chirp(BirdColor.Gold);
+                Invite.Share();
+            }
+            DrawShareButton(shareR, shareHeld, s);
 
             // Third rail button: bird video poker.
             var pokerR = SplashPokerRect();
@@ -5947,14 +6162,6 @@ namespace FlockFive
             float s = Mathf.Max(Screen.height / 720f, 1f);
             DrawHomeWash(0.28f);
 
-            var title = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Mathf.RoundToInt(28 * s),
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleLeft
-            };
-            title.normal.textColor = new Color(1f, 0.94f, 0.72f);
-            var row = new GUIStyle(GUI.skin.label) { fontSize = Mathf.RoundToInt(20 * s) };
             var backLab = new GUIStyle(GUI.skin.label)
             {
                 fontSize = Mathf.RoundToInt(22 * s),
@@ -5965,7 +6172,9 @@ namespace FlockFive
 
             var safe = Screen.safeArea;
             float top = Mathf.Max(20f, Screen.height - safe.yMax + 10f);
-            var back = new Rect(Mathf.Max(16f, safe.xMin + 10f), top, 132f * Mathf.Min(s, 1.6f), 44f * Mathf.Min(s, 1.6f));
+            float btnH = 44f * Mathf.Min(s, 1.6f);
+            float btnW = 132f * Mathf.Min(s, 1.6f);
+            var back = new Rect(Mathf.Max(16f, safe.xMin + 10f), top, btnW, btnH);
             if (HitPad(back, out bool backHeld))
             {
                 if (_hiveInspect >= 0)
@@ -5988,30 +6197,35 @@ namespace FlockFive
             GUI.color = Color.white;
             GUI.Label(back, "Back", backLab);
 
-            float hiveSize = Mathf.Clamp(Screen.width * 0.20f, 80f, 140f);
-            var hiveSpr = SpriteCatalog.Hive;
-            if (hiveSpr != null && hiveSpr.texture != null)
-                GUI.DrawTexture(new Rect((Screen.width - hiveSize) * 0.5f, top + 8f, hiveSize, hiveSize), hiveSpr.texture, ScaleMode.ScaleToFit, true);
-
-            float boxY = top + hiveSize + 4f * s;
-            var head = new GUIStyle(GUI.skin.label)
+            float hiveSize = Mathf.Clamp(Screen.width * 0.30f, 128f, 220f);
+            var hiveHead = new Rect(
+                (Screen.width - hiveSize) * 0.5f,
+                top + btnH + 12f * s,
+                hiveSize, hiveSize);
+            DrawHiveButton(hiveHead, s);
+            var shareAlbum = new Rect(
+                Screen.width - Mathf.Max(16f, Screen.width - safe.xMax + 10f) - btnW,
+                top, btnW, btnH);
+            if (HitPad(shareAlbum, out bool shareHeld))
             {
-                fontStyle = FontStyle.Bold,
+                Sfx.Chirp(BirdColor.Gold);
+                Invite.Share();
+            }
+            GUI.color = new Color(0.10f, 0.08f, 0.05f, shareHeld ? 0.88f : 0.72f);
+            GUI.DrawTexture(shareAlbum, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var shareLab = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = Mathf.RoundToInt(20 * s),
                 alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
+                fontStyle = FontStyle.Bold
             };
+            shareLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
+            GUI.Label(shareAlbum, "Invite", shareLab);
+
+            float hiveBottom = DrawHiveTally(hiveHead, s);
             int pages = Mathf.Max(1, (Hive.AlbumSlots + HivePageSize - 1) / HivePageSize);
             _hivePage = Mathf.Clamp(_hivePage, 0, pages - 1);
-            string album = "Bee Album  " + Hive.Found + " / " + Hive.AlbumSlots;
-            head.fontSize = FitFont(head, album, Screen.width * 0.72f, 32f * s, 16, 28);
-            StampOutlined(new Rect(0f, boxY, Screen.width, 30f * s), album, head, new Color(1f, 0.94f, 0.72f), 2, 1);
-            var tip = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Italic,
-                alignment = TextAnchor.MiddleCenter
-            };
-            tip.fontSize = Mathf.RoundToInt(13 * s);
-            StampOutlined(new Rect(0f, boxY + 26f * s, Screen.width, 20f * s), "Tap a card to pull it out  ·  tabs turn the page", tip, new Color(0.92f, 0.82f, 0.58f), 1, 1);
 
             if (_hiveFlip >= 0)
             {
@@ -6030,9 +6244,9 @@ namespace FlockFive
             // Ultra Pro clear page: 3×3 sleeves on a binder sheet
             float tabH = 40f * s;
             float pageBottom = Screen.height - 16f * s - tabH - 8f * s;
-            float pageTop = boxY + 50f * s;
+            float pageTop = hiveBottom + 22f * s;
             float pageH = pageBottom - pageTop;
-            float pagePad = 16f * s;
+            float pagePad = 22f * s;
             float pageW = Screen.width - pagePad * 2f;
             var sheet = new Rect(pagePad, pageTop, pageW, pageH);
 
@@ -7053,4 +7267,8 @@ namespace FlockFive
         }
     }
 }
+
+
+
+
 

@@ -172,6 +172,7 @@ PlayerSettings:
   applicationIdentifier:
     Standalone: com.zfxgames.flockfive
     iPhone: com.zfxgames.flockfive
+    Android: com.zfxgames.flockfive
   buildNumber:
     Standalone: 0
     VisionOS: 0
@@ -803,12 +804,12 @@ PlayerSettings:
   captureStartupLogs: {}
   activeInputHandler: 1
   windowsGamepadBackendHint: 0
-  cloudProjectId: 
+  cloudProjectId: fefd35e6-1dc8-4425-a723-7d796f14edc0
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
-  projectName: 
-  organizationId: 
-  cloudEnabled: 0
+  projectName: flock-five
+  organizationId: aae36792-45ab-40b6-0000-0100003d51b7
+  cloudEnabled: 1
   legacyClampBlendShapeWeights: 0
   hmiLoadingImage: {fileID: 0}
   platformRequiresReadableAssets: 0
