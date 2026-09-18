@@ -170,9 +170,9 @@ PlayerSettings:
   androidMaxAspectRatio: 2.4
   androidMinAspectRatio: 1
   applicationIdentifier:
+    Android: com.zfxgames.flockfive
     Standalone: com.zfxgames.flockfive
     iPhone: com.zfxgames.flockfive
-    Android: com.zfxgames.flockfive
   buildNumber:
     Standalone: 0
     VisionOS: 0
@@ -706,7 +706,8 @@ PlayerSettings:
   webGLCloseOnQuit: 0
   webWasm2023: 0
   webEnableSubmoduleStrippingCompatibility: 0
-  scriptingDefineSymbols: {}
+  scriptingDefineSymbols:
+    Standalone: LEVELPLAY_DEPENDENCIES_INSTALLED
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend: {}
@@ -807,8 +808,8 @@ PlayerSettings:
   cloudProjectId: fefd35e6-1dc8-4425-a723-7d796f14edc0
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
-  projectName: flock-five
-  organizationId: aae36792-45ab-40b6-0000-0100003d51b7
+  projectName: Flock Five
+  organizationId: zyxnfryx
   cloudEnabled: 1
   legacyClampBlendShapeWeights: 0
   hmiLoadingImage: {fileID: 0}

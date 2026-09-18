@@ -78,7 +78,7 @@ namespace FlockFive
             }
             Sfx.FeederLeave();
             float t = 0f;
-            const float dur = 0.72f;
+            const float dur = 1.55f;
             while (t < dur)
             {
                 t += Time.unscaledDeltaTime;
@@ -86,22 +86,22 @@ namespace FlockFive
                 float k = u * u * (3f - 2f * u);
                 if (_a != null)
                 {
-                    _a.color = new Color(1f, 1f, 1f, 0.92f * k);
-                    float grow = Mathf.Lerp(1.10f, 1f, k);
+                    _a.color = new Color(1f, 1f, 1f, 0.58f * k);
+                    float grow = Mathf.Lerp(1.08f, 1f, k);
                     _a.transform.localScale = _fitA * grow;
                 }
-                float u2 = Mathf.Clamp01((t - 0.18f) / 0.55f);
+                float u2 = Mathf.Clamp01((t - 0.35f) / 1.05f);
                 float k2 = u2 * u2 * (3f - 2f * u2);
                 if (_b != null)
                 {
-                    _b.color = new Color(1f, 1f, 1f, 0.78f * k2);
-                    float grow = Mathf.Lerp(1.14f, 1f, k2);
+                    _b.color = new Color(1f, 1f, 1f, 0.46f * k2);
+                    float grow = Mathf.Lerp(1.12f, 1f, k2);
                     _b.transform.localScale = _fitB * grow;
                 }
                 yield return null;
             }
-            if (_a != null) { _a.color = Color.white; _a.transform.localScale = _fitA; }
-            if (_b != null) { _b.color = new Color(1f, 1f, 1f, 0.78f); _b.transform.localScale = _fitB; }
+            if (_a != null) { _a.color = new Color(1f, 1f, 1f, 0.58f); _a.transform.localScale = _fitA; }
+            if (_b != null) { _b.color = new Color(1f, 1f, 1f, 0.46f); _b.transform.localScale = _fitB; }
         }
 
         public IEnumerator Shatter(Transform world)

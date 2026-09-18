@@ -137,9 +137,9 @@ namespace FlockFive
         {
             public float Angle, Speed, RadiusK, BobPhase;
             public Color Tint;
+            public float Appear, Expire;
         }
-        HiveHaloBee[] _hiveHalo;
-        int _hiveHaloFound = -1;
+        readonly List<HiveHaloBee> _incomingHalo = new List<HiveHaloBee>();
         static Sprite _splashPointedV;
 
         public void InviteShareDone(string ok)
@@ -292,6 +292,7 @@ namespace FlockFive
             _collecting = false;
             _locked.Clear();
             _levelBees.Clear();
+            _incomingHalo.Clear();
             _levelHive = false;
             _gift = GiftFace.None;
             _frozen = false;
@@ -1478,20 +1479,10 @@ namespace FlockFive
             }
             if (_sel < 0)
             {
-                if (_board.Branches[hit].Broken || _board.Branches[hit].Empty)
+                if (!_board.CanPick(hit))
                 {
                     _garden.Branches[hit].Shake();
-                    return;
-                }
-                if (_board.IsSleeping(hit))
-                {
-                    _garden.Branches[hit].Shake();
-                    Sfx.Sleep();
-                    return;
-                }
-                if (TipLocked(hit))
-                {
-                    _garden.Branches[hit].Shake();
+                    if (_board.IsSleeping(hit)) Sfx.Sleep();
                     return;
                 }
                 Select(hit);
@@ -1515,15 +1506,10 @@ namespace FlockFive
             }
             if (!_board.Branches[hit].Empty)
             {
-                if (_board.IsSleeping(hit))
+                if (!_board.CanPick(hit))
                 {
                     _garden.Branches[hit].Shake();
-                    Sfx.Sleep();
-                    return;
-                }
-                if (TipLocked(hit))
-                {
-                    _garden.Branches[hit].Shake();
+                    if (_board.IsSleeping(hit)) Sfx.Sleep();
                     return;
                 }
                 Select(hit);
@@ -1575,6 +1561,7 @@ namespace FlockFive
                 var visit = Hive.TakeVisitor();
                 _levelBees.Add(visit);
                 Sfx.BeeFound();
+                if (visit.Fresh) ArmIncomingHalo(visit);
                 if (_garden.Hive != null)
                 {
                     SnapHiveToHud();
@@ -1692,17 +1679,21 @@ namespace FlockFive
                 var idle = birds[i] != null ? birds[i].GetComponent<BirdIdle>() : null;
                 flock[i] = idle != null ? new Bird(idle.Color, idle.Sex) : new Bird(col, BirdSex.Neutral);
             }
-            _board.ApplyCollect(branch);
+            bool vsHawk = HawkView.Live != null && HawkView.Live.BlockingSlot == slot;
+            bool vsSparrow = !vsHawk && SparrowView.Live != null && SparrowView.Live.BlockingSlot == slot;
+            bool pest = vsHawk || vsSparrow;
+            _board.ApplyCollect(branch, scoreFeeder: !pest);
 
             float haste = Mathf.Lerp(1f, 0.52f, Mathf.Clamp01((combo - 1) / 7f));
             float step = 0.192f * haste;
             float fly = 0.432f * haste;
-            bool vsHawk = HawkView.Live != null && HawkView.Live.BlockingSlot == slot;
-            bool vsSparrow = !vsHawk && SparrowView.Live != null && SparrowView.Live.BlockingSlot == slot;
+            // Pest scraps stay at full tempo — combo haste made the fight unreadable.
+            float fightHaste = (vsHawk || vsSparrow) ? 1f : haste;
+            float fightFly = (vsHawk || vsSparrow) ? 0.58f : fly;
             if (vsHawk)
-                yield return CollectVsHawk(birds, n, feeder, mouth, view, col, haste, step, fly, combo, flock, branch);
+                yield return CollectVsHawk(birds, n, feeder, mouth, view, col, fightHaste, step, fightFly, combo, flock, branch);
             else if (vsSparrow)
-                yield return CollectVsSparrow(birds, n, feeder, mouth, view, col, haste, step, fly, combo, flock, branch);
+                yield return CollectVsSparrow(birds, n, feeder, mouth, view, col, fightHaste, step, fightFly, combo, flock, branch);
             else
             {
                 if (feeder != null) feeder.Hold();
@@ -1730,6 +1721,8 @@ namespace FlockFive
                 yield return GardenFit.Tween(_garden, _board, false);
             if (more != 0) yield break;
             yield return SettleIfIdle();
+            if (vsHawk || vsSparrow)
+                yield return new WaitForSeconds(1.05f);
             CheckOver();
         }
 
@@ -1782,7 +1775,7 @@ namespace FlockFive
 
             yield return ScatterUp(birds, n);
 
-            if (feeder != null) yield return feeder.PullAway();
+            if (feeder != null) feeder.SnapHome();
             yield return view.BreakAway();
             yield return PerchOnRemain(birds, n, flock, broken);
         }
@@ -1838,15 +1831,7 @@ namespace FlockFive
 
             yield return ScatterUp(birds, n);
 
-            if (cleared)
-            {
-                if (feeder != null) yield return feeder.PullAway();
-            }
-            else if (feeder != null)
-            {
-                // Keep feeder planted so wounded hawk stays blocking for next collect.
-                feeder.SnapHome();
-            }
+            if (feeder != null) feeder.SnapHome();
             yield return view.BreakAway();
             yield return PerchOnRemain(birds, n, flock, broken);
         }
@@ -2022,7 +2007,7 @@ namespace FlockFive
                 float delay = i * Random.Range(0.02f, 0.05f);
                 StartCoroutine(ScatterHold(birds[i].transform, hold, delay));
             }
-            yield return new WaitForSeconds(0.40f + n * 0.03f);
+            yield return new WaitForSeconds(0.92f + n * 0.05f);
         }
 
         static IEnumerator ScatterHold(Transform tr, Vector3 dest, float delay)
@@ -2034,7 +2019,7 @@ namespace FlockFive
             var scale = BranchView.BirdScale;
             float side = dest.x >= start.x ? 1f : -1f;
             float lift = Random.Range(0.55f, 1.05f);
-            float dur = Random.Range(0.28f, 0.40f);
+            float dur = Random.Range(0.48f, 0.64f);
             var idle = tr.GetComponent<BirdIdle>();
             if (idle != null)
             {
@@ -2092,12 +2077,12 @@ namespace FlockFive
             }
 
             Sfx.FlockFlutter(Mathf.Max(1, n));
-            float wait = 0.48f;
+            float wait = 1.15f;
             for (int i = 0; i < n; i++)
             {
                 if (birds[i] == null) continue;
-                float delay = i * 0.035f;
-                wait = Mathf.Max(wait, delay + 0.52f);
+                float delay = i * 0.08f;
+                wait = Mathf.Max(wait, delay + 0.88f);
                 if (parked[i])
                     StartCoroutine(PerchOne(birds[i].transform, dests[i], delay));
                 else
@@ -2107,6 +2092,7 @@ namespace FlockFive
                 }
             }
             yield return new WaitForSeconds(wait);
+            yield return new WaitForSeconds(0.55f);
             // Fight sprites were parented to Root for the scrap; SyncAll owns
             // parked seat visuals, so drop the temps. Scattered birds already
             // fade/hide via ScatterOne.
@@ -2162,7 +2148,7 @@ namespace FlockFive
             if (tr == null) yield break;
             var start = tr.position;
             var scale = BranchView.BirdScale;
-            float dur = 0.48f;
+            float dur = 0.78f;
             var idle = tr.GetComponent<BirdIdle>();
             if (idle != null)
             {
@@ -2368,7 +2354,9 @@ namespace FlockFive
         {
             if (_busy || _collecting || _locked.Count > 0 || _frozen) return;
             if (_won || _board == null || _board.Won) return;
+            if (_gift != GiftFace.None) return;
             if (GardenSolve.Look(_board) != GardenSolve.Outlook.Tangled) return;
+            _frozen = true;
             StartCoroutine(FreezeOver());
         }
 
@@ -2385,6 +2373,7 @@ namespace FlockFive
             }
             StillBirds(true);
             if (_garden.Ice != null) yield return _garden.Ice.Coat();
+            yield return new WaitForSeconds(0.45f);
             _gift = GiftFace.Card;
         }
 
@@ -2566,9 +2555,11 @@ namespace FlockFive
                     var v = _garden.Branches[b];
                     if (v == null || !v.gameObject.activeInHierarchy) continue;
                     if (_board.Branches[v.Index].Broken) continue;
+                    if (_board.Branches[v.Index].IsFullMatch(out _)) continue;
                     for (int s = 0; s < BranchState.Cap; s++)
                     {
                         if (v.Birds[s] == null || !v.Birds[s].enabled) continue;
+                        if (v.Birds[s].transform.parent != v.transform) continue;
                         float d = ((Vector2)v.Birds[s].transform.position - world).sqrMagnitude;
                         if (d < bestBird) { bestBird = d; idx = v.Index; }
                     }
@@ -2583,7 +2574,7 @@ namespace FlockFive
                 var v = _garden.Branches[i];
                 if (v == null || !v.gameObject.activeInHierarchy) continue;
                 var st = _board.Branches[v.Index];
-                if (st.Broken) continue;
+                if (st.Broken || st.IsFullMatch(out _)) continue;
                 float reach = st.Empty && sending ? 3.45f : pad;
                 float d = v.NearestPadSqr(world);
                 if (d < reach * reach && d < best) { best = d; idx = v.Index; }
@@ -2593,6 +2584,7 @@ namespace FlockFive
             {
                 var v = overlap[i].GetComponentInParent<BranchView>();
                 if (v == null || _board.Branches[v.Index].Broken) continue;
+                if (_board.Branches[v.Index].IsFullMatch(out _)) continue;
                 float d = v.NearestPadSqr(world);
                 if (d < best) { best = d; idx = v.Index; }
             }
@@ -2725,7 +2717,7 @@ namespace FlockFive
                 GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
             else
                 GUI.Box(restart, "↩");
-            DrawHiveButton(hive, s);
+            DrawHiveButton(hive, s, orbit: true);
             if (_levelHive) DrawLevelHive(s);
             DrawGiftSign(s);
             if (_gift != GiftFace.None) DrawGiftOffer(s);
@@ -2775,7 +2767,7 @@ namespace FlockFive
             GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
         }
 
-        void DrawHiveButton(Rect hive, float s)
+        void DrawHiveButton(Rect hive, float s, bool orbit = false)
         {
             float pulse = HiveView.GuiPulse;
             Rect draw = hive;
@@ -2786,7 +2778,7 @@ namespace FlockFive
                 draw = new Rect(cx - hive.width * 0.5f * k, cy - hive.height * 0.5f * k,
                     hive.width * k, hive.height * k);
             }
-            DrawHiveHalo(draw, s, true);
+            if (orbit) DrawHiveHalo(draw, s, true);
             var spr = SpriteCatalog.Hive;
             if (spr != null && spr.texture != null)
             {
@@ -2797,7 +2789,7 @@ namespace FlockFive
             }
             else
                 GUI.Box(draw, "Hive");
-            DrawHiveHalo(draw, s, false);
+            if (orbit) DrawHiveHalo(draw, s, false);
         }
 
         float DrawHiveTally(Rect hive, float s)
@@ -2832,45 +2824,35 @@ namespace FlockFive
             return plate.yMax;
         }
 
-        void EnsureHiveHalo()
+        void ArmIncomingHalo(BeeVisit visit)
         {
-            int found = Hive.Found;
-            int n = Mathf.Clamp(found > 0 ? Mathf.Min(6, found) : 2, 2, 6);
-            if (_hiveHalo != null && _hiveHalo.Length == n && _hiveHaloFound == found) return;
-            var tints = new Color[n];
-            int slot = 0;
-            for (int k = 0; k < Hive.Kinds && slot < n; k++)
+            var tint = visit.Kind.Tint;
+            if (visit.Finish != BeeFinish.Normal)
+                tint = Color.Lerp(tint, Color.white, visit.Finish == BeeFinish.Holo ? 0.18f : 0.28f);
+            float now = Time.unscaledTime;
+            _incomingHalo.Add(new HiveHaloBee
             {
-                if (Hive.CountOf(k) <= 0) continue;
-                tints[slot++] = Hive.Roster[k].Tint;
-            }
-            while (slot < n)
-            {
-                tints[slot] = new Color(1f, 0.78f, 0.22f, 1f);
-                slot++;
-            }
-            var prev = _hiveHalo;
-            _hiveHalo = new HiveHaloBee[n];
-            float step = Mathf.PI * 2f / n;
-            for (int i = 0; i < n; i++)
-            {
-                float ang = prev != null && i < prev.Length ? prev[i].Angle : i * step;
-                _hiveHalo[i] = new HiveHaloBee
-                {
-                    Angle = ang,
-                    Speed = 0.55f + i * 0.07f,
-                    RadiusK = 0.78f + 0.06f * (i % 3),
-                    BobPhase = i * 1.13f,
-                    Tint = tints[i]
-                };
-            }
-            _hiveHaloFound = found;
+                Angle = Random.Range(0f, Mathf.PI * 2f),
+                Speed = 3.1f,
+                RadiusK = 0.86f,
+                BobPhase = now * 1.7f,
+                Tint = tint,
+                Appear = now + 0.32f,
+                Expire = now + 0.95f
+            });
+        }
+
+        void PruneIncomingHalo()
+        {
+            float now = Time.unscaledTime;
+            for (int i = _incomingHalo.Count - 1; i >= 0; i--)
+                if (now >= _incomingHalo[i].Expire) _incomingHalo.RemoveAt(i);
         }
 
         void DrawHiveHalo(Rect hive, float s, bool behind)
         {
-            EnsureHiveHalo();
-            if (_hiveHalo == null) return;
+            if (behind) PruneIncomingHalo();
+            if (_incomingHalo.Count == 0) return;
             Vector2 c = hive.center;
             c.y -= hive.height * 0.08f;
             // Corner hives sit on the right bezel — keep the ring on-screen.
@@ -2881,14 +2863,16 @@ namespace FlockFive
             float ry = hive.height * 0.50f;
             float icon = Mathf.Clamp(hive.width * 0.32f, 16f * s, 36f * s);
             var prev = GUI.color;
+            float now = Time.unscaledTime;
             float dt = behind ? Time.unscaledDeltaTime : 0f;
-            for (int i = 0; i < _hiveHalo.Length; i++)
+            for (int i = 0; i < _incomingHalo.Count; i++)
             {
-                var b = _hiveHalo[i];
+                var b = _incomingHalo[i];
+                if (now < b.Appear || now >= b.Expire) continue;
                 if (behind)
                 {
                     b.Angle = Mathf.Repeat(b.Angle + b.Speed * dt, Mathf.PI * 2f);
-                    _hiveHalo[i] = b;
+                    _incomingHalo[i] = b;
                 }
                 float depth = Mathf.Sin(b.Angle);
                 bool isBehind = depth < 0f;
@@ -2898,14 +2882,16 @@ namespace FlockFive
                 y += Mathf.Sin(Time.unscaledTime * 2.2f + b.BobPhase) * (2.4f * s);
                 x = Mathf.Clamp(x, icon * 0.55f, Screen.width - icon * 0.55f);
                 y = Mathf.Clamp(y, icon * 0.55f, Screen.height - icon * 0.45f);
-                float scale = isBehind ? 0.86f : 1.06f;
+                float life = Mathf.Clamp01((b.Expire - now) / 0.22f);
+                float scale = (isBehind ? 0.86f : 1.06f) * Mathf.Lerp(0.55f, 1f, life);
                 float iw = icon * scale;
                 var spr = SpriteCatalog.BeeFrame(Time.unscaledTime * 14f + i * 2.4f);
                 if (spr == null || spr.texture == null) continue;
                 var r = new Rect(x - iw * 0.5f, y - iw * 0.5f, iw, iw);
                 var tint = b.Tint;
                 float dim = isBehind ? 0.78f : 1f;
-                GUI.color = new Color(tint.r * dim, tint.g * dim, tint.b * dim, isBehind ? 0.82f : 0.96f);
+                GUI.color = new Color(tint.r * dim, tint.g * dim, tint.b * dim,
+                    (isBehind ? 0.82f : 0.96f) * life);
                 bool faceLeft = Mathf.Cos(b.Angle) < 0f;
                 if (faceLeft)
                 {
@@ -6862,6 +6848,7 @@ namespace FlockFive
             yield return new WaitForSeconds(2.45f);
             _gift = GiftFace.None;
             _busy = false;
+            CheckOver();
         }
 
         IEnumerator GiftPopBursts(Vector3 pos)
@@ -7002,7 +6989,7 @@ namespace FlockFive
 
             string head = _keepStreak
                 ? "Watch AD to keep ×" + Purse.Streak
-                : (_freezeOffer ? "Watch AD to thaw a branch" : "Watch AD for an extra branch");
+                : (_freezeOffer ? "Icing over — thaw a limb" : "Watch AD for an extra branch");
             var headR = new Rect(plate.x + 10f * s, plate.y + 8f * s, plate.width - 20f * s, plate.height - 16f * s);
             GUI.color = new Color(1f, 0.72f, 0.16f, 0.40f + 0.22f * breathe);
             GUI.DrawTexture(new Rect(headR.x - 12f * s, headR.y - 8f * s, headR.width + 24f * s, headR.height + 16f * s), glow, ScaleMode.ScaleToFit, true);

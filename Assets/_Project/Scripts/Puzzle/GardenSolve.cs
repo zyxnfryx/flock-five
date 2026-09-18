@@ -122,7 +122,7 @@ namespace FlockFive
             {
                 var a = b.Branches[from];
                 if (a.Broken || a.Empty || a.TipLocked) continue;
-                if (a.IsFullMatch(out var wait) && !b.LiveHas(wait)) continue;
+                if (a.IsFullMatch(out _)) continue;
                 for (int to = 0; to < n; to++)
                 {
                     if (!b.CanMove(from, to, out int run) || run <= 0) continue;

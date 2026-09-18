@@ -117,6 +117,17 @@ namespace FlockFive
             return Branches[i].IsFullMatch(out var col) && !LiveHas(col);
         }
 
+        // Five of a kind is never a hand — sleeping waits on a feeder,
+        // live ones are already collecting or about to.
+        public bool CanPick(int i)
+        {
+            if ((uint)i >= (uint)Branches.Count) return false;
+            var a = Branches[i];
+            if (a.Broken || a.Empty || a.AdLocked || a.TipLocked) return false;
+            if (a.IsFullMatch(out _)) return false;
+            return true;
+        }
+
         public int FeederSlotFor(BirdColor c)
         {
             if (Live[0] == c) return 0;
@@ -132,7 +143,7 @@ namespace FlockFive
             var a = Branches[from];
             var b = Branches[to];
             if (a.Broken || b.Broken || a.AdLocked || b.AdLocked || a.Empty) return false;
-            if (a.IsFullMatch(out var wait) && !LiveHas(wait)) return false;
+            if (a.IsFullMatch(out _)) return false;
             // Leaf-locked limb: unusable until a feeder collect breeze lifts the tip.
             if (a.TipLocked || b.TipLocked) return false;
             if (b.Free <= 0) return false;
@@ -149,7 +160,7 @@ namespace FlockFive
             {
                 var a = Branches[from];
                 if (a.Broken || a.Empty || a.TipLocked) continue;
-                if (a.IsFullMatch(out var wait) && !LiveHas(wait)) continue;
+                if (a.IsFullMatch(out _)) continue;
                 for (int to = 0; to < n; to++)
                     if (CanMove(from, to, out _)) return true;
             }
@@ -201,14 +212,16 @@ namespace FlockFive
             return n;
         }
 
-        public int ApplyCollect(int branchIndex)
+        public int ApplyCollect(int branchIndex, bool scoreFeeder = true)
         {
             var br = Branches[branchIndex];
             br.IsFullMatch(out var col);
             int slot = FeederSlotFor(col);
             br.Birds.Clear();
             br.Broken = true;
-            if (slot >= 0)
+            // Pest scraps break the limb and park the flock. They must not
+            // retire a feeder — that sleeps leftover fives and false-freezes.
+            if (scoreFeeder && slot >= 0)
             {
                 if (Queue.Count > 0)
                 {

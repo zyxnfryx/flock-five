@@ -111,7 +111,10 @@ namespace FlockFive.Editor
                     if (c >= 0)
                     {
                         var flock = b.Branches[c].Birds.ToArray();
-                        b.ApplyCollect(c);
+                        var live0 = b.Live[0];
+                        var live1 = b.Live[1];
+                        b.ApplyCollect(c, scoreFeeder: false);
+                        if (b.Live[0] != live0 || b.Live[1] != live1) fails++;
                         if (!ParkFlockSafe(b, flock, c)) fails++;
                         continue;
                     }

@@ -286,7 +286,7 @@ namespace FlockFive
             var a = from + new Vector3(dir * Random.Range(0.65f, 1.1f), Random.Range(0.6f, 1.15f), 0f);
             var b = a + new Vector3(-dir * Random.Range(0.8f, 1.35f), Random.Range(0.5f, 1.05f), 0f);
             var legs = new[] { a, b, dest };
-            var durs = new[] { 0.17f, 0.19f, 0.30f };
+            var durs = new[] { 0.24f, 0.28f, 0.42f };
             var prev = from;
             for (int leg = 0; leg < legs.Length; leg++)
             {
