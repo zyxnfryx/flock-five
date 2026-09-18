@@ -118,7 +118,8 @@ namespace FlockFive
         {
             get
             {
-                if (_handFan == null) _handFan = TryLoad("Sprites/fx_hand_fan", 200f);
+                if (!HandHard(_handFan))
+                    _handFan = HardenHand(TryLoad("Sprites/fx_hand_fan", 200f), true);
                 return _handFan;
             }
         }
@@ -126,7 +127,8 @@ namespace FlockFive
         {
             get
             {
-                if (_handFanFront == null) _handFanFront = TryLoad("Sprites/fx_hand_fan_front", 200f);
+                if (!HandHard(_handFanFront))
+                    _handFanFront = HardenHand(TryLoad("Sprites/fx_hand_fan_front", 200f), true);
                 return _handFanFront;
             }
         }
@@ -134,10 +136,14 @@ namespace FlockFive
         {
             get
             {
-                if (_handPluck == null) _handPluck = TryLoad("Sprites/fx_hand_pluck", 200f);
+                if (!HandHard(_handPluck))
+                    _handPluck = HardenHand(TryLoad("Sprites/fx_hand_pluck", 200f), true);
                 return _handPluck;
             }
         }
+
+        static bool HandHard(Sprite spr) =>
+            spr != null && spr.texture != null && spr.texture.filterMode == FilterMode.Point;
         public static Sprite WildBanner
         {
             get
@@ -483,6 +489,84 @@ namespace FlockFive
             Debug.LogWarning("Missing sprite " + path);
 #endif
             return Fallback(ppu);
+        }
+
+        // Hard-clip alpha and fill interior holes so IMGUI cards cannot
+        // show through the palm, and bilinear fringe cannot read as a
+        // torn white finger mask.
+        static Sprite HardenHand(Sprite src, bool fillHoles)
+        {
+            if (src == null || src.texture == null) return src;
+            var srcTex = src.texture;
+            int w = srcTex.width;
+            int h = srcTex.height;
+            Color[] pix;
+            try { pix = srcTex.GetPixels(); }
+            catch { return src; }
+            for (int i = 0; i < pix.Length; i++)
+            {
+                if (pix[i].a < 0.5f) pix[i] = new Color(0f, 0f, 0f, 0f);
+                else
+                {
+                    var p = pix[i];
+                    p.a = 1f;
+                    pix[i] = p;
+                }
+            }
+            if (fillHoles)
+            {
+                int n = pix.Length;
+                var outside = new bool[n];
+                var q = new int[n];
+                int qh = 0, qt = 0;
+                void Enq(int i)
+                {
+                    if ((uint)i >= (uint)n || outside[i] || pix[i].a >= 0.5f) return;
+                    outside[i] = true;
+                    q[qt++] = i;
+                }
+                for (int x = 0; x < w; x++) { Enq(x); Enq((h - 1) * w + x); }
+                for (int y = 0; y < h; y++) { Enq(y * w); Enq(y * w + w - 1); }
+                while (qh < qt)
+                {
+                    int i = q[qh++];
+                    int x = i % w;
+                    if (x > 0) Enq(i - 1);
+                    if (x + 1 < w) Enq(i + 1);
+                    if (i >= w) Enq(i - w);
+                    if (i + w < n) Enq(i + w);
+                }
+                var skin = new Color(0.78f, 0.56f, 0.44f, 1f);
+                for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int i = y * w + x;
+                    if (outside[i] || pix[i].a >= 0.5f) continue;
+                    Color fill = skin;
+                    if (x > 0 && pix[i - 1].a >= 0.5f) fill = pix[i - 1];
+                    else if (y > 0 && pix[i - w].a >= 0.5f) fill = pix[i - w];
+                    fill.a = 1f;
+                    pix[i] = fill;
+                }
+                for (int y = h - 1; y >= 0; y--)
+                for (int x = w - 1; x >= 0; x--)
+                {
+                    int i = y * w + x;
+                    if (outside[i] || pix[i].a >= 0.5f) continue;
+                    Color fill = skin;
+                    if (x + 1 < w && pix[i + 1].a >= 0.5f) fill = pix[i + 1];
+                    else if (y + 1 < h && pix[i + w].a >= 0.5f) fill = pix[i + w];
+                    fill.a = 1f;
+                    pix[i] = fill;
+                }
+            }
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Point;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.SetPixels(pix);
+            tex.Apply(false, false);
+            return Sprite.Create(tex, new Rect(0f, 0f, w, h), new Vector2(0.5f, 0.5f),
+                src.pixelsPerUnit, 0, SpriteMeshType.FullRect);
         }
 
         static Sprite TryLoad(string path, float ppu)

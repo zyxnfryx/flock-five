@@ -1,12 +1,5 @@
-2026-09-18 Flock Five Poker playrun (BirdPoker x3) + ShotPokerFaces
-Logic: 3/3 hands deal-hold-draw-collect.
+2026-09-18 Poker: opaque fan/hold + tighter five-up row.
 
-hand 1 dealt Ruby/Female,Gold/Female,Teal/Neutral,Teal/Female,Violet/Male
-        drawn pair, win 0, held 0 and 2 kept
-hand 2 dealt Ruby/Female,Gold/Male,Gold/Male,Teal/Female,Teal/Male
-        drawn no pay, win 0, held 0 and 2 kept
-hand 3 dealt Ruby/Male,Gold/Male,Teal/Neutral,Violet/Female,Peach/Neutral
-        drawn THREE OF A KIND (WILD), win 5000, held 0 and 2 kept
-
-Shots: hand-fan.png (dealt fan), hand-hold.png (kept 0+2 chained),
-hand-row.png (five-up result row).
+hand-fan.png  dealt fan (hardened palm, UV sprite draw, tighter span)
+hand-hold.png held 0+2, remaining fan
+hand-row.png  five-up with 2px-scale gaps

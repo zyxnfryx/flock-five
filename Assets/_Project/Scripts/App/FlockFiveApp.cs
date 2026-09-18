@@ -4182,7 +4182,7 @@ namespace FlockFive
             if (!_pokerStamp)
                 TickPokerPayTable(below, s);
 
-            float gap = 5f * s;
+            float gap = 2f * s;
             float maxRow = Screen.width - 24f * s;
             float cardW = Mathf.Min(Screen.width * 0.205f, 138f * s);
             cardW = Mathf.Min(cardW, (maxRow - (BirdPoker.HandSize - 1) * gap) / BirdPoker.HandSize);
@@ -4872,7 +4872,7 @@ namespace FlockFive
         const float DealFanT = 0.50f;
         const float DealBumpT = 0.24f;
         const float PokerFanScale = 1.42f;
-        const float PokerFanSpan = 0.58f;
+        const float PokerFanSpan = 0.46f;
         const float PokerFanPinchU = 0.24f;
         const float PokerFanPinchV = 0.10f;
         const float PokerFanHandAspect = 0.80f;
@@ -5149,7 +5149,7 @@ namespace FlockFive
             float t = fanCount <= 1 ? 0.5f : fanIndex / (float)(fanCount - 1);
             float cardH = row.height * PokerFanScale;
             float cardW = cardH / 1.42f;
-            float span = row.width * PokerFanSpan * Mathf.Lerp(0.58f, 1f, (fanCount - 1) / 4f);
+            float span = row.width * PokerFanSpan * Mathf.Lerp(0.36f, 1f, (fanCount - 1) / 4f);
             float x = row.center.x - span * 0.5f + span * t - cardW * 0.5f;
             float mid = 1f - Mathf.Abs(t * 2f - 1f);
             // Sit in the hand, well below the hold row so keeps never cover the fan.
@@ -5158,10 +5158,10 @@ namespace FlockFive
             float sway = Mathf.Sin(Time.unscaledTime * 0.82f + fanIndex * 0.91f) * 2.0f;
             x += sway;
             // Extra pad so a rolled corner stays inside 9:16.
-            float leftPad = Screen.width * 0.10f;
-            float rightPad = Screen.width * 0.10f;
-            if (fanIndex == 0) leftPad += cardW * 0.38f;
-            if (fanIndex == fanCount - 1) rightPad += cardW * 0.28f;
+            float leftPad = Screen.width * 0.16f;
+            float rightPad = Screen.width * 0.13f;
+            if (fanIndex == 0) leftPad += cardW * 0.30f;
+            if (fanIndex == fanCount - 1) rightPad += cardW * 0.20f;
             if (x < leftPad) x = leftPad;
             if (x + cardW > Screen.width - rightPad) x = Screen.width - rightPad - cardW;
             return new Rect(x, y + life, cardW, cardH);
@@ -5177,7 +5177,7 @@ namespace FlockFive
             return PokerFanRollAt(t) + Mathf.Sin(Time.unscaledTime * 1.18f + i * 0.73f) * 1.8f;
         }
 
-        float PokerFanRollAt(float t) => Mathf.Lerp(-22f, 22f, t);
+        float PokerFanRollAt(float t) => Mathf.Lerp(-16f, 16f, t);
 
         Rect PokerStackSeat(Rect row)
         {
@@ -5400,9 +5400,35 @@ namespace FlockFive
             GUIUtility.RotateAroundPivot(ang, new Vector2(pinchX, pinchY));
             GUIUtility.ScaleAroundPivot(new Vector2(squash, 2f - squash), new Vector2(pinchX, pinchY));
             GUI.color = new Color(1f, 1f, 1f, u);
-            GUI.DrawTexture(new Rect(x, y, w, h), spr.texture, ScaleMode.ScaleToFit, true);
+            DrawSprite(new Rect(x, y, w, h), spr, true);
             GUI.matrix = prev;
             GUI.color = Color.white;
+        }
+
+        static void DrawSprite(Rect dest, Sprite spr, bool scaleToFit)
+        {
+            if (spr == null || spr.texture == null) return;
+            var tex = spr.texture;
+            var r = spr.textureRect;
+            float tw = Mathf.Max(1f, tex.width);
+            float th = Mathf.Max(1f, tex.height);
+            var uv = new Rect(r.x / tw, r.y / th, r.width / tw, r.height / th);
+            if (scaleToFit && r.height > 1f)
+            {
+                float texA = r.width / r.height;
+                float destA = dest.height > 1f ? dest.width / dest.height : texA;
+                if (texA > destA)
+                {
+                    float hh = dest.width / texA;
+                    dest = new Rect(dest.x, dest.y + (dest.height - hh) * 0.5f, dest.width, hh);
+                }
+                else
+                {
+                    float ww = dest.height * texA;
+                    dest = new Rect(dest.x + (dest.width - ww) * 0.5f, dest.y, ww, dest.height);
+                }
+            }
+            GUI.DrawTextureWithTexCoords(dest, tex, uv);
         }
 
         void TickPokerDash(float s)
@@ -5651,11 +5677,11 @@ namespace FlockFive
             float exit = 1f - Mathf.Clamp01((_pokerMotionT - last) / 0.16f);
             float a = enter * exit;
             if (a < 0.02f) return;
-            var seat = new Rect(row.x + cur * (cardW + 8f * s), row.y, cardW, cardH);
+            var seat = new Rect(row.x + cur * (cardW + 2f * s), row.y, cardW, cardH);
             float w = cardH * 2.2f;
             var hr = new Rect(seat.x - w * 0.72f + _pokerKick.x, seat.y + seat.height * 0.15f + _pokerKick.y, w, w);
             GUI.color = new Color(1f, 1f, 1f, a);
-            GUI.DrawTexture(hr, spr.texture, ScaleMode.ScaleToFit, true);
+            DrawSprite(hr, spr, true);
             GUI.color = Color.white;
         }
 
