@@ -1010,6 +1010,7 @@ namespace FlockFive
         IEnumerator RunPokerFacesShots(string dir)
         {
             System.IO.Directory.CreateDirectory(dir);
+            SpriteCatalog.DropPokerArt();
             Debug.Log("Flock Five: ShotPokerFaces start " + dir);
             _home = HomeFace.Poker;
             _splash = true;
@@ -1045,10 +1046,20 @@ namespace FlockFive
             yield return new WaitForSecondsRealtime(0.20f);
             yield return SnapShot(dir + "/poker-fan-hover.png");
             ApplyPokerHold(0);
-            ApplyPokerHold(2);
             _pokerHover = -1;
             yield return new WaitForSecondsRealtime(0.45f);
+            yield return SnapShot(dir + "/poker-hold-one.png");
+            ApplyPokerHold(2);
+            yield return new WaitForSecondsRealtime(0.45f);
             yield return SnapShot(dir + "/poker-fan-hold.png");
+            ApplyPokerHold(1);
+            ApplyPokerHold(3);
+            ApplyPokerHold(4);
+            yield return new WaitForSecondsRealtime(0.50f);
+            yield return SnapShot(dir + "/poker-hold-all.png");
+            ApplyPokerHold(1);
+            ApplyPokerHold(3);
+            ApplyPokerHold(4);
             for (int i = 0; i < BirdPoker.HandSize; i++)
             {
                 _pokerRedraw[i] = !BirdPoker.Hold[i];
@@ -5399,7 +5410,7 @@ namespace FlockFive
             var prev = GUI.matrix;
             GUIUtility.RotateAroundPivot(ang, new Vector2(pinchX, pinchY));
             GUIUtility.ScaleAroundPivot(new Vector2(squash, 2f - squash), new Vector2(pinchX, pinchY));
-            GUI.color = new Color(1f, 1f, 1f, u);
+            GUI.color = u >= 0.98f ? Color.white : new Color(1f, 1f, 1f, u);
             DrawSprite(new Rect(x, y, w, h), spr, true);
             GUI.matrix = prev;
             GUI.color = Color.white;
@@ -6009,15 +6020,15 @@ namespace FlockFive
             float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 1.15f + phase);
             float sprawl = sheen ? 1.02f + 0.06f * breathe : 1f;
             var prev = GUI.matrix;
-            float bandW = inner.width * 1.58f;
-            float bandY = inner.y + inner.height * 0.56f - bandH * 0.5f;
+            float bandW = inner.width * 1.82f;
+            float bandY = inner.y + inner.height * 0.64f - bandH * 0.5f;
             var band = new Rect(inner.center.x - bandW * 0.5f, bandY, bandW, bandH);
             GUIUtility.ScaleAroundPivot(new Vector2(sprawl, 1f), band.center);
             var spr = SpriteCatalog.WildBanner;
             if (spr != null && spr.texture != null)
             {
                 GUI.color = Color.white;
-                GUI.DrawTexture(band, spr.texture, ScaleMode.ScaleToFit, true);
+                DrawSprite(band, spr, true);
             }
             else
             {

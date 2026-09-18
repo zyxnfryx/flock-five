@@ -47,6 +47,11 @@ namespace FlockFive.Editor
             BirdPoker.Boot();
             if (Purse.Coins < 40) Purse.Credit(40 - Purse.Coins);
             Line("coins " + Purse.Coins + " bet " + BirdPoker.Bet);
+            if (!HoldNegatives(Line))
+            {
+                Line("poker playrun FAIL hold-negatives");
+                return;
+            }
             int ok = 0;
             for (int round = 1; round <= 3; round++)
             {
@@ -103,6 +108,81 @@ namespace FlockFive.Editor
                 ok++;
             }
             Line(ok == 3 ? "poker playrun DONE 3/3" : "poker playrun FAIL " + ok + "/3");
+        }
+
+        static int LiveFan()
+        {
+            int n = 0;
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+                if (!BirdPoker.Hold[i]) n++;
+            return n;
+        }
+
+        static bool HoldNegatives(System.Action<string> Line)
+        {
+            Line("--- hold negatives ---");
+            if (BirdPoker.PhaseNow != BirdPoker.Phase.Idle)
+                BirdPoker.ResetRound();
+            if (!BirdPoker.Deal())
+            {
+                Line("FAIL hold-neg deal");
+                return false;
+            }
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+            {
+                BirdPoker.ToggleHold(i);
+                if (!BirdPoker.Hold[i])
+                {
+                    Line("FAIL incremental hold " + i);
+                    return false;
+                }
+                int live = LiveFan();
+                int want = BirdPoker.HandSize - (i + 1);
+                if (live != want)
+                {
+                    Line("FAIL fan live after hold " + i + " live=" + live + " want=" + want);
+                    return false;
+                }
+            }
+            if (LiveFan() != 0)
+            {
+                Line("FAIL all-five-held live=" + LiveFan());
+                return false;
+            }
+            Line("all-five-held fan live=0");
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+                BirdPoker.ToggleHold(i);
+            if (LiveFan() != BirdPoker.HandSize)
+            {
+                Line("FAIL unhold-all live=" + LiveFan());
+                return false;
+            }
+            Line("hold-none DRAW path live=" + LiveFan());
+            if (!BirdPoker.Draw())
+            {
+                Line("FAIL hold-none draw");
+                return false;
+            }
+            BirdPoker.Collect();
+            if (!BirdPoker.Deal())
+            {
+                Line("FAIL thrash deal");
+                return false;
+            }
+            bool expect = false;
+            for (int n = 0; n < 8; n++)
+            {
+                BirdPoker.ToggleHold(1);
+                expect = !expect;
+                if (BirdPoker.Hold[1] != expect)
+                {
+                    Line("FAIL toggle thrash n=" + n);
+                    return false;
+                }
+            }
+            Line("toggle thrash ok");
+            BirdPoker.ResetRound();
+            return true;
         }
 
         static bool Same(BirdPoker.Card a, BirdPoker.Card b) =>

@@ -103,6 +103,7 @@ namespace FlockFive
             _cardBack = null;
             _handFan = null;
             _handFanFront = null;
+            _handPluck = null;
             _stampTool = null;
             _wildBanner = null;
         }
@@ -118,8 +119,8 @@ namespace FlockFive
         {
             get
             {
-                if (!HandHard(_handFan))
-                    _handFan = HardenHand(TryLoad("Sprites/fx_hand_fan", 200f), true);
+                if (!HandSolid(_handFan, "HandFanSolid2"))
+                    _handFan = NameHand(HardenHand(TryLoad("Sprites/fx_hand_fan", 200f), true), "HandFanSolid2");
                 return _handFan;
             }
         }
@@ -127,8 +128,8 @@ namespace FlockFive
         {
             get
             {
-                if (!HandHard(_handFanFront))
-                    _handFanFront = HardenHand(TryLoad("Sprites/fx_hand_fan_front", 200f), true);
+                if (!HandSolid(_handFanFront, "HandFanFrontSolid2"))
+                    _handFanFront = NameHand(HardenHand(TryLoad("Sprites/fx_hand_fan_front", 200f), true), "HandFanFrontSolid2");
                 return _handFanFront;
             }
         }
@@ -136,14 +137,20 @@ namespace FlockFive
         {
             get
             {
-                if (!HandHard(_handPluck))
-                    _handPluck = HardenHand(TryLoad("Sprites/fx_hand_pluck", 200f), true);
+                if (!HandSolid(_handPluck, "HandPluckSolid2"))
+                    _handPluck = NameHand(HardenHand(TryLoad("Sprites/fx_hand_pluck", 200f), true), "HandPluckSolid2");
                 return _handPluck;
             }
         }
 
-        static bool HandHard(Sprite spr) =>
-            spr != null && spr.texture != null && spr.texture.filterMode == FilterMode.Point;
+        static bool HandSolid(Sprite spr, string name) =>
+            spr != null && spr.texture != null && spr.name == name;
+
+        static Sprite NameHand(Sprite spr, string name)
+        {
+            if (spr != null) spr.name = name;
+            return spr;
+        }
         public static Sprite WildBanner
         {
             get
@@ -491,9 +498,9 @@ namespace FlockFive
             return Fallback(ppu);
         }
 
-        // Hard-clip alpha and fill interior holes so IMGUI cards cannot
-        // show through the palm, and bilinear fringe cannot read as a
-        // torn white finger mask.
+        // Hard-clip alpha and fill the silhouette so jungle cannot read
+        // through palm or finger flesh. 1px atlas lines are opened off
+        // the mask first so scanline fill cannot bridge canvas specks.
         static Sprite HardenHand(Sprite src, bool fillHoles)
         {
             if (src == null || src.texture == null) return src;
@@ -503,61 +510,38 @@ namespace FlockFive
             Color[] pix;
             try { pix = srcTex.GetPixels(); }
             catch { return src; }
-            for (int i = 0; i < pix.Length; i++)
+            int n = pix.Length;
+            var mask = new byte[n];
+            for (int i = 0; i < n; i++)
             {
-                if (pix[i].a < 0.5f) pix[i] = new Color(0f, 0f, 0f, 0f);
+                if (pix[i].a < 0.5f)
+                {
+                    pix[i] = new Color(0f, 0f, 0f, 0f);
+                    mask[i] = 0;
+                }
                 else
                 {
                     var p = pix[i];
                     p.a = 1f;
                     pix[i] = p;
+                    mask[i] = 1;
                 }
             }
             if (fillHoles)
             {
-                int n = pix.Length;
-                var outside = new bool[n];
-                var q = new int[n];
-                int qh = 0, qt = 0;
-                void Enq(int i)
+                DropSmall(mask, w, h, 400);
+                MorphOpen(mask, w, h, 2);
+                DropSmall(mask, w, h, 400);
+                ScanlineFill(mask, pix, w, h);
+                for (int i = 0; i < n; i++)
                 {
-                    if ((uint)i >= (uint)n || outside[i] || pix[i].a >= 0.5f) return;
-                    outside[i] = true;
-                    q[qt++] = i;
-                }
-                for (int x = 0; x < w; x++) { Enq(x); Enq((h - 1) * w + x); }
-                for (int y = 0; y < h; y++) { Enq(y * w); Enq(y * w + w - 1); }
-                while (qh < qt)
-                {
-                    int i = q[qh++];
-                    int x = i % w;
-                    if (x > 0) Enq(i - 1);
-                    if (x + 1 < w) Enq(i + 1);
-                    if (i >= w) Enq(i - w);
-                    if (i + w < n) Enq(i + w);
-                }
-                var skin = new Color(0.78f, 0.56f, 0.44f, 1f);
-                for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                {
-                    int i = y * w + x;
-                    if (outside[i] || pix[i].a >= 0.5f) continue;
-                    Color fill = skin;
-                    if (x > 0 && pix[i - 1].a >= 0.5f) fill = pix[i - 1];
-                    else if (y > 0 && pix[i - w].a >= 0.5f) fill = pix[i - w];
-                    fill.a = 1f;
-                    pix[i] = fill;
-                }
-                for (int y = h - 1; y >= 0; y--)
-                for (int x = w - 1; x >= 0; x--)
-                {
-                    int i = y * w + x;
-                    if (outside[i] || pix[i].a >= 0.5f) continue;
-                    Color fill = skin;
-                    if (x + 1 < w && pix[i + 1].a >= 0.5f) fill = pix[i + 1];
-                    else if (y + 1 < h && pix[i + w].a >= 0.5f) fill = pix[i + w];
-                    fill.a = 1f;
-                    pix[i] = fill;
+                    if (mask[i] == 0) pix[i] = new Color(0f, 0f, 0f, 0f);
+                    else
+                    {
+                        var p = pix[i];
+                        p.a = 1f;
+                        pix[i] = p;
+                    }
                 }
             }
             var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
@@ -565,8 +549,165 @@ namespace FlockFive
             tex.wrapMode = TextureWrapMode.Clamp;
             tex.SetPixels(pix);
             tex.Apply(false, false);
+#if UNITY_EDITOR
+            try
+            {
+                var png = tex.EncodeToPNG();
+                if (png != null && png.Length > 0)
+                    System.IO.File.WriteAllBytes("/tmp/paradice/hard-" + src.name + ".png", png);
+                Debug.Log("Flock Five: HardenHand " + src.name + " " + w + "x" + h);
+            }
+            catch { }
+#endif
             return Sprite.Create(tex, new Rect(0f, 0f, w, h), new Vector2(0.5f, 0.5f),
                 src.pixelsPerUnit, 0, SpriteMeshType.FullRect);
+        }
+
+        static void DropSmall(byte[] mask, int w, int h, int min)
+        {
+            int n = w * h;
+            var seen = new bool[n];
+            var q = new int[n];
+            var comp = new int[n];
+            for (int s = 0; s < n; s++)
+            {
+                if (mask[s] == 0 || seen[s]) continue;
+                int qh = 0, qt = 0;
+                q[qt++] = s;
+                seen[s] = true;
+                int count = 0;
+                while (qh < qt)
+                {
+                    int i = q[qh++];
+                    comp[count++] = i;
+                    int x = i % w;
+                    int y = i / w;
+                    if (x > 0) EnqMask(mask, seen, q, ref qt, i - 1);
+                    if (x + 1 < w) EnqMask(mask, seen, q, ref qt, i + 1);
+                    if (y > 0) EnqMask(mask, seen, q, ref qt, i - w);
+                    if (y + 1 < h) EnqMask(mask, seen, q, ref qt, i + w);
+                }
+                if (count >= min) continue;
+                for (int k = 0; k < count; k++) mask[comp[k]] = 0;
+            }
+        }
+
+        static void EnqMask(byte[] mask, bool[] seen, int[] q, ref int qt, int i)
+        {
+            if (mask[i] == 0 || seen[i]) return;
+            seen[i] = true;
+            q[qt++] = i;
+        }
+
+        static void MorphOpen(byte[] mask, int w, int h, int r)
+        {
+            int n = w * h;
+            var tmp = new byte[n];
+            MorphMin(mask, tmp, w, h, r);
+            MorphMax(tmp, mask, w, h, r);
+        }
+
+        static void MorphMin(byte[] src, byte[] dst, int w, int h, int r)
+        {
+            for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                byte v = 1;
+                int y0 = y - r, y1 = y + r, x0 = x - r, x1 = x + r;
+                if (y0 < 0) y0 = 0;
+                if (y1 >= h) y1 = h - 1;
+                if (x0 < 0) x0 = 0;
+                if (x1 >= w) x1 = w - 1;
+                for (int yy = y0; yy <= y1 && v != 0; yy++)
+                {
+                    int row = yy * w;
+                    for (int xx = x0; xx <= x1; xx++)
+                        if (src[row + xx] == 0) { v = 0; break; }
+                }
+                dst[y * w + x] = v;
+            }
+        }
+
+        static void MorphMax(byte[] src, byte[] dst, int w, int h, int r)
+        {
+            for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                byte v = 0;
+                int y0 = y - r, y1 = y + r, x0 = x - r, x1 = x + r;
+                if (y0 < 0) y0 = 0;
+                if (y1 >= h) y1 = h - 1;
+                if (x0 < 0) x0 = 0;
+                if (x1 >= w) x1 = w - 1;
+                for (int yy = y0; yy <= y1 && v == 0; yy++)
+                {
+                    int row = yy * w;
+                    for (int xx = x0; xx <= x1; xx++)
+                        if (src[row + xx] != 0) { v = 1; break; }
+                }
+                dst[y * w + x] = v;
+            }
+        }
+
+        static void ScanlineFill(byte[] mask, Color[] pix, int w, int h)
+        {
+            var skin = new Color(0.78f, 0.56f, 0.44f, 1f);
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w;
+                int lo = -1, hi = -1;
+                for (int x = 0; x < w; x++)
+                {
+                    if (mask[row + x] == 0) continue;
+                    if (lo < 0) lo = x;
+                    hi = x;
+                }
+                if (lo < 0) continue;
+                for (int x = lo; x <= hi; x++)
+                {
+                    int i = row + x;
+                    if (mask[i] != 0)
+                    {
+                        var p = pix[i];
+                        p.a = 1f;
+                        pix[i] = p;
+                        continue;
+                    }
+                    Color fill = skin;
+                    if (x > lo && mask[i - 1] != 0) fill = pix[i - 1];
+                    else if (y > 0 && mask[i - w] != 0) fill = pix[i - w];
+                    fill.a = 1f;
+                    pix[i] = fill;
+                    mask[i] = 1;
+                }
+            }
+            for (int x = 0; x < w; x++)
+            {
+                int lo = -1, hi = -1;
+                for (int y = 0; y < h; y++)
+                {
+                    if (mask[y * w + x] == 0) continue;
+                    if (lo < 0) lo = y;
+                    hi = y;
+                }
+                if (lo < 0) continue;
+                for (int y = lo; y <= hi; y++)
+                {
+                    int i = y * w + x;
+                    if (mask[i] != 0)
+                    {
+                        var p = pix[i];
+                        p.a = 1f;
+                        pix[i] = p;
+                        continue;
+                    }
+                    Color fill = skin;
+                    if (y > lo && mask[i - w] != 0) fill = pix[i - w];
+                    fill.a = 1f;
+                    pix[i] = fill;
+                    mask[i] = 1;
+                }
+            }
         }
 
         static Sprite TryLoad(string path, float ppu)
