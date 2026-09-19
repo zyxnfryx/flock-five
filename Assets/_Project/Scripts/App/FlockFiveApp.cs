@@ -157,6 +157,7 @@ namespace FlockFive
             Screen.autorotateToLandscapeRight = false;
             Sfx.Warm();
             Ads.Warm();
+            NoAds.Warm();
             Invite.Warm();
             SpriteCatalog.DropPokerArt();
             try { ShowSplash(); }
@@ -2741,6 +2742,14 @@ namespace FlockFive
             return new Rect(left.x, hive.y + (hive.height - size) * 0.5f, size, size);
         }
 
+        static Rect SplashNoAdsRect()
+        {
+            var share = SplashShareRect();
+            float w = share.width * 1.42f;
+            float h = share.height * 0.48f;
+            return new Rect(share.center.x - w * 0.5f, share.yMax + SplashRailGap() * 0.40f, w, h);
+        }
+
         static Rect SplashPokerRect()
         {
             // A touch larger than hive/piggy so the chip reads as the poker button,
@@ -2931,6 +2940,29 @@ namespace FlockFive
             string lab = "Invite";
             st.fontSize = FitFont(st, lab, disc.width * 0.78f, disc.height * 0.55f, 14, 28);
             StampOutlined(disc, lab, st, new Color(1f, 0.92f, 0.62f), 1, Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.08f)));
+        }
+
+        void DrawNoAdsButton(Rect r, float s)
+        {
+            GUI.color = new Color(0.16f, 0.10f, 0.04f, 0.78f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 0.84f, 0.32f, 0.80f);
+            float t = 3f * s;
+            GUI.DrawTexture(new Rect(r.x + t, r.y + t, r.width - t * 2f, 2f * s), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(r.x + t, r.yMax - t - 2f * s, r.width - t * 2f, 2f * s), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var st = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+            string lab = NoAds.Owned ? "No Ads" : "No Ads";
+            st.fontSize = FitFont(st, lab, r.width * 0.86f, r.height * 0.62f, 12, 22);
+            var gold = NoAds.Owned
+                ? new Color(0.72f, 0.86f, 0.52f, 1f)
+                : new Color(1f, 0.92f, 0.62f, 1f);
+            StampOutlined(r, lab, st, gold, 1, 2);
         }
 
         void ArmStreakSlide()
@@ -3512,6 +3544,14 @@ namespace FlockFive
                 Invite.Share();
             }
             DrawShareButton(shareR, shareHeld, s);
+
+            var noAdsR = SplashNoAdsRect();
+            if (!NoAds.Owned && HitPad(noAdsR, out bool noAdsHeld))
+            {
+                Sfx.Clink();
+                NoAds.Buy();
+            }
+            DrawNoAdsButton(noAdsR, s);
 
             // Third rail button: bird video poker.
             var pokerR = SplashPokerRect();

@@ -4,30 +4,41 @@ using Unity.Services.LevelPlay;
 
 namespace FlockFive
 {
-    // Bonus-branch rewarded goes through Rewarded(). Interstitial stays a
-    // no-op until a post-win placement is designed. No banners.
-    // Paste LevelPlay iOS/Android app keys + rewarded ad unit ids below.
+    // Rewarded bonus_branch stays opt-in. Interstitial is stage-clear only
+    // (clears 2, 5, 8…) and No Ads IAP silences that path alone. No banners.
     public static class Ads
     {
         public static bool Enabled = true;
         public static bool LastGranted;
 
         public const string PlacementBonus = "bonus_branch";
+        public const string PlacementClear = "stage_clear";
+
+        const string PrefClears = "flockfive.session_clears";
+
+        // Garden clears toward 2, 5, 8… Survives quit/relaunch. Not ladder instage.
+        public static int SessionClears;
 
 #if UNITY_IOS
         public const string AppKey = "282d0b97d";
         public const string RewardedUnitId = "kjzd8hybcb9wklmz";
+        public const string InterstitialUnitId = "gjnd3xxjtz2lpag1"; // stage_clear
 #elif UNITY_ANDROID
         public const string AppKey = "282d36bdd";
         public const string RewardedUnitId = "dakjzwgzszpcx3k2";
+        public const string InterstitialUnitId = "97jpjr0pna1yghuh"; // stage_clear
 #else
-        // Editor / standalone: same iOS app so Play Mode can init.
+        // Editor / standalone: iOS ids so Play Mode can init interstitial too
         public const string AppKey = "282d0b97d";
         public const string RewardedUnitId = "kjzd8hybcb9wklmz";
+        public const string InterstitialUnitId = "gjnd3xxjtz2lpag1";
 #endif
 
         public static bool HasKeys =>
             !string.IsNullOrEmpty(AppKey) && !string.IsNullOrEmpty(RewardedUnitId);
+
+        public static bool HasInterstitial =>
+            !string.IsNullOrEmpty(AppKey) && !string.IsNullOrEmpty(InterstitialUnitId);
 
         static AdsHost _host;
 
@@ -36,18 +47,32 @@ namespace FlockFive
         {
             _host = null;
             LastGranted = false;
+            SessionClears = PlayerPrefs.GetInt(PrefClears, 0);
         }
 
-        public static void Warm() => Ensure();
+        public static void Warm()
+        {
+            SessionClears = PlayerPrefs.GetInt(PrefClears, SessionClears);
+            Ensure();
+        }
+
+        public static bool CadenceHit()
+        {
+            int n = SessionClears;
+            return n >= 2 && (n - 2) % 3 == 0;
+        }
 
         public static IEnumerator Interstitial()
         {
+            SessionClears++;
+            PlayerPrefs.SetInt(PrefClears, SessionClears);
+            PlayerPrefs.Save();
             if (!Enabled) yield break;
-#if UNITY_EDITOR
-            yield break;
-#else
-            yield return ShowInterstitial();
-#endif
+            if (NoAds.Owned) yield break;
+            if (!CadenceHit()) yield break;
+            Ensure();
+            if (_host == null) yield break;
+            yield return _host.RunInterstitial();
         }
 
         public static IEnumerator Rewarded()
@@ -101,11 +126,6 @@ namespace FlockFive
             _host.Boot();
         }
 
-        static IEnumerator ShowInterstitial()
-        {
-            yield break;
-        }
-
         internal static bool OwnsHost(AdsHost h) => _host == h;
 
         internal static void DropHost() => _host = null;
@@ -114,10 +134,12 @@ namespace FlockFive
     sealed class AdsHost : MonoBehaviour
     {
         LevelPlayRewardedAd _rv;
+        LevelPlayInterstitialAd _int;
         bool _inited;
         bool _initFailed;
         bool _waiting;
         bool _didReward;
+        bool _intWaiting;
 
         public void Boot()
         {
@@ -125,6 +147,7 @@ namespace FlockFive
             if (_inited)
             {
                 if (_rv == null) CreateRewarded();
+                if (_int == null) CreateInterstitial();
                 return;
             }
             LevelPlay.OnInitSuccess -= OnInitOk;
@@ -204,6 +227,7 @@ namespace FlockFive
             _inited = true;
             _initFailed = false;
             CreateRewarded();
+            CreateInterstitial();
         }
 
         void OnInitFail(LevelPlayInitError error)
@@ -220,6 +244,55 @@ namespace FlockFive
             _rv.OnAdLoadFailed += OnLoadFail;
             _rv.OnAdDisplayFailed += OnDisplayFail;
             _rv.LoadAd();
+        }
+
+        public IEnumerator RunInterstitial()
+        {
+            if (!Ads.HasInterstitial) yield break;
+            float t = 0f;
+            while (!_inited && !_initFailed && t < 4f)
+            {
+                t += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            if (!_inited) yield break;
+            if (_int == null) CreateInterstitial();
+            if (_int == null) yield break;
+            if (!_int.IsAdReady()) yield break;
+            _intWaiting = true;
+            _int.ShowAd(Ads.PlacementClear);
+            t = 0f;
+            while (_intWaiting && t < 180f)
+            {
+                t += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            _int.LoadAd();
+        }
+
+        void CreateInterstitial()
+        {
+            if (_int != null || string.IsNullOrEmpty(Ads.InterstitialUnitId)) return;
+            _int = new LevelPlayInterstitialAd(Ads.InterstitialUnitId);
+            _int.OnAdClosed += OnIntClosed;
+            _int.OnAdLoadFailed += OnIntLoadFail;
+            _int.OnAdDisplayFailed += OnIntDisplayFail;
+            _int.LoadAd();
+        }
+
+        void OnIntClosed(LevelPlayAdInfo info)
+        {
+            _intWaiting = false;
+        }
+
+        void OnIntLoadFail(LevelPlayAdError error)
+        {
+            _intWaiting = false;
+        }
+
+        void OnIntDisplayFail(LevelPlayAdInfo info, LevelPlayAdError error)
+        {
+            _intWaiting = false;
         }
 
         void OnRewarded(LevelPlayAdInfo info, LevelPlayReward reward)
@@ -253,6 +326,12 @@ namespace FlockFive
                 _rv.OnAdClosed -= OnClosed;
                 _rv.OnAdLoadFailed -= OnLoadFail;
                 _rv.OnAdDisplayFailed -= OnDisplayFail;
+            }
+            if (_int != null)
+            {
+                _int.OnAdClosed -= OnIntClosed;
+                _int.OnAdLoadFailed -= OnIntLoadFail;
+                _int.OnAdDisplayFailed -= OnIntDisplayFail;
             }
             if (Ads.OwnsHost(this)) Ads.DropHost();
         }
