@@ -1,12 +1,19 @@
-2026-09-18 Flock Five Poker playrun (BirdPoker x3) + ShotPokerFaces
-Logic: 3/3 hands deal-hold-draw-collect.
+2026-09-18 Poker pass 3: solid flesh, keyhole padlock, wild ribbon wider/lower, unhold 0→1.
 
-hand 1 dealt Ruby/Female,Gold/Female,Teal/Neutral,Teal/Female,Violet/Male
-        drawn pair, win 0, held 0 and 2 kept
-hand 2 dealt Ruby/Female,Gold/Male,Gold/Male,Teal/Female,Teal/Male
-        drawn no pay, win 0, held 0 and 2 kept
-hand 3 dealt Ruby/Male,Gold/Male,Teal/Neutral,Violet/Female,Peach/Neutral
-        drawn THREE OF A KIND (WILD), win 5000, held 0 and 2 kept
+hand-fan.png        dealt fan; palm/sleeve filled; front fingertips not scanline-mitten
+hand-hold-one.png   keep 0; 4-up residual; padlock keyhole; wild ribbon lower
+hand-hold.png       keep 0+2 (3 live)
+hand-hold-two.png   same 2-kept
+hand-hold-three.png 3 kept / 2 live, even fan spacing
+hand-hold-all.png   all five held; residual fan/hand gone; WILD readable under lock
+hand-unhold-one.png unhold one from all-five; hand returns 1-up
+hand-row.png        five-up gaps unchanged (2f*s)
 
-Shots: hand-fan.png (dealt fan), hand-hold.png (kept 0+2 chained),
-hand-row.png (five-up result row).
+hold negatives:
+  incremental live 4..0
+  all-five-held live=0
+  unhold 0→1 live=1
+  reverse re-pack live=3
+  re-hold to five live=0
+  hold-none DRAW + toggle thrash
+  playrun DONE 3/3
