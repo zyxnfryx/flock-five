@@ -150,6 +150,30 @@ namespace FlockFive.Editor
                 return false;
             }
             Line("all-five-held fan live=0");
+            BirdPoker.ToggleHold(4);
+            if (LiveFan() != 1 || BirdPoker.Hold[4])
+            {
+                Line("FAIL unhold 0->1 live=" + LiveFan());
+                return false;
+            }
+            Line("unhold 0->1 live=1");
+            BirdPoker.ToggleHold(3);
+            BirdPoker.ToggleHold(2);
+            if (LiveFan() != 3)
+            {
+                Line("FAIL unhold two more live=" + LiveFan());
+                return false;
+            }
+            Line("unhold reverse re-pack live=3");
+            BirdPoker.ToggleHold(2);
+            BirdPoker.ToggleHold(3);
+            BirdPoker.ToggleHold(4);
+            if (LiveFan() != 0)
+            {
+                Line("FAIL re-hold to five live=" + LiveFan());
+                return false;
+            }
+            Line("re-hold to five live=0");
             for (int i = 0; i < BirdPoker.HandSize; i++)
                 BirdPoker.ToggleHold(i);
             if (LiveFan() != BirdPoker.HandSize)

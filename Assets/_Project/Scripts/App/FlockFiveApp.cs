@@ -1052,11 +1052,18 @@ namespace FlockFive
             ApplyPokerHold(2);
             yield return new WaitForSecondsRealtime(0.45f);
             yield return SnapShot(dir + "/poker-fan-hold.png");
+            yield return SnapShot(dir + "/poker-hold-two.png");
             ApplyPokerHold(1);
+            yield return new WaitForSecondsRealtime(0.40f);
+            yield return SnapShot(dir + "/poker-hold-three.png");
             ApplyPokerHold(3);
             ApplyPokerHold(4);
             yield return new WaitForSecondsRealtime(0.50f);
             yield return SnapShot(dir + "/poker-hold-all.png");
+            ApplyPokerHold(4);
+            yield return new WaitForSecondsRealtime(0.45f);
+            yield return SnapShot(dir + "/poker-unhold-one.png");
+            ApplyPokerHold(4);
             ApplyPokerHold(1);
             ApplyPokerHold(3);
             ApplyPokerHold(4);
@@ -5161,20 +5168,19 @@ namespace FlockFive
             float cardH = row.height * PokerFanScale;
             float cardW = cardH / 1.42f;
             float span = row.width * PokerFanSpan * Mathf.Lerp(0.36f, 1f, (fanCount - 1) / 4f);
-            float x = row.center.x - span * 0.5f + span * t - cardW * 0.5f;
+            // Shrink the whole fan uniformly if it would clip — never shove ends independently.
+            float leftPad = Screen.width * 0.07f;
+            float rightPad = Screen.width * 0.07f;
+            float maxSpan = Screen.width - leftPad - rightPad - cardW;
+            if (maxSpan < 8f) maxSpan = 8f;
+            if (span > maxSpan) span = maxSpan;
+            float x0 = (Screen.width - (span + cardW)) * 0.5f;
+            if (x0 < leftPad) x0 = leftPad;
+            float x = x0 + span * t;
             float mid = 1f - Mathf.Abs(t * 2f - 1f);
-            // Sit in the hand, well below the hold row so keeps never cover the fan.
             float y = row.y + row.height * 2.12f - mid * 12f + bump;
-            float life = Mathf.Sin(Time.unscaledTime * 1.55f + fanIndex * 1.27f) * 3.4f;
-            float sway = Mathf.Sin(Time.unscaledTime * 0.82f + fanIndex * 0.91f) * 2.0f;
-            x += sway;
-            // Extra pad so a rolled corner stays inside 9:16.
-            float leftPad = Screen.width * 0.16f;
-            float rightPad = Screen.width * 0.13f;
-            if (fanIndex == 0) leftPad += cardW * 0.30f;
-            if (fanIndex == fanCount - 1) rightPad += cardW * 0.20f;
-            if (x < leftPad) x = leftPad;
-            if (x + cardW > Screen.width - rightPad) x = Screen.width - rightPad - cardW;
+            float life = Mathf.Sin(Time.unscaledTime * 1.55f + fanIndex * 1.27f) * 2.4f;
+            x += Mathf.Sin(Time.unscaledTime * 0.82f + fanIndex * 0.91f) * 0.8f;
             return new Rect(x, y + life, cardW, cardH);
         }
 
@@ -5493,8 +5499,8 @@ namespace FlockFive
             if (!_pokerChained && _pokerChainBreak < 0f) return;
             var spr = SpriteCatalog.Chain;
             var tex = spr != null ? spr.texture : null;
-            float h = Mathf.Clamp(wrap.height * 0.30f, 30f * s, 56f * s);
-            float midY = wrap.y + wrap.height * 0.50f;
+            float h = Mathf.Clamp(wrap.height * 0.26f, 26f * s, 48f * s);
+            float midY = wrap.y + wrap.height * 0.32f;
             // End loops live behind the card; lock + inner links sit on the face.
             var back = new Rect(wrap.center.x - wrap.width * 0.68f, midY - h * 0.40f, wrap.width * 1.36f, h * 0.80f);
             var front = new Rect(wrap.x, midY - h * 0.50f, wrap.width, h);
@@ -5584,6 +5590,19 @@ namespace FlockFive
             GUIUtility.RotateAroundPivot(78f, new Vector2(card.xMax, front.center.y));
             GUI.DrawTextureWithTexCoords(right, tex, new Rect(0.82f, 0f, 0.16f, 1f));
             GUI.matrix = prev;
+            DrawPadlock(card, front.height);
+        }
+
+        static void DrawPadlock(Rect card, float chainH)
+        {
+            var spr = SpriteCatalog.Padlock;
+            if (spr == null || spr.texture == null) return;
+            float lockH = Mathf.Clamp(card.height * 0.30f, chainH * 1.15f, card.height * 0.36f);
+            float lockW = lockH * 1.38f;
+            // Sit on the upper face so the wild ribbon (~0.72) stays clear.
+            float y = card.y + card.height * 0.16f;
+            var lr = new Rect(card.center.x - lockW * 0.5f, y, lockW, lockH);
+            DrawSprite(lr, spr, true);
         }
 
         static void DrawChainShard(Texture tex, Rect chain, float u0, float uW, float dirX, float dirY, float spin, float drop, float fly, float s)
@@ -6020,8 +6039,8 @@ namespace FlockFive
             float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 1.15f + phase);
             float sprawl = sheen ? 1.02f + 0.06f * breathe : 1f;
             var prev = GUI.matrix;
-            float bandW = inner.width * 1.82f;
-            float bandY = inner.y + inner.height * 0.64f - bandH * 0.5f;
+            float bandW = inner.width * 2.08f;
+            float bandY = inner.y + inner.height * 0.72f - bandH * 0.5f;
             var band = new Rect(inner.center.x - bandW * 0.5f, bandY, bandW, bandH);
             GUIUtility.ScaleAroundPivot(new Vector2(sprawl, 1f), band.center);
             var spr = SpriteCatalog.WildBanner;

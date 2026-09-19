@@ -4,7 +4,7 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _wildBanner, _dash, _chain, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _wildBanner, _dash, _chain, _padlock, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk;
         static Sprite[] _flames;
         static bool _sparrowPlaceholder;
         static bool _hawkPlaceholder;
@@ -106,6 +106,8 @@ namespace FlockFive
             _handPluck = null;
             _stampTool = null;
             _wildBanner = null;
+            _padlock = null;
+            _chain = null;
         }
         public static Sprite CardPaper
         {
@@ -119,8 +121,8 @@ namespace FlockFive
         {
             get
             {
-                if (!HandSolid(_handFan, "HandFanSolid2"))
-                    _handFan = NameHand(HardenHand(TryLoad("Sprites/fx_hand_fan", 200f), true), "HandFanSolid2");
+                if (!HandSolid(_handFan, "HandFanSolid5"))
+                    _handFan = NameHand(HardenHand(TryLoad("Sprites/fx_hand_fan", 200f), true), "HandFanSolid5");
                 return _handFan;
             }
         }
@@ -128,8 +130,8 @@ namespace FlockFive
         {
             get
             {
-                if (!HandSolid(_handFanFront, "HandFanFrontSolid2"))
-                    _handFanFront = NameHand(HardenHand(TryLoad("Sprites/fx_hand_fan_front", 200f), true), "HandFanFrontSolid2");
+                if (!HandSolid(_handFanFront, "HandFanFrontSolid5"))
+                    _handFanFront = NameHand(HardenHand(TryLoad("Sprites/fx_hand_fan_front", 200f), true), "HandFanFrontSolid5");
                 return _handFanFront;
             }
         }
@@ -137,8 +139,8 @@ namespace FlockFive
         {
             get
             {
-                if (!HandSolid(_handPluck, "HandPluckSolid2"))
-                    _handPluck = NameHand(HardenHand(TryLoad("Sprites/fx_hand_pluck", 200f), true), "HandPluckSolid2");
+                if (!HandSolid(_handPluck, "HandPluckSolid5"))
+                    _handPluck = NameHand(HardenHand(TryLoad("Sprites/fx_hand_pluck", 200f), true), "HandPluckSolid5");
                 return _handPluck;
             }
         }
@@ -173,6 +175,14 @@ namespace FlockFive
             {
                 if (_chain == null) _chain = TryLoad("Sprites/fx_chain", 200f);
                 return _chain;
+            }
+        }
+        public static Sprite Padlock
+        {
+            get
+            {
+                if (_padlock == null) _padlock = TryLoad("Sprites/fx_padlock", 200f);
+                return _padlock;
             }
         }
         public static Sprite Flame(int i)
@@ -498,9 +508,8 @@ namespace FlockFive
             return Fallback(ppu);
         }
 
-        // Hard-clip alpha and fill the silhouette so jungle cannot read
-        // through palm or finger flesh. 1px atlas lines are opened off
-        // the mask first so scanline fill cannot bridge canvas specks.
+        // Solid silhouette: keep faint sleeve paint, drop white finger-edge
+        // fringe, close holes in palm/forearm, then force alpha = 1.
         static Sprite HardenHand(Sprite src, bool fillHoles)
         {
             if (src == null || src.texture == null) return src;
@@ -514,7 +523,7 @@ namespace FlockFive
             var mask = new byte[n];
             for (int i = 0; i < n; i++)
             {
-                if (pix[i].a < 0.5f)
+                if (pix[i].a < 0.12f)
                 {
                     pix[i] = new Color(0f, 0f, 0f, 0f);
                     mask[i] = 0;
@@ -530,9 +539,19 @@ namespace FlockFive
             if (fillHoles)
             {
                 DropSmall(mask, w, h, 400);
-                MorphOpen(mask, w, h, 2);
+                MorphOpen(mask, w, h, 1);
                 DropSmall(mask, w, h, 400);
-                ScanlineFill(mask, pix, w, h);
+                int ones = 0;
+                for (int i = 0; i < n; i++)
+                    if (mask[i] != 0) ones++;
+                if (ones > 80000)
+                {
+                    MorphClose(mask, w, h, 3);
+                    ScanlineFill(mask, pix, w, h);
+                }
+                else
+                    FillClosedHoles(mask, pix, w, h);
+                RecolorWhiteEdge(mask, pix, w, h);
                 for (int i = 0; i < n; i++)
                 {
                     if (mask[i] == 0) pix[i] = new Color(0f, 0f, 0f, 0f);
@@ -545,7 +564,7 @@ namespace FlockFive
                 }
             }
             var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
-            tex.filterMode = FilterMode.Point;
+            tex.filterMode = FilterMode.Bilinear;
             tex.wrapMode = TextureWrapMode.Clamp;
             tex.SetPixels(pix);
             tex.Apply(false, false);
@@ -605,6 +624,75 @@ namespace FlockFive
             var tmp = new byte[n];
             MorphMin(mask, tmp, w, h, r);
             MorphMax(tmp, mask, w, h, r);
+        }
+
+        static void MorphClose(byte[] mask, int w, int h, int r)
+        {
+            int n = w * h;
+            var tmp = new byte[n];
+            MorphMax(mask, tmp, w, h, r);
+            MorphMin(tmp, mask, w, h, r);
+        }
+
+        static bool WhiteFringe(Color p)
+        {
+            return p.r > 0.86f && p.g > 0.86f && p.b > 0.86f;
+        }
+
+        static void FillClosedHoles(byte[] mask, Color[] pix, int w, int h)
+        {
+            int n = w * h;
+            var outside = new bool[n];
+            var q = new int[n];
+            int qh = 0, qt = 0;
+            void Enq(int i)
+            {
+                if ((uint)i >= (uint)n || outside[i] || mask[i] != 0) return;
+                outside[i] = true;
+                q[qt++] = i;
+            }
+            for (int x = 0; x < w; x++) { Enq(x); Enq((h - 1) * w + x); }
+            for (int y = 0; y < h; y++) { Enq(y * w); Enq(y * w + w - 1); }
+            while (qh < qt)
+            {
+                int i = q[qh++];
+                int x = i % w;
+                if (x > 0) Enq(i - 1);
+                if (x + 1 < w) Enq(i + 1);
+                if (i >= w) Enq(i - w);
+                if (i + w < n) Enq(i + w);
+            }
+            var skin = new Color(0.78f, 0.56f, 0.44f, 1f);
+            for (int i = 0; i < n; i++)
+            {
+                if (outside[i] || mask[i] != 0) continue;
+                Color fill = skin;
+                int x = i % w;
+                if (x > 0 && mask[i - 1] != 0) fill = pix[i - 1];
+                fill.a = 1f;
+                pix[i] = fill;
+                mask[i] = 1;
+            }
+        }
+
+        static void RecolorWhiteEdge(byte[] mask, Color[] pix, int w, int h)
+        {
+            var skin = new Color(0.78f, 0.56f, 0.44f, 1f);
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    int i = row + x;
+                    if (mask[i] == 0 || !WhiteFringe(pix[i])) continue;
+                    Color fill = skin;
+                    if (x > 0 && mask[i - 1] != 0 && !WhiteFringe(pix[i - 1])) fill = pix[i - 1];
+                    else if (y > 0 && mask[i - w] != 0 && !WhiteFringe(pix[i - w])) fill = pix[i - w];
+                    else if (x + 1 < w && mask[i + 1] != 0 && !WhiteFringe(pix[i + 1])) fill = pix[i + 1];
+                    fill.a = 1f;
+                    pix[i] = fill;
+                }
+            }
         }
 
         static void MorphMin(byte[] src, byte[] dst, int w, int h, int r)
