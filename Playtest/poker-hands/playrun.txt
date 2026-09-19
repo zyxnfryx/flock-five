@@ -1,12 +1,15 @@
-2026-09-18 Flock Five Poker playrun (BirdPoker x3) + ShotPokerFaces
-Logic: 3/3 hands deal-hold-draw-collect.
+2026-09-19 Poker hand redo v1: opaque by art, not HardenHand.
 
-hand 1 dealt Ruby/Female,Gold/Female,Teal/Neutral,Teal/Female,Violet/Male
-        drawn pair, win 0, held 0 and 2 kept
-hand 2 dealt Ruby/Female,Gold/Male,Gold/Male,Teal/Female,Teal/Male
-        drawn no pay, win 0, held 0 and 2 kept
-hand 3 dealt Ruby/Male,Gold/Male,Teal/Neutral,Violet/Female,Peach/Neutral
-        drawn THREE OF A KIND (WILD), win 5000, held 0 and 2 kept
+hand-idle-deal.png  Idle: bet + DEAL; no arm under flower
+hand-fan.png        Dealt fan + DRAW; solid fingertips over cards; arm left of flower
+hand-hold-one.png   keep 0
+hand-hold.png       keep 0+2
+hand-hold-two.png   2 kept
+hand-hold-three.png 3 kept / 2 live
+hand-hold-all.png   all five; residual hand gone; WILD readable
+hand-unhold-one.png unhold 0→1; hand returns
+hand-row.png        five-up gap 2f*s
 
-Shots: hand-fan.png (dealt fan), hand-hold.png (kept 0+2 chained),
-hand-row.png (five-up result row).
+playrun: hand alpha mid=0 on fan/front/pluck
+  hold negatives 0→1 / all-held / DRAW / thrash
+  DONE 3/3
