@@ -121,8 +121,7 @@ namespace FlockFive
         {
             get
             {
-                if (!HandSolid(_handFan, "HandFanSolid5"))
-                    _handFan = NameHand(HardenHand(TryLoad("Sprites/fx_hand_fan", 200f), true), "HandFanSolid5");
+                if (_handFan == null) _handFan = TryLoad("Sprites/fx_hand_fan", 200f);
                 return _handFan;
             }
         }
@@ -130,8 +129,7 @@ namespace FlockFive
         {
             get
             {
-                if (!HandSolid(_handFanFront, "HandFanFrontSolid5"))
-                    _handFanFront = NameHand(HardenHand(TryLoad("Sprites/fx_hand_fan_front", 200f), true), "HandFanFrontSolid5");
+                if (_handFanFront == null) _handFanFront = TryLoad("Sprites/fx_hand_fan_front", 200f);
                 return _handFanFront;
             }
         }
@@ -139,19 +137,9 @@ namespace FlockFive
         {
             get
             {
-                if (!HandSolid(_handPluck, "HandPluckSolid5"))
-                    _handPluck = NameHand(HardenHand(TryLoad("Sprites/fx_hand_pluck", 200f), true), "HandPluckSolid5");
+                if (_handPluck == null) _handPluck = TryLoad("Sprites/fx_hand_pluck", 200f);
                 return _handPluck;
             }
-        }
-
-        static bool HandSolid(Sprite spr, string name) =>
-            spr != null && spr.texture != null && spr.name == name;
-
-        static Sprite NameHand(Sprite spr, string name)
-        {
-            if (spr != null) spr.name = name;
-            return spr;
         }
         public static Sprite WildBanner
         {

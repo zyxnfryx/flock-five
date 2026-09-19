@@ -1,19 +1,15 @@
-2026-09-18 Poker pass 3: solid flesh, keyhole padlock, wild ribbon wider/lower, unhold 0→1.
+2026-09-19 Poker hand redo v1: opaque by art, not HardenHand.
 
-hand-fan.png        dealt fan; palm/sleeve filled; front fingertips not scanline-mitten
-hand-hold-one.png   keep 0; 4-up residual; padlock keyhole; wild ribbon lower
-hand-hold.png       keep 0+2 (3 live)
-hand-hold-two.png   same 2-kept
-hand-hold-three.png 3 kept / 2 live, even fan spacing
-hand-hold-all.png   all five held; residual fan/hand gone; WILD readable under lock
-hand-unhold-one.png unhold one from all-five; hand returns 1-up
-hand-row.png        five-up gaps unchanged (2f*s)
+hand-idle-deal.png  Idle: bet + DEAL; no arm under flower
+hand-fan.png        Dealt fan + DRAW; solid fingertips over cards; arm left of flower
+hand-hold-one.png   keep 0
+hand-hold.png       keep 0+2
+hand-hold-two.png   2 kept
+hand-hold-three.png 3 kept / 2 live
+hand-hold-all.png   all five; residual hand gone; WILD readable
+hand-unhold-one.png unhold 0→1; hand returns
+hand-row.png        five-up gap 2f*s
 
-hold negatives:
-  incremental live 4..0
-  all-five-held live=0
-  unhold 0→1 live=1
-  reverse re-pack live=3
-  re-hold to five live=0
-  hold-none DRAW + toggle thrash
-  playrun DONE 3/3
+playrun: hand alpha mid=0 on fan/front/pluck
+  hold negatives 0→1 / all-held / DRAW / thrash
+  DONE 3/3

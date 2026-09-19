@@ -43,6 +43,11 @@ namespace FlockFive.Editor
                 Debug.Log("[poker-playrun] " + t);
             }
             Line("poker playrun start");
+            if (!HandOpaque(Line))
+            {
+                Line("poker playrun FAIL hand-alpha");
+                return;
+            }
             Purse.Boot();
             BirdPoker.Boot();
             if (Purse.Coins < 40) Purse.Credit(40 - Purse.Coins);
@@ -108,6 +113,37 @@ namespace FlockFive.Editor
                 ok++;
             }
             Line(ok == 3 ? "poker playrun DONE 3/3" : "poker playrun FAIL " + ok + "/3");
+        }
+
+        static bool HandOpaque(System.Action<string> Line)
+        {
+            string[] paths = { "Sprites/fx_hand_fan", "Sprites/fx_hand_fan_front", "Sprites/fx_hand_pluck" };
+            for (int p = 0; p < paths.Length; p++)
+            {
+                var tex = Resources.Load<Texture2D>(paths[p]);
+                if (tex == null)
+                {
+                    Line("FAIL missing " + paths[p]);
+                    return false;
+                }
+                Color[] pix;
+                try { pix = tex.GetPixels(); }
+                catch
+                {
+                    Line("hand alpha skip unread " + paths[p]);
+                    continue;
+                }
+                int mid = 0;
+                for (int i = 0; i < pix.Length; i++)
+                    if (pix[i].a > 0.05f && pix[i].a < 0.98f) mid++;
+                Line("hand alpha " + paths[p] + " mid=" + mid);
+                if (mid > pix.Length / 200)
+                {
+                    Line("FAIL soft alpha " + paths[p] + " mid=" + mid);
+                    return false;
+                }
+            }
+            return true;
         }
 
         static int LiveFan()

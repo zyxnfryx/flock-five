@@ -1032,6 +1032,7 @@ namespace FlockFive
                 yield return null;
             }
             yield return SnapShot(dir + "/poker-backs.png");
+            yield return SnapShot(dir + "/poker-idle-deal.png");
             Debug.Log("Flock Five: captured poker-backs");
             if (!BirdPoker.Deal()) yield break;
             BirdPoker.Hand[0] = BirdPoker.Card.Of(BirdColor.Ruby, BirdSex.Neutral);
@@ -4891,8 +4892,8 @@ namespace FlockFive
         const float DealBumpT = 0.24f;
         const float PokerFanScale = 1.42f;
         const float PokerFanSpan = 0.46f;
-        const float PokerFanPinchU = 0.24f;
-        const float PokerFanPinchV = 0.10f;
+        const float PokerFanPinchU = 0.40f;
+        const float PokerFanPinchV = 0.45f;
         const float PokerFanHandAspect = 0.80f;
 
         void TryPokerDeal()
@@ -5405,12 +5406,16 @@ namespace FlockFive
             float alive = u;
             float breathe = Mathf.Sin(Time.unscaledTime * 1.32f);
             float tick = Mathf.Sin(Time.unscaledTime * 2.55f);
-            float pinchX = row.center.x + _pokerKick.x + 2.2f * breathe * alive;
+            float pinchX = row.center.x - Screen.width * 0.06f + _pokerKick.x + 2.2f * breathe * alive;
             // Fingers wrap the fan bottoms — cards sit in the grip.
-            float pinchY = grip.yMax - grip.height * 0.10f + _pokerKick.y
+            float pinchY = grip.yMax - grip.height * 0.08f + _pokerKick.y
                 + (3.2f * breathe + 1.4f * tick) * alive;
             float x = pinchX - w * PokerFanPinchU;
             float y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
+            float flowerLeft = Screen.width * 0.52f;
+            if (x + w > flowerLeft)
+                x = flowerLeft - w;
+            if (x < -w * 0.08f) x = -w * 0.08f;
             float ang = 5.5f + 2.4f * breathe * alive;
             float squash = 1f + 0.016f * breathe * alive;
             var prev = GUI.matrix;
