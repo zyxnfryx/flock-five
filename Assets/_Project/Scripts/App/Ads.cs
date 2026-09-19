@@ -5,8 +5,7 @@ using Unity.Services.LevelPlay;
 namespace FlockFive
 {
     // Rewarded bonus_branch stays opt-in. Interstitial is stage-clear only
-    // (session clears 2, 5, 8…) and No Ads IAP silences that path alone.
-    // No banners. Paste interstitial ad unit ids when LevelPlay has them.
+    // (clears 2, 5, 8…) and No Ads IAP silences that path alone. No banners.
     public static class Ads
     {
         public static bool Enabled = true;
@@ -15,23 +14,24 @@ namespace FlockFive
         public const string PlacementBonus = "bonus_branch";
         public const string PlacementClear = "stage_clear";
 
-        // Session garden clears this process. Resets on cold launch, not ladder.
+        const string PrefClears = "flockfive.session_clears";
+
+        // Garden clears toward 2, 5, 8… Survives quit/relaunch. Not ladder instage.
         public static int SessionClears;
 
 #if UNITY_IOS
         public const string AppKey = "282d0b97d";
         public const string RewardedUnitId = "kjzd8hybcb9wklmz";
-        // Paste from LevelPlay → Ad units → Interstitial when the unit exists.
-        public const string InterstitialUnitId = "";
+        public const string InterstitialUnitId = "gjnd3xxjtz2lpag1"; // stage_clear
 #elif UNITY_ANDROID
         public const string AppKey = "282d36bdd";
         public const string RewardedUnitId = "dakjzwgzszpcx3k2";
-        public const string InterstitialUnitId = "";
+        public const string InterstitialUnitId = "97jpjr0pna1yghuh"; // stage_clear
 #else
-        // Editor / standalone: same iOS app so Play Mode can init.
+        // Editor / standalone: iOS ids so Play Mode can init interstitial too
         public const string AppKey = "282d0b97d";
         public const string RewardedUnitId = "kjzd8hybcb9wklmz";
-        public const string InterstitialUnitId = "";
+        public const string InterstitialUnitId = "gjnd3xxjtz2lpag1";
 #endif
 
         public static bool HasKeys =>
@@ -47,10 +47,14 @@ namespace FlockFive
         {
             _host = null;
             LastGranted = false;
-            SessionClears = 0;
+            SessionClears = PlayerPrefs.GetInt(PrefClears, 0);
         }
 
-        public static void Warm() => Ensure();
+        public static void Warm()
+        {
+            SessionClears = PlayerPrefs.GetInt(PrefClears, SessionClears);
+            Ensure();
+        }
 
         public static bool CadenceHit()
         {
@@ -61,6 +65,8 @@ namespace FlockFive
         public static IEnumerator Interstitial()
         {
             SessionClears++;
+            PlayerPrefs.SetInt(PrefClears, SessionClears);
+            PlayerPrefs.Save();
             if (!Enabled) yield break;
             if (NoAds.Owned) yield break;
             if (!CadenceHit()) yield break;
