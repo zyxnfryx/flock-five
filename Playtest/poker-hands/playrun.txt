@@ -1,13 +1,13 @@
-2026-09-19 Poker hand redo v1: opaque by art, not HardenHand.
+2026-09-19 Poker hand redo v1 pass 2: real hold, no card-through-hand.
 
-hand-idle-deal.png  Idle: bet + DEAL; no arm under flower
-hand-fan.png        Dealt fan + DRAW; solid fingertips over cards; arm left of flower
+hand-idle-deal.png  Idle: bet + DEAL; no arm under flower (Avoid)
+hand-fan.png        Dealt fan + DRAW; finger pads on card bottoms; no cream through flesh; arm left of flower
 hand-hold-one.png   keep 0
 hand-hold.png       keep 0+2
 hand-hold-two.png   2 kept
 hand-hold-three.png 3 kept / 2 live
 hand-hold-all.png   all five; residual hand gone; WILD readable
-hand-unhold-one.png unhold 0→1; hand returns
+hand-unhold-one.png unhold 0→1; hand returns on the live card
 hand-row.png        five-up gap 2f*s
 
 playrun: hand alpha mid=0 on fan/front/pluck

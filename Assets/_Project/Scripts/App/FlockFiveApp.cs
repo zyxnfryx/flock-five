@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir);
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass2-hold-b");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -4892,9 +4892,13 @@ namespace FlockFive
         const float DealBumpT = 0.24f;
         const float PokerFanScale = 1.42f;
         const float PokerFanSpan = 0.46f;
-        const float PokerFanPinchU = 0.40f;
-        const float PokerFanPinchV = 0.45f;
+        // Finger pads, not palm — palm at 0.40/0.45 put cards through the hand.
+        const float PokerFanPinchU = 0.56f;
+        const float PokerFanPinchV = 0.64f;
         const float PokerFanHandAspect = 0.80f;
+
+        static float PokerAliveBreathe() => Mathf.Sin(Time.unscaledTime * 1.18f);
+        static float PokerAliveTick() => Mathf.Sin(Time.unscaledTime * 2.02f);
 
         void TryPokerDeal()
         {
@@ -5180,8 +5184,10 @@ namespace FlockFive
             float x = x0 + span * t;
             float mid = 1f - Mathf.Abs(t * 2f - 1f);
             float y = row.y + row.height * 2.12f - mid * 12f + bump;
-            float life = Mathf.Sin(Time.unscaledTime * 1.55f + fanIndex * 1.27f) * 2.4f;
-            x += Mathf.Sin(Time.unscaledTime * 0.82f + fanIndex * 0.91f) * 0.8f;
+            float breathe = PokerAliveBreathe();
+            // Ride the hand's breath. Independent bob made cards swim through fingers.
+            x += breathe * 0.55f;
+            float life = breathe * 1.05f;
             return new Rect(x, y + life, cardW, cardH);
         }
 
@@ -5192,7 +5198,7 @@ namespace FlockFive
             if (BirdPoker.Hold[i] || fanCount <= 0)
                 return PokerFanRollAt(i / (float)(BirdPoker.HandSize - 1));
             float t = fanCount <= 1 ? 0.5f : slot / (float)(fanCount - 1);
-            return PokerFanRollAt(t) + Mathf.Sin(Time.unscaledTime * 1.18f + i * 0.73f) * 1.8f;
+            return PokerFanRollAt(t) + PokerAliveBreathe() * 0.40f;
         }
 
         float PokerFanRollAt(float t) => Mathf.Lerp(-16f, 16f, t);
@@ -5404,20 +5410,20 @@ namespace FlockFive
             float h = fanH * 2.05f;
             float w = h * PokerFanHandAspect;
             float alive = u;
-            float breathe = Mathf.Sin(Time.unscaledTime * 1.32f);
-            float tick = Mathf.Sin(Time.unscaledTime * 2.55f);
-            float pinchX = row.center.x - Screen.width * 0.06f + _pokerKick.x + 2.2f * breathe * alive;
-            // Fingers wrap the fan bottoms — cards sit in the grip.
-            float pinchY = grip.yMax - grip.height * 0.08f + _pokerKick.y
-                + (3.2f * breathe + 1.4f * tick) * alive;
+            float breathe = PokerAliveBreathe();
+            float tick = PokerAliveTick();
+            // Pads land on the remaining fan (tracks 1-card unhold, not row-center).
+            float pinchX = grip.center.x - grip.width * 0.10f + _pokerKick.x + 1.5f * breathe * alive;
+            float pinchY = grip.yMax - grip.height * 0.04f + _pokerKick.y
+                + (1.7f * breathe + 0.55f * tick) * alive;
             float x = pinchX - w * PokerFanPinchU;
             float y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
             float flowerLeft = Screen.width * 0.52f;
             if (x + w > flowerLeft)
                 x = flowerLeft - w;
             if (x < -w * 0.08f) x = -w * 0.08f;
-            float ang = 5.5f + 2.4f * breathe * alive;
-            float squash = 1f + 0.016f * breathe * alive;
+            float ang = 4.8f + 1.15f * breathe * alive;
+            float squash = 1f + 0.010f * breathe * alive;
             var prev = GUI.matrix;
             GUIUtility.RotateAroundPivot(ang, new Vector2(pinchX, pinchY));
             GUIUtility.ScaleAroundPivot(new Vector2(squash, 2f - squash), new Vector2(pinchX, pinchY));
