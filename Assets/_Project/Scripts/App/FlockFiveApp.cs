@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass4-thumb-front");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass5-locks-thumb-arm");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -4240,20 +4240,23 @@ namespace FlockFive
             {
                 DrawPokerFanHand(rowBox, cardW, cardH, s, false);
                 int[] order = PokerDrawOrder();
-                bool frontDone = false;
+                // Palm, then every live fan card, then thumb. A later seat must
+                // never redraw over the thumb (5-fan neighbor corners).
                 for (int o = 0; o < order.Length; o++)
                 {
                     int i = order[o];
-                    bool lifted = BirdPoker.Hold[i] && _pokerHoldSlide[i] > 0.22f;
-                    if (lifted && !frontDone)
-                    {
-                        DrawPokerFanHand(rowBox, cardW, cardH, s, true);
-                        frontDone = true;
-                    }
+                    if (PokerCardLifted(i)) continue;
                     var seat = new Rect(rowX + i * (cardW + gap), rowY, cardW, cardH);
                     DrawPokerCard(seat, i, s, holdH, rowBox);
                 }
-                if (!frontDone) DrawPokerFanHand(rowBox, cardW, cardH, s, true);
+                DrawPokerFanHand(rowBox, cardW, cardH, s, true);
+                for (int o = 0; o < order.Length; o++)
+                {
+                    int i = order[o];
+                    if (!PokerCardLifted(i)) continue;
+                    var seat = new Rect(rowX + i * (cardW + gap), rowY, cardW, cardH);
+                    DrawPokerCard(seat, i, s, holdH, rowBox);
+                }
                 DrawPokerKeepHint(rowBox, s);
                 DrawPokerFlames(rowBox, cardH, s);
                 DrawPokerDealHand(rowBox, cardW, cardH, s);
@@ -4894,7 +4897,7 @@ namespace FlockFive
         const float PokerFanSpan = 0.46f;
         // Full thumb pad/nail at the bottom-fan pinch (front layer = thumb only).
         const float PokerFanPinchU = 0.512f;
-        const float PokerFanPinchV = 0.48f;
+        const float PokerFanPinchV = 0.45f;
         const float PokerFanHandAspect = 0.80f;
 
         static float PokerAliveBreathe() => Mathf.Sin(Time.unscaledTime * 1.18f);
@@ -5419,7 +5422,22 @@ namespace FlockFive
                 + (0.90f * breathe + 0.18f * tick) * alive;
             float x = pinchX - w * PokerFanPinchU;
             float y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
-            if (x < -w * 0.08f) x = -w * 0.08f;
+            // Sleeve originates off the left/bottom. Keep the pinch locked.
+            if (x > -6f)
+            {
+                w = (pinchX + 6f) / Mathf.Max(0.12f, PokerFanPinchU);
+                h = w / PokerFanHandAspect;
+                x = pinchX - w * PokerFanPinchU;
+                y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
+            }
+            float needH = (Screen.height + 10f - pinchY) / Mathf.Max(0.12f, 1f - PokerFanPinchV);
+            if (h < needH)
+            {
+                h = needH;
+                w = h * PokerFanHandAspect;
+                x = pinchX - w * PokerFanPinchU;
+                y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
+            }
             float ang = 3.2f + 0.55f * breathe * alive;
             float squash = 1f + 0.006f * breathe * alive;
             var prev = GUI.matrix;
@@ -5508,8 +5526,8 @@ namespace FlockFive
             if (!_pokerChained && _pokerChainBreak < 0f) return;
             var spr = SpriteCatalog.Chain;
             var tex = spr != null ? spr.texture : null;
-            float h = Mathf.Clamp(wrap.height * 0.26f, 26f * s, 48f * s);
-            float midY = wrap.y + wrap.height * 0.32f;
+            float h = Mathf.Clamp(wrap.height * 0.24f, 24f * s, 44f * s);
+            float midY = wrap.y + wrap.height * 0.44f;
             // End loops live behind the card; lock + inner links sit on the face.
             var back = new Rect(wrap.center.x - wrap.width * 0.68f, midY - h * 0.40f, wrap.width * 1.36f, h * 0.80f);
             var front = new Rect(wrap.x, midY - h * 0.50f, wrap.width, h);
@@ -5606,10 +5624,10 @@ namespace FlockFive
         {
             var spr = SpriteCatalog.Padlock;
             if (spr == null || spr.texture == null) return;
-            float lockH = Mathf.Clamp(card.height * 0.30f, chainH * 1.15f, card.height * 0.36f);
+            float lockH = Mathf.Clamp(card.height * 0.22f, chainH * 0.92f, card.height * 0.26f);
             float lockW = lockH * 1.38f;
-            // Sit on the upper face so the wild ribbon (~0.72) stays clear.
-            float y = card.y + card.height * 0.16f;
+            // Mid-face, above the wild ribbon (~0.72) so the lock does not cover WILD.
+            float y = card.y + card.height * 0.33f;
             var lr = new Rect(card.center.x - lockW * 0.5f, y, lockW, lockH);
             DrawSprite(lr, spr, true);
         }
@@ -5753,7 +5771,7 @@ namespace FlockFive
                 GUIUtility.RotateAroundPivot(roll, rollPivot);
             GUIUtility.ScaleAroundPivot(new Vector2(sx, 1f), r.center);
             if (fanCard)
-                GUIUtility.ScaleAroundPivot(new Vector2(1.05f, 1.16f), rollPivot);
+                GUIUtility.ScaleAroundPivot(new Vector2(1f, 1.08f), rollPivot);
             bool wrapChain = held && showFace && chainLive;
             if (wrapChain) DrawPokerChain(r, s, true);
             if (showFace) DrawPokerFace(r, face, s, sparkle);

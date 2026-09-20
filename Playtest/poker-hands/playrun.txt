@@ -2,7 +2,7 @@ poker playrun start
 hand alpha Sprites/fx_hand_fan mid=0
 hand alpha Sprites/fx_hand_fan_front mid=0
 hand alpha Sprites/fx_hand_pluck mid=0
-coins 110870 bet 1000
+coins 104870 bet 1000
 --- hold negatives ---
 all-five-held fan live=0
 unhold 0->1 live=1
@@ -11,15 +11,15 @@ re-hold to five live=0
 hold-none DRAW path live=5
 toggle thrash ok
 --- hand 1 ---
-dealt Teal/Neutral,Violet/Neutral,Violet/Male,Peach/Neutral,Peach/Male spent 1000 phase Dealt
-drawn Teal/Neutral,Violet/Neutral,Violet/Male,Gold/Male,Ruby/Neutral rank  win 0 coins 107870 kept=True
-collect ok coins 107870
+dealt Ruby/Female,Teal/Neutral,Teal/Male,Violet/Male,Peach/Neutral spent 1000 phase Dealt
+drawn Ruby/Female,Teal/Neutral,Teal/Male,Gold/Male,Ruby/Male rank  win 0 coins 102870 kept=True
+collect ok coins 102870
 --- hand 2 ---
-dealt Teal/Female,Teal/Male,Violet/Female,Peach/Female,Peach/Male spent 1000 phase Dealt
-drawn Teal/Female,Teal/Neutral,Violet/Female,Teal/Male,Ruby/Male rank  win 0 coins 106870 kept=True
-collect ok coins 106870
+dealt Ruby/Female,Ruby/Male,Gold/Male,Violet/Neutral,Violet/Male spent 1000 phase Dealt
+drawn Ruby/Female,Peach/Male,Gold/Male,Teal/Neutral,Gold/Female rank  win 0 coins 101870 kept=True
+collect ok coins 101870
 --- hand 3 ---
-dealt Gold/Female,Teal/Neutral,Teal/Female,Violet/Female,WILD spent 1000 phase Dealt
-drawn Gold/Female,Peach/Neutral,Teal/Female,Gold/Male,Peach/Female rank  win 0 coins 105870 kept=True
-collect ok coins 105870
+dealt Ruby/Female,Ruby/Male,Gold/Neutral,Peach/Neutral,Peach/Neutral spent 1000 phase Dealt
+drawn Ruby/Female,Teal/Male,Gold/Neutral,WILD,Violet/Female rank PAIR win 0 coins 100870 kept=True
+collect ok coins 100870
 poker playrun DONE 3/3
