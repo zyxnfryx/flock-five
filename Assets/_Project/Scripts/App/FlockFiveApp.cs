@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass3-pinch-hold");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass4-thumb-front");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -4892,9 +4892,9 @@ namespace FlockFive
         const float DealBumpT = 0.24f;
         const float PokerFanScale = 1.42f;
         const float PokerFanSpan = 0.46f;
-        // Thumb pad at the bottom-fan pinch (nail/pad of the new hold art).
-        const float PokerFanPinchU = 0.554f;
-        const float PokerFanPinchV = 0.435f;
+        // Full thumb pad/nail at the bottom-fan pinch (front layer = thumb only).
+        const float PokerFanPinchU = 0.512f;
+        const float PokerFanPinchV = 0.48f;
         const float PokerFanHandAspect = 0.80f;
 
         static float PokerAliveBreathe() => Mathf.Sin(Time.unscaledTime * 1.18f);
