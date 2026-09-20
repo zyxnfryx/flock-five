@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass2-hold-b");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass3-pinch-hold");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -4892,9 +4892,9 @@ namespace FlockFive
         const float DealBumpT = 0.24f;
         const float PokerFanScale = 1.42f;
         const float PokerFanSpan = 0.46f;
-        // Finger pads, not palm — palm at 0.40/0.45 put cards through the hand.
-        const float PokerFanPinchU = 0.56f;
-        const float PokerFanPinchV = 0.64f;
+        // Thumb pad at the bottom-fan pinch (nail/pad of the new hold art).
+        const float PokerFanPinchU = 0.554f;
+        const float PokerFanPinchV = 0.435f;
         const float PokerFanHandAspect = 0.80f;
 
         static float PokerAliveBreathe() => Mathf.Sin(Time.unscaledTime * 1.18f);
@@ -5413,17 +5413,15 @@ namespace FlockFive
             float breathe = PokerAliveBreathe();
             float tick = PokerAliveTick();
             // Pads land on the remaining fan (tracks 1-card unhold, not row-center).
-            float pinchX = grip.center.x - grip.width * 0.10f + _pokerKick.x + 1.5f * breathe * alive;
-            float pinchY = grip.yMax - grip.height * 0.04f + _pokerKick.y
-                + (1.7f * breathe + 0.55f * tick) * alive;
+            // Breath only at the pinch pivot so pads stay on the bottom rims.
+            float pinchX = grip.center.x - grip.width * 0.10f + _pokerKick.x + 0.85f * breathe * alive;
+            float pinchY = grip.yMax - grip.height * 0.02f + _pokerKick.y
+                + (0.90f * breathe + 0.18f * tick) * alive;
             float x = pinchX - w * PokerFanPinchU;
             float y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
-            float flowerLeft = Screen.width * 0.52f;
-            if (x + w > flowerLeft)
-                x = flowerLeft - w;
             if (x < -w * 0.08f) x = -w * 0.08f;
-            float ang = 4.8f + 1.15f * breathe * alive;
-            float squash = 1f + 0.010f * breathe * alive;
+            float ang = 3.2f + 0.55f * breathe * alive;
+            float squash = 1f + 0.006f * breathe * alive;
             var prev = GUI.matrix;
             GUIUtility.RotateAroundPivot(ang, new Vector2(pinchX, pinchY));
             GUIUtility.ScaleAroundPivot(new Vector2(squash, 2f - squash), new Vector2(pinchX, pinchY));
