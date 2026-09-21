@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass5-locks-thumb-arm");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass6-dangle-thumb-top");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -4249,7 +4249,6 @@ namespace FlockFive
                     var seat = new Rect(rowX + i * (cardW + gap), rowY, cardW, cardH);
                     DrawPokerCard(seat, i, s, holdH, rowBox);
                 }
-                DrawPokerFanHand(rowBox, cardW, cardH, s, true);
                 for (int o = 0; o < order.Length; o++)
                 {
                     int i = order[o];
@@ -4260,6 +4259,8 @@ namespace FlockFive
                 DrawPokerKeepHint(rowBox, s);
                 DrawPokerFlames(rowBox, cardH, s);
                 DrawPokerDealHand(rowBox, cardW, cardH, s);
+                // Thumb last — pinching agent stays on top of every live fan card.
+                DrawPokerFanHand(rowBox, cardW, cardH, s, true);
             }
 
             float actX = Screen.width - Mathf.Max(10f, Screen.width - safe.xMax + 8f) - btnSize;
@@ -5423,14 +5424,14 @@ namespace FlockFive
             float x = pinchX - w * PokerFanPinchU;
             float y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
             // Sleeve originates off the left/bottom. Keep the pinch locked.
-            if (x > -6f)
+            if (x > -28f)
             {
-                w = (pinchX + 6f) / Mathf.Max(0.12f, PokerFanPinchU);
+                w = (pinchX + 28f) / Mathf.Max(0.12f, PokerFanPinchU);
                 h = w / PokerFanHandAspect;
                 x = pinchX - w * PokerFanPinchU;
                 y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
             }
-            float needH = (Screen.height + 10f - pinchY) / Mathf.Max(0.12f, 1f - PokerFanPinchV);
+            float needH = (Screen.height + 36f - pinchY) / Mathf.Max(0.12f, 1f - PokerFanPinchV);
             if (h < needH)
             {
                 h = needH;
@@ -5526,8 +5527,8 @@ namespace FlockFive
             if (!_pokerChained && _pokerChainBreak < 0f) return;
             var spr = SpriteCatalog.Chain;
             var tex = spr != null ? spr.texture : null;
-            float h = Mathf.Clamp(wrap.height * 0.24f, 24f * s, 44f * s);
-            float midY = wrap.y + wrap.height * 0.44f;
+            float h = Mathf.Clamp(wrap.height * 0.16f, 20f * s, 34f * s);
+            float midY = wrap.y + wrap.height * 0.18f;
             // End loops live behind the card; lock + inner links sit on the face.
             var back = new Rect(wrap.center.x - wrap.width * 0.68f, midY - h * 0.40f, wrap.width * 1.36f, h * 0.80f);
             var front = new Rect(wrap.x, midY - h * 0.50f, wrap.width, h);
@@ -5602,10 +5603,12 @@ namespace FlockFive
                 GUI.color = Color.white;
                 return;
             }
-            // Lock and inner links on the face — end loops stay on the back.
+            // High wrap — links only, skip the baked lock in the chain sheet.
             GUI.color = Color.white;
-            GUI.DrawTextureWithTexCoords(front, tex, new Rect(0.20f, 0f, 0.60f, 1f));
-            // Short links turning around each side, joining front to back.
+            var wrapL = new Rect(front.x, front.y, front.width * 0.48f, front.height);
+            var wrapR = new Rect(front.xMax - front.width * 0.48f, front.y, front.width * 0.48f, front.height);
+            GUI.DrawTextureWithTexCoords(wrapL, tex, new Rect(0.02f, 0f, 0.16f, 1f));
+            GUI.DrawTextureWithTexCoords(wrapR, tex, new Rect(0.82f, 0f, 0.16f, 1f));
             float sideH = front.height * 0.70f;
             float sideW = front.height * 0.62f;
             var prev = GUI.matrix;
@@ -5617,18 +5620,30 @@ namespace FlockFive
             GUIUtility.RotateAroundPivot(78f, new Vector2(card.xMax, front.center.y));
             GUI.DrawTextureWithTexCoords(right, tex, new Rect(0.82f, 0f, 0.16f, 1f));
             GUI.matrix = prev;
-            DrawPadlock(card, front.height);
+            // Dangle left of center so the hang misses the WILD letters.
+            float lockH = Mathf.Clamp(card.height * 0.18f, front.height * 0.9f, card.height * 0.22f);
+            float lockY = card.yMax - lockH - card.height * 0.012f;
+            float hangTop = front.yMax - front.height * 0.12f;
+            float hangH = Mathf.Max(8f, lockY - hangTop);
+            float hangW = card.width * 0.16f;
+            float hangX = card.x + card.width * 0.16f;
+            var hang = new Rect(hangX - hangH * 0.5f, hangTop + hangH * 0.5f - hangW * 0.5f, hangH, hangW);
+            GUIUtility.RotateAroundPivot(90f, new Vector2(hangX, hangTop + hangH * 0.5f));
+            GUI.DrawTextureWithTexCoords(hang, tex, new Rect(0.02f, 0f, 0.16f, 1f));
+            GUI.matrix = prev;
+            DrawPadlock(card, lockH, hangX);
         }
 
-        static void DrawPadlock(Rect card, float chainH)
+        static void DrawPadlock(Rect card, float chainH, float hangX = -1f)
         {
             var spr = SpriteCatalog.Padlock;
             if (spr == null || spr.texture == null) return;
-            float lockH = Mathf.Clamp(card.height * 0.22f, chainH * 0.92f, card.height * 0.26f);
+            float lockH = Mathf.Clamp(card.height * 0.18f, chainH * 0.85f, card.height * 0.22f);
             float lockW = lockH * 1.38f;
-            // Mid-face, above the wild ribbon (~0.72) so the lock does not cover WILD.
-            float y = card.y + card.height * 0.33f;
-            var lr = new Rect(card.center.x - lockW * 0.5f, y, lockW, lockH);
+            // Dangle: lock body toward the bottom edge, below the wild ribbon.
+            float y = card.yMax - lockH - card.height * 0.012f;
+            float x = hangX >= 0f ? hangX : card.x + card.width * 0.16f;
+            var lr = new Rect(x - lockW * 0.5f, y, lockW, lockH);
             DrawSprite(lr, spr, true);
         }
 
@@ -6061,13 +6076,13 @@ namespace FlockFive
 
         static void DrawWildBanner(Rect inner, float s, float phase, bool sheen = true)
         {
-            float bandH = Mathf.Max(22f * s, inner.height * 0.28f);
-            // Centered on the card; swallowtails may sprawl past the edges.
+            float bandH = Mathf.Max(20f * s, inner.height * 0.22f);
+            // Mid-card so a dangling lock at the foot leaves WILD readable.
             float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 1.15f + phase);
             float sprawl = sheen ? 1.02f + 0.06f * breathe : 1f;
             var prev = GUI.matrix;
             float bandW = inner.width * 2.08f;
-            float bandY = inner.y + inner.height * 0.72f - bandH * 0.5f;
+            float bandY = inner.y + inner.height * 0.52f - bandH * 0.5f;
             var band = new Rect(inner.center.x - bandW * 0.5f, bandY, bandW, bandH);
             GUIUtility.ScaleAroundPivot(new Vector2(sprawl, 1f), band.center);
             var spr = SpriteCatalog.WildBanner;
