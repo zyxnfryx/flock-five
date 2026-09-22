@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass12-fill-grip");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass13-full-thumb");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -5445,28 +5445,27 @@ namespace FlockFive
             GUI.color = u >= 0.98f ? Color.white : new Color(1f, 1f, 1f, u);
             if (!front)
             {
-                // Solid palm — cards sit on flesh, no cutout.
                 DrawSprite(new Rect(x, y, w, h), SpriteCatalog.HandPalm, true);
-                // Behind digits as pads under the remaining fan, overlapping the palm.
+                // Full behind-finger paths at the palm dest so they continue
+                // under the fan (not cropped to a stump at the card rim).
+                // Re-anchor X to remaining fan when count drops; keep Y/H so
+                // the path still runs from palm up under the cards.
                 var cover = PokerFanCover(gripN, row, bump);
-                float padH = Mathf.Max(34f, cover.height * 0.18f);
-                float padW = Mathf.Max(28f, cover.width / 4.4f);
-                Sprite[] behind = {
-                    SpriteCatalog.HandPinky, SpriteCatalog.HandRing,
-                    SpriteCatalog.HandMiddle, SpriteCatalog.HandIndex
-                };
-                for (int d = 0; d < 4; d++)
-                {
-                    float t = (d + 0.5f) / 4f;
-                    float dx = cover.x + cover.width * t - padW * 0.5f;
-                    var pad = new Rect(dx, pinchY - padH * 0.12f, padW, padH);
-                    DrawSprite(pad, behind[d], true);
-                }
+                float bx = cover.x - w * 0.08f;
+                float bw = cover.width + w * 0.16f;
+                var behind = new Rect(bx, y, bw, h);
+                DrawSprite(behind, SpriteCatalog.HandPinky, true);
+                DrawSprite(behind, SpriteCatalog.HandRing, true);
+                DrawSprite(behind, SpriteCatalog.HandMiddle, true);
+                DrawSprite(behind, SpriteCatalog.HandIndex, true);
             }
             else
             {
-                // Same dest as palm so the pad sits in the grip, not a floating cutout.
-                DrawSprite(new Rect(x, y, w, h), SpriteCatalog.HandThumb, true);
+                // Full thumb digit on top of the cards: nail + joint + base.
+                float th = fanH * 1.28f;
+                float tw = th * 0.89f;
+                var thumb = new Rect(pinchX - tw * 0.48f, pinchY - th * 0.60f, tw, th);
+                DrawSprite(thumb, SpriteCatalog.HandThumb, true);
             }
             GUI.matrix = prev;
             GUI.color = Color.white;
