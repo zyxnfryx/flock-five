@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass14-longer-thumb");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass15-native-thumb");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -4897,8 +4897,9 @@ namespace FlockFive
         const float PokerFanScale = 1.42f;
         const float PokerFanSpan = 0.46f;
         // Constructed hand: palm + digits share this UV; thumb is pinch-anchored.
-        const float PokerFanPinchU = 0.423f;
-        const float PokerFanPinchV = 0.431f;
+        // Native thumb joint on the same canvas as the palm (image 31).
+        const float PokerFanPinchU = 0.586f;
+        const float PokerFanPinchV = 0.28f;
         const float PokerFanHandAspect = 0.80f;
 
         static float PokerAliveBreathe() => Mathf.Sin(Time.unscaledTime * 1.18f);
@@ -5458,11 +5459,8 @@ namespace FlockFive
             }
             else
             {
-                // Longer full digit: nail well up the fan, joint mid-card, thenar at pinch.
-                float th = fanH * 1.18f;
-                float tw = th * 0.51f;
-                var thumb = new Rect(pinchX - tw * 0.50f, pinchY - th * 0.82f, tw, th);
-                DrawSprite(thumb, SpriteCatalog.HandThumb, true);
+                // Distal thumb from the SAME paint as the palm, same dest — zero seam.
+                DrawSprite(new Rect(x, y, w, h), SpriteCatalog.HandThumb, true);
             }
             GUI.matrix = prev;
             GUI.color = Color.white;
@@ -5545,10 +5543,10 @@ namespace FlockFive
             if (!_pokerChained && _pokerChainBreak < 0f) return;
             var spr = SpriteCatalog.Chain;
             var tex = spr != null ? spr.texture : null;
-            float h = Mathf.Clamp(wrap.height * 0.16f, 20f * s, 34f * s);
-            float midY = wrap.y + wrap.height * 0.18f;
-            // End loops live behind the card; lock + inner links sit on the face.
-            var back = new Rect(wrap.center.x - wrap.width * 0.68f, midY - h * 0.40f, wrap.width * 1.36f, h * 0.80f);
+            float h = Mathf.Clamp(wrap.height * 0.11f, 16f * s, 28f * s);
+            // Belt: slightly below mid, like pants on hips.
+            float midY = wrap.y + wrap.height * 0.58f;
+            var back = new Rect(wrap.x - wrap.width * 0.10f, midY - h * 0.42f, wrap.width * 1.20f, h * 0.84f);
             var front = new Rect(wrap.x, midY - h * 0.50f, wrap.width, h);
             if (_pokerChainBreak < 0f)
             {
@@ -5606,6 +5604,10 @@ namespace FlockFive
 
         static void DrawChainAround(Texture tex, Rect card, Rect back, Rect front, bool behind)
         {
+            float beltH = front.height;
+            float hipY = front.center.y;
+            float sag = card.height * 0.075f;
+            float sagY = hipY + sag;
             if (tex == null)
             {
                 GUI.color = new Color(0.72f, 0.55f, 0.16f, behind ? 0.55f : 0.95f);
@@ -5615,52 +5617,49 @@ namespace FlockFive
             }
             if (behind)
             {
-                // End loops peek past the left/right edges from behind the card.
+                // Hip loops peek past the left/right edges from behind.
                 GUI.color = new Color(0.70f, 0.62f, 0.38f, 1f);
                 GUI.DrawTexture(back, tex, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
                 return;
             }
-            // High wrap — links only, skip the baked lock in the chain sheet.
             GUI.color = Color.white;
-            var wrapL = new Rect(front.x, front.y, front.width * 0.48f, front.height);
-            var wrapR = new Rect(front.xMax - front.width * 0.48f, front.y, front.width * 0.48f, front.height);
-            GUI.DrawTextureWithTexCoords(wrapL, tex, new Rect(0.02f, 0f, 0.16f, 1f));
-            GUI.DrawTextureWithTexCoords(wrapR, tex, new Rect(0.82f, 0f, 0.16f, 1f));
-            float sideH = front.height * 0.70f;
-            float sideW = front.height * 0.62f;
             var prev = GUI.matrix;
-            var left = new Rect(card.x - sideW * 0.48f, front.center.y - sideH * 0.50f, sideW, sideH);
-            GUIUtility.RotateAroundPivot(-78f, new Vector2(card.x, front.center.y));
-            GUI.DrawTextureWithTexCoords(left, tex, new Rect(0.02f, 0f, 0.16f, 1f));
+            float hipW = beltH * 0.72f;
+            float hipH = beltH * 0.95f;
+            // Side rails hug the card edges like a belt on hips.
+            var leftHip = new Rect(card.x - hipW * 0.42f, hipY - hipH * 0.50f, hipW, hipH);
+            GUIUtility.RotateAroundPivot(-12f, new Vector2(card.x, hipY));
+            GUI.DrawTextureWithTexCoords(leftHip, tex, new Rect(0.02f, 0f, 0.16f, 1f));
             GUI.matrix = prev;
-            var right = new Rect(card.xMax - sideW * 0.52f, front.center.y - sideH * 0.50f, sideW, sideH);
-            GUIUtility.RotateAroundPivot(78f, new Vector2(card.xMax, front.center.y));
-            GUI.DrawTextureWithTexCoords(right, tex, new Rect(0.82f, 0f, 0.16f, 1f));
+            var rightHip = new Rect(card.xMax - hipW * 0.58f, hipY - hipH * 0.50f, hipW, hipH);
+            GUIUtility.RotateAroundPivot(12f, new Vector2(card.xMax, hipY));
+            GUI.DrawTextureWithTexCoords(rightHip, tex, new Rect(0.82f, 0f, 0.16f, 1f));
             GUI.matrix = prev;
-            // Dangle left of center so the hang misses the WILD letters.
-            float lockH = Mathf.Clamp(card.height * 0.18f, front.height * 0.9f, card.height * 0.22f);
-            float lockY = card.yMax - lockH - card.height * 0.012f;
-            float hangTop = front.yMax - front.height * 0.12f;
-            float hangH = Mathf.Max(8f, lockY - hangTop);
-            float hangW = card.width * 0.16f;
-            float hangX = card.x + card.width * 0.16f;
-            var hang = new Rect(hangX - hangH * 0.5f, hangTop + hangH * 0.5f - hangW * 0.5f, hangH, hangW);
-            GUIUtility.RotateAroundPivot(90f, new Vector2(hangX, hangTop + hangH * 0.5f));
-            GUI.DrawTextureWithTexCoords(hang, tex, new Rect(0.02f, 0f, 0.16f, 1f));
+            // Front belt: two rails from each hip down to the sagged center.
+            float half = card.width * 0.52f;
+            float dipAng = Mathf.Atan2(sag, card.width * 0.50f) * Mathf.Rad2Deg;
+            var leftBelt = new Rect(card.x, hipY - beltH * 0.50f, half, beltH);
+            GUIUtility.RotateAroundPivot(dipAng, new Vector2(card.x, hipY));
+            GUI.DrawTextureWithTexCoords(leftBelt, tex, new Rect(0.02f, 0f, 0.18f, 1f));
             GUI.matrix = prev;
-            DrawPadlock(card, lockH, hangX);
+            var rightBelt = new Rect(card.xMax - half, hipY - beltH * 0.50f, half, beltH);
+            GUIUtility.RotateAroundPivot(-dipAng, new Vector2(card.xMax, hipY));
+            GUI.DrawTextureWithTexCoords(rightBelt, tex, new Rect(0.80f, 0f, 0.18f, 1f));
+            GUI.matrix = prev;
+            // Lock sits on the sagged front at card center.
+            float lockH = Mathf.Clamp(card.height * 0.16f, beltH * 1.05f, card.height * 0.20f);
+            DrawPadlock(card, lockH, card.center.x, sagY - lockH * 0.28f);
         }
 
-        static void DrawPadlock(Rect card, float chainH, float hangX = -1f)
+        static void DrawPadlock(Rect card, float chainH, float hangX = -1f, float hangY = -1f)
         {
             var spr = SpriteCatalog.Padlock;
             if (spr == null || spr.texture == null) return;
-            float lockH = Mathf.Clamp(card.height * 0.18f, chainH * 0.85f, card.height * 0.22f);
+            float lockH = Mathf.Clamp(card.height * 0.16f, chainH * 0.85f, card.height * 0.20f);
             float lockW = lockH * 1.38f;
-            // Dangle: lock body toward the bottom edge, below the wild ribbon.
-            float y = card.yMax - lockH - card.height * 0.012f;
-            float x = hangX >= 0f ? hangX : card.x + card.width * 0.16f;
+            float x = hangX >= 0f ? hangX : card.center.x;
+            float y = hangY >= 0f ? hangY : card.y + card.height * 0.58f - lockH * 0.25f;
             var lr = new Rect(x - lockW * 0.5f, y, lockW, lockH);
             DrawSprite(lr, spr, true);
         }
