@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass17-layers-fusion");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass18-layers-hq");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -5213,7 +5213,8 @@ namespace FlockFive
             if (BirdPoker.Hold[i] || fanCount <= 0)
                 return PokerFanRollAt(i / (float)(BirdPoker.HandSize - 1));
             float t = fanCount <= 1 ? 0.5f : slot / (float)(fanCount - 1);
-            return PokerFanRollAt(t) + PokerAliveBreathe() * 0.40f;
+            float mag = Mathf.Lerp(6f, 16f, (fanCount - 1) / 4f);
+            return Mathf.Lerp(-mag, mag, t) + PokerAliveBreathe() * 0.40f;
         }
 
         float PokerFanRollAt(float t) => Mathf.Lerp(-16f, 16f, t);
@@ -5795,8 +5796,6 @@ namespace FlockFive
             if (Mathf.Abs(roll) > 0.2f)
                 GUIUtility.RotateAroundPivot(roll, rollPivot);
             GUIUtility.ScaleAroundPivot(new Vector2(sx, 1f), r.center);
-            if (fanCard)
-                GUIUtility.ScaleAroundPivot(new Vector2(1f, 1.08f), rollPivot);
             bool wrapChain = held && showFace && chainLive;
             if (wrapChain) DrawPokerChain(r, s, true);
             if (showFace) DrawPokerFace(r, face, s, sparkle);
@@ -5983,8 +5982,11 @@ namespace FlockFive
             var fused = SpriteCatalog.PokerFace(card);
             if (fused != null && fused.texture != null)
             {
+                // Opaque fill so letterbox/alpha cannot show palm through the card.
+                GUI.color = new Color(0.22f, 0.12f, 0.08f, 1f);
+                GUI.DrawTexture(r, Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                GUI.DrawTexture(r, fused.texture, ScaleMode.ScaleToFit, true);
+                GUI.DrawTexture(r, fused.texture, ScaleMode.StretchToFill, true);
                 if (card.Wild)
                 {
                     var inner = new Rect(r.x + 2.6f * s, r.y + 2.6f * s, r.width - 5.2f * s, r.height - 5.2f * s);
