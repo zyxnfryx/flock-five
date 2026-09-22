@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass11-constructed");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass12-fill-grip");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -4897,8 +4897,8 @@ namespace FlockFive
         const float PokerFanScale = 1.42f;
         const float PokerFanSpan = 0.46f;
         // Constructed hand: palm + digits share this UV; thumb is pinch-anchored.
-        const float PokerFanPinchU = 0.425f;
-        const float PokerFanPinchV = 0.422f;
+        const float PokerFanPinchU = 0.423f;
+        const float PokerFanPinchV = 0.431f;
         const float PokerFanHandAspect = 0.80f;
 
         static float PokerAliveBreathe() => Mathf.Sin(Time.unscaledTime * 1.18f);
@@ -5420,32 +5420,24 @@ namespace FlockFive
             int gripN = Mathf.Max(1, live);
             var grip = PokerFanSeatAt(Mathf.Min(gripN - 1, gripN / 2), gripN, row, bump);
             float fanH = row.height * PokerFanScale;
-            float h = fanH * 2.05f;
+            float h = fanH * 1.88f;
             float w = h * PokerFanHandAspect;
             float alive = u;
             float breathe = PokerAliveBreathe();
             float tick = PokerAliveTick();
-            float pinchX = grip.center.x - grip.width * 0.10f + _pokerKick.x + 0.85f * breathe * alive;
+            float pinchX = grip.center.x - grip.width * 0.08f + _pokerKick.x + 0.85f * breathe * alive;
             float pinchY = grip.yMax - grip.height * 0.02f + _pokerKick.y
                 + (0.90f * breathe + 0.18f * tick) * alive;
             float x = pinchX - w * PokerFanPinchU;
             float y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
-            if (x > -28f)
+            if (x > -12f)
             {
-                w = (pinchX + 28f) / Mathf.Max(0.12f, PokerFanPinchU);
+                w = (pinchX + 12f) / Mathf.Max(0.12f, PokerFanPinchU);
                 h = w / PokerFanHandAspect;
                 x = pinchX - w * PokerFanPinchU;
                 y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
             }
-            float needH = (Screen.height + 36f - pinchY) / Mathf.Max(0.12f, 1f - PokerFanPinchV);
-            if (h < needH)
-            {
-                h = needH;
-                w = h * PokerFanHandAspect;
-                x = pinchX - w * PokerFanPinchU;
-                y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
-            }
-            float ang = 3.2f + 0.55f * breathe * alive;
+            float ang = 2.4f + 0.45f * breathe * alive;
             float squash = 1f + 0.006f * breathe * alive;
             var prev = GUI.matrix;
             GUIUtility.RotateAroundPivot(ang, new Vector2(pinchX, pinchY));
@@ -5453,25 +5445,28 @@ namespace FlockFive
             GUI.color = u >= 0.98f ? Color.white : new Color(1f, 1f, 1f, u);
             if (!front)
             {
+                // Solid palm — cards sit on flesh, no cutout.
                 DrawSprite(new Rect(x, y, w, h), SpriteCatalog.HandPalm, true);
-                GUI.matrix = prev;
+                // Behind digits as pads under the remaining fan, overlapping the palm.
                 var cover = PokerFanCover(gripN, row, bump);
-                GUI.BeginGroup(cover);
-                var local = new Rect(x - cover.x, y - cover.y, w, h);
-                DrawSprite(local, SpriteCatalog.HandPinky, true);
-                DrawSprite(local, SpriteCatalog.HandRing, true);
-                DrawSprite(local, SpriteCatalog.HandMiddle, true);
-                GUI.EndGroup();
-                GUI.matrix = prev;
-                GUIUtility.RotateAroundPivot(ang, new Vector2(pinchX, pinchY));
-                GUIUtility.ScaleAroundPivot(new Vector2(squash, 2f - squash), new Vector2(pinchX, pinchY));
+                float padH = Mathf.Max(34f, cover.height * 0.18f);
+                float padW = Mathf.Max(28f, cover.width / 4.4f);
+                Sprite[] behind = {
+                    SpriteCatalog.HandPinky, SpriteCatalog.HandRing,
+                    SpriteCatalog.HandMiddle, SpriteCatalog.HandIndex
+                };
+                for (int d = 0; d < 4; d++)
+                {
+                    float t = (d + 0.5f) / 4f;
+                    float dx = cover.x + cover.width * t - padW * 0.5f;
+                    var pad = new Rect(dx, pinchY - padH * 0.12f, padW, padH);
+                    DrawSprite(pad, behind[d], true);
+                }
             }
             else
             {
-                float th = fanH * 0.85f;
-                float tw = th * 0.78f;
-                var thumb = new Rect(pinchX - tw * 0.50f, pinchY - th * 0.28f, tw, th);
-                DrawSprite(thumb, SpriteCatalog.HandThumb, true);
+                // Same dest as palm so the pad sits in the grip, not a floating cutout.
+                DrawSprite(new Rect(x, y, w, h), SpriteCatalog.HandThumb, true);
             }
             GUI.matrix = prev;
             GUI.color = Color.white;
