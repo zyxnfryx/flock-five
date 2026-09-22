@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass16-layer-order");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass17-layers-fusion");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -5979,11 +5979,12 @@ namespace FlockFive
 
         static void DrawPokerFace(Rect r, BirdPoker.Card card, float s, bool sparkle = true)
         {
+            // One authored art object per live card — never bird-on-face at runtime.
             var fused = SpriteCatalog.PokerFace(card);
             if (fused != null && fused.texture != null)
             {
                 GUI.color = Color.white;
-                GUI.DrawTexture(r, fused.texture, ScaleMode.ScaleAndCrop, true);
+                GUI.DrawTexture(r, fused.texture, ScaleMode.ScaleToFit, true);
                 if (card.Wild)
                 {
                     var inner = new Rect(r.x + 2.6f * s, r.y + 2.6f * s, r.width - 5.2f * s, r.height - 5.2f * s);
@@ -5991,47 +5992,7 @@ namespace FlockFive
                 }
                 return;
             }
-            bool wild = card.Wild;
-            float phase = r.x * 0.013f + r.y * 0.007f;
-            if (wild && sparkle) DrawWildHalo(r, phase);
-            GUI.color = wild
-                ? new Color(0.42f, 0.26f, 0.08f, 1f)
-                : new Color(0.22f, 0.12f, 0.08f, 1f);
-            GUI.DrawTexture(r, Texture2D.whiteTexture);
-            if (wild)
-            {
-                GUI.color = new Color(0.86f, 0.68f, 0.22f, 1f);
-                GUI.DrawTexture(new Rect(r.x + 1.6f * s, r.y + 1.6f * s, r.width - 3.2f * s, r.height - 3.2f * s), Texture2D.whiteTexture);
-            }
-            var inner2 = new Rect(r.x + 2.6f * s, r.y + 2.6f * s, r.width - 5.2f * s, r.height - 5.2f * s);
-            DrawCardPaper(inner2, wild);
-            if (wild)
-            {
-                var joker = SpriteCatalog.Joker;
-                if (joker != null && joker.texture != null)
-                {
-                    float pad = inner2.width * 0.02f;
-                    GUI.DrawTexture(
-                        new Rect(inner2.x + pad, inner2.y + pad, inner2.width - pad * 2f, inner2.height - pad * 2f),
-                        joker.texture, ScaleMode.ScaleToFit, true);
-                }
-                DrawWildBanner(inner2, s, phase, sparkle);
-                if (sparkle) DrawWildSparkles(r, inner2, phase);
-                return;
-            }
-            var spr = SpriteCatalog.Bird(card.Color, card.Sex);
-            if (spr != null && spr.texture != null)
-            {
-                float pad = inner2.width * 0.03f;
-                GUI.DrawTexture(new Rect(inner2.x + pad, inner2.y + pad, inner2.width - pad * 2f, inner2.height - pad * 2f), spr.texture, ScaleMode.ScaleToFit, true);
-            }
-            DrawCardSheen(inner2, phase);
-            var pip = PokerPip(card.Color);
-            float pr2 = r.width * 0.16f;
-            GUI.color = new Color(0.99f, 0.96f, 0.88f, 0.55f);
-            GUI.DrawTexture(new Rect(inner2.x + 3f * s, inner2.y + 3f * s, pr2 + 4f * s, pr2 + 4f * s), Texture2D.whiteTexture);
-            GUI.color = pip;
-            GUI.DrawTexture(new Rect(inner2.x + 5f * s, inner2.y + 5f * s, pr2, pr2), Texture2D.whiteTexture);
+            DrawCardPaper(r, card.Wild);
             GUI.color = Color.white;
         }
 
