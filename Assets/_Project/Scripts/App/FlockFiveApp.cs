@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass13-full-thumb");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass14-longer-thumb");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -5446,14 +5446,11 @@ namespace FlockFive
             if (!front)
             {
                 DrawSprite(new Rect(x, y, w, h), SpriteCatalog.HandPalm, true);
-                // Full behind-finger paths at the palm dest so they continue
-                // under the fan (not cropped to a stump at the card rim).
-                // Re-anchor X to remaining fan when count drops; keep Y/H so
-                // the path still runs from palm up under the cards.
+                // Full finger paths at palm dest (no width-squash — that
+                // amputated them at the rim). Nudge X toward remaining fan.
                 var cover = PokerFanCover(gripN, row, bump);
-                float bx = cover.x - w * 0.08f;
-                float bw = cover.width + w * 0.16f;
-                var behind = new Rect(bx, y, bw, h);
+                float shift = cover.center.x - pinchX;
+                var behind = new Rect(x + shift * 0.22f, y, w, h);
                 DrawSprite(behind, SpriteCatalog.HandPinky, true);
                 DrawSprite(behind, SpriteCatalog.HandRing, true);
                 DrawSprite(behind, SpriteCatalog.HandMiddle, true);
@@ -5461,10 +5458,10 @@ namespace FlockFive
             }
             else
             {
-                // Full thumb digit on top of the cards: nail + joint + base.
-                float th = fanH * 1.28f;
-                float tw = th * 0.89f;
-                var thumb = new Rect(pinchX - tw * 0.48f, pinchY - th * 0.60f, tw, th);
+                // Longer full digit: nail well up the fan, joint mid-card, thenar at pinch.
+                float th = fanH * 1.18f;
+                float tw = th * 0.51f;
+                var thumb = new Rect(pinchX - tw * 0.50f, pinchY - th * 0.82f, tw, th);
                 DrawSprite(thumb, SpriteCatalog.HandThumb, true);
             }
             GUI.matrix = prev;
