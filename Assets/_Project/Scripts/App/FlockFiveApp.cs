@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass8-thumb-only");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass9-index-occluded");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
