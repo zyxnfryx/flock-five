@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass18-layers-hq");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass19-singular-card");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -5978,24 +5978,17 @@ namespace FlockFive
 
         static void DrawPokerFace(Rect r, BirdPoker.Card card, float s, bool sparkle = true)
         {
-            // One authored art object per live card — never bird-on-face at runtime.
+            // Singular sprite: cream + bird + pip already one texture.
+            // Never SpriteCatalog.Bird / ScaleToFit bird-on-face here.
             var fused = SpriteCatalog.PokerFace(card);
-            if (fused != null && fused.texture != null)
-            {
-                // Opaque fill so letterbox/alpha cannot show palm through the card.
-                GUI.color = new Color(0.22f, 0.12f, 0.08f, 1f);
-                GUI.DrawTexture(r, Texture2D.whiteTexture);
-                GUI.color = Color.white;
-                GUI.DrawTexture(r, fused.texture, ScaleMode.StretchToFill, true);
-                if (card.Wild)
-                {
-                    var inner = new Rect(r.x + 2.6f * s, r.y + 2.6f * s, r.width - 5.2f * s, r.height - 5.2f * s);
-                    DrawWildLabel(inner, s);
-                }
-                return;
-            }
-            DrawCardPaper(r, card.Wild);
+            if (fused == null || fused.texture == null) return;
             GUI.color = Color.white;
+            GUI.DrawTexture(r, fused.texture, ScaleMode.StretchToFill, false);
+            if (card.Wild)
+            {
+                var inner = new Rect(r.x + 2.6f * s, r.y + 2.6f * s, r.width - 5.2f * s, r.height - 5.2f * s);
+                DrawWildLabel(inner, s);
+            }
         }
 
         static void DrawCardSheen(Rect inner, float phase)
