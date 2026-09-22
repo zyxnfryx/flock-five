@@ -4,7 +4,8 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _handPalm, _handPinky, _handRing, _handMiddle, _handIndex, _handThumb, _wildBanner, _dash, _chain, _padlock, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _handPalm, _handPinky, _handRing, _handMiddle, _handIndex, _handThumb, _wildBanner, _dash, _chain, _padlock, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk, _pokerFaceWild;
+        static Sprite[] _pokerFaces;
         static Sprite[] _flames;
         static bool _sparrowPlaceholder;
         static bool _hawkPlaceholder;
@@ -114,6 +115,27 @@ namespace FlockFive
             _wildBanner = null;
             _padlock = null;
             _chain = null;
+            _pokerFaceWild = null;
+            _pokerFaces = null;
+        }
+
+        public static Sprite PokerFace(BirdPoker.Card card)
+        {
+            if (card.Wild)
+            {
+                if (_pokerFaceWild == null) _pokerFaceWild = TryLoad("Sprites/fx_poker_face_wild", 200f);
+                return _pokerFaceWild;
+            }
+            int n = Palette.Max * 3;
+            if (_pokerFaces == null) _pokerFaces = new Sprite[n];
+            int ix = (int)card.Sex * Palette.Max + (int)card.Color;
+            if (ix < 0 || ix >= n) return null;
+            if (_pokerFaces[ix] == null)
+            {
+                string tag = card.Sex == BirdSex.Female ? "_f" : card.Sex == BirdSex.Male ? "_m" : "";
+                _pokerFaces[ix] = TryLoad("Sprites/fx_poker_face_" + Name(card.Color) + tag, 200f);
+            }
+            return _pokerFaces[ix];
         }
         public static Sprite CardPaper
         {

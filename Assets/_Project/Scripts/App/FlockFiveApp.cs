@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass15-native-thumb");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass16-layer-order");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -4238,10 +4238,9 @@ namespace FlockFive
             HitPokerCards(canHold, rowBox, rowX, rowY, cardW, cardH, gap);
             if (!hideCards)
             {
+                // LOCK: garden → rest-of-hand → ALL fused cards → thumb only.
                 DrawPokerFanHand(rowBox, cardW, cardH, s, false);
                 int[] order = PokerDrawOrder();
-                // Palm, then every live fan card, then thumb. A later seat must
-                // never redraw over the thumb (5-fan neighbor corners).
                 for (int o = 0; o < order.Length; o++)
                 {
                     int i = order[o];
@@ -5444,23 +5443,17 @@ namespace FlockFive
             GUIUtility.RotateAroundPivot(ang, new Vector2(pinchX, pinchY));
             GUIUtility.ScaleAroundPivot(new Vector2(squash, 2f - squash), new Vector2(pinchX, pinchY));
             GUI.color = u >= 0.98f ? Color.white : new Color(1f, 1f, 1f, u);
+            var dest = new Rect(x, y, w, h);
             if (!front)
             {
-                DrawSprite(new Rect(x, y, w, h), SpriteCatalog.HandPalm, true);
-                // Full finger paths at palm dest (no width-squash — that
-                // amputated them at the rim). Nudge X toward remaining fan.
-                var cover = PokerFanCover(gripN, row, bump);
-                float shift = cover.center.x - pinchX;
-                var behind = new Rect(x + shift * 0.22f, y, w, h);
-                DrawSprite(behind, SpriteCatalog.HandPinky, true);
-                DrawSprite(behind, SpriteCatalog.HandRing, true);
-                DrawSprite(behind, SpriteCatalog.HandMiddle, true);
-                DrawSprite(behind, SpriteCatalog.HandIndex, true);
+                // Rest-of-hand behind-block: palm painting includes
+                // pinky/ring/middle/index. Same dest, entirely under cards.
+                DrawSprite(dest, SpriteCatalog.HandPalm, true);
             }
             else
             {
-                // Distal thumb from the SAME paint as the palm, same dest — zero seam.
-                DrawSprite(new Rect(x, y, w, h), SpriteCatalog.HandThumb, true);
+                // Thumb ONLY above cards. Same paint, same dest as the palm.
+                DrawSprite(dest, SpriteCatalog.HandThumb, true);
             }
             GUI.matrix = prev;
             GUI.color = Color.white;
@@ -5986,6 +5979,18 @@ namespace FlockFive
 
         static void DrawPokerFace(Rect r, BirdPoker.Card card, float s, bool sparkle = true)
         {
+            var fused = SpriteCatalog.PokerFace(card);
+            if (fused != null && fused.texture != null)
+            {
+                GUI.color = Color.white;
+                GUI.DrawTexture(r, fused.texture, ScaleMode.ScaleAndCrop, true);
+                if (card.Wild)
+                {
+                    var inner = new Rect(r.x + 2.6f * s, r.y + 2.6f * s, r.width - 5.2f * s, r.height - 5.2f * s);
+                    DrawWildLabel(inner, s);
+                }
+                return;
+            }
             bool wild = card.Wild;
             float phase = r.x * 0.013f + r.y * 0.007f;
             if (wild && sparkle) DrawWildHalo(r, phase);
@@ -5998,35 +6003,35 @@ namespace FlockFive
                 GUI.color = new Color(0.86f, 0.68f, 0.22f, 1f);
                 GUI.DrawTexture(new Rect(r.x + 1.6f * s, r.y + 1.6f * s, r.width - 3.2f * s, r.height - 3.2f * s), Texture2D.whiteTexture);
             }
-            var inner = new Rect(r.x + 2.6f * s, r.y + 2.6f * s, r.width - 5.2f * s, r.height - 5.2f * s);
-            DrawCardPaper(inner, wild);
+            var inner2 = new Rect(r.x + 2.6f * s, r.y + 2.6f * s, r.width - 5.2f * s, r.height - 5.2f * s);
+            DrawCardPaper(inner2, wild);
             if (wild)
             {
                 var joker = SpriteCatalog.Joker;
                 if (joker != null && joker.texture != null)
                 {
-                    float pad = inner.width * 0.02f;
+                    float pad = inner2.width * 0.02f;
                     GUI.DrawTexture(
-                        new Rect(inner.x + pad, inner.y + pad, inner.width - pad * 2f, inner.height - pad * 2f),
+                        new Rect(inner2.x + pad, inner2.y + pad, inner2.width - pad * 2f, inner2.height - pad * 2f),
                         joker.texture, ScaleMode.ScaleToFit, true);
                 }
-                DrawWildBanner(inner, s, phase, sparkle);
-                if (sparkle) DrawWildSparkles(r, inner, phase);
+                DrawWildBanner(inner2, s, phase, sparkle);
+                if (sparkle) DrawWildSparkles(r, inner2, phase);
                 return;
             }
             var spr = SpriteCatalog.Bird(card.Color, card.Sex);
             if (spr != null && spr.texture != null)
             {
-                float pad = inner.width * 0.03f;
-                GUI.DrawTexture(new Rect(inner.x + pad, inner.y + pad, inner.width - pad * 2f, inner.height - pad * 2f), spr.texture, ScaleMode.ScaleToFit, true);
+                float pad = inner2.width * 0.03f;
+                GUI.DrawTexture(new Rect(inner2.x + pad, inner2.y + pad, inner2.width - pad * 2f, inner2.height - pad * 2f), spr.texture, ScaleMode.ScaleToFit, true);
             }
-            DrawCardSheen(inner, phase);
+            DrawCardSheen(inner2, phase);
             var pip = PokerPip(card.Color);
             float pr2 = r.width * 0.16f;
             GUI.color = new Color(0.99f, 0.96f, 0.88f, 0.55f);
-            GUI.DrawTexture(new Rect(inner.x + 3f * s, inner.y + 3f * s, pr2 + 4f * s, pr2 + 4f * s), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(inner2.x + 3f * s, inner2.y + 3f * s, pr2 + 4f * s, pr2 + 4f * s), Texture2D.whiteTexture);
             GUI.color = pip;
-            GUI.DrawTexture(new Rect(inner.x + 5f * s, inner.y + 5f * s, pr2, pr2), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(inner2.x + 5f * s, inner2.y + 5f * s, pr2, pr2), Texture2D.whiteTexture);
             GUI.color = Color.white;
         }
 
@@ -6118,7 +6123,13 @@ namespace FlockFive
                 GUI.DrawTexture(new Rect(band.x + 3f * s, band.y + 3f * s, band.width - 6f * s, band.height - 6f * s), Texture2D.whiteTexture);
             }
             GUI.matrix = prev;
+            DrawWildLabel(inner, s);
+        }
 
+        static void DrawWildLabel(Rect inner, float s)
+        {
+            float bandH = Mathf.Max(20f * s, inner.height * 0.22f);
+            float bandY = inner.y + inner.height * 0.52f - bandH * 0.5f;
             var st = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
@@ -6126,7 +6137,7 @@ namespace FlockFive
                 wordWrap = false
             };
             string lab = "WILD";
-            var textR = new Rect(inner.center.x - inner.width * 0.5f, band.y, inner.width, bandH);
+            var textR = new Rect(inner.center.x - inner.width * 0.5f, bandY, inner.width, bandH);
             st.fontSize = FitFont(st, lab, textR.width * 0.78f, textR.height * 0.62f, 16, 36);
             int stroke = Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.16f));
             var gold = new Color(1f, 0.86f, 0.28f, 1f);
