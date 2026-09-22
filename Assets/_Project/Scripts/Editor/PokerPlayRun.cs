@@ -117,7 +117,11 @@ namespace FlockFive.Editor
 
         static bool HandOpaque(System.Action<string> Line)
         {
-            string[] paths = { "Sprites/fx_hand_fan", "Sprites/fx_hand_fan_front", "Sprites/fx_hand_pluck" };
+            string[] paths = {
+                "Sprites/fx_hand_palm", "Sprites/fx_hand_pinky", "Sprites/fx_hand_ring",
+                "Sprites/fx_hand_middle", "Sprites/fx_hand_index", "Sprites/fx_hand_thumb",
+                "Sprites/fx_hand_pluck"
+            };
             for (int p = 0; p < paths.Length; p++)
             {
                 var tex = Resources.Load<Texture2D>(paths[p]);

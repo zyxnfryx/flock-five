@@ -1011,7 +1011,7 @@ namespace FlockFive
         {
             System.IO.Directory.CreateDirectory(dir);
             SpriteCatalog.DropPokerArt();
-            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass10-zero-index");
+            Debug.Log("Flock Five: ShotPokerFaces start " + dir + " pass11-constructed");
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
@@ -4896,9 +4896,9 @@ namespace FlockFive
         const float DealBumpT = 0.24f;
         const float PokerFanScale = 1.42f;
         const float PokerFanSpan = 0.46f;
-        // Physical thumb pad/nail at the bottom-fan pinch (front layer = thumb only).
-        const float PokerFanPinchU = 0.518f;
-        const float PokerFanPinchV = 0.281f;
+        // Constructed hand: palm + digits share this UV; thumb is pinch-anchored.
+        const float PokerFanPinchU = 0.425f;
+        const float PokerFanPinchV = 0.422f;
         const float PokerFanHandAspect = 0.80f;
 
         static float PokerAliveBreathe() => Mathf.Sin(Time.unscaledTime * 1.18f);
@@ -5195,6 +5195,17 @@ namespace FlockFive
             return new Rect(x, y + life, cardW, cardH);
         }
 
+        Rect PokerFanCover(int fanCount, Rect row, float bump)
+        {
+            var a = PokerFanSeatAt(0, fanCount, row, bump);
+            var b = PokerFanSeatAt(Mathf.Max(0, fanCount - 1), fanCount, row, bump);
+            float x = Mathf.Min(a.x, b.x);
+            float y = Mathf.Min(a.y, b.y);
+            float x2 = Mathf.Max(a.xMax, b.xMax);
+            float y2 = Mathf.Max(a.yMax, b.yMax);
+            return new Rect(x - 8f, y - 10f, x2 - x + 16f, y2 - y + 28f);
+        }
+
         float PokerFanRoll(int i)
         {
             int fanCount;
@@ -5406,8 +5417,6 @@ namespace FlockFive
                 u = 1f - Mathf.Clamp01(_pokerMotionT / 0.22f);
             }
             if (!show || u < 0.02f) return;
-            var spr = front ? SpriteCatalog.HandFanFront : SpriteCatalog.HandFan;
-            if (spr == null || spr.texture == null) return;
             int gripN = Mathf.Max(1, live);
             var grip = PokerFanSeatAt(Mathf.Min(gripN - 1, gripN / 2), gripN, row, bump);
             float fanH = row.height * PokerFanScale;
@@ -5416,14 +5425,11 @@ namespace FlockFive
             float alive = u;
             float breathe = PokerAliveBreathe();
             float tick = PokerAliveTick();
-            // Pads land on the remaining fan (tracks 1-card unhold, not row-center).
-            // Breath only at the pinch pivot so pads stay on the bottom rims.
             float pinchX = grip.center.x - grip.width * 0.10f + _pokerKick.x + 0.85f * breathe * alive;
             float pinchY = grip.yMax - grip.height * 0.02f + _pokerKick.y
                 + (0.90f * breathe + 0.18f * tick) * alive;
             float x = pinchX - w * PokerFanPinchU;
             float y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
-            // Sleeve originates off the left/bottom. Keep the pinch locked.
             if (x > -28f)
             {
                 w = (pinchX + 28f) / Mathf.Max(0.12f, PokerFanPinchU);
@@ -5445,7 +5451,28 @@ namespace FlockFive
             GUIUtility.RotateAroundPivot(ang, new Vector2(pinchX, pinchY));
             GUIUtility.ScaleAroundPivot(new Vector2(squash, 2f - squash), new Vector2(pinchX, pinchY));
             GUI.color = u >= 0.98f ? Color.white : new Color(1f, 1f, 1f, u);
-            DrawSprite(new Rect(x, y, w, h), spr, true);
+            if (!front)
+            {
+                DrawSprite(new Rect(x, y, w, h), SpriteCatalog.HandPalm, true);
+                GUI.matrix = prev;
+                var cover = PokerFanCover(gripN, row, bump);
+                GUI.BeginGroup(cover);
+                var local = new Rect(x - cover.x, y - cover.y, w, h);
+                DrawSprite(local, SpriteCatalog.HandPinky, true);
+                DrawSprite(local, SpriteCatalog.HandRing, true);
+                DrawSprite(local, SpriteCatalog.HandMiddle, true);
+                GUI.EndGroup();
+                GUI.matrix = prev;
+                GUIUtility.RotateAroundPivot(ang, new Vector2(pinchX, pinchY));
+                GUIUtility.ScaleAroundPivot(new Vector2(squash, 2f - squash), new Vector2(pinchX, pinchY));
+            }
+            else
+            {
+                float th = fanH * 0.85f;
+                float tw = th * 0.78f;
+                var thumb = new Rect(pinchX - tw * 0.50f, pinchY - th * 0.28f, tw, th);
+                DrawSprite(thumb, SpriteCatalog.HandThumb, true);
+            }
             GUI.matrix = prev;
             GUI.color = Color.white;
         }

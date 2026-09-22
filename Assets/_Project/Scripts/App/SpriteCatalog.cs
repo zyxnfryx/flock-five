@@ -4,7 +4,7 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _wildBanner, _dash, _chain, _padlock, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _handPalm, _handPinky, _handRing, _handMiddle, _handIndex, _handThumb, _wildBanner, _dash, _chain, _padlock, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk;
         static Sprite[] _flames;
         static bool _sparrowPlaceholder;
         static bool _hawkPlaceholder;
@@ -104,6 +104,12 @@ namespace FlockFive
             _handFan = null;
             _handFanFront = null;
             _handPluck = null;
+            _handPalm = null;
+            _handPinky = null;
+            _handRing = null;
+            _handMiddle = null;
+            _handIndex = null;
+            _handThumb = null;
             _stampTool = null;
             _wildBanner = null;
             _padlock = null;
@@ -139,6 +145,54 @@ namespace FlockFive
             {
                 if (_handPluck == null) _handPluck = TryLoad("Sprites/fx_hand_pluck", 200f);
                 return _handPluck;
+            }
+        }
+        public static Sprite HandPalm
+        {
+            get
+            {
+                if (_handPalm == null) _handPalm = TryLoad("Sprites/fx_hand_palm", 200f);
+                return _handPalm;
+            }
+        }
+        public static Sprite HandPinky
+        {
+            get
+            {
+                if (_handPinky == null) _handPinky = TryLoad("Sprites/fx_hand_pinky", 200f);
+                return _handPinky;
+            }
+        }
+        public static Sprite HandRing
+        {
+            get
+            {
+                if (_handRing == null) _handRing = TryLoad("Sprites/fx_hand_ring", 200f);
+                return _handRing;
+            }
+        }
+        public static Sprite HandMiddle
+        {
+            get
+            {
+                if (_handMiddle == null) _handMiddle = TryLoad("Sprites/fx_hand_middle", 200f);
+                return _handMiddle;
+            }
+        }
+        public static Sprite HandIndex
+        {
+            get
+            {
+                if (_handIndex == null) _handIndex = TryLoad("Sprites/fx_hand_index", 200f);
+                return _handIndex;
+            }
+        }
+        public static Sprite HandThumb
+        {
+            get
+            {
+                if (_handThumb == null) _handThumb = TryLoad("Sprites/fx_hand_thumb", 200f);
+                return _handThumb;
             }
         }
         public static Sprite WildBanner
