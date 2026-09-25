@@ -451,14 +451,19 @@ namespace FlockFive
             }
             if (from >= 0 && to >= 0)
             {
+                // Slow the world so editor capture latency doesn't skip the flight.
+                Time.timeScale = 0.12f;
                 StartCoroutine(DoMove(from, to));
-                float t0 = Time.unscaledTime;
-                float[] at = { 0.10f, 0.20f, 0.30f, 0.42f, 0.60f };
+                float t0 = Time.time;
+                float[] at = { 0.08f, 0.16f, 0.24f, 0.34f, 0.46f };
                 for (int k = 0; k < at.Length; k++)
                 {
-                    while (Time.unscaledTime - t0 < at[k]) yield return null;
+                    while (Time.time - t0 < at[k]) yield return null;
+                    Time.timeScale = 0f;
                     yield return SnapShot(dir + "/birds-fly-" + k + ".png");
+                    Time.timeScale = 0.12f;
                 }
+                Time.timeScale = 1f;
                 yield return new WaitForSecondsRealtime(1.2f);
                 yield return SnapShot(dir + "/birds-landed.png");
             }
