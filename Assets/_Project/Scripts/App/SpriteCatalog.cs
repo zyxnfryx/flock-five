@@ -518,6 +518,8 @@ namespace FlockFive
         public static Sprite BirdFrame(BirdColor c, float t, bool flap) =>
             BirdFrame(c, t, flap, BirdSex.Neutral);
 
+        static readonly System.Collections.Generic.HashSet<string> _missingFlap = new System.Collections.Generic.HashSet<string>();
+
         public static Sprite BirdFrame(BirdColor c, float t, bool flap, BirdSex sex)
         {
             var rest = Bird(c, sex);
@@ -536,7 +538,11 @@ namespace FlockFive
                         // Optional extras must not fall back to placeholder sprites.
                         if (plainArr == null) plainArr = new Sprite[Palette.Max];
                         int i = (int)c;
-                        if (plainArr[i] == null) plainArr[i] = TryLoad(path, 280f);
+                        if (plainArr[i] == null && !_missingFlap.Contains(path))
+                        {
+                            plainArr[i] = TryLoad(path, 280f);
+                            if (plainArr[i] == null) _missingFlap.Add(path); // don't re-probe Resources every frame
+                        }
                         return plainArr[i];
                     }
                     return Slot(ref plainArr, (int)c, path, 280f);
@@ -607,8 +613,11 @@ namespace FlockFive
             int n = Palette.Max * 3;
             if (arr == null) arr = new Sprite[n];
             if (i < 0 || i >= arr.Length) return null;
-            if (arr[i] == null)
+            if (arr[i] == null && !_missingFlap.Contains(path))
+            {
                 arr[i] = TryLoad(path, ppu);
+                if (arr[i] == null) _missingFlap.Add(path);
+            }
             return arr[i];
         }
 

@@ -278,7 +278,7 @@ namespace FlockFive
         // Per-frame male crown locals (facing-right), same row/col order as the bow.
         // _1/_2 are the spread-wing flap frames, eye-aligned to rest; their head
         // dome sits ~44px lower, so kit Y drops 0.15-0.16u on those columns.
-// All five share the teal body: crown rests ON the head (drawn in front), tipped 26deg so the band
+        // All five share the teal body: crown rests ON the head (drawn in front), tipped 26deg so the band
         // bottom follows the dome; every band-bottom point >=1px into feathers (no back gap).
         static readonly float[,] CrownLocalX = {
             { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Ruby

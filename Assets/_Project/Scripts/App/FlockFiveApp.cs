@@ -2424,6 +2424,9 @@ namespace FlockFive
             _keepStreak = false;
             _frozen = false;
             _freezeOffer = false;
+            // Drop the lift + selection glow on the branch that was picked before Restart.
+            if (_sel >= 0 && _garden.Branches != null && _sel < _garden.Branches.Length && _garden.Branches[_sel] != null)
+                _garden.Branches[_sel].SetReady(false);
             _sel = -1;
             _combo = 0;
             _collecting = false;
