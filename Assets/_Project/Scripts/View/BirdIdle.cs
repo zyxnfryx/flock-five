@@ -21,6 +21,9 @@ namespace FlockFive
         SpriteRenderer _sr;
         SpriteRenderer _face;
         SpriteRenderer _kit;
+        SpriteRenderer _glow;
+        SpriteRenderer _kitGlow;
+        float _glowA;
         float _phase;
         float _liftShown;
         float _nextWing;
@@ -104,7 +107,10 @@ namespace FlockFive
                 // A seated Flutter or ruffle keeps the rest frame so toes stay on bark.
                 bool airborne = Frozen || _liftShown > 0.05f || (Flapping && _flutterUntil <= 0f);
                 bool wings = fly && airborne;
-                _sr.sprite = SpriteCatalog.BirdFrame(Color, Time.time * (wings ? 16f : 0.9f) + _phase, wings, Sex);
+                // BirdFrame steps poses at t*16, so t = Time.time * FlapRate gives
+                // 16*FlapRate poses/sec (rest,_1,_2,_1 = 4 poses per wingbeat).
+                // 1.25 = 20 poses/sec = 5 wingbeats/sec, frame-rate independent.
+                _sr.sprite = SpriteCatalog.BirdFrame(Color, (Time.time + _phase) * (wings ? FlapRate : 0.06f), wings, Sex);
                 if (!Frozen)
                 {
                     _sr.color = Shrouded ? new Color(0.04f, 0.03f, 0.05f, 1f) : UnityEngine.Color.white;
@@ -116,6 +122,7 @@ namespace FlockFive
             if (kitOn) EnsureKit();
             PlaceKit(mood, kitOn);
             PlaceFace(mood, show && !Shrouded);
+            PlaceGlow(show && !Shrouded && !Sleeping && !Frozen && Lift >= 1f);
             if (fly && !Frozen) BeatWings();
             else if (show && !Sleeping && !Shrouded && !Frozen) MaybeRuffle();
 
@@ -151,6 +158,60 @@ namespace FlockFive
                 RestScale.x * scale * (1f + beat * squash),
                 RestScale.y * scale * (1f - beat * squash * 0.8f),
                 1f);
+        }
+
+        const float FlapRate = 1.25f;
+
+        // Selected run (BranchView.SetReady lifts tip birds to Lift 1.15) gets a thick
+        // white border: a white, grown silhouette of the body (and kit) one step behind.
+        SpriteRenderer MakeGlow(Transform parent, string name)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            var r = go.AddComponent<SpriteRenderer>();
+            r.enabled = false;
+            return r;
+        }
+
+        void PlaceGlow(bool selected)
+        {
+            _glowA = Mathf.MoveTowards(_glowA, selected ? 1f : 0f, 9f * Time.deltaTime);
+            bool on = _glowA > 0.01f && _sr != null && _sr.enabled;
+            if (!on)
+            {
+                if (_glow != null) _glow.enabled = false;
+                if (_kitGlow != null) _kitGlow.enabled = false;
+                return;
+            }
+            float a = _glowA * (0.9f + 0.1f * Mathf.Sin(Time.time * 6f + _phase));
+            var col = new Color(1f, 1f, 1f, a);
+            int bodyOrder = _sr.sortingOrder;
+            if (_glow == null) _glow = MakeGlow(transform, "SelGlow");
+            _glow.sprite = BirdGlow.For(_sr.sprite);
+            _glow.enabled = _glow.sprite != null;
+            _glow.flipX = _sr.flipX;
+            _glow.color = col;
+            _glow.sortingLayerID = _sr.sortingLayerID;
+            _glow.sortingOrder = bodyOrder - 2; // behind kit bow (body-1) and body
+            bool kitShown = _kit != null && _kit.enabled;
+            if (kitShown && _kitGlow == null) _kitGlow = MakeGlow(_kit.transform, "SelGlow");
+            if (_kitGlow != null)
+            {
+                float kpx = 1f;
+                if (kitShown && _kit.sprite != null && _sr.sprite != null)
+                {
+                    // world size of one kit px vs one body px (kit is a scaled child)
+                    float kitPx = _kit.transform.localScale.x / _kit.sprite.pixelsPerUnit;
+                    float bodyPx = 1f / _sr.sprite.pixelsPerUnit;
+                    kpx = bodyPx / Mathf.Max(1e-5f, kitPx);
+                }
+                _kitGlow.sprite = kitShown ? BirdGlow.For(_kit.sprite, kpx) : null;
+                _kitGlow.enabled = kitShown && _kitGlow.sprite != null;
+                _kitGlow.flipX = _kit != null && _kit.flipX;
+                _kitGlow.color = col;
+                _kitGlow.sortingLayerID = _sr.sortingLayerID;
+                _kitGlow.sortingOrder = bodyOrder - 2;
+            }
         }
 
         void PlaceFace(BirdMood.Pose mood, bool on)
