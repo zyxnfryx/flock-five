@@ -81,6 +81,8 @@ namespace FlockFive
         readonly float[] _pokerPoseRoll = new float[BirdPoker.HandSize];
         readonly Rect[] _pokerHoldFrom = new Rect[BirdPoker.HandSize];
         readonly Rect[] _pokerDrawFrom = new Rect[BirdPoker.HandSize];
+        // Rect each card was actually painted at (no hit-slop, no kick) — the draw flight starts here.
+        readonly Rect[] _pokerDrawnR = new Rect[BirdPoker.HandSize];
         int _pokerHover = -1;
         bool _pokerKeepHint;
         bool _pokerShowPay;
@@ -5276,7 +5278,8 @@ namespace FlockFive
             _pokerPluckN = 0;
             for (int i = 0; i < BirdPoker.HandSize; i++)
             {
-                _pokerDrawFrom[i] = _pokerPoseR[i];
+                // _pokerPoseR is the enlarged tap rect for fan cards; starting there made plucked cards jump.
+                _pokerDrawFrom[i] = _pokerDrawnR[i].width > 2f ? _pokerDrawnR[i] : _pokerPoseR[i];
                 if (!BirdPoker.Hold[i]) continue;
                 _pokerPluckIx[_pokerPluckN] = i;
                 _pokerPluckN++;
@@ -5390,7 +5393,8 @@ namespace FlockFive
                 for (int i = 0; i < BirdPoker.HandSize; i++)
                 {
                     if (!_pokerRedraw[i]) continue;
-                    float at = _pokerReplaceEnd + di * 0.15f;
+                    // Slap when the inbound card reaches its seat, not when it leaves the dealer.
+                    float at = _pokerReplaceEnd + di * DrawDealStagger + DrawInboundT * DrawInboundHitU;
                     if (prev < at && now >= at) Sfx.CardSlap();
                     di++;
                 }
@@ -5616,9 +5620,12 @@ namespace FlockFive
                 {
                     float at = _pokerPluckEnd + discSlot * 0.12f;
                     float u = Mathf.Clamp01((_pokerMotionT - at) / 0.72f);
-                    u = u * u * (3f - 2f * u);
+                    // Toss: quick ease-out to the seat on a small upward arc, hang, then burst.
+                    float pu = 1f - Mathf.Pow(1f - Mathf.Clamp01(u / 0.66f), 3f);
                     var dest = classic;
-                    r = LerpRect(from, dest, u);
+                    r = LerpRect(from, dest, pu);
+                    r.y -= Mathf.Sin(pu * Mathf.PI) * classic.height * 0.30f;
+                    u = u * u * (3f - 2f * u);
                     float pop = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - 0.62f) / 0.38f));
                     float sc = Mathf.Lerp(1f, 0.08f, pop);
                     float nw = r.width * Mathf.Max(0.02f, sc);
@@ -5632,15 +5639,30 @@ namespace FlockFive
                 }
                 else
                 {
-                    float at = _pokerReplaceEnd + discSlot * 0.15f;
-                    float u = Mathf.Clamp01((_pokerMotionT - at) / 0.22f);
-                    u = u * u * (3f - 2f * u);
-                    var inbound = new Rect(-classic.width * 1.2f, classic.y - 20f, classic.width, classic.height);
-                    r = LerpRect(inbound, classic, u);
-                    yaw = (1f - u) * 180f;
-                    showFace = u >= 0.45f;
-                    roll = 0f;
-                    face = u < 0.45f ? default : BirdPoker.Hand[i];
+                    float at = _pokerReplaceEnd + discSlot * DrawDealStagger;
+                    float u = Mathf.Clamp01((_pokerMotionT - at) / DrawInboundT);
+                    // Thrown in from the dealer (low-left, a little high), flips face-up mid-air,
+                    // overshoots the seat a touch and settles; lands at u = DrawInboundHitU.
+                    float hu = Mathf.Clamp01(u / DrawInboundHitU);
+                    float px = u < DrawInboundHitU ? 1f - (1f - hu) * (1f - hu) * (1f - hu)
+                        : 1f + 0.05f * Mathf.Sin((u - DrawInboundHitU) / (1f - DrawInboundHitU) * Mathf.PI);
+                    float py = 1f - (1f - hu) * (1f - hu);
+                    var inbound = new Rect(-classic.width * 1.2f, classic.y - classic.height * 0.45f, classic.width, classic.height);
+                    r = new Rect(Mathf.LerpUnclamped(inbound.x, classic.x, px), Mathf.Lerp(inbound.y, classic.y, py), classic.width, classic.height);
+                    // Landing squash, bottom-anchored, then settle.
+                    if (u > DrawInboundHitU)
+                    {
+                        float q = (u - DrawInboundHitU) / (1f - DrawInboundHitU);
+                        float sq = 0.07f * Mathf.Sin(q * Mathf.PI) * (1f - q * 0.4f);
+                        float nw = r.width * (1f + sq);
+                        float nh = r.height * (1f - sq);
+                        r = new Rect(r.center.x - nw * 0.5f, r.yMax - nh, nw, nh);
+                    }
+                    float fu = Mathf.Clamp01(u / (DrawInboundHitU * 0.9f));
+                    yaw = (1f - fu * fu * (3f - 2f * fu)) * 180f;
+                    showFace = yaw < 90f;
+                    roll = (1f - hu) * -14f;
+                    face = showFace ? BirdPoker.Hand[i] : default;
                 }
             }
             else if (_pokerFan && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt)
@@ -6430,33 +6452,59 @@ namespace FlockFive
             }
         }
 
+        // Redeal timing shared by the inbound cards, the slap SFX and the dealer hand.
+        const float DrawDealStagger = 0.15f;
+        const float DrawInboundT = 0.26f;
+        const float DrawInboundHitU = 0.62f;
+
+        // Dealer hand x-slot at time t: glides to the next discarded seat just before that card
+        // is thrown (it used to teleport), with a small flick up on each throw.
+        float PokerDealHandSlot(float t, out float flick)
+        {
+            flick = 0f;
+            float slotX = -1f;
+            int slot = 0;
+            int prevI = -1;
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+            {
+                if (!_pokerRedraw[i]) continue;
+                float at = _pokerReplaceEnd + slot * DrawDealStagger;
+                if (prevI < 0) slotX = i;
+                else
+                {
+                    const float glide = 0.10f;
+                    float g = Mathf.Clamp01((t - (at - glide)) / glide);
+                    slotX = Mathf.Lerp(slotX, i, g * g * (3f - 2f * g));
+                }
+                float f = Mathf.Clamp01((t - at) / 0.14f);
+                if (f > 0f && f < 1f) flick = Mathf.Sin(f * Mathf.PI);
+                prevI = i;
+                slot++;
+            }
+            return slotX;
+        }
+
         void DrawPokerDealHand(Rect row, float cardW, float gap, float s)
         {
             if (_pokerMotion != PokerMotion.Draw) return;
             if (_pokerMotionT < _pokerReplaceEnd || _pokerMotionT > _pokerRowEnd) return;
             var spr = SpriteCatalog.HandPluck;
             if (spr == null || spr.texture == null) return;
-            int slot = 0;
-            int cur = 0;
-            for (int i = 0; i < BirdPoker.HandSize; i++)
-            {
-                if (!_pokerRedraw[i]) continue;
-                float at = _pokerReplaceEnd + slot * 0.15f;
-                if (_pokerMotionT >= at) cur = i;
-                slot++;
-            }
             int n = 0;
             for (int i = 0; i < BirdPoker.HandSize; i++)
                 if (_pokerRedraw[i]) n++;
             if (n == 0) return;
-            float last = _pokerReplaceEnd + (n - 1) * 0.15f + 0.22f;
+            float slotX = PokerDealHandSlot(_pokerMotionT, out float flick);
+            float last = _pokerReplaceEnd + (n - 1) * DrawDealStagger + DrawInboundT;
             float enter = Mathf.Clamp01((_pokerMotionT - _pokerReplaceEnd) / 0.10f);
             float exit = 1f - Mathf.Clamp01((_pokerMotionT - last) / 0.16f);
             float a = enter * exit;
             if (a < 0.02f) return;
-            var seat = PokerSeat(row, cardW, gap, cur);
+            var seat = new Rect(row.x + slotX * (cardW + gap), row.y, cardW, row.height);
             float w = seat.height * 2.2f;
-            var hr = new Rect(seat.x - w * 0.72f + _pokerKick.x, seat.y + seat.height * 0.15f + _pokerKick.y, w, w);
+            // Slides in from below on entry and drops away on exit instead of only fading.
+            float dy = (1f - enter) * seat.height * 0.35f + (1f - exit) * seat.height * 0.45f - flick * seat.height * 0.06f;
+            var hr = new Rect(seat.x - w * 0.72f + _pokerKick.x, seat.y + seat.height * 0.15f + dy + _pokerKick.y, w, w);
             GUI.color = new Color(1f, 1f, 1f, a);
             DrawSprite(hr, spr, true);
             GUI.color = Color.white;
@@ -6470,6 +6518,7 @@ namespace FlockFive
             bool showFace, sparkle;
             var face = BirdPoker.Hand[i];
             PokerPose(i, seat, rowBox, out r, out yaw, out roll, out showFace, out face, out sparkle);
+            _pokerDrawnR[i] = new Rect(r.x - _pokerKick.x, r.y - _pokerKick.y, r.width, r.height);
             bool fanCard = dealt && _pokerFan && !PokerCardLifted(i) && _pokerHoldSlide[i] < 0.40f;
             _pokerPoseRoll[i] = roll;
             if (fanCard)
