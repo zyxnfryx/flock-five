@@ -2205,11 +2205,11 @@ namespace FlockFive
             if (tr == null) yield break;
             tr.position = dest;
             tr.localScale = scale;
-            if (idle != null)
-            {
-                idle.Frozen = false;
-                idle.Flapping = false;
-            }
+            // Stay Frozen: this is a temp fight sprite still parented to the
+            // garden root. Unfreezing let BirdIdle write its old seat-local
+            // RestLocal in root space, snapping the row to mid-screen until
+            // PerchOnRemain destroys it and SyncAll shows the real seat bird.
+            if (idle != null) idle.Flapping = false;
         }
 
         Vector3[] ScatterDests(int need)
