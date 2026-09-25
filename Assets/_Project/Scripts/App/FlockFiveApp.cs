@@ -245,6 +245,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-hand-qa"); } catch { }
                 StartCoroutine(ShotHandQa());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-poker-feel"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-poker-feel"); } catch { }
+                StartCoroutine(ShotPokerFeel());
+            }
 #endif
         }
 
@@ -1100,6 +1105,223 @@ namespace FlockFive
             yield return new WaitForSecondsRealtime(0.40f);
             yield return SnapShot(dir + "/poker-faces-pay.png");
         }
+
+#if UNITY_EDITOR
+        // Editor-only feel review: hand sway extremes, discard bursts on slots 2+4, win fanfare
+        // frames and a timed JPG frame run for a clip. Triggered by /tmp/flock-five-poker-feel.
+        const string FeelDir = "/tmp/paradice/feel";
+        const float FeelSwayA = 39.666f; // turn ≈ +1.30°
+        const float FeelSwayB = 28.214f; // turn ≈ −1.28°
+        bool _feelRec;
+
+        IEnumerator ShotPokerFeel()
+        {
+            EditorShotLive = true;
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+            Time.timeScale = 1f;
+            System.IO.Directory.CreateDirectory(FeelDir);
+            System.IO.Directory.CreateDirectory(FeelDir + "/frames");
+            Debug.Log("Flock Five: ShotPokerFeel start");
+            SpriteCatalog.DropPokerArt();
+            _home = HomeFace.Poker;
+            _splash = true;
+            _pokerPayOpen = false;
+            _pokerPayAnim = 0f;
+            _pokerFan = false;
+            _pokerMotion = PokerMotion.None;
+            _pokerKeepHint = false;
+            _pokerHover = -1;
+            BirdPoker.Boot();
+            Purse.Boot();
+            int keepCoins = Purse.Coins;
+            if (Purse.Coins < 5000) Purse.Credit(5000 - Purse.Coins);
+            BirdPoker.BeginVisit();
+            while (BirdPoker.CanNudge(1)) BirdPoker.NudgeBet(1);
+            for (int i = 0; i < 18; i++) yield return null;
+            yield return SnapShot(FeelDir + "/feel-idle-deal.png");
+
+            // Pass 1: stills of the held fan at both sway extremes.
+            FeelDeal();
+            yield return new WaitForSecondsRealtime(1.85f);
+            yield return FeelSwayShot("feel-fan");
+            ApplyPokerHold(0);
+            ApplyPokerHold(2);
+            yield return new WaitForSecondsRealtime(0.55f);
+            yield return FeelSwayShot("feel-fan-hold");
+            ApplyPokerHold(0);
+            ApplyPokerHold(2);
+            yield return new WaitForSecondsRealtime(0.55f);
+
+            // Pass 2: timed frame run — live sway, keep 0/1/3, draw (discards 2+4), full win fanfare.
+            StartCoroutine(FeelRecord());
+            yield return new WaitForSecondsRealtime(4.5f);
+            ApplyPokerHold(0);
+            yield return new WaitForSecondsRealtime(0.35f);
+            ApplyPokerHold(1);
+            yield return new WaitForSecondsRealtime(0.35f);
+            ApplyPokerHold(3);
+            yield return new WaitForSecondsRealtime(1.2f);
+            FeelDraw();
+            while (PokerMotionBusy() || PokerWinFlying()) yield return null;
+            yield return new WaitForSecondsRealtime(1.2f);
+            _feelRec = false;
+            yield return new WaitForSecondsRealtime(0.3f);
+
+            // Pass 3: crisp stills — discard mid-confetti, fanfare key frames, rested result + bet bar.
+            BirdPoker.Collect();
+            FeelDeal();
+            yield return new WaitForSecondsRealtime(1.85f);
+            ApplyPokerHold(0);
+            ApplyPokerHold(1);
+            ApplyPokerHold(3);
+            yield return new WaitForSecondsRealtime(0.6f);
+            FeelDraw();
+            yield return FeelAtMotion(0.70f, "feel-discard-a.png");
+            yield return FeelAtMotion(0.80f, "feel-discard-b.png");
+            yield return FeelAtMotion(0.90f, "feel-discard-c.png");
+            while (PokerMotionBusy()) yield return null;
+            yield return FeelAtWin(0.17f, "feel-win-punch.png");
+            yield return FeelAtWin(0.70f, "feel-win-hold.png");
+            yield return FeelAtWin(WinWhooshAt + WinWhooshT * 0.35f, "feel-win-whoosh-a.png");
+            yield return FeelAtWin(WinWhooshAt + WinWhooshT * 0.55f, "feel-win-whoosh-b.png");
+            yield return FeelAtWin(WinLandAt + WinLandT * 0.45f, "feel-win-land.png");
+            _pokerWinT = WinDoneAt;
+            yield return new WaitForSecondsRealtime(0.8f);
+            yield return SnapShot(FeelDir + "/feel-result-betbar.png");
+            string bet = "bet " + BirdPoker.Bet + " phase " + BirdPoker.PhaseNow
+                + " open " + BirdPoker.BetOpen + " plus " + BirdPoker.CanNudge(1) + " minus " + BirdPoker.CanNudge(-1)
+                + " win " + BirdPoker.LastWin + " rank " + BirdPoker.RankLabel(BirdPoker.LastRank);
+            BirdPoker.NudgeBet(-1);
+            yield return SnapShot(FeelDir + "/feel-result-bet-nudged.png");
+            bet += " | after minus bet " + BirdPoker.Bet + " coins " + Purse.Coins;
+            System.IO.File.WriteAllText(FeelDir + "/feel-state.txt", bet + "\n");
+
+            // Pass 4: stepped frame strips — the whole redeal, then the whoosh into the banner.
+            System.IO.Directory.CreateDirectory(FeelDir + "/strip-redeal");
+            System.IO.Directory.CreateDirectory(FeelDir + "/strip-whoosh");
+            var stripLog = new System.Text.StringBuilder();
+            BirdPoker.Collect();
+            FeelDeal();
+            yield return new WaitForSecondsRealtime(1.85f);
+            ApplyPokerHold(0);
+            ApplyPokerHold(1);
+            ApplyPokerHold(3);
+            yield return new WaitForSecondsRealtime(0.6f);
+            FeelDraw();
+            int frame = 0;
+            for (float mt = 0f; mt < _pokerRowEnd; mt += 1f / 30f)
+            {
+                yield return null;
+                _pokerMotionT = mt;
+                string file = "strip-redeal/r" + frame.ToString("D3") + ".jpg";
+                yield return FeelGrab(file);
+                stripLog.Append(file).Append(" motionT ").Append(_pokerMotionT.ToString("F3")).Append('\n');
+                frame++;
+            }
+            while (PokerMotionBusy()) yield return null;
+            frame = 0;
+            for (float wt = WinWhooshAt - 0.10f; wt < WinDoneAt + 0.10f; wt += 1f / 60f)
+            {
+                yield return null;
+                _pokerWinT = wt;
+                string file = "strip-whoosh/w" + frame.ToString("D3") + ".jpg";
+                yield return FeelGrab(file);
+                stripLog.Append(file).Append(" winT ").Append(_pokerWinT.ToString("F3")).Append('\n');
+                frame++;
+            }
+            System.IO.File.WriteAllText(FeelDir + "/strip-times.txt", stripLog.ToString());
+
+            BirdPoker.ResetRound();
+            _pokerShowPay = false;
+            _pokerWinT = -1f;
+            if (Purse.Coins > keepCoins) Purse.TrySpend(Purse.Coins - keepCoins);
+            else if (Purse.Coins < keepCoins) Purse.Credit(keepCoins - Purse.Coins);
+            System.IO.File.WriteAllText(FeelDir + "/feel-done", "1");
+            EditorShotLive = false;
+            Debug.Log("Flock Five: ShotPokerFeel done");
+        }
+
+        void FeelDeal()
+        {
+            BirdPoker.ResetRound();
+            if (!BirdPoker.Deal()) return;
+            BirdPoker.Hand[0] = BirdPoker.Card.Of(BirdColor.Ruby, BirdSex.Neutral);
+            BirdPoker.Hand[1] = BirdPoker.Card.MakeWild();
+            BirdPoker.Hand[2] = BirdPoker.Card.Of(BirdColor.Teal, BirdSex.Female);
+            BirdPoker.Hand[3] = BirdPoker.Card.MakeWild();
+            BirdPoker.Hand[4] = BirdPoker.Card.Of(BirdColor.Gold, BirdSex.Male);
+            BeginPokerDeal();
+        }
+
+        // Ruby + two wilds kept: the draw always pays (trips or better) at the real bet.
+        void FeelDraw()
+        {
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+            {
+                _pokerRedraw[i] = !BirdPoker.Hold[i];
+                _pokerPrev[i] = BirdPoker.Hand[i];
+            }
+            BirdPoker.Draw();
+            BeginPokerDraw();
+            _pokerPendingStamp = false;
+            _pokerResultCue = BirdPoker.LastWin > 0 ? 2 : 1;
+        }
+
+        IEnumerator FeelSwayShot(string name)
+        {
+            yield return null;
+            _pokerSwayT = FeelSwayA;
+            yield return SnapShot(FeelDir + "/" + name + "-swayA.png");
+            yield return null;
+            _pokerSwayT = FeelSwayB;
+            yield return SnapShot(FeelDir + "/" + name + "-swayB.png");
+        }
+
+        IEnumerator FeelAtMotion(float at, string file)
+        {
+            while (_pokerMotion == PokerMotion.Draw && _pokerMotionT < at) yield return null;
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(FeelDir + "/" + file);
+            System.IO.File.AppendAllText(FeelDir + "/feel-state.log", file + " motionT " + _pokerMotionT + "\n");
+        }
+
+        IEnumerator FeelAtWin(float at, string file)
+        {
+            yield return null;
+            _pokerWinT = at;
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(FeelDir + "/" + file);
+            System.IO.File.AppendAllText(FeelDir + "/feel-state.log", file + " winT " + _pokerWinT + "\n");
+            yield return new WaitForSecondsRealtime(0.25f);
+        }
+
+        IEnumerator FeelGrab(string file)
+        {
+            yield return new WaitForEndOfFrame();
+            var tex = ScreenCapture.CaptureScreenshotAsTexture();
+            System.IO.File.WriteAllBytes(FeelDir + "/" + file, tex.EncodeToJPG(88));
+            Destroy(tex);
+        }
+
+        IEnumerator FeelRecord()
+        {
+            _feelRec = true;
+            var times = new System.Text.StringBuilder();
+            float t0 = Time.unscaledTime;
+            int n = 0;
+            while (_feelRec)
+            {
+                yield return new WaitForEndOfFrame();
+                var tex = ScreenCapture.CaptureScreenshotAsTexture();
+                System.IO.File.WriteAllBytes(FeelDir + "/frames/f" + n.ToString("D4") + ".jpg", tex.EncodeToJPG(88));
+                Destroy(tex);
+                times.Append(n).Append(' ').Append((Time.unscaledTime - t0).ToString("F4")).Append('\n');
+                n++;
+            }
+            System.IO.File.WriteAllText(FeelDir + "/frames/times.txt", times.ToString());
+        }
+#endif
 
         IEnumerator ShotHandQa()
         {
@@ -2696,6 +2918,11 @@ namespace FlockFive
             {
                 try { System.IO.File.Delete("/tmp/flock-five-hand-qa"); } catch { }
                 StartCoroutine(ShotHandQa());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-poker-feel"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-poker-feel"); } catch { }
+                StartCoroutine(ShotPokerFeel());
             }
 #endif
             SnapHiveToHud();
