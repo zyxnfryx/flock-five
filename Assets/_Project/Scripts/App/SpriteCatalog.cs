@@ -4,7 +4,7 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _handPalm, _handPinky, _handRing, _handMiddle, _handIndex, _handThumb, _wildBanner, _dash, _chain, _padlock, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk, _pokerFaceWild;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _handPalm, _handPinky, _handRing, _handMiddle, _handIndex, _handThumb,  _dash, _chain, _padlock, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk, _pokerFaceWild;
         static Sprite[] _pokerFaces;
         static Sprite[] _flames;
         static bool _sparrowPlaceholder;
@@ -17,6 +17,12 @@ namespace FlockFive
         static Sprite[] _kitRest;
         static Sprite[] _kitUp;
         static Sprite[] _kitMid;
+        static Sprite[] _kitFlap3;
+        static Sprite[] _kitFlap4;
+        static Sprite[] _kitFlap5;
+        static Sprite[] _flap3;
+        static Sprite[] _flap4;
+        static Sprite[] _flap5;
         static Sprite[] _feeders;
 
         public static Sprite GardenBg => Load(ref _bg, "Sprites/bg_garden", 96f);
@@ -96,6 +102,16 @@ namespace FlockFive
         public static Sprite Bow => Load(ref _bow, "Sprites/fx_bow", 200f);
         public static Sprite Bowtie => Load(ref _bowtie, "Sprites/fx_bowtie", 200f);
         public static Sprite Crown => Load(ref _crown, "Sprites/fx_crown", 200f);
+        static readonly Sprite[] _crownByColor = new Sprite[5];
+        static readonly string[] CrownNames = { "ruby", "gold", "teal", "violet", "peach" };
+        /// <summary>Crown whose jewels match the wearer's plumage; falls back to fx_crown.</summary>
+        public static Sprite CrownFor(BirdColor c)
+        {
+            int i = (int)c;
+            if (i < 0 || i >= _crownByColor.Length) return Crown;
+            if (_crownByColor[i] == null) _crownByColor[i] = TryLoad("Sprites/fx_crown_" + CrownNames[i], 200f);
+            return _crownByColor[i] != null ? _crownByColor[i] : Crown;
+        }
         public static Sprite Hive => Load(ref _hive, "Sprites/fx_hive", 200f);
         public static Sprite Poker => Load(ref _poker, "Sprites/fx_poker", 200f);
         public static Sprite CardBack => Load(ref _cardBack, "Sprites/fx_card_back", 200f);
@@ -112,7 +128,7 @@ namespace FlockFive
             _handIndex = null;
             _handThumb = null;
             _stampTool = null;
-            _wildBanner = null;
+            _pokerWildFoil = null;
             _padlock = null;
             _chain = null;
             _pokerFaceWild = null;
@@ -217,13 +233,14 @@ namespace FlockFive
                 return _handThumb;
             }
         }
-        public static Sprite WildBanner
+        static Sprite[] _pokerWildFoil;
+        // Holo foil overlays for the wild face (hue-shifted thirds, crossfaded at runtime).
+        public static Sprite PokerWildFoil(int i)
         {
-            get
-            {
-                if (_wildBanner == null) _wildBanner = TryLoad("Sprites/fx_wild_banner", 200f);
-                return _wildBanner;
-            }
+            if (i < 0 || i > 2) return null;
+            if (_pokerWildFoil == null) _pokerWildFoil = new Sprite[3];
+            if (_pokerWildFoil[i] == null) _pokerWildFoil[i] = TryLoad("Sprites/fx_poker_face_wild_foil" + i, 100f);
+            return _pokerWildFoil[i];
         }
         public static Sprite Dash
         {
@@ -474,6 +491,12 @@ namespace FlockFive
             _kitRest = null;
             _kitUp = null;
             _kitMid = null;
+            _kitFlap3 = null;
+            _kitFlap4 = null;
+            _kitFlap5 = null;
+            _flap3 = null;
+            _flap4 = null;
+            _flap5 = null;
             _sparrow = null;
             _sparrowFlap1 = null;
             _sparrowFlap2 = null;
@@ -501,16 +524,49 @@ namespace FlockFive
             if (!flap) return rest;
             string tag = sex == BirdSex.Female ? "_f" : sex == BirdSex.Male ? "_m" : "";
             int ix = KitIx(c, sex);
-            var up = tag.Length == 0
-                ? Slot(ref _flap1, (int)c, "Sprites/bird_" + Name(c) + "_1", 280f)
-                : SlotWide(ref _kitUp, ix, "Sprites/bird_" + Name(c) + tag + "_1", 280f);
-            var mid = tag.Length == 0
-                ? Slot(ref _flap2, (int)c, "Sprites/bird_" + Name(c) + "_2", 280f)
-                : SlotWide(ref _kitMid, ix, "Sprites/bird_" + Name(c) + tag + "_2", 280f);
+            Sprite F(int n, ref Sprite[] kitArr, ref Sprite[] plainArr, bool required)
+            {
+                string path = tag.Length == 0
+                    ? "Sprites/bird_" + Name(c) + "_" + n
+                    : "Sprites/bird_" + Name(c) + tag + "_" + n;
+                if (tag.Length == 0)
+                {
+                    if (!required)
+                    {
+                        // Optional extras must not fall back to placeholder sprites.
+                        if (plainArr == null) plainArr = new Sprite[Palette.Max];
+                        int i = (int)c;
+                        if (plainArr[i] == null) plainArr[i] = TryLoad(path, 280f);
+                        return plainArr[i];
+                    }
+                    return Slot(ref plainArr, (int)c, path, 280f);
+                }
+                return SlotWide(ref kitArr, ix, path, 280f);
+            }
+            var f1 = F(1, ref _kitUp, ref _flap1, true);
+            var f2 = F(2, ref _kitMid, ref _flap2, true);
+            var f3 = F(3, ref _kitFlap3, ref _flap3, false);
+            var f4 = F(4, ref _kitFlap4, ref _flap4, false);
+            var f5 = F(5, ref _kitFlap5, ref _flap5, false);
+            // 6-frame cycle when extras exist; else classic 3-pose (rest/up/mid)
+            bool six = f3 != null || f4 != null || f5 != null;
+            if (six)
+            {
+                int k6 = Mathf.FloorToInt(Mathf.Abs(t) * 18f) % 6;
+                switch (k6)
+                {
+                    case 0: return rest;
+                    case 1: return f1 != null ? f1 : rest;
+                    case 2: return f3 != null ? f3 : (f1 != null ? f1 : rest);
+                    case 3: return f2 != null ? f2 : (f1 != null ? f1 : rest);
+                    case 4: return f4 != null ? f4 : (f2 != null ? f2 : rest);
+                    default: return f5 != null ? f5 : (f1 != null ? f1 : rest);
+                }
+            }
             int k = Mathf.FloorToInt(Mathf.Abs(t) * 16f) % 4;
             if (k == 0) return rest;
-            if (k == 2) return mid != null ? mid : up;
-            return up != null ? up : rest;
+            if (k == 2) return f2 != null ? f2 : f1;
+            return f1 != null ? f1 : rest;
         }
 
         public static Sprite BirdFrame(BirdColor c, float t) => BirdFrame(c, t, false);

@@ -13,6 +13,24 @@ namespace FlockFive
         public const float GiftWoodScaleX = 0.46f;
         public const float WoodHalf = 1280f / 140f * WoodScaleX * 0.5f;
 
+        // Exact perch spots (V24.3). Birds sit on bare-wood pads painted into branch.png /
+        // branch_gift.png, and the wood slopes down toward the tip, so each spot has its own
+        // height. X is in branch-sprite pixels (1280 wide, left-branch orientation, right
+        // branches mirror). Seat Y is local, fitted so the reference toe row (sprite row 831)
+        // touches the bark under both feet. Checked by Playtest/perch-contact/check_perch_contact.py:
+        // re-run it after any branch art, bird foot or BirdScale change.
+        public const float SeatToeRowPx = 831f;
+        public static readonly float[] SeatXPx = { 192f, 441.6f, 691.2f, 940.8f, 1130f };
+        public static readonly float[] SeatYMain = { 0.3419f, 0.3811f, 0.2740f, 0.0811f, 0.1204f };
+        public static readonly float[] SeatYGift = { 0.3439f, 0.3884f, 0.2733f, 0.0764f, 0.1117f };
+
+        public static Vector2 SeatLocal(int s, bool gift, bool fromRight)
+        {
+            float wsx = gift ? GiftWoodScaleX : WoodScaleX;
+            float x = (SeatXPx[s] - 640f) * wsx / 140f;
+            return new Vector2(fromRight ? -x : x, (gift ? SeatYGift : SeatYMain)[s]);
+        }
+
         public static float WoodHalfOf(float woodScaleX) => 1280f / 140f * woodScaleX * 0.5f;
 
         public static float EdgeX(Camera cam, float packScale) => EdgeX(cam, packScale, WoodScaleX);
@@ -200,19 +218,18 @@ namespace FlockFive
             // Outer bird sits at the bark / screen edge without the sprite spilling.
             // Inner uses the rest of the limb so five pads have air; a 4-stack
             // still leaves the inner tip. Bees may fly off-screen.
-            float outer = fromRight ? half * 0.70f : -half * 0.70f;
-            float inner = fromRight ? -half * 0.86f : half * 0.86f;
+            // Exact per-spot seats: see SeatXPx / SeatYMain / SeatYGift.
+            bool gift = Mathf.Approximately(woodScaleX, GiftWoodScaleX);
             for (int s = 0; s < BranchState.Cap; s++)
             {
-                float u = BranchState.Cap <= 1 ? 0.5f : s / (float)(BranchState.Cap - 1);
-                float x = Mathf.Lerp(outer, inner, u);
+                var p = SeatLocal(s, gift, fromRight);
                 var seat = new GameObject("Seat" + s).transform;
                 seat.SetParent(go.transform, false);
-                seat.localPosition = new Vector3(x, 0.38f, 0f);
+                seat.localPosition = new Vector3(p.x, p.y, 0f);
                 view.Seats[s] = seat;
 
                 var bird = Sprite("Bird" + s, SpriteCatalog.Bird(BirdColor.Ruby), go.transform.position, 1f, 6, go.transform);
-                bird.transform.localPosition = new Vector3(x, 0.38f + BranchView.RestLift, 0f);
+                bird.transform.localPosition = new Vector3(p.x, p.y + BranchView.RestLift, 0f);
                 bird.transform.localScale = BranchView.BirdScale;
                 var idle = bird.AddComponent<BirdIdle>();
                 idle.RestScale = BranchView.BirdScale;

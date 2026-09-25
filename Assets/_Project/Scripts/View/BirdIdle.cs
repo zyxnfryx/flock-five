@@ -2,6 +2,10 @@ using UnityEngine;
 
 namespace FlockFive
 {
+    /// <summary>
+    /// Idle bird. Female kit bow / male crown are sibling SpriteRenderers so draw order is
+    /// kit (behind) → body/flaps → face — bow tucked behind the head silhouette, never baked into PNGs.
+    /// </summary>
     public sealed class BirdIdle : MonoBehaviour
     {
         public Vector3 RestLocal;
@@ -49,7 +53,15 @@ namespace FlockFive
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
             if (_sr != null) _sr.flipX = FaceLeft;
             EnsureFace();
-            if (_kit != null) _kit.enabled = false;
+            // Neutral = plain bird (finale). Female/Male get kit bow/crown.
+            if (Sex == BirdSex.Neutral)
+            {
+                if (_kit != null) _kit.enabled = false;
+            }
+            else
+            {
+                EnsureKit();
+            }
         }
 
         public void Flutter(float seconds)
@@ -95,8 +107,11 @@ namespace FlockFive
                     _sr.sortingOrder = Shrouded ? 7 : (Lift > 0.05f ? 40 : 12);
                 }
             }
+            // Draw order (back→front): kit bow → body/flaps → face
+            bool kitOn = show && !Shrouded && Sex != BirdSex.Neutral;
+            if (kitOn) EnsureKit();
+            PlaceKit(mood, kitOn);
             PlaceFace(mood, show && !Shrouded);
-            if (_kit != null) _kit.enabled = false;
             if (fly && !Frozen) BeatWings();
             else if (show && !Sleeping && !Shrouded && !Frozen) MaybeRuffle();
 
@@ -150,7 +165,8 @@ namespace FlockFive
             _face.transform.localPosition = new Vector3(x, y, 0f);
             _face.transform.localRotation = Quaternion.identity;
             _face.flipX = FaceLeft;
-            _face.sortingOrder = _sr != null ? _sr.sortingOrder + 1 : 13;
+            // Face always in front of kit bow
+            _face.sortingOrder = _sr != null ? _sr.sortingOrder + 2 : 14;
             float fs = mood.FaceScale * (blink ? 1f : 1f);
             _face.transform.localScale = new Vector3(fs, blink ? fs * 0.18f : fs, 1f);
             if (!Frozen) _face.color = UnityEngine.Color.white;
@@ -163,17 +179,66 @@ namespace FlockFive
                 if (_kit != null) _kit.enabled = false;
                 return;
             }
-            var spr = Sex == BirdSex.Female ? SpriteCatalog.Bow : SpriteCatalog.Crown;
+            var spr = Sex == BirdSex.Female ? SpriteCatalog.Bow : SpriteCatalog.CrownFor(Color);
             if (_kit != null)
             {
                 _kit.sprite = spr;
                 _kit.enabled = true;
                 return;
             }
-            var go = WorldBuilder.Sprite("Kit", spr, transform.position, 0.3f, 14, transform);
+            var go = WorldBuilder.Sprite("Kit", spr, transform.position, 0.3f, 13, transform);
             go.transform.localRotation = Quaternion.identity;
             _kit = go.GetComponent<SpriteRenderer>();
-            _kit.sortingOrder = 14;
+            _kit.sortingOrder = 13;
+        }
+
+        // Per-frame female bow locals (facing-right). Rows = BirdColor enum order
+        // Ruby,Gold,Teal,Violet,Peach. Cols = rest,_1,_2,_3,_4,_5. Measured so
+        // bow loops embed crown (behind-head). Flip X when FaceLeft.
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                static readonly float[,] BowLocalX = {
+                                                    { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Ruby
+                                                    { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Gold
+                                                    { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Teal
+                                                    { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Violet
+                                                    { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Peach
+                                                };
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                static readonly float[,] BowLocalY = {
+                                                    { 1.055f, 1.055f, 1.055f, 1.055f, 1.055f, 1.055f }, // Ruby
+                                                    { 1.055f, 1.055f, 1.055f, 1.055f, 1.055f, 1.055f }, // Gold
+                                                    { 1.055f, 1.055f, 1.055f, 1.055f, 1.055f, 1.055f }, // Teal
+                                                    { 1.055f, 1.055f, 1.055f, 1.055f, 1.055f, 1.055f }, // Violet
+                                                    { 1.055f, 1.055f, 1.055f, 1.055f, 1.055f, 1.055f }, // Peach
+                                                };
+
+        // Per-frame male crown locals (facing-right), same row/col order as the bow.
+// All five share the teal body: crown rests ON the head (drawn in front), tipped 26deg so the band
+        // bottom follows the dome; every band-bottom point >=1px into feathers (no back gap).
+        static readonly float[,] CrownLocalX = {
+            { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Ruby
+            { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Gold
+            { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Teal
+            { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Violet
+            { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Peach
+        };
+        static readonly float[,] CrownLocalY = {
+            { 1.374f, 1.374f, 1.374f, 1.374f, 1.374f, 1.374f }, // Ruby
+            { 1.374f, 1.374f, 1.374f, 1.374f, 1.374f, 1.374f }, // Gold
+            { 1.374f, 1.374f, 1.374f, 1.374f, 1.374f, 1.374f }, // Teal
+            { 1.374f, 1.374f, 1.374f, 1.374f, 1.374f, 1.374f }, // Violet
+            { 1.374f, 1.374f, 1.374f, 1.374f, 1.374f, 1.374f }, // Peach
+        };
+
+        static int KitFrameIndex(Sprite spr)
+        {
+            if (spr == null || string.IsNullOrEmpty(spr.name)) return 0;
+            var n = spr.name;
+            // bird_teal_f_5 / bird_teal_5 / bird_teal_f
+            for (int i = 5; i >= 1; i--)
+            {
+                if (n.EndsWith("_" + i) || n.Contains("_f_" + i) || n.Contains("_m_" + i))
+                    return i;
+            }
+            return 0;
         }
 
         void PlaceKit(BirdMood.Pose mood, bool on)
@@ -187,13 +252,44 @@ namespace FlockFive
             _kit.enabled = on;
             if (!on) return;
             bool girl = Sex == BirdSex.Female;
-            float x = FaceLeft ? -mood.HeadX : mood.HeadX;
-            float y = girl ? mood.HeadY + 0.22f : mood.HeadY + 0.24f;
-            _kit.transform.localPosition = new Vector3(x * 0.12f, y, 0f);
-            _kit.transform.localRotation = Quaternion.identity;
+            float headX = FaceLeft ? -mood.HeadX : mood.HeadX;
+            float bowX;
+            float bowY;
+            float ks;
+            float tiltZ;
+            if (girl)
+            {
+                // Per-frame crown embed (not one global Y) — head redraws in-atlas.
+                int fi = KitFrameIndex(_sr != null ? _sr.sprite : null);
+                int ci = (int)Color;
+                if (ci < 0 || ci >= BowLocalX.GetLength(0)) ci = 0;
+                if (fi < 0 || fi > 5) fi = 0;
+                float lx = BowLocalX[ci, fi];
+                float ly = BowLocalY[ci, fi];
+                bowX = FaceLeft ? -lx : lx;
+                bowY = ly;
+                ks = 0.42f;
+                tiltZ = FaceLeft ? -12f : 12f;
+            }
+            else
+            {
+                // Male frames share the female body art; crown seated per color.
+                int fi = KitFrameIndex(_sr != null ? _sr.sprite : null);
+                int ci = (int)Color;
+                if (ci < 0 || ci >= CrownLocalX.GetLength(0)) ci = 0;
+                if (fi < 0 || fi > 5) fi = 0;
+                float lx = CrownLocalX[ci, fi];
+                bowX = FaceLeft ? -lx : lx;
+                bowY = CrownLocalY[ci, fi];
+                ks = 0.42f;
+                tiltZ = FaceLeft ? -26f : 26f;
+            }
+            _kit.transform.localPosition = new Vector3(bowX, bowY, 0f);
+            _kit.transform.localRotation = Quaternion.Euler(0f, 0f, tiltZ);
             _kit.flipX = FaceLeft;
-            _kit.sortingOrder = _sr != null ? _sr.sortingOrder + 2 : 14;
-            float ks = girl ? 0.36f : 0.30f;
+            // Bow tucks behind body/head; crown rests in front of the head, below the face layer.
+            int bodyOrder = _sr != null ? _sr.sortingOrder : 12;
+            _kit.sortingOrder = girl ? bodyOrder - 1 : bodyOrder + 1;
             _kit.transform.localScale = new Vector3(ks, ks, 1f);
             if (!Frozen) _kit.color = UnityEngine.Color.white;
         }

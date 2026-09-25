@@ -5984,120 +5984,56 @@ namespace FlockFive
             if (fused == null || fused.texture == null) return;
             GUI.color = Color.white;
             GUI.DrawTexture(r, fused.texture, ScaleMode.StretchToFill, false);
-            if (card.Wild)
-            {
-                var inner = new Rect(r.x + 2.6f * s, r.y + 2.6f * s, r.width - 5.2f * s, r.height - 5.2f * s);
-                DrawWildLabel(inner, s);
-            }
+            // WILD lettering + ribbon are baked into fx_poker_face_wild; only the foil moves.
+            if (card.Wild && sparkle) DrawWildFoil(r, r.x * 0.013f);
         }
 
-        static void DrawCardSheen(Rect inner, float phase)
+        static void DrawWildFoil(Rect r, float phase)
         {
-            float t = Mathf.Repeat(Time.unscaledTime * 0.22f + phase * 0.15f, 1.8f);
-            if (t > 1f) return;
-            float fade = Mathf.Sin(t * Mathf.PI);
-            var glow = GlowTex();
-            float x = inner.x + inner.width * (t * 1.15f - 0.18f);
-            var band = new Rect(x, inner.y + inner.height * 0.06f, inner.width * 0.22f, inner.height * 0.88f);
-            GUI.color = new Color(1f, 0.97f, 0.88f, 0.16f * fade);
-            GUI.DrawTexture(band, glow, ScaleMode.ScaleToFit, true);
-            GUI.color = Color.white;
-        }
-
-        static void DrawWildHalo(Rect r, float phase)
-        {
+            // Holographic foil: three baked hue-shifted rainbow layers (fx_poker_face_wild_foil0..2,
+            // masked to the gold frame, stars, ribbon and WILD lettering) crossfade so the rainbow
+            // drifts across the card; paper and jester stay clean. cos^2 weights over three phases
+            // sum to a constant, so overall foil strength never pulses.
             float t = Time.unscaledTime;
-            float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.15f + phase);
-            float pad = r.width * (0.10f + 0.06f * breathe);
-            var glow = GlowTex();
-            GUI.color = new Color(1f, 0.84f, 0.38f, 0.22f + 0.20f * breathe);
-            GUI.DrawTexture(new Rect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f), glow, ScaleMode.ScaleToFit, true);
-            GUI.color = Color.white;
-        }
-
-        static void DrawWildSparkles(Rect r, Rect inner, float phase)
-        {
-            float t = Time.unscaledTime;
-            var glow = GlowTex();
-            GUI.BeginGroup(inner);
-            float sheenU = Mathf.Repeat(t * 0.36f + phase, 1.75f);
-            if (sheenU < 1f)
+            float cyc = Mathf.Repeat(t * 0.28f + phase, 1f);
+            for (int i = 0; i < 3; i++)
             {
-                float fade = Mathf.Sin(sheenU * Mathf.PI);
-                float x = inner.width * (sheenU * 1.25f - 0.22f);
-                var band = new Rect(x, inner.height * 0.02f, inner.width * 0.30f, inner.height * 0.96f);
-                GUI.color = new Color(1f, 0.96f, 0.78f, 0.36f * fade);
-                GUI.DrawTexture(band, glow, ScaleMode.ScaleToFit, true);
+                var foil = SpriteCatalog.PokerWildFoil(i);
+                if (foil == null || foil.texture == null) continue;
+                float w = 0.5f + 0.5f * Mathf.Cos((cyc - i / 3f) * Mathf.PI * 2f);
+                w *= w;
+                if (w < 0.02f) continue;
+                GUI.color = new Color(1f, 1f, 1f, 0.55f * w);
+                GUI.DrawTexture(r, foil.texture, ScaleMode.StretchToFill, true);
             }
-            GUI.EndGroup();
 
+            // Glint band sweeping across, then a pause.
+            var glow = GlowTex();
+            float u = Mathf.Repeat(t * 0.36f + phase, 1.75f);
+            if (u < 1f)
+            {
+                GUI.BeginGroup(r);
+                float fade = Mathf.Sin(u * Mathf.PI);
+                float x = r.width * (u * 1.25f - 0.22f);
+                GUI.color = new Color(1f, 0.98f, 0.90f, 0.30f * fade);
+                GUI.DrawTexture(new Rect(x, r.height * 0.02f, r.width * 0.30f, r.height * 0.96f), glow, ScaleMode.ScaleToFit, true);
+                GUI.EndGroup();
+            }
+
+            // Twinkles around the frame.
             var spark = SpriteCatalog.Sparkle;
             var tex = spark != null && spark.texture != null ? spark.texture : glow;
-            float baseSz = r.width * 0.22f;
+            float baseSz = r.width * 0.16f;
             for (int i = 0; i < WildGlints.Length; i++)
             {
-                float tw = Mathf.Sin(t * 2.4f + phase + i * 1.17f);
-                tw = Mathf.Max(0f, tw);
-                tw = tw * tw;
+                float tw = Mathf.Max(0f, Mathf.Sin(t * 2.4f + phase * 6f + i * 1.17f));
+                tw *= tw;
                 if (tw < 0.10f) continue;
                 var uv = WildGlints[i];
                 float sz = baseSz * (0.45f + 0.85f * tw);
-                var gr = new Rect(
-                    r.x + r.width * uv.x - sz * 0.5f,
-                    r.y + r.height * uv.y - sz * 0.5f,
-                    sz, sz);
-                GUI.color = new Color(1f, 0.95f, 0.72f, 0.35f + 0.55f * tw);
-                GUI.DrawTexture(gr, tex, ScaleMode.ScaleToFit, true);
+                GUI.color = new Color(1f, 0.97f, 0.85f, 0.30f + 0.55f * tw);
+                GUI.DrawTexture(new Rect(r.x + r.width * uv.x - sz * 0.5f, r.y + r.height * uv.y - sz * 0.5f, sz, sz), tex, ScaleMode.ScaleToFit, true);
             }
-            GUI.color = Color.white;
-        }
-
-        static void DrawWildBanner(Rect inner, float s, float phase, bool sheen = true)
-        {
-            float bandH = Mathf.Max(20f * s, inner.height * 0.22f);
-            // Mid-card so a dangling lock at the foot leaves WILD readable.
-            float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 1.15f + phase);
-            float sprawl = sheen ? 1.02f + 0.06f * breathe : 1f;
-            var prev = GUI.matrix;
-            float bandW = inner.width * 2.08f;
-            float bandY = inner.y + inner.height * 0.52f - bandH * 0.5f;
-            var band = new Rect(inner.center.x - bandW * 0.5f, bandY, bandW, bandH);
-            GUIUtility.ScaleAroundPivot(new Vector2(sprawl, 1f), band.center);
-            var spr = SpriteCatalog.WildBanner;
-            if (spr != null && spr.texture != null)
-            {
-                GUI.color = Color.white;
-                DrawSprite(band, spr, true);
-            }
-            else
-            {
-                GUI.color = new Color(0.10f, 0.16f, 0.42f, 1f);
-                GUI.DrawTexture(new Rect(band.x - 2f * s, band.y - 2f * s, band.width + 4f * s, band.height + 4f * s), Texture2D.whiteTexture);
-                GUI.color = new Color(0.86f, 0.68f, 0.18f, 1f);
-                GUI.DrawTexture(band, Texture2D.whiteTexture);
-                GUI.color = new Color(0.12f, 0.22f, 0.62f, 1f);
-                GUI.DrawTexture(new Rect(band.x + 3f * s, band.y + 3f * s, band.width - 6f * s, band.height - 6f * s), Texture2D.whiteTexture);
-            }
-            GUI.matrix = prev;
-            DrawWildLabel(inner, s);
-        }
-
-        static void DrawWildLabel(Rect inner, float s)
-        {
-            float bandH = Mathf.Max(20f * s, inner.height * 0.22f);
-            float bandY = inner.y + inner.height * 0.52f - bandH * 0.5f;
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
-            string lab = "WILD";
-            var textR = new Rect(inner.center.x - inner.width * 0.5f, bandY, inner.width, bandH);
-            st.fontSize = FitFont(st, lab, textR.width * 0.78f, textR.height * 0.62f, 16, 36);
-            int stroke = Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.16f));
-            var gold = new Color(1f, 0.86f, 0.28f, 1f);
-            StampOutlined(textR, lab, st, gold, stroke, Mathf.Max(2, stroke - 1));
             GUI.color = Color.white;
         }
 
