@@ -5,7 +5,8 @@ namespace FlockFive
     public sealed class LeafCover : MonoBehaviour
     {
         const int Count = 11;
-        const float BirdY = 0.38f + BranchView.RestLift;
+        // Follows the exact per-spot seat heights (WorldBuilder.SeatYMain/Gift) of the covered birds.
+        float BirdY = 0.38f + BranchView.RestLift;
         const float LeafScale = 0.55f;
 
         public float TrunkDir = -1f;
@@ -27,6 +28,10 @@ namespace FlockFive
             if (locked && seats != null && occupied > 0 && seats[0] != null)
             {
                 float trunkX = seats[0].localPosition.x;
+                float sumY = 0f; int nY = 0;
+                for (int k = 0; k <= occupied - 1 && k < seats.Length; k++)
+                    if (seats[k] != null) { sumY += seats[k].localPosition.y; nY++; }
+                if (nY > 0) BirdY = sumY / nY + BranchView.RestLift;
                 int last = occupied - 1;
                 float lastX = seats[last] != null ? seats[last].localPosition.x : trunkX;
                 _deep = trunkX + TrunkDir * 0.18f;
