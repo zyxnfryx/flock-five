@@ -3205,17 +3205,39 @@ namespace FlockFive
             float aura = 22f * s;
             GUI.DrawTexture(new Rect(board.x - aura, board.y - aura * 0.6f, board.width + aura * 2f, board.height + aura * 1.2f), glow, ScaleMode.ScaleToFit, true);
 
-            GUI.color = new Color(0.04f, 0.02f, 0.01f, 0.90f * alpha);
+            // Marquee frame: a solid brass band the bulbs screw into (not bulbs floating off a line).
+            float band = Mathf.Max(9f * s, board.width * 0.034f);
+            var outer = new Rect(board.x - band, board.y - band, board.width + band * 2f, board.height + band * 2f);
+            GUI.color = new Color(0f, 0f, 0f, 0.45f * alpha); // drop shadow
+            GUI.DrawTexture(new Rect(outer.x + 3f * s, outer.y + 5f * s, outer.width, outer.height), Texture2D.whiteTexture);
+            GUI.color = new Color(0.30f, 0.16f, 0.05f, alpha); // band body
+            GUI.DrawTexture(outer, Texture2D.whiteTexture);
+            GUI.color = new Color(0.58f, 0.36f, 0.12f, alpha); // band face
+            GUI.DrawTexture(new Rect(outer.x + 2f * s, outer.y + 2f * s, outer.width - 4f * s, outer.height - 4f * s), Texture2D.whiteTexture);
+            float edge = Mathf.Max(1f, 1.6f * s);
+            GUI.color = new Color(1f, 0.86f, 0.46f, 0.85f * alpha); // outer top/left bevel light
+            GUI.DrawTexture(new Rect(outer.x + 2f * s, outer.y + 2f * s, outer.width - 4f * s, edge), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(outer.x + 2f * s, outer.y + 2f * s, edge, outer.height - 4f * s), Texture2D.whiteTexture);
+            GUI.color = new Color(0.14f, 0.07f, 0.02f, 0.9f * alpha); // outer bottom/right bevel shade
+            GUI.DrawTexture(new Rect(outer.x + 2f * s, outer.yMax - 2f * s - edge, outer.width - 4f * s, edge), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(outer.xMax - 2f * s - edge, outer.y + 2f * s, edge, outer.height - 4f * s), Texture2D.whiteTexture);
+
+            GUI.color = new Color(0.04f, 0.02f, 0.01f, 0.94f * alpha);
             GUI.DrawTexture(board, Texture2D.whiteTexture);
             GUI.color = new Color(1f, 0.78f, 0.22f, (0.40f + 0.28f * (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.05f))) * alpha);
             float rim = 3f * s;
-            GUI.DrawTexture(new Rect(board.x + rim, board.y + rim, board.width - rim * 2f, 3f * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(board.x + rim, board.yMax - rim - 3f * s, board.width - rim * 2f, 3f * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(board.x + rim, board.y + rim, 3f * s, board.height - rim * 2f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(board.xMax - rim - 3f * s, board.y + rim, 3f * s, board.height - rim * 2f), Texture2D.whiteTexture);
+            float line = 2f * s;
+            GUI.DrawTexture(new Rect(board.x + rim, board.y + rim, board.width - rim * 2f, line), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(board.x + rim, board.yMax - rim - line, board.width - rim * 2f, line), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(board.x + rim, board.y + rim, line, board.height - rim * 2f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(board.xMax - rim - line, board.y + rim, line, board.height - rim * 2f), Texture2D.whiteTexture);
+            GUI.color = new Color(0f, 0f, 0f, 0.55f * alpha); // inner shadow where board meets band
+            GUI.DrawTexture(new Rect(board.x, board.y, board.width, 2f * s), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(board.x, board.y, 2f * s, board.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            DrawGiftMarquee(board, s, Time.unscaledTime);
+            // Sockets ride the middle of the brass band.
+            DrawGiftMarquee(board, s, Time.unscaledTime, alpha, band * 0.5f);
 
             float padX = board.width * 0.12f;
             float innerX = board.x + padX;
@@ -7083,13 +7105,15 @@ namespace FlockFive
             StampOutlined(xBtn, "×", xLab, new Color(1f, 0.88f, 0.42f, held ? 1f : 0.92f), 1, 2);
         }
 
-        static void DrawGiftMarquee(Rect plate, float s, float t)
+        // grow: how far outside `plate` the bulb sockets sit (px); <0 = 6*s (gift chalkboard rim).
+        static void DrawGiftMarquee(Rect plate, float s, float t, float alpha = 1f, float grow = -1f)
         {
             var bulb = SpriteCatalog.AdBulb;
             var glow = GlowTex();
             var tex = bulb != null ? bulb.texture : null;
             // Sit on the gold rim of the chalkboard, not the outer orchid wood.
-            var frame = new Rect(plate.x - 6f * s, plate.y - 6f * s, plate.width + 12f * s, plate.height + 12f * s);
+            if (grow < 0f) grow = 6f * s;
+            var frame = new Rect(plate.x - grow, plate.y - grow, plate.width + grow * 2f, plate.height + grow * 2f);
             const int n = 16;
             bool strobe = (Mathf.FloorToInt(t * 1.65f) % 7) == 0;
             bool strobeOn = ((int)(t * 14f) & 1) == 0;
@@ -7107,7 +7131,7 @@ namespace FlockFive
                 if (d < frame.width)
                 {
                     p = new Vector2(frame.x + d, frame.y);
-                    ang = 0f;
+                    ang = 180f; // fx_ad_bulb's screw base is at the TOP of the art: point it into the box
                 }
                 else if ((d -= frame.width) < frame.height)
                 {
@@ -7117,7 +7141,7 @@ namespace FlockFive
                 else if ((d -= frame.height) < frame.width)
                 {
                     p = new Vector2(frame.xMax - d, frame.yMax);
-                    ang = 180f;
+                    ang = 0f;
                 }
                 else
                 {
@@ -7133,16 +7157,26 @@ namespace FlockFive
                 float idle = 0.16f + 0.10f * (0.5f + 0.5f * Mathf.Sin(t * 2.2f + i * 0.7f));
                 float lit = strobe ? (strobeOn ? 1f : idle) : Mathf.Max(idle, comet);
                 float sz = Mathf.Lerp(szOff, szOn, lit);
-                var r = new Rect(p.x - sz * 0.5f, p.y - sz * 0.5f, sz, sz);
                 var prev = GUI.matrix;
                 GUIUtility.RotateAroundPivot(ang, p);
-                GUI.color = Color.Lerp(
+                // Local frame: the screw base points up (into the box). Anchor the base on the
+                // rim so it stays screwed in as the bulb swells; the glass hangs outward.
+                float sock = szOn * 0.44f;
+                GUI.color = new Color(0.16f, 0.09f, 0.03f, 0.92f * alpha);
+                GUI.DrawTexture(new Rect(p.x - sock * 0.5f, p.y - sock * 0.5f, sock, sock), glow, ScaleMode.ScaleToFit, true);
+                var r = new Rect(p.x - sz * 0.5f, p.y - sz * 0.16f, sz, sz);
+                var glass = new Vector2(p.x, r.y + sz * 0.60f);
+                var glowCol = Color.Lerp(
                     new Color(1f, 0.48f, 0.10f, 0.18f),
                     new Color(1f, 0.92f, 0.38f, 1f),
                     lit);
-                float halo = Mathf.Lerp(1.15f, 1.85f, lit);
-                GUI.DrawTexture(new Rect(r.x - sz * (halo - 1f) * 0.5f, r.y - sz * (halo - 1f) * 0.5f, sz * halo, sz * halo), glow, ScaleMode.ScaleToFit, true);
-                GUI.color = Color.Lerp(new Color(0.42f, 0.24f, 0.08f, 0.70f), Color.white, lit);
+                glowCol.a *= alpha;
+                GUI.color = glowCol;
+                float halo = Mathf.Lerp(1.05f, 1.70f, lit) * sz;
+                GUI.DrawTexture(new Rect(glass.x - halo * 0.5f, glass.y - halo * 0.5f, halo, halo), glow, ScaleMode.ScaleToFit, true);
+                var bulbCol = Color.Lerp(new Color(0.42f, 0.24f, 0.08f, 0.70f), Color.white, lit);
+                bulbCol.a *= alpha;
+                GUI.color = bulbCol;
                 if (tex != null) GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
                 else GUI.DrawTexture(r, Texture2D.whiteTexture);
                 GUI.matrix = prev;
