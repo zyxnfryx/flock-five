@@ -2026,7 +2026,12 @@ namespace FlockFive
                 float delay = i * Random.Range(0.02f, 0.05f);
                 StartCoroutine(ScatterHold(birds[i].transform, hold, delay));
             }
-            yield return new WaitForSeconds(0.92f + n * 0.05f);
+            // Only wait for the flock to break off the sparrow. The limb break
+            // (0.62s) runs while they are still climbing, so every lift (max
+            // 0.2s stagger + 0.64s) lands just before PerchOnRemain takes over.
+            // The old 0.92s + n*0.05s wait parked the whole row motionless
+            // mid-screen for about a second before the branch even broke.
+            yield return new WaitForSeconds(0.30f);
         }
 
         static IEnumerator ScatterHold(Transform tr, Vector3 dest, float delay)
