@@ -85,6 +85,12 @@ namespace FlockFive
         bool _pokerKeepHint;
         bool _pokerShowPay;
         float _pokerSwayT;
+        float _pokerWinT = -1f;
+        string _pokerWinFitKey;
+        // Bottom of the card row this frame; win speed lines never cross above it.
+        float _pokerRowBottom;
+        int _pokerWinHeroFont;
+        int _pokerWinRestFont;
         bool _pokerPendingStamp;
         int _pokerResultCue;
         bool _pokerStamp;
@@ -4169,6 +4175,7 @@ namespace FlockFive
                 _pokerFan = false;
                 _pokerChained = false;
                 _pokerShowPay = false;
+                _pokerWinT = -1f;
                 _pokerDash = 0f;
                 _pokerStamp = false;
                 _pokerPayOpen = false;
@@ -4234,6 +4241,7 @@ namespace FlockFive
                 TickPokerSway();
             }
             var rowBox = new Rect(rowX, rowY, rowW, cardH);
+            _pokerRowBottom = rowBox.yMax;
             bool payBlockedEarly = _pokerPayOpen || _pokerPayAnim > 0.35f;
             bool canHold = !PokerMotionBusy() && !payBlockedEarly && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt;
             bool hideCards = _pokerPayAnim > 0.18f;
@@ -4270,9 +4278,12 @@ namespace FlockFive
             var betR = new Rect(clusterL, btnY, Mathf.Max(80f, actR.x - 10f * s - clusterL), btnSize);
 
             bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f;
-            bool busy = PokerMotionBusy() || _pokerStamp || payBlocked;
+            if (GuiPaint()) TickPokerWin();
+            bool winFlying = PokerWinFlying();
+            bool busy = PokerMotionBusy() || _pokerStamp || payBlocked || winFlying;
             if (GuiPaint()) TickPokerDash(s);
             TickPokerStamp();
+            if (winFlying && !_pokerStamp && !payBlocked) SkipPokerWinOnTap();
             string act = BirdPoker.PhaseNow == BirdPoker.Phase.Dealt ? "DRAW" : "DEAL";
             // Between hands (idle or showing a result) the bet steers the next DEAL.
             bool steppers = BirdPoker.BetOpen && !PokerMotionBusy();
@@ -4299,6 +4310,7 @@ namespace FlockFive
                     TryPokerDeal();
                 }
             }
+            DrawPokerWinFanfare(betR, actR, s);
 
             // Stamp ceremony above everything; else pay-table overlay / jewel tab on top.
             if (_pokerStamp) DrawPokerStampCeremony(s);
@@ -4997,6 +5009,7 @@ namespace FlockFive
                     _pokerFan = false;
                     _pokerChained = false;
                     _pokerShowPay = true;
+                    BeginPokerWin();
                     if (_pokerPendingStamp)
                     {
                         BeginPokerStamp(BirdPoker.LastPunchKind);
@@ -5018,6 +5031,7 @@ namespace FlockFive
             _pokerFan = false;
             _pokerChained = false;
             _pokerShowPay = false;
+            _pokerWinT = -1f;
             _pokerChainBreak = -1f;
             _pokerHover = -1;
             for (int i = 0; i < _pokerRedraw.Length; i++)
@@ -5573,7 +5587,7 @@ namespace FlockFive
         {
             if (_pokerMotion == PokerMotion.Deal)
                 return _pokerMotionT >= DealGatherT + DealRiffleT;
-            if (PokerMotionBusy()) return true;
+            if (PokerMotionBusy() || PokerWinFlying()) return true;
             return BirdPoker.PhaseNow == BirdPoker.Phase.Dealt;
         }
 
@@ -5588,23 +5602,396 @@ namespace FlockFive
             return fire;
         }
 
+        // Win fanfare: "WIN $X" punches in big at centre with rays, sparkles and confetti,
+        // holds, then whooshes (speed lines + ghost trail) into the enlarged resting banner.
+        const float WinPunchT = 0.32f;
+        const float WinHoldT = 0.90f;
+        const float WinWhooshT = 0.26f;
+        const float WinLandT = 0.30f;
+        // Speed lines / ghosts span the word's own path over this much time.
+        const float WinTrailT = 0.065f;
+        const float WinWhooshAt = WinPunchT + WinHoldT;
+        const float WinLandAt = WinWhooshAt + WinWhooshT;
+        const float WinDoneAt = WinLandAt + WinLandT;
+        static readonly Color PokerWinRed = new Color(0.94f, 0.12f, 0.14f, 1f);
+        static readonly Color PokerWinGold = new Color(1f, 0.86f, 0.22f, 1f);
+
+        void BeginPokerWin() => _pokerWinT = BirdPoker.LastWin > 0 ? 0f : -1f;
+
+        // Punch / hold / whoosh still playing (the landing bounce already counts as rested).
+        bool PokerWinFlying() => _pokerWinT >= 0f && _pokerWinT < WinLandAt;
+
+        void TickPokerWin()
+        {
+            if (_pokerWinT < 0f || _pokerWinT >= WinDoneAt) return;
+            // A fresh punch-card stamp plays first; the fanfare waits for it.
+            if (_pokerStamp) return;
+            float prev = _pokerWinT;
+            _pokerWinT += Time.unscaledDeltaTime;
+            if (prev < WinWhooshAt && _pokerWinT >= WinWhooshAt) Sfx.CardWhoosh();
+            if (prev < WinLandAt && _pokerWinT >= WinLandAt) LandPokerWin();
+        }
+
+        // The word hits the banner still moving: clink + a short table punch sell the impact.
+        void LandPokerWin()
+        {
+            Sfx.Clink();
+            PunchPoker(0.14f, 4.0f, 0.8f);
+        }
+
+        void SkipPokerWinOnTap()
+        {
+            var e = Event.current;
+            if (e.type != EventType.MouseDown) return;
+            _pokerWinT = WinLandAt;
+            LandPokerWin();
+            e.Use();
+        }
+
+        static string PokerWinText() => "WIN " + Purse.Compact(BirdPoker.LastWin);
+
+        static GUIStyle PokerWinStyle(TextAnchor align) => new GUIStyle(GUI.skin.label)
+        {
+            fontStyle = FontStyle.Bold,
+            alignment = align,
+            wordWrap = false
+        };
+
+        static float PokerWinHeroH(float s) => Mathf.Min(Screen.width * 0.26f, 190f * s);
+
+        // Resting banner (~1.8× the old text height): sits above the bet bar AND the DEAL disc
+        // tops, so it can run most of the safe width without touching either.
+        static Rect PokerWinRestRect(Rect betR, Rect actR, float s)
+        {
+            var safe = PokerSafeGui();
+            float h = Mathf.Clamp(Mathf.Max(120f * s, Screen.height * 0.085f), 96f, 190f);
+            float x = Mathf.Max(betR.x, safe.xMin + 8f);
+            float w = Mathf.Min(safe.xMax - 12f - x, Screen.width * 0.92f);
+            float top = Mathf.Min(betR.y, actR.y);
+            var r = new Rect(x, top - h - 10f * s, w, h);
+            if (r.y < 8f) r.y = 8f;
+            return r;
+        }
+
+        // Screen.safeArea in GUI coordinates (top-left origin).
+        static Rect PokerSafeGui()
+        {
+            var a = Screen.safeArea;
+            if (a.width < 8f || a.height < 8f) return new Rect(0f, 0f, Screen.width, Screen.height);
+            return new Rect(a.x, Screen.height - a.yMax, a.width, a.height);
+        }
+
+        // Largest scale the hero word reaches: EaseOutBack punch peak (~1.116) plus hold wobble.
+        const float WinHeroMaxK = 1.13f;
+
+        // FitFont walks sizes; cache per payout text so the fanfare never refits every frame.
+        void FitPokerWinFonts(string text, Rect rest, float heroH)
+        {
+            string key = text + "|" + Screen.width + "x" + Screen.height;
+            if (key == _pokerWinFitKey) return;
+            _pokerWinFitKey = key;
+            var st = PokerWinStyle(TextAnchor.MiddleCenter);
+            // Hero must stay inside the safe area even at the punch-in overshoot, outline included
+            // (at 0.80 of the raw screen width "WIN $1,000" clipped the left edge at the peak).
+            float safeW = PokerSafeGui().width;
+            _pokerWinHeroFont = FitFont(st, text, safeW * 0.90f / WinHeroMaxK / 1.06f, heroH, 24, Mathf.RoundToInt(heroH));
+            _pokerWinRestFont = FitFont(st, text, rest.width * 0.96f, rest.height, 16, Mathf.RoundToInt(rest.height * 0.80f));
+        }
+
+        static float EaseOutBack(float u)
+        {
+            const float c1 = 2.2f;
+            const float c3 = c1 + 1f;
+            float v = u - 1f;
+            return 1f + c3 * v * v * v + c1 * v * v;
+        }
+
+        // Accelerate hard and arrive still moving (~60% of peak speed); the landing squash absorbs
+        // the hit. SmoothStep crawled through its last third, which read as floaty.
+        static float WinWhooshEase(float t)
+        {
+            float u = Mathf.Clamp01((t - WinWhooshAt) / WinWhooshT);
+            return u * u * (2.2f - 1.2f * u);
+        }
+
+        struct PokerWinGeo
+        {
+            public string Text;
+            public GUIStyle St;
+            public Vector2 Size, HeroC, RestC;
+            public float RestK;
+        }
+
+        // Shared by the flight and the resting banner so the handoff uses identical numbers:
+        // restC = banner text centre, restK = restFont / heroFont.
+        PokerWinGeo PokerWinGeom(Rect betR, Rect actR, float s)
+        {
+            var g = new PokerWinGeo { Text = PokerWinText() };
+            var rest = PokerWinRestRect(betR, actR, s);
+            FitPokerWinFonts(g.Text, rest, PokerWinHeroH(s));
+            g.St = PokerWinStyle(TextAnchor.MiddleCenter);
+            g.St.fontSize = _pokerWinHeroFont;
+            g.Size = g.St.CalcSize(new GUIContent(g.Text));
+            var rst = PokerWinStyle(TextAnchor.MiddleLeft);
+            rst.fontSize = _pokerWinRestFont;
+            float restW = rst.CalcSize(new GUIContent(g.Text)).x;
+            g.HeroC = new Vector2(PokerSafeGui().center.x, Screen.height * 0.47f);
+            g.RestC = new Vector2(rest.x + restW * 0.5f, rest.center.y);
+            g.RestK = _pokerWinRestFont / (float)Mathf.Max(1, _pokerWinHeroFont);
+            return g;
+        }
+
+        // Fanfare word pose at time t: centre + scale (1 = hero size).
+        static void PokerWinPose(float t, Vector2 heroC, Vector2 restC, float restK, out Vector2 c, out float k)
+        {
+            if (t < WinPunchT)
+            {
+                c = heroC;
+                k = Mathf.LerpUnclamped(0.25f, 1f, EaseOutBack(Mathf.Clamp01(t / WinPunchT)));
+                return;
+            }
+            float windUp = 0.06f * Mathf.SmoothStep(0f, 1f, (t - (WinWhooshAt - 0.14f)) / 0.14f);
+            if (t < WinWhooshAt)
+            {
+                float h = t - WinPunchT;
+                c = heroC;
+                k = 1f + 0.035f * Mathf.Sin(h * 9f) * Mathf.Exp(-h * 2.4f) + windUp;
+                return;
+            }
+            float e = WinWhooshEase(t);
+            var d = restC - heroC;
+            var perp = new Vector2(-d.y, d.x).normalized;
+            // Swoop low and shrink ahead of the travel so the word never clips the screen edge.
+            c = Vector2.Lerp(heroC, restC, e) - perp * Mathf.Sin(e * Mathf.PI) * d.magnitude * 0.10f;
+            k = Mathf.Lerp(1f + windUp, restK, 1f - (1f - e) * (1f - e));
+        }
+
+        void DrawPokerWinFanfare(Rect betR, Rect actR, float s)
+        {
+            if (!PokerWinFlying() || _pokerStamp || !_pokerShowPay || BirdPoker.LastWin <= 0) return;
+            float t = _pokerWinT;
+            var g = PokerWinGeom(betR, actR, s);
+            string text = g.Text;
+            var st = g.St;
+            var size = g.Size;
+            var heroC = g.HeroC;
+            var restC = g.RestC;
+            float restK = g.RestK;
+
+            float punch = Mathf.Clamp01(t / WinPunchT);
+            float whoosh = WinWhooshEase(t);
+            float burst = Mathf.SmoothStep(0f, 1f, punch) * (1f - Mathf.Clamp01(whoosh * 2.5f));
+            // Bigger hands throw more rays.
+            int rays = 12 + 2 * (int)BirdPoker.LastRank;
+            if (burst > 0.01f)
+            {
+                float reach = size.x * 0.95f * (0.35f + 0.65f * Mathf.Sin(punch * Mathf.PI * 0.5f));
+                DrawPokerWinRays(heroC, reach, t, burst, rays);
+            }
+            if (t < WinLandAt) DrawGiftConfetti(t, s, heroC);
+
+            PokerWinPose(t, heroC, restC, restK, out Vector2 c, out float k);
+            DrawPokerWinTrail(g, t, s, Color.Lerp(PokerWinGold, PokerWinRed, whoosh), _pokerRowBottom + 10f * s);
+            DrawPokerWinWord(text, st, c, size, k, Color.Lerp(PokerWinGold, PokerWinRed, whoosh), 1f, true);
+            if (burst > 0.01f) DrawPokerWinSparkles(heroC, size, t, burst);
+        }
+
+        // outline=false paints fill only (ghost trail) — stacked outlines turn to white smears.
+        static void DrawPokerWinWord(string text, GUIStyle st, Vector2 c, Vector2 size, float k, Color fill, float alpha, bool outline)
+        {
+            var r = new Rect(c.x - size.x * 0.5f, c.y - size.y * 0.5f, size.x, size.y);
+            var prev = GUI.matrix;
+            GUIUtility.ScaleAroundPivot(new Vector2(k, k), c);
+            var tint = new Color(fill.r, fill.g, fill.b, alpha);
+            if (outline)
+            {
+                int white = Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.08f));
+                int black = Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.035f));
+                StampOutlined(r, text, st, tint, white, black);
+            }
+            else
+            {
+                Paint(st, tint);
+                GUI.Label(r, text, st);
+            }
+            GUI.matrix = prev;
+        }
+
+        static void DrawPokerWinRays(Vector2 c, float reach, float t, float alpha, int count)
+        {
+            var glow = GlowTex();
+            GUI.color = new Color(1f, 0.84f, 0.30f, 0.70f * alpha);
+            GUI.DrawTexture(new Rect(c.x - reach * 1.1f, c.y - reach * 0.7f, reach * 2.2f, reach * 1.4f), glow, ScaleMode.StretchToFill, true);
+            var prev = GUI.matrix;
+            for (int i = 0; i < count; i++)
+            {
+                bool major = (i & 1) == 0;
+                float len = reach * (major ? 1f : 0.70f);
+                float th = reach * (major ? 0.16f : 0.10f);
+                GUI.matrix = prev;
+                GUIUtility.RotateAroundPivot(i * 360f / count + t * 24f, c);
+                GUI.color = major
+                    ? new Color(1f, 0.94f, 0.58f, 0.95f * alpha)
+                    : new Color(1f, 0.66f, 0.24f, 0.80f * alpha);
+                GUI.DrawTexture(new Rect(c.x, c.y - th * 0.5f, len, th), glow, ScaleMode.StretchToFill, true);
+                // Second pass doubles the spoke so it reads as a ray, not haze.
+                GUI.DrawTexture(new Rect(c.x + len * 0.15f, c.y - th * 0.25f, len * 0.85f, th * 0.5f), glow, ScaleMode.StretchToFill, true);
+            }
+            GUI.matrix = prev;
+            GUI.color = Color.white;
+        }
+
+        static void DrawPokerWinSparkles(Vector2 c, Vector2 size, float t, float alpha)
+        {
+            var spark = SpriteCatalog.Sparkle;
+            var tex = spark != null && spark.texture != null ? spark.texture : GlowTex();
+            const int n = 10;
+            for (int i = 0; i < n; i++)
+            {
+                float tw = Mathf.Max(0f, Mathf.Sin(t * 6.2f + i * 1.7f));
+                tw *= tw;
+                float ang = i * Mathf.PI * 2f / n + t * 0.6f;
+                float rx = size.x * (0.56f + 0.06f * (i % 3));
+                float ry = size.y * (0.95f + 0.10f * (i % 2));
+                float sz = size.y * 0.30f * (0.35f + 0.9f * tw);
+                GUI.color = new Color(1f, 0.97f, 0.82f, (0.35f + 0.65f * tw) * alpha);
+                GUI.DrawTexture(new Rect(c.x + Mathf.Cos(ang) * rx - sz * 0.5f, c.y + Mathf.Sin(ang) * ry - sz * 0.5f, sz, sz), tex, ScaleMode.ScaleToFit, true);
+            }
+            GUI.color = Color.white;
+        }
+
+        // Speed lines + ghost trail, both sampled from the word's real path: every line spans
+        // where the word was WinTrailT ago → where it is now, so it sits right behind the moving
+        // word, follows the arc's actual heading, grows/shrinks with actual speed, and collapses
+        // into the banner after landing instead of vanishing (the banner keeps drawing it).
+        static void DrawPokerWinTrail(in PokerWinGeo g, float t, float s, Color fill, float ceilY)
+        {
+            float tail = t - WinTrailT;
+            if (t <= WinWhooshAt || tail >= WinLandAt) return;
+            float tNow = Mathf.Min(t, WinLandAt);
+            tail = Mathf.Max(tail, WinWhooshAt);
+            PokerWinPose(tNow, g.HeroC, g.RestC, g.RestK, out Vector2 c, out float k);
+            PokerWinPose(tail, g.HeroC, g.RestC, g.RestK, out Vector2 cb, out float kb);
+            var seg = c - cb;
+            float len = seg.magnitude;
+            if (len < 3f) return;
+            // Peak ease slope is ~1.34, so this is the longest trail the flight can make.
+            float peak = (g.RestC - g.HeroC).magnitude * 1.34f * WinTrailT / WinWhooshT;
+            float speed = Mathf.Clamp01(len / Mathf.Max(1f, peak));
+
+            // Ghosts first (fill only): earlier poses on the same path.
+            for (int gi = 3; gi >= 1; gi--)
+            {
+                float gt = Mathf.Clamp(t - gi * WinTrailT / 3f, WinWhooshAt, WinLandAt);
+                PokerWinPose(gt, g.HeroC, g.RestC, g.RestK, out Vector2 gc, out float gk);
+                if ((gc - c).sqrMagnitude < 16f) continue;
+                DrawPokerWinWord(g.Text, g.St, gc, g.Size, gk, fill, 0.34f * speed / gi, false);
+            }
+
+            var glow = GlowTex();
+            var dir = seg / len;
+            var perp = new Vector2(-dir.y, dir.x);
+            float back = Mathf.Atan2(-dir.y, -dir.x) * Mathf.Rad2Deg;
+            var wordSz = g.Size * k;
+            var half = wordSz * 0.5f;
+            // Emerge from inside the word's box on its trailing side (the old fixed 0.2·width
+            // offset put the roots above a wide word's top edge, so lines floated detached).
+            float inset = 0.55f * Mathf.Min(half.x / Mathf.Max(0.05f, Mathf.Abs(dir.x)), half.y / Mathf.Max(0.05f, Mathf.Abs(dir.y)));
+            // Spread lanes across the word's silhouette as seen along the motion.
+            float spread = Mathf.Abs(perp.x) * half.x + Mathf.Abs(perp.y) * half.y;
+            var prev = GUI.matrix;
+            const int n = 9;
+            for (int i = 0; i < n; i++)
+            {
+                float hbit = (i * 37 + 11) * 0.173f;
+                hbit -= Mathf.Floor(hbit);
+                float lat = (i / (float)(n - 1) - 0.5f) * 2f * spread * 0.85f;
+                // Lanes start inside the word (hidden under it) and run back along the path.
+                float lane = len * (0.75f + 0.50f * hbit) + inset;
+                float th = Mathf.Max(2.5f, wordSz.y * (0.045f + 0.045f * hbit));
+                var root = c - dir * inset + perp * lat;
+                // Never streak up over the card row: clip the tail at the row's bottom edge.
+                if (dir.y > 0.02f)
+                {
+                    float room = (root.y - ceilY) / dir.y;
+                    if (room < 6f) continue;
+                    lane = Mathf.Min(lane, room);
+                }
+                GUI.matrix = prev;
+                GUIUtility.RotateAroundPivot(back, root);
+                GUI.color = new Color(1f, 0.90f, 0.55f, 0.55f * speed);
+                GUI.DrawTexture(new Rect(root.x, root.y - th * 1.5f, lane, th * 3f), glow, ScaleMode.StretchToFill, true);
+                GUI.color = new Color(1f, 1f, 0.96f, 0.85f * speed);
+                GUI.DrawTexture(new Rect(root.x, root.y - th * 0.18f, lane * 0.85f, th * 0.36f), Texture2D.whiteTexture);
+            }
+            GUI.matrix = prev;
+            GUI.color = Color.white;
+        }
+
         void DrawPokerWinBanner(Rect betR, Rect actR, float s)
         {
-            if (!_pokerShowPay || BirdPoker.LastWin <= 0) return;
-            string win = "WIN " + Purse.Compact(BirdPoker.LastWin);
-            float h = Mathf.Clamp(42f * s, 36f, 56f);
-            float w = Mathf.Min(betR.width + actR.width * 0.15f, Screen.width * 0.52f);
-            var r = new Rect(betR.x, betR.y - h - 8f * s, w, h);
-            if (r.y < 8f) r.y = 8f;
-            var st = new GUIStyle(GUI.skin.label)
+            if (!_pokerShowPay || BirdPoker.LastWin <= 0 || PokerWinFlying()) return;
+            var g = PokerWinGeom(betR, actR, s);
+            string text = g.Text;
+            var r = PokerWinRestRect(betR, actR, s);
+            var st = PokerWinStyle(TextAnchor.MiddleLeft);
+            st.fontSize = _pokerWinRestFont;
+            var textR = new Rect(r.x, r.y, st.CalcSize(new GUIContent(text)).x, r.height);
+            bool landing = _pokerWinT >= WinLandAt && _pokerWinT < WinDoneAt;
+            float land = landing ? Mathf.Clamp01((_pokerWinT - WinLandAt) / WinLandT) : 1f;
+            float hit = landing ? 1f - land : 0f;
+            // Glow plate eases in over the landing (it used to pop in at the handoff frame).
+            float plateIn = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(land / 0.7f));
+            float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.2f);
+            var plate = new Rect(textR.x - r.height * 0.5f, textR.y - r.height * 0.3f, textR.width + r.height, textR.height * 1.6f);
+            GUI.color = new Color(1f, 0.80f, 0.28f, (0.30f + 0.12f * breathe) * plateIn);
+            GUI.DrawTexture(plate, GlowTex(), ScaleMode.StretchToFill, true);
+            if (hit > 0.01f)
             {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleLeft,
-                wordWrap = false
-            };
-            st.fontSize = Mathf.RoundToInt(h * 0.62f);
-            int stroke = Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.10f));
-            StampOutlined(r, win, st, new Color(0.94f, 0.12f, 0.14f, 1f), stroke, 2);
+                // Impact flash: ramps in over ~2 frames, blooms outward and fades.
+                float flashIn = Mathf.Clamp01((_pokerWinT - WinLandAt) / 0.035f);
+                float grow = 1f + 0.55f * (1f - hit);
+                var fr = new Rect(plate.center.x - plate.width * grow * 0.5f, plate.center.y - plate.height * grow * 0.5f,
+                    plate.width * grow, plate.height * grow);
+                GUI.color = new Color(1f, 0.93f, 0.62f, 0.85f * hit * hit * flashIn);
+                GUI.DrawTexture(fr, GlowTex(), ScaleMode.StretchToFill, true);
+            }
+            GUI.color = Color.white;
+            // Streaks/ghosts collapse into the banner behind the text.
+            if (landing) DrawPokerWinTrail(g, _pokerWinT, s, PokerWinRed, _pokerRowBottom + 10f * s);
+            // Impact squash → stretch → settle; starts at 1 so the handoff scale is continuous.
+            float pop = 1f + 0.28f * Mathf.Sin(land * Mathf.PI * 2f) * Mathf.Exp(-land * 3.2f);
+            var prev = GUI.matrix;
+            // Pivot on the left edge so the squash grows away from the screen edge.
+            if (Mathf.Abs(pop - 1f) > 0.001f) GUIUtility.ScaleAroundPivot(new Vector2(pop, 2f - pop), new Vector2(textR.x, textR.center.y));
+            // Bolder resting stamp: slightly heavier white + black rims than the flight word.
+            int white = Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.09f));
+            int black = Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.042f));
+            StampOutlined(r, text, st, PokerWinRed, white, black);
+            GUI.matrix = prev;
+            if (hit > 0.01f) DrawPokerWinImpactSparks(textR, land);
+        }
+
+        // Sparkle ring thrown off the banner on impact.
+        static void DrawPokerWinImpactSparks(Rect textR, float land)
+        {
+            var spark = SpriteCatalog.Sparkle;
+            var tex = spark != null && spark.texture != null ? spark.texture : GlowTex();
+            var c = textR.center;
+            float out1 = 1f - (1f - land) * (1f - land) * (1f - land);
+            const int n = 12;
+            for (int i = 0; i < n; i++)
+            {
+                float hbit = (i * 29 + 7) * 0.131f;
+                hbit -= Mathf.Floor(hbit);
+                float ang = (i + 0.5f * hbit) * Mathf.PI * 2f / n;
+                float rx = textR.width * (0.30f + (0.42f + 0.25f * hbit) * out1);
+                float ry = textR.height * (0.30f + (0.70f + 0.45f * hbit) * out1);
+                float sz = textR.height * (0.42f + 0.30f * hbit) * (1f - 0.6f * land);
+                GUI.color = new Color(1f, 0.96f, 0.78f, (1f - land) * (0.7f + 0.3f * hbit));
+                GUI.DrawTexture(new Rect(c.x + Mathf.Cos(ang) * rx - sz * 0.5f, c.y + Mathf.Sin(ang) * ry - sz * 0.5f, sz, sz), tex, ScaleMode.ScaleToFit, true);
+            }
+            GUI.color = Color.white;
         }
 
         void DrawPokerChain(Rect wrap, float s, bool behind)
@@ -7288,7 +7675,10 @@ namespace FlockFive
             GUI.matrix = prev;
         }
 
-        static void DrawGiftConfetti(float u, float s)
+        static void DrawGiftConfetti(float u, float s) =>
+            DrawGiftConfetti(u, s, new Vector2(Screen.width * 0.5f, Screen.height * 0.40f));
+
+        static void DrawGiftConfetti(float u, float s, Vector2 origin)
         {
             var pink = SpriteCatalog.PetalPink;
             var peach = SpriteCatalog.PetalPeach;
@@ -7298,7 +7688,6 @@ namespace FlockFive
             var peachTex = peach != null ? peach.texture : null;
             var sparkTex = spark != null && spark.texture != null ? spark.texture : glow;
             const int n = 52;
-            var origin = new Vector2(Screen.width * 0.5f, Screen.height * 0.40f);
             for (int i = 0; i < n; i++)
             {
                 float wave = (i % 3) * 0.15f;
