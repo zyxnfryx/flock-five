@@ -5913,12 +5913,16 @@ namespace FlockFive
 
         static float PokerWinHeroH(float s) => Mathf.Min(Screen.width * 0.26f, 190f * s);
 
-        // Resting banner (~1.8× the old text height): sits above the bet bar AND the DEAL disc
-        // tops, so it can run most of the safe width without touching either.
+        // Resting banner: ~1.4x the pre-fanfare banner (old h = Clamp(42s, 36, 56), font 0.62h;
+        // bac2d72 had it at ~2x, Brandon found that too large). Sits above the bet bar AND the
+        // DEAL disc tops. The flight lands on this rect + font via PokerWinGeom (restC / restK).
+        const float WinRestGrow = 1.4f;
+        const float WinRestFontFrac = 0.62f;
+
         static Rect PokerWinRestRect(Rect betR, Rect actR, float s)
         {
             var safe = PokerSafeGui();
-            float h = Mathf.Clamp(Mathf.Max(120f * s, Screen.height * 0.085f), 96f, 190f);
+            float h = Mathf.Clamp(42f * s, 36f, 56f) * WinRestGrow;
             float x = Mathf.Max(betR.x, safe.xMin + 8f);
             float w = Mathf.Min(safe.xMax - 12f - x, Screen.width * 0.92f);
             float top = Mathf.Min(betR.y, actR.y);
@@ -5941,7 +5945,7 @@ namespace FlockFive
         // FitFont walks sizes; cache per payout text so the fanfare never refits every frame.
         void FitPokerWinFonts(string text, Rect rest, float heroH)
         {
-            string key = text + "|" + Screen.width + "x" + Screen.height;
+            string key = text + "|" + Screen.width + "x" + Screen.height + "|" + rest.height;
             if (key == _pokerWinFitKey) return;
             _pokerWinFitKey = key;
             var st = PokerWinStyle(TextAnchor.MiddleCenter);
@@ -5949,7 +5953,7 @@ namespace FlockFive
             // (at 0.80 of the raw screen width "WIN $1,000" clipped the left edge at the peak).
             float safeW = PokerSafeGui().width;
             _pokerWinHeroFont = FitFont(st, text, safeW * 0.90f / WinHeroMaxK / 1.06f, heroH, 24, Mathf.RoundToInt(heroH));
-            _pokerWinRestFont = FitFont(st, text, rest.width * 0.96f, rest.height, 16, Mathf.RoundToInt(rest.height * 0.80f));
+            _pokerWinRestFont = FitFont(st, text, rest.width * 0.96f, rest.height, 16, Mathf.RoundToInt(rest.height * WinRestFontFrac));
         }
 
         static float EaseOutBack(float u)
