@@ -223,6 +223,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-level6"); } catch { }
                 StartCoroutine(ShotSplashButtons());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-birds-shot"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-birds-shot"); } catch { }
+                StartCoroutine(ShotBirds());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-streak-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-streak-shot"); } catch { }
@@ -410,6 +415,57 @@ namespace FlockFive
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot("/tmp/paradice/ice-dialog.png");
             yield return new WaitForSecondsRealtime(0.35f);
+        }
+
+        // Test-only capture: selected-bird outline and mid-flight frames on a real garden.
+        IEnumerator ShotBirds()
+        {
+#if UNITY_EDITOR
+            EditorShotLive = true;
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+            Time.timeScale = 1f;
+#endif
+            const string dir = "/tmp/paradice/birds";
+            System.IO.Directory.CreateDirectory(dir);
+            Debug.Log("Flock Five: ShotBirds start");
+            Load(0);
+            yield return new WaitForSecondsRealtime(1.3f);
+            yield return SnapShot(dir + "/birds-rest.png");
+            int from = -1, to = -1;
+            for (int a = 0; a < _board.Branches.Count && to < 0; a++)
+            {
+                if (!_board.CanPick(a) || Locked(a) || GiftLocked(a)) continue;
+                for (int b = 0; b < _board.Branches.Count; b++)
+                {
+                    if (b == a || Locked(b) || GiftLocked(b)) continue;
+                    if (_board.CanMove(a, b, out _)) { from = a; to = b; break; }
+                }
+                if (to < 0 && from < 0) from = a;
+            }
+            if (from >= 0)
+            {
+                Select(from);
+                yield return new WaitForSecondsRealtime(0.45f);
+                yield return SnapShot(dir + "/birds-selected.png");
+            }
+            if (from >= 0 && to >= 0)
+            {
+                StartCoroutine(DoMove(from, to));
+                float t0 = Time.unscaledTime;
+                float[] at = { 0.10f, 0.20f, 0.30f, 0.42f, 0.60f };
+                for (int k = 0; k < at.Length; k++)
+                {
+                    while (Time.unscaledTime - t0 < at[k]) yield return null;
+                    yield return SnapShot(dir + "/birds-fly-" + k + ".png");
+                }
+                yield return new WaitForSecondsRealtime(1.2f);
+                yield return SnapShot(dir + "/birds-landed.png");
+            }
+            Debug.Log("Flock Five: ShotBirds done from=" + from + " to=" + to);
+#if UNITY_EDITOR
+            EditorShotLive = false;
+#endif
         }
 
         IEnumerator ShotGift()
