@@ -83,8 +83,15 @@ for ci, c in enumerate(COLORS):
             continue
         a = np.array(Image.open(p).convert("RGBA"))[..., 3]
         tip, ft = feet(a)
-        # Every bird (all 6 frames) must end its toes on the one shared seat row.
+        # Every frame a SEATED bird can show must end its toes on the one shared
+        # seat row. _1/_2 are the spread-wing flight frames: BirdIdle only shows
+        # them when airborne (Frozen coroutine flight, Lift > 0.05, or Flapping
+        # outside a seated Flutter); seated flutter/ruffle stays on the rest
+        # frame. _3.._5 would be seated-flap extras and must still meet the row.
+        FLIGHT_ONLY = {"_1", "_2"}
         for fr in [""] + [f"_{i}" for i in range(1, 6)]:
+            if fr in FLIGHT_ONLY:
+                continue
             q = SPR / f"bird_{c}{tag}{fr}.png"
             if q.exists():
                 qa = np.array(Image.open(q).convert("RGBA"))[..., 3]

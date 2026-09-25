@@ -100,7 +100,11 @@ namespace FlockFive
             if (show)
             {
                 _sr.flipX = FaceLeft;
-                _sr.sprite = SpriteCatalog.BirdFrame(Color, Time.time * (fly ? 16f : 0.9f) + _phase, fly, Sex);
+                // Spread-wing flight frames (_1/_2) only while actually airborne.
+                // A seated Flutter or ruffle keeps the rest frame so toes stay on bark.
+                bool airborne = Frozen || _liftShown > 0.05f || (Flapping && _flutterUntil <= 0f);
+                bool wings = fly && airborne;
+                _sr.sprite = SpriteCatalog.BirdFrame(Color, Time.time * (wings ? 16f : 0.9f) + _phase, wings, Sex);
                 if (!Frozen)
                 {
                     _sr.color = Shrouded ? new Color(0.04f, 0.03f, 0.05f, 1f) : UnityEngine.Color.white;
@@ -195,22 +199,24 @@ namespace FlockFive
         // Per-frame female bow locals (facing-right). Rows = BirdColor enum order
         // Ruby,Gold,Teal,Violet,Peach. Cols = rest,_1,_2,_3,_4,_5. Measured so
         // bow loops embed crown (behind-head). Flip X when FaceLeft.
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                static readonly float[,] BowLocalX = {
-                                                    { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Ruby
-                                                    { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Gold
-                                                    { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Teal
-                                                    { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Violet
-                                                    { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Peach
-                                                };
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                static readonly float[,] BowLocalY = {
-                                                    { 1.055f, 1.055f, 1.055f, 1.055f, 1.055f, 1.055f }, // Ruby
-                                                    { 1.055f, 1.055f, 1.055f, 1.055f, 1.055f, 1.055f }, // Gold
-                                                    { 1.055f, 1.055f, 1.055f, 1.055f, 1.055f, 1.055f }, // Teal
-                                                    { 1.055f, 1.055f, 1.055f, 1.055f, 1.055f, 1.055f }, // Violet
-                                                    { 1.055f, 1.055f, 1.055f, 1.055f, 1.055f, 1.055f }, // Peach
-                                                };
+        static readonly float[,] BowLocalX = {
+            { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Ruby
+            { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Gold
+            { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Teal
+            { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Violet
+            { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Peach
+        };
+        static readonly float[,] BowLocalY = {
+            { 1.055f, 0.895f, 0.895f, 1.055f, 1.055f, 1.055f }, // Ruby
+            { 1.055f, 0.895f, 0.895f, 1.055f, 1.055f, 1.055f }, // Gold
+            { 1.055f, 0.895f, 0.895f, 1.055f, 1.055f, 1.055f }, // Teal
+            { 1.055f, 0.895f, 0.895f, 1.055f, 1.055f, 1.055f }, // Violet
+            { 1.055f, 0.895f, 0.895f, 1.055f, 1.055f, 1.055f }, // Peach
+        };
 
         // Per-frame male crown locals (facing-right), same row/col order as the bow.
+        // _1/_2 are the spread-wing flap frames, eye-aligned to rest; their head
+        // dome sits ~44px lower, so kit Y drops 0.15-0.16u on those columns.
 // All five share the teal body: crown rests ON the head (drawn in front), tipped 26deg so the band
         // bottom follows the dome; every band-bottom point >=1px into feathers (no back gap).
         static readonly float[,] CrownLocalX = {
@@ -221,11 +227,11 @@ namespace FlockFive
             { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Peach
         };
         static readonly float[,] CrownLocalY = {
-            { 1.374f, 1.374f, 1.374f, 1.374f, 1.374f, 1.374f }, // Ruby
-            { 1.374f, 1.374f, 1.374f, 1.374f, 1.374f, 1.374f }, // Gold
-            { 1.374f, 1.374f, 1.374f, 1.374f, 1.374f, 1.374f }, // Teal
-            { 1.374f, 1.374f, 1.374f, 1.374f, 1.374f, 1.374f }, // Violet
-            { 1.374f, 1.374f, 1.374f, 1.374f, 1.374f, 1.374f }, // Peach
+            { 1.374f, 1.224f, 1.224f, 1.374f, 1.374f, 1.374f }, // Ruby
+            { 1.374f, 1.224f, 1.224f, 1.374f, 1.374f, 1.374f }, // Gold
+            { 1.374f, 1.224f, 1.224f, 1.374f, 1.374f, 1.374f }, // Teal
+            { 1.374f, 1.224f, 1.224f, 1.374f, 1.374f, 1.374f }, // Violet
+            { 1.374f, 1.224f, 1.224f, 1.374f, 1.374f, 1.374f }, // Peach
         };
 
         static int KitFrameIndex(Sprite spr)
