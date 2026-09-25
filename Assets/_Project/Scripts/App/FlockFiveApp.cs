@@ -7120,8 +7120,8 @@ namespace FlockFive
             float perim = 2f * (frame.width + frame.height);
             float headCw = Mathf.Repeat(t * 0.52f, 1f);
             float headCcw = Mathf.Repeat(-t * 0.38f, 1f);
-            float szOn = Mathf.Max(22f, plate.width * 0.048f);
-            float szOff = szOn * 0.72f;
+            float szOn = Mathf.Max(30f * s, plate.width * 0.085f);
+            float szOff = szOn * 0.82f;
             for (int i = 0; i < n; i++)
             {
                 float u = i / (float)n;
@@ -7174,7 +7174,7 @@ namespace FlockFive
                 GUI.color = glowCol;
                 float halo = Mathf.Lerp(1.05f, 1.70f, lit) * sz;
                 GUI.DrawTexture(new Rect(glass.x - halo * 0.5f, glass.y - halo * 0.5f, halo, halo), glow, ScaleMode.ScaleToFit, true);
-                var bulbCol = Color.Lerp(new Color(0.42f, 0.24f, 0.08f, 0.70f), Color.white, lit);
+                var bulbCol = Color.Lerp(new Color(0.86f, 0.60f, 0.30f, 1f), Color.white, lit);
                 bulbCol.a *= alpha;
                 GUI.color = bulbCol;
                 if (tex != null) GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
