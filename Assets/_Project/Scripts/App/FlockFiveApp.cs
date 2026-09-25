@@ -4245,19 +4245,19 @@ namespace FlockFive
                 {
                     int i = order[o];
                     if (PokerCardLifted(i)) continue;
-                    var seat = new Rect(rowX + i * (cardW + gap), rowY, cardW, cardH);
+                    var seat = PokerSeat(rowBox, cardW, gap, i);
                     DrawPokerCard(seat, i, s, holdH, rowBox);
                 }
                 for (int o = 0; o < order.Length; o++)
                 {
                     int i = order[o];
                     if (!PokerCardLifted(i)) continue;
-                    var seat = new Rect(rowX + i * (cardW + gap), rowY, cardW, cardH);
+                    var seat = PokerSeat(rowBox, cardW, gap, i);
                     DrawPokerCard(seat, i, s, holdH, rowBox);
                 }
                 DrawPokerKeepHint(rowBox, s);
-                DrawPokerFlames(rowBox, cardH, s);
-                DrawPokerDealHand(rowBox, cardW, cardH, s);
+                DrawPokerFlames(rowBox, cardW, gap, s);
+                DrawPokerDealHand(rowBox, cardW, gap, s);
                 // Thumb last — pinching agent stays on top of every live fan card.
                 DrawPokerFanHand(rowBox, cardW, cardH, s, true);
             }
@@ -5678,10 +5678,15 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        void DrawPokerFlames(Rect row, float cardH, float s)
+        // Classic-row seat for card i — shared by cards, discard bursts and the dealer hand.
+        static Rect PokerSeat(Rect row, float cardW, float gap, int i) =>
+            new Rect(row.x + i * (cardW + gap), row.y, cardW, row.height);
+
+        void DrawPokerFlames(Rect row, float cardW, float gap, float s)
         {
             if (_pokerMotion != PokerMotion.Draw) return;
             if (_pokerMotionT < _pokerPluckEnd || _pokerMotionT > _pokerReplaceEnd + 0.18f) return;
+            float cardH = row.height;
             var glow = GlowTex();
             int slot = 0;
             for (int i = 0; i < BirdPoker.HandSize; i++)
@@ -5696,8 +5701,7 @@ namespace FlockFive
                 float yaw, roll;
                 bool showFace, sparkle;
                 var face = _pokerPrev[i];
-                var classic = new Rect(row.x, row.y, row.height / 1.42f, row.height);
-                PokerPose(i, classic, row, out r, out yaw, out roll, out showFace, out face, out sparkle);
+                PokerPose(i, PokerSeat(row, cardW, gap, i), row, out r, out yaw, out roll, out showFace, out face, out sparkle);
                 Vector2 c = r.center;
                 var pip = PokerPip(face.Wild ? BirdColor.Gold : face.Color);
                 const int bits = 42;
@@ -5740,7 +5744,7 @@ namespace FlockFive
             }
         }
 
-        void DrawPokerDealHand(Rect row, float cardW, float cardH, float s)
+        void DrawPokerDealHand(Rect row, float cardW, float gap, float s)
         {
             if (_pokerMotion != PokerMotion.Draw) return;
             if (_pokerMotionT < _pokerReplaceEnd || _pokerMotionT > _pokerRowEnd) return;
@@ -5764,8 +5768,8 @@ namespace FlockFive
             float exit = 1f - Mathf.Clamp01((_pokerMotionT - last) / 0.16f);
             float a = enter * exit;
             if (a < 0.02f) return;
-            var seat = new Rect(row.x + cur * (cardW + 2f * s), row.y, cardW, cardH);
-            float w = cardH * 2.2f;
+            var seat = PokerSeat(row, cardW, gap, cur);
+            float w = seat.height * 2.2f;
             var hr = new Rect(seat.x - w * 0.72f + _pokerKick.x, seat.y + seat.height * 0.15f + _pokerKick.y, w, w);
             GUI.color = new Color(1f, 1f, 1f, a);
             DrawSprite(hr, spr, true);
