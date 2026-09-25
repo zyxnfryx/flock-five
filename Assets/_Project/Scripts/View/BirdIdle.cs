@@ -169,8 +169,8 @@ namespace FlockFive
         // white-silhouette copies pushed outward, one sorting step behind. Same sprite,
         // pivot, transform and flip as the bird, so it can't drift off the bird.
         const int GlowRing = 16;           // copies per ring
-        const float GlowSolidPx = 30f;     // inner ring radius, in body source px
-        const float GlowSoftPx = 46f;      // outer (soft) ring radius, in body source px
+        const float GlowSolidPx = 19f;     // inner ring radius, in body source px
+        const float GlowSoftPx = 29f;      // outer (soft) ring radius, in body source px
         const float GlowSoftAlpha = 0.22f; // per-copy alpha of the soft ring
 
         static Material Silhouette()
@@ -302,18 +302,18 @@ namespace FlockFive
         // Ruby,Gold,Teal,Violet,Peach. Cols = rest,_1,_2,_3,_4,_5. Measured so
         // bow loops embed crown (behind-head). Flip X when FaceLeft.
         static readonly float[,] BowLocalX = {
-            { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Ruby
-            { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Gold
-            { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Teal
-            { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Violet
-            { -0.11f, -0.11f, -0.11f, -0.11f, -0.11f, -0.11f }, // Peach
+            { -0.11f, -0.270f, -0.259f, -0.11f, -0.11f, -0.11f }, // Ruby
+            { -0.11f, -0.270f, -0.259f, -0.11f, -0.11f, -0.11f }, // Gold
+            { -0.11f, -0.270f, -0.259f, -0.11f, -0.11f, -0.11f }, // Teal
+            { -0.11f, -0.270f, -0.259f, -0.11f, -0.11f, -0.11f }, // Violet
+            { -0.11f, -0.270f, -0.259f, -0.11f, -0.11f, -0.11f }, // Peach
         };
         static readonly float[,] BowLocalY = {
-            { 1.055f, 0.895f, 0.895f, 1.055f, 1.055f, 1.055f }, // Ruby
-            { 1.055f, 0.895f, 0.895f, 1.055f, 1.055f, 1.055f }, // Gold
-            { 1.055f, 0.895f, 0.895f, 1.055f, 1.055f, 1.055f }, // Teal
-            { 1.055f, 0.895f, 0.895f, 1.055f, 1.055f, 1.055f }, // Violet
-            { 1.055f, 0.895f, 0.895f, 1.055f, 1.055f, 1.055f }, // Peach
+            { 1.055f, 0.831f, 0.843f, 1.055f, 1.055f, 1.055f }, // Ruby
+            { 1.055f, 0.831f, 0.843f, 1.055f, 1.055f, 1.055f }, // Gold
+            { 1.055f, 0.831f, 0.843f, 1.055f, 1.055f, 1.055f }, // Teal
+            { 1.055f, 0.831f, 0.843f, 1.055f, 1.055f, 1.055f }, // Violet
+            { 1.055f, 0.831f, 0.843f, 1.055f, 1.055f, 1.055f }, // Peach
         };
 
         // Per-frame male crown locals (facing-right), same row/col order as the bow.
@@ -322,18 +322,18 @@ namespace FlockFive
         // All five share the teal body: crown rests ON the head (drawn in front), tipped 26deg so the band
         // bottom follows the dome; every band-bottom point >=1px into feathers (no back gap).
         static readonly float[,] CrownLocalX = {
-            { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Ruby
-            { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Gold
-            { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Teal
-            { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Violet
-            { -0.03f, -0.03f, -0.03f, -0.03f, -0.03f, -0.03f }, // Peach
+            { -0.03f, -0.168f, -0.156f, -0.03f, -0.03f, -0.03f }, // Ruby
+            { -0.03f, -0.168f, -0.156f, -0.03f, -0.03f, -0.03f }, // Gold
+            { -0.03f, -0.168f, -0.156f, -0.03f, -0.03f, -0.03f }, // Teal
+            { -0.03f, -0.168f, -0.156f, -0.03f, -0.03f, -0.03f }, // Violet
+            { -0.03f, -0.168f, -0.156f, -0.03f, -0.03f, -0.03f }, // Peach
         };
         static readonly float[,] CrownLocalY = {
-            { 1.374f, 1.224f, 1.224f, 1.374f, 1.374f, 1.374f }, // Ruby
-            { 1.374f, 1.224f, 1.224f, 1.374f, 1.374f, 1.374f }, // Gold
-            { 1.374f, 1.224f, 1.224f, 1.374f, 1.374f, 1.374f }, // Teal
-            { 1.374f, 1.224f, 1.224f, 1.374f, 1.374f, 1.374f }, // Violet
-            { 1.374f, 1.224f, 1.224f, 1.374f, 1.374f, 1.374f }, // Peach
+            { 1.374f, 1.252f, 1.264f, 1.374f, 1.374f, 1.374f }, // Ruby
+            { 1.374f, 1.252f, 1.264f, 1.374f, 1.374f, 1.374f }, // Gold
+            { 1.374f, 1.252f, 1.264f, 1.374f, 1.374f, 1.374f }, // Teal
+            { 1.374f, 1.252f, 1.264f, 1.374f, 1.374f, 1.374f }, // Violet
+            { 1.374f, 1.252f, 1.264f, 1.374f, 1.374f, 1.374f }, // Peach
         };
 
         static int KitFrameIndex(Sprite spr)
