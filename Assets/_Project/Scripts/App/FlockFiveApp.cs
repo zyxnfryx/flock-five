@@ -84,6 +84,7 @@ namespace FlockFive
         int _pokerHover = -1;
         bool _pokerKeepHint;
         bool _pokerShowPay;
+        float _pokerSwayT;
         bool _pokerPendingStamp;
         int _pokerResultCue;
         bool _pokerStamp;
@@ -4230,6 +4231,7 @@ namespace FlockFive
                 TickPokerKick();
                 TickPokerMotion();
                 TickHoldSlide();
+                TickPokerSway();
             }
             var rowBox = new Rect(rowX, rowY, rowW, cardH);
             bool payBlockedEarly = _pokerPayOpen || _pokerPayAnim > 0.35f;
@@ -4902,8 +4904,61 @@ namespace FlockFive
         const float PokerFanPinchV = 0.28f;
         const float PokerFanHandAspect = 0.80f;
 
-        static float PokerAliveBreathe() => Mathf.Sin(Time.unscaledTime * 1.18f);
-        static float PokerAliveTick() => Mathf.Sin(Time.unscaledTime * 2.02f);
+        // Wrist on the hand canvas (where the forearm meets the palm): sway pivot.
+        const float PokerFanWristU = 0.33f;
+        const float PokerFanWristV = 0.70f;
+        // Hand sway: slow layered turn about the wrist + a small drift/bob (fractions of card height).
+        const float PokerSwayTurnDeg = 1.00f;
+        const float PokerSwayTurnDeg2 = 0.30f;
+        const float PokerSwayDriftX = 0.012f;
+        const float PokerSwayBobY = 0.018f;
+        const float PokerSwayBobY2 = 0.006f;
+
+        // One rigid motion (turn about the wrist, then drift). Palm, every fan card and the
+        // thumb all go through Apply + Turn, so the pinch can never slide against the cards.
+        struct PokerSway
+        {
+            public Vector2 Wrist;
+            public float Turn;
+            public Vector2 Drift;
+
+            public Vector2 Apply(Vector2 p)
+            {
+                float rad = Turn * Mathf.Deg2Rad;
+                float cs = Mathf.Cos(rad);
+                float sn = Mathf.Sin(rad);
+                var d = p - Wrist;
+                return Wrist + new Vector2(cs * d.x - sn * d.y, sn * d.x + cs * d.y) + Drift;
+            }
+        }
+
+        void TickPokerSway()
+        {
+            // Frozen through a draw so the plucked cards' captured poses still match the fading hand.
+            if (_pokerMotion == PokerMotion.Draw) return;
+            _pokerSwayT += Time.unscaledDeltaTime;
+        }
+
+        float PokerSwayTurn()
+        {
+            float t = _pokerSwayT;
+            return PokerSwayTurnDeg * Mathf.Sin(t * 0.83f) + PokerSwayTurnDeg2 * Mathf.Sin(t * 1.91f + 1.3f);
+        }
+
+        PokerSway PokerSwayNow(Rect row, float bump)
+        {
+            float t = _pokerSwayT;
+            float h = row.height;
+            var hand = PokerHandRest(row, bump, out _);
+            return new PokerSway
+            {
+                Wrist = new Vector2(hand.x + hand.width * PokerFanWristU, hand.y + hand.height * PokerFanWristV),
+                Turn = PokerSwayTurn(),
+                Drift = new Vector2(
+                    PokerSwayDriftX * h * Mathf.Sin(t * 0.61f + 2.1f),
+                    PokerSwayBobY * h * Mathf.Sin(t * 1.18f + 0.6f) + PokerSwayBobY2 * h * Mathf.Sin(t * 2.47f))
+            };
+        }
 
         void TryPokerDeal()
         {
@@ -5172,7 +5227,17 @@ namespace FlockFive
             return PokerFanSeatAt(slot, Mathf.Max(1, fanCount), row, bump);
         }
 
+        // Fan seat riding the hand: the card's roll pivot (bottom-centre) goes through the
+        // shared sway; PokerFanRoll adds the same turn.
         Rect PokerFanSeatAt(int fanIndex, int fanCount, Rect row, float bump)
+        {
+            var rest = PokerFanRestAt(fanIndex, fanCount, row, bump);
+            var foot = PokerSwayNow(row, bump).Apply(new Vector2(rest.center.x, rest.yMax));
+            return new Rect(foot.x - rest.width * 0.5f, foot.y - rest.height, rest.width, rest.height);
+        }
+
+        // Fan seat with the hand at rest (no sway).
+        Rect PokerFanRestAt(int fanIndex, int fanCount, Rect row, float bump)
         {
             float t = fanCount <= 1 ? 0.5f : fanIndex / (float)(fanCount - 1);
             float cardH = row.height * PokerFanScale;
@@ -5189,11 +5254,7 @@ namespace FlockFive
             float x = x0 + span * t;
             float mid = 1f - Mathf.Abs(t * 2f - 1f);
             float y = row.y + row.height * 2.12f - mid * 12f + bump;
-            float breathe = PokerAliveBreathe();
-            // Ride the hand's breath. Independent bob made cards swim through fingers.
-            x += breathe * 0.55f;
-            float life = breathe * 1.05f;
-            return new Rect(x, y + life, cardW, cardH);
+            return new Rect(x, y, cardW, cardH);
         }
 
         Rect PokerFanCover(int fanCount, Rect row, float bump)
@@ -5212,10 +5273,10 @@ namespace FlockFive
             int fanCount;
             int slot = PokerFanSlot(i, out fanCount);
             if (BirdPoker.Hold[i] || fanCount <= 0)
-                return PokerFanRollAt(i / (float)(BirdPoker.HandSize - 1));
+                return PokerFanRollAt(i / (float)(BirdPoker.HandSize - 1)) + PokerSwayTurn();
             float t = fanCount <= 1 ? 0.5f : slot / (float)(fanCount - 1);
             float mag = Mathf.Lerp(6f, 16f, (fanCount - 1) / 4f);
-            return Mathf.Lerp(-mag, mag, t) + PokerAliveBreathe() * 0.40f;
+            return Mathf.Lerp(-mag, mag, t) + PokerSwayTurn();
         }
 
         float PokerFanRollAt(float t) => Mathf.Lerp(-16f, 16f, t);
@@ -5383,11 +5444,37 @@ namespace FlockFive
                 Mathf.Lerp(a.height, b.height, u));
         }
 
-        void DrawPokerFanHand(Rect row, float cardW, float cardH, float s, bool front)
+        // Fan cards the hand is still pinching (not kept / not being kept by a draw).
+        int PokerFanLive()
         {
             int live = 0;
             for (int i = 0; i < BirdPoker.HandSize; i++)
                 if (!BirdPoker.Hold[i] && !(_pokerMotion == PokerMotion.Draw && _pokerKept[i])) live++;
+            return live;
+        }
+
+        // Hand sprite rect at rest (no sway, fully shown) and its pinch point on the grip card.
+        Rect PokerHandRest(Rect row, float bump, out Vector2 pinch)
+        {
+            int gripN = Mathf.Max(1, PokerFanLive());
+            var grip = PokerFanRestAt(Mathf.Min(gripN - 1, gripN / 2), gripN, row, bump);
+            float fanH = row.height * PokerFanScale;
+            float h = fanH * 1.88f;
+            float w = h * PokerFanHandAspect;
+            pinch = new Vector2(grip.center.x - grip.width * 0.08f, grip.yMax - grip.height * 0.02f);
+            float x = pinch.x - w * PokerFanPinchU;
+            if (x > -12f)
+            {
+                w = (pinch.x + 12f) / Mathf.Max(0.12f, PokerFanPinchU);
+                h = w / PokerFanHandAspect;
+                x = pinch.x - w * PokerFanPinchU;
+            }
+            return new Rect(x, pinch.y - h * PokerFanPinchV, w, h);
+        }
+
+        void DrawPokerFanHand(Rect row, float cardW, float cardH, float s, bool front)
+        {
+            int live = PokerFanLive();
             if (live == 0 && _pokerMotion != PokerMotion.Deal) return;
             float u = 0f;
             float bump = 0f;
@@ -5419,33 +5506,18 @@ namespace FlockFive
                 u = 1f - Mathf.Clamp01(_pokerMotionT / 0.22f);
             }
             if (!show || u < 0.02f) return;
-            int gripN = Mathf.Max(1, live);
-            var grip = PokerFanSeatAt(Mathf.Min(gripN - 1, gripN / 2), gripN, row, bump);
-            float fanH = row.height * PokerFanScale;
-            float h = fanH * 1.88f;
-            float w = h * PokerFanHandAspect;
-            float alive = u;
-            float breathe = PokerAliveBreathe();
-            float tick = PokerAliveTick();
-            float pinchX = grip.center.x - grip.width * 0.08f + _pokerKick.x + 0.85f * breathe * alive;
-            float pinchY = grip.yMax - grip.height * 0.02f + _pokerKick.y
-                + (0.90f * breathe + 0.18f * tick) * alive;
-            float x = pinchX - w * PokerFanPinchU;
-            float y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
-            if (x > -12f)
-            {
-                w = (pinchX + 12f) / Mathf.Max(0.12f, PokerFanPinchU);
-                h = w / PokerFanHandAspect;
-                x = pinchX - w * PokerFanPinchU;
-                y = pinchY - h * PokerFanPinchV + (1f - u) * h * 0.35f;
-            }
-            float ang = 2.4f + 0.45f * breathe * alive;
-            float squash = 1f + 0.006f * breathe * alive;
+            var rest = PokerHandRest(row, bump, out Vector2 restPinch);
+            var sway = PokerSwayNow(row, bump);
+            // Same rigid sway as the cards (pinch through Apply, tilt + Turn), kick added after like the cards.
+            Vector2 pinch = sway.Apply(restPinch) + _pokerKick;
+            var dest = new Rect(
+                pinch.x + (rest.x - restPinch.x),
+                pinch.y + (rest.y - restPinch.y) + (1f - u) * rest.height * 0.35f,
+                rest.width, rest.height);
+            float ang = 2.4f + sway.Turn;
             var prev = GUI.matrix;
-            GUIUtility.RotateAroundPivot(ang, new Vector2(pinchX, pinchY));
-            GUIUtility.ScaleAroundPivot(new Vector2(squash, 2f - squash), new Vector2(pinchX, pinchY));
+            GUIUtility.RotateAroundPivot(ang, pinch);
             GUI.color = u >= 0.98f ? Color.white : new Color(1f, 1f, 1f, u);
-            var dest = new Rect(x, y, w, h);
             if (!front)
             {
                 // Rest-of-hand behind-block: palm painting includes
@@ -5913,7 +5985,7 @@ namespace FlockFive
             };
             st.fontSize = type;
             float cap = type * 1.40f;
-            var fan = PokerFanSeatAt(0, BirdPoker.HandSize, row, 0f);
+            var fan = PokerFanRestAt(0, BirdPoker.HandSize, row, 0f);
             float y = fan.y - cap - 28f * s;
             if (y < 44f * s) y = 44f * s;
             var fill = new Color(0.94f, 0.12f, 0.14f, 1f);
