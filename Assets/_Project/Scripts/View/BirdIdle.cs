@@ -21,9 +21,10 @@ namespace FlockFive
         SpriteRenderer _sr;
         SpriteRenderer _face;
         SpriteRenderer _kit;
-        SpriteRenderer _glow;
-        SpriteRenderer _kitGlow;
+        SpriteRenderer[] _glow;
+        SpriteRenderer[] _kitGlow;
         float _glowA;
+        static Material _silhouette;
         float _phase;
         float _liftShown;
         float _nextWing;
@@ -53,6 +54,7 @@ namespace FlockFive
             Frozen = false;
             Flapping = false;
             _flutterUntil = 0f;
+            _liftShown = 0f; // re-bound birds (e.g. after Restart) start seated, no pop
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
             if (_sr != null) _sr.flipX = FaceLeft;
             EnsureFace();
@@ -163,55 +165,94 @@ namespace FlockFive
         const float FlapRate = 1.25f;
 
         // Selected run (BranchView.SetReady lifts tip birds to Lift 1.15) gets a thick
-        // white border: a white, grown silhouette of the body (and kit) one step behind.
-        SpriteRenderer MakeGlow(Transform parent, string name)
+        // white border. It is drawn from the SAME sprite as the body (and kit): a ring of
+        // white-silhouette copies pushed outward, one sorting step behind. Same sprite,
+        // pivot, transform and flip as the bird, so it can't drift off the bird.
+        const int GlowRing = 16;           // copies per ring
+        const float GlowSolidPx = 30f;     // inner ring radius, in body source px
+        const float GlowSoftPx = 46f;      // outer (soft) ring radius, in body source px
+        const float GlowSoftAlpha = 0.22f; // per-copy alpha of the soft ring
+
+        static Material Silhouette()
         {
-            var go = new GameObject(name);
-            go.transform.SetParent(parent, false);
-            var r = go.AddComponent<SpriteRenderer>();
-            r.enabled = false;
-            return r;
+            if (_silhouette != null) return _silhouette;
+            var sh = Resources.Load<Shader>("Shaders/SpriteSilhouette");
+            if (sh == null) sh = Shader.Find("FlockFive/SpriteSilhouette");
+            if (sh == null) sh = Shader.Find("GUI/Text Shader"); // alpha-only fallback
+            if (sh == null) return null;
+            _silhouette = new Material(sh) { name = "SelGlowSilhouette" };
+            return _silhouette;
+        }
+
+        SpriteRenderer[] MakeGlowRing(Transform parent)
+        {
+            var mat = Silhouette();
+            var arr = new SpriteRenderer[GlowRing * 2];
+            for (int i = 0; i < arr.Length; i++)
+            {
+                var go = new GameObject("SelGlow");
+                go.transform.SetParent(parent, false);
+                var r = go.AddComponent<SpriteRenderer>();
+                if (mat != null) r.sharedMaterial = mat;
+                r.enabled = false;
+                arr[i] = r;
+            }
+            return arr;
+        }
+
+        static void HideRing(SpriteRenderer[] ring)
+        {
+            if (ring == null) return;
+            for (int i = 0; i < ring.Length; i++)
+                if (ring[i] != null) ring[i].enabled = false;
+        }
+
+        // unitsPerBodyPx: this renderer's local units per body source pixel.
+        static void ShowRing(SpriteRenderer[] ring, SpriteRenderer src, float unitsPerBodyPx,
+            float a, int layer, int order)
+        {
+            if (ring == null || src == null || src.sprite == null) { HideRing(ring); return; }
+            float flip = src.flipX ? -1f : 1f;
+            for (int i = 0; i < ring.Length; i++)
+            {
+                var r = ring[i];
+                if (r == null) continue;
+                bool soft = i >= GlowRing;
+                float ang = (i % GlowRing) * (Mathf.PI * 2f / GlowRing) + (soft ? Mathf.PI / GlowRing : 0f);
+                float rad = (soft ? GlowSoftPx : GlowSolidPx) * unitsPerBodyPx;
+                r.sprite = src.sprite;
+                r.flipX = false; // mirrored by scale instead, so any shader flips correctly
+                r.transform.localPosition = new Vector3(Mathf.Cos(ang) * rad, Mathf.Sin(ang) * rad, 0f);
+                r.transform.localRotation = Quaternion.identity;
+                r.transform.localScale = new Vector3(flip, 1f, 1f);
+                r.color = new Color(1f, 1f, 1f, soft ? a * GlowSoftAlpha : a);
+                r.sortingLayerID = layer;
+                r.sortingOrder = order;
+                r.enabled = true;
+            }
         }
 
         void PlaceGlow(bool selected)
         {
             _glowA = Mathf.MoveTowards(_glowA, selected ? 1f : 0f, 9f * Time.deltaTime);
-            bool on = _glowA > 0.01f && _sr != null && _sr.enabled;
+            bool on = _glowA > 0.01f && _sr != null && _sr.enabled && _sr.sprite != null;
             if (!on)
             {
-                if (_glow != null) _glow.enabled = false;
-                if (_kitGlow != null) _kitGlow.enabled = false;
+                HideRing(_glow);
+                HideRing(_kitGlow);
                 return;
             }
             float a = _glowA * (0.9f + 0.1f * Mathf.Sin(Time.time * 6f + _phase));
-            var col = new Color(1f, 1f, 1f, a);
             int bodyOrder = _sr.sortingOrder;
-            if (_glow == null) _glow = MakeGlow(transform, "SelGlow");
-            _glow.sprite = BirdGlow.For(_sr.sprite);
-            _glow.enabled = _glow.sprite != null;
-            _glow.flipX = _sr.flipX;
-            _glow.color = col;
-            _glow.sortingLayerID = _sr.sortingLayerID;
-            _glow.sortingOrder = bodyOrder - 2; // behind kit bow (body-1) and body
-            bool kitShown = _kit != null && _kit.enabled;
-            if (kitShown && _kitGlow == null) _kitGlow = MakeGlow(_kit.transform, "SelGlow");
-            if (_kitGlow != null)
-            {
-                float kpx = 1f;
-                if (kitShown && _kit.sprite != null && _sr.sprite != null)
-                {
-                    // world size of one kit px vs one body px (kit is a scaled child)
-                    float kitPx = _kit.transform.localScale.x / _kit.sprite.pixelsPerUnit;
-                    float bodyPx = 1f / _sr.sprite.pixelsPerUnit;
-                    kpx = bodyPx / Mathf.Max(1e-5f, kitPx);
-                }
-                _kitGlow.sprite = kitShown ? BirdGlow.For(_kit.sprite, kpx) : null;
-                _kitGlow.enabled = kitShown && _kitGlow.sprite != null;
-                _kitGlow.flipX = _kit != null && _kit.flipX;
-                _kitGlow.color = col;
-                _kitGlow.sortingLayerID = _sr.sortingLayerID;
-                _kitGlow.sortingOrder = bodyOrder - 2;
-            }
+            if (_glow == null) _glow = MakeGlowRing(transform);
+            float bodyUnitsPerPx = 1f / _sr.sprite.pixelsPerUnit;
+            ShowRing(_glow, _sr, bodyUnitsPerPx, a, _sr.sortingLayerID, bodyOrder - 2); // behind kit bow (body-1)
+            bool kitShown = _kit != null && _kit.enabled && _kit.sprite != null;
+            if (!kitShown) { HideRing(_kitGlow); return; }
+            if (_kitGlow == null) _kitGlow = MakeGlowRing(_kit.transform);
+            // Kit ring lives under the scaled kit transform: convert body px to kit-local units.
+            float ks = Mathf.Max(1e-4f, Mathf.Abs(_kit.transform.localScale.x));
+            ShowRing(_kitGlow, _kit, bodyUnitsPerPx / ks, a, _sr.sortingLayerID, bodyOrder - 2);
         }
 
         void PlaceFace(BirdMood.Pose mood, bool on)
