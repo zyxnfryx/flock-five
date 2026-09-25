@@ -4272,8 +4272,9 @@ namespace FlockFive
             if (GuiPaint()) TickPokerDash(s);
             TickPokerStamp();
             string act = BirdPoker.PhaseNow == BirdPoker.Phase.Dealt ? "DRAW" : "DEAL";
-            bool steppers = BirdPoker.PhaseNow == BirdPoker.Phase.Idle;
-            if (BirdPoker.PhaseNow == BirdPoker.Phase.Idle) BirdPoker.SyncBet();
+            // Between hands (idle or showing a result) the bet steers the next DEAL.
+            bool steppers = BirdPoker.BetOpen && !PokerMotionBusy();
+            if (steppers) BirdPoker.SyncBet();
             if (DrawPokerDash(betR, actR, s, busy, steppers, act) && !busy)
             {
                 if (BirdPoker.PhaseNow == BirdPoker.Phase.Idle)
@@ -5490,15 +5491,18 @@ namespace FlockFive
         {
             if (_pokerChainBreak >= 0f)
                 _pokerChainBreak += Time.unscaledDeltaTime / 0.72f;
-            float want = 0f;
-            if (BirdPoker.PhaseNow != BirdPoker.Phase.Idle)
-                want = 1f;
-            if (_pokerMotion == PokerMotion.Deal)
-            {
-                float fanAt = DealGatherT + DealRiffleT;
-                want = _pokerMotionT >= fanAt ? 1f : 0f;
-            }
+            float want = PokerBetBarAway() ? 1f : 0f;
             _pokerDash = Mathf.MoveTowards(_pokerDash, want, Time.unscaledDeltaTime * 3.4f);
+        }
+
+        // Bet bar tucks under the screen while the fan hand needs the space
+        // (deal fan-in, held hand, draw); it returns as soon as a result settles.
+        bool PokerBetBarAway()
+        {
+            if (_pokerMotion == PokerMotion.Deal)
+                return _pokerMotionT >= DealGatherT + DealRiffleT;
+            if (PokerMotionBusy()) return true;
+            return BirdPoker.PhaseNow == BirdPoker.Phase.Dealt;
         }
 
         bool DrawPokerDash(Rect betR, Rect actR, float s, bool busy, bool steppers, string act)

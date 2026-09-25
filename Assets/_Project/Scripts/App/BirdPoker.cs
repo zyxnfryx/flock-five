@@ -140,9 +140,13 @@ namespace FlockFive
                 Bet = NearestBet(Mathf.Clamp(Bet, MinBet, cap));
         }
 
+        // Bet is locked only while a dealt hand is live (Draw pays at that bet).
+        // After a result it steers the next Deal; coins move only in Deal/Draw.
+        public static bool BetOpen => PhaseNow != Phase.Dealt;
+
         public static bool NudgeBet(int dir)
         {
-            if (PhaseNow != Phase.Idle) return false;
+            if (!BetOpen) return false;
             RebuildLadder();
             _betPicked = true;
             int ix = 0;
@@ -156,7 +160,7 @@ namespace FlockFive
 
         public static bool CanNudge(int dir)
         {
-            if (PhaseNow != Phase.Idle) return false;
+            if (!BetOpen) return false;
             RebuildLadder();
             int ix = 0;
             for (int i = 0; i < _ladder.Count; i++)

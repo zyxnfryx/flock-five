@@ -171,6 +171,34 @@ namespace FlockFive.Editor
                 Check("after-win-max-rises", BirdPoker.MaxBet == 250,
                     "max=" + BirdPoker.MaxBet + " coins=" + Purse.Coins);
 
+                // Bet between hands: locked while dealt, open on the result screen,
+                // nudging never moves coins, and the next Deal charges the pick once.
+                SetCoins(1000);
+                BirdPoker.BeginVisit();
+                int openBet = BirdPoker.Bet;
+                if (!BirdPoker.Deal())
+                    Check("deal-for-open-bet", false, "deal failed coins=" + Purse.Coins);
+                else
+                {
+                    Check("dealt-bet-locked",
+                        !BirdPoker.CanNudge(1) && !BirdPoker.CanNudge(-1) && !BirdPoker.NudgeBet(1) && BirdPoker.Bet == openBet,
+                        "bet=" + BirdPoker.Bet + " phase=" + BirdPoker.PhaseNow);
+                    BirdPoker.Draw();
+                    int paid = Purse.Coins;
+                    Check("drawn-bet-open", BirdPoker.CanNudge(1) || BirdPoker.CanNudge(-1),
+                        "phase=" + BirdPoker.PhaseNow + " bet=" + BirdPoker.Bet);
+                    int picked = NudgeUntilStuck(1);
+                    Check("drawn-nudge-no-coins", Purse.Coins == paid && picked <= BirdPoker.MaxBet && picked <= Purse.Coins,
+                        "coins=" + Purse.Coins + " paid=" + paid + " picked=" + picked + " max=" + BirdPoker.MaxBet);
+                    BirdPoker.Collect();
+                    Check("collect-keeps-pick", BirdPoker.Bet == picked && Purse.Coins == paid,
+                        "bet=" + BirdPoker.Bet + " picked=" + picked + " coins=" + Purse.Coins);
+                    bool dealt = BirdPoker.Deal();
+                    Check("next-deal-charges-once", dealt && Purse.Coins == paid - picked,
+                        "coins=" + Purse.Coins + " want=" + (paid - picked));
+                    BirdPoker.ResetRound();
+                }
+
                 // Stepper stays on the chip ladder between min and max.
                 SetCoins(1000);
                 BirdPoker.BeginVisit();
