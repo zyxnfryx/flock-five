@@ -26,6 +26,16 @@ namespace FlockFive
         static Sprite[] _feeders;
 
         public static Sprite GardenBg => Load(ref _bg, "Sprites/bg_garden", 96f);
+        static Sprite _bgOasis;
+        public static Sprite OasisBg => Load(ref _bgOasis, "Sprites/bg_oasis", 96f);
+
+        // Background art rotates by garden range so the look stays fresh:
+        // gardens 1-15 are the jungle garden, 16-50 the desert oasis.
+        public static Sprite GardenBgFor(int gardenNumber)
+        {
+            if (gardenNumber >= 16 && gardenNumber <= 50 && OasisBg != null) return OasisBg;
+            return GardenBg;
+        }
         public static Sprite Branch => Load(ref _branch, "Sprites/branch", 140f);
         public static Sprite BranchGift => Load(ref _branchGift, "Sprites/branch_gift", 140f);
         public static Sprite AdSign => Load(ref _adSign, "Sprites/fx_ad_sign", 200f);

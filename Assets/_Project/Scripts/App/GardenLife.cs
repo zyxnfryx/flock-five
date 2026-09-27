@@ -60,44 +60,6 @@ namespace FlockFive
                 list.Add(b);
             }
 
-            Vector3[] leafAt =
-            {
-                new Vector3(-3.85f, -6.55f, 0f),
-                new Vector3(3.75f, -6.35f, 0f),
-                new Vector3(-4.05f, -4.6f, 0f),
-                new Vector3(4.1f, -4.9f, 0f),
-                new Vector3(-4.0f, 5.35f, 0f),
-                new Vector3(3.95f, 4.7f, 0f)
-            };
-            float[] leafRot = { 28f, -22f, 12f, -18f, 35f, -30f };
-            for (int k = 0; k < leafAt.Length; k++)
-            {
-                float sc = k < 2 ? 0.62f : 0.48f;
-                var b = Make("Leaf" + k, SpriteCatalog.Leaf, leafAt[k], sc, -6, Color.white, 3, rng);
-                b.Planted = leafRot[k];
-                b.RotAmp = 5.5f + 2f * (float)rng.NextDouble();
-                b.Speed = 0.55f + 0.25f * (float)rng.NextDouble();
-                if (leafAt[k].x > 0f) b.Sr.flipX = true;
-                list.Add(b);
-            }
-
-            Vector3[] vineAt =
-            {
-                new Vector3(-4.15f, 8.05f, 0f),
-                new Vector3(-4.28f, 2.85f, 0f),
-                new Vector3(4.18f, 8.15f, 0f),
-                new Vector3(4.22f, 3.15f, 0f)
-            };
-            for (int k = 0; k < vineAt.Length; k++)
-            {
-                var b = Make("Vine" + k, SpriteCatalog.Vine, vineAt[k], 0.58f, -7, Color.white, 4, rng);
-                b.Planted = 0f;
-                b.RotAmp = 3.8f + 1.5f * (float)rng.NextDouble();
-                b.Speed = 0.38f + 0.22f * (float)rng.NextDouble();
-                if (vineAt[k].x > 0f) b.Sr.flipX = true;
-                list.Add(b);
-            }
-
             for (int k = 0; k < 3; k++)
             {
                 float x = Mathf.Lerp(-1.35f, 1.35f, k / 2f);
@@ -107,26 +69,6 @@ namespace FlockFive
                 b.Planted = Mathf.Lerp(-8f, 8f, k / 2f);
                 b.RotAmp = 2.4f;
                 b.Speed = 0.16f + 0.05f * k;
-                list.Add(b);
-            }
-
-            Vector3[] shootAt =
-            {
-                new Vector3(-3.55f, -7.15f, 0f),
-                new Vector3(3.45f, -7.05f, 0f),
-                new Vector3(-4.15f, -5.35f, 0f),
-                new Vector3(4.22f, -5.55f, 0f),
-                new Vector3(-3.92f, 3.85f, 0f),
-                new Vector3(3.88f, 3.55f, 0f)
-            };
-            for (int k = 0; k < shootAt.Length; k++)
-            {
-                float sc = 0.22f + 0.06f * (k % 3);
-                var b = Make("Shoot" + k, SpriteCatalog.Leaf, shootAt[k], sc, -5, Color.white, 6, rng);
-                b.Planted = shootAt[k].x > 0f ? -18f : 18f;
-                b.RotAmp = 4.2f + 1.6f * (float)rng.NextDouble();
-                b.Speed = 0.48f + 0.22f * (float)rng.NextDouble();
-                if (shootAt[k].x > 0f) b.Sr.flipX = true;
                 list.Add(b);
             }
 

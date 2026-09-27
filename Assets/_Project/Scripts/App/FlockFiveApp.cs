@@ -437,6 +437,36 @@ namespace FlockFive
             yield return new WaitForSecondsRealtime(0.35f);
         }
 
+        // Editor QA: garden 1 (jungle) vs garden 16 (desert oasis) background.
+        IEnumerator ShotOasis()
+        {
+#if UNITY_EDITOR
+            EditorShotLive = true;
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+            try
+            {
+#endif
+                Time.timeScale = 1f;
+                const string dir = "/tmp/paradice/oasis";
+                System.IO.Directory.CreateDirectory(dir);
+                Load(15);
+                yield return new WaitForSecondsRealtime(1.6f);
+                yield return SnapShot(dir + "/garden16.png");
+                Load(0);
+                yield return new WaitForSecondsRealtime(1.6f);
+                yield return SnapShot(dir + "/garden1.png");
+                Debug.Log("Flock Five: ShotOasis done");
+#if UNITY_EDITOR
+            }
+            finally
+            {
+                Time.timeScale = 1f;
+                EditorShotLive = false;
+            }
+#endif
+        }
+
         // Editor QA: Amber Grove (garden 10) has two leaf-locked limbs.
         IEnumerator ShotLeaves()
         {

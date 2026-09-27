@@ -67,7 +67,7 @@ namespace FlockFive
             var cam = MakeCamera(parent);
             float limbX = EdgeX(cam, 1f);
 
-            var bg = Sprite("Bg", SpriteCatalog.GardenBg, new Vector3(0f, -0.15f, 8f), 1f, -20, root);
+            var bg = Sprite("Bg", SpriteCatalog.GardenBgFor(LevelData.DisplayNumber), new Vector3(0f, -0.15f, 8f), 1f, -20, root);
             var fit = bg.AddComponent<BackgroundFitter>();
             fit.Cam = cam;
             fit.FollowCamera = false;
