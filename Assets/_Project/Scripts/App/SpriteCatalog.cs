@@ -553,20 +553,19 @@ namespace FlockFive
             var f2 = F(2, ref _kitMid, ref _flap2, true);
             var f3 = F(3, ref _kitFlap3, ref _flap3, false);
             var f4 = F(4, ref _kitFlap4, ref _flap4, false);
-            var f5 = F(5, ref _kitFlap5, ref _flap5, false);
-            // 6-frame cycle when extras exist; else classic 3-pose (rest/up/mid)
-            bool six = f3 != null || f4 != null || f5 != null;
-            if (six)
+            // 8-pose wingbeat when the in-betweens exist: _3 = wings lowered (rest.._1),
+            // _4 = wings half-raised (_1.._2). Same beat rate as the 4-pose cycle,
+            // twice the steps: rest,_3,_1,_4,_2,_4,_1,_3.
+            if (f3 != null && f4 != null && f1 != null && f2 != null)
             {
-                int k6 = Mathf.FloorToInt(Mathf.Abs(t) * 18f) % 6;
-                switch (k6)
+                int k8 = Mathf.FloorToInt(Mathf.Abs(t) * 32f) % 8;
+                switch (k8)
                 {
                     case 0: return rest;
-                    case 1: return f1 != null ? f1 : rest;
-                    case 2: return f3 != null ? f3 : (f1 != null ? f1 : rest);
-                    case 3: return f2 != null ? f2 : (f1 != null ? f1 : rest);
-                    case 4: return f4 != null ? f4 : (f2 != null ? f2 : rest);
-                    default: return f5 != null ? f5 : (f1 != null ? f1 : rest);
+                    case 1: case 7: return f3;
+                    case 2: case 6: return f1;
+                    case 3: case 5: return f4;
+                    default: return f2;
                 }
             }
             int k = Mathf.FloorToInt(Mathf.Abs(t) * 16f) % 4;

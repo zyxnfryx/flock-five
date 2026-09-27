@@ -233,6 +233,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-level6"); } catch { }
                 StartCoroutine(ShotSplashButtons());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-leaves-shot"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-leaves-shot"); } catch { }
+                StartCoroutine(ShotLeaves());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-birds-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-birds-shot"); } catch { }
@@ -430,6 +435,35 @@ namespace FlockFive
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot("/tmp/paradice/ice-dialog.png");
             yield return new WaitForSecondsRealtime(0.35f);
+        }
+
+        // Editor QA: Amber Grove (garden 10) has two leaf-locked limbs.
+        IEnumerator ShotLeaves()
+        {
+#if UNITY_EDITOR
+            EditorShotLive = true;
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+            try
+            {
+#endif
+                Time.timeScale = 1f;
+                const string dir = "/tmp/paradice/leaves";
+                System.IO.Directory.CreateDirectory(dir);
+                Load(9);
+                yield return new WaitForSecondsRealtime(1.4f);
+                yield return SnapShot(dir + "/leaves-a.png");
+                yield return new WaitForSecondsRealtime(1.1f);
+                yield return SnapShot(dir + "/leaves-b.png");
+                Debug.Log("Flock Five: ShotLeaves done");
+#if UNITY_EDITOR
+            }
+            finally
+            {
+                Time.timeScale = 1f;
+                EditorShotLive = false;
+            }
+#endif
         }
 
         // Test-only capture: selected-bird outline and mid-flight frames on a real garden.

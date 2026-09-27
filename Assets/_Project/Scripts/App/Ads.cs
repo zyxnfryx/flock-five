@@ -9,6 +9,10 @@ namespace FlockFive
     public static class Ads
     {
         public static bool Enabled = true;
+
+        // TestFlight only: hidden LevelPlay test suite (hold three fingers
+        // on the screen for 2 seconds). Set false before App Store launch.
+        public const bool TestSuite = true;
         public static bool LastGranted;
 
         public const string PlacementBonus = "bonus_branch";
@@ -154,6 +158,7 @@ namespace FlockFive
             LevelPlay.OnInitFailed -= OnInitFail;
             LevelPlay.OnInitSuccess += OnInitOk;
             LevelPlay.OnInitFailed += OnInitFail;
+            if (Ads.TestSuite) LevelPlay.SetMetaData("is_test_suite", "enable");
             LevelPlay.Init(Ads.AppKey);
         }
 
@@ -314,6 +319,28 @@ namespace FlockFive
         void OnDisplayFail(LevelPlayAdInfo info, LevelPlayAdError error)
         {
             _waiting = false;
+        }
+
+        float _suiteHold;
+
+        void Update()
+        {
+            if (!Ads.TestSuite || !_inited) return;
+            var ts = UnityEngine.InputSystem.Touchscreen.current;
+            if (ts == null) { _suiteHold = 0f; return; }
+            int down = 0;
+            foreach (var tc in ts.touches)
+                if (tc.press.isPressed) down++;
+            if (down >= 3)
+            {
+                _suiteHold += Time.unscaledDeltaTime;
+                if (_suiteHold >= 2f)
+                {
+                    _suiteHold = -999f; // once per hold
+                    LevelPlay.LaunchTestSuite();
+                }
+            }
+            else _suiteHold = 0f;
         }
 
         void OnDestroy()
