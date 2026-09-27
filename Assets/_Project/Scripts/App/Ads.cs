@@ -6,6 +6,61 @@ namespace FlockFive
 {
     // Rewarded bonus_branch stays opt-in. Interstitial is stage-clear only
     // (clears 2, 5, 8…) and No Ads IAP silences that path alone. No banners.
+    // TestFlight ad log: every ad request / show / close plus app pause and
+    // resume, stamped with local time and what the player was doing. Hold
+    // four fingers for 2 seconds to open the list; tap to close. Kept across
+    // relaunches (last 60 lines). Remove with TestSuite before launch.
+    public static class AdLog
+    {
+        const string Pref = "flockfive.adlog";
+        const int Max = 60;
+        static readonly System.Collections.Generic.List<string> _lines = new System.Collections.Generic.List<string>();
+        static bool _loaded, _dirty;
+        public static System.Func<string> Context;
+
+        public static System.Collections.Generic.List<string> Lines { get { Load(); return _lines; } }
+
+        static void Load()
+        {
+            if (_loaded) return;
+            _loaded = true;
+            var raw = PlayerPrefs.GetString(Pref, "");
+            if (!string.IsNullOrEmpty(raw)) _lines.AddRange(raw.Split('\n'));
+        }
+
+        public static void Add(string what)
+        {
+            string ctx = "?";
+            try { if (Context != null) ctx = Context(); } catch { }
+            lock (_lines)
+            {
+                Load();
+                _lines.Add(System.DateTime.Now.ToString("MM/dd HH:mm:ss") + "  " + what + "  [" + ctx + "]");
+                while (_lines.Count > Max) _lines.RemoveAt(0);
+                _dirty = true;
+            }
+            Debug.Log("[AdLog] " + what + " [" + ctx + "]");
+        }
+
+        // Main thread only.
+        public static void Flush()
+        {
+            if (!_dirty) return;
+            lock (_lines)
+            {
+                PlayerPrefs.SetString(Pref, string.Join("\n", _lines));
+                PlayerPrefs.Save();
+                _dirty = false;
+            }
+        }
+
+        public static void Clear()
+        {
+            lock (_lines) { Load(); _lines.Clear(); _dirty = true; }
+            Flush();
+        }
+    }
+
     public static class Ads
     {
         public static bool Enabled = true;
@@ -71,16 +126,20 @@ namespace FlockFive
             SessionClears++;
             PlayerPrefs.SetInt(PrefClears, SessionClears);
             PlayerPrefs.Save();
+            bool hit = CadenceHit();
+            AdLog.Add("clear #" + SessionClears + (hit ? " -> ad turn" : " -> no ad turn")
+                + (!Enabled ? " (ads off)" : "") + (NoAds.Owned ? " (No Ads owned)" : ""));
             if (!Enabled) yield break;
             if (NoAds.Owned) yield break;
-            if (!CadenceHit()) yield break;
+            if (!hit) yield break;
             Ensure();
-            if (_host == null) yield break;
+            if (_host == null) { AdLog.Add("interstitial skipped: no ad host"); yield break; }
             yield return _host.RunInterstitial();
         }
 
         public static IEnumerator Rewarded()
         {
+            AdLog.Add("gift ad requested (gift tapped)");
             LastGranted = false;
             if (!Enabled)
             {
@@ -216,6 +275,7 @@ namespace FlockFive
             _waiting = true;
             _didReward = false;
             Ads.LastGranted = false;
+            AdLog.Add("gift ad show called");
             _rv.ShowAd(Ads.PlacementBonus);
             t = 0f;
             while (_waiting && t < 180f)
@@ -248,6 +308,7 @@ namespace FlockFive
             _rv.OnAdClosed += OnClosed;
             _rv.OnAdLoadFailed += OnLoadFail;
             _rv.OnAdDisplayFailed += OnDisplayFail;
+            _rv.OnAdDisplayed += OnRvShown;
             _rv.LoadAd();
         }
 
@@ -260,11 +321,12 @@ namespace FlockFive
                 t += Time.unscaledDeltaTime;
                 yield return null;
             }
-            if (!_inited) yield break;
+            if (!_inited) { AdLog.Add("interstitial skipped: SDK not ready"); yield break; }
             if (_int == null) CreateInterstitial();
             if (_int == null) yield break;
-            if (!_int.IsAdReady()) yield break;
+            if (!_int.IsAdReady()) { AdLog.Add("interstitial skipped: no ad loaded"); yield break; }
             _intWaiting = true;
+            AdLog.Add("interstitial show called");
             _int.ShowAd(Ads.PlacementClear);
             t = 0f;
             while (_intWaiting && t < 180f)
@@ -272,6 +334,8 @@ namespace FlockFive
                 t += Time.unscaledDeltaTime;
                 yield return null;
             }
+            if (_intWaiting) AdLog.Add("interstitial wait TIMED OUT after 180s; game resumed");
+            _intWaiting = false;
             _int.LoadAd();
         }
 
@@ -282,22 +346,36 @@ namespace FlockFive
             _int.OnAdClosed += OnIntClosed;
             _int.OnAdLoadFailed += OnIntLoadFail;
             _int.OnAdDisplayFailed += OnIntDisplayFail;
+            _int.OnAdDisplayed += OnIntShown;
             _int.LoadAd();
+        }
+
+        void OnIntShown(LevelPlayAdInfo info)
+        {
+            AdLog.Add("INTERSTITIAL ON SCREEN" + (_intWaiting ? "" : " (NOT requested by game!)"));
         }
 
         void OnIntClosed(LevelPlayAdInfo info)
         {
+            AdLog.Add("interstitial closed");
             _intWaiting = false;
         }
 
         void OnIntLoadFail(LevelPlayAdError error)
         {
+            if (_intWaiting) AdLog.Add("interstitial load failed while waiting");
             _intWaiting = false;
         }
 
         void OnIntDisplayFail(LevelPlayAdInfo info, LevelPlayAdError error)
         {
+            AdLog.Add("interstitial display failed");
             _intWaiting = false;
+        }
+
+        void OnRvShown(LevelPlayAdInfo info)
+        {
+            AdLog.Add("GIFT AD ON SCREEN" + (_waiting ? "" : " (NOT requested by game!)"));
         }
 
         void OnRewarded(LevelPlayAdInfo info, LevelPlayReward reward)
@@ -308,6 +386,7 @@ namespace FlockFive
 
         void OnClosed(LevelPlayAdInfo info)
         {
+            AdLog.Add("gift ad closed" + (_didReward ? " (rewarded)" : " (no reward)"));
             _waiting = false;
         }
 
@@ -321,26 +400,84 @@ namespace FlockFive
             _waiting = false;
         }
 
-        float _suiteHold;
+        float _suiteHold, _logHold;
+        bool _showLog, _logArm;
+        Vector2 _logScroll;
+
+        void OnApplicationPause(bool paused)
+        {
+            AdLog.Add(paused ? "app left foreground" : "app back in foreground");
+            if (paused) AdLog.Flush();
+        }
 
         void Update()
         {
-            if (!Ads.TestSuite || !_inited) return;
+            AdLog.Flush();
+            if (!Ads.TestSuite) return;
             var ts = UnityEngine.InputSystem.Touchscreen.current;
-            if (ts == null) { _suiteHold = 0f; return; }
+            if (ts == null) { _suiteHold = 0f; _logHold = 0f; return; }
             int down = 0;
             foreach (var tc in ts.touches)
                 if (tc.press.isPressed) down++;
-            if (down >= 3)
+
+            if (_showLog) return; // OnGUI handles close
+
+            // Four fingers for 2s opens the ad log (checked before the suite).
+            if (down >= 4)
+            {
+                _suiteHold = -999f;
+                _logHold += Time.unscaledDeltaTime;
+                if (_logHold >= 2f)
+                {
+                    _logHold = -999f;
+                    _showLog = true;
+                    _logArm = false;
+                    _logScroll = new Vector2(0f, 1e6f);
+                }
+                return;
+            }
+            _logHold = 0f;
+
+            if (!_inited) return;
+            if (down == 3)
             {
                 _suiteHold += Time.unscaledDeltaTime;
                 if (_suiteHold >= 2f)
                 {
                     _suiteHold = -999f; // once per hold
+                    AdLog.Add("ad test suite opened (3-finger hold)");
                     LevelPlay.LaunchTestSuite();
                 }
             }
-            else _suiteHold = 0f;
+            else if (down == 0) _suiteHold = 0f;
+        }
+
+        void OnGUI()
+        {
+            if (!_showLog) return;
+            float s = Screen.width / 400f;
+            var old = GUI.matrix;
+            GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1f));
+            float w = 400f, h = Screen.height / s;
+            GUI.color = new Color(0f, 0f, 0f, 0.92f);
+            GUI.DrawTexture(new Rect(0, 0, w, h), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var st = new GUIStyle(GUI.skin.label) { fontSize = 11, wordWrap = true };
+            st.normal.textColor = Color.white;
+            var lines = AdLog.Lines;
+            GUI.Label(new Rect(8, 40, w - 16, 20), "AD LOG (" + lines.Count + ")  ·  tap Close when done", st);
+            _logScroll = GUI.BeginScrollView(new Rect(4, 64, w - 8, h - 130), _logScroll,
+                new Rect(0, 0, w - 30, Mathf.Max(lines.Count * 30f, 10f)));
+            for (int i = 0; i < lines.Count; i++)
+                GUI.Label(new Rect(4, i * 30f, w - 34, 30f), lines[i], st);
+            GUI.EndScrollView();
+            if (GUI.Button(new Rect(8, h - 58, 120, 44), "Close")) _showLog = false;
+            if (GUI.Button(new Rect(w - 128, h - 58, 120, 44), _logArm ? "Tap again" : "Clear log"))
+            {
+                if (_logArm) { AdLog.Clear(); _logArm = false; }
+                else _logArm = true;
+            }
+            GUI.matrix = old;
         }
 
         void OnDestroy()
@@ -353,12 +490,14 @@ namespace FlockFive
                 _rv.OnAdClosed -= OnClosed;
                 _rv.OnAdLoadFailed -= OnLoadFail;
                 _rv.OnAdDisplayFailed -= OnDisplayFail;
+                _rv.OnAdDisplayed -= OnRvShown;
             }
             if (_int != null)
             {
                 _int.OnAdClosed -= OnIntClosed;
                 _int.OnAdLoadFailed -= OnIntLoadFail;
                 _int.OnAdDisplayFailed -= OnIntDisplayFail;
+                _int.OnAdDisplayed -= OnIntShown;
             }
             if (Ads.OwnsHost(this)) Ads.DropHost();
         }

@@ -158,6 +158,10 @@ namespace FlockFive
 
         void Start()
         {
+            AdLog.Context = () => _splash ? "splash screen"
+                : _board == null ? "no garden"
+                : "garden " + LevelData.DisplayNumber + (_board.Won ? ", cleared" : ", MID-STAGE");
+            AdLog.Add("app started");
             Application.runInBackground = true;
             Screen.orientation = ScreenOrientation.Portrait;
             Screen.autorotateToPortrait = true;
