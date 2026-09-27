@@ -158,6 +158,9 @@ namespace FlockFive.Editor
                 PlayerSettings.insecureHttpOption = InsecureHttpOption.NotAllowed;
             if (!PlayerSettings.iOS.appleEnableAutomaticSigning)
                 PlayerSettings.iOS.appleEnableAutomaticSigning = true;
+            const string team = "23K8T866FT";
+            if (PlayerSettings.iOS.appleDeveloperTeamID != team)
+                PlayerSettings.iOS.appleDeveloperTeamID = team;
             const string att = "Ads help keep Flock Five free.";
             var attProp = typeof(PlayerSettings.iOS).GetProperty("userTrackingUsageDescription");
             if (attProp != null && attProp.CanWrite)
