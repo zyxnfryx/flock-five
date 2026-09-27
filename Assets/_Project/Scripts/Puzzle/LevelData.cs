@@ -29,7 +29,17 @@ namespace FlockFive
             new Level { Number = 12, Id = "thistle-well", Title = "Thistle Well", Make = ThistleWell },
             new Level { Number = 13, Id = "nectar-pinch", Title = "Nectar Pinch", Make = NectarPinch },
             new Level { Number = 14, Id = "twin-swarm", Title = "Twin Swarm", Make = TwinSwarm },
-            new Level { Number = 15, Id = "last-light", Title = "Last Light", Make = LastLight }
+            new Level { Number = 15, Id = "last-light", Title = "Last Light", Make = LastLight },
+            new Level { Number = 16, Id = "garden-16", Title = "Garden 16", Make = Garden16 },
+            new Level { Number = 17, Id = "garden-17", Title = "Garden 17", Make = Garden17 },
+            new Level { Number = 18, Id = "garden-18", Title = "Garden 18", Make = Garden18 },
+            new Level { Number = 19, Id = "garden-19", Title = "Garden 19", Make = Garden19 },
+            new Level { Number = 20, Id = "garden-20", Title = "Garden 20", Make = Garden20 },
+            new Level { Number = 21, Id = "garden-21", Title = "Garden 21", Make = Garden21 },
+            new Level { Number = 22, Id = "garden-22", Title = "Garden 22", Make = Garden22 },
+            new Level { Number = 23, Id = "garden-23", Title = "Garden 23", Make = Garden23 },
+            new Level { Number = 24, Id = "garden-24", Title = "Garden 24", Make = Garden24 },
+            new Level { Number = 25, Id = "garden-25", Title = "Garden 25", Make = Garden25 }
         };
 
         public static int Count => All.Length;
@@ -624,6 +634,232 @@ namespace FlockFive
             HideInner(b.Branches[1], 2);
             HideInner(b.Branches[2], 2);
             HideInner(b.Branches[3], 2);
+            b.BreezeOnCollect = true;
+            Prep(b, keepTipShrouds: true);
+            HideTip(b.Branches[0]);
+            HideTip(b.Branches[2]);
+            return b;
+        }
+
+        // Soft landing. Light inner bees, both feeders live, no stubborn tip.
+        static Board Garden16()
+        {
+            var b = Eight(
+                Row(BirdColor.Gold, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Teal),
+                Row(BirdColor.Ruby, BirdColor.Gold, BirdColor.Ruby, BirdColor.Violet),
+                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Ruby, BirdColor.Teal),
+                Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Teal, BirdColor.Violet),
+                Row(BirdColor.Violet, BirdColor.Violet, BirdColor.Violet, BirdColor.Gold),
+                new BranchState(),
+                new BranchState(),
+                new BranchState());
+            b.Live[0] = BirdColor.Gold;
+            b.Live[1] = BirdColor.Violet;
+            b.Queue.Add(BirdColor.Ruby);
+            b.Queue.Add(BirdColor.Teal);
+            HideInner(b.Branches[0], 2);
+            HideInner(b.Branches[2], 2);
+            return Prep(b);
+        }
+
+        // Violet stacks. Their clones are Peach, so Peach calls twice.
+        static Board Garden17()
+        {
+            var b = Eight(
+                Row(BirdColor.Ruby, BirdColor.Gold, BirdColor.Ruby, BirdColor.Violet),
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Gold, BirdColor.Violet),
+                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Violet, BirdColor.Ruby),
+                Row(BirdColor.Violet, BirdColor.Violet, BirdColor.Violet, BirdColor.Violet),
+                Row(BirdColor.Violet, BirdColor.Gold, BirdColor.Violet, BirdColor.Violet),
+                new BranchState(),
+                new BranchState(),
+                new BranchState());
+            b.Live[0] = BirdColor.Ruby;
+            b.Live[1] = BirdColor.Violet;
+            b.Queue.Add(BirdColor.Violet);
+            b.Queue.Add(BirdColor.Gold);
+            HideInner(b.Branches[1], 2);
+            HideInner(b.Branches[2], 2);
+            HideInner(b.Branches[4], 2);
+            return Prep(b);
+        }
+
+        // Three stubborn tips. A live color still hops on turn 1.
+        static Board Garden18()
+        {
+            var b = Eight(
+                Row(BirdColor.Ruby, BirdColor.Teal, BirdColor.Teal, BirdColor.Ruby),
+                Row(BirdColor.Teal, BirdColor.Gold, BirdColor.Gold, BirdColor.Gold),
+                Row(BirdColor.Gold, BirdColor.Violet, BirdColor.Teal, BirdColor.Violet),
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Violet),
+                Row(BirdColor.Gold, BirdColor.Violet, BirdColor.Violet, BirdColor.Teal),
+                new BranchState(),
+                new BranchState(),
+                new BranchState());
+            b.Live[0] = BirdColor.Gold;
+            b.Live[1] = BirdColor.Violet;
+            b.Queue.Add(BirdColor.Teal);
+            b.Queue.Add(BirdColor.Ruby);
+            HideInner(b.Branches[2], 1);
+            b.BreezeOnCollect = true;
+            Prep(b, keepTipShrouds: true);
+            HideTip(b.Branches[0]);
+            HideTip(b.Branches[2]);
+            HideTip(b.Branches[4]);
+            return b;
+        }
+
+        // Pinched nectar, five-visit queue. Teal calls twice.
+        static Board Garden19()
+        {
+            var b = Eight(
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby),
+                Row(BirdColor.Ruby, BirdColor.Teal, BirdColor.Gold, BirdColor.Gold),
+                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Teal, BirdColor.Teal),
+                Row(BirdColor.Teal, BirdColor.Violet, BirdColor.Teal, BirdColor.Violet),
+                Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Teal),
+                Row(BirdColor.Teal, BirdColor.Violet, BirdColor.Teal),
+                Row(BirdColor.Violet, BirdColor.Gold, BirdColor.Violet),
+                new BranchState());
+            b.Live[0] = BirdColor.Gold;
+            b.Live[1] = null;
+            b.Queue.Add(BirdColor.Ruby);
+            b.Queue.Add(BirdColor.Teal);
+            b.Queue.Add(BirdColor.Teal);
+            b.Queue.Add(BirdColor.Violet);
+            HideInner(b.Branches[1], 2);
+            return Prep(b);
+        }
+
+        // Five flocks, no empty limb. Clears clean without the gift spare.
+        static Board Garden20()
+        {
+            var b = Eight(
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby),
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Violet, BirdColor.Ruby),
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Gold, BirdColor.Gold),
+                Row(BirdColor.Gold, BirdColor.Violet, BirdColor.Gold, BirdColor.Teal),
+                Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Violet),
+                Row(BirdColor.Gold, BirdColor.Violet, BirdColor.Violet),
+                Row(BirdColor.Teal, BirdColor.Ruby, BirdColor.Teal),
+                new BranchState());
+            b.Live[0] = BirdColor.Ruby;
+            b.Live[1] = BirdColor.Violet;
+            b.Queue.Add(BirdColor.Ruby);
+            b.Queue.Add(BirdColor.Gold);
+            b.Queue.Add(BirdColor.Teal);
+            return Prep(b);
+        }
+
+        // Shift density. Ruby clones turn Gold, so Gold flocks three times.
+        static Board Garden21()
+        {
+            var b = Eight(
+                Row(BirdColor.Gold, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Gold),
+                Row(BirdColor.Ruby, BirdColor.Gold, BirdColor.Violet, BirdColor.Gold),
+                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Violet, BirdColor.Gold),
+                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Gold, BirdColor.Violet),
+                Row(BirdColor.Ruby, BirdColor.Violet, BirdColor.Ruby, BirdColor.Violet),
+                new BranchState(),
+                new BranchState(),
+                new BranchState());
+            b.Live[0] = BirdColor.Gold;
+            b.Live[1] = BirdColor.Violet;
+            b.Queue.Add(BirdColor.Ruby);
+            b.Queue.Add(BirdColor.Gold);
+            HideInner(b.Branches[1], 1);
+            return Prep(b);
+        }
+
+        // Two stubborn tips sitting on thick inner bees.
+        static Board Garden22()
+        {
+            var b = Eight(
+                Row(BirdColor.Gold, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Teal),
+                Row(BirdColor.Ruby, BirdColor.Teal, BirdColor.Violet, BirdColor.Ruby),
+                Row(BirdColor.Teal, BirdColor.Violet, BirdColor.Gold, BirdColor.Ruby),
+                Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Gold, BirdColor.Violet),
+                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Violet, BirdColor.Violet),
+                new BranchState(),
+                new BranchState(),
+                new BranchState());
+            b.Live[0] = BirdColor.Teal;
+            b.Live[1] = BirdColor.Gold;
+            b.Queue.Add(BirdColor.Violet);
+            b.Queue.Add(BirdColor.Ruby);
+            HideInner(b.Branches[0], 1);
+            HideInner(b.Branches[2], 3);
+            HideInner(b.Branches[3], 3);
+            b.BreezeOnCollect = true;
+            Prep(b, keepTipShrouds: true);
+            HideTip(b.Branches[2]);
+            HideTip(b.Branches[3]);
+            return b;
+        }
+
+        // Both feeders live, long queue. Ruby calls twice, so mind the timing.
+        static Board Garden23()
+        {
+            var b = Eight(
+                Row(BirdColor.Violet, BirdColor.Teal, BirdColor.Ruby, BirdColor.Gold),
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby),
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Gold, BirdColor.Ruby),
+                Row(BirdColor.Ruby, BirdColor.Gold, BirdColor.Ruby, BirdColor.Teal),
+                Row(BirdColor.Violet, BirdColor.Teal, BirdColor.Teal),
+                Row(BirdColor.Teal, BirdColor.Violet, BirdColor.Gold),
+                Row(BirdColor.Gold, BirdColor.Violet, BirdColor.Violet),
+                new BranchState());
+            b.Live[0] = BirdColor.Gold;
+            b.Live[1] = BirdColor.Ruby;
+            b.Queue.Add(BirdColor.Ruby);
+            b.Queue.Add(BirdColor.Violet);
+            b.Queue.Add(BirdColor.Teal);
+            return Prep(b);
+        }
+
+        // Mixed fours under heavy bees. Same flock or no hop.
+        static Board Garden24()
+        {
+            var b = Eight(
+                Row(BirdColor.Ruby, BirdColor.Gold, BirdColor.Ruby, BirdColor.Teal),
+                Row(BirdColor.Teal, BirdColor.Gold, BirdColor.Gold, BirdColor.Violet),
+                Row(BirdColor.Gold, BirdColor.Teal, BirdColor.Ruby, BirdColor.Violet),
+                Row(BirdColor.Violet, BirdColor.Violet, BirdColor.Teal, BirdColor.Ruby),
+                Row(BirdColor.Gold, BirdColor.Ruby, BirdColor.Violet, BirdColor.Teal),
+                new BranchState(),
+                new BranchState(),
+                new BranchState());
+            b.Live[0] = BirdColor.Violet;
+            b.Live[1] = BirdColor.Ruby;
+            b.Queue.Add(BirdColor.Gold);
+            b.Queue.Add(BirdColor.Teal);
+            HideInner(b.Branches[0], 3);
+            HideInner(b.Branches[1], 2);
+            HideInner(b.Branches[2], 3);
+            HideInner(b.Branches[3], 2);
+            return Prep(b);
+        }
+
+        // Dawn-shaped rows with the late kit: pinch, two stubborn tips, bees.
+        static Board Garden25()
+        {
+            var b = Eight(
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby),
+                Row(BirdColor.Violet, BirdColor.Gold, BirdColor.Ruby, BirdColor.Violet),
+                Row(BirdColor.Gold, BirdColor.Teal, BirdColor.Gold, BirdColor.Violet),
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Violet, BirdColor.Ruby),
+                Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Gold, BirdColor.Teal),
+                Row(BirdColor.Ruby, BirdColor.Violet, BirdColor.Gold),
+                Row(BirdColor.Ruby, BirdColor.Teal),
+                new BranchState());
+            b.Live[0] = BirdColor.Gold;
+            b.Live[1] = null;
+            b.Queue.Add(BirdColor.Ruby);
+            b.Queue.Add(BirdColor.Teal);
+            b.Queue.Add(BirdColor.Violet);
+            b.Queue.Add(BirdColor.Ruby);
+            HideInner(b.Branches[2], 2);
+            HideInner(b.Branches[6], 1);
             b.BreezeOnCollect = true;
             Prep(b, keepTipShrouds: true);
             HideTip(b.Branches[0]);
