@@ -3870,7 +3870,6 @@ namespace FlockFive
             DrawStreakRewards(s);
 
             int next = LevelData.NextPlay;
-            var peek = LevelData.Peek(next);
 
             // Pig above hive: hit-test first so taps don't open the album.
             var pigR = PiggyRect(s);
@@ -3914,10 +3913,10 @@ namespace FlockFive
 
 #if UNITY_EDITOR
             string ease = _shotEase ?? LevelData.JokeEase(next);
-            int number = _shotLevelNumber > 0 ? _shotLevelNumber : (peek != null ? peek.Number : next + 1);
+            int number = _shotLevelNumber > 0 ? _shotLevelNumber : next + 1;
 #else
             string ease = LevelData.JokeEase(next);
-            int number = peek != null ? peek.Number : next + 1;
+            int number = next + 1;
 #endif
             if (DrawFlowerPlay(s, ease, number))
             {

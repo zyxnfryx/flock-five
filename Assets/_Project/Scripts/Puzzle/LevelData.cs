@@ -33,32 +33,32 @@ namespace FlockFive
         };
 
         public static int Count => All.Length;
-        public static bool HasNext => Index + 1 < All.Length;
+        public static bool HasNext => All.Length > 0;
         const string PrefNext = "flockfive.next";
+
+        // Climb is unbounded. Layouts cycle through the 15 gardens.
+        // The flower shows LEVEL 16, 17, … instead of wrapping to Dawn Garden as level 1.
+        public static int DisplayNumber => Index + 1;
 
         public static int NextPlay
         {
             get
             {
                 int n = UnityEngine.PlayerPrefs.GetInt(PrefNext, 0);
-                if (n < 0) n = 0;
-                if (n >= All.Length) n = 0;
-                return n;
+                return n < 0 ? 0 : n;
             }
         }
 
         public static Level Peek(int index)
         {
             if (All.Length == 0) return null;
-            int i = index < 0 ? 0 : (index >= All.Length ? All.Length - 1 : index);
-            return All[i];
+            if (index < 0) index = 0;
+            return All[index % All.Length];
         }
 
         public static void RememberClear()
         {
-            int n = Index + 1;
-            if (n >= All.Length) n = 0;
-            UnityEngine.PlayerPrefs.SetInt(PrefNext, n);
+            UnityEngine.PlayerPrefs.SetInt(PrefNext, Index + 1);
             UnityEngine.PlayerPrefs.Save();
         }
 
@@ -111,8 +111,8 @@ namespace FlockFive
         public static Board Open(int index)
         {
             if (All.Length == 0) return new Board();
-            Index = index < 0 ? 0 : (index >= All.Length ? All.Length - 1 : index);
-            Current = All[Index];
+            Index = index < 0 ? 0 : index;
+            Current = All[Index % All.Length];
             return Pack(Current.Make());
         }
 
@@ -123,7 +123,7 @@ namespace FlockFive
         {
             get
             {
-                int n = Current != null ? Current.Number : 1;
+                int n = DisplayNumber;
                 if (n <= 2) return 0;
                 if (n <= 6) return 1;
                 if (n <= 10) return 2;
@@ -136,8 +136,7 @@ namespace FlockFive
         {
             get
             {
-                int n = Current != null ? Current.Number : 1;
-                return n <= 10 ? 0 : 1;
+                return DisplayNumber <= 10 ? 0 : 1;
             }
         }
 
