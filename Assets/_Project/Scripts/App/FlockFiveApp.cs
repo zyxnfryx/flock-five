@@ -4410,15 +4410,20 @@ namespace FlockFive
             Vector2 c = h.center;
             var prev = GUI.color;
             float dt = behind ? Time.unscaledDeltaTime : 0f;
-            for (int i = 0; i < flutters.Length; i++)
+            if (behind)
             {
-                var f = flutters[i];
-                if (behind)
+                for (int i = 0; i < flutters.Length; i++)
                 {
+                    var f = flutters[i];
                     float speed = f.Speed * (0.95f + 0.05f * Mathf.Sin(Time.unscaledTime * 0.5f + f.BobPhase));
                     f.Angle = Mathf.Repeat(f.Angle + speed * dt, Mathf.PI * 2f);
                     flutters[i] = f;
                 }
+                SeparateHaloBirds(flutters, icon * 0.95f);
+            }
+            for (int i = 0; i < flutters.Length; i++)
+            {
+                var f = flutters[i];
                 // y-down: Sin<0 = above title = behind letters; Sin>=0 = below = in front.
                 // Split at 0 with no dead band — a ±0.10 gap made birds blink out at the sides.
                 float depth = Mathf.Sin(f.Angle);
@@ -4449,6 +4454,37 @@ namespace FlockFive
                     GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
             }
             GUI.color = prev;
+        }
+
+        // Halo birds only: keep every pair at least minD apart on screen by
+        // nudging them apart along their ellipses (the one ahead moves on,
+        // the one behind eases back), so faster birds queue instead of overlapping.
+        static void SeparateHaloBirds(SplashFlutter[] fl, float minD)
+        {
+            int n = fl.Length;
+            for (int pass = 0; pass < 4; pass++)
+            {
+                bool moved = false;
+                for (int i = 0; i < n; i++)
+                for (int j = i + 1; j < n; j++)
+                {
+                    var a = fl[i]; var b = fl[j];
+                    float dx = Mathf.Cos(a.Angle) * a.RadiusX - Mathf.Cos(b.Angle) * b.RadiusX;
+                    float dy = Mathf.Sin(a.Angle) * a.RadiusY - Mathf.Sin(b.Angle) * b.RadiusY;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (d >= minD) continue;
+                    float rAvg = Mathf.Max(1f, (a.RadiusX + a.RadiusY + b.RadiusX + b.RadiusY) * 0.25f);
+                    float push = (minD - d) / rAvg * 0.5f;
+                    // + means b is ahead of a in the (positive) travel direction
+                    float ahead = Mathf.DeltaAngle(a.Angle * Mathf.Rad2Deg, b.Angle * Mathf.Rad2Deg);
+                    float sgn = ahead >= 0f ? 1f : -1f;
+                    b.Angle = Mathf.Repeat(b.Angle + push * sgn, Mathf.PI * 2f);
+                    a.Angle = Mathf.Repeat(a.Angle - push * sgn, Mathf.PI * 2f);
+                    fl[i] = a; fl[j] = b;
+                    moved = true;
+                }
+                if (!moved) break;
+            }
         }
 
         static void Ring(Rect r, string text, GUIStyle st, int px)
