@@ -21,6 +21,7 @@ namespace FlockFive
         static AudioClip _celebrate;
         static AudioClip[] _jingles;
         static AudioClip _deny;
+        static AudioClip _fonzie;
         static AudioClip _pageTurn;
         static AudioClip[] _betIn;
         static AudioClip[] _betOut;
@@ -354,13 +355,22 @@ namespace FlockFive
             Ensure();
             size = Mathf.Clamp(size, 2, Palette.ComboMax);
             if (MixDesk.Live != null) MixDesk.Live.ComboWarm();
-            int i = Mathf.Min(size, 8) - 2;
-            float pitch = size <= 8 ? 1f : Mathf.Min(1.04f, 1f + 0.008f * (size - 8));
-            if (_jingles != null && i >= 0 && i < _jingles.Length)
+            if (size == 8)
             {
-                Shot(_jingles[i], pitch, 0.76f, MixLayer.Lead, MixDesk.DuckWhoosh);
-                if (MixDesk.Live != null)
-                    MixDesk.Live.MarkLead(0.42f + 0.14f * i, MixDesk.DuckWhoosh);
+                if (_fonzie == null) _fonzie = MakeFonzieEight();
+                Shot(_fonzie, 1f, 0.82f, MixLayer.Lead, MixDesk.DuckWhoosh);
+                if (MixDesk.Live != null) MixDesk.Live.MarkLead(1.35f, MixDesk.DuckWhoosh);
+            }
+            else
+            {
+                int i = Mathf.Min(size, 8) - 2;
+                float pitch = size <= 8 ? 1f : Mathf.Min(1.04f, 1f + 0.008f * (size - 8));
+                if (_jingles != null && i >= 0 && i < _jingles.Length)
+                {
+                    Shot(_jingles[i], pitch, 0.76f, MixLayer.Lead, MixDesk.DuckWhoosh);
+                    if (MixDesk.Live != null)
+                        MixDesk.Live.MarkLead(0.42f + 0.14f * i, MixDesk.DuckWhoosh);
+                }
             }
             if (size >= 3) Rumble();
         }

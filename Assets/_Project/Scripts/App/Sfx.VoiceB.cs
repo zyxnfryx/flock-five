@@ -160,6 +160,129 @@ namespace FlockFive
             return Clip("boom" + seed, data);
         }
 
+        static AudioClip MakeFonzieEight()
+        {
+            // Combo 8 only. "Combo" then the vowel of eight held as Fonzie's ayyy.
+            // One lead gag. Not a second bed, and not the wood sting.
+            float dur = 1.42f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float gphase = 0f;
+            float ay1 = 0f, ay2 = 0f, by1 = 0f, by2 = 0f, ny1 = 0f, ny2 = 0f;
+            float aA1 = 0f, aA2 = 0f, bA1 = 0f, bA2 = 0f, nA1 = 0f, nA2 = 0f;
+            int rng = 17;
+            float peak = 0.0001f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                FonzieFrame(t, out float f0, out float f1, out float f2, out float amp, out float breath, out float nose);
+                gphase += f0 / Rate;
+                float excite = 0f;
+                if (amp > 0.01f && gphase >= 1f)
+                {
+                    gphase -= 1f;
+                    excite = 1f;
+                }
+                rng = (rng * 1103515245 + 12345) & 0x7fffffff;
+                float noise = (rng / 1073741824f) - 1f;
+                excite += noise * breath * 0.25f;
+                float vf = Vowel(ref ay1, ref ay2, ref aA1, ref aA2, f1, 80f, excite);
+                float vb = Vowel(ref by1, ref by2, ref bA1, ref bA2, f2, 120f, excite);
+                float vn = Vowel(ref ny1, ref ny2, ref nA1, ref nA2, 250f, 60f, excite);
+                float s = (vf * 0.9f + vb * 0.45f) * amp + vn * nose * Mathf.Max(amp, 0.2f);
+                s += noise * breath * 0.06f;
+                data[i] = s;
+                float a = Mathf.Abs(s);
+                if (a > peak) peak = a;
+            }
+            float gain = 0.82f / peak;
+            for (int i = 0; i < n; i++)
+                data[i] = Mathf.Clamp(data[i] * gain, -0.95f, 0.95f);
+            return ClipLp("fonzie-eight", data, 0.78f);
+        }
+
+        static void FonzieFrame(float t, out float f0, out float f1, out float f2, out float amp, out float breath, out float nose)
+        {
+            f0 = 118f;
+            f1 = 700f;
+            f2 = 1200f;
+            amp = 0f;
+            breath = 0f;
+            nose = 0.05f;
+            if (t < 0.04f)
+            {
+                breath = 0.35f * (t / 0.04f);
+                return;
+            }
+            if (t < 0.15f)
+            {
+                float u = (t - 0.04f) / 0.11f;
+                f0 = 112f;
+                f1 = 730f;
+                f2 = 1120f;
+                amp = Mathf.Sin(Mathf.PI * u);
+                breath = 0.04f;
+                return;
+            }
+            if (t < 0.25f)
+            {
+                float u = (t - 0.15f) / 0.10f;
+                f0 = 106f;
+                f1 = 270f;
+                f2 = 1050f;
+                amp = 0.7f * Mathf.Sin(Mathf.PI * u);
+                nose = 0.9f;
+                breath = 0.02f;
+                return;
+            }
+            if (t < 0.29f)
+            {
+                breath = 0.05f;
+                return;
+            }
+            if (t < 0.48f)
+            {
+                float u = (t - 0.29f) / 0.19f;
+                f0 = Mathf.Lerp(114f, 124f, u);
+                f1 = Mathf.Lerp(500f, 400f, u);
+                f2 = Mathf.Lerp(1000f, 800f, u);
+                amp = 0.95f * Mathf.Sin(Mathf.PI * Mathf.Clamp01(u));
+                breath = 0.04f;
+                return;
+            }
+            if (t < 1.24f)
+            {
+                float u = (t - 0.48f) / 0.76f;
+                float slide = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(u / 0.42f));
+                float fall = u > 0.84f ? (u - 0.84f) / 0.16f : 0f;
+                f0 = Mathf.Lerp(102f, 178f, slide) * (1f - 0.08f * fall);
+                f0 *= 1f + 0.025f * Mathf.Sin(2f * Mathf.PI * 5.2f * (t - 0.48f));
+                f1 = Mathf.Lerp(560f, 310f, slide);
+                f2 = Mathf.Lerp(1600f, 2400f, slide);
+                float env = u < 0.04f ? u / 0.04f : 1f;
+                amp = env * (1f - 0.15f * fall);
+                breath = 0.05f;
+                nose = 0.35f;
+                return;
+            }
+            if (t < 1.30f)
+                breath = 0.45f;
+        }
+
+        static float Vowel(ref float y1, ref float y2, ref float a1, ref float a2, float freq, float bw, float x)
+        {
+            float r = Mathf.Exp(-Mathf.PI * bw / Rate);
+            float na1 = 2f * r * Mathf.Cos(2f * Mathf.PI * freq / Rate);
+            float na2 = -r * r;
+            if (a1 == 0f) { a1 = na1; a2 = na2; }
+            a1 += 0.35f * (na1 - a1);
+            a2 += 0.35f * (na2 - a2);
+            float y = 0.08f * x + a1 * y1 + a2 * y2;
+            y2 = y1;
+            y1 = y;
+            return y;
+        }
+
         static AudioClip MakeComboJingle(int size)
         {
             // Garden D-major sting. Climbs in pitch and length with combo size.
