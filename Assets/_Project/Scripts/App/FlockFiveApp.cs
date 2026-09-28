@@ -293,6 +293,7 @@ namespace FlockFive
         void ShowSplash()
         {
             _splash = true;
+            _incomingHalo.Clear(); // hive bees circle only inside a garden
             _home = HomeFace.Splash;
             _busy = false;
             _won = false;
@@ -3304,11 +3305,14 @@ namespace FlockFive
                 Angle = Random.Range(0f, Mathf.PI * 2f),
                 Speed = 3.1f,
                 RadiusK = 0.86f,
-                BobPhase = now * 1.7f,
+                BobPhase = now * 1.7f + _incomingHalo.Count * 1.3f,
                 Tint = tint,
                 Appear = now + 0.32f,
-                Expire = now + 0.95f
+                // Collected bees keep circling the hive for the rest of the stage
+                // (cleared on stage load). Arriving bees spread across the ring.
+                Expire = float.MaxValue
             });
+            if (_incomingHalo.Count > 12) _incomingHalo.RemoveAt(0);
         }
 
         void PruneIncomingHalo()
@@ -3351,7 +3355,7 @@ namespace FlockFive
                 y += Mathf.Sin(Time.unscaledTime * 2.2f + b.BobPhase) * (2.4f * s);
                 x = Mathf.Clamp(x, icon * 0.55f, Screen.width - icon * 0.55f);
                 y = Mathf.Clamp(y, icon * 0.55f, Screen.height - icon * 0.45f);
-                float life = Mathf.Clamp01((b.Expire - now) / 0.22f);
+                float life = b.Expire == float.MaxValue ? Mathf.Clamp01((now - b.Appear) / 0.22f) : Mathf.Clamp01((b.Expire - now) / 0.22f);
                 float scale = (isBehind ? 0.86f : 1.06f) * Mathf.Lerp(0.55f, 1f, life);
                 float iw = icon * scale;
                 var spr = SpriteCatalog.BeeFrame(Time.unscaledTime * 14f + i * 2.4f);

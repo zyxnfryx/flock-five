@@ -46,6 +46,21 @@ namespace FlockFive
                 list.Add(b);
             }
 
+            // Night fireflies: invisible by day, fade in as the garden darkens and
+            // blink on and off while drifting slowly over the lower garden and pond.
+            for (int k = 0; k < 14; k++)
+            {
+                float x = Mathf.Lerp(-3.5f, 3.5f, (float)rng.NextDouble());
+                float y = Mathf.Lerp(-7.0f, 5.5f, (float)rng.NextDouble());
+                var tint = Color.Lerp(new Color(1f, 0.95f, 0.45f, 1f), new Color(0.78f, 1f, 0.42f, 1f), (float)rng.NextDouble());
+                var b = Make("NightFly" + k, SpriteCatalog.Firefly, new Vector3(x, y, 0f), Mathf.Lerp(0.07f, 0.11f, (float)rng.NextDouble()), 9, new Color(tint.r, tint.g, tint.b, 0f), 7, rng);
+                b.AmpX = 0.6f + 0.9f * (float)rng.NextDouble();
+                b.AmpY = 0.4f + 0.7f * (float)rng.NextDouble();
+                b.Speed = 0.18f + 0.30f * (float)rng.NextDouble();
+                b.Spin = 0.55f + 0.7f * (float)rng.NextDouble(); // blink rate
+                list.Add(b);
+            }
+
             Sprite[] petals = { SpriteCatalog.PetalPink, SpriteCatalog.PetalPeach };
             for (int k = 0; k < 3; k++)
             {
@@ -149,6 +164,26 @@ namespace FlockFive
                     if (b.Kind == 4) sy *= 1f + 0.22f * _grow;
                     b.T.localScale = new Vector3(sx, sy, 1f);
                     b.Sr.color = Color.Lerp(Color.white, lush, 0.45f * _grow);
+                }
+                else if (b.Kind == 7)
+                {
+                    float dark = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.35f, 0.85f, SkyCycle.Dusk));
+                    if (dark <= 0.001f)
+                    {
+                        if (b.Sr.enabled) b.Sr.enabled = false;
+                        continue;
+                    }
+                    if (!b.Sr.enabled) b.Sr.enabled = true;
+                    var p = b.Home;
+                    p.x += Mathf.Sin(u) * b.AmpX;
+                    p.y += Mathf.Sin(u * 0.61f + 1.3f) * b.AmpY;
+                    b.T.position = p;
+                    // Soft blink: mostly dim, a warm glow every couple of seconds.
+                    float w = 0.5f + 0.5f * Mathf.Sin(t * b.Spin * Mathf.PI * 2f * 0.5f + b.Phase);
+                    float blink = 0.12f + 0.88f * w * w * w;
+                    var c = b.Tint;
+                    c.a = Mathf.Clamp01(0.95f * blink * dark);
+                    b.Sr.color = c;
                 }
                 else if (b.Kind == 5)
                 {
