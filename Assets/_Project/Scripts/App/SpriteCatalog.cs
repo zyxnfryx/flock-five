@@ -517,8 +517,22 @@ namespace FlockFive
         }
 
         public static Sprite Bird(BirdColor c) => Slot(ref _birds, (int)c, "Sprites/bird_" + Name(c), 280f);
+        // Peach only ships female/male art. A plain (neutral) request for a color with
+        // no plain sheet borrows the female sheet so it gets the full 6-pose wingbeat.
+        static readonly int[] _plainArt = new int[8];
+        static BirdSex PlainOr(BirdColor c, BirdSex sex)
+        {
+            if (sex != BirdSex.Neutral) return sex;
+            int i = (int)c;
+            if (i < 0 || i >= _plainArt.Length) return sex;
+            if (_plainArt[i] == 0)
+                _plainArt[i] = TryLoad("Sprites/bird_" + Name(c) + "_1", 280f) != null ? 1 : 2;
+            return _plainArt[i] == 1 ? sex : BirdSex.Female;
+        }
+
         public static Sprite Bird(BirdColor c, BirdSex sex)
         {
+            sex = PlainOr(c, sex);
             if (sex == BirdSex.Neutral) return Bird(c);
             string tag = sex == BirdSex.Female ? "_f" : "_m";
             var got = SlotWide(ref _kitRest, KitIx(c, sex), "Sprites/bird_" + Name(c) + tag, 280f);
@@ -533,6 +547,7 @@ namespace FlockFive
 
         public static Sprite BirdFrame(BirdColor c, float t, bool flap, BirdSex sex)
         {
+            sex = PlainOr(c, sex);
             var rest = Bird(c, sex);
             if (!flap) return rest;
             string tag = sex == BirdSex.Female ? "_f" : sex == BirdSex.Male ? "_m" : "";
