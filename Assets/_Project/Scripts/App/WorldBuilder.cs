@@ -289,6 +289,7 @@ namespace FlockFive
             cam.transform.position = new Vector3(0f, -0.45f, -10f);
             cam.transform.rotation = Quaternion.identity;
             go.AddComponent<AudioListener>();
+            go.AddComponent<MasterLoudness>();
             go.AddComponent<PortraitLock>();
             go.AddComponent<CamShake>();
             go.tag = "MainCamera";
@@ -353,7 +354,9 @@ namespace FlockFive
                 _bleed = go.AddComponent<Camera>();
                 _bleed.orthographic = true;
                 _bleed.clearFlags = CameraClearFlags.SolidColor;
-                _bleed.cullingMask = 1 << BleedLayer;
+                // Everything but UI: any world effect (rain, ice, veils, birds flying off)
+                // reaches the bezel automatically. The play camera redraws its 9:16 rect on top.
+                _bleed.cullingMask = ~(1 << 5);
                 _bleed.nearClipPlane = _cam.nearClipPlane;
                 _bleed.farClipPlane = _cam.farClipPlane;
                 _bleed.rect = new Rect(0f, 0f, 1f, 1f);

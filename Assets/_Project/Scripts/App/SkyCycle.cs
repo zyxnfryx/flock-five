@@ -78,7 +78,7 @@ namespace FlockFive
         void Build()
         {
             var veilGo = WorldBuilder.Sprite("Veil", SpriteCatalog.Glow, new Vector3(0f, 0.35f, 7.6f), 1f, -18, transform);
-            veilGo.transform.localScale = new Vector3(22f, 28f, 1f);
+            veilGo.transform.localScale = new Vector3(22f, 28f * PortraitLock.TallFactor(), 1f);
             _veil = veilGo.GetComponent<SpriteRenderer>();
             _veil.color = new Color(0.18f, 0.12f, 0.28f, 0f);
 

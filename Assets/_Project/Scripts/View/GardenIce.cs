@@ -45,7 +45,7 @@ namespace FlockFive
         void Fit()
         {
             if (_cam == null) return;
-            float h = _cam.orthographicSize * 2.24f;
+            float h = _cam.orthographicSize * 2.24f * PortraitLock.TallFactor();
             float w = h * Mathf.Max(0.4f, _cam.aspect);
             _fitA = Cover(_a, w, h);
             _fitB = Cover(_b, w * 1.04f, h * 1.04f);
@@ -128,8 +128,8 @@ namespace FlockFive
             var spr = SpriteCatalog.IceShard;
             if (spr == null || _cam == null) return;
             int n = 28;
-            float hh = _cam.orthographicSize * 1.05f;
-            float ww = hh * Mathf.Max(0.4f, _cam.aspect);
+            float ww = _cam.orthographicSize * 1.05f * Mathf.Max(0.4f, _cam.aspect);
+            float hh = _cam.orthographicSize * 1.05f * PortraitLock.TallFactor();
             var origin = _cam.transform.position + _cam.transform.forward * 9f;
             origin.z = 0f;
             for (int i = 0; i < n; i++)

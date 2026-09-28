@@ -27,6 +27,7 @@ namespace FlockFive
         float _nextBoom;
         float _flashT = 99f;
         float _flashPower;
+        float _floor = -8.6f;
 
         public static GardenStorm Attach(Transform root)
         {
@@ -64,7 +65,7 @@ namespace FlockFive
         void Build()
         {
             var veilGo = WorldBuilder.Sprite("StormVeil", SpriteCatalog.Glow, new Vector3(0f, 0.2f, 6.8f), 1f, 16, transform);
-            veilGo.transform.localScale = new Vector3(24f, 30f, 1f);
+            veilGo.transform.localScale = new Vector3(24f, 30f * PortraitLock.TallFactor(), 1f);
             _veil = veilGo.GetComponent<SpriteRenderer>();
             _veil.color = new Color(0.07f, 0.09f, 0.13f, 0f);
 
@@ -114,6 +115,8 @@ namespace FlockFive
             if (_veil != null)
                 _veil.color = new Color(0.06f, 0.08f, 0.12f, 0.62f * _wet);
 
+            // Tall phones: let drops fall through the bottom bleed band too.
+            _floor = -8.6f - 10.6f * (PortraitLock.TallFactor() - 1f);
             if (_drop != null)
             {
                 float dt = Time.deltaTime;
@@ -132,7 +135,7 @@ namespace FlockFive
                     float fall = _spd[i] * dt * Mathf.Lerp(0.18f, 1f, _wet);
                     p.y -= fall;
                     p.x -= (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * dt * _wet;
-                    if (p.y < -8.6f)
+                    if (p.y < _floor)
                     {
                         p.y = Random.Range(9.2f, 16.5f);
                         p.x = Random.Range(-5.4f, 5.4f);
@@ -159,7 +162,7 @@ namespace FlockFive
                 var cool = new Color(0.78f, 0.86f, 1f, a);
                 _flash.color = Color.Lerp(warm, cool, Mathf.Clamp01(ft * 6.5f));
                 float sc = 22f + 3.4f * strike + 1.6f * echo;
-                _flash.transform.localScale = new Vector3(sc, sc * 1.18f, 1f);
+                _flash.transform.localScale = new Vector3(sc, sc * 1.18f * PortraitLock.TallFactor(), 1f);
                 _flashT += Time.unscaledDeltaTime;
             }
 
