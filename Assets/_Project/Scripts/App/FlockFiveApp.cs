@@ -162,6 +162,9 @@ namespace FlockFive
                 : _board == null ? "no garden"
                 : "garden " + LevelData.DisplayNumber + (_board.Won ? ", cleared" : ", MID-STAGE");
             AdLog.Add("app started");
+            // iOS defaults to 30 fps; ask for 60 so flaps and motion read smooth.
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = 60;
             Application.runInBackground = true;
             Screen.orientation = ScreenOrientation.Portrait;
             Screen.autorotateToPortrait = true;
@@ -4437,6 +4440,7 @@ namespace FlockFive
         }
 
         static float HaloBirdIcon(float s) => 36f * s;
+        const float HaloFlapRate = 1.25f;
 
         void DrawHaloBirds(ref SplashFlutter[] flutters, Rect h, float s, bool behind, float icon)
         {
@@ -4472,8 +4476,21 @@ namespace FlockFive
                 float iw = icon * scale;
                 float vx = -Mathf.Sin(f.Angle) * f.RadiusX;
                 bool faceLeft = vx < 0f;
-                var spr = SpriteCatalog.BirdFrame(f.Col, Time.unscaledTime * 11f + i * 2.1f, true);
+                // Same wingbeat as perched birds (BirdIdle FlapRate 1.25 = 40 poses/s).
+                // It was *11 (352 poses/s): far above the screen rate, so each
+                // frame showed a random pose and the flap strobed.
+                var spr = SpriteCatalog.BirdFrame(f.Col, Time.unscaledTime * HaloFlapRate + i * 0.37f, true);
                 if (spr == null || spr.texture == null) continue;
+                // Flight frames are bigger canvases (1504 px at a different PPU)
+                // than the rest pose (1024 px). GUI ignores PPU, so size each
+                // frame by its world size vs the rest pose or the bird pops.
+                var restSpr = SpriteCatalog.BirdFrame(f.Col, 0f, false);
+                if (restSpr != null && restSpr != spr && restSpr.pixelsPerUnit > 0f && spr.pixelsPerUnit > 0f)
+                {
+                    float restU = restSpr.rect.width / restSpr.pixelsPerUnit;
+                    float frameU = spr.rect.width / spr.pixelsPerUnit;
+                    if (restU > 0f) iw *= frameU / restU;
+                }
                 var r = new Rect(x - iw * 0.5f, y - iw * 0.5f, iw, iw);
                 float dim = behind ? 0.74f : 0.98f;
                 GUI.color = new Color(dim, dim, dim, behind ? 0.80f : 0.95f);
