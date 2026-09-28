@@ -3110,7 +3110,6 @@ namespace FlockFive
             }
             if (_board == null) return;
             HudLayout(out float s, out float top, out _, out var restart, out var hive);
-            DrawRemainingBirds(s);
             var arrow = SpriteCatalog.Restart;
             if (arrow != null && arrow.texture != null)
                 GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);

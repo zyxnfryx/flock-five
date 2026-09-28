@@ -44,7 +44,10 @@ namespace FlockFive
             // Bark kisses the bezel so the outer bird can sit at the screen edge.
             return halfW - WoodHalfOf(woodScaleX) * s + 0.18f;
         }
-        public const float RowY0 = 3.42f;
+        // Tall phones: lift the rows so the flock sits mid-screen instead of low under a gap.
+        public static float RowY0 => 3.42f + 5.0f * (PortraitLock.TallFactor() - 1f);
+        // Feeders keep the same drop from the real screen top on every phone.
+        public static float FeederY => 8.12f + 10.6f * (PortraitLock.TallFactor() - 1f);
         public const float RowGap = 1.50f;
         public const int GiftIndex = Rows * Cols;
         public const float GiftY = -7.52f;
@@ -91,8 +94,8 @@ namespace FlockFive
             branches[GiftIndex] = MakeGift(root);
 
             var feeders = new FeederView[2];
-            feeders[0] = MakeFeeder(0, new Vector3(-1.22f, 8.12f, 0f), root);
-            feeders[1] = MakeFeeder(1, new Vector3(1.22f, 8.12f, 0f), root);
+            feeders[0] = MakeFeeder(0, new Vector3(-1.22f, FeederY, 0f), root);
+            feeders[1] = MakeFeeder(1, new Vector3(1.22f, FeederY, 0f), root);
             var hive = HiveView.Attach(root);
             var ice = GardenIce.Attach(root, cam);
 

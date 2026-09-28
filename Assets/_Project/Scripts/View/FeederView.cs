@@ -15,6 +15,32 @@ namespace FlockFive
 
         void Awake() => _planted = transform.position;
 
+        static Sprite _px;
+        // Hanging cord from the art's hook up past the real screen top, so the feeder never floats.
+        void Start()
+        {
+            if (Art == null || Art.sprite == null) return;
+            if (_px == null)
+            {
+                var t = new Texture2D(1, 1) { filterMode = FilterMode.Bilinear };
+                t.SetPixel(0, 0, Color.white); t.Apply();
+                _px = Sprite.Create(t, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0f), 1f);
+            }
+            float hookY = Art.sprite.bounds.max.y - 0.06f;            // local units, sprite space
+            float worldTop = 10.6f * PortraitLock.TallFactor() + 1.5f;  // past the bezel
+            float len = (worldTop - transform.position.y) / Scale - hookY;
+            if (len <= 0f) return;
+            var go = new GameObject("Cord");
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = new Vector3(0f, hookY, 0.01f);
+            go.transform.localScale = new Vector3(0.05f / Scale, len, 1f);
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = _px;
+            sr.color = new Color(0.20f, 0.13f, 0.08f, 1f);
+            sr.sortingOrder = Art.sortingOrder - 1;
+            go.layer = gameObject.layer;
+        }
+
         public void Show(BirdColor? color)
         {
             if (Art == null) return;
