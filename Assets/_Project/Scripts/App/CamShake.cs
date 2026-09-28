@@ -5,6 +5,10 @@ namespace FlockFive
     public sealed class CamShake : MonoBehaviour
     {
         public static CamShake Live;
+        // Screen-space mirror of the shake (GUI pixels, degrees) so IMGUI garden
+        // controls (hive, restart) shake with the scene.
+        public static Vector2 HudOffset;
+        public static float HudTwist;
         Vector3 _rest;
         float _restSize;
         Camera _cam;
@@ -95,6 +99,7 @@ namespace FlockFive
             transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(w * 1.3f) * _twist * decay);
             if (_cam != null)
                 _cam.orthographicSize = _restSize * (1f - _kick * Mathf.Sin((1f - u) * Mathf.PI) * decay);
+            Mirror();
         }
 
         void ApplyBolt()
@@ -114,10 +119,23 @@ namespace FlockFive
             transform.localRotation = Quaternion.Euler(0f, 0f, (s1 * 0.75f + s2 * 0.4f + roll * 0.28f) * _boltTwist);
             if (_cam != null)
                 _cam.orthographicSize = _restSize * (1f - _boltKick * (s1 + 0.32f * s2));
+            Mirror();
+        }
+
+        void Mirror()
+        {
+            float size = _restSize > 0.01f ? _restSize : 8.2f;
+            float ppu = Screen.height / (2f * size);
+            var d = transform.localPosition - _rest;
+            HudOffset = new Vector2(-d.x * ppu, d.y * ppu);
+            HudTwist = transform.localEulerAngles.z;
+            if (HudTwist > 180f) HudTwist -= 360f;
         }
 
         void Settle()
         {
+            HudOffset = Vector2.zero;
+            HudTwist = 0f;
             _t = 0f;
             transform.localPosition = _rest;
             transform.localRotation = Quaternion.identity;

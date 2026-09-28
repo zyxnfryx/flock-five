@@ -3164,12 +3164,20 @@ namespace FlockFive
             }
             if (_board == null) return;
             HudLayout(out float s, out float top, out _, out var restart, out var hive);
+            var hudM = GUI.matrix;
+            bool quake = CamShake.HudOffset.sqrMagnitude > 0.01f || Mathf.Abs(CamShake.HudTwist) > 0.001f;
+            if (quake)
+            {
+                GUIUtility.RotateAroundPivot(CamShake.HudTwist, new Vector2(Screen.width * 0.5f, Screen.height * 0.5f));
+                GUI.matrix = Matrix4x4.Translate(new Vector3(CamShake.HudOffset.x, CamShake.HudOffset.y, 0f)) * GUI.matrix;
+            }
             var arrow = SpriteCatalog.Restart;
             if (arrow != null && arrow.texture != null)
                 GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
             else
                 GUI.Box(restart, "↩");
             DrawHiveButton(hive, s, orbit: true);
+            if (quake) GUI.matrix = hudM;
             if (_levelHive) DrawLevelHive(s);
             DrawGiftSign(s);
             DrawCoach(s, top);
