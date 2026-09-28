@@ -315,7 +315,8 @@ namespace FlockFive
         void Flap(bool hard)
         {
             if (_art == null) return;
-            _flap += Time.deltaTime * (hard ? 22f : 14f);
+            // Wingbeats per second; poses step at a steady rate so the flap never aliases.
+            _flap += Time.deltaTime * (hard ? 4f : 2.6f);
             _art.sprite = SpriteCatalog.SparrowFrame(_flap);
             if (SpriteCatalog.SparrowIsPlaceholder)
                 _art.color = _tint;

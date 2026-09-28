@@ -74,10 +74,11 @@ namespace FlockFive
         public static Sprite SparrowFrame(float t)
         {
             var rest = Sparrow;
-            if (_sparrowPlaceholder) return BirdFrame(BirdColor.Violet, t, true);
+            if (_sparrowPlaceholder) return BirdFrame(BirdColor.Violet, t * 0.25f, true);
             var up = Load(ref _sparrowFlap1, "Sprites/fx_sparrow_1", 200f);
             var mid = Load(ref _sparrowFlap2, "Sprites/fx_sparrow_2", 200f);
-            int k = Mathf.FloorToInt(Mathf.Abs(t) * 16f) % 4;
+            // t counts wingbeats (one rest-up-mid-up cycle per unit).
+            int k = Mathf.FloorToInt(Mathf.Abs(t) * 4f) % 4;
             if (k == 1) return up != null ? up : rest;
             if (k == 2) return mid != null ? mid : rest;
             if (k == 3) return up != null ? up : rest;
@@ -105,7 +106,7 @@ namespace FlockFive
         public static Sprite HawkFrame(float t)
         {
             var rest = Hawk;
-            if (_hawkPlaceholder) return BirdFrame(BirdColor.Ruby, t, true);
+            if (_hawkPlaceholder) return BirdFrame(BirdColor.Ruby, t * 0.25f, true);
             // Single-frame art for now (no flap sheet yet).
             return rest;
         }

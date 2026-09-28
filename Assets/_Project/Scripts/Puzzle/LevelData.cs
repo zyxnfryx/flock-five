@@ -200,6 +200,15 @@ namespace FlockFive
                         break;
                     }
                 }
+                // Bees cover one solid stack from the trunk out. Never leave a lone
+                // hidden bird between visible ones: once a bird below is showing,
+                // every bee above it lifts too (a tip leaf is separate and stays).
+                bool seen = false;
+                for (int k = 0; k < br.Count - 1; k++)
+                {
+                    if (!br.IsShrouded(k)) { seen = true; continue; }
+                    if (seen) br.Shrouded[k] = false;
+                }
             }
         }
 
