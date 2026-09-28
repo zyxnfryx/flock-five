@@ -202,6 +202,7 @@ namespace FlockFive
         bool _initFailed;
         bool _waiting;
         bool _didReward;
+        bool _shown;
         bool _intWaiting;
 
         public void Boot()
@@ -234,7 +235,7 @@ namespace FlockFive
             }
 
             float t = 0f;
-            while (!_inited && !_initFailed && t < 8f)
+            while (!_inited && !_initFailed && t < 5f)
             {
                 t += Time.unscaledDeltaTime;
                 yield return null;
@@ -242,21 +243,24 @@ namespace FlockFive
 
             if (!_inited)
             {
-#if UNITY_EDITOR
-                yield return Ads.Simulate();
+                AdLog.Add("gift ad unavailable (ads not ready) -> gift granted anyway");
                 Ads.LastGranted = true;
-#endif
                 yield break;
             }
 
             if (_rv == null) CreateRewarded();
-            if (_rv == null) yield break;
+            if (_rv == null)
+            {
+                AdLog.Add("gift ad unavailable (no ad unit) -> gift granted anyway");
+                Ads.LastGranted = true;
+                yield break;
+            }
 
             if (!_rv.IsAdReady())
             {
                 _rv.LoadAd();
                 t = 0f;
-                while (!_rv.IsAdReady() && t < 12f)
+                while (!_rv.IsAdReady() && t < 6f)
                 {
                     t += Time.unscaledDeltaTime;
                     yield return null;
@@ -265,14 +269,14 @@ namespace FlockFive
 
             if (!_rv.IsAdReady())
             {
-#if UNITY_EDITOR
-                yield return Ads.Simulate();
+                AdLog.Add("gift ad did not load -> gift granted anyway");
                 Ads.LastGranted = true;
-#endif
+                _rv.LoadAd();
                 yield break;
             }
 
             _waiting = true;
+            _shown = false;
             _didReward = false;
             Ads.LastGranted = false;
             AdLog.Add("gift ad show called");
@@ -283,7 +287,10 @@ namespace FlockFive
                 t += Time.unscaledDeltaTime;
                 yield return null;
             }
-            Ads.LastGranted = _didReward;
+            // Permissive: only withhold the gift when an ad really played and the
+            // player closed it before the reward. Any failure still grants it.
+            Ads.LastGranted = _didReward || !_shown;
+            if (!_didReward && !_shown) AdLog.Add("gift ad failed to show -> gift granted anyway");
             _rv.LoadAd();
         }
 
@@ -375,6 +382,7 @@ namespace FlockFive
 
         void OnRvShown(LevelPlayAdInfo info)
         {
+            _shown = true;
             AdLog.Add("GIFT AD ON SCREEN" + (_waiting ? "" : " (NOT requested by game!)"));
         }
 
