@@ -2668,6 +2668,7 @@ namespace FlockFive
             _levelHive = false;
             yield return FinaleShow.Play(_garden, this);
             yield return new WaitForSeconds(0.45f);
+            yield return Tracking.AskOnce();
             yield return Ads.Interstitial();
             LevelData.RememberClear();
             Purse.AwardClear();
@@ -3868,7 +3869,8 @@ namespace FlockFive
         static Rect HomeRailRect(bool right, float size)
         {
             var safe = Screen.safeArea;
-            float y = Screen.height * 0.30f;
+            // Brandon: drop the whole rail so the $ row clears the logo.
+            float y = Screen.height * 0.335f;
             if (right)
             {
                 float x = Mathf.Min(Screen.width, safe.xMax) - 20f - size;
