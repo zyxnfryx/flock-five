@@ -23,7 +23,7 @@ namespace FlockFive
             if (Cam != null)
             {
                 // Bleed past the frustum so the garden painting, not the clear color, hits the bezel.
-                float h = Cam.orthographicSize * 2.24f;
+                float h = Cam.orthographicSize * 2.24f * PortraitLock.TallFactor();
                 float w = h * Mathf.Max(0.05f, Cam.aspect);
                 float x = FollowCamera ? Cam.transform.position.x : WorldCenter.x;
                 float y = FollowCamera ? Cam.transform.position.y : WorldCenter.y;

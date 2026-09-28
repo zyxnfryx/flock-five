@@ -74,6 +74,9 @@ namespace FlockFive
             fit.WorldCenter = new Vector3(0f, -0.15f, 8f);
             fit.WorldSize = new Vector2(13.6f, 24.0f);
             fit.Apply();
+            // Tall phones: PortraitLock letterboxes the 9:16 play area; a bleed camera
+            // paints this layer into the bands so the garden art reaches the bezel.
+            bg.layer = PortraitLock.BleedLayer;
             SkyCycle.Attach(root, cam);
             GardenLife.Attach(root);
             GardenStorm.Attach(root);
@@ -295,7 +298,9 @@ namespace FlockFive
 
     public sealed class PortraitLock : MonoBehaviour
     {
+        public const int BleedLayer = 30;
         Camera _cam;
+        Camera _bleed;
 
         void Awake() => _cam = GetComponent<Camera>();
 
@@ -331,7 +336,40 @@ namespace FlockFive
             {
                 float h = window / want;
                 _cam.rect = new Rect(0f, (1f - h) * 0.5f, 1f, h);
+                Bleed(want / window);
+                return;
             }
+            if (_bleed != null) _bleed.enabled = false;
+        }
+
+        // Full-screen camera behind the play camera that draws only the background
+        // layer, same world scale, so the top/bottom bands show garden art, not clear color.
+        void Bleed(float tall)
+        {
+            if (_bleed == null)
+            {
+                var go = new GameObject("BleedCam");
+                go.transform.SetParent(transform, false);
+                _bleed = go.AddComponent<Camera>();
+                _bleed.orthographic = true;
+                _bleed.clearFlags = CameraClearFlags.SolidColor;
+                _bleed.cullingMask = 1 << BleedLayer;
+                _bleed.nearClipPlane = _cam.nearClipPlane;
+                _bleed.farClipPlane = _cam.farClipPlane;
+                _bleed.rect = new Rect(0f, 0f, 1f, 1f);
+            }
+            _bleed.enabled = _cam.enabled;
+            _bleed.backgroundColor = _cam.backgroundColor;
+            _bleed.depth = _cam.depth - 1f;
+            _bleed.orthographicSize = _cam.orthographicSize * tall;
+            _bleed.transform.localPosition = Vector3.zero;
+            _bleed.transform.localRotation = Quaternion.identity;
+        }
+
+        public static float TallFactor()
+        {
+            float window = (float)Screen.width / Mathf.Max(1, Screen.height);
+            return Mathf.Max(1f, WorldBuilder.PortraitAspect / Mathf.Max(0.05f, window));
         }
     }
 }
