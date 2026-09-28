@@ -5,7 +5,7 @@ using UnityEngine.InputSystem;
 
 namespace FlockFive
 {
-    public sealed class FlockFiveApp : MonoBehaviour
+    public sealed partial class FlockFiveApp : MonoBehaviour
     {
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoBoot()
@@ -333,6 +333,7 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.SetSplash(false);
             _board = LevelData.Open(index);
             _seed = _board.Clone();
+            CoachBegin(index);
             Purse.BeginStage();
             if (_garden.Root != null) Destroy(_garden.Root.gameObject);
             if (_garden.Cam != null) Destroy(_garden.Cam.gameObject);
@@ -1937,6 +1938,7 @@ namespace FlockFive
 
             int kicked = KickCollects();
             SyncAll();
+            CoachMoved(from, to, kicked);
             if (_locked.Count == 0)
                 yield return GardenFit.Tween(_garden, _board, false);
             if (_board.JustUnveiled)
@@ -3117,6 +3119,7 @@ namespace FlockFive
             DrawHiveButton(hive, s, orbit: true);
             if (_levelHive) DrawLevelHive(s);
             DrawGiftSign(s);
+            DrawCoach(s, top);
             if (_gift != GiftFace.None) DrawGiftOffer(s);
         }
 
