@@ -568,20 +568,21 @@ namespace FlockFive
             // twice the steps: rest,_3,_1,_4,_2,_4,_1,_3.
             if (f3 != null && f4 != null && f1 != null && f2 != null)
             {
-                int k8 = Mathf.FloorToInt(Mathf.Abs(t) * 32f) % 8;
-                switch (k8)
+                // No rest pose in flight: its tucked wings flashed the belly out once per
+                // beat (and pulsed the selection halo). 6 poses at the same beat length.
+                int k6 = Mathf.FloorToInt(Mathf.Abs(t) * 24f) % 6;
+                switch (k6)
                 {
-                    case 0: return rest;
-                    case 1: case 7: return f3;
-                    case 2: case 6: return f1;
-                    case 3: case 5: return f4;
+                    case 0: return f3;
+                    case 1: case 5: return f1;
+                    case 2: case 4: return f4;
                     default: return f2;
                 }
             }
-            int k = Mathf.FloorToInt(Mathf.Abs(t) * 16f) % 4;
-            if (k == 0) return rest;
-            if (k == 2) return f2 != null ? f2 : f1;
-            return f1 != null ? f1 : rest;
+            if (f1 == null) return rest;
+            if (f2 == null) return f1;
+            int k = Mathf.FloorToInt(Mathf.Abs(t) * 8f) % 2;
+            return k == 0 ? f1 : f2;
         }
 
         public static Sprite BirdFrame(BirdColor c, float t) => BirdFrame(c, t, false);
