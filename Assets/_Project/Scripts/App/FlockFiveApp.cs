@@ -107,6 +107,8 @@ namespace FlockFive
         float _giftThanksAt;
         bool _frozen;
         bool _freezeOffer;
+        // The gift branch was earned this stage; Restart keeps it open instead of re-offering it.
+        bool _giftClaimed;
         readonly List<BeeVisit> _levelBees = new List<BeeVisit>();
         int _hiveFlip = -1;
         float _hiveFlipT;
@@ -333,6 +335,7 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.SetSplash(false);
             _board = LevelData.Open(index);
             _seed = _board.Clone();
+            _giftClaimed = false;
             CoachBegin(index);
             Purse.BeginStage();
             if (_garden.Root != null) Destroy(_garden.Root.gameObject);
@@ -2802,6 +2805,9 @@ namespace FlockFive
                 yield return _garden.Ice.Shatter(_garden.Root);
             StillBirds(false);
             if (_seed != null) _board = _seed.Clone();
+            if (_giftClaimed && _board != null)
+                for (int gi = 0; gi < _board.Branches.Count; gi++)
+                    _board.Branches[gi].AdLocked = false;
             if (_garden.Branches != null && _board != null)
             {
                 for (int i = 0; i < _garden.Branches.Length; i++)
@@ -7893,6 +7899,7 @@ namespace FlockFive
                 if (!_board.Branches[i].AdLocked) continue;
                 _board.Branches[i].AdLocked = false;
                 unlocked = i;
+                _giftClaimed = true;
                 var v = i < _garden.Branches.Length ? _garden.Branches[i] : null;
                 if (v != null)
                 {
