@@ -2804,6 +2804,7 @@ namespace FlockFive
             if (_garden.Ice != null)
                 yield return _garden.Ice.Shatter(_garden.Root);
             StillBirds(false);
+            yield return FlyOffAll();
             if (_seed != null) _board = _seed.Clone();
             if (_giftClaimed && _board != null)
                 for (int gi = 0; gi < _board.Branches.Count; gi++)
@@ -2841,12 +2842,48 @@ namespace FlockFive
             _busy = false;
         }
 
+        float EdgeHalfW()
+        {
+            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
+            return cam != null ? cam.orthographicSize * cam.aspect : 3.2f;
+        }
+
+        // Restart: the whole flock takes off and leaves the screen before the reset.
+        // Hidden birds (bees or leaves) keep their silhouette in flight.
+        IEnumerator FlyOffAll()
+        {
+            if (_garden.Branches == null) yield break;
+            float edge = EdgeHalfW() + 1.4f;
+            int n = 0;
+            for (int i = 0; i < _garden.Branches.Length; i++)
+            {
+                var v = _garden.Branches[i];
+                if (v == null || !v.gameObject.activeInHierarchy || v.Birds == null) continue;
+                for (int s = 0; s < v.Birds.Length; s++)
+                {
+                    var b = v.Birds[s];
+                    if (b == null || !b.enabled) continue;
+                    var p = b.transform.position;
+                    float side = p.x >= 0f ? 1f : -1f;
+                    var dest = new Vector3(side * (edge + Random.Range(0f, 0.8f)), p.y + Random.Range(1.2f, 3.0f), p.z);
+                    StartCoroutine(ScatterHold(b.transform, dest, n * Random.Range(0.012f, 0.03f)));
+                    n++;
+                }
+            }
+            if (n == 0) yield break;
+            Sfx.Takeoff(n);
+            Sfx.FlockFlutter(Mathf.Min(3, Mathf.Max(1, n / 3)));
+            yield return new WaitForSeconds(0.66f + Mathf.Min(0.35f, n * 0.012f));
+        }
+
         IEnumerator SnapBirdsHome()
         {
             if (_garden.Branches == null) yield break;
             var birds = new System.Collections.Generic.List<Transform>();
             var dests = new System.Collections.Generic.List<Vector3>();
             var starts = new System.Collections.Generic.List<Vector3>();
+            var delays = new System.Collections.Generic.List<float>();
+            float edgeX = EdgeHalfW() + 1.4f;
             for (int i = 0; i < _garden.Branches.Length; i++)
             {
                 var v = _garden.Branches[i];
@@ -2858,8 +2895,15 @@ namespace FlockFive
                     birds.Add(tr);
                     dests.Add(tr.position);
                     var idle = v.Birds[s].GetComponent<BirdIdle>();
-                    if (idle != null) idle.Frozen = true;
-                    starts.Add(tr.position + new Vector3(Random.Range(-1.6f, 1.6f), Random.Range(1.6f, 3.8f), 0f));
+                    float side = tr.position.x >= 0f ? 1f : -1f;
+                    if (idle != null)
+                    {
+                        idle.Frozen = true;
+                        idle.Flapping = true;
+                        idle.FaceLeft = side > 0f; // flying in from the right faces left
+                    }
+                    starts.Add(new Vector3(side * (edgeX + Random.Range(0f, 0.9f)), tr.position.y + Random.Range(1.0f, 2.6f), tr.position.z));
+                    delays.Add(birds.Count * Random.Range(0.014f, 0.032f));
                     tr.position = starts[starts.Count - 1];
                 }
             }
@@ -2877,25 +2921,29 @@ namespace FlockFive
             }
             Sfx.FlockFlutter(Mathf.Max(1, birds.Count / 3));
             float t = 0f;
-            const float dur = 0.28f;
-            while (t < dur)
+            const float dur = 0.72f;
+            float maxDelay = 0f;
+            for (int i = 0; i < delays.Count; i++) maxDelay = Mathf.Max(maxDelay, delays[i]);
+            while (t < dur + maxDelay)
             {
                 t += Time.deltaTime;
-                float u = Mathf.Clamp01(t / dur);
-                float k = 1f - (1f - u) * (1f - u);
                 for (int i = 0; i < birds.Count; i++)
                 {
                     if (birds[i] == null) continue;
+                    float u = Mathf.Clamp01((t - delays[i]) / dur);
+                    float k = Mathf.SmoothStep(0f, 1f, u);
                     var p = Vector3.Lerp(starts[i], dests[i], k);
-                    p.y += Mathf.Sin(u * Mathf.PI) * 0.7f;
+                    p.y += Mathf.Sin(u * Mathf.PI) * 0.5f;
                     birds[i].position = p;
                 }
                 if (_garden.Feeders != null)
                 {
+                    float fu = Mathf.Clamp01(t / 0.4f);
+                    float fk = 1f - (1f - fu) * (1f - fu);
                     for (int i = 0; i < 2; i++)
                     {
                         if (_garden.Feeders[i] == null) continue;
-                        _garden.Feeders[i].transform.position = Vector3.Lerp(fFrom[i], fTo[i], k);
+                        _garden.Feeders[i].transform.position = Vector3.Lerp(fFrom[i], fTo[i], fk);
                     }
                 }
                 yield return null;
