@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace FlockFive
@@ -13,6 +14,7 @@ namespace FlockFive
         public float Lift;
         public bool Frozen;
         public bool Flapping;
+        public float FlapMul = 1f;
         public bool Sleeping;
         public bool Shrouded;
         public bool FaceLeft;
@@ -33,6 +35,7 @@ namespace FlockFive
         float _flutterUntil;
         float _blinkUntil;
         float _nextBlink;
+        float _cheerUntil;
 
         void Awake()
         {
@@ -54,6 +57,8 @@ namespace FlockFive
             Frozen = false;
             Flapping = false;
             _flutterUntil = 0f;
+            _cheerUntil = 0f;
+            _glowA = 0f;
             _liftShown = 0f; // re-bound birds (e.g. after Restart) start seated, no pop
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
             if (_sr != null) _sr.flipX = FaceLeft;
@@ -74,6 +79,56 @@ namespace FlockFive
             Flapping = true;
             _flutterUntil = Time.time + Mathf.Max(0.12f, seconds);
             _nextWing = 0f;
+        }
+
+        // Short celebratory outline. Fades on its own so a score hop never sticks.
+        public void Cheer(float seconds)
+        {
+            _cheerUntil = Time.time + Mathf.Max(0.05f, seconds);
+        }
+
+        // One seated bounce. Restores whatever Lift the perch already had.
+        public void HopCheer(float delay, float hop)
+        {
+            if (!isActiveAndEnabled || Frozen || Shrouded || Sleeping) return;
+            StartCoroutine(HopCheerCo(delay, hop));
+        }
+
+        IEnumerator HopCheerCo(float delay, float hop)
+        {
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            if (Frozen || Shrouded || Sleeping) yield break;
+            float keep = Lift;
+            Cheer(0.32f);
+            Lift = keep + hop;
+            float t = 0f;
+            while (t < 0.16f)
+            {
+                t += Time.deltaTime;
+                if (Frozen || Shrouded)
+                {
+                    Lift = 0f;
+                    yield break;
+                }
+                yield return null;
+            }
+            Lift = keep;
+        }
+
+        public void SetFade(float a)
+        {
+            if (_sr == null) _sr = GetComponent<SpriteRenderer>();
+            FadeSprite(_sr, a);
+            FadeSprite(_face, a);
+            FadeSprite(_kit, a);
+        }
+
+        static void FadeSprite(SpriteRenderer sr, float a)
+        {
+            if (sr == null) return;
+            var c = sr.color;
+            c.a = a;
+            sr.color = c;
         }
 
         void EnsureFace()
@@ -100,7 +155,10 @@ namespace FlockFive
             }
             if (_ruffle > 0f) _ruffle -= Time.deltaTime;
             bool show = _sr != null && _sr.enabled;
-            bool fly = !Sleeping && !Shrouded && show && (Flapping || Lift > 0.05f || _ruffle > 0f);
+            // Shrouded birds stay a still silhouette on the perch. A frozen flap
+            // (restart takeoff) still beats the wings so that silhouette flies.
+            bool fly = !Sleeping && show && (Flapping || Lift > 0.05f || _ruffle > 0f)
+                && (!Shrouded || (Frozen && Flapping));
             var mood = BirdMood.Of(Color);
             if (show)
             {
@@ -113,7 +171,9 @@ namespace FlockFive
                 // 16*FlapRate poses/sec (rest,_1,_2,_1 = 4 poses per wingbeat); with the _3/_4
                 // in-betweens BirdFrame doubles that to 8 poses per beat at the same beat rate.
                 // 1.25 = 20 poses/sec = 5 wingbeats/sec, frame-rate independent.
-                _sr.sprite = SpriteCatalog.BirdFrame(Color, (Time.time + _phase) * (wings ? FlapRate : 0.06f), wings, Sex);
+                float mul = FlapMul < 0.05f ? 1f : FlapMul;
+                float flap = wings ? FlapRate * mul : 0.06f;
+                _sr.sprite = SpriteCatalog.BirdFrame(Color, (Time.time + _phase) * flap, wings, Sex);
                 if (!Frozen)
                 {
                     _sr.color = Shrouded ? new Color(0.04f, 0.03f, 0.05f, 1f) : UnityEngine.Color.white;
@@ -125,7 +185,13 @@ namespace FlockFive
             if (kitOn) EnsureKit();
             PlaceKit(mood, kitOn);
             PlaceFace(mood, show && !Shrouded);
-            PlaceGlow(show && !Shrouded && !Sleeping && !Frozen && Lift >= 1f);
+            float glow = 0f;
+            if (show && !Shrouded && !Sleeping)
+            {
+                if (!Frozen && Lift >= 1f) glow = 1f;
+                if (Time.time < _cheerUntil) glow = Mathf.Max(glow, 0.62f);
+            }
+            PlaceGlow(glow);
             if (fly && !Frozen) BeatWings();
             else if (show && !Sleeping && !Shrouded && !Frozen) MaybeRuffle();
 
@@ -233,9 +299,9 @@ namespace FlockFive
             }
         }
 
-        void PlaceGlow(bool selected)
+        void PlaceGlow(float target)
         {
-            _glowA = Mathf.MoveTowards(_glowA, selected ? 1f : 0f, 9f * Time.deltaTime);
+            _glowA = Mathf.MoveTowards(_glowA, Mathf.Clamp01(target), 9f * Time.deltaTime);
             bool on = _glowA > 0.01f && _sr != null && _sr.enabled && _sr.sprite != null;
             if (!on)
             {
@@ -337,19 +403,6 @@ namespace FlockFive
             { 1.374f, 1.252f, 1.264f, 1.252f, 1.252f, 1.374f }, // Peach
         };
 
-        static int KitFrameIndex(Sprite spr)
-        {
-            if (spr == null || string.IsNullOrEmpty(spr.name)) return 0;
-            var n = spr.name;
-            // bird_teal_f_5 / bird_teal_5 / bird_teal_f
-            for (int i = 5; i >= 1; i--)
-            {
-                if (n.EndsWith("_" + i) || n.Contains("_f_" + i) || n.Contains("_m_" + i))
-                    return i;
-            }
-            return 0;
-        }
-
         void PlaceKit(BirdMood.Pose mood, bool on)
         {
             if (Sex == BirdSex.Neutral)
@@ -369,7 +422,7 @@ namespace FlockFive
             if (girl)
             {
                 // Per-frame crown embed (not one global Y) — head redraws in-atlas.
-                int fi = KitFrameIndex(_sr != null ? _sr.sprite : null);
+                int fi = SpriteCatalog.PoseIndex(_sr != null ? _sr.sprite : null, Color, Sex);
                 int ci = (int)Color;
                 if (ci < 0 || ci >= BowLocalX.GetLength(0)) ci = 0;
                 if (fi < 0 || fi > 5) fi = 0;
@@ -383,7 +436,7 @@ namespace FlockFive
             else
             {
                 // Male frames share the female body art; crown seated per color.
-                int fi = KitFrameIndex(_sr != null ? _sr.sprite : null);
+                int fi = SpriteCatalog.PoseIndex(_sr != null ? _sr.sprite : null, Color, Sex);
                 int ci = (int)Color;
                 if (ci < 0 || ci >= CrownLocalX.GetLength(0)) ci = 0;
                 if (fi < 0 || fi > 5) fi = 0;

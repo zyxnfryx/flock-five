@@ -55,8 +55,18 @@ namespace FlockFive
                 if (bits[i] != null) Object.Destroy(bits[i].gameObject);
         }
 
-        public static IEnumerator Shed(Vector3 pos, BirdColor col, Transform parent)
+        // Own host so a limb deactivate (pest snap) cannot orphan the feathers.
+        public static void Shed(Vector3 pos, BirdColor col, Transform parent)
         {
+            if (parent == null) return;
+            var go = new GameObject("Shed");
+            go.transform.SetParent(parent, false);
+            go.AddComponent<WowRunner>().Begin(ShedRun(go, pos, col));
+        }
+
+        static IEnumerator ShedRun(GameObject host, Vector3 pos, BirdColor col)
+        {
+            var parent = host != null ? host.transform : null;
             if (parent == null) yield break;
             var tint = Of(col);
             const int n = 5;
@@ -97,8 +107,76 @@ namespace FlockFive
                 }
                 yield return null;
             }
-            for (int fi = 0; fi < n; fi++)
-                if (bits[fi] != null) Object.Destroy(bits[fi].gameObject);
+            if (host != null) Object.Destroy(host);
+        }
+
+        sealed class WowRunner : MonoBehaviour
+        {
+            public void Begin(IEnumerator co) => StartCoroutine(co);
+        }
+
+        // Cream at x2, amber through the middle, hot coral by the top of the ladder.
+        static Color ComboInk(int combo)
+        {
+            float h = Mathf.Clamp01((combo - 2) / 10f);
+            var cream = new Color(1f, 0.95f, 0.72f);
+            var amber = new Color(1f, 0.72f, 0.26f);
+            var hot = new Color(1f, 0.38f, 0.16f);
+            if (h < 0.5f) return Color.Lerp(cream, amber, h * 2f);
+            return Color.Lerp(amber, hot, (h - 0.5f) * 2f);
+        }
+
+        static void AddComboRim(Transform letter, Sprite spr, int order, float heat, Color ink)
+        {
+            if (letter == null || spr == null) return;
+            var go = WorldBuilder.Sprite("HitRim", spr, letter.position, 1f, order, letter);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one * (1.08f + 0.05f * heat);
+            var sr = go.GetComponent<SpriteRenderer>();
+            sr.color = new Color(ink.r * 0.55f, ink.g * 0.28f, ink.b * 0.08f, 0.96f);
+            sr.sortingOrder = order;
+        }
+
+        static void StepComboSparks(SpriteRenderer[] rs, Vector3[] vel, float[] age, float life)
+        {
+            if (rs == null) return;
+            float dt = Time.deltaTime;
+            for (int i = 0; i < rs.Length; i++)
+            {
+                if (rs[i] == null) continue;
+                age[i] += dt;
+                float u = Mathf.Clamp01(age[i] / life);
+                rs[i].transform.position += vel[i] * dt;
+                vel[i] *= 0.90f;
+                rs[i].transform.Rotate(0f, 0f, (i % 2 == 0 ? 140f : -110f) * dt);
+                var c = rs[i].color;
+                c.a = (1f - u) * (1f - u);
+                rs[i].color = c;
+            }
+        }
+
+        // Pivot gap so neighbors clear the tallest flap pose, the sine bob, and the small bank.
+        static float ComboFlockLane(float scaleX, float scaleY, float bobAmp, float bankDeg)
+        {
+            float maxTop = 0f;
+            float maxBot = 0f;
+            float maxWide = 0f;
+            for (int s = 0; s < 8; s++)
+            {
+                var spr = SpriteCatalog.BirdFrame(BirdColor.Ruby, s * 0.05f, true);
+                if (spr == null) continue;
+                var b = spr.bounds;
+                float top = (b.center.y + b.extents.y) * scaleY;
+                float bot = (-b.center.y + b.extents.y) * scaleY;
+                float wide = b.size.x * scaleX;
+                if (top > maxTop) maxTop = top;
+                if (bot > maxBot) maxBot = bot;
+                if (wide > maxWide) maxWide = wide;
+            }
+            if (maxTop + maxBot < 0.2f) return 1.9f;
+            float bankPad = maxWide * Mathf.Sin(bankDeg * Mathf.Deg2Rad) * 2f;
+            return maxTop + maxBot + bobAmp * 2f + bankPad + 0.20f;
         }
 
         public static IEnumerator SlamCombo(Transform parent, int combo)
@@ -109,12 +187,26 @@ namespace FlockFive
             hold.SetParent(parent, false);
             hold.position = new Vector3(0f, 2.22f, 0f);
             float grow = 1f + 0.042f * Mathf.Min(combo - 2, 8);
+            float heat = Mathf.Clamp01((combo - 2) / 10f);
+            var ink = ComboInk(combo);
+            var fill = Color.Lerp(new Color(1f, 0.98f, 0.92f), ink, 0.22f + 0.62f * heat);
 
-            var glowGo = WorldBuilder.Sprite("ComboGlow", SpriteCatalog.Glow, hold.position, 1f, 54, hold);
+            var glowGo = WorldBuilder.Sprite("ComboGlow", SpriteCatalog.Glow, hold.position, 1f, 53, hold);
             glowGo.transform.localPosition = new Vector3(0f, -0.18f, 0f);
-            glowGo.transform.localScale = new Vector3(6.8f * grow, 3.1f * grow, 1f);
+            glowGo.transform.localScale = new Vector3((7.2f + 1.4f * heat) * grow, (3.3f + 0.6f * heat) * grow, 1f);
             var glowSr = glowGo.GetComponent<SpriteRenderer>();
-            glowSr.color = new Color(1f, 0.92f, 0.48f, 0f);
+            glowSr.color = new Color(ink.r, ink.g, ink.b, 0f);
+
+            var coreGo = WorldBuilder.Sprite("ComboCore", SpriteCatalog.Glow, hold.position, 1f, 54, hold);
+            coreGo.transform.localPosition = new Vector3(0f, 0.02f, 0f);
+            coreGo.transform.localScale = new Vector3((3.6f + 0.9f * heat) * grow, (1.8f + 0.45f * heat) * grow, 1f);
+            var coreSr = coreGo.GetComponent<SpriteRenderer>();
+            coreSr.color = new Color(1f, 0.95f, 0.7f, 0f);
+
+            SpriteRenderer[] sparkRs = null;
+            Vector3[] sparkVel = null;
+            float[] sparkAge = null;
+            const float sparkLife = 0.48f;
 
             const string word = "COMBO";
             string mul = "x" + combo;
@@ -151,6 +243,7 @@ namespace FlockFive
                 wordGo.transform.localScale = rest[wi] * 0.70f;
                 letters[wi] = wordGo.transform;
                 srs[wi] = wordGo.GetComponent<SpriteRenderer>();
+                AddComboRim(letters[wi], wordSpr, 55, heat, ink);
             }
 
             float mgap = 0.68f * grow;
@@ -163,7 +256,7 @@ namespace FlockFive
                 int mk = word.Length + mi;
                 char ch = mul[mi];
                 var mulSpr = SpriteCatalog.Glyph(ch);
-                var mulGo = WorldBuilder.Sprite("HitMul" + ch, mulSpr, hold.position, 1f, 57, hold);
+                var mulGo = WorldBuilder.Sprite("HitMul" + ch, mulSpr, hold.position, 1f, 58, hold);
                 float mulH = mulSpr != null ? Mathf.Max(0.01f, mulSpr.bounds.size.y) : 1f;
                 float mulS = (ch == 'x' || ch == 'X' ? 0.68f : 1.00f) * grow / mulH;
                 rest[mk] = new Vector3(mulS, mulS, 1f);
@@ -177,10 +270,14 @@ namespace FlockFive
                 mulGo.transform.localScale = rest[mk] * 0.62f;
                 letters[mk] = mulGo.transform;
                 srs[mk] = mulGo.GetComponent<SpriteRenderer>();
+                AddComboRim(letters[mk], mulSpr, 55, heat, ink);
             }
 
+            const float overDur = 0.30f;
             float popT = 0f;
-            float popEnd = delay[n - 1] + drop[n - 1] + 0.10f;
+            float popEnd = delay[n - 1] + drop[n - 1] + overDur;
+            float wobHz = 9f + 3f * heat;
+            float wobAmp = 1.6f + 2.8f * heat;
             while (popT < popEnd)
             {
                 popT += Time.deltaTime;
@@ -192,23 +289,42 @@ namespace FlockFive
                     float y = Mathf.Lerp(fromY[li], restY[li], fall);
                     float squash = 1f;
                     float stretch = 1f;
-                    if (fallU > 0.78f)
+                    float over = 1f;
+                    float wob = 0f;
+                    if (fallU > 0.78f && fallU < 1f)
                     {
                         float sq = (fallU - 0.78f) / 0.22f;
                         float bump = Mathf.Sin(sq * Mathf.PI);
-                        squash = 1f - 0.20f * bump;
-                        stretch = 1f + 0.18f * bump;
+                        squash = 1f - 0.16f * bump;
+                        stretch = 1f + 0.14f * bump;
+                    }
+                    if (fallU >= 1f)
+                    {
+                        float ou = Mathf.Clamp01((popT - delay[li] - drop[li]) / overDur);
+                        // Peak at 1.35, then settle to the rest scale.
+                        over = 1f + 0.35f * Mathf.Sin(ou * Mathf.PI);
+                        wob = Mathf.Sin(ou * Mathf.PI * 2f) * (2.0f + 3.0f * heat) * (1f - ou);
                     }
                     var lp = letters[li].localPosition;
                     lp.y = y;
                     letters[li].localPosition = lp;
-                    letters[li].localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(restZ[li] * 2.4f, restZ[li], fall));
-                    float appear = 0.70f + 0.30f * fallU;
-                    letters[li].localScale = new Vector3(rest[li].x * stretch * appear, rest[li].y * squash * appear, 1f);
+                    letters[li].localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(restZ[li] * 2.4f, restZ[li], fall) + wob);
+                    float appear = fallU < 1f ? 0.70f + 0.30f * fallU : 1f;
+                    letters[li].localScale = new Vector3(
+                        rest[li].x * stretch * appear * over,
+                        rest[li].y * squash * appear * over,
+                        1f);
                     if (srs[li] != null)
                     {
-                        float flash = fallU > 0.82f && fallU < 0.96f ? 1f : 0f;
-                        srs[li].color = Color.Lerp(Color.white, new Color(1f, 0.96f, 0.78f), flash);
+                        float flash = 0f;
+                        if (fallU >= 0.82f && fallU < 1f)
+                            flash = Mathf.Sin((fallU - 0.82f) / 0.18f * Mathf.PI);
+                        else if (fallU >= 1f)
+                        {
+                            float ou = Mathf.Clamp01((popT - delay[li] - drop[li]) / overDur);
+                            flash = (1f - ou) * (1f - ou);
+                        }
+                        srs[li].color = Color.Lerp(fill, Color.white, flash);
                     }
                 }
                 if (!mulHit && popT >= delay[word.Length] + drop[word.Length] * 0.82f)
@@ -216,19 +332,51 @@ namespace FlockFive
                     mulHit = true;
                     if (CamShake.Live != null)
                         CamShake.Live.Punch(0.11f, 0.07f, 2.2f, 0.08f);
+                    int sparkN = 6 + Mathf.RoundToInt(heat * 8f);
+                    sparkRs = new SpriteRenderer[sparkN];
+                    sparkVel = new Vector3[sparkN];
+                    sparkAge = new float[sparkN];
+                    Vector3 origin = hold.TransformPoint(new Vector3(0f, -0.15f, 0f));
+                    for (int s = 0; s < sparkN; s++)
+                    {
+                        float sang = (s / (float)sparkN) * Mathf.PI * 2f + Random.Range(-0.14f, 0.14f);
+                        float spd = Random.Range(1.5f, 3.1f) * (1f + 0.4f * heat);
+                        sparkVel[s] = new Vector3(Mathf.Cos(sang), Mathf.Sin(sang), 0f) * spd;
+                        float sc = Random.Range(0.08f, 0.15f) * (1f + 0.3f * heat);
+                        var sgo = WorldBuilder.Sprite("ComboSpark", SpriteCatalog.Sparkle, origin, sc, 60, parent);
+                        sparkRs[s] = sgo.GetComponent<SpriteRenderer>();
+                        bool whiteHot = s % 2 == 0;
+                        sparkRs[s].color = whiteHot
+                            ? new Color(1f, 0.98f, 0.9f, 1f)
+                            : new Color(ink.r, ink.g, ink.b, 0.95f);
+                    }
                 }
                 if (glowSr != null)
                 {
-                    float wordLand = Mathf.Clamp01((popT - 0.10f) / 0.08f);
-                    float mulLand = Mathf.Clamp01((popT - (mulStart + dropMul * 0.8f)) / 0.08f);
-                    float g = 0.18f + 0.32f * wordLand * (1f - 0.45f * mulLand) + 0.28f * mulLand;
-                    glowSr.color = new Color(1f, 0.92f, 0.48f, g);
-                    glowGo.transform.localScale = new Vector3((6.8f + 0.8f * mulLand) * grow, (3.1f + 0.4f * mulLand) * grow, 1f);
+                    float wordLand = Mathf.Clamp01((popT - 0.10f) / 0.10f);
+                    float mulLand = Mathf.Clamp01((popT - (mulStart + dropMul * 0.8f)) / 0.10f);
+                    float pulse = 0f;
+                    if (wordLand > 0f && wordLand < 1f) pulse = Mathf.Sin(wordLand * Mathf.PI);
+                    if (mulLand > 0f && mulLand < 1f) pulse = Mathf.Max(pulse, Mathf.Sin(mulLand * Mathf.PI));
+                    float hit = Mathf.Max(wordLand, mulLand);
+                    float g = (0.24f + 0.22f * heat) * hit + (0.16f + 0.18f * heat) * pulse;
+                    glowSr.color = new Color(ink.r, ink.g, ink.b, g);
+                    float gs = 1f + (0.08f + 0.06f * heat) * pulse;
+                    glowGo.transform.localScale = new Vector3(
+                        (7.2f + 1.4f * heat) * grow * gs,
+                        (3.3f + 0.6f * heat) * grow * gs,
+                        1f);
+                    if (coreSr != null)
+                    {
+                        coreSr.color = new Color(1f, 0.95f, 0.72f, g * 0.85f);
+                        coreGo.transform.localScale = new Vector3(
+                            (3.6f + 0.9f * heat) * grow * gs,
+                            (1.8f + 0.45f * heat) * grow * gs,
+                            1f);
+                    }
                 }
-                float punch = 1f;
-                if (popT > 0.12f && popT < 0.28f)
-                    punch = 1f + 0.06f * Mathf.Sin((popT - 0.12f) / 0.16f * Mathf.PI);
-                hold.localScale = Vector3.one * punch;
+                hold.localScale = Vector3.one;
+                StepComboSparks(sparkRs, sparkVel, sparkAge, sparkLife);
                 yield return null;
             }
             for (int pi = 0; pi < n; pi++)
@@ -237,7 +385,7 @@ namespace FlockFive
                 letters[pi].localPosition = new Vector3(letters[pi].localPosition.x, restY[pi], 0f);
                 letters[pi].localRotation = Quaternion.Euler(0f, 0f, restZ[pi]);
                 letters[pi].localScale = rest[pi];
-                if (srs[pi] != null) srs[pi].color = Color.white;
+                if (srs[pi] != null) srs[pi].color = fill;
             }
             hold.localScale = Vector3.one;
 
@@ -248,11 +396,24 @@ namespace FlockFive
                 hT += Time.deltaTime;
                 float settle = 1f + 0.012f * Mathf.Exp(-hT * 8f) * Mathf.Sin(hT * 22f);
                 hold.localScale = Vector3.one * settle;
+                hold.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(hT * wobHz) * wobAmp * Mathf.Exp(-hT * 2.2f));
                 if (glowSr != null)
-                    glowSr.color = new Color(1f, 0.92f, 0.48f, 0.26f * (1f - 0.35f * hT / holdDur));
+                {
+                    float a = (0.30f + 0.22f * heat) * (1f - 0.40f * hT / holdDur);
+                    glowSr.color = new Color(ink.r, ink.g, ink.b, a);
+                    if (coreSr != null) coreSr.color = new Color(1f, 0.95f, 0.72f, a * 0.75f);
+                }
+                StepComboSparks(sparkRs, sparkVel, sparkAge, sparkLife);
                 yield return null;
             }
 
+            if (hold == null)
+            {
+                if (sparkRs != null)
+                    for (int s = 0; s < sparkRs.Length; s++)
+                        if (sparkRs[s] != null) Object.Destroy(sparkRs[s].gameObject);
+                yield break;
+            }
             var fadeRs = hold.GetComponentsInChildren<SpriteRenderer>();
             var fadeA = new float[fadeRs.Length];
             for (int fi = 0; fi < fadeRs.Length; fi++)
@@ -263,7 +424,9 @@ namespace FlockFive
             {
                 fadeT += Time.deltaTime;
                 float fadeU = Mathf.Clamp01(fadeT / fade);
+                float wobT = holdDur + fadeT;
                 hold.localScale = Vector3.one * (1f + 0.10f * fadeU);
+                hold.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(wobT * wobHz) * wobAmp * Mathf.Exp(-wobT * 2.2f));
                 for (int fj = 0; fj < fadeRs.Length; fj++)
                 {
                     if (fadeRs[fj] == null) continue;
@@ -271,8 +434,12 @@ namespace FlockFive
                     fc.a = fadeA[fj] * (1f - fadeU);
                     fadeRs[fj].color = fc;
                 }
+                StepComboSparks(sparkRs, sparkVel, sparkAge, sparkLife);
                 yield return null;
             }
+            if (sparkRs != null)
+                for (int s = 0; s < sparkRs.Length; s++)
+                    if (sparkRs[s] != null) Object.Destroy(sparkRs[s].gameObject);
             if (hold != null) Object.Destroy(hold.gameObject);
         }
 
@@ -300,17 +467,24 @@ namespace FlockFive
             var off = new Vector3[n];
             const int trails = 3;
             var lines = new SpriteRenderer[n * trails];
+            // Combo flock only. Hive halo birds are a different path.
+            const float bigger = 1.20f;
+            var introScale = new Vector3(0.46f * bigger, 0.30f * bigger, 1f);
+            var flyScale = new Vector3(0.50f * bigger, 0.28f * bigger, 1f);
+            const float bobAmp = 0.06f;
+            float spread = Mathf.Min(n - 2, 6);
+            const float bankDeg = 2f;
+            float lane = ComboFlockLane(flyScale.x, flyScale.y, bobAmp, bankDeg) + 0.05f * spread;
+            float trail = (0.46f + 0.08f * spread) * bigger;
             for (int i = 0; i < n; i++)
             {
                 int rank = i == 0 ? 0 : (i + 1) / 2;
                 float side = i == 0 ? 0f : (i % 2 == 0 ? -1f : 1f);
-                float lane = 0.92f + 0.14f * Mathf.Min(n - 2, 6);
-                float trail = 0.46f + 0.08f * Mathf.Min(n - 2, 6);
                 off[i] = perp * (side * rank * lane) - dir * (rank * trail);
                 col[i] = Parade[i % Parade.Length];
                 var go = WorldBuilder.Sprite("ComboBird" + i, SpriteCatalog.Bird(col[i]), a, 1f, 52, parent);
                 go.transform.rotation = Quaternion.Euler(0f, 0f, ang);
-                go.transform.localScale = new Vector3(0.46f, 0.30f, 1f);
+                go.transform.localScale = introScale;
                 srs[i] = go.GetComponent<SpriteRenderer>();
                 srs[i].flipX = false;
                 srs[i].sortingOrder = 52;
@@ -347,9 +521,11 @@ namespace FlockFive
                 dash[s].sortingOrder = 46;
             }
 
-            float dur = 0.70f + 0.02f * Mathf.Min(n, 8);
+            // 15% slower crossing and launch stagger. Direction of a→b is unchanged.
+            const float pace = 1f / 0.85f;
+            float dur = (0.70f + 0.02f * Mathf.Min(n, 8)) * pace;
             float t = 0f;
-            float stagger = 0.078f;
+            float stagger = 0.078f * pace;
             float span = dur + n * stagger;
             while (t < span)
             {
@@ -368,8 +544,9 @@ namespace FlockFive
                 {
                     if (srs[i] == null) continue;
                     float u = Mathf.Clamp01((t - i * stagger) / dur);
-                    float ease = u * u * (3f - 2f * u);
-                    var pos = Vector3.Lerp(a, b, ease) + off[i];
+                    float ease = u * u * u * (u * (u * 6f - 15f) + 10f);
+                    float bob = Mathf.Sin(ease * Mathf.PI * 2f + i * 0.85f) * bobAmp;
+                    var pos = Vector3.Lerp(a, b, ease) + off[i] + perp * bob;
                     // Hide until inside the playfield so an off-screen spawn cannot
                     // read as an unrelated flock bird during collect.
                     bool on = u > 0.02f && u < 0.98f && Mathf.Abs(pos.x) < 6.1f;
@@ -386,9 +563,10 @@ namespace FlockFive
                         continue;
                     }
                     gos[i].transform.position = pos;
-                    gos[i].transform.rotation = Quaternion.Euler(0f, 0f, ang);
-                    gos[i].transform.localScale = new Vector3(0.50f, 0.28f, 1f);
-                    srs[i].sprite = SpriteCatalog.BirdFrame(col[i], t * 22f, true);
+                    float bank = Mathf.Cos(ease * Mathf.PI * 2f + i * 0.85f) * bankDeg;
+                    gos[i].transform.rotation = Quaternion.Euler(0f, 0f, ang + bank);
+                    gos[i].transform.localScale = flyScale;
+                    srs[i].sprite = SpriteCatalog.BirdFrame(col[i], (t + i * 0.17f) * (22f * 0.85f), true);
                     var tint = Of(col[i]);
                     for (int k = 0; k < trails; k++)
                     {

@@ -33,7 +33,9 @@ namespace FlockFive
 
         static void OfferGift(Board b)
         {
-            b.Branches.Add(new BranchState { AdLocked = true });
+            // Two bottom gifts. Each stays locked until its own ad.
+            b.Branches.Add(new BranchState { AdLocked = true, IsBonus = true });
+            b.Branches.Add(new BranchState { AdLocked = true, IsBonus = true });
         }
 
         static BranchState ShiftClone(BranchState src)

@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace FlockFive
@@ -17,6 +18,7 @@ namespace FlockFive
         bool _done;
         bool _evict;
         bool _fleeing;
+        bool _abort;
         float _exitX;
         Color _tint = new Color(0.58f, 0.52f, 0.46f, 1f);
         float _flap;
@@ -63,8 +65,12 @@ namespace FlockFive
             var target = picks[Random.Range(0, picks.Length)];
             var mouth = target.Mouth + new Vector3(Random.Range(-0.15f, 0.15f), 0.35f, 0f);
 
-            var go = WorldBuilder.Sprite("Sparrow", SpriteCatalog.Sparrow, start, Scale, 42, parent);
-            var view = go.AddComponent<SparrowView>();
+            GameObject go = null;
+            SparrowView view = null;
+            try
+            {
+            go = WorldBuilder.Sprite("Sparrow", SpriteCatalog.Sparrow, start, Scale, 42, parent);
+            view = go.AddComponent<SparrowView>();
             view._art = go.GetComponent<SpriteRenderer>();
             view._art.color = view._tint;
             view._art.flipX = !fromLeft;
@@ -103,7 +109,7 @@ namespace FlockFive
                 while (settle < 0.22f && !view._evict)
                 {
                     settle += Time.deltaTime;
-                    if (go == null) yield break;
+                    if (go == null || parent == null) yield break;
                     go.transform.position = target.Mouth + new Vector3(
                         Mathf.Sin(Time.time * 9f) * 0.03f,
                         0.35f + Mathf.Sin(Time.time * 7f) * 0.04f,
@@ -114,8 +120,8 @@ namespace FlockFive
 
                 while (!view._evict)
                 {
-                    if (parent == null || go == null || target == null) yield break;
-                    if (!IsOn(target))
+                    if (parent == null || go == null) yield break;
+                    if (target == null || !IsOn(target))
                     {
                         // Feeder vanished — leave quietly.
                         break;
@@ -129,6 +135,7 @@ namespace FlockFive
                 }
             }
 
+            if (view == null) yield break;
             view.BlockingSlot = -1;
 
             if (view._evict)
@@ -139,9 +146,19 @@ namespace FlockFive
             }
             else if (go != null)
                 yield return view.FlyOut(exitX);
+            }
+            finally
+            {
+                if (view != null && Live == view) Live = null;
+                if (go != null) Object.Destroy(go);
+            }
+        }
 
-            if (Live == view) Live = null;
-            if (go != null) Object.Destroy(go);
+        // Feathers, cheers, and the hawk pass. Stage load and restart both call this.
+        public static void ClearFx()
+        {
+            PestPool.Clear();
+            HawkView.ClearShow();
         }
 
         public void BeginEvict()
@@ -149,6 +166,14 @@ namespace FlockFive
             if (_done || _evict) return;
             _evict = true;
             BlockingSlot = -1;
+        }
+
+        // Restart aborted the scrap before PanicFlee. Let Visit destroy this sparrow.
+        // A flee already in the air (including the defeat tumble) stops on the next frame.
+        public void FinishEvict()
+        {
+            if (_fleeing) _abort = true;
+            if (_evict && !_done && !_fleeing) _done = true;
         }
 
         // Compat alias — collect dive-strikes call TakeHit.
@@ -237,12 +262,18 @@ namespace FlockFive
             }
         }
 
-        // Panic zigzag bolt after five hits (no opening yell — hits already yelled).
-        public IEnumerator PanicFlee()
+        // Panic zigzag bolt. defeated: the five-hit clear — hit-stop, then a tumble off.
+        // Hawk-boot still uses the zigzag (no cheer).
+        public IEnumerator PanicFlee(bool defeated = false)
         {
             if (_done || _fleeing) yield break;
             _fleeing = true;
             BlockingSlot = -1;
+            if (defeated)
+            {
+                yield return DefeatArc();
+                yield break;
+            }
             var from = transform.position;
             float dir = Mathf.Sign(_exitX - from.x);
             if (dir == 0f) dir = _exitX >= 0f ? 1f : -1f;
@@ -258,14 +289,14 @@ namespace FlockFive
             var legs = new[] { a, b, dest };
             var durs = new[] { 0.24f, 0.28f, 0.42f };
             var prev = from;
-            for (int leg = 0; leg < legs.Length; leg++)
+            for (int leg = 0; leg < legs.Length && !_abort; leg++)
             {
                 var next = legs[leg];
                 if (_art != null) _art.flipX = next.x < prev.x;
                 float t = 0f;
                 float dur = durs[leg];
                 float sway = (leg % 2 == 0 ? 1f : -1f) * Random.Range(0.22f, 0.42f);
-                while (t < dur)
+                while (t < dur && !_abort)
                 {
                     t += Time.deltaTime;
                     float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / dur));
@@ -287,6 +318,64 @@ namespace FlockFive
                     yield return null;
                 }
                 prev = next;
+            }
+            _done = true;
+        }
+
+        // Five-hit clear. Holds one beat, then spins off on a single arc. No yell —
+        // the hits already yelled. Flock cheer is one chip, not a second melody.
+        IEnumerator DefeatArc()
+        {
+            var parent = transform.parent;
+            var from = transform.position;
+            transform.localScale = Vector3.one * (Scale * 1.08f);
+            transform.localRotation = Quaternion.identity;
+            if (_art != null) _art.color = Color.white;
+            if (CamShake.Live != null)
+                CamShake.Live.Punch(0.10f, 0.045f, 1.0f, 0.03f);
+
+            float hold = 0f;
+            while (hold < 0.06f && !_abort)
+            {
+                hold += Time.deltaTime;
+                if (_art != null) _art.color = Color.white;
+                transform.localScale = Vector3.one * (Scale * 1.08f);
+                transform.localRotation = Quaternion.identity;
+                yield return null;
+            }
+            if (_abort)
+            {
+                _done = true;
+                yield break;
+            }
+            SparrowBits.Burst(from + new Vector3(0f, 0.1f, 0f), parent, _tint, 16);
+            PestCheer.Mark(from, parent, false);
+
+            float dir = Mathf.Sign(_exitX - from.x);
+            if (dir == 0f) dir = _exitX >= 0f ? 1f : -1f;
+            var dest = new Vector3(_exitX, from.y + Random.Range(2.1f, 3.3f), 0f);
+            if (_art != null) _art.flipX = dest.x < from.x;
+            float spin = -dir * Random.Range(520f, 740f);
+            float t = 0f;
+            const float dur = 0.74f;
+            while (t < dur && !_abort)
+            {
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                float ease = u * u;
+                var p = Vector3.Lerp(from, dest, ease);
+                p.y += Mathf.Sin(u * Mathf.PI) * 1.75f;
+                transform.position = p;
+                transform.localRotation = Quaternion.Euler(0f, 0f, spin * u);
+                transform.localScale = Vector3.one * (Scale * Mathf.Lerp(1.06f, 0.5f, u));
+                Flap(true);
+                if (_art != null)
+                {
+                    var c = _art.color;
+                    c.a = u > 0.72f ? Mathf.Lerp(1f, 0.35f, (u - 0.72f) / 0.28f) : 1f;
+                    _art.color = c;
+                }
+                yield return null;
             }
             _done = true;
         }
@@ -355,37 +444,223 @@ namespace FlockFive
             f != null && f.Art != null && f.Art.enabled;
     }
 
-    // Self-cleaning feather burst so smack/flee FX outlive the sparrow GO.
-    sealed class SparrowBits : MonoBehaviour
+    // Feather / cheer sprites reused across scraps. Cleared on stage load and restart.
+    static class PestPool
     {
-        public static void Burst(Vector3 pos, Transform parent, Color tint)
+        const int Cap = 48;
+        const int MaxLive = 10;
+        static readonly List<SpriteRenderer> Free = new List<SpriteRenderer>(Cap);
+        static readonly List<IPestBurst> Live = new List<IPestBurst>(MaxLive);
+        static Transform Root;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            Free.Clear();
+            Live.Clear();
+            Root = null;
+        }
+
+        public static void Clear()
+        {
+            for (int i = Live.Count - 1; i >= 0; i--)
+            {
+                var b = Live[i];
+                if (b != null) b.ReleaseAndDie();
+            }
+            Live.Clear();
+            Free.Clear();
+            if (Root != null) Object.Destroy(Root.gameObject);
+            Root = null;
+        }
+
+        public static void Watch(IPestBurst burst)
+        {
+            if (burst == null) return;
+            for (int i = Live.Count - 1; i >= 0; i--)
+                if (Live[i] == null) Live.RemoveAt(i);
+            while (Live.Count >= MaxLive)
+            {
+                var old = Live[0];
+                Live.RemoveAt(0);
+                if (old != null) old.ReleaseAndDie();
+            }
+            Live.Add(burst);
+        }
+
+        public static void Forget(IPestBurst burst)
+        {
+            Live.Remove(burst);
+        }
+
+        public static SpriteRenderer Take(Transform garden, string name, Sprite spr, Vector3 pos, float size, int order)
+        {
+            Ensure(garden);
+            SpriteRenderer sr = null;
+            while (Free.Count > 0)
+            {
+                int last = Free.Count - 1;
+                sr = Free[last];
+                Free.RemoveAt(last);
+                if (sr != null) break;
+                sr = null;
+            }
+            if (sr == null)
+            {
+                var go = WorldBuilder.Sprite(name, spr, pos, size, order, Root);
+                sr = go.GetComponent<SpriteRenderer>();
+            }
+            else
+            {
+                var t = sr.transform;
+                t.SetParent(Root, false);
+                t.position = pos;
+                t.localScale = Vector3.one * size;
+                t.rotation = Quaternion.identity;
+                sr.sprite = spr;
+                sr.sortingOrder = order;
+                sr.gameObject.SetActive(true);
+            }
+            sr.enabled = true;
+            return sr;
+        }
+
+        public static void Give(SpriteRenderer sr)
+        {
+            if (sr == null) return;
+            if (Free.Count >= Cap || Root == null)
+            {
+                Object.Destroy(sr.gameObject);
+                return;
+            }
+            sr.enabled = false;
+            sr.gameObject.SetActive(false);
+            sr.transform.SetParent(Root, false);
+            Free.Add(sr);
+        }
+
+        static void Ensure(Transform garden)
+        {
+            if (Root != null) return;
+            var go = new GameObject("PestPool");
+            if (garden != null) go.transform.SetParent(garden, false);
+            Root = go.transform;
+        }
+    }
+
+    interface IPestBurst
+    {
+        void ReleaseAndDie();
+    }
+
+    // Self-cleaning feather burst so smack/flee FX outlive the sparrow GO.
+    sealed class SparrowBits : MonoBehaviour, IPestBurst
+    {
+        SpriteRenderer[] _bits;
+        bool _dead;
+
+        public static void Burst(Vector3 pos, Transform parent, Color tint, int count = 0)
         {
             if (parent == null) return;
             var go = new GameObject("SparrowBits");
             go.transform.SetParent(parent, false);
-            go.AddComponent<SparrowBits>().StartCoroutine(Run(go, pos, tint));
+            var bits = go.AddComponent<SparrowBits>();
+            PestPool.Watch(bits);
+            bits.StartCoroutine(bits.Run(pos, tint, count));
         }
 
-        static IEnumerator Run(GameObject host, Vector3 pos, Color tint)
+        // One drifting feather. Lives on the pool so a pass teardown can reclaim it.
+        public static void Drop(Vector3 pos, Transform parent, Color tint)
         {
-            int n = Random.Range(5, 10);
+            if (parent == null) return;
+            var go = new GameObject("FeatherDrop");
+            go.transform.SetParent(parent, false);
+            var bits = go.AddComponent<SparrowBits>();
+            PestPool.Watch(bits);
+            bits.StartCoroutine(bits.One(pos, tint));
+        }
+
+        public void ReleaseAndDie()
+        {
+            if (_dead) return;
+            _dead = true;
+            StopAllCoroutines();
+            Release();
+            if (this != null) Object.Destroy(gameObject);
+        }
+
+        void OnDestroy()
+        {
+            PestPool.Forget(this);
+            Release();
+        }
+
+        void Release()
+        {
+            var bits = _bits;
+            if (bits == null) return;
+            _bits = null;
+            for (int i = 0; i < bits.Length; i++)
+                PestPool.Give(bits[i]);
+        }
+
+        Transform Anchor()
+        {
+            var p = transform.parent;
+            // Hawk-pass drops parent the runner to the pass. Keep the pool on the garden
+            // so clearing the pass does not take the shared feathers with it.
+            if (p != null && p.GetComponent<HawkPass>() != null && p.parent != null)
+                return p.parent;
+            return p;
+        }
+
+        IEnumerator One(Vector3 pos, Color tint)
+        {
+            float size = Random.Range(0.10f, 0.16f);
+            var sr = PestPool.Take(Anchor(), "Feather", SpriteCatalog.Feather, pos, size, 37);
+            _bits = new SpriteRenderer[] { sr };
+            float shade = Random.Range(0.8f, 1f);
+            sr.color = new Color(tint.r * shade, tint.g * shade, tint.b * shade, 0.95f);
+            var vel = new Vector3(Random.Range(-0.55f, 0.55f), Random.Range(0.35f, 1.15f), 0f);
+            float spin = Random.Range(-220f, 220f);
+            float life = 0.7f;
+            float t = 0f;
+            while (t < life && sr != null)
+            {
+                t += Time.deltaTime;
+                vel.y -= 4.4f * Time.deltaTime;
+                sr.transform.position += vel * Time.deltaTime;
+                sr.transform.Rotate(0f, 0f, spin * Time.deltaTime);
+                var c = sr.color;
+                c.a = 0.95f * (1f - t / life);
+                sr.color = c;
+                yield return null;
+            }
+            ReleaseAndDie();
+        }
+
+        IEnumerator Run(Vector3 pos, Color tint, int count)
+        {
+            bool big = count > 0;
+            int n = big ? count : Random.Range(5, 10);
             var bits = new SpriteRenderer[n];
             var vel = new Vector3[n];
             var spin = new float[n];
             var spr = SpriteCatalog.Feather;
+            var garden = Anchor();
             for (int i = 0; i < n; i++)
             {
                 float ang = (i / (float)n) * Mathf.PI * 2f + Random.Range(-0.35f, 0.35f);
-                float spd = Random.Range(2.8f, 5.4f);
+                float spd = big ? Random.Range(3.6f, 6.8f) : Random.Range(2.8f, 5.4f);
                 vel[i] = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang) + 0.55f, 0f) * spd;
                 spin[i] = Random.Range(-420f, 420f);
-                float size = Random.Range(0.12f, 0.22f);
-                var go = WorldBuilder.Sprite("Feather", spr, pos, size, 43, host.transform);
-                go.transform.rotation = Quaternion.Euler(0f, 0f, Random.Range(-60f, 60f));
-                bits[i] = go.GetComponent<SpriteRenderer>();
+                float size = big ? Random.Range(0.18f, 0.34f) : Random.Range(0.12f, 0.22f);
+                bits[i] = PestPool.Take(garden, "Feather", spr, pos, size, 43);
+                bits[i].transform.rotation = Quaternion.Euler(0f, 0f, Random.Range(-60f, 60f));
                 float shade = Random.Range(0.75f, 1.05f);
                 bits[i].color = new Color(tint.r * shade, tint.g * shade, tint.b * shade, 0.98f);
             }
+            _bits = bits;
 
             float life = 0.85f;
             float t = 0f;
@@ -405,7 +680,172 @@ namespace FlockFive
                 }
                 yield return null;
             }
-            Object.Destroy(host);
+            ReleaseAndDie();
+        }
+    }
+
+    // Defeat pop: one flock chip, a few coins and sparkles, a hop. No collider.
+    static class PestCheer
+    {
+        public static void Mark(Vector3 pos, Transform parent, bool heavy)
+        {
+            if (parent == null) return;
+            Sfx.Chirp(BirdColor.Gold);
+            int coins = heavy ? 7 : 4;
+            int sparks = heavy ? 8 : 5;
+            var go = new GameObject(heavy ? "HawkCheer" : "SparrowCheer");
+            go.transform.SetParent(parent, false);
+            go.AddComponent<CheerBits>().Begin(pos, coins, sparks);
+            Hops(parent, pos, heavy);
+        }
+
+        static readonly List<BirdIdle> IdleBuf = new List<BirdIdle>(64);
+        static readonly System.Comparison<BirdIdle> ByX = (a, b) =>
+        {
+            if (a == null && b == null) return 0;
+            if (a == null) return -1;
+            if (b == null) return 1;
+            return a.transform.position.x.CompareTo(b.transform.position.x);
+        };
+
+        static void Hops(Transform root, Vector3 at, bool wave)
+        {
+            if (root == null) return;
+            IdleBuf.Clear();
+            root.GetComponentsInChildren(false, IdleBuf);
+            if (wave)
+            {
+                IdleBuf.Sort(ByX);
+                int seat = 0;
+                for (int i = 0; i < IdleBuf.Count; i++)
+                {
+                    var idle = IdleBuf[i];
+                    if (idle == null) continue;
+                    // Scrappers are Frozen and off the limb. Bounce them now so the
+                    // wave on the branches is not still running when they scatter.
+                    if (idle.Frozen)
+                    {
+                        idle.StartCoroutine(AirHop(idle.transform, Random.Range(0f, 0.04f), 0.2f));
+                        continue;
+                    }
+                    idle.HopCheer(seat * 0.042f, 0.24f);
+                    seat++;
+                }
+                return;
+            }
+            float r2 = 3.8f * 3.8f;
+            for (int i = 0; i < IdleBuf.Count; i++)
+            {
+                var idle = IdleBuf[i];
+                if (idle == null) continue;
+                var d = idle.transform.position - at;
+                d.z = 0f;
+                if (d.sqrMagnitude > r2) continue;
+                if (idle.Frozen)
+                    idle.StartCoroutine(AirHop(idle.transform, Random.Range(0f, 0.05f), 0.18f));
+                else
+                    idle.HopCheer(Random.Range(0f, 0.05f), 0.2f);
+            }
+        }
+
+        // Fight birds are Frozen, so BirdIdle will not write their position.
+        // If restart or scatter moves the bird, drop the hop and leave their pose alone.
+        static IEnumerator AirHop(Transform tr, float delay, float hop)
+        {
+            if (tr == null) yield break;
+            var origin = tr.position;
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            if (tr == null || (tr.position - origin).sqrMagnitude > 0.0004f) yield break;
+            var placed = origin;
+            float t = 0f;
+            const float dur = 0.22f;
+            while (t < dur)
+            {
+                if (tr == null) yield break;
+                if ((tr.position - placed).sqrMagnitude > 0.0004f) yield break;
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                placed = origin + new Vector3(0f, Mathf.Sin(u * Mathf.PI) * hop, 0f);
+                tr.position = placed;
+                yield return null;
+            }
+            if (tr != null && (tr.position - placed).sqrMagnitude <= 0.0004f)
+                tr.position = origin;
+        }
+    }
+
+    sealed class CheerBits : MonoBehaviour, IPestBurst
+    {
+        SpriteRenderer[] _bits;
+        bool _dead;
+
+        public void Begin(Vector3 pos, int coins, int sparks)
+        {
+            PestPool.Watch(this);
+            StartCoroutine(Run(pos, coins, sparks));
+        }
+
+        public void ReleaseAndDie()
+        {
+            if (_dead) return;
+            _dead = true;
+            StopAllCoroutines();
+            Release();
+            if (this != null) Object.Destroy(gameObject);
+        }
+
+        void OnDestroy()
+        {
+            PestPool.Forget(this);
+            Release();
+        }
+
+        void Release()
+        {
+            var bits = _bits;
+            if (bits == null) return;
+            _bits = null;
+            for (int i = 0; i < bits.Length; i++)
+                PestPool.Give(bits[i]);
+        }
+
+        IEnumerator Run(Vector3 pos, int coins, int sparks)
+        {
+            int n = coins + sparks;
+            var bits = new SpriteRenderer[n];
+            var vel = new Vector3[n];
+            var garden = transform.parent;
+            for (int i = 0; i < n; i++)
+            {
+                bool coin = i < coins;
+                float ang = (i / (float)Mathf.Max(1, n)) * Mathf.PI * 2f + Random.Range(-0.3f, 0.3f);
+                float spd = Random.Range(1.8f, coin ? 3.4f : 4.2f);
+                vel[i] = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang) + 0.7f, 0f) * spd;
+                var spr = coin ? SpriteCatalog.Coin : SpriteCatalog.Sparkle;
+                float size = coin ? Random.Range(0.16f, 0.26f) : Random.Range(0.1f, 0.18f);
+                bits[i] = PestPool.Take(garden, coin ? "Coin" : "Spark", spr, pos, size, coin ? 44 : 45);
+                bits[i].color = coin ? new Color(1f, 0.9f, 0.38f, 1f) : Color.white;
+            }
+            _bits = bits;
+            float life = 0.62f;
+            float t = 0f;
+            while (t < life)
+            {
+                t += Time.deltaTime;
+                float u = t / life;
+                for (int i = 0; i < n; i++)
+                {
+                    if (bits[i] == null) continue;
+                    vel[i].y -= 5.4f * Time.deltaTime;
+                    bits[i].transform.position += vel[i] * Time.deltaTime;
+                    vel[i] *= 0.985f;
+                    var c = bits[i].color;
+                    c.a = (1f - u) * (1f - u);
+                    bits[i].color = c;
+                }
+                yield return null;
+            }
+            ReleaseAndDie();
         }
     }
 }

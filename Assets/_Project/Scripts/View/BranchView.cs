@@ -28,8 +28,13 @@ namespace FlockFive
         // the 1024 canvas), so all birds share one seat height with no per-bird offset.
         int _count;
         Vector3 _planted;
+        Vector3 _woodScale = new Vector3(0.64f, 0.50f, 1f);
+        Vector3 _woodPos;
+        bool _woodRemembered;
         float _shake;
         bool _breaking;
+        GameObject _fly;
+        int _act;
         bool _sleeping;
         float _nextSnooze;
         BeeSwarm _swarm;
@@ -203,7 +208,7 @@ namespace FlockFive
                 idle.Lift = tip ? 1.15f : 0f;
                 idle.Flapping = tip;
                 if (tip)
-                    StartCoroutine(Wow.Shed(Birds[i].transform.position, idle.Color, transform.parent));
+                    Wow.Shed(Birds[i].transform.position, idle.Color, transform.parent);
             }
         }
 
@@ -234,7 +239,49 @@ namespace FlockFive
         void Awake()
         {
             _planted = transform.position;
+            RememberWood();
             EnsureZzz();
+        }
+
+        public void RememberWood()
+        {
+            if (_woodRemembered || Wood == null) return;
+            _woodScale = Wood.transform.localScale;
+            _woodPos = Wood.transform.localPosition;
+            _woodRemembered = true;
+        }
+
+        public void RetakeWood()
+        {
+            _woodRemembered = false;
+            RememberWood();
+        }
+
+        // Drop snap-off copies and extra colliders left by a break or a rebuild.
+        public void ClearDebris()
+        {
+            HaltBreak();
+            _breaking = false;
+            RememberWood();
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                var child = transform.GetChild(i);
+                if (child == null) continue;
+                if (Wood != null && child == Wood.transform) continue;
+                if (child.name.StartsWith("Wood"))
+                    Destroy(child.gameObject);
+            }
+            var cols = GetComponents<BoxCollider2D>();
+            for (int i = 1; i < cols.Length; i++)
+                Destroy(cols[i]);
+            transform.rotation = Quaternion.identity;
+            if (Wood != null)
+            {
+                Wood.color = Color.white;
+                Wood.transform.localScale = _woodScale;
+                Wood.transform.localPosition = _woodPos;
+                Wood.transform.localRotation = Quaternion.identity;
+            }
         }
 
         void EnsureZzz()
@@ -295,22 +342,58 @@ namespace FlockFive
             }
         }
 
+        // Restart takes the flock. Stop a limb break so it cannot deactivate the
+        // branch after the birds have already been sent off and the round restored.
+        public bool Breaking => _breaking;
+
+        public void HaltBreak()
+        {
+            _act++;
+            DropFly();
+        }
+
+        void DropFly()
+        {
+            if (_fly == null) return;
+            var go = _fly;
+            _fly = null;
+            Object.Destroy(go);
+        }
+
+        void OnDisable()
+        {
+            DropFly();
+            if (!_breaking) return;
+            _breaking = false;
+            transform.rotation = Quaternion.identity;
+            if (Wood != null && _woodRemembered)
+            {
+                Wood.color = Color.white;
+                Wood.transform.localScale = _woodScale;
+                Wood.transform.localPosition = _woodPos;
+                Wood.transform.localRotation = Quaternion.identity;
+            }
+        }
+
         public IEnumerator BreakAway()
         {
+            int act = _act;
             _breaking = true;
             Sfx.Break();
+            RememberWood();
             float dir = FromRight ? 1f : -1f;
             SpriteRenderer fly = null;
             GameObject flyGo = null;
-            Vector3 stubScale = Wood != null ? Wood.transform.localScale : Vector3.one;
-            Vector3 stubPos = Wood != null ? Wood.transform.localPosition : Vector3.zero;
+            Vector3 stubScale = _woodScale;
+            Vector3 stubPos = _woodPos;
             if (Wood != null)
             {
                 flyGo = Object.Instantiate(Wood.gameObject, transform);
+                _fly = flyGo;
                 fly = flyGo.GetComponent<SpriteRenderer>();
-                var ls = Wood.transform.localScale;
-                Wood.transform.localScale = new Vector3(ls.x * 0.52f, ls.y, ls.z);
-                flyGo.transform.localScale = new Vector3(ls.x * 0.52f, ls.y, ls.z);
+                var stub = new Vector3(_woodScale.x * 0.52f, _woodScale.y, _woodScale.z);
+                Wood.transform.localScale = stub;
+                flyGo.transform.localScale = stub;
                 Wood.transform.localPosition = new Vector3(-dir * 0.62f, 0f, 0f);
                 flyGo.transform.localPosition = new Vector3(dir * 0.62f, 0.04f, 0f);
             }
@@ -320,6 +403,11 @@ namespace FlockFive
             var start = transform.position;
             while (t < dur)
             {
+                if (act != _act)
+                {
+                    RestoreBreak(flyGo, stubScale, stubPos);
+                    yield break;
+                }
                 t += Time.deltaTime;
                 float u = Mathf.Clamp01(t / dur);
                 float k = u * u;
@@ -342,6 +430,12 @@ namespace FlockFive
                 transform.position = start + new Vector3(0f, -1.15f * k, 0f);
                 yield return null;
             }
+            if (act != _act)
+            {
+                RestoreBreak(flyGo, stubScale, stubPos);
+                yield break;
+            }
+            if (_fly == flyGo) _fly = null;
             if (flyGo != null) Object.Destroy(flyGo);
             gameObject.SetActive(false);
             transform.position = _planted;
@@ -356,19 +450,29 @@ namespace FlockFive
             _breaking = false;
         }
 
-        public void Revive()
+        void RestoreBreak(GameObject flyGo, Vector3 stubScale, Vector3 stubPos)
         {
+            if (_fly == flyGo) _fly = null;
+            if (flyGo != null) Object.Destroy(flyGo);
             _breaking = false;
-            _shake = 0f;
             gameObject.SetActive(true);
-            transform.rotation = Quaternion.identity;
             transform.position = _planted;
+            transform.rotation = Quaternion.identity;
             if (Wood != null)
             {
                 Wood.color = Color.white;
+                Wood.transform.localScale = stubScale;
+                Wood.transform.localPosition = stubPos;
                 Wood.transform.localRotation = Quaternion.identity;
-                Wood.transform.localPosition = Vector3.zero;
             }
+        }
+
+        public void Revive()
+        {
+            ClearDebris();
+            _shake = 0f;
+            gameObject.SetActive(true);
+            transform.position = _planted;
         }
     }
 }

@@ -123,7 +123,23 @@ namespace FlockFive
             if (All.Length == 0) return new Board();
             Index = index < 0 ? 0 : index;
             Current = All[Index % All.Length];
-            return Pack(Current.Make());
+            var b = Pack(Current.Make());
+            // Garden 16 is one empty limb short once three sparrow snaps are in play.
+            if (DisplayNumber == 16)
+                InsertEmptyLimb(b);
+            return b;
+        }
+
+        static void InsertEmptyLimb(Board b)
+        {
+            int at = b.Branches.Count;
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                if (!b.Branches[i].IsBonus) continue;
+                at = i;
+                break;
+            }
+            b.Branches.Insert(at, new BranchState());
         }
 
         // Predetermined pest budget. Hops stay winnable with a feeder blocked
@@ -215,6 +231,8 @@ namespace FlockFive
         // Same-sex flocks: hops need color AND sex, so every bird of a color
         // shares a sex (otherwise a 5-stack can never gather). Colors cycle
         // Female / Male / Neutral so a stage is never all one gender.
+        public static BirdSex SexFor(BirdColor c) => SexOf(c);
+
         static BirdSex SexOf(BirdColor c)
         {
             switch (c)

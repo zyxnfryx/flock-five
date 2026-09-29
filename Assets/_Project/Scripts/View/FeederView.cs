@@ -10,6 +10,9 @@ namespace FlockFive
         public SpriteRenderer Art;
         Vector3 _planted;
         bool _held;
+        bool _scoring;
+        bool _departing;
+        float _scoreAmp;
         float _gust;
         float _spin;
 
@@ -57,7 +60,26 @@ namespace FlockFive
 
         public Vector3 Mouth => transform.position + new Vector3(0f, -1.08f, 0f);
 
+        // Stable aim point so a score arc does not chase sway.
+        public Vector3 RestMouth => _planted + new Vector3(0f, -1.08f, 0f);
+
         public void Hold() => _held = true;
+
+        public void BeginScore()
+        {
+            if (_departing) return;
+            _scoring = true;
+            _held = true;
+        }
+
+        // One shared impulse. Overlapping arrivals refresh it instead of stacking coroutines.
+        public void ScoreTick()
+        {
+            if (_departing) return;
+            _scoring = true;
+            _held = true;
+            _scoreAmp = 1f;
+        }
 
         public void Poke()
         {
@@ -132,6 +154,9 @@ namespace FlockFive
 
         public IEnumerator PullAway()
         {
+            _departing = true;
+            _scoring = false;
+            _scoreAmp = 0f;
             _held = true;
             Sfx.FeederLeave();
             float t = 0f;
@@ -158,12 +183,16 @@ namespace FlockFive
             transform.localScale = Vector3.one * Scale;
             if (Art != null) Art.color = Color.white;
             _held = false;
+            _departing = false;
         }
 
         public void SnapHome()
         {
             StopAllCoroutines();
             _held = false;
+            _scoring = false;
+            _departing = false;
+            _scoreAmp = 0f;
             transform.position = _planted;
             transform.localRotation = Quaternion.identity;
             transform.localScale = Vector3.one * Scale;
@@ -172,6 +201,23 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            if (_departing) return;
+            if (_scoring)
+            {
+                _scoreAmp = Mathf.MoveTowards(_scoreAmp, 0f, Time.deltaTime / 0.16f);
+                float a = _scoreAmp;
+                float wob = Mathf.Sin(Time.time * 32f) * 7f * a;
+                float hop = Mathf.Sin(Time.time * 21f) * 0.05f * a;
+                float sway = Mathf.Sin(Time.time * 26f) * 0.035f * a;
+                var pose = _planted + new Vector3(sway, hop, 0f);
+                var rot = Quaternion.Euler(0f, 0f, wob);
+                var scale = Vector3.one * (Scale * (1f + 0.07f * a));
+                float k = 1f - Mathf.Exp(-16f * Time.deltaTime);
+                transform.position = Vector3.Lerp(transform.position, pose, k);
+                transform.localRotation = Quaternion.Slerp(transform.localRotation, rot, k);
+                transform.localScale = Vector3.Lerp(transform.localScale, scale, k);
+                return;
+            }
             if (_held) return;
             if (Art == null || !Art.enabled)
             {

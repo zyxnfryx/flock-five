@@ -110,12 +110,23 @@ namespace FlockFive.Editor
                     int c = b.FindCollect();
                     if (c >= 0)
                     {
-                        var flock = b.Branches[c].Birds.ToArray();
+                        var before = BoardValidator.Counts(b);
                         var live0 = b.Live[0];
                         var live1 = b.Live[1];
-                        b.ApplyCollect(c, scoreFeeder: false);
+                        PestPark.Apply(b, c, hawk: false);
                         if (b.Live[0] != live0 || b.Live[1] != live1) fails++;
-                        if (!ParkFlockSafe(b, flock, c)) fails++;
+                        if (!BoardValidator.Same(BoardValidator.Counts(b), before)) fails++;
+                        if (b.RemainingBirds > 0 && PestPark.FreeSeats(b) < 1) fails++;
+                        var hawkBoard = b.Clone();
+                        int hawkLimbs = LiveLimbs(hawkBoard);
+                        int hawkCollect = hawkBoard.FindCollect();
+                        if (hawkCollect >= 0)
+                        {
+                            var hawkCounts = BoardValidator.Counts(hawkBoard);
+                            PestPark.Apply(hawkBoard, hawkCollect, hawk: true);
+                            if (LiveLimbs(hawkBoard) < hawkLimbs) fails++;
+                            if (!BoardValidator.Same(BoardValidator.Counts(hawkBoard), hawkCounts)) fails++;
+                        }
                         continue;
                     }
                     if (!RandomHop(b)) break;
@@ -125,59 +136,13 @@ namespace FlockFive.Editor
             return fails;
         }
 
-        static bool ParkFlockSafe(Board b, Bird[] flock, int broken)
+        static int LiveLimbs(Board b)
         {
-            if (flock == null) return true;
-            var parkedOnto = new HashSet<int>();
-            for (int i = 0; i < flock.Length; i++)
-            {
-                int home = FindPark(b, broken, flock[i]);
-                if (home < 0) continue;
-                var st = b.Branches[home];
-                if (st.Free <= 0) return false;
-                if (WouldFullMatchAfterAdd(st, flock[i])) return false;
-                st.Birds.Add(flock[i]);
-                st.AlignShroud();
-                parkedOnto.Add(home);
-                if (st.Count > BranchState.Cap) return false;
-                if (st.IsFullMatch(out _)) return false;
-            }
-            int collect = b.FindCollect();
-            if (collect >= 0 && parkedOnto.Contains(collect))
-                return false;
-            return true;
-        }
-
-        static int FindPark(Board b, int broken, Bird bird)
-        {
-            int best = -1;
-            int bestFree = -1;
+            if (b == null) return 0;
+            int n = 0;
             for (int i = 0; i < b.Branches.Count; i++)
-            {
-                if (i == broken) continue;
-                var st = b.Branches[i];
-                if (st.Broken || st.AdLocked || st.Free <= 0) continue;
-                if (b.IsSleeping(i)) continue;
-                if (WouldFullMatchAfterAdd(st, bird)) continue;
-                if (st.Free > bestFree)
-                {
-                    bestFree = st.Free;
-                    best = i;
-                }
-            }
-            return best;
-        }
-
-        static bool WouldFullMatchAfterAdd(BranchState st, Bird bird)
-        {
-            if (st == null || st.Broken) return false;
-            if (st.Count + 1 != BranchState.Cap) return false;
-            for (int i = 0; i < st.Count; i++)
-            {
-                if (st.IsShrouded(i)) return false;
-                if (st.Birds[i].Color != bird.Color) return false;
-            }
-            return true;
+                if (b.Branches[i] != null && !b.Branches[i].Broken) n++;
+            return n;
         }
 
         static bool RandomHop(Board b)

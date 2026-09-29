@@ -10,6 +10,8 @@ namespace FlockFive
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoBoot()
         {
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = 60;
             if (FindAnyObjectByType<FlockFiveApp>() != null) return;
             var go = new GameObject("FlockFiveApp");
             DontDestroyOnLoad(go);
@@ -20,6 +22,8 @@ namespace FlockFive
         WorldBuilder.Garden _garden;
         int _sel = -1;
         bool _busy;
+        bool _restarting;
+        static int _motionGen;
         bool _won;
         Board _seed;
         bool _keepStreak;
@@ -107,8 +111,13 @@ namespace FlockFive
         float _giftThanksAt;
         bool _frozen;
         bool _freezeOffer;
-        // The gift branch was earned this stage; Restart keeps it open instead of re-offering it.
-        bool _giftClaimed;
+        // One flag per bottom gift. Stays set for the stage, including Restart.
+        // Cleared only when a stage loads. Index is the gift's ordinal, not its branch.
+        readonly bool[] _bonusOn = new bool[WorldBuilder.GiftCount];
+        int _giftBranch = -1;
+        float _suppressGiftUntil;
+        float _swallowTapsUntil;
+        int[] _census;
         readonly List<BeeVisit> _levelBees = new List<BeeVisit>();
         int _hiveFlip = -1;
         float _hiveFlipT;
@@ -140,17 +149,38 @@ namespace FlockFive
             public float RadiusX;   // ellipse radii (outside glyphs)
             public float RadiusY;
             public float BobPhase;
+            public float Slot;      // eased angular target (radians)
             public BirdColor Col;
         }
         SplashFlutter[] _splashFlutters;
         SplashFlutter[] _pokerFlutters;
+        int _splashHaloTick = -1;
+        int _pokerHaloTick = -1;
+        static float _titleWing = -1f;
+        static readonly int[] _titleOrd = new int[8];
+        static readonly float[] _titleAng = new float[8];
         struct HiveHaloBee
         {
-            public float Angle, Speed, RadiusK, BobPhase;
+            public float SlotFrom, SlotTo, SlotStart;
+            public float RadiusPhase, RadiusOmega;
+            public float BobPhase, BobOmega, BobGain;
             public Color Tint;
             public float Appear, Expire;
         }
         readonly List<HiveHaloBee> _incomingHalo = new List<HiveHaloBee>();
+        // Bird halo orbits at this ±0.06 rad/s (EnsureHaloFlutters). Bee halo base matches it.
+        const float HaloOrbitSpeed = 0.46f;
+        const float HaloEbbAmp = 0.25f;
+        const float HaloEbbOmega = 0.65f;
+        const float HaloRespaceSec = 0.26f;
+        const float HaloRadiusWobble = 0.03f;
+        const int HaloCap = 12;
+        float _haloSpin;
+        float _haloEbbPhase;
+        bool _haloEbbReady;
+        readonly float[] _haloGap = new float[HaloCap];
+        readonly int[] _haloOrder = new int[HaloCap];
+        readonly float[] _haloUnwrapped = new float[HaloCap];
         static Sprite _splashPointedV;
 
         public void InviteShareDone(string ok)
@@ -336,13 +366,16 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.SetSplash(false);
             _board = LevelData.Open(index);
             _seed = _board.Clone();
-            _giftClaimed = false;
+            for (int i = 0; i < _bonusOn.Length; i++) _bonusOn[i] = false;
+            _giftBranch = -1;
+            _census = BoardValidator.Counts(_board);
             CoachBegin(index);
             Purse.BeginStage();
             if (_garden.Root != null) Destroy(_garden.Root.gameObject);
             if (_garden.Cam != null) Destroy(_garden.Cam.gameObject);
             SpriteCatalog.ForgetBirds();
             _garden = WorldBuilder.Build(transform);
+            AlignBranchViews();
             SyncAll();
             StartCoroutine(GardenFit.Tween(_garden, _board, true));
             Sfx.GardenWake();
@@ -375,6 +408,7 @@ namespace FlockFive
                 StopCoroutine(_hawkRun);
                 _hawkRun = null;
             }
+            HawkView.ClearShow();
             if (HawkView.Live != null)
                 Destroy(HawkView.Live.gameObject);
         }
@@ -383,6 +417,7 @@ namespace FlockFive
         {
             StopSparrow();
             StopHawk();
+            SparrowView.ClearFx();
         }
 
         bool CanSparrowVisit() =>
@@ -1765,14 +1800,20 @@ namespace FlockFive
         }
 #endif
 
-        void SyncAll()
+        void SyncAll(bool force = false)
         {
+            // In-flight hops and collects must not snap birds back onto perches
+            // while a restart takeoff still owns them.
+            if (_restarting && !force) return;
             for (int i = 0; i < _garden.Branches.Length; i++)
             {
                 if (_locked.Contains(i)) continue;
                 if (_board == null || i >= _board.Branches.Count) continue;
-                _garden.Branches[i].Sync(_board.Branches[i], _board.IsSleeping(i));
-                _garden.Branches[i].SetReady(i == _sel);
+                var branchView = _garden.Branches[i];
+                // Limb break is already playing; Sync would hide it mid-fall.
+                if (branchView == null || branchView.Breaking) continue;
+                branchView.Sync(_board.Branches[i], _board.IsSleeping(i));
+                branchView.SetReady(i == _sel);
             }
             for (int i = 0; i < 2; i++)
                 _garden.Feeders[i].Show(_board.Live[i]);
@@ -1830,8 +1871,18 @@ namespace FlockFive
         void HandleTap(Vector2 world)
         {
             if (_busy || _won || _board == null) return;
+            if (Time.unscaledTime < _swallowTapsUntil) return;
             if (Time.unscaledTime < _nextTap) return;
             _nextTap = Time.unscaledTime + 0.10f;
+
+            int sign = HitGiftSign(world);
+            if (sign >= 0)
+            {
+                if (CanOfferBonus(sign)) OpenBonus(sign);
+                return;
+            }
+            // Bird and limb taps must not open a gift a moment later.
+            _suppressGiftUntil = Time.unscaledTime + 1f;
 
             int feeder = HitFeeder(world);
             if (feeder >= 0)
@@ -1846,11 +1897,6 @@ namespace FlockFive
             }
 
             int hit = HitBranch(world);
-            if (hit >= 0 && GiftLocked(hit))
-            {
-                OpenGift();
-                return;
-            }
             if (hit < 0)
             {
                 if (_sel >= 0)
@@ -1918,6 +1964,7 @@ namespace FlockFive
 
         IEnumerator DoMove(int from, int to)
         {
+            int gen = _motionGen;
             _garden.Branches[from].SetReady(false);
             _sel = -1;
             if (Locked(from) || Locked(to) || !_board.CanMove(from, to, out int run))
@@ -1936,6 +1983,7 @@ namespace FlockFive
             ArmPests();
             _board.TryMove(from, to, out run);
             yield return Hop(from, to, run, fromCount, toCount, hopCol);
+            if (gen != _motionGen) yield break;
             Unlock(from);
             Unlock(to);
             SyncAll();
@@ -1945,6 +1993,7 @@ namespace FlockFive
             CoachMoved(from, to, kicked);
             if (_locked.Count == 0)
                 yield return GardenFit.Tween(_garden, _board, false);
+            if (gen != _motionGen) yield break;
             if (_board.JustUnveiled)
             {
                 var visit = Hive.TakeVisitor();
@@ -1975,6 +2024,7 @@ namespace FlockFive
 
         IEnumerator Hop(int from, int to, int run, int fromCount, int toCount, BirdColor col)
         {
+            int gen = _motionGen;
             var src = _garden.Branches[from];
             var dst = _garden.Branches[to];
             Sfx.FlockFlutter(run);
@@ -2002,6 +2052,7 @@ namespace FlockFive
             const float dur = 0.48f;
             while (t < dur)
             {
+                if (gen != _motionGen) yield break;
                 t += Time.deltaTime;
                 float u = Mathf.SmoothStep(0f, 1f, t / dur);
                 for (int i = 0; i < run; i++)
@@ -2017,6 +2068,7 @@ namespace FlockFive
 
         IEnumerator Collect(int branch, int combo = 1)
         {
+            int gen = _motionGen;
             var br = _board.Branches[branch];
             br.IsFullMatch(out var col);
             int slot = _board.FeederSlotFor(col);
@@ -2071,7 +2123,12 @@ namespace FlockFive
             bool vsHawk = HawkView.Live != null && HawkView.Live.BlockingSlot == slot;
             bool vsSparrow = !vsHawk && SparrowView.Live != null && SparrowView.Live.BlockingSlot == slot;
             bool pest = vsHawk || vsSparrow;
-            _board.ApplyCollect(branch, scoreFeeder: !pest);
+            // Feeder matches score when the last bird lands. Pest scraps park the
+            // flock up front so the five cannot immediately collect again.
+            // Hawk never drops the limb; a sparrow drops it only when every bird
+            // still has a seat.
+            PestPark.Plan pestPlan = default;
+            if (pest) pestPlan = PestPark.Apply(_board, branch, vsHawk);
 
             float haste = Mathf.Lerp(1f, 0.52f, Mathf.Clamp01((combo - 1) / 7f));
             float step = 0.192f * haste;
@@ -2085,33 +2142,103 @@ namespace FlockFive
                 yield return CollectVsSparrow(birds, n, feeder, mouth, view, col, fightHaste, step, fightFly, combo, flock, branch);
             else
             {
-                if (feeder != null) feeder.Hold();
-                for (int i = 0; i < n; i++)
+                const float beat = 0.12f;
+                const float stagger = 0.05f;
+                const float flyDur = 0.45f;
+                var order = new int[n];
+                for (int i = 0; i < n; i++) order[i] = i;
+                for (int a = 0; a < n; a++)
                 {
-                    float u = n <= 1 ? 0f : i / (float)(n - 1) - 0.5f;
-                    var land = mouth + new Vector3(u * 0.95f, 0.06f * Mathf.Sin((i + 1) * 1.2f), 0f);
-                    StartCoroutine(FlyHit(birds[i].transform, land, step * i, fly, i, feeder));
+                    int best = a;
+                    float bx = birds[order[a]] != null ? birds[order[a]].transform.position.x : 0f;
+                    for (int b = a + 1; b < n; b++)
+                    {
+                        float x = birds[order[b]] != null ? birds[order[b]].transform.position.x : 0f;
+                        if (x < bx)
+                        {
+                            best = b;
+                            bx = x;
+                        }
+                    }
+                    int swap = order[a];
+                    order[a] = order[best];
+                    order[best] = swap;
                 }
-                if (n > 0)
-                {
-                    yield return new WaitForSeconds(fly * 0.92f);
-                    StartCoroutine(Wow.Burst(mouth + Vector3.up * 0.2f, col, _garden.Root, combo));
-                }
-                yield return new WaitForSeconds((n > 0 ? (n - 1) * step : 0f) + 0.216f * haste);
 
-                if (feeder != null) yield return feeder.PullAway();
-                yield return view.BreakAway();
+                var home = new Vector3[n];
+                var homeRot = new Quaternion[n];
+                var homeScale = new Vector3[n];
+                for (int k = 0; k < n; k++)
+                {
+                    int i = order[k];
+                    if (birds[i] == null) continue;
+                    home[i] = birds[i].transform.position;
+                    homeRot[i] = birds[i].transform.rotation;
+                    homeScale[i] = birds[i].transform.localScale;
+                    var idle = birds[i].GetComponent<BirdIdle>();
+                    if (idle != null) idle.Cheer(beat + stagger * k + 0.08f);
+                }
+                Sfx.Chirp(col);
+                float bt = 0f;
+                while (bt < beat)
+                {
+                    if (gen != _motionGen) yield break;
+                    bt += Time.deltaTime;
+                    float u = Mathf.SmoothStep(0f, 1f, bt / beat);
+                    for (int i = 0; i < n; i++)
+                    {
+                        if (birds[i] == null) continue;
+                        var p = home[i];
+                        p.y += 0.18f * u;
+                        birds[i].transform.position = p;
+                        birds[i].transform.rotation = Quaternion.Slerp(homeRot[i], Quaternion.identity, u);
+                        birds[i].transform.localScale = homeScale[i] * (1f + 0.06f * u);
+                    }
+                    yield return null;
+                }
+                if (gen != _motionGen) yield break;
+
+                if (feeder != null) feeder.BeginScore();
+                var landed = new int[1];
+                int expect = 0;
+                Vector3 aim = feeder != null ? feeder.RestMouth : mouth;
+                for (int k = 0; k < n; k++)
+                {
+                    int i = order[k];
+                    if (birds[i] == null) continue;
+                    expect++;
+                    float spread = n <= 1 ? 0f : k / (float)(n - 1) - 0.5f;
+                    var land = aim + new Vector3(spread * 0.62f, 0.035f * ((k & 1) == 0 ? 1f : -1f), 0f);
+                    birds[i].sortingOrder = 42 + k;
+                    StartCoroutine(FlyHit(birds[i].transform, land, stagger * k, flyDur, k, feeder, landed));
+                }
+                while (landed[0] < expect)
+                {
+                    if (gen != _motionGen) yield break;
+                    yield return null;
+                }
+                if (gen != _motionGen) yield break;
+
+                _board.ApplyCollect(branch, scoreFeeder: true);
+                if (feeder != null) StartCoroutine(RetireFeeder(feeder, slot, gen));
+                StartCoroutine(view.BreakAway());
             }
+            if (gen != _motionGen) yield break;
+            if (pest)
+                yield return FinishPest(view, birds, n, pestPlan, branch, gen);
+            if (gen != _motionGen) yield break;
             Unlock(branch);
             _collecting = false;
             int more = KickCollects();
             SyncAll();
             if (_locked.Count == 0)
                 yield return GardenFit.Tween(_garden, _board, false);
-            if (more != 0) yield break;
+            if (gen != _motionGen || more != 0) yield break;
             yield return SettleIfIdle();
+            if (gen != _motionGen) yield break;
             if (vsHawk || vsSparrow)
                 yield return new WaitForSeconds(1.05f);
+            if (gen != _motionGen) yield break;
             CheckOver();
         }
 
@@ -2121,6 +2248,7 @@ namespace FlockFive
             BranchView view, BirdColor col, float haste, float step, float fly, int combo,
             Bird[] flock, int broken)
         {
+            int gen = _motionGen;
             if (SparrowView.Live != null)
                 SparrowView.Live.BeginEvict();
             if (feeder != null) feeder.Hold();
@@ -2146,6 +2274,7 @@ namespace FlockFive
                 StartCoroutine(DiveApproach(birds[i].transform, hold, delay, fly * Random.Range(0.78f, 1.05f), i));
             }
             yield return new WaitForSeconds(approachSpan + fly * 0.85f);
+            if (gen != _motionGen) yield break;
             if (n > 0)
                 StartCoroutine(Wow.Burst(Body() + Vector3.up * 0.15f, col, _garden.Root, combo));
 
@@ -2154,19 +2283,21 @@ namespace FlockFive
             {
                 if (h > 0)
                     yield return new WaitForSeconds(Random.Range(0.12f, 0.22f) * haste);
+                if (gen != _motionGen) yield break;
                 int striker = h % Mathf.Max(1, n);
                 if (birds[striker] == null) continue;
                 yield return DiveStrike(birds[striker].transform, Body, h);
+                if (gen != _motionGen) yield break;
             }
 
             if (SparrowView.Live != null)
-                yield return SparrowView.Live.PanicFlee();
+                yield return SparrowView.Live.PanicFlee(true);
+            if (gen != _motionGen) yield break;
 
             yield return ScatterUp(birds, n);
+            if (gen != _motionGen) yield break;
 
             if (feeder != null) feeder.SnapHome();
-            yield return view.BreakAway();
-            yield return PerchOnRemain(birds, n, flock, broken);
         }
 
         // Collect into a hawk-blocked feeder. Same dive scrap as sparrow, but two
@@ -2176,6 +2307,7 @@ namespace FlockFive
             BranchView view, BirdColor col, float haste, float step, float fly, int combo,
             Bird[] flock, int broken)
         {
+            int gen = _motionGen;
             var hawk = HawkView.Live;
             if (hawk != null) hawk.BeginScrap();
             if (feeder != null) feeder.Hold();
@@ -2200,6 +2332,7 @@ namespace FlockFive
                 StartCoroutine(DiveApproach(birds[i].transform, hold, delay, fly * Random.Range(0.78f, 1.05f), i));
             }
             yield return new WaitForSeconds(approachSpan + fly * 0.85f);
+            if (gen != _motionGen) yield break;
             if (n > 0)
                 StartCoroutine(Wow.Burst(Body() + Vector3.up * 0.15f, col, _garden.Root, combo));
 
@@ -2207,28 +2340,32 @@ namespace FlockFive
             {
                 if (h > 0)
                     yield return new WaitForSeconds(Random.Range(0.12f, 0.22f) * haste);
+                if (gen != _motionGen) yield break;
                 int striker = h % Mathf.Max(1, n);
                 if (birds[striker] == null) continue;
                 yield return DiveStrike(birds[striker].transform, Body, h);
+                if (gen != _motionGen) yield break;
             }
 
+            if (gen != _motionGen) yield break;
             bool cleared = hawk != null && hawk.AbsorbCollect();
             if (cleared && HawkView.Live != null)
-                yield return HawkView.Live.PanicFlee();
+                yield return HawkView.Live.PanicFlee(true);
             else if (hawk != null)
                 hawk.EndScrap();
+            if (gen != _motionGen) yield break;
 
             yield return ScatterUp(birds, n);
+            if (gen != _motionGen) yield break;
 
             if (feeder != null) feeder.SnapHome();
-            yield return view.BreakAway();
-            yield return PerchOnRemain(birds, n, flock, broken);
         }
 
         IEnumerator DiveApproach(Transform tr, Vector3 hold, float delay, float dur, int pop)
         {
+            int gen = _motionGen;
             if (delay > 0f) yield return new WaitForSeconds(delay);
-            if (tr == null) yield break;
+            if (gen != _motionGen || tr == null) yield break;
             Sfx.FlockFlutter(1);
             var start = tr.position;
             var scale = tr.localScale;
@@ -2239,10 +2376,11 @@ namespace FlockFive
             over.y += Random.Range(0.05f, 0.2f);
             FaceToward(tr, hold.x >= start.x);
             float lift = Random.Range(1.2f, 1.9f);
+            var idle = tr.GetComponent<BirdIdle>();
             float t = 0f;
             while (t < dur)
             {
-                if (tr == null) yield break;
+                if (gen != _motionGen || tr == null) yield break;
                 t += Time.deltaTime;
                 float u = Mathf.Clamp01(t / dur);
                 // Accelerate into the dive (ease-in), soft land.
@@ -2254,18 +2392,17 @@ namespace FlockFive
                     FaceToward(tr, hold.x < start.x);
                 tr.position = mid;
                 tr.localScale = scale;
-                var idle = tr.GetComponent<BirdIdle>();
                 if (idle != null) idle.Flapping = true;
                 yield return null;
             }
             // Ease back from overshoot to hold.
-            if (tr == null) yield break;
+            if (gen != _motionGen || tr == null) yield break;
             var from = tr.position;
             float back = 0f;
             const float backDur = 0.10f;
             while (back < backDur)
             {
-                if (tr == null) yield break;
+                if (gen != _motionGen || tr == null) yield break;
                 back += Time.deltaTime;
                 float u = Mathf.SmoothStep(0f, 1f, back / backDur);
                 tr.position = Vector3.Lerp(from, hold, u);
@@ -2277,6 +2414,7 @@ namespace FlockFive
 
         IEnumerator DiveStrike(Transform tr, System.Func<Vector3> bodyFn, int hit)
         {
+            int gen = _motionGen;
             if (tr == null) yield break;
             Sfx.FlockFlutter(1);
             var start = tr.position;
@@ -2292,9 +2430,10 @@ namespace FlockFive
             float dur = Random.Range(0.14f, 0.22f);
             float t = 0f;
             bool struck = false;
+            var idle = tr.GetComponent<BirdIdle>();
             while (t < dur)
             {
-                if (tr == null) yield break;
+                if (gen != _motionGen || tr == null) yield break;
                 t += Time.deltaTime;
                 float u = Mathf.Clamp01(t / dur);
                 // Accelerate hard into contact.
@@ -2314,13 +2453,12 @@ namespace FlockFive
                     // Brief contact squash on the hummer.
                     tr.localScale = scale * 1.12f;
                 }
-                var idle = tr.GetComponent<BirdIdle>();
                 if (idle != null) idle.Flapping = true;
                 yield return null;
             }
 
             // Glance-off tight loop, then hover nearby for a possible return pass.
-            if (tr == null) yield break;
+            if (gen != _motionGen || tr == null) yield break;
             var loopFrom = tr.position;
             float side = loopFrom.x >= body.x ? 1f : -1f;
             FaceToward(tr, side < 0f);
@@ -2333,7 +2471,7 @@ namespace FlockFive
                 0f);
             while (loop < loopDur)
             {
-                if (tr == null) yield break;
+                if (gen != _motionGen || tr == null) yield break;
                 loop += Time.deltaTime;
                 float u = Mathf.Clamp01(loop / loopDur);
                 float ang = u * Mathf.PI * 1.35f;
@@ -2406,9 +2544,10 @@ namespace FlockFive
 
         static IEnumerator ScatterHold(Transform tr, Vector3 dest, float delay)
         {
+            int gen = _motionGen;
             if (tr == null) yield break;
             if (delay > 0f) yield return new WaitForSeconds(delay);
-            if (tr == null) yield break;
+            if (gen != _motionGen || tr == null) yield break;
             var start = tr.position;
             var scale = BranchView.BirdScale;
             float side = dest.x >= start.x ? 1f : -1f;
@@ -2434,7 +2573,7 @@ namespace FlockFive
             float t = 0f;
             while (t < dur)
             {
-                if (tr == null) yield break;
+                if (gen != _motionGen || tr == null) yield break;
                 t += Time.deltaTime;
                 float u = Mathf.SmoothStep(0f, 1f, t / dur);
                 var p = Vector3.Lerp(start, dest, u);
@@ -2444,28 +2583,47 @@ namespace FlockFive
                 tr.localScale = scale;
                 yield return null;
             }
-            if (tr != null) tr.position = dest;
+            if (gen != _motionGen || tr == null) yield break;
+            tr.position = dest;
         }
 
-        // After a pest scrap the flock hops onto remaining limbs. Redistribute
-        // must never land an auto-clear: skip any perch that would fill a
-        // same-color Cap match (KickCollects would fire). No safe seat → scatter.
-        IEnumerator PerchOnRemain(SpriteRenderer[] birds, int n, Bird[] flock, int broken)
+        // Limb snap, then every fighter flies to the seat PestPark already reserved.
+        // Sprites stay alive: SyncAll re-parents them. Destroying them here was
+        // how a restored gift limb lost its birds.
+        IEnumerator FinishPest(BranchView view, SpriteRenderer[] birds, int n, PestPark.Plan plan, int branch, int gen)
         {
-            if (n <= 0) yield break;
+            AlignBranchViews();
+            if (view != null)
+            {
+                yield return view.BreakAway();
+                if (gen != _motionGen) yield break;
+                bool regrow = !plan.Break || (branch >= 0 && branch < _board.Branches.Count && _board.Branches[branch].IsBonus);
+                if (regrow) view.Revive();
+            }
+            if (gen != _motionGen) yield break;
+            yield return GardenFit.Tween(_garden, _board, true);
+            if (gen != _motionGen) yield break;
+            yield return PerchOnRemain(birds, n, plan);
+            if (gen != _motionGen) yield break;
+            SyncAll();
+            Conserve("pest");
+        }
+
+        IEnumerator PerchOnRemain(SpriteRenderer[] birds, int n, PestPark.Plan plan)
+        {
+            int gen = _motionGen;
+            if (n <= 0 || gen != _motionGen) yield break;
             var dests = new Vector3[n];
             var parked = new bool[n];
+            var homes = plan.Homes;
             for (int i = 0; i < n; i++)
             {
-                var bird = i < flock.Length ? flock[i] : new Bird(BirdColor.Gold, BirdSex.Neutral);
-                int home = FindParkBranch(broken, bird);
-                if (home < 0 || _garden.Branches == null || home >= _garden.Branches.Length)
-                    continue;
-                var st = _board.Branches[home];
-                int seat = st.Count;
-                st.Birds.Add(bird);
-                st.AlignShroud();
+                if (homes == null || i >= homes.Length) continue;
+                int home = homes[i].Branch;
+                int seat = homes[i].Seat;
+                if (_garden.Branches == null || (uint)home >= (uint)_garden.Branches.Length) continue;
                 var br = _garden.Branches[home];
+                if (br == null || seat < 0 || seat >= BranchState.Cap) continue;
                 dests[i] = br.SeatWorld(seat) + br.transform.TransformVector(new Vector3(0f, BranchView.RestLift, 0f));
                 parked[i] = true;
             }
@@ -2480,66 +2638,19 @@ namespace FlockFive
                 if (parked[i])
                     StartCoroutine(PerchOne(birds[i].transform, dests[i], delay));
                 else
-                {
-                    var off = ScatterDests(1);
-                    StartCoroutine(ScatterOne(birds[i].transform, off[0], delay));
-                }
+                    StartCoroutine(PerchOne(birds[i].transform, birds[i].transform.position + Vector3.up * 0.4f, delay));
             }
             yield return new WaitForSeconds(wait);
-            yield return new WaitForSeconds(0.55f);
-            // Fight sprites were parented to Root for the scrap; SyncAll owns
-            // parked seat visuals, so drop the temps. Scattered birds already
-            // fade/hide via ScatterOne.
-            for (int i = 0; i < n; i++)
-            {
-                if (!parked[i] || birds[i] == null) continue;
-                Destroy(birds[i].gameObject);
-                birds[i] = null;
-            }
-        }
-
-        int FindParkBranch(int broken, Bird bird)
-        {
-            if (_board == null) return -1;
-            int best = -1;
-            int bestFree = -1;
-            for (int b = 0; b < _board.Branches.Count; b++)
-            {
-                if (b == broken) continue;
-                var st = _board.Branches[b];
-                if (st.Broken || st.AdLocked || st.Free <= 0) continue;
-                if (_board.IsSleeping(b)) continue;
-                if (_garden.Branches == null || b >= _garden.Branches.Length) continue;
-                var view = _garden.Branches[b];
-                if (view == null) continue;
-                if (WouldFullMatchAfterAdd(st, bird)) continue;
-                if (st.Free > bestFree)
-                {
-                    bestFree = st.Free;
-                    best = b;
-                }
-            }
-            return best;
-        }
-
-        // Same rules as BranchState.IsFullMatch, hypothetically after one add.
-        static bool WouldFullMatchAfterAdd(BranchState st, Bird bird)
-        {
-            if (st == null || st.Broken) return false;
-            if (st.Count + 1 != BranchState.Cap) return false;
-            for (int i = 0; i < st.Count; i++)
-            {
-                if (st.IsShrouded(i)) return false;
-                if (st.Birds[i].Color != bird.Color) return false;
-            }
-            return true;
+            if (gen != _motionGen) yield break;
+            yield return new WaitForSeconds(0.35f);
         }
 
         static IEnumerator PerchOne(Transform tr, Vector3 dest, float delay)
         {
+            int gen = _motionGen;
             if (tr == null) yield break;
             if (delay > 0f) yield return new WaitForSeconds(delay);
-            if (tr == null) yield break;
+            if (gen != _motionGen || tr == null) yield break;
             var start = tr.position;
             var scale = BranchView.BirdScale;
             float dur = 0.78f;
@@ -2563,7 +2674,7 @@ namespace FlockFive
             float t = 0f;
             while (t < dur)
             {
-                if (tr == null) yield break;
+                if (gen != _motionGen || tr == null) yield break;
                 t += Time.deltaTime;
                 float u = Mathf.SmoothStep(0f, 1f, t / dur);
                 var p = Vector3.Lerp(start, dest, u);
@@ -2572,7 +2683,7 @@ namespace FlockFive
                 tr.localScale = scale;
                 yield return null;
             }
-            if (tr == null) yield break;
+            if (gen != _motionGen || tr == null) yield break;
             tr.position = dest;
             tr.localScale = scale;
             // Stay Frozen: this is a temp fight sprite still parented to the
@@ -2620,9 +2731,10 @@ namespace FlockFive
 
         static IEnumerator ScatterOne(Transform tr, Vector3 dest, float delay)
         {
+            int gen = _motionGen;
             if (tr == null) yield break;
             if (delay > 0f) yield return new WaitForSeconds(delay);
-            if (tr == null) yield break;
+            if (gen != _motionGen || tr == null) yield break;
             var start = tr.position;
             var scale = tr.localScale;
             float side = dest.x >= start.x ? 1f : -1f;
@@ -2641,7 +2753,7 @@ namespace FlockFive
             float t = 0f;
             while (t < dur)
             {
-                if (tr == null) yield break;
+                if (gen != _motionGen || tr == null) yield break;
                 t += Time.deltaTime;
                 float u = Mathf.SmoothStep(0f, 1f, t / dur);
                 var p = Vector3.Lerp(start, dest, u);
@@ -2649,21 +2761,18 @@ namespace FlockFive
                 p.x += Mathf.Sin(u * Mathf.PI * wobble) * side * sway * (1f - u * 0.65f);
                 tr.position = p;
                 tr.localScale = scale * Mathf.Lerp(1f, 0.68f, u);
-                var sr = tr.GetComponent<SpriteRenderer>();
-                if (sr != null)
+                if (srFace != null)
                 {
-                    var c = sr.color;
+                    var c = srFace.color;
                     c.a = 1f - u * 0.88f;
-                    sr.color = c;
+                    srFace.color = c;
                 }
                 yield return null;
             }
-            if (tr != null)
-            {
-                tr.gameObject.SetActive(false);
-                var sr = tr.GetComponent<SpriteRenderer>();
-                if (sr != null) sr.enabled = false;
-            }
+            if (gen != _motionGen || tr == null) yield break;
+            tr.gameObject.SetActive(false);
+            var hide = tr.GetComponent<SpriteRenderer>();
+            if (hide != null) hide.enabled = false;
         }
 
         IEnumerator SettleIfIdle()
@@ -2700,49 +2809,125 @@ namespace FlockFive
             return n;
         }
 
-        IEnumerator FlyHit(Transform tr, Vector3 dest, float delay, float dur, int pop, FeederView feeder)
+        // Feeder leaves after the last tick, then the next color (if any) comes in.
+        // Does not hold the branch lock.
+        IEnumerator RetireFeeder(FeederView feeder, int slot, int gen)
         {
-            if (delay > 0f) yield return new WaitForSeconds(delay);
-            if (tr == null) yield break;
-            Sfx.FlockFlutter(1);
-            var start = tr.position;
-            var scale = tr.localScale;
-            float t = 0f;
-            while (t < dur)
+            yield return new WaitForSeconds(0.16f);
+            if (gen != _motionGen || feeder == null) yield break;
+            var pull = feeder.PullAway();
+            while (gen == _motionGen && pull.MoveNext())
+                yield return pull.Current;
+            if (gen != _motionGen)
             {
-                t += Time.deltaTime;
-                float u = Mathf.SmoothStep(0f, 1f, t / dur);
-                var p = Vector3.Lerp(start, dest, u);
-                p.y += Mathf.Sin(u * Mathf.PI) * 1.85f;
-                tr.position = p;
-                tr.localScale = scale;
-                yield return null;
+                if (feeder != null) feeder.SnapHome();
+                yield break;
             }
-            tr.position = dest;
-            Sfx.ScorePop(pop);
-            if (feeder != null) feeder.Pulse();
-            yield return PopOff(tr);
+            if (feeder == null || _board == null) yield break;
+            if ((uint)slot < (uint)_board.Live.Length)
+                feeder.Show(_board.Live[slot]);
         }
 
-        static IEnumerator PopOff(Transform tr)
+        IEnumerator FlyHit(Transform tr, Vector3 dest, float delay, float dur, int pop, FeederView feeder, int[] landed)
         {
-            if (tr == null) yield break;
-            var from = tr.localScale;
+            int gen = _motionGen;
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            if (gen != _motionGen) yield break;
+            if (tr == null)
+            {
+                NoteLanded(landed);
+                yield break;
+            }
+            Sfx.FlockFlutter(1);
+            var start = tr.position;
+            var crest = tr.localScale;
+            var delta = dest - start;
+            var ctrl = (start + dest) * 0.5f;
+            ctrl.y += Mathf.Clamp(1.05f + Mathf.Abs(delta.y) * 0.22f, 1.05f, 2.15f) + (pop % 3) * 0.12f;
+            float bow = (0.34f + Mathf.Min(0.22f, Mathf.Abs(delta.x) * 0.05f)) * ((pop & 1) == 0 ? 1f : -1f);
+            ctrl.x += bow;
+            bool faceLeft = dest.x < start.x;
+            var idle = tr.GetComponent<BirdIdle>();
+            if (idle != null)
+            {
+                idle.Frozen = true;
+                idle.Flapping = true;
+                idle.FaceLeft = faceLeft;
+                idle.SetFade(1f);
+            }
+            var sr = tr.GetComponent<SpriteRenderer>();
+            if (sr != null)
+            {
+                sr.flipX = faceLeft;
+                sr.sortingOrder = 42 + pop;
+            }
+            bool scored = false;
             float t = 0f;
-            const float dur = 0.168f;
             while (t < dur)
             {
+                if (gen != _motionGen) yield break;
+                if (tr == null)
+                {
+                    NoteLanded(landed);
+                    yield break;
+                }
                 t += Time.deltaTime;
-                float u = Mathf.Clamp01(t / dur);
-                float pop = u < 0.28f
-                    ? Mathf.Lerp(1f, 1.28f, u / 0.28f)
-                    : Mathf.Lerp(1.28f, 0f, (u - 0.28f) / 0.72f);
-                tr.localScale = from * pop;
+                float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / dur));
+                tr.position = Quad(start, ctrl, dest, u);
+                tr.localScale = crest * Mathf.Lerp(1f, 0.80f, u);
+                float bank = Mathf.Sin(u * Mathf.PI) * (faceLeft ? 12f : -12f);
+                tr.rotation = Quaternion.Euler(0f, 0f, bank);
+                float fade = Mathf.InverseLerp(0.82f, 1f, u);
+                if (idle != null) idle.SetFade(1f - fade);
+                else if (sr != null)
+                {
+                    var c = sr.color;
+                    c.a = 1f - fade;
+                    sr.color = c;
+                }
+                if (!scored && u >= 0.92f)
+                {
+                    scored = true;
+                    Sfx.ScorePop(pop);
+                    if (feeder != null) feeder.ScoreTick();
+                }
                 yield return null;
             }
+            if (gen != _motionGen) yield break;
+            if (tr == null)
+            {
+                NoteLanded(landed);
+                yield break;
+            }
+            tr.position = dest;
+            tr.rotation = Quaternion.identity;
+            tr.localScale = crest * 0.80f;
+            if (!scored)
+            {
+                Sfx.ScorePop(pop);
+                if (feeder != null) feeder.ScoreTick();
+            }
+            if (idle != null) idle.SetFade(1f);
+            else if (sr != null)
+            {
+                var c = sr.color;
+                c.a = 1f;
+                sr.color = c;
+            }
             tr.gameObject.SetActive(false);
-            var sr = tr.GetComponent<SpriteRenderer>();
             if (sr != null) sr.enabled = false;
+            NoteLanded(landed);
+        }
+
+        static void NoteLanded(int[] landed)
+        {
+            if (landed != null && landed.Length > 0) landed[0]++;
+        }
+
+        static Vector3 Quad(Vector3 a, Vector3 b, Vector3 c, float u)
+        {
+            float k = 1f - u;
+            return k * k * a + 2f * k * u * b + u * u * c;
         }
 
         void CheckOver()
@@ -2790,6 +2975,9 @@ namespace FlockFive
 
         IEnumerator SnapRound()
         {
+            if (_restarting) yield break;
+            _motionGen++;
+            _restarting = true;
             _busy = true;
             _gift = GiftFace.None;
             _keepStreak = false;
@@ -2802,110 +2990,407 @@ namespace FlockFive
             _combo = 0;
             _collecting = false;
             _locked.Clear();
+            HaltBreaks();
+            SparrowView.ClearFx();
+            if (HawkView.Live != null) HawkView.Live.EndScrap();
+            if (SparrowView.Live != null) SparrowView.Live.FinishEvict();
+            // Own every visible bird before any yield, including ones already in the air
+            // and silhouettes under bees or leaves, so a limb break or hop cannot hide them.
+            var flock = ClaimFlock();
             if (_garden.Ice != null)
                 yield return _garden.Ice.Shatter(_garden.Root);
-            StillBirds(false);
-            yield return FlyOffAll();
+            yield return FlyOffAll(flock);
             if (_seed != null) _board = _seed.Clone();
-            if (_giftClaimed && _board != null)
-                for (int gi = 0; gi < _board.Branches.Count; gi++)
-                    _board.Branches[gi].AdLocked = false;
-            if (_garden.Branches != null && _board != null)
-            {
-                for (int i = 0; i < _garden.Branches.Length; i++)
-                {
-                    var v = _garden.Branches[i];
-                    if (v == null) continue;
-                    if (i >= _board.Branches.Count)
-                    {
-                        v.gameObject.SetActive(false);
-                        continue;
-                    }
-                    v.Revive();
-                    var want = v.GetComponent<GiftWant>();
-                    if (want != null)
-                    {
-                        bool locked = _board.Branches[i].AdLocked;
-                        want.On = locked;
-                        want.enabled = locked;
-                        if (v.Sign != null) v.Sign.gameObject.SetActive(locked);
-                    }
-                }
-            }
+            BonusBranches.ApplyClaims(_board, _bonusOn);
+            AlignBranchViews();
+            RefreshBonusSigns();
             if (_garden.Feeders != null)
             {
                 for (int i = 0; i < _garden.Feeders.Length; i++)
                     if (_garden.Feeders[i] != null) _garden.Feeders[i].SnapHome();
             }
-            SyncAll();
+            SyncAll(true);
             yield return GardenFit.Tween(_garden, _board, true);
             yield return SnapBirdsHome();
+            Conserve("restart");
+            _restarting = false;
+            StillBirds(false);
             _busy = false;
         }
 
-        float EdgeHalfW()
+        void RefreshBonusSigns()
         {
-            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
-            return cam != null ? cam.orthographicSize * cam.aspect : 3.2f;
+            if (_garden.Branches == null || _board == null) return;
+            int n = Mathf.Min(_garden.Branches.Length, _board.Branches.Count);
+            for (int i = 0; i < n; i++)
+            {
+                var v = _garden.Branches[i];
+                if (v == null) continue;
+                var want = v.GetComponent<GiftWant>();
+                if (want == null) continue;
+                bool locked = _board.Branches[i].AdLocked && !_board.Branches[i].Broken;
+                want.On = locked;
+                want.enabled = locked;
+                if (v.Sign != null) v.Sign.gameObject.SetActive(locked);
+            }
         }
 
-        // Restart: the whole flock takes off and leaves the screen before the reset.
-        // Hidden birds (bees or leaves) keep their silhouette in flight.
-        IEnumerator FlyOffAll()
+        // Rebuild the limb row from the board. Old snap-off pieces and extra
+        // gift views are destroyed first so a restart cannot leave a hole or a twin.
+        void AlignBranchViews()
         {
-            if (_garden.Branches == null) yield break;
-            float edge = EdgeHalfW() + 1.4f;
-            int n = 0;
+            if (_board == null || _garden.Root == null) return;
+            int n = _board.Branches.Count;
+            var old = _garden.Branches ?? new BranchView[0];
+            var next = new BranchView[n];
+            var used = new bool[old.Length];
+            for (int i = 0; i < n; i++)
+            {
+                bool bonus = _board.Branches[i] != null && _board.Branches[i].IsBonus;
+                bool fromRight = SideRight(i);
+                BranchView v = null;
+                if (i < old.Length && !used[i] && old[i] != null
+                    && old[i].IsGift == bonus && old[i].FromRight == fromRight)
+                {
+                    v = old[i];
+                    used[i] = true;
+                }
+                for (int j = 0; v == null && j < old.Length; j++)
+                {
+                    if (used[j] || old[j] == null) continue;
+                    if (old[j].IsGift != bonus || old[j].FromRight != fromRight) continue;
+                    v = old[j];
+                    used[j] = true;
+                    break;
+                }
+                if (v == null)
+                    v = bonus
+                        ? WorldBuilder.MakeGift(i, fromRight, _garden.Root)
+                        : WorldBuilder.MakePlain(i, fromRight, _garden.Root);
+                v.Index = i;
+                v.ClearDebris();
+                if (_board.Branches[i] != null && !_board.Branches[i].Broken)
+                    v.Revive();
+                next[i] = v;
+            }
+            for (int j = 0; j < old.Length; j++)
+            {
+                if (used[j] || old[j] == null) continue;
+                DestroyBranchView(old[j]);
+            }
+            _garden.Branches = next;
+        }
+
+        bool SideRight(int index)
+        {
+            if (_board == null || (uint)index >= (uint)_board.Branches.Count) return false;
+            if (_board.Branches[index] != null && _board.Branches[index].IsBonus)
+            {
+                int n = 0;
+                for (int i = 0; i < index; i++)
+                    if (_board.Branches[i] != null && _board.Branches[i].IsBonus) n++;
+                return (n & 1) == 1;
+            }
+            int plain = 0;
+            for (int i = 0; i < index; i++)
+            {
+                var st = _board.Branches[i];
+                if (st != null && !st.IsBonus) plain++;
+            }
+            return (plain & 1) == 1;
+        }
+
+        static void DestroyBranchView(BranchView v)
+        {
+            if (v == null) return;
+            if (v.Birds != null)
+            {
+                for (int s = 0; s < v.Birds.Length; s++)
+                    if (v.Birds[s] != null) Object.Destroy(v.Birds[s].gameObject);
+            }
+            Object.Destroy(v.gameObject);
+        }
+
+        void Conserve(string why)
+        {
+            if (_board == null || _census == null) return;
+            var report = BoardValidator.Check(_board, _census);
+            if (report.Ok) return;
+            Debug.LogWarning("Flock Five conserve (" + why + "): " + report.Message);
+            int put = BoardValidator.Restore(_board, _census);
+            if (put > 0) AlignBranchViews();
+            SyncAll(true);
+            var again = BoardValidator.Check(_board, _census);
+            if (!again.Ok)
+                Debug.LogWarning("Flock Five conserve still short (" + why + "): " + again.Message);
+        }
+
+        void HaltBreaks()
+        {
+            if (_garden.Branches == null) return;
+            for (int i = 0; i < _garden.Branches.Length; i++)
+                if (_garden.Branches[i] != null) _garden.Branches[i].HaltBreak();
+        }
+
+        // Ease-in leaves (slow start, then off the screen). Ease-out arrives.
+        static float EaseIn(float u)
+        {
+            u = Mathf.Clamp01(u);
+            return u * u;
+        }
+
+        static float EaseOut(float u)
+        {
+            u = Mathf.Clamp01(u);
+            float v = 1f - u;
+            return 1f - v * v;
+        }
+
+        void CamPlane(out float camX, out float camY, out float halfW, out float halfH)
+        {
+            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
+            if (cam == null)
+            {
+                camX = 0f;
+                camY = 0f;
+                halfW = 3.2f;
+                halfH = 5f;
+                return;
+            }
+            camX = cam.transform.position.x;
+            camY = cam.transform.position.y;
+            halfH = cam.orthographicSize;
+            halfW = halfH * Mathf.Max(0.01f, cam.aspect);
+        }
+
+        static float SpriteHalfX(SpriteRenderer sr)
+        {
+            if (sr == null || sr.sprite == null) return 0.8f;
+            return Mathf.Max(0.45f, sr.sprite.bounds.extents.x * Mathf.Abs(sr.transform.lossyScale.x));
+        }
+
+        Vector3 Offscreen(Vector3 from, SpriteRenderer sr)
+        {
+            CamPlane(out float camX, out float camY, out float halfW, out float halfH);
+            float side = from.x >= camX ? 1f : -1f;
+            float y = Mathf.Clamp(from.y + Random.Range(0.12f, 0.42f), camY - halfH + 0.35f, camY + halfH - 0.35f);
+            return new Vector3(camX + side * (halfW + SpriteHalfX(sr) + 0.35f), y, from.z);
+        }
+
+        void PushPastEdge(SpriteRenderer sr)
+        {
+            if (sr == null || !sr.enabled) return;
+            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
+            if (cam == null) return;
+            float halfH = cam.orthographicSize;
+            float halfW = halfH * Mathf.Max(0.01f, cam.aspect);
+            var c = cam.transform.position;
+            var b = sr.bounds;
+            if (b.max.x < c.x - halfW || b.min.x > c.x + halfW
+                || b.max.y < c.y - halfH || b.min.y > c.y + halfH)
+                return;
+            float side = sr.transform.position.x >= c.x ? 1f : -1f;
+            float gap = side > 0f ? (c.x + halfW) - b.min.x : b.max.x - (c.x - halfW);
+            sr.transform.position += new Vector3(side * (gap + 0.08f), 0f, 0f);
+        }
+
+        static readonly Color FlightSilhouette = new Color(0.04f, 0.03f, 0.05f, 1f);
+
+        void FlightScale(SpriteRenderer sr, BranchView branch)
+        {
+            if (sr == null) return;
+            var rest = BranchView.BirdScale;
+            var idle = sr.GetComponent<BirdIdle>();
+            if (idle != null && idle.RestScale.sqrMagnitude > 0.0001f)
+                rest = idle.RestScale;
+            if (branch != null && sr.transform.parent == branch.transform)
+            {
+                sr.transform.localScale = new Vector3(Mathf.Abs(rest.x), Mathf.Abs(rest.y), 1f);
+                return;
+            }
+            float bx = branch != null ? Mathf.Abs(branch.transform.lossyScale.x) : 1f;
+            if (bx < 0.001f) bx = 1f;
+            float px = 1f;
+            if (sr.transform.parent != null)
+            {
+                px = Mathf.Abs(sr.transform.parent.lossyScale.x);
+                if (px < 0.001f) px = 1f;
+            }
+            float s = Mathf.Abs(rest.x) * bx / px;
+            sr.transform.localScale = new Vector3(s, s, 1f);
+        }
+
+        void ParkFlight(SpriteRenderer sr, BranchView branch)
+        {
+            if (sr == null) return;
+            FlightScale(sr, branch);
+            if (_garden.Root != null && sr.transform.parent != _garden.Root)
+                sr.transform.SetParent(_garden.Root, true);
+            var idle = sr.GetComponent<BirdIdle>();
+            if (idle == null) return;
+            idle.Frozen = true;
+            idle.Flapping = false;
+            idle.Lift = 0f;
+        }
+
+        void ArmFlight(SpriteRenderer sr, bool faceLeft)
+        {
+            if (sr == null) return;
+            var idle = sr.GetComponent<BirdIdle>();
+            bool shroud = idle != null && idle.Shrouded;
+            if (idle != null)
+            {
+                idle.Sleeping = false;
+                idle.Lift = 1f;
+                idle.Frozen = true;
+                idle.Flapping = true;
+                idle.FaceLeft = faceLeft;
+            }
+            sr.flipX = faceLeft;
+            sr.enabled = true;
+            sr.sortingOrder = 42;
+            if (shroud)
+                sr.color = FlightSilhouette;
+            else
+            {
+                var c = sr.color;
+                c.a = 1f;
+                sr.color = c;
+            }
+        }
+
+        void KeepFlight(SpriteRenderer sr, float landU)
+        {
+            if (sr == null) return;
+            var idle = sr.GetComponent<BirdIdle>();
+            bool shroud = idle != null && idle.Shrouded;
+            if (idle != null)
+            {
+                idle.Sleeping = false;
+                idle.Frozen = true;
+                idle.Flapping = true;
+                idle.Lift = 1f;
+                if (shroud) sr.color = FlightSilhouette;
+            }
+            sr.enabled = true;
+            // Duck a silhouette back under the leaves only as it lands.
+            sr.sortingOrder = shroud && landU > 0.92f ? 7 : 42;
+        }
+
+        bool LiveBird(SpriteRenderer b)
+        {
+            return b != null && b.enabled && b.gameObject.activeInHierarchy;
+        }
+
+        List<SpriteRenderer> ClaimFlock()
+        {
+            var flock = new List<SpriteRenderer>();
+            if (_garden.Branches == null) return flock;
             for (int i = 0; i < _garden.Branches.Length; i++)
             {
                 var v = _garden.Branches[i];
-                if (v == null || !v.gameObject.activeInHierarchy || v.Birds == null) continue;
+                if (v == null || v.Birds == null) continue;
                 for (int s = 0; s < v.Birds.Length; s++)
                 {
                     var b = v.Birds[s];
-                    if (b == null || !b.enabled) continue;
-                    var p = b.transform.position;
-                    float side = p.x >= 0f ? 1f : -1f;
-                    var dest = new Vector3(side * (edge + Random.Range(0f, 0.8f)), p.y + Random.Range(1.2f, 3.0f), p.z);
-                    StartCoroutine(ScatterHold(b.transform, dest, n * Random.Range(0.012f, 0.03f)));
-                    n++;
+                    if (!LiveBird(b)) continue;
+                    ParkFlight(b, v);
+                    flock.Add(b);
                 }
             }
+            return flock;
+        }
+
+        // Whole flock, including silhouettes and birds already in the air, eases off
+        // past the screen before the board resets. About 0.30s with a short stagger.
+        IEnumerator FlyOffAll(List<SpriteRenderer> flock)
+        {
+            if (flock == null || flock.Count == 0) yield break;
+            int gen = _motionGen;
+            int n = 0;
+            for (int i = 0; i < flock.Count; i++)
+                if (flock[i] != null) n++;
             if (n == 0) yield break;
+            var starts = new Vector3[flock.Count];
+            var dests = new Vector3[flock.Count];
+            var delays = new float[flock.Count];
+            const float dur = 0.22f;
+            const float spread = 0.08f;
+            for (int i = 0; i < flock.Count; i++)
+            {
+                var b = flock[i];
+                if (b == null) continue;
+                var start = b.transform.position;
+                var dest = Offscreen(start, b);
+                starts[i] = start;
+                dests[i] = dest;
+                delays[i] = Random.Range(0f, spread);
+                ArmFlight(b, dest.x < start.x);
+            }
             Sfx.Takeoff(n);
             Sfx.FlockFlutter(Mathf.Min(3, Mathf.Max(1, n / 3)));
-            yield return new WaitForSeconds(0.66f + Mathf.Min(0.35f, n * 0.012f));
+            float maxDelay = 0f;
+            for (int i = 0; i < delays.Length; i++)
+                if (flock[i] != null) maxDelay = Mathf.Max(maxDelay, delays[i]);
+            float t = 0f;
+            float total = dur + maxDelay;
+            while (t < total)
+            {
+                if (gen != _motionGen) yield break;
+                t += Time.deltaTime;
+                for (int i = 0; i < flock.Count; i++)
+                {
+                    var b = flock[i];
+                    if (b == null) continue;
+                    float u = Mathf.Clamp01((t - delays[i]) / dur);
+                    var p = Vector3.Lerp(starts[i], dests[i], EaseIn(u));
+                    p.y += Mathf.Sin(u * Mathf.PI) * 0.22f;
+                    b.transform.position = p;
+                    KeepFlight(b, 0f);
+                }
+                yield return null;
+            }
+            for (int i = 0; i < flock.Count; i++)
+            {
+                var b = flock[i];
+                if (b == null) continue;
+                b.transform.position = dests[i];
+                KeepFlight(b, 0f);
+                PushPastEdge(b);
+            }
+            // One rendered frame fully past the edge, then the board may reset.
+            yield return null;
         }
 
         IEnumerator SnapBirdsHome()
         {
             if (_garden.Branches == null) yield break;
-            var birds = new System.Collections.Generic.List<Transform>();
-            var dests = new System.Collections.Generic.List<Vector3>();
-            var starts = new System.Collections.Generic.List<Vector3>();
-            var delays = new System.Collections.Generic.List<float>();
-            float edgeX = EdgeHalfW() + 1.4f;
+            int gen = _motionGen;
+            var birds = new List<SpriteRenderer>();
+            var dests = new List<Vector3>();
+            var starts = new List<Vector3>();
+            var delays = new List<float>();
+            const float dur = 0.32f;
+            const float spread = 0.08f;
             for (int i = 0; i < _garden.Branches.Length; i++)
             {
                 var v = _garden.Branches[i];
-                if (v == null || !v.gameObject.activeInHierarchy) continue;
+                if (v == null || v.Birds == null) continue;
                 for (int s = 0; s < v.Birds.Length; s++)
                 {
-                    if (v.Birds[s] == null || !v.Birds[s].enabled) continue;
-                    var tr = v.Birds[s].transform;
-                    birds.Add(tr);
-                    dests.Add(tr.position);
-                    var idle = v.Birds[s].GetComponent<BirdIdle>();
-                    float side = tr.position.x >= 0f ? 1f : -1f;
-                    if (idle != null)
-                    {
-                        idle.Frozen = true;
-                        idle.Flapping = true;
-                        idle.FaceLeft = side > 0f; // flying in from the right faces left
-                    }
-                    starts.Add(new Vector3(side * (edgeX + Random.Range(0f, 0.9f)), tr.position.y + Random.Range(1.0f, 2.6f), tr.position.z));
-                    delays.Add(birds.Count * Random.Range(0.014f, 0.032f));
-                    tr.position = starts[starts.Count - 1];
+                    var b = v.Birds[s];
+                    if (!LiveBird(b)) continue;
+                    var home = b.transform.position;
+                    var from = Offscreen(home, b);
+                    from.y = home.y + Random.Range(0.2f, 0.55f);
+                    birds.Add(b);
+                    dests.Add(home);
+                    starts.Add(from);
+                    delays.Add(Random.Range(0f, spread));
+                    ArmFlight(b, from.x > home.x);
+                    if (_garden.Root != null && b.transform.parent != _garden.Root)
+                        b.transform.SetParent(_garden.Root, true);
+                    b.transform.position = from;
                 }
             }
             var fFrom = new Vector3[2];
@@ -2920,27 +3405,30 @@ namespace FlockFive
                     _garden.Feeders[i].transform.position = fFrom[i];
                 }
             }
-            Sfx.FlockFlutter(Mathf.Max(1, birds.Count / 3));
-            float t = 0f;
-            const float dur = 0.72f;
+            if (birds.Count > 0)
+                Sfx.FlockFlutter(Mathf.Max(1, birds.Count / 3));
             float maxDelay = 0f;
             for (int i = 0; i < delays.Count; i++) maxDelay = Mathf.Max(maxDelay, delays[i]);
-            while (t < dur + maxDelay)
+            float t = 0f;
+            float total = dur + maxDelay;
+            while (t < total)
             {
+                if (gen != _motionGen) yield break;
                 t += Time.deltaTime;
                 for (int i = 0; i < birds.Count; i++)
                 {
-                    if (birds[i] == null) continue;
+                    var b = birds[i];
+                    if (b == null) continue;
                     float u = Mathf.Clamp01((t - delays[i]) / dur);
-                    float k = Mathf.SmoothStep(0f, 1f, u);
-                    var p = Vector3.Lerp(starts[i], dests[i], k);
-                    p.y += Mathf.Sin(u * Mathf.PI) * 0.5f;
-                    birds[i].position = p;
+                    var p = Vector3.Lerp(starts[i], dests[i], EaseOut(u));
+                    p.y += Mathf.Sin(u * Mathf.PI) * 0.22f;
+                    b.transform.position = p;
+                    KeepFlight(b, u);
                 }
                 if (_garden.Feeders != null)
                 {
-                    float fu = Mathf.Clamp01(t / 0.4f);
-                    float fk = 1f - (1f - fu) * (1f - fu);
+                    float fu = Mathf.Clamp01(t / 0.40f);
+                    float fk = EaseOut(fu);
                     for (int i = 0; i < 2; i++)
                     {
                         if (_garden.Feeders[i] == null) continue;
@@ -2949,7 +3437,12 @@ namespace FlockFive
                 }
                 yield return null;
             }
-            SyncAll();
+            for (int i = 0; i < birds.Count; i++)
+            {
+                if (birds[i] == null) continue;
+                birds[i].transform.position = dests[i];
+            }
+            SyncAll(true);
             StillBirds(false);
         }
 
@@ -3003,7 +3496,7 @@ namespace FlockFive
                 {
                     var v = _garden.Branches[b];
                     if (v == null || !v.gameObject.activeInHierarchy) continue;
-                    if (_board.Branches[v.Index].Broken) continue;
+                    if (_board.Branches[v.Index].Broken || _board.Branches[v.Index].AdLocked) continue;
                     if (_board.Branches[v.Index].IsFullMatch(out _)) continue;
                     for (int s = 0; s < BranchState.Cap; s++)
                     {
@@ -3023,7 +3516,7 @@ namespace FlockFive
                 var v = _garden.Branches[i];
                 if (v == null || !v.gameObject.activeInHierarchy) continue;
                 var st = _board.Branches[v.Index];
-                if (st.Broken || st.IsFullMatch(out _)) continue;
+                if (st.Broken || st.AdLocked || st.IsFullMatch(out _)) continue;
                 float reach = st.Empty && sending ? 3.45f : pad;
                 float d = v.NearestPadSqr(world);
                 if (d < reach * reach && d < best) { best = d; idx = v.Index; }
@@ -3032,7 +3525,7 @@ namespace FlockFive
             for (int i = 0; i < overlap.Length; i++)
             {
                 var v = overlap[i].GetComponentInParent<BranchView>();
-                if (v == null || _board.Branches[v.Index].Broken) continue;
+                if (v == null || _board.Branches[v.Index].Broken || _board.Branches[v.Index].AdLocked) continue;
                 if (_board.Branches[v.Index].IsFullMatch(out _)) continue;
                 float d = v.NearestPadSqr(world);
                 if (d < best) { best = d; idx = v.Index; }
@@ -3300,61 +3793,252 @@ namespace FlockFive
             if (visit.Finish != BeeFinish.Normal)
                 tint = Color.Lerp(tint, Color.white, visit.Finish == BeeFinish.Holo ? 0.18f : 0.28f);
             float now = Time.unscaledTime;
+            if (!_haloEbbReady)
+            {
+                _haloEbbPhase = Random.Range(0f, Mathf.PI * 2f);
+                _haloEbbReady = true;
+            }
+            // Cap stays 12. Drop the oldest before the newcomer so the ring never holds 13.
+            if (_incomingHalo.Count >= HaloCap) _incomingHalo.RemoveAt(0);
+            float slot = HaloGapSlot(now);
             _incomingHalo.Add(new HiveHaloBee
             {
-                Angle = Random.Range(0f, Mathf.PI * 2f),
-                Speed = 3.1f,
-                RadiusK = 0.86f,
-                BobPhase = now * 1.7f + _incomingHalo.Count * 1.3f,
+                SlotFrom = slot,
+                SlotTo = slot,
+                SlotStart = now,
+                RadiusPhase = Random.Range(0f, Mathf.PI * 2f),
+                RadiusOmega = Random.Range(0.8f, 1.8f),
+                BobPhase = Random.Range(0f, Mathf.PI * 2f),
+                BobOmega = Random.Range(0.9f, 1.7f),
+                BobGain = Random.Range(0.65f, 1f),
                 Tint = tint,
-                Appear = now + 0.32f,
                 // Collected bees keep circling the hive for the rest of the stage
-                // (cleared on stage load). Arriving bees spread across the ring.
+                // (cleared on stage load). Appear waits until the respace has settled.
+                Appear = now + 0.32f,
                 Expire = float.MaxValue
             });
-            if (_incomingHalo.Count > 12) _incomingHalo.RemoveAt(0);
+            RespaceHalo(now);
         }
 
         void PruneIncomingHalo()
         {
             float now = Time.unscaledTime;
+            bool removed = false;
             for (int i = _incomingHalo.Count - 1; i >= 0; i--)
-                if (now >= _incomingHalo[i].Expire) _incomingHalo.RemoveAt(i);
+            {
+                if (now < _incomingHalo[i].Expire) continue;
+                _incomingHalo.RemoveAt(i);
+                removed = true;
+            }
+            if (removed) RespaceHalo(now);
+        }
+
+        float HaloSlotNow(HiveHaloBee b, float now)
+        {
+            float u = Mathf.Clamp01((now - b.SlotStart) / HaloRespaceSec);
+            u = u * u * (3f - 2f * u);
+            return Mathf.Lerp(b.SlotFrom, b.SlotTo, u);
+        }
+
+        // Writes each bee's slot into _haloGap and a circular order into _haloOrder.
+        int HaloSorted(float now, bool visibleOnly)
+        {
+            int n = _incomingHalo.Count;
+            if (n > HaloCap) n = HaloCap;
+            int w = 0;
+            for (int i = 0; i < n; i++)
+            {
+                var b = _incomingHalo[i];
+                if (visibleOnly && (now < b.Appear || now >= b.Expire)) continue;
+                _haloOrder[w] = i;
+                _haloGap[i] = Mathf.Repeat(HaloSlotNow(b, now), Mathf.PI * 2f);
+                w++;
+            }
+            for (int i = 1; i < w; i++)
+            {
+                int key = _haloOrder[i];
+                float ka = _haloGap[key];
+                int j = i - 1;
+                while (j >= 0 && _haloGap[_haloOrder[j]] > ka)
+                {
+                    _haloOrder[j + 1] = _haloOrder[j];
+                    j--;
+                }
+                _haloOrder[j + 1] = key;
+            }
+            return w;
+        }
+
+        // Negative when fewer than two bees are drawn (no neighbor to clear).
+        float HaloMinGap(float now)
+        {
+            int w = HaloSorted(now, true);
+            if (w <= 1) return -1f;
+            float min = float.MaxValue;
+            for (int i = 0; i < w; i++)
+            {
+                float a = _haloGap[_haloOrder[i]];
+                int j = (i + 1) % w;
+                float b = _haloGap[_haloOrder[j]];
+                float gap = (j == 0 ? b + Mathf.PI * 2f : b) - a;
+                if (gap < min) min = gap;
+            }
+            return Mathf.Max(min, 0.05f);
+        }
+
+        float HaloGapSlot(float now)
+        {
+            int n = HaloSorted(now, false);
+            if (n <= 0) return Random.Range(0f, Mathf.PI * 2f);
+            if (n == 1) return Mathf.Repeat(_haloGap[_haloOrder[0]] + Mathf.PI, Mathf.PI * 2f);
+            int after = 0;
+            float biggest = -1f;
+            for (int i = 0; i < n; i++)
+            {
+                int j = (i + 1) % n;
+                float a = _haloGap[_haloOrder[i]];
+                float b = _haloGap[_haloOrder[j]];
+                float gap = (j == 0 ? b + Mathf.PI * 2f : b) - a;
+                if (gap > biggest)
+                {
+                    biggest = gap;
+                    after = j;
+                }
+            }
+            float left = _haloGap[_haloOrder[(after - 1 + n) % n]];
+            return Mathf.Repeat(left + biggest * 0.5f, Mathf.PI * 2f);
+        }
+
+        // Even slots in current circular order. Linear lerp cannot cross.
+        void RespaceHalo(float now)
+        {
+            int n = HaloSorted(now, false);
+            if (n <= 0) return;
+            if (n == 1)
+            {
+                int idx = _haloOrder[0];
+                var only = _incomingHalo[idx];
+                float cur = _haloGap[idx];
+                only.SlotFrom = cur;
+                only.SlotTo = cur;
+                only.SlotStart = now;
+                _incomingHalo[idx] = only;
+                return;
+            }
+            int after = 0;
+            float biggest = -1f;
+            for (int i = 0; i < n; i++)
+            {
+                int j = (i + 1) % n;
+                float a = _haloGap[_haloOrder[i]];
+                float b = _haloGap[_haloOrder[j]];
+                float gap = (j == 0 ? b + Mathf.PI * 2f : b) - a;
+                if (gap > biggest)
+                {
+                    biggest = gap;
+                    after = j;
+                }
+            }
+            float prev = _haloGap[_haloOrder[after]];
+            _haloUnwrapped[0] = prev;
+            for (int k = 1; k < n; k++)
+            {
+                float a = _haloGap[_haloOrder[(after + k) % n]];
+                while (a + 0.001f < prev) a += Mathf.PI * 2f;
+                _haloUnwrapped[k] = a;
+                prev = a;
+            }
+            float step = Mathf.PI * 2f / n;
+            float mean = 0f;
+            for (int k = 0; k < n; k++) mean += _haloUnwrapped[k] - k * step;
+            mean /= n;
+            float settle = now + HaloRespaceSec + 0.06f;
+            for (int k = 0; k < n; k++)
+            {
+                int idx = _haloOrder[(after + k) % n];
+                var bee = _incomingHalo[idx];
+                bee.SlotFrom = _haloUnwrapped[k];
+                bee.SlotTo = mean + k * step;
+                bee.SlotStart = now;
+                // Stay hidden until this ease finishes so a newcomer never draws in the gap.
+                if (bee.Appear > now) bee.Appear = Mathf.Max(bee.Appear, settle);
+                _incomingHalo[idx] = bee;
+            }
         }
 
         void DrawHiveHalo(Rect hive, float s, bool behind)
         {
             if (behind) PruneIncomingHalo();
             if (_incomingHalo.Count == 0) return;
+            float now = Time.unscaledTime;
+            // Shared spin: every bee advances by the same angle, so slots stay even.
+            if (behind)
+            {
+                float ebb = 1f + HaloEbbAmp * Mathf.Sin(now * HaloEbbOmega + _haloEbbPhase);
+                _haloSpin = Mathf.Repeat(_haloSpin + HaloOrbitSpeed * ebb * Time.unscaledDeltaTime, Mathf.PI * 2f);
+            }
             Vector2 c = hive.center;
             c.y -= hive.height * 0.08f;
-            // Corner hives sit on the right bezel — keep the ring on-screen.
+            // Corner hives sit on the right bezel — prefer a center that still rings the button.
             float padR = Mathf.Max(6f, Screen.width - hive.xMax);
             if (padR < hive.width * 0.45f)
                 c.x -= hive.width * 0.10f;
-            float rx = hive.width * 0.58f;
-            float ry = hive.height * 0.50f;
+
+            // Ring is sized for a full lap of 12 so icons can stay readable and still not touch.
             float icon = Mathf.Clamp(hive.width * 0.32f, 16f * s, 36f * s);
+            float bobCap = 2.0f * s;
+            float rx = hive.width * 0.62f;
+            float ry = hive.height * 0.56f;
+            float gap12 = Mathf.PI * 2f / HaloCap;
+            float chord = 2f * Mathf.Sin(gap12 * 0.5f);
+            for (int pass = 0; pass < 3; pass++)
+            {
+                float dNeed = icon * 1.22f + bobCap * 2f;
+                float rNeed = dNeed / Mathf.Max(0.01f, chord * (1f - HaloRadiusWobble));
+                rx = Mathf.Max(hive.width * 0.62f, rNeed);
+                ry = Mathf.Max(hive.height * 0.56f, rNeed);
+                float pad = icon * 0.55f + 3f * s;
+                float maxRx = Mathf.Max(8f * s, (Screen.width - pad * 2f) * 0.5f);
+                float maxRy = Mathf.Max(8f * s, (Screen.height - pad * 2f) * 0.5f);
+                if (rx <= maxRx && ry <= maxRy) break;
+                rx = Mathf.Min(rx, maxRx);
+                ry = Mathf.Min(ry, maxRy);
+                float rSmall = Mathf.Min(rx, ry) * (1f - HaloRadiusWobble);
+                float dMin = rSmall * chord;
+                bobCap = Mathf.Min(2.0f * s, Mathf.Max(0f, dMin * 0.10f));
+                float geom = (dMin - bobCap * 2f) / 1.22f;
+                icon = Mathf.Clamp(geom, 8f * s, Mathf.Min(hive.width * 0.32f, 36f * s));
+            }
+            float padF = icon * 0.55f + 3f * s;
+            float minX = padF + rx;
+            float maxX = Screen.width - padF - rx;
+            if (minX <= maxX) c.x = Mathf.Clamp(c.x, minX, maxX);
+            float minY = padF + ry;
+            float maxY = Screen.height - padF - ry;
+            if (minY <= maxY) c.y = Mathf.Clamp(c.y, minY, maxY);
+
+            float live = HaloMinGap(now);
+            if (live > 0f && live < gap12 * 0.98f)
+            {
+                float rSmall = Mathf.Min(rx, ry) * (1f - HaloRadiusWobble);
+                float dMin = rSmall * 2f * Mathf.Sin(live * 0.5f);
+                float geom = (dMin - bobCap * 2f) / 1.22f;
+                icon = Mathf.Min(icon, Mathf.Max(4f * s, geom));
+            }
+
             var prev = GUI.color;
-            float now = Time.unscaledTime;
-            float dt = behind ? Time.unscaledDeltaTime : 0f;
             for (int i = 0; i < _incomingHalo.Count; i++)
             {
                 var b = _incomingHalo[i];
                 if (now < b.Appear || now >= b.Expire) continue;
-                if (behind)
-                {
-                    b.Angle = Mathf.Repeat(b.Angle + b.Speed * dt, Mathf.PI * 2f);
-                    _incomingHalo[i] = b;
-                }
-                float depth = Mathf.Sin(b.Angle);
+                float ang = Mathf.Repeat(_haloSpin + HaloSlotNow(b, now), Mathf.PI * 2f);
+                float depth = Mathf.Sin(ang);
                 bool isBehind = depth < 0f;
                 if (behind != isBehind) continue;
-                float x = c.x + Mathf.Cos(b.Angle) * rx * b.RadiusK;
-                float y = c.y + Mathf.Sin(b.Angle) * ry * b.RadiusK;
-                y += Mathf.Sin(Time.unscaledTime * 2.2f + b.BobPhase) * (2.4f * s);
-                x = Mathf.Clamp(x, icon * 0.55f, Screen.width - icon * 0.55f);
-                y = Mathf.Clamp(y, icon * 0.55f, Screen.height - icon * 0.45f);
+                float rk = 1f + HaloRadiusWobble * Mathf.Sin(now * b.RadiusOmega + b.RadiusPhase);
+                float x = c.x + Mathf.Cos(ang) * rx * rk;
+                float y = c.y + Mathf.Sin(ang) * ry * rk;
+                y += Mathf.Sin(now * b.BobOmega + b.BobPhase) * (bobCap * b.BobGain);
                 float life = b.Expire == float.MaxValue ? Mathf.Clamp01((now - b.Appear) / 0.22f) : Mathf.Clamp01((b.Expire - now) / 0.22f);
                 float scale = (isBehind ? 0.86f : 1.06f) * Mathf.Lerp(0.55f, 1f, life);
                 float iw = icon * scale;
@@ -3365,7 +4049,8 @@ namespace FlockFive
                 float dim = isBehind ? 0.78f : 1f;
                 GUI.color = new Color(tint.r * dim, tint.g * dim, tint.b * dim,
                     (isBehind ? 0.82f : 0.96f) * life);
-                bool faceLeft = Mathf.Cos(b.Angle) < 0f;
+                // Positive spin moves left along the lower half (GUI y grows downward).
+                bool faceLeft = Mathf.Sin(ang) > 0f;
                 if (faceLeft)
                 {
                     var m = GUI.matrix;
@@ -4457,34 +5142,41 @@ namespace FlockFive
         void EnsureHaloFlutters(ref SplashFlutter[] flutters, Rect h)
         {
             const int n = 5;
-            // Ring sits inside the halo so we never need a hard clamp (clamp parked birds on the glyphs).
+            // One ring. Nested radii stacked birds on the same ray; a hair of
+            // depth stays, and the per-frame spacer keeps that from overlapping.
             float rx = Mathf.Max(10f, h.width * 0.42f);
             float ry = Mathf.Max(10f, h.height * 0.48f);
+            const float ring = 0.86f;
             if (flutters != null && flutters.Length == n)
             {
                 for (int i = 0; i < n; i++)
                 {
-                    float k = 0.74f + 0.05f * i;
+                    float k = ring * (0.984f + 0.008f * i);
                     flutters[i].RadiusX = rx * k;
                     flutters[i].RadiusY = ry * k;
                     flutters[i].Angle = Mathf.Repeat(flutters[i].Angle, Mathf.PI * 2f);
                 }
                 return;
             }
+            var prev = flutters;
             flutters = new SplashFlutter[n];
             var cols = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet, BirdColor.Peach };
             float step = Mathf.PI * 2f / n;
             for (int i = 0; i < n; i++)
             {
-                float k = 0.74f + 0.05f * i;
+                float k = ring * (0.984f + 0.008f * i);
+                bool keep = prev != null && i < prev.Length;
                 flutters[i] = new SplashFlutter
                 {
-                    Angle = i * step,
-                    Speed = Random.Range(0.40f, 0.52f),
+                    // Join/leave keeps the angle it already had so the ease can
+                    // walk it to the new slot instead of popping.
+                    Angle = keep ? Mathf.Repeat(prev[i].Angle, Mathf.PI * 2f) : i * step,
+                    Slot = i * step,
+                    Speed = keep ? prev[i].Speed : HaloOrbitSpeed + Random.Range(-0.06f, 0.06f),
                     RadiusX = rx * k,
                     RadiusY = ry * k,
-                    BobPhase = i * 1.17f,
-                    Col = cols[i]
+                    BobPhase = keep ? prev[i].BobPhase : i * 1.17f,
+                    Col = keep ? prev[i].Col : cols[i]
                 };
             }
         }
@@ -4506,28 +5198,23 @@ namespace FlockFive
         void DrawAmbientSplashBirds(float s, bool behind)
         {
             EnsureSplashFlutters();
-            DrawHaloBirds(ref _splashFlutters, SplashTitleHalo(), s, behind, HaloBirdIcon(s));
+            DrawHaloBirds(ref _splashFlutters, SplashTitleHalo(), s, behind, HaloBirdIcon(s), ref _splashHaloTick);
         }
 
         static float HaloBirdIcon(float s) => 36f * s;
         const float HaloFlapRate = 1.25f;
 
-        void DrawHaloBirds(ref SplashFlutter[] flutters, Rect h, float s, bool behind, float icon)
+        void DrawHaloBirds(ref SplashFlutter[] flutters, Rect h, float s, bool behind, float icon, ref int stepFrame)
         {
             if (flutters == null || flutters.Length == 0) return;
             Vector2 c = h.center;
             var prev = GUI.color;
-            float dt = behind ? Time.unscaledDeltaTime : 0f;
-            if (behind)
+            // OnGUI fires more than once a frame. Step the ring a single time or the
+            // spacer double-applies and the orbit runs hot.
+            if (behind && stepFrame != Time.frameCount)
             {
-                for (int i = 0; i < flutters.Length; i++)
-                {
-                    var f = flutters[i];
-                    float speed = f.Speed * (0.95f + 0.05f * Mathf.Sin(Time.unscaledTime * 0.5f + f.BobPhase));
-                    f.Angle = Mathf.Repeat(f.Angle + speed * dt, Mathf.PI * 2f);
-                    flutters[i] = f;
-                }
-                SeparateHaloBirds(flutters, icon * 0.95f);
+                stepFrame = Time.frameCount;
+                StepTitleHalo(flutters, icon, s);
             }
             for (int i = 0; i < flutters.Length; i++)
             {
@@ -4538,9 +5225,9 @@ namespace FlockFive
                 bool isBehind = depth < 0f;
                 if (behind != isBehind) continue;
 
-                float x = c.x + Mathf.Cos(f.Angle) * f.RadiusX;
-                float y = c.y + Mathf.Sin(f.Angle) * f.RadiusY;
-                y += Mathf.Sin(Time.unscaledTime * 2.0f + f.BobPhase) * (3.0f * s);
+                var off = TitleOffset(f, s);
+                float x = c.x + off.x;
+                float y = c.y + off.y;
 
                 float scale = behind ? 0.92f : 1.04f;
                 float iw = icon * scale;
@@ -4577,35 +5264,150 @@ namespace FlockFive
             GUI.color = prev;
         }
 
-        // Halo birds only: keep every pair at least minD apart on screen by
-        // nudging them apart along their ellipses (the one ahead moves on,
-        // the one behind eases back), so faster birds queue instead of overlapping.
-        static void SeparateHaloBirds(SplashFlutter[] fl, float minD)
+        // Widest flight frame vs the rest pose. GUI sizes by this, so the gap has to too.
+        static float TitleWingMul()
+        {
+            if (_titleWing > 0f) return _titleWing;
+            var rest = SpriteCatalog.BirdFrame(BirdColor.Gold, 0f, false);
+            if (rest == null || rest.pixelsPerUnit <= 0f) return 1f;
+            float rw = rest.rect.width / rest.pixelsPerUnit;
+            if (rw <= 0.01f) return 1f;
+            float max = rw;
+            for (int k = 0; k < 8; k++)
+            {
+                var spr = SpriteCatalog.BirdFrame(BirdColor.Gold, k * 0.2f, true);
+                if (spr == null || spr.pixelsPerUnit <= 0f) continue;
+                float w = spr.rect.width / spr.pixelsPerUnit;
+                if (w > max) max = w;
+            }
+            _titleWing = Mathf.Clamp(max / rw, 1f, 1.9f);
+            return _titleWing;
+        }
+
+        // Same offset the drawer uses (ellipse + bob), so the gap test matches pixels.
+        static Vector2 TitleOffset(SplashFlutter f, float s)
+        {
+            float rk = 1f + 0.018f * Mathf.Sin(Time.unscaledTime * 0.85f + f.BobPhase);
+            float x = Mathf.Cos(f.Angle) * f.RadiusX * rk;
+            float y = Mathf.Sin(f.Angle) * f.RadiusY * rk;
+            float bobHz = 1.75f + 0.35f * Mathf.Sin(f.BobPhase * 1.3f);
+            float bob = (1.3f + 0.5f * (0.5f + 0.5f * Mathf.Sin(f.BobPhase))) * s;
+            y += Mathf.Sin(Time.unscaledTime * bobHz + f.BobPhase) * bob;
+            return new Vector2(x, y);
+        }
+
+        // Each bird owns an angular slot on one ring. Speed/bob may lead a slot,
+        // but a neighbor inside ~1.2× bird width is pushed out before the frame draws.
+        // Join/leave keeps the old angle and eases toward the new even slots — no snap.
+        static void StepTitleHalo(SplashFlutter[] fl, float icon, float s)
         {
             int n = fl.Length;
-            for (int pass = 0; pass < 4; pass++)
+            if (n <= 0) return;
+            if (n > _titleOrd.Length) n = _titleOrd.Length;
+            float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.05f);
+            if (n == 1)
             {
-                bool moved = false;
+                var only = fl[0];
+                only.Angle = Mathf.Repeat(only.Angle + only.Speed * dt, Mathf.PI * 2f);
+                only.Slot = only.Angle;
+                fl[0] = only;
+                return;
+            }
+
+            float rate = 0f;
+            float rMin = float.MaxValue;
+            for (int i = 0; i < n; i++)
+            {
+                rate += fl[i].Speed;
+                rMin = Mathf.Min(rMin, Mathf.Min(fl[i].RadiusX, fl[i].RadiusY));
+            }
+            rate /= n;
+            for (int i = 0; i < n; i++)
+            {
+                var f = fl[i];
+                f.Angle = Mathf.Repeat(f.Angle + rate * dt, Mathf.PI * 2f);
+                fl[i] = f;
+            }
+
+            for (int i = 0; i < n; i++) _titleOrd[i] = i;
+            for (int i = 1; i < n; i++)
+            {
+                int key = _titleOrd[i];
+                float ka = fl[key].Angle;
+                int j = i - 1;
+                while (j >= 0 && fl[_titleOrd[j]].Angle > ka)
+                {
+                    _titleOrd[j + 1] = _titleOrd[j];
+                    j--;
+                }
+                _titleOrd[j + 1] = key;
+            }
+            _titleAng[0] = fl[_titleOrd[0]].Angle;
+            for (int k = 1; k < n; k++)
+            {
+                float a = fl[_titleOrd[k]].Angle;
+                while (a + 0.0001f < _titleAng[k - 1]) a += Mathf.PI * 2f;
+                _titleAng[k] = a;
+            }
+            float step = Mathf.PI * 2f / n;
+            float mean = 0f;
+            for (int k = 0; k < n; k++) mean += _titleAng[k] - k * step;
+            mean /= n;
+
+            rMin = Mathf.Max(8f, rMin);
+            float minD = icon * 1.04f * TitleWingMul() * 1.2f;
+            float chord = 2f * rMin * Mathf.Sin(Mathf.PI / n);
+            if (chord > 1f) minD = Mathf.Min(minD, chord * 0.90f);
+            float minAng = minD / rMin;
+            float slack = Mathf.Max(0.02f, (step - minAng) * 0.32f);
+
+            float gain = 1f - Mathf.Exp(-dt / 0.32f);
+            for (int k = 0; k < n; k++)
+            {
+                int idx = _titleOrd[k];
+                var f = fl[idx];
+                float bias = Mathf.Clamp((f.Speed - rate) * 2.4f, -slack, slack);
+                float wob = Mathf.Sin(Time.unscaledTime * (0.42f + 0.07f * idx) + f.BobPhase) * slack * 0.40f;
+                float slot = mean + k * step + bias + wob;
+                f.Slot = slot;
+                float err = Mathf.DeltaAngle(f.Angle * Mathf.Rad2Deg, slot * Mathf.Rad2Deg) * Mathf.Deg2Rad;
+                f.Angle = Mathf.Repeat(f.Angle + err * gain, Mathf.PI * 2f);
+                fl[idx] = f;
+            }
+
+            for (int pass = 0; pass < 8; pass++)
+            {
+                bool any = false;
                 for (int i = 0; i < n; i++)
                 for (int j = i + 1; j < n; j++)
                 {
-                    var a = fl[i]; var b = fl[j];
-                    float dx = Mathf.Cos(a.Angle) * a.RadiusX - Mathf.Cos(b.Angle) * b.RadiusX;
-                    float dy = Mathf.Sin(a.Angle) * a.RadiusY - Mathf.Sin(b.Angle) * b.RadiusY;
-                    float d = Mathf.Sqrt(dx * dx + dy * dy);
-                    if (d >= minD) continue;
-                    float rAvg = Mathf.Max(1f, (a.RadiusX + a.RadiusY + b.RadiusX + b.RadiusY) * 0.25f);
-                    float push = (minD - d) / rAvg * 0.5f;
-                    // + means b is ahead of a in the (positive) travel direction
-                    float ahead = Mathf.DeltaAngle(a.Angle * Mathf.Rad2Deg, b.Angle * Mathf.Rad2Deg);
-                    float sgn = ahead >= 0f ? 1f : -1f;
-                    b.Angle = Mathf.Repeat(b.Angle + push * sgn, Mathf.PI * 2f);
-                    a.Angle = Mathf.Repeat(a.Angle - push * sgn, Mathf.PI * 2f);
-                    fl[i] = a; fl[j] = b;
-                    moved = true;
+                    if (!TitlePush(fl[i], fl[j], minD, s, out float half)) continue;
+                    any = true;
+                    var a = fl[i];
+                    var b = fl[j];
+                    a.Angle = Mathf.Repeat(a.Angle - half, Mathf.PI * 2f);
+                    b.Angle = Mathf.Repeat(b.Angle + half, Mathf.PI * 2f);
+                    fl[i] = a;
+                    fl[j] = b;
                 }
-                if (!moved) break;
+                if (!any) break;
             }
+        }
+
+        static bool TitlePush(SplashFlutter a, SplashFlutter b, float minD, float s, out float half)
+        {
+            half = 0f;
+            float d = Vector2.Distance(TitleOffset(a, s), TitleOffset(b, s));
+            float ang = Mathf.DeltaAngle(a.Angle * Mathf.Rad2Deg, b.Angle * Mathf.Rad2Deg) * Mathf.Deg2Rad;
+            float r = Mathf.Max(8f, (Mathf.Min(a.RadiusX, a.RadiusY) + Mathf.Min(b.RadiusX, b.RadiusY)) * 0.5f);
+            float needAng = Mathf.Max(0f, minD / r - Mathf.Abs(ang));
+            float needPix = d < minD ? (minD - d) / r : 0f;
+            float need = Mathf.Max(needAng, needPix);
+            if (need <= 0.0004f) return false;
+            float sgn = ang >= 0f ? 1f : -1f;
+            if (Mathf.Abs(ang) < 0.0001f) sgn = 1f;
+            half = sgn * need * 0.5f;
+            return true;
         }
 
         static void Ring(Rect r, string text, GUIStyle st, int px)
@@ -4750,9 +5552,9 @@ namespace FlockFive
                 haloW,
                 logoH + 14f * s);
             EnsureHaloFlutters(ref _pokerFlutters, halo);
-            DrawHaloBirds(ref _pokerFlutters, halo, s, true, HaloBirdIcon(s));
+            DrawHaloBirds(ref _pokerFlutters, halo, s, true, HaloBirdIcon(s), ref _pokerHaloTick);
             DrawPokerTitleMark(logoTop, s);
-            DrawHaloBirds(ref _pokerFlutters, halo, s, false, HaloBirdIcon(s));
+            DrawHaloBirds(ref _pokerFlutters, halo, s, false, HaloBirdIcon(s), ref _pokerHaloTick);
             float below = logoTop + logoH;
 
             // Hit-test pay-table tab / dismiss early so overlay blocks cards & Deal.
@@ -7881,6 +8683,53 @@ namespace FlockFive
 
         void OpenGift()
         {
+            _giftBranch = -1;
+            OpenGiftCard();
+        }
+
+        void OpenBonus(int branch)
+        {
+            if (!CanOfferBonus(branch)) return;
+            _giftBranch = branch;
+            OpenGiftCard();
+        }
+
+        bool CanOfferBonus(int branch)
+        {
+            if (_sel >= 0 || _won) return false;
+            if (_busy || _collecting || _locked.Count > 0) return false;
+            if (Time.unscaledTime < _suppressGiftUntil) return false;
+            if (_gift != GiftFace.None) return false;
+            if (_board == null || (uint)branch >= (uint)_board.Branches.Count) return false;
+            var st = _board.Branches[branch];
+            if (st == null || !st.IsBonus || st.Broken || !st.AdLocked) return false;
+            int ord = BonusBranches.Ordinal(_board, branch);
+            if (ord < 0 || ord >= _bonusOn.Length || _bonusOn[ord]) return false;
+            return true;
+        }
+
+        int HitGiftSign(Vector2 world)
+        {
+            if (_garden.Branches == null || _board == null) return -1;
+            var hits = Physics2D.OverlapPointAll(world);
+            for (int i = 0; i < hits.Length; i++)
+            {
+                var col = hits[i];
+                if (col == null) continue;
+                var v = col.GetComponentInParent<BranchView>();
+                if (v == null || v.Sign == null) continue;
+                if (col.transform != v.Sign && !col.transform.IsChildOf(v.Sign)) continue;
+                int idx = v.Index;
+                if ((uint)idx >= (uint)_board.Branches.Count) continue;
+                var st = _board.Branches[idx];
+                if (st == null || !st.IsBonus || st.Broken || !st.AdLocked) continue;
+                return idx;
+            }
+            return -1;
+        }
+
+        void OpenGiftCard()
+        {
             if (_gift != GiftFace.None || _won) return;
             if (!_frozen && _busy) return;
             if (_sel >= 0 && _garden.Branches != null)
@@ -7897,6 +8746,8 @@ namespace FlockFive
         {
             if (_gift == GiftFace.Movie) return;
             _gift = GiftFace.None;
+            _swallowTapsUntil = Time.unscaledTime + 0.45f;
+            _suppressGiftUntil = Time.unscaledTime + 1f;
         }
 
         IEnumerator WatchGift()
@@ -7933,7 +8784,10 @@ namespace FlockFive
                 StartCoroutine(GiftPopBursts(popAt));
             yield return new WaitForSeconds(2.45f);
             _gift = GiftFace.None;
+            _swallowTapsUntil = Time.unscaledTime + 0.45f;
+            _suppressGiftUntil = Time.unscaledTime + 1f;
             _busy = false;
+            Conserve("bonus");
             CheckOver();
         }
 
@@ -7952,50 +8806,67 @@ namespace FlockFive
 
         Vector3 GrantSpare()
         {
-            if (_board == null) return Vector3.zero;
-            int unlocked = -1;
+            int i = _giftBranch;
+            if (i < 0) i = FirstLockedBonus();
+            return UnlockBonus(i);
+        }
+
+        int FirstLockedBonus()
+        {
+            if (_board == null) return -1;
             for (int i = 0; i < _board.Branches.Count; i++)
             {
-                if (!_board.Branches[i].AdLocked) continue;
-                _board.Branches[i].AdLocked = false;
-                unlocked = i;
-                _giftClaimed = true;
-                var v = i < _garden.Branches.Length ? _garden.Branches[i] : null;
-                if (v != null)
-                {
-                    var want = v.GetComponent<GiftWant>();
-                    if (want != null) want.On = false;
-                    if (v.Sign != null) v.Sign.gameObject.SetActive(false);
-                    v.Shake();
-                }
+                var st = _board.Branches[i];
+                if (st == null || !st.IsBonus || !st.AdLocked || st.Broken) continue;
+                int ord = BonusBranches.Ordinal(_board, i);
+                if (ord >= 0 && ord < _bonusOn.Length && _bonusOn[ord]) continue;
+                return i;
             }
-            if (unlocked < 0) unlocked = AppendSpare();
+            return -1;
+        }
+
+        // One grant per gift per stage. Never grows a new limb, so a later tap
+        // cannot run the ad again.
+        Vector3 UnlockBonus(int i)
+        {
+            if (_board == null || (uint)i >= (uint)_board.Branches.Count) return Vector3.zero;
+            var st = _board.Branches[i];
+            if (st == null || !st.IsBonus) return Vector3.zero;
+            int ord = BonusBranches.Ordinal(_board, i);
+            if (ord < 0 || ord >= _bonusOn.Length) return Vector3.zero;
+            if (_bonusOn[ord])
+            {
+                st.AdLocked = false;
+                st.Broken = false;
+                RefreshBonusSigns();
+                return Vector3.zero;
+            }
+            _bonusOn[ord] = true;
+            st.AdLocked = false;
+            st.Broken = false;
+            var v = i < _garden.Branches.Length ? _garden.Branches[i] : null;
+            if (v != null)
+            {
+                var want = v.GetComponent<GiftWant>();
+                if (want != null) want.On = false;
+                if (v.Sign != null) v.Sign.gameObject.SetActive(false);
+                v.Shake();
+            }
             Sfx.FeederDone();
-            var burst = unlocked >= 0 && unlocked < _garden.Branches.Length
-                ? _garden.Branches[unlocked]
-                : null;
-            var pos = burst != null ? burst.transform.position : Vector3.zero;
+            var pos = v != null ? v.transform.position : Vector3.zero;
             if (_garden.Root != null)
                 StartCoroutine(Wow.Burst(pos, BirdColor.Gold, _garden.Root, 3));
             SyncAll();
+            Conserve("bonus");
             return pos;
-        }
-
-        int AppendSpare()
-        {
-            int i = _board.Branches.Count;
-            _board.Branches.Add(new BranchState());
-            var list = new System.Collections.Generic.List<BranchView>(_garden.Branches);
-            var v = WorldBuilder.MakeSpare(i, new Vector2(WorldBuilder.EdgeX(_garden.Cam, 1.22f, WorldBuilder.GiftWoodScaleX), WorldBuilder.GiftY), _garden.Root);
-            list.Add(v);
-            _garden.Branches = list.ToArray();
-            return i;
         }
 
         void DrawGiftSign(float s)
         {
             // Film+play is painted into fx_ad_sign art — no GUI sticker overlay.
         }
+
+        static GUIStyle _giftTitle, _giftWatch, _giftX;
 
         void DrawGiftOffer(float s)
         {
@@ -8081,12 +8952,14 @@ namespace FlockFive
             GUI.color = new Color(1f, 0.72f, 0.16f, 0.40f + 0.22f * breathe);
             GUI.DrawTexture(new Rect(headR.x - 12f * s, headR.y - 8f * s, headR.width + 24f * s, headR.height + 16f * s), glow, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
-            var title = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Normal,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = true
-            };
+            if (_giftTitle == null)
+                _giftTitle = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Normal,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = true
+                };
+            var title = _giftTitle;
             title.fontSize = FitFont(title, head, headR.width, headR.height * 0.88f, 24, 44);
             int headStroke = Mathf.Max(2, Mathf.RoundToInt(title.fontSize * 0.08f));
             StampOutlined(headR, head, title, new Color(1f, 0.92f, 0.55f), 1, headStroke);
@@ -8108,12 +8981,14 @@ namespace FlockFive
                 if (!held) DrawFlowerShimmer(cta, 0f);
                 if (held) DrawDiscPress(cta, sink);
                 var disc = FlowerDisc(cta, sink);
-                var watchSt = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Normal,
-                    alignment = TextAnchor.MiddleCenter,
-                    wordWrap = false
-                };
+                if (_giftWatch == null)
+                    _giftWatch = new GUIStyle(GUI.skin.label)
+                    {
+                        fontStyle = FontStyle.Normal,
+                        alignment = TextAnchor.MiddleCenter,
+                        wordWrap = false
+                    };
+                var watchSt = _giftWatch;
                 string watchLab = "Watch";
                 watchSt.fontSize = FitFont(watchSt, watchLab, disc.width * 0.78f, disc.height * 0.58f, 22, 42);
                 int ink = Mathf.Max(2, Mathf.RoundToInt(watchSt.fontSize * 0.08f));
@@ -8134,12 +9009,14 @@ namespace FlockFive
             GUI.color = new Color(0.04f, 0.03f, 0.02f, held ? 0.62f : 0.38f);
             GUI.DrawTexture(xBtn, glow, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
-            var xLab = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            if (_giftX == null)
+                _giftX = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = false
+                };
+            var xLab = _giftX;
             xLab.fontSize = FitFont(xLab, "×", xBtn.width * 0.84f, xBtn.height * 0.84f, 20, 34);
             StampOutlined(xBtn, "×", xLab, new Color(1f, 0.88f, 0.42f, held ? 1f : 0.92f), 1, 2);
         }

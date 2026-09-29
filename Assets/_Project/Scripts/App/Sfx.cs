@@ -303,6 +303,12 @@ namespace FlockFive
             if (_host == null) return;
             if (MixDesk.Live != null)
                 MixDesk.Live.MarkLead(0.4f + 0.05f * birds, 0.84f);
+            // One bird (pest dives, single flaps) has no stagger — don't spawn a coroutine.
+            if (birds <= 1)
+            {
+                PlayFlutter(settle ? 0.48f : 0.66f, Random.Range(0.93f, 0.98f));
+                return;
+            }
             _host.StartCoroutine(FlockFlutterCo(birds, settle));
         }
 
@@ -362,7 +368,10 @@ namespace FlockFive
                 {
                     Shot(_jingles[i], pitch, 0.76f, MixLayer.Lead, MixDesk.DuckWhoosh);
                     if (MixDesk.Live != null)
+                    {
                         MixDesk.Live.MarkLead(0.42f + 0.14f * i, MixDesk.DuckWhoosh);
+                        MixDesk.Live.DuckRain();
+                    }
                 }
             }
             if (size >= 3) Rumble();
@@ -395,7 +404,11 @@ namespace FlockFive
             Ensure();
             int i = Next(_breaks.Length, ref _lastBreak);
             Shot(_breaks[i], Random.Range(0.98f, 1.02f), 1f, MixLayer.Lead, MixDesk.DuckBreak);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.9f, MixDesk.DuckBreak);
+            if (MixDesk.Live != null)
+            {
+                MixDesk.Live.MarkLead(0.9f, MixDesk.DuckBreak);
+                MixDesk.Live.DuckRain();
+            }
             Rumble();
         }
 
@@ -404,7 +417,11 @@ namespace FlockFive
             Ensure();
             int i = Next(_chings.Length, ref _lastChing);
             Shot(_chings[i], Random.Range(0.98f, 1.02f), 0.64f, MixLayer.Lead, MixDesk.DuckChirp);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.4f, MixDesk.DuckChirp);
+            if (MixDesk.Live != null)
+            {
+                MixDesk.Live.MarkLead(0.4f, MixDesk.DuckChirp);
+                MixDesk.Live.DuckRain();
+            }
         }
 
         public static void Clink()
@@ -471,12 +488,17 @@ namespace FlockFive
         }
 
         // Hawk pest cry — deeper / longer bank than SparrowYell (Audio/Hawk).
-        public static void HawkCry()
+        public static void HawkCry() => PlayHawkCry(Random.Range(0.98f, 1.04f));
+
+        // Wounded hawk: same bank, held at the mix pitch ceiling.
+        public static void HawkCryHot() => PlayHawkCry(1.04f);
+
+        static void PlayHawkCry(float pitch)
         {
             Ensure();
             if (_hawks == null || _hawks.Length == 0) return;
             int i = Next(_hawks.Length, ref _lastHawk);
-            Shot(_hawks[i], Random.Range(0.98f, 1.04f), Random.Range(0.78f, 0.88f), MixLayer.Lead, MixDesk.DuckChirp);
+            Shot(_hawks[i], Mathf.Clamp(pitch, 0.96f, 1.04f), Random.Range(0.78f, 0.88f), MixLayer.Lead, MixDesk.DuckChirp);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(Random.Range(0.32f, 0.40f), MixDesk.DuckChirp);
         }
 

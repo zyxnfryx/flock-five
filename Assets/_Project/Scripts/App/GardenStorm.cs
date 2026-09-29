@@ -14,6 +14,9 @@ namespace FlockFive
 
         public static GardenStorm Instance { get; private set; }
         public static float Wet { get; private set; }
+        // 1 while a storm is scheduled. Rain audio fades on this, not on Wet,
+        // so the curtain can keep its own timing.
+        public static float Want { get; private set; }
 
         Transform[] _drop;
         SpriteRenderer[] _dropSr;
@@ -28,6 +31,7 @@ namespace FlockFive
         float _flashT = 99f;
         float _flashPower;
         float _floor = -8.6f;
+        bool _wasDry = true;
 
         public static GardenStorm Attach(Transform root)
         {
@@ -48,6 +52,7 @@ namespace FlockFive
             }
 #endif
             Wet = 0f;
+            Want = 0f;
             _wet = 0f;
             _nextBoom = 6.5f;
             _flashT = 99f;
@@ -58,11 +63,14 @@ namespace FlockFive
         {
             if (Instance == this) Instance = null;
             Wet = 0f;
+            Want = 0f;
         }
 
-        void Start() => Build();
+        void Start() => StartCoroutine(Build());
 
-        void Build()
+        // Drops are invisible until the first storm. Spread the instantiate
+        // so stage load does not hitch on one frame of 177 sprites.
+        System.Collections.IEnumerator Build()
         {
             var veilGo = WorldBuilder.Sprite("StormVeil", SpriteCatalog.Glow, new Vector3(0f, 0.2f, 6.8f), 1f, 16, transform);
             veilGo.transform.localScale = new Vector3(24f, 30f * PortraitLock.TallFactor(), 1f);
@@ -94,6 +102,7 @@ namespace FlockFive
                 _drop[i] = go.transform;
                 _dropSr[i] = go.GetComponent<SpriteRenderer>();
                 _dropSr[i].color = new Color(0.78f, 0.86f, 0.95f, 0f);
+                if ((i & 11) == 11) yield return null;
             }
         }
 
@@ -109,6 +118,7 @@ namespace FlockFive
         {
             float play = Time.unscaledTime - _t0;
             float want = WantStorm(play) ? 1f : 0f;
+            Want = want;
             _wet = Mathf.MoveTowards(_wet, want, Time.unscaledDeltaTime / Fade);
             Wet = _wet;
 
@@ -117,7 +127,17 @@ namespace FlockFive
 
             // Tall phones: let drops fall through the bottom bleed band too.
             _floor = -8.6f - 10.6f * (PortraitLock.TallFactor() - 1f);
-            if (_drop != null)
+            // Clear stretches are invisible. Frozen drops keep the last spread,
+            // so the next fade-in is still a sheet, not a hitch every frame.
+            bool dry = _wet <= 0.001f && want <= 0f;
+            if (dry) _wasDry = true;
+            else if (_wasDry && _phase != null)
+            {
+                // Holds only stagger a wrap, not the moment rain becomes visible.
+                for (int i = 0; i < _phase.Length; i++) _phase[i] = 0f;
+                _wasDry = false;
+            }
+            if (_drop != null && !dry)
             {
                 float dt = Time.deltaTime;
                 for (int i = 0; i < _drop.Length; i++)

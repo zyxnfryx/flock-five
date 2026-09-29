@@ -29,13 +29,27 @@ namespace FlockFive
         float _splashMix;
         float _splashGate = -1f;
         bool _splashLoopOn;
+        float _rainEnv;
+        float _rainSwell = 1f;
+        float _rainDuck = 1f;
+        float _rainDuckUntil = -99f;
+        float _rainPhaseA;
+        float _rainPhaseB;
+        float _rainHzA;
+        float _rainHzB;
         const float SplashPageHold = 0.45f;
         const int Rate = 22050;
         const float PlaceCap = 0.24f;
         const float PlaceMax = 0.28f;
         const float ComboCap = 0.04f;
         const float SplashCap = 0.52f;
-        const float RainCap = 0.17f;
+        // 25% under the old 0.17 fader. Clip bed peaks near 0.40 and sparse taps near 0.96,
+        // so a full swell is ~0.05 bed / ~0.12 tap — about 40% of a score ching (0.64 × ~0.50)
+        // and under the garden place cap. Same AudioSource path as every other stem, so
+        // AudioListener volume and MasterLoudness apply (no private bus).
+        const float RainCap = 0.128f;
+        const float RainFade = 1.5f;
+        const float RainDuckGain = 0.70f;
         const float ComboWindow = 4f;
         const float ComboIn = 0.35f;
         const float Bpm = 84f;
@@ -171,6 +185,13 @@ namespace FlockFive
             _comboUntil = Time.unscaledTime + ComboWindow;
         }
 
+        // Score, combo, and the collect crunch. Rain only — the garden bed stays put.
+        public void DuckRain(float seconds = 0.50f)
+        {
+            float until = Time.unscaledTime + Mathf.Max(0.2f, seconds);
+            if (until > _rainDuckUntil) _rainDuckUntil = until;
+        }
+
         public void SetSplash(bool on)
         {
             if (on && !_splash) ArmSplashWelcome();
@@ -229,6 +250,11 @@ namespace FlockFive
                 _stems[4].volume = 0f;
             }
             SwapClip(5, rain, true);
+            if (_stems[5] != null)
+            {
+                _stems[5].ignoreListenerVolume = false;
+                _stems[5].ignoreListenerPause = false;
+            }
             PruneExtraLoops();
         }
 
@@ -334,8 +360,37 @@ namespace FlockFive
             SetStem(3, ComboGain() * ComboCap * duck * gardenMix);
             float splashVol = _splashMix * SplashCap * duck;
             SetStem(4, _splashLoopOn ? splashVol : 0f);
-            // Non-melodic place air. Not a fourth flute bed.
-            SetStem(5, GardenStorm.Wet * RainCap * duck * gardenMix);
+            // Non-melodic place air. Not a fourth flute bed. Own fade and duck,
+            // so a hop does not pump the rain and thunder is left alone.
+            TickRain(Time.unscaledDeltaTime);
+            SetStem(5, _rainEnv * _rainSwell * _rainDuck * RainCap * gardenMix);
+        }
+
+        void TickRain(float dt)
+        {
+            if (dt < 0f) dt = 0f;
+            _rainEnv = Mathf.MoveTowards(_rainEnv, GardenStorm.Want, dt / RainFade);
+            if (_rainHzA <= 0f) _rainHzA = 1f / 9.5f;
+            if (_rainHzB <= 0f) _rainHzB = 1f / 13f;
+            _rainPhaseA += dt * _rainHzA;
+            _rainPhaseB += dt * _rainHzB;
+            if (_rainPhaseA >= 1f)
+            {
+                _rainPhaseA -= 1f;
+                _rainHzA = 1f / Random.Range(6f, 15f);
+            }
+            if (_rainPhaseB >= 1f)
+            {
+                _rainPhaseB -= 1f;
+                _rainHzB = 1f / Random.Range(7f, 14f);
+            }
+            float a = 0.5f + 0.5f * Mathf.Sin(_rainPhaseA * Mathf.PI * 2f);
+            float b = 0.5f + 0.5f * Mathf.Sin(_rainPhaseB * Mathf.PI * 2f);
+            _rainSwell = Mathf.Lerp(0.78f, 1f, a * 0.62f + b * 0.38f);
+
+            float duckTarget = Time.unscaledTime < _rainDuckUntil ? RainDuckGain : 1f;
+            float rate = duckTarget < _rainDuck ? (0.30f / 0.05f) : (0.30f / 0.22f);
+            _rainDuck = Mathf.MoveTowards(_rainDuck, duckTarget, dt * rate);
         }
 
         void TickSplashWelcome()
@@ -617,93 +672,178 @@ namespace FlockFive
 
         static AudioClip MakeRain()
         {
-            // Steady garden rain: dense leaf-hits, no wind whoosh, no loop swell.
-            int n = Mathf.RoundToInt(8.0f * Rate);
-            var bus = new float[n * 2];
-            var hiss = new float[n];
-            int h = 91331;
-            float hp = 0f, lp = 0f, bp = 0f;
-            float aHp = OnePoleA(820f);
-            float aLp = OnePoleA(1680f);
-            float aBp = OnePoleA(1100f);
-            for (int i = 0; i < n; i++)
-            {
-                h = (h * 1103515245 + 12345) & 0x7fffffff;
-                float nz = (h / 1073741824f) - 1f;
-                hp += aHp * (nz - hp);
-                float hi = nz - hp;
-                lp += aLp * (hi - lp);
-                bp += aBp * (lp - bp);
-                hiss[i] = lp - 0.35f * bp;
-            }
-            for (int i = 0; i < n; i++)
-            {
-                bus[i * 2] += hiss[i] * 0.30f;
-                bus[i * 2 + 1] += hiss[(i * 17 + n / 3) % n] * 0.30f;
-            }
+            // Near patter under ~4.5 kHz, a quieter far bed under ~1.2 kHz, sparse taps.
+            // 16s so the loop is not a short hiss phrase. No RMS flatten — that was the wall.
+            const float seconds = 16f;
+            int n = Mathf.RoundToInt(seconds * Rate);
+            var nearL = new float[n];
+            var nearR = new float[n];
+            var far = new float[n];
+            FillNoise(nearL, 91331);
+            FillNoise(nearR, 48271);
+            FillNoise(far, 17389);
+            OnePoleHp(nearL, 260f);
+            OnePoleHp(nearR, 260f);
+            // 4th-order lowpass, cutoff 4.5 kHz. One-poles at this rate still pass hiss.
+            BiquadLp(nearL, 4500f, 0.707f);
+            BiquadLp(nearL, 4500f, 0.707f);
+            BiquadLp(nearR, 4500f, 0.707f);
+            BiquadLp(nearR, 4500f, 0.707f);
+            OnePoleHp(far, 90f);
+            // Heavier bed, knee ~1.2 kHz.
+            BiquadLp(far, 1700f, 0.707f);
+            BiquadLp(far, 1700f, 0.707f);
+            BiquadLp(far, 1700f, 0.707f);
+            ScalePeak(nearL, 0.30f);
+            ScalePeak(nearR, 0.30f);
+            ScalePeak(far, 0.16f);
 
-            int drops = 1480;
-            int hh = 44117;
-            for (int d = 0; d < drops; d++)
+            var bus = new float[n * 2];
+            for (int i = 0; i < n; i++)
             {
-                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
-                int at = (int)((hh / 2147483647f) * n);
-                if (at < 0) at = 0;
-                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
-                int len = 90 + (hh % 220);
-                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
+                // Two cycles across the loop so the seam meets. Runtime swell does the rest.
+                float breathe = 0.94f + 0.06f * Mathf.Sin(2f * Mathf.PI * (i / (float)n) * 2f);
+                bus[i * 2] = (nearL[i] + far[i]) * breathe;
+                bus[i * 2 + 1] = (nearR[i] + far[i]) * breathe;
+            }
+            ScalePeak(bus, 0.40f);
+
+            int hh = 44117;
+            float t = 0.40f;
+            while (t < seconds - 0.28f)
+            {
+                hh = Lcg(hh);
+                t += 0.55f + (hh / 2147483647f) * 1.15f;
+                if (t >= seconds - 0.28f) break;
+                hh = Lcg(hh);
+                float pitch = 0.85f + (hh / 2147483647f) * 0.30f;
+                hh = Lcg(hh);
+                float amp = 0.34f + (hh / 2147483647f) * 0.28f;
+                hh = Lcg(hh);
                 float pan = (hh / 1073741824f) - 1f;
-                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
-                float amp = 0.13f + 0.20f * (hh / 2147483647f);
-                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
-                int src = hh % n;
-                float gl = Mathf.Cos((pan + 1f) * 0.5f * Mathf.PI * 0.5f);
-                float gr = Mathf.Sin((pan + 1f) * 0.5f * Mathf.PI * 0.5f);
-                for (int k = 0; k < len; k++)
+                DropTap(bus, n, t, pitch, amp, pan, ref hh);
+                hh = Lcg(hh);
+                if ((hh & 255) < 76)
                 {
-                    float e = Mathf.Exp(-k / 38f) * Mathf.Clamp01(k / 4f);
-                    float s = hiss[(src + k) % n] * e * amp;
-                    int o = ((at + k) % n) * 2;
-                    bus[o] += s * gl;
-                    bus[o + 1] += s * gr;
+                    hh = Lcg(hh);
+                    float dt = 0.055f + (hh / 2147483647f) * 0.09f;
+                    hh = Lcg(hh);
+                    float pitch2 = 0.85f + (hh / 2147483647f) * 0.30f;
+                    hh = Lcg(hh);
+                    float amp2 = amp * (0.45f + 0.35f * (hh / 2147483647f));
+                    hh = Lcg(hh);
+                    float pan2 = (hh / 1073741824f) - 1f;
+                    if (t + dt < seconds - 0.22f)
+                        DropTap(bus, n, t + dt, pitch2, amp2, pan2, ref hh);
                 }
             }
 
-            FlattenRms(bus, 0.12f);
-            LoopSeam(bus, 0.028f);
-            return PeakClip("garden-rain", bus, 0.46f);
+            LoopSeam(bus, 0.14f);
+            float peak = 1e-6f;
+            for (int i = 0; i < bus.Length; i++)
+            {
+                float v = bus[i] < 0f ? -bus[i] : bus[i];
+                if (v > peak) peak = v;
+            }
+            // Do not lift a quiet bed up to a hot peak. Only shave overs.
+            if (peak > 0.96f) peak = 0.96f;
+            return PeakClip("garden-rain", bus, peak);
         }
 
-        static void FlattenRms(float[] stereo, float target)
+        static int Lcg(int h) => (h * 1103515245 + 12345) & 0x7fffffff;
+
+        static void FillNoise(float[] dst, int seed)
         {
-            int frames = stereo.Length / 2;
-            int win = Mathf.Max(32, Rate / 40);
-            float acc = 0f;
-            for (int i = 0; i < win && i < frames; i++)
+            int h = seed | 1;
+            for (int i = 0; i < dst.Length; i++)
             {
-                float l = stereo[i * 2], r = stereo[i * 2 + 1];
-                acc += l * l + r * r;
+                h = Lcg(h);
+                dst[i] = (h / 1073741824f) - 1f;
             }
-            for (int i = 0; i < frames; i++)
+        }
+
+        static void BiquadLp(float[] x, float fc, float q)
+        {
+            float w0 = 2f * Mathf.PI * fc / Rate;
+            float cos = Mathf.Cos(w0);
+            float alpha = Mathf.Sin(w0) / (2f * q);
+            float a0 = 1f + alpha;
+            float b0 = (1f - cos) * 0.5f / a0;
+            float b1 = (1f - cos) / a0;
+            float b2 = b0;
+            float a1 = -2f * cos / a0;
+            float a2 = (1f - alpha) / a0;
+            float z1 = 0f, z2 = 0f;
+            for (int i = 0; i < x.Length; i++)
             {
-                int add = i + win;
-                int rem = i - win;
-                if (add < frames)
-                {
-                    float l = stereo[add * 2], r = stereo[add * 2 + 1];
-                    acc += l * l + r * r;
-                }
-                if (rem >= 0)
-                {
-                    float l = stereo[rem * 2], r = stereo[rem * 2 + 1];
-                    acc -= l * l + r * r;
-                }
-                float rms = Mathf.Sqrt(Mathf.Max(1e-8f, acc / (2f * win)));
-                float g = target / rms;
-                if (g > 2.4f) g = 2.4f;
-                if (g < 0.45f) g = 0.45f;
-                stereo[i * 2] *= g;
-                stereo[i * 2 + 1] *= g;
+                float inp = x[i];
+                float y = b0 * inp + z1;
+                z1 = b1 * inp - a1 * y + z2;
+                z2 = b2 * inp - a2 * y;
+                x[i] = y;
+            }
+        }
+
+        static void OnePoleHp(float[] x, float fc)
+        {
+            float a = OnePoleA(fc);
+            float acc = 0f;
+            for (int i = 0; i < x.Length; i++)
+            {
+                float x0 = x[i];
+                acc += a * (x0 - acc);
+                x[i] = x0 - acc;
+            }
+        }
+
+        static void ScalePeak(float[] x, float peak)
+        {
+            float p = 1e-6f;
+            for (int i = 0; i < x.Length; i++)
+            {
+                float v = x[i] < 0f ? -x[i] : x[i];
+                if (v > p) p = v;
+            }
+            float g = peak / p;
+            for (int i = 0; i < x.Length; i++)
+                x[i] *= g;
+        }
+
+        static void DropTap(float[] bus, int frames, float time, float pitch, float amp, float pan, ref int h)
+        {
+            pitch = Mathf.Clamp(pitch, 0.85f, 1.15f);
+            int len = Mathf.RoundToInt(0.072f * Rate / pitch);
+            if (len < 16) len = 16;
+            var grain = new float[len];
+            int hh = h | 1;
+            float body = 0f;
+            float a = OnePoleA(Mathf.Clamp(1480f * pitch, 1100f, 1800f));
+            float phase = 0f;
+            float dPhase = 2f * Mathf.PI * (390f * pitch) / Rate;
+            float decay = (0.024f * Rate) / pitch;
+            for (int k = 0; k < len; k++)
+            {
+                hh = Lcg(hh);
+                float nz = (hh / 1073741824f) - 1f;
+                body += a * (nz - body);
+                phase += dPhase;
+                float att = k < 8 ? k / 8f : 1f;
+                float env = att * Mathf.Exp(-k / decay);
+                grain[k] = (body * 0.82f + Mathf.Sin(phase) * 0.18f) * env;
+            }
+            h = hh;
+            ScalePeak(grain, amp);
+            int i0 = Mathf.RoundToInt(time * Rate);
+            float p = 0.5f * (pan + 1f);
+            float gl = Mathf.Cos(p * Mathf.PI * 0.5f);
+            float gr = Mathf.Sin(p * Mathf.PI * 0.5f);
+            for (int k = 0; k < len; k++)
+            {
+                int i = i0 + k;
+                if ((uint)i >= (uint)frames) continue;
+                int o = i * 2;
+                bus[o] += grain[k] * gl;
+                bus[o + 1] += grain[k] * gr;
             }
         }
 

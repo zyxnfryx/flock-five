@@ -20,9 +20,11 @@ namespace FlockFive
         // touches the bark under both feet. Checked by Playtest/perch-contact/check_perch_contact.py:
         // re-run it after any branch art, bird foot or BirdScale change.
         public const float SeatToeRowPx = 831f;
-        public static readonly float[] SeatXPx = { 192f, 441.6f, 691.2f, 940.8f, 1130f };
-        public static readonly float[] SeatYMain = { 0.3419f, 0.3811f, 0.2740f, 0.0811f, 0.1204f };
-        public static readonly float[] SeatYGift = { 0.3439f, 0.3884f, 0.2733f, 0.0764f, 0.1117f };
+        // Even steps on bare bark. The outer seat stays in from the tip
+        // (1280px wood) so the last bird is not crammed into the one before it.
+        public static readonly float[] SeatXPx = { 220f, 458f, 695f, 933f, 1148f };
+        public static readonly float[] SeatYMain = { 0.3364f, 0.3757f, 0.2669f, 0.0776f, 0.0847f };
+        public static readonly float[] SeatYGift = { 0.3382f, 0.3791f, 0.2659f, 0.0690f, 0.0764f };
 
         public static Vector2 SeatLocal(int s, bool gift, bool fromRight)
         {
@@ -49,6 +51,7 @@ namespace FlockFive
         // Feeders keep the same drop from the real screen top on every phone.
         public static float FeederY => 8.12f + 10.6f * (PortraitLock.TallFactor() - 1f);
         public const float RowGap = 1.50f;
+        public const int GiftCount = 2;
         public const int GiftIndex = Rows * Cols;
         public const float GiftY = -7.52f;
 
@@ -84,14 +87,15 @@ namespace FlockFive
             GardenLife.Attach(root);
             GardenStorm.Attach(root);
 
-            var branches = new BranchView[Rows * Cols + 1];
+            var branches = new BranchView[Rows * Cols + GiftCount];
             for (int row = 0; row < Rows; row++)
             {
                 float y = RowY0 - row * RowGap;
                 branches[row * 2] = MakeBranch(row * 2, new Vector2(-limbX, y), false, root);
                 branches[row * 2 + 1] = MakeBranch(row * 2 + 1, new Vector2(limbX, y), true, root);
             }
-            branches[GiftIndex] = MakeGift(root);
+            for (int g = 0; g < GiftCount; g++)
+                branches[GiftIndex + g] = MakeGift(GiftIndex + g, g == 1, root);
 
             var feeders = new FeederView[2];
             feeders[0] = MakeFeeder(0, new Vector3(-1.22f, FeederY, 0f), root);
@@ -110,28 +114,30 @@ namespace FlockFive
             };
         }
 
+        public static BranchView MakePlain(int index, bool fromRight, Transform parent)
+        {
+            float x = EdgeX(null, 1f);
+            return MakeBranch(index, new Vector2(fromRight ? x : -x, RowY0), fromRight, parent, WoodScaleX);
+        }
+
         public static BranchView MakeSpare(int index, Vector2 pos, Transform parent)
         {
-            var view = MakeBranch(index, pos, true, parent, GiftWoodScaleX);
-            view.IsGift = true;
-            if (view.Wood != null)
-            {
-                view.Wood.sprite = SpriteCatalog.BranchGift;
-                view.Wood.transform.localScale = new Vector3(GiftWoodScaleX, 0.52f, 1f);
-                view.Wood.sortingOrder = 3;
-            }
+            var view = MakeGift(index, pos.x >= 0f, parent);
+            view.transform.position = new Vector3(pos.x, pos.y, 0f);
             return view;
         }
 
-        static BranchView MakeGift(Transform parent)
+        public static BranchView MakeGift(int index, bool fromRight, Transform parent)
         {
-            var view = MakeBranch(GiftIndex, new Vector2(EdgeX(null, 1.22f, GiftWoodScaleX), GiftY), true, parent, GiftWoodScaleX);
+            float x = EdgeX(null, 1f, GiftWoodScaleX);
+            var view = MakeBranch(index, new Vector2(fromRight ? x : -x, GiftY), fromRight, parent, GiftWoodScaleX);
             view.IsGift = true;
             if (view.Wood != null)
             {
                 view.Wood.sprite = SpriteCatalog.BranchGift;
                 view.Wood.transform.localScale = new Vector3(GiftWoodScaleX, 0.52f, 1f);
                 view.Wood.sortingOrder = 3;
+                view.RetakeWood();
             }
 
             var glowGo = Sprite("GiftGlow", SpriteCatalog.Glow, view.transform.position, 1f, 1, view.transform);
@@ -140,15 +146,21 @@ namespace FlockFive
             var glow = glowGo.GetComponent<SpriteRenderer>();
             glow.color = new Color(1f, 0.86f, 0.42f, 0.28f);
 
-            // Hang the plank on the inner bark, arrow pointing into the spare perch.
+            // Plank sits on the inner bark. Negative X scale mirrors the arrow
+            // onto a left-hand limb, bulbs included.
+            float dir = fromRight ? 1f : -1f;
             var signGo = Sprite("GiftSign", SpriteCatalog.AdSign, view.transform.position, 1f, 11, view.transform);
-            signGo.transform.localPosition = new Vector3(-1.08f, 0.48f, 0f);
-            signGo.transform.localScale = new Vector3(0.26f, 0.26f, 1f);
-            signGo.transform.localRotation = Quaternion.Euler(0f, 0f, -6f);
+            signGo.transform.localPosition = new Vector3(-1.08f * dir, 0.48f, 0f);
+            signGo.transform.localScale = new Vector3(0.26f * dir, 0.26f, 1f);
+            signGo.transform.localRotation = Quaternion.Euler(0f, 0f, -6f * dir);
             view.Sign = signGo.transform;
             var signCol = signGo.AddComponent<BoxCollider2D>();
-            signCol.size = new Vector2(5.6f, 2.5f);
-            signCol.offset = new Vector2(-0.15f, 0f);
+            var signSr = signGo.GetComponent<SpriteRenderer>();
+            if (signSr != null && signSr.sprite != null)
+                signCol.size = signSr.sprite.bounds.size * 0.72f;
+            else
+                signCol.size = new Vector2(4.2f, 1.8f);
+            signCol.offset = Vector2.zero;
 
             var bulbs = PinBulbs(signGo.transform);
 
@@ -245,6 +257,7 @@ namespace FlockFive
                 view.Birds[s].flipX = fromRight;
                 view.Birds[s].enabled = false;
             }
+            view.RememberWood();
             return view;
         }
 
@@ -305,6 +318,7 @@ namespace FlockFive
         public const int BleedLayer = 30;
         Camera _cam;
         Camera _bleed;
+        bool _orientOnce;
 
         void Awake() => _cam = GetComponent<Camera>();
 
@@ -314,11 +328,19 @@ namespace FlockFive
 
         void Apply()
         {
-            Screen.orientation = ScreenOrientation.Portrait;
-            Screen.autorotateToPortrait = true;
-            Screen.autorotateToPortraitUpsideDown = false;
-            Screen.autorotateToLandscapeLeft = false;
-            Screen.autorotateToLandscapeRight = false;
+            // Setting orientation every frame stalls iOS. Lock the flags once,
+            // and only write orientation when the device has left portrait.
+            if (!_orientOnce)
+            {
+                _orientOnce = true;
+                Screen.autorotateToPortrait = true;
+                Screen.autorotateToPortraitUpsideDown = false;
+                Screen.autorotateToLandscapeLeft = false;
+                Screen.autorotateToLandscapeRight = false;
+                Screen.orientation = ScreenOrientation.Portrait;
+            }
+            else if (Screen.orientation != ScreenOrientation.Portrait)
+                Screen.orientation = ScreenOrientation.Portrait;
 
             if (_cam == null) _cam = GetComponent<Camera>();
             if (_cam == null) return;

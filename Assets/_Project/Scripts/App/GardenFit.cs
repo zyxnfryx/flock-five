@@ -6,47 +6,38 @@ namespace FlockFive
 {
     public static class GardenFit
     {
-        // Left and right columns pack independently so a missing limb never
-        // leaves a hole in the middle of the other side. Bonus perches stack
-        // on the right under that column.
+        public struct Spot
+        {
+            public int Index;
+            public int Column; // 0 left, 1 right, 2 bonus row
+            public int Row;
+            public Vector3 Pos;
+            public Vector3 Scale;
+        }
+
+        // Branch roots stay at scale 1 so perch gaps and bird sprites never
+        // grow when a limb is gone. Only the positions are recomputed.
+        public static readonly Vector3 LimbScale = Vector3.one;
+
         public static IEnumerator Tween(WorldBuilder.Garden garden, Board board, bool instant)
         {
             if (garden.Branches == null || board == null) yield break;
-
-            var left = Column(board, garden, false);
-            var right = Column(board, garden, true);
-            int extras = 0;
-            for (int i = WorldBuilder.GiftIndex; i < board.Branches.Count; i++)
-                if (Alive(board, garden, i)) extras++;
-            int rows = WorldBuilder.Rows;
-            int slots = Mathf.Max(left.Count, right.Count + extras);
-            float fill = slots <= 0 ? 1f : 1f - Mathf.Min(slots, rows) / (float)rows;
-            float s = Mathf.Lerp(1f, 1.58f, fill);
-            // Length stays near 1 so five birds still fit; only puff height when sparse.
-            float sx = Mathf.Lerp(1f, 1.06f, fill);
-            float gap = Mathf.Lerp(WorldBuilder.RowGap, 2.72f, fill);
-            float used = (rows - 1) * WorldBuilder.RowGap;
-            float pack = Mathf.Max(0f, slots - 1) * gap;
-            float yTop = WorldBuilder.RowY0 - 0.5f * (used - pack) * fill;
-            float x = WorldBuilder.EdgeX(garden.Cam, sx);
-            var scale = new Vector3(sx, s, 1f);
-
-            var views = new List<BranchView>();
-            var fromPos = new List<Vector3>();
-            var fromS = new List<Vector3>();
-            var toPos = new List<Vector3>();
-
-            for (int i = 0; i < left.Count; i++)
-                TryAdd(garden, board, left[i], new Vector3(-x, yTop - i * gap, 0f), views, fromPos, fromS, toPos);
-            int ri = 0;
-            for (int i = 0; i < right.Count; i++, ri++)
-                TryAdd(garden, board, right[i], new Vector3(x, yTop - ri * gap, 0f), views, fromPos, fromS, toPos);
-            float giftX = WorldBuilder.EdgeX(garden.Cam, 1.22f, WorldBuilder.GiftWoodScaleX);
-            for (int i = WorldBuilder.GiftIndex; i < board.Branches.Count; i++)
+            var spots = new List<Spot>(board.Branches.Count);
+            Collect(board, garden.Cam, spots);
+            var views = new List<BranchView>(spots.Count);
+            var fromPos = new List<Vector3>(spots.Count);
+            var fromS = new List<Vector3>(spots.Count);
+            var toPos = new List<Vector3>(spots.Count);
+            for (int i = 0; i < spots.Count; i++)
             {
-                if (!Alive(board, garden, i)) continue;
-                TryAdd(garden, board, i, new Vector3(giftX, yTop - ri * gap, 0f), views, fromPos, fromS, toPos);
-                ri++;
+                int bi = spots[i].Index;
+                if ((uint)bi >= (uint)garden.Branches.Length) continue;
+                var v = garden.Branches[bi];
+                if (v == null) continue;
+                views.Add(v);
+                fromPos.Add(v.Planted);
+                fromS.Add(v.transform.localScale);
+                toPos.Add(spots[i].Pos);
             }
 
             int n = views.Count;
@@ -54,7 +45,7 @@ namespace FlockFive
             if (instant)
             {
                 for (int i = 0; i < n; i++)
-                    views[i].Fit(toPos[i], ScaleOf(views[i], scale));
+                    views[i].Fit(toPos[i], LimbScale);
                 yield break;
             }
 
@@ -65,51 +56,116 @@ namespace FlockFive
                 u += Time.deltaTime / dur;
                 float k = u * u * (3f - 2f * u);
                 for (int i = 0; i < n; i++)
-                {
-                    var sc = ScaleOf(views[i], scale);
-                    views[i].Fit(Vector3.Lerp(fromPos[i], toPos[i], k), Vector3.Lerp(fromS[i], sc, k));
-                }
+                    views[i].Fit(Vector3.Lerp(fromPos[i], toPos[i], k), Vector3.Lerp(fromS[i], LimbScale, k));
                 yield return null;
             }
             for (int i = 0; i < n; i++)
-                views[i].Fit(toPos[i], ScaleOf(views[i], scale));
+                views[i].Fit(toPos[i], LimbScale);
         }
 
-        static Vector3 ScaleOf(BranchView v, Vector3 packed)
+        public static void Collect(Board board, Camera cam, List<Spot> into)
         {
-            if (v != null && v.IsGift) return new Vector3(1.22f, 1.22f, 1f);
-            return packed;
-        }
-
-        static List<int> Column(Board board, WorldBuilder.Garden garden, bool right)
-        {
-            var live = new List<int>();
-            for (int row = 0; row < WorldBuilder.Rows; row++)
+            if (into == null) return;
+            into.Clear();
+            if (board == null) return;
+            var left = new List<int>();
+            var right = new List<int>();
+            var bonus = new List<int>();
+            var bonusRight = new List<bool>();
+            int plain = 0;
+            int giftOrd = 0;
+            for (int i = 0; i < board.Branches.Count; i++)
             {
-                int i = row * 2 + (right ? 1 : 0);
-                if (Alive(board, garden, i)) live.Add(i);
+                var st = board.Branches[i];
+                if (st == null) continue;
+                if (st.IsBonus)
+                {
+                    // Side stays put when the other gift is gone, so a snap
+                    // cannot slide the survivor across the screen.
+                    if (!st.Broken)
+                    {
+                        bonus.Add(i);
+                        bonusRight.Add((giftOrd & 1) == 1);
+                    }
+                    giftOrd++;
+                    continue;
+                }
+                bool rightSide = (plain & 1) == 1;
+                if (!st.Broken)
+                {
+                    if (rightSide) right.Add(i);
+                    else left.Add(i);
+                }
+                plain++;
             }
-            return live;
+
+            float gap = WorldBuilder.RowGap;
+            float y0 = WorldBuilder.RowY0;
+            int tall = Mathf.Max(left.Count, right.Count);
+            float lowest = tall > 0 ? y0 - (tall - 1) * gap : y0;
+            float bonusY = BonusY(cam, lowest);
+            float sep = tall > 0 ? lowest - bonusY : gap;
+            if (tall > 0 && sep < gap * 0.85f)
+                y0 += gap * 0.85f - sep;
+
+            float x = WorldBuilder.EdgeX(cam, 1f);
+            float gx = WorldBuilder.EdgeX(cam, 1f, WorldBuilder.GiftWoodScaleX);
+            for (int i = 0; i < left.Count; i++)
+                into.Add(new Spot { Index = left[i], Column = 0, Row = i, Pos = new Vector3(-x, y0 - i * gap, 0f), Scale = LimbScale });
+            for (int i = 0; i < right.Count; i++)
+                into.Add(new Spot { Index = right[i], Column = 1, Row = i, Pos = new Vector3(x, y0 - i * gap, 0f), Scale = LimbScale });
+            for (int i = 0; i < bonus.Count; i++)
+            {
+                bool onRight = bonusRight[i];
+                into.Add(new Spot
+                {
+                    Index = bonus[i],
+                    Column = 2,
+                    Row = 0,
+                    Pos = new Vector3(onRight ? gx : -gx, bonusY, 0f),
+                    Scale = LimbScale
+                });
+            }
         }
 
-        static bool Alive(Board board, WorldBuilder.Garden garden, int i)
+        // Bottom gift row: one gap under the lowest plain limb, never under the
+        // restart / hive band. Tall phones letterbox that band below the play field.
+        public static float BonusY(Camera cam, float lowestPlain)
         {
-            if (i < 0 || i >= board.Branches.Count || i >= garden.Branches.Length) return false;
-            if (board.Branches[i].Broken) return false;
-            return garden.Branches[i] != null;
+            float floor = HudFloor(cam);
+            float y = lowestPlain - WorldBuilder.RowGap;
+            if (y < floor) y = floor;
+            return y;
         }
 
-        static void TryAdd(WorldBuilder.Garden garden, Board board, int i,
-            Vector3 dest, List<BranchView> views, List<Vector3> fromPos, List<Vector3> fromS, List<Vector3> toPos)
+        public static float HudFloor(Camera cam)
         {
-            if (!Alive(board, garden, i)) return;
-            var v = garden.Branches[i];
-            views.Add(v);
-            fromPos.Add(v.Planted);
-            fromS.Add(v.transform.localScale);
-            toPos.Add(dest);
+            float camY = cam != null ? cam.transform.position.y : -0.45f;
+            float half = cam != null ? cam.orthographicSize : 10.6f;
+            float bottom = camY - half;
+            float tall = Mathf.Max(1f, PortraitLock.TallFactor());
+            const float hudFrac = 0.175f;
+            float letter = (tall - 1f) / (2f * tall);
+            float overlap = Mathf.Max(0f, hudFrac - letter);
+            float inset = overlap * tall * (half * 2f);
+            return bottom + inset + 0.70f;
+        }
+
+        public static bool RowsPacked(List<Spot> spots, int column)
+        {
+            int n = 0;
+            var seen = new bool[32];
+            for (int i = 0; i < spots.Count; i++)
+            {
+                if (spots[i].Column != column) continue;
+                if (spots[i].Row < 0 || spots[i].Row >= seen.Length) return false;
+                if (seen[spots[i].Row]) return false;
+                seen[spots[i].Row] = true;
+                n++;
+            }
+            for (int r = 0; r < n; r++)
+                if (!seen[r]) return false;
+            return true;
         }
     }
 }
-
-

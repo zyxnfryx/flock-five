@@ -4,8 +4,9 @@ using UnityEngine;
 namespace FlockFive
 {
     // Garden pest: rarer than sparrow. Perches on a feeder and blocks it until
-    // TWO full collect scraps (HitsNeeded=2). First scrap wounds; second flees.
-    // Landing boots any live sparrow. Never sets _busy. No tap-scare.
+    // TWO full collect scraps (HitsNeeded=2). First scrap wounds and perches
+    // angry until the second scrap flees. Landing boots any live sparrow.
+    // Never sets _busy. No tap-scare.
     public sealed class HawkView : MonoBehaviour
     {
         public static HawkView Live { get; private set; }
@@ -21,9 +22,17 @@ namespace FlockFive
         bool _scrap;   // collect owns pose during dive-fight
         bool _evict;   // final flee — Visit yields to PanicFlee
         bool _fleeing;
+        bool _abort;
         float _exitX;
         Color _tint = new Color(0.42f, 0.30f, 0.20f, 1f);
         float _flap;
+        bool _angry;
+        bool _angerFresh;
+        bool _burst;
+        float _twitchIn;
+        float _twitchT;
+        bool _twitching;
+        static readonly Color AngryTint = new Color(1f, 0.6f, 0.55f, 1f);
 
         public static IEnumerator Patrol(System.Func<bool> allow, System.Func<bool> armed, int visits, FeederView[] feeders, Transform parent)
         {
@@ -68,8 +77,12 @@ namespace FlockFive
             var mouth = target.Mouth + new Vector3(Random.Range(-0.12f, 0.12f), 0.42f, 0f);
 
             float scale = Random.Range(1.05f, 1.15f);
-            var go = WorldBuilder.Sprite("Hawk", SpriteCatalog.Hawk, start, scale, 43, parent);
-            var view = go.AddComponent<HawkView>();
+            GameObject go = null;
+            HawkView view = null;
+            try
+            {
+            go = WorldBuilder.Sprite("Hawk", SpriteCatalog.Hawk, start, scale, 43, parent);
+            view = go.AddComponent<HawkView>();
             view._scale = scale;
             view._art = go.GetComponent<SpriteRenderer>();
             view._art.color = SpriteCatalog.HawkIsPlaceholder ? view._tint : Color.white;
@@ -111,8 +124,8 @@ namespace FlockFive
                 while (settle < 0.28f && !view._evict)
                 {
                     settle += Time.deltaTime;
-                    if (go == null) yield break;
-                    if (view._scrap) { yield return null; continue; }
+                    if (go == null || parent == null) yield break;
+                    if (view._scrap || view._burst) { yield return null; continue; }
                     go.transform.position = target.Mouth + new Vector3(
                         Mathf.Sin(Time.time * 8f) * 0.025f,
                         0.42f + Mathf.Sin(Time.time * 6f) * 0.035f,
@@ -123,8 +136,9 @@ namespace FlockFive
 
                 while (!view._evict)
                 {
-                    if (parent == null || go == null || target == null) yield break;
-                    if (view._scrap)
+                    if (parent == null || go == null) yield break;
+                    if (target == null) break;
+                    if (view._scrap || view._burst)
                     {
                         yield return null;
                         continue;
@@ -134,10 +148,12 @@ namespace FlockFive
                         // Feeder vanished — leave quietly.
                         break;
                     }
+                    var lunge = view.AngryLunge();
                     go.transform.position = target.Mouth + new Vector3(
                         Mathf.Sin(Time.time * 5.8f) * 0.04f,
                         0.42f + Mathf.Sin(Time.time * 4.6f) * 0.05f,
-                        0f);
+                        0f) + lunge;
+                    go.transform.localRotation = Quaternion.Euler(0f, 0f, -lunge.y * 70f);
                     view.Flap(Mathf.Sin(Time.time * 2.6f) > 0.4f);
                     yield return null;
                 }
@@ -156,8 +172,12 @@ namespace FlockFive
                     yield return view.FlyOut(exitX);
             }
 
-            if (Live == view) Live = null;
-            if (go != null) Object.Destroy(go);
+            }
+            finally
+            {
+                if (view != null && Live == view) Live = null;
+                if (go != null) Object.Destroy(go);
+            }
         }
 
         // Collect dive-fight owns pose; BlockingSlot stays set (still blocking).
@@ -170,7 +190,19 @@ namespace FlockFive
         public void EndScrap()
         {
             _scrap = false;
+            // The wound's own EndScrap follows BeginAnger in the same call.
+            // A later EndScrap is restart releasing the perch.
+            if (_angerFresh)
+            {
+                _angerFresh = false;
+                return;
+            }
+            Calm();
+            if (_fleeing) _abort = true;
         }
+
+        // Cosmetic return-pass only. Stage load and restart both call this.
+        public static void ClearShow() => HawkPass.Clear();
 
         // One full collect counted. Returns true when hawk should PanicFlee.
         public bool AbsorbCollect()
@@ -183,6 +215,8 @@ namespace FlockFive
                 BlockingSlot = -1;
                 return true;
             }
+            if (HitsTaken == 1)
+                BeginAnger();
             return false;
         }
 
@@ -212,7 +246,7 @@ namespace FlockFive
 
             float flash = 0f;
             const float flashDur = 0.06f;
-            while (flash < flashDur && !_fleeing)
+            while (flash < flashDur && !_fleeing && !_burst)
             {
                 flash += Time.deltaTime;
                 float u = Mathf.Clamp01(flash / flashDur);
@@ -220,15 +254,15 @@ namespace FlockFive
                     baseScale.x * Mathf.Lerp(1.18f, 1.04f, u),
                     baseScale.y * Mathf.Lerp(0.66f, 0.90f, u),
                     1f);
-                if (_art != null)
-                    _art.color = Color.Lerp(Color.white, SpriteCatalog.HawkIsPlaceholder ? _tint : Color.white, u);
                 Flap(true);
+                if (_art != null)
+                    _art.color = Color.Lerp(Color.white, RestColor(), u);
                 yield return null;
             }
 
             float crouch = 0f;
             const float crouchDur = 0.075f;
-            while (crouch < crouchDur && !_fleeing)
+            while (crouch < crouchDur && !_fleeing && !_burst)
             {
                 crouch += Time.deltaTime;
                 float u = Mathf.Clamp01(crouch / crouchDur);
@@ -244,7 +278,7 @@ namespace FlockFive
             float hop = 0f;
             const float hopDur = 0.15f;
             float tilt = side * Random.Range(6f, 12f);
-            while (hop < hopDur && !_fleeing)
+            while (hop < hopDur && !_fleeing && !_burst)
             {
                 hop += Time.deltaTime;
                 float u = Mathf.Clamp01(hop / hopDur);
@@ -259,7 +293,7 @@ namespace FlockFive
                 yield return null;
             }
 
-            if (!_fleeing)
+            if (!_fleeing && !_burst)
             {
                 transform.localScale = baseScale;
                 transform.localRotation = Quaternion.identity;
@@ -267,12 +301,18 @@ namespace FlockFive
             }
         }
 
-        public IEnumerator PanicFlee()
+        public IEnumerator PanicFlee(bool defeated = false)
         {
             if (_done || _fleeing) yield break;
             _fleeing = true;
             _scrap = false;
+            Calm();
             BlockingSlot = -1;
+            if (defeated)
+            {
+                yield return DefeatExit();
+                yield break;
+            }
             var from = transform.position;
             float dir = Mathf.Sign(_exitX - from.x);
             if (dir == 0f) dir = _exitX >= 0f ? 1f : -1f;
@@ -288,14 +328,14 @@ namespace FlockFive
             var legs = new[] { a, b, dest };
             var durs = new[] { 0.24f, 0.28f, 0.42f };
             var prev = from;
-            for (int leg = 0; leg < legs.Length; leg++)
+            for (int leg = 0; leg < legs.Length && !_abort; leg++)
             {
                 var next = legs[leg];
                 if (_art != null) _art.flipX = next.x < prev.x;
                 float t = 0f;
                 float dur = durs[leg];
                 float sway = (leg % 2 == 0 ? 1f : -1f) * Random.Range(0.25f, 0.48f);
-                while (t < dur)
+                while (t < dur && !_abort)
                 {
                     t += Time.deltaTime;
                     float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / dur));
@@ -320,9 +360,75 @@ namespace FlockFive
             _done = true;
         }
 
+        // Second-collect clear. Heavier than the sparrow: longer hold, bigger burst,
+        // then a clean fly-off. The beaten return pass is a separate object so this
+        // yield can finish and the scrap can unlock.
+        IEnumerator DefeatExit()
+        {
+            var parent = transform.parent;
+            var from = transform.position;
+            transform.localScale = Vector3.one * (_scale * 1.12f);
+            transform.localRotation = Quaternion.identity;
+            if (_art != null) _art.color = Color.white;
+            if (CamShake.Live != null)
+                CamShake.Live.Punch(0.14f, 0.08f, 1.6f, 0.05f);
+
+            float hold = 0f;
+            while (hold < 0.08f && !_abort)
+            {
+                hold += Time.deltaTime;
+                if (_art != null) _art.color = Color.white;
+                transform.localScale = Vector3.one * (_scale * 1.12f);
+                transform.localRotation = Quaternion.identity;
+                yield return null;
+            }
+            if (_abort)
+            {
+                _done = true;
+                yield break;
+            }
+            SparrowBits.Burst(from + new Vector3(0f, 0.14f, 0f), parent, _tint, 18);
+            PestCheer.Mark(from, parent, true);
+
+            float dir = Mathf.Sign(_exitX - from.x);
+            if (dir == 0f) dir = _exitX >= 0f ? 1f : -1f;
+            var dest = new Vector3(_exitX, from.y + Random.Range(2.0f, 3.3f), 0f);
+            if (_art != null) _art.flipX = dest.x < from.x;
+            float passY = Mathf.Clamp(from.y + 2.55f, 6.1f, 8.6f);
+            float edge = Mathf.Max(7.2f, Mathf.Abs(_exitX));
+            float t = 0f;
+            const float dur = 0.7f;
+            while (t < dur && !_abort)
+            {
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                float ease = u * u * (3f - 2f * u);
+                var p = Vector3.Lerp(from, dest, ease);
+                p.y += Mathf.Sin(u * Mathf.PI) * 1.7f;
+                transform.position = p;
+                transform.localScale = Vector3.one * (_scale * Mathf.Lerp(1.08f, 0.7f, u));
+                transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(u * Mathf.PI) * -8f * dir);
+                Flap(true);
+                if (_art != null)
+                {
+                    var c = _art.color;
+                    c.a = u > 0.78f ? Mathf.Lerp(1f, 0.55f, (u - 0.78f) / 0.22f) : 1f;
+                    _art.color = c;
+                }
+                yield return null;
+            }
+            _done = true;
+            if (!_abort && parent != null)
+            {
+                var normal = SpriteCatalog.HawkIsPlaceholder ? _tint : Color.white;
+                HawkPass.Begin(parent, dir > 0f, passY, _scale * 0.58f, edge, normal, _tint);
+            }
+        }
+
         IEnumerator FlyOut(float exitX)
         {
             _fleeing = true;
+            Calm();
             var from = transform.position;
             var dest = new Vector3(exitX, from.y + Random.Range(0.5f, 1.8f), 0f);
             if (_art != null) _art.flipX = dest.x < from.x;
@@ -345,12 +451,97 @@ namespace FlockFive
         {
             if (_art == null) return;
             // Wingbeats per second; poses step at a steady rate so the flap never aliases.
-            _flap += Time.deltaTime * (hard ? 2.8f : 1.8f);
+            float rate = hard ? 2.8f : 1.8f;
+            if (_angry) rate *= 1.5f;
+            _flap += Time.deltaTime * rate;
             _art.sprite = SpriteCatalog.HawkFrame(_flap);
-            if (SpriteCatalog.HawkIsPlaceholder)
-                _art.color = _tint;
-            else
-                _art.color = Color.white;
+            _art.color = RestColor();
+        }
+
+        // First collect wound. Burst owns pose; perch resumes angry until clear.
+        void BeginAnger()
+        {
+            if (_angry || _done || _fleeing) return;
+            _angry = true;
+            _angerFresh = true;
+            _twitching = false;
+            _twitchIn = Random.Range(2f, 3f);
+            StartCoroutine(AngerBurst());
+        }
+
+        IEnumerator AngerBurst()
+        {
+            if (_done || _fleeing) yield break;
+            _burst = true;
+            Sfx.HawkCryHot();
+            var origin = transform.position;
+            var baseScale = Vector3.one * _scale;
+            float t = 0f;
+            const float dur = 0.25f;
+            var hot = new Color(1f, 0.28f, 0.24f, 1f);
+            while (t < dur && _angry && !_fleeing && !_done)
+            {
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                float amp = (1f - u) * 0.065f;
+                transform.position = origin + new Vector3(
+                    Mathf.Sin(t * 86f) * amp,
+                    Mathf.Cos(t * 71f) * amp * 0.7f,
+                    0f);
+                float puff = Mathf.Sin(u * Mathf.PI);
+                transform.localScale = baseScale * Mathf.Lerp(1f, 1.15f, puff);
+                Flap(true);
+                if (_art != null)
+                    _art.color = Color.Lerp(AngryTint, hot, puff);
+                yield return null;
+            }
+            if (_angry && !_fleeing && !_done)
+            {
+                transform.localScale = baseScale;
+                transform.localRotation = Quaternion.identity;
+                transform.position = origin;
+                if (_art != null) _art.color = RestColor();
+            }
+            _burst = false;
+        }
+
+        // Periodic peck toward the feeder mouth while the wounded hawk waits.
+        Vector3 AngryLunge()
+        {
+            if (!_angry || _fleeing || _burst) return Vector3.zero;
+            if (!_twitching)
+            {
+                _twitchIn -= Time.deltaTime;
+                if (_twitchIn > 0f) return Vector3.zero;
+                _twitching = true;
+                _twitchT = 0f;
+                _twitchIn = Random.Range(2f, 3f);
+            }
+            const float twitchDur = 0.28f;
+            _twitchT += Time.deltaTime;
+            float u = Mathf.Clamp01(_twitchT / twitchDur);
+            if (u >= 1f) _twitching = false;
+            float k = Mathf.Sin(u * Mathf.PI);
+            float face = (_art != null && _art.flipX) ? -1f : 1f;
+            return new Vector3(0.10f * k * face, -0.16f * k, 0f);
+        }
+
+        Color RestColor()
+        {
+            if (_angry)
+            {
+                float pulse = Mathf.Lerp(0.84f, 1f, 0.5f + 0.5f * Mathf.Sin(Time.time * 2.2f));
+                return new Color(AngryTint.r * pulse, AngryTint.g * pulse, AngryTint.b * pulse, 1f);
+            }
+            return SpriteCatalog.HawkIsPlaceholder ? _tint : Color.white;
+        }
+
+        void Calm()
+        {
+            _angry = false;
+            _angerFresh = false;
+            _burst = false;
+            _twitching = false;
         }
 
         void OnDisable()
@@ -358,6 +549,9 @@ namespace FlockFive
             if (Live == this) Live = null;
             BlockingSlot = -1;
             _done = true;
+            _angry = false;
+            _angerFresh = false;
+            _burst = false;
         }
 
         static void BootSparrow()
@@ -390,6 +584,87 @@ namespace FlockFive
 
         static bool IsOn(FeederView f) =>
             f != null && f.Art != null && f.Art.enabled;
+    }
+
+    // Beaten flyby after a hawk clear. Cosmetic only: no collider, not HawkView.Live,
+    // so it cannot block a feeder or input. Clear() on stage load and restart.
+    sealed class HawkPass : MonoBehaviour
+    {
+        static HawkPass _live;
+
+        public static void Clear()
+        {
+            if (_live != null)
+                Object.Destroy(_live.gameObject);
+            _live = null;
+        }
+
+        public static void Begin(Transform parent, bool fromLeft, float y, float scale, float edge, Color body, Color feather)
+        {
+            Clear();
+            if (parent == null) return;
+            var go = new GameObject("HawkPass");
+            go.transform.SetParent(parent, false);
+            var pass = go.AddComponent<HawkPass>();
+            _live = pass;
+            pass.StartCoroutine(pass.Run(fromLeft, y, scale, edge, body, feather));
+        }
+
+        IEnumerator Run(bool fromLeft, float y, float scale, float edge, Color body, Color feather)
+        {
+            yield return new WaitForSeconds(0.6f);
+            if (this == null) yield break;
+            float x0 = fromLeft ? -edge : edge;
+            float x1 = -x0;
+            var go = WorldBuilder.Sprite("HawkFar", SpriteCatalog.Hawk, new Vector3(x0, y, 0f), scale, 36, transform);
+            if (go == null)
+            {
+                Clear();
+                yield break;
+            }
+            var art = go.GetComponent<SpriteRenderer>();
+            art.flipX = !fromLeft;
+            art.color = body;
+            float droop = fromLeft ? -13f : 13f;
+            go.transform.rotation = Quaternion.Euler(0f, 0f, droop);
+            float dur = 0.48f;
+            float t = 0f;
+            float flap = 0f;
+            int dropped = 0;
+            while (t < dur)
+            {
+                if (go == null || art == null)
+                {
+                    Clear();
+                    yield break;
+                }
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                float x = Mathf.Lerp(x0, x1, u);
+                go.transform.position = new Vector3(x, y + Mathf.Sin(u * Mathf.PI) * 0.18f, 0f);
+                flap += Time.deltaTime * 1.5f;
+                art.sprite = SpriteCatalog.HawkFrame(flap);
+                art.color = body;
+                art.flipX = !fromLeft;
+                go.transform.rotation = Quaternion.Euler(0f, 0f, droop + Mathf.Sin(u * 8f) * 2.2f);
+                if (dropped < 4 && u >= (dropped + 1) * 0.18f)
+                {
+                    dropped++;
+                    SparrowBits.Drop(go.transform.position, transform, feather);
+                }
+                yield return null;
+            }
+            if (go != null) Object.Destroy(go);
+            // Feathers are children of this host. Let them finish, unless Clear()
+            // already tore the pass down (restart / stage load).
+            yield return new WaitForSeconds(0.72f);
+            if (this != null) Clear();
+        }
+
+        void OnDestroy()
+        {
+            if (_live == this) _live = null;
+        }
     }
 }
 

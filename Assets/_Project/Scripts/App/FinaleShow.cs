@@ -17,12 +17,17 @@ namespace FlockFive
             fx.SetParent(root, false);
 
             Live = true;
+            _cut = false;
+            Time.timeScale = 1f;
             host.StartCoroutine(Fireworks(fx, host));
             host.StartCoroutine(RumbleTrain());
 
-            yield return new WaitForSeconds(0.28f);
-            yield return SlamLogo(fx, host);
+            yield return Wait(0.28f);
+            if (!_cut)
+                yield return SlamLogo(fx, host);
             Live = false;
+            Glow = false;
+            Time.timeScale = 1f;
             SweepSparkles(fx);
         }
 
@@ -30,14 +35,54 @@ namespace FlockFive
         {
             for (int i = 0; i < 3; i++)
             {
+                if (Cut()) yield break;
                 Sfx.Rumble();
-                yield return new WaitForSeconds(0.4f);
+                yield return Wait(0.4f);
             }
         }
 
         static bool Live;
         static bool Glow;
+        static bool _cut;
         const float PulseDur = 1.6f;
+
+        static bool Cut()
+        {
+            if (_cut) return true;
+            var mouse = UnityEngine.InputSystem.Mouse.current;
+            if (mouse != null && mouse.leftButton.wasPressedThisFrame)
+            {
+                _cut = true;
+                return true;
+            }
+            var touch = UnityEngine.InputSystem.Touchscreen.current;
+            if (touch != null && touch.primaryTouch.press.wasPressedThisFrame)
+            {
+                _cut = true;
+                return true;
+            }
+            return false;
+        }
+
+        static IEnumerator Wait(float dur)
+        {
+            float t = 0f;
+            while (t < dur)
+            {
+                if (Cut()) yield break;
+                t += Time.deltaTime;
+                yield return null;
+            }
+        }
+
+        static bool Stopped(Transform[] letters, Vector3[] restScale, Vector3[] restPos)
+        {
+            if (!_cut) return false;
+            Time.timeScale = 1f;
+            Glow = false;
+            Settle(letters, restScale, restPos);
+            return true;
+        }
 
         // Logo / halo / mascots stay. Sparkle leftovers do not.
         static void SweepSparkles(Transform root)
@@ -62,6 +107,10 @@ namespace FlockFive
                 || name.StartsWith("Fly")
                 || name.StartsWith("Burst")
                 || name.StartsWith("Boom")
+                || name.StartsWith("Petal")
+                || name.StartsWith("Fountain")
+                || name.StartsWith("Feather")
+                || name.StartsWith("Ring")
                 || name == "Rocket"
                 || name == "Shine";
         }
@@ -107,7 +156,8 @@ namespace FlockFive
             }
 
             host.StartCoroutine(FadeStage(hold, 0.7f));
-            yield return new WaitForSeconds(0.1f);
+            yield return Wait(0.1f);
+            if (Stopped(all, restScale, restPos)) yield break;
 
             const float letterDur = 0.56f;
             const float stagger = 0.055f;
@@ -115,7 +165,8 @@ namespace FlockFive
                 host.StartCoroutine(Popcorn(all[i], restScale[i], restPos[i], letterDur, i * stagger));
 
             float lettersDone = (all.Length - 1) * stagger + letterDur;
-            yield return new WaitForSeconds(lettersDone * 0.62f);
+            yield return Wait(lettersDone * 0.62f);
+            if (Stopped(all, restScale, restPos)) yield break;
 
             Sfx.Takeoff(4);
             Sfx.Rumble();
@@ -124,9 +175,11 @@ namespace FlockFive
             host.StartCoroutine(PopBird(teal, 0.52f, 0.14f));
             host.StartCoroutine(PopBird(violet, 0.52f, 0.2f));
 
-            yield return new WaitForSeconds(lettersDone * 0.38f + 0.08f);
+            yield return Wait(lettersDone * 0.38f + 0.08f);
+            if (Stopped(all, restScale, restPos)) yield break;
             Settle(all, restScale, restPos);
             yield return Breathe(hold, 0.62f, 1.035f);
+            if (Stopped(all, restScale, restPos)) yield break;
             Sfx.Takeoff(4);
 
             Glow = true;
@@ -135,19 +188,28 @@ namespace FlockFive
             host.StartCoroutine(Shine(hold));
             host.StartCoroutine(Twinkle(hold, PulseDur));
             host.StartCoroutine(Fireflies(hold));
-            yield return new WaitForSeconds(0.22f);
+            host.StartCoroutine(WarmGlow(hold));
+            host.StartCoroutine(CoinFountain(hold));
+            host.StartCoroutine(PetalShower(hold));
+            host.StartCoroutine(CountUp(hold));
+            host.StartCoroutine(MascotCheer(new[] { ruby, gold, teal, violet }));
+            CheerFlock(hold);
+            yield return Wait(0.22f);
+            if (Stopped(all, restScale, restPos)) yield break;
             host.StartCoroutine(Burst(hold, true));
 
             yield return PulseHold(hold, PulseDur);
+            if (Stopped(all, restScale, restPos)) yield break;
             Settle(all, restScale, restPos);
             Glow = false;
             SweepSparkles(hold);
 
             var peach = Mascot(BirdColor.Peach, new Vector3(0f, 0.28f, 5.4f), false, 8, hold);
-            yield return SlingPeach(peach, hold, host, all, new[] { ruby, gold, teal, violet });
+            yield return SlingPeach(peach, hold, host, all, restScale, restPos);
+            if (_cut) Stopped(all, restScale, restPos);
         }
 
-        static IEnumerator SlingPeach(Transform peach, Transform hold, MonoBehaviour host, Transform[] letters, Transform[] crew)
+        static IEnumerator SlingPeach(Transform peach, Transform hold, MonoBehaviour host, Transform[] letters, Vector3[] restScale, Vector3[] restPos)
         {
             if (peach == null) yield break;
             var idle = peach.GetComponent<BirdIdle>();
@@ -156,79 +218,714 @@ namespace FlockFive
                 idle.Frozen = true;
                 idle.Flapping = true;
                 idle.Lift = 0.2f;
-                idle.RestScale = Vector3.one * 0.5f;
+                idle.FlapMul = 1.6f;
+                idle.FaceLeft = false;
+                idle.RestScale = Vector3.one * 0.55f;
             }
             // Leave the lockup so the letter blast cannot drag her with it.
             if (hold != null && hold.parent != null)
                 peach.SetParent(hold.parent, true);
 
             var sr = peach.GetComponent<SpriteRenderer>();
-            peach.localPosition = new Vector3(0f, 1.4f, 5.6f);
-            peach.localScale = Vector3.one * 0.07f;
-            if (sr != null) sr.sortingOrder = 8;
+            var face = peach.Find("Mood");
+            var faceSr = face != null ? face.GetComponent<SpriteRenderer>() : null;
+            PaintBird(sr, faceSr, 40, 1f);
+
+            Vector3 impact = hold != null
+                ? hold.localPosition + new Vector3(0f, -0.08f, 0.12f)
+                : new Vector3(0f, 1.08f, 0.12f);
+            var from = new Vector3(impact.x, impact.y - 0.62f, 4.2f);
+            peach.localPosition = from;
+            peach.localRotation = Quaternion.Euler(0f, 0f, -16f);
+            peach.localScale = new Vector3(0.36f, 0.36f, 1f);
 
             float t = 0f;
-            const float pull = 0.28f;
-            while (t < pull && peach != null)
+            const float wind = 0.15f;
+            while (t < wind && peach != null)
             {
+                if (Cut()) { AbortPeach(peach, letters, restScale, restPos); yield break; }
                 t += Time.deltaTime;
-                float u = Smooth01(t / pull);
-                peach.localPosition = new Vector3(0f, 1.4f, Mathf.Lerp(5.6f, 6.8f, u));
-                peach.localScale = Vector3.one * Mathf.Lerp(0.07f, 0.05f, u);
+                float u = Smooth01(t / wind);
+                float sc = Mathf.Lerp(0.36f, 0.27f, u);
+                peach.localScale = new Vector3(sc * Mathf.Lerp(1f, 1.34f, u), sc * Mathf.Lerp(1f, 0.66f, u), 1f);
+                peach.localPosition = Vector3.Lerp(from, new Vector3(from.x, from.y - 0.2f, 5.2f), u);
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-16f, -28f, u));
                 yield return null;
             }
+            if (peach == null || Cut()) { AbortPeach(peach, letters, restScale, restPos); yield break; }
 
-            Sfx.FlockFlutter(1);
-            Sfx.Rumble();
+            Sfx.FlapHard();
+            if (idle != null) idle.FlapMul = 3.15f;
+            Vector3 dipped = peach.localPosition;
             t = 0f;
-            const float approach = 0.36f;
-            while (t < approach && peach != null)
+            const float burst = 0.18f;
+            while (t < burst && peach != null)
             {
+                if (Cut()) { AbortPeach(peach, letters, restScale, restPos); yield break; }
                 t += Time.deltaTime;
-                float k = Mathf.Pow(Mathf.Clamp01(t / approach), 2.4f);
-                peach.localPosition = new Vector3(0f, Mathf.Lerp(1.4f, 1.18f, k), Mathf.Lerp(6.8f, 0.18f, k));
-                peach.localScale = Vector3.one * Mathf.Lerp(0.05f, 1.15f, k);
-                if (sr != null) sr.sortingOrder = 8;
+                float u = Mathf.Clamp01(t / burst);
+                float k = u * u;
+                float sc = Mathf.Lerp(0.30f, 1.14f, k);
+                float stretch = Mathf.Lerp(1.06f, 1.48f, Mathf.Sin(u * Mathf.PI));
+                peach.localPosition = Vector3.Lerp(dipped, impact, k);
+                peach.localScale = new Vector3(sc / stretch, sc * stretch, 1f);
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-28f, 12f, EaseOutCubic(u)));
+                PaintBird(sr, faceSr, 48 + Mathf.RoundToInt(k * 28f), 1f);
                 yield return null;
             }
+            if (peach == null || Cut()) { AbortPeach(peach, letters, restScale, restPos); yield break; }
 
+            peach.localPosition = impact;
+            peach.localScale = new Vector3(1.4f, 0.7f, 1f);
+            peach.localRotation = Quaternion.Euler(0f, 0f, 6f);
+            PaintBird(sr, faceSr, 80, 1f);
             Sfx.Break();
             Sfx.Rumble();
-            if (CamShake.Live != null) CamShake.Live.Punch(0.38f, 0.18f, 2.6f, 0.14f);
-            if (sr != null) sr.sortingOrder = 72;
-            host.StartCoroutine(Burst(hold, false));
-            host.StartCoroutine(ScatterOutro(hold, letters, crew));
+            yield return HitStop();
+            if (peach == null || Cut()) { AbortPeach(peach, letters, restScale, restPos); yield break; }
+
+            if (CamShake.Live != null) CamShake.Live.Punch(0.18f, 0.06f, 0.85f, 0.04f);
+            if (host != null && hold != null)
+            {
+                host.StartCoroutine(ShockRing(hold));
+                host.StartCoroutine(FeatherBurst(hold));
+                host.StartCoroutine(KnockReform(letters, restScale, restPos));
+            }
+
+            if (idle != null) idle.FlapMul = 2.6f;
+            t = 0f;
+            const float loopDur = 0.70f;
+            while (t < loopDur && peach != null)
+            {
+                if (Cut()) { AbortPeach(peach, letters, restScale, restPos); yield break; }
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / loopDur);
+                float ang = u * Mathf.PI * 2f;
+                const float rx = 1.9f;
+                const float ry = 1.02f;
+                peach.localPosition = new Vector3(
+                    impact.x + Mathf.Sin(ang) * rx,
+                    impact.y + (Mathf.Cos(ang) - 1f) * ry,
+                    0.16f);
+                float tx = Mathf.Cos(ang) * rx;
+                float ty = -Mathf.Sin(ang) * ry;
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(ty, tx) * Mathf.Rad2Deg);
+                const float sc = 0.64f;
+                peach.localScale = new Vector3(sc * 1.22f, sc * 0.82f, 1f);
+                PaintBird(sr, faceSr, 82, 1f);
+                yield return null;
+            }
+            if (peach == null || Cut()) { AbortPeach(peach, letters, restScale, restPos); yield break; }
+
+            if (idle != null) idle.FaceLeft = true;
+            if (sr != null) sr.flipX = true;
+            var land = new Vector3(impact.x + 2.4f, impact.y - 1.2f, 0f);
+            var leave = peach.localPosition;
+            t = 0f;
+            const float landDur = 0.26f;
+            while (t < landDur && peach != null)
+            {
+                if (Cut()) { AbortPeach(peach, letters, restScale, restPos); yield break; }
+                t += Time.deltaTime;
+                float u = EaseOutCubic(t / landDur);
+                var p = Vector3.Lerp(leave, land, u);
+                p.y += Mathf.Sin(u * Mathf.PI) * 0.38f;
+                peach.localPosition = p;
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(18f, 0f, u));
+                float sc = Mathf.Lerp(0.64f, 0.55f, u);
+                float squash = u > 0.7f ? Mathf.Sin((u - 0.7f) / 0.3f * Mathf.PI) * 0.24f : 0f;
+                peach.localScale = new Vector3(sc * (1f + squash), sc * (1f - squash * 0.9f), 1f);
+                PaintBird(sr, faceSr, 36, 1f);
+                yield return null;
+            }
+            if (peach == null || Cut()) { AbortPeach(peach, letters, restScale, restPos); yield break; }
 
             t = 0f;
-            const float through = 0.62f;
-            var face = peach != null ? peach.Find("Mood") : null;
-            var faceSr = face != null ? face.GetComponent<SpriteRenderer>() : null;
-            while (t < through && peach != null)
+            const float settle = 0.16f;
+            while (t < settle && peach != null)
             {
+                if (Cut()) { AbortPeach(peach, letters, restScale, restPos); yield break; }
                 t += Time.deltaTime;
-                float u = Mathf.Clamp01(t / through);
-                float k = 1f - (1f - u) * (1f - u);
-                peach.localPosition = new Vector3(0f, Mathf.Lerp(1.18f, 0.55f, k), Mathf.Lerp(0.18f, -8.4f, k));
-                peach.localScale = Vector3.one * Mathf.Lerp(1.15f, 5.4f, k);
-                int order = 72 + Mathf.RoundToInt(k * 20f);
-                if (sr != null)
+                float b = Mathf.Sin(Mathf.Clamp01(t / settle) * Mathf.PI);
+                peach.localPosition = land;
+                peach.localRotation = Quaternion.identity;
+                peach.localScale = new Vector3(0.55f * (1f + 0.16f * b), 0.55f * (1f - 0.14f * b), 1f);
+                yield return null;
+            }
+            if (peach == null) yield break;
+            peach.localPosition = land;
+            peach.localRotation = Quaternion.identity;
+            peach.localScale = Vector3.one * 0.55f;
+            PaintBird(sr, faceSr, 32, 1f);
+            if (idle != null)
+            {
+                idle.RestLocal = land;
+                idle.RestScale = Vector3.one * 0.55f;
+                idle.FaceLeft = true;
+                idle.FlapMul = 1f;
+                idle.Flapping = true;
+                idle.Lift = 0.06f;
+                idle.Frozen = false;
+            }
+            yield return Wait(0.18f);
+        }
+
+        static void PaintBird(SpriteRenderer sr, SpriteRenderer face, int order, float alpha)
+        {
+            if (sr != null)
+            {
+                sr.sortingOrder = order;
+                var c = sr.color;
+                c.a = alpha;
+                sr.color = c;
+            }
+            if (face != null)
+            {
+                face.sortingOrder = order + 1;
+                var c = face.color;
+                c.a = alpha;
+                face.color = c;
+            }
+        }
+
+        static void AbortPeach(Transform peach, Transform[] letters, Vector3[] restScale, Vector3[] restPos)
+        {
+            Time.timeScale = 1f;
+            Settle(letters, restScale, restPos);
+            if (peach != null) Object.Destroy(peach.gameObject);
+        }
+
+        static IEnumerator HitStop()
+        {
+            float prev = Time.timeScale;
+            Time.timeScale = 0.02f;
+            float t = 0f;
+            while (t < 0.05f)
+            {
+                if (Cut()) break;
+                t += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            Time.timeScale = prev > 0.05f ? prev : 1f;
+        }
+
+        static IEnumerator KnockReform(Transform[] letters, Vector3[] restScale, Vector3[] restPos)
+        {
+            if (letters == null) yield break;
+            int n = letters.Length;
+            var vel = new Vector3[n];
+            var spin = new float[n];
+            var rot = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                if (letters[i] == null) continue;
+                var d = letters[i].localPosition;
+                d.z = 0f;
+                if (d.sqrMagnitude < 0.04f) d = Vector3.up;
+                d.y += 0.42f;
+                d.Normalize();
+                vel[i] = d * Random.Range(3.5f, 5.5f);
+                spin[i] = (letters[i].localPosition.x >= 0f ? 1f : -1f) * Random.Range(260f, 540f);
+            }
+            float t = 0f;
+            const float outDur = 0.40f;
+            while (t < outDur)
+            {
+                if (Cut()) { Settle(letters, restScale, restPos); yield break; }
+                float dt = Time.deltaTime;
+                t += dt;
+                float u = Mathf.Clamp01(t / outDur);
+                for (int i = 0; i < n; i++)
                 {
-                    sr.sortingOrder = order;
-                    var c = sr.color;
-                    c.a = u > 0.62f ? 1f - Smooth01((u - 0.62f) / 0.38f) : 1f;
-                    sr.color = c;
-                }
-                if (faceSr != null)
-                {
-                    faceSr.sortingOrder = order + 1;
-                    var c = faceSr.color;
-                    c.a = sr != null ? sr.color.a : 1f;
-                    faceSr.color = c;
+                    if (letters[i] == null) continue;
+                    vel[i].y -= 12.5f * dt;
+                    letters[i].localPosition += vel[i] * dt;
+                    rot[i] += spin[i] * dt;
+                    letters[i].localRotation = Quaternion.Euler(0f, 0f, rot[i]);
+                    if (restScale != null && i < restScale.Length)
+                        letters[i].localScale = restScale[i] * Mathf.Lerp(1.1f, 0.9f, u);
                 }
                 yield return null;
             }
-            if (peach != null) Object.Destroy(peach.gameObject);
-            yield return new WaitForSeconds(0.85f);
+            var fromP = new Vector3[n];
+            var fromR = new float[n];
+            var fromS = new Vector3[n];
+            for (int i = 0; i < n; i++)
+            {
+                if (letters[i] == null) continue;
+                fromP[i] = letters[i].localPosition;
+                fromR[i] = letters[i].localEulerAngles.z;
+                fromS[i] = letters[i].localScale;
+            }
+            t = 0f;
+            const float back = 0.42f;
+            while (t < back)
+            {
+                if (Cut()) { Settle(letters, restScale, restPos); yield break; }
+                t += Time.deltaTime;
+                float u = EaseOutCubic(t / back);
+                for (int i = 0; i < n; i++)
+                {
+                    if (letters[i] == null) continue;
+                    var restP = restPos != null && i < restPos.Length ? restPos[i] : fromP[i];
+                    var restS = restScale != null && i < restScale.Length ? restScale[i] : fromS[i];
+                    letters[i].localPosition = Vector3.Lerp(fromP[i], restP, u);
+                    letters[i].localRotation = Quaternion.Euler(0f, 0f, Mathf.LerpAngle(fromR[i], 0f, u));
+                    letters[i].localScale = Vector3.Lerp(fromS[i], restS, u);
+                }
+                yield return null;
+            }
+            Settle(letters, restScale, restPos);
+        }
+
+        static IEnumerator ShockRing(Transform parent)
+        {
+            if (parent == null) yield break;
+            const int n = 16;
+            var rs = new SpriteRenderer[n];
+            var origin = parent.position + new Vector3(0f, -0.08f, 0f);
+            for (int i = 0; i < n; i++)
+            {
+                var go = WorldBuilder.Sprite("Ring", SpriteCatalog.Glow, origin, 0.3f, 70, parent);
+                rs[i] = go.GetComponent<SpriteRenderer>();
+                rs[i].color = new Color(1f, 0.9f, 0.55f, 0.85f);
+            }
+            float t = 0f;
+            const float dur = 0.36f;
+            while (t < dur && parent != null)
+            {
+                if (_cut) break;
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                float rad = Mathf.Lerp(0.2f, 3.35f, EaseOutCubic(u));
+                float a = (1f - u) * (1f - u);
+                for (int i = 0; i < n; i++)
+                {
+                    if (rs[i] == null) continue;
+                    float ang = (i / (float)n) * Mathf.PI * 2f;
+                    rs[i].transform.position = origin + new Vector3(Mathf.Cos(ang) * rad * 1.28f, Mathf.Sin(ang) * rad, 0f);
+                    float sc = Mathf.Lerp(0.4f, 0.07f, u);
+                    rs[i].transform.localScale = new Vector3(sc * 1.45f, sc * 0.5f, 1f);
+                    rs[i].transform.localRotation = Quaternion.Euler(0f, 0f, ang * Mathf.Rad2Deg);
+                    var c = rs[i].color;
+                    c.a = a * 0.82f;
+                    rs[i].color = c;
+                }
+                yield return null;
+            }
+            for (int i = 0; i < n; i++)
+                if (rs[i] != null) Object.Destroy(rs[i].gameObject);
+        }
+
+        static IEnumerator FeatherBurst(Transform parent)
+        {
+            if (parent == null) yield break;
+            const int n = 14;
+            var rs = new SpriteRenderer[n];
+            var vel = new Vector3[n];
+            var spin = new float[n];
+            var origin = parent.position + new Vector3(0f, -0.04f, 0f);
+            var feather = SpriteCatalog.Feather;
+            var spark = SpriteCatalog.Sparkle;
+            for (int i = 0; i < n; i++)
+            {
+                bool soft = (i & 1) == 0 && feather != null;
+                float ang = (i / (float)n) * Mathf.PI * 2f + Random.Range(-0.14f, 0.14f);
+                vel[i] = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang), 0f) * Random.Range(2.6f, 5.2f);
+                vel[i].y += 1.5f;
+                spin[i] = Random.Range(-460f, 460f);
+                var go = WorldBuilder.Sprite(soft ? "Feather" : "Burst", soft ? feather : spark, origin, soft ? 0.2f : 0.11f, 76, parent);
+                rs[i] = go.GetComponent<SpriteRenderer>();
+                rs[i].color = soft ? new Color(1f, 0.93f, 0.78f, 1f) : new Color(1f, 0.96f, 0.7f, 1f);
+            }
+            float t = 0f;
+            const float dur = 0.7f;
+            while (t < dur && parent != null)
+            {
+                if (_cut) break;
+                float dt = Time.deltaTime;
+                t += dt;
+                float u = Mathf.Clamp01(t / dur);
+                float a = (1f - u) * (1f - u);
+                for (int i = 0; i < n; i++)
+                {
+                    if (rs[i] == null) continue;
+                    vel[i].y -= 7.4f * dt;
+                    rs[i].transform.position += vel[i] * dt;
+                    rs[i].transform.Rotate(0f, 0f, spin[i] * dt);
+                    float sc = Mathf.Lerp(rs[i].name == "Feather" ? 0.2f : 0.11f, 0.05f, u);
+                    rs[i].transform.localScale = Vector3.one * sc;
+                    var c = rs[i].color;
+                    c.a = a;
+                    rs[i].color = c;
+                }
+                yield return null;
+            }
+            for (int i = 0; i < n; i++)
+                if (rs[i] != null) Object.Destroy(rs[i].gameObject);
+        }
+
+        static IEnumerator WarmGlow(Transform hold)
+        {
+            if (hold == null) yield break;
+            var srs = hold.GetComponentsInChildren<SpriteRenderer>(true);
+            var halo = new SpriteRenderer[srs.Length];
+            var baseS = new Vector3[srs.Length];
+            var baseC = new Color[srs.Length];
+            int n = 0;
+            for (int i = 0; i < srs.Length; i++)
+            {
+                if (srs[i] == null) continue;
+                if (srs[i].name != "Halo" && srs[i].name != "HaloCore") continue;
+                halo[n] = srs[i];
+                baseS[n] = srs[i].transform.localScale;
+                baseC[n] = srs[i].color;
+                n++;
+            }
+            float t = 0f;
+            while (Glow && hold != null && !_cut)
+            {
+                t += Time.deltaTime;
+                float p = 0.5f + 0.5f * Mathf.Sin(t * 3.5f);
+                for (int i = 0; i < n; i++)
+                {
+                    if (halo[i] == null) continue;
+                    halo[i].transform.localScale = baseS[i] * (1f + 0.08f * p);
+                    var warm = Color.Lerp(baseC[i], new Color(1f, 0.74f, 0.28f, baseC[i].a), 0.28f + 0.22f * p);
+                    warm.a = baseC[i].a * (0.76f + 0.24f * p);
+                    halo[i].color = warm;
+                }
+                yield return null;
+            }
+            for (int i = 0; i < n; i++)
+            {
+                if (halo[i] == null) continue;
+                halo[i].transform.localScale = baseS[i];
+                halo[i].color = baseC[i];
+            }
+        }
+
+        static IEnumerator CoinFountain(Transform parent)
+        {
+            if (parent == null) yield break;
+            const int n = 12;
+            var rs = new SpriteRenderer[n];
+            var vel = new Vector3[n];
+            var spin = new float[n];
+            var born = new float[n];
+            var origin = parent.position + new Vector3(0f, -0.4f, 0f);
+            for (int i = 0; i < n; i++)
+            {
+                var go = WorldBuilder.Sprite("Fountain", SpriteCatalog.Coin, origin, 0.16f, 58, parent);
+                rs[i] = go.GetComponent<SpriteRenderer>();
+                var c = rs[i].color;
+                c.a = 0f;
+                rs[i].color = c;
+                vel[i] = new Vector3(Random.Range(-1.7f, 1.7f), Random.Range(4.4f, 6.6f), 0f);
+                spin[i] = Random.Range(-320f, 320f);
+                born[i] = i * 0.04f;
+            }
+            float t = 0f;
+            const float life = 1.2f;
+            while (t < life && parent != null && !_cut)
+            {
+                float dt = Time.deltaTime;
+                t += dt;
+                for (int i = 0; i < n; i++)
+                {
+                    if (rs[i] == null) continue;
+                    float age = t - born[i];
+                    if (age < 0f) continue;
+                    vel[i].y -= 9.8f * dt;
+                    rs[i].transform.position += vel[i] * dt;
+                    rs[i].transform.Rotate(0f, 0f, spin[i] * dt);
+                    float u = Mathf.Clamp01(age / 0.95f);
+                    float a = u < 0.1f ? u / 0.1f : 1f - Smooth01(Mathf.Clamp01((u - 0.55f) / 0.45f));
+                    var c = rs[i].color;
+                    c.a = a;
+                    rs[i].color = c;
+                    rs[i].transform.localScale = Vector3.one * (0.2f * (1f + 0.08f * Mathf.Sin(age * 18f)));
+                }
+                yield return null;
+            }
+            for (int i = 0; i < n; i++)
+                if (rs[i] != null) Object.Destroy(rs[i].gameObject);
+        }
+
+        static IEnumerator PetalShower(Transform parent)
+        {
+            if (parent == null) yield break;
+            const int n = 16;
+            var rs = new SpriteRenderer[n];
+            var vel = new Vector3[n];
+            var spin = new float[n];
+            var sway = new float[n];
+            var born = new float[n];
+            var pink = SpriteCatalog.PetalPink;
+            var peach = SpriteCatalog.PetalPeach;
+            for (int i = 0; i < n; i++)
+            {
+                bool rose = (i & 1) == 0 || peach == null;
+                var spr = rose ? pink : peach;
+                if (spr == null) spr = pink != null ? pink : peach;
+                var origin = parent.position + new Vector3(Random.Range(-3.3f, 3.3f), Random.Range(1.6f, 2.8f), 0f);
+                var go = WorldBuilder.Sprite("Petal", spr, origin, 0.16f, 22, parent);
+                rs[i] = go.GetComponent<SpriteRenderer>();
+                vel[i] = new Vector3(Random.Range(-0.35f, 0.35f), Random.Range(-1.7f, -0.9f), 0f);
+                spin[i] = Random.Range(-180f, 180f);
+                sway[i] = Random.Range(1.4f, 2.6f);
+                born[i] = i * 0.035f;
+            }
+            float t = 0f;
+            const float life = 1.65f;
+            while (t < life && parent != null && !_cut)
+            {
+                float dt = Time.deltaTime;
+                t += dt;
+                for (int i = 0; i < n; i++)
+                {
+                    if (rs[i] == null) continue;
+                    float age = t - born[i];
+                    if (age < 0f) continue;
+                    var p = rs[i].transform.position;
+                    p += vel[i] * dt;
+                    p.x += Mathf.Sin(age * sway[i]) * 0.55f * dt;
+                    rs[i].transform.position = p;
+                    rs[i].transform.Rotate(0f, 0f, spin[i] * dt);
+                    float u = Mathf.Clamp01(age / 1.35f);
+                    float a = u < 0.08f ? u / 0.08f : 1f - Smooth01(Mathf.Clamp01((u - 0.62f) / 0.38f));
+                    var c = rs[i].color;
+                    c.a = a;
+                    rs[i].color = c;
+                }
+                yield return null;
+            }
+            for (int i = 0; i < n; i++)
+                if (rs[i] != null) Object.Destroy(rs[i].gameObject);
+        }
+
+        static int ClearPreview()
+        {
+            int streak = Mathf.Max(1, Purse.Streak + 1);
+            int login = Mathf.Max(1, Purse.LoginMul);
+            return Mathf.Max(1, Purse.StagePay * streak * login);
+        }
+
+        static IEnumerator CountUp(Transform parent)
+        {
+            if (parent == null) yield break;
+            int pay = ClearPreview();
+            var root = new GameObject("Tally").transform;
+            root.SetParent(parent, false);
+            root.localPosition = new Vector3(0f, -2.35f, 0f);
+            root.localScale = Vector3.one * 0.01f;
+            var glow = WorldBuilder.Sprite("TallyGlow", SpriteCatalog.Glow, root.position, 1f, 60, root);
+            glow.transform.localPosition = Vector3.zero;
+            glow.transform.localScale = new Vector3(2.4f, 1.1f, 1f);
+            var glowSr = glow.GetComponent<SpriteRenderer>();
+            glowSr.color = new Color(1f, 0.78f, 0.28f, 0.35f);
+            var coin = WorldBuilder.Sprite("TallyCoin", SpriteCatalog.Coin, root.position, 1f, 66, root);
+            var digs = new SpriteRenderer[8];
+            float t = 0f;
+            const float roll = 0.84f;
+            int ticks = 0;
+            const int steps = 4;
+            while (t < roll + 0.42f && root != null && !_cut)
+            {
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / roll);
+                float e = EaseOutCubic(u);
+                int shown = u >= 1f ? pay : Mathf.RoundToInt(pay * e);
+                int q = Mathf.Clamp(Mathf.FloorToInt(e * steps + 0.001f), 0, steps);
+                while (ticks < q)
+                {
+                    ticks++;
+                    if (ticks < steps) Sfx.Clink();
+                    else Sfx.FeederDone();
+                }
+                LayoutTally(root, coin.transform, digs, shown);
+                float pop = 1f;
+                if (t < 0.16f) pop = EaseOutBack(t / 0.16f, 0.7f);
+                else if (u >= 1f)
+                {
+                    float k = Mathf.Clamp01((t - roll) / 0.22f);
+                    pop = 1f + 0.28f * Mathf.Sin(Mathf.Clamp01(k) * Mathf.PI);
+                }
+                root.localScale = Vector3.one * pop;
+                if (glowSr != null)
+                {
+                    var c = glowSr.color;
+                    c.a = 0.22f + 0.2f * (0.5f + 0.5f * Mathf.Sin(t * 6f));
+                    glowSr.color = c;
+                }
+                yield return null;
+            }
+        }
+
+        static void LayoutTally(Transform root, Transform coin, SpriteRenderer[] digs, int value)
+        {
+            if (root == null || coin == null || digs == null) return;
+            string text = Mathf.Max(0, value).ToString();
+            const float h = 0.42f;
+            var widths = new float[text.Length];
+            var scales = new float[text.Length];
+            float total = 0.08f;
+            for (int i = 0; i < text.Length; i++)
+            {
+                var spr = SpriteCatalog.Digit(text[i] - '0');
+                float bh = spr != null ? Mathf.Max(0.05f, spr.bounds.size.y) : 1f;
+                float bw = spr != null ? spr.bounds.size.x : 0.6f;
+                scales[i] = h / bh;
+                widths[i] = bw * scales[i];
+                total += widths[i] + 0.03f;
+            }
+            var coinSpr = coin.GetComponent<SpriteRenderer>() != null ? coin.GetComponent<SpriteRenderer>().sprite : null;
+            float coinH = coinSpr != null ? Mathf.Max(0.05f, coinSpr.bounds.size.y) : 1f;
+            float coinSc = h / coinH;
+            float coinW = (coinSpr != null ? coinSpr.bounds.size.x : 1f) * coinSc;
+            total += coinW;
+            float cursor = -total * 0.5f;
+            coin.localScale = Vector3.one * coinSc;
+            coin.localPosition = new Vector3(cursor + coinW * 0.5f, 0f, 0f);
+            cursor += coinW + 0.08f;
+            for (int i = 0; i < text.Length && i < digs.Length; i++)
+            {
+                if (digs[i] == null)
+                {
+                    var go = WorldBuilder.Sprite("Digit", SpriteCatalog.Digit(0), root.position, 1f, 68, root);
+                    digs[i] = go.GetComponent<SpriteRenderer>();
+                }
+                digs[i].enabled = true;
+                digs[i].sprite = SpriteCatalog.Digit(text[i] - '0');
+                digs[i].transform.localScale = Vector3.one * scales[i];
+                digs[i].transform.localPosition = new Vector3(cursor + widths[i] * 0.5f, 0f, 0f);
+                cursor += widths[i] + 0.03f;
+            }
+            for (int i = text.Length; i < digs.Length; i++)
+                if (digs[i] != null) digs[i].enabled = false;
+        }
+
+        static IEnumerator MascotCheer(Transform[] birds)
+        {
+            if (birds == null || birds.Length == 0) yield break;
+            int n = birds.Length;
+            var idle = new BirdIdle[n];
+            var baseP = new Vector3[n];
+            var baseS = new Vector3[n];
+            var ord = new int[n];
+            int live = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (birds[i] == null) continue;
+                ord[live] = i;
+                idle[i] = birds[i].GetComponent<BirdIdle>();
+                baseP[i] = idle[i] != null ? idle[i].RestLocal : birds[i].localPosition;
+                baseS[i] = idle[i] != null ? idle[i].RestScale : birds[i].localScale;
+                if (baseS[i].sqrMagnitude < 0.0001f) baseS[i] = Vector3.one * 0.5f;
+                if (idle[i] != null)
+                {
+                    idle[i].Frozen = true;
+                    idle[i].Flapping = true;
+                    idle[i].FlapMul = 1.8f;
+                }
+                live++;
+            }
+            for (int a = 1; a < live; a++)
+            {
+                int key = ord[a];
+                float kx = birds[key] != null ? birds[key].localPosition.x : 0f;
+                int j = a - 1;
+                while (j >= 0 && birds[ord[j]] != null && birds[ord[j]].localPosition.x > kx)
+                {
+                    ord[j + 1] = ord[j];
+                    j--;
+                }
+                ord[j + 1] = key;
+            }
+            var rank = new int[n];
+            for (int k = 0; k < live; k++) rank[ord[k]] = k;
+            float t = 0f;
+            const float dur = 1.05f;
+            while (t < dur && !_cut)
+            {
+                t += Time.deltaTime;
+                for (int i = 0; i < n; i++)
+                {
+                    if (birds[i] == null) continue;
+                    float local = t - rank[i] * 0.07f;
+                    float hop = HopArc(local, 0.26f) * 0.32f + HopArc(local - 0.48f, 0.22f) * 0.18f;
+                    float squash = LandSquash(local, 0.26f) + LandSquash(local - 0.48f, 0.22f);
+                    birds[i].localPosition = baseP[i] + Vector3.up * hop;
+                    birds[i].localScale = new Vector3(baseS[i].x * (1f + squash), baseS[i].y * (1f - squash * 0.85f), 1f);
+                }
+                yield return null;
+            }
+            for (int i = 0; i < n; i++)
+            {
+                if (birds[i] == null) continue;
+                birds[i].localPosition = baseP[i];
+                birds[i].localScale = baseS[i];
+                birds[i].localRotation = Quaternion.identity;
+                if (idle[i] == null) continue;
+                idle[i].FlapMul = 1f;
+                idle[i].RestLocal = baseP[i];
+                idle[i].RestScale = baseS[i];
+                idle[i].Flapping = true;
+                idle[i].Frozen = false;
+            }
+        }
+
+        static float HopArc(float t, float dur)
+        {
+            if (t <= 0f || t >= dur) return 0f;
+            return Mathf.Sin(t / dur * Mathf.PI);
+        }
+
+        static float LandSquash(float t, float dur)
+        {
+            float start = dur * 0.78f;
+            float end = dur + 0.07f;
+            if (t < start || t > end) return 0f;
+            return Mathf.Sin((t - start) / (end - start) * Mathf.PI) * 0.16f;
+        }
+
+        static void CheerFlock(Transform any)
+        {
+            if (any == null) return;
+            var root = any;
+            while (root.parent != null) root = root.parent;
+            var idles = root.GetComponentsInChildren<BirdIdle>(false);
+            int n = 0;
+            var list = new BirdIdle[idles.Length];
+            var xs = new float[idles.Length];
+            for (int i = 0; i < idles.Length; i++)
+            {
+                var idle = idles[i];
+                if (idle == null || !idle.isActiveAndEnabled) continue;
+                if (idle.name.StartsWith("Mascot")) continue;
+                var sr = idle.GetComponent<SpriteRenderer>();
+                if (sr == null || !sr.enabled) continue;
+                list[n] = idle;
+                xs[n] = idle.transform.position.x;
+                n++;
+            }
+            for (int a = 1; a < n; a++)
+            {
+                var key = list[a];
+                float kx = xs[a];
+                int j = a - 1;
+                while (j >= 0 && xs[j] > kx)
+                {
+                    list[j + 1] = list[j];
+                    xs[j + 1] = xs[j];
+                    j--;
+                }
+                list[j + 1] = key;
+                xs[j + 1] = kx;
+            }
+            float step = n <= 1 ? 0f : 0.62f / (n - 1);
+            for (int i = 0; i < n; i++)
+                list[i].HopCheer(i * step, 0.2f);
         }
 
         static float Smooth01(float u)
@@ -255,15 +952,16 @@ namespace FlockFive
         static IEnumerator Breathe(Transform hold, float dur, float peak)
         {
             float t = 0f;
-            while (t < dur)
+            while (t < dur && hold != null)
             {
+                if (Cut()) break;
                 t += Time.deltaTime;
                 float u = Smooth01(t / dur);
                 float k = 1f + (peak - 1f) * Mathf.Sin(u * Mathf.PI);
                 hold.localScale = Vector3.one * k;
                 yield return null;
             }
-            hold.localScale = Vector3.one;
+            if (hold != null) hold.localScale = Vector3.one;
         }
 
         static IEnumerator PulseHold(Transform hold, float dur)
@@ -271,8 +969,9 @@ namespace FlockFive
             float t = 0f;
             const float fadeIn = 0.38f;
             const float fadeOut = 0.55f;
-            while (t < dur)
+            while (t < dur && hold != null)
             {
+                if (Cut()) break;
                 t += Time.deltaTime;
                 float env;
                 if (t < fadeIn) env = Smooth01(t / fadeIn);
@@ -282,7 +981,7 @@ namespace FlockFive
                 hold.localScale = Vector3.one * k;
                 yield return null;
             }
-            hold.localScale = Vector3.one;
+            if (hold != null) hold.localScale = Vector3.one;
         }
 
         static void DimStage(Transform hold)
@@ -317,6 +1016,7 @@ namespace FlockFive
             float t = 0f;
             while (t < dur && hold != null)
             {
+                if (Cut()) yield break;
                 t += Time.deltaTime;
                 float u = EaseOutCubic(t / dur);
                 for (int i = 0; i < srs.Length; i++)
@@ -326,135 +1026,6 @@ namespace FlockFive
                     srs[i].color = Color.Lerp(from[i], to[i], u);
                 }
                 yield return null;
-            }
-        }
-
-        static IEnumerator ScatterOutro(Transform hold, Transform[] letters, Transform[] birds)
-        {
-            for (int i = 0; i < birds.Length; i++)
-            {
-                if (birds[i] == null) continue;
-                var idle = birds[i].GetComponent<BirdIdle>();
-                if (idle == null) continue;
-                idle.Frozen = true;
-                idle.Flapping = false;
-            }
-
-            Sfx.Takeoff(4);
-            hold.localScale = Vector3.one;
-
-            int n = letters.Length;
-            var vel = new Vector3[n];
-            var spin = new float[n];
-            var delay = new float[n];
-            var srs = new SpriteRenderer[n][];
-            var baseA = new float[n][];
-            var rest = new Vector3[n];
-            for (int i = 0; i < n; i++)
-            {
-                if (letters[i] == null) continue;
-                rest[i] = letters[i].localScale;
-                var d = letters[i].localPosition;
-                d.z = 0f;
-                if (d.sqrMagnitude < 0.05f) d = Vector3.up;
-                d.y += 0.45f;
-                d.Normalize();
-                vel[i] = d * Random.Range(9.2f, 14.5f);
-                spin[i] = (letters[i].localPosition.x >= 0f ? 1f : -1f) * Random.Range(280f, 520f);
-                delay[i] = Mathf.Clamp01(letters[i].localPosition.magnitude / 4.4f) * 0.03f;
-                srs[i] = letters[i].GetComponentsInChildren<SpriteRenderer>(true);
-                baseA[i] = new float[srs[i].Length];
-                for (int k = 0; k < srs[i].Length; k++)
-                    baseA[i][k] = srs[i][k] != null ? srs[i][k].color.a : 0f;
-            }
-
-            int bn = birds.Length;
-            var bVel = new Vector3[bn];
-            var bSrs = new SpriteRenderer[bn][];
-            var bA = new float[bn][];
-            var bScale = new Vector3[bn];
-            for (int i = 0; i < bn; i++)
-            {
-                if (birds[i] == null) continue;
-                float side = birds[i].localPosition.x >= 0f ? 1f : -1f;
-                bVel[i] = new Vector3(side * Random.Range(5.2f, 8.4f), Random.Range(4.2f, 6.8f), 0f);
-                bSrs[i] = birds[i].GetComponentsInChildren<SpriteRenderer>(true);
-                bA[i] = new float[bSrs[i].Length];
-                for (int k = 0; k < bSrs[i].Length; k++)
-                    bA[i][k] = bSrs[i][k] != null ? bSrs[i][k].color.a : 0f;
-                bScale[i] = birds[i].localScale;
-            }
-
-            var halo = hold.GetComponentsInChildren<SpriteRenderer>(true);
-            var haloA = new float[halo.Length];
-            var haloOk = new bool[halo.Length];
-            for (int i = 0; i < halo.Length; i++)
-            {
-                if (halo[i] == null) continue;
-                string nm = halo[i].name;
-                haloOk[i] = nm == "Halo" || nm == "HaloCore" || nm == "Floor";
-                if (haloOk[i]) haloA[i] = halo[i].color.a;
-            }
-
-            const float dur = 1.18f;
-            float t = 0f;
-            while (t < dur)
-            {
-                t += Time.deltaTime;
-                float dt = Time.deltaTime;
-                for (int i = 0; i < n; i++)
-                {
-                    if (letters[i] == null) continue;
-                    float age = t - delay[i];
-                    if (age < 0f) continue;
-                    vel[i].y -= 7.4f * dt;
-                    vel[i] *= Mathf.Exp(-1.05f * dt);
-                    letters[i].localPosition += vel[i] * dt;
-                    letters[i].Rotate(0f, 0f, spin[i] * dt);
-                    float u = Smooth01(Mathf.Clamp01(age / Mathf.Max(0.2f, dur - delay[i])));
-                    float pop = 1f + 0.14f * (1f - u) * Mathf.Sin(Mathf.Clamp01(age * 8f) * Mathf.PI);
-                    letters[i].localScale = rest[i] * Mathf.Lerp(1f, 0.42f, u) * pop;
-                    float a = (1f - u) * (1f - u);
-                    FadeSprites(srs[i], baseA[i], a);
-                }
-                float bu = Smooth01(Mathf.Clamp01(t / dur));
-                float ba = (1f - bu) * (1f - bu);
-                for (int i = 0; i < bn; i++)
-                {
-                    if (birds[i] == null) continue;
-                    bVel[i].y -= 4.6f * dt;
-                    bVel[i] *= Mathf.Exp(-0.7f * dt);
-                    birds[i].localPosition += bVel[i] * dt;
-                    birds[i].Rotate(0f, 0f, (birds[i].localPosition.x >= 0f ? -1f : 1f) * 90f * dt);
-                    birds[i].localScale = bScale[i] * Mathf.Lerp(1f, 0.55f, bu);
-                    FadeSprites(bSrs[i], bA[i], ba);
-                }
-                float hu = 1f - Smooth01(Mathf.Clamp01(t / 0.48f));
-                for (int i = 0; i < halo.Length; i++)
-                {
-                    if (!haloOk[i] || halo[i] == null) continue;
-                    var c = halo[i].color;
-                    c.a = haloA[i] * hu;
-                    halo[i].color = c;
-                }
-                yield return null;
-            }
-
-            for (int i = 0; i < n; i++)
-                if (letters[i] != null) Object.Destroy(letters[i].gameObject);
-            for (int i = 0; i < bn; i++)
-                if (birds[i] != null) Object.Destroy(birds[i].gameObject);
-        }
-
-        static void FadeSprites(SpriteRenderer[] srs, float[] baseA, float a)
-        {
-            if (srs == null || baseA == null) return;
-            for (int k = 0; k < srs.Length; k++)
-            {
-                if (srs[k] == null) continue;
-                var c = srs[k].color;
-                c.a = baseA[k] * a;
-                srs[k].color = c;
             }
         }
 
@@ -787,11 +1358,21 @@ namespace FlockFive
 
         static IEnumerator Popcorn(Transform tr, Vector3 restScale, Vector3 restPos, float dur, float delay)
         {
-            if (delay > 0f) yield return new WaitForSeconds(delay);
-            if (tr == null) yield break;
+            if (delay > 0f) yield return Wait(delay);
+            if (Cut() || tr == null) yield break;
             float t = 0f;
             while (t < dur)
             {
+                if (Cut() || tr == null)
+                {
+                    if (tr != null)
+                    {
+                        tr.localScale = restScale;
+                        tr.localPosition = restPos;
+                        tr.localRotation = Quaternion.identity;
+                    }
+                    yield break;
+                }
                 t += Time.deltaTime;
                 float u = Mathf.Clamp01(t / dur);
                 float pop = EaseOutBack(u, 0.58f);
@@ -831,8 +1412,8 @@ namespace FlockFive
 
         static IEnumerator PopBird(Transform tr, float scale, float delay)
         {
-            if (delay > 0f) yield return new WaitForSeconds(delay);
-            if (tr == null) yield break;
+            if (delay > 0f) yield return Wait(delay);
+            if (Cut() || tr == null) yield break;
             Sfx.FlapHard();
             float t = 0f;
             const float dur = 0.46f;
@@ -841,6 +1422,24 @@ namespace FlockFive
             var rest = idle != null ? idle.RestLocal : tr.localPosition;
             while (t < dur)
             {
+                if (Cut() || tr == null)
+                {
+                    if (tr != null)
+                    {
+                        tr.localScale = Vector3.one * scale;
+                        tr.localPosition = rest;
+                        tr.localRotation = Quaternion.identity;
+                        if (idle != null)
+                        {
+                            idle.RestScale = Vector3.one * scale;
+                            idle.RestLocal = rest;
+                            idle.FlapMul = 1f;
+                            idle.Flapping = true;
+                            idle.Frozen = false;
+                        }
+                    }
+                    yield break;
+                }
                 t += Time.deltaTime;
                 float u = Mathf.Clamp01(t / dur);
                 float s = EaseOutBack(u, 0.48f) * scale;
@@ -866,7 +1465,7 @@ namespace FlockFive
             var colors = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet };
             for (int n = 0; n < 18; n++)
             {
-                if (!Live) yield break;
+                if (!Live || _cut) yield break;
                 var col = colors[n % 4];
                 float x;
                 float peak;
@@ -882,14 +1481,14 @@ namespace FlockFive
                     peak = Random.Range(2.4f, 5.8f);
                 }
                 host.StartCoroutine(Rocket(parent, new Vector3(x, -7.4f, 0f), peak, col, n % 3 == 0));
-                yield return new WaitForSeconds(0.12f);
+                yield return Wait(0.12f);
             }
-            yield return new WaitForSeconds(1.2f);
+            yield return Wait(1.2f);
         }
 
         static IEnumerator Rocket(Transform parent, Vector3 from, float peakY, BirdColor col, bool boom)
         {
-            if (!Live || parent == null) yield break;
+            if (!Live || _cut || parent == null) yield break;
             var spark = WorldBuilder.Sprite("Rocket", SpriteCatalog.Glow, from, 0.22f, 17, parent);
             var sr = spark.GetComponent<SpriteRenderer>();
             sr.color = Wow.Of(col);
@@ -897,13 +1496,21 @@ namespace FlockFive
             const float up = 0.42f;
             while (t < up)
             {
-                if (spark == null || !Live) yield break;
+                if (spark == null || !Live || _cut)
+                {
+                    if (spark != null) Object.Destroy(spark);
+                    yield break;
+                }
                 t += Time.deltaTime;
                 float u = t / up;
                 spark.transform.position = Vector3.Lerp(from, new Vector3(from.x, peakY, 0f), u * u);
                 yield return null;
             }
-            if (spark == null || !Live) yield break;
+            if (spark == null || !Live || _cut)
+            {
+                if (spark != null) Object.Destroy(spark);
+                yield break;
+            }
             var pos = spark.transform.position;
             Object.Destroy(spark);
             if (boom) Sfx.Firework();
@@ -925,6 +1532,7 @@ namespace FlockFive
             float b = 0f;
             while (b < 0.85f)
             {
+                if (_cut) break;
                 b += Time.deltaTime;
                 float u = b / 0.85f;
                 for (int i = 0; i < bits; i++)

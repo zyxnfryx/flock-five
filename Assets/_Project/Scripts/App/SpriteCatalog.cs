@@ -516,7 +516,48 @@ namespace FlockFive
             _hawkPlaceholder = false;
         }
 
-        public static Sprite Bird(BirdColor c) => Slot(ref _birds, (int)c, "Sprites/bird_" + Name(c), 280f);
+        // Path strings are built once. BirdFrame / Bird run for every bird every frame.
+        static readonly string[] _birdPath = new string[Palette.Max * 3];
+        static readonly string[] _flapPath = new string[Palette.Max * 3 * 4];
+        static readonly string[] _feederPath = new string[Palette.Max];
+
+        static string BirdPath(BirdColor c, BirdSex sex)
+        {
+            int i = (int)sex * Palette.Max + (int)c;
+            if ((uint)i >= (uint)_birdPath.Length) i = 0;
+            var p = _birdPath[i];
+            if (p != null) return p;
+            if (sex == BirdSex.Female) p = "Sprites/bird_" + Name(c) + "_f";
+            else if (sex == BirdSex.Male) p = "Sprites/bird_" + Name(c) + "_m";
+            else p = "Sprites/bird_" + Name(c);
+            _birdPath[i] = p;
+            return p;
+        }
+
+        static string FlapPath(BirdColor c, BirdSex sex, int n)
+        {
+            int i = ((int)sex * Palette.Max + (int)c) * 4 + (n - 1);
+            if ((uint)i >= (uint)_flapPath.Length) return BirdPath(c, sex);
+            var p = _flapPath[i];
+            if (p != null) return p;
+            string tag = sex == BirdSex.Female ? "_f" : sex == BirdSex.Male ? "_m" : "";
+            p = "Sprites/bird_" + Name(c) + tag + "_" + n;
+            _flapPath[i] = p;
+            return p;
+        }
+
+        static string FeederPath(BirdColor c)
+        {
+            int i = (int)c;
+            if ((uint)i >= (uint)_feederPath.Length) i = 0;
+            var p = _feederPath[i];
+            if (p != null) return p;
+            p = "Sprites/feeder_" + Name(c);
+            _feederPath[i] = p;
+            return p;
+        }
+
+        public static Sprite Bird(BirdColor c) => Slot(ref _birds, (int)c, BirdPath(c, BirdSex.Neutral), 280f);
         // Peach only ships female/male art. A plain (neutral) request for a color with
         // no plain sheet borrows the female sheet so it gets the full 6-pose wingbeat.
         static readonly int[] _plainArt = new int[8];
@@ -534,11 +575,10 @@ namespace FlockFive
         {
             sex = PlainOr(c, sex);
             if (sex == BirdSex.Neutral) return Bird(c);
-            string tag = sex == BirdSex.Female ? "_f" : "_m";
-            var got = SlotWide(ref _kitRest, KitIx(c, sex), "Sprites/bird_" + Name(c) + tag, 280f);
+            var got = SlotWide(ref _kitRest, KitIx(c, sex), BirdPath(c, sex), 280f);
             return got != null ? got : Bird(c);
         }
-        public static Sprite Feeder(BirdColor c) => Slot(ref _feeders, (int)c, "Sprites/feeder_" + Name(c), 180f);
+        public static Sprite Feeder(BirdColor c) => Slot(ref _feeders, (int)c, FeederPath(c), 180f);
 
         public static Sprite BirdFrame(BirdColor c, float t, bool flap) =>
             BirdFrame(c, t, flap, BirdSex.Neutral);
@@ -550,35 +590,24 @@ namespace FlockFive
             sex = PlainOr(c, sex);
             var rest = Bird(c, sex);
             if (!flap) return rest;
-            string tag = sex == BirdSex.Female ? "_f" : sex == BirdSex.Male ? "_m" : "";
-            int ix = KitIx(c, sex);
-            Sprite F(int n, ref Sprite[] kitArr, ref Sprite[] plainArr, bool required)
+            int ci = (int)c;
+            if (ci < 0 || ci >= Palette.Max) ci = 0;
+            Sprite f1, f2, f3, f4;
+            if (sex == BirdSex.Neutral)
             {
-                string path = tag.Length == 0
-                    ? "Sprites/bird_" + Name(c) + "_" + n
-                    : "Sprites/bird_" + Name(c) + tag + "_" + n;
-                if (tag.Length == 0)
-                {
-                    if (!required)
-                    {
-                        // Optional extras must not fall back to placeholder sprites.
-                        if (plainArr == null) plainArr = new Sprite[Palette.Max];
-                        int i = (int)c;
-                        if (plainArr[i] == null && !_missingFlap.Contains(path))
-                        {
-                            plainArr[i] = TryLoad(path, 280f);
-                            if (plainArr[i] == null) _missingFlap.Add(path); // don't re-probe Resources every frame
-                        }
-                        return plainArr[i];
-                    }
-                    return Slot(ref plainArr, (int)c, path, 280f);
-                }
-                return SlotWide(ref kitArr, ix, path, 280f);
+                f1 = Slot(ref _flap1, ci, FlapPath(c, sex, 1), 280f);
+                f2 = Slot(ref _flap2, ci, FlapPath(c, sex, 2), 280f);
+                f3 = OptPlain(ref _flap3, ci, FlapPath(c, sex, 3));
+                f4 = OptPlain(ref _flap4, ci, FlapPath(c, sex, 4));
             }
-            var f1 = F(1, ref _kitUp, ref _flap1, true);
-            var f2 = F(2, ref _kitMid, ref _flap2, true);
-            var f3 = F(3, ref _kitFlap3, ref _flap3, false);
-            var f4 = F(4, ref _kitFlap4, ref _flap4, false);
+            else
+            {
+                int ix = KitIx(c, sex);
+                f1 = SlotWide(ref _kitUp, ix, FlapPath(c, sex, 1), 280f);
+                f2 = SlotWide(ref _kitMid, ix, FlapPath(c, sex, 2), 280f);
+                f3 = SlotWide(ref _kitFlap3, ix, FlapPath(c, sex, 3), 280f);
+                f4 = SlotWide(ref _kitFlap4, ix, FlapPath(c, sex, 4), 280f);
+            }
             // 8-pose wingbeat when the in-betweens exist: _3 = wings lowered (rest.._1),
             // _4 = wings half-raised (_1.._2). Same beat rate as the 4-pose cycle,
             // twice the steps: rest,_3,_1,_4,_2,_4,_1,_3.
@@ -600,6 +629,47 @@ namespace FlockFive
             int k = Mathf.FloorToInt(Mathf.Abs(t) * 8f) % 2;
             return k == 0 ? f1 : f2;
         }
+
+        // Optional in-betweens must not fall back to a placeholder sprite.
+        static Sprite OptPlain(ref Sprite[] arr, int i, string path)
+        {
+            if (arr == null) arr = new Sprite[Palette.Max];
+            if ((uint)i >= (uint)arr.Length) return null;
+            if (arr[i] == null && !_missingFlap.Contains(path))
+            {
+                arr[i] = TryLoad(path, 280f);
+                if (arr[i] == null) _missingFlap.Add(path);
+            }
+            return arr[i];
+        }
+
+        // Which baked pose this sprite is (0 rest, 1–4 flaps). Reference compare, no name string.
+        public static int PoseIndex(Sprite spr, BirdColor c, BirdSex sex)
+        {
+            if (spr == null) return 0;
+            sex = PlainOr(c, sex);
+            int ci = (int)c;
+            if (ci < 0 || ci >= Palette.Max) return 0;
+            if (sex == BirdSex.Neutral)
+            {
+                if (Hit(_flap1, ci, spr)) return 1;
+                if (Hit(_flap2, ci, spr)) return 2;
+                if (Hit(_flap3, ci, spr)) return 3;
+                if (Hit(_flap4, ci, spr)) return 4;
+                if (Hit(_flap5, ci, spr)) return 5;
+                return 0;
+            }
+            int ix = KitIx(c, sex);
+            if (Hit(_kitUp, ix, spr)) return 1;
+            if (Hit(_kitMid, ix, spr)) return 2;
+            if (Hit(_kitFlap3, ix, spr)) return 3;
+            if (Hit(_kitFlap4, ix, spr)) return 4;
+            if (Hit(_kitFlap5, ix, spr)) return 5;
+            return 0;
+        }
+
+        static bool Hit(Sprite[] arr, int i, Sprite spr) =>
+            arr != null && (uint)i < (uint)arr.Length && arr[i] == spr;
 
         public static Sprite BirdFrame(BirdColor c, float t) => BirdFrame(c, t, false);
 

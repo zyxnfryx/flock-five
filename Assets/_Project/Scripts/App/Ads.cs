@@ -425,8 +425,9 @@ namespace FlockFive
             var ts = UnityEngine.InputSystem.Touchscreen.current;
             if (ts == null) { _suiteHold = 0f; _logHold = 0f; return; }
             int down = 0;
-            foreach (var tc in ts.touches)
-                if (tc.press.isPressed) down++;
+            var touches = ts.touches;
+            for (int i = 0; i < touches.Count; i++)
+                if (touches[i].press.isPressed) down++;
 
             if (_showLog) return; // OnGUI handles close
 

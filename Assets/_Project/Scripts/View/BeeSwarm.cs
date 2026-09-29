@@ -13,6 +13,9 @@ namespace FlockFive
         const float BeeHalf = 0.22f;
         const float Clear = 0.68f;
 
+        // ~27% slower than the old cloud orbit, then each bee's own 0.8–1.2.
+        const float Pace = 0.73f;
+
         public float TrunkDir = -1f;
         SpriteRenderer[] _bees;
         SpriteRenderer[] _smoke;
@@ -20,6 +23,11 @@ namespace FlockFive
         SpriteRenderer _haze;
         float[] _phase;
         float[] _radius;
+        float[] _speedMul;
+        float[] _liss;
+        float[] _wobAmp;
+        float[] _wobHz;
+        float[] _bobAmp;
         float _deep;
         float _near;
         float _fence;
@@ -122,6 +130,11 @@ namespace FlockFive
             _blanket = new SpriteRenderer[Blankets];
             _phase = new float[Count];
             _radius = new float[Count];
+            _speedMul = new float[Count];
+            _liss = new float[Count];
+            _wobAmp = new float[Count];
+            _wobHz = new float[Count];
+            _bobAmp = new float[Count];
             _scatterVel = new Vector3[Count];
 
             var hazeGo = WorldBuilder.Sprite("Haze", SpriteCatalog.Smoke, transform.position, 1f, 5, transform);
@@ -150,8 +163,14 @@ namespace FlockFive
                 var go = WorldBuilder.Sprite("Bee" + i, SpriteCatalog.Bee, transform.position, 1f, 8, transform);
                 _bees[i] = go.GetComponent<SpriteRenderer>();
                 _bees[i].enabled = false;
-                _phase[i] = Random.Range(0f, 40f);
-                _radius[i] = 0.16f + 0.14f * (i % 5) / 4f;
+                _phase[i] = Random.Range(0f, Mathf.PI * 2f);
+                float baseR = 0.16f + 0.14f * (i % 5) / 4f;
+                _radius[i] = baseR * Random.Range(0.85f, 1.15f);
+                _speedMul[i] = Random.Range(0.8f, 1.2f);
+                _liss[i] = Random.Range(1.3f, 1.7f);
+                _wobAmp[i] = Random.Range(0.08f, 0.18f);
+                _wobHz[i] = Random.Range(1.2f, 2.4f);
+                _bobAmp[i] = Random.Range(0.04f, 0.08f);
             }
         }
 
@@ -201,18 +220,27 @@ namespace FlockFive
             {
                 if (_bees[i] == null) continue;
                 if (_phase == null || i >= _phase.Length) continue;
-                float a = t * (4.4f + i * 0.31f) + _phase[i];
+                if (_speedMul == null || i >= _speedMul.Length) continue;
+                float rate = (4.4f + i * 0.31f) * Pace * _speedMul[i];
+                float ax = t * rate + _phase[i];
                 float r = _radius[i];
                 float u = nBees <= 1 ? 0.5f : i / (float)(nBees - 1);
                 float along = Mathf.Lerp(_deep, _near, u);
-                float x = ClampAisle(along + Mathf.Cos(a) * r * 0.55f);
+                // Lissajous: Y cycles faster than X so the loop is not a circle.
+                float ox = Mathf.Cos(ax) * r * 0.55f;
+                float oy = Mathf.Sin(ax * _liss[i]) * r * 0.78f;
+                float tx = -Mathf.Sin(ax);
+                float ty = Mathf.Cos(ax * _liss[i]) * _liss[i];
+                float wob = Mathf.Sin(t * _wobHz[i] * Mathf.PI * 2f + _phase[i]) * _wobAmp[i];
+                Vector3 wobL = WorldWobble(transform, tx, ty, wob);
+                Vector3 bobL = transform.InverseTransformVector(
+                    new Vector3(0f, Mathf.Sin(t * 1.15f + _phase[i]) * _bobAmp[i], 0f));
+                float x = ClampAisle(along + ox + wobL.x);
                 if (TrunkDir < 0f) x = Mathf.Min(x, _fence - BeeHalf);
                 else x = Mathf.Max(x, _fence + BeeHalf);
                 float laneT = ((i * 3 + 1) % nBees) / (float)Mathf.Max(1, nBees - 1);
                 float lane = (laneT * 2f - 1f) * 0.54f;
-                float y = BirdY + lane
-                    + Mathf.Sin(a * 0.48f + _phase[i]) * 0.26f
-                    + Mathf.Sin(a * 1.12f) * r * 0.95f;
+                float y = BirdY + lane + oy + bobL.y + wobL.y;
                 y = Mathf.Clamp(y, BirdY - 0.72f, BirdY + 0.82f);
                 _bees[i].transform.localPosition = new Vector3(x, y, 0f);
                 _bees[i].flipX = x * TrunkDir < 0f;
@@ -253,6 +281,17 @@ namespace FlockFive
                 _nextHum = Time.unscaledTime + Random.Range(3.2f, 5.4f);
             }
             LayoutCloud(Time.time);
+        }
+
+        // World-unit offset along the normal of a local tangent, returned in parent space.
+        static Vector3 WorldWobble(Transform host, float tx, float ty, float amp)
+        {
+            Vector3 tangentW = host.TransformVector(new Vector3(tx, ty, 0f));
+            tangentW.z = 0f;
+            Vector3 normalW = new Vector3(-tangentW.y, tangentW.x, 0f);
+            if (normalW.sqrMagnitude < 1e-8f) normalW = Vector3.up;
+            else normalW.Normalize();
+            return host.InverseTransformVector(normalW * amp);
         }
 
         void FadeCloud(float a)

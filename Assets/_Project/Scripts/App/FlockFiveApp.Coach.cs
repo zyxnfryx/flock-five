@@ -102,14 +102,18 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        static GUIStyle _coachLine;
+
         void DrawCoachLine(string text, float s, float top)
         {
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = true
-            };
+            if (_coachLine == null)
+                _coachLine = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = true
+                };
+            var st = _coachLine;
             float w = Screen.width * 0.86f;
             float h = 54f * s;
             var r = new Rect((Screen.width - w) * 0.5f, top + 6f * s, w, h);

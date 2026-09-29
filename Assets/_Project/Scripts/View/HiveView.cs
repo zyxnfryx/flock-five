@@ -7,8 +7,16 @@ namespace FlockFive
     {
         public Transform Home;
         public static float GuiPulse;
+        // ~27% slower than the old visitor / resident orbits.
+        const float Pace = 0.73f;
+
         SpriteRenderer[] _residents;
         float[] _phase;
+        float[] _speedMul;
+        float[] _liss;
+        float[] _radiusK;
+        float[] _wobAmp;
+        float[] _wobHz;
         bool _pulse;
         float _pulseT;
         float _baseScale = 0.72f;
@@ -58,12 +66,22 @@ namespace FlockFive
 
             _residents = new SpriteRenderer[6];
             _phase = new float[6];
+            _speedMul = new float[6];
+            _liss = new float[6];
+            _radiusK = new float[6];
+            _wobAmp = new float[6];
+            _wobHz = new float[6];
             for (int i = 0; i < 6; i++)
             {
                 var go = WorldBuilder.Sprite("HiveBee" + i, SpriteCatalog.Bee, transform.position, 0.16f, 11, transform);
                 _residents[i] = go.GetComponent<SpriteRenderer>();
                 _residents[i].enabled = false;
-                _phase[i] = Random.Range(0f, 20f);
+                _phase[i] = Random.Range(0f, Mathf.PI * 2f);
+                _speedMul[i] = Random.Range(0.8f, 1.2f);
+                _liss[i] = Random.Range(1.3f, 1.7f);
+                _radiusK[i] = Random.Range(0.85f, 1.15f);
+                _wobAmp[i] = Random.Range(0.08f, 0.18f);
+                _wobHz[i] = Random.Range(1.2f, 2.4f);
             }
             RefreshResidents();
         }
@@ -80,8 +98,12 @@ namespace FlockFive
             if (visit.Finish != BeeFinish.Normal)
                 tint = Color.Lerp(tint, Color.white, visit.Finish == BeeFinish.Holo ? 0.18f : 0.28f);
             sr.color = tint;
+            float speedMul = Random.Range(0.8f, 1.2f);
+            float phase = Random.Range(0f, Mathf.PI * 2f);
+            float wobAmp = Random.Range(0.08f, 0.18f);
+            float wobHz = Random.Range(1.2f, 2.4f);
             float t = 0f;
-            const float dur = 0.85f;
+            float dur = 0.85f / (Pace * speedMul);
             Sfx.BeeHum();
             while (t < dur)
             {
@@ -91,6 +113,17 @@ namespace FlockFive
                 var dest = Mouth;
                 var p = Vector3.Lerp(from, dest, u);
                 p.y += Mathf.Sin(u * Mathf.PI) * 1.55f;
+                // Sideways sine, gone by the time the bee reaches the mouth.
+                Vector3 dir = dest - from;
+                dir.z = 0f;
+                float dmag = dir.magnitude;
+                if (dmag > 0.001f)
+                {
+                    var perp = new Vector3(-dir.y, dir.x, 0f) / dmag;
+                    float fade = 1f - u;
+                    float wob = Mathf.Sin(phase + t * wobHz * Mathf.PI * 2f) * wobAmp * fade;
+                    p += perp * wob;
+                }
                 go.transform.position = p;
                 go.transform.localScale = Vector3.one * Mathf.Lerp(0.26f, 0.12f, u);
                 sr.sprite = SpriteCatalog.BeeFrame(Time.time * 18f);
@@ -136,14 +169,32 @@ namespace FlockFive
             {
                 var sr = _residents[i];
                 if (sr == null || !sr.enabled) continue;
-                float a = t * (1.55f + i * 0.22f) + _phase[i];
-                float orbit = 0.42f + (i % 3) * 0.12f;
-                float x = Mathf.Cos(a) * orbit;
-                float y = 0.28f + Mathf.Sin(a * 1.15f) * (orbit * 0.62f);
-                sr.transform.localPosition = new Vector3(x, y, 0f);
+                if (_speedMul == null || i >= _speedMul.Length) continue;
+                float rate = (1.55f + i * 0.22f) * Pace * _speedMul[i];
+                float ax = t * rate + _phase[i];
+                float orbit = (0.42f + (i % 3) * 0.12f) * _radiusK[i];
+                float x = Mathf.Cos(ax) * orbit;
+                float y = 0.28f + Mathf.Sin(ax * _liss[i]) * (orbit * 0.62f);
+                float tx = -Mathf.Sin(ax);
+                float ty = Mathf.Cos(ax * _liss[i]) * _liss[i];
+                float wob = Mathf.Sin(t * _wobHz[i] * Mathf.PI * 2f + _phase[i]) * _wobAmp[i];
+                Vector3 wobL = WorldWobble(transform, tx, ty, wob);
+                Vector3 bobL = transform.InverseTransformVector(
+                    new Vector3(0f, Mathf.Sin(t * 1.3f + _phase[i]) * 0.05f, 0f));
+                sr.transform.localPosition = new Vector3(x + wobL.x, y + wobL.y + bobL.y, 0f);
                 sr.sprite = SpriteCatalog.BeeFrame(t * 16f + _phase[i]);
-                sr.flipX = Mathf.Cos(a) < 0f;
+                sr.flipX = Mathf.Cos(ax) < 0f;
             }
+        }
+
+        static Vector3 WorldWobble(Transform host, float tx, float ty, float amp)
+        {
+            Vector3 tangentW = host.TransformVector(new Vector3(tx, ty, 0f));
+            tangentW.z = 0f;
+            Vector3 normalW = new Vector3(-tangentW.y, tangentW.x, 0f);
+            if (normalW.sqrMagnitude < 1e-8f) normalW = Vector3.up;
+            else normalW.Normalize();
+            return host.InverseTransformVector(normalW * amp);
         }
     }
 }

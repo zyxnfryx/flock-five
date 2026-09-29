@@ -13,6 +13,7 @@ namespace FlockFive
         Vector3 _signRest;
         Quaternion _signRestRot = Quaternion.identity;
         Vector3[] _bulbRest;
+        SpriteRenderer[] _halo;
         bool _rested;
 
         void LateUpdate()
@@ -83,18 +84,21 @@ namespace FlockFive
                 sr.color = on ? Color.white : new Color(0.38f, 0.22f, 0.08f, 0.62f);
                 if (_bulbRest != null && i < _bulbRest.Length)
                     sr.transform.localScale = _bulbRest[i] * (on ? 1.12f : 0.78f);
-                if (sr.transform.childCount > 0)
+                if (_halo == null || _halo.Length != n) _halo = new SpriteRenderer[n];
+                var halo = _halo[i];
+                if (halo == null && sr.transform.childCount > 0)
                 {
-                    var halo = sr.transform.GetChild(0).GetComponent<SpriteRenderer>();
-                    if (halo != null)
-                    {
-                        halo.enabled = true;
-                        halo.color = on
-                            ? new Color(1f, 0.88f, 0.40f, 0.82f)
-                            : new Color(1f, 0.72f, 0.24f, 0.22f);
-                        float hs = on ? 2.8f : 2.2f;
-                        halo.transform.localScale = new Vector3(hs, hs, 1f);
-                    }
+                    halo = sr.transform.GetChild(0).GetComponent<SpriteRenderer>();
+                    _halo[i] = halo;
+                }
+                if (halo != null)
+                {
+                    halo.enabled = true;
+                    halo.color = on
+                        ? new Color(1f, 0.88f, 0.40f, 0.82f)
+                        : new Color(1f, 0.72f, 0.24f, 0.22f);
+                    float hs = on ? 2.8f : 2.2f;
+                    halo.transform.localScale = new Vector3(hs, hs, 1f);
                 }
             }
         }
