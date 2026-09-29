@@ -9,6 +9,7 @@ namespace FlockFive
         public int Slot;
         public SpriteRenderer Art;
         Vector3 _planted;
+        Transform _cord;
         bool _held;
         bool _scoring;
         bool _departing;
@@ -20,7 +21,19 @@ namespace FlockFive
 
         static Sprite _px;
         // Hanging cord from the art's hook up past the real screen top, so the feeder never floats.
-        void Start()
+        void Start() => FitCord();
+
+        // Safe-area top can arrive a frame late, and it changes with rotation.
+        public void Seat(float y)
+        {
+            if (Mathf.Abs(_planted.y - y) < 0.01f && _cord != null) return;
+            _planted = new Vector3(_planted.x, y, _planted.z);
+            if (!_held && !_scoring && !_departing)
+                transform.position = _planted;
+            FitCord();
+        }
+
+        void FitCord()
         {
             if (Art == null || Art.sprite == null) return;
             if (_px == null)
@@ -30,18 +43,22 @@ namespace FlockFive
                 _px = Sprite.Create(t, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0f), 1f);
             }
             float hookY = Art.sprite.bounds.max.y - 0.06f;            // local units, sprite space
-            float worldTop = 10.6f * PortraitLock.TallFactor() + 1.5f;  // past the bezel
-            float len = (worldTop - transform.position.y) / Scale - hookY;
-            if (len <= 0f) return;
-            var go = new GameObject("Cord");
-            go.transform.SetParent(transform, false);
-            go.transform.localPosition = new Vector3(0f, hookY, 0.01f);
-            go.transform.localScale = new Vector3(0.05f / Scale, len, 1f);
-            var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = _px;
-            sr.color = new Color(0.20f, 0.13f, 0.08f, 1f);
-            sr.sortingOrder = Art.sortingOrder - 1;
-            go.layer = gameObject.layer;
+            float worldTop = WorldBuilder.ScreenTop() + 1.5f;         // past the bezel, island included
+            float len = (worldTop - _planted.y) / Scale - hookY;
+            if (len <= 0.05f) len = 0.05f;
+            if (_cord == null)
+            {
+                var go = new GameObject("Cord");
+                go.transform.SetParent(transform, false);
+                _cord = go.transform;
+                var sr = go.AddComponent<SpriteRenderer>();
+                sr.sprite = _px;
+                sr.color = new Color(0.20f, 0.13f, 0.08f, 1f);
+                sr.sortingOrder = Art.sortingOrder - 1;
+                go.layer = gameObject.layer;
+            }
+            _cord.localPosition = new Vector3(0f, hookY, 0.01f);
+            _cord.localScale = new Vector3(0.05f / Scale, len, 1f);
         }
 
         public void Show(BirdColor? color)
@@ -56,6 +73,7 @@ namespace FlockFive
             Art.enabled = true;
             Art.sprite = SpriteCatalog.Feeder(color.Value);
             if (!_held) Art.color = Color.white;
+            FitCord();
         }
 
         public Vector3 Mouth => transform.position + new Vector3(0f, -1.08f, 0f);

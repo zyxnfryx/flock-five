@@ -41,15 +41,46 @@ namespace FlockFive
         {
             float halfW = cam != null
                 ? cam.orthographicSize * Mathf.Max(0.05f, cam.aspect)
-                : 10.6f * PortraitAspect;
+                : CamOrtho * PortraitAspect;
             float s = Mathf.Max(0.2f, packScale);
             // Bark kisses the bezel so the outer bird can sit at the screen edge.
             return halfW - WoodHalfOf(woodScaleX) * s + 0.18f;
         }
+        public const float CamRestY = -0.45f;
+        public const float CamOrtho = 10.6f;
         // Tall phones: lift the rows so the flock sits mid-screen instead of low under a gap.
         public static float RowY0 => 3.42f + 5.0f * (PortraitLock.TallFactor() - 1f);
-        // Feeders keep the same drop from the real screen top on every phone.
-        public static float FeederY => 8.12f + 10.6f * (PortraitLock.TallFactor() - 1f);
+        // Ring of the feeder art above the pivot (1024px @ 180 PPU × FeederView.Scale).
+        // The painted rope above the ring may enter the island; the bulb must not.
+        public const float FeederCrown = 1.34f;
+        public const float FeederSafeMargin = 0.48f;
+        // Same drop from the glass on a phone with no inset. Notch / island
+        // pushes the bulb below Screen.safeArea, re-read every call.
+        public static float FeederY
+        {
+            get
+            {
+                float legacy = 8.12f + CamOrtho * (PortraitLock.TallFactor() - 1f);
+                float safe = ScreenTop() - SafeTopWorld() - FeederSafeMargin - FeederCrown;
+                return Mathf.Min(legacy, safe);
+            }
+        }
+
+        // Highest a perched bird's crown may sit so it stays clear of the feeder tray.
+        public static float FeederShelf() => FeederY - 1.08f - 0.40f;
+
+        public static float ScreenTop() => CamRestY + CamOrtho * PortraitLock.TallFactor();
+
+        public static float SafeTopWorld()
+        {
+            float h = Mathf.Max(1f, Screen.height);
+            var safe = Screen.safeArea;
+            // Before the OS reports insets, safeArea can be empty or the full glass.
+            if (safe.width < 2f || safe.height < 2f) return 0f;
+            float inset = Mathf.Max(0f, h - safe.yMax) / h;
+            if (inset > 0.40f) return 0f;
+            return inset * (CamOrtho * PortraitLock.TallFactor() * 2f);
+        }
         public const float RowGap = 1.50f;
         public const int GiftCount = 2;
         public const int GiftIndex = Rows * Cols;
@@ -295,14 +326,14 @@ namespace FlockFive
             go.transform.SetParent(parent, false);
             var cam = go.AddComponent<Camera>();
             cam.orthographic = true;
-            cam.orthographicSize = 10.6f;
+            cam.orthographicSize = CamOrtho;
             cam.aspect = PortraitAspect;
             cam.rect = new Rect(0f, 0f, 1f, 1f);
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = new Color(0.22f, 0.18f, 0.10f);
             cam.nearClipPlane = -10f;
             cam.farClipPlane = 50f;
-            cam.transform.position = new Vector3(0f, -0.45f, -10f);
+            cam.transform.position = new Vector3(0f, CamRestY, -10f);
             cam.transform.rotation = Quaternion.identity;
             go.AddComponent<AudioListener>();
             go.AddComponent<MasterLoudness>();

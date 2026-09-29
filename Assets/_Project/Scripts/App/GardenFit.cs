@@ -102,11 +102,21 @@ namespace FlockFive
             float gap = WorldBuilder.RowGap;
             float y0 = WorldBuilder.RowY0;
             int tall = Mathf.Max(left.Count, right.Count);
+            // Keep the top perch under the feeder tray after the island pushes it down.
+            float shelf = WorldBuilder.FeederShelf();
+            const float topReach = 1.30f;
+            if (y0 + topReach > shelf) y0 = shelf - topReach;
             float lowest = tall > 0 ? y0 - (tall - 1) * gap : y0;
             float bonusY = BonusY(cam, lowest);
             float sep = tall > 0 ? lowest - bonusY : gap;
             if (tall > 0 && sep < gap * 0.85f)
                 y0 += gap * 0.85f - sep;
+            if (y0 + topReach > shelf)
+            {
+                float over = y0 + topReach - shelf;
+                if (tall > 1) gap = Mathf.Max(1.12f, gap - over / (tall - 1));
+                y0 = shelf - topReach;
+            }
 
             float x = WorldBuilder.EdgeX(cam, 1f);
             float gx = WorldBuilder.EdgeX(cam, 1f, WorldBuilder.GiftWoodScaleX);
@@ -140,8 +150,8 @@ namespace FlockFive
 
         public static float HudFloor(Camera cam)
         {
-            float camY = cam != null ? cam.transform.position.y : -0.45f;
-            float half = cam != null ? cam.orthographicSize : 10.6f;
+            float camY = cam != null ? cam.transform.position.y : WorldBuilder.CamRestY;
+            float half = cam != null ? cam.orthographicSize : WorldBuilder.CamOrtho;
             float bottom = camY - half;
             float tall = Mathf.Max(1f, PortraitLock.TallFactor());
             const float hudFrac = 0.175f;

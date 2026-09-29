@@ -11,12 +11,11 @@ namespace FlockFive
         public const float ClearLen = 90f;
         const float Fade = 2.1f;
         const int Drops = 177; // ~50% denser than 118
+        // Past the bezel so a streak finishes off-screen before it wraps.
+        const float Edge = 1.7f;
 
         public static GardenStorm Instance { get; private set; }
         public static float Wet { get; private set; }
-        // 1 while a storm is scheduled. Rain audio fades on this, not on Wet,
-        // so the curtain can keep its own timing.
-        public static float Want { get; private set; }
 
         Transform[] _drop;
         SpriteRenderer[] _dropSr;
@@ -52,7 +51,6 @@ namespace FlockFive
             }
 #endif
             Wet = 0f;
-            Want = 0f;
             _wet = 0f;
             _nextBoom = 6.5f;
             _flashT = 99f;
@@ -63,7 +61,6 @@ namespace FlockFive
         {
             if (Instance == this) Instance = null;
             Wet = 0f;
-            Want = 0f;
         }
 
         void Start() => StartCoroutine(Build());
@@ -88,11 +85,12 @@ namespace FlockFive
             _len = new float[Drops];
             _phase = new float[Drops];
             var rng = new System.Random(29);
+            FullFrame(out float left, out float right, out float bottom, out float top);
             for (int i = 0; i < Drops; i++)
             {
-                float x = Mathf.Lerp(-5.4f, 5.4f, (float)rng.NextDouble());
-                // Spread starts over a taller column so sheets don't fall in lockstep.
-                float y = Mathf.Lerp(-8.4f, 14.5f, (float)rng.NextDouble());
+                float x = Mathf.Lerp(left - Edge, right + Edge, (float)rng.NextDouble());
+                // Spread starts over the full column so sheets don't fall in lockstep.
+                float y = Mathf.Lerp(bottom - Edge, top + Edge, (float)rng.NextDouble());
                 _len[i] = Mathf.Lerp(0.70f, 1.45f, (float)rng.NextDouble());
                 _spd[i] = Mathf.Lerp(8.5f, 26.5f, (float)rng.NextDouble());
                 _phase[i] = (float)rng.NextDouble() * 2.8f;
@@ -104,6 +102,20 @@ namespace FlockFive
                 _dropSr[i].color = new Color(0.78f, 0.86f, 0.95f, 0f);
                 if ((i & 11) == 11) yield return null;
             }
+        }
+
+        // Play-camera letterbox is not the screen. Bleed height × window aspect
+        // is the glass, home indicator included. Never Screen.safeArea.
+        static void FullFrame(out float left, out float right, out float bottom, out float top)
+        {
+            float halfH = WorldBuilder.CamOrtho * PortraitLock.TallFactor();
+            float aspect = Screen.height > 1 ? (float)Screen.width / Screen.height : WorldBuilder.PortraitAspect;
+            if (aspect < 0.2f) aspect = WorldBuilder.PortraitAspect;
+            float halfW = halfH * aspect;
+            left = -halfW;
+            right = halfW;
+            bottom = WorldBuilder.CamRestY - halfH;
+            top = WorldBuilder.CamRestY + halfH;
         }
 
         static bool WantStorm(float play)
@@ -118,15 +130,16 @@ namespace FlockFive
         {
             float play = Time.unscaledTime - _t0;
             float want = WantStorm(play) ? 1f : 0f;
-            Want = want;
             _wet = Mathf.MoveTowards(_wet, want, Time.unscaledDeltaTime / Fade);
             Wet = _wet;
 
             if (_veil != null)
                 _veil.color = new Color(0.06f, 0.08f, 0.12f, 0.62f * _wet);
 
-            // Tall phones: let drops fall through the bottom bleed band too.
-            _floor = -8.6f - 10.6f * (PortraitLock.TallFactor() - 1f);
+            // Full screen, including the letterbox past the home indicator.
+            // Safe area is for HUD only — drops exit past every edge before recycle.
+            FullFrame(out float left, out float right, out float bottom, out float top);
+            _floor = bottom - Edge;
             // Clear stretches are invisible. Frozen drops keep the last spread,
             // so the next fade-in is still a sheet, not a hitch every frame.
             bool dry = _wet <= 0.001f && want <= 0f;
@@ -155,10 +168,10 @@ namespace FlockFive
                     float fall = _spd[i] * dt * Mathf.Lerp(0.18f, 1f, _wet);
                     p.y -= fall;
                     p.x -= (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * dt * _wet;
-                    if (p.y < _floor)
+                    if (p.y < _floor || p.x < left - Edge || p.x > right + Edge)
                     {
-                        p.y = Random.Range(9.2f, 16.5f);
-                        p.x = Random.Range(-5.4f, 5.4f);
+                        p.y = Random.Range(top + 0.25f, top + Edge + 1.8f);
+                        p.x = Random.Range(left - 0.35f, right + Edge);
                         _phase[i] = Random.Range(0.05f, 1.35f);
                         _spd[i] = Random.Range(8.5f, 26.5f);
                     }

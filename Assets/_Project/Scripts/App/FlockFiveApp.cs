@@ -323,6 +323,7 @@ namespace FlockFive
         void ShowSplash()
         {
             _splash = true;
+            CoachRelease();
             _incomingHalo.Clear(); // hive bees circle only inside a garden
             _home = HomeFace.Splash;
             _busy = false;
@@ -1835,6 +1836,7 @@ namespace FlockFive
 
         void Update()
         {
+            CoachAdvance();
             if (_splash) return;
             if (_gift != GiftFace.None || _frozen)
             {
@@ -1874,6 +1876,7 @@ namespace FlockFive
             if (Time.unscaledTime < _swallowTapsUntil) return;
             if (Time.unscaledTime < _nextTap) return;
             _nextTap = Time.unscaledTime + 0.10f;
+            if (CoachReject(world)) return;
 
             int sign = HitGiftSign(world);
             if (sign >= 0)
@@ -2978,6 +2981,7 @@ namespace FlockFive
             if (_restarting) yield break;
             _motionGen++;
             _restarting = true;
+            CoachHideNow();
             _busy = true;
             _gift = GiftFace.None;
             _keepStreak = false;
@@ -3550,6 +3554,18 @@ namespace FlockFive
             return false;
         }
 
+        // Below the notch / Dynamic Island. Safe area is read every pass, so a
+        // rotation or a late inset still clears the island.
+        static float TopHud(float extra = 0f)
+        {
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            var safe = Screen.safeArea;
+            float inset = (safe.width < 2f || safe.height < 2f)
+                ? 0f
+                : Mathf.Max(0f, Screen.height - safe.yMax);
+            return Mathf.Max(12f, inset + 10f * s + extra);
+        }
+
         static void HudLayout(out float scale, out float top, out float bot, out Rect restart, out Rect hive)
         {
             scale = Mathf.Max(Screen.height / 720f, 1f);
@@ -3568,6 +3584,14 @@ namespace FlockFive
             hive = new Rect(
                 Mathf.Min(Screen.width - hiveS - 10f, safe.xMax - hiveS - 8f),
                 hiveY, hiveS, hiveS);
+        }
+
+        void SeatFeeders()
+        {
+            if (_splash || _garden.Feeders == null) return;
+            float y = WorldBuilder.FeederY;
+            for (int i = 0; i < _garden.Feeders.Length; i++)
+                if (_garden.Feeders[i] != null) _garden.Feeders[i].Seat(y);
         }
 
         void SnapHiveToHud()
@@ -3619,7 +3643,9 @@ namespace FlockFive
                 StartCoroutine(ShotPokerFeel());
             }
 #endif
+            SeatFeeders();
             SnapHiveToHud();
+            CoachPlace();
         }
 
         bool HitHud(Vector2 screen)
@@ -3657,6 +3683,7 @@ namespace FlockFive
                 return;
             }
             if (_board == null) return;
+            CoachDim();
             HudLayout(out float s, out float top, out _, out var restart, out var hive);
             var hudM = GUI.matrix;
             bool quake = CamShake.HudOffset.sqrMagnitude > 0.01f || Mathf.Abs(CamShake.HudTwist) > 0.001f;
@@ -4338,7 +4365,7 @@ namespace FlockFive
             int win = Purse.LastWin > 0 ? Purse.LastWin : stagePay * streak * login;
             bool showLogin = login > 1;
 
-            float titleTop = Mathf.Max(12f, Screen.height - Screen.safeArea.yMax + 6f);
+            float titleTop = TopHud();
             float restW = Mathf.Min(Screen.width * 0.62f, 400f * s);
             float restH = Mathf.Min(Screen.height * 0.20f, 176f * s);
             float restX = (Screen.width - restW) * 0.5f;
@@ -4508,7 +4535,7 @@ namespace FlockFive
         void DrawRemainingBirds(float s)
         {
             if (_board == null) return;
-            float safeTop = Mathf.Max(8f, Screen.height - Screen.safeArea.yMax);
+            float safeTop = TopHud();
             float icon = 36f * s;
             float pad = 10f * s;
             var st = new GUIStyle(GUI.skin.label)
@@ -4521,7 +4548,7 @@ namespace FlockFive
             st.fontSize = Mathf.RoundToInt(28 * s);
             float tw = st.CalcSize(new GUIContent(tx)).x;
             float x = Mathf.Max(16f * s, Screen.safeArea.xMin + 12f * s);
-            float y = safeTop + 4f * s;
+            float y = safeTop;
             var bird = SpriteCatalog.Bird(BirdColor.Gold);
             if (bird != null && bird.texture != null)
                 GUI.DrawTexture(new Rect(x, y, icon, icon), bird.texture, ScaleMode.ScaleToFit, true);
@@ -4990,7 +5017,7 @@ namespace FlockFive
         // Finale-family wordmark via letter sprites (yellow faces + navy ExtrudeNear/Far block).
         void DrawSplashTitleMark(float s)
         {
-            float top = Mathf.Max(12f, Screen.height - Screen.safeArea.yMax + 6f);
+            float top = TopHud();
             float maxW = Screen.width * 0.72f; // Brandon: reduce home logo size
             float capH = 56f * s;
             float rowGap = 4f * s;
@@ -5184,7 +5211,7 @@ namespace FlockFive
         // Soft bounds around the stacked title mark (logo companions only).
         static Rect SplashTitleHalo()
         {
-            float top = Mathf.Max(12f, Screen.height - Screen.safeArea.yMax + 6f);
+            float top = TopHud();
             float capH = 56f * Mathf.Max(Screen.height / 720f, 1f);
             float rowGap = 4f * Mathf.Max(Screen.height / 720f, 1f);
             float titleH = capH * 2f + rowGap;
@@ -5511,7 +5538,7 @@ namespace FlockFive
             BirdPoker.Boot();
 
             var safe = Screen.safeArea;
-            float top = Mathf.Max(20f, Screen.height - safe.yMax + 10f);
+            float top = TopHud();
             var backLab = new GUIStyle(GUI.skin.label)
             {
                 fontSize = Mathf.RoundToInt(22 * s),
@@ -8045,7 +8072,7 @@ namespace FlockFive
             backLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
 
             var safe = Screen.safeArea;
-            float top = Mathf.Max(20f, Screen.height - safe.yMax + 10f);
+            float top = TopHud();
             float btnH = 44f * Mathf.Min(s, 1.6f);
             float btnW = 132f * Mathf.Min(s, 1.6f);
             var back = new Rect(Mathf.Max(16f, safe.xMin + 10f), top, btnW, btnH);
@@ -8311,7 +8338,7 @@ namespace FlockFive
 
             // Close X top-right of overlay
             var safe = Screen.safeArea;
-            float top = Mathf.Max(20f, Screen.height - safe.yMax + 10f);
+            float top = TopHud();
             float xSz = 44f * Mathf.Min(s, 1.6f);
             var xBtn = new Rect(Screen.width - Mathf.Max(16f, Screen.width - safe.xMax + 10f) - xSz, top, xSz, xSz);
             bool xHeld;
@@ -8708,24 +8735,72 @@ namespace FlockFive
             return true;
         }
 
+        // Whole limb and sign. The sign BoxCollider2D does not receive the tap:
+        // it was shrunk to 72% of the sprite, the left sign is mirrored with a
+        // negative scale (2D physics drops that shape), and every miss refreshed
+        // the 1s gift lockout so a follow-up tap was swallowed too.
         int HitGiftSign(Vector2 world)
         {
             if (_garden.Branches == null || _board == null) return -1;
-            var hits = Physics2D.OverlapPointAll(world);
-            for (int i = 0; i < hits.Length; i++)
+            if (NearPlayBird(world)) return -1;
+            int best = -1;
+            float bestD = float.MaxValue;
+            for (int i = 0; i < _garden.Branches.Length; i++)
             {
-                var col = hits[i];
-                if (col == null) continue;
-                var v = col.GetComponentInParent<BranchView>();
-                if (v == null || v.Sign == null) continue;
-                if (col.transform != v.Sign && !col.transform.IsChildOf(v.Sign)) continue;
+                var v = _garden.Branches[i];
+                if (v == null || !v.gameObject.activeInHierarchy) continue;
                 int idx = v.Index;
                 if ((uint)idx >= (uint)_board.Branches.Count) continue;
                 var st = _board.Branches[idx];
                 if (st == null || !st.IsBonus || st.Broken || !st.AdLocked) continue;
-                return idx;
+                if (!BonusSpot(v, world)) continue;
+                float d = ((Vector2)v.transform.position - world).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = idx; }
             }
-            return -1;
+            return best;
+        }
+
+        // Same radius HitBranch uses to claim a bird, so a perch tap beside the
+        // bottom gifts still selects that bird.
+        bool NearPlayBird(Vector2 world)
+        {
+            const float r2 = 1.05f * 1.05f;
+            for (int b = 0; b < _garden.Branches.Length; b++)
+            {
+                var v = _garden.Branches[b];
+                if (v == null || !v.gameObject.activeInHierarchy) continue;
+                if ((uint)v.Index >= (uint)_board.Branches.Count) continue;
+                var st = _board.Branches[v.Index];
+                if (st == null || st.Broken || st.AdLocked || st.IsFullMatch(out _)) continue;
+                for (int s = 0; s < BranchState.Cap; s++)
+                {
+                    var bird = v.Birds[s];
+                    if (bird == null || !bird.enabled) continue;
+                    if (bird.transform.parent != v.transform) continue;
+                    if (((Vector2)bird.transform.position - world).sqrMagnitude <= r2)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        static bool BonusSpot(BranchView v, Vector2 world)
+        {
+            if (SpriteHit(v.Wood, world, 0.36f)) return true;
+            if (v.Sign != null && v.Sign.gameObject.activeInHierarchy)
+            {
+                var sr = v.Sign.GetComponent<SpriteRenderer>();
+                if (SpriteHit(sr, world, 0.42f)) return true;
+            }
+            return false;
+        }
+
+        static bool SpriteHit(SpriteRenderer sr, Vector2 world, float pad)
+        {
+            if (sr == null || !sr.enabled || sr.sprite == null) return false;
+            var b = sr.bounds;
+            return world.x >= b.min.x - pad && world.x <= b.max.x + pad
+                && world.y >= b.min.y - pad && world.y <= b.max.y + pad;
         }
 
         void OpenGiftCard()
@@ -8888,7 +8963,7 @@ namespace FlockFive
             }
 
             var safe = Screen.safeArea;
-            float top = Mathf.Max(18f, Screen.height - safe.yMax + 8f);
+            float top = TopHud();
             float xSz = 40f * Mathf.Min(s, 1.45f);
             var xBtn = new Rect(
                 Screen.width - Mathf.Max(14f, Screen.width - safe.xMax + 8f) - xSz,

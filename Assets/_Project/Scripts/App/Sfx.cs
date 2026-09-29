@@ -368,10 +368,7 @@ namespace FlockFive
                 {
                     Shot(_jingles[i], pitch, 0.76f, MixLayer.Lead, MixDesk.DuckWhoosh);
                     if (MixDesk.Live != null)
-                    {
                         MixDesk.Live.MarkLead(0.42f + 0.14f * i, MixDesk.DuckWhoosh);
-                        MixDesk.Live.DuckRain();
-                    }
                 }
             }
             if (size >= 3) Rumble();
@@ -404,11 +401,7 @@ namespace FlockFive
             Ensure();
             int i = Next(_breaks.Length, ref _lastBreak);
             Shot(_breaks[i], Random.Range(0.98f, 1.02f), 1f, MixLayer.Lead, MixDesk.DuckBreak);
-            if (MixDesk.Live != null)
-            {
-                MixDesk.Live.MarkLead(0.9f, MixDesk.DuckBreak);
-                MixDesk.Live.DuckRain();
-            }
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.9f, MixDesk.DuckBreak);
             Rumble();
         }
 
@@ -417,11 +410,7 @@ namespace FlockFive
             Ensure();
             int i = Next(_chings.Length, ref _lastChing);
             Shot(_chings[i], Random.Range(0.98f, 1.02f), 0.64f, MixLayer.Lead, MixDesk.DuckChirp);
-            if (MixDesk.Live != null)
-            {
-                MixDesk.Live.MarkLead(0.4f, MixDesk.DuckChirp);
-                MixDesk.Live.DuckRain();
-            }
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.4f, MixDesk.DuckChirp);
         }
 
         public static void Clink()
