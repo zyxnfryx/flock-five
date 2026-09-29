@@ -349,6 +349,7 @@ namespace FlockFive
 
         void Load(int index)
         {
+            DismissStreakSign();
             _busy = false;
             _won = false;
             _sel = -1;
@@ -3677,11 +3678,16 @@ namespace FlockFive
         {
             if (_splash)
             {
+                // Hive, poker, and the garden do not draw the sign. Drop it here so a
+                // tap away cannot leave bulbs parked on the slide clock.
+                if (_home != HomeFace.Splash)
+                    DismissStreakSign();
                 if (_home == HomeFace.Hive) DrawHivePage();
                 else if (_home == HomeFace.Poker) DrawPokerPage();
                 else DrawSplash();
                 return;
             }
+            DismissStreakSign();
             if (_board == null) return;
             CoachDim();
             HudLayout(out float s, out float top, out _, out var restart, out var hive);
@@ -4141,6 +4147,11 @@ namespace FlockFive
             StampOutlined(r, lab, st, gold, 1, 2);
         }
 
+        void DismissStreakSign()
+        {
+            _streakSlide = -1f;
+        }
+
         void ArmStreakSlide()
         {
             if (Purse.Streak <= 0)
@@ -4329,34 +4340,41 @@ namespace FlockFive
             if (_streakSlide < 0f) return;
             if (Purse.Streak <= 0)
             {
-                _streakSlide = -1f;
+                DismissStreakSign();
                 return;
             }
 
-            const float dur = 6.4f;
+            // 0.75s tuck sits inside the 6.4s beat so peek/pop/hold land where they did.
+            const float seqDur = 6.4f;
+            const float tuckDur = 0.75f;
+            float tuck0 = 1f - tuckDur / seqDur;
             if (GuiPaint())
-                _streakSlide = Mathf.Min(1f, _streakSlide + Time.unscaledDeltaTime / dur);
+                _streakSlide = Mathf.Min(1f, _streakSlide + Time.unscaledDeltaTime / seqDur);
             float u = _streakSlide;
 
             float enter = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(u / 0.10f));
-            float tuck = u < 0.86f ? 0f : Mathf.SmoothStep(0f, 1f, (u - 0.86f) / 0.14f);
+            // One ease-in-out drives the move, the shrink, and the fade. No early cut.
+            float tuck = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(tuck0, 1f, u));
             if (u >= 1f)
             {
-                _streakSlide = -1f;
+                DismissStreakSign();
                 Purse.Pending = 0;
+                GUI.color = Color.white;
                 return;
             }
 
             float alpha = enter * (1f - tuck);
-            if (alpha < 0.04f) return;
 
             float scale = Mathf.Lerp(0.82f, 1.06f, enter);
             scale = Mathf.Lerp(scale, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - 0.10f) / 0.08f)));
-            if (u > 0.72f && u < 0.86f)
+            // Freeze the lamp clock on the way out so the strobe cannot flash after the board thins.
+            float lampT = Time.unscaledTime - Mathf.Max(0f, u - tuck0) * seqDur;
+            if (u > 0.72f)
             {
-                float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.6f);
-                scale *= 1f + 0.018f * breathe;
+                float breathe = 0.5f + 0.5f * Mathf.Sin(lampT * 2.6f);
+                scale *= 1f + 0.018f * breathe * (1f - tuck);
             }
+            // Rect scale, not GUI.matrix: marquee bulbs rotate in the current matrix.
             scale = Mathf.Lerp(scale, 0.72f, tuck);
 
             int streak = Mathf.Max(1, Purse.LastStreak > 0 ? Purse.LastStreak : Purse.Streak);
@@ -4365,11 +4383,64 @@ namespace FlockFive
             int win = Purse.LastWin > 0 ? Purse.LastWin : stagePay * streak * login;
             bool showLogin = login > 1;
 
-            float titleTop = TopHud();
-            float restW = Mathf.Min(Screen.width * 0.62f, 400f * s);
-            float restH = Mathf.Min(Screen.height * 0.20f, 176f * s);
-            float restX = (Screen.width - restW) * 0.5f;
-            float restY = titleTop + 56f * s * 2f + 4f * s;
+            // Bulb sprite: screw anchor at 16% from the top, glass tip at ~98%.
+            // Halo sits on the glass (center 60%, radius up to 0.85 of the bulb).
+            const float bulbFrac = 0.10f;
+            const float bandFrac = 0.036f;
+            // Socket is band/2 outside the board. Fully lit halo reaches 1.29 bulb-widths
+            // past the socket (glass center at 0.44, halo radius 0.85).
+            const float haloOut = 1.29f;
+            float crownFrac = bandFrac * 0.5f + haloOut * bulbFrac;
+            const float maxPop = 1.06f;
+
+            // Whole lit sign (board + halos) must clear the wordmark, which already
+            // sits under the notch / Dynamic Island, the side rails, and the play flower.
+            // Read safe area every pass so a late inset still pushes the lights down.
+            float titleBottom = TopHud() + (56f * 2f + 4f) * s;
+            float gap = 10f * s;
+            var safe = Screen.safeArea;
+            bool safeOk = safe.width > 2f && safe.height > 2f;
+            float safeL = safeOk ? safe.xMin : 0f;
+            float safeR = safeOk ? safe.xMax : Screen.width;
+            float safeB = safeOk ? safe.yMin : 0f;
+            var share = SplashShareRect();
+            float leftLimit = Mathf.Max(safeL + gap, share.xMax + gap);
+            float rightLimit = Mathf.Min(safeR - gap, pig.xMin - gap);
+            if (rightLimit - leftLimit < 80f * s)
+            {
+                leftLimit = safeL + gap;
+                rightLimit = Mathf.Max(leftLimit + 80f * s, safeR - gap);
+            }
+            float botPad = Mathf.Max(14f, safeB + 8f);
+            float flower = Mathf.Min(Screen.width * 0.94f, Screen.height * 0.50f);
+            float flowerTop = Screen.height - botPad - flower;
+            float topLimit = titleBottom + gap;
+            float botLimit = Mathf.Max(topLimit + 72f * s, flowerTop - gap);
+            float availW = Mathf.Max(64f * s, rightLimit - leftLimit);
+            float availH = Mathf.Max(72f * s, botLimit - topLimit);
+            float widthBudget = availW / (maxPop * (1f + 2f * crownFrac));
+            float restW = Mathf.Min(Screen.width * 0.62f, 400f * s, widthBudget);
+            float restHCap = availH / maxPop - 2f * crownFrac * restW;
+            if (restHCap < 64f * s)
+            {
+                restW = Mathf.Min(restW, Mathf.Max(64f * s, (availH / maxPop - 64f * s) / (2f * crownFrac)));
+                restHCap = availH / maxPop - 2f * crownFrac * restW;
+            }
+            float restH = Mathf.Min(Screen.height * 0.20f, 176f * s, restHCap);
+            if (restH < 36f * s) restH = 36f * s;
+            float cx = (leftLimit + rightLimit) * 0.5f;
+            float halfVis = (restW * 0.5f + crownFrac * restW) * maxPop;
+            float minCx = leftLimit + halfVis;
+            float maxCx = rightLimit - halfVis;
+            cx = maxCx >= minCx ? Mathf.Clamp(cx, minCx, maxCx) : (leftLimit + rightLimit) * 0.5f;
+            float centerY = topLimit + maxPop * (restH * 0.5f + crownFrac * restW);
+            float visualBottom = centerY + maxPop * (restH * 0.5f + crownFrac * restW);
+            if (visualBottom > botLimit) centerY -= visualBottom - botLimit;
+            float visualTop = centerY - maxPop * (restH * 0.5f + crownFrac * restW);
+            // Prefer the wordmark / island over the flower if the slot is shorter than the sign.
+            if (visualTop < topLimit) centerY += topLimit - visualTop;
+            float restX = cx - restW * 0.5f;
+            float restY = centerY - restH * 0.5f;
             var pigC = pig.center;
             float x = Mathf.Lerp(restX, pigC.x - restW * 0.22f, tuck);
             float y = Mathf.Lerp(restY, pigC.y - restH * 0.35f, tuck);
@@ -4381,51 +4452,57 @@ namespace FlockFive
             board.y = c.y - board.height * 0.5f;
 
             var glow = GlowTex();
-            float glowA = 0.22f + 0.20f * (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.3f));
+            float glowA = 0.22f + 0.20f * (0.5f + 0.5f * Mathf.Sin(lampT * 2.3f));
             GUI.color = new Color(1f, 0.82f, 0.28f, glowA * alpha);
-            float aura = 22f * s;
+            // Aura stays inside the bulb halo so it scales and tucks with the sign.
+            float aura = board.width * crownFrac * 0.55f;
             GUI.DrawTexture(new Rect(board.x - aura, board.y - aura * 0.6f, board.width + aura * 2f, board.height + aura * 1.2f), glow, ScaleMode.ScaleToFit, true);
 
             // Marquee frame: a solid brass band the bulbs screw into (not bulbs floating off a line).
-            float band = Mathf.Max(9f * s, board.width * 0.034f);
+            // Thickness is a fraction of the animated board so the band shrinks with the tuck.
+            float band = board.width * bandFrac;
             var outer = new Rect(board.x - band, board.y - band, board.width + band * 2f, board.height + band * 2f);
+            float sh = 3f * s * scale;
             GUI.color = new Color(0f, 0f, 0f, 0.45f * alpha); // drop shadow
-            GUI.DrawTexture(new Rect(outer.x + 3f * s, outer.y + 5f * s, outer.width, outer.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(outer.x + sh, outer.y + sh * 1.6f, outer.width, outer.height), Texture2D.whiteTexture);
             GUI.color = new Color(0.30f, 0.16f, 0.05f, alpha); // band body
             GUI.DrawTexture(outer, Texture2D.whiteTexture);
             GUI.color = new Color(0.58f, 0.36f, 0.12f, alpha); // band face
-            GUI.DrawTexture(new Rect(outer.x + 2f * s, outer.y + 2f * s, outer.width - 4f * s, outer.height - 4f * s), Texture2D.whiteTexture);
-            float edge = Mathf.Max(1f, 1.6f * s);
+            float face = 2f * s * scale;
+            GUI.DrawTexture(new Rect(outer.x + face, outer.y + face, outer.width - face * 2f, outer.height - face * 2f), Texture2D.whiteTexture);
+            float edge = Mathf.Max(1f, 1.6f * s * scale);
             GUI.color = new Color(1f, 0.86f, 0.46f, 0.85f * alpha); // outer top/left bevel light
-            GUI.DrawTexture(new Rect(outer.x + 2f * s, outer.y + 2f * s, outer.width - 4f * s, edge), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(outer.x + 2f * s, outer.y + 2f * s, edge, outer.height - 4f * s), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(outer.x + face, outer.y + face, outer.width - face * 2f, edge), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(outer.x + face, outer.y + face, edge, outer.height - face * 2f), Texture2D.whiteTexture);
             GUI.color = new Color(0.14f, 0.07f, 0.02f, 0.9f * alpha); // outer bottom/right bevel shade
-            GUI.DrawTexture(new Rect(outer.x + 2f * s, outer.yMax - 2f * s - edge, outer.width - 4f * s, edge), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(outer.xMax - 2f * s - edge, outer.y + 2f * s, edge, outer.height - 4f * s), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(outer.x + face, outer.yMax - face - edge, outer.width - face * 2f, edge), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(outer.xMax - face - edge, outer.y + face, edge, outer.height - face * 2f), Texture2D.whiteTexture);
 
-            GUI.color = new Color(0.04f, 0.02f, 0.01f, 0.94f * alpha);
+            GUI.color = new Color(0.04f, 0.02f, 0.01f, alpha);
             GUI.DrawTexture(board, Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.78f, 0.22f, (0.40f + 0.28f * (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.05f))) * alpha);
-            float rim = 3f * s;
-            float line = 2f * s;
+            GUI.color = new Color(1f, 0.78f, 0.22f, (0.40f + 0.28f * (0.5f + 0.5f * Mathf.Sin(lampT * 2.05f))) * alpha);
+            float rim = 3f * s * scale;
+            float line = 2f * s * scale;
             GUI.DrawTexture(new Rect(board.x + rim, board.y + rim, board.width - rim * 2f, line), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(board.x + rim, board.yMax - rim - line, board.width - rim * 2f, line), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(board.x + rim, board.y + rim, line, board.height - rim * 2f), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(board.xMax - rim - line, board.y + rim, line, board.height - rim * 2f), Texture2D.whiteTexture);
             GUI.color = new Color(0f, 0f, 0f, 0.55f * alpha); // inner shadow where board meets band
-            GUI.DrawTexture(new Rect(board.x, board.y, board.width, 2f * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(board.x, board.y, 2f * s, board.height), Texture2D.whiteTexture);
+            float shade = 2f * s * scale;
+            GUI.DrawTexture(new Rect(board.x, board.y, board.width, shade), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(board.x, board.y, shade, board.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // Sockets ride the middle of the brass band.
-            DrawGiftMarquee(board, s, Time.unscaledTime, alpha, band * 0.5f);
+            // Sockets ride the middle of the brass band. bulbFrac sizes every glass,
+            // socket, and halo from the animated board so peek/pop/hold/tuck stay one unit.
+            DrawGiftMarquee(board, s, lampT, alpha, band * 0.5f, bulbFrac);
 
             float padX = board.width * 0.12f;
             float innerX = board.x + padX;
             float innerW = board.width - padX * 2f;
             float pipH = board.height * 0.18f;
             var pipRow = new Rect(innerX, board.y + board.height * 0.14f, innerW, pipH);
-            DrawStreakPips(pipRow, streak, u, s, alpha);
+            DrawStreakPips(pipRow, streak, u, alpha);
 
             var leftSt = new GUIStyle(GUI.skin.label)
             {
@@ -4437,9 +4514,9 @@ namespace FlockFive
             var winSt = new GUIStyle(leftSt) { alignment = TextAnchor.MiddleCenter };
 
             int rows = showLogin ? 3 : 2;
-            float linesTop = pipRow.yMax + 6f * s;
+            float linesTop = pipRow.yMax + 6f * s * scale;
             float winH = board.height * 0.22f;
-            float linesH = board.yMax - 12f * s - winH - linesTop;
+            float linesH = board.yMax - 12f * s * scale - winH - linesTop;
             float rowH = linesH / (rows + 0.35f);
 
             void Line(int index, float at, string left, string right, bool gold)
@@ -4452,8 +4529,8 @@ namespace FlockFive
                 var fill = gold
                     ? new Color(1f, 0.90f, 0.28f, appear * alpha)
                     : new Color(1f, 0.94f, 0.78f, appear * alpha);
-                StampOutlined(new Rect(row.x, row.y, row.width * 0.52f, row.height), left, leftSt, fill, 1, 2);
-                StampOutlined(new Rect(row.x + row.width * 0.48f, row.y, row.width * 0.52f, row.height), right, rightSt, fill, 1, 2);
+                StampOutlined(new Rect(row.x, row.y, row.width * 0.52f, row.height), left, leftSt, fill, 1, 2, 0.001f);
+                StampOutlined(new Rect(row.x + row.width * 0.48f, row.y, row.width * 0.52f, row.height), right, rightSt, fill, 1, 2, 0.001f);
             }
 
             Line(0, 0.20f, "STAGE", Purse.Dollars(stagePay), false);
@@ -4477,29 +4554,41 @@ namespace FlockFive
                     _streakWinChimed = true;
                     Sfx.Clink();
                 }
-                var winR = new Rect(innerX, board.yMax - 10f * s - winH, innerW, winH);
-                GUI.color = new Color(1f, 0.78f, 0.18f, (0.28f + 0.22f * roll) * alpha);
-                GUI.DrawTexture(new Rect(winR.x - 8f * s, winR.y - 4f * s, winR.width + 16f * s, winR.height + 8f * s), glow, ScaleMode.ScaleToFit, true);
-                GUI.color = Color.white;
+                var winR = new Rect(innerX, board.yMax - 10f * s * scale - winH, innerW, winH);
                 string winTx = "WIN  " + Purse.Dollars(_streakRollShown);
                 winSt.fontSize = FitFont(winSt, winTx, winR.width * 0.96f, winR.height * 0.90f, 28, 56);
                 float punch = 1f + 0.10f * Mathf.Sin(Mathf.Clamp01((roll - 0.85f) / 0.15f) * Mathf.PI);
                 var prevM = GUI.matrix;
                 GUIUtility.ScaleAroundPivot(new Vector2(punch, punch), winR.center);
-                StampOutlined(winR, winTx, winSt, new Color(1f, 0.90f, 0.28f, alpha), 1, Mathf.Max(3, Mathf.RoundToInt(winSt.fontSize * 0.12f)));
+                float glowPad = 8f * s * scale;
+                GUI.color = new Color(1f, 0.78f, 0.18f, (0.28f + 0.22f * roll) * alpha);
+                GUI.DrawTexture(new Rect(winR.x - glowPad, winR.y - glowPad * 0.5f, winR.width + glowPad * 2f, winR.height + glowPad), glow, ScaleMode.ScaleToFit, true);
+                GUI.color = Color.white;
+                StampOutlined(winR, winTx, winSt, new Color(1f, 0.90f, 0.28f, alpha), 1, Mathf.Max(3, Mathf.RoundToInt(winSt.fontSize * 0.12f)), 0.001f);
                 GUI.matrix = prevM;
             }
             GUI.color = Color.white;
         }
 
-        static void DrawStreakPips(Rect row, int streak, float u, float s, float alpha)
+        static void DrawStreakPips(Rect row, int streak, float u, float alpha)
         {
             const int slots = 7;
             int lit = Mathf.Clamp(streak, 0, slots);
-            float gap = 10f * s;
-            float d = Mathf.Min((row.width - gap * (slots - 1)) / slots, row.height * 0.70f);
-            float total = slots * d + (slots - 1) * gap;
-            float x0 = row.center.x - total * 0.5f;
+            string more = streak > slots ? "+" + (streak - slots) : null;
+            // Gap and diameter come from the row, which is already inside the scaled sign.
+            float gap = Mathf.Clamp(row.height * 0.28f, 3f, Mathf.Max(3f, row.width * 0.05f));
+            float labelW = 0f;
+            if (more != null)
+                labelW = Mathf.Min(row.width * 0.30f, row.height * (0.52f * more.Length + 0.40f));
+            float slotsW = Mathf.Max(slots * 4f, row.width - labelW - (more != null ? gap : 0f));
+            float maxGap = (slotsW * 0.42f) / (slots - 1);
+            if (gap > maxGap) gap = maxGap;
+            float d = (slotsW - gap * (slots - 1)) / slots;
+            float dCap = row.height * 0.72f;
+            if (d > dCap) d = dCap;
+            if (d < 4f) d = 4f;
+            float used = slots * d + (slots - 1) * gap + (more != null ? gap + labelW : 0f);
+            float x0 = row.x + Mathf.Max(0f, (row.width - used) * 0.5f);
             var glow = GlowTex();
             for (int i = 0; i < slots; i++)
             {
@@ -4514,11 +4603,11 @@ namespace FlockFive
                 if (on > 0.4f)
                 {
                     GUI.color = new Color(1f, 0.86f, 0.32f, 0.55f * on * alpha);
-                    GUI.DrawTexture(new Rect(r.x - d * 0.28f, r.y - d * 0.28f, d * 1.56f, d * 1.56f), glow, ScaleMode.ScaleToFit, true);
+                    GUI.DrawTexture(new Rect(r.x - d * 0.22f, r.y - d * 0.22f, d * 1.44f, d * 1.44f), glow, ScaleMode.ScaleToFit, true);
                 }
             }
             GUI.color = Color.white;
-            if (streak > slots)
+            if (more != null)
             {
                 var extra = new GUIStyle(GUI.skin.label)
                 {
@@ -4526,9 +4615,11 @@ namespace FlockFive
                     alignment = TextAnchor.MiddleLeft,
                     wordWrap = false
                 };
-                string more = "+" + (streak - slots);
-                extra.fontSize = FitFont(extra, more, d * 1.6f, d, 12, 22);
-                StampOutlined(new Rect(x0 + total + 6f * s, row.y, d * 1.8f, row.height), more, extra, new Color(1f, 0.90f, 0.28f, alpha), 1, 1);
+                var lab = new Rect(x0 + slots * (d + gap), row.y, labelW, row.height);
+                if (lab.xMax > row.xMax) lab.x = row.xMax - lab.width;
+                int hi = Mathf.Clamp(Mathf.RoundToInt(lab.height * 0.72f), 10, 28);
+                extra.fontSize = FitFont(extra, more, lab.width, lab.height * 0.9f, 8, hi);
+                StampOutlined(lab, more, extra, new Color(1f, 0.90f, 0.28f, alpha), 1, 1, 0.001f);
             }
         }
 
@@ -5002,10 +5093,10 @@ namespace FlockFive
             GUI.matrix = prev;
         }
 
-        static void StampOutlined(Rect r, string text, GUIStyle st, Color fill, int whitePx, int blackPx)
+        static void StampOutlined(Rect r, string text, GUIStyle st, Color fill, int whitePx, int blackPx, float minA = 0.04f)
         {
             float a = Mathf.Clamp01(fill.a);
-            if (a < 0.04f) return;
+            if (a < minA) return;
             Paint(st, new Color(0.02f, 0.02f, 0.02f, a));
             Ring(r, text, st, whitePx + blackPx);
             Paint(st, new Color(1f, 1f, 1f, a));
@@ -9097,7 +9188,9 @@ namespace FlockFive
         }
 
         // grow: how far outside `plate` the bulb sockets sit (px); <0 = 6*s (gift chalkboard rim).
-        static void DrawGiftMarquee(Rect plate, float s, float t, float alpha = 1f, float grow = -1f)
+        // bulbFrac > 0 sizes every bulb from the plate (streak sign, already scaled).
+        // bulbFrac == 0 keeps the gift-card floor so that marquee is unchanged.
+        static void DrawGiftMarquee(Rect plate, float s, float t, float alpha = 1f, float grow = -1f, float bulbFrac = 0f)
         {
             var bulb = SpriteCatalog.AdBulb;
             var glow = GlowTex();
@@ -9111,33 +9204,80 @@ namespace FlockFive
             float perim = 2f * (frame.width + frame.height);
             float headCw = Mathf.Repeat(t * 0.52f, 1f);
             float headCcw = Mathf.Repeat(-t * 0.38f, 1f);
-            float szOn = Mathf.Max(30f * s, plate.width * 0.085f);
+            float szOn = bulbFrac > 0f
+                ? plate.width * bulbFrac
+                : Mathf.Max(30f * s, plate.width * 0.085f);
+            // Streak sign only: a short plate would otherwise stack neighbouring glass.
+            // 0.62 of the arc stays under the corner chord (spacing / sqrt(2)).
+            if (bulbFrac > 0f)
+            {
+                float spacing = perim / n;
+                if (szOn > spacing * 0.62f) szOn = spacing * 0.62f;
+            }
             float szOff = szOn * 0.82f;
             for (int i = 0; i < n; i++)
             {
                 float u = i / (float)n;
-                float d = u * perim;
+                // Half a loop is the bottom-right corner at every size, and a float
+                // edge test flips that bulb — and any other sample that lands on a
+                // corner — onto the neighbouring edge as the sign scales. The edge
+                // that starts at the corner owns it; the socket is that corner.
+                double fw = frame.width;
+                double fh = frame.height;
+                double loop = 2.0 * (fw + fh);
+                double arc = (i / (double)n) * loop;
+                double snap = loop * 1.0e-3;
+                double cTR = fw;
+                double cBR = fw + fh;
+                double cBL = cBR + fw;
+                double dTL = System.Math.Min(arc, loop - arc);
+                double dTR = System.Math.Abs(arc - cTR);
+                double dBR = System.Math.Abs(arc - cBR);
+                double dBL = System.Math.Abs(arc - cBL);
                 Vector2 p;
                 float ang;
-                if (d < frame.width)
+                // fx_ad_bulb's screw base is at the TOP of the art: point it into the box.
+                if (dTL <= snap && dTL <= dTR && dTL <= dBR && dTL <= dBL)
                 {
-                    p = new Vector2(frame.x + d, frame.y);
-                    ang = 180f; // fx_ad_bulb's screw base is at the TOP of the art: point it into the box
+                    p = new Vector2(frame.x, frame.y);
+                    ang = 180f;
                 }
-                else if ((d -= frame.width) < frame.height)
+                else if (dTR <= snap && dTR <= dBR && dTR <= dBL)
                 {
-                    p = new Vector2(frame.xMax, frame.y + d);
+                    p = new Vector2(frame.xMax, frame.y);
                     ang = -90f;
                 }
-                else if ((d -= frame.height) < frame.width)
+                else if (dBR <= snap && dBR <= dBL)
                 {
-                    p = new Vector2(frame.xMax - d, frame.yMax);
+                    p = new Vector2(frame.xMax, frame.yMax);
+                    ang = 0f;
+                }
+                else if (dBL <= snap)
+                {
+                    p = new Vector2(frame.x, frame.yMax);
+                    ang = 90f;
+                }
+                else if (arc < cTR)
+                {
+                    p = new Vector2(frame.x + (float)arc, frame.y);
+                    ang = 180f;
+                }
+                else if (arc < cBR)
+                {
+                    double along = arc - cTR;
+                    p = new Vector2(frame.xMax, frame.y + (float)along);
+                    ang = -90f;
+                }
+                else if (arc < cBL)
+                {
+                    double along = arc - cBR;
+                    p = new Vector2(frame.xMax - (float)along, frame.yMax);
                     ang = 0f;
                 }
                 else
                 {
-                    d -= frame.width;
-                    p = new Vector2(frame.x, frame.yMax - d);
+                    double along = arc - cBL;
+                    p = new Vector2(frame.x, frame.yMax - (float)along);
                     ang = 90f;
                 }
                 float ring = Mathf.Min(Mathf.Abs(u - headCw), 1f - Mathf.Abs(u - headCw));
