@@ -312,12 +312,12 @@ namespace FlockFive
         static Board DawnGarden()
         {
             var b = Eight(
-                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby),
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby),
                 Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Gold, BirdColor.Gold),
                 Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Teal, BirdColor.Teal),
                 Row(BirdColor.Violet, BirdColor.Violet, BirdColor.Violet, BirdColor.Violet),
                 Row(BirdColor.Gold, BirdColor.Teal, BirdColor.Violet, BirdColor.Ruby),
-                new BranchState(),
+                Row(BirdColor.Ruby),
                 new BranchState(),
                 new BranchState());
             b.Live[0] = BirdColor.Ruby;

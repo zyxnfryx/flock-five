@@ -4826,14 +4826,6 @@ namespace FlockFive
                 _home = HomeFace.Hive;
             DrawHiveButton(hiveR, s);
 
-            var shareR = SplashShareRect();
-            if (HitPad(shareR, out bool shareHeld))
-            {
-                Sfx.Chirp(BirdColor.Gold);
-                Invite.Share();
-            }
-            DrawShareButton(shareR, shareHeld, s);
-
             var noAdsR = SplashNoAdsRect();
             if (!NoAds.Owned && HitPad(noAdsR, out bool noAdsHeld))
             {
@@ -8195,26 +8187,6 @@ namespace FlockFive
                 top + btnH + 12f * s,
                 hiveSize, hiveSize);
             DrawHiveButton(hiveHead, s);
-            var shareAlbum = new Rect(
-                Screen.width - Mathf.Max(16f, Screen.width - safe.xMax + 10f) - btnW,
-                top, btnW, btnH);
-            if (HitPad(shareAlbum, out bool shareHeld))
-            {
-                Sfx.Chirp(BirdColor.Gold);
-                Invite.Share();
-            }
-            GUI.color = new Color(0.10f, 0.08f, 0.05f, shareHeld ? 0.88f : 0.72f);
-            GUI.DrawTexture(shareAlbum, Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            var shareLab = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Mathf.RoundToInt(20 * s),
-                alignment = TextAnchor.MiddleCenter,
-                fontStyle = FontStyle.Bold
-            };
-            shareLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
-            GUI.Label(shareAlbum, "Invite", shareLab);
-
             float hiveBottom = DrawHiveTally(hiveHead, s);
             int pages = Mathf.Max(1, (Hive.AlbumSlots + HivePageSize - 1) / HivePageSize);
             _hivePage = Mathf.Clamp(_hivePage, 0, pages - 1);
@@ -8810,6 +8782,7 @@ namespace FlockFive
             if (!CanOfferBonus(branch)) return;
             _giftBranch = branch;
             OpenGiftCard();
+            if (_gift == GiftFace.Card) ArmAdHand();
         }
 
         bool CanOfferBonus(int branch)
@@ -8910,6 +8883,7 @@ namespace FlockFive
 
         void CloseGift()
         {
+            DismissAdHand();
             if (_gift == GiftFace.Movie) return;
             _gift = GiftFace.None;
             _swallowTapsUntil = Time.unscaledTime + 0.45f;
@@ -9062,6 +9036,7 @@ namespace FlockFive
             bool xHeld = false;
             if (!_freezeOffer && HitPad(xBtn, out xHeld))
             {
+                DismissAdHand();
                 if (_keepStreak)
                 {
                     Purse.BreakStreak();
@@ -9071,14 +9046,7 @@ namespace FlockFive
                 return;
             }
 
-            float cardW = Mathf.Min(Screen.width * 0.88f, 600f * s);
-            float cardH = cardW * (501f / 780f);
-            float flower = Mathf.Min(Screen.width * 0.54f, 300f * s);
-            float overlap = flower * 0.40f;
-            float hiveY = Screen.height - 88f * s - 12f * s - 64f * s;
-            float stackH = cardH + flower - overlap;
-            float cardY = Mathf.Clamp(Screen.height * 0.24f, Screen.height * 0.18f, hiveY - 16f * s - stackH);
-            var card = new Rect((Screen.width - cardW) * 0.5f, cardY, cardW, cardH);
+            GiftCardLayout(s, out var card, out var cta);
 
             float t = Time.unscaledTime;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
@@ -9132,7 +9100,6 @@ namespace FlockFive
 
             DrawGiftMarquee(plate, s, t);
 
-            var cta = new Rect((Screen.width - flower) * 0.5f, card.yMax - overlap, flower, flower);
             var discHit = FlowerDisc(cta, 0f);
             bool watch = HitPad(discHit, out bool held);
             var bloom = SpriteCatalog.PlayFlower;
@@ -9162,11 +9129,33 @@ namespace FlockFive
             }
             if (watch)
             {
+                DismissAdHand();
                 StartCoroutine(WatchGift());
                 return;
             }
 
             if (!_freezeOffer) DrawGiftCloseX(xBtn, xHeld, s);
+            if (_adHand) DrawAdHand(s, top + xSz);
+        }
+
+        // Card plus the flower the Watch label sits on. Shared with the ad-hand aim.
+        void GiftCardLayout(float s, out Rect card, out Rect flower)
+        {
+            float cardW = Mathf.Min(Screen.width * 0.88f, 600f * s);
+            float cardH = cardW * (501f / 780f);
+            float flowerSz = Mathf.Min(Screen.width * 0.54f, 300f * s);
+            float overlap = flowerSz * 0.40f;
+            float hiveY = Screen.height - 88f * s - 12f * s - 64f * s;
+            float stackH = cardH + flowerSz - overlap;
+            float cardY = Mathf.Clamp(Screen.height * 0.24f, Screen.height * 0.18f, hiveY - 16f * s - stackH);
+            card = new Rect((Screen.width - cardW) * 0.5f, cardY, cardW, cardH);
+            flower = new Rect((Screen.width - flowerSz) * 0.5f, card.yMax - overlap, flowerSz, flowerSz);
+        }
+
+        Vector2 GiftWatchAim(float s)
+        {
+            GiftCardLayout(s, out _, out var flower);
+            return FlowerDisc(flower, 0f).center;
         }
 
         static void DrawGiftCloseX(Rect xBtn, bool held, float s)

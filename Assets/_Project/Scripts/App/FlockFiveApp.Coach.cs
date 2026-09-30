@@ -8,6 +8,8 @@ namespace FlockFive
     {
         const string CoachKey = "flockfive.coach.done";
         const string CoachGiftKey = "flockfive.coach.gift";
+        const string CoachAdHandKey = "flockfive.coach.adhand";
+        const string AdHandLine = "Tap to watch and unlock a bonus spot.";
         // One outline for every coach line. StampCoach is the only draw path.
         const int CoachOutlinePx = 6;
         // Hover, quick press, ease-out lift, short pause. 0.72+0.12+0.20+0.16 = 1.20s.
@@ -25,6 +27,7 @@ namespace FlockFive
         const float LiftHalfW = 1.28f;
 
         bool _coach;
+        bool _adHand;
         int _coachMoves;
         int _coachFrom = -1, _coachTo = -1;
         float _coachFade;
@@ -93,6 +96,7 @@ namespace FlockFive
             _cueLine = null;
             _cueBranch = -1;
             _gloveVis = false;
+            _adHand = false;
             if (!_coach) CoachRelease();
             else
             {
@@ -135,6 +139,18 @@ namespace FlockFive
         {
             from = -1; to = -1;
             int fallFrom = -1, fallTo = -1;
+            // First lesson: a single bird hops onto a matching bird.
+            if (_coachMoves == 0)
+                for (int a1 = 0; a1 < _board.Branches.Count; a1++)
+                {
+                    if (!_board.CanPick(a1) || Locked(a1) || GiftLocked(a1) || _board.Branches[a1].TipRun() != 1) continue;
+                    for (int b1 = 0; b1 < _board.Branches.Count; b1++)
+                    {
+                        if (b1 == a1 || Locked(b1) || GiftLocked(b1) || _board.Branches[b1].Birds.Count != 1) continue;
+                        if (!_board.CanMove(a1, b1, out _)) continue;
+                        from = a1; to = b1; return true;
+                    }
+                }
             for (int a = 0; a < _board.Branches.Count; a++)
             {
                 if (!_board.CanPick(a) || Locked(a) || GiftLocked(a)) continue;
@@ -213,6 +229,20 @@ namespace FlockFive
             }
             if (_restarting || _won || _gift != GiftFace.None)
             {
+                // Tutorial stays down on the gift card. The one-shot ad glove keeps its tap cycle.
+                if (_adHand && _gift == GiftFace.Card && !_restarting && !_won)
+                {
+                    _cueHand = false;
+                    _cueForce = false;
+                    _cueFreeze = false;
+                    _cueGift = false;
+                    _cueLine = null;
+                    _cueBranch = -1;
+                    CoachHideGlow();
+                    CoachHideRipples();
+                    return;
+                }
+                _adHand = false;
                 CoachHideNow();
                 return;
             }
@@ -415,6 +445,22 @@ namespace FlockFive
             if (_coachGlowKick > 0f)
                 _coachGlowKick = Mathf.Max(0f, _coachGlowKick - dt / 0.24f);
             CoachTickRipples(dt);
+            if (_adHand)
+            {
+                if (_gift != GiftFace.Card)
+                {
+                    _adHand = false;
+                    _gloveVis = false;
+                    CoachHideGlow();
+                    return;
+                }
+                CoachHideGlow();
+                CoachHideRipples();
+                _coachFade = 1f;
+                float handS = Mathf.Max(Screen.height / 720f, 1f);
+                CoachGloveAt(GiftWatchAim(handS), dt, handS);
+                return;
+            }
             if (_levelHive || !_cueHand || !CoachView(out var view) || _garden.Cam == null)
             {
                 _gloveVis = false;
@@ -448,6 +494,56 @@ namespace FlockFive
             _coachGlow.color = new Color(1f, 0.91f, 0.46f, a);
 
             float s = Mathf.Max(Screen.height / 720f, 1f);
+            if (CoachGloveAt(_cueAimGui, dt, s))
+            {
+                _coachGlowKick = 1f;
+                CoachSpawnRipple(_cueAimWorld);
+                float flash = (0.40f + 0.28f * pulse + 0.62f) * _coachFade;
+                if (flash > 1f) flash = 1f;
+                _coachGlow.transform.localScale = new Vector3(dx * breathe * spread * 1.12f, dy * breathe * spread * 1.12f, 1f);
+                _coachGlow.color = new Color(1f, 0.91f, 0.46f, flash);
+            }
+        }
+
+        // First bonus-branch ad card only. The flag sticks even if they close without watching.
+        void ArmAdHand()
+        {
+            if (PlayerPrefs.GetInt(CoachAdHandKey, 0) != 0) return;
+            PlayerPrefs.SetInt(CoachAdHandKey, 1);
+            PlayerPrefs.Save();
+            _adHand = true;
+            _coachFade = 1f;
+            _gloveReady = false;
+            _gloveWiggle = 0f;
+            _glovePhase = 0f;
+            _gloveDip = 0f;
+            _tapSent = false;
+            _coachGlowKick = 0f;
+            _coachLineHeld = false;
+            _cueHand = false;
+            _cueForce = false;
+            _cueFreeze = false;
+            _cueGift = false;
+            _cueLine = null;
+            _cueBranch = -1;
+            _gloveVis = false;
+            CoachHideGlow();
+            CoachHideRipples();
+        }
+
+        void DismissAdHand()
+        {
+            if (!_adHand) return;
+            _adHand = false;
+            _gloveVis = false;
+            _gloveReady = false;
+        }
+
+        // Same hover-press-lift as the tutorial glove. aimGui is GUI space, y down.
+        // True on the frame the fingertip lands.
+        bool CoachGloveAt(Vector2 aimGui, float dt, float s)
+        {
+            _cueAimGui = aimGui;
             float margin = 130f * s;
             CoachAimAway(s, margin, out var away, out float gap);
             var rest = _cueAimGui + away * gap;
@@ -486,16 +582,7 @@ namespace FlockFive
             }
             _glovePhase = nextPhase;
             _gloveDip = TapDip(_glovePhase);
-            if (fire)
-            {
-                _tapSent = true;
-                _coachGlowKick = 1f;
-                CoachSpawnRipple(_cueAimWorld);
-                float flash = (0.40f + 0.28f * pulse + 0.62f) * _coachFade;
-                if (flash > 1f) flash = 1f;
-                _coachGlow.transform.localScale = new Vector3(dx * breathe * spread * 1.12f, dy * breathe * spread * 1.12f, 1f);
-                _coachGlow.color = new Color(1f, 0.91f, 0.46f, flash);
-            }
+            if (fire) _tapSent = true;
 
             // Bob only while hovering. The press itself is the dip toward the aim.
             float bob = _glovePhase < TapHover
@@ -508,6 +595,7 @@ namespace FlockFive
             float nod = 11f * _gloveDip * (_gloveAway.x >= 0f ? -1f : 1f);
             _gloveShownAng = _gloveAng + Mathf.Sin(Time.unscaledTime * 46f) * 7f * _gloveWiggle + nod;
             _gloveVis = true;
+            return fire;
         }
 
         // Hand sits off the lifted flock so the glove and those birds do not share a spot.
@@ -904,6 +992,70 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // Both ends of this hop. The glove still taps only the branch this step wants.
+        void DrawCoachArrows(float s)
+        {
+            if (!_coach || _won || _cueGift || !_cueHand || _coachFade < 0.03f) return;
+            if (_coachFrom < 0 || _coachTo < 0) return;
+            if (_coachGlow == null || !_coachGlow.enabled) return;
+            float bob = Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.3f)) * (6f * s);
+            DrawCoachArrow(_coachFrom, "1", 1f, s, bob);
+            DrawCoachArrow(_coachTo, "2", 0.84f, s, bob);
+        }
+
+        void DrawCoachArrow(int branch, string badge, float mark, float s, float bob)
+        {
+            if (!CoachBranchGui(branch, out var gui)) return;
+            var tex = CoachArrowTex();
+            if (tex == null) return;
+            float h = 50f * s * mark;
+            float w = h * (tex.width / (float)Mathf.Max(1, tex.height));
+            var arrow = new Rect(gui.x - w * 0.5f, gui.y - h + bob, w, h);
+            GUI.color = new Color(1f, 1f, 1f, _coachFade);
+            GUI.DrawTexture(arrow, tex, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+            var st = CoachLineStyle();
+            float bw = 26f * s * mark;
+            float bh = 30f * s * mark;
+            var plate = new Rect(arrow.center.x - bw * 0.5f, arrow.y - bh * 0.62f, bw, bh);
+            st.fontSize = Mathf.Max(12, Mathf.RoundToInt(18f * s * mark));
+            int black = Mathf.Clamp(Mathf.CeilToInt(CoachOutlinePx * s), CoachOutlinePx, 8);
+            StampOutlined(plate, badge, st, new Color(1f, 0.96f, 0.82f, _coachFade), 0, black);
+        }
+
+        // Seat of the top bird, in GUI space, lifted clear of that bird. A hop takes the
+        // sprite off the limb; the arrow stays on the perch instead of riding along.
+        bool CoachBranchGui(int branch, out Vector2 gui)
+        {
+            gui = default;
+            var cam = _garden.Cam;
+            var branches = _garden.Branches;
+            if (cam == null || branches == null || _board == null) return false;
+            if ((uint)branch >= (uint)branches.Length) return false;
+            if ((uint)branch >= (uint)_board.Branches.Count) return false;
+            var view = branches[branch];
+            if (view == null) return false;
+            var st = _board.Branches[branch];
+            int seat = st.Count > 0 ? st.Count - 1 : 0;
+            if ((uint)seat >= (uint)view.Seats.Length) return false;
+            var world = view.SeatWorld(seat);
+            const float head = 1.25f;
+            if (st.Count > 0)
+            {
+                var sr = (uint)seat < (uint)view.Birds.Length ? view.Birds[seat] : null;
+                if (sr != null && sr.transform.parent == view.transform)
+                    world.y = sr.transform.position.y;
+                else
+                    world.y += BranchView.RestLift;
+                world.y += head;
+            }
+            else world.y += 0.72f;
+            var sp = cam.WorldToScreenPoint(world);
+            if (sp.z < 0f) return false;
+            gui = new Vector2(sp.x, Screen.height - sp.y);
+            return true;
+        }
+
         void DrawCoach(float s, float top)
         {
             if (_levelHive) return;
@@ -911,6 +1063,16 @@ namespace FlockFive
                 DrawCoachLine(_cueLine, s, top);
             if (_cueHand)
                 DrawCoachGlove(s);
+            DrawCoachArrows(s);
+        }
+
+        // Drawn after the gift card so the wash does not cover the hand.
+        void DrawAdHand(float s, float top)
+        {
+            if (!_adHand) return;
+            _coachFade = 1f;
+            DrawCoachLine(AdHandLine, s, top);
+            DrawCoachGlove(s);
         }
 
         void CoachEnsureRipples()
@@ -1005,10 +1167,40 @@ namespace FlockFive
         }
 
         static Texture2D _coachGlove;
+        static Texture2D _coachArrow;
         static Texture2D _coachDim;
         static Sprite _coachGlowSpr;
         static Sprite _coachRipple;
         static float _gloveTipU = 0.39f, _gloveTipV = 0.87f;
+
+        // Outer silhouette. Same centers as the old tubes; radii are the old fill+outline
+        // so the index tip (GloveTip reach 24) and the glove's span stay put. Bases are
+        // a little fatter so each finger swells into the palm instead of staying a pipe.
+        struct CoachCap
+        {
+            public float X0, Y0, X1, Y1, R0, R1;
+            public CoachCap(float x0, float y0, float x1, float y1, float r0, float r1)
+            {
+                X0 = x0;
+                Y0 = y0;
+                X1 = x1;
+                Y1 = y1;
+                R0 = r0;
+                R1 = r1;
+            }
+        }
+
+        static readonly CoachCap[] _coachCaps =
+        {
+            new CoachCap(72f, 44f, 148f, 44f, 34f, 34f),
+            new CoachCap(88f, 66f, 138f, 104f, 42f, 42f),
+            new CoachCap(116f, 94f, 116f, 94f, 40f, 40f),
+            new CoachCap(78f, 100f, 26f, 158f, 26f, 27f),
+            new CoachCap(192f, 106f, 200f, 136f, 18f, 17f),
+            new CoachCap(156f, 110f, 166f, 158f, 21f, 20f),
+            new CoachCap(128f, 114f, 134f, 180f, 23f, 22f),
+            new CoachCap(98f, 116f, 88f, 236f, 26f, 24f)
+        };
 
         static Texture2D CoachGloveTex()
         {
@@ -1023,19 +1215,17 @@ namespace FlockFive
             };
             var px = new Color32[w * h];
             // Four fingers (index long) plus a side thumb and a ribbed cuff. Not a three-finger glove.
-            Blob(px, w, h, 72f, 44f, 148f, 44f, 22f, 12f, 255, 255, 255);
-            Blob(px, w, h, 78f, 100f, 26f, 158f, 16f, 11f, 255, 255, 255);
-            Blob(px, w, h, 88f, 66f, 138f, 104f, 30f, 12f, 255, 255, 255);
-            Blob(px, w, h, 192f, 106f, 200f, 136f, 9f, 8f, 255, 255, 255);
-            Blob(px, w, h, 156f, 110f, 166f, 158f, 11f, 9f, 255, 255, 255);
-            Blob(px, w, h, 128f, 114f, 134f, 180f, 12f, 10f, 255, 255, 255);
-            Blob(px, w, h, 98f, 116f, 88f, 236f, 13f, 11f, 255, 255, 255);
-            GloveTip(98f, 116f, 88f, 236f, 13f, 11f, w, h);
-            Blob(px, w, h, 90f, 42f, 130f, 42f, 4f, 0f, 12, 12, 14);
-            Blob(px, w, h, 92f, 60f, 128f, 60f, 3f, 0f, 12, 12, 14);
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w;
+                float fy = y + 0.5f;
+                for (int x = 0; x < w; x++)
+                    px[row + x] = GlovePixel(x + 0.5f, fy);
+            }
             tex.SetPixels32(px);
             tex.Apply(false, false);
             _coachGlove = tex;
+            GloveTip(98f, 116f, 88f, 236f, 13f, 11f, w, h);
             return tex;
         }
 
@@ -1050,61 +1240,158 @@ namespace FlockFive
             _gloveTipV = (y1 + dy / len * reach) / h;
         }
 
-        static void Blob(Color32[] px, int w, int h, float x0, float y0, float x1, float y1, float rad, float outline, byte r, byte g, byte b)
+        static Color32 GlovePixel(float x, float y)
         {
-            if (outline > 0f)
-                PaintCapsule(px, w, h, x0, y0, x1, y1, rad + outline, 12, 12, 14);
-            PaintCapsule(px, w, h, x0, y0, x1, y1, rad, r, g, b);
+            float dist = GloveField(x, y);
+            const float aa = 1.25f;
+            float alpha = Mathf.Clamp01(0.5f - dist / aa);
+            if (alpha <= 0f) return default;
+            float ow = Mathf.Lerp(9f, 6.4f, Mathf.SmoothStep(30f, 250f, y));
+            float fillT = Mathf.Clamp01((-dist - ow) / aa + 0.5f);
+            GloveFill(x, y, dist, out float fr, out float fg, out float fb);
+            float rib = GloveRib(x, y, dist);
+            if (rib > 0f)
+            {
+                fr = Mathf.Lerp(fr, 186f, rib);
+                fg = Mathf.Lerp(fg, 164f, rib);
+                fb = Mathf.Lerp(fb, 148f, rib);
+            }
+            return new Color32(
+                GloveByte(Mathf.Lerp(58f, fr, fillT)),
+                GloveByte(Mathf.Lerp(40f, fg, fillT)),
+                GloveByte(Mathf.Lerp(32f, fb, fillT)),
+                GloveByte(alpha * 255f));
         }
 
-        static void PaintCapsule(Color32[] px, int w, int h, float x0, float y0, float x1, float y1, float rad, byte r, byte g, byte b)
+        static void GloveFill(float x, float y, float dist, out float r, out float g, out float b)
         {
-            float pad = rad + 2f;
-            int minX = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(x0, x1) - pad));
-            int maxX = Mathf.Min(w - 1, Mathf.CeilToInt(Mathf.Max(x0, x1) + pad));
-            int minY = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(y0, y1) - pad));
-            int maxY = Mathf.Min(h - 1, Mathf.CeilToInt(Mathf.Max(y0, y1) + pad));
-            float abx = x1 - x0;
-            float aby = y1 - y0;
-            float den = abx * abx + aby * aby;
-            for (int y = minY; y <= maxY; y++)
+            const float e = 1.35f;
+            float nx = GloveField(x + e, y) - GloveField(x - e, y);
+            float ny = GloveField(x, y + e) - GloveField(x, y - e);
+            float mag = Mathf.Sqrt(nx * nx + ny * ny);
+            if (mag < 1e-4f) mag = 1f;
+            nx /= mag;
+            ny /= mag;
+            // Lower-right of each puff. The middle stays bright so it reads as round.
+            float down = Mathf.Clamp01(-ny * 0.55f + nx * 0.85f);
+            float depth = dist < 0f ? -dist : 0f;
+            float rim = Mathf.Clamp01((18f - depth) / 13f);
+            float puff = 0f;
+            var caps = _coachCaps;
+            for (int i = 3; i <= 7; i++)
             {
-                int row = y * w;
-                for (int x = minX; x <= maxX; x++)
-                {
-                    float px0 = x + 0.5f;
-                    float py0 = y + 0.5f;
-                    float t = den < 0.001f ? 0f : ((px0 - x0) * abx + (py0 - y0) * aby) / den;
-                    if (t < 0f) t = 0f;
-                    else if (t > 1f) t = 1f;
-                    float dx = px0 - (x0 + abx * t);
-                    float dy = py0 - (y0 + aby * t);
-                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                    float cover = rad - dist + 0.5f;
-                    if (cover <= 0f) continue;
-                    if (cover > 1f) cover = 1f;
-                    Over(px, row + x, r, g, b, cover);
-                }
+                GloveAxis(x, y, caps[i], out float cx, out float cy, out float rad);
+                float rx = x - cx;
+                float ry = y - cy;
+                float side = Mathf.Sqrt(rx * rx + ry * ry);
+                if (side > rad || side < 0.4f || rad < 0.5f) continue;
+                float edge = side / rad;
+                edge *= edge;
+                float face = Mathf.Clamp01((-ry / side) * 0.70f + (rx / side) * 0.62f);
+                float here = face * edge;
+                if (here > puff) puff = here;
             }
+            float shade = Mathf.Clamp01(down * rim * 0.85f + puff * 0.55f);
+            float soft = 1f - shade * 0.50f;
+            r = Mathf.Lerp(206f, 250f, soft);
+            g = Mathf.Lerp(182f, 245f, soft);
+            b = Mathf.Lerp(162f, 236f, soft);
+            float hi = 0f;
+            const float lx = -0.30f, ly = 0.95f;
+            for (int i = 3; i <= 7; i++)
+            {
+                var tip = caps[i];
+                float rad = tip.R1;
+                float hx = tip.X1 + lx * rad * 0.26f;
+                float hy = tip.Y1 + ly * rad * 0.20f;
+                float dx = x - hx;
+                float dy = y - hy;
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+                float spot = Mathf.Clamp01(1f - d / (rad * 0.50f));
+                float core = Mathf.Clamp01(1f - d / (rad * 0.26f));
+                spot = spot * 0.55f + core * core * 0.95f;
+                if (spot > hi) hi = spot;
+            }
+            float px = (x - 104f) / 16f;
+            float py = (y - 114f) / 11f;
+            float palm = Mathf.Sqrt(px * px + py * py);
+            float pad = Mathf.Clamp01(1f - palm);
+            pad = pad * 0.5f + pad * pad * 0.7f;
+            if (pad > hi) hi = pad;
+            hi = Mathf.Clamp01(hi);
+            r = Mathf.Lerp(r, 255f, hi);
+            g = Mathf.Lerp(g, 255f, hi);
+            b = Mathf.Lerp(b, 255f, hi);
         }
 
-        static void Over(Color32[] px, int i, byte r, byte g, byte b, float cover)
+        static float GloveRib(float x, float y, float dist)
         {
-            int a = (int)(cover * 255f);
-            if (a <= 0) return;
-            if (a >= 255)
-            {
-                px[i] = new Color32(r, g, b, 255);
-                return;
-            }
-            var dst = px[i];
-            float af = a / 255f;
-            float ia = 1f - af;
-            px[i] = new Color32(
-                (byte)(r * af + dst.r * ia),
-                (byte)(g * af + dst.g * ia),
-                (byte)(b * af + dst.b * ia),
-                (byte)Mathf.Min(255f, a + dst.a * ia));
+            if (y > 68f || dist > -12f) return 0f;
+            if (GloveCapDist(x, y, _coachCaps[0]) > -4f) return 0f;
+            float best = 0f;
+            float arc = (x - 110f) * (x - 110f) * 0.00085f;
+            best = GloveBand(y, 33.5f - arc, 0.46f);
+            float upper = GloveBand(y, 49.5f - arc, 0.34f);
+            if (upper > best) best = upper;
+            return best;
+        }
+
+        static float GloveBand(float y, float ry, float amp)
+        {
+            float d = y - ry;
+            if (d < 0f) d = -d;
+            float band = Mathf.Clamp01(1f - d / 4.2f);
+            band = band * band * (3f - 2f * band);
+            return band * amp;
+        }
+
+        // Cuff, palm, and thumb blend together. Each finger joins that body on its
+        // own, so the four tips stay separate and the webs stay round.
+        static float GloveField(float x, float y)
+        {
+            var c = _coachCaps;
+            float body = GloveCapDist(x, y, c[0]);
+            body = GloveSmin(body, GloveCapDist(x, y, c[1]), 16f);
+            body = GloveSmin(body, GloveCapDist(x, y, c[2]), 14f);
+            body = GloveSmin(body, GloveCapDist(x, y, c[3]), 13f);
+            float d = body;
+            d = GloveSmin(d, GloveCapDist(x, y, c[4]), 11f);
+            d = GloveSmin(d, GloveCapDist(x, y, c[5]), 11f);
+            d = GloveSmin(d, GloveCapDist(x, y, c[6]), 11f);
+            d = GloveSmin(d, GloveCapDist(x, y, c[7]), 11f);
+            return d;
+        }
+
+        static float GloveSmin(float a, float b, float k)
+        {
+            float h = Mathf.Clamp01(0.5f + 0.5f * (b - a) / k);
+            return Mathf.Lerp(b, a, h) - k * h * (1f - h);
+        }
+
+        static float GloveCapDist(float x, float y, CoachCap c)
+        {
+            GloveAxis(x, y, c, out float cx, out float cy, out float rad);
+            float dx = x - cx;
+            float dy = y - cy;
+            return Mathf.Sqrt(dx * dx + dy * dy) - rad;
+        }
+
+        static void GloveAxis(float x, float y, CoachCap c, out float cx, out float cy, out float rad)
+        {
+            float ax = c.X1 - c.X0;
+            float ay = c.Y1 - c.Y0;
+            float den = ax * ax + ay * ay;
+            float t = den < 0.0001f ? 0f : ((x - c.X0) * ax + (y - c.Y0) * ay) / den;
+            if (t < 0f) t = 0f;
+            else if (t > 1f) t = 1f;
+            rad = c.R0 + (c.R1 - c.R0) * t;
+            cx = c.X0 + ax * t;
+            cy = c.Y0 + ay * t;
+        }
+
+        static byte GloveByte(float v)
+        {
+            return (byte)Mathf.Clamp(v + 0.5f, 0f, 255f);
         }
 
         static Texture2D CoachDimTex()
@@ -1199,6 +1486,103 @@ namespace FlockFive
             _coachRipple.name = "CoachRipple";
             _coachRipple.hideFlags = HideFlags.HideAndDontSave;
             return _coachRipple;
+        }
+
+        // Down pointer. Cream fill, warm rim. A full CoachOutlinePx rim would swallow the shaft.
+        static Texture2D CoachArrowTex()
+        {
+            if (_coachArrow != null) return _coachArrow;
+            const int w = 96, h = 140;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = "CoachArrow"
+            };
+            var px = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w;
+                float fy = y + 0.5f;
+                for (int x = 0; x < w; x++)
+                    px[row + x] = ArrowPixel(x + 0.5f, fy);
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, false);
+            _coachArrow = tex;
+            return tex;
+        }
+
+        static Color32 ArrowPixel(float x, float y)
+        {
+            float dist = ArrowField(x, y);
+            const float aa = 1.2f;
+            float alpha = Mathf.Clamp01(0.5f - dist / aa);
+            if (alpha <= 0f) return default;
+            const float ow = 6.5f;
+            float fillT = Mathf.Clamp01((-dist - ow) / aa + 0.5f);
+            return new Color32(
+                GloveByte(Mathf.Lerp(78f, 255f, fillT)),
+                GloveByte(Mathf.Lerp(46f, 245f, fillT)),
+                GloveByte(Mathf.Lerp(28f, 209f, fillT)),
+                GloveByte(alpha * 255f));
+        }
+
+        // Low y is the tip (texture bottom, so it points down in the GUI rect).
+        static float ArrowField(float x, float y)
+        {
+            float shaft = ArrowCapsule(x, y, 48f, 112f, 48f, 64f, 14f);
+            float head = ArrowTri(x, y, 48f, 8f, 10f, 74f, 86f, 74f);
+            return GloveSmin(shaft, head, 8f);
+        }
+
+        static float ArrowCapsule(float x, float y, float ax, float ay, float bx, float by, float r)
+        {
+            float vx = x - ax;
+            float vy = y - ay;
+            float dx = bx - ax;
+            float dy = by - ay;
+            float den = dx * dx + dy * dy;
+            float t = den < 0.0001f ? 0f : (vx * dx + vy * dy) / den;
+            if (t < 0f) t = 0f;
+            else if (t > 1f) t = 1f;
+            float px = ax + dx * t - x;
+            float py = ay + dy * t - y;
+            return Mathf.Sqrt(px * px + py * py) - r;
+        }
+
+        static float ArrowTri(float px, float py, float ax, float ay, float bx, float by, float cx, float cy)
+        {
+            float e0x = bx - ax, e0y = by - ay;
+            float e1x = cx - bx, e1y = cy - by;
+            float e2x = ax - cx, e2y = ay - cy;
+            float v0x = px - ax, v0y = py - ay;
+            float v1x = px - bx, v1y = py - by;
+            float v2x = px - cx, v2y = py - cy;
+            float d0 = e0x * e0x + e0y * e0y;
+            float d1 = e1x * e1x + e1y * e1y;
+            float d2 = e2x * e2x + e2y * e2y;
+            float t0 = d0 > 1e-6f ? Mathf.Clamp01((v0x * e0x + v0y * e0y) / d0) : 0f;
+            float t1 = d1 > 1e-6f ? Mathf.Clamp01((v1x * e1x + v1y * e1y) / d1) : 0f;
+            float t2 = d2 > 1e-6f ? Mathf.Clamp01((v2x * e2x + v2y * e2y) / d2) : 0f;
+            float q0x = v0x - e0x * t0, q0y = v0y - e0y * t0;
+            float q1x = v1x - e1x * t1, q1y = v1y - e1y * t1;
+            float q2x = v2x - e2x * t2, q2y = v2y - e2y * t2;
+            float s = Mathf.Sign(e0x * e2y - e0y * e2x);
+            float m0 = q0x * q0x + q0y * q0y;
+            float m1 = q1x * q1x + q1y * q1y;
+            float m2 = q2x * q2x + q2y * q2y;
+            float c0 = s * (v0x * e0y - v0y * e0x);
+            float c1 = s * (v1x * e1y - v1y * e1x);
+            float c2 = s * (v2x * e2y - v2y * e2x);
+            float md = m0;
+            float mc = c0;
+            if (m1 < md) md = m1;
+            if (c1 < mc) mc = c1;
+            if (m2 < md) md = m2;
+            if (c2 < mc) mc = c2;
+            return -Mathf.Sqrt(md) * Mathf.Sign(mc);
         }
     }
 }
