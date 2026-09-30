@@ -33,7 +33,10 @@ namespace FlockFive
                     PlayerPrefs.Save();
                 }
             }
+#if UNITY_EDITOR
+            // Device builds never read the clipboard: iOS shows a paste-permission prompt each time.
             TryClaimClipboard();
+#endif
         }
 
         public static string Blurb()
