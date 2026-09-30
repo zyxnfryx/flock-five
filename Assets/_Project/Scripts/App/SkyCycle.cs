@@ -34,7 +34,7 @@ namespace FlockFive
                     float ru = Mathf.Clamp01(Instance._rushT / Mathf.Max(0.01f, Instance._rushDur));
                     return Mathf.Lerp(Instance._rushFrom, 1f, Mathf.SmoothStep(0f, 1f, ru));
                 }
-                float u = (Time.unscaledTime - Instance._t0) / Duration;
+                float u = (PlayClock.Now - Instance._t0) / Duration;
                 float v = Mathf.Clamp01((u - 0.12f) / 0.88f);
                 return Mathf.SmoothStep(0f, 1f, v);
             }
@@ -63,7 +63,7 @@ namespace FlockFive
         void OnEnable()
         {
             Instance = this;
-            _t0 = Time.unscaledTime;
+            _t0 = PlayClock.Now;
             Courtesy = null;
             _welcomed = false;
             _rushing = false;
@@ -110,7 +110,7 @@ namespace FlockFive
         {
             if (_rushing)
             {
-                _rushT += Time.unscaledDeltaTime;
+                _rushT += PlayClock.Delta;
                 if (_rushT >= _rushDur)
                 {
                     _rushing = false;
@@ -135,12 +135,15 @@ namespace FlockFive
                 _halo.transform.localScale = new Vector3(hs, hs, 1f);
                 _halo.color = new Color(1f, 0.9f, 0.7f, moonIn * 0.32f);
             }
+            float bolt = GardenStorm.SkyFlash;
             if (_veil != null)
             {
                 var duskCol = Color.Lerp(new Color(0.42f, 0.18f, 0.16f, 0f), new Color(0.14f, 0.12f, 0.34f, 0.36f), d);
                 duskCol.a = Mathf.Lerp(0f, 0.36f, d);
                 float wet = GardenStorm.Wet;
                 duskCol = Color.Lerp(duskCol, new Color(0.10f, 0.12f, 0.18f, Mathf.Max(duskCol.a, 0.34f)), wet * 0.55f);
+                if (bolt > 0.004f)
+                    duskCol = Color.Lerp(duskCol, new Color(0.70f, 0.78f, 0.92f, Mathf.Max(duskCol.a, 0.28f)), bolt * 0.8f);
                 _veil.color = duskCol;
             }
             if (_stars != null)
@@ -158,7 +161,10 @@ namespace FlockFive
             if (_cam != null)
             {
                 var bg = Color.Lerp(new Color(0.07f, 0.12f, 0.08f), new Color(0.05f, 0.06f, 0.14f), d);
-                _cam.backgroundColor = Color.Lerp(bg, new Color(0.05f, 0.07f, 0.10f), GardenStorm.Wet * 0.45f);
+                bg = Color.Lerp(bg, new Color(0.05f, 0.07f, 0.10f), GardenStorm.Wet * 0.45f);
+                if (bolt > 0.004f)
+                    bg = Color.Lerp(bg, new Color(0.55f, 0.66f, 0.82f), bolt * 0.85f);
+                _cam.backgroundColor = bg;
             }
 
             if (!_welcomed && moonIn > 0.55f)

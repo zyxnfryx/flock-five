@@ -392,6 +392,7 @@ namespace FlockFive
             int act = _act;
             _breaking = true;
             Sfx.Break();
+            Haptics.BranchBreak();
             RememberWood();
             float dir = FromRight ? 1f : -1f;
             SpriteRenderer fly = null;

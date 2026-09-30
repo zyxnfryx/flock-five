@@ -3,7 +3,8 @@ using UnityEngine;
 namespace FlockFive
 {
     // Gameplay weather. First storm after 70s, 75s of denser rain, 90s clear, repeat.
-    // Rain is place air on MixDesk. Thunder is a distant Mid rumble, never Lead.
+    // Rain is place air on MixDesk. Thunder is Mid, never Lead: a crack on the big
+    // bolts, then one delayed roll from the same clip pool.
     public sealed class GardenStorm : MonoBehaviour
     {
         public const float FirstWait = 70f;
@@ -11,11 +12,26 @@ namespace FlockFive
         public const float ClearLen = 90f;
         const float Fade = 2.1f;
         const int Drops = 177; // ~50% denser than 118
+        const int Segs = 36;
+        const int PathCap = 10;
+        const float BarW = 1.35f;
+        const float LeanDt = 0.042f; // ~24 fps — fewer bolt pieces, wider strike gap
         // Past the bezel so a streak finishes off-screen before it wraps.
         const float Edge = 1.7f;
 
         public static GardenStorm Instance { get; private set; }
         public static float Wet { get; private set; }
+
+        // Same curve the flash sprite uses, so sky tints do not wait on script order.
+        public static float SkyFlash
+        {
+            get
+            {
+                float ft = PlayClock.Now - _skyAt;
+                if (ft < 0f || ft > 0.5f) return 0f;
+                return FlashShape(ft, _skyBig) * _skyPow;
+            }
+        }
 
         Transform[] _drop;
         SpriteRenderer[] _dropSr;
@@ -24,11 +40,10 @@ namespace FlockFive
         float[] _phase;
         SpriteRenderer _veil;
         SpriteRenderer _flash;
-        float _t0;
+        float _play;
         float _wet;
         float _nextBoom;
-        float _flashT = 99f;
-        float _flashPower;
+        int _rainSync;
         float _floor = -8.6f;
         bool _wasDry = true;
         bool _flashLit;
@@ -38,6 +53,36 @@ namespace FlockFive
         int _frameH;
         float _frameTall;
         float _frL, _frR, _frB, _frT;
+        Transform[] _bolt;
+        SpriteRenderer[] _boltSr;
+        float[] _segMul;
+        float[] _px;
+        float[] _py;
+        int _pn;
+        int _boltN;
+        int _boltHi;
+        int _boltQ = -1;
+        bool _boltOn;
+        float _boltAt;
+        float _boltLife = 0.3f;
+        float _boltPow = 1f;
+        float _step;
+        float _rumbleIn = -1f;
+        float _rumblePow;
+        static float _skyAt = -100f;
+        static float _skyPow;
+        static bool _skyBig;
+        Transform _cue;
+        SpriteRenderer[] _cueSr;
+        SpriteRenderer _track;
+        SpriteRenderer _fill;
+        Transform _fillT;
+        int _barQ = -1;
+        int _fadeQ = -1;
+        bool _cueOn;
+        int _cueFrame = int.MinValue;
+        int _cueFrameH;
+        float _cueTall;
 
         public static GardenStorm Attach(Transform root)
         {
@@ -49,28 +94,57 @@ namespace FlockFive
         void OnEnable()
         {
             Instance = this;
-            _t0 = Time.unscaledTime;
+            _play = 0f;
+            _rainSync = 0;
 #if UNITY_EDITOR
             if (System.IO.File.Exists("/tmp/flock-five-storm-now"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-storm-now"); } catch { }
-                _t0 = Time.unscaledTime - FirstWait - 1.2f;
+                _play = FirstWait + 1.2f;
             }
 #endif
             Wet = 0f;
             _wet = 0f;
             _nextBoom = 6.5f;
-            _flashT = 99f;
-            _flashPower = 0f;
             _flashLit = false;
             _veilA = 0f;
             _frameW = -1;
+            _boltOn = false;
+            _boltQ = -1;
+            _rumbleIn = -1f;
+            _step = 0f;
+            _skyAt = -100f;
+            _skyPow = 0f;
+            _skyBig = false;
+            _barQ = -1;
+            _fadeQ = -1;
+            _cueOn = false;
+            _cueFrame = int.MinValue;
+            EndBolt();
+            HideCue();
         }
 
         void OnDisable()
         {
             if (Instance == this) Instance = null;
             Wet = 0f;
+            _skyAt = -100f;
+            EndBolt();
+            HideCue();
+        }
+
+        // Resume frame's unscaled step is the whole suspension. Drop it, then
+        // rebuild the streak layer from the foreground storm state.
+        void OnApplicationPause(bool paused)
+        {
+            PlayClock.DropResumeFrame();
+            if (!paused && _rainSync == 0) _rainSync = 1;
+        }
+
+        void OnApplicationFocus(bool focus)
+        {
+            PlayClock.DropResumeFrame();
+            if (focus && _rainSync == 0) _rainSync = 1;
         }
 
         void Start() => StartCoroutine(Build());
@@ -113,6 +187,61 @@ namespace FlockFive
                 _dropSr[i].color = new Color(0.78f, 0.86f, 0.95f, 0f);
                 if ((i & 11) == 11) yield return null;
             }
+
+            _bolt = new Transform[Segs];
+            _boltSr = new SpriteRenderer[Segs];
+            _segMul = new float[Segs];
+            _px = new float[PathCap];
+            _py = new float[PathCap];
+            for (int i = 0; i < Segs; i++)
+            {
+                var go = WorldBuilder.Sprite("Bolt" + i, SpriteCatalog.RainStreak, new Vector3(0f, -20f, 0.22f), 1f, 18, transform);
+                _bolt[i] = go.transform;
+                _boltSr[i] = go.GetComponent<SpriteRenderer>();
+                _boltSr[i].enabled = false;
+                _boltSr[i].color = new Color(0.94f, 0.97f, 1f, 0f);
+                if ((i & 7) == 7) yield return null;
+            }
+            BuildCue();
+        }
+
+        // Small lightning mark and a bar that shrinks across StormLen. Built once.
+        void BuildCue()
+        {
+            var root = new GameObject("StormCue");
+            root.transform.SetParent(transform, false);
+            _cue = root.transform;
+            _cue.localScale = new Vector3(1.4f, 1.4f, 1f);
+            _cueSr = new SpriteRenderer[3];
+            Vector2[] a = { new Vector2(-0.04f, 0.36f), new Vector2(0.20f, 0.06f), new Vector2(-0.06f, -0.04f) };
+            Vector2[] b = { new Vector2(0.20f, 0.06f), new Vector2(-0.06f, -0.04f), new Vector2(0.18f, -0.38f) };
+            for (int i = 0; i < 3; i++)
+            {
+                var go = WorldBuilder.Sprite("Zap" + i, SpriteCatalog.RainStreak, Vector3.zero, 1f, 21, _cue);
+                float dx = b[i].x - a[i].x;
+                float dy = b[i].y - a[i].y;
+                float len = Mathf.Sqrt(dx * dx + dy * dy);
+                var t = go.transform;
+                t.localPosition = new Vector3((a[i].x + b[i].x) * 0.5f, (a[i].y + b[i].y) * 0.5f, 0f);
+                t.localRotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(dy, dx) * Mathf.Rad2Deg - 90f);
+                t.localScale = new Vector3(1.25f, len * 1.08f, 1f);
+                _cueSr[i] = go.GetComponent<SpriteRenderer>();
+                _cueSr[i].color = new Color(0.96f, 0.97f, 1f, 0f);
+                _cueSr[i].enabled = false;
+            }
+            var trackGo = WorldBuilder.Sprite("CueTrack", SpriteCatalog.Glow, Vector3.zero, 1f, 19, _cue);
+            trackGo.transform.localPosition = new Vector3(0f, -0.62f, 0f);
+            trackGo.transform.localScale = new Vector3(BarW, 0.11f, 1f);
+            _track = trackGo.GetComponent<SpriteRenderer>();
+            _track.color = new Color(0.10f, 0.12f, 0.16f, 0f);
+            _track.enabled = false;
+            var fillGo = WorldBuilder.Sprite("CueFill", SpriteCatalog.Glow, Vector3.zero, 1f, 20, _cue);
+            _fillT = fillGo.transform;
+            _fillT.localPosition = new Vector3(0f, -0.62f, 0f);
+            _fillT.localScale = new Vector3(BarW, 0.11f, 1f);
+            _fill = fillGo.GetComponent<SpriteRenderer>();
+            _fill.color = new Color(0.82f, 0.90f, 1f, 0f);
+            _fill.enabled = false;
         }
 
         // Play-camera letterbox is not the screen. Bleed height × window aspect
@@ -166,27 +295,84 @@ namespace FlockFive
 
         void LateUpdate()
         {
-            float play = Time.unscaledTime - _t0;
-            float want = WantStorm(play) ? 1f : 0f;
-            _wet = Mathf.MoveTowards(_wet, want, Time.unscaledDeltaTime / Fade);
+            float dt = PlayClock.Delta;
+            if (dt > 0.0001f)
+                _step = _step <= 0f ? dt : _step + (dt - _step) * 0.2f;
+            _play += dt;
+            float want = WantStorm(_play) ? 1f : 0f;
+            _wet = Mathf.MoveTowards(_wet, want, dt / Fade);
             Wet = _wet;
 
-            // Steady rain keeps one veil alpha. Dry skips the write after the clear.
+            if (_rumbleIn >= 0f)
+            {
+                _rumbleIn -= dt;
+                if (_rumbleIn <= 0f)
+                {
+                    _rumbleIn = -1f;
+                    Sfx.ThunderRoll(_rumblePow);
+                }
+            }
+            if (_wet > 0.45f)
+            {
+                _nextBoom -= dt;
+                if (_nextBoom <= 0f)
+                {
+                    // Visible strikes, not a chatter loop. A low frame stretches the gap.
+                    bool big = Random.value < 0.28f;
+                    float power = big ? Random.Range(0.90f, 1f) : Random.Range(0.62f, 0.86f);
+                    float gap = big ? Random.Range(8.5f, 14f) : Random.Range(5.5f, 9.5f);
+                    if (LeanFrame()) gap += 3.5f;
+                    _nextBoom = gap;
+                    Boom(power, big);
+                }
+            }
+
+            // Steady rain keeps one veil alpha. A strike opens it so the sky pulse reads.
             float veilA = _wet > 0.001f ? 0.62f * _wet : 0f;
+            float sky = SkyFlash;
+            if (sky > 0f) veilA *= 1f - 0.7f * sky;
             if (_veil != null && veilA != _veilA)
             {
                 _veilA = veilA;
                 _veil.color = new Color(0.06f, 0.08f, 0.12f, veilA);
             }
 
-            // Clear stretches are invisible. Frozen drops keep the last spread,
-            // so the next fade-in is still a sheet, not a hitch every frame.
+            // Clear stretches are invisible. A snap to dry (resume used to do this
+            // in one spiked step) must still hide every streak, not leave the last paint.
             bool dry = _wet <= 0.001f && want <= 0f;
-            if (dry) _wasDry = true;
+            if (_rainSync > 0)
+            {
+                if (dry)
+                {
+                    ClearDrops();
+                    _rainSync = 0;
+                }
+                else if (_rainSync == 1)
+                {
+                    // One hidden frame so a frozen resume batch is dropped, then restart.
+                    HoldDrops();
+                    _rainSync = 2;
+                }
+                else
+                {
+                    RestartDrops();
+                    _rainSync = 0;
+                }
+            }
+            if (dry)
+            {
+                if (!_wasDry || DropsEnabled()) ClearDrops();
+                _wasDry = true;
+            }
             else if (_wasDry && _phase != null)
             {
                 // Holds only stagger a wrap, not the moment rain becomes visible.
-                for (int i = 0; i < _phase.Length; i++) _phase[i] = 0f;
+                for (int i = 0; i < _phase.Length; i++)
+                {
+                    _phase[i] = 0f;
+                    if (_dropSr != null && i < _dropSr.Length && _dropSr[i] != null)
+                        _dropSr[i].enabled = true;
+                }
                 _wasDry = false;
             }
             if (_drop != null && !dry)
@@ -195,7 +381,6 @@ namespace FlockFive
                 // Safe area is for HUD only — drops exit past every edge before recycle.
                 Frame(out float left, out float right, out float bottom, out float top);
                 _floor = bottom - Edge;
-                float dt = Time.deltaTime;
                 float wet = _wet;
                 for (int i = 0; i < _drop.Length; i++)
                 {
@@ -228,61 +413,397 @@ namespace FlockFive
                 }
             }
 
-            // Same bolt curve. After the tail fades, stop rewriting the full-screen sprite.
-            if (_flash != null && _flashT < 1.6f)
+            PaintFlash();
+            if (_boltOn)
             {
-                float ft = _flashT;
-                float strike = Mathf.Exp(-(ft - 0.018f) * (ft - 0.018f) / 0.00042f);
-                float echo = 0.62f * Mathf.Exp(-(ft - 0.098f) * (ft - 0.098f) / 0.00095f);
-                float glow = 0.10f * Mathf.Exp(-ft * 4.4f);
-                float a = (strike + echo + glow) * _flashPower;
-                _flashT += Time.unscaledDeltaTime;
-                if (a < 0.002f && ft > 0.2f)
-                {
-                    if (_flashLit)
-                    {
-                        _flash.color = new Color(0.78f, 0.86f, 1f, 0f);
-                        float rest = 22f;
-                        _flash.transform.localScale = new Vector3(rest, rest * 1.18f * PortraitLock.TallFactor(), 1f);
-                        _flashLit = false;
-                    }
-                }
-                else
-                {
-                    var warm = new Color(1f, 0.96f, 0.88f, a);
-                    var cool = new Color(0.78f, 0.86f, 1f, a);
-                    _flash.color = Color.Lerp(warm, cool, Mathf.Clamp01(ft * 6.5f));
-                    float sc = 22f + 3.4f * strike + 1.6f * echo;
-                    _flash.transform.localScale = new Vector3(sc, sc * 1.18f * PortraitLock.TallFactor(), 1f);
-                    _flashLit = true;
-                }
+                float age = PlayClock.Now - _boltAt;
+                if (age >= _boltLife) EndBolt();
+                else FadeBolt(age);
             }
+            PaintCue();
+        }
 
-            if (_wet > 0.45f)
+        bool DropsEnabled()
+        {
+            if (_dropSr == null) return false;
+            for (int i = 0; i < _dropSr.Length; i++)
+                if (_dropSr[i] != null && _dropSr[i].enabled) return true;
+            return false;
+        }
+
+        // Rain-off. Alpha 0 and the renderer off, so a stale batch cannot keep needles up.
+        void ClearDrops()
+        {
+            _wasDry = true;
+            if (_dropSr == null) return;
+            for (int i = 0; i < _dropSr.Length; i++)
             {
-                _nextBoom -= Time.unscaledDeltaTime;
-                if (_nextBoom <= 0f)
+                Paint(i, 0f);
+                if (_dropSr[i] != null) _dropSr[i].enabled = false;
+            }
+        }
+
+        void HoldDrops()
+        {
+            if (_dropSr == null) return;
+            for (int i = 0; i < _dropSr.Length; i++)
+                if (_dropSr[i] != null) _dropSr[i].enabled = false;
+        }
+
+        void RestartDrops()
+        {
+            _wasDry = false;
+            if (_dropSr == null) return;
+            for (int i = 0; i < _dropSr.Length; i++)
+            {
+                var sr = _dropSr[i];
+                if (sr == null) continue;
+                sr.enabled = true;
+                if (_drop != null && _drop[i] != null)
                 {
-                    // Fewer strikes — favor a solid roll over chatter.
-                    float power = Random.value < 0.55f
-                        ? Random.Range(0.82f, 1f)
-                        : Random.Range(0.55f, 0.78f);
-                    _nextBoom = power > 0.8f ? Random.Range(11f, 20f) : Random.Range(14f, 24f);
-                    Boom(power);
-                    // Rare echo only — not a rumble loop.
-                    if (power > 0.9f && Random.value < 0.12f)
-                        _nextBoom = Mathf.Min(_nextBoom, Random.Range(1.8f, 3.2f));
+                    var p = _drop[i].localPosition;
+                    _drop[i].localPosition = p;
                 }
             }
         }
 
-        void Boom(float power)
+        void Boom(float power, bool big)
         {
-            _flashT = 0f;
-            _flashPower = power;
-            Sfx.Thunder();
-            CamShake.Bolt(power);
-            if (power > 0.78f) Sfx.Rumble();
+            _skyAt = PlayClock.Now - 0.012f;
+            _skyBig = big;
+            _skyPow = big ? 1f : Mathf.Lerp(0.62f, 0.84f, Mathf.Clamp01(power));
+            // Close bolts crack with the light. The roll arrives later, sooner when the hit is bigger.
+            bool close = big || power >= 0.84f;
+            if (close) Sfx.ThunderCrack(power);
+            _rumblePow = power;
+            _rumbleIn = close
+                ? Mathf.Lerp(0.42f, 0.14f, Mathf.Clamp01(power))
+                : Mathf.Lerp(1.15f, 0.50f, Mathf.Clamp01(power));
+            CamShake.Bolt(big ? Mathf.Max(power, 0.92f) : power);
+            if (big) Haptics.Play(Haptics.Tier.Strong);
+            else if (power >= 0.78f) Haptics.Play(Haptics.Tier.Medium);
+            SpawnBolt(power, big);
+        }
+
+        static float FlashShape(float ft, bool big)
+        {
+            float strike = Mathf.Exp(-(ft - 0.012f) * (ft - 0.012f) / 0.00020f);
+            float echo = (big ? 0.94f : 0.68f) * Mathf.Exp(-(ft - 0.058f) * (ft - 0.058f) / 0.00032f);
+            float s = strike + echo;
+            return s > 1f ? 1f : s;
+        }
+
+        // Screen flash while the strike is live. One clear after the tail, then no further writes.
+        // SkyFlash is the same curve, so the painted sky does not wait on script order.
+        void PaintFlash()
+        {
+            if (_flash == null) return;
+            float ft = PlayClock.Now - _skyAt;
+            if (ft < 0f || ft > 0.45f)
+            {
+                if (_flashLit) DimFlash();
+                return;
+            }
+            float shape = FlashShape(ft, _skyBig);
+            float a = shape * _skyPow;
+            if (a < 0.012f && ft > 0.14f)
+            {
+                if (_flashLit) DimFlash();
+                return;
+            }
+            var warm = new Color(1f, 0.97f, 0.90f, a);
+            var cool = new Color(0.75f, 0.86f, 1f, a);
+            _flash.color = Color.Lerp(warm, cool, Mathf.Clamp01(ft * 8f));
+            float sc = (28f + 7f * shape) * (_skyBig ? 1.08f : 1f);
+            float tall = PortraitLock.TallFactor();
+            _flash.transform.localScale = new Vector3(sc, sc * tall, 1f);
+            _flashLit = true;
+        }
+
+        void DimFlash()
+        {
+            _flash.color = new Color(0.78f, 0.86f, 1f, 0f);
+            float rest = 22f;
+            float tall = PortraitLock.TallFactor();
+            _flash.transform.localScale = new Vector3(rest, rest * tall, 1f);
+            _flashLit = false;
+        }
+
+        bool LeanFrame() => _step > LeanDt;
+
+        void SpawnBolt(float power, bool big)
+        {
+            if (_bolt == null) return;
+            EndBolt();
+            _boltOn = true;
+            _boltAt = PlayClock.Now;
+            _boltLife = big ? 0.46f : 0.28f;
+            _boltPow = big ? 1f : Mathf.Clamp01(power);
+            Frame(out float left, out float right, out float bottom, out float top);
+            float x0 = Random.Range(left * 0.62f, right * 0.62f);
+            float y0 = top - 0.05f;
+            float x1 = x0 + Random.Range(-1.8f, 1.8f);
+            float y1 = Mathf.Lerp(bottom + 2.6f, bottom + 0.55f, Mathf.Clamp01(power));
+            float thick = big ? 0.36f : 0.22f;
+            Lay(x0, y0, x1, y1, big ? 8 : 6, big ? 0.9f : 0.55f, thick, true);
+            int forks = big ? (LeanFrame() ? 2 : 4) : (LeanFrame() ? 1 : 2);
+            for (int f = 0; f < forks; f++)
+            {
+                if (_pn < 3) break;
+                int at = 1 + (f * 2) % (_pn - 1);
+                float dir = ((f & 1) == 0) ? -1f : 1f;
+                if (Random.value < 0.15f) dir = -dir;
+                float len = Random.Range(0.9f, big ? 2.6f : 1.7f);
+                Lay(_px[at], _py[at], _px[at] + dir * len, _py[at] - Random.Range(0.35f, 1.35f), big ? 4 : 3, 0.35f, thick * 0.48f, false);
+            }
+            if (big && !LeanFrame())
+            {
+                float side = Random.value < 0.5f ? -1f : 1f;
+                float ox = x0 + side * Random.Range(1.1f, 2.0f);
+                Lay(ox, y0 - 0.35f, ox + Random.Range(-0.8f, 0.8f), y1 + 1.5f, 6, 0.6f, thick * 0.62f, false);
+            }
+            FadeBolt(0f);
+        }
+
+        void Lay(float x0, float y0, float x1, float y1, int steps, float jag, float thick, bool record)
+        {
+            if (steps < 2) steps = 2;
+            float px = x0;
+            float py = y0;
+            if (record)
+            {
+                _pn = 0;
+                PushPath(px, py);
+            }
+            float dx = x1 - x0;
+            float dy = y1 - y0;
+            float inv = 1f / Mathf.Max(0.001f, Mathf.Sqrt(dx * dx + dy * dy));
+            float nx = -dy * inv;
+            float ny = dx * inv;
+            for (int s = 1; s <= steps; s++)
+            {
+                float u = s / (float)steps;
+                float x = Mathf.Lerp(x0, x1, u);
+                float y = Mathf.Lerp(y0, y1, u);
+                if (s != steps && jag > 0f)
+                {
+                    float kick = Random.Range(-jag, jag);
+                    x += nx * kick;
+                    y += ny * kick;
+                }
+                PlaceSeg(px, py, x, y, thick * Mathf.Lerp(1.2f, 0.5f, u));
+                px = x;
+                py = y;
+                if (record) PushPath(px, py);
+            }
+        }
+
+        void PushPath(float x, float y)
+        {
+            if (_px == null || _pn >= PathCap) return;
+            _px[_pn] = x;
+            _py[_pn] = y;
+            _pn++;
+        }
+
+        void PlaceSeg(float x0, float y0, float x1, float y1, float thick)
+        {
+            if (_bolt == null || _boltN >= _bolt.Length) return;
+            if (LeanFrame() && _boltN >= 14) return;
+            float dx = x1 - x0;
+            float dy = y1 - y0;
+            float len = Mathf.Sqrt(dx * dx + dy * dy);
+            if (len < 0.05f) return;
+            int i = _boltN;
+            var t = _bolt[i];
+            var sr = _boltSr[i];
+            if (t == null || sr == null) return;
+            _boltN = i + 1;
+            _boltHi = _boltN;
+            t.position = new Vector3((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, 0.22f);
+            t.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(dy, dx) * Mathf.Rad2Deg - 90f);
+            // RainStreak is 0.125 wide and 1 tall at scale 1.
+            t.localScale = new Vector3(thick * 8f, len * 1.08f, 1f);
+            sr.enabled = true;
+            _segMul[i] = thick >= 0.2f ? 1f : 0.8f;
+        }
+
+        void FadeBolt(float age)
+        {
+            if (_boltSr == null) return;
+            float tail = _boltLife > 0.16f ? _boltLife - 0.10f : 0.16f;
+            float hold = age < 0.10f ? 1f : 1f - (age - 0.10f) / tail;
+            if (hold < 0f) hold = 0f;
+            // Same double peak as the screen flash, with a floor so the fork stays readable in the dip.
+            float shape = FlashShape(age + 0.012f, _skyBig);
+            float a = (age < 0.10f ? 0.34f + 0.66f * shape : hold) * _boltPow;
+            int q = (int)(a * 32f);
+            if (q == _boltQ) return;
+            _boltQ = q;
+            var core = new Color(0.95f, 0.97f, 1f, a);
+            var limb = new Color(0.70f, 0.84f, 1f, a * 0.86f);
+            int n = _boltHi;
+            for (int i = 0; i < n; i++)
+            {
+                var sr = _boltSr[i];
+                if (sr == null || !sr.enabled) continue;
+                sr.color = _segMul[i] > 0.9f ? core : limb;
+            }
+        }
+
+        void EndBolt()
+        {
+            _boltOn = false;
+            _boltQ = -1;
+            if (_boltSr == null) return;
+            for (int i = 0; i < _boltHi; i++)
+            {
+                if (_boltSr[i] != null) _boltSr[i].enabled = false;
+            }
+            _boltHi = 0;
+            _boltN = 0;
+        }
+
+        static float Remain(float play)
+        {
+            if (play < FirstWait) return 0f;
+            float u = play - FirstWait;
+            float cycle = StormLen + ClearLen;
+            float into = u % cycle;
+            if (into >= StormLen) return 0f;
+            return StormLen - into;
+        }
+
+        void PaintCue()
+        {
+            if (_cue == null) return;
+            float left = Remain(_play);
+            bool show = left > 0.05f && _wet > 0.12f;
+            if (!show)
+            {
+                if (_cueOn) HideCue();
+                return;
+            }
+            if (!_cueOn) ShowCue();
+            PlaceCue();
+            float frac = left / StormLen;
+            float fade = Mathf.Clamp01((_wet - 0.12f) / 0.4f);
+            int q = (int)(frac * 48f);
+            int fq = (int)(fade * 16f);
+            if (q == _barQ && fq == _fadeQ) return;
+            _barQ = q;
+            _fadeQ = fq;
+            float a = fade * 0.78f;
+            var bolt = new Color(0.96f, 0.97f, 1f, a);
+            for (int i = 0; i < _cueSr.Length; i++)
+                if (_cueSr[i] != null) _cueSr[i].color = bolt;
+            if (_track != null) _track.color = new Color(0.10f, 0.12f, 0.16f, fade * 0.42f);
+            if (_fill != null) _fill.color = new Color(0.82f, 0.90f, 1f, fade * 0.74f);
+            float w = BarW * Mathf.Clamp01(frac);
+            if (w < 0.04f) w = 0.04f;
+            _fillT.localScale = new Vector3(w, 0.11f, 1f);
+            _fillT.localPosition = new Vector3(-BarW * 0.5f + w * 0.5f, -0.62f, 0f);
+        }
+
+        void PlaceCue()
+        {
+            Frame(out _, out _, out _, out _);
+            if (_cueFrame == _frameW && _cueFrameH == _frameH && _cueTall == _frameTall) return;
+            float y = _frT - WorldBuilder.SafeTopWorld() - 0.95f;
+            float x = (_frL + _frR) * 0.5f;
+            _cue.position = new Vector3(x, y, 0.12f);
+            _cueFrame = _frameW;
+            _cueFrameH = _frameH;
+            _cueTall = _frameTall;
+        }
+
+        void ShowCue()
+        {
+            _cueOn = true;
+            if (_cueSr != null)
+            {
+                for (int i = 0; i < _cueSr.Length; i++)
+                    if (_cueSr[i] != null) _cueSr[i].enabled = true;
+            }
+            if (_track != null) _track.enabled = true;
+            if (_fill != null) _fill.enabled = true;
+        }
+
+        void HideCue()
+        {
+            _cueOn = false;
+            _barQ = -1;
+            _fadeQ = -1;
+            if (_cueSr != null)
+            {
+                for (int i = 0; i < _cueSr.Length; i++)
+                    if (_cueSr[i] != null) _cueSr[i].enabled = false;
+            }
+            if (_track != null) _track.enabled = false;
+            if (_fill != null) _fill.enabled = false;
+        }
+    }
+
+    // Foreground seconds. Time.unscaledTime and the resume frame's unscaledDeltaTime
+    // include the whole iOS/Android suspension, so ambience countdowns must not read them.
+    public static class PlayClock
+    {
+        const float Spike = 0.5f;
+
+        static float _now;
+        static float _delta;
+        static int _frame = -1;
+        static int _drop;
+
+        public static float Now
+        {
+            get
+            {
+                Tick();
+                return _now;
+            }
+        }
+
+        public static float Delta
+        {
+            get
+            {
+                Tick();
+                return _delta;
+            }
+        }
+
+        // Pause and focus both bookend a suspend. The next frames' unscaled step is that gap.
+        public static void DropResumeFrame()
+        {
+            _drop = 2;
+        }
+
+        public static System.Collections.IEnumerator Wait(float seconds)
+        {
+            float t = 0f;
+            while (t < seconds)
+            {
+                t += Delta;
+                yield return null;
+            }
+        }
+
+        static void Tick()
+        {
+            int frame = Time.frameCount;
+            if (frame == _frame) return;
+            _frame = frame;
+            float dt = Time.unscaledDeltaTime;
+            if (_drop > 0)
+            {
+                _drop--;
+                dt = 0f;
+            }
+            else if (dt > Spike)
+                dt = 0f;
+            _delta = dt;
+            _now += dt;
         }
     }
 }

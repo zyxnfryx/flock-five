@@ -9,7 +9,23 @@ namespace FlockFive
         const string CoachKey = "flockfive.coach.done";
         const string CoachGiftKey = "flockfive.coach.gift";
         const string CoachAdHandKey = "flockfive.coach.adhand";
+        const string CoachHiveKey = "flockfive.coach.hive";
+        const string CoachLeafKey = "flockfive.coach.leaf";
+        const string CoachSparrowKey = "flockfive.coach.sparrow";
+        const string CoachHawkKey = "flockfive.coach.hawk";
         const string AdHandLine = "Tap to watch and unlock a bonus spot.";
+        const string HiveIntroLine = "You found a bee! Bees live in your hive. Tap the hive to see your collection.";
+        // A feeder collect calls Board.Breeze, which lifts the tip leaf.
+        const string LeafIntroLine = "Leaves hide these birds. Collect at a feeder to blow them away.";
+        // A tap does not scare a sparrow. One full match (five birds) into its feeder does.
+        const string SparrowIntroLine = "A sparrow! It blocks a feeder. Collect five matching birds there to chase it off.";
+        // HitsNeeded is two collects on the blocked feeder. Five birds twice is ten.
+        const string HawkIntroLine = "A hawk! It needs two collects on its feeder to clear. Match five birds twice to drive it off.";
+        const int PestCueSparrow = 1;
+        const int PestCueHawk = 2;
+        const float PestCueSeconds = 4.5f;
+        // Hawk waits out the sparrow line, then this long, so the two never share a frame.
+        const float PestCueGap = 1.05f;
         // One outline for every coach line. StampCoach is the only draw path.
         const int CoachOutlinePx = 6;
         // Sweep along the arc, soft dip, rise back, short pause. 0.56+0.26+0.22+0.16 = 1.20s.
@@ -31,6 +47,17 @@ namespace FlockFive
 
         bool _coach;
         bool _adHand;
+        bool _hiveIntro;
+        bool _hiveIntroLive;
+        bool _hiveIntroSaw;
+        bool _leafIntro;
+        int _pestCue;
+        float _pestCueUntil;
+        float _pestNext;
+        int _pestSlot = -1;
+        bool _hivePopping;
+        float _hivePop;
+        float _hivePopMul = 1f;
         int _coachMoves;
         int _coachFrom = -1, _coachTo = -1;
         float _coachFade;
@@ -110,6 +137,10 @@ namespace FlockFive
             _cueBranch = -1;
             _gloveVis = false;
             _adHand = false;
+            _pestCue = 0;
+            _pestCueUntil = 0f;
+            _pestNext = 0f;
+            _pestSlot = -1;
             if (!_coach) CoachRelease();
             else
             {
@@ -134,7 +165,7 @@ namespace FlockFive
             PlayerPrefs.SetInt(CoachKey, 1);
             if (PlayerPrefs.GetInt(CoachGiftKey, 0) == 0 && GiftBranch() >= 0)
             {
-                _coachGiftUntil = Time.unscaledTime + 4.5f;
+                _coachGiftUntil = PlayClock.Now + 4.5f;
                 PlayerPrefs.SetInt(CoachGiftKey, 1);
             }
             PlayerPrefs.Save();
@@ -207,6 +238,9 @@ namespace FlockFive
             CoachClearCue();
             CoachHideGlow();
             CoachHideRipples();
+            _pestCue = 0;
+            _pestCueUntil = 0f;
+            _pestSlot = -1;
         }
 
         void CoachRelease()
@@ -236,9 +270,15 @@ namespace FlockFive
         {
             if (_gloveWiggle > 0f)
                 _gloveWiggle = Mathf.Max(0f, _gloveWiggle - Time.unscaledDeltaTime / 0.28f);
+            TickHivePop();
+            TickHiveIntro();
+            if (!PestStageFree())
+                PestIntroHide();
 
             if (_splash || _board == null || _garden.Cam == null)
             {
+                // Home lesson keeps the tap cycle. A full release would restart it every frame.
+                if (_hiveIntro && _splash) return;
                 CoachRelease();
                 return;
             }
@@ -261,14 +301,21 @@ namespace FlockFive
                 CoachHideNow();
                 return;
             }
-            if (!_coach && Time.unscaledTime >= _coachGiftUntil)
+            if (!_coach && PlayClock.Now >= _coachGiftUntil)
             {
+                if (_leafIntro)
+                {
+                    LeafIntroAdvance();
+                    return;
+                }
+                if (PestStageFree() && PestIntroAdvance())
+                    return;
                 CoachRelease();
                 return;
             }
 
             CoachClearCue();
-            if (Time.unscaledTime < _coachGiftUntil)
+            if (PlayClock.Now < _coachGiftUntil)
             {
                 int g = GiftBranch();
                 if (g < 0)
@@ -278,7 +325,7 @@ namespace FlockFive
                     _coachFade = 0f;
                     return;
                 }
-                float left = (_coachGiftUntil - Time.unscaledTime) / 0.5f;
+                float left = (_coachGiftUntil - PlayClock.Now) / 0.5f;
                 _coachFade = Mathf.Clamp01(Mathf.Min(1f, left));
                 _cueHand = true;
                 _cueForce = true;
@@ -407,7 +454,20 @@ namespace FlockFive
             Vector3 focus = wood + Vector3.up * 0.4f;
             var st = _board.Branches[_cueBranch];
             int run = st.TipRun();
-            if (!_cueGift && st.Count > 0 && run > 0)
+            if (_leafIntro && st.TipLocked && st.Count > 0 && view.Seats != null)
+            {
+                Vector3 acc = Vector3.zero;
+                int n = 0;
+                int tip = st.Count - 1;
+                for (int seat = 0; seat <= tip && seat < view.Seats.Length; seat++)
+                {
+                    if (view.Seats[seat] == null) continue;
+                    acc += view.SeatWorld(seat);
+                    n++;
+                }
+                if (n > 0) focus = acc / n + Vector3.up * 0.95f;
+            }
+            else if (!_cueGift && st.Count > 0 && run > 0)
             {
                 int tip = st.Count - 1;
                 int a = tip - run + 1;
@@ -474,6 +534,17 @@ namespace FlockFive
                 _coachFade = 1f;
                 float handS = Mathf.Max(Screen.height / 720f, 1f);
                 CoachGloveAt(GiftWatchAim(handS), dt, handS);
+                return;
+            }
+            if (_hiveIntroLive)
+            {
+                float handS = Mathf.Max(Screen.height / 720f, 1f);
+                CoachGloveAt(SplashHiveRect().center, dt, handS);
+                return;
+            }
+            if (_pestCue != 0)
+            {
+                PlacePestGlove(dt);
                 return;
             }
             if (_levelHive || !_cueHand || !CoachView(out var view) || _garden.Cam == null)
@@ -561,6 +632,12 @@ namespace FlockFive
             _cueAimGui = aimGui;
             float margin = 130f * s;
             CoachAimAway(_cueAimGui, s, margin, out var away, out float gap);
+            // Home lesson: sit under the hive so the line beside the rail stays clear.
+            if (_hiveIntroLive)
+            {
+                away = new Vector2(-0.08f, 1f).normalized;
+                gap = Mathf.Max(gap, 72f * s);
+            }
             var rest = _cueAimGui + away * gap;
             float ang = Mathf.Atan2(-away.x, away.y) * Mathf.Rad2Deg;
             _gloveRest = rest;
@@ -857,18 +934,21 @@ namespace FlockFive
             return _coachLine;
         }
 
-        void DrawCoachLine(string text, float s, float top)
+        void DrawCoachLine(string text, float s, float top, float boxH = 0f, int fontHi = 0)
         {
             var st = CoachLineStyle();
             if (_coachContent == null) _coachContent = new GUIContent();
             float w = Screen.width * 0.86f;
-            float h = 68f * s;
+            float h = boxH > 1f ? boxH : 68f * s;
+            int hi = fontHi > 0 ? fontHi : Mathf.RoundToInt(22f * s);
+            int lo = fontHi > 0 ? 18 : 14;
+            if (lo > hi) lo = hi;
             float y = CoachLineY(text, s, top, w, h);
             var r = new Rect((Screen.width - w) * 0.5f, y, w, h);
             if (_coachSizedFor != text || Mathf.Abs(_coachSizedW - r.width) > 1f || Mathf.Abs(_coachSizedH - r.height) > 1f)
             {
                 _coachContent.text = text;
-                _coachSizedPx = FitFontWrapped(st, text, r.width, r.height, 14, Mathf.RoundToInt(22f * s));
+                _coachSizedPx = FitFontWrapped(st, text, r.width, r.height, lo, hi);
                 _coachSizedFor = text;
                 _coachSizedW = r.width;
                 _coachSizedH = r.height;
@@ -937,6 +1017,7 @@ namespace FlockFive
                 AddRestPose(0.06f, s, rs, pad);
                 AddRestPose(_restTravelHi, s, rs, pad);
             }
+            AddPestBlock(pad);
             AddLiftedBirds(pad);
         }
 
@@ -1121,8 +1202,9 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        // The hop's other perch. Same arched glove, off to the side, nodding on the tap arc.
-        // Not gated on the spotlight: that renderer is still off in the first hint frames.
+        // The hop's other perch. Same glove and the same arc-point curve as the tap,
+        // held short of the birds. Not gated on the spotlight: that renderer is still
+        // off in the first hint frames.
         void PoseRestGlove(float s)
         {
             _restVis = false;
@@ -1137,8 +1219,7 @@ namespace FlockFive
             float hi = 0.40f;
             TapArc(rest, aim, away, s, hi, out var farPos, out float farAng);
             if (GloveHitsBirds(farPos, farAng, s)) hi = 0.18f;
-            float bob = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.6f));
-            float travel = Mathf.Lerp(0.06f, hi, bob);
+            float travel = Mathf.Lerp(0.06f, hi, TapTravel(_glovePhase));
             TapArc(rest, aim, away, s, travel, out _restShown, out _restAng);
             _restTip = rest;
             _restAim = aim;
@@ -1150,7 +1231,7 @@ namespace FlockFive
         void DrawRestGlove(float s)
         {
             if (!_restVis || _coachFade < 0.03f) return;
-            DrawGloveAt(_restShown, _restAng, 118f * s * RestMark, _coachFade * RestAlpha, 0f);
+            DrawGloveAt(_restShown, _restAng, 118f * s * RestMark, _coachFade * RestAlpha, TapDip(_glovePhase));
         }
 
         // Perch the tap hand uses, in GUI space. Matches the lesson focus, not the gift sign.
@@ -1196,7 +1277,14 @@ namespace FlockFive
             }
             PoseRestGlove(s);
             if (_cueLine != null)
-                DrawCoachLine(_cueLine, s, top);
+            {
+                if (_leafIntro)
+                    DrawCoachLine(_cueLine, s, top, 100f * s, Mathf.RoundToInt(28f * s));
+                else if (_pestCue != 0)
+                    DrawCoachLine(_cueLine, s, top, 148f * s, Mathf.RoundToInt(34f * s));
+                else
+                    DrawCoachLine(_cueLine, s, top);
+            }
             if (_restVis)
                 DrawRestGlove(s);
             if (_cueHand)
@@ -1210,6 +1298,463 @@ namespace FlockFive
             _coachFade = 1f;
             DrawCoachLine(AdHandLine, s, top);
             DrawCoachGlove(s);
+        }
+
+        void TickHivePop()
+        {
+            if (!_hivePopping) return;
+            _hivePop += Time.unscaledDeltaTime / 0.40f;
+            if (_hivePop >= 1f)
+            {
+                _hivePop = 1f;
+                _hivePopping = false;
+                _hivePopMul = 1f;
+                return;
+            }
+            float u = _hivePop;
+            float settle = Mathf.SmoothStep(0.42f, 1f, u);
+            float over = Mathf.Sin(u * Mathf.PI) * 0.12f * (1f - u);
+            _hivePopMul = Mathf.Clamp(settle + over, 0.35f, 1.14f);
+        }
+
+        // Streak toast owns the middle of the home screen. The hive lesson waits until it tucks away.
+        void TickHiveIntro()
+        {
+            bool live = _hiveIntro && _splash && _home == HomeFace.Splash && _streakSlide < 0f;
+            if (!live)
+            {
+                _hiveIntroLive = false;
+                if (_hiveIntro && _splash) _gloveVis = false;
+                return;
+            }
+            if (!_hiveIntroLive)
+            {
+                _hivePopping = true;
+                _hivePop = 0f;
+                _hivePopMul = 0.35f;
+                _gloveReady = false;
+                _coachFade = 0f;
+            }
+            _hiveIntroLive = true;
+            _hiveIntroSaw = true;
+            _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
+        }
+
+        void MarkHiveCoach()
+        {
+            if (PlayerPrefs.GetInt(CoachHiveKey, 0) != 0) return;
+            PlayerPrefs.SetInt(CoachHiveKey, 1);
+            PlayerPrefs.Save();
+        }
+
+        void ArmHiveIntro()
+        {
+            _hiveIntro = false;
+            _hiveIntroLive = false;
+            _hiveIntroSaw = false;
+            if (!Hive.Collected) return;
+            if (Hive.LegacyAdopted)
+            {
+                MarkHiveCoach();
+                return;
+            }
+            if (PlayerPrefs.GetInt(CoachHiveKey, 0) != 0) return;
+            _hiveIntro = true;
+            _gloveReady = false;
+            _gloveVis = false;
+            _coachFade = 0f;
+            TickHiveIntro();
+        }
+
+        void DismissHiveIntro()
+        {
+            if (!_hiveIntro) return;
+            if (_hiveIntroSaw) MarkHiveCoach();
+            _hiveIntro = false;
+            _hiveIntroLive = false;
+            _hiveIntroSaw = false;
+            _gloveVis = false;
+            _gloveReady = false;
+            _coachFade = 0f;
+        }
+
+        void NoteHiveIntroLeft()
+        {
+            if (_hiveIntroSaw) MarkHiveCoach();
+            _hiveIntro = false;
+            _hiveIntroLive = false;
+            _hiveIntroSaw = false;
+        }
+
+        // First real collect, lesson not stamped, not a pre-stamp album.
+        bool HiveLessonOwed()
+        {
+            return Hive.Collected && !Hive.LegacyAdopted && PlayerPrefs.GetInt(CoachHiveKey, 0) == 0;
+        }
+
+        // Home rail, garden hive, and the album. Hidden until the lesson is on screen
+        // or already stamped. A book that already has cards and is not waiting on that
+        // lesson is shown and stamped, so a missed intro cannot hide it. The in-garden
+        // skep still pops on the first collect so the visitor has a hive to fly to.
+        bool HiveReachable()
+        {
+            if (PlayerPrefs.GetInt(CoachHiveKey, 0) == 0 && Hive.Found > 0 && !HiveLessonOwed())
+                MarkHiveCoach();
+            if (_hiveIntroLive) return true;
+            if (_hiveIntro && !_hiveIntroLive) return false;
+            if (PlayerPrefs.GetInt(CoachHiveKey, 0) != 0) return true;
+            if (!_splash && Hive.Collected) return true;
+            return false;
+        }
+
+        bool SplashHiveShown() => HiveReachable();
+
+        void DrawHiveIntro(float s)
+        {
+            if (!_hiveIntroLive) return;
+            var hive = SplashHiveRect();
+            var pig = PiggyRect(s);
+            float botPad = Mathf.Max(14f, Screen.safeArea.yMin + 8f);
+            float flower = Mathf.Min(Screen.width * 0.94f, Screen.height * 0.50f);
+            float flowerTop = Screen.height - botPad - flower;
+            float left = Mathf.Max(16f * s, Screen.safeArea.xMin + 8f);
+            if (!NoAds.Owned && LevelData.NextPlay >= 1)
+                left = Mathf.Max(left, SplashNoAdsRect().xMax + 10f * s);
+            float right = hive.x - 12f * s;
+            float y = pig.yMax + 10f * s;
+            float avail = flowerTop - 12f * s - y;
+            float h = Mathf.Min(avail, 124f * s);
+            float w = right - left;
+            if (w < 150f * s || h < 64f * s)
+            {
+                left = (Screen.width - Screen.width * 0.86f) * 0.5f;
+                w = Screen.width * 0.86f;
+                y = TopHud() + 122f * s;
+                h = Mathf.Max(72f * s, Mathf.Min(116f * s, hive.y - y - 8f * s));
+            }
+            var r = new Rect(left, y, w, h);
+            var st = CoachLineStyle();
+            if (_coachContent == null) _coachContent = new GUIContent();
+            if (_coachSizedFor != HiveIntroLine || Mathf.Abs(_coachSizedW - r.width) > 1f || Mathf.Abs(_coachSizedH - r.height) > 1f)
+            {
+                _coachContent.text = HiveIntroLine;
+                int hi = Mathf.Max(18, Mathf.RoundToInt(30f * s));
+                _coachSizedPx = FitFontWrapped(st, HiveIntroLine, r.width, r.height, 18, hi);
+                _coachSizedFor = HiveIntroLine;
+                _coachSizedW = r.width;
+                _coachSizedH = r.height;
+            }
+            st.fontSize = _coachSizedPx;
+            int black = Mathf.Clamp(Mathf.CeilToInt(CoachOutlinePx * s), CoachOutlinePx, 8);
+            StampOutlined(r, HiveIntroLine, st, new Color(1f, 0.96f, 0.82f, _coachFade), 0, black);
+            DrawCoachGlove(s);
+        }
+
+        int FirstLeaf()
+        {
+            if (_board == null) return -1;
+            for (int i = 0; i < _board.Branches.Count; i++)
+            {
+                var br = _board.Branches[i];
+                if (br.Broken || br.Count == 0 || !br.TipLocked) continue;
+                return i;
+            }
+            return -1;
+        }
+
+        void ArmLeafIntro()
+        {
+            _leafIntro = false;
+            if (_coach) return;
+            if (PlayerPrefs.GetInt(CoachLeafKey, 0) != 0) return;
+            if (FirstLeaf() < 0) return;
+            PlayerPrefs.SetInt(CoachLeafKey, 1);
+            PlayerPrefs.Save();
+            _leafIntro = true;
+            _coachFade = 0f;
+            _gloveReady = false;
+            _gloveWiggle = 0f;
+            _glovePhase = 0f;
+            _gloveDip = 0f;
+            _tapSent = false;
+            _cueForce = false;
+            _cueFreeze = false;
+        }
+
+        void DismissLeafIntro()
+        {
+            if (!_leafIntro) return;
+            _leafIntro = false;
+            _cueHand = false;
+            _cueForce = false;
+            _cueFreeze = false;
+            _cueGift = false;
+            _cueLine = null;
+            _cueBranch = -1;
+            _gloveVis = false;
+            _gloveReady = false;
+            CoachHideGlow();
+            CoachHideRipples();
+        }
+
+        void LeafIntroAdvance()
+        {
+            if (_won || _restarting || _gift != GiftFace.None || _levelHive)
+            {
+                _cueHand = false;
+                _gloveVis = false;
+                CoachHideGlow();
+                return;
+            }
+            int b = FirstLeaf();
+            if (b < 0)
+            {
+                DismissLeafIntro();
+                return;
+            }
+            _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.35f);
+            _cueHand = true;
+            _cueForce = false;
+            _cueFreeze = false;
+            _cueGift = false;
+            _cueBranch = b;
+            _cueLine = LeafIntroLine;
+        }
+
+        // Level-1 coach, hive lesson, leaf lesson, gift, and ads keep the glove.
+        bool PestStageFree()
+        {
+            if (_splash || _board == null || _garden.Cam == null) return false;
+            if (_restarting || _won || _frozen || _gift != GiftFace.None) return false;
+            if (_coach || _leafIntro || _adHand || _levelHive) return false;
+            if (_hiveIntro || _hiveIntroLive) return false;
+            if (PlayClock.Now < _coachGiftUntil) return false;
+            return true;
+        }
+
+        void PestIntroHide()
+        {
+            if (_pestCue == 0) return;
+            _pestCue = 0;
+            _pestCueUntil = 0f;
+            _pestSlot = -1;
+            _cueHand = false;
+            _cueForce = false;
+            _cueFreeze = false;
+            _cueGift = false;
+            _cueLine = null;
+            _cueBranch = -1;
+            _gloveVis = false;
+            _gloveReady = false;
+            _cueHolePx = 0f;
+            CoachHideGlow();
+            CoachHideRipples();
+        }
+
+        // True while a pest line is up. Caller skips CoachRelease so the tap ripples stay.
+        bool PestIntroAdvance()
+        {
+            if (_pestCue != 0)
+            {
+                if (!PestCueAlive() || PlayClock.Now >= _pestCueUntil)
+                {
+                    DismissPestIntro();
+                    return false;
+                }
+                ApplyPestCue();
+                return true;
+            }
+            if (PlayClock.Now < _pestNext) return false;
+            if (SparrowDue())
+            {
+                BeginPestCue(PestCueSparrow);
+                return true;
+            }
+            if (HawkDue())
+            {
+                BeginPestCue(PestCueHawk);
+                return true;
+            }
+            return false;
+        }
+
+        bool SparrowDue()
+        {
+            if (PlayerPrefs.GetInt(CoachSparrowKey, 0) != 0) return false;
+            var s = SparrowView.Live;
+            return s != null && s.IsBlocking && !s.InScrap;
+        }
+
+        // Hold the hawk while an unseen sparrow is still in the garden, and while
+        // the sparrow line's gap has not elapsed. One line at a time.
+        bool HawkDue()
+        {
+            if (PlayerPrefs.GetInt(CoachHawkKey, 0) != 0) return false;
+            if (PlayClock.Now < _pestNext) return false;
+            if (PlayerPrefs.GetInt(CoachSparrowKey, 0) == 0 && SparrowView.Live != null) return false;
+            if (SparrowDue()) return false;
+            var h = HawkView.Live;
+            return h != null && h.IsBlocking && !h.InScrap;
+        }
+
+        bool PestCueAlive()
+        {
+            if (_pestCue == PestCueSparrow) return SparrowView.Live != null;
+            if (_pestCue == PestCueHawk) return HawkView.Live != null;
+            return false;
+        }
+
+        void BeginPestCue(int kind)
+        {
+            _pestCue = kind;
+            _pestCueUntil = PlayClock.Now + PestCueSeconds;
+            _coachFade = 0f;
+            _gloveReady = false;
+            _gloveWiggle = 0f;
+            _glovePhase = 0f;
+            _gloveDip = 0f;
+            _tapSent = false;
+            _gloveBranch = -1;
+            _restVis = false;
+            _coachGlowKick = 0f;
+            _coachLineHeld = false;
+            _pestSlot = -1;
+            if (kind == PestCueSparrow && SparrowView.Live != null)
+                _pestSlot = SparrowView.Live.BlockingSlot;
+            else if (kind == PestCueHawk && HawkView.Live != null)
+                _pestSlot = HawkView.Live.BlockingSlot;
+            ApplyPestCue();
+        }
+
+        void ApplyPestCue()
+        {
+            _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
+            _cueHand = true;
+            _cueForce = false;
+            _cueFreeze = false;
+            _cueGift = false;
+            _cueBranch = -1;
+            _cueHolePx = 0f;
+            _cueLine = _pestCue == PestCueHawk ? HawkIntroLine : SparrowIntroLine;
+        }
+
+        void DismissPestIntro()
+        {
+            if (_pestCue == 0) return;
+            if (_pestCue == PestCueSparrow) PlayerPrefs.SetInt(CoachSparrowKey, 1);
+            else PlayerPrefs.SetInt(CoachHawkKey, 1);
+            PlayerPrefs.Save();
+            _pestNext = PlayClock.Now + PestCueGap;
+            PestIntroHide();
+        }
+
+        // Tap on the pest dismisses its line and still reaches the garden.
+        void PestIntroTap(Vector2 screen)
+        {
+            if (_pestCue == 0 || HitHud(screen)) return;
+            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
+            if (cam == null) return;
+            var world = (Vector2)cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
+            if (_pestCue == PestCueSparrow && SparrowView.Live != null && PestHit(SparrowView.Live.transform, world))
+                DismissPestIntro();
+            else if (_pestCue == PestCueHawk && HawkView.Live != null && PestHit(HawkView.Live.transform, world))
+                DismissPestIntro();
+        }
+
+        static bool PestHit(Transform t, Vector2 world)
+        {
+            if (t == null) return false;
+            if (((Vector2)t.position - world).sqrMagnitude <= 1.35f * 1.35f) return true;
+            var sr = t.GetComponent<SpriteRenderer>();
+            if (sr == null || !sr.enabled || sr.sprite == null) return false;
+            var b = sr.bounds;
+            b.Expand(0.45f);
+            return b.Contains(new Vector3(world.x, world.y, b.center.z));
+        }
+
+        void PlacePestGlove(float dt)
+        {
+            // Halo only. Hole stays under the dim threshold so the rest of the garden still takes taps.
+            _cueHolePx = 0f;
+            if (!PestAim(out var gui, out var world))
+            {
+                _gloveVis = false;
+                CoachHideGlow();
+                return;
+            }
+            CoachEnsureGlow();
+            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.35f));
+            float breathe = 0.94f + 0.08f * pulse;
+            float a = (0.40f + 0.28f * pulse) * _coachFade;
+            if (a > 1f) a = 1f;
+            _coachGlow.enabled = true;
+            _coachGlow.transform.position = world;
+            _coachGlow.transform.localScale = new Vector3(2.3f * breathe, 2.3f * breathe, 1f);
+            _coachGlow.color = new Color(1f, 0.91f, 0.46f, a);
+            float handS = Mathf.Max(Screen.height / 720f, 1f);
+            if (CoachGloveAt(gui, dt, handS))
+            {
+                _coachGlowKick = 1f;
+                CoachSpawnRipple(world);
+                _coachGlow.color = new Color(1f, 0.91f, 0.46f, Mathf.Min(1f, a + 0.35f * _coachFade));
+            }
+        }
+
+        bool PestAim(out Vector2 gui, out Vector3 world)
+        {
+            gui = default;
+            world = default;
+            Transform body = null;
+            int slot = _pestSlot;
+            float perch = 0.35f;
+            if (_pestCue == PestCueSparrow && SparrowView.Live != null)
+            {
+                body = SparrowView.Live.transform;
+                if (SparrowView.Live.BlockingSlot >= 0) slot = SparrowView.Live.BlockingSlot;
+            }
+            else if (_pestCue == PestCueHawk && HawkView.Live != null)
+            {
+                body = HawkView.Live.transform;
+                if (HawkView.Live.BlockingSlot >= 0) slot = HawkView.Live.BlockingSlot;
+                perch = 0.42f;
+            }
+            if (body != null)
+                world = body.position;
+            else if (_garden.Feeders != null && (uint)slot < (uint)_garden.Feeders.Length && _garden.Feeders[slot] != null)
+                world = _garden.Feeders[slot].Mouth + new Vector3(0f, perch, 0f);
+            else
+                return false;
+            var cam = _garden.Cam;
+            if (cam == null) return false;
+            var sp = cam.WorldToScreenPoint(world);
+            if (sp.z < 0f) return false;
+            gui = new Vector2(sp.x, Screen.height - sp.y);
+            return true;
+        }
+
+        void AddPestBlock(float pad)
+        {
+            if (_pestCue == 0 || _blockN >= _blocks.Length) return;
+            Transform body = null;
+            if (_pestCue == PestCueSparrow && SparrowView.Live != null) body = SparrowView.Live.transform;
+            else if (_pestCue == PestCueHawk && HawkView.Live != null) body = HawkView.Live.transform;
+            if (body == null) return;
+            var sr = body.GetComponent<SpriteRenderer>();
+            var cam = _garden.Cam;
+            if (sr == null || cam == null || sr.sprite == null) return;
+            var b = sr.bounds;
+            var a = cam.WorldToScreenPoint(new Vector3(b.min.x, b.max.y, 0f));
+            var c = cam.WorldToScreenPoint(new Vector3(b.max.x, b.min.y, 0f));
+            if (a.z < 0f && c.z < 0f) return;
+            float x0 = (a.x < c.x ? a.x : c.x) - pad;
+            float x1 = (a.x > c.x ? a.x : c.x) + pad;
+            float y0 = Screen.height - (a.y > c.y ? a.y : c.y) - pad;
+            float y1 = Screen.height - (a.y < c.y ? a.y : c.y) + pad;
+            _blocks[_blockN].X0 = x0;
+            _blocks[_blockN].Y0 = y0;
+            _blocks[_blockN].X1 = x1;
+            _blocks[_blockN].Y1 = y1;
+            _blockN++;
         }
 
         void CoachEnsureRipples()
@@ -1304,16 +1849,15 @@ namespace FlockFive
         }
 
         static Texture2D _coachGlove;
-        static Texture2D _coachArrow;
         static Texture2D _coachDim;
         static Sprite _coachGlowSpr;
         static Sprite _coachRipple;
         static float _gloveTipU = 0.39f, _gloveTipV = 0.87f;
 
-        // Outer silhouette. Same ends and radii as the straight tubes, so the index tip
-        // (GloveTip reach 24), the pivot, and the texture span stay put. Bow is the peak
-        // sagitta in pixels, to the left of base→tip. The index bows and meets its tip
-        // straight. The shorter fingers hook the other way. The thumb arches inward.
+        // Outer silhouette. Ends and radii stay put, so the index tip (GloveTip reach 24),
+        // the pivot, and the texture span stay put. Bow is the peak sagitta in pixels, to
+        // the left of base→tip. Every finger hooks, including the index, so none of them
+        // run straight out to a point. The thumb arches inward.
         struct CoachCap
         {
             public float X0, Y0, X1, Y1, R0, R1, Bow, Curl;
@@ -1339,7 +1883,7 @@ namespace FlockFive
             new CoachCap(192f, 106f, 200f, 136f, 18f, 17f, -3f, 1f),
             new CoachCap(156f, 110f, 166f, 158f, 21f, 20f, -6f, 1f),
             new CoachCap(128f, 114f, 134f, 180f, 23f, 22f, -8f, 1f),
-            new CoachCap(98f, 116f, 88f, 236f, 26f, 24f, 16f, -1f)
+            new CoachCap(98f, 116f, 88f, 236f, 26f, 24f, 22f, 1f)
         };
 
         static Texture2D CoachGloveTex()
@@ -1354,7 +1898,7 @@ namespace FlockFive
                 name = "CoachGlove"
             };
             var px = new Color32[w * h];
-            // Four fingers (index long) plus a side thumb and a ribbed cuff. Not a three-finger glove.
+            // Four fingers plus a side thumb and a ribbed cuff. The index hooks with the others.
             for (int y = 0; y < h; y++)
             {
                 int row = y * w;
@@ -1686,103 +2230,6 @@ namespace FlockFive
             _coachRipple.name = "CoachRipple";
             _coachRipple.hideFlags = HideFlags.HideAndDontSave;
             return _coachRipple;
-        }
-
-        // Down pointer. Cream fill, warm rim. A full CoachOutlinePx rim would swallow the shaft.
-        static Texture2D CoachArrowTex()
-        {
-            if (_coachArrow != null) return _coachArrow;
-            const int w = 96, h = 140;
-            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
-            {
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp,
-                hideFlags = HideFlags.HideAndDontSave,
-                name = "CoachArrow"
-            };
-            var px = new Color32[w * h];
-            for (int y = 0; y < h; y++)
-            {
-                int row = y * w;
-                float fy = y + 0.5f;
-                for (int x = 0; x < w; x++)
-                    px[row + x] = ArrowPixel(x + 0.5f, fy);
-            }
-            tex.SetPixels32(px);
-            tex.Apply(false, false);
-            _coachArrow = tex;
-            return tex;
-        }
-
-        static Color32 ArrowPixel(float x, float y)
-        {
-            float dist = ArrowField(x, y);
-            const float aa = 1.2f;
-            float alpha = Mathf.Clamp01(0.5f - dist / aa);
-            if (alpha <= 0f) return default;
-            const float ow = 6.5f;
-            float fillT = Mathf.Clamp01((-dist - ow) / aa + 0.5f);
-            return new Color32(
-                GloveByte(Mathf.Lerp(78f, 255f, fillT)),
-                GloveByte(Mathf.Lerp(46f, 245f, fillT)),
-                GloveByte(Mathf.Lerp(28f, 209f, fillT)),
-                GloveByte(alpha * 255f));
-        }
-
-        // Low y is the tip (texture bottom, so it points down in the GUI rect).
-        static float ArrowField(float x, float y)
-        {
-            float shaft = ArrowCapsule(x, y, 48f, 112f, 48f, 64f, 14f);
-            float head = ArrowTri(x, y, 48f, 8f, 10f, 74f, 86f, 74f);
-            return GloveSmin(shaft, head, 8f);
-        }
-
-        static float ArrowCapsule(float x, float y, float ax, float ay, float bx, float by, float r)
-        {
-            float vx = x - ax;
-            float vy = y - ay;
-            float dx = bx - ax;
-            float dy = by - ay;
-            float den = dx * dx + dy * dy;
-            float t = den < 0.0001f ? 0f : (vx * dx + vy * dy) / den;
-            if (t < 0f) t = 0f;
-            else if (t > 1f) t = 1f;
-            float px = ax + dx * t - x;
-            float py = ay + dy * t - y;
-            return Mathf.Sqrt(px * px + py * py) - r;
-        }
-
-        static float ArrowTri(float px, float py, float ax, float ay, float bx, float by, float cx, float cy)
-        {
-            float e0x = bx - ax, e0y = by - ay;
-            float e1x = cx - bx, e1y = cy - by;
-            float e2x = ax - cx, e2y = ay - cy;
-            float v0x = px - ax, v0y = py - ay;
-            float v1x = px - bx, v1y = py - by;
-            float v2x = px - cx, v2y = py - cy;
-            float d0 = e0x * e0x + e0y * e0y;
-            float d1 = e1x * e1x + e1y * e1y;
-            float d2 = e2x * e2x + e2y * e2y;
-            float t0 = d0 > 1e-6f ? Mathf.Clamp01((v0x * e0x + v0y * e0y) / d0) : 0f;
-            float t1 = d1 > 1e-6f ? Mathf.Clamp01((v1x * e1x + v1y * e1y) / d1) : 0f;
-            float t2 = d2 > 1e-6f ? Mathf.Clamp01((v2x * e2x + v2y * e2y) / d2) : 0f;
-            float q0x = v0x - e0x * t0, q0y = v0y - e0y * t0;
-            float q1x = v1x - e1x * t1, q1y = v1y - e1y * t1;
-            float q2x = v2x - e2x * t2, q2y = v2y - e2y * t2;
-            float s = Mathf.Sign(e0x * e2y - e0y * e2x);
-            float m0 = q0x * q0x + q0y * q0y;
-            float m1 = q1x * q1x + q1y * q1y;
-            float m2 = q2x * q2x + q2y * q2y;
-            float c0 = s * (v0x * e0y - v0y * e0x);
-            float c1 = s * (v1x * e1y - v1y * e1x);
-            float c2 = s * (v2x * e2y - v2y * e2x);
-            float md = m0;
-            float mc = c0;
-            if (m1 < md) md = m1;
-            if (c1 < mc) mc = c1;
-            if (m2 < md) md = m2;
-            if (c2 < mc) mc = c2;
-            return -Mathf.Sqrt(md) * Mathf.Sign(mc);
         }
     }
 }

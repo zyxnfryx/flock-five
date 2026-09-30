@@ -33,6 +33,9 @@ namespace FlockFive
         float _twitchIn;
         float _twitchT;
         bool _twitching;
+        Coroutine _hitCo;
+        int _hitGen;
+        int _hitIndex = -1;
         static readonly Color AngryTint = new Color(1f, 0.6f, 0.55f, 1f);
 
         public static IEnumerator Patrol(System.Func<bool> allow, System.Func<bool> armed, int visits, FeederView[] feeders, Transform parent)
@@ -43,7 +46,7 @@ namespace FlockFive
                 if (parent == null) yield break;
                 yield return null;
             }
-            yield return new WaitForSeconds(Random.Range(40f, 70f));
+            yield return PlayClock.Wait(Random.Range(40f, 70f));
             int left = visits;
             while (parent != null && left > 0)
             {
@@ -58,7 +61,7 @@ namespace FlockFive
                 while (t < wait)
                 {
                     if (parent == null) yield break;
-                    t += Time.deltaTime;
+                    t += PlayClock.Delta;
                     yield return null;
                 }
             }
@@ -226,11 +229,33 @@ namespace FlockFive
 
         public void TakeHit(int index = 0)
         {
-            if (_done || _fleeing || _art == null) return;
-            StartCoroutine(TakeHitCo(index));
+            if (_art == null) return;
+            if (_done || _fleeing)
+            {
+                AdLog.Add("hawk hit ignored (defeat)");
+                return;
+            }
+            if (_hitCo != null && _hitIndex == index)
+            {
+                AdLog.Add("hawk hit ignored (duplicate)");
+                return;
+            }
+            _hitIndex = index;
+            int gen = ++_hitGen;
+            if (_hitCo != null) StopCoroutine(_hitCo);
+            _hitCo = StartCoroutine(TakeHitCo(index, gen));
         }
 
-        IEnumerator TakeHitCo(int index)
+        void StopHit()
+        {
+            _hitGen++;
+            if (_hitCo == null) return;
+            var co = _hitCo;
+            _hitCo = null;
+            StopCoroutine(co);
+        }
+
+        IEnumerator TakeHitCo(int index, int gen)
         {
             var pos = transform.position;
             var parent = transform.parent;
@@ -301,12 +326,18 @@ namespace FlockFive
                 transform.localRotation = Quaternion.identity;
                 transform.position = pos + new Vector3(hopX * 0.35f, 0.02f, 0f);
             }
+            if (gen == _hitGen) _hitCo = null;
         }
 
         public IEnumerator PanicFlee(bool defeated = false)
         {
-            if (_done || _fleeing) yield break;
+            if (_done || _fleeing)
+            {
+                AdLog.Add(defeated ? "hawk defeat ignored (duplicate)" : "hawk flee ignored (duplicate)");
+                yield break;
+            }
             _fleeing = true;
+            StopHit();
             _scrap = false;
             Calm();
             BlockingSlot = -1;

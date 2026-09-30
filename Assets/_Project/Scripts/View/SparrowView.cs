@@ -23,6 +23,9 @@ namespace FlockFive
         float _exitX;
         Color _tint = new Color(0.58f, 0.52f, 0.46f, 1f);
         float _flap;
+        Coroutine _hitCo;
+        int _hitGen;
+        int _hitIndex = -1;
 
         public static IEnumerator Patrol(System.Func<bool> allow, System.Func<bool> armed, int visits, FeederView[] feeders, Transform parent)
         {
@@ -32,7 +35,7 @@ namespace FlockFive
                 if (parent == null) yield break;
                 yield return null;
             }
-            yield return new WaitForSeconds(Random.Range(12f, 22f));
+            yield return PlayClock.Wait(Random.Range(12f, 22f));
             int left = visits;
             while (parent != null && left > 0)
             {
@@ -47,7 +50,7 @@ namespace FlockFive
                 while (t < wait)
                 {
                     if (parent == null) yield break;
-                    t += Time.deltaTime;
+                    t += PlayClock.Delta;
                     yield return null;
                 }
             }
@@ -184,11 +187,33 @@ namespace FlockFive
         // Lifelike hit: brief contact squash, crouch→hop flinch, wing flutter, yell, feather puff.
         public void TakeHit(int index = 0)
         {
-            if (_done || _fleeing || _art == null) return;
-            StartCoroutine(TakeHitCo(index));
+            if (_art == null) return;
+            if (_done || _fleeing)
+            {
+                AdLog.Add("sparrow hit ignored (defeat)");
+                return;
+            }
+            if (_hitCo != null && _hitIndex == index)
+            {
+                AdLog.Add("sparrow hit ignored (duplicate)");
+                return;
+            }
+            _hitIndex = index;
+            int gen = ++_hitGen;
+            if (_hitCo != null) StopCoroutine(_hitCo);
+            _hitCo = StartCoroutine(TakeHitCo(index, gen));
         }
 
-        IEnumerator TakeHitCo(int index)
+        void StopHit()
+        {
+            _hitGen++;
+            if (_hitCo == null) return;
+            var co = _hitCo;
+            _hitCo = null;
+            StopCoroutine(co);
+        }
+
+        IEnumerator TakeHitCo(int index, int gen)
         {
             var pos = transform.position;
             var parent = transform.parent;
@@ -262,14 +287,20 @@ namespace FlockFive
                 // Settle slightly off perch — Visit loop no longer owns position while _evict.
                 transform.position = pos + new Vector3(hopX * 0.45f, 0.02f, 0f);
             }
+            if (gen == _hitGen) _hitCo = null;
         }
 
         // Panic zigzag bolt. defeated: the five-hit clear — hit-stop, then a tumble off.
         // Hawk-boot still uses the zigzag (no cheer).
         public IEnumerator PanicFlee(bool defeated = false)
         {
-            if (_done || _fleeing) yield break;
+            if (_done || _fleeing)
+            {
+                AdLog.Add(defeated ? "sparrow defeat ignored (duplicate)" : "sparrow flee ignored (duplicate)");
+                yield break;
+            }
             _fleeing = true;
+            StopHit();
             BlockingSlot = -1;
             if (defeated)
             {

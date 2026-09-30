@@ -119,7 +119,6 @@ namespace FlockFive
             }
 
             float x = WorldBuilder.EdgeX(cam, 1f);
-            float gx = WorldBuilder.EdgeX(cam, 1f, WorldBuilder.GiftWoodScaleX);
             for (int i = 0; i < left.Count; i++)
                 into.Add(new Spot { Index = left[i], Column = 0, Row = i, Pos = new Vector3(-x, y0 - i * gap, 0f), Scale = LimbScale });
             for (int i = 0; i < right.Count; i++)
@@ -132,7 +131,7 @@ namespace FlockFive
                     Index = bonus[i],
                     Column = 2,
                     Row = 0,
-                    Pos = new Vector3(onRight ? gx : -gx, bonusY, 0f),
+                    Pos = new Vector3(onRight ? x : -x, bonusY, 0f),
                     Scale = LimbScale
                 });
             }

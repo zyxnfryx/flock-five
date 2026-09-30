@@ -41,6 +41,9 @@ namespace FlockFive
             var night = new Color(0.64f, 0.58f, 0.82f, 1f);
             var sky = Color.Lerp(sunset, night, dusk);
             _sr.color = Color.Lerp(sky, new Color(0.52f, 0.58f, 0.64f, 1f), GardenStorm.Wet * 0.32f);
+            float bolt = GardenStorm.SkyFlash;
+            if (bolt > 0.004f)
+                _sr.color = Color.Lerp(_sr.color, new Color(0.88f, 0.92f, 0.98f, 1f), bolt * 0.7f);
         }
     }
 }

@@ -12,7 +12,6 @@ namespace FlockFive
             if (_gate == null) _gate = MakeGate();
             Shot(_gate, 1f, 0.86f, MixLayer.Lead, MixDesk.DuckWhoosh);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(2.7f, MixDesk.DuckWhoosh);
-            Rumble();
         }
 
         static AudioClip MakeGate()

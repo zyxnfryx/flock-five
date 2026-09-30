@@ -53,6 +53,12 @@ namespace FlockFive
         const float ComboPopGap = 2f;
         float _comboPopAt = -99f;
         bool _collecting;
+        // Set for the whole sparrow/hawk scrap, from the tap that starts it
+        // through perch. Blocks a second move, scatter, or stage reload.
+        bool _pestResolving;
+        bool _pestFinishing;
+        bool _scatterBusy;
+        bool _pestGuardNoted;
         bool _pestsArmed;
         float _nextTap;
 #if UNITY_EDITOR
@@ -133,6 +139,25 @@ namespace FlockFive
         float _hiveInspectT; // 0..1 pull animation (open), also used for close
         bool _hiveInspectClosing;
         Rect _hiveInspectFrom; // sleeve rect when opened (for lerp)
+        // Fresh slots still waiting for a tap. Survives the splash, where the garden halo is cleared.
+        readonly List<int> _hiveFreshSlots = new List<int>();
+        int _hiveJumpSlot = -1;
+        bool _hiveHowToNudge;
+        int _levelHivePick;
+        float _levelHiveShown;
+        float _levelHiveAuto;
+        int _levelHiveFrame = -1;
+        int _levelHiveCountSeen = -1;
+        Vector2 _levelHiveDrag0;
+        float _levelHiveDragX;
+        int _levelHiveDragId;
+        bool _levelHiveDrag;
+        bool _levelHiveSwallow;
+        Rect _levelHiveRect;
+        const float HiveCarouselStep = 1.5f;
+        const string HiveTitle = "Bee Hive";
+        const string HiveSubtitle = "Earn a card for every bird you uncover.";
+        const string HiveHowTo = "Hop birds off a dark bird. That bee is a card here. Tap a card you have found, then tap it again to flip.";
 #if UNITY_EDITOR
         bool _pokerPlayrun;
 #endif
@@ -311,6 +336,11 @@ namespace FlockFive
         void Restart()
         {
             if (_splash) return;
+            if (_pestResolving)
+            {
+                NotePestGuard("restart ignored (pest resolving)");
+                return;
+            }
             if (_busy && !_frozen) return;
             if (Purse.Streak > 0)
             {
@@ -328,6 +358,8 @@ namespace FlockFive
         void ShowSplash()
         {
             _splash = true;
+            _leafIntro = false;
+            NoteHiveIntroLeft();
             CoachRelease();
             _incomingHalo.Clear(); // hive bees circle only inside a garden
             _home = HomeFace.Splash;
@@ -350,6 +382,7 @@ namespace FlockFive
             PigPoke.Boot();
             BirdPoker.Boot();
             ArmStreakSlide();
+            ArmHiveIntro();
         }
 
         void Load(int index)
@@ -363,6 +396,7 @@ namespace FlockFive
             _comboUntil = -99f;
             _comboPopAt = -99f;
             _collecting = false;
+            EndPest();
             _locked.Clear();
             _levelBees.Clear();
             _incomingHalo.Clear();
@@ -371,6 +405,7 @@ namespace FlockFive
             _frozen = false;
             _freezeOffer = false;
             _splash = false;
+            NoteHiveIntroLeft();
             if (MixDesk.Live != null) MixDesk.Live.SetSplash(false);
             _board = LevelData.Open(index);
             _seed = _board.Clone();
@@ -378,6 +413,7 @@ namespace FlockFive
             _giftBranch = -1;
             _census = BoardValidator.Counts(_board);
             CoachBegin(index);
+            ArmLeafIntro();
             Purse.BeginStage();
             if (_garden.Root != null) Destroy(_garden.Root.gameObject);
             if (_garden.Cam != null) Destroy(_garden.Cam.gameObject);
@@ -388,6 +424,7 @@ namespace FlockFive
             StartCoroutine(GardenFit.Tween(_garden, _board, true));
             Sfx.GardenWake();
             StopPests();
+            SyncOrbitHive();
             _sparrowRun = StartCoroutine(SparrowView.Patrol(
                 CanSparrowVisit, PestsArmed, LevelData.SparrowVisits, _garden.Feeders, _garden.Root));
             _hawkRun = StartCoroutine(HawkView.Patrol(
@@ -700,7 +737,7 @@ namespace FlockFive
             _home = HomeFace.Hive;
             if (Hive.Found == 0)
             {
-                for (int n = 0; n < 4; n++) Hive.TakeVisitor();
+                for (int n = 0; n < 4; n++) Hive.GrantVisitor();
             }
             int ix = 0;
             for (int k = 0; k < Hive.AlbumSlots; k++)
@@ -1813,6 +1850,9 @@ namespace FlockFive
             // In-flight hops and collects must not snap birds back onto perches
             // while a restart takeoff still owns them.
             if (_restarting && !force) return;
+            // PestPark has already parked the flock. Painting unlocked limbs
+            // here swaps every branch while the scrap sprites are still flying.
+            if (_pestResolving && !force) return;
             for (int i = 0; i < _garden.Branches.Length; i++)
             {
                 if (_locked.Contains(i)) continue;
@@ -1841,6 +1881,16 @@ namespace FlockFive
             return _combo;
         }
 
+        void OnApplicationPause(bool paused)
+        {
+            PlayClock.DropResumeFrame();
+        }
+
+        void OnApplicationFocus(bool focus)
+        {
+            PlayClock.DropResumeFrame();
+        }
+
         void Update()
         {
             CoachAdvance();
@@ -1849,6 +1899,7 @@ namespace FlockFive
             {
                 if (Pressed(out var tap))
                 {
+                    if (_leafIntro) DismissLeafIntro();
                     if (HitHud(tap)) return;
                     if (_frozen && _gift == GiftFace.None) OpenGift();
                 }
@@ -1864,6 +1915,8 @@ namespace FlockFive
             }
 #endif
             if (!Pressed(out var screen)) return;
+            if (_leafIntro) DismissLeafIntro();
+            if (_pestCue != 0) PestIntroTap(screen);
             if (HitHud(screen)) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
@@ -1880,6 +1933,11 @@ namespace FlockFive
         void HandleTap(Vector2 world)
         {
             if (_busy || _won || _board == null) return;
+            if (_pestResolving)
+            {
+                NotePestGuard("tap ignored (pest resolving)");
+                return;
+            }
             if (Time.unscaledTime < _swallowTapsUntil) return;
             if (Time.unscaledTime < _nextTap) return;
             _nextTap = Time.unscaledTime + 0.10f;
@@ -1975,6 +2033,11 @@ namespace FlockFive
         IEnumerator DoMove(int from, int to)
         {
             int gen = _motionGen;
+            if (_pestResolving)
+            {
+                AdLog.Add("move ignored (pest resolving)");
+                yield break;
+            }
             _garden.Branches[from].SetReady(false);
             _sel = -1;
             if (Locked(from) || Locked(to) || !_board.CanMove(from, to, out int run))
@@ -2006,9 +2069,18 @@ namespace FlockFive
             if (gen != _motionGen) yield break;
             if (_board.JustUnveiled)
             {
+                bool firstBee = !Hive.Collected;
                 var visit = Hive.TakeVisitor();
                 _levelBees.Add(visit);
+                NoteHiveCue(visit);
                 Sfx.BeeFound();
+                if (firstBee)
+                {
+                    _hivePopping = true;
+                    _hivePop = 0f;
+                    _hivePopMul = 0.35f;
+                    SyncOrbitHive();
+                }
                 if (visit.Fresh) ArmIncomingHalo(visit);
                 if (_garden.Hive != null)
                 {
@@ -2090,12 +2162,26 @@ namespace FlockFive
                 _garden.Branches[branch].SetReady(false);
                 _sel = -1;
             }
+            bool vsHawk = HawkView.Live != null && HawkView.Live.BlockingSlot == slot;
+            bool vsSparrow = !vsHawk && SparrowView.Live != null && SparrowView.Live.BlockingSlot == slot;
+            bool pest = vsHawk || vsSparrow;
+            if (pest && _pestResolving)
+            {
+                AdLog.Add("pest sequence ignored (already resolving)");
+                yield break;
+            }
+            if (pest)
+            {
+                _pestResolving = true;
+                _pestGuardNoted = false;
+            }
             _collecting = true;
             Lock(branch);
             if (combo >= 2 && Time.unscaledTime >= _comboPopAt)
             {
                 _comboPopAt = Time.unscaledTime + ComboPopGap;
                 Sfx.Combo(combo);
+                Haptics.OnCombo(combo);
                 CamShake.Combo(combo);
                 var root = _garden.Root;
                 StartCoroutine(PlayComboPop(root, combo));
@@ -2107,6 +2193,8 @@ namespace FlockFive
                     StartCoroutine(Wow.SkyBurst(root, p, (BirdColor)(i % Palette.Max), i < 3, i * 0.08f));
                 }
             }
+            else
+                Haptics.OnCombo(0);
 
             var birds = new SpriteRenderer[BranchState.Cap];
             int n = 0;
@@ -2131,9 +2219,6 @@ namespace FlockFive
                 var idle = birds[i] != null ? birds[i].GetComponent<BirdIdle>() : null;
                 flock[i] = idle != null ? new Bird(idle.Color, idle.Sex) : new Bird(col, BirdSex.Neutral);
             }
-            bool vsHawk = HawkView.Live != null && HawkView.Live.BlockingSlot == slot;
-            bool vsSparrow = !vsHawk && SparrowView.Live != null && SparrowView.Live.BlockingSlot == slot;
-            bool pest = vsHawk || vsSparrow;
             // Feeder matches score when the last bird lands. Pest scraps park the
             // flock up front so the five cannot immediately collect again.
             // Hawk never drops the limb; a sparrow drops it only when every bird
@@ -2234,14 +2319,23 @@ namespace FlockFive
                 if (feeder != null) StartCoroutine(RetireFeeder(feeder, slot, gen));
                 StartCoroutine(view.BreakAway());
             }
-            if (gen != _motionGen) yield break;
+            if (gen != _motionGen)
+            {
+                if (pest) EndPest();
+                yield break;
+            }
             if (pest)
                 yield return FinishPest(view, birds, n, pestPlan, branch, gen);
-            if (gen != _motionGen) yield break;
+            if (gen != _motionGen)
+            {
+                if (pest) EndPest();
+                yield break;
+            }
             Unlock(branch);
             _collecting = false;
-            int more = KickCollects();
+            if (pest) EndPest();
             SyncAll();
+            int more = KickCollects();
             if (_locked.Count == 0)
                 yield return GardenFit.Tween(_garden, _board, false);
             if (gen != _motionGen || more != 0) yield break;
@@ -2531,7 +2625,13 @@ namespace FlockFive
         // Panic lift after a pest scrap — stay visible until the broken limb is gone.
         IEnumerator ScatterUp(SpriteRenderer[] birds, int n)
         {
+            if (_scatterBusy)
+            {
+                AdLog.Add("scatter ignored (already scattering)");
+                yield break;
+            }
             if (n <= 0) yield break;
+            _scatterBusy = true;
             Sfx.Takeoff(n);
             Sfx.FlockFlutter(Mathf.Min(3, Mathf.Max(1, n)));
             for (int i = 0; i < n; i++)
@@ -2551,6 +2651,7 @@ namespace FlockFive
             // The old 0.92s + n*0.05s wait parked the whole row motionless
             // mid-screen for about a second before the branch even broke.
             yield return new WaitForSeconds(0.30f);
+            _scatterBusy = false;
         }
 
         static IEnumerator ScatterHold(Transform tr, Vector3 dest, float delay)
@@ -2603,21 +2704,43 @@ namespace FlockFive
         // how a restored gift limb lost its birds.
         IEnumerator FinishPest(BranchView view, SpriteRenderer[] birds, int n, PestPark.Plan plan, int branch, int gen)
         {
+            if (_pestFinishing)
+            {
+                AdLog.Add("pest finish ignored (already running)");
+                yield break;
+            }
+            _pestFinishing = true;
             AlignBranchViews();
             if (view != null)
             {
                 yield return view.BreakAway();
-                if (gen != _motionGen) yield break;
+                if (gen != _motionGen) { _pestFinishing = false; yield break; }
                 bool regrow = !plan.Break || (branch >= 0 && branch < _board.Branches.Count && _board.Branches[branch].IsBonus);
                 if (regrow) view.Revive();
             }
-            if (gen != _motionGen) yield break;
+            if (gen != _motionGen) { _pestFinishing = false; yield break; }
             yield return GardenFit.Tween(_garden, _board, true);
-            if (gen != _motionGen) yield break;
+            if (gen != _motionGen) { _pestFinishing = false; yield break; }
             yield return PerchOnRemain(birds, n, plan);
-            if (gen != _motionGen) yield break;
-            SyncAll();
+            if (gen != _motionGen) { _pestFinishing = false; yield break; }
+            SyncAll(true);
             Conserve("pest");
+            _pestFinishing = false;
+        }
+
+        void EndPest()
+        {
+            _pestResolving = false;
+            _pestFinishing = false;
+            _scatterBusy = false;
+        }
+
+        // One ad-log line per scrap. Mashing the screen must not fill the log.
+        void NotePestGuard(string what)
+        {
+            if (_pestGuardNoted) return;
+            _pestGuardNoted = true;
+            AdLog.Add(what);
         }
 
         IEnumerator PerchOnRemain(SpriteRenderer[] birds, int n, PestPark.Plan plan)
@@ -3003,6 +3126,7 @@ namespace FlockFive
             _combo = 0;
             _comboPopAt = -99f;
             _collecting = false;
+            EndPest();
             _locked.Clear();
             HaltBreaks();
             SparrowView.ClearFx();
@@ -3613,6 +3737,21 @@ namespace FlockFive
             _garden.Hive.TrackHud(cam, hive);
         }
 
+        // The wood skep is the OnGUI button. This glow sits under it, so it follows the same gate.
+        void SyncOrbitHive()
+        {
+            if (_garden.Hive == null) return;
+            bool show = HiveReachable();
+            var hive = _garden.Hive.transform;
+            for (int i = 0; i < hive.childCount; i++)
+            {
+                var ch = hive.GetChild(i);
+                if (ch.name != "Comb" && ch.name != "CombCore") continue;
+                var sr = ch.GetComponent<SpriteRenderer>();
+                if (sr != null) sr.enabled = show;
+            }
+        }
+
         void LateUpdate()
         {
 #if UNITY_EDITOR
@@ -3655,6 +3794,7 @@ namespace FlockFive
 #endif
             SeatFeeders();
             SnapHiveToHud();
+            SyncOrbitHive();
             CoachPlace();
         }
 
@@ -3663,9 +3803,13 @@ namespace FlockFive
             HudLayout(out _, out float top, out _, out var restart, out var hive);
             float gy = Screen.height - screen.y;
             var gui = new Vector2(screen.x, gy);
+            if (_hiveInspect >= 0)
+                return true;
             if (_levelHive)
             {
-                _levelHive = false;
+                if (_levelHiveRect.width > 1f && _levelHiveRect.Contains(gui))
+                    return true;
+                CloseLevelHive();
                 return true;
             }
             if (gui.y < top) return true;
@@ -3674,9 +3818,9 @@ namespace FlockFive
                 Restart();
                 return true;
             }
-            if (hive.Contains(gui))
+            if (HiveReachable() && hive.Contains(gui))
             {
-                _levelHive = !_levelHive;
+                OpenLevelHive();
                 return true;
             }
             HudLayout(out _, out _, out float bot, out _, out _);
@@ -3712,9 +3856,22 @@ namespace FlockFive
                 GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
             else
                 GUI.Box(restart, "↩");
-            DrawHiveButton(hive, s, orbit: true);
+            if (HiveReachable())
+                DrawHiveButton(hive, s, orbit: true, pop: true);
+            else
+            {
+                if (_levelHive) CloseLevelHive();
+                if (_hiveInspect >= 0)
+                {
+                    _hiveInspect = -1;
+                    _hiveInspectClosing = false;
+                    _hiveInspectT = 0f;
+                    _hiveFlip = -1;
+                }
+            }
             if (quake) GUI.matrix = hudM;
             if (_levelHive) DrawLevelHive(s);
+            if (_hiveInspect >= 0) DrawHiveInspect(s);
             DrawGiftSign(s);
             DrawCoach(s, top);
             if (_gift != GiftFace.None) DrawGiftOffer(s);
@@ -3772,16 +3929,34 @@ namespace FlockFive
             GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
         }
 
-        void DrawHiveButton(Rect hive, float s, bool orbit = false)
+        void DrawHiveButton(Rect hive, float s, bool orbit = false, bool pop = false)
         {
-            float pulse = HiveView.GuiPulse;
+            if (pop && _hivePopping)
+            {
+                float k = Mathf.Max(0.35f, _hivePopMul);
+                float cx = hive.center.x, cy = hive.center.y;
+                hive = new Rect(cx - hive.width * 0.5f * k, cy - hive.height * 0.5f * k,
+                    hive.width * k, hive.height * k);
+            }
+            float pulse = pop && _hivePopping ? 0f : HiveView.GuiPulse;
+            bool freshCue = _home == HomeFace.Splash && _hiveFreshSlots.Count > 0 && !(pop && _hivePopping);
+            if (freshCue)
+                pulse = Mathf.Max(pulse, 0.55f + 0.45f * Mathf.Sin(Time.unscaledTime * 5.2f));
             Rect draw = hive;
             if (pulse > 0.01f)
             {
-                float k = 1f + 0.10f * pulse;
+                float k = 1f + (freshCue ? 0.08f : 0.10f) * pulse;
                 float cx = hive.center.x, cy = hive.center.y;
                 draw = new Rect(cx - hive.width * 0.5f * k, cy - hive.height * 0.5f * k,
                     hive.width * k, hive.height * k);
+            }
+            if (freshCue)
+            {
+                float a = 0.22f + 0.38f * Mathf.Clamp01(pulse);
+                GUI.color = new Color(1f, 0.82f, 0.28f, a);
+                float m = 6f * s;
+                GUI.DrawTexture(new Rect(draw.x - m, draw.y - m, draw.width + m * 2f, draw.height + m * 2f), Texture2D.whiteTexture);
+                GUI.color = Color.white;
             }
             if (orbit) DrawHiveHalo(draw, s, true);
             var spr = SpriteCatalog.Hive;
@@ -3797,35 +3972,43 @@ namespace FlockFive
             if (orbit) DrawHiveHalo(draw, s, false);
         }
 
-        float DrawHiveTally(Rect hive, float s)
+        float DrawHiveTally(Rect anchor, float s)
         {
             int have = Hive.Found;
             int cap = Mathf.Max(1, Hive.AlbumSlots);
             float u = Mathf.Clamp01(have / (float)cap);
-            float h = Mathf.Clamp(hive.height * 0.20f, 16f * s, 26f * s);
-            float w = hive.width * 0.88f;
-            var plate = new Rect(hive.center.x - w * 0.5f, hive.yMax + 3f * s, w, h);
-            GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.84f);
-            GUI.DrawTexture(plate, Texture2D.whiteTexture);
-            if (u > 0.008f)
-            {
-                GUI.color = new Color(0.90f, 0.66f, 0.18f, 0.90f);
-                GUI.DrawTexture(new Rect(plate.x, plate.y, plate.width * u, plate.height), Texture2D.whiteTexture);
-            }
-            GUI.color = new Color(1f, 0.82f, 0.28f, 0.62f);
-            float t = Mathf.Max(1.5f, 2f * s);
-            GUI.DrawTexture(new Rect(plate.x, plate.y, plate.width, t), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(plate.x, plate.yMax - t, plate.width, t), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            string n = have.ToString();
+            int floor = Mathf.RoundToInt(14f * s);
+            int hi = Mathf.Max(floor, Mathf.RoundToInt(22f * s));
+            string label = "Bees found " + have + " / " + cap;
             var st = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap = false
             };
-            st.fontSize = FitFont(st, n, plate.width * 0.82f, plate.height * 0.80f, 11, 22);
-            StampOutlined(plate, n, st, new Color(1f, 0.95f, 0.78f), 1, 1);
+            float labelH = hi + 6f;
+            var labelR = new Rect(anchor.x, anchor.y, anchor.width, labelH);
+            st.fontSize = FitFont(st, label, labelR.width * 0.98f, labelR.height * 0.92f, floor, hi);
+            StampOutlined(labelR, label, st, new Color(1f, 0.95f, 0.78f), 1, 1);
+
+            float barH = Mathf.Clamp(12f * s, 10f, 18f * s);
+            var plate = new Rect(anchor.x, labelR.yMax + 4f * s, anchor.width, barH);
+            GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.84f);
+            GUI.DrawTexture(plate, Texture2D.whiteTexture);
+            float inset = Mathf.Max(2f, 2.5f * s);
+            var track = new Rect(plate.x + inset, plate.y + inset, Mathf.Max(0f, plate.width - inset * 2f), Mathf.Max(0f, plate.height - inset * 2f));
+            GUI.color = new Color(0.24f, 0.17f, 0.10f, 0.95f);
+            GUI.DrawTexture(track, Texture2D.whiteTexture);
+            if (u > 0f)
+            {
+                GUI.color = new Color(0.90f, 0.66f, 0.18f, 0.95f);
+                GUI.DrawTexture(new Rect(track.x, track.y, track.width * u, track.height), Texture2D.whiteTexture);
+            }
+            GUI.color = new Color(1f, 0.82f, 0.28f, 0.70f);
+            float t = Mathf.Max(1.5f, 2f * s);
+            GUI.DrawTexture(new Rect(plate.x, plate.y, plate.width, t), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(plate.x, plate.yMax - t, plate.width, t), Texture2D.whiteTexture);
+            GUI.color = Color.white;
             return plate.yMax;
         }
 
@@ -4528,8 +4711,10 @@ namespace FlockFive
             var coinR = new Rect(pig.x - 12f - icon - gap - labelW, pig.y + (pig.height - h) * 0.5f, labelW, h);
             int lo = Mathf.Max(18, Mathf.RoundToInt(icon * 0.55f));
             int hi = Mathf.Max(lo + 2, Mathf.RoundToInt(icon * 0.92f));
-            st.fontSize = FitFont(st, coins, coinR.width * 0.98f, coinR.height, lo, hi);
-            StampOutlined(coinR, coins, st, new Color(0.42f, 0.26f, 0.08f), 2, 1);
+            int coinFloor = Mathf.Max(lo, Mathf.RoundToInt(18f * s));
+            st.fontSize = FitFont(st, coins, coinR.width * 0.98f, coinR.height, Mathf.Min(coinFloor, hi), hi);
+            int coinDark = Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.10f));
+            StampOutlined(coinR, coins, st, new Color(0.22f, 0.10f, 0.03f), 2, coinDark);
 
             var coinSpr = SpriteCatalog.Coin;
             if (coinSpr != null && coinSpr.texture != null)
@@ -4685,18 +4870,15 @@ namespace FlockFive
             int win = Purse.LastWin > 0 ? Purse.LastWin : stagePay * streak * login;
             bool showLogin = login > 1;
 
-            // Bulb sprite: screw anchor at 16% from the top, glass tip at ~98%.
-            // Halo sits on the glass (center 60%, radius up to 0.85 of the bulb).
-            const float bulbFrac = 0.10f;
-            const float bandFrac = 0.036f;
-            // Socket is band/2 outside the board. Fully lit halo reaches 1.29 bulb-widths
-            // past the socket (glass center at 0.44, halo radius 0.85).
-            const float haloOut = 1.29f;
-            float crownFrac = bandFrac * 0.5f + haloOut * bulbFrac;
+            // Bulb sprite: screw at 16% from the top of the art, glass tip at ~84% outward,
+            // lit halo to 1.29 diameters. Layout reserves the glass plus a little air
+            // (1.22); the soft fringe stays inside the gap under the wordmark.
+            const float bandFrac = 0.046f;
+            const float glassOut = 1.22f;
             const float maxPop = 1.06f;
 
-            // Whole lit sign (board + halos) must clear the wordmark, which already
-            // sits under the notch / Dynamic Island, the side rails, and the play flower.
+            // The payout owns the band under the wordmark, inside the safe area.
+            // Glass stops at the play-disc top (the disc starts ~10% into the bloom).
             // Read safe area every pass so a late inset still pushes the lights down.
             float titleBottom = TopHud() + (56f * 2f + 4f) * s;
             float gap = 10f * s;
@@ -4705,41 +4887,70 @@ namespace FlockFive
             float safeL = safeOk ? safe.xMin : 0f;
             float safeR = safeOk ? safe.xMax : Screen.width;
             float safeB = safeOk ? safe.yMin : 0f;
-            var share = SplashShareRect();
-            float leftLimit = Mathf.Max(safeL + gap, share.xMax + gap);
-            float rightLimit = Mathf.Min(safeR - gap, pig.xMin - gap);
-            if (rightLimit - leftLimit < 80f * s)
+            float leftLimit = safeL + gap;
+            float rightLimit = safeR - gap;
+            if (rightLimit - leftLimit < 120f * s)
             {
-                leftLimit = safeL + gap;
-                rightLimit = Mathf.Max(leftLimit + 80f * s, safeR - gap);
+                leftLimit = safeL + 4f;
+                rightLimit = Mathf.Max(leftLimit + 120f * s, safeR - 4f);
             }
             float botPad = Mathf.Max(14f, safeB + 8f);
             float flower = Mathf.Min(Screen.width * 0.94f, Screen.height * 0.50f);
             float flowerTop = Screen.height - botPad - flower;
             float topLimit = titleBottom + gap;
-            float botLimit = Mathf.Max(topLimit + 72f * s, flowerTop - gap);
-            float availW = Mathf.Max(64f * s, rightLimit - leftLimit);
-            float availH = Mathf.Max(72f * s, botLimit - topLimit);
-            float widthBudget = availW / (maxPop * (1f + 2f * crownFrac));
-            float restW = Mathf.Min(Screen.width * 0.62f, 400f * s, widthBudget);
-            float restHCap = availH / maxPop - 2f * crownFrac * restW;
-            if (restHCap < 64f * s)
+            float botLimit = Mathf.Min(Screen.height - botPad - 6f, flowerTop + flower * 0.06f);
+            if (botLimit < topLimit + 88f * s)
+                botLimit = Mathf.Min(Screen.height - botPad - 6f, topLimit + 88f * s);
+            float faceW = Mathf.Max(120f * s, rightLimit - leftLimit) / maxPop;
+            float faceH = Mathf.Max(72f * s, botLimit - topLimit) / maxPop;
+
+            // Bulbs are a fat slice of the face. Text keeps a floor; bulbs shrink first
+            // when the band between the wordmark and the play disc is short.
+            float restW = faceW * 0.66f;
+            float restH = faceH * 0.58f;
+            float szBulb = 12f * s;
+            for (int fit = 0; fit < 8; fit++)
             {
-                restW = Mathf.Min(restW, Mathf.Max(64f * s, (availH / maxPop - 64f * s) / (2f * crownFrac)));
-                restHCap = availH / maxPop - 2f * crownFrac * restW;
+                szBulb = Mathf.Min(restH * 0.36f, restW * 0.22f);
+                float margin = glassOut * szBulb + restW * bandFrac * 0.5f;
+                float floorH = 64f * s;
+                if (faceH - 2f * margin < floorH)
+                {
+                    margin = Mathf.Max(5f * s, (faceH - floorH) * 0.5f);
+                    szBulb = Mathf.Max(7f * s, (margin - restW * bandFrac * 0.5f) / glassOut);
+                    margin = glassOut * szBulb + restW * bandFrac * 0.5f;
+                }
+                float nextW = Mathf.Max(72f * s, faceW - 2f * margin);
+                float nextH = Mathf.Max(52f * s, faceH - 2f * margin);
+                if (nextW > nextH * 2.15f) nextW = nextH * 2.15f;
+                if (nextH > nextW * 0.90f) nextH = nextW * 0.90f;
+                restW = Mathf.Lerp(restW, nextW, 0.65f);
+                restH = Mathf.Lerp(restH, nextH, 0.65f);
             }
-            float restH = Mathf.Min(Screen.height * 0.20f, 176f * s, restHCap);
-            if (restH < 36f * s) restH = 36f * s;
+            szBulb = Mathf.Min(restH * 0.36f, restW * 0.22f);
+            float crown = glassOut * szBulb + restW * bandFrac * 0.5f;
+            float visW = restW + 2f * crown;
+            float visH = restH + 2f * crown;
+            float squeeze = Mathf.Min(1f, faceW / Mathf.Max(1f, visW), faceH / Mathf.Max(1f, visH));
+            if (squeeze < 0.999f)
+            {
+                restW *= squeeze;
+                restH *= squeeze;
+                szBulb *= squeeze;
+                crown = glassOut * szBulb + restW * bandFrac * 0.5f;
+            }
+            float bulbFrac = szBulb / Mathf.Max(1f, restW);
+            float crownFrac = crown / Mathf.Max(1f, restW);
+
             float cx = (leftLimit + rightLimit) * 0.5f;
-            float halfVis = (restW * 0.5f + crownFrac * restW) * maxPop;
+            float halfVis = (restW * 0.5f + crown) * maxPop;
             float minCx = leftLimit + halfVis;
             float maxCx = rightLimit - halfVis;
             cx = maxCx >= minCx ? Mathf.Clamp(cx, minCx, maxCx) : (leftLimit + rightLimit) * 0.5f;
-            float centerY = topLimit + maxPop * (restH * 0.5f + crownFrac * restW);
-            float visualBottom = centerY + maxPop * (restH * 0.5f + crownFrac * restW);
+            float centerY = (topLimit + botLimit) * 0.5f;
+            float visualBottom = centerY + maxPop * (restH * 0.5f + crown);
             if (visualBottom > botLimit) centerY -= visualBottom - botLimit;
-            float visualTop = centerY - maxPop * (restH * 0.5f + crownFrac * restW);
-            // Prefer the wordmark / island over the flower if the slot is shorter than the sign.
+            float visualTop = centerY - maxPop * (restH * 0.5f + crown);
             if (visualTop < topLimit) centerY += topLimit - visualTop;
             float restX = cx - restW * 0.5f;
             float restY = centerY - restH * 0.5f;
@@ -4799,47 +5010,125 @@ namespace FlockFive
             // socket, and halo from the animated board so peek/pop/hold/tuck stay one unit.
             DrawGiftMarquee(board, s, lampT, alpha, band * 0.5f, bulbFrac);
 
-            float padX = board.width * 0.12f;
-            float innerX = board.x + padX;
-            float innerW = board.width - padX * 2f;
-            float pipH = board.height * 0.18f;
-            var pipRow = new Rect(innerX, board.y + board.height * 0.14f, innerW, pipH);
-            DrawStreakPips(pipRow, streak, u, alpha);
+            float padX = Mathf.Max(8f * s * scale, board.width * 0.055f);
+            float padY = Mathf.Max(4f * s * scale, board.height * 0.04f);
+            var inner = new Rect(board.x + padX, board.y + padY, board.width - padX * 2f, board.height - padY * 2f);
 
-            var leftSt = new GUIStyle(GUI.skin.label)
+            // Row count from the resting face so pop/tuck cannot swap the layout.
+            // A caption row wants ~18*s so a 14*s glyph fits; the payout keeps the rest.
+            float lineH = 18f * s;
+            float padRest = Mathf.Max(4f * s, restH * 0.04f);
+            float innerRest = Mathf.Max(24f * s, restH - padRest * 2f);
+            int metaRows = innerRest >= lineH * 2f + 34f * s ? 2 : 1;
+            float pipNeed = 20f * s;
+            bool showPips = metaRows == 2 && innerRest >= lineH * 2f + 48f * s + pipNeed;
+            float pipH = 0f;
+            if (showPips)
+            {
+                pipH = Mathf.Min(pipNeed * scale, inner.height * 0.16f);
+                DrawStreakPips(new Rect(inner.x, inner.y, inner.width, pipH), streak, u, alpha, s);
+            }
+
+            float bodyH = Mathf.Max(8f, inner.height - pipH);
+            float metaH = metaRows == 2 ? bodyH * 0.40f : bodyH * 0.34f;
+            float heroH = bodyH - metaH;
+            float capFloor = lineH * metaRows * Mathf.Clamp(scale, 0.72f, 1.06f);
+            if (metaH < capFloor && bodyH > capFloor + 20f * s * scale)
+            {
+                metaH = capFloor;
+                heroH = bodyH - metaH;
+            }
+            if (heroH < bodyH * 0.42f)
+            {
+                heroH = bodyH * 0.42f;
+                metaH = bodyH - heroH;
+            }
+            float rowH = metaH / metaRows;
+            float linesTop = inner.y + pipH;
+
+            var labelSt = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleLeft,
                 wordWrap = false
             };
-            var rightSt = new GUIStyle(leftSt) { alignment = TextAnchor.MiddleRight };
-            var winSt = new GUIStyle(leftSt) { alignment = TextAnchor.MiddleCenter };
+            var valueSt = new GUIStyle(labelSt) { alignment = TextAnchor.MiddleRight };
+            var heroSt = new GUIStyle(labelSt) { alignment = TextAnchor.MiddleCenter };
+            int labelHi = Mathf.Max(18, Mathf.RoundToInt(30f * s));
+            int heroHi = Mathf.Max(28, Mathf.RoundToInt(72f * s));
+            var labelInk = new Color(1f, 0.97f, 0.88f, 1f);
+            var heroInk = new Color(1f, 0.95f, 0.42f, 1f);
 
-            int rows = showLogin ? 3 : 2;
-            float linesTop = pipRow.yMax + 6f * s * scale;
-            float winH = board.height * 0.22f;
-            float linesH = board.yMax - 12f * s * scale - winH - linesTop;
-            float rowH = linesH / (rows + 0.35f);
+            void StampFit(Rect r, string text, GUIStyle st, Color fill, int hi, float widthFrac)
+            {
+                if (r.width < 4f || r.height < 4f || string.IsNullOrEmpty(text)) return;
+                st.wordWrap = false;
+                float fitW = Mathf.Max(4f, r.width * widthFrac);
+                float fitH = r.height * 0.86f;
+                st.fontSize = FitFont(st, text, fitW, fitH, 8, hi);
+                var content = new GUIContent(text);
+                int guard = 0;
+                while (st.fontSize > 6 && guard < 28
+                    && (st.CalcSize(content).x > fitW || st.CalcSize(content).y > r.height))
+                {
+                    st.fontSize -= 1;
+                    guard++;
+                }
+                int dark = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 2, 6);
+                int light = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.05f), 1, 3);
+                var ink = fill;
+                ink.a *= alpha;
+                StampOutlined(r, text, st, ink, light, dark, 0.001f);
+            }
 
-            void Line(int index, float at, string left, string right, bool gold)
+            void Pair(int index, float at, string left, string right)
             {
                 float appear = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - at) / 0.07f));
                 if (appear < 0.04f) return;
-                var row = new Rect(innerX, linesTop + index * rowH, innerW, rowH);
-                leftSt.fontSize = FitFont(leftSt, left, row.width * 0.48f, row.height * 0.82f, 16, 28);
-                rightSt.fontSize = leftSt.fontSize;
-                var fill = gold
-                    ? new Color(1f, 0.90f, 0.28f, appear * alpha)
-                    : new Color(1f, 0.94f, 0.78f, appear * alpha);
-                StampOutlined(new Rect(row.x, row.y, row.width * 0.52f, row.height), left, leftSt, fill, 1, 2, 0.001f);
-                StampOutlined(new Rect(row.x + row.width * 0.48f, row.y, row.width * 0.52f, row.height), right, rightSt, fill, 1, 2, 0.001f);
+                var row = new Rect(inner.x, linesTop + index * rowH, inner.width, rowH);
+                float colW = row.width * 0.46f;
+                int fitL = FitFont(labelSt, left, colW, row.height * 0.86f, 8, labelHi);
+                int fitR = FitFont(valueSt, right, colW, row.height * 0.86f, 8, labelHi);
+                int fs = Mathf.Min(fitL, fitR);
+                labelSt.fontSize = fs;
+                valueSt.fontSize = fs;
+                var probeL = new GUIContent(left);
+                var probeR = new GUIContent(right);
+                int guard = 0;
+                while (fs > 6 && guard < 24
+                    && (labelSt.CalcSize(probeL).x > colW || valueSt.CalcSize(probeR).x > colW
+                        || labelSt.CalcSize(probeL).y > row.height || valueSt.CalcSize(probeR).y > row.height))
+                {
+                    fs--;
+                    labelSt.fontSize = fs;
+                    valueSt.fontSize = fs;
+                    guard++;
+                }
+                int dark = Mathf.Clamp(Mathf.RoundToInt(fs * 0.14f), 2, 6);
+                int light = Mathf.Clamp(Mathf.RoundToInt(fs * 0.05f), 1, 3);
+                var draw = labelInk;
+                draw.a = appear * alpha;
+                var leftR = new Rect(row.x, row.y, colW, row.height);
+                var rightR = new Rect(row.xMax - colW, row.y, colW, row.height);
+                StampOutlined(leftR, left, labelSt, draw, light, dark, 0.001f);
+                StampOutlined(rightR, right, valueSt, draw, light, dark, 0.001f);
             }
 
-            Line(0, 0.20f, "STAGE", Purse.Dollars(stagePay), false);
-            Line(1, 0.30f, "STREAK", "×" + streak, false);
-            if (showLogin) Line(2, 0.40f, "LOGIN", "×" + login, false);
+            string dollars = Purse.Dollars(stagePay);
+            string streakTx = "×" + streak;
+            string dayTx = "×" + login;
+            if (metaRows == 2)
+            {
+                Pair(0, 0.18f, "STAGE", dollars);
+                if (showLogin) Pair(1, 0.28f, "STREAK " + streakTx, "DAY " + dayTx);
+                else Pair(1, 0.28f, "STREAK", streakTx);
+            }
+            else if (showLogin)
+                Pair(0, 0.18f, "STREAK " + streakTx, "DAY " + dayTx);
+            else
+                Pair(0, 0.18f, "STREAK", streakTx);
 
-            float rollAt = showLogin ? 0.50f : 0.42f;
+            float rollAt = showLogin ? 0.48f : 0.40f;
             float roll = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - rollAt) / 0.20f));
             if (roll > 0.02f)
             {
@@ -4856,17 +5145,27 @@ namespace FlockFive
                     _streakWinChimed = true;
                     Sfx.Clink();
                 }
-                var winR = new Rect(innerX, board.yMax - 10f * s * scale - winH, innerW, winH);
-                string winTx = "WIN  " + Purse.Dollars(_streakRollShown);
-                winSt.fontSize = FitFont(winSt, winTx, winR.width * 0.96f, winR.height * 0.90f, 28, 56);
-                float punch = 1f + 0.10f * Mathf.Sin(Mathf.Clamp01((roll - 0.85f) / 0.15f) * Mathf.PI);
+                var hero = new Rect(inner.x, linesTop + metaH, inner.width, heroH);
+                float winLabH = Mathf.Min(hero.height * 0.28f, 22f * s * scale);
+                if (winLabH < 15f * s * scale) winLabH = 0f;
+                string amt = Purse.Dollars(_streakRollShown);
+                var amtR = new Rect(hero.x, hero.y + winLabH, hero.width, hero.height - winLabH);
+                if (winLabH > 0f)
+                {
+                    float wordIn = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((roll - 0.04f) / 0.12f));
+                    var wordInk = new Color(1f, 0.90f, 0.55f, wordIn);
+                    StampFit(new Rect(hero.x, hero.y, hero.width, winLabH), "WIN", heroSt, wordInk, Mathf.Max(16, Mathf.RoundToInt(26f * s)), 0.80f);
+                }
+                else
+                    amt = "WIN  " + amt;
+                float punch = 1f + 0.08f * Mathf.Sin(Mathf.Clamp01((roll - 0.85f) / 0.15f) * Mathf.PI);
                 var prevM = GUI.matrix;
-                GUIUtility.ScaleAroundPivot(new Vector2(punch, punch), winR.center);
-                float glowPad = 8f * s * scale;
-                GUI.color = new Color(1f, 0.78f, 0.18f, (0.28f + 0.22f * roll) * alpha);
-                GUI.DrawTexture(new Rect(winR.x - glowPad, winR.y - glowPad * 0.5f, winR.width + glowPad * 2f, winR.height + glowPad), glow, ScaleMode.ScaleToFit, true);
+                GUIUtility.ScaleAroundPivot(new Vector2(punch, punch), amtR.center);
+                float glowPad = 10f * s * scale;
+                GUI.color = new Color(1f, 0.78f, 0.18f, (0.34f + 0.24f * roll) * alpha);
+                GUI.DrawTexture(new Rect(amtR.x - glowPad, amtR.y - glowPad * 0.35f, amtR.width + glowPad * 2f, amtR.height + glowPad), glow, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
-                StampOutlined(winR, winTx, winSt, new Color(1f, 0.90f, 0.28f, alpha), 1, Mathf.Max(3, Mathf.RoundToInt(winSt.fontSize * 0.12f)), 0.001f);
+                StampFit(amtR, amt, heroSt, heroInk, heroHi, 0.96f);
                 GUI.matrix = prevM;
             }
             float halo = board.width * crownFrac + aura;
@@ -4874,7 +5173,7 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        static void DrawStreakPips(Rect row, int streak, float u, float alpha)
+        static void DrawStreakPips(Rect row, int streak, float u, float alpha, float s)
         {
             const int slots = 7;
             int lit = Mathf.Clamp(streak, 0, slots);
@@ -4921,9 +5220,11 @@ namespace FlockFive
                 };
                 var lab = new Rect(x0 + slots * (d + gap), row.y, labelW, row.height);
                 if (lab.xMax > row.xMax) lab.x = row.xMax - lab.width;
-                int hi = Mathf.Clamp(Mathf.RoundToInt(lab.height * 0.72f), 10, 28);
-                extra.fontSize = FitFont(extra, more, lab.width, lab.height * 0.9f, 8, hi);
-                StampOutlined(lab, more, extra, new Color(1f, 0.90f, 0.28f, alpha), 1, 1, 0.001f);
+                int floor = Mathf.Max(8, Mathf.RoundToInt(14f * s));
+                int hi = Mathf.Max(floor, Mathf.RoundToInt(lab.height * 0.78f));
+                extra.fontSize = FitFont(extra, more, lab.width * 0.96f, lab.height * 0.88f, 8, hi);
+                int dark = Mathf.Max(2, Mathf.RoundToInt(extra.fontSize * 0.14f));
+                StampOutlined(lab, more, extra, new Color(1f, 0.95f, 0.42f, alpha), 1, dark, 0.001f);
             }
         }
 
@@ -5108,6 +5409,9 @@ namespace FlockFive
         void DrawSplash()
         {
             float s = Mathf.Max(Screen.height / 720f, 1f);
+            if (_hiveIntroLive && Event.current != null
+                && Event.current.type == EventType.MouseDown && Event.current.button == 0)
+                DismissHiveIntro();
             DrawHomeWash(0.18f);
 
             // Home title: stacked FLOCK / FIVE via letter sprites + navy block extrude
@@ -5125,10 +5429,17 @@ namespace FlockFive
                 TryPigPoke();
 
             // Hive stays on the right rail; pig stacks above it (see PiggyRect).
+            // Hidden until the hive lesson. The rect still anchors pig and poker.
             var hiveR = SplashHiveRect();
-            if (HitPad(hiveR, out _))
-                _home = HomeFace.Hive;
-            DrawHiveButton(hiveR, s);
+            if (SplashHiveShown())
+            {
+                if (HitPad(hiveR, out _))
+                {
+                    DismissHiveIntro();
+                    OpenHiveAlbum();
+                }
+                DrawHiveButton(hiveR, s, pop: true);
+            }
 
             // NextPlay is the next level index. Clearing level 1 (index 0) stores 1.
             // Owned still hides the offer and its hit target.
@@ -5168,6 +5479,7 @@ namespace FlockFive
                 Sfx.GateGo();
                 Load(next);
             }
+            DrawHiveIntro(s);
         }
 
         bool DrawFlowerPlay(float s, string ease, int number)
@@ -8482,6 +8794,7 @@ namespace FlockFive
                     _hiveInspect = -1;
                     _hiveInspectT = 0f;
                     _hiveInspectClosing = false;
+                    _hiveHowToNudge = false;
                     _home = HomeFace.Splash;
                 }
             }
@@ -8490,13 +8803,53 @@ namespace FlockFive
             GUI.color = Color.white;
             GUI.Label(back, "Back", backLab);
 
-            float hiveSize = Mathf.Clamp(Screen.width * 0.30f, 128f, 220f);
-            var hiveHead = new Rect(
-                (Screen.width - hiveSize) * 0.5f,
-                top + btnH + 12f * s,
-                hiveSize, hiveSize);
+            int floor = Mathf.RoundToInt(14f * s);
+            float hiveSize = Mathf.Clamp(68f * s, 56f, 88f);
+            float headY = top + btnH + 8f * s;
+            var hiveHead = new Rect(Mathf.Max(16f, safe.xMin + 10f), headY, hiveSize, hiveSize);
             DrawHiveButton(hiveHead, s);
-            float hiveBottom = DrawHiveTally(hiveHead, s);
+            float textX = hiveHead.xMax + 10f * s;
+            float textW = Screen.width - textX - 16f * s;
+            var titleSt = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = false
+            };
+            int titlePx = Mathf.Max(floor + 8, Mathf.RoundToInt(26f * s));
+            titleSt.fontSize = titlePx;
+            var titleR = new Rect(textX, hiveHead.y + 2f * s, textW, titlePx + 4f);
+            StampOutlined(titleR, HiveTitle, titleSt, new Color(1f, 0.94f, 0.78f), 2, 1);
+            var subSt = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.UpperLeft,
+                wordWrap = true
+            };
+            int subHi = Mathf.Max(floor, Mathf.RoundToInt(18f * s));
+            var subR = new Rect(textX, titleR.yMax, textW, subHi * 2.4f);
+            subSt.fontSize = FitFontWrapped(subSt, HiveSubtitle, subR.width, subR.height, floor, subHi);
+            StampOutlined(subR, HiveSubtitle, subSt, new Color(1f, 0.92f, 0.72f), 1, 1);
+            float textBottom = Mathf.Max(hiveHead.yMax, subR.yMax);
+            bool showHow = Hive.Found == 0 || _hiveHowToNudge;
+            if (showHow)
+            {
+                var howSt = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.UpperLeft,
+                    wordWrap = true
+                };
+                int howHi = Mathf.Max(floor, Mathf.RoundToInt(18f * s));
+                float howH = howHi * 2.6f;
+                var howR = new Rect(16f * s, textBottom + 6f * s, Screen.width - 32f * s, howH);
+                howSt.fontSize = FitFontWrapped(howSt, HiveHowTo, howR.width, howR.height, floor, howHi);
+                StampOutlined(howR, HiveHowTo, howSt, new Color(1f, 0.96f, 0.82f), 1, 1);
+                textBottom = howR.yMax;
+            }
+            float tallyW = Mathf.Min(Screen.width - 32f * s, 460f * s);
+            var tallyAnchor = new Rect((Screen.width - tallyW) * 0.5f, textBottom + 6f * s, tallyW, 8f);
+            float hiveBottom = DrawHiveTally(tallyAnchor, s);
             int pages = Mathf.Max(1, (Hive.AlbumSlots + HivePageSize - 1) / HivePageSize);
             _hivePage = Mathf.Clamp(_hivePage, 0, pages - 1);
 
@@ -8515,10 +8868,14 @@ namespace FlockFive
             if (turning) _hivePageTurn += Time.unscaledDeltaTime;
 
             // Ultra Pro clear page: 3×3 sleeves on a binder sheet
-            float tabH = 40f * s;
-            float pageBottom = Screen.height - 16f * s - tabH - 8f * s;
-            float pageTop = hiveBottom + 22f * s;
+            int typeFloor = Mathf.RoundToInt(14f * s);
+            float colH = typeFloor * 2f + 8f;
+            float tabH = Mathf.Max(54f * s, typeFloor * 2f + 16f);
+            float ofH = typeFloor + 10f;
+            float pageBottom = Screen.height - 10f * s - tabH - ofH - 6f * s;
+            float pageTop = hiveBottom + colH + 6f * s;
             float pageH = pageBottom - pageTop;
+            if (pageH < 72f * s) pageH = 72f * s;
             float pagePad = 22f * s;
             float pageW = Screen.width - pagePad * 2f;
             var sheet = new Rect(pagePad, pageTop, pageW, pageH);
@@ -8540,9 +8897,10 @@ namespace FlockFive
             float gridH = 3f * cellH + 2f * gap;
             float gx0 = sheet.x + (sheet.width - gridW) * 0.5f;
             float gy0 = sheet.y + (sheet.height - gridH) * 0.5f;
+            GUI.color = Color.white;
+            DrawHiveColumns(hiveBottom + 2f * s, colH, gx0, cellW, gap, s);
 
             int showPage = turning ? _hivePageFrom : _hivePage;
-            int startIx = showPage * HivePageSize;
 
             // During turn: draw outgoing page curling away, then incoming
             float turnU = turning ? Mathf.Clamp01(_hivePageTurn / 0.52f) : 1f;
@@ -8637,9 +8995,16 @@ namespace FlockFive
                     : new Color(0.18f, 0.14f, 0.10f, held ? 0.90f : 0.72f);
                 GUI.DrawTexture(tab, Texture2D.whiteTexture);
                 GUI.color = Color.white;
+                Color ink = on ? new Color(0.28f, 0.14f, 0.05f) : new Color(1f, 0.94f, 0.72f);
                 string num = (p + 1).ToString();
-                tabLab.fontSize = FitFont(tabLab, num, tab.width * 0.86f, tab.height * 0.70f, 16, 28);
-                StampOutlined(tab, num, tabLab, on ? new Color(0.28f, 0.14f, 0.05f) : new Color(1f, 0.94f, 0.72f), 1, 1);
+                int numHi = Mathf.Max(typeFloor, Mathf.RoundToInt(22f * s));
+                var numR = new Rect(tab.x, tab.y + 2f, tab.width, tab.height * 0.48f);
+                tabLab.fontSize = FitFont(tabLab, num, numR.width * 0.9f, numR.height * 0.92f, typeFloor, numHi);
+                StampOutlined(numR, num, tabLab, ink, 1, 1);
+                string fill = HivePageFill(p) + "/" + HivePageSize;
+                var fillR = new Rect(tab.x, tab.y + tab.height * 0.48f, tab.width, tab.height * 0.48f);
+                tabLab.fontSize = typeFloor;
+                StampOutlined(fillR, fill, tabLab, ink, 1, 1);
                 if (hit && p != _hivePage)
                 {
                     _hivePageFrom = _hivePage;
@@ -8649,6 +9014,16 @@ namespace FlockFive
                     Sfx.PageTurn();
                 }
             }
+
+            var ofSt = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+            ofSt.fontSize = typeFloor;
+            string ofBook = "of " + pages;
+            StampOutlined(new Rect(0f, tabY + tabH + 2f * s, Screen.width, ofH), ofBook, ofSt, new Color(1f, 0.94f, 0.72f), 1, 1);
 
             if (_hiveInspect >= 0)
                 DrawHiveInspect(s);
@@ -8852,12 +9227,26 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(face.x, face.yMax - rim, face.width, rim), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(face.x, face.y, rim, face.height), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(face.xMax - rim, face.y, rim, face.height), Texture2D.whiteTexture);
+            for (int sp = 0; sp < 3; sp++)
+            {
+                float u = Mathf.Repeat(t * 0.40f + phase + sp * 0.31f, 1f);
+                float a = Mathf.Sin(u * Mathf.PI) * amp;
+                float sz = Mathf.Max(3f, face.width * 0.040f);
+                float x = face.x + face.width * (0.12f + 0.68f * Mathf.Repeat(u + sp * 0.37f, 1f));
+                float y = face.y + face.height * (0.05f + 0.12f * sp);
+                GUI.color = new Color(1f, 1f, 1f, 0.70f * a);
+                GUI.DrawTexture(new Rect(x, y, sz, sz * 0.28f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(x + sz * 0.36f, y - sz * 0.36f, sz * 0.28f, sz), Texture2D.whiteTexture);
+            }
             GUI.color = Color.white;
         }
 
-        void DrawBeeAlbumCard(Rect card, int i, float s) => DrawBeeAlbumCard(card, i, s, false);
+        void DrawBeeAlbumCard(Rect card, int i, float s) => DrawBeeAlbumCard(card, i, s, false, true);
 
-        void DrawBeeAlbumCard(Rect card, int i, float s, bool inspectView)
+        void DrawBeeAlbumCard(Rect card, int i, float s, bool inspectView) =>
+            DrawBeeAlbumCard(card, i, s, inspectView, true);
+
+        void DrawBeeAlbumCard(Rect card, int i, float s, bool inspectView, bool tappable)
         {
             // Pulled-out sleeve: faint ghost so the card looks removed
             if (!inspectView && i == _hiveInspect)
@@ -8869,6 +9258,14 @@ namespace FlockFive
             }
 
             if ((uint)i >= (uint)Hive.AlbumSlots) return;
+            if (!inspectView && HiveCardFresh(i))
+            {
+                float p = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 5.2f);
+                GUI.color = new Color(1f, 0.82f, 0.28f, 0.28f + 0.50f * p);
+                float m = (3f + 3f * p) * Mathf.Max(1f, s);
+                GUI.DrawTexture(new Rect(card.x - m, card.y - m, card.width + m * 2f, card.height + m * 2f), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
             int kindIx = Hive.KindOfSlot(i);
             BeeFinish finish = Hive.FinishOfSlot(i);
             int n = Hive.CountOf(kindIx, finish);
@@ -8908,23 +9305,32 @@ namespace FlockFive
 
             if (!owned)
             {
+                if (finish == BeeFinish.Holo || finish == BeeFinish.InverseRainbow)
+                {
+                    Color edge = finish == BeeFinish.Holo
+                        ? new Color(0.15f, 0.48f, 0.92f, 0.95f)
+                        : new Color(0.82f, 0.22f, 0.68f, 0.95f);
+                    float edgeH = Mathf.Max(3f, 4f * s);
+                    GUI.color = edge;
+                    GUI.DrawTexture(new Rect(face.x, face.y, face.width, edgeH), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                }
+                var lockedBee = SpriteCatalog.Bee;
+                if (lockedBee != null && lockedBee.texture != null)
+                {
+                    float bh = face.height * 0.46f;
+                    var br = new Rect(face.center.x - bh * 0.5f, face.y + face.height * 0.08f, bh, bh);
+                    GUI.color = new Color(kind.Tint.r * 0.45f, kind.Tint.g * 0.45f, kind.Tint.b * 0.45f, 0.80f);
+                    GUI.DrawTexture(br, lockedBee.texture, ScaleMode.ScaleToFit, true);
+                    GUI.color = Color.white;
+                }
                 var mystery = new GUIStyle(GUI.skin.label)
                 {
                     fontStyle = FontStyle.Bold,
                     alignment = TextAnchor.MiddleCenter
                 };
                 mystery.fontSize = FitFont(mystery, "?", face.width * 0.55f, face.height * 0.40f, inspectView ? 48 : 28, inspectView ? 96 : 64);
-                StampOutlined(new Rect(face.x, face.y + face.height * 0.16f, face.width, face.height * 0.42f), "?", mystery, new Color(0.55f, 0.48f, 0.38f), 2, 1);
-                var lockSt = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.UpperCenter,
-                    wordWrap = true
-                };
-                string locked = "Still out buzzing";
-                var lockBox = new Rect(face.x + face.width * 0.04f, face.yMax - face.height * 0.30f, face.width * 0.92f, face.height * 0.26f);
-                lockSt.fontSize = FitFontWrapped(lockSt, locked, lockBox.width, lockBox.height, inspectView ? 18 : 12, inspectView ? 36 : 20);
-                StampOutlined(lockBox, locked, lockSt, new Color(0.50f, 0.42f, 0.30f), inspectView ? 2 : 1, 1);
+                StampOutlined(new Rect(face.x, face.y + face.height * 0.28f, face.width, face.height * 0.42f), "?", mystery, new Color(0.62f, 0.54f, 0.42f), 2, 1);
             }
             else if (!showBack)
             {
@@ -8948,10 +9354,12 @@ namespace FlockFive
                 float nameTop = inspectView ? 0.28f : 0.50f;
                 float nameH = inspectView ? 0.18f : 0.18f;
                 var nameBox = new Rect(face.x + face.width * 0.03f, face.y + face.height * nameTop, face.width * 0.94f, face.height * nameH);
+                int nameLo = inspectView ? 28 : Mathf.RoundToInt(14f * s);
                 int nameHi = inspectView
                     ? Mathf.Clamp(Mathf.RoundToInt(nameBox.height * 0.88f), 32, 88)
-                    : Mathf.Clamp(Mathf.RoundToInt(nameBox.height * 0.72f), 16, 28);
-                nameSt.fontSize = FitFontWrapped(nameSt, kind.Name, nameBox.width, nameBox.height, inspectView ? 28 : 14, nameHi);
+                    : Mathf.Max(nameLo, Mathf.RoundToInt(nameBox.height * 0.72f));
+                if (nameHi < nameLo) nameHi = nameLo;
+                nameSt.fontSize = FitFontWrapped(nameSt, kind.Name, nameBox.width, nameBox.height, nameLo, nameHi);
                 int nameStroke = inspectView ? Mathf.Max(2, Mathf.RoundToInt(nameSt.fontSize * 0.06f)) : 2;
                 StampOutlined(nameBox, kind.Name, nameSt, new Color(0.16f, 0.07f, 0.02f), nameStroke, 1);
                 var frontSt = new GUIStyle(GUI.skin.label)
@@ -8965,26 +9373,29 @@ namespace FlockFive
                     face.y + face.height * (nameTop + nameH + 0.01f),
                     face.width * 0.94f,
                     face.height * (0.96f - nameTop - nameH));
+                int frontLo = inspectView ? 22 : Mathf.RoundToInt(14f * s);
                 int frontHi = inspectView
                     ? Mathf.Clamp(Mathf.RoundToInt(frontBox.height * 0.42f), 28, 88)
-                    : Mathf.Clamp(Mathf.RoundToInt(frontBox.height * 0.36f), 13, 22);
-                frontSt.fontSize = FitFontWrapped(frontSt, kind.Front, frontBox.width, frontBox.height, inspectView ? 22 : 13, frontHi);
+                    : Mathf.Max(frontLo, Mathf.RoundToInt(frontBox.height * 0.36f));
+                if (frontHi < frontLo) frontHi = frontLo;
+                frontSt.fontSize = FitFontWrapped(frontSt, kind.Front, frontBox.width, frontBox.height, frontLo, frontHi);
                 StampOutlined(frontBox, kind.Front, frontSt, new Color(0.20f, 0.09f, 0.03f), inspectView ? 2 : 1, 1);
                 if (n > 1)
                 {
                     var cnt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperRight };
-                    cnt.fontSize = Mathf.Max(inspectView ? 22 : 13, Mathf.RoundToInt((inspectView ? 20f : 13f) * s));
+                    cnt.fontSize = Mathf.Max(inspectView ? 22 : Mathf.RoundToInt(14f * s), Mathf.RoundToInt((inspectView ? 20f : 14f) * s));
                     StampOutlined(new Rect(face.xMax - 56f * s, face.y + 4f * s, 52f * s, inspectView ? 32f * s : 20f * s), "×" + n, cnt, new Color(0.16f, 0.07f, 0.02f), inspectView ? 2 : 1, 1);
                 }
                 if (finish != BeeFinish.Normal)
                 {
                     string foil = finish == BeeFinish.Holo ? "Holo" : "Inverse Rainbow";
                     var foilSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperLeft };
-                    foilSt.fontSize = Mathf.RoundToInt(11 * s);
+                    int foilPx = inspectView ? Mathf.Max(18, Mathf.RoundToInt(16f * s)) : Mathf.RoundToInt(14f * s);
+                    foilSt.fontSize = foilPx;
                     Color foilCol = finish == BeeFinish.Holo
                         ? new Color(0.15f, 0.48f, 0.92f)
                         : new Color(0.82f, 0.22f, 0.68f);
-                    StampOutlined(new Rect(face.x + 4f * s, face.y + 4f * s, face.width * 0.7f, 18f * s), foil, foilSt, foilCol, 1, 1);
+                    StampOutlined(new Rect(face.x + 4f * s, face.y + 4f * s, face.width * 0.62f, foilPx + 6f), foil, foilSt, foilCol, 1, 1);
                 }
             }
             else
@@ -9013,16 +9424,20 @@ namespace FlockFive
                     face.y + face.height * 0.23f,
                     face.width * 0.92f,
                     face.height * (0.72f - foilH));
+                int bodyLo = inspectView ? 22 : Mathf.RoundToInt(14f * s);
                 int bodyHi = inspectView
                     ? Mathf.Clamp(Mathf.RoundToInt(bodyBox.height * 0.28f), 28, 96)
-                    : Mathf.Clamp(Mathf.RoundToInt(bodyBox.height * 0.18f), 13, 20);
-                blip.fontSize = FitFontWrapped(blip, kind.Back, bodyBox.width, bodyBox.height, inspectView ? 22 : 13, bodyHi);
+                    : Mathf.Max(bodyLo, Mathf.RoundToInt(bodyBox.height * 0.18f));
+                if (bodyHi < bodyLo) bodyHi = bodyLo;
+                blip.fontSize = FitFontWrapped(blip, kind.Back, bodyBox.width, bodyBox.height, bodyLo, bodyHi);
                 StampOutlined(bodyBox, kind.Back, blip, new Color(0.18f, 0.08f, 0.03f), inspectView ? 2 : 1, 1);
                 if (finish != BeeFinish.Normal)
                 {
                     string foil = finish == BeeFinish.Holo ? "Holo" : "Inverse Rainbow";
                     var foilSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.LowerCenter };
-                    foilSt.fontSize = Mathf.Max(inspectView ? 18 : 12, Mathf.RoundToInt((inspectView ? 16f : 12f) * s));
+                    foilSt.fontSize = inspectView
+                        ? Mathf.Max(18, Mathf.RoundToInt(16f * s))
+                        : Mathf.RoundToInt(14f * s);
                     Color foilCol = finish == BeeFinish.Holo
                         ? new Color(0.15f, 0.48f, 0.92f)
                         : new Color(0.82f, 0.22f, 0.68f);
@@ -9030,48 +9445,389 @@ namespace FlockFive
                 }
             }
 
-            // Binder sleeve tap opens fullscreen inspect (flip lives inside inspect)
-            if (!inspectView && owned && !flipping && _hivePageTurn >= 0.55f && _hiveInspect < 0 && HitPad(card, out _))
+            // Owned sleeve opens inspect. A locked "?" re-shows the how-to and stays shut.
+            if (tappable && !inspectView && !flipping && _hivePageTurn >= 0.55f && _hiveInspect < 0 && HitPad(card, out _))
             {
-                _hiveInspect = i;
-                _hiveInspectT = 0f;
-                _hiveInspectClosing = false;
-                _hiveInspectFrom = card;
-                _hiveFaceBack[i] = false;
-                _hiveFlip = -1;
-                _hiveFlipT = 0f;
-                Sfx.PageTurn();
+                if (owned) OpenHiveInspect(i, card);
+                else _hiveHowToNudge = true;
             }
         }
 
         void DrawLevelHive(float s)
         {
-            var box = new Rect(20f * s, 90f * s, Screen.width - 40f * s, Mathf.Min(420f * s, Screen.height * 0.48f));
-            GUI.Box(box, "");
-            var title = new GUIStyle(GUI.skin.label) { fontSize = Mathf.RoundToInt(24 * s), fontStyle = FontStyle.Bold };
-            title.normal.textColor = new Color(1f, 0.92f, 0.7f);
-            var row = new GUIStyle(GUI.skin.label) { fontSize = Mathf.RoundToInt(20 * s) };
-            GUILayout.BeginArea(new Rect(box.x + 16f, box.y + 10f, box.width - 32f, box.height - 20f));
-            GUILayout.Label("This garden's visitors", title);
-            GUILayout.Space(8f);
-            if (_levelBees.Count == 0)
+            int count = _levelBees.Count;
+            bool cards = count > 0;
+            int floor = Mathf.RoundToInt(14f * s);
+            float boxW = Mathf.Min(Screen.width - 24f * s, 560f * s);
+            float boxH = cards
+                ? Mathf.Min(Screen.height * 0.72f, 560f * s)
+                : Mathf.Min(Screen.height * 0.42f, 260f * s);
+            float y = TopHud() + 6f * s;
+            var box = new Rect((Screen.width - boxW) * 0.5f, y, boxW, boxH);
+            _levelHiveRect = box;
+
+            GUI.color = new Color(0.10f, 0.07f, 0.04f, 0.94f);
+            GUI.DrawTexture(box, Texture2D.whiteTexture);
+            GUI.color = new Color(0.96f, 0.78f, 0.32f, 0.90f);
+            float edge = Mathf.Max(2f, 3f * s);
+            GUI.DrawTexture(new Rect(box.x, box.y, box.width, edge), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(box.x, box.yMax - edge, box.width, edge), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(box.x, box.y, edge, box.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(box.xMax - edge, box.y, edge, box.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            var titleSt = new GUIStyle(GUI.skin.label)
             {
-                row.normal.textColor = new Color(0.7f, 0.66f, 0.55f);
-                GUILayout.Label("No bees have dropped by yet.", row);
-            }
-            else
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+            int titlePx = Mathf.Max(floor, Mathf.RoundToInt(22f * s));
+            var titleR = new Rect(box.x + 12f * s, box.y + 10f * s, box.width - 24f * s, titlePx + 8f);
+            titleSt.fontSize = FitFont(titleSt, "Cards earned this round", titleR.width * 0.98f, titleR.height * 0.92f, floor, titlePx);
+            StampOutlined(titleR, "Cards earned this round", titleSt, new Color(1f, 0.94f, 0.72f), 2, 1);
+
+            if (!cards)
             {
-                for (int i = 0; i < _levelBees.Count; i++)
+                var howSt = new GUIStyle(GUI.skin.label)
                 {
-                    var v = _levelBees[i];
-                    row.normal.textColor = v.Kind.Tint;
-                    string label = v.Kind.Name;
-                    if (v.Finish == BeeFinish.Holo) label += " · Holo";
-                    else if (v.Finish == BeeFinish.InverseRainbow) label += " · Inverse Rainbow";
-                    GUILayout.Label(label, row);
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.UpperCenter,
+                    wordWrap = true
+                };
+                var howR = new Rect(box.x + 16f * s, titleR.yMax + 12f * s, box.width - 32f * s, box.yMax - titleR.yMax - 24f * s);
+                int howHi = Mathf.Max(floor, Mathf.RoundToInt(18f * s));
+                howSt.fontSize = FitFontWrapped(howSt, HiveHowTo, howR.width, howR.height, floor, howHi);
+                StampOutlined(howR, HiveHowTo, howSt, new Color(1f, 0.96f, 0.82f), 1, 1);
+                return;
+            }
+
+            if (count != _levelHiveCountSeen)
+            {
+                _levelHivePick = count - 1;
+                _levelHiveShown = _levelHivePick;
+                _levelHiveAuto = 0f;
+                _levelHiveCountSeen = count;
+                _levelHiveDrag = false;
+                _levelHiveDragX = 0f;
+            }
+            _levelHivePick = Mathf.Clamp(_levelHivePick, 0, count - 1);
+
+            var ev = Event.current;
+            if (ev != null && ev.type == EventType.Repaint && Time.frameCount != _levelHiveFrame)
+            {
+                _levelHiveFrame = Time.frameCount;
+                if (count > 1 && _hiveInspect < 0 && !_levelHiveDrag)
+                {
+                    _levelHiveAuto += Time.unscaledDeltaTime;
+                    if (_levelHiveAuto >= HiveCarouselStep)
+                    {
+                        _levelHiveAuto = 0f;
+                        _levelHivePick = (_levelHivePick + 1) % count;
+                    }
+                }
+                if (!_levelHiveDrag) EaseHiveCarousel(count);
+            }
+
+            float capH = floor + 10f;
+            float dotsH = count > 1 ? 26f * s : 0f;
+            float stageTop = titleR.yMax + 6f * s;
+            float stageBot = box.yMax - 10f * s - capH - dotsH;
+            float stageH = Mathf.Max(48f * s, stageBot - stageTop);
+            var stage = new Rect(box.x + 8f * s, stageTop, box.width - 16f * s, stageH);
+            float cardH = stage.height * 0.94f;
+            float cardW = Mathf.Min(cardH / 1.35f, stage.width * 0.62f);
+            cardH = cardW * 1.35f;
+            float stride = cardW * 0.78f;
+            float shown = _levelHiveShown;
+            if (_levelHiveDrag && count > 1)
+                shown -= _levelHiveDragX / Mathf.Max(1f, stride);
+
+            int centerIx = 0;
+            float best = 999f;
+            for (int i = 0; i < count; i++)
+            {
+                float a = Mathf.Abs(HiveWrap(i - shown, count));
+                if (a < best) { best = a; centerIx = i; }
+            }
+
+            GUI.BeginGroup(stage);
+            float cx = stage.width * 0.5f;
+            float cy = stage.height * 0.5f;
+            Rect centerLocal = default;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    bool center = i == centerIx;
+                    if (center != (pass == 1)) continue;
+                    float off = HiveWrap(i - shown, count);
+                    if (!center && Mathf.Abs(off) > 1.25f) continue;
+                    float sc = Mathf.Lerp(1f, 0.72f, Mathf.Clamp01(Mathf.Abs(off)));
+                    float w = cardW * sc;
+                    float h = cardH * sc;
+                    var r = new Rect(cx + off * stride - w * 0.5f, cy - h * 0.5f, w, h);
+                    if (center) centerLocal = r;
+                    int slot = _levelBees[i].Slot;
+                    if ((uint)slot < (uint)Hive.AlbumSlots)
+                        DrawBeeAlbumCard(r, slot, s, false, false);
                 }
             }
-            GUILayout.EndArea();
+            bool tap = false;
+            int dir = 0;
+            if (_levelHiveSwallow)
+            {
+                var swallow = Event.current;
+                bool released = swallow != null && swallow.type == EventType.MouseUp && swallow.button == 0;
+                bool up = Mouse.current == null || !Mouse.current.leftButton.isPressed;
+                if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed)
+                    up = false;
+                if (released || (swallow != null && swallow.type == EventType.Repaint && up))
+                    _levelHiveSwallow = false;
+            }
+            else if (_hiveInspect < 0)
+                CarouselDrag(new Rect(0f, 0f, stage.width, stage.height), s, count, out tap, out dir);
+            GUI.EndGroup();
+
+            if (dir != 0)
+            {
+                _levelHivePick = (_levelHivePick + dir + count) % count;
+                _levelHiveShown = _levelHivePick;
+                _levelHiveAuto = 0f;
+            }
+            else if (tap)
+            {
+                var from = centerLocal;
+                from.x += stage.x;
+                from.y += stage.y;
+                OpenHiveInspect(_levelBees[centerIx].Slot, from);
+            }
+
+            var cap = _levelBees[centerIx];
+            string mark = cap.Fresh ? "New in the hive" : "Already in the hive";
+            var capSt = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+            capSt.fontSize = floor;
+            Color markInk = cap.Fresh ? new Color(1f, 0.86f, 0.36f) : new Color(0.78f, 0.74f, 0.64f);
+            var capR = new Rect(box.x, stage.yMax + 2f * s, box.width, capH);
+            StampOutlined(capR, mark, capSt, markInk, 1, 1);
+
+            if (count > 1 && count <= 12)
+            {
+                float dot = 12f * s;
+                float gap = 8f * s;
+                float rowW = count * dot + (count - 1) * gap;
+                float x0 = box.center.x - rowW * 0.5f;
+                float dy = box.yMax - 8f * s - dot;
+                for (int i = 0; i < count; i++)
+                {
+                    var d = new Rect(x0 + i * (dot + gap), dy, dot, dot);
+                    if (_hiveInspect < 0 && !_levelHiveSwallow && HitPad(d, out _))
+                    {
+                        _levelHivePick = i;
+                        _levelHiveShown = i;
+                        _levelHiveAuto = 0f;
+                    }
+                    bool on = i == _levelHivePick;
+                    GUI.color = on
+                        ? new Color(1f, 0.82f, 0.28f, 0.95f)
+                        : new Color(1f, 0.94f, 0.72f, 0.35f);
+                    GUI.DrawTexture(d, Texture2D.whiteTexture);
+                }
+                GUI.color = Color.white;
+            }
+            else if (count > 12)
+            {
+                var pageSt = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = false
+                };
+                pageSt.fontSize = floor;
+                string page = (_levelHivePick + 1) + " / " + count;
+                StampOutlined(new Rect(box.x, box.yMax - capH - 4f * s, box.width, capH), page, pageSt, new Color(1f, 0.94f, 0.72f), 1, 1);
+            }
+        }
+
+        void CarouselDrag(Rect r, float s, int count, out bool tap, out int dir)
+        {
+            tap = false;
+            dir = 0;
+            int id = GUIUtility.GetControlID(FocusType.Passive);
+            _levelHiveDragId = id;
+            var e = Event.current;
+            if (e == null) return;
+            bool inside = r.Contains(e.mousePosition);
+            switch (e.GetTypeForControl(id))
+            {
+                case EventType.MouseDown:
+                    if (inside && e.button == 0)
+                    {
+                        GUIUtility.hotControl = id;
+                        _levelHiveDrag0 = e.mousePosition;
+                        _levelHiveDragX = 0f;
+                        _levelHiveDrag = true;
+                        _levelHiveAuto = 0f;
+                        e.Use();
+                    }
+                    break;
+                case EventType.MouseDrag:
+                    if (GUIUtility.hotControl == id)
+                    {
+                        _levelHiveDragX = e.mousePosition.x - _levelHiveDrag0.x;
+                        e.Use();
+                    }
+                    break;
+                case EventType.MouseUp:
+                    if (GUIUtility.hotControl == id)
+                    {
+                        GUIUtility.hotControl = 0;
+                        float dx = e.mousePosition.x - _levelHiveDrag0.x;
+                        _levelHiveDrag = false;
+                        _levelHiveDragX = 0f;
+                        e.Use();
+                        float slop = Mathf.Max(28f, 36f * s);
+                        if (count > 1 && Mathf.Abs(dx) >= slop)
+                            dir = dx < 0f ? 1 : -1;
+                        else if (inside)
+                            tap = true;
+                    }
+                    break;
+            }
+        }
+
+        void OpenLevelHive()
+        {
+            _levelHive = true;
+            int n = _levelBees.Count;
+            _levelHivePick = Mathf.Max(0, n - 1);
+            _levelHiveShown = _levelHivePick;
+            _levelHiveAuto = 0f;
+            _levelHiveCountSeen = n;
+            _levelHiveDrag = false;
+            _levelHiveDragX = 0f;
+            // The tap that opens the panel must not also tap the card underneath.
+            _levelHiveSwallow = true;
+        }
+
+        void CloseLevelHive()
+        {
+            _levelHive = false;
+            _levelHiveDrag = false;
+            _levelHiveDragX = 0f;
+            if (_levelHiveDragId != 0 && GUIUtility.hotControl == _levelHiveDragId)
+                GUIUtility.hotControl = 0;
+        }
+
+        void OpenHiveAlbum()
+        {
+            if (_hiveJumpSlot >= 0)
+            {
+                int pages = Mathf.Max(1, (Hive.AlbumSlots + HivePageSize - 1) / HivePageSize);
+                _hivePage = Mathf.Clamp(_hiveJumpSlot / HivePageSize, 0, pages - 1);
+                _hivePageFrom = _hivePage;
+                _hivePageTurn = 99f;
+                _hiveFlip = -1;
+                _hiveJumpSlot = -1;
+            }
+            _home = HomeFace.Hive;
+        }
+
+        void NoteHiveCue(BeeVisit visit)
+        {
+            _hiveJumpSlot = visit.Slot;
+            if (!visit.Fresh) return;
+            for (int i = 0; i < _hiveFreshSlots.Count; i++)
+                if (_hiveFreshSlots[i] == visit.Slot) return;
+            _hiveFreshSlots.Add(visit.Slot);
+        }
+
+        bool HiveCardFresh(int slot)
+        {
+            for (int i = 0; i < _hiveFreshSlots.Count; i++)
+                if (_hiveFreshSlots[i] == slot) return true;
+            return false;
+        }
+
+        void ClearHiveFresh(int slot)
+        {
+            for (int i = _hiveFreshSlots.Count - 1; i >= 0; i--)
+                if (_hiveFreshSlots[i] == slot) _hiveFreshSlots.RemoveAt(i);
+        }
+
+        void OpenHiveInspect(int slot, Rect from)
+        {
+            if ((uint)slot >= (uint)Hive.AlbumSlots) return;
+            if (Hive.CountOfSlot(slot) <= 0) return;
+            _hiveInspect = slot;
+            _hiveInspectT = 0f;
+            _hiveInspectClosing = false;
+            _hiveInspectFrom = from;
+            if ((uint)slot < (uint)_hiveFaceBack.Length)
+                _hiveFaceBack[slot] = false;
+            _hiveFlip = -1;
+            _hiveFlipT = 0f;
+            ClearHiveFresh(slot);
+            Sfx.PageTurn();
+        }
+
+        int HivePageFill(int page)
+        {
+            int start = page * HivePageSize;
+            int end = Mathf.Min(start + HivePageSize, Hive.AlbumSlots);
+            int n = 0;
+            for (int i = start; i < end; i++)
+                if (Hive.CountOfSlot(i) > 0) n++;
+            return n;
+        }
+
+        void DrawHiveColumns(float y, float h, float gx0, float cellW, float gap, float s)
+        {
+            int floor = Mathf.RoundToInt(14f * s);
+            var st = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true
+            };
+            st.fontSize = floor;
+            for (int col = 1; col < 3; col++)
+            {
+                string text = col == 1 ? "Holo" : "Inverse Rainbow";
+                Color ink = col == 1
+                    ? new Color(0.15f, 0.48f, 0.92f)
+                    : new Color(0.82f, 0.22f, 0.68f);
+                var r = new Rect(gx0 + col * (cellW + gap), y, cellW, h);
+                StampOutlined(r, text, st, ink, 1, 1);
+            }
+        }
+
+        static float HiveWrap(float d, int count)
+        {
+            if (count <= 1) return 0f;
+            float n = count;
+            return Mathf.Repeat(d + n * 0.5f, n) - n * 0.5f;
+        }
+
+        void EaseHiveCarousel(int count)
+        {
+            if (count <= 1)
+            {
+                _levelHiveShown = 0f;
+                _levelHivePick = 0;
+                return;
+            }
+            float d = HiveWrap(_levelHivePick - _levelHiveShown, count);
+            float step = Time.unscaledDeltaTime / 0.28f;
+            if (Mathf.Abs(d) <= step) _levelHiveShown = _levelHivePick;
+            else _levelHiveShown += Mathf.Sign(d) * step;
+            if (_levelHiveShown < 0f) _levelHiveShown += count;
+            else if (_levelHiveShown >= count) _levelHiveShown -= count;
         }
 
         bool GiftLocked(int i)
@@ -9357,7 +10113,7 @@ namespace FlockFive
 
             var safe = Screen.safeArea;
             float top = TopHud();
-            float xSz = 40f * Mathf.Min(s, 1.45f);
+            float xSz = Mathf.Max(48f * s, 44f);
             var xBtn = new Rect(
                 Screen.width - Mathf.Max(14f, Screen.width - safe.xMax + 8f) - xSz,
                 top, xSz, xSz);
@@ -9410,25 +10166,47 @@ namespace FlockFive
             string head = _keepStreak
                 ? "Watch AD to keep ×" + Purse.Streak
                 : (_freezeOffer ? "Icing over — thaw a limb" : "Watch AD for an extra branch");
-            var headR = new Rect(plate.x + 10f * s, plate.y + 8f * s, plate.width - 20f * s, plate.height - 16f * s);
+            // Inset past the screw bases so the headline never sits under a bulb.
+            float insetX = Mathf.Max(12f * s, plate.width * 0.08f);
+            float insetY = Mathf.Max(10f * s, plate.height * 0.12f);
+            var headR = new Rect(plate.x + insetX, plate.y + insetY, plate.width - insetX * 2f, plate.height - insetY * 2f);
             GUI.color = new Color(1f, 0.72f, 0.16f, 0.40f + 0.22f * breathe);
-            GUI.DrawTexture(new Rect(headR.x - 12f * s, headR.y - 8f * s, headR.width + 24f * s, headR.height + 16f * s), glow, ScaleMode.ScaleToFit, true);
+            GUI.DrawTexture(new Rect(headR.x - 8f * s, headR.y - 6f * s, headR.width + 16f * s, headR.height + 12f * s), glow, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
             if (_giftTitle == null)
                 _giftTitle = new GUIStyle(GUI.skin.label)
                 {
-                    fontStyle = FontStyle.Normal,
                     alignment = TextAnchor.MiddleCenter,
                     wordWrap = true
                 };
             var title = _giftTitle;
-            title.fontSize = FitFont(title, head, headR.width, headR.height * 0.88f, 24, 44);
-            int headStroke = Mathf.Max(2, Mathf.RoundToInt(title.fontSize * 0.08f));
-            StampOutlined(headR, head, title, new Color(1f, 0.92f, 0.55f), 1, headStroke);
+            title.fontStyle = FontStyle.Bold;
+            title.wordWrap = true;
+            int headLo = Mathf.Max(14, Mathf.RoundToInt(16f * s));
+            int headHi = Mathf.Max(headLo + 4, Mathf.RoundToInt(40f * s));
+            title.fontSize = FitFontWrapped(title, head, headR.width, headR.height * 0.92f, headLo, headHi);
+            var headContent = new GUIContent(head);
+            int headGuard = 0;
+            while (title.fontSize > 8 && headGuard < 28
+                && title.CalcHeight(headContent, headR.width) > headR.height * 0.96f)
+            {
+                title.fontSize -= 1;
+                headGuard++;
+            }
+            int headStroke = Mathf.Max(2, Mathf.RoundToInt(title.fontSize * 0.10f));
+            StampOutlined(headR, head, title, new Color(1f, 0.96f, 0.72f), 1, headStroke);
 
             DrawGiftMarquee(plate, s, t);
 
             var discHit = FlowerDisc(cta, 0f);
+            float hitGrow = 18f * s;
+            discHit = new Rect(discHit.x - hitGrow, discHit.y - hitGrow * 0.65f, discHit.width + hitGrow * 2f, discHit.height + hitGrow * 1.3f);
+            if (discHit.height < 52f * s)
+            {
+                float extra = 52f * s - discHit.height;
+                discHit.y -= extra * 0.5f;
+                discHit.height += extra;
+            }
             bool watch = HitPad(discHit, out bool held);
             var bloom = SpriteCatalog.PlayFlower;
             if (bloom != null && bloom.texture != null)
@@ -9445,15 +10223,25 @@ namespace FlockFive
                 if (_giftWatch == null)
                     _giftWatch = new GUIStyle(GUI.skin.label)
                     {
-                        fontStyle = FontStyle.Normal,
                         alignment = TextAnchor.MiddleCenter,
                         wordWrap = false
                     };
                 var watchSt = _giftWatch;
+                watchSt.fontStyle = FontStyle.Bold;
                 string watchLab = "Watch";
-                watchSt.fontSize = FitFont(watchSt, watchLab, disc.width * 0.78f, disc.height * 0.58f, 22, 42);
-                int ink = Mathf.Max(2, Mathf.RoundToInt(watchSt.fontSize * 0.08f));
-                StampOutlined(disc, watchLab, watchSt, new Color(0.42f, 0.24f, 0.10f), 1, ink);
+                int watchLo = Mathf.Max(16, Mathf.RoundToInt(20f * s));
+                int watchHi = Mathf.Max(watchLo + 4, Mathf.RoundToInt(42f * s));
+                watchSt.fontSize = FitFont(watchSt, watchLab, disc.width * 0.82f, disc.height * 0.62f, 8, watchHi);
+                var watchContent = new GUIContent(watchLab);
+                int watchGuard = 0;
+                while (watchSt.fontSize > 8 && watchGuard < 20
+                    && watchSt.CalcSize(watchContent).x > disc.width * 0.90f)
+                {
+                    watchSt.fontSize -= 1;
+                    watchGuard++;
+                }
+                int ink = Mathf.Clamp(Mathf.RoundToInt(watchSt.fontSize * 0.12f), 2, 6);
+                StampOutlined(disc, watchLab, watchSt, new Color(0.28f, 0.12f, 0.04f), 2, ink);
             }
             if (watch)
             {
@@ -9500,8 +10288,11 @@ namespace FlockFive
                     wordWrap = false
                 };
             var xLab = _giftX;
-            xLab.fontSize = FitFont(xLab, "×", xBtn.width * 0.84f, xBtn.height * 0.84f, 20, 34);
-            StampOutlined(xBtn, "×", xLab, new Color(1f, 0.88f, 0.42f, held ? 1f : 0.92f), 1, 2);
+            int xLo = Mathf.Max(18, Mathf.RoundToInt(22f * s));
+            int xHi = Mathf.Max(xLo + 4, Mathf.RoundToInt(36f * s));
+            xLab.fontSize = FitFont(xLab, "×", xBtn.width * 0.84f, xBtn.height * 0.84f, 8, xHi);
+            int xInk = Mathf.Clamp(Mathf.RoundToInt(xLab.fontSize * 0.12f), 2, 6);
+            StampOutlined(xBtn, "×", xLab, new Color(1f, 0.94f, 0.62f, held ? 1f : 0.96f), 2, xInk);
         }
 
         // grow: how far outside `plate` the bulb sockets sit (px); <0 = 6*s (gift chalkboard rim).
@@ -9515,21 +10306,31 @@ namespace FlockFive
             // Sit on the gold rim of the chalkboard, not the outer orchid wood.
             if (grow < 0f) grow = 6f * s;
             var frame = new Rect(plate.x - grow, plate.y - grow, plate.width + grow * 2f, plate.height + grow * 2f);
-            const int n = 16;
-            bool strobe = (Mathf.FloorToInt(t * 1.65f) % 7) == 0;
-            bool strobeOn = ((int)(t * 14f) & 1) == 0;
             float perim = 2f * (frame.width + frame.height);
-            float headCw = Mathf.Repeat(t * 0.52f, 1f);
-            float headCcw = Mathf.Repeat(-t * 0.38f, 1f);
-            float szOn = bulbFrac > 0f
-                ? plate.width * bulbFrac
-                : Mathf.Max(30f * s, plate.width * 0.085f);
-            // Streak sign only: a short plate would otherwise stack neighbouring glass.
-            // 0.62 of the arc stays under the corner chord (spacing / sqrt(2)).
+            // Gift card keeps 16 lamps at its own floor. The celebration sign asks for
+            // a fat glass; drop the count (never below 8) so neighbours still clear
+            // the corner chord (spacing / sqrt(2), held at 0.62).
+            int n = 16;
+            float szOn = Mathf.Max(30f * s, plate.width * 0.085f);
             if (bulbFrac > 0f)
             {
-                float spacing = perim / n;
-                if (szOn > spacing * 0.62f) szOn = spacing * 0.62f;
+                szOn = plate.width * bulbFrac;
+                int fitN = Mathf.FloorToInt(perim * 0.60f / Mathf.Max(1f, szOn));
+                n = Mathf.Clamp(fitN, 8, 16);
+                float cap = perim / n * 0.62f;
+                if (szOn > cap) szOn = cap;
+            }
+            // One readable chase (~2.6s) plus a slower counter-glow. A soft bloom
+            // every few seconds replaces the old 14Hz strobe.
+            float headCw = Mathf.Repeat(t * 0.38f, 1f);
+            float headCcw = Mathf.Repeat(-t * 0.15f, 1f);
+            float pulse = Mathf.Repeat(t, 4.6f);
+            float bloom = 0f;
+            if (pulse < 0.62f)
+            {
+                float up = Mathf.SmoothStep(0f, 1f, pulse / 0.16f);
+                float down = Mathf.SmoothStep(1f, 0f, (pulse - 0.16f) / 0.46f);
+                bloom = up * down;
             }
             float szOff = szOn * 0.82f;
             for (int i = 0; i < n; i++)
@@ -9600,10 +10401,11 @@ namespace FlockFive
                 float ring = Mathf.Min(Mathf.Abs(u - headCw), 1f - Mathf.Abs(u - headCw));
                 float ringB = Mathf.Min(Mathf.Abs(u - headCcw), 1f - Mathf.Abs(u - headCcw));
                 float comet = Mathf.Max(
-                    Mathf.Clamp01(1f - ring * n / 3.4f),
-                    Mathf.Clamp01(1f - ringB * n / 3.4f));
-                float idle = 0.16f + 0.10f * (0.5f + 0.5f * Mathf.Sin(t * 2.2f + i * 0.7f));
-                float lit = strobe ? (strobeOn ? 1f : idle) : Mathf.Max(idle, comet);
+                    Mathf.Clamp01(1f - ring * n / 2.6f),
+                    0.55f * Mathf.Clamp01(1f - ringB * n / 2.1f));
+                float idle = 0.20f + 0.10f * (0.5f + 0.5f * Mathf.Sin(t * 1.6f + i * 0.55f));
+                float lit = Mathf.Max(idle, comet);
+                lit = Mathf.Lerp(lit, 1f, bloom * 0.80f);
                 float sz = Mathf.Lerp(szOff, szOn, lit);
                 var prev = GUI.matrix;
                 GUIUtility.RotateAroundPivot(ang, p);

@@ -9,8 +9,10 @@ namespace FlockFive
         public const int Cols = 2;
         public const float LimbX = 2.38f;
         // Wood sprite 1280px @ 140 PPU. X scale is long enough that Cap (5) birds sit on the limb.
+        // Bonus limbs use that same scale (keep GiftWoodScaleX equal to WoodScaleX). A shorter X
+        // packed the five perches and drew the gift row short.
         public const float WoodScaleX = 0.64f;
-        public const float GiftWoodScaleX = 0.46f;
+        public const float GiftWoodScaleX = 0.64f;
         public const float WoodHalf = 1280f / 140f * WoodScaleX * 0.5f;
 
         // Exact perch spots (V24.3). Birds sit on bare-wood pads painted into branch.png /
@@ -24,12 +26,13 @@ namespace FlockFive
         // (1280px wood) so the last bird is not crammed into the one before it.
         public static readonly float[] SeatXPx = { 220f, 458f, 695f, 933f, 1148f };
         public static readonly float[] SeatYMain = { 0.3364f, 0.3757f, 0.2669f, 0.0776f, 0.0847f };
-        public static readonly float[] SeatYGift = { 0.3382f, 0.3791f, 0.2659f, 0.0690f, 0.0764f };
+        public static readonly float[] SeatYGift = { 0.3382f, 0.3791f, 0.2659f, 0.0690f, 0.0847f };
 
         public static Vector2 SeatLocal(int s, bool gift, bool fromRight)
         {
-            float wsx = gift ? GiftWoodScaleX : WoodScaleX;
-            float x = (SeatXPx[s] - 640f) * wsx / 140f;
+            // Same pixel steps and the same wood scale, so a bonus limb spaces
+            // its Cap perches like a regular one. Y stays fitted to each art.
+            float x = (SeatXPx[s] - 640f) * WoodScaleX / 140f;
             return new Vector2(fromRight ? -x : x, (gift ? SeatYGift : SeatYMain)[s]);
         }
 
@@ -160,13 +163,13 @@ namespace FlockFive
 
         public static BranchView MakeGift(int index, bool fromRight, Transform parent)
         {
-            float x = EdgeX(null, 1f, GiftWoodScaleX);
-            var view = MakeBranch(index, new Vector2(fromRight ? x : -x, GiftY), fromRight, parent, GiftWoodScaleX);
+            float x = EdgeX(null, 1f, WoodScaleX);
+            var view = MakeBranch(index, new Vector2(fromRight ? x : -x, GiftY), fromRight, parent, WoodScaleX, true);
             view.IsGift = true;
             if (view.Wood != null)
             {
                 view.Wood.sprite = SpriteCatalog.BranchGift;
-                view.Wood.transform.localScale = new Vector3(GiftWoodScaleX, 0.52f, 1f);
+                view.Wood.transform.localScale = new Vector3(WoodScaleX, 0.52f, 1f);
                 view.Wood.sortingOrder = 3;
                 view.RetakeWood();
             }
@@ -242,7 +245,7 @@ namespace FlockFive
             return bulbs;
         }
 
-        static BranchView MakeBranch(int index, Vector2 pos, bool fromRight, Transform parent, float woodScaleX = WoodScaleX)
+        static BranchView MakeBranch(int index, Vector2 pos, bool fromRight, Transform parent, float woodScaleX = WoodScaleX, bool gift = false)
         {
             var go = new GameObject("Branch" + index);
             go.transform.SetParent(parent, false);
@@ -268,7 +271,8 @@ namespace FlockFive
             // Inner uses the rest of the limb so five pads have air; a 4-stack
             // still leaves the inner tip. Bees may fly off-screen.
             // Exact per-spot seats: see SeatXPx / SeatYMain / SeatYGift.
-            bool gift = Mathf.Approximately(woodScaleX, GiftWoodScaleX);
+            // Kind, not scale: bonus wood is WoodScaleX too, so a scale compare would
+            // put regular limbs on the gift heights.
             for (int s = 0; s < BranchState.Cap; s++)
             {
                 var p = SeatLocal(s, gift, fromRight);

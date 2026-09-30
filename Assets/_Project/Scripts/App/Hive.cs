@@ -32,12 +32,17 @@ namespace FlockFive
         public BeeFinish Finish;
         public bool Fresh;
         public int Count;
+        public int Slot;
     }
 
     public static class Hive
     {
         const string PrefV1 = "flockfive.hive.v1";
         const string Pref = "flockfive.hive.v2";
+        // Play collects only. Screenshot seeds use GrantVisitor and stay out of this.
+        const string PrefCollected = "flockfive.hive.collected";
+        const string PrefMigrated = "flockfive.hive.collected.mig";
+        const string PrefLegacy = "flockfive.hive.collected.legacy";
         const char Pair = ';';
         const char Kv = ':';
         public const int Finishes = 3;
@@ -452,6 +457,10 @@ namespace FlockFive
         public static int AlbumSlots => Kinds * Finishes;
         public static int Found => CountFound();
         public static int Visitors => CountAll();
+        // True after a bird is uncovered in a stage. An album seeded for screenshots stays false.
+        public static bool Collected => ReadCollected();
+        // Albums that already had bees when this stamp shipped. Those players already know the hive.
+        public static bool LegacyAdopted => PlayerPrefs.GetInt(PrefLegacy, 0) != 0;
 
         public static int SlotOf(int kind, BeeFinish finish) => kind * Finishes + (int)finish;
         public static int KindOfSlot(int slot) => slot / Finishes;
@@ -486,6 +495,26 @@ namespace FlockFive
 
         public static BeeVisit TakeVisitor()
         {
+            var visit = AddVisitor();
+            NoteCollected();
+            return visit;
+        }
+
+        // Fills the album for a screenshot. Does not count as a bee the player found.
+        public static BeeVisit GrantVisitor()
+        {
+            bool seeded = PlayerPrefs.GetInt(PrefCollected, 0) == 0
+                && PlayerPrefs.GetInt(PrefMigrated, 0) == 0
+                && CountFound() == 0;
+            var visit = AddVisitor();
+            if (!seeded) return visit;
+            PlayerPrefs.SetInt(PrefMigrated, 1);
+            PlayerPrefs.Save();
+            return visit;
+        }
+
+        static BeeVisit AddVisitor()
+        {
             Warm();
             int kind = PickKind();
             BeeFinish finish = PickFinish();
@@ -499,7 +528,32 @@ namespace FlockFive
                 Finish = finish,
                 Fresh = fresh,
                 Count = _counts[ix],
+                Slot = ix,
             };
+        }
+
+        static void NoteCollected()
+        {
+            if (PlayerPrefs.GetInt(PrefCollected, 0) != 0) return;
+            PlayerPrefs.SetInt(PrefCollected, 1);
+            PlayerPrefs.SetInt(PrefMigrated, 1);
+            PlayerPrefs.Save();
+        }
+
+        static bool ReadCollected()
+        {
+            if (PlayerPrefs.GetInt(PrefCollected, 0) != 0) return true;
+            if (PlayerPrefs.GetInt(PrefMigrated, 0) != 0) return false;
+            // One read: a filled album from before the stamp was earned in play.
+            bool legacy = CountFound() > 0;
+            PlayerPrefs.SetInt(PrefMigrated, 1);
+            if (legacy)
+            {
+                PlayerPrefs.SetInt(PrefCollected, 1);
+                PlayerPrefs.SetInt(PrefLegacy, 1);
+            }
+            PlayerPrefs.Save();
+            return legacy;
         }
 
         static BeeFinish PickFinish()

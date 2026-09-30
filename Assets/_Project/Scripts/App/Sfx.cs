@@ -371,7 +371,6 @@ namespace FlockFive
                         MixDesk.Live.MarkLead(0.42f + 0.14f * i, MixDesk.DuckWhoosh);
                 }
             }
-            if (size >= 3) Rumble();
         }
 
         public static void BeeFound()
@@ -402,7 +401,6 @@ namespace FlockFive
             int i = Next(_breaks.Length, ref _lastBreak);
             Shot(_breaks[i], Random.Range(0.98f, 1.02f), 1f, MixLayer.Lead, MixDesk.DuckBreak);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.9f, MixDesk.DuckBreak);
-            Rumble();
         }
 
         public static void FeederDone()
@@ -558,23 +556,57 @@ namespace FlockFive
             Shot(_booms[i], Random.Range(0.94f, 1.03f), 0.7f, MixLayer.Lead);
         }
 
-        public static void Rumble()
-        {
-            if (!Application.isMobilePlatform) return;
-            try { Handheld.Vibrate(); }
-            catch (System.Exception) { }
-        }
+        public static void Rumble() => Haptics.Play(Haptics.Tier.Medium);
 
         // Distant garden rumble + crack variety. Mid, never Lead. Skips if a hop is speaking.
+        // Clips 0,3,6,9 are the close crack; 1,4,7,10 the roll; 2,5,8,11 the far growl.
         public static bool Thunder()
+        {
+            if (!ThunderOk()) return false;
+            int i = Next(_thunders.Length, ref _lastThunder);
+            float near = (i % 3 == 0) ? 1f : 0f;
+            float vol = Mathf.Lerp(0.42f, 0.72f, near * 0.55f + Random.value * 0.45f);
+            return ThunderShot(i, vol);
+        }
+
+        public static bool ThunderCrack(float power)
+        {
+            if (!ThunderOk()) return false;
+            float vol = Mathf.Lerp(0.52f, 0.72f, Mathf.Clamp01(power));
+            return ThunderShot(ThunderOf(0), vol);
+        }
+
+        public static bool ThunderRoll(float power)
+        {
+            if (!ThunderOk()) return false;
+            int family = power >= 0.72f ? 1 : 2;
+            float vol = Mathf.Lerp(0.38f, 0.62f, Mathf.Clamp01(power));
+            return ThunderShot(ThunderOf(family), vol);
+        }
+
+        static bool ThunderOk()
         {
             Ensure();
             if (MixDesk.Live != null && !MixDesk.Live.AllowMid) return false;
-            if (_thunders == null || _thunders.Length == 0) return false;
-            int i = Next(_thunders.Length, ref _lastThunder);
-            // Far rolls quieter; close cracks a touch hotter — still under chirps.
-            float near = (i % 3 == 0) ? 1f : 0f;
-            float vol = Mathf.Lerp(0.42f, 0.72f, near * 0.55f + Random.value * 0.45f);
+            return _thunders != null && _thunders.Length > 0;
+        }
+
+        static int ThunderOf(int family)
+        {
+            int n = _thunders.Length;
+            int i = _lastThunder;
+            for (int k = 0; k < n; k++)
+            {
+                i++;
+                if (i >= n) i = 0;
+                if ((i % 3) == family) break;
+            }
+            _lastThunder = i;
+            return i;
+        }
+
+        static bool ThunderShot(int i, float vol)
+        {
             float pitch = Random.Range(0.88f, 1.04f); // skill: no pitch-up past ~1.04
             Shot(_thunders[i], pitch, vol, MixLayer.Mid);
             return true;

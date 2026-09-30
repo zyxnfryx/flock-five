@@ -11,7 +11,7 @@ namespace FlockFive
             if (root == null) yield break;
             SkyCycle.RushNight(2.35f);
             Sfx.GardenWake();
-            Sfx.Rumble();
+            Haptics.Play(Haptics.Tier.Strong);
 
             var fx = new GameObject("Finale").transform;
             fx.SetParent(root, false);
@@ -20,7 +20,6 @@ namespace FlockFive
             _cut = false;
             Time.timeScale = 1f;
             host.StartCoroutine(Fireworks(fx, host));
-            host.StartCoroutine(RumbleTrain());
 
             yield return Wait(0.28f);
             if (!_cut)
@@ -29,16 +28,6 @@ namespace FlockFive
             Glow = false;
             Time.timeScale = 1f;
             SweepSparkles(fx);
-        }
-
-        static IEnumerator RumbleTrain()
-        {
-            for (int i = 0; i < 3; i++)
-            {
-                if (Cut()) yield break;
-                Sfx.Rumble();
-                yield return Wait(0.4f);
-            }
         }
 
         static bool Live;
@@ -166,7 +155,6 @@ namespace FlockFive
             if (Stopped(all, restScale, restPos)) yield break;
 
             Sfx.Takeoff(4);
-            Sfx.Rumble();
             host.StartCoroutine(PopBird(ruby, 0.50f, 0f));
             host.StartCoroutine(PopBird(gold, 0.50f, 0.06f));
             host.StartCoroutine(PopBird(teal, 0.52f, 0.14f));
@@ -235,7 +223,6 @@ namespace FlockFive
             }
 
             Sfx.FlockFlutter(1);
-            Sfx.Rumble();
             t = 0f;
             const float approach = 0.36f;
             while (t < approach && peach != null)
@@ -249,7 +236,6 @@ namespace FlockFive
             }
 
             Sfx.Break();
-            Sfx.Rumble();
             if (CamShake.Live != null) CamShake.Live.Punch(0.38f, 0.18f, 2.6f, 0.14f);
             if (sr != null) sr.sortingOrder = 72;
             host.StartCoroutine(Burst(hold, false));

@@ -112,6 +112,7 @@ namespace FlockFive
                 yield break;
             }
             Sfx.Break();
+            Haptics.Play(Haptics.Tier.Medium);
             CamShake.Combo(4);
             var parent = world != null ? world : transform;
             SpawnShards(parent);
