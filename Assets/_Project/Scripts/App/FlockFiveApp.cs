@@ -1940,7 +1940,7 @@ namespace FlockFive
 
         void PlayComboShow(int combo)
         {
-            var root = _garden != null ? _garden.Root : null;
+            var root = _garden.Root;
             if (root != null)
                 StartCoroutine(PlayComboPop(root, combo));
             Sfx.Combo(combo);
