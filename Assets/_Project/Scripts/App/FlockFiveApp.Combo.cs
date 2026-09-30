@@ -173,7 +173,7 @@ namespace FlockFive
         {
             CamPlane(out camX, out camY, out halfW, out float h);
             halfH = h;
-            cam = _garden != null && _garden.Cam != null ? _garden.Cam : Camera.main;
+            cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             return cam != null;
         }
 
