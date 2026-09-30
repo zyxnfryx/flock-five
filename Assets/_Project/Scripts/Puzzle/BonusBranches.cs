@@ -33,12 +33,20 @@ namespace FlockFive
             {
                 if (!b.Branches[i].IsBonus) continue;
                 if (n < claimed.Length && claimed[n])
-                {
-                    b.Branches[i].AdLocked = false;
-                    b.Branches[i].Broken = false;
-                }
+                    OpenEmpty(b.Branches[i]);
                 n++;
             }
+        }
+
+        // A claimed gift is a new perch. Wipe anything a park, a restore,
+        // or a reused limb left on it. Only a player hop fills it after this.
+        public static void OpenEmpty(BranchState st)
+        {
+            if (st == null) return;
+            st.AdLocked = false;
+            st.Broken = false;
+            st.Birds.Clear();
+            st.Shrouded.Clear();
         }
     }
 }

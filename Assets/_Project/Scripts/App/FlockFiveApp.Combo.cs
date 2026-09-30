@@ -5,7 +5,8 @@ using UnityEngine;
 namespace FlockFive
 {
     // Combo wordmark. Slots are the sprite bounds (baked navy shadow included)
-    // plus clear air, so a pop cannot pull one glyph into the next.
+    // plus a small positive gap from the two letter widths. The gap stays
+    // above zero so wide letters (M, B) and two-digit counts cannot overlap.
     public sealed partial class FlockFiveApp
     {
         struct ComboGlyph
@@ -24,6 +25,8 @@ namespace FlockFive
         }
 
         const float ComboPopPeak = 1.085f;
+        // Side bearing, as a fraction of each glyph's width. Positive tracking only.
+        const float ComboLetterGap = 0.04f;
         static readonly List<ComboLane> ComboLanes = new List<ComboLane>(4);
         Rect _comboStreakGui;
         float _comboStreakUntil;
@@ -81,6 +84,12 @@ namespace FlockFive
             hy = w * 0.5f * s + h * 0.5f * c;
         }
 
+        // Gap between two glyph boxes. Each side contributes ComboLetterGap of its own width.
+        static float ComboAir(float leftW, float rightW)
+        {
+            return (leftW + rightW) * (ComboLetterGap * 0.5f);
+        }
+
         static bool ComboGlyphSize(char ch, float cap, out float w, out float h, out float scale, out Sprite spr)
         {
             spr = SpriteCatalog.Glyph(ch);
@@ -96,7 +105,7 @@ namespace FlockFive
             return true;
         }
 
-        int ComboLayRow(string text, bool word, float cap, float y, float air, float delay0, float step,
+        int ComboLayRow(string text, bool word, float cap, float y, float delay0, float step,
             ComboGlyph[] dst, int n, Color ink)
         {
             int count = text.Length;
@@ -106,17 +115,24 @@ namespace FlockFive
             var spr = new Sprite[count];
             var tilt = new float[count];
             var hx = new float[count];
+            var gap = new float[count];
             var ok = new bool[count];
             float span = 0f;
             int live = 0;
+            float prevW = 0f;
             for (int i = 0; i < count; i++)
             {
                 tilt[i] = ComboTilt(word, i);
                 ok[i] = ComboGlyphSize(text[i], cap, out w[i], out h[i], out sc[i], out spr[i]);
                 if (!ok[i]) continue;
                 ComboHalf(w[i], h[i], tilt[i], out hx[i], out _);
-                if (live > 0) span += air;
+                if (live > 0)
+                {
+                    gap[i] = ComboAir(prevW, w[i]);
+                    span += gap[i];
+                }
                 span += hx[i] * 2f;
+                prevW = w[i];
                 live++;
             }
             if (live == 0) return n;
@@ -125,7 +141,7 @@ namespace FlockFive
             for (int i = 0; i < count; i++)
             {
                 if (!ok[i]) continue;
-                if (placed) cursor += air;
+                if (placed) cursor += gap[i];
                 float x = cursor + hx[i];
                 cursor += hx[i] * 2f;
                 placed = true;
@@ -342,7 +358,6 @@ namespace FlockFive
             float tier = Mathf.InverseLerp(2f, Palette.ComboMax, combo);
             float cap = Mathf.Lerp(1.18f, 1.46f, tier);
             float mulCap = cap * 0.90f;
-            float air = 0.20f * cap;
             float vAir = 0.28f * cap;
             float drop = 0.12f * cap;
             var ink = ComboTier(combo);
@@ -353,8 +368,8 @@ namespace FlockFive
             float sep = wordHalf + mulHalf + vAir;
             var glyphs = new ComboGlyph[8];
             int n = 0;
-            n = ComboLayRow("COMBO", true, cap, sep * 0.5f, air, 0f, 0.026f, glyphs, n, face);
-            n = ComboLayRow("x" + combo, false, mulCap, -sep * 0.5f, air * 0.92f, 0.08f, 0.03f, glyphs, n, face);
+            n = ComboLayRow("COMBO", true, cap, sep * 0.5f, 0f, 0.026f, glyphs, n, face);
+            n = ComboLayRow("x" + combo, false, mulCap, -sep * 0.5f, 0.08f, 0.03f, glyphs, n, face);
             if (n == 0) yield break;
 
             ComboBounds(glyphs, n, 0f, out float minX, out float maxX, out float minY, out float maxY);

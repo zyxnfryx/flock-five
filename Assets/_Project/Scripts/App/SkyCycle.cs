@@ -22,6 +22,11 @@ namespace FlockFive
         float _rushFrom;
         float _rushDur;
         float _rushT;
+        Color _veilCol;
+        Color _camCol;
+        bool _veilOn;
+        bool _camSet;
+        bool _starsOff;
 
         public static float Dusk
         {
@@ -81,15 +86,18 @@ namespace FlockFive
             veilGo.transform.localScale = new Vector3(22f, 28f * PortraitLock.TallFactor(), 1f);
             _veil = veilGo.GetComponent<SpriteRenderer>();
             _veil.color = new Color(0.18f, 0.12f, 0.28f, 0f);
+            _veil.enabled = false;
 
             var haloGo = WorldBuilder.Sprite("MoonHalo", SpriteCatalog.Glow, new Vector3(0.45f, 2.1f, 7.2f), 1f, -16, transform);
             haloGo.transform.localScale = new Vector3(2.8f, 2.8f, 1f);
             _halo = haloGo.GetComponent<SpriteRenderer>();
             _halo.color = new Color(1f, 0.92f, 0.72f, 0f);
+            _halo.enabled = false;
 
             var moonGo = WorldBuilder.Sprite("Moon", SpriteCatalog.Moon, new Vector3(0.45f, 2.1f, 7.1f), 0.46f, -14, transform);
             _moon = moonGo.GetComponent<SpriteRenderer>();
             _moon.color = new Color(1f, 1f, 1f, 0f);
+            _moon.enabled = false;
 
             var rng = new System.Random(41);
             _stars = new SpriteRenderer[16];
@@ -102,6 +110,7 @@ namespace FlockFive
                     Mathf.Lerp(0.08f, 0.16f, (float)rng.NextDouble()), -15, transform);
                 _stars[i] = go.GetComponent<SpriteRenderer>();
                 _stars[i].color = new Color(1f, 0.96f, 0.82f, 0f);
+                _stars[i].enabled = false;
                 _starPhase[i] = (float)rng.NextDouble() * 40f;
             }
         }
@@ -122,49 +131,93 @@ namespace FlockFive
             float moonIn = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.16f, 0.55f, d));
             float y = Mathf.Lerp(2.15f, 5.12f, moonIn);
             var moonPos = new Vector3(0.12f, y, 7.1f);
+            float bolt = GardenStorm.SkyFlash;
+            float wet = GardenStorm.Wet;
+            bool moonOn = moonIn > 0.004f;
             if (_moon != null)
             {
-                _moon.transform.position = moonPos;
-                _moon.transform.localScale = Vector3.one * Mathf.Lerp(0.34f, 0.42f, moonIn);
-                _moon.color = new Color(1f, 0.98f, 0.92f, moonIn);
+                if (_moon.enabled != moonOn) _moon.enabled = moonOn;
+                if (moonOn)
+                {
+                    _moon.transform.position = moonPos;
+                    _moon.transform.localScale = Vector3.one * Mathf.Lerp(0.34f, 0.42f, moonIn);
+                    _moon.color = new Color(1f, 0.98f, 0.92f, moonIn);
+                }
             }
             if (_halo != null)
             {
-                _halo.transform.position = moonPos;
-                float hs = Mathf.Lerp(1.9f, 2.55f, moonIn);
-                _halo.transform.localScale = new Vector3(hs, hs, 1f);
-                _halo.color = new Color(1f, 0.9f, 0.7f, moonIn * 0.32f);
+                if (_halo.enabled != moonOn) _halo.enabled = moonOn;
+                if (moonOn)
+                {
+                    _halo.transform.position = moonPos;
+                    float hs = Mathf.Lerp(1.9f, 2.55f, moonIn);
+                    _halo.transform.localScale = new Vector3(hs, hs, 1f);
+                    _halo.color = new Color(1f, 0.9f, 0.7f, moonIn * 0.32f);
+                }
             }
-            float bolt = GardenStorm.SkyFlash;
             if (_veil != null)
             {
                 var duskCol = Color.Lerp(new Color(0.42f, 0.18f, 0.16f, 0f), new Color(0.14f, 0.12f, 0.34f, 0.36f), d);
                 duskCol.a = Mathf.Lerp(0f, 0.36f, d);
-                float wet = GardenStorm.Wet;
                 duskCol = Color.Lerp(duskCol, new Color(0.10f, 0.12f, 0.18f, Mathf.Max(duskCol.a, 0.34f)), wet * 0.55f);
                 if (bolt > 0.004f)
                     duskCol = Color.Lerp(duskCol, new Color(0.70f, 0.78f, 0.92f, Mathf.Max(duskCol.a, 0.28f)), bolt * 0.8f);
-                _veil.color = duskCol;
+                bool veilOn = duskCol.a > 0.004f;
+                if (veilOn)
+                {
+                    if (!_veil.enabled) _veil.enabled = true;
+                    if (!_veilOn || !SameByte(_veilCol, duskCol))
+                    {
+                        _veilOn = true;
+                        _veilCol = duskCol;
+                        _veil.color = duskCol;
+                    }
+                }
+                else if (_veil.enabled)
+                {
+                    _veil.enabled = false;
+                    _veilOn = false;
+                    _veilCol = duskCol;
+                }
             }
             if (_stars != null)
             {
                 float starA = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.38f, 0.85f, d));
-                for (int i = 0; i < _stars.Length; i++)
+                if (starA < 0.004f)
                 {
-                    if (_stars[i] == null) continue;
-                    float tw = 0.45f + 0.55f * (0.5f + 0.5f * Mathf.Sin(Time.time * 1.4f + _starPhase[i]));
-                    var c = _stars[i].color;
-                    c.a = starA * tw * 0.85f;
-                    _stars[i].color = c;
+                    if (!_starsOff)
+                    {
+                        _starsOff = true;
+                        for (int i = 0; i < _stars.Length; i++)
+                            if (_stars[i] != null) _stars[i].enabled = false;
+                    }
+                }
+                else
+                {
+                    _starsOff = false;
+                    for (int i = 0; i < _stars.Length; i++)
+                    {
+                        if (_stars[i] == null) continue;
+                        if (!_stars[i].enabled) _stars[i].enabled = true;
+                        float tw = 0.45f + 0.55f * (0.5f + 0.5f * Mathf.Sin(Time.time * 1.4f + _starPhase[i]));
+                        var c = _stars[i].color;
+                        c.a = starA * tw * 0.85f;
+                        _stars[i].color = c;
+                    }
                 }
             }
             if (_cam != null)
             {
                 var bg = Color.Lerp(new Color(0.07f, 0.12f, 0.08f), new Color(0.05f, 0.06f, 0.14f), d);
-                bg = Color.Lerp(bg, new Color(0.05f, 0.07f, 0.10f), GardenStorm.Wet * 0.45f);
+                bg = Color.Lerp(bg, new Color(0.05f, 0.07f, 0.10f), wet * 0.45f);
                 if (bolt > 0.004f)
                     bg = Color.Lerp(bg, new Color(0.55f, 0.66f, 0.82f), bolt * 0.85f);
-                _cam.backgroundColor = bg;
+                if (!_camSet || !SameByte(_camCol, bg))
+                {
+                    _camSet = true;
+                    _camCol = bg;
+                    _cam.backgroundColor = bg;
+                }
             }
 
             if (!_welcomed && moonIn > 0.55f)
@@ -174,6 +227,18 @@ namespace FlockFive
                 Sfx.Moonrise(); // MixDesk night swell, not a Lead arpeggio.
             }
 
+        }
+
+        static bool SameByte(Color a, Color b)
+        {
+            return Byte(a.r) == Byte(b.r) && Byte(a.g) == Byte(b.g)
+                && Byte(a.b) == Byte(b.b) && Byte(a.a) == Byte(b.a);
+        }
+
+        static int Byte(float u)
+        {
+            int v = (int)(Mathf.Clamp01(u) * 255f + 0.5f);
+            return v > 255 ? 255 : v;
         }
     }
 }

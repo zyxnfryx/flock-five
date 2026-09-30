@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace FlockFive
@@ -9,8 +10,18 @@ namespace FlockFive
         SpriteRenderer _b;
         Camera _cam;
         bool _coated;
+        int _coatGen;
         Vector3 _fitA = Vector3.one;
         Vector3 _fitB = Vector3.one;
+        readonly List<Creep> _creep = new List<Creep>(24);
+
+        sealed class Creep
+        {
+            public Transform T;
+            public SpriteRenderer Sr;
+            public Vector3 From, To;
+            public float Delay, Spin, Scale;
+        }
 
         public static GardenIce Attach(Transform garden, Camera cam)
         {
@@ -37,9 +48,21 @@ namespace FlockFive
 
         void Hide()
         {
+            _coatGen++;
+            ClearCreep();
             if (_a != null) _a.enabled = false;
             if (_b != null) _b.enabled = false;
             _coated = false;
+        }
+
+        void ClearCreep()
+        {
+            for (int i = 0; i < _creep.Count; i++)
+            {
+                var bit = _creep[i];
+                if (bit != null && bit.T != null) Destroy(bit.T.gameObject);
+            }
+            _creep.Clear();
         }
 
         void Fit()
@@ -62,50 +85,111 @@ namespace FlockFive
             return s;
         }
 
+        // Frost sits in the rim of the pane art. Starting oversized holds that rim
+        // off-screen; shrinking pulls it inward until the garden is covered.
         public IEnumerator Coat()
         {
+            int gen = ++_coatGen;
             Fit();
             _coated = true;
+            ClearCreep();
+            SpawnCreep();
             if (_a != null)
             {
                 _a.enabled = true;
                 _a.color = new Color(1f, 1f, 1f, 0f);
+                _a.transform.localScale = _fitA * 1.85f;
             }
             if (_b != null)
             {
                 _b.enabled = true;
                 _b.color = new Color(1f, 1f, 1f, 0f);
+                _b.transform.localScale = _fitB * 2.05f;
             }
             Sfx.FeederLeave();
             float t = 0f;
-            const float dur = 1.55f;
+            const float dur = 1.9f;
             while (t < dur)
             {
+                if (gen != _coatGen) yield break;
                 t += Time.unscaledDeltaTime;
-                float u = Mathf.Clamp01(t / dur);
+                float u = Mathf.Clamp01(t / 1.65f);
                 float k = u * u * (3f - 2f * u);
                 if (_a != null)
                 {
                     _a.color = new Color(1f, 1f, 1f, 0.58f * k);
-                    float grow = Mathf.Lerp(1.08f, 1f, k);
-                    _a.transform.localScale = _fitA * grow;
+                    _a.transform.localScale = _fitA * Mathf.Lerp(1.85f, 1f, k);
                 }
-                float u2 = Mathf.Clamp01((t - 0.35f) / 1.05f);
+                float u2 = Mathf.Clamp01((t - 0.42f) / 1.35f);
                 float k2 = u2 * u2 * (3f - 2f * u2);
                 if (_b != null)
                 {
                     _b.color = new Color(1f, 1f, 1f, 0.46f * k2);
-                    float grow = Mathf.Lerp(1.12f, 1f, k2);
-                    _b.transform.localScale = _fitB * grow;
+                    _b.transform.localScale = _fitB * Mathf.Lerp(2.05f, 1f, k2);
                 }
+                StepCreep(t);
                 yield return null;
             }
+            if (gen != _coatGen) yield break;
             if (_a != null) { _a.color = new Color(1f, 1f, 1f, 0.58f); _a.transform.localScale = _fitA; }
             if (_b != null) { _b.color = new Color(1f, 1f, 1f, 0.46f); _b.transform.localScale = _fitB; }
+            ClearCreep();
+        }
+
+        void SpawnCreep()
+        {
+            var spr = SpriteCatalog.IceShard;
+            if (spr == null || _cam == null) return;
+            float hh = _cam.orthographicSize * 1.12f * PortraitLock.TallFactor();
+            float ww = hh * Mathf.Max(0.4f, _cam.aspect);
+            const int n = 22;
+            for (int i = 0; i < n; i++)
+            {
+                float ang = (i / (float)n) * Mathf.PI * 2f + 0.35f;
+                float ox = Mathf.Cos(ang);
+                float oy = Mathf.Sin(ang);
+                var from = new Vector3(ox * ww * 1.18f, oy * hh * 1.18f, 8.15f);
+                var to = new Vector3(ox * ww * 0.55f, oy * hh * 0.48f, 8.15f);
+                var go = WorldBuilder.Sprite("Creep", spr, transform.position, 0.16f, 42, transform);
+                go.transform.localPosition = from;
+                go.transform.localRotation = Quaternion.Euler(0f, 0f, ang * Mathf.Rad2Deg);
+                var sr = go.GetComponent<SpriteRenderer>();
+                sr.color = new Color(0.82f, 0.94f, 1f, 0f);
+                _creep.Add(new Creep
+                {
+                    T = go.transform,
+                    Sr = sr,
+                    From = from,
+                    To = to,
+                    Delay = (i % 6) * 0.07f,
+                    Spin = (i % 2 == 0 ? 1f : -1f) * (28f + (i % 5) * 11f),
+                    Scale = 0.22f + (i % 4) * 0.06f
+                });
+            }
+        }
+
+        void StepCreep(float t)
+        {
+            for (int i = 0; i < _creep.Count; i++)
+            {
+                var bit = _creep[i];
+                if (bit == null || bit.T == null) continue;
+                float u = Mathf.Clamp01((t - bit.Delay) / 0.95f);
+                float k = u * u * (3f - 2f * u);
+                float fade = 1f;
+                if (t > 1.35f) fade = Mathf.Clamp01(1f - (t - 1.35f) / 0.45f);
+                bit.T.localPosition = Vector3.Lerp(bit.From, bit.To, k);
+                bit.T.localScale = Vector3.one * Mathf.Lerp(0.06f, bit.Scale, k);
+                bit.T.Rotate(0f, 0f, bit.Spin * Time.unscaledDeltaTime);
+                if (bit.Sr != null)
+                    bit.Sr.color = new Color(0.82f, 0.94f, 1f, k * fade);
+            }
         }
 
         public IEnumerator Shatter(Transform world)
         {
+            _coatGen++;
+            ClearCreep();
             if (!_coated)
             {
                 Hide();

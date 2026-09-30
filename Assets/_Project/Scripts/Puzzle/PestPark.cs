@@ -168,7 +168,9 @@ namespace FlockFive
             for (int i = 0; i < b.Branches.Count; i++)
             {
                 var st = b.Branches[i];
-                if (st.Broken || st.AdLocked || st.Free <= 0) continue;
+                // Same rule as BoardValidator.FindSeat: a bonus perch is the player's.
+                // Parking here used to fill a gift the moment it unlocked.
+                if (st.Broken || st.AdLocked || st.IsBonus || st.Free <= 0) continue;
                 if (b.IsSleeping(i)) continue;
                 if (!allowFull && WouldFill(st, bird)) continue;
                 if (st.Free > bestFree)

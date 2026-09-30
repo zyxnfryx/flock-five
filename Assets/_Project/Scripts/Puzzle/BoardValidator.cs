@@ -169,7 +169,9 @@ namespace FlockFive
             for (int i = 0; i < b.Branches.Count; i++)
             {
                 var st = b.Branches[i];
-                if (st == null || st.Broken || st.AdLocked || st.Free <= 0) continue;
+                // Gifts open empty. A short flock must not land on one just because
+                // it has the most free seats (that is how a new bonus arrived full).
+                if (st == null || st.Broken || st.AdLocked || st.IsBonus || st.Free <= 0) continue;
                 if (!allowFull && st.Count + 1 == BranchState.Cap)
                 {
                     bool fill = true;

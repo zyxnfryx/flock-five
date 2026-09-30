@@ -9,6 +9,8 @@ namespace FlockFive
         public Vector2 WorldSize = new Vector2(24f, 13.5f);
         public Vector3 WorldCenter = new Vector3(0f, 0.4f, 8f);
         SpriteRenderer _sr;
+        Color _tint;
+        bool _tintSet;
 
         void Awake() => _sr = GetComponent<SpriteRenderer>();
         void LateUpdate() => Apply();
@@ -20,6 +22,8 @@ namespace FlockFive
             var size = _sr.sprite.bounds.size;
             if (size.x < 0.01f || size.y < 0.01f) return;
 
+            Vector3 pos;
+            Vector3 scale;
             if (Cam != null)
             {
                 // Bleed past the frustum so the garden painting, not the clear color, hits the bezel.
@@ -27,23 +31,43 @@ namespace FlockFive
                 float w = h * Mathf.Max(0.05f, Cam.aspect);
                 float x = FollowCamera ? Cam.transform.position.x : WorldCenter.x;
                 float y = FollowCamera ? Cam.transform.position.y : WorldCenter.y;
-                transform.position = new Vector3(x, y, WorldCenter.z);
-                transform.localScale = new Vector3(w / size.x, h / size.y, 1f);
+                pos = new Vector3(x, y, WorldCenter.z);
+                scale = new Vector3(w / size.x, h / size.y, 1f);
             }
             else
             {
-                transform.position = WorldCenter;
-                transform.localScale = new Vector3(WorldSize.x / size.x, WorldSize.y / size.y, 1f);
+                pos = WorldCenter;
+                scale = new Vector3(WorldSize.x / size.x, WorldSize.y / size.y, 1f);
             }
+            if (transform.position != pos) transform.position = pos;
+            if (transform.localScale != scale) transform.localScale = scale;
             float dusk = SkyCycle.Dusk;
             float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 0.28f);
             var sunset = Color.Lerp(new Color(0.96f, 0.93f, 0.86f, 1f), new Color(1f, 0.86f, 0.68f, 1f), pulse * 0.28f);
             var night = new Color(0.64f, 0.58f, 0.82f, 1f);
             var sky = Color.Lerp(sunset, night, dusk);
-            _sr.color = Color.Lerp(sky, new Color(0.52f, 0.58f, 0.64f, 1f), GardenStorm.Wet * 0.32f);
+            var tint = Color.Lerp(sky, new Color(0.52f, 0.58f, 0.64f, 1f), GardenStorm.Wet * 0.32f);
             float bolt = GardenStorm.SkyFlash;
             if (bolt > 0.004f)
-                _sr.color = Color.Lerp(_sr.color, new Color(0.88f, 0.92f, 0.98f, 1f), bolt * 0.7f);
+                tint = Color.Lerp(tint, new Color(0.88f, 0.92f, 0.98f, 1f), bolt * 0.7f);
+            if (!_tintSet || !SameByte(_tint, tint))
+            {
+                _tintSet = true;
+                _tint = tint;
+                _sr.color = tint;
+            }
+        }
+
+        static bool SameByte(Color a, Color b)
+        {
+            return Byte(a.r) == Byte(b.r) && Byte(a.g) == Byte(b.g)
+                && Byte(a.b) == Byte(b.b) && Byte(a.a) == Byte(b.a);
+        }
+
+        static int Byte(float u)
+        {
+            int v = (int)(Mathf.Clamp01(u) * 255f + 0.5f);
+            return v > 255 ? 255 : v;
         }
     }
 }

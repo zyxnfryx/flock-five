@@ -11,7 +11,10 @@ namespace FlockFive
         public const float StormLen = 75f;
         public const float ClearLen = 90f;
         const float Fade = 2.1f;
-        const int Drops = 177; // ~50% denser than 118
+        // One batched sheet. Phones use fewer quads; each is a little longer so the curtain stays full.
+        const int DropsDesk = 156;
+        const int DropsPhone = 120;
+        const float StreakW = 0.125f; // RainStreak width at scale 1
         const int Segs = 36;
         const int PathCap = 10;
         const float BarW = 1.35f;
@@ -33,11 +36,25 @@ namespace FlockFive
             }
         }
 
-        Transform[] _drop;
-        SpriteRenderer[] _dropSr;
+        Mesh _mesh;
+        MeshRenderer _sheet;
+        Material _sheetMat;
+        MaterialPropertyBlock _sheetBlock;
+        Vector3[] _verts;
+        Color32[] _cols;
+        float[] _x;
+        float[] _y;
         float[] _spd;
-        float[] _len;
         float[] _phase;
+        float[] _amp;
+        float[] _cos;
+        float[] _sin;
+        float[] _hw;
+        float[] _hh;
+        int _colQ = -1;
+        Bounds _sheetBounds;
+        static readonly int SpritePropsId = Shader.PropertyToID("unity_SpriteProps");
+        static readonly int SpriteColorId = Shader.PropertyToID("unity_SpriteColor");
         SpriteRenderer _veil;
         SpriteRenderer _flash;
         float _play;
@@ -47,7 +64,6 @@ namespace FlockFive
         float _floor = -8.6f;
         bool _wasDry = true;
         bool _flashLit;
-        float[] _dropA;
         float _veilA;
         int _frameW = -1;
         int _frameH;
@@ -108,6 +124,7 @@ namespace FlockFive
             _nextBoom = 6.5f;
             _flashLit = false;
             _veilA = 0f;
+            _colQ = -1;
             _frameW = -1;
             _boltOn = false;
             _boltQ = -1;
@@ -131,6 +148,13 @@ namespace FlockFive
             _skyAt = -100f;
             EndBolt();
             HideCue();
+            if (_sheet != null) _sheet.enabled = false;
+        }
+
+        void OnDestroy()
+        {
+            if (_mesh != null) Destroy(_mesh);
+            if (_sheetMat != null) Destroy(_sheetMat);
         }
 
         // Resume frame's unscaled step is the whole suspension. Drop it, then
@@ -149,44 +173,24 @@ namespace FlockFive
 
         void Start() => StartCoroutine(Build());
 
-        // Drops are invisible until the first storm. Spread the instantiate
-        // so stage load does not hitch on one frame of 177 sprites.
+        // Drops stay off until the first storm. One mesh, built on this frame — not 177 sprites.
         System.Collections.IEnumerator Build()
         {
             var veilGo = WorldBuilder.Sprite("StormVeil", SpriteCatalog.Glow, new Vector3(0f, 0.2f, 6.8f), 1f, 16, transform);
             veilGo.transform.localScale = new Vector3(24f, 30f * PortraitLock.TallFactor(), 1f);
             _veil = veilGo.GetComponent<SpriteRenderer>();
             _veil.color = new Color(0.07f, 0.09f, 0.13f, 0f);
+            _veil.enabled = false;
 
             var flashGo = WorldBuilder.Sprite("Flash", SpriteCatalog.Glow, new Vector3(0f, 1.2f, 6.7f), 1f, 17, transform);
             flashGo.transform.localScale = new Vector3(22f, 28f, 1f);
             _flash = flashGo.GetComponent<SpriteRenderer>();
             _flash.color = new Color(0.82f, 0.88f, 1f, 0f);
+            _flash.enabled = false;
 
-            _drop = new Transform[Drops];
-            _dropSr = new SpriteRenderer[Drops];
-            _dropA = new float[Drops];
-            _spd = new float[Drops];
-            _len = new float[Drops];
-            _phase = new float[Drops];
-            var rng = new System.Random(29);
             FullFrame(out float left, out float right, out float bottom, out float top);
-            for (int i = 0; i < Drops; i++)
-            {
-                float x = Mathf.Lerp(left - Edge, right + Edge, (float)rng.NextDouble());
-                // Spread starts over the full column so sheets don't fall in lockstep.
-                float y = Mathf.Lerp(bottom - Edge, top + Edge, (float)rng.NextDouble());
-                _len[i] = Mathf.Lerp(0.70f, 1.45f, (float)rng.NextDouble());
-                _spd[i] = Mathf.Lerp(8.5f, 26.5f, (float)rng.NextDouble());
-                _phase[i] = (float)rng.NextDouble() * 2.8f;
-                var go = WorldBuilder.Sprite("Drop" + i, SpriteCatalog.RainStreak, new Vector3(x, y, 0.4f), 1f, 15, transform);
-                go.transform.localScale = new Vector3(0.82f, _len[i], 1f);
-                go.transform.localRotation = Quaternion.Euler(0f, 0f, 9f + (float)rng.NextDouble() * 6f);
-                _drop[i] = go.transform;
-                _dropSr[i] = go.GetComponent<SpriteRenderer>();
-                _dropSr[i].color = new Color(0.78f, 0.86f, 0.95f, 0f);
-                if ((i & 11) == 11) yield return null;
-            }
+            BuildSheet(left, right, bottom, top);
+            yield return null;
 
             _bolt = new Transform[Segs];
             _boltSr = new SpriteRenderer[Segs];
@@ -203,6 +207,148 @@ namespace FlockFive
                 if ((i & 7) == 7) yield return null;
             }
             BuildCue();
+        }
+
+        static int DropCount() => Application.isMobilePlatform ? DropsPhone : DropsDesk;
+
+        // Streak quads share the sprite shader. unity_SpriteProps defaults to 0 on a mesh and flattens it.
+        void BuildSheet(float left, float right, float bottom, float top)
+        {
+            int n = DropCount();
+            bool phone = Application.isMobilePlatform;
+            float wide = phone ? 0.98f : 0.86f;
+            float lenMul = phone ? 1.18f : 1.06f;
+            _x = new float[n];
+            _y = new float[n];
+            _spd = new float[n];
+            _phase = new float[n];
+            _amp = new float[n];
+            _cos = new float[n];
+            _sin = new float[n];
+            _hw = new float[n];
+            _hh = new float[n];
+            _verts = new Vector3[n * 4];
+            _cols = new Color32[n * 4];
+            var tris = new int[n * 6];
+            var uvs = new Vector2[n * 4];
+            var norms = new Vector3[n * 4];
+            var rng = new System.Random(29);
+            float halfW = StreakW * wide * 0.5f;
+            for (int i = 0; i < n; i++)
+            {
+                _x[i] = Mathf.Lerp(left - Edge, right + Edge, (float)rng.NextDouble());
+                _y[i] = Mathf.Lerp(bottom - Edge, top + Edge, (float)rng.NextDouble());
+                float len = Mathf.Lerp(0.70f, 1.45f, (float)rng.NextDouble()) * lenMul;
+                _spd[i] = Mathf.Lerp(8.5f, 26.5f, (float)rng.NextDouble());
+                _phase[i] = (float)rng.NextDouble() * 2.8f;
+                _amp[i] = Mathf.Lerp(0.34f, 0.76f, (i % 11) / 10f);
+                float ang = (9f + (float)rng.NextDouble() * 6f) * Mathf.Deg2Rad;
+                _cos[i] = Mathf.Cos(ang);
+                _sin[i] = Mathf.Sin(ang);
+                _hw[i] = halfW;
+                _hh[i] = len * 0.5f;
+                int v = i * 4;
+                int t = i * 6;
+                tris[t] = v;
+                tris[t + 1] = v + 2;
+                tris[t + 2] = v + 1;
+                tris[t + 3] = v + 2;
+                tris[t + 4] = v + 3;
+                tris[t + 5] = v + 1;
+                uvs[v] = new Vector2(0f, 0f);
+                uvs[v + 1] = new Vector2(1f, 0f);
+                uvs[v + 2] = new Vector2(0f, 1f);
+                uvs[v + 3] = new Vector2(1f, 1f);
+                norms[v] = norms[v + 1] = norms[v + 2] = norms[v + 3] = new Vector3(0f, 0f, -1f);
+                PlaceDrop(i, _x[i], _y[i], true);
+            }
+
+            var donor = WorldBuilder.Sprite("RainDonor", SpriteCatalog.RainStreak, new Vector3(0f, -40f, 0.4f), 1f, 15, transform);
+            var donorSr = donor.GetComponent<SpriteRenderer>();
+            if (donorSr.sharedMaterial != null)
+                _sheetMat = new Material(donorSr.sharedMaterial);
+            Destroy(donor);
+            if (_sheetMat == null) return;
+            _sheetMat.mainTexture = SpriteCatalog.RainStreak.texture;
+            _sheetMat.SetVector(SpritePropsId, new Vector4(1f, 1f, -1f, 0f));
+            _sheetMat.SetVector(SpriteColorId, new Vector4(1f, 1f, 1f, 1f));
+
+            _mesh = new Mesh { name = "RainSheet" };
+            _mesh.MarkDynamic();
+            _mesh.vertices = _verts;
+            _mesh.uv = uvs;
+            _mesh.normals = norms;
+            _mesh.colors32 = _cols;
+            _mesh.triangles = tris;
+            _sheetBounds = new Bounds(new Vector3(0f, WorldBuilder.CamRestY, 0f), new Vector3(80f, 80f, 2f));
+            _mesh.bounds = _sheetBounds;
+
+            var go = new GameObject("RainSheet");
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = new Vector3(0f, 0f, 0.4f);
+            var mf = go.AddComponent<MeshFilter>();
+            mf.sharedMesh = _mesh;
+            _sheet = go.AddComponent<MeshRenderer>();
+            _sheet.sharedMaterial = _sheetMat;
+            _sheet.sortingOrder = 15;
+            _sheet.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _sheet.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            _sheet.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+            _sheet.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+            _sheetBlock = new MaterialPropertyBlock();
+            _sheetBlock.SetVector(SpritePropsId, new Vector4(1f, 1f, -1f, 0f));
+            _sheetBlock.SetVector(SpriteColorId, new Vector4(1f, 1f, 1f, 1f));
+            _sheet.SetPropertyBlock(_sheetBlock);
+            _sheet.enabled = false;
+        }
+
+        void PlaceDrop(int i, float cx, float cy, bool live)
+        {
+            int v = i * 4;
+            if (!live)
+            {
+                _verts[v].x = _verts[v + 1].x = _verts[v + 2].x = _verts[v + 3].x = cx;
+                _verts[v].y = _verts[v + 1].y = _verts[v + 2].y = _verts[v + 3].y = cy;
+                _verts[v].z = _verts[v + 1].z = _verts[v + 2].z = _verts[v + 3].z = 0f;
+                return;
+            }
+            float hw = _hw[i];
+            float hh = _hh[i];
+            float c = _cos[i];
+            float s = _sin[i];
+            Put(v, cx, cy, -hw, -hh, c, s);
+            Put(v + 1, cx, cy, hw, -hh, c, s);
+            Put(v + 2, cx, cy, -hw, hh, c, s);
+            Put(v + 3, cx, cy, hw, hh, c, s);
+        }
+
+        void Put(int v, float cx, float cy, float x, float y, float c, float s)
+        {
+            _verts[v].x = cx + x * c - y * s;
+            _verts[v].y = cy + x * s + y * c;
+            _verts[v].z = 0f;
+        }
+
+        void WriteColors(float wet)
+        {
+            const byte r = 199, g = 219, b = 240;
+            int n = _x.Length;
+            for (int i = 0; i < n; i++)
+            {
+                int a = Mathf.RoundToInt(wet * _amp[i] * 255f);
+                if (a < 0) a = 0;
+                else if (a > 255) a = 255;
+                var col = new Color32(r, g, b, (byte)a);
+                int v = i * 4;
+                _cols[v] = _cols[v + 1] = _cols[v + 2] = _cols[v + 3] = col;
+            }
+        }
+
+        void CommitSheet()
+        {
+            if (_mesh == null) return;
+            _mesh.SetVertices(_verts);
+            _mesh.bounds = _sheetBounds;
         }
 
         // Small lightning mark and a bar that shrinks across StormLen. Built once.
@@ -256,14 +402,6 @@ namespace FlockFive
             right = halfW;
             bottom = WorldBuilder.CamRestY - halfH;
             top = WorldBuilder.CamRestY + halfH;
-        }
-
-        void Paint(int i, float a)
-        {
-            if (_dropA == null || _dropSr == null || _dropSr[i] == null) return;
-            if (_dropA[i] == a) return;
-            _dropA[i] = a;
-            _dropSr[i].color = new Color(0.78f, 0.86f, 0.94f, a);
         }
 
         // Screen size and letterbox height. Drops do not ask again while both hold.
@@ -335,6 +473,8 @@ namespace FlockFive
             {
                 _veilA = veilA;
                 _veil.color = new Color(0.06f, 0.08f, 0.12f, veilA);
+                bool veilOn = veilA > 0.001f;
+                if (_veil.enabled != veilOn) _veil.enabled = veilOn;
             }
 
             // Clear stretches are invisible. A snap to dry (resume used to do this
@@ -368,49 +508,53 @@ namespace FlockFive
             {
                 // Holds only stagger a wrap, not the moment rain becomes visible.
                 for (int i = 0; i < _phase.Length; i++)
-                {
                     _phase[i] = 0f;
-                    if (_dropSr != null && i < _dropSr.Length && _dropSr[i] != null)
-                        _dropSr[i].enabled = true;
-                }
+                _colQ = -1;
                 _wasDry = false;
             }
-            if (_drop != null && !dry)
+            if (_x != null && _sheet != null && !dry)
             {
                 // Full screen, including the letterbox past the home indicator.
                 // Safe area is for HUD only — drops exit past every edge before recycle.
                 Frame(out float left, out float right, out float bottom, out float top);
                 _floor = bottom - Edge;
                 float wet = _wet;
-                for (int i = 0; i < _drop.Length; i++)
+                if (dt > 0.0001f)
                 {
-                    if (_drop[i] == null) continue;
-                    // Per-drop hold so the curtain doesn't reset as one sheet.
-                    if (_phase[i] > 0f)
+                    for (int i = 0; i < _x.Length; i++)
                     {
-                        _phase[i] -= dt;
-                        Paint(i, 0f);
-                        continue;
+                        // Per-drop hold so the curtain doesn't reset as one sheet.
+                        if (_phase[i] > 0f)
+                        {
+                            _phase[i] -= dt;
+                            PlaceDrop(i, _x[i], _y[i], false);
+                            continue;
+                        }
+                        float fall = _spd[i] * dt * Mathf.Lerp(0.18f, 1f, wet);
+                        float nx = _x[i] - (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * dt * wet;
+                        float ny = _y[i] - fall;
+                        if (ny < _floor || nx < left - Edge || nx > right + Edge)
+                        {
+                            ny = Random.Range(top + 0.25f, top + Edge + 1.8f);
+                            nx = Random.Range(left - 0.35f, right + Edge);
+                            _phase[i] = Random.Range(0.05f, 1.35f);
+                            _spd[i] = Random.Range(8.5f, 26.5f);
+                        }
+                        _x[i] = nx;
+                        _y[i] = ny;
+                        PlaceDrop(i, nx, ny, true);
                     }
-                    var p = _drop[i].position;
-                    float fall = _spd[i] * dt * Mathf.Lerp(0.18f, 1f, wet);
-                    float nx = p.x - (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * dt * wet;
-                    float ny = p.y - fall;
-                    if (ny < _floor || nx < left - Edge || nx > right + Edge)
-                    {
-                        ny = Random.Range(top + 0.25f, top + Edge + 1.8f);
-                        nx = Random.Range(left - 0.35f, right + Edge);
-                        _phase[i] = Random.Range(0.05f, 1.35f);
-                        _spd[i] = Random.Range(8.5f, 26.5f);
-                    }
-                    if (nx != p.x || ny != p.y)
-                    {
-                        p.x = nx;
-                        p.y = ny;
-                        _drop[i].position = p;
-                    }
-                    Paint(i, wet * Mathf.Lerp(0.34f, 0.76f, (i % 11) / 10f));
+                    CommitSheet();
                 }
+                int q = (int)(wet * 48f);
+                if (q != _colQ)
+                {
+                    _colQ = q;
+                    WriteColors(wet);
+                    _mesh.SetColors(_cols);
+                }
+                // Hold frame (_rainSync == 2) stays hidden so a frozen resume batch is dropped.
+                if (_rainSync != 2 && !_sheet.enabled) _sheet.enabled = true;
             }
 
             PaintFlash();
@@ -423,48 +567,25 @@ namespace FlockFive
             PaintCue();
         }
 
-        bool DropsEnabled()
-        {
-            if (_dropSr == null) return false;
-            for (int i = 0; i < _dropSr.Length; i++)
-                if (_dropSr[i] != null && _dropSr[i].enabled) return true;
-            return false;
-        }
+        bool DropsEnabled() => _sheet != null && _sheet.enabled;
 
-        // Rain-off. Alpha 0 and the renderer off, so a stale batch cannot keep needles up.
+        // Rain-off. Renderer off, so a stale sheet cannot keep needles up.
         void ClearDrops()
         {
             _wasDry = true;
-            if (_dropSr == null) return;
-            for (int i = 0; i < _dropSr.Length; i++)
-            {
-                Paint(i, 0f);
-                if (_dropSr[i] != null) _dropSr[i].enabled = false;
-            }
+            if (_sheet != null) _sheet.enabled = false;
         }
 
         void HoldDrops()
         {
-            if (_dropSr == null) return;
-            for (int i = 0; i < _dropSr.Length; i++)
-                if (_dropSr[i] != null) _dropSr[i].enabled = false;
+            if (_sheet != null) _sheet.enabled = false;
         }
 
         void RestartDrops()
         {
             _wasDry = false;
-            if (_dropSr == null) return;
-            for (int i = 0; i < _dropSr.Length; i++)
-            {
-                var sr = _dropSr[i];
-                if (sr == null) continue;
-                sr.enabled = true;
-                if (_drop != null && _drop[i] != null)
-                {
-                    var p = _drop[i].localPosition;
-                    _drop[i].localPosition = p;
-                }
-            }
+            _colQ = -1;
+            if (_sheet != null) _sheet.enabled = true;
         }
 
         void Boom(float power, bool big)
@@ -517,6 +638,7 @@ namespace FlockFive
             float sc = (28f + 7f * shape) * (_skyBig ? 1.08f : 1f);
             float tall = PortraitLock.TallFactor();
             _flash.transform.localScale = new Vector3(sc, sc * tall, 1f);
+            if (!_flash.enabled) _flash.enabled = true;
             _flashLit = true;
         }
 
@@ -526,6 +648,7 @@ namespace FlockFive
             float rest = 22f;
             float tall = PortraitLock.TallFactor();
             _flash.transform.localScale = new Vector3(rest, rest * tall, 1f);
+            _flash.enabled = false;
             _flashLit = false;
         }
 

@@ -61,6 +61,8 @@ namespace FlockFive.Editor
             CheckLayout(Check);
             CheckLevels(Check);
             CheckRestore(Check);
+            CheckBonusOpensEmpty(Check);
+            CheckStageOne(Check);
 
             Line(fail == 0 ? "ALL OK  " + pass : "FAILED  " + fail + "  passed " + pass);
         }
@@ -211,6 +213,84 @@ namespace FlockFive.Editor
             int put = BoardValidator.Restore(b, expect);
             var good = BoardValidator.Check(b, expect);
             Check("restore-short", !bad.Ok && good.Ok && put == 5, bad.Message + " -> " + good.Message + " put " + put);
+        }
+
+        // A short census used to park on the gift: it is the perch with the most free seats.
+        static void CheckBonusOpensEmpty(System.Action<string, bool, string> Check)
+        {
+            var b = MonoFlock();
+            b.Branches.Add(new BranchState { IsBonus = true, AdLocked = true });
+            var expect = BoardValidator.Counts(b);
+            b.Branches[0].Birds.Clear();
+            b.Branches[0].Shrouded.Clear();
+            b.Branches[0].Broken = true;
+            BonusBranches.OpenEmpty(b.Branches[1]);
+            BoardValidator.Restore(b, expect);
+            Check("bonus-opens-empty", b.Branches[1].Empty && !b.Branches[1].AdLocked,
+                "gift birds " + b.Branches[1].Count);
+
+            var park = MonoFlock();
+            park.Branches.Add(new BranchState { IsBonus = true });
+            var before = BoardValidator.Counts(park);
+            PestPark.Apply(park, 0, hawk: false);
+            Check("bonus-not-a-park", park.Branches[1].Empty && park.Branches[1].IsBonus,
+                "gift birds " + park.Branches[1].Count);
+            Check("bonus-park-keeps", BoardValidator.Same(BoardValidator.Counts(park), before),
+                "birds " + park.RemainingBirds);
+        }
+
+        // Stage 1 stays solvable with the two gifts. A locked gift is not a move.
+        // An empty open gift is. The ice card uses HasHop, so this is the stuck rule.
+        static void CheckStageOne(System.Action<string, bool, string> Check)
+        {
+            var dawn = LevelData.Open(0);
+            var look = GardenSolve.Search(dawn, 30000);
+            Check("stage1-winnable", look.Outlook == GardenSolve.Outlook.Winnable,
+                look.Outlook + " moves " + look.Moves);
+            Check("stage1-has-hop", dawn.HasHop(), "branches " + dawn.Branches.Count);
+
+            int bonus = -1;
+            for (int i = 0; i < dawn.Branches.Count; i++)
+            {
+                if (!dawn.Branches[i].IsBonus) continue;
+                bonus = i;
+                break;
+            }
+            bool locked = bonus >= 0 && dawn.Branches[bonus].AdLocked && dawn.Branches[bonus].Empty;
+            bool ontoLocked = false;
+            if (bonus >= 0)
+            {
+                for (int from = 0; from < dawn.Branches.Count; from++)
+                    if (dawn.CanMove(from, bonus, out _)) ontoLocked = true;
+            }
+            Check("stage1-locked-gift", locked && !ontoLocked, "bonus " + bonus);
+
+            var only = new Board();
+            var src = new BranchState();
+            src.Birds.Add(new Bird(BirdColor.Ruby, LevelData.SexFor(BirdColor.Ruby)));
+            only.Branches.Add(src);
+            only.Branches.Add(new BranchState { IsBonus = true, AdLocked = true });
+            Check("locked-bonus-not-a-move", !only.HasHop() && !only.CanMove(0, 1, out _),
+                "hops");
+            BonusBranches.OpenEmpty(only.Branches[1]);
+            Check("empty-bonus-is-a-move", only.Branches[1].Empty && only.HasHop() && only.CanMove(0, 1, out _),
+                "gift birds " + only.Branches[1].Count);
+
+            int onto = 0;
+            GardenSolve.Outlook openedOutlook = GardenSolve.Outlook.Tangled;
+            int openedMoves = 0;
+            if (bonus >= 0)
+            {
+                BonusBranches.OpenEmpty(dawn.Branches[bonus]);
+                for (int from = 0; from < dawn.Branches.Count; from++)
+                    if (dawn.CanMove(from, bonus, out _)) onto++;
+                var opened = GardenSolve.Search(dawn, 30000);
+                openedOutlook = opened.Outlook;
+                openedMoves = opened.Moves;
+            }
+            Check("stage1-open-bonus-dest", onto > 0 && dawn.HasHop(), "onto " + onto);
+            Check("stage1-open-winnable", openedOutlook == GardenSolve.Outlook.Winnable,
+                openedOutlook + " moves " + openedMoves);
         }
 
         static Board MonoFlock()

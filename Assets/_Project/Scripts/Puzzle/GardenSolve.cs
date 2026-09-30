@@ -6,6 +6,8 @@ namespace FlockFive
     // A hop order must not lose the round. Outlook.Tangled means this perch
     // is proven stuck (no legal hop, or the search emptied without a win).
     // Unknown means we ran out of nodes — fail open, never call it a loss.
+    // The ice card does not use Tangled. It waits until HasHop is false, so an
+    // empty open bonus (a legal destination) keeps the garden in play.
     public static class GardenSolve
     {
         public enum Outlook

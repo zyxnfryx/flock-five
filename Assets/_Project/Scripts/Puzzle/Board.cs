@@ -144,6 +144,7 @@ namespace FlockFive
             if ((uint)from >= (uint)Branches.Count || (uint)to >= (uint)Branches.Count) return false;
             var a = Branches[from];
             var b = Branches[to];
+            // A locked gift is not a perch. An open bonus limb is, even when empty.
             if (a.Broken || b.Broken || a.AdLocked || b.AdLocked || a.Empty) return false;
             if (a.IsFullMatch(out _)) return false;
             // Leaf-locked limb: unusable until a feeder collect breeze lifts the tip.
@@ -155,6 +156,7 @@ namespace FlockFive
             return run > 0;
         }
 
+        // Any legal hop. An open bonus limb is a destination, including while empty.
         public bool HasHop()
         {
             int n = Branches.Count;

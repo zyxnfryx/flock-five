@@ -213,27 +213,114 @@ namespace FlockFive
             return view;
         }
 
+        // Mirrored marquee. hSegs is how many equal steps span the top and the bottom;
+        // vSegs is the same for the two sides. Corners are the shared endpoints, so
+        // they are drawn once. n = 2 * (hSegs + vSegs). minPitch > 0 drops a candidate
+        // whose step would crowd the glass; 0 leaves sizing to the caller.
+        public static void FitMarquee(float width, float height, int want, float minPitch, out int hSegs, out int vSegs)
+        {
+            width = Mathf.Max(1e-3f, width);
+            height = Mathf.Max(1e-3f, height);
+            want = Mathf.Clamp(want, 8, 16);
+            int bestH = 1, bestV = 1;
+            float best = float.MaxValue;
+            for (int h = 1; h <= 7; h++)
+            {
+                for (int v = 1; v <= 7; v++)
+                {
+                    int n = 2 * (h + v);
+                    if (n < 8 || n > 16) continue;
+                    float hp = width / h;
+                    float vp = height / v;
+                    if (minPitch > 0f && (hp < minPitch || vp < minPitch)) continue;
+                    float mismatch = Mathf.Abs(hp - vp) / Mathf.Max(hp, vp);
+                    float density = Mathf.Abs(n - want) / (float)want;
+                    float score = mismatch * 5f + density;
+                    if (score < best)
+                    {
+                        best = score;
+                        bestH = h;
+                        bestV = v;
+                    }
+                }
+            }
+            hSegs = bestH;
+            vSegs = bestV;
+        }
+
+        public static int MarqueeCount(int hSegs, int vSegs) => 2 * (hSegs + vSegs);
+
+        // Clockwise from (x0, y0). y0 and y1 are one opposite pair (GUI: y0 is the top).
+        // Top and bottom use the same x fractions; left and right use the same y fractions.
+        public static void MarqueeSpot(float x0, float y0, float x1, float y1, int hSegs, int vSegs, int i, out Vector2 pos, out float ang)
+        {
+            int topN = hSegs + 1;
+            int sideN = vSegs > 1 ? vSegs - 1 : 0;
+            int botN = hSegs + 1;
+            if (i < topN)
+            {
+                float t = i / (float)hSegs;
+                pos = new Vector2(Mathf.Lerp(x0, x1, t), y0);
+                ang = 180f;
+                return;
+            }
+            i -= topN;
+            if (i < sideN)
+            {
+                float t = (i + 1) / (float)vSegs;
+                pos = new Vector2(x1, Mathf.Lerp(y0, y1, t));
+                ang = -90f;
+                return;
+            }
+            i -= sideN;
+            if (i < botN)
+            {
+                float t = i / (float)hSegs;
+                pos = new Vector2(Mathf.Lerp(x1, x0, t), y1);
+                ang = 0f;
+                return;
+            }
+            i -= botN;
+            float s = (i + 1) / (float)vSegs;
+            pos = new Vector2(x0, Mathf.Lerp(y1, y0, s));
+            ang = 90f;
+        }
+
+        // fx_ad_sign's board is the rectangle on the left of the texture. The arrow
+        // head is the right third, so a full-bounds ring would hang in the notch.
+        static Rect GiftSignRect(Sprite sprite)
+        {
+            const float u0 = 12f / 1126f;
+            const float u1 = 768f / 1126f;
+            const float vTop = 100f / 530f;
+            const float vBot = 431f / 530f;
+            if (sprite == null)
+                return new Rect(-2.755f, -0.830f, 3.780f, 1.655f);
+            var b = sprite.bounds;
+            float x0 = Mathf.Lerp(b.min.x, b.max.x, u0);
+            float x1 = Mathf.Lerp(b.min.x, b.max.x, u1);
+            float yTop = Mathf.Lerp(b.max.y, b.min.y, vTop);
+            float yBot = Mathf.Lerp(b.max.y, b.min.y, vBot);
+            return new Rect(x0, yBot, x1 - x0, yTop - yBot);
+        }
+
         static SpriteRenderer[] PinBulbs(Transform sign)
         {
-            // Chase around the plank and arrowhead only — no trail onto the spare.
-            var spots = new Vector2[]
+            // Same ring as the GUI marquees, on the board rect. Chase still walks the index order.
+            var signSr = sign.GetComponent<SpriteRenderer>();
+            var shaft = GiftSignRect(signSr != null ? signSr.sprite : null);
+            const float glass = 0.20f;
+            var bulbSpr = SpriteCatalog.AdBulb;
+            float minPitch = bulbSpr != null ? bulbSpr.bounds.size.x * glass / 0.62f : 0.9f;
+            FitMarquee(shaft.width, shaft.height, 12, minPitch, out int hSegs, out int vSegs);
+            int n = MarqueeCount(hSegs, vSegs);
+            var bulbs = new SpriteRenderer[n];
+            for (int i = 0; i < n; i++)
             {
-                new Vector2(-2.35f, 1.02f),
-                new Vector2(-0.55f, 1.08f),
-                new Vector2(1.05f, 1.00f),
-                new Vector2(2.05f, 0.72f),
-                new Vector2(2.58f, 0.08f),
-                new Vector2(2.05f, -0.72f),
-                new Vector2(1.05f, -1.00f),
-                new Vector2(-0.55f, -1.08f),
-                new Vector2(-2.35f, -1.02f)
-            };
-            var bulbs = new SpriteRenderer[spots.Length];
-            for (int i = 0; i < spots.Length; i++)
-            {
+                MarqueeSpot(shaft.xMin, shaft.yMax, shaft.xMax, shaft.yMin, hSegs, vSegs, i, out var p, out _);
                 var go = Sprite("GiftBulb" + i, SpriteCatalog.AdBulb, sign.position, 1f, 13, sign);
-                go.transform.localPosition = new Vector3(spots[i].x, spots[i].y, 0f);
-                go.transform.localScale = new Vector3(0.20f, 0.20f, 1f);
+                go.transform.localPosition = new Vector3(p.x, p.y, 0f);
+                go.transform.localScale = new Vector3(glass, glass, 1f);
                 var sr = go.GetComponent<SpriteRenderer>();
                 bulbs[i] = sr;
                 var halo = Sprite("Halo", SpriteCatalog.Glow, go.transform.position, 1f, 12, go.transform);

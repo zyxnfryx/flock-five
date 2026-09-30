@@ -46,6 +46,13 @@ namespace FlockFive
 
         public static void Play(Tier tier)
         {
+            try { Offer(tier); }
+            catch (System.Exception) { }
+        }
+
+        // Spacing window lives here. It only coalesces vibrations.
+        static void Offer(Tier tier)
+        {
             if (!CanPlay(tier)) return;
             int t = (int)tier;
             float now = Time.unscaledTime;
@@ -65,28 +72,43 @@ namespace FlockFive
         }
 
         // Combo owns this clear, so the limb snap must not buzz as well.
+        // Fire-and-forget: a prefs, pump, or vibrate failure must not escape.
         public static void OnCombo(int size)
         {
-            if (size >= 3)
+            try
             {
-                _skipBreak = true;
-                Play(size >= StrongCombo ? Tier.Strong : Tier.Medium);
+                if (size >= 3)
+                {
+                    _skipBreak = true;
+                    Play(size >= StrongCombo ? Tier.Strong : Tier.Medium);
+                }
+                else
+                    _skipBreak = false;
             }
-            else
-                _skipBreak = false;
+            catch (System.Exception) { }
         }
 
         public static void BranchBreak()
         {
-            if (_skipBreak)
+            try
             {
-                _skipBreak = false;
-                return;
+                if (_skipBreak)
+                {
+                    _skipBreak = false;
+                    return;
+                }
+                Play(Tier.Light);
             }
-            Play(Tier.Light);
+            catch (System.Exception) { }
         }
 
         internal static void Pump()
+        {
+            try { Drain(); }
+            catch (System.Exception) { }
+        }
+
+        static void Drain()
         {
             if (_pending == 0) return;
             if (Time.unscaledTime < _next) return;
@@ -108,6 +130,12 @@ namespace FlockFive
         }
 
         static void EnsurePump()
+        {
+            try { EnsurePumpCore(); }
+            catch (System.Exception) { }
+        }
+
+        static void EnsurePumpCore()
         {
             if (_pump != null) return;
             var found = Object.FindObjectsByType<HapticsPump>(FindObjectsInactive.Include, FindObjectsSortMode.None);
