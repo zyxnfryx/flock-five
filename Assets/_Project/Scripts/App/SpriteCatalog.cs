@@ -517,6 +517,29 @@ namespace FlockFive
         }
 
         // Path strings are built once. BirdFrame / Bird run for every bird every frame.
+        // Sex copies of these poses are the same PNG. Lookups keep the old names;
+        // TryLoad falls back to the one file that is still in Resources.
+        static readonly System.Collections.Generic.Dictionary<string, string> _spriteAlias = BuildSpriteAlias();
+
+        static System.Collections.Generic.Dictionary<string, string> BuildSpriteAlias()
+        {
+            var map = new System.Collections.Generic.Dictionary<string, string>();
+            string[] plain = { "gold", "ruby", "teal", "violet" };
+            string[] poses = { "", "_1", "_2", "_3", "_4" };
+            for (int c = 0; c < plain.Length; c++)
+            {
+                for (int p = 0; p < poses.Length; p++)
+                {
+                    string keep = "Sprites/bird_" + plain[c] + poses[p];
+                    map["Sprites/bird_" + plain[c] + "_f" + poses[p]] = keep;
+                    map["Sprites/bird_" + plain[c] + "_m" + poses[p]] = keep;
+                }
+            }
+            for (int p = 0; p < poses.Length; p++)
+                map["Sprites/bird_peach_m" + poses[p]] = "Sprites/bird_peach_f" + poses[p];
+            return map;
+        }
+
         static readonly string[] _birdPath = new string[Palette.Max * 3];
         static readonly string[] _flapPath = new string[Palette.Max * 3 * 4];
         static readonly string[] _feederPath = new string[Palette.Max];
@@ -1026,8 +1049,18 @@ namespace FlockFive
         static Sprite TryLoad(string path, float ppu)
         {
             var ready = Resources.Load<Sprite>(path);
+            Texture2D tex = null;
+            if (ready == null)
+            {
+                tex = Resources.Load<Texture2D>(path);
+                if (tex == null && path != null && _spriteAlias.TryGetValue(path, out var alias))
+                {
+                    path = alias;
+                    ready = Resources.Load<Sprite>(path);
+                    if (ready == null) tex = Resources.Load<Texture2D>(path);
+                }
+            }
             if (ready != null) return ready;
-            var tex = Resources.Load<Texture2D>(path);
             if (tex == null) return null;
             tex.filterMode = FilterMode.Bilinear;
             tex.wrapMode = TextureWrapMode.Clamp;

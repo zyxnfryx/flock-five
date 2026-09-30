@@ -40,6 +40,7 @@ public static class AndroidBuild
         PlayerSettings.Android.keyaliasPass = Env("FF_KEYSTORE_PASS");
         PlayerSettings.Android.bundleVersionCode = int.Parse(Env("FF_VERSION_CODE"));
         AssignAndroidIcons();
+        FlockFive.Editor.SpriteImport.EnsureAndroidOpaqueAstc();
 
         var scenes = EditorBuildSettings.scenes.Where(s => s.enabled).Select(s => s.path).ToArray();
         var opts = new BuildPlayerOptions
