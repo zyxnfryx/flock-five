@@ -451,7 +451,7 @@ namespace FlockFive
     {
         const int Cap = 48;
         const int Warm = 32;
-        const int AfterCheer = 16;
+        const int AfterCheerKeep = 16;
         const int MaxLive = 10;
         static readonly List<SpriteRenderer> Free = new List<SpriteRenderer>(Cap);
         static readonly List<IPestBurst> Live = new List<IPestBurst>(MaxLive);
@@ -532,7 +532,7 @@ namespace FlockFive
             for (int i = 0; i < Live.Count; i++)
                 if (Live[i] != null) return;
             _trimCheer = false;
-            while (Free.Count > AfterCheer)
+            while (Free.Count > AfterCheerKeep)
             {
                 int last = Free.Count - 1;
                 var sr = Free[last];
