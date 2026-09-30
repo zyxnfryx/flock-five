@@ -25,6 +25,8 @@ namespace FlockFive
         SpriteRenderer _kit;
         SpriteRenderer[] _glow;
         SpriteRenderer[] _kitGlow;
+        bool _glowHidden = true;
+        bool _kitGlowHidden = true;
         float _glowA;
         static Material _silhouette;
         float _phase;
@@ -267,18 +269,29 @@ namespace FlockFive
             return arr;
         }
 
-        static void HideRing(SpriteRenderer[] ring)
+        static void HideRing(SpriteRenderer[] ring, ref bool hidden)
         {
-            if (ring == null) return;
+            if (hidden || ring == null) return;
+            hidden = true;
             for (int i = 0; i < ring.Length; i++)
                 if (ring[i] != null) ring[i].enabled = false;
         }
 
+        static void RetireRing(ref SpriteRenderer[] ring, ref bool hidden)
+        {
+            HideRing(ring, ref hidden);
+            if (ring == null) return;
+            GlowPool.Give(ring);
+            ring = null;
+            hidden = true;
+        }
+
         // unitsPerBodyPx: this renderer's local units per body source pixel.
         static void ShowRing(SpriteRenderer[] ring, SpriteRenderer src, float unitsPerBodyPx,
-            float a, int layer, int order)
+            float a, int layer, int order, ref bool hidden)
         {
-            if (ring == null || src == null || src.sprite == null) { HideRing(ring); return; }
+            if (ring == null || src == null || src.sprite == null) { HideRing(ring, ref hidden); return; }
+            hidden = false;
             float flip = src.flipX ? -1f : 1f;
             for (int i = 0; i < ring.Length; i++)
             {
@@ -305,21 +318,32 @@ namespace FlockFive
             bool on = _glowA > 0.01f && _sr != null && _sr.enabled && _sr.sprite != null;
             if (!on)
             {
-                HideRing(_glow);
-                HideRing(_kitGlow);
+                // Faded rings leave the bird so a bob does not drag disabled copies.
+                RetireRing(ref _glow, ref _glowHidden);
+                RetireRing(ref _kitGlow, ref _kitGlowHidden);
                 return;
             }
             float a = _glowA * (0.9f + 0.1f * Mathf.Sin(Time.time * 6f + _phase));
             int bodyOrder = _sr.sortingOrder;
-            if (_glow == null) _glow = MakeGlowRing(transform);
+            if (_glow == null) _glow = RentRing(transform);
             float bodyUnitsPerPx = 1f / _sr.sprite.pixelsPerUnit;
-            ShowRing(_glow, _sr, bodyUnitsPerPx, a, _sr.sortingLayerID, bodyOrder - 2); // behind kit bow (body-1)
+            ShowRing(_glow, _sr, bodyUnitsPerPx, a, _sr.sortingLayerID, bodyOrder - 2, ref _glowHidden); // behind kit bow (body-1)
             bool kitShown = _kit != null && _kit.enabled && _kit.sprite != null;
-            if (!kitShown) { HideRing(_kitGlow); return; }
-            if (_kitGlow == null) _kitGlow = MakeGlowRing(_kit.transform);
+            if (!kitShown)
+            {
+                RetireRing(ref _kitGlow, ref _kitGlowHidden);
+                return;
+            }
+            if (_kitGlow == null) _kitGlow = RentRing(_kit.transform);
             // Kit ring lives under the scaled kit transform: convert body px to kit-local units.
             float ks = Mathf.Max(1e-4f, Mathf.Abs(_kit.transform.localScale.x));
-            ShowRing(_kitGlow, _kit, bodyUnitsPerPx / ks, a, _sr.sortingLayerID, bodyOrder - 2);
+            ShowRing(_kitGlow, _kit, bodyUnitsPerPx / ks, a, _sr.sortingLayerID, bodyOrder - 2, ref _kitGlowHidden);
+        }
+
+        SpriteRenderer[] RentRing(Transform parent)
+        {
+            var got = GlowPool.Take(parent);
+            return got != null ? got : MakeGlowRing(parent);
         }
 
         void PlaceFace(BirdMood.Pose mood, bool on)
@@ -476,6 +500,85 @@ namespace FlockFive
             _ruffle = 0.22f;
             _nextWing = 0f;
             Sfx.FlapSoft();
+        }
+
+        // Rings checked out while a bird is lit, parked once the fade finishes.
+        static class GlowPool
+        {
+            const int Max = 12;
+            static readonly System.Collections.Generic.List<SpriteRenderer[]> Free =
+                new System.Collections.Generic.List<SpriteRenderer[]>(Max);
+            static Transform _bin;
+
+            [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+            static void Reset()
+            {
+                Free.Clear();
+                _bin = null;
+            }
+
+            public static SpriteRenderer[] Take(Transform parent)
+            {
+                while (Free.Count > 0)
+                {
+                    int last = Free.Count - 1;
+                    var ring = Free[last];
+                    Free.RemoveAt(last);
+                    if (!Alive(ring)) continue;
+                    for (int i = 0; i < ring.Length; i++)
+                    {
+                        var sr = ring[i];
+                        sr.transform.SetParent(parent, false);
+                        sr.gameObject.SetActive(true);
+                        sr.enabled = false;
+                    }
+                    return ring;
+                }
+                return null;
+            }
+
+            public static void Give(SpriteRenderer[] ring)
+            {
+                if (!Alive(ring))
+                {
+                    DestroyRing(ring);
+                    return;
+                }
+                if (Free.Count >= Max)
+                {
+                    DestroyRing(ring);
+                    return;
+                }
+                if (_bin == null)
+                {
+                    var go = new GameObject("SelGlowPool");
+                    go.SetActive(false);
+                    _bin = go.transform;
+                }
+                for (int i = 0; i < ring.Length; i++)
+                {
+                    var sr = ring[i];
+                    sr.enabled = false;
+                    sr.gameObject.SetActive(false);
+                    sr.transform.SetParent(_bin, false);
+                }
+                Free.Add(ring);
+            }
+
+            static bool Alive(SpriteRenderer[] ring)
+            {
+                if (ring == null || ring.Length == 0) return false;
+                for (int i = 0; i < ring.Length; i++)
+                    if (ring[i] == null) return false;
+                return true;
+            }
+
+            static void DestroyRing(SpriteRenderer[] ring)
+            {
+                if (ring == null) return;
+                for (int i = 0; i < ring.Length; i++)
+                    if (ring[i] != null) Object.Destroy(ring[i].gameObject);
+            }
         }
     }
 }

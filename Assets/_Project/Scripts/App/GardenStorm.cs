@@ -31,6 +31,13 @@ namespace FlockFive
         float _flashPower;
         float _floor = -8.6f;
         bool _wasDry = true;
+        bool _flashLit;
+        float[] _dropA;
+        float _veilA;
+        int _frameW = -1;
+        int _frameH;
+        float _frameTall;
+        float _frL, _frR, _frB, _frT;
 
         public static GardenStorm Attach(Transform root)
         {
@@ -55,6 +62,9 @@ namespace FlockFive
             _nextBoom = 6.5f;
             _flashT = 99f;
             _flashPower = 0f;
+            _flashLit = false;
+            _veilA = 0f;
+            _frameW = -1;
         }
 
         void OnDisable()
@@ -81,6 +91,7 @@ namespace FlockFive
 
             _drop = new Transform[Drops];
             _dropSr = new SpriteRenderer[Drops];
+            _dropA = new float[Drops];
             _spd = new float[Drops];
             _len = new float[Drops];
             _phase = new float[Drops];
@@ -118,6 +129,33 @@ namespace FlockFive
             top = WorldBuilder.CamRestY + halfH;
         }
 
+        void Paint(int i, float a)
+        {
+            if (_dropA == null || _dropSr == null || _dropSr[i] == null) return;
+            if (_dropA[i] == a) return;
+            _dropA[i] = a;
+            _dropSr[i].color = new Color(0.78f, 0.86f, 0.94f, a);
+        }
+
+        // Screen size and letterbox height. Drops do not ask again while both hold.
+        void Frame(out float left, out float right, out float bottom, out float top)
+        {
+            float tall = PortraitLock.TallFactor();
+            int w = Screen.width;
+            int h = Screen.height;
+            if (w != _frameW || h != _frameH || tall != _frameTall)
+            {
+                FullFrame(out _frL, out _frR, out _frB, out _frT);
+                _frameW = w;
+                _frameH = h;
+                _frameTall = tall;
+            }
+            left = _frL;
+            right = _frR;
+            bottom = _frB;
+            top = _frT;
+        }
+
         static bool WantStorm(float play)
         {
             if (play < FirstWait) return false;
@@ -133,13 +171,14 @@ namespace FlockFive
             _wet = Mathf.MoveTowards(_wet, want, Time.unscaledDeltaTime / Fade);
             Wet = _wet;
 
-            if (_veil != null)
-                _veil.color = new Color(0.06f, 0.08f, 0.12f, 0.62f * _wet);
+            // Steady rain keeps one veil alpha. Dry skips the write after the clear.
+            float veilA = _wet > 0.001f ? 0.62f * _wet : 0f;
+            if (_veil != null && veilA != _veilA)
+            {
+                _veilA = veilA;
+                _veil.color = new Color(0.06f, 0.08f, 0.12f, veilA);
+            }
 
-            // Full screen, including the letterbox past the home indicator.
-            // Safe area is for HUD only — drops exit past every edge before recycle.
-            FullFrame(out float left, out float right, out float bottom, out float top);
-            _floor = bottom - Edge;
             // Clear stretches are invisible. Frozen drops keep the last spread,
             // so the next fade-in is still a sheet, not a hitch every frame.
             bool dry = _wet <= 0.001f && want <= 0f;
@@ -152,7 +191,12 @@ namespace FlockFive
             }
             if (_drop != null && !dry)
             {
+                // Full screen, including the letterbox past the home indicator.
+                // Safe area is for HUD only — drops exit past every edge before recycle.
+                Frame(out float left, out float right, out float bottom, out float top);
+                _floor = bottom - Edge;
                 float dt = Time.deltaTime;
+                float wet = _wet;
                 for (int i = 0; i < _drop.Length; i++)
                 {
                     if (_drop[i] == null) continue;
@@ -160,43 +204,58 @@ namespace FlockFive
                     if (_phase[i] > 0f)
                     {
                         _phase[i] -= dt;
-                        if (_dropSr[i] != null)
-                            _dropSr[i].color = new Color(0.78f, 0.86f, 0.94f, 0f);
+                        Paint(i, 0f);
                         continue;
                     }
                     var p = _drop[i].position;
-                    float fall = _spd[i] * dt * Mathf.Lerp(0.18f, 1f, _wet);
-                    p.y -= fall;
-                    p.x -= (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * dt * _wet;
-                    if (p.y < _floor || p.x < left - Edge || p.x > right + Edge)
+                    float fall = _spd[i] * dt * Mathf.Lerp(0.18f, 1f, wet);
+                    float nx = p.x - (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * dt * wet;
+                    float ny = p.y - fall;
+                    if (ny < _floor || nx < left - Edge || nx > right + Edge)
                     {
-                        p.y = Random.Range(top + 0.25f, top + Edge + 1.8f);
-                        p.x = Random.Range(left - 0.35f, right + Edge);
+                        ny = Random.Range(top + 0.25f, top + Edge + 1.8f);
+                        nx = Random.Range(left - 0.35f, right + Edge);
                         _phase[i] = Random.Range(0.05f, 1.35f);
                         _spd[i] = Random.Range(8.5f, 26.5f);
                     }
-                    _drop[i].position = p;
-                    if (_dropSr[i] != null)
+                    if (nx != p.x || ny != p.y)
                     {
-                        float a = _wet * Mathf.Lerp(0.34f, 0.76f, (i % 11) / 10f);
-                        _dropSr[i].color = new Color(0.78f, 0.86f, 0.94f, a);
+                        p.x = nx;
+                        p.y = ny;
+                        _drop[i].position = p;
                     }
+                    Paint(i, wet * Mathf.Lerp(0.34f, 0.76f, (i % 11) / 10f));
                 }
             }
 
-            if (_flash != null)
+            // Same bolt curve. After the tail fades, stop rewriting the full-screen sprite.
+            if (_flash != null && _flashT < 1.6f)
             {
                 float ft = _flashT;
                 float strike = Mathf.Exp(-(ft - 0.018f) * (ft - 0.018f) / 0.00042f);
                 float echo = 0.62f * Mathf.Exp(-(ft - 0.098f) * (ft - 0.098f) / 0.00095f);
                 float glow = 0.10f * Mathf.Exp(-ft * 4.4f);
                 float a = (strike + echo + glow) * _flashPower;
-                var warm = new Color(1f, 0.96f, 0.88f, a);
-                var cool = new Color(0.78f, 0.86f, 1f, a);
-                _flash.color = Color.Lerp(warm, cool, Mathf.Clamp01(ft * 6.5f));
-                float sc = 22f + 3.4f * strike + 1.6f * echo;
-                _flash.transform.localScale = new Vector3(sc, sc * 1.18f * PortraitLock.TallFactor(), 1f);
                 _flashT += Time.unscaledDeltaTime;
+                if (a < 0.002f && ft > 0.2f)
+                {
+                    if (_flashLit)
+                    {
+                        _flash.color = new Color(0.78f, 0.86f, 1f, 0f);
+                        float rest = 22f;
+                        _flash.transform.localScale = new Vector3(rest, rest * 1.18f * PortraitLock.TallFactor(), 1f);
+                        _flashLit = false;
+                    }
+                }
+                else
+                {
+                    var warm = new Color(1f, 0.96f, 0.88f, a);
+                    var cool = new Color(0.78f, 0.86f, 1f, a);
+                    _flash.color = Color.Lerp(warm, cool, Mathf.Clamp01(ft * 6.5f));
+                    float sc = 22f + 3.4f * strike + 1.6f * echo;
+                    _flash.transform.localScale = new Vector3(sc, sc * 1.18f * PortraitLock.TallFactor(), 1f);
+                    _flashLit = true;
+                }
             }
 
             if (_wet > 0.45f)

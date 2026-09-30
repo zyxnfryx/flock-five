@@ -12,6 +12,7 @@ namespace FlockFive
 
         public int BlockingSlot { get; private set; } = -1;
         public bool IsBlocking => Live != null && BlockingSlot >= 0 && !_done;
+        public bool InScrap => _evict || _fleeing;
 
         const float Scale = 0.78f; // bigger pest than hummingbirds (0.42)
         SpriteRenderer _art;
@@ -77,13 +78,14 @@ namespace FlockFive
             view._exitX = exitX;
             Live = view;
 
-            // Fly in.
+            // Fly in. Warm the feather pool across these frames, before any hit.
             float t = 0f;
             const float inDur = 0.95f;
             bool chirped = false;
             while (t < inDur)
             {
                 if (parent == null || go == null) yield break;
+                PestPool.Prewarm(parent, 4);
                 t += Time.deltaTime;
                 float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / inDur));
                 var p = Vector3.Lerp(start, mouth, u);
@@ -448,10 +450,13 @@ namespace FlockFive
     static class PestPool
     {
         const int Cap = 48;
+        const int Warm = 32;
+        const int AfterCheer = 16;
         const int MaxLive = 10;
         static readonly List<SpriteRenderer> Free = new List<SpriteRenderer>(Cap);
         static readonly List<IPestBurst> Live = new List<IPestBurst>(MaxLive);
         static Transform Root;
+        static bool _trimCheer;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
@@ -459,6 +464,32 @@ namespace FlockFive
             Free.Clear();
             Live.Clear();
             Root = null;
+            _trimCheer = false;
+        }
+
+        // A few disabled feathers ahead of the first hit. Further calls stop at Warm.
+        public static void Prewarm(Transform garden, int batch)
+        {
+            if (garden == null || batch <= 0 || Free.Count >= Warm) return;
+            Ensure(garden);
+            int n = 0;
+            int goal = Mathf.Min(Warm, Cap);
+            while (n < batch && Free.Count < goal)
+            {
+                var go = WorldBuilder.Sprite("Feather", SpriteCatalog.Feather, Vector3.zero, 0.12f, 43, Root);
+                var sr = go.GetComponent<SpriteRenderer>();
+                sr.enabled = false;
+                go.SetActive(false);
+                Free.Add(sr);
+                n++;
+            }
+        }
+
+        // Cheer is over. Drop idle sprites once every burst has given them back.
+        public static void AfterCheer()
+        {
+            _trimCheer = true;
+            TryTrim();
         }
 
         public static void Clear()
@@ -470,6 +501,7 @@ namespace FlockFive
             }
             Live.Clear();
             Free.Clear();
+            _trimCheer = false;
             if (Root != null) Object.Destroy(Root.gameObject);
             Root = null;
         }
@@ -491,6 +523,22 @@ namespace FlockFive
         public static void Forget(IPestBurst burst)
         {
             Live.Remove(burst);
+            TryTrim();
+        }
+
+        static void TryTrim()
+        {
+            if (!_trimCheer) return;
+            for (int i = 0; i < Live.Count; i++)
+                if (Live[i] != null) return;
+            _trimCheer = false;
+            while (Free.Count > AfterCheer)
+            {
+                int last = Free.Count - 1;
+                var sr = Free[last];
+                Free.RemoveAt(last);
+                if (sr != null) Object.Destroy(sr.gameObject);
+            }
         }
 
         public static SpriteRenderer Take(Transform garden, string name, Sprite spr, Vector3 pos, float size, int order)
@@ -556,15 +604,37 @@ namespace FlockFive
     // Self-cleaning feather burst so smack/flee FX outlive the sparrow GO.
     sealed class SparrowBits : MonoBehaviour, IPestBurst
     {
+        struct Puff
+        {
+            public SpriteRenderer Sr;
+            public Vector3 Vel;
+            public float Spin;
+            public float Age;
+        }
+
+        const float PuffLife = 0.85f;
+        static SparrowBits _burstHost;
         SpriteRenderer[] _bits;
+        List<Puff> _puffs;
         bool _dead;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetHost() => _burstHost = null;
 
         public static void Burst(Vector3 pos, Transform parent, Color tint, int count = 0)
         {
             if (parent == null) return;
+            // One host for the scrap. Later hits and the defeat puff join it
+            // instead of stacking another feather runner.
+            if (_burstHost != null && !_burstHost._dead)
+            {
+                _burstHost.Spawn(pos, tint, count);
+                return;
+            }
             var go = new GameObject("SparrowBits");
             go.transform.SetParent(parent, false);
             var bits = go.AddComponent<SparrowBits>();
+            _burstHost = bits;
             PestPool.Watch(bits);
             bits.StartCoroutine(bits.Run(pos, tint, count));
         }
@@ -584,6 +654,7 @@ namespace FlockFive
         {
             if (_dead) return;
             _dead = true;
+            if (_burstHost == this) _burstHost = null;
             StopAllCoroutines();
             Release();
             if (this != null) Object.Destroy(gameObject);
@@ -591,17 +662,49 @@ namespace FlockFive
 
         void OnDestroy()
         {
+            if (_burstHost == this) _burstHost = null;
             PestPool.Forget(this);
             Release();
         }
 
         void Release()
         {
+            if (_puffs != null)
+            {
+                for (int i = 0; i < _puffs.Count; i++)
+                    PestPool.Give(_puffs[i].Sr);
+                _puffs = null;
+            }
             var bits = _bits;
             if (bits == null) return;
             _bits = null;
             for (int i = 0; i < bits.Length; i++)
                 PestPool.Give(bits[i]);
+        }
+
+        void Spawn(Vector3 pos, Color tint, int count)
+        {
+            if (_puffs == null) _puffs = new List<Puff>(16);
+            bool big = count > 0;
+            int n = big ? count : Random.Range(5, 10);
+            var spr = SpriteCatalog.Feather;
+            var garden = Anchor();
+            for (int i = 0; i < n; i++)
+            {
+                float ang = (i / (float)n) * Mathf.PI * 2f + Random.Range(-0.35f, 0.35f);
+                float spd = big ? Random.Range(3.6f, 6.8f) : Random.Range(2.8f, 5.4f);
+                float size = big ? Random.Range(0.18f, 0.34f) : Random.Range(0.12f, 0.22f);
+                var sr = PestPool.Take(garden, "Feather", spr, pos, size, 43);
+                sr.transform.rotation = Quaternion.Euler(0f, 0f, Random.Range(-60f, 60f));
+                float shade = Random.Range(0.75f, 1.05f);
+                sr.color = new Color(tint.r * shade, tint.g * shade, tint.b * shade, 0.98f);
+                _puffs.Add(new Puff
+                {
+                    Sr = sr,
+                    Vel = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang) + 0.55f, 0f) * spd,
+                    Spin = Random.Range(-420f, 420f)
+                });
+            }
         }
 
         Transform Anchor()
@@ -641,43 +744,36 @@ namespace FlockFive
 
         IEnumerator Run(Vector3 pos, Color tint, int count)
         {
-            bool big = count > 0;
-            int n = big ? count : Random.Range(5, 10);
-            var bits = new SpriteRenderer[n];
-            var vel = new Vector3[n];
-            var spin = new float[n];
-            var spr = SpriteCatalog.Feather;
-            var garden = Anchor();
-            for (int i = 0; i < n; i++)
+            Spawn(pos, tint, count);
+            while (!_dead)
             {
-                float ang = (i / (float)n) * Mathf.PI * 2f + Random.Range(-0.35f, 0.35f);
-                float spd = big ? Random.Range(3.6f, 6.8f) : Random.Range(2.8f, 5.4f);
-                vel[i] = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang) + 0.55f, 0f) * spd;
-                spin[i] = Random.Range(-420f, 420f);
-                float size = big ? Random.Range(0.18f, 0.34f) : Random.Range(0.12f, 0.22f);
-                bits[i] = PestPool.Take(garden, "Feather", spr, pos, size, 43);
-                bits[i].transform.rotation = Quaternion.Euler(0f, 0f, Random.Range(-60f, 60f));
-                float shade = Random.Range(0.75f, 1.05f);
-                bits[i].color = new Color(tint.r * shade, tint.g * shade, tint.b * shade, 0.98f);
-            }
-            _bits = bits;
-
-            float life = 0.85f;
-            float t = 0f;
-            while (t < life)
-            {
-                t += Time.deltaTime;
-                float u = t / life;
-                for (int i = 0; i < n; i++)
+                float dt = Time.deltaTime;
+                int live = 0;
+                var puffs = _puffs;
+                if (puffs == null) break;
+                for (int i = 0; i < puffs.Count; i++)
                 {
-                    if (bits[i] == null) continue;
-                    vel[i].y -= 6.2f * Time.deltaTime;
-                    bits[i].transform.position += vel[i] * Time.deltaTime;
-                    bits[i].transform.Rotate(0f, 0f, spin[i] * Time.deltaTime);
-                    var c = bits[i].color;
+                    var b = puffs[i];
+                    if (b.Sr == null) continue;
+                    b.Age += dt;
+                    if (b.Age >= PuffLife)
+                    {
+                        PestPool.Give(b.Sr);
+                        b.Sr = null;
+                        puffs[i] = b;
+                        continue;
+                    }
+                    live++;
+                    float u = b.Age / PuffLife;
+                    b.Vel.y -= 6.2f * dt;
+                    b.Sr.transform.position += b.Vel * dt;
+                    b.Sr.transform.Rotate(0f, 0f, b.Spin * dt);
+                    var c = b.Sr.color;
                     c.a = 0.98f * (1f - u) * (1f - u);
-                    bits[i].color = c;
+                    b.Sr.color = c;
+                    puffs[i] = b;
                 }
+                if (live == 0) break;
                 yield return null;
             }
             ReleaseAndDie();
@@ -712,7 +808,22 @@ namespace FlockFive
         {
             if (root == null) return;
             IdleBuf.Clear();
-            root.GetComponentsInChildren(false, IdleBuf);
+            // Branch seats only. Storm drops and the rest of the garden are not birds.
+            // Fighters stay in BranchView.Birds after they are reparented to the garden.
+            int children = root.childCount;
+            for (int c = 0; c < children; c++)
+            {
+                var br = root.GetChild(c).GetComponent<BranchView>();
+                if (br == null) continue;
+                var birds = br.Birds;
+                for (int i = 0; i < birds.Length; i++)
+                {
+                    var sr = birds[i];
+                    if (sr == null || !sr.gameObject.activeInHierarchy) continue;
+                    var idle = sr.GetComponent<BirdIdle>();
+                    if (idle != null) IdleBuf.Add(idle);
+                }
+            }
             if (wave)
             {
                 IdleBuf.Sort(ByX);
@@ -791,6 +902,7 @@ namespace FlockFive
             _dead = true;
             StopAllCoroutines();
             Release();
+            PestPool.AfterCheer();
             if (this != null) Object.Destroy(gameObject);
         }
 

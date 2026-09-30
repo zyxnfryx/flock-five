@@ -15,6 +15,7 @@ namespace FlockFive
         public int HitsTaken { get; private set; }
         public int BlockingSlot { get; private set; } = -1;
         public bool IsBlocking => Live != null && BlockingSlot >= 0 && !_done;
+        public bool InScrap => _scrap || _fleeing;
 
         float _scale = 1.1f;
         SpriteRenderer _art;
@@ -90,13 +91,14 @@ namespace FlockFive
             view._exitX = exitX;
             Live = view;
 
-            // Fly in.
+            // Fly in. Same warm-up as the sparrow so a hawk scrap does not allocate feathers.
             float t = 0f;
             const float inDur = 1.05f;
             bool cried = false;
             while (t < inDur)
             {
                 if (parent == null || go == null) yield break;
+                PestPool.Prewarm(parent, 4);
                 t += Time.deltaTime;
                 float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / inDur));
                 var p = Vector3.Lerp(start, mouth, u);

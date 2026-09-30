@@ -3,7 +3,7 @@ using UnityEngine;
 namespace FlockFive
 {
     // First garden: every hint shares one thick black edge, a soft glow under the
-    // branch the step wants, and a gloved hand that taps it. Other taps wait.
+    // branch the step wants, and a gloved hand on each end of the hop. Other taps wait.
     public sealed partial class FlockFiveApp
     {
         const string CoachKey = "flockfive.coach.done";
@@ -12,12 +12,15 @@ namespace FlockFive
         const string AdHandLine = "Tap to watch and unlock a bonus spot.";
         // One outline for every coach line. StampCoach is the only draw path.
         const int CoachOutlinePx = 6;
-        // Hover, quick press, ease-out lift, short pause. 0.72+0.12+0.20+0.16 = 1.20s.
-        const float TapHover = 0.72f;
-        const float TapPress = 0.12f;
-        const float TapLift = 0.20f;
+        // Sweep along the arc, soft dip, rise back, short pause. 0.56+0.26+0.22+0.16 = 1.20s.
+        const float TapHover = 0.56f;
+        const float TapPress = 0.26f;
+        const float TapLift = 0.22f;
         const float TapPause = 0.16f;
         const float TapCycle = TapHover + TapPress + TapLift + TapPause;
+        // Other end of the hop. A little smaller and dimmer than the hand that is tapping.
+        const float RestMark = 0.86f;
+        const float RestAlpha = 0.88f;
         const int RipplePool = 4;
         const float RippleLife = 0.46f;
         // Wing-up opaque extent of the 1536 flap sheet at 220 ppu, BirdScale 0.42,
@@ -58,6 +61,14 @@ namespace FlockFive
         float _glovePhase;
         float _gloveDip;
         bool _tapSent;
+        int _gloveBranch = -1;
+        bool _restVis;
+        Vector2 _restShown;
+        float _restAng;
+        Vector2 _restTip;
+        Vector2 _restAim;
+        Vector2 _restAway;
+        float _restTravelHi;
         float _coachGlowKick;
         Vector3 _cueAimWorld;
         SpriteRenderer _coachGlow;
@@ -87,6 +98,8 @@ namespace FlockFive
             _glovePhase = 0f;
             _gloveDip = 0f;
             _tapSent = false;
+            _gloveBranch = -1;
+            _restVis = false;
             _coachGlowKick = 0f;
             _coachLineHeld = false;
             _cueHand = false;
@@ -187,6 +200,8 @@ namespace FlockFive
             _glovePhase = 0f;
             _gloveDip = 0f;
             _tapSent = false;
+            _gloveBranch = -1;
+            _restVis = false;
             _coachGlowKick = 0f;
             _coachLineHeld = false;
             CoachClearCue();
@@ -539,28 +554,38 @@ namespace FlockFive
             _gloveReady = false;
         }
 
-        // Same hover-press-lift as the tutorial glove. aimGui is GUI space, y down.
+        // Same arc-point as the tutorial glove. aimGui is GUI space, y down.
         // True on the frame the fingertip lands.
         bool CoachGloveAt(Vector2 aimGui, float dt, float s)
         {
             _cueAimGui = aimGui;
             float margin = 130f * s;
-            CoachAimAway(s, margin, out var away, out float gap);
+            CoachAimAway(_cueAimGui, s, margin, out var away, out float gap);
             var rest = _cueAimGui + away * gap;
             float ang = Mathf.Atan2(-away.x, away.y) * Mathf.Rad2Deg;
             _gloveRest = rest;
             _gloveRestAng = ang;
-            if (!_gloveReady)
+            // Same branch keeps the glide. A new lesson branch takes the tap in place
+            // so the other glove can rest where this one was. The phase clock stays put.
+            bool swap = _gloveReady && _coach && !_cueGift && !_adHand
+                && _gloveBranch >= 0 && _cueBranch >= 0 && _gloveBranch != _cueBranch
+                && (_gloveBranch == _coachFrom || _gloveBranch == _coachTo)
+                && (_cueBranch == _coachFrom || _cueBranch == _coachTo);
+            if (!_gloveReady || swap)
             {
                 _gloveTip = rest;
                 _gloveVel = Vector2.zero;
                 _gloveAway = away;
                 _gloveAng = ang;
                 _gloveAngVel = 0f;
-                _glovePhase = 0f;
-                _gloveDip = 0f;
-                _tapSent = false;
+                if (!_gloveReady)
+                {
+                    _glovePhase = 0f;
+                    _gloveDip = 0f;
+                    _tapSent = false;
+                }
                 _gloveReady = true;
+                _gloveBranch = _cueBranch;
             }
             else
             {
@@ -568,6 +593,7 @@ namespace FlockFive
                 _gloveAway = Vector2.Lerp(_gloveAway, away, 1f - Mathf.Exp(-dt / 0.28f));
                 if (_gloveAway.sqrMagnitude > 0.0001f) _gloveAway.Normalize();
                 _gloveAng = Mathf.SmoothDampAngle(_gloveAng, ang, ref _gloveAngVel, 0.36f, Mathf.Infinity, dt);
+                if (_cueBranch >= 0) _gloveBranch = _cueBranch;
             }
 
             float pressAt = TapHover + TapPress;
@@ -581,38 +607,38 @@ namespace FlockFive
                 _tapSent = false;
             }
             _glovePhase = nextPhase;
-            _gloveDip = TapDip(_glovePhase);
             if (fire) _tapSent = true;
-
-            // Bob only while hovering. The press itself is the dip toward the aim.
-            float bob = _glovePhase < TapHover
-                ? Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.15f)) * (8f * s)
-                : 0f;
+            // The crossing frame draws the bottom of the arc, where the ripple is sent.
+            float posePhase = fire ? pressAt : _glovePhase;
+            _gloveDip = TapDip(posePhase);
+            float travel = TapTravel(posePhase);
+            TapArc(_gloveTip, _cueAimGui, _gloveAway, s, travel, out var arcPos, out float arcAng);
             float wig = Mathf.Sin(Time.unscaledTime * 46f) * 8f * _gloveWiggle;
             var side = new Vector2(-_gloveAway.y, _gloveAway.x);
-            var hover = _gloveTip + _gloveAway * bob + side * wig;
-            _gloveShown = Vector2.Lerp(hover, _cueAimGui, _gloveDip);
+            _gloveShown = arcPos + side * wig * (1f - travel);
+            float baseAng = Mathf.Atan2(-_gloveAway.x, _gloveAway.y) * Mathf.Rad2Deg;
             float nod = 11f * _gloveDip * (_gloveAway.x >= 0f ? -1f : 1f);
-            _gloveShownAng = _gloveAng + Mathf.Sin(Time.unscaledTime * 46f) * 7f * _gloveWiggle + nod;
+            _gloveShownAng = _gloveAng + Mathf.DeltaAngle(baseAng, arcAng)
+                + Mathf.Sin(Time.unscaledTime * 46f) * 7f * _gloveWiggle + nod;
             _gloveVis = true;
             return fire;
         }
 
         // Hand sits off the lifted flock so the glove and those birds do not share a spot.
         // Falls back to the side that stays on screen when nothing is lifted.
-        void CoachAimAway(float s, float margin, out Vector2 away, out float gap)
+        void CoachAimAway(Vector2 aim, float s, float margin, out Vector2 away, out float gap)
         {
             gap = 46f * s;
-            float hx = _cueAimGui.x < Screen.width * 0.5f ? 1f : -1f;
+            float hx = aim.x < Screen.width * 0.5f ? 1f : -1f;
             float hy = 1.05f;
-            if (_cueAimGui.y > Screen.height - margin) hy = -1.15f;
-            else if (_cueAimGui.y < margin * 0.65f) hy = 1.15f;
+            if (aim.y > Screen.height - margin) hy = -1.15f;
+            else if (aim.y < margin * 0.65f) hy = 1.15f;
             float sx = hx;
             float sy = hy;
             if (LiftedGuiCenter(out var flock))
             {
-                float dx = _cueAimGui.x - flock.x;
-                float dy = _cueAimGui.y - flock.y;
+                float dx = aim.x - flock.x;
+                float dy = aim.y - flock.y;
                 if (dx * dx + dy * dy > 36f * 36f)
                 {
                     if (Mathf.Abs(dx) > 24f) sx = dx >= 0f ? 1f : -1f;
@@ -628,13 +654,14 @@ namespace FlockFive
                 {
                     float cx = i == 3 ? hx : sx;
                     float cy = i == 1 ? 1.15f : i == 2 ? -1.15f : i == 3 ? hy : sy;
-                    if (_cueAimGui.y < margin * 0.65f && cy < 0f) continue;
-                    if (_cueAimGui.y > Screen.height - margin && cy > 0f) continue;
+                    if (aim.y < margin * 0.65f && cy < 0f) continue;
+                    if (aim.y > Screen.height - margin && cy > 0f) continue;
                     var dir = new Vector2(cx, cy).normalized;
                     float ang = Mathf.Atan2(-dir.x, dir.y) * Mathf.Rad2Deg;
-                    var rest = _cueAimGui + dir * tryGap;
+                    var rest = aim + dir * tryGap;
                     if (rest.x < 8f || rest.y < 8f || rest.x > Screen.width - 8f || rest.y > Screen.height - 8f) continue;
-                    if (GloveHitsBirds(rest, ang, s) || GloveHitsBirds(_cueAimGui, ang, s)) continue;
+                    if (GloveHitsBirds(rest, ang, s) || GloveHitsBirds(aim, ang, s)) continue;
+                    if (ArcHitsBirds(rest, aim, dir, s)) continue;
                     bestHx = cx;
                     bestHy = cy;
                     bestGap = tryGap;
@@ -643,8 +670,8 @@ namespace FlockFive
             }
             if (!found)
             {
-                if (_cueAimGui.y < margin * 0.65f && bestHy < 0f) bestHy = 1.15f;
-                if (_cueAimGui.y > Screen.height - margin && bestHy > 0f) bestHy = -1.15f;
+                if (aim.y < margin * 0.65f && bestHy < 0f) bestHy = 1.15f;
+                if (aim.y > Screen.height - margin && bestHy > 0f) bestHy = -1.15f;
             }
             gap = bestGap;
             away = new Vector2(bestHx, bestHy).normalized;
@@ -695,22 +722,98 @@ namespace FlockFive
             return CoachBirdsBlock(box, 0f);
         }
 
-        // 0 at rest, 1 at the bottom of the press. The lift eases out (fast off the target, then settles).
+        // Side hold and the widest part of the sweep. Rest and the aim are checked by the caller.
+        bool ArcHitsBirds(Vector2 rest, Vector2 aim, Vector2 away, float s)
+        {
+            TapArc(rest, aim, away, s, 0f, out var sidePos, out float sideAng);
+            if (GloveHitsBirds(sidePos, sideAng, s)) return true;
+            TapArc(rest, aim, away, s, 0.22f, out var bowPos, out float bowAng);
+            return GloveHitsBirds(bowPos, bowAng, s);
+        }
+
+        // 0 through the sweep, 1 at the bottom of the arc. The dip and the lift both ease.
         static float TapDip(float phase)
         {
+            float pressAt = TapHover + TapPress;
             if (phase < TapHover) return 0f;
-            if (phase < TapHover + TapPress)
+            if (phase < pressAt)
             {
                 float u = (phase - TapHover) / TapPress;
-                return u * u;
+                return u * u * (3f - 2f * u);
             }
-            if (phase < TapHover + TapPress + TapLift)
+            float liftEnd = pressAt + TapLift;
+            if (phase < liftEnd)
             {
-                float u = (phase - TapHover - TapPress) / TapLift;
-                float back = 1f - u;
-                return back * back;
+                float u = (phase - pressAt) / TapLift;
+                float back = u * u * (3f - 2f * u);
+                return 1f - back;
             }
             return 0f;
+        }
+
+        // 0 at the side pose, 1 on the target. One ease in, the same curve back out.
+        static float TapTravel(float phase)
+        {
+            float pressAt = TapHover + TapPress;
+            float liftEnd = pressAt + TapLift;
+            if (phase < pressAt)
+            {
+                float u = phase / pressAt;
+                return u * u * (3f - 2f * u);
+            }
+            if (phase < liftEnd)
+            {
+                float u = (phase - pressAt) / TapLift;
+                float back = u * u * (3f - 2f * u);
+                return 1f - back;
+            }
+            return 0f;
+        }
+
+        // Curved path from beside the rest pose onto the aim. The bow flattens at the
+        // end, so the last of the ease is a dip along the finger. ang has no press nod.
+        static void TapArc(Vector2 rest, Vector2 aim, Vector2 away, float s, float t,
+            out Vector2 pos, out float ang)
+        {
+            float baseAng = Mathf.Atan2(-away.x, away.y) * Mathf.Rad2Deg;
+            float gap = Vector2.Distance(rest, aim);
+            if (gap < 1f || away.sqrMagnitude < 0.0001f)
+            {
+                pos = aim;
+                ang = baseAng;
+                return;
+            }
+            var side = new Vector2(-away.y, away.x);
+            const float bow = 5.5f;
+            float sweep = Mathf.Min(gap * 0.46f, 36f * s);
+            float peakT = (bow - 2f) / (3f * bow);
+            float peakU = 1f - peakT;
+            float peak = sweep * peakU * peakU * (1f + bow * peakT);
+            float allow = FitAlong(rest, side, peak);
+            if (peak > 0.001f && allow < peak) sweep *= allow / peak;
+            float u = 1f - t;
+            float lateral = sweep * u * u * (1f + bow * t);
+            pos = aim + away * (gap * u) + side * lateral;
+            float dLat = sweep * (-2f * u * (1f + bow * t) + u * u * bow);
+            var travel = -away * gap + side * dLat;
+            if (travel.sqrMagnitude < 0.0001f) travel = -away;
+            travel.Normalize();
+            float arcAng = Mathf.Atan2(travel.x, -travel.y) * Mathf.Rad2Deg;
+            float delta = Mathf.Clamp(Mathf.DeltaAngle(baseAng, arcAng), -18f, 18f);
+            ang = baseAng + delta * (1f - t);
+        }
+
+        // How far `dir` (unit) can go from origin before the point leaves the screen.
+        static float FitAlong(Vector2 origin, Vector2 dir, float want)
+        {
+            if (want <= 0f) return 0f;
+            const float m = 8f;
+            float lim = want;
+            if (dir.x > 0.02f) lim = Mathf.Min(lim, (Screen.width - m - origin.x) / dir.x);
+            else if (dir.x < -0.02f) lim = Mathf.Min(lim, (origin.x - m) / -dir.x);
+            if (dir.y > 0.02f) lim = Mathf.Min(lim, (Screen.height - m - origin.y) / dir.y);
+            else if (dir.y < -0.02f) lim = Mathf.Min(lim, (origin.y - m) / -dir.y);
+            return lim > 0f ? lim : 0f;
         }
 
         void CoachDim()
@@ -822,11 +925,34 @@ namespace FlockFive
             {
                 float nod = 11f * (_gloveAway.x >= 0f ? -1f : 1f);
                 AddGlove(_gloveShown, _gloveShownAng, s, pad);
-                AddGlove(_gloveRest, _gloveRestAng, s, pad);
-                AddGlove(_cueAimGui, _gloveRestAng + nod, s, pad);
-                AddGlove((_gloveShown + _gloveRest) * 0.5f, _gloveShownAng, s, pad);
+                AddArcPose(0f, s, pad, 0f);
+                AddArcPose(0.22f, s, pad, 0f);
+                AddArcPose(0.55f, s, pad, 0f);
+                AddArcPose(1f, s, pad, nod);
+            }
+            if (_restVis)
+            {
+                float rs = s * RestMark;
+                AddGlove(_restShown, _restAng, rs, pad);
+                AddRestPose(0.06f, s, rs, pad);
+                AddRestPose(_restTravelHi, s, rs, pad);
             }
             AddLiftedBirds(pad);
+        }
+
+        void AddRestPose(float t, float layoutS, float drawS, float pad)
+        {
+            if (_restAway.sqrMagnitude < 0.0001f) return;
+            TapArc(_restTip, _restAim, _restAway, layoutS, t, out var pos, out float ang);
+            AddGlove(pos, ang, drawS, pad);
+        }
+
+        void AddArcPose(float t, float s, float pad, float extraAng)
+        {
+            if (_gloveAway.sqrMagnitude < 0.0001f) return;
+            TapArc(_gloveTip, _cueAimGui, _gloveAway, s, t, out var pos, out float ang);
+            float baseAng = Mathf.Atan2(-_gloveAway.x, _gloveAway.y) * Mathf.Rad2Deg;
+            AddGlove(pos, _gloveRestAng + Mathf.DeltaAngle(baseAng, ang) + extraAng, s, pad);
         }
 
         void AddGlove(Vector2 pivot, float ang, float s, float pad)
@@ -968,64 +1094,67 @@ namespace FlockFive
         void DrawCoachGlove(float s)
         {
             if (!_gloveVis || _coachFade < 0.03f) return;
+            DrawGloveAt(_gloveShown, _gloveShownAng, 118f * s, _coachFade, _gloveDip);
+        }
+
+        void DrawGloveAt(Vector2 pivot, float ang, float dh, float alpha, float dip)
+        {
             var tex = CoachGloveTex();
             if (tex == null) return;
-            float dh = 118f * s;
             float dw = dh * (tex.width / (float)tex.height);
-            var pivot = _gloveShown;
             var rect = new Rect(
                 pivot.x - _gloveTipU * dw,
                 pivot.y - (1f - _gloveTipV) * dh,
                 dw, dh);
             // Scale in the glove's own up (finger) axis, then rotate, so the dip squashes the fingertip.
-            float widen = 1f + 0.07f * _gloveDip;
-            float squash = 1f - 0.12f * _gloveDip;
+            float widen = 1f + 0.07f * dip;
+            float squash = 1f - 0.12f * dip;
             var prev = GUI.matrix;
             var fro = Matrix4x4.TRS(new Vector3(-pivot.x, -pivot.y, 0f), Quaternion.identity, Vector3.one);
             var scale = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(widen, squash, 1f));
-            var rot = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 0f, _gloveShownAng), Vector3.one);
+            var rot = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 0f, ang), Vector3.one);
             var to = Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f), Quaternion.identity, Vector3.one);
             GUI.matrix = to * rot * scale * fro * prev;
-            GUI.color = new Color(1f, 1f, 1f, _coachFade);
+            GUI.color = new Color(1f, 1f, 1f, alpha);
             GUI.DrawTexture(rect, tex, ScaleMode.ScaleToFit, true);
             GUI.matrix = prev;
             GUI.color = Color.white;
         }
 
-        // Both ends of this hop. The glove still taps only the branch this step wants.
-        void DrawCoachArrows(float s)
+        // The hop's other perch. Same arched glove, off to the side, nodding on the tap arc.
+        // Not gated on the spotlight: that renderer is still off in the first hint frames.
+        void PoseRestGlove(float s)
         {
+            _restVis = false;
             if (!_coach || _won || _cueGift || !_cueHand || _coachFade < 0.03f) return;
-            if (_coachFrom < 0 || _coachTo < 0) return;
-            if (_coachGlow == null || !_coachGlow.enabled) return;
-            float bob = Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.3f)) * (6f * s);
-            DrawCoachArrow(_coachFrom, "1", 1f, s, bob);
-            DrawCoachArrow(_coachTo, "2", 0.84f, s, bob);
+            if (_coachFrom < 0 || _coachTo < 0 || _coachFrom == _coachTo) return;
+            if (_cueBranch != _coachFrom && _cueBranch != _coachTo) return;
+            int branch = _cueBranch == _coachFrom ? _coachTo : _coachFrom;
+            if (!CoachBranchAim(branch, out var aim)) return;
+            float margin = 130f * s;
+            CoachAimAway(aim, s, margin, out var away, out float gap);
+            var rest = aim + away * gap;
+            float hi = 0.40f;
+            TapArc(rest, aim, away, s, hi, out var farPos, out float farAng);
+            if (GloveHitsBirds(farPos, farAng, s)) hi = 0.18f;
+            float bob = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.6f));
+            float travel = Mathf.Lerp(0.06f, hi, bob);
+            TapArc(rest, aim, away, s, travel, out _restShown, out _restAng);
+            _restTip = rest;
+            _restAim = aim;
+            _restAway = away;
+            _restTravelHi = hi;
+            _restVis = true;
         }
 
-        void DrawCoachArrow(int branch, string badge, float mark, float s, float bob)
+        void DrawRestGlove(float s)
         {
-            if (!CoachBranchGui(branch, out var gui)) return;
-            var tex = CoachArrowTex();
-            if (tex == null) return;
-            float h = 50f * s * mark;
-            float w = h * (tex.width / (float)Mathf.Max(1, tex.height));
-            var arrow = new Rect(gui.x - w * 0.5f, gui.y - h + bob, w, h);
-            GUI.color = new Color(1f, 1f, 1f, _coachFade);
-            GUI.DrawTexture(arrow, tex, ScaleMode.ScaleToFit, true);
-            GUI.color = Color.white;
-            var st = CoachLineStyle();
-            float bw = 26f * s * mark;
-            float bh = 30f * s * mark;
-            var plate = new Rect(arrow.center.x - bw * 0.5f, arrow.y - bh * 0.62f, bw, bh);
-            st.fontSize = Mathf.Max(12, Mathf.RoundToInt(18f * s * mark));
-            int black = Mathf.Clamp(Mathf.CeilToInt(CoachOutlinePx * s), CoachOutlinePx, 8);
-            StampOutlined(plate, badge, st, new Color(1f, 0.96f, 0.82f, _coachFade), 0, black);
+            if (!_restVis || _coachFade < 0.03f) return;
+            DrawGloveAt(_restShown, _restAng, 118f * s * RestMark, _coachFade * RestAlpha, 0f);
         }
 
-        // Seat of the top bird, in GUI space, lifted clear of that bird. A hop takes the
-        // sprite off the limb; the arrow stays on the perch instead of riding along.
-        bool CoachBranchGui(int branch, out Vector2 gui)
+        // Perch the tap hand uses, in GUI space. Matches the lesson focus, not the gift sign.
+        bool CoachBranchAim(int branch, out Vector2 gui)
         {
             gui = default;
             var cam = _garden.Cam;
@@ -1035,22 +1164,24 @@ namespace FlockFive
             if ((uint)branch >= (uint)_board.Branches.Count) return false;
             var view = branches[branch];
             if (view == null) return false;
+            Vector3 focus = view.transform.position + Vector3.up * 0.4f;
             var st = _board.Branches[branch];
-            int seat = st.Count > 0 ? st.Count - 1 : 0;
-            if ((uint)seat >= (uint)view.Seats.Length) return false;
-            var world = view.SeatWorld(seat);
-            const float head = 1.25f;
-            if (st.Count > 0)
+            int run = st.TipRun();
+            if (st.Count > 0 && run > 0)
             {
-                var sr = (uint)seat < (uint)view.Birds.Length ? view.Birds[seat] : null;
-                if (sr != null && sr.transform.parent == view.transform)
-                    world.y = sr.transform.position.y;
-                else
-                    world.y += BranchView.RestLift;
-                world.y += head;
+                int tip = st.Count - 1;
+                int a = tip - run + 1;
+                Vector3 acc = Vector3.zero;
+                int n = 0;
+                for (int i = a; i <= tip; i++)
+                {
+                    if ((uint)i >= (uint)view.Seats.Length || view.Seats[i] == null) continue;
+                    acc += view.SeatWorld(i);
+                    n++;
+                }
+                if (n > 0) focus = acc / n + Vector3.up * 0.42f;
             }
-            else world.y += 0.72f;
-            var sp = cam.WorldToScreenPoint(world);
+            var sp = cam.WorldToScreenPoint(focus);
             if (sp.z < 0f) return false;
             gui = new Vector2(sp.x, Screen.height - sp.y);
             return true;
@@ -1058,12 +1189,18 @@ namespace FlockFive
 
         void DrawCoach(float s, float top)
         {
-            if (_levelHive) return;
+            if (_levelHive)
+            {
+                _restVis = false;
+                return;
+            }
+            PoseRestGlove(s);
             if (_cueLine != null)
                 DrawCoachLine(_cueLine, s, top);
+            if (_restVis)
+                DrawRestGlove(s);
             if (_cueHand)
                 DrawCoachGlove(s);
-            DrawCoachArrows(s);
         }
 
         // Drawn after the gift card so the wash does not cover the hand.
@@ -1173,13 +1310,14 @@ namespace FlockFive
         static Sprite _coachRipple;
         static float _gloveTipU = 0.39f, _gloveTipV = 0.87f;
 
-        // Outer silhouette. Same centers as the old tubes; radii are the old fill+outline
-        // so the index tip (GloveTip reach 24) and the glove's span stay put. Bases are
-        // a little fatter so each finger swells into the palm instead of staying a pipe.
+        // Outer silhouette. Same ends and radii as the straight tubes, so the index tip
+        // (GloveTip reach 24), the pivot, and the texture span stay put. Bow is the peak
+        // sagitta in pixels, to the left of base→tip. The index bows and meets its tip
+        // straight. The shorter fingers hook the other way. The thumb arches inward.
         struct CoachCap
         {
-            public float X0, Y0, X1, Y1, R0, R1;
-            public CoachCap(float x0, float y0, float x1, float y1, float r0, float r1)
+            public float X0, Y0, X1, Y1, R0, R1, Bow, Curl;
+            public CoachCap(float x0, float y0, float x1, float y1, float r0, float r1, float bow = 0f, float curl = 0f)
             {
                 X0 = x0;
                 Y0 = y0;
@@ -1187,6 +1325,8 @@ namespace FlockFive
                 Y1 = y1;
                 R0 = r0;
                 R1 = r1;
+                Bow = bow;
+                Curl = curl;
             }
         }
 
@@ -1195,11 +1335,11 @@ namespace FlockFive
             new CoachCap(72f, 44f, 148f, 44f, 34f, 34f),
             new CoachCap(88f, 66f, 138f, 104f, 42f, 42f),
             new CoachCap(116f, 94f, 116f, 94f, 40f, 40f),
-            new CoachCap(78f, 100f, 26f, 158f, 26f, 27f),
-            new CoachCap(192f, 106f, 200f, 136f, 18f, 17f),
-            new CoachCap(156f, 110f, 166f, 158f, 21f, 20f),
-            new CoachCap(128f, 114f, 134f, 180f, 23f, 22f),
-            new CoachCap(98f, 116f, 88f, 236f, 26f, 24f)
+            new CoachCap(78f, 100f, 26f, 158f, 26f, 27f, -7f, -1f),
+            new CoachCap(192f, 106f, 200f, 136f, 18f, 17f, -3f, 1f),
+            new CoachCap(156f, 110f, 166f, 158f, 21f, 20f, -6f, 1f),
+            new CoachCap(128f, 114f, 134f, 180f, 23f, 22f, -8f, 1f),
+            new CoachCap(98f, 116f, 88f, 236f, 26f, 24f, 16f, -1f)
         };
 
         static Texture2D CoachGloveTex()
@@ -1381,12 +1521,72 @@ namespace FlockFive
             float ax = c.X1 - c.X0;
             float ay = c.Y1 - c.Y0;
             float den = ax * ax + ay * ay;
-            float t = den < 0.0001f ? 0f : ((x - c.X0) * ax + (y - c.Y0) * ay) / den;
-            if (t < 0f) t = 0f;
-            else if (t > 1f) t = 1f;
-            rad = c.R0 + (c.R1 - c.R0) * t;
-            cx = c.X0 + ax * t;
-            cy = c.Y0 + ay * t;
+            if (Mathf.Abs(c.Bow) < 0.01f || den < 0.0001f)
+            {
+                float t = den < 0.0001f ? 0f : ((x - c.X0) * ax + (y - c.Y0) * ay) / den;
+                if (t < 0f) t = 0f;
+                else if (t > 1f) t = 1f;
+                rad = c.R0 + (c.R1 - c.R0) * t;
+                cx = c.X0 + ax * t;
+                cy = c.Y0 + ay * t;
+                return;
+            }
+            float best = 0f;
+            float bestD = 1e30f;
+            for (int i = 0; i <= 8; i++)
+            {
+                float sample = i / 8f;
+                GloveBowPoint(c, sample, out float sx, out float sy);
+                float ddx = x - sx;
+                float ddy = y - sy;
+                float d = ddx * ddx + ddy * ddy;
+                if (d < bestD)
+                {
+                    bestD = d;
+                    best = sample;
+                }
+            }
+            float t0 = best - 0.125f;
+            float t1 = best + 0.125f;
+            if (t0 < 0f) t0 = 0f;
+            if (t1 > 1f) t1 = 1f;
+            for (int i = 0; i < 8; i++)
+            {
+                float m0 = (2f * t0 + t1) / 3f;
+                float m1 = (t0 + 2f * t1) / 3f;
+                GloveBowPoint(c, m0, out float ax0, out float ay0);
+                GloveBowPoint(c, m1, out float bx, out float by);
+                float d0 = (x - ax0) * (x - ax0) + (y - ay0) * (y - ay0);
+                float d1 = (x - bx) * (x - bx) + (y - by) * (y - by);
+                if (d0 < d1) t1 = m1;
+                else t0 = m0;
+            }
+            float tf = (t0 + t1) * 0.5f;
+            GloveBowPoint(c, tf, out cx, out cy);
+            rad = c.R0 + (c.R1 - c.R0) * tf;
+        }
+
+        // Curl < 0 peaks mid-shaft and is flat at the tip. Curl > 0 hooks toward the tip.
+        static void GloveBowPoint(CoachCap c, float t, out float x, out float y)
+        {
+            float ax = c.X1 - c.X0;
+            float ay = c.Y1 - c.Y0;
+            float len = Mathf.Sqrt(ax * ax + ay * ay);
+            float px = 0f;
+            float py = 0f;
+            if (len > 0.001f)
+            {
+                px = -ay / len;
+                py = ax / len;
+            }
+            float u = 1f - t;
+            float amt;
+            if (c.Curl > 0.5f) amt = 6.75f * t * t * u;
+            else if (c.Curl < -0.5f) amt = 16f * t * t * u * u;
+            else amt = 4f * t * u;
+            float b = c.Bow * amt;
+            x = c.X0 + ax * t + px * b;
+            y = c.Y0 + ay * t + py * b;
         }
 
         static byte GloveByte(float v)

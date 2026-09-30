@@ -207,9 +207,21 @@ namespace FlockFive
                 bool tip = on && i >= _count - run && i < _count;
                 idle.Lift = tip ? 1.15f : 0f;
                 idle.Flapping = tip;
-                if (tip)
+                // Lift still draws the ring. Skip the extra feathers when rain and a scrap
+                // are already filling the screen.
+                if (tip && !RainScrap())
                     Wow.Shed(Birds[i].transform.position, idle.Color, transform.parent);
             }
+        }
+
+        static bool RainScrap()
+        {
+            if (GardenStorm.Wet < 0.2f) return false;
+            var sp = SparrowView.Live;
+            if (sp != null && sp.InScrap) return true;
+            var hk = HawkView.Live;
+            if (hk != null && hk.InScrap) return true;
+            return false;
         }
 
         int ReadyRun()

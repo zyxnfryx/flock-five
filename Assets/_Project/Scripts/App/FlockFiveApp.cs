@@ -49,6 +49,9 @@ namespace FlockFive
         readonly HashSet<int> _locked = new HashSet<int>();
         int _combo;
         float _comboUntil = -99f;
+        // Space COMBO lettering. NextCombo still climbs on every collect.
+        const float ComboPopGap = 2f;
+        float _comboPopAt = -99f;
         bool _collecting;
         bool _pestsArmed;
         float _nextTap;
@@ -311,9 +314,11 @@ namespace FlockFive
             if (_busy && !_frozen) return;
             if (Purse.Streak > 0)
             {
+                bool show = _gift != GiftFace.Card || !_keepStreak;
                 _keepStreak = true;
                 _freezeOffer = false;
                 _gift = GiftFace.Card;
+                if (show) AdLog.Add("branch offer shown (keep streak)");
                 Sfx.Chirp(BirdColor.Gold);
                 return;
             }
@@ -356,6 +361,7 @@ namespace FlockFive
             _pestsArmed = false;
             _combo = 0;
             _comboUntil = -99f;
+            _comboPopAt = -99f;
             _collecting = false;
             _locked.Clear();
             _levelBees.Clear();
@@ -2086,12 +2092,13 @@ namespace FlockFive
             }
             _collecting = true;
             Lock(branch);
-            if (combo >= 2)
+            if (combo >= 2 && Time.unscaledTime >= _comboPopAt)
             {
+                _comboPopAt = Time.unscaledTime + ComboPopGap;
                 Sfx.Combo(combo);
                 CamShake.Combo(combo);
                 var root = _garden.Root;
-                StartCoroutine(Wow.SlamCombo(root, combo));
+                StartCoroutine(PlayComboPop(root, combo));
                 StartCoroutine(Wow.FlockOver(root, combo));
                 int bursts = Mathf.Clamp(combo, 2, Palette.ComboMax);
                 for (int i = 0; i < bursts; i++)
@@ -2940,7 +2947,7 @@ namespace FlockFive
             if (_won || _board == null || _board.Won) return;
             if (_gift != GiftFace.None) return;
             if (GardenSolve.Look(_board) != GardenSolve.Outlook.Tangled) return;
-            _frozen = true;
+            // FreezeOver aborts if _frozen is already set. It has to set that flag itself.
             StartCoroutine(FreezeOver());
         }
 
@@ -2958,7 +2965,8 @@ namespace FlockFive
             StillBirds(true);
             if (_garden.Ice != null) yield return _garden.Ice.Coat();
             yield return new WaitForSeconds(0.45f);
-            _gift = GiftFace.Card;
+            if (_won || _gift != GiftFace.None) yield break;
+            RaiseGiftCard();
         }
 
         void StillBirds(bool on)
@@ -2993,6 +3001,7 @@ namespace FlockFive
                 _garden.Branches[_sel].SetReady(false);
             _sel = -1;
             _combo = 0;
+            _comboPopAt = -99f;
             _collecting = false;
             _locked.Clear();
             HaltBreaks();
@@ -4124,27 +4133,320 @@ namespace FlockFive
             StampOutlined(disc, lab, st, new Color(1f, 0.92f, 0.62f), 1, Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.08f)));
         }
 
-        void DrawNoAdsButton(Rect r, float s)
+        // Plate aspect matches SplashNoAdsRect (1.42 / 0.48). Baked once, not an asset.
+        const int VipPlateW = 284;
+        const int VipPlateH = 96;
+        const int VipStuds = 14;
+        static Texture2D _vipPlate;
+        static Texture2D _vipGem;
+        static Texture2D _vipCrown;
+
+        void DrawNoAdsButton(Rect r, float s, bool held)
         {
-            GUI.color = new Color(0.16f, 0.10f, 0.04f, 0.78f);
-            GUI.DrawTexture(r, Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.84f, 0.32f, 0.80f);
-            float t = 3f * s;
-            GUI.DrawTexture(new Rect(r.x + t, r.y + t, r.width - t * 2f, 2f * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(r.x + t, r.yMax - t - 2f * s, r.width - t * 2f, 2f * s), Texture2D.whiteTexture);
+            float sink = held ? r.height * 0.05f : 0f;
+            var plate = new Rect(r.x, r.y + sink, r.width, r.height);
+            var face = VipPlateTex();
+
+            float bloom = plate.height * 0.08f;
+            GUI.color = new Color(1f, 0.78f, 0.32f, held ? 0.08f : 0.20f);
+            GUI.DrawTexture(new Rect(plate.x - bloom, plate.y - bloom * 0.35f, plate.width + bloom * 2f, plate.height + bloom), face, ScaleMode.StretchToFill, true);
+
+            GUI.color = new Color(0.04f, 0.01f, 0.03f, held ? 0.22f : 0.42f);
+            GUI.DrawTexture(new Rect(r.x + 1.5f, r.y + (held ? 2f : 4f), r.width, r.height), face, ScaleMode.StretchToFill, true);
+
+            GUI.color = held ? new Color(0.82f, 0.80f, 0.76f, 1f) : Color.white;
+            GUI.DrawTexture(plate, face, ScaleMode.StretchToFill, true);
+            DrawVipShimmer(plate, held);
+
+            var crown = new Rect(
+                plate.center.x - plate.height * 0.32f,
+                plate.y + plate.height * 0.04f,
+                plate.height * 0.64f,
+                plate.height * 0.30f);
+            DrawVipStuds(plate, crown);
+            GUI.color = held ? new Color(0.90f, 0.88f, 0.82f, 1f) : Color.white;
+            GUI.DrawTexture(crown, VipCrownTex(), ScaleMode.ScaleToFit, true);
+            float gem = crown.height * 0.42f;
+            GUI.color = new Color(0.90f, 0.97f, 1f, held ? 0.85f : 1f);
+            GUI.DrawTexture(new Rect(crown.center.x - gem * 0.5f, crown.y + crown.height * 0.10f, gem, gem), VipGemTex(), ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
-            var st = new GUIStyle(GUI.skin.label)
+
+            var vipSt = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap = false
             };
-            string lab = NoAds.Owned ? "No Ads" : "No Ads";
-            st.fontSize = FitFont(st, lab, r.width * 0.86f, r.height * 0.62f, 12, 22);
-            var gold = NoAds.Owned
-                ? new Color(0.72f, 0.86f, 0.52f, 1f)
-                : new Color(1f, 0.92f, 0.62f, 1f);
-            StampOutlined(r, lab, st, gold, 1, 2);
+            var subSt = new GUIStyle(vipSt);
+            float textW = plate.width * 0.70f;
+            var vipR = new Rect(plate.center.x - textW * 0.5f, plate.y + plate.height * 0.32f, textW, plate.height * 0.40f);
+            var subR = new Rect(vipR.x, plate.y + plate.height * 0.70f, textW, plate.height * 0.22f);
+            vipSt.fontSize = FitFont(vipSt, "VIP", vipR.width, vipR.height * 0.92f, 10, 32);
+            subSt.fontSize = FitFont(subSt, "No Ads", subR.width, subR.height * 0.92f, 7, 16);
+            int edge = Mathf.Max(1, Mathf.RoundToInt(s));
+            StampOutlined(vipR, "VIP", vipSt, new Color(1f, 0.86f, 0.34f, 1f), 1, edge + 1);
+            StampOutlined(subR, "No Ads", subSt, new Color(0.96f, 0.80f, 0.42f, 0.95f), 0, 1);
+            GUI.color = Color.white;
+        }
+
+        static void DrawVipShimmer(Rect plate, bool held)
+        {
+            const float period = 4.8f;
+            const float dur = 0.9f;
+            float phase = Mathf.Repeat(Time.unscaledTime, period);
+            if (phase >= dur) return;
+            float t = phase / dur;
+            float fade = Mathf.Sin(t * Mathf.PI);
+            float band = plate.width * 0.20f;
+            float x = Mathf.Lerp(-band, plate.width, t);
+            float y0 = plate.height * 0.16f;
+            GUI.BeginGroup(plate);
+            GUI.color = new Color(1f, 0.96f, 0.78f, (held ? 0.10f : 0.28f) * fade);
+            GUI.DrawTexture(new Rect(x, y0, band, plate.height - y0 * 2f), GlowTex(), ScaleMode.StretchToFill, true);
+            GUI.EndGroup();
+            GUI.color = Color.white;
+        }
+
+        static void DrawVipStuds(Rect plate, Rect crown)
+        {
+            var gem = VipGemTex();
+            var glow = GlowTex();
+            float now = Time.unscaledTime;
+            for (int i = 0; i < VipStuds; i++)
+            {
+                VipStudPos(i, VipStuds, plate, out float x, out float y);
+                if (y < crown.yMax && x > crown.x && x < crown.xMax) continue;
+                float wave = Mathf.Sin(now * 1.15f + i * 0.72f);
+                float spark = wave > 0f ? Mathf.Pow(wave, 8f) : 0f;
+                float sz = plate.height * (0.15f + 0.10f * spark);
+                if (spark > 0.25f)
+                {
+                    float halo = sz * (1.6f + spark);
+                    GUI.color = new Color(0.82f, 0.94f, 1f, 0.45f * spark);
+                    GUI.DrawTexture(new Rect(x - halo * 0.5f, y - halo * 0.5f, halo, halo), glow, ScaleMode.ScaleToFit, true);
+                }
+                GUI.color = new Color(0.86f, 0.95f, 1f, 0.50f + 0.50f * spark);
+                GUI.DrawTexture(new Rect(x - sz * 0.5f, y - sz * 0.5f, sz, sz), gem, ScaleMode.ScaleToFit, true);
+            }
+            GUI.color = Color.white;
+        }
+
+        // Bezel centerline of a horizontal capsule. GUI y grows downward.
+        static void VipStudPos(int i, int n, Rect plate, out float x, out float y)
+        {
+            float rim = plate.height * 0.07f;
+            float rad = plate.height * 0.5f - rim;
+            float midY = plate.center.y;
+            float left = plate.x + plate.height * 0.5f;
+            float right = plate.xMax - plate.height * 0.5f;
+            float straight = Mathf.Max(0.01f, right - left);
+            float arc = Mathf.PI * Mathf.Max(0.01f, rad);
+            float peri = straight * 2f + arc * 2f;
+            float d = (i + 0.5f) / n * peri;
+            if (d < straight)
+            {
+                x = left + d;
+                y = midY - rad;
+                return;
+            }
+            d -= straight;
+            if (d < arc)
+            {
+                float th = d / Mathf.Max(0.01f, rad);
+                x = right + Mathf.Sin(th) * rad;
+                y = midY - Mathf.Cos(th) * rad;
+                return;
+            }
+            d -= arc;
+            if (d < straight)
+            {
+                x = right - d;
+                y = midY + rad;
+                return;
+            }
+            d -= straight;
+            float th2 = Mathf.PI + d / Mathf.Max(0.01f, rad);
+            x = left + Mathf.Sin(th2) * rad;
+            y = midY - Mathf.Cos(th2) * rad;
+        }
+
+        static Texture2D VipPlateTex()
+        {
+            if (_vipPlate != null) return _vipPlate;
+            var tex = NewVipTex(VipPlateW, VipPlateH, "VipPlate");
+            var px = new Color32[VipPlateW * VipPlateH];
+            float bezel = VipPlateH * 0.15f;
+            for (int y = 0; y < VipPlateH; y++)
+            {
+                float up = y / (float)(VipPlateH - 1);
+                for (int x = 0; x < VipPlateW; x++)
+                {
+                    float d = VipCapsule(x + 0.5f, y + 0.5f, VipPlateW, VipPlateH);
+                    float aa = Mathf.Clamp01(0.5f - d * 0.5f);
+                    if (aa <= 0.001f)
+                    {
+                        px[y * VipPlateW + x] = new Color32(0, 0, 0, 0);
+                        continue;
+                    }
+                    float inset = -d;
+                    Color c;
+                    if (inset < bezel)
+                    {
+                        Color deep = new Color(0.40f, 0.22f, 0.05f, 1f);
+                        Color mid = new Color(0.90f, 0.64f, 0.18f, 1f);
+                        Color bright = new Color(1f, 0.93f, 0.62f, 1f);
+                        c = Color.Lerp(deep, mid, Mathf.SmoothStep(0f, 0.55f, up));
+                        c = Color.Lerp(c, bright, Mathf.SmoothStep(0.58f, 1f, up) * 0.9f);
+                        float edge = Mathf.Clamp01(inset / 3.2f);
+                        c = Color.Lerp(new Color(0.20f, 0.10f, 0.03f, 1f), c, edge);
+                        float lip = Mathf.Clamp01((inset - bezel * 0.62f) / (bezel * 0.38f));
+                        c = Color.Lerp(c, bright, lip * 0.35f);
+                    }
+                    else
+                    {
+                        Color plum = Color.Lerp(new Color(0.04f, 0.015f, 0.03f, 1f), new Color(0.22f, 0.07f, 0.13f, 1f), up);
+                        float well = Mathf.Clamp01((inset - bezel) / 5f);
+                        c = Color.Lerp(new Color(0.02f, 0.005f, 0.015f, 1f), plum, well);
+                    }
+                    c.a = aa;
+                    px[y * VipPlateW + x] = (Color32)c;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _vipPlate = tex;
+            return tex;
+        }
+
+        static Texture2D VipGemTex()
+        {
+            if (_vipGem != null) return _vipGem;
+            const int n = 48;
+            var tex = NewVipTex(n, n, "VipGem");
+            var px = new Color32[n * n];
+            float c0 = (n - 1) * 0.5f;
+            for (int y = 0; y < n; y++)
+            {
+                for (int x = 0; x < n; x++)
+                {
+                    float u = (x - c0) / c0;
+                    float v = (y - c0) / c0;
+                    float dmd = Mathf.Abs(u) + Mathf.Abs(v);
+                    Color c = new Color(0f, 0f, 0f, 0f);
+                    if (dmd <= 1f)
+                    {
+                        float edge = Mathf.Clamp01((1f - dmd) / 0.16f);
+                        float facet = Mathf.Clamp01(0.30f + 0.70f * (v * 0.5f + 0.5f));
+                        c = Color.Lerp(new Color(0.38f, 0.62f, 1f, 1f), new Color(0.97f, 0.99f, 1f, 1f), facet);
+                        if (Mathf.Abs(u) < 0.08f) c = Color.Lerp(c, Color.white, 0.7f);
+                        c.a = edge;
+                    }
+                    else
+                    {
+                        float ray = Mathf.Min(Mathf.Abs(u), Mathf.Abs(v));
+                        float arm = Mathf.Max(Mathf.Abs(u), Mathf.Abs(v));
+                        if (ray < 0.07f && arm < 1.28f)
+                        {
+                            float a = (1f - arm / 1.28f) * (1f - ray / 0.07f);
+                            c = new Color(0.90f, 0.97f, 1f, a * 0.95f);
+                        }
+                    }
+                    px[y * n + x] = (Color32)c;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _vipGem = tex;
+            return tex;
+        }
+
+        static Texture2D VipCrownTex()
+        {
+            if (_vipCrown != null) return _vipCrown;
+            const int w = 128;
+            const int h = 72;
+            var tex = NewVipTex(w, h, "VipCrown");
+            var px = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    float fx = x + 0.5f;
+                    float fy = y + 0.5f;
+                    bool fill = VipCrownShape(fx, fy);
+                    bool outline = !fill && (
+                        VipCrownShape(fx + 2.2f, fy) || VipCrownShape(fx - 2.2f, fy) ||
+                        VipCrownShape(fx, fy + 2.2f) || VipCrownShape(fx, fy - 2.2f));
+                    if (!fill && !outline)
+                    {
+                        px[y * w + x] = new Color32(0, 0, 0, 0);
+                        continue;
+                    }
+                    Color c;
+                    if (!fill)
+                        c = new Color(0.08f, 0.03f, 0.04f, 0.92f);
+                    else
+                    {
+                        float up = fy / (h - 1f);
+                        c = Color.Lerp(new Color(0.46f, 0.26f, 0.06f, 1f), new Color(1f, 0.90f, 0.46f, 1f), Mathf.SmoothStep(0.05f, 0.9f, up));
+                        if (VipDisc(fx, fy, 64f, 46f, 8f))
+                            c = new Color(0.86f, 0.95f, 1f, 1f);
+                        else if (VipDisc(fx, fy, 34f, 36f, 4.5f) || VipDisc(fx, fy, 94f, 36f, 4.5f))
+                            c = new Color(0.86f, 0.18f, 0.32f, 1f);
+                    }
+                    px[y * w + x] = (Color32)c;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _vipCrown = tex;
+            return tex;
+        }
+
+        static bool VipCrownShape(float x, float y)
+        {
+            bool band = x >= 12f && x <= 116f && y >= 8f && y <= 28f;
+            bool left = VipInTri(x, y, 16f, 28f, 34f, 46f, 50f, 28f);
+            bool mid = VipInTri(x, y, 40f, 28f, 64f, 64f, 88f, 28f);
+            bool right = VipInTri(x, y, 78f, 28f, 94f, 46f, 112f, 28f);
+            return band || left || mid || right;
+        }
+
+        static bool VipInTri(float px, float py, float ax, float ay, float bx, float by, float cx, float cy)
+        {
+            float d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by);
+            float d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy);
+            float d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay);
+            bool neg = d1 < 0f || d2 < 0f || d3 < 0f;
+            bool pos = d1 > 0f || d2 > 0f || d3 > 0f;
+            return !(neg && pos);
+        }
+
+        static bool VipDisc(float x, float y, float cx, float cy, float r)
+        {
+            float dx = x - cx;
+            float dy = y - cy;
+            return dx * dx + dy * dy <= r * r;
+        }
+
+        static float VipCapsule(float x, float y, float w, float h)
+        {
+            float rad = h * 0.5f;
+            float cx = Mathf.Clamp(x, rad, w - rad);
+            float dx = x - cx;
+            float dy = y - rad;
+            return Mathf.Sqrt(dx * dx + dy * dy) - rad;
+        }
+
+        static Texture2D NewVipTex(int w, int h, string texName)
+        {
+            return new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = texName
+            };
         }
 
         void DismissStreakSign()
@@ -4567,6 +4869,8 @@ namespace FlockFive
                 StampOutlined(winR, winTx, winSt, new Color(1f, 0.90f, 0.28f, alpha), 1, Mathf.Max(3, Mathf.RoundToInt(winSt.fontSize * 0.12f)), 0.001f);
                 GUI.matrix = prevM;
             }
+            float halo = board.width * crownFrac + aura;
+            NoteComboStreak(new Rect(board.x - halo, board.y - halo, board.width + halo * 2f, board.height + halo * 2f));
             GUI.color = Color.white;
         }
 
@@ -4826,13 +5130,18 @@ namespace FlockFive
                 _home = HomeFace.Hive;
             DrawHiveButton(hiveR, s);
 
-            var noAdsR = SplashNoAdsRect();
-            if (!NoAds.Owned && HitPad(noAdsR, out bool noAdsHeld))
+            // NextPlay is the next level index. Clearing level 1 (index 0) stores 1.
+            // Owned still hides the offer and its hit target.
+            if (!NoAds.Owned && LevelData.NextPlay >= 1)
             {
-                Sfx.Clink();
-                NoAds.Buy();
+                var noAdsR = SplashNoAdsRect();
+                if (HitPad(noAdsR, out bool noAdsHeld))
+                {
+                    Sfx.Clink();
+                    NoAds.Buy();
+                }
+                DrawNoAdsButton(noAdsR, s, noAdsHeld);
             }
-            DrawNoAdsButton(noAdsR, s);
 
             // Third rail button: bird video poker.
             var pokerR = SplashPokerRect();
@@ -8774,6 +9083,7 @@ namespace FlockFive
         void OpenGift()
         {
             _giftBranch = -1;
+            if (_frozen) _freezeOffer = true;
             OpenGiftCard();
         }
 
@@ -8877,8 +9187,26 @@ namespace FlockFive
                 _sel = -1;
             }
             if (!_frozen) _freezeOffer = false;
-            _gift = GiftFace.Card;
+            RaiseGiftCard();
             Sfx.Chirp(BirdColor.Gold);
+        }
+
+        void RaiseGiftCard()
+        {
+            if (_gift == GiftFace.Card) return;
+            _gift = GiftFace.Card;
+            AdLog.Add("branch offer shown (" + OfferReason() + ")");
+        }
+
+        string OfferReason()
+        {
+            if (_keepStreak) return "keep streak";
+            if (_freezeOffer || _frozen)
+            {
+                bool noMove = _board == null || (!_board.HasHop() && _board.FindCollect() < 0);
+                return noMove ? "stuck, no moves" : "stuck, no way to win";
+            }
+            return "gift sign tapped";
         }
 
         void CloseGift()
@@ -8900,8 +9228,8 @@ namespace FlockFive
             yield return Ads.Rewarded();
             if (!Ads.LastGranted)
             {
-                _gift = GiftFace.Card;
                 _busy = false;
+                RaiseGiftCard();
                 yield break;
             }
             if (keep)
