@@ -628,8 +628,8 @@ namespace FlockFive
             if (_hiveIntroLive || _hiveLevelLive)
             {
                 float handS = Mathf.Max(Screen.height / 720f, 1f);
-                Vector2 aim = _splash ? SplashHiveRect().center : LevelHiveAim();
-                CoachGloveAt(aim, dt, handS);
+                Vector2 hiveAim = _splash ? SplashHiveRect().center : LevelHiveAim();
+                CoachGloveAt(hiveAim, dt, handS);
                 return;
             }
             if (_pokerIntroLive)
@@ -644,15 +644,15 @@ namespace FlockFive
             if (_dailyIntroLive)
             {
                 float handS = Mathf.Max(Screen.height / 720f, 1f);
-                Vector2 aim;
+                Vector2 dailyAim;
                 bool onClaim = _dailyOpen;
                 if (onClaim)
-                    aim = DailyClaimAim(handS);
+                    dailyAim = DailyClaimAim(handS);
                 else
                 {
                     var box = SplashDailyRect();
                     var seat = SplashRailSeat(RailDaily);
-                    aim = box.width > 12f ? box.center : seat.center;
+                    dailyAim = box.width > 12f ? box.center : seat.center;
                 }
                 if (onClaim != _dailyGloveOnClaim)
                 {
@@ -661,7 +661,7 @@ namespace FlockFive
                     _gloveDip = 0f;
                     _tapSent = false;
                 }
-                bool landed = CoachGloveAt(aim, dt, handS);
+                bool landed = CoachGloveAt(dailyAim, dt, handS);
                 if (landed && !_dailyOpen && RailSettled(RailDaily))
                     OpenDailyCard();
                 return;
@@ -789,8 +789,8 @@ namespace FlockFive
             {
                 // One glove on the reward branch. From the right when the limb is
                 // on the left; SideAbove flips the approach when the limb is on the right.
-                float side = aimGui.x < Screen.width * 0.5f ? 1f : -1f;
-                away = new Vector2(side, -0.82f).normalized;
+                float approach = aimGui.x < Screen.width * 0.5f ? 1f : -1f;
+                away = new Vector2(approach, -0.82f).normalized;
                 gap = Mathf.Max(gap, 72f * s);
             }
             else if (_pestCue != 0)

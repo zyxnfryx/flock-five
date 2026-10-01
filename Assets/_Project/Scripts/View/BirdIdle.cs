@@ -236,7 +236,7 @@ namespace FlockFive
                 float pulse = Mathf.Sin(u * Mathf.PI * 2f);
                 pulse = pulse < 0f ? 0f : pulse;
                 if (_sr != null)
-                    _sr.color = Color.Lerp(Color.white, new Color(1f, 0.18f, 0.14f), pulse * (1f - u * 0.35f));
+                    _sr.color = UnityEngine.Color.Lerp(UnityEngine.Color.white, new Color(1f, 0.18f, 0.14f), pulse * (1f - u * 0.35f));
                 float hop = Mathf.Sin(Mathf.Clamp01(u / 0.42f) * Mathf.PI) * 0.20f;
                 transform.localPosition = new Vector3(RestLocal.x, RestLocal.y + hop, RestLocal.z);
                 float lean = (FaceLeft ? 12f : -12f) * (1f - u);
@@ -546,8 +546,8 @@ namespace FlockFive
                 float rise = Mathf.Lerp(-0.2f, 1.55f, u);
                 float rad = 0.35f + u * 0.7f;
                 float hue = Mathf.Repeat(Time.time * 0.35f + i * 0.18f + _phase * 0.02f, 1f);
-                var col = Color.HSVToRGB(hue, 0.55f, 1f);
-                col = Color.Lerp(new Color(1f, 0.82f, 0.28f), col, 0.55f);
+                var col = UnityEngine.Color.HSVToRGB(hue, 0.55f, 1f);
+                col = UnityEngine.Color.Lerp(new Color(1f, 0.82f, 0.28f), col, 0.55f);
                 float fade = _cheerA * Mathf.Sin(u * Mathf.PI);
                 sp.sprite = (i & 1) == 0 ? SpriteCatalog.Sparkle : SpriteCatalog.Glow;
                 sp.color = new Color(col.r, col.g, col.b, fade);
