@@ -589,8 +589,8 @@ namespace FlockFive
                 float handS = Mathf.Max(Screen.height / 720f, 1f);
                 var box = SplashPokerRect();
                 var seat = SplashRailSeat(RailPoker);
-                Vector2 aim = box.width > 12f ? box.center : seat.center;
-                CoachGloveAt(aim, dt, handS);
+                Vector2 pokerAim = box.width > 12f ? box.center : seat.center;
+                CoachGloveAt(pokerAim, dt, handS);
                 return;
             }
             if (_pestCue != 0)
