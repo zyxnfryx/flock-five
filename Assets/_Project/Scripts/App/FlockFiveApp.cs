@@ -10804,15 +10804,28 @@ namespace FlockFive
             if (!_hiveTutorOn) return;
             float fade = _hiveTutorStep >= 4 ? 1f - Mathf.Clamp01(_hiveTutorT / 0.45f) : 1f;
             if (fade < 0.02f) return;
-            Vector2 aim = new Vector2(card.center.x, card.y + card.height * 0.42f);
+            float y = card.y + card.height * 0.46f;
+            bool fromRight = card.center.x < Screen.width * 0.5f;
+            bool mirror = !fromRight;
+            float ang = ClampUpright(mirror);
+            float outward = fromRight ? 1f : -1f;
+            var safe = CoachSafeGui(8f * s);
+            float cuff = fromRight ? safe.xMax : safe.xMin;
             float travel = _hiveTutorStep == 0 ? Mathf.Clamp01(_hiveTutorT / 0.48f) : 1f;
             travel = travel * travel * (3f - 2f * travel);
-            var from = new Vector2(aim.x, aim.y - card.height * 0.36f);
-            var pivot = Vector2.Lerp(from, aim, travel);
+            // Cuff on the screen edge, index toward the card. The poke stays short
+            // so the hand does not travel across the face.
+            float gloveBack = 0.90f * 118f * s;
+            float tip = cuff - outward * (gloveBack + 14f * s * travel);
+            float mid = card.center.x;
+            if (fromRight) { if (tip < mid) tip = mid; }
+            else if (tip > mid) tip = mid;
+            var pivot = new Vector2(tip, y);
+            var aim = new Vector2(mid, y);
             float dip = 0f;
             if (_hiveTutorStep == 0 && _hiveTutorT > 0.40f)
                 dip = Mathf.Sin(Mathf.Clamp01((_hiveTutorT - 0.40f) / 0.22f) * Mathf.PI);
-            ChooseUpright(180f, out float ang, out bool mirror);
+            SeatGlove(ref pivot, ref ang, aim, s, ref mirror, dip);
             DrawGloveAt(pivot, ang, 118f * s, fade, dip, mirror);
         }
 

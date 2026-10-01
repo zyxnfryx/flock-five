@@ -3,10 +3,12 @@ using UnityEngine;
 namespace FlockFive
 {
     // First garden: every hint shares one thick black edge, a soft glow under the
-    // branch the step wants, and one gloved hand. The hand stays upright (thumb
-    // on the top side): a target on the other side mirrors across X instead of
-    // rotating past upright. Hands come in from the side and above, except a
-    // pest, which sits beside the body so it does not cover it.
+    // branch the step wants, and one gloved hand. The hand points sideways. A
+    // target on the left half is a right hand from the right, pointing left. A
+    // target on the right half mirrors the sprite into a left hand from the left,
+    // pointing right. The cuff sits toward the screen edge, the index aims at the
+    // target, and the tap is a short poke along that line so the hand stays off
+    // the bird. The pose clock is unscaled, so GamePause does not freeze it.
     // Other taps wait. One glove on screen at a time.
     public sealed partial class FlockFiveApp
     {
@@ -36,7 +38,7 @@ namespace FlockFive
         const float PestCueGap = 1.05f;
         // One outline for every coach line. StampCoach is the only draw path.
         const int CoachOutlinePx = 6;
-        // Sweep along the arc, soft dip, rise back, short pause. 0.56+0.26+0.22+0.16 = 1.20s.
+        // Poke along the finger, soft curl, draw back, short pause. 0.56+0.26+0.22+0.16 = 1.20s.
         const float TapHover = 0.56f;
         const float TapPress = 0.26f;
         const float TapLift = 0.22f;
@@ -749,63 +751,18 @@ namespace FlockFive
             _gloveReady = false;
         }
 
-        // Same arc-point as the tutorial glove. aimGui is GUI space, y down.
-        // True on the frame the fingertip lands.
+        // Shared pose for every glove: tap, hive, daily, gift, hawk, leaves, sparrow.
+        // aimGui is GUI space, y down. True on the frame the poke lands.
         bool CoachGloveAt(Vector2 aimGui, float dt, float s)
         {
             _cueAimGui = aimGui;
-            float margin = 130f * s;
-            CoachAimAway(_cueAimGui, s, margin, out var away, out float gap, false);
-            // Right-rail buttons and the Watch flower. The hand comes from the side
-            // and above; ChooseUpright mirrors when that side would roll the thumb.
-            if (_adHand)
-            {
-                away = new Vector2(1f, -0.85f).normalized;
-                gap = Mathf.Max(gap, 84f * s);
-            }
-            else if (_welcomeGlove)
-            {
-                away = new Vector2(1f, -0.85f).normalized;
-                gap = Mathf.Max(gap, 76f * s);
-            }
-            else if (_hiveIntroLive)
-            {
-                away = new Vector2(1f, -0.8f).normalized;
-                gap = Mathf.Max(gap, 72f * s);
-            }
-            else if (_pokerIntroLive)
-            {
-                away = new Vector2(1f, -0.8f).normalized;
-                gap = Mathf.Max(gap, 76f * s);
-            }
-            else if (_dailyIntroLive)
-            {
-                // Left-rail gift. The hand comes from the right, above the medallion,
-                // and the same side when it moves down onto Claim.
-                away = new Vector2(1f, -0.8f).normalized;
-                gap = Mathf.Max(gap, _dailyOpen ? 84f * s : 76f * s);
-            }
-            else if (_cueGift || LeftOpenBonus(_cueBranch))
-            {
-                // One glove on the reward branch. From the right when the limb is
-                // on the left; SideAbove flips the approach when the limb is on the right.
-                float approach = aimGui.x < Screen.width * 0.5f ? 1f : -1f;
-                away = new Vector2(approach, -0.82f).normalized;
-                gap = Mathf.Max(gap, 72f * s);
-            }
-            else if (_pestCue != 0)
-            {
-                // Beside the pest and a little above the contact. SideAbove would
-                // drop the palm onto a hawk that is already at the top of the screen.
-                float ox = aimGui.x >= Screen.width * 0.5f ? 1f : -1f;
-                away = new Vector2(ox * 1.15f, -0.38f).normalized;
-                gap = Mathf.Max(gap, 114f * s);
-            }
-            if (_pestCue == 0)
-                away = SideAbove(away);
+            CoachAimAway(_cueAimGui, s, out var away, out float gap);
             var rest = _cueAimGui + away * gap;
-            float rawAng = Mathf.Atan2(-away.x, away.y) * Mathf.Rad2Deg;
-            ChooseUpright(rawAng, out float ang, out _gloveMirror);
+            // Side is the screen half only. A mostly vertical vector must not
+            // turn the finger down or swap which hand is showing.
+            bool prevMirror = _gloveMirror;
+            _gloveMirror = _cueAimGui.x >= Screen.width * 0.5f;
+            float ang = ClampUpright(_gloveMirror);
             _gloveRest = rest;
             _gloveRestAng = ang;
             // Same branch keeps the glide. Crossing to the hop's other branch takes the
@@ -814,7 +771,10 @@ namespace FlockFive
                 && _gloveBranch >= 0 && _cueBranch >= 0 && _gloveBranch != _cueBranch
                 && (_gloveBranch == _coachFrom || _gloveBranch == _coachTo)
                 && (_cueBranch == _coachFrom || _cueBranch == _coachTo);
-            if (!_gloveReady || swap)
+            // Crossing the screen midline swaps right hand for left. Snap, or the
+            // damp spins the finger through straight up.
+            bool handFlip = _gloveReady && prevMirror != _gloveMirror;
+            if (!_gloveReady || swap || handFlip)
             {
                 _gloveTip = rest;
                 _gloveVel = Vector2.zero;
@@ -851,119 +811,74 @@ namespace FlockFive
             }
             _glovePhase = nextPhase;
             if (fire) _tapSent = true;
-            // The crossing frame draws the bottom of the arc, where the ripple is sent.
+            // The landing frame is the end of the poke, where the ripple is sent.
             float posePhase = fire ? pressAt : _glovePhase;
             _gloveDip = TapDip(posePhase);
             float travel = TapTravel(posePhase);
-            TapArc(_gloveTip, _cueAimGui, _gloveAway, s, travel, out var arcPos, out float arcAng, _gloveMirror);
-            float wig = Mathf.Sin(Time.unscaledTime * 46f) * 8f * _gloveWiggle;
-            var side = CurlSide(_gloveAway, _gloveMirror);
-            _gloveShown = arcPos + side * wig * (1f - travel);
-            float baseAng = Mathf.Atan2(-_gloveAway.x, _gloveAway.y) * Mathf.Rad2Deg;
-            // Press nods with the curl. Positive flexes the unmirrored hand; the mirror flips it.
-            float nod = 11f * _gloveDip * (_gloveMirror ? -1f : 1f);
-            _gloveShownAng = _gloveAng + Mathf.DeltaAngle(baseAng, arcAng)
-                + Mathf.Sin(Time.unscaledTime * 46f) * 7f * _gloveWiggle + nod;
-            _gloveShownAng = ClampUpright(_gloveShownAng, _gloveMirror);
+            TapArc(_gloveTip, _cueAimGui, _gloveAway, s, travel, out var arcPos, out _, _gloveMirror);
+            float wig = Mathf.Sin(Time.unscaledTime * 46f) * 7f * _gloveWiggle;
+            var axis = _gloveAway.sqrMagnitude > 0.0001f ? _gloveAway.normalized : away;
+            _gloveShown = arcPos - axis * wig * (1f - travel);
+            _gloveShownAng = ang;
             SeatGlove(ref _gloveShown, ref _gloveShownAng, _cueAimGui, s, ref _gloveMirror, _gloveDip);
-            _gloveShownAng = ClampUpright(_gloveShownAng + nod * 0.35f, _gloveMirror);
+            _gloveShownAng = ClampUpright(_gloveMirror);
             _gloveVis = true;
             return fire;
         }
 
-        // Hand sits off the lifted flock, always to one side and above the aim.
-        // GUI y grows down, so a positive away.y would rise into the target from underneath.
-        void CoachAimAway(Vector2 aim, float s, float margin, out Vector2 away, out float gap, bool mirror = false)
+        // Horizontal approach. Left half is met from the right (right hand, points
+        // left). Right half is met from the left (mirrored left hand, points right).
+        // The cuff is the far end of that line, toward the screen edge. Gap grows
+        // until the glove clears the bird and still fits on screen.
+        void CoachAimAway(Vector2 aim, float s, out Vector2 away, out float gap)
         {
-            gap = 52f * s;
-            // Left half of the screen is met from the right, right half from the left.
-            float hx = aim.x < Screen.width * 0.5f ? 1f : -1f;
-            float sx = hx;
-            if (LiftedGuiCenter(out var flock))
+            bool fromRight = aim.x < Screen.width * 0.5f;
+            away = new Vector2(fromRight ? 1f : -1f, 0f);
+            bool mirror = !fromRight;
+            float ang = ClampUpright(mirror);
+            float floor = SideGap(s);
+            var safe = CoachSafeGui(12f * s);
+            float dh = 118f * s;
+            gap = floor;
+            float clear = -1f;
+            for (int i = 0; i < 8; i++)
             {
-                float dx = aim.x - flock.x;
-                float dy = aim.y - flock.y;
-                if (dx * dx + dy * dy > 36f * 36f && Mathf.Abs(dx) > 24f)
-                    sx = dx >= 0f ? 1f : -1f;
-            }
-            bool nearTop = aim.y < margin * 0.55f;
-            float y0 = nearTop ? -0.4f : -0.78f;
-            float y1 = nearTop ? -0.78f : -1.05f;
-            float y2 = nearTop ? -1.05f : -0.4f;
-            float bestHx = hx, bestHy = y0, bestGap = gap;
-            bool found = false;
-            float[] xs = { sx, hx, -hx };
-            float[] ys = { y0, y1, y2 };
-            for (int g = 0; g < 3 && !found; g++)
-            {
-                float tryGap = (52f + 28f * g) * s;
-                for (int i = 0; i < xs.Length && !found; i++)
+                float tryGap = floor + 20f * s * i;
+                var rest = aim + away * tryGap;
+                float poke = TapReach(tryGap, s);
+                var near = rest - away * poke;
+                bool hits = GloveHitsBirds(rest, ang, s, mirror) || GloveHitsBirds(near, ang, s, mirror)
+                    || GloveHitsPest(rest, ang, s, mirror) || GloveHitsPest(near, ang, s, mirror);
+                bool fits = GloveFits(rest, ang, dh, 0f, mirror, safe) && GloveFits(near, ang, dh, 0f, mirror, safe);
+                if (!hits)
                 {
-                    for (int k = 0; k < ys.Length && !found; k++)
+                    clear = tryGap;
+                    if (fits)
                     {
-                        float cx = xs[i];
-                        float cy = ys[k];
-                        if (cy >= 0f) continue;
-                        var dir = new Vector2(cx, cy).normalized;
-                        float ang = Mathf.Atan2(-dir.x, dir.y) * Mathf.Rad2Deg;
-                        var rest = aim + dir * tryGap;
-                        // The whole glove has to sit in the safe area, not only the fingertip.
-                        if (!GloveFits(rest, ang, 118f * s, 0f, mirror, CoachSafeGui(12f * s))) continue;
-                        if (GloveHitsBirds(rest, ang, s, mirror) || GloveHitsBirds(aim, ang, s, mirror)) continue;
-                        if (ArcHitsBirds(rest, aim, dir, s, mirror)) continue;
-                        bestHx = cx;
-                        bestHy = cy;
-                        bestGap = tryGap;
-                        found = true;
+                        gap = tryGap;
+                        return;
                     }
                 }
+                if (!fits) break;
             }
-            gap = bestGap;
-            away = SideAbove(new Vector2(bestHx, bestHy));
+            // A clear pose whose cuff leaves the screen still beats one that covers the bird.
+            if (clear > 0f) gap = clear;
         }
 
-        // Side component required, and the rest stays above the aim.
-        static Vector2 SideAbove(Vector2 away)
+        // Branch and pest aims sit on a body. The fingertip starts outside that body
+        // so the palm, which trails the index, does not cover it.
+        float SideGap(float s)
         {
-            if (away.sqrMagnitude < 0.0001f) return new Vector2(1f, -0.8f).normalized;
-            float x = away.x;
-            if (Mathf.Abs(x) < 0.55f) x = x >= 0f ? 0.78f : -0.78f;
-            float y = away.y;
-            if (y > -0.72f) y = -0.85f;
-            return new Vector2(x, y).normalized;
-        }
-
-        bool LiftedGuiCenter(out Vector2 gui)
-        {
-            gui = default;
+            float gap = 48f * s;
+            bool atBird = _pestCue != 0
+                || (_leafIntro && _cueBranch >= 0)
+                || (_coach && _cueBranch >= 0 && !_cueGift);
+            if (!atBird) return gap;
             var cam = _garden.Cam;
-            var branches = _garden.Branches;
-            if (cam == null || branches == null) return false;
-            float sx = 0f, sy = 0f;
-            int n = 0;
-            for (int b = 0; b < branches.Length; b++)
-            {
-                var view = branches[b];
-                if (view == null) continue;
-                var birds = view.Birds;
-                for (int i = 0; i < birds.Length; i++)
-                {
-                    var sr = birds[i];
-                    if (sr == null || !sr.enabled || !sr.gameObject.activeInHierarchy) continue;
-                    var idle = sr.GetComponent<BirdIdle>();
-                    if (idle == null || idle.Shrouded || idle.Lift < 0.9f) continue;
-                    var p = view.transform.TransformPoint(new Vector3(
-                        idle.RestLocal.x, idle.RestLocal.y + idle.Lift, idle.RestLocal.z));
-                    var sp = cam.WorldToScreenPoint(p);
-                    if (sp.z < 0f) continue;
-                    sx += sp.x;
-                    sy += Screen.height - sp.y;
-                    n++;
-                }
-            }
-            if (n == 0) return false;
-            gui = new Vector2(sx / n, sy / n);
-            return true;
+            if (cam == null || !cam.orthographic) return Mathf.Max(gap, 72f * s);
+            float span = cam.orthographicSize * 2f;
+            if (span < 0.01f) return Mathf.Max(gap, 72f * s);
+            return Mathf.Max(gap, LiftHalfW * (Screen.height / span) + 16f * s);
         }
 
         bool GloveHitsBirds(Vector2 pivot, float ang, float s, bool mirror = false)
@@ -976,16 +891,36 @@ namespace FlockFive
             return CoachBirdsBlock(box, 0f);
         }
 
-        // Side hold and the widest part of the sweep. Rest and the aim are checked by the caller.
-        bool ArcHitsBirds(Vector2 rest, Vector2 aim, Vector2 away, float s, bool mirror = false)
+        // Hawk and sparrow are not lifted birds. The same rect test keeps the palm off the body.
+        bool GloveHitsPest(Vector2 pivot, float ang, float s, bool mirror)
         {
-            TapArc(rest, aim, away, s, 0f, out var sidePos, out float sideAng, mirror);
-            if (GloveHitsBirds(sidePos, sideAng, s, mirror)) return true;
-            TapArc(rest, aim, away, s, 0.22f, out var bowPos, out float bowAng, mirror);
-            return GloveHitsBirds(bowPos, bowAng, s, mirror);
+            if (_pestCue == 0) return false;
+            Transform body = null;
+            if (_pestCue == PestCueSparrow && SparrowView.Live != null)
+                body = SparrowView.Live.transform;
+            else if (_pestCue == PestCueHawk && HawkView.Live != null)
+                body = HawkView.Live.transform;
+            if (body == null) return false;
+            var sr = body.GetComponent<SpriteRenderer>();
+            if (sr == null || !sr.enabled || sr.sprite == null) return false;
+            var cam = _garden.Cam;
+            if (cam == null) return false;
+            var b = sr.bounds;
+            var a = cam.WorldToScreenPoint(new Vector3(b.min.x, b.max.y, 0f));
+            var c = cam.WorldToScreenPoint(new Vector3(b.max.x, b.min.y, 0f));
+            if (a.z < 0f && c.z < 0f) return false;
+            float pad = 4f * s;
+            float gx0 = (a.x < c.x ? a.x : c.x) - pad;
+            float gx1 = (a.x > c.x ? a.x : c.x) + pad;
+            float gy0 = Screen.height - (a.y > c.y ? a.y : c.y) - pad;
+            float gy1 = Screen.height - (a.y < c.y ? a.y : c.y) + pad;
+            float dh = 118f * s;
+            var rect = GloveRect(pivot, dh, mirror);
+            if (!RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 6f * s, out var box)) return false;
+            return box.xMax >= gx0 && box.xMin <= gx1 && box.yMax >= gy0 && box.yMin <= gy1;
         }
 
-        // 0 through the sweep, 1 at the bottom of the arc. The dip and the lift both ease.
+        // 0 through the poke, 1 at full reach. The curl and the return both ease.
         static float TapDip(float phase)
         {
             float pressAt = TapHover + TapPress;
@@ -1005,7 +940,7 @@ namespace FlockFive
             return 0f;
         }
 
-        // 0 at the side pose, 1 on the target. One ease in, the same curve back out.
+        // 0 at the side hold, 1 at the end of the poke. One ease in, the same curve back out.
         static float TapTravel(float phase)
         {
             float pressAt = TapHover + TapPress;
@@ -1024,60 +959,23 @@ namespace FlockFive
             return 0f;
         }
 
-        // Curl side of the finger. mirror flips the knuckles. A result that points
-        // down the screen is turned back up, so the sweep curls in from above.
-        static Vector2 CurlSide(Vector2 away, bool mirror)
+        // Short travel toward the aim along the finger. Stays inside the side gap
+        // so the tip points at the target without landing on it.
+        static float TapReach(float gap, float s)
         {
-            var side = new Vector2(away.y, -away.x);
-            if (mirror) side = -side;
-            if (side.y > 0f) side = -side;
-            return side;
+            if (gap < 1f) return 0f;
+            return Mathf.Min(18f * s, gap * 0.42f);
         }
 
-        // Curved path from the side, over the top, onto the aim. The bow flattens
-        // at the end, so the last of the ease is along the finger. ang has no press nod.
+        // Straight poke from the side hold toward the aim. ang stays horizontal.
         static void TapArc(Vector2 rest, Vector2 aim, Vector2 away, float s, float t,
             out Vector2 pos, out float ang, bool mirror = false)
         {
-            float baseAng = Mathf.Atan2(-away.x, away.y) * Mathf.Rad2Deg;
-            float gap = Vector2.Distance(rest, aim);
-            if (gap < 1f || away.sqrMagnitude < 0.0001f)
-            {
-                pos = aim;
-                ang = ClampUpright(baseAng, mirror);
-                return;
-            }
-            var side = CurlSide(away, mirror);
-            const float bow = 5.5f;
-            float sweep = Mathf.Min(gap * 0.46f, 36f * s);
-            float peakT = (bow - 2f) / (3f * bow);
-            float peakU = 1f - peakT;
-            float peak = sweep * peakU * peakU * (1f + bow * peakT);
-            float allow = FitAlong(rest, side, peak);
-            if (peak > 0.001f && allow < peak) sweep *= allow / peak;
-            float u = 1f - t;
-            float lateral = sweep * u * u * (1f + bow * t);
-            pos = aim + away * (gap * u) + side * lateral;
-            float dLat = sweep * (-2f * u * (1f + bow * t) + u * u * bow);
-            var travel = -away * gap + side * dLat;
-            if (travel.sqrMagnitude < 0.0001f) travel = -away;
-            travel.Normalize();
-            float arcAng = Mathf.Atan2(travel.x, -travel.y) * Mathf.Rad2Deg;
-            float delta = Mathf.Clamp(Mathf.DeltaAngle(baseAng, arcAng), -18f, 18f);
-            ang = ClampUpright(baseAng + delta * (1f - t), mirror);
-        }
-
-        // How far `dir` (unit) can go from origin before the point leaves the screen.
-        static float FitAlong(Vector2 origin, Vector2 dir, float want)
-        {
-            if (want <= 0f) return 0f;
-            const float m = 8f;
-            float lim = want;
-            if (dir.x > 0.02f) lim = Mathf.Min(lim, (Screen.width - m - origin.x) / dir.x);
-            else if (dir.x < -0.02f) lim = Mathf.Min(lim, (origin.x - m) / -dir.x);
-            if (dir.y > 0.02f) lim = Mathf.Min(lim, (Screen.height - m - origin.y) / dir.y);
-            else if (dir.y < -0.02f) lim = Mathf.Min(lim, (origin.y - m) / -dir.y);
-            return lim > 0f ? lim : 0f;
+            if (away.sqrMagnitude < 0.0001f) away = new Vector2(1f, 0f);
+            else away.Normalize();
+            float poke = TapReach(Vector2.Distance(rest, aim), s);
+            pos = rest - away * (poke * Mathf.Clamp01(t));
+            ang = ClampUpright(mirror);
         }
 
         // Safe area in GUI space, inset so the outline does not sit on the notch.
@@ -1093,36 +991,12 @@ namespace FlockFive
             return new Rect(safe.x + m, safe.y + m, safe.width - m * 2f, safe.height - m * 2f);
         }
 
-        // Finger angle: texture up aims from `from` toward `to` (GUI y grows downward).
-        // 0 is finger-up. ±180 is straight down, which is the over-the-top point.
-        static float GlovePointAng(Vector2 from, Vector2 to)
+        // False is the right hand pointing left. True is the mirrored left hand pointing right.
+        // -90 points left, +90 points right. 0 would be finger-up and 180 finger-down;
+        // neither is used.
+        static float ClampUpright(bool mirror)
         {
-            float dx = to.x - from.x;
-            float dy = to.y - from.y;
-            if (dx * dx + dy * dy < 0.25f) return float.NaN;
-            return Mathf.Atan2(dx, -dy) * Mathf.Rad2Deg;
-        }
-
-        // Keep the point within 68° of straight down so the wrist stays above the
-        // fingers. mirror is the horizontal flip that puts the thumb on the top
-        // side: true when the finger aims to the left of straight down.
-        const float GloveUpright = 68f;
-
-        static void ChooseUpright(float raw, out float ang, out bool mirror)
-        {
-            float lean = Mathf.DeltaAngle(180f, raw);
-            mirror = lean > 0f;
-            ang = ClampUpright(raw, mirror);
-        }
-
-        static float ClampUpright(float ang, bool mirror)
-        {
-            float lean = Mathf.DeltaAngle(180f, ang);
-            if (lean > GloveUpright) lean = GloveUpright;
-            if (lean < -GloveUpright) lean = -GloveUpright;
-            if (mirror && lean < 0f) lean = 0f;
-            if (!mirror && lean > 0f) lean = 0f;
-            return Mathf.DeltaAngle(0f, 180f + lean);
+            return mirror ? 90f : -90f;
         }
 
         // Drawn rect after the same scale-then-rotate DrawGloveAt applies. Mirror flips local X.
@@ -1186,61 +1060,29 @@ namespace FlockFive
             return dx * dx + dy * dy > 0.25f;
         }
 
-        // Keep the full glove rect inside the safe area. A pose that already fits is left
-        // alone, so the tap arc keeps its reach. An overflowing pose shifts inward; the
-        // finger stays aimed at the target, and the fingertip comes back in as far as the body allows.
+        // A pose that already fits is left alone, so the poke keeps its reach.
+        // An overflow may slide perpendicular to the finger (the index stays level
+        // with the target). It does not slide toward the target: that lays the palm
+        // on the bird. The cuff may leave the screen on the edge side.
         static void SeatGlove(ref Vector2 pivot, ref float ang, Vector2 aim, float s, ref bool mirror, float dip)
         {
+            // The caller picked the hand from the screen half. Sliding to fit
+            // must not retarget the finger, or a high branch turns it straight down.
+            ang = ClampUpright(mirror);
             float dh = 118f * s;
             var safe = CoachSafeGui(12f * s);
-            float raw = GlovePointAng(pivot, aim);
-            if (float.IsNaN(raw)) ang = ClampUpright(ang, mirror);
-            else ChooseUpright(raw, out ang, out mirror);
             if (GloveFits(pivot, ang, dh, dip, mirror, safe)) return;
             for (int n = 0; n < 4; n++)
             {
                 GloveSpan(pivot, ang, dh, dip, mirror, out float x0, out float y0, out float x1, out float y1);
                 if (!GlovePush(x0, y0, x1, y1, safe, out var push)) break;
+                var toward = aim - pivot;
+                float along = Vector2.Dot(push, toward);
+                if (along > 0f && toward.sqrMagnitude > 1f)
+                    push -= toward * (along / toward.sqrMagnitude);
+                if (push.sqrMagnitude < 0.25f) break;
                 pivot += push;
-                raw = GlovePointAng(pivot, aim);
-                if (float.IsNaN(raw)) ang = ClampUpright(ang, mirror);
-                else ChooseUpright(raw, out ang, out mirror);
-            }
-            float dist = Vector2.Distance(pivot, aim);
-            if (dist > 1f)
-            {
-                var dir = (aim - pivot) / dist;
-                float lo = 0f;
-                float hi = dist;
-                var origin = pivot;
-                for (int i = 0; i < 8; i++)
-                {
-                    float mid = (lo + hi) * 0.5f;
-                    var tryP = origin + dir * mid;
-                    float tryRaw = GlovePointAng(tryP, aim);
-                    float tryA;
-                    bool tryM;
-                    if (float.IsNaN(tryRaw))
-                    {
-                        hi = mid;
-                        continue;
-                    }
-                    ChooseUpright(tryRaw, out tryA, out tryM);
-                    if (GloveFits(tryP, tryA, dh, dip, tryM, safe)) lo = mid;
-                    else hi = mid;
-                }
-                pivot = origin + dir * lo;
-                raw = GlovePointAng(pivot, aim);
-                if (float.IsNaN(raw)) ang = ClampUpright(ang, mirror);
-                else ChooseUpright(raw, out ang, out mirror);
-            }
-            for (int n = 0; n < 3; n++)
-            {
-                GloveSpan(pivot, ang, dh, dip, mirror, out float x0, out float y0, out float x1, out float y1);
-                if (!GlovePush(x0, y0, x1, y1, safe, out var push)) break;
-                pivot += push;
-                raw = GlovePointAng(pivot, aim);
-                if (!float.IsNaN(raw)) ChooseUpright(raw, out ang, out mirror);
+                ang = ClampUpright(mirror);
             }
         }
 
@@ -1386,7 +1228,7 @@ namespace FlockFive
             StampOutlined(r, text, st, new Color(1f, 0.98f, 0.90f, _coachFade), 0, black);
         }
 
-        // Highest band that clears the glove's tap sweep and the lifted birds' hop.
+        // Highest band that clears the glove's poke and the lifted birds' hop.
         // The usual spot is just under the top inset; when a high branch's birds rise
         // into it, the next open band (often below that hop, clear of the glove) is used.
         float CoachLineY(string text, float s, float hudTop, float w, float h)
@@ -1422,7 +1264,7 @@ namespace FlockFive
             return minY;
         }
 
-        // Glove sweep plus each lifted bird, once per line placement. The scan below only
+        // Glove poke plus each lifted bird, once per line placement. The scan below only
         // tests this list, so it does not walk the flock on every candidate row.
         void CoachFillBlocks(float s)
         {
@@ -1431,12 +1273,11 @@ namespace FlockFive
             float pad = 12f * s;
             if (_gloveVis)
             {
-                float nod = 11f * (_gloveMirror ? -1f : 1f);
                 AddGlove(_gloveShown, _gloveShownAng, s, pad, _gloveMirror);
-                AddArcPose(0f, s, pad, 0f);
-                AddArcPose(0.22f, s, pad, 0f);
-                AddArcPose(0.55f, s, pad, 0f);
-                AddArcPose(1f, s, pad, nod);
+                AddArcPose(0f, s, pad);
+                AddArcPose(0.22f, s, pad);
+                AddArcPose(0.55f, s, pad);
+                AddArcPose(1f, s, pad);
             }
             if (_restVis)
             {
@@ -1457,15 +1298,13 @@ namespace FlockFive
             AddGlove(pos, ang, drawS, pad, _restMirror);
         }
 
-        void AddArcPose(float t, float s, float pad, float extraAng)
+        void AddArcPose(float t, float s, float pad)
         {
             if (_gloveAway.sqrMagnitude < 0.0001f) return;
             TapArc(_gloveTip, _cueAimGui, _gloveAway, s, t, out var pos, out float ang, _gloveMirror);
-            float baseAng = Mathf.Atan2(-_gloveAway.x, _gloveAway.y) * Mathf.Rad2Deg;
-            float shown = _gloveRestAng + Mathf.DeltaAngle(baseAng, ang) + extraAng;
             bool arcMirror = _gloveMirror;
-            SeatGlove(ref pos, ref shown, _cueAimGui, s, ref arcMirror, 0f);
-            AddGlove(pos, shown, s, pad, _gloveMirror);
+            SeatGlove(ref pos, ref ang, _cueAimGui, s, ref arcMirror, 0f);
+            AddGlove(pos, ang, s, pad, _gloveMirror);
         }
 
         void AddGlove(Vector2 pivot, float ang, float s, float pad, bool mirror = false)
@@ -1622,9 +1461,9 @@ namespace FlockFive
         {
             var tex = CoachGloveCurl(dip);
             if (tex == null) return;
-            // Gentle point along the finger. Unscaled so a pause does not freeze it.
+            ang = ClampUpright(mirror);
+            // Small poke along the finger, not a vertical bob. Unscaled so GamePause does not freeze it.
             float bob = Mathf.Sin(Time.unscaledTime * 2.35f) * dh * 0.028f;
-            ang += Mathf.Sin(Time.unscaledTime * 2.35f + 0.6f) * 2.4f;
             float rad = ang * Mathf.Deg2Rad;
             pivot += new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
             float dw = dh * (tex.width / (float)tex.height);
@@ -2577,13 +2416,8 @@ namespace FlockFive
                 if (sr != null && sr.enabled && sr.sprite != null)
                 {
                     var b = sr.bounds;
-                    // Lower outer corner, just off the sprite, so the fingertip points
-                    // at the pest and the palm stays beside it.
-                    float ox = b.center.x >= 0f ? 1f : -1f;
-                    world = new Vector3(
-                        b.center.x + ox * (b.extents.x + 0.28f),
-                        b.min.y + b.extents.y * 0.42f,
-                        b.center.z);
+                    // Body center. The hand sits off to the side and points in, so the palm stays off the pest.
+                    world = new Vector3(b.center.x, b.center.y, b.center.z);
                 }
             }
             else if (_garden.Feeders != null && (uint)slot < (uint)_garden.Feeders.Length && _garden.Feeders[slot] != null)
