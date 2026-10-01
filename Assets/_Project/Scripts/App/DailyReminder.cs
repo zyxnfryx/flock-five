@@ -12,10 +12,14 @@ namespace FlockFive
 {
     // Local reminder for the daily bonus. com.unity.mobile.notifications 2.4.x.
     // Editor and desktop builds compile the same methods with no native calls.
-    // iOS permission is requested only after the first claim, not at launch.
+    // Nothing here requests permission. The OS prompt runs only from Accept,
+    // after the player says yes on the in-game card. Reschedule is a no-op
+    // until that permission is already granted.
     public static class DailyReminder
     {
         const string PrefAsked = "flockfive.daily.asked";
+        const string PrefYes = "flockfive.daily.askYes";
+        const string PrefAsks = "flockfive.daily.askN";
         const string PrefNoteReady = "flockfive.daily.noteReady";
         const string PrefNoteKeep = "flockfive.daily.noteKeep";
         const string ReadyBody = "Your daily coins are ready.";
@@ -59,8 +63,10 @@ namespace FlockFive
             _armClaimed = claimedToday;
             _armRisk = atRisk && streak >= 2;
 #if UNITY_IOS && !UNITY_EDITOR
+            if (!IosGranted()) return;
             ScheduleIos();
 #elif UNITY_ANDROID && !UNITY_EDITOR
+            if (!AndroidGranted()) return;
             ScheduleAndroid();
 #else
             // No notification assembly in the editor or on desktop. Read the armed
@@ -69,40 +75,89 @@ namespace FlockFive
 #endif
         }
 
-        // First successful claim only. Later opens reschedule without asking again.
-        public static void AskAfterFirstClaim(int streak, bool claimedToday, bool atRisk)
+        // In-game "want a reminder?" card. Two answers total. Yes is the only
+        // path that constructs an authorization request. Not now spends one ask.
+        public static bool PromptDue()
         {
-            if (streak < 0) streak = 0;
-            _armStreak = streak;
-            _armClaimed = claimedToday;
-            _armRisk = atRisk && streak >= 2;
+            if (OsGranted()) return false;
+            if (PlayerPrefs.GetInt(PrefYes, 0) != 0) return false;
+            if (PlayerPrefs.GetInt(PrefAsked, 0) != 0) return false;
+            return PlayerPrefs.GetInt(PrefAsks, 0) < 2;
+        }
+
+        public static void Accept()
+        {
+            if (PlayerPrefs.GetInt(PrefAsks, 0) < 2)
+                PlayerPrefs.SetInt(PrefAsks, PlayerPrefs.GetInt(PrefAsks, 0) + 1);
+            PlayerPrefs.SetInt(PrefYes, 1);
+            PlayerPrefs.SetInt(PrefAsked, 1);
+            PlayerPrefs.Save();
 #if UNITY_IOS && !UNITY_EDITOR
-            if (PlayerPrefs.GetInt(PrefAsked, 0) == 0)
+            try
             {
-                PlayerPrefs.SetInt(PrefAsked, 1);
-                PlayerPrefs.Save();
-                try
-                {
-                    _iosAuth = new AuthorizationRequest(AuthorizationOption.Alert | AuthorizationOption.Sound, false);
-                    return;
-                }
-                catch (Exception) { }
+                _iosAuth = new AuthorizationRequest(AuthorizationOption.Alert | AuthorizationOption.Sound, false);
+                return;
             }
+            catch (Exception) { }
 #elif UNITY_ANDROID && !UNITY_EDITOR
-            if (PlayerPrefs.GetInt(PrefAsked, 0) == 0)
+            try
             {
-                PlayerPrefs.SetInt(PrefAsked, 1);
-                PlayerPrefs.Save();
-                try
-                {
-                    _androidAuth = new PermissionRequest();
-                    return;
-                }
-                catch (Exception) { }
+                _androidAuth = new PermissionRequest();
+                return;
             }
+            catch (Exception) { }
 #endif
             Reschedule(_armStreak, _armClaimed, _armRisk);
         }
+
+        public static void Decline()
+        {
+            int n = PlayerPrefs.GetInt(PrefAsks, 0);
+            if (n < 2) PlayerPrefs.SetInt(PrefAsks, n + 1);
+            PlayerPrefs.Save();
+        }
+
+        static bool OsGranted()
+        {
+#if UNITY_IOS && !UNITY_EDITOR
+            return IosGranted();
+#elif UNITY_ANDROID && !UNITY_EDITOR
+            return AndroidGranted();
+#else
+            return false;
+#endif
+        }
+
+#if UNITY_IOS && !UNITY_EDITOR
+        static bool IosGranted()
+        {
+            try
+            {
+                var st = iOSNotificationCenter.GetNotificationSettings().AuthorizationStatus;
+                return st == AuthorizationStatus.Authorized
+                    || st == AuthorizationStatus.Provisional
+                    || st == AuthorizationStatus.Ephemeral;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+#endif
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        static bool AndroidGranted()
+        {
+            try
+            {
+                return AndroidNotificationCenter.UserPermissionToPost == PermissionStatus.Allowed;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+#endif
 
         public static void Tick()
         {

@@ -277,6 +277,36 @@ namespace FlockFive
                 return _padlock;
             }
         }
+
+        // Card back, paper, palm, thumb, chain, padlock, sparkle, glow, wild, 3 foils, 15 faces.
+        const int PokerArtSteps = 8 + 1 + 3 + Palette.Max * 3;
+        static int _pokerArtStep;
+        public static bool PokerArtReady => _pokerArtStep >= PokerArtSteps;
+
+        // One Resources.Load per call. Caller draws the texture offscreen so the GPU upload
+        // is not the first card flip.
+        public static Sprite PokerArtWarmStep()
+        {
+            if (_pokerArtStep >= PokerArtSteps) return null;
+            int i = _pokerArtStep++;
+            if (i == 0) return CardBack;
+            if (i == 1) return CardPaper;
+            if (i == 2) return HandPalm;
+            if (i == 3) return HandThumb;
+            if (i == 4) return Chain;
+            if (i == 5) return Padlock;
+            if (i == 6) return Sparkle;
+            if (i == 7) return Glow;
+            if (i == 8) return PokerFace(BirdPoker.Card.MakeWild());
+            if (i < 12) return PokerWildFoil(i - 9);
+            int k = i - 12;
+            return PokerFace(BirdPoker.Card.Of((BirdColor)(k % Palette.Max), (BirdSex)(k / Palette.Max)));
+        }
+
+        public static void PokerArtWarmFinish()
+        {
+            while (!PokerArtReady) PokerArtWarmStep();
+        }
         public static Sprite Flame(int i)
         {
             if (_flames == null) _flames = new Sprite[6];

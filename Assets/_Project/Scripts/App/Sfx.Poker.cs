@@ -14,25 +14,42 @@ namespace FlockFive
         static int _lastCardSlap = -1;
         static int _lastCardBump = -1;
         static int _lastCardTap = -1;
+        static int _pokerWarmStep;
+        const int PokerWarmSteps = 4 + 8 + 8 + 4 + 6;
+
+        public static bool PokerWarmDone => _pokerWarmStep >= PokerWarmSteps && _riffles != null;
+
+        // One procedural clip per call so the page-open frames absorb the cost.
+        public static void PokerWarmStep()
+        {
+            Ensure();
+            if (_riffles == null)
+            {
+                _riffles = new AudioClip[4];
+                _cardWhoosh = new AudioClip[8];
+                _cardSlap = new AudioClip[8];
+                _cardBump = new AudioClip[4];
+                _cardTap = new AudioClip[6];
+                _pokerWarmStep = 0;
+            }
+            if (_pokerWarmStep >= PokerWarmSteps) return;
+            int i = _pokerWarmStep++;
+            if (i < 4) _riffles[i] = MakeRiffle(i);
+            else if (i < 12) _cardWhoosh[i - 4] = MakeCardWhoosh(i - 4);
+            else if (i < 20) _cardSlap[i - 12] = MakeCardSlap(i - 12);
+            else if (i < 24) _cardBump[i - 20] = MakeCardBump(i - 20);
+            else _cardTap[i - 24] = MakeCardTap(i - 24);
+        }
+
+        public static void PokerWarmFinish()
+        {
+            while (!PokerWarmDone) PokerWarmStep();
+        }
 
         static void WarmPokerClips()
         {
-            if (_riffles != null) return;
-            _riffles = new AudioClip[4];
-            for (int k = 0; k < _riffles.Length; k++)
-                _riffles[k] = MakeRiffle(k);
-            _cardWhoosh = new AudioClip[8];
-            for (int k = 0; k < _cardWhoosh.Length; k++)
-                _cardWhoosh[k] = MakeCardWhoosh(k);
-            _cardSlap = new AudioClip[8];
-            for (int k = 0; k < _cardSlap.Length; k++)
-                _cardSlap[k] = MakeCardSlap(k);
-            _cardBump = new AudioClip[4];
-            for (int k = 0; k < _cardBump.Length; k++)
-                _cardBump[k] = MakeCardBump(k);
-            _cardTap = new AudioClip[6];
-            for (int k = 0; k < _cardTap.Length; k++)
-                _cardTap[k] = MakeCardTap(k);
+            if (PokerWarmDone) return;
+            PokerWarmFinish();
         }
 
         public static void Riffle()

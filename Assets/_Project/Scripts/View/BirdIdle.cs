@@ -28,6 +28,10 @@ namespace FlockFive
         bool _glowHidden = true;
         bool _kitGlowHidden = true;
         float _glowA;
+        SpriteRenderer[] _aura;
+        SpriteRenderer[] _twink;
+        float _selectA;
+        float _cheerA;
         static Material _silhouette;
         float _phase;
         float _liftShown;
@@ -38,6 +42,12 @@ namespace FlockFive
         float _blinkUntil;
         float _nextBlink;
         float _cheerUntil;
+        float _alertFrom;
+        float _alertUntil;
+        Transform[] _zzz;
+        SpriteRenderer[] _zzzSr;
+        SpriteRenderer _bang;
+        static Sprite _bangSpr;
 
         void Awake()
         {
@@ -90,6 +100,19 @@ namespace FlockFive
         }
 
         // One seated bounce. Restores whatever Lift the perch already had.
+        // Matching feeder arrived. Eyes open, one startled hop, red flash. The "!" is local.
+        public void WakeAlert()
+        {
+            Sleeping = false;
+            _blinkUntil = 0f;
+            _nextBlink = Time.time + 0.9f;
+            _alertFrom = Time.time;
+            _alertUntil = Time.time + 0.46f;
+            EnsureBang();
+            if (_bang != null) _bang.enabled = true;
+            HideZzz();
+        }
+
         public void HopCheer(float delay, float hop)
         {
             if (!isActiveAndEnabled || Frozen || Shrouded || Sleeping) return;
@@ -187,38 +210,61 @@ namespace FlockFive
             if (kitOn) EnsureKit();
             PlaceKit(mood, kitOn);
             PlaceFace(mood, show && !Shrouded);
-            float glow = 0f;
-            if (show && !Shrouded && !Sleeping)
-            {
-                if (!Frozen && Lift >= 1f) glow = 1f;
-                if (Time.time < _cheerUntil) glow = Mathf.Max(glow, 0.62f);
-            }
-            PlaceGlow(glow);
+            // White silhouette only used to mean "selected". Selection is the colored
+            // aura. A cheer (feeder clear, hawk wave, finale) is twinkles, including
+            // while Frozen, and never that halo. Flight sets Lift with Frozen and stays dark.
+            bool selected = show && !Shrouded && !Sleeping && !Frozen && Lift >= 1f;
+            bool cheering = show && !Shrouded && Time.time < _cheerUntil;
+            PlaceSelect(selected);
+            PlaceCheerFx(cheering);
             if (fly && !Frozen) BeatWings();
             else if (show && !Sleeping && !Shrouded && !Frozen) MaybeRuffle();
 
             if (Frozen) return;
             if (Shrouded)
             {
+                HideZzz();
+                HideBang();
                 transform.localPosition = RestLocal;
                 transform.localRotation = Quaternion.identity;
                 transform.localScale = RestScale;
                 return;
             }
-            float wantLift = Sleeping ? -0.10f : Lift;
+            if (Time.time < _alertUntil)
+            {
+                float u = Mathf.Clamp01((Time.time - _alertFrom) / 0.46f);
+                float pulse = Mathf.Sin(u * Mathf.PI * 2f);
+                pulse = pulse < 0f ? 0f : pulse;
+                if (_sr != null)
+                    _sr.color = Color.Lerp(Color.white, new Color(1f, 0.18f, 0.14f), pulse * (1f - u * 0.35f));
+                float hop = Mathf.Sin(Mathf.Clamp01(u / 0.42f) * Mathf.PI) * 0.20f;
+                transform.localPosition = new Vector3(RestLocal.x, RestLocal.y + hop, RestLocal.z);
+                float lean = (FaceLeft ? 12f : -12f) * (1f - u);
+                transform.localRotation = Quaternion.Euler(0f, 0f, lean);
+                float sc = mood.Scale * (1f + 0.05f * pulse);
+                transform.localScale = new Vector3(RestScale.x * sc, RestScale.y * sc, 1f);
+                PlaceBang(u);
+                HideZzz();
+                return;
+            }
+            HideBang();
+            float wantLift = Sleeping ? -0.16f : Lift;
             _liftShown = Mathf.MoveTowards(_liftShown, wantLift, 4.2f * Time.deltaTime);
             float scale = mood.Scale;
             if (Sleeping)
             {
-                float snore = Mathf.Sin(Time.time * (Color == BirdColor.Violet ? 1.35f : 1.7f) + _phase);
-                float droop = Color == BirdColor.Violet ? 0.04f : 0.025f;
+                float snore = Mathf.Sin(Time.time * (Color == BirdColor.Violet ? 1.15f : 1.45f) + _phase);
+                float droop = Color == BirdColor.Violet ? 0.055f : 0.04f;
                 transform.localPosition = new Vector3(RestLocal.x, RestLocal.y + snore * droop + _liftShown, RestLocal.z);
-                float z = (FaceLeft ? 8f : -8f) + snore * 2.5f + mood.Lean * 0.35f;
+                float tuck = FaceLeft ? 16f : -16f;
+                float z = tuck + snore * 3.2f + mood.Lean * 0.25f;
                 transform.localRotation = Quaternion.Euler(0f, 0f, z);
-                float breathe = 1f + snore * 0.03f;
-                transform.localScale = new Vector3(RestScale.x * scale * breathe, RestScale.y * scale * (2f - breathe), 1f);
+                float breathe = 1f + snore * 0.045f;
+                transform.localScale = new Vector3(RestScale.x * scale * breathe, RestScale.y * scale * (2f - breathe) * 0.98f, 1f);
+                PlaceZzz(snore);
                 return;
             }
+            HideZzz();
             float look = Color == BirdColor.Teal ? Mathf.Sin(Time.time * 1.15f + _phase) * mood.Tilt : Mathf.Sin(Time.time * 5.1f + _phase) * mood.Tilt;
             float bob = Mathf.Sin(Time.time * mood.BobHz + _phase) * (fly ? mood.BobAmp * 3.2f : mood.BobAmp);
             float beat = Mathf.Sin(Time.time * 21f + _phase);
@@ -233,10 +279,8 @@ namespace FlockFive
 
         const float FlapRate = 1.25f;
 
-        // Selected run (BranchView.SetReady lifts tip birds to Lift 1.15) gets a thick
-        // white border. It is drawn from the SAME sprite as the body (and kit): a ring of
-        // white-silhouette copies pushed outward, one sorting step behind. Same sprite,
-        // pivot, transform and flip as the bird, so it can't drift off the bird.
+        // Selected run (BranchView.SetReady lifts tip birds to Lift 1.15) draws
+        // PlaceSelect. The silhouette ring below is unused; celebrations do not call it.
         const int GlowRing = 16;           // copies per ring
         const float GlowSolidPx = 9.5f;    // inner ring radius, in body source px
         const float GlowSoftPx = 14.5f;     // outer (soft) ring radius, in body source px
@@ -312,6 +356,248 @@ namespace FlockFive
             }
         }
 
+        void HideZzz()
+        {
+            if (_zzz == null) return;
+            for (int i = 0; i < _zzz.Length; i++)
+                if (_zzz[i] != null) _zzz[i].gameObject.SetActive(false);
+        }
+
+        void EnsureZzz()
+        {
+            if (_zzz != null) return;
+            _zzz = new Transform[2];
+            _zzzSr = new SpriteRenderer[2];
+            var zee = SpriteCatalog.Zee;
+            if (zee == null) return;
+            for (int i = 0; i < 2; i++)
+            {
+                var go = WorldBuilder.Sprite("Z" + i, zee, transform.position, 0.12f, 14, transform);
+                go.SetActive(false);
+                _zzz[i] = go.transform;
+                _zzzSr[i] = go.GetComponent<SpriteRenderer>();
+            }
+        }
+
+        // Two bubbles per bird, offset so a full row does not snore in unison.
+        void PlaceZzz(float snore)
+        {
+            EnsureZzz();
+            if (_zzz == null || _zzz[0] == null) return;
+            float side = FaceLeft ? -1f : 1f;
+            for (int i = 0; i < _zzz.Length; i++)
+            {
+                if (_zzz[i] == null) continue;
+                _zzz[i].gameObject.SetActive(true);
+                float u = Mathf.Repeat(Time.time * (0.42f + 0.08f * i) + _phase * 0.17f + i * 0.53f, 1f);
+                float x = side * (0.22f + 0.08f * i) + Mathf.Sin(Time.time * 1.3f + _phase + i) * 0.04f;
+                float y = 0.62f + u * 0.55f + i * 0.05f;
+                _zzz[i].localPosition = new Vector3(x, y, 0f);
+                float pulse = 0.11f + 0.04f * i + 0.015f * snore;
+                _zzz[i].localScale = Vector3.one * pulse * (0.75f + 0.35f * (1f - u));
+                _zzz[i].localRotation = Quaternion.identity;
+                if (_zzzSr[i] != null)
+                {
+                    var c = new Color(0.93f, 0.95f, 1f, 1f);
+                    c.a = (0.25f + 0.7f * (1f - u)) * (0.85f + 0.15f * snore);
+                    _zzzSr[i].color = c;
+                    _zzzSr[i].sortingOrder = _sr != null ? _sr.sortingOrder + 3 : 15;
+                }
+            }
+        }
+
+        void HideBang()
+        {
+            if (_bang != null) _bang.enabled = false;
+        }
+
+        void EnsureBang()
+        {
+            if (_bang != null) return;
+            if (_bangSpr == null) _bangSpr = MakeBang();
+            if (_bangSpr == null) return;
+            var go = WorldBuilder.Sprite("Alert", _bangSpr, transform.position, 0.2f, 16, transform);
+            _bang = go.GetComponent<SpriteRenderer>();
+            _bang.enabled = false;
+        }
+
+        static Sprite MakeBang()
+        {
+            const int w = 24;
+            const int h = 48;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = "AlertBang"
+            };
+            var px = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    float nx = (x + 0.5f) / w - 0.5f;
+                    float ny = (y + 0.5f) / h;
+                    bool bar = ny > 0.28f && ny < 0.96f && Mathf.Abs(nx) < 0.16f;
+                    bool dot = ny < 0.18f && nx * nx + (ny - 0.09f) * (ny - 0.09f) * 4f < 0.012f;
+                    if (!bar && !dot)
+                    {
+                        px[y * w + x] = new Color32(0, 0, 0, 0);
+                        continue;
+                    }
+                    px[y * w + x] = new Color32(255, 42, 36, 255);
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0f), 48f);
+        }
+
+        void PlaceBang(float u)
+        {
+            if (_bang == null) return;
+            _bang.enabled = true;
+            float pop = Mathf.Sin(Mathf.Clamp01(u / 0.28f) * Mathf.PI * 0.5f);
+            float fade = u < 0.72f ? 1f : Mathf.Clamp01((1f - u) / 0.28f);
+            float side = FaceLeft ? -0.16f : 0.16f;
+            _bang.transform.localPosition = new Vector3(side, 0.78f + pop * 0.12f, 0f);
+            float sc = Mathf.Lerp(0.35f, 1.15f, pop) * (0.9f + 0.1f * fade);
+            _bang.transform.localScale = Vector3.one * sc;
+            _bang.transform.localRotation = Quaternion.identity;
+            _bang.color = new Color(1f, 0.16f, 0.12f, fade);
+            _bang.sortingOrder = _sr != null ? _sr.sortingOrder + 4 : 16;
+        }
+
+        void PlaceSelect(bool on)
+        {
+            _selectA = Mathf.MoveTowards(_selectA, on ? 1f : 0f, 8f * Time.deltaTime);
+            if (_selectA <= 0.01f)
+            {
+                HideFx(_aura);
+                return;
+            }
+            EnsureAura();
+            var tint = Wow.Of(Color);
+            float pulse = 0.72f + 0.28f * Mathf.Sin(Time.time * 5.2f + _phase);
+            float a = _selectA * pulse;
+            int order = _sr != null ? _sr.sortingOrder : 12;
+            int layer = _sr != null ? _sr.sortingLayerID : 0;
+            var halo = _aura[0];
+            halo.sprite = SpriteCatalog.Glow;
+            halo.color = new Color(tint.r, tint.g, tint.b, 0.40f * a);
+            halo.transform.localPosition = new Vector3(0f, 0.42f, 0f);
+            halo.transform.localRotation = Quaternion.identity;
+            halo.transform.localScale = Vector3.one * (3.15f + 0.28f * pulse);
+            halo.sortingOrder = order - 3;
+            halo.sortingLayerID = layer;
+            halo.enabled = true;
+            float spin = Time.time * 70f + _phase * 20f;
+            for (int i = 0; i < 5; i++)
+            {
+                var dot = _aura[1 + i];
+                float ang = (spin + i * 72f) * Mathf.Deg2Rad;
+                dot.sprite = SpriteCatalog.Glow;
+                dot.color = new Color(tint.r, tint.g, tint.b, 0.88f * a);
+                dot.transform.localPosition = new Vector3(Mathf.Cos(ang) * 1.15f, 0.42f + Mathf.Sin(ang) * 1.15f, 0f);
+                dot.transform.localRotation = Quaternion.identity;
+                dot.transform.localScale = Vector3.one * 0.42f;
+                dot.sortingOrder = order + 3;
+                dot.sortingLayerID = layer;
+                dot.enabled = true;
+            }
+            for (int i = 0; i < 3; i++)
+            {
+                var sp = _aura[6 + i];
+                float ang = (-spin * 1.35f + i * 120f) * Mathf.Deg2Rad;
+                float rad = 1.45f + 0.12f * Mathf.Sin(Time.time * 3f + i);
+                float tw = 0.28f + 0.10f * Mathf.Sin(Time.time * 8f + i * 2f);
+                sp.sprite = SpriteCatalog.Sparkle;
+                sp.color = new Color(
+                    Mathf.Lerp(tint.r, 1f, 0.35f),
+                    Mathf.Lerp(tint.g, 1f, 0.35f),
+                    Mathf.Lerp(tint.b, 1f, 0.35f),
+                    0.92f * a);
+                sp.transform.localPosition = new Vector3(Mathf.Cos(ang) * rad, 0.42f + Mathf.Sin(ang) * rad * 0.82f, 0f);
+                sp.transform.localScale = Vector3.one * tw;
+                sp.transform.localRotation = Quaternion.Euler(0f, 0f, Time.time * 120f + i * 40f);
+                sp.sortingOrder = order + 4;
+                sp.sortingLayerID = layer;
+                sp.enabled = true;
+            }
+        }
+
+        void PlaceCheerFx(bool on)
+        {
+            _cheerA = Mathf.MoveTowards(_cheerA, on ? 1f : 0f, 7f * Time.deltaTime);
+            if (_cheerA <= 0.01f)
+            {
+                HideFx(_twink);
+                return;
+            }
+            EnsureTwink();
+            int order = _sr != null ? _sr.sortingOrder : 12;
+            int layer = _sr != null ? _sr.sortingLayerID : 0;
+            for (int i = 0; i < _twink.Length; i++)
+            {
+                var sp = _twink[i];
+                float u = Mathf.Repeat(Time.time * 0.85f + _phase * 0.17f + i * 0.25f, 1f);
+                float ang = (i * 90f + u * 40f) * Mathf.Deg2Rad;
+                float rise = Mathf.Lerp(-0.2f, 1.55f, u);
+                float rad = 0.35f + u * 0.7f;
+                float hue = Mathf.Repeat(Time.time * 0.35f + i * 0.18f + _phase * 0.02f, 1f);
+                var col = Color.HSVToRGB(hue, 0.55f, 1f);
+                col = Color.Lerp(new Color(1f, 0.82f, 0.28f), col, 0.55f);
+                float fade = _cheerA * Mathf.Sin(u * Mathf.PI);
+                sp.sprite = (i & 1) == 0 ? SpriteCatalog.Sparkle : SpriteCatalog.Glow;
+                sp.color = new Color(col.r, col.g, col.b, fade);
+                sp.transform.localPosition = new Vector3(Mathf.Cos(ang) * rad, rise, 0f);
+                float sc = ((i & 1) == 0 ? 0.34f : 0.55f) * (0.65f + 0.45f * Mathf.Sin(u * Mathf.PI));
+                sp.transform.localScale = Vector3.one * sc;
+                sp.transform.localRotation = Quaternion.Euler(0f, 0f, u * 180f + i * 30f);
+                sp.sortingOrder = order + 5;
+                sp.sortingLayerID = layer;
+                sp.enabled = true;
+            }
+        }
+
+        void EnsureAura()
+        {
+            if (_aura != null) return;
+            _aura = new SpriteRenderer[9];
+            for (int i = 0; i < _aura.Length; i++)
+            {
+                var spr = i >= 6 ? SpriteCatalog.Sparkle : SpriteCatalog.Glow;
+                var go = WorldBuilder.Sprite(i == 0 ? "Aura" : "AuraBit", spr, transform.position, 0.2f, 11, transform);
+                go.transform.localRotation = Quaternion.identity;
+                var sr = go.GetComponent<SpriteRenderer>();
+                sr.enabled = false;
+                _aura[i] = sr;
+            }
+        }
+
+        void EnsureTwink()
+        {
+            if (_twink != null) return;
+            _twink = new SpriteRenderer[4];
+            for (int i = 0; i < _twink.Length; i++)
+            {
+                var spr = (i & 1) == 0 ? SpriteCatalog.Sparkle : SpriteCatalog.Glow;
+                var go = WorldBuilder.Sprite("Twink", spr, transform.position, 0.2f, 14, transform);
+                go.transform.localRotation = Quaternion.identity;
+                var sr = go.GetComponent<SpriteRenderer>();
+                sr.enabled = false;
+                _twink[i] = sr;
+            }
+        }
+
+        static void HideFx(SpriteRenderer[] fx)
+        {
+            if (fx == null) return;
+            for (int i = 0; i < fx.Length; i++)
+                if (fx[i] != null) fx[i].enabled = false;
+        }
+
         void PlaceGlow(float target)
         {
             _glowA = Mathf.MoveTowards(_glowA, Mathf.Clamp01(target), 9f * Time.deltaTime);
@@ -358,7 +644,7 @@ namespace FlockFive
             }
             bool blink = Time.time < _blinkUntil || Sleeping;
             float x = FaceLeft ? -mood.HeadX : mood.HeadX;
-            float y = mood.HeadY + (Sleeping ? -0.02f : 0f);
+            float y = mood.HeadY + (Sleeping ? -0.07f : 0f);
             _face.transform.localPosition = new Vector3(x, y, 0f);
             _face.transform.localRotation = Quaternion.identity;
             _face.flipX = FaceLeft;

@@ -311,6 +311,7 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            if (GamePause.Paused) return;
             if (!LeadHot) _leadDuck = 1f;
             if (_stems == null) return;
 

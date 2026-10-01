@@ -112,6 +112,11 @@ namespace FlockFive
             while (t < dur)
             {
                 if (gen != _coatGen) yield break;
+                if (GamePause.Paused)
+                {
+                    yield return null;
+                    continue;
+                }
                 t += Time.unscaledDeltaTime;
                 float u = Mathf.Clamp01(t / 1.65f);
                 float k = u * u * (3f - 2f * u);

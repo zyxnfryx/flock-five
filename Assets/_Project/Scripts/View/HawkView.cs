@@ -16,6 +16,8 @@ namespace FlockFive
         public int BlockingSlot { get; private set; } = -1;
         public bool IsBlocking => Live != null && BlockingSlot >= 0 && !_done;
         public bool InScrap => _scrap || _fleeing;
+        // True only after the perch settle, so the tutorial does not talk over the arrival.
+        public bool Settled { get; private set; }
 
         float _scale = 1.1f;
         SpriteRenderer _art;
@@ -138,6 +140,8 @@ namespace FlockFive
                     view.Flap(true);
                     yield return null;
                 }
+                if (!view._evict)
+                    view.Settled = true;
 
                 while (!view._evict)
                 {
@@ -337,6 +341,7 @@ namespace FlockFive
                 yield break;
             }
             _fleeing = true;
+            Settled = false;
             StopHit();
             _scrap = false;
             Calm();
@@ -393,25 +398,23 @@ namespace FlockFive
             _done = true;
         }
 
-        // Second-collect clear. Heavier than the sparrow: longer hold, bigger burst,
-        // then a clean fly-off. The beaten return pass is a separate object so this
-        // yield can finish and the scrap can unlock.
+        // Second-collect clear. Full size, slow limp off the screen. The flock
+        // cheer waits until this yield ends, so the exit is not covered.
         IEnumerator DefeatExit()
         {
             var parent = transform.parent;
             var from = transform.position;
-            transform.localScale = Vector3.one * (_scale * 1.12f);
+            transform.localScale = Vector3.one * _scale;
             transform.localRotation = Quaternion.identity;
             if (_art != null) _art.color = Color.white;
             if (CamShake.Live != null)
                 CamShake.Live.Punch(0.14f, 0.08f, 1.6f, 0.05f);
 
             float hold = 0f;
-            while (hold < 0.08f && !_abort)
+            while (hold < 0.12f && !_abort)
             {
                 hold += Time.deltaTime;
-                if (_art != null) _art.color = Color.white;
-                transform.localScale = Vector3.one * (_scale * 1.12f);
+                transform.localScale = Vector3.one * _scale;
                 transform.localRotation = Quaternion.identity;
                 yield return null;
             }
@@ -420,42 +423,70 @@ namespace FlockFive
                 _done = true;
                 yield break;
             }
-            SparrowBits.Burst(from + new Vector3(0f, 0.14f, 0f), parent, _tint, 18);
-            PestCheer.Mark(from, parent, true);
+            Sfx.HawkCryHurt();
+            Sfx.FlockFlutter(1);
+            SparrowBits.Burst(from + new Vector3(0f, 0.14f, 0f), parent, _tint, 6);
 
             float dir = Mathf.Sign(_exitX - from.x);
             if (dir == 0f) dir = _exitX >= 0f ? 1f : -1f;
-            var dest = new Vector3(_exitX, from.y + Random.Range(2.0f, 3.3f), 0f);
+            var dest = new Vector3(_exitX, from.y + 0.25f, 0f);
             if (_art != null) _art.flipX = dest.x < from.x;
-            float passY = Mathf.Clamp(from.y + 2.55f, 6.1f, 8.6f);
-            float edge = Mathf.Max(7.2f, Mathf.Abs(_exitX));
             float t = 0f;
-            const float dur = 0.7f;
+            const float dur = 2.5f;
+            int dropped = 0;
             while (t < dur && !_abort)
             {
                 t += Time.deltaTime;
                 float u = Mathf.Clamp01(t / dur);
-                float ease = u * u * (3f - 2f * u);
+                float smooth = u * u * (3f - 2f * u);
+                float ease = Mathf.Lerp(u * 0.55f, smooth, 0.45f);
                 var p = Vector3.Lerp(from, dest, ease);
-                p.y += Mathf.Sin(u * Mathf.PI) * 1.7f;
+                float wave = Mathf.Sin(u * Mathf.PI * 3f);
+                float sag = wave < 0f ? wave * 0.95f : wave * 0.22f;
+                p.y += sag;
+                p.x += Mathf.Sin(u * Mathf.PI * 4f) * 0.28f;
                 transform.position = p;
-                transform.localScale = Vector3.one * (_scale * Mathf.Lerp(1.08f, 0.7f, u));
-                transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(u * Mathf.PI) * -8f * dir);
-                Flap(true);
+                transform.localScale = Vector3.one * _scale;
+                float tilt = (wave * 16f + Mathf.Sin(u * Mathf.PI * 7f) * 8f) * -dir;
+                transform.localRotation = Quaternion.Euler(0f, 0f, tilt);
+                LimpFlap(LimpOpen());
                 if (_art != null)
                 {
                     var c = _art.color;
-                    c.a = u > 0.78f ? Mathf.Lerp(1f, 0.55f, (u - 0.78f) / 0.22f) : 1f;
+                    c.a = u > 0.90f ? Mathf.Lerp(1f, 0.12f, (u - 0.90f) / 0.10f) : 1f;
                     _art.color = c;
+                }
+                if (parent != null && dropped < 4 && u > (dropped + 1) * 0.18f)
+                {
+                    SparrowBits.Drop(p + new Vector3(0f, -0.2f, 0f), parent, _tint);
+                    dropped++;
                 }
                 yield return null;
             }
+            if (!_abort)
+                PestCheer.Mark(from, parent, true);
             _done = true;
-            if (!_abort && parent != null)
-            {
-                var normal = SpriteCatalog.HawkIsPlaceholder ? _tint : Color.white;
-                HawkPass.Begin(parent, dir > 0f, passY, _scale * 0.58f, edge, normal, _tint);
-            }
+        }
+
+        // Uneven beat: a short open, a long sag, a late weak flick.
+        static bool LimpOpen()
+        {
+            float phase = Mathf.Repeat(Time.time * 1.15f, 1f);
+            if (phase < 0.18f) return true;
+            if (phase < 0.62f) return false;
+            return phase < 0.74f;
+        }
+
+        void LimpFlap(bool open)
+        {
+            if (_art == null) return;
+            _flap += Time.deltaTime * (open ? 2.2f : 0.40f);
+            _art.sprite = SpriteCatalog.HawkFrame(_flap);
+            float dip = open ? 1f : 0.82f;
+            Color hurt = SpriteCatalog.HawkIsPlaceholder
+                ? Color.Lerp(_tint, new Color(0.55f, 0.30f, 0.26f), 0.5f)
+                : new Color(0.78f * dip, 0.62f * dip, 0.56f * dip, 1f);
+            _art.color = hurt;
         }
 
         IEnumerator FlyOut(float exitX)
@@ -581,6 +612,7 @@ namespace FlockFive
         {
             if (Live == this) Live = null;
             BlockingSlot = -1;
+            Settled = false;
             _done = true;
             _angry = false;
             _angerFresh = false;

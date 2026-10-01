@@ -9,7 +9,7 @@ namespace FlockFive
         {
             var root = garden.Root;
             if (root == null) yield break;
-            SkyCycle.RushNight(2.35f);
+            bool fromShow = _nightShow;
             Sfx.GardenWake();
             Haptics.Play(Haptics.Tier.Strong);
 
@@ -19,15 +19,216 @@ namespace FlockFive
             Live = true;
             _cut = false;
             Time.timeScale = 1f;
-            host.StartCoroutine(Fireworks(fx, host));
-
-            yield return Wait(0.28f);
+            // Bursts launched with the last combo finish in the air. No second barrage over the logo.
+            if (fromShow)
+                yield return SettleBursts();
+            if (fromShow)
+                SkyCycle.EaseToSaved(1.1f);
+            yield return Wait(0.12f);
             if (!_cut)
                 yield return SlamLogo(fx, host);
             Live = false;
             Glow = false;
+            _nightShow = false;
             Time.timeScale = 1f;
             SweepSparkles(fx);
+        }
+
+        const int FwSlots = 72;
+        static bool _nightShow;
+        static bool _launching;
+        static int _fwLive;
+        static Coroutine _fwLoop;
+        static Transform _fwRoot;
+        static SpriteRenderer[] _fwSr;
+        static Vector3[] _fwPos;
+        static Vector3[] _fwVel;
+        static float[] _fwAge;
+        static float[] _fwLife;
+        static bool[] _fwOn;
+        static bool[] _fwRise;
+        static readonly BirdColor[] FwColors = { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet, BirdColor.Peach };
+
+        public static void BeginNightShow(Transform root, MonoBehaviour host)
+        {
+            if (root == null || host == null) return;
+            SkyCycle.SnapNight();
+            Sfx.FireworkGain = 1f;
+            _nightShow = true;
+            _launching = true;
+            _fwRoot = root;
+            EnsureFwPool(root);
+            if (_fwLoop == null)
+                _fwLoop = host.StartCoroutine(FwLoop());
+        }
+
+        public static void StopLaunching()
+        {
+            _launching = false;
+        }
+
+        static void EnsureFwPool(Transform root)
+        {
+            if (_fwSr != null && _fwSr.Length == FwSlots && _fwRoot == root) return;
+            _fwSr = new SpriteRenderer[FwSlots];
+            _fwPos = new Vector3[FwSlots];
+            _fwVel = new Vector3[FwSlots];
+            _fwAge = new float[FwSlots];
+            _fwLife = new float[FwSlots];
+            _fwOn = new bool[FwSlots];
+            _fwRise = new bool[FwSlots];
+            _fwLive = 0;
+            _fwRoot = root;
+        }
+
+        static int RentFw()
+        {
+            if (_fwOn == null) return -1;
+            for (int i = 0; i < FwSlots; i++)
+            {
+                if (_fwOn[i]) continue;
+                if (_fwSr[i] == null)
+                {
+                    if (_fwRoot == null) return -1;
+                    var go = WorldBuilder.Sprite("FwSpark", SpriteCatalog.Sparkle, Vector3.zero, 0.12f, 18, _fwRoot);
+                    _fwSr[i] = go.GetComponent<SpriteRenderer>();
+                }
+                _fwOn[i] = true;
+                _fwRise[i] = false;
+                _fwSr[i].gameObject.SetActive(true);
+                _fwLive++;
+                return i;
+            }
+            return -1;
+        }
+
+        static void FreeFw(int i)
+        {
+            if (_fwOn == null || !_fwOn[i]) return;
+            _fwOn[i] = false;
+            _fwLive = Mathf.Max(0, _fwLive - 1);
+            if (_fwSr[i] != null) _fwSr[i].gameObject.SetActive(false);
+        }
+
+        static void LaunchRocket(int n)
+        {
+            int i = RentFw();
+            if (i < 0) return;
+            float side = (n & 1) == 0 ? -1f : 1f;
+            float x = (n % 3 == 0) ? Random.Range(-1.5f, 1.5f) : side * Random.Range(2.4f, 3.6f);
+            float peak = Random.Range(3.2f, 6.4f);
+            _fwPos[i] = new Vector3(x, -6.6f, 0f);
+            _fwVel[i] = new Vector3(0f, peak, 0f);
+            _fwAge[i] = 0f;
+            _fwLife[i] = 0.48f;
+            _fwRise[i] = true;
+            var tint = Wow.Of(FwColors[n % FwColors.Length]);
+            _fwSr[i].sprite = SpriteCatalog.Glow;
+            _fwSr[i].color = tint;
+            _fwSr[i].transform.localScale = Vector3.one * 0.22f;
+            _fwSr[i].transform.position = _fwPos[i];
+            Sfx.FireworkLaunch();
+        }
+
+        static void BurstAt(Vector3 pos, Color tint, int n)
+        {
+            Sfx.Firework();
+            int bits = 10 + (n % 3) * 3;
+            for (int b = 0; b < bits; b++)
+            {
+                int i = RentFw();
+                if (i < 0) return;
+                float ang = (b / (float)bits) * Mathf.PI * 2f;
+                float spd = 1.6f + (b % 5) * 0.55f;
+                bool glow = (b % 4) == 0;
+                _fwPos[i] = pos;
+                _fwVel[i] = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang), 0f) * spd;
+                _fwAge[i] = 0f;
+                _fwLife[i] = glow ? 1.05f : 0.78f;
+                _fwSr[i].sprite = glow ? SpriteCatalog.Glow : SpriteCatalog.Sparkle;
+                _fwSr[i].color = glow ? new Color(tint.r, tint.g, tint.b, 0.85f) : Color.Lerp(Color.white, tint, 0.4f);
+                _fwSr[i].transform.localScale = Vector3.one * (glow ? 0.34f : 0.14f);
+                _fwSr[i].transform.position = pos;
+            }
+        }
+
+        static void TickFw(float dt)
+        {
+            if (_fwOn == null) return;
+            for (int i = 0; i < FwSlots; i++)
+            {
+                if (!_fwOn[i] || _fwSr[i] == null) continue;
+                _fwAge[i] += dt;
+                float u = _fwLife[i] > 0.01f ? Mathf.Clamp01(_fwAge[i] / _fwLife[i]) : 1f;
+                if (_fwRise[i])
+                {
+                    _fwPos[i].y = Mathf.Lerp(-6.6f, _fwVel[i].y, u * u);
+                    _fwSr[i].transform.position = _fwPos[i];
+                    if (u >= 1f)
+                    {
+                        var tint = _fwSr[i].color;
+                        var at = _fwPos[i];
+                        _fwRise[i] = false;
+                        FreeFw(i);
+                        BurstAt(at, tint, i);
+                    }
+                    continue;
+                }
+                _fwVel[i].y -= 4.2f * dt;
+                _fwPos[i] += _fwVel[i] * dt;
+                _fwSr[i].transform.position = _fwPos[i];
+                var c = _fwSr[i].color;
+                float fade = 1f - u;
+                c.a = fade * fade;
+                _fwSr[i].color = c;
+                if (u >= 1f) FreeFw(i);
+            }
+        }
+
+        static IEnumerator FwLoop()
+        {
+            int n = 0;
+            float wait = 0f;
+            while (_launching || _fwLive > 0)
+            {
+                if (GamePause.Paused)
+                {
+                    yield return null;
+                    continue;
+                }
+                float dt = Time.unscaledDeltaTime;
+                if (_launching)
+                {
+                    wait -= dt;
+                    if (wait <= 0f)
+                    {
+                        LaunchRocket(n++);
+                        wait = 0.22f;
+                    }
+                }
+                else
+                    Sfx.FireworkGain = Mathf.MoveTowards(Sfx.FireworkGain, 0f, dt * 0.65f);
+                TickFw(dt);
+                yield return null;
+            }
+            Sfx.FireworkGain = 1f;
+            _fwLoop = null;
+        }
+
+        public static IEnumerator SettleBursts()
+        {
+            StopLaunching();
+            float t = 0f;
+            while (_fwLive > 0 && t < 2.6f)
+            {
+                if (!GamePause.Paused)
+                {
+                    t += Time.unscaledDeltaTime;
+                    Sfx.FireworkGain = Mathf.MoveTowards(Sfx.FireworkGain, 0f, Time.unscaledDeltaTime * 0.7f);
+                }
+                yield return null;
+            }
+            Sfx.FireworkGain = 1f;
         }
 
         static bool Live;

@@ -4,11 +4,12 @@ namespace FlockFive
 {
     public sealed partial class FlockFiveApp
     {
-        // Armed until claimed or dismissed this launch. Opens only when the streak
-        // toast, hive lesson, poker lesson, and VIP card are clear.
-        bool _dailyArmed;
+        // The card opens from the rail button (or that button's glove tap). It does not
+        // pop on launch. The ask card is the in-game reminder prompt after a claim.
         bool _dailyOpen;
-        bool _dailyDismissed;
+        bool _dailyAskOpen;
+        float _dailyPopAt = -1f;
+        float _dailyAskAt = -1f;
 #if UNITY_EDITOR
         bool _dailyShotQuiet;
 #endif
@@ -25,6 +26,36 @@ namespace FlockFive
         static int _dailyLinePx = 12;
         static int _dailyBonusPx = 12;
         static int _dailyDigitPx = 14;
+        static int _railDigitPx;
+        static int _railDigitKey = int.MinValue;
+        static GUIStyle _dailyAsk;
+        static GUIStyle _dailyAskBtn;
+        static int _dailyAskFit = int.MinValue;
+        static int _dailyAskBodyPx = 18;
+        static int _dailyAskYesPx = 16;
+        static int _dailyAskNoPx = 16;
+        static Texture2D _dailyMedal;
+
+        const string DailyAskCopy = "Want a reminder so you never miss your streak?";
+        const string DailyAskYes = "Yes please";
+        const string DailyAskNo = "Not now";
+
+        const string WelcomeBonusKey = "flockfive.welcome.bonus";
+        const string WelcomePendingKey = "flockfive.welcome.pending";
+        const int WelcomeBonusCoins = 1000;
+        const string WelcomeTitle = "Welcome bonus!";
+        const string WelcomeLine = "Ready to remove ads and support the game? Tap the VIP button anytime.";
+        const string WelcomeThanks = "Thanks!";
+
+        bool _welcomeOpen;
+        float _welcomeAt = -1f;
+        bool _welcomeGlove;
+        float _welcomeGloveUntil;
+        static int _welcomeFit = int.MinValue;
+        static int _welcomeTitlePx = 26;
+        static int _welcomeAmtPx = 34;
+        static int _welcomeLinePx = 16;
+        static int _welcomeBtnPx = 18;
 
         void ArmDailyBonus()
         {
@@ -32,64 +63,181 @@ namespace FlockFive
             if (DailyShotSentinel()) _dailyShotQuiet = true;
 #endif
             DailyBonus.Boot();
-            if (DailyBonus.RefreshDay()) _dailyDismissed = false;
+            DailyBonus.RefreshDay();
             DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun)
             {
-                _dailyArmed = false;
                 _dailyOpen = false;
+                _dailyAskOpen = false;
+                _welcomeOpen = false;
+                _welcomeGlove = false;
                 return;
             }
 #endif
-            if (_dailyDismissed) return;
-            _dailyArmed = DailyBonus.OfferReady;
+            if (!_dailyAskOpen && PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0)
+                OfferWelcome();
         }
 
         void TickDailyBonus()
         {
             DailyReminder.Tick();
-            if (DailyBonus.RefreshDay())
-            {
-                _dailyDismissed = false;
-                _dailyArmed = DailyBonus.OfferReady;
-            }
-            if (_dailyDismissed)
-            {
-                _dailyOpen = false;
-                return;
-            }
+            DailyBonus.RefreshDay();
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive)
             {
                 _dailyOpen = false;
-                return;
+                _dailyAskOpen = false;
+                _welcomeOpen = false;
+                _welcomeGlove = false;
             }
 #endif
-            // Same queue as the poker lesson: streak sign, then hive, then poker.
-            // VIP on screen holds the card; it does not consume the claim.
-            bool wait = !_splash || _home != HomeFace.Splash
-                || _streakSlide >= 0f
-                || _hiveIntro || _hiveIntroLive
-                || _pokerIntro || _pokerIntroLive
-                || VipOffer.IsOpen;
-            _dailyOpen = !wait && _dailyArmed && DailyBonus.OfferReady;
         }
 
         void ResumeDailyReminder()
         {
             DailyBonus.Boot();
-            if (DailyBonus.RefreshDay())
-            {
-                _dailyDismissed = false;
-                _dailyArmed = DailyBonus.OfferReady;
-            }
+            DailyBonus.RefreshDay();
             DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
+        }
+
+        void OpenDailyCard()
+        {
+            if (_dailyOpen || _dailyAskOpen) return;
+#if UNITY_EDITOR
+            if (_dailyShotQuiet || EditorShotLive) return;
+#endif
+            DailyBonus.Boot();
+            _dailyOpen = true;
+            _dailyPopAt = Time.unscaledTime;
+            Sfx.CardTap();
+        }
+
+        void DrawDailyRail(Rect r, float s, bool held)
+        {
+            if (r.width < 2f) return;
+            DailyBonus.Boot();
+            float sink = held ? r.height * 0.045f : 0f;
+            var plate = new Rect(r.x, r.y + sink, r.width, r.height);
+            var tex = DailyMedalTex();
+            var glow = GlowTex();
+            bool ready = DailyBonus.OfferReady;
+            float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.6f);
+            if (ready)
+            {
+                float bloom = plate.width * (0.05f + 0.025f * breathe);
+                GUI.color = new Color(0.90f, 0.18f, 0.12f, 0.16f + 0.14f * breathe);
+                GUI.DrawTexture(new Rect(plate.x - bloom, plate.y - bloom, plate.width + bloom * 2f, plate.height + bloom * 2f), glow, ScaleMode.ScaleToFit, true);
+            }
+            GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.34f);
+            GUI.DrawTexture(new Rect(plate.x + 3f, plate.y + 5f, plate.width, plate.height), tex, ScaleMode.ScaleToFit, true);
+            GUI.color = held ? new Color(0.90f, 0.88f, 0.82f, 1f) : Color.white;
+            GUI.DrawTexture(plate, tex, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+
+            float f = plate.width * 0.40f;
+            var flame = new Rect(plate.xMax - f * 0.90f, plate.yMax - f * 0.88f, f, f);
+            int frame = (int)(Time.unscaledTime * 8f) % 6;
+            if (frame < 0) frame = 0;
+            var spr = SpriteCatalog.Flame(frame);
+            if (spr != null && spr.texture != null)
+                GUI.DrawTexture(flame, spr.texture, ScaleMode.ScaleToFit, true);
+            if (DailyBonus.Streak >= 1)
+            {
+                EnsureDailyStyles();
+                var num = new Rect(flame.x, flame.y + flame.height * 0.32f, flame.width, flame.height * 0.40f);
+                _dailyLine.fontSize = RailDigitPx(num.width, num.height);
+                StampOutlined(num, DailyBonus.StreakDigits, _dailyLine, new Color(1f, 0.97f, 0.86f), 1, 1);
+            }
+            if (!ready) return;
+            float dot = plate.width * (0.15f + 0.02f * breathe);
+            float cx = plate.xMax - plate.width * 0.18f;
+            float cy = plate.y + plate.width * 0.18f;
+            GUI.color = new Color(0.42f, 0.04f, 0.03f, 0.85f);
+            GUI.DrawTexture(new Rect(cx - dot * 0.62f, cy - dot * 0.62f + 1.2f, dot * 1.24f, dot * 1.24f), glow, ScaleMode.ScaleToFit, true);
+            GUI.color = new Color(0.93f, 0.16f, 0.13f, 0.78f + 0.22f * breathe);
+            GUI.DrawTexture(new Rect(cx - dot * 0.5f, cy - dot * 0.5f, dot, dot), glow, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+        }
+
+        static int RailDigitPx(float w, float h)
+        {
+            int key = Mathf.RoundToInt(w) * 397 ^ Mathf.RoundToInt(h) * 17 ^ DailyBonus.StreakDigits.Length * 13;
+            if (key == _railDigitKey) return _railDigitPx;
+            _railDigitKey = key;
+            EnsureDailyStyles();
+            _railDigitPx = FitFont(_dailyLine, DailyBonus.StreakDigits, w * 0.78f, h * 0.90f, 8, 28);
+            return _railDigitPx;
+        }
+
+        static Texture2D DailyMedalTex()
+        {
+            if (_dailyMedal != null) return _dailyMedal;
+            const int n = 128;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = "DailyMedal"
+            };
+            var px = new Color32[n * n];
+            float c = (n - 1) * 0.5f;
+            float rad = c - 1.2f;
+            for (int y = 0; y < n; y++)
+            {
+                float ny = (y + 0.5f - c) / rad;
+                for (int x = 0; x < n; x++)
+                {
+                    float nx = (x + 0.5f - c) / rad;
+                    float dist = Mathf.Sqrt(nx * nx + ny * ny);
+                    float edge = Mathf.Clamp01((1.02f - dist) * rad * 0.45f);
+                    if (edge <= 0f) continue;
+                    Color col = DailyMedalPixel(nx, ny, dist);
+                    col.a *= edge;
+                    px[y * n + x] = col;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _dailyMedal = tex;
+            return tex;
+        }
+
+        // Gold ring, cream gift, red ribbon. nx/ny are radius units, +y up.
+        static Color DailyMedalPixel(float nx, float ny, float dist)
+        {
+            float up = Mathf.Clamp01(0.5f + ny * 0.5f);
+            if (dist > 0.80f)
+            {
+                float k = Mathf.Clamp01((dist - 0.80f) / 0.20f);
+                Color rim = Color.Lerp(new Color(1f, 0.90f, 0.55f, 1f), new Color(0.55f, 0.30f, 0.08f, 1f), k);
+                rim = Color.Lerp(rim, new Color(1f, 0.96f, 0.78f, 1f), (1f - k) * up * 0.45f);
+                return rim;
+            }
+            Color face = Color.Lerp(new Color(0.42f, 0.18f, 0.07f, 1f), new Color(0.28f, 0.12f, 0.05f, 1f), ny * 0.5f + 0.5f);
+            bool box = nx > -0.36f && nx < 0.36f && ny > -0.42f && ny < 0.28f;
+            if (box)
+            {
+                float shade = Mathf.Clamp01((0.28f - ny) / 0.70f);
+                face = Color.Lerp(new Color(1f, 0.96f, 0.84f, 1f), new Color(0.90f, 0.78f, 0.52f, 1f), shade);
+                bool ribbon = Mathf.Abs(nx) < 0.09f || Mathf.Abs(ny + 0.04f) < 0.075f;
+                if (ribbon)
+                    face = Color.Lerp(new Color(0.55f, 0.08f, 0.10f, 1f), new Color(0.86f, 0.18f, 0.16f, 1f), up);
+            }
+            float bowL = (nx + 0.16f) * (nx + 0.16f) + (ny - 0.40f) * (ny - 0.40f);
+            float bowR = (nx - 0.16f) * (nx - 0.16f) + (ny - 0.40f) * (ny - 0.40f);
+            float knot = nx * nx * 1.8f + (ny - 0.28f) * (ny - 0.28f);
+            if (bowL < 0.018f || bowR < 0.018f || knot < 0.012f)
+                face = new Color(0.78f, 0.12f, 0.14f, 1f);
+            if ((bowL > 0.010f && bowL < 0.016f) || (bowR > 0.010f && bowR < 0.016f))
+                face = Color.Lerp(face, new Color(1f, 0.55f, 0.52f, 1f), 0.65f);
+            return face;
         }
 
         void DrawDailyBonus(float s)
         {
-            if (!_dailyOpen || !DailyBonus.OfferReady) return;
+            if (!_dailyOpen) return;
 #if UNITY_EDITOR
             if (_dailyShotQuiet || EditorShotLive) return;
 #endif
@@ -100,7 +248,7 @@ namespace FlockFive
                 Screen.width - Mathf.Max(14f, Screen.width - safe.xMax + 8f) - xSz,
                 top, xSz, xSz);
 
-            DailyLayout(s, out var card, out var flower, out var plate);
+            DailyLayout(s, out var card, out var flower, out var board, out float band);
             var disc = FlowerDisc(flower, 0f);
             float hitGrow = 18f * s;
             var claimHit = new Rect(disc.x - hitGrow, disc.y - hitGrow * 0.65f, disc.width + hitGrow * 2f, disc.height + hitGrow * 1.3f);
@@ -111,8 +259,10 @@ namespace FlockFive
                 claimHit.height += extra;
             }
 
-            float x0 = Mathf.Min(card.x, flower.x);
-            float y0 = Mathf.Min(card.y, flower.y);
+            float badge = band * 2.05f;
+            var badgeR = new Rect(board.x - band - badge * 0.55f, board.y - band - badge * 0.58f, badge, badge);
+            float x0 = Mathf.Min(card.x, Mathf.Min(flower.x, badgeR.x));
+            float y0 = Mathf.Min(card.y, Mathf.Min(flower.y, badgeR.y));
             float x1 = Mathf.Max(card.xMax, flower.xMax);
             float y1 = Mathf.Max(card.yMax, flower.yMax);
             var swallow = new Rect(x0 - 12f, y0 - 12f, (x1 - x0) + 24f, (y1 - y0) + 24f);
@@ -130,49 +280,28 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            float aura = card.width * (0.08f + 0.03f * breathe);
-            GUI.color = new Color(1f, 0.78f, 0.22f, 0.28f + 0.18f * breathe);
-            GUI.DrawTexture(new Rect(card.x - aura, card.y - aura * 0.55f, card.width + aura * 2f, card.height + aura), glow, ScaleMode.ScaleToFit, true);
-            GUI.color = Color.white;
+            // Hits stay on the resting layout. The picture eases in around the same pivot.
+            float k = DailyPop(_dailyPopAt);
+            var pivot = DailyPivot(card, flower);
+            var prev = GUI.matrix;
+            if (k < 0.999f)
+                GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
 
-            var wood = SpriteCatalog.Blanket != null ? SpriteCatalog.Blanket.texture : Texture2D.whiteTexture;
-            GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.45f);
-            GUI.DrawTexture(new Rect(card.x + 6f, card.y + 12f, card.width, card.height), wood, ScaleMode.StretchToFill, true);
-            GUI.color = new Color(0.45f, 0.26f, 0.10f, 1f);
-            GUI.DrawTexture(card, wood, ScaleMode.StretchToFill, true);
-            GUI.color = Color.white;
-            var art = SpriteCatalog.AdCard != null ? SpriteCatalog.AdCard.texture : null;
-            if (art != null)
-            {
-                float artH = card.width * (501f / 780f);
-                if (artH > card.height) artH = card.height;
-                GUI.DrawTexture(new Rect(card.x, card.y, card.width, artH), art, ScaleMode.ScaleToFit, true);
-                QuietFrameFlowers(new Rect(card.x, card.y, card.width, artH));
-            }
-            GUI.color = new Color(1f, 0.78f, 0.22f, 0.90f);
-            float rim = Mathf.Max(3f, 4f * s);
-            GUI.DrawTexture(new Rect(card.x, card.y, card.width, rim), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(card.x, card.yMax - rim, card.width, rim), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(card.x, card.y, rim, card.height), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(card.xMax - rim, card.y, rim, card.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-
-            GUI.color = new Color(0.04f, 0.02f, 0.01f, 0.92f);
-            GUI.DrawTexture(plate, Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.78f, 0.22f, 0.42f + 0.28f * breathe);
-            GUI.DrawTexture(new Rect(plate.x + 2f * s, plate.y + 2f * s, plate.width - 4f * s, 3f * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(plate.x + 2f * s, plate.yMax - 5f * s, plate.width - 4f * s, 3f * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(plate.x + 2f * s, plate.y + 2f * s, 3f * s, plate.height - 4f * s), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(plate.xMax - 5f * s, plate.y + 2f * s, 3f * s, plate.height - 4f * s), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-
+            DrawDailyFrame(card, board, band, s, breathe, glow);
             EnsureDailyStyles();
-            EnsureDailyFit(s, plate, disc);
-            DrawDailyCopy(plate, s, breathe, glow);
-            DrawDailyTiles(plate, s, breathe, glow);
-            DrawGiftMarquee(plate, s, t);
-            DrawDailyBadge(card, s, glow);
+            DailyRows(s, board, out var titleR, out var streakR, out var bonusR, out var row, out float gap, out float unit);
+            EnsureDailyFit(s, band, titleR, streakR, bonusR, disc, unit, row.height);
+            DrawDailyCopy(titleR, streakR, bonusR, s, breathe, glow);
+            DrawDailyTiles(row, gap, unit, s, breathe, glow);
+            DrawDailyBadge(board, band, s, glow);
             DrawDailyClaim(flower, claimHeld, s, t);
+            GUI.matrix = prev;
+
+            // Sockets on the brass midline, outside the scale matrix so each bulb
+            // rotates around its own seat. Steady size; the chase is the glow.
+            float bulbFrac = (band * 0.62f) / Mathf.Max(1f, board.width);
+            var boardDraw = DailyScaleRect(board, pivot, k);
+            DrawGiftMarquee(boardDraw, s, t, 1f, band * 0.5f * k, bulbFrac, 16, 0f, true);
             DrawGiftCloseX(xBtn, xHeld, s);
             GUI.color = Color.white;
 
@@ -186,24 +315,86 @@ namespace FlockFive
 
         void ClaimDaily()
         {
-            if (!DailyBonus.TryClaim(out int coins, out bool first)) return;
+            if (!DailyBonus.TryClaim(out int coins, out bool firstEver)) return;
             Sfx.CardTap();
             Sfx.Clink();
             Haptics.Play(Haptics.Tier.Medium);
             BurstDailyCoins(coins);
             _dailyOpen = false;
-            _dailyArmed = false;
-            _dailyDismissed = true;
-            if (first) DailyReminder.AskAfterFirstClaim(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
-            else DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
+            _dailyPopAt = -1f;
+            DismissDailyIntro();
+            DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
+            if (DailyReminder.PromptDue())
+            {
+                _dailyAskOpen = true;
+                _dailyAskAt = Time.unscaledTime;
+                NoteWelcomeClaim(firstEver);
+                return;
+            }
+            NoteWelcomeClaim(firstEver);
+        }
+
+        // First claim only. The ask card, when it is due, is answered before this award.
+        void NoteWelcomeClaim(bool firstEver)
+        {
+            if (!firstEver) return;
+            if (PlayerPrefs.GetInt(WelcomeBonusKey, 0) != 0) return;
+#if UNITY_EDITOR
+            if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive) return;
+#endif
+            if (_dailyAskOpen)
+            {
+                PlayerPrefs.SetInt(WelcomePendingKey, 1);
+                PlayerPrefs.Save();
+                return;
+            }
+            OfferWelcome();
+        }
+
+        void OfferWelcome()
+        {
+            if (PlayerPrefs.GetInt(WelcomeBonusKey, 0) != 0) return;
+#if UNITY_EDITOR
+            if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive) return;
+#endif
+            PlayerPrefs.SetInt(WelcomeBonusKey, 1);
+            PlayerPrefs.SetInt(WelcomePendingKey, 0);
+            PlayerPrefs.Save();
+            Purse.Credit(WelcomeBonusCoins);
+            Sfx.Clink();
+            Haptics.Play(Haptics.Tier.Medium);
+            BurstDailyCoins(WelcomeBonusCoins);
+            _welcomeOpen = true;
+            _welcomeAt = Time.unscaledTime;
+            _welcomeGlove = false;
+        }
+
+        void CloseWelcome()
+        {
+            if (!_welcomeOpen) return;
+            _welcomeOpen = false;
+            _welcomeAt = -1f;
+            Sfx.CardTap();
+            if (VipRailGoal() <= 0.5f) return;
+            var box = SplashNoAdsRect();
+            var seat = SplashRailSeat(RailVip);
+            if (box.width < 12f && seat.width < 12f) return;
+            _welcomeGlove = true;
+            _welcomeGloveUntil = Time.unscaledTime + TapCycle;
+            _gloveReady = false;
+            _gloveVis = false;
+            _glovePhase = 0f;
+            _gloveDip = 0f;
+            _tapSent = false;
+            _coachFade = 1f;
         }
 
         void DismissDaily()
         {
-            if (!_dailyOpen && !_dailyArmed) return;
+            if (!_dailyOpen) return;
             _dailyOpen = false;
-            _dailyArmed = false;
-            _dailyDismissed = true;
+            _dailyPopAt = -1f;
+            DismissDailyIntro();
             Sfx.CardTap();
         }
 
@@ -231,24 +422,147 @@ namespace FlockFive
             _pigJiggle = 1f;
         }
 
-        static void DailyLayout(float s, out Rect card, out Rect flower, out Rect plate)
+        // Ease-out cubic, 0.88 → 1. Resting scale is 1, so an already-open card does not drift.
+        static float DailyPop(float at)
         {
-            float cardW = Mathf.Min(Screen.width * 0.92f, 640f * s);
-            float cardH = cardW * 0.86f;
-            float flowerSz = Mathf.Min(Screen.width * 0.50f, 280f * s);
-            float overlap = flowerSz * 0.36f;
+            if (at < 0f) return 1f;
+            float u = (Time.unscaledTime - at) / 0.34f;
+            if (u >= 1f) return 1f;
+            if (u < 0f) u = 0f;
+            float inv = 1f - u;
+            return Mathf.Lerp(0.88f, 1f, 1f - inv * inv * inv);
+        }
+
+        static Vector2 DailyPivot(Rect card, Rect flower)
+        {
+            float x0 = Mathf.Min(card.x, flower.x);
+            float y0 = Mathf.Min(card.y, flower.y);
+            float x1 = Mathf.Max(card.xMax, flower.xMax);
+            float y1 = Mathf.Max(card.yMax, flower.yMax);
+            return new Vector2((x0 + x1) * 0.5f, (y0 + y1) * 0.5f);
+        }
+
+        static Rect DailyScaleRect(Rect r, Vector2 pivot, float k)
+        {
+            if (k >= 0.999f) return r;
+            return new Rect(
+                pivot.x + (r.x - pivot.x) * k,
+                pivot.y + (r.y - pivot.y) * k,
+                r.width * k,
+                r.height * k);
+        }
+
+        // Glove aim tracks the claim disc while the card is still scaling in.
+        Vector2 DailyClaimAim(float s)
+        {
+            DailyLayout(s, out var card, out var flower, out _, out _);
+            var c = FlowerDisc(flower, 0f).center;
+            float k = DailyPop(_dailyPopAt);
+            var pivot = DailyPivot(card, flower);
+            return new Vector2(pivot.x + (c.x - pivot.x) * k, pivot.y + (c.y - pivot.y) * k);
+        }
+
+        // Content-sized. Rows are reserved up front, including an empty bonus line,
+        // so opening and a later week-bonus string cannot reflow the tiles.
+        static void DailyLayout(float s, out Rect card, out Rect flower, out Rect board, out float band)
+        {
+            float cardW = Mathf.Min(Screen.width * 0.90f, 620f * s);
+            band = Mathf.Clamp(cardW * 0.048f, 15f * s, 30f * s);
+            float boardW = cardW - band * 2.5f;
+            if (boardW < 160f) boardW = 160f;
+            DailyBoardSize(s, boardW, out float boardH, out _, out _, out _, out _, out _, out _);
+            float lip = band * 1.15f;
+            float cardH = lip + boardH + lip;
+            float flowerSz = Mathf.Min(Screen.width * 0.48f, cardW * 0.50f);
+            float overlap = band * 0.35f;
             float stack = cardH + flowerSz - overlap;
             float top = TopHud() + 4f * s;
             float bot = Screen.height - Mathf.Max(8f, Screen.safeArea.yMin + 4f);
             float y = top + Mathf.Max(0f, (bot - top - stack) * 0.36f);
             if (y + stack > bot) y = Mathf.Max(top, bot - stack);
             card = new Rect((Screen.width - cardW) * 0.5f, y, cardW, cardH);
+            board = new Rect(card.x + (cardW - boardW) * 0.5f, card.y + lip, boardW, boardH);
             flower = new Rect((Screen.width - flowerSz) * 0.5f, card.yMax - overlap, flowerSz, flowerSz);
-            float plateTop = card.y + cardH * 0.13f;
-            // Stop above the claim disc. The petals may cross the frame; the label must not.
-            float plateBot = flower.y + flower.height * 0.08f;
-            if (plateBot < plateTop + 72f * s) plateBot = plateTop + 72f * s;
-            plate = new Rect(card.x + cardW * 0.08f, plateTop, cardW * 0.84f, plateBot - plateTop);
+        }
+
+        static void DailyBoardSize(float s, float boardW, out float boardH, out float titleH, out float streakH, out float bonusH, out float tileH, out float gap, out float unit)
+        {
+            float pad = 12f * s;
+            titleH = Mathf.Clamp(32f * s, 26f, 46f * s);
+            streakH = Mathf.Clamp(18f * s, 15f, 24f * s);
+            bonusH = Mathf.Clamp(16f * s, 14f, 22f * s);
+            gap = Mathf.Max(4f, 5f * s);
+            float inner = boardW * 0.90f;
+            unit = (inner - gap * 6f) / 7f;
+            if (unit < 8f)
+            {
+                gap = 4f;
+                unit = (inner - gap * 6f) / 7f;
+                if (unit < 4f) unit = 4f;
+            }
+            tileH = unit * 1.36f;
+            boardH = pad + titleH + streakH + bonusH + 10f * s + tileH + pad;
+        }
+
+        static void DailyRows(float s, Rect board, out Rect title, out Rect streak, out Rect bonus, out Rect row, out float gap, out float unit)
+        {
+            DailyBoardSize(s, board.width, out _, out float titleH, out float streakH, out float bonusH, out float tileH, out gap, out unit);
+            float pad = 12f * s;
+            float x = board.x + board.width * 0.05f;
+            float w = board.width * 0.90f;
+            float y = board.y + pad;
+            title = new Rect(x, y, w, titleH);
+            y += titleH;
+            streak = new Rect(x, y, w, streakH);
+            y += streakH;
+            bonus = new Rect(x, y, w, bonusH);
+            y += bonusH + 10f * s;
+            float rowW = unit * 7f + gap * 6f;
+            row = new Rect(board.center.x - rowW * 0.5f, y, rowW, tileH);
+        }
+
+        static void DrawDailyFrame(Rect card, Rect board, float band, float s, float breathe, Texture2D glow)
+        {
+            float aura = card.width * (0.055f + 0.02f * breathe);
+            GUI.color = new Color(1f, 0.78f, 0.22f, 0.20f + 0.10f * breathe);
+            GUI.DrawTexture(new Rect(card.x - aura, card.y - aura * 0.55f, card.width + aura * 2f, card.height + aura), glow, ScaleMode.ScaleToFit, true);
+
+            var wood = SpriteCatalog.Blanket != null ? SpriteCatalog.Blanket.texture : Texture2D.whiteTexture;
+            float sh = 4f * s;
+            GUI.color = new Color(0.05f, 0.03f, 0.02f, 0.42f);
+            GUI.DrawTexture(new Rect(card.x + sh, card.y + sh * 1.5f, card.width, card.height), wood, ScaleMode.StretchToFill, true);
+            GUI.color = new Color(0.52f, 0.30f, 0.11f, 1f);
+            GUI.DrawTexture(card, wood, ScaleMode.StretchToFill, true);
+
+            // Brass band. Bulb sockets land on its midline (half a band outside the board).
+            var outer = new Rect(board.x - band, board.y - band, board.width + band * 2f, board.height + band * 2f);
+            GUI.color = new Color(0.30f, 0.16f, 0.05f, 1f);
+            GUI.DrawTexture(outer, Texture2D.whiteTexture);
+            GUI.color = new Color(0.74f, 0.52f, 0.16f, 1f);
+            float face = 2f * s;
+            GUI.DrawTexture(new Rect(outer.x + face, outer.y + face, outer.width - face * 2f, outer.height - face * 2f), Texture2D.whiteTexture);
+            float edge = Mathf.Max(1f, 1.6f * s);
+            GUI.color = new Color(1f, 0.88f, 0.50f, 0.90f);
+            GUI.DrawTexture(new Rect(outer.x + face, outer.y + face, outer.width - face * 2f, edge), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(outer.x + face, outer.y + face, edge, outer.height - face * 2f), Texture2D.whiteTexture);
+            GUI.color = new Color(0.18f, 0.09f, 0.03f, 0.92f);
+            GUI.DrawTexture(new Rect(outer.x + face, outer.yMax - face - edge, outer.width - face * 2f, edge), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(outer.xMax - face - edge, outer.y + face, edge, outer.height - face * 2f), Texture2D.whiteTexture);
+
+            GUI.color = new Color(0.09f, 0.05f, 0.025f, 1f);
+            GUI.DrawTexture(board, wood, ScaleMode.StretchToFill, true);
+            GUI.color = new Color(1f, 0.78f, 0.22f, 0.50f + 0.16f * breathe);
+            float rim = Mathf.Max(2f, 2.5f * s);
+            float line = Mathf.Max(1.5f, 2f * s);
+            GUI.DrawTexture(new Rect(board.x + rim, board.y + rim, board.width - rim * 2f, line), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(board.x + rim, board.yMax - rim - line, board.width - rim * 2f, line), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(board.x + rim, board.y + rim, line, board.height - rim * 2f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(board.xMax - rim - line, board.y + rim, line, board.height - rim * 2f), Texture2D.whiteTexture);
+            GUI.color = new Color(0f, 0f, 0f, 0.50f);
+            float shade = 2f * s;
+            GUI.DrawTexture(new Rect(board.x, board.y, board.width, shade), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(board.x, board.y, shade, board.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
         }
 
         static void EnsureDailyStyles()
@@ -265,112 +579,124 @@ namespace FlockFive
             _dailyLine = new GUIStyle(_dailyTitle);
         }
 
-        static void EnsureDailyFit(float s, Rect plate, Rect disc)
+        static void EnsureDailyFit(float s, float band, Rect titleR, Rect streakR, Rect bonusR, Rect disc, float unit, float tileH)
         {
+            float badge = band * 2.05f;
             int key = Screen.width * 73856093 ^ Screen.height * 19349663
-                ^ DailyBonus.PayLine.Length * 83492791
-                ^ DailyBonus.StreakLine.Length * 50331653
-                ^ DailyBonus.BonusLine.Length * 2718281;
+                ^ Mathf.RoundToInt(titleR.width) * 83492791
+                ^ Mathf.RoundToInt(disc.width) * 50331653
+                ^ Mathf.RoundToInt(unit) * 2718281
+                ^ Mathf.RoundToInt(badge) * 17
+                ^ DailyBonus.StreakLine.Length * 97
+                ^ DailyBonus.StreakDigits.Length * 13;
             if (key == _dailyFitKey) return;
             _dailyFitKey = key;
-            float titleH = plate.height * 0.16f;
-            var titleR = new Rect(plate.x, plate.y + plate.height * 0.04f, plate.width, titleH);
-            _dailyTitlePx = FitFont(_dailyTitle, "Daily Bonus", titleR.width * 0.90f, titleR.height * 0.92f, 14, Mathf.Max(18, Mathf.RoundToInt(34f * s)));
-            _dailyClaimPx = FitFont(_dailyClaim, "Claim", disc.width * 0.72f, disc.height * 0.42f, 12, Mathf.Max(16, Mathf.RoundToInt(32f * s)));
-            _dailyPayPx = FitFont(_dailyClaim, DailyBonus.PayLine, disc.width * 0.70f, disc.height * 0.28f, 10, Mathf.Max(12, Mathf.RoundToInt(18f * s)));
-            float gap = Mathf.Max(3f, 4f * s);
-            float unit = (plate.width * 0.94f - gap * 6f) / 7.28f;
-            _dailyTilePx = FitFont(_dailyTile, "$75", unit * 0.88f, plate.height * 0.22f, 8, Mathf.Max(10, Mathf.RoundToInt(16f * s)));
-            float badge = Mathf.Clamp(58f * s, 46f, 76f);
-            _dailyDigitPx = FitFont(_dailyLine, DailyBonus.StreakDigits, badge * 0.62f, badge * 0.42f, 10, Mathf.Max(12, Mathf.RoundToInt(20f * s)));
-            _dailyLinePx = FitFont(_dailyLine, DailyBonus.StreakLine, badge * 1.7f, 22f * s, 9, Mathf.Max(11, Mathf.RoundToInt(15f * s)));
-            string bonus = DailyBonus.BonusLine;
-            if (bonus.Length > 0)
-                _dailyBonusPx = FitFont(_dailyLine, bonus, plate.width * 0.80f, plate.height * 0.12f, 9, Mathf.Max(11, Mathf.RoundToInt(16f * s)));
+            _dailyTitlePx = FitFont(_dailyTitle, "Daily Bonus", titleR.width * 0.90f, titleR.height * 0.90f, 14, Mathf.Max(18, Mathf.RoundToInt(34f * s)));
+            _dailyLinePx = FitFont(_dailyLine, DailyBonus.StreakLine, streakR.width * 0.88f, streakR.height * 0.90f, 10, Mathf.Max(12, Mathf.RoundToInt(18f * s)));
+            _dailyBonusPx = FitFont(_dailyLine, "streak +$25", bonusR.width * 0.88f, bonusR.height * 0.90f, 9, Mathf.Max(11, Mathf.RoundToInt(16f * s)));
+            _dailyTilePx = FitFont(_dailyTile, "$75", unit * 0.84f, tileH * 0.40f, 8, Mathf.Max(10, Mathf.RoundToInt(16f * s)));
+            _dailyClaimPx = FitFont(_dailyClaim, "Claimed", disc.width * 0.72f, disc.height * 0.40f, 12, Mathf.Max(16, Mathf.RoundToInt(30f * s)));
+            _dailyPayPx = FitFont(_dailyClaim, "$100", disc.width * 0.70f, disc.height * 0.26f, 10, Mathf.Max(12, Mathf.RoundToInt(18f * s)));
+            _dailyDigitPx = FitFont(_dailyLine, DailyBonus.StreakDigits, badge * 0.42f, badge * 0.26f, 10, Mathf.Max(12, Mathf.RoundToInt(22f * s)));
         }
 
-        static void DrawDailyCopy(Rect plate, float s, float breathe, Texture2D glow)
+        static void DrawDailyCopy(Rect titleR, Rect streakR, Rect bonusR, float s, float breathe, Texture2D glow)
         {
-            float titleH = plate.height * 0.16f;
-            var titleR = new Rect(plate.x + plate.width * 0.06f, plate.y + plate.height * 0.035f, plate.width * 0.88f, titleH);
-            GUI.color = new Color(1f, 0.72f, 0.16f, 0.36f + 0.18f * breathe);
-            GUI.DrawTexture(new Rect(titleR.x, titleR.y - 3f * s, titleR.width, titleR.height + 6f * s), glow, ScaleMode.ScaleToFit, true);
+            GUI.color = new Color(1f, 0.72f, 0.16f, 0.26f + 0.12f * breathe);
+            GUI.DrawTexture(new Rect(titleR.x, titleR.y - 2f * s, titleR.width, titleR.height + 4f * s), glow, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
             _dailyTitle.fontSize = _dailyTitlePx;
             int ink = Mathf.Max(2, Mathf.RoundToInt(_dailyTitlePx * 0.10f));
-            StampOutlined(titleR, "Daily Bonus", _dailyTitle, new Color(1f, 0.96f, 0.72f), 1, ink);
+            StampOutlined(titleR, "Daily Bonus", _dailyTitle, new Color(1f, 0.96f, 0.78f), 1, ink);
+            _dailyLine.fontSize = _dailyLinePx;
+            StampOutlined(streakR, DailyBonus.StreakLine, _dailyLine, new Color(1f, 0.90f, 0.55f), 1, 1);
             string bonus = DailyBonus.BonusLine;
             if (bonus.Length == 0) return;
-            var bonusR = new Rect(titleR.x, titleR.yMax, titleR.width, plate.height * 0.09f);
             _dailyLine.fontSize = _dailyBonusPx;
             StampOutlined(bonusR, bonus, _dailyLine, new Color(1f, 0.86f, 0.42f), 1, 1);
         }
 
-        static void DrawDailyTiles(Rect plate, float s, float breathe, Texture2D glow)
+        static void DrawDailyTiles(Rect row, float gap, float unit, float s, float breathe, Texture2D glow)
         {
-            string bonus = DailyBonus.BonusLine;
-            float top = plate.y + plate.height * (bonus.Length > 0 ? 0.30f : 0.24f);
-            float bot = plate.yMax - plate.height * 0.06f;
-            var row = new Rect(plate.x + plate.width * 0.03f, top, plate.width * 0.94f, Mathf.Max(24f, bot - top));
-            float gap = Mathf.Max(3f, 4f * s);
-            const float big = 1.28f;
-            float unit = (row.width - gap * 6f) / (6f + big);
             if (unit < 4f) return;
-            float x = row.x;
             int today = DailyBonus.Cycle;
-            float baseH = row.height * 0.82f;
+            bool claimed = DailyBonus.ClaimedToday;
             var crown = SpriteCatalog.Crown;
             var crownTex = crown != null ? crown.texture : null;
+            var spark = SpriteCatalog.Sparkle;
+            var sparkTex = spark != null ? spark.texture : null;
+            float x = row.x;
             for (int i = 0; i < 7; i++)
             {
-                bool day7 = i == 6;
-                bool now = i == today;
-                bool past = i < today;
-                float w = day7 ? unit * big : unit;
-                float h = day7 ? row.height : baseH;
-                var tile = new Rect(x, row.yMax - h, w, h);
-                DrawDailyTile(tile, i, now, past, day7, s, breathe, glow, crownTex);
-                x += w + gap;
+                bool now = i == today && DailyBonus.OfferReady;
+                bool done = i < today || (i == today && claimed);
+                var tile = new Rect(x, row.y, unit, row.height);
+                DrawDailyTile(tile, i, now, done, i == 6, s, breathe, glow, crownTex, sparkTex);
+                x += unit + gap;
             }
         }
 
-        static void DrawDailyTile(Rect tile, int day, bool now, bool past, bool day7, float s, float breathe, Texture2D glow, Texture crownTex)
+        static void DrawDailyTile(Rect tile, int day, bool now, bool done, bool day7, float s, float breathe, Texture2D glow, Texture crownTex, Texture sparkTex)
         {
             if (now)
             {
-                float pad = 5f * s + 2f * breathe;
-                GUI.color = new Color(1f, 0.82f, 0.28f, 0.34f + 0.20f * breathe);
+                float pad = 4f * s + 1.5f * breathe;
+                GUI.color = new Color(1f, 0.82f, 0.28f, 0.30f + 0.22f * breathe);
                 GUI.DrawTexture(new Rect(tile.x - pad, tile.y - pad, tile.width + pad * 2f, tile.height + pad * 2f), glow, ScaleMode.ScaleToFit, true);
             }
             Color fill = now
                 ? new Color(0.98f, 0.78f, 0.28f, 1f)
-                : past
-                    ? new Color(0.28f, 0.16f, 0.07f, 0.92f)
-                    : new Color(0.14f, 0.08f, 0.04f, 0.88f);
-            if (day7 && !now) fill = new Color(0.62f, 0.40f, 0.12f, 0.96f);
+                : done
+                    ? new Color(0.30f, 0.17f, 0.07f, 0.94f)
+                    : new Color(0.16f, 0.09f, 0.04f, 0.90f);
+            if (day7 && !now && !done) fill = new Color(0.55f, 0.34f, 0.10f, 0.96f);
+            if (day7 && now) fill = new Color(1f, 0.84f, 0.34f, 1f);
             GUI.color = fill;
             GUI.DrawTexture(tile, Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.86f, 0.42f, now || day7 ? 1f : 0.45f);
-            float edge = Mathf.Max(2f, (now ? 3.5f : 2f) * s);
+            GUI.color = new Color(1f, 0.86f, 0.42f, now || day7 ? 1f : done ? 0.55f : 0.40f);
+            float edge = Mathf.Max(1.5f, (now ? 2.6f : 1.6f) * s);
             GUI.DrawTexture(new Rect(tile.x, tile.y, tile.width, edge), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(tile.x, tile.yMax - edge, tile.width, edge), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(tile.x, tile.y, edge, tile.height), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(tile.xMax - edge, tile.y, edge, tile.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
+
+            float textTop = tile.y + tile.height * 0.14f;
+            float textH = tile.height * 0.48f;
             if (day7 && crownTex != null)
             {
-                float cs = tile.width * 0.46f;
-                GUI.DrawTexture(new Rect(tile.center.x - cs * 0.5f, tile.y - cs * 0.55f, cs, cs * 0.72f), crownTex, ScaleMode.ScaleToFit, true);
+                float cs = tile.width * 0.78f;
+                float ch = cs * 0.58f;
+                var crownR = new Rect(tile.center.x - cs * 0.5f, tile.y + tile.height * 0.04f, cs, ch);
+                GUI.DrawTexture(crownR, crownTex, ScaleMode.ScaleToFit, true);
+                if (sparkTex != null)
+                {
+                    float pulse = 0.45f + 0.55f * (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.1f));
+                    float sz = tile.width * 0.30f;
+                    var sr = new Rect(crownR.xMax - sz * 0.62f, crownR.y - sz * 0.04f, sz, sz);
+                    GUI.color = new Color(1f, 0.96f, 0.75f, 0.22f + 0.48f * pulse);
+                    GUI.DrawTexture(sr, sparkTex, ScaleMode.ScaleToFit, true);
+                    GUI.color = Color.white;
+                }
+                textTop = crownR.yMax + 1f;
+                float below = tile.yMax - textTop - (done ? tile.height * 0.22f : tile.height * 0.05f);
+                textH = below > tile.height * 0.20f ? below : tile.height * 0.20f;
             }
-            var amt = new Rect(tile.x + 1f, tile.y + tile.height * (day7 ? 0.28f : 0.16f), tile.width - 2f, tile.height * 0.46f);
+            else if (done)
+            {
+                textTop = tile.y + tile.height * 0.08f;
+                textH = tile.height * 0.46f;
+            }
+            var amt = new Rect(tile.x + 1f, textTop, tile.width - 2f, textH);
             _dailyTile.fontSize = _dailyTilePx;
             Color ink = now
-                ? new Color(0.28f, 0.12f, 0.04f, 1f)
-                : new Color(1f, 0.94f, 0.72f, past ? 0.55f : 0.78f);
+                ? new Color(0.32f, 0.14f, 0.04f, 1f)
+                : new Color(1f, 0.94f, 0.74f, done ? 0.72f : 0.92f);
             StampOutlined(amt, DailyBonus.TileLabel(day), _dailyTile, ink, 1, 1);
-            if (!past) return;
-            var mark = new Rect(tile.x + tile.width * 0.28f, tile.yMax - tile.height * 0.32f, tile.width * 0.44f, tile.height * 0.20f);
-            DrawDailyCheck(mark, new Color(1f, 0.86f, 0.36f, 0.95f));
+            if (!done) return;
+            float mh = tile.height * 0.15f;
+            var mark = new Rect(tile.x + tile.width * 0.27f, tile.yMax - mh - tile.height * 0.07f, tile.width * 0.46f, mh);
+            DrawDailyCheck(mark, new Color(1f, 0.88f, 0.40f, 0.96f));
         }
 
         static void DrawDailyCheck(Rect r, Color c)
@@ -389,15 +715,14 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        static void DrawDailyBadge(Rect card, float s, Texture2D glow)
+        static void DrawDailyBadge(Rect board, float band, float s, Texture2D glow)
         {
-            float b = Mathf.Clamp(58f * s, 46f, 76f);
-            var flame = new Rect(card.x + 6f * s, card.y - b * 0.28f, b, b);
-            float minY = TopHud();
-            if (flame.y < minY) flame.y = minY;
-            GUI.color = new Color(1f, 0.55f, 0.12f, 0.40f);
-            float pad = b * 0.18f;
-            GUI.DrawTexture(new Rect(flame.x - pad, flame.y - pad * 0.2f, flame.width + pad * 2f, flame.height + pad * 2f), glow, ScaleMode.ScaleToFit, true);
+            float b = band * 2.05f;
+            var flame = new Rect(board.x - band - b * 0.55f, board.y - band - b * 0.58f, b, b);
+            if (flame.y < 2f * s) flame.y = 2f * s;
+            GUI.color = new Color(1f, 0.55f, 0.12f, 0.34f);
+            float pad = b * 0.16f;
+            GUI.DrawTexture(new Rect(flame.x - pad, flame.y - pad * 0.2f, flame.width + pad * 2f, flame.height + pad), glow, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
             int frame = (int)(Time.unscaledTime * 8f) % 6;
             if (frame < 0) frame = 0;
@@ -410,56 +735,276 @@ namespace FlockFive
                 GUI.DrawTexture(flame, glow, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
             }
-            var num = new Rect(flame.x, flame.y + flame.height * 0.34f, flame.width, flame.height * 0.40f);
+            var num = new Rect(flame.x, flame.y + flame.height * 0.36f, flame.width, flame.height * 0.34f);
             _dailyLine.fontSize = _dailyDigitPx;
-            StampOutlined(num, DailyBonus.StreakDigits, _dailyLine, new Color(1f, 0.97f, 0.82f), 1, 1);
-            float lineW = Mathf.Max(b * 1.8f, 96f * s);
-            var line = new Rect(flame.x - 4f * s, flame.yMax - 2f * s, lineW, Mathf.Max(16f, 18f * s));
-            _dailyLine.fontSize = _dailyLinePx;
-            StampOutlined(line, DailyBonus.StreakLine, _dailyLine, new Color(1f, 0.90f, 0.55f), 1, 1);
+            StampOutlined(num, DailyBonus.StreakDigits, _dailyLine, new Color(1f, 0.97f, 0.86f), 1, 1);
+        }
+
+        static string DailyVerb()
+        {
+            if (DailyBonus.OfferReady) return "Claim";
+            if (DailyBonus.ClaimedToday) return "Claimed";
+            return "Later";
         }
 
         static void DrawDailyClaim(Rect flower, bool held, float s, float t)
         {
+            bool ready = DailyBonus.OfferReady;
             var bloom = SpriteCatalog.PlayFlower;
             float sink = held ? flower.height * 0.028f : 0f;
             if (bloom != null && bloom.texture != null)
             {
-                GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.38f);
+                GUI.color = new Color(0.10f, 0.06f, 0.03f, ready ? 0.38f : 0.20f);
                 GUI.DrawTexture(new Rect(flower.x + 5f, flower.y + 12f, flower.width, flower.height), bloom.texture, ScaleMode.ScaleToFit, true);
-                GUI.color = Color.white;
-                if (!held) DrawFlowerHalo(flower, 0f);
+                GUI.color = ready ? Color.white : new Color(0.84f, 0.82f, 0.76f, 1f);
+                if (!held && ready) DrawFlowerHalo(flower, 0f);
                 GUI.DrawTexture(flower, bloom.texture, ScaleMode.ScaleToFit, true);
-                if (!held) DrawFlowerShimmer(flower, 0f);
+                if (!held && ready) DrawFlowerShimmer(flower, 0f);
+                GUI.color = Color.white;
                 if (held) DrawDiscPress(flower, sink);
             }
             var disc = FlowerDisc(flower, sink);
             if (bloom == null || bloom.texture == null)
             {
-                GUI.color = new Color(0.93f, 0.68f, 0.18f, 1f);
+                GUI.color = ready ? new Color(0.93f, 0.68f, 0.18f, 1f) : new Color(0.55f, 0.42f, 0.16f, 1f);
                 GUI.DrawTexture(disc, Texture2D.whiteTexture);
                 GUI.color = Color.white;
             }
-            var payR = new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.30f);
-            var labR = new Rect(disc.x, disc.y + disc.height * 0.36f, disc.width, disc.height * 0.46f);
+            var payR = new Rect(disc.x, disc.y + disc.height * 0.08f, disc.width, disc.height * 0.28f);
+            var labR = new Rect(disc.x, disc.y + disc.height * 0.36f, disc.width, disc.height * 0.44f);
             _dailyClaim.fontSize = _dailyPayPx;
             StampOutlined(payR, DailyBonus.PayLine, _dailyClaim, new Color(0.45f, 0.22f, 0.06f), 1, 1);
             _dailyClaim.fontSize = _dailyClaimPx;
             int ink = Mathf.Clamp(Mathf.RoundToInt(_dailyClaimPx * 0.12f), 2, 6);
-            StampOutlined(labR, "Claim", _dailyClaim, new Color(0.28f, 0.12f, 0.04f), 2, ink);
+            StampOutlined(labR, DailyVerb(), _dailyClaim, new Color(0.28f, 0.12f, 0.04f), 2, ink);
+            if (!ready) return;
 
             var spark = SpriteCatalog.Sparkle;
             var tex = spark != null && spark.texture != null ? spark.texture : null;
             if (tex == null) return;
-            float pulse = 0.78f + 0.22f * Mathf.Sin(t * 5.4f);
-            float sz = disc.width * 0.30f * pulse;
-            var sr = new Rect(disc.xMax - sz * 0.78f, disc.y - sz * 0.18f, sz, sz);
+            float pulse = 0.82f + 0.18f * Mathf.Sin(t * 5.4f);
+            float sz = disc.width * 0.28f * pulse;
+            var sr = new Rect(disc.xMax - sz * 0.72f, disc.y - sz * 0.12f, sz, sz);
             var prev = GUI.matrix;
             GUIUtility.RotateAroundPivot(t * 40f, sr.center);
             GUI.color = new Color(1f, 0.96f, 0.75f, 0.92f);
             GUI.DrawTexture(sr, tex, ScaleMode.ScaleToFit, true);
             GUI.matrix = prev;
             GUI.color = Color.white;
+        }
+
+        void DrawDailyAsk(float s)
+        {
+            if (!_dailyAskOpen) return;
+#if UNITY_EDITOR
+            if (_dailyShotQuiet || EditorShotLive) return;
+#endif
+            DailyAskLayout(s, out var card, out var body, out var yesR, out var noR);
+            bool yes = HitPad(yesR, out bool yesHeld);
+            bool no = HitPad(noR, out bool noHeld);
+            HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
+
+            float t = Time.unscaledTime;
+            float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
+            var glow = GlowTex();
+            GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.72f);
+            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            float k = DailyPop(_dailyAskAt);
+            var prev = GUI.matrix;
+            if (k < 0.999f)
+                GUIUtility.ScaleAroundPivot(new Vector2(k, k), card.center);
+            DrawAskFrame(card, s, breathe, glow);
+            EnsureAskStyles();
+            EnsureAskFit(s, body, yesR);
+            _dailyAsk.fontSize = _dailyAskBodyPx;
+            int ink = Mathf.Max(2, Mathf.RoundToInt(_dailyAskBodyPx * 0.10f));
+            StampOutlined(body, DailyAskCopy, _dailyAsk, new Color(1f, 0.96f, 0.78f), 1, ink);
+            DrawAskButton(yesR, DailyAskYes, _dailyAskYesPx, true, yesHeld);
+            DrawAskButton(noR, DailyAskNo, _dailyAskNoPx, false, noHeld);
+            GUI.matrix = prev;
+            GUI.color = Color.white;
+
+            if (yes) CloseDailyAsk(true);
+            else if (no) CloseDailyAsk(false);
+        }
+
+        void CloseDailyAsk(bool yes)
+        {
+            if (!_dailyAskOpen) return;
+            _dailyAskOpen = false;
+            _dailyAskAt = -1f;
+            if (yes) DailyReminder.Accept();
+            else DailyReminder.Decline();
+            Sfx.CardTap();
+            if (PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0)
+                OfferWelcome();
+        }
+
+        static void DailyAskLayout(float s, out Rect card, out Rect body, out Rect yesR, out Rect noR)
+        {
+            float w = Mathf.Min(Screen.width * 0.82f, 480f * s);
+            float h = Mathf.Clamp(176f * s, 156f, 220f * s);
+            if (h > Screen.height * 0.42f) h = Screen.height * 0.42f;
+            card = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.44f, w, h);
+            float band = Mathf.Max(8f, 10f * s);
+            float pad = band + 10f * s;
+            float btnH = Mathf.Clamp(46f * s, 42f, 56f * s);
+            float gap = 10f * s;
+            float btnW = (w - pad * 2f - gap) * 0.5f;
+            float btnY = card.yMax - pad - btnH;
+            yesR = new Rect(card.x + pad, btnY, btnW, btnH);
+            noR = new Rect(yesR.xMax + gap, btnY, btnW, btnH);
+            body = new Rect(card.x + pad, card.y + pad, w - pad * 2f, Mathf.Max(36f, btnY - card.y - pad - 8f * s));
+        }
+
+        static void DrawAskFrame(Rect card, float s, float breathe, Texture2D glow)
+        {
+            float aura = card.width * 0.06f;
+            GUI.color = new Color(1f, 0.78f, 0.22f, 0.16f + 0.08f * breathe);
+            GUI.DrawTexture(new Rect(card.x - aura, card.y - aura * 0.4f, card.width + aura * 2f, card.height + aura), glow, ScaleMode.ScaleToFit, true);
+            var wood = SpriteCatalog.Blanket != null ? SpriteCatalog.Blanket.texture : Texture2D.whiteTexture;
+            float sh = 4f * s;
+            GUI.color = new Color(0.05f, 0.03f, 0.02f, 0.42f);
+            GUI.DrawTexture(new Rect(card.x + sh, card.y + sh * 1.4f, card.width, card.height), wood, ScaleMode.StretchToFill, true);
+            GUI.color = new Color(0.46f, 0.26f, 0.10f, 1f);
+            GUI.DrawTexture(card, wood, ScaleMode.StretchToFill, true);
+            float band = Mathf.Max(8f, 10f * s);
+            GUI.color = new Color(0.78f, 0.56f, 0.18f, 1f);
+            GUI.DrawTexture(new Rect(card.x + 3f * s, card.y + 3f * s, card.width - 6f * s, card.height - 6f * s), Texture2D.whiteTexture);
+            var inner = new Rect(card.x + band, card.y + band, card.width - band * 2f, card.height - band * 2f);
+            GUI.color = new Color(0.18f, 0.10f, 0.05f, 1f);
+            GUI.DrawTexture(inner, wood, ScaleMode.StretchToFill, true);
+            GUI.color = Color.white;
+        }
+
+        static void EnsureAskStyles()
+        {
+            if (_dailyAsk != null) return;
+            _dailyAsk = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true
+            };
+            _dailyAskBtn = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+        }
+
+        static void EnsureAskFit(float s, Rect body, Rect btn)
+        {
+            int key = Screen.width * 19349663 ^ Screen.height * 83492791
+                ^ Mathf.RoundToInt(body.width) * 17
+                ^ Mathf.RoundToInt(body.height)
+                ^ Mathf.RoundToInt(btn.width);
+            if (key == _dailyAskFit) return;
+            _dailyAskFit = key;
+            EnsureAskStyles();
+            int hi = Mathf.Max(18, Mathf.RoundToInt(26f * s));
+            _dailyAskBodyPx = FitFontWrapped(_dailyAsk, DailyAskCopy, body.width, body.height * 0.92f, 14, hi);
+            int yes = FitFont(_dailyAskBtn, DailyAskYes, btn.width * 0.88f, btn.height * 0.62f, 12, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
+            int no = FitFont(_dailyAskBtn, DailyAskNo, btn.width * 0.88f, btn.height * 0.62f, 12, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
+            _dailyAskYesPx = yes < no ? yes : no;
+            _dailyAskNoPx = _dailyAskYesPx;
+        }
+
+        static void DrawAskButton(Rect r, string label, int px, bool gold, bool held)
+        {
+            var blob = SpriteCatalog.Blanket != null ? SpriteCatalog.Blanket.texture : Texture2D.whiteTexture;
+            float sink = held ? r.height * 0.05f : 0f;
+            var face = new Rect(r.x, r.y + sink, r.width, r.height - sink);
+            GUI.color = gold
+                ? (held ? new Color(0.72f, 0.48f, 0.12f, 1f) : new Color(0.95f, 0.72f, 0.22f, 1f))
+                : (held ? new Color(0.26f, 0.15f, 0.07f, 1f) : new Color(0.38f, 0.22f, 0.10f, 1f));
+            GUI.DrawTexture(face, blob, ScaleMode.StretchToFill, true);
+            GUI.color = new Color(1f, 0.88f, 0.48f, gold ? 0.95f : 0.40f);
+            float e = Mathf.Max(2f, face.height * 0.06f);
+            GUI.DrawTexture(new Rect(face.x, face.y, face.width, e), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            _dailyAskBtn.fontSize = px;
+            var ink = gold ? new Color(0.32f, 0.14f, 0.04f, 1f) : new Color(1f, 0.94f, 0.78f, 1f);
+            StampOutlined(face, label, _dailyAskBtn, ink, 1, 1);
+        }
+
+        void DrawWelcome(float s)
+        {
+            if (!_welcomeOpen) return;
+#if UNITY_EDITOR
+            if (_dailyShotQuiet || EditorShotLive) return;
+#endif
+            WelcomeLayout(s, out var card, out var titleR, out var amtR, out var lineR, out var btn);
+            bool thanks = HitPad(btn, out bool held);
+            HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
+
+            float t = Time.unscaledTime;
+            float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
+            var glow = GlowTex();
+            GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.72f);
+            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            float k = DailyPop(_welcomeAt);
+            var prev = GUI.matrix;
+            if (k < 0.999f)
+                GUIUtility.ScaleAroundPivot(new Vector2(k, k), card.center);
+            DrawAskFrame(card, s, breathe, glow);
+            EnsureAskStyles();
+            EnsureWelcomeFit(s, titleR, amtR, lineR, btn);
+            _dailyAsk.fontSize = _welcomeTitlePx;
+            StampOutlined(titleR, WelcomeTitle, _dailyAsk, new Color(1f, 0.94f, 0.62f), 1, 2);
+            _dailyAsk.fontSize = _welcomeAmtPx;
+            StampOutlined(amtR, Money.Format(WelcomeBonusCoins), _dailyAsk, new Color(1f, 0.86f, 0.28f), 1, 2);
+            float nudge = Mathf.Sin(t * 2.8f) * 4f * s;
+            var nudged = new Rect(lineR.x + nudge, lineR.y, lineR.width, lineR.height);
+            _dailyAsk.fontSize = _welcomeLinePx;
+            int ink = Mathf.Max(2, Mathf.RoundToInt(_welcomeLinePx * 0.10f));
+            StampOutlined(nudged, WelcomeLine, _dailyAsk, new Color(1f, 0.96f, 0.78f), 1, ink);
+            DrawAskButton(btn, WelcomeThanks, _welcomeBtnPx, true, held);
+            GUI.matrix = prev;
+            GUI.color = Color.white;
+            if (thanks) CloseWelcome();
+        }
+
+        static void WelcomeLayout(float s, out Rect card, out Rect title, out Rect amt, out Rect line, out Rect btn)
+        {
+            float w = Mathf.Min(Screen.width * 0.84f, 500f * s);
+            float h = Mathf.Clamp(248f * s, 220f, 310f * s);
+            if (h > Screen.height * 0.52f) h = Screen.height * 0.52f;
+            card = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.42f, w, h);
+            float band = Mathf.Max(8f, 10f * s);
+            float pad = band + 12f * s;
+            float btnH = Mathf.Clamp(48f * s, 44f, 58f * s);
+            float innerW = w - pad * 2f;
+            float y = card.y + pad;
+            float titleH = 32f * s;
+            float amtH = 40f * s;
+            title = new Rect(card.x + pad, y, innerW, titleH);
+            y += titleH;
+            amt = new Rect(card.x + pad, y, innerW, amtH);
+            y += amtH + 4f * s;
+            float btnY = card.yMax - pad - btnH;
+            line = new Rect(card.x + pad, y, innerW, Mathf.Max(36f, btnY - y - 8f * s));
+            btn = new Rect(card.x + pad, btnY, innerW, btnH);
+        }
+
+        static void EnsureWelcomeFit(float s, Rect title, Rect amt, Rect line, Rect btn)
+        {
+            int key = Screen.width * 83492791 ^ Screen.height * 19349663
+                ^ Mathf.RoundToInt(line.width) * 13
+                ^ Mathf.RoundToInt(line.height)
+                ^ Mathf.RoundToInt(btn.width);
+            if (key == _welcomeFit) return;
+            _welcomeFit = key;
+            EnsureAskStyles();
+            _welcomeTitlePx = FitFont(_dailyAsk, WelcomeTitle, title.width, title.height * 0.9f, 16, Mathf.Max(22, Mathf.RoundToInt(30f * s)));
+            _welcomeAmtPx = FitFont(_dailyAsk, Money.Format(WelcomeBonusCoins), amt.width, amt.height * 0.92f, 18, Mathf.Max(26, Mathf.RoundToInt(40f * s)));
+            _welcomeLinePx = FitFontWrapped(_dailyAsk, WelcomeLine, line.width * 0.92f, line.height * 0.92f, 13, Mathf.Max(16, Mathf.RoundToInt(20f * s)));
+            _welcomeBtnPx = FitFont(_dailyAskBtn, WelcomeThanks, btn.width * 0.8f, btn.height * 0.62f, 14, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
         }
 
 #if UNITY_EDITOR

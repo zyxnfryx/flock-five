@@ -110,6 +110,11 @@ namespace FlockFive
 
         static void Drain()
         {
+            if (GamePause.Paused || Ads.IsShowing)
+            {
+                _pending = 0;
+                return;
+            }
             if (_pending == 0) return;
             if (Time.unscaledTime < _next) return;
             int t = _pending;
@@ -123,6 +128,7 @@ namespace FlockFive
 
         static bool CanPlay(Tier tier)
         {
+            if (GamePause.Paused || Ads.IsShowing) return false;
             if (!Enabled || !Application.isMobilePlatform) return false;
             // UIImpactFeedbackGenerator needs an Objective-C plugin. Light has no system-vibrate equivalent.
             if (tier == Tier.Light) return false;

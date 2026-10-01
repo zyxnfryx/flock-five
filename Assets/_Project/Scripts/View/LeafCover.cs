@@ -51,10 +51,25 @@ namespace FlockFive
         float[] _liftSpin = new float[0];
         bool _on;
         bool _lift;
+        bool _hold;
         float _liftT;
         int _sig = int.MinValue;
 
         public bool Locked => _on && !_lift;
+
+        // Restart parade owns the transforms. LateUpdate stays out until they settle.
+        public void HoldMotion(bool on) => _hold = on;
+
+        public void AppendLive(System.Collections.Generic.List<SpriteRenderer> into)
+        {
+            if (into == null) return;
+            for (int i = 0; i < _items.Count; i++)
+            {
+                var sr = _items[i].Sr;
+                if (sr != null && sr.enabled && sr.gameObject.activeInHierarchy)
+                    into.Add(sr);
+            }
+        }
 
         public void Cover(bool locked, Transform[] seats, int occupied)
         {
@@ -254,6 +269,7 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            if (GamePause.Paused || _hold) return;
             if (_items.Count == 0) return;
             if (_lift)
             {

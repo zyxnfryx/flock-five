@@ -77,6 +77,7 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            if (GamePause.Paused) return;
             if (_bolt > 0f)
             {
                 ApplyBolt();

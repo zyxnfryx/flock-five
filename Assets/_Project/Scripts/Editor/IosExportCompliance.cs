@@ -20,6 +20,11 @@ public static class IosExportCompliance
         // App Tracking Transparency prompt text (asked once after the first garden).
         plist.root.SetString("NSUserTrackingUsageDescription",
             "Allowing tracking helps show you ads that fit you better and keeps Flock Five free.");
+        // Runs after the notifications postprocessor (order 1). That step copies
+        // Request Authorization on App Launch into this key; the daily reminder
+        // asks only after a claim, from DailyReminder.Accept.
+        plist.root.SetBoolean("UnityNotificationRequestAuthorizationOnAppLaunch", false);
+        plist.root.SetBoolean("UnityNotificationRequestAuthorizationForRemoteNotificationsOnAppLaunch", false);
         plist.WriteToFile(plistPath);
 
         var projPath = PBXProject.GetPBXProjectPath(path);

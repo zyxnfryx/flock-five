@@ -35,11 +35,26 @@ namespace FlockFive
         readonly float[] _hidX = new float[Blankets];
         bool _on;
         bool _scatter;
+        bool _hold;
         float _scatterT;
         float _nextHum;
         Vector3[] _scatterVel;
 
         public bool Hidden => _on && !_scatter;
+
+        // Restart flies the cloud with the flock. LateUpdate must not pin them mid-parade.
+        public void HoldMotion(bool on) => _hold = on;
+
+        public void AppendLive(System.Collections.Generic.List<SpriteRenderer> into)
+        {
+            if (into == null || _bees == null) return;
+            for (int i = 0; i < _bees.Length; i++)
+            {
+                var b = _bees[i];
+                if (b != null && b.enabled && b.gameObject.activeInHierarchy)
+                    into.Add(b);
+            }
+        }
 
         public void Cover(bool shrouded, Transform[] seats, int lastHid, int occupied)
         {
@@ -255,6 +270,7 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            if (GamePause.Paused || _hold) return;
             if (_bees == null) return;
             if (_scatter)
             {

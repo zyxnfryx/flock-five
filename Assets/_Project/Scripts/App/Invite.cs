@@ -42,7 +42,7 @@ namespace FlockFive
         public static string Blurb()
         {
             int n = Hive.Found;
-            string hive = n > 0 ? n + " bees in my hive" : "a new garden";
+            string hive = n > 0 ? n + " cards in my collection" : "a new garden";
             return "Come play Flock Five with me — " + hive + ". "
                  + "Open the game and use hive code " + Code + " and we both get coins. "
                  + "flockfive://r/" + Code;

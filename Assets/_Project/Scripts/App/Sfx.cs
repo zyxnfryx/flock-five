@@ -355,7 +355,9 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.72f, MixDesk.DuckWhoosh);
         }
 
-        public static void Combo(int size)
+        public static void Combo(int size) => Combo(size, 0.76f);
+
+        public static void Combo(int size, float vol)
         {
             Ensure();
             size = Mathf.Clamp(size, 2, Palette.ComboMax);
@@ -366,7 +368,7 @@ namespace FlockFive
                 float pitch = size <= 8 ? 1f : Mathf.Min(1.04f, 1f + 0.008f * (size - 8));
                 if (_jingles != null && i >= 0 && i < _jingles.Length)
                 {
-                    Shot(_jingles[i], pitch, 0.76f, MixLayer.Lead, MixDesk.DuckWhoosh);
+                    Shot(_jingles[i], pitch, vol, MixLayer.Lead, MixDesk.DuckWhoosh);
                     if (MixDesk.Live != null)
                         MixDesk.Live.MarkLead(0.42f + 0.14f * i, MixDesk.DuckWhoosh);
                 }
@@ -480,6 +482,16 @@ namespace FlockFive
         // Wounded hawk: same bank, held at the mix pitch ceiling.
         public static void HawkCryHot() => PlayHawkCry(1.04f);
 
+        // Defeated limp: same kee, lower and quieter, still under the pitch ceiling.
+        public static void HawkCryHurt()
+        {
+            Ensure();
+            if (_hawks == null || _hawks.Length == 0) return;
+            int i = Next(_hawks.Length, ref _lastHawk);
+            Shot(_hawks[i], 0.90f, Random.Range(0.62f, 0.70f), MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.45f, MixDesk.DuckChirp);
+        }
+
         static void PlayHawkCry(float pitch)
         {
             Ensure();
@@ -549,11 +561,41 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MoonLift();
         }
 
+        public static float FireworkGain = 1f;
+        static AudioClip _fwWhistle;
+
+        public static void FireworkLaunch()
+        {
+            Ensure();
+            if (_fwWhistle == null) _fwWhistle = MakeFwWhistle();
+            float g = Mathf.Clamp01(FireworkGain);
+            if (g < 0.04f) return;
+            Shot(_fwWhistle, Random.Range(0.96f, 1.05f), 0.38f * g, MixLayer.Mid);
+        }
+
         public static void Firework()
         {
             Ensure();
+            float g = Mathf.Clamp01(FireworkGain);
+            if (g < 0.04f || _booms == null || _booms.Length == 0) return;
             int i = Random.Range(0, _booms.Length);
-            Shot(_booms[i], Random.Range(0.94f, 1.03f), 0.7f, MixLayer.Lead);
+            Shot(_booms[i], Random.Range(0.94f, 1.03f), 0.7f * g, MixLayer.Lead);
+        }
+
+        static AudioClip MakeFwWhistle()
+        {
+            const float dur = 0.22f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float u = t / dur;
+                float f = Mathf.Lerp(420f, 1380f, u);
+                float e = Mathf.Sin(Mathf.PI * u) * (1f - u);
+                data[i] = Mathf.Sin(2f * Mathf.PI * f * t) * e * 0.45f;
+            }
+            return Clip("fw-whistle", data);
         }
 
         public static void Rumble() => Haptics.Play(Haptics.Tier.Medium);
@@ -631,6 +673,27 @@ namespace FlockFive
             int i = Next(_scatters.Length, ref _lastScatter);
             Shot(_scatters[i], Random.Range(0.98f, 1.02f), 0.70f, MixLayer.Lead, MixDesk.DuckChirp);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.32f, MixDesk.DuckChirp);
+        }
+
+        static AudioClip _rowAlert;
+        static AudioClip _feederArrive;
+
+        // One shot for the whole sleeping row. Warm double pulse, not a beep stack.
+        public static void RowAlert()
+        {
+            Ensure();
+            if (_rowAlert == null) _rowAlert = MakeRowAlert();
+            Shot(_rowAlert, Random.Range(0.98f, 1.02f), 0.60f, MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.26f, MixDesk.DuckChirp);
+        }
+
+        // Feeder drop. Short wood pluck, one Lead seat, not a chime loop.
+        public static void FeederArrive()
+        {
+            Ensure();
+            if (_feederArrive == null) _feederArrive = MakeFeederArrive();
+            Shot(_feederArrive, Random.Range(0.98f, 1.02f), 0.48f, MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.18f, MixDesk.DuckChirp);
         }
 
         static int Next(int n, ref int last)

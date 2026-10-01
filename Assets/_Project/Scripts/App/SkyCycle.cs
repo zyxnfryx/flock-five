@@ -22,6 +22,13 @@ namespace FlockFive
         float _rushFrom;
         float _rushDur;
         float _rushT;
+        bool _easing;
+        float _easeFrom;
+        float _easeTo;
+        float _easeDur;
+        float _easeT;
+        float _savedDusk;
+        bool _haveSaved;
         Color _veilCol;
         Color _camCol;
         bool _veilOn;
@@ -33,6 +40,11 @@ namespace FlockFive
             get
             {
                 if (Instance == null) return 0f;
+                if (Instance._easing)
+                {
+                    float eu = Mathf.Clamp01(Instance._easeT / Mathf.Max(0.01f, Instance._easeDur));
+                    return Mathf.Lerp(Instance._easeFrom, Instance._easeTo, Mathf.SmoothStep(0f, 1f, eu));
+                }
                 if (Instance._heldNight) return 1f;
                 if (Instance._rushing)
                 {
@@ -52,7 +64,46 @@ namespace FlockFive
             Instance._rushDur = Mathf.Max(0.25f, seconds);
             Instance._rushT = 0f;
             Instance._rushing = true;
+            Instance._easing = false;
             Instance._welcomed = true;
+        }
+
+        float ClockDusk()
+        {
+            float u = (PlayClock.Now - _t0) / Duration;
+            float v = Mathf.Clamp01((u - 0.12f) / 0.88f);
+            return Mathf.SmoothStep(0f, 1f, v);
+        }
+
+        // Instant night for the last combo. The clock dusk is remembered so the
+        // finale can ease back without a pop.
+        public static void SnapNight()
+        {
+            if (Instance == null) return;
+            var s = Instance;
+            if (!s._haveSaved)
+            {
+                s._savedDusk = s.ClockDusk();
+                s._haveSaved = true;
+            }
+            s._rushing = false;
+            s._easing = false;
+            s._heldNight = true;
+            s._welcomed = true;
+        }
+
+        public static void EaseToSaved(float seconds)
+        {
+            if (Instance == null) return;
+            var s = Instance;
+            s._easeFrom = Dusk;
+            s._easeTo = s._haveSaved ? s._savedDusk : s.ClockDusk();
+            s._easeDur = Mathf.Max(0.25f, seconds);
+            s._easeT = 0f;
+            s._easing = true;
+            s._heldNight = false;
+            s._rushing = false;
+            s._haveSaved = false;
         }
 
         public static SkyCycle Attach(Transform root, Camera cam)
@@ -73,6 +124,8 @@ namespace FlockFive
             _welcomed = false;
             _rushing = false;
             _heldNight = false;
+            _easing = false;
+            _haveSaved = false;
         }
 
         void OnDisable()
@@ -117,6 +170,18 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            if (GamePause.Paused) return;
+            if (_easing)
+            {
+                _easeT += PlayClock.Delta;
+                if (_easeT >= _easeDur)
+                {
+                    _easing = false;
+                    float v = Mathf.Clamp01(_easeTo);
+                    float u = 0.12f + v * 0.88f;
+                    _t0 = PlayClock.Now - u * Duration;
+                }
+            }
             if (_rushing)
             {
                 _rushT += PlayClock.Delta;

@@ -351,12 +351,17 @@ namespace FlockFive
             return want;
         }
 
-        IEnumerator PlayComboPop(Transform parent, int combo)
+        IEnumerator PlayComboPop(Transform parent, int combo, bool celebrate = false)
         {
-            if (parent == null || combo < 2) yield break;
+            if (parent == null || combo < 2)
+            {
+                if (celebrate) FinaleShow.StopLaunching();
+                yield break;
+            }
             combo = Mathf.Clamp(combo, 2, Palette.ComboMax);
             float tier = Mathf.InverseLerp(2f, Palette.ComboMax, combo);
             float cap = Mathf.Lerp(1.18f, 1.46f, tier);
+            if (celebrate) cap *= 1.32f;
             float mulCap = cap * 0.90f;
             float vAir = 0.28f * cap;
             float drop = 0.12f * cap;
@@ -370,7 +375,11 @@ namespace FlockFive
             int n = 0;
             n = ComboLayRow("COMBO", true, cap, sep * 0.5f, 0f, 0.026f, glyphs, n, face);
             n = ComboLayRow("x" + combo, false, mulCap, -sep * 0.5f, 0.08f, 0.03f, glyphs, n, face);
-            if (n == 0) yield break;
+            if (n == 0)
+            {
+                if (celebrate) FinaleShow.StopLaunching();
+                yield break;
+            }
 
             ComboBounds(glyphs, n, 0f, out float minX, out float maxX, out float minY, out float maxY);
             float shiftX = (minX + maxX) * 0.5f;
@@ -423,8 +432,11 @@ namespace FlockFive
             var glowSr = glowGo.GetComponent<SpriteRenderer>();
             if (glowSr != null) glowSr.color = new Color(ink.r, ink.g, ink.b, 0f);
             float glowA = Mathf.Lerp(0.20f, 0.40f, tier);
+            if (celebrate) glowA = Mathf.Min(0.70f, glowA * 1.45f);
 
-            var sparks = new SpriteRenderer[6 + Mathf.RoundToInt(tier * 3f)];
+            int sparkN = 6 + Mathf.RoundToInt(tier * 3f);
+            if (celebrate) sparkN += 8;
+            var sparks = new SpriteRenderer[sparkN];
             var sparkAge = new float[sparks.Length];
             var sparkVel = new Vector3[sparks.Length];
             const float sparkLife = 0.42f;
@@ -450,6 +462,7 @@ namespace FlockFive
             const float popDur = 0.32f;
             float popEnd = lastDelay + popDur;
             float t = 0f;
+            if (celebrate) _comboPopLive++;
             try
             {
                 lane.Live = true;
@@ -532,6 +545,7 @@ namespace FlockFive
                 }
 
                 float holdDur = 0.36f + 0.02f * Mathf.Min(combo, 12);
+                if (celebrate) holdDur *= 1.65f;
                 float hT = 0f;
                 while (hT < holdDur && hold != null)
                 {
@@ -573,6 +587,11 @@ namespace FlockFive
             }
             finally
             {
+                if (celebrate)
+                {
+                    _comboPopLive = Mathf.Max(0, _comboPopLive - 1);
+                    FinaleShow.StopLaunching();
+                }
                 lane.Live = false;
                 ComboLanes.Remove(lane);
                 if (sparks != null)

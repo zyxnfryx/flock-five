@@ -13,6 +13,7 @@ namespace FlockFive
         public int BlockingSlot { get; private set; } = -1;
         public bool IsBlocking => Live != null && BlockingSlot >= 0 && !_done;
         public bool InScrap => _evict || _fleeing;
+        public bool Settled { get; private set; }
 
         const float Scale = 0.78f; // bigger pest than hummingbirds (0.42)
         SpriteRenderer _art;
@@ -122,6 +123,8 @@ namespace FlockFive
                     view.Flap(true);
                     yield return null;
                 }
+                if (!view._evict)
+                    view.Settled = true;
 
                 while (!view._evict)
                 {
@@ -300,6 +303,7 @@ namespace FlockFive
                 yield break;
             }
             _fleeing = true;
+            Settled = false;
             StopHit();
             BlockingSlot = -1;
             if (defeated)
@@ -381,35 +385,36 @@ namespace FlockFive
                 _done = true;
                 yield break;
             }
-            SparrowBits.Burst(from + new Vector3(0f, 0.1f, 0f), parent, _tint, 16);
-            PestCheer.Mark(from, parent, false);
+            SparrowBits.Burst(from + new Vector3(0f, 0.1f, 0f), parent, _tint, 10);
 
             float dir = Mathf.Sign(_exitX - from.x);
             if (dir == 0f) dir = _exitX >= 0f ? 1f : -1f;
-            var dest = new Vector3(_exitX, from.y + Random.Range(2.1f, 3.3f), 0f);
+            var dest = new Vector3(_exitX, from.y + Random.Range(1.3f, 2.1f), 0f);
             if (_art != null) _art.flipX = dest.x < from.x;
-            float spin = -dir * Random.Range(520f, 740f);
+            float spin = -dir * Random.Range(120f, 160f);
             float t = 0f;
-            const float dur = 0.74f;
+            const float dur = 1.5f;
             while (t < dur && !_abort)
             {
                 t += Time.deltaTime;
                 float u = Mathf.Clamp01(t / dur);
-                float ease = u * u;
+                float ease = Mathf.SmoothStep(0f, 1f, u);
                 var p = Vector3.Lerp(from, dest, ease);
-                p.y += Mathf.Sin(u * Mathf.PI) * 1.75f;
+                p.y += Mathf.Sin(u * Mathf.PI) * 0.85f;
                 transform.position = p;
-                transform.localRotation = Quaternion.Euler(0f, 0f, spin * u);
-                transform.localScale = Vector3.one * (Scale * Mathf.Lerp(1.06f, 0.5f, u));
+                transform.localRotation = Quaternion.Euler(0f, 0f, spin * u * 0.35f + Mathf.Sin(u * Mathf.PI * 2f) * 12f);
+                transform.localScale = Vector3.one * (Scale * Mathf.Lerp(1.04f, 0.94f, u));
                 Flap(true);
                 if (_art != null)
                 {
                     var c = _art.color;
-                    c.a = u > 0.72f ? Mathf.Lerp(1f, 0.35f, (u - 0.72f) / 0.28f) : 1f;
+                    c.a = u > 0.86f ? Mathf.Lerp(1f, 0.2f, (u - 0.86f) / 0.14f) : 1f;
                     _art.color = c;
                 }
                 yield return null;
             }
+            if (!_abort)
+                PestCheer.Mark(from, parent, false);
             _done = true;
         }
 
@@ -450,6 +455,7 @@ namespace FlockFive
         {
             if (Live == this) Live = null;
             BlockingSlot = -1;
+            Settled = false;
             _done = true;
         }
 

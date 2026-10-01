@@ -11,12 +11,15 @@ namespace FlockFive
         {
             const string Title = "VIP";
             const string BuyLabel = "Go VIP";
-            const string RestoreLabel = "Restore purchases";
+            const string RestoreLabel = "Already a VIP? Restore purchase";
             const string Body =
                 "No ads between stages.\nYou can still watch for a branch.\nOne-time purchase.";
+            const float BuyScale = 0.85f;
 
             static bool _open;
             static GUIStyle _title, _body, _buy, _link;
+            static string _note;
+            static float _noteUntil;
 
             public static bool IsOpen => _open;
 
@@ -41,9 +44,10 @@ namespace FlockFive
             public static void Draw(float s)
             {
                 if (!_open) return;
-                if (NoAds.Owned)
+                if (NoAds.Owned && (string.IsNullOrEmpty(_note) || Time.unscaledTime >= _noteUntil))
                 {
                     _open = false;
+                    _note = null;
                     return;
                 }
 
@@ -56,16 +60,20 @@ namespace FlockFive
                 bool xHit = HitPad(xBtn, out bool xHeld);
 
                 GiftCardLayout(s, out var card, out var flower);
-                var disc = FlowerDisc(flower, 0f);
+                var buyFlower = ScaledAbout(flower, BuyScale);
+                var disc = FlowerDisc(buyFlower, 0f);
                 var discHit = GrowDisc(disc, s);
                 bool buy = HitPad(discHit, out bool buyHeld);
 
-                float linkH = Mathf.Max(44f, 40f * s);
-                float linkY = discHit.yMax + 8f * s;
-                float maxY = Screen.height - Mathf.Max(8f, safe.yMin + 4f) - linkH;
-                if (linkY > maxY) linkY = maxY;
-                if (linkY < discHit.yMax + 4f) linkY = discHit.yMax + 4f;
-                var link = new Rect(flower.x + flower.width * 0.06f, linkY, flower.width * 0.88f, linkH);
+                float linkH = Mathf.Max(44f, 36f * s);
+                float gap = 22f * s;
+                float linkY = buyFlower.yMax + gap;
+                float playFlower = Mathf.Min(Screen.width * 0.94f, Screen.height * 0.50f);
+                float playTop = Screen.height - Mathf.Max(14f, safe.yMin + 8f) - playFlower;
+                float maxY = playTop - linkH - 10f * s;
+                if (linkY > maxY) linkY = Mathf.Max(disc.yMax + 12f * s, maxY);
+                float linkW = Mathf.Min(card.width * 0.86f, 340f * s);
+                var link = new Rect(flower.center.x - linkW * 0.5f, linkY, linkW, linkH);
                 bool restore = HitPad(link, out bool linkHeld);
 
                 float x0 = Mathf.Min(card.x, Mathf.Min(flower.x, link.x));
@@ -97,6 +105,7 @@ namespace FlockFive
                     GUI.color = Color.white;
                     GUI.DrawTexture(card, tex, ScaleMode.ScaleToFit, true);
                 }
+                DrawVipAccents(card);
 
                 var plate = new Rect(
                     card.x + card.width * 0.13f,
@@ -113,9 +122,11 @@ namespace FlockFive
                 GUI.color = Color.white;
 
                 DrawCopy(plate, s, breathe, glow);
-                DrawGiftMarquee(plate, s, t);
-                DrawBuy(flower, buyHeld, s);
+                float bulbFrac = Mathf.Clamp(15f * s / Mathf.Max(1f, plate.width), 0.040f, 0.058f);
+                DrawGiftMarquee(plate, s, t, 0.70f, 3f * s, bulbFrac, 12, 0f, true);
+                DrawBuy(buyFlower, buyHeld, s);
                 DrawRestore(link, linkHeld, s);
+                DrawRestoreNote(link, s);
                 DrawGiftCloseX(xBtn, xHeld, s);
                 GUI.color = Color.white;
 
@@ -130,7 +141,8 @@ namespace FlockFive
                 {
                     Sfx.CardTap();
                     NoAds.Restore();
-                    if (NoAds.Owned) _open = false;
+                    _note = NoAds.Owned ? "Restored" : "Nothing to restore";
+                    _noteUntil = Time.unscaledTime + 1.6f;
                     return;
                 }
                 if (xHit || outside) Dismiss();
@@ -237,25 +249,64 @@ namespace FlockFive
                         wordWrap = false
                     };
                 var st = _link;
-                int hi = Mathf.Max(14, Mathf.RoundToInt(20f * s));
-                st.fontSize = FitFont(st, RestoreLabel, link.width * 0.94f, link.height * 0.70f, 12, hi);
-                var content = new GUIContent(RestoreLabel);
-                var sz = st.CalcSize(content);
-                float padX = 16f * s;
-                float padY = 5f * s;
-                var pill = new Rect(
-                    link.center.x - sz.x * 0.5f - padX,
-                    link.center.y - sz.y * 0.5f - padY,
-                    sz.x + padX * 2f,
-                    sz.y + padY * 2f);
-                GUI.color = new Color(0.05f, 0.03f, 0.02f, held ? 0.84f : 0.66f);
-                GUI.DrawTexture(pill, Texture2D.whiteTexture);
+                int hi = Mathf.Max(11, Mathf.RoundToInt(15f * s));
+                st.fontSize = FitFont(st, RestoreLabel, link.width * 0.96f, link.height * 0.62f, 10, hi);
+                int ink = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.16f), 1, 3);
+                var inkCol = held
+                    ? new Color(0.72f, 0.58f, 0.40f, 1f)
+                    : new Color(0.55f, 0.42f, 0.28f, 0.96f);
+                StampOutlined(link, RestoreLabel, st, inkCol, 0, ink);
+            }
+
+            static void DrawRestoreNote(Rect link, float s)
+            {
+                if (string.IsNullOrEmpty(_note) || Time.unscaledTime >= _noteUntil) return;
+                if (_link == null) return;
+                var st = _link;
+                float h = Mathf.Max(22f, 18f * s);
+                var r = new Rect(link.x, link.yMax + 4f * s, link.width, h);
+                int hi = Mathf.Max(11, Mathf.RoundToInt(14f * s));
+                st.fontSize = FitFont(st, _note, r.width * 0.96f, r.height * 0.90f, 10, hi);
+                StampOutlined(r, _note, st, new Color(0.93f, 0.86f, 0.70f, 0.95f), 0, 2);
+            }
+
+            // Baked orchids stay in the card texture. Wash the corners, then two
+            // small petals at opposite top corners so the frame is not a cluster.
+            static void DrawVipAccents(Rect card)
+            {
+                var glow = GlowTex();
+                float w = card.width * 0.20f;
+                float h = card.height * 0.24f;
+                GUI.color = new Color(0.05f, 0.03f, 0.025f, 0.62f);
+                GUI.DrawTexture(new Rect(card.x - w * 0.04f, card.y - h * 0.02f, w, h), glow, ScaleMode.ScaleToFit, true);
+                GUI.DrawTexture(new Rect(card.xMax - w * 0.96f, card.y - h * 0.02f, w, h), glow, ScaleMode.ScaleToFit, true);
+                float bw = card.width * 0.18f;
+                float bh = card.height * 0.20f;
+                GUI.DrawTexture(new Rect(card.x, card.yMax - bh, bw, bh), glow, ScaleMode.ScaleToFit, true);
+                GUI.DrawTexture(new Rect(card.xMax - bw, card.yMax - bh, bw, bh), glow, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
-                int ink = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 1, 4);
-                StampOutlined(link, RestoreLabel, st, new Color(1f, 0.94f, 0.62f, held ? 1f : 0.96f), 1, ink);
-                GUI.color = new Color(1f, 0.86f, 0.42f, held ? 1f : 0.92f);
-                GUI.DrawTexture(new Rect(link.center.x - sz.x * 0.5f, link.center.y + sz.y * 0.32f, sz.x, Mathf.Max(1.5f, 2f * s)), Texture2D.whiteTexture);
+                float sz = card.width * 0.10f;
+                var pink = SpriteCatalog.PetalPink;
+                var peach = SpriteCatalog.PetalPeach;
+                if (pink != null && pink.texture != null)
+                {
+                    GUI.color = new Color(1f, 0.74f, 0.82f, 0.88f);
+                    GUI.DrawTexture(new Rect(card.x + card.width * 0.03f, card.y + card.height * 0.03f, sz, sz), pink.texture, ScaleMode.ScaleToFit, true);
+                }
+                if (peach != null && peach.texture != null)
+                {
+                    GUI.color = new Color(1f, 0.80f, 0.58f, 0.88f);
+                    float pz = sz * 0.86f;
+                    GUI.DrawTexture(new Rect(card.xMax - pz - card.width * 0.04f, card.y + card.height * 0.045f, pz, pz), peach.texture, ScaleMode.ScaleToFit, true);
+                }
                 GUI.color = Color.white;
+            }
+
+            static Rect ScaledAbout(Rect r, float k)
+            {
+                float w = r.width * k;
+                float h = r.height * k;
+                return new Rect(r.center.x - w * 0.5f, r.center.y - h * 0.5f, w, h);
             }
 
             static Rect GrowDisc(Rect disc, float s)

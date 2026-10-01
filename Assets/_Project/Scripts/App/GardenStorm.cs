@@ -433,6 +433,7 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            if (GamePause.Paused) return;
             float dt = PlayClock.Delta;
             if (dt > 0.0001f)
                 _step = _step <= 0f ? dt : _step + (dt - _step) * 0.2f;
@@ -918,7 +919,9 @@ namespace FlockFive
             if (frame == _frame) return;
             _frame = frame;
             float dt = Time.unscaledDeltaTime;
-            if (_drop > 0)
+            if (GamePause.Paused)
+                dt = 0f;
+            else if (_drop > 0)
             {
                 _drop--;
                 dt = 0f;

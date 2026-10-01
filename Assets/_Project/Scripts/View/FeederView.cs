@@ -13,9 +13,14 @@ namespace FlockFive
         bool _held;
         bool _scoring;
         bool _departing;
+        bool _arriving;
+        BirdColor? _color;
         float _scoreAmp;
         float _gust;
         float _spin;
+        SpriteRenderer[] _glint;
+
+        public bool InTransit => _departing || _arriving;
 
         void Awake() => _planted = transform.position;
 
@@ -61,19 +66,45 @@ namespace FlockFive
             _cord.localScale = new Vector3(0.05f / Scale, len, 1f);
         }
 
-        public void Show(BirdColor? color)
+        public void Show(BirdColor? color, bool glide = true)
         {
             if (Art == null) return;
-            if (_held) return;
             if (color == null)
             {
+                if (_departing) return;
+                _color = null;
+                _arriving = false;
                 Art.enabled = false;
+                ClearGlints();
                 return;
             }
-            Art.enabled = true;
+            if (_departing) return;
+            bool same = _color == color && Art.enabled && !_arriving;
+            _color = color;
             Art.sprite = SpriteCatalog.Feeder(color.Value);
-            if (!_held) Art.color = Color.white;
             FitCord();
+            if (same) return;
+            if (_held && !_arriving)
+            {
+                Art.enabled = true;
+                Art.color = Color.white;
+                return;
+            }
+            if (!glide || _scoring)
+            {
+                _arriving = false;
+                Art.enabled = true;
+                Art.color = Color.white;
+                if (!_held && !_departing)
+                {
+                    transform.position = _planted;
+                    transform.localRotation = Quaternion.identity;
+                    transform.localScale = Vector3.one * Scale;
+                }
+                return;
+            }
+            StopCoroutine(nameof(Arrive));
+            StartCoroutine(Arrive());
         }
 
         public Vector3 Mouth => transform.position + new Vector3(0f, -1.08f, 0f);
@@ -173,25 +204,37 @@ namespace FlockFive
         public IEnumerator PullAway()
         {
             _departing = true;
+            _arriving = false;
             _scoring = false;
             _scoreAmp = 0f;
             _held = true;
+            StopCoroutine(nameof(Arrive));
             Sfx.FeederLeave();
             float t = 0f;
+            const float dur = 0.82f;
             var start = transform.position;
-            var want = start + new Vector3(0f, 2.8f, 0f);
-            while (t < 0.45f)
+            var rot0 = transform.localRotation;
+            while (t < dur)
             {
+                if (GamePause.Paused)
+                {
+                    yield return null;
+                    continue;
+                }
                 t += Time.deltaTime;
-                float u = Mathf.SmoothStep(0f, 1f, t / 0.45f);
-                transform.position = Vector3.Lerp(start, want, u);
-                transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(u * Mathf.PI) * 12f);
-                transform.localScale = Vector3.one * (Scale * (1f + u * 0.22f));
+                float u = Mathf.Clamp01(t / dur);
+                float swing = u < 0.42f ? Mathf.Sin((u / 0.42f) * Mathf.PI * 2.2f) * (1f - u / 0.42f) : 0f;
+                float lift = u < 0.38f ? 0f : Mathf.SmoothStep(0f, 1f, (u - 0.38f) / 0.62f);
+                lift = lift * lift * (3f - 2f * lift);
+                float burst = Mathf.Sin(Mathf.Clamp01(u / 0.38f) * Mathf.PI);
+                transform.position = start + new Vector3(swing * 0.16f, lift * 3.4f, 0f);
+                transform.localRotation = rot0 * Quaternion.Euler(0f, 0f, swing * 22f);
+                transform.localScale = Vector3.one * (Scale * (1f + burst * 0.16f + lift * 0.08f));
                 if (Art != null)
                 {
-                    var c = Art.color;
-                    c.a = 1f - u;
-                    Art.color = c;
+                    var glow = Color.Lerp(Color.white, new Color(1f, 0.92f, 0.55f), burst * 0.85f);
+                    glow.a = 1f - lift;
+                    Art.color = glow;
                 }
                 yield return null;
             }
@@ -200,8 +243,95 @@ namespace FlockFive
             transform.localRotation = Quaternion.identity;
             transform.localScale = Vector3.one * Scale;
             if (Art != null) Art.color = Color.white;
+            ClearGlints();
             _held = false;
             _departing = false;
+        }
+
+        IEnumerator Arrive()
+        {
+            _arriving = true;
+            _held = true;
+            if (Art != null)
+            {
+                Art.enabled = true;
+                Art.color = Color.white;
+            }
+            var home = _planted;
+            var from = home + new Vector3(0f, 3.1f, 0f);
+            transform.position = from;
+            transform.localRotation = Quaternion.identity;
+            transform.localScale = Vector3.one * (Scale * 0.92f);
+            Sfx.FeederArrive();
+            BurstGlints();
+            float t = 0f;
+            const float dur = 0.88f;
+            while (t < dur)
+            {
+                if (GamePause.Paused)
+                {
+                    yield return null;
+                    continue;
+                }
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                float e = 1f - u;
+                float drop = 1f - e * e * e;
+                float bounce = Mathf.Sin(u * Mathf.PI) * e * 0.22f;
+                float sway = Mathf.Sin(u * Mathf.PI * 2.4f) * e * 0.10f;
+                transform.position = Vector3.Lerp(from, home, drop) + new Vector3(sway, bounce, 0f);
+                transform.localRotation = Quaternion.Euler(0f, 0f, sway * 90f);
+                transform.localScale = Vector3.one * (Scale * (0.94f + 0.10f * Mathf.Sin(u * Mathf.PI)));
+                TickGlints(1f - u);
+                yield return null;
+            }
+            transform.position = _planted;
+            transform.localRotation = Quaternion.identity;
+            transform.localScale = Vector3.one * Scale;
+            if (Art != null) Art.color = Color.white;
+            ClearGlints();
+            _held = false;
+            _arriving = false;
+        }
+
+        void BurstGlints()
+        {
+            var spr = SpriteCatalog.Sparkle;
+            if (spr == null || Art == null) return;
+            if (_glint == null) _glint = new SpriteRenderer[4];
+            for (int i = 0; i < _glint.Length; i++)
+            {
+                if (_glint[i] == null)
+                {
+                    var go = WorldBuilder.Sprite("FeederGlint" + i, spr, transform.position, 0.2f, 20, transform);
+                    _glint[i] = go.GetComponent<SpriteRenderer>();
+                }
+                float ang = i * (Mathf.PI * 0.5f) + 0.4f;
+                _glint[i].transform.localPosition = new Vector3(Mathf.Cos(ang) * 0.35f, 0.4f + Mathf.Sin(ang) * 0.2f, 0f);
+                _glint[i].transform.localScale = Vector3.one * 0.22f;
+                _glint[i].color = new Color(1f, 0.94f, 0.62f, 0.9f);
+                _glint[i].enabled = true;
+            }
+        }
+
+        void TickGlints(float a)
+        {
+            if (_glint == null) return;
+            for (int i = 0; i < _glint.Length; i++)
+            {
+                if (_glint[i] == null || !_glint[i].enabled) continue;
+                var c = _glint[i].color;
+                c.a = 0.85f * Mathf.Clamp01(a);
+                _glint[i].color = c;
+                _glint[i].transform.localScale = Vector3.one * (0.18f + 0.1f * a);
+            }
+        }
+
+        void ClearGlints()
+        {
+            if (_glint == null) return;
+            for (int i = 0; i < _glint.Length; i++)
+                if (_glint[i] != null) _glint[i].enabled = false;
         }
 
         public void SnapHome()
@@ -210,7 +340,9 @@ namespace FlockFive
             _held = false;
             _scoring = false;
             _departing = false;
+            _arriving = false;
             _scoreAmp = 0f;
+            ClearGlints();
             transform.position = _planted;
             transform.localRotation = Quaternion.identity;
             transform.localScale = Vector3.one * Scale;

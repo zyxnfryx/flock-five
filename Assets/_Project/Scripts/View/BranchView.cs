@@ -39,8 +39,28 @@ namespace FlockFive
         float _nextSnooze;
         BeeSwarm _swarm;
         LeafCover _leaves;
+        SpriteRenderer _calm;
         readonly Transform[] _zz = new Transform[3];
         readonly SpriteRenderer[] _zzSr = new SpriteRenderer[3];
+
+        // Restart flies bees and leaves with the flock. Their LateUpdate stays pinned until Settle.
+        public void HoldDecor(bool on)
+        {
+            if (_swarm != null) _swarm.HoldMotion(on);
+            if (_leaves != null) _leaves.HoldMotion(on);
+        }
+
+        public void AppendBees(System.Collections.Generic.List<SpriteRenderer> into)
+        {
+            if (_swarm != null) _swarm.AppendLive(into);
+        }
+
+        public void AppendLeaves(System.Collections.Generic.List<SpriteRenderer> into)
+        {
+            if (_leaves != null) _leaves.AppendLive(into);
+        }
+
+        public bool LeavesOn => _leaves != null && _leaves.Locked;
 
         public void Shake() => _shake = 0.22f;
 
@@ -119,7 +139,7 @@ namespace FlockFive
             gameObject.SetActive(true);
             _count = state.Count;
             if (sleeping && !_sleeping)
-                _nextSnooze = Time.unscaledTime + Random.Range(0.25f, 0.9f);
+                _nextSnooze = Time.time + Random.Range(0.25f, 0.9f);
             _sleeping = sleeping;
             int lastHid = -1;
             bool tipLocked = state.TipLocked;
@@ -207,7 +227,7 @@ namespace FlockFive
                 bool tip = on && i >= _count - run && i < _count;
                 idle.Lift = tip ? 1.15f : 0f;
                 idle.Flapping = tip;
-                // Lift still draws the ring. Skip the extra feathers when rain and a scrap
+                // Lift draws the selection aura. Skip the extra feathers when rain and a scrap
                 // are already filling the screen.
                 if (tip && !RainScrap())
                     Wow.Shed(Birds[i].transform.position, idle.Color, transform.parent);
@@ -311,13 +331,20 @@ namespace FlockFive
 
         void ShowZzz(bool on)
         {
+            // Bubbles live on each bird now. The old tip-only trio stays off.
             EnsureZzz();
             for (int i = 0; i < 3; i++)
-                if (_zz[i] != null) _zz[i].gameObject.SetActive(on);
+                if (_zz[i] != null) _zz[i].gameObject.SetActive(false);
+            if (!on && _calm != null) _calm.enabled = false;
         }
 
         void LateUpdate()
         {
+            if (GamePause.Paused)
+            {
+                if (!_breaking) transform.position = _planted;
+                return;
+            }
             if (_breaking) return;
             if (_shake > 0f)
             {
@@ -327,31 +354,60 @@ namespace FlockFive
             }
             else transform.position = _planted;
 
-            if (!_sleeping) return;
-            if (Time.unscaledTime >= _nextSnooze)
+            if (!_sleeping)
+            {
+                if (_calm != null) _calm.enabled = false;
+                return;
+            }
+            // Scaled time so an ad pause freezes the snore instead of dumping one on resume.
+            if (Time.time >= _nextSnooze)
             {
                 Sfx.Snooze();
-                _nextSnooze = Time.unscaledTime + Random.Range(1.35f, 2.7f);
+                _nextSnooze = Time.time + Random.Range(1.35f, 2.7f);
             }
-            for (int i = 0; i < 3; i++)
+            PlaceCalmGlow();
+        }
+
+        void EnsureCalm()
+        {
+            if (_calm != null) return;
+            var glow = SpriteCatalog.Glow;
+            if (glow == null) return;
+            var go = WorldBuilder.Sprite("RowCalm", glow, transform.position, 1f, 3, transform);
+            _calm = go.GetComponent<SpriteRenderer>();
+            _calm.enabled = false;
+        }
+
+        // Soft wash behind a finished row. One sprite, not a halo per bird.
+        void PlaceCalmGlow()
+        {
+            if (_count <= 0 || Seats[0] == null)
             {
-                if (_zz[i] == null || !_zz[i].gameObject.activeSelf) continue;
-                float u = Time.time * (0.55f + 0.12f * i) + i * 1.7f;
-                float rise = Mathf.Repeat(u, 1f);
-                float baseX = 0f;
-                if (_count > 0 && Seats[_count - 1] != null)
-                    baseX = Seats[_count - 1].localPosition.x;
-                float along = baseX + (FromRight ? -0.22f : 0.22f) * i;
-                _zz[i].localPosition = new Vector3(along, 1.08f + rise * 0.55f, 0f);
-                float pulse = 0.10f + 0.028f * i + 0.012f * Mathf.Sin(u * 6f);
-                _zz[i].localScale = Vector3.one * pulse;
-                if (_zzSr[i] != null)
-                {
-                    var c = Color.white;
-                    c.a = 0.35f + 0.65f * (1f - rise);
-                    _zzSr[i].color = c;
-                }
+                if (_calm != null) _calm.enabled = false;
+                return;
             }
+            EnsureCalm();
+            if (_calm == null) return;
+            int last = _count - 1;
+            if (Seats[last] == null) last = 0;
+            float x0 = Seats[0].localPosition.x;
+            float x1 = Seats[last].localPosition.x;
+            float y = 0f;
+            int n = 0;
+            for (int i = 0; i < _count && i < Seats.Length; i++)
+            {
+                if (Seats[i] == null) continue;
+                y += Seats[i].localPosition.y;
+                n++;
+            }
+            if (n > 0) y /= n;
+            float span = Mathf.Abs(x1 - x0) + 1.55f;
+            float breathe = 0.82f + 0.18f * Mathf.Sin(Time.time * 1.35f);
+            _calm.transform.localPosition = new Vector3((x0 + x1) * 0.5f, y + RestLift + 0.12f, 0f);
+            _calm.transform.localScale = new Vector3(span * 0.42f, 0.72f * breathe, 1f);
+            _calm.color = new Color(0.78f, 0.70f, 0.98f, 0.20f * breathe);
+            _calm.sortingOrder = 3;
+            _calm.enabled = true;
         }
 
         // Restart takes the flock. Stop a limb break so it cannot deactivate the

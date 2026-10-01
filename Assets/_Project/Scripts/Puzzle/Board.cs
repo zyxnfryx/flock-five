@@ -203,17 +203,29 @@ namespace FlockFive
             return -1;
         }
 
-        public int Breeze()
+        // One feeder collect lifts one leaf set. The locked tip on the same
+        // column as the feeder that just paid is the set that collect hits;
+        // otherwise the locked tip nearest the feeders (higher row). Bees
+        // under a leaf stay until that tip is exposed.
+        public int Breeze(int feederSlot = -1)
         {
-            int n = 0;
+            int pick = -1;
+            int best = int.MaxValue;
+            int wantCol = feederSlot == 0 ? 0 : (feederSlot == 1 ? 1 : -1);
             for (int i = 0; i < Branches.Count; i++)
             {
                 var br = Branches[i];
-                if (br.Broken || br.Count == 0) continue;
-                // Leaves only. Bees under the leaf stay until that tip is exposed.
-                if (br.LiftLeaf()) n++;
+                if (br.Broken || br.Count == 0 || !br.TipLocked) continue;
+                int row = i >> 1;
+                int col = i & 1;
+                int score = row * 4;
+                if (wantCol >= 0 && col != wantCol) score += 6;
+                if (score >= best) continue;
+                best = score;
+                pick = i;
             }
-            return n;
+            if (pick < 0) return 0;
+            return Branches[pick].LiftLeaf() ? 1 : 0;
         }
 
         public int ApplyCollect(int branchIndex, bool scoreFeeder = true)
@@ -234,7 +246,7 @@ namespace FlockFive
                 }
                 else Live[slot] = null;
             }
-            if (BreezeOnCollect) Breeze();
+            if (BreezeOnCollect) Breeze(slot);
             return slot;
         }
 

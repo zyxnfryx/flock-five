@@ -11,6 +11,8 @@ namespace FlockFive
         const float Pace = 0.73f;
 
         SpriteRenderer[] _residents;
+        SpriteRenderer[] _glints;
+        float[] _glintPh;
         float[] _phase;
         float[] _speedMul;
         float[] _liss;
@@ -54,15 +56,31 @@ namespace FlockFive
         {
             Home = transform;
             // Soft glow only — the wood hive art is the OnGUI button; this is the fly-to target.
+            // Round discs on the hive center. A stretched scale read as a rectangle
+            // that drifted off the skep toward the middle of the garden.
             var comb = WorldBuilder.Sprite("Comb", SpriteCatalog.Glow, transform.position, 1f, 9, transform);
             comb.transform.localPosition = Vector3.zero;
-            comb.transform.localScale = new Vector3(1.35f, 1.05f, 1f);
-            comb.GetComponent<SpriteRenderer>().color = new Color(0.92f, 0.62f, 0.18f, 0.20f);
+            comb.transform.localScale = new Vector3(1.15f, 1.15f, 1f);
+            comb.GetComponent<SpriteRenderer>().color = new Color(0.92f, 0.62f, 0.18f, 0.22f);
 
             var core = WorldBuilder.Sprite("CombCore", SpriteCatalog.Glow, transform.position, 1f, 10, transform);
-            core.transform.localPosition = new Vector3(0f, 0.06f, 0f);
-            core.transform.localScale = new Vector3(0.72f, 0.58f, 1f);
-            core.GetComponent<SpriteRenderer>().color = new Color(1f, 0.82f, 0.32f, 0.28f);
+            core.transform.localPosition = Vector3.zero;
+            core.transform.localScale = new Vector3(0.58f, 0.58f, 1f);
+            core.GetComponent<SpriteRenderer>().color = new Color(1f, 0.82f, 0.32f, 0.30f);
+
+            _glints = new SpriteRenderer[4];
+            _glintPh = new float[4];
+            var spark = SpriteCatalog.Sparkle;
+            for (int g = 0; g < _glints.Length; g++)
+            {
+                var go = WorldBuilder.Sprite("CombGlint" + g, spark != null ? spark : SpriteCatalog.Glow, transform.position, 0.22f, 12, transform);
+                float ang = g * (Mathf.PI * 0.5f) + 0.4f;
+                go.transform.localPosition = new Vector3(Mathf.Cos(ang) * 0.34f, Mathf.Sin(ang) * 0.28f, 0f);
+                go.transform.localScale = Vector3.one * (0.16f + (g & 1) * 0.05f);
+                _glints[g] = go.GetComponent<SpriteRenderer>();
+                _glints[g].enabled = false;
+                _glintPh[g] = g * 1.37f;
+            }
 
             _residents = new SpriteRenderer[6];
             _phase = new float[6];
@@ -84,6 +102,26 @@ namespace FlockFive
                 _wobHz[i] = Random.Range(1.2f, 2.4f);
             }
             RefreshResidents();
+        }
+
+        // Restart drops an in-flight visitor. Album copies already saved stay saved.
+        public void CancelVisitors()
+        {
+            StopAllCoroutines();
+            _pulse = false;
+            _pulseT = 0f;
+            GuiPulse = 0f;
+            transform.localScale = Vector3.one * _baseScale;
+            var parent = transform.parent;
+            if (parent == null) return;
+            for (int i = parent.childCount - 1; i >= 0; i--)
+            {
+                var ch = parent.GetChild(i);
+                if (ch == null || ch.name != "Visitor") continue;
+                var sr = ch.GetComponent<SpriteRenderer>();
+                if (sr != null) sr.enabled = false;
+                Object.Destroy(ch.gameObject);
+            }
         }
 
         public IEnumerator Welcome(BeeVisit visit, Vector3 from)
@@ -165,6 +203,17 @@ namespace FlockFive
                 }
             }
             else GuiPulse = 0f;
+            if (_glints != null)
+            {
+                for (int g = 0; g < _glints.Length; g++)
+                {
+                    var gl = _glints[g];
+                    if (gl == null || !gl.enabled) continue;
+                    float tw = 0.5f + 0.5f * Mathf.Sin(t * 2.4f + _glintPh[g]);
+                    tw = tw * tw;
+                    gl.color = new Color(1f, 0.94f, 0.62f, 0.15f + 0.75f * tw);
+                }
+            }
             for (int i = 0; i < _residents.Length; i++)
             {
                 var sr = _residents[i];

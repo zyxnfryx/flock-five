@@ -38,6 +38,7 @@ namespace FlockFive
                 enabled = false;
                 return;
             }
+            if (GamePause.Paused) return;
             float t = Time.unscaledTime;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
             if (Glow != null)
