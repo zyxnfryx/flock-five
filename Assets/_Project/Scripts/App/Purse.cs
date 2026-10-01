@@ -4,6 +4,43 @@ using UnityEngine;
 
 namespace FlockFive
 {
+    // Screen money. Under 1,000 is a plain integer. Then K, M, and B.
+    // One decimal while the unit is under 10, and a trailing .0 is dropped.
+    // Floors, so a label never reads higher than the amount.
+    public static class Money
+    {
+        public static string Format(int n) => Format((long)n);
+
+        public static string Format(long n)
+        {
+            if (n < 0) return "-" + Format(n == long.MinValue ? long.MaxValue : -n);
+            if (n < 1000L) return "$" + n.ToString(CultureInfo.InvariantCulture);
+            long unit = 1000L;
+            string suffix = "K";
+            if (n >= 1000000000L)
+            {
+                unit = 1000000000L;
+                suffix = "B";
+            }
+            else if (n >= 1000000L)
+            {
+                unit = 1000000L;
+                suffix = "M";
+            }
+            return "$" + Scaled(n, unit) + suffix;
+        }
+
+        static string Scaled(long n, long unit)
+        {
+            long whole = n / unit;
+            if (whole >= 10L) return whole.ToString(CultureInfo.InvariantCulture);
+            long tenths = whole * 10L + (n % unit) * 10L / unit;
+            long frac = tenths % 10L;
+            if (frac == 0L) return (tenths / 10L).ToString(CultureInfo.InvariantCulture);
+            return (tenths / 10L).ToString(CultureInfo.InvariantCulture) + "." + frac.ToString(CultureInfo.InvariantCulture);
+        }
+    }
+
     public static class Purse
     {
         const string PrefCoins = "flockfive.coins";
@@ -11,7 +48,14 @@ namespace FlockFive
         const string PrefStage = "flockfive.instage";
         const string PrefLoginDay = "flockfive.login.day";
         const string PrefLoginN = "flockfive.login.n";
-        public const int StagePay = 16;
+        // Clear pay before streak and login. Level 1 is 25, then +5 a level (20 + 5n).
+        public static int StageBase(int level)
+        {
+            if (level < 1) level = 1;
+            return 20 + 5 * level;
+        }
+
+        public static int StagePay => StageBase(LevelData.DisplayNumber);
 
         public static int Coins { get; private set; }
         public static int Streak { get; private set; }
@@ -23,36 +67,6 @@ namespace FlockFive
         public static int LastLogin { get; private set; }
         public static int LastWin { get; private set; }
         public static int Multiplier => Streak < 1 ? 1 : Streak;
-        public static string Cash => Coins >= 1000000 ? Compact(Coins) : Dollars(Coins);
-
-        public static string Dollars(int n)
-        {
-            if (n < 0) return "-" + Dollars(-n);
-            return "$" + n.ToString("N0", CultureInfo.InvariantCulture);
-        }
-
-        // Tight labels: $999 / $1,234 / $12.5K / $1.2M
-        public static string Compact(int n)
-        {
-            if (n < 0) return "-" + Compact(-n);
-            if (n < 10000) return Dollars(n);
-            double v;
-            string unit;
-            if (n < 1000000)
-            {
-                v = n / 1000.0;
-                unit = "K";
-            }
-            else
-            {
-                v = n / 1000000.0;
-                unit = "M";
-            }
-            string num = v >= 100
-                ? Mathf.RoundToInt((float)v).ToString(CultureInfo.InvariantCulture)
-                : v.ToString("0.##", CultureInfo.InvariantCulture);
-            return "$" + num + unit;
-        }
 
         public static void Boot()
         {
@@ -104,10 +118,11 @@ namespace FlockFive
         {
             TickLogin();
             Streak = Streak + 1;
-            LastStagePay = StagePay;
+            int basePay = StageBase(LevelData.DisplayNumber);
+            LastStagePay = basePay;
             LastStreak = Streak;
             LastLogin = LoginMul;
-            int pay = StagePay * Streak * LastLogin;
+            int pay = basePay * Streak * LastLogin;
             LastWin = pay;
             Coins += pay;
             Pending = pay;
@@ -121,10 +136,11 @@ namespace FlockFive
         public static void CueWin(int streak, int win)
         {
             Streak = Mathf.Max(1, streak);
-            LastStagePay = StagePay;
+            int basePay = StageBase(LevelData.DisplayNumber);
+            LastStagePay = basePay;
             LastStreak = Streak;
             LastLogin = LoginMul;
-            LastWin = win > 0 ? win : StagePay * Streak * LastLogin;
+            LastWin = win > 0 ? win : basePay * Streak * LastLogin;
             Pending = LastWin;
         }
 

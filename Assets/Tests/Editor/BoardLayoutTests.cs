@@ -191,6 +191,50 @@ namespace FlockFive.Editor
             Check("layout-left-packed", GardenFit.RowsPacked(spots, 0), "left");
             Check("layout-right-packed", GardenFit.RowsPacked(spots, 1), "right");
             Check("layout-two-gifts", BonusSpots(spots) == 2, "gifts " + BonusSpots(spots));
+
+            float anchor = WorldBuilder.ColumnX();
+            var full = LevelData.Open(0);
+            var thin = ThinColumns();
+            bool held = ColumnsAnchored(full, anchor) && ColumnsAnchored(b, anchor) && ColumnsAnchored(thin, anchor);
+            Check("layout-x-anchor", held, "anchor " + anchor.ToString("0.00"));
+        }
+
+        // One plain limb each side, gifts left alone. X must match a full board.
+        static Board ThinColumns()
+        {
+            var b = LevelData.Open(0);
+            int seenL = 0, seenR = 0, plain = 0;
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var st = b.Branches[i];
+                if (st == null || st.IsBonus) continue;
+                bool rightSide = (plain & 1) == 1;
+                plain++;
+                if (rightSide)
+                {
+                    seenR++;
+                    if (seenR > 1) st.Broken = true;
+                }
+                else
+                {
+                    seenL++;
+                    if (seenL > 1) st.Broken = true;
+                }
+            }
+            return b;
+        }
+
+        static bool ColumnsAnchored(Board b, float anchor)
+        {
+            var spots = new List<GardenFit.Spot>();
+            GardenFit.Collect(b, null, spots);
+            if (spots.Count == 0) return false;
+            for (int i = 0; i < spots.Count; i++)
+            {
+                if (Mathf.Abs(Mathf.Abs(spots[i].Pos.x) - anchor) > 0.0001f) return false;
+                if (Mathf.Abs(spots[i].Scale.x - 1f) > 0.0001f) return false;
+            }
+            return true;
         }
 
         static void CheckLevels(System.Action<string, bool, string> Check)

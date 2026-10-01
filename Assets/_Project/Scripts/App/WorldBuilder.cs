@@ -38,16 +38,25 @@ namespace FlockFive
 
         public static float WoodHalfOf(float woodScaleX) => 1280f / 140f * woodScaleX * 0.5f;
 
+        // Resting 9:16 playfield. Not the live orthographic size: a combo or
+        // sparrow punch shrinks that for a few frames, and a refit during the
+        // punch would park both columns closer to center after the camera settles.
+        public static float PlayHalfWidth() => CamOrtho * PortraitAspect;
+
+        // Sprite center for a unit-scale limb whose outer bark kisses the bezel.
+        // Screen width and the constant wood length only — never the remaining
+        // branch count, the vertical pitch, or a pack scale.
+        public static float ColumnX() => PlayHalfWidth() - WoodHalf + 0.18f;
+
         public static float EdgeX(Camera cam, float packScale) => EdgeX(cam, packScale, WoodScaleX);
 
         public static float EdgeX(Camera cam, float packScale, float woodScaleX)
         {
-            float halfW = cam != null
-                ? cam.orthographicSize * Mathf.Max(0.05f, cam.aspect)
-                : CamOrtho * PortraitAspect;
-            float s = Mathf.Max(0.2f, packScale);
-            // Bark kisses the bezel so the outer bird can sit at the screen edge.
-            return halfW - WoodHalfOf(woodScaleX) * s + 0.18f;
+            // packScale and cam are ignored. A short stack passed a larger
+            // packScale, and a break refit read the punched orthographicSize.
+            // Either one walked the root inward. Length stays constant; only
+            // a different wood width (still not the row count) changes the inset.
+            return PlayHalfWidth() - WoodHalfOf(woodScaleX) + 0.18f;
         }
         public const float CamRestY = -0.45f;
         public const float CamOrtho = 10.6f;

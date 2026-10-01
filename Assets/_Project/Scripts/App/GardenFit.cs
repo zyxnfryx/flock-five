@@ -15,8 +15,8 @@ namespace FlockFive
             public Vector3 Scale;
         }
 
-        // Branch roots stay at scale 1 so perch gaps and bird sprites never
-        // grow when a limb is gone. Only the positions are recomputed.
+        // Length stays 1 so perch gaps and the gap to center never change
+        // when a limb is gone. Only the row pitch is recomputed.
         public static readonly Vector3 LimbScale = Vector3.one;
 
         public static IEnumerator Tween(WorldBuilder.Garden garden, Board board, bool instant)
@@ -49,6 +49,8 @@ namespace FlockFive
                 yield break;
             }
 
+            // X is already the bezel anchor. Ease the row only, so a refit
+            // cannot slide either column toward center.
             float u = 0f;
             const float dur = 0.42f;
             while (u < 1f)
@@ -56,7 +58,13 @@ namespace FlockFive
                 u += Time.deltaTime / dur;
                 float k = u * u * (3f - 2f * u);
                 for (int i = 0; i < n; i++)
-                    views[i].Fit(Vector3.Lerp(fromPos[i], toPos[i], k), Vector3.Lerp(fromS[i], LimbScale, k));
+                {
+                    var p = Vector3.Lerp(fromPos[i], toPos[i], k);
+                    p.x = toPos[i].x;
+                    var s = Vector3.Lerp(fromS[i], LimbScale, k);
+                    s.x = LimbScale.x;
+                    views[i].Fit(p, s);
+                }
                 yield return null;
             }
             for (int i = 0; i < n; i++)
@@ -99,6 +107,9 @@ namespace FlockFive
                 plain++;
             }
 
+            // Before any vertical fit. Pitch and count must not revise this.
+            float x = WorldBuilder.ColumnX();
+
             float gap = WorldBuilder.RowGap;
             float y0 = WorldBuilder.RowY0;
             int tall = Mathf.Max(left.Count, right.Count);
@@ -118,7 +129,6 @@ namespace FlockFive
                 y0 = shelf - topReach;
             }
 
-            float x = WorldBuilder.EdgeX(cam, 1f);
             for (int i = 0; i < left.Count; i++)
                 into.Add(new Spot { Index = left[i], Column = 0, Row = i, Pos = new Vector3(-x, y0 - i * gap, 0f), Scale = LimbScale });
             for (int i = 0; i < right.Count; i++)

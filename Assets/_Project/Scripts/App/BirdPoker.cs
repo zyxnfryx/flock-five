@@ -124,20 +124,20 @@ namespace FlockFive
         public static void SyncBet()
         {
             RebuildLadder();
-            if (Purse.Coins < 1)
-            {
-                Bet = _ladder.Count > 0 ? _ladder[0] : 1;
-                return;
-            }
-            if (!_betPicked)
+            if (Purse.Coins < FloorBet)
+                Bet = FloorBet;
+            else if (!_betPicked)
             {
                 Bet = RecBet;
                 _betPicked = true;
-                return;
             }
-            int cap = Mathf.Min(MaxBet, Mathf.Max(MinBet, Purse.Coins));
-            if (Bet > cap || Bet < MinBet || !_ladder.Contains(Bet))
-                Bet = NearestBet(Mathf.Clamp(Bet, MinBet, cap));
+            else
+            {
+                int cap = Mathf.Min(MaxBet, Mathf.Max(MinBet, Purse.Coins));
+                if (Bet > cap || Bet < MinBet || !_ladder.Contains(Bet))
+                    Bet = NearestBet(Mathf.Clamp(Bet, MinBet, cap));
+            }
+            if (Bet < FloorBet) Bet = FloorBet;
         }
 
         // Bet is locked only while a dealt hand is live (Draw pays at that bet).
@@ -153,7 +153,7 @@ namespace FlockFive
             for (int i = 0; i < _ladder.Count; i++)
                 if (_ladder[i] == Bet) { ix = i; break; }
             int n = ix + (dir < 0 ? -1 : 1);
-            if (n < 0 || n >= _ladder.Count) return false;
+            if (n < 0 || n >= _ladder.Count || _ladder[n] < FloorBet) return false;
             Bet = _ladder[n];
             return true;
         }
@@ -166,7 +166,7 @@ namespace FlockFive
             for (int i = 0; i < _ladder.Count; i++)
                 if (_ladder[i] == Bet) { ix = i; break; }
             int n = ix + (dir < 0 ? -1 : 1);
-            return n >= 0 && n < _ladder.Count;
+            return n >= 0 && n < _ladder.Count && _ladder[n] >= FloorBet;
         }
 
         static int CeilTenth(int coins)
@@ -238,20 +238,13 @@ namespace FlockFive
             _ladderCoins = coins;
             _ladder.Clear();
 
-            if (coins < 1)
-            {
-                MinBet = 1;
-                MaxBet = 1;
-                RecBet = 1;
-                _ladder.Add(1);
-                return;
-            }
+            // Purse can sit under $5. The stepper still shows that floor; CanDeal stays shut.
             if (coins < FloorBet)
             {
-                MinBet = Mathf.Max(1, coins);
-                MaxBet = MinBet;
-                RecBet = MinBet;
-                _ladder.Add(MinBet);
+                MinBet = FloorBet;
+                MaxBet = FloorBet;
+                RecBet = FloorBet;
+                _ladder.Add(FloorBet);
                 return;
             }
 
@@ -275,7 +268,7 @@ namespace FlockFive
 
         static int NearestBet(int want)
         {
-            if (_ladder.Count == 0) return Mathf.Max(1, want);
+            if (_ladder.Count == 0) return Mathf.Max(FloorBet, want);
             int best = _ladder[0];
             int bestD = Mathf.Abs(best - want);
             for (int i = 1; i < _ladder.Count; i++)

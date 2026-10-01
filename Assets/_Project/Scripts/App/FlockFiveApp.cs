@@ -380,6 +380,7 @@ namespace FlockFive
             _splash = true;
             _leafIntro = false;
             NoteHiveIntroLeft();
+            NotePokerIntroLeft();
             CoachRelease();
             _incomingHalo.Clear(); // hive bees circle only inside a garden
             _home = HomeFace.Splash;
@@ -404,6 +405,8 @@ namespace FlockFive
             BirdPoker.Boot();
             ArmStreakSlide();
             ArmHiveIntro();
+            ArmPokerIntro();
+            ArmDailyBonus();
         }
 
         void Load(int index)
@@ -428,6 +431,7 @@ namespace FlockFive
             _iceCoating = false;
             _splash = false;
             NoteHiveIntroLeft();
+            NotePokerIntroLeft();
             if (MixDesk.Live != null) MixDesk.Live.SetSplash(false);
             _board = LevelData.Open(index);
             _seed = _board.Clone();
@@ -1958,6 +1962,7 @@ namespace FlockFive
         void OnApplicationPause(bool paused)
         {
             PlayClock.DropResumeFrame();
+            if (!paused) ResumeDailyReminder();
         }
 
         void OnApplicationFocus(bool focus)
@@ -1968,6 +1973,7 @@ namespace FlockFive
         void Update()
         {
             CoachAdvance();
+            TickDailyBonus();
             if (_splash) return;
             if (_gift != GiftFace.None || _frozen)
             {
@@ -2783,7 +2789,7 @@ namespace FlockFive
                 if (regrow) view.Revive();
             }
             if (gen != _motionGen) { _pestFinishing = false; yield break; }
-            yield return GardenFit.Tween(_garden, _board, true);
+            yield return GardenFit.Tween(_garden, _board, false);
             if (gen != _motionGen) { _pestFinishing = false; yield break; }
             yield return PerchOnRemain(birds, n, plan);
             if (gen != _motionGen) { _pestFinishing = false; yield break; }
@@ -3843,37 +3849,44 @@ namespace FlockFive
 #if UNITY_EDITOR
             if (!_pokerPlayrun && System.IO.File.Exists("/tmp/flock-five-poker-run"))
             {
+                _dailyShotQuiet = true;
                 try { System.IO.File.Delete("/tmp/flock-five-poker-run"); } catch { }
                 _pokerPlayrun = true;
                 StartCoroutine(PokerPlayrun());
             }
             if (System.IO.File.Exists("/tmp/flock-five-poker-faces"))
             {
+                _dailyShotQuiet = true;
                 try { System.IO.File.Delete("/tmp/flock-five-poker-faces"); } catch { }
                 StartCoroutine(ShotPokerFaces());
             }
             if (System.IO.File.Exists("/tmp/flock-five-consumer-tour"))
             {
+                _dailyShotQuiet = true;
                 try { System.IO.File.Delete("/tmp/flock-five-consumer-tour"); } catch { }
                 StartCoroutine(ShotConsumerTour());
             }
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
+                _dailyShotQuiet = true;
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
                 StartCoroutine(ShotHome());
             }
             if (System.IO.File.Exists("/tmp/flock-five-poker-stamp"))
             {
+                _dailyShotQuiet = true;
                 try { System.IO.File.Delete("/tmp/flock-five-poker-stamp"); } catch { }
                 StartCoroutine(ShotPokerStamp());
             }
             if (System.IO.File.Exists("/tmp/flock-five-hand-qa"))
             {
+                _dailyShotQuiet = true;
                 try { System.IO.File.Delete("/tmp/flock-five-hand-qa"); } catch { }
                 StartCoroutine(ShotHandQa());
             }
             if (System.IO.File.Exists("/tmp/flock-five-poker-feel"))
             {
+                _dailyShotQuiet = true;
                 try { System.IO.File.Delete("/tmp/flock-five-poker-feel"); } catch { }
                 StartCoroutine(ShotPokerFeel());
             }
@@ -3972,27 +3985,30 @@ namespace FlockFive
         static float SplashRailAnchor() =>
             Mathf.Clamp(Screen.width * 0.11f, 52f, 108f);
 
-        static float SplashRailSize() => SplashRailAnchor() * 1.22f;
+        // One scale for pig, hive, poker, and VIP, about 15% over the previous rail.
+        const float SplashRailScale = 1.15f;
+
+        static float SplashRailSize() => SplashRailAnchor() * 1.22f * SplashRailScale;
 
         static float SplashRailGap() => Mathf.Max(24f, SplashRailSize() * 0.30f);
 
-        // Right rail, top to bottom: pig, hive, poker. Left rail: VIP.
-        // Both pack from their top, so a missing button closes instead of leaving a hole.
-        // Resting pose of a full right stack matches the old fixed rects: pig one
-        // gap above the hive anchor, poker one gap below it, VIP on the hive row.
+        // Right rail, top to bottom: pig, hive, poker. Left: VIP on the pig's row.
+        // One size and one gap, so those two share a center line and the stack stays even.
+        // Both pack from their top: a hidden button takes no slot and the rest slide up.
         void TickSplashRails()
         {
             bool face = _splash && _home == HomeFace.Splash;
             if (_railInit && !face) return;
             float hive = SplashHiveGoal();
             float vip = VipRailGoal();
+            float poker = SplashPokerGoal();
             float now = Time.unscaledTime;
             if (!_railInit)
             {
                 _railInit = true;
                 for (int i = 0; i < RailCount; i++)
                 {
-                    float g = RailGoal(i, hive, vip);
+                    float g = RailGoal(i, hive, vip, poker);
                     _railK[i] = g;
                     _railFrom[i] = g;
                     _railGoal[i] = g;
@@ -4002,7 +4018,7 @@ namespace FlockFive
             }
             for (int i = 0; i < RailCount; i++)
             {
-                float g = RailGoal(i, hive, vip);
+                float g = RailGoal(i, hive, vip, poker);
                 if (_railGoal[i] != g)
                 {
                     _railFrom[i] = _railK[i];
@@ -4029,10 +4045,20 @@ namespace FlockFive
             return (!NoAds.Owned && LevelData.NextPlay >= 1) ? 1f : 0f;
         }
 
-        static float RailGoal(int id, float hive, float vip)
+        // Hidden through level 1. The lesson keeps it out of the stack until the
+        // line is up, then the same presence slide the hive uses grows it in.
+        float SplashPokerGoal()
+        {
+            if (LevelData.NextPlay < 1) return 0f;
+            if (_pokerIntro && !_pokerIntroLive) return 0f;
+            return 1f;
+        }
+
+        static float RailGoal(int id, float hive, float vip, float poker)
         {
             if (id == RailHive) return hive;
             if (id == RailVip) return vip;
+            if (id == RailPoker) return poker;
             return 1f;
         }
 
@@ -4046,20 +4072,19 @@ namespace FlockFive
         {
             float size = SplashRailSize();
             float gap = SplashRailGap();
-            float poker = size * 1.22f;
             var right = HomeRailRect(true, size);
             var left = HomeRailRect(false, size);
-            float rightTop = right.y - size - gap;
+            float top = right.y - size - gap;
             float rightCx = right.center.x;
             float leftCx = left.center.x;
             for (int pass = 0; pass < 2; pass++)
             {
                 bool visual = pass == 0;
-                float y = rightTop;
+                float y = top;
                 PackRail(ref y, rightCx, gap, RailPig, size, visual);
                 PackRail(ref y, rightCx, gap, RailHive, size, visual);
-                PackRail(ref y, rightCx, gap, RailPoker, poker, visual);
-                y = left.y;
+                PackRail(ref y, rightCx, gap, RailPoker, size, visual);
+                y = top;
                 PackRail(ref y, leftCx, gap, RailVip, size, visual);
             }
         }
@@ -4538,10 +4563,14 @@ namespace FlockFive
         // Square bake of the round face. Scaled to SplashNoAdsRect at draw time.
         const int VipPlateN = 256;
         const int VipStuds = 12;
+        const int VipCrownW = 192;
+        const int VipCrownH = 130;
         static Texture2D _vipPlate;
         static Texture2D _vipGem;
         static Texture2D _vipCrown;
+        static Texture2D _vipGlint;
         static Texture2D _vipRibbon;
+        static Texture2D _backMedal;
 
         void DrawNoAdsButton(Rect r, float s, bool held)
         {
@@ -4564,14 +4593,12 @@ namespace FlockFive
             DrawVipShimmer(plate, held);
             DrawVipStuds(plate);
 
-            float cw = d * 0.30f;
-            float ch = cw * (72f / 128f);
-            var crown = new Rect(plate.center.x - cw * 0.5f, plate.y + d * 0.145f, cw, ch);
+            float cw = d * 0.52f;
+            float ch = cw * (VipCrownH / (float)VipCrownW);
+            float crownTop = d * 0.155f;
+            var crown = new Rect(plate.center.x - cw * 0.5f, plate.y + crownTop, cw, ch);
             GUI.color = held ? new Color(0.92f, 0.90f, 0.84f, 1f) : Color.white;
             GUI.DrawTexture(crown, VipCrownTex(), ScaleMode.ScaleToFit, true);
-            float gem = ch * 0.40f;
-            GUI.color = new Color(0.90f, 0.97f, 1f, held ? 0.85f : 1f);
-            GUI.DrawTexture(new Rect(crown.center.x - gem * 0.5f, crown.y + ch * 0.06f, gem, gem), VipGemTex(), ScaleMode.ScaleToFit, true);
 
             var vipSt = new GUIStyle(GUI.skin.label)
             {
@@ -4579,13 +4606,16 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap = false
             };
-            var vipR = new Rect(plate.center.x - d * 0.38f, plate.y + d * 0.38f, d * 0.76f, d * 0.40f);
+            float vipTop = crownTop + ch + d * 0.018f;
+            float vipH = Mathf.Max(d * 0.18f, d * 0.80f - vipTop);
+            var vipR = new Rect(plate.center.x - d * 0.36f, plate.y + vipTop, d * 0.72f, vipH);
             int vipHi = Mathf.Max(22, Mathf.RoundToInt(d * 0.40f));
             vipSt.fontSize = FitFont(vipSt, "VIP", vipR.width * 0.94f, vipR.height * 0.90f, 13, vipHi);
             int vipDark = Mathf.Clamp(Mathf.RoundToInt(vipSt.fontSize * 0.14f), 2, 8);
             StampOutlined(vipR, "VIP", vipSt, new Color(1f, 0.95f, 0.62f, 1f), 1, vipDark);
 
             DrawVipRibbon(plate, held, s);
+            DrawVipGlints(plate, crown, held);
             GUI.color = Color.white;
         }
 
@@ -4643,24 +4673,47 @@ namespace FlockFive
         static void DrawVipStuds(Rect plate)
         {
             var gem = VipGemTex();
-            var glow = GlowTex();
-            float now = Time.unscaledTime;
+            float sz = plate.width * 0.078f;
             for (int i = 0; i < VipStuds; i++)
             {
                 VipStudPos(i, VipStuds, plate, out float x, out float y);
-                float wave = Mathf.Sin(now * 1.15f + i * 0.72f);
-                float spark = wave > 0f ? Mathf.Pow(wave, 8f) : 0f;
-                float sz = plate.width * (0.085f + 0.05f * spark);
-                if (spark > 0.25f)
-                {
-                    float halo = sz * (1.7f + spark);
-                    GUI.color = new Color(0.82f, 0.94f, 1f, 0.42f * spark);
-                    GUI.DrawTexture(new Rect(x - halo * 0.5f, y - halo * 0.5f, halo, halo), glow, ScaleMode.ScaleToFit, true);
-                }
-                GUI.color = new Color(0.12f, 0.06f, 0.02f, 0.55f);
-                GUI.DrawTexture(new Rect(x - sz * 0.5f + 1f, y - sz * 0.5f + 1.4f, sz, sz), gem, ScaleMode.ScaleToFit, true);
-                GUI.color = new Color(0.88f, 0.96f, 1f, 0.55f + 0.45f * spark);
+                GUI.color = new Color(0.10f, 0.05f, 0.02f, 0.48f);
+                GUI.DrawTexture(new Rect(x - sz * 0.5f + 0.6f, y - sz * 0.5f + 1.1f, sz, sz), gem, ScaleMode.ScaleToFit, true);
+                GUI.color = Color.white;
                 GUI.DrawTexture(new Rect(x - sz * 0.5f, y - sz * 0.5f, sz, sz), gem, ScaleMode.ScaleToFit, true);
+            }
+            GUI.color = Color.white;
+        }
+
+        // Stud index, or -1 for a crown spot (nx, ny in the crown rect, y down). One lap every couple of seconds.
+        static readonly int[] VipGlintStud = { 0, -1, 3, -1, 6, 9 };
+        static readonly float[] VipGlintNx = { 0f, 0.50f, 0f, 0.26f, 0f, 0f };
+        static readonly float[] VipGlintNy = { 0f, 0.18f, 0f, 0.34f, 0f, 0f };
+
+        static void DrawVipGlints(Rect plate, Rect crown, bool held)
+        {
+            var tex = VipGlintTex();
+            int n = VipGlintStud.Length;
+            float phase = Mathf.Repeat(Time.unscaledTime / 2.2f, 1f) * n;
+            float sz = plate.width * 0.048f;
+            float dim = held ? 0.55f : 1f;
+            for (int i = 0; i < n; i++)
+            {
+                float dist = Mathf.Abs(phase - i);
+                if (dist > n * 0.5f) dist = n - dist;
+                if (dist > 1.02f) continue;
+                float a = Mathf.Cos(Mathf.Clamp01(dist) * Mathf.PI * 0.5f);
+                if (a < 0.04f) continue;
+                float x, y;
+                if (VipGlintStud[i] >= 0)
+                    VipStudPos(VipGlintStud[i], VipStuds, plate, out x, out y);
+                else
+                {
+                    x = crown.x + crown.width * VipGlintNx[i];
+                    y = crown.y + crown.height * VipGlintNy[i];
+                }
+                GUI.color = new Color(1f, 0.97f, 0.84f, 0.90f * a * dim);
+                GUI.DrawTexture(new Rect(x - sz * 0.5f, y - sz * 0.5f, sz, sz), tex, ScaleMode.ScaleToFit, true);
             }
             GUI.color = Color.white;
         }
@@ -4681,19 +4734,22 @@ namespace FlockFive
             var tex = NewVipTex(n, n, "VipPlate");
             var px = new Color32[n * n];
             float c0 = n * 0.5f;
-            float rad = c0 - 1.2f;
-            float rimIn = rad * 0.74f;
-            const float lip = 8f;
+            float rad = c0 - 1.4f;
+            float rimIn = rad * 0.76f;
+            const float lip = 5.5f;
+            const float shade = 9f;
             for (int y = 0; y < n; y++)
             {
-                float up = 1f - y / (float)(n - 1);
+                float py = y + 0.5f;
+                // High texture y is the top of the medallion.
+                float up = py / (n - 1f);
                 for (int x = 0; x < n; x++)
                 {
                     float dx = x + 0.5f - c0;
-                    float dy = y + 0.5f - c0;
+                    float dy = py - c0;
                     float dist = Mathf.Sqrt(dx * dx + dy * dy);
                     float sd = dist - rad;
-                    float aa = Mathf.Clamp01(0.85f - sd);
+                    float aa = Mathf.Clamp01(1.05f - sd);
                     if (aa <= 0.004f)
                     {
                         px[y * n + x] = new Color32(0, 0, 0, 0);
@@ -4703,33 +4759,48 @@ namespace FlockFive
                     Color c;
                     if (ring < lip)
                     {
-                        c = Color.Lerp(new Color(0.10f, 0.04f, 0.015f, 1f), new Color(0.55f, 0.32f, 0.08f, 1f), Mathf.Clamp01(ring / lip));
+                        float k = Mathf.Clamp01(ring / lip);
+                        c = Color.Lerp(new Color(0.05f, 0.02f, 0.012f, 1f), new Color(0.72f, 0.46f, 0.12f, 1f), k);
+                        c = Color.Lerp(c, new Color(1f, 0.92f, 0.62f, 1f), k * up * 0.45f);
                     }
                     else if (dist >= rimIn)
                     {
-                        float t = Mathf.InverseLerp(rad - lip, rimIn, dist);
-                        Color deep = new Color(0.42f, 0.22f, 0.05f, 1f);
-                        Color mid = new Color(0.93f, 0.68f, 0.18f, 1f);
+                        float span = Mathf.Max(1f, rad - lip - rimIn);
+                        float t = Mathf.Clamp01((dist - rimIn) / span);
+                        float bevel = Mathf.Sin(t * Mathf.PI);
+                        Color deep = new Color(0.40f, 0.20f, 0.04f, 1f);
+                        Color mid = new Color(0.90f, 0.64f, 0.14f, 1f);
                         Color bright = new Color(1f, 0.95f, 0.68f, 1f);
-                        float bevel = Mathf.Sin(Mathf.Clamp01(t) * Mathf.PI);
-                        c = Color.Lerp(deep, mid, 0.35f + 0.65f * up);
-                        c = Color.Lerp(c, bright, bevel * (0.28f + 0.72f * up));
-                        float groove = Mathf.Clamp01((t - 0.78f) / 0.22f);
-                        c = Color.Lerp(c, new Color(0.30f, 0.15f, 0.04f, 1f), groove * 0.8f);
-                        float spec = Mathf.Clamp01(1.05f - Mathf.Sqrt(dx * dx * 1.3f + (dy + rad * 0.45f) * (dy + rad * 0.45f)) / rad);
-                        c = Color.Lerp(c, new Color(1f, 0.98f, 0.84f, 1f), spec * spec * 0.55f);
+                        c = Color.Lerp(deep, mid, Mathf.Lerp(0.22f, 1f, up));
+                        c = Color.Lerp(c, bright, bevel * Mathf.Lerp(0.12f, 0.85f, up));
+                        float inner = Mathf.Clamp01(1f - t * 3.2f);
+                        c = Color.Lerp(c, new Color(0.28f, 0.13f, 0.03f, 1f), inner * 0.55f);
+                    }
+                    else if (dist >= rimIn - shade)
+                    {
+                        float t = Mathf.Clamp01((rimIn - dist) / shade);
+                        float belly = Mathf.Sin(t * Mathf.PI);
+                        c = Color.Lerp(new Color(0.22f, 0.10f, 0.03f, 1f), new Color(0.03f, 0.008f, 0.014f, 1f), t);
+                        c = Color.Lerp(c, new Color(0.012f, 0.004f, 0.008f, 1f), belly * 0.72f);
                     }
                     else
                     {
-                        float u = dist / Mathf.Max(1f, rimIn);
-                        c = Color.Lerp(new Color(0.18f, 0.04f, 0.06f, 1f), new Color(0.045f, 0.012f, 0.022f, 1f), Mathf.SmoothStep(0.05f, 1f, u));
-                        c = Color.Lerp(c, new Color(0.32f, 0.10f, 0.10f, 1f), up * (1f - u) * 0.40f);
+                        float u = dist / Mathf.Max(1f, rimIn - shade);
+                        c = Color.Lerp(new Color(0.11f, 0.028f, 0.040f, 1f), new Color(0.035f, 0.010f, 0.018f, 1f), Mathf.SmoothStep(0f, 1f, u));
+                        c = Color.Lerp(c, new Color(0.16f, 0.045f, 0.05f, 1f), up * (1f - u) * 0.22f);
                     }
                     float lipD = Mathf.Abs(dist - rimIn);
-                    if (lipD < 2.8f && sd < -lip)
+                    if (lipD < 1.7f && sd < -lip)
+                        c = Color.Lerp(c, new Color(1f, 0.90f, 0.55f, 1f), (1f - lipD / 1.7f) * (0.35f + 0.65f * up));
+                    float hx = dx / rad;
+                    float hy = (dy - rad * 0.34f) / (rad * 0.48f);
+                    float h2 = hx * hx * 1.35f + hy * hy;
+                    if (h2 < 1f)
                     {
-                        float k = 1f - lipD / 2.8f;
-                        c = Color.Lerp(c, new Color(1f, 0.90f, 0.52f, 1f), k * 0.70f);
+                        float gloss = 1f - h2;
+                        gloss *= gloss;
+                        float gain = dist >= rimIn ? 0.62f : 0.18f;
+                        c = Color.Lerp(c, new Color(1f, 0.98f, 0.90f, 1f), gloss * gain);
                     }
                     c.a = aa;
                     px[y * n + x] = (Color32)c;
@@ -4800,26 +4871,24 @@ namespace FlockFive
                 {
                     float u = (x - c0) / c0;
                     float v = (y - c0) / c0;
-                    float dmd = Mathf.Abs(u) + Mathf.Abs(v);
-                    Color c = new Color(0f, 0f, 0f, 0f);
-                    if (dmd <= 1f)
+                    float dist = Mathf.Sqrt(u * u + v * v);
+                    if (dist > 0.94f)
                     {
-                        float edge = Mathf.Clamp01((1f - dmd) / 0.16f);
-                        float facet = Mathf.Clamp01(0.30f + 0.70f * (v * 0.5f + 0.5f));
-                        c = Color.Lerp(new Color(0.38f, 0.62f, 1f, 1f), new Color(0.97f, 0.99f, 1f, 1f), facet);
-                        if (Mathf.Abs(u) < 0.08f) c = Color.Lerp(c, Color.white, 0.7f);
-                        c.a = edge;
+                        px[y * n + x] = new Color32(0, 0, 0, 0);
+                        continue;
                     }
-                    else
-                    {
-                        float ray = Mathf.Min(Mathf.Abs(u), Mathf.Abs(v));
-                        float arm = Mathf.Max(Mathf.Abs(u), Mathf.Abs(v));
-                        if (ray < 0.07f && arm < 1.28f)
-                        {
-                            float a = (1f - arm / 1.28f) * (1f - ray / 0.07f);
-                            c = new Color(0.90f, 0.97f, 1f, a * 0.95f);
-                        }
-                    }
+                    float up = v * 0.5f + 0.5f;
+                    Color deep = new Color(0.12f, 0.32f, 0.72f, 1f);
+                    Color mid = new Color(0.42f, 0.74f, 1f, 1f);
+                    Color c = Color.Lerp(deep, mid, up);
+                    float bevel = Mathf.Clamp01((dist - 0.55f) / 0.28f);
+                    c = Color.Lerp(c, new Color(0.86f, 0.95f, 1f, 1f), (1f - dist) * 0.55f);
+                    c = Color.Lerp(c, new Color(0.08f, 0.18f, 0.42f, 1f), bevel * 0.72f);
+                    float sx = u + 0.16f;
+                    float sy = v - 0.28f;
+                    if (sx * sx + sy * sy < 0.045f)
+                        c = Color.Lerp(c, Color.white, 0.92f);
+                    c.a = Mathf.Clamp01((0.94f - dist) / 0.08f);
                     px[y * n + x] = (Color32)c;
                 }
             }
@@ -4829,39 +4898,100 @@ namespace FlockFive
             return tex;
         }
 
+        static Texture2D VipGlintTex()
+        {
+            if (_vipGlint != null) return _vipGlint;
+            const int n = 32;
+            var tex = NewVipTex(n, n, "VipGlint");
+            var px = new Color32[n * n];
+            float c0 = (n - 1) * 0.5f;
+            for (int y = 0; y < n; y++)
+            {
+                for (int x = 0; x < n; x++)
+                {
+                    float u = (x - c0) / c0;
+                    float v = (y - c0) / c0;
+                    float ax = Mathf.Abs(u);
+                    float ay = Mathf.Abs(v);
+                    float vert = ax / 0.12f + ay / 1.02f;
+                    float horz = ay / 0.12f + ax / 1.02f;
+                    float d = Mathf.Min(vert, horz);
+                    if (d > 1f)
+                    {
+                        px[y * n + x] = new Color32(0, 0, 0, 0);
+                        continue;
+                    }
+                    float edge = Mathf.Clamp01((1f - d) / 0.28f);
+                    float core = Mathf.Clamp01(1.15f - d * 2.4f);
+                    Color c = Color.Lerp(new Color(1f, 0.90f, 0.58f, 1f), Color.white, core);
+                    c.a = edge * (0.72f + 0.28f * core);
+                    px[y * n + x] = (Color32)c;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _vipGlint = tex;
+            return tex;
+        }
+
+        // Texture y grows up. Band narrows into a curved bottom; five points flare outward.
+        static float[] _vipCrownPoly;
+        static int _vipCrownN;
+
         static Texture2D VipCrownTex()
         {
             if (_vipCrown != null) return _vipCrown;
-            const int w = 128;
-            const int h = 72;
+            BuildVipCrownPoly();
+            int w = VipCrownW;
+            int h = VipCrownH;
             var tex = NewVipTex(w, h, "VipCrown");
             var px = new Color32[w * h];
+            const float outlineR = 3.6f;
             for (int y = 0; y < h; y++)
             {
                 for (int x = 0; x < w; x++)
                 {
                     float fx = x + 0.5f;
                     float fy = y + 0.5f;
-                    bool fill = VipCrownShape(fx, fy);
-                    bool outline = !fill && (
-                        VipCrownShape(fx + 2.2f, fy) || VipCrownShape(fx - 2.2f, fy) ||
-                        VipCrownShape(fx, fy + 2.2f) || VipCrownShape(fx, fy - 2.2f));
-                    if (!fill && !outline)
+                    bool body = VipInPoly(fx, fy);
+                    bool blue = VipCrownDisc(fx, fy, 96f, 104f, 15f);
+                    bool jewel = VipCrownDisc(fx, fy, 96f, 30f, 7.5f);
+                    bool ball = VipCrownDisc(fx, fy, 20f, 78f, 12f)
+                        || VipCrownDisc(fx, fy, 54f, 92f, 12f)
+                        || VipCrownDisc(fx, fy, 138f, 92f, 12f)
+                        || VipCrownDisc(fx, fy, 172f, 78f, 12f);
+                    bool fill = body || blue || jewel || ball;
+                    if (!fill && !VipCrownNear(fx, fy, outlineR))
                     {
                         px[y * w + x] = new Color32(0, 0, 0, 0);
                         continue;
                     }
                     Color c;
                     if (!fill)
-                        c = new Color(0.08f, 0.03f, 0.04f, 0.92f);
+                        c = new Color(0.08f, 0.025f, 0.04f, 0.94f);
+                    else if (blue)
+                        c = VipOrbColor(fx, fy, 96f, 104f, 15f, true);
+                    else if (ball)
+                        c = VipOrbColor(fx, fy, VipCrownBallAt(fx, fy), true);
+                    else if (jewel)
+                        c = VipJewelColor(fx, fy);
                     else
                     {
                         float up = fy / (h - 1f);
-                        c = Color.Lerp(new Color(0.46f, 0.26f, 0.06f, 1f), new Color(1f, 0.90f, 0.46f, 1f), Mathf.SmoothStep(0.05f, 0.9f, up));
-                        if (VipDisc(fx, fy, 64f, 46f, 8f))
-                            c = new Color(0.86f, 0.95f, 1f, 1f);
-                        else if (VipDisc(fx, fy, 34f, 36f, 4.5f) || VipDisc(fx, fy, 94f, 36f, 4.5f))
-                            c = new Color(0.86f, 0.18f, 0.32f, 1f);
+                        float g = up * up * (3f - 2f * up);
+                        c = Color.Lerp(new Color(0.50f, 0.28f, 0.07f, 1f), new Color(1f, 0.90f, 0.48f, 1f), g);
+                        if (!VipInPoly(fx - 2.8f, fy))
+                            c = Color.Lerp(c, new Color(1f, 0.96f, 0.78f, 1f), 0.85f);
+                        if (!VipInPoly(fx, fy - 2.4f))
+                            c = Color.Lerp(c, new Color(0.36f, 0.18f, 0.04f, 1f), 0.65f);
+                        float sx = (fx - 74f) / 34f;
+                        float sy = (fy - 40f) / 11f;
+                        float sheen = sx * sx + sy * sy;
+                        if (sheen < 1f)
+                        {
+                            float k = 1f - sheen;
+                            c = Color.Lerp(c, new Color(1f, 0.97f, 0.80f, 1f), k * k * 0.75f);
+                        }
                     }
                     px[y * w + x] = (Color32)c;
                 }
@@ -4872,30 +5002,138 @@ namespace FlockFive
             return tex;
         }
 
-        static bool VipCrownShape(float x, float y)
+        static void BuildVipCrownPoly()
         {
-            bool band = x >= 12f && x <= 116f && y >= 8f && y <= 28f;
-            bool left = VipInTri(x, y, 16f, 28f, 34f, 46f, 50f, 28f);
-            bool mid = VipInTri(x, y, 40f, 28f, 64f, 64f, 88f, 28f);
-            bool right = VipInTri(x, y, 78f, 28f, 94f, 46f, 112f, 28f);
-            return band || left || mid || right;
+            if (_vipCrownPoly != null) return;
+            var p = new float[64];
+            int n = 0;
+            VipCrownBez(p, ref n, 48f, 20f, 32f, 32f, 26f, 44f, 5, false);
+            VipCrownPt(p, ref n, 16f, 82f);
+            VipCrownPt(p, ref n, 48f, 46f);
+            VipCrownPt(p, ref n, 52f, 96f);
+            VipCrownPt(p, ref n, 80f, 46f);
+            VipCrownPt(p, ref n, 96f, 112f);
+            VipCrownPt(p, ref n, 112f, 46f);
+            VipCrownPt(p, ref n, 140f, 96f);
+            VipCrownPt(p, ref n, 144f, 46f);
+            VipCrownPt(p, ref n, 176f, 82f);
+            VipCrownPt(p, ref n, 166f, 44f);
+            VipCrownBez(p, ref n, 166f, 44f, 160f, 32f, 144f, 20f, 5, true);
+            VipCrownBez(p, ref n, 144f, 20f, 96f, 8f, 48f, 20f, 8, true);
+            _vipCrownPoly = p;
+            _vipCrownN = n / 2;
         }
 
-        static bool VipInTri(float px, float py, float ax, float ay, float bx, float by, float cx, float cy)
+        static void VipCrownPt(float[] dst, ref int n, float x, float y)
         {
-            float d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by);
-            float d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy);
-            float d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay);
-            bool neg = d1 < 0f || d2 < 0f || d3 < 0f;
-            bool pos = d1 > 0f || d2 > 0f || d3 > 0f;
-            return !(neg && pos);
+            dst[n++] = x;
+            dst[n++] = y;
         }
 
-        static bool VipDisc(float x, float y, float cx, float cy, float r)
+        static void VipCrownBez(float[] dst, ref int n, float x0, float y0, float x1, float y1, float x2, float y2, int steps, bool skipFirst)
+        {
+            int i0 = skipFirst ? 1 : 0;
+            for (int i = i0; i <= steps; i++)
+            {
+                float t = i / (float)steps;
+                float u = 1f - t;
+                dst[n++] = u * u * x0 + 2f * u * t * x1 + t * t * x2;
+                dst[n++] = u * u * y0 + 2f * u * t * y1 + t * t * y2;
+            }
+        }
+
+        static bool VipInPoly(float x, float y)
+        {
+            var p = _vipCrownPoly;
+            int n = _vipCrownN;
+            bool inside = false;
+            for (int i = 0, j = n - 1; i < n; j = i++)
+            {
+                float yi = p[i * 2 + 1];
+                float yj = p[j * 2 + 1];
+                if ((yi > y) == (yj > y)) continue;
+                float xi = p[i * 2];
+                float xj = p[j * 2];
+                if (x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+            }
+            return inside;
+        }
+
+        static bool VipCrownDisc(float x, float y, float cx, float cy, float r)
         {
             float dx = x - cx;
             float dy = y - cy;
             return dx * dx + dy * dy <= r * r;
+        }
+
+        static bool VipCrownFilled(float x, float y)
+        {
+            if (VipInPoly(x, y)) return true;
+            if (VipCrownDisc(x, y, 96f, 104f, 15f)) return true;
+            if (VipCrownDisc(x, y, 96f, 30f, 7.5f)) return true;
+            if (VipCrownDisc(x, y, 20f, 78f, 12f)) return true;
+            if (VipCrownDisc(x, y, 54f, 92f, 12f)) return true;
+            if (VipCrownDisc(x, y, 138f, 92f, 12f)) return true;
+            return VipCrownDisc(x, y, 172f, 78f, 12f);
+        }
+
+        static bool VipCrownNear(float x, float y, float r)
+        {
+            if (VipCrownFilled(x + r, y) || VipCrownFilled(x - r, y)) return true;
+            if (VipCrownFilled(x, y + r) || VipCrownFilled(x, y - r)) return true;
+            float d = r * 0.7f;
+            return VipCrownFilled(x + d, y + d) || VipCrownFilled(x - d, y + d)
+                || VipCrownFilled(x + d, y - d) || VipCrownFilled(x - d, y - d);
+        }
+
+        static Vector3 VipCrownBallAt(float x, float y)
+        {
+            if (VipCrownDisc(x, y, 20f, 78f, 12f)) return new Vector3(20f, 78f, 12f);
+            if (VipCrownDisc(x, y, 54f, 92f, 12f)) return new Vector3(54f, 92f, 12f);
+            if (VipCrownDisc(x, y, 138f, 92f, 12f)) return new Vector3(138f, 92f, 12f);
+            return new Vector3(172f, 78f, 12f);
+        }
+
+        static Color VipOrbColor(float x, float y, float cx, float cy, float r, bool blue)
+        {
+            float dx = x - cx;
+            float dy = y - cy;
+            float dist = Mathf.Sqrt(dx * dx + dy * dy) / Mathf.Max(0.01f, r);
+            float lit = Mathf.Clamp01(0.34f + 0.72f * ((dy * 0.85f - dx * 0.30f) / r));
+            Color c = blue
+                ? Color.Lerp(new Color(0.10f, 0.28f, 0.62f, 1f), new Color(0.72f, 0.92f, 1f, 1f), lit)
+                : Color.Lerp(new Color(0.55f, 0.32f, 0.06f, 1f), new Color(1f, 0.92f, 0.55f, 1f), lit);
+            float spec = (dx + 1.2f) * (dx + 1.2f) + (dy - r * 0.34f) * (dy - r * 0.34f);
+            if (spec < r * r * 0.10f)
+                c = Color.Lerp(c, new Color(1f, 0.99f, 0.94f, 1f), 0.85f);
+            if (dist > 0.78f)
+            {
+                Color rim = blue ? new Color(0.05f, 0.12f, 0.32f, 1f) : new Color(0.36f, 0.18f, 0.04f, 1f);
+                c = Color.Lerp(rim, c, Mathf.Clamp01((0.96f - dist) / 0.18f));
+            }
+            return c;
+        }
+
+        static Color VipOrbColor(float x, float y, Vector3 ball, bool gold)
+        {
+            return VipOrbColor(x, y, ball.x, ball.y, ball.z, !gold);
+        }
+
+        static Color VipJewelColor(float x, float y)
+        {
+            const float cx = 96f;
+            const float cy = 30f;
+            const float r = 7.5f;
+            float dx = x - cx;
+            float dy = y - cy;
+            float dist = Mathf.Sqrt(dx * dx + dy * dy) / r;
+            float lit = Mathf.Clamp01(0.30f + 0.75f * (dy / r));
+            Color c = Color.Lerp(new Color(0.45f, 0.06f, 0.10f, 1f), new Color(0.95f, 0.28f, 0.32f, 1f), lit);
+            if (dx * dx + (dy - 2.2f) * (dy - 2.2f) < 7f)
+                c = Color.Lerp(c, new Color(1f, 0.90f, 0.90f, 1f), 0.8f);
+            if (dist > 0.72f)
+                c = Color.Lerp(new Color(0.28f, 0.04f, 0.06f, 1f), c, Mathf.Clamp01((1f - dist) / 0.28f));
+            return c;
         }
 
         static Texture2D NewVipTex(int w, int h, string texName)
@@ -4907,6 +5145,169 @@ namespace FlockFive
                 hideFlags = HideFlags.HideAndDontSave,
                 name = texName
             };
+        }
+
+        // Left chevron in radius units. +x right, +y up. Bold enough to read at 44pt.
+        static readonly float[] BackChevronPoly =
+        {
+            -0.48f, 0f,
+            0.28f, 0.52f,
+            0.28f, 0.16f,
+            -0.08f, 0f,
+            0.28f, -0.16f,
+            0.28f, -0.52f
+        };
+
+        static bool BackInChevron(float nx, float ny)
+        {
+            var p = BackChevronPoly;
+            bool inside = false;
+            int n = p.Length / 2;
+            for (int i = 0, j = n - 1; i < n; j = i++)
+            {
+                float yi = p[i * 2 + 1];
+                float yj = p[j * 2 + 1];
+                if ((yi > ny) == (yj > ny)) continue;
+                float xi = p[i * 2];
+                float xj = p[j * 2];
+                float xAt = (xj - xi) * (ny - yi) / (yj - yi) + xi;
+                if (nx < xAt) inside = !inside;
+            }
+            return inside;
+        }
+
+        // Clay disc, gold rim (same bevel as the VIP plate), gold left chevron.
+        static Texture2D BackMedalTex()
+        {
+            if (_backMedal != null) return _backMedal;
+            const int n = 160;
+            var tex = NewVipTex(n, n, "BackMedal");
+            var px = new Color32[n * n];
+            float c0 = n * 0.5f;
+            float rad = c0 - 1.4f;
+            float rimIn = rad * 0.76f;
+            const float lip = 7f;
+            for (int y = 0; y < n; y++)
+            {
+                float py = y + 0.5f;
+                float up = py / (n - 1f);
+                for (int x = 0; x < n; x++)
+                {
+                    float dx = x + 0.5f - c0;
+                    float dy = py - c0;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    float sd = dist - rad;
+                    float aa = Mathf.Clamp01(0.85f - sd);
+                    if (aa <= 0.004f)
+                    {
+                        px[y * n + x] = new Color32(0, 0, 0, 0);
+                        continue;
+                    }
+                    float ring = rad - dist;
+                    Color c;
+                    if (ring < lip)
+                    {
+                        c = Color.Lerp(new Color(0.10f, 0.04f, 0.015f, 1f), new Color(0.55f, 0.32f, 0.08f, 1f), Mathf.Clamp01(ring / lip));
+                    }
+                    else if (dist >= rimIn)
+                    {
+                        float t = Mathf.InverseLerp(rad - lip, rimIn, dist);
+                        Color deep = new Color(0.42f, 0.22f, 0.05f, 1f);
+                        Color mid = new Color(0.93f, 0.68f, 0.18f, 1f);
+                        Color bright = new Color(1f, 0.95f, 0.68f, 1f);
+                        float bevel = Mathf.Sin(Mathf.Clamp01(t) * Mathf.PI);
+                        c = Color.Lerp(deep, mid, 0.35f + 0.65f * up);
+                        c = Color.Lerp(c, bright, bevel * (0.28f + 0.72f * up));
+                        float groove = Mathf.Clamp01((t - 0.78f) / 0.22f);
+                        c = Color.Lerp(c, new Color(0.30f, 0.15f, 0.04f, 1f), groove * 0.8f);
+                        float spec = Mathf.Clamp01(1.05f - Mathf.Sqrt(dx * dx * 1.3f + (dy - rad * 0.42f) * (dy - rad * 0.42f)) / rad);
+                        c = Color.Lerp(c, new Color(1f, 0.98f, 0.84f, 1f), spec * spec * 0.55f);
+                    }
+                    else
+                    {
+                        float u = dist / Mathf.Max(1f, rimIn);
+                        float grain = 0.5f + 0.5f * Mathf.Sin(x * 0.09f + Mathf.Sin(y * 0.05f) * 2.4f);
+                        float streak = 0.5f + 0.5f * Mathf.Sin(y * 0.055f + x * 0.012f);
+                        c = Color.Lerp(new Color(0.50f, 0.30f, 0.15f, 1f), new Color(0.84f, 0.60f, 0.34f, 1f), grain * 0.75f + 0.12f);
+                        c = Color.Lerp(c, new Color(0.68f, 0.44f, 0.22f, 1f), streak * 0.22f);
+                        c = Color.Lerp(c, new Color(0.38f, 0.20f, 0.10f, 1f), Mathf.SmoothStep(0.42f, 1f, u) * 0.58f);
+                        c = Color.Lerp(c, new Color(0.96f, 0.84f, 0.60f, 1f), Mathf.Clamp01(up * (1f - u) * 0.42f));
+                        float glaze = Mathf.Clamp01(1.12f - Mathf.Sqrt(dx * dx * 1.15f + (dy - rad * 0.22f) * (dy - rad * 0.22f)) / (rad * 0.62f));
+                        c = Color.Lerp(c, new Color(0.98f, 0.90f, 0.74f, 1f), glaze * glaze * 0.32f);
+                    }
+                    float lipD = Mathf.Abs(dist - rimIn);
+                    if (lipD < 2.6f && sd < -lip)
+                    {
+                        float k = 1f - lipD / 2.6f;
+                        c = Color.Lerp(c, new Color(1f, 0.90f, 0.52f, 1f), k * 0.70f);
+                    }
+                    if (dist < rimIn - 1.5f)
+                    {
+                        float nx = dx / rad;
+                        float ny = dy / rad;
+                        float e = 2.2f / rad;
+                        bool on = BackInChevron(nx, ny);
+                        if (!on && BackInChevron(nx - e, ny + e * 1.25f))
+                            c = Color.Lerp(c, new Color(0.20f, 0.10f, 0.04f, 1f), 0.50f);
+                        if (on)
+                        {
+                            bool aboveOut = !BackInChevron(nx, ny + e);
+                            bool around = aboveOut
+                                || !BackInChevron(nx, ny - e)
+                                || !BackInChevron(nx + e, ny)
+                                || !BackInChevron(nx - e, ny);
+                            if (!around)
+                            {
+                                float lit = Mathf.Clamp01(0.28f + 0.72f * (ny + 0.52f));
+                                c = Color.Lerp(new Color(0.62f, 0.40f, 0.08f, 1f), new Color(1f, 0.94f, 0.60f, 1f), lit);
+                            }
+                            else if (aboveOut)
+                                c = new Color(1f, 0.95f, 0.70f, 1f);
+                            else
+                                c = new Color(0.36f, 0.18f, 0.05f, 1f);
+                        }
+                    }
+                    c.a = aa;
+                    px[y * n + x] = (Color32)c;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _backMedal = tex;
+            return tex;
+        }
+
+        // Square pad, at least 44pt, under the notch and inset from the safe left edge.
+        static Rect BackMedalRect(float s, float top)
+        {
+            var safe = Screen.safeArea;
+            float size = 56f * Mathf.Clamp(s, 1f, 1.35f);
+            if (size < 48f) size = 48f;
+            float x = Mathf.Max(16f, safe.xMin + 10f);
+            return new Rect(x, top, size, size);
+        }
+
+        // Hit pad stays full size. The face scales down while the finger is down.
+        bool DrawBackMedal(Rect hit)
+        {
+            bool fire = HitPad(hit, out bool held);
+            if (fire) Sfx.CardTap();
+            float k = held ? 0.94f : 1f;
+            float side = Mathf.Min(hit.width, hit.height);
+            float d = side * k;
+            var face = new Rect(hit.center.x - d * 0.5f, hit.center.y - d * 0.5f, d, d);
+            var tex = BackMedalTex();
+            var glow = GlowTex();
+            float pad = face.width * 0.12f;
+            GUI.color = new Color(1f, 0.82f, 0.36f, held ? 0.08f : 0.16f);
+            GUI.DrawTexture(new Rect(face.x - pad, face.y - pad, face.width + pad * 2f, face.height + pad * 2f), glow, ScaleMode.ScaleToFit, true);
+            float sh = held ? 2f : 4f;
+            GUI.color = new Color(0.08f, 0.05f, 0.02f, held ? 0.22f : 0.40f);
+            GUI.DrawTexture(new Rect(face.x + sh * 0.45f, face.y + sh, face.width, face.height), tex, ScaleMode.ScaleToFit, true);
+            GUI.color = held ? new Color(0.88f, 0.84f, 0.76f, 1f) : Color.white;
+            GUI.DrawTexture(face, tex, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+            return fire;
         }
 
         void DismissStreakSign()
@@ -4979,7 +5380,7 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleRight,
                 wordWrap = false
             };
-            string coins = Purse.Cash;
+            string coins = Money.Format(Purse.Coins);
             // ~20% smaller coin; $ text FitFont tracks the icon height.
             float icon = Mathf.Clamp(pig.height * 0.48f * 0.80f, 29f * s, 51f * s);
             float gap = 8f * s;
@@ -5391,7 +5792,7 @@ namespace FlockFive
                 StampOutlined(rightR, right, valueSt, draw, light, dark, 0.001f);
             }
 
-            string dollars = Purse.Dollars(stagePay);
+            string dollars = Money.Format(stagePay);
             string streakTx = "×" + streak;
             string dayTx = "×" + login;
             if (metaRows == 2)
@@ -5425,7 +5826,7 @@ namespace FlockFive
                 var hero = new Rect(inner.x, linesTop + metaH, inner.width, heroH);
                 float winLabH = Mathf.Min(hero.height * 0.28f, 22f * s * scale);
                 if (winLabH < 15f * s * scale) winLabH = 0f;
-                string amt = Purse.Dollars(_streakRollShown);
+                string amt = Money.Format(_streakRollShown);
                 var amtR = new Rect(hero.x, hero.y + winLabH, hero.width, hero.height - winLabH);
                 if (winLabH > 0f)
                 {
@@ -5727,10 +6128,13 @@ namespace FlockFive
         {
             float s = Mathf.Max(Screen.height / 720f, 1f);
             if (NoAds.Owned) VipOffer.Close();
-            bool vipCard = VipOffer.IsOpen;
-            if (!vipCard && _hiveIntroLive && Event.current != null
+            bool modal = VipOffer.IsOpen || _dailyOpen;
+            if (!modal && _hiveIntroLive && Event.current != null
                 && Event.current.type == EventType.MouseDown && Event.current.button == 0)
                 DismissHiveIntro();
+            if (!modal && _pokerIntroLive && Event.current != null
+                && Event.current.type == EventType.MouseDown && Event.current.button == 0)
+                DismissPokerIntro();
             DrawHomeWash(0.18f);
 
             // Home title: stacked FLOCK / FIVE via letter sprites + navy block extrude
@@ -5750,13 +6154,13 @@ namespace FlockFive
             var noAdsR = SplashNoAdsRect();
             bool noAdsHeld = false;
             bool vipTap = false;
-            if (vipDraw && offerVip && !vipCard)
+            if (vipDraw && offerVip && !modal)
                 vipTap = HitVip(noAdsR, out noAdsHeld);
 
             // Pig above hive: hit-test before the album so taps don't open it.
             // The offer card swallows the rail so a dismiss tap cannot oink.
             var pigR = PiggyRect(s);
-            if (!vipCard && HitPad(pigR, out _) && !(vipDraw && offerVip && VipContains(noAdsR, Event.current.mousePosition)))
+            if (!modal && HitPad(pigR, out _) && !(vipDraw && offerVip && VipContains(noAdsR, Event.current.mousePosition)))
                 TryPigPoke();
 
             // Hive lesson hides that slot. The packer closes it; poker slides up under the pig.
@@ -5765,7 +6169,7 @@ namespace FlockFive
             bool hiveOpening = hiveDraw && !RailSettled(RailHive);
             bool hivePop = _hivePopping && !hiveOpening;
             var hiveHit = HivePopRect(hiveR, hivePop);
-            if (hiveDraw && SplashHiveShown() && !vipCard && HitPad(hiveHit, out _))
+            if (hiveDraw && SplashHiveShown() && !modal && HitPad(hiveHit, out _))
             {
                 DismissHiveIntro();
                 OpenHiveAlbum();
@@ -5786,10 +6190,13 @@ namespace FlockFive
                 DrawNoAdsButton(noAdsR, s, noAdsHeld);
             }
 
-            // Poker is the next packed sibling. Its hit is the sliding rect.
+            // Poker is the next packed sibling. Absent until level 1 is cleared,
+            // so the rail closes under the hive. Its hit is the sliding rect.
+            bool pokerDraw = RailLive(RailPoker);
             var pokerR = SplashPokerRect();
-            if (!vipCard && HitPad(pokerR, out _))
+            if (pokerDraw && !modal && HitPad(pokerR, out _))
             {
+                DismissPokerIntro();
                 BirdPoker.Boot();
                 BirdPoker.BeginVisit();
                 _pokerKeepHint = true;
@@ -5797,7 +6204,8 @@ namespace FlockFive
                 for (int i = 0; i < _pokerHoldSlide.Length; i++) _pokerHoldSlide[i] = 0f;
                 _home = HomeFace.Poker;
             }
-            DrawSplashPokerButton(pokerR);
+            if (pokerDraw)
+                DrawSplashPokerButton(pokerR);
 
 #if UNITY_EDITOR
             string ease = _shotEase ?? LevelData.JokeEase(next);
@@ -5806,13 +6214,15 @@ namespace FlockFive
             string ease = LevelData.JokeEase(next);
             int number = next + 1;
 #endif
-            if (DrawFlowerPlay(s, ease, number, acceptTap: !vipCard))
+            if (DrawFlowerPlay(s, ease, number, acceptTap: !modal))
             {
                 Sfx.GateGo();
                 Load(next);
             }
             DrawHiveIntro(s);
+            DrawPokerIntro(s);
             if (VipOffer.IsOpen) VipOffer.Draw(s);
+            if (_dailyOpen) DrawDailyBonus(s);
         }
 
         bool DrawFlowerPlay(float s, string ease, int number, bool acceptTap)
@@ -6571,6 +6981,29 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // Card row centers on the screen. Safe-area insets apply only when left and right match.
+        static void PokerRowSpan(out float x, out float width)
+        {
+            float sw = Mathf.Max(1f, Screen.width);
+            var safe = Screen.safeArea;
+            float left = 0f, right = 0f;
+            if (safe.width > 8f && safe.height > 8f)
+            {
+                left = Mathf.Max(0f, safe.xMin);
+                right = Mathf.Max(0f, sw - safe.xMax);
+            }
+            if (Mathf.Abs(left - right) <= 1f)
+            {
+                x = left;
+                width = Mathf.Max(8f, sw - left - right);
+            }
+            else
+            {
+                x = 0f;
+                width = sw;
+            }
+        }
+
         void DrawPokerPage()
         {
             float s = Mathf.Max(Screen.height / 720f, 1f);
@@ -6579,15 +7012,8 @@ namespace FlockFive
 
             var safe = Screen.safeArea;
             float top = TopHud();
-            var backLab = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Mathf.RoundToInt(22 * s),
-                alignment = TextAnchor.MiddleCenter,
-                fontStyle = FontStyle.Bold
-            };
-            backLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
-            var back = new Rect(Mathf.Max(16f, safe.xMin + 10f), top, 132f * Mathf.Min(s, 1.6f), 44f * Mathf.Min(s, 1.6f));
-            if (HitPad(back, out bool backHeld))
+            var back = BackMedalRect(s, top);
+            if (DrawBackMedal(back))
             {
                 BirdPoker.ResetRound();
                 _pokerMotion = PokerMotion.None;
@@ -6603,11 +7029,7 @@ namespace FlockFive
                 _pokerHover = -1;
                 _home = HomeFace.Splash;
             }
-            GUI.color = new Color(0.10f, 0.08f, 0.05f, backHeld ? 0.88f : 0.72f);
-            GUI.DrawTexture(back, Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            GUI.Label(back, "Back", backLab);
-            DrawPokerPurse(top, s);
+            DrawPokerPurse(back, top, s);
 
             float logoTop = top + back.height + 4f * s;
             float logoH = PokerTitleHeight(s);
@@ -6629,29 +7051,29 @@ namespace FlockFive
                 TickPokerPayTable(below, s);
 
             float gap = 2f * s;
-            float maxRow = Screen.width - 24f * s;
+            PokerRowSpan(out float spanX, out float spanW);
+            float side = 12f * s;
+            float maxRow = Mathf.Max(8f, spanW - side * 2f);
             float cardW = Mathf.Min(Screen.width * 0.205f, 138f * s);
             cardW = Mathf.Min(cardW, (maxRow - (BirdPoker.HandSize - 1) * gap) / BirdPoker.HandSize);
             float cardH = cardW * 1.42f;
             float holdH = 32f * s;
             float rowW = BirdPoker.HandSize * cardW + (BirdPoker.HandSize - 1) * gap;
-            float rowX = (Screen.width - rowW) * 0.5f;
+            float rowX = spanX + (spanW - rowW) * 0.5f;
             float btnSize = Mathf.Min(Screen.width * 0.46f, 200f * s);
             float botPad = Mathf.Max(12f, safe.yMin + 6f);
             float btnY = Screen.height - botPad - btnSize;
-            float meterH = 36f * s;
-            float head = below + 8f * s;
-            float floor = btnY - holdH - meterH - 8f * s;
             var payTab = PokerPayTabRect(below, s);
-            // Below the PAY TABLE chip so a right-seat keep never covers the tab.
-            float rowY = payTab.yMax + 12f * s;
-            float holdRight = payTab.x - 10f * s;
-            if (rowX + rowW > holdRight)
-            {
-                rowW = Mathf.Max(cardW, holdRight - Mathf.Max(12f, safe.xMin + 8f));
-                rowX = Mathf.Max(12f, safe.xMin + 8f);
-                if (rowX + rowW > holdRight) rowX = holdRight - rowW;
-            }
+            // Equal air between the wordmark and the bet/deal controls. Drop below the PAY TABLE chip when that still fits.
+            float bandTop = below;
+            float bandBot = btnY;
+            float rowY = bandTop + Mathf.Max(0f, bandBot - bandTop - cardH) * 0.5f;
+            float clearTab = payTab.yMax + 8f * s;
+            if (rowY < clearTab && clearTab + cardH <= bandBot - 8f * s)
+                rowY = clearTab;
+            float maxY = bandBot - cardH - 8f * s;
+            if (rowY > maxY && maxY >= bandTop)
+                rowY = maxY;
             if (GuiPaint())
             {
                 TickPokerKick();
@@ -6837,7 +7259,7 @@ namespace FlockFive
                     new Color(0.28f, 0.14f, 0.06f), 2, 1);
                 var sub = new GUIStyle(head) { fontSize = Mathf.Max(16, head.fontSize - 6) };
                 StampOutlined(new Rect(paper.x, paper.y + headH * 0.52f, paper.width, headH * 0.40f),
-                    "BET " + Purse.Compact(BirdPoker.Bet), sub, new Color(0.62f, 0.28f, 0.08f), 1, 1);
+                    "BET " + Money.Format(BirdPoker.Bet), sub, new Color(0.62f, 0.28f, 0.08f), 1, 1);
                 GUI.color = new Color(0.72f, 0.52f, 0.22f, 0.85f * u);
                 float ruleY = paper.y + headH - 2f * s;
                 GUI.DrawTexture(new Rect(paper.x + 10f * s, ruleY, paper.width - 20f * s, 2f * s), Texture2D.whiteTexture);
@@ -6862,7 +7284,7 @@ namespace FlockFive
                 {
                     var rank = BirdPoker.PayTableRows[i];
                     int mult = BirdPoker.Multiplier(rank);
-                    int dollars = mult * BirdPoker.Bet;
+                    long payout = (long)mult * BirdPoker.Bet;
                     string name = BirdPoker.RankLabel(rank);
                     var row = new Rect(paper.x + 10f * s, yRow, paper.width - 20f * s, rowH);
 
@@ -6888,7 +7310,7 @@ namespace FlockFive
                     int cap = jackpot ? jack : body;
                     nameSt.fontSize = FitFont(nameSt, name, nameW * 0.98f, row.height * 0.70f, 14, cap);
                     string multTx = mult + "×";
-                    string cashTx = Purse.Compact(dollars);
+                    string cashTx = Money.Format(payout);
                     numSt.fontSize = FitFont(numSt, cashTx, cashW * 0.98f, row.height * 0.70f, 14, cap);
                     StampOutlined(new Rect(row.x, row.y, nameW, row.height), name, nameSt, fill, 2, 1);
                     StampOutlined(new Rect(row.x + nameW, row.y, multW, row.height), multTx, numSt, fill, 2, 1);
@@ -7229,7 +7651,7 @@ namespace FlockFive
                     fontSize = Mathf.RoundToInt(14 * s)
                 };
                 string hintTx = _pokerBingo
-                    ? "FULLCARD  " + Purse.Compact(BirdPoker.FullcardPrize) + "   ·   lifetime " + BirdPoker.FullcardCount
+                    ? "FULLCARD  " + Money.Format(BirdPoker.FullcardPrize) + "   ·   lifetime " + BirdPoker.FullcardCount
                     : "tap to continue";
                 StampOutlined(new Rect(0f, board.yMax + 12f * s, Screen.width, 24f * s), hintTx, hint, new Color(1f, 0.92f, 0.7f), 1, 1);
             }
@@ -7300,10 +7722,12 @@ namespace FlockFive
             DrawInkStamp(stamp, rot, Mathf.Clamp01(stampU * 1.5f) * a, true);
         }
 
-        void DrawPokerPurse(float top, float s)
+        void DrawPokerPurse(Rect back, float top, float s)
         {
-            string coins = Purse.Cash;
-            float icon = Mathf.Clamp(38f * s, 30f, 48f);
+            string coins = Money.Format(Purse.Coins);
+            // Purse stays to the right of the back medallion. Point size is the old chip's 22 * s.
+            int px = Mathf.Max(16, Mathf.RoundToInt(22f * s));
+            float icon = Mathf.Max(44f * Mathf.Min(s, 1.6f), px * 1.15f);
             float gap = 6f * s;
             var st = new GUIStyle(GUI.skin.label)
             {
@@ -7311,12 +7735,27 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleRight,
                 wordWrap = false
             };
-            st.fontSize = Mathf.RoundToInt(icon * 0.72f);
-            float labelW = Mathf.Max(st.CalcSize(new GUIContent(coins)).x + 8f * s, 64f * s);
             float right = Screen.width - Mathf.Max(12f, Screen.width - Screen.safeArea.xMax + 10f);
-            var ir = new Rect(right - icon, top + (40f * s - icon) * 0.5f, icon, icon);
-            var coinR = new Rect(ir.x - gap - labelW, ir.y, labelW, icon);
-            st.fontSize = FitFont(st, coins, coinR.width * 0.98f, coinR.height, 16, Mathf.RoundToInt(icon * 0.85f));
+            float y = back.y + (back.height - icon) * 0.5f;
+            if (y < top) y = top;
+            float logoTop = top + back.height + 4f * s;
+            float aboveLogo = logoTop - 4f * s;
+            float room = aboveLogo - y;
+            if (room > 8f && y + icon > aboveLogo)
+                icon = room;
+            var tab = PokerPayTabRect(logoTop + PokerTitleHeight(s), s);
+            float tabRoom = tab.y - 4f * s - y;
+            if (tabRoom > 8f && icon > tabRoom)
+                icon = tabRoom;
+            st.fontSize = px;
+            float textW = st.CalcSize(new GUIContent(coins)).x + 8f * s;
+            float maxLabel = right - icon - gap - (back.xMax + 8f * s);
+            if (maxLabel < 28f) maxLabel = 28f;
+            float labelW = Mathf.Min(Mathf.Max(textW, px * 1.2f), maxLabel);
+            var ir = new Rect(right - icon, y, icon, icon);
+            var coinR = new Rect(ir.x - gap - labelW, y, labelW, icon);
+            int hi = Mathf.Max(16, px);
+            st.fontSize = FitFont(st, coins, coinR.width * 0.98f, coinR.height, Mathf.Min(16, hi), hi);
             StampOutlined(coinR, coins, st, new Color(0.42f, 0.26f, 0.08f), 2, 1);
             var coinSpr = SpriteCatalog.Coin;
             if (coinSpr != null && coinSpr.texture != null)
@@ -7679,16 +8118,21 @@ namespace FlockFive
             float cardW = cardH / 1.42f;
             float span = row.width * PokerFanSpan * Mathf.Lerp(0.36f, 1f, (fanCount - 1) / 4f);
             // Shrink the whole fan uniformly if it would clip — never shove ends independently.
-            float leftPad = Screen.width * 0.07f;
-            float rightPad = Screen.width * 0.07f;
-            float maxSpan = Screen.width - leftPad - rightPad - cardW;
+            PokerRowSpan(out float spanX, out float spanW);
+            float pad = spanW * 0.07f;
+            float maxSpan = spanW - pad * 2f - cardW;
             if (maxSpan < 8f) maxSpan = 8f;
             if (span > maxSpan) span = maxSpan;
-            float x0 = (Screen.width - (span + cardW)) * 0.5f;
-            if (x0 < leftPad) x0 = leftPad;
+            float x0 = spanX + (spanW - (span + cardW)) * 0.5f;
             float x = x0 + span * t;
             float mid = 1f - Mathf.Abs(t * 2f - 1f);
-            float y = row.y + row.height * 2.12f - mid * 12f + bump;
+            // Idle row is centered under the logo. The dealt fan stays just above the deal disc.
+            float sc = Mathf.Max(Screen.height / 720f, 1f);
+            float btnSize = Mathf.Min(Screen.width * 0.46f, 200f * sc);
+            float botPad = Mathf.Max(12f, Screen.safeArea.yMin + 6f);
+            float btnY = Screen.height - botPad - btnSize;
+            float y = btnY - 8f * sc - cardH - mid * 12f + bump;
+            if (y < 0f) y = 0f;
             return new Rect(x, y, cardW, cardH);
         }
 
@@ -8087,7 +8531,7 @@ namespace FlockFive
             e.Use();
         }
 
-        static string PokerWinText() => "WIN " + Purse.Compact(BirdPoker.LastWin);
+        static string PokerWinText() => "WIN " + Money.Format(BirdPoker.LastWin);
 
         static GUIStyle PokerWinStyle(TextAnchor align) => new GUIStyle(GUI.skin.label)
         {
@@ -9018,7 +9462,7 @@ namespace FlockFive
             var red = new Color(0.94f, 0.12f, 0.14f, 1f);
             led.fontSize = type;
             int betStroke = Mathf.Max(2, Mathf.RoundToInt(type * 0.08f));
-            StampOutlined(amount, "BET " + Purse.Compact(BirdPoker.Bet), led, red, betStroke, 2);
+            StampOutlined(amount, "BET " + Money.Format(BirdPoker.Bet), led, red, betStroke, 2);
 
             bool live = steppers && !busy;
             if (DrawBetStepper(minus, "−", live && BirdPoker.CanNudge(-1)) && live)
@@ -9103,20 +9547,10 @@ namespace FlockFive
             float s = Mathf.Max(Screen.height / 720f, 1f);
             DrawHomeWash(0.28f);
 
-            var backLab = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Mathf.RoundToInt(22 * s),
-                alignment = TextAnchor.MiddleCenter,
-                fontStyle = FontStyle.Bold
-            };
-            backLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
-
             var safe = Screen.safeArea;
             float top = TopHud();
-            float btnH = 44f * Mathf.Min(s, 1.6f);
-            float btnW = 132f * Mathf.Min(s, 1.6f);
-            var back = new Rect(Mathf.Max(16f, safe.xMin + 10f), top, btnW, btnH);
-            if (HitPad(back, out bool backHeld))
+            var back = BackMedalRect(s, top);
+            if (DrawBackMedal(back))
             {
                 if (_hiveInspect >= 0)
                 {
@@ -9134,14 +9568,10 @@ namespace FlockFive
                     _home = HomeFace.Splash;
                 }
             }
-            GUI.color = new Color(0.10f, 0.08f, 0.05f, backHeld ? 0.88f : 0.72f);
-            GUI.DrawTexture(back, Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            GUI.Label(back, "Back", backLab);
 
             int floor = Mathf.RoundToInt(14f * s);
             float hiveSize = Mathf.Clamp(68f * s, 56f, 88f);
-            float headY = top + btnH + 8f * s;
+            float headY = back.yMax + 8f * s;
             var hiveHead = new Rect(Mathf.Max(16f, safe.xMin + 10f), headY, hiveSize, hiveSize);
             DrawHiveButton(hiveHead, s);
             float textX = hiveHead.xMax + 10f * s;

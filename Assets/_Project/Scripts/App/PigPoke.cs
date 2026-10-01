@@ -3,7 +3,8 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Splash piggy poke cadence: oink always; coin every 3 pokes (max 3/day); +1 at every 100th lifetime poke.
+    // Splash piggy poke cadence: oink always; coin every 3 pokes (max 3/day); bonus at every 100th lifetime poke.
+    // Each coin payout snaps to the nearest multiple of 5 (minimum 5).
     public static class PigPoke
     {
         const string PrefPokes = "flockfive.pig.pokes";
@@ -54,6 +55,14 @@ namespace FlockFive
             PlayerPrefs.Save();
         }
 
+        static int SnapFive(int amount)
+        {
+            if (amount <= 0) return 0;
+            int rem = amount % 5;
+            int snapped = rem >= 3 ? amount + (5 - rem) : amount - rem;
+            return snapped < 5 ? 5 : snapped;
+        }
+
         public static Result Poke()
         {
             EnsureBoot();
@@ -81,13 +90,15 @@ namespace FlockFive
             int coins = 0;
             if (triple)
             {
-                Purse.Credit(1);
-                coins++;
+                int pay = SnapFive(1);
+                Purse.Credit(pay);
+                coins += pay;
             }
             if (milestone)
             {
-                Purse.Credit(1);
-                coins++;
+                int pay = SnapFive(1);
+                Purse.Credit(pay);
+                coins += pay;
             }
 
             PlayerPrefs.Save();
