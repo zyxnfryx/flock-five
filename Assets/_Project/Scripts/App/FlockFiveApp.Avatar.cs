@@ -4,9 +4,9 @@ namespace FlockFive
 {
     // Home bird stays off until level 1 is cleared (flockfive.next >= 1) and the
     // player has adopted. The first splash after that clear is the one-time scene:
-    // five birds land, one is already adopted, and a statement asks for a tap.
+    // the saved bird flies onto a short leafy twig, and a statement asks for a tap.
     // That tap, and later taps on the home perch, open the same avatar page.
-    // Garden SexOf is not part of this. Kit is splash-only.
+    // Garden SexOf is not part of this. Kit is splash-only. The logo orbit stays.
     public sealed partial class FlockFiveApp
     {
         const string AvatarNamePref = "flockfive.avatar.name";
@@ -19,11 +19,22 @@ namespace FlockFive
         const string AvatarDoneLabel = "Done";
         const float AdoptLookHold = 3.2f;
         const int AvatarNameMax = 12;
-        // Middle pad on the home limb. Outer seats are the side perches.
+        // Middle pad of branch.png. The splash draws only the crop around this seat.
         const int AvatarHomeSeat = 2;
-        // 2.75x sits inside the 2.5–3x ask, then the fit clamp keeps the body and
-        // the name plate between the title, the rails, and the play flower.
+        // One pad, plus the orchids on that stretch. Pixels, origin top-left of the sheet.
+        const float HomeTwigX0 = 500f;
+        const float HomeTwigX1 = 910f;
+        const float HomeTwigTop = 190f;
+        const float HomeTwigBot = 530f;
+        const float HomeTwigTexW = 1280f;
+        const float HomeTwigTexH = 720f;
+        // 2.75x sits inside the 2.5–3x ask. AvatarBirdMul is the later 1.4x.
+        // The fit clamp keeps the body and the name plate off the title, rails, and flower.
         const float AvatarGrow = 2.75f;
+        const float AvatarBirdMul = 1.4f;
+        // Visible perch is half the limb that matched the pre-1.4 bird.
+        const float AvatarBranchMul = 0.5f;
+        const float AvatarPlateMul = 0.65f;
 
         static readonly string[] AvatarNames = { "Rosie", "Goldie", "Pip", "Plum", "Peach" };
         static readonly string[] AvatarBad =
@@ -153,9 +164,12 @@ namespace FlockFive
             return n;
         }
 
-        static float AvatarPlateH(float s) => 28f * s;
+        static float AvatarPlateH(float s) => 28f * s * AvatarPlateMul;
 
-        static float AvatarPlateDrop(float s) => AvatarPlateH(s) + 4f * s;
+        static float AvatarPlateW(float icon, float s) =>
+            Mathf.Max(54f * s * AvatarPlateMul, icon * 0.92f * AvatarPlateMul);
+
+        static float AvatarPlateDrop(float s) => AvatarPlateH(s) + 1f * s;
 
         void AvatarChannel(float s, out float left, out float right)
         {
@@ -177,10 +191,13 @@ namespace FlockFive
             var vip = SplashNoAdsRect();
             Eat(vip);
             if (vip.width > 2f) Eat(SplashNoAdsRibbon(vip));
-            if (R < L + 80f * s)
+            // A collapsed gap stays between the rails. Opening it to the screen
+            // edges put the name plate on Daily and VIP.
+            if (R < L)
             {
-                L = 16f * s;
-                R = Screen.width - 16f * s;
+                float edge = R;
+                L = edge;
+                R = edge;
             }
             left = L;
             right = R;
@@ -265,62 +282,53 @@ namespace FlockFive
         void TickAdoptMotion(float dt)
         {
             float s = Mathf.Max(Screen.height / 720f, 1f);
+            if (_adoptStep != AdoptStep.Settle)
+                AdoptLayout(s, out _, out _, out _, out _, out _);
+            float icon = AvatarIcon(s);
+            _avatarTail = AvatarPlateDrop(s);
+            FillAvatarPerches(s, icon);
+            if (_avatarFitIcon > 1f) icon = _avatarFitIcon;
+            _adoptIcon = icon;
+            var home = AvatarHomePoint();
+            int pick = _adoptPick;
+            if (pick < 0 || pick > 4) pick = 1;
+
             if (_adoptStep == AdoptStep.Settle)
             {
                 _adoptSettle = Mathf.Min(1f, _adoptSettle + dt / 0.72f);
                 float e = Mathf.SmoothStep(0f, 1f, _adoptSettle);
-                float icon = AvatarIcon(s);
-                _avatarTail = AvatarPlateDrop(s);
-                FillAvatarPerches(s, icon);
-                var home = AvatarHomePoint();
-                for (int i = 0; i < 5; i++)
-                {
-                    if (i == _adoptPick)
-                        _adoptShown[i] = Vector2.Lerp(_adoptLeaveFrom[i], home, e);
-                    else
-                    {
-                        var off = new Vector2(Screen.width + _adoptFromIcon, _adoptLeaveFrom[i].y - 28f * s);
-                        _adoptShown[i] = Vector2.Lerp(_adoptLeaveFrom[i], off, e);
-                    }
-                    if (_adoptHop[i] > 0f)
-                        _adoptHop[i] = Mathf.Max(0f, _adoptHop[i] - dt / 0.36f);
-                }
+                _adoptShown[pick] = Vector2.Lerp(_adoptLeaveFrom[pick], home, e);
+                if (_adoptHop[pick] > 0f)
+                    _adoptHop[pick] = Mathf.Max(0f, _adoptHop[pick] - dt / 0.36f);
                 return;
             }
 
-            AdoptLayout(s, out _, out _, out float rowIcon, out _, out _);
-            _adoptIcon = rowIcon;
+            var from = new Vector2(-icon * 0.85f, home.y);
             bool landed = _adoptClock > 0.35f;
-            for (int i = 0; i < 5; i++)
+            if (_adoptStep == AdoptStep.Fly)
             {
-                var dest = LimbBird(_adoptWood, _adoptPx, false, i);
-                var from = new Vector2(-rowIcon * 0.85f, dest.y);
-                if (_adoptStep == AdoptStep.Fly)
+                if (_adoptClock < 0.05f)
                 {
-                    float delay = 0.08f * i;
-                    if (_adoptClock < delay)
-                    {
-                        _adoptShown[i] = from;
-                        landed = false;
-                    }
-                    else
-                    {
-                        _adoptFly[i] = Mathf.Min(1f, _adoptFly[i] + dt / 0.78f);
-                        float u = Mathf.SmoothStep(0f, 1f, _adoptFly[i]);
-                        var p = Vector2.Lerp(from, dest, u);
-                        p.y -= Mathf.Sin(u * Mathf.PI) * 24f * s;
-                        _adoptShown[i] = p;
-                        if (_adoptFly[i] < 1f) landed = false;
-                    }
+                    _adoptShown[pick] = from;
+                    landed = false;
                 }
                 else
                 {
-                    float k = 1f - Mathf.Exp(-dt / 0.14f);
-                    _adoptShown[i] = Vector2.Lerp(_adoptShown[i], dest, k);
+                    _adoptFly[pick] = Mathf.Min(1f, _adoptFly[pick] + dt / 0.78f);
+                    float u = Mathf.SmoothStep(0f, 1f, _adoptFly[pick]);
+                    var p = Vector2.Lerp(from, home, u);
+                    p.y -= Mathf.Sin(u * Mathf.PI) * 24f * s;
+                    _adoptShown[pick] = p;
+                    if (_adoptFly[pick] < 1f) landed = false;
                 }
-                if (_adoptHop[i] > 0f)
-                    _adoptHop[i] = Mathf.Max(0f, _adoptHop[i] - dt / 0.36f);
             }
+            else
+            {
+                float k = 1f - Mathf.Exp(-dt / 0.14f);
+                _adoptShown[pick] = Vector2.Lerp(_adoptShown[pick], home, k);
+            }
+            if (_adoptHop[pick] > 0f)
+                _adoptHop[pick] = Mathf.Max(0f, _adoptHop[pick] - dt / 0.36f);
             if (_adoptStep == AdoptStep.Fly && landed)
             {
                 _adoptStep = AdoptStep.Look;
@@ -470,16 +478,14 @@ namespace FlockFive
         void DrawAdoptScene(float s)
         {
             if (!_adoptLive && _adoptStep != AdoptStep.Settle) return;
-            AdoptLayout(s, out _, out _, out float icon, out _, out _);
+            AdoptLayout(s, out _, out _, out _, out _, out _);
+            float homeIcon = AvatarIcon(s);
+            FillAvatarPerches(s, homeIcon);
+            if (_avatarFitIcon > 1f) homeIcon = _avatarFitIcon;
             if (_adoptStep == AdoptStep.Look || _adoptStep == AdoptStep.Settle)
-                HitAdoptBirds(icon);
-            if (_adoptStep == AdoptStep.Settle)
-                FillAvatarPerches(s, AvatarIcon(s));
-            if (_adoptStep != AdoptStep.Settle || _adoptSettle < 0.45f)
-                DrawLimb(_adoptWood, _adoptWoodW, _adoptWoodH, false, _adoptPx);
-            if (_adoptStep == AdoptStep.Settle)
-                DrawHomeLimbs();
-            DrawAdoptBirds(s, icon);
+                HitAdoptBirds(homeIcon);
+            DrawHomeLimbs();
+            DrawAdoptBirds(s, homeIcon);
             if (!_avatarRename && (_adoptStep == AdoptStep.Look || _adoptStep == AdoptStep.Settle))
                 DrawAdoptBubble(AdoptLookLine, s);
             if (_adoptStep == AdoptStep.Settle && _adoptSettle >= 1f && GuiPaint() && !_avatarRename)
@@ -517,41 +523,27 @@ namespace FlockFive
 
         void DrawAdoptBirds(float s, float icon)
         {
+            int i = _adoptPick;
+            if (i < 0 || i > 4) return;
             float drawIcon = icon;
             if (_adoptStep == AdoptStep.Settle)
             {
                 float homeIcon = _avatarFitIcon > 1f ? _avatarFitIcon : AvatarIcon(s);
                 drawIcon = Mathf.Lerp(_adoptFromIcon, homeIcon, Mathf.SmoothStep(0f, 1f, _adoptSettle));
             }
-            for (int i = 0; i < 5; i++)
-            {
-                if (_adoptStep == AdoptStep.Settle && i != _adoptPick && _adoptSettle > 0.92f) continue;
-                bool chosen = i == _adoptPick && _adoptPick >= 0;
-                float hop = _adoptHop[i] > 0f ? Mathf.Sin((1f - _adoptHop[i]) * Mathf.PI) * 14f * s : 0f;
-                float size = _adoptStep == AdoptStep.Settle
-                    ? (chosen ? drawIcon : _adoptFromIcon)
-                    : icon;
-                bool wings = (_adoptStep == AdoptStep.Fly && _adoptFly[i] < 1f)
-                    || (_adoptStep == AdoptStep.Settle && _adoptSettle < 0.98f)
-                    || _adoptHop[i] > 0.05f;
-                float bob = wings ? 0f : Mathf.Sin((_adoptClock + i * 0.4f) * 1.7f) * Mathf.Min(4f * s, size * 0.04f);
-                var c = new Vector2(_adoptShown[i].x, _adoptShown[i].y - bob - hop);
-                bool faceLeft = false;
-                if (_adoptStep == AdoptStep.Settle && chosen)
-                    faceLeft = AvatarHomePoint().x < _adoptLeaveFrom[i].x;
-                var prev = GUI.color;
-                if (_adoptPick >= 0 && !chosen && _adoptStep == AdoptStep.Look)
-                    GUI.color = new Color(1f, 1f, 1f, 0.5f);
-                else
-                    GUI.color = Color.white;
-                float clock = _adoptClock + i * 0.17f;
-                var col = chosen ? _adoptCol : (BirdColor)i;
-                int kit = chosen ? SavedAvatarKit() : 0;
-                DrawDressedBird(col, kit, c, size, faceLeft, wings, clock);
-                GUI.color = prev;
-                if (chosen && _adoptStep == AdoptStep.Settle)
-                    DrawAvatarPlate(c, drawIcon, _adoptName, s);
-            }
+            float hop = _adoptHop[i] > 0f ? Mathf.Sin((1f - _adoptHop[i]) * Mathf.PI) * 14f * s : 0f;
+            bool wings = (_adoptStep == AdoptStep.Fly && _adoptFly[i] < 1f)
+                || (_adoptStep == AdoptStep.Settle && _adoptSettle < 0.98f)
+                || _adoptHop[i] > 0.05f;
+            float bob = wings ? 0f : Mathf.Sin((_adoptClock + i * 0.4f) * 1.7f) * Mathf.Min(4f * s, drawIcon * 0.04f);
+            var c = new Vector2(_adoptShown[i].x, _adoptShown[i].y - bob - hop);
+            bool faceLeft = _adoptStep == AdoptStep.Settle && AvatarHomePoint().x < _adoptLeaveFrom[i].x;
+            var prev = GUI.color;
+            GUI.color = Color.white;
+            DrawDressedBird(_adoptCol, SavedAvatarKit(), c, drawIcon, faceLeft, wings, _adoptClock + i * 0.17f);
+            GUI.color = prev;
+            if (_adoptStep == AdoptStep.Settle)
+                DrawAvatarPlate(c, drawIcon, _adoptName, s);
         }
 
         void DismissAvatarRename(float s)
@@ -820,9 +812,9 @@ namespace FlockFive
             if (string.IsNullOrEmpty(name)) name = AvatarSuggestion(_avatarCol);
             name = ClipAvatarName(name);
             if (name.Length == 0) name = AvatarSuggestion(SavedAvatar());
-            float w = Mathf.Max(54f * s, icon * 0.92f);
+            float w = AvatarPlateW(icon, s);
             float h = AvatarPlateH(s);
-            var r = new Rect(c.x - w * 0.5f, c.y + icon * 0.5f + 4f * s, w, h);
+            var r = new Rect(c.x - w * 0.5f, c.y + icon * 0.5f + 1f * s, w, h);
             var tex = AvatarPlateTex();
             if (tex != null)
             {
@@ -969,7 +961,8 @@ namespace FlockFive
 
         bool AdoptGloveHits(Rect box, Vector2 aim, float s)
         {
-            AdoptLayout(s, out var caption, out _, out float icon, out _, out _);
+            AdoptLayout(s, out var caption, out _, out _, out _, out _);
+            float icon = _avatarFitIcon > 1f ? _avatarFitIcon : AvatarIcon(s);
             if (HitsExceptAim(CoachPanelRect(caption), box, aim)) return true;
             float titleBottom = TopHud() + (56f * 2f + 4f) * s;
             if (HitsExceptAim(new Rect(0f, 0f, Screen.width, titleBottom), box, aim)) return true;
@@ -981,14 +974,12 @@ namespace FlockFive
             var vip = SplashNoAdsRect();
             if (HitsExceptAim(vip, box, aim)) return true;
             if (vip.width > 2f && HitsExceptAim(SplashNoAdsRibbon(vip), box, aim)) return true;
+            int pick = _adoptPick;
+            if (pick < 0 || pick > 4) return false;
             float pad = 4f * s;
-            for (int i = 0; i < 5; i++)
-            {
-                var c = _adoptShown[i];
-                var bird = new Rect(c.x - icon * 0.5f - pad, c.y - icon * 0.5f - pad, icon + pad * 2f, icon + pad * 2f);
-                if (HitsExceptAim(bird, box, aim)) return true;
-            }
-            return false;
+            var c = _adoptShown[pick];
+            var bird = new Rect(c.x - icon * 0.5f - pad, c.y - icon * 0.5f - pad, icon + pad * 2f, icon + pad * 2f);
+            return HitsExceptAim(bird, box, aim);
         }
 
         static bool HitsExceptAim(Rect obstacle, Rect box, Vector2 aim)
@@ -1222,45 +1213,56 @@ namespace FlockFive
 
         void DrawHomeLimbs()
         {
-            if (_limbOn)
-                DrawLimb(_limbCenter, _limbW, _limbH, _limbFromRight, _limbPx);
-            if (_awayOn)
-                DrawLimb(_awayCenter, _awayW, _awayH, _awayFromRight, _awayPx);
+            if (_awayOn && _avatarPerchIx < 0)
+                DrawHomeTwig(_awayCenter, _awayW, _awayH, _awayPx);
+            else if (_limbOn)
+                DrawHomeTwig(_limbCenter, _limbW, _limbH, _limbPx);
         }
 
-        void DrawLimb(Vector2 center, float w, float h, bool fromRight, float px)
+        // Visible slice of the full sheet. center/woodW/woodH are the uncropped limb.
+        static void HomeTwigRect(Vector2 center, float woodW, float woodH, out Rect vis)
+        {
+            float u0 = HomeTwigX0 / HomeTwigTexW;
+            float u1 = HomeTwigX1 / HomeTwigTexW;
+            float topFrac = HomeTwigTop / HomeTwigTexH;
+            float botFrac = HomeTwigBot / HomeTwigTexH;
+            float x = center.x - woodW * 0.5f + u0 * woodW;
+            float y = center.y - woodH * 0.5f + topFrac * woodH;
+            vis = new Rect(x, y, (u1 - u0) * woodW, (botFrac - topFrac) * woodH);
+        }
+
+        static Rect HomeTwigUv()
+        {
+            float u0 = HomeTwigX0 / HomeTwigTexW;
+            float u1 = HomeTwigX1 / HomeTwigTexW;
+            float v = (HomeTwigTexH - HomeTwigBot) / HomeTwigTexH;
+            float vh = (HomeTwigBot - HomeTwigTop) / HomeTwigTexH;
+            return new Rect(u0, v, u1 - u0, vh);
+        }
+
+        void DrawHomeTwig(Vector2 center, float w, float h, float px)
         {
             if (w < 4f || h < 4f) return;
             var wood = SpriteCatalog.Branch;
             if (wood == null || wood.texture == null) return;
-            var r = new Rect(center.x - w * 0.5f, center.y - h * 0.5f, w, h);
+            HomeTwigRect(center, w, h, out var r);
+            if (r.width < 2f || r.height < 2f) return;
             var prev = GUI.color;
             GUI.color = Color.white;
-            if (fromRight)
-            {
-                var m = GUI.matrix;
-                GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), r.center);
-                GUI.DrawTexture(r, wood.texture, ScaleMode.StretchToFill, true);
-                GUI.matrix = m;
-            }
-            else
-                GUI.DrawTexture(r, wood.texture, ScaleMode.StretchToFill, true);
-            DrawLimbLeaves(center, h, fromRight, px);
+            GUI.DrawTextureWithTexCoords(r, wood.texture, HomeTwigUv());
+            DrawHomeTwigLeaves(center, r.height, px);
             GUI.color = prev;
         }
 
-        // Catalog leaves sprout from the bark outside the outer pads. The middle
-        // keeps the orchids already painted on branch.png, and the bird stays in front.
-        void DrawLimbLeaves(Vector2 center, float woodH, bool fromRight, float px)
+        void DrawHomeTwigLeaves(Vector2 center, float visH, float px)
         {
             var leaf = SpriteCatalog.Leaf;
             if (leaf == null || leaf.texture == null || px < 0.5f) return;
-            float lh = Mathf.Clamp(px * 0.62f, woodH * 0.22f, woodH * 0.48f);
+            float lh = Mathf.Clamp(px * 0.42f, visH * 0.16f, visH * 0.38f);
             float t = Time.unscaledTime;
-            DrawOneLeaf(leaf, center, px, fromRight, 0, -0.28f, lh * 0.92f, -16f, t, 0);
-            DrawOneLeaf(leaf, center, px, fromRight, 0, 0.22f, lh * 0.70f, 18f, t, 1);
-            DrawOneLeaf(leaf, center, px, fromRight, 4, 0.08f, lh * 0.66f, -12f, t, 2);
-            DrawOneLeaf(leaf, center, px, fromRight, 4, 0.40f, lh * 0.84f, 22f, t, 3);
+            DrawOneLeaf(leaf, center, px, false, AvatarHomeSeat, -0.20f, lh * 0.90f, -18f, t, 0);
+            DrawOneLeaf(leaf, center, px, false, AvatarHomeSeat, 0.12f, lh * 0.70f, 14f, t, 1);
+            DrawOneLeaf(leaf, center, px, false, AvatarHomeSeat, 0.30f, lh * 0.82f, 22f, t, 2);
         }
 
         static void DrawOneLeaf(Sprite leaf, Vector2 center, float px, bool fromRight, int seat, float along, float height, float deg, float time, int i)

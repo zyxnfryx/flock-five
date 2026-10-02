@@ -4,8 +4,9 @@ namespace FlockFive
 {
     public sealed partial class FlockFiveApp
     {
-        // The card opens from the rail button (or that button's glove tap). It does not
-        // pop on launch. The ask card is the in-game reminder prompt after a claim.
+        // The card opens only when the player taps the rail button. The lesson glove
+        // keeps tapping that button and does not open it. Welcome does not open it either.
+        // The ask card is the in-game reminder prompt after a claim.
         bool _dailyOpen;
         bool _dailyAskOpen;
         float _dailyPopAt = -1f;
@@ -107,7 +108,7 @@ namespace FlockFive
 
         void OpenDailyCard()
         {
-            if (_dailyOpen || _dailyAskOpen) return;
+            if (_dailyOpen || _dailyAskOpen || _welcomeOpen) return;
 #if UNITY_EDITOR
             if (_dailyShotQuiet || EditorShotLive) return;
 #endif

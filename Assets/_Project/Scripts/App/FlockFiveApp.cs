@@ -41,10 +41,10 @@ namespace FlockFive
         bool _coinArmed;
         // Splash streak neon: <0 idle; 0..1 sign-on, calc, roll, tuck to pig.
         float _streakSlide = -1f;
-        static int _rewardStampMul;
-        static float _rewardStampAt = -1f;
+        static bool _rewardStampHit;
         static GUIStyle _rewardStampStyle;
         static GUIContent _rewardContent;
+        static Texture2D _rewardDisc;
         int _streakAnnounced = -1;
         bool _streakChirped;
         bool _streakWinChimed;
@@ -324,7 +324,6 @@ namespace FlockFive
         float _limbW;
         float _limbH;
         float _limbPx;
-        bool _limbFromRight;
         bool _limbOn;
         bool _awayOn;
         Vector2 _awayCenter;
@@ -332,7 +331,6 @@ namespace FlockFive
         float _awayW;
         float _awayH;
         float _awayPx;
-        bool _awayFromRight;
 
         public void InviteShareDone(string ok)
         {
@@ -5816,6 +5814,7 @@ namespace FlockFive
         bool DrawBackMedal(Rect hit)
         {
             bool fire = HitPad(hit, out bool held);
+            if (!held && GlovePresses(hit)) held = true;
             if (fire) Sfx.CardTap();
             PaintBackMedal(hit, held);
             return fire;
@@ -5866,8 +5865,7 @@ namespace FlockFive
             _streakWinChimed = false;
             _streakRollShown = 0;
             _streakTickBucket = -1;
-            _rewardStampAt = -1f;
-            _rewardStampMul = 0;
+            _rewardStampHit = false;
         }
 
         void DrawStreakRewards(float s)
@@ -5912,9 +5910,9 @@ namespace FlockFive
             DrawCoinCluster(ir, s);
         }
 
-        // Amount set to the coin's pixel size, then shrunk on width only so the
-        // glyphs stay as tall as the coin. Shared by home, hive, and poker.
-        void DrawCoinCluster(Rect iconR, float s)
+        // Amount matches the coin times typeScale, then shrinks on width only.
+        // Home and hive pass 1. Poker passes 0.90.
+        void DrawCoinCluster(Rect iconR, float s, float typeScale = 1f)
         {
             var coinSpr = SpriteCatalog.Coin;
             string coins = Money.Format(Purse.Coins);
@@ -5925,7 +5923,7 @@ namespace FlockFive
                 wordWrap = false,
                 clipping = TextClipping.Overflow
             };
-            st.fontSize = Mathf.Max(14, Mathf.RoundToInt(iconR.height));
+            st.fontSize = Mathf.Max(14, Mathf.RoundToInt(iconR.height * typeScale));
             var content = new GUIContent(coins);
             float leftLimit = Mathf.Max(8f, Screen.safeArea.xMin + 8f);
             float maxW = Mathf.Max(36f, iconR.x - 8f * s - leftLimit);
@@ -6041,6 +6039,12 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // Base number holds, then the badge stamps. The roll waits for the thud.
+        const float RewardSee = 1.05f;
+        const float RewardStampDur = 0.40f;
+        const float RewardRollDur = 0.55f;
+        const float RewardShakeDur = 0.22f;
+
         // x2 = 1, x3 = 1.20, x5 = 1.45, x10 = 1.85. Smooth between the anchors.
         static float RewardStampScale(int mul)
         {
@@ -6093,52 +6097,103 @@ namespace FlockFive
         static readonly float[] RewardGlintY = { 0.16f, -0.18f, 0.30f, -0.28f, 0.06f };
         static readonly float[] RewardGlintPh = { 0.2f, 1.4f, 2.5f, 3.6f, 4.7f };
 
-        void DrawRewardRow(Rect inner, float linesTop, float metaH, string dollars, int streak, float u, float alpha, GUIStyle labelSt, GUIStyle valueSt, int labelHi, Color labelInk)
+        // EaseOutBack (c1 = 2.2) first reaches 1 here. That frame is the thud.
+        static float RewardStampLandU()
         {
-            float appear = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - 0.18f) / 0.07f));
-            bool stamp = streak > 1;
-            float stampW = 0f;
-            float stampH = 0f;
-            if (stamp)
-            {
-                float sc = RewardStampScale(streak);
-                stampH = Mathf.Min(metaH * 0.92f, metaH * 0.72f * sc);
-                stampW = Mathf.Min(inner.width * 0.34f, stampH * 1.65f);
-                stampH = stampW / 1.65f;
-            }
-            if (appear > 0.04f)
-            {
-                float labelW = Mathf.Max(8f, inner.width - stampW - 10f);
-                var row = new Rect(inner.x, linesTop, labelW, metaH);
-                labelSt.alignment = TextAnchor.MiddleLeft;
-                int fs = FitFont(labelSt, "REWARD", row.width * 0.92f, row.height * 0.90f, 12, labelHi);
-                labelSt.fontSize = fs;
-                int dark = Mathf.Clamp(Mathf.RoundToInt(fs * 0.16f), 2, 7);
-                var shadow = new Rect(row.x + 1.6f, row.y + 2.4f, row.width, row.height);
-                var shade = new Color(0.16f, 0.07f, 0.02f, appear * alpha * 0.62f);
-                StampOutlined(shadow, "REWARD", labelSt, shade, 0, dark, 0.001f);
-                var gold = new Color(1f, 0.91f, 0.58f, appear * alpha);
-                StampOutlined(row, "REWARD", labelSt, gold, 0, dark, 0.001f);
-            }
-            if (!stamp) return;
-            float gate = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - 0.24f) / 0.08f));
-            if (gate < 0.02f) return;
-            var stampR = new Rect(inner.xMax - stampW, linesTop + (metaH - stampH) * 0.5f, stampW, stampH);
-            DrawRewardStamp(stampR, streak, gate * alpha);
+            const float c1 = 2.2f;
+            return 1f - c1 / (c1 + 1f);
         }
 
-        void DrawRewardStamp(Rect r, int mul, float alpha)
+        static float RewardStampPop(float age)
         {
-            if (r.width < 4f || alpha < 0.02f) return;
-            if (_rewardStampMul != mul)
+            float u = Mathf.Clamp01(age / RewardStampDur);
+            return Mathf.LerpUnclamped(2.2f, 1f, EaseOutBack(u));
+        }
+
+        static Vector2 RewardCardShake(float age, float s)
+        {
+            float since = age - RewardStampDur * RewardStampLandU();
+            if (since <= 0f || since >= RewardShakeDur) return Vector2.zero;
+            float k = 1f - since / RewardShakeDur;
+            k *= k;
+            float mag = 10f * s * k;
+            return new Vector2(Mathf.Sin(since * 58f) * mag, Mathf.Sin(since * 43f) * mag * 0.42f);
+        }
+
+        // Oversized disc on the top-right corner. Higher streaks grow a little more.
+        static Rect RewardStampRect(Rect board, int mul)
+        {
+            float sc = RewardStampScale(mul);
+            float grow = Mathf.Lerp(1f, 1.12f, Mathf.Clamp01((sc - 1f) / 0.85f));
+            float d = Mathf.Min(board.width * 0.46f, board.height * 0.70f) * grow;
+            float inset = d * 0.22f;
+            float cx = board.xMax - inset;
+            float cy = board.y + inset;
+            return new Rect(cx - d * 0.5f, cy - d * 0.5f, d, d);
+        }
+
+        static Texture2D RewardDiscTex()
+        {
+            if (_rewardDisc != null) return _rewardDisc;
+            const int n = 96;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
             {
-                _rewardStampMul = mul;
-                _rewardStampAt = Time.unscaledTime;
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = "RewardDisc"
+            };
+            var px = new Color32[n * n];
+            float c = n * 0.5f;
+            float rad = c - 1.2f;
+            for (int y = 0; y < n; y++)
+            {
+                for (int x = 0; x < n; x++)
+                {
+                    float dx = x + 0.5f - c;
+                    float dy = y + 0.5f - c;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    float a = Mathf.Clamp01(rad - dist + 0.75f);
+                    px[y * n + x] = a <= 0.004f
+                        ? new Color32(0, 0, 0, 0)
+                        : new Color32(255, 255, 255, (byte)Mathf.RoundToInt(a * 255f));
+                }
             }
-            float age = Time.unscaledTime - _rewardStampAt;
-            float pop = Mathf.Clamp01(age / 0.18f);
-            float amp = 0.10f + 0.10f * (RewardStampScale(mul) - 1f);
-            float bounce = 1f + amp * Mathf.Sin(pop * Mathf.PI) * (1f - pop);
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _rewardDisc = tex;
+            return tex;
+        }
+
+        void DrawRewardRow(Rect inner, float linesTop, float metaH, float u, float alpha, GUIStyle labelSt, int labelHi)
+        {
+            float appear = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - 0.18f) / 0.07f));
+            if (appear <= 0.04f) return;
+            float inX = Mathf.Max(8f, metaH * 0.42f);
+            float down = Mathf.Max(5f, metaH * 0.26f);
+            float labelW = Mathf.Max(8f, inner.width * 0.62f - inX);
+            var row = new Rect(inner.x + inX, linesTop + down, labelW, metaH);
+            labelSt.alignment = TextAnchor.MiddleLeft;
+            int fs = FitFont(labelSt, "REWARD", row.width * 0.92f, row.height * 0.90f, 12, labelHi);
+            labelSt.fontSize = fs;
+            int dark = Mathf.Clamp(Mathf.RoundToInt(fs * 0.16f), 2, 7);
+            var shadow = new Rect(row.x + 1.6f, row.y + 2.4f, row.width, row.height);
+            var shade = new Color(0.16f, 0.07f, 0.02f, appear * alpha * 0.62f);
+            StampOutlined(shadow, "REWARD", labelSt, shade, 0, dark, 0.001f);
+            var gold = new Color(1f, 0.91f, 0.58f, appear * alpha);
+            StampOutlined(row, "REWARD", labelSt, gold, 0, dark, 0.001f);
+        }
+
+        void DrawRewardStamp(Rect r, int mul, float alpha, float age)
+        {
+            if (r.width < 8f || alpha < 0.02f || age < 0f) return;
+            float land = RewardStampDur * RewardStampLandU();
+            if (GuiPaint() && !_rewardStampHit && age >= land)
+            {
+                _rewardStampHit = true;
+                Sfx.CardBump();
+            }
+            float pop = RewardStampPop(age);
             RewardStampInk(mul, out Color fill, out Color edge, out bool sparkle);
             if (_rewardStampStyle == null)
             {
@@ -6147,31 +6202,52 @@ namespace FlockFive
                     fontStyle = FontStyle.Bold,
                     alignment = TextAnchor.MiddleCenter,
                     wordWrap = false,
-                    clipping = TextClipping.Clip
+                    clipping = TextClipping.Overflow
                 };
             }
             if (_rewardContent == null) _rewardContent = new GUIContent();
             string text = "x" + mul;
             _rewardContent.text = text;
             var st = _rewardStampStyle;
-            st.fontSize = FitFont(st, text, r.width * 0.78f, r.height * 0.72f, 10, 64);
+            int hi = Mathf.Max(18, Mathf.RoundToInt(r.height * 0.46f));
+            st.fontSize = FitFont(st, text, r.width * 0.62f, r.height * 0.50f, 12, hi);
+            var content = _rewardContent;
+            int guard = 0;
+            while (st.fontSize > 12 && guard < 24 && st.CalcSize(content).x > r.width * 0.62f)
+            {
+                st.fontSize -= 1;
+                guard++;
+            }
             var prev = GUI.matrix;
             Vector2 pivot = r.center;
-            GUIUtility.RotateAroundPivot(-9f, pivot);
-            GUIUtility.ScaleAroundPivot(new Vector2(bounce, bounce), pivot);
-            var ghost = new Rect(r.x + 1.2f, r.y + 1.4f, r.width, r.height);
-            var ghostInk = edge;
-            ghostInk.a *= 0.35f * alpha;
-            Paint(st, ghostInk);
-            GUI.Label(ghost, text, st);
-            Paint(st, new Color(edge.r, edge.g, edge.b, alpha));
-            Ring(r, text, st, Mathf.Max(2, st.fontSize / 9));
-            var face = fill;
-            face.a *= alpha;
-            Paint(st, face);
-            GUI.Label(r, text, st);
+            GUIUtility.RotateAroundPivot(-15f, pivot);
+            GUIUtility.ScaleAroundPivot(new Vector2(pop, pop), pivot);
+            var disc = RewardDiscTex();
+            var glow = GlowTex();
+            float halo = r.width * 0.16f;
+            GUI.color = new Color(edge.r, edge.g, edge.b, 0.34f * alpha);
+            GUI.DrawTexture(new Rect(r.x - halo, r.y - halo, r.width + halo * 2f, r.height + halo * 2f), glow, ScaleMode.ScaleToFit, true);
+            var shadow = new Rect(r.x + r.width * 0.045f, r.y + r.height * 0.055f, r.width, r.height);
+            GUI.color = new Color(0.10f, 0.04f, 0.02f, 0.42f * alpha);
+            GUI.DrawTexture(shadow, disc, ScaleMode.ScaleToFit, true);
+            GUI.color = new Color(edge.r, edge.g, edge.b, alpha);
+            GUI.DrawTexture(r, disc, ScaleMode.ScaleToFit, true);
+            float lip = r.width * 0.11f;
+            var faceR = new Rect(r.x + lip, r.y + lip, r.width - lip * 2f, r.height - lip * 2f);
+            var faceCol = fill;
+            faceCol.a *= alpha;
+            GUI.color = faceCol;
+            GUI.DrawTexture(faceR, disc, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+            int dark = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.12f), 2, 8);
+            bool lightFace = mul >= 6;
+            var ink = lightFace
+                ? new Color(0.28f, 0.12f, 0.03f, alpha)
+                : new Color(1f, 0.97f, 0.90f, alpha);
+            StampOutlined(r, text, st, ink, lightFace ? 0 : 1, dark);
             if (sparkle) DrawRewardGlints(r, alpha);
             GUI.matrix = prev;
+            GUI.color = Color.white;
         }
 
         static void DrawRewardGlints(Rect r, float alpha)
@@ -6241,6 +6317,9 @@ namespace FlockFive
             // LastWin is the coins already credited (base × streak × login, once).
             // The stamp is the streak only. Do not multiply the shown number again.
             int win = Purse.LastWin > 0 ? Purse.LastWin : stagePay * Mathf.Max(1, streak);
+            // Toast clock, same one that tucks the card. Pause does not skip the slam.
+            float stampAge = u * seqDur - RewardSee;
+            bool stampLive = streak > 1 && stampAge >= 0f;
 
             // Bulb sprite: screw at 16% from the top of the art, glass tip at ~84% outward,
             // lit halo to 1.29 diameters. Layout reserves the glass plus a little air
@@ -6334,6 +6413,12 @@ namespace FlockFive
             board.height *= scale;
             board.x = c.x - board.width * 0.5f;
             board.y = c.y - board.height * 0.5f;
+            if (stampLive)
+            {
+                var kick = RewardCardShake(stampAge, s);
+                board.x += kick.x;
+                board.y += kick.y;
+            }
 
             var glow = GlowTex();
             float glowA = 0.10f + 0.08f * (0.5f + 0.5f * Mathf.Sin(lampT * 2.3f));
@@ -6410,12 +6495,10 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleLeft,
                 wordWrap = false
             };
-            var valueSt = new GUIStyle(labelSt) { alignment = TextAnchor.MiddleRight };
             var heroSt = new GUIStyle(labelSt) { alignment = TextAnchor.MiddleCenter };
             int labelHi = Mathf.Max(20, Mathf.RoundToInt(38f * s));
             // ~28% under the build-35 hero cap so the count-up stays inside the board.
             int heroHi = Mathf.Max(28, Mathf.RoundToInt(52f * s));
-            var labelInk = new Color(1f, 0.97f, 0.88f, 1f);
             var heroInk = new Color(1f, 0.95f, 0.42f, 1f);
 
             void StampFit(Rect r, string text, GUIStyle st, Color fill, int hi, float widthFrac)
@@ -6440,8 +6523,7 @@ namespace FlockFive
                 StampOutlined(r, text, st, ink, light, dark, 0.001f);
             }
 
-            string dollars = Money.Format(stagePay);
-            DrawRewardRow(inner, linesTop, metaH, dollars, streak, u, alpha, labelSt, valueSt, labelHi, labelInk);
+            DrawRewardRow(inner, linesTop, metaH, u, alpha, labelSt, labelHi);
 
             int fromPay = Mathf.Max(0, stagePay);
             int toPay = Mathf.Max(0, win);
@@ -6449,15 +6531,15 @@ namespace FlockFive
             float roll = 1f;
             if (streak > 1 && toPay != fromPay)
             {
-                if (_rewardStampAt < 0f)
+                float sinceLand = stampAge - RewardStampDur * RewardStampLandU();
+                if (sinceLand <= 0f)
                 {
                     shown = fromPay;
                     roll = 0f;
                 }
                 else
                 {
-                    float age = Time.unscaledTime - _rewardStampAt;
-                    roll = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(age / 0.55f));
+                    roll = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(sinceLand / RewardRollDur));
                     shown = Mathf.RoundToInt(Mathf.Lerp(fromPay, toPay, roll));
                     int bucket = roll >= 0.999f ? 8 : Mathf.Clamp(Mathf.FloorToInt(roll * 8f), 0, 7);
                     if (GuiPaint() && bucket != _streakTickBucket)
@@ -6479,6 +6561,8 @@ namespace FlockFive
             GUI.color = Color.white;
             StampFit(hero, amt, heroSt, heroInk, heroHi, 0.66f);
             GUI.matrix = prevM;
+            if (stampLive)
+                DrawRewardStamp(RewardStampRect(board, streak), streak, alpha, stampAge);
             float halo = board.width * crownFrac + aura;
             NoteComboStreak(new Rect(board.x - halo, board.y - halo, board.width + halo * 2f, board.height + halo * 2f));
             GUI.color = Color.white;
@@ -6772,10 +6856,8 @@ namespace FlockFive
             if (!modal && _pokerIntroLive && Event.current != null
                 && Event.current.type == EventType.MouseDown && Event.current.button == 0)
                 DismissPokerIntro();
-            if (!modal && _dailyIntroLive && !_dailyOpen && Event.current != null
-                && Event.current.type == EventType.MouseDown && Event.current.button == 0
-                && !SplashDailyRect().Contains(Event.current.mousePosition))
-                DismissDailyIntro();
+            // Rail step holds until the player taps Daily. A miss does not skip it,
+            // and the looping glove does not open the card.
             DrawHomeWash(0.18f);
 
             // Home title: stacked FLOCK / FIVE via letter sprites + navy block extrude
@@ -7460,9 +7542,9 @@ namespace FlockFive
             DrawHaloBirds(ref _splashFlutters, SplashTitleHalo(), s, behind, HaloBirdIcon(s) * SplashLogoScale, ref _splashHaloTick);
         }
 
-        // One saved bird on a leafy branch between the title and the play flower,
-        // after level 1 is cleared and a color has been adopted. Toes stay on a
-        // pad while it bobs and preens. It flaps only in flight, then lands again.
+        // One saved bird on a short leafy twig between the title and the play flower,
+        // after level 1 is cleared and a color has been adopted. Toes stay on that
+        // one pad while it bobs and preens. It flaps only in flight, then lands again.
         // A clear owes a left-to-right settle. The streak board fills that gap until
         // it tucks, so the cross waits; a home lesson perches aside. The adoption
         // settle clears the owed cross so it does not play a second time.
@@ -7825,7 +7907,7 @@ namespace FlockFive
             float gap = flower.yMin - titleBottom;
             if (gap < 1f) gap = 80f * s;
             float legacy = Mathf.Clamp(gap * 0.32f, 40f * s, 64f * s);
-            float want = legacy * AvatarGrow;
+            float want = legacy * AvatarGrow * AvatarBirdMul;
             AvatarChannel(s, out float left, out float right);
             float roomX = (right - left) - 12f * s;
             float roomY = gap - AvatarPlateDrop(s) - 16f * s;
@@ -7879,66 +7961,89 @@ namespace FlockFive
 
         void FillAvatarPerches(float s, float icon) => AnchorHomeBranch(s, icon);
 
-        // Home perch. The limb enters from the left side of the open gap, between
-        // the title and the play flower. AvatarHomeSeat is the resting pad; the
-        // other seats are the same branch. Toes use BranchView.RestLift.
+        // One short twig in the open gap. Every perch slot is that same pad, so the
+        // splash never keeps a row of seats. Toes use BranchView.RestLift.
         void AnchorHomeBranch(float s, float icon)
         {
             var flower = FlowerPlayRect();
-            float titleBottom = TopHud() + (56f * 2f + 4f) * s;
+            float wordBottom = TopHud() + (56f * 2f + 4f) * s;
+            var halo = SplashTitleHalo();
+            float titleBottom = halo.yMax > wordBottom ? halo.yMax : wordBottom;
+            if (_adoptLive && _adoptLineR.height > 2f)
+            {
+                float capBottom = _adoptLineR.yMax + 16f * s;
+                if (capBottom > titleBottom) titleBottom = capBottom;
+            }
             float flowerTop = flower.yMin;
             AvatarChannel(s, out float railL, out float railR);
-            float maxW = Mathf.Max(64f * s, railR - railL);
-            float maxH = Mathf.Max(36f * s, flowerTop - titleBottom - 8f * s);
-            FitWood(maxW, maxH, out float woodW, out float woodH, out float px);
-            float bird = px * AvatarBirdWorld();
-            float need = woodH * 0.5f + bird * 0.55f + AvatarPlateDrop(s);
-            float room = Mathf.Max(32f * s, flowerTop - titleBottom - 8f * s);
-            if (need > room)
+            float bird = Mathf.Max(8f, icon);
+            WoodWorld(out float worldW, out float worldH);
+            float px = bird / AvatarBirdWorld();
+            float woodW = px * worldW;
+            float woodH = px * worldH;
+            // Branch stays half the pre-1.4 perch. The bird itself keeps AvatarBirdMul.
+            float branchK = AvatarBranchMul / AvatarBirdMul;
+            px *= branchK;
+            woodW *= branchK;
+            woodH *= branchK;
+            HomeTwigRect(Vector2.zero, woodW, woodH, out var probe);
+            float capW = Mathf.Min(Mathf.Max(48f * s, railR - railL), Mathf.Max(64f * s, bird * 2.3f));
+            float capH = Mathf.Max(28f * s, flowerTop - titleBottom - AvatarPlateDrop(s) - 8f * s);
+            float fit = 1f;
+            if (probe.width > capW && probe.width > 1f) fit = Mathf.Min(fit, capW / probe.width);
+            if (probe.height > capH && probe.height > 1f) fit = Mathf.Min(fit, capH / probe.height);
+            if (fit < 1f)
             {
-                float k = Mathf.Clamp(room / need, 0.35f, 1f);
-                woodW *= k;
-                woodH *= k;
-                px *= k;
-                bird *= k;
-            }
-            float cx = railL + woodW * 0.5f;
-            float cy = (titleBottom + flowerTop) * 0.5f;
-            var center = new Vector2(cx, cy);
-            float topLim = titleBottom + 2f;
-            float botLim = flowerTop - 2f;
-            if (center.y - woodH * 0.5f < topLim) center.y += topLim - (center.y - woodH * 0.5f);
-            if (center.y + woodH * 0.5f > botLim) center.y -= (center.y + woodH * 0.5f) - botLim;
-            _limbCenter = center;
-            _limbW = woodW;
-            _limbH = woodH;
-            _limbPx = px;
-            _limbFromRight = false;
-            _limbOn = true;
-            if (icon > 8f && bird > icon)
-            {
-                float fit = icon / bird;
+                px *= fit;
                 woodW *= fit;
                 woodH *= fit;
-                px *= fit;
-                bird = icon;
-                center.x = railL + woodW * 0.5f;
+                bird *= fit;
             }
-            _avatarFitIcon = Mathf.Max(8f, bird);
-            for (int i = 0; i < _avatarPerches.Length; i++)
-                _avatarPerches[i] = LimbBird(center, px, false, i);
-            var home = _avatarPerches[AvatarHomeSeat];
-            float plateBot = home.y + _avatarFitIcon * 0.5f + AvatarPlateDrop(s);
-            if (plateBot > flowerTop - 4f)
-                center.y -= plateBot - (flowerTop - 4f);
-            float ceil = titleBottom + 2f + woodH * 0.5f;
-            if (center.y < ceil) center.y = ceil;
+
+            float topLim = titleBottom + 2f;
+            float botLim = flowerTop - 2f;
+            float nameW = AvatarPlateW(bird, s);
+            float reach = Mathf.Max(bird * 0.5f, nameW * 0.5f) + 6f * s;
+            float birdX = railR - reach;
+            float minX = railL + reach;
+            if (birdX < minX) birdX = (railL + railR) * 0.5f;
+            float birdY = (topLim + botLim) * 0.5f;
+            var toe = LimbBird(Vector2.zero, px, false, AvatarHomeSeat);
+            var center = new Vector2(birdX - toe.x, birdY - toe.y);
+            float plate = AvatarPlateDrop(s);
+            for (int n = 0; n < 3; n++)
+            {
+                HomeTwigRect(center, woodW, woodH, out var vis);
+                var perch = LimbBird(center, px, false, AvatarHomeSeat);
+                float dx = 0f;
+                float dy = 0f;
+                if (vis.xMin < railL) dx += railL - vis.xMin;
+                if (vis.xMax + dx > railR) dx -= (vis.xMax + dx) - railR;
+                float nameLeft = perch.x - nameW * 0.5f;
+                float nameRight = perch.x + nameW * 0.5f;
+                if (nameLeft + dx < railL) dx += railL - (nameLeft + dx);
+                if (nameRight + dx > railR) dx -= (nameRight + dx) - railR;
+                float head = perch.y - bird * 0.5f;
+                if (head < topLim) dy += topLim - head;
+                float low = vis.yMax;
+                float plateBot = perch.y + bird * 0.5f + plate;
+                if (plateBot > low) low = plateBot;
+                if (low + dy > botLim) dy -= (low + dy) - botLim;
+                if (vis.yMin + dy < topLim) dy += topLim - (vis.yMin + dy);
+                if (Mathf.Abs(dx) < 0.5f && Mathf.Abs(dy) < 0.5f) break;
+                center.x += dx;
+                center.y += dy;
+            }
+
             _limbCenter = center;
             _limbW = woodW;
             _limbH = woodH;
             _limbPx = px;
+            _limbOn = true;
+            _avatarFitIcon = Mathf.Max(8f, bird);
+            var home = LimbBird(center, px, false, AvatarHomeSeat);
             for (int i = 0; i < _avatarPerches.Length; i++)
-                _avatarPerches[i] = LimbBird(center, px, false, i);
+                _avatarPerches[i] = home;
         }
 
         int FillAvatarBlocks(float s)
@@ -8067,23 +8172,26 @@ namespace FlockFive
             return best >= 0 ? best : any;
         }
 
-        // No home pad is clear. Plant a limb so this spot is its tip seat, trailing off the nearer side.
+        // No home pad is clear. The same short twig moves with the bird.
         Vector2 ParkAway(Vector2 spot, float icon)
         {
-            bool fromRight = spot.x >= Screen.width * 0.5f;
-            const int seat = 4;
             float px = _limbPx > 1f ? _limbPx : icon / AvatarBirdWorld();
-            var local = WorldBuilder.SeatLocal(seat, false, fromRight);
-            float offY = local.y + BranchView.RestLift;
-            var center = new Vector2(spot.x - local.x * px, spot.y + offY * px);
+            float woodW = _limbW > 1f ? _limbW : px * 5.85f;
+            float woodH = _limbH > 1f ? _limbH : px * 2.57f;
+            var toe = LimbBird(Vector2.zero, px, false, AvatarHomeSeat);
+            var center = new Vector2(spot.x - toe.x, spot.y - toe.y);
+            HomeTwigRect(center, woodW, woodH, out var vis);
+            float minX = 4f;
+            float maxX = Screen.width - 4f;
+            if (vis.xMin < minX) center.x += minX - vis.xMin;
+            if (vis.xMax > maxX) center.x -= vis.xMax - maxX;
             _awayOn = true;
             _awayCenter = center;
-            _awayW = _limbW > 1f ? _limbW : px * 5.85f;
-            _awayH = _limbH > 1f ? _limbH : px * 2.57f;
+            _awayW = woodW;
+            _awayH = woodH;
             _awayPx = px;
-            _awayFromRight = fromRight;
             _avatarPerchIx = -1;
-            _awaySeat = LimbBird(center, px, fromRight, seat);
+            _awaySeat = LimbBird(center, px, false, AvatarHomeSeat);
             return _awaySeat;
         }
 
@@ -8263,8 +8371,10 @@ namespace FlockFive
 
         Rect AvatarBody(Vector2 c, float icon, float pad)
         {
-            float w = icon + pad * 2f;
-            float h = w + _avatarTail;
+            float ui = Mathf.Max(Screen.height / 720f, 1f);
+            float plateW = AvatarPlateW(icon, ui);
+            float w = Mathf.Max(icon, plateW) + pad * 2f;
+            float h = icon + pad * 2f + _avatarTail;
             return new Rect(c.x - w * 0.5f, c.y - icon * 0.5f - pad, w, h);
         }
 
@@ -8760,7 +8870,7 @@ namespace FlockFive
             else if (_pokerPageStep == 3)
                 aim = TopTouch(PokerSeat(row, cardW, gap, 2));
             else
-                aim = TopTouch(FlowerDisc(actR, 0f));
+                aim = DealPlatformAim(actR);
             _pokerTutorAim = aim;
             _pokerTutorAimOk = true;
         }
@@ -8842,7 +8952,7 @@ namespace FlockFive
                 return;
             }
             var disc = FlowerDisc(actR, 0f);
-            _pokerDealAim = TopTouch(disc);
+            _pokerDealAim = DealPlatformAim(actR);
             _pokerDealAimOk = disc.width > 2f;
             var want = PokerCoachBubble(s, row, betR, actR);
             DrawSplashIntroLine(PokerBetLine, want, s);
@@ -8890,7 +9000,7 @@ namespace FlockFive
             return true;
         }
 
-        void DrawPokerBackHint(float s, Rect back)
+        void DrawPokerBackHint(float s, Rect back, Rect row, float logoBottom)
         {
             if (PokerBackDone() || _pokerPageOn || _pokerDealHint) return;
             if (BirdPoker.PhaseNow != BirdPoker.Phase.Drawn || PokerMotionBusy() || PokerPageTutorBlocked())
@@ -8898,15 +9008,50 @@ namespace FlockFive
                 _pokerBackAimOk = false;
                 return;
             }
-            _pokerBackAim = TopTouch(back);
+            _pokerBackAim = back.center;
             _pokerBackAimOk = back.width > 2f;
-            float w = Mathf.Min(Screen.width * 0.70f, 460f * s);
-            float h = 64f * s;
-            float x = Mathf.Max(12f * s, Screen.safeArea.xMin + 6f);
-            float y = back.yMax + 10f * s;
-            float maxY = Screen.height - h - 8f;
-            if (y > maxY) y = maxY;
-            DrawCoachLine(PokerBackLine, s, back.yMax, h, 0, y, w, x);
+            const float panelPad = 12f;
+            float w = Mathf.Min(Screen.width * 0.46f, 240f * s);
+            float h = 36f * s;
+            float y = logoBottom + panelPad + 8f * s;
+            float cardTop = row.y - 8f * s;
+            if (y + h + panelPad > cardTop)
+            {
+                float room = cardTop - panelPad - y;
+                float minH = 28f * s;
+                if (room >= minH) h = room;
+                else
+                {
+                    h = minH;
+                    y = Mathf.Max(logoBottom + panelPad + 4f * s, cardTop - panelPad - h);
+                }
+            }
+            float x = (Screen.width - w) * 0.5f;
+            float right = Screen.width - Mathf.Max(8f, Screen.width - Screen.safeArea.xMax + 6f);
+            if (x + w > right) x = right - w;
+            if (x < 8f) x = 8f;
+            var tab = PokerPayTabRect(logoBottom, s);
+            bool onTab = tab.width > 2f && y < tab.yMax + 4f && y + h + panelPad > tab.y && x + w > tab.x - 6f * s;
+            if (onTab)
+            {
+                float under = tab.yMax + 6f * s;
+                float underRoom = cardTop - panelPad - under;
+                if (underRoom >= 28f * s)
+                {
+                    y = under;
+                    if (h > underRoom) h = underRoom;
+                }
+                else
+                {
+                    float span = tab.x - 8f * s - 8f;
+                    if (span >= 100f * s)
+                    {
+                        w = Mathf.Min(w, span);
+                        x = tab.x - 8f * s - w;
+                    }
+                }
+            }
+            DrawCoachLine(PokerBackLine, s, logoBottom, h, 17, y, w, x);
             DrawCoachGlove(s);
         }
 
@@ -9078,7 +9223,7 @@ namespace FlockFive
             NotePokerTutorAims(actR, rowBox, cardW, gap);
             DrawPokerPageTutor(s, rowBox, betR, actR);
             DrawPokerDealHint(s, rowBox, betR, actR);
-            DrawPokerBackHint(s, back);
+            DrawPokerBackHint(s, back, rowBox, below);
             DrawPokerWinFanfare(betR, actR, s);
 
             // Stamp ceremony above everything; else pay-table overlay / jewel tab on top.
@@ -9750,7 +9895,7 @@ namespace FlockFive
             float y = back.y + (back.height - icon) * 0.5f;
             if (y < top) y = top;
             var ir = new Rect(right - icon, y, icon, icon);
-            DrawCoinCluster(ir, s);
+            DrawCoinCluster(ir, s, 0.90f);
         }
 
         const float DealGatherT = 0.32f;
@@ -9763,10 +9908,10 @@ namespace FlockFive
         // Native thumb joint on the same canvas as the palm (image 31).
         const float PokerFanPinchU = 0.586f;
         const float PokerFanPinchV = 0.28f;
-        // Behind-hand crop. Non-thumb fingers on fx_hand_palm run from the top
-        // down to ~0.36 (left stack and the right pinky). 0.37 is the first row
-        // that is only palm. The thumb sprite reaches ~0.38, so the two meet.
-        const float PokerPalmBandTop = 0.37f;
+        // Thumb column on the shared canvas. The sprite's right side (to 0.675)
+        // still carries other fingers, so the front layer stops at 0.60.
+        const float PokerThumbU0 = 0.50f;
+        const float PokerThumbU1 = 0.60f;
         const float PokerFanHandAspect = 0.80f;
         // Raise only the card row (and everything seated on it) by ~5% of screen height.
         const float PokerRowLiftFrac = 0.05f;
@@ -10428,14 +10573,13 @@ namespace FlockFive
             GUI.color = u >= 0.98f ? Color.white : new Color(1f, 1f, 1f, u);
             if (!front)
             {
-                // Palm and sleeve only, starting below every non-thumb finger
-                // so nothing but the thumb layer can show in the fan gaps.
-                DrawSpriteBand(dest, SpriteCatalog.HandPalm, PokerPalmBandTop, 1f);
+                // Full palm and sleeve behind the cards, from the pinch down.
+                DrawSpriteBand(dest, SpriteCatalog.HandPalm, PokerFanPinchV, 1f);
             }
             else
             {
-                // Thumb ONLY above cards. Same paint, same dest as the palm.
-                DrawSprite(dest, SpriteCatalog.HandThumb, true);
+                // Thumb column only. The sprite's right edge is other fingers.
+                DrawSpriteColumn(dest, SpriteCatalog.HandThumb, PokerThumbU0, PokerThumbU1);
             }
             GUI.matrix = prev;
             GUI.color = Color.white;
@@ -10499,6 +10643,40 @@ namespace FlockFive
             var slice = new Rect(dest.x, dest.y + dest.height * t0, dest.width, dest.height * band);
             float uvTop = uv.y + uv.height;
             var sliceUv = new Rect(uv.x, uvTop - uv.height * (t0 + band), uv.width, uv.height * band);
+            GUI.DrawTextureWithTexCoords(slice, tex, sliceUv);
+        }
+
+        // Horizontal slice of the same letterbox as DrawSpriteBand.
+        // u0/u1 are fractions of the sprite canvas (0 = left, 1 = right).
+        static void DrawSpriteColumn(Rect dest, Sprite spr, float u0, float u1)
+        {
+            if (spr == null || spr.texture == null) return;
+            if (u1 - u0 < 0.01f) return;
+            var tex = spr.texture;
+            var r = spr.textureRect;
+            float tw = Mathf.Max(1f, tex.width);
+            float th = Mathf.Max(1f, tex.height);
+            var uv = new Rect(r.x / tw, r.y / th, r.width / tw, r.height / th);
+            if (r.height > 1f)
+            {
+                float texA = r.width / r.height;
+                float destA = dest.height > 1f ? dest.width / dest.height : texA;
+                if (texA > destA)
+                {
+                    float hh = dest.width / texA;
+                    dest = new Rect(dest.x, dest.y + (dest.height - hh) * 0.5f, dest.width, hh);
+                }
+                else
+                {
+                    float ww = dest.height * texA;
+                    dest = new Rect(dest.x + (dest.width - ww) * 0.5f, dest.y, ww, dest.height);
+                }
+            }
+            float span = Mathf.Clamp01(u1) - Mathf.Clamp01(u0);
+            if (span < 0.01f) return;
+            float left = Mathf.Clamp01(u0);
+            var slice = new Rect(dest.x + dest.width * left, dest.y, dest.width * span, dest.height);
+            var sliceUv = new Rect(uv.x + uv.width * left, uv.y, uv.width * span, uv.height);
             GUI.DrawTextureWithTexCoords(slice, tex, sliceUv);
         }
 
@@ -11237,12 +11415,11 @@ namespace FlockFive
             GUI.color = new Color(1f, 1f, 1f, a);
             if (!front)
             {
-                // Same palm crop as the holding hand (no non-thumb fingers),
-                // and above the wrist so the cuff seam stays hidden.
-                DrawSpriteBand(dest, palm, PokerPalmBandTop, 0.66f);
+                // Palm, forearm, and sleeve, same span as the holding hand.
+                DrawSpriteBand(dest, palm, PokerFanPinchV, 1f);
             }
             else
-                DrawSprite(dest, thumb, true);
+                DrawSpriteColumn(dest, thumb, PokerThumbU0, PokerThumbU1);
             GUI.matrix = prev;
             GUI.color = Color.white;
         }
@@ -11597,9 +11774,24 @@ namespace FlockFive
 
         bool DrawFloralBtn(Rect r, string label, float s) => DrawFloralBtn(r, label, s, false);
 
+        static Vector2 DealPlatformAim(Rect actR)
+        {
+            var disc = FlowerDisc(actR, 0f);
+            if (disc.width < 2f || disc.height < 2f) return actR.center;
+            return disc.center;
+        }
+
+        bool GlovePresses(Rect disc)
+        {
+            if (!_gloveVis || _coachFade < 0.2f || _gloveDip < 0.55f) return false;
+            return disc.width > 2f && disc.Contains(_cueAimGui);
+        }
+
         bool DrawFloralBtn(Rect r, string label, float s, bool hero)
         {
             bool fire = HitPad(r, out bool held);
+            var pressDisc = FlowerDisc(r, 0f);
+            if (!held && GlovePresses(pressDisc)) held = true;
             float sink = held ? r.height * 0.04f : 0f;
             if (GuiPaint())
             {
@@ -13381,7 +13573,7 @@ namespace FlockFive
 
             // Fewer, smaller lamps than the shared 16-bulb floor. FitMarquee keeps
             // the ring mirrored and evenly spaced. Streak and VIP keep the default.
-            DrawGiftMarquee(plate, s, t, 1f, -1f, 0f, 10, 0.048f);
+            DrawGiftMarquee(plate, s, t, 1f, -1f, 0f, 10, 0.048f, false, 0.16f, 0f, card);
 
             if (_freezeOffer)
             {
@@ -13407,6 +13599,7 @@ namespace FlockFive
                 return;
             }
 
+            if (_adHand) DrawAdHand(s, top + xSz);
             var discHit = FlowerDisc(cta, 0f);
             float hitGrow = 18f * s;
             discHit = new Rect(discHit.x - hitGrow, discHit.y - hitGrow * 0.65f, discHit.width + hitGrow * 2f, discHit.height + hitGrow * 1.3f);
@@ -13417,10 +13610,13 @@ namespace FlockFive
                 discHit.height += extra;
             }
             bool watch = HitPad(discHit, out bool held);
+            var pressDisc = FlowerDisc(cta, 0f);
+            if (!held && GlovePresses(pressDisc)) held = true;
+            float sink = held ? cta.height * 0.028f : 0f;
             var bloom = SpriteCatalog.PlayFlower;
-            if (bloom != null && bloom.texture != null)
+            bool bloomOn = bloom != null && bloom.texture != null;
+            if (bloomOn)
             {
-                float sink = held ? cta.height * 0.028f : 0f;
                 GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.22f);
                 GUI.DrawTexture(new Rect(cta.x + 5f, cta.y + 12f, cta.width, cta.height), bloom.texture, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
@@ -13428,32 +13624,38 @@ namespace FlockFive
                 GUI.DrawTexture(cta, bloom.texture, ScaleMode.ScaleToFit, true);
                 if (!held) DrawFlowerShimmer(cta, 0f, 0.30f);
                 if (held) DrawDiscPress(cta, sink);
-                var disc = FlowerDisc(cta, sink);
-                if (_giftWatch == null)
-                    _giftWatch = new GUIStyle(GUI.skin.label)
-                    {
-                        alignment = TextAnchor.MiddleCenter,
-                        wordWrap = false
-                    };
-                var watchSt = _giftWatch;
-                watchSt.fontStyle = FontStyle.Bold;
-                string watchLab = "Watch";
-                // Round cap is inset from FlowerDisc. Fit inside it, then leave the outline's pixels.
-                int ink = 1;
-                float capW = Mathf.Max(24f, disc.width * 0.58f - ink * 4f);
-                float capH = disc.height * 0.42f;
-                int watchHi = Mathf.Max(16, Mathf.RoundToInt(26f * s));
-                watchSt.fontSize = FitFont(watchSt, watchLab, capW, capH, 8, watchHi);
-                var watchContent = new GUIContent(watchLab);
-                int watchGuard = 0;
-                while (watchSt.fontSize > 8 && watchGuard < 24
-                    && watchSt.CalcSize(watchContent).x > capW)
-                {
-                    watchSt.fontSize -= 1;
-                    watchGuard++;
-                }
-                StampOutlined(disc, watchLab, watchSt, new Color(0.28f, 0.12f, 0.04f), 1, ink);
             }
+            var disc = FlowerDisc(cta, sink);
+            if (!bloomOn)
+            {
+                GUI.color = new Color(0.93f, 0.68f, 0.18f, 1f);
+                GUI.DrawTexture(disc, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
+            if (_giftWatch == null)
+                _giftWatch = new GUIStyle(GUI.skin.label)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = false
+                };
+            var watchSt = _giftWatch;
+            watchSt.fontStyle = FontStyle.Bold;
+            string watchLab = "Watch";
+            // Round cap is inset from FlowerDisc. Fit inside it, then leave the outline's pixels.
+            int ink = 1;
+            float capW = Mathf.Max(24f, disc.width * 0.58f - ink * 4f);
+            float capH = disc.height * 0.42f;
+            int watchHi = Mathf.Max(16, Mathf.RoundToInt(26f * s));
+            watchSt.fontSize = FitFont(watchSt, watchLab, capW, capH, 8, watchHi);
+            var watchContent = new GUIContent(watchLab);
+            int watchGuard = 0;
+            while (watchSt.fontSize > 8 && watchGuard < 24
+                && watchSt.CalcSize(watchContent).x > capW)
+            {
+                watchSt.fontSize -= 1;
+                watchGuard++;
+            }
+            StampOutlined(disc, watchLab, watchSt, new Color(0.28f, 0.12f, 0.04f), 1, ink);
             if (watch)
             {
                 DismissAdHand();
@@ -13462,7 +13664,7 @@ namespace FlockFive
             }
 
             if (!_freezeOffer) DrawGiftCloseX(xBtn, xHeld, s);
-            if (_adHand) DrawAdHand(s, top + xSz);
+            if (_adHand) DrawCoachGlove(s);
         }
 
         // Frozen board: Retry is the big flower. Continue is a smaller ad sign under it.
@@ -13583,18 +13785,38 @@ namespace FlockFive
             float cardW = Mathf.Min(Screen.width * 0.88f, 600f * s);
             float cardH = cardW * (501f / 780f);
             float flowerSz = Mathf.Min(Screen.width * 0.54f, 300f * s);
-            float overlap = flowerSz * 0.40f;
+            // Petals kiss the card. The wooden disc starts at 10% of the flower,
+            // so a 40% overlap buried the Watch button in the plaque.
+            float overlap = flowerSz * 0.08f;
             float hiveY = Screen.height - 88f * s - 12f * s - 64f * s;
             float stackH = cardH + flowerSz - overlap;
             float cardY = Mathf.Clamp(Screen.height * 0.24f, Screen.height * 0.18f, hiveY - 16f * s - stackH);
             card = new Rect((Screen.width - cardW) * 0.5f, cardY, cardW, cardH);
             flower = new Rect((Screen.width - flowerSz) * 0.5f, card.yMax - overlap, flowerSz, flowerSz);
+            float bot = Screen.height - Mathf.Max(8f, Screen.safeArea.yMin + 6f);
+            if (flower.yMax > bot)
+            {
+                float shift = flower.yMax - bot;
+                card.y -= shift;
+                flower.y -= shift;
+            }
+            float hud = TopHud() + 8f * s;
+            if (card.y < hud)
+            {
+                float push = hud - card.y;
+                float room = bot - flower.yMax;
+                if (push > room) push = room > 0f ? room : 0f;
+                card.y += push;
+                flower.y += push;
+            }
         }
 
         Vector2 GiftWatchAim(float s)
         {
             GiftCardPlaced(s, out _, out var flower);
-            return TopTouch(FlowerDisc(flower, 0f));
+            var disc = FlowerDisc(flower, 0f);
+            if (disc.width < 2f || disc.height < 2f) return flower.center;
+            return disc.center;
         }
 
         // Same stack as GiftCardLayout. The bonus sign stays at that higher
@@ -13641,19 +13863,22 @@ namespace FlockFive
             StampOutlined(xBtn, "×", xLab, new Color(1f, 0.94f, 0.62f, held ? 1f : 0.96f), 2, xInk);
         }
 
-        // grow: how far outside `plate` the bulb sockets sit (px); <0 = 6*s (gift chalkboard rim).
+        // grow: how far outside `plate` the bulb sockets sit (px). <0 sits on the plate edge.
         // bulbFrac > 0 sizes every bulb from the plate (streak sign, already scaled).
         // bulbFrac == 0 keeps the 16-bulb gift floor unless lampWant/lampFrac override it.
         // Both rings come from FitMarquee, so each side stays mirrored and evenly spaced.
-        // pinFrac: fraction of the art from the screw tip pinned to the spot (0.16 = screw midpoint).
+        // pinFrac stays in the signature for callers. The glass is centered on the rim,
+        // so that offset cannot park a bulb on the wood face.
         // glassPx > 0 replaces that glass size (daily and welcome pass a smaller glass).
-        static void DrawGiftMarquee(Rect plate, float s, float t, float alpha = 1f, float grow = -1f, float bulbFrac = 0f, int lampWant = 16, float lampFrac = 0f, bool steady = false, float pinFrac = 0.16f, float glassPx = 0f)
+        // flowerCard: fx_ad_card rect. Bulbs whose body meets a corner orchid are skipped.
+        static void DrawGiftMarquee(Rect plate, float s, float t, float alpha = 1f, float grow = -1f, float bulbFrac = 0f, int lampWant = 16, float lampFrac = 0f, bool steady = false, float pinFrac = 0.16f, float glassPx = 0f, Rect flowerCard = default)
         {
             var bulb = SpriteCatalog.AdBulb;
             var glow = GlowTex();
             var tex = bulb != null ? bulb.texture : null;
-            // Sit on the gold rim of the chalkboard, not the outer orchid wood.
-            if (grow < 0f) grow = 6f * s;
+            // On the frame outline. A positive grow is an explicit rim (brass midline).
+            if (grow < 0f) grow = 0f;
+            if (pinFrac < 0f) pinFrac = 0f;
             var frame = new Rect(plate.x - grow, plate.y - grow, plate.width + grow * 2f, plate.height + grow * 2f);
             float perim = 2f * (frame.width + frame.height);
             // want is only a density hint. FitMarquee picks whole steps so each side
@@ -13701,6 +13926,7 @@ namespace FlockFive
                 // fx_ad_bulb's screw base is at the TOP of the art: point it into the box.
                 // Top and bottom share x; the two sides share y; all four corners are set.
                 WorldBuilder.MarqueeSpot(frame.x, frame.y, frame.xMax, frame.yMax, hSegs, vSegs, i, out var p, out float ang);
+                if (BulbOnCornerFlower(p, flowerCard, szOn)) continue;
                 float ring = Mathf.Min(Mathf.Abs(u - headCw), 1f - Mathf.Abs(u - headCw));
                 float ringB = Mathf.Min(Mathf.Abs(u - headCcw), 1f - Mathf.Abs(u - headCcw));
                 float comet = Mathf.Max(
@@ -13712,13 +13938,12 @@ namespace FlockFive
                 float sz = steady ? szOn : Mathf.Lerp(szOff, szOn, lit);
                 var prev = GUI.matrix;
                 GUIUtility.RotateAroundPivot(ang, p);
-                // Local frame: the screw base points up (into the box). pinFrac of the art
-                // stays on the spot as the bulb swells; the glass hangs outward.
+                // Screw still points into the box. The sprite center is the outline.
                 float sock = szOn * 0.44f;
                 GUI.color = new Color(0.16f, 0.09f, 0.03f, 0.92f * alpha);
                 GUI.DrawTexture(new Rect(p.x - sock * 0.5f, p.y - sock * 0.5f, sock, sock), glow, ScaleMode.ScaleToFit, true);
-                var r = new Rect(p.x - sz * 0.5f, p.y - sz * pinFrac, sz, sz);
-                var glass = new Vector2(p.x, r.y + sz * 0.60f);
+                var r = new Rect(p.x - sz * 0.5f, p.y - sz * 0.5f, sz, sz);
+                var glass = new Vector2(p.x, p.y);
                 var glowCol = Color.Lerp(
                     new Color(1f, 0.48f, 0.10f, 0.18f),
                     new Color(1f, 0.92f, 0.38f, 1f),
@@ -13735,6 +13960,28 @@ namespace FlockFive
                 GUI.matrix = prev;
             }
             GUI.color = Color.white;
+        }
+
+        // Corner orchids and bottom petals on fx_ad_card. An empty card skips nothing,
+        // so a brass sign with no flowers keeps its corner bulbs.
+        static bool BulbOnCornerFlower(Vector2 p, Rect card, float sz)
+        {
+            if (card.width < 8f || card.height < 8f) return false;
+            float reach = Mathf.Max(0f, sz) * 0.5f;
+            var body = new Rect(p.x - reach, p.y - reach, Mathf.Max(1f, sz), Mathf.Max(1f, sz));
+            float topW = card.width * 0.34f;
+            float topH = card.height * 0.46f;
+            float botW = card.width * 0.28f;
+            float botH = card.height * 0.32f;
+            var topLeft = new Rect(card.x, card.y, topW, topH);
+            var topRight = new Rect(card.xMax - topW, card.y, topW, topH);
+            var botLeft = new Rect(card.x, card.yMax - botH, botW, botH);
+            var botRight = new Rect(card.xMax - botW, card.yMax - botH, botW, botH);
+            if (body.Overlaps(topLeft)) return true;
+            if (body.Overlaps(topRight)) return true;
+            if (body.Overlaps(botLeft)) return true;
+            if (body.Overlaps(botRight)) return true;
+            return false;
         }
 
         void DrawGiftMovie(float s)

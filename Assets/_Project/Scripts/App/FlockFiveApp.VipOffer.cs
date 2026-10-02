@@ -123,7 +123,7 @@ namespace FlockFive
 
                 DrawCopy(plate, s, breathe, glow);
                 float bulbFrac = Mathf.Clamp(15f * s / Mathf.Max(1f, plate.width), 0.040f, 0.058f);
-                DrawGiftMarquee(plate, s, t, 0.70f, 3f * s, bulbFrac, 12, 0f, true);
+                DrawGiftMarquee(plate, s, t, 0.70f, 3f * s, bulbFrac, 12, 0f, true, 0.16f, 0f, card);
                 DrawBuy(buyFlower, buyHeld, s);
                 DrawRestore(link, linkHeld, s);
                 DrawRestoreNote(link, s);

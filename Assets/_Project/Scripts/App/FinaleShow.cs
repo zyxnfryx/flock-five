@@ -375,7 +375,6 @@ namespace FlockFive
             host.StartCoroutine(Twinkle(hold, PulseDur));
             host.StartCoroutine(Fireflies(hold));
             host.StartCoroutine(WarmGlow(hold));
-            host.StartCoroutine(PetalShower(hold));
             host.StartCoroutine(MascotCheer(new[] { ruby, gold, teal, violet }));
             CheerFlock(hold);
             yield return Wait(0.22f);

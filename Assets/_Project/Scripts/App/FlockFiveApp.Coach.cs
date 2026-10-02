@@ -24,7 +24,7 @@ namespace FlockFive
         const string AdHandLine = "Tap to watch\nand unlock a bonus spot.";
         const string HiveIntroLine = "You found a bee!\nFinding bees awards cards\nthat are stored in your collection.\nClick the hive to view them.";
         const string PokerIntroLine = "You earned coins from that stage.\nTap poker to bet them.";
-        const string DailyIntroLine = "Daily coins are waiting.\nTap the gift to claim them.";
+        const string DailyIntroLine = "Tap Daily for your bonus!";
         // A feeder collect calls Board.Breeze, which lifts the tip leaf.
         const string LeafIntroLine = "Leaves hide these birds.\nCollect at a feeder\nto blow them away.";
         // A tap does not scare a sparrow. One full match (five birds) into its feeder does.
@@ -686,14 +686,14 @@ namespace FlockFive
                 float handS = Mathf.Max(Screen.height / 720f, 1f);
                 var box = SplashPokerRect();
                 var seat = SplashRailSeat(RailPoker);
-                Vector2 pokerAim = box.width > 12f ? TopTouch(box) : TopTouch(seat);
+                var target = box.width > 12f ? box : seat;
+                Vector2 pokerAim = target.width > 2f ? target.center : box.center;
                 CoachGloveAt(pokerAim, dt, handS);
                 return;
             }
             if (_dailyIntroLive)
             {
                 float handS = Mathf.Max(Screen.height / 720f, 1f);
-                Vector2 dailyAim;
                 bool onClaim = _dailyOpen;
                 if (onClaim != _dailyGloveOnClaim)
                 {
@@ -702,21 +702,20 @@ namespace FlockFive
                     _gloveDip = 0f;
                     _tapSent = false;
                 }
-                bool landed;
+                Vector2 dailyAim;
                 if (onClaim)
                 {
                     DailyClaimGlove(handS, out dailyAim, out float perchLift, out bool fromLeft);
-                    landed = CoachGloveAt(dailyAim, dt, handS, perchLift, fromLeft);
+                    CoachGloveAt(dailyAim, dt, handS, perchLift, fromLeft);
                 }
                 else
                 {
+                    // Keep tapping the rail button. The card waits for the player's tap.
                     var box = SplashDailyRect();
                     var seat = SplashRailSeat(RailDaily);
                     dailyAim = box.width > 12f ? TopTouch(box) : TopTouch(seat);
-                    landed = CoachGloveAt(dailyAim, dt, handS);
+                    CoachGloveAt(dailyAim, dt, handS);
                 }
-                if (landed && !_dailyOpen && RailSettled(RailDaily))
-                    OpenDailyCard();
                 return;
             }
             if (TickPokerPageTutor(dt)) return;
@@ -1335,7 +1334,7 @@ namespace FlockFive
         // tests this list, so it does not walk the flock on every candidate row.
         void CoachFillBlocks(float s)
         {
-            if (_blocks == null) _blocks = new ScreenBox[16];
+            if (_blocks == null || _blocks.Length < 48) _blocks = new ScreenBox[48];
             _blockN = 0;
             float pad = 12f * s;
             if (_gloveVis)
@@ -1680,6 +1679,7 @@ namespace FlockFive
         Rect NudgeCaption(string key, Rect want, float s, Rect obstacle = default)
         {
             CoachFillBlocks(s);
+            AddSplashKeepouts(s);
             AddAimBlock(s);
             if (obstacle.width > 2f && obstacle.height > 2f && _blocks != null && _blockN < _blocks.Length)
             {
@@ -1700,13 +1700,13 @@ namespace FlockFive
                 var held = want;
                 held.y = _coachLineHold;
                 if (held.y >= 2f && held.yMax <= Screen.height - 2f && !BlocksHit(held))
-                    return held;
+                    return SeatSplashCaption(held, s);
             }
             if (!BlocksHit(want))
             {
                 _coachLineHold = want.y;
                 _coachLineHeld = true;
-                return want;
+                return SeatSplashCaption(want, s);
             }
             float maxY = Screen.height - want.height - 4f;
             for (float y = 4f; y <= maxY; y += 6f)
@@ -1716,10 +1716,84 @@ namespace FlockFive
                 if (BlocksHit(probe)) continue;
                 _coachLineHold = y;
                 _coachLineHeld = true;
-                return probe;
+                return SeatSplashCaption(probe, s);
             }
             _coachLineHeld = false;
-            return want;
+            return SeatSplashCaption(want, s);
+        }
+
+        // Splash lessons only. Garden CoachLineY does not call this.
+        void AddSplashKeepouts(float s)
+        {
+            if (!_splash || _home != HomeFace.Splash) return;
+            float pad = 12f + 8f * s;
+            AddKeepout(FlowerPlayRect(), pad);
+            AddKeepout(SplashTitleHalo(), pad);
+            AddKeepout(PiggyRect(s), pad);
+            AddKeepout(SplashHiveRect(), pad);
+            AddKeepout(SplashPokerRect(), pad);
+            AddKeepout(SplashDailyRect(), pad);
+            var vip = SplashNoAdsRect();
+            AddKeepout(vip, pad);
+            if (vip.width > 2f) AddKeepout(SplashNoAdsRibbon(vip), pad);
+        }
+
+        void AddKeepout(Rect zone, float pad)
+        {
+            if (_blocks == null || _blockN >= _blocks.Length) return;
+            if (zone.width < 2f || zone.height < 2f) return;
+            _blocks[_blockN].X0 = zone.xMin - pad;
+            _blocks[_blockN].Y0 = zone.yMin - pad;
+            _blocks[_blockN].X1 = zone.xMax + pad;
+            _blocks[_blockN].Y1 = zone.yMax + pad;
+            _blockN++;
+        }
+
+        // Panel pad is 12×18. The text rect has to sit inside the free band
+        // or the bubble still covers LEVEL, a rail, or the logo.
+        Rect SeatSplashCaption(Rect caption, float s)
+        {
+            if (!_splash || _home != HomeFace.Splash) return caption;
+            const float padY = 12f;
+            const float padX = 18f;
+            float gap = 8f * s;
+            float flowerTop = FlowerPlayRect().y;
+            float limit = flowerTop - gap - padY;
+            var logo = SplashTitleHalo();
+            float logoClear = logo.yMax + gap + padY;
+            if (caption.yMax + padY > flowerTop - gap)
+                caption.y = limit - caption.height;
+            if (caption.y - padY < logo.yMax + gap)
+            {
+                float room = limit - logoClear;
+                float minH = 28f * s;
+                if (room >= minH)
+                {
+                    if (caption.height > room) caption.height = room;
+                    caption.y = logoClear;
+                    if (caption.yMax > limit) caption.y = limit - caption.height;
+                }
+                else if (limit - minH > 4f)
+                {
+                    caption.height = Mathf.Max(minH, limit - (logo.yMax + 4f));
+                    caption.y = limit - caption.height;
+                }
+            }
+            if (caption.y < 4f) caption.y = 4f;
+            AvatarChannel(s, out float chL, out float chR);
+            float left = chL + 6f * s + padX;
+            float right = chR - 6f * s - padX;
+            if (right - left < 80f * s)
+            {
+                left = 8f;
+                right = Screen.width - 8f;
+            }
+            float span = right - left;
+            if (caption.width > span) caption.width = Mathf.Max(80f * s, span);
+            if (caption.x < left) caption.x = left;
+            if (caption.xMax > right) caption.x = right - caption.width;
+            if (caption.x < 4f) caption.x = 4f;
+            return caption;
         }
 
         void AddAimBlock(float s)
@@ -1764,7 +1838,6 @@ namespace FlockFive
             if (y < minY) y = minY;
             float x = card.center.x - w * 0.5f;
             DrawCoachLine(AdHandLine, s, top, h, 0, y, w, x);
-            DrawCoachGlove(s);
         }
 
         void TickHivePop()
@@ -2045,7 +2118,7 @@ namespace FlockFive
 
             float margin = 14f * s;
             float y0 = hudBottom + margin;
-            float y1 = flowerTop - margin;
+            float y1 = flowerTop - margin - 12f;
             if (y1 < y0 + 64f * s)
             {
                 y0 = titleBottom + 8f * s;
