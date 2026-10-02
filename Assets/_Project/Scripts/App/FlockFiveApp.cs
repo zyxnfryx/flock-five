@@ -255,6 +255,40 @@ namespace FlockFive
         readonly float[] _haloUnwrapped = new float[HaloCap];
         static Sprite _splashPointedV;
 
+        // Home-splash favorite. flockfive.avatar is 0-4 (ruby, gold, teal, violet, peach).
+        // Missing or out of range reads as gold. The five halo birds stay on the logo.
+        const string AvatarPref = "flockfive.avatar";
+        const float AvatarFlapRate = 1.25f;
+        BirdColor _avatarCol = BirdColor.Gold;
+        bool _avatarPlaced;
+        bool _avatarDrew;
+        bool _avatarCross;
+        bool _avatarCrossing;
+        bool _avatarGliding;
+        bool _avatarHold;
+        bool _avatarTutor;
+        bool _avatarFaceLeft;
+        int _avatarTick = -1;
+        int _avatarPerchIx;
+        float _avatarClock;
+        float _avatarBobPhase;
+        float _avatarCrossT;
+        float _avatarCrossDur = 1.15f;
+        float _avatarGlideT;
+        float _avatarGlideDur = 0.85f;
+        float _avatarNextGlide;
+        float _avatarNextFlap;
+        float _avatarFlapT;
+        float _avatarHappy;
+        Vector2 _avatarPos;
+        Vector2 _avatarCrossFrom;
+        Vector2 _avatarCrossTo;
+        Vector2 _avatarGlideFrom;
+        Vector2 _avatarGlideTo;
+        Rect _avatarDrawR;
+        readonly Vector2[] _avatarPerches = new Vector2[5];
+        readonly Rect[] _avatarBlock = new Rect[4];
+
         public void InviteShareDone(string ok)
         {
             if (ok == "1") Invite.OnShared();
@@ -3113,6 +3147,7 @@ namespace FlockFive
             yield return Ads.Interstitial();
             LevelData.RememberClear();
             Purse.AwardClear();
+            ArmAvatarCross();
             ShowSplash();
             ArmCoinFly();
         }
@@ -4272,6 +4307,7 @@ namespace FlockFive
             SyncOrbitHive();
             TickSplashRails();
             CoachPlace();
+            TickHomeAvatar();
         }
 
         bool HitHud(Vector2 screen)
@@ -6721,6 +6757,8 @@ namespace FlockFive
             float s = Mathf.Max(Screen.height / 720f, 1f);
             if (NoAds.Owned) VipOffer.Close();
             bool modal = VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen;
+            // Captured before the dismiss taps below, so that same click cannot poke the bird.
+            bool tutorUp = HomeTutorLive();
             if (!modal && _hiveIntroLive && Event.current != null
                 && Event.current.type == EventType.MouseDown && Event.current.button == 0)
                 DismissHiveIntro();
@@ -6828,6 +6866,8 @@ namespace FlockFive
                 Sfx.GateGo();
                 Load(next);
             }
+            DrawHomeAvatar(s);
+            HitHomeAvatar(s, tutorUp);
             DrawHiveIntro(s);
             DrawPokerIntro(s);
             DrawDailyIntro(s);
@@ -7361,6 +7401,620 @@ namespace FlockFive
         {
             EnsureSplashFlutters();
             DrawHaloBirds(ref _splashFlutters, SplashTitleHalo(), s, behind, HaloBirdIcon(s), ref _splashHaloTick);
+        }
+
+        // One saved bird in the title-to-flower gap. Halo orbits are untouched.
+        // A clear owes a left-to-right settle. The streak board fills that gap until
+        // it tucks, so the cross waits; a home lesson perches aside instead of flying.
+        void ArmAvatarCross()
+        {
+            _avatarCross = true;
+            _avatarCrossing = false;
+            _avatarGliding = false;
+            _avatarDrew = false;
+            _avatarHappy = 0f;
+        }
+
+        void TickHomeAvatar()
+        {
+            if (GamePause.Paused) return;
+            if (!_splash || _home != HomeFace.Splash) return;
+            if (_avatarTick == Time.frameCount) return;
+            _avatarTick = Time.frameCount;
+
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.05f);
+            _avatarClock += dt;
+            if (_avatarFlapT > 0f) _avatarFlapT = Mathf.Max(0f, _avatarFlapT - dt);
+            if (_avatarHappy > 0f) _avatarHappy = Mathf.Max(0f, _avatarHappy - dt / 0.36f);
+            _avatarCol = SavedAvatar();
+
+            float icon = AvatarIcon(s);
+            FillAvatarPerches(s, icon);
+            if (!_avatarPlaced)
+            {
+                _avatarPlaced = true;
+                _avatarPos = _avatarPerches[0];
+                _avatarPerchIx = 0;
+                _avatarBobPhase = Random.Range(0f, 6.28f);
+                _avatarNextGlide = _avatarClock + Random.Range(3.4f, 6.2f);
+                _avatarNextFlap = _avatarClock + Random.Range(1.2f, 3.4f);
+            }
+
+            bool tutor = HomeTutorLive();
+            if (tutor)
+            {
+                _avatarHappy = 0f;
+                if (_avatarCrossing)
+                {
+                    _avatarCrossing = false;
+                    _avatarCross = true;
+                }
+                _avatarHold = false;
+                TickAvatarYield(s, icon, dt);
+                _avatarTutor = true;
+                return;
+            }
+
+            bool leftTutor = _avatarTutor;
+            _avatarTutor = false;
+            // Payout sign owns the gap. Hold the entrance offscreen until it leaves.
+            if (_avatarCross && _streakSlide >= 0f)
+            {
+                _avatarHold = true;
+                _avatarCrossing = false;
+                _avatarGliding = false;
+                return;
+            }
+
+            _avatarHold = false;
+            if (_avatarCross && !_avatarCrossing)
+                BeginAvatarCross(icon);
+            else if (leftTutor)
+                BeginAvatarReturn(s);
+            else if (!_avatarCrossing && !_avatarGliding && _avatarClock >= _avatarNextGlide)
+                BeginAvatarGlide();
+
+            if (_avatarCrossing)
+                TickAvatarCross(dt, s);
+            else if (_avatarGliding)
+                TickAvatarSlide(dt, s, 10f * s, false);
+            else if (_avatarClock >= _avatarNextFlap)
+            {
+                _avatarFlapT = 0.38f;
+                _avatarNextFlap = _avatarClock + Random.Range(2.6f, 5.4f);
+            }
+        }
+
+        void TickAvatarYield(float s, float icon, float dt)
+        {
+            int blocks = FillAvatarBlocks(s);
+            var look = AvatarTutorLook(s);
+            float pad = 6f * s;
+            bool inside = blocks > 0 && AvatarHits(_avatarPos, icon, blocks, pad);
+            Vector2 safe = (!inside && blocks > 0) ? _avatarPos : AvatarSafePoint(s, icon, blocks, look);
+            float slack = 18f * s;
+            bool retarget = !_avatarGliding || (safe - _avatarGlideTo).sqrMagnitude > slack * slack;
+            bool clear = blocks <= 0 || !AvatarHits(safe, icon, blocks, pad);
+            if (clear && (safe - _avatarPos).sqrMagnitude <= 4f)
+            {
+                _avatarPos = safe;
+                _avatarGliding = false;
+                _avatarFlapT = 0f;
+            }
+            else if (!clear || inside || (retarget && AvatarSegmentHits(_avatarPos, safe, icon, blocks, pad, 8f * s)))
+            {
+                // A hop would cross the caption or the glove. Sit on the clear perch.
+                _avatarPos = safe;
+                _avatarGliding = false;
+                _avatarFlapT = 0f;
+            }
+            else if (retarget)
+            {
+                _avatarGliding = true;
+                _avatarGlideFrom = _avatarPos;
+                _avatarGlideTo = safe;
+                _avatarGlideT = 0f;
+                float dist = Vector2.Distance(_avatarGlideFrom, safe);
+                _avatarGlideDur = Mathf.Clamp(dist / (240f * s), 0.28f, 0.55f);
+            }
+
+            if (_avatarGliding)
+                TickAvatarSlide(dt, s, 8f * s, true);
+            if (Mathf.Abs(look.x - _avatarPos.x) > 2f)
+                _avatarFaceLeft = look.x < _avatarPos.x;
+        }
+
+        void BeginAvatarCross(float icon)
+        {
+            _avatarCrossing = true;
+            _avatarCross = false;
+            _avatarGliding = false;
+            _avatarCrossT = 0f;
+            _avatarCrossDur = 1.15f;
+            var home = _avatarPerches[0];
+            _avatarCrossFrom = _avatarDrew
+                ? _avatarPos
+                : new Vector2(-icon * 0.75f, home.y);
+            _avatarCrossTo = home;
+            _avatarPos = _avatarCrossFrom;
+            _avatarPerchIx = 0;
+            _avatarFaceLeft = _avatarCrossTo.x < _avatarCrossFrom.x;
+        }
+
+        void BeginAvatarGlide()
+        {
+            int next = _avatarPerchIx;
+            for (int guard = 0; guard < 6; guard++)
+            {
+                int pick = Random.Range(0, _avatarPerches.Length);
+                if (pick == _avatarPerchIx) continue;
+                next = pick;
+                break;
+            }
+            var dest = _avatarPerches[next];
+            if ((dest - _avatarPos).sqrMagnitude < 9f)
+            {
+                _avatarNextGlide = _avatarClock + Random.Range(2.5f, 4.5f);
+                return;
+            }
+            _avatarPerchIx = next;
+            _avatarGliding = true;
+            _avatarGlideFrom = _avatarPos;
+            _avatarGlideTo = dest;
+            _avatarGlideT = 0f;
+            _avatarGlideDur = Random.Range(0.72f, 1.05f);
+            _avatarFaceLeft = dest.x < _avatarPos.x;
+            _avatarNextGlide = _avatarClock + Random.Range(4.6f, 8.2f);
+        }
+
+        // A lesson may have parked the bird on a rail or above a card. Come back to the gap.
+        void BeginAvatarReturn(float s)
+        {
+            var home = _avatarPerches[0];
+            float slack = 28f * s;
+            float slack2 = slack * slack;
+            if (_avatarGliding && (_avatarGlideTo - home).sqrMagnitude <= slack2) return;
+            if (!_avatarGliding && (_avatarPos - home).sqrMagnitude <= slack2) return;
+            _avatarPerchIx = 0;
+            _avatarGliding = true;
+            _avatarGlideFrom = _avatarPos;
+            _avatarGlideTo = home;
+            _avatarGlideT = 0f;
+            float dist = Vector2.Distance(_avatarPos, home);
+            _avatarGlideDur = Mathf.Clamp(dist / (280f * s), 0.40f, 0.95f);
+            _avatarFaceLeft = home.x < _avatarPos.x;
+            _avatarNextGlide = _avatarClock + Random.Range(4.6f, 8.2f);
+        }
+
+        void TickAvatarCross(float dt, float s)
+        {
+            _avatarCrossT += dt;
+            float u = _avatarCrossDur > 0.01f ? Mathf.Clamp01(_avatarCrossT / _avatarCrossDur) : 1f;
+            float e = Mathf.SmoothStep(0f, 1f, u);
+            var p = Vector2.Lerp(_avatarCrossFrom, _avatarCrossTo, e);
+            p.y -= Mathf.Sin(u * Mathf.PI) * 28f * s;
+            _avatarPos = p;
+            _avatarFlapT = 0.3f;
+            _avatarFaceLeft = _avatarCrossTo.x < _avatarCrossFrom.x;
+            if (u < 1f) return;
+            _avatarCrossing = false;
+            _avatarPos = _avatarCrossTo;
+            _avatarPerchIx = 0;
+            _avatarFlapT = 0.22f;
+            _avatarNextGlide = _avatarClock + Random.Range(4.2f, 7.5f);
+        }
+
+        void TickAvatarSlide(float dt, float s, float arc, bool tutorHop)
+        {
+            _avatarGlideT += dt;
+            float u = _avatarGlideDur > 0.01f ? Mathf.Clamp01(_avatarGlideT / _avatarGlideDur) : 1f;
+            float e = Mathf.SmoothStep(0f, 1f, u);
+            var p = Vector2.Lerp(_avatarGlideFrom, _avatarGlideTo, e);
+            p.y -= Mathf.Sin(u * Mathf.PI) * arc;
+            _avatarPos = p;
+            if (!tutorHop)
+                _avatarFlapT = 0.25f;
+            if (!tutorHop && Mathf.Abs(_avatarGlideTo.x - _avatarGlideFrom.x) > 2f)
+                _avatarFaceLeft = _avatarGlideTo.x < _avatarGlideFrom.x;
+            if (u < 1f) return;
+            _avatarPos = _avatarGlideTo;
+            _avatarGliding = false;
+            _avatarFlapT = tutorHop ? 0f : 0.18f;
+        }
+
+        void DrawHomeAvatar(float s)
+        {
+            _avatarDrawR = default;
+            if (_avatarHold || !_avatarPlaced) return;
+            // Payout sign fills the gap. A lesson still draws so the perch stays visible under the caption.
+            if (_streakSlide >= 0f && !_avatarTutor) return;
+            float icon = AvatarIcon(s);
+            float bobAmp = (_avatarTutor ? 3.2f : 5.4f) * s;
+            float bob = Mathf.Sin(_avatarClock * 1.65f + _avatarBobPhase) * bobAmp;
+            float hop = _avatarHappy > 0f ? Mathf.Sin((1f - _avatarHappy) * Mathf.PI) * 16f * s : 0f;
+            var c = new Vector2(_avatarPos.x, _avatarPos.y + bob - hop);
+            bool wings = _avatarFlapT > 0.01f || _avatarCrossing || (_avatarGliding && !_avatarTutor);
+            var spr = SpriteCatalog.BirdFrame(_avatarCol, wings ? _avatarClock * AvatarFlapRate : 0f, wings);
+            if (spr == null || spr.texture == null) return;
+            float iw = icon;
+            var rest = SpriteCatalog.BirdFrame(_avatarCol, 0f, false);
+            if (rest != null && rest != spr && rest.pixelsPerUnit > 0f && spr.pixelsPerUnit > 0f)
+            {
+                float restU = rest.rect.width / rest.pixelsPerUnit;
+                float frameU = spr.rect.width / spr.pixelsPerUnit;
+                if (restU > 0f) iw *= frameU / restU;
+            }
+            var r = new Rect(c.x - iw * 0.5f, c.y - iw * 0.5f, iw, iw);
+            _avatarDrawR = r;
+            _avatarDrew = true;
+            var prev = GUI.color;
+            GUI.color = Color.white;
+            if (_avatarFaceLeft)
+            {
+                var m = GUI.matrix;
+                GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), r.center);
+                GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
+                GUI.matrix = m;
+            }
+            else
+                GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
+            GUI.color = prev;
+        }
+
+        // Rails and the flower already took their taps. A lesson click is ignored.
+        void HitHomeAvatar(float s, bool tutorUp)
+        {
+            if (tutorUp || HomeTutorLive()) return;
+            if (_avatarHold || _avatarDrawR.width < 2f) return;
+            if (VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen) return;
+            if (FlowerPlayRect().Contains(_avatarDrawR.center)) return;
+            if (AvatarHitsRails(_avatarPos, AvatarIcon(s), s)) return;
+            if (HitPad(_avatarDrawR, out _))
+                PokeAvatar();
+        }
+
+        void PokeAvatar()
+        {
+            _avatarHappy = 1f;
+            Sfx.Chirp(_avatarCol);
+        }
+
+        static BirdColor SavedAvatar()
+        {
+            int n = PlayerPrefs.GetInt(AvatarPref, (int)BirdColor.Gold);
+            if (n < (int)BirdColor.Ruby || n > (int)BirdColor.Peach) return BirdColor.Gold;
+            return (BirdColor)n;
+        }
+
+        bool HomeTutorLive()
+        {
+            if (!_splash || _home != HomeFace.Splash) return false;
+            if (_hiveIntroLive || _pokerIntroLive || _dailyIntroLive) return true;
+            if (_welcomeOpen || _welcomeGlove || _dailyAskOpen) return true;
+            return false;
+        }
+
+        static float AvatarIcon(float s)
+        {
+            var flower = FlowerPlayRect();
+            float gap = flower.yMin - (TopHud() + (56f * 2f + 4f) * s);
+            if (gap < 1f) gap = 80f * s;
+            return Mathf.Clamp(gap * 0.32f, 40f * s, 64f * s);
+        }
+
+        static Rect FlowerPlayRect()
+        {
+            float botPad = Mathf.Max(14f, Screen.safeArea.yMin + 8f);
+            float size = Mathf.Min(Screen.width * 0.94f, Screen.height * 0.50f);
+            return new Rect((Screen.width - size) * 0.5f, Screen.height - botPad - size, size, size);
+        }
+
+        void AvatarGap(float s, float icon, out float top, out float bot, out float left, out float right)
+        {
+            float half = icon * 0.5f;
+            var flower = FlowerPlayRect();
+            float titleBottom = TopHud() + (56f * 2f + 4f) * s;
+            top = titleBottom + half + 8f * s;
+            bot = flower.yMin - half - 8f * s;
+            if (bot < top)
+            {
+                float mid = (titleBottom + flower.yMin) * 0.5f;
+                top = mid;
+                bot = mid;
+            }
+            left = half + 10f * s;
+            right = Screen.width - half - 10f * s;
+            if (right < left)
+            {
+                float mid = Screen.width * 0.5f;
+                left = mid;
+                right = mid;
+            }
+        }
+
+        void FillAvatarPerches(float s, float icon)
+        {
+            AvatarGap(s, icon, out float top, out float bot, out float left, out float right);
+            float cx = (left + right) * 0.5f;
+            float cy = Mathf.Lerp(top, bot, 0.46f);
+            float dx = 22f * s;
+            float dy = 16f * s;
+            _avatarPerches[0] = new Vector2(cx, cy);
+            _avatarPerches[1] = new Vector2(Mathf.Clamp(cx - dx, left, right), Mathf.Clamp(cy - dy * 0.4f, top, bot));
+            _avatarPerches[2] = new Vector2(Mathf.Clamp(cx + dx, left, right), Mathf.Clamp(cy + dy * 0.35f, top, bot));
+            _avatarPerches[3] = new Vector2(cx, Mathf.Clamp(cy - dy, top, bot));
+            _avatarPerches[4] = new Vector2(Mathf.Clamp(cx + dx * 0.45f, left, right), Mathf.Clamp(cy + dy, top, bot));
+        }
+
+        int FillAvatarBlocks(float s)
+        {
+            int n = 0;
+            float pad = 8f * s;
+            bool line = _hiveIntroLive || _pokerIntroLive || (_dailyIntroLive && !_dailyOpen && !_dailyAskOpen);
+            if (line)
+                _avatarBlock[n++] = CoachPanelRect(SplashIntroBand(s));
+            if (_welcomeOpen && n < _avatarBlock.Length)
+            {
+                WelcomeLayout(s, out var card, out _, out _, out _, out _);
+                _avatarBlock[n++] = PadRect(card, pad);
+            }
+            if (_dailyAskOpen && n < _avatarBlock.Length)
+            {
+                DailyAskLayout(s, out var card, out _, out _, out _);
+                _avatarBlock[n++] = PadRect(card, pad);
+            }
+            if (_dailyIntroLive && _dailyOpen && !_dailyAskOpen && n < _avatarBlock.Length)
+            {
+                DailyLayout(s, out var card, out var flower, out _, out _);
+                _avatarBlock[n++] = PadRect(UnionRect(card, flower), pad);
+            }
+            if (n < _avatarBlock.Length && HomeGloveBox(s, out var glove))
+                _avatarBlock[n++] = glove;
+            return n;
+        }
+
+        Vector2 AvatarTutorLook(float s)
+        {
+            if (_gloveVis) return _cueAimGui;
+            if (_welcomeOpen)
+            {
+                WelcomeLayout(s, out var card, out _, out _, out _, out _);
+                return card.center;
+            }
+            if (_dailyAskOpen)
+            {
+                DailyAskLayout(s, out var card, out _, out _, out _);
+                return card.center;
+            }
+            if (_dailyIntroLive && _dailyOpen) return DailyClaimAim(s);
+            if (_hiveIntroLive)
+            {
+                var hive = SplashHiveRect();
+                if (hive.width > 2f) return hive.center;
+            }
+            if (_pokerIntroLive)
+            {
+                var poker = SplashPokerRect();
+                if (poker.width > 2f) return poker.center;
+            }
+            if (_dailyIntroLive)
+            {
+                var daily = SplashDailyRect();
+                if (daily.width > 2f) return daily.center;
+            }
+            if (_welcomeGlove)
+            {
+                var vip = SplashNoAdsRect();
+                if (vip.width > 2f) return vip.center;
+            }
+            return new Vector2(Screen.width * 0.5f, Screen.height * 0.45f);
+        }
+
+        bool HomeGloveBox(float s, out Rect box)
+        {
+            box = default;
+            if (!_gloveVis || _coachFade < 0.03f) return false;
+            if (!HomeTutorLive()) return false;
+            float dh = 118f * s;
+            var pivot = _gloveShown;
+            float bob = Mathf.Sin(Time.unscaledTime * 2.35f) * dh * 0.028f;
+            float rad = _gloveShownAng * Mathf.Deg2Rad;
+            pivot += new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
+            var rect = GloveRect(pivot, dh, _gloveMirror);
+            return RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, _gloveShownAng, 8f * s, out box);
+        }
+
+        Vector2 AvatarSafePoint(float s, float icon, int blocks, Vector2 look)
+        {
+            AvatarGap(s, icon, out float top, out float bot, out float left, out float right);
+            bool wantLeft = look.x >= Screen.width * 0.5f;
+            float side = wantLeft ? left : right;
+            float other = wantLeft ? right : left;
+            float mid = (top + bot) * 0.5f;
+            float pad = 6f * s;
+            Vector2 spot;
+            if (TryAvatarSpot(new Vector2(side, mid), icon, blocks, pad, s, true, out spot)) return spot;
+            if (TryAvatarSpot(new Vector2(side, top), icon, blocks, pad, s, true, out spot)) return spot;
+            if (TryAvatarSpot(new Vector2(side, bot), icon, blocks, pad, s, true, out spot)) return spot;
+            if (TryAvatarSpot(new Vector2(other, mid), icon, blocks, pad, s, true, out spot)) return spot;
+            if (TryAvatarSpot(new Vector2(other, top), icon, blocks, pad, s, true, out spot)) return spot;
+            if (TryAvatarSpot(new Vector2(other, bot), icon, blocks, pad, s, true, out spot)) return spot;
+            float reach = icon * 0.5f + pad + 2f;
+            float minX = icon * 0.5f;
+            float maxX = Mathf.Max(minX, Screen.width - minX);
+            float minY = minX;
+            float maxY = Mathf.Max(minY, Screen.height - minY);
+            for (int i = 0; i < blocks; i++)
+            {
+                var b = _avatarBlock[i];
+                float y = Mathf.Clamp(b.center.y, top, bot);
+                float outWant = wantLeft ? b.xMin - reach : b.xMax + reach;
+                float outOther = wantLeft ? b.xMax + reach : b.xMin - reach;
+                // Keep a side perch that clears the plate. Clamping it back into the gap
+                // can drop it onto the caption, and the short push then climbs into the title.
+                if (outWant >= minX && outWant <= maxX
+                    && (TryAvatarSpot(new Vector2(outWant, y), icon, blocks, pad, s, true, out spot)
+                        || TryAvatarSpot(new Vector2(outWant, y), icon, blocks, pad, s, false, out spot)))
+                    return spot;
+                if (outOther >= minX && outOther <= maxX
+                    && (TryAvatarSpot(new Vector2(outOther, y), icon, blocks, pad, s, true, out spot)
+                        || TryAvatarSpot(new Vector2(outOther, y), icon, blocks, pad, s, false, out spot)))
+                    return spot;
+                float x = Mathf.Clamp(b.center.x, left, right);
+                if (TryAvatarSpot(new Vector2(x, Mathf.Clamp(b.yMin - reach, top, bot)), icon, blocks, pad, s, true, out spot)) return spot;
+                if (TryAvatarSpot(new Vector2(x, Mathf.Clamp(b.yMax + reach, top, bot)), icon, blocks, pad, s, true, out spot)) return spot;
+            }
+            if (TryAvatarSpot(new Vector2(side, mid), icon, blocks, pad, s, false, out spot)) return spot;
+            if (TryAvatarSpot(new Vector2(side, top), icon, blocks, pad, s, false, out spot)) return spot;
+            if (TryAvatarSpot(new Vector2(other, mid), icon, blocks, pad, s, false, out spot)) return spot;
+
+            Vector2 p = new Vector2(side, mid);
+            for (int n = 0; n < 12; n++)
+            {
+                if (!AvatarHits(p, icon, blocks, pad)) break;
+                Vector2 pushed = PushAvatar(p, icon, blocks, pad);
+                if ((pushed - p).sqrMagnitude < 0.01f) break;
+                p = pushed;
+            }
+            var clamped = new Vector2(Mathf.Clamp(p.x, minX, maxX), Mathf.Clamp(p.y, minY, maxY));
+            // Clamping a side push back onto a full-width card would sit inside it.
+            if (!AvatarHits(clamped, icon, blocks, pad)) return clamped;
+            float midX = (left + right) * 0.5f;
+            if (TryAvatarEscape(side, other, midX, blocks, icon, pad, out spot)) return spot;
+            if (!AvatarHits(p, icon, blocks, pad)) return p;
+            return clamped;
+        }
+
+        // On-screen perch just outside a caption, card, or glove. Rails may lose.
+        bool TryAvatarEscape(float side, float other, float midX, int blocks, float icon, float pad, out Vector2 spot)
+        {
+            spot = default;
+            float reach = icon * 0.5f + pad + 2f;
+            float minX = icon * 0.5f;
+            float maxX = Mathf.Max(minX, Screen.width - minX);
+            float minY = icon * 0.5f;
+            float maxY = Mathf.Max(minY, Screen.height - minY);
+            float xWant = Mathf.Clamp(side, minX, maxX);
+            float xOther = Mathf.Clamp(other, minX, maxX);
+            float xMid = Mathf.Clamp(midX, minX, maxX);
+            for (int i = 0; i < blocks; i++)
+            {
+                var b = _avatarBlock[i];
+                float above = b.yMin - reach;
+                float below = b.yMax + reach;
+                if (above >= minY && above <= maxY)
+                {
+                    if (TryAvatarSpot(new Vector2(xWant, above), icon, blocks, pad, 0f, false, out spot)) return true;
+                    if (TryAvatarSpot(new Vector2(xOther, above), icon, blocks, pad, 0f, false, out spot)) return true;
+                    if (TryAvatarSpot(new Vector2(xMid, above), icon, blocks, pad, 0f, false, out spot)) return true;
+                }
+                if (below >= minY && below <= maxY)
+                {
+                    if (TryAvatarSpot(new Vector2(xWant, below), icon, blocks, pad, 0f, false, out spot)) return true;
+                    if (TryAvatarSpot(new Vector2(xOther, below), icon, blocks, pad, 0f, false, out spot)) return true;
+                    if (TryAvatarSpot(new Vector2(xMid, below), icon, blocks, pad, 0f, false, out spot)) return true;
+                }
+                float yMid = Mathf.Clamp(b.center.y, minY, maxY);
+                if (TryAvatarSpot(new Vector2(b.xMin - reach, yMid), icon, blocks, pad, 0f, false, out spot)
+                    && spot.x >= minX && spot.x <= maxX)
+                    return true;
+                if (TryAvatarSpot(new Vector2(b.xMax + reach, yMid), icon, blocks, pad, 0f, false, out spot)
+                    && spot.x >= minX && spot.x <= maxX)
+                    return true;
+            }
+            return false;
+        }
+
+        bool TryAvatarSpot(Vector2 p, float icon, int blocks, float pad, float s, bool rails, out Vector2 spot)
+        {
+            spot = p;
+            if (AvatarHits(p, icon, blocks, pad)) return false;
+            if (rails && AvatarHitsRails(p, icon, s)) return false;
+            return true;
+        }
+
+        Vector2 PushAvatar(Vector2 p, float icon, int blocks, float pad)
+        {
+            var body = AvatarBody(p, icon, pad);
+            for (int i = 0; i < blocks; i++)
+            {
+                var b = _avatarBlock[i];
+                if (!body.Overlaps(b)) continue;
+                float pushL = body.xMax - b.xMin;
+                float pushR = b.xMax - body.xMin;
+                float pushU = body.yMax - b.yMin;
+                float pushD = b.yMax - body.yMin;
+                float best = pushL;
+                int axis = 0;
+                if (pushR < best) { best = pushR; axis = 1; }
+                if (pushU < best) { best = pushU; axis = 2; }
+                if (pushD < best) { best = pushD; axis = 3; }
+                float step = best + 2f;
+                if (axis == 0) p.x -= step;
+                else if (axis == 1) p.x += step;
+                else if (axis == 2) p.y -= step;
+                else p.y += step;
+                body = AvatarBody(p, icon, pad);
+            }
+            return p;
+        }
+
+        bool AvatarHits(Vector2 p, float icon, int blocks, float pad)
+        {
+            if (blocks <= 0) return false;
+            var body = AvatarBody(p, icon, pad);
+            for (int i = 0; i < blocks; i++)
+                if (body.Overlaps(_avatarBlock[i])) return true;
+            return false;
+        }
+
+        bool AvatarSegmentHits(Vector2 a, Vector2 b, float icon, int blocks, float pad, float arc)
+        {
+            for (int i = 0; i <= 4; i++)
+            {
+                float u = i / 4f;
+                var p = Vector2.Lerp(a, b, u);
+                p.y -= Mathf.Sin(u * Mathf.PI) * arc;
+                if (AvatarHits(p, icon, blocks, pad)) return true;
+            }
+            return false;
+        }
+
+        bool AvatarHitsRails(Vector2 p, float icon, float s) => AvatarRectHitsRails(AvatarBody(p, icon, 4f * s), s);
+
+        bool AvatarRectHitsRails(Rect body, float s)
+        {
+            if (RailHits(body, PiggyRect(s))) return true;
+            if (RailHits(body, SplashHiveRect())) return true;
+            if (RailHits(body, SplashPokerRect())) return true;
+            if (RailHits(body, SplashDailyRect())) return true;
+            var vip = SplashNoAdsRect();
+            if (RailHits(body, vip)) return true;
+            if (vip.width > 2f && RailHits(body, SplashNoAdsRibbon(vip))) return true;
+            if (RailHits(body, FlowerPlayRect())) return true;
+            return false;
+        }
+
+        static bool RailHits(Rect body, Rect rail) =>
+            rail.width > 2f && rail.height > 2f && body.Overlaps(rail);
+
+        static Rect AvatarBody(Vector2 c, float icon, float pad)
+        {
+            float w = icon + pad * 2f;
+            return new Rect(c.x - w * 0.5f, c.y - w * 0.5f, w, w);
+        }
+
+        static Rect PadRect(Rect r, float p) =>
+            new Rect(r.x - p, r.y - p, r.width + p * 2f, r.height + p * 2f);
+
+        static Rect UnionRect(Rect a, Rect b)
+        {
+            float x0 = a.xMin < b.xMin ? a.xMin : b.xMin;
+            float y0 = a.yMin < b.yMin ? a.yMin : b.yMin;
+            float x1 = a.xMax > b.xMax ? a.xMax : b.xMax;
+            float y1 = a.yMax > b.yMax ? a.yMax : b.yMax;
+            return new Rect(x0, y0, Mathf.Max(0f, x1 - x0), Mathf.Max(0f, y1 - y0));
         }
 
         static float HaloBirdIcon(float s) => 36f * s;

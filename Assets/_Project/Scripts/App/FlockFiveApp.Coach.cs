@@ -1154,14 +1154,20 @@ namespace FlockFive
             return Mathf.Sqrt(ox * ox + oy * oy) + Mathf.Min(Mathf.Max(cx, cy), 0f) - rad;
         }
 
+        // Plate behind a tutorial sentence, including the soft corner pad.
+        static Rect CoachPanelRect(Rect r)
+        {
+            const float padX = 18f;
+            const float padY = 12f;
+            return new Rect(r.x - padX, r.y - padY, r.width + padX * 2f, r.height + padY * 2f);
+        }
+
         static void DrawCoachPanel(Rect r, float fade)
         {
             if (fade < 0.02f) return;
             var tex = CoachPanelTex();
             if (tex == null) return;
-            float padX = 18f;
-            float padY = 12f;
-            var box = new Rect(r.x - padX, r.y - padY, r.width + padX * 2f, r.height + padY * 2f);
+            var box = CoachPanelRect(r);
             var prev = GUI.color;
             GUI.color = new Color(0.07f, 0.05f, 0.03f, 0.90f * fade);
             const float corner = 22f;
