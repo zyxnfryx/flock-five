@@ -49,6 +49,7 @@ namespace FlockFive
         bool _streakChirped;
         bool _streakWinChimed;
         int _streakRollShown;
+        int _streakTickBucket = -1;
         float _pigBurst;
         float _pigJiggle;
         // Splash rails. Presence eases 0..1; a hidden button takes no slot.
@@ -131,6 +132,17 @@ namespace FlockFive
         readonly Rect[] _pokerDrawnR = new Rect[BirdPoker.HandSize];
         int _pokerHover = -1;
         bool _pokerKeepHint;
+        // First visit to the table. 0 waiting, 1 bet, 2 deal, 3 hold, 4 draw, -1 done.
+        const string CoachPokerPageKey = "flockfive.coach.pokerpage";
+        const string PokerBetLine = "Pick your bet, then tap Deal.";
+        const string PokerHoldLine = "Tap a card to hold it, then tap Draw.";
+        int _pokerPageStep;
+        bool _pokerPageOn;
+        float _pokerPageAge;
+        bool _pokerTutorAimOk;
+        Vector2 _pokerTutorAim;
+        Rect _pokerMinusR;
+        Rect _pokerPlusR;
         bool _pokerShowPay;
         float _pokerSwayT;
         float _pokerWinT = -1f;
@@ -256,7 +268,9 @@ namespace FlockFive
         static Sprite _splashPointedV;
 
         // Home-splash favorite. flockfive.avatar is 0-4 (ruby, gold, teal, violet, peach).
-        // Missing or out of range reads as gold. The five halo birds stay on the logo.
+        // Missing or out of range reads as gold. The bird stays hidden until level 1 is
+        // cleared (flockfive.next >= 1) and flockfive.avatar.adopted is set. The name
+        // lives in flockfive.avatar.name. The five halo birds stay on the logo.
         const string AvatarPref = "flockfive.avatar";
         const float AvatarFlapRate = 1.25f;
         BirdColor _avatarCol = BirdColor.Gold;
@@ -279,7 +293,9 @@ namespace FlockFive
         float _avatarNextGlide;
         float _avatarNextFlap;
         float _avatarFlapT;
+        float _avatarPreenT;
         float _avatarHappy;
+        float _avatarFitIcon;
         Vector2 _avatarPos;
         Vector2 _avatarCrossFrom;
         Vector2 _avatarCrossTo;
@@ -288,6 +304,19 @@ namespace FlockFive
         Rect _avatarDrawR;
         readonly Vector2[] _avatarPerches = new Vector2[5];
         readonly Rect[] _avatarBlock = new Rect[4];
+        Vector2 _limbCenter;
+        float _limbW;
+        float _limbH;
+        float _limbPx;
+        bool _limbFromRight;
+        bool _limbOn;
+        bool _awayOn;
+        Vector2 _awayCenter;
+        Vector2 _awaySeat;
+        float _awayW;
+        float _awayH;
+        float _awayPx;
+        bool _awayFromRight;
 
         public void InviteShareDone(string ok)
         {
@@ -465,6 +494,8 @@ namespace FlockFive
             BirdPoker.Boot();
             ArmStreakSlide();
             ArmDailyBonus();
+            CloseAvatarRename();
+            ArmAdopt();
             ArmDailyIntro();
             ArmHiveIntro();
             ArmPokerIntro();
@@ -492,6 +523,7 @@ namespace FlockFive
             _freezeOffer = false;
             _iceCoating = false;
             _splash = false;
+            CloseAvatarRename();
             NoteHiveIntroLeft();
             NotePokerIntroLeft();
             NoteDailyIntroLeft();
@@ -4253,7 +4285,7 @@ namespace FlockFive
             {
                 // Glove pose uses unscaled time, including under an ad, so the
                 // hand does not freeze and then jump when the pause lifts.
-                if (TutorialGuideLive() || _tutorPause != 0)
+                if (TutorialGuideLive() || _tutorPause != 0 || _pokerPageOn)
                     CoachPlace();
                 return;
             }
@@ -4417,9 +4449,8 @@ namespace FlockFive
 
         static float SplashRailGap() => Mathf.Max(24f, SplashRailSize() * 0.30f);
 
-        // Right rail, top to bottom: pig, hive, poker. Left: VIP on the pig's row, then daily.
-        // One size and one gap, so VIP and the pig share a center line and the stack stays even.
-        // Both pack from their top: a hidden button takes no slot and the rest slide up.
+        // Right rail, top to bottom: pig, hive, poker. Left: daily, then VIP a full button below.
+        // Both pack from their top. A hidden button takes no slot and the rest slide up.
         void TickSplashRails()
         {
             if (LevelData.NextPlay < 1) _dailyRailLocked = true;
@@ -4523,8 +4554,12 @@ namespace FlockFive
                 PackRail(ref y, rightCx, gap, RailHive, size, visual);
                 PackRail(ref y, rightCx, gap, RailPoker, size, visual);
                 y = top;
-                PackRail(ref y, leftCx, gap, RailVip, size, visual);
+                float dailyK = visual ? _railK[RailDaily] : _railGoal[RailDaily];
                 PackRail(ref y, leftCx, gap, RailDaily, size, visual);
+                // One button of air between the gift and VIP. Hidden daily adds none.
+                if (dailyK > 0.001f)
+                    y += (size - gap) * dailyK;
+                PackRail(ref y, leftCx, gap, RailVip, size, visual);
             }
         }
 
@@ -5818,6 +5853,9 @@ namespace FlockFive
             _streakChirped = false;
             _streakWinChimed = false;
             _streakRollShown = 0;
+            _streakTickBucket = -1;
+            _rewardStampAt = -1f;
+            _rewardStampMul = 0;
         }
 
         void DrawStreakRewards(float s)
@@ -5857,32 +5895,40 @@ namespace FlockFive
 
         void DrawCoinBalance(float s, Rect pig)
         {
+            float icon = Mathf.Clamp(pig.height * 0.48f * 0.80f, 29f * s, 51f * s);
+            var ir = new Rect(pig.x - 12f - icon, pig.y + (pig.height - icon) * 0.5f, icon, icon);
+            DrawCoinCluster(ir, s);
+        }
+
+        // Amount set to the coin's pixel size, then shrunk on width only so the
+        // glyphs stay as tall as the coin. Shared by home, hive, and poker.
+        void DrawCoinCluster(Rect iconR, float s)
+        {
+            var coinSpr = SpriteCatalog.Coin;
+            string coins = Money.Format(Purse.Coins);
             var st = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleRight,
-                wordWrap = false
+                wordWrap = false,
+                clipping = TextClipping.Overflow
             };
-            string coins = Money.Format(Purse.Coins);
-            // ~20% smaller coin; $ text FitFont tracks the icon height.
-            float icon = Mathf.Clamp(pig.height * 0.48f * 0.80f, 29f * s, 51f * s);
-            float gap = 8f * s;
-            float labelW = Mathf.Max(120f * s, pig.x - 28f - icon - gap);
-            float h = icon;
-            var coinR = new Rect(pig.x - 12f - icon - gap - labelW, pig.y + (pig.height - h) * 0.5f, labelW, h);
-            int lo = Mathf.Max(18, Mathf.RoundToInt(icon * 0.55f));
-            int hi = Mathf.Max(lo + 2, Mathf.RoundToInt(icon * 0.92f));
-            int coinFloor = Mathf.Max(lo, Mathf.RoundToInt(18f * s));
-            st.fontSize = FitFont(st, coins, coinR.width * 0.98f, coinR.height, Mathf.Min(coinFloor, hi), hi);
-            int coinDark = Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.10f));
-            StampOutlined(coinR, coins, st, new Color(0.22f, 0.10f, 0.03f), 2, coinDark);
-
-            var coinSpr = SpriteCatalog.Coin;
-            if (coinSpr != null && coinSpr.texture != null)
+            st.fontSize = Mathf.Max(14, Mathf.RoundToInt(iconR.height));
+            var content = new GUIContent(coins);
+            float leftLimit = Mathf.Max(8f, Screen.safeArea.xMin + 8f);
+            float maxW = Mathf.Max(36f, iconR.x - 8f * s - leftLimit);
+            int guard = 0;
+            while (st.fontSize > 14 && guard < 48 && st.CalcSize(content).x > maxW)
             {
-                var ir = new Rect(coinR.xMax + gap, coinR.y + (coinR.height - icon) * 0.5f, icon, icon);
-                DrawIdleCoin(ir, coinSpr.texture);
+                st.fontSize -= 1;
+                guard++;
             }
+            var size = st.CalcSize(content);
+            var coinR = new Rect(iconR.x - 8f * s - size.x, iconR.center.y - size.y * 0.5f, size.x + 4f, size.y);
+            int dark = Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.12f));
+            StampOutlined(coinR, coins, st, new Color(0.22f, 0.10f, 0.03f), 2, dark);
+            if (coinSpr != null && coinSpr.texture != null)
+                DrawIdleCoin(iconR, coinSpr.texture);
         }
 
         static readonly Vector2[] CoinGlints =
@@ -6044,26 +6090,23 @@ namespace FlockFive
             if (stamp)
             {
                 float sc = RewardStampScale(streak);
-                stampH = Mathf.Min(metaH * 0.96f, metaH * 0.58f * sc);
-                stampW = Mathf.Min(inner.width * 0.40f, stampH * 1.65f);
+                stampH = Mathf.Min(metaH * 0.92f, metaH * 0.72f * sc);
+                stampW = Mathf.Min(inner.width * 0.34f, stampH * 1.65f);
                 stampH = stampW / 1.65f;
             }
             if (appear > 0.04f)
             {
-                var row = new Rect(inner.x, linesTop, Mathf.Max(8f, inner.width - stampW - 6f), metaH);
-                float colW = row.width * 0.48f;
-                string left = "REWARD";
-                int fitL = FitFont(labelSt, left, colW, row.height * 0.86f, 8, labelHi);
-                int fitR = FitFont(valueSt, dollars, colW, row.height * 0.86f, 8, labelHi);
-                int fs = Mathf.Min(fitL, fitR);
+                float labelW = Mathf.Max(8f, inner.width - stampW - 10f);
+                var row = new Rect(inner.x, linesTop, labelW, metaH);
+                labelSt.alignment = TextAnchor.MiddleLeft;
+                int fs = FitFont(labelSt, "REWARD", row.width * 0.92f, row.height * 0.90f, 12, labelHi);
                 labelSt.fontSize = fs;
-                valueSt.fontSize = fs;
-                int dark = Mathf.Clamp(Mathf.RoundToInt(fs * 0.14f), 2, 6);
-                int light = Mathf.Clamp(Mathf.RoundToInt(fs * 0.05f), 1, 3);
-                var draw = labelInk;
-                draw.a = appear * alpha;
-                StampOutlined(new Rect(row.x, row.y, colW, row.height), left, labelSt, draw, light, dark, 0.001f);
-                StampOutlined(new Rect(row.xMax - colW, row.y, colW, row.height), dollars, valueSt, draw, light, dark, 0.001f);
+                int dark = Mathf.Clamp(Mathf.RoundToInt(fs * 0.16f), 2, 7);
+                var shadow = new Rect(row.x + 1.6f, row.y + 2.4f, row.width, row.height);
+                var shade = new Color(0.16f, 0.07f, 0.02f, appear * alpha * 0.62f);
+                StampOutlined(shadow, "REWARD", labelSt, shade, 0, dark, 0.001f);
+                var gold = new Color(1f, 0.91f, 0.58f, appear * alpha);
+                StampOutlined(row, "REWARD", labelSt, gold, 0, dark, 0.001f);
             }
             if (!stamp) return;
             float gate = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - 0.24f) / 0.08f));
@@ -6183,9 +6226,9 @@ namespace FlockFive
 
             int streak = Mathf.Max(1, Purse.LastStreak > 0 ? Purse.LastStreak : Purse.Streak);
             int stagePay = Purse.LastStagePay > 0 ? Purse.LastStagePay : Purse.StagePay;
-            int login = Purse.LastLogin > 0 ? Purse.LastLogin : Purse.LoginMul;
-            int win = Purse.LastWin > 0 ? Purse.LastWin : stagePay * streak * login;
-            bool showLogin = login > 1;
+            // LastWin is the coins already credited (base × streak × login, once).
+            // The stamp is the streak only. Do not multiply the shown number again.
+            int win = Purse.LastWin > 0 ? Purse.LastWin : stagePay * Mathf.Max(1, streak);
 
             // Bulb sprite: screw at 16% from the top of the art, glass tip at ~84% outward,
             // lit halo to 1.29 diameters. Layout reserves the glass plus a little air
@@ -6336,9 +6379,8 @@ namespace FlockFive
             float lineH = 18f * s;
             float padRest = Mathf.Max(4f * s, restH * 0.04f);
             float innerRest = Mathf.Max(24f * s, restH - padRest * 2f);
-            int metaRows = innerRest >= lineH * 2f + 34f * s ? 2 : 1;
             float pipNeed = 20f * s;
-            bool showPips = metaRows == 2 && innerRest >= lineH * 2f + 48f * s + pipNeed;
+            bool showPips = innerRest >= lineH + 56f * s + pipNeed;
             float pipH = 0f;
             if (showPips)
             {
@@ -6347,20 +6389,8 @@ namespace FlockFive
             }
 
             float bodyH = Mathf.Max(8f, inner.height - pipH);
-            float metaH = metaRows == 2 ? bodyH * 0.40f : bodyH * 0.34f;
+            float metaH = Mathf.Clamp(bodyH * 0.24f, 26f * s * Mathf.Clamp(scale, 0.72f, 1.06f), bodyH * 0.32f);
             float heroH = bodyH - metaH;
-            float capFloor = lineH * metaRows * Mathf.Clamp(scale, 0.72f, 1.06f);
-            if (metaH < capFloor && bodyH > capFloor + 20f * s * scale)
-            {
-                metaH = capFloor;
-                heroH = bodyH - metaH;
-            }
-            if (heroH < bodyH * 0.42f)
-            {
-                heroH = bodyH * 0.42f;
-                metaH = bodyH - heroH;
-            }
-            float rowH = metaH / metaRows;
             float linesTop = inner.y + pipH;
 
             var labelSt = new GUIStyle(GUI.skin.label)
@@ -6371,7 +6401,7 @@ namespace FlockFive
             };
             var valueSt = new GUIStyle(labelSt) { alignment = TextAnchor.MiddleRight };
             var heroSt = new GUIStyle(labelSt) { alignment = TextAnchor.MiddleCenter };
-            int labelHi = Mathf.Max(18, Mathf.RoundToInt(30f * s));
+            int labelHi = Mathf.Max(20, Mathf.RoundToInt(38f * s));
             int heroHi = Mathf.Max(28, Mathf.RoundToInt(72f * s));
             var labelInk = new Color(1f, 0.97f, 0.88f, 1f);
             var heroInk = new Color(1f, 0.95f, 0.42f, 1f);
@@ -6398,82 +6428,45 @@ namespace FlockFive
                 StampOutlined(r, text, st, ink, light, dark, 0.001f);
             }
 
-            void Pair(int index, float at, string left, string right)
-            {
-                float appear = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - at) / 0.07f));
-                if (appear < 0.04f) return;
-                var row = new Rect(inner.x, linesTop + index * rowH, inner.width, rowH);
-                float colW = row.width * 0.46f;
-                int fitL = FitFont(labelSt, left, colW, row.height * 0.86f, 8, labelHi);
-                int fitR = FitFont(valueSt, right, colW, row.height * 0.86f, 8, labelHi);
-                int fs = Mathf.Min(fitL, fitR);
-                labelSt.fontSize = fs;
-                valueSt.fontSize = fs;
-                var probeL = new GUIContent(left);
-                var probeR = new GUIContent(right);
-                int guard = 0;
-                while (fs > 6 && guard < 24
-                    && (labelSt.CalcSize(probeL).x > colW || valueSt.CalcSize(probeR).x > colW
-                        || labelSt.CalcSize(probeL).y > row.height || valueSt.CalcSize(probeR).y > row.height))
-                {
-                    fs--;
-                    labelSt.fontSize = fs;
-                    valueSt.fontSize = fs;
-                    guard++;
-                }
-                int dark = Mathf.Clamp(Mathf.RoundToInt(fs * 0.14f), 2, 6);
-                int light = Mathf.Clamp(Mathf.RoundToInt(fs * 0.05f), 1, 3);
-                var draw = labelInk;
-                draw.a = appear * alpha;
-                var leftR = new Rect(row.x, row.y, colW, row.height);
-                var rightR = new Rect(row.xMax - colW, row.y, colW, row.height);
-                StampOutlined(leftR, left, labelSt, draw, light, dark, 0.001f);
-                StampOutlined(rightR, right, valueSt, draw, light, dark, 0.001f);
-            }
-
             string dollars = Money.Format(stagePay);
             DrawRewardRow(inner, linesTop, metaH, dollars, streak, u, alpha, labelSt, valueSt, labelHi, labelInk);
 
-            float rollAt = showLogin ? 0.48f : 0.40f;
-            float roll = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - rollAt) / 0.20f));
-            if (roll > 0.02f)
+            int fromPay = Mathf.Max(0, stagePay);
+            int toPay = Mathf.Max(0, win);
+            int shown = toPay;
+            float roll = 1f;
+            if (streak > 1 && toPay != fromPay)
             {
-                int shown = Mathf.RoundToInt(win * roll);
-                if (shown < 0) shown = 0;
-                if (shown > _streakRollShown) _streakRollShown = shown;
-                if (!_streakChirped && roll > 0.12f)
+                if (_rewardStampAt < 0f)
                 {
-                    _streakChirped = true;
-                    Sfx.Clink();
-                }
-                if (!_streakWinChimed && roll >= 0.98f)
-                {
-                    _streakWinChimed = true;
-                    Sfx.Clink();
-                }
-                var hero = new Rect(inner.x, linesTop + metaH, inner.width, heroH);
-                float winLabH = Mathf.Min(hero.height * 0.28f, 22f * s * scale);
-                if (winLabH < 15f * s * scale) winLabH = 0f;
-                string amt = Money.Format(_streakRollShown);
-                var amtR = new Rect(hero.x, hero.y + winLabH, hero.width, hero.height - winLabH);
-                if (winLabH > 0f)
-                {
-                    float wordIn = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((roll - 0.04f) / 0.12f));
-                    var wordInk = new Color(1f, 0.90f, 0.55f, wordIn);
-                    StampFit(new Rect(hero.x, hero.y, hero.width, winLabH), "WIN", heroSt, wordInk, Mathf.Max(16, Mathf.RoundToInt(26f * s)), 0.80f);
+                    shown = fromPay;
+                    roll = 0f;
                 }
                 else
-                    amt = "WIN  " + amt;
-                float punch = 1f + 0.08f * Mathf.Sin(Mathf.Clamp01((roll - 0.85f) / 0.15f) * Mathf.PI);
-                var prevM = GUI.matrix;
-                GUIUtility.ScaleAroundPivot(new Vector2(punch, punch), amtR.center);
-                float glowPad = 10f * s * scale;
-                GUI.color = new Color(1f, 0.78f, 0.18f, (0.34f + 0.24f * roll) * alpha);
-                GUI.DrawTexture(new Rect(amtR.x - glowPad, amtR.y - glowPad * 0.35f, amtR.width + glowPad * 2f, amtR.height + glowPad), glow, ScaleMode.ScaleToFit, true);
-                GUI.color = Color.white;
-                StampFit(amtR, amt, heroSt, heroInk, heroHi, 0.96f);
-                GUI.matrix = prevM;
+                {
+                    float age = Time.unscaledTime - _rewardStampAt;
+                    roll = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(age / 0.55f));
+                    shown = Mathf.RoundToInt(Mathf.Lerp(fromPay, toPay, roll));
+                    int bucket = roll >= 0.999f ? 8 : Mathf.Clamp(Mathf.FloorToInt(roll * 8f), 0, 7);
+                    if (GuiPaint() && bucket != _streakTickBucket)
+                    {
+                        _streakTickBucket = bucket;
+                        if (bucket > 0) Sfx.Clink();
+                    }
+                }
             }
+            _streakRollShown = shown;
+            var hero = new Rect(inner.x, linesTop + metaH, inner.width, heroH);
+            string amt = Money.Format(shown);
+            float punch = 1f + 0.08f * Mathf.Sin(Mathf.Clamp01((roll - 0.85f) / 0.15f) * Mathf.PI);
+            var prevM = GUI.matrix;
+            GUIUtility.ScaleAroundPivot(new Vector2(punch, punch), hero.center);
+            float glowPad = 10f * s * scale;
+            GUI.color = new Color(1f, 0.78f, 0.18f, (0.22f + 0.28f * roll) * alpha);
+            GUI.DrawTexture(new Rect(hero.x - glowPad, hero.y - glowPad * 0.35f, hero.width + glowPad * 2f, hero.height + glowPad), glow, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+            StampFit(hero, amt, heroSt, heroInk, heroHi, 0.92f);
+            GUI.matrix = prevM;
             float halo = board.width * crownFrac + aura;
             NoteComboStreak(new Rect(board.x - halo, board.y - halo, board.width + halo * 2f, board.height + halo * 2f));
             GUI.color = Color.white;
@@ -6756,9 +6749,10 @@ namespace FlockFive
         {
             float s = Mathf.Max(Screen.height / 720f, 1f);
             if (NoAds.Owned) VipOffer.Close();
-            bool modal = VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen;
+            bool modal = VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive;
             // Captured before the dismiss taps below, so that same click cannot poke the bird.
             bool tutorUp = HomeTutorLive();
+            DismissAvatarRename(s);
             if (!modal && _hiveIntroLive && Event.current != null
                 && Event.current.type == EventType.MouseDown && Event.current.button == 0)
                 DismissHiveIntro();
@@ -6844,7 +6838,7 @@ namespace FlockFive
                 DrawSplashPokerButton(pokerR);
             }
 
-            // Daily gift sits under VIP. Absent until level 1 is cleared. A fresh
+            // Daily gift sits above VIP, one button apart. Absent until level 1 is cleared. A fresh
             // unlock stays out of the pack until its lesson, then grows into the gap.
             bool dailyDraw = RailLive(RailDaily);
             var dailyR = SplashDailyRect();
@@ -6868,6 +6862,7 @@ namespace FlockFive
             }
             DrawHomeAvatar(s);
             HitHomeAvatar(s, tutorUp);
+            if (_adoptLive) DrawAdoptScene(s);
             DrawHiveIntro(s);
             DrawPokerIntro(s);
             DrawDailyIntro(s);
@@ -6875,10 +6870,10 @@ namespace FlockFive
             if (_dailyOpen) DrawDailyBonus(s);
             if (_dailyAskOpen) DrawDailyAsk(s);
             if (_welcomeOpen) DrawWelcome(s);
-            if (_dailyIntroLive && _dailyOpen && !_dailyAskOpen)
+            if (_dailyOpen) DrawDailyClaimLine(s);
+            if (_adoptLive || _welcomeGlove || (_dailyIntroLive && _dailyOpen && !_dailyAskOpen))
                 DrawCoachGlove(s);
-            if (_welcomeGlove)
-                DrawCoachGlove(s);
+            if (_avatarRename) DrawAvatarRename(s);
         }
 
         bool DrawFlowerPlay(float s, string ease, int number, bool acceptTap)
@@ -7403,9 +7398,12 @@ namespace FlockFive
             DrawHaloBirds(ref _splashFlutters, SplashTitleHalo(), s, behind, HaloBirdIcon(s), ref _splashHaloTick);
         }
 
-        // One saved bird in the title-to-flower gap. Halo orbits are untouched.
+        // One saved bird on a leafy branch between the title and the play flower,
+        // after level 1 is cleared and a color has been adopted. Toes stay on a
+        // pad while it bobs and preens. It flaps only in flight, then lands again.
         // A clear owes a left-to-right settle. The streak board fills that gap until
-        // it tucks, so the cross waits; a home lesson perches aside instead of flying.
+        // it tucks, so the cross waits; a home lesson perches aside. The adoption
+        // settle clears the owed cross so it does not play a second time.
         void ArmAvatarCross()
         {
             _avatarCross = true;
@@ -7417,12 +7415,20 @@ namespace FlockFive
 
         void TickHomeAvatar()
         {
+            if (!_splash || _home != HomeFace.Splash || _adoptLive || HomeLessonUp() || !AvatarAdopted())
+                CloseAvatarRename();
             if (GamePause.Paused) return;
             if (!_splash || _home != HomeFace.Splash) return;
             if (_avatarTick == Time.frameCount) return;
             _avatarTick = Time.frameCount;
 
             float s = Mathf.Max(Screen.height / 720f, 1f);
+            if (!AvatarHomeOn())
+            {
+                _avatarTail = 0f;
+                return;
+            }
+            _avatarTail = AvatarPlateDrop(s);
             float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.05f);
             _avatarClock += dt;
             if (_avatarFlapT > 0f) _avatarFlapT = Mathf.Max(0f, _avatarFlapT - dt);
@@ -7431,28 +7437,37 @@ namespace FlockFive
 
             float icon = AvatarIcon(s);
             FillAvatarPerches(s, icon);
+            if (_avatarFitIcon > 1f) icon = _avatarFitIcon;
             if (!_avatarPlaced)
             {
                 _avatarPlaced = true;
-                _avatarPos = _avatarPerches[0];
-                _avatarPerchIx = 0;
+                _avatarPerchIx = AvatarHomeSeat;
+                _avatarPos = AvatarHomePoint();
+                _awayOn = false;
                 _avatarBobPhase = Random.Range(0f, 6.28f);
                 _avatarNextGlide = _avatarClock + Random.Range(3.4f, 6.2f);
-                _avatarNextFlap = _avatarClock + Random.Range(1.2f, 3.4f);
+                _avatarNextFlap = _avatarClock + Random.Range(2.8f, 5.2f);
             }
+            TrackGlideTarget();
 
             bool tutor = HomeTutorLive();
             if (tutor)
             {
-                _avatarHappy = 0f;
+                // A rename sheet steps the bird aside without eating the hop or
+                // replaying the entrance. A real lesson still cancels both.
+                bool renameOnly = _avatarRename && !HomeLessonUp();
+                if (!renameOnly)
+                    _avatarHappy = 0f;
                 if (_avatarCrossing)
                 {
                     _avatarCrossing = false;
-                    _avatarCross = true;
+                    if (!renameOnly)
+                        _avatarCross = true;
                 }
                 _avatarHold = false;
                 TickAvatarYield(s, icon, dt);
                 _avatarTutor = true;
+                PoseAvatar(dt, false);
                 return;
             }
 
@@ -7479,11 +7494,50 @@ namespace FlockFive
                 TickAvatarCross(dt, s);
             else if (_avatarGliding)
                 TickAvatarSlide(dt, s, 10f * s, false);
-            else if (_avatarClock >= _avatarNextFlap)
+            PoseAvatar(dt, true);
+        }
+
+        // On a pad: toes planted, a small bob, and the occasional preen.
+        // In the air: the caller is flapping. Never sit still off the wood.
+        void PoseAvatar(float dt, bool preen)
+        {
+            bool flying = _avatarCrossing || _avatarGliding;
+            if (flying)
             {
-                _avatarFlapT = 0.38f;
-                _avatarNextFlap = _avatarClock + Random.Range(2.6f, 5.4f);
+                _avatarPreenT = 0f;
+                _avatarFlapT = 0.3f;
+                return;
             }
+            _avatarFlapT = 0f;
+            StickAvatarToPerch();
+            if (_avatarPreenT > 0f)
+                _avatarPreenT = Mathf.Max(0f, _avatarPreenT - dt);
+            if (!preen || _avatarHappy > 0.05f) return;
+            if (_avatarClock < _avatarNextFlap) return;
+            _avatarPreenT = 0.72f;
+            _avatarNextFlap = _avatarClock + Random.Range(3.4f, 6.8f);
+        }
+
+        void StickAvatarToPerch()
+        {
+            if (_avatarCrossing || _avatarGliding || _avatarHold || !_avatarPlaced) return;
+            if (_awayOn && _avatarPerchIx < 0)
+            {
+                _avatarPos = _awaySeat;
+                return;
+            }
+            _awayOn = false;
+            if (_avatarPerchIx >= 0 && _avatarPerchIx < _avatarPerches.Length)
+                _avatarPos = _avatarPerches[_avatarPerchIx];
+        }
+
+        void TrackGlideTarget()
+        {
+            if (!_avatarGliding) return;
+            if (_avatarPerchIx >= 0 && _avatarPerchIx < _avatarPerches.Length)
+                _avatarGlideTo = _avatarPerches[_avatarPerchIx];
+            else if (_awayOn)
+                _avatarGlideTo = _awaySeat;
         }
 
         void TickAvatarYield(float s, float icon, float dt)
@@ -7492,7 +7546,7 @@ namespace FlockFive
             var look = AvatarTutorLook(s);
             float pad = 6f * s;
             bool inside = blocks > 0 && AvatarHits(_avatarPos, icon, blocks, pad);
-            Vector2 safe = (!inside && blocks > 0) ? _avatarPos : AvatarSafePoint(s, icon, blocks, look);
+            Vector2 safe = AvatarSafePoint(s, icon, blocks, look);
             float slack = 18f * s;
             bool retarget = !_avatarGliding || (safe - _avatarGlideTo).sqrMagnitude > slack * slack;
             bool clear = blocks <= 0 || !AvatarHits(safe, icon, blocks, pad);
@@ -7532,13 +7586,14 @@ namespace FlockFive
             _avatarGliding = false;
             _avatarCrossT = 0f;
             _avatarCrossDur = 1.15f;
-            var home = _avatarPerches[0];
+            var home = AvatarHomePoint();
             _avatarCrossFrom = _avatarDrew
                 ? _avatarPos
                 : new Vector2(-icon * 0.75f, home.y);
             _avatarCrossTo = home;
             _avatarPos = _avatarCrossFrom;
-            _avatarPerchIx = 0;
+            _avatarPerchIx = AvatarHomeSeat;
+            _awayOn = false;
             _avatarFaceLeft = _avatarCrossTo.x < _avatarCrossFrom.x;
         }
 
@@ -7559,6 +7614,7 @@ namespace FlockFive
                 return;
             }
             _avatarPerchIx = next;
+            _awayOn = false;
             _avatarGliding = true;
             _avatarGlideFrom = _avatarPos;
             _avatarGlideTo = dest;
@@ -7568,15 +7624,15 @@ namespace FlockFive
             _avatarNextGlide = _avatarClock + Random.Range(4.6f, 8.2f);
         }
 
-        // A lesson may have parked the bird on a rail or above a card. Come back to the gap.
+        // A lesson may have parked the bird on a side pad. Come back to the home seat.
         void BeginAvatarReturn(float s)
         {
-            var home = _avatarPerches[0];
+            var home = AvatarHomePoint();
             float slack = 28f * s;
             float slack2 = slack * slack;
             if (_avatarGliding && (_avatarGlideTo - home).sqrMagnitude <= slack2) return;
             if (!_avatarGliding && (_avatarPos - home).sqrMagnitude <= slack2) return;
-            _avatarPerchIx = 0;
+            _avatarPerchIx = AvatarHomeSeat;
             _avatarGliding = true;
             _avatarGlideFrom = _avatarPos;
             _avatarGlideTo = home;
@@ -7600,77 +7656,83 @@ namespace FlockFive
             if (u < 1f) return;
             _avatarCrossing = false;
             _avatarPos = _avatarCrossTo;
-            _avatarPerchIx = 0;
-            _avatarFlapT = 0.22f;
+            _avatarPerchIx = AvatarHomeSeat;
+            _avatarFlapT = 0f;
+            _avatarPreenT = 0f;
+            _awayOn = false;
             _avatarNextGlide = _avatarClock + Random.Range(4.2f, 7.5f);
         }
 
         void TickAvatarSlide(float dt, float s, float arc, bool tutorHop)
         {
+            if (tutorHop) arc = Mathf.Min(arc, 12f * s);
             _avatarGlideT += dt;
             float u = _avatarGlideDur > 0.01f ? Mathf.Clamp01(_avatarGlideT / _avatarGlideDur) : 1f;
             float e = Mathf.SmoothStep(0f, 1f, u);
             var p = Vector2.Lerp(_avatarGlideFrom, _avatarGlideTo, e);
             p.y -= Mathf.Sin(u * Mathf.PI) * arc;
             _avatarPos = p;
-            if (!tutorHop)
-                _avatarFlapT = 0.25f;
-            if (!tutorHop && Mathf.Abs(_avatarGlideTo.x - _avatarGlideFrom.x) > 2f)
+            _avatarFlapT = 0.25f;
+            if (Mathf.Abs(_avatarGlideTo.x - _avatarGlideFrom.x) > 2f)
                 _avatarFaceLeft = _avatarGlideTo.x < _avatarGlideFrom.x;
             if (u < 1f) return;
             _avatarPos = _avatarGlideTo;
             _avatarGliding = false;
-            _avatarFlapT = tutorHop ? 0f : 0.18f;
+            _avatarFlapT = 0f;
+            _avatarPreenT = 0f;
+            if (_avatarPerchIx >= 0) _awayOn = false;
         }
 
         void DrawHomeAvatar(float s)
         {
             _avatarDrawR = default;
+            _avatarPlateR = default;
+            if (!AvatarHomeOn()) return;
+            _avatarTail = AvatarPlateDrop(s);
             if (_avatarHold || !_avatarPlaced) return;
             // Payout sign fills the gap. A lesson still draws so the perch stays visible under the caption.
             if (_streakSlide >= 0f && !_avatarTutor) return;
             float icon = AvatarIcon(s);
-            float bobAmp = (_avatarTutor ? 3.2f : 5.4f) * s;
-            float bob = Mathf.Sin(_avatarClock * 1.65f + _avatarBobPhase) * bobAmp;
-            float hop = _avatarHappy > 0f ? Mathf.Sin((1f - _avatarHappy) * Mathf.PI) * 16f * s : 0f;
-            var c = new Vector2(_avatarPos.x, _avatarPos.y + bob - hop);
-            bool wings = _avatarFlapT > 0.01f || _avatarCrossing || (_avatarGliding && !_avatarTutor);
-            var spr = SpriteCatalog.BirdFrame(_avatarCol, wings ? _avatarClock * AvatarFlapRate : 0f, wings);
-            if (spr == null || spr.texture == null) return;
-            float iw = icon;
-            var rest = SpriteCatalog.BirdFrame(_avatarCol, 0f, false);
-            if (rest != null && rest != spr && rest.pixelsPerUnit > 0f && spr.pixelsPerUnit > 0f)
+            FillAvatarPerches(s, icon);
+            if (_avatarFitIcon > 1f) icon = _avatarFitIcon;
+            if (!_avatarCrossing && !_avatarGliding) StickAvatarToPerch();
+            bool airborne = _avatarCrossing || _avatarGliding || _avatarHappy > 0.02f;
+            float bob = airborne ? 0f : Mathf.Sin(_avatarClock * 1.7f + _avatarBobPhase) * icon * 0.035f;
+            float hop = _avatarHappy > 0f ? Mathf.Sin((1f - _avatarHappy) * Mathf.PI) * icon * 0.16f : 0f;
+            var c = new Vector2(_avatarPos.x, _avatarPos.y - bob - hop);
+            DrawHomeLimbs();
+            float preen = 0f;
+            if (!airborne && _avatarPreenT > 0f)
             {
-                float restU = rest.rect.width / rest.pixelsPerUnit;
-                float frameU = spr.rect.width / spr.pixelsPerUnit;
-                if (restU > 0f) iw *= frameU / restU;
+                float u = 1f - Mathf.Clamp01(_avatarPreenT / 0.72f);
+                preen = Mathf.Sin(u * Mathf.PI) * (_avatarFaceLeft ? 16f : -16f);
             }
-            var r = new Rect(c.x - iw * 0.5f, c.y - iw * 0.5f, iw, iw);
-            _avatarDrawR = r;
-            _avatarDrew = true;
+            var prevMat = GUI.matrix;
+            if (Mathf.Abs(preen) > 0.4f)
+                GUIUtility.RotateAroundPivot(preen, new Vector2(c.x, c.y + icon * 0.31f));
             var prev = GUI.color;
             GUI.color = Color.white;
-            if (_avatarFaceLeft)
-            {
-                var m = GUI.matrix;
-                GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), r.center);
-                GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
-                GUI.matrix = m;
-            }
-            else
-                GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
+            var drawn = DrawCatalogBird(_avatarCol, c, icon, _avatarFaceLeft, airborne, _avatarClock);
+            GUI.matrix = prevMat;
             GUI.color = prev;
+            if (drawn.width <= 2f) return;
+            _avatarDrawR = drawn;
+            _avatarDrew = true;
+            _avatarPlateR = DrawAvatarPlate(c, icon, SavedAvatarName(), s);
         }
 
         // Rails and the flower already took their taps. A lesson click is ignored.
         void HitHomeAvatar(float s, bool tutorUp)
         {
-            if (tutorUp || HomeTutorLive()) return;
-            if (_avatarHold || _avatarDrawR.width < 2f) return;
+            if (tutorUp || HomeTutorLive() || !AvatarHomeOn()) return;
+            if (_avatarHold) return;
             if (VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen) return;
-            if (FlowerPlayRect().Contains(_avatarDrawR.center)) return;
-            if (AvatarHitsRails(_avatarPos, AvatarIcon(s), s)) return;
-            if (HitPad(_avatarDrawR, out _))
+            if (_avatarDrawR.width > 2f && FlowerPlayRect().Contains(_avatarDrawR.center)) return;
+            float hitIcon = _avatarFitIcon > 1f ? _avatarFitIcon : AvatarIcon(s);
+            if (AvatarHitsRails(_avatarPos, hitIcon, s)) return;
+            if (_avatarDrawR.width > 2f && HitPad(_avatarDrawR, out _))
+                PokeAvatar();
+            else if (_avatarPlateR.width > 2f && HitPad(_avatarPlateR, out _))
                 PokeAvatar();
         }
 
@@ -7678,6 +7740,7 @@ namespace FlockFive
         {
             _avatarHappy = 1f;
             Sfx.Chirp(_avatarCol);
+            OpenAvatarRename();
         }
 
         static BirdColor SavedAvatar()
@@ -7690,17 +7753,24 @@ namespace FlockFive
         bool HomeTutorLive()
         {
             if (!_splash || _home != HomeFace.Splash) return false;
-            if (_hiveIntroLive || _pokerIntroLive || _dailyIntroLive) return true;
-            if (_welcomeOpen || _welcomeGlove || _dailyAskOpen) return true;
-            return false;
+            return HomeLessonUp() || _avatarRename;
         }
 
-        static float AvatarIcon(float s)
+        float AvatarIcon(float s)
         {
             var flower = FlowerPlayRect();
-            float gap = flower.yMin - (TopHud() + (56f * 2f + 4f) * s);
+            float titleBottom = TopHud() + (56f * 2f + 4f) * s;
+            float gap = flower.yMin - titleBottom;
             if (gap < 1f) gap = 80f * s;
-            return Mathf.Clamp(gap * 0.32f, 40f * s, 64f * s);
+            float legacy = Mathf.Clamp(gap * 0.32f, 40f * s, 64f * s);
+            float want = legacy * AvatarGrow;
+            AvatarChannel(s, out float left, out float right);
+            float roomX = (right - left) - 12f * s;
+            float roomY = gap - AvatarPlateDrop(s) - 16f * s;
+            float room = Mathf.Min(roomX, roomY);
+            float lo = 40f * s;
+            float hi = room > lo ? room : lo;
+            return Mathf.Clamp(want, lo, hi);
         }
 
         static Rect FlowerPlayRect()
@@ -7715,42 +7785,96 @@ namespace FlockFive
             float half = icon * 0.5f;
             var flower = FlowerPlayRect();
             float titleBottom = TopHud() + (56f * 2f + 4f) * s;
+            float tail = AvatarPlateDrop(s);
             top = titleBottom + half + 8f * s;
-            bot = flower.yMin - half - 8f * s;
+            bot = flower.yMin - half - tail - 8f * s;
             if (bot < top)
             {
                 float mid = (titleBottom + flower.yMin) * 0.5f;
                 top = mid;
                 bot = mid;
             }
-            left = half + 10f * s;
-            right = Screen.width - half - 10f * s;
+            AvatarChannel(s, out float chL, out float chR);
+            left = chL + half;
+            right = chR - half;
             if (right < left)
             {
-                float mid = Screen.width * 0.5f;
+                float mid = (chL + chR) * 0.5f;
                 left = mid;
                 right = mid;
             }
         }
 
-        void FillAvatarPerches(float s, float icon)
+        void FillAvatarPerches(float s, float icon) => AnchorHomeBranch(s, icon);
+
+        // Home perch. The limb enters from the left side of the open gap, between
+        // the title and the play flower. AvatarHomeSeat is the resting pad; the
+        // other seats are the same branch. Toes use BranchView.RestLift.
+        void AnchorHomeBranch(float s, float icon)
         {
-            AvatarGap(s, icon, out float top, out float bot, out float left, out float right);
-            float cx = (left + right) * 0.5f;
-            float cy = Mathf.Lerp(top, bot, 0.46f);
-            float dx = 22f * s;
-            float dy = 16f * s;
-            _avatarPerches[0] = new Vector2(cx, cy);
-            _avatarPerches[1] = new Vector2(Mathf.Clamp(cx - dx, left, right), Mathf.Clamp(cy - dy * 0.4f, top, bot));
-            _avatarPerches[2] = new Vector2(Mathf.Clamp(cx + dx, left, right), Mathf.Clamp(cy + dy * 0.35f, top, bot));
-            _avatarPerches[3] = new Vector2(cx, Mathf.Clamp(cy - dy, top, bot));
-            _avatarPerches[4] = new Vector2(Mathf.Clamp(cx + dx * 0.45f, left, right), Mathf.Clamp(cy + dy, top, bot));
+            var flower = FlowerPlayRect();
+            float titleBottom = TopHud() + (56f * 2f + 4f) * s;
+            float flowerTop = flower.yMin;
+            AvatarChannel(s, out float railL, out float railR);
+            float maxW = Mathf.Max(64f * s, railR - railL);
+            float maxH = Mathf.Max(36f * s, flowerTop - titleBottom - 8f * s);
+            FitWood(maxW, maxH, out float woodW, out float woodH, out float px);
+            float bird = px * AvatarBirdWorld();
+            float need = woodH * 0.5f + bird * 0.55f + AvatarPlateDrop(s);
+            float room = Mathf.Max(32f * s, flowerTop - titleBottom - 8f * s);
+            if (need > room)
+            {
+                float k = Mathf.Clamp(room / need, 0.35f, 1f);
+                woodW *= k;
+                woodH *= k;
+                px *= k;
+                bird *= k;
+            }
+            float cx = railL + woodW * 0.5f;
+            float cy = (titleBottom + flowerTop) * 0.5f;
+            var center = new Vector2(cx, cy);
+            float topLim = titleBottom + 2f;
+            float botLim = flowerTop - 2f;
+            if (center.y - woodH * 0.5f < topLim) center.y += topLim - (center.y - woodH * 0.5f);
+            if (center.y + woodH * 0.5f > botLim) center.y -= (center.y + woodH * 0.5f) - botLim;
+            _limbCenter = center;
+            _limbW = woodW;
+            _limbH = woodH;
+            _limbPx = px;
+            _limbFromRight = false;
+            _limbOn = true;
+            if (icon > 8f && bird > icon)
+            {
+                float fit = icon / bird;
+                woodW *= fit;
+                woodH *= fit;
+                px *= fit;
+                bird = icon;
+                center.x = railL + woodW * 0.5f;
+            }
+            _avatarFitIcon = Mathf.Max(8f, bird);
+            for (int i = 0; i < _avatarPerches.Length; i++)
+                _avatarPerches[i] = LimbBird(center, px, false, i);
+            var home = _avatarPerches[AvatarHomeSeat];
+            float plateBot = home.y + _avatarFitIcon * 0.5f + AvatarPlateDrop(s);
+            if (plateBot > flowerTop - 4f)
+                center.y -= plateBot - (flowerTop - 4f);
+            float ceil = titleBottom + 2f + woodH * 0.5f;
+            if (center.y < ceil) center.y = ceil;
+            _limbCenter = center;
+            _limbW = woodW;
+            _limbH = woodH;
+            _limbPx = px;
+            for (int i = 0; i < _avatarPerches.Length; i++)
+                _avatarPerches[i] = LimbBird(center, px, false, i);
         }
 
         int FillAvatarBlocks(float s)
         {
             int n = 0;
             float pad = 8f * s;
+            if (_avatarRename && _avatarRenameR.width > 2f)
+                _avatarBlock[n++] = _avatarRenameR;
             bool line = _hiveIntroLive || _pokerIntroLive || (_dailyIntroLive && !_dailyOpen && !_dailyAskOpen);
             if (line)
                 _avatarBlock[n++] = CoachPanelRect(SplashIntroBand(s));
@@ -7776,6 +7900,8 @@ namespace FlockFive
 
         Vector2 AvatarTutorLook(float s)
         {
+            if (_avatarRename && _avatarRenameR.width > 2f)
+                return _avatarRenameR.center;
             if (_gloveVis) return _cueAimGui;
             if (_welcomeOpen)
             {
@@ -7816,9 +7942,9 @@ namespace FlockFive
             box = default;
             if (!_gloveVis || _coachFade < 0.03f) return false;
             if (!HomeTutorLive()) return false;
-            float dh = 118f * s;
+            float dh = GloveDh(s);
             var pivot = _gloveShown;
-            float bob = Mathf.Sin(Time.unscaledTime * 2.35f) * dh * 0.028f;
+            float bob = Mathf.Sin(Time.unscaledTime * 2.35f) * dh * 0.028f * (1f - _gloveDip);
             float rad = _gloveShownAng * Mathf.Deg2Rad;
             pivot += new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
             var rect = GloveRect(pivot, dh, _gloveMirror);
@@ -7826,6 +7952,70 @@ namespace FlockFive
         }
 
         Vector2 AvatarSafePoint(float s, float icon, int blocks, Vector2 look)
+        {
+            int seat = BestClearSeat(s, icon, blocks, look);
+            if (seat >= 0)
+            {
+                _avatarPerchIx = seat;
+                if (!_avatarGliding && (_avatarPos - _avatarPerches[seat]).sqrMagnitude <= 16f)
+                    _awayOn = false;
+                return _avatarPerches[seat];
+            }
+            return ParkAway(AvatarClearPoint(s, icon, blocks, look), icon);
+        }
+
+        // A seat that misses the caption and the glove. Stay put when the current pad is already clear.
+        int BestClearSeat(float s, float icon, int blocks, Vector2 look)
+        {
+            float pad = 6f * s;
+            if (blocks <= 0) return AvatarHomeSeat;
+            if (_avatarPerchIx >= 0 && _avatarPerchIx < _avatarPerches.Length
+                && !AvatarHits(_avatarPerches[_avatarPerchIx], icon, blocks, pad))
+                return _avatarPerchIx;
+            int best = -1;
+            int any = -1;
+            float bestScore = -1f;
+            float anyScore = -1f;
+            for (int i = 0; i < _avatarPerches.Length; i++)
+            {
+                var p = _avatarPerches[i];
+                if (AvatarHits(p, icon, blocks, pad)) continue;
+                float score = (p - look).sqrMagnitude;
+                if (!AvatarHitsRails(p, icon, s) && score > bestScore)
+                {
+                    bestScore = score;
+                    best = i;
+                }
+                if (score > anyScore)
+                {
+                    anyScore = score;
+                    any = i;
+                }
+            }
+            return best >= 0 ? best : any;
+        }
+
+        // No home pad is clear. Plant a limb so this spot is its tip seat, trailing off the nearer side.
+        Vector2 ParkAway(Vector2 spot, float icon)
+        {
+            bool fromRight = spot.x >= Screen.width * 0.5f;
+            const int seat = 4;
+            float px = _limbPx > 1f ? _limbPx : icon / AvatarBirdWorld();
+            var local = WorldBuilder.SeatLocal(seat, false, fromRight);
+            float offY = local.y + BranchView.RestLift;
+            var center = new Vector2(spot.x - local.x * px, spot.y + offY * px);
+            _awayOn = true;
+            _awayCenter = center;
+            _awayW = _limbW > 1f ? _limbW : px * 5.85f;
+            _awayH = _limbH > 1f ? _limbH : px * 2.57f;
+            _awayPx = px;
+            _awayFromRight = fromRight;
+            _avatarPerchIx = -1;
+            _awaySeat = LimbBird(center, px, fromRight, seat);
+            return _awaySeat;
+        }
+
+        Vector2 AvatarClearPoint(float s, float icon, int blocks, Vector2 look)
         {
             AvatarGap(s, icon, out float top, out float bot, out float left, out float right);
             bool wantLeft = look.x >= Screen.width * 0.5f;
@@ -7999,10 +8189,11 @@ namespace FlockFive
         static bool RailHits(Rect body, Rect rail) =>
             rail.width > 2f && rail.height > 2f && body.Overlaps(rail);
 
-        static Rect AvatarBody(Vector2 c, float icon, float pad)
+        Rect AvatarBody(Vector2 c, float icon, float pad)
         {
             float w = icon + pad * 2f;
-            return new Rect(c.x - w * 0.5f, c.y - w * 0.5f, w, w);
+            float h = w + _avatarTail;
+            return new Rect(c.x - w * 0.5f, c.y - icon * 0.5f - pad, w, h);
         }
 
         static Rect PadRect(Rect r, float p) =>
@@ -8357,6 +8548,7 @@ namespace FlockFive
         bool PokerHandAdReady()
         {
             if (_home != HomeFace.Poker || _splash) return false;
+            if (_pokerPageOn) return false;
             if (Ads.IsBusy || Ads.IsShowing) return false;
             if (TutorialGuideLive() || _hiveTutorOn || _tutorPause != 0) return false;
             if (_pokerIntro || _pokerIntroLive || _hiveIntro || _hiveIntroLive) return false;
@@ -8380,11 +8572,163 @@ namespace FlockFive
             _pokerAdRunning = false;
         }
 
+        // Editor captures and the stamp ceremony own the screen. The tutor waits them out.
+        bool PokerPageTutorBlocked()
+        {
+#if UNITY_EDITOR
+            if (_pokerPlayrun || EditorShotLive) return true;
+#endif
+            if (_pokerStamp || _pokerPayOpen) return true;
+            if (_pokerWinT >= 0f && _pokerWinT < WinDoneAt) return true;
+            return false;
+        }
+
+        void ArmPokerPageTutor()
+        {
+            if (_pokerPageOn || _pokerPageStep < 0) return;
+#if UNITY_EDITOR
+            if (_pokerPlayrun || EditorShotLive) return;
+#endif
+            if (PlayerPrefs.GetInt(CoachPokerPageKey, 0) != 0)
+            {
+                _pokerPageStep = -1;
+                return;
+            }
+            if (_pokerIntroLive) return;
+            _pokerPageOn = true;
+            _pokerPageStep = 1;
+            _pokerPageAge = 0f;
+            _gloveReady = false;
+            _coachFade = 0f;
+        }
+
+        void AdvancePokerTutor(int step)
+        {
+            if (_pokerPageStep == step) return;
+            bool hold = _pokerPageStep >= 3;
+            _pokerPageStep = step;
+            _pokerPageAge = 0f;
+            _glovePhase = 0f;
+            _tapSent = false;
+            if ((step >= 3) != hold)
+            {
+                _coachFade = 0f;
+                _coachLineHeld = false;
+            }
+        }
+
+        void FinishPokerPageTutor()
+        {
+            _pokerPageOn = false;
+            _pokerPageStep = -1;
+            _pokerTutorAimOk = false;
+            _gloveVis = false;
+            PlayerPrefs.SetInt(CoachPokerPageKey, 1);
+            PlayerPrefs.Save();
+        }
+
+        // True while this lesson owns the glove. Leaving the table does not stamp the flag.
+        bool TickPokerPageTutor(float dt)
+        {
+            if (!_pokerPageOn) return false;
+            if (_home != HomeFace.Poker)
+            {
+                _gloveVis = false;
+                return false;
+            }
+            if (_pokerPageStep >= 3 && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn)
+            {
+                FinishPokerPageTutor();
+                return true;
+            }
+            if (PokerPageTutorBlocked() || PokerMotionBusy() || !_pokerTutorAimOk)
+            {
+                _gloveVis = false;
+                _glovePhase = 0f;
+                _tapSent = false;
+                _pokerPageAge = 0f;
+                return true;
+            }
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            CoachGloveAt(_pokerTutorAim, dt, s);
+            bool parked = Vector2.Distance(_gloveTip, _gloveRest) > 32f * s;
+            if (parked) _pokerPageAge = 0f;
+            else _pokerPageAge += dt;
+            // Age is cleared on each advance, so a finished bet cycle cannot skip the card and Draw.
+            if (_pokerPageStep <= 1 && _pokerPageAge >= TapCycle)
+                AdvancePokerTutor(2);
+            if (_pokerPageStep == 2 && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt)
+                AdvancePokerTutor(3);
+            if (_pokerPageStep == 3 && _pokerPageAge >= TapCycle)
+                AdvancePokerTutor(4);
+            if (_pokerPageStep >= 4 && _pokerPageAge >= TapCycle)
+                FinishPokerPageTutor();
+            return true;
+        }
+
+        void NotePokerTutorAims(Rect actR, Rect row, float cardW, float gap)
+        {
+            if (!_pokerPageOn)
+            {
+                _pokerTutorAimOk = false;
+                return;
+            }
+            Vector2 aim;
+            if (_pokerPageStep <= 1)
+            {
+                // Plus sits against Deal. A right hand parked there covers Deal, so the
+                // bet poke lands on the minus chip instead.
+                var chip = _pokerMinusR.width > 2f ? _pokerMinusR : _pokerPlusR;
+                aim = TopTouch(chip.width > 2f ? chip : actR);
+            }
+            else if (_pokerPageStep == 3)
+                aim = TopTouch(PokerSeat(row, cardW, gap, 2));
+            else
+                aim = TopTouch(FlowerDisc(actR, 0f));
+            _pokerTutorAim = aim;
+            _pokerTutorAimOk = true;
+        }
+
+        void DrawPokerPageTutor(float s, float belowTitle, Rect row, Rect betR, Rect actR)
+        {
+            if (!_pokerPageOn || PokerPageTutorBlocked()) return;
+            string line = _pokerPageStep >= 3 ? PokerHoldLine : PokerBetLine;
+            var tab = PokerPayTabRect(belowTitle, s);
+            float h = Mathf.Clamp(52f * s, 44f, 68f);
+            float left = Mathf.Max(12f * s, Screen.safeArea.xMin + 8f);
+            float right = tab.x - 10f * s;
+            float y = belowTitle + 6f * s;
+            float w = right - left;
+            float cap = Mathf.Min(440f * s, Screen.width * 0.70f);
+            if (w > cap)
+            {
+                left += (w - cap) * 0.5f;
+                w = cap;
+            }
+            if (w < 160f * s)
+            {
+                w = Mathf.Min(cap, Screen.width - 24f * s);
+                left = (Screen.width - w) * 0.5f;
+                y = tab.yMax + 8f * s;
+            }
+            var want = new Rect(left, y, Mathf.Max(120f * s, w), h);
+            float x0 = Mathf.Min(row.x, Mathf.Min(betR.x, actR.x));
+            float y0 = Mathf.Min(row.y, Mathf.Min(betR.y, actR.y));
+            float x1 = Mathf.Max(row.xMax, Mathf.Max(betR.xMax, actR.xMax));
+            float y1 = Mathf.Max(row.yMax, Mathf.Max(betR.yMax, actR.yMax));
+            var play = new Rect(x0, y0, Mathf.Max(0f, x1 - x0), Mathf.Max(0f, y1 - y0));
+            want = NudgeCaption(line, want, s, play);
+            DrawSplashIntroLine(line, want, s);
+            DrawCoachGlove(s);
+        }
+
         void DrawPokerPage()
         {
             float s = Mathf.Max(Screen.height / 720f, 1f);
             DrawHomeWash(0.28f);
             BirdPoker.Boot();
+            ArmPokerPageTutor();
 
             var safe = Screen.safeArea;
             float top = TopHud();
@@ -8540,6 +8884,8 @@ namespace FlockFive
                     TryPokerDeal();
                 }
             }
+            NotePokerTutorAims(actR, rowBox, cardW, gap);
+            DrawPokerPageTutor(s, below, rowBox, betR, actR);
             DrawPokerWinFanfare(betR, actR, s);
 
             // Stamp ceremony above everything; else pay-table overlay / jewel tab on top.
@@ -9124,46 +9470,16 @@ namespace FlockFive
             DrawInkStamp(stamp, rot, Mathf.Clamp01(stampU * 1.5f) * a, true);
         }
 
-        static GUIStyle _pokerPurseStyle;
-        static GUIContent _pokerPurseContent;
         static GUIStyle _pokerPayStyle;
 
         void DrawPokerPurse(Rect back, float top, float s)
         {
-            string coins = Money.Format(Purse.Coins);
-            // Same diameter as the Back medallion, sharing its vertical center.
-            int px = Mathf.Max(16, Mathf.RoundToInt(22f * Mathf.Max(1f, back.height / 70f)));
             float icon = back.height;
-            float gap = 6f * s;
-            if (_pokerPurseStyle == null)
-            {
-                _pokerPurseStyle = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleRight,
-                    wordWrap = false,
-                    clipping = TextClipping.Clip
-                };
-            }
-            if (_pokerPurseContent == null) _pokerPurseContent = new GUIContent();
-            _pokerPurseContent.text = coins;
-            var st = _pokerPurseStyle;
             float right = Screen.width - Mathf.Max(12f, Screen.width - Screen.safeArea.xMax + 10f);
             float y = back.y + (back.height - icon) * 0.5f;
             if (y < top) y = top;
-            st.fontSize = px;
-            float textW = st.CalcSize(_pokerPurseContent).x + 8f * s;
-            float maxLabel = right - icon - gap - (back.xMax + 8f * s);
-            if (maxLabel < 28f) maxLabel = 28f;
-            float labelW = Mathf.Min(Mathf.Max(textW, px * 1.2f), maxLabel);
             var ir = new Rect(right - icon, y, icon, icon);
-            var coinR = new Rect(ir.x - gap - labelW, y, labelW, icon);
-            int hi = Mathf.Max(16, px);
-            st.fontSize = FitFont(st, coins, coinR.width * 0.92f, coinR.height * 0.86f, Mathf.Min(14, hi), hi);
-            StampOutlined(coinR, coins, st, new Color(0.42f, 0.26f, 0.08f), 2, 1);
-            var coinSpr = SpriteCatalog.Coin;
-            if (coinSpr != null && coinSpr.texture != null)
-                DrawIdleCoin(ir, coinSpr.texture);
+            DrawCoinCluster(ir, s);
         }
 
         const float DealGatherT = 0.32f;
@@ -10755,6 +11071,7 @@ namespace FlockFive
 
         void DrawPokerKeepHint(Rect row, float s)
         {
+            if (_pokerPageOn) return;
             if (!_pokerKeepHint) return;
             if (!_pokerFan || BirdPoker.PhaseNow != BirdPoker.Phase.Dealt) return;
             if (_pokerMotion != PokerMotion.None) return;
@@ -10934,6 +11251,8 @@ namespace FlockFive
             var plus = new Rect(amount.xMax + gap, minus.y, side, side);
             if (plus.xMax > slot.xMax)
                 plus.x = slot.xMax - plus.width;
+            _pokerMinusR = minus;
+            _pokerPlusR = plus;
 
             var led = new GUIStyle(GUI.skin.label)
             {
@@ -11032,6 +11351,12 @@ namespace FlockFive
             var safe = Screen.safeArea;
             float top = TopHud();
             var back = BackMedalRect(s, top);
+            {
+                float icon = Mathf.Clamp(back.height * 0.86f, 36f * s, back.height);
+                float right = Screen.width - Mathf.Max(12f, Screen.width - safe.xMax + 10f);
+                var ir = new Rect(right - icon, back.center.y - icon * 0.5f, icon, icon);
+                DrawCoinCluster(ir, s);
+            }
             if (_hiveInspect < 0 && DrawBackMedal(back))
             {
                 ClearHivePageFresh(_hivePage);
@@ -11458,29 +11783,20 @@ namespace FlockFive
             if (!_hiveTutorOn) return;
             float fade = _hiveTutorStep >= 4 ? 1f - Mathf.Clamp01(_hiveTutorT / 0.45f) : 1f;
             if (fade < 0.02f) return;
-            float y = card.y + card.height * 0.46f;
-            bool fromRight = card.center.x < Screen.width * 0.5f;
-            bool mirror = !fromRight;
+            var aim = TopTouch(card);
+            bool mirror = aim.x >= Screen.width * 0.5f;
             float ang = ClampUpright(mirror);
-            float outward = fromRight ? 1f : -1f;
-            var safe = CoachSafeGui(8f * s);
-            float cuff = fromRight ? safe.xMax : safe.xMin;
+            var away = new Vector2(mirror ? -1f : 1f, 0f);
+            var rest = aim + away * (GloveDh(s) * 0.85f) + new Vector2(0f, -GloveRise(s));
             float travel = _hiveTutorStep == 0 ? Mathf.Clamp01(_hiveTutorT / 0.48f) : 1f;
             travel = travel * travel * (3f - 2f * travel);
-            // Cuff on the screen edge, index toward the card. The poke stays short
-            // so the hand does not travel across the face.
-            float gloveBack = 0.90f * 118f * s;
-            float tip = cuff - outward * (gloveBack + 14f * s * travel);
-            float mid = card.center.x;
-            if (fromRight) { if (tip < mid) tip = mid; }
-            else if (tip > mid) tip = mid;
-            var pivot = new Vector2(tip, y);
-            var aim = new Vector2(mid, y);
+            TapArc(rest, aim, away, s, travel, out var pivot, out _, mirror);
             float dip = 0f;
             if (_hiveTutorStep == 0 && _hiveTutorT > 0.40f)
                 dip = Mathf.Sin(Mathf.Clamp01((_hiveTutorT - 0.40f) / 0.22f) * Mathf.PI);
-            SeatGlove(ref pivot, ref ang, aim, s, ref mirror, dip);
-            DrawGloveAt(pivot, ang, 118f * s, fade, dip, mirror);
+            if (travel < 0.84f)
+                SeatGlove(ref pivot, ref ang, aim, s, ref mirror, dip);
+            DrawGloveAt(pivot, ang, GloveDh(s), fade, dip, mirror);
         }
 
         void DrawFlipHint(float y, float s, float alpha)
@@ -12974,7 +13290,7 @@ namespace FlockFive
         Vector2 GiftWatchAim(float s)
         {
             GiftCardPlaced(s, out _, out var flower);
-            return FlowerDisc(flower, 0f).center;
+            return TopTouch(FlowerDisc(flower, 0f));
         }
 
         // Same stack as GiftCardLayout. The first bonus look drops the card so the

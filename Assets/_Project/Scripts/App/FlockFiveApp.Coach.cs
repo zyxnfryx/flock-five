@@ -6,9 +6,9 @@ namespace FlockFive
     // branch the step wants, and one gloved hand. The hand points sideways. A
     // target on the left half is a right hand from the right, pointing left. A
     // target on the right half mirrors the sprite into a left hand from the left,
-    // pointing right. The cuff sits toward the screen edge, the index aims at the
-    // target, and the tap is a short poke along that line so the hand stays off
-    // the bird. The pose clock is unscaled, so GamePause does not freeze it.
+    // pointing right. The cuff sits off to that side and above the target. The
+    // tap lifts, arcs over the top, and the fingertip descends onto the target.
+    // The pose clock is unscaled, so GamePause does not freeze it.
     // Other taps wait. One glove on screen at a time.
     public sealed partial class FlockFiveApp
     {
@@ -38,7 +38,31 @@ namespace FlockFive
         const float PestCueGap = 1.05f;
         // One outline for every coach line. StampCoach is the only draw path.
         const int CoachOutlinePx = 6;
-        // Poke along the finger, soft curl, draw back, short pause. 0.56+0.26+0.22+0.16 = 1.20s.
+        // About 20% under the old 118px lesson hand.
+        const float GlovePx = 94.4f;
+        static float GloveDh(float s) => GlovePx * s;
+        // How far above the target the wind-up perch sits, in GUI pixels (y down).
+        static float GloveRise(float s) => Mathf.Max(28f * s, GloveDh(s) * 0.34f);
+        // Extra height of the apex above that perch, so the path rises before it falls.
+        static float GloveArch(float s) => Mathf.Max(18f * s, GloveDh(s) * 0.20f);
+
+        static float EaseOutCubic(float u)
+        {
+            u = Mathf.Clamp01(u);
+            float inv = 1f - u;
+            return 1f - inv * inv * inv;
+        }
+
+        // Top of a round control, slightly inside the disc so the tip is on the face
+        // and the palm (which sits above the pivot) stays off the label.
+        static Vector2 TopTouch(Rect r)
+        {
+            if (r.width < 2f || r.height < 2f) return r.center;
+            float inset = Mathf.Min(10f, r.height * 0.18f);
+            return new Vector2(r.center.x, r.y + inset);
+        }
+
+        // Poke along the arc, soft curl, draw back, short pause. 0.56+0.26+0.22+0.16 = 1.20s.
         const float TapHover = 0.56f;
         const float TapPress = 0.26f;
         const float TapLift = 0.22f;
@@ -324,6 +348,7 @@ namespace FlockFive
         {
             if (_gloveWiggle > 0f)
                 _gloveWiggle = Mathf.Max(0f, _gloveWiggle - Time.unscaledDeltaTime / 0.28f);
+            TickAdopt();
             TickHivePop();
             TickHiveIntro();
             TickPokerIntro();
@@ -342,7 +367,7 @@ namespace FlockFive
             if (_splash || _board == null || _garden.Cam == null)
             {
                 // Home lessons keep the tap cycle. A full release would restart it every frame.
-                if ((_hiveIntro || _pokerIntro || _dailyIntro || _welcomeGlove) && _splash) return;
+                if ((_hiveIntro || _pokerIntro || _dailyIntro || _welcomeGlove || _adoptLive) && _splash) return;
                 CoachRelease();
                 return;
             }
@@ -395,7 +420,7 @@ namespace FlockFive
                 _cueForce = true;
                 _cueGift = true;
                 _cueBranch = g;
-                _cueLine = "Stuck? Tap the gift branch for a bonus spot.";
+                CueLine("Stuck? Tap the gift branch for a bonus spot.");
                 return;
             }
 
@@ -430,7 +455,7 @@ namespace FlockFive
                 _cueHand = true;
                 _cueForce = true;
                 _cueBranch = _coachFrom;
-                _cueLine = "Tap a branch to pick up its top birds.";
+                CueLine("Tap a branch to pick up its top birds.");
                 return;
             }
 
@@ -442,7 +467,7 @@ namespace FlockFive
                     if (b != _sel && !Locked(b) && !GiftLocked(b) && _board.CanMove(_sel, b, out _)) dest = b;
             if (dest < 0)
             {
-                _cueLine = "Those birds have nowhere to go yet. Try another branch.";
+                CueLine("Those birds have nowhere to go yet. Try another branch.");
                 CoachHideGlow();
                 _gloveReady = false;
                 return;
@@ -452,7 +477,7 @@ namespace FlockFive
             _cueHand = true;
             _cueForce = true;
             _cueBranch = dest;
-            _cueLine = "Now tap a branch with the same color on top, or an empty one.";
+            CueLine("Now tap a branch with the same color on top, or an empty one.");
         }
 
         bool CoachReject(Vector2 world)
@@ -517,41 +542,49 @@ namespace FlockFive
             return view != null;
         }
 
+        // Body center of the top bird. The seat transform sits under the sprite.
+        static bool TipBody(BranchView view, int seat, out Vector3 world)
+        {
+            world = default;
+            if (view == null || view.Birds == null) return false;
+            if ((uint)seat >= (uint)view.Birds.Length) return false;
+            var sr = view.Birds[seat];
+            if (sr == null || !sr.enabled || sr.sprite == null) return false;
+            world = sr.bounds.center;
+            return true;
+        }
+
+        static Vector3 SeatOrWood(BranchView view, int seat, Vector3 wood)
+        {
+            if (view.Seats != null && (uint)seat < (uint)view.Seats.Length && view.Seats[seat] != null)
+                return view.SeatWorld(seat);
+            return wood + Vector3.up * 0.4f;
+        }
+
         void CoachFocus(BranchView view, out Vector3 aim, out Vector3 glow, out float dx, out float dy)
         {
             Vector3 wood = view.transform.position;
             Vector3 focus = wood + Vector3.up * 0.4f;
             var st = _board.Branches[_cueBranch];
             int run = st.TipRun();
-            if (_leafIntro && st.TipLocked && st.Count > 0 && view.Seats != null)
+            if (_leafIntro && st.TipLocked && st.Count > 0)
             {
-                Vector3 acc = Vector3.zero;
-                int n = 0;
                 int tip = st.Count - 1;
-                for (int seat = 0; seat <= tip && seat < view.Seats.Length; seat++)
-                {
-                    if (view.Seats[seat] == null) continue;
-                    acc += view.SeatWorld(seat);
-                    n++;
-                }
-                if (n > 0) focus = acc / n + Vector3.up * 0.95f;
+                if (!TipBody(view, tip, out focus))
+                    focus = SeatOrWood(view, tip, wood);
             }
             else if (!_cueGift && st.Count > 0 && run > 0)
             {
                 int tip = st.Count - 1;
-                int a = tip - run + 1;
-                Vector3 acc = Vector3.zero;
-                int n = 0;
-                for (int s = a; s <= tip; s++)
-                {
-                    if (view.Seats[s] == null) continue;
-                    acc += view.SeatWorld(s);
-                    n++;
-                }
-                if (n > 0) focus = acc / n + Vector3.up * 0.42f;
+                if (!TipBody(view, tip, out focus))
+                    focus = SeatOrWood(view, tip, wood);
             }
             else if (_cueGift && view.Sign != null && view.Sign.gameObject.activeInHierarchy)
+            {
                 focus = view.Sign.position;
+                var sign = view.Sign.GetComponent<SpriteRenderer>();
+                if (sign != null && sign.sprite != null) focus = sign.bounds.center;
+            }
 
             float minX = Mathf.Min(wood.x, focus.x);
             float maxX = Mathf.Max(wood.x, focus.x);
@@ -583,12 +616,27 @@ namespace FlockFive
             _coachGlow.enabled = false;
         }
 
+        // A new sentence fades back in. The same sentence, repeated each frame, does not.
+        void CueLine(string text)
+        {
+            if (_cueLine == text) return;
+            _cueLine = text;
+            _coachFade = 0f;
+            _coachLineHeld = false;
+        }
+
         void CoachPlace()
         {
             float dt = Time.unscaledDeltaTime;
             if (_coachGlowKick > 0f)
                 _coachGlowKick = Mathf.Max(0f, _coachGlowKick - dt / 0.24f);
             CoachTickRipples(dt);
+            if (_adoptLive && _splash)
+            {
+                float adoptS = Mathf.Max(Screen.height / 720f, 1f);
+                AdoptPlaceGlove(dt, adoptS);
+                return;
+            }
             if (_welcomeGlove)
             {
                 if (!_splash || _home != HomeFace.Splash || VipOffer.IsOpen || VipRailGoal() < 0.5f)
@@ -600,8 +648,8 @@ namespace FlockFive
                 float welcomeS = Mathf.Max(Screen.height / 720f, 1f);
                 var vipBox = SplashNoAdsRect();
                 var vipSeat = SplashRailSeat(RailVip);
-                Vector2 vipAim = vipBox.width > 12f ? vipBox.center : vipSeat.center;
-                _coachFade = 1f;
+                Vector2 vipAim = vipBox.width > 12f ? TopTouch(vipBox) : TopTouch(vipSeat);
+                _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
                 CoachGloveAt(vipAim, dt, welcomeS);
                 if (Time.unscaledTime >= _welcomeGloveUntil)
                 {
@@ -622,15 +670,15 @@ namespace FlockFive
                 }
                 CoachHideGlow();
                 CoachHideRipples();
-                _coachFade = 1f;
                 float handS = Mathf.Max(Screen.height / 720f, 1f);
+                _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
                 CoachGloveAt(GiftWatchAim(handS), dt, handS);
                 return;
             }
             if (_hiveIntroLive || _hiveLevelLive)
             {
                 float handS = Mathf.Max(Screen.height / 720f, 1f);
-                Vector2 hiveAim = _splash ? SplashHiveRect().center : LevelHiveAim();
+                Vector2 hiveAim = _splash ? TopTouch(SplashHiveRect()) : LevelHiveAim();
                 CoachGloveAt(hiveAim, dt, handS);
                 return;
             }
@@ -639,7 +687,7 @@ namespace FlockFive
                 float handS = Mathf.Max(Screen.height / 720f, 1f);
                 var box = SplashPokerRect();
                 var seat = SplashRailSeat(RailPoker);
-                Vector2 pokerAim = box.width > 12f ? box.center : seat.center;
+                Vector2 pokerAim = box.width > 12f ? TopTouch(box) : TopTouch(seat);
                 CoachGloveAt(pokerAim, dt, handS);
                 return;
             }
@@ -654,7 +702,7 @@ namespace FlockFive
                 {
                     var box = SplashDailyRect();
                     var seat = SplashRailSeat(RailDaily);
-                    dailyAim = box.width > 12f ? box.center : seat.center;
+                    dailyAim = box.width > 12f ? TopTouch(box) : TopTouch(seat);
                 }
                 if (onClaim != _dailyGloveOnClaim)
                 {
@@ -668,6 +716,7 @@ namespace FlockFive
                     OpenDailyCard();
                 return;
             }
+            if (TickPokerPageTutor(dt)) return;
             if (_pestCue != 0)
             {
                 PlacePestGlove(dt);
@@ -701,7 +750,7 @@ namespace FlockFive
             _coachGlow.enabled = true;
             _coachGlow.transform.position = glow;
             _coachGlow.transform.localScale = new Vector3(dx * breathe * spread * pop, dy * breathe * spread * pop, 1f);
-            float a = (0.40f + 0.28f * pulse + 0.62f * kick) * _coachFade;
+            float a = (0.40f + 0.28f * pulse + 0.62f * kick) * EaseOutCubic(_coachFade);
             if (a > 1f) a = 1f;
             _coachGlow.color = new Color(1f, 0.91f, 0.46f, a);
 
@@ -710,7 +759,7 @@ namespace FlockFive
             {
                 _coachGlowKick = 1f;
                 CoachSpawnRipple(_cueAimWorld);
-                float flash = (0.40f + 0.28f * pulse + 0.62f) * _coachFade;
+                float flash = (0.40f + 0.28f * pulse + 0.62f) * EaseOutCubic(_coachFade);
                 if (flash > 1f) flash = 1f;
                 _coachGlow.transform.localScale = new Vector3(dx * breathe * spread * 1.12f, dy * breathe * spread * 1.12f, 1f);
                 _coachGlow.color = new Color(1f, 0.91f, 0.46f, flash);
@@ -724,7 +773,7 @@ namespace FlockFive
             PlayerPrefs.SetInt(CoachAdHandKey, 1);
             PlayerPrefs.Save();
             _adHand = true;
-            _coachFade = 1f;
+            _coachFade = 0f;
             _gloveReady = false;
             _gloveWiggle = 0f;
             _glovePhase = 0f;
@@ -752,75 +801,83 @@ namespace FlockFive
         }
 
         // Shared pose for every glove: tap, hive, daily, gift, hawk, leaves, sparrow.
-        // aimGui is GUI space, y down. True on the frame the poke lands.
+        // aimGui is GUI space, y down. True on the frame the fingertip lands.
+        // The perch eases in from off-screen (or from wherever it was). The tap
+        // stays parked until that glide arrives, then arcs over the top and down.
         bool CoachGloveAt(Vector2 aimGui, float dt, float s)
         {
             _cueAimGui = aimGui;
             CoachAimAway(_cueAimGui, s, out var away, out float gap);
-            var rest = _cueAimGui + away * gap;
-            // Side is the screen half only. A mostly vertical vector must not
-            // turn the finger down or swap which hand is showing.
-            bool prevMirror = _gloveMirror;
+            var rest = _cueAimGui + away * gap + new Vector2(0f, -GloveRise(s));
             _gloveMirror = _cueAimGui.x >= Screen.width * 0.5f;
             float ang = ClampUpright(_gloveMirror);
             _gloveRest = rest;
             _gloveRestAng = ang;
-            // Same branch keeps the glide. Crossing to the hop's other branch takes the
-            // tap in place so the hand does not slide across the flock. The phase clock stays put.
-            bool swap = _gloveReady && _coach && !_cueGift && !_adHand
-                && _gloveBranch >= 0 && _cueBranch >= 0 && _gloveBranch != _cueBranch
-                && (_gloveBranch == _coachFrom || _gloveBranch == _coachTo)
-                && (_cueBranch == _coachFrom || _cueBranch == _coachTo);
-            // Crossing the screen midline swaps right hand for left. Snap, or the
-            // damp spins the finger through straight up.
-            bool handFlip = _gloveReady && prevMirror != _gloveMirror;
-            if (!_gloveReady || swap || handFlip)
+            if (!_gloveReady)
             {
-                _gloveTip = rest;
+                float edgeX = away.x >= 0f ? Screen.width + GloveDh(s) : -GloveDh(s);
+                _gloveTip = new Vector2(edgeX, rest.y);
                 _gloveVel = Vector2.zero;
                 _gloveAway = away;
                 _gloveAng = ang;
                 _gloveAngVel = 0f;
-                if (!_gloveReady)
-                {
-                    _glovePhase = 0f;
-                    _gloveDip = 0f;
-                    _tapSent = false;
-                }
+                _glovePhase = 0f;
+                _gloveDip = 0f;
+                _tapSent = false;
                 _gloveReady = true;
                 _gloveBranch = _cueBranch;
             }
             else
             {
-                _gloveTip = Vector2.SmoothDamp(_gloveTip, rest, ref _gloveVel, 0.36f, Mathf.Infinity, dt);
+                _gloveTip = Vector2.SmoothDamp(_gloveTip, rest, ref _gloveVel, 0.40f, Mathf.Infinity, dt);
                 _gloveAway = Vector2.Lerp(_gloveAway, away, 1f - Mathf.Exp(-dt / 0.28f));
                 if (_gloveAway.sqrMagnitude > 0.0001f) _gloveAway.Normalize();
-                _gloveAng = Mathf.SmoothDampAngle(_gloveAng, ang, ref _gloveAngVel, 0.36f, Mathf.Infinity, dt);
+                _gloveAng = ang;
+                _gloveAngVel = 0f;
                 if (_cueBranch >= 0) _gloveBranch = _cueBranch;
             }
 
+            bool parked = Vector2.Distance(_gloveTip, rest) > 32f * s;
             float pressAt = TapHover + TapPress;
-            float prevPhase = _glovePhase;
-            float nextPhase = prevPhase + dt;
-            bool fire = _coachFade > 0.25f && !_tapSent && prevPhase < pressAt && nextPhase >= pressAt;
-            if (nextPhase >= TapCycle)
+            bool fire = false;
+            float posePhase = 0f;
+            float travel = 0f;
+            if (parked)
             {
-                nextPhase -= TapCycle;
-                if (nextPhase < 0f) nextPhase = 0f;
+                _glovePhase = 0f;
+                _gloveDip = 0f;
                 _tapSent = false;
             }
-            _glovePhase = nextPhase;
-            if (fire) _tapSent = true;
-            // The landing frame is the end of the poke, where the ripple is sent.
-            float posePhase = fire ? pressAt : _glovePhase;
-            _gloveDip = TapDip(posePhase);
-            float travel = TapTravel(posePhase);
+            else
+            {
+                float prevPhase = _glovePhase;
+                float nextPhase = prevPhase + dt;
+                fire = _coachFade > 0.25f && !_tapSent && prevPhase < pressAt && nextPhase >= pressAt;
+                if (nextPhase >= TapCycle)
+                {
+                    nextPhase -= TapCycle;
+                    if (nextPhase < 0f) nextPhase = 0f;
+                    _tapSent = false;
+                }
+                _glovePhase = nextPhase;
+                if (fire) _tapSent = true;
+                posePhase = fire ? pressAt : _glovePhase;
+                _gloveDip = TapDip(posePhase);
+                travel = TapTravel(posePhase);
+            }
             TapArc(_gloveTip, _cueAimGui, _gloveAway, s, travel, out var arcPos, out _, _gloveMirror);
             float wig = Mathf.Sin(Time.unscaledTime * 46f) * 7f * _gloveWiggle;
             var axis = _gloveAway.sqrMagnitude > 0.0001f ? _gloveAway.normalized : away;
             _gloveShown = arcPos - axis * wig * (1f - travel);
             _gloveShownAng = ang;
             SeatGlove(ref _gloveShown, ref _gloveShownAng, _cueAimGui, s, ref _gloveMirror, _gloveDip);
+            // Seat may slide the cuff. At the tap the pivot is the aim, so the
+            // drawn fingertip (bob is zero while dipped) is the target.
+            if (travel > 0.84f)
+            {
+                float pin = Mathf.SmoothStep(0f, 1f, (travel - 0.84f) / 0.16f);
+                _gloveShown = Vector2.Lerp(_gloveShown, arcPos, pin);
+            }
             _gloveShownAng = ClampUpright(_gloveMirror);
             _gloveVis = true;
             return fire;
@@ -838,18 +895,17 @@ namespace FlockFive
             float ang = ClampUpright(mirror);
             float floor = SideGap(s);
             var safe = CoachSafeGui(12f * s);
-            float dh = 118f * s;
+            float dh = GloveDh(s);
+            var rise = new Vector2(0f, -GloveRise(s));
             gap = floor;
             float clear = -1f;
             for (int i = 0; i < 8; i++)
             {
                 float tryGap = floor + 20f * s * i;
-                var rest = aim + away * tryGap;
-                float poke = TapReach(tryGap, s);
-                var near = rest - away * poke;
-                bool hits = GloveHitsBirds(rest, ang, s, mirror) || GloveHitsBirds(near, ang, s, mirror)
-                    || GloveHitsPest(rest, ang, s, mirror) || GloveHitsPest(near, ang, s, mirror);
-                bool fits = GloveFits(rest, ang, dh, 0f, mirror, safe) && GloveFits(near, ang, dh, 0f, mirror, safe);
+                // The wind-up perch only. The tap itself is supposed to touch the target.
+                var rest = aim + away * tryGap + rise;
+                bool hits = GloveHitsBirds(rest, ang, s, mirror) || GloveHitsPest(rest, ang, s, mirror);
+                bool fits = GloveFits(rest, ang, dh, 0f, mirror, safe);
                 if (!hits)
                 {
                     clear = tryGap;
@@ -885,7 +941,7 @@ namespace FlockFive
         {
             var tex = CoachGloveTex();
             if (tex == null) return false;
-            float dh = 118f * s;
+            float dh = GloveDh(s);
             var rect = GloveRect(pivot, dh, mirror);
             if (!RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 8f * s, out var box)) return false;
             return CoachBirdsBlock(box, 0f);
@@ -914,7 +970,7 @@ namespace FlockFive
             float gx1 = (a.x > c.x ? a.x : c.x) + pad;
             float gy0 = Screen.height - (a.y > c.y ? a.y : c.y) - pad;
             float gy1 = Screen.height - (a.y < c.y ? a.y : c.y) + pad;
-            float dh = 118f * s;
+            float dh = GloveDh(s);
             var rect = GloveRect(pivot, dh, mirror);
             if (!RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 6f * s, out var box)) return false;
             return box.xMax >= gx0 && box.xMin <= gx1 && box.yMax >= gy0 && box.yMin <= gy1;
@@ -959,22 +1015,16 @@ namespace FlockFive
             return 0f;
         }
 
-        // Short travel toward the aim along the finger. Stays inside the side gap
-        // so the tip points at the target without landing on it.
-        static float TapReach(float gap, float s)
-        {
-            if (gap < 1f) return 0f;
-            return Mathf.Min(18f * s, gap * 0.42f);
-        }
-
-        // Straight poke from the side hold toward the aim. ang stays horizontal.
+        // Over the top and down. t = 0 is the perch, t = 1 is exactly the aim
+        // (the arc offset is zero on the tap). Arrival is straight down in GUI y.
         static void TapArc(Vector2 rest, Vector2 aim, Vector2 away, float s, float t,
             out Vector2 pos, out float ang, bool mirror = false)
         {
-            if (away.sqrMagnitude < 0.0001f) away = new Vector2(1f, 0f);
-            else away.Normalize();
-            float poke = TapReach(Vector2.Distance(rest, aim), s);
-            pos = rest - away * (poke * Mathf.Clamp01(t));
+            t = Mathf.Clamp01(t);
+            float apexY = Mathf.Min(rest.y, aim.y) - GloveArch(s);
+            var ctrl = new Vector2(aim.x, apexY);
+            float u = 1f - t;
+            pos = rest * (u * u) + ctrl * (2f * u * t) + aim * (t * t);
             ang = ClampUpright(mirror);
         }
 
@@ -1069,7 +1119,7 @@ namespace FlockFive
             // The caller picked the hand from the screen half. Sliding to fit
             // must not retarget the finger, or a high branch turns it straight down.
             ang = ClampUpright(mirror);
-            float dh = 118f * s;
+            float dh = GloveDh(s);
             var safe = CoachSafeGui(12f * s);
             if (GloveFits(pivot, ang, dh, dip, mirror, safe)) return;
             for (int n = 0; n < 4; n++)
@@ -1102,7 +1152,7 @@ namespace FlockFive
                 Mathf.Max(Vector2.Distance(c, new Vector2(0f, sh)), Vector2.Distance(c, new Vector2(sw, sh))));
             float half = Mathf.Max(_cueHolePx / 0.28f, reach / 0.62f);
             float side = half * 2f;
-            GUI.color = new Color(0f, 0f, 0f, 0.34f * _coachFade);
+            GUI.color = new Color(0f, 0f, 0f, 0.34f * EaseOutCubic(_coachFade));
             GUI.DrawTexture(new Rect(c.x - half, c.y - half, side, side), tex, ScaleMode.StretchToFill, true);
             GUI.color = Color.white;
         }
@@ -1229,9 +1279,10 @@ namespace FlockFive
                 _coachSizedH = r.height;
             }
             st.fontSize = _coachSizedPx;
-            DrawCoachPanel(r, _coachFade);
+            float fade = EaseOutCubic(_coachFade);
+            DrawCoachPanel(r, fade);
             int black = Mathf.Clamp(Mathf.CeilToInt(CoachOutlinePx * s), CoachOutlinePx, 8);
-            StampOutlined(r, text, st, new Color(1f, 0.98f, 0.90f, _coachFade), 0, black);
+            StampOutlined(r, text, st, new Color(1f, 0.98f, 0.90f, fade), 0, black);
         }
 
         // Highest band that clears the glove's poke and the lifted birds' hop.
@@ -1281,7 +1332,7 @@ namespace FlockFive
             {
                 AddGlove(_gloveShown, _gloveShownAng, s, pad, _gloveMirror);
                 AddArcPose(0f, s, pad);
-                AddArcPose(0.22f, s, pad);
+                AddArcPose(0.35f, s, pad);
                 AddArcPose(0.55f, s, pad);
                 AddArcPose(1f, s, pad);
             }
@@ -1318,7 +1369,7 @@ namespace FlockFive
             if (_blockN >= _blocks.Length) return;
             var tex = CoachGloveTex();
             if (tex == null) return;
-            float dh = 118f * s;
+            float dh = GloveDh(s);
             var rect = GloveRect(pivot, dh, mirror);
             if (!RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, pad, out var box)) return;
             _blocks[_blockN].X0 = box.xMin;
@@ -1450,7 +1501,7 @@ namespace FlockFive
         void DrawCoachGlove(float s)
         {
             if (!_gloveVis || _coachFade < 0.03f) return;
-            DrawGloveAt(_gloveShown, _gloveShownAng, 118f * s, _coachFade, _gloveDip, _gloveMirror);
+            DrawGloveAt(_gloveShown, _gloveShownAng, GloveDh(s), EaseOutCubic(_coachFade), _gloveDip, _gloveMirror);
         }
 
         // Unmirrored rect keeps the fingertip pixel on the pivot. mirror is for the
@@ -1468,8 +1519,9 @@ namespace FlockFive
             var tex = CoachGloveCurl(dip);
             if (tex == null) return;
             ang = ClampUpright(mirror);
-            // Small poke along the finger, not a vertical bob. Unscaled so GamePause does not freeze it.
-            float bob = Mathf.Sin(Time.unscaledTime * 2.35f) * dh * 0.028f;
+            // Small poke along the finger, not a vertical bob. Zero at full dip so the
+            // tap frame's fingertip is the pivot. Unscaled so GamePause does not freeze it.
+            float bob = Mathf.Sin(Time.unscaledTime * 2.35f) * dh * 0.028f * (1f - dip);
             float rad = ang * Mathf.Deg2Rad;
             pivot += new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
             float dw = dh * (tex.width / (float)tex.height);
@@ -1504,7 +1556,7 @@ namespace FlockFive
         void DrawRestGlove(float s)
         {
             if (!_restVis || _coachFade < 0.03f) return;
-            DrawGloveAt(_restShown, _restAng, 118f * s, _coachFade, TapDip(_glovePhase), _restMirror);
+            DrawGloveAt(_restShown, _restAng, GloveDh(s), EaseOutCubic(_coachFade), TapDip(_glovePhase), _restMirror);
         }
 
         // Perch the tap hand uses, in GUI space. Matches the lesson focus, not the gift sign.
@@ -1524,16 +1576,8 @@ namespace FlockFive
             if (st.Count > 0 && run > 0)
             {
                 int tip = st.Count - 1;
-                int a = tip - run + 1;
-                Vector3 acc = Vector3.zero;
-                int n = 0;
-                for (int i = a; i <= tip; i++)
-                {
-                    if ((uint)i >= (uint)view.Seats.Length || view.Seats[i] == null) continue;
-                    acc += view.SeatWorld(i);
-                    n++;
-                }
-                if (n > 0) focus = acc / n + Vector3.up * 0.42f;
+                if (!TipBody(view, tip, out focus))
+                    focus = SeatOrWood(view, tip, view.transform.position);
             }
             var sp = cam.WorldToScreenPoint(focus);
             if (sp.z < 0f) return false;
@@ -1554,7 +1598,11 @@ namespace FlockFive
             if (view == null) return false;
             Vector3 focus = view.transform.position + Vector3.up * 0.4f;
             if (view.Sign != null && view.Sign.gameObject.activeInHierarchy)
+            {
                 focus = view.Sign.position;
+                var sign = view.Sign.GetComponent<SpriteRenderer>();
+                if (sign != null && sign.sprite != null) focus = sign.bounds.center;
+            }
             var sp = cam.WorldToScreenPoint(focus);
             if (sp.z < 0f) return false;
             gui = new Vector2(sp.x, Screen.height - sp.y);
@@ -1584,13 +1632,112 @@ namespace FlockFive
                 DrawCoachGlove(s);
         }
 
+        // Move a caption off a dialog. Above, then below, then a thin strip in the free gap.
+        static Rect ClearOfDialog(Rect line, Rect dialog, float s)
+        {
+            if (dialog.width < 8f || dialog.height < 8f || !line.Overlaps(dialog)) return line;
+            float gap = 10f * s;
+            float above = dialog.y - gap - line.height;
+            if (above >= 4f)
+            {
+                line.y = above;
+                return line;
+            }
+            float below = dialog.yMax + gap;
+            if (below + line.height <= Screen.height - 4f)
+            {
+                line.y = below;
+                return line;
+            }
+            float room = dialog.y - gap - 4f;
+            if (room > 28f * s)
+            {
+                line.y = 4f;
+                line.height = Mathf.Max(28f * s, room - 4f);
+                return line;
+            }
+            float roomB = Screen.height - 4f - below;
+            if (roomB > 28f * s)
+            {
+                line.y = below;
+                line.height = roomB;
+            }
+            return line;
+        }
+
+        // Held so a caption does not jump every frame. The glove path and the fingertip
+        // target are both in the block list.
+        Rect NudgeCaption(string key, Rect want, float s, Rect obstacle = default)
+        {
+            CoachFillBlocks(s);
+            AddAimBlock(s);
+            if (obstacle.width > 2f && obstacle.height > 2f && _blocks != null && _blockN < _blocks.Length)
+            {
+                float p = 6f * s;
+                _blocks[_blockN].X0 = obstacle.xMin - p;
+                _blocks[_blockN].Y0 = obstacle.yMin - p;
+                _blocks[_blockN].X1 = obstacle.xMax + p;
+                _blocks[_blockN].Y1 = obstacle.yMax + p;
+                _blockN++;
+            }
+            if (_coachLineFor != key)
+            {
+                _coachLineFor = key;
+                _coachLineHeld = false;
+            }
+            if (_coachLineHeld)
+            {
+                var held = want;
+                held.y = _coachLineHold;
+                if (held.y >= 2f && held.yMax <= Screen.height - 2f && !BlocksHit(held))
+                    return held;
+            }
+            if (!BlocksHit(want))
+            {
+                _coachLineHold = want.y;
+                _coachLineHeld = true;
+                return want;
+            }
+            float maxY = Screen.height - want.height - 4f;
+            for (float y = 4f; y <= maxY; y += 6f)
+            {
+                var probe = want;
+                probe.y = y;
+                if (BlocksHit(probe)) continue;
+                _coachLineHold = y;
+                _coachLineHeld = true;
+                return probe;
+            }
+            _coachLineHeld = false;
+            return want;
+        }
+
+        void AddAimBlock(float s)
+        {
+            if (_blocks == null || _blockN >= _blocks.Length) return;
+            float p = 22f * s;
+            var a = _cueAimGui;
+            _blocks[_blockN].X0 = a.x - p;
+            _blocks[_blockN].Y0 = a.y - p;
+            _blocks[_blockN].X1 = a.x + p;
+            _blocks[_blockN].Y1 = a.y + p;
+            _blockN++;
+        }
+
         // Drawn after the gift card so the wash does not cover the hand.
-        // `top` is the close-button row. The line may sit higher, beside that button.
+        // The sentence stays outside the card and the Watch flower.
         void DrawAdHand(float s, float top)
         {
             if (!_adHand) return;
-            _coachFade = 1f;
             AdHandLineRect(s, top, out var line);
+            GiftCardPlaced(s, out var card, out var flower);
+            float x0 = Mathf.Min(card.x, flower.x);
+            float y0 = Mathf.Min(card.y, flower.y);
+            float x1 = Mathf.Max(card.xMax, flower.xMax);
+            float y1 = Mathf.Max(card.yMax, flower.yMax);
+            var dialog = new Rect(x0 - 6f, y0 - 6f, (x1 - x0) + 12f, (y1 - y0) + 12f);
+            line = ClearOfDialog(line, dialog, s);
+            line = NudgeCaption(AdHandLine, line, s);
             DrawCoachLine(AdHandLine, s, top, line.height, 0, line.y, line.width, line.x);
             DrawCoachGlove(s);
         }
@@ -1614,7 +1761,7 @@ namespace FlockFive
 
         // One splash lesson at a time. Pending flags stay set; only the turn that
         // wins this frame is live. Ads, the streak toast, VIP, the ask, and the
-        // welcome card all hold the queue. Order when several are owed: daily, hive, poker.
+        // welcome card all hold the queue. Order when several are owed: adoption, daily, hive, poker.
         bool SplashLessonRoom()
         {
 #if UNITY_EDITOR
@@ -1630,19 +1777,19 @@ namespace FlockFive
 
         bool SplashDailyTurn()
         {
-            return SplashLessonRoom() && _dailyIntro && LevelData.NextPlay >= 1;
+            return SplashLessonRoom() && _dailyIntro && LevelData.NextPlay >= 1 && !AdoptHoldsQueue();
         }
 
         bool SplashHiveTurn()
         {
-            if (!SplashLessonRoom() || !_hiveIntro || _dailyIntro) return false;
+            if (!SplashLessonRoom() || !_hiveIntro || _dailyIntro || AdoptHoldsQueue()) return false;
             return true;
         }
 
         bool SplashPokerTurn()
         {
             if (!SplashLessonRoom() || !_pokerIntro || LevelData.NextPlay < 1) return false;
-            if (_dailyIntro || _hiveIntro) return false;
+            if (_dailyIntro || _hiveIntro || AdoptHoldsQueue()) return false;
             return true;
         }
 
@@ -1765,7 +1912,7 @@ namespace FlockFive
             {
                 _hiveIntro = true;
                 _cueHand = true;
-                _cueLine = HiveIntroLine;
+                CueLine(HiveIntroLine);
                 _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
                 return;
             }
@@ -1777,18 +1924,18 @@ namespace FlockFive
             _gloveReady = false;
             _glovePhase = 0f;
             _coachFade = 0f;
-            _cueLine = HiveIntroLine;
+            CueLine(HiveIntroLine);
         }
 
         Vector2 LevelHiveAim()
         {
             HudLayout(out _, out _, out _, out _, out var hive);
-            return hive.center;
+            return TopTouch(hive);
         }
 
         bool TutorialGuideLive() =>
             _pestCue != 0 || _hiveLevelLive || _hiveIntroLive || _pokerIntroLive
-            || _dailyIntroLive || _leafIntro || _adHand || _welcomeGlove || (_coach && _cueHand);
+            || _dailyIntroLive || _leafIntro || _adHand || _welcomeGlove || _adoptLive || (_coach && _cueHand);
 
         void HoldTutorPause(bool hold)
         {
@@ -1932,15 +2079,16 @@ namespace FlockFive
                 _coachSizedH = r.height;
             }
             st.fontSize = _coachSizedPx;
-            DrawCoachPanel(r, _coachFade);
+            float fade = EaseOutCubic(_coachFade);
+            DrawCoachPanel(r, fade);
             int black = Mathf.Clamp(Mathf.CeilToInt(CoachOutlinePx * s), CoachOutlinePx, 8);
-            StampOutlined(r, line, st, new Color(1f, 0.98f, 0.90f, _coachFade), 0, black);
+            StampOutlined(r, line, st, new Color(1f, 0.98f, 0.90f, fade), 0, black);
         }
 
         void DrawHiveIntro(float s)
         {
             if (!_hiveIntroLive) return;
-            DrawSplashIntroLine(HiveIntroLine, SplashIntroBand(s), s);
+            DrawSplashIntroLine(HiveIntroLine, NudgeCaption(HiveIntroLine, SplashIntroBand(s), s), s);
             DrawCoachGlove(s);
         }
 
@@ -2011,7 +2159,7 @@ namespace FlockFive
         {
             if (!_pokerIntroLive) return;
             if (GuiPaint()) TickPokerWarm();
-            DrawSplashIntroLine(PokerIntroLine, SplashIntroBand(s), s);
+            DrawSplashIntroLine(PokerIntroLine, NudgeCaption(PokerIntroLine, SplashIntroBand(s), s), s);
             DrawCoachGlove(s);
         }
 
@@ -2092,8 +2240,30 @@ namespace FlockFive
         void DrawDailyIntro(float s)
         {
             if (!_dailyIntroLive || _dailyOpen || _dailyAskOpen) return;
-            DrawSplashIntroLine(DailyIntroLine, SplashIntroBand(s), s);
+            DrawSplashIntroLine(DailyIntroLine, NudgeCaption(DailyIntroLine, SplashIntroBand(s), s), s);
             DrawCoachGlove(s);
+        }
+
+        // Claim sentence, painted after the card so the dim wash does not hide it
+        // and so it sits outside the frame instead of on the buttons.
+        void DrawDailyClaimLine(float s)
+        {
+            if (!_dailyIntroLive || !_dailyOpen || _dailyAskOpen) return;
+            DailyLayout(s, out var card, out var flower, out _, out _);
+            float x0 = Mathf.Min(card.x, flower.x) - 8f;
+            float y0 = Mathf.Min(card.y, flower.y) - 8f;
+            float x1 = Mathf.Max(card.xMax, flower.xMax) + 8f;
+            float y1 = Mathf.Max(card.yMax, flower.yMax) + 8f;
+            var dialog = new Rect(x0, y0, x1 - x0, y1 - y0);
+            const string line = "Tap Claim.";
+            float w = Mathf.Min(Screen.width * 0.70f, 420f * s);
+            float h = 48f * s;
+            float y = dialog.y - 10f * s - h;
+            if (y < TopHud()) y = dialog.yMax + 8f * s;
+            var r = new Rect((Screen.width - w) * 0.5f, y, w, h);
+            r = ClearOfDialog(r, dialog, s);
+            r = NudgeCaption(line, r, s);
+            DrawSplashIntroLine(line, r, s);
         }
 
         int FirstLeaf()
@@ -2188,13 +2358,13 @@ namespace FlockFive
                 _cueBranch = b;
                 return;
             }
-            _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.35f);
             _cueHand = true;
             _cueForce = false;
             _cueFreeze = false;
             _cueGift = false;
             _cueBranch = b;
-            _cueLine = LeafIntroLine;
+            CueLine(LeafIntroLine);
+            _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.35f);
         }
 
         // Level-1 coach, hive lesson, poker lesson, leaf lesson, gift, and ads keep the glove.
@@ -2317,14 +2487,14 @@ namespace FlockFive
 
         void ApplyPestCue()
         {
-            _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
             _cueHand = true;
             _cueForce = false;
             _cueFreeze = false;
             _cueGift = false;
             _cueBranch = -1;
             _cueHolePx = 0f;
-            _cueLine = _pestCue == PestCueHawk ? HawkIntroLine : SparrowIntroLine;
+            CueLine(_pestCue == PestCueHawk ? HawkIntroLine : SparrowIntroLine);
+            _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
         }
 
         void DismissPestIntro()
