@@ -46,13 +46,6 @@ namespace FlockFive
         // Extra height of the apex above that perch, so the path rises before it falls.
         static float GloveArch(float s) => Mathf.Max(18f * s, GloveDh(s) * 0.20f);
 
-        static float EaseOutCubic(float u)
-        {
-            u = Mathf.Clamp01(u);
-            float inv = 1f - u;
-            return 1f - inv * inv * inv;
-        }
-
         // Top of a round control, slightly inside the disc so the tip is on the face
         // and the palm (which sits above the pivot) stays off the label.
         static Vector2 TopTouch(Rect r)
