@@ -265,7 +265,8 @@ namespace FlockFive
             Sfx.FeederArrive();
             BurstGlints();
             float t = 0f;
-            const float dur = 0.88f;
+            // 15% shorter than the old 0.88s drop.
+            const float dur = 0.748f;
             while (t < dur)
             {
                 if (GamePause.Paused)

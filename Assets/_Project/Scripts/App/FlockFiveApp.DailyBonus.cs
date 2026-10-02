@@ -42,8 +42,14 @@ namespace FlockFive
         const string WelcomePendingKey = "flockfive.welcome.pending";
         const int WelcomeBonusCoins = 1000;
         const string WelcomeTitle = "Welcome bonus!";
+        const string WelcomeAmount = "$1000";
         const string WelcomeLine = "Ready to remove ads and support the game? Tap the VIP button anytime.";
         const string WelcomeThanks = "Thanks!";
+
+        // Screw lip of fx_ad_bulb: metal ends and the glass starts about 28% down the art.
+        const float DailyBulbPin = 0.28f;
+        // Shared marquee glass, about 27% smaller (inside the 25–30% shrink).
+        const float DailyBulbShrink = 0.73f;
 
         bool _welcomeOpen;
         float _welcomeAt = -1f;
@@ -133,8 +139,14 @@ namespace FlockFive
             GUI.DrawTexture(plate, tex, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
 
-            float f = plate.width * 0.40f;
-            var flame = new Rect(plate.xMax - f * 0.90f, plate.yMax - f * 0.88f, f, f);
+            // Top-right of the round medal. Art is 289×672, so a square letterboxes the fire.
+            // The digit sits on the flame's middle (the bright belly, not the thin tip).
+            float fh = plate.width * 0.92f;
+            float fw = fh * (289f / 672f);
+            const float belly = 0.65f;
+            float markX = plate.xMax - plate.width * 0.20f;
+            float markY = plate.y + plate.width * 0.18f;
+            var flame = new Rect(markX - fw * 0.5f, markY - fh * belly, fw, fh);
             int frame = (int)(Time.unscaledTime * 8f) % 6;
             if (frame < 0) frame = 0;
             var spr = SpriteCatalog.Flame(frame);
@@ -143,14 +155,16 @@ namespace FlockFive
             if (DailyBonus.Streak >= 1)
             {
                 EnsureDailyStyles();
-                var num = new Rect(flame.x, flame.y + flame.height * 0.32f, flame.width, flame.height * 0.40f);
+                float numH = fh * 0.32f;
+                float numW = Mathf.Max(fw * 2.2f, plate.width * 0.55f);
+                var num = new Rect(markX - numW * 0.5f, markY - numH * 0.5f, numW, numH);
                 _dailyLine.fontSize = RailDigitPx(num.width, num.height);
                 StampOutlined(num, DailyBonus.StreakDigits, _dailyLine, new Color(1f, 0.97f, 0.86f), 1, 1);
             }
             if (!ready) return;
             float dot = plate.width * (0.15f + 0.02f * breathe);
-            float cx = plate.xMax - plate.width * 0.18f;
-            float cy = plate.y + plate.width * 0.18f;
+            float cx = plate.xMax - plate.width * 0.22f;
+            float cy = plate.yMax - plate.width * 0.22f;
             GUI.color = new Color(0.42f, 0.04f, 0.03f, 0.85f);
             GUI.DrawTexture(new Rect(cx - dot * 0.62f, cy - dot * 0.62f + 1.2f, dot * 1.24f, dot * 1.24f), glow, ScaleMode.ScaleToFit, true);
             GUI.color = new Color(0.93f, 0.16f, 0.13f, 0.78f + 0.22f * breathe);
@@ -164,7 +178,7 @@ namespace FlockFive
             if (key == _railDigitKey) return _railDigitPx;
             _railDigitKey = key;
             EnsureDailyStyles();
-            _railDigitPx = FitFont(_dailyLine, DailyBonus.StreakDigits, w * 0.78f, h * 0.90f, 8, 28);
+            _railDigitPx = FitFont(_dailyLine, DailyBonus.StreakDigits, w * 0.92f, h * 0.92f, 10, 36);
             return _railDigitPx;
         }
 
@@ -289,19 +303,18 @@ namespace FlockFive
             EnsureDailyFit(s, band, titleR, streakR, bonusR, disc, unit, row.height);
             DrawDailyCopy(titleR, streakR, bonusR, s, breathe, glow);
             DrawDailyTiles(row, gap, unit, s, breathe, glow);
-            DrawDailyClaim(flower, claimHeld, s, t);
             GUI.matrix = prev;
 
-            // Glass size of the earlier marquee (about 8.5% of the board, never under 30px).
-            // The ring stops above the Claim flower. Steady size; the chase is the glow.
-            float glass = Mathf.Max(30f * s, board.width * 0.085f) * k;
-            float grow = band * 0.5f * k;
-            var plate = board;
-            float limit = flower.y - 6f * s - grow - glass * 0.45f;
-            if (plate.yMax > limit && limit > plate.y + 48f * s)
-                plate.height = limit - plate.y;
-            var plateDraw = DailyScaleRect(plate, pivot, k);
-            DrawGiftMarquee(plateDraw, s, t, 1f, grow, 0f, 16, 0f, true);
+            // Screw lip on the pop-up's outer edge. Glass hangs outside, smaller than the old ring.
+            // The claim flower paints after so a bottom bulb cannot cover the word.
+            var shell = DailyFrameOuter(card, board, band);
+            var shellDraw = DailyScaleRect(shell, pivot, k);
+            float bulbPx = Mathf.Max(30f * s, DailyScaleRect(board, pivot, k).width * 0.085f) * DailyBulbShrink;
+            DrawGiftMarquee(shellDraw, s, t, 1f, 0f, 0f, 16, 0f, true, DailyBulbPin, bulbPx);
+            if (k < 0.999f)
+                GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
+            DrawDailyClaim(flower, claimHeld, s, t);
+            GUI.matrix = prev;
             DrawGiftCloseX(xBtn, xHeld, s);
             GUI.color = Color.white;
 
@@ -400,7 +413,7 @@ namespace FlockFive
 
         void BurstDailyCoins(int coins)
         {
-            int n = coins >= 75 ? 8 : coins >= 35 ? 6 : 4;
+            int n = coins >= 100 ? 8 : coins >= 25 ? 6 : 4;
             float sc = Mathf.Max(Screen.height / 720f, 1f);
             var pig = PiggyRect(sc);
             var dest = new Vector2(pig.x + pig.width * 0.5f, pig.y + pig.height * 0.42f);
@@ -452,14 +465,44 @@ namespace FlockFive
                 r.height * k);
         }
 
-        // Glove aim tracks the claim disc while the card is still scaling in.
+        // Outermost pixels of the pop-up frame. The wood card, unless the brass band sticks past it.
+        static Rect DailyFrameOuter(Rect card, Rect board, float frameBand)
+        {
+            float x0 = Mathf.Min(card.x, board.x - frameBand);
+            float y0 = Mathf.Min(card.y, board.y - frameBand);
+            float x1 = Mathf.Max(card.xMax, board.xMax + frameBand);
+            float y1 = Mathf.Max(card.yMax, board.yMax + frameBand);
+            return new Rect(x0, y0, x1 - x0, y1 - y0);
+        }
+
+        // Where the avatar looks. Same contact the claim glove taps.
         Vector2 DailyClaimAim(float s)
         {
+            DailyClaimGlove(s, out var aim, out _, out _);
+            return aim;
+        }
+
+        // Claim step only. Hit is just left of the face center and a little below
+        // it, on the top surface: not the rim, not the middle. The perch lift is
+        // shorter than the shared rise, which parks the hand up on the reward row.
+        // fromLeft keeps that side-on approach when the nudge crosses mid-screen.
+        void DailyClaimGlove(float s, out Vector2 aim, out float perchLift, out bool fromLeft)
+        {
             DailyLayout(s, out var card, out var flower, out _, out _);
-            var c = TopTouch(FlowerDisc(flower, 0f));
+            var disc = FlowerDisc(flower, 0f);
+            float left = Mathf.Clamp(disc.width * 0.10f, 8f * s, 18f * s);
+            float below = Mathf.Clamp(disc.height * 0.12f, 4f * s, 10f * s);
+            var hit = new Vector2(disc.center.x - left, disc.center.y + below);
             float k = DailyPop(_dailyPopAt);
             var pivot = DailyPivot(card, flower);
-            return new Vector2(pivot.x + (c.x - pivot.x) * k, pivot.y + (c.y - pivot.y) * k);
+            aim = new Vector2(pivot.x + (hit.x - pivot.x) * k, pivot.y + (hit.y - pivot.y) * k);
+            float lift = disc.height * 0.20f;
+            float minLift = 6f * s;
+            if (lift < minLift) lift = minLift;
+            float maxLift = GloveRise(s) * 0.45f;
+            if (lift > maxLift) lift = maxLift;
+            perchLift = lift;
+            fromLeft = disc.center.x >= Screen.width * 0.5f;
         }
 
         // Content-sized. Rows are reserved up front, including an empty bonus line,
@@ -468,14 +511,15 @@ namespace FlockFive
         {
             float insetL = Mathf.Max(12f * s, Screen.safeArea.xMin + 8f);
             float insetR = Mathf.Max(12f * s, Screen.width - Screen.safeArea.xMax + 8f);
-            float cardW = Mathf.Min(Screen.width - insetL - insetR, Mathf.Min(Screen.width * 0.90f, 620f * s));
-            band = Mathf.Clamp(cardW * 0.048f, 15f * s, 30f * s);
-            float boardW = cardW - band * 2.5f;
-            if (boardW < 160f) boardW = 160f;
+            float cardW = Mathf.Min(Screen.width - insetL - insetR, Mathf.Min(Screen.width * 0.72f, 420f * s));
+            if (cardW < 200f) cardW = Mathf.Min(Screen.width - insetL - insetR, 200f);
+            band = Mathf.Clamp(cardW * 0.05f, 11f * s, 20f * s);
+            // Brass outer edge is the card edge, so each bulb base sits on the border.
+            float boardW = cardW - band * 2f;
             DailyBoardSize(s, boardW, out float boardH, out _, out _, out _, out _, out _, out _);
-            float lip = band * 1.15f;
+            float lip = band;
             float cardH = lip + boardH + lip;
-            float flowerSz = Mathf.Min(Screen.width * 0.48f, cardW * 0.50f);
+            float flowerSz = Mathf.Min(Screen.width * 0.38f, cardW * 0.44f);
             float overlap = band * 0.35f;
             float stack = cardH + flowerSz - overlap;
             float top = TopHud() + 4f * s;
@@ -490,37 +534,43 @@ namespace FlockFive
 
         static void DailyBoardSize(float s, float boardW, out float boardH, out float titleH, out float streakH, out float bonusH, out float tileH, out float gap, out float unit)
         {
-            float pad = 12f * s;
-            titleH = Mathf.Clamp(32f * s, 26f, 46f * s);
-            streakH = Mathf.Clamp(18f * s, 15f, 24f * s);
-            bonusH = Mathf.Clamp(16f * s, 14f, 22f * s);
-            gap = Mathf.Max(4f, 5f * s);
-            float inner = boardW * 0.90f;
-            unit = (inner - gap * 6f) / 7f;
+            float pad = 8f * s;
+            titleH = Mathf.Clamp(26f * s, 22f, 36f * s);
+            streakH = Mathf.Clamp(16f * s, 14f, 22f * s);
+            bonusH = Mathf.Clamp(14f * s, 12f, 18f * s);
+            gap = Mathf.Max(6f, 7f * s);
+            int days = DailyBonus.CycleDays;
+            if (days < 1) days = 1;
+            int seams = days - 1;
+            float inner = boardW - pad * 2f;
+            if (inner < 40f) inner = 40f;
+            unit = (inner - gap * seams) / days;
             if (unit < 8f)
             {
                 gap = 4f;
-                unit = (inner - gap * 6f) / 7f;
+                unit = (inner - gap * seams) / days;
                 if (unit < 4f) unit = 4f;
             }
-            tileH = unit * 1.36f;
-            boardH = pad + titleH + streakH + bonusH + 10f * s + tileH + pad;
+            tileH = unit * 1.22f;
+            boardH = pad + titleH + streakH + bonusH + 6f * s + tileH + pad;
         }
 
         static void DailyRows(float s, Rect board, out Rect title, out Rect streak, out Rect bonus, out Rect row, out float gap, out float unit)
         {
             DailyBoardSize(s, board.width, out _, out float titleH, out float streakH, out float bonusH, out float tileH, out gap, out unit);
-            float pad = 12f * s;
-            float x = board.x + board.width * 0.05f;
-            float w = board.width * 0.90f;
+            float pad = 8f * s;
+            float x = board.x + pad;
+            float w = board.width - pad * 2f;
             float y = board.y + pad;
             title = new Rect(x, y, w, titleH);
             y += titleH;
             streak = new Rect(x, y, w, streakH);
             y += streakH;
             bonus = new Rect(x, y, w, bonusH);
-            y += bonusH + 10f * s;
-            float rowW = unit * 7f + gap * 6f;
+            y += bonusH + 6f * s;
+            int days = DailyBonus.CycleDays;
+            if (days < 1) days = 1;
+            float rowW = unit * days + gap * (days - 1);
             row = new Rect(board.center.x - rowW * 0.5f, y, rowW, tileH);
         }
 
@@ -537,7 +587,7 @@ namespace FlockFive
             GUI.color = new Color(0.52f, 0.30f, 0.11f, 1f);
             GUI.DrawTexture(card, wood, ScaleMode.StretchToFill, true);
 
-            // Brass band. Bulb sockets land on its midline (half a band outside the board).
+            // Brass band. Bulb screw-lips sit on the outer edge of the pop-up, not this midline.
             var outer = new Rect(board.x - band, board.y - band, board.width + band * 2f, board.height + band * 2f);
             GUI.color = new Color(0.30f, 0.16f, 0.05f, 1f);
             GUI.DrawTexture(outer, Texture2D.whiteTexture);
@@ -594,7 +644,7 @@ namespace FlockFive
             _dailyTitlePx = FitFont(_dailyTitle, "Daily Bonus", titleR.width * 0.90f, titleR.height * 0.90f, 14, Mathf.Max(18, Mathf.RoundToInt(34f * s)));
             _dailyLinePx = FitFont(_dailyLine, DailyBonus.StreakLine, streakR.width * 0.88f, streakR.height * 0.90f, 10, Mathf.Max(12, Mathf.RoundToInt(18f * s)));
             _dailyBonusPx = FitFont(_dailyLine, "streak +$25", bonusR.width * 0.88f, bonusR.height * 0.90f, 9, Mathf.Max(11, Mathf.RoundToInt(16f * s)));
-            _dailyTilePx = FitFont(_dailyTile, "$75", unit * 0.84f, tileH * 0.40f, 8, Mathf.Max(10, Mathf.RoundToInt(16f * s)));
+            _dailyTilePx = FitFont(_dailyTile, "$100", unit * 0.90f, tileH * 0.32f, 8, Mathf.Max(10, Mathf.RoundToInt(16f * s)));
             _dailyClaimPx = FitFont(_dailyClaim, "Claimed", disc.width * 0.72f, disc.height * 0.52f, 12, Mathf.Max(16, Mathf.RoundToInt(30f * s)));
         }
 
@@ -624,17 +674,19 @@ namespace FlockFive
             var spark = SpriteCatalog.Sparkle;
             var sparkTex = spark != null ? spark.texture : null;
             float x = row.x;
-            for (int i = 0; i < 7; i++)
+            int days = DailyBonus.CycleDays;
+            int crownDay = days - 1;
+            for (int i = 0; i < days; i++)
             {
                 bool now = i == today && DailyBonus.OfferReady;
                 bool done = i < today || (i == today && claimed);
                 var tile = new Rect(x, row.y, unit, row.height);
-                DrawDailyTile(tile, i, now, done, i == 6, s, breathe, glow, crownTex, sparkTex);
+                DrawDailyTile(tile, i, now, done, i == crownDay, s, breathe, glow, crownTex, sparkTex);
                 x += unit + gap;
             }
         }
 
-        static void DrawDailyTile(Rect tile, int day, bool now, bool done, bool day7, float s, float breathe, Texture2D glow, Texture crownTex, Texture sparkTex)
+        static void DrawDailyTile(Rect tile, int day, bool now, bool done, bool crown, float s, float breathe, Texture2D glow, Texture crownTex, Texture sparkTex)
         {
             if (now)
             {
@@ -647,11 +699,11 @@ namespace FlockFive
                 : done
                     ? new Color(0.30f, 0.17f, 0.07f, 0.94f)
                     : new Color(0.16f, 0.09f, 0.04f, 0.90f);
-            if (day7 && !now && !done) fill = new Color(0.55f, 0.34f, 0.10f, 0.96f);
-            if (day7 && now) fill = new Color(1f, 0.84f, 0.34f, 1f);
+            if (crown && !now && !done) fill = new Color(0.55f, 0.34f, 0.10f, 0.96f);
+            if (crown && now) fill = new Color(1f, 0.84f, 0.34f, 1f);
             GUI.color = fill;
             GUI.DrawTexture(tile, Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.86f, 0.42f, now || day7 ? 1f : done ? 0.55f : 0.40f);
+            GUI.color = new Color(1f, 0.86f, 0.42f, now || crown ? 1f : done ? 0.55f : 0.40f);
             float edge = Mathf.Max(1.5f, (now ? 2.6f : 1.6f) * s);
             GUI.DrawTexture(new Rect(tile.x, tile.y, tile.width, edge), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(tile.x, tile.yMax - edge, tile.width, edge), Texture2D.whiteTexture);
@@ -661,7 +713,7 @@ namespace FlockFive
 
             float textTop = tile.y + tile.height * 0.14f;
             float textH = tile.height * 0.48f;
-            if (day7 && crownTex != null)
+            if (crown && crownTex != null)
             {
                 float cs = tile.width * 0.78f;
                 float ch = cs * 0.58f;
@@ -814,19 +866,43 @@ namespace FlockFive
 
         static void DailyAskLayout(float s, out Rect card, out Rect body, out Rect yesR, out Rect noR)
         {
-            float w = Mathf.Min(Screen.width * 0.82f, 480f * s);
-            float h = Mathf.Clamp(176f * s, 156f, 220f * s);
-            if (h > Screen.height * 0.42f) h = Screen.height * 0.42f;
-            card = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.44f, w, h);
+            EnsureAskStyles();
+            float side = Mathf.Max(16f * s, Screen.safeArea.xMin + 8f);
+            float w = Mathf.Min(Screen.width - side * 2f, Mathf.Min(Screen.width * 0.78f, 420f * s));
+            if (w < 180f) w = Mathf.Min(Screen.width - 12f, 180f);
             float band = Mathf.Max(8f, 10f * s);
-            float pad = band + 10f * s;
-            float btnH = Mathf.Clamp(46f * s, 42f, 56f * s);
+            float pad = band + 12f * s;
+            float innerW = w - pad * 2f;
+            if (innerW < 40f) innerW = 40f;
+            float btnH = Mathf.Clamp(42f * s, 38f, 50f * s);
             float gap = 10f * s;
-            float btnW = (w - pad * 2f - gap) * 0.5f;
+            int hi = Mathf.Max(14, Mathf.RoundToInt(18f * s));
+            int lo = 11;
+            float textH = 28f * s;
+            float maxH = Screen.height * 0.48f;
+            float chrome = pad * 2f + 12f * s + btnH;
+            for (int fs = hi; fs >= lo; fs--)
+            {
+                BindFit(_dailyAsk, DailyAskCopy, true);
+                _fitScratch.fontSize = fs;
+                float measured = _fitScratch.CalcHeight(_fitContent, innerW);
+                textH = measured;
+                if (chrome + measured + 8f * s <= maxH || fs == lo) break;
+            }
+            float h = chrome + textH + 8f * s;
+            if (h > maxH) h = maxH;
+            if (h < chrome + 28f * s) h = chrome + 28f * s;
+            card = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.44f, w, h);
+            float btnW = (innerW - gap) * 0.5f;
+            if (btnW < 8f) btnW = 8f;
             float btnY = card.yMax - pad - btnH;
+            if (btnY < card.y + pad) btnY = card.y + pad;
             yesR = new Rect(card.x + pad, btnY, btnW, btnH);
             noR = new Rect(yesR.xMax + gap, btnY, btnW, btnH);
-            body = new Rect(card.x + pad, card.y + pad, w - pad * 2f, Mathf.Max(36f, btnY - card.y - pad - 8f * s));
+            float bodyTop = card.y + pad;
+            float bodyBot = btnY - 12f * s;
+            if (bodyBot < bodyTop) bodyBot = bodyTop;
+            body = new Rect(card.x + pad, bodyTop, innerW, bodyBot - bodyTop);
         }
 
         static void DrawAskFrame(Rect card, float s, float breathe, Texture2D glow)
@@ -875,8 +951,8 @@ namespace FlockFive
             if (key == _dailyAskFit) return;
             _dailyAskFit = key;
             EnsureAskStyles();
-            int hi = Mathf.Max(18, Mathf.RoundToInt(26f * s));
-            _dailyAskBodyPx = FitFontWrapped(_dailyAsk, DailyAskCopy, body.width, body.height * 0.92f, 14, hi);
+            int hi = Mathf.Max(14, Mathf.RoundToInt(18f * s));
+            _dailyAskBodyPx = FitFontWrapped(_dailyAsk, DailyAskCopy, body.width, body.height * 0.92f, 11, hi);
             int yes = FitFont(_dailyAskBtn, DailyAskYes, btn.width * 0.88f, btn.height * 0.62f, 12, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
             int no = FitFont(_dailyAskBtn, DailyAskNo, btn.width * 0.88f, btn.height * 0.62f, 12, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
             _dailyAskYesPx = yes < no ? yes : no;
@@ -892,9 +968,6 @@ namespace FlockFive
                 ? (held ? new Color(0.72f, 0.48f, 0.12f, 1f) : new Color(0.95f, 0.72f, 0.22f, 1f))
                 : (held ? new Color(0.26f, 0.15f, 0.07f, 1f) : new Color(0.38f, 0.22f, 0.10f, 1f));
             GUI.DrawTexture(face, blob, ScaleMode.StretchToFill, true);
-            GUI.color = new Color(1f, 0.88f, 0.48f, gold ? 0.95f : 0.40f);
-            float e = Mathf.Max(2f, face.height * 0.06f);
-            GUI.DrawTexture(new Rect(face.x, face.y, face.width, e), Texture2D.whiteTexture);
             GUI.color = Color.white;
             _dailyAskBtn.fontSize = px;
             var ink = gold ? new Color(0.32f, 0.14f, 0.04f, 1f) : new Color(1f, 0.94f, 0.78f, 1f);
@@ -923,21 +996,23 @@ namespace FlockFive
             if (k < 0.999f)
                 GUIUtility.ScaleAroundPivot(new Vector2(k, k), card.center);
             float band = Mathf.Clamp(card.width * 0.045f, 12f * s, 22f * s);
-            var board = new Rect(card.x + band * 0.55f, card.y + band * 0.45f, card.width - band * 1.1f, card.height - band * 0.9f);
-            DrawDailyFrame(card, board, band * 0.85f, s, breathe, glow);
+            var board = new Rect(card.x + band, card.y + band, card.width - band * 2f, card.height - band * 2f);
+            DrawDailyFrame(card, board, band, s, breathe, glow);
             EnsureAskStyles();
             EnsureWelcomeFit(s, titleR, amtR, lineR, btn);
             _dailyAsk.fontSize = _welcomeTitlePx;
             StampOutlined(titleR, WelcomeTitle, _dailyAsk, new Color(1f, 0.94f, 0.62f), 1, 2);
             _dailyAsk.fontSize = _welcomeAmtPx;
-            StampOutlined(amtR, Money.Format(WelcomeBonusCoins), _dailyAsk, new Color(1f, 0.86f, 0.28f), 1, 2);
+            StampOutlined(amtR, WelcomeAmount, _dailyAsk, new Color(1f, 0.86f, 0.28f), 1, 2);
             _dailyAsk.fontSize = _welcomeLinePx;
             int ink = Mathf.Max(2, Mathf.RoundToInt(_welcomeLinePx * 0.10f));
             StampOutlined(lineR, WelcomeLine, _dailyAsk, new Color(1f, 0.96f, 0.78f), 1, ink);
             DrawAskButton(btn, WelcomeThanks, _welcomeBtnPx, true, held);
             GUI.matrix = prev;
-            var boardDraw = DailyScaleRect(board, card.center, k);
-            DrawGiftMarquee(boardDraw, s, t, 1f, band * 0.42f * k, 0f, 16, 0f, true);
+            var shell = DailyFrameOuter(card, board, band);
+            var shellDraw = DailyScaleRect(shell, card.center, k);
+            float bulbPx = Mathf.Max(30f * s, DailyScaleRect(board, card.center, k).width * 0.085f) * DailyBulbShrink;
+            DrawGiftMarquee(shellDraw, s, t, 1f, 0f, 0f, 16, 0f, true, DailyBulbPin, bulbPx);
             GUI.color = Color.white;
             if (thanks) CloseWelcome();
         }
@@ -981,7 +1056,7 @@ namespace FlockFive
             _welcomeFit = key;
             EnsureAskStyles();
             _welcomeTitlePx = FitFont(_dailyAsk, WelcomeTitle, title.width, title.height * 0.9f, 16, Mathf.Max(22, Mathf.RoundToInt(30f * s)));
-            _welcomeAmtPx = FitFont(_dailyAsk, Money.Format(WelcomeBonusCoins), amt.width, amt.height * 0.92f, 18, Mathf.Max(26, Mathf.RoundToInt(40f * s)));
+            _welcomeAmtPx = FitFont(_dailyAsk, WelcomeAmount, amt.width, amt.height * 0.92f, 18, Mathf.Max(26, Mathf.RoundToInt(40f * s)));
             _welcomeLinePx = FitFontWrapped(_dailyAsk, WelcomeLine, line.width * 0.92f, line.height * 0.92f, 13, Mathf.Max(16, Mathf.RoundToInt(20f * s)));
             _welcomeBtnPx = FitFont(_dailyAskBtn, WelcomeThanks, btn.width * 0.8f, btn.height * 0.62f, 14, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
         }

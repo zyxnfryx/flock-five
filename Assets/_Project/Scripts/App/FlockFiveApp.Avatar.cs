@@ -4,17 +4,20 @@ namespace FlockFive
 {
     // Home bird stays off until level 1 is cleared (flockfive.next >= 1) and the
     // player has adopted. The first splash after that clear is the one-time scene:
-    // five birds land on a branch, one asks to come home, Yes opens the name.
-    // Not yet asks again on the next splash. A later tap only renames.
+    // five birds land, one is already adopted, and a statement asks for a tap.
+    // That tap, and later taps on the home perch, open the same avatar page.
+    // Garden SexOf is not part of this. Kit is splash-only.
     public sealed partial class FlockFiveApp
     {
         const string AvatarNamePref = "flockfive.avatar.name";
         const string AvatarAdoptedPref = "flockfive.avatar.adopted";
-        const string AdoptHello = "Can I come home with you?";
+        const string AvatarKitPref = "flockfive.avatar.kit";
+        const string AvatarNamedPref = "flockfive.avatar.named";
+        const string AdoptLookLine = "Look, a bird followed you home! Tap your bird for a closer look.";
         const string AdoptNameLine = "Please give me a name!";
-        const string AdoptYesLabel = "Yes";
-        const string AdoptLaterLabel = "Not yet";
         const string AvatarRenameLine = "What should we call them?";
+        const string AvatarDoneLabel = "Done";
+        const float AdoptLookHold = 3.2f;
         const int AvatarNameMax = 12;
         // Middle pad on the home limb. Outer seats are the side perches.
         const int AvatarHomeSeat = 2;
@@ -29,23 +32,20 @@ namespace FlockFive
             "dick", "cunt", "slut", "whore"
         };
 
-        enum AdoptStep { Off, Fly, Pick, Name, Settle }
+        enum AdoptStep { Off, Fly, Look, Settle }
 
         AdoptStep _adoptStep;
         bool _adoptOwed;
         bool _adoptLive;
-        bool _adoptSkip;
         Rect _adoptLineR;
-        Rect _adoptYesR;
-        Rect _adoptNoR;
         Vector2 _adoptWood;
         float _adoptWoodW;
         float _adoptWoodH;
         float _adoptPx;
-        bool _adoptArmFocus;
         int _adoptPick = -1;
         float _adoptClock;
         float _adoptSettle;
+        float _adoptLook;
         float _adoptIcon;
         float _adoptFromIcon;
         BirdColor _adoptCol = BirdColor.Gold;
@@ -61,6 +61,19 @@ namespace FlockFive
         Rect _avatarRenameR;
         Rect _avatarPlateR;
         float _avatarTail;
+        int _avatarOpenFrame = -1;
+        int _avatarKitN;
+        readonly Rect[] _avatarSwatch = new Rect[5];
+        readonly Rect[] _avatarKitR = new Rect[3];
+        readonly int[] _avatarKitId = new int[3];
+
+        // Rest and flap columns match BirdIdle. Rows there are identical per color.
+        static readonly float[] AvatarBowX = { -0.11f, -0.270f, -0.259f, -0.270f, -0.270f };
+        static readonly float[] AvatarBowY = { 1.055f, 0.831f, 0.843f, 0.831f, 0.831f };
+        static readonly float[] AvatarCrownX = { -0.03f, -0.168f, -0.156f, -0.168f, -0.168f };
+        static readonly float[] AvatarCrownY = { 1.374f, 1.252f, 1.264f, 1.252f, 1.252f };
+        static int _avatarBowArt = -1;
+        static int _avatarCrownArt = -1;
 
         static Texture2D _avatarPlateTex;
         static Texture2D _avatarFieldTex;
@@ -78,7 +91,7 @@ namespace FlockFive
             return AvatarAdopted();
         }
 
-        // Hive, poker, daily, welcome, and the ask. Rename is not one of these.
+        // Hive, poker, daily, welcome, and the ask. The avatar page is not one of these.
         bool HomeLessonUp()
         {
             if (_hiveIntroLive || _pokerIntroLive || _dailyIntroLive) return true;
@@ -86,12 +99,44 @@ namespace FlockFive
             return false;
         }
 
-        // Daily, hive, and poker wait until the adoption scene has saved.
+        // Daily, hive, and poker wait until the adoption scene has finished.
         bool AdoptHoldsQueue()
         {
-            if (_adoptSkip) return false;
             if (_adoptLive || _adoptStep != AdoptStep.Off) return true;
             return _adoptOwed && !AvatarAdopted() && LevelData.NextPlay >= 1;
+        }
+
+        // 0 none, 1 bow, 2 crown. Out of range stays bare. Never writes SexOf.
+        static int SavedAvatarKit()
+        {
+            int k = PlayerPrefs.GetInt(AvatarKitPref, 0);
+            if (k < 0 || k > 2) return 0;
+            return k;
+        }
+
+        // Missing flag: an older save that already has a name is not prompted again.
+        static bool AvatarNeedsName()
+        {
+            int flag = PlayerPrefs.GetInt(AvatarNamedPref, -1);
+            if (flag == 1) return false;
+            if (flag == 0) return true;
+            return ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length == 0;
+        }
+
+        static bool AvatarBowArt()
+        {
+            if (_avatarBowArt >= 0) return _avatarBowArt == 1;
+            var spr = SpriteCatalog.Bow;
+            _avatarBowArt = spr != null && spr.texture != null && spr.texture.width >= 32 ? 1 : 0;
+            return _avatarBowArt == 1;
+        }
+
+        static bool AvatarCrownArt()
+        {
+            if (_avatarCrownArt >= 0) return _avatarCrownArt == 1;
+            var spr = SpriteCatalog.Crown;
+            _avatarCrownArt = spr != null && spr.texture != null && spr.texture.width >= 32 ? 1 : 0;
+            return _avatarCrownArt == 1;
         }
 
         static string AvatarSuggestion(BirdColor c)
@@ -146,8 +191,8 @@ namespace FlockFive
             _adoptLive = false;
             _adoptStep = AdoptStep.Off;
             _adoptOwed = false;
-            _adoptSkip = false;
             _adoptPick = -1;
+            _adoptLook = 0f;
             CloseAvatarRename();
             if (LevelData.NextPlay < 1) return;
             if (AvatarAdopted()) return;
@@ -158,9 +203,13 @@ namespace FlockFive
         {
             if (_adoptStep == AdoptStep.Settle)
                 return _splash && _home == HomeFace.Splash && !GamePause.Paused && !Ads.IsBusy;
-            if (_adoptSkip) return false;
-            if (!_adoptOwed || AvatarAdopted()) return false;
-            if (LevelData.NextPlay < 1) return false;
+            if (_adoptStep == AdoptStep.Off)
+            {
+                if (!_adoptOwed || AvatarAdopted()) return false;
+                if (LevelData.NextPlay < 1) return false;
+                return SplashLessonRoom();
+            }
+            if (!_splash || _home != HomeFace.Splash || GamePause.Paused || Ads.IsBusy) return false;
             return SplashLessonRoom();
         }
 
@@ -195,14 +244,16 @@ namespace FlockFive
             _adoptStep = AdoptStep.Fly;
             _adoptClock = 0f;
             _adoptSettle = 0f;
+            _adoptLook = 0f;
             _adoptPick = 1;
             _adoptCol = BirdColor.Gold;
-            _adoptName = "";
-            _adoptArmFocus = false;
+            _adoptName = AvatarSuggestion(_adoptCol);
             _coachFade = 0f;
             _gloveReady = false;
             _gloveVis = false;
             CloseAvatarRename();
+            // Same prefs the old accept path wrote, so a later splash does not ask again.
+            MarkAdopted(_adoptCol, _adoptName);
             for (int i = 0; i < 5; i++)
             {
                 _adoptFly[i] = 0f;
@@ -271,55 +322,21 @@ namespace FlockFive
                     _adoptHop[i] = Mathf.Max(0f, _adoptHop[i] - dt / 0.36f);
             }
             if (_adoptStep == AdoptStep.Fly && landed)
-                _adoptStep = AdoptStep.Pick;
-        }
-
-        void AdoptChoose(int i)
-        {
-            if (i < 0 || i > 4) return;
-            if (_adoptStep != AdoptStep.Pick && _adoptStep != AdoptStep.Name) return;
-            var col = (BirdColor)i;
-            string prev = AvatarSuggestion(_adoptCol);
-            bool untouched = _adoptStep != AdoptStep.Name || _adoptName == prev || string.IsNullOrEmpty(_adoptName);
-            _adoptCol = col;
-            _adoptPick = i;
-            _adoptHop[i] = 1f;
-            // The hop picks who is speaking. Yes is what opens the name.
-            Sfx.Chirp(col);
-            if (untouched)
-                _adoptName = AvatarSuggestion(col);
-        }
-
-        void AdoptYes()
-        {
-            if (_adoptStep != AdoptStep.Pick) return;
-            if (_adoptPick < 0 || _adoptPick > 4)
             {
-                _adoptPick = 1;
-                _adoptCol = BirdColor.Gold;
+                _adoptStep = AdoptStep.Look;
+                _adoptLook = 0f;
             }
-            _adoptCol = (BirdColor)_adoptPick;
-            _adoptStep = AdoptStep.Name;
-            _adoptName = AvatarSuggestion(_adoptCol);
-            _adoptArmFocus = true;
-            _gloveReady = false;
-            _gloveVis = false;
-            Sfx.Chirp(_adoptCol);
+            if (_adoptStep != AdoptStep.Look || _avatarRename) return;
+            _adoptLook += dt;
+            if (_adoptLook >= AdoptLookHold)
+                BeginSettle();
         }
 
-        // This splash stands down. The next ShowSplash asks again.
-        void AdoptNotYet()
+        // Color, suggested name, and adopted. named stays 0 until Done on the page.
+        void MarkAdopted(BirdColor col, string birdName)
         {
-            if (_adoptStep != AdoptStep.Pick && _adoptStep != AdoptStep.Fly) return;
-            _adoptSkip = true;
-            _adoptLive = false;
-            _adoptStep = AdoptStep.Off;
-            _adoptPick = -1;
-            _gloveVis = false;
-            _gloveReady = false;
-            _coachFade = 0f;
-            GUIUtility.keyboardControl = 0;
-            Sfx.CardTap();
+            PlayerPrefs.SetInt(AvatarNamedPref, 0);
+            SaveAvatar(col, birdName);
         }
 
         void BeginSettle()
@@ -396,45 +413,14 @@ namespace FlockFive
             float bot = flower.yMin - 8f * s;
             AvatarChannel(s, out float left, out float right);
             float width = Mathf.Max(48f, right - left);
-            bool asking = _adoptStep == AdoptStep.Fly || _adoptStep == AdoptStep.Pick;
-            bool naming = _adoptStep == AdoptStep.Name;
-
-            float textH = Mathf.Clamp(50f * s, 42f * s, 66f * s);
-            float capW = Mathf.Min(Mathf.Max(120f, width - 8f), 440f * s);
+            float textH = Mathf.Clamp(84f * s, 68f * s, 120f * s);
+            float capW = Mathf.Min(Mathf.Max(120f, width - 8f), 460f * s);
             caption = new Rect(left + (width - capW) * 0.5f, top, capW, textH);
             _adoptLineR = caption;
 
-            _adoptYesR = default;
-            _adoptNoR = default;
-            float btnH = asking ? 42f * s : 0f;
-            float btnGap = asking ? 8f * s : 0f;
-            if (asking)
-            {
-                float yesW = Mathf.Min(88f * s, capW * 0.32f);
-                float noW = Mathf.Min(146f * s, capW * 0.50f);
-                float gap = 10f * s;
-                float chips = yesW + noW + gap;
-                float room = capW - 4f;
-                if (chips > room && chips > 1f)
-                {
-                    float k = room / chips;
-                    yesW *= k;
-                    noW *= k;
-                    gap *= k;
-                    chips = yesW + noW + gap;
-                }
-                float bx = caption.center.x - chips * 0.5f;
-                float by = caption.yMax + btnGap;
-                _adoptYesR = new Rect(bx, by, yesW, btnH);
-                _adoptNoR = new Rect(bx + yesW + gap, by, noW, btnH);
-            }
-
-            float bubbleBottom = asking ? _adoptNoR.yMax : caption.yMax;
             // The shared plate pads past the words. Keep the branch under that pad.
-            float branchTop = bubbleBottom + 22f;
-            float nameH = naming ? 46f * s : 0f;
-            float nameGap = naming ? 10f * s : 0f;
-            float branchBot = bot - nameH - nameGap;
+            float branchTop = caption.yMax + 22f;
+            float branchBot = bot;
             if (branchBot < branchTop + 28f * s) branchBot = branchTop + 28f * s;
 
             FitWood(width, Mathf.Max(28f * s, branchBot - branchTop), out float woodW, out float woodH, out float px);
@@ -479,40 +465,13 @@ namespace FlockFive
 
             field = default;
             keep = default;
-            if (!naming) return;
-            float ky = row.yMax + nameGap;
-            if (ky + nameH > bot) ky = Mathf.Max(row.yMax + 4f, bot - nameH);
-            float keepW = 78f * s;
-            keep = new Rect(right - keepW, ky, keepW, nameH);
-            field = new Rect(left, ky, Mathf.Max(48f, keep.x - left - 8f * s), nameH);
         }
 
         void DrawAdoptScene(float s)
         {
             if (!_adoptLive && _adoptStep != AdoptStep.Settle) return;
-            AdoptLayout(s, out _, out _, out float icon, out var field, out var keep);
-            bool ask = _adoptStep == AdoptStep.Pick;
-            bool yesHeld = false;
-            bool noHeld = false;
-            bool yes = false;
-            bool no = false;
-            if (ask)
-            {
-                yes = HitPad(_adoptYesR, out yesHeld);
-                no = HitPad(_adoptNoR, out noHeld);
-            }
-            if (no)
-            {
-                AdoptNotYet();
-                return;
-            }
-            if (yes)
-            {
-                AdoptYes();
-                AdoptLayout(s, out _, out _, out icon, out field, out keep);
-                ask = false;
-            }
-            if (_adoptStep == AdoptStep.Pick || _adoptStep == AdoptStep.Name)
+            AdoptLayout(s, out _, out _, out float icon, out _, out _);
+            if (_adoptStep == AdoptStep.Look || _adoptStep == AdoptStep.Settle)
                 HitAdoptBirds(icon);
             if (_adoptStep == AdoptStep.Settle)
                 FillAvatarPerches(s, AvatarIcon(s));
@@ -521,75 +480,39 @@ namespace FlockFive
             if (_adoptStep == AdoptStep.Settle)
                 DrawHomeLimbs();
             DrawAdoptBirds(s, icon);
-            if (_adoptStep != AdoptStep.Settle && _adoptStep != AdoptStep.Fly)
-            {
-                string line = _adoptStep == AdoptStep.Name ? AdoptNameLine : AdoptHello;
-                DrawAdoptBubble(line, s);
-            }
-            if (ask)
-            {
-                DrawPlaqueChip(_adoptYesR, AdoptYesLabel, s, yesHeld);
-                DrawPlaqueChip(_adoptNoR, AdoptLaterLabel, s, noHeld);
-            }
-            if (_adoptStep == AdoptStep.Name)
-                DrawAdoptName(s, field, keep);
-            if (_adoptStep == AdoptStep.Settle && _adoptSettle >= 1f && GuiPaint())
+            if (!_avatarRename && (_adoptStep == AdoptStep.Look || _adoptStep == AdoptStep.Settle))
+                DrawAdoptBubble(AdoptLookLine, s);
+            if (_adoptStep == AdoptStep.Settle && _adoptSettle >= 1f && GuiPaint() && !_avatarRename)
                 FinishAdopt();
         }
 
         void DrawAdoptBubble(string line, float s)
         {
             var bubble = _adoptLineR;
-            if (_adoptYesR.width > 2f) bubble = UnionRect(bubble, _adoptYesR);
-            if (_adoptNoR.width > 2f) bubble = UnionRect(bubble, _adoptNoR);
             if (bubble.width < 2f) return;
             DrawCoachPanel(bubble, EaseOutCubic(_coachFade));
             var text = _adoptLineR;
             var st = CoachLineStyle();
-            int hi = Mathf.Max(18, Mathf.RoundToInt(32f * s));
+            int hi = Mathf.Max(18, Mathf.RoundToInt(30f * s));
             st.fontSize = FitFontWrapped(st, line, text.width, text.height, 15, hi);
             int black = Mathf.Clamp(Mathf.CeilToInt(CoachOutlinePx * s), CoachOutlinePx, 8);
             StampOutlined(text, line, st, new Color(1f, 0.98f, 0.90f, EaseOutCubic(_coachFade)), 0, black);
         }
 
-        void DrawAdoptName(float s, Rect field, Rect keep)
-        {
-            var st = AvatarFieldStyle(s);
-            GUI.SetNextControlName("avatar-name");
-            _adoptName = GUI.TextField(field, _adoptName ?? "", AvatarNameMax, st);
-            if (_adoptArmFocus)
-            {
-                GUI.FocusControl("avatar-name");
-                _adoptArmFocus = false;
-            }
-            bool held = false;
-            bool fire = HitPad(keep, out held);
-            DrawKeepChip(keep, s, held);
-            if (!fire) return;
-            string n = ClipAvatarName(_adoptName);
-            if (n.Length == 0 || AvatarNameDirty(n))
-            {
-                _adoptName = AvatarSuggestion(_adoptCol);
-                _adoptArmFocus = true;
-                return;
-            }
-            _adoptName = n;
-            SaveAvatar(_adoptCol, n);
-            BeginSettle();
-        }
-
         void HitAdoptBirds(float icon)
         {
+            if (_avatarRename) return;
+            if (_adoptStep != AdoptStep.Look && _adoptStep != AdoptStep.Settle) return;
+            int i = _adoptPick;
+            if (i < 0 || i > 4) return;
             float s = Mathf.Max(Screen.height / 720f, 1f);
             float pad = 4f * s;
-            for (int i = 0; i < 5; i++)
-            {
-                var c = _adoptShown[i];
-                var r = new Rect(c.x - icon * 0.5f - pad, c.y - icon * 0.5f - pad, icon + pad * 2f, icon + pad * 2f);
-                if (!HitPad(r, out _)) continue;
-                AdoptChoose(i);
-                return;
-            }
+            var c = _adoptShown[i];
+            var r = new Rect(c.x - icon * 0.5f - pad, c.y - icon * 0.5f - pad, icon + pad * 2f, icon + pad * 2f);
+            if (!HitPad(r, out _)) return;
+            _adoptHop[i] = 1f;
+            Sfx.Chirp(_adoptCol);
+            OpenAvatarRename();
         }
 
         void DrawAdoptBirds(float s, float icon)
@@ -617,12 +540,14 @@ namespace FlockFive
                 if (_adoptStep == AdoptStep.Settle && chosen)
                     faceLeft = AvatarHomePoint().x < _adoptLeaveFrom[i].x;
                 var prev = GUI.color;
-                if (_adoptPick >= 0 && !chosen && (_adoptStep == AdoptStep.Pick || _adoptStep == AdoptStep.Name))
+                if (_adoptPick >= 0 && !chosen && _adoptStep == AdoptStep.Look)
                     GUI.color = new Color(1f, 1f, 1f, 0.5f);
                 else
                     GUI.color = Color.white;
                 float clock = _adoptClock + i * 0.17f;
-                DrawCatalogBird((BirdColor)i, c, size, faceLeft, wings, clock);
+                var col = chosen ? _adoptCol : (BirdColor)i;
+                int kit = chosen ? SavedAvatarKit() : 0;
+                DrawDressedBird(col, kit, c, size, faceLeft, wings, clock);
                 GUI.color = prev;
                 if (chosen && _adoptStep == AdoptStep.Settle)
                     DrawAvatarPlate(c, drawIcon, _adoptName, s);
@@ -635,16 +560,21 @@ namespace FlockFive
             if (Event.current.type != EventType.MouseDown || Event.current.button != 0) return;
             AvatarRenameLayout(s, out _, out _, out _);
             if (_avatarRenameR.Contains(Event.current.mousePosition)) return;
+            bool look = _adoptLive && _adoptStep == AdoptStep.Look;
             CloseAvatarRename();
+            if (look) BeginSettle();
             Event.current.Use();
         }
 
         void OpenAvatarRename()
         {
-            if (_avatarRename || _adoptLive || !AvatarAdopted()) return;
+            if (_avatarRename || !AvatarAdopted()) return;
             _avatarRename = true;
             _avatarRenameText = SavedAvatarName();
-            _avatarRenameFocus = true;
+            _avatarRenameFocus = AvatarNeedsName();
+            _avatarOpenFrame = Time.frameCount;
+            _gloveVis = false;
+            _gloveReady = false;
         }
 
         void CloseAvatarRename()
@@ -661,52 +591,169 @@ namespace FlockFive
             string n = ClipAvatarName(_avatarRenameText);
             if (n.Length == 0 || AvatarNameDirty(n))
             {
-                _avatarRenameText = SavedAvatarName();
+                _avatarRenameText = AvatarSuggestion(SavedAvatar());
                 _avatarRenameFocus = true;
                 return;
             }
+            _adoptName = n;
             PlayerPrefs.SetString(AvatarNamePref, n);
+            PlayerPrefs.SetInt(AvatarNamedPref, 1);
             PlayerPrefs.Save();
+            bool look = _adoptLive && _adoptStep == AdoptStep.Look;
             CloseAvatarRename();
+            if (look) BeginSettle();
         }
 
-        void AvatarRenameLayout(float s, out Rect line, out Rect field, out Rect keep)
+        // SexOf stays the garden rule. This only writes the splash color.
+        void PickAvatarColor(int i)
+        {
+            if (i < 0 || i > 4) return;
+            var prev = _adoptCol;
+            var col = (BirdColor)i;
+            _adoptCol = col;
+            _avatarCol = col;
+            if (AvatarNeedsName())
+            {
+                string was = AvatarSuggestion(prev);
+                string typed = _avatarRenameText ?? "";
+                if (typed.Length == 0 || typed == was || typed == _adoptName)
+                {
+                    string sug = AvatarSuggestion(col);
+                    _avatarRenameText = sug;
+                    _adoptName = sug;
+                    PlayerPrefs.SetString(AvatarNamePref, sug);
+                }
+            }
+            PlayerPrefs.SetInt(AvatarPref, i);
+            PlayerPrefs.Save();
+            if (_adoptPick >= 0 && _adoptPick < _adoptHop.Length)
+                _adoptHop[_adoptPick] = 1f;
+            Sfx.Chirp(col);
+        }
+
+        void PickAvatarKit(int kit)
+        {
+            if (kit < 0 || kit > 2) return;
+            if (kit == 1 && !AvatarBowArt()) return;
+            if (kit == 2 && !AvatarCrownArt()) return;
+            PlayerPrefs.SetInt(AvatarKitPref, kit);
+            PlayerPrefs.Save();
+            Sfx.CardTap();
+        }
+
+        int AvatarKitChoices()
+        {
+            int n = 0;
+            _avatarKitId[n++] = 0;
+            if (AvatarBowArt()) _avatarKitId[n++] = 1;
+            if (AvatarCrownArt()) _avatarKitId[n++] = 2;
+            if (n < 2) n = 0;
+            _avatarKitN = n;
+            return n;
+        }
+
+        static string AvatarKitLabel(int kit)
+        {
+            if (kit == 1) return "Bow";
+            if (kit == 2) return "Crown";
+            return "None";
+        }
+
+        void AvatarRenameLayout(float s, out Rect line, out Rect field, out Rect done)
         {
             AvatarChannel(s, out float left, out float right);
             float titleBottom = TopHud() + (56f * 2f + 4f) * s;
             var flower = FlowerPlayRect();
-            float top = titleBottom + 18f;
-            float bot = flower.yMin - 18f;
+            float top = titleBottom + 8f * s;
+            float bot = flower.yMin - 8f * s;
             float width = Mathf.Max(80f, right - left);
-            float innerW = Mathf.Min(width - 36f, 300f * s);
-            float innerH = 112f * s;
+            int kits = AvatarKitChoices();
+            float gap = 8f * s;
+            float lineH = 36f * s;
+            float swH = 58f * s;
+            float kitH = kits > 0 ? 44f * s : 0f;
+            float rowH = 42f * s;
+            float pad = 10f * s;
+            float innerW = Mathf.Min(width - 8f, 360f * s);
+            float innerH = pad + lineH + gap + swH + gap;
+            if (kits > 0) innerH += kitH + gap;
+            innerH += rowH + pad;
+            float room = bot - top;
+            if (innerH > room && room > 80f * s)
+            {
+                float k = Mathf.Clamp(room / innerH, 0.62f, 1f);
+                lineH *= k;
+                swH *= k;
+                kitH *= k;
+                rowH *= k;
+                gap *= k;
+                pad *= k;
+                innerH = pad + lineH + gap + swH + gap;
+                if (kits > 0) innerH += kitH + gap;
+                innerH += rowH + pad;
+            }
             float x = left + (width - innerW) * 0.5f;
-            float y = top + Mathf.Max(0f, (bot - top - innerH) * 0.4f);
+            float y = top + Mathf.Max(0f, (room - innerH) * 0.28f);
             if (y + innerH > bot) y = Mathf.Max(top, bot - innerH);
             var inner = new Rect(x, y, innerW, innerH);
             _avatarRenameR = CoachPanelRect(inner);
-            line = new Rect(inner.x + 8f, inner.y + 8f * s, inner.width - 16f, 36f * s);
-            float rowH = 40f * s;
-            float rowY = inner.yMax - rowH - 12f * s;
-            float keepW = 74f * s;
-            keep = new Rect(inner.xMax - keepW - 10f * s, rowY, keepW, rowH);
-            field = new Rect(inner.x + 10f * s, rowY, Mathf.Max(40f, keep.x - inner.x - 18f * s), rowH);
+            float cx = inner.x + 8f * s;
+            float cw = inner.width - 16f * s;
+            float yy = inner.y + pad;
+            line = new Rect(cx, yy, cw, lineH);
+            yy += lineH + gap;
+            float doneW = 86f * s;
+            done = new Rect(cx + cw - doneW, yy, doneW, rowH);
+            field = new Rect(cx, yy, Mathf.Max(40f, done.x - cx - 8f * s), rowH);
+            yy += rowH + gap;
+            float cell = cw / 5f;
+            for (int i = 0; i < 5; i++)
+                _avatarSwatch[i] = new Rect(cx + cell * i, yy, cell, swH);
+            yy += swH + gap;
+            if (kits > 0)
+            {
+                float kw = (cw - gap * (kits - 1)) / kits;
+                for (int i = 0; i < kits; i++)
+                    _avatarKitR[i] = new Rect(cx + (kw + gap) * i, yy, kw, kitH);
+            }
         }
 
         void DrawAvatarRename(float s)
         {
             if (!_avatarRename) return;
-            AvatarRenameLayout(s, out var line, out var field, out var keep);
-            var inner = new Rect(
+            bool cue = AvatarNeedsName();
+            string prompt = cue ? AdoptNameLine : AvatarRenameLine;
+            AvatarRenameLayout(s, out var line, out var field, out var done);
+            var content = new Rect(
                 _avatarRenameR.x + 18f,
                 _avatarRenameR.y + 12f,
                 _avatarRenameR.width - 36f,
                 _avatarRenameR.height - 24f);
-            DrawCoachPanel(inner, 1f);
+            DrawCoachPanel(content, 1f);
             var st = CoachLineStyle();
-            st.fontSize = FitFont(st, AvatarRenameLine, line.width, line.height, 14, Mathf.RoundToInt(26f * s));
-            StampOutlined(line, AvatarRenameLine, st, new Color(1f, 0.98f, 0.90f, 1f), 0,
+            st.fontSize = FitFont(st, prompt, line.width, line.height, 14, Mathf.RoundToInt(26f * s));
+            StampOutlined(line, prompt, st, new Color(1f, 0.98f, 0.90f, 1f), 0,
                 Mathf.Clamp(Mathf.CeilToInt(CoachOutlinePx * s * 0.45f), 2, 4));
+
+            bool arm = Time.frameCount == _avatarOpenFrame;
+            int shown = (int)SavedAvatar();
+            if (shown < 0 || shown > 4) shown = (int)BirdColor.Gold;
+            for (int i = 0; i < 5; i++)
+            {
+                bool held = false;
+                bool fire = !arm && HitPad(_avatarSwatch[i], out held);
+                DrawColorSwatch(_avatarSwatch[i], (BirdColor)i, s, i == shown, held);
+                if (fire) PickAvatarColor(i);
+            }
+            int kitNow = SavedAvatarKit();
+            for (int i = 0; i < _avatarKitN; i++)
+            {
+                int kit = _avatarKitId[i];
+                bool held = false;
+                bool fire = !arm && HitPad(_avatarKitR[i], out held);
+                DrawChoiceChip(_avatarKitR[i], AvatarKitLabel(kit), s, kit == kitNow, held);
+                if (fire) PickAvatarKit(kit);
+            }
 
             var fieldSt = AvatarFieldStyle(s);
             GUI.SetNextControlName("avatar-name");
@@ -716,13 +763,37 @@ namespace FlockFive
                 GUI.FocusControl("avatar-name");
                 _avatarRenameFocus = false;
             }
-            bool held = false;
-            bool fire = HitPad(keep, out held);
-            DrawKeepChip(keep, s, held);
-            if (fire) CommitAvatarRename();
+            bool doneHeld = false;
+            bool doneFire = !arm && HitPad(done, out doneHeld);
+            DrawPlaqueChip(done, AvatarDoneLabel, s, doneHeld);
+            if (doneFire) CommitAvatarRename();
         }
 
-        void DrawKeepChip(Rect keep, float s, bool held) => DrawPlaqueChip(keep, "Keep", s, held);
+        void DrawColorSwatch(Rect cell, BirdColor col, float s, bool on, bool held)
+        {
+            float icon = Mathf.Min(cell.width, cell.height) * 0.82f;
+            var c = cell.center;
+            if (held) c.y += 2f * s;
+            if (on)
+            {
+                float ring = icon + 10f * s;
+                var rr = new Rect(c.x - ring * 0.5f, c.y - ring * 0.5f, ring, ring);
+                DrawSliced(AvatarPlateTex(), rr, 14f, 8f * s, new Color(1f, 0.98f, 0.90f, 1f));
+                DrawDressedBird(col, SavedAvatarKit(), c, icon, false, false, 0f);
+            }
+            else
+                DrawCatalogBird(col, c, icon, false, false, 0f);
+        }
+
+        void DrawChoiceChip(Rect chip, string label, float s, bool on, bool held)
+        {
+            if (on)
+            {
+                var ring = new Rect(chip.x - 3f * s, chip.y - 3f * s, chip.width + 6f * s, chip.height + 6f * s);
+                DrawSliced(AvatarFieldTex(), ring, 12f, 8f * s, new Color(1f, 0.98f, 0.90f, 1f));
+            }
+            DrawPlaqueChip(chip, label, s, held);
+        }
 
         void DrawPlaqueChip(Rect keep, string label, float s, bool held)
         {
@@ -793,6 +864,55 @@ namespace FlockFive
             return r;
         }
 
+        // Bow sits behind the body. Crown sits in front. Neither path writes SexOf.
+        Rect DrawDressedBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool wings, float clock)
+        {
+            if (kit == 1) DrawAvatarKit(1, col, c, icon, faceLeft, wings, clock);
+            var drawn = DrawCatalogBird(col, c, icon, faceLeft, wings, clock);
+            if (kit == 2) DrawAvatarKit(2, col, c, icon, faceLeft, wings, clock);
+            return drawn;
+        }
+
+        void DrawAvatarKit(int kit, BirdColor col, Vector2 c, float icon, bool faceLeft, bool wings, float clock)
+        {
+            if (icon < 2f) return;
+            bool bow = kit == 1;
+            if (bow)
+            {
+                if (!AvatarBowArt()) return;
+            }
+            else if (kit != 2 || !AvatarCrownArt())
+                return;
+            var spr = bow ? SpriteCatalog.Bow : SpriteCatalog.CrownFor(col);
+            if (spr == null || spr.texture == null || spr.texture.width < 32) return;
+            int fi = 0;
+            if (wings)
+            {
+                var body = SpriteCatalog.BirdFrame(col, clock * AvatarFlapRate, true);
+                fi = SpriteCatalog.PoseIndex(body, col, BirdSex.Neutral);
+                if (fi < 0 || fi > 4) fi = 0;
+            }
+            float lx = bow ? AvatarBowX[fi] : AvatarCrownX[fi];
+            float ly = bow ? AvatarBowY[fi] : AvatarCrownY[fi];
+            if (faceLeft) lx = -lx;
+            float unit = 280f * (icon / 1024f);
+            float dw = (spr.rect.width / 200f) * 0.42f * unit;
+            float dh = (spr.rect.height / 200f) * 0.42f * unit;
+            if (dw < 1f || dh < 1f) return;
+            float x = c.x + lx * unit;
+            float y = c.y - ly * unit;
+            var r = new Rect(x - dw * 0.5f, y - dh * 0.5f, dw, dh);
+            float tilt = bow ? 12f : 26f;
+            if (faceLeft) tilt = -tilt;
+            var m = GUI.matrix;
+            if (Mathf.Abs(tilt) > 0.4f)
+                GUIUtility.RotateAroundPivot(tilt, r.center);
+            if (faceLeft)
+                GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), r.center);
+            GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
+            GUI.matrix = m;
+        }
+
         // Side-on glove, same pose as the other splash lessons. A phone's row fills
         // the channel between the rails, so the hand stays down when it would cover
         // a bird, the caption, a rail, the title, or the flower.
@@ -811,19 +931,14 @@ namespace FlockFive
         bool AdoptGloveAim(float s, out Vector2 aim)
         {
             aim = default;
-            if (_adoptStep == AdoptStep.Name)
-            {
-                AdoptLayout(s, out _, out _, out _, out _, out var keep);
-                aim = TopTouch(keep);
-                return keep.width > 2f && GloveWouldClear(aim, s);
-            }
-            if (_adoptStep == AdoptStep.Pick)
-            {
-                AdoptLayout(s, out _, out _, out _, out _, out _);
-                aim = TopTouch(_adoptYesR);
-                return _adoptYesR.width > 2f && GloveWouldClear(aim, s);
-            }
-            return false;
+            if (_avatarRename) return false;
+            if (_adoptStep != AdoptStep.Look && _adoptStep != AdoptStep.Settle) return false;
+            if (_adoptPick < 0 || _adoptPick > 4) return false;
+            float icon = _adoptIcon > 1f ? _adoptIcon : AvatarIcon(s);
+            var c = _adoptShown[_adoptPick];
+            var bird = new Rect(c.x - icon * 0.5f, c.y - icon * 0.5f, icon, icon);
+            aim = TopTouch(bird);
+            return bird.width > 2f && GloveWouldClear(aim, s);
         }
 
         bool GloveWouldClear(Vector2 aim, float s)
@@ -854,10 +969,8 @@ namespace FlockFive
 
         bool AdoptGloveHits(Rect box, Vector2 aim, float s)
         {
-            AdoptLayout(s, out var caption, out _, out float icon, out var field, out _);
+            AdoptLayout(s, out var caption, out _, out float icon, out _, out _);
             if (HitsExceptAim(CoachPanelRect(caption), box, aim)) return true;
-            if (HitsExceptAim(_adoptNoR, box, aim)) return true;
-            if (field.width > 2f && HitsExceptAim(field, box, aim)) return true;
             float titleBottom = TopHud() + (56f * 2f + 4f) * s;
             if (HitsExceptAim(new Rect(0f, 0f, Screen.width, titleBottom), box, aim)) return true;
             if (HitsExceptAim(FlowerPlayRect(), box, aim)) return true;
@@ -871,7 +984,6 @@ namespace FlockFive
             float pad = 4f * s;
             for (int i = 0; i < 5; i++)
             {
-                if (_adoptStep == AdoptStep.Name && i != _adoptPick) continue;
                 var c = _adoptShown[i];
                 var bird = new Rect(c.x - icon * 0.5f - pad, c.y - icon * 0.5f - pad, icon + pad * 2f, icon + pad * 2f);
                 if (HitsExceptAim(bird, box, aim)) return true;

@@ -4,8 +4,8 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Screen money. Under 1,000 is a plain integer. Then K, M, and B.
-    // One decimal while the unit is under 10, and a trailing .0 is dropped.
+    // Screen money. Under 1,000 is a plain integer. K always keeps one decimal
+    // (1.0K, 12.3K). M and B keep one decimal under 10 and drop a trailing .0.
     // Floors, so a label never reads higher than the amount.
     public static class Money
     {
@@ -15,19 +15,24 @@ namespace FlockFive
         {
             if (n < 0) return "-" + Format(n == long.MinValue ? long.MaxValue : -n);
             if (n < 1000L) return "$" + n.ToString(CultureInfo.InvariantCulture);
-            long unit = 1000L;
-            string suffix = "K";
+            if (n < 1000000L) return "$" + KTenths(n) + "K";
+            long unit = 1000000L;
+            string suffix = "M";
             if (n >= 1000000000L)
             {
                 unit = 1000000000L;
                 suffix = "B";
             }
-            else if (n >= 1000000L)
-            {
-                unit = 1000000L;
-                suffix = "M";
-            }
             return "$" + Scaled(n, unit) + suffix;
+        }
+
+        // One floored decimal for every K amount. 1000 → 1.0, 1500 → 1.5, 12349 → 12.3.
+        static string KTenths(long n)
+        {
+            long tenths = n / 100L;
+            long whole = tenths / 10L;
+            long frac = tenths % 10L;
+            return whole.ToString(CultureInfo.InvariantCulture) + "." + frac.ToString(CultureInfo.InvariantCulture);
         }
 
         static string Scaled(long n, long unit)

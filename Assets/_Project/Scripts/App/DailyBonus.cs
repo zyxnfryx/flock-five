@@ -6,19 +6,20 @@ namespace FlockFive
 {
     // Daily login coins. Local calendar day, not the stage-clear streak in Purse.
     // A missed day (gap of 2+) offers day 1 again. The saved streak still counts
-    // past 7 ("12 day streak"); the row is only the 7-day cycle.
-    // Week bonus is +5 per full week already finished before today's claim, cap +25.
-    // Day 7 pays 75 with no week bonus. Day 8 pays 10+5. Clock behind the last
-    // claim cannot claim again.
+    // past 5 ("12 day streak"); the row is only the 5-day cycle.
+    // Week bonus is +5 per full cycle already finished before today's claim, cap +25.
+    // Day 5 pays 100 with no week bonus. Day 6 pays 10+5. Clock behind the last
+    // claim cannot claim again. A saved streak of 6 or 7 still wraps into the row.
     public static class DailyBonus
     {
         const string PrefLast = "flockfive.daily.last";
         const string PrefStreak = "flockfive.daily.streak";
         const int StreakCap = 100000;
+        public const int CycleDays = 5;
 
-        // Day 1..7. Every value is a multiple of 5.
-        static readonly int[] DayPay = { 10, 15, 20, 25, 35, 45, 75 };
-        static readonly string[] TileLabels = new string[7];
+        // Day 1..5. Every value is a multiple of 5. Day 5 is the crown.
+        static readonly int[] DayPay = { 10, 15, 20, 25, 100 };
+        static readonly string[] TileLabels = new string[CycleDays];
         static bool _tiles;
 
         static bool _booted;
@@ -88,7 +89,8 @@ namespace FlockFive
 
         public static string TileLabel(int day)
         {
-            if ((uint)day >= 7u) return TileLabels[0] ?? "$10";
+            if (TileLabels.Length == 0) return "$10";
+            if ((uint)day >= (uint)TileLabels.Length) return TileLabels[0] ?? "$10";
             return TileLabels[day] ?? "$10";
         }
 
@@ -187,22 +189,23 @@ namespace FlockFive
                 }
             }
 
-            _cycle = (_offerStreak - 1) % 7;
-            if (_cycle < 0) _cycle = 0;
+            int days = DayPay.Length;
+            _cycle = days > 0 ? (_offerStreak - 1) % days : 0;
+            if (_cycle < 0 || _cycle >= days) _cycle = 0;
             _bonus = WeekBonus(_offerStreak);
-            _payout = DayPay[_cycle] + _bonus;
+            _payout = (days > 0 ? DayPay[_cycle] : 10) + _bonus;
             bool alive = _gate == Gate.Claimed || (_gate == Gate.Ready && _continuing);
             _atRisk = alive && _streak >= 2;
             CacheLines(_gate == Gate.Ready ? _offerStreak : (_streak < 1 ? _offerStreak : _streak));
         }
 
-        // Full weeks completed before this claim. Day 7 is the last day of a week
+        // Full cycles completed before this claim. Day 5 is the last day of a cycle
         // and does not add the bonus; the next claim does.
         static int WeekBonus(int streakDay)
         {
             int done = streakDay - 1;
-            if (done < 7) return 0;
-            int bonus = (done / 7) * 5;
+            if (done < CycleDays) return 0;
+            int bonus = (done / CycleDays) * 5;
             return bonus > 25 ? 25 : bonus;
         }
 

@@ -89,7 +89,6 @@ namespace FlockFive
         static float _skyPow;
         static bool _skyBig;
         Transform _cue;
-        SpriteRenderer[] _cueSr;
         SpriteRenderer _track;
         SpriteRenderer _fill;
         Transform _fillT;
@@ -351,30 +350,15 @@ namespace FlockFive
             _mesh.bounds = _sheetBounds;
         }
 
-        // Small lightning mark and a bar that shrinks across StormLen. Built once.
+        // Bar that shrinks across StormLen. Built once. No bolt glyph: three
+        // RainStreaks here sat under the notch for the whole storm (a stuck scar).
+        // Strikes are the Bolt segments, and EndBolt clears those.
         void BuildCue()
         {
             var root = new GameObject("StormCue");
             root.transform.SetParent(transform, false);
             _cue = root.transform;
             _cue.localScale = new Vector3(1.4f, 1.4f, 1f);
-            _cueSr = new SpriteRenderer[3];
-            Vector2[] a = { new Vector2(-0.04f, 0.36f), new Vector2(0.20f, 0.06f), new Vector2(-0.06f, -0.04f) };
-            Vector2[] b = { new Vector2(0.20f, 0.06f), new Vector2(-0.06f, -0.04f), new Vector2(0.18f, -0.38f) };
-            for (int i = 0; i < 3; i++)
-            {
-                var go = WorldBuilder.Sprite("Zap" + i, SpriteCatalog.RainStreak, Vector3.zero, 1f, 21, _cue);
-                float dx = b[i].x - a[i].x;
-                float dy = b[i].y - a[i].y;
-                float len = Mathf.Sqrt(dx * dx + dy * dy);
-                var t = go.transform;
-                t.localPosition = new Vector3((a[i].x + b[i].x) * 0.5f, (a[i].y + b[i].y) * 0.5f, 0f);
-                t.localRotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(dy, dx) * Mathf.Rad2Deg - 90f);
-                t.localScale = new Vector3(1.25f, len * 1.08f, 1f);
-                _cueSr[i] = go.GetComponent<SpriteRenderer>();
-                _cueSr[i].color = new Color(0.96f, 0.97f, 1f, 0f);
-                _cueSr[i].enabled = false;
-            }
             var trackGo = WorldBuilder.Sprite("CueTrack", SpriteCatalog.Glow, Vector3.zero, 1f, 19, _cue);
             trackGo.transform.localPosition = new Vector3(0f, -0.62f, 0f);
             trackGo.transform.localScale = new Vector3(BarW, 0.11f, 1f);
@@ -817,10 +801,6 @@ namespace FlockFive
             if (q == _barQ && fq == _fadeQ) return;
             _barQ = q;
             _fadeQ = fq;
-            float a = fade * 0.78f;
-            var bolt = new Color(0.96f, 0.97f, 1f, a);
-            for (int i = 0; i < _cueSr.Length; i++)
-                if (_cueSr[i] != null) _cueSr[i].color = bolt;
             if (_track != null) _track.color = new Color(0.10f, 0.12f, 0.16f, fade * 0.42f);
             if (_fill != null) _fill.color = new Color(0.82f, 0.90f, 1f, fade * 0.74f);
             float w = BarW * Mathf.Clamp01(frac);
@@ -844,11 +824,6 @@ namespace FlockFive
         void ShowCue()
         {
             _cueOn = true;
-            if (_cueSr != null)
-            {
-                for (int i = 0; i < _cueSr.Length; i++)
-                    if (_cueSr[i] != null) _cueSr[i].enabled = true;
-            }
             if (_track != null) _track.enabled = true;
             if (_fill != null) _fill.enabled = true;
         }
@@ -858,11 +833,6 @@ namespace FlockFive
             _cueOn = false;
             _barQ = -1;
             _fadeQ = -1;
-            if (_cueSr != null)
-            {
-                for (int i = 0; i < _cueSr.Length; i++)
-                    if (_cueSr[i] != null) _cueSr[i].enabled = false;
-            }
             if (_track != null) _track.enabled = false;
             if (_fill != null) _fill.enabled = false;
         }

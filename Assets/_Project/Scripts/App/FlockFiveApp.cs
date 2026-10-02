@@ -134,19 +134,34 @@ namespace FlockFive
         bool _pokerKeepHint;
         // First visit to the table. 0 waiting, 1 bet, 2 deal, 3 hold, 4 draw, -1 done.
         const string CoachPokerPageKey = "flockfive.coach.pokerpage";
+        // Set on the first Deal. The bet sentence never returns after that.
+        const string CoachPokerDealtKey = "flockfive.coach.pokerdealt";
+        const string CoachPokerBackKey = "flockfive.coach.pokerback";
         const string PokerBetLine = "Pick your bet, then tap Deal.";
         const string PokerHoldLine = "Tap a card to hold it, then tap Draw.";
+        const string PokerBackLine = "Tap the back button to return home.";
         int _pokerPageStep;
         bool _pokerPageOn;
         float _pokerPageAge;
         bool _pokerTutorAimOk;
         Vector2 _pokerTutorAim;
+        // Repeat visits, after flockfive.coach.pokerpage. Hidden once Deal is tapped,
+        // and kept hidden after that (flockfive.coach.pokerdealt).
+        bool _pokerDealHint;
+        bool _pokerDealAimOk;
+        Vector2 _pokerDealAim;
+        // One-time glove on the back medal after a hand pays. flockfive.coach.pokerback.
+        bool _pokerBackKnown;
+        bool _pokerBackDone;
+        bool _pokerBackAimOk;
+        Vector2 _pokerBackAim;
         Rect _pokerMinusR;
         Rect _pokerPlusR;
         bool _pokerShowPay;
         float _pokerSwayT;
         float _pokerWinT = -1f;
-        string _pokerWinFitKey;
+        string _pokerWinFitText;
+        int _pokerWinFitW, _pokerWinFitH, _pokerWinFitRest, _pokerWinFitHero;
         // Bottom of the card row this frame; win speed lines never cross above it.
         float _pokerRowBottom;
         int _pokerWinHeroFont;
@@ -270,7 +285,8 @@ namespace FlockFive
         // Home-splash favorite. flockfive.avatar is 0-4 (ruby, gold, teal, violet, peach).
         // Missing or out of range reads as gold. The bird stays hidden until level 1 is
         // cleared (flockfive.next >= 1) and flockfive.avatar.adopted is set. The name
-        // lives in flockfive.avatar.name. The five halo birds stay on the logo.
+        // lives in flockfive.avatar.name. Kit is flockfive.avatar.kit (0 none, 1 bow,
+        // 2 crown) and does not change garden SexOf. The five halo birds stay on the logo.
         const string AvatarPref = "flockfive.avatar";
         const float AvatarFlapRate = 1.25f;
         BirdColor _avatarCol = BirdColor.Gold;
@@ -4285,7 +4301,7 @@ namespace FlockFive
             {
                 // Glove pose uses unscaled time, including under an ad, so the
                 // hand does not freeze and then jump when the pause lifts.
-                if (TutorialGuideLive() || _tutorPause != 0 || _pokerPageOn)
+                if (TutorialGuideLive() || _tutorPause != 0 || _pokerPageOn || _pokerDealHint)
                     CoachPlace();
                 return;
             }
@@ -4449,7 +4465,7 @@ namespace FlockFive
 
         static float SplashRailGap() => Mathf.Max(24f, SplashRailSize() * 0.30f);
 
-        // Right rail, top to bottom: pig, hive, poker. Left: daily, then VIP a full button below.
+        // Right rail, top to bottom: pig, hive, poker. Left: daily, then VIP.
         // Both pack from their top. A hidden button takes no slot and the rest slide up.
         void TickSplashRails()
         {
@@ -4554,11 +4570,7 @@ namespace FlockFive
                 PackRail(ref y, rightCx, gap, RailHive, size, visual);
                 PackRail(ref y, rightCx, gap, RailPoker, size, visual);
                 y = top;
-                float dailyK = visual ? _railK[RailDaily] : _railGoal[RailDaily];
                 PackRail(ref y, leftCx, gap, RailDaily, size, visual);
-                // One button of air between the gift and VIP. Hidden daily adds none.
-                if (dailyK > 0.001f)
-                    y += (size - gap) * dailyK;
                 PackRail(ref y, leftCx, gap, RailVip, size, visual);
             }
         }
@@ -6246,7 +6258,6 @@ namespace FlockFive
             bool safeOk = safe.width > 2f && safe.height > 2f;
             float safeL = safeOk ? safe.xMin : 0f;
             float safeR = safeOk ? safe.xMax : Screen.width;
-            float safeB = safeOk ? safe.yMin : 0f;
             float leftLimit = safeL + gap;
             float rightLimit = safeR - gap;
             if (rightLimit - leftLimit < 120f * s)
@@ -6254,11 +6265,11 @@ namespace FlockFive
                 leftLimit = safeL + 4f;
                 rightLimit = Mathf.Max(leftLimit + 120f * s, safeR - 4f);
             }
-            float botPad = Mathf.Max(14f, safeB + 8f);
-            float flower = Mathf.Min(Screen.width * 0.94f, Screen.height * 0.50f);
-            float flowerTop = Screen.height - botPad - flower;
+            var playBloom = FlowerPlayRect();
+            float botPad = Screen.height - playBloom.yMax;
+            float flowerTop = playBloom.y;
             float topLimit = titleBottom + gap;
-            float botLimit = Mathf.Min(Screen.height - botPad - 6f, flowerTop + flower * 0.06f);
+            float botLimit = Mathf.Min(Screen.height - botPad - 6f, flowerTop + playBloom.height * 0.06f);
             if (botLimit < topLimit + 88f * s)
                 botLimit = Mathf.Min(Screen.height - botPad - 6f, topLimit + 88f * s);
             float faceW = Mathf.Max(120f * s, rightLimit - leftLimit) / maxPop;
@@ -6402,7 +6413,8 @@ namespace FlockFive
             var valueSt = new GUIStyle(labelSt) { alignment = TextAnchor.MiddleRight };
             var heroSt = new GUIStyle(labelSt) { alignment = TextAnchor.MiddleCenter };
             int labelHi = Mathf.Max(20, Mathf.RoundToInt(38f * s));
-            int heroHi = Mathf.Max(28, Mathf.RoundToInt(72f * s));
+            // ~28% under the build-35 hero cap so the count-up stays inside the board.
+            int heroHi = Mathf.Max(28, Mathf.RoundToInt(52f * s));
             var labelInk = new Color(1f, 0.97f, 0.88f, 1f);
             var heroInk = new Color(1f, 0.95f, 0.42f, 1f);
 
@@ -6411,7 +6423,7 @@ namespace FlockFive
                 if (r.width < 4f || r.height < 4f || string.IsNullOrEmpty(text)) return;
                 st.wordWrap = false;
                 float fitW = Mathf.Max(4f, r.width * widthFrac);
-                float fitH = r.height * 0.86f;
+                float fitH = r.height * 0.62f;
                 st.fontSize = FitFont(st, text, fitW, fitH, 8, hi);
                 var content = new GUIContent(text);
                 int guard = 0;
@@ -6465,7 +6477,7 @@ namespace FlockFive
             GUI.color = new Color(1f, 0.78f, 0.18f, (0.22f + 0.28f * roll) * alpha);
             GUI.DrawTexture(new Rect(hero.x - glowPad, hero.y - glowPad * 0.35f, hero.width + glowPad * 2f, hero.height + glowPad), glow, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
-            StampFit(hero, amt, heroSt, heroInk, heroHi, 0.92f);
+            StampFit(hero, amt, heroSt, heroInk, heroHi, 0.66f);
             GUI.matrix = prevM;
             float halo = board.width * crownFrac + aura;
             NoteComboStreak(new Rect(board.x - halo, board.y - halo, board.width + halo * 2f, board.height + halo * 2f));
@@ -6633,6 +6645,7 @@ namespace FlockFive
 
         void DrawHomeWash(float a)
         {
+            if (!GuiPaint()) return;
             var bg = SpriteCatalog.GardenBg;
             if (bg != null && bg.texture != null)
                 GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), bg.texture, ScaleMode.ScaleAndCrop);
@@ -6830,6 +6843,17 @@ namespace FlockFive
                 _pokerKeepHint = true;
                 _pokerHover = -1;
                 for (int i = 0; i < _pokerHoldSlide.Length; i++) _pokerHoldSlide[i] = 0f;
+                _pokerDealHint = PlayerPrefs.GetInt(CoachPokerPageKey, 0) != 0
+                    && PlayerPrefs.GetInt(CoachPokerDealtKey, 0) == 0;
+                _pokerDealAimOk = false;
+                if (_pokerDealHint)
+                {
+                    _gloveReady = false;
+                    _gloveVis = false;
+                    _glovePhase = 0f;
+                    _tapSent = false;
+                    _coachFade = 0f;
+                }
                 _home = HomeFace.Poker;
             }
             if (pokerDraw)
@@ -6838,7 +6862,7 @@ namespace FlockFive
                 DrawSplashPokerButton(pokerR);
             }
 
-            // Daily gift sits above VIP, one button apart. Absent until level 1 is cleared. A fresh
+            // Daily gift sits above VIP on the same rail gap. Absent until level 1 is cleared. A fresh
             // unlock stays out of the pack until its lesson, then grows into the gap.
             bool dailyDraw = RailLive(RailDaily);
             var dailyR = SplashDailyRect();
@@ -6878,9 +6902,7 @@ namespace FlockFive
 
         bool DrawFlowerPlay(float s, string ease, int number, bool acceptTap)
         {
-            float botPad = Mathf.Max(14f, Screen.safeArea.yMin + 8f);
-            float size = Mathf.Min(Screen.width * 0.94f, Screen.height * 0.50f);
-            var rest = new Rect((Screen.width - size) * 0.5f, Screen.height - botPad - size, size, size);
+            var rest = FlowerPlayRect();
             bool held = false;
             bool fired = acceptTap && HitPad(rest, out held);
 
@@ -7184,16 +7206,44 @@ namespace FlockFive
             GUI.Label(r, text, st);
         }
 
+        // Eight-point rim instead of Ring. Poker chrome calls this every event
+        // (same GUI.Label count on Layout and Repaint, or HitPad ids drift).
+        // Ring's 8*radius samples were hundreds of GUI.Labels per label.
+        static void StampLight(Rect r, string text, GUIStyle st, Color fill)
+        {
+            float a = Mathf.Clamp01(fill.a);
+            if (a < 0.04f) return;
+            Paint(st, new Color(0.02f, 0.02f, 0.02f, a));
+            for (int i = 0; i < 8; i++)
+            {
+                float ang = i * 0.78539816f;
+                GUI.Label(new Rect(r.x + Mathf.Cos(ang) * 2f, r.y + Mathf.Sin(ang) * 2f, r.width, r.height), text, st);
+            }
+            Paint(st, new Color(1f, 1f, 1f, a));
+            for (int i = 0; i < 8; i++)
+            {
+                float ang = i * 0.78539816f;
+                GUI.Label(new Rect(r.x + Mathf.Cos(ang), r.y + Mathf.Sin(ang), r.width, r.height), text, st);
+            }
+            Paint(st, fill);
+            GUI.Label(r, text, st);
+        }
+
+        // Home wordmark vs the 0.72-wide mark. Top edge stays; FIVE clears the coin rail.
+        // Splash halo radii, center, and bird size read this same factor.
+        const float SplashLogoScale = 0.91f;
+
         // Finale-family wordmark via letter sprites (yellow faces + navy ExtrudeNear/Far block).
         void DrawSplashTitleMark(float s)
         {
             float top = TopHud();
-            float maxW = Screen.width * 0.72f; // Brandon: reduce home logo size
-            float capH = 56f * s;
-            float rowGap = 4f * s;
+            float fit = s * SplashLogoScale;
+            float maxW = Screen.width * 0.72f * SplashLogoScale;
+            float capH = 56f * fit;
+            float rowGap = 4f * fit;
             float tracking = -0.055f;
-            DrawSplashWord("FLOCK", top, maxW, capH, tracking, s);
-            DrawSplashWord("FIVE", top + capH + rowGap, maxW, capH, tracking, s);
+            DrawSplashWord("FLOCK", top, maxW, capH, tracking, fit);
+            DrawSplashWord("FIVE", top + capH + rowGap, maxW, capH, tracking, fit);
         }
 
         // Same yellow-navy letter family as the splash mark, with POKER as the third row.
@@ -7379,15 +7429,27 @@ namespace FlockFive
         }
 
         // Soft bounds around the stacked title mark (logo companions only).
+        // Scaled about the fixed top edge with SplashLogoScale so the ring
+        // stays tight on the smaller wordmark and clear of the right rail.
         static Rect SplashTitleHalo()
         {
             float top = TopHud();
-            float capH = 56f * Mathf.Max(Screen.height / 720f, 1f);
-            float rowGap = 4f * Mathf.Max(Screen.height / 720f, 1f);
+            float ui = Mathf.Max(Screen.height / 720f, 1f);
+            float capH = 56f * ui;
+            float rowGap = 4f * ui;
             float titleH = capH * 2f + rowGap;
             float padX = Screen.width * 0.18f; // tighter logo halo
-            float padY = 16f * Mathf.Max(Screen.height / 720f, 1f);
-            return new Rect(padX, Mathf.Max(4f, top - padY * 0.35f), Screen.width - padX * 2f, titleH + padY);
+            float padY = 16f * ui;
+            float x = padX;
+            float y = Mathf.Max(4f, top - padY * 0.35f);
+            float w = Screen.width - padX * 2f;
+            float haloH = titleH + padY;
+            float mid = Screen.width * 0.5f;
+            x = mid + (x - mid) * SplashLogoScale;
+            y = top + (y - top) * SplashLogoScale;
+            w *= SplashLogoScale;
+            haloH *= SplashLogoScale;
+            return new Rect(x, y, w, haloH);
         }
 
         // behind=true: upper half of ellipse draws under letter faces (true z-weave).
@@ -7395,7 +7457,7 @@ namespace FlockFive
         void DrawAmbientSplashBirds(float s, bool behind)
         {
             EnsureSplashFlutters();
-            DrawHaloBirds(ref _splashFlutters, SplashTitleHalo(), s, behind, HaloBirdIcon(s), ref _splashHaloTick);
+            DrawHaloBirds(ref _splashFlutters, SplashTitleHalo(), s, behind, HaloBirdIcon(s) * SplashLogoScale, ref _splashHaloTick);
         }
 
         // One saved bird on a leafy branch between the title and the play flower,
@@ -7415,7 +7477,7 @@ namespace FlockFive
 
         void TickHomeAvatar()
         {
-            if (!_splash || _home != HomeFace.Splash || _adoptLive || HomeLessonUp() || !AvatarAdopted())
+            if (!_splash || _home != HomeFace.Splash || HomeLessonUp() || !AvatarAdopted())
                 CloseAvatarRename();
             if (GamePause.Paused) return;
             if (!_splash || _home != HomeFace.Splash) return;
@@ -7712,7 +7774,7 @@ namespace FlockFive
                 GUIUtility.RotateAroundPivot(preen, new Vector2(c.x, c.y + icon * 0.31f));
             var prev = GUI.color;
             GUI.color = Color.white;
-            var drawn = DrawCatalogBird(_avatarCol, c, icon, _avatarFaceLeft, airborne, _avatarClock);
+            var drawn = DrawDressedBird(_avatarCol, SavedAvatarKit(), c, icon, _avatarFaceLeft, airborne, _avatarClock);
             GUI.matrix = prevMat;
             GUI.color = prev;
             if (drawn.width <= 2f) return;
@@ -7773,9 +7835,19 @@ namespace FlockFive
             return Mathf.Clamp(want, lo, hi);
         }
 
+        // Sits on the safe-area floor. The old pad left a spare band under the tier.
+        static float PlayFlowerBotPad()
+        {
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float clear = Mathf.Max(4f, Screen.safeArea.yMin + 2f);
+            float old = Mathf.Max(14f, Screen.safeArea.yMin + 8f);
+            float pad = old - 28f * s;
+            return pad < clear ? clear : pad;
+        }
+
         static Rect FlowerPlayRect()
         {
-            float botPad = Mathf.Max(14f, Screen.safeArea.yMin + 8f);
+            float botPad = PlayFlowerBotPad();
             float size = Mathf.Min(Screen.width * 0.94f, Screen.height * 0.50f);
             return new Rect((Screen.width - size) * 0.5f, Screen.height - botPad - size, size, size);
         }
@@ -8213,6 +8285,7 @@ namespace FlockFive
 
         void DrawHaloBirds(ref SplashFlutter[] flutters, Rect h, float s, bool behind, float icon, ref int stepFrame)
         {
+            if (!GuiPaint()) return;
             if (flutters == null || flutters.Length == 0) return;
             Vector2 c = h.center;
             var prev = GUI.color;
@@ -8450,6 +8523,7 @@ namespace FlockFive
 
         static void DrawFlowerHalo(Rect rest, float sink, float gain = 1f)
         {
+            if (!GuiPaint()) return;
             float t = Time.unscaledTime;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 1.7f);
             float pad = rest.width * (0.03f + 0.035f * breathe);
@@ -8462,6 +8536,7 @@ namespace FlockFive
 
         static void DrawFlowerShimmer(Rect rest, float sink, float gain = 1f)
         {
+            if (!GuiPaint()) return;
             float t = Time.unscaledTime;
             var glow = GlowTex();
             var face = new Rect(rest.x, rest.y + sink, rest.width, rest.height);
@@ -8690,36 +8765,148 @@ namespace FlockFive
             _pokerTutorAimOk = true;
         }
 
-        void DrawPokerPageTutor(float s, float belowTitle, Rect row, Rect betR, Rect actR)
+        // Between the five cards and the bet/deal controls. CoachPanelRect pads
+        // 18×12 around this rect, so the plate stays inside that gap.
+        Rect PokerCoachBubble(float s, Rect row, Rect betR, Rect actR)
+        {
+            const float panelPadX = 18f;
+            const float panelPadY = 12f;
+            float top = row.yMax + 2f * s;
+            float bot = Mathf.Min(betR.y, actR.y) - 2f * s;
+            if (bot < top + 8f) bot = top + 8f;
+            float room = bot - top;
+            float h = Mathf.Min(46f * s, Mathf.Max(28f * s, room - panelPadY * 2f));
+            if (h > room) h = room;
+            float y = top + panelPadY;
+            if (y + h + panelPadY > bot)
+                y = Mathf.Max(top, bot - panelPadY - h);
+            float left = Mathf.Max(12f * s + panelPadX, Screen.safeArea.xMin + 8f + panelPadX);
+            float right = Screen.width - Mathf.Max(12f * s + panelPadX, Screen.width - Screen.safeArea.xMax + 8f + panelPadX);
+            float span = right - left;
+            if (span < 80f)
+            {
+                left = 8f;
+                right = Screen.width - 8f;
+                span = Mathf.Max(80f, right - left);
+            }
+            float w = Mathf.Min(span, Mathf.Min(420f * s, Screen.width * 0.68f));
+            float x = left + Mathf.Max(0f, (span - w) * 0.5f);
+            return new Rect(x, y, w, h);
+        }
+
+        void DrawPokerPageTutor(float s, Rect row, Rect betR, Rect actR)
         {
             if (!_pokerPageOn || PokerPageTutorBlocked()) return;
-            string line = _pokerPageStep >= 3 ? PokerHoldLine : PokerBetLine;
-            var tab = PokerPayTabRect(belowTitle, s);
-            float h = Mathf.Clamp(52f * s, 44f, 68f);
-            float left = Mathf.Max(12f * s, Screen.safeArea.xMin + 8f);
-            float right = tab.x - 10f * s;
-            float y = belowTitle + 6f * s;
-            float w = right - left;
-            float cap = Mathf.Min(440f * s, Screen.width * 0.70f);
-            if (w > cap)
+            // Bet sentence leaves the moment the first hand is dealt, including
+            // the deal animation. It does not come back for the hold step.
+            string line = null;
+            if (_pokerPageStep >= 3)
+                line = PokerHoldLine;
+            else if (BirdPoker.PhaseNow == BirdPoker.Phase.Idle
+                && _pokerMotion != PokerMotion.Deal
+                && PlayerPrefs.GetInt(CoachPokerDealtKey, 0) == 0)
+                line = PokerBetLine;
+            if (line != null)
             {
-                left += (w - cap) * 0.5f;
-                w = cap;
+                var want = PokerCoachBubble(s, row, betR, actR);
+                DrawSplashIntroLine(line, want, s);
             }
-            if (w < 160f * s)
+            DrawCoachGlove(s);
+        }
+
+        // Same sentence as the first-visit bet step, for later visits only.
+        // The lesson owns the glove and the caption while it is running.
+        bool TickPokerDealHint(float dt)
+        {
+            if (_pokerPageOn || !_pokerDealHint || _home != HomeFace.Poker)
+                return false;
+            if (PokerPageTutorBlocked() || PokerMotionBusy() || BirdPoker.PhaseNow == BirdPoker.Phase.Dealt || !_pokerDealAimOk)
             {
-                w = Mathf.Min(cap, Screen.width - 24f * s);
-                left = (Screen.width - w) * 0.5f;
-                y = tab.yMax + 8f * s;
+                _gloveVis = false;
+                _glovePhase = 0f;
+                _tapSent = false;
+                return true;
             }
-            var want = new Rect(left, y, Mathf.Max(120f * s, w), h);
-            float x0 = Mathf.Min(row.x, Mathf.Min(betR.x, actR.x));
-            float y0 = Mathf.Min(row.y, Mathf.Min(betR.y, actR.y));
-            float x1 = Mathf.Max(row.xMax, Mathf.Max(betR.xMax, actR.xMax));
-            float y1 = Mathf.Max(row.yMax, Mathf.Max(betR.yMax, actR.yMax));
-            var play = new Rect(x0, y0, Mathf.Max(0f, x1 - x0), Mathf.Max(0f, y1 - y0));
-            want = NudgeCaption(line, want, s, play);
-            DrawSplashIntroLine(line, want, s);
+            float handS = Mathf.Max(Screen.height / 720f, 1f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            CoachGloveAt(_pokerDealAim, dt, handS);
+            return true;
+        }
+
+        void DrawPokerDealHint(float s, Rect row, Rect betR, Rect actR)
+        {
+            if (_pokerPageOn || !_pokerDealHint || PokerPageTutorBlocked() || PokerMotionBusy()
+                || BirdPoker.PhaseNow == BirdPoker.Phase.Dealt)
+            {
+                _pokerDealAimOk = false;
+                return;
+            }
+            var disc = FlowerDisc(actR, 0f);
+            _pokerDealAim = TopTouch(disc);
+            _pokerDealAimOk = disc.width > 2f;
+            var want = PokerCoachBubble(s, row, betR, actR);
+            DrawSplashIntroLine(PokerBetLine, want, s);
+            DrawCoachGlove(s);
+        }
+
+        bool PokerBackDone()
+        {
+            if (_pokerBackKnown) return _pokerBackDone;
+            _pokerBackKnown = true;
+            _pokerBackDone = PlayerPrefs.GetInt(CoachPokerBackKey, 0) != 0;
+            return _pokerBackDone;
+        }
+
+        void MarkPokerBackDone()
+        {
+            if (PokerBackDone()) return;
+#if UNITY_EDITOR
+            if (_pokerPlayrun || EditorShotLive) return;
+#endif
+            _pokerBackDone = true;
+            _pokerBackKnown = true;
+            _pokerBackAimOk = false;
+            _gloveVis = false;
+            PlayerPrefs.SetInt(CoachPokerBackKey, 1);
+            PlayerPrefs.Save();
+        }
+
+        // After the result is up. Hidden through the next deal; dismissed on Back.
+        bool TickPokerBackHint(float dt)
+        {
+            if (PokerBackDone() || _home != HomeFace.Poker) return false;
+            if (_pokerPageOn || _pokerDealHint) return false;
+            if (BirdPoker.PhaseNow != BirdPoker.Phase.Drawn || PokerMotionBusy()
+                || PokerPageTutorBlocked() || !_pokerBackAimOk)
+            {
+                _gloveVis = false;
+                _glovePhase = 0f;
+                _tapSent = false;
+                return true;
+            }
+            float handS = Mathf.Max(Screen.height / 720f, 1f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            CoachGloveAt(_pokerBackAim, dt, handS);
+            return true;
+        }
+
+        void DrawPokerBackHint(float s, Rect back)
+        {
+            if (PokerBackDone() || _pokerPageOn || _pokerDealHint) return;
+            if (BirdPoker.PhaseNow != BirdPoker.Phase.Drawn || PokerMotionBusy() || PokerPageTutorBlocked())
+            {
+                _pokerBackAimOk = false;
+                return;
+            }
+            _pokerBackAim = TopTouch(back);
+            _pokerBackAimOk = back.width > 2f;
+            float w = Mathf.Min(Screen.width * 0.70f, 460f * s);
+            float h = 64f * s;
+            float x = Mathf.Max(12f * s, Screen.safeArea.xMin + 6f);
+            float y = back.yMax + 10f * s;
+            float maxY = Screen.height - h - 8f;
+            if (y > maxY) y = maxY;
+            DrawCoachLine(PokerBackLine, s, back.yMax, h, 0, y, w, x);
             DrawCoachGlove(s);
         }
 
@@ -8735,6 +8922,8 @@ namespace FlockFive
             var back = BackMedalRect(s, top);
             if (DrawBackMedal(back))
             {
+                if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn || _pokerShowPay)
+                    MarkPokerBackDone();
                 BirdPoker.ResetRound();
                 _pokerMotion = PokerMotion.None;
                 _pokerFan = false;
@@ -8746,6 +8935,8 @@ namespace FlockFive
                 _pokerPayOpen = false;
                 _pokerPayAnim = 0f;
                 _pokerKeepHint = false;
+                _pokerDealHint = false;
+                _pokerDealAimOk = false;
                 _pokerHover = -1;
                 _home = HomeFace.Splash;
             }
@@ -8885,7 +9076,9 @@ namespace FlockFive
                 }
             }
             NotePokerTutorAims(actR, rowBox, cardW, gap);
-            DrawPokerPageTutor(s, below, rowBox, betR, actR);
+            DrawPokerPageTutor(s, rowBox, betR, actR);
+            DrawPokerDealHint(s, rowBox, betR, actR);
+            DrawPokerBackHint(s, back);
             DrawPokerWinFanfare(betR, actR, s);
 
             // Stamp ceremony above everything; else pay-table overlay / jewel tab on top.
@@ -8932,6 +9125,7 @@ namespace FlockFive
 
         void DrawPokerPayTable(float top, float s)
         {
+            if (!GuiPaint()) return;
             if (_pokerPayAnim <= 0.01f && !_pokerPayOpen)
             {
                 DrawPokerPayJewel(PokerPayTabRect(top, s), s);
@@ -8983,38 +9177,39 @@ namespace FlockFive
                 DrawCardPaper(paper, false, 0.98f * u);
                 GUI.color = Color.white;
 
-                var head = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter
-                };
+                var head = PokerBold(ref _payHead, TextAnchor.MiddleCenter);
+                head.clipping = TextClipping.Clip;
+                var sub = PokerBold(ref _paySub, TextAnchor.MiddleCenter);
+                sub.clipping = TextClipping.Clip;
                 string headTx = "PAY TABLE";
-                head.fontSize = FitFont(head, headTx, paper.width * 0.80f, headH * 0.52f, 24, 44);
-                StampOutlined(new Rect(paper.x, paper.y + 2f * s, paper.width, headH * 0.58f), headTx, head,
-                    new Color(0.28f, 0.14f, 0.06f), 2, 1);
-                var sub = new GUIStyle(head) { fontSize = Mathf.Max(16, head.fontSize - 6) };
-                StampOutlined(new Rect(paper.x, paper.y + headH * 0.52f, paper.width, headH * 0.40f),
-                    "BET " + Money.Format(BirdPoker.Bet), sub, new Color(0.62f, 0.28f, 0.08f), 1, 1);
+                int fitKey = BirdPoker.Bet
+                    ^ (Mathf.RoundToInt(paper.width) * 397)
+                    ^ (Mathf.RoundToInt(rowH * 10f) * 8191)
+                    ^ (Mathf.RoundToInt(headH) << 20)
+                    ^ (rows << 28);
+                if (fitKey == int.MinValue) fitKey = -2;
+                bool fitMiss = fitKey != _payFitKey || rows > _payCashTx.Length;
+                if (fitMiss && rows <= _payCashTx.Length) _payFitKey = fitKey;
+                if (fitMiss)
+                {
+                    head.fontSize = FitFont(head, headTx, paper.width * 0.80f, headH * 0.52f, 24, 44);
+                    sub.fontSize = Mathf.Max(16, head.fontSize - 6);
+                }
+                StampLight(new Rect(paper.x, paper.y + 2f * s, paper.width, headH * 0.58f), headTx, head,
+                    new Color(0.28f, 0.14f, 0.06f));
+                StampLight(new Rect(paper.x, paper.y + headH * 0.52f, paper.width, headH * 0.40f),
+                    PokerBetText(), sub, new Color(0.62f, 0.28f, 0.08f));
                 GUI.color = new Color(0.72f, 0.52f, 0.22f, 0.85f * u);
                 float ruleY = paper.y + headH - 2f * s;
                 GUI.DrawTexture(new Rect(paper.x + 10f * s, ruleY, paper.width - 20f * s, 2f * s), Texture2D.whiteTexture);
                 GUI.color = Color.white;
 
-                var nameSt = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleLeft,
-                    wordWrap = false,
-                    clipping = TextClipping.Clip
-                };
-                var numSt = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleRight,
-                    wordWrap = false,
-                    clipping = TextClipping.Clip
-                };
-                var midSt = new GUIStyle(numSt) { alignment = TextAnchor.MiddleCenter };
+                var nameSt = PokerBold(ref _payName, TextAnchor.MiddleLeft);
+                nameSt.clipping = TextClipping.Clip;
+                var numSt = PokerBold(ref _payNum, TextAnchor.MiddleRight);
+                numSt.clipping = TextClipping.Clip;
+                var midSt = PokerBold(ref _payMid, TextAnchor.MiddleCenter);
+                midSt.clipping = TextClipping.Clip;
                 int body = Mathf.RoundToInt(Mathf.Clamp(rowH * 0.46f, 22f, 40f));
                 int jack = body + 4;
                 float yRow = paper.y + headH + 2f * s;
@@ -9050,14 +9245,35 @@ namespace FlockFive
                     float cashW = inner.width - nameW - multW;
                     int cap = jackpot ? jack : body;
                     int floorPx = 11;
-                    nameSt.fontSize = FitFont(nameSt, name, nameW - 6f, row.height * 0.62f, floorPx, cap);
-                    string multTx = mult + "×";
-                    string cashTx = Money.Format(payout);
-                    midSt.fontSize = FitFont(midSt, multTx, multW - 4f, row.height * 0.62f, floorPx, cap);
-                    numSt.fontSize = FitFont(numSt, cashTx, cashW - 6f, row.height * 0.62f, floorPx, cap);
-                    StampOutlined(new Rect(inner.x, inner.y, nameW, inner.height), name, nameSt, fill, 1, 1);
-                    StampOutlined(new Rect(inner.x + nameW, inner.y, multW, inner.height), multTx, midSt, fill, 1, 1);
-                    StampOutlined(new Rect(inner.x + nameW + multW, inner.y, cashW, inner.height), cashTx, numSt, fill, 1, 1);
+                    string multTx;
+                    string cashTx;
+                    if (fitMiss || i >= _payCashTx.Length)
+                    {
+                        nameSt.fontSize = FitFont(nameSt, name, nameW - 6f, row.height * 0.62f, floorPx, cap);
+                        multTx = mult + "×";
+                        cashTx = Money.Format(payout);
+                        midSt.fontSize = FitFont(midSt, multTx, multW - 4f, row.height * 0.62f, floorPx, cap);
+                        numSt.fontSize = FitFont(numSt, cashTx, cashW - 6f, row.height * 0.62f, floorPx, cap);
+                        if (i < _payCashTx.Length)
+                        {
+                            _payNamePx[i] = nameSt.fontSize;
+                            _payMidPx[i] = midSt.fontSize;
+                            _payCashPx[i] = numSt.fontSize;
+                            _payMultTx[i] = multTx;
+                            _payCashTx[i] = cashTx;
+                        }
+                    }
+                    else
+                    {
+                        nameSt.fontSize = _payNamePx[i];
+                        midSt.fontSize = _payMidPx[i];
+                        numSt.fontSize = _payCashPx[i];
+                        multTx = _payMultTx[i];
+                        cashTx = _payCashTx[i];
+                    }
+                    StampLight(new Rect(inner.x, inner.y, nameW, inner.height), name, nameSt, fill);
+                    StampLight(new Rect(inner.x + nameW, inner.y, multW, inner.height), multTx, midSt, fill);
+                    StampLight(new Rect(inner.x + nameW + multW, inner.y, cashW, inner.height), cashTx, numSt, fill);
                     yRow += rowH;
                 }
             }
@@ -9067,6 +9283,7 @@ namespace FlockFive
 
         void DrawPokerPayJewel(Rect tab, float s)
         {
+            if (!GuiPaint()) return;
             // Input System only — do not call UnityEngine.Input.GetMouseButton.
             bool held = _pokerPayJewelHeld;
 
@@ -9084,8 +9301,7 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(chip.x + 4f * s, chip.y + 3f * s, chip.width - 8f * s, 3f * s), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            string arrow = _pokerPayOpen ? "▼" : "▶";
-            string lab = "PAY TABLE " + arrow;
+            string lab = _pokerPayOpen ? "PAY TABLE ▼" : "PAY TABLE ▶";
             if (_pokerPayStyle == null)
             {
                 _pokerPayStyle = new GUIStyle(GUI.skin.label)
@@ -9097,8 +9313,17 @@ namespace FlockFive
                 };
             }
             var labSt = _pokerPayStyle;
-            labSt.fontSize = FitFont(labSt, lab, chip.width * 0.90f, chip.height * 0.72f, 14, 26);
-            StampOutlined(chip, lab, labSt, new Color(1f, 0.94f, 0.72f), 1, 1);
+            int jewelKey = (_pokerPayOpen ? 1 : 0)
+                ^ (Mathf.RoundToInt(chip.width) * 17)
+                ^ (Mathf.RoundToInt(chip.height) << 12);
+            if (jewelKey == int.MinValue) jewelKey = -2;
+            if (jewelKey != _payJewelKey)
+            {
+                _payJewelKey = jewelKey;
+                _payJewelPx = FitFont(labSt, lab, chip.width * 0.90f, chip.height * 0.72f, 14, 26);
+            }
+            labSt.fontSize = _payJewelPx;
+            StampLight(chip, lab, labSt, new Color(1f, 0.94f, 0.72f));
         }
 
         void BeginPokerStamp(int kind)
@@ -9470,7 +9695,53 @@ namespace FlockFive
             DrawInkStamp(stamp, rot, Mathf.Clamp01(stampU * 1.5f) * a, true);
         }
 
-        static GUIStyle _pokerPayStyle;
+        static GUIStyle _pokerPayStyle, _pokerLed, _pokerStep, _pokerHero, _pokerWinCenter, _pokerWinLeft;
+        static GUIStyle _payHead, _paySub, _payName, _payNum, _payMid;
+        static GUIContent _pokerGui;
+        static string _pokerBetText;
+        static int _pokerBetSeen = int.MinValue;
+        static string _pokerWinText;
+        static int _pokerWinAmt = int.MinValue;
+        static int _pokerHeroKey = int.MinValue;
+        static int _pokerHeroPx;
+        static int _payJewelKey = int.MinValue;
+        static int _payJewelPx;
+        static int _payFitKey = int.MinValue;
+        static readonly int[] _payNamePx = new int[8];
+        static readonly int[] _payMidPx = new int[8];
+        static readonly int[] _payCashPx = new int[8];
+        static readonly string[] _payCashTx = new string[8];
+        static readonly string[] _payMultTx = new string[8];
+
+        static GUIStyle PokerBold(ref GUIStyle slot, TextAnchor align)
+        {
+            if (slot != null) return slot;
+            slot = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = align,
+                wordWrap = false
+            };
+            return slot;
+        }
+
+        static GUIContent PokerGui(string text)
+        {
+            if (_pokerGui == null) _pokerGui = new GUIContent();
+            _pokerGui.text = text ?? "";
+            return _pokerGui;
+        }
+
+        static string PokerBetText()
+        {
+            int bet = BirdPoker.Bet;
+            if (bet != _pokerBetSeen || _pokerBetText == null)
+            {
+                _pokerBetSeen = bet;
+                _pokerBetText = "BET " + Money.Format(bet);
+            }
+            return _pokerBetText;
+        }
 
         void DrawPokerPurse(Rect back, float top, float s)
         {
@@ -9492,6 +9763,10 @@ namespace FlockFive
         // Native thumb joint on the same canvas as the palm (image 31).
         const float PokerFanPinchU = 0.586f;
         const float PokerFanPinchV = 0.28f;
+        // Behind-hand crop. Non-thumb fingers on fx_hand_palm run from the top
+        // down to ~0.36 (left stack and the right pinky). 0.37 is the first row
+        // that is only palm. The thumb sprite reaches ~0.38, so the two meet.
+        const float PokerPalmBandTop = 0.37f;
         const float PokerFanHandAspect = 0.80f;
         // Raise only the card row (and everything seated on it) by ~5% of screen height.
         const float PokerRowLiftFrac = 0.05f;
@@ -9608,6 +9883,17 @@ namespace FlockFive
 
         void BeginPokerDeal()
         {
+            _pokerDealHint = false;
+            _pokerDealAimOk = false;
+            bool stampDealt = PlayerPrefs.GetInt(CoachPokerDealtKey, 0) == 0;
+#if UNITY_EDITOR
+            if (_pokerPlayrun || EditorShotLive) stampDealt = false;
+#endif
+            if (stampDealt)
+            {
+                PlayerPrefs.SetInt(CoachPokerDealtKey, 1);
+                PlayerPrefs.Save();
+            }
             _pokerMotion = PokerMotion.Deal;
             _pokerMotionT = 0f;
             _pokerFan = false;
@@ -10095,6 +10381,7 @@ namespace FlockFive
 
         void DrawPokerFanHand(Rect row, float cardW, float cardH, float s, bool front)
         {
+            if (!GuiPaint()) return;
             int live = PokerFanLive();
             if (live == 0 && _pokerMotion != PokerMotion.Deal) return;
             float u = 0f;
@@ -10141,9 +10428,9 @@ namespace FlockFive
             GUI.color = u >= 0.98f ? Color.white : new Color(1f, 1f, 1f, u);
             if (!front)
             {
-                // Palm and sleeve only. The fingertip band above the pinch stays
-                // out, so index/middle/ring cannot show through the fan gaps.
-                DrawSpriteBand(dest, SpriteCatalog.HandPalm, PokerFanPinchV, 1f);
+                // Palm and sleeve only, starting below every non-thumb finger
+                // so nothing but the thumb layer can show in the fan gaps.
+                DrawSpriteBand(dest, SpriteCatalog.HandPalm, PokerPalmBandTop, 1f);
             }
             else
             {
@@ -10312,14 +10599,23 @@ namespace FlockFive
             e.Use();
         }
 
-        static string PokerWinText() => "WIN " + Money.Format(BirdPoker.LastWin);
-
-        static GUIStyle PokerWinStyle(TextAnchor align) => new GUIStyle(GUI.skin.label)
+        static string PokerWinText()
         {
-            fontStyle = FontStyle.Bold,
-            alignment = align,
-            wordWrap = false
-        };
+            int win = BirdPoker.LastWin;
+            if (win != _pokerWinAmt || _pokerWinText == null)
+            {
+                _pokerWinAmt = win;
+                _pokerWinText = "WIN " + Money.Format(win);
+            }
+            return _pokerWinText;
+        }
+
+        static GUIStyle PokerWinStyle(TextAnchor align)
+        {
+            if (align == TextAnchor.MiddleLeft)
+                return PokerBold(ref _pokerWinLeft, TextAnchor.MiddleLeft);
+            return PokerBold(ref _pokerWinCenter, TextAnchor.MiddleCenter);
+        }
 
         static float PokerWinHeroH(float s) => Mathf.Min(Screen.width * 0.26f, 190f * s);
 
@@ -10355,9 +10651,18 @@ namespace FlockFive
         // FitFont walks sizes; cache per payout text so the fanfare never refits every frame.
         void FitPokerWinFonts(string text, Rect rest, float heroH)
         {
-            string key = text + "|" + Screen.width + "x" + Screen.height + "|" + rest.height;
-            if (key == _pokerWinFitKey) return;
-            _pokerWinFitKey = key;
+            int sw = Screen.width;
+            int sh = Screen.height;
+            int rh = Mathf.RoundToInt(rest.height);
+            int hh = Mathf.RoundToInt(heroH);
+            if (text == _pokerWinFitText && sw == _pokerWinFitW && sh == _pokerWinFitH
+                && rh == _pokerWinFitRest && hh == _pokerWinFitHero)
+                return;
+            _pokerWinFitText = text;
+            _pokerWinFitW = sw;
+            _pokerWinFitH = sh;
+            _pokerWinFitRest = rh;
+            _pokerWinFitHero = hh;
             var st = PokerWinStyle(TextAnchor.MiddleCenter);
             // Hero must stay inside the safe area even at the punch-in overshoot, outline included
             // (at 0.80 of the raw screen width "WIN $1,000" clipped the left edge at the peak).
@@ -10399,10 +10704,11 @@ namespace FlockFive
             FitPokerWinFonts(g.Text, rest, PokerWinHeroH(s));
             g.St = PokerWinStyle(TextAnchor.MiddleCenter);
             g.St.fontSize = _pokerWinHeroFont;
-            g.Size = g.St.CalcSize(new GUIContent(g.Text));
+            var content = PokerGui(g.Text);
+            g.Size = g.St.CalcSize(content);
             var rst = PokerWinStyle(TextAnchor.MiddleLeft);
             rst.fontSize = _pokerWinRestFont;
-            float restW = rst.CalcSize(new GUIContent(g.Text)).x;
+            float restW = rst.CalcSize(content).x;
             g.HeroC = new Vector2(PokerSafeGui().center.x, Screen.height * 0.47f);
             g.RestC = new Vector2(rest.x + restW * 0.5f, rest.center.y);
             g.RestK = _pokerWinRestFont / (float)Mathf.Max(1, _pokerWinHeroFont);
@@ -10472,11 +10778,7 @@ namespace FlockFive
             GUIUtility.ScaleAroundPivot(new Vector2(k, k), c);
             var tint = new Color(fill.r, fill.g, fill.b, alpha);
             if (outline)
-            {
-                int white = Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.08f));
-                int black = Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.035f));
-                StampOutlined(r, text, st, tint, white, black);
-            }
+                StampLight(r, text, st, tint);
             else
             {
                 Paint(st, tint);
@@ -10604,7 +10906,7 @@ namespace FlockFive
             var r = PokerWinRestRect(betR, actR, s);
             var st = PokerWinStyle(TextAnchor.MiddleLeft);
             st.fontSize = _pokerWinRestFont;
-            var textR = new Rect(r.x, r.y, st.CalcSize(new GUIContent(text)).x, r.height);
+            var textR = new Rect(r.x, r.y, st.CalcSize(PokerGui(text)).x, r.height);
             bool landing = _pokerWinT >= WinLandAt && _pokerWinT < WinDoneAt;
             float land = landing ? Mathf.Clamp01((_pokerWinT - WinLandAt) / WinLandT) : 1f;
             float hit = landing ? 1f - land : 0f;
@@ -10632,10 +10934,7 @@ namespace FlockFive
             var prev = GUI.matrix;
             // Pivot on the left edge so the squash grows away from the screen edge.
             if (Mathf.Abs(pop - 1f) > 0.001f) GUIUtility.ScaleAroundPivot(new Vector2(pop, 2f - pop), new Vector2(textR.x, textR.center.y));
-            // Bolder resting stamp: slightly heavier white + black rims than the flight word.
-            int white = Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.09f));
-            int black = Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.042f));
-            StampOutlined(r, text, st, PokerWinRed, white, black);
+            StampLight(r, text, st, PokerWinRed);
             GUI.matrix = prev;
             if (hit > 0.01f) DrawPokerWinImpactSparks(textR, land);
         }
@@ -10813,6 +11112,7 @@ namespace FlockFive
 
         void DrawPokerFlames(Rect row, float cardW, float gap, float s)
         {
+            if (!GuiPaint()) return;
             if (_pokerMotion != PokerMotion.Draw) return;
             if (_pokerMotionT < _pokerPluckEnd || _pokerMotionT > _pokerReplaceEnd + 0.18f) return;
             float cardH = row.height;
@@ -10833,7 +11133,7 @@ namespace FlockFive
                 PokerPose(i, PokerSeat(row, cardW, gap, i), row, out r, out yaw, out roll, out showFace, out face, out sparkle);
                 Vector2 c = r.center;
                 var pip = PokerPip(face.Wild ? BirdColor.Gold : face.Color);
-                const int bits = 42;
+                const int bits = 16;
                 var prev = GUI.matrix;
                 for (int b = 0; b < bits; b++)
                 {
@@ -10907,6 +11207,7 @@ namespace FlockFive
 
         void DrawPokerDealHand(Rect row, float cardW, float gap, float s, bool front)
         {
+            if (!GuiPaint()) return;
             if (_pokerMotion != PokerMotion.Draw) return;
             if (_pokerMotionT < _pokerReplaceEnd || _pokerMotionT > _pokerRowEnd) return;
             var palm = SpriteCatalog.HandPalm;
@@ -10936,9 +11237,9 @@ namespace FlockFive
             GUI.color = new Color(1f, 1f, 1f, a);
             if (!front)
             {
-                // Same palm art as the holding hand, cropped above the pinch (no
-                // fingertips) and above the wrist so the cuff seam stays hidden.
-                DrawSpriteBand(dest, palm, PokerFanPinchV, 0.66f);
+                // Same palm crop as the holding hand (no non-thumb fingers),
+                // and above the wrist so the cuff seam stays hidden.
+                DrawSpriteBand(dest, palm, PokerPalmBandTop, 0.66f);
             }
             else
                 DrawSprite(dest, thumb, true);
@@ -10961,6 +11262,8 @@ namespace FlockFive
                 _pokerPoseR[i] = new Rect(r.x - r.width * 0.03f, r.y - r.height * 0.16f, r.width * 1.06f, r.height * 1.16f);
             else
                 _pokerPoseR[i] = r;
+            // Pose stays current for HitPokerCards. Textures only on Repaint.
+            if (!GuiPaint()) return;
 
             bool kept = _pokerMotion == PokerMotion.Draw && _pokerKept[i];
             bool held = (BirdPoker.Hold[i] || kept) && (_pokerHoldSlide[i] > 0.45f || kept);
@@ -11077,20 +11380,14 @@ namespace FlockFive
             if (_pokerMotion != PokerMotion.None) return;
             // Same outlined BET style, one line.
             int type = Mathf.RoundToInt(Mathf.Clamp(28f * s, 26f, 40f));
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var st = PokerBold(ref _pokerLed, TextAnchor.MiddleCenter);
             st.fontSize = type;
             float cap = type * 1.40f;
             var fan = PokerFanRestAt(0, BirdPoker.HandSize, row, 0f);
             float y = fan.y - cap - 28f * s;
             if (y < 44f * s) y = 44f * s;
             var fill = new Color(0.94f, 0.12f, 0.14f, 1f);
-            int stroke = Mathf.Max(2, Mathf.RoundToInt(type * 0.08f));
-            StampOutlined(new Rect(0f, y, Screen.width, cap), "TAP A CARD TO KEEP", st, fill, stroke, 2);
+            StampLight(new Rect(0f, y, Screen.width, cap), "TAP A CARD TO KEEP", st, fill);
         }
 
         static void DrawPokerKeptMark(Rect r, float s)
@@ -11170,6 +11467,7 @@ namespace FlockFive
 
         static void DrawWildFoil(Rect r, float phase)
         {
+            if (!GuiPaint()) return;
             // Holographic foil: three baked hue-shifted rainbow layers (fx_poker_face_wild_foil0..2,
             // masked to the gold frame, stars, ribbon and WILD lettering) crossfade so the rainbow
             // drifts across the card; paper and jester stay clean. cos^2 weights over three phases
@@ -11254,16 +11552,10 @@ namespace FlockFive
             _pokerMinusR = minus;
             _pokerPlusR = plus;
 
-            var led = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var led = PokerBold(ref _pokerLed, TextAnchor.MiddleCenter);
             var red = new Color(0.94f, 0.12f, 0.14f, 1f);
             led.fontSize = type;
-            int betStroke = Mathf.Max(2, Mathf.RoundToInt(type * 0.08f));
-            StampOutlined(amount, "BET " + Money.Format(BirdPoker.Bet), led, red, betStroke, 2);
+            StampLight(amount, PokerBetText(), led, red);
 
             bool live = steppers && !busy;
             if (DrawBetStepper(minus, "−", live && BirdPoker.CanNudge(-1)) && live)
@@ -11286,21 +11578,20 @@ namespace FlockFive
             float shadow = 2f;
             var chip = new Rect(r.x, r.y + sink, r.width - shadow, r.height - sink - shadow);
             float a = on ? 1f : 0.38f;
-            GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.40f * a);
-            GUI.DrawTexture(new Rect(chip.x + shadow, chip.y + shadow, chip.width, chip.height), Texture2D.whiteTexture);
-            GUI.color = new Color(0.78f, 0.58f, 0.18f, (held ? 0.98f : 0.92f) * a);
-            GUI.DrawTexture(chip, Texture2D.whiteTexture);
-            float inset = Mathf.Max(2f, chip.width * 0.10f);
-            GUI.color = new Color(0.96f, 0.90f, 0.62f, (held ? 1f : 0.94f) * a);
-            GUI.DrawTexture(new Rect(chip.x + inset, chip.y + inset, chip.width - inset * 2f, chip.height - inset * 2f), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            var st = new GUIStyle(GUI.skin.label)
+            if (GuiPaint())
             {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter
-            };
+                GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.40f * a);
+                GUI.DrawTexture(new Rect(chip.x + shadow, chip.y + shadow, chip.width, chip.height), Texture2D.whiteTexture);
+                GUI.color = new Color(0.78f, 0.58f, 0.18f, (held ? 0.98f : 0.92f) * a);
+                GUI.DrawTexture(chip, Texture2D.whiteTexture);
+                float inset = Mathf.Max(2f, chip.width * 0.10f);
+                GUI.color = new Color(0.96f, 0.90f, 0.62f, (held ? 1f : 0.94f) * a);
+                GUI.DrawTexture(new Rect(chip.x + inset, chip.y + inset, chip.width - inset * 2f, chip.height - inset * 2f), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
+            var st = PokerBold(ref _pokerStep, TextAnchor.MiddleCenter);
             st.fontSize = Mathf.RoundToInt(chip.height * 0.56f);
-            StampOutlined(chip, glyph, st, new Color(0.36f, 0.18f, 0.07f, a), 2, 1);
+            StampLight(chip, glyph, st, new Color(0.36f, 0.18f, 0.07f, a));
             return fire;
         }
 
@@ -11310,36 +11601,49 @@ namespace FlockFive
         {
             bool fire = HitPad(r, out bool held);
             float sink = held ? r.height * 0.04f : 0f;
-            var flower = SpriteCatalog.PlayFlower;
-            var tex = flower != null ? flower.texture : null;
-            if (tex != null)
+            if (GuiPaint())
             {
-                GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.40f);
-                GUI.DrawTexture(new Rect(r.x + 4f, r.y + 10f, r.width, r.height), tex, ScaleMode.ScaleToFit, true);
-                if (!held) DrawFlowerHalo(r, 0f);
-                GUI.color = Color.white;
-                GUI.DrawTexture(new Rect(r.x, r.y + sink, r.width, r.height), tex, ScaleMode.ScaleToFit, true);
-                if (!held) DrawFlowerShimmer(r, sink);
-                if (held) DrawDiscPress(r, sink);
-            }
-            else
-            {
-                GUI.color = new Color(0.78f, 0.58f, 0.26f, held ? 0.95f : 0.82f);
-                GUI.DrawTexture(r, Texture2D.whiteTexture);
-                GUI.color = Color.white;
+                var flower = SpriteCatalog.PlayFlower;
+                var tex = flower != null ? flower.texture : null;
+                if (tex != null)
+                {
+                    GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.40f);
+                    GUI.DrawTexture(new Rect(r.x + 4f, r.y + 10f, r.width, r.height), tex, ScaleMode.ScaleToFit, true);
+                    if (!held) DrawFlowerHalo(r, 0f);
+                    GUI.color = Color.white;
+                    GUI.DrawTexture(new Rect(r.x, r.y + sink, r.width, r.height), tex, ScaleMode.ScaleToFit, true);
+                    if (!held) DrawFlowerShimmer(r, sink);
+                    if (held) DrawDiscPress(r, sink);
+                }
+                else
+                {
+                    GUI.color = new Color(0.78f, 0.58f, 0.26f, held ? 0.95f : 0.82f);
+                    GUI.DrawTexture(r, Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                }
             }
             var disc = FlowerDisc(r, sink);
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var st = PokerBold(ref _pokerHero, TextAnchor.MiddleCenter);
             int lo = hero ? 22 : 14;
             int hi = hero ? 48 : 28;
-            st.fontSize = FitFont(st, label, disc.width * (hero ? 0.92f : 0.84f), disc.height * (hero ? 0.72f : 0.62f), lo, hi);
-            int stroke = hero ? Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.06f)) : 2;
-            StampOutlined(disc, label, st, new Color(0.36f, 0.18f, 0.07f), stroke, 1);
+            float maxW = disc.width * (hero ? 0.92f : 0.84f);
+            float maxH = disc.height * (hero ? 0.72f : 0.62f);
+            int heroKey = hero ? 17 : 3;
+            if (!string.IsNullOrEmpty(label))
+            {
+                for (int i = 0; i < label.Length; i++)
+                    heroKey = heroKey * 33 + label[i];
+            }
+            heroKey ^= Mathf.RoundToInt(maxW) * 13;
+            heroKey ^= Mathf.RoundToInt(maxH) << 10;
+            if (heroKey == int.MinValue) heroKey = -2;
+            if (heroKey != _pokerHeroKey)
+            {
+                _pokerHeroKey = heroKey;
+                _pokerHeroPx = FitFont(st, label, maxW, maxH, lo, hi);
+            }
+            st.fontSize = _pokerHeroPx;
+            StampLight(disc, label, st, new Color(0.36f, 0.18f, 0.07f));
             return fire;
         }
 
@@ -13293,94 +13597,11 @@ namespace FlockFive
             return TopTouch(FlowerDisc(flower, 0f));
         }
 
-        // Same stack as GiftCardLayout. The first bonus look drops the card so the
-        // coach line keeps air above the sign and under the hanging feeders.
+        // Same stack as GiftCardLayout. The bonus sign stays at that higher
+        // seat; the coach line anchors above it and does not push the card down.
         void GiftCardPlaced(float s, out Rect card, out Rect flower)
         {
             GiftCardLayout(s, out card, out flower);
-            if (!_adHand) return;
-            AdHandLineRect(s, -1f, out var line);
-            float gap = 36f * s;
-            float shift = line.yMax + gap - card.y;
-            if (shift <= 1f) return;
-            float hiveY = Screen.height - (88f + 12f + 64f) * s;
-            float room = hiveY - 16f * s - flower.yMax;
-            if (room <= 1f) return;
-            if (shift > room) shift = room;
-            card.y += shift;
-            flower.y += shift;
-        }
-
-        // Top sentence on the first bonus card. Sits under the notch and any
-        // feeder that hangs into the header, and beside the close button when
-        // that row is free, so it stays above the sign.
-        void AdHandLineRect(float s, float belowClose, out Rect line)
-        {
-            var safe = Screen.safeArea;
-            float topHud = TopHud();
-            float xSz = Mathf.Max(48f * s, 44f);
-            float closeBottom = topHud + xSz;
-            if (belowClose > closeBottom) closeBottom = belowClose;
-            float insetR = Mathf.Max(14f, Screen.width - safe.xMax + 8f);
-            float xLeft = Screen.width - insetR - xSz;
-            float feed = FeederHangBottomGui();
-            float pad = 14f * s;
-
-            float w = Screen.width * 0.58f;
-            float x = (Screen.width - w) * 0.5f;
-            float y = closeBottom + pad;
-            bool feedersHang = feed > topHud + 4f;
-            if (feedersHang) y = Mathf.Max(y, feed + pad);
-            // Feeders that stop above the close row leave that row free. Sit the
-            // sentence up there, short of the button, instead of under it.
-            if (!feedersHang || feed < closeBottom - 8f * s)
-            {
-                float freeW = xLeft - 18f * s - 14f * s;
-                if (freeW >= Screen.width * 0.58f)
-                {
-                    float raised = topHud + 12f * s;
-                    if (feedersHang && raised < feed + 10f * s)
-                        raised = feed + 10f * s;
-                    if (raised + 8f < y)
-                    {
-                        w = Mathf.Min(Screen.width * 0.80f, freeW);
-                        x = 14f * s;
-                        y = raised;
-                    }
-                }
-            }
-
-            var st = CoachLineStyle();
-            int hi = Mathf.Max(18, Mathf.RoundToInt(32f * s));
-            st.fontSize = hi;
-            float h = st.CalcHeight(new GUIContent(AdHandLine), w) + 12f * s;
-            float maxY = Screen.height - h - 8f * s;
-            if (y > maxY) y = Mathf.Max(topHud + 8f * s, maxY);
-            line = new Rect(x, y, w, h);
-        }
-
-        // Lowest gui y of a visible hanging feeder (y grows downward). 0 if none.
-        float FeederHangBottomGui()
-        {
-            var cam = _garden.Cam;
-            var feeders = _garden.Feeders;
-            if (cam == null || feeders == null) return 0f;
-            float bottom = 0f;
-            bool any = false;
-            for (int i = 0; i < feeders.Length; i++)
-            {
-                var f = feeders[i];
-                if (f == null || f.Art == null || !f.Art.enabled || f.Art.sprite == null) continue;
-                var b = f.Art.sprite.bounds;
-                float worldY = f.transform.position.y + b.min.y * f.transform.lossyScale.y;
-                var sp = cam.WorldToScreenPoint(new Vector3(f.transform.position.x, worldY, f.transform.position.z));
-                if (sp.z < 0f) continue;
-                float gui = Screen.height - sp.y;
-                if (gui < 0f) gui = 0f;
-                if (!any || gui > bottom) bottom = gui;
-                any = true;
-            }
-            return any ? bottom : 0f;
         }
 
         // Orchids live in the card art, outside the chalkboard. A soft wash over
@@ -13424,7 +13645,9 @@ namespace FlockFive
         // bulbFrac > 0 sizes every bulb from the plate (streak sign, already scaled).
         // bulbFrac == 0 keeps the 16-bulb gift floor unless lampWant/lampFrac override it.
         // Both rings come from FitMarquee, so each side stays mirrored and evenly spaced.
-        static void DrawGiftMarquee(Rect plate, float s, float t, float alpha = 1f, float grow = -1f, float bulbFrac = 0f, int lampWant = 16, float lampFrac = 0f, bool steady = false)
+        // pinFrac: fraction of the art from the screw tip pinned to the spot (0.16 = screw midpoint).
+        // glassPx > 0 replaces that glass size (daily and welcome pass a smaller glass).
+        static void DrawGiftMarquee(Rect plate, float s, float t, float alpha = 1f, float grow = -1f, float bulbFrac = 0f, int lampWant = 16, float lampFrac = 0f, bool steady = false, float pinFrac = 0.16f, float glassPx = 0f)
         {
             var bulb = SpriteCatalog.AdBulb;
             var glow = GlowTex();
@@ -13453,6 +13676,7 @@ namespace FlockFive
                     haloMul = 0.72f;
                 }
             }
+            if (glassPx > 0f) szOn = glassPx;
             WorldBuilder.FitMarquee(frame.width, frame.height, want, 0f, out int hSegs, out int vSegs);
             int n = WorldBuilder.MarqueeCount(hSegs, vSegs);
             float pitch = Mathf.Min(frame.width / hSegs, frame.height / vSegs);
@@ -13488,12 +13712,12 @@ namespace FlockFive
                 float sz = steady ? szOn : Mathf.Lerp(szOff, szOn, lit);
                 var prev = GUI.matrix;
                 GUIUtility.RotateAroundPivot(ang, p);
-                // Local frame: the screw base points up (into the box). Anchor the base on the
-                // rim so it stays screwed in as the bulb swells; the glass hangs outward.
+                // Local frame: the screw base points up (into the box). pinFrac of the art
+                // stays on the spot as the bulb swells; the glass hangs outward.
                 float sock = szOn * 0.44f;
                 GUI.color = new Color(0.16f, 0.09f, 0.03f, 0.92f * alpha);
                 GUI.DrawTexture(new Rect(p.x - sock * 0.5f, p.y - sock * 0.5f, sock, sock), glow, ScaleMode.ScaleToFit, true);
-                var r = new Rect(p.x - sz * 0.5f, p.y - sz * 0.16f, sz, sz);
+                var r = new Rect(p.x - sz * 0.5f, p.y - sz * pinFrac, sz, sz);
                 var glass = new Vector2(p.x, r.y + sz * 0.60f);
                 var glowCol = Color.Lerp(
                     new Color(1f, 0.48f, 0.10f, 0.18f),
