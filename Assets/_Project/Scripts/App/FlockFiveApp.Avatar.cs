@@ -114,16 +114,16 @@ namespace FlockFive
 
         void AvatarChannel(float s, out float left, out float right)
         {
-            left = Mathf.Max(16f * s, Screen.safeArea.xMin + 10f);
+            float L = Mathf.Max(16f * s, Screen.safeArea.xMin + 10f);
             float safeRight = Mathf.Max(0f, Screen.width - Screen.safeArea.xMax);
-            right = Screen.width - Mathf.Max(16f * s, safeRight + 10f);
+            float R = Screen.width - Mathf.Max(16f * s, safeRight + 10f);
             void Eat(Rect r)
             {
                 if (r.width < 2f || r.height < 2f) return;
                 if (r.center.x < Screen.width * 0.5f)
-                    left = Mathf.Max(left, r.xMax + 8f * s);
+                    L = Mathf.Max(L, r.xMax + 8f * s);
                 else
-                    right = Mathf.Min(right, r.xMin - 8f * s);
+                    R = Mathf.Min(R, r.xMin - 8f * s);
             }
             Eat(PiggyRect(s));
             Eat(SplashHiveRect());
@@ -132,11 +132,13 @@ namespace FlockFive
             var vip = SplashNoAdsRect();
             Eat(vip);
             if (vip.width > 2f) Eat(SplashNoAdsRibbon(vip));
-            if (right < left + 80f * s)
+            if (R < L + 80f * s)
             {
-                left = 16f * s;
-                right = Screen.width - 16f * s;
+                L = 16f * s;
+                R = Screen.width - 16f * s;
             }
+            left = L;
+            right = R;
         }
 
         void ArmAdopt()
