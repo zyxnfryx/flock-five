@@ -1,3 +1,5 @@
+using UnityEngine;
+
 namespace FlockFive
 {
     // Bees stay strictly above every bird state, including restart silhouettes.
@@ -17,6 +19,16 @@ namespace FlockFive
             int cap = Bee - 6;
             if (order > cap) order = cap;
             return order;
+        }
+
+        // One writer for bird draw order. Call it after a sprite assign: a new
+        // sprite must not leave the renderer at 0, behind wood and the leaf curtain.
+        // The splash avatar is IMGUI and has no renderer; it stays in front by
+        // painting after the perch leaves, outside that GUI group.
+        public static void Apply(SpriteRenderer sr, int order)
+        {
+            if (sr == null) return;
+            if (sr.sortingOrder != order) sr.sortingOrder = order;
         }
     }
 }

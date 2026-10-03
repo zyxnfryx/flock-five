@@ -44,8 +44,11 @@ namespace FlockFive
         {
             public Vector2 A, B;
             public float T, Delay, Spin;
+            public int Worth;
         }
         readonly System.Collections.Generic.List<CoinFly> _flies = new System.Collections.Generic.List<CoinFly>();
+        // Purse coins already saved. Hidden until that sprite lands, then the balance counts them.
+        int _coinInFlight;
         // Piggy coin: hold with random wait, then a slow Y-flip.
         float _coinSpinT = -1f;
         float _coinHoldLeft;
@@ -4653,6 +4656,7 @@ namespace FlockFive
                 {
                     DismissStreakSign();
                     VipOffer.Close();
+                    FoldCoinFlies();
                 }
                 if (_home == HomeFace.Hive) DrawHivePage();
                 else if (_home == HomeFace.Poker) DrawPokerPage();
@@ -4661,6 +4665,7 @@ namespace FlockFive
             }
             DismissStreakSign();
             VipOffer.Close();
+            FoldCoinFlies();
             if (_board == null) return;
             CoachDim();
             HudLayout(out float s, out float top, out _, out var restart, out var hive);
@@ -4986,11 +4991,9 @@ namespace FlockFive
 
         static void DrawHiveNewDot(Rect plate)
         {
-            float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.6f);
-            float dot = plate.width * (0.16f + 0.02f * breathe);
             float cx = plate.xMax - plate.width * 0.18f;
             float cy = plate.y + plate.width * 0.16f;
-            DrawNotifyBadge(cx, cy, dot, null);
+            DrawReadyBadge(cx, cy, plate.width);
         }
 
         float DrawHiveTally(Rect anchor, float s)
@@ -6096,8 +6099,9 @@ namespace FlockFive
 #if UNITY_EDITOR
             if (EditorShotLive) return;
 #endif
-            if (Purse.CommitStreakPay())
-                ArmStreakCoins();
+            int before = Purse.Coins;
+            if (!Purse.CommitStreakPay()) return;
+            ArmStreakCoins(Purse.Coins - before);
         }
 
         // Editor captures must not commit a real owed clear.
@@ -6159,11 +6163,12 @@ namespace FlockFive
                 DismissStreakSign();
         }
 
-        void ArmStreakCoins()
+        void ArmStreakCoins(int coins)
         {
             if (_streakFlyArmed) return;
             _streakFlyArmed = true;
-            ArmCoinFly();
+            FoldCoinFlies();
+            FlyCoinsToBalance(coins);
         }
 
         void DrawStreakRewards(float s)
@@ -6183,7 +6188,7 @@ namespace FlockFive
             DrawRailIcon(pig, SpriteCatalog.Piggy);
             GUI.matrix = prevM;
 
-            // Step before the balance so the pay frame shows the new total.
+            // Step before the balance so a pay this frame can hold its coins until they land.
             if (GuiPaint())
                 StepStreakReward();
 
@@ -6217,7 +6222,7 @@ namespace FlockFive
         void DrawCoinCluster(Rect iconR, float s, float typeScale = 1f)
         {
             var coinSpr = SpriteCatalog.Coin;
-            string coins = Money.Format(Purse.Coins);
+            string coins = Money.Format(CoinsShown());
             if (_coinClusterStyle == null)
             {
                 _coinClusterStyle = new GUIStyle(GUI.skin.label)
@@ -7144,29 +7149,56 @@ namespace FlockFive
             // In-garden: restart arrow only — purse $ lives on splash / poker.
         }
 
-        void ArmCoinFly()
+        // Saved balance, minus coins still in the air.
+        int CoinsShown()
         {
+            int n = Purse.Coins - _coinInFlight;
+            if (n < 0) n = 0;
+            return n;
+        }
+
+        // Splash is gone, so the flight cannot finish on the balance. Show the saved total.
+        void FoldCoinFlies()
+        {
+            if (_flies.Count == 0 && _coinInFlight == 0) return;
             _flies.Clear();
-            int n = Mathf.Clamp(Purse.LastWin, 0, 12);
+            _coinInFlight = 0;
+        }
+
+        // Streak sign and daily claim. The purse already has the coins; each sprite
+        // carries an even share, and the balance counts that share when it lands.
+        void FlyCoinsToBalance(int coins)
+        {
+            int n = Mathf.Clamp(coins, 0, 12);
             if (n <= 0) return;
+            int share = coins / n;
+            int extra = coins - share * n;
             var pig = PiggyRect(Mathf.Max(Screen.height / 720f, 1f));
             var dest = new Vector2(pig.x + pig.width * 0.5f, pig.y + pig.height * 0.42f);
+            _coinInFlight += coins;
             for (int i = 0; i < n; i++)
             {
+                int worth = share;
+                if (i < extra) worth += 1;
                 _flies.Add(new CoinFly
                 {
                     A = new Vector2(Screen.width * 0.5f + Random.Range(-70f, 70f), Screen.height * 0.30f + Random.Range(-24f, 36f)),
                     B = dest,
                     T = 0f,
                     Delay = i * 0.10f,
-                    Spin = Random.Range(300f, 420f) * (Random.value < 0.5f ? -1f : 1f)
+                    Spin = Random.Range(300f, 420f) * (Random.value < 0.5f ? -1f : 1f),
+                    Worth = worth
                 });
             }
         }
 
         void DrawCoinFly(Rect pig)
         {
-            if (_flies.Count == 0) return;
+            if (_flies.Count == 0)
+            {
+                _coinInFlight = 0;
+                return;
+            }
             var spr = SpriteCatalog.Coin;
             var tex = spr != null ? spr.texture : null;
             var glow = GlowTex();
@@ -7207,6 +7239,9 @@ namespace FlockFive
                 {
                     Sfx.Clink();
                     _pigBurst = 1f;
+                    _coinInFlight -= f.Worth;
+                    if (_coinInFlight < 0 || _flies.Count == 1)
+                        _coinInFlight = 0;
                     _flies.RemoveAt(i);
                     continue;
                 }
@@ -7258,6 +7293,12 @@ namespace FlockFive
             return e == null || e.type == EventType.Repaint;
         }
 
+        // This OnGUI pass: a tiny home target (bird or name plate) owns the pointer.
+        static bool _homeTapTaken;
+
+        // Finger slop around the fixed 1.15× body. Does not change the drawn bird.
+        const float HomeBirdHitPad = 8f;
+
         static bool HitPad(Rect r, out bool held)
         {
             int id = GUIUtility.GetControlID(FocusType.Passive);
@@ -7286,6 +7327,24 @@ namespace FlockFive
                     break;
             }
             held = GUIUtility.hotControl == id;
+            return fired;
+        }
+
+        // Shared hit for every tiny home target that sits on the play flower.
+        // Call before DrawFlowerPlay. HitPad Uses the event: MouseDown takes
+        // hotControl, and MouseUp Uses the release, so the flower cannot arm
+        // on that press and cannot fire when the finger comes up.
+        static bool HitHomeFirst(Rect r, out bool held)
+        {
+            var e = Event.current;
+            int hotBefore = GUIUtility.hotControl;
+            EventType typeBefore = e != null ? e.type : EventType.Ignore;
+            bool fired = HitPad(r, out held);
+            if (fired || held)
+                _homeTapTaken = true;
+            else if (e != null && hotBefore != 0 && GUIUtility.hotControl == 0
+                && typeBefore == EventType.MouseUp && e.type == EventType.Used)
+                _homeTapTaken = true;
             return fired;
         }
 
@@ -7331,6 +7390,7 @@ namespace FlockFive
 
         void DrawSplash()
         {
+            _homeTapTaken = false;
             float s = Mathf.Max(Screen.height / 720f, 1f);
             if (NoAds.Owned) VipOffer.Close();
             bool modal = VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive;
@@ -7350,6 +7410,14 @@ namespace FlockFive
             DrawSplashTitleMark(s);
             DrawAmbientSplashBirds(s, behind: false);
             DrawStreakRewards(s);
+
+            if (HomeLimbVisible())
+            {
+                if (_adoptLive)
+                    _adoptLineR = AdoptCaptionRect(s);
+                PlaceHomeBranch(s);
+                DrawHomeLimbSide(true);
+            }
 
             int next = LevelData.NextPlay;
 
@@ -7445,13 +7513,16 @@ namespace FlockFive
             string ease = LevelData.JokeEase(next);
             int number = next + 1;
 #endif
+            // Bird and name plate before the flower, so a tap on either is Used
+            // before the play button can arm or fire on release.
+            HitHomeAvatar(s, tutorUp);
+            HitAdoptTutor(s);
             if (DrawFlowerPlay(s, ease, number, acceptTap: !modal))
             {
                 Sfx.GateGo();
                 Load(next);
             }
             DrawHomeAvatar(s);
-            HitHomeAvatar(s, tutorUp);
             if (_adoptLive) DrawAdoptScene(s);
             DrawHiveIntro(s);
             DrawPokerIntro(s);
@@ -7460,9 +7531,9 @@ namespace FlockFive
             if (_dailyOpen) DrawDailyBonus(s);
             if (_dailyAskOpen) DrawDailyAsk(s);
             if (_welcomeOpen) DrawWelcome(s);
-            if (_dailyOpen) DrawDailyClaimLine(s);
-            if (_adoptLive || _welcomeGlove || (_dailyIntroLive && _dailyOpen && !_dailyAskOpen))
+            if (_welcomeGlove || (_dailyIntroLive && _dailyOpen && !_dailyAskOpen))
                 DrawCoachGlove(s);
+            if (_dailyOpen) DrawDailyClaimLine(s);
             if (_avatarRename) DrawAvatarRename(s);
         }
 
@@ -7470,7 +7541,14 @@ namespace FlockFive
         {
             var rest = FlowerPlayRect();
             bool held = false;
+            // HitPad stays in the id sequence. A tiny target that already Used this
+            // press — down or release — must not arm the flower or start the level.
             bool fired = acceptTap && HitPad(rest, out held);
+            if (_homeTapTaken)
+            {
+                fired = false;
+                held = false;
+            }
 
             float sink = held ? rest.height * 0.030f : 0f;
             var flower = SpriteCatalog.PlayFlower;
@@ -8521,6 +8599,7 @@ namespace FlockFive
             _awayOn = false;
             if (_avatarPerchIx >= 0 && _avatarPerchIx < _avatarPerches.Length)
                 _avatarPos = _avatarPerches[_avatarPerchIx];
+            _avatarFaceLeft = _avatarPos.x >= Screen.width * 0.5f;
         }
 
         void TrackGlideTarget()
@@ -8581,13 +8660,28 @@ namespace FlockFive
             _avatarPose = AvatarPose.Flying;
             var spot = AvatarClearPoint(s, icon, blocks, look);
             var lap = AvatarCircle(spot, icon, _avatarClock, out bool face);
-            float half = icon * 0.5f;
-            float minX = half + 4f;
-            float maxX = Screen.width - half - 4f;
+            // Same flap reach as HomeWanderBounds, so the drawn quad stays on screen.
+            float reach = icon * 0.5f * HomeFlapFit;
+            float minX = reach + 4f;
+            float maxX = Screen.width - reach - 4f;
+            if (maxX < minX)
+            {
+                float mid = Screen.width * 0.5f;
+                minX = mid;
+                maxX = mid;
+            }
             if (lap.x < minX) lap.x = minX;
             if (lap.x > maxX) lap.x = maxX;
-            float minY = CaptionFloorY(s) + half;
-            float maxY = Screen.height - half - 8f;
+            float minY = CaptionFloorY(s) + reach;
+            float maxY = Screen.height - reach - 8f;
+            if (maxY < minY)
+            {
+                float mid = (minY + maxY) * 0.5f;
+                if (mid < reach) mid = reach;
+                if (mid > Screen.height - reach) mid = Screen.height - reach;
+                minY = mid;
+                maxY = mid;
+            }
             if (lap.y < minY) lap.y = minY;
             if (lap.y > maxY) lap.y = maxY;
             _avatarPos = lap;
@@ -8627,9 +8721,12 @@ namespace FlockFive
             _avatarCrossT = 0f;
             _avatarCrossDur = 1.15f;
             var home = AvatarHomePoint();
-            _avatarCrossFrom = _avatarDrew
-                ? _avatarPos
-                : new Vector2(-icon * 0.75f, home.y);
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            var box = HomeWanderBounds(s, icon);
+            var from = _avatarDrew ? _avatarPos : new Vector2(box.xMin, box.center.y);
+            if (from.x < 0f || from.y < 0f || from.x > Screen.width || from.y > Screen.height)
+                from = new Vector2(box.xMin, box.center.y);
+            _avatarCrossFrom = from;
             _avatarCrossTo = home;
             _avatarPos = _avatarCrossFrom;
             _avatarPerchIx = AvatarHomeSeat;
@@ -8733,16 +8830,18 @@ namespace FlockFive
             _avatarPose = landed ? AvatarPose.Perched : AvatarPose.Flying;
         }
 
-        void DrawHomeAvatar(float s)
+        // Same center the home bird draws at. Fixed body is HomeAvatarIcon (1.15×).
+        bool HomeAvatarFrame(float s, out Vector2 c, out float icon, out bool onPerch)
         {
-            _avatarDrawR = default;
-            _avatarPlateR = default;
-            if (!AvatarHomeOn()) return;
+            c = default;
+            icon = 0f;
+            onPerch = false;
+            if (!AvatarHomeOn()) return false;
             _avatarTail = AvatarPlateDrop(s);
-            if (_avatarHold || !_avatarPlaced) return;
+            if (_avatarHold || !_avatarPlaced) return false;
             // Payout sign fills the gap. A lesson still draws so the perch stays visible under the caption.
-            if (_streakSlide >= 0f && !_avatarTutor) return;
-            float icon = HomeAvatarIcon(s);
+            if (_streakSlide >= 0f && !_avatarTutor) return false;
+            icon = HomeAvatarIcon(s);
             FillAvatarPerches(s);
             // The open Daily card holds the bird on the fixed pad at the shared size.
             if (DailyCardHoldsBird())
@@ -8755,11 +8854,21 @@ namespace FlockFive
             else if (_avatarPose != AvatarPose.Flying && _avatarPose != AvatarPose.Landing
                 && !_avatarCrossing && !_avatarGliding)
                 StickAvatarToPerch();
-            bool onPerch = AvatarParked() && _avatarHappy <= 0.02f;
+            onPerch = AvatarParked() && _avatarHappy <= 0.02f;
             float bob = onPerch ? Mathf.Sin(_avatarClock * 1.7f + _avatarBobPhase) * icon * 0.035f : 0f;
             float hop = _avatarHappy > 0f ? Mathf.Sin((1f - _avatarHappy) * Mathf.PI) * icon * 0.16f : 0f;
-            var c = new Vector2(_avatarPos.x, _avatarPos.y - bob - hop);
-            DrawHomeLimbs();
+            c = new Vector2(_avatarPos.x, _avatarPos.y - bob - hop);
+            return true;
+        }
+
+        void DrawHomeAvatar(float s)
+        {
+            _avatarDrawR = default;
+            _avatarPlateR = default;
+            if (!HomeAvatarFrame(s, out var c, out float icon, out bool onPerch)) return;
+            if (onPerch)
+                _avatarFaceLeft = c.x >= Screen.width * 0.5f;
+            DrawHomeLimbSide(false);
             float preen = 0f;
             if (onPerch && _avatarPreenT > 0f)
             {
@@ -8780,19 +8889,25 @@ namespace FlockFive
             _avatarPlateR = DrawAvatarPlate(c, icon, SavedAvatarName(), s);
         }
 
-        // Rails and the flower already took their taps. A lesson click is ignored.
-        void HitHomeAvatar(float s, bool tutorUp)
+        // Rails already took their taps. The play flower has not. A lesson click
+        // is still swallowed here so the flower cannot start under the bird.
+        bool HitHomeAvatar(float s, bool tutorUp)
         {
-            if (tutorUp || HomeTutorLive() || !AvatarHomeOn()) return;
-            if (_avatarHold) return;
-            if (VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen) return;
-            if (_avatarDrawR.width > 2f && FlowerPlayRect().Contains(_avatarDrawR.center)) return;
-            float hitIcon = HomeBirdIcon(s);
-            if (AvatarHitsRails(_avatarPos, hitIcon, s)) return;
-            if (_avatarDrawR.width > 2f && HitPad(_avatarDrawR, out _))
+            if (!HomeAvatarFrame(s, out var c, out float icon, out _)) return false;
+            if (VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive) return false;
+            float pad = HomeBirdHitPad * s;
+            var bird = new Rect(
+                c.x - icon * 0.5f - pad,
+                c.y - icon * 0.5f - pad,
+                icon + pad * 2f,
+                icon + pad * 2f);
+            var plate = AvatarPlateRect(c, icon, s);
+            bool birdHit = HitHomeFirst(bird, out _);
+            bool plateHit = HitHomeFirst(plate, out _);
+            if (tutorUp || HomeTutorLive()) return false;
+            if (birdHit || plateHit)
                 PokeAvatar();
-            else if (_avatarPlateR.width > 2f && HitPad(_avatarPlateR, out _))
-                PokeAvatar();
+            return birdHit || plateHit;
         }
 
         void PokeAvatar()
@@ -9700,12 +9815,12 @@ namespace FlockFive
                 && _pokerMotion != PokerMotion.Deal
                 && PlayerPrefs.GetInt(CoachPokerDealtKey, 0) == 0)
                 line = PokerBetLine;
+            DrawCoachGlove(s);
             if (line != null)
             {
                 var want = PokerCoachBubble(s, row, betR, actR);
                 DrawSplashIntroLine(line, want, s);
             }
-            DrawCoachGlove(s);
         }
 
         // Same sentence as the first-visit bet step, for later visits only.
@@ -9738,9 +9853,9 @@ namespace FlockFive
             var disc = FlowerDisc(actR, 0f);
             _pokerDealAim = DealPlatformAim(actR);
             _pokerDealAimOk = disc.width > 2f;
+            DrawCoachGlove(s);
             var want = PokerCoachBubble(s, row, betR, actR);
             DrawSplashIntroLine(PokerBetLine, want, s);
-            DrawCoachGlove(s);
         }
 
         bool PokerBackDone()
@@ -9804,8 +9919,8 @@ namespace FlockFive
             float cardTop = row.y - 8f * s;
             if (seat.yMax > cardTop - 4f * s && cardTop - seat.y > 28f * s)
                 seat.height = cardTop - 4f * s - seat.y;
-            DrawSplashIntroLine(PokerBackLine, seat, s);
             DrawCoachGlove(s);
+            DrawSplashIntroLine(PokerBackLine, seat, s);
         }
 
         void DrawPokerPage()
@@ -12906,12 +13021,11 @@ namespace FlockFive
                 AdvanceHiveTutor(ix);
             DrawBeeAlbumCard(big, ix, s, true);
             if (t > 0.4f)
-            {
                 DrawFlipArrows(big, s, Mathf.Clamp01(t));
-                DrawFlipHint(big.yMax + 12f * s, s, Mathf.Clamp01(t));
-            }
             if (_hiveTutorOn)
                 DrawHiveTutorGlove(big, s);
+            if (t > 0.4f)
+                DrawFlipHint(big.yMax + 12f * s, s, Mathf.Clamp01(t));
 
             // Shared Back medallion, painted above the dim. Same control as Poker and the album.
             float top = TopHud();
@@ -13048,15 +13162,36 @@ namespace FlockFive
             float ang = ClampUpright(mirror);
             var away = new Vector2(mirror ? -1f : 1f, 0f);
             var rest = aim + away * (GloveDh(s) * 0.85f) + new Vector2(0f, -GloveRise(s));
+            NoteTutorPlate(FlipHintRect(card.yMax + 12f * s, s));
+            ClearGloveOfCaption(aim, s, ref rest, ref away, ref mirror, ref ang, float.NaN);
             float travel = _hiveTutorStep == 0 ? Mathf.Clamp01(_hiveTutorT / 0.48f) : 1f;
             travel = travel * travel * (3f - 2f * travel);
-            TapArc(rest, aim, away, s, travel, out var pivot, out _, mirror);
+            TapArc(rest, aim, away, s, travel, out var pivot, out _, mirror, _gloveApexMinY);
             float dip = 0f;
             if (_hiveTutorStep == 0 && _hiveTutorT > 0.40f)
                 dip = Mathf.Sin(Mathf.Clamp01((_hiveTutorT - 0.40f) / 0.22f) * Mathf.PI);
             if (travel < 0.84f)
                 SeatGlove(ref pivot, ref ang, aim, s, ref mirror, dip);
             DrawGloveAt(pivot, ang, GloveDh(s), fade, dip, mirror);
+        }
+
+        Rect FlipHintRect(float y, float s)
+        {
+            const string wider = "Tap outside to put back";
+            int hintHi = Mathf.Clamp(Mathf.RoundToInt(32f * s), 28, 56);
+            var measure = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false
+            };
+            measure.fontSize = hintHi;
+            float hintW = Mathf.Min(Screen.width * 0.92f, measure.CalcSize(new GUIContent(wider)).x + 48f * s);
+            float hintH = hintHi * 2.45f;
+            var pill = new Rect((Screen.width - hintW) * 0.5f, y, hintW, hintH);
+            float edge = 28f * s;
+            if (pill.yMax > Screen.height - edge) pill.y = Screen.height - edge - pill.height;
+            return pill;
         }
 
         void DrawFlipHint(float y, float s, float alpha)
@@ -13072,11 +13207,9 @@ namespace FlockFive
                 wordWrap = false
             };
             st.fontSize = hi;
-            float w = Mathf.Min(Screen.width * 0.92f, st.CalcSize(new GUIContent(b)).x + 48f * s);
-            float h = hi * 2.45f;
-            var pill = new Rect((Screen.width - w) * 0.5f, y, w, h);
-            float edgePad = 28f * s;
-            if (pill.yMax > Screen.height - edgePad) pill.y = Screen.height - edgePad - pill.height;
+            var pill = FlipHintRect(y, s);
+            NoteTutorPlate(pill);
+            float h = pill.height;
             GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.82f * alpha);
             GUI.DrawTexture(pill, Texture2D.whiteTexture);
             GUI.color = new Color(1f, 0.86f, 0.42f, 0.9f * alpha);
@@ -14279,7 +14412,6 @@ namespace FlockFive
                 return;
             }
 
-            if (_adHand) DrawAdHand(s, top + xSz);
             var discHit = FlowerDisc(cta, 0f);
             float hitGrow = 18f * s;
             discHit = new Rect(discHit.x - hitGrow, discHit.y - hitGrow * 0.65f, discHit.width + hitGrow * 2f, discHit.height + hitGrow * 1.3f);
@@ -14317,15 +14449,17 @@ namespace FlockFive
                 watchGuard++;
             }
             StampOutlined(disc, watchLab, watchSt, new Color(0.28f, 0.12f, 0.04f), 1, ink);
+            // Glove under the sentence. The Watch hit is already stored, so painting
+            // here does not change which control won the click.
+            if (!_freezeOffer) DrawGiftCloseX(xBtn, xHeld, s);
+            if (_adHand) DrawCoachGlove(s);
+            if (_adHand) DrawAdHand(s, top + xSz);
             if (watch)
             {
                 DismissAdHand();
                 StartCoroutine(WatchGift());
                 return;
             }
-
-            if (!_freezeOffer) DrawGiftCloseX(xBtn, xHeld, s);
-            if (_adHand) DrawCoachGlove(s);
         }
 
         // Frozen board: Retry is the big flower. Continue is a smaller ad sign under it.

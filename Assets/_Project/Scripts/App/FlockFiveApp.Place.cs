@@ -146,6 +146,15 @@ namespace FlockFive
             return tex;
         }
 
+        // Shared ready-to-collect badge. The hive new-dot and the daily rail both call this.
+        // Pulse and disc stay here so the two icons cannot drift.
+        static void DrawReadyBadge(float cx, float cy, float plateWidth)
+        {
+            float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.6f);
+            float dot = plateWidth * (0.16f + 0.02f * breathe);
+            DrawNotifyBadge(cx, cy, dot, null);
+        }
+
         // cx, cy is the center. number is optional and drawn in the face.
         static void DrawNotifyBadge(float cx, float cy, float diameter, string number)
         {

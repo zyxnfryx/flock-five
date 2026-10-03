@@ -165,14 +165,16 @@ namespace FlockFive
         {
             if (_face != null)
             {
+                int faceHeld = _face.sortingOrder;
                 _face.sprite = BirdMood.Face(Color);
+                FlockSort.Apply(_face, faceHeld > 0 ? faceHeld : FlockSort.Perch + 1);
                 return;
             }
             var mood = BirdMood.Of(Color);
-            var go = WorldBuilder.Sprite("Mood", BirdMood.Face(Color), transform.position, mood.FaceScale, 13, transform);
+            var go = WorldBuilder.Sprite("Mood", BirdMood.Face(Color), transform.position, mood.FaceScale, FlockSort.Perch + 1, transform);
             go.transform.localRotation = Quaternion.identity;
             _face = go.GetComponent<SpriteRenderer>();
-            _face.sortingOrder = 13;
+            FlockSort.Apply(_face, FlockSort.Perch + 1);
         }
 
         // Shared pose rule. Off the perch, wing frames. On the perch, only a real airborne flap.
@@ -222,7 +224,11 @@ namespace FlockFive
                 float mul = FlapMul < 0.05f ? 1f : FlapMul;
                 float flap = wings ? FlapRate * mul : 0.06f;
                 var frame = SpriteCatalog.BirdFrame(Color, (Time.time + _phase) * flap, wings, Sex);
+                // Read before the assign. A sprite swap must not stick the body at 0
+                // (behind wood and leaves). Frozen flight keeps Fly; it does not drop to Perch.
+                int heldOrder = _sr.sortingOrder;
                 if (_sr.sprite != frame) _sr.sprite = frame;
+                if (_sr.flipX != FaceLeft) _sr.flipX = FaceLeft;
                 if (!Frozen)
                 {
                     // Alert lerp owns the body color for its short hop. A shroud still wins.
@@ -232,8 +238,10 @@ namespace FlockFive
                         if (_sr.color != tint) _sr.color = tint;
                     }
                     int order = Shrouded ? FlockSort.Shroud : (Lift > 0.05f ? FlockSort.Lift : FlockSort.Perch);
-                    if (_sr.sortingOrder != order) _sr.sortingOrder = order;
+                    FlockSort.Apply(_sr, order);
                 }
+                else
+                    FlockSort.Apply(_sr, heldOrder);
             }
             // Draw order (back→front): kit bow → body/flaps → face
             bool kitOn = show && !Shrouded && Sex != BirdSex.Neutral;
@@ -582,23 +590,27 @@ namespace FlockFive
             _bang.enabled = true;
             float pop = Mathf.Sin(Mathf.Clamp01(u / 0.28f) * Mathf.PI * 0.5f);
             float fade = u < 0.72f ? 1f : Mathf.Clamp01((1f - u) / 0.28f);
-            float side = FaceLeft ? -0.16f : 0.16f;
-            // 25% over the old pop. Pivot is the bottom, so the extra height
-            // grows downward and the top stays where it was.
-            float baseSc = Mathf.Lerp(0.35f, 1.15f, pop) * (0.9f + 0.1f * fade);
-            float sc = baseSc * 1.25f;
-            float y = 0.78f + pop * 0.12f - baseSc * 0.25f;
+            int frame = SpriteCatalog.PoseIndex(_sr != null ? _sr.sprite : null, Color, Sex);
+            float bird = transform.localScale.x;
+            if (bird < 0f) bird = -bird;
+            AlertAnchor(frame, FaceLeft, bird, out float ax, out float ay, out float fit);
+            // Pivot is the bottom, so the pop grows up and the gap under it stays.
+            float sc = fit * Mathf.Lerp(0.78f, 1f, pop);
+            float y = ay + pop * 0.05f;
             var t = _bang.transform;
-            t.localPosition = new Vector3(side, y, 0f);
-            t.localScale = Vector3.one * sc;
+            t.localPosition = new Vector3(ax, y, 0f);
+            t.localScale = new Vector3(sc, sc, 1f);
             t.localRotation = Quaternion.identity;
             _bang.color = new Color(1f, 0.16f, 0.12f, fade);
             _bang.sortingOrder = _sr != null ? _sr.sortingOrder + 4 : 16;
-            FitBang(sc);
+            float above = transform.TransformPoint(new Vector3(ax, ay, 0f)).y;
+            FitBang(sc, above);
         }
 
         // Keep the mark inside the playfield and in the gap between limbs.
-        void FitBang(float sc)
+        // aboveHead is the world Y of the clearance, so a low ceiling shrinks
+        // the mark instead of pulling it down over the bird.
+        void FitBang(float sc, float aboveHead)
         {
             if (_bang == null || _bang.sprite == null) return;
             var t = _bang.transform;
@@ -623,6 +635,7 @@ namespace FlockFive
             const float gap = 0.03f;
             if (ceiling < topLim) topLim = ceiling - gap;
             if (floor > botLim) botLim = floor + gap;
+            if (aboveHead > botLim) botLim = aboveHead;
             float room = topLim - botLim;
             if (room > 0.08f && box.size.y > room)
             {
@@ -636,6 +649,12 @@ namespace FlockFive
             Vector3 shift = Vector3.zero;
             if (box.max.y > topLim) shift.y -= box.max.y - topLim;
             float bottom = box.min.y + shift.y;
+            // A tight limb gap must not drag the glyph back onto the head.
+            if (bottom < aboveHead)
+            {
+                shift.y += aboveHead - bottom;
+                bottom = aboveHead;
+            }
             if (bottom < botLim)
             {
                 float up = botLim - bottom;
@@ -978,7 +997,7 @@ namespace FlockFive
             if (_face.flipX != FaceLeft) _face.flipX = FaceLeft;
             // Face always in front of kit bow
             int faceOrder = _sr != null ? _sr.sortingOrder + 2 : 14;
-            if (_face.sortingOrder != faceOrder) _face.sortingOrder = faceOrder;
+            FlockSort.Apply(_face, faceOrder);
             float fs = mood.FaceScale;
             var faceScale = new Vector3(fs, blink ? fs * 0.18f : fs, 1f);
             if (_face.transform.localScale != faceScale) _face.transform.localScale = faceScale;
@@ -995,14 +1014,16 @@ namespace FlockFive
             var spr = Sex == BirdSex.Female ? SpriteCatalog.Bow : SpriteCatalog.CrownFor(Color);
             if (_kit != null)
             {
+                int kitHeld = _kit.sortingOrder;
                 if (_kit.sprite != spr) _kit.sprite = spr;
                 if (!_kit.enabled) _kit.enabled = true;
+                FlockSort.Apply(_kit, kitHeld);
                 return;
             }
-            var go = WorldBuilder.Sprite("Kit", spr, transform.position, 0.3f, 13, transform);
+            var go = WorldBuilder.Sprite("Kit", spr, transform.position, 0.3f, FlockSort.Perch + 1, transform);
             go.transform.localRotation = Quaternion.identity;
             _kit = go.GetComponent<SpriteRenderer>();
-            _kit.sortingOrder = 13;
+            FlockSort.Apply(_kit, FlockSort.Perch + 1);
         }
 
         // Per-frame female bow locals (facing-right). Rows = BirdColor enum order
@@ -1043,10 +1064,15 @@ namespace FlockFive
             { 1.374f, 1.252f, 1.264f, 1.252f, 1.252f, 1.374f }, // Peach
         };
 
-        // Garden accessory anchor. Locals are facing-right; faceLeft mirrors X.
+        // Garden accessory anchor. Locals are facing-right; faceLeft mirrors X only.
         // Splash DrawAvatarKit uses this so the dialog does not keep a second offset.
+        // Bow and crown art is the mirror of the right-facing body. Build 39 flipped
+        // the sprite only when the body did not, and that flip mirrored the tilt.
+        // Build 40 copied the body's flip (flip when faceLeft) and negated tilt,
+        // which turned the kit around on the dome. flip is applied first, then tilt
+        // (SpriteRenderer order). The splash scales, then rotates.
         public static void KitAnchor(bool crown, int frame, bool faceLeft,
-            out float x, out float y, out float scale, out float tilt)
+            out float x, out float y, out float scale, out float tilt, out bool flip)
         {
             if (frame < 0 || frame > 5) frame = 0;
             float lx = crown ? CrownLocalX[0, frame] : BowLocalX[0, frame];
@@ -1054,8 +1080,50 @@ namespace FlockFive
             x = faceLeft ? -lx : lx;
             y = ly;
             scale = crown ? 0.42f : SpriteCatalog.BowScale;
-            tilt = crown ? 26f : 12f;
-            if (faceLeft) tilt = -tilt;
+            float tip = crown ? 26f : 12f;
+            flip = !faceLeft;
+            tilt = flip ? -tip : tip;
+        }
+
+        // Bottom of the alert "!". Same local space as KitAnchor. Clears the
+        // head, the bow, and the crown by a small gap. scale is the glyph
+        // localScale for a child of the bird, so world size tracks birdScale.
+        public static void AlertAnchor(int frame, bool faceLeft, float birdScale,
+            out float x, out float y, out float scale)
+        {
+            if (frame < 0 || frame > 5) frame = 0;
+            float top = KitTop(true, frame, faceLeft, out x);
+            float bowTop = KitTop(false, frame, faceLeft, out _);
+            if (bowTop > top) top = bowTop;
+            const float gap = 0.10f;
+            y = top + gap;
+            float unit = birdScale < 0.05f ? 0.42f : birdScale;
+            // Glyph is 1 local unit tall at scale 1. Parent scale is the bird,
+            // so a local scale of ~0.58 grows and shrinks with it. Floor keeps
+            // a tiny bird readable.
+            float world = unit * 0.58f;
+            if (world < 0.14f) world = 0.14f;
+            scale = world / unit;
+        }
+
+        // Top of the tilted kit sprite, bird-local. x is the kit anchor.
+        static float KitTop(bool crown, int frame, bool faceLeft, out float x)
+        {
+            KitAnchor(crown, frame, faceLeft, out x, out float ky, out float ks, out float tilt, out _);
+            float halfW = 0.22f * ks;
+            float halfH = 0.20f * ks;
+            var spr = crown ? SpriteCatalog.Crown : SpriteCatalog.Bow;
+            if (spr != null && spr.pixelsPerUnit > 1f)
+            {
+                halfW = spr.rect.width * 0.5f / spr.pixelsPerUnit * ks;
+                halfH = spr.rect.height * 0.5f / spr.pixelsPerUnit * ks;
+            }
+            float rad = tilt * Mathf.Deg2Rad;
+            float c = Mathf.Cos(rad);
+            float s = Mathf.Sin(rad);
+            if (c < 0f) c = -c;
+            if (s < 0f) s = -s;
+            return ky + halfH * c + halfW * s;
         }
 
         void PlaceKit(BirdMood.Pose mood, bool on)
@@ -1070,16 +1138,16 @@ namespace FlockFive
             if (!on) return;
             bool girl = Sex == BirdSex.Female;
             int fi = SpriteCatalog.PoseIndex(_sr != null ? _sr.sprite : null, Color, Sex);
-            KitAnchor(!girl, fi, FaceLeft, out float bowX, out float bowY, out float ks, out float tiltZ);
+            KitAnchor(!girl, fi, FaceLeft, out float bowX, out float bowY, out float ks, out float tiltZ, out bool kitFlip);
             var kitPos = new Vector3(bowX, bowY, 0f);
             if (_kit.transform.localPosition != kitPos) _kit.transform.localPosition = kitPos;
             var kitRot = Quaternion.Euler(0f, 0f, tiltZ);
             if (_kit.transform.localRotation != kitRot) _kit.transform.localRotation = kitRot;
-            if (_kit.flipX != FaceLeft) _kit.flipX = FaceLeft;
+            if (_kit.flipX != kitFlip) _kit.flipX = kitFlip;
             // Bow tucks behind body/head; crown rests in front of the head, below the face layer.
-            int bodyOrder = _sr != null ? _sr.sortingOrder : 12;
+            int bodyOrder = _sr != null ? _sr.sortingOrder : FlockSort.Perch;
             int kitOrder = girl ? bodyOrder - 1 : bodyOrder + 1;
-            if (_kit.sortingOrder != kitOrder) _kit.sortingOrder = kitOrder;
+            FlockSort.Apply(_kit, kitOrder);
             var kitScale = new Vector3(ks, ks, 1f);
             if (_kit.transform.localScale != kitScale) _kit.transform.localScale = kitScale;
             if (!Frozen && _kit.color != UnityEngine.Color.white) _kit.color = UnityEngine.Color.white;

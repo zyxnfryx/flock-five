@@ -419,78 +419,42 @@ namespace FlockFive
             return ClipLp("thunder" + seed, data, soft);
         }
 
-        // Original spotted sting. A short scoop into one higher accent, square
-        // partials plus a fast FM edge, a 10ms band-limited tick, then a quiet
-        // slapback. Not a known cue. Fundamentals stay under 900 Hz. ~0.42s.
+        // Two-note rising "hey!". Soft attack, sine plus a quiet second
+        // harmonic. No tick, no FM. A4 then a fourth up (D5), both under 720 Hz.
+        // ~0.30s. Lowpass 0.40 so the rise stays bright without phone hash.
         static AudioClip MakeRowAlert()
         {
-            const float dur = 0.42f;
+            const float dur = 0.30f;
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
-            int hash = 214013;
-            float nz = 0f;
-            float phase = 0f;
-            float mod = 0f;
+            const float fLo = 440f;
+            const float fHi = 587.33f;
+            float pLo = 0f;
+            float pHi = 0f;
             float dt = 1f / Rate;
             for (int i = 0; i < n; i++)
             {
-                float t = i / (float)Rate;
-                float f;
-                if (t < 0.07f)
-                {
-                    float u = t / 0.07f;
-                    f = Mathf.Lerp(368f, 466f, u * u);
-                }
-                else if (t < 0.082f)
-                    f = 466f;
-                else
-                    f = 622f;
-                phase += 2f * Mathf.PI * f * dt;
-                mod += 2f * Mathf.PI * (f * 2.65f) * dt;
-                float modAmt = (150f * Mathf.Exp(-t * 16f)) / 466f;
-                float fm = Mathf.Sin(phase + modAmt * Mathf.Sin(mod));
-                float sq = Mathf.Sin(phase);
-                sq += 0.33f * Mathf.Sin(phase * 3f);
-                sq += 0.14f * Mathf.Sin(phase * 5f);
-                float tone = fm * 0.58f + sq * 0.42f;
-
-                float eZing = 0f;
-                if (t < 0.09f)
-                {
-                    float u = t / 0.09f;
-                    float atk = u < 0.01f ? u / 0.01f : 1f;
-                    eZing = atk * Mathf.Exp(-u * 3.6f);
-                }
-                float eAcc = 0f;
-                float x = t - 0.08f;
-                if (x >= 0f && x < 0.18f)
-                {
-                    float u = x / 0.18f;
-                    float atk = u < 0.006f ? u / 0.006f : 1f;
-                    eAcc = atk * Mathf.Exp(-u * 3.2f);
-                }
-                float eEcho = 0f;
-                float xe = t - 0.155f;
-                if (xe >= 0f && xe < 0.14f)
-                {
-                    float u = xe / 0.14f;
-                    eEcho = Mathf.Exp(-u * 4.4f) * 0.32f;
-                }
-
-                hash = (hash * 1103515245 + 12345) & 0x7fffffff;
-                float white = (hash / 1073741824f) - 1f;
-                nz += 0.18f * (white - nz);
-                float nEnv = 0f;
-                if (t < 0.010f)
-                {
-                    float u = t / 0.010f;
-                    nEnv = Mathf.Sin(u * Mathf.PI);
-                }
-
-                float body = tone * (eZing * 0.62f + eAcc * 0.88f + eEcho);
-                data[i] = (body + nz * nEnv * 0.28f) * 0.36f;
+                float t = i * dt;
+                pLo += 2f * Mathf.PI * fLo * dt;
+                pHi += 2f * Mathf.PI * fHi * dt;
+                float aLo = HeyRise(t, 0.020f) * Mathf.Exp(-Mathf.Max(0f, t - 0.028f) * 10f);
+                float tHi = t - 0.105f;
+                float aHi = 0f;
+                if (tHi > 0f)
+                    aHi = HeyRise(tHi, 0.024f) * Mathf.Exp(-Mathf.Max(0f, tHi - 0.030f) * 7.5f);
+                float lo = Mathf.Sin(pLo) + 0.16f * Mathf.Sin(pLo * 2f);
+                float hi = Mathf.Sin(pHi) + 0.12f * Mathf.Sin(pHi * 2f);
+                data[i] = (lo * aLo * 0.55f + hi * aHi * 0.72f) * 0.42f;
             }
-            return ClipLp("wake-sting", data, 0.68f);
+            return ClipLp("wake-sting", data, 0.40f);
+        }
+
+        static float HeyRise(float t, float atk)
+        {
+            if (t <= 0f) return 0f;
+            if (atk < 0.0001f || t >= atk) return 1f;
+            float u = t / atk;
+            return u * u * (3f - 2f * u);
         }
 
         // Soft falling yawn. Once per branch, under the crunch. No lead mark.

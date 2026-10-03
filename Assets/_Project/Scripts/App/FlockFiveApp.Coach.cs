@@ -8,6 +8,8 @@ namespace FlockFive
     // target on the right half mirrors the sprite into a left hand from the left,
     // pointing right. The cuff sits off to that side and above the target. The
     // tap lifts, arcs over the top, and the fingertip descends onto the target.
+    // ClearGloveOfCaption keeps that perch, the glide, and the tap off the plate.
+    // The plate stays where it was seated.
     // The pose clock is unscaled, so GamePause does not freeze it.
     // Other taps wait. One glove on screen at a time.
     public sealed partial class FlockFiveApp
@@ -163,6 +165,12 @@ namespace FlockFive
         float _tutorSeatX;
         float _tutorSeatY;
         string _tutorSeatFor;
+        // Last painted tutorial plate (text plus the soft corner). Not a seat latch.
+        Rect _tutorPlate;
+        int _tutorPlateFrame = -1;
+        bool _tutorPlateOn;
+        // Lowest GUI y the arc apex may use. NaN keeps the full arch.
+        float _gloveApexMinY = float.NaN;
         ScreenBox[] _blocks;
         int _blockN;
 
@@ -832,6 +840,7 @@ namespace FlockFive
         // on the left when a contact nudge would otherwise flip it.
         bool CoachGloveAt(Vector2 aimGui, float dt, float s, float perchLift = float.NaN, bool fromLeft = false, float approachDeg = float.NaN)
         {
+            bool handWas = _gloveMirror;
             _cueAimGui = aimGui;
             _gloveApproach = approachDeg;
             bool angled = !float.IsNaN(approachDeg);
@@ -871,6 +880,9 @@ namespace FlockFive
                 _gloveMirror = fromLeft || _cueAimGui.x >= Screen.width * 0.5f;
                 ang = ClampUpright(_gloveMirror);
             }
+            ClearGloveOfCaption(_cueAimGui, s, ref rest, ref away, ref _gloveMirror, ref ang, approachDeg);
+            if (_gloveReady && handWas != _gloveMirror)
+                _gloveReady = false;
             _gloveRest = rest;
             _gloveRestAng = ang;
             if (!_gloveReady)
@@ -950,7 +962,7 @@ namespace FlockFive
             if (angled)
                 arcPos = Vector2.Lerp(_gloveTip, _cueAimGui, Mathf.Clamp01(travel));
             else
-                TapArc(_gloveTip, _cueAimGui, _gloveAway, s, travel, out arcPos, out _, _gloveMirror);
+                TapArc(_gloveTip, _cueAimGui, _gloveAway, s, travel, out arcPos, out _, _gloveMirror, _gloveApexMinY);
             float wig = Mathf.Sin(Time.unscaledTime * 46f) * 7f * _gloveWiggle;
             var axis = _gloveAway.sqrMagnitude > 0.0001f ? _gloveAway.normalized : away;
             _gloveShown = arcPos - axis * wig * (1f - travel);
@@ -991,7 +1003,8 @@ namespace FlockFive
                 float tryGap = floor + 20f * s * i;
                 // The wind-up perch only. The tap itself is supposed to touch the target.
                 var rest = aim + away * tryGap + rise;
-                bool hits = GloveHitsBirds(rest, ang, s, mirror) || GloveHitsPest(rest, ang, s, mirror);
+                bool hits = GloveHitsBirds(rest, ang, s, mirror) || GloveHitsPest(rest, ang, s, mirror)
+                    || GloveHitsAdoptBird(rest, ang, s, mirror);
                 bool fits = GloveFits(rest, ang, dh, 0f, mirror, safe);
                 if (!hits)
                 {
@@ -1104,15 +1117,286 @@ namespace FlockFive
 
         // Over the top and down. t = 0 is the perch, t = 1 is exactly the aim
         // (the arc offset is zero on the tap). Arrival is straight down in GUI y.
+        // apexMinY, when set, stops the bow at the tutorial plate. It never lifts the arc.
         static void TapArc(Vector2 rest, Vector2 aim, Vector2 away, float s, float t,
-            out Vector2 pos, out float ang, bool mirror = false)
+            out Vector2 pos, out float ang, bool mirror = false, float apexMinY = float.NaN)
         {
             t = Mathf.Clamp01(t);
-            float apexY = Mathf.Min(rest.y, aim.y) - GloveArch(s);
+            float high = Mathf.Min(rest.y, aim.y);
+            float apexY = high - GloveArch(s);
+            if (!float.IsNaN(apexMinY) && apexY < apexMinY)
+                apexY = apexMinY < high ? apexMinY : high;
             var ctrl = new Vector2(aim.x, apexY);
             float u = 1f - t;
             pos = rest * (u * u) + ctrl * (2f * u * t) + aim * (t * t);
             ang = ClampUpright(mirror);
+        }
+
+        // How far the sprite reaches above the fingertip, in GUI pixels (y down).
+        static float GloveAbove(float ang, float s, bool mirror, float dip)
+        {
+            GloveSpan(Vector2.zero, ang, GloveDh(s), dip, mirror, out _, out float top, out _, out _);
+            float above = -top;
+            return above > 0f ? above : 0f;
+        }
+
+        static float GloveIntersect(Vector2 pivot, float ang, float dh, float dip, bool mirror, Rect plate)
+        {
+            GloveSpan(pivot, ang, dh, dip, mirror, out float x0, out float y0, out float x1, out float y1);
+            float ix0 = x0 > plate.xMin ? x0 : plate.xMin;
+            float iy0 = y0 > plate.yMin ? y0 : plate.yMin;
+            float ix1 = x1 < plate.xMax ? x1 : plate.xMax;
+            float iy1 = y1 < plate.yMax ? y1 : plate.yMax;
+            float w = ix1 - ix0;
+            float h = iy1 - iy0;
+            if (w <= 0f || h <= 0f) return 0f;
+            return w * h;
+        }
+
+        // Hover, the glide in, the bow, and the tap. 0 means the whole pose misses the plate.
+        float GlovePlateArea(Vector2 perch, Vector2 aim, Vector2 away, float s, bool mirror,
+            float ang, bool angled, float approachDeg, Rect plate)
+        {
+            float dh = GloveDh(s);
+            float area = 0f;
+            Vector2 from;
+            if (angled)
+                from = perch + away * (dh * 0.9f);
+            else
+            {
+                float edge = away.x >= 0f ? Screen.width + dh : -dh;
+                from = new Vector2(edge, perch.y);
+            }
+            for (int step = 0; step <= 4; step++)
+            {
+                float u = step / 4f;
+                var glide = Vector2.Lerp(from, perch, u);
+                area += GloveIntersect(glide, ang, dh, 0f, mirror, plate);
+                Vector2 pos;
+                float poseAng;
+                if (angled)
+                {
+                    pos = Vector2.Lerp(perch, aim, u);
+                    poseAng = ang;
+                }
+                else
+                    TapArc(perch, aim, away, s, u, out pos, out poseAng, mirror, _gloveApexMinY);
+                float dip = u > 0.8f ? 1f : 0f;
+                area += GloveIntersect(pos, poseAng, dh, dip, mirror, plate);
+                var seated = pos;
+                float seatAng = poseAng;
+                bool seatMirror = mirror;
+                SeatGlove(ref seated, ref seatAng, aim, s, ref seatMirror, dip, approachDeg);
+                area += GloveIntersect(seated, seatAng, dh, dip, seatMirror, plate);
+            }
+            return area;
+        }
+
+        // Palm point trails the fingertip. True when that point lies on the Watch face.
+        bool PalmInsideWatch(Vector2 pivot, Vector2 awayDir, float s)
+        {
+            if (!_adHand) return false;
+            GiftCardPlaced(s, out _, out var flower);
+            var disc = FlowerDisc(flower, 0f);
+            if (disc.width < 2f || disc.height < 2f) return false;
+            var unit = awayDir.sqrMagnitude > 0.0001f ? awayDir.normalized : Vector2.right;
+            var palm = pivot + unit * (GloveDh(s) * 0.40f);
+            float rx = disc.width * 0.46f;
+            float ry = disc.height * 0.46f;
+            if (rx < 1f) rx = 1f;
+            if (ry < 1f) ry = 1f;
+            float nx = (palm.x - disc.center.x) / rx;
+            float ny = (palm.y - disc.center.y) / ry;
+            return nx * nx + ny * ny < 1f;
+        }
+
+        static float ApexFloor(Rect plate, float ang, float s, bool mirror)
+        {
+            float above = GloveAbove(ang, s, mirror, 0f);
+            float dipped = GloveAbove(ang, s, mirror, 1f);
+            if (dipped > above) above = dipped;
+            return plate.yMax + above + 2f;
+        }
+
+        // One avoidance for every lesson glove. Moves the perch (further out, then
+        // down) or flips the approach side. Does not move the caption. The fingertip
+        // still comes down from above, and a flip is only the fallback. The Watch
+        // face keeps the palm it already had: a clear pose is not allowed to cover it.
+        void ClearGloveOfCaption(Vector2 aim, float s, ref Vector2 rest, ref Vector2 away,
+            ref bool mirror, ref float ang, float approachDeg)
+        {
+            _gloveApexMinY = float.NaN;
+            if (!TutorCaptionPlate(out var plate)) return;
+            bool angled = !float.IsNaN(approachDeg);
+            float bestFloor = ApexFloor(plate, ang, s, mirror);
+            _gloveApexMinY = bestFloor;
+            float bestArea = GlovePlateArea(rest, aim, away, s, mirror, ang, angled, approachDeg, plate);
+            if (bestArea <= 0f) return;
+            Vector2 bestRest = rest;
+            Vector2 bestAway = away;
+            bool bestMirror = mirror;
+            float bestAng = ang;
+            bool birdsClear = !GloveHitsBirds(rest, ang, s, mirror) && !GloveHitsPest(rest, ang, s, mirror)
+                && !GloveHitsAdoptBird(rest, ang, s, mirror);
+            bool watchClear = !PalmInsideWatch(rest, away, s) && !PalmInsideWatch(aim, away, s);
+            var safe = CoachSafeGui(12f * s);
+            float dh = GloveDh(s);
+            int passes = angled ? 1 : 2;
+            for (int pass = 0; pass < passes; pass++)
+            {
+                bool flip = pass == 1;
+                Vector2 dir = away;
+                bool hand = mirror;
+                float handAng = ang;
+                float gap;
+                float rise;
+                if (flip)
+                {
+                    dir = new Vector2(-away.x, 0f);
+                    if (dir.sqrMagnitude < 0.25f)
+                        dir = new Vector2(aim.x < Screen.width * 0.5f ? -1f : 1f, 0f);
+                    dir.Normalize();
+                    hand = dir.x < 0f;
+                    handAng = ClampUpright(hand);
+                    gap = SideGap(s);
+                    rise = GloveRise(s);
+                }
+                else if (angled)
+                {
+                    gap = Vector2.Distance(rest, aim);
+                    if (gap < 8f * s) gap = 48f * s;
+                    rise = 0f;
+                }
+                else
+                {
+                    gap = Mathf.Abs(rest.x - aim.x);
+                    if (gap < 8f * s) gap = SideGap(s);
+                    rise = aim.y - rest.y;
+                    if (rise < 0f) rise = 0f;
+                }
+                float floor = ApexFloor(plate, handAng, s, hand);
+                _gloveApexMinY = floor;
+                for (int down = 0; down <= 12; down++)
+                {
+                    float drop = 8f * s * down;
+                    if (!angled && rise - drop < 6f * s) break;
+                    for (int shove = 0; shove <= 8; shove++)
+                    {
+                        float reach = gap + 16f * s * shove;
+                        Vector2 cand = angled
+                            ? aim + dir * reach + new Vector2(0f, drop)
+                            : aim + new Vector2(dir.x, 0f) * reach + new Vector2(0f, -(rise - drop));
+                        if (!angled && cand.y > aim.y - 6f * s) continue;
+                        if (!GloveFits(cand, handAng, dh, 0f, hand, safe)) continue;
+                        if (birdsClear && (GloveHitsBirds(cand, handAng, s, hand) || GloveHitsPest(cand, handAng, s, hand)
+                            || GloveHitsAdoptBird(cand, handAng, s, hand)))
+                            continue;
+                        if (watchClear && (PalmInsideWatch(cand, dir, s) || PalmInsideWatch(aim, dir, s)))
+                            continue;
+                        float area = GlovePlateArea(cand, aim, dir, s, hand, handAng, angled, approachDeg, plate);
+                        if (area <= 0f)
+                        {
+                            rest = cand;
+                            away = dir;
+                            mirror = hand;
+                            ang = handAng;
+                            _gloveApexMinY = floor;
+                            return;
+                        }
+                        if (area < bestArea)
+                        {
+                            bestArea = area;
+                            bestRest = cand;
+                            bestAway = dir;
+                            bestMirror = hand;
+                            bestAng = handAng;
+                            bestFloor = floor;
+                        }
+                    }
+                }
+            }
+            rest = bestRest;
+            away = bestAway;
+            mirror = bestMirror;
+            ang = bestAng;
+            _gloveApexMinY = bestFloor;
+        }
+
+        // Plate the glove must miss. Garden seats are known before the draw.
+        // Anything painted through NoteTutorPlate is used on the next pose, and
+        // on this pose when the paint already ran (the hive-card hint).
+        bool TutorCaptionPlate(out Rect plate)
+        {
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            if (_tutorPlateOn && _tutorPlateFrame == Time.frameCount)
+            {
+                plate = PadPlate(_tutorPlate, s);
+                return true;
+            }
+            if (GardenTutorPlate(s, out plate) || SplashCaptionPlate(s, out plate))
+            {
+                plate = PadPlate(plate, s);
+                return true;
+            }
+            if (_tutorPlateOn && _tutorPlateFrame >= 0 && Time.frameCount - _tutorPlateFrame <= 1)
+            {
+                plate = PadPlate(_tutorPlate, s);
+                return true;
+            }
+            plate = default;
+            return false;
+        }
+
+        static Rect PadPlate(Rect plate, float s)
+        {
+            float p = 6f * s;
+            return new Rect(plate.x - p, plate.y - p, plate.width + p * 2f, plate.height + p * 2f);
+        }
+
+        void NoteTutorPlate(Rect plate)
+        {
+            if (plate.width < 2f || plate.height < 2f) return;
+            _tutorPlate = plate;
+            _tutorPlateOn = true;
+            _tutorPlateFrame = Time.frameCount;
+        }
+
+        // Same box DrawCoach paints. Gift keeps the lower PlaceCaption seat.
+        void GardenLineBox(float s, out float w, out float h)
+        {
+            w = Mathf.Min(Screen.width * 0.72f, 520f * s);
+            if (_leafIntro)
+                h = 176f * s;
+            else if (_pestCue != 0 || _hiveLevelLive || _hiveIntroLive)
+                h = 252f * s;
+            else
+                h = Mathf.Max(128f * s, 108f);
+        }
+
+        bool GardenTutorPlate(float s, out Rect plate)
+        {
+            plate = default;
+            if (_splash || _levelHive || string.IsNullOrEmpty(_cueLine)) return false;
+            HudLayout(out _, out float top, out _, out _, out _);
+            GardenLineBox(s, out float w, out float h);
+            var seat = SeatTutorialCaption(_cueLine, s, top, w, h);
+            plate = CoachPanelRect(seat);
+            return plate.width > 2f && plate.height > 2f;
+        }
+
+        // GUI-free splash plates. Measured poker and daily lines arrive through NoteTutorPlate.
+        bool SplashCaptionPlate(float s, out Rect plate)
+        {
+            plate = default;
+            Rect seat;
+            if (_adoptLive)
+                seat = AdoptCaptionRect(s);
+            else if (_hiveIntroLive && _splash && _home == HomeFace.Splash)
+                seat = HiveHomeCaption(s);
+            else
+                return false;
+            plate = CoachPanelRect(seat);
+            return plate.width > 2f && plate.height > 2f;
         }
 
         // Safe area in GUI space, inset so the outline does not sit on the notch.
@@ -1411,6 +1695,7 @@ namespace FlockFive
         // Shared tutorial caption: even inset, balanced wrap, one outline weight.
         void PaintCoachCaption(string text, Rect r, float s, int lo, int hi)
         {
+            NoteTutorPlate(CoachPanelRect(r));
             var st = CoachLineStyle();
             if (_coachContent == null) _coachContent = new GUIContent();
             float padX = Mathf.Clamp(r.width * 0.055f, 10f * s, 18f * s);
@@ -1791,19 +2076,21 @@ namespace FlockFive
                 return;
             }
             PoseRestGlove();
-            if (_cueLine != null)
-            {
-                if (_leafIntro)
-                    DrawCoachLine(_cueLine, s, top, 176f * s, Mathf.RoundToInt(32f * s));
-                else if (_pestCue != 0 || _hiveLevelLive || _hiveIntroLive)
-                    DrawCoachLine(_cueLine, s, top, 252f * s, Mathf.RoundToInt(32f * s));
-                else
-                    DrawCoachLine(_cueLine, s, top);
-            }
+            // Hand first. The plate paints after it, so a fingertip on the bird
+            // cannot cover the words.
             if (_restVis)
                 DrawRestGlove(s);
             if (_cueHand)
                 DrawCoachGlove(s);
+            if (_cueLine != null)
+            {
+                GardenLineBox(s, out _, out float capH);
+                int capHi = Mathf.RoundToInt(32f * s);
+                if (_leafIntro || _pestCue != 0 || _hiveLevelLive || _hiveIntroLive)
+                    DrawCoachLine(_cueLine, s, top, capH, capHi);
+                else
+                    DrawCoachLine(_cueLine, s, top, capH);
+            }
         }
 
         // Move a caption off a dialog. Above, then below, then a thin strip in the free gap.
@@ -2553,13 +2840,17 @@ namespace FlockFive
             PaintCoachCaption(line, r, s, 12, hi);
         }
 
+        static Rect HiveHomeCaption(float s)
+        {
+            float w = Mathf.Min(Screen.width * 0.72f, 420f * s);
+            return PlaceCaption(s, w, 52f * s, CaptionFloorY(s));
+        }
+
         void DrawHiveIntro(float s)
         {
             if (!_hiveIntroLive) return;
-            float w = Mathf.Min(Screen.width * 0.72f, 420f * s);
-            var seat = PlaceCaption(s, w, 52f * s, CaptionFloorY(s));
-            DrawSplashIntroLine(HiveHomeLine, seat, s);
             DrawCoachGlove(s);
+            DrawSplashIntroLine(HiveHomeLine, HiveHomeCaption(s), s);
         }
 
         // Daily, then hive, then poker. The rail samples a hidden slot until this turn.
@@ -2629,8 +2920,8 @@ namespace FlockFive
         {
             if (!_pokerIntroLive) return;
             if (GuiPaint()) TickPokerWarm();
-            DrawSplashIntroLine(PokerIntroLine, PokerIntroBox(s), s);
             DrawCoachGlove(s);
+            DrawSplashIntroLine(PokerIntroLine, PokerIntroBox(s), s);
         }
 
         // Two lines, width of the longer line, height of that wrap. No spare row.
@@ -2766,8 +3057,8 @@ namespace FlockFive
         void DrawDailyIntro(float s)
         {
             if (!_dailyIntroLive || _dailyOpen || _dailyAskOpen) return;
-            DrawSplashIntroLine(DailyIntroLine, DailyIntroBox(s), s);
             DrawCoachGlove(s);
+            DrawSplashIntroLine(DailyIntroLine, DailyIntroBox(s), s);
         }
 
         // Two lines, width of the longer line, height of that wrap. No spare row under the words.

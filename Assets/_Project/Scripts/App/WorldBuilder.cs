@@ -424,7 +424,7 @@ namespace FlockFive
                 seat.localPosition = new Vector3(p.x, p.y, 0f);
                 view.Seats[s] = seat;
 
-                var bird = Sprite("Bird" + s, SpriteCatalog.Bird(BirdColor.Ruby), go.transform.position, 1f, 6, go.transform);
+                var bird = Sprite("Bird" + s, SpriteCatalog.Bird(BirdColor.Ruby), go.transform.position, 1f, FlockSort.Perch, go.transform);
                 bird.transform.localPosition = new Vector3(p.x, p.y + BranchView.RestLift, 0f);
                 bird.transform.localScale = BranchView.BirdScale;
                 var idle = bird.AddComponent<BirdIdle>();
@@ -456,7 +456,7 @@ namespace FlockFive
             go.transform.localScale = Vector3.one * scale;
             var sr = go.AddComponent<SpriteRenderer>();
             sr.sprite = spr;
-            sr.sortingOrder = order;
+            FlockSort.Apply(sr, order);
             return go;
         }
 

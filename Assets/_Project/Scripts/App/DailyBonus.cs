@@ -4,6 +4,15 @@ using UnityEngine;
 
 namespace FlockFive
 {
+    // Splash daily medal. Ready is the red badge. A streak is the flame only
+    // after a claim. Painters take one of these and never stack the two.
+    public enum DailyBonusIconState
+    {
+        Plain,
+        Badge,
+        Flame
+    }
+
     // Daily login coins. Local calendar day, not the stage-clear streak in Purse.
     // A missed day (gap of 2+) offers day 1 again. The saved streak still counts
     // past 5 ("12 day streak"); the row is only the 5-day cycle.
@@ -82,8 +91,21 @@ namespace FlockFive
         public static int Bonus => _bonus;
         public static bool AtRisk => _atRisk;
         public static bool ClaimedToday => _booted && _gate == Gate.Claimed;
-        // Rail flame only after today's claim has set or raised the streak.
-        public static bool FlameLit => ClaimedToday && _streak >= 1;
+
+        // Ready wins, so a collectable day never keeps yesterday's flame.
+        // Flame is claimed-today or clock-held behind that claim, with a streak.
+        public static DailyBonusIconState IconState
+        {
+            get
+            {
+                if (OfferReady) return DailyBonusIconState.Badge;
+                if (_booted && _last > 0 && _streak >= 1) return DailyBonusIconState.Flame;
+                return DailyBonusIconState.Plain;
+            }
+        }
+
+        // Same answer as IconState. Ready hides the flame.
+        public static bool FlameLit => IconState == DailyBonusIconState.Flame;
         public static string StreakDigits => _digits;
         public static string StreakLine => _streakLine;
         public static string PayLine => _payLine ?? PayFallback();

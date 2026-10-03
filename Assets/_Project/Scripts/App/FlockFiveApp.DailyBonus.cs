@@ -126,11 +126,11 @@ namespace FlockFive
             float sink = held ? r.height * 0.045f : 0f;
             var plate = new Rect(r.x, r.y + sink, r.width, r.height);
             var tex = DailyMedalTex();
-            var glow = GlowTex();
-            bool ready = DailyBonus.OfferReady;
-            float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.6f);
-            if (ready)
+            var icon = DailyBonus.IconState;
+            if (icon == DailyBonusIconState.Badge)
             {
+                var glow = GlowTex();
+                float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.6f);
                 float bloom = plate.width * (0.05f + 0.025f * breathe);
                 GUI.color = new Color(0.90f, 0.18f, 0.12f, 0.16f + 0.14f * breathe);
                 GUI.DrawTexture(new Rect(plate.x - bloom, plate.y - bloom, plate.width + bloom * 2f, plate.height + bloom * 2f), glow, ScaleMode.ScaleToFit, true);
@@ -141,8 +141,21 @@ namespace FlockFive
             GUI.DrawTexture(plate, tex, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
 
-            // Top-right of the round medal. Art is 289×672, so a square letterboxes the fire.
-            // The digit sits on the flame's middle (the bright belly, not the thin tip).
+            // One ornament. IconState already excludes the other, and this branch does too.
+            if (icon == DailyBonusIconState.Flame)
+                DrawDailyStreakFlame(plate);
+            else if (icon == DailyBonusIconState.Badge)
+            {
+                float cx = plate.xMax - plate.width * 0.22f;
+                float cy = plate.yMax - plate.width * 0.22f;
+                DrawReadyBadge(cx, cy, plate.width);
+            }
+        }
+
+        // Top-right of the round medal. Art is 289×672, so a square letterboxes the fire.
+        // The digit sits on the flame's middle (the bright belly, not the thin tip).
+        void DrawDailyStreakFlame(Rect plate)
+        {
             float fh = plate.width * 0.92f;
             float fw = fh * (289f / 672f);
             const float belly = 0.65f;
@@ -152,28 +165,17 @@ namespace FlockFive
             var flame = new Rect(markX - fw * 0.5f, markY - fh * belly - lift, fw, fh);
             int frame = (int)(Time.unscaledTime * 8f) % 6;
             if (frame < 0) frame = 0;
-            if (DailyBonus.FlameLit)
-            {
-                var spr = SpriteCatalog.Flame(frame);
-                if (spr != null && spr.texture != null)
-                    GUI.DrawTexture(flame, spr.texture, ScaleMode.ScaleToFit, true);
-            }
-            if (DailyBonus.Streak >= 1)
-            {
-                EnsureDailyStyles();
-                float numH = fh * 0.32f;
-                float numW = Mathf.Max(fw * 2.2f, plate.width * 0.55f);
-                float bodyX = flame.center.x;
-                float bodyY = flame.center.y;
-                var num = new Rect(bodyX - numW * 0.5f, bodyY - numH * 0.5f, numW, numH);
-                _dailyLine.fontSize = RailDigitPx(num.width, num.height);
-                StampOutlined(num, DailyBonus.StreakDigits, _dailyLine, new Color(1f, 0.97f, 0.86f), 0, 2);
-            }
-            if (!ready) return;
-            float dot = plate.width * (0.15f + 0.02f * breathe);
-            float cx = plate.xMax - plate.width * 0.22f;
-            float cy = plate.yMax - plate.width * 0.22f;
-            DrawNotifyBadge(cx, cy, dot, null);
+            var spr = SpriteCatalog.Flame(frame);
+            if (spr != null && spr.texture != null)
+                GUI.DrawTexture(flame, spr.texture, ScaleMode.ScaleToFit, true);
+            EnsureDailyStyles();
+            float numH = fh * 0.32f;
+            float numW = Mathf.Max(fw * 2.2f, plate.width * 0.55f);
+            float bodyX = flame.center.x;
+            float bodyY = flame.center.y;
+            var num = new Rect(bodyX - numW * 0.5f, bodyY - numH * 0.5f, numW, numH);
+            _dailyLine.fontSize = RailDigitPx(num.width, num.height);
+            StampOutlined(num, DailyBonus.StreakDigits, _dailyLine, new Color(1f, 0.97f, 0.86f), 0, 2);
         }
 
         static int RailDigitPx(float w, float h)
@@ -338,7 +340,7 @@ namespace FlockFive
             Sfx.CardTap();
             Sfx.Clink();
             Haptics.Play(Haptics.Tier.Medium);
-            BurstDailyCoins(coins);
+            FlyCoinsToBalance(coins);
             _dailyOpen = false;
             _dailyPopAt = -1f;
             DismissDailyIntro();
@@ -382,7 +384,7 @@ namespace FlockFive
             Purse.Credit(WelcomeBonusCoins);
             Sfx.Clink();
             Haptics.Play(Haptics.Tier.Medium);
-            BurstDailyCoins(WelcomeBonusCoins);
+            FlyCoinsToBalance(WelcomeBonusCoins);
             _welcomeOpen = true;
             _welcomeAt = Time.unscaledTime;
             _welcomeGlove = false;
@@ -431,30 +433,6 @@ namespace FlockFive
             _dailyPopAt = -1f;
             DismissDailyIntro();
             Sfx.CardTap();
-        }
-
-        void BurstDailyCoins(int coins)
-        {
-            int n = coins >= 100 ? 8 : coins >= 25 ? 6 : 4;
-            float sc = Mathf.Max(Screen.height / 720f, 1f);
-            var pig = PiggyRect(sc);
-            var dest = new Vector2(pig.x + pig.width * 0.5f, pig.y + pig.height * 0.42f);
-            float cx = Screen.width * 0.5f;
-            float cy = Screen.height * 0.58f;
-            for (int i = 0; i < n; i++)
-            {
-                float ang = i * 6.2831853f / n;
-                _flies.Add(new CoinFly
-                {
-                    A = new Vector2(cx + Mathf.Cos(ang) * 40f, cy + Mathf.Sin(ang) * 16f),
-                    B = dest,
-                    T = 0f,
-                    Delay = i * 0.05f,
-                    Spin = ((i & 1) == 0 ? 360f : -360f)
-                });
-            }
-            _pigBurst = 1f;
-            _pigJiggle = 1f;
         }
 
         // Ease-out cubic, 0.88 → 1. Resting scale is 1, so an already-open card does not drift.

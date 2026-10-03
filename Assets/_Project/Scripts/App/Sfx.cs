@@ -764,7 +764,7 @@ namespace FlockFive
         static AudioClip _rowAlert;
         static AudioClip _feederArrive;
 
-        // First "!" of a combo. Lead sting, bed left alone (DuckChirp).
+        // First "!" of a combo. Two-note rising hey, Lead. Bed left alone (DuckChirp).
         public static void RowAlert()
         {
             Ensure();
