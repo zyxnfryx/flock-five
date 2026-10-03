@@ -19,7 +19,7 @@ namespace FlockFive
         {
             _planted = planted;
             transform.localScale = scale;
-            if (!_breaking) transform.position = planted;
+            if (!_breaking) ApplyIdle();
         }
         // Seat is the wood; this lifts the sprite so gripping toes sit on the limb.
         public const float RestLift = 0.41f;
@@ -342,7 +342,11 @@ namespace FlockFive
         {
             if (GamePause.Paused)
             {
-                if (!_breaking) transform.position = _planted;
+                if (!_breaking)
+                {
+                    transform.position = _planted;
+                    transform.rotation = Quaternion.identity;
+                }
                 return;
             }
             if (_breaking) return;
@@ -351,8 +355,9 @@ namespace FlockFive
                 _shake -= Time.unscaledDeltaTime;
                 float u = Mathf.Clamp01(_shake / 0.22f);
                 transform.position = _planted + new Vector3(Mathf.Sin(Time.time * 48f) * 0.08f * u, 0f, 0f);
+                transform.rotation = Quaternion.identity;
             }
-            else transform.position = _planted;
+            else ApplyIdle();
 
             if (!_sleeping)
             {
@@ -366,6 +371,31 @@ namespace FlockFive
                 _nextSnooze = Time.time + Random.Range(1.35f, 2.7f);
             }
             PlaceCalmGlow();
+        }
+
+        // One wind path for every limb: play rows, open gifts, and locked
+        // bonus wood+sign. The sign is a child, so it rides this pose.
+        void ApplyIdle()
+        {
+            WindPose(_planted, Index, FromRight, Time.time, GardenStorm.Wet,
+                transform.localScale.x, out var pos, out var rot);
+            transform.position = pos;
+            transform.rotation = rot;
+        }
+
+        static void WindPose(Vector3 planted, int index, bool fromRight, float t, float wet, float scaleX, out Vector3 pos, out Quaternion rot)
+        {
+            float wind = 1f + 1.15f * Mathf.Clamp01(wet);
+            float phase = index * 0.37f;
+            float sway = Mathf.Sin(t * 0.55f + phase);
+            float bob = Mathf.Sin(t * 0.82f + phase * 0.6f);
+            float wiggle = Mathf.Sin(t * 1.15f + phase * 1.4f);
+            float ang = (sway * 0.70f + wiggle * 0.22f) * wind;
+            var lift = new Vector3(0f, (bob * 0.016f + Mathf.Abs(sway) * 0.004f) * wind, 0f);
+            float hingeX = (fromRight ? 1f : -1f) * WorldBuilder.WoodHalf * scaleX;
+            var hinge = new Vector3(hingeX, 0f, 0f);
+            rot = Quaternion.Euler(0f, 0f, ang);
+            pos = planted + lift + hinge - rot * hinge;
         }
 
         void EnsureCalm()

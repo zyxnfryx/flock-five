@@ -123,7 +123,7 @@ namespace FlockFive
 
                 DrawCopy(plate, s, breathe, glow);
                 float bulbFrac = Mathf.Clamp(15f * s / Mathf.Max(1f, plate.width), 0.040f, 0.058f);
-                DrawGiftMarquee(plate, s, t, 0.70f, 3f * s, bulbFrac, 12, 0f, true, 0.16f, 0f, card);
+                DrawGiftMarquee(plate, s, t, 0.70f, -1f, bulbFrac, 12, 0f, true, 0.16f, 0f, card);
                 DrawBuy(buyFlower, buyHeld, s);
                 DrawRestore(link, linkHeld, s);
                 DrawRestoreNote(link, s);
@@ -200,25 +200,7 @@ namespace FlockFive
 
             static void DrawBuy(Rect flower, bool held, float s)
             {
-                var bloom = SpriteCatalog.PlayFlower;
-                float sink = held ? flower.height * 0.028f : 0f;
-                if (bloom != null && bloom.texture != null)
-                {
-                    GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.38f);
-                    GUI.DrawTexture(new Rect(flower.x + 5f, flower.y + 12f, flower.width, flower.height), bloom.texture, ScaleMode.ScaleToFit, true);
-                    GUI.color = Color.white;
-                    if (!held) DrawFlowerHalo(flower, 0f);
-                    GUI.DrawTexture(flower, bloom.texture, ScaleMode.ScaleToFit, true);
-                    if (!held) DrawFlowerShimmer(flower, 0f);
-                    if (held) DrawDiscPress(flower, sink);
-                }
-                var disc = FlowerDisc(flower, sink);
-                if (bloom == null || bloom.texture == null)
-                {
-                    GUI.color = new Color(0.93f, 0.68f, 0.18f, 1f);
-                    GUI.DrawTexture(disc, Texture2D.whiteTexture);
-                    GUI.color = Color.white;
-                }
+                var disc = DrawPopupButton(flower, held, true);
                 if (_buy == null)
                     _buy = new GUIStyle(GUI.skin.label)
                     {

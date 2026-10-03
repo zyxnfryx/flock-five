@@ -678,13 +678,13 @@ namespace FlockFive
         static AudioClip _rowAlert;
         static AudioClip _feederArrive;
 
-        // One shot for the whole sleeping row. Warm double pulse, not a beep stack.
+        // First "!" of a combo. Lead sting, bed left alone (DuckChirp).
         public static void RowAlert()
         {
             Ensure();
             if (_rowAlert == null) _rowAlert = MakeRowAlert();
-            Shot(_rowAlert, Random.Range(0.98f, 1.02f), 0.60f, MixLayer.Lead, MixDesk.DuckChirp);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.26f, MixDesk.DuckChirp);
+            Shot(_rowAlert, Random.Range(0.98f, 1.02f), 0.54f, MixLayer.Lead, MixDesk.DuckChirp);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.38f, MixDesk.DuckChirp);
         }
 
         // Feeder drop. Short wood pluck, one Lead seat, not a chime loop.

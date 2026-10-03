@@ -170,6 +170,23 @@ namespace FlockFive
             _face.sortingOrder = 13;
         }
 
+        // Shared pose rule. Off the perch, wing frames. On the perch, only a real airborne flap.
+        public static bool UseFlyingPose(bool onPerch, bool airborneFlap)
+        {
+            if (!onPerch) return true;
+            return airborneFlap;
+        }
+
+        // Feet on this bird's seat. Sleep droops into the bark. A lift, or a body
+        // that flight has carried off RestLocal, is not perched.
+        bool PerchHeld()
+        {
+            if (Sleeping) return true;
+            if (Lift > 0.05f || _liftShown > 0.05f) return false;
+            var d = transform.localPosition - RestLocal;
+            return d.sqrMagnitude < 0.0256f;
+        }
+
         void LateUpdate()
         {
             if (!isActiveAndEnabled) return;
@@ -180,18 +197,19 @@ namespace FlockFive
             }
             if (_ruffle > 0f) _ruffle -= Time.deltaTime;
             bool show = _sr != null && _sr.enabled;
-            // Shrouded birds stay a still silhouette on the perch. A frozen flap
-            // (restart takeoff) still beats the wings so that silhouette flies.
-            bool fly = !Sleeping && show && (Flapping || Lift > 0.05f || _ruffle > 0f)
-                && (!Shrouded || (Frozen && Flapping));
+            // Shrouded birds stay a still silhouette on the perch. Off the perch,
+            // including a frozen takeoff, the flying cycle is mandatory.
+            bool onPerch = PerchHeld();
+            bool fly = !Sleeping && show && (Flapping || Lift > 0.05f || _ruffle > 0f || !onPerch)
+                && (!Shrouded || (Frozen && Flapping) || !onPerch);
             var mood = BirdMood.Of(Color);
             if (show)
             {
                 _sr.flipX = FaceLeft;
-                // Spread-wing flight frames (_1/_2) only while actually airborne.
-                // A seated Flutter or ruffle keeps the rest frame so toes stay on bark.
+                // On the bark, a seated flutter or ruffle keeps the rest frame.
+                // Anywhere else, wing frames. A still rest pose is only a perched bird.
                 bool airborne = Frozen || _liftShown > 0.05f || (Flapping && _flutterUntil <= 0f);
-                bool wings = fly && airborne;
+                bool wings = UseFlyingPose(onPerch, fly && airborne);
                 // BirdFrame steps poses at t*16, so t = Time.time * FlapRate gives
                 // 16*FlapRate poses/sec (rest,_1,_2,_1 = 4 poses per wingbeat); with the _3/_4
                 // in-betweens BirdFrame doubles that to 8 poses per beat at the same beat rate.
@@ -461,12 +479,216 @@ namespace FlockFive
             float pop = Mathf.Sin(Mathf.Clamp01(u / 0.28f) * Mathf.PI * 0.5f);
             float fade = u < 0.72f ? 1f : Mathf.Clamp01((1f - u) / 0.28f);
             float side = FaceLeft ? -0.16f : 0.16f;
-            _bang.transform.localPosition = new Vector3(side, 0.78f + pop * 0.12f, 0f);
-            float sc = Mathf.Lerp(0.35f, 1.15f, pop) * (0.9f + 0.1f * fade);
-            _bang.transform.localScale = Vector3.one * sc;
-            _bang.transform.localRotation = Quaternion.identity;
+            // 25% over the old pop. Pivot is the bottom, so the extra height
+            // grows downward and the top stays where it was.
+            float baseSc = Mathf.Lerp(0.35f, 1.15f, pop) * (0.9f + 0.1f * fade);
+            float sc = baseSc * 1.25f;
+            float y = 0.78f + pop * 0.12f - baseSc * 0.25f;
+            var t = _bang.transform;
+            t.localPosition = new Vector3(side, y, 0f);
+            t.localScale = Vector3.one * sc;
+            t.localRotation = Quaternion.identity;
             _bang.color = new Color(1f, 0.16f, 0.12f, fade);
             _bang.sortingOrder = _sr != null ? _sr.sortingOrder + 4 : 16;
+            FitBang(sc);
+        }
+
+        // Keep the mark inside the playfield and in the gap between limbs.
+        void FitBang(float sc)
+        {
+            if (_bang == null || _bang.sprite == null) return;
+            var t = _bang.transform;
+            var box = _bang.bounds;
+            if (box.size.y < 0.001f) return;
+            float topLim = float.PositiveInfinity;
+            float botLim = float.NegativeInfinity;
+            float leftLim = float.NegativeInfinity;
+            float rightLim = float.PositiveInfinity;
+            var cam = Camera.main;
+            if (cam != null && cam.orthographic)
+            {
+                var a = cam.ViewportToWorldPoint(new Vector3(0.02f, 0.02f, 10f));
+                var b = cam.ViewportToWorldPoint(new Vector3(0.98f, 0.98f, 10f));
+                leftLim = Mathf.Min(a.x, b.x);
+                rightLim = Mathf.Max(a.x, b.x);
+                botLim = Mathf.Min(a.y, b.y);
+                topLim = Mathf.Max(a.y, b.y);
+            }
+            float ceiling = LimbEdge(box.center.x, true);
+            float floor = LimbEdge(box.center.x, false);
+            const float gap = 0.03f;
+            if (ceiling < topLim) topLim = ceiling - gap;
+            if (floor > botLim) botLim = floor + gap;
+            float room = topLim - botLim;
+            if (room > 0.08f && box.size.y > room)
+            {
+                float fit = sc * (room / box.size.y);
+                if (fit < sc)
+                {
+                    t.localScale = Vector3.one * Mathf.Max(0.2f, fit);
+                    box = _bang.bounds;
+                }
+            }
+            Vector3 shift = Vector3.zero;
+            if (box.max.y > topLim) shift.y -= box.max.y - topLim;
+            float bottom = box.min.y + shift.y;
+            if (bottom < botLim)
+            {
+                float up = botLim - bottom;
+                float spare = topLim - (box.max.y + shift.y);
+                if (up > spare) up = Mathf.Max(0f, spare);
+                shift.y += up;
+            }
+            if (box.max.x > rightLim) shift.x -= box.max.x - rightLim;
+            float left = box.min.x + shift.x;
+            if (left < leftLim)
+            {
+                float back = leftLim - left;
+                float spare = rightLim - (box.max.x + shift.x);
+                if (back > spare) back = Mathf.Max(0f, spare);
+                shift.x += back;
+            }
+            if (shift.sqrMagnitude > 0.0000001f)
+                t.position += shift;
+        }
+
+        // above: underside of the next limb. Otherwise the top of the perch under this bird.
+        float LimbEdge(float worldX, bool above)
+        {
+            float best = above ? float.PositiveInfinity : float.NegativeInfinity;
+            if (above)
+            {
+                var limb = transform.parent;
+                var garden = limb != null ? limb.parent : null;
+                if (garden == null) return best;
+                float y0 = transform.position.y;
+                int n = garden.childCount;
+                for (int i = 0; i < n; i++)
+                {
+                    var ch = garden.GetChild(i);
+                    if (ch == null || ch == limb || !ch.gameObject.activeInHierarchy) continue;
+                    float dy = ch.position.y - y0;
+                    if (dy < 0.25f || dy > 3.2f) continue;
+                    var view = ch.GetComponent<BranchView>();
+                    if (view == null || view.Breaking || view.Wood == null) continue;
+                    if (!WoodSpan(view.Wood, worldX, true, out float y)) continue;
+                    if (y < best) best = y;
+                }
+                return best;
+            }
+            var home = transform.parent != null ? transform.parent.GetComponent<BranchView>() : null;
+            if (home == null || home.Wood == null) return best;
+            if (WoodSpan(home.Wood, worldX, false, out float top))
+                best = top;
+            return best;
+        }
+
+        static bool WoodSpan(SpriteRenderer wood, float worldX, bool underside, out float worldY)
+        {
+            worldY = 0f;
+            bool any = false;
+            float edge = underside ? float.PositiveInfinity : float.NegativeInfinity;
+            for (int s = -1; s <= 1; s++)
+            {
+                if (!WoodColumn(wood, worldX + s * 0.06f, underside, out float y)) continue;
+                any = true;
+                if (underside) { if (y < edge) edge = y; }
+                else if (y > edge) edge = y;
+            }
+            if (!any) return false;
+            worldY = edge;
+            return true;
+        }
+
+        static bool WoodColumn(SpriteRenderer wood, float worldX, bool underside, out float worldY)
+        {
+            worldY = 0f;
+            if (wood == null || !wood.enabled || !wood.gameObject.activeInHierarchy) return false;
+            var spr = wood.sprite;
+            if (spr == null || spr.texture == null || !spr.texture.isReadable) return false;
+            var tex = spr.texture;
+            float ppu = spr.pixelsPerUnit;
+            var rect = spr.rect;
+            if (ppu < 1f || rect.width < 2f || rect.height < 2f) return false;
+            Vector3 local = wood.transform.InverseTransformPoint(new Vector3(worldX, wood.transform.position.y, wood.transform.position.z));
+            float u = local.x * ppu / rect.width + 0.5f;
+            if (wood.flipX) u = 1f - u;
+            if (u < 0f || u >= 1f) return false;
+            int px = (int)rect.x + Mathf.FloorToInt(u * rect.width);
+            if (!RailRow(tex, px, underside, out int py)) return false;
+            float v = (py + 0.5f) / rect.height;
+            float localY = (v - 0.5f) * (rect.height / ppu);
+            worldY = wood.transform.TransformPoint(new Vector3(local.x, localY, 0f)).y;
+            return true;
+        }
+
+        struct RailCols
+        {
+            public int Id;
+            public int[] Lo;
+            public int[] Hi;
+        }
+
+        static RailCols _rail0, _rail1;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetBangRails()
+        {
+            _rail0 = default;
+            _rail1 = default;
+        }
+
+        static bool RailRow(Texture2D tex, int x, bool underside, out int row)
+        {
+            row = -1;
+            if (tex == null || !EnsureRailCols(tex)) return false;
+            int id = tex.GetInstanceID();
+            int[] col = null;
+            if (_rail0.Id == id) col = underside ? _rail0.Lo : _rail0.Hi;
+            else if (_rail1.Id == id) col = underside ? _rail1.Lo : _rail1.Hi;
+            if (col == null || (uint)x >= (uint)col.Length) return false;
+            row = col[x];
+            return row >= 0;
+        }
+
+        static bool EnsureRailCols(Texture2D tex)
+        {
+            int id = tex.GetInstanceID();
+            if (_rail0.Id == id) return _rail0.Lo != null;
+            if (_rail1.Id == id) return _rail1.Lo != null;
+            Color32[] pix = null;
+            try { pix = tex.GetPixels32(); }
+            catch (System.Exception) { pix = null; }
+            int w = tex.width;
+            int h = tex.height;
+            var map = new RailCols { Id = id };
+            if (pix != null && w >= 2 && h >= 2 && pix.Length >= w * h)
+            {
+                var lo = new int[w];
+                var hi = new int[w];
+                for (int x = 0; x < w; x++)
+                {
+                    int bot = -1;
+                    int top = -1;
+                    int i = x;
+                    for (int y = 0; y < h; y++)
+                    {
+                        if (pix[i].a > 32)
+                        {
+                            if (bot < 0) bot = y;
+                            top = y;
+                        }
+                        i += w;
+                    }
+                    lo[x] = bot;
+                    hi[x] = top;
+                }
+                map.Lo = lo;
+                map.Hi = hi;
+            }
+            if (_rail0.Id == 0) _rail0 = map;
+            else _rail1 = map;
+            return map.Lo != null;
         }
 
         void PlaceSelect(bool on)
@@ -740,7 +962,7 @@ namespace FlockFive
                 float ly = BowLocalY[ci, fi];
                 bowX = FaceLeft ? -lx : lx;
                 bowY = ly;
-                ks = 0.42f;
+                ks = SpriteCatalog.BowScale;
                 tiltZ = FaceLeft ? -12f : 12f;
             }
             else

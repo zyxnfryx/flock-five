@@ -53,6 +53,7 @@ namespace FlockFive
         const string PrefStage = "flockfive.instage";
         const string PrefLoginDay = "flockfive.login.day";
         const string PrefLoginN = "flockfive.login.n";
+        const string PrefOwed = "flockfive.owed";
         // Clear pay before streak and login. Level 1 is 25, then +5 a level (20 + 5n).
         public static int StageBase(int level)
         {
@@ -65,6 +66,8 @@ namespace FlockFive
         public static int Coins { get; private set; }
         public static int Streak { get; private set; }
         public static int Pending { get; set; }
+        // Stage-clear coins waiting for the reward sign's pay step. Not the balance.
+        static int Owed;
         public static int LoginDays { get; private set; }
         public static int LoginMul => Mathf.Clamp(LoginDays, 1, 3);
         public static int LastStagePay { get; private set; }
@@ -78,6 +81,7 @@ namespace FlockFive
             Coins = Mathf.Max(0, PrefGuard.GetInt(PrefCoins, 0));
             Streak = Mathf.Max(0, PrefGuard.GetInt(PrefStreak, 0));
             LoginDays = Mathf.Max(1, PrefGuard.GetInt(PrefLoginN, 1));
+            Owed = Mathf.Max(0, PrefGuard.GetInt(PrefOwed, 0));
             TickLogin();
             bool inStage = PlayerPrefs.GetInt(PrefStage, 0) == 1;
             if (inStage)
@@ -129,13 +133,28 @@ namespace FlockFive
             LastLogin = LoginMul;
             int pay = basePay * Streak * LastLogin;
             LastWin = pay;
-            Coins += pay;
+            // The reward sign credits this once, after its roll (or amount fade).
             Pending = pay;
-            PrefGuard.SetInt(PrefCoins, Coins);
+            Owed = pay;
+            PrefGuard.SetInt(PrefOwed, pay);
             PrefGuard.SetInt(PrefStreak, Streak);
             PlayerPrefs.SetInt(PrefStage, 0);
             PlayerPrefs.Save();
             return pay;
+        }
+
+        // Single stage-clear credit. A second call is a no-op until the next clear.
+        public static bool CommitStreakPay()
+        {
+            if (Owed <= 0) return false;
+            int pay = Owed;
+            Owed = 0;
+            Pending = 0;
+            Coins += pay;
+            PrefGuard.SetInt(PrefCoins, Coins);
+            PrefGuard.SetInt(PrefOwed, 0);
+            PlayerPrefs.Save();
+            return true;
         }
 
         public static void CueWin(int streak, int win)

@@ -295,6 +295,50 @@ namespace FlockFive
             ang = 90f;
         }
 
+        // Glass points out of the box. MarqueeSpot stores the screw-in angle:
+        // 180 top, -90 right, 0 bottom, 90 left. GUI y grows downward.
+        public static Vector2 MarqueeOutward(float angDeg)
+        {
+            float a = angDeg;
+            if (a > 180f) a -= 360f;
+            if (a < -180f) a += 360f;
+            if (a >= 135f || a < -135f) return new Vector2(0f, -1f);
+            if (a < -45f) return new Vector2(1f, 0f);
+            if (a < 45f) return new Vector2(0f, 1f);
+            return new Vector2(-1f, 0f);
+        }
+
+        // Rim point stays on the outer edge. The sprite center moves out by `half`
+        // (half the glass) so the screw base touches that edge and the body stays outside.
+        // yDown is GUI. World sprites flip Y and negate the spin.
+        public static void SeatBulb(Vector2 rim, float angDeg, float half, bool yDown, out Vector2 center, out float spin)
+        {
+            var g = MarqueeOutward(angDeg);
+            if (half < 0f) half = 0f;
+            if (yDown)
+            {
+                center = rim + g * half;
+                spin = angDeg;
+                return;
+            }
+            center = new Vector2(rim.x + g.x * half, rim.y - g.y * half);
+            spin = -angDeg;
+        }
+
+        // Circle: index 0 is the top, then clockwise in GUI space. Same seat rule as SeatBulb.
+        public static void RadialSeat(Vector2 origin, float radius, int i, int n, float half, out Vector2 rim, out Vector2 center, out Vector2 outward, out float spin)
+        {
+            float turns = n > 0 ? i / (float)n : 0f;
+            float rad = -Mathf.PI * 0.5f + turns * Mathf.PI * 2f;
+            outward = new Vector2(Mathf.Cos(rad), Mathf.Sin(rad));
+            if (radius < 0f) radius = 0f;
+            rim = origin + outward * radius;
+            if (half < 0f) half = 0f;
+            center = rim + outward * half;
+            var inward = new Vector2(-outward.x, -outward.y);
+            spin = Mathf.Atan2(inward.x, -inward.y) * Mathf.Rad2Deg;
+        }
+
         // fx_ad_sign's board is the rectangle on the left of the texture. The arrow
         // head is the right third, so a full-bounds ring would hang in the notch.
         static Rect GiftSignRect(Sprite sprite)
@@ -324,11 +368,14 @@ namespace FlockFive
             FitMarquee(shaft.width, shaft.height, 12, minPitch, out int hSegs, out int vSegs);
             int n = MarqueeCount(hSegs, vSegs);
             var bulbs = new SpriteRenderer[n];
+            float half = bulbSpr != null ? bulbSpr.bounds.size.y * glass * 0.5f : glass * 1.6f;
             for (int i = 0; i < n; i++)
             {
-                MarqueeSpot(shaft.xMin, shaft.yMax, shaft.xMax, shaft.yMin, hSegs, vSegs, i, out var p, out _);
+                MarqueeSpot(shaft.xMin, shaft.yMax, shaft.xMax, shaft.yMin, hSegs, vSegs, i, out var p, out float ang);
+                SeatBulb(p, ang, half, false, out var seat, out float spin);
                 var go = Sprite("GiftBulb" + i, SpriteCatalog.AdBulb, sign.position, 1f, 13, sign);
-                go.transform.localPosition = new Vector3(p.x, p.y, 0f);
+                go.transform.localPosition = new Vector3(seat.x, seat.y, 0f);
+                go.transform.localRotation = Quaternion.Euler(0f, 0f, spin);
                 go.transform.localScale = new Vector3(glass, glass, 1f);
                 var sr = go.GetComponent<SpriteRenderer>();
                 bulbs[i] = sr;

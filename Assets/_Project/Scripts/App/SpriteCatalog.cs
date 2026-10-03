@@ -111,6 +111,8 @@ namespace FlockFive
             return rest;
         }
         public static Sprite Bow => Load(ref _bow, "Sprites/fx_bow", 200f);
+        // Female kit bow. Was 0.42 on every draw site; 1.12 grows it around that same point.
+        public const float BowScale = 0.42f * 1.12f;
         public static Sprite Bowtie => Load(ref _bowtie, "Sprites/fx_bowtie", 200f);
         public static Sprite Crown => Load(ref _crown, "Sprites/fx_crown", 200f);
         static readonly Sprite[] _crownByColor = new Sprite[5];

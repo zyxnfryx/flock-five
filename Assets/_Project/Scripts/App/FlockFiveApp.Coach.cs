@@ -23,8 +23,10 @@ namespace FlockFive
         const string CoachHawkKey = "flockfive.coach.hawk";
         const string AdHandLine = "Tap to watch\nand unlock a bonus spot.";
         const string HiveIntroLine = "You found a bee!\nFinding bees awards cards\nthat are stored in your collection.\nClick the hive to view them.";
-        const string PokerIntroLine = "You earned coins from that stage.\nTap poker to bet them.";
-        const string DailyIntroLine = "Tap Daily for your bonus!";
+        // Two lines, snug. The break is the wrap; the plate is measured to these lines.
+        const string PokerIntroLine = "You earned coins!\nTap poker to bet them.";
+        // Break is the two-line wrap. The plate is measured to these lines.
+        const string DailyIntroLine = "Tap Daily for\nyour bonus!";
         // A feeder collect calls Board.Breeze, which lifts the tip leaf.
         const string LeafIntroLine = "Leaves hide these birds.\nCollect at a feeder\nto blow them away.";
         // A tap does not scare a sparrow. One full match (five birds) into its feeder does.
@@ -146,6 +148,8 @@ namespace FlockFive
         float[] _rippleAge;
         bool _coachLineHeld;
         float _coachLineHold;
+        float _coachLineHoldX;
+        bool _coachHoldXOn;
         string _coachLineFor;
         ScreenBox[] _blocks;
         int _blockN;
@@ -710,10 +714,12 @@ namespace FlockFive
                 }
                 else
                 {
-                    // Keep tapping the rail button. The card waits for the player's tap.
+                    // Same rect DrawDailyRail paints and HitPad tests. The fingertip
+                    // is the pivot, so the center is the contact. The tap still arcs
+                    // over the top and arrives straight down.
                     var box = SplashDailyRect();
-                    var seat = SplashRailSeat(RailDaily);
-                    dailyAim = box.width > 12f ? TopTouch(box) : TopTouch(seat);
+                    if (box.width < 2f) box = SplashRailSeat(RailDaily);
+                    dailyAim = box.center;
                     CoachGloveAt(dailyAim, dt, handS);
                 }
                 return;
@@ -1674,52 +1680,238 @@ namespace FlockFive
             return line;
         }
 
-        // Held so a caption does not jump every frame. The glove path and the fingertip
-        // target are both in the block list.
+        // Held so a caption does not jump every frame. Forbidden: the glove's drawn
+        // rect over its whole tap arc, the LEVEL flower, both side rails, and the
+        // bird plus its name plate. SeatSplashCaption only knows the logo and the
+        // play flower, and was parking the bar on the heading and on the hand.
         Rect NudgeCaption(string key, Rect want, float s, Rect obstacle = default)
         {
             CoachFillBlocks(s);
             AddSplashKeepouts(s);
             AddAimBlock(s);
-            if (obstacle.width > 2f && obstacle.height > 2f && _blocks != null && _blockN < _blocks.Length)
+            AddDailyFrameKeepout(s);
+            AddTutorKeepouts(s);
+            if (obstacle.width > 2f && obstacle.height > 2f)
             {
-                float p = 6f * s;
-                _blocks[_blockN].X0 = obstacle.xMin - p;
-                _blocks[_blockN].Y0 = obstacle.yMin - p;
-                _blocks[_blockN].X1 = obstacle.xMax + p;
-                _blocks[_blockN].Y1 = obstacle.yMax + p;
-                _blockN++;
+                if (_blocks == null || _blockN >= _blocks.Length) GrowBlocks();
+                if (_blocks != null && _blockN < _blocks.Length)
+                {
+                    // CoachPanelRect hangs 18×12 past the text. A smaller pad still covers the frame.
+                    float px = 6f * s;
+                    float py = 6f * s;
+                    if (px < 18f) px = 18f;
+                    if (py < 12f) py = 12f;
+                    _blocks[_blockN].X0 = obstacle.xMin - px;
+                    _blocks[_blockN].Y0 = obstacle.yMin - py;
+                    _blocks[_blockN].X1 = obstacle.xMax + px;
+                    _blocks[_blockN].Y1 = obstacle.yMax + py;
+                    _blockN++;
+                }
             }
             if (_coachLineFor != key)
             {
                 _coachLineFor = key;
                 _coachLineHeld = false;
+                _coachHoldXOn = false;
             }
             if (_coachLineHeld)
             {
                 var held = want;
                 held.y = _coachLineHold;
-                if (held.y >= 2f && held.yMax <= Screen.height - 2f && !BlocksHit(held))
-                    return SeatSplashCaption(held, s);
+                if (_coachHoldXOn) held.x = _coachLineHoldX;
+                if (CaptionSeat(held, s, out var seated))
+                    return seated;
             }
-            if (!BlocksHit(want))
+            if (CaptionSeat(want, s, out var placed))
             {
                 _coachLineHold = want.y;
+                _coachLineHoldX = want.x;
+                _coachHoldXOn = true;
                 _coachLineHeld = true;
-                return SeatSplashCaption(want, s);
+                return placed;
             }
+            if (SeekOpenCaption(want, want.x, s, out var found))
+                return found;
+            AvatarChannel(s, out float chL, out float chR);
+            const float padX = 18f;
+            float innerL = chL + 6f * s + padX;
+            float innerR = chR - 6f * s - padX - want.width;
+            if (innerL < 4f) innerL = 4f;
+            if (innerR < 4f) innerR = 4f;
+            if (innerR < innerL) innerR = innerL;
+            // The hand sits on the aim's side. Try the open side first.
+            bool gloveOnRight = _cueAimGui.x >= Screen.width * 0.5f;
+            float prefer = gloveOnRight ? innerL : innerR;
+            float other = gloveOnRight ? innerR : innerL;
+            if (Mathf.Abs(prefer - want.x) > 1f && SeekOpenCaption(want, prefer, s, out found))
+                return found;
+            if (Mathf.Abs(other - want.x) > 1f && Mathf.Abs(other - prefer) > 1f
+                && SeekOpenCaption(want, other, s, out found))
+                return found;
+            _coachLineHeld = false;
+            _coachHoldXOn = false;
+            if (!BlocksHit(want)) return want;
+            return ParkOffGlove(want, s);
+        }
+
+        // Highest row at this x that misses every forbidden rect. Holds that seat.
+        bool SeekOpenCaption(Rect want, float x, float s, out Rect placed)
+        {
+            placed = want;
             float maxY = Screen.height - want.height - 4f;
+            if (maxY < 4f) return false;
             for (float y = 4f; y <= maxY; y += 6f)
             {
                 var probe = want;
+                probe.x = x;
                 probe.y = y;
-                if (BlocksHit(probe)) continue;
+                if (!CaptionSeat(probe, s, out placed)) continue;
                 _coachLineHold = y;
+                _coachLineHoldX = x;
+                _coachHoldXOn = true;
                 _coachLineHeld = true;
-                return SeatSplashCaption(probe, s);
+                return true;
             }
-            _coachLineHeld = false;
-            return SeatSplashCaption(want, s);
+            return false;
+        }
+
+        // Last seat when every scanned row still touches a keepout. Push clear of the
+        // glove arc even if a rail has to give, so the bar does not stay on the hand.
+        Rect ParkOffGlove(Rect want, float s)
+        {
+            if (!GloveArcRect(s, true, out var sweep)) return want;
+            float gap = 8f * s + 18f;
+            var parked = want;
+            float above = sweep.yMin - gap - want.height;
+            float below = sweep.yMax + gap;
+            if (above >= 4f) parked.y = above;
+            else if (below + want.height <= Screen.height - 4f) parked.y = below;
+            bool overX = parked.xMax > sweep.xMin - gap && parked.x < sweep.xMax + gap;
+            bool overY = parked.yMax > sweep.yMin - gap && parked.y < sweep.yMax + gap;
+            float leftOf = sweep.xMin - gap - want.width;
+            if (overX && overY && leftOf >= 4f)
+                parked.x = leftOf;
+            if (parked.x < 4f) parked.x = 4f;
+            if (parked.y < 4f) parked.y = 4f;
+            return parked;
+        }
+
+        // LEVEL flower, both rails, the perched bird, and its name plate.
+        // The glove's drawn rect, including the whole tap arc, is in the same list.
+        void AddTutorKeepouts(float s)
+        {
+            float pad = 12f + 8f * s;
+            if (pad < 18f) pad = 18f;
+            AddKeepout(FlowerPlayRect(), pad);
+            AddKeepout(PiggyRect(s), pad);
+            AddKeepout(SplashHiveRect(), pad);
+            AddKeepout(SplashPokerRect(), pad);
+            AddKeepout(SplashDailyRect(), pad);
+            var vip = SplashNoAdsRect();
+            AddKeepout(vip, pad);
+            if (vip.width > 2f) AddKeepout(SplashNoAdsRibbon(vip), pad);
+            AddKeepout(_avatarDrawR, pad);
+            AddKeepout(_avatarPlateR, pad);
+            if (!GloveArcRect(s, true, out var sweep)) return;
+            AddKeepout(sweep, pad);
+        }
+
+        // Union of the drawn glove over the tap cycle. livePose also takes where the
+        // hand is this frame, so the entrance glide is forbidden too. Slack covers
+        // the fingertip bob and the nudge wiggle, which are not in the arc samples.
+        bool GloveArcRect(float s, bool livePose, out Rect box)
+        {
+            box = default;
+            if (!_gloveVis) return false;
+            float dh = GloveDh(s);
+            bool any = false;
+            float x0 = 0f, y0 = 0f, x1 = 0f, y1 = 0f;
+            if (livePose)
+                UnionGlove(ref any, ref x0, ref y0, ref x1, ref y1, _gloveShown, _gloveShownAng, dh, _gloveDip, _gloveMirror);
+            if (_gloveAway.sqrMagnitude > 0.0001f)
+            {
+                for (int step = 0; step <= 8; step++)
+                {
+                    float t = step / 8f;
+                    for (int pass = 0; pass < 2; pass++)
+                    {
+                        float dip = pass == 0 ? 0f : 1f;
+                        TapArc(_gloveRest, _cueAimGui, _gloveAway, s, t, out var pos, out float ang, _gloveMirror);
+                        bool mirror = _gloveMirror;
+                        SeatGlove(ref pos, ref ang, _cueAimGui, s, ref mirror, dip);
+                        UnionGlove(ref any, ref x0, ref y0, ref x1, ref y1, pos, ang, dh, dip, mirror);
+                    }
+                }
+            }
+            if (!any) return false;
+            float slack = dh * 0.028f + 8f;
+            x0 -= slack;
+            y0 -= slack;
+            x1 += slack;
+            y1 += slack;
+            box = new Rect(x0, y0, Mathf.Max(0f, x1 - x0), Mathf.Max(0f, y1 - y0));
+            return box.width > 2f && box.height > 2f;
+        }
+
+        static void UnionGlove(ref bool any, ref float x0, ref float y0, ref float x1, ref float y1,
+            Vector2 pivot, float ang, float dh, float dip, bool mirror)
+        {
+            GloveSpan(pivot, ang, dh, dip, mirror, out float gx0, out float gy0, out float gx1, out float gy1);
+            if (!any)
+            {
+                any = true;
+                x0 = gx0;
+                y0 = gy0;
+                x1 = gx1;
+                y1 = gy1;
+                return;
+            }
+            if (gx0 < x0) x0 = gx0;
+            if (gy0 < y0) y0 = gy0;
+            if (gx1 > x1) x1 = gx1;
+            if (gy1 > y1) y1 = gy1;
+        }
+
+        void GrowBlocks()
+        {
+            int n = _blocks == null ? 64 : _blocks.Length * 2;
+            if (n < 64) n = 64;
+            var next = new ScreenBox[n];
+            if (_blocks != null)
+            {
+                int c = _blockN;
+                if (c > _blocks.Length) c = _blocks.Length;
+                for (int i = 0; i < c; i++) next[i] = _blocks[i];
+            }
+            _blocks = next;
+        }
+
+        // Open daily pop-up only. The frame rect is forbidden so a caption cannot cover
+        // the heading. Pad matches CoachPanelRect, or the bar still overlaps the gold.
+        void AddDailyFrameKeepout(float s)
+        {
+            if (!_dailyOpen || _blocks == null || _blockN >= _blocks.Length) return;
+            DailyLayout(s, out var card, out _, out var board, out float band);
+            var frame = DailyFrameOuter(card, board, band);
+            const float px = 18f;
+            const float py = 12f;
+            _blocks[_blockN].X0 = frame.xMin - px;
+            _blocks[_blockN].Y0 = frame.yMin - py;
+            _blocks[_blockN].X1 = frame.xMax + px;
+            _blocks[_blockN].Y1 = frame.yMax + py;
+            _blockN++;
+        }
+
+        // Prefer the splash-band seat when it is still clear. Otherwise keep the candidate
+        // that already missed every block, so the logo clamp cannot drop the bar on the frame.
+        bool CaptionSeat(Rect candidate, float s, out Rect placed)
+        {
+            placed = candidate;
+            if (candidate.y < 2f || candidate.yMax > Screen.height - 2f) return false;
+            if (BlocksHit(candidate)) return false;
+            var seated = SeatSplashCaption(candidate, s);
+            if (!BlocksHit(seated)) placed = seated;
+            return true;
         }
 
         // Splash lessons only. Garden CoachLineY does not call this.
@@ -1740,8 +1932,9 @@ namespace FlockFive
 
         void AddKeepout(Rect zone, float pad)
         {
-            if (_blocks == null || _blockN >= _blocks.Length) return;
             if (zone.width < 2f || zone.height < 2f) return;
+            if (_blocks == null || _blockN >= _blocks.Length) GrowBlocks();
+            if (_blocks == null || _blockN >= _blocks.Length) return;
             _blocks[_blockN].X0 = zone.xMin - pad;
             _blocks[_blockN].Y0 = zone.yMin - pad;
             _blocks[_blockN].X1 = zone.xMax + pad;
@@ -1873,9 +2066,11 @@ namespace FlockFive
             return true;
         }
 
+        // Glove and caption wait until the adopted bird is perched on the branch.
         bool SplashDailyTurn()
         {
-            return SplashLessonRoom() && _dailyIntro && LevelData.NextPlay >= 1 && !AdoptHoldsQueue();
+            return SplashLessonRoom() && _dailyIntro && LevelData.NextPlay >= 1
+                && !AdoptHoldsQueue() && BirdSettledOnBranch();
         }
 
         bool SplashHiveTurn()
@@ -2169,7 +2364,7 @@ namespace FlockFive
             {
                 _coachContent.text = line;
                 int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
-                _coachSizedPx = FitFontWrapped(st, line, r.width, r.height, 16, hi);
+                _coachSizedPx = FitFontWrapped(st, line, r.width, r.height, 12, hi);
                 _coachSizedFor = line;
                 _coachSizedW = r.width;
                 _coachSizedH = r.height;
@@ -2255,8 +2450,78 @@ namespace FlockFive
         {
             if (!_pokerIntroLive) return;
             if (GuiPaint()) TickPokerWarm();
-            DrawSplashIntroLine(PokerIntroLine, NudgeCaption(PokerIntroLine, SplashIntroBand(s), s), s);
+            DrawSplashIntroLine(PokerIntroLine, NudgeCaption(PokerIntroLine, PokerIntroBox(s), s), s);
             DrawCoachGlove(s);
+        }
+
+        // Two lines, width of the longer line, height of that wrap. No spare row.
+        // Sits under the logo on the side away from the poker glove (right rail).
+        Rect PokerIntroBox(float s)
+        {
+            AvatarChannel(s, out float chL, out float chR);
+            const float padX = 18f;
+            float left = chL + 6f * s + padX;
+            float right = chR - 6f * s - padX;
+            float maxW = right - left;
+            if (maxW < 80f * s)
+                maxW = Mathf.Min(Screen.width * 0.62f, Screen.width - 36f * s);
+            if (maxW < 8f) maxW = 8f;
+            var st = CoachLineStyle();
+            int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            const int floor = 12;
+            int br = PokerIntroLine.IndexOf('\n');
+            string top = br > 0 ? PokerIntroLine.Substring(0, br) : PokerIntroLine;
+            string bot = br > 0 ? PokerIntroLine.Substring(br + 1) : PokerIntroLine;
+            float w = maxW;
+            float h = 32f * s;
+            for (int fs = hi; fs >= floor; fs--)
+            {
+                st.fontSize = fs;
+                BindFit(st, top, false);
+                _fitScratch.fontSize = fs;
+                float wa = _fitScratch.CalcSize(_fitContent).x;
+                BindFit(st, bot, false);
+                _fitScratch.fontSize = fs;
+                float wb = _fitScratch.CalcSize(_fitContent).x;
+                float need = (wa > wb ? wa : wb) + 8f;
+                if (need > maxW && fs > floor) continue;
+                float useW = need > maxW ? maxW : need;
+                if (useW < 8f) useW = 8f;
+                BindFit(st, PokerIntroLine, true);
+                _fitScratch.fontSize = fs;
+                float th = _fitScratch.CalcHeight(_fitContent, useW);
+                BindFit(st, top, false);
+                _fitScratch.fontSize = fs;
+                float two = _fitScratch.CalcSize(_fitContent).y * 2f;
+                if (th > two + 1f) th = two;
+                w = useW;
+                h = th > 1f ? th : 1f;
+                break;
+            }
+            float x = left;
+            if (x + w > right) x = right - w;
+            if (x < 4f) x = 4f;
+            var logo = SplashTitleHalo();
+            float gap = 8f * s + 12f;
+            float y = logo.yMax + gap;
+            if (GloveArcRect(s, false, out var sweep))
+            {
+                bool hitX = x + w > sweep.xMin - gap && x < sweep.xMax + gap;
+                bool hitY = y + h > sweep.yMin - gap && y < sweep.yMax + gap;
+                if (hitX && hitY)
+                {
+                    float above = sweep.yMin - gap - h;
+                    float below = sweep.yMax + gap;
+                    float floorY = FlowerPlayRect().y - gap - h;
+                    if (above >= logo.yMax + gap) y = above;
+                    else if (below <= floorY) y = below;
+                    else if (above >= 4f) y = above;
+                }
+            }
+            float limit = FlowerPlayRect().y - gap - h;
+            if (y > limit) y = limit;
+            if (y < 4f) y = 4f;
+            return new Rect(x, y, w, h);
         }
 
         // First in the splash queue. Hive and poker stay pending until this one ends.
@@ -2336,29 +2601,80 @@ namespace FlockFive
         void DrawDailyIntro(float s)
         {
             if (!_dailyIntroLive || _dailyOpen || _dailyAskOpen) return;
-            DrawSplashIntroLine(DailyIntroLine, NudgeCaption(DailyIntroLine, SplashIntroBand(s), s), s);
+            DrawSplashIntroLine(DailyIntroLine, NudgeCaption(DailyIntroLine, DailyIntroBox(s), s), s);
             DrawCoachGlove(s);
         }
 
-        // Claim sentence, painted after the card so the dim wash does not hide it
-        // and so it sits outside the frame instead of on the buttons.
+        // Two lines, width of the longer line, height of that wrap. No spare row under the words.
+        Rect DailyIntroBox(float s)
+        {
+            var band = SplashIntroBand(s);
+            var st = CoachLineStyle();
+            int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            float maxW = band.width > 48f ? band.width : Mathf.Min(Screen.width * 0.72f, 420f * s);
+            int br = DailyIntroLine.IndexOf('\n');
+            string top = br > 0 ? DailyIntroLine.Substring(0, br) : DailyIntroLine;
+            string bot = br > 0 ? DailyIntroLine.Substring(br + 1) : DailyIntroLine;
+            float w = maxW;
+            float h = 32f * s;
+            for (int fs = hi; fs >= 16; fs--)
+            {
+                st.fontSize = fs;
+                BindFit(st, top, false);
+                _fitScratch.fontSize = fs;
+                float wa = _fitScratch.CalcSize(_fitContent).x;
+                BindFit(st, bot, false);
+                _fitScratch.fontSize = fs;
+                float wb = _fitScratch.CalcSize(_fitContent).x;
+                float need = (wa > wb ? wa : wb) + 8f;
+                if (need > maxW && fs > 16) continue;
+                float useW = need > maxW ? maxW : need;
+                if (useW < 8f) useW = 8f;
+                BindFit(st, DailyIntroLine, true);
+                _fitScratch.fontSize = fs;
+                float th = _fitScratch.CalcHeight(_fitContent, useW);
+                w = useW;
+                h = th > 1f ? th : 1f;
+                break;
+            }
+            float x = band.center.x - w * 0.5f;
+            float y = band.center.y - h * 0.5f;
+            if (x < 4f) x = 4f;
+            if (y < 4f) y = 4f;
+            return new Rect(x, y, w, h);
+        }
+
+        // Claim sentence, painted after the card so the dim wash does not hide it.
+        // Above the frame when that band is clear, otherwise under the Claim pedestal.
         void DrawDailyClaimLine(float s)
         {
             if (!_dailyIntroLive || !_dailyOpen || _dailyAskOpen) return;
-            DailyLayout(s, out var card, out var flower, out _, out _);
-            float x0 = Mathf.Min(card.x, flower.x) - 8f;
-            float y0 = Mathf.Min(card.y, flower.y) - 8f;
-            float x1 = Mathf.Max(card.xMax, flower.xMax) + 8f;
-            float y1 = Mathf.Max(card.yMax, flower.yMax) + 8f;
-            var dialog = new Rect(x0, y0, x1 - x0, y1 - y0);
-            const string line = "Tap Claim.";
+            DailyLayout(s, out var card, out var flower, out var board, out float band);
+            var frame = DailyFrameOuter(card, board, band);
+            const string line = "Tap to claim!";
             float w = Mathf.Min(Screen.width * 0.70f, 420f * s);
             float h = 48f * s;
-            float y = dialog.y - 10f * s - h;
-            if (y < TopHud()) y = dialog.yMax + 8f * s;
-            var r = new Rect((Screen.width - w) * 0.5f, y, w, h);
+            const float barPad = 12f;
+            float gap = 8f * s;
+            float aboveY = frame.y - gap - barPad - h;
+            float belowY = flower.yMax + gap + barPad;
+            float x = (Screen.width - w) * 0.5f;
+            float logoClear = SplashTitleHalo().yMax + gap + barPad;
+            bool aboveFits = aboveY >= logoClear && aboveY >= TopHud();
+            bool belowFits = belowY + h + barPad <= FlowerPlayRect().y && belowY + h <= Screen.height - 4f;
+            float y;
+            if (aboveFits) y = aboveY;
+            else if (belowFits) y = belowY;
+            else if (aboveY >= TopHud()) y = aboveY;
+            else y = belowY;
+            float x0 = Mathf.Min(frame.x, flower.x);
+            float y0 = Mathf.Min(frame.y, flower.y);
+            float x1 = Mathf.Max(frame.xMax, flower.xMax);
+            float y1 = Mathf.Max(frame.yMax, flower.yMax);
+            var dialog = new Rect(x0, y0, x1 - x0, y1 - y0);
+            var r = new Rect(x, y, w, h);
             r = ClearOfDialog(r, dialog, s);
-            r = NudgeCaption(line, r, s);
+            r = NudgeCaption(line, r, s, dialog);
             DrawSplashIntroLine(line, r, s);
         }
 

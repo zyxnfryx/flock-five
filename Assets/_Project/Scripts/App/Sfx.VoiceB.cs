@@ -419,23 +419,41 @@ namespace FlockFive
             return ClipLp("thunder" + seed, data, soft);
         }
 
+        // Original spotted sting: A4 then E5, a rising fifth, about 0.35s.
+        // Sine plus a short octave edge. No sample, no noise.
         static AudioClip MakeRowAlert()
         {
-            const float dur = 0.24f;
+            const float dur = 0.35f;
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
+            const float a0 = 440f;
+            const float b0 = 659.25f;
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
-                float p0 = Mathf.Exp(-((t - 0.02f) * (t - 0.02f)) / 0.0009f);
-                float p1 = Mathf.Exp(-((t - 0.12f) * (t - 0.12f)) / 0.0011f);
-                float a = Mathf.Sin(2f * Mathf.PI * 486f * t);
-                float b = Mathf.Sin(2f * Mathf.PI * 364f * t);
-                a += 0.35f * Mathf.Sin(2f * Mathf.PI * 243f * t);
-                b += 0.28f * Mathf.Sin(2f * Mathf.PI * 182f * t);
-                data[i] = (a * p0 + b * p1 * 0.9f) * 0.55f;
+                float e0 = 0f;
+                float x0 = t - 0.006f;
+                if (x0 >= 0f && x0 < 0.10f)
+                {
+                    float u = x0 / 0.10f;
+                    float hit = u < 0.04f ? u / 0.04f : 1f;
+                    e0 = hit * Mathf.Exp(-u * 6.2f);
+                }
+                float e1 = 0f;
+                float x1 = t - 0.132f;
+                if (x1 >= 0f && x1 < 0.21f)
+                {
+                    float u = x1 / 0.21f;
+                    float hit = u < 0.035f ? u / 0.035f : 1f;
+                    e1 = hit * Mathf.Exp(-u * 4.6f);
+                }
+                float s = Mathf.Sin(2f * Mathf.PI * a0 * t);
+                s += 0.30f * Mathf.Sin(2f * Mathf.PI * a0 * 2f * t);
+                float r = Mathf.Sin(2f * Mathf.PI * b0 * t);
+                r += 0.36f * Mathf.Sin(2f * Mathf.PI * b0 * 2f * t);
+                data[i] = (s * e0 * 0.78f + r * e1) * 0.48f;
             }
-            return Clip("row-alert", data);
+            return ClipLp("wake-sting", data, 0.30f);
         }
 
         static AudioClip MakeFeederArrive()

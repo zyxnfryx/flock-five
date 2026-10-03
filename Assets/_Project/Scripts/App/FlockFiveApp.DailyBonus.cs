@@ -153,6 +153,11 @@ namespace FlockFive
             var spr = SpriteCatalog.Flame(frame);
             if (spr != null && spr.texture != null)
                 GUI.DrawTexture(flame, spr.texture, ScaleMode.ScaleToFit, true);
+            if (plate.width >= 36f)
+            {
+                float glass = Mathf.Clamp(plate.width * 0.14f, 7f, 18f);
+                DrawGiftMarqueeRing(plate.center, plate.width * 0.5f, s, Time.unscaledTime, 1f, glass, 8, true, flame);
+            }
             if (DailyBonus.Streak >= 1)
             {
                 EnsureDailyStyles();
@@ -521,7 +526,12 @@ namespace FlockFive
             float lip = band;
             float cardH = lip + boardH + lip;
             float flowerSz = Mathf.Min(Screen.width * 0.38f, cardW * 0.44f);
-            float overlap = band * 0.35f;
+            // Pedestal art starts ~13% down the square (1024×811 letterboxed). A lip of
+            // band*0.35 left the dim wash showing as a dark seam under the gold frame.
+            // Cap at the brass plus the board's bottom pad so the day tiles stay clear.
+            float overlap = flowerSz * 0.15f;
+            float tileClear = band + 8f * s;
+            if (overlap > tileClear) overlap = tileClear;
             float stack = cardH + flowerSz - overlap;
             float top = TopHud() + 4f * s;
             float bot = Screen.height - Mathf.Max(8f, Screen.safeArea.yMin + 4f);
@@ -584,7 +594,8 @@ namespace FlockFive
             var wood = SpriteCatalog.Blanket != null ? SpriteCatalog.Blanket.texture : Texture2D.whiteTexture;
             float sh = 4f * s;
             GUI.color = new Color(0.05f, 0.03f, 0.02f, 0.42f);
-            GUI.DrawTexture(new Rect(card.x + sh, card.y + sh * 1.5f, card.width, card.height), wood, ScaleMode.StretchToFill, true);
+            // Right only. Shifting down drew a dark band along the bottom of the gold frame.
+            GUI.DrawTexture(new Rect(card.x + sh, card.y, card.width, card.height), wood, ScaleMode.StretchToFill, true);
             GUI.color = new Color(0.52f, 0.30f, 0.11f, 1f);
             GUI.DrawTexture(card, wood, ScaleMode.StretchToFill, true);
 
@@ -776,26 +787,7 @@ namespace FlockFive
         static void DrawDailyClaim(Rect flower, bool held, float s, float t)
         {
             bool ready = DailyBonus.OfferReady;
-            var bloom = SpriteCatalog.PlayFlower;
-            float sink = held ? flower.height * 0.028f : 0f;
-            if (bloom != null && bloom.texture != null)
-            {
-                GUI.color = new Color(0.10f, 0.06f, 0.03f, ready ? 0.38f : 0.20f);
-                GUI.DrawTexture(new Rect(flower.x + 5f, flower.y + 12f, flower.width, flower.height), bloom.texture, ScaleMode.ScaleToFit, true);
-                GUI.color = ready ? Color.white : new Color(0.84f, 0.82f, 0.76f, 1f);
-                if (!held && ready) DrawFlowerHalo(flower, 0f);
-                GUI.DrawTexture(flower, bloom.texture, ScaleMode.ScaleToFit, true);
-                if (!held && ready) DrawFlowerShimmer(flower, 0f);
-                GUI.color = Color.white;
-                if (held) DrawDiscPress(flower, sink);
-            }
-            var disc = FlowerDisc(flower, sink);
-            if (bloom == null || bloom.texture == null)
-            {
-                GUI.color = ready ? new Color(0.93f, 0.68f, 0.18f, 1f) : new Color(0.55f, 0.42f, 0.16f, 1f);
-                GUI.DrawTexture(disc, Texture2D.whiteTexture);
-                GUI.color = Color.white;
-            }
+            var disc = DrawPopupButton(flower, held, ready);
             var labR = new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.56f);
             _dailyClaim.fontSize = _dailyClaimPx;
             int ink = Mathf.Clamp(Mathf.RoundToInt(_dailyClaimPx * 0.12f), 2, 6);
@@ -847,6 +839,8 @@ namespace FlockFive
             DrawAskButton(yesR, DailyAskYes, _dailyAskYesPx, true, yesHeld);
             DrawAskButton(noR, DailyAskNo, _dailyAskNoPx, false, noHeld);
             GUI.matrix = prev;
+            var askShell = DailyScaleRect(card, card.center, k);
+            DrawGiftMarquee(askShell, s, t, 1f, -1f, 0f, 12, 0.058f, true);
             GUI.color = Color.white;
 
             if (yes) CloseDailyAsk(true);
@@ -962,14 +956,7 @@ namespace FlockFive
 
         static void DrawAskButton(Rect r, string label, int px, bool gold, bool held)
         {
-            var blob = SpriteCatalog.Blanket != null ? SpriteCatalog.Blanket.texture : Texture2D.whiteTexture;
-            float sink = held ? r.height * 0.05f : 0f;
-            var face = new Rect(r.x, r.y + sink, r.width, r.height - sink);
-            GUI.color = gold
-                ? (held ? new Color(0.72f, 0.48f, 0.12f, 1f) : new Color(0.95f, 0.72f, 0.22f, 1f))
-                : (held ? new Color(0.26f, 0.15f, 0.07f, 1f) : new Color(0.38f, 0.22f, 0.10f, 1f));
-            GUI.DrawTexture(face, blob, ScaleMode.StretchToFill, true);
-            GUI.color = Color.white;
+            var face = DrawPopupButton(r, held, gold);
             _dailyAskBtn.fontSize = px;
             var ink = gold ? new Color(0.32f, 0.14f, 0.04f, 1f) : new Color(1f, 0.94f, 0.78f, 1f);
             StampOutlined(face, label, _dailyAskBtn, ink, 1, 1);
