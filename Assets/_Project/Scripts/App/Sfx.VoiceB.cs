@@ -419,41 +419,129 @@ namespace FlockFive
             return ClipLp("thunder" + seed, data, soft);
         }
 
-        // Original spotted sting: A4 then E5, a rising fifth, about 0.35s.
-        // Sine plus a short octave edge. No sample, no noise.
+        // Original spotted sting. A short scoop into one higher accent, square
+        // partials plus a fast FM edge, a 10ms band-limited tick, then a quiet
+        // slapback. Not a known cue. Fundamentals stay under 900 Hz. ~0.42s.
         static AudioClip MakeRowAlert()
         {
-            const float dur = 0.35f;
+            const float dur = 0.42f;
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
-            const float a0 = 440f;
-            const float b0 = 659.25f;
+            int hash = 214013;
+            float nz = 0f;
+            float phase = 0f;
+            float mod = 0f;
+            float dt = 1f / Rate;
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
-                float e0 = 0f;
-                float x0 = t - 0.006f;
-                if (x0 >= 0f && x0 < 0.10f)
+                float f;
+                if (t < 0.07f)
                 {
-                    float u = x0 / 0.10f;
-                    float hit = u < 0.04f ? u / 0.04f : 1f;
-                    e0 = hit * Mathf.Exp(-u * 6.2f);
+                    float u = t / 0.07f;
+                    f = Mathf.Lerp(368f, 466f, u * u);
                 }
-                float e1 = 0f;
-                float x1 = t - 0.132f;
-                if (x1 >= 0f && x1 < 0.21f)
+                else if (t < 0.082f)
+                    f = 466f;
+                else
+                    f = 622f;
+                phase += 2f * Mathf.PI * f * dt;
+                mod += 2f * Mathf.PI * (f * 2.65f) * dt;
+                float modAmt = (150f * Mathf.Exp(-t * 16f)) / 466f;
+                float fm = Mathf.Sin(phase + modAmt * Mathf.Sin(mod));
+                float sq = Mathf.Sin(phase);
+                sq += 0.33f * Mathf.Sin(phase * 3f);
+                sq += 0.14f * Mathf.Sin(phase * 5f);
+                float tone = fm * 0.58f + sq * 0.42f;
+
+                float eZing = 0f;
+                if (t < 0.09f)
                 {
-                    float u = x1 / 0.21f;
-                    float hit = u < 0.035f ? u / 0.035f : 1f;
-                    e1 = hit * Mathf.Exp(-u * 4.6f);
+                    float u = t / 0.09f;
+                    float atk = u < 0.01f ? u / 0.01f : 1f;
+                    eZing = atk * Mathf.Exp(-u * 3.6f);
                 }
-                float s = Mathf.Sin(2f * Mathf.PI * a0 * t);
-                s += 0.30f * Mathf.Sin(2f * Mathf.PI * a0 * 2f * t);
-                float r = Mathf.Sin(2f * Mathf.PI * b0 * t);
-                r += 0.36f * Mathf.Sin(2f * Mathf.PI * b0 * 2f * t);
-                data[i] = (s * e0 * 0.78f + r * e1) * 0.48f;
+                float eAcc = 0f;
+                float x = t - 0.08f;
+                if (x >= 0f && x < 0.18f)
+                {
+                    float u = x / 0.18f;
+                    float atk = u < 0.006f ? u / 0.006f : 1f;
+                    eAcc = atk * Mathf.Exp(-u * 3.2f);
+                }
+                float eEcho = 0f;
+                float xe = t - 0.155f;
+                if (xe >= 0f && xe < 0.14f)
+                {
+                    float u = xe / 0.14f;
+                    eEcho = Mathf.Exp(-u * 4.4f) * 0.32f;
+                }
+
+                hash = (hash * 1103515245 + 12345) & 0x7fffffff;
+                float white = (hash / 1073741824f) - 1f;
+                nz += 0.18f * (white - nz);
+                float nEnv = 0f;
+                if (t < 0.010f)
+                {
+                    float u = t / 0.010f;
+                    nEnv = Mathf.Sin(u * Mathf.PI);
+                }
+
+                float body = tone * (eZing * 0.62f + eAcc * 0.88f + eEcho);
+                data[i] = (body + nz * nEnv * 0.28f) * 0.36f;
             }
-            return ClipLp("wake-sting", data, 0.30f);
+            return ClipLp("wake-sting", data, 0.68f);
+        }
+
+        // Soft falling yawn. Once per branch, under the crunch. No lead mark.
+        static AudioClip MakeLullaby()
+        {
+            const float dur = 0.46f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float u = t / dur;
+                float f = Mathf.Lerp(214f, 148f, u);
+                float env = Mathf.Sin(Mathf.Clamp01(u / 0.16f) * Mathf.PI * 0.5f) * Mathf.Exp(-u * 2.6f);
+                float s = Mathf.Sin(2f * Mathf.PI * f * t);
+                s += 0.32f * Mathf.Sin(2f * Mathf.PI * f * 0.5f * t);
+                s += 0.10f * Mathf.Sin(2f * Mathf.PI * f * 1.5f * t);
+                data[i] = s * env * 0.40f;
+            }
+            return ClipLp("lullaby", data, 0.14f);
+        }
+
+        // Short low thump plus a band-limited crack. Not a gunshot.
+        static AudioClip MakeFwCrackle()
+        {
+            const float dur = 0.28f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            int hash = 7919;
+            float nz = 0f;
+            float body = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float u = t / dur;
+                float thump = Mathf.Exp(-t * 18f) * Mathf.Sin(2f * Mathf.PI * 92f * t);
+                float mid = Mathf.Exp(-t * 11f) * Mathf.Sin(2f * Mathf.PI * 180f * t);
+                hash = (hash * 1103515245 + 12345) & 0x7fffffff;
+                float white = (hash / 1073741824f) - 1f;
+                nz += 0.12f * (white - nz);
+                body += 0.20f * (nz - body);
+                float crack = 0f;
+                if (t < 0.045f)
+                {
+                    float cu = t / 0.045f;
+                    crack = Mathf.Sin(cu * Mathf.PI) * (1f - cu);
+                }
+                float env = Mathf.Exp(-u * 3.2f);
+                data[i] = (thump * 0.72f + mid * 0.28f + body * crack * 0.55f) * env * 0.62f;
+            }
+            return ClipLp("fw-crackle", data, 0.22f);
         }
 
         static AudioClip MakeFeederArrive()

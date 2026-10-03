@@ -16,6 +16,8 @@ namespace FlockFive
         public string Front;   // short face-side blurb
         public string Back;    // reverse-side groaner
         public Color Tint;
+        // Optional labels for the card's middle row. Empty draws nothing.
+        public string[] Attrs;
         public BeeKind(string id, string name, string front, string back, Color tint)
         {
             Id = id;
@@ -23,6 +25,7 @@ namespace FlockFive
             Front = front;
             Back = back;
             Tint = tint;
+            Attrs = null;
         }
     }
 

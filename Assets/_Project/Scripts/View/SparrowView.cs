@@ -40,20 +40,16 @@ namespace FlockFive
             int left = visits;
             while (parent != null && left > 0)
             {
-                if (allow != null && allow() && HasEnabled(feeders))
+                if (PestSchedule.StageFull) yield break;
+                if (allow != null && allow() && HasEnabled(feeders) && PestSchedule.TryReserve())
                 {
                     yield return Visit(feeders, parent);
+                    PestSchedule.NoteGone();
                     left--;
                     if (left <= 0) yield break;
                 }
-                float wait = Random.Range(18f, 35f);
-                float t = 0f;
-                while (t < wait)
-                {
-                    if (parent == null) yield break;
-                    t += PlayClock.Delta;
-                    yield return null;
-                }
+                if (parent == null) yield break;
+                yield return null;
             }
         }
 

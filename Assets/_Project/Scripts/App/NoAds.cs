@@ -11,6 +11,8 @@ namespace FlockFive
         const string Pref = "flockfive.noads";
 
         public static bool Owned { get; private set; }
+        public static string RestoreNote { get; private set; }
+        public static int RestoreSerial { get; private set; }
 
         static NoAdsHost _host;
 
@@ -18,7 +20,16 @@ namespace FlockFive
         static void ResetStatics()
         {
             Owned = false;
+            RestoreNote = null;
+            RestoreSerial = 0;
             _host = null;
+        }
+
+        // Store-localized price only. Empty until the store answers. Never a hardcoded dollar amount.
+        public static string PriceLabel()
+        {
+            if (_host == null) return "";
+            return _host.StorePrice();
         }
 
         public static void Warm()
@@ -47,7 +58,18 @@ namespace FlockFive
         public static void Restore()
         {
             Ensure();
-            if (_host != null) _host.Restore();
+            if (_host == null)
+            {
+                NoteRestore("Couldn't reach the store");
+                return;
+            }
+            _host.Restore();
+        }
+
+        internal static void NoteRestore(string msg)
+        {
+            RestoreNote = msg;
+            RestoreSerial++;
         }
 
         static void Ensure()
@@ -113,12 +135,42 @@ namespace FlockFive
 #endif
         }
 
+        public string StorePrice()
+        {
+#if UNITY_PURCHASING
+            if (_ctl == null) return "";
+            var p = _ctl.products.WithID(NoAds.ProductId);
+            if (p == null || p.metadata == null) return "";
+            var label = p.metadata.localizedPriceString;
+            return string.IsNullOrEmpty(label) ? "" : label;
+#else
+            return "";
+#endif
+        }
+
         public void Restore()
         {
 #if UNITY_PURCHASING
-            if (_ext == null) return;
+            if (_ext == null || _ctl == null)
+            {
+                NoAds.NoteRestore("Couldn't reach the store");
+                return;
+            }
             var apple = _ext.GetExtension<IAppleExtensions>();
-            if (apple != null) apple.RestoreTransactions(ok => { });
+            if (apple == null)
+            {
+                NoAds.NoteRestore(NoAds.Owned ? "Restored" : "Nothing to restore");
+                return;
+            }
+            apple.RestoreTransactions(ok =>
+            {
+                if (!ok) NoAds.NoteRestore("Couldn't restore");
+                else NoAds.NoteRestore(NoAds.Owned ? "Restored" : "Nothing to restore");
+            });
+#elif UNITY_EDITOR
+            NoAds.NoteRestore(NoAds.Owned ? "Restored" : "Nothing to restore");
+#else
+            NoAds.NoteRestore("Couldn't reach the store");
 #endif
         }
 

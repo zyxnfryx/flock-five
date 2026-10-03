@@ -124,14 +124,18 @@ namespace FlockFive
 
         bool BirdSettledOnBranch() => _birdSettledOnBranch;
 
-        // Small right perch while the Daily lesson is on the splash. The open
-        // card may still ask the bird to step aside; the first glove may not.
+        // Small right perch while the Daily lesson is on the splash. The first
+        // glove may not move it. The open card holds the perch in DailyCardHoldsBird.
         bool DailyRestPose()
         {
             if (!_birdSettledOnBranch) return false;
             if (_dailyOpen || _dailyAskOpen) return false;
             return _dailyIntro || _dailyIntroLive;
         }
+
+        // The open Daily card must not rebuild the home bird. Dropping the rest
+        // pose was scaling the full perch bird up behind the logo.
+        bool DailyCardHoldsBird() => _dailyOpen && _avatarPlaced;
 
         // 0 none, 1 bow, 2 crown. Out of range stays bare. Never writes SexOf.
         static int SavedAvatarKit()
@@ -401,6 +405,8 @@ namespace FlockFive
             _gloveVis = false;
             _gloveReady = false;
             _coachFade = 0f;
+            _adoptPx = 0f;
+            _adoptIcon = 0f;
             _adoptLive = false;
             _adoptOwed = false;
             _adoptStep = AdoptStep.Off;
@@ -419,9 +425,9 @@ namespace FlockFive
         {
             if (_adoptStep == AdoptStep.Settle && _adoptPx > 1f)
             {
-                caption = _adoptLineR.width > 2f
+                caption = _adoptLineR.height > 2f
                     ? _adoptLineR
-                    : new Rect(0f, 0f, 0f, 0f);
+                    : PlaceCaption(s, 280f * s, 72f * s, CaptionFloorY(s));
                 row = new Rect(_adoptWood.x - _adoptWoodW * 0.5f, _adoptWood.y - _adoptWoodH * 0.5f, _adoptWoodW, _adoptWoodH);
                 icon = _adoptPx * AvatarBirdWorld();
                 field = default;
@@ -680,23 +686,38 @@ namespace FlockFive
 
         void AvatarRenameLayout(float s, out Rect line, out Rect field, out Rect done)
         {
-            AvatarChannel(s, out float left, out float right);
-            float titleBottom = TopHud() + (56f * 2f + 4f) * s;
+            // Plate top is the logo halo's bottom plus a margin. Wider and lower
+            // is fine, including over the rails. Never climb into the wordmark.
+            float minTop = SplashTitleHalo().yMax + 14f * s;
             var flower = FlowerPlayRect();
-            float top = titleBottom + 8f * s;
-            float bot = flower.yMin - 8f * s;
+            float botLimit = flower.yMin - 8f * s;
+            AvatarChannel(s, out float chanL, out float chanR);
+            float bleed = SplashRailSize() * 0.55f;
+            float edgeL = Mathf.Max(8f, Screen.safeArea.xMin + 4f);
+            float edgeR = Mathf.Min(Screen.width - 8f, Screen.safeArea.xMax - 4f);
+            float left = Mathf.Max(edgeL, chanL - bleed);
+            float right = Mathf.Min(edgeR, chanR + bleed);
+            if (right < left + 120f)
+            {
+                left = edgeL;
+                right = edgeR;
+            }
             float width = Mathf.Max(80f, right - left);
             int kits = AvatarKitChoices();
-            float gap = 8f * s;
+            float gap = 10f * s;
             float lineH = 36f * s;
-            float swH = 58f * s;
-            float kitH = kits > 0 ? 44f * s : 0f;
-            float rowH = 42f * s;
-            float pad = 10f * s;
-            float innerW = Mathf.Min(width - 8f, 360f * s);
-            float innerH = pad + lineH + gap + swH + gap;
-            if (kits > 0) innerH += kitH + gap;
-            innerH += rowH + pad;
+            // 67 is 15% over the old 58 row, so the color birds and the dressed preview grow together.
+            float swH = 67f * s;
+            float kitH = kits > 0 ? 48f * s : 0f;
+            float rowH = 46f * s;
+            float pad = 12f * s;
+            float innerW = Mathf.Min(width, 420f * s);
+            float innerH = pad + lineH + gap + rowH + gap + swH;
+            if (kits > 0) innerH += gap + kitH;
+            innerH += pad;
+            // CoachPanelRect paints 12px above the inner block.
+            float top = minTop + 12f;
+            float bot = botLimit - 12f;
             float room = bot - top;
             if (innerH > room && room > 80f * s)
             {
@@ -707,33 +728,63 @@ namespace FlockFive
                 rowH *= k;
                 gap *= k;
                 pad *= k;
-                innerH = pad + lineH + gap + swH + gap;
-                if (kits > 0) innerH += kitH + gap;
-                innerH += rowH + pad;
+                innerH = pad + lineH + gap + rowH + gap + swH;
+                if (kits > 0) innerH += gap + kitH;
+                innerH += pad;
             }
+            float span = edgeR - edgeL;
+            float maxInner = span - 36f;
+            if (maxInner < 80f) maxInner = Mathf.Max(40f, span - 8f);
+            innerW = Mathf.Min(innerW, maxInner);
             float x = left + (width - innerW) * 0.5f;
-            float y = top + Mathf.Max(0f, (room - innerH) * 0.28f);
+            // CoachPanelRect paints 18px past the inner block. Keep that plate on screen.
+            if (x - 18f < edgeL) x += edgeL - (x - 18f);
+            if (x + innerW + 18f > edgeR) x -= (x + innerW + 18f) - edgeR;
+            float y = top + Mathf.Max(0f, (room - innerH) * 0.22f);
             if (y + innerH > bot) y = Mathf.Max(top, bot - innerH);
-            var inner = new Rect(x, y, innerW, innerH);
+            float x0 = Mathf.Round(x);
+            float y0 = Mathf.Round(y);
+            var inner = new Rect(x0, y0, Mathf.Max(2f, Mathf.Round(x + innerW) - x0), Mathf.Max(2f, Mathf.Round(y + innerH) - y0));
             _avatarRenameR = CoachPanelRect(inner);
-            float cx = inner.x + 8f * s;
-            float cw = inner.width - 16f * s;
-            float yy = inner.y + pad;
-            line = new Rect(cx, yy, cw, lineH);
-            yy += lineH + gap;
-            float doneW = 86f * s;
-            done = new Rect(cx + cw - doneW, yy, doneW, rowH);
-            field = new Rect(cx, yy, Mathf.Max(40f, done.x - cx - 8f * s), rowH);
-            yy += rowH + gap;
+            if (_avatarRenameR.y < minTop)
+            {
+                inner.y = Mathf.Ceil(inner.y + (minTop - _avatarRenameR.y));
+                _avatarRenameR = CoachPanelRect(inner);
+            }
+            float cx = Mathf.Round(inner.x + pad);
+            float cw = Mathf.Max(40f, Mathf.Round(inner.xMax - pad) - cx);
+            float yy = Mathf.Round(inner.y + pad);
+            line = new Rect(cx, yy, cw, Mathf.Max(2f, Mathf.Round(lineH)));
+            yy = Mathf.Round(yy + line.height + gap);
+            float gapPx = Mathf.Max(4f, Mathf.Round(gap));
+            float doneW = Mathf.Round(92f * s);
+            float fieldW = cw - doneW - gapPx;
+            if (fieldW < 40f)
+            {
+                fieldW = Mathf.Max(24f, cw * 0.62f);
+                doneW = Mathf.Max(28f, cw - fieldW - gapPx);
+            }
+            float row = Mathf.Max(2f, Mathf.Round(rowH));
+            done = new Rect(Mathf.Round(cx + cw - doneW), yy, doneW, row);
+            field = new Rect(cx, yy, Mathf.Max(2f, done.x - cx - gapPx), row);
+            yy = Mathf.Round(yy + row + gap);
+            float sw = Mathf.Max(2f, Mathf.Round(swH));
             float cell = cw / 5f;
             for (int i = 0; i < 5; i++)
-                _avatarSwatch[i] = new Rect(cx + cell * i, yy, cell, swH);
-            yy += swH + gap;
-            if (kits > 0)
             {
-                float kw = (cw - gap * (kits - 1)) / kits;
-                for (int i = 0; i < kits; i++)
-                    _avatarKitR[i] = new Rect(cx + (kw + gap) * i, yy, kw, kitH);
+                float sx = Mathf.Round(cx + cell * i);
+                float sx1 = Mathf.Round(cx + cell * (i + 1f));
+                _avatarSwatch[i] = new Rect(sx, yy, Mathf.Max(2f, sx1 - sx), sw);
+            }
+            if (kits <= 0) return;
+            yy = Mathf.Round(yy + sw + gap);
+            float kw = (cw - gap * (kits - 1)) / kits;
+            float kh = Mathf.Max(2f, Mathf.Round(kitH));
+            for (int i = 0; i < kits; i++)
+            {
+                float kx = Mathf.Round(cx + (kw + gap) * i);
+                float kx1 = i == kits - 1 ? cx + cw : Mathf.Round(kx + kw);
+                _avatarKitR[i] = new Rect(kx, yy, Mathf.Max(2f, kx1 - kx), kh);
             }
         }
 
@@ -774,6 +825,12 @@ namespace FlockFive
                 if (fire) PickAvatarKit(kit);
             }
 
+            var fieldTex = AvatarFieldTex();
+            if (fieldTex != null)
+            {
+                DrawSliced(fieldTex, new Rect(field.x, field.y + 2f * s, field.width, field.height), 12f, 10f * s, new Color(0.25f, 0.12f, 0.05f, 0.28f));
+                DrawSliced(fieldTex, field, 12f, 10f * s, Color.white);
+            }
             var fieldSt = AvatarFieldStyle(s);
             GUI.SetNextControlName("avatar-name");
             _avatarRenameText = GUI.TextField(field, _avatarRenameText ?? "", AvatarNameMax, fieldSt);
@@ -795,9 +852,13 @@ namespace FlockFive
             if (held) c.y += 2f * s;
             if (on)
             {
-                float ring = icon + 10f * s;
+                var plate = AvatarPlateTex();
+                float glow = icon + 16f * s;
+                var gr = new Rect(c.x - glow * 0.5f, c.y - glow * 0.5f, glow, glow);
+                DrawSliced(plate, gr, 16f, 10f * s, new Color(1f, 0.91f, 0.62f, 0.32f));
+                float ring = icon + 8f * s;
                 var rr = new Rect(c.x - ring * 0.5f, c.y - ring * 0.5f, ring, ring);
-                DrawSliced(AvatarPlateTex(), rr, 14f, 8f * s, new Color(1f, 0.98f, 0.90f, 1f));
+                DrawSliced(plate, rr, 16f, 8f * s, new Color(1f, 0.98f, 0.90f, 1f));
                 DrawDressedBird(col, SavedAvatarKit(), c, icon, false, false, 0f);
             }
             else
@@ -806,12 +867,16 @@ namespace FlockFive
 
         void DrawChoiceChip(Rect chip, string label, float s, bool on, bool held)
         {
+            var r = chip;
+            if (held) r.y += 2f * s;
             if (on)
             {
-                var ring = new Rect(chip.x - 3f * s, chip.y - 3f * s, chip.width + 6f * s, chip.height + 6f * s);
+                var glow = new Rect(r.x - 6f * s, r.y - 5f * s, r.width + 12f * s, r.height + 10f * s);
+                DrawSliced(AvatarFieldTex(), glow, 12f, 10f * s, new Color(1f, 0.93f, 0.70f, 0.34f));
+                var ring = new Rect(r.x - 3f * s, r.y - 3f * s, r.width + 6f * s, r.height + 6f * s);
                 DrawSliced(AvatarFieldTex(), ring, 12f, 8f * s, new Color(1f, 0.98f, 0.90f, 1f));
             }
-            DrawPlaqueChip(chip, label, s, held);
+            DrawPlaqueChip(r, label, s, false);
         }
 
         void DrawPlaqueChip(Rect keep, string label, float s, bool held)
@@ -913,7 +978,11 @@ namespace FlockFive
             }
             float lx = bow ? AvatarBowX[fi] : AvatarCrownX[fi];
             float ly = bow ? AvatarBowY[fi] : AvatarCrownY[fi];
-            if (faceLeft) lx = -lx;
+            // Garden X is the back of a right-facing head. One horizontal mirror
+            // (offset plus a single sprite flip) seats the kit on the face.
+            // faceLeft mirrors that pose with the body, so the art is not flipped twice.
+            bool mirrorKit = !faceLeft;
+            if (mirrorKit) lx = -lx;
             float unit = 280f * (icon / 1024f);
             float fit = bow ? SpriteCatalog.BowScale : 0.42f;
             float dw = (spr.rect.width / 200f) * fit * unit;
@@ -922,12 +991,13 @@ namespace FlockFive
             float x = c.x + lx * unit;
             float y = c.y - ly * unit;
             var r = new Rect(x - dw * 0.5f, y - dh * 0.5f, dw, dh);
+            // Flip runs after the rotate, so it mirrors the angle. Negating tilt
+            // as well would turn the crown the wrong way on the dome.
             float tilt = bow ? 12f : 26f;
-            if (faceLeft) tilt = -tilt;
             var m = GUI.matrix;
             if (Mathf.Abs(tilt) > 0.4f)
                 GUIUtility.RotateAroundPivot(tilt, r.center);
-            if (faceLeft)
+            if (mirrorKit)
                 GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), r.center);
             GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
             GUI.matrix = m;
@@ -1021,19 +1091,27 @@ namespace FlockFive
         {
             if (_avatarField == null)
             {
-                var tex = AvatarFieldTex();
+                var blank = new Texture2D(1, 1, TextureFormat.RGBA32, false)
+                {
+                    hideFlags = HideFlags.HideAndDontSave,
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Point,
+                    name = "AvatarFieldBlank"
+                };
+                blank.SetPixel(0, 0, new Color(0f, 0f, 0f, 0f));
+                blank.Apply(false, true);
                 _avatarField = new GUIStyle(GUI.skin.textField)
                 {
                     fontStyle = FontStyle.Bold,
                     alignment = TextAnchor.MiddleCenter,
                     clipping = TextClipping.Clip,
-                    border = new RectOffset(12, 12, 12, 12),
+                    border = new RectOffset(0, 0, 0, 0),
                     padding = new RectOffset(8, 8, 4, 4)
                 };
-                _avatarField.normal.background = tex;
-                _avatarField.focused.background = tex;
-                _avatarField.hover.background = tex;
-                _avatarField.active.background = tex;
+                _avatarField.normal.background = blank;
+                _avatarField.focused.background = blank;
+                _avatarField.hover.background = blank;
+                _avatarField.active.background = blank;
                 var ink = new Color(0.33f, 0.15f, 0.05f, 1f);
                 _avatarField.normal.textColor = ink;
                 _avatarField.focused.textColor = ink;
@@ -1093,33 +1171,66 @@ namespace FlockFive
             return tex;
         }
 
+        // One plaque, nine quads. Edges sample the painted border, not the fill,
+        // and neighbors overlap by a pixel so the rim does not score.
         static void DrawSliced(Texture2D tex, Rect box, float srcRad, float dstRad, Color tint)
         {
             if (tex == null || box.width < 2f || box.height < 2f) return;
+            float x0 = Mathf.Round(box.x);
+            float y0 = Mathf.Round(box.y);
+            float x1 = Mathf.Round(box.xMax);
+            float y1 = Mathf.Round(box.yMax);
+            if (x1 < x0 + 2f || y1 < y0 + 2f) return;
             var prev = GUI.color;
             GUI.color = tint;
-            float u = srcRad / tex.width;
-            float v = srcRad / tex.height;
-            float cw = Mathf.Min(dstRad, box.width * 0.5f);
-            float ch = Mathf.Min(dstRad, box.height * 0.5f);
-            var bl = new Rect(0f, 0f, u, v);
-            var br = new Rect(1f - u, 0f, u, v);
-            var tl = new Rect(0f, 1f - v, u, v);
-            var tr = new Rect(1f - u, 1f - v, u, v);
-            GUI.DrawTextureWithTexCoords(new Rect(box.x, box.yMax - ch, cw, ch), tex, bl);
-            GUI.DrawTextureWithTexCoords(new Rect(box.xMax - cw, box.yMax - ch, cw, ch), tex, br);
-            GUI.DrawTextureWithTexCoords(new Rect(box.x, box.y, cw, ch), tex, tl);
-            GUI.DrawTextureWithTexCoords(new Rect(box.xMax - cw, box.y, cw, ch), tex, tr);
-            var edgeH = new Rect(u, 0.40f, Mathf.Max(0.04f, 1f - 2f * u), 0.20f);
-            var edgeV = new Rect(0.40f, v, 0.20f, Mathf.Max(0.04f, 1f - 2f * v));
-            float midW = Mathf.Max(0f, box.width - cw * 2f);
-            float midH = Mathf.Max(0f, box.height - ch * 2f);
-            GUI.DrawTextureWithTexCoords(new Rect(box.x + cw, box.yMax - ch, midW, ch), tex, edgeH);
-            GUI.DrawTextureWithTexCoords(new Rect(box.x + cw, box.y, midW, ch), tex, edgeH);
-            GUI.DrawTextureWithTexCoords(new Rect(box.x, box.y + ch, cw, midH), tex, edgeV);
-            GUI.DrawTextureWithTexCoords(new Rect(box.xMax - cw, box.y + ch, cw, midH), tex, edgeV);
-            var mid = new Rect(u, v, Mathf.Max(0.04f, 1f - 2f * u), Mathf.Max(0.04f, 1f - 2f * v));
-            GUI.DrawTextureWithTexCoords(new Rect(box.x + cw, box.y + ch, midW, midH), tex, mid);
+            float tw = Mathf.Max(1f, tex.width);
+            float th = Mathf.Max(1f, tex.height);
+            float u = Mathf.Clamp(srcRad / tw, 0.02f, 0.45f);
+            float v = Mathf.Clamp(srcRad / th, 0.02f, 0.45f);
+            float bw = x1 - x0;
+            float bh = y1 - y0;
+            float cw = Mathf.Min(Mathf.Max(1f, Mathf.Round(dstRad)), Mathf.Floor(bw * 0.5f));
+            float ch = Mathf.Min(Mathf.Max(1f, Mathf.Round(dstRad)), Mathf.Floor(bh * 0.5f));
+            float lap = (cw + 1f <= bw * 0.5f && ch + 1f <= bh * 0.5f) ? 1f : 0f;
+            float hx = 0.5f / tw;
+            float hy = 0.5f / th;
+            float u0 = hx;
+            float u1 = u - hx;
+            float u2 = u + hx;
+            float u3 = 1f - u - hx;
+            float u4 = 1f - u + hx;
+            float u5 = 1f - hx;
+            if (u1 <= u0) { u0 = 0f; u1 = u; }
+            if (u3 <= u2) { u2 = u; u3 = 1f - u; }
+            if (u5 <= u4) { u4 = 1f - u; u5 = 1f; }
+            float v0 = hy;
+            float v1 = v - hy;
+            float v2 = v + hy;
+            float v3 = 1f - v - hy;
+            float v4 = 1f - v + hy;
+            float v5 = 1f - hy;
+            if (v1 <= v0) { v0 = 0f; v1 = v; }
+            if (v3 <= v2) { v2 = v; v3 = 1f - v; }
+            if (v5 <= v4) { v4 = 1f - v; v5 = 1f; }
+            float midW = bw - cw * 2f;
+            float midH = bh - ch * 2f;
+            void Slice(float x, float y, float w, float h, float su, float sv, float su1, float sv1)
+            {
+                if (w < 0.5f || h < 0.5f) return;
+                GUI.DrawTextureWithTexCoords(new Rect(x, y, w, h), tex,
+                    new Rect(su, sv, Mathf.Max(0.001f, su1 - su), Mathf.Max(0.001f, sv1 - sv)));
+            }
+            Slice(x0 + cw, y0 + ch, midW, midH, u2, v2, u3, v3);
+            Slice(x0 + cw - lap, y1 - (ch + lap), midW + lap * 2f, ch + lap, u2, v0, u3, v1);
+            Slice(x0 + cw - lap, y0, midW + lap * 2f, ch + lap, u2, v4, u3, v5);
+            Slice(x0, y0 + ch - lap, cw + lap, midH + lap * 2f, u0, v2, u1, v3);
+            Slice(x1 - cw - lap, y0 + ch - lap, cw + lap, midH + lap * 2f, u4, v2, u5, v3);
+            float cornerW = cw + lap;
+            float cornerH = ch + lap;
+            Slice(x0, y1 - cornerH, cornerW, cornerH, u0, v0, u1, v1);
+            Slice(x1 - cornerW, y1 - cornerH, cornerW, cornerH, u4, v0, u5, v1);
+            Slice(x0, y0, cornerW, cornerH, u0, v4, u1, v5);
+            Slice(x1 - cornerW, y0, cornerW, cornerH, u4, v4, u5, v5);
             GUI.color = prev;
         }
 

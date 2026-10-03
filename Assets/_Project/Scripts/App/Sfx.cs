@@ -210,6 +210,46 @@ namespace FlockFive
             a.PlayOneShot(clip, vol);
         }
 
+        public static void PlayProc(AudioClip clip, float pitch, float vol, MixLayer layer)
+        {
+            Ensure();
+            if (pitch > 1.04f) pitch = 1.04f;
+            if (pitch < 0.92f) pitch = 0.92f;
+            Shot(clip, pitch, vol, layer);
+        }
+
+        static AudioSource _held;
+
+        public static void PlayHeld(AudioClip clip, float vol, float duckFor)
+        {
+            if (clip == null) return;
+            Ensure();
+            if (_held == null && _host != null)
+            {
+                _held = _host.gameObject.AddComponent<AudioSource>();
+                _held.playOnAwake = false;
+                _held.loop = false;
+                _held.spatialBlend = 0f;
+            }
+            if (_held == null)
+            {
+                PlayProc(clip, 1f, vol, MixLayer.Lead);
+                return;
+            }
+            _held.Stop();
+            _held.pitch = 1f;
+            _held.clip = clip;
+            _held.volume = Mathf.Clamp(vol, 0.02f, 0.5f);
+            _held.Play();
+            if (MixDesk.Live != null)
+                MixDesk.Live.MarkLead(Mathf.Max(0.2f, duckFor), 0.62f);
+        }
+
+        public static void StopHeld()
+        {
+            if (_held != null && _held.isPlaying) _held.Stop();
+        }
+
         public static bool QuietMid => MixDesk.Live == null || MixDesk.Live.AllowMid;
 
         public static void Chirp() => Chirp(BirdColor.Ruby);
@@ -545,6 +585,16 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.5f, MixDesk.DuckChirp);
         }
 
+        static AudioClip _lullaby;
+
+        // Quiet mid. Plays under a collect crunch and does not take the lead seat.
+        public static void Lullaby()
+        {
+            Ensure();
+            if (_lullaby == null) _lullaby = MakeLullaby();
+            Shot(_lullaby, Random.Range(0.97f, 1.03f), 0.19f, MixLayer.Mid);
+        }
+
         public static void Snooze(float vol = 0.40f)
         {
             Ensure();
@@ -563,6 +613,8 @@ namespace FlockFive
 
         public static float FireworkGain = 1f;
         static AudioClip _fwWhistle;
+        static AudioClip _fwCrackle;
+        static float _fwCrackleAt;
 
         public static void FireworkLaunch()
         {
@@ -577,9 +629,13 @@ namespace FlockFive
         {
             Ensure();
             float g = Mathf.Clamp01(FireworkGain);
-            if (g < 0.04f || _booms == null || _booms.Length == 0) return;
-            int i = Random.Range(0, _booms.Length);
-            Shot(_booms[i], Random.Range(0.94f, 1.03f), 0.7f * g, MixLayer.Lead);
+            if (g < 0.04f) return;
+            if (Time.unscaledTime - _fwCrackleAt < 0.14f) return;
+            _fwCrackleAt = Time.unscaledTime;
+            if (_fwCrackle == null) _fwCrackle = MakeFwCrackle();
+            float vol = 0.26f * g;
+            if (MixDesk.Live != null && !MixDesk.Live.AllowMid) vol *= 0.45f;
+            Shot(_fwCrackle, Random.Range(0.92f, 1.04f), vol, MixLayer.Mid);
         }
 
         static AudioClip MakeFwWhistle()

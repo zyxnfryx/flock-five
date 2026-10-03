@@ -139,7 +139,10 @@ namespace FlockFive
             gameObject.SetActive(true);
             _count = state.Count;
             if (sleeping && !_sleeping)
+            {
                 _nextSnooze = Time.time + Random.Range(0.25f, 0.9f);
+                Sfx.Lullaby();
+            }
             _sleeping = sleeping;
             int lastHid = -1;
             bool tipLocked = state.TipLocked;
@@ -158,7 +161,7 @@ namespace FlockFive
                 else if (hid && !tipLocked) lastHid = i;
                 bird.gameObject.SetActive(show);
                 bird.enabled = show;
-                bird.sortingOrder = hid ? 7 : 12;
+                bird.sortingOrder = hid ? FlockSort.Shroud : FlockSort.Perch;
                 bird.transform.SetParent(transform, false);
                 var rest = Seats[i].localPosition + new Vector3(0f, RestLift, 0f);
                 // SetParent(..., false) keeps local coords — snap to the seat so a

@@ -40,6 +40,8 @@ namespace FlockFive
             public float Scale;
             public float Phase;
             public float SwayDeg;
+            public float StemY;      // pin offset from sprite center, already scaled
+            public int Order;
             public bool Vine;
             public Color Tint;
         }
@@ -52,8 +54,11 @@ namespace FlockFive
         bool _on;
         bool _lift;
         bool _hold;
+        bool _swayHeld;
+        float _swayAt;
         float _liftT;
         int _sig = int.MinValue;
+        Camera _cam;
 
         public bool Locked => _on && !_lift;
 
@@ -87,7 +92,10 @@ namespace FlockFive
                 }
                 _on = true;
                 _lift = false;
-                Layout(Time.time);
+                float sample = LeafDraw.SampleTime();
+                Layout(sample);
+                _swayAt = sample;
+                _swayHeld = true;
                 return;
             }
             if (locked) return;
@@ -143,7 +151,6 @@ namespace FlockFive
         void Build(Transform[] seats, int occupied)
         {
             _items.Clear();
-            _orders.Clear();
             float trunkX = seats[0].localPosition.x;
             int last = Mathf.Min(occupied, seats.Length) - 1;
             float lastX = seats[last] != null ? seats[last].localPosition.x : trunkX;
@@ -222,12 +229,11 @@ namespace FlockFive
             {
                 Anchor = anchor, Angle = angle, Scale = scale, Vine = vine, Tint = tint,
                 Phase = (float)rng.NextDouble() * 40f, SwayDeg = sway,
+                StemY = vine ? VineTopOff * scale : -LeafStemOff * scale,
+                Order = order,
                 Sr = null,
             });
-            _orders.Add(order);
         }
-
-        readonly List<int> _orders = new List<int>();
 
         SpriteRenderer Take(List<SpriteRenderer> pool, ref int used, bool vine)
         {
@@ -242,29 +248,22 @@ namespace FlockFive
 
         void Layout(float t)
         {
+            if (_cam == null) _cam = Camera.main;
+            float mirror = TrunkDir < 0f ? 1f : -1f;
             for (int i = 0; i < _items.Count; i++)
             {
                 var it = _items[i];
                 if (it.Sr == null) continue;
-                float ang = it.Angle + it.SwayDeg * Mathf.Sin(t * 1.3f + it.Phase);
-                Place(it, ang, i < _orders.Count ? _orders[i] : OrderBack);
+                float ang = LeafDraw.Angle(it.Angle, it.SwayDeg, it.Phase, t);
+                Vector3 local = LeafDraw.LocalPos(it.Anchor, ang, it.StemY);
+                if (LeafDraw.OffCamera(_cam, transform.TransformPoint(local), LeafDraw.CullRadius))
+                {
+                    if (it.Sr.enabled) it.Sr.enabled = false;
+                    continue;
+                }
+                if (!it.Sr.enabled) it.Sr.enabled = true;
+                LeafDraw.Pose(it.Sr.transform, it.Sr, local, ang, it.Scale, mirror, it.Order);
             }
-        }
-
-        // Rotate around the stem (leaf) or top (vine) so sway swings from the attach point.
-        void Place(Leaf it, float ang, int order)
-        {
-            var tr = it.Sr.transform;
-            float mirror = TrunkDir < 0f ? 1f : -1f;
-            var rot = Quaternion.Euler(0f, 0f, ang);
-            Vector3 local = it.Vine
-                ? new Vector3(0f, VineTopOff * it.Scale, 0f)
-                : new Vector3(0f, -LeafStemOff * it.Scale, 0f);
-            Vector3 offset = rot * local;
-            tr.localPosition = new Vector3(it.Anchor.x - offset.x, it.Anchor.y - offset.y, 0f);
-            tr.localRotation = rot;
-            tr.localScale = new Vector3(it.Scale * mirror, it.Scale, 1f);
-            it.Sr.sortingOrder = order;
         }
 
         void LateUpdate()
@@ -298,7 +297,72 @@ namespace FlockFive
                 return;
             }
             if (!_on) return;
-            Layout(Time.time);
+            float sample = LeafDraw.SampleTime();
+            if (_swayHeld && sample == _swayAt) return;
+            _swayHeld = true;
+            _swayAt = sample;
+            Layout(sample);
+        }
+    }
+
+    // Shared leaf pose. Every curtain reads one clock so a locked limb does not
+    // rebuild its local sway on every frame. Blow-away does not use this path.
+    public static class LeafDraw
+    {
+        public const float SwayHz = 12f;
+        public const float CullRadius = 4f;
+        const float SwayOmega = 1.3f;
+
+        static int _frame = -1;
+        static float _sample;
+
+        public static float SampleTime()
+        {
+            int frame = Time.frameCount;
+            if (frame != _frame)
+            {
+                _frame = frame;
+                float step = 1f / SwayHz;
+                _sample = Mathf.Floor(Time.time / step) * step;
+            }
+            return _sample;
+        }
+
+        public static float Angle(float baseDeg, float swayDeg, float phase, float time)
+        {
+            return baseDeg + swayDeg * Mathf.Sin(time * SwayOmega + phase);
+        }
+
+        // Sprite center so a Z rotation swings around the stem (leaf) or top (vine).
+        public static Vector3 LocalPos(Vector2 anchor, float angDeg, float stemY)
+        {
+            float rad = angDeg * Mathf.Deg2Rad;
+            float s = Mathf.Sin(rad);
+            float c = Mathf.Cos(rad);
+            float ox = -stemY * s;
+            float oy = stemY * c;
+            return new Vector3(anchor.x - ox, anchor.y - oy, 0f);
+        }
+
+        public static void Pose(Transform tr, SpriteRenderer sr, Vector3 local, float angDeg, float scale, float mirror, int order)
+        {
+            tr.localPosition = local;
+            tr.localRotation = Quaternion.Euler(0f, 0f, angDeg);
+            tr.localScale = new Vector3(scale * mirror, scale, 1f);
+            if (sr.sortingOrder != order) sr.sortingOrder = order;
+        }
+
+        // True only when the pivot is fully outside an orthographic frame.
+        public static bool OffCamera(Camera cam, Vector3 world, float radius)
+        {
+            if (cam == null || !cam.orthographic) return false;
+            Vector3 p = cam.transform.position;
+            float halfH = cam.orthographicSize;
+            float halfW = halfH * cam.aspect;
+            float dx = world.x - p.x;
+            float dy = world.y - p.y;
+            return dx > halfW + radius || dx < -(halfW + radius)
+                || dy > halfH + radius || dy < -(halfH + radius);
         }
     }
 }

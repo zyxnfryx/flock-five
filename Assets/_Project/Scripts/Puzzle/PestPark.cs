@@ -114,7 +114,7 @@ namespace FlockFive
             }
             for (int i = 0; i < spawns; i++)
                 b.Branches.Add(new BranchState());
-            if (!Place(b, flock, allowFull: false, out var homes)) return false;
+            if (!Place(b, flock, allowFull: false, grow: false, out var homes)) return false;
             if (b.RemainingBirds > 0 && FreeSeats(b) < 1) return false;
             plan = new Plan
             {
@@ -130,7 +130,8 @@ namespace FlockFive
             var b = seed.Clone();
             b.Branches[branch].Broken = false;
             int baseCount = b.Branches.Count;
-            Place(b, flock, allowFull: true, out var homes);
+            // A miss opens an empty limb. Never complete a color match from here.
+            Place(b, flock, allowFull: false, grow: true, out var homes);
             return new Plan
             {
                 Break = false,
@@ -139,18 +140,18 @@ namespace FlockFive
             };
         }
 
-        static bool Place(Board b, List<Bird> flock, bool allowFull, out Home[] homes)
+        static bool Place(Board b, List<Bird> flock, bool allowFull, bool grow, out Home[] homes)
         {
             homes = new Home[flock.Count];
             for (int i = 0; i < flock.Count; i++)
             {
                 int home = Find(b, flock[i], allowFull);
-                if (home < 0 && !allowFull) return false;
-                if (home < 0)
+                if (home < 0 && grow)
                 {
                     b.Branches.Add(new BranchState());
                     home = b.Branches.Count - 1;
                 }
+                if (home < 0) return false;
                 var st = b.Branches[home];
                 int seat = st.Count;
                 st.Birds.Add(flock[i]);
@@ -161,10 +162,15 @@ namespace FlockFive
             return true;
         }
 
+        // Occupied limbs of a different color first. Same color and empty limbs
+        // are the fallback, and a placement that would complete a color match is skipped.
         static int Find(Board b, Bird bird, bool allowFull)
         {
-            int best = -1;
-            int bestFree = -1;
+            int open = -1;
+            int openFree = -1;
+            int fall = -1;
+            int fallFree = -1;
+            int fallRank = 9;
             for (int i = 0; i < b.Branches.Count; i++)
             {
                 var st = b.Branches[i];
@@ -173,15 +179,38 @@ namespace FlockFive
                 if (st.Broken || st.AdLocked || st.IsBonus || st.Free <= 0) continue;
                 if (b.IsSleeping(i)) continue;
                 if (!allowFull && WouldFill(st, bird)) continue;
-                if (st.Free > bestFree)
+                bool empty = st.Count == 0;
+                bool same = !empty && HoldsColor(st, bird.Color);
+                if (!empty && !same)
                 {
-                    bestFree = st.Free;
-                    best = i;
+                    if (st.Free > openFree)
+                    {
+                        openFree = st.Free;
+                        open = i;
+                    }
+                }
+                else
+                {
+                    int rank = empty ? 1 : 0;
+                    if (rank < fallRank || (rank == fallRank && st.Free > fallFree))
+                    {
+                        fallRank = rank;
+                        fallFree = st.Free;
+                        fall = i;
+                    }
                 }
             }
-            return best;
+            return open >= 0 ? open : fall;
         }
 
+        static bool HoldsColor(BranchState st, BirdColor color)
+        {
+            for (int i = 0; i < st.Count; i++)
+                if (st.Birds[i].Color == color) return true;
+            return false;
+        }
+
+        // A full color match clears, sex included or not. Shrouded birds do not.
         static bool WouldFill(BranchState st, Bird bird)
         {
             if (st == null || st.Broken) return false;
@@ -189,7 +218,7 @@ namespace FlockFive
             for (int i = 0; i < st.Count; i++)
             {
                 if (st.IsShrouded(i)) return false;
-                if (!st.Birds[i].SameFlock(bird)) return false;
+                if (st.Birds[i].Color != bird.Color) return false;
             }
             return true;
         }

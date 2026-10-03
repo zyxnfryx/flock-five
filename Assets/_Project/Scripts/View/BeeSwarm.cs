@@ -175,7 +175,7 @@ namespace FlockFive
 
             for (int i = 0; i < Count; i++)
             {
-                var go = WorldBuilder.Sprite("Bee" + i, SpriteCatalog.Bee, transform.position, 1f, 8, transform);
+                var go = WorldBuilder.Sprite("Bee" + i, SpriteCatalog.Bee, transform.position, 1f, FlockSort.Bee, transform);
                 _bees[i] = go.GetComponent<SpriteRenderer>();
                 _bees[i].enabled = false;
                 _phase[i] = Random.Range(0f, Mathf.PI * 2f);
@@ -261,7 +261,7 @@ namespace FlockFive
                 _bees[i].flipX = x * TrunkDir < 0f;
                 _bees[i].sprite = SpriteCatalog.BeeFrame(t * 18f + _phase[i]);
                 _bees[i].color = Color.white;
-                _bees[i].sortingOrder = 8;
+                _bees[i].sortingOrder = FlockSort.Bee;
                 float buzz = BeeScale * (1f + 0.08f * Mathf.Sin(t * 42f + _phase[i]));
                 _bees[i].transform.localScale = Vector3.one * buzz;
                 _bees[i].enabled = true;

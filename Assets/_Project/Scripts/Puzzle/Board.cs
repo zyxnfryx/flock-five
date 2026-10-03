@@ -237,7 +237,17 @@ namespace FlockFive
             br.Broken = true;
             // Pest scraps break the limb and park the flock. They must not
             // retire a feeder — that sleeps leftover fives and false-freezes.
-            if (scoreFeeder && slot >= 0)
+            if (scoreFeeder) ScoreFeeder(slot);
+            else if (BreezeOnCollect) Breeze(slot);
+            return slot;
+        }
+
+        // The feeder this collect already matched. The limb may already be
+        // empty: a pest parks the flock before the scrap ends, so IsFullMatch
+        // can no longer name the slot.
+        public void ScoreFeeder(int slot)
+        {
+            if (slot >= 0 && (uint)slot < (uint)Live.Length)
             {
                 if (Queue.Count > 0)
                 {
@@ -247,7 +257,6 @@ namespace FlockFive
                 else Live[slot] = null;
             }
             if (BreezeOnCollect) Breeze(slot);
-            return slot;
         }
 
         public bool Won

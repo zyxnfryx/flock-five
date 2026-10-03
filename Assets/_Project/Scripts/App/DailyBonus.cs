@@ -37,7 +37,7 @@ namespace FlockFive
         static int _bonusN = -1;
         static string _digits = "1";
         static string _streakLine = "1 day streak";
-        static string _payLine = "$10";
+        static string _payLine = null;
         static string _bonusLine = "";
 
         public enum Gate
@@ -68,7 +68,7 @@ namespace FlockFive
             _bonusN = -1;
             _digits = "1";
             _streakLine = "1 day streak";
-            _payLine = "$10";
+            _payLine = PayFallback();
             _bonusLine = "";
             _gate = Gate.Ready;
             for (int i = 0; i < TileLabels.Length; i++) TileLabels[i] = null;
@@ -82,17 +82,21 @@ namespace FlockFive
         public static int Bonus => _bonus;
         public static bool AtRisk => _atRisk;
         public static bool ClaimedToday => _booted && _gate == Gate.Claimed;
+        // Rail flame only after today's claim has set or raised the streak.
+        public static bool FlameLit => ClaimedToday && _streak >= 1;
         public static string StreakDigits => _digits;
         public static string StreakLine => _streakLine;
-        public static string PayLine => _payLine;
+        public static string PayLine => _payLine ?? PayFallback();
         public static string BonusLine => _bonusLine;
 
         public static string TileLabel(int day)
         {
-            if (TileLabels.Length == 0) return "$10";
-            if ((uint)day >= (uint)TileLabels.Length) return TileLabels[0] ?? "$10";
-            return TileLabels[day] ?? "$10";
+            if (TileLabels.Length == 0) return PayFallback();
+            if ((uint)day >= (uint)TileLabels.Length) return TileLabels[0] ?? PayFallback();
+            return TileLabels[day] ?? PayFallback();
         }
+
+        static string PayFallback() => Money.Format(10);
 
         public static void Boot()
         {

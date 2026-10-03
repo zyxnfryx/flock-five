@@ -59,6 +59,7 @@ namespace FlockFive.Editor
             CheckBonusRegrows(Check);
             CheckRestart(Check);
             CheckLayout(Check);
+            CheckBonusCloses(Check);
             CheckLevels(Check);
             CheckRestore(Check);
             CheckBonusOpensEmpty(Check);
@@ -190,7 +191,7 @@ namespace FlockFive.Editor
             Check("layout-scale", scale, "spots " + spots.Count);
             Check("layout-left-packed", GardenFit.RowsPacked(spots, 0), "left");
             Check("layout-right-packed", GardenFit.RowsPacked(spots, 1), "right");
-            Check("layout-two-gifts", BonusSpots(spots) == 2, "gifts " + BonusSpots(spots));
+            Check("layout-two-gifts", BonusSpots(b, spots) == 2, "gifts " + BonusSpots(b, spots));
 
             float anchor = WorldBuilder.ColumnX();
             var full = LevelData.Open(0);
@@ -380,11 +381,97 @@ namespace FlockFive.Editor
             return n;
         }
 
-        static int BonusSpots(List<GardenFit.Spot> spots)
+        // A right-column clear packs that column, sign included. The other
+        // column is still full, so its gift stays put.
+        static void CheckBonusCloses(System.Action<string, bool, string> Check)
+        {
+            var b = LevelData.Open(0);
+            var before = new List<GardenFit.Spot>();
+            GardenFit.Collect(b, null, before);
+            int broken = -1;
+            int below = -1;
+            int plain = 0;
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var st = b.Branches[i];
+                if (st == null || st.IsBonus) continue;
+                if ((plain & 1) == 1)
+                {
+                    if (broken < 0) broken = i;
+                    else if (below < 0) below = i;
+                }
+                plain++;
+            }
+            int rightGift = -1;
+            int leftGift = -1;
+            int giftOrd = 0;
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var st = b.Branches[i];
+                if (st == null || !st.IsBonus) continue;
+                if ((giftOrd & 1) == 1) rightGift = i;
+                else leftGift = i;
+                giftOrd++;
+            }
+            float gift0 = SpotY(before, rightGift);
+            float below0 = SpotY(before, below);
+            float left0 = SpotY(before, leftGift);
+            if (broken >= 0) b.Branches[broken].Broken = true;
+            var after = new List<GardenFit.Spot>();
+            GardenFit.Collect(b, null, after);
+            float gift1 = SpotY(after, rightGift);
+            float below1 = SpotY(after, below);
+            float left1 = SpotY(after, leftGift);
+            float rise = gift1 - gift0;
+            float mate = below1 - below0;
+            bool lowest = rightGift >= 0 && LowestInColumn(after, rightGift);
+            bool ok = broken >= 0 && below >= 0 && rightGift >= 0 && leftGift >= 0
+                && rise > 0.2f && Mathf.Abs(rise - mate) < 0.0001f
+                && Mathf.Abs(left1 - left0) < 0.0001f && lowest;
+            Check("bonus-closes", ok, "rise " + rise.ToString("0.00") + " mate " + mate.ToString("0.00"));
+        }
+
+        static float SpotY(List<GardenFit.Spot> spots, int index)
+        {
+            if (spots == null || index < 0) return float.NaN;
+            for (int i = 0; i < spots.Count; i++)
+                if (spots[i].Index == index) return spots[i].Pos.y;
+            return float.NaN;
+        }
+
+        static bool LowestInColumn(List<GardenFit.Spot> spots, int index)
+        {
+            int col = -1;
+            float y = 0f;
+            bool found = false;
+            for (int i = 0; i < spots.Count; i++)
+            {
+                if (spots[i].Index != index) continue;
+                col = spots[i].Column;
+                y = spots[i].Pos.y;
+                found = true;
+                break;
+            }
+            if (!found) return false;
+            for (int i = 0; i < spots.Count; i++)
+            {
+                if (spots[i].Column != col) continue;
+                if (spots[i].Pos.y < y - 0.0001f) return false;
+            }
+            return true;
+        }
+
+        static int BonusSpots(Board b, List<GardenFit.Spot> spots)
         {
             int n = 0;
+            if (b == null || spots == null) return 0;
             for (int i = 0; i < spots.Count; i++)
-                if (spots[i].Column == 2) n++;
+            {
+                int ix = spots[i].Index;
+                if ((uint)ix >= (uint)b.Branches.Count) continue;
+                var st = b.Branches[ix];
+                if (st != null && st.IsBonus) n++;
+            }
             return n;
         }
 

@@ -113,6 +113,8 @@ namespace FlockFive
         // on the screen for 2 seconds). Set false before App Store launch.
         public const bool TestSuite = true;
         public static bool LastGranted;
+        // True only when a rewarded ad actually paid (or the editor simulate). No-fill stays false.
+        public static bool LastEarned;
 
         public const string PlacementBonus = "bonus_branch";
         public const string PlacementClear = "stage_clear";
@@ -186,6 +188,7 @@ namespace FlockFive
         {
             _host = null;
             LastGranted = false;
+            LastEarned = false;
             SessionClears = PlayerPrefs.GetInt(PrefClears, 0);
             IsLoading = false;
             _showDepth = 0;
@@ -260,6 +263,7 @@ namespace FlockFive
         {
             AdLog.Add("gift ad requested (gift tapped)");
             LastGranted = false;
+            LastEarned = false;
             if (!Enabled)
             {
                 LastGranted = true;
@@ -271,6 +275,7 @@ namespace FlockFive
             {
                 yield return Simulate();
                 LastGranted = true;
+                LastEarned = true;
                 yield break;
             }
             yield return _host.RunRewarded();
@@ -359,6 +364,7 @@ namespace FlockFive
         public IEnumerator RunRewarded()
         {
             Ads.LastGranted = false;
+            Ads.LastEarned = false;
             _didReward = false;
             bool loading = false;
             bool showing = false;
@@ -368,6 +374,7 @@ namespace FlockFive
                 {
                     yield return Ads.Simulate();
                     Ads.LastGranted = true;
+                    Ads.LastEarned = true;
                     yield break;
                 }
 
@@ -434,6 +441,7 @@ namespace FlockFive
                 // Permissive: only withhold the gift when an ad really played and the
                 // player closed it before the reward. Any failure still grants it.
                 Ads.LastGranted = _didReward || !_shown;
+                Ads.LastEarned = _didReward;
                 if (!_didReward && !_shown) AdLog.Add("gift ad failed to show -> gift granted anyway");
                 _rv.LoadAd();
             }
@@ -568,6 +576,7 @@ namespace FlockFive
         {
             _didReward = true;
             Ads.LastGranted = true;
+            Ads.LastEarned = true;
         }
 
         void OnClosed(LevelPlayAdInfo info)

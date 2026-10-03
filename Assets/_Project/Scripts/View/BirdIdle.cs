@@ -46,8 +46,13 @@ namespace FlockFive
         float _alertUntil;
         Transform[] _zzz;
         SpriteRenderer[] _zzzSr;
+        Transform[] _zzzEdge;
+        SpriteRenderer[] _zzzEdgeSr;
+        Transform[] _zzzGlow;
+        SpriteRenderer[] _zzzGlowSr;
         SpriteRenderer _bang;
         static Sprite _bangSpr;
+        static readonly UnityEngine.Color ShroudTint = new UnityEngine.Color(0.04f, 0.03f, 0.05f, 1f);
 
         void Awake()
         {
@@ -205,7 +210,7 @@ namespace FlockFive
             var mood = BirdMood.Of(Color);
             if (show)
             {
-                _sr.flipX = FaceLeft;
+                if (_sr.flipX != FaceLeft) _sr.flipX = FaceLeft;
                 // On the bark, a seated flutter or ruffle keeps the rest frame.
                 // Anywhere else, wing frames. A still rest pose is only a perched bird.
                 bool airborne = Frozen || _liftShown > 0.05f || (Flapping && _flutterUntil <= 0f);
@@ -216,11 +221,18 @@ namespace FlockFive
                 // 1.25 = 20 poses/sec = 5 wingbeats/sec, frame-rate independent.
                 float mul = FlapMul < 0.05f ? 1f : FlapMul;
                 float flap = wings ? FlapRate * mul : 0.06f;
-                _sr.sprite = SpriteCatalog.BirdFrame(Color, (Time.time + _phase) * flap, wings, Sex);
+                var frame = SpriteCatalog.BirdFrame(Color, (Time.time + _phase) * flap, wings, Sex);
+                if (_sr.sprite != frame) _sr.sprite = frame;
                 if (!Frozen)
                 {
-                    _sr.color = Shrouded ? new Color(0.04f, 0.03f, 0.05f, 1f) : UnityEngine.Color.white;
-                    _sr.sortingOrder = Shrouded ? 7 : (Lift > 0.05f ? 40 : 12);
+                    // Alert lerp owns the body color for its short hop. A shroud still wins.
+                    if (Shrouded || Time.time >= _alertUntil)
+                    {
+                        UnityEngine.Color tint = Shrouded ? ShroudTint : UnityEngine.Color.white;
+                        if (_sr.color != tint) _sr.color = tint;
+                    }
+                    int order = Shrouded ? FlockSort.Shroud : (Lift > 0.05f ? FlockSort.Lift : FlockSort.Perch);
+                    if (_sr.sortingOrder != order) _sr.sortingOrder = order;
                 }
             }
             // Draw order (back→front): kit bow → body/flaps → face
@@ -376,24 +388,58 @@ namespace FlockFive
 
         void HideZzz()
         {
-            if (_zzz == null) return;
-            for (int i = 0; i < _zzz.Length; i++)
-                if (_zzz[i] != null) _zzz[i].gameObject.SetActive(false);
+            HideZGroup(_zzz);
+            HideZGroup(_zzzEdge);
+            HideZGroup(_zzzGlow);
+        }
+
+        static void HideZGroup(Transform[] group)
+        {
+            if (group == null) return;
+            for (int i = 0; i < group.Length; i++)
+                if (group[i] != null) group[i].gameObject.SetActive(false);
         }
 
         void EnsureZzz()
         {
-            if (_zzz != null) return;
-            _zzz = new Transform[2];
-            _zzzSr = new SpriteRenderer[2];
+            if (_zzz != null && _zzzEdge != null && _zzzGlow != null) return;
             var zee = SpriteCatalog.Zee;
             if (zee == null) return;
+            if (_zzz == null)
+            {
+                _zzz = new Transform[2];
+                _zzzSr = new SpriteRenderer[2];
+                for (int i = 0; i < 2; i++)
+                {
+                    var go = WorldBuilder.Sprite("Z" + i, zee, transform.position, 0.24f, 14, transform);
+                    go.SetActive(false);
+                    _zzz[i] = go.transform;
+                    _zzzSr[i] = go.GetComponent<SpriteRenderer>();
+                }
+            }
+            if (_zzzEdge == null)
+            {
+                _zzzEdge = new Transform[2];
+                _zzzEdgeSr = new SpriteRenderer[2];
+                for (int i = 0; i < 2; i++)
+                {
+                    var go = WorldBuilder.Sprite("ZEdge" + i, zee, transform.position, 0.28f, 13, transform);
+                    go.SetActive(false);
+                    _zzzEdge[i] = go.transform;
+                    _zzzEdgeSr[i] = go.GetComponent<SpriteRenderer>();
+                }
+            }
+            if (_zzzGlow != null) return;
+            var glow = SpriteCatalog.Glow;
+            if (glow == null) return;
+            _zzzGlow = new Transform[2];
+            _zzzGlowSr = new SpriteRenderer[2];
             for (int i = 0; i < 2; i++)
             {
-                var go = WorldBuilder.Sprite("Z" + i, zee, transform.position, 0.12f, 14, transform);
+                var go = WorldBuilder.Sprite("ZGlow" + i, glow, transform.position, 0.50f, 12, transform);
                 go.SetActive(false);
-                _zzz[i] = go.transform;
-                _zzzSr[i] = go.GetComponent<SpriteRenderer>();
+                _zzzGlow[i] = go.transform;
+                _zzzGlowSr[i] = go.GetComponent<SpriteRenderer>();
             }
         }
 
@@ -403,23 +449,48 @@ namespace FlockFive
             EnsureZzz();
             if (_zzz == null || _zzz[0] == null) return;
             float side = FaceLeft ? -1f : 1f;
+            int order = _sr != null ? _sr.sortingOrder + 3 : 15;
             for (int i = 0; i < _zzz.Length; i++)
             {
                 if (_zzz[i] == null) continue;
                 _zzz[i].gameObject.SetActive(true);
-                float u = Mathf.Repeat(Time.time * (0.42f + 0.08f * i) + _phase * 0.17f + i * 0.53f, 1f);
-                float x = side * (0.22f + 0.08f * i) + Mathf.Sin(Time.time * 1.3f + _phase + i) * 0.04f;
-                float y = 0.62f + u * 0.55f + i * 0.05f;
-                _zzz[i].localPosition = new Vector3(x, y, 0f);
-                float pulse = 0.11f + 0.04f * i + 0.015f * snore;
-                _zzz[i].localScale = Vector3.one * pulse * (0.75f + 0.35f * (1f - u));
+                float u = Mathf.Repeat(Time.time * (0.38f + 0.06f * i) + _phase * 0.17f + i * 0.53f, 1f);
+                float x = side * (0.26f + 0.10f * i) + Mathf.Sin(Time.time * 1.1f + _phase + i) * 0.05f;
+                float y = 0.70f + u * 0.72f + i * 0.08f;
+                var pos = new Vector3(x, y, 0f);
+                float pulse = (0.22f + 0.08f * i + 0.02f * snore) * (0.78f + 0.28f * (1f - u));
+                float a = (0.35f + 0.65f * (1f - u)) * (0.88f + 0.12f * snore);
+                _zzz[i].localPosition = pos;
+                _zzz[i].localScale = Vector3.one * pulse;
                 _zzz[i].localRotation = Quaternion.identity;
                 if (_zzzSr[i] != null)
                 {
-                    var c = new Color(0.93f, 0.95f, 1f, 1f);
-                    c.a = (0.25f + 0.7f * (1f - u)) * (0.85f + 0.15f * snore);
-                    _zzzSr[i].color = c;
-                    _zzzSr[i].sortingOrder = _sr != null ? _sr.sortingOrder + 3 : 15;
+                    _zzzSr[i].color = new Color(0.96f, 0.97f, 1f, a);
+                    _zzzSr[i].sortingOrder = order;
+                }
+                if (_zzzEdge != null && i < _zzzEdge.Length && _zzzEdge[i] != null)
+                {
+                    _zzzEdge[i].gameObject.SetActive(true);
+                    _zzzEdge[i].localPosition = pos;
+                    _zzzEdge[i].localScale = Vector3.one * (pulse * 1.16f);
+                    _zzzEdge[i].localRotation = Quaternion.identity;
+                    if (_zzzEdgeSr[i] != null)
+                    {
+                        _zzzEdgeSr[i].color = new Color(0.05f, 0.04f, 0.07f, a * 0.92f);
+                        _zzzEdgeSr[i].sortingOrder = order - 1;
+                    }
+                }
+                if (_zzzGlow != null && i < _zzzGlow.Length && _zzzGlow[i] != null)
+                {
+                    _zzzGlow[i].gameObject.SetActive(true);
+                    _zzzGlow[i].localPosition = pos;
+                    _zzzGlow[i].localScale = Vector3.one * (pulse * 2.5f);
+                    _zzzGlow[i].localRotation = Quaternion.identity;
+                    if (_zzzGlowSr[i] != null)
+                    {
+                        _zzzGlowSr[i].color = new Color(0.85f, 0.90f, 1f, a * 0.28f);
+                        _zzzGlowSr[i].sortingOrder = order - 2;
+                    }
                 }
             }
         }
@@ -857,7 +928,7 @@ namespace FlockFive
         void PlaceFace(BirdMood.Pose mood, bool on)
         {
             if (_face == null) return;
-            _face.enabled = on;
+            if (_face.enabled != on) _face.enabled = on;
             if (!on) return;
             if (Time.time >= _nextBlink)
             {
@@ -867,14 +938,18 @@ namespace FlockFive
             bool blink = Time.time < _blinkUntil || Sleeping;
             float x = FaceLeft ? -mood.HeadX : mood.HeadX;
             float y = mood.HeadY + (Sleeping ? -0.07f : 0f);
-            _face.transform.localPosition = new Vector3(x, y, 0f);
-            _face.transform.localRotation = Quaternion.identity;
-            _face.flipX = FaceLeft;
+            var facePos = new Vector3(x, y, 0f);
+            if (_face.transform.localPosition != facePos) _face.transform.localPosition = facePos;
+            if (_face.transform.localRotation != Quaternion.identity)
+                _face.transform.localRotation = Quaternion.identity;
+            if (_face.flipX != FaceLeft) _face.flipX = FaceLeft;
             // Face always in front of kit bow
-            _face.sortingOrder = _sr != null ? _sr.sortingOrder + 2 : 14;
-            float fs = mood.FaceScale * (blink ? 1f : 1f);
-            _face.transform.localScale = new Vector3(fs, blink ? fs * 0.18f : fs, 1f);
-            if (!Frozen) _face.color = UnityEngine.Color.white;
+            int faceOrder = _sr != null ? _sr.sortingOrder + 2 : 14;
+            if (_face.sortingOrder != faceOrder) _face.sortingOrder = faceOrder;
+            float fs = mood.FaceScale;
+            var faceScale = new Vector3(fs, blink ? fs * 0.18f : fs, 1f);
+            if (_face.transform.localScale != faceScale) _face.transform.localScale = faceScale;
+            if (!Frozen && _face.color != UnityEngine.Color.white) _face.color = UnityEngine.Color.white;
         }
 
         void EnsureKit()
@@ -887,8 +962,8 @@ namespace FlockFive
             var spr = Sex == BirdSex.Female ? SpriteCatalog.Bow : SpriteCatalog.CrownFor(Color);
             if (_kit != null)
             {
-                _kit.sprite = spr;
-                _kit.enabled = true;
+                if (_kit.sprite != spr) _kit.sprite = spr;
+                if (!_kit.enabled) _kit.enabled = true;
                 return;
             }
             var go = WorldBuilder.Sprite("Kit", spr, transform.position, 0.3f, 13, transform);
@@ -939,11 +1014,11 @@ namespace FlockFive
         {
             if (Sex == BirdSex.Neutral)
             {
-                if (_kit != null) _kit.enabled = false;
+                if (_kit != null && _kit.enabled) _kit.enabled = false;
                 return;
             }
             if (_kit == null) return;
-            _kit.enabled = on;
+            if (_kit.enabled != on) _kit.enabled = on;
             if (!on) return;
             bool girl = Sex == BirdSex.Female;
             float headX = FaceLeft ? -mood.HeadX : mood.HeadX;
@@ -978,14 +1053,18 @@ namespace FlockFive
                 ks = 0.42f;
                 tiltZ = FaceLeft ? -26f : 26f;
             }
-            _kit.transform.localPosition = new Vector3(bowX, bowY, 0f);
-            _kit.transform.localRotation = Quaternion.Euler(0f, 0f, tiltZ);
-            _kit.flipX = FaceLeft;
+            var kitPos = new Vector3(bowX, bowY, 0f);
+            if (_kit.transform.localPosition != kitPos) _kit.transform.localPosition = kitPos;
+            var kitRot = Quaternion.Euler(0f, 0f, tiltZ);
+            if (_kit.transform.localRotation != kitRot) _kit.transform.localRotation = kitRot;
+            if (_kit.flipX != FaceLeft) _kit.flipX = FaceLeft;
             // Bow tucks behind body/head; crown rests in front of the head, below the face layer.
             int bodyOrder = _sr != null ? _sr.sortingOrder : 12;
-            _kit.sortingOrder = girl ? bodyOrder - 1 : bodyOrder + 1;
-            _kit.transform.localScale = new Vector3(ks, ks, 1f);
-            if (!Frozen) _kit.color = UnityEngine.Color.white;
+            int kitOrder = girl ? bodyOrder - 1 : bodyOrder + 1;
+            if (_kit.sortingOrder != kitOrder) _kit.sortingOrder = kitOrder;
+            var kitScale = new Vector3(ks, ks, 1f);
+            if (_kit.transform.localScale != kitScale) _kit.transform.localScale = kitScale;
+            if (!Frozen && _kit.color != UnityEngine.Color.white) _kit.color = UnityEngine.Color.white;
         }
 
         void BeatWings()

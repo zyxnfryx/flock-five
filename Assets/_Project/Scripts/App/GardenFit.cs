@@ -9,7 +9,7 @@ namespace FlockFive
         public struct Spot
         {
             public int Index;
-            public int Column; // 0 left, 1 right, 2 bonus row
+            public int Column; // 0 left, 1 right
             public int Row;
             public Vector3 Pos;
             public Vector3 Scale;
@@ -19,11 +19,30 @@ namespace FlockFive
         // when a limb is gone. Only the row pitch is recomputed.
         public static readonly Vector3 LimbScale = Vector3.one;
 
+        static int _fitSerial;
+        static bool _busy;
+        static readonly List<Spot> _snapSpots = new List<Spot>(16);
+        static readonly List<int> _packLeft = new List<int>(8);
+        static readonly List<int> _packRight = new List<int>(8);
+
+        public static bool Busy => _busy;
+
+        // A stopped tween must not leave the snap guard stuck.
+        public static void ClearBusy()
+        {
+            _fitSerial++;
+            _busy = false;
+        }
+
         public static IEnumerator Tween(WorldBuilder.Garden garden, Board board, bool instant)
         {
-            if (garden.Branches == null || board == null) yield break;
-            var spots = new List<Spot>(board.Branches.Count);
-            Collect(board, garden.Cam, spots);
+            int run = ++_fitSerial;
+            _busy = true;
+            try
+            {
+                if (garden.Branches == null || board == null) yield break;
+                var spots = new List<Spot>(board.Branches.Count);
+                Collect(board, garden.Cam, spots);
             var views = new List<BranchView>(spots.Count);
             var fromPos = new List<Vector3>(spots.Count);
             var fromS = new List<Vector3>(spots.Count);
@@ -69,6 +88,44 @@ namespace FlockFive
             }
             for (int i = 0; i < n; i++)
                 views[i].Fit(toPos[i], LimbScale);
+            }
+            finally
+            {
+                if (run == _fitSerial) _busy = false;
+            }
+        }
+
+        // Packed Y is the source of truth. Wind moves the transform, not Planted.
+        // A gap above a survivor (or a bonus sign left low) snaps the column up.
+        public static void SnapIfGapped(WorldBuilder.Garden garden, Board board)
+        {
+            if (_busy || board == null || garden.Branches == null) return;
+            Collect(board, garden.Cam, _snapSpots);
+            const float tol = 0.16f;
+            bool gap = false;
+            for (int i = 0; i < _snapSpots.Count; i++)
+            {
+                var view = SpotView(garden, _snapSpots[i].Index);
+                if (view == null || view.Breaking) continue;
+                if (Mathf.Abs(view.Planted.y - _snapSpots[i].Pos.y) > tol)
+                {
+                    gap = true;
+                    break;
+                }
+            }
+            if (!gap) return;
+            for (int i = 0; i < _snapSpots.Count; i++)
+            {
+                var view = SpotView(garden, _snapSpots[i].Index);
+                if (view == null || view.Breaking) continue;
+                view.Fit(_snapSpots[i].Pos, LimbScale);
+            }
+        }
+
+        static BranchView SpotView(WorldBuilder.Garden garden, int index)
+        {
+            if (garden.Branches == null || (uint)index >= (uint)garden.Branches.Length) return null;
+            return garden.Branches[index];
         }
 
         public static void Collect(Board board, Camera cam, List<Spot> into)
@@ -76,35 +133,37 @@ namespace FlockFive
             if (into == null) return;
             into.Clear();
             if (board == null) return;
-            var left = new List<int>();
-            var right = new List<int>();
-            var bonus = new List<int>();
-            var bonusRight = new List<bool>();
+            var left = _packLeft;
+            var right = _packRight;
+            left.Clear();
+            right.Clear();
             int plain = 0;
+            for (int i = 0; i < board.Branches.Count; i++)
+            {
+                var st = board.Branches[i];
+                if (st == null || st.IsBonus) continue;
+                if (!st.Broken)
+                {
+                    if ((plain & 1) == 1) right.Add(i);
+                    else left.Add(i);
+                }
+                plain++;
+            }
+            // Bonus limbs are the last row of their own column, then the same
+            // pitch as every other limb. A clear packs that column from the top,
+            // so the sign rises with the limbs under the gap. Ordinal keeps the
+            // side when the other gift is gone, so it cannot slide across.
             int giftOrd = 0;
             for (int i = 0; i < board.Branches.Count; i++)
             {
                 var st = board.Branches[i];
-                if (st == null) continue;
-                if (st.IsBonus)
-                {
-                    // Side stays put when the other gift is gone, so a snap
-                    // cannot slide the survivor across the screen.
-                    if (!st.Broken)
-                    {
-                        bonus.Add(i);
-                        bonusRight.Add((giftOrd & 1) == 1);
-                    }
-                    giftOrd++;
-                    continue;
-                }
-                bool rightSide = (plain & 1) == 1;
+                if (st == null || !st.IsBonus) continue;
                 if (!st.Broken)
                 {
-                    if (rightSide) right.Add(i);
+                    if ((giftOrd & 1) == 1) right.Add(i);
                     else left.Add(i);
                 }
-                plain++;
+                giftOrd++;
             }
 
             // Before any vertical fit. Pitch and count must not revise this.
@@ -117,44 +176,27 @@ namespace FlockFive
             float shelf = WorldBuilder.FeederShelf();
             const float topReach = 1.30f;
             if (y0 + topReach > shelf) y0 = shelf - topReach;
-            float lowest = tall > 0 ? y0 - (tall - 1) * gap : y0;
-            float bonusY = BonusY(cam, lowest);
-            float sep = tall > 0 ? lowest - bonusY : gap;
-            if (tall > 0 && sep < gap * 0.85f)
-                y0 += gap * 0.85f - sep;
-            if (y0 + topReach > shelf)
+            // Whole column, bonus included, stays above the restart / hive band.
+            // Tall phones letterbox that band below the play field.
+            float yCap = shelf - topReach;
+            float floor = HudFloor(cam);
+            if (tall > 1)
             {
-                float over = y0 + topReach - shelf;
-                if (tall > 1) gap = Mathf.Max(1.12f, gap - over / (tall - 1));
-                y0 = shelf - topReach;
+                float bottom = y0 - (tall - 1) * gap;
+                if (bottom < floor)
+                {
+                    float span = yCap - floor;
+                    if (span > 0f && (tall - 1) * gap > span)
+                        gap = Mathf.Max(1.12f, span / (tall - 1));
+                    float lifted = floor + (tall - 1) * gap;
+                    y0 = lifted < yCap ? lifted : yCap;
+                }
             }
 
             for (int i = 0; i < left.Count; i++)
                 into.Add(new Spot { Index = left[i], Column = 0, Row = i, Pos = new Vector3(-x, y0 - i * gap, 0f), Scale = LimbScale });
             for (int i = 0; i < right.Count; i++)
                 into.Add(new Spot { Index = right[i], Column = 1, Row = i, Pos = new Vector3(x, y0 - i * gap, 0f), Scale = LimbScale });
-            for (int i = 0; i < bonus.Count; i++)
-            {
-                bool onRight = bonusRight[i];
-                into.Add(new Spot
-                {
-                    Index = bonus[i],
-                    Column = 2,
-                    Row = 0,
-                    Pos = new Vector3(onRight ? x : -x, bonusY, 0f),
-                    Scale = LimbScale
-                });
-            }
-        }
-
-        // Bottom gift row: one gap under the lowest plain limb, never under the
-        // restart / hive band. Tall phones letterbox that band below the play field.
-        public static float BonusY(Camera cam, float lowestPlain)
-        {
-            float floor = HudFloor(cam);
-            float y = lowestPlain - WorldBuilder.RowGap;
-            if (y < floor) y = floor;
-            return y;
         }
 
         public static float HudFloor(Camera cam)

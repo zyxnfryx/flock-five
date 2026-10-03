@@ -4,18 +4,33 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Screen money. Under 1,000 is a plain integer. K always keeps one decimal
-    // (1.0K, 12.3K). M and B keep one decimal under 10 and drop a trailing .0.
+    // Screen money. Under 10,000 is the full number with a thousands separator
+    // (1,000, 9,999). From 10,000, K drops a trailing .0 (10K, 11.6K).
+    // M and B keep one decimal under 10 and drop a trailing .0.
     // Floors, so a label never reads higher than the amount.
+    // The glyph stays "$": the IMGUI font has no U+20A3, so that sign would be tofu.
     public static class Money
     {
         public static string Format(int n) => Format((long)n);
 
+        static long _formatKey;
+        static string _formatText;
+        static bool _formatReady;
+
         public static string Format(long n)
         {
-            if (n < 0) return "-" + Format(n == long.MinValue ? long.MaxValue : -n);
-            if (n < 1000L) return "$" + n.ToString(CultureInfo.InvariantCulture);
-            if (n < 1000000L) return "$" + KTenths(n) + "K";
+            if (_formatReady && n == _formatKey) return _formatText;
+            _formatKey = n;
+            _formatText = FormatFresh(n);
+            _formatReady = true;
+            return _formatText;
+        }
+
+        static string FormatFresh(long n)
+        {
+            if (n < 0) return "-" + FormatFresh(n == long.MinValue ? long.MaxValue : -n);
+            if (n < 10000L) return "$" + n.ToString("N0", CultureInfo.InvariantCulture);
+            if (n < 1000000L) return "$" + KText(n) + "K";
             long unit = 1000000L;
             string suffix = "M";
             if (n >= 1000000000L)
@@ -26,12 +41,13 @@ namespace FlockFive
             return "$" + Scaled(n, unit) + suffix;
         }
 
-        // One floored decimal for every K amount. 1000 → 1.0, 1500 → 1.5, 12349 → 12.3.
-        static string KTenths(long n)
+        // Floored tenths. 10000 → 10, 11600 → 11.6, 12349 → 12.3.
+        static string KText(long n)
         {
             long tenths = n / 100L;
             long whole = tenths / 10L;
             long frac = tenths % 10L;
+            if (frac == 0L) return whole.ToString(CultureInfo.InvariantCulture);
             return whole.ToString(CultureInfo.InvariantCulture) + "." + frac.ToString(CultureInfo.InvariantCulture);
         }
 
@@ -74,12 +90,14 @@ namespace FlockFive
         public static int LastStreak { get; private set; }
         public static int LastLogin { get; private set; }
         public static int LastWin { get; private set; }
-        public static int Multiplier => Streak < 1 ? 1 : Streak;
+        public static int Multiplier => StreakTier.Display(Streak);
 
         public static void Boot()
         {
             Coins = Mathf.Max(0, PrefGuard.GetInt(PrefCoins, 0));
-            Streak = Mathf.Max(0, PrefGuard.GetInt(PrefStreak, 0));
+            int saved = Mathf.Max(0, PrefGuard.GetInt(PrefStreak, 0));
+            Streak = StreakTier.Normalize(saved);
+            if (Streak != saved) PrefGuard.SetInt(PrefStreak, Streak);
             LoginDays = Mathf.Max(1, PrefGuard.GetInt(PrefLoginN, 1));
             Owed = Mathf.Max(0, PrefGuard.GetInt(PrefOwed, 0));
             TickLogin();
@@ -126,7 +144,7 @@ namespace FlockFive
         public static int AwardClear()
         {
             TickLogin();
-            Streak = Streak + 1;
+            Streak = StreakTier.Next(Streak);
             int basePay = StageBase(LevelData.DisplayNumber);
             LastStagePay = basePay;
             LastStreak = Streak;
@@ -157,9 +175,17 @@ namespace FlockFive
             return true;
         }
 
+        public static void SetStreak(int tier)
+        {
+            Streak = StreakTier.Normalize(tier);
+            PrefGuard.SetInt(PrefStreak, Streak);
+            PlayerPrefs.Save();
+        }
+
         public static void CueWin(int streak, int win)
         {
-            Streak = Mathf.Max(1, streak);
+            Streak = StreakTier.Normalize(streak);
+            if (Streak < 1) Streak = 1;
             int basePay = StageBase(LevelData.DisplayNumber);
             LastStagePay = basePay;
             LastStreak = Streak;

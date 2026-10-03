@@ -125,7 +125,7 @@ namespace FlockFive
             var tint = Wow.Of(FwColors[n % FwColors.Length]);
             _fwSr[i].sprite = SpriteCatalog.Glow;
             _fwSr[i].color = tint;
-            _fwSr[i].transform.localScale = Vector3.one * 0.22f;
+            _fwSr[i].transform.localScale = Vector3.one * 0.66f;
             _fwSr[i].transform.position = _fwPos[i];
             Sfx.FireworkLaunch();
         }
@@ -139,7 +139,7 @@ namespace FlockFive
                 int i = RentFw();
                 if (i < 0) return;
                 float ang = (b / (float)bits) * Mathf.PI * 2f;
-                float spd = 1.6f + (b % 5) * 0.55f;
+                float spd = 4.0f + (b % 5) * 1.35f;
                 bool glow = (b % 4) == 0;
                 _fwPos[i] = pos;
                 _fwVel[i] = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang), 0f) * spd;
@@ -147,7 +147,7 @@ namespace FlockFive
                 _fwLife[i] = glow ? 1.05f : 0.78f;
                 _fwSr[i].sprite = glow ? SpriteCatalog.Glow : SpriteCatalog.Sparkle;
                 _fwSr[i].color = glow ? new Color(tint.r, tint.g, tint.b, 0.85f) : Color.Lerp(Color.white, tint, 0.4f);
-                _fwSr[i].transform.localScale = Vector3.one * (glow ? 0.34f : 0.14f);
+                _fwSr[i].transform.localScale = Vector3.one * (glow ? 1.05f : 0.44f);
                 _fwSr[i].transform.position = pos;
             }
         }
