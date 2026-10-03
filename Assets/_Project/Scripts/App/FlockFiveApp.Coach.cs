@@ -2667,8 +2667,8 @@ namespace FlockFive
             float y = CaptionFloorY(s);
             float limit = FlowerPlayRect().y - gap - h;
             if (limit > y && y + h > limit) y = limit;
-            float floor = CaptionFloorY(s);
-            if (y < floor) y = floor;
+            float capFloor = CaptionFloorY(s);
+            if (y < capFloor) y = capFloor;
             return PlaceCaption(s, w, h, y - 8f * s);
         }
 
