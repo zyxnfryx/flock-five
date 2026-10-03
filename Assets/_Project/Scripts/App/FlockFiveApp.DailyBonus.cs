@@ -115,6 +115,7 @@ namespace FlockFive
             DailyBonus.Boot();
             _dailyOpen = true;
             _dailyPopAt = Time.unscaledTime;
+            SfxLibrary.SeatGroove(true);
             Sfx.CardTap();
         }
 
@@ -418,7 +419,7 @@ namespace FlockFive
 
         void StopClaimGroove()
         {
-            SfxLibrary.StopHeld();
+            SfxLibrary.SeatGroove(false);
             if (_cowbellRhythm != null) _cowbellRhythm.Reset();
         }
 

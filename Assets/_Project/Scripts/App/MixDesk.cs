@@ -161,6 +161,15 @@ namespace FlockFive
             _leadDuck = wasHot ? Mathf.Min(_leadDuck, duckRemain) : duckRemain;
         }
 
+        // Drop a lead window this caller opened. A longer lead keeps the seat.
+        public void EndLead(float until)
+        {
+            if (until <= 0f) return;
+            if (_leadUntil > until + 0.05f) return;
+            _leadUntil = Time.unscaledTime;
+            _leadDuck = 1f;
+        }
+
         public void MoonLift(float seconds = 2.4f)
         {
             _moonLiftUntil = Time.unscaledTime + Mathf.Max(0.4f, seconds);

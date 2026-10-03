@@ -158,7 +158,7 @@ namespace FlockFive
             var list = new System.Collections.Generic.List<AudioSource>(20);
             for (int i = 0; i < all.Length; i++)
             {
-                if (all[i] == null || all[i].loop) continue;
+                if (all[i] == null || all[i].loop || all[i] == _held) continue;
                 list.Add(all[i]);
             }
             while (list.Count < 20)
@@ -177,8 +177,17 @@ namespace FlockFive
                 a.playOnAwake = false;
                 a.loop = false;
                 a.spatialBlend = 0f;
+                ShareListener(a);
                 _voices[i] = a;
             }
+        }
+
+        // GamePause mutes with AudioListener.pause. MasterLoudness is the listener gain.
+        static void ShareListener(AudioSource a)
+        {
+            if (a == null) return;
+            a.ignoreListenerPause = false;
+            a.ignoreListenerVolume = false;
         }
 
         static AudioSource Voice()
@@ -187,6 +196,15 @@ namespace FlockFive
             var a = _voices[_v];
             _v = (_v + 1) % _voices.Length;
             return a;
+        }
+
+        // One-shot on the voice pool. Does not mark Lead.
+        static void PlayVoice(AudioClip clip, float pitch, float vol)
+        {
+            if (clip == null) return;
+            var a = Voice();
+            a.pitch = pitch;
+            a.PlayOneShot(clip, vol);
         }
 
         static void Shot(AudioClip clip, float pitch, float vol, MixLayer layer, float leadDuck = MixDesk.DuckChirp)
@@ -205,9 +223,7 @@ namespace FlockFive
                 if (MixDesk.Live != null && !MixDesk.Live.AllowBed) return;
                 if (MixDesk.Live != null) vol *= MixDesk.Live.BedDuck;
             }
-            var a = Voice();
-            a.pitch = pitch;
-            a.PlayOneShot(clip, vol);
+            PlayVoice(clip, pitch, vol);
         }
 
         public static void PlayProc(AudioClip clip, float pitch, float vol, MixLayer layer)
@@ -219,6 +235,7 @@ namespace FlockFive
         }
 
         static AudioSource _held;
+        static float _heldUntil;
 
         public static void PlayHeld(AudioClip clip, float vol, float duckFor)
         {
@@ -236,18 +253,26 @@ namespace FlockFive
                 PlayProc(clip, 1f, vol, MixLayer.Lead);
                 return;
             }
+            ShareListener(_held);
             _held.Stop();
             _held.pitch = 1f;
             _held.clip = clip;
             _held.volume = Mathf.Clamp(vol, 0.02f, 0.5f);
             _held.Play();
+            float span = Mathf.Max(0.2f, duckFor);
+            _heldUntil = 0f;
             if (MixDesk.Live != null)
-                MixDesk.Live.MarkLead(Mathf.Max(0.2f, duckFor), 0.62f);
+            {
+                _heldUntil = Time.unscaledTime + span;
+                MixDesk.Live.MarkLead(span, 0.62f);
+            }
         }
 
         public static void StopHeld()
         {
             if (_held != null && _held.isPlaying) _held.Stop();
+            if (MixDesk.Live != null) MixDesk.Live.EndLead(_heldUntil);
+            _heldUntil = 0f;
         }
 
         public static bool QuietMid => MixDesk.Live == null || MixDesk.Live.AllowMid;
@@ -634,8 +659,13 @@ namespace FlockFive
             _fwCrackleAt = Time.unscaledTime;
             if (_fwCrackle == null) _fwCrackle = MakeFwCrackle();
             float vol = 0.26f * g;
-            if (MixDesk.Live != null && !MixDesk.Live.AllowMid) vol *= 0.45f;
-            Shot(_fwCrackle, Random.Range(0.92f, 1.04f), vol, MixLayer.Mid);
+            float pitch = Random.Range(0.92f, 1.04f);
+            if (MixDesk.Live != null && !MixDesk.Live.AllowMid)
+            {
+                PlayVoice(_fwCrackle, pitch, vol * 0.45f);
+                return;
+            }
+            Shot(_fwCrackle, pitch, vol, MixLayer.Mid);
         }
 
         static AudioClip MakeFwWhistle()

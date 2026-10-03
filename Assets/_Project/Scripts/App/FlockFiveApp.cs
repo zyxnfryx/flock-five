@@ -495,6 +495,7 @@ namespace FlockFive
         void ShowSplash()
         {
             _splash = true;
+            SfxLibrary.NoteGarden(false);
             _gardenScoring = false;
             _gardenStampAt = -1f;
             _collectDepth = 0;
@@ -565,6 +566,7 @@ namespace FlockFive
             _freezeOffer = false;
             _iceCoating = false;
             _splash = false;
+            SfxLibrary.NoteGarden(true);
             CloseAvatarRename();
             NoteHiveIntroLeft();
             NotePokerIntroLeft();

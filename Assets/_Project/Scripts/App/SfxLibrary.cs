@@ -7,8 +7,24 @@ namespace FlockFive
     public static class SfxLibrary
     {
         const int Rate = 44100;
+        const float FanfareCap = 0.34f;
         static readonly Dictionary<string, AudioClip> _clips = new Dictionary<string, AudioClip>();
         static float _grooveAt = -99f;
+        static bool _claimGroove;
+        static bool _inPlay;
+
+        // Garden play locks the groove. The daily-claim card is the only seat that opens it.
+        public static void NoteGarden(bool playing)
+        {
+            _inPlay = playing;
+            if (playing) SeatGroove(false);
+        }
+
+        public static void SeatGroove(bool on)
+        {
+            _claimGroove = on && !_inPlay;
+            if (!_claimGroove) StopHeld();
+        }
 
         public static void Play(string name, float volume = 0.5f, float pitchVariance = 0f)
         {
@@ -25,6 +41,7 @@ namespace FlockFive
             }
             if (name == "groove")
             {
+                if (!_claimGroove) return;
                 if (Time.unscaledTime - _grooveAt < 30f) return;
                 _grooveAt = Time.unscaledTime;
                 var groove = Clip(name);
@@ -36,6 +53,7 @@ namespace FlockFive
             if (clip == null) return;
             float pitch = 1f + Random.Range(-pitchVariance, pitchVariance);
             float vol = volume <= 0f ? 0.2f : volume;
+            if (name == "fanfare" && vol > FanfareCap) vol = FanfareCap;
             var layer = name == "tick" ? MixLayer.Mid : MixLayer.Lead;
             Sfx.PlayProc(clip, pitch, vol, layer);
         }
