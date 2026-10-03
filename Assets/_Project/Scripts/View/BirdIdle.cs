@@ -443,23 +443,21 @@ namespace FlockFive
             }
         }
 
-        // Two bubbles per bird, offset so a full row does not snore in unison.
+        // Marks rise on one diagonal. Spacing stays at least one mark wide,
+        // starts are staggered, and each mark grows as it climbs. Drift is
+        // clamped to this bird's half of the perch gap.
         void PlaceZzz(float snore)
         {
             EnsureZzz();
             if (_zzz == null || _zzz[0] == null) return;
-            float side = FaceLeft ? -1f : 1f;
             int order = _sr != null ? _sr.sortingOrder + 3 : 15;
-            for (int i = 0; i < _zzz.Length; i++)
+            float lane = SleepZLane(transform.localScale.x);
+            int count = _zzz.Length;
+            for (int i = 0; i < count; i++)
             {
                 if (_zzz[i] == null) continue;
                 _zzz[i].gameObject.SetActive(true);
-                float u = Mathf.Repeat(Time.time * (0.38f + 0.06f * i) + _phase * 0.17f + i * 0.53f, 1f);
-                float x = side * (0.26f + 0.10f * i) + Mathf.Sin(Time.time * 1.1f + _phase + i) * 0.05f;
-                float y = 0.70f + u * 0.72f + i * 0.08f;
-                var pos = new Vector3(x, y, 0f);
-                float pulse = (0.22f + 0.08f * i + 0.02f * snore) * (0.78f + 0.28f * (1f - u));
-                float a = (0.35f + 0.65f * (1f - u)) * (0.88f + 0.12f * snore);
+                SleepZSlot(i, count, Time.time, _phase, FaceLeft, lane, snore, out var pos, out float pulse, out float a);
                 _zzz[i].localPosition = pos;
                 _zzz[i].localScale = Vector3.one * pulse;
                 _zzz[i].localRotation = Quaternion.identity;
@@ -493,6 +491,41 @@ namespace FlockFive
                     }
                 }
             }
+        }
+
+        // Half the nearest seat step, in this bird's local units.
+        static float SleepZLane(float scaleX)
+        {
+            float sc = scaleX < 0f ? -scaleX : scaleX;
+            if (sc < 0.05f) sc = 0.42f;
+            float step = (WorldBuilder.SeatXPx[1] - WorldBuilder.SeatXPx[0]) * WorldBuilder.WoodScaleX / 140f;
+            float lane = step / sc * 0.5f;
+            if (lane < 0.2f) lane = 0.2f;
+            return lane;
+        }
+
+        // One mark on the shared diagonal. `along` differs by ZGap, so neighbors
+        // stay at least one mark-width apart even when a mark wraps to the bottom.
+        static void SleepZSlot(int i, int count, float time, float phase, bool faceLeft, float lane, float snore,
+            out Vector3 pos, out float pulse, out float alpha)
+        {
+            const float ZGap = 0.42f;
+            if (count < 1) count = 1;
+            float span = count * ZGap + 0.22f;
+            float along = Mathf.Repeat(time * 0.34f + phase * 0.15f + i * ZGap, span);
+            float climb = along / span;
+            float side = faceLeft ? -1f : 1f;
+            float drift = Mathf.Sin(time * 0.9f + phase) * 0.04f;
+            float x = side * (0.16f + along * 0.62f) + drift;
+            float y = 0.58f + along * 1.20f;
+            pulse = Mathf.Lerp(0.15f, 0.34f, climb) * (0.82f + 0.18f * i);
+            float limit = lane - pulse;
+            if (limit < 0.08f) limit = 0.08f;
+            if (x > limit) x = limit;
+            if (x < -limit) x = -limit;
+            pos = new Vector3(x, y, 0f);
+            float breathe = 0.88f + 0.12f * snore;
+            alpha = (0.40f + 0.60f * (1f - climb)) * breathe;
         }
 
         void HideBang()
@@ -1010,6 +1043,21 @@ namespace FlockFive
             { 1.374f, 1.252f, 1.264f, 1.252f, 1.252f, 1.374f }, // Peach
         };
 
+        // Garden accessory anchor. Locals are facing-right; faceLeft mirrors X.
+        // Splash DrawAvatarKit uses this so the dialog does not keep a second offset.
+        public static void KitAnchor(bool crown, int frame, bool faceLeft,
+            out float x, out float y, out float scale, out float tilt)
+        {
+            if (frame < 0 || frame > 5) frame = 0;
+            float lx = crown ? CrownLocalX[0, frame] : BowLocalX[0, frame];
+            float ly = crown ? CrownLocalY[0, frame] : BowLocalY[0, frame];
+            x = faceLeft ? -lx : lx;
+            y = ly;
+            scale = crown ? 0.42f : SpriteCatalog.BowScale;
+            tilt = crown ? 26f : 12f;
+            if (faceLeft) tilt = -tilt;
+        }
+
         void PlaceKit(BirdMood.Pose mood, bool on)
         {
             if (Sex == BirdSex.Neutral)
@@ -1021,38 +1069,8 @@ namespace FlockFive
             if (_kit.enabled != on) _kit.enabled = on;
             if (!on) return;
             bool girl = Sex == BirdSex.Female;
-            float headX = FaceLeft ? -mood.HeadX : mood.HeadX;
-            float bowX;
-            float bowY;
-            float ks;
-            float tiltZ;
-            if (girl)
-            {
-                // Per-frame crown embed (not one global Y) — head redraws in-atlas.
-                int fi = SpriteCatalog.PoseIndex(_sr != null ? _sr.sprite : null, Color, Sex);
-                int ci = (int)Color;
-                if (ci < 0 || ci >= BowLocalX.GetLength(0)) ci = 0;
-                if (fi < 0 || fi > 5) fi = 0;
-                float lx = BowLocalX[ci, fi];
-                float ly = BowLocalY[ci, fi];
-                bowX = FaceLeft ? -lx : lx;
-                bowY = ly;
-                ks = SpriteCatalog.BowScale;
-                tiltZ = FaceLeft ? -12f : 12f;
-            }
-            else
-            {
-                // Male frames share the female body art; crown seated per color.
-                int fi = SpriteCatalog.PoseIndex(_sr != null ? _sr.sprite : null, Color, Sex);
-                int ci = (int)Color;
-                if (ci < 0 || ci >= CrownLocalX.GetLength(0)) ci = 0;
-                if (fi < 0 || fi > 5) fi = 0;
-                float lx = CrownLocalX[ci, fi];
-                bowX = FaceLeft ? -lx : lx;
-                bowY = CrownLocalY[ci, fi];
-                ks = 0.42f;
-                tiltZ = FaceLeft ? -26f : 26f;
-            }
+            int fi = SpriteCatalog.PoseIndex(_sr != null ? _sr.sprite : null, Color, Sex);
+            KitAnchor(!girl, fi, FaceLeft, out float bowX, out float bowY, out float ks, out float tiltZ);
             var kitPos = new Vector3(bowX, bowY, 0f);
             if (_kit.transform.localPosition != kitPos) _kit.transform.localPosition = kitPos;
             var kitRot = Quaternion.Euler(0f, 0f, tiltZ);

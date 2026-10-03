@@ -22,6 +22,11 @@ namespace FlockFive
         const string CoachSparrowKey = "flockfive.coach.sparrow";
         const string CoachHawkKey = "flockfive.coach.hawk";
         const string AdHandLine = "Tap to watch\nand unlock a bonus spot.";
+        const string GiftStuckLine = "Stuck? Tap the gift branch for a bonus spot.";
+        // Old clear CoachLineY rest under the hud, in reference pixels. Not the logo floor.
+        const float TutorCaptionGap = 8f;
+        // Gift line only. Reference pixels under the shared PlaceCaption seat.
+        const float GiftCaptionDrop = 24f;
         const string HiveIntroLine = "You found a bee!\nFinding bees awards cards\nthat are stored in your collection.\nClick the hive to view them.";
         const string HiveHomeLine = "Tap the hive to see your bees.";
         // Two lines, snug. The break is the wrap; the plate is measured to these lines.
@@ -153,6 +158,11 @@ namespace FlockFive
         float _coachLineHoldX;
         bool _coachHoldXOn;
         string _coachLineFor;
+        // Tutorial plate, stored on the first draw of a step. Not the splash nudge latch.
+        bool _tutorSeatOn;
+        float _tutorSeatX;
+        float _tutorSeatY;
+        string _tutorSeatFor;
         ScreenBox[] _blocks;
         int _blockN;
 
@@ -424,7 +434,7 @@ namespace FlockFive
                 _cueForce = true;
                 _cueGift = true;
                 _cueBranch = g;
-                CueLine("Stuck? Tap the gift branch for a bonus spot.");
+                CueLine(GiftStuckLine);
                 return;
             }
 
@@ -629,6 +639,7 @@ namespace FlockFive
             _cueSpoken = text;
             _coachFade = 0f;
             _coachLineHeld = false;
+            _tutorSeatOn = false;
         }
 
         void CoachPlace()
@@ -1343,6 +1354,8 @@ namespace FlockFive
             return _coachLine;
         }
 
+        // Shared garden/tutorial line. SeatTutorialCaption latches the plate.
+        // PaintCoachCaption draws. A caller may pin placeY.
         void DrawCoachLine(string text, float s, float top, float boxH = 0f, int fontHi = 0, float placeY = -1f, float placeW = 0f, float placeX = -1f)
         {
             float w = placeW > 1f ? placeW : Mathf.Min(Screen.width * 0.72f, 520f * s);
@@ -1350,9 +1363,49 @@ namespace FlockFive
             int hi = fontHi > 0 ? fontHi : Mathf.RoundToInt(32f * s);
             int lo = fontHi > 0 ? 20 : 18;
             if (lo > hi) lo = hi;
-            float y = placeY >= 0f ? placeY : CoachLineY(text, s, top, w, h);
-            float x = placeX >= 0f ? placeX : (Screen.width - w) * 0.5f;
-            PaintCoachCaption(text, new Rect(x, y, w, h), s, lo, hi);
+            Rect seat;
+            if (placeY >= 0f)
+            {
+                float pinX = placeX >= 0f ? placeX : (Screen.width - w) * 0.5f;
+                seat = new Rect(pinX, placeY, w, h);
+            }
+            else
+            {
+                seat = SeatTutorialCaption(text, s, top, w, h);
+            }
+            _coachLineFor = text;
+            _coachLineHold = seat.y;
+            _coachLineHoldX = seat.x;
+            _coachHoldXOn = true;
+            _coachLineHeld = true;
+            PaintCoachCaption(text, seat, s, lo, hi);
+        }
+
+        // One x,y per tutorial sentence, taken on the first draw of that step.
+        // Later frames reuse it. The glove, branches, and birds are not read.
+        // Other lines sit on the old hud rest. The gift line keeps the lower
+        // PlaceCaption seat and then drops GiftCaptionDrop.
+        Rect SeatTutorialCaption(string text, float s, float top, float w, float h)
+        {
+            if (_tutorSeatOn && _tutorSeatFor == text)
+                return new Rect(_tutorSeatX, _tutorSeatY, w, h);
+            float restX = (Screen.width - w) * 0.5f;
+            float restY = top + TutorCaptionGap * s;
+            if (text == GiftStuckLine)
+            {
+                float underLogo = CaptionFloorY(s);
+                if (underLogo < top) underLogo = top;
+                Rect low = PlaceCaption(s, w, h, underLogo);
+                restX = low.x;
+                restY = low.y + GiftCaptionDrop * s;
+                float bottom = Screen.height - h - 8f;
+                if (restY > bottom) restY = bottom;
+            }
+            _tutorSeatFor = text;
+            _tutorSeatX = restX;
+            _tutorSeatY = restY;
+            _tutorSeatOn = true;
+            return new Rect(restX, restY, w, h);
         }
 
         // Shared tutorial caption: even inset, balanced wrap, one outline weight.
@@ -1395,42 +1448,6 @@ namespace FlockFive
             DrawCoachPanel(r, fade);
             int black = Mathf.Clamp(Mathf.CeilToInt(CoachOutlinePx * s), CoachOutlinePx, 8);
             StampOutlined(textR, _coachShown ?? text, st, new Color(1f, 0.98f, 0.90f, fade), 0, black);
-        }
-
-        // Highest band that clears the glove's poke and the lifted birds' hop.
-        // The usual spot is just under the top inset; when a high branch's birds rise
-        // into it, the next open band (often below that hop, clear of the glove) is used.
-        float CoachLineY(string text, float s, float hudTop, float w, float h)
-        {
-            float x = (Screen.width - w) * 0.5f;
-            float minY = hudTop + 8f * s;
-            HudLayout(out _, out _, out float bot, out _, out _);
-            float maxY = Screen.height - bot - h - 36f * s;
-            if (maxY < minY) return minY;
-            CoachFillBlocks(s);
-            if (_coachLineFor != text)
-            {
-                _coachLineFor = text;
-                _coachLineHeld = false;
-            }
-            var probe = new Rect(x, minY, w, h);
-            if (!BlocksHit(probe)) return minY;
-            if (_coachLineHeld)
-            {
-                probe.y = _coachLineHold;
-                if (probe.y >= minY && probe.y <= maxY && !BlocksHit(probe))
-                    return _coachLineHold;
-            }
-            for (float y = minY; y <= maxY; y += 4f)
-            {
-                probe.y = y;
-                if (BlocksHit(probe)) continue;
-                _coachLineHold = y;
-                _coachLineHeld = true;
-                return y;
-            }
-            _coachLineHeld = false;
-            return minY;
         }
 
         // Glove poke plus each lifted bird, once per line placement. The scan below only
@@ -2089,7 +2106,7 @@ namespace FlockFive
             return true;
         }
 
-        // Splash lessons only. Garden CoachLineY does not call this.
+        // Splash lessons only. Garden PlaceCaption does not call this.
         void AddSplashKeepouts(float s)
         {
             if (!_splash || _home != HomeFace.Splash) return;

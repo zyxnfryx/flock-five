@@ -6546,8 +6546,8 @@ namespace FlockFive
             _rewardContent.text = text;
             var st = _rewardStampStyle;
             var content = _rewardContent;
-            int rw = Mathf.RoundToInt(r.width);
-            int rh = Mathf.RoundToInt(r.height);
+            int rw = Mathf.RoundToInt(r.width / 16f);
+            int rh = Mathf.RoundToInt(r.height / 16f);
             int key = mul * 131 + rw * 17 + rh;
             if (key != _stampKey || _stampPx < 12)
             {
@@ -6996,14 +6996,6 @@ namespace FlockFive
                 float fitW = Mathf.Max(4f, r.width * widthFrac);
                 float fitH = r.height * 0.62f;
                 st.fontSize = FitFont(st, text, fitW, fitH, 8, hi);
-                var content = new GUIContent(text);
-                int guard = 0;
-                while (st.fontSize > 6 && guard < 28
-                    && (st.CalcSize(content).x > fitW || st.CalcSize(content).y > r.height))
-                {
-                    st.fontSize -= 1;
-                    guard++;
-                }
                 int dark = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 2, 6);
                 int light = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.05f), 1, 3);
                 var ink = fill;
@@ -7781,6 +7773,17 @@ namespace FlockFive
 
         static GUIStyle _fitScratch;
         static GUIContent _fitContent;
+        const int FitSlots = 24;
+        const float FitKeep = 0.05f;
+        static readonly string[] _fitText = new string[FitSlots];
+        static readonly int[] _fitLo = new int[FitSlots];
+        static readonly int[] _fitHi = new int[FitSlots];
+        static readonly int[] _fitStamp = new int[FitSlots];
+        static readonly int[] _fitPx = new int[FitSlots];
+        static readonly float[] _fitW = new float[FitSlots];
+        static readonly float[] _fitH = new float[FitSlots];
+        static readonly int[] _fitUse = new int[FitSlots];
+        static int _fitSerial;
 
         static void BindFit(GUIStyle proto, string text, bool wrap)
         {
@@ -7796,9 +7799,72 @@ namespace FlockFive
             _fitContent.text = text ?? "";
         }
 
-        static int FitFont(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi)
+        static int FitFont(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi) =>
+            CachedFit(proto, text, maxW, maxH, lo, hi, proto != null && proto.wordWrap);
+
+        static int FitFontWrapped(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi) =>
+            CachedFit(proto, text, maxW, maxH, lo, hi, true);
+
+        // Same text and a box within 5% reuses the fitted size. A lamp pulse is
+        // about ±2%, so a full-size popup label does not refit every frame.
+        static int CachedFit(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi, bool wrap)
         {
-            BindFit(proto, text, proto.wordWrap);
+            if (lo > hi) lo = hi;
+            string key = text ?? "";
+            int stamp = FitStamp(proto, wrap);
+            int slot = -1;
+            int oldest = 0;
+            int oldestUse = int.MaxValue;
+            for (int i = 0; i < FitSlots; i++)
+            {
+                if (_fitUse[i] < oldestUse)
+                {
+                    oldestUse = _fitUse[i];
+                    oldest = i;
+                }
+                if (_fitText[i] != key || _fitLo[i] != lo || _fitHi[i] != hi || _fitStamp[i] != stamp)
+                    continue;
+                if (!FitClose(_fitW[i], maxW) || !FitClose(_fitH[i], maxH)) continue;
+                _fitSerial++;
+                _fitUse[i] = _fitSerial;
+                return _fitPx[i];
+            }
+            slot = oldest;
+            int size = wrap
+                ? MeasureFitWrapped(proto, key, maxW, maxH, lo, hi)
+                : MeasureFit(proto, key, maxW, maxH, lo, hi);
+            _fitText[slot] = key;
+            _fitLo[slot] = lo;
+            _fitHi[slot] = hi;
+            _fitStamp[slot] = stamp;
+            _fitW[slot] = maxW;
+            _fitH[slot] = maxH;
+            _fitPx[slot] = size;
+            _fitSerial++;
+            _fitUse[slot] = _fitSerial;
+            return size;
+        }
+
+        static bool FitClose(float stored, float now)
+        {
+            float den = stored > 8f ? stored : 8f;
+            float d = now - stored;
+            if (d < 0f) d = -d;
+            return d <= den * FitKeep;
+        }
+
+        static int FitStamp(GUIStyle proto, bool wrap)
+        {
+            if (proto == null) return wrap ? 1 : 0;
+            int font = proto.font != null ? proto.font.GetInstanceID() : 0;
+            int bits = wrap ? 1 : 0;
+            if (proto.richText) bits += 2;
+            return font * 17 + (int)proto.fontStyle * 3 + bits;
+        }
+
+        static int MeasureFit(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi)
+        {
+            BindFit(proto, text, proto != null && proto.wordWrap);
             var st = _fitScratch;
             var content = _fitContent;
             for (int fs = hi; fs >= lo; fs--)
@@ -7810,7 +7876,7 @@ namespace FlockFive
             return lo;
         }
 
-        static int FitFontWrapped(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi)
+        static int MeasureFitWrapped(GUIStyle proto, string text, float maxW, float maxH, int lo, int hi)
         {
             if (string.IsNullOrEmpty(text) || maxW < 8f || maxH < 8f) return lo;
             BindFit(proto, text, true);
@@ -8336,15 +8402,14 @@ namespace FlockFive
             if (_avatarHappy > 0f) _avatarHappy = Mathf.Max(0f, _avatarHappy - dt / 0.36f);
             _avatarCol = SavedAvatar();
 
-            float icon = HomeBirdIcon(s);
-            _avatarFitIcon = icon;
-            FillAvatarPerches(s, icon);
-            if (_avatarFitIcon > 1f) icon = _avatarFitIcon;
+            float icon = HomeAvatarIcon(s);
+            FillAvatarPerches(s);
             if (DailyCardHoldsBird())
             {
                 _avatarCrossing = false;
                 _avatarGliding = false;
                 _avatarHold = false;
+                _avatarPose = AvatarPose.Perched;
                 StickAvatarToPerch();
                 PoseAvatar(dt, false);
                 return;
@@ -8354,26 +8419,11 @@ namespace FlockFive
                 _avatarPlaced = true;
                 _avatarPerchIx = AvatarHomeSeat;
                 _avatarPos = AvatarHomePoint();
+                _avatarPose = AvatarPose.Perched;
                 _awayOn = false;
                 _avatarBobPhase = Random.Range(0f, 6.28f);
                 _avatarNextGlide = _avatarClock + Random.Range(3.4f, 6.2f);
                 _avatarNextFlap = _avatarClock + Random.Range(2.8f, 5.2f);
-            }
-            if (DailyRestPose())
-            {
-                _avatarPerchIx = AvatarHomeSeat;
-                _avatarPos = AvatarHomePoint();
-                _awayOn = false;
-                _avatarCrossing = false;
-                _avatarGliding = false;
-                _avatarHold = false;
-                _avatarCross = false;
-                _avatarHappy = 0f;
-                _avatarFlapT = 0f;
-                _avatarPreenT = 0f;
-                _avatarTutor = true;
-                PoseAvatar(dt, false);
-                return;
             }
             TrackGlideTarget();
 
@@ -8414,10 +8464,13 @@ namespace FlockFive
                 BeginAvatarCross(icon);
             else if (leftTutor)
                 BeginAvatarReturn(s);
-            else if (!_avatarCrossing && !_avatarGliding && _avatarClock >= _avatarNextGlide)
+            else if (!_avatarCrossing && !_avatarGliding && _avatarPose == AvatarPose.Perched
+                && _avatarClock >= _avatarNextGlide)
                 BeginAvatarGlide();
 
-            if (_avatarCrossing)
+            if (_avatarPose == AvatarPose.Landing)
+                StepAvatarLand(dt, s);
+            else if (_avatarCrossing)
                 TickAvatarCross(dt, s);
             else if (_avatarGliding)
                 TickAvatarSlide(dt, s, 10f * s, false);
@@ -8425,10 +8478,13 @@ namespace FlockFive
         }
 
         // On a pad: toes planted, a small bob, and the occasional preen.
-        // In the air: the caller is flapping. Never sit still off the wood.
+        // In the air the pose is already Flying or Landing, so the wings stay out.
         void PoseAvatar(float dt, bool preen)
         {
-            bool flying = _avatarCrossing || _avatarGliding || !AvatarParked();
+            bool flying = _avatarPose == AvatarPose.Flying
+                || _avatarPose == AvatarPose.Landing
+                || _avatarCrossing
+                || _avatarGliding;
             if (flying)
             {
                 _avatarPreenT = 0f;
@@ -8445,24 +8501,21 @@ namespace FlockFive
             _avatarNextFlap = _avatarClock + Random.Range(3.4f, 6.8f);
         }
 
-        // Settled on the home pad or the moved twig. A hop or a gap is off the wood.
+        // Toes on the fixed home pad. Off that pad, or still in the air, is not parked.
         bool AvatarParked()
         {
-            if (_avatarCrossing || _avatarGliding || _avatarHappy > 0.02f) return false;
-            if (!_avatarPlaced) return true;
-            var seat = _awayOn && _avatarPerchIx < 0 ? _awaySeat : AvatarHomePoint();
+            if (_avatarPose == AvatarPose.Flying || _avatarPose == AvatarPose.Landing) return false;
+            if (_avatarCrossing || _avatarGliding) return false;
+            if (!_avatarPlaced) return false;
+            var seat = AvatarHomePoint();
             var d = seat - _avatarPos;
             return d.sqrMagnitude <= 36f;
         }
 
         void StickAvatarToPerch()
         {
+            if (_avatarPose == AvatarPose.Flying || _avatarPose == AvatarPose.Landing) return;
             if (_avatarCrossing || _avatarGliding || _avatarHold || !_avatarPlaced) return;
-            if (_awayOn && _avatarPerchIx < 0)
-            {
-                _avatarPos = _awaySeat;
-                return;
-            }
             _awayOn = false;
             if (_avatarPerchIx >= 0 && _avatarPerchIx < _avatarPerches.Length)
                 _avatarPos = _avatarPerches[_avatarPerchIx];
@@ -8471,49 +8524,96 @@ namespace FlockFive
         void TrackGlideTarget()
         {
             if (!_avatarGliding) return;
-            if (_avatarPerchIx >= 0 && _avatarPerchIx < _avatarPerches.Length)
-                _avatarGlideTo = _avatarPerches[_avatarPerchIx];
-            else if (_awayOn)
-                _avatarGlideTo = _awaySeat;
+            if (_avatarPerchIx < 0 || _avatarPerchIx >= _avatarPerches.Length) return;
+            // A lesson glide aims at clear air. Only a hop between pads tracks the seat.
+            if (_avatarPose != AvatarPose.Flying) return;
+            if ((_avatarGlideTo - _avatarPerches[_avatarPerchIx]).sqrMagnitude > 64f) return;
+            _avatarGlideTo = _avatarPerches[_avatarPerchIx];
         }
 
+        // Lesson or rename covers the pad: circle in the clear, wings out.
+        // Pad is free: glide home, then land. Never a rest pose in the air, and
+        // never move the twig to follow the bird.
         void TickAvatarYield(float s, float icon, float dt)
         {
             int blocks = FillAvatarBlocks(s);
             var look = AvatarTutorLook(s);
             float pad = 6f * s;
-            bool inside = blocks > 0 && AvatarHits(_avatarPos, icon, blocks, pad);
-            Vector2 safe = AvatarSafePoint(s, icon, blocks, look);
-            float slack = 18f * s;
-            bool retarget = !_avatarGliding || (safe - _avatarGlideTo).sqrMagnitude > slack * slack;
-            bool clear = blocks <= 0 || !AvatarHits(safe, icon, blocks, pad);
-            if (clear && (safe - _avatarPos).sqrMagnitude <= 4f)
+            int seat = BestClearSeat(s, icon, blocks, look);
+            bool open = seat >= 0;
+            if (open)
             {
-                _avatarPos = safe;
-                _avatarGliding = false;
-                _avatarFlapT = 0f;
-            }
-            else if (!clear || inside || (retarget && AvatarSegmentHits(_avatarPos, safe, icon, blocks, pad, 8f * s)))
-            {
-                // A hop would cross the caption or the glove. Sit on the clear perch.
-                _avatarPos = safe;
-                _avatarGliding = false;
-                _avatarFlapT = 0f;
-            }
-            else if (retarget)
-            {
-                _avatarGliding = true;
-                _avatarGlideFrom = _avatarPos;
-                _avatarGlideTo = safe;
-                _avatarGlideT = 0f;
-                float dist = Vector2.Distance(_avatarGlideFrom, safe);
-                _avatarGlideDur = Mathf.Clamp(dist / (240f * s), 0.28f, 0.55f);
+                _avatarPerchIx = seat;
+                _awayOn = false;
+                var home = _avatarPerches[seat];
+                if (_avatarPose == AvatarPose.Landing)
+                {
+                    StepAvatarLand(dt, s);
+                    return;
+                }
+                float near = 20f * s;
+                if ((_avatarPos - home).sqrMagnitude <= near * near)
+                {
+                    if (_avatarPose == AvatarPose.Flying || _avatarGliding)
+                        BeginAvatarLand(_avatarPos, home, false);
+                    else
+                    {
+                        _avatarGliding = false;
+                        _avatarPose = AvatarPose.Perched;
+                        _avatarPos = home;
+                        return;
+                    }
+                }
+                else
+                    AimAvatarFlight(home, s, 240f);
+                if (_avatarPose == AvatarPose.Landing)
+                    StepAvatarLand(dt, s);
+                else if (_avatarGliding)
+                    TickAvatarSlide(dt, s, 10f * s, true);
+                return;
             }
 
-            if (_avatarGliding)
-                TickAvatarSlide(dt, s, 8f * s, true);
-            if (Mathf.Abs(look.x - _avatarPos.x) > 2f)
-                _avatarFaceLeft = look.x < _avatarPos.x;
+            _awayOn = false;
+            _avatarGliding = false;
+            _avatarCrossing = false;
+            _avatarPose = AvatarPose.Flying;
+            var spot = AvatarClearPoint(s, icon, blocks, look);
+            var lap = AvatarCircle(spot, icon, _avatarClock, out bool face);
+            float half = icon * 0.5f;
+            float minX = half + 4f;
+            float maxX = Screen.width - half - 4f;
+            if (lap.x < minX) lap.x = minX;
+            if (lap.x > maxX) lap.x = maxX;
+            float minY = CaptionFloorY(s) + half;
+            float maxY = Screen.height - half - 8f;
+            if (lap.y < minY) lap.y = minY;
+            if (lap.y > maxY) lap.y = maxY;
+            _avatarPos = lap;
+            _avatarFaceLeft = face;
+        }
+
+        // Keep an in-flight glide when the pad is still the target. Otherwise start one.
+        void AimAvatarFlight(Vector2 dest, float s, float speed)
+        {
+            _avatarPose = AvatarPose.Flying;
+            float slack = 18f * s;
+            if (_avatarGliding && (dest - _avatarGlideTo).sqrMagnitude <= slack * slack) return;
+            float dist = Vector2.Distance(_avatarPos, dest);
+            StartAvatarGlide(dest, Mathf.Clamp(dist / (speed * s), 0.28f, 0.70f));
+        }
+
+        void StartAvatarGlide(Vector2 dest, float dur)
+        {
+            _avatarPose = AvatarPose.Flying;
+            _avatarCrossing = false;
+            _avatarGliding = true;
+            _avatarGlideFrom = _avatarPos;
+            _avatarGlideTo = dest;
+            _avatarGlideT = 0f;
+            if (dur < 0.2f) dur = 0.2f;
+            _avatarGlideDur = dur;
+            if (Mathf.Abs(dest.x - _avatarPos.x) > 2f)
+                _avatarFaceLeft = dest.x < _avatarPos.x;
         }
 
         void BeginAvatarCross(float icon)
@@ -8521,6 +8621,7 @@ namespace FlockFive
             _avatarCrossing = true;
             _avatarCross = false;
             _avatarGliding = false;
+            _avatarPose = AvatarPose.Flying;
             _avatarCrossT = 0f;
             _avatarCrossDur = 1.15f;
             var home = AvatarHomePoint();
@@ -8552,31 +8653,37 @@ namespace FlockFive
             }
             _avatarPerchIx = next;
             _awayOn = false;
-            _avatarGliding = true;
-            _avatarGlideFrom = _avatarPos;
-            _avatarGlideTo = dest;
-            _avatarGlideT = 0f;
-            _avatarGlideDur = Random.Range(0.72f, 1.05f);
-            _avatarFaceLeft = dest.x < _avatarPos.x;
+            StartAvatarGlide(dest, Random.Range(0.72f, 1.05f));
             _avatarNextGlide = _avatarClock + Random.Range(4.6f, 8.2f);
         }
 
-        // A lesson may have parked the bird on a side pad. Come back to the home seat.
+        // A lesson may have sent the bird into the air. Fly back, then fold the wings.
         void BeginAvatarReturn(float s)
         {
             var home = AvatarHomePoint();
             float slack = 28f * s;
             float slack2 = slack * slack;
-            if (_avatarGliding && (_avatarGlideTo - home).sqrMagnitude <= slack2) return;
-            if (!_avatarGliding && (_avatarPos - home).sqrMagnitude <= slack2) return;
+            _awayOn = false;
             _avatarPerchIx = AvatarHomeSeat;
-            _avatarGliding = true;
-            _avatarGlideFrom = _avatarPos;
-            _avatarGlideTo = home;
-            _avatarGlideT = 0f;
+            if (_avatarPose == AvatarPose.Landing) return;
+            if (_avatarGliding && (_avatarGlideTo - home).sqrMagnitude <= slack2)
+            {
+                _avatarPose = AvatarPose.Flying;
+                return;
+            }
+            if (!_avatarGliding && (_avatarPos - home).sqrMagnitude <= slack2)
+            {
+                if (_avatarPose == AvatarPose.Flying)
+                    BeginAvatarLand(_avatarPos, home, false);
+                else
+                {
+                    _avatarPose = AvatarPose.Perched;
+                    _avatarPos = home;
+                }
+                return;
+            }
             float dist = Vector2.Distance(_avatarPos, home);
-            _avatarGlideDur = Mathf.Clamp(dist / (280f * s), 0.40f, 0.95f);
-            _avatarFaceLeft = home.x < _avatarPos.x;
+            StartAvatarGlide(home, Mathf.Clamp(dist / (280f * s), 0.40f, 0.95f));
             _avatarNextGlide = _avatarClock + Random.Range(4.6f, 8.2f);
         }
 
@@ -8594,6 +8701,7 @@ namespace FlockFive
             _avatarCrossing = false;
             _avatarPos = _avatarCrossTo;
             _avatarPerchIx = AvatarHomeSeat;
+            _avatarPose = AvatarPose.Perched;
             _avatarFlapT = 0f;
             _avatarPreenT = 0f;
             _awayOn = false;
@@ -8617,7 +8725,10 @@ namespace FlockFive
             _avatarGliding = false;
             _avatarFlapT = 0f;
             _avatarPreenT = 0f;
-            if (_avatarPerchIx >= 0) _awayOn = false;
+            _awayOn = false;
+            bool landed = _avatarPerchIx >= 0 && _avatarPerchIx < _avatarPerches.Length
+                && (_avatarGlideTo - _avatarPerches[_avatarPerchIx]).sqrMagnitude <= 36f;
+            _avatarPose = landed ? AvatarPose.Perched : AvatarPose.Flying;
         }
 
         void DrawHomeAvatar(float s)
@@ -8629,28 +8740,26 @@ namespace FlockFive
             if (_avatarHold || !_avatarPlaced) return;
             // Payout sign fills the gap. A lesson still draws so the perch stays visible under the caption.
             if (_streakSlide >= 0f && !_avatarTutor) return;
-            float icon = HomeBirdIcon(s);
-            _avatarFitIcon = icon;
-            FillAvatarPerches(s, icon);
-            if (_avatarFitIcon > 1f) icon = _avatarFitIcon;
-            // The open Daily card must not rebuild or flap this bird. A flight
-            // frame is a bigger canvas, and dropping the rest perch scales it up.
+            float icon = HomeAvatarIcon(s);
+            FillAvatarPerches(s);
+            // The open Daily card holds the bird on the fixed pad at the shared size.
             if (DailyCardHoldsBird())
             {
                 _avatarCrossing = false;
                 _avatarGliding = false;
+                _avatarPose = AvatarPose.Perched;
                 StickAvatarToPerch();
             }
-            else if (!_avatarCrossing && !_avatarGliding)
+            else if (_avatarPose != AvatarPose.Flying && _avatarPose != AvatarPose.Landing
+                && !_avatarCrossing && !_avatarGliding)
                 StickAvatarToPerch();
-            bool onPerch = AvatarParked();
-            bool wings = BirdIdle.UseFlyingPose(onPerch, false);
-            float bob = wings ? 0f : Mathf.Sin(_avatarClock * 1.7f + _avatarBobPhase) * icon * 0.035f;
+            bool onPerch = AvatarParked() && _avatarHappy <= 0.02f;
+            float bob = onPerch ? Mathf.Sin(_avatarClock * 1.7f + _avatarBobPhase) * icon * 0.035f : 0f;
             float hop = _avatarHappy > 0f ? Mathf.Sin((1f - _avatarHappy) * Mathf.PI) * icon * 0.16f : 0f;
             var c = new Vector2(_avatarPos.x, _avatarPos.y - bob - hop);
             DrawHomeLimbs();
             float preen = 0f;
-            if (!wings && _avatarPreenT > 0f)
+            if (onPerch && _avatarPreenT > 0f)
             {
                 float u = 1f - Mathf.Clamp01(_avatarPreenT / 0.72f);
                 preen = Mathf.Sin(u * Mathf.PI) * (_avatarFaceLeft ? 16f : -16f);
@@ -8660,7 +8769,7 @@ namespace FlockFive
                 GUIUtility.RotateAroundPivot(preen, new Vector2(c.x, c.y + icon * 0.31f));
             var prev = GUI.color;
             GUI.color = Color.white;
-            var drawn = DrawDressedBird(_avatarCol, SavedAvatarKit(), c, icon, _avatarFaceLeft, wings, _avatarClock);
+            var drawn = DrawAvatarBird(_avatarCol, SavedAvatarKit(), c, icon, _avatarFaceLeft, onPerch, _avatarClock);
             GUI.matrix = prevMat;
             GUI.color = prev;
             if (drawn.width <= 2f) return;
@@ -8748,105 +8857,8 @@ namespace FlockFive
             }
         }
 
-        void FillAvatarPerches(float s, float icon) => AnchorHomeBranch(s, icon);
-
-        // One short twig in the open gap. Every perch slot is that same pad, so the
-        // splash never keeps a row of seats. Toes use BranchView.RestLift.
-        void AnchorHomeBranch(float s, float icon)
-        {
-            if (DailyRestPose())
-            {
-                PlaceClearRest(s);
-                return;
-            }
-            var flower = FlowerPlayRect();
-            float wordBottom = TopHud() + (56f * 2f + 4f) * s;
-            var halo = SplashTitleHalo();
-            float titleBottom = halo.yMax > wordBottom ? halo.yMax : wordBottom;
-            if (_adoptLive && _adoptLineR.height > 2f)
-            {
-                float capBottom = _adoptLineR.yMax + 16f * s;
-                if (capBottom > titleBottom) titleBottom = capBottom;
-            }
-            float flowerTop = flower.yMin;
-            AvatarChannel(s, out float railL, out float railR);
-            float bird = Mathf.Max(8f, icon);
-            WoodWorld(out float worldW, out float worldH);
-            float birdPx = bird / AvatarBirdWorld();
-            // Branch stays half the build-36 limb. The lift uses the bird's own
-            // scale, so the toe row meets that smaller pad.
-            float branchK = AvatarBranchMul / AvatarBirdMul;
-            float px = birdPx * branchK;
-            float woodW = px * worldW;
-            float woodH = px * worldH;
-            HomeTwigRect(Vector2.zero, woodW, woodH, out var probe);
-            float capW = Mathf.Min(Mathf.Max(48f * s, railR - railL), Mathf.Max(64f * s, bird * 2.3f));
-            float capH = Mathf.Max(28f * s, flowerTop - titleBottom - AvatarPlateDrop(s) - 8f * s);
-            float fit = 1f;
-            if (probe.width > capW && probe.width > 1f) fit = Mathf.Min(fit, capW / probe.width);
-            if (probe.height > capH && probe.height > 1f) fit = Mathf.Min(fit, capH / probe.height);
-            if (fit < 1f)
-            {
-                px *= fit;
-                birdPx *= fit;
-                woodW *= fit;
-                woodH *= fit;
-                bird *= fit;
-            }
-
-            float topLim = titleBottom + 2f;
-            float levelLim = FlowerLevelTop() - 4f * s;
-            float botLim = flowerTop - 2f;
-            if (botLim > levelLim) botLim = levelLim;
-            float nameW = AvatarPlateW(bird, s);
-            float reach = Mathf.Max(bird * 0.5f, nameW * 0.5f) + 6f * s;
-            float birdX = railR - reach;
-            float minX = railL + reach;
-            if (birdX < minX) birdX = (railL + railR) * 0.5f;
-            float birdY = (topLim + botLim) * 0.5f;
-            var toe = LimbBirdSeated(Vector2.zero, px, birdPx, false, AvatarHomeSeat);
-            var center = new Vector2(birdX - toe.x, birdY - toe.y);
-            float plate = AvatarPlateDrop(s);
-            for (int n = 0; n < 3; n++)
-            {
-                HomeTwigRect(center, woodW, woodH, out var vis);
-                var perch = LimbBirdSeated(center, px, birdPx, false, AvatarHomeSeat);
-                float dx = 0f;
-                float dy = 0f;
-                if (vis.xMin < railL) dx += railL - vis.xMin;
-                if (vis.xMax + dx > railR) dx -= (vis.xMax + dx) - railR;
-                float nameLeft = perch.x - nameW * 0.5f;
-                float nameRight = perch.x + nameW * 0.5f;
-                if (nameLeft + dx < railL) dx += railL - (nameLeft + dx);
-                if (nameRight + dx > railR) dx -= (nameRight + dx) - railR;
-                float head = perch.y - bird * 0.5f;
-                if (head < topLim) dy += topLim - head;
-                float low = vis.yMax;
-                float plateBot = perch.y + bird * 0.5f + plate;
-                if (plateBot > low) low = plateBot;
-                if (low + dy > botLim) dy -= (low + dy) - botLim;
-                if (vis.yMin + dy < topLim) dy += topLim - (vis.yMin + dy);
-                if (Mathf.Abs(dx) < 0.5f && Mathf.Abs(dy) < 0.5f) break;
-                center.x += dx;
-                center.y += dy;
-            }
-
-            var home = LimbBirdSeated(center, px, birdPx, false, AvatarHomeSeat);
-            float over = home.y + bird * 0.5f + plate - levelLim;
-            if (over > 0f)
-            {
-                center.y -= over;
-                home = LimbBirdSeated(center, px, birdPx, false, AvatarHomeSeat);
-            }
-            _limbCenter = center;
-            _limbW = woodW;
-            _limbH = woodH;
-            _limbPx = px;
-            _limbOn = true;
-            _avatarFitIcon = Mathf.Max(8f, bird);
-            for (int i = 0; i < _avatarPerches.Length; i++)
-                _avatarPerches[i] = home;
-        }
+        // Right-edge twig. The bird size is not an input.
+        void FillAvatarPerches(float s) => PlaceHomeBranch(s);
 
         int FillAvatarBlocks(float s)
         {
@@ -8930,19 +8942,6 @@ namespace FlockFive
             return RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, _gloveShownAng, 8f * s, out box);
         }
 
-        Vector2 AvatarSafePoint(float s, float icon, int blocks, Vector2 look)
-        {
-            int seat = BestClearSeat(s, icon, blocks, look);
-            if (seat >= 0)
-            {
-                _avatarPerchIx = seat;
-                if (!_avatarGliding && (_avatarPos - _avatarPerches[seat]).sqrMagnitude <= 16f)
-                    _awayOn = false;
-                return _avatarPerches[seat];
-            }
-            return ParkAway(AvatarClearPoint(s, icon, blocks, look), icon);
-        }
-
         // A seat that misses the caption and the glove. Stay put when the current pad is already clear.
         int BestClearSeat(float s, float icon, int blocks, Vector2 look)
         {
@@ -8972,30 +8971,6 @@ namespace FlockFive
                 }
             }
             return best >= 0 ? best : any;
-        }
-
-        // No home pad is clear. The same short twig moves with the bird.
-        Vector2 ParkAway(Vector2 spot, float icon)
-        {
-            float birdPx = icon / AvatarBirdWorld();
-            float px = _limbPx > 1f ? _limbPx : birdPx * (AvatarBranchMul / AvatarBirdMul);
-            float woodW = _limbW > 1f ? _limbW : px * 5.85f;
-            float woodH = _limbH > 1f ? _limbH : px * 2.57f;
-            var toe = LimbBirdSeated(Vector2.zero, px, birdPx, false, AvatarHomeSeat);
-            var center = new Vector2(spot.x - toe.x, spot.y - toe.y);
-            HomeTwigRect(center, woodW, woodH, out var vis);
-            float minX = 4f;
-            float maxX = Screen.width - 4f;
-            if (vis.xMin < minX) center.x += minX - vis.xMin;
-            if (vis.xMax > maxX) center.x -= vis.xMax - maxX;
-            _awayOn = true;
-            _awayCenter = center;
-            _awayW = woodW;
-            _awayH = woodH;
-            _awayPx = px;
-            _avatarPerchIx = -1;
-            _awaySeat = LimbBirdSeated(center, px, birdPx, false, AvatarHomeSeat);
-            return _awaySeat;
         }
 
         Vector2 AvatarClearPoint(float s, float icon, int blocks, Vector2 look)

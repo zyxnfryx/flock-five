@@ -3,10 +3,10 @@ using UnityEngine;
 namespace FlockFive
 {
     // Home bird stays off until level 1 is cleared (flockfive.next >= 1) and the
-    // player has adopted. The first splash after that clear is three taps:
-    // the bird flies in and a caption waits, a tap on the bird opens the avatar
-    // page, and Done sends it to the right perch. Daily's glove waits until that
-    // perch is settled. Kit is splash-only. The logo orbit stays.
+    // player has adopted. The first splash: the bird flies beside the right-hand
+    // twig, a tap lands it, then the glove points at the perched bird. Done on
+    // the name page leaves it there. Daily's glove waits until that perch is
+    // settled. Kit is splash-only. The logo orbit stays.
     public sealed partial class FlockFiveApp
     {
         const string AvatarNamePref = "flockfive.avatar.name";
@@ -28,11 +28,13 @@ namespace FlockFive
         const float HomeTwigBot = 530f;
         const float HomeTwigTexW = 1280f;
         const float HomeTwigTexH = 720f;
-        // 2.75x sits inside the 2.5–3x ask. AvatarBirdMul is 1.15x that build-36 body.
-        // The fit clamp keeps the body and the name plate off the title, rails, and flower.
+        // 2.75x sits inside the 2.5–3x ask. Kept so older notes still name it.
         const float AvatarGrow = 2.75f;
-        const float AvatarBirdMul = 1.15f;
-        // Visible perch is half the limb that matched the build-36 bird.
+        // Home splash body. 1.15× a garden bird (1024px @ 280ppu × BirdScale).
+        // First sight ("followed you home") and the bird after naming share this.
+        // Swatches in the name dialog do not.
+        const float HomeAvatarMul = 1.15f;
+        // Visible perch is half a garden limb. Not scaled from the bird.
         const float AvatarBranchMul = 0.5f;
         const float AvatarPlateMul = 0.65f;
 
@@ -45,31 +47,30 @@ namespace FlockFive
 
         enum AdoptStep { Off, Fly, Look, Settle }
 
+        // Off the wood the avatar flies. Landing ends on the perch, then the
+        // glove may point. Folded wings are only Perched or GlovePointing.
+        enum AvatarPose { Flying, Landing, Perched, GlovePointing }
+
         AdoptStep _adoptStep;
+        AvatarPose _avatarPose = AvatarPose.Perched;
         bool _adoptOwed;
         bool _adoptLive;
         Rect _adoptLineR;
-        Vector2 _adoptWood;
-        float _adoptWoodW;
-        float _adoptWoodH;
         float _adoptPx;
         int _adoptPick = -1;
         float _adoptClock;
-        float _adoptSettle;
         float _adoptIcon;
         // Daily's glove and caption wait until the adopted bird is perched.
         bool _birdSettledOnBranch = true;
-        Vector2 _adoptWoodFrom;
-        float _adoptWoodFromW;
-        float _adoptWoodFromH;
-        float _adoptWoodFromPx;
-        float _adoptFromIcon;
         BirdColor _adoptCol = BirdColor.Gold;
         string _adoptName = "";
-        readonly float[] _adoptFly = new float[5];
         readonly float[] _adoptHop = new float[5];
         readonly Vector2[] _adoptShown = new Vector2[5];
-        readonly Vector2[] _adoptLeaveFrom = new Vector2[5];
+        Vector2 _avatarLandFrom;
+        Vector2 _avatarLandTo;
+        float _avatarLandT;
+        float _avatarPerchHold;
+        bool _avatarLandGlove;
 
         bool _avatarRename;
         bool _avatarRenameFocus;
@@ -83,11 +84,6 @@ namespace FlockFive
         readonly Rect[] _avatarKitR = new Rect[3];
         readonly int[] _avatarKitId = new int[3];
 
-        // Rest and flap columns match BirdIdle. Rows there are identical per color.
-        static readonly float[] AvatarBowX = { -0.11f, -0.270f, -0.259f, -0.270f, -0.270f };
-        static readonly float[] AvatarBowY = { 1.055f, 0.831f, 0.843f, 0.831f, 0.831f };
-        static readonly float[] AvatarCrownX = { -0.03f, -0.168f, -0.156f, -0.168f, -0.168f };
-        static readonly float[] AvatarCrownY = { 1.374f, 1.252f, 1.264f, 1.252f, 1.252f };
         static int _avatarBowArt = -1;
         static int _avatarCrownArt = -1;
 
@@ -124,17 +120,7 @@ namespace FlockFive
 
         bool BirdSettledOnBranch() => _birdSettledOnBranch;
 
-        // Small right perch while the Daily lesson is on the splash. The first
-        // glove may not move it. The open card holds the perch in DailyCardHoldsBird.
-        bool DailyRestPose()
-        {
-            if (!_birdSettledOnBranch) return false;
-            if (_dailyOpen || _dailyAskOpen) return false;
-            return _dailyIntro || _dailyIntroLive;
-        }
-
-        // The open Daily card must not rebuild the home bird. Dropping the rest
-        // pose was scaling the full perch bird up behind the logo.
+        // The open Daily card holds the bird on the fixed pad. It does not resize it.
         bool DailyCardHoldsBird() => _dailyOpen && _avatarPlaced;
 
         // 0 none, 1 bow, 2 crown. Out of range stays bare. Never writes SexOf.
@@ -288,8 +274,10 @@ namespace FlockFive
         {
             _adoptStep = AdoptStep.Fly;
             _adoptClock = 0f;
-            _adoptSettle = 0f;
             _adoptPick = 1;
+            _avatarPose = AvatarPose.Flying;
+            _avatarLandGlove = false;
+            _avatarPerchHold = 0f;
             _birdSettledOnBranch = false;
             _adoptCol = BirdColor.Gold;
             _adoptName = AvatarSuggestion(_adoptCol);
@@ -301,7 +289,6 @@ namespace FlockFive
             MarkAdopted(_adoptCol, _adoptName);
             for (int i = 0; i < 5; i++)
             {
-                _adoptFly[i] = 0f;
                 _adoptHop[i] = 0f;
                 _adoptShown[i] = new Vector2(-80f, Screen.height * 0.42f);
             }
@@ -313,40 +300,41 @@ namespace FlockFive
             _avatarTail = AvatarPlateDrop(s);
             int pick = _adoptPick;
             if (pick < 0 || pick > 4) pick = 1;
-
-            if (_adoptStep == AdoptStep.Settle)
-            {
-                _adoptSettle = Mathf.Min(1f, _adoptSettle + dt / 0.72f);
-                if (_adoptHop[pick] > 0f)
-                    _adoptHop[pick] = Mathf.Max(0f, _adoptHop[pick] - dt / 0.36f);
-                PoseAdoptSettle(s);
-                if (_adoptSettle >= 1f && _adoptHop[pick] <= 0.05f)
-                    FinishAdopt();
-                return;
-            }
-
-            AdoptLayout(s, out _, out _, out _, out _, out _);
-            float icon = _adoptPx > 0.01f ? _adoptPx * AvatarBirdWorld() : AvatarIcon(s);
+            PlaceHomeBranch(s);
+            float icon = HomeAvatarIcon(s);
             _adoptIcon = icon;
-            var greet = AdoptGreetPoint(icon);
-            var from = new Vector2(-icon * 0.85f, greet.y);
-            if (_adoptStep == AdoptStep.Fly)
+            _adoptPx = _limbPx;
+            var perch = AvatarHomePoint();
+
+            if (_avatarPose == AvatarPose.Flying)
             {
-                if (_adoptClock < 0.05f)
-                    _adoptShown[pick] = from;
-                else
-                {
-                    _adoptFly[pick] = Mathf.Min(1f, _adoptFly[pick] + dt / 0.78f);
-                    float u = Mathf.SmoothStep(0f, 1f, _adoptFly[pick]);
-                    var p = Vector2.Lerp(from, greet, u);
-                    p.y -= Mathf.Sin(u * Mathf.PI) * 24f * s;
-                    _adoptShown[pick] = p;
-                }
+                var p = AvatarCircle(perch, icon, _adoptClock, out bool face);
+                _adoptShown[pick] = p;
+                _avatarPos = p;
+                _avatarFaceLeft = face;
+            }
+            else if (_avatarPose == AvatarPose.Landing)
+            {
+                StepAvatarLand(dt, s);
+                _adoptShown[pick] = _avatarPos;
             }
             else
             {
-                float k = 1f - Mathf.Exp(-dt / 0.14f);
-                _adoptShown[pick] = Vector2.Lerp(_adoptShown[pick], greet, k);
+                _adoptShown[pick] = perch;
+                _avatarPos = perch;
+                _avatarPerchIx = AvatarHomeSeat;
+                if (_avatarPose == AvatarPose.Perched && _avatarLandGlove)
+                {
+                    _avatarPerchHold -= dt;
+                    if (_avatarPerchHold <= 0f)
+                    {
+                        _avatarPose = AvatarPose.GlovePointing;
+                        _adoptStep = AdoptStep.Look;
+                        _avatarLandGlove = false;
+                        _gloveReady = false;
+                        _gloveVis = false;
+                    }
+                }
             }
             if (_adoptHop[pick] > 0f)
                 _adoptHop[pick] = Mathf.Max(0f, _adoptHop[pick] - dt / 0.36f);
@@ -361,18 +349,15 @@ namespace FlockFive
 
         void BeginSettle()
         {
-            for (int i = 0; i < 5; i++)
-                _adoptLeaveFrom[i] = _adoptShown[i];
-            _adoptFromIcon = _adoptIcon;
-            _adoptWoodFrom = _adoptWood;
-            _adoptWoodFromW = _adoptWoodW;
-            _adoptWoodFromH = _adoptWoodH;
-            _adoptWoodFromPx = _adoptPx;
             _adoptStep = AdoptStep.Settle;
-            _adoptSettle = 0f;
+            _avatarPose = AvatarPose.Perched;
+            _avatarLandGlove = false;
             _gloveVis = false;
             _gloveReady = false;
             GUIUtility.keyboardControl = 0;
+            PlaceHomeBranch(Mathf.Max(Screen.height / 720f, 1f));
+            _avatarPos = AvatarHomePoint();
+            FinishAdopt();
         }
 
         void FinishAdopt()
@@ -381,8 +366,7 @@ namespace FlockFive
             _birdSettledOnBranch = true;
             float s = Mathf.Max(Screen.height / 720f, 1f);
             _avatarTail = AvatarPlateDrop(s);
-            float icon = AvatarIcon(s);
-            FillAvatarPerches(s, icon);
+            FillAvatarPerches(s);
             _avatarPos = AvatarHomePoint();
             _avatarPerchIx = AvatarHomeSeat;
             _avatarPlaced = true;
@@ -396,6 +380,7 @@ namespace FlockFive
             _avatarFlapT = 0f;
             _avatarPreenT = 0f;
             _avatarCol = _adoptCol;
+            _avatarPose = AvatarPose.Perched;
             _avatarClock = 0f;
             _avatarBobPhase = 0f;
             _avatarNextGlide = 4.8f;
@@ -423,73 +408,15 @@ namespace FlockFive
 
         void AdoptLayout(float s, out Rect caption, out Rect row, out float icon, out Rect field, out Rect keep)
         {
-            if (_adoptStep == AdoptStep.Settle && _adoptPx > 1f)
-            {
-                caption = _adoptLineR.height > 2f
-                    ? _adoptLineR
-                    : PlaceCaption(s, 280f * s, 72f * s, CaptionFloorY(s));
-                row = new Rect(_adoptWood.x - _adoptWoodW * 0.5f, _adoptWood.y - _adoptWoodH * 0.5f, _adoptWoodW, _adoptWoodH);
-                icon = _adoptPx * AvatarBirdWorld();
-                field = default;
-                keep = default;
-                return;
-            }
-            float titleBottom = TopHud() + (56f * 2f + 4f) * s;
-            var flower = FlowerPlayRect();
-            float top = titleBottom + 8f * s;
-            float bot = flower.yMin - 8f * s;
-            AvatarChannel(s, out float left, out float right);
-            float width = Mathf.Max(48f, right - left);
             float textH = Mathf.Clamp(84f * s, 68f * s, 120f * s);
-            float capW = Mathf.Min(Mathf.Max(120f, width - 8f), 460f * s);
-            caption = new Rect(left + (width - capW) * 0.5f, top, capW, textH);
+            float capW = Mathf.Min(460f * s, Mathf.Max(120f, Screen.width - 24f));
+            caption = PlaceCaption(s, capW, textH, CaptionFloorY(s));
             _adoptLineR = caption;
-
-            // The shared plate pads past the words. Keep the branch under that pad.
-            float branchTop = caption.yMax + 22f;
-            float branchBot = bot;
-            if (branchBot < branchTop + 28f * s) branchBot = branchTop + 28f * s;
-
-            FitWood(width, Mathf.Max(28f * s, branchBot - branchTop), out float woodW, out float woodH, out float px);
-            icon = px * AvatarBirdWorld();
-            float head = icon * 0.55f;
-            float roomH = Mathf.Max(28f * s, branchBot - branchTop);
-            if (woodH + head > roomH && woodH > 8f)
-            {
-                float k = Mathf.Clamp((roomH - head) / woodH, 0.35f, 1f);
-                woodW *= k;
-                woodH *= k;
-                px *= k;
-                icon = px * AvatarBirdWorld();
-                head = icon * 0.55f;
-            }
-
-            float cx = (left + right) * 0.5f;
-            float cy = branchTop + head + woodH * 0.5f;
-            if (cy + woodH * 0.5f > branchBot) cy = branchBot - woodH * 0.5f;
-            _adoptWood = new Vector2(cx, cy);
-            _adoptWoodW = woodW;
-            _adoptWoodH = woodH;
-            _adoptPx = px;
-            row = new Rect(cx - woodW * 0.5f, cy - woodH * 0.5f, woodW, woodH);
-
-            // Heads stay under the caption. Toes stay on the wood, so shift the whole limb.
-            float highest = float.MaxValue;
-            for (int i = 0; i < 5; i++)
-            {
-                float y = LimbBird(_adoptWood, _adoptPx, false, i).y - icon * 0.5f;
-                if (y < highest) highest = y;
-            }
-            float minTop = branchTop;
-            if (highest < minTop)
-            {
-                float drop = minTop - highest;
-                float below = branchBot - (_adoptWood.y + _adoptWoodH * 0.5f);
-                if (drop > below) drop = Mathf.Max(0f, below);
-                _adoptWood.y += drop;
-                row.y += drop;
-            }
-
+            PlaceHomeBranch(s);
+            icon = HomeAvatarIcon(s);
+            _adoptIcon = icon;
+            _adoptPx = _limbPx;
+            HomeTwigRect(_limbCenter, _limbW, _limbH, out row);
             field = default;
             keep = default;
         }
@@ -499,34 +426,22 @@ namespace FlockFive
             if (!_adoptLive && _adoptStep != AdoptStep.Settle) return;
             int pick = _adoptPick;
             if (pick < 0 || pick > 4) pick = 1;
-            if (_adoptStep == AdoptStep.Settle)
-                PoseAdoptSettle(s);
-            else
-                AdoptLayout(s, out _, out _, out _, out _, out _);
+            AdoptLayout(s, out _, out _, out _, out _, out _);
+            float greetIcon = HomeAvatarIcon(s);
+            _adoptIcon = greetIcon;
 
-            float greetIcon = _adoptPx > 0.01f ? _adoptPx * AvatarBirdWorld() : AvatarIcon(s);
-            if (_adoptStep != AdoptStep.Settle)
-                _adoptIcon = greetIcon;
-
-            bool landed = _adoptStep == AdoptStep.Fly && _adoptFly[pick] >= 1f;
-            if (landed && AdoptGreetTap())
-            {
-                _adoptStep = AdoptStep.Look;
-                _gloveReady = false;
-                _gloveVis = false;
-            }
-            else if (_adoptStep == AdoptStep.Look)
+            if (_avatarPose == AvatarPose.Flying && HitAdoptBird(pick, greetIcon))
+                BeginAvatarLand(_adoptShown[pick], AvatarHomePoint(), true);
+            else if (_avatarPose == AvatarPose.GlovePointing)
                 HitAdoptBirds(greetIcon);
 
-            if (_adoptStep == AdoptStep.Settle)
-                DrawHomeLimbs();
-            else if (_adoptWoodW > 4f && _adoptWoodH > 4f)
-                DrawHomeTwig(_adoptWood, _adoptWoodW, _adoptWoodH, _adoptPx);
+            DrawHomeLimbs();
             DrawAdoptBirds(s, greetIcon);
-            if (!_avatarRename && _adoptStep == AdoptStep.Fly)
-                DrawAdoptBubble(AdoptGreetLine, s);
-            else if (!_avatarRename && _adoptStep == AdoptStep.Look)
+            if (_avatarRename) return;
+            if (_avatarPose == AvatarPose.GlovePointing)
                 DrawAdoptBubble(AdoptLookLine, s);
+            else
+                DrawAdoptBubble(AdoptGreetLine, s);
         }
 
         void DrawAdoptBubble(string line, float s)
@@ -562,23 +477,29 @@ namespace FlockFive
         {
             int i = _adoptPick;
             if (i < 0 || i > 4) return;
-            float drawIcon = icon;
-            if (_adoptStep == AdoptStep.Settle && _adoptIcon > 1f)
-                drawIcon = _adoptIcon;
+            float drawIcon = HomeAvatarIcon(s);
+            if (drawIcon < 8f) drawIcon = icon;
             float hop = _adoptHop[i] > 0f ? Mathf.Sin((1f - _adoptHop[i]) * Mathf.PI) * 14f * s : 0f;
-            bool onPerch = !((_adoptStep == AdoptStep.Fly && _adoptFly[i] < 1f)
-                || (_adoptStep == AdoptStep.Settle && _adoptSettle < 0.98f)
-                || _adoptHop[i] > 0.05f);
-            bool wings = BirdIdle.UseFlyingPose(onPerch, false);
-            float bob = wings ? 0f : Mathf.Sin((_adoptClock + i * 0.4f) * 1.7f) * Mathf.Min(4f * s, drawIcon * 0.04f);
+            bool onPerch = AvatarPoseOnWood() && _adoptHop[i] <= 0.05f;
+            float bob = onPerch ? Mathf.Sin((_adoptClock + i * 0.4f) * 1.7f) * Mathf.Min(4f * s, drawIcon * 0.04f) : 0f;
             var c = new Vector2(_adoptShown[i].x, _adoptShown[i].y - bob - hop);
-            bool faceLeft = _adoptStep == AdoptStep.Settle && AvatarHomePoint().x < _adoptLeaveFrom[i].x;
+            bool faceLeft = _avatarPose == AvatarPose.Flying ? _avatarFaceLeft : false;
             var prev = GUI.color;
             GUI.color = Color.white;
-            DrawDressedBird(_adoptCol, SavedAvatarKit(), c, drawIcon, faceLeft, wings, _adoptClock + i * 0.17f);
+            DrawAvatarBird(_adoptCol, SavedAvatarKit(), c, drawIcon, faceLeft, onPerch, _adoptClock + i * 0.17f);
             GUI.color = prev;
-            if (_adoptStep == AdoptStep.Settle)
+            if (onPerch)
                 DrawAvatarPlate(c, drawIcon, _adoptName, s);
+        }
+
+        bool HitAdoptBird(int i, float icon)
+        {
+            if (i < 0 || i > 4) return false;
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float pad = 8f * s;
+            var c = _adoptShown[i];
+            var r = new Rect(c.x - icon * 0.55f - pad, c.y - icon * 0.55f - pad, icon * 1.1f + pad * 2f, icon * 1.1f + pad * 2f);
+            return HitPad(r, out _);
         }
 
         void DismissAvatarRename(float s)
@@ -859,7 +780,7 @@ namespace FlockFive
                 float ring = icon + 8f * s;
                 var rr = new Rect(c.x - ring * 0.5f, c.y - ring * 0.5f, ring, ring);
                 DrawSliced(plate, rr, 16f, 8f * s, new Color(1f, 0.98f, 0.90f, 1f));
-                DrawDressedBird(col, SavedAvatarKit(), c, icon, false, false, 0f);
+                DrawAvatarBird(col, SavedAvatarKit(), c, icon, false, true, 0f);
             }
             else
                 DrawCatalogBird(col, c, icon, false, false, 0f);
@@ -948,6 +869,15 @@ namespace FlockFive
             return r;
         }
 
+        // Off the perch, wing frames. On the perch, folded wings. One path for
+        // the adopt bird, the home bird, the name-dialog portrait, and the finale
+        // rule BirdIdle.UseFlyingPose already applies to garden birds.
+        Rect DrawAvatarBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool onPerch, float clock)
+        {
+            bool wings = BirdIdle.UseFlyingPose(onPerch, false);
+            return DrawDressedBird(col, kit, c, icon, faceLeft, wings, clock);
+        }
+
         // Bow sits behind the body. Crown sits in front. Neither path writes SexOf.
         Rect DrawDressedBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool wings, float clock)
         {
@@ -976,28 +906,18 @@ namespace FlockFive
                 fi = SpriteCatalog.PoseIndex(body, col, BirdSex.Neutral);
                 if (fi < 0 || fi > 4) fi = 0;
             }
-            float lx = bow ? AvatarBowX[fi] : AvatarCrownX[fi];
-            float ly = bow ? AvatarBowY[fi] : AvatarCrownY[fi];
-            // Garden X is the back of a right-facing head. One horizontal mirror
-            // (offset plus a single sprite flip) seats the kit on the face.
-            // faceLeft mirrors that pose with the body, so the art is not flipped twice.
-            bool mirrorKit = !faceLeft;
-            if (mirrorKit) lx = -lx;
+            BirdIdle.KitAnchor(!bow, fi, faceLeft, out float lx, out float ly, out float fit, out float tilt);
             float unit = 280f * (icon / 1024f);
-            float fit = bow ? SpriteCatalog.BowScale : 0.42f;
             float dw = (spr.rect.width / 200f) * fit * unit;
             float dh = (spr.rect.height / 200f) * fit * unit;
             if (dw < 1f || dh < 1f) return;
             float x = c.x + lx * unit;
             float y = c.y - ly * unit;
             var r = new Rect(x - dw * 0.5f, y - dh * 0.5f, dw, dh);
-            // Flip runs after the rotate, so it mirrors the angle. Negating tilt
-            // as well would turn the crown the wrong way on the dome.
-            float tilt = bow ? 12f : 26f;
             var m = GUI.matrix;
             if (Mathf.Abs(tilt) > 0.4f)
                 GUIUtility.RotateAroundPivot(tilt, r.center);
-            if (mirrorKit)
+            if (faceLeft)
                 GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), r.center);
             GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
             GUI.matrix = m;
@@ -1022,10 +942,9 @@ namespace FlockFive
         {
             aim = default;
             if (_avatarRename) return false;
-            if (_adoptStep != AdoptStep.Look) return false;
-            if (_adoptPick < 0 || _adoptPick > 4) return false;
-            float icon = _adoptIcon > 1f ? _adoptIcon : AvatarIcon(s);
-            var c = _adoptShown[_adoptPick];
+            if (_avatarPose != AvatarPose.GlovePointing) return false;
+            float icon = HomeAvatarIcon(s);
+            var c = AvatarHomePoint();
             var bird = new Rect(c.x - icon * 0.5f, c.y - icon * 0.5f, icon, icon);
             aim = TopTouch(bird);
             return bird.width > 2f && GloveWouldClear(aim, s);
@@ -1304,239 +1223,102 @@ namespace FlockFive
             return false;
         }
 
-        // Arrival seat under the greet caption. The right-hand rest perch is later.
-        Vector2 AdoptGreetPoint(float icon)
+        bool AvatarPoseOnWood() =>
+            _avatarPose == AvatarPose.Perched || _avatarPose == AvatarPose.GlovePointing;
+
+        // Circle just above the fixed perch. Velocity faces the way the bird moves.
+        static Vector2 AvatarCircle(Vector2 perch, float icon, float clock, out bool faceLeft)
         {
-            float world = AvatarBirdWorld();
-            float birdPx = world > 0.001f ? icon / world : icon;
-            float branchPx = _adoptPx > 0.01f ? _adoptPx : birdPx;
-            return LimbBirdSeated(_adoptWood, branchPx, birdPx, false, AvatarHomeSeat);
+            float ang = clock * 1.35f;
+            float rx = icon > 8f ? icon * 0.90f : 28f;
+            float ry = icon > 8f ? icon * 0.36f : 12f;
+            float sn = Mathf.Sin(ang);
+            var p = new Vector2(perch.x + Mathf.Cos(ang) * rx, perch.y - icon * 0.62f + sn * ry);
+            faceLeft = sn > 0f;
+            return p;
         }
 
-        // Any tap after the fly-in. The avatar page is a second tap, on the bird.
-        bool AdoptGreetTap()
+        void BeginAvatarLand(Vector2 from, Vector2 perch, bool thenGlove)
         {
-            var e = Event.current;
-            if (e == null || e.type != EventType.MouseUp || e.button != 0) return false;
-            e.Use();
-            return true;
+            _avatarPose = AvatarPose.Landing;
+            _avatarLandFrom = from;
+            _avatarLandTo = perch;
+            _avatarLandT = 0f;
+            _avatarPerchHold = 0f;
+            _avatarLandGlove = thenGlove;
+            _avatarGliding = false;
+            _avatarCrossing = false;
         }
 
-        // One branch rides with the bird from the greet twig to the right perch.
-        void PoseAdoptSettle(float s)
+        void StepAvatarLand(float dt, float s)
         {
-            int pick = _adoptPick;
-            if (pick < 0 || pick > 4) pick = 1;
-            PlaceClearRest(s);
-            var destC = _limbCenter;
-            float destW = _limbW;
-            float destH = _limbH;
-            float destPx = _limbPx;
-            float destIcon = _avatarFitIcon > 1f ? _avatarFitIcon : _adoptFromIcon;
-            float e = Mathf.SmoothStep(0f, 1f, _adoptSettle);
-            _limbCenter = Vector2.Lerp(_adoptWoodFrom, destC, e);
-            _limbW = Mathf.Lerp(_adoptWoodFromW, destW, e);
-            _limbH = Mathf.Lerp(_adoptWoodFromH, destH, e);
-            _limbPx = Mathf.Lerp(_adoptWoodFromPx, destPx, e);
-            _limbOn = true;
-            float icon = Mathf.Lerp(_adoptFromIcon, destIcon, e);
-            float world = AvatarBirdWorld();
-            float birdPx = world > 0.001f && icon > 1f ? icon / world : 0.01f;
-            float branchPx = _limbPx > 0.01f ? _limbPx : birdPx;
-            _adoptShown[pick] = LimbBirdSeated(_limbCenter, branchPx, birdPx, false, AvatarHomeSeat);
-            _adoptIcon = icon > 1f ? icon : destIcon;
-            _avatarFitIcon = destIcon;
+            _avatarLandT += dt;
+            const float dur = 0.58f;
+            float u = Mathf.Clamp01(_avatarLandT / dur);
+            float e = Mathf.SmoothStep(0f, 1f, u);
+            var p = Vector2.Lerp(_avatarLandFrom, _avatarLandTo, e);
+            p.y -= Mathf.Sin(u * Mathf.PI) * 22f * s;
+            _avatarPos = p;
+            if (Mathf.Abs(_avatarLandTo.x - _avatarLandFrom.x) > 2f)
+                _avatarFaceLeft = _avatarLandTo.x < _avatarLandFrom.x;
+            if (u < 1f) return;
+            _avatarPos = _avatarLandTo;
+            _avatarPerchIx = AvatarHomeSeat;
+            _awayOn = false;
+            _avatarGliding = false;
+            _avatarPose = AvatarPose.Perched;
+            if (!_avatarLandGlove) return;
+            _avatarPerchHold = 0.18f;
         }
 
-        // Small bird on the right, clear of the rails, the pedestal, Daily,
-        // the Daily caption, and the glove's path onto that button.
-        void PlaceClearRest(float s)
+        // Half a garden limb, rooted on the right edge, near the LEVEL button.
+        // Screen and safe area only. The bird flies to this perch.
+        void PlaceHomeBranch(float s)
         {
-            _avatarTail = AvatarPlateDrop(s);
-            float titleBottom = TopHud() + (56f * 2f + 4f) * s;
-            var halo = SplashTitleHalo();
-            float topLim = halo.yMax > titleBottom ? halo.yMax : titleBottom;
-            float floorY = FlowerPlayRect().yMin - 4f * s;
-            float level = FlowerLevelTop() - 4f * s;
-            if (level < floorY) floorY = level;
-            var leftCol = SplashRailColumn(false, 2, s);
-            var rightCol = SplashRailColumn(true, 3, s);
-            float railL = leftCol.xMax + 4f * s;
-            float railR = rightCol.xMin - 4f * s;
-            if (railR < railL)
-            {
-                float mid = (leftCol.xMax + rightCol.xMin) * 0.5f;
-                railL = mid;
-                railR = mid;
-            }
+            WoodWorld(out float worldW, out float worldH);
+            float h = Screen.height > 2f ? Screen.height : s * 720f;
+            float ppu = h / (WorldBuilder.CamOrtho * 2f);
+            if (ppu < 1f) ppu = 1f;
+            float px = ppu * AvatarBranchMul;
+            float woodW = px * worldW;
+            float woodH = px * worldH;
+            HomeTwigRect(Vector2.zero, woodW, woodH, out var probe);
+            float visW = probe.width > 8f ? probe.width : 8f;
+            float visH = probe.height > 8f ? probe.height : 8f;
 
-            float useIcon = 16f * s;
-            Vector2 perch = default;
-            Vector2 center = default;
-            float woodW = 0f;
-            float woodH = 0f;
-            float px = 0f;
-            bool found = false;
-            float start = 42f * s;
-            for (int attempt = 0; attempt < 5 && !found; attempt++)
-            {
-                float icon = Mathf.Max(16f * s, start * (1f - attempt * 0.16f));
-                float plate = AvatarPlateDrop(s);
-                float reach = Mathf.Max(icon * 0.5f, AvatarPlateW(icon, s) * 0.5f) + 8f * s;
-                float xR = railR - reach;
-                float xL = railL + reach;
-                if (xR < xL) xR = (railL + railR) * 0.5f;
-                float yLow = floorY - plate - icon * 0.55f;
-                float yHigh = topLim + icon * 0.55f + 6f * s;
-                if (yLow < yHigh)
-                {
-                    float midY = (topLim + floorY) * 0.5f;
-                    yLow = midY;
-                    yHigh = midY;
-                }
-                var cap = DailyCaptionKeepout(s);
-                float xCap = cap.xMax + reach;
-                float xSide = xCap > xL && xCap < xR ? xCap : xR;
-                for (int pass = 0; pass < 3 && !found; pass++)
-                {
-                    float x = pass == 0 ? xR : pass == 1 ? xSide : Mathf.Lerp(xR, xL, 0.35f);
-                    if (x < xL) x = xL;
-                    if (x > xR) x = xR;
-                    for (int yi = 0; yi < 6; yi++)
-                    {
-                        float y = Mathf.Lerp(yLow, yHigh, yi / 5f);
-                        if (!TryRestAt(s, icon, x, y, topLim, out perch, out center, out woodW, out woodH, out px))
-                            continue;
-                        useIcon = icon;
-                        found = true;
-                        break;
-                    }
-                }
-            }
-            if (!found)
-            {
-                useIcon = 16f * s;
-                float reach = Mathf.Max(useIcon * 0.5f, AvatarPlateW(useIcon, s) * 0.5f) + 8f * s;
-                float x = railR - reach;
-                if (x < railL) x = (railL + railR) * 0.5f;
-                float y = floorY - AvatarPlateDrop(s) - useIcon * 0.55f;
-                TryRestAt(s, useIcon, x, y, topLim, out perch, out center, out woodW, out woodH, out px);
-            }
+            var disc = FlowerDisc(FlowerPlayRect(), 0f);
+            float levelTop = FlowerLevelTop();
+            var rail = SplashRailColumn(true, 3, s);
+            float y = levelTop - visH - AvatarPlateDrop(s) - 8f * s;
+            var box = PlaceRight(s, visW, visH, y);
+            if (disc.width > 2f && box.Overlaps(disc))
+                box.y = disc.yMin - visH - 8f * s;
+            if (box.yMax > levelTop - 4f * s)
+                box.y = levelTop - visH - AvatarPlateDrop(s) - 8f * s;
+            if (_adoptLive && _adoptLineR.height > 2f && box.Overlaps(_adoptLineR))
+                box.y = _adoptLineR.yMax + 8f * s;
+            float cap = CaptionFloorY(s);
+            if (box.y < cap) box.y = cap;
+            if (rail.width > 2f && box.Overlaps(rail))
+                box.x = rail.xMin - visW - 6f * s;
+            if (disc.width > 2f && box.Overlaps(disc))
+                box.y = disc.yMin - visH - 8f * s;
+            if (box.y < cap) box.y = cap;
+            float maxX = Screen.width - 4f - visW;
+            if (box.x > maxX) box.x = maxX;
+            if (box.x < 4f) box.x = 4f;
 
-            _limbCenter = center;
+            _limbCenter = new Vector2(box.x - probe.x, box.y - probe.y);
             _limbW = woodW;
             _limbH = woodH;
             _limbPx = px;
-            _limbOn = woodW > 1f && woodH > 1f;
-            _avatarFitIcon = Mathf.Max(8f, useIcon);
-            for (int i = 0; i < _avatarPerches.Length; i++)
-                _avatarPerches[i] = perch;
-        }
-
-        bool TryRestAt(float s, float icon, float birdX, float birdY, float topLim,
-            out Vector2 perch, out Vector2 center, out float woodW, out float woodH, out float px)
-        {
-            perch = default;
-            center = default;
-            woodW = 0f;
-            woodH = 0f;
-            px = 0f;
+            _limbOn = true;
+            _avatarFitIcon = HomeAvatarIcon(s);
             float world = AvatarBirdWorld();
-            if (world < 0.001f || icon < 2f) return false;
-            float birdPx = icon / world;
-            px = birdPx * (AvatarBranchMul / AvatarBirdMul);
-            WoodWorld(out float worldW, out float worldH);
-            woodW = px * worldW;
-            woodH = px * worldH;
-            var toe = LimbBirdSeated(Vector2.zero, px, birdPx, false, AvatarHomeSeat);
-            center = new Vector2(birdX - toe.x, birdY - toe.y);
-            perch = LimbBirdSeated(center, px, birdPx, false, AvatarHomeSeat);
-            var body = AvatarBody(perch, icon, 4f * s);
-            if (body.yMin < topLim) return false;
-            HomeTwigRect(center, woodW, woodH, out var vis);
-            float leaf = vis.height * 0.42f;
-            var twig = new Rect(vis.x, vis.y - leaf, vis.width, vis.height + leaf);
-            if (RestBlocked(body, s) || RestBlocked(twig, s)) return false;
-            return true;
-        }
-
-        bool RestBlocked(Rect body, float s)
-        {
-            if (body.width < 1f || body.height < 1f) return true;
-            var caption = DailyCaptionKeepout(s);
-            if (caption.width > 2f && body.Overlaps(caption)) return true;
-            var daily = DailyButtonSoon();
-            if (daily.width > 2f && body.Overlaps(PadRect(daily, 6f * s))) return true;
-            var glove = DailyGlovePath(s, daily);
-            if (glove.width > 2f && body.Overlaps(glove)) return true;
-            if (body.Overlaps(SplashRailColumn(false, 2, s))) return true;
-            if (body.Overlaps(SplashRailColumn(true, 3, s))) return true;
-            if (body.Overlaps(SplashTitleHalo())) return true;
-            if (AvatarRectHitsRails(body, s)) return true;
-            float level = FlowerLevelTop();
-            var flower = FlowerPlayRect();
-            if (body.yMax > level && body.xMax > flower.xMin && body.xMin < flower.xMax)
-                return true;
-            return false;
-        }
-
-        // The Daily sentence sits in this band. The rest perch stays outside it,
-        // and the rect does not follow the rail while that button slides in.
-        Rect DailyCaptionKeepout(float s)
-        {
-            float flowerTop = FlowerPlayRect().y;
-            float titleBottom = TopHud() + (56f * 2f + 4f) * s;
-            var halo = SplashTitleHalo();
-            if (halo.yMax > titleBottom) titleBottom = halo.yMax;
-            var left = SplashRailColumn(false, 2, s);
-            var right = SplashRailColumn(true, 3, s);
-            float x0 = left.xMax + 6f * s;
-            float x1 = right.xMin - 6f * s;
-            float span = x1 - x0;
-            if (span < 48f)
-            {
-                span = 48f;
-                x0 = (x0 + x1) * 0.5f - span * 0.5f;
-            }
-            float gapTop = titleBottom + 8f * s;
-            float gapBot = flowerTop - 8f * s;
-            float bandH = Mathf.Min(168f * s, Mathf.Max(72f * s, (gapBot - gapTop) * 0.62f));
-            float y = gapTop;
-            if (gapBot - gapTop > bandH) y = gapTop + (gapBot - gapTop - bandH) * 0.32f;
-            return PadRect(new Rect(x0, y, span, bandH), 8f * s);
-        }
-
-        // Full Daily disc at the top of the left rail, including before it slides in.
-        Rect DailyButtonSoon()
-        {
-            float size = SplashRailSize();
-            float gap = SplashRailGap();
-            var left = HomeRailRect(false, size);
-            var right = HomeRailRect(true, size);
-            float top = right.y - size - gap;
-            return new Rect(left.center.x - size * 0.5f, top, size, size);
-        }
-
-        // Entrance from the screen edge, the wind-up perch, and the tap onto Daily.
-        Rect DailyGlovePath(float s, Rect daily)
-        {
-            var aim = daily.width > 2f ? daily.center : new Vector2(24f * s, TopHud() + 80f * s);
-            float dh = GloveDh(s);
-            float lift = GloveRise(s);
-            float arch = GloveArch(s);
-            bool fromRight = aim.x < Screen.width * 0.5f;
-            float awayX = fromRight ? 1f : -1f;
-            float gapHi = 48f * s + 20f * s * 7f;
-            float restX = aim.x + awayX * gapHi;
-            float restY = aim.y - lift;
-            float top = Mathf.Min(restY, aim.y) - arch - dh * 0.45f;
-            float bot = aim.y + dh * 0.90f;
-            float left = Mathf.Min(aim.x, restX) - dh;
-            float right = Mathf.Max(aim.x, restX) + dh;
-            if (fromRight) right = Screen.width + dh;
-            else left = -dh;
-            if (bot < top + 4f) bot = top + 4f;
-            return new Rect(left, top, Mathf.Max(4f, right - left), bot - top);
+            float birdPx = world > 0.001f ? _avatarFitIcon / world : 0.01f;
+            var seated = LimbBirdSeated(_limbCenter, px, birdPx, false, AvatarHomeSeat);
+            for (int i = 0; i < _avatarPerches.Length; i++)
+                _avatarPerches[i] = seated;
         }
 
         // Full-size rail stack, so a button that is still sliding in stays reserved.
@@ -1609,9 +1391,7 @@ namespace FlockFive
 
         void DrawHomeLimbs()
         {
-            if (_awayOn && _avatarPerchIx < 0)
-                DrawHomeTwig(_awayCenter, _awayW, _awayH, _awayPx);
-            else if (_limbOn)
+            if (_limbOn)
                 DrawHomeTwig(_limbCenter, _limbW, _limbH, _limbPx);
         }
 

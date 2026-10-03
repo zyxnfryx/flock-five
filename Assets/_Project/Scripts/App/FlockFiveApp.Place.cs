@@ -18,6 +18,7 @@ namespace FlockFive
         const float GloveBelowDeg = -45f;
 
         // Lowest legal caption top: just under the logo. Never the screen top.
+        // SeatTutorialCaption uses this for the gift line only.
         static float CaptionFloorY(float s)
         {
             float title = TopHud() + (56f * 2f + 4f) * s;
@@ -30,6 +31,7 @@ namespace FlockFive
         }
 
         // w/h are the text box. belowY is the thing it must sit under (logo, cards).
+        // Static: never reads a bird or a glove, so a tap arc cannot re-seat the plate.
         static Rect PlaceCaption(float s, float w, float h, float belowY)
         {
             float min = CaptionFloorY(s);
@@ -71,26 +73,34 @@ namespace FlockFive
             return new Rect(x, y, w, h);
         }
 
-        // One home-bird size. Reference scale, capped to the band between the logo
-        // and the LEVEL words so the body and the name plate cannot cover either.
-        // Reset every layout. Not the adoption px and not a stored fit.
-        static float HomeBirdIcon(float s)
+        // Right-edge anchor. w/h are the prop. top is the preferred top.
+        // Safe-area inset only. Does not read a bird, a glove, or a popup scale.
+        static Rect PlaceRight(float s, float w, float h, float top)
         {
-            float title = TopHud() + (56f * 2f + 4f) * s;
-            var halo = SplashTitleHalo();
-            float top = title;
-            if (halo.height > 2f && halo.yMax > top) top = halo.yMax;
-            float flowerTop = FlowerPlayRect().yMin;
-            float level = FlowerLevelTop();
-            float limit = flowerTop;
-            if (level > top + 36f * s) limit = level;
-            float plate = AvatarPlateDrop(s);
-            float band = limit - top - plate - 16f * s;
-            float nominal = 52f * s;
-            float cap = band > 8f ? band * 0.62f : nominal;
-            if (cap < 28f * s) cap = 28f * s;
-            float icon = nominal < cap ? nominal : cap;
-            if (icon < 28f * s) icon = 28f * s;
+            if (w < 8f) w = 8f;
+            if (h < 8f) h = 8f;
+            float inset = Mathf.Max(8f * s, Screen.width - Screen.safeArea.xMax + 6f);
+            float x = Screen.width - inset - w;
+            float left = Mathf.Max(8f, Screen.safeArea.xMin + 6f);
+            if (x < left) x = left;
+            float y = top;
+            float bot = Screen.height - h - Mathf.Max(8f, Screen.safeArea.yMin + 4f);
+            if (y > bot) y = bot;
+            if (y < 8f) y = 8f;
+            return new Rect(x, y, w, h);
+        }
+
+        // One home-bird size. Garden body times HomeAvatarMul. Not a layout clamp
+        // and not the adoption px, so naming the bird cannot shrink it.
+        static float HomeBirdIcon(float s) => HomeAvatarIcon(s);
+
+        static float HomeAvatarIcon(float s)
+        {
+            float h = Screen.height > 2f ? Screen.height : s * 720f;
+            float ppu = h / (WorldBuilder.CamOrtho * 2f);
+            if (ppu < 1f) ppu = 1f;
+            float icon = AvatarBirdWorld() * ppu * HomeAvatarMul;
+            if (icon < 8f) icon = 8f;
             return icon;
         }
 
