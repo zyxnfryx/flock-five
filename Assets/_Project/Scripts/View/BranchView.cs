@@ -23,6 +23,9 @@ namespace FlockFive
         }
         // Seat is the wood; this lifts the sprite so gripping toes sit on the limb.
         public const float RestLift = 0.41f;
+
+        // Every rest bird sprite's lowest toe row is baked to WorldBuilder.SeatToeRowPx (831 of
+        // the 1024 canvas), so all birds share one seat height with no per-bird offset.
         int _count;
         Vector3 _planted;
         float _shake;
@@ -148,6 +151,7 @@ namespace FlockFive
                 bird.flipX = FromRight;
                 if (show)
                 {
+                    bird.transform.localPosition = rest;
                     idle.Bind(state.Birds[i], rest);
                     idle.Sleeping = sleeping;
                     idle.Shrouded = hid;

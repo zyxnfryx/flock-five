@@ -1,12 +1,29 @@
-2026-09-18 Flock Five Poker playrun (BirdPoker x3) + ShotPokerFaces
-Logic: 3/3 hands deal-hold-draw-collect.
-
-hand 1 dealt Ruby/Female,Gold/Female,Teal/Neutral,Teal/Female,Violet/Male
-        drawn pair, win 0, held 0 and 2 kept
-hand 2 dealt Ruby/Female,Gold/Male,Gold/Male,Teal/Female,Teal/Male
-        drawn no pay, win 0, held 0 and 2 kept
-hand 3 dealt Ruby/Male,Gold/Male,Teal/Neutral,Violet/Female,Peach/Neutral
-        drawn THREE OF A KIND (WILD), win 5000, held 0 and 2 kept
-
-Shots: hand-fan.png (dealt fan), hand-hold.png (kept 0+2 chained),
-hand-row.png (five-up result row).
+poker playrun start
+hand alpha Sprites/fx_hand_palm mid=0
+hand alpha Sprites/fx_hand_pinky mid=0
+hand alpha Sprites/fx_hand_ring mid=0
+hand alpha Sprites/fx_hand_middle mid=0
+hand alpha Sprites/fx_hand_index mid=0
+hand alpha Sprites/fx_hand_thumb mid=0
+hand alpha Sprites/fx_hand_pluck mid=0
+coins 16870 bet 250
+--- hold negatives ---
+all-five-held fan live=0
+unhold 0->1 live=1
+unhold reverse re-pack live=3
+re-hold to five live=0
+hold-none DRAW path live=5
+toggle thrash ok
+--- hand 1 ---
+dealt Teal/Male,Teal/Male,Violet/Female,Peach/Male,Peach/Male spent 250 phase Dealt
+drawn Teal/Male,WILD,Violet/Female,Gold/Female,Teal/Female rank PAIR win 0 coins 16120 kept=True
+collect ok coins 16120
+--- hand 2 ---
+dealt Ruby/Neutral,Gold/Male,Teal/Neutral,Violet/Female,Violet/Female spent 250 phase Dealt
+drawn Ruby/Neutral,Ruby/Male,Teal/Neutral,Teal/Male,Teal/Neutral rank PAIR win 0 coins 15870 kept=True
+collect ok coins 15870
+--- hand 3 ---
+dealt Gold/Neutral,Gold/Female,Teal/Male,Violet/Male,WILD spent 250 phase Dealt
+drawn Gold/Neutral,Ruby/Male,Teal/Male,Violet/Neutral,Violet/Male rank  win 0 coins 15620 kept=True
+collect ok coins 15620
+poker playrun DONE 3/3

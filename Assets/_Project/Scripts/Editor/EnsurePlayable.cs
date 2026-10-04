@@ -273,6 +273,7 @@ namespace FlockFive.Editor
         {
             "/tmp/flock-five-poker-faces",
             "/tmp/flock-five-streak-shot",
+            "/tmp/flock-five-birds-shot",
             "/tmp/flock-five-gift-shot",
             "/tmp/flock-five-consumer-tour",
             "/tmp/flock-five-shot",
@@ -318,6 +319,7 @@ namespace FlockFive.Editor
                     {
                         TryStartShot(app, "/tmp/flock-five-poker-faces", "ShotPokerFaces");
                         TryStartShot(app, "/tmp/flock-five-streak-shot", "ShotStreak");
+                        TryStartShot(app, "/tmp/flock-five-birds-shot", "ShotBirds");
                         TryStartShot(app, "/tmp/flock-five-gift-shot", "ShotGift");
                         TryStartShot(app, "/tmp/flock-five-consumer-tour", "ShotConsumerTour");
                         TryStartShot(app, "/tmp/flock-five-shot", "ShotHome");

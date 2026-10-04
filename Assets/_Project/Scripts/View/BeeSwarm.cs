@@ -7,7 +7,8 @@ namespace FlockFive
         const int Count = 9;
         const int Smokes = 3;
         const int Blankets = 4;
-        const float BirdY = 0.38f + BranchView.RestLift;
+        // Follows the exact per-spot seat heights (WorldBuilder.SeatYMain/Gift) of the covered birds.
+        float BirdY = 0.38f + BranchView.RestLift;
         const float BeeScale = 0.16f;
         const float BeeHalf = 0.22f;
         const float Clear = 0.68f;
@@ -39,6 +40,10 @@ namespace FlockFive
             if (_hidCount > 0 && seats != null && seats[0] != null && seats[lastHid] != null)
             {
                 float trunkX = seats[0].localPosition.x;
+                float sumY = 0f; int nY = 0;
+                for (int k = 0; k <= lastHid && k < seats.Length; k++)
+                    if (seats[k] != null) { sumY += seats[k].localPosition.y; nY++; }
+                if (nY > 0) BirdY = sumY / nY + BranchView.RestLift;
                 float lastX = seats[lastHid].localPosition.x;
                 _deep = trunkX + TrunkDir * 0.22f;
                 float aisle = -TrunkDir;
