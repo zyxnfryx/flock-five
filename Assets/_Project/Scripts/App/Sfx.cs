@@ -478,12 +478,31 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.4f, MixDesk.DuckChirp);
         }
 
+        // Latest payout one-shot. RewardPay waits until this moment, then fades.
+        static float _payoutUntil;
+
+        public static bool PayoutBusy => Time.unscaledTime < _payoutUntil;
+
+        public static void ClearPayout() => _payoutUntil = 0f;
+
+        static void MarkPayout(AudioClip clip, float pitch)
+        {
+            if (clip == null) return;
+            float span = clip.length;
+            if (pitch > 0.05f) span /= pitch;
+            float end = Time.unscaledTime + span;
+            if (end > _payoutUntil) _payoutUntil = end;
+        }
+
         public static void Clink()
         {
             Ensure();
             if (_clinks == null || _clinks.Length == 0) return;
             int i = Next(_clinks.Length, ref _lastClink);
-            Shot(_clinks[i], Random.Range(0.98f, 1.04f), 0.78f, MixLayer.Lead, MixDesk.DuckChirp);
+            var clip = _clinks[i];
+            float pitch = Random.Range(0.98f, 1.04f);
+            Shot(clip, pitch, 0.78f, MixLayer.Lead, MixDesk.DuckChirp);
+            MarkPayout(clip, pitch);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.18f, MixDesk.DuckChirp);
         }
 
@@ -765,11 +784,13 @@ namespace FlockFive
         static AudioClip _feederArrive;
 
         // First "!" of a combo. Two-note rising hey, Lead. Bed left alone (DuckChirp).
+        // +50% (was 0.54) on the shared Voice path. Clip peak ~0.39, so 0.81 is
+        // ~0.64 after MasterLoudness ×2, under the 0.72 knee. Pitch stays put.
         public static void RowAlert()
         {
             Ensure();
             if (_rowAlert == null) _rowAlert = MakeRowAlert();
-            Shot(_rowAlert, Random.Range(0.98f, 1.02f), 0.54f, MixLayer.Lead, MixDesk.DuckChirp);
+            Shot(_rowAlert, Random.Range(0.98f, 1.02f), 0.81f, MixLayer.Lead, MixDesk.DuckChirp);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.38f, MixDesk.DuckChirp);
         }
 

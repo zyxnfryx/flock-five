@@ -551,10 +551,15 @@ namespace FlockFive
             _bang.enabled = false;
         }
 
+        // Shared "!". Every alert marker uses this sprite (EnsureBang).
+        // Fill is inset one texel so a 3px black ring stays inside the quad.
+        // 3 texels is about one screen pixel at bird scale 0.42. PlaceBang's
+        // red tint multiplies the texture, so the ring stays black.
         static Sprite MakeBang()
         {
             const int w = 24;
             const int h = 48;
+            const float ring = 3f;
             var tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
             {
                 filterMode = FilterMode.Bilinear,
@@ -562,21 +567,54 @@ namespace FlockFive
                 hideFlags = HideFlags.HideAndDontSave,
                 name = "AlertBang"
             };
-            var px = new Color32[w * h];
+            var fill = new bool[w * h];
             for (int y = 0; y < h; y++)
             {
                 for (int x = 0; x < w; x++)
                 {
                     float nx = (x + 0.5f) / w - 0.5f;
                     float ny = (y + 0.5f) / h;
-                    bool bar = ny > 0.28f && ny < 0.96f && Mathf.Abs(nx) < 0.16f;
-                    bool dot = ny < 0.18f && nx * nx + (ny - 0.09f) * (ny - 0.09f) * 4f < 0.012f;
-                    if (!bar && !dot)
+                    bool bar = ny > 0.30f && ny < 0.94f && Mathf.Abs(nx) < 0.16f;
+                    bool dot = ny > 0.055f && ny < 0.18f
+                        && nx * nx + (ny - 0.09f) * (ny - 0.09f) * 4f < 0.012f;
+                    fill[y * w + x] = bar || dot;
+                }
+            }
+            var px = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    int i = row + x;
+                    if (fill[i])
                     {
-                        px[y * w + x] = new Color32(0, 0, 0, 0);
+                        px[i] = new Color32(255, 42, 36, 255);
                         continue;
                     }
-                    px[y * w + x] = new Color32(255, 42, 36, 255);
+                    float nearest = ring + 1f;
+                    int y0 = y - 3;
+                    int y1 = y + 3;
+                    int x0 = x - 3;
+                    int x1 = x + 3;
+                    if (y0 < 0) y0 = 0;
+                    if (x0 < 0) x0 = 0;
+                    if (y1 >= h) y1 = h - 1;
+                    if (x1 >= w) x1 = w - 1;
+                    for (int yy = y0; yy <= y1; yy++)
+                    {
+                        int dy = yy - y;
+                        int scan = yy * w;
+                        for (int xx = x0; xx <= x1; xx++)
+                        {
+                            if (!fill[scan + xx]) continue;
+                            int dx = xx - x;
+                            float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                            if (dist < nearest) nearest = dist;
+                        }
+                    }
+                    if (nearest > ring) continue;
+                    px[i] = new Color32(0, 0, 0, 255);
                 }
             }
             tex.SetPixels32(px);
@@ -1072,7 +1110,8 @@ namespace FlockFive
         // which turned the kit around on the dome. flip is applied first, then tilt
         // (SpriteRenderer order). The splash scales, then rotates.
         public static void KitAnchor(bool crown, int frame, bool faceLeft,
-            out float x, out float y, out float scale, out float tilt, out bool flip)
+            out float x, out float y, out float scale, out float tilt, out bool flip,
+            bool buttonSeat = false)
         {
             if (frame < 0 || frame > 5) frame = 0;
             float lx = crown ? CrownLocalX[0, frame] : BowLocalX[0, frame];
@@ -1083,6 +1122,21 @@ namespace FlockFive
             float tip = crown ? 26f : 12f;
             flip = !faceLeft;
             tilt = flip ? -tip : tip;
+            if (!buttonSeat) return;
+            // Color-row buttons only. Garden birds and the home avatar leave this
+            // false, so their seat stays on the locals above. The button quad is
+            // the full sheet: the crown base still clears the dome, and the bow
+            // knot sits a hair high. Nudge is in the same facing space as x.
+            if (crown)
+            {
+                x += faceLeft ? -0.06f : 0.06f;
+                y -= 0.15f;
+            }
+            else
+            {
+                x += faceLeft ? -0.02f : 0.02f;
+                y -= 0.045f;
+            }
         }
 
         // Bottom of the alert "!". Same local space as KitAnchor. Clears the

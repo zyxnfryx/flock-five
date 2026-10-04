@@ -18,7 +18,8 @@ namespace FlockFive
         const float GloveBelowDeg = -45f;
 
         // Lowest legal caption top: just under the logo. Never the screen top.
-        // SeatTutorialCaption uses this for the gift line only.
+        // The gift line's preferred seat starts here. PlaceCaption uses the
+        // same floor when a line has to sit under the glove or the top row.
         static float CaptionFloorY(float s)
         {
             float title = TopHud() + (56f * 2f + 4f) * s;

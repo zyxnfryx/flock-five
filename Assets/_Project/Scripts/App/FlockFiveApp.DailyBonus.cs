@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace FlockFive
@@ -340,17 +341,25 @@ namespace FlockFive
             Sfx.CardTap();
             Sfx.Clink();
             Haptics.Play(Haptics.Tier.Medium);
-            FlyCoinsToBalance(coins);
+            BeginRewardPay(coins);
             _dailyOpen = false;
             _dailyPopAt = -1f;
             DismissDailyIntro();
             DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
+            StartCoroutine(FinishDailyClaim(firstEver));
+        }
+
+        // Ask card or welcome only after the claim coins, balance, and clink are done.
+        IEnumerator FinishDailyClaim(bool firstEver)
+        {
+            yield return WaitRewardPay();
+            if (_restarting) yield break;
             if (DailyReminder.PromptDue())
             {
                 _dailyAskOpen = true;
                 _dailyAskAt = Time.unscaledTime;
                 NoteWelcomeClaim(firstEver);
-                return;
+                yield break;
             }
             NoteWelcomeClaim(firstEver);
         }
@@ -384,7 +393,17 @@ namespace FlockFive
             Purse.Credit(WelcomeBonusCoins);
             Sfx.Clink();
             Haptics.Play(Haptics.Tier.Medium);
-            FlyCoinsToBalance(WelcomeBonusCoins);
+            BeginRewardPay(WelcomeBonusCoins);
+            StartCoroutine(OpenWelcomeWhenPaid());
+        }
+
+        IEnumerator OpenWelcomeWhenPaid()
+        {
+            yield return WaitRewardPay();
+            if (_restarting) yield break;
+#if UNITY_EDITOR
+            if (_dailyShotQuiet || EditorShotLive) yield break;
+#endif
             _welcomeOpen = true;
             _welcomeAt = Time.unscaledTime;
             _welcomeGlove = false;
