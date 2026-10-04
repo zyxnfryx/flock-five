@@ -182,16 +182,19 @@ namespace FlockFive
         float _pokerPageAge;
         bool _pokerTutorAimOk;
         Vector2 _pokerTutorAim;
+        Rect _pokerTutorTap;
         // Repeat visits, after flockfive.coach.pokerpage. Hidden once Deal is tapped,
         // and kept hidden after that (flockfive.coach.pokerdealt).
         bool _pokerDealHint;
         bool _pokerDealAimOk;
         Vector2 _pokerDealAim;
+        Rect _pokerDealTap;
         // One-time glove on the back medal after a hand pays. flockfive.coach.pokerback.
         bool _pokerBackKnown;
         bool _pokerBackDone;
         bool _pokerBackAimOk;
         Vector2 _pokerBackAim;
+        Rect _pokerBackTap;
         Rect _pokerMinusR;
         Rect _pokerPlusR;
         bool _pokerShowPay;
@@ -2264,7 +2267,6 @@ namespace FlockFive
             {
                 if (Pressed(out var tap))
                 {
-                    if (_leafIntro) DismissLeafIntro();
                     if (HitHud(tap)) return;
                     if (_frozen && !_iceCoating && _gift == GiftFace.None) OpenGift();
                 }
@@ -2287,7 +2289,6 @@ namespace FlockFive
                 _stampPulse = Time.unscaledTime;
                 return;
             }
-            if (_leafIntro) DismissLeafIntro();
             if (_pestCue != 0 && PestIntroTap(screen)) return;
             if (HitHud(screen)) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
@@ -7733,10 +7734,7 @@ namespace FlockFive
             // Captured before the dismiss taps below, so that same click cannot poke the bird.
             bool tutorUp = HomeTutorLive();
             DismissAvatarRename(s);
-            if (!modal && _pokerIntroLive && Event.current != null
-                && Event.current.type == EventType.MouseDown && Event.current.button == 0)
-                DismissPokerIntro();
-            // Rail step holds until the player taps Daily. A miss does not skip it,
+            // Rail steps hold until their own button. A miss does not skip poker or Daily,
             // and the looping glove does not open the card.
             DrawHomeWash(0.18f);
 
@@ -8154,6 +8152,27 @@ namespace FlockFive
                 rest.y + sink + rest.height * 0.10f,
                 rest.width * 0.59f,
                 rest.height * 0.38f);
+        }
+
+        // Same pad the Watch and Claim flowers use. The glove accepts this rect, not the square.
+        static Rect FlowerHit(Rect flower, float s)
+        {
+            var disc = FlowerDisc(flower, 0f);
+            float hitGrow = 18f * s;
+            var hit = new Rect(disc.x - hitGrow, disc.y - hitGrow * 0.65f, disc.width + hitGrow * 2f, disc.height + hitGrow * 1.3f);
+            if (hit.height < 52f * s)
+            {
+                float extra = 52f * s - hit.height;
+                hit.y -= extra * 0.5f;
+                hit.height += extra;
+            }
+            return hit;
+        }
+
+        static Rect GiftWatchTapRect(float s)
+        {
+            GiftCardLayout(s, out _, out var flower);
+            return FlowerHit(flower, s);
         }
 
         // Difficulty line under LEVEL. One size for every joke, including a long one.
@@ -9011,7 +9030,7 @@ namespace FlockFive
             PoseAvatar(dt, true);
         }
 
-        // On a pad: toes planted, a small bob, and the occasional preen.
+        // On a pad: toes planted, no bob (PerchAnchor), and the occasional preen.
         // In the air the pose is already Flying or Landing, so the wings stay out.
         void PoseAvatar(float dt, bool preen)
         {
@@ -9309,9 +9328,8 @@ namespace FlockFive
                 && !_avatarCrossing && !_avatarGliding)
                 StickAvatarToPerch();
             onPerch = AvatarParked() && _avatarHappy <= 0.02f;
-            float bob = onPerch ? Mathf.Sin(_avatarClock * 1.7f + _avatarBobPhase) * icon * 0.035f : 0f;
-            float hop = _avatarHappy > 0f ? Mathf.Sin((1f - _avatarHappy) * Mathf.PI) * icon * 0.16f : 0f;
-            c = new Vector2(_avatarPos.x, _avatarPos.y - bob - hop);
+            // Rest pose: no bob, no hover. PerchAnchor is the one shared seat.
+            c = PerchAnchor(_avatarPos, icon, onPerch, _avatarHappy, icon * 0.16f);
             if (onPerch)
                 _avatarFaceLeft = c.x >= Screen.width * 0.5f;
             return true;
@@ -10200,7 +10218,7 @@ namespace FlockFive
             }
             float s = Mathf.Max(Screen.height / 720f, 1f);
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-            CoachGloveAt(_pokerTutorAim, dt, s);
+            CoachGloveAt(_pokerTutorAim, dt, s, float.NaN, false, float.NaN, _pokerTutorTap);
             bool parked = Vector2.Distance(_gloveTip, _gloveRest) > 32f * s;
             if (parked) _pokerPageAge = 0f;
             else _pokerPageAge += dt;
@@ -10225,6 +10243,7 @@ namespace FlockFive
                 return;
             }
             _pokerTutorAim = DealPlatformAim(actR);
+            _pokerTutorTap = actR;
             _pokerTutorAimOk = true;
         }
 
@@ -10292,7 +10311,7 @@ namespace FlockFive
             }
             float handS = Mathf.Max(Screen.height / 720f, 1f);
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-            CoachGloveAt(_pokerDealAim, dt, handS);
+            CoachGloveAt(_pokerDealAim, dt, handS, float.NaN, false, float.NaN, _pokerDealTap);
             return true;
         }
 
@@ -10306,6 +10325,7 @@ namespace FlockFive
             }
             var disc = FlowerDisc(actR, 0f);
             _pokerDealAim = DealPlatformAim(actR);
+            _pokerDealTap = actR;
             _pokerDealAimOk = disc.width > 2f;
             var want = PokerCoachBubble(s, row, betR, actR);
             DrawSplashIntroLine(PokerBetLine, want, s);
@@ -10350,7 +10370,7 @@ namespace FlockFive
             }
             float handS = Mathf.Max(Screen.height / 720f, 1f);
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, GloveBelowDeg);
+            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, GloveBelowDeg, _pokerBackTap);
             return true;
         }
 
@@ -10363,6 +10383,7 @@ namespace FlockFive
                 return;
             }
             _pokerBackAim = back.center;
+            _pokerBackTap = back;
             _pokerBackAimOk = back.width > 2f;
             float below = logoBottom;
             var tab = PokerPayTabRect(logoBottom, s);
@@ -13458,21 +13479,34 @@ namespace FlockFive
                 return true;
             }
             Vector2 aim = _albumTutorAim;
+            Rect tap = default;
             bool aimed = false;
             if (_albumTutorStep >= 3)
             {
                 aimed = _albumPagerOk;
-                if (aimed) aim = GloveTarget(_albumPagerR);
+                if (aimed)
+                {
+                    aim = GloveTarget(_albumPagerR);
+                    tap = _albumPagerR;
+                }
             }
             else if (_albumTutorStep == 2)
             {
                 aimed = _albumInspectOk && AlbumInspectReady();
-                if (aimed) aim = GloveTarget(_albumInspectR);
+                if (aimed)
+                {
+                    aim = GloveTarget(_albumInspectR);
+                    tap = _albumInspectR;
+                }
             }
             else
             {
                 aimed = _albumCardOk && _albumTutorSlot >= 0;
-                if (aimed) aim = GloveTarget(_albumCardR);
+                if (aimed)
+                {
+                    aim = GloveTarget(_albumCardR);
+                    tap = _albumCardR;
+                }
             }
             _albumTutorAim = aim;
             _albumTutorAimOk = aimed;
@@ -13485,7 +13519,7 @@ namespace FlockFive
             CueLine(AlbumTutorLine());
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             float handS = Mathf.Max(Screen.height / 720f, 1f);
-            CoachGloveAt(aim, dt, handS);
+            CoachGloveAt(aim, dt, handS, float.NaN, false, float.NaN, tap);
             return true;
         }
 
@@ -15207,15 +15241,7 @@ namespace FlockFive
                 return;
             }
 
-            var discHit = FlowerDisc(cta, 0f);
-            float hitGrow = 18f * s;
-            discHit = new Rect(discHit.x - hitGrow, discHit.y - hitGrow * 0.65f, discHit.width + hitGrow * 2f, discHit.height + hitGrow * 1.3f);
-            if (discHit.height < 52f * s)
-            {
-                float extra = 52f * s - discHit.height;
-                discHit.y -= extra * 0.5f;
-                discHit.height += extra;
-            }
+            var discHit = FlowerHit(cta, s);
             bool watch = HitPad(discHit, out bool held);
             var pressDisc = FlowerDisc(cta, 0f);
             if (!held && GlovePresses(pressDisc)) held = true;
@@ -15369,7 +15395,7 @@ namespace FlockFive
             float cardH = cardW * (501f / 780f);
             float flowerSz = PopupButtonSize(s, cardW);
             // Same overlap the daily claim uses. The disc still clears the plaque.
-            float overlap = flowerSz * 0.15f;
+            float overlap = PopupCtaOverlap(flowerSz, 0f);
             float stackH = cardH + flowerSz - overlap;
             var placed = PlacePopup(s, cardW, stackH, 0.32f);
             card = new Rect(placed.x, placed.y, cardW, cardH);

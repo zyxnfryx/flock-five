@@ -210,6 +210,8 @@ namespace FlockFive
         static void Shot(AudioClip clip, float pitch, float vol, MixLayer layer, float leadDuck = MixDesk.DuckChirp)
         {
             if (clip == null) return;
+            // One level rule for every one-shot, so no sound jumps out of the mix.
+            vol = SfxLibrary.Level(vol);
             if (layer == MixLayer.Lead)
             {
                 if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.55f, leadDuck);
@@ -257,7 +259,7 @@ namespace FlockFive
             _held.Stop();
             _held.pitch = 1f;
             _held.clip = clip;
-            _held.volume = Mathf.Clamp(vol, 0.02f, 0.5f);
+            _held.volume = Mathf.Clamp(SfxLibrary.Level(vol), 0.02f, 0.5f);
             _held.Play();
             float span = Mathf.Max(0.2f, duckFor);
             _heldUntil = 0f;
@@ -782,15 +784,16 @@ namespace FlockFive
 
         static AudioClip _feederArrive;
 
-        // First "!" of a combo. One SfxLibrary string stab, Lead. Bed left alone (DuckChirp).
-        // Clip peak is 0.89 (under -1 dBFS). 0.39 * 0.89 * MasterLoudness ×2 ≈ 0.69,
-        // under the 0.72 knee. Pitch stays put.
+        // First "!" of a combo and every bird "!" alert. One soft SfxLibrary pluck pair,
+        // Lead. Bed left alone (DuckChirp). Clip peak 0.78 at SfxLibrary.StingVolume:
+        // 0.30 * 0.78 * MasterLoudness ×2 ≈ 0.47, well under the 0.72 knee and quieter
+        // than the other alerts. Pitch stays put.
         public static void RowAlert()
         {
             Ensure();
             var clip = SfxLibrary.Sting();
             if (clip == null) return;
-            Shot(clip, Random.Range(0.98f, 1.02f), 0.39f, MixLayer.Lead, MixDesk.DuckChirp);
+            Shot(clip, Random.Range(0.99f, 1.01f), SfxLibrary.StingVolume, MixLayer.Lead, MixDesk.DuckChirp);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.48f, MixDesk.DuckChirp);
         }
 

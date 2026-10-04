@@ -18,11 +18,15 @@ namespace FlockFive
         public const float DuckChirp = 1f;
         public const float DuckWhoosh = 0.88f;
         public const float DuckBreak = 0.78f;
+        // The bed never ducks below this, whatever a caller asks for, and always slews
+        // back to exactly 1. A held clip once asked for 0.62, a drop the ear heard.
+        public const float DuckFloor = 0.70f;
 
         AudioSource[] _stems;
         float _leadUntil;
         float _leadDuck = 1f;
         float _duckSlew = 1f;
+        float _capNow;
         float _moonLiftUntil;
         float _comboUntil = -99f;
         bool _splash;
@@ -155,6 +159,7 @@ namespace FlockFive
 
         public void MarkLead(float seconds, float duckRemain = DuckChirp)
         {
+            if (duckRemain < DuckFloor) duckRemain = DuckFloor;
             bool wasHot = LeadHot;
             float until = Time.unscaledTime + Mathf.Max(0.05f, seconds);
             if (until > _leadUntil) _leadUntil = until;
@@ -325,11 +330,16 @@ namespace FlockFive
             if (_stems == null) return;
 
             float target = BedDuck;
-            float rate = target < _duckSlew ? 10f : 4f;
+            // Gentle both ways: a 0.3 duck takes ~0.1 s in and ~0.2 s out, no snap.
+            float rate = target < _duckSlew ? 3f : 1.5f;
             _duckSlew = Mathf.MoveTowards(_duckSlew, target, Time.unscaledDeltaTime * rate);
 
             bool moon = Time.unscaledTime < _moonLiftUntil;
-            float cap = moon ? PlaceMax : PlaceCap;
+            float capWant = moon ? PlaceMax : PlaceCap;
+            // The moon lift eases the bed cap over half a second, no step in level.
+            if (_capNow <= 0f) _capNow = capWant;
+            _capNow = Mathf.MoveTowards(_capNow, capWant, Time.unscaledDeltaTime * (PlaceMax - PlaceCap) * 2f);
+            float cap = _capNow;
             float duck = _duckSlew;
             float splashT = _splash ? 1f : 0f;
             float splashRate = splashT > _splashMix ? 1.7f : 2.8f;

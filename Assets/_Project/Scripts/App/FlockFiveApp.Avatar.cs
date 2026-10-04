@@ -687,34 +687,43 @@ namespace FlockFive
                 HitAdoptBirds(icon);
         }
 
-        // Same center DrawAdoptBirds uses, bob and hop included.
+        // Same center DrawAdoptBirds uses, hop included. No bob: PerchAnchor is the
+        // shared rest seat, so the adopt bird sits on the branch like the home bird.
         Vector2 AdoptBirdCenter(int i, float icon, float s, out bool onPerch)
         {
-            float hop = _adoptHop[i] > 0f ? Mathf.Sin((1f - _adoptHop[i]) * Mathf.PI) * 14f * s : 0f;
             onPerch = AvatarPoseOnWood() && _adoptHop[i] <= 0.05f;
-            float bob = onPerch ? Mathf.Sin((_adoptClock + i * 0.4f) * 1.7f) * Mathf.Min(4f * s, icon * 0.04f) : 0f;
-            return new Vector2(_adoptShown[i].x, _adoptShown[i].y - bob - hop);
+            return PerchAnchor(_adoptShown[i], icon, onPerch, _adoptHop[i], 14f * s);
+        }
+
+        bool AdoptLookRects(float icon, out Rect bird, out Rect plate)
+        {
+            bird = default;
+            plate = default;
+            if (_avatarRename) return false;
+            if (_adoptStep != AdoptStep.Look) return false;
+            int i = _adoptPick;
+            if (i < 0 || i > 4) return false;
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float drawIcon = HomeAvatarIcon(s);
+            if (drawIcon < 8f) drawIcon = icon;
+            if (drawIcon < 8f) return false;
+            float pad = HomeBirdHitPad * s;
+            var c = AdoptBirdCenter(i, drawIcon, s, out bool onPerch);
+            bird = new Rect(c.x - drawIcon * 0.5f - pad, c.y - drawIcon * 0.5f - pad, drawIcon + pad * 2f, drawIcon + pad * 2f);
+            bool faceLeft = c.x >= Screen.width * 0.5f;
+            bool wings = BirdIdle.UseFlyingPose(onPerch, false);
+            float clock = _adoptClock + i * 0.17f;
+            plate = NameTagRect(c, drawIcon, s, _adoptCol, _adoptName, faceLeft, wings, clock, false);
+            return bird.width > 2f;
         }
 
         void HitAdoptBirds(float icon)
         {
-            if (_avatarRename) return;
-            if (_adoptStep != AdoptStep.Look) return;
-            int i = _adoptPick;
-            if (i < 0 || i > 4) return;
-            float s = Mathf.Max(Screen.height / 720f, 1f);
-            float drawIcon = HomeAvatarIcon(s);
-            if (drawIcon < 8f) drawIcon = icon;
-            float pad = HomeBirdHitPad * s;
-            var c = AdoptBirdCenter(i, drawIcon, s, out bool onPerch);
-            var r = new Rect(c.x - drawIcon * 0.5f - pad, c.y - drawIcon * 0.5f - pad, drawIcon + pad * 2f, drawIcon + pad * 2f);
-            bool faceLeft = c.x >= Screen.width * 0.5f;
-            bool wings = BirdIdle.UseFlyingPose(onPerch, false);
-            float clock = _adoptClock + i * 0.17f;
-            var plate = NameTagRect(c, drawIcon, s, _adoptCol, _adoptName, faceLeft, wings, clock, false);
+            if (!AdoptLookRects(icon, out var r, out var plate)) return;
             bool birdHit = HitHomeFirst(r, out _);
             bool plateHit = plate.width > 2f && HitHomeFirst(plate, out _);
             if (!birdHit && !plateHit) return;
+            int i = _adoptPick;
             _adoptHop[i] = 1f;
             Sfx.Chirp(_adoptCol);
             OpenAvatarRename();
@@ -1286,7 +1295,18 @@ namespace FlockFive
             float lift = GloveRise(s);
             float hang = GloveDh(s) * 0.48f;
             if (lift < hang) lift = hang;
-            CoachGloveAt(aim, dt, s, lift);
+            CoachGloveAt(aim, dt, s, lift, false, float.NaN, default, FnAdoptTap());
+        }
+
+        // Bird body or name plate. Same rects HitAdoptBirds claims, without using the event.
+        bool AdoptGloveTap(Vector2 screen)
+        {
+            if (!_adoptLive || _avatarPose != AvatarPose.GlovePointing) return false;
+            if (!AdoptLookRects(HomeAvatarIcon(Mathf.Max(Screen.height / 720f, 1f)), out var bird, out var plate))
+                return false;
+            var gui = new Vector2(screen.x, Screen.height - screen.y);
+            if (bird.Contains(gui)) return true;
+            return plate.width > 2f && plate.Contains(gui);
         }
 
         bool AdoptGloveAim(float s, out Vector2 aim)
@@ -1794,6 +1814,22 @@ namespace FlockFive
             var local = WorldBuilder.SeatLocal(seat, false, fromRight);
             float y = local.y * branchPx + BranchView.RestLift * birdPx;
             return new Vector2(center.x + local.x * branchPx, center.y - y);
+        }
+
+        // Toes settle this fraction of the bird body into the bark, so a resting bird
+        // reads as planted and never as hovering over the branch tip.
+        const float PerchToeSink = 0.02f;
+
+        // The ONE resting-bird center. seat is the branch-tip point LimbBirdSeated
+        // returned. A bird at rest does not bob: it sits at the seat, sunk by
+        // PerchToeSink. Only a happy hop (hop01 counts 1 to 0, hopPx is its height)
+        // lifts it. Off the perch (flying, landing) the caller's position is kept.
+        // Home bird, adopt bird, and their name tags/hit rects all read this.
+        static Vector2 PerchAnchor(Vector2 seat, float icon, bool onPerch, float hop01, float hopPx)
+        {
+            float lift = hop01 > 0f ? Mathf.Sin((1f - hop01) * Mathf.PI) * hopPx : 0f;
+            float sink = onPerch ? icon * PerchToeSink : 0f;
+            return new Vector2(seat.x, seat.y + sink - lift);
         }
 
         // Adopt scene, or the saved bird once it has a perch. Hidden under the streak sign.

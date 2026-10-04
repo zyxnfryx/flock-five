@@ -274,14 +274,7 @@ namespace FlockFive
 
             DailyLayout(s, out var card, out var flower, out var board, out float band);
             var disc = FlowerDisc(flower, 0f);
-            float hitGrow = 18f * s;
-            var claimHit = new Rect(disc.x - hitGrow, disc.y - hitGrow * 0.65f, disc.width + hitGrow * 2f, disc.height + hitGrow * 1.3f);
-            if (claimHit.height < 52f * s)
-            {
-                float extra = 52f * s - claimHit.height;
-                claimHit.y -= extra * 0.5f;
-                claimHit.height += extra;
-            }
+            var claimHit = DailyClaimTapRect(s);
 
             float x0 = Mathf.Min(card.x, flower.x);
             float y0 = Mathf.Min(card.y, flower.y);
@@ -520,8 +513,15 @@ namespace FlockFive
             StopClaimGroove();
             _dailyOpen = false;
             _dailyPopAt = -1f;
-            DismissDailyIntro();
+            // X and the dim close the card only. The lesson stays until Claim.
             Sfx.CardTap();
+        }
+
+        // Claim flower, same pad DrawDailyBonus hits. Not today's tile.
+        static Rect DailyClaimTapRect(float s)
+        {
+            DailyLayout(s, out _, out var flower, out _, out _);
+            return FlowerHit(flower, s);
         }
 
         // Ease-out cubic, 0.88 → 1. Resting scale is 1, so an already-open card does not drift.
@@ -571,27 +571,19 @@ namespace FlockFive
             return aim;
         }
 
-        // Claim step. Fingertip is the center of today's tile ($10 on day one).
-        // Shared rise, so the cuff stays above the tile. The hand leaves by the
-        // nearer frame edge. _gloveKeepOff holds the palm off the frame.
+        // Claim step. Fingertip is the center of the real Claim button (the pedestal
+        // face, same FlowerDisc the Watch glove uses), never a reward box. Shared
+        // rise. _gloveKeepOff holds the palm off the button face.
         void DailyClaimGlove(float s, out Vector2 aim, out float perchLift, out bool fromLeft)
         {
-            DailyLayout(s, out var card, out var flower, out var board, out float band);
-            DailyRows(s, board, out _, out _, out _, out var row, out float gap, out float unit);
-            int days = DailyBonus.CycleDays;
-            if (days < 1) days = 1;
-            int day = DailyBonus.Cycle;
-            if (day < 0) day = 0;
-            if (day >= days) day = days - 1;
-            var tile = new Rect(row.x + (unit + gap) * day, row.y, unit, row.height);
+            DailyLayout(s, out var card, out var flower, out _, out _);
             float k = DailyPop(_dailyPopAt);
             var pivot = DailyPivot(card, flower);
-            tile = DailyScaleRect(tile, pivot, k);
-            var frame = DailyScaleRect(DailyFrameOuter(card, board, band), pivot, k);
-            aim = GloveTarget(tile);
+            var disc = DailyScaleRect(FlowerDisc(flower, 0f), pivot, k);
+            aim = GloveTarget(disc);
             perchLift = float.NaN;
-            fromLeft = (tile.center.x - frame.x) <= (frame.xMax - tile.center.x);
-            _gloveKeepOff = frame;
+            fromLeft = false;
+            _gloveKeepOff = disc;
         }
 
         // Content-sized. Rows are reserved up front, including an empty bonus line,
@@ -610,9 +602,10 @@ namespace FlockFive
             // Pedestal art starts ~13% down the square (1024×811 letterboxed). A lip of
             // band*0.35 left the dim wash showing as a dark seam under the gold frame.
             // Cap at the brass plus the board's bottom pad so the day tiles stay clear.
-            float overlap = flowerSz * 0.15f;
-            float tileClear = band + 8f * s;
-            if (overlap > tileClear) overlap = tileClear;
+            // PopupCtaOverlap closes the gap under the brass so the bulbs on the bottom
+            // edge no longer show between the card and the pedestal. The pedestal
+            // still sinks at most band + the board's bottom pad, so the tiles stay clear.
+            float overlap = PopupCtaOverlap(flowerSz, band + 8f * s);
             float stack = cardH + flowerSz - overlap;
             var placed = PlacePopup(s, cardW, stack, 0.36f);
             card = new Rect(placed.x, placed.y, cardW, cardH);
@@ -883,24 +876,22 @@ namespace FlockFive
             if (unit < 4f) return;
             int today = DailyBonus.Cycle;
             bool claimed = DailyBonus.ClaimedToday;
-            var crown = SpriteCatalog.Crown;
-            var crownTex = crown != null ? crown.texture : null;
-            var spark = SpriteCatalog.Sparkle;
-            var sparkTex = spark != null ? spark.texture : null;
             float x = row.x;
             int days = DailyBonus.CycleDays;
-            int crownDay = days - 1;
             for (int i = 0; i < days; i++)
             {
                 bool now = i == today && DailyBonus.OfferReady;
                 bool done = i < today || (i == today && claimed);
                 var tile = new Rect(x, row.y, unit, row.height);
-                DrawDailyTile(tile, i, now, done, i == crownDay, s, breathe, glow, crownTex, sparkTex);
+                DrawDailyTile(tile, i, now, done, s, breathe, glow);
                 x += unit + gap;
             }
         }
 
-        static void DrawDailyTile(Rect tile, int day, bool now, bool done, bool crown, float s, float breathe, Texture2D glow, Texture crownTex, Texture sparkTex)
+        // The one box path for all five rewards ($10 to $100). Only the amount and the
+        // now / done state differ. The amount fills the whole box and the style is
+        // MiddleCenter, so every figure sits dead center both ways. No crown, no stars.
+        static void DrawDailyTile(Rect tile, int day, bool now, bool done, float s, float breathe, Texture2D glow)
         {
             if (now)
             {
@@ -913,11 +904,9 @@ namespace FlockFive
                 : done
                     ? new Color(0.30f, 0.17f, 0.07f, 0.94f)
                     : new Color(0.16f, 0.09f, 0.04f, 0.90f);
-            if (crown && !now && !done) fill = new Color(0.55f, 0.34f, 0.10f, 0.96f);
-            if (crown && now) fill = new Color(1f, 0.84f, 0.34f, 1f);
             GUI.color = fill;
             GUI.DrawTexture(tile, Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.86f, 0.42f, now || crown ? 1f : done ? 0.55f : 0.40f);
+            GUI.color = new Color(1f, 0.86f, 0.42f, now ? 1f : done ? 0.55f : 0.40f);
             float edge = Mathf.Max(1.5f, (now ? 2.6f : 1.6f) * s);
             GUI.DrawTexture(new Rect(tile.x, tile.y, tile.width, edge), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(tile.x, tile.yMax - edge, tile.width, edge), Texture2D.whiteTexture);
@@ -925,33 +914,7 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(tile.xMax - edge, tile.y, edge, tile.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            float textTop = tile.y + tile.height * 0.14f;
-            float textH = tile.height * 0.48f;
-            if (crown && crownTex != null)
-            {
-                float cs = tile.width * 0.78f;
-                float ch = cs * 0.58f;
-                var crownR = new Rect(tile.center.x - cs * 0.5f, tile.y + tile.height * 0.04f, cs, ch);
-                GUI.DrawTexture(crownR, crownTex, ScaleMode.ScaleToFit, true);
-                if (sparkTex != null)
-                {
-                    float pulse = 0.45f + 0.55f * (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.1f));
-                    float sz = tile.width * 0.30f;
-                    var sr = new Rect(crownR.xMax - sz * 0.62f, crownR.y - sz * 0.04f, sz, sz);
-                    GUI.color = new Color(1f, 0.96f, 0.75f, 0.22f + 0.48f * pulse);
-                    GUI.DrawTexture(sr, sparkTex, ScaleMode.ScaleToFit, true);
-                    GUI.color = Color.white;
-                }
-                textTop = crownR.yMax + 1f;
-                float below = tile.yMax - textTop - (done ? tile.height * 0.22f : tile.height * 0.05f);
-                textH = below > tile.height * 0.20f ? below : tile.height * 0.20f;
-            }
-            else if (done)
-            {
-                textTop = tile.y + tile.height * 0.08f;
-                textH = tile.height * 0.46f;
-            }
-            var amt = new Rect(tile.x + 1f, textTop, tile.width - 2f, textH);
+            var amt = new Rect(tile.x + 1f, tile.y, tile.width - 2f, tile.height);
             _dailyTile.fontSize = _dailyTilePx;
             Color ink = now
                 ? new Color(0.32f, 0.14f, 0.04f, 1f)

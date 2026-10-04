@@ -8,7 +8,8 @@ namespace FlockFive
     // target on the right half mirrors the sprite into a left hand from the left,
     // pointing right. The cuff sits off to that side and above the target. The
     // tap lifts, arcs over the top, and the fingertip descends onto the target.
-    // Any tap fades that hand out in place on the tap frame. It stays hidden
+    // A tap on the step's own target fades that hand out in place on the tap frame.
+    // Any other tap leaves it demonstrating. It stays hidden
     // until the next step's start pose is locked, then fades in on that arc.
     // It is never drawn at a stale or default perch, and never dragged while visible.
     // SeatTutorialCaption places the plate once. PlaceTutorCaption keeps a clear
@@ -183,6 +184,15 @@ namespace FlockFive
         bool _gloveStepFromLeft;
         float _gloveStepApproach = float.NaN;
         int _gloveClaimFrame = -1;
+        // What the posing step calls a valid tap. Rect is GUI, y down.
+        // Hit, when set, is screen space (y up), same as Pressed, and wins over the rect.
+        // Armed only while that step is actually posing, so a stale target cannot fire.
+        Rect _gloveTapRect;
+        bool _gloveTapRectOn;
+        System.Func<Vector2, bool> _gloveTapHit;
+        int _gloveTapFrame = -1;
+        int _glovePestKind;
+        System.Func<Vector2, bool> _fnVipTap, _fnCueTap, _fnPestTap, _fnAdoptTap;
         bool _restVis;
         bool _restMirror;
         Vector2 _restShown;
@@ -723,7 +733,7 @@ namespace FlockFive
                 var vipSeat = SplashRailSeat(RailVip);
                 Vector2 vipAim = vipBox.width > 12f ? GloveTarget(vipBox) : GloveTarget(vipSeat);
                 _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-                CoachGloveAt(vipAim, dt, welcomeS);
+                CoachGloveAt(vipAim, dt, welcomeS, float.NaN, false, float.NaN, default, FnVipTap());
                 if (PlayClock.Now >= _welcomeGloveUntil)
                 {
                     _welcomeGlove = false;
@@ -751,7 +761,7 @@ namespace FlockFive
                 var watchFace = watchDisc.width > 2f ? watchDisc : watchFlower;
                 _gloveKeepOff = watchFace;
                 Vector2 watchAim = GloveTarget(watchFace);
-                CoachGloveAt(watchAim, dt, handS);
+                CoachGloveAt(watchAim, dt, handS, float.NaN, false, float.NaN, GiftWatchTapRect(handS));
                 return;
             }
             if (_hiveIntroLive || _hiveLevelLive)
@@ -785,10 +795,11 @@ namespace FlockFive
                         _tutorSeatOn = false;
                     }
                     _cueLine = HiveHomeLine;
-                    CoachGloveAt(GloveTarget(box), dt, handS);
+                    CoachGloveAt(GloveTarget(box), dt, handS, float.NaN, false, float.NaN, box);
                     return;
                 }
-                CoachGloveAt(LevelHiveAim(), dt, handS);
+                HudLayout(out _, out _, out _, out _, out var hiveTap);
+                CoachGloveAt(LevelHiveAim(), dt, handS, float.NaN, false, float.NaN, hiveTap);
                 return;
             }
             if (_pokerIntroLive)
@@ -798,7 +809,7 @@ namespace FlockFive
                 var seat = SplashRailSeat(RailPoker);
                 var target = box.width > 12f ? box : seat;
                 Vector2 pokerAim = target.width > 2f ? target.center : box.center;
-                CoachGloveAt(pokerAim, dt, handS);
+                CoachGloveAt(pokerAim, dt, handS, float.NaN, false, float.NaN, target);
                 return;
             }
             if (_dailyIntroLive)
@@ -816,7 +827,7 @@ namespace FlockFive
                 if (onClaim)
                 {
                     DailyClaimGlove(handS, out dailyAim, out float perchLift, out bool fromLeft);
-                    CoachGloveAt(dailyAim, dt, handS, perchLift, fromLeft);
+                    CoachGloveAt(dailyAim, dt, handS, perchLift, fromLeft, float.NaN, DailyClaimTapRect(handS));
                 }
                 else
                 {
@@ -826,7 +837,7 @@ namespace FlockFive
                     var box = SplashDailyRect();
                     if (box.width < 2f) box = SplashRailSeat(RailDaily);
                     dailyAim = box.center;
-                    CoachGloveAt(dailyAim, dt, handS);
+                    CoachGloveAt(dailyAim, dt, handS, float.NaN, false, float.NaN, box);
                 }
                 return;
             }
@@ -871,7 +882,7 @@ namespace FlockFive
             _coachGlow.color = new Color(1f, 0.91f, 0.46f, a);
 
             float s = Mathf.Max(Screen.height / 720f, 1f);
-            if (CoachGloveAt(_cueAimGui, dt, s))
+            if (CoachGloveAt(_cueAimGui, dt, s, float.NaN, false, float.NaN, default, FnCueTap()))
             {
                 _coachGlowKick = 1f;
                 CoachSpawnRipple(_cueAimWorld);
@@ -933,6 +944,11 @@ namespace FlockFive
             _gloveStepApproach = float.NaN;
             _gloveLockAim = Vector2.zero;
             _gloveStepAim = Vector2.zero;
+            _gloveTapFrame = -1;
+            _gloveTapRectOn = false;
+            _gloveTapHit = null;
+            _gloveTapRect = default;
+            _glovePestKind = 0;
         }
 
         // Freeze the drawn pose and drop alpha. A second tap does not restart it.
@@ -959,15 +975,118 @@ namespace FlockFive
             _gloveReady = false;
         }
 
-        // Fade starts on this tap frame. Hop land, board settle, and pest cues
-        // must not be the first time the hand hides.
+        // Fade starts on the valid tap frame. Hop land, board settle, and pest cues
+        // must not be the first time the hand hides. A miss does not count.
+        // Pressed drops the pointer delivered on resume, so backgrounding is not a tap.
         void NoteGloveTap()
         {
-            if (!Pressed(out _)) return;
+            if (!Pressed(out var screen)) return;
             if (_gloveAct != TutorGloveAct.Live && _gloveAct != TutorGloveAct.Reappear
                 && _gloveAlpha <= 0.03f && !_gloveVis)
                 return;
+            if (!GloveTapHits(screen)) return;
             GloveStartFadeOut();
+        }
+
+        // One check for every lesson. The posing step armed either a GUI rect or a hit.
+        // A target from the previous pose frame still counts: this runs before the step
+        // re-arms, and that is the control the player was shown.
+        bool GloveTapHits(Vector2 screen)
+        {
+            if (_gloveTapFrame < 0) return false;
+            int age = Time.frameCount - _gloveTapFrame;
+            if (age < 0 || age > 1) return false;
+            if (_gloveTapHit != null) return _gloveTapHit(screen);
+            if (!_gloveTapRectOn) return false;
+            return _gloveTapRect.Contains(new Vector2(screen.x, Screen.height - screen.y));
+        }
+
+        // Called from the live pose only. An early hide does not refresh it, so the
+        // stamp expires and a later miss cannot fade a hand that is no longer up.
+        void GloveArmTap(Rect guiRect, System.Func<Vector2, bool> hit)
+        {
+            if (hit != null)
+            {
+                _gloveTapHit = hit;
+                _gloveTapRectOn = false;
+                _gloveTapFrame = Time.frameCount;
+                return;
+            }
+            _gloveTapHit = null;
+            _gloveTapRect = guiRect;
+            _gloveTapRectOn = guiRect.width > 1.5f && guiRect.height > 1.5f;
+            _gloveTapFrame = _gloveTapRectOn ? Time.frameCount : -1;
+        }
+
+        System.Func<Vector2, bool> FnVipTap()
+        {
+            if (_fnVipTap == null) _fnVipTap = VipGloveTap;
+            return _fnVipTap;
+        }
+
+        System.Func<Vector2, bool> FnCueTap()
+        {
+            if (_fnCueTap == null) _fnCueTap = CueGloveTap;
+            return _fnCueTap;
+        }
+
+        System.Func<Vector2, bool> FnPestTap()
+        {
+            if (_fnPestTap == null) _fnPestTap = PestGloveTap;
+            return _fnPestTap;
+        }
+
+        System.Func<Vector2, bool> FnAdoptTap()
+        {
+            if (_fnAdoptTap == null) _fnAdoptTap = AdoptGloveTap;
+            return _fnAdoptTap;
+        }
+
+        // Disc plus the ribbon. The square corners outside the rim are not the button.
+        bool VipGloveTap(Vector2 screen)
+        {
+            var box = SplashNoAdsRect();
+            if (box.width < 12f) box = SplashRailSeat(RailVip);
+            if (box.width < 2f) return false;
+            return VipContains(box, new Vector2(screen.x, Screen.height - screen.y));
+        }
+
+        // Branch, gift limb, or the feeder a leaf lesson is waiting on.
+        // Reads the cue still showing this frame. The hop has not advanced it yet.
+        bool CueGloveTap(Vector2 screen)
+        {
+            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
+            if (cam == null || _board == null) return false;
+            var world = (Vector2)cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
+            if (_cueGift)
+            {
+                int branch = _cueBranch;
+                if (branch < 0) return false;
+                int other = OtherGiftBranch(branch);
+                int hit = HitGiftSign(world);
+                if (hit == branch || (other >= 0 && hit == other)) return true;
+                if (NearGift(branch, world)) return true;
+                return other >= 0 && NearGift(other, world);
+            }
+            if (_cueBranch < 0) return false;
+            if (HitBranch(world) == _cueBranch) return true;
+            return _leafIntro && HitFeeder(world) >= 0;
+        }
+
+        // Kind is the pest the hand was pointing at. Dismiss clears _pestCue in
+        // Update, before this check, and must not make the real tap miss.
+        bool PestGloveTap(Vector2 screen)
+        {
+            int kind = _glovePestKind;
+            if (kind == 0) return false;
+            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
+            if (cam == null) return false;
+            var world = (Vector2)cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
+            if (kind == PestCueSparrow && SparrowView.Live != null)
+                return PestHit(SparrowView.Live.transform, world);
+            if (kind == PestCueHawk && HawkView.Live != null)
+                return PestHit(HawkView.Live.transform, world);
+            return false;
         }
 
         void TickGloveAct(float dt)
@@ -1097,10 +1216,11 @@ namespace FlockFive
 
         // Shared pose for every glove: tap, hive, daily, gift, hawk, leaves, sparrow,
         // and the home avatar. aimGui is GUI space, y down. True on the frame the
-        // fingertip lands. A tap fades the hand out where it is. The next step
-        // fades in at the start of that step's arc. perchLift replaces the shared
-        // rise. fromLeft keeps the hand on the left when a nudge would flip it.
-        bool CoachGloveAt(Vector2 aimGui, float dt, float s, float perchLift = float.NaN, bool fromLeft = false, float approachDeg = float.NaN)
+        // fingertip lands. A tap on tapRect, or tapHit when set, fades the hand out
+        // where it is. The next step fades in at the start of that step's arc.
+        // perchLift replaces the shared rise. fromLeft keeps the hand on the left
+        // when a nudge would flip it.
+        bool CoachGloveAt(Vector2 aimGui, float dt, float s, float perchLift = float.NaN, bool fromLeft = false, float approachDeg = float.NaN, Rect tapRect = default, System.Func<Vector2, bool> tapHit = null)
         {
             _gloveClaimFrame = Time.frameCount;
             bool same = GloveSameStep(aimGui, s, fromLeft, approachDeg);
@@ -1196,6 +1316,7 @@ namespace FlockFive
                 _gloveShown = Vector2.Lerp(_gloveShown, arcPos, pin);
             }
             _gloveShownAng = angled ? _gloveApproach : ClampUpright(_gloveMirror);
+            GloveArmTap(tapRect, tapHit);
             _gloveVis = _gloveAlpha > 0.03f;
             return fire;
         }
@@ -4068,6 +4189,8 @@ namespace FlockFive
             _cueFreeze = false;
         }
 
+        // Stray taps do not call this. The glove waits for that branch or a feeder.
+        // No leaves left is what ends the lesson.
         void DismissLeafIntro()
         {
             if (!_leafIntro) return;
@@ -4315,7 +4438,8 @@ namespace FlockFive
             _coachGlow.transform.localScale = new Vector3(2.3f * breathe, 2.3f * breathe, 1f);
             _coachGlow.color = new Color(1f, 0.91f, 0.46f, a);
             float handS = Mathf.Max(Screen.height / 720f, 1f);
-            if (CoachGloveAt(gui, dt, handS))
+            _glovePestKind = _pestCue;
+            if (CoachGloveAt(gui, dt, handS, float.NaN, false, float.NaN, default, FnPestTap()))
             {
                 _coachGlowKick = 1f;
                 CoachSpawnRipple(world);

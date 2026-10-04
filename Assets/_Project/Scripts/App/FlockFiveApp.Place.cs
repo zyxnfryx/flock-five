@@ -86,6 +86,21 @@ namespace FlockFive
             return sz;
         }
 
+        // How far the square CTA's box rises into the card above it. The pedestal art
+        // starts about 13% down its square, so 15% parks the pedestal on the card's
+        // bottom edge. lipRoom > 0 is the card's own spare bottom (brass plus board pad)
+        // the art may sink into: the pedestal then rises to 20% so no gap is left where
+        // the marquee bulbs on the bottom edge show. 0 keeps the plain 15%.
+        static float PopupCtaOverlap(float flowerSz, float lipRoom)
+        {
+            float plain = flowerSz * 0.15f;
+            if (lipRoom <= 0f) return plain;
+            float lifted = flowerSz * 0.20f;
+            float most = flowerSz * 0.13f + lipRoom;
+            float v = lifted < most ? lifted : most;
+            return v > plain ? v : plain;
+        }
+
         // Wide bar on the same card (Yes / No, Thanks, ask). Grows with PopupButtonSize.
         static float PopupBarHeight(float s, float cardW)
         {

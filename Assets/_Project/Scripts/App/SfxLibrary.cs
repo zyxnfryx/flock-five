@@ -26,6 +26,23 @@ namespace FlockFive
             if (!_claimGroove) StopHeld();
         }
 
+        // The ONE level rule for every one-shot (Sfx.Shot and Sfx.PlayHeld route through
+        // it). Up to SfxCeiling a volume passes as written. Above it the excess is
+        // squeezed to a quarter, so a 1.0 break or a 0.96 celebrate lands a hair over
+        // the rest instead of jumping out of the mix. Steady loudness, no clipping.
+        public const float SfxCeiling = 0.80f;
+
+        public static float Level(float vol)
+        {
+            if (vol <= 0f) return 0f;
+            if (vol <= SfxCeiling) return vol;
+            return SfxCeiling + (vol - SfxCeiling) * 0.25f;
+        }
+
+        // Level the "!" sting plays at, with its clip peak (0.78) it sits under every
+        // other alert in the mix. RowAlert is the only caller.
+        public const float StingVolume = 0.30f;
+
         public static void Play(string name, float volume = 0.5f, float pitchVariance = 0f)
         {
             if (string.IsNullOrEmpty(name)) return;
@@ -194,81 +211,44 @@ namespace FlockFive
             return Bake("tick", data, 0.2f);
         }
 
-        // Original "!" stab. Three detuned filtered saws scoop a minor 3rd
-        // (C#6 to E6) in 42ms, then hold. Bow-scrape on the attack, a short
-        // amplitude shiver on the tail, no vibrato. 0.42s. Peaked under -1 dBFS.
-        // Bake's pole is 1: the saws are already filtered, and Bake still writes the clip.
+        // Original "!" cue, soft and round. Two plucked-string notes rise a fifth
+        // (E5 to B5), the second 85 ms after the first. Each note is a sine with a
+        // gentle 2nd and 3rd partial that die fast (warm pluck, nothing above ~3 kHz
+        // for long), a slightly detuned twin for width, a 9 ms eased attack so there
+        // is no click or bite, and a smooth exponential decay. 0.46 s. Peak 0.78.
+        // Bake low-passes the sum again, which rounds the top further.
         static AudioClip MakeSting()
         {
-            const float dur = 0.42f;
-            const float fLo = 1108.73f;
-            const float fHi = 1318.51f;
-            const float cut = 0.48f;
+            const float dur = 0.46f;
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
-            float dLo = Mathf.Pow(2f, -7f / 1200f);
-            float dHi = Mathf.Pow(2f, 6f / 1200f);
-            float p0 = 0.15f;
-            float p1 = 0.42f;
-            float p2 = 0.73f;
-            float a0 = 0f;
-            float a1 = 0f;
-            float a2 = 0f;
-            float b0 = 0f;
-            float b1 = 0f;
-            float b2 = 0f;
-            float shelf = 0f;
-            float slow = 0f;
-            float mid = 0f;
-            int h = 0x27BB2EE6;
-            float dt = 1f / Rate;
-            for (int i = 0; i < n; i++)
+            float[] freq = { 659.25f, 987.77f };
+            float[] start = { 0f, 0.085f };
+            float[] gain = { 0.72f, 1f };
+            float[] decay = { 11f, 7.5f };
+            for (int k = 0; k < freq.Length; k++)
             {
-                float t = i * dt;
-                float glide = t >= 0.042f ? 1f : t / 0.042f;
-                float scoop = 1f - Mathf.Exp(-glide * 4.5f);
-                if (glide >= 1f) scoop = 1f;
-                float hz = fLo + (fHi - fLo) * scoop;
-                float inc = hz * dt;
-                p0 += inc * dLo;
-                p1 += inc;
-                p2 += inc * dHi;
-                if (p0 >= 1f) p0 -= 1f;
-                if (p1 >= 1f) p1 -= 1f;
-                if (p2 >= 1f) p2 -= 1f;
-                float s0 = BlepSaw(p0, inc * dLo);
-                float s1 = BlepSaw(p1, inc);
-                float s2 = BlepSaw(p2, inc * dHi);
-                a0 += cut * (s0 - a0);
-                a1 += cut * (s1 - a1);
-                a2 += cut * (s2 - a2);
-                b0 += cut * (a0 - b0);
-                b1 += cut * (a1 - b1);
-                b2 += cut * (a2 - b2);
-                float tone = (b0 + b1 + b2) * 0.34f;
-                shelf += 0.20f * (tone - shelf);
-                float bright = tone + 0.30f * (tone - shelf);
-                float atk = t < 0.0035f ? t / 0.0035f : 1f;
-                float env = atk * atk * Mathf.Exp(-t * 9.2f);
-                float shiver = 1f;
-                if (t > 0.07f && t < 0.30f)
+                int i0 = Mathf.RoundToInt(start[k] * Rate);
+                float f = freq[k];
+                for (int i = i0; i < n; i++)
                 {
-                    float w = (t - 0.07f) / 0.23f;
-                    float gate = Mathf.Sin(w * Mathf.PI);
-                    float lfo = 0.5f - 0.5f * Mathf.Sin(2f * Mathf.PI * 28f * t);
-                    shiver = 1f - 0.45f * gate * lfo;
+                    float t = (i - i0) / (float)Rate;
+                    float u = t / 0.009f;
+                    float atk = u >= 1f ? 1f : u * u * (3f - 2f * u);
+                    float env = atk * Mathf.Exp(-t * decay[k]);
+                    float w = 2f * Mathf.PI * f * t;
+                    float tone = Mathf.Sin(w)
+                        + 0.30f * Mathf.Sin(2f * w) * Mathf.Exp(-t * 16f)
+                        + 0.09f * Mathf.Sin(3f * w) * Mathf.Exp(-t * 28f)
+                        + 0.45f * Mathf.Sin(w * 1.0021f);
+                    data[i] += tone * env * gain[k];
                 }
-                h = (h * 1103515245 + 12345) & 0x7fffffff;
-                float white = (h / 1073741824f) - 1f;
-                slow += 0.08f * (white - slow);
-                mid += 0.55f * (white - mid);
-                float grit = mid - slow;
-                float bow = t < 0.0012f ? t / 0.0012f : 1f;
-                float scrape = grit * bow * Mathf.Exp(-t * 190f);
-                data[i] = bright * env * shiver + scrape * 0.85f;
             }
-            PeakUnder(data, 0.89f);
-            return Bake("sting", data, 1f);
+            int tail = Mathf.RoundToInt(0.04f * Rate);
+            for (int i = 0; i < tail && i < n; i++)
+                data[n - 1 - i] *= i / (float)tail;
+            PeakUnder(data, 0.78f);
+            return Bake("sting", data, 0.5f);
         }
 
         static float BlepSaw(float phase, float dt)
