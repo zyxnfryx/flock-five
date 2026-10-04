@@ -361,6 +361,20 @@ namespace FlockFive
             if (use <= 0d) return false;
             double cx = (sumA > 0d ? sumX : allX) / use;
             double cy = (sumA > 0d ? sumY : allY) / use;
+            // A tailed shape (the flame) is much taller than it is wide. Its belly
+            // centroid is dragged up the tail, so center on the round ball instead:
+            // a circle as wide as the art that rests on the bottom edge. A round disc
+            // is about as tall as wide and keeps the centroid.
+            // Pixel rows run bottom-up here, so the art's lowest edge is the first row.
+            int lowRow = -1, highRow = -1;
+            for (int y = 0; y < h; y++)
+            {
+                if (left[y] < 0) continue;
+                if (lowRow < 0) lowRow = y;
+                highRow = y;
+            }
+            if (lowRow >= 0 && (highRow - lowRow + 1) > widest * 1.25f)
+                cy = lowRow + widest * 0.5d;
             u = (float)(cx / w);
             v = (float)(1d - cy / h);
             return true;

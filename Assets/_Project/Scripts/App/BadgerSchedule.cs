@@ -25,6 +25,14 @@ namespace FlockFive
         public const int PlayerTargetCap = 18;
         public const int BadgerTargetFixed = 18;
 
+        // KILL SWITCH. Phases 3-5 (loadout, fight, rewards) are not built, so a set
+        // flag would lock the player out of the next garden with no fight to play.
+        // While false: no flag is written, BadgerSave.Pending reads 0, and the
+        // inspect-back honey chip stays hidden. Flip to true when Phases 3-5 ship.
+        // A property (not const) so editor tests can cover both states; only
+        // tests use the setter.
+        public static bool Enabled { get; set; } = false;
+
         // Counts of honey 2, 3, 4, 5 (fourteen tiles). Two 1s are added on top.
         // Every row rises: more 3s than 2s, more 4s than 3s, more 5s than 4s.
         // Each visit shifts one step hotter. The last row is the hottest mix
@@ -45,6 +53,15 @@ namespace FlockFive
         {
             if (cleared < FirstAfter) return false;
             return (cleared - FirstAfter) % Interval == 0;
+        }
+
+        // Hook rule: this clear writes the unpaid flag. The switch is a parameter so
+        // tests can cover both states; the one-argument form reads Enabled.
+        public static bool ShouldFlag(int cleared) => ShouldFlag(cleared, Enabled);
+
+        public static bool ShouldFlag(int cleared, bool enabled)
+        {
+            return enabled && Due(cleared);
         }
 
         // (cleared - 15) / 5 + 1. Callers gate on Due. 16 still math-evaluates to 1.
@@ -111,26 +128,10 @@ namespace FlockFive
         }
 
         // Best owned bees first (higher honey first). Pads with yard honey 1.
-        // Does not remove album copies.
+        // Does not remove album copies. BadgerLoadout is the one place that deals it.
         public static int[] PlayerLoadout(int slots)
         {
-            var owned = new List<int>();
-            int kinds = Hive.Kinds;
-            for (int kind = 0; kind < kinds; kind++)
-            {
-                for (int f = 0; f < Hive.Finishes; f++)
-                {
-                    var finish = (BeeFinish)f;
-                    int copies = Hive.CountOf(kind, finish);
-                    if (copies <= 0) continue;
-                    int honey = Hive.HoneyOfFinish(finish);
-                    for (int copy = 0; copy < copies; copy++)
-                        owned.Add(honey);
-                }
-            }
-            var raw = new int[owned.Count];
-            for (int i = 0; i < owned.Count; i++) raw[i] = owned[i];
-            return ArrangeLoadout(raw, slots);
+            return BadgerLoadout.Preload(slots).Honeys();
         }
 
         public static int[] PlayerLoadout()

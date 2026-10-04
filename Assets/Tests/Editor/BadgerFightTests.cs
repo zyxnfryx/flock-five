@@ -33,6 +33,14 @@ namespace FlockFive.Editor
             Run();
         }
 
+        // Play Mode only: opens the contest screen at the given cleared level (the screen holds
+        // the kill switch on until you leave it). The real flow never reaches it yet.
+        [MenuItem("Flock Five/Open Badger Fight Screen (Play Mode)")]
+        public static void OpenScreen()
+        {
+            File.WriteAllText("/tmp/flock-five-badger-fight", "15");
+        }
+
         [MenuItem("Flock Five/Badger Fight Tests")]
         public static void Run()
         {
@@ -70,6 +78,14 @@ namespace FlockFive.Editor
                 CheckTieFight(Check);
                 CheckPurse(Check);
                 CheckSeed(Check);
+                CheckHoneyLabel(Check);
+                CheckSaveFlag(Check);
+                CheckHook(Check);
+                CheckHoneyShared(Check);
+                CheckLoadoutPreload(Check);
+                CheckLoadoutSwap(Check);
+                CheckPowerPlay(Check);
+                CheckScriptedFight(Check);
             }
             finally
             {
@@ -171,6 +187,85 @@ namespace FlockFive.Editor
             Check("mix-shape", shape, why.Length == 0 ? "16 tiles, exactly two 1s, values 1-5" : why);
             Check("mix-up", climb && mixed, "each visit through 7 is hotter and still rises");
             Check("mix-stay", stayed && bag && stable, "visit 50 stays on the hot row; seed is stable");
+        }
+
+        static void CheckHoneyLabel(System.Action<string, bool, string> Check)
+        {
+            bool labels = Hive.HoneyLabel(BeeFinish.Normal) == "H2"
+                && Hive.HoneyLabel(BeeFinish.Holo) == "H3"
+                && Hive.HoneyLabel(BeeFinish.InverseRainbow) == "H5";
+            bool keep = BadgerSchedule.Enabled;
+            try
+            {
+                BadgerSchedule.Enabled = false;
+                bool hidden = Hive.HoneyChips(BeeFinish.Holo) == null;
+                BadgerSchedule.Enabled = true;
+                var row = Hive.HoneyChips(BeeFinish.Holo);
+                bool shape = row != null && row.Length == 4 && row[0] == "H3"
+                    && row[1] == "" && row[2] == "" && row[3] == "";
+                var inv = Hive.HoneyChips(BeeFinish.InverseRainbow);
+                bool inverse = inv != null && inv[0] == "H5";
+                Check("honey label", labels && hidden && shape && inverse,
+                    "H2/H3/H5; chip row hidden when off, 1 label + 3 empty when on");
+            }
+            finally { BadgerSchedule.Enabled = keep; }
+        }
+
+        static void CheckSaveFlag(System.Action<string, bool, string> Check)
+        {
+            bool keepOn = BadgerSchedule.Enabled;
+            int keepFlag = BadgerSave.PendingFor(true);
+            try
+            {
+                BadgerSave.Clear();
+                bool off = !BadgerSave.Set(15, false) && BadgerSave.PendingFor(true) == 0;
+                bool on = BadgerSave.Set(15, true) && BadgerSave.PendingFor(true) == 15;
+                BadgerSchedule.Enabled = false;
+                bool gated = BadgerSave.Pending == 0 && BadgerSave.PendingFor(false) == 0;
+                BadgerSchedule.Enabled = true;
+                bool read = BadgerSave.Pending == 15;
+                BadgerSave.Set(20);
+                bool again = BadgerSave.Pending == 20;
+                BadgerSave.Clear();
+                bool clear = BadgerSave.Pending == 0 && BadgerSave.PendingFor(true) == 0;
+                bool bad = !BadgerSave.Set(0, true) && !BadgerSave.Set(-5, true);
+                Check("save flag", off && on && gated && read && again && clear && bad,
+                    "Set/Clear/Pending round trip; Pending 0 when switch off; zero and negative refused");
+            }
+            finally
+            {
+                BadgerSchedule.Enabled = keepOn;
+                if (keepFlag > 0) BadgerSave.Set(keepFlag, true);
+                else BadgerSave.Clear();
+            }
+        }
+
+        static void CheckHook(System.Action<string, bool, string> Check)
+        {
+            bool keepOn = BadgerSchedule.Enabled;
+            int keepFlag = BadgerSave.PendingFor(true);
+            try
+            {
+                bool due = BadgerSchedule.Due(15) && !BadgerSchedule.Due(16) && BadgerSchedule.Due(20);
+                bool rule = BadgerSchedule.ShouldFlag(15, true) && !BadgerSchedule.ShouldFlag(16, true)
+                    && BadgerSchedule.ShouldFlag(20, true) && !BadgerSchedule.ShouldFlag(15, false)
+                    && !BadgerSchedule.ShouldFlag(20, false);
+                BadgerSave.Clear();
+                bool offNoWrite = !BadgerSave.SetIfDue(15, false) && BadgerSave.PendingFor(true) == 0;
+                bool notDue = !BadgerSave.SetIfDue(16, true) && BadgerSave.PendingFor(true) == 0;
+                bool wrote = BadgerSave.SetIfDue(20, true) && BadgerSave.PendingFor(true) == 20;
+                BadgerSave.Clear();
+                BadgerSchedule.Enabled = false;
+                bool realOff = !BadgerSave.SetIfDue(15) && BadgerSave.PendingFor(true) == 0;
+                Check("hook", due && rule && offNoWrite && notDue && wrote && realOff,
+                    "Due 15/20 yes, 16 no; switch off writes nothing; due writes the cleared level");
+            }
+            finally
+            {
+                BadgerSchedule.Enabled = keepOn;
+                if (keepFlag > 0) BadgerSave.Set(keepFlag, true);
+                else BadgerSave.Clear();
+            }
         }
 
         static void CheckHoney(System.Action<string, bool, string> Check)
@@ -530,6 +625,162 @@ namespace FlockFive.Editor
                 && even.Result == BadgerResult.BadgerWon
                 && even.PlayerLeft == 0 && even.BossLeft == 0;
             Check("tie-grid", badger, "sixteen pushes, 0-0, badger takes it");
+        }
+
+        // A small fake album: kind 0 has two regular, kind 1 one foil, kind 2 one Inverse Rainbow,
+        // kind 3 one regular. Five bees, so a 16-tile grid pads eleven yard tiles.
+        static int FakeAlbum(int kind, BeeFinish finish)
+        {
+            if (kind == 0 && finish == BeeFinish.Normal) return 2;
+            if (kind == 1 && finish == BeeFinish.Holo) return 1;
+            if (kind == 2 && finish == BeeFinish.InverseRainbow) return 1;
+            if (kind == 3 && finish == BeeFinish.Normal) return 1;
+            return 0;
+        }
+
+        static void CheckHoneyShared(System.Action<string, bool, string> Check)
+        {
+            bool table = Hive.HoneyOfFinish(BeeFinish.Normal) == 2
+                && Hive.HoneyOfFinish(BeeFinish.Holo) == 3
+                && Hive.HoneyOfFinish(BeeFinish.InverseRainbow) == 5;
+            bool tiles = BadgerTile.Bee(0, BeeFinish.Normal).Honey == Hive.HoneyOfFinish(BeeFinish.Normal)
+                && BadgerTile.Bee(0, BeeFinish.Holo).Honey == Hive.HoneyOfFinish(BeeFinish.Holo)
+                && BadgerTile.Bee(0, BeeFinish.InverseRainbow).Honey == Hive.HoneyOfFinish(BeeFinish.InverseRainbow)
+                && BadgerTile.YardTile().Honey == 1 && BadgerTile.YardTile().Yard;
+            bool label = Hive.HoneyLabel(BeeFinish.Holo) == "H" + Hive.HoneyOfFinish(BeeFinish.Holo);
+            Check("honey shared", table && tiles && label, "tiles and chip label both read Hive.HoneyOfFinish (2/3/5, yard 1)");
+        }
+
+        static void CheckLoadoutPreload(System.Action<string, bool, string> Check)
+        {
+            var load = BadgerLoadout.Preload(FakeAlbum, 6, BadgerSchedule.Tiles);
+            var honey = load.Honeys();
+            bool best = honey.Length == 16 && honey[0] == 5 && honey[1] == 3
+                && honey[2] == 2 && honey[3] == 2 && honey[4] == 2;
+            int yard = 0;
+            for (int i = 5; i < honey.Length; i++) if (honey[i] == 1 && load[i].Yard) yard++;
+            bool pad = yard == 11 && load.BeeTiles == 5;
+            var none = BadgerLoadout.Preload((k, f) => 0, 6, 16);
+            bool empty = none.BeeTiles == 0 && Sum(none.Honeys()) == 16;
+            var few = BadgerLoadout.Preload(FakeAlbum, 6, 3);
+            bool cut = few.Length == 3 && few[0].Honey == 5 && few[1].Honey == 3 && few[2].Honey == 2;
+            var live = BadgerSchedule.PlayerLoadout();
+            bool real = live.Length == 16;
+            Check("loadout preload", best && pad && empty && cut && real,
+                "best bees first (5,3,2,2,2), padded with eleven yard 1s, empty album all yard, cut to slot count");
+        }
+
+        static void CheckLoadoutSwap(System.Action<string, bool, string> Check)
+        {
+            var load = BadgerLoadout.Preload(FakeAlbum, 6, 16);
+            bool noCopy = !load.Set(10, BadgerTile.Bee(0, BeeFinish.Normal));
+            bool notOwned = !load.Set(10, BadgerTile.Bee(5, BeeFinish.Holo));
+            bool freeUp = load.Free(2, BeeFinish.InverseRainbow) == 0;
+            load.Set(0, BadgerTile.YardTile());
+            bool freed = load.Free(2, BeeFinish.InverseRainbow) == 1;
+            bool moved = load.Set(11, BadgerTile.Bee(2, BeeFinish.InverseRainbow)) && load[11].Honey == 5 && load[0].Yard;
+            bool again = !load.Set(12, BadgerTile.Bee(2, BeeFinish.InverseRainbow));
+            var list = new System.Collections.Generic.List<BadgerTile>();
+            load.Options(12, list);
+            bool none = list.Count == 0;
+            load.Set(1, BadgerTile.YardTile());
+            load.Options(12, list);
+            bool one = list.Count == 1 && list[0].Honey == 3;
+            load.Options(2, list);
+            bool own = list.Count == 2 && list[0].Honey == 3 && list[1].Honey == 2;
+            bool opts = none && one && own;
+            bool sameOk = load.Set(11, BadgerTile.Bee(2, BeeFinish.InverseRainbow));
+            bool range = !load.Set(-1, BadgerTile.YardTile()) && !load.Set(16, BadgerTile.YardTile())
+                && load[99].Yard;
+            Check("loadout swap", noCopy && notOwned && freeUp && freed && moved && again && opts && sameOk && range,
+                "swap needs a free copy; yard always allowed; options skip bees already on the grid");
+        }
+
+        static void CheckPowerPlay(System.Action<string, bool, string> Check)
+        {
+            var fight = new BadgerFight(1, 5, Fill(16, 3), Fill(16, 2));
+            fight.BossPick();
+            SetCoins(99);
+            bool short1 = !fight.PlayerPlay(0, BadgerPower.X2) && fight.PlayerOpen(0)
+                && Purse.Coins == 99 && fight.PowerReady(BadgerPower.X2) && !fight.CanAfford(BadgerPower.X2);
+            SetCoins(100);
+            bool paid = fight.PlayerPlay(0, BadgerPower.X2) && Purse.Coins == 0 && !fight.PowerReady(BadgerPower.X2);
+            BadgerRound round;
+            bool boosted = fight.Resolve(out round) && round.PlayerFinal == 6 && round.PlayerGained == 6 && round.Power == BadgerPower.X2;
+            fight.BossPick();
+            SetCoins(500);
+            bool once = !fight.PlayerPlay(1, BadgerPower.X2) && Purse.Coins == 500 && fight.PlayerOpen(1);
+            bool plain = fight.PlayerPlay(1, BadgerPower.None) && Purse.Coins == 500;
+            fight.Resolve(out round);
+
+            var later = new BadgerFight(3, 5, Fill(16, 3), Fill(16, 2));
+            bool price = later.PriceOf(BadgerPower.X2) == 200 && later.PriceOf(BadgerPower.X3) == 300
+                && later.PriceOf(BadgerPower.HotSauce) == 400 && later.PriceOf(BadgerPower.Pepper) == 400
+                && later.PriceOf(BadgerPower.HotSauce) == BadgerSchedule.PowerUpPrice(BadgerPower.HotSauce, 3);
+
+            var sauce = new BadgerFight(1, 5, Fill(16, 1), Fill(16, 5));
+            var pepper = new BadgerFight(1, 5, Fill(16, 1), Fill(16, 5));
+            SetCoins(300);
+            sauce.BossPick();
+            bool s1 = sauce.PlayerPlay(0, BadgerPower.HotSauce) && Purse.Coins == 0;
+            BadgerRound a;
+            bool sr = sauce.Resolve(out a);
+            SetCoins(300);
+            pepper.BossPick();
+            bool p1 = pepper.PlayerPlay(0, BadgerPower.Pepper) && Purse.Coins == 0;
+            BadgerRound b;
+            bool pr = pepper.Resolve(out b);
+            bool block = s1 && sr && p1 && pr && a.BossGained == 0 && b.BossGained == 0
+                && a.PlayerGained == 1 && b.PlayerGained == 1 && a.BossFinal == 0 && b.BossFinal == 0;
+            SetCoins(0);
+            var broke = new BadgerFight(1, 5, Fill(16, 4), Fill(16, 2));
+            broke.BossPick();
+            bool freeFight = broke.PlayerPlay(0, BadgerPower.None) && broke.Resolve(out a) && a.PlayerGained == 4;
+            Check("power play", short1 && paid && boosted && once && plain && price && block && freeFight,
+                "short purse picks nothing; x2 pays and doubles; one use; price +50 per visit; sauce == pepper; 0 coins playable");
+        }
+
+        static void CheckScriptedFight(System.Action<string, bool, string> Check)
+        {
+            SetCoins(0);
+            var load = BadgerLoadout.Preload(FakeAlbum, 6, 16);
+            var win = new BadgerFight(1, 9, load.Honeys(), Fill(16, 1));
+            int rounds = 0;
+            while (win.Result == BadgerResult.Playing && rounds < 20)
+            {
+                rounds++;
+                int ix = FindPlayer(win, 5);
+                if (ix < 0) ix = FindPlayer(win, 3);
+                if (ix < 0) ix = FindPlayer(win, 2);
+                if (win.BossPick() < 0 || ix < 0 || !win.PlayerPlay(ix, BadgerPower.None)) break;
+                BadgerRound r;
+                win.Resolve(out r);
+            }
+            bool won = win.Result == BadgerResult.PlayerWon && win.PlayerScore == 10 && win.BossScore == 0 && rounds == 3;
+
+            var lose = new BadgerFight(1, 9, Fill(16, 1), Fill(16, 5));
+            rounds = 0;
+            while (lose.Result == BadgerResult.Playing && rounds < 20)
+            {
+                rounds++;
+                if (lose.BossPick() < 0 || !lose.PlayerPlay(FindPlayer(lose, 1), BadgerPower.None)) break;
+                BadgerRound r;
+                lose.Resolve(out r);
+            }
+            bool lost = lose.Result == BadgerResult.BadgerWon && lose.BossScore == 20 && lose.PlayerScore == 0 && rounds == 4;
+
+            var out1 = new BadgerFight(1, 9, Fill(2, 3), Fill(2, 3));
+            rounds = 0;
+            while (out1.Result == BadgerResult.Playing && rounds < 20)
+            {
+                rounds++;
+                if (out1.BossPick() < 0 || !out1.PlayerPlay(FindPlayer(out1, 3), BadgerPower.None)) break;
+                BadgerRound r;
+                out1.Resolve(out r);
+            }
+            bool exhausted = out1.Result == BadgerResult.BadgerWon && rounds == 2 && out1.PlayerLeft == 0 && out1.BossLeft == 0;
+            Check("scripted fight", won && lost && exhausted,
+                "loadout 5+3+2 beats an all-1 grid in three rounds; all-1 loses to all-5 in four; dead heat on empty goes to the badger");
         }
 
         static bool Play(BadgerFight fight, int honey, BadgerPower power, out BadgerRound round)

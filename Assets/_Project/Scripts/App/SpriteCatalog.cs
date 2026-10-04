@@ -4,7 +4,7 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _handPalm, _handPinky, _handRing, _handMiddle, _handIndex, _handThumb,  _dash, _chain, _padlock, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk, _pokerFaceWild;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _handPalm, _handPinky, _handRing, _handMiddle, _handIndex, _handThumb, _handThumbShadow, _dash, _chain, _padlock, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk, _pokerFaceWild;
         static Sprite[] _pokerFaces;
         static Sprite[] _flames;
         static bool _sparrowPlaceholder;
@@ -140,6 +140,7 @@ namespace FlockFive
             _handMiddle = null;
             _handIndex = null;
             _handThumb = null;
+            _handThumbShadow = null;
             _stampTool = null;
             _pokerWildFoil = null;
             _padlock = null;
@@ -244,6 +245,15 @@ namespace FlockFive
             {
                 if (_handThumb == null) _handThumb = TryLoad("Sprites/fx_hand_thumb", 200f);
                 return _handThumb;
+            }
+        }
+        // Soft contact/occlusion shadow baked from the thumb alpha (same canvas as the thumb).
+        public static Sprite HandThumbShadow
+        {
+            get
+            {
+                if (_handThumbShadow == null) _handThumbShadow = TryLoad("Sprites/fx_hand_thumb_shadow", 200f);
+                return _handThumbShadow;
             }
         }
         static Sprite[] _pokerWildFoil;

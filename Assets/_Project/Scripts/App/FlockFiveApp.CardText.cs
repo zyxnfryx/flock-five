@@ -74,6 +74,36 @@ namespace FlockFive
                 }
             }
 
+            static string[] _honeyDigits;
+
+            // The battle tile number. Same ink as the attribute chips (0.20, 0.10, 0.04) with a
+            // cream edge so it reads on any tint. Two labels, no outline ring: sixteen to thirty-two
+            // of these draw every frame. Used by every honeycomb tile, in the grids and the arena.
+            public static void DrawHoneyDigit(Rect box, int honey, float alpha = 1f)
+            {
+                if (_honeyDigits == null)
+                {
+                    _honeyDigits = new string[41];
+                    for (int i = 0; i < _honeyDigits.Length; i++) _honeyDigits[i] = i.ToString();
+                }
+                string text = honey >= 0 && honey < _honeyDigits.Length ? _honeyDigits[honey] : honey.ToString();
+                DrawHoneyDigit(box, text, alpha);
+            }
+
+            public static void DrawHoneyDigit(Rect box, string text, float alpha = 1f)
+            {
+                if (string.IsNullOrEmpty(text) || box.width < 4f || box.height < 4f || alpha < 0.04f) return;
+                var st = Style();
+                st.alignment = TextAnchor.MiddleCenter;
+                st.wordWrap = false;
+                st.fontSize = FitFont(st, text, box.width * 0.86f, box.height * 0.86f, 10, 220);
+                float lift = Mathf.Max(1.5f, st.fontSize * 0.04f);
+                Paint(st, new Color(1f, 0.96f, 0.80f, 0.85f * alpha));
+                GUI.Label(new Rect(box.x + lift, box.y + lift, box.width, box.height), text, st);
+                Paint(st, new Color(0.20f, 0.10f, 0.04f, alpha));
+                GUI.Label(box, text, st);
+            }
+
             // Cards whose flavor exceeds 3 lines at the preferred size, before the last-resort shrink.
             public static string FlavorAudit(float width, int fontSize)
             {

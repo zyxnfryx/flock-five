@@ -478,6 +478,32 @@ namespace FlockFive
             return 2;
         }
 
+        // "H2" / "H3" / "H5". The inspect-back chip and the battle tile digit both
+        // read HoneyOfFinish, so the 2/3/5 table lives in one place.
+        public static string HoneyLabel(BeeFinish finish)
+        {
+            return "H" + HoneyOfFinish(finish);
+        }
+
+        static string[][] _honeyChips;
+
+        // Four chip slots for CardText.DrawAttrs: the honey label, then three empty.
+        // Cached so OnGUI does not allocate. Null while the badger switch is off,
+        // so the card back is unchanged until the contest ships.
+        public static string[] HoneyChips(BeeFinish finish)
+        {
+            if (!BadgerSchedule.Enabled) return null;
+            if (_honeyChips == null)
+            {
+                _honeyChips = new string[Finishes][];
+                for (int f = 0; f < Finishes; f++)
+                    _honeyChips[f] = new[] { HoneyLabel((BeeFinish)f), "", "", "" };
+            }
+            int ix = (int)finish;
+            if ((uint)ix >= (uint)Finishes) return null;
+            return _honeyChips[ix];
+        }
+
         /// <summary>Total owned copies of a kind across all finishes.</summary>
         public static int CountOf(int kind)
         {

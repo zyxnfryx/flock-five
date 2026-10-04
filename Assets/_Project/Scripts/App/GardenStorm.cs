@@ -891,7 +891,7 @@ namespace FlockFive
             if (frame == _frame) return;
             _frame = frame;
             float dt = Time.unscaledDeltaTime;
-            if (GamePause.Paused)
+            if (GamePause.Paused && !(GamePause.TutorHold && !Ads.IsShowing))
                 dt = 0f;
             else if (_drop > 0)
             {

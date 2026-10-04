@@ -139,7 +139,7 @@ namespace FlockFive
 #endif
         bool _splash = true;
         bool _levelHive;
-        enum HomeFace { Splash, Hive, Poker }
+        enum HomeFace { Splash, Hive, Poker, Badger }
         HomeFace _home;
         enum PokerMotion { None, Deal, Draw, Shuffle }
         PokerMotion _pokerMotion;
@@ -427,6 +427,8 @@ namespace FlockFive
         // resume spike, keeps the live lesson, and lets a shown ad settle once.
         public static void NoteAppBackground()
         {
+            // Leaving mid-lesson: settle anything already half-done before the suspend.
+            if (_app != null) _app.HealInterruptedTutorials();
         }
 
         public static void NoteAppResume()
@@ -438,6 +440,8 @@ namespace FlockFive
             if (_app == null) return;
             _resumeInputUntil = PlayClock.Now + 0.35f;
             _app.FreshTutorGlove();
+            // The suspend may have cut a step off. Settle it before the first tap lands.
+            _app.HealInterruptedTutorials();
         }
 
         void Start()
@@ -460,7 +464,7 @@ namespace FlockFive
             NoAds.Warm();
             Invite.Warm();
             SpriteCatalog.DropPokerArt();
-            try { ShowSplash(); }
+            try { ShowSplash(); HealInterruptedTutorials(); }
             catch (System.Exception e)
             {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -2254,6 +2258,8 @@ namespace FlockFive
             // Chain ended. A collect still in flight keeps the opening sting slot.
             if (!_collecting && Time.unscaledTime > _comboUntil)
                 SfxLibrary.CloseCombo();
+            // Interrupted-tutorial check: cheap, and it only acts on a stuck state.
+            if ((Time.frameCount & 7) == 0) HealInterruptedTutorials();
             if (GamePause.Paused)
             {
                 if (TutorialGuideLive() || _tutorPause != 0)
@@ -3529,6 +3535,10 @@ namespace FlockFive
                 _gardenScoring = false;
                 yield break;
             }
+            // Badger flag first, then the unlock, with no yield between: a kill must not
+            // unlock the next garden without the unpaid flag. DisplayNumber is still the
+            // cleared level (RememberClear does not move Index). No-op while the switch is off.
+            BadgerSave.SetIfDue(LevelData.DisplayNumber);
             LevelData.RememberClear();
             Purse.AwardClear();
             // Sparrow, hawk, and a plain clear all arrive here.
@@ -3815,6 +3825,51 @@ namespace FlockFive
             }
         }
 
+        // Renderers hidden by VeilBoard. forceRenderingOff keeps enabled, color and
+        // position alone, so LiveBird and the fly-in math read them as usual.
+        readonly List<Renderer> _veiled = new List<Renderer>();
+
+        // Stage reset only: hides (true) or restores (false) everything that sits on the
+        // refreshed board between its sync and the fly-in. Always safe to call twice.
+        void VeilBoard(bool on)
+        {
+            for (int i = 0; i < _veiled.Count; i++)
+                if (_veiled[i] != null) _veiled[i].forceRenderingOff = false;
+            _veiled.Clear();
+            if (!on) return;
+            if (_garden.Branches != null)
+            {
+                for (int i = 0; i < _garden.Branches.Length; i++)
+                {
+                    var v = _garden.Branches[i];
+                    if (v == null || v.Birds == null) continue;
+                    for (int k = 0; k < v.Birds.Length; k++)
+                        VeilOne(v.Birds[k]);
+                }
+            }
+            var bees = new List<SpriteRenderer>();
+            var leaves = new List<SpriteRenderer>();
+            GatherDecor(bees, leaves);
+            for (int i = 0; i < bees.Count; i++) VeilOne(bees[i]);
+            for (int i = 0; i < leaves.Count; i++) VeilOne(leaves[i]);
+            if (_garden.Feeders != null)
+            {
+                for (int i = 0; i < _garden.Feeders.Length; i++)
+                {
+                    if (_garden.Feeders[i] == null) continue;
+                    var parts = _garden.Feeders[i].GetComponentsInChildren<Renderer>(true);
+                    for (int k = 0; k < parts.Length; k++) VeilOne(parts[k]);
+                }
+            }
+        }
+
+        void VeilOne(Renderer r)
+        {
+            if (r == null) return;
+            r.forceRenderingOff = true;
+            _veiled.Add(r);
+        }
+
         IEnumerator SnapRound()
         {
             if (_restarting) yield break;
@@ -3880,8 +3935,13 @@ namespace FlockFive
                     if (_garden.Feeders[i] != null) _garden.Feeders[i].SnapHome();
             }
             SyncAll(true);
+            // The refreshed board is now seated on its perches. Keep its birds, bees,
+            // leaves and feeders unseen until SnapBirdsHome has moved them offscreen,
+            // so the new board never flashes before the fly-in.
+            VeilBoard(true);
             yield return GardenFit.Tween(_garden, _board, true);
             yield return SnapBirdsHome();
+            VeilBoard(false);
             HoldDecor(false);
             Conserve("restart");
             _restarting = false;
@@ -4446,6 +4506,8 @@ namespace FlockFive
                 leafRot[i] = b.transform.rotation;
                 b.transform.position = from;
             }
+            // Everything is offscreen now, so the board can show again without a flash.
+            VeilBoard(false);
             if (birds.Count > 0)
                 Sfx.FlockFlutter(Mathf.Max(1, birds.Count / 3));
             float maxDelay = 0f;
@@ -4712,6 +4774,8 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
                 StartCoroutine(ShotHome());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-badger-fight"))
+                EditorOpenBadgerFight();
             if (System.IO.File.Exists("/tmp/flock-five-poker-stamp"))
             {
                 _dailyShotQuiet = true;
@@ -4796,6 +4860,7 @@ namespace FlockFive
                 }
                 if (_home == HomeFace.Hive) DrawHivePage();
                 else if (_home == HomeFace.Poker) DrawPokerPage();
+                else if (_home == HomeFace.Badger) DrawBadgerPage();
                 else DrawSplash();
                 return;
             }
@@ -7767,13 +7832,13 @@ namespace FlockFive
             var noAdsR = SplashNoAdsRect();
             bool noAdsHeld = false;
             bool vipTap = false;
-            if (vipDraw && offerVip && !modal)
+            if (vipDraw && offerVip && !modal && HomeTapAllowed(RailVip))
                 vipTap = HitVip(noAdsR, out noAdsHeld);
 
             // Pig above hive: hit-test before the album so taps don't open it.
             // The offer card swallows the rail so a dismiss tap cannot oink.
             var pigR = PiggyRect(s);
-            if (!modal && HitPad(pigR, out _) && !(vipDraw && offerVip && VipContains(noAdsR, Event.current.mousePosition)))
+            if (!modal && HomeTapAllowed(RailPig) && HitPad(pigR, out _) && !(vipDraw && offerVip && VipContains(noAdsR, Event.current.mousePosition)))
                 TryPigPoke();
 
             // Hive lesson hides that slot. The packer closes it; poker slides up under the pig.
@@ -7782,7 +7847,7 @@ namespace FlockFive
             bool hiveOpening = hiveDraw && !RailSettled(RailHive);
             bool hivePop = _hivePopping && !hiveOpening;
             var hiveHit = HivePopRect(hiveR, hivePop);
-            if (hiveDraw && SplashHiveShown() && !modal && HitPad(hiveHit, out _))
+            if (hiveDraw && SplashHiveShown() && !modal && HomeTapAllowed(RailHive) && HitPad(hiveHit, out _))
             {
                 DismissHiveIntro();
                 OpenHiveAlbum();
@@ -7807,7 +7872,7 @@ namespace FlockFive
             // so the rail closes under the hive. Its hit is the sliding rect.
             bool pokerDraw = RailLive(RailPoker);
             var pokerR = SplashPokerRect();
-            if (pokerDraw && !modal && HitPad(pokerR, out _))
+            if (pokerDraw && !modal && HomeTapAllowed(RailPoker) && HitPad(pokerR, out _))
             {
                 DismissPokerIntro();
                 BirdPoker.Boot();
@@ -7839,7 +7904,7 @@ namespace FlockFive
             bool dailyDraw = RailLive(RailDaily);
             var dailyR = SplashDailyRect();
             bool dailyHeld = false;
-            if (dailyDraw && !modal && HitPad(dailyR, out dailyHeld))
+            if (dailyDraw && !modal && HomeTapAllowed(RailDaily) && HitPad(dailyR, out dailyHeld))
                 OpenDailyCard();
             if (dailyDraw)
                 DrawDailyRail(dailyR, s, dailyHeld);
@@ -7859,7 +7924,7 @@ namespace FlockFive
             if (AdoptGreetUp() && HitHomeFirst(FlowerPlayRect(), out _))
                 AdvanceAdoptGreet();
             // Owed bird lesson keeps LEVEL from starting under the breath or the greet.
-            if (DrawFlowerPlay(s, ease, number, acceptTap: !modal && !AdoptHoldsQueue()))
+            if (DrawFlowerPlay(s, ease, number, acceptTap: !modal && !AdoptHoldsQueue() && HomeTapAllowed(-1)))
             {
                 Sfx.GateGo();
                 Load(next);
@@ -10272,7 +10337,7 @@ namespace FlockFive
             float bot = Mathf.Min(betR.y, actR.y) - 2f * s;
             if (bot < top + 8f) bot = top + 8f;
             float room = bot - top;
-            float h = Mathf.Min(46f * s, Mathf.Max(28f * s, room - panelPadY * 2f));
+            float h = Mathf.Min(58f * s, Mathf.Max(28f * s, room - panelPadY * 2f));
             if (h > room) h = room;
             float y = top + panelPadY;
             if (y + h + panelPadY > bot)
@@ -10286,12 +10351,39 @@ namespace FlockFive
                 right = Screen.width - 8f;
                 span = Mathf.Max(80f, right - left);
             }
-            float w = Mathf.Min(span, Mathf.Min(420f * s, Screen.width * 0.68f));
+            float w = Mathf.Min(span, Mathf.Min(520f * s, Screen.width * 0.86f));
             float x = left + Mathf.Max(0f, (span - w) * 0.5f);
             return new Rect(x, y, w, h);
         }
 
-        void DrawPokerPageTutor(float s, Rect row, Rect betR, Rect actR)
+        // The hold step's seat: ABOVE the card row, never over the cards. Held cards and
+        // the fanned hand reach a little above the row, so that reach stays clear too.
+        // ceilingY is the bottom of the wordmark / pay-table chip. A cramped screen
+        // squeezes the plate (down to 34 reference px) before it would touch a card.
+        Rect PokerHoldBubble(float s, Rect row, float ceilingY)
+        {
+            const float panelPadX = 18f;
+            const float panelPadY = 12f;
+            float bot = row.y - row.height * 0.20f - 6f * s;
+            float room = bot - ceilingY;
+            float h = Mathf.Min(58f * s, Mathf.Max(34f * s, room - panelPadY * 2f));
+            float y = bot - panelPadY - h;
+            if (y < 8f) y = 8f;
+            float left = Mathf.Max(12f * s + panelPadX, Screen.safeArea.xMin + 8f + panelPadX);
+            float right = Screen.width - Mathf.Max(12f * s + panelPadX, Screen.width - Screen.safeArea.xMax + 8f + panelPadX);
+            float span = right - left;
+            if (span < 80f)
+            {
+                left = 8f;
+                right = Screen.width - 8f;
+                span = Mathf.Max(80f, right - left);
+            }
+            float w = Mathf.Min(span, Mathf.Min(520f * s, Screen.width * 0.86f));
+            float x = left + Mathf.Max(0f, (span - w) * 0.5f);
+            return new Rect(x, y, w, h);
+        }
+
+        void DrawPokerPageTutor(float s, Rect row, Rect betR, Rect actR, float ceilingY)
         {
             if (!_pokerPageOn || PokerPageTutorBlocked()) return;
             // Bet sentence leaves the moment the first hand is dealt, including
@@ -10305,8 +10397,9 @@ namespace FlockFive
                 line = PokerBetLine;
             if (line != null)
             {
-                var want = PokerCoachBubble(s, row, betR, actR);
-                DrawSplashIntroLine(line, want, s);
+                bool hold = line == PokerHoldLine;
+                var want = hold ? PokerHoldBubble(s, row, ceilingY) : PokerCoachBubble(s, row, betR, actR);
+                DrawSplashIntroLine(line, want, s, 0, hold);
             }
             DrawTutorOverlay(s);
         }
@@ -10581,7 +10674,9 @@ namespace FlockFive
                 }
             }
             NotePokerTutorAims(actR, rowBox, cardW, gap);
-            DrawPokerPageTutor(s, rowBox, betR, actR);
+            float holdCeil = payTab.yMax;
+            if (rowBox.y - holdCeil < 60f * s) holdCeil = below;
+            DrawPokerPageTutor(s, rowBox, betR, actR, holdCeil);
             DrawPokerDealHint(s, rowBox, betR, actR);
             DrawPokerBackHint(s, back, rowBox, below);
             DrawPokerWinFanfare(betR, actR, s);
@@ -11934,7 +12029,7 @@ namespace FlockFive
             if (!front)
             {
                 // Full palm and sleeve behind the cards, from the pinch down.
-                DrawSpriteBand(dest, SpriteCatalog.HandPalm, PokerFanPinchV, 1f);
+                DrawPokerPalm(dest);
             }
             else
             {
@@ -12008,7 +12103,58 @@ namespace FlockFive
 
         // The one thumb draw. Holding hand and dealing hand both end here, so the thumb is the
         // same whole-canvas art, letterboxed like the palm, wherever it is drawn.
-        static void DrawPokerThumb(Rect dest) => DrawSprite(dest, SpriteCatalog.HandThumb, true);
+        // Soft contact shadow on the cards first, then the thumb: the pinch presses into the card.
+        static void DrawPokerThumb(Rect dest)
+        {
+            DrawSprite(dest, SpriteCatalog.HandThumbShadow, true);
+            DrawSprite(dest, SpriteCatalog.HandThumb, true);
+        }
+
+        // The one rest-of-hand draw (palm, fingers, forearm, sleeve), from the pinch down, always
+        // under the cards. Shared by the holding hand and the dealing hand. The sleeve runs on past
+        // the screen bottom so the arm never ends in a floating cut on tall phones.
+        static void DrawPokerPalm(Rect dest)
+        {
+            DrawSpriteTail(dest, SpriteCatalog.HandPalm, Screen.height + dest.width * 0.25f + 40f);
+            DrawSpriteBand(dest, SpriteCatalog.HandPalm, PokerFanPinchV, 1f);
+        }
+
+        // Continue the sprite past its fitted bottom edge down to toY: its bottom texel row is
+        // extruded along the forearm's axis (sheared down-left, slope armSlope) so the sleeve
+        // runs on off-screen seamlessly. Local GUI space, so it follows the hand's rotation.
+        static void DrawSpriteTail(Rect dest, Sprite spr, float toY)
+        {
+            if (spr == null || spr.texture == null) return;
+            var tex = spr.texture;
+            var r = spr.textureRect;
+            if (r.height <= 1f || r.width <= 1f) return;
+            float tw = Mathf.Max(1f, tex.width);
+            float th = Mathf.Max(1f, tex.height);
+            float texA = r.width / r.height;
+            float destA = dest.height > 1f ? dest.width / dest.height : texA;
+            if (texA > destA)
+            {
+                float hh = dest.width / texA;
+                dest = new Rect(dest.x, dest.y + (dest.height - hh) * 0.5f, dest.width, hh);
+            }
+            else
+            {
+                float ww = dest.height * texA;
+                dest = new Rect(dest.x + (dest.width - ww) * 0.5f, dest.y, ww, dest.height);
+            }
+            if (toY <= dest.yMax) return;
+            const float armSlope = 0.6f;
+            float texel = dest.height / r.height;
+            float cutY = dest.yMax - texel * 0.75f;
+            var keep = GUI.matrix;
+            var shear = Matrix4x4.identity;
+            shear.m01 = -armSlope;          // x' = x - armSlope * (y - cutY)
+            shear.m03 = armSlope * cutY;
+            GUI.matrix = keep * shear;
+            var uv = new Rect(r.x / tw, (r.y + 0.5f) / th, r.width / tw, 1f / th);
+            GUI.DrawTextureWithTexCoords(new Rect(dest.x, cutY, dest.width, toY - cutY), tex, uv);
+            GUI.matrix = keep;
+        }
 
         void TickPokerWarm()
         {
@@ -12757,7 +12903,7 @@ namespace FlockFive
             if (!front)
             {
                 // Palm, forearm, and sleeve, same span as the holding hand.
-                DrawSpriteBand(dest, palm, PokerFanPinchV, 1f);
+                DrawPokerPalm(dest);
             }
             else
                 DrawPokerThumb(dest);
@@ -14192,6 +14338,16 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // The album card's wood frame and plate colors. The badger tiles read the same two,
+        // so a tile and its sleeve card are the same tint.
+        static Color AlbumWood(Color tint, bool owned) => owned
+            ? Color.Lerp(new Color(0.28f, 0.16f, 0.07f), tint, 0.35f)
+            : new Color(0.14f, 0.12f, 0.10f, 0.92f);
+
+        static Color AlbumFace(Color tint, bool owned) => owned
+            ? Color.Lerp(new Color(0.98f, 0.92f, 0.72f), tint, 0.18f)
+            : new Color(0.22f, 0.20f, 0.18f, 0.95f);
+
         void DrawBeeAlbumCard(Rect card, int i, float s) => DrawBeeAlbumCard(card, i, s, false, true);
 
         void DrawBeeAlbumCard(Rect card, int i, float s, bool inspectView) =>
@@ -14233,9 +14389,7 @@ namespace FlockFive
             var r = new Rect(cx - w * 0.5f, card.y, w, card.height);
 
             var kind = Hive.Roster[kindIx];
-            Color wood = owned
-                ? Color.Lerp(new Color(0.28f, 0.16f, 0.07f), kind.Tint, 0.35f)
-                : new Color(0.14f, 0.12f, 0.10f, 0.92f);
+            Color wood = AlbumWood(kind.Tint, owned);
             GUI.color = new Color(0f, 0f, 0f, 0.35f);
             GUI.DrawTexture(new Rect(r.x + 4f, r.y + 6f, r.width, r.height), Texture2D.whiteTexture);
             GUI.color = wood;
@@ -14244,9 +14398,7 @@ namespace FlockFive
 
             // Inner face — use the plate; type needs every pixel for 55+ reading
             var face = new Rect(r.x + r.width * 0.045f, r.y + r.height * 0.035f, r.width * 0.91f, r.height * 0.93f);
-            Color faceFill = owned
-                ? Color.Lerp(new Color(0.98f, 0.92f, 0.72f), kind.Tint, 0.18f)
-                : new Color(0.22f, 0.20f, 0.18f, 0.95f);
+            Color faceFill = AlbumFace(kind.Tint, owned);
             GUI.color = faceFill;
             GUI.DrawTexture(face, Texture2D.whiteTexture);
             GUI.color = Color.white;
@@ -14331,7 +14483,8 @@ namespace FlockFive
                 string ownedLine = n == 1 ? "Owned 1" : "Owned " + n;
                 if (finish == BeeFinish.Holo) ownedLine = "Holo  ·  " + ownedLine;
                 else if (finish == BeeFinish.InverseRainbow) ownedLine = "Inverse  ·  " + ownedLine;
-                CardText.DrawBack(face, kind.Name, backCopy, ownedLine, stars, kind.Attrs, inspectView, s, DrawHiveStars);
+                var chips = kind.Attrs != null && kind.Attrs.Length > 0 ? kind.Attrs : Hive.HoneyChips(finish);
+                CardText.DrawBack(face, kind.Name, backCopy, ownedLine, stars, chips, inspectView, s, DrawHiveStars);
             }
 
             if (!inspectView && owned && HiveCardFresh(i))
@@ -14970,7 +15123,23 @@ namespace FlockFive
             _suppressGiftUntil = PlayClock.Now + 1f;
         }
 
+        // The Watch ad stage. The flag marks the coroutine alive, so the interruption
+        // check can tell a running stage from one that was cut off.
         IEnumerator WatchGift()
+        {
+            _watchGiftLive = true;
+            var body = WatchGiftBody();
+            try
+            {
+                while (body.MoveNext()) yield return body.Current;
+            }
+            finally
+            {
+                _watchGiftLive = false;
+            }
+        }
+
+        IEnumerator WatchGiftBody()
         {
             bool keep = _keepStreak;
             _gift = GiftFace.Movie;

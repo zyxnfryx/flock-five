@@ -73,6 +73,11 @@ namespace FlockFive
 
         public static bool Paused => _depth > 0;
 
+        // A tutorial step froze the garden on purpose (the sparrow lesson). Its glove,
+        // caption fade and tap gates still have to run, so PlayClock keeps counting
+        // under this pause. An ad on screen still stops the clock.
+        public static bool TutorHold;
+
         public static void Push()
         {
             if (_depth == 0)
@@ -102,6 +107,7 @@ namespace FlockFive
                 AudioListener.pause = _audio;
             }
             _depth = 0;
+            TutorHold = false;
         }
     }
 

@@ -43,7 +43,7 @@ namespace FlockFive
         // Gift line only. Reference pixels under the shared PlaceCaption seat.
         const float GiftCaptionDrop = 24f;
         const string HiveIntroLine = "You found a bee!\nFinding bees awards cards\nthat are stored in your collection.\nClick the hive to view them.";
-        const string HiveHomeLine = "Tap the hive to see your bees.";
+        const string HiveHomeLine = "Tap the hive to see your bee collection.";
         // Two lines, snug. The break is the wrap; the plate is measured to these lines.
         const string PokerIntroLine = "You earned coins!\nTap poker to bet them.";
         // Break is the two-line wrap. The plate is measured to these lines.
@@ -1827,6 +1827,12 @@ namespace FlockFive
             w = Mathf.Min(Screen.width * 0.72f, 520f * s);
             if (_leafIntro)
                 h = 176f * s;
+            else if (_pestCue != 0 && _capBoxH > 1f && _capBoxFor == _cueLine && Mathf.Abs(_capBoxS - s) < 0.01f)
+            {
+                // Measured by FitCaptionBox in DrawCoach, so the plate hugs the lines.
+                w = _capBoxW;
+                h = _capBoxH;
+            }
             else if (_pestCue != 0 || _hiveLevelLive || _hiveIntroLive)
                 h = 252f * s;
             else
@@ -1844,18 +1850,13 @@ namespace FlockFive
             return plate.width > 2f && plate.height > 2f;
         }
 
-        // GUI-free splash plates. Measured poker and daily lines arrive through NoteTutorPlate.
+        // GUI-free splash plates. Measured poker, hive and daily lines arrive through NoteTutorPlate.
         bool SplashCaptionPlate(float s, out Rect plate)
         {
             plate = default;
             Rect seat;
             if (_adoptLive)
                 seat = SeatedAdoptCaption(s);
-            else if (_hiveIntroLive && _splash && _home == HomeFace.Splash)
-            {
-                var pref = HiveHomeCaption(s);
-                seat = SeatTutorialCaption(HiveHomeLine, s, pref.y, pref.width, pref.height, pref.y, pref.x);
-            }
             else
                 return false;
             plate = CoachPanelRect(seat);
@@ -2584,9 +2585,19 @@ namespace FlockFive
             return any && hit;
         }
 
+        // Build 50: every tutorial caption is a little bigger. This one number is the only
+        // place that size is chosen. PaintCoachCaption applies it to the size range it
+        // fits, and the lessons that measure their plate first (FitCaptionBox, the daily
+        // box) apply it through CaptionPx, so the plate and the text agree.
+        const float CaptionFontBoost = 1.14f;
+
+        static int CaptionPx(int px) => Mathf.Max(1, Mathf.RoundToInt(px * CaptionFontBoost));
+
         // Shared tutorial caption: even inset, balanced wrap, one outline weight.
         void PaintCoachCaption(string text, Rect r, float s, int lo, int hi)
         {
+            lo = CaptionPx(lo);
+            hi = CaptionPx(hi);
             NoteTutorPlate(CoachPanelRect(r));
             var st = CoachLineStyle();
             if (_coachContent == null) _coachContent = new GUIContent();
@@ -2997,14 +3008,36 @@ namespace FlockFive
             PoseRestGlove();
             if (_cueLine != null)
             {
-                GardenLineBox(s, out _, out float capH);
                 int capHi = Mathf.RoundToInt(32f * s);
-                if (_leafIntro || _pestCue != 0 || _hiveLevelLive || _hiveIntroLive)
+                // Sparrow and hawk lines use the same measured box as the other lessons.
+                if (_pestCue != 0) MeasurePestCaption(s, capHi);
+                GardenLineBox(s, out float capW, out float capH);
+                if (_pestCue != 0)
+                    DrawCoachLine(_cueLine, s, top, capH, capHi, -1f, capW);
+                else if (_leafIntro || _hiveLevelLive || _hiveIntroLive)
                     DrawCoachLine(_cueLine, s, top, capH, capHi);
                 else
                     DrawCoachLine(_cueLine, s, top, capH);
             }
             DrawTutorOverlay(s);
+        }
+
+        string _capBoxFor;
+        float _capBoxS;
+        float _capBoxW;
+        float _capBoxH;
+
+        // Sizes a pest line with the shared FitCaptionBox and keeps the result for
+        // GardenLineBox, so the drawn plate and the glove-avoid plate are the same box.
+        void MeasurePestCaption(float s, int hi)
+        {
+            if (_capBoxFor == _cueLine && Mathf.Abs(_capBoxS - s) < 0.01f) return;
+            float maxW = Mathf.Min(Screen.width * 0.72f, 520f * s);
+            var fit = FitCaptionBox(_cueLine, maxW, hi, 16);
+            _capBoxFor = _cueLine;
+            _capBoxS = s;
+            _capBoxW = Mathf.Min(maxW, fit.width + 30f * s);
+            _capBoxH = fit.height + 24f * s;
         }
 
         // Shared tutorial overlay. The caller paints the caption first.
@@ -3541,6 +3574,8 @@ namespace FlockFive
             // Dawn Garden (level 1) is the first board with inner bees.
             // The home lesson waits until that clear, same gate as the poker intro.
             if (LevelData.NextPlay < 1) return;
+            // No hive on the rail, and no lesson, until the first Bee card has been received.
+            if (!Hive.Collected) return;
             _hiveIntro = true;
             if (_dailyIntro) return;
             _gloveReady = false;
@@ -3620,6 +3655,8 @@ namespace FlockFive
                 return;
             }
             if (HoldLiveLesson()) return;
+            // "You found a bee!" starts only after the first Bee card is in hand.
+            if (!Hive.Collected) return;
             if (_splash || _won || Ads.IsBusy || Ads.IsShowing) return;
             if (_coach || _leafIntro || _pestCue != 0 || _adHand || _gift != GiftFace.None) return;
             _hiveLevelLive = true;
@@ -3634,6 +3671,27 @@ namespace FlockFive
         {
             HudLayout(out _, out _, out _, out _, out var hive);
             return GloveTarget(hive);
+        }
+
+        // Home rail lessons (hive, poker, daily) own the pointer. While one is live the only
+        // honored tap is that lesson's own rail button; LEVEL, the pig, VIP and the other
+        // rail buttons are ignored, so a stray tap cannot skip or break the step.
+        // Returns the rail the live step waits on, or -1 when no step holds the home screen.
+        int HomeStepRail()
+        {
+            if (!_splash || _home != HomeFace.Splash) return -1;
+            if (_hiveIntroLive) return RailHive;
+            if (_pokerIntroLive) return RailPoker;
+            if (_dailyIntroLive && !_dailyOpen && !_dailyAskOpen) return RailDaily;
+            return -1;
+        }
+
+        // One check for every home hit. Pass the rail the control belongs to, or -1 for
+        // anything that is not a rail lesson button (the LEVEL flower).
+        bool HomeTapAllowed(int rail)
+        {
+            int own = HomeStepRail();
+            return own < 0 || own == rail;
         }
 
         bool TutorialGuideLive() =>
@@ -3734,6 +3792,75 @@ namespace FlockFive
             return GamePause.Paused || Ads.IsBusy || PlayClock.Now < _resumeInputUntil;
         }
 
+        // True while the WatchGift coroutine (the ad stage behind the Watch lesson) is alive.
+        bool _watchGiftLive;
+
+        // THE interruption check, shared by every tutorial. A lesson that is backgrounded,
+        // closed, or cut off half-way can leave a flag, a pause, an ad stage or a tap gate
+        // behind with nothing left to clear it. Those held Daily (blocked by the lesson
+        // gate) and the bonus branches (blocked by the open ad stage) shut. This runs on
+        // start, splash, pause, resume and focus, and every few frames in Update, so a
+        // half-done step is always reset or completed cleanly. TutorialHeal.Plan decides;
+        // this applies. A healthy lesson plans nothing and is never touched.
+        void HealInterruptedTutorials()
+        {
+            float now = PlayClock.Now;
+            var snap = new TutorSnapshot
+            {
+                Splash = _splash,
+                GiftCard = _gift == GiftFace.Card,
+                GiftMovie = _gift == GiftFace.Movie,
+                WatchRunning = _watchGiftLive,
+                AdHand = _adHand,
+                PauseHeld = GamePause.Paused,
+                AdShowing = Ads.IsShowing,
+                TutorPause = _tutorPause != 0,
+                SparrowCueLive = _pestCue == PestCueSparrow && PestCueAlive(),
+                HomeLessonLive = _hiveIntroLive || _pokerIntroLive || _dailyIntroLive,
+                ResumeGateLeft = _resumeInputUntil - now,
+                TapGateLeft = _swallowTapsUntil - now,
+                GiftGateLeft = _suppressGiftUntil - now
+            };
+            var fix = TutorialHeal.Plan(snap);
+            if (fix == TutorFix.None) return;
+            AdLog.Add("tutorial heal: " + fix);
+            if ((fix & TutorFix.DropAdHand) != 0)
+            {
+                DismissAdHand();
+                if (string.Equals(_cueLine, AdHandLine)) _cueLine = null;
+                CoachHideGlow();
+                CoachHideRipples();
+            }
+            if ((fix & TutorFix.ReleaseTutorPause) != 0)
+                PestIntroHide();
+            if ((fix & TutorFix.ClearWatchStage) != 0)
+            {
+                _gift = GiftFace.None;
+                _busy = false;
+                _swallowTapsUntil = now + 0.45f;
+                _suppressGiftUntil = now + 1f;
+            }
+            if ((fix & TutorFix.ClampGates) != 0)
+            {
+                if (snap.ResumeGateLeft > TutorialHeal.MaxGateSeconds) _resumeInputUntil = now + 0.35f;
+                if (snap.TapGateLeft > TutorialHeal.MaxGateSeconds) _swallowTapsUntil = now + 0.45f;
+                if (snap.GiftGateLeft > TutorialHeal.MaxGateSeconds) _suppressGiftUntil = now + 1f;
+            }
+            if ((fix & TutorFix.DropHomeLessons) != 0)
+            {
+                if (_hiveIntroLive)
+                {
+                    _hiveIntroLive = false;
+                    _hiveIntroSaw = false;
+                }
+                NotePokerIntroLeft();
+                NoteDailyIntroLeft();
+                _gloveVis = false;
+            }
+            if ((fix & TutorFix.ResetLeakedPause) != 0 && GamePause.Paused && !Ads.IsShowing && _tutorPause == 0)
+                GamePause.Reset();
+        }
+
         // Same aim, arc restarted. The lesson flags stay. A suspension is not a tap.
         void FreshTutorGlove()
         {
@@ -3753,6 +3880,7 @@ namespace FlockFive
             {
                 if (_tutorPause != 0 || Ads.IsShowing) return;
                 GamePause.Push();
+                GamePause.TutorHold = true;
                 _tutorPause = 1;
                 return;
             }
@@ -3763,6 +3891,7 @@ namespace FlockFive
         {
             if (_tutorPause == 0) return;
             GamePause.Pop();
+            GamePause.TutorHold = false;
             _tutorPause = 0;
         }
 
@@ -3776,8 +3905,16 @@ namespace FlockFive
                     PestIntroHide();
                     return;
                 }
+                // Watchdog: a frozen garden never waits on one lesson for long.
+                _pestHeld += Mathf.Min(Time.unscaledDeltaTime, 0.1f);
+                if (_pestHeld > PestHoldMax && !Ads.IsShowing)
+                {
+                    DismissPestIntro();
+                    return;
+                }
                 ApplyPestCue();
             }
+            else _pestHeld = 0f;
             if (Ads.IsShowing) return;
             if (!Pressed(out var screen)) return;
             if (_pestCue != 0)
@@ -3877,12 +4014,14 @@ namespace FlockFive
         // lets a lesson ask for a bigger line (0 = standard). The caption fades in on
         // its own repaint, so a step whose glove is not ticking (poker hold, back) can
         // never sit at fade 0, which drew the grey text with only its outline.
-        void DrawSplashIntroLine(string line, Rect r, float s, int fontHi = 0)
+        // pin seats the plate exactly at r: no glove-avoidance re-seat, no latch. Used when
+        // the spot is a rule (the poker hold line stays above the cards).
+        void DrawSplashIntroLine(string line, Rect r, float s, int fontHi = 0, bool pin = false)
         {
             if (GuiPaint())
                 _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
             int hi = fontHi > 0 ? fontHi : Mathf.Max(18, Mathf.RoundToInt(34f * s));
-            var seat = SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
+            var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
             PaintCoachCaption(line, seat, s, 12, hi);
         }
 
@@ -3891,9 +4030,14 @@ namespace FlockFive
         Rect FitCaptionBox(string line, float maxW, int hi, int floor)
         {
             var st = CoachLineStyle();
-            int br = line.IndexOf('\n');
-            string top = br > 0 ? line.Substring(0, br) : line;
-            string bot = br > 0 ? line.Substring(br + 1) : line;
+            hi = CaptionPx(hi);
+            floor = CaptionPx(floor);
+            // A long one-line sentence is measured as two balanced lines, which is how
+            // PaintCoachCaption wraps it. Otherwise it would shrink to fit one row.
+            string measured = line.IndexOf('\n') > 0 ? line : BalanceTwoLines(line);
+            int br = measured.IndexOf('\n');
+            string top = br > 0 ? measured.Substring(0, br) : measured;
+            string bot = br > 0 ? measured.Substring(br + 1) : measured;
             float w = maxW;
             float h = 32f;
             for (int fs = hi; fs >= floor; fs--)
@@ -3914,7 +4058,11 @@ namespace FlockFive
                 float th = _fitScratch.CalcHeight(_fitContent, useW);
                 BindFit(st, top, false);
                 _fitScratch.fontSize = fs;
-                float two = _fitScratch.CalcSize(_fitContent).y * 2f;
+                // As many rows as the lines asked for (2 for the poker plate, 4 for a pest).
+                int rows = 1;
+                for (int ci = 0; ci < measured.Length; ci++)
+                    if (measured[ci] == '\n') rows++;
+                float two = _fitScratch.CalcSize(_fitContent).y * rows;
                 if (th > two + 1f) th = two;
                 w = useW;
                 h = th > 1f ? th : 1f;
@@ -3923,11 +4071,25 @@ namespace FlockFive
             return new Rect(0f, 0f, w, h);
         }
 
-        static Rect HiveHomeCaption(float s)
+        // Splits a long sentence at the space nearest its middle. Short or break-free
+        // text comes back unchanged.
+        static string BalanceTwoLines(string line)
         {
-            float w = Mathf.Min(Screen.width * 0.72f, 420f * s);
-            return PlaceCaption(s, w, 52f * s, CaptionFloorY(s));
+            if (string.IsNullOrEmpty(line) || line.Length < 26) return line;
+            int mid = line.Length / 2;
+            int best = -1;
+            for (int i = 0; i < line.Length; i++)
+            {
+                if (line[i] != ' ') continue;
+                if (best < 0 || Mathf.Abs(i - mid) < Mathf.Abs(best - mid)) best = i;
+            }
+            if (best <= 0 || best >= line.Length - 1) return line;
+            return line.Substring(0, best) + "\n" + line.Substring(best + 1);
         }
+
+        // The hive step uses the same seat as the poker step: over the LEVEL button,
+        // which is fine here because the glove is driving the player to the rail.
+        Rect HiveHomeCaption(float s) => LevelCoverBox(HiveHomeLine, s);
 
         // One line, under the Watch flower so the plate clears the button base.
         static Rect AdHandCaptionRect(float s)
@@ -3942,7 +4104,7 @@ namespace FlockFive
         void DrawHiveIntro(float s)
         {
             if (!_hiveIntroLive) return;
-            DrawSplashIntroLine(HiveHomeLine, HiveHomeCaption(s), s);
+            DrawSplashIntroLine(HiveHomeLine, HiveHomeCaption(s), s, PokerIntroFontHi(s));
             DrawTutorOverlay(s);
         }
 
@@ -4023,12 +4185,16 @@ namespace FlockFive
         // caption box; this only picks the size (PokerIntroFontHi) and the seat.
         int PokerIntroFontHi(float s) => Mathf.Max(24, Mathf.RoundToInt(46f * s));
 
-        Rect PokerIntroBox(float s)
+        Rect PokerIntroBox(float s) => LevelCoverBox(PokerIntroLine, s);
+
+        // Shared by the hive and poker home steps: a measured plate seated over the
+        // LEVEL button.
+        Rect LevelCoverBox(string line, float s)
         {
             float maxW = Mathf.Min(Screen.width - 48f * s, Screen.width * 0.86f);
             if (maxW < 80f * s) maxW = Mathf.Min(Screen.width * 0.62f, Screen.width - 36f * s);
             if (maxW < 8f) maxW = 8f;
-            var fit = FitCaptionBox(PokerIntroLine, maxW, PokerIntroFontHi(s), 16);
+            var fit = FitCaptionBox(line, maxW, PokerIntroFontHi(s), 16);
             float w = fit.width;
             float h = fit.height;
             var play = FlowerPlayRect();
@@ -4128,7 +4294,7 @@ namespace FlockFive
         {
             var band = SplashIntroBand(s);
             var st = CoachLineStyle();
-            int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            int hi = CaptionPx(Mathf.Max(18, Mathf.RoundToInt(34f * s)));
             float maxW = band.width > 48f ? band.width : Mathf.Min(Screen.width * 0.72f, 420f * s);
             int br = DailyIntroLine.IndexOf('\n');
             string top = br > 0 ? DailyIntroLine.Substring(0, br) : DailyIntroLine;
@@ -4388,8 +4554,12 @@ namespace FlockFive
             return false;
         }
 
+        float _pestHeld;
+        const float PestHoldMax = 30f;
+
         void BeginPestCue(int kind)
         {
+            _pestHeld = 0f;
             _pestCue = kind;
             _pestCueUntil = kind == PestCueSparrow ? float.PositiveInfinity : PlayClock.Now + PestCueSeconds;
             if (kind == PestCueSparrow) HoldTutorPause(true);
@@ -4447,6 +4617,13 @@ namespace FlockFive
                 return true;
             }
             if (_pestCue == PestCueHawk && HawkView.Live != null && PestHit(HawkView.Live.transform, world))
+            {
+                DismissPestIntro();
+                return true;
+            }
+            // The sparrow line freezes the garden. Once it is fully up, a tap anywhere
+            // lets it go, so a missed sparrow can never leave the player stuck.
+            if (_pestCue == PestCueSparrow && _tutorPause != 0 && _coachFade >= 0.99f)
             {
                 DismissPestIntro();
                 return true;

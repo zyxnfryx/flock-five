@@ -53,6 +53,7 @@ namespace FlockFive
         public int BossCount => _boss.Length;
         public int PlayerLeft => _playerLeft;
         public int BossLeft => _bossLeft;
+        public BadgerPower Armed => _armed;
 
         // Null grids deal from the album and BadgerSchedule. Tests pass both.
         public BadgerFight(int appearance, int seed, int[] playerTiles, int[] bossTiles)
@@ -138,6 +139,36 @@ namespace FlockFive
             _playerLeft--;
             _playerPick = index;
             return true;
+        }
+
+        public int PriceOf(BadgerPower power)
+        {
+            return BadgerSchedule.PowerUpPrice(power, _appearance);
+        }
+
+        // Unused this contest and the purse covers this visit's price.
+        public bool CanAfford(BadgerPower power)
+        {
+            if (!PowerReady(power)) return false;
+            return Purse.Coins >= PriceOf(power);
+        }
+
+        // The player's whole turn in one call: buy the power-up (if any) and pick the tile.
+        // A short purse, a used power, or a closed tile changes nothing, so the view can
+        // shake the tile and let the player try again.
+        public bool PlayerPlay(int index, BadgerPower power)
+        {
+            if (Result != BadgerResult.Playing) return false;
+            if (_bossPick < 0 || _playerPick >= 0) return false;
+            if ((uint)index >= (uint)_playerOpen.Length || !_playerOpen[index]) return false;
+            if (power != BadgerPower.None && !CanAfford(power)) return false;
+            if (!PlayerPick(index)) return false;
+            if (power == BadgerPower.None) return true;
+            if (TryPower(power)) return true;
+            _playerOpen[index] = true;
+            _playerLeft++;
+            _playerPick = -1;
+            return false;
         }
 
         // One power per round, one use per contest. A short purse returns false
