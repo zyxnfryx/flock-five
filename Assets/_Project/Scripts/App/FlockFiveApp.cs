@@ -55,9 +55,9 @@ namespace FlockFive
         bool _rewardPayLive;
         float _rewardHoldLeft;
         int _rewardHoldFrame = -1;
-        // Coin pay over the cleared garden. The streak board itself waits for home.
+        // Garden overlay. The streak sign must not run under this, or its pay beat never fires.
         bool _clearReward;
-        // A clear paid its coins. The homepage still owes the streak board.
+        // Clear is saved and unspent. The homepage sign still owes the coin flight.
         bool _streakHomeDue;
         // RewardGap after that board tucks. Lessons wait. The sign is already gone.
         bool _rewardGap;
@@ -622,6 +622,10 @@ namespace FlockFive
         {
             GardenFit.ClearBusy();
             DismissStreakSign();
+            // Board never opened: still one credit. A pay beat that already ran is a no-op.
+            SettleUnshownStreakPay();
+            _streakHomeDue = false;
+            _popupDefer &= ~(int)PopupKind.Streak;
             CancelRewardGap();
             _busy = false;
             _won = false;
@@ -3522,9 +3526,9 @@ namespace FlockFive
             }
             LevelData.RememberClear();
             Purse.AwardClear();
-            // Sparrow, hawk, and a plain clear all arrive here. Coins land, then home.
-            // The streak board plays on the homepage after that pay.
-            yield return PlayClearReward();
+            // Sparrow, hawk, and a plain clear all arrive here.
+            // The homepage sign spends this clear and plays the coins.
+            PlayClearReward();
             if (_restarting || _splash)
             {
                 _clearReward = false;
@@ -3536,17 +3540,17 @@ namespace FlockFive
             ShowSplash();
         }
 
-        // Coin flight over the cleared garden. WaitRewardPay is the gate (coins,
-        // balance, sound). The streak board is not part of this wait.
-        IEnumerator PlayClearReward()
+        // Marks the homepage sign. Does not commit and does not spawn coins.
+        // StepStreakReward pays once, on the home pay beat, through the shared flight.
+        void PlayClearReward()
         {
-            _clearReward = true;
-            bool boardAfter = Purse.Streak > 0 && Purse.Pending > 0;
-            PayStreakStep();
-            yield return WaitRewardPay();
-            if (_restarting || _splash) boardAfter = false;
-            _streakHomeDue = boardAfter;
             _clearReward = false;
+            if (_restarting || _splash)
+            {
+                _streakHomeDue = false;
+                return;
+            }
+            _streakHomeDue = Purse.Streak > 0 && Purse.Pending > 0;
         }
 
         bool TipLocked(int i)
@@ -6293,7 +6297,7 @@ namespace FlockFive
                 return;
             }
             _streakAnnounced = Purse.Streak;
-            // Coins already landed in the garden. The board is the homepage sign.
+            // Owed is still unspent. The sign's pay beat launches the coins.
             if (_streakHomeDue)
             {
                 _streakHomeDue = false;
@@ -6338,7 +6342,7 @@ namespace FlockFive
             var beat = RewardBeats(RewardMulOn(streak, fromPay, toPay));
             float dur = beat.SeqDur > 0.05f ? beat.SeqDur : 0.05f;
             float t = _streakSlide * dur;
-            // The tuck is the way out. It stays put until the payout has finished.
+            // Tuck waits until the shared flight, the balance tick, and the payout sound finish.
             bool fadeGate = t >= beat.HoldEnd && RewardPayBusy();
             if (!fadeGate)
                 _streakSlide = Mathf.Min(1f, _streakSlide + PlayClock.Delta / dur);
@@ -7436,7 +7440,7 @@ namespace FlockFive
             _rewardPayLive = false;
         }
 
-        // Garden coin pay only. The streak board stays idle until the homepage.
+        // Not the streak payoff. Those coins launch on the homepage sign.
         void DrawClearReward()
         {
             float s = Mathf.Max(Screen.height / 720f, 1f);
@@ -8151,6 +8155,20 @@ namespace FlockFive
                 rest.height * 0.38f);
         }
 
+        // Difficulty line under LEVEL. One size for every joke, including a long one.
+        // EaseSubtextMinPx is the floor. The band wraps or widens; the glyphs do not shrink.
+        const float EaseSubtextPt = 18f;
+        const int EaseSubtextMinPx = 18;
+        static GUIContent _easeContent;
+
+        static int EaseSubtextPx(float s)
+        {
+            if (s < 1f) s = 1f;
+            int px = Mathf.RoundToInt(EaseSubtextPt * s);
+            if (px < EaseSubtextMinPx) px = EaseSubtextMinPx;
+            return px;
+        }
+
         static void DrawFlowerCaption(Rect rest, float sink, string ease, int number)
         {
             var disc = FlowerDisc(rest, sink);
@@ -8212,18 +8230,43 @@ namespace FlockFive
 
             if (!hasEase) return;
 
-            // Joke keeps full size; width tracks LEVEL+digits (not shrunk by high level counts).
+            // Shared size. Does not follow the 100+ LEVEL cap or the length of the line.
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            int jokePx = EaseSubtextPx(s);
             var joke = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.UpperCenter,
-                wordWrap = false
+                wordWrap = false,
+                fontSize = jokePx
             };
-            float jokeMaxW = jokeR.width * 0.92f;
-            int jHi = Mathf.Max(18, Mathf.RoundToInt(lv.fontSize * 0.40f));
-            joke.fontSize = FitFont(joke, ease, jokeMaxW, jokeR.height * 0.95f, 18, jHi);
+            if (_easeContent == null) _easeContent = new GUIContent();
+            _easeContent.text = ease;
+            float side = disc.width * 0.03f;
+            float lineW = disc.width - side * 2f;
+            if (lineW < jokeR.width) lineW = jokeR.width;
+            var ink = joke.CalcSize(_easeContent);
+            float textH = ink.y;
+            if (ink.x > lineW)
+            {
+                joke.wordWrap = true;
+                textH = joke.CalcHeight(_easeContent, lineW);
+            }
+            float bandH = textH + 4f;
+            if (bandH < jokeR.height) bandH = jokeR.height;
+            float y = jokeR.y;
+            float bottom = disc.yMax - 2f;
+            if (y + textH > bottom)
+            {
+                float minY = lvR.yMax + disc.height * 0.004f;
+                float y2 = bottom - textH;
+                if (y2 < minY) y2 = minY;
+                if (y2 < y) y = y2;
+            }
+            if (y + bandH > bottom && bandH > textH) bandH = Mathf.Max(textH, bottom - y);
+            var jokeDraw = new Rect(disc.center.x - lineW * 0.5f, y, lineW, bandH);
             int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.14f));
-            StampOutlined(jokeR, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 2);
+            StampOutlined(jokeDraw, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 2);
         }
 
         static GUIStyle _fitScratch;

@@ -1079,41 +1079,35 @@ namespace FlockFive
             return new Rect(c.x - w * 0.5f, c.y + icon * 0.5f + 1f * s, w, h);
         }
 
-        static int NameTagHi(float s)
+        // Home name. 18px at a 720-tall screen, never under NameTagMinPx, scales with s.
+        // About 16-18pt on a phone. The wood follows the glyphs.
+        const float NameTagPt = 18f;
+        const int NameTagMinPx = 16;
+
+        static int NameTagFont(float s)
         {
-            int hi = Mathf.RoundToInt(14f * s);
-            if (hi < 11) hi = 11;
-            if (hi > 22) hi = 22;
-            return hi;
+            if (s < 1f) s = 1f;
+            int px = Mathf.RoundToInt(NameTagPt * s);
+            if (px < NameTagMinPx) px = NameTagMinPx;
+            return px;
         }
 
-        // Wood hugs the name. Cap keeps a long name off the rails. It does not
-        // grow when the wings open.
-        static void NameTagBox(string name, float s, float icon, out float w, out float h)
+        // Tight pad around the measured line. Does not shrink the type to fit the bird.
+        static void NameTagBox(string name, float s, out float w, out float h)
         {
             var st = CoachLineStyle();
             bool wrap = st.wordWrap;
             st.wordWrap = false;
-            int hi = NameTagHi(s);
-            int lo = 11;
-            if (lo > hi) lo = hi;
-            float cap = Mathf.Max(icon * 0.78f, 64f * s);
-            float padX = 10f * s;
-            float padY = 3f * s;
-            float fitW = cap - padX * 2f;
-            if (fitW < 8f) fitW = 8f;
-            float fitH = Mathf.Max(22f * s, hi + 8f);
-            st.fontSize = FitFont(st, name, fitW, fitH, lo, hi);
+            st.fontSize = NameTagFont(s);
+            float padX = 8f * s;
+            float padY = 4f * s;
             if (_avatarTagContent == null) _avatarTagContent = new GUIContent();
             _avatarTagContent.text = name ?? "";
             var sz = st.CalcSize(_avatarTagContent);
             w = sz.x + padX * 2f;
             h = sz.y + padY * 2f;
             float minW = 28f * s;
-            float minH = 15f * s;
             if (w < minW) w = minW;
-            if (h < minH) h = minH;
-            if (w > cap) w = cap;
             st.wordWrap = wrap;
         }
 
@@ -1160,7 +1154,7 @@ namespace FlockFive
                 dx = _adoptTagDx;
                 dy = _adoptTagDy;
             }
-            NameTagBox(name, s, icon, out float w, out float h);
+            NameTagBox(name, s, out float w, out float h);
             return BirdNameTag.Place(c.x + dx, c.y + dy, w, h, 4f * s);
         }
 
@@ -1179,12 +1173,7 @@ namespace FlockFive
             var st = CoachLineStyle();
             bool wrap = st.wordWrap;
             st.wordWrap = false;
-            int hi = NameTagHi(s);
-            int lo = 11;
-            if (lo > hi) lo = hi;
-            float padX = 10f * s;
-            float padY = 3f * s;
-            st.fontSize = FitFont(st, name, Mathf.Max(8f, r.width - padX * 2f), Mathf.Max(8f, r.height - padY * 2f), lo, hi);
+            st.fontSize = NameTagFont(s);
             StampOutlined(r, name, st, new Color(0.33f, 0.15f, 0.05f, 1f), 1, 1);
             st.wordWrap = wrap;
             return r;
