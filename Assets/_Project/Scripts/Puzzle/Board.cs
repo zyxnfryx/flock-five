@@ -96,6 +96,10 @@ namespace FlockFive
         public readonly List<BranchState> Branches = new List<BranchState>();
         public readonly BirdColor?[] Live = new BirdColor?[2];
         public readonly List<BirdColor> Queue = new List<BirdColor>();
+        // Flock a pest knocked off a limb and has not seated yet. No branch is
+        // reserved for them. They still count, so a win or a stuck check is not
+        // decided while they are in the air.
+        public readonly List<Bird> Displaced = new List<Bird>();
         public bool JustUnveiled;
         public bool BreezeOnCollect;
 
@@ -107,6 +111,7 @@ namespace FlockFive
             n.Live[0] = Live[0];
             n.Live[1] = Live[1];
             n.Queue.AddRange(Queue);
+            n.Displaced.AddRange(Displaced);
             n.BreezeOnCollect = BreezeOnCollect;
             return n;
         }
@@ -235,16 +240,15 @@ namespace FlockFive
             int slot = FeederSlotFor(col);
             br.Birds.Clear();
             br.Broken = true;
-            // Pest scraps break the limb and park the flock. They must not
-            // retire a feeder — that sleeps leftover fives and false-freezes.
+            // A pest scrap does not retire a feeder. Scoring it here would
+            // sleep leftover fives and false-freeze the garden.
             if (scoreFeeder) ScoreFeeder(slot);
             else if (BreezeOnCollect) Breeze(slot);
             return slot;
         }
 
         // The feeder this collect already matched. The limb may already be
-        // empty: a pest parks the flock before the scrap ends, so IsFullMatch
-        // can no longer name the slot.
+        // empty, so IsFullMatch can no longer name the slot.
         public void ScoreFeeder(int slot)
         {
             if (slot >= 0 && (uint)slot < (uint)Live.Length)
@@ -263,6 +267,7 @@ namespace FlockFive
         {
             get
             {
+                if (Displaced.Count > 0) return false;
                 for (int i = 0; i < Branches.Count; i++)
                     if (!Branches[i].Broken && Branches[i].Count > 0) return false;
                 return true;
@@ -273,7 +278,7 @@ namespace FlockFive
         {
             get
             {
-                int n = 0;
+                int n = Displaced.Count;
                 for (int i = 0; i < Branches.Count; i++)
                     if (!Branches[i].Broken) n += Branches[i].Count;
                 return n;

@@ -32,43 +32,13 @@ namespace FlockFive
 
         public static bool AtStake(int raw) => Normalize(raw) >= 2;
 
-        // Shared stamp ink. x1 neutral, x2 red, x3 green, x4 blue, x5 purple,
-        // x10 shimmering gold. 6-9 follow Display (x5). Not a diamond.
+        // Forwards the shared chip palette. StreakBadge.Colors is the only ink.
         public static void BadgeColors(int raw, out Color fill, out Color edge, out bool shimmer)
         {
-            int mul = Display(raw);
-            shimmer = mul >= 10;
-            if (mul >= 10)
-            {
-                fill = new Color(0.96f, 0.78f, 0.28f, 0.92f);
-                edge = new Color(0.42f, 0.26f, 0.04f, 1f);
-            }
-            else if (mul >= 5)
-            {
-                fill = new Color(0.62f, 0.28f, 0.78f, 0.92f);
-                edge = new Color(0.28f, 0.08f, 0.36f, 1f);
-            }
-            else if (mul == 4)
-            {
-                fill = new Color(0.22f, 0.42f, 0.86f, 0.92f);
-                edge = new Color(0.06f, 0.12f, 0.32f, 1f);
-            }
-            else if (mul == 3)
-            {
-                fill = new Color(0.18f, 0.62f, 0.28f, 0.92f);
-                edge = new Color(0.04f, 0.24f, 0.08f, 1f);
-            }
-            else if (mul == 2)
-            {
-                fill = new Color(0.78f, 0.10f, 0.12f, 0.92f);
-                edge = new Color(0.36f, 0.02f, 0.04f, 1f);
-            }
-            else
-            {
-                fill = new Color(0.78f, 0.74f, 0.68f, 0.92f);
-                edge = new Color(0.28f, 0.24f, 0.20f, 1f);
-                shimmer = false;
-            }
+            var ink = StreakBadge.Colors(raw);
+            fill = ink.Fill;
+            edge = ink.Edge;
+            shimmer = ink.Shimmer;
         }
 
         // Six pips: tiers 1..5 light 1..5, x10 lights the sixth. No plus chip.

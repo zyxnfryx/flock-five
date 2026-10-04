@@ -469,6 +469,15 @@ namespace FlockFive
         public static int KindOfSlot(int slot) => slot / Finishes;
         public static BeeFinish FinishOfSlot(int slot) => (BeeFinish)(slot % Finishes);
 
+        // Honey a finish is worth in the badger contest. Foil is Holo.
+        // Regular 2, foil 3, Inverse Rainbow 5. Yard tiles are not a finish.
+        public static int HoneyOfFinish(BeeFinish finish)
+        {
+            if (finish == BeeFinish.Holo) return 3;
+            if (finish == BeeFinish.InverseRainbow) return 5;
+            return 2;
+        }
+
         /// <summary>Total owned copies of a kind across all finishes.</summary>
         public static int CountOf(int kind)
         {

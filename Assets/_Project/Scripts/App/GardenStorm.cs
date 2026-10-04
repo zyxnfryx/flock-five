@@ -156,17 +156,19 @@ namespace FlockFive
             if (_sheetMat != null) Destroy(_sheetMat);
         }
 
-        // Resume frame's unscaled step is the whole suspension. Drop it, then
-        // rebuild the streak layer from the foreground storm state.
+        // Resume frame's unscaled step is the whole suspension. The app handler
+        // drops that frame once. Rain still rebuilds from the foreground state.
         void OnApplicationPause(bool paused)
         {
-            PlayClock.DropResumeFrame();
+            if (paused) FlockFiveApp.NoteAppBackground();
+            else FlockFiveApp.NoteAppResume();
             if (!paused && _rainSync == 0) _rainSync = 1;
         }
 
         void OnApplicationFocus(bool focus)
         {
-            PlayClock.DropResumeFrame();
+            if (focus) FlockFiveApp.NoteAppResume();
+            else FlockFiveApp.NoteAppBackground();
             if (focus && _rainSync == 0) _rainSync = 1;
         }
 

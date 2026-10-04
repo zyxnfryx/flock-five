@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace FlockFive
@@ -50,6 +51,18 @@ namespace FlockFive
             if (x < left) x = left;
             if (x > right) x = right;
             return new Rect(x, y, w, h);
+        }
+
+        // One content width for every standard card: daily, gift, and VIP.
+        // Insets, 72% of the glass, cap 420 reference pixels, floor 200.
+        static float StandardPopupWidth(float s)
+        {
+            float insetL = Mathf.Max(12f * s, Screen.safeArea.xMin + 8f);
+            float insetR = Mathf.Max(12f * s, Screen.width - Screen.safeArea.xMax + 8f);
+            float cardW = Mathf.Min(Screen.width - insetL - insetR, Mathf.Min(Screen.width * 0.72f, 420f * s));
+            if (cardW < 200f) cardW = Mathf.Min(Screen.width - insetL - insetR, 200f);
+            if (cardW < 8f) cardW = 8f;
+            return cardW;
         }
 
         // Card origin in the safe band. bias is 0 at the top of that band, 1 at the bottom.
@@ -174,8 +187,193 @@ namespace FlockFive
                 };
             float inner = d * 0.62f;
             _notifyDigits.fontSize = Mathf.Max(8, Mathf.RoundToInt(inner * 0.72f));
-            var box = new Rect(cx - inner * 0.5f, cy - inner * 0.5f, inner, inner);
-            StampOutlined(box, number, _notifyDigits, Color.white, 0, 1);
+            var slot = new Rect(cx - d * 0.5f, cy - d * 0.5f, d, d);
+            DrawBadgeNumber(BadgeBodyCenter(slot, tex), number, _notifyDigits, Color.white, inner, inner, 1);
+        }
+
+        struct BadgeMark
+        {
+            public float U;
+            public float V;
+            public bool Ok;
+        }
+
+        static readonly Dictionary<int, BadgeMark> _badgeMark = new Dictionary<int, BadgeMark>();
+
+        // ScaleToFit letterbox. The body sits in the drawn image, not the slot,
+        // because flame frames are not all the same width as the medal slot.
+        static Rect BadgeFit(Rect slot, Texture2D tex)
+        {
+            if (tex == null || tex.width < 1 || tex.height < 1 || slot.width < 1f || slot.height < 1f)
+                return slot;
+            float sa = slot.width / slot.height;
+            float ta = tex.width / (float)tex.height;
+            if (ta > sa)
+            {
+                float h = slot.width / ta;
+                return new Rect(slot.x, slot.y + (slot.height - h) * 0.5f, slot.width, h);
+            }
+            float w = slot.height * ta;
+            return new Rect(slot.x + (slot.width - w) * 0.5f, slot.y, w, slot.height);
+        }
+
+        // Belly of the opaque art, in GUI y-down. Rows narrower than the body
+        // (the flame tip, the caps of a disc) are left out, so a flame's digit
+        // sits on the bright belly and a round badge stays on the disc center.
+        static Vector2 BadgeBodyCenter(Rect slot, Texture2D tex)
+        {
+            var fit = BadgeFit(slot, tex);
+            if (!TryBadgeMark(tex, out float u, out float v)) return fit.center;
+            return new Vector2(fit.x + u * fit.width, fit.y + v * fit.height);
+        }
+
+        static bool TryBadgeMark(Texture2D tex, out float u, out float v)
+        {
+            u = 0.5f;
+            v = 0.5f;
+            if (tex == null || !tex.isReadable || tex.width < 2 || tex.height < 2) return false;
+            int id = tex.GetInstanceID();
+            if (id != 0 && _badgeMark.TryGetValue(id, out var got))
+            {
+                if (!got.Ok) return false;
+                u = got.U;
+                v = got.V;
+                return true;
+            }
+            bool ok = MeasureBadge(tex, out u, out v);
+            if (id != 0) _badgeMark[id] = new BadgeMark { U = u, V = v, Ok = ok };
+            return ok;
+        }
+
+        static bool MeasureBadge(Texture2D tex, out float u, out float v)
+        {
+            u = 0.5f;
+            v = 0.5f;
+            int w = tex.width;
+            int h = tex.height;
+            var px = tex.GetPixels32();
+            if (px == null || px.Length < (long)w * h) return false;
+            var left = new int[h];
+            var right = new int[h];
+            int widest = 0;
+            for (int y = 0; y < h; y++)
+            {
+                int lo = -1;
+                int hi = -1;
+                int row = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    if (px[row + x].a <= 40) continue;
+                    if (lo < 0) lo = x;
+                    hi = x;
+                }
+                left[y] = lo;
+                right[y] = hi;
+                if (lo < 0) continue;
+                int wide = hi - lo + 1;
+                if (wide > widest) widest = wide;
+            }
+            if (widest < 1) return false;
+            float body = widest * 0.42f;
+            double sumA = 0d, sumX = 0d, sumY = 0d;
+            double allA = 0d, allX = 0d, allY = 0d;
+            for (int y = 0; y < h; y++)
+            {
+                if (left[y] < 0) continue;
+                bool belly = (right[y] - left[y] + 1) >= body;
+                int row = y * w;
+                for (int x = left[y]; x <= right[y]; x++)
+                {
+                    int a = px[row + x].a;
+                    if (a <= 40) continue;
+                    double ad = a;
+                    allA += ad;
+                    allX += (x + 0.5d) * ad;
+                    allY += (y + 0.5d) * ad;
+                    if (!belly) continue;
+                    sumA += ad;
+                    sumX += (x + 0.5d) * ad;
+                    sumY += (y + 0.5d) * ad;
+                }
+            }
+            double use = sumA > 0d ? sumA : allA;
+            if (use <= 0d) return false;
+            double cx = (sumA > 0d ? sumX : allX) / use;
+            double cy = (sumA > 0d ? sumY : allY) / use;
+            u = (float)(cx / w);
+            v = (float)(1d - cy / h);
+            return true;
+        }
+
+        // Ink center of the glyphs, relative to the em box MiddleCenter uses.
+        // Positive x means the ink sits right of that box (a "1" does this).
+        static void BadgeGlyphShift(string text, GUIStyle style, out float ox, out float oy)
+        {
+            ox = 0f;
+            oy = 0f;
+            if (string.IsNullOrEmpty(text) || style == null) return;
+            var font = style.font != null ? style.font : (GUI.skin != null ? GUI.skin.font : null);
+            if (font == null) return;
+            int size = style.fontSize;
+            if (size < 1) size = font.fontSize;
+            if (size < 1) size = 16;
+            var face = style.fontStyle;
+            font.RequestCharactersInTexture(text, size, face);
+            float pen = 0f;
+            float minX = 0f, maxX = 0f, minY = 0f, maxY = 0f;
+            bool any = false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (!font.GetCharacterInfo(text[i], out var info, size, face)) return;
+                float x0 = pen + info.minX;
+                float x1 = pen + info.maxX;
+                if (!any || x0 < minX) minX = x0;
+                if (!any || x1 > maxX) maxX = x1;
+                if (!any || info.minY < minY) minY = info.minY;
+                if (!any || info.maxY > maxY) maxY = info.maxY;
+                any = true;
+                pen += info.advance;
+            }
+            if (!any || pen <= 0f) return;
+            ox = (minX + maxX) * 0.5f - pen * 0.5f;
+            float ascent = font.ascent;
+            float line = font.lineHeight;
+            if (font.fontSize > 1)
+            {
+                float scale = size / (float)font.fontSize;
+                ascent *= scale;
+                line *= scale;
+            }
+            if (ascent < 1f) ascent = size * 0.92f;
+            if (line < 1f) line = size;
+            oy = (ascent - (minY + maxY) * 0.5f) - line * 0.5f;
+        }
+
+        static Vector2 BadgePadShift(GUIStyle style)
+        {
+            if (style == null) return Vector2.zero;
+            var pad = style.padding;
+            float x = style.contentOffset.x;
+            float y = style.contentOffset.y;
+            if (pad != null)
+            {
+                x += (pad.left - pad.right) * 0.5f;
+                y += (pad.top - pad.bottom) * 0.5f;
+            }
+            return new Vector2(x, y);
+        }
+
+        // One number path for the streak flame and the red disc. The label's
+        // em box is shifted so the glyph ink, not the advance, lands on body.
+        static void DrawBadgeNumber(Vector2 body, string text, GUIStyle style, Color color, float boxW, float boxH, int blackPx)
+        {
+            if (string.IsNullOrEmpty(text) || style == null || boxW < 1f || boxH < 1f) return;
+            BadgeGlyphShift(text, style, out float ox, out float oy);
+            var pad = BadgePadShift(style);
+            float cx = body.x - pad.x - ox;
+            float cy = body.y - pad.y - oy;
+            var num = new Rect(cx - boxW * 0.5f, cy - boxH * 0.5f, boxW, boxH);
+            StampOutlined(num, text, style, color, 0, blackPx);
         }
 
         static Texture2D CautionMarkTex()

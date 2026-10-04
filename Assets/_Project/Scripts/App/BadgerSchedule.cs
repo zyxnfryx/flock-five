@@ -1,0 +1,168 @@
+using System;
+using System.Collections.Generic;
+
+namespace FlockFive
+{
+    public enum BadgerPower
+    {
+        None = 0,
+        X2 = 1,
+        X3 = 2,
+        HotSauce = 3,
+        Pepper = 4,
+    }
+
+    // When the honey badger contest is due, and the numbers for that visit.
+    // Pure: no purse, no album writes, no views.
+    public static class BadgerSchedule
+    {
+        public const int FirstAfter = 15;
+        public const int Interval = 5;
+        public const int Side = 4;
+        public const int Tiles = Side * Side;
+        public const int YardHoney = 1;
+        public const int PlayerTargetStart = 10;
+        public const int PlayerTargetCap = 18;
+        public const int BadgerTargetFixed = 18;
+
+        // Counts of honey 2, 3, 4, 5 (fourteen tiles). Two 1s are added on top.
+        // Every row rises: more 3s than 2s, more 4s than 3s, more 5s than 4s.
+        // Each visit shifts one step hotter. The last row is the hottest mix
+        // that still rises. Later visits stay on it. That ceiling is the
+        // 16-tile grid, not a cap on which visit can show up.
+        static readonly int[,] Rise =
+        {
+            { 2, 3, 4, 5 },
+            { 1, 3, 4, 6 },
+            { 0, 3, 4, 7 },
+            { 0, 2, 4, 8 },
+            { 0, 1, 4, 9 },
+            { 0, 1, 3, 10 },
+            { 0, 1, 2, 11 },
+        };
+
+        public static bool Due(int cleared)
+        {
+            if (cleared < FirstAfter) return false;
+            return (cleared - FirstAfter) % Interval == 0;
+        }
+
+        // (cleared - 15) / 5 + 1. Callers gate on Due. 16 still math-evaluates to 1.
+        public static int Appearance(int cleared)
+        {
+            if (cleared < FirstAfter) return 0;
+            return (cleared - FirstAfter) / Interval + 1;
+        }
+
+        public static int PlayerTarget(int appearance)
+        {
+            if (appearance >= PlayerTargetCap - PlayerTargetStart + 1) return PlayerTargetCap;
+            int n = appearance < 1 ? 1 : appearance;
+            return PlayerTargetStart + (n - 1);
+        }
+
+        // Always 18. Appearance is accepted so both meters are read the same way.
+        public static int BadgerTarget(int appearance)
+        {
+            return BadgerTargetFixed;
+        }
+
+        public static int BasePrice(BadgerPower power)
+        {
+            if (power == BadgerPower.X2) return 100;
+            if (power == BadgerPower.X3) return 200;
+            if (power == BadgerPower.HotSauce) return 300;
+            if (power == BadgerPower.Pepper) return 300;
+            return 0;
+        }
+
+        // base + 50 * (n - 1). No cap. A bad power is 0.
+        public static int PowerUpPrice(BadgerPower power, int appearance)
+        {
+            int basePrice = BasePrice(power);
+            if (basePrice <= 0) return 0;
+            int n = appearance < 1 ? 1 : appearance;
+            long price = basePrice + 50L * (n - 1);
+            if (price > int.MaxValue) return int.MaxValue;
+            return (int)price;
+        }
+
+        // Sixteen honey values. Same appearance and seed always return the same order.
+        public static int[] BossTileMix(int appearance, int seed)
+        {
+            int row = appearance - 1;
+            int last = Rise.GetLength(0) - 1;
+            if (row < 0) row = 0;
+            if (row > last) row = last;
+
+            var tiles = new int[Tiles];
+            int wrote = 0;
+            tiles[wrote++] = 1;
+            tiles[wrote++] = 1;
+            for (int col = 0; col < 4; col++)
+            {
+                int face = col + 2;
+                int count = Rise[row, col];
+                for (int k = 0; k < count; k++)
+                    tiles[wrote++] = face;
+            }
+            Shuffle(tiles, seed);
+            return tiles;
+        }
+
+        // Best owned bees first (higher honey first). Pads with yard honey 1.
+        // Does not remove album copies.
+        public static int[] PlayerLoadout(int slots)
+        {
+            var owned = new List<int>();
+            int kinds = Hive.Kinds;
+            for (int kind = 0; kind < kinds; kind++)
+            {
+                for (int f = 0; f < Hive.Finishes; f++)
+                {
+                    var finish = (BeeFinish)f;
+                    int copies = Hive.CountOf(kind, finish);
+                    if (copies <= 0) continue;
+                    int honey = Hive.HoneyOfFinish(finish);
+                    for (int copy = 0; copy < copies; copy++)
+                        owned.Add(honey);
+                }
+            }
+            var raw = new int[owned.Count];
+            for (int i = 0; i < owned.Count; i++) raw[i] = owned[i];
+            return ArrangeLoadout(raw, slots);
+        }
+
+        public static int[] PlayerLoadout()
+        {
+            return PlayerLoadout(Tiles);
+        }
+
+        // Pure sort-and-pad. `ownedHoney` is already in honey units.
+        public static int[] ArrangeLoadout(int[] ownedHoney, int slots)
+        {
+            if (slots < 0) slots = 0;
+            var tiles = new int[slots];
+            int owned = ownedHoney == null ? 0 : ownedHoney.Length;
+            var order = new int[owned];
+            for (int i = 0; i < owned; i++) order[i] = ownedHoney[i];
+            if (owned > 1) Array.Sort(order, (a, b) => b.CompareTo(a));
+            int take = owned < slots ? owned : slots;
+            for (int i = 0; i < take; i++) tiles[i] = order[i];
+            for (int i = take; i < slots; i++) tiles[i] = YardHoney;
+            return tiles;
+        }
+
+        static void Shuffle(int[] tiles, int seed)
+        {
+            var rng = new Random(seed);
+            for (int i = tiles.Length - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                int swap = tiles[i];
+                tiles[i] = tiles[j];
+                tiles[j] = swap;
+            }
+        }
+    }
+}

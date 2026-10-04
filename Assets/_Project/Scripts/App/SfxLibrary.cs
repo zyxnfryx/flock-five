@@ -39,6 +39,11 @@ namespace FlockFive
                 Sfx.CardBump();
                 return;
             }
+            if (name == "sting")
+            {
+                Sfx.RowAlert();
+                return;
+            }
             if (name == "groove")
             {
                 if (!_claimGroove) return;
@@ -89,6 +94,9 @@ namespace FlockFive
             return true;
         }
 
+        // The one "!" clip. Every alert plays it through Sfx.RowAlert.
+        public static AudioClip Sting() => Clip("sting");
+
         static AudioClip Clip(string name)
         {
             AudioClip clip;
@@ -97,6 +105,7 @@ namespace FlockFive
             else if (name == "fanfare") clip = MakeFanfare();
             else if (name == "groove") clip = MakeGroove();
             else if (name == "tick") clip = MakeTick();
+            else if (name == "sting") clip = MakeSting();
             else return null;
             _clips[name] = clip;
             return clip;
@@ -183,6 +192,121 @@ namespace FlockFive
                 data[i] = Mathf.Sin(2f * Mathf.PI * 520f * t) * Mathf.Exp(-t * 70f) * 0.45f;
             }
             return Bake("tick", data, 0.2f);
+        }
+
+        // Original "!" stab. Three detuned filtered saws scoop a minor 3rd
+        // (C#6 to E6) in 42ms, then hold. Bow-scrape on the attack, a short
+        // amplitude shiver on the tail, no vibrato. 0.42s. Peaked under -1 dBFS.
+        // Bake's pole is 1: the saws are already filtered, and Bake still writes the clip.
+        static AudioClip MakeSting()
+        {
+            const float dur = 0.42f;
+            const float fLo = 1108.73f;
+            const float fHi = 1318.51f;
+            const float cut = 0.48f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float dLo = Mathf.Pow(2f, -7f / 1200f);
+            float dHi = Mathf.Pow(2f, 6f / 1200f);
+            float p0 = 0.15f;
+            float p1 = 0.42f;
+            float p2 = 0.73f;
+            float a0 = 0f;
+            float a1 = 0f;
+            float a2 = 0f;
+            float b0 = 0f;
+            float b1 = 0f;
+            float b2 = 0f;
+            float shelf = 0f;
+            float slow = 0f;
+            float mid = 0f;
+            int h = 0x27BB2EE6;
+            float dt = 1f / Rate;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i * dt;
+                float glide = t >= 0.042f ? 1f : t / 0.042f;
+                float scoop = 1f - Mathf.Exp(-glide * 4.5f);
+                if (glide >= 1f) scoop = 1f;
+                float hz = fLo + (fHi - fLo) * scoop;
+                float inc = hz * dt;
+                p0 += inc * dLo;
+                p1 += inc;
+                p2 += inc * dHi;
+                if (p0 >= 1f) p0 -= 1f;
+                if (p1 >= 1f) p1 -= 1f;
+                if (p2 >= 1f) p2 -= 1f;
+                float s0 = BlepSaw(p0, inc * dLo);
+                float s1 = BlepSaw(p1, inc);
+                float s2 = BlepSaw(p2, inc * dHi);
+                a0 += cut * (s0 - a0);
+                a1 += cut * (s1 - a1);
+                a2 += cut * (s2 - a2);
+                b0 += cut * (a0 - b0);
+                b1 += cut * (a1 - b1);
+                b2 += cut * (a2 - b2);
+                float tone = (b0 + b1 + b2) * 0.34f;
+                shelf += 0.20f * (tone - shelf);
+                float bright = tone + 0.30f * (tone - shelf);
+                float atk = t < 0.0035f ? t / 0.0035f : 1f;
+                float env = atk * atk * Mathf.Exp(-t * 9.2f);
+                float shiver = 1f;
+                if (t > 0.07f && t < 0.30f)
+                {
+                    float w = (t - 0.07f) / 0.23f;
+                    float gate = Mathf.Sin(w * Mathf.PI);
+                    float lfo = 0.5f - 0.5f * Mathf.Sin(2f * Mathf.PI * 28f * t);
+                    shiver = 1f - 0.45f * gate * lfo;
+                }
+                h = (h * 1103515245 + 12345) & 0x7fffffff;
+                float white = (h / 1073741824f) - 1f;
+                slow += 0.08f * (white - slow);
+                mid += 0.55f * (white - mid);
+                float grit = mid - slow;
+                float bow = t < 0.0012f ? t / 0.0012f : 1f;
+                float scrape = grit * bow * Mathf.Exp(-t * 190f);
+                data[i] = bright * env * shiver + scrape * 0.85f;
+            }
+            PeakUnder(data, 0.89f);
+            return Bake("sting", data, 1f);
+        }
+
+        static float BlepSaw(float phase, float dt)
+        {
+            float s = 2f * phase - 1f;
+            s -= PolyBlep(phase, dt);
+            return s;
+        }
+
+        static float PolyBlep(float phase, float dt)
+        {
+            if (dt <= 0f) return 0f;
+            if (phase < dt)
+            {
+                phase /= dt;
+                return phase + phase - phase * phase - 1f;
+            }
+            if (phase > 1f - dt)
+            {
+                phase = (phase - 1f) / dt;
+                return phase * phase + phase + phase + 1f;
+            }
+            return 0f;
+        }
+
+        static void PeakUnder(float[] data, float peak)
+        {
+            float m = 0f;
+            for (int i = 0; i < data.Length; i++)
+            {
+                float a = data[i];
+                if (a < 0f) a = -a;
+                if (a > m) m = a;
+            }
+            if (m < 0.00001f) return;
+            float g = peak / m;
+            for (int i = 0; i < data.Length; i++)
+                data[i] *= g;
         }
 
         static float Square(float freq, float t)

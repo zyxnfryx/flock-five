@@ -27,6 +27,12 @@ namespace FlockFive
                     if ((uint)c < (uint)n.Length) n[c]++;
                 }
             }
+            // In the air between a pest scrap and Resolve. Still this garden's birds.
+            for (int i = 0; i < b.Displaced.Count; i++)
+            {
+                int c = (int)b.Displaced[i].Color;
+                if ((uint)c < (uint)n.Length) n[c]++;
+            }
             return n;
         }
 

@@ -149,13 +149,25 @@ namespace FlockFive
 
         static AdsHost _host;
         static int _showDepth;
-        static float _shownAt = -99f;
+        // Foreground seconds the current show has been up. The resume frame's
+        // unscaled step is the whole suspension, so it must not move this.
+        static float _shownForeground;
+        static float _settleLeft = -1f;
 
         public static bool IsLoading { get; private set; }
         public static bool IsShowing => _showDepth > 0;
         public static bool IsBusy => IsLoading || IsShowing;
-        public static bool JustShown => Time.unscaledTime - _shownAt < 0.75f;
-        public static float ShownFor => Time.unscaledTime - _shownAt;
+        public static bool JustShown => _showDepth > 0 && _shownForeground < 0.75f;
+        public static float ShownFor => _shownForeground;
+
+        // Steps the ad waits. Runs during GamePause (the show freezes PlayClock)
+        // and drops a suspension spike so a resume cannot finish the wait.
+        internal static float ForegroundDt()
+        {
+            float dt = Time.unscaledDeltaTime;
+            if (dt <= 0f || dt > 0.5f) return 0f;
+            return dt;
+        }
 
         public static void NoteLoad(bool on) => IsLoading = on;
 
@@ -163,7 +175,8 @@ namespace FlockFive
         {
             if (_showDepth == 0)
             {
-                _shownAt = Time.unscaledTime;
+                _shownForeground = 0f;
+                _settleLeft = -1f;
                 GamePause.Push();
             }
             _showDepth++;
@@ -173,14 +186,36 @@ namespace FlockFive
         {
             if (_showDepth == 0) return;
             _showDepth--;
-            if (_showDepth == 0) GamePause.Pop();
+            if (_showDepth > 0) return;
+            _settleLeft = -1f;
+            GamePause.Pop();
         }
 
         // Missed close, focus return, or a host that died mid-ad. Idempotent.
         public static void ForceClear()
         {
             IsLoading = false;
+            _settleLeft = -1f;
             while (_showDepth > 0) EndShow();
+        }
+
+        // Coming back while a show is up. A late reward callback still has a
+        // beat; then one release lets the owning coroutine finish the grant.
+        public static void ArmResumeSettle()
+        {
+            if (!IsShowing || JustShown) return;
+            if (_settleLeft < 0f) _settleLeft = 0.35f;
+        }
+
+        public static void TickShowClock()
+        {
+            if (_showDepth > 0)
+                _shownForeground += ForegroundDt();
+            if (_settleLeft < 0f) return;
+            _settleLeft -= ForegroundDt();
+            if (_settleLeft > 0f) return;
+            _settleLeft = -1f;
+            if (_host != null) _host.ReleaseAfterResume();
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -192,7 +227,8 @@ namespace FlockFive
             SessionClears = PlayerPrefs.GetInt(PrefClears, 0);
             IsLoading = false;
             _showDepth = 0;
-            _shownAt = -99f;
+            _shownForeground = 0f;
+            _settleLeft = -1f;
             GamePause.Reset();
         }
 
@@ -289,7 +325,7 @@ namespace FlockFive
                 float t = 0f;
                 while (t < 2.15f)
                 {
-                    t += Time.unscaledDeltaTime;
+                    t += ForegroundDt();
                     yield return null;
                 }
             }
@@ -383,7 +419,7 @@ namespace FlockFive
                 float t = 0f;
                 while (!_inited && !_initFailed && t < 5f)
                 {
-                    t += Time.unscaledDeltaTime;
+                    t += Ads.ForegroundDt();
                     yield return null;
                 }
 
@@ -408,7 +444,7 @@ namespace FlockFive
                     t = 0f;
                     while (!_rv.IsAdReady() && t < 6f)
                     {
-                        t += Time.unscaledDeltaTime;
+                        t += Ads.ForegroundDt();
                         yield return null;
                     }
                 }
@@ -434,7 +470,7 @@ namespace FlockFive
                 t = 0f;
                 while (_waiting && t < 180f)
                 {
-                    t += Time.unscaledDeltaTime;
+                    t += Ads.ForegroundDt();
                     yield return null;
                 }
                 if (_waiting) AdLog.Add("gift ad wait TIMED OUT after 180s; game resumed");
@@ -490,7 +526,7 @@ namespace FlockFive
                 float t = 0f;
                 while (!_inited && !_initFailed && t < 4f)
                 {
-                    t += Time.unscaledDeltaTime;
+                    t += Ads.ForegroundDt();
                     yield return null;
                 }
                 if (!_inited) { AdLog.Add("interstitial skipped: SDK not ready"); yield break; }
@@ -507,7 +543,7 @@ namespace FlockFive
                 t = 0f;
                 while (_intWaiting && t < 180f)
                 {
-                    t += Time.unscaledDeltaTime;
+                    t += Ads.ForegroundDt();
                     yield return null;
                 }
                 if (_intWaiting) AdLog.Add("interstitial wait TIMED OUT after 180s; game resumed");
@@ -593,6 +629,29 @@ namespace FlockFive
             _waiting = false;
         }
 
+        // One exit for a show the player left. The coroutine that called ShowAd
+        // still writes LastGranted once. Orphan shows have no coroutine, so
+        // they end here. A second call does not pop the pause again.
+        internal void ReleaseAfterResume()
+        {
+            bool reward = _waiting;
+            bool inter = _intWaiting;
+            _waiting = false;
+            _intWaiting = false;
+            if (_orphanRv)
+            {
+                _orphanRv = false;
+                Ads.EndShow();
+            }
+            if (_orphanInt)
+            {
+                _orphanInt = false;
+                Ads.EndShow();
+            }
+            if (!reward && !inter && Ads.IsShowing)
+                Ads.ForceClear();
+        }
+
         void OnDisplayFail(LevelPlayAdInfo info, LevelPlayAdError error)
         {
             _waiting = false;
@@ -613,26 +672,31 @@ namespace FlockFive
                 AdLog.Flush();
                 return;
             }
-            // The ad activity took the foreground. Coming back means it is gone,
-            // even when the close callback never arrived. Ignore the flicker
-            // some SDKs emit in the first moments of ShowAd.
-            if (_leftApp && Ads.IsShowing && !Ads.JustShown)
-                Ads.ForceClear();
+            // The ad activity took the foreground. Coming back usually means it is
+            // gone, even when the close callback never arrived. JustShown still
+            // ignores the flicker some SDKs emit in the first moments of ShowAd.
+            // ArmResumeSettle waits one beat so a late reward is not dropped.
+            if (_leftApp && Ads.IsShowing)
+                Ads.ArmResumeSettle();
             _leftApp = false;
         }
 
         void OnApplicationFocus(bool focus)
         {
-            if (!focus || !_leftApp || !Ads.IsShowing || Ads.JustShown) return;
-            Ads.ForceClear();
+            if (!focus || !_leftApp || !Ads.IsShowing) return;
+            Ads.ArmResumeSettle();
             _leftApp = false;
         }
 
         void Update()
         {
             AdLog.Flush();
+            Ads.TickShowClock();
             if (Ads.IsShowing && Ads.ShownFor > 185f)
+            {
+                ReleaseAfterResume();
                 Ads.ForceClear();
+            }
             if (!Ads.TestSuite) return;
             var ts = UnityEngine.InputSystem.Touchscreen.current;
             if (ts == null) { _suiteHold = 0f; _logHold = 0f; return; }

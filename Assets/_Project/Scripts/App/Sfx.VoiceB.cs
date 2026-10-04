@@ -419,44 +419,6 @@ namespace FlockFive
             return ClipLp("thunder" + seed, data, soft);
         }
 
-        // Two-note rising "hey!". Soft attack, sine plus a quiet second
-        // harmonic. No tick, no FM. A4 then a fourth up (D5), both under 720 Hz.
-        // ~0.30s. Lowpass 0.40 so the rise stays bright without phone hash.
-        static AudioClip MakeRowAlert()
-        {
-            const float dur = 0.30f;
-            int n = Mathf.CeilToInt(Rate * dur);
-            var data = new float[n];
-            const float fLo = 440f;
-            const float fHi = 587.33f;
-            float pLo = 0f;
-            float pHi = 0f;
-            float dt = 1f / Rate;
-            for (int i = 0; i < n; i++)
-            {
-                float t = i * dt;
-                pLo += 2f * Mathf.PI * fLo * dt;
-                pHi += 2f * Mathf.PI * fHi * dt;
-                float aLo = HeyRise(t, 0.020f) * Mathf.Exp(-Mathf.Max(0f, t - 0.028f) * 10f);
-                float tHi = t - 0.105f;
-                float aHi = 0f;
-                if (tHi > 0f)
-                    aHi = HeyRise(tHi, 0.024f) * Mathf.Exp(-Mathf.Max(0f, tHi - 0.030f) * 7.5f);
-                float lo = Mathf.Sin(pLo) + 0.16f * Mathf.Sin(pLo * 2f);
-                float hi = Mathf.Sin(pHi) + 0.12f * Mathf.Sin(pHi * 2f);
-                data[i] = (lo * aLo * 0.55f + hi * aHi * 0.72f) * 0.42f;
-            }
-            return ClipLp("wake-sting", data, 0.40f);
-        }
-
-        static float HeyRise(float t, float atk)
-        {
-            if (t <= 0f) return 0f;
-            if (atk < 0.0001f || t >= atk) return 1f;
-            float u = t / atk;
-            return u * u * (3f - 2f * u);
-        }
-
         // Soft falling yawn. Once per branch, under the crunch. No lead mark.
         static AudioClip MakeLullaby()
         {

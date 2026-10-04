@@ -55,8 +55,13 @@ namespace FlockFive
         bool _rewardPayLive;
         float _rewardHoldLeft;
         int _rewardHoldFrame = -1;
-        // End-of-garden payout, drawn over the garden until it has paid, then home.
+        // Coin pay over the cleared garden. The streak board itself waits for home.
         bool _clearReward;
+        // A clear paid its coins. The homepage still owes the streak board.
+        bool _streakHomeDue;
+        // RewardGap after that board tucks. Lessons wait. The sign is already gone.
+        bool _rewardGap;
+        int _rewardGapGen;
         // Piggy coin: hold with random wait, then a slow Y-flip.
         float _coinSpinT = -1f;
         float _coinHoldLeft;
@@ -253,10 +258,34 @@ namespace FlockFive
         const string HiveSubtitle = "Finding bees awards cards for your collection.";
         const string HiveHowTo = "Uncover a dark bird to award a card. Tap a card you have, then tap again to flip.";
         const string HiveFlipSeenKey = "flockfive.hive.flip.seen";
+        // First visit to the album. Same done-flag pattern as the other coach lessons.
+        const string CoachHiveAlbumKey = "flockfive.coach.hivealbum";
+        const string AlbumTapLine = "Tap a card you have\nto enlarge it.";
+        const string AlbumFlipLine = "Tap again to flip.";
+        const string AlbumPageLine = "Swipe left or right,\nor tap the page numbers.";
+        static readonly Color AlbumInk = new Color(1f, 0.98f, 0.90f, 1f);
         bool _hiveTutorOn;
         float _hiveTutorT;
         int _hiveTutorStep;
         int _hiveGuiFrame = -1;
+        bool _albumTutorOn;
+        bool _albumTutorKnown;
+        bool _albumTutorDone;
+        bool _albumTutorFlipped;
+        int _albumTutorStep;
+        int _albumTutorSlot = -1;
+        bool _albumTutorAimOk;
+        Vector2 _albumTutorAim;
+        float _albumOpenAt = -1f;
+        int _albumOpenFrames;
+        int _albumAgeFrame = -1;
+        bool _albumCardOk;
+        Rect _albumCardR;
+        bool _albumPagerOk;
+        Rect _albumPagerR;
+        bool _albumInspectOk;
+        Rect _albumInspectR;
+        PageSwipe _pageSwipe;
         int _wakeBranch = -1;
 #if UNITY_EDITOR
         bool _pokerPlayrun;
@@ -371,6 +400,37 @@ namespace FlockFive
             Invite.OnShared();
             int gained = Purse.Coins - before;
             if (gained > 0) BeginRewardPay(gained);
+        }
+
+        static FlockFiveApp _app;
+        static int _resumeNoteFrame = -1;
+        static float _resumeInputUntil = -1f;
+
+        void OnEnable()
+        {
+            _app = this;
+        }
+
+        void OnDisable()
+        {
+            if (_app == this) _app = null;
+        }
+
+        // Pause and focus both bookend a suspend. One call per frame drops the
+        // resume spike, keeps the live lesson, and lets a shown ad settle once.
+        public static void NoteAppBackground()
+        {
+        }
+
+        public static void NoteAppResume()
+        {
+            if (_resumeNoteFrame == Time.frameCount) return;
+            _resumeNoteFrame = Time.frameCount;
+            PlayClock.DropResumeFrame();
+            Ads.ArmResumeSettle();
+            if (_app == null) return;
+            _resumeInputUntil = PlayClock.Now + 0.35f;
+            _app.FreshTutorGlove();
         }
 
         void Start()
@@ -497,6 +557,7 @@ namespace FlockFive
             if (_busy && !_frozen) return;
             if (StreakTier.AtStake(Purse.Streak))
             {
+                if (!GatePopup(PopupKind.Streak, true)) return;
                 _restartSavedMul = StreakTier.Normalize(Purse.Streak);
                 _restartAsk = RestartAsk.Sure;
                 _gift = GiftFace.None;
@@ -510,6 +571,8 @@ namespace FlockFive
         void ShowSplash()
         {
             _splash = true;
+            _clearReward = false;
+            CancelRewardGap();
             SfxLibrary.NoteGarden(false);
             _gardenScoring = false;
             _gardenStampAt = -1f;
@@ -547,9 +610,9 @@ namespace FlockFive
             PigPoke.Boot();
             BirdPoker.Boot();
             ArmStreakSlide();
-            ArmDailyBonus();
             CloseAvatarRename();
             ArmAdopt();
+            ArmDailyBonus();
             ArmDailyIntro();
             ArmHiveIntro();
             ArmPokerIntro();
@@ -559,6 +622,7 @@ namespace FlockFive
         {
             GardenFit.ClearBusy();
             DismissStreakSign();
+            CancelRewardGap();
             _busy = false;
             _won = false;
             _finaleHold = false;
@@ -2038,9 +2102,9 @@ namespace FlockFive
             // In-flight hops and collects must not snap birds back onto perches
             // while a restart takeoff still owns them.
             if (_restarting && !force) return;
-            // PestPark has already parked the flock. Painting unlocked limbs
-            // here swaps every branch while the scrap sprites are still flying.
-            if (_pestResolving && !force) return;
+            // The limb in the scrap stays locked, so its fight sprites are not
+            // pulled home. Every other limb tracks the board. No seat is held
+            // for the flock until ResolveDisplaced.
             for (int i = 0; i < _garden.Branches.Length; i++)
             {
                 if (_locked.Contains(i)) continue;
@@ -2160,13 +2224,18 @@ namespace FlockFive
 
         void OnApplicationPause(bool paused)
         {
-            PlayClock.DropResumeFrame();
-            if (!paused) ResumeDailyReminder();
+            if (paused) NoteAppBackground();
+            else
+            {
+                NoteAppResume();
+                ResumeDailyReminder();
+            }
         }
 
         void OnApplicationFocus(bool focus)
         {
-            PlayClock.DropResumeFrame();
+            if (focus) NoteAppResume();
+            else NoteAppBackground();
         }
 
         void Update()
@@ -2181,6 +2250,7 @@ namespace FlockFive
                 return;
             }
             CoachAdvance();
+            TickPopups();
             TickDailyBonus();
             if (_splash) return;
             if (_restartAsk != RestartAsk.None) return;
@@ -2231,7 +2301,7 @@ namespace FlockFive
         void HandleTap(Vector2 world)
         {
             if (_busy || _won || _board == null) return;
-            if (Time.unscaledTime < _swallowTapsUntil) return;
+            if (PlayClock.Now < _swallowTapsUntil) return;
             if (Time.unscaledTime < _nextTap) return;
             _nextTap = Time.unscaledTime + 0.10f;
             if (CoachReject(world)) return;
@@ -2243,7 +2313,7 @@ namespace FlockFive
                 return;
             }
             // Bird and limb taps must not open a gift a moment later.
-            _suppressGiftUntil = Time.unscaledTime + 1f;
+            _suppressGiftUntil = PlayClock.Now + 1f;
 
             int feeder = HitFeeder(world);
             if (feeder >= 0)
@@ -2498,12 +2568,10 @@ namespace FlockFive
                 var idle = birds[i] != null ? birds[i].GetComponent<BirdIdle>() : null;
                 flock[i] = idle != null ? new Bird(idle.Color, idle.Sex) : new Bird(col, BirdSex.Neutral);
             }
-            // Feeder matches score when the last bird lands. Pest scraps park the
-            // flock up front so the five cannot immediately collect again.
+            // Feeder matches score when the last bird lands. A pest scrap lifts
+            // the flock now and does not pick a limb until the fight is over.
             // Hawk never drops the limb; a sparrow drops it only when every bird
             // still has a seat.
-            PestPark.Plan pestPlan = default;
-            // Read before PestPark moves the flock onto other limbs.
             bool scoreClear = pest && PestWillLeave(vsHawk, vsSparrow) && StageClearingCollect(branch);
             // A solved garden does not wait out the scrap. Dismiss the pest and score.
             if (pest && scoreClear)
@@ -2513,10 +2581,8 @@ namespace FlockFive
                 yield return AfterPestLeaves(true, true, birds, n, feeder, view, slot, branch);
                 _scoreImmediate = false;
             }
-            else
-            {
-                if (pest) pestPlan = PestPark.Apply(_board, branch, vsHawk);
-            }
+            else if (pest)
+                PestPark.Hold(_board, branch);
 
             float haste = Mathf.Lerp(1f, 0.52f, Mathf.Clamp01((combo - 1) / 7f));
             float step = 0.192f * haste;
@@ -2633,7 +2699,7 @@ namespace FlockFive
             }
             bool pestScored = _pestClearScored;
             if (pest && !pestScored)
-                yield return FinishPest(view, birds, n, pestPlan, branch, gen);
+                yield return FinishPest(view, birds, n, branch, vsHawk, gen);
             if (gen != _motionGen)
             {
                 EndCollect();
@@ -3065,7 +3131,7 @@ namespace FlockFive
             ReleaseClearedFlock();
             if (_board != null)
             {
-                // Park already emptied this limb, so ApplyCollect cannot see the match.
+                // The slot was captured when the match was still on the limb.
                 if ((uint)branch < (uint)_board.Branches.Count)
                 {
                     var src = _board.Branches[branch];
@@ -3106,10 +3172,10 @@ namespace FlockFive
             }
         }
 
-        // Limb snap, then every fighter flies to the seat PestPark already reserved.
+        // Limb snap, then every fighter flies to the seat just chosen.
         // Sprites stay alive: SyncAll re-parents them. Destroying them here was
         // how a restored gift limb lost its birds.
-        IEnumerator FinishPest(BranchView view, SpriteRenderer[] birds, int n, PestPark.Plan plan, int branch, int gen)
+        IEnumerator FinishPest(BranchView view, SpriteRenderer[] birds, int n, int branch, bool hawk, int gen)
         {
             if (_pestFinishing)
             {
@@ -3117,6 +3183,8 @@ namespace FlockFive
                 yield break;
             }
             _pestFinishing = true;
+            // One path for sparrow, hawk, and any later pest that knocks birds off.
+            var plan = ResolveDisplaced(branch, hawk);
             AlignBranchViews();
             if (view != null)
             {
@@ -3133,6 +3201,14 @@ namespace FlockFive
             SyncAll(true);
             Conserve("pest");
             _pestFinishing = false;
+        }
+
+        // Seats the flock Hold lifted. Called only after the scrap, so the
+        // player had the whole fight to use every other limb.
+        PestPark.Plan ResolveDisplaced(int branch, bool hawk)
+        {
+            if (_board == null) return default;
+            return PestPark.Resolve(_board, branch, hawk);
         }
 
         void EndPest()
@@ -3166,7 +3242,7 @@ namespace FlockFive
         {
             if (_gardenScoring || _won) return true;
             if (_restarting || _splash || _frozen) return false;
-            if (_board == null || !_board.Won) return false;
+            if (_board == null || _board.Displaced.Count > 0 || !_board.Won) return false;
             if (_collectDepth > 0 || _collecting) return false;
             if (!PestOnStage() && (_locked.Count > 0 || GardenFit.Busy)) return false;
             _gardenScoring = true;
@@ -3446,11 +3522,13 @@ namespace FlockFive
             }
             LevelData.RememberClear();
             Purse.AwardClear();
-            // Sparrow, hawk, and a plain clear all arrive here. Pay, then home.
+            // Sparrow, hawk, and a plain clear all arrive here. Coins land, then home.
+            // The streak board plays on the homepage after that pay.
             yield return PlayClearReward();
             if (_restarting || _splash)
             {
                 _clearReward = false;
+                _streakHomeDue = false;
                 _gardenScoring = false;
                 yield break;
             }
@@ -3458,22 +3536,16 @@ namespace FlockFive
             ShowSplash();
         }
 
-        // Reward sign over the cleared garden. Home starts after the sign fades,
-        // and the fade waits on WaitRewardPay's same gate (coins, balance, sound).
+        // Coin flight over the cleared garden. WaitRewardPay is the gate (coins,
+        // balance, sound). The streak board is not part of this wait.
         IEnumerator PlayClearReward()
         {
             _clearReward = true;
-            ArmStreakSlide();
-            float guard = 0f;
-            while ((_streakSlide >= 0f || RewardPayBusy()) && guard < 45f)
-            {
-                if (_restarting || _splash) break;
-                if (!GamePause.Paused) guard += Time.unscaledDeltaTime;
-                yield return null;
-            }
-            // A stall dismiss still pays. WaitRewardPay holds home until that pay finishes.
-            if (_streakSlide >= 0f) DismissStreakSign();
+            bool boardAfter = Purse.Streak > 0 && Purse.Pending > 0;
+            PayStreakStep();
             yield return WaitRewardPay();
+            if (_restarting || _splash) boardAfter = false;
+            _streakHomeDue = boardAfter;
             _clearReward = false;
         }
 
@@ -3687,6 +3759,7 @@ namespace FlockFive
         {
             if (_busy || _collecting || _locked.Count > 0 || _frozen) return;
             if (_won || _board == null || _board.Won) return;
+            if (_board.Displaced.Count > 0) return;
             if (_gift != GiftFace.None) return;
             // Ice only when nothing can move. An open bonus limb counts, empty or not.
             // A search that finds no win is not enough: stage 1 still has hops.
@@ -4498,9 +4571,23 @@ namespace FlockFive
             return idx;
         }
 
+        // Resume delivers the pointer that was down when the app left. Eat it
+        // once, for every IMGUI control, so a lesson cannot be tapped through.
+        static void SwallowResumePointer()
+        {
+            if (PlayClock.Now >= _resumeInputUntil) return;
+            var e = Event.current;
+            if (e == null) return;
+            var t = e.type;
+            if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
+            if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+            e.Use();
+        }
+
         static bool Pressed(out Vector2 screen)
         {
             screen = default;
+            if (PlayClock.Now < _resumeInputUntil) return false;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
                 screen = Mouse.current.position.ReadValue();
@@ -4584,8 +4671,8 @@ namespace FlockFive
         {
             if (GamePause.Paused)
             {
-                // Glove pose uses unscaled time, including under an ad, so the
-                // hand does not freeze and then jump when the pause lifts.
+                // Pose steps on PlayClock, so a suspension cannot skip the arc.
+                // Under an ad the clock holds and the hand does not jump when it lifts.
                 if (TutorialGuideLive() || _tutorPause != 0 || _pokerPageOn || _pokerDealHint)
                     CoachPlace();
                 return;
@@ -4674,6 +4761,7 @@ namespace FlockFive
 
         void OnGUI()
         {
+            SwallowResumePointer();
             if (GamePause.Paused)
             {
                 // Card-flip tutor keeps running through a pause. An ad hides it so the
@@ -5045,8 +5133,8 @@ namespace FlockFive
             int have = Hive.Found;
             int cap = Mathf.Max(1, Hive.AlbumSlots);
             float u = Mathf.Clamp01(have / (float)cap);
-            int floor = Mathf.RoundToInt(14f * s);
-            int hi = Mathf.Max(floor, Mathf.RoundToInt(22f * s));
+            int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
+            int hi = Mathf.Max(floor + 2, Mathf.RoundToInt(24f * s));
             string label = "Cards " + have + " / " + cap;
             var st = new GUIStyle(GUI.skin.label)
             {
@@ -5054,10 +5142,10 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap = false
             };
-            float labelH = hi + 6f;
+            float labelH = hi + 8f;
             var labelR = new Rect(anchor.x, anchor.y, anchor.width, labelH);
             st.fontSize = FitFont(st, label, labelR.width * 0.98f, labelR.height * 0.92f, floor, hi);
-            StampOutlined(labelR, label, st, new Color(1f, 0.95f, 0.78f), 1, 1);
+            StampReadable(labelR, label, st, AlbumInk);
 
             float barH = Mathf.Clamp(12f * s, 10f, 18f * s);
             var plate = new Rect(anchor.x, labelR.yMax + 4f * s, anchor.width, barH);
@@ -6130,11 +6218,47 @@ namespace FlockFive
         void DismissStreakSign()
         {
             bool live = _streakSlide >= 0f;
+            bool finished = _streakSlide >= 1f;
             _streakSlide = -1f;
             if (!live) return;
             // Leaving early still pays once. The pay step already cleared Owed if it ran.
             PayStreakStep();
             Purse.Pending = 0;
+            // The tuck finished on the homepage. Breath, then the bird lesson.
+            // An early leave (level start, hive, poker) does not take that breath.
+            if (finished && _splash && _home == HomeFace.Splash && AdoptHoldsQueue())
+                BeginRewardGap();
+        }
+
+        // Lessons only. The sign is already gone, so this is not an input block.
+        void BeginRewardGap()
+        {
+#if UNITY_EDITOR
+            if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive) return;
+#endif
+            if (_rewardGap) return;
+            int gen = ++_rewardGapGen;
+            _rewardGap = true;
+            StartCoroutine(RunRewardGap(gen));
+        }
+
+        void CancelRewardGap()
+        {
+            _rewardGapGen++;
+            _rewardGap = false;
+        }
+
+        IEnumerator RunRewardGap(int gen)
+        {
+            yield return WaitRewardPay(true);
+            if (gen != _rewardGapGen) yield break;
+            _rewardGap = false;
+        }
+
+        // Streak board, or the breath after it. Splash lessons wait on this.
+        bool RewardLessonHold()
+        {
+            return _streakSlide >= 0f || _rewardGap;
         }
 
         // One call adds the clear. A repeat, including the fade's dismiss, does not.
@@ -6164,10 +6288,18 @@ namespace FlockFive
                 _streakSlide = -1f;
                 _streakAnnounced = 0;
                 _streakChirped = false;
+                _streakHomeDue = false;
                 SettleUnshownStreakPay();
                 return;
             }
             _streakAnnounced = Purse.Streak;
+            // Coins already landed in the garden. The board is the homepage sign.
+            if (_streakHomeDue)
+            {
+                _streakHomeDue = false;
+                OpenStreakBoard();
+                return;
+            }
             // Neon tally only after a stage clear (coins incoming).
             if (Purse.Pending <= 0)
             {
@@ -6175,6 +6307,12 @@ namespace FlockFive
                 SettleUnshownStreakPay();
                 return;
             }
+            OpenStreakBoard();
+        }
+
+        void OpenStreakBoard()
+        {
+            if (!GatePopup(PopupKind.Streak, false)) return;
             _streakSlide = 0f;
             _streakChirped = false;
             _streakWinChimed = false;
@@ -6187,7 +6325,7 @@ namespace FlockFive
 
         void StepStreakReward()
         {
-            if (_streakSlide < 0f) return;
+            if (_clearReward || _streakSlide < 0f) return;
             if (Purse.Streak <= 0)
             {
                 DismissStreakSign();
@@ -6203,7 +6341,7 @@ namespace FlockFive
             // The tuck is the way out. It stays put until the payout has finished.
             bool fadeGate = t >= beat.HoldEnd && RewardPayBusy();
             if (!fadeGate)
-                _streakSlide = Mathf.Min(1f, _streakSlide + Time.unscaledDeltaTime / dur);
+                _streakSlide = Mathf.Min(1f, _streakSlide + PlayClock.Delta / dur);
             t = _streakSlide * dur;
             if (t >= beat.PayAt)
                 PayStreakStep();
@@ -6266,7 +6404,7 @@ namespace FlockFive
         }
 
         // Amount matches the coin times typeScale, then shrinks on width only.
-        // Home passes 0.95. Poker passes 0.86. Hive passes 1.
+        // Home passes 0.95. Poker passes 0.86.
         void DrawCoinCluster(Rect iconR, float s, float typeScale = 1f)
         {
             var coinSpr = SpriteCatalog.Coin;
@@ -6422,6 +6560,9 @@ namespace FlockFive
         const float RewardHoldDur = 1.20f * RewardPace;
         const float RewardFadeDur = 0.75f * RewardPace;
         const float RewardShakeDur = 0.22f * RewardPace;
+        // Breath after the homepage streak board tucks, before the bird lesson.
+        // Wall clock, inside 0.5–0.8s. WaitRewardPay is the only waiter.
+        const float RewardGap = 0.65f;
 
         struct RewardBeat
         {
@@ -6477,10 +6618,6 @@ namespace FlockFive
             if (m < 10f) return Mathf.Lerp(1.45f, 1.85f, (m - 5f) / 5f);
             return 1.85f;
         }
-
-        static readonly float[] RewardGlintX = { -0.28f, 0.22f, 0.04f, -0.16f, 0.30f };
-        static readonly float[] RewardGlintY = { 0.16f, -0.18f, 0.30f, -0.28f, 0.06f };
-        static readonly float[] RewardGlintPh = { 0.2f, 1.4f, 2.5f, 3.6f, 4.7f };
 
         // EaseOutBack (c1 = 2.2) first reaches 1 here. That frame is the thud.
         static float RewardStampLandU()
@@ -6550,26 +6687,44 @@ namespace FlockFive
             return tex;
         }
 
-        void DrawRewardRow(Rect inner, float linesTop, float metaH, float appear, float alpha, GUIStyle labelSt, int labelHi)
+        // REWARD at the full-open seat. openK is the appear/tuck scale only.
+        // The lamp breathe stays on the frame and must not reach this rect.
+        void DrawRewardRow(Rect rest, float appear, float alpha, GUIStyle labelSt, int labelHi, float openK, Vector2 pivot)
         {
             appear = Mathf.Clamp01(appear);
-            if (appear <= 0.04f) return;
+            if (appear <= 0.04f || rest.width < 4f || rest.height < 4f) return;
+            labelSt.alignment = TextAnchor.MiddleLeft;
+            labelSt.wordWrap = false;
+            var shadow = rest;
+            shadow.x += 2f;
+            shadow.y += 2f;
+            var shade = new Color(0.16f, 0.07f, 0.02f, appear * alpha * 0.62f);
+            DrawPopupTitle(shadow, "REWARD", labelSt, shade, 12, labelHi, 0.92f, 0.90f, 0, -1, 0.16f, 0.001f, openK, pivot);
+            var gold = new Color(1f, 0.91f, 0.58f, appear * alpha);
+            DrawPopupTitle(rest, "REWARD", labelSt, gold, 12, labelHi, 0.92f, 0.90f, 0, -1, 0.16f, 0.001f, openK, pivot);
+        }
+
+        // Same pad as the live inner block, at scale 1, so the word lands on the
+        // seat the card has when the open finishes.
+        static Rect RewardWordRect(Rect face, float s, bool showPips)
+        {
+            float padX = Mathf.Max(8f * s, face.width * 0.055f);
+            float padY = Mathf.Max(4f * s, face.height * 0.04f);
+            var inner = new Rect(face.x + padX, face.y + padY, face.width - padX * 2f, face.height - padY * 2f);
+            float pipH = 0f;
+            if (showPips)
+                pipH = Mathf.Min(20f * s, inner.height * 0.16f);
+            float bodyH = Mathf.Max(8f, inner.height - pipH);
+            float metaH = Mathf.Clamp(bodyH * 0.24f, 26f * s, bodyH * 0.32f);
+            float linesTop = inner.y + pipH;
             float inX = Mathf.Max(8f, metaH * 0.42f);
             float down = Mathf.Max(5f, metaH * 0.26f);
             float labelW = Mathf.Max(8f, inner.width * 0.62f - inX);
-            var row = new Rect(inner.x + inX, linesTop + down, labelW, metaH);
-            labelSt.alignment = TextAnchor.MiddleLeft;
-            int fs = FitFont(labelSt, "REWARD", row.width * 0.92f, row.height * 0.90f, 12, labelHi);
-            labelSt.fontSize = fs;
-            int dark = Mathf.Clamp(Mathf.RoundToInt(fs * 0.16f), 2, 7);
-            var shadow = new Rect(row.x + 1.6f, row.y + 2.4f, row.width, row.height);
-            var shade = new Color(0.16f, 0.07f, 0.02f, appear * alpha * 0.62f);
-            StampOutlined(shadow, "REWARD", labelSt, shade, 0, dark, 0.001f);
-            var gold = new Color(1f, 0.91f, 0.58f, appear * alpha);
-            StampOutlined(row, "REWARD", labelSt, gold, 0, dark, 0.001f);
+            return new Rect(inner.x + inX, linesTop + down, labelW, metaH);
         }
 
-        void DrawRewardStamp(Rect r, int mul, float alpha, float age)
+        // sparkle 0 still lets x10 twinkle inside StreakBadge.Draw.
+        void DrawRewardStamp(Rect r, int mul, float alpha, float age, float sparkle = 0f)
         {
             if (r.width < 8f || alpha < 0.02f || age < 0f) return;
             mul = StreakTier.Display(mul);
@@ -6587,7 +6742,7 @@ namespace FlockFive
                 if (since >= 0f && since < 0.22f)
                     pop *= 1f + 0.08f * Mathf.Sin(since / 0.22f * Mathf.PI);
             }
-            StreakTier.BadgeColors(mul, out Color fill, out Color edge, out bool shimmer);
+            var ink = StreakBadge.Colors(mul);
             if (_rewardStampStyle == null)
             {
                 _rewardStampStyle = new GUIStyle(GUI.skin.label)
@@ -6625,70 +6780,10 @@ namespace FlockFive
             Vector2 pivot = r.center;
             GUIUtility.RotateAroundPivot(-15f, pivot);
             GUIUtility.ScaleAroundPivot(new Vector2(pop, pop), pivot);
-            var disc = RewardDiscTex();
-            var glow = GlowTex();
-            float halo = r.width * 0.16f;
-            GUI.color = new Color(edge.r, edge.g, edge.b, 0.34f * alpha);
-            GUI.DrawTexture(new Rect(r.x - halo, r.y - halo, r.width + halo * 2f, r.height + halo * 2f), glow, ScaleMode.ScaleToFit, true);
-            var shadow = new Rect(r.x + r.width * 0.045f, r.y + r.height * 0.055f, r.width, r.height);
-            GUI.color = new Color(0.10f, 0.04f, 0.02f, 0.42f * alpha);
-            GUI.DrawTexture(shadow, disc, ScaleMode.ScaleToFit, true);
-            GUI.color = new Color(edge.r, edge.g, edge.b, alpha);
-            GUI.DrawTexture(r, disc, ScaleMode.ScaleToFit, true);
-            float lip = r.width * 0.11f;
-            var faceR = new Rect(r.x + lip, r.y + lip, r.width - lip * 2f, r.height - lip * 2f);
-            var faceCol = fill;
-            faceCol.a *= alpha;
-            GUI.color = faceCol;
-            GUI.DrawTexture(faceR, disc, ScaleMode.ScaleToFit, true);
-            GUI.color = Color.white;
-            int dark = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.12f), 2, 8);
-            bool lightFace = shimmer || mul <= 1;
-            var ink = lightFace
-                ? new Color(0.28f, 0.12f, 0.03f, alpha)
-                : new Color(1f, 0.97f, 0.90f, alpha);
-            if (shimmer) DrawGoldSweep(faceR, alpha);
-            StampOutlined(r, text, st, ink, lightFace ? 0 : 1, dark);
-            if (shimmer) DrawRewardGlints(r, alpha);
+            StreakBadge.Draw(r, text, st, ink, alpha, sparkle);
             float wax = _waxBorn < 0f ? 9f : Time.unscaledTime - _waxBorn;
-            if (wax >= 0f && wax < 0.5f) DrawWaxSplat(r, fill, edge, wax, alpha);
+            if (wax >= 0f && wax < 0.5f) DrawWaxSplat(r, ink.Fill, ink.Edge, wax, alpha);
             GUI.matrix = prev;
-            GUI.color = Color.white;
-        }
-
-        static void DrawRewardGlints(Rect r, float alpha)
-        {
-            var spr = SpriteCatalog.Sparkle;
-            var tex = spr != null && spr.texture != null ? spr.texture : null;
-            if (tex == null) return;
-            float t = Time.unscaledTime;
-            for (int i = 0; i < RewardGlintX.Length; i++)
-            {
-                float tw = 0.5f + 0.5f * Mathf.Sin(t * 2.6f + RewardGlintPh[i]);
-                tw = tw * tw;
-                if (tw < 0.08f) continue;
-                float sz = r.height * (0.16f + 0.08f * (i & 1));
-                float x = r.center.x + RewardGlintX[i] * r.width - sz * 0.5f;
-                float y = r.center.y + RewardGlintY[i] * r.height - sz * 0.5f;
-                GUI.color = new Color(1f, 0.94f, 0.62f, tw * alpha);
-                GUI.DrawTexture(new Rect(x, y, sz, sz), tex, ScaleMode.ScaleToFit, true);
-            }
-            GUI.color = Color.white;
-        }
-
-        // Slow light band across the gold disc. Not a gem shape.
-        static void DrawGoldSweep(Rect face, float alpha)
-        {
-            var glow = GlowTex();
-            if (glow == null) return;
-            float u = Mathf.Repeat(Time.unscaledTime * 0.18f, 1f);
-            float fade = Mathf.Sin(u * Mathf.PI);
-            float travel = Mathf.Lerp(-0.15f, 0.78f, u);
-            float w = face.width * 0.30f;
-            float h = face.height * 0.72f;
-            var band = new Rect(face.x + face.width * travel, face.y + face.height * 0.14f, w, h);
-            GUI.color = new Color(1f, 0.98f, 0.84f, 0.42f * fade * alpha);
-            GUI.DrawTexture(band, glow, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
         }
 
@@ -6721,19 +6816,39 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // Garden play only. Home, hive, and poker do not draw the chip.
+        bool GardenStampLive()
+        {
+            return !_splash && _gardenStampAt >= 0f && StreakTier.AtStake(Purse.Streak);
+        }
+
+        // Top-left chip, about 1.5× the old 54px disc (44..78). TopHud keeps it
+        // under the notch / Dynamic Island. Glints stay inside this rect.
+        Rect GardenStampRect(float s)
+        {
+            float d = Mathf.Clamp(81f * s, 66f, 117f);
+            float x = Mathf.Max(10f * s, Screen.safeArea.xMin + 8f);
+            float y = TopHud() + 10f * s;
+            var safe = Screen.safeArea;
+            if (safe.width > 8f && safe.height > 8f)
+            {
+                float maxX = safe.xMax - 6f;
+                if (x + d > maxX) x = Mathf.Max(safe.xMin + 4f, maxX - d);
+                float minY = Screen.height - safe.yMax + 4f;
+                if (y < minY) y = minY;
+            }
+            return new Rect(x, y, d, d);
+        }
+
         void DrawGardenStamp(float s)
         {
             _gardenStampRect = default;
-            if (_splash || _gardenStampAt < 0f || !StreakTier.AtStake(Purse.Streak)) return;
-            int mul = StreakTier.Display(Purse.Streak);
-            float d = Mathf.Clamp(54f * s, 44f, 78f);
-            float x = Mathf.Max(10f * s, Screen.safeArea.xMin + 8f);
-            float y = TopHud() + 8f * s;
-            var r = new Rect(x, y, d, d);
+            if (!GardenStampLive()) return;
+            var r = GardenStampRect(s);
             _gardenStampRect = r;
             float age = Time.unscaledTime - _gardenStampAt;
-            DrawRewardStamp(r, mul, 1f, age);
-            if (mul < 10) DrawRewardGlints(r, 0.55f);
+            // Gentle twinkle on every tier. x10 adds the gold sweep inside Draw.
+            DrawRewardStamp(r, StreakTier.Display(Purse.Streak), 1f, age, 0.48f);
         }
 
         void DrawRestartAsk(float s)
@@ -6825,7 +6940,7 @@ namespace FlockFive
 
         void DrawStreakToast(float s, Rect pig)
         {
-            if (_streakSlide < 0f) return;
+            if (_clearReward || _streakSlide < 0f) return;
             if (Purse.Streak <= 0)
             {
                 DismissStreakSign();
@@ -6851,7 +6966,10 @@ namespace FlockFive
             float tuck = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(beat.HoldEnd, beat.SeqDur, t));
             float alpha = wordAppear * (1f - tuck);
 
-            float scale = Mathf.Lerp(0.82f, 1f, wordAppear);
+            float openK = Mathf.Lerp(0.82f, 1f, wordAppear);
+            // Title scale is the open and the tuck. The lamp breathe below stays on the frame.
+            float titleK = Mathf.Lerp(openK, 0.72f, tuck);
+            float scale = openK;
             // Freeze the lamp clock on the way out so the strobe cannot flash after the board thins.
             float lampT = Time.unscaledTime - Mathf.Max(0f, t - beat.HoldEnd);
             if (t >= beat.AmtAt)
@@ -6950,18 +7068,13 @@ namespace FlockFive
             var pigC = pig.center;
             float x = Mathf.Lerp(restX, pigC.x - restW * 0.22f, tuck);
             float y = Mathf.Lerp(restY, pigC.y - restH * 0.35f, tuck);
+            var kick = stampLive ? RewardCardShake(stampAge, s) : Vector2.zero;
             var board = new Rect(x, y, restW, restH);
             var c = board.center;
             board.width *= scale;
             board.height *= scale;
-            board.x = c.x - board.width * 0.5f;
-            board.y = c.y - board.height * 0.5f;
-            if (stampLive)
-            {
-                var kick = RewardCardShake(stampAge, s);
-                board.x += kick.x;
-                board.y += kick.y;
-            }
+            board.x = c.x - board.width * 0.5f + kick.x;
+            board.y = c.y - board.height * 0.5f + kick.y;
 
             var glow = GlowTex();
             float glowA = 0.10f + 0.08f * (0.5f + 0.5f * Mathf.Sin(lampT * 2.3f));
@@ -7060,7 +7173,9 @@ namespace FlockFive
                 StampOutlined(r, text, st, ink, light, dark, 0.001f);
             }
 
-            DrawRewardRow(inner, linesTop, metaH, wordAppear, 1f - tuck, labelSt, labelHi);
+            var wordFace = new Rect(x + kick.x, y + kick.y, restW, restH);
+            var wordRest = RewardWordRect(wordFace, s, showPips);
+            DrawRewardRow(wordRest, wordAppear, 1f - tuck, labelSt, labelHi, titleK, wordFace.center);
 
             int shown = toPay;
             float roll = 1f;
@@ -7234,7 +7349,9 @@ namespace FlockFive
                 int delta = goal - _coinTick;
                 float dur = 0.45f * RewardPace;
                 if (dur < 0.05f) dur = 0.05f;
-                int step = Mathf.CeilToInt(Mathf.Abs(delta) * Time.unscaledDeltaTime / dur);
+                float slice = PlayClock.Delta;
+                if (slice <= 0f) return;
+                int step = Mathf.CeilToInt(Mathf.Abs(delta) * slice / dur);
                 if (step < 1) step = 1;
                 if (delta > 0) _coinTick += step;
                 else _coinTick -= step;
@@ -7290,15 +7407,23 @@ namespace FlockFive
         }
 
         // One wait. Callers fade or open the next segment only after this returns.
-        IEnumerator WaitRewardPay()
+        // gapAfter adds RewardGap, the named breath before the next home lesson.
+        IEnumerator WaitRewardPay(bool gapAfter = false)
         {
             float guard = 0f;
             while (RewardPayBusy() && guard < 45f)
             {
-                if (!GamePause.Paused) guard += Time.unscaledDeltaTime;
+                guard += PlayClock.Delta;
                 yield return null;
             }
             if (RewardPayBusy()) FinishRewardPay();
+            if (!gapAfter) yield break;
+            float breath = 0f;
+            while (breath < RewardGap)
+            {
+                breath += PlayClock.Delta;
+                yield return null;
+            }
         }
 
         void FinishRewardPay()
@@ -7311,6 +7436,7 @@ namespace FlockFive
             _rewardPayLive = false;
         }
 
+        // Garden coin pay only. The streak board stays idle until the homepage.
         void DrawClearReward()
         {
             float s = Mathf.Max(Screen.height / 720f, 1f);
@@ -7484,6 +7610,54 @@ namespace FlockFive
             }
             held = GUIUtility.hotControl == id;
             return fired;
+        }
+
+        // One gesture for any paged screen. The caller keeps the state.
+        // Dir is +1 when the finger moved left (next page) and -1 when it moved right.
+        // A tiny drag, or one that travels farther vertically than sideways, stays Dir 0
+        // and does not set PageSwipeAte, so a tap under the finger still lands.
+        struct PageSwipe
+        {
+            public Vector2 Origin;
+            public bool Tracking;
+            public bool Claimed;
+            public int Dir;
+        }
+
+        static bool PageSwipeAte;
+
+        static void WatchPageSwipe(ref PageSwipe swipe, Rect area, float minPx)
+        {
+            swipe.Dir = 0;
+            var e = Event.current;
+            if (e == null) return;
+            var kind = e.type;
+            if (kind == EventType.MouseDown && e.button == 0)
+            {
+                swipe.Tracking = area.width > 2f && area.height > 2f && area.Contains(e.mousePosition);
+                swipe.Origin = e.mousePosition;
+                swipe.Claimed = false;
+                PageSwipeAte = false;
+                return;
+            }
+            if (!swipe.Tracking || kind != EventType.MouseUp) return;
+            swipe.Tracking = false;
+            if (e.button != 0) return;
+            int dir;
+            bool took = PageSwipeDir(e.mousePosition - swipe.Origin, minPx, out dir);
+            swipe.Claimed = took;
+            PageSwipeAte = took;
+            if (took) swipe.Dir = dir;
+        }
+
+        static bool PageSwipeDir(Vector2 delta, float minPx, out int dir)
+        {
+            dir = 0;
+            float ax = Mathf.Abs(delta.x);
+            float ay = Mathf.Abs(delta.y);
+            if (ax < minPx || ax <= ay) return false;
+            dir = delta.x < 0f ? 1 : -1;
+            return true;
         }
 
         // Shared hit for every tiny home target that sits on the play flower.
@@ -7677,7 +7851,8 @@ namespace FlockFive
             // Greet only. The flower tap dismisses that line. It does not Load.
             if (AdoptGreetUp() && HitHomeFirst(FlowerPlayRect(), out _))
                 AdvanceAdoptGreet();
-            if (DrawFlowerPlay(s, ease, number, acceptTap: !modal))
+            // Owed bird lesson keeps LEVEL from starting under the breath or the greet.
+            if (DrawFlowerPlay(s, ease, number, acceptTap: !modal && !AdoptHoldsQueue()))
             {
                 Sfx.GateGo();
                 Load(next);
@@ -8391,6 +8566,24 @@ namespace FlockFive
             GUI.Label(r, text, st);
         }
 
+        // Busy backgrounds. Thin dark rim, a soft shadow down-right, then the bright fill.
+        // StampOutlined stays the thick white-and-black rim. This is the lighter one.
+        static void StampReadable(Rect r, string text, GUIStyle st, Color fill)
+        {
+            if (string.IsNullOrEmpty(text) || st == null) return;
+            float a = Mathf.Clamp01(fill.a);
+            if (a < 0.04f) return;
+            float drop = Mathf.Max(1.5f, st.fontSize * 0.07f);
+            Paint(st, new Color(0.02f, 0.03f, 0.06f, a * 0.20f));
+            GUI.Label(new Rect(r.x + drop * 1.7f, r.y + drop * 2.2f, r.width, r.height), text, st);
+            Paint(st, new Color(0.02f, 0.03f, 0.06f, a * 0.40f));
+            GUI.Label(new Rect(r.x + drop * 0.75f, r.y + drop, r.width, r.height), text, st);
+            Paint(st, new Color(0.05f, 0.04f, 0.03f, a));
+            Ring(r, text, st, 1);
+            Paint(st, fill);
+            GUI.Label(r, text, st);
+        }
+
         // Eight-point rim instead of Ring. Poker chrome calls this every event
         // (same GUI.Label count on Layout and Repaint, or HitPad ids drift).
         // Ring's 8*radius samples were hundreds of GUI.Labels per label.
@@ -9058,6 +9251,8 @@ namespace FlockFive
             float bob = onPerch ? Mathf.Sin(_avatarClock * 1.7f + _avatarBobPhase) * icon * 0.035f : 0f;
             float hop = _avatarHappy > 0f ? Mathf.Sin((1f - _avatarHappy) * Mathf.PI) * icon * 0.16f : 0f;
             c = new Vector2(_avatarPos.x, _avatarPos.y - bob - hop);
+            if (onPerch)
+                _avatarFaceLeft = c.x >= Screen.width * 0.5f;
             return true;
         }
 
@@ -9066,8 +9261,6 @@ namespace FlockFive
             _avatarDrawR = default;
             _avatarPlateR = default;
             if (!HomeAvatarFrame(s, out var c, out float icon, out bool onPerch)) return;
-            if (onPerch)
-                _avatarFaceLeft = c.x >= Screen.width * 0.5f;
             DrawHomeLimbSide(false);
             float preen = 0f;
             if (onPerch && _avatarPreenT > 0f)
@@ -9086,14 +9279,15 @@ namespace FlockFive
             if (drawn.width <= 2f) return;
             _avatarDrawR = drawn;
             _avatarDrew = true;
-            _avatarPlateR = DrawAvatarPlate(c, icon, SavedAvatarName(), s);
+            bool wings = BirdIdle.UseFlyingPose(onPerch, false);
+            _avatarPlateR = DrawAvatarPlate(c, icon, SavedAvatarName(), s, _avatarCol, _avatarFaceLeft, wings, _avatarClock, true);
         }
 
         // Rails already took their taps. The play flower has not. A lesson click
         // is still swallowed here so the flower cannot start under the bird.
         bool HitHomeAvatar(float s, bool tutorUp)
         {
-            if (!HomeAvatarFrame(s, out var c, out float icon, out _)) return false;
+            if (!HomeAvatarFrame(s, out var c, out float icon, out bool onPerch)) return false;
             if (VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive) return false;
             float pad = HomeBirdHitPad * s;
             var bird = new Rect(
@@ -9101,9 +9295,10 @@ namespace FlockFive
                 c.y - icon * 0.5f - pad,
                 icon + pad * 2f,
                 icon + pad * 2f);
-            var plate = AvatarPlateRect(c, icon, s);
+            bool wings = BirdIdle.UseFlyingPose(onPerch, false);
+            var plate = NameTagRect(c, icon, s, _avatarCol, SavedAvatarName(), _avatarFaceLeft, wings, _avatarClock, true);
             bool birdHit = HitHomeFirst(bird, out _);
-            bool plateHit = !AvatarNeedsName() && HitHomeFirst(plate, out _);
+            bool plateHit = plate.width > 2f && HitHomeFirst(plate, out _);
             if (tutorUp || HomeTutorLive()) return false;
             if (birdHit || plateHit)
                 PokeAvatar();
@@ -9830,9 +10025,7 @@ namespace FlockFive
             if (_home != HomeFace.Poker || _splash) return false;
             if (_pokerPageOn) return false;
             if (Ads.IsBusy || Ads.IsShowing) return false;
-            if (TutorialGuideLive() || _hiveTutorOn || _tutorPause != 0) return false;
-            if (_pokerIntro || _pokerIntroLive || _hiveIntro || _hiveIntroLive) return false;
-            if (_dailyIntro || _dailyIntroLive || _welcomeOpen || _welcomeGlove) return false;
+            if (IsTutorialBlocking || TutorialOwnPopup() != PopupKind.None || _welcomeOpen) return false;
             if (BirdPoker.PhaseNow == BirdPoker.Phase.Dealt) return false;
             if (PokerMotionBusy() || _pokerStamp) return false;
             if (_pokerPayOpen || _pokerPayAnim > 0.2f) return false;
@@ -12918,20 +13111,360 @@ namespace FlockFive
             return fire;
         }
 
+        // Header plate, title, and the instruction lines. Returns the bottom of the plate.
+        float DrawAlbumHeader(float s, Rect back)
+        {
+            int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
+            float hiveSize = Mathf.Clamp(72f * s, 60f, 92f);
+            float headY = back.yMax + 20f * s;
+            float left = Mathf.Max(16f * s, Screen.safeArea.xMin + 10f);
+            var hiveHead = new Rect(left, headY, hiveSize, hiveSize);
+            float textX = hiveHead.xMax + 12f * s;
+            float textRight = Screen.width - Mathf.Max(16f * s, Screen.width - Screen.safeArea.xMax + 12f);
+            float textW = Mathf.Max(48f, textRight - textX);
+            var titleSt = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                wordWrap = false
+            };
+            int titlePx = Mathf.Max(floor + 12, Mathf.RoundToInt(32f * s));
+            float titleH = titlePx + 8f;
+            var titleR = new Rect(textX, hiveHead.center.y - titleH * 0.5f, textW, titleH);
+            titleSt.fontSize = FitFont(titleSt, HiveTitle, titleR.width, titleR.height * 0.9f, floor, titlePx);
+
+            bool showHow = Hive.Found == 0 || _hiveHowToNudge;
+            int split = HiveHowTo.IndexOf(". ", System.StringComparison.Ordinal);
+            string how = HiveHowTo;
+            if (split > 0)
+                how = HiveHowTo.Substring(0, split + 1) + "\n" + HiveHowTo.Substring(split + 2);
+            string body = showHow ? HiveSubtitle + "\n" + how : HiveSubtitle;
+            var bodySt = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.UpperLeft,
+                wordWrap = true
+            };
+            int bodyHi = Mathf.Max(floor, Mathf.RoundToInt(showHow ? 19f * s : 21f * s));
+            float bodyW = Mathf.Max(48f, textRight - left);
+            bodySt.fontSize = bodyHi;
+            // Width wraps the sentences, so the plate grows instead of clipping a line.
+            float bodyH = Mathf.Max(bodyHi + 8f, bodySt.CalcHeight(new GUIContent(body), bodyW) + 6f);
+            var bodyR = new Rect(left, hiveHead.yMax + 12f * s, bodyW, bodyH);
+
+            var plate = new Rect(
+                left - 6f * s,
+                hiveHead.y - 8f * s,
+                Mathf.Max(48f, textRight - left + 12f * s),
+                bodyR.yMax - (hiveHead.y - 8f * s) + 8f * s);
+            DrawCoachPanel(plate, 1f);
+            DrawHiveButton(hiveHead, s);
+            StampReadable(titleR, HiveTitle, titleSt, AlbumInk);
+            GUI.color = new Color(1f, 0.84f, 0.38f, 0.92f);
+            float ruleW = Mathf.Min(textW * 0.46f, 140f * s);
+            GUI.DrawTexture(new Rect(titleR.x, titleR.yMax - 1f, ruleW, Mathf.Max(2f, 3f * Mathf.Min(s, 1.35f))), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            StampReadable(bodyR, body, bodySt, AlbumInk);
+            return plate.yMax + 8f * s;
+        }
+
+        void NoteAlbumOpen()
+        {
+            var e = Event.current;
+            if (e == null || e.type != EventType.Repaint) return;
+            if (_albumAgeFrame == Time.frameCount) return;
+            _albumAgeFrame = Time.frameCount;
+            if (_albumOpenAt < 0f) _albumOpenAt = PlayClock.Now;
+            if (_albumOpenFrames < 12) _albumOpenFrames++;
+        }
+
+        void ResetAlbumOpen()
+        {
+            _albumOpenAt = -1f;
+            _albumOpenFrames = 0;
+            _albumAgeFrame = -1;
+            _pageSwipe.Tracking = false;
+            _pageSwipe.Claimed = false;
+            _pageSwipe.Dir = 0;
+        }
+
+        bool AlbumPageSettled()
+        {
+            if (_albumOpenFrames < 2 || _albumOpenAt < 0f) return false;
+            if (PlayClock.Now - _albumOpenAt < 0.34f) return false;
+            if (_hivePageTurn < 0.55f) return false;
+            return true;
+        }
+
+        bool AlbumTutorDone()
+        {
+            if (_albumTutorKnown) return _albumTutorDone;
+            _albumTutorKnown = true;
+            _albumTutorDone = PlayerPrefs.GetInt(CoachHiveAlbumKey, 0) != 0;
+            return _albumTutorDone;
+        }
+
+        static int AlbumOwnedOnPage(int page)
+        {
+            if (page < 0) return -1;
+            int start = page * HivePageSize;
+            for (int n = 0; n < HivePageSize; n++)
+            {
+                int slot = start + n;
+                if (slot >= Hive.AlbumSlots) break;
+                if (Hive.CountOfSlot(slot) > 0) return slot;
+            }
+            return -1;
+        }
+
+        static int AlbumOwnedSlot(int preferPage)
+        {
+            int here = AlbumOwnedOnPage(preferPage);
+            if (here >= 0) return here;
+            int pages = Mathf.Max(1, (Hive.AlbumSlots + HivePageSize - 1) / HivePageSize);
+            for (int p = 0; p < pages; p++)
+            {
+                if (p == preferPage) continue;
+                int slot = AlbumOwnedOnPage(p);
+                if (slot >= 0) return slot;
+            }
+            return -1;
+        }
+
+        bool TurnHivePage(int page)
+        {
+            int pages = Mathf.Max(1, (Hive.AlbumSlots + HivePageSize - 1) / HivePageSize);
+            if (_hivePageTurn < 0.55f) return false;
+            if (page < 0 || page >= pages || page == _hivePage) return false;
+            ClearHivePageFresh(_hivePage);
+            _hivePageFrom = _hivePage;
+            _hivePage = page;
+            _hivePageTurn = 0f;
+            _hiveFlip = -1;
+            Sfx.PageTurn();
+            if (_albumTutorOn && _albumTutorStep >= 3)
+                FinishAlbumTutor();
+            return true;
+        }
+
+        bool AlbumInspectReady()
+        {
+            return _hiveInspect >= 0 && !_hiveInspectClosing && _hiveInspectT >= 0.28f;
+        }
+
+        string AlbumTutorLine()
+        {
+            if (_albumTutorStep >= 3) return AlbumPageLine;
+            if (_albumTutorStep == 2) return AlbumFlipLine;
+            return AlbumTapLine;
+        }
+
+        void BeginAlbumTutor(int step)
+        {
+            _albumTutorOn = true;
+            _albumTutorStep = step;
+            _albumTutorFlipped = false;
+            _albumTutorAimOk = false;
+            _coachFade = 0f;
+            _tutorSeatOn = false;
+            _cueSpoken = null;
+            _cueLine = null;
+            GloveVeilReset();
+            _gloveVis = false;
+            _gloveReady = false;
+        }
+
+        void AdvanceAlbumTutor(int step)
+        {
+            if (_albumTutorStep == step) return;
+            _albumTutorStep = step;
+            _tutorSeatOn = false;
+            _coachFade = 0f;
+            CueLine(AlbumTutorLine());
+        }
+
+        void FinishAlbumTutor()
+        {
+            bool was = _albumTutorOn;
+            _albumTutorOn = false;
+            _albumTutorStep = 0;
+            _albumTutorFlipped = false;
+            _albumTutorAimOk = false;
+            _albumTutorDone = true;
+            _albumTutorKnown = true;
+            _gloveVis = false;
+            _gloveReady = false;
+            if (was) GloveVeilReset();
+            if (_cueLine == AlbumTapLine || _cueLine == AlbumFlipLine || _cueLine == AlbumPageLine)
+                _cueLine = null;
+            _cueSpoken = null;
+#if UNITY_EDITOR
+            // Shots must not write the done flags. A later real visit can still teach.
+            if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive)
+            {
+                _albumTutorDone = false;
+                _albumTutorKnown = false;
+                return;
+            }
+#endif
+            bool save = false;
+            if (PlayerPrefs.GetInt(CoachHiveAlbumKey, 0) == 0)
+            {
+                PlayerPrefs.SetInt(CoachHiveAlbumKey, 1);
+                save = true;
+            }
+            if (PlayerPrefs.GetInt(HiveFlipSeenKey, 0) == 0)
+            {
+                PlayerPrefs.SetInt(HiveFlipSeenKey, 1);
+                save = true;
+            }
+            if (save) PlayerPrefs.Save();
+        }
+
+        void TryArmAlbumTutor()
+        {
+            // Back sets _home before this runs, in the same pass. Do not arm on the way out.
+            if (_home != HomeFace.Hive) return;
+            if (_albumTutorOn || AlbumTutorDone()) return;
+            if (!AlbumPageSettled() || !TutorialGateClear()) return;
+            if (Hive.Found <= 0) return;
+            if (_hiveInspect >= 0)
+            {
+                if (!AlbumInspectReady() || Hive.CountOfSlot(_hiveInspect) <= 0) return;
+                BeginAlbumTutor(2);
+                return;
+            }
+            if (_albumTutorSlot < 0 || !_albumCardOk)
+            {
+                int other = AlbumOwnedSlot(_hivePage);
+                if (other < 0) return;
+                int page = other / HivePageSize;
+                if (page != _hivePage)
+                {
+                    _hivePage = page;
+                    _hivePageFrom = page;
+                    _hivePageTurn = 99f;
+                    _albumTutorSlot = other;
+                }
+                return;
+            }
+            BeginAlbumTutor(1);
+        }
+
+        // Owns the shared glove while the album lesson is up. False when another
+        // lesson should keep posing. Caption and glove draw from the album page.
+        bool TickAlbumTutor(float dt)
+        {
+            if (!_albumTutorOn) return false;
+            if (_home != HomeFace.Hive)
+            {
+                _gloveVis = false;
+                _albumTutorAimOk = false;
+                return false;
+            }
+            if (!AlbumPageSettled() || !TutorialGateClear())
+            {
+                _gloveVis = false;
+                if (OtherTutorialLive()) return false;
+                return true;
+            }
+            if (_albumTutorStep <= 1 && _hiveInspect >= 0)
+            {
+                AdvanceAlbumTutor(2);
+                _gloveVis = false;
+                return true;
+            }
+            if (_albumTutorStep == 2 && _albumTutorFlipped)
+            {
+                _gloveVis = false;
+                if (_hiveInspect < 0) AdvanceAlbumTutor(3);
+                return true;
+            }
+            if (_albumTutorStep == 2 && _hiveInspect < 0)
+            {
+                AdvanceAlbumTutor(1);
+                _gloveVis = false;
+                return true;
+            }
+            if (_albumTutorStep == 2 && !AlbumInspectReady())
+            {
+                _gloveVis = false;
+                return true;
+            }
+            if (_albumTutorStep >= 3 && _hiveInspect >= 0)
+            {
+                _gloveVis = false;
+                return true;
+            }
+            Vector2 aim = _albumTutorAim;
+            bool aimed = false;
+            if (_albumTutorStep >= 3)
+            {
+                aimed = _albumPagerOk;
+                if (aimed) aim = TopTouch(_albumPagerR);
+            }
+            else if (_albumTutorStep == 2)
+            {
+                aimed = _albumInspectOk && AlbumInspectReady();
+                if (aimed) aim = TopTouch(_albumInspectR);
+            }
+            else
+            {
+                aimed = _albumCardOk && _albumTutorSlot >= 0;
+                if (aimed) aim = TopTouch(_albumCardR);
+            }
+            _albumTutorAim = aim;
+            _albumTutorAimOk = aimed;
+            if (!aimed)
+            {
+                _gloveVis = false;
+                return true;
+            }
+            if (dt < 0f) dt = 0f;
+            CueLine(AlbumTutorLine());
+            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            float handS = Mathf.Max(Screen.height / 720f, 1f);
+            CoachGloveAt(aim, dt, handS);
+            return true;
+        }
+
+        void DrawAlbumTutor(float s)
+        {
+            if (!_albumTutorOn || _home != HomeFace.Hive) return;
+            if (!AlbumPageSettled() || !TutorialGateClear()) return;
+            if (_albumTutorStep == 2 && (_albumTutorFlipped || !AlbumInspectReady())) return;
+            if (_albumTutorStep >= 3 && _hiveInspect >= 0) return;
+            if (_albumTutorStep <= 1 && _hiveInspect >= 0) return;
+            if (!_albumTutorAimOk) return;
+            string line = AlbumTutorLine();
+            if (string.IsNullOrEmpty(line)) return;
+            float w = Mathf.Min(Screen.width * 0.78f, 460f * s);
+            float h = line.IndexOf('\n') >= 0 ? 78f * s : 52f * s;
+            float y = TopHud() + 8f * s;
+            if (_albumTutorStep >= 3 && _albumPagerOk)
+                y = _albumPagerR.y - h - 18f * s;
+            else if (_albumTutorStep == 2 && _albumInspectOk)
+                y = _albumInspectR.y - h - 12f * s;
+            else if (_albumCardOk)
+                y = _albumCardR.y - h - 16f * s;
+            float minY = TopHud() + 4f;
+            if (y < minY) y = minY;
+            float maxY = Screen.height - h - 8f;
+            if (y > maxY) y = maxY;
+            var seat = new Rect((Screen.width - w) * 0.5f, y, w, h);
+            DrawSplashIntroLine(line, seat, s);
+            DrawTutorOverlay(s);
+        }
+
         void DrawHivePage()
         {
             float s = Mathf.Max(Screen.height / 720f, 1f);
             DrawHomeWash(0.28f);
 
-            var safe = Screen.safeArea;
             float top = TopHud();
             var back = BackMedalRect(s, top);
-            {
-                float icon = Mathf.Clamp(back.height * 0.86f, 36f * s, back.height);
-                float right = Screen.width - Mathf.Max(12f, Screen.width - safe.xMax + 10f);
-                var ir = new Rect(right - icon, back.center.y - icon * 0.5f, icon, icon);
-                DrawCoinCluster(ir, s);
-            }
+            PageSwipeAte = false;
+            NoteAlbumOpen();
             if (_hiveInspect < 0 && DrawBackMedal(back))
             {
                 ClearHivePageFresh(_hivePage);
@@ -12942,53 +13475,11 @@ namespace FlockFive
                 _hiveInspectT = 0f;
                 _hiveInspectClosing = false;
                 _hiveHowToNudge = false;
+                ResetAlbumOpen();
                 _home = HomeFace.Splash;
             }
 
-            int floor = Mathf.RoundToInt(14f * s);
-            float hiveSize = Mathf.Clamp(68f * s, 56f, 88f);
-            float headY = back.yMax + 16f * s;
-            var hiveHead = new Rect(Mathf.Max(16f, safe.xMin + 10f), headY, hiveSize, hiveSize);
-            DrawHiveButton(hiveHead, s);
-            float textX = hiveHead.xMax + 10f * s;
-            float textW = Screen.width - textX - 16f * s;
-            var titleSt = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleLeft,
-                wordWrap = false
-            };
-            int titlePx = Mathf.Max(floor + 8, Mathf.RoundToInt(26f * s));
-            titleSt.fontSize = titlePx;
-            var titleR = new Rect(textX, hiveHead.y + 4f * s, textW, titlePx + 8f);
-            StampOutlined(titleR, HiveTitle, titleSt, new Color(1f, 0.94f, 0.78f), 2, 1);
-            var subSt = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.UpperLeft,
-                wordWrap = true
-            };
-            int subHi = Mathf.Max(floor, Mathf.RoundToInt(18f * s));
-            var subR = new Rect(textX, titleR.yMax + 8f * s, textW, subHi * 2.4f);
-            subSt.fontSize = FitFontWrapped(subSt, HiveSubtitle, subR.width, subR.height, floor, subHi);
-            StampOutlined(subR, HiveSubtitle, subSt, new Color(1f, 0.92f, 0.72f), 1, 1);
-            float textBottom = Mathf.Max(hiveHead.yMax, subR.yMax);
-            bool showHow = Hive.Found == 0 || _hiveHowToNudge;
-            if (showHow)
-            {
-                var howSt = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.UpperLeft,
-                    wordWrap = true
-                };
-                int howHi = Mathf.Max(floor, Mathf.RoundToInt(18f * s));
-                float howH = howHi * 2.6f;
-                var howR = new Rect(16f * s, textBottom + 14f * s, Screen.width - 32f * s, howH);
-                howSt.fontSize = FitFontWrapped(howSt, HiveHowTo, howR.width, howR.height, floor, howHi);
-                StampOutlined(howR, HiveHowTo, howSt, new Color(1f, 0.96f, 0.82f), 1, 1);
-                textBottom = howR.yMax;
-            }
+            float textBottom = DrawAlbumHeader(s, back);
             float tallyW = Mathf.Min(Screen.width - 32f * s, 460f * s);
             var tallyAnchor = new Rect((Screen.width - tallyW) * 0.5f, textBottom + 16f * s, tallyW, 8f);
             float hiveBottom = DrawHiveTally(tallyAnchor, s);
@@ -12998,13 +13489,18 @@ namespace FlockFive
             bool turning = _hivePageTurn < 0.55f;
             if (turning) _hivePageTurn += Time.unscaledDeltaTime;
 
-            // Ultra Pro clear page: 3×3 sleeves on a binder sheet
-            int typeFloor = Mathf.RoundToInt(14f * s);
-            float colH = typeFloor * 2.3f + 10f * s;
+            // Ultra Pro clear page: 3×3 sleeves on a binder sheet.
+            // Pager hit is the painted chip and is at least 48pt.
+            int typeFloor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
+            float colH = typeFloor * 2.55f + 12f * s;
             float colGap = 16f * s;
-            float pagerHit = 44f;
-            float pagerLab = Mathf.Max(24f, 20f * s);
-            float pageBottom = Screen.height - 8f * s - pagerHit - pagerLab - 10f * s;
+            float pagerHit = Mathf.Max(48f, 56f * s);
+            float pagerLab = Mathf.Max(36f, 30f * s);
+            float botInset = Mathf.Max(8f * s, Screen.safeArea.yMin + 4f);
+            // footGap is text-to-chip air. DrawCoachPanel pads 12px, so the plate clears the chips
+            // and the safe inset (tab row sits 6*s under pageBottom).
+            float footGap = 22f;
+            float pageBottom = Screen.height - botInset - pagerHit - pagerLab - footGap - 16f - 6f * s;
             float pageTop = hiveBottom + colH + colGap;
             float pageH = pageBottom - pageTop;
             if (pageH < 72f * s) pageH = 72f * s;
@@ -13013,9 +13509,9 @@ namespace FlockFive
             var sheet = new Rect(pagePad, pageTop, pageW, pageH);
 
             // Binder spine shadow + clear sheet
-            GUI.color = new Color(0.08f, 0.06f, 0.04f, 0.55f);
+            GUI.color = new Color(0.08f, 0.06f, 0.04f, 0.62f);
             GUI.DrawTexture(new Rect(sheet.x - 6f * s, sheet.y + 8f * s, 14f * s, sheet.height), Texture2D.whiteTexture);
-            GUI.color = new Color(0.78f, 0.88f, 0.92f, 0.22f);
+            GUI.color = new Color(0.86f, 0.93f, 0.96f, 0.30f);
             GUI.DrawTexture(sheet, Texture2D.whiteTexture);
             GUI.color = new Color(0.55f, 0.62f, 0.68f, 0.35f);
             // Sleeve grid lines
@@ -13060,6 +13556,11 @@ namespace FlockFive
                     float cy = gy0 + row * (cellH + gap) + cellH * 0.5f;
                     float w = cardW * widthScale;
                     var card = new Rect(cx - w * 0.5f, cy - cardH * 0.5f, w, cardH);
+                    if (curl < 0.02f && i == _albumTutorSlot)
+                    {
+                        _albumCardR = card;
+                        _albumCardOk = true;
+                    }
                     // Sleeve pocket
                     var sleeve = new Rect(cx - cellW * 0.5f * widthScale + xShift * 0f, cy - cellH * 0.5f, cellW * widthScale, cellH);
                     // recompute sleeve with shift
@@ -13075,6 +13576,23 @@ namespace FlockFive
                         DrawBeeAlbumCard(card, i, s);
                     GUI.color = Color.white;
                 }
+            }
+
+            if (!_albumTutorOn || _albumTutorStep <= 1)
+                _albumTutorSlot = AlbumOwnedOnPage(_hivePage);
+            _albumCardOk = false;
+            int albumSwipeDir = 0;
+            if (_hiveInspect < 0 && !turning)
+            {
+                float swipeMin = Mathf.Max(36f, 40f * s);
+                var swipeArea = new Rect(0f, sheet.y, Screen.width, sheet.height);
+                WatchPageSwipe(ref _pageSwipe, swipeArea, swipeMin);
+                albumSwipeDir = _pageSwipe.Dir;
+            }
+            else
+            {
+                _pageSwipe.Tracking = false;
+                _pageSwipe.Claimed = false;
             }
 
             if (turning)
@@ -13102,11 +13620,14 @@ namespace FlockFive
                 DrawPageCards(_hivePage, 0f);
             }
 
-            // Slim page boxes. The hit pad stays 44pt; the painted box is smaller.
+            if (albumSwipeDir != 0)
+                TurnHivePage(_hivePage + albumSwipeDir);
+
+            // Page chips. The painted box is the hit, at least 48pt.
             float tabY = pageBottom + 6f * s;
             float tabGap = 8f;
             int shown = Mathf.Min(pages, 5);
-            float vis = Mathf.Clamp(22f * s, 20f, 30f);
+            float vis = pagerHit;
             int first = 0;
             if (pages > shown)
                 first = Mathf.Clamp(_hivePage - shown / 2, 0, pages - shown);
@@ -13124,8 +13645,13 @@ namespace FlockFive
                 var tab = new Rect(tabX0 + n * (pagerHit + tabGap), tabY, pagerHit, pagerHit);
                 var box = new Rect(tab.center.x - vis * 0.5f, tab.center.y - vis * 0.5f, vis, vis);
                 bool on = p == _hivePage && !turning;
-                bool held = false;
-                bool hit = !turning && _hiveInspect < 0 && HitPad(tab, out held);
+                bool held;
+                bool hit = HitPad(tab, out held);
+                if (turning || _hiveInspect >= 0 || PageSwipeAte)
+                {
+                    hit = false;
+                    held = false;
+                }
                 GUI.color = on
                     ? new Color(0.95f, 0.74f, 0.22f, held ? 1f : 0.95f)
                     : new Color(0.18f, 0.14f, 0.10f, held ? 0.92f : 0.72f);
@@ -13133,14 +13659,13 @@ namespace FlockFive
                 if (on)
                 {
                     GUI.color = new Color(1f, 0.94f, 0.62f, 0.9f);
-                    GUI.DrawTexture(new Rect(box.x + 2f, box.y + 2f, box.width - 4f, 2f), Texture2D.whiteTexture);
+                    GUI.DrawTexture(new Rect(box.x + 2f, box.y + 2f, box.width - 4f, 3f), Texture2D.whiteTexture);
                 }
                 GUI.color = Color.white;
-                Color ink = on ? new Color(0.28f, 0.14f, 0.05f) : new Color(1f, 0.94f, 0.72f);
                 string num = (p + 1).ToString();
-                int numHi = Mathf.Max(14, Mathf.RoundToInt(16f * s));
-                tabLab.fontSize = FitFont(tabLab, num, box.width * 0.86f, box.height * 0.86f, 12, numHi);
-                StampOutlined(box, num, tabLab, ink, 1, 1);
+                int numHi = Mathf.Max(22, Mathf.RoundToInt(28f * s));
+                tabLab.fontSize = FitFont(tabLab, num, box.width * 0.72f, box.height * 0.68f, 18, numHi);
+                StampReadable(box, num, tabLab, AlbumInk);
                 if (HivePageHasFresh(p))
                 {
                     float dot = Mathf.Max(7f, 6f * s);
@@ -13149,14 +13674,7 @@ namespace FlockFive
                     GUI.color = Color.white;
                 }
                 if (hit && p != _hivePage)
-                {
-                    ClearHivePageFresh(_hivePage);
-                    _hivePageFrom = _hivePage;
-                    _hivePage = p;
-                    _hivePageTurn = 0f;
-                    _hiveFlip = -1;
-                    Sfx.PageTurn();
-                }
+                    TurnHivePage(p);
             }
 
             var ofSt = new GUIStyle(GUI.skin.label)
@@ -13165,14 +13683,22 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap = false
             };
-            int bookHi = Mathf.Max(typeFloor, Mathf.RoundToInt(18f * s));
+            int bookHi = Mathf.Max(typeFloor + 4, Mathf.RoundToInt(24f * s));
             string ofBook = "Page " + (_hivePage + 1) + " of " + pages + "   ·   " + Hive.Found + " found";
-            var bookR = new Rect(12f * s, tabY + pagerHit + 2f, Screen.width - 24f * s, pagerLab);
-            ofSt.fontSize = FitFont(ofSt, ofBook, bookR.width * 0.96f, bookR.height * 0.9f, typeFloor, bookHi);
-            StampOutlined(bookR, ofBook, ofSt, new Color(1f, 0.94f, 0.72f), 1, 1);
-
+            var bookR = new Rect(16f * s, tabY + pagerHit + footGap, Screen.width - 32f * s, pagerLab);
+            ofSt.fontSize = FitFont(ofSt, ofBook, bookR.width * 0.92f, bookR.height * 0.86f, typeFloor, bookHi);
+            DrawCoachPanel(bookR, 1f);
+            StampReadable(bookR, ofBook, ofSt, AlbumInk);
+            _albumPagerR = new Rect(tabX0, tabY, tabsW, pagerHit);
+            _albumPagerOk = shown > 0 && tabsW > 8f;
+            if (_albumTutorOn && _albumTutorStep >= 3 && pages < 2)
+                FinishAlbumTutor();
             if (_hiveInspect >= 0)
                 DrawHiveInspect(s);
+            else
+                _albumInspectOk = false;
+            TryArmAlbumTutor();
+            DrawAlbumTutor(s);
         }
 
         void DrawHiveInspect(float s)
@@ -13217,6 +13743,8 @@ namespace FlockFive
                 Mathf.Lerp(from.height, to.height, t));
 
             int ix = _hiveInspect;
+            _albumInspectR = big;
+            _albumInspectOk = big.width > 8f && big.height > 8f;
             if (tick && _hiveTutorOn && !Ads.IsShowing && !_hiveInspectClosing)
                 AdvanceHiveTutor(ix);
             DrawBeeAlbumCard(big, ix, s, true);
@@ -13254,7 +13782,7 @@ namespace FlockFive
             // Card taps during the demo are swallowed so they neither flip nor dismiss.
             if (_hiveTutorOn)
                 HitPad(big, out _);
-            else if (fullyOpen && HitPad(big, out _))
+            else if (fullyOpen && HitPad(big, out _) && !PageSwipeAte)
                 BeginHiveFlip(ix);
 
             // Tap dim outside card closes (after card/X/Back so they win hit tests)
@@ -13294,12 +13822,15 @@ namespace FlockFive
             if ((uint)ix >= (uint)_hiveFaceBack.Length) return;
             _hiveFlip = ix;
             _hiveFlipT = 0f;
+            if (_albumTutorOn && _albumTutorStep == 2)
+                _albumTutorFlipped = true;
             Sfx.PageTurn();
         }
 
         void ArmHiveTutor()
         {
             if (_hiveTutorOn) return;
+            if (_albumTutorOn || !AlbumTutorDone()) return;
             if (PlayerPrefs.GetInt(HiveFlipSeenKey, 0) != 0) return;
             _hiveTutorOn = true;
             _hiveTutorT = 0f;
@@ -13321,7 +13852,9 @@ namespace FlockFive
         // Scripted tap, flip to the back, flip home, fade. No idle timer.
         void AdvanceHiveTutor(int ix)
         {
-            _hiveTutorT += Time.unscaledDeltaTime;
+            float tutorDt = PlayClock.Delta;
+            if (tutorDt > 0.05f) tutorDt = 0.05f;
+            _hiveTutorT += tutorDt;
             if (_hiveTutorStep == 0 && _hiveTutorT >= 0.62f)
             {
                 _hiveTutorStep = 1;
@@ -13702,7 +14235,8 @@ namespace FlockFive
                 DrawNewPill(card, s);
 
             // Owned sleeve opens inspect. A locked "?" re-shows the how-to and stays shut.
-            if (tappable && !inspectView && !flipping && _hivePageTurn >= 0.55f && _hiveInspect < 0 && HitPad(card, out _))
+            if (tappable && !inspectView && !flipping && _hivePageTurn >= 0.55f && _hiveInspect < 0
+                && HitPad(card, out _) && !PageSwipeAte)
             {
                 if (owned) OpenHiveInspect(i, card);
                 else _hiveHowToNudge = true;
@@ -14068,6 +14602,7 @@ namespace FlockFive
 
         void OpenHiveAlbum()
         {
+            ResetAlbumOpen();
             if (_hiveJumpSlot < 0 && _hiveFreshSlots.Count > 0)
                 _hiveJumpSlot = _hiveFreshSlots[_hiveFreshSlots.Count - 1];
             if (_hiveJumpSlot >= 0)
@@ -14134,28 +14669,31 @@ namespace FlockFive
             _hiveFlip = -1;
             _hiveFlipT = 0f;
             ClearHiveFresh(slot);
+            if (_albumTutorOn && _albumTutorStep <= 1)
+                AdvanceAlbumTutor(2);
             ArmHiveTutor();
             Sfx.PageTurn();
         }
 
         void DrawHiveColumns(float y, float h, float gx0, float cellW, float gap, float s)
         {
-            int floor = Mathf.RoundToInt(14f * s);
+            int floor = Mathf.Max(16, Mathf.RoundToInt(16f * s));
+            int hi = Mathf.Max(floor + 2, Mathf.RoundToInt(20f * s));
             var st = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap = true
             };
-            st.fontSize = floor;
             for (int col = 1; col < 3; col++)
             {
                 string text = col == 1 ? "Holo" : "Inverse Rainbow";
                 Color ink = col == 1
-                    ? new Color(0.15f, 0.48f, 0.92f)
-                    : new Color(0.82f, 0.22f, 0.68f);
+                    ? new Color(0.72f, 0.93f, 1f)
+                    : new Color(1f, 0.74f, 0.94f);
                 var r = new Rect(gx0 + col * (cellW + gap), y, cellW, h);
-                StampOutlined(r, text, st, ink, 1, 1);
+                st.fontSize = FitFontWrapped(st, text, r.width * 0.96f, r.height * 0.90f, floor, hi);
+                StampReadable(r, text, st, ink);
             }
         }
 
@@ -14191,6 +14729,7 @@ namespace FlockFive
         void OpenGift()
         {
             if (_iceCoating) return;
+            if (!GatePopup(PopupKind.Gift, true)) return;
             _giftBranch = -1;
             if (_frozen) _freezeOffer = true;
             OpenGiftCard();
@@ -14199,6 +14738,7 @@ namespace FlockFive
         void OpenBonus(int branch)
         {
             if (!CanOfferBonus(branch)) return;
+            if (!GatePopup(PopupKind.Gift, true)) return;
             _giftBranch = branch;
             OpenGiftCard();
             if (_gift == GiftFace.Card) ArmAdHand();
@@ -14208,7 +14748,7 @@ namespace FlockFive
         {
             if (_sel >= 0 || _won) return false;
             if (_busy || _collecting || _locked.Count > 0) return false;
-            if (Time.unscaledTime < _suppressGiftUntil) return false;
+            if (PlayClock.Now < _suppressGiftUntil) return false;
             if (_gift != GiftFace.None) return false;
             if (_board == null || (uint)branch >= (uint)_board.Branches.Count) return false;
             var st = _board.Branches[branch];
@@ -14303,6 +14843,7 @@ namespace FlockFive
         void RaiseGiftCard()
         {
             if (_gift == GiftFace.Card) return;
+            if (!GatePopup(PopupKind.Gift, false)) return;
             _gift = GiftFace.Card;
             AdLog.Add("branch offer shown (" + OfferReason() + ")");
         }
@@ -14323,8 +14864,8 @@ namespace FlockFive
             DismissAdHand();
             if (_gift == GiftFace.Movie) return;
             _gift = GiftFace.None;
-            _swallowTapsUntil = Time.unscaledTime + 0.45f;
-            _suppressGiftUntil = Time.unscaledTime + 1f;
+            _swallowTapsUntil = PlayClock.Now + 0.45f;
+            _suppressGiftUntil = PlayClock.Now + 1f;
         }
 
         IEnumerator WatchGift()
@@ -14362,8 +14903,8 @@ namespace FlockFive
             BeginRewardPay(0, 2.45f);
             yield return WaitRewardPay();
             _gift = GiftFace.None;
-            _swallowTapsUntil = Time.unscaledTime + 0.45f;
-            _suppressGiftUntil = Time.unscaledTime + 1f;
+            _swallowTapsUntil = PlayClock.Now + 0.45f;
+            _suppressGiftUntil = PlayClock.Now + 1f;
             _busy = false;
             Conserve("bonus");
             CheckOver();
@@ -14463,8 +15004,7 @@ namespace FlockFive
             title.wordWrap = false;
             title.alignment = TextAnchor.MiddleCenter;
             int hi = Mathf.Max(18, Mathf.RoundToInt(28f * s));
-            title.fontSize = FitFont(title, StreakKeepTitle, titleR.width, titleR.height * 0.9f, 14, hi);
-            StampOutlined(titleR, StreakKeepTitle, title, fill, 1, 2);
+            DrawPopupTitle(titleR, StreakKeepTitle, title, fill, 14, hi, 1f, 0.9f, 1, 2, 0f, 0.04f, 1f, titleR.center);
             title.wordWrap = true;
             int bodyHi = Mathf.Max(13, Mathf.RoundToInt(18f * s));
             title.fontSize = FitFontWrapped(title, StreakKeepBody, bodyR.width, bodyR.height * 0.92f, 11, bodyHi);
@@ -14653,8 +15193,11 @@ namespace FlockFive
             // Sentence first, glove last. The Watch hit is already stored, so painting
             // here does not change which control won the click.
             if (!_freezeOffer) DrawGiftCloseX(xBtn, xHeld, s);
-            if (_adHand) DrawAdHand(s, top + xSz);
-            if (_adHand) DrawTutorOverlay(s);
+            if (_adHand)
+            {
+                DrawSplashIntroLine(AdHandLine, AdHandCaptionRect(s), s);
+                DrawTutorOverlay(s);
+            }
             if (watch)
             {
                 DismissAdHand();
@@ -14768,12 +15311,11 @@ namespace FlockFive
         // and the VIP offer.
         static void GiftCardLayout(float s, out Rect card, out Rect flower)
         {
-            float cardW = Mathf.Min(Screen.width * 0.88f, 600f * s);
+            float cardW = StandardPopupWidth(s);
             float cardH = cardW * (501f / 780f);
-            float flowerSz = Mathf.Min(Screen.width * 0.54f, 300f * s);
-            // Petals kiss the card. The wooden disc starts at 10% of the flower,
-            // so a 40% overlap buried the Watch button in the plaque.
-            float overlap = flowerSz * 0.08f;
+            float flowerSz = Mathf.Min(Screen.width * 0.448f, cardW * 0.519f);
+            // Same overlap the daily claim uses. The disc still clears the plaque.
+            float overlap = flowerSz * 0.15f;
             float stackH = cardH + flowerSz - overlap;
             var placed = PlacePopup(s, cardW, stackH, 0.32f);
             card = new Rect(placed.x, placed.y, cardW, cardH);
@@ -14794,14 +15336,6 @@ namespace FlockFive
                 card.y += push;
                 flower.y += push;
             }
-        }
-
-        Vector2 GiftWatchAim(float s)
-        {
-            GiftCardPlaced(s, out _, out var flower);
-            var disc = FlowerDisc(flower, 0f);
-            if (disc.width < 2f || disc.height < 2f) return flower.center;
-            return disc.center;
         }
 
         // Same stack as GiftCardLayout. The bonus sign stays at that higher

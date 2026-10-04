@@ -59,6 +59,7 @@ namespace FlockFive
             public static void Show()
             {
                 if (NoAds.Owned || _open) return;
+                if (_app != null && !_app.GatePopup(PopupKind.Vip, true)) return;
                 _open = true;
                 _showAt = Time.unscaledTime;
                 _skipped = false;

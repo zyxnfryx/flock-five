@@ -105,7 +105,7 @@ namespace FlockFive
         }
 
         // One seated bounce. Restores whatever Lift the perch already had.
-        // Matching feeder arrived. Eyes open, one startled hop, red flash. The "!" is local.
+        // Matching feeder arrived. Eyes open, one startled hop. The "!" is local.
         public void WakeAlert()
         {
             Sleeping = false;
@@ -231,12 +231,9 @@ namespace FlockFive
                 if (_sr.flipX != FaceLeft) _sr.flipX = FaceLeft;
                 if (!Frozen)
                 {
-                    // Alert lerp owns the body color for its short hop. A shroud still wins.
-                    if (Shrouded || Time.time >= _alertUntil)
-                    {
-                        UnityEngine.Color tint = Shrouded ? ShroudTint : UnityEngine.Color.white;
-                        if (_sr.color != tint) _sr.color = tint;
-                    }
+                    // Shroud darkens the body. The "!" hop does not tint it.
+                    UnityEngine.Color tint = Shrouded ? ShroudTint : UnityEngine.Color.white;
+                    if (_sr.color != tint) _sr.color = tint;
                     int order = Shrouded ? FlockSort.Shroud : (Lift > 0.05f ? FlockSort.Lift : FlockSort.Perch);
                     FlockSort.Apply(_sr, order);
                 }
@@ -273,8 +270,6 @@ namespace FlockFive
                 float u = Mathf.Clamp01((Time.time - _alertFrom) / 0.46f);
                 float pulse = Mathf.Sin(u * Mathf.PI * 2f);
                 pulse = pulse < 0f ? 0f : pulse;
-                if (_sr != null)
-                    _sr.color = UnityEngine.Color.Lerp(UnityEngine.Color.white, new Color(1f, 0.18f, 0.14f), pulse * (1f - u * 0.35f));
                 float hop = Mathf.Sin(Mathf.Clamp01(u / 0.42f) * Mathf.PI) * 0.20f;
                 transform.localPosition = new Vector3(RestLocal.x, RestLocal.y + hop, RestLocal.z);
                 float lean = (FaceLeft ? 12f : -12f) * (1f - u);

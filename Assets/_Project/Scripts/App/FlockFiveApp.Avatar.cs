@@ -1,7 +1,141 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace FlockFive
 {
+    // Opaque wingspan of one sprite, in GUI y-down. In-game named birds pass the
+    // camera screen rect of that sprite as the sheet. Home and adopt use the same
+    // quad DrawCatalogBird draws, so flying and resting do not share one box.
+    public static class BirdNameTag
+    {
+        public struct Span
+        {
+            public float U0, U1, V0, V1;
+            public bool Ok;
+            public float MidU => (U0 + U1) * 0.5f;
+            public float BotV => V1;
+        }
+
+        static readonly Dictionary<int, Span> _span = new Dictionary<int, Span>();
+
+        public static bool TrySpan(Sprite spr, out Span span)
+        {
+            span = default;
+            var tex = spr != null ? spr.texture : null;
+            if (tex == null || !tex.isReadable || tex.width < 2 || tex.height < 2) return false;
+            int id = tex.GetInstanceID();
+            if (id != 0 && _span.TryGetValue(id, out span)) return span.Ok;
+            span = Measure(tex);
+            if (id != 0) _span[id] = span;
+            return span.Ok;
+        }
+
+        // Alpha above the fringe. A wide sheet is sampled every other pixel.
+        static Span Measure(Texture2D tex)
+        {
+            var span = new Span();
+            int w = tex.width;
+            int h = tex.height;
+            var px = tex.GetPixels32();
+            if (px == null || px.Length < (long)w * h) return span;
+            int step = (w > 800 || h > 800) ? 2 : 1;
+            int minX = w, maxX = -1, minY = h, maxY = -1;
+            for (int y = 0; y < h; y += step)
+            {
+                int row = y * w;
+                for (int x = 0; x < w; x += step)
+                {
+                    if (px[row + x].a <= 40) continue;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+            if (maxX < 0) return span;
+            int pad = step - 1;
+            if (minX > pad) minX -= pad;
+            else minX = 0;
+            if (minY > pad) minY -= pad;
+            else minY = 0;
+            maxX = Mathf.Min(w - 1, maxX + pad);
+            maxY = Mathf.Min(h - 1, maxY + pad);
+            span.U0 = minX / (float)w;
+            span.U1 = (maxX + 1) / (float)w;
+            span.V0 = 1f - (maxY + 1) / (float)h;
+            span.V1 = 1f - minY / (float)h;
+            span.Ok = span.U1 > span.U0 && span.V1 > span.V0;
+            return span;
+        }
+
+        public static bool TryVisual(Sprite spr, Rect sheet, bool faceLeft, out Rect visual)
+        {
+            visual = default;
+            if (!TrySpan(spr, out var span) || sheet.width < 1f || sheet.height < 1f) return false;
+            var tex = spr.texture;
+            var fit = FitSheet(sheet, tex.width, tex.height);
+            float u0 = span.U0;
+            float u1 = span.U1;
+            if (faceLeft)
+            {
+                float flip = 1f - u1;
+                u1 = 1f - u0;
+                u0 = flip;
+            }
+            float x0 = fit.x + u0 * fit.width;
+            float x1 = fit.x + u1 * fit.width;
+            float y0 = fit.y + span.V0 * fit.height;
+            float y1 = fit.y + span.V1 * fit.height;
+            if (x1 < x0)
+            {
+                float swap = x0;
+                x0 = x1;
+                x1 = swap;
+            }
+            visual = new Rect(x0, y0, Mathf.Max(1f, x1 - x0), Mathf.Max(1f, y1 - y0));
+            return true;
+        }
+
+        // Same letterbox as GUI.DrawTexture ScaleToFit.
+        static Rect FitSheet(Rect sheet, float texW, float texH)
+        {
+            if (texW < 1f || texH < 1f || sheet.width < 1f || sheet.height < 1f) return sheet;
+            float sa = sheet.width / sheet.height;
+            float ta = texW / texH;
+            if (ta > sa)
+            {
+                float h = sheet.width / ta;
+                return new Rect(sheet.x, sheet.y + (sheet.height - h) * 0.5f, sheet.width, h);
+            }
+            float w = sheet.height * ta;
+            return new Rect(sheet.x + (sheet.width - w) * 0.5f, sheet.y, w, sheet.height);
+        }
+
+        public static Rect Place(float centerX, float visualBottom, float width, float height, float gap)
+        {
+            if (width < 1f) width = 1f;
+            if (height < 1f) height = 1f;
+            return new Rect(centerX - width * 0.5f, visualBottom + gap, width, height);
+        }
+
+        // Pose offset from the bird center, not a screen point. A glide then
+        // carries the tag with the bird, and flap frames do not buzz it.
+        public static void Follow(ref float x, ref float bottom, ref bool ready, float wantX, float wantBottom, float dt)
+        {
+            if (!ready)
+            {
+                x = wantX;
+                bottom = wantBottom;
+                ready = true;
+                return;
+            }
+            if (dt <= 0f) return;
+            float k = 1f - Mathf.Exp(-6f * dt);
+            x += (wantX - x) * k;
+            bottom += (wantBottom - bottom) * k;
+        }
+    }
+
     // Home bird stays off until level 1 is cleared (flockfive.next >= 1) and the
     // player has adopted. The first splash: the bird flies beside the right-hand
     // twig, a tap lands it, then the shared glove points at the perched bird.
@@ -90,6 +224,16 @@ namespace FlockFive
         string _avatarRenameText = "";
         Rect _avatarRenameR;
         Rect _avatarPlateR;
+        // Pose offset from the bird center. Not a screen point, so a glide
+        // does not leave the tag behind.
+        float _nameTagDx;
+        float _nameTagDy;
+        bool _nameTagReady;
+        int _nameTagFrame = -1;
+        float _adoptTagDx;
+        float _adoptTagDy;
+        bool _adoptTagReady;
+        int _adoptTagFrame = -1;
         float _avatarTail;
         int _avatarOpenFrame = -1;
         int _avatarKitN;
@@ -103,6 +247,7 @@ namespace FlockFive
         static Texture2D _avatarPlateTex;
         static Texture2D _avatarFieldTex;
         static GUIStyle _avatarField;
+        static GUIContent _avatarTagContent;
 
         static bool AvatarAdopted()
         {
@@ -181,6 +326,14 @@ namespace FlockFive
             string n = ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, ""));
             if (n.Length == 0 || AvatarNameDirty(n)) return AvatarSuggestion(SavedAvatar());
             return n;
+        }
+
+        static string AvatarTagName(string name, BirdColor col)
+        {
+            if (string.IsNullOrEmpty(name)) name = AvatarSuggestion(col);
+            name = ClipAvatarName(name);
+            if (name.Length == 0) name = AvatarSuggestion(col);
+            return name;
         }
 
         static float AvatarPlateH(float s) => 28f * s * AvatarPlateMul;
@@ -535,6 +688,15 @@ namespace FlockFive
                 HitAdoptBirds(icon);
         }
 
+        // Same center DrawAdoptBirds uses, bob and hop included.
+        Vector2 AdoptBirdCenter(int i, float icon, float s, out bool onPerch)
+        {
+            float hop = _adoptHop[i] > 0f ? Mathf.Sin((1f - _adoptHop[i]) * Mathf.PI) * 14f * s : 0f;
+            onPerch = AvatarPoseOnWood() && _adoptHop[i] <= 0.05f;
+            float bob = onPerch ? Mathf.Sin((_adoptClock + i * 0.4f) * 1.7f) * Mathf.Min(4f * s, icon * 0.04f) : 0f;
+            return new Vector2(_adoptShown[i].x, _adoptShown[i].y - bob - hop);
+        }
+
         void HitAdoptBirds(float icon)
         {
             if (_avatarRename) return;
@@ -542,12 +704,17 @@ namespace FlockFive
             int i = _adoptPick;
             if (i < 0 || i > 4) return;
             float s = Mathf.Max(Screen.height / 720f, 1f);
+            float drawIcon = HomeAvatarIcon(s);
+            if (drawIcon < 8f) drawIcon = icon;
             float pad = HomeBirdHitPad * s;
-            var c = _adoptShown[i];
-            var r = new Rect(c.x - icon * 0.5f - pad, c.y - icon * 0.5f - pad, icon + pad * 2f, icon + pad * 2f);
-            var plate = AvatarPlateRect(c, icon, s);
+            var c = AdoptBirdCenter(i, drawIcon, s, out bool onPerch);
+            var r = new Rect(c.x - drawIcon * 0.5f - pad, c.y - drawIcon * 0.5f - pad, drawIcon + pad * 2f, drawIcon + pad * 2f);
+            bool faceLeft = c.x >= Screen.width * 0.5f;
+            bool wings = BirdIdle.UseFlyingPose(onPerch, false);
+            float clock = _adoptClock + i * 0.17f;
+            var plate = NameTagRect(c, drawIcon, s, _adoptCol, _adoptName, faceLeft, wings, clock, false);
             bool birdHit = HitHomeFirst(r, out _);
-            bool plateHit = !AvatarNeedsName() && HitHomeFirst(plate, out _);
+            bool plateHit = plate.width > 2f && HitHomeFirst(plate, out _);
             if (!birdHit && !plateHit) return;
             _adoptHop[i] = 1f;
             Sfx.Chirp(_adoptCol);
@@ -561,20 +728,19 @@ namespace FlockFive
             if (i < 0 || i > 4) return;
             float drawIcon = HomeAvatarIcon(s);
             if (drawIcon < 8f) drawIcon = icon;
-            float hop = _adoptHop[i] > 0f ? Mathf.Sin((1f - _adoptHop[i]) * Mathf.PI) * 14f * s : 0f;
-            bool onPerch = AvatarPoseOnWood() && _adoptHop[i] <= 0.05f;
-            float bob = onPerch ? Mathf.Sin((_adoptClock + i * 0.4f) * 1.7f) * Mathf.Min(4f * s, drawIcon * 0.04f) : 0f;
-            var c = new Vector2(_adoptShown[i].x, _adoptShown[i].y - bob - hop);
+            var c = AdoptBirdCenter(i, drawIcon, s, out bool onPerch);
             // In the air, face the way it is moving. On the wood, face center.
             // Right half faces left. DrawAvatarBird does the shared flip.
             bool traveling = _avatarPose == AvatarPose.Flying || _avatarPose == AvatarPose.Landing;
             bool faceLeft = traveling ? _avatarFaceLeft : c.x >= Screen.width * 0.5f;
             var prev = GUI.color;
             GUI.color = Color.white;
-            _adoptBirdR = DrawAvatarBird(_adoptCol, SavedAvatarKit(), c, drawIcon, faceLeft, onPerch, _adoptClock + i * 0.17f);
+            float clock = _adoptClock + i * 0.17f;
+            _adoptBirdR = DrawAvatarBird(_adoptCol, SavedAvatarKit(), c, drawIcon, faceLeft, onPerch, clock);
             GUI.color = prev;
-            if (onPerch)
-                DrawAvatarPlate(c, drawIcon, _adoptName, s);
+            if (!onPerch) return;
+            bool wings = BirdIdle.UseFlyingPose(onPerch, false);
+            DrawAvatarPlate(c, drawIcon, _adoptName, s, _adoptCol, faceLeft, wings, clock, false);
         }
 
         bool HitAdoptBird(int i, float icon)
@@ -913,43 +1079,137 @@ namespace FlockFive
             return new Rect(c.x - w * 0.5f, c.y + icon * 0.5f + 1f * s, w, h);
         }
 
-        Rect DrawAvatarPlate(Vector2 c, float icon, string name, float s)
+        static int NameTagHi(float s)
+        {
+            int hi = Mathf.RoundToInt(14f * s);
+            if (hi < 11) hi = 11;
+            if (hi > 22) hi = 22;
+            return hi;
+        }
+
+        // Wood hugs the name. Cap keeps a long name off the rails. It does not
+        // grow when the wings open.
+        static void NameTagBox(string name, float s, float icon, out float w, out float h)
+        {
+            var st = CoachLineStyle();
+            bool wrap = st.wordWrap;
+            st.wordWrap = false;
+            int hi = NameTagHi(s);
+            int lo = 11;
+            if (lo > hi) lo = hi;
+            float cap = Mathf.Max(icon * 0.78f, 64f * s);
+            float padX = 10f * s;
+            float padY = 3f * s;
+            float fitW = cap - padX * 2f;
+            if (fitW < 8f) fitW = 8f;
+            float fitH = Mathf.Max(22f * s, hi + 8f);
+            st.fontSize = FitFont(st, name, fitW, fitH, lo, hi);
+            if (_avatarTagContent == null) _avatarTagContent = new GUIContent();
+            _avatarTagContent.text = name ?? "";
+            var sz = st.CalcSize(_avatarTagContent);
+            w = sz.x + padX * 2f;
+            h = sz.y + padY * 2f;
+            float minW = 28f * s;
+            float minH = 15f * s;
+            if (w < minW) w = minW;
+            if (h < minH) h = minH;
+            if (w > cap) w = cap;
+            st.wordWrap = wrap;
+        }
+
+        // Hidden until the bird is named. Center and tail come from this pose's
+        // opaque wingspan. The offset is smoothed once per frame.
+        Rect NameTagRect(Vector2 c, float icon, float s, BirdColor col, string name, bool faceLeft, bool wings, float clock, bool homeTag)
+        {
+            if (AvatarNeedsName())
+            {
+                if (homeTag) _nameTagReady = false;
+                else _adoptTagReady = false;
+                return default;
+            }
+            name = AvatarTagName(name, col);
+            var spr = SpriteCatalog.BirdFrame(col, wings ? clock * AvatarFlapRate : 0f, wings);
+            var rest = SpriteCatalog.BirdFrame(col, 0f, false);
+            if (spr == null || spr.texture == null)
+                return AvatarPlateRect(c, icon, s);
+            var sheet = CatalogBirdRect(spr, rest, c, icon);
+            if (!BirdNameTag.TryVisual(spr, sheet, faceLeft, out var visual))
+                return AvatarPlateRect(c, icon, s);
+            float wantDx = visual.center.x - c.x;
+            float wantDy = visual.yMax - c.y;
+            float dx;
+            float dy;
+            int frame = Time.frameCount;
+            if (homeTag)
+            {
+                if (_nameTagFrame != frame)
+                {
+                    BirdNameTag.Follow(ref _nameTagDx, ref _nameTagDy, ref _nameTagReady, wantDx, wantDy, Time.unscaledDeltaTime);
+                    _nameTagFrame = frame;
+                }
+                dx = _nameTagDx;
+                dy = _nameTagDy;
+            }
+            else
+            {
+                if (_adoptTagFrame != frame)
+                {
+                    BirdNameTag.Follow(ref _adoptTagDx, ref _adoptTagDy, ref _adoptTagReady, wantDx, wantDy, Time.unscaledDeltaTime);
+                    _adoptTagFrame = frame;
+                }
+                dx = _adoptTagDx;
+                dy = _adoptTagDy;
+            }
+            NameTagBox(name, s, icon, out float w, out float h);
+            return BirdNameTag.Place(c.x + dx, c.y + dy, w, h, 4f * s);
+        }
+
+        Rect DrawAvatarPlate(Vector2 c, float icon, string name, float s, BirdColor col, bool faceLeft, bool wings, float clock, bool homeTag)
         {
             // Suggested names are not the player's. The wooden sign waits for Done.
-            if (AvatarNeedsName()) return default;
-            if (string.IsNullOrEmpty(name)) name = AvatarSuggestion(_avatarCol);
-            name = ClipAvatarName(name);
-            if (name.Length == 0) name = AvatarSuggestion(SavedAvatar());
-            var r = AvatarPlateRect(c, icon, s);
+            name = AvatarTagName(name, col);
+            var r = NameTagRect(c, icon, s, col, name, faceLeft, wings, clock, homeTag);
+            if (r.width < 2f) return default;
             var tex = AvatarPlateTex();
             if (tex != null)
             {
-                DrawSliced(tex, new Rect(r.x, r.y + 3f * s, r.width, r.height), 16f, 11f * s, new Color(0.22f, 0.10f, 0.04f, 0.32f));
+                DrawSliced(tex, new Rect(r.x, r.y + 2f * s, r.width, r.height), 16f, 11f * s, new Color(0.22f, 0.10f, 0.04f, 0.32f));
                 DrawSliced(tex, r, 16f, 11f * s, Color.white);
             }
             var st = CoachLineStyle();
             bool wrap = st.wordWrap;
             st.wordWrap = false;
-            int hi = Mathf.Max(12, Mathf.RoundToInt(16f * s));
-            st.fontSize = FitFont(st, name, r.width - 12f, r.height - 4f, 9, hi);
+            int hi = NameTagHi(s);
+            int lo = 11;
+            if (lo > hi) lo = hi;
+            float padX = 10f * s;
+            float padY = 3f * s;
+            st.fontSize = FitFont(st, name, Mathf.Max(8f, r.width - padX * 2f), Mathf.Max(8f, r.height - padY * 2f), lo, hi);
             StampOutlined(r, name, st, new Color(0.33f, 0.15f, 0.05f, 1f), 1, 1);
             st.wordWrap = wrap;
             return r;
+        }
+
+        // Sheet quad. Flap art is wider in world units than the rest pose, so the
+        // drawn square grows by that ratio. Hit and the name tag share this.
+        static Rect CatalogBirdRect(Sprite spr, Sprite rest, Vector2 c, float icon)
+        {
+            float iw = icon;
+            if (spr != null && rest != null && rest != spr && rest.pixelsPerUnit > 0f && spr.pixelsPerUnit > 0f)
+            {
+                float restU = rest.rect.width / rest.pixelsPerUnit;
+                float frameU = spr.rect.width / spr.pixelsPerUnit;
+                if (restU > 0f) iw *= frameU / restU;
+            }
+            return new Rect(c.x - iw * 0.5f, c.y - iw * 0.5f, iw, iw);
         }
 
         Rect DrawCatalogBird(BirdColor col, Vector2 c, float icon, bool faceLeft, bool wings, float clock)
         {
             var spr = SpriteCatalog.BirdFrame(col, wings ? clock * AvatarFlapRate : 0f, wings);
             if (spr == null || spr.texture == null) return default;
-            float iw = icon;
             var rest = SpriteCatalog.BirdFrame(col, 0f, false);
-            if (rest != null && rest != spr && rest.pixelsPerUnit > 0f && spr.pixelsPerUnit > 0f)
-            {
-                float restU = rest.rect.width / rest.pixelsPerUnit;
-                float frameU = spr.rect.width / spr.pixelsPerUnit;
-                if (restU > 0f) iw *= frameU / restU;
-            }
-            var r = new Rect(c.x - iw * 0.5f, c.y - iw * 0.5f, iw, iw);
+            var r = CatalogBirdRect(spr, rest, c, icon);
             if (faceLeft)
             {
                 var m = GUI.matrix;

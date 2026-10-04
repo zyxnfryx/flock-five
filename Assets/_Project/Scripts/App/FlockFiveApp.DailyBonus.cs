@@ -21,7 +21,6 @@ namespace FlockFive
         static GUIStyle _dailyTile;
         static GUIStyle _dailyLine;
         static int _dailyFitKey = int.MinValue;
-        static int _dailyTitlePx = 22;
         static int _dailyClaimPx = 22;
         static int _dailyTilePx = 12;
         static int _dailyLinePx = 12;
@@ -54,11 +53,12 @@ namespace FlockFive
         const float DailyBulbShrink = 0.73f;
 
         bool _welcomeOpen;
+        // Coins are in flight and the welcome card has not opened yet.
+        bool _welcomeQueued;
         float _welcomeAt = -1f;
         bool _welcomeGlove;
         float _welcomeGloveUntil;
         static int _welcomeFit = int.MinValue;
-        static int _welcomeTitlePx = 26;
         static int _welcomeAmtPx = 34;
         static int _welcomeLinePx = 16;
         static int _welcomeBtnPx = 18;
@@ -78,6 +78,7 @@ namespace FlockFive
                 _dailyAskOpen = false;
                 _welcomeOpen = false;
                 _welcomeGlove = false;
+                _welcomeQueued = false;
                 return;
             }
 #endif
@@ -96,8 +97,13 @@ namespace FlockFive
                 _dailyAskOpen = false;
                 _welcomeOpen = false;
                 _welcomeGlove = false;
+                _welcomeQueued = false;
+                return;
             }
 #endif
+            if (_splash && _home == HomeFace.Splash && !_dailyAskOpen
+                && PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0)
+                OfferWelcome();
         }
 
         void ResumeDailyReminder()
@@ -110,6 +116,7 @@ namespace FlockFive
         void OpenDailyCard()
         {
             if (_dailyOpen || _dailyAskOpen || _welcomeOpen) return;
+            if (!GatePopup(PopupKind.Daily, true)) return;
 #if UNITY_EDITOR
             if (_dailyShotQuiet || EditorShotLive) return;
 #endif
@@ -154,7 +161,7 @@ namespace FlockFive
         }
 
         // Top-right of the round medal. Art is 289×672, so a square letterboxes the fire.
-        // The digit sits on the flame's middle (the bright belly, not the thin tip).
+        // belly only hangs the graphic. The digit is BadgeBodyCenter (the belly, not the tip).
         void DrawDailyStreakFlame(Rect plate)
         {
             float fh = plate.width * 0.92f;
@@ -167,16 +174,14 @@ namespace FlockFive
             int frame = (int)(Time.unscaledTime * 8f) % 6;
             if (frame < 0) frame = 0;
             var spr = SpriteCatalog.Flame(frame);
-            if (spr != null && spr.texture != null)
-                GUI.DrawTexture(flame, spr.texture, ScaleMode.ScaleToFit, true);
+            var tex = spr != null ? spr.texture : null;
+            if (tex != null)
+                GUI.DrawTexture(flame, tex, ScaleMode.ScaleToFit, true);
             EnsureDailyStyles();
             float numH = fh * 0.32f;
             float numW = Mathf.Max(fw * 2.2f, plate.width * 0.55f);
-            float bodyX = flame.center.x;
-            float bodyY = flame.center.y;
-            var num = new Rect(bodyX - numW * 0.5f, bodyY - numH * 0.5f, numW, numH);
-            _dailyLine.fontSize = RailDigitPx(num.width, num.height);
-            StampOutlined(num, DailyBonus.StreakDigits, _dailyLine, new Color(1f, 0.97f, 0.86f), 0, 2);
+            _dailyLine.fontSize = RailDigitPx(numW, numH);
+            DrawBadgeNumber(BadgeBodyCenter(flame, tex), DailyBonus.StreakDigits, _dailyLine, new Color(1f, 0.97f, 0.86f), numW, numH, 2);
         }
 
         static int RailDigitPx(float w, float h)
@@ -356,8 +361,11 @@ namespace FlockFive
             if (_restarting) yield break;
             if (DailyReminder.PromptDue())
             {
-                _dailyAskOpen = true;
-                _dailyAskAt = Time.unscaledTime;
+                if (GatePopup(PopupKind.Ask, false))
+                {
+                    _dailyAskOpen = true;
+                    _dailyAskAt = Time.unscaledTime;
+                }
                 NoteWelcomeClaim(firstEver);
                 yield break;
             }
@@ -381,15 +389,37 @@ namespace FlockFive
             OfferWelcome();
         }
 
+        // True while the welcome card, its glove, its coin flight, or a deferred
+        // grant owns the next home turn. Adoption and the streak board go first.
+        bool WelcomeOwnsTurn()
+        {
+            if (_welcomeOpen || _welcomeGlove || _welcomeQueued) return true;
+            if (RewardLessonHold() || AdoptHoldsQueue() || _dailyAskOpen) return false;
+            if (PlayerPrefs.GetInt(WelcomeBonusKey, 0) != 0) return false;
+            return PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0;
+        }
+
         void OfferWelcome()
         {
             if (PlayerPrefs.GetInt(WelcomeBonusKey, 0) != 0) return;
+            if (_welcomeOpen || _welcomeQueued) return;
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive) return;
 #endif
+            if (!GatePopup(PopupKind.Welcome, false)) return;
+            if (RewardLessonHold() || AdoptHoldsQueue() || _dailyAskOpen)
+            {
+                if (PlayerPrefs.GetInt(WelcomePendingKey, 0) == 0)
+                {
+                    PlayerPrefs.SetInt(WelcomePendingKey, 1);
+                    PlayerPrefs.Save();
+                }
+                return;
+            }
             PlayerPrefs.SetInt(WelcomeBonusKey, 1);
             PlayerPrefs.SetInt(WelcomePendingKey, 0);
             PlayerPrefs.Save();
+            _welcomeQueued = true;
             Purse.Credit(WelcomeBonusCoins);
             Sfx.Clink();
             Haptics.Play(Haptics.Tier.Medium);
@@ -400,17 +430,57 @@ namespace FlockFive
         IEnumerator OpenWelcomeWhenPaid()
         {
             yield return WaitRewardPay();
-            if (_restarting) yield break;
+            if (_restarting)
+            {
+                _welcomeQueued = false;
+                yield break;
+            }
 #if UNITY_EDITOR
-            if (_dailyShotQuiet || EditorShotLive) yield break;
+            if (_dailyShotQuiet || EditorShotLive)
+            {
+                _welcomeQueued = false;
+                yield break;
+            }
 #endif
+            _welcomeQueued = false;
+            if (!GatePopup(PopupKind.Welcome, false)) yield break;
             _welcomeOpen = true;
             _welcomeAt = Time.unscaledTime;
             _welcomeGlove = false;
         }
 
+        // Ask card remembered while a lesson owned the screen.
+        void OpenAskPopup()
+        {
+            if (!GatePopup(PopupKind.Ask, false)) return;
+            if (_dailyAskOpen || _welcomeOpen) return;
+            _dailyAskOpen = true;
+            _dailyAskAt = Time.unscaledTime;
+        }
+
+        // Welcome card remembered while a lesson owned the screen.
+        // Coins are credited once, inside OfferWelcome, before the card opens.
+        void OpenDeferredWelcome()
+        {
+            if (PlayerPrefs.GetInt(WelcomeBonusKey, 0) != 0)
+            {
+                if (!GatePopup(PopupKind.Welcome, false)) return;
+                if (_welcomeOpen || _restarting) return;
+#if UNITY_EDITOR
+                if (_dailyShotQuiet || EditorShotLive) return;
+#endif
+                _welcomeQueued = false;
+                _welcomeOpen = true;
+                _welcomeAt = Time.unscaledTime;
+                _welcomeGlove = false;
+                return;
+            }
+            OfferWelcome();
+        }
+
         void CloseWelcome()
         {
+            _welcomeQueued = false;
             if (!_welcomeOpen) return;
             _welcomeOpen = false;
             _welcomeAt = -1f;
@@ -420,7 +490,7 @@ namespace FlockFive
             var seat = SplashRailSeat(RailVip);
             if (box.width < 12f && seat.width < 12f) return;
             _welcomeGlove = true;
-            _welcomeGloveUntil = Time.unscaledTime + TapCycle;
+            _welcomeGloveUntil = PlayClock.Now + TapCycle;
             _gloveReady = false;
             _gloveVis = false;
             _glovePhase = 0f;
@@ -528,10 +598,7 @@ namespace FlockFive
         // so opening and a later week-bonus string cannot reflow the tiles.
         static void DailyLayout(float s, out Rect card, out Rect flower, out Rect board, out float band)
         {
-            float insetL = Mathf.Max(12f * s, Screen.safeArea.xMin + 8f);
-            float insetR = Mathf.Max(12f * s, Screen.width - Screen.safeArea.xMax + 8f);
-            float cardW = Mathf.Min(Screen.width - insetL - insetR, Mathf.Min(Screen.width * 0.72f, 420f * s));
-            if (cardW < 200f) cardW = Mathf.Min(Screen.width - insetL - insetR, 200f);
+            float cardW = StandardPopupWidth(s);
             band = Mathf.Clamp(cardW * 0.05f, 11f * s, 20f * s);
             // Brass outer edge is the card edge, so each bulb base sits on the border.
             float boardW = cardW - band * 2f;
@@ -647,6 +714,101 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // One title cache for every pop-up. The key is the full-open fit box, not
+        // the lamp scale, so a ±2% breathe cannot swap the point size.
+        const int PopupTitleSlots = 4;
+        static readonly string[] _popTitleTx = new string[PopupTitleSlots];
+        static readonly int[] _popTitlePx = new int[PopupTitleSlots];
+        static readonly int[] _popTitleLo = new int[PopupTitleSlots];
+        static readonly int[] _popTitleHi = new int[PopupTitleSlots];
+        static readonly int[] _popTitleMark = new int[PopupTitleSlots];
+        static readonly int[] _popTitleW = new int[PopupTitleSlots];
+        static readonly int[] _popTitleH = new int[PopupTitleSlots];
+        static readonly int[] _popTitleUse = new int[PopupTitleSlots];
+        static int _popTitleSerial;
+
+        static int PopupTitleSize(GUIStyle st, string text, float fitW, float fitH, int lo, int hi)
+        {
+            if (lo > hi) lo = hi;
+            int w = Mathf.Max(1, Mathf.RoundToInt(fitW));
+            int h = Mathf.Max(1, Mathf.RoundToInt(fitH));
+            int mark = FitStamp(st, st != null && st.wordWrap);
+            int oldest = 0;
+            int oldestUse = int.MaxValue;
+            for (int i = 0; i < PopupTitleSlots; i++)
+            {
+                if (_popTitleUse[i] < oldestUse)
+                {
+                    oldestUse = _popTitleUse[i];
+                    oldest = i;
+                }
+                if (_popTitleTx[i] != text || _popTitleLo[i] != lo || _popTitleHi[i] != hi
+                    || _popTitleMark[i] != mark || _popTitleW[i] != w || _popTitleH[i] != h)
+                    continue;
+                _popTitleSerial++;
+                _popTitleUse[i] = _popTitleSerial;
+                return _popTitlePx[i];
+            }
+            int px = FitFont(st, text, w, h, lo, hi);
+            _popTitleTx[oldest] = text;
+            _popTitleLo[oldest] = lo;
+            _popTitleHi[oldest] = hi;
+            _popTitleMark[oldest] = mark;
+            _popTitleW[oldest] = w;
+            _popTitleH[oldest] = h;
+            _popTitlePx[oldest] = px;
+            _popTitleSerial++;
+            _popTitleUse[oldest] = _popTitleSerial;
+            return px;
+        }
+
+        static Rect SnapPopupRect(Rect r)
+        {
+            float x = Mathf.Round(r.x);
+            float y = Mathf.Round(r.y);
+            float w = Mathf.Round(r.width);
+            float h = Mathf.Round(r.height);
+            if (w < 1f) w = 1f;
+            if (h < 1f) h = 1f;
+            return new Rect(x, y, w, h);
+        }
+
+        // Shared pop-up title. `rest` is the full-open seat (not the lamp scale).
+        // The point size is cached from that seat. The seat snaps to whole pixels.
+        // openK scales the snapped seat around pivot only while the card is opening
+        // or tucking. openK == 1 leaves the matrix alone, so a later breathe cannot
+        // walk the glyphs across a pixel. blackPx < 0 derives the outline from inkFrac.
+        static void DrawPopupTitle(
+            Rect rest, string text, GUIStyle st, Color fill,
+            int lo, int hi, float fitWFrac, float fitHFrac,
+            int whitePx, int blackPx, float inkFrac, float minA,
+            float openK, Vector2 pivot)
+        {
+            if (st == null || string.IsNullOrEmpty(text)) return;
+            if (fill.a < minA) return;
+            if (rest.width < 4f || rest.height < 4f) return;
+            var seat = SnapPopupRect(rest);
+            if (fitWFrac <= 0f) fitWFrac = 0.92f;
+            if (fitHFrac <= 0f) fitHFrac = 0.90f;
+            int px = PopupTitleSize(st, text, seat.width * fitWFrac, seat.height * fitHFrac, lo, hi);
+            st.fontSize = px;
+            int dark;
+            if (blackPx >= 0)
+                dark = blackPx;
+            else
+            {
+                float frac = inkFrac > 0f ? inkFrac : 0.16f;
+                dark = Mathf.Max(2, Mathf.RoundToInt(px * frac));
+                if (frac >= 0.15f && dark > 7) dark = 7;
+            }
+            bool move = openK < 0.9995f || openK > 1.0005f;
+            var prev = GUI.matrix;
+            if (move)
+                GUIUtility.ScaleAroundPivot(new Vector2(openK, openK), pivot);
+            StampOutlined(seat, text, st, fill, whitePx, dark, minA);
+            if (move) GUI.matrix = prev;
+        }
+
         // Thin gold line just inside the band. Shared-frame pop-ups keep it.
         static void DrawPopupInset(Rect board, float s, float breathe)
         {
@@ -694,7 +856,6 @@ namespace FlockFive
                 ^ DailyBonus.StreakLine.Length * 97;
             if (key == _dailyFitKey) return;
             _dailyFitKey = key;
-            _dailyTitlePx = FitFont(_dailyTitle, "Daily Bonus", titleR.width * 0.90f, titleR.height * 0.90f, 14, Mathf.Max(18, Mathf.RoundToInt(34f * s)));
             _dailyLinePx = FitFont(_dailyLine, DailyBonus.StreakLine, streakR.width * 0.88f, streakR.height * 0.90f, 10, Mathf.Max(12, Mathf.RoundToInt(18f * s)));
             _dailyBonusPx = FitFont(_dailyLine, "streak +$25", bonusR.width * 0.88f, bonusR.height * 0.90f, 9, Mathf.Max(11, Mathf.RoundToInt(16f * s)));
             _dailyTilePx = FitFont(_dailyTile, "$100", unit * 0.90f, tileH * 0.32f, 8, Mathf.Max(10, Mathf.RoundToInt(16f * s)));
@@ -706,9 +867,9 @@ namespace FlockFive
             GUI.color = new Color(1f, 0.72f, 0.16f, 0.26f + 0.12f * breathe);
             GUI.DrawTexture(new Rect(titleR.x, titleR.y - 2f * s, titleR.width, titleR.height + 4f * s), glow, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
-            _dailyTitle.fontSize = _dailyTitlePx;
-            int ink = Mathf.Max(2, Mathf.RoundToInt(_dailyTitlePx * 0.10f));
-            StampOutlined(titleR, "Daily Bonus", _dailyTitle, new Color(1f, 0.96f, 0.78f), 1, ink);
+            int titleHi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            DrawPopupTitle(titleR, "Daily Bonus", _dailyTitle, new Color(1f, 0.96f, 0.78f),
+                14, titleHi, 0.90f, 0.90f, 1, -1, 0.10f, 0.04f, 1f, titleR.center);
             _dailyLine.fontSize = _dailyLinePx;
             StampOutlined(streakR, DailyBonus.StreakLine, _dailyLine, new Color(1f, 0.90f, 0.55f), 1, 1);
             string bonus = DailyBonus.BonusLine;
@@ -1051,8 +1212,9 @@ namespace FlockFive
             DrawDailyFrame(card, board, band, s, breathe, glow, true);
             EnsureAskStyles();
             EnsureWelcomeFit(s, titleR, amtR, lineR, btn);
-            _dailyAsk.fontSize = _welcomeTitlePx;
-            StampOutlined(titleR, WelcomeTitle, _dailyAsk, new Color(1f, 0.94f, 0.62f), 1, 2);
+            int welcomeHi = Mathf.Max(22, Mathf.RoundToInt(30f * s));
+            DrawPopupTitle(titleR, WelcomeTitle, _dailyAsk, new Color(1f, 0.94f, 0.62f),
+                16, welcomeHi, 1f, 0.9f, 1, 2, 0f, 0.04f, 1f, titleR.center);
             _dailyAsk.fontSize = _welcomeAmtPx;
             StampOutlined(amtR, WelcomeAmountText(), _dailyAsk, new Color(1f, 0.86f, 0.28f), 1, 2);
             _dailyAsk.fontSize = _welcomeLinePx;
@@ -1098,7 +1260,6 @@ namespace FlockFive
             if (key == _welcomeFit) return;
             _welcomeFit = key;
             EnsureAskStyles();
-            _welcomeTitlePx = FitFont(_dailyAsk, WelcomeTitle, title.width, title.height * 0.9f, 16, Mathf.Max(22, Mathf.RoundToInt(30f * s)));
             _welcomeAmtPx = FitFont(_dailyAsk, WelcomeAmountText(), amt.width, amt.height * 0.92f, 18, Mathf.Max(26, Mathf.RoundToInt(40f * s)));
             _welcomeLinePx = FitFontWrapped(_dailyAsk, WelcomeLine, line.width * 0.92f, line.height * 0.92f, 13, Mathf.Max(16, Mathf.RoundToInt(20f * s)));
             _welcomeBtnPx = FitFont(_dailyAskBtn, WelcomeThanks, btn.width * 0.8f, btn.height * 0.62f, 14, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
