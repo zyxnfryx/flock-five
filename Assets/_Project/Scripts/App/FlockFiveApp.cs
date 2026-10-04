@@ -6861,19 +6861,20 @@ namespace FlockFive
             GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.78f);
             GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
-            float w = Mathf.Min(Screen.width * 0.86f, 480f * s);
-            float h = _restartAsk == RestartAsk.Sure ? 220f * s : 300f * s;
-            var card = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.42f, w, h);
-            GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.96f);
-            GUI.DrawTexture(card, Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.78f, 0.22f, 0.9f);
-            GUI.DrawTexture(new Rect(card.x, card.y, card.width, 4f), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            var inner = new Rect(card.x + 16f * s, card.y + 16f * s, card.width - 32f * s, card.height - 32f * s);
+            float w = StandardPopupWidth(s);
+            bool sure = _restartAsk == RestartAsk.Sure;
+            float h = sure ? Mathf.Max(220f * s, w * 0.46f) : Mathf.Max(300f * s, w * 0.58f);
+            float capH = Screen.height * 0.62f;
+            if (h > capH) h = capH;
+            var card = PlacePopup(s, w, h, 0.42f);
+            float band = Mathf.Clamp(w * 0.045f, 10f * s, 18f * s);
+            var board = new Rect(card.x + band, card.y + band, Mathf.Max(8f, card.width - band * 2f), Mathf.Max(8f, card.height - band * 2f));
+            DrawDailyFrame(card, board, band, s, 0.5f, GlowTex());
+            var inner = new Rect(board.x + 8f * s, board.y + 8f * s, Mathf.Max(8f, board.width - 16f * s), Mathf.Max(8f, board.height - 16f * s));
             if (_giftTitle == null)
                 _giftTitle = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = true };
             var st = _giftTitle;
-            if (_restartAsk == RestartAsk.Sure)
+            if (sure)
             {
                 const string ask = "Are you sure you want to restart?";
                 var titleR = new Rect(inner.x, inner.y, inner.width, inner.height * 0.46f);
@@ -6882,7 +6883,7 @@ namespace FlockFive
                 st.fontSize = FitFontWrapped(st, ask, titleR.width, titleR.height * 0.9f, 14, hi);
                 StampOutlined(titleR, ask, st, new Color(1f, 0.96f, 0.78f, 1f), 0, 3);
                 float bw = inner.width * 0.42f;
-                float bh = Mathf.Max(48f, 52f * s);
+                float bh = PopupBarHeight(s, w);
                 var noR = new Rect(inner.x, inner.yMax - bh, bw, bh);
                 var yesR = new Rect(inner.xMax - bw, inner.yMax - bh, bw, bh);
                 bool no = HitPad(noR, out bool noHeld);
@@ -6904,7 +6905,7 @@ namespace FlockFive
             }
             var head = new Rect(inner.x, inner.y, inner.width, inner.height * 0.62f);
             DrawStreakCaution(head, s, st);
-            float watchH = Mathf.Max(52f, 56f * s);
+            float watchH = PopupBarHeight(s, w);
             var watchR = new Rect(inner.center.x - inner.width * 0.28f, inner.yMax - watchH, inner.width * 0.56f, watchH);
             float xSz = Mathf.Max(40f, 42f * s);
             var xBtn = new Rect(card.xMax - xSz - 6f, card.y + 6f, xSz, xSz);
@@ -8224,9 +8225,7 @@ namespace FlockFive
                 lvR.width * (quad ? 0.98f : (triple ? 0.96f : 0.94f)),
                 lvR.height * (hasEase ? 0.95f : 0.80f),
                 quad ? 30 : (triple ? 26 : 30), lvHi);
-            int white = Mathf.Max(2, Mathf.RoundToInt(lv.fontSize * 0.055f));
-            int levelEdge = Mathf.Max(3, Mathf.RoundToInt(lv.fontSize * 0.09f));
-            StampOutlined(lvR, level, lv, new Color(0.22f, 0.10f, 0.04f), white, levelEdge);
+            StampBannerText(lvR, level, lv, 1f, true);
 
             if (!hasEase) return;
 
@@ -8235,7 +8234,7 @@ namespace FlockFive
             int jokePx = EaseSubtextPx(s);
             var joke = new GUIStyle(GUI.skin.label)
             {
-                fontStyle = FontStyle.Bold,
+                fontStyle = FontStyle.Normal,
                 alignment = TextAnchor.UpperCenter,
                 wordWrap = false,
                 fontSize = jokePx
@@ -8265,8 +8264,7 @@ namespace FlockFive
             }
             if (y + bandH > bottom && bandH > textH) bandH = Mathf.Max(textH, bottom - y);
             var jokeDraw = new Rect(disc.center.x - lineW * 0.5f, y, lineW, bandH);
-            int jWhite = Mathf.Max(2, Mathf.RoundToInt(joke.fontSize * 0.14f));
-            StampOutlined(jokeDraw, ease, joke, new Color(0.30f, 0.15f, 0.06f), jWhite, 2);
+            StampBannerText(jokeDraw, ease, joke, 1f, false);
         }
 
         static GUIStyle _fitScratch;
@@ -8595,6 +8593,26 @@ namespace FlockFive
                 acc += widths[i];
             }
             GUI.matrix = prev;
+        }
+
+        // Bold white, black edge at BannerOutline of the point size. Subtext passes bold false
+        // (same face, thinner). Level disc, status banners, and tutorial captions all use this.
+        const float BannerOutline = 0.16f;
+
+        static int BannerOutlinePx(int fontPx)
+        {
+            int px = Mathf.RoundToInt(fontPx * BannerOutline);
+            if (px < 2) px = 2;
+            return px;
+        }
+
+        static void StampBannerText(Rect r, string text, GUIStyle st, float alpha, bool bold)
+        {
+            if (st == null || string.IsNullOrEmpty(text) || alpha < 0.04f) return;
+            var prev = st.fontStyle;
+            st.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
+            StampOutlined(r, text, st, new Color(1f, 1f, 1f, alpha), 0, BannerOutlinePx(st.fontSize));
+            st.fontStyle = prev;
         }
 
         static void StampOutlined(Rect r, string text, GUIStyle st, Color fill, int whitePx, int blackPx, float minA = 0.04f)
@@ -13093,7 +13111,7 @@ namespace FlockFive
         {
             var disc = FlowerDisc(actR, 0f);
             if (disc.width < 2f || disc.height < 2f) return actR.center;
-            return disc.center;
+            return GloveTarget(disc);
         }
 
         bool GlovePresses(Rect disc)
@@ -13444,17 +13462,17 @@ namespace FlockFive
             if (_albumTutorStep >= 3)
             {
                 aimed = _albumPagerOk;
-                if (aimed) aim = TopTouch(_albumPagerR);
+                if (aimed) aim = GloveTarget(_albumPagerR);
             }
             else if (_albumTutorStep == 2)
             {
                 aimed = _albumInspectOk && AlbumInspectReady();
-                if (aimed) aim = TopTouch(_albumInspectR);
+                if (aimed) aim = GloveTarget(_albumInspectR);
             }
             else
             {
                 aimed = _albumCardOk && _albumTutorSlot >= 0;
-                if (aimed) aim = TopTouch(_albumCardR);
+                if (aimed) aim = GloveTarget(_albumCardR);
             }
             _albumTutorAim = aim;
             _albumTutorAimOk = aimed;
@@ -13933,7 +13951,7 @@ namespace FlockFive
             if (!_hiveTutorOn) return;
             float fade = _hiveTutorStep >= 4 ? 1f - Mathf.Clamp01(_hiveTutorT / 0.45f) : 1f;
             if (fade < 0.02f) return;
-            var aim = TopTouch(card);
+            var aim = GloveTarget(card);
             bool mirror = aim.x >= Screen.width * 0.5f;
             float ang = ClampUpright(mirror);
             var away = new Vector2(mirror ? -1f : 1f, 0f);
@@ -13984,23 +14002,17 @@ namespace FlockFive
             };
             st.fontSize = hi;
             var pill = FlipHintRect(y, s);
-            NoteTutorPlate(pill);
+            var inner = new Rect(pill.x + 18f, pill.y + 12f, Mathf.Max(8f, pill.width - 36f), Mathf.Max(8f, pill.height - 24f));
+            NoteTutorPlate(CoachPanelRect(inner));
+            DrawCoachPanel(inner, alpha);
             float h = pill.height;
-            GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.82f * alpha);
-            GUI.DrawTexture(pill, Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.86f, 0.42f, 0.9f * alpha);
-            GUI.DrawTexture(new Rect(pill.x, pill.y, pill.width, 3f), Texture2D.whiteTexture);
-            GUI.color = Color.white;
             var r1 = new Rect(pill.x + 16f * s, pill.y + h * 0.06f, pill.width - 32f * s, h * 0.42f);
             var r2 = new Rect(pill.x + 16f * s, pill.y + h * 0.50f, pill.width - 32f * s, h * 0.42f);
-            var cream = new Color(1f, 0.96f, 0.72f, alpha);
             st.fontSize = FitFont(st, a, r1.width, r1.height * 0.92f, 24, hi);
-            int stroke = Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.16f));
-            StampOutlined(r1, a, st, cream, 0, stroke);
+            StampBannerText(r1, a, st, alpha, true);
             int bHi = Mathf.Max(st.fontSize, hi);
             st.fontSize = FitFont(st, b, r2.width, r2.height * 0.92f, 20, bHi);
-            int strokeB = Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.16f));
-            StampOutlined(r2, b, st, cream, 0, strokeB);
+            StampBannerText(r2, b, st, alpha, true);
         }
 
         void DrawFlipArrows(Rect card, float s, float alpha)
@@ -14401,8 +14413,7 @@ namespace FlockFive
             int titlePx = Mathf.Max(floor + 4, Mathf.RoundToInt(26f * s));
             var titleR = new Rect(box.x + 12f * s, box.y + 12f * s, box.width - 24f * s, titlePx + 10f);
             titleSt.fontSize = FitFont(titleSt, roundHead, titleR.width * 0.98f, titleR.height * 0.92f, floor, titlePx);
-            int headInk = Mathf.Max(3, Mathf.RoundToInt(titleSt.fontSize * 0.16f));
-            StampOutlined(titleR, roundHead, titleSt, new Color(1f, 0.97f, 0.86f), 0, headInk);
+            StampBannerText(titleR, roundHead, titleSt, 1f, true);
 
             if (!cards)
             {
@@ -15252,9 +15263,9 @@ namespace FlockFive
         // Frozen board: Retry is the big flower. Continue is a smaller ad sign under it.
         static void PlaceFreeze(float s, out Rect card, out Rect retry, out Rect cont)
         {
-            float cardW = Mathf.Min(Screen.width * 0.88f, 600f * s);
+            float cardW = StandardPopupWidth(s);
             float cardH = cardW * (501f / 780f);
-            float retrySz = Mathf.Min(Screen.width * 0.50f, 268f * s);
+            float retrySz = PopupButtonSize(s, cardW);
             float overlap = retrySz * 0.36f;
             const float signAspect = 530f / 1126f;
             float contW = retrySz * 0.66f;
@@ -15356,7 +15367,7 @@ namespace FlockFive
         {
             float cardW = StandardPopupWidth(s);
             float cardH = cardW * (501f / 780f);
-            float flowerSz = Mathf.Min(Screen.width * 0.448f, cardW * 0.519f);
+            float flowerSz = PopupButtonSize(s, cardW);
             // Same overlap the daily claim uses. The disc still clears the plaque.
             float overlap = flowerSz * 0.15f;
             float stackH = cardH + flowerSz - overlap;
@@ -15591,9 +15602,9 @@ namespace FlockFive
 
         void DrawGiftMovie(float s)
         {
-            float w = Mathf.Min(Screen.width * 0.86f, 560f * s);
+            float w = StandardPopupWidth(s);
             float h = w * 0.56f;
-            var stage = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.38f, w, h);
+            var stage = PlacePopup(s, w, h, 0.38f);
             GUI.color = new Color(0.12f, 0.08f, 0.04f, 0.92f);
             GUI.DrawTexture(stage, Texture2D.whiteTexture);
             GUI.color = new Color(0.82f, 0.62f, 0.28f, 1f);

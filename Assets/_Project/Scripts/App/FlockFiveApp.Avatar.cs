@@ -666,8 +666,7 @@ namespace FlockFive
             var st = CoachLineStyle();
             int hi = Mathf.Max(18, Mathf.RoundToInt(30f * s));
             st.fontSize = FitFontWrapped(st, line, text.width, text.height, 15, hi);
-            int black = Mathf.Clamp(Mathf.CeilToInt(CoachOutlinePx * s), CoachOutlinePx, 8);
-            StampOutlined(text, line, st, new Color(1f, 0.98f, 0.90f, EaseOutCubic(_coachFade)), 0, black);
+            StampBannerText(text, line, st, EaseOutCubic(_coachFade), true);
         }
 
         // Before DrawFlowerPlay. HitHomeFirst Uses the press so the LEVEL flower
@@ -884,7 +883,7 @@ namespace FlockFive
             float kitH = kits > 0 ? 48f * s : 0f;
             float rowH = 46f * s;
             float pad = 12f * s;
-            float innerW = Mathf.Min(width, 420f * s);
+            float innerW = Mathf.Min(width, StandardPopupWidth(s));
             float innerH = pad + lineH + gap + rowH + gap + swH;
             if (kits > 0) innerH += gap + kitH;
             innerH += pad;
@@ -976,8 +975,7 @@ namespace FlockFive
             DrawCoachPanel(content, 1f);
             var st = CoachLineStyle();
             st.fontSize = FitFont(st, prompt, line.width, line.height, 14, Mathf.RoundToInt(26f * s));
-            StampOutlined(line, prompt, st, new Color(1f, 0.98f, 0.90f, 1f), 0,
-                Mathf.Clamp(Mathf.CeilToInt(CoachOutlinePx * s * 0.45f), 2, 4));
+            StampBannerText(line, prompt, st, 1f, true);
 
             bool arm = Time.frameCount == _avatarOpenFrame;
             int shown = (int)SavedAvatar();
@@ -1079,9 +1077,9 @@ namespace FlockFive
             return new Rect(c.x - w * 0.5f, c.y + icon * 0.5f + 1f * s, w, h);
         }
 
-        // Home name. 18px at a 720-tall screen, never under NameTagMinPx, scales with s.
-        // About 16-18pt on a phone. The wood follows the glyphs.
-        const float NameTagPt = 18f;
+        // Home name. 16px at a 720-tall screen (was 18, about 11% smaller).
+        // Never under NameTagMinPx. Scales with s. The wood follows the glyphs.
+        const float NameTagPt = 16f;
         const int NameTagMinPx = 16;
 
         static int NameTagFont(float s)
@@ -1092,21 +1090,22 @@ namespace FlockFive
             return px;
         }
 
-        // Tight pad around the measured line. Does not shrink the type to fit the bird.
+        // Pad leaves room for the shared outline. The type stays at NameTagPt.
         static void NameTagBox(string name, float s, out float w, out float h)
         {
             var st = CoachLineStyle();
             bool wrap = st.wordWrap;
             st.wordWrap = false;
+            st.fontStyle = FontStyle.Bold;
             st.fontSize = NameTagFont(s);
-            float padX = 8f * s;
-            float padY = 4f * s;
+            float padX = 10f * s;
+            float padY = 6f * s;
             if (_avatarTagContent == null) _avatarTagContent = new GUIContent();
             _avatarTagContent.text = name ?? "";
             var sz = st.CalcSize(_avatarTagContent);
             w = sz.x + padX * 2f;
             h = sz.y + padY * 2f;
-            float minW = 28f * s;
+            float minW = 25f * s;
             if (w < minW) w = minW;
             st.wordWrap = wrap;
         }
@@ -1164,19 +1163,25 @@ namespace FlockFive
             name = AvatarTagName(name, col);
             var r = NameTagRect(c, icon, s, col, name, faceLeft, wings, clock, homeTag);
             if (r.width < 2f) return default;
-            var tex = AvatarPlateTex();
-            if (tex != null)
-            {
-                DrawSliced(tex, new Rect(r.x, r.y + 2f * s, r.width, r.height), 16f, 11f * s, new Color(0.22f, 0.10f, 0.04f, 0.32f));
-                DrawSliced(tex, r, 16f, 11f * s, Color.white);
-            }
             var st = CoachLineStyle();
+            st.fontSize = NameTagFont(s);
+            DrawNameplate(r, name, st, s);
+            return r;
+        }
+
+        // Cream plaque, thin dark rim, inner highlight. Home bird and the intro share it.
+        static void DrawNameplate(Rect r, string name, GUIStyle st, float s)
+        {
+            if (r.width < 2f || st == null || string.IsNullOrEmpty(name)) return;
+            float rad = Mathf.Min(r.height * 0.48f, 14f * s);
+            if (rad < 4f) rad = 4f;
+            var shadow = new Rect(r.x + 1.5f * s, r.y + 2f * s, r.width, r.height);
+            DrawSolidRound(shadow, rad, 0, 0.28f);
+            DrawSolidRound(r, rad, 1, 1f);
             bool wrap = st.wordWrap;
             st.wordWrap = false;
-            st.fontSize = NameTagFont(s);
-            StampOutlined(r, name, st, new Color(0.33f, 0.15f, 0.05f, 1f), 1, 1);
+            StampBannerText(r, name, st, 1f, true);
             st.wordWrap = wrap;
-            return r;
         }
 
         // Sheet quad. Flap art is wider in world units than the rest pose, so the

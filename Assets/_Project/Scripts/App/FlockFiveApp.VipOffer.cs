@@ -116,7 +116,7 @@ namespace FlockFive
                 flower = ScaledAbout(flower, BuyScale);
                 float statusH = Mathf.Max(28f, 22f * s);
                 float linkH = Mathf.Max(48f, 40f * s);
-                float linkW = Mathf.Min(Screen.width * 0.86f, 420f * s);
+                float linkW = StandardPopupWidth(s);
                 float bottom = Screen.height - Mathf.Max(6f, safe.yMin);
                 var link = new Rect((Screen.width - linkW) * 0.5f, bottom - linkH - 4f * s, linkW, linkH);
                 var status = new Rect(link.x, link.y - 4f * s - statusH, link.width, statusH);

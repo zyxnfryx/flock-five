@@ -571,27 +571,27 @@ namespace FlockFive
             return aim;
         }
 
-        // Claim step only. Hit is just left of the face center and a little below
-        // it, on the top surface: not the rim, not the middle. The perch lift is
-        // shorter than the shared rise, which parks the hand up on the reward row.
-        // fromLeft keeps that side-on approach when the nudge crosses mid-screen.
+        // Claim step. Fingertip is the center of today's tile ($10 on day one).
+        // Shared rise, so the cuff stays above the tile. The hand leaves by the
+        // nearer frame edge. _gloveKeepOff holds the palm off the frame.
         void DailyClaimGlove(float s, out Vector2 aim, out float perchLift, out bool fromLeft)
         {
-            DailyLayout(s, out var card, out var flower, out _, out _);
-            var disc = FlowerDisc(flower, 0f);
-            float left = Mathf.Clamp(disc.width * 0.10f, 8f * s, 18f * s);
-            float below = Mathf.Clamp(disc.height * 0.12f, 4f * s, 10f * s);
-            var hit = new Vector2(disc.center.x - left, disc.center.y + below);
+            DailyLayout(s, out var card, out var flower, out var board, out float band);
+            DailyRows(s, board, out _, out _, out _, out var row, out float gap, out float unit);
+            int days = DailyBonus.CycleDays;
+            if (days < 1) days = 1;
+            int day = DailyBonus.Cycle;
+            if (day < 0) day = 0;
+            if (day >= days) day = days - 1;
+            var tile = new Rect(row.x + (unit + gap) * day, row.y, unit, row.height);
             float k = DailyPop(_dailyPopAt);
             var pivot = DailyPivot(card, flower);
-            aim = new Vector2(pivot.x + (hit.x - pivot.x) * k, pivot.y + (hit.y - pivot.y) * k);
-            float lift = disc.height * 0.20f;
-            float minLift = 6f * s;
-            if (lift < minLift) lift = minLift;
-            float maxLift = GloveRise(s) * 0.45f;
-            if (lift > maxLift) lift = maxLift;
-            perchLift = lift;
-            fromLeft = disc.center.x >= Screen.width * 0.5f;
+            tile = DailyScaleRect(tile, pivot, k);
+            var frame = DailyScaleRect(DailyFrameOuter(card, board, band), pivot, k);
+            aim = GloveTarget(tile);
+            perchLift = float.NaN;
+            fromLeft = (tile.center.x - frame.x) <= (frame.xMax - tile.center.x);
+            _gloveKeepOff = frame;
         }
 
         // Content-sized. Rows are reserved up front, including an empty bonus line,
@@ -605,8 +605,8 @@ namespace FlockFive
             DailyBoardSize(s, boardW, out float boardH, out _, out _, out _, out _, out _, out _);
             float lip = band;
             float cardH = lip + boardH + lip;
-            // ~18% larger than the old 0.38 / 0.44 disc. Caption stays under the face.
-            float flowerSz = Mathf.Min(Screen.width * 0.448f, cardW * 0.519f);
+            // Same square CTA as Watch / Retry. Caption stays under the face.
+            float flowerSz = PopupButtonSize(s, cardW);
             // Pedestal art starts ~13% down the square (1024×811 letterboxed). A lip of
             // band*0.35 left the dim wash showing as a dark seam under the gold frame.
             // Cap at the brass plus the board's bottom pad so the day tiles stay clear.
@@ -1086,14 +1086,12 @@ namespace FlockFive
         static void DailyAskLayout(float s, out Rect card, out Rect body, out Rect yesR, out Rect noR)
         {
             EnsureAskStyles();
-            float side = Mathf.Max(16f * s, Screen.safeArea.xMin + 8f);
-            float w = Mathf.Min(Screen.width - side * 2f, Mathf.Min(Screen.width * 0.78f, 420f * s));
-            if (w < 180f) w = Mathf.Min(Screen.width - 12f, 180f);
+            float w = StandardPopupWidth(s);
             float band = Mathf.Max(8f, 10f * s);
             float pad = band + 12f * s;
             float innerW = w - pad * 2f;
             if (innerW < 40f) innerW = 40f;
-            float btnH = Mathf.Clamp(42f * s, 38f, 50f * s);
+            float btnH = PopupBarHeight(s, w);
             float gap = 10f * s;
             int hi = Mathf.Max(14, Mathf.RoundToInt(18f * s));
             int lo = 11;
@@ -1124,24 +1122,16 @@ namespace FlockFive
             body = new Rect(card.x + pad, bodyTop, innerW, bodyBot - bodyTop);
         }
 
+        // Same wood frame as daily and welcome. band is the brass width.
         static void DrawAskFrame(Rect card, float s, float breathe, Texture2D glow)
         {
-            float aura = card.width * 0.06f;
-            GUI.color = new Color(1f, 0.78f, 0.22f, 0.16f + 0.08f * breathe);
-            GUI.DrawTexture(new Rect(card.x - aura, card.y - aura * 0.4f, card.width + aura * 2f, card.height + aura), glow, ScaleMode.ScaleToFit, true);
-            var wood = SpriteCatalog.Blanket != null ? SpriteCatalog.Blanket.texture : Texture2D.whiteTexture;
-            float sh = 4f * s;
-            GUI.color = new Color(0.05f, 0.03f, 0.02f, 0.42f);
-            GUI.DrawTexture(new Rect(card.x + sh, card.y + sh * 1.4f, card.width, card.height), wood, ScaleMode.StretchToFill, true);
-            GUI.color = new Color(0.46f, 0.26f, 0.10f, 1f);
-            GUI.DrawTexture(card, wood, ScaleMode.StretchToFill, true);
-            float band = Mathf.Max(8f, 10f * s);
-            GUI.color = new Color(0.78f, 0.56f, 0.18f, 1f);
-            GUI.DrawTexture(new Rect(card.x + 3f * s, card.y + 3f * s, card.width - 6f * s, card.height - 6f * s), Texture2D.whiteTexture);
-            var inner = new Rect(card.x + band, card.y + band, card.width - band * 2f, card.height - band * 2f);
-            GUI.color = new Color(0.18f, 0.10f, 0.05f, 1f);
-            GUI.DrawTexture(inner, wood, ScaleMode.StretchToFill, true);
-            GUI.color = Color.white;
+            float band = Mathf.Clamp(card.width * 0.045f, 10f * s, 18f * s);
+            var board = new Rect(
+                card.x + band,
+                card.y + band,
+                Mathf.Max(8f, card.width - band * 2f),
+                Mathf.Max(8f, card.height - band * 2f));
+            DrawDailyFrame(card, board, band, s, breathe, glow);
         }
 
         static void EnsureAskStyles()
@@ -1228,16 +1218,15 @@ namespace FlockFive
 
         static void WelcomeLayout(float s, out Rect card, out Rect title, out Rect amt, out Rect line, out Rect btn)
         {
-            float insetL = Mathf.Max(14f * s, Screen.safeArea.xMin + 8f);
-            float insetR = Mathf.Max(14f * s, Screen.width - Screen.safeArea.xMax + 8f);
-            float maxW = Mathf.Max(160f * s, Screen.width - insetL - insetR);
-            float w = Mathf.Min(maxW, Mathf.Min(Screen.width * 0.84f, 500f * s));
-            float h = Mathf.Clamp(248f * s, 220f, 310f * s);
-            if (h > Screen.height * 0.52f) h = Screen.height * 0.52f;
+            float w = StandardPopupWidth(s);
+            float h = Mathf.Max(248f * s, w * 0.50f);
+            float capH = Mathf.Min(Screen.height * 0.58f, 360f * s);
+            if (h > capH) h = capH;
+            if (h < 220f * s && capH > 220f * s) h = 220f * s;
             card = PlacePopup(s, w, h, 0.42f);
             float band = Mathf.Max(10f, 12f * s);
             float pad = band + 16f * s;
-            float btnH = Mathf.Clamp(48f * s, 44f, 58f * s);
+            float btnH = PopupBarHeight(s, w);
             float innerW = w - pad * 2f;
             float y = card.y + pad;
             float titleH = 32f * s;

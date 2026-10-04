@@ -53,16 +53,62 @@ namespace FlockFive
             return new Rect(x, y, w, h);
         }
 
-        // One content width for every standard card: daily, gift, and VIP.
-        // Insets, 72% of the glass, cap 420 reference pixels, floor 200.
+        // One content width for every standard card: daily, gift, welcome, ask,
+        // restart, freeze, VIP, and the ad stage. Insets, 88% of the glass,
+        // cap 600 reference pixels, floor 240. Safe-area aware.
         static float StandardPopupWidth(float s)
         {
             float insetL = Mathf.Max(12f * s, Screen.safeArea.xMin + 8f);
             float insetR = Mathf.Max(12f * s, Screen.width - Screen.safeArea.xMax + 8f);
-            float cardW = Mathf.Min(Screen.width - insetL - insetR, Mathf.Min(Screen.width * 0.72f, 420f * s));
-            if (cardW < 200f) cardW = Mathf.Min(Screen.width - insetL - insetR, 200f);
+            float span = Screen.width - insetL - insetR;
+            if (span < 8f) span = 8f;
+            float cardW = Mathf.Min(span, Mathf.Min(Screen.width * 0.88f, 600f * s));
+            float floor = 240f;
+            if (floor > span) floor = span;
+            if (cardW < floor) cardW = floor;
             if (cardW < 8f) cardW = 8f;
             return cardW;
+        }
+
+        // Square CTA (Watch, Claim, Retry, Buy). Same fraction of the shared card.
+        static float PopupButtonSize(float s, float cardW)
+        {
+            if (s < 1f) s = 1f;
+            float sz = cardW * 0.56f;
+            float cap = Screen.width * 0.52f;
+            if (sz > cap) sz = cap;
+            float floor = 120f * s;
+            if (sz < floor) sz = floor;
+            float span = Screen.width - 24f;
+            if (span < 8f) span = 8f;
+            if (sz > span) sz = span;
+            if (sz < 8f) sz = 8f;
+            return sz;
+        }
+
+        // Wide bar on the same card (Yes / No, Thanks, ask). Grows with PopupButtonSize.
+        static float PopupBarHeight(float s, float cardW)
+        {
+            if (s < 1f) s = 1f;
+            float h = PopupButtonSize(s, cardW) * 0.18f;
+            float floor = 44f * s;
+            if (h < floor) h = floor;
+            float cap = 64f * s;
+            if (h > cap) h = cap;
+            return h;
+        }
+
+        // Tutorial line under a pop-up control. belowY is that control's bottom.
+        // block is the rect the plate must clear. Centered, safe-area clamped.
+        static Rect PlacePopupTutorCaption(float s, float w, float h, float belowY, Rect block)
+        {
+            float gap = 10f * s;
+            float y = belowY + gap;
+            if (block.height > 2f && y < block.yMax + gap)
+                y = block.yMax + gap;
+            if (w < 8f) w = 8f;
+            if (h < 8f) h = 8f;
+            return PlaceCaption(s, w, h, y - 8f * s);
         }
 
         // Card origin in the safe band. bias is 0 at the top of that band, 1 at the bottom.
@@ -445,7 +491,7 @@ namespace FlockFive
 
         static GUIStyle _bottomStatus;
 
-        // Cream line with a thick dark edge. Sits in a caller-placed bottom band.
+        // Shared banner type. Sits in a caller-placed bottom band.
         static void DrawBottomStatus(Rect line, string text, float alpha, float s)
         {
             if (string.IsNullOrEmpty(text) || alpha < 0.04f || line.width < 8f) return;
@@ -458,8 +504,7 @@ namespace FlockFive
                 };
             int hi = Mathf.Max(14, Mathf.RoundToInt(18f * s));
             _bottomStatus.fontSize = FitFont(_bottomStatus, text, line.width * 0.96f, line.height * 0.88f, 12, hi);
-            int ink = Mathf.Max(3, Mathf.RoundToInt(_bottomStatus.fontSize * 0.16f));
-            StampOutlined(line, text, _bottomStatus, new Color(1f, 0.97f, 0.88f, alpha), 0, ink);
+            StampBannerText(line, text, _bottomStatus, alpha, true);
         }
     }
 }
