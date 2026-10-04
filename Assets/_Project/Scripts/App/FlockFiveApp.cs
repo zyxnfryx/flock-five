@@ -40,6 +40,8 @@ namespace FlockFive
         bool _gardenScoring;
         RhythmTap _cowbellRhythm;
         static float _claimClunk = -1f;
+        // When the rhythm Easter egg last fired (unscaled time). Drives the button pulse.
+        static float _claimEaster = -1f;
         struct CoinFly
         {
             public Vector2 A, B;
@@ -258,14 +260,16 @@ namespace FlockFive
         Rect _levelHiveRect;
         const float HiveCarouselStep = 1.5f;
         const string HiveTitle = "Collection";
-        const string HiveSubtitle = "Finding bees awards cards for your collection.";
-        const string HiveHowTo = "Uncover a dark bird to award a card. Tap a card you have, then tap again to flip.";
+        const string HiveSubtitle = "Find bees to earn cards.";
+        const string HiveHowTo = "Tap a card to take a look, tap again to flip.";
         const string HiveFlipSeenKey = "flockfive.hive.flip.seen";
         // First visit to the album. Same done-flag pattern as the other coach lessons.
         const string CoachHiveAlbumKey = "flockfive.coach.hivealbum";
         const string AlbumTapLine = "Tap a card you have\nto enlarge it.";
         const string AlbumFlipLine = "Tap again to flip.";
-        const string AlbumPageLine = "Swipe left or right,\nor tap the page numbers.";
+        const string AlbumPageLine = "Swipe to turn the page!\nOr tap a page number.";
+        // Empty book: nothing to enlarge yet, so the glove points at the grid itself.
+        const string AlbumEmptyLine = "Tap a card to take\na closer look!";
         static readonly Color AlbumInk = new Color(1f, 0.98f, 0.90f, 1f);
         bool _hiveTutorOn;
         float _hiveTutorT;
@@ -8986,6 +8990,16 @@ namespace FlockFive
                 // A rename sheet steps the bird aside without eating the hop or
                 // replaying the entrance. A real lesson still cancels both.
                 bool renameOnly = _avatarRename && !HomeLessonUp();
+                // Tapping the named bird opens the rename sheet and the bird stays on
+                // its branch (PerchAnchor via StickAvatarToPerch). It used to yield to
+                // the "clearest seat", which flew/teleported it to the left side.
+                if (renameOnly && !_avatarCrossing && !_avatarGliding
+                    && _avatarPose == AvatarPose.Perched && _avatarPlaced)
+                {
+                    _avatarHold = false;
+                    PoseAvatar(dt, false);
+                    return;
+                }
                 if (!renameOnly)
                     _avatarHappy = 0f;
                 if (_avatarCrossing)
@@ -10218,6 +10232,7 @@ namespace FlockFive
             }
             float s = Mathf.Max(Screen.height / 720f, 1f);
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            LessonLine(PokerBetLine);
             CoachGloveAt(_pokerTutorAim, dt, s, float.NaN, false, float.NaN, _pokerTutorTap);
             bool parked = Vector2.Distance(_gloveTip, _gloveRest) > 32f * s;
             if (parked) _pokerPageAge = 0f;
@@ -10311,6 +10326,7 @@ namespace FlockFive
             }
             float handS = Mathf.Max(Screen.height / 720f, 1f);
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            LessonLine(PokerBetLine);
             CoachGloveAt(_pokerDealAim, dt, handS, float.NaN, false, float.NaN, _pokerDealTap);
             return true;
         }
@@ -10370,7 +10386,8 @@ namespace FlockFive
             }
             float handS = Mathf.Max(Screen.height / 720f, 1f);
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, GloveBelowDeg, _pokerBackTap);
+            LessonLine(PokerBackLine);
+            CoachGloveBelow(_pokerBackAim, dt, handS, _pokerBackTap);
             return true;
         }
 
@@ -11251,10 +11268,9 @@ namespace FlockFive
         // Native thumb joint on the same canvas as the palm (image 31).
         const float PokerFanPinchU = 0.586f;
         const float PokerFanPinchV = 0.28f;
-        // Thumb column on the shared canvas. The sprite's right side (to 0.675)
-        // still carries other fingers, so the front layer stops at 0.60.
-        const float PokerThumbU0 = 0.50f;
-        const float PokerThumbU1 = 0.60f;
+        // fx_hand_thumb.png holds ONLY the thumb (alpha spans U 0.499-0.675, centred on the
+        // pinch at U 0.586). The whole canvas is the front layer; never crop it by U, or the
+        // right half of the nail and tip are lost and the cards show through there.
         const float PokerFanHandAspect = 0.80f;
         // Raise only the card row (and everything seated on it) by ~5% of screen height.
         const float PokerRowLiftFrac = 0.05f;
@@ -11922,8 +11938,8 @@ namespace FlockFive
             }
             else
             {
-                // Thumb column only. The sprite's right edge is other fingers.
-                DrawSpriteColumn(dest, SpriteCatalog.HandThumb, PokerThumbU0, PokerThumbU1);
+                // The only front layer: the whole thumb, last over every card part.
+                DrawPokerThumb(dest);
             }
             GUI.matrix = prev;
             GUI.color = Color.white;
@@ -11990,39 +12006,9 @@ namespace FlockFive
             GUI.DrawTextureWithTexCoords(slice, tex, sliceUv);
         }
 
-        // Horizontal slice of the same letterbox as DrawSpriteBand.
-        // u0/u1 are fractions of the sprite canvas (0 = left, 1 = right).
-        static void DrawSpriteColumn(Rect dest, Sprite spr, float u0, float u1)
-        {
-            if (spr == null || spr.texture == null) return;
-            if (u1 - u0 < 0.01f) return;
-            var tex = spr.texture;
-            var r = spr.textureRect;
-            float tw = Mathf.Max(1f, tex.width);
-            float th = Mathf.Max(1f, tex.height);
-            var uv = new Rect(r.x / tw, r.y / th, r.width / tw, r.height / th);
-            if (r.height > 1f)
-            {
-                float texA = r.width / r.height;
-                float destA = dest.height > 1f ? dest.width / dest.height : texA;
-                if (texA > destA)
-                {
-                    float hh = dest.width / texA;
-                    dest = new Rect(dest.x, dest.y + (dest.height - hh) * 0.5f, dest.width, hh);
-                }
-                else
-                {
-                    float ww = dest.height * texA;
-                    dest = new Rect(dest.x + (dest.width - ww) * 0.5f, dest.y, ww, dest.height);
-                }
-            }
-            float span = Mathf.Clamp01(u1) - Mathf.Clamp01(u0);
-            if (span < 0.01f) return;
-            float left = Mathf.Clamp01(u0);
-            var slice = new Rect(dest.x + dest.width * left, dest.y, dest.width * span, dest.height);
-            var sliceUv = new Rect(uv.x + uv.width * left, uv.y, uv.width * span, uv.height);
-            GUI.DrawTextureWithTexCoords(slice, tex, sliceUv);
-        }
+        // The one thumb draw. Holding hand and dealing hand both end here, so the thumb is the
+        // same whole-canvas art, letterboxed like the palm, wherever it is drawn.
+        static void DrawPokerThumb(Rect dest) => DrawSprite(dest, SpriteCatalog.HandThumb, true);
 
         void TickPokerWarm()
         {
@@ -12774,7 +12760,7 @@ namespace FlockFive
                 DrawSpriteBand(dest, palm, PokerFanPinchV, 1f);
             }
             else
-                DrawSpriteColumn(dest, thumb, PokerThumbU0, PokerThumbU1);
+                DrawPokerThumb(dest);
             GUI.matrix = prev;
             GUI.color = Color.white;
         }
@@ -13193,16 +13179,17 @@ namespace FlockFive
             return fire;
         }
 
-        // Header plate, title, and the instruction lines. Returns the bottom of the plate.
+        // Compact header. The hive icon and "Collection" title ride the Back medal's row
+        // (right of it), and the instruction text sits in one plate right under that row,
+        // so the card grid gets the freed height. Returns the bottom of the text plate.
         float DrawAlbumHeader(float s, Rect back)
         {
             int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
-            float hiveSize = Mathf.Clamp(72f * s, 60f, 92f);
-            float headY = back.yMax + 20f * s;
             float left = Mathf.Max(16f * s, Screen.safeArea.xMin + 10f);
-            var hiveHead = new Rect(left, headY, hiveSize, hiveSize);
-            float textX = hiveHead.xMax + 12f * s;
             float textRight = Screen.width - Mathf.Max(16f * s, Screen.width - Screen.safeArea.xMax + 12f);
+            float hiveSize = Mathf.Clamp(back.height * 0.80f, 44f, 92f);
+            var hiveHead = new Rect(back.xMax + 12f * s, back.center.y - hiveSize * 0.5f, hiveSize, hiveSize);
+            float textX = hiveHead.xMax + 12f * s;
             float textW = Mathf.Max(48f, textRight - textX);
             var titleSt = new GUIStyle(GUI.skin.label)
             {
@@ -13210,35 +13197,34 @@ namespace FlockFive
                 alignment = TextAnchor.MiddleLeft,
                 wordWrap = false
             };
-            int titlePx = Mathf.Max(floor + 12, Mathf.RoundToInt(32f * s));
+            int titlePx = Mathf.Max(floor + 8, Mathf.RoundToInt(30f * s));
             float titleH = titlePx + 8f;
             var titleR = new Rect(textX, hiveHead.center.y - titleH * 0.5f, textW, titleH);
             titleSt.fontSize = FitFont(titleSt, HiveTitle, titleR.width, titleR.height * 0.9f, floor, titlePx);
 
-            bool showHow = Hive.Found == 0 || _hiveHowToNudge;
-            int split = HiveHowTo.IndexOf(". ", System.StringComparison.Ordinal);
-            string how = HiveHowTo;
-            if (split > 0)
-                how = HiveHowTo.Substring(0, split + 1) + "\n" + HiveHowTo.Substring(split + 2);
-            string body = showHow ? HiveSubtitle + "\n" + how : HiveSubtitle;
+            // Two short lines, always.
+            string body = HiveSubtitle + "\n" + HiveHowTo;
             var bodySt = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.UpperLeft,
                 wordWrap = true
             };
-            int bodyHi = Mathf.Max(floor, Mathf.RoundToInt(showHow ? 19f * s : 21f * s));
+            int bodyPx = Mathf.Max(floor - 1, Mathf.RoundToInt(17f * s));
+            if (bodyPx < 15) bodyPx = 15;
             float bodyW = Mathf.Max(48f, textRight - left);
-            bodySt.fontSize = bodyHi;
-            // Width wraps the sentences, so the plate grows instead of clipping a line.
-            float bodyH = Mathf.Max(bodyHi + 8f, bodySt.CalcHeight(new GUIContent(body), bodyW) + 6f);
-            var bodyR = new Rect(left, hiveHead.yMax + 12f * s, bodyW, bodyH);
+            bodySt.fontSize = bodyPx;
+            float bodyH = Mathf.Max(bodyPx + 8f, bodySt.CalcHeight(new GUIContent(body), bodyW) + 4f);
+            float bodyY = Mathf.Max(hiveHead.yMax, back.yMax) + 6f * s;
+            var bodyR = new Rect(left, bodyY, bodyW, bodyH);
 
-            var plate = new Rect(
-                left - 6f * s,
-                hiveHead.y - 8f * s,
-                Mathf.Max(48f, textRight - left + 12f * s),
-                bodyR.yMax - (hiveHead.y - 8f * s) + 8f * s);
+            var titlePlate = new Rect(
+                hiveHead.x - 6f * s,
+                hiveHead.y - 4f * s,
+                Mathf.Max(48f, textRight - hiveHead.x + 12f * s),
+                hiveHead.height + 8f * s);
+            var plate = new Rect(left - 6f * s, bodyR.y - 4f * s, Mathf.Max(48f, textRight - left + 12f * s), bodyR.height + 8f * s);
+            DrawCoachPanel(titlePlate, 1f);
             DrawCoachPanel(plate, 1f);
             DrawHiveButton(hiveHead, s);
             StampReadable(titleR, HiveTitle, titleSt, AlbumInk);
@@ -13247,7 +13233,7 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(titleR.x, titleR.yMax - 1f, ruleW, Mathf.Max(2f, 3f * Mathf.Min(s, 1.35f))), Texture2D.whiteTexture);
             GUI.color = Color.white;
             StampReadable(bodyR, body, bodySt, AlbumInk);
-            return plate.yMax + 8f * s;
+            return plate.yMax + 4f * s;
         }
 
         void NoteAlbumOpen()
@@ -13299,6 +13285,17 @@ namespace FlockFive
             return -1;
         }
 
+        // The card the lesson glove points at on a page: the first card the player owns,
+        // or on an empty book the middle sleeve of the grid. -1 when neither exists.
+        static int AlbumTutorCardSlot(int page)
+        {
+            int own = AlbumOwnedOnPage(page);
+            if (own >= 0) return own;
+            if (Hive.Found > 0 || page < 0) return -1;
+            int mid = page * HivePageSize + HivePageSize / 2;
+            return mid < Hive.AlbumSlots ? mid : -1;
+        }
+
         static int AlbumOwnedSlot(int preferPage)
         {
             int here = AlbumOwnedOnPage(preferPage);
@@ -13338,7 +13335,7 @@ namespace FlockFive
         {
             if (_albumTutorStep >= 3) return AlbumPageLine;
             if (_albumTutorStep == 2) return AlbumFlipLine;
-            return AlbumTapLine;
+            return Hive.Found <= 0 ? AlbumEmptyLine : AlbumTapLine;
         }
 
         void BeginAlbumTutor(int step)
@@ -13377,7 +13374,7 @@ namespace FlockFive
             _gloveVis = false;
             _gloveReady = false;
             if (was) GloveVeilReset();
-            if (_cueLine == AlbumTapLine || _cueLine == AlbumFlipLine || _cueLine == AlbumPageLine)
+            if (_cueLine == AlbumTapLine || _cueLine == AlbumFlipLine || _cueLine == AlbumPageLine || _cueLine == AlbumEmptyLine)
                 _cueLine = null;
             _cueSpoken = null;
 #if UNITY_EDITOR
@@ -13395,7 +13392,9 @@ namespace FlockFive
                 PlayerPrefs.SetInt(CoachHiveAlbumKey, 1);
                 save = true;
             }
-            if (PlayerPrefs.GetInt(HiveFlipSeenKey, 0) == 0)
+            // An empty-book lesson never flipped a card, so the flip lesson stays owed
+            // (ArmHiveTutor teaches it on the first card inspected).
+            if (Hive.Found > 0 && PlayerPrefs.GetInt(HiveFlipSeenKey, 0) == 0)
             {
                 PlayerPrefs.SetInt(HiveFlipSeenKey, 1);
                 save = true;
@@ -13409,7 +13408,7 @@ namespace FlockFive
             if (_home != HomeFace.Hive) return;
             if (_albumTutorOn || AlbumTutorDone()) return;
             if (!AlbumPageSettled() || !TutorialGateClear()) return;
-            if (Hive.Found <= 0) return;
+            // An empty book still teaches: the glove points at the grid (AlbumEmptyLine).
             if (_hiveInspect >= 0)
             {
                 if (!AlbumInspectReady() || Hive.CountOfSlot(_hiveInspect) <= 0) return;
@@ -13418,6 +13417,7 @@ namespace FlockFive
             }
             if (_albumTutorSlot < 0 || !_albumCardOk)
             {
+                if (Hive.Found <= 0) return;
                 int other = AlbumOwnedSlot(_hivePage);
                 if (other < 0) return;
                 int page = other / HivePageSize;
@@ -13576,7 +13576,7 @@ namespace FlockFive
 
             float textBottom = DrawAlbumHeader(s, back);
             float tallyW = Mathf.Min(Screen.width - 32f * s, 460f * s);
-            var tallyAnchor = new Rect((Screen.width - tallyW) * 0.5f, textBottom + 16f * s, tallyW, 8f);
+            var tallyAnchor = new Rect((Screen.width - tallyW) * 0.5f, textBottom + 4f * s, tallyW, 8f);
             float hiveBottom = DrawHiveTally(tallyAnchor, s);
             int pages = Mathf.Max(1, (Hive.AlbumSlots + HivePageSize - 1) / HivePageSize);
             _hivePage = Mathf.Clamp(_hivePage, 0, pages - 1);
@@ -13587,8 +13587,8 @@ namespace FlockFive
             // Ultra Pro clear page: 3×3 sleeves on a binder sheet.
             // Pager hit is the painted chip and is at least 48pt.
             int typeFloor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
-            float colH = typeFloor * 2.55f + 12f * s;
-            float colGap = 16f * s;
+            float colH = typeFloor * 2.2f + 6f * s;
+            float colGap = 6f * s;
             float pagerHit = Mathf.Max(48f, 56f * s);
             float pagerLab = Mathf.Max(36f, 30f * s);
             float botInset = Mathf.Max(8f * s, Screen.safeArea.yMin + 4f);
@@ -13599,7 +13599,7 @@ namespace FlockFive
             float pageTop = hiveBottom + colH + colGap;
             float pageH = pageBottom - pageTop;
             if (pageH < 72f * s) pageH = 72f * s;
-            float pagePad = 18f * s;
+            float pagePad = 10f * s;
             float pageW = Screen.width - pagePad * 2f;
             var sheet = new Rect(pagePad, pageTop, pageW, pageH);
 
@@ -13610,15 +13610,15 @@ namespace FlockFive
             GUI.DrawTexture(sheet, Texture2D.whiteTexture);
             GUI.color = new Color(0.55f, 0.62f, 0.68f, 0.35f);
             // Sleeve grid lines
-            float inner = 16f * s;
-            float gap = 16f * s;
+            float inner = 8f * s;
+            float gap = 10f * s;
             float cellW = (sheet.width - inner * 2f - gap * 2f) / 3f;
             float cellH = (sheet.height - inner * 2f - gap * 2f) / 3f;
             if (cellW < 8f) cellW = 8f;
             if (cellH < 8f) cellH = 8f;
             // Keep cards portrait-ish inside sleeves, with air around each one.
-            float cardW = cellW - 10f * s;
-            float cardH = Mathf.Min(cellH - 10f * s, cardW * 1.35f);
+            float cardW = cellW - 6f * s;
+            float cardH = Mathf.Min(cellH - 6f * s, cardW * 1.35f);
             if (cardW < 8f) cardW = 8f;
             if (cardH < 8f) cardH = 8f;
             float gridW = 3f * cellW + 2f * gap;
@@ -13626,7 +13626,7 @@ namespace FlockFive
             float gx0 = sheet.x + (sheet.width - gridW) * 0.5f;
             float gy0 = sheet.y + (sheet.height - gridH) * 0.5f;
             GUI.color = Color.white;
-            DrawHiveColumns(hiveBottom + 8f * s, colH, gx0, cellW, gap, s);
+            DrawHiveColumns(hiveBottom + 4f * s, colH, gx0, cellW, gap, s);
 
             // During turn: draw outgoing page curling away, then incoming
             float turnU = turning ? Mathf.Clamp01(_hivePageTurn / 0.52f) : 1f;
@@ -13674,7 +13674,7 @@ namespace FlockFive
             }
 
             if (!_albumTutorOn || _albumTutorStep <= 1)
-                _albumTutorSlot = AlbumOwnedOnPage(_hivePage);
+                _albumTutorSlot = AlbumTutorCardSlot(_hivePage);
             _albumCardOk = false;
             int albumSwipeDir = 0;
             if (_hiveInspect < 0 && !turning)
@@ -13792,8 +13792,22 @@ namespace FlockFive
                 DrawHiveInspect(s);
             else
                 _albumInspectOk = false;
+            NoteEmptyAlbumTap(turning);
             TryArmAlbumTutor();
             DrawAlbumTutor(s);
+        }
+
+        // Empty book, step 1: a release on the sleeve the glove points at is the valid
+        // tap (nothing opens, there is no card yet), so the lesson moves on to the pager.
+        // rawType survives a HitPad Use, so a sleeve that eats the press still counts.
+        void NoteEmptyAlbumTap(bool turning)
+        {
+            if (!_albumTutorOn || _albumTutorStep > 1 || Hive.Found > 0 || turning) return;
+            if (!_albumCardOk || _hiveInspect >= 0 || PageSwipeAte) return;
+            var e = Event.current;
+            if (e == null || e.rawType != EventType.MouseUp || e.button != 0) return;
+            if (!_albumCardR.Contains(e.mousePosition)) return;
+            AdvanceAlbumTutor(3);
         }
 
         void DrawHiveInspect(float s)

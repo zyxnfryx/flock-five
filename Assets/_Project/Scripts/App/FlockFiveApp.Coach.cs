@@ -48,6 +48,7 @@ namespace FlockFive
         const string PokerIntroLine = "You earned coins!\nTap poker to bet them.";
         // Break is the two-line wrap. The plate is measured to these lines.
         const string DailyIntroLine = "Tap Daily for\nyour bonus!";
+        const string DailyClaimLine = "Tap to claim!";
         // A feeder collect calls Board.Breeze, which lifts the tip leaf.
         const string LeafIntroLine = "Leaves hide these birds.\nCollect at a feeder\nto blow them away.";
         // A tap does not scare a sparrow. One full match (five birds) into its feeder does.
@@ -156,6 +157,10 @@ namespace FlockFive
         // Cleared at the start of every CoachPlace. Daily claim sets the frame.
         // The Watch lesson sets the button.
         Rect _gloveKeepOff;
+        // Rail / icon-column targets: the hand enters from the side AWAY from that
+        // column (left hand from the left for a right-hand icon). Set by the lesson that
+        // poses, cleared at the top of every CoachPlace.
+        bool _gloveInward;
         bool _glovePosing;
         // Set at the start of CoachPlace. A new sentence waits for this frame's
         // pose before it latches, so the seat is not taken against last step's hand.
@@ -703,9 +708,32 @@ namespace FlockFive
             _tutorSeatOn = false;
         }
 
+        // Every lesson that owns the glove names its sentence before it poses. GloveStepReady
+        // refuses a pose when a previous step's line is still latched but the cue is empty,
+        // which is how a lesson without a CueLine call lost its hand. A lesson with no
+        // sentence (null) clears the latch instead.
+        void LessonLine(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                _cueLine = null;
+                _gloveStepLine = null;
+                return;
+            }
+            CueLine(text);
+        }
+
+        // Shared bottom-entry option: the hand rises from the bottom of the screen at
+        // GloveBelowDeg (45 degrees) and lands its fingertip on the target.
+        bool CoachGloveBelow(Vector2 aimGui, float dt, float s, Rect tapRect)
+        {
+            return CoachGloveAt(aimGui, dt, s, float.NaN, false, GloveBelowDeg, tapRect);
+        }
+
         void CoachPlace()
         {
             _gloveKeepOff = default;
+            _gloveInward = false;
             _glovePoseFrame = Time.frameCount;
             float dt = PlayClock.Delta;
             NoteGloveTap();
@@ -729,6 +757,8 @@ namespace FlockFive
                     return;
                 }
                 float welcomeS = Mathf.Max(Screen.height / 720f, 1f);
+                LessonLine(null);
+                _gloveInward = true;
                 var vipBox = SplashNoAdsRect();
                 var vipSeat = SplashRailSeat(RailVip);
                 Vector2 vipAim = vipBox.width > 12f ? GloveTarget(vipBox) : GloveTarget(vipSeat);
@@ -795,6 +825,7 @@ namespace FlockFive
                         _tutorSeatOn = false;
                     }
                     _cueLine = HiveHomeLine;
+                    _gloveInward = true;
                     CoachGloveAt(GloveTarget(box), dt, handS, float.NaN, false, float.NaN, box);
                     return;
                 }
@@ -809,6 +840,9 @@ namespace FlockFive
                 var seat = SplashRailSeat(RailPoker);
                 var target = box.width > 12f ? box : seat;
                 Vector2 pokerAim = target.width > 2f ? target.center : box.center;
+                LessonLine(PokerIntroLine);
+                _gloveInward = true;
+                _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
                 CoachGloveAt(pokerAim, dt, handS, float.NaN, false, float.NaN, target);
                 return;
             }
@@ -824,6 +858,8 @@ namespace FlockFive
                     _tapSent = false;
                 }
                 Vector2 dailyAim;
+                LessonLine(onClaim ? DailyClaimLine : DailyIntroLine);
+                _gloveInward = !onClaim;
                 if (onClaim)
                 {
                     DailyClaimGlove(handS, out dailyAim, out float perchLift, out bool fromLeft);
@@ -1647,7 +1683,8 @@ namespace FlockFive
                 && !GloveHitsAdoptBird(rest, ang, s, mirror);
             var safe = CoachSafeGui(12f * s);
             float dh = GloveDh(s);
-            int passes = angled ? 1 : 2;
+            // A rail / icon-column target is never approached from its own column's side.
+            int passes = (angled || _gloveInward) ? 1 : 2;
             for (int pass = 0; pass < passes; pass++)
             {
                 bool flip = pass == 1;
@@ -3836,11 +3873,54 @@ namespace FlockFive
             return new Rect(left, y, w, h);
         }
 
-        void DrawSplashIntroLine(string line, Rect r, float s)
+        // The shared standard caption box for splash, poker, and album lessons. fontHi
+        // lets a lesson ask for a bigger line (0 = standard). The caption fades in on
+        // its own repaint, so a step whose glove is not ticking (poker hold, back) can
+        // never sit at fade 0, which drew the grey text with only its outline.
+        void DrawSplashIntroLine(string line, Rect r, float s, int fontHi = 0)
         {
-            int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            if (GuiPaint())
+                _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
+            int hi = fontHi > 0 ? fontHi : Mathf.Max(18, Mathf.RoundToInt(34f * s));
             var seat = SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
             PaintCoachCaption(line, seat, s, 12, hi);
+        }
+
+        // Measures a caption to its longest line at the biggest font in [floor, hi] that
+        // fits maxW. Returns a rect at the origin (w, h). Shared by the poker intro box.
+        Rect FitCaptionBox(string line, float maxW, int hi, int floor)
+        {
+            var st = CoachLineStyle();
+            int br = line.IndexOf('\n');
+            string top = br > 0 ? line.Substring(0, br) : line;
+            string bot = br > 0 ? line.Substring(br + 1) : line;
+            float w = maxW;
+            float h = 32f;
+            for (int fs = hi; fs >= floor; fs--)
+            {
+                st.fontSize = fs;
+                BindFit(st, top, false);
+                _fitScratch.fontSize = fs;
+                float wa = _fitScratch.CalcSize(_fitContent).x;
+                BindFit(st, bot, false);
+                _fitScratch.fontSize = fs;
+                float wb = _fitScratch.CalcSize(_fitContent).x;
+                float need = (wa > wb ? wa : wb) + 8f;
+                if (need > maxW && fs > floor) continue;
+                float useW = need > maxW ? maxW : need;
+                if (useW < 8f) useW = 8f;
+                BindFit(st, line, true);
+                _fitScratch.fontSize = fs;
+                float th = _fitScratch.CalcHeight(_fitContent, useW);
+                BindFit(st, top, false);
+                _fitScratch.fontSize = fs;
+                float two = _fitScratch.CalcSize(_fitContent).y * 2f;
+                if (th > two + 1f) th = two;
+                w = useW;
+                h = th > 1f ? th : 1f;
+                break;
+            }
+            return new Rect(0f, 0f, w, h);
         }
 
         static Rect HiveHomeCaption(float s)
@@ -3934,64 +4014,31 @@ namespace FlockFive
         {
             if (!_pokerIntroLive) return;
             if (GuiPaint()) TickPokerWarm();
-            DrawSplashIntroLine(PokerIntroLine, PokerIntroBox(s), s);
+            DrawSplashIntroLine(PokerIntroLine, PokerIntroBox(s), s, PokerIntroFontHi(s));
             DrawTutorOverlay(s);
         }
 
-        // Two lines, width of the longer line, height of that wrap. No spare row.
-        // Sits under the logo on the side away from the poker glove (right rail).
+        // Poker intro caption: bigger than the standard line and seated over the LEVEL
+        // button, so the player's eye (and tap) goes to Poker instead. Same shared
+        // caption box; this only picks the size (PokerIntroFontHi) and the seat.
+        int PokerIntroFontHi(float s) => Mathf.Max(24, Mathf.RoundToInt(46f * s));
+
         Rect PokerIntroBox(float s)
         {
-            AvatarChannel(s, out float chL, out float chR);
-            const float padX = 18f;
-            float left = chL + 6f * s + padX;
-            float right = chR - 6f * s - padX;
-            float maxW = right - left;
-            if (maxW < 80f * s)
-                maxW = Mathf.Min(Screen.width * 0.62f, Screen.width - 36f * s);
+            float maxW = Mathf.Min(Screen.width - 48f * s, Screen.width * 0.86f);
+            if (maxW < 80f * s) maxW = Mathf.Min(Screen.width * 0.62f, Screen.width - 36f * s);
             if (maxW < 8f) maxW = 8f;
-            var st = CoachLineStyle();
-            int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
-            const int floor = 12;
-            int br = PokerIntroLine.IndexOf('\n');
-            string top = br > 0 ? PokerIntroLine.Substring(0, br) : PokerIntroLine;
-            string bot = br > 0 ? PokerIntroLine.Substring(br + 1) : PokerIntroLine;
-            float w = maxW;
-            float h = 32f * s;
-            for (int fs = hi; fs >= floor; fs--)
-            {
-                st.fontSize = fs;
-                BindFit(st, top, false);
-                _fitScratch.fontSize = fs;
-                float wa = _fitScratch.CalcSize(_fitContent).x;
-                BindFit(st, bot, false);
-                _fitScratch.fontSize = fs;
-                float wb = _fitScratch.CalcSize(_fitContent).x;
-                float need = (wa > wb ? wa : wb) + 8f;
-                if (need > maxW && fs > floor) continue;
-                float useW = need > maxW ? maxW : need;
-                if (useW < 8f) useW = 8f;
-                BindFit(st, PokerIntroLine, true);
-                _fitScratch.fontSize = fs;
-                float th = _fitScratch.CalcHeight(_fitContent, useW);
-                BindFit(st, top, false);
-                _fitScratch.fontSize = fs;
-                float two = _fitScratch.CalcSize(_fitContent).y * 2f;
-                if (th > two + 1f) th = two;
-                w = useW;
-                h = th > 1f ? th : 1f;
-                break;
-            }
-            float x = left;
-            if (x + w > right) x = right - w;
+            var fit = FitCaptionBox(PokerIntroLine, maxW, PokerIntroFontHi(s), 16);
+            float w = fit.width;
+            float h = fit.height;
+            var play = FlowerPlayRect();
+            float x = play.center.x - w * 0.5f;
+            float y = play.center.y - h * 0.5f;
             if (x < 4f) x = 4f;
-            float gap = 8f * s + 12f;
-            float y = CaptionFloorY(s);
-            float limit = FlowerPlayRect().y - gap - h;
-            if (limit > y && y + h > limit) y = limit;
-            float capFloor = CaptionFloorY(s);
-            if (y < capFloor) y = capFloor;
-            return PlaceCaption(s, w, h, y - 8f * s);
+            if (x + w > Screen.width - 4f) x = Screen.width - 4f - w;
+            var r = PlaceCaption(s, w, h, y - 8f * s);
+            r.x = x;
+            return r;
         }
 
         // First in the splash queue. Hive and poker stay pending until this one ends.
@@ -4126,7 +4173,7 @@ namespace FlockFive
             float x1 = Mathf.Max(frame.xMax, flower.xMax);
             float y1 = Mathf.Max(frame.yMax, flower.yMax);
             var block = new Rect(x0, y0, x1 - x0, y1 - y0);
-            const string line = "Tap to claim!";
+            const string line = DailyClaimLine;
             float w = Mathf.Min(StandardPopupWidth(s) * 0.72f, 280f * s);
             float h = 48f * s;
             var r = PlacePopupTutorCaption(s, w, h, block.yMax, block);

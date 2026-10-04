@@ -43,6 +43,12 @@ namespace FlockFive
         // other alert in the mix. RowAlert is the only caller.
         public const float StingVolume = 0.30f;
 
+        // The cowbell's one level. It rides the shared SfxCeiling, so Level() passes
+        // it as written. No random pitch or volume: the clunk is identical every tap.
+        public const float CowbellVolume = SfxCeiling;
+
+        public static void Cowbell() => Play("cowbell", CowbellVolume);
+
         public static void Play(string name, float volume = 0.5f, float pitchVariance = 0f)
         {
             if (string.IsNullOrEmpty(name)) return;
@@ -64,15 +70,21 @@ namespace FlockFive
             if (name == "groove")
             {
                 if (!_claimGroove) return;
-                if (Time.unscaledTime - _grooveAt < 30f) return;
+                if (Time.unscaledTime - _grooveAt < 6f) return;
                 _grooveAt = Time.unscaledTime;
                 var groove = Clip(name);
                 if (groove == null) return;
-                Sfx.PlayHeld(groove, Mathf.Clamp(volume <= 0f ? 0.30f : volume, 0.05f, 0.42f), groove.length);
+                Sfx.PlayHeld(groove, Mathf.Clamp(volume <= 0f ? 0.30f : volume, 0.05f, 0.50f), groove.length);
                 return;
             }
             var clip = Clip(name);
             if (clip == null) return;
+            // The cowbell is ONE fixed sound: same pitch, same level, every tap.
+            if (name == "cowbell")
+            {
+                Sfx.PlayProc(clip, 1f, CowbellVolume, MixLayer.Lead);
+                return;
+            }
             float pitch = 1f + Random.Range(-pitchVariance, pitchVariance);
             float vol = volume <= 0f ? 0.2f : volume;
             if (name == "fanfare" && vol > FanfareCap) vol = FanfareCap;
@@ -128,21 +140,35 @@ namespace FlockFive
             return clip;
         }
 
-        // Two-tone dry clank. Short, quiet, not a bell loop.
+        // The ONE cowbell. Two detuned square tones (587 and 845 Hz, the classic
+        // clunk pair) with a hard 2 ms attack, a bright click, and a punchy ~0.2 s
+        // decay. Normalised hot and barely low-passed so it cuts through the mix.
         static AudioClip MakeCowbell()
         {
-            const float dur = 0.16f;
+            const float dur = 0.30f;
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
-                float env = Mathf.Exp(-t * 28f);
-                float s = Mathf.Sin(2f * Mathf.PI * 560f * t);
-                s += 0.72f * Square(845f, t);
-                data[i] = s * env * 0.34f;
+                float atk = Mathf.Clamp01(t / 0.002f);
+                float body = Mathf.Exp(-t * 13f);
+                float ring = Mathf.Exp(-t * 6f);
+                float a = HardSquare(587f, t) * 0.6f + HardSquare(845f, t);
+                float click = t < 0.012f ? Mathf.Sin(2f * Mathf.PI * 2400f * t) * Mathf.Exp(-t * 420f) : 0f;
+                float tail = Mathf.Sin(2f * Mathf.PI * 1180f * t) * ring * 0.18f;
+                data[i] = (a * body * 0.8f + click * 0.9f + tail) * atk;
             }
-            return Bake("cowbell", data, 0.22f);
+            int fade = Mathf.RoundToInt(0.02f * Rate);
+            for (int i = 0; i < fade && i < n; i++)
+                data[n - 1 - i] *= i / (float)fade;
+            PeakUnder(data, 0.92f);
+            return Bake("cowbell", data, 0.80f);
+        }
+
+        static float HardSquare(float freq, float t)
+        {
+            return Mathf.Sin(2f * Mathf.PI * freq * t) >= 0f ? 1f : -1f;
         }
 
         // Short rising brass-like sting. Original, one shot, no choir.
@@ -195,7 +221,8 @@ namespace FlockFive
                     kick = Mathf.Sin(2f * Mathf.PI * 58f * t) * Mathf.Exp(-into * 36f);
                 data[i] = (g * gEnv * 0.42f + bell * 0.22f + kick * 0.30f) * 0.55f;
             }
-            return Bake("groove", data, 0.16f);
+            PeakUnder(data, 0.85f);
+            return Bake("groove", data, 0.40f);
         }
 
         static AudioClip MakeTick()

@@ -322,7 +322,9 @@ namespace FlockFive
 
             if (claim)
             {
-                ClaimDaily();
+                // Claimed: the pedestal still takes taps, for the clunk and the rhythm only.
+                if (!DailyBonus.OfferReady && DailyBonus.ClaimedToday) ClunkClaimed();
+                else ClaimDaily();
                 return;
             }
             if (xHit || outside) DismissDaily();
@@ -492,13 +494,20 @@ namespace FlockFive
             _coachFade = 0f;
         }
 
+        // Claimed-state tap: the one cowbell clunk every time, nothing else (no second
+        // claim, no reward, no dismissal). Four steady or short-long-short taps fire the
+        // shared RhythmTap: the guitar-and-cowbell snippet plus a visible button pulse.
         void ClunkClaimed()
         {
-            SfxLibrary.Play("cowbell", 0.22f, 0.04f);
+            SfxLibrary.Cowbell();
             _claimClunk = Time.unscaledTime;
             if (_cowbellRhythm == null) _cowbellRhythm = new RhythmTap();
-            if (_cowbellRhythm.Hear(Time.unscaledTime))
-                SfxLibrary.Play("groove", 0.28f);
+            if (!_cowbellRhythm.Hear(Time.unscaledTime)) return;
+            Debug.Log("[Easter] cowbell rhythm fired");
+            _claimEaster = Time.unscaledTime;
+            SfxLibrary.SeatGroove(true);
+            SfxLibrary.Play("groove", 0.45f);
+            Haptics.Play(Haptics.Tier.Medium);
         }
 
         void StopClaimGroove()
@@ -513,6 +522,7 @@ namespace FlockFive
             StopClaimGroove();
             _dailyOpen = false;
             _dailyPopAt = -1f;
+            _claimEaster = -1f;
             // X and the dim close the card only. The lesson stays until Claim.
             Sfx.CardTap();
         }
@@ -949,6 +959,45 @@ namespace FlockFive
             return "Later";
         }
 
+        // Rhythm Easter egg reaction: a gold ring swells off the button and sparkles fly
+        // out for about a second, so the player sees it fired. No-op when idle.
+        static void DrawEasterPulse(Rect disc, float t)
+        {
+            if (_claimEaster < 0f) return;
+            float age = t - _claimEaster;
+            if (age < 0f || age > 1.1f) return;
+            float u = age / 1.1f;
+            float fade = 1f - u;
+            var glow = GlowTex();
+            if (glow != null)
+            {
+                float grow = 1f + 0.9f * u;
+                float w = disc.width * 1.5f * grow;
+                float h = disc.height * 1.5f * grow;
+                GUI.color = new Color(1f, 0.82f, 0.30f, 0.70f * fade);
+                GUI.DrawTexture(new Rect(disc.center.x - w * 0.5f, disc.center.y - h * 0.5f, w, h), glow, ScaleMode.ScaleToFit, true);
+            }
+            var spark = SpriteCatalog.Sparkle;
+            var tex = spark != null && spark.texture != null ? spark.texture : null;
+            if (tex != null)
+            {
+                var prev = GUI.matrix;
+                for (int i = 0; i < 6; i++)
+                {
+                    float ang = (i / 6f) * Mathf.PI * 2f + 0.4f;
+                    float reach = disc.width * (0.42f + 0.50f * u);
+                    float sz = disc.width * 0.22f * (0.5f + fade);
+                    var c = new Vector2(disc.center.x + Mathf.Cos(ang) * reach, disc.center.y + Mathf.Sin(ang) * reach * 0.8f);
+                    var sr = new Rect(c.x - sz * 0.5f, c.y - sz * 0.5f, sz, sz);
+                    GUIUtility.RotateAroundPivot(t * 180f + i * 30f, sr.center);
+                    GUI.color = new Color(1f, 0.96f, 0.75f, 0.95f * fade);
+                    GUI.DrawTexture(sr, tex, ScaleMode.ScaleToFit, true);
+                    GUI.matrix = prev;
+                }
+            }
+            GUI.color = Color.white;
+        }
+
         static void DrawDailyClaim(Rect flower, bool held, float s, float t)
         {
             bool ready = DailyBonus.OfferReady;
@@ -968,6 +1017,7 @@ namespace FlockFive
             if (squish < 0.995f)
                 GUIUtility.ScaleAroundPivot(new Vector2(squish, squish * 0.94f), flower.center);
             var disc = DrawPopupButton(flower, held, ready);
+            DrawEasterPulse(disc, t);
             var labR = new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.56f);
             _dailyClaim.fontSize = _dailyClaimPx;
             int ink = Mathf.Clamp(Mathf.RoundToInt(_dailyClaimPx * 0.12f), 2, 6);

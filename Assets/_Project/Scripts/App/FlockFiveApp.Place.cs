@@ -74,8 +74,8 @@ namespace FlockFive
         static float PopupButtonSize(float s, float cardW)
         {
             if (s < 1f) s = 1f;
-            float sz = cardW * 0.56f;
-            float cap = Screen.width * 0.52f;
+            float sz = cardW * 0.62f;
+            float cap = Screen.width * 0.58f;
             if (sz > cap) sz = cap;
             float floor = 120f * s;
             if (sz < floor) sz = floor;
@@ -89,13 +89,13 @@ namespace FlockFive
         // How far the square CTA's box rises into the card above it. The pedestal art
         // starts about 13% down its square, so 15% parks the pedestal on the card's
         // bottom edge. lipRoom > 0 is the card's own spare bottom (brass plus board pad)
-        // the art may sink into: the pedestal then rises to 20% so no gap is left where
+        // the art may sink into: the pedestal then rises to 24% so no gap is left where
         // the marquee bulbs on the bottom edge show. 0 keeps the plain 15%.
         static float PopupCtaOverlap(float flowerSz, float lipRoom)
         {
             float plain = flowerSz * 0.15f;
             if (lipRoom <= 0f) return plain;
-            float lifted = flowerSz * 0.20f;
+            float lifted = flowerSz * 0.24f;
             float most = flowerSz * 0.13f + lipRoom;
             float v = lifted < most ? lifted : most;
             return v > plain ? v : plain;
@@ -373,8 +373,13 @@ namespace FlockFive
             ox = 0f;
             oy = 0f;
             if (string.IsNullOrEmpty(text) || style == null) return;
-            var font = style.font != null ? style.font : (GUI.skin != null ? GUI.skin.font : null);
+            var font = BadgeFont(style);
             if (font == null) return;
+            // Real laid-out glyph quads first: the ink box is measured from the same
+            // MiddleCenter layout the label uses, not from font metrics.
+            if (BadgeInkShift(text, style, font, out ox, out oy)) return;
+            ox = 0f;
+            oy = 0f;
             int size = style.fontSize;
             if (size < 1) size = font.fontSize;
             if (size < 1) size = 16;
@@ -408,6 +413,89 @@ namespace FlockFive
             if (ascent < 1f) ascent = size * 0.92f;
             if (line < 1f) line = size;
             oy = (ascent - (minY + maxY) * 0.5f) - line * 0.5f;
+        }
+
+        static Font _badgeFont;
+        static TextGenerator _badgeGen;
+        static string _badgeInkText;
+        static int _badgeInkSize = -1;
+        static FontStyle _badgeInkFace;
+        static int _badgeInkFont;
+        static float _badgeInkX;
+        static float _badgeInkY;
+        static bool _badgeInkOk;
+
+        // GUI.skin.font is null on the default skin, which used to leave every shift at
+        // zero: the "1" then rode high and right of the flame. Fall back to the
+        // built-in runtime font the labels actually draw with.
+        static Font BadgeFont(GUIStyle style)
+        {
+            if (style.font != null) return style.font;
+            if (GUI.skin != null && GUI.skin.font != null) return GUI.skin.font;
+            if (_badgeFont == null) _badgeFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            return _badgeFont;
+        }
+
+        // Ink center of the string as TextGenerator lays it out MiddleCenter around the
+        // rect center. ox: + is right of center. oy: + is below center (GUI y down).
+        static bool BadgeInkShift(string text, GUIStyle style, Font font, out float ox, out float oy)
+        {
+            ox = 0f;
+            oy = 0f;
+            int size = style.fontSize > 0 ? style.fontSize : 16;
+            int fontId = font.GetInstanceID();
+            if (_badgeInkSize == size && _badgeInkFace == style.fontStyle && _badgeInkFont == fontId
+                && string.Equals(_badgeInkText, text))
+            {
+                ox = _badgeInkX;
+                oy = _badgeInkY;
+                return _badgeInkOk;
+            }
+            _badgeInkSize = size;
+            _badgeInkFace = style.fontStyle;
+            _badgeInkFont = fontId;
+            _badgeInkText = text;
+            _badgeInkOk = false;
+            if (_badgeGen == null) _badgeGen = new TextGenerator();
+            var settings = new TextGenerationSettings
+            {
+                font = font,
+                color = Color.white,
+                fontSize = size,
+                fontStyle = style.fontStyle,
+                lineSpacing = 1f,
+                richText = false,
+                scaleFactor = 1f,
+                textAnchor = TextAnchor.MiddleCenter,
+                alignByGeometry = false,
+                resizeTextForBestFit = false,
+                updateBounds = false,
+                horizontalOverflow = HorizontalWrapMode.Overflow,
+                verticalOverflow = VerticalWrapMode.Overflow,
+                generateOutOfBounds = true,
+                generationExtents = new Vector2(2000f, 2000f),
+                pivot = new Vector2(0.5f, 0.5f)
+            };
+            _badgeGen.Populate(text, settings);
+            var verts = _badgeGen.verts;
+            int n = _badgeGen.vertexCount;
+            if (verts == null || n < 4) return false;
+            float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
+            for (int i = 0; i < n && i < verts.Count; i++)
+            {
+                var v = verts[i].position;
+                if (v.x < minX) minX = v.x;
+                if (v.x > maxX) maxX = v.x;
+                if (v.y < minY) minY = v.y;
+                if (v.y > maxY) maxY = v.y;
+            }
+            if (maxX <= minX || maxY <= minY) return false;
+            _badgeInkX = (minX + maxX) * 0.5f;
+            _badgeInkY = -(minY + maxY) * 0.5f;
+            _badgeInkOk = true;
+            ox = _badgeInkX;
+            oy = _badgeInkY;
+            return true;
         }
 
         static Vector2 BadgePadShift(GUIStyle style)
