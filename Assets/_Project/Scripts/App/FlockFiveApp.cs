@@ -4744,7 +4744,7 @@ namespace FlockFive
             {
                 // Pose steps on PlayClock, so a suspension cannot skip the arc.
                 // Under an ad the clock holds and the hand does not jump when it lifts.
-                if (TutorialGuideLive() || _tutorPause != 0 || _pokerPageOn || _pokerDealHint)
+                if (TutorialGuideLive() || _tutorPause != 0 || _pokerPageOn || _pokerDealHint || PokerBackHintOn())
                     CoachPlace();
                 return;
             }
@@ -10449,6 +10449,11 @@ namespace FlockFive
             return _pokerBackDone;
         }
 
+        // The back step is live on the poker page (shown after the first hand). Shared by
+        // CoachAdvance and LateUpdate so this step keeps its glove cycle and caption fade
+        // the same way the bet, deal and hold steps do.
+        bool PokerBackHintOn() => _home == HomeFace.Poker && !PokerBackDone();
+
         void MarkPokerBackDone()
         {
             if (PokerBackDone()) return;
@@ -10480,7 +10485,9 @@ namespace FlockFive
             float handS = Mathf.Max(Screen.height / 720f, 1f);
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBackLine);
-            CoachGloveBelow(_pokerBackAim, dt, handS, _pokerBackTap);
+            // Standard shared arc: the hand rides over the top and the fingertip comes straight
+            // down onto the back button. Only a tap inside the back rect is a valid tap.
+            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, float.NaN, _pokerBackTap);
             return true;
         }
 
@@ -10498,13 +10505,18 @@ namespace FlockFive
             float below = logoBottom;
             var tab = PokerPayTabRect(logoBottom, s);
             if (tab.width > 2f && tab.yMax > below) below = tab.yMax;
-            float w = Mathf.Min(Screen.width * 0.78f, 520f * s);
-            float h = 52f * s;
-            var seat = PlaceCaption(s, w, h, below);
-            float cardTop = row.y - 8f * s;
-            if (seat.yMax > cardTop - 4f * s && cardTop - seat.y > 28f * s)
-                seat.height = cardTop - 4f * s - seat.y;
-            DrawSplashIntroLine(PokerBackLine, seat, s);
+            // Same measured plate as the other lessons (FitCaptionBox), seated between the
+            // pay-table tab and the card row, clear of the back button and the glove.
+            int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            float maxW = Mathf.Min(Screen.width * 0.86f, 520f * s) - 36f * s;
+            var fit = FitCaptionBox(PokerBackLine, maxW, hi, 16);
+            float w = Mathf.Min(fit.width + 36f * s, Screen.width - 16f);
+            float h = fit.height + 28f * s;
+            var seat = PlaceCaption(s, w, h, below + 12f * s);
+            float cardTop = row.y - 14f * s;
+            if (seat.yMax > cardTop)
+                seat.y = Mathf.Max(below + 4f * s, cardTop - seat.height);
+            DrawSplashIntroLine(PokerBackLine, seat, s, hi);
             DrawTutorOverlay(s);
         }
 

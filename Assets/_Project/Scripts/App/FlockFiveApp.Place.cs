@@ -288,6 +288,39 @@ namespace FlockFive
             return new Vector2(fit.x + u * fit.width, fit.y + v * fit.height);
         }
 
+        const int FlameFrames = 6;
+        static Rect _flameRestKey;
+        static Vector2 _flameRestPt;
+        static bool _flameRestOn;
+
+        // STATIC digit seat for the animated streak flame. BadgeBodyCenter of the frame on
+        // screen moved with the flicker (each frame has its own width, centroid and ball
+        // size), so the digit rode the animation. This averages all frames once and caches
+        // it for this flame rect: never the per-frame sprite, so the number cannot move.
+        static Vector2 FlameRestCenter(Rect flame)
+        {
+            if (_flameRestOn && _flameRestKey == flame) return _flameRestPt;
+            var sum = Vector2.zero;
+            int n = 0;
+            for (int i = 0; i < FlameFrames; i++)
+            {
+                var spr = SpriteCatalog.Flame(i);
+                var tex = spr != null ? spr.texture : null;
+                if (tex == null) continue;
+                sum += BadgeBodyCenter(flame, tex);
+                n++;
+            }
+            if (n == 0) return flame.center;
+            var pt = sum / n;
+            if (n == FlameFrames)
+            {
+                _flameRestKey = flame;
+                _flameRestPt = pt;
+                _flameRestOn = true;
+            }
+            return pt;
+        }
+
         static bool TryBadgeMark(Texture2D tex, out float u, out float v)
         {
             u = 0.5f;

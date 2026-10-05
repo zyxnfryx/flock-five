@@ -171,7 +171,7 @@ namespace FlockFive
             float markY = plate.y + plate.width * 0.18f;
             float lift = plate.width * 0.06f;
             var flame = new Rect(markX - fw * 0.5f, markY - fh * belly - lift, fw, fh);
-            int frame = (int)(Time.unscaledTime * 8f) % 6;
+            int frame = (int)(Time.unscaledTime * 8f) % FlameFrames;
             if (frame < 0) frame = 0;
             var spr = SpriteCatalog.Flame(frame);
             var tex = spr != null ? spr.texture : null;
@@ -181,7 +181,7 @@ namespace FlockFive
             float numH = fh * 0.32f;
             float numW = Mathf.Max(fw * 2.2f, plate.width * 0.55f);
             _dailyLine.fontSize = RailDigitPx(numW, numH);
-            DrawBadgeNumber(BadgeBodyCenter(flame, tex), DailyBonus.StreakDigits, _dailyLine, new Color(1f, 0.97f, 0.86f), numW, numH, 2);
+            DrawBadgeNumber(FlameRestCenter(flame), DailyBonus.StreakDigits, _dailyLine, new Color(1f, 0.97f, 0.86f), numW, numH, 2);
         }
 
         static int RailDigitPx(float w, float h)
@@ -480,18 +480,9 @@ namespace FlockFive
             _welcomeOpen = false;
             _welcomeAt = -1f;
             Sfx.CardTap();
-            if (VipRailGoal() <= 0.5f) return;
-            var box = SplashNoAdsRect();
-            var seat = SplashRailSeat(RailVip);
-            if (box.width < 12f && seat.width < 12f) return;
-            _welcomeGlove = true;
-            _welcomeGloveUntil = PlayClock.Now + TapCycle;
-            _gloveReady = false;
-            _gloveVis = false;
-            _glovePhase = 0f;
-            _gloveDip = 0f;
-            _tapSent = false;
-            _coachFade = 0f;
+            // Build 51: no glove points at the VIP button after the welcome card. Players
+            // find it themselves. The next splash lesson takes its turn right away.
+            _welcomeGlove = false;
         }
 
         // Claimed-state tap: the one cowbell clunk every time, nothing else (no second

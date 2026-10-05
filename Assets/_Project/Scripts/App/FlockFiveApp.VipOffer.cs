@@ -13,8 +13,24 @@ namespace FlockFive
             const string BuyLabel = "Go VIP";
             const string RestoreLabel = "Already a VIP? Restore purchase";
             const float BuyScale = 1.08f;
-            const float FullSpan = 2.05f;
-            const float ShortSpan = 0.45f;
+            // Build 51 pacing. One beat at a time, nothing overlaps the beat before it:
+            //   1 button glow  ->  2 crown flies (first open)  ->  3 card opens
+            //   ->  4 burst + thud as it lands  ->  5 text settles (title, then rows).
+            // First open (full):  glow 0-0.70, crown 0.70-1.25, card 1.30-1.75, text 1.85-2.40.
+            // Later opens (short): glow 0-0.30, card 0.30-0.70, text 0.62-0.82.
+            const float FullGlow = 0.70f;
+            const float ShortGlow = 0.30f;
+            const float CrownStart = 0.70f;
+            const float CrownDur = 0.55f;
+            const float FullPanelStart = 1.30f;
+            const float FullPanelDur = 0.45f;
+            const float ShortPanelDur = 0.40f;
+            const float FullThudAt = 1.48f;
+            const float FullCopyStart = 1.85f;
+            const float ShortCopyStart = 0.62f;
+            const float CopyFade = 0.22f;
+            const float FullSpan = 2.55f;
+            const float ShortSpan = 0.85f;
 
             static readonly string[] Benefits =
             {
@@ -140,7 +156,8 @@ namespace FlockFive
                 float t = Time.unscaledTime;
                 float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
                 var glow = GlowTex();
-                GUI.color = new Color(0.04f, 0.03f, 0.02f, entering ? 0.78f : 0.72f);
+                float dimRamp = (_reduce || _skipped) ? 1f : Mathf.Clamp01(age / 0.20f);
+                GUI.color = new Color(0.04f, 0.03f, 0.02f, (entering ? 0.78f : 0.72f) * dimRamp);
                 GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
                 DrawArrivalGlow(glow, s, age);
@@ -151,18 +168,19 @@ namespace FlockFive
 
                 if (_full && !_reduce && !_skipped)
                     DrawCrownFlight(s, age, card);
-                if (_full && !_reduce && age >= 0.90f && age < 1.45f)
-                    DrawVipBurst(new Vector2(card.center.x, card.y + card.height * 0.34f), (age - 0.90f) / 0.55f, s);
+                if (_full && !_reduce && !_skipped && age >= FullThudAt && age < FullThudAt + 0.55f)
+                    DrawVipBurst(new Vector2(card.center.x, card.y + card.height * 0.34f), (age - FullThudAt) / 0.55f, s);
 
                 float k = PanelScale(age);
                 var pivot = new Vector2(card.center.x, (card.y + flower.yMax) * 0.5f);
                 var prev = GUI.matrix;
                 if (k > 0.04f)
                 {
-                    if (k < 0.98f || k > 1.02f)
+                    // Scale right up to rest. The old 0.98-1.02 dead zone snapped the card.
+                    if (Mathf.Abs(k - 1f) > 0.0005f)
                         GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
-                    DrawCard(card, s, breathe, glow, t, reveal);
-                    float shineStart = _full && !_reduce ? 1.62f : ShortSpan;
+                    DrawCard(card, s, breathe, glow, t, reveal, CopyAlpha(age));
+                    float shineStart = _full && !_reduce ? FullCopyStart + 0.55f : ShortSpan;
                     float shineU = (age - shineStart) / 0.55f;
                     DrawBuy(flower, buyHeld, s, shineU, !entering);
                     GUI.matrix = prev;
@@ -215,10 +233,21 @@ namespace FlockFive
             static int RevealCount(float age)
             {
                 if (!_full || _reduce || _skipped) return Benefits.Length;
-                if (age < 1.60f) return 0;
-                if (age < 1.76f) return 1;
-                if (age < 1.92f) return 2;
+                // Rows come in one by one after the title has faded in.
+                float r0 = FullCopyStart + CopyFade;
+                if (age < r0) return 0;
+                if (age < r0 + 0.16f) return 1;
+                if (age < r0 + 0.32f) return 2;
                 return Benefits.Length;
+            }
+
+            // Text only starts once the card has stopped moving, then fades (no scale, no
+            // slide), so nothing inside the card shifts while the card is still settling.
+            static float CopyAlpha(float age)
+            {
+                if (_reduce || _skipped) return 1f;
+                float start = _full ? FullCopyStart : ShortCopyStart;
+                return Mathf.Clamp01((age - start) / CopyFade);
             }
 
             static void NoteTicks(int reveal)
@@ -232,7 +261,7 @@ namespace FlockFive
             static void NoteThud(float age)
             {
                 if (_thud || !_full || _reduce) return;
-                if (_skipped || age < 0.90f) return;
+                if (_skipped || age < FullThudAt) return;
                 _thud = true;
                 SfxLibrary.Play("thud", 0.40f, 0f);
                 if (CamShake.Live != null)
@@ -242,8 +271,8 @@ namespace FlockFive
             static float PanelScale(float age)
             {
                 if (_reduce || _skipped) return 1f;
-                float start = _full ? 1.20f : 0f;
-                float dur = _full ? 0.40f : ShortSpan;
+                float start = _full ? FullPanelStart : ShortGlow;
+                float dur = _full ? FullPanelDur : ShortPanelDur;
                 float u = Mathf.Clamp01((age - start) / Mathf.Max(0.05f, dur));
                 return EaseOutBack(u);
             }
@@ -278,11 +307,15 @@ namespace FlockFive
 
             static void DrawArrivalGlow(Texture2D glow, float s, float age)
             {
-                if (!_full || _reduce || glow == null) return;
-                float a = Mathf.Clamp01(1f - Mathf.Abs(age - 0.40f) / 0.55f);
+                if (_reduce || _skipped || glow == null) return;
+                // Rises and falls inside [0, dur] and is gone before the next beat starts.
+                float dur = _full ? FullGlow : ShortGlow;
+                if (age >= dur) return;
+                float half = dur * 0.5f;
+                float a = Mathf.Clamp01(1f - Mathf.Abs(age - half) / half);
                 if (a < 0.04f) return;
                 Vector2 from = _anchored ? _anchor : new Vector2(Screen.width * 0.82f, TopHud() + 40f * s);
-                float d = Mathf.Lerp(80f * s, 280f * s, Mathf.Clamp01(age / 0.7f));
+                float d = Mathf.Lerp(80f * s, 280f * s, Mathf.Clamp01(age / dur));
                 GUI.color = new Color(1f, 0.78f, 0.28f, 0.55f * a);
                 GUI.DrawTexture(new Rect(from.x - d * 0.5f, from.y - d * 0.5f, d, d), glow, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
@@ -290,8 +323,9 @@ namespace FlockFive
 
             static void DrawCrownFlight(float s, float age, Rect card)
             {
-                float u = Mathf.Clamp01((age - 0.35f) / 0.55f);
-                float fade = u < 1f ? 1f : Mathf.Clamp01(1f - (age - 0.90f) / 0.28f);
+                float u = Mathf.Clamp01((age - CrownStart) / CrownDur);
+                float fade = u < 1f ? 1f : Mathf.Clamp01(1f - (age - (CrownStart + CrownDur)) / 0.18f);
+                if (age < CrownStart) return;
                 if (fade < 0.04f) return;
                 var tex = VipCrownTex();
                 if (tex == null) return;
@@ -323,7 +357,7 @@ namespace FlockFive
                 GUI.color = Color.white;
             }
 
-            static void DrawCard(Rect card, float s, float breathe, Texture2D glow, float t, int reveal)
+            static void DrawCard(Rect card, float s, float breathe, Texture2D glow, float t, int reveal, float copyA)
             {
                 float aura = card.width * (0.10f + 0.04f * breathe);
                 GUI.color = new Color(1f, 0.78f, 0.22f, 0.30f + 0.22f * breathe);
@@ -351,13 +385,19 @@ namespace FlockFive
                 GUI.DrawTexture(new Rect(plate.x + 2f * s, plate.y + 2f * s, 3f * s, plate.height - 4f * s), Texture2D.whiteTexture);
                 GUI.DrawTexture(new Rect(plate.xMax - 5f * s, plate.y + 2f * s, 3f * s, plate.height - 4f * s), Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                DrawCopy(plate, s, reveal);
+                DrawCopy(plate, s, reveal, copyA);
                 float bulbFrac = Mathf.Clamp(15f * s / Mathf.Max(1f, plate.width), 0.040f, 0.058f);
                 DrawGiftMarquee(plate, s, t, 0.70f, -1f, bulbFrac, 12, 0f, true, 0.16f, 0f, card);
             }
 
-            static void DrawCopy(Rect plate, float s, int reveal)
+            // Title centered, three benefit rows left-aligned on one check column. One bold
+            // face for all of it: the title fits its own box, and ALL rows share one size
+            // (the smallest any row needs) and one outline weight, so the lines read as a
+            // set. Fit and outline use the shared FitFontWrapped / StampOutlined helpers.
+            // copyA fades the text in after the card has settled (it never scales or slides).
+            static void DrawCopy(Rect plate, float s, int reveal, float copyA)
             {
+                if (copyA < 0.04f) return;
                 float insetX = Mathf.Max(12f * s, plate.width * 0.06f);
                 float insetY = Mathf.Max(8f * s, plate.height * 0.06f);
                 var block = new Rect(
@@ -377,7 +417,7 @@ namespace FlockFive
                 int titleHi = Mathf.Max(28, Mathf.RoundToInt(60f * s));
                 _title.fontSize = FitFontWrapped(_title, Headline, titleR.width * 0.96f, titleR.height * 0.92f, 16, titleHi);
                 int titleInk = Mathf.Max(3, Mathf.RoundToInt(_title.fontSize * 0.14f));
-                StampOutlined(titleR, Headline, _title, new Color(1f, 0.97f, 0.86f, 1f), 0, titleInk);
+                StampOutlined(titleR, Headline, _title, new Color(1f, 0.97f, 0.86f, copyA), 0, titleInk);
 
                 if (_body == null)
                     _body = new GUIStyle(GUI.skin.label)
@@ -386,19 +426,31 @@ namespace FlockFive
                         alignment = TextAnchor.MiddleLeft,
                         wordWrap = true
                     };
-                float rowH = (block.yMax - titleR.yMax) / Benefits.Length;
+                float gap = 6f * s;
+                float rowsTop = titleR.yMax + gap;
+                float rowH = (block.yMax - rowsTop) / Benefits.Length;
                 int bodyHi = Mathf.Max(16, Mathf.RoundToInt(29f * s));
-                var cream = new Color(1f, 0.97f, 0.88f, 1f);
+                float mark = Mathf.Min(rowH * 0.46f, 26f * s);
+                float labX = block.x + mark + 8f * s;
+                float labW = Mathf.Max(20f, block.xMax - labX);
+                // One size for every row: the smallest any row needs, never a per-row jump.
+                int bodyPx = bodyHi;
                 for (int i = 0; i < Benefits.Length; i++)
                 {
-                    if (i >= reveal) continue;
-                    var row = new Rect(block.x, titleR.yMax + rowH * i, block.width, rowH);
-                    float mark = Mathf.Min(rowH * 0.46f, 26f * s);
-                    var mk = new Rect(row.x, row.center.y - mark * 0.5f, mark, mark);
+                    int px = FitFontWrapped(_body, Benefits[i], labW, rowH * 0.88f, 13, bodyHi);
+                    if (px < bodyPx) bodyPx = px;
+                }
+                _body.fontSize = bodyPx;
+                int ink = Mathf.Max(3, Mathf.RoundToInt(bodyPx * 0.16f));
+                float rowA = Mathf.Clamp01((copyA - 0.5f) * 2f);
+                var cream = new Color(1f, 0.97f, 0.88f, rowA);
+                for (int i = 0; i < Benefits.Length; i++)
+                {
+                    if (i >= reveal || rowA < 0.04f) continue;
+                    var row = new Rect(block.x, rowsTop + rowH * i, block.width, rowH);
+                    var mk = new Rect(block.x, row.center.y - mark * 0.5f, mark, mark);
                     DrawCheckMark(mk);
-                    var lab = new Rect(mk.xMax + 8f * s, row.y, Mathf.Max(20f, row.xMax - mk.xMax - 8f * s), row.height);
-                    _body.fontSize = FitFontWrapped(_body, Benefits[i], lab.width, lab.height * 0.88f, 13, bodyHi);
-                    int ink = Mathf.Max(3, Mathf.RoundToInt(_body.fontSize * 0.16f));
+                    var lab = new Rect(labX, row.y, labW, row.height);
                     StampOutlined(lab, Benefits[i], _body, cream, 0, ink);
                 }
             }

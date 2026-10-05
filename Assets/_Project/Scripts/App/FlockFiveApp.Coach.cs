@@ -447,7 +447,7 @@ namespace FlockFive
             if (_splash || _board == null || _garden.Cam == null)
             {
                 // Home lessons keep the tap cycle. A full release would restart it every frame.
-                if ((_hiveIntro || _pokerIntro || _dailyIntro || _welcomeGlove || _adoptLive || _pokerPageOn || _pokerDealHint || _albumTutorOn) && _splash) return;
+                if ((_hiveIntro || _pokerIntro || _dailyIntro || _welcomeGlove || _adoptLive || _pokerPageOn || _pokerDealHint || PokerBackHintOn() || _albumTutorOn) && _splash) return;
                 CoachRelease();
                 return;
             }
@@ -748,30 +748,9 @@ namespace FlockFive
                 AdoptPlaceGlove(dt, adoptS);
                 return;
             }
-            if (_welcomeGlove)
-            {
-                if (!_splash || _home != HomeFace.Splash || VipOffer.IsOpen || VipRailGoal() < 0.5f)
-                {
-                    _welcomeGlove = false;
-                    _gloveVis = false;
-                    return;
-                }
-                float welcomeS = Mathf.Max(Screen.height / 720f, 1f);
-                LessonLine(null);
-                _gloveInward = true;
-                var vipBox = SplashNoAdsRect();
-                var vipSeat = SplashRailSeat(RailVip);
-                Vector2 vipAim = vipBox.width > 12f ? GloveTarget(vipBox) : GloveTarget(vipSeat);
-                _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-                CoachGloveAt(vipAim, dt, welcomeS, float.NaN, false, float.NaN, default, FnVipTap());
-                if (PlayClock.Now >= _welcomeGloveUntil)
-                {
-                    _welcomeGlove = false;
-                    _gloveVis = false;
-                    _gloveReady = false;
-                }
-                return;
-            }
+            // The welcome flag can no longer be raised (the VIP button glove was removed in
+            // build 51). Drop it if a stale value is somehow set so no gate waits on it.
+            _welcomeGlove = false;
             if (_adHand)
             {
                 if (_gift != GiftFace.Card)
