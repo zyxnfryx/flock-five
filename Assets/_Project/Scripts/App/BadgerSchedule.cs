@@ -9,7 +9,7 @@ namespace FlockFive
         X2 = 1,
         X3 = 2,
         HotSauce = 3,
-        Pepper = 4,
+        FreezeSpray = 4,
     }
 
     // When the honey badger contest is due, and the numbers for that visit.
@@ -89,7 +89,7 @@ namespace FlockFive
             if (power == BadgerPower.X2) return 100;
             if (power == BadgerPower.X3) return 200;
             if (power == BadgerPower.HotSauce) return 300;
-            if (power == BadgerPower.Pepper) return 300;
+            if (power == BadgerPower.FreezeSpray) return 600;
             return 0;
         }
 

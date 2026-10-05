@@ -72,6 +72,7 @@ namespace FlockFive.Editor
                 CheckBossLeads(Check);
                 CheckTie(Check);
                 CheckBlock(Check);
+                CheckFreeze(Check);
                 CheckMultiplier(Check);
                 CheckEmpty(Check);
                 CheckExhaust(Check);
@@ -124,19 +125,19 @@ namespace FlockFive.Editor
             bool bases = BadgerSchedule.PowerUpPrice(BadgerPower.X2, 1) == 100
                 && BadgerSchedule.PowerUpPrice(BadgerPower.X3, 1) == 200
                 && BadgerSchedule.PowerUpPrice(BadgerPower.HotSauce, 1) == 300
-                && BadgerSchedule.PowerUpPrice(BadgerPower.Pepper, 1) == 300;
+                && BadgerSchedule.PowerUpPrice(BadgerPower.FreezeSpray, 1) == 600;
             bool step = BadgerSchedule.PowerUpPrice(BadgerPower.X2, 2) == 150
                 && BadgerSchedule.PowerUpPrice(BadgerPower.X3, 2) == 250
                 && BadgerSchedule.PowerUpPrice(BadgerPower.HotSauce, 2) == 350
-                && BadgerSchedule.PowerUpPrice(BadgerPower.Pepper, 3) == 400;
-            bool pair = BadgerSchedule.PowerUpPrice(BadgerPower.HotSauce, 6)
-                == BadgerSchedule.PowerUpPrice(BadgerPower.Pepper, 6);
+                && BadgerSchedule.PowerUpPrice(BadgerPower.FreezeSpray, 3) == 700;
+            bool split = BadgerSchedule.PowerUpPrice(BadgerPower.HotSauce, 6) == 550
+                && BadgerSchedule.PowerUpPrice(BadgerPower.FreezeSpray, 6) == 850;
             int far = BadgerSchedule.PowerUpPrice(BadgerPower.X2, 100);
             int near = BadgerSchedule.PowerUpPrice(BadgerPower.X2, 99);
             bool open = far == 100 + 50 * 99 && far - near == 50
-                && BadgerSchedule.PowerUpPrice(BadgerPower.Pepper, 40) == 300 + 50 * 39
+                && BadgerSchedule.PowerUpPrice(BadgerPower.FreezeSpray, 40) == 600 + 50 * 39
                 && BadgerSchedule.PowerUpPrice(BadgerPower.None, 5) == 0;
-            Check("price", bases && step && pair && open, "base + 50 per visit, no cap, sauce == pepper");
+            Check("price", bases && step && split && open, "base + 50 per visit, no cap; freeze 600");
         }
 
         static void CheckMix(System.Action<string, bool, string> Check)
@@ -375,15 +376,18 @@ namespace FlockFive.Editor
             int sauceBoss;
             int sauceGain;
             int sauceBossGain;
-            int pepperFinal;
-            int pepperBoss;
-            int pepperGain;
-            int pepperBossGain;
+            int freezeFinal;
+            int freezeBoss;
+            int freezeGain;
+            int freezeBossGain;
             BadgerFight.ApplyRound(2, 5, BadgerPower.HotSauce, out sauceFinal, out sauceBoss, out sauceGain, out sauceBossGain);
-            BadgerFight.ApplyRound(2, 5, BadgerPower.Pepper, out pepperFinal, out pepperBoss, out pepperGain, out pepperBossGain);
-            bool same = sauceFinal == pepperFinal && sauceBoss == pepperBoss
-                && sauceGain == pepperGain && sauceBossGain == pepperBossGain
-                && sauceFinal == 2 && sauceBoss == 0 && sauceGain == 2 && sauceBossGain == 0;
+            BadgerFight.ApplyRound(2, 5, BadgerPower.FreezeSpray, out freezeFinal, out freezeBoss, out freezeGain, out freezeBossGain);
+            bool math = sauceFinal == 2 && sauceBoss == 0 && sauceGain == 2 && sauceBossGain == 0
+                && freezeFinal == 2 && freezeBoss == 0 && freezeGain == 2 && freezeBossGain == 0
+                && BadgerFight.SkipTurnsOf(BadgerPower.HotSauce) == 1
+                && BadgerFight.SkipTurnsOf(BadgerPower.FreezeSpray) == 2
+                && BadgerFight.IsBlock(BadgerPower.HotSauce) && BadgerFight.IsBlock(BadgerPower.FreezeSpray)
+                && !BadgerFight.IsBlock(BadgerPower.None);
             int plainFinal;
             int plainBoss;
             int plainGain;
@@ -402,22 +406,52 @@ namespace FlockFive.Editor
             bool resolved = bought && sauce.Resolve(out sauceRound);
             bool effect = picked && resolved && Purse.Coins == before - price
                 && sauceRound.BossFinal == 0 && sauceRound.BossGained == 0 && sauceRound.PlayerGained == 2
-                && sauce.PlayerScore == 2 && sauce.BossScore == 0
+                && sauce.PlayerScore == 2 && sauce.BossScore == 0 && sauce.BossSkipLeft == 0
                 && !sauce.BossOpen(bossIx) && !sauce.PlayerOpen(0)
                 && !sauce.PowerReady(BadgerPower.HotSauce);
             bool second = sauce.BossPick() >= 0 && sauce.PlayerPick(1)
                 && !sauce.TryPower(BadgerPower.HotSauce)
                 && Purse.Coins == before - price;
+            BadgerRound afterSauce;
+            bool sauceNext = sauce.Resolve(out afterSauce) && afterSauce.BossFinal == 5
+                && afterSauce.BossGained == 5 && sauce.BossScore == 5;
 
-            BadgerRound pepperRound;
-            var pepper = new BadgerFight(1, 22, Fill(16, 2), Fill(16, 5));
-            bool pepperOk = Play(pepper, 2, BadgerPower.Pepper, out pepperRound)
-                && pepperRound.BossFinal == 0 && pepperRound.BossGained == 0 && pepperRound.PlayerGained == 2
-                && pepper.BossScore == 0
-                && !pepper.BossOpen(pepperRound.BossIndex) && !pepper.PlayerOpen(pepperRound.PlayerIndex);
+            Check("block-sauce", math && unblocked && effect && second && sauceNext,
+                "sauce knocks badger honey to 0 for one turn; one use");
+        }
 
-            Check("block-sauce", same && unblocked && effect && second, "sauce knocks badger honey to 0; one use");
-            Check("block-pepper", pepperOk && same, "pepper matches sauce");
+        static void CheckFreeze(System.Action<string, bool, string> Check)
+        {
+            SetCoins(5000);
+            int before = Purse.Coins;
+            int price = BadgerSchedule.PowerUpPrice(BadgerPower.FreezeSpray, 1);
+            bool cost = price == 600;
+            var fight = new BadgerFight(1, 22, Fill(16, 2), Fill(16, 5));
+            BadgerRound r1;
+            bool first = Play(fight, 2, BadgerPower.FreezeSpray, out r1)
+                && r1.BossFinal == 0 && r1.BossGained == 0 && r1.PlayerGained == 2
+                && fight.BossScore == 0 && fight.BossSkipLeft == 1
+                && !fight.PowerReady(BadgerPower.FreezeSpray)
+                && Purse.Coins == before - price;
+            BadgerRound r2;
+            bool held = first && Play(fight, 2, BadgerPower.None, out r2)
+                && r2.Power == BadgerPower.None
+                && r2.BossFinal == 0 && r2.BossGained == 0 && r2.PlayerGained == 2
+                && fight.BossScore == 0 && fight.BossSkipLeft == 0;
+            BadgerRound r3;
+            bool thawed = held && Play(fight, 2, BadgerPower.None, out r3)
+                && r3.BossFinal == 5 && r3.BossGained == 5
+                && fight.BossScore == 5 && fight.BossSkipLeft == 0;
+            // Hot Sauce still one turn only (unchanged).
+            var sauce = new BadgerFight(1, 23, Fill(16, 2), Fill(16, 5));
+            SetCoins(5000);
+            BadgerRound s1, s2;
+            bool sauceOk = Play(sauce, 2, BadgerPower.HotSauce, out s1)
+                && s1.BossFinal == 0 && sauce.BossSkipLeft == 0
+                && Play(sauce, 2, BadgerPower.None, out s2)
+                && s2.BossFinal == 5 && s2.BossGained == 5;
+            Check("freeze-spray", cost && first && held && thawed && sauceOk,
+                "freeze skips exactly two boss turns at 600; sauce still one");
         }
 
         static void CheckMultiplier(System.Action<string, bool, string> Check)
@@ -729,29 +763,30 @@ namespace FlockFive.Editor
 
             var later = new BadgerFight(3, 5, Fill(16, 3), Fill(16, 2));
             bool price = later.PriceOf(BadgerPower.X2) == 200 && later.PriceOf(BadgerPower.X3) == 300
-                && later.PriceOf(BadgerPower.HotSauce) == 400 && later.PriceOf(BadgerPower.Pepper) == 400
+                && later.PriceOf(BadgerPower.HotSauce) == 400 && later.PriceOf(BadgerPower.FreezeSpray) == 700
                 && later.PriceOf(BadgerPower.HotSauce) == BadgerSchedule.PowerUpPrice(BadgerPower.HotSauce, 3);
 
             var sauce = new BadgerFight(1, 5, Fill(16, 1), Fill(16, 5));
-            var pepper = new BadgerFight(1, 5, Fill(16, 1), Fill(16, 5));
+            var freeze = new BadgerFight(1, 5, Fill(16, 1), Fill(16, 5));
             SetCoins(300);
             sauce.BossPick();
             bool s1 = sauce.PlayerPlay(0, BadgerPower.HotSauce) && Purse.Coins == 0;
             BadgerRound a;
             bool sr = sauce.Resolve(out a);
-            SetCoins(300);
-            pepper.BossPick();
-            bool p1 = pepper.PlayerPlay(0, BadgerPower.Pepper) && Purse.Coins == 0;
+            SetCoins(600);
+            freeze.BossPick();
+            bool f1 = freeze.PlayerPlay(0, BadgerPower.FreezeSpray) && Purse.Coins == 0;
             BadgerRound b;
-            bool pr = pepper.Resolve(out b);
-            bool block = s1 && sr && p1 && pr && a.BossGained == 0 && b.BossGained == 0
-                && a.PlayerGained == 1 && b.PlayerGained == 1 && a.BossFinal == 0 && b.BossFinal == 0;
+            bool fr = freeze.Resolve(out b);
+            bool block = s1 && sr && f1 && fr && a.BossGained == 0 && b.BossGained == 0
+                && a.PlayerGained == 1 && b.PlayerGained == 1 && a.BossFinal == 0 && b.BossFinal == 0
+                && sauce.BossSkipLeft == 0 && freeze.BossSkipLeft == 1;
             SetCoins(0);
             var broke = new BadgerFight(1, 5, Fill(16, 4), Fill(16, 2));
             broke.BossPick();
             bool freeFight = broke.PlayerPlay(0, BadgerPower.None) && broke.Resolve(out a) && a.PlayerGained == 4;
             Check("power play", short1 && paid && boosted && once && plain && price && block && freeFight,
-                "short purse picks nothing; x2 pays and doubles; one use; price +50 per visit; sauce == pepper; 0 coins playable");
+                "short purse picks nothing; x2 pays and doubles; one use; price +50 per visit; freeze 600; 0 coins playable");
         }
 
         static void CheckScriptedFight(System.Action<string, bool, string> Check)

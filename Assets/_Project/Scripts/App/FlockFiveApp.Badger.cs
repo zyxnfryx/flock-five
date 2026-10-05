@@ -252,7 +252,7 @@ namespace FlockFive
         {
             if (BadgerFight.IsBlock(r.Power))
             {
-                string name = r.Power == BadgerPower.HotSauce ? "Hot sauce!" : "Pepper!";
+                string name = r.Power == BadgerPower.HotSauce ? "Hot sauce!" : "Freeze spray!";
                 return name + " The badger gets nothing. You take " + r.PlayerGained + ".";
             }
             if (r.PlayerGained > 0)
@@ -266,7 +266,8 @@ namespace FlockFive
             if (p == BadgerPower.X2) return "x2";
             if (p == BadgerPower.X3) return "x3";
             if (p == BadgerPower.HotSauce) return "Hot Sauce";
-            return "Pepper";
+            if (p == BadgerPower.FreezeSpray) return "Freeze Spray";
+            return "";
         }
 
         void BadgerShakeNow(int key)
@@ -750,7 +751,7 @@ namespace FlockFive
                 bool lit = _bgArmed == p && (inPick || _bgStage == BadgerStage.Reveal || _bgStage == BadgerStage.Verdict);
                 string sub = used ? "USED" : _bgPrice[(int)p];
                 Color ink = p == BadgerPower.HotSauce ? new Color(1f, 0.55f, 0.35f)
-                    : p == BadgerPower.Pepper ? new Color(0.70f, 0.95f, 0.45f)
+                    : p == BadgerPower.FreezeSpray ? new Color(0.45f, 0.85f, 1f)
                     : Color.white;
                 bool fire = BadgerButton(r, BadgerPowerName(p), sub, k < 2, used || !inPick, lit,
                     live && inPick && !used, ink, BadgerShakeX(BadgerPowerKey + (int)p, s));

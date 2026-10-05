@@ -42,6 +42,8 @@ namespace FlockFive
         int _bossPick = -1;
         int _playerPick = -1;
         BadgerPower _armed = BadgerPower.None;
+        // Rounds left where the badger still scores 0 (from Freeze Spray leftover).
+        int _bossSkipLeft;
 
         public int Appearance => _appearance;
         public int PlayerScore { get; private set; }
@@ -54,6 +56,7 @@ namespace FlockFive
         public int PlayerLeft => _playerLeft;
         public int BossLeft => _bossLeft;
         public BadgerPower Armed => _armed;
+        public int BossSkipLeft => _bossSkipLeft;
 
         // Null grids deal from the album and BadgerSchedule. Tests pass both.
         public BadgerFight(int appearance, int seed, int[] playerTiles, int[] bossTiles)
@@ -196,8 +199,12 @@ namespace FlockFive
             int bossHoney = _boss[_bossPick];
             int playerHoney = _player[_playerPick];
             BadgerPower power = _armed;
-            ApplyRound(playerHoney, bossHoney, power,
+            bool pendingSkip = _bossSkipLeft > 0;
+            ApplyRound(playerHoney, bossHoney, power, pendingSkip,
                 out int playerFinal, out int bossFinal, out int playerGain, out int bossGain);
+            int skips = SkipTurnsOf(power);
+            if (skips > 0) _bossSkipLeft = skips - 1;
+            else if (pendingSkip) _bossSkipLeft--;
 
             int bossIndex = _bossPick;
             int playerIndex = _playerPick;
@@ -223,14 +230,22 @@ namespace FlockFive
             return true;
         }
 
-        // X2 and X3 scale the player's honey this round. Hot Sauce and Pepper
-        // are the same comic knock-back: the badger's honey counts as 0, so
-        // the badger scores 0 and the tile is already spent.
+        // X2 and X3 scale the player's honey this round. Hot Sauce and Freeze
+        // Spray share one knock-back path: the badger's honey counts as 0 so
+        // it scores nothing and its tile is already spent. SkipTurnsOf says
+        // how many boss turns that lasts (1 for sauce, 2 for freeze).
         public static void ApplyRound(int playerHoney, int bossHoney, BadgerPower power,
             out int playerFinal, out int bossFinal, out int playerGain, out int bossGain)
         {
+            ApplyRound(playerHoney, bossHoney, power, false,
+                out playerFinal, out bossFinal, out playerGain, out bossGain);
+        }
+
+        public static void ApplyRound(int playerHoney, int bossHoney, BadgerPower power, bool forceSkip,
+            out int playerFinal, out int bossFinal, out int playerGain, out int bossGain)
+        {
             playerFinal = playerHoney * MultiplierOf(power);
-            bossFinal = IsBlock(power) ? 0 : bossHoney;
+            bossFinal = (forceSkip || IsBlock(power)) ? 0 : bossHoney;
             playerGain = 0;
             bossGain = 0;
             if (playerFinal > bossFinal) playerGain = playerFinal;
@@ -244,9 +259,17 @@ namespace FlockFive
             return 1;
         }
 
+        // Boss turns skipped when this power is spent (current round counts as one).
+        public static int SkipTurnsOf(BadgerPower power)
+        {
+            if (power == BadgerPower.HotSauce) return 1;
+            if (power == BadgerPower.FreezeSpray) return 2;
+            return 0;
+        }
+
         public static bool IsBlock(BadgerPower power)
         {
-            return power == BadgerPower.HotSauce || power == BadgerPower.Pepper;
+            return SkipTurnsOf(power) > 0;
         }
 
         // Target first. If the grids cannot deal another round, the higher
