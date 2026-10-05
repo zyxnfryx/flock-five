@@ -9,25 +9,7 @@ namespace FlockFive
         const int Rate = 44100;
         const float FanfareCap = 0.34f;
         static readonly Dictionary<string, AudioClip> _clips = new Dictionary<string, AudioClip>();
-        static float _grooveAt = -99f;
-        static bool _claimGroove;
-        static bool _inPlay;
-
-        // Garden play locks the groove. The daily-claim card is the only seat that opens it.
-        public static void NoteGarden(bool playing)
-        {
-            _inPlay = playing;
-            if (playing) SeatGroove(false);
-        }
-
-        public static void SeatGroove(bool on)
-        {
-            _claimGroove = on && !_inPlay;
-            if (!_claimGroove) StopHeld();
-        }
-
-        // The ONE level rule for every one-shot (Sfx.Shot and Sfx.PlayHeld route through
-        // it). Up to SfxCeiling a volume passes as written. Above it the excess is
+        // The ONE level rule for every one-shot (Sfx.Shot routes through it). Up to SfxCeiling a volume passes as written. Above it the excess is
         // squeezed to a quarter, so a 1.0 break or a 0.96 celebrate lands a hair over
         // the rest instead of jumping out of the mix. Steady loudness, no clipping.
         public const float SfxCeiling = 0.80f;
@@ -67,16 +49,6 @@ namespace FlockFive
                 Sfx.RowAlert();
                 return;
             }
-            if (name == "groove")
-            {
-                if (!_claimGroove) return;
-                if (Time.unscaledTime - _grooveAt < 6f) return;
-                _grooveAt = Time.unscaledTime;
-                var groove = Clip(name);
-                if (groove == null) return;
-                Sfx.PlayHeld(groove, Mathf.Clamp(volume <= 0f ? 0.30f : volume, 0.05f, 0.50f), groove.length);
-                return;
-            }
             var clip = Clip(name);
             if (clip == null) return;
             // The cowbell is ONE fixed sound: same pitch, same level, every tap.
@@ -91,8 +63,6 @@ namespace FlockFive
             var layer = name == "tick" ? MixLayer.Mid : MixLayer.Lead;
             Sfx.PlayProc(clip, pitch, vol, layer);
         }
-
-        public static void StopHeld() => Sfx.StopHeld();
 
         // Wake "!" sting. One play at the start of a combo, never mid-chain.
         // The caller opens, seals, and closes. Cowbell does not use this gate.
@@ -132,7 +102,6 @@ namespace FlockFive
             if (_clips.TryGetValue(name, out clip) && clip != null) return clip;
             if (name == "cowbell") clip = MakeCowbell();
             else if (name == "fanfare") clip = MakeFanfare();
-            else if (name == "groove") clip = MakeGroove();
             else if (name == "tick") clip = MakeTick();
             else if (name == "sting") clip = MakeSting();
             else return null;
@@ -192,37 +161,6 @@ namespace FlockFive
                 data[i] = s * env * 0.40f;
             }
             return Bake("fanfare", data, 0.18f);
-        }
-
-        // Original low minor figure. Not a known song. One shot, about five seconds.
-        static AudioClip MakeGroove()
-        {
-            float[] riff = { 146.83f, 174.61f, 130.81f, 164.81f, 116.54f, 146.83f };
-            const float beat = 0.62f;
-            const float dur = 5.0f;
-            int n = Mathf.CeilToInt(Rate * dur);
-            var data = new float[n];
-            for (int i = 0; i < n; i++)
-            {
-                float t = i / (float)Rate;
-                int step = Mathf.FloorToInt(t / beat);
-                float f = riff[step % riff.Length];
-                float into = t - step * beat;
-                float gEnv = Mathf.Exp(-into * 10f) * Mathf.Clamp01(into / 0.012f);
-                float g = Square(f, t) * 0.55f + Mathf.Sin(2f * Mathf.PI * f * 0.5f * t) * 0.35f;
-                float bell = 0f;
-                if (into < 0.09f)
-                {
-                    float be = Mathf.Exp(-into * 32f);
-                    bell = (Mathf.Sin(2f * Mathf.PI * 560f * t) + 0.6f * Square(845f, t)) * be;
-                }
-                float kick = 0f;
-                if ((step % 2) == 0 && into < 0.08f)
-                    kick = Mathf.Sin(2f * Mathf.PI * 58f * t) * Mathf.Exp(-into * 36f);
-                data[i] = (g * gEnv * 0.42f + bell * 0.22f + kick * 0.30f) * 0.55f;
-            }
-            PeakUnder(data, 0.85f);
-            return Bake("groove", data, 0.40f);
         }
 
         static AudioClip MakeTick()
@@ -314,14 +252,6 @@ namespace FlockFive
             float g = peak / m;
             for (int i = 0; i < data.Length; i++)
                 data[i] *= g;
-        }
-
-        static float Square(float freq, float t)
-        {
-            float s = Mathf.Sin(2f * Mathf.PI * freq * t);
-            if (s > 0.2f) return 0.65f;
-            if (s < -0.2f) return -0.65f;
-            return s;
         }
 
         static AudioClip Bake(string name, float[] data, float lp)

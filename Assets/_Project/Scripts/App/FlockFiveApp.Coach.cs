@@ -782,21 +782,7 @@ namespace FlockFive
                     // now locks the previous perch or a moving top. A visible hand
                     // fades out where it is. A hidden one stays hidden.
                     var box = SplashHiveRect();
-                    bool settled = _railInit && RailSettled(RailHive) && !_hivePopping
-                        && box.width > 12f && box.height > 12f;
-                    if (!settled)
-                    {
-                        if ((_gloveAct == TutorGloveAct.Live || _gloveAct == TutorGloveAct.Reappear)
-                            && _gloveVis && _gloveAlpha > 0.03f)
-                            GloveStartFadeOut();
-                        else if (_gloveAct != TutorGloveAct.FadeOutOnTap)
-                        {
-                            GloveVeilReset();
-                            _gloveVis = false;
-                        }
-                        _glovePoseFrame = -1;
-                        return;
-                    }
+                    if (!RailGloveSettled(RailHive, box, !_hivePopping)) return;
                     if ((_gloveAct == TutorGloveAct.None || _gloveAct == TutorGloveAct.Hidden)
                         && (!string.Equals(_gloveStepLine, HiveHomeLine) || !_gloveLockOn))
                     {
@@ -849,10 +835,13 @@ namespace FlockFive
                     // Same rect DrawDailyRail paints and HitPad tests. The fingertip
                     // is the pivot, so the center is the contact. The tap still arcs
                     // over the top and arrives straight down.
+                    // Wait for the rail to finish growing in (same gate as hive): the rect
+                    // moves and scales while it slides, so a tap there could miss the
+                    // spot the glove showed. The glove's tap check is the real tap rect.
                     var box = SplashDailyRect();
-                    if (box.width < 2f) box = SplashRailSeat(RailDaily);
+                    if (!RailGloveSettled(RailDaily, box)) return;
                     dailyAim = box.center;
-                    CoachGloveAt(dailyAim, dt, handS, float.NaN, false, float.NaN, box);
+                    CoachGloveAt(dailyAim, dt, handS, float.NaN, false, float.NaN, SplashDailyTapRect());
                 }
                 return;
             }
@@ -906,6 +895,25 @@ namespace FlockFive
                 _coachGlow.transform.localScale = new Vector3(dx * breathe * spread * 1.12f, dy * breathe * spread * 1.12f, 1f);
                 _coachGlow.color = new Color(1f, 0.91f, 0.46f, flash);
             }
+        }
+
+        // Shared rail-lesson gate (hive, daily): true once the rail button has stopped sliding.
+        // Until then a visible hand fades out where it is and a hidden one stays hidden.
+        bool RailGloveSettled(int rail, Rect box, bool extra = true)
+        {
+            bool settled = _railInit && RailSettled(rail) && extra
+                && box.width > 12f && box.height > 12f;
+            if (settled) return true;
+            if ((_gloveAct == TutorGloveAct.Live || _gloveAct == TutorGloveAct.Reappear)
+                && _gloveVis && _gloveAlpha > 0.03f)
+                GloveStartFadeOut();
+            else if (_gloveAct != TutorGloveAct.FadeOutOnTap)
+            {
+                GloveVeilReset();
+                _gloveVis = false;
+            }
+            _glovePoseFrame = -1;
+            return false;
         }
 
         // First bonus-branch ad card only. The flag sticks even if they close without watching.
@@ -3730,8 +3738,10 @@ namespace FlockFive
 
         PopupKind TutorialOwnPopup()
         {
-            if (_adHand || _cueGift) return PopupKind.Gift;
+            // The home Daily lesson is checked first: a stale garden gift flag must not
+            // make the lesson's own button look blocked and eat the first tap.
             if (_dailyIntroLive) return PopupKind.Daily;
+            if (_adHand || _cueGift) return PopupKind.Gift;
             if (_welcomeGlove) return PopupKind.Vip;
             return PopupKind.None;
         }

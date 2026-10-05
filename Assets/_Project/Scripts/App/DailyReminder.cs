@@ -12,14 +12,20 @@ namespace FlockFive
 {
     // Local reminder for the daily bonus. com.unity.mobile.notifications 2.4.x.
     // Editor and desktop builds compile the same methods with no native calls.
-    // Nothing here requests permission. The OS prompt runs only from Accept,
-    // after the player says yes on the in-game card. Reschedule is a no-op
+    // Nothing here requests permission. The OS prompt runs only from RequestOsNow,
+    // after the player says yes on the in-game card (Accept) and the game is idle
+    // after its reward audio. Reschedule is a no-op
     // until that permission is already granted.
     public static class DailyReminder
     {
         const string PrefAsked = "flockfive.daily.asked";
         const string PrefYes = "flockfive.daily.askYes";
         const string PrefAsks = "flockfive.daily.askN";
+        // Build 52: "yes" on the in-game card no longer opens the OS dialog right away. It only
+        // records that the dialog is owed. The game asks for it (RequestOsNow) once the
+        // reward audio and animation are done, so the Apple/Android sheet cannot cut off the
+        // welcome bonus coin sound. Stored in PlayerPrefs so a quit before then still asks later.
+        const string PrefOsOwed = "flockfive.daily.osOwed";
         const string PrefNoteReady = "flockfive.daily.noteReady";
         const string PrefNoteKeep = "flockfive.daily.noteKeep";
         const string ReadyBody = "Your daily coins are ready.";
@@ -91,6 +97,19 @@ namespace FlockFive
                 PlayerPrefs.SetInt(PrefAsks, PlayerPrefs.GetInt(PrefAsks, 0) + 1);
             PlayerPrefs.SetInt(PrefYes, 1);
             PlayerPrefs.SetInt(PrefAsked, 1);
+            PlayerPrefs.SetInt(PrefOsOwed, 1);
+            PlayerPrefs.Save();
+        }
+
+        // True after the player said yes and before the OS dialog has been shown.
+        public static bool OsRequestOwed => PlayerPrefs.GetInt(PrefOsOwed, 0) != 0;
+
+        // Shows the OS permission dialog now. The caller (FlockFiveApp.TickDailyOsRequest)
+        // only calls this when the game is idle after a reward.
+        public static void RequestOsNow()
+        {
+            if (PlayerPrefs.GetInt(PrefOsOwed, 0) == 0) return;
+            PlayerPrefs.SetInt(PrefOsOwed, 0);
             PlayerPrefs.Save();
 #if UNITY_IOS && !UNITY_EDITOR
             try

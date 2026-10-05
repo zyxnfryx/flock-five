@@ -4,7 +4,8 @@ using UnityEngine;
 namespace FlockFive
 {
     // Video-poker draw: 75 birds (5 colors × 3 looks × 5 copies) + 5 wilds.
-    // Pay table is a house game: pair does not pay. Greedy-hold RTP sits ~95%.
+    // Pay table is a house game: pair does not pay. Exact RTP with perfect holds is
+    // ~99.7% (keep-the-pairs play is within 0.04 points of perfect). Flush adds ~0.74.
     public static class BirdPoker
     {
         public const int HandSize = 5;
@@ -40,10 +41,11 @@ namespace FlockFive
             Pair = 1,
             TwoPair = 2,
             Trips = 3,
-            FullHouse = 4,
-            Quads = 5,
-            FiveWild = 6,
-            NaturalFive = 7
+            Flush = 4, // every bird the same color (wilds count as any); never beats FullHouse and up
+            FullHouse = 5,
+            Quads = 6,
+            FiveWild = 7,
+            NaturalFive = 8
         }
 
         public const int FloorBet = 5;
@@ -360,6 +362,7 @@ namespace FlockFive
             Rank.FiveWild,
             Rank.Quads,
             Rank.FullHouse,
+            Rank.Flush,
             Rank.Trips,
             Rank.TwoPair
         };
@@ -372,6 +375,7 @@ namespace FlockFive
                 case Rank.FiveWild: return "FIVE OF A KIND";
                 case Rank.Quads: return "FOUR OF A KIND";
                 case Rank.FullHouse: return "FULL HOUSE";
+                case Rank.Flush: return "FLUSH";
                 case Rank.Trips: return "THREE OF A KIND";
                 case Rank.TwoPair: return "TWO PAIR";
                 case Rank.Pair: return "PAIR";
@@ -388,6 +392,7 @@ namespace FlockFive
                 case Rank.FiveWild: return 30;
                 case Rank.Quads: return 10;
                 case Rank.FullHouse: return 6;
+                case Rank.Flush: return 3;
                 case Rank.Trips: return 1;
                 case Rank.TwoPair: return 1;
                 default: return 0;
@@ -549,7 +554,26 @@ namespace FlockFive
             return true;
         }
 
+        // True when every non-wild bird shares one color (wilds fill any color).
+        // The corner color squares act as the suit.
+        public static bool IsFlush(Card[] hand)
+        {
+            int mask = 0;
+            for (int i = 0; i < hand.Length; i++)
+                if (!hand[i].Wild) mask |= 1 << (int)hand[i].Color;
+            return mask != 0 && (mask & (mask - 1)) == 0;
+        }
+
+        // One evaluator path: look-matching rank first, then a same-color hand
+        // lifts anything below Flush (Trips / Two Pair). Full House and up stay as is.
         public static Rank Evaluate(Card[] hand, out bool naturalFive)
+        {
+            var r = EvaluateLooks(hand, out naturalFive);
+            if (r < Rank.Flush && IsFlush(hand)) return Rank.Flush;
+            return r;
+        }
+
+        static Rank EvaluateLooks(Card[] hand, out bool naturalFive)
         {
             naturalFive = false;
             int wilds = 0;

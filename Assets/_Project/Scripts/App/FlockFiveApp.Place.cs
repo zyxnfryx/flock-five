@@ -621,23 +621,72 @@ namespace FlockFive
             GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
         }
 
-        // Two-stroke check. Shared by VIP benefit lines. No extra art.
-        static void DrawCheckMark(Rect r)
+        // ONE shared check mark (VIP benefit lines, Daily Bonus claimed tiles). It is a
+        // single continuous shape: one polyline (short stroke down-right, long stroke
+        // up-right) rasterized once into a white texture with a round join and round
+        // caps, so there is no seam where the two strokes meet and no overlap darkening.
+        // The texture is tinted by the caller's color and fit (aspect kept) inside r.
+        const int CheckTexW = 120;
+        const int CheckTexH = 100;
+        const float CheckAspect = CheckTexW / (float)CheckTexH;
+        static Texture2D _checkMark;
+
+        static Texture2D CheckMarkTex()
         {
-            if (r.width < 2f) return;
-            var prev = GUI.matrix;
-            float thick = Mathf.Max(2f, r.height * 0.16f);
-            var p = new Vector2(r.x + r.width * 0.32f, r.center.y);
-            GUI.color = new Color(0.55f, 0.85f, 0.42f, 1f);
-            GUIUtility.RotateAroundPivot(42f, p);
-            GUI.DrawTexture(new Rect(p.x - r.width * 0.18f, p.y - thick * 0.5f, r.width * 0.36f, thick), Texture2D.whiteTexture);
-            GUI.matrix = prev;
-            var q = new Vector2(r.x + r.width * 0.52f, r.y + r.height * 0.30f);
-            GUIUtility.RotateAroundPivot(-48f, q);
-            GUI.DrawTexture(new Rect(q.x - r.width * 0.02f, q.y - thick * 0.5f, r.width * 0.52f, thick), Texture2D.whiteTexture);
-            GUI.matrix = prev;
+            if (_checkMark != null) return _checkMark;
+            var tex = new Texture2D(CheckTexW, CheckTexH, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = "CheckMark"
+            };
+            // y is up here (texture rows). Polyline A -> B -> C, thickness in pixels.
+            var pa = new Vector2(12f, 44f);
+            var pb = new Vector2(44f, 14f);
+            var pc = new Vector2(108f, 84f);
+            const float half = 9f;
+            var px = new Color32[CheckTexW * CheckTexH];
+            for (int y = 0; y < CheckTexH; y++)
+            {
+                for (int x = 0; x < CheckTexW; x++)
+                {
+                    var pt = new Vector2(x + 0.5f, y + 0.5f);
+                    float d = Mathf.Min(CheckSegDist(pt, pa, pb), CheckSegDist(pt, pb, pc));
+                    float a = Mathf.Clamp01(half - d + 0.5f);
+                    if (a <= 0f) continue;
+                    px[y * CheckTexW + x] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(a * 255f));
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _checkMark = tex;
+            return tex;
+        }
+
+        static float CheckSegDist(Vector2 p, Vector2 a, Vector2 b)
+        {
+            var ab = b - a;
+            float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
+            return (p - (a + ab * t)).magnitude;
+        }
+
+        // Fits the check inside r (centered, aspect kept) in the given color.
+        static void DrawCheckMark(Rect r, Color c)
+        {
+            if (r.width < 2f || r.height < 2f) return;
+            var tex = CheckMarkTex();
+            if (tex == null) return;
+            float w = Mathf.Min(r.width, r.height * CheckAspect);
+            float h = w / CheckAspect;
+            var box = new Rect(r.center.x - w * 0.5f, r.center.y - h * 0.5f, w, h);
+            GUI.color = c;
+            GUI.DrawTexture(box, tex, ScaleMode.StretchToFill, true);
             GUI.color = Color.white;
         }
+
+        // VIP benefit green.
+        static void DrawCheckMark(Rect r) => DrawCheckMark(r, new Color(0.55f, 0.85f, 0.42f, 1f));
 
         static GUIStyle _bottomStatus;
 

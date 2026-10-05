@@ -89,6 +89,7 @@ namespace FlockFive
         void TickDailyBonus()
         {
             DailyReminder.Tick();
+            TickDailyOsRequest();
             DailyBonus.RefreshDay();
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive)
@@ -104,6 +105,42 @@ namespace FlockFive
             if (_splash && _home == HomeFace.Splash && !_dailyAskOpen
                 && PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0)
                 OfferWelcome();
+        }
+
+        // ONE "idle after reward" gate. True only when no reward is in flight and none is
+        // about to start: no coin flight/tick/payout sound, no streak board or breath after
+        // it, no welcome card/coin pass/pending grant, no ask card, no Daily card. Anything
+        // that must not talk over reward audio (the OS notification dialog today) waits on
+        // this. Add new reward states here, not at the call sites.
+        bool IdleAfterReward()
+        {
+            if (RewardPayBusy() || RewardLessonHold() || Sfx.PayoutBusy) return false;
+            if (_welcomeQueued || _welcomeOpen || _welcomeGlove || _dailyAskOpen || _dailyOpen) return false;
+            if (PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0 && PlayerPrefs.GetInt(WelcomeBonusKey, 0) == 0) return false;
+            return true;
+        }
+
+        float _osIdleSince = -1f;
+
+        // Shows the OS notification dialog after the player said yes, but only once the
+        // game has been reward-idle for a short beat on the home screen. The beat covers
+        // the tail of the coin sound and the frame between one reward and the next.
+        void TickDailyOsRequest()
+        {
+            if (!DailyReminder.OsRequestOwed)
+            {
+                _osIdleSince = -1f;
+                return;
+            }
+            if (!_splash || _home != HomeFace.Splash || !IdleAfterReward() || HoldLiveLesson())
+            {
+                _osIdleSince = -1f;
+                return;
+            }
+            if (_osIdleSince < 0f) _osIdleSince = PlayClock.Now;
+            if (PlayClock.Now - _osIdleSince < 0.75f) return;
+            _osIdleSince = -1f;
+            DailyReminder.RequestOsNow();
         }
 
         void ResumeDailyReminder()
@@ -123,7 +160,6 @@ namespace FlockFive
             DailyBonus.Boot();
             _dailyOpen = true;
             _dailyPopAt = Time.unscaledTime;
-            SfxLibrary.SeatGroove(true);
             Sfx.CardTap();
         }
 
@@ -160,9 +196,9 @@ namespace FlockFive
             }
         }
 
-        // Top-right of the round medal. Art is 289×672, so a square letterboxes the fire.
-        // belly only hangs the graphic. The digit is BadgeBodyCenter (the belly, not the tip).
-        void DrawDailyStreakFlame(Rect plate)
+        // Where the flame art is drawn for a given plate. DrawDailyStreakFlame paints it and
+        // RailTapRect covers it, so the tap rect and the picture cannot drift.
+        static Rect DailyFlameRect(Rect plate)
         {
             float fh = plate.width * 0.92f;
             float fw = fh * (289f / 672f);
@@ -170,7 +206,16 @@ namespace FlockFive
             float markX = plate.xMax - plate.width * 0.20f;
             float markY = plate.y + plate.width * 0.18f;
             float lift = plate.width * 0.06f;
-            var flame = new Rect(markX - fw * 0.5f, markY - fh * belly - lift, fw, fh);
+            return new Rect(markX - fw * 0.5f, markY - fh * belly - lift, fw, fh);
+        }
+
+        // Top-right of the round medal. Art is 289×672, so a square letterboxes the fire.
+        // belly only hangs the graphic. The digit is BadgeBodyCenter (the belly, not the tip).
+        void DrawDailyStreakFlame(Rect plate)
+        {
+            float fh = plate.width * 0.92f;
+            float fw = fh * (289f / 672f);
+            var flame = DailyFlameRect(plate);
             int frame = (int)(Time.unscaledTime * 8f) % FlameFrames;
             if (frame < 0) frame = 0;
             var spr = SpriteCatalog.Flame(frame);
@@ -310,9 +355,8 @@ namespace FlockFive
             DrawDailyTiles(row, gap, unit, s, breathe, glow);
             GUI.matrix = prev;
 
-            // Screw lip on the pop-up's outer edge. Glass hangs outside, smaller than the old ring.
-            // The claim flower paints after so a bottom bulb cannot cover the word.
-            DrawPopupBulbs(card, board, band, s, t, pivot, k, true);
+            // Build 52: the marquee bulbs around this pop-up frame are gone (DrawPopupBulbs is
+            // no longer called). The claim flower still paints after the frame.
             if (k < 0.999f)
                 GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
             DrawDailyClaim(flower, claimHeld, s, t);
@@ -322,7 +366,7 @@ namespace FlockFive
 
             if (claim)
             {
-                // Claimed: the pedestal still takes taps, for the clunk and the rhythm only.
+                // Claimed: the pedestal still takes taps, for the clunk only.
                 if (!DailyBonus.OfferReady && DailyBonus.ClaimedToday) ClunkClaimed();
                 else ClaimDaily();
                 return;
@@ -337,7 +381,6 @@ namespace FlockFive
                 if (DailyBonus.ClaimedToday) ClunkClaimed();
                 return;
             }
-            StopClaimGroove();
             Sfx.CardTap();
             Sfx.Clink();
             Haptics.Play(Haptics.Tier.Medium);
@@ -486,34 +529,18 @@ namespace FlockFive
         }
 
         // Claimed-state tap: the one cowbell clunk every time, nothing else (no second
-        // claim, no reward, no dismissal). Four steady or short-long-short taps fire the
-        // shared RhythmTap: the guitar-and-cowbell snippet plus a visible button pulse.
+        // claim, no reward, no dismissal). The button gives a tiny squish.
         void ClunkClaimed()
         {
             SfxLibrary.Cowbell();
             _claimClunk = Time.unscaledTime;
-            if (_cowbellRhythm == null) _cowbellRhythm = new RhythmTap();
-            if (!_cowbellRhythm.Hear(Time.unscaledTime)) return;
-            Debug.Log("[Easter] cowbell rhythm fired");
-            _claimEaster = Time.unscaledTime;
-            SfxLibrary.SeatGroove(true);
-            SfxLibrary.Play("groove", 0.45f);
-            Haptics.Play(Haptics.Tier.Medium);
-        }
-
-        void StopClaimGroove()
-        {
-            SfxLibrary.SeatGroove(false);
-            if (_cowbellRhythm != null) _cowbellRhythm.Reset();
         }
 
         void DismissDaily()
         {
             if (!_dailyOpen) return;
-            StopClaimGroove();
             _dailyOpen = false;
             _dailyPopAt = -1f;
-            _claimEaster = -1f;
             // X and the dim close the card only. The lesson stays until Claim.
             Sfx.CardTap();
         }
@@ -922,25 +949,11 @@ namespace FlockFive
                 : new Color(1f, 0.94f, 0.74f, done ? 0.72f : 0.92f);
             StampOutlined(amt, DailyBonus.TileLabel(day), _dailyTile, ink, 1, 1);
             if (!done) return;
-            float mh = tile.height * 0.15f;
-            var mark = new Rect(tile.x + tile.width * 0.27f, tile.yMax - mh - tile.height * 0.07f, tile.width * 0.46f, mh);
-            DrawDailyCheck(mark, new Color(1f, 0.88f, 0.40f, 0.96f));
-        }
-
-        static void DrawDailyCheck(Rect r, Color c)
-        {
-            var prev = GUI.matrix;
-            var p = new Vector2(r.x + r.width * 0.32f, r.center.y);
-            float thick = Mathf.Max(2f, r.height * 0.42f);
-            GUI.color = c;
-            GUIUtility.RotateAroundPivot(42f, p);
-            GUI.DrawTexture(new Rect(p.x - r.width * 0.22f, p.y - thick * 0.5f, r.width * 0.42f, thick), Texture2D.whiteTexture);
-            GUI.matrix = prev;
-            var q = new Vector2(r.x + r.width * 0.58f, r.y + r.height * 0.28f);
-            GUIUtility.RotateAroundPivot(-48f, q);
-            GUI.DrawTexture(new Rect(q.x - r.width * 0.06f, q.y - thick * 0.5f, r.width * 0.62f, thick), Texture2D.whiteTexture);
-            GUI.matrix = prev;
-            GUI.color = Color.white;
+            // Shared one-piece check (DrawCheckMark), seated in the bottom of the tile.
+            float cw = tile.width * 0.40f;
+            float ch = Mathf.Min(tile.height * 0.30f, cw);
+            var mark = new Rect(tile.center.x - cw * 0.5f, tile.yMax - tile.height * 0.05f - ch, cw, ch);
+            DrawCheckMark(mark, new Color(1f, 0.88f, 0.40f, 0.96f));
         }
 
         static string DailyVerb()
@@ -948,45 +961,6 @@ namespace FlockFive
             if (DailyBonus.OfferReady) return "Claim";
             if (DailyBonus.ClaimedToday) return "Claimed";
             return "Later";
-        }
-
-        // Rhythm Easter egg reaction: a gold ring swells off the button and sparkles fly
-        // out for about a second, so the player sees it fired. No-op when idle.
-        static void DrawEasterPulse(Rect disc, float t)
-        {
-            if (_claimEaster < 0f) return;
-            float age = t - _claimEaster;
-            if (age < 0f || age > 1.1f) return;
-            float u = age / 1.1f;
-            float fade = 1f - u;
-            var glow = GlowTex();
-            if (glow != null)
-            {
-                float grow = 1f + 0.9f * u;
-                float w = disc.width * 1.5f * grow;
-                float h = disc.height * 1.5f * grow;
-                GUI.color = new Color(1f, 0.82f, 0.30f, 0.70f * fade);
-                GUI.DrawTexture(new Rect(disc.center.x - w * 0.5f, disc.center.y - h * 0.5f, w, h), glow, ScaleMode.ScaleToFit, true);
-            }
-            var spark = SpriteCatalog.Sparkle;
-            var tex = spark != null && spark.texture != null ? spark.texture : null;
-            if (tex != null)
-            {
-                var prev = GUI.matrix;
-                for (int i = 0; i < 6; i++)
-                {
-                    float ang = (i / 6f) * Mathf.PI * 2f + 0.4f;
-                    float reach = disc.width * (0.42f + 0.50f * u);
-                    float sz = disc.width * 0.22f * (0.5f + fade);
-                    var c = new Vector2(disc.center.x + Mathf.Cos(ang) * reach, disc.center.y + Mathf.Sin(ang) * reach * 0.8f);
-                    var sr = new Rect(c.x - sz * 0.5f, c.y - sz * 0.5f, sz, sz);
-                    GUIUtility.RotateAroundPivot(t * 180f + i * 30f, sr.center);
-                    GUI.color = new Color(1f, 0.96f, 0.75f, 0.95f * fade);
-                    GUI.DrawTexture(sr, tex, ScaleMode.ScaleToFit, true);
-                    GUI.matrix = prev;
-                }
-            }
-            GUI.color = Color.white;
         }
 
         static void DrawDailyClaim(Rect flower, bool held, float s, float t)
@@ -1008,7 +982,6 @@ namespace FlockFive
             if (squish < 0.995f)
                 GUIUtility.ScaleAroundPivot(new Vector2(squish, squish * 0.94f), flower.center);
             var disc = DrawPopupButton(flower, held, ready);
-            DrawEasterPulse(disc, t);
             var labR = new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.56f);
             _dailyClaim.fontSize = _dailyClaimPx;
             int ink = Mathf.Clamp(Mathf.RoundToInt(_dailyClaimPx * 0.12f), 2, 6);

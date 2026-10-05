@@ -158,7 +158,7 @@ namespace FlockFive
             var list = new System.Collections.Generic.List<AudioSource>(20);
             for (int i = 0; i < all.Length; i++)
             {
-                if (all[i] == null || all[i].loop || all[i] == _held) continue;
+                if (all[i] == null || all[i].loop) continue;
                 list.Add(all[i]);
             }
             while (list.Count < 20)
@@ -234,47 +234,6 @@ namespace FlockFive
             if (pitch > 1.04f) pitch = 1.04f;
             if (pitch < 0.92f) pitch = 0.92f;
             Shot(clip, pitch, vol, layer);
-        }
-
-        static AudioSource _held;
-        static float _heldUntil;
-
-        public static void PlayHeld(AudioClip clip, float vol, float duckFor)
-        {
-            if (clip == null) return;
-            Ensure();
-            if (_held == null && _host != null)
-            {
-                _held = _host.gameObject.AddComponent<AudioSource>();
-                _held.playOnAwake = false;
-                _held.loop = false;
-                _held.spatialBlend = 0f;
-            }
-            if (_held == null)
-            {
-                PlayProc(clip, 1f, vol, MixLayer.Lead);
-                return;
-            }
-            ShareListener(_held);
-            _held.Stop();
-            _held.pitch = 1f;
-            _held.clip = clip;
-            _held.volume = Mathf.Clamp(SfxLibrary.Level(vol), 0.02f, 0.5f);
-            _held.Play();
-            float span = Mathf.Max(0.2f, duckFor);
-            _heldUntil = 0f;
-            if (MixDesk.Live != null)
-            {
-                _heldUntil = Time.unscaledTime + span;
-                MixDesk.Live.MarkLead(span, 0.62f);
-            }
-        }
-
-        public static void StopHeld()
-        {
-            if (_held != null && _held.isPlaying) _held.Stop();
-            if (MixDesk.Live != null) MixDesk.Live.EndLead(_heldUntil);
-            _heldUntil = 0f;
         }
 
         public static bool QuietMid => MixDesk.Live == null || MixDesk.Live.AllowMid;

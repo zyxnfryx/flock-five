@@ -38,10 +38,7 @@ namespace FlockFive
         static float _waxBorn = -1f;
         int _collectDepth;
         bool _gardenScoring;
-        RhythmTap _cowbellRhythm;
         static float _claimClunk = -1f;
-        // When the rhythm Easter egg last fired (unscaled time). Drives the button pulse.
-        static float _claimEaster = -1f;
         struct CoinFly
         {
             public Vector2 A, B;
@@ -584,7 +581,6 @@ namespace FlockFive
             _splash = true;
             _clearReward = false;
             CancelRewardGap();
-            SfxLibrary.NoteGarden(false);
             _gardenScoring = false;
             _gardenStampAt = -1f;
             _collectDepth = 0;
@@ -660,7 +656,6 @@ namespace FlockFive
             _freezeOffer = false;
             _iceCoating = false;
             _splash = false;
-            SfxLibrary.NoteGarden(true);
             CloseAvatarRename();
             NoteHiveIntroLeft();
             NotePokerIntroLeft();
@@ -5103,6 +5098,37 @@ namespace FlockFive
             return _railRect[RailDaily];
         }
 
+        // THE tap rect for a rail button (shared by the hit-test and the glove's tap check).
+        // It is the drawn rect, padded a little, and for the Daily medal it also covers the
+        // streak flame that hangs above the plate, so a tap on anything the player sees as
+        // "the button" opens it. The pad never reaches into a neighbor: below it stops short
+        // of half the rail gap, and the rail is a single column so nothing sits beside it.
+        Rect RailTapRect(int id)
+        {
+            EnsureSplashRails();
+            var r = _railRect[id];
+            if (r.width < 2f || r.height < 2f) return r;
+            float pad = r.width * 0.06f;
+            float x0 = r.x - pad;
+            float y0 = r.y - pad;
+            float x1 = r.xMax + pad;
+            float y1 = r.yMax + Mathf.Min(pad, SplashRailGap() * 0.25f);
+            if (id == RailDaily)
+            {
+                DailyBonus.Boot();
+                if (DailyBonus.IconState == DailyBonusIconState.Flame)
+                {
+                    var fl = DailyFlameRect(r);
+                    x0 = Mathf.Min(x0, fl.x);
+                    y0 = Mathf.Min(y0, fl.y);
+                    x1 = Mathf.Max(x1, fl.xMax);
+                }
+            }
+            return Rect.MinMaxRect(x0, y0, x1, y1);
+        }
+
+        Rect SplashDailyTapRect() => RailTapRect(RailDaily);
+
         Rect PiggyRect(float s)
         {
             EnsureSplashRails();
@@ -7798,8 +7824,9 @@ namespace FlockFive
             _homeTapTaken = false;
             float s = Mathf.Max(Screen.height / 720f, 1f);
             if (NoAds.Owned) VipOffer.Close();
-            bool modal = VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive
-                || _streakSlide >= 0f || RewardPayBusy();
+            bool hardModal = VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive;
+            bool softModal = _streakSlide >= 0f || RewardPayBusy();
+            bool modal = hardModal || softModal;
             // Captured before the dismiss taps below, so that same click cannot poke the bird.
             bool tutorUp = HomeTutorLive();
             DismissAvatarRename(s);
@@ -7904,7 +7931,12 @@ namespace FlockFive
             bool dailyDraw = RailLive(RailDaily);
             var dailyR = SplashDailyRect();
             bool dailyHeld = false;
-            if (dailyDraw && !modal && HomeTapAllowed(RailDaily) && HitPad(dailyR, out dailyHeld))
+            // Hit = RailTapRect (drawn plate + flame, padded). While the Daily lesson points at
+            // this button, a coin payout still ticking (softModal) must not eat the tap: the
+            // glove already faded on it, so the card has to open on that first tap.
+            bool dailyLesson = HomeStepRail() == RailDaily;
+            if (dailyDraw && !hardModal && (!softModal || dailyLesson) && HomeTapAllowed(RailDaily)
+                && HitPad(SplashDailyTapRect(), out dailyHeld))
                 OpenDailyCard();
             if (dailyDraw)
                 DrawDailyRail(dailyR, s, dailyHeld);
@@ -10357,20 +10389,18 @@ namespace FlockFive
         }
 
         // The hold step's seat: ABOVE the card row, never over the cards. Held cards and
-        // the fanned hand reach a little above the row, so that reach stays clear too.
-        // ceilingY is the bottom of the wordmark / pay-table chip. A cramped screen
-        // squeezes the plate (down to 34 reference px) before it would touch a card.
-        Rect PokerHoldBubble(float s, Rect row, float ceilingY)
+        // the fanned hand reach a little above the row (hover puff is ~16% of a card), so that
+        // reach stays clear too. ceilingY is the bottom of the wordmark / pay-table chip.
+        // Build 52: the plate is measured with FitCaptionBox exactly like the other tutorial
+        // captions (poker back, intro lines), so it paints in the same bold outlined size
+        // instead of being squeezed into a short fixed-height box. A cramped screen steps
+        // the font down before the plate would touch the pay-table chip or a card.
+        Rect PokerHoldBubble(float s, Rect row, float ceilingY, out int fontHi)
         {
-            const float panelPadX = 18f;
-            const float panelPadY = 12f;
-            float bot = row.y - row.height * 0.20f - 6f * s;
-            float room = bot - ceilingY;
-            float h = Mathf.Min(58f * s, Mathf.Max(34f * s, room - panelPadY * 2f));
-            float y = bot - panelPadY - h;
-            if (y < 8f) y = 8f;
-            float left = Mathf.Max(12f * s + panelPadX, Screen.safeArea.xMin + 8f + panelPadX);
-            float right = Screen.width - Mathf.Max(12f * s + panelPadX, Screen.width - Screen.safeArea.xMax + 8f + panelPadX);
+            float bot = row.y - row.height * 0.14f - 2f * s;
+            float room = Mathf.Max(30f * s, bot - ceilingY - 4f * s);
+            float left = Mathf.Max(12f * s + 18f, Screen.safeArea.xMin + 8f + 18f);
+            float right = Screen.width - Mathf.Max(12f * s + 18f, Screen.width - Screen.safeArea.xMax + 8f + 18f);
             float span = right - left;
             if (span < 80f)
             {
@@ -10379,8 +10409,23 @@ namespace FlockFive
                 span = Mathf.Max(80f, right - left);
             }
             float w = Mathf.Min(span, Mathf.Min(520f * s, Screen.width * 0.86f));
-            float x = left + Mathf.Max(0f, (span - w) * 0.5f);
-            return new Rect(x, y, w, h);
+            float maxW = Mathf.Max(48f, w - 36f * s);
+            int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            Rect fit = default;
+            for (int px = hi; px >= 14; px -= 2)
+            {
+                hi = px;
+                fit = FitCaptionBox(PokerHoldLine, maxW, px, 12);
+                if (fit.height + 28f * s <= room) break;
+            }
+            float pw = Mathf.Min(fit.width + 36f * s, w);
+            float h = fit.height + 28f * s;
+            float y = bot - h;
+            if (y < ceilingY + 2f) y = ceilingY + 2f;
+            if (y < 8f) y = 8f;
+            float x = left + Mathf.Max(0f, (span - pw) * 0.5f);
+            fontHi = hi;
+            return new Rect(x, y, pw, h);
         }
 
         void DrawPokerPageTutor(float s, Rect row, Rect betR, Rect actR, float ceilingY)
@@ -10398,8 +10443,9 @@ namespace FlockFive
             if (line != null)
             {
                 bool hold = line == PokerHoldLine;
-                var want = hold ? PokerHoldBubble(s, row, ceilingY) : PokerCoachBubble(s, row, betR, actR);
-                DrawSplashIntroLine(line, want, s, 0, hold);
+                int holdHi = 0;
+                var want = hold ? PokerHoldBubble(s, row, ceilingY, out holdHi) : PokerCoachBubble(s, row, betR, actR);
+                DrawSplashIntroLine(line, want, s, holdHi, hold);
             }
             DrawTutorOverlay(s);
         }
@@ -11483,7 +11529,7 @@ namespace FlockFive
                         BeginPokerStamp(BirdPoker.LastPunchKind);
                         _pokerPendingStamp = false;
                     }
-                    if (BirdPoker.LastRank >= BirdPoker.Rank.FullHouse) Sfx.Celebrate();
+                    if (BirdPoker.LastRank >= BirdPoker.Rank.Flush) Sfx.Celebrate();
                     else if (_pokerResultCue == 2) Sfx.Clink();
                     else if (_pokerResultCue == 1) Sfx.Deny();
                     _pokerResultCue = 0;
@@ -12040,8 +12086,8 @@ namespace FlockFive
             GUI.color = u >= 0.98f ? Color.white : new Color(1f, 1f, 1f, u);
             if (!front)
             {
-                // Full palm and sleeve behind the cards, from the pinch down.
-                DrawPokerPalm(dest);
+                // Full palm and sleeve behind the cards, from the pinch down (sleeve runs off-screen).
+                DrawPokerPalm(dest, true);
             }
             else
             {
@@ -12123,11 +12169,15 @@ namespace FlockFive
         }
 
         // The one rest-of-hand draw (palm, fingers, forearm, sleeve), from the pinch down, always
-        // under the cards. Shared by the holding hand and the dealing hand. The sleeve runs on past
-        // the screen bottom so the arm never ends in a floating cut on tall phones.
-        static void DrawPokerPalm(Rect dest)
+        // under the cards. Shared by the holding hand and the dealing hand. sleeveTail is true only
+        // for the holding hand: its sleeve runs on past the screen bottom so the arm never ends in a
+        // floating cut on tall phones. The dealing hand glides and flicks across the row, so it
+        // keeps the plain palm-and-forearm span (the build 49 look); a tail there stretches into a
+        // long arm.
+        static void DrawPokerPalm(Rect dest, bool sleeveTail)
         {
-            DrawSpriteTail(dest, SpriteCatalog.HandPalm, Screen.height + dest.width * 0.25f + 40f);
+            if (sleeveTail)
+                DrawSpriteTail(dest, SpriteCatalog.HandPalm, Screen.height + dest.width * 0.25f + 40f);
             DrawSpriteBand(dest, SpriteCatalog.HandPalm, PokerFanPinchV, 1f);
         }
 
@@ -12289,7 +12339,13 @@ namespace FlockFive
         // height * WinRestFontFrac, so the landed word is ~25% larger. Left edge is
         // HudTextLeft. The flight lands on this rect + font via PokerWinGeom (restC / restK).
         const float WinRestGrow = 1.75f;
-        const float WinRestFontFrac = 0.62f;
+        // Build 52: the red poker status texts ("WIN $x" at rest and "TAP A CARD TO KEEP") share
+        // ONE size boost, so they stay consistent. WIN's 0.62 base fraction * 1.25 = 0.775.
+        // That fraction also drives the fanfare's landing scale (restK), so the flight arrives
+        // at the same size. Position, color and outline are unchanged; FitFont still caps it
+        // by the rect, so a cramped screen shrinks it instead of overlapping BET or the cards.
+        const float PokerStatusTextBoost = 1.25f;
+        const float WinRestFontFrac = 0.62f * PokerStatusTextBoost;
 
         static Rect PokerWinRestRect(Rect betR, Rect actR, float s, float cardBottom)
         {
@@ -12914,8 +12970,8 @@ namespace FlockFive
             GUI.color = new Color(1f, 1f, 1f, a);
             if (!front)
             {
-                // Palm, forearm, and sleeve, same span as the holding hand.
-                DrawPokerPalm(dest);
+                // Palm and forearm only, no sleeve tail: the build 49 dealing hand.
+                DrawPokerPalm(dest, false);
             }
             else
                 DrawPokerThumb(dest);
@@ -13055,7 +13111,9 @@ namespace FlockFive
             if (!_pokerFan || BirdPoker.PhaseNow != BirdPoker.Phase.Dealt) return;
             if (_pokerMotion != PokerMotion.None) return;
             // Same outlined BET style, one line.
-            int type = Mathf.RoundToInt(Mathf.Clamp(28f * s, 26f, 40f));
+            // Boosted by the shared red status-text size (PokerStatusTextBoost). The plate's
+            // bottom edge stays at fan.y - 28s, so the larger line grows upward, off the cards.
+            int type = Mathf.RoundToInt(Mathf.Clamp(28f * s, 26f, 40f) * PokerStatusTextBoost);
             var st = PokerBold(ref _pokerLed, TextAnchor.MiddleCenter);
             st.fontSize = type;
             float cap = type * 1.40f;
