@@ -538,6 +538,31 @@ namespace FlockFive
             return visit;
         }
 
+        // Badger win bee. Strong finishes only; garden clears keep TakeVisitor.
+        // Pick order (Phase 5 / Brandon): (1) Inverse Rainbow of a kind not
+        // yet owned as that finish (album holes / CountOf(kind)==0 first),
+        // else (2) foil (BeeFinish.Holo) the same way, else (3) a duplicate
+        // Inverse Rainbow of any kind. Foil is Holo in the album enums.
+        // Grant / save / BeeVisit fields share GrantVisitorAt with TakeVisitor.
+        public static BeeVisit TakeBossVisitor()
+        {
+            Warm();
+            int kind;
+            BeeFinish finish;
+            if (TryPickKindMissing(BeeFinish.InverseRainbow, out kind))
+                finish = BeeFinish.InverseRainbow;
+            else if (TryPickKindMissing(BeeFinish.Holo, out kind))
+                finish = BeeFinish.Holo;
+            else
+            {
+                kind = Random.Range(0, Kinds);
+                finish = BeeFinish.InverseRainbow;
+            }
+            var visit = GrantVisitorAt(kind, finish);
+            NoteCollected();
+            return visit;
+        }
+
         // Fills the album for a screenshot. Does not count as a bee the player found.
         public static BeeVisit GrantVisitor()
         {
@@ -554,8 +579,14 @@ namespace FlockFive
         static BeeVisit AddVisitor()
         {
             Warm();
-            int kind = PickKind();
-            BeeFinish finish = PickFinish();
+            return GrantVisitorAt(PickKind(), PickFinish());
+        }
+
+        // Shared grant / save / BeeVisit reveal fields for TakeVisitor,
+        // TakeBossVisitor, and GrantVisitor.
+        static BeeVisit GrantVisitorAt(int kind, BeeFinish finish)
+        {
+            if ((uint)kind >= (uint)Kinds) kind = 0;
             int ix = SlotOf(kind, finish);
             bool fresh = _counts[ix] == 0;
             _counts[ix]++;
@@ -568,6 +599,52 @@ namespace FlockFive
                 Count = _counts[ix],
                 Slot = ix,
             };
+        }
+
+        // Prefer a fully unowned kind (CountOf==0), else any kind still
+        // missing this finish. Uniform among ties. False when every kind
+        // already has at least one copy of the finish.
+        static bool TryPickKindMissing(BeeFinish finish, out int kind)
+        {
+            int holes = 0;
+            for (int k = 0; k < Kinds; k++)
+                if (CountOf(k) == 0) holes++;
+            if (holes > 0)
+            {
+                int skip = Random.Range(0, holes);
+                for (int k = 0; k < Kinds; k++)
+                {
+                    if (CountOf(k) != 0) continue;
+                    if (skip == 0)
+                    {
+                        kind = k;
+                        return true;
+                    }
+                    skip--;
+                }
+            }
+
+            int miss = 0;
+            for (int k = 0; k < Kinds; k++)
+                if (CountOf(k, finish) == 0) miss++;
+            if (miss == 0)
+            {
+                kind = 0;
+                return false;
+            }
+            int skip2 = Random.Range(0, miss);
+            for (int k = 0; k < Kinds; k++)
+            {
+                if (CountOf(k, finish) != 0) continue;
+                if (skip2 == 0)
+                {
+                    kind = k;
+                    return true;
+                }
+                skip2--;
+            }
+            kind = 0;
+            return false;
         }
 
         static void NoteCollected()

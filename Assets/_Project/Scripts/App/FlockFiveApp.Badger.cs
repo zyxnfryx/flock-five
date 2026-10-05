@@ -12,7 +12,7 @@ namespace FlockFive
     //
     // Shared pieces: BadgerLoadout (auto-fill), BadgerFight (rules; boss always leads),
     // BadgerSchedule (targets, prices, boss mix, Enabled), BadgerCopy / BadgerPay (lines +
-    // settle plan), Purse.ClearRewardFor + Credit, Hive.TakeVisitor / HoneyOfFinish,
+    // settle plan), Purse.ClearRewardFor + Credit, Hive.TakeBossVisitor / TakeVisitor / HoneyOfFinish,
     // CardText.DrawHoneyDigit, AlbumWood/AlbumFace, DrawBadgerTile, BadgerButton,
     // FitCaptionBox + CoachGloveAt (first-fight lesson), TutorialHeal, Sfx.CardBump/Deny.
     public sealed partial class FlockFiveApp

@@ -140,7 +140,7 @@ namespace FlockFive
             }
             if (plan.ClearFlag) BadgerSave.Clear();
             if (plan.Credit > 0) Purse.Credit(plan.Credit);
-            if (plan.TakeVisitor) Hive.TakeVisitor();
+            if (plan.TakeVisitor) Hive.TakeBossVisitor();
             return plan.Credit;
         }
     }
