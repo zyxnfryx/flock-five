@@ -53,6 +53,7 @@ namespace FlockFive.Editor
             CheckOpeningTiming(Check);
             CheckSitterSwitch(Check);
             CheckArt(Check);
+            CheckPhase5Copy(Check);
 
             Line(fail == 0 ? "ALL OK  " + pass : "FAILED  " + fail + "  passed " + pass);
         }
@@ -185,6 +186,23 @@ namespace FlockFive.Editor
                 if (SpriteCatalog.BadgerArt(n) == null) missing.Append(n).Append(' ');
             Check("art", missing.Length == 0,
                 missing.Length == 0 ? "all 17 frames load from Sprites/Badger/" : "missing: " + missing);
+        }
+
+        static void CheckPhase5Copy(System.Action<string, bool, string> Check)
+        {
+            bool ends = BadgerCopy.Win == "Fine. Take the yard."
+                && BadgerCopy.Lose == "Yard's still mine."
+                && BadgerCopy.OpenLater.StartsWith("Hive's mine");
+            bool verdict = BadgerCopy.Tie == "That didn't prove much."
+                && BadgerCopy.DontCare == "Honey badger don't care."
+                && BadgerCopy.MineNow == "Mine now."
+                && BadgerCopy.CoinsShort == "Coins short.";
+            var winRound = new BadgerRound { PlayerGained = 3, BossGained = 0 };
+            var theft = new BadgerRound { PlayerGained = 0, BossGained = 4 };
+            bool beats = BadgerCopy.ShowShrug(winRound) && BadgerCopy.ShowTheftSplat(theft)
+                && !BadgerCopy.ShowTheftSplat(winRound);
+            Check("phase5 copy", ends && verdict && beats,
+                "win/lose/opening/verdict lines; shrug + theft splat rules");
         }
     }
 }

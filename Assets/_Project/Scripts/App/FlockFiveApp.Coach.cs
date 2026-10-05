@@ -32,6 +32,7 @@ namespace FlockFive
         const string CoachLeafKey = "flockfive.coach.leaf";
         const string CoachSparrowKey = "flockfive.coach.sparrow";
         const string CoachHawkKey = "flockfive.coach.hawk";
+        // Badger first-fight lesson stamp lives on BadgerCopy.CoachPref (PrefGuard).
         const string AdHandLine = "Tap to unlock your bonus!";
         const string GiftStuckLine = "Stuck? Tap the gift branch for a bonus spot.";
         // Old clear CoachLineY rest under the hud, in reference pixels. Not the logo floor.
@@ -771,6 +772,12 @@ namespace FlockFive
                 _gloveKeepOff = watchFace;
                 Vector2 watchAim = GloveTarget(watchFace);
                 CoachGloveAt(watchAim, dt, handS, float.NaN, false, float.NaN, GiftWatchTapRect(handS));
+                return;
+            }
+            if (_bgLessonLive && _splash && _home == HomeFace.Badger)
+            {
+                float handS = Mathf.Max(Screen.height / 720f, 1f);
+                PlaceBadgerLessonGlove(dt, handS);
                 return;
             }
             if (_hiveIntroLive || _hiveLevelLive)
@@ -3684,7 +3691,7 @@ namespace FlockFive
         bool TutorialGuideLive() =>
             _pestCue != 0 || _hiveLevelLive || _hiveIntroLive || _pokerIntroLive
             || _dailyIntroLive || _leafIntro || _adHand || _welcomeGlove || _adoptLive
-            || _albumTutorOn || (_coach && _cueHand);
+            || _albumTutorOn || _bgLessonLive || (_coach && _cueHand);
 
         // One arbiter for every non-tutorial card. A live lesson blocks every
         // kind except the card that lesson owns. Player taps are refused.
@@ -3709,6 +3716,7 @@ namespace FlockFive
                 || _pokerDealHint
                 || _adHand
                 || _cueGift
+                || _bgLessonLive
                 || (_coach && _cueHand);
         }
 
@@ -3806,7 +3814,7 @@ namespace FlockFive
                 AdShowing = Ads.IsShowing,
                 TutorPause = _tutorPause != 0,
                 SparrowCueLive = _pestCue == PestCueSparrow && PestCueAlive(),
-                HomeLessonLive = _hiveIntroLive || _pokerIntroLive || _dailyIntroLive,
+                HomeLessonLive = _hiveIntroLive || _pokerIntroLive || _dailyIntroLive || _bgLessonLive,
                 ResumeGateLeft = _resumeInputUntil - now,
                 TapGateLeft = _swallowTapsUntil - now,
                 GiftGateLeft = _suppressGiftUntil - now
@@ -3845,6 +3853,7 @@ namespace FlockFive
                 }
                 NotePokerIntroLeft();
                 NoteDailyIntroLeft();
+                if (_bgLessonLive) EndBadgerLesson();
                 _gloveVis = false;
             }
             if ((fix & TutorFix.ResetLeakedPause) != 0 && GamePause.Paused && !Ads.IsShowing && _tutorPause == 0)

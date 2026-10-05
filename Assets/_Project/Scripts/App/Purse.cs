@@ -77,6 +77,10 @@ namespace FlockFive
             return 20 + 5 * level;
         }
 
+        // Shared clear-reward table. AwardClear and a badger win both read this so the
+        // amounts never drift. Display is the cleared level (15, 20, 25, ...).
+        public static int ClearRewardFor(int display) => StageBase(display);
+
         public static int StagePay => StageBase(LevelData.DisplayNumber);
 
         public static int Coins { get; private set; }
@@ -145,7 +149,7 @@ namespace FlockFive
         {
             TickLogin();
             Streak = StreakTier.Next(Streak);
-            int basePay = StageBase(LevelData.DisplayNumber);
+            int basePay = ClearRewardFor(LevelData.DisplayNumber);
             LastStagePay = basePay;
             LastStreak = Streak;
             LastLogin = LoginMul;
@@ -186,7 +190,7 @@ namespace FlockFive
         {
             Streak = StreakTier.Normalize(streak);
             if (Streak < 1) Streak = 1;
-            int basePay = StageBase(LevelData.DisplayNumber);
+            int basePay = ClearRewardFor(LevelData.DisplayNumber);
             LastStagePay = basePay;
             LastStreak = Streak;
             LastLogin = LoginMul;

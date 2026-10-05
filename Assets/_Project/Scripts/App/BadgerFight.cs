@@ -146,7 +146,8 @@ namespace FlockFive
 
         public int PriceOf(BadgerPower power)
         {
-            return BadgerSchedule.PowerUpPrice(power, _appearance);
+            bool free = BadgerSave.IsTutorialFirstUse(power, _appearance);
+            return BadgerSchedule.PriceFor(power, _appearance, free);
         }
 
         // Unused this contest and the purse covers this visit's price.
@@ -182,9 +183,18 @@ namespace FlockFive
             if (_bossPick < 0 || _playerPick < 0) return false;
             if (_armed != BadgerPower.None) return false;
             if (Used(power)) return false;
-            int price = BadgerSchedule.PowerUpPrice(power, _appearance);
-            if (price <= 0) return false;
-            if (!Purse.TrySpend(price)) return false;
+            if (BadgerSchedule.BasePrice(power) <= 0) return false;
+            bool tutFree = BadgerSave.IsTutorialFirstUse(power, _appearance);
+            int price = BadgerSchedule.PriceFor(power, _appearance, tutFree);
+            if (price > 0)
+            {
+                if (!Purse.TrySpend(price)) return false;
+            }
+            else if (!tutFree)
+            {
+                return false;
+            }
+            if (tutFree) BadgerSave.ClaimTutorialFree(power);
             Mark(power);
             _armed = power;
             return true;

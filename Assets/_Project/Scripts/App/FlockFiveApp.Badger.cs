@@ -2,21 +2,22 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Honey badger contest, Phase 3+4: contest screen (IMGUI). Phase 4 (the opening hive
+    // Honey badger contest, Phase 3-5: contest screen (IMGUI). Phase 4 (the opening hive
     // swipe and bee fill, the leap, the sitter) lives in FlockFiveApp.BadgerShow.cs.
-    // Reached only through OpenBadgerFight, which obeys the BadgerSchedule.Enabled kill
-    // switch. After the opening, a short PostOpen pause, then the badger picks first every
-    // turn. No bee-swap screen and no FIGHT gate: auto-fill still uses BadgerLoadout.Preload.
-    // Mild and cartoonish: a knock is a honey splat and a comic bump, never a wound.
+    // Phase 5: rewards, first-fight lesson, lose/retry, Enabled on. Reached only through
+    // OpenBadgerFight, which obeys the BadgerSchedule.Enabled kill switch. After the opening,
+    // a short PostOpen pause (and the one-time lesson on appearance 1), then the badger picks
+    // first every turn. No bee-swap screen and no FIGHT gate: auto-fill still uses
+    // BadgerLoadout.Preload. Mild and cartoonish: a knock is a honey splat and a comic bump.
     //
     // Shared pieces: BadgerLoadout (auto-fill), BadgerFight (rules; boss always leads),
-    // BadgerSchedule (targets, prices, boss mix), Hive.HoneyOfFinish (every honey number),
-    // CardText.DrawHoneyDigit, AlbumWood/AlbumFace (the album plate colors), DrawBadgerTile
-    // (the one honeycomb tile: grids, arena), BadgerButton (power-ups, Continue),
-    // Purse.TrySpend (inside BadgerFight), Sfx.CardBump/Deny.
+    // BadgerSchedule (targets, prices, boss mix, Enabled), BadgerCopy / BadgerPay (lines +
+    // settle plan), Purse.ClearRewardFor + Credit, Hive.TakeVisitor / HoneyOfFinish,
+    // CardText.DrawHoneyDigit, AlbumWood/AlbumFace, DrawBadgerTile, BadgerButton,
+    // FitCaptionBox + CoachGloveAt (first-fight lesson), TutorialHeal, Sfx.CardBump/Deny.
     public sealed partial class FlockFiveApp
     {
-        enum BadgerStage { PostOpen, BossWait, YourPick, Reveal, Verdict, Over, Opening }
+        enum BadgerStage { PostOpen, BossWait, YourPick, Reveal, Verdict, Over, Opening, Lesson }
         enum BadgerLook { Face, Down, Spent }
 
         const float BadgerBossWait = 0.75f;
@@ -48,6 +49,12 @@ namespace FlockFive
         string _bgLine = "";
         string _bgNeedLine = "";
         readonly string[] _bgPrice = new string[5];
+        int _bgFlagDisplay;
+        int _bgRoundN;
+        bool _bgLessonLive;
+        int _bgLessonStep;
+        Rect _bgLessonAim;
+        Rect _bgLessonCap;
         static GUIStyle _bgStyle;
         static GUIStyle _bgWrap;
         static Texture2D _bgHex;
@@ -72,6 +79,7 @@ namespace FlockFive
             int n = BadgerSchedule.Appearance(cleared);
             if (n < 1) n = 1;
             _bgAppearance = n;
+            _bgFlagDisplay = cleared > 0 ? cleared : 0;
             _bgSeed = Random.Range(1, int.MaxValue);
             _bgLoadout = BadgerLoadout.Preload(BadgerSchedule.Tiles);
             _bgFight = null;
@@ -86,10 +94,14 @@ namespace FlockFive
             _bgShownBoss = 0;
             _bgShakeKey = -1;
             _bgShakeT = 0f;
+            _bgRoundN = 0;
+            _bgLessonLive = false;
+            _bgLessonStep = 0;
+            _bgLessonAim = default;
+            _bgLessonCap = default;
             _bgLine = "";
             _bgNeedLine = "You need " + BadgerSchedule.PlayerTarget(n) + "    Badger needs " + BadgerSchedule.BadgerTarget(n);
-            for (int p = 1; p < _bgPrice.Length; p++)
-                _bgPrice[p] = Money.Format(BadgerSchedule.PowerUpPrice((BadgerPower)p, n));
+            RefreshBadgerPrices();
             _splash = true;
             _home = HomeFace.Badger;
             // Phase 4: hive swipe + bee fill, PostOpen pause, then the badger leads.
@@ -97,16 +109,24 @@ namespace FlockFive
             return true;
         }
 
-        // TODO(Phase 5): a win clears BadgerSave, pays the cleared level's reward and one
-        // Hive.TakeVisitor(); a loss keeps the flag. Phase 3 only returns to the splash.
+        // Quit mid-fight or Continue after Over. Win pays; lose / quit leaves the flag.
         void LeaveBadger()
         {
+            EndBadgerLesson();
+            bool finished = _bgStage == BadgerStage.Over
+                && _bgFight != null
+                && _bgFight.Result != BadgerResult.Playing;
+            BadgerResult result = finished ? _bgFight.Result : BadgerResult.BadgerWon;
+            int flag = _bgFlagDisplay > 0 ? _bgFlagDisplay : BadgerSave.Pending;
+            var plan = BadgerPay.Plan(result, flag);
+            BadgerPay.Apply(plan);
             _home = HomeFace.Splash;
             _bgFight = null;
             _bgLoadout = null;
             _bgStage = BadgerStage.Opening;
             _bgOpenT = 0f;
             _bgWashOut = 0f;
+            _bgFlagDisplay = 0;
             if (_bgLeap.Live) _bgLeap.Release();
 #if UNITY_EDITOR
             if (_bgSwitchHeld)
@@ -159,7 +179,8 @@ namespace FlockFive
             _bgResolved = false;
             _bgT = 0f;
             _bgStage = BadgerStage.BossWait;
-            _bgLine = "Honey badger goes first.";
+            _bgLine = BadgerCopy.RoundStartLine(_bgRoundN);
+            _bgRoundN++;
         }
 
         void TickBadger(float dt)
@@ -174,7 +195,16 @@ namespace FlockFive
             _bgT += dt;
             if (_bgStage == BadgerStage.PostOpen)
             {
-                if (_bgT >= BadgerOpening.PostSeconds) BeginBadgerFight();
+                if (_bgT >= BadgerOpening.PostSeconds)
+                {
+                    if (BadgerCopy.NeedsLesson(_bgAppearance)) BeginBadgerLesson();
+                    else BeginBadgerFight();
+                }
+                return;
+            }
+            if (_bgStage == BadgerStage.Lesson)
+            {
+                // Pose + advance run from DrawBadgerPage / CoachPlace. Clock only holds the stage.
                 return;
             }
             if (_bgFight == null) return;
@@ -192,7 +222,7 @@ namespace FlockFive
                     _bgBossAt = Time.unscaledTime;
                     _bgT = 0f;
                     _bgStage = BadgerStage.YourPick;
-                    _bgLine = "Your pick. Tap a power-up first if you want one.";
+                    _bgLine = BadgerCopy.YourPick;
                     Sfx.CardBump();
                     break;
                 case BadgerStage.Reveal:
@@ -243,23 +273,12 @@ namespace FlockFive
             _bgT = 0f;
             _bgShownPlayer = _bgFight != null ? Mathf.Min(_bgFight.PlayerScore, _bgFight.PlayerTarget) : 0;
             _bgShownBoss = _bgFight != null ? Mathf.Min(_bgFight.BossScore, _bgFight.BadgerTarget) : 0;
-            _bgLine = won ? "You win! The badger grumbles off." : "The badger wins this one. Try again.";
+            _bgLine = BadgerCopy.EndLine(won ? BadgerResult.PlayerWon : BadgerResult.BadgerWon);
             if (won) SfxLibrary.Play("fanfare", 0.40f);
             else Sfx.Deny();
         }
 
-        static string BadgerVerdict(BadgerRound r)
-        {
-            if (BadgerFight.IsBlock(r.Power))
-            {
-                string name = r.Power == BadgerPower.HotSauce ? "Hot sauce!" : "Freeze spray!";
-                return name + " The badger gets nothing. You take " + r.PlayerGained + ".";
-            }
-            if (r.PlayerGained > 0)
-                return r.Power == BadgerPower.None ? "You take " + r.PlayerGained + "." : "Boosted! You take " + r.PlayerGained + ".";
-            if (r.BossGained > 0) return "Badger takes " + r.BossGained + ".";
-            return "Tie. Nobody scores.";
-        }
+        static string BadgerVerdict(BadgerRound r) => BadgerCopy.VerdictLine(r);
 
         static string BadgerPowerName(BadgerPower p)
         {
@@ -268,6 +287,25 @@ namespace FlockFive
             if (p == BadgerPower.HotSauce) return "Hot Sauce";
             if (p == BadgerPower.FreezeSpray) return "Freeze Spray";
             return "";
+        }
+
+        // Shared PriceFor / PriceLabel so FREE and the spend path stay in sync.
+        void RefreshBadgerPrices()
+        {
+            int n = _bgAppearance < 1 ? 1 : _bgAppearance;
+            for (int p = 1; p < _bgPrice.Length; p++)
+            {
+                var power = (BadgerPower)p;
+                bool free = BadgerSave.IsTutorialFirstUse(power, n);
+                _bgPrice[p] = BadgerSchedule.PriceLabel(power, n, free);
+            }
+        }
+
+        string BadgerPowerPriceSub(BadgerPower p)
+        {
+            int n = _bgAppearance < 1 ? 1 : _bgAppearance;
+            bool free = BadgerSave.IsTutorialFirstUse(p, n);
+            return BadgerSchedule.PriceLabel(p, n, free);
         }
 
         void BadgerShakeNow(int key)
@@ -289,14 +327,14 @@ namespace FlockFive
             if (_bgArmed == p)
             {
                 _bgArmed = BadgerPower.None;
-                _bgLine = "Your pick. Tap a power-up first if you want one.";
+                _bgLine = BadgerCopy.YourPick;
                 return;
             }
             if (!_bgFight.PowerReady(p)) return;
             if (!_bgFight.CanAfford(p))
             {
                 BadgerShakeNow(BadgerPowerKey + (int)p);
-                _bgLine = "Not enough coins for that one.";
+                _bgLine = BadgerCopy.CoinsShort;
                 return;
             }
             _bgArmed = p;
@@ -313,7 +351,7 @@ namespace FlockFive
             if (!_bgFight.PlayerPlay(i, _bgArmed))
             {
                 BadgerShakeNow(i);
-                _bgLine = "Not enough coins for that one.";
+                _bgLine = BadgerCopy.CoinsShort;
                 return;
             }
             _bgPlayerIx = i;
@@ -325,7 +363,107 @@ namespace FlockFive
             Sfx.CardBump();
         }
 
+        // ---- first-fight lesson (shared FitCaptionBox + glove) ----
+
+        void BeginBadgerLesson()
+        {
+            _bgLessonLive = true;
+            _bgLessonStep = 0;
+            _bgStage = BadgerStage.Lesson;
+            _bgT = 0f;
+            _bgLine = "";
+            RefreshBadgerLessonAim();
+            _gloveReady = false;
+            _gloveVis = false;
+            _coachFade = 0f;
+            GloveVeilReset();
+        }
+
+        void EndBadgerLesson()
+        {
+            if (!_bgLessonLive && _bgStage != BadgerStage.Lesson) return;
+            _bgLessonLive = false;
+            _bgLessonStep = 0;
+            _bgLessonAim = default;
+            _bgLessonCap = default;
+            _gloveVis = false;
+            _gloveReady = false;
+            _coachFade = 0f;
+            GloveVeilReset();
+        }
+
+        void AdvanceBadgerLesson()
+        {
+            if (!_bgLessonLive) return;
+            _bgLessonStep++;
+            _gloveReady = false;
+            _gloveVis = false;
+            GloveVeilReset();
+            _coachFade = 0f;
+            if (_bgLessonStep < BadgerCopy.LessonCount)
+            {
+                RefreshBadgerLessonAim();
+                return;
+            }
+            BadgerCopy.MarkCoach();
+            EndBadgerLesson();
+            BeginBadgerFight();
+        }
+
+        void RefreshBadgerLessonAim()
+        {
+            var L = BadgerLayout();
+            if (_bgLessonStep <= 0) _bgLessonAim = L.PlayerGrid;
+            else if (_bgLessonStep == 1) _bgLessonAim = L.Power;
+            else _bgLessonAim = L.ColL;
+        }
+
+        // Called from CoachPlace while the lesson is live. Aims the shared glove at the
+        // step's control; a valid tap fades the hand and advances the step.
+        void PlaceBadgerLessonGlove(float dt, float s)
+        {
+            if (!_bgLessonLive || _bgStage != BadgerStage.Lesson) return;
+            var aim = _bgLessonAim;
+            if (aim.width < 2f || aim.height < 2f) return;
+            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            // Pose the shared glove. Its return is the demo poke beat, not a player tap.
+            CoachGloveAt(GloveTarget(aim), dt, s, float.NaN, false, float.NaN, aim);
+            // Advance only on a real tap of the demonstrated control (glove fades via NoteGloveTap).
+            if (BadgerLessonTapNow(aim))
+                AdvanceBadgerLesson();
+        }
+
+        bool BadgerLessonTapNow(Rect aim)
+        {
+            if (!Pressed(out var screen)) return false;
+            var gui = new Vector2(screen.x, Screen.height - screen.y);
+            return aim.Contains(gui);
+        }
+
+        void DrawBadgerLesson(BadgerRects L)
+        {
+            if (!_bgLessonLive || _bgStage != BadgerStage.Lesson) return;
+            float s = L.S;
+            string line = BadgerCopy.LessonAt(_bgLessonStep);
+            if (string.IsNullOrEmpty(line)) return;
+            // Cache the glove target for CoachPlace this frame.
+            if (_bgLessonStep == 0) _bgLessonAim = L.PlayerGrid;
+            else if (_bgLessonStep == 1) _bgLessonAim = L.Power;
+            else _bgLessonAim = L.ColL;
+            float maxW = Mathf.Min(L.Caption.width, Screen.width * 0.86f);
+            if (maxW < 8f) maxW = 8f;
+            var fit = FitCaptionBox(line, maxW, Mathf.Max(18, Mathf.RoundToInt(34f * s)), 14);
+            float x = L.Caption.center.x - fit.width * 0.5f;
+            float y = L.Caption.y + (L.Caption.height - fit.height) * 0.5f;
+            if (x < 4f) x = 4f;
+            if (x + fit.width > Screen.width - 4f) x = Screen.width - 4f - fit.width;
+            _bgLessonCap = new Rect(x, y, fit.width, fit.height);
+            DrawSplashIntroLine(line, _bgLessonCap, s, Mathf.Max(18, Mathf.RoundToInt(34f * s)), pin: true);
+            DrawTutorOverlay(s);
+        }
+
         // ---- layout ----
+
 
         struct BadgerRects
         {
@@ -597,8 +735,9 @@ namespace FlockFive
             float s = L.S;
             DrawHomeWash(0.58f);
 
-            // Opening and PostOpen are not skippable: the medal paints but does not take a tap.
-            if (_bgStage == BadgerStage.Opening || _bgStage == BadgerStage.PostOpen) PaintBackMedal(L.Back, false);
+            // Opening, PostOpen, and the lesson are not skippable via the medal.
+            if (_bgStage == BadgerStage.Opening || _bgStage == BadgerStage.PostOpen || _bgStage == BadgerStage.Lesson)
+                PaintBackMedal(L.Back, false);
             else if (DrawBackMedal(L.Back))
             {
                 LeaveBadger();
@@ -643,9 +782,10 @@ namespace FlockFive
 
             DrawBadgerArena(L, bossHex, youHex);
             DrawBadgerOpeningCast(L, youHex);
-            DrawBadgerPowers(L, true);
+            DrawBadgerPowers(L, _bgStage != BadgerStage.Lesson);
             DrawBadgerCaption(L);
-            if (tapped >= 0) ClickBadgerTile(tapped);
+            DrawBadgerLesson(L);
+            if (tapped >= 0 && _bgStage != BadgerStage.Lesson) ClickBadgerTile(tapped);
 
             if (_bgWashOut > 0f) DrawBadgerWash(_bgWashOut / BadgerLeap.WashOutSeconds);
         }
@@ -698,16 +838,34 @@ namespace FlockFive
                 }
             }
 
+            // Round beats: shrug on a player win, honey splat on a theft (boss honey >= 4).
+            if (_bgResolved && (_bgStage == BadgerStage.Verdict || _bgStage == BadgerStage.Over))
+                DrawBadgerRoundBeat(L);
+
             if (_bgStage != BadgerStage.Over) return;
             var btn = new Rect(L.Arena.center.x - Mathf.Min(L.Arena.width * 0.34f, 300f * s),
                 L.Arena.y + L.Arena.height * 0.08f,
                 Mathf.Min(L.Arena.width * 0.68f, 600f * s), L.Arena.height * 0.84f);
             if (BadgerButton(btn, "Continue", null, true, false, false, true, Color.white, 0f))
-            {
-                // TODO(Phase 5): win -> BadgerSave.Clear(), pay the cleared level's reward,
-                // Hive.TakeVisitor(). Loss -> flag stays. Phase 3 just goes home.
                 LeaveBadger();
+        }
+
+        void DrawBadgerRoundBeat(BadgerRects L)
+        {
+            if (!GuiPaint()) return;
+            if (BadgerCopy.ShowShrug(_bgRound))
+            {
+                float unit = L.Arena.height * 1.20f / 654f;
+                var foot = new Vector2(L.Arena.center.x + L.Arena.width * 0.28f, L.Arena.yMax);
+                DrawBadgerArt("badger_shrug", foot, unit, 1f);
             }
+            if (!BadgerCopy.ShowTheftSplat(_bgRound)) return;
+            // Comic honey splat over the player score column (theft), not a wound.
+            float su = L.ColL.width * 2.4f / 775f;
+            if (su < 0.01f) su = L.S * 0.12f;
+            float sh = BadgerArtHeight("honey_splat", su);
+            var foot2 = new Vector2(L.ColL.center.x, L.ColL.y + L.ColL.height * 0.35f + sh * 0.5f);
+            DrawBadgerArt("honey_splat", foot2, su, 0.92f);
         }
 
         void DrawBadgerWinGlow(Rect r)
@@ -749,7 +907,7 @@ namespace FlockFive
                 bool used = _bgFight != null && !_bgFight.PowerReady(p);
                 bool inPick = _bgStage == BadgerStage.YourPick;
                 bool lit = _bgArmed == p && (inPick || _bgStage == BadgerStage.Reveal || _bgStage == BadgerStage.Verdict);
-                string sub = used ? "USED" : _bgPrice[(int)p];
+                string sub = used ? "USED" : BadgerPowerPriceSub(p);
                 Color ink = p == BadgerPower.HotSauce ? new Color(1f, 0.55f, 0.35f)
                     : p == BadgerPower.FreezeSpray ? new Color(0.45f, 0.85f, 1f)
                     : Color.white;

@@ -25,13 +25,12 @@ namespace FlockFive
         public const int PlayerTargetCap = 18;
         public const int BadgerTargetFixed = 18;
 
-        // KILL SWITCH. Phases 3-5 (loadout, fight, rewards) are not built, so a set
-        // flag would lock the player out of the next garden with no fight to play.
-        // While false: no flag is written, BadgerSave.Pending reads 0, and the
-        // inspect-back honey chip stays hidden. Flip to true when Phases 3-5 ship.
+        // Kill switch. Phase 5 (rewards, lesson, lose/retry) is wired, so the
+        // contest is safe to play. While false: no flag is written, BadgerSave.Pending
+        // reads 0, and the inspect-back honey chip stays hidden.
         // A property (not const) so editor tests can cover both states; only
         // tests use the setter.
-        public static bool Enabled { get; set; } = false;
+        public static bool Enabled { get; set; } = true;
 
         // Counts of honey 2, 3, 4, 5 (fourteen tiles). Two 1s are added on top.
         // Every row rises: more 3s than 2s, more 4s than 3s, more 5s than 4s.
@@ -102,6 +101,23 @@ namespace FlockFive
             long price = basePrice + 50L * (n - 1);
             if (price > int.MaxValue) return int.MaxValue;
             return (int)price;
+        }
+
+        // Shared price helper. Tutorial first-use is free (0); otherwise PowerUpPrice.
+        // Callers pass isTutorialFirstUse from BadgerSave so button labels and TryPower agree.
+        public static int PriceFor(BadgerPower power, int appearance, bool isTutorialFirstUse)
+        {
+            if (BasePrice(power) <= 0) return 0;
+            if (isTutorialFirstUse) return 0;
+            return PowerUpPrice(power, appearance);
+        }
+
+        // Button sub-label. "FREE" while the shared helper returns a tutorial free price.
+        public static string PriceLabel(BadgerPower power, int appearance, bool isTutorialFirstUse)
+        {
+            if (BasePrice(power) <= 0) return "";
+            if (isTutorialFirstUse) return "FREE";
+            return Money.Format(PowerUpPrice(power, appearance));
         }
 
         // Sixteen honey values. Same appearance and seed always return the same order.

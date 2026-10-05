@@ -61,6 +61,8 @@ namespace FlockFive.Editor
 
             Purse.Boot();
             int keep = Purse.Coins;
+            // Burn tutorial freebies so existing appearance-1 spend checks stay on normal prices.
+            BadgerSave.ExhaustTutorialFreeForTest();
             try
             {
                 CheckDue(Check);
@@ -88,6 +90,12 @@ namespace FlockFive.Editor
                 CheckLoadoutSwap(Check);
                 CheckPowerPlay(Check);
                 CheckScriptedFight(Check);
+                CheckClearReward(Check);
+                CheckPayPlan(Check);
+                CheckCoachOnce(Check);
+                CheckEnabledPlayable(Check);
+                CheckZeroCoinNoSoftLock(Check);
+                CheckTutorialFreeFirstUse(Check);
             }
             finally
             {
@@ -926,6 +934,182 @@ namespace FlockFive.Editor
             for (int i = 0; i < left.Length; i++)
                 if (left[i] != right[i]) return false;
             return true;
+        }
+
+
+        static void CheckClearReward(System.Action<string, bool, string> Check)
+        {
+            bool table = Purse.ClearRewardFor(15) == Purse.StageBase(15)
+                && Purse.ClearRewardFor(20) == Purse.StageBase(20)
+                && Purse.ClearRewardFor(1) == Purse.StageBase(1)
+                && Purse.ClearRewardFor(0) == Purse.StageBase(0);
+            bool rise = Purse.ClearRewardFor(20) > Purse.ClearRewardFor(15);
+            Check("clear-reward", table && rise, "ClearRewardFor matches StageBase; rises with display");
+        }
+
+        static void CheckPayPlan(System.Action<string, bool, string> Check)
+        {
+            bool keepOn = BadgerSchedule.Enabled;
+            int keepFlag = BadgerSave.PendingFor(true);
+            int keepCoins = Purse.Coins;
+            try
+            {
+                BadgerSchedule.Enabled = true;
+                BadgerSave.Clear();
+                BadgerSave.Set(15, true);
+                var win = BadgerPay.Plan(BadgerResult.PlayerWon, 15);
+                bool winOk = win.Won && win.ClearFlag && win.TakeVisitor
+                    && win.Credit == Purse.ClearRewardFor(15)
+                    && win.Line == BadgerCopy.Win;
+                var lose = BadgerPay.Plan(BadgerResult.BadgerWon, 15);
+                bool loseOk = !lose.Won && !lose.ClearFlag && !lose.TakeVisitor
+                    && lose.Credit == 0 && lose.Line == BadgerCopy.Lose;
+                var quit = BadgerPay.Plan(BadgerResult.Playing, 15);
+                bool quitOk = !quit.Won && !quit.ClearFlag && quit.Credit == 0;
+
+                // Apply win: Clear + Credit (TakeVisitor needs a warm Hive; credit/flag are the pure checks here).
+                int before = Purse.Coins;
+                BadgerSave.Set(15, true);
+                var paid = BadgerPay.Plan(BadgerResult.PlayerWon, 15);
+                // Skip TakeVisitor in this unit check by clearing that flag on a copy path:
+                // Apply always takes a visitor on win; count coins and pending instead.
+                int visitorsBefore = Hive.Found;
+                BadgerPay.Apply(paid);
+                bool applied = BadgerSave.PendingFor(true) == 0
+                    && Purse.Coins == before + Purse.ClearRewardFor(15)
+                    && Hive.Found >= visitorsBefore;
+
+                BadgerSave.Set(20, true);
+                BadgerPay.Apply(BadgerPay.Plan(BadgerResult.BadgerWon, 20));
+                bool left = BadgerSave.PendingFor(true) == 20;
+
+                Check("pay-plan", winOk && loseOk && quitOk && applied && left,
+                    "win clears+credits+visitor; lose/quit leave Pending");
+            }
+            finally
+            {
+                BadgerSchedule.Enabled = keepOn;
+                if (keepFlag > 0) BadgerSave.Set(keepFlag, true);
+                else BadgerSave.Clear();
+                SetCoins(keepCoins);
+            }
+        }
+
+        static void CheckCoachOnce(System.Action<string, bool, string> Check)
+        {
+            bool had = BadgerCopy.CoachDone();
+            try
+            {
+                BadgerCopy.ClearCoachForTest();
+                bool need = BadgerCopy.NeedsLesson(1) && !BadgerCopy.NeedsLesson(2);
+                bool lines = BadgerCopy.LessonCount == 3
+                    && BadgerCopy.LessonAt(0).Contains("honeycomb")
+                    && BadgerCopy.LessonAt(1).Contains("Freeze Spray")
+                    && BadgerCopy.LessonAt(2).Contains("don't care");
+                bool open1 = BadgerCopy.OpeningLine(1, true) == ""
+                    && BadgerCopy.OpeningLine(2, false) == BadgerCopy.OpenLater;
+                BadgerCopy.MarkCoach();
+                bool once = BadgerCopy.CoachDone() && !BadgerCopy.NeedsLesson(1);
+                BadgerCopy.MarkCoach();
+                bool still = BadgerCopy.CoachDone();
+                Check("coach-once", need && lines && open1 && once && still,
+                    "lesson 3 lines once on appearance 1; opening empty while pending");
+            }
+            finally
+            {
+                if (had) BadgerCopy.MarkCoach();
+                else BadgerCopy.ClearCoachForTest();
+            }
+        }
+
+        static void CheckEnabledPlayable(System.Action<string, bool, string> Check)
+        {
+            bool on = BadgerSchedule.Enabled;
+            bool due = BadgerSchedule.ShouldFlag(15, true) && !BadgerSchedule.ShouldFlag(16, true);
+            bool targets = BadgerSchedule.PlayerTarget(1) == 10 && BadgerSchedule.BadgerTarget(1) == 18;
+            Check("enabled-on", on && due && targets,
+                "Enabled true; Due after 15 then every 5; targets unchanged");
+        }
+
+        static void CheckZeroCoinNoSoftLock(System.Action<string, bool, string> Check)
+        {
+            int keep = Purse.Coins;
+            try
+            {
+                SetCoins(0);
+                var fight = new BadgerFight(1, 7, Fill(16, 3), Fill(16, 2));
+                bool ready = fight.Result == BadgerResult.Playing;
+                bool boss = fight.BossPick() >= 0;
+                // Honey tiles need no purchase: a plain pick at 0 coins works.
+                int ix = -1;
+                for (int i = 0; i < fight.PlayerCount; i++)
+                    if (fight.PlayerOpen(i)) { ix = i; break; }
+                bool play = boss && ix >= 0 && fight.PlayerPlay(ix, BadgerPower.None);
+                BadgerRound round;
+                bool resolved = play && fight.Resolve(out round);
+                bool blocked = !fight.CanAfford(BadgerPower.HotSauce)
+                    && !fight.CanAfford(BadgerPower.FreezeSpray);
+                Check("zero-coin", ready && resolved && blocked,
+                    "0 coins: honey pick still plays; power-ups unaffordable, not a soft lock");
+            }
+            finally { SetCoins(keep); }
+        }
+
+        static void CheckTutorialFreeFirstUse(System.Action<string, bool, string> Check)
+        {
+            BadgerSave.ClearTutorialFreeForTest();
+            try
+            {
+                // Shared helper: FREE on tutorial first use, normal otherwise.
+                bool label = BadgerSchedule.PriceLabel(BadgerPower.HotSauce, 1, true) == "FREE"
+                    && BadgerSchedule.PriceFor(BadgerPower.HotSauce, 1, true) == 0
+                    && BadgerSchedule.PriceFor(BadgerPower.HotSauce, 1, false) == 300
+                    && BadgerSchedule.PriceFor(BadgerPower.FreezeSpray, 1, true) == 0
+                    && BadgerSchedule.PriceFor(BadgerPower.X2, 1, true) == 0
+                    && BadgerSchedule.PriceFor(BadgerPower.X3, 1, true) == 0
+                    && BadgerSchedule.PriceLabel(BadgerPower.X2, 2, false) != "FREE";
+
+                SetCoins(0);
+                var fight = new BadgerFight(1, 11, Fill(16, 3), Fill(16, 2));
+                bool freeReady = fight.PriceOf(BadgerPower.HotSauce) == 0
+                    && fight.CanAfford(BadgerPower.HotSauce)
+                    && fight.CanAfford(BadgerPower.FreezeSpray)
+                    && fight.CanAfford(BadgerPower.X2)
+                    && fight.CanAfford(BadgerPower.X3);
+                fight.BossPick();
+                bool bought = fight.PlayerPlay(0, BadgerPower.HotSauce) && Purse.Coins == 0;
+                BadgerRound round;
+                bool resolved = bought && fight.Resolve(out round) && round.Power == BadgerPower.HotSauce;
+                bool claimed = BadgerSave.TutorialFreeClaimed(BadgerPower.HotSauce)
+                    && !BadgerSave.IsTutorialFirstUse(BadgerPower.HotSauce, 1)
+                    && BadgerSave.IsTutorialFirstUse(BadgerPower.FreezeSpray, 1);
+
+                // Retry mid-tutorial (new fight, same appearance): Hot Sauce now costs; Freeze still free.
+                SetCoins(0);
+                var retry = new BadgerFight(1, 12, Fill(16, 3), Fill(16, 2));
+                bool retrySauce = retry.PriceOf(BadgerPower.HotSauce) == 300
+                    && !retry.CanAfford(BadgerPower.HotSauce);
+                bool retryFreeze = retry.PriceOf(BadgerPower.FreezeSpray) == 0
+                    && retry.CanAfford(BadgerPower.FreezeSpray);
+                retry.BossPick();
+                SetCoins(300);
+                bool paySauce = retry.PlayerPlay(0, BadgerPower.HotSauce) && Purse.Coins == 0;
+                BadgerRound r2;
+                bool payOk = paySauce && retry.Resolve(out r2);
+
+                // Appearance 2 never gets the freebie even with a clear mask for other powers.
+                SetCoins(0);
+                var later = new BadgerFight(2, 13, Fill(16, 3), Fill(16, 2));
+                bool laterPaid = later.PriceOf(BadgerPower.X2) == 150 && !later.CanAfford(BadgerPower.X2);
+
+                Check("tutorial-free", label && freeReady && resolved && claimed
+                    && retrySauce && retryFreeze && payOk && laterPaid,
+                    "first-fight tutorial: each power FREE once via PriceFor; retry keeps claim; appearance 2 paid");
+            }
+            finally
+            {
+                BadgerSave.ExhaustTutorialFreeForTest();
+            }
         }
 
         static void SetCoins(int n)

@@ -3,9 +3,9 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Honey badger contest, Phase 4: the leap toward camera, the hive swipe and bee fill,
-    // the takeoff sting, and the splash sitter. Timing and rules live in BadgerShow.cs
-    // (BadgerLeap, BadgerOpening, BadgerSitter); this file draws them and hooks them in.
+    // Honey badger contest, Phase 4-5: the leap toward camera, the hive swipe and bee fill,
+    // the takeoff sting, the splash sitter, and the Phase 5 opening lines. Timing and rules
+    // live in BadgerShow.cs (BadgerLeap, BadgerOpening, BadgerSitter); lines in BadgerCopy.
     // Everything here is behind BadgerSchedule.Enabled: with the switch off the flag reads
     // 0, so no leap starts, no sitter draws, and the flower always loads the next garden.
     //
@@ -13,7 +13,7 @@ namespace FlockFive
     // (the one opening clock), BadgerTilePlate (the one player-grid tile path: the opening's
     // landing frame and the live grid), DrawBadgerArt (every badger, hive, bee, and splat
     // frame, through DrawSprite), SfxLibrary.Badger ("badger" clip + MixDesk lead mark),
-    // Sfx.CardBump and the "tick" clip, PlayClock, BadgerSave, and the TutorialHeal gate length.
+    // Sfx.CardBump and the "tick" clip, PlayClock, BadgerSave, BadgerCopy, TutorialHeal.
     public sealed partial class FlockFiveApp
     {
         readonly BadgerLeapRun _bgLeap = new BadgerLeapRun();
@@ -89,6 +89,7 @@ namespace FlockFive
         bool BadgerShowHoldsTaps()
         {
             if (_bgLeap.Live) return true;
+            // Lesson is not held here: the shared glove must receive its valid tap.
             return _splash && _home == HomeFace.Badger
                 && (_bgStage == BadgerStage.Opening || _bgStage == BadgerStage.PostOpen);
         }
@@ -194,6 +195,13 @@ namespace FlockFive
         // pause, resume, focus, and every-few-frames schedule as every tutorial check.
         void HealBadgerShow()
         {
+            if (_bgLessonLive && !(_splash && _home == HomeFace.Badger))
+            {
+                AdLog.Add("badger heal: lesson dropped");
+                EndBadgerLesson();
+                if (_bgFight == null && _bgStage == BadgerStage.Lesson)
+                    BeginBadgerFight();
+            }
             if (!BadgerLeap.Stuck(_bgLeap.Live, PlayClock.Now - _bgLeap.StartedAt)) return;
             AdLog.Add("badger heal: leap dropped");
             _bgLeap.Release();
@@ -217,8 +225,6 @@ namespace FlockFive
             else _bgWashOut = 0f;
         }
 
-        const string BadgerOpenLine = "The badger swatted the hive. Your bees took their tiles!";
-
         void StepBadgerOpening(float dt)
         {
             if (_bgWashOut > 0f)
@@ -239,7 +245,8 @@ namespace FlockFive
             if (_bgOpenT < BadgerOpening.Duration) return;
             _bgT = 0f;
             _bgStage = BadgerStage.PostOpen;
-            _bgLine = BadgerOpenLine;
+            // Appearance 1 with the lesson pending: lesson owns the box (no opening line).
+            _bgLine = BadgerCopy.OpeningLine(_bgAppearance, BadgerCopy.NeedsLesson(_bgAppearance));
         }
 
         // 0 = empty cell, 0..1 flipping, 1 = final face. Outside the opening every tile is final.
