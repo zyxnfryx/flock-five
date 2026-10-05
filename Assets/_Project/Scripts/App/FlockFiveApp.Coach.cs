@@ -3794,6 +3794,7 @@ namespace FlockFive
         void HealInterruptedTutorials()
         {
             float now = PlayClock.Now;
+            HealBadgerShow();
             var snap = new TutorSnapshot
             {
                 Splash = _splash,

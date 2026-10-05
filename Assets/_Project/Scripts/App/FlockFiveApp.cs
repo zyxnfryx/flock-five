@@ -3547,6 +3547,22 @@ namespace FlockFive
                 yield break;
             }
             ArmAvatarCross();
+            // Badger owed (flag set above): the leap plays over the live garden, then the
+            // contest opens instead of the plain splash. Reads 0 while the switch is off.
+            int owed = BadgerSave.Pending;
+            if (owed > 0)
+            {
+                yield return BadgerClearLeap();
+                if (_restarting || _splash)
+                {
+                    _bgLeap.Release();
+                    _gardenScoring = false;
+                    yield break;
+                }
+                ShowSplash();
+                if (!OpenBadgerFight(owed)) _bgLeap.Release();
+                yield break;
+            }
             ShowSplash();
         }
 
@@ -4830,6 +4846,7 @@ namespace FlockFive
         void OnGUI()
         {
             SwallowResumePointer();
+            SwallowBadgerShowPointer();
             if (GamePause.Paused)
             {
                 // Card-flip tutor keeps running through a pause. An ad hides it so the
@@ -4857,11 +4874,13 @@ namespace FlockFive
                 else if (_home == HomeFace.Poker) DrawPokerPage();
                 else if (_home == HomeFace.Badger) DrawBadgerPage();
                 else DrawSplash();
+                DrawBadgerLeap();
                 return;
             }
             if (_clearReward)
             {
                 DrawClearReward();
+                DrawBadgerLeap();
                 return;
             }
             DismissStreakSign();
@@ -4903,6 +4922,7 @@ namespace FlockFive
             DrawCoach(s, top);
             if (_gift != GiftFace.None) DrawGiftOffer(s);
             if (_restartAsk != RestartAsk.None) DrawRestartAsk(s);
+            DrawBadgerLeap();
         }
 
         // Original splash hive size — pig matches this, then both bump together.
@@ -7958,8 +7978,12 @@ namespace FlockFive
             // Owed bird lesson keeps LEVEL from starting under the breath or the greet.
             if (DrawFlowerPlay(s, ease, number, acceptTap: !modal && !AdoptHoldsQueue() && HomeTapAllowed(-1)))
             {
-                Sfx.GateGo();
-                Load(next);
+                // Badger owed: the leap, then the contest. The flower never reaches Load.
+                if (!TakeBadgerFlower())
+                {
+                    Sfx.GateGo();
+                    Load(next);
+                }
             }
             DrawHomeAvatar(s);
             if (_adoptLive) DrawAdoptScene(s);
@@ -8005,6 +8029,7 @@ namespace FlockFive
                 if (held) DrawDiscPress(rest, sink);
             }
 
+            DrawBadgerSitter(sink);
             DrawFlowerCaption(rest, sink, ease, number);
             return fired;
         }
@@ -11421,6 +11446,7 @@ namespace FlockFive
         // Native thumb joint on the same canvas as the palm (image 31).
         const float PokerFanPinchU = 0.586f;
         const float PokerFanPinchV = 0.28f;
+        const float PokerDealArmFade = 0.14f; // share of the dealing forearm that fades out
         // fx_hand_thumb.png holds ONLY the thumb (alpha spans U 0.499-0.675, centred on the
         // pinch at U 0.586). The whole canvas is the front layer; never crop it by U, or the
         // right half of the nail and tip are lost and the cards show through there.
@@ -12125,8 +12151,11 @@ namespace FlockFive
         }
 
         // Vertical slice of a sprite. top0/top1 are fractions down from the top of the
-        // letterboxed dest (0 = top, 1 = bottom), matching PokerFanPinchV.
-        static void DrawSpriteBand(Rect dest, Sprite spr, float top0, float top1)
+        // letterboxed dest (0 = top, 1 = bottom), matching PokerFanPinchV. fadeOut (0..1) is the
+        // share of the slice, counted from its bottom, that ramps from opaque to clear in
+        // PokerBandFadeSteps strips, so a cut bottom edge dissolves instead of ending in a hard line.
+        const int PokerBandFadeSteps = 14;
+        static void DrawSpriteBand(Rect dest, Sprite spr, float top0, float top1, float fadeOut = 0f)
         {
             if (spr == null || spr.texture == null) return;
             if (top1 - top0 < 0.01f) return;
@@ -12153,10 +12182,27 @@ namespace FlockFive
             float band = Mathf.Clamp01(top1) - Mathf.Clamp01(top0);
             if (band < 0.01f) return;
             float t0 = Mathf.Clamp01(top0);
-            var slice = new Rect(dest.x, dest.y + dest.height * t0, dest.width, dest.height * band);
             float uvTop = uv.y + uv.height;
-            var sliceUv = new Rect(uv.x, uvTop - uv.height * (t0 + band), uv.width, uv.height * band);
-            GUI.DrawTextureWithTexCoords(slice, tex, sliceUv);
+            float fade = Mathf.Clamp01(fadeOut) * band;
+            float solid = band - fade;
+            if (solid > 0.0001f)
+            {
+                var slice = new Rect(dest.x, dest.y + dest.height * t0, dest.width, dest.height * solid);
+                var sliceUv = new Rect(uv.x, uvTop - uv.height * (t0 + solid), uv.width, uv.height * solid);
+                GUI.DrawTextureWithTexCoords(slice, tex, sliceUv);
+            }
+            if (fade <= 0.0001f) return;
+            var keep = GUI.color;
+            float stepH = fade / PokerBandFadeSteps;
+            for (int k = 0; k < PokerBandFadeSteps; k++)
+            {
+                float y0 = t0 + solid + stepH * k;
+                var slice = new Rect(dest.x, dest.y + dest.height * y0, dest.width, dest.height * stepH + 0.5f);
+                var sliceUv = new Rect(uv.x, uvTop - uv.height * (y0 + stepH), uv.width, uv.height * stepH);
+                GUI.color = new Color(keep.r, keep.g, keep.b, keep.a * (1f - (k + 0.5f) / PokerBandFadeSteps));
+                GUI.DrawTextureWithTexCoords(slice, tex, sliceUv);
+            }
+            GUI.color = keep;
         }
 
         // The one thumb draw. Holding hand and dealing hand both end here, so the thumb is the
@@ -12174,11 +12220,13 @@ namespace FlockFive
         // floating cut on tall phones. The dealing hand glides and flicks across the row, so it
         // keeps the plain palm-and-forearm span (the build 49 look); a tail there stretches into a
         // long arm.
-        static void DrawPokerPalm(Rect dest, bool sleeveTail)
+        // armFade is the share of the forearm, from its cut end up, that dissolves (dealing hand
+        // only; the holding hand has the tail and needs no fade).
+        static void DrawPokerPalm(Rect dest, bool sleeveTail, float armFade = 0f)
         {
             if (sleeveTail)
                 DrawSpriteTail(dest, SpriteCatalog.HandPalm, Screen.height + dest.width * 0.25f + 40f);
-            DrawSpriteBand(dest, SpriteCatalog.HandPalm, PokerFanPinchV, 1f);
+            DrawSpriteBand(dest, SpriteCatalog.HandPalm, PokerFanPinchV, 1f, armFade);
         }
 
         // Continue the sprite past its fitted bottom edge down to toY: its bottom texel row is
@@ -12970,8 +13018,9 @@ namespace FlockFive
             GUI.color = new Color(1f, 1f, 1f, a);
             if (!front)
             {
-                // Palm and forearm only, no sleeve tail: the build 49 dealing hand.
-                DrawPokerPalm(dest, false);
+                // Palm and forearm only, no sleeve tail (the build 49 dealing hand), with the cut
+                // end of the forearm dissolving so the arm doesn't float.
+                DrawPokerPalm(dest, false, PokerDealArmFade);
             }
             else
                 DrawPokerThumb(dest);

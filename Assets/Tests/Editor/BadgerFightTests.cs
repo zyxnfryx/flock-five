@@ -69,6 +69,7 @@ namespace FlockFive.Editor
                 CheckMix(Check);
                 CheckHoney(Check);
                 CheckCompare(Check);
+                CheckBossLeads(Check);
                 CheckTie(Check);
                 CheckBlock(Check);
                 CheckMultiplier(Check);
@@ -314,6 +315,19 @@ namespace FlockFive.Editor
             Check("loadout-album", sized && sorted && legal && suffix, "album tiles are 16, best first, 1s at the end");
         }
 
+
+        // Boss always leads: PlayerPick / PlayerPlay before BossPick change nothing.
+        static void CheckBossLeads(System.Action<string, bool, string> Check)
+        {
+            var fight = new BadgerFight(1, 9, Fill(16, 4), Fill(16, 2));
+            bool blocked = !fight.PlayerPick(0) && !fight.PlayerPlay(0, BadgerPower.None)
+                && fight.PlayerOpen(0) && fight.PlayerLeft == 16 && fight.BossLeft == 16
+                && fight.Result == BadgerResult.Playing;
+            int boss = fight.BossPick();
+            bool after = boss >= 0 && fight.PlayerPick(0) && !fight.BossOpen(boss) && !fight.PlayerOpen(0);
+            Check("boss leads", blocked && after, "player cannot pick first; boss pick unlocks the player");
+        }
+
         static void CheckCompare(System.Action<string, bool, string> Check)
         {
             int playerFinal;
@@ -333,7 +347,7 @@ namespace FlockFive.Editor
                 && round.PlayerGained == 4 && round.BossGained == 0
                 && fight.PlayerScore == 4 && fight.BossScore == 0
                 && !fight.BossOpen(round.BossIndex) && !fight.PlayerOpen(round.PlayerIndex);
-            Check("compare", math && scored, "higher honey scores that honey");
+            Check("compare", math && scored, "higher honey scores that honey; early player pick blocked");
         }
 
         static void CheckTie(System.Action<string, bool, string> Check)

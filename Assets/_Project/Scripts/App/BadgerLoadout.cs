@@ -29,9 +29,10 @@ namespace FlockFive
         }
     }
 
-    // The player's grid before a fight: preloaded with the best owned bees, swappable
-    // one tile at a time, padded with yard honey. Pure: reads counts through a delegate
-    // (Hive in the game, a fake album in tests). Never writes the album.
+    // The player's grid before a fight: preloaded with the best owned bees, padded with
+    // yard honey. Swap helpers remain for tests; the contest screen auto-fills and skips
+    // the swap UI. Pure: reads counts through a delegate (Hive in the game, a fake album
+    // in tests). Never writes the album.
     public sealed class BadgerLoadout
     {
         public delegate int CountOf(int kind, BeeFinish finish);

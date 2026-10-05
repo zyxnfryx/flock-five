@@ -31,6 +31,16 @@ namespace FlockFive
 
         public static void Cowbell() => Play("cowbell", CowbellVolume);
 
+        // Honey badger takeoff. The one "badger" clip plus a lead mark the way
+        // Sfx.CardBump does, so the splash bed ducks under it.
+        public const float BadgerVolume = 0.62f;
+
+        public static void Badger()
+        {
+            Play("badger", BadgerVolume);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.42f, MixDesk.DuckWhoosh);
+        }
+
         public static void Play(string name, float volume = 0.5f, float pitchVariance = 0f)
         {
             if (string.IsNullOrEmpty(name)) return;
@@ -102,6 +112,7 @@ namespace FlockFive
             if (_clips.TryGetValue(name, out clip) && clip != null) return clip;
             if (name == "cowbell") clip = MakeCowbell();
             else if (name == "fanfare") clip = MakeFanfare();
+            else if (name == "badger") clip = MakeBadger();
             else if (name == "tick") clip = MakeTick();
             else if (name == "sting") clip = MakeSting();
             else return null;
@@ -161,6 +172,41 @@ namespace FlockFive
                 data[i] = s * env * 0.40f;
             }
             return Bake("fanfare", data, 0.18f);
+        }
+
+        // Honey badger takeoff sting. Original, procedural, one shot, about 0.4 s:
+        // two low notes stepping down a fourth (G2 then D2), round and comic, no
+        // growl. Plays through Play() so mute and Sfx.PlayProc apply.
+        static AudioClip MakeBadger()
+        {
+            const float dur = 0.42f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float[] freq = { 98.00f, 73.42f };
+            float[] start = { 0f, 0.15f };
+            float[] gain = { 0.85f, 1f };
+            for (int k = 0; k < freq.Length; k++)
+            {
+                int i0 = Mathf.RoundToInt(start[k] * Rate);
+                float f = freq[k];
+                for (int i = i0; i < n; i++)
+                {
+                    float t = (i - i0) / (float)Rate;
+                    float u = t / 0.012f;
+                    float atk = u >= 1f ? 1f : u * u * (3f - 2f * u);
+                    float env = atk * Mathf.Exp(-t * 7.5f);
+                    float w = 2f * Mathf.PI * f * t;
+                    float tone = Mathf.Sin(w)
+                        + 0.42f * Mathf.Sin(2f * w) * Mathf.Exp(-t * 9f)
+                        + 0.16f * Mathf.Sin(3f * w) * Mathf.Exp(-t * 14f);
+                    data[i] += tone * env * gain[k];
+                }
+            }
+            int tail = Mathf.RoundToInt(0.04f * Rate);
+            for (int i = 0; i < tail && i < n; i++)
+                data[n - 1 - i] *= i / (float)tail;
+            PeakUnder(data, 0.80f);
+            return Bake("badger", data, 0.35f);
         }
 
         static AudioClip MakeTick()

@@ -1,21 +1,22 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace FlockFive
 {
-    // Honey badger contest, Phase 3: loadout and contest screen (IMGUI).
+    // Honey badger contest, Phase 3+4: contest screen (IMGUI). Phase 4 (the opening hive
+    // swipe and bee fill, the leap, the sitter) lives in FlockFiveApp.BadgerShow.cs.
     // Reached only through OpenBadgerFight, which obeys the BadgerSchedule.Enabled kill
-    // switch. Nothing in the real flower or flag flow calls it yet (Phases 4 and 5).
+    // switch. After the opening, a short PostOpen pause, then the badger picks first every
+    // turn. No bee-swap screen and no FIGHT gate: auto-fill still uses BadgerLoadout.Preload.
     // Mild and cartoonish: a knock is a honey splat and a comic bump, never a wound.
     //
-    // Shared pieces: BadgerLoadout (deal and swap), BadgerFight (rules), BadgerSchedule
-    // (targets, prices, boss mix), Hive.HoneyOfFinish (every honey number),
+    // Shared pieces: BadgerLoadout (auto-fill), BadgerFight (rules; boss always leads),
+    // BadgerSchedule (targets, prices, boss mix), Hive.HoneyOfFinish (every honey number),
     // CardText.DrawHoneyDigit, AlbumWood/AlbumFace (the album plate colors), DrawBadgerTile
-    // (the one honeycomb tile: grids, arena, picker), BadgerButton (FIGHT, power-ups,
-    // picker controls, Continue), Purse.TrySpend (inside BadgerFight), Sfx.CardBump/Deny.
+    // (the one honeycomb tile: grids, arena), BadgerButton (power-ups, Continue),
+    // Purse.TrySpend (inside BadgerFight), Sfx.CardBump/Deny.
     public sealed partial class FlockFiveApp
     {
-        enum BadgerStage { Loadout, Picker, BossWait, YourPick, Reveal, Verdict, Over }
+        enum BadgerStage { PostOpen, BossWait, YourPick, Reveal, Verdict, Over, Opening }
         enum BadgerLook { Face, Down, Spent }
 
         const float BadgerBossWait = 0.75f;
@@ -24,7 +25,6 @@ namespace FlockFive
         const float BadgerVerdictHold = 1.20f;
         const float BadgerDotStep = 0.11f;
         const float BadgerShake = 0.35f;
-        const int BadgerPickPage = 12;
         const int BadgerPowerKey = 100;
 
         BadgerStage _bgStage;
@@ -43,14 +43,11 @@ namespace FlockFive
         bool _bgResolved;
         int _bgShownPlayer;
         int _bgShownBoss;
-        int _bgPickSlot = -1;
-        int _bgPickPage;
         int _bgShakeKey = -1;
         float _bgShakeT;
         string _bgLine = "";
         string _bgNeedLine = "";
         readonly string[] _bgPrice = new string[5];
-        readonly List<BadgerTile> _bgOptions = new List<BadgerTile>(64);
         static GUIStyle _bgStyle;
         static GUIStyle _bgWrap;
         static Texture2D _bgHex;
@@ -78,7 +75,7 @@ namespace FlockFive
             _bgSeed = Random.Range(1, int.MaxValue);
             _bgLoadout = BadgerLoadout.Preload(BadgerSchedule.Tiles);
             _bgFight = null;
-            _bgStage = BadgerStage.Loadout;
+            _bgStage = BadgerStage.Opening;
             _bgT = 0f;
             _bgDotT = 0f;
             _bgBossIx = -1;
@@ -87,15 +84,16 @@ namespace FlockFive
             _bgResolved = false;
             _bgShownPlayer = 0;
             _bgShownBoss = 0;
-            _bgPickSlot = -1;
             _bgShakeKey = -1;
             _bgShakeT = 0f;
-            _bgLine = "Tap a tile to swap its bee. Then hit FIGHT.";
+            _bgLine = "";
             _bgNeedLine = "You need " + BadgerSchedule.PlayerTarget(n) + "    Badger needs " + BadgerSchedule.BadgerTarget(n);
             for (int p = 1; p < _bgPrice.Length; p++)
                 _bgPrice[p] = Money.Format(BadgerSchedule.PowerUpPrice((BadgerPower)p, n));
             _splash = true;
             _home = HomeFace.Badger;
+            // Phase 4: hive swipe + bee fill, PostOpen pause, then the badger leads.
+            BeginBadgerOpening();
             return true;
         }
 
@@ -106,7 +104,10 @@ namespace FlockFive
             _home = HomeFace.Splash;
             _bgFight = null;
             _bgLoadout = null;
-            _bgStage = BadgerStage.Loadout;
+            _bgStage = BadgerStage.Opening;
+            _bgOpenT = 0f;
+            _bgWashOut = 0f;
+            if (_bgLeap.Live) _bgLeap.Release();
 #if UNITY_EDITOR
             if (_bgSwitchHeld)
             {
@@ -165,7 +166,17 @@ namespace FlockFive
         {
             if (dt > 0.1f) dt = 0.1f;
             if (_bgShakeT > 0f) _bgShakeT = Mathf.Max(0f, _bgShakeT - dt);
+            if (_bgStage == BadgerStage.Opening)
+            {
+                StepBadgerOpening(dt);
+                return;
+            }
             _bgT += dt;
+            if (_bgStage == BadgerStage.PostOpen)
+            {
+                if (_bgT >= BadgerOpening.PostSeconds) BeginBadgerFight();
+                return;
+            }
             if (_bgFight == null) return;
             switch (_bgStage)
             {
@@ -296,15 +307,6 @@ namespace FlockFive
 
         void ClickBadgerTile(int i)
         {
-            if (_bgStage == BadgerStage.Loadout)
-            {
-                _bgPickSlot = i;
-                _bgPickPage = 0;
-                _bgLoadout.Options(i, _bgOptions);
-                _bgStage = BadgerStage.Picker;
-                Sfx.CardTap();
-                return;
-            }
             if (_bgStage != BadgerStage.YourPick || _bgFight == null) return;
             if (!_bgFight.PlayerOpen(i)) return;
             if (!_bgFight.PlayerPlay(i, _bgArmed))
@@ -523,7 +525,7 @@ namespace FlockFive
             GUI.Label(lr, label, st);
         }
 
-        // The one button: FIGHT, Continue, power-ups, picker controls. Hit pad is the whole rect;
+        // The one button: Continue, power-ups. Hit pad is the whole rect;
         // `live` false skips the hit entirely so a modal in front owns the finger.
         bool BadgerButton(Rect hit, string title, string sub, bool gold, bool dim, bool lit, bool live, Color ink, float shakeX)
         {
@@ -594,8 +596,8 @@ namespace FlockFive
             float s = L.S;
             DrawHomeWash(0.58f);
 
-            bool picker = _bgStage == BadgerStage.Picker;
-            if (picker) PaintBackMedal(L.Back, false);
+            // Opening and PostOpen are not skippable: the medal paints but does not take a tap.
+            if (_bgStage == BadgerStage.Opening || _bgStage == BadgerStage.PostOpen) PaintBackMedal(L.Back, false);
             else if (DrawBackMedal(L.Back))
             {
                 LeaveBadger();
@@ -617,7 +619,7 @@ namespace FlockFive
 
             var bossHex = BadgerHex.Fit(L.BossGrid, 4, 4);
             var youHex = BadgerHex.Fit(L.PlayerGrid, 4, 4);
-            bool tilesLive = !picker && (_bgStage == BadgerStage.Loadout || _bgStage == BadgerStage.YourPick);
+            bool tilesLive = _bgStage == BadgerStage.YourPick;
 
             for (int i = 0; i < BadgerSchedule.Tiles; i++)
             {
@@ -635,27 +637,27 @@ namespace FlockFive
                 if (tilesLive && open && HitPad(youHex.Hit(i), out held)) tapped = i;
                 if (held) draw = Inset(draw, 0.03f);
                 draw.x += BadgerShakeX(i, s);
-                DrawBadgerTile(draw, open ? BadgerLook.Face : BadgerLook.Spent, t.Honey, BadgerTint(t), t.Finish, 1f, null);
+                BadgerTilePlate(draw, t, open ? BadgerLook.Face : BadgerLook.Spent, BadgerTileLand(i));
             }
 
             DrawBadgerArena(L, bossHex, youHex);
-            DrawBadgerPowers(L, !picker);
+            DrawBadgerOpeningCast(L, youHex);
+            DrawBadgerPowers(L, true);
             DrawBadgerCaption(L);
             if (tapped >= 0) ClickBadgerTile(tapped);
 
-            if (picker) DrawBadgerPicker(L);
+            if (_bgWashOut > 0f) DrawBadgerWash(_bgWashOut / BadgerLeap.WashOutSeconds);
         }
 
         void DrawBadgerArena(BadgerRects L, BadgerHex bossHex, BadgerHex youHex)
         {
             float s = L.S;
-            bool picker = _bgStage == BadgerStage.Picker;
             float size = Mathf.Min(L.Arena.height * 0.98f, L.Arena.width * 0.30f);
             float w = size * 0.87f;
             var youSlot = new Rect(L.Arena.center.x - size * 0.95f - w * 0.5f, L.Arena.center.y - size * 0.5f, w, size);
             var bossSlot = new Rect(L.Arena.center.x + size * 0.95f - w * 0.5f, L.Arena.center.y - size * 0.5f, w, size);
 
-            if (GuiPaint())
+            if (GuiPaint() && _bgStage != BadgerStage.Opening)
             {
                 var st = BadgerStyle();
                 string mid = _bgResolved && _bgRound.PlayerGained == 0 && _bgRound.BossGained == 0 ? "TIE" : "VS";
@@ -695,24 +697,16 @@ namespace FlockFive
                 }
             }
 
-            bool big = _bgStage == BadgerStage.Loadout || _bgStage == BadgerStage.Over;
-            if (!big) return;
+            if (_bgStage != BadgerStage.Over) return;
             var btn = new Rect(L.Arena.center.x - Mathf.Min(L.Arena.width * 0.34f, 300f * s),
                 L.Arena.y + L.Arena.height * 0.08f,
                 Mathf.Min(L.Arena.width * 0.68f, 600f * s), L.Arena.height * 0.84f);
-            if (_bgStage == BadgerStage.Over)
+            if (BadgerButton(btn, "Continue", null, true, false, false, true, Color.white, 0f))
             {
-                bool fire = BadgerButton(btn, "Continue", null, true, false, false, !picker, Color.white, 0f);
-                if (fire)
-                {
-                    // TODO(Phase 5): win -> BadgerSave.Clear(), pay the cleared level's reward,
-                    // Hive.TakeVisitor(). Loss -> flag stays. Phase 3 just goes home.
-                    LeaveBadger();
-                }
-                return;
+                // TODO(Phase 5): win -> BadgerSave.Clear(), pay the cleared level's reward,
+                // Hive.TakeVisitor(). Loss -> flag stays. Phase 3 just goes home.
+                LeaveBadger();
             }
-            if (BadgerButton(btn, "FIGHT!", null, true, false, false, !picker, Color.white, 0f))
-                BeginBadgerFight();
         }
 
         void DrawBadgerWinGlow(Rect r)
@@ -775,66 +769,5 @@ namespace FlockFive
             StampOutlined(tr, _bgLine, st, BadgerCream, 0, 2);
         }
 
-        void DrawBadgerPicker(BadgerRects L)
-        {
-            float s = L.S;
-            float pad = 10f * s;
-            var panel = new Rect(L.Power.x, L.Arena.y, L.Power.width, L.Caption.yMax - L.Arena.y);
-            if (GuiPaint())
-            {
-                DrawSolidRound(panel, 22f, 0, 0.97f);
-                var st = BadgerStyle();
-                var head = new Rect(panel.x, panel.y + 4f * s, panel.width, panel.height * 0.08f);
-                string title = _bgOptions.Count > 0 ? "Swap in a bee" : "No bees yet. Yard honey is ready.";
-                st.fontSize = FitFont(st, title, head.width * 0.9f, head.height, 10, 60);
-                StampOutlined(head, title, st, BadgerCream, 0, 2);
-            }
-            float footH = panel.height * 0.14f;
-            var foot = new Rect(panel.x + pad, panel.yMax - footH - pad, panel.width - pad * 2f, footH);
-            var area = new Rect(panel.x + pad, panel.y + panel.height * 0.09f, panel.width - pad * 2f, foot.y - pad - (panel.y + panel.height * 0.09f));
-            var hex = BadgerHex.Fit(area, 4, 3);
-            int pages = Mathf.Max(1, (_bgOptions.Count + BadgerPickPage - 1) / BadgerPickPage);
-            _bgPickPage = Mathf.Clamp(_bgPickPage, 0, pages - 1);
-            var current = _bgLoadout[_bgPickSlot];
-            int chosen = -1;
-            for (int j = 0; j < BadgerPickPage; j++)
-            {
-                int idx = _bgPickPage * BadgerPickPage + j;
-                if (idx >= _bgOptions.Count) break;
-                var tile = _bgOptions[idx];
-                var draw = hex.Draw(j);
-                if (tile.Same(current)) DrawBadgerWinGlow(draw);
-                bool held;
-                if (HitPad(hex.Hit(j), out held)) chosen = idx;
-                if (held) draw = Inset(draw, 0.03f);
-                DrawBadgerTile(draw, BadgerLook.Face, tile.Honey, BadgerTint(tile), tile.Finish, 1f, Hive.Roster[tile.Kind].Name);
-            }
-
-            float gap = 8f * s;
-            float bw = (foot.width - gap * 3f) / 4f;
-            bool prev = BadgerButton(new Rect(foot.x, foot.y, bw, foot.height), "<", null, false, _bgPickPage <= 0, false, true, Color.white, 0f);
-            bool yard = BadgerButton(new Rect(foot.x + (bw + gap), foot.y, bw, foot.height), "Yard", "honey 1", false, false, false, true, BadgerWax, 0f);
-            bool next = BadgerButton(new Rect(foot.x + (bw + gap) * 2f, foot.y, bw, foot.height), ">", null, false, _bgPickPage >= pages - 1, false, true, Color.white, 0f);
-            bool close = BadgerButton(new Rect(foot.x + (bw + gap) * 3f, foot.y, bw, foot.height), "Close", null, true, false, false, true, Color.white, 0f);
-
-            if (chosen >= 0)
-            {
-                _bgLoadout.Set(_bgPickSlot, _bgOptions[chosen]);
-                Sfx.CardBump();
-                _bgStage = BadgerStage.Loadout;
-            }
-            else if (yard)
-            {
-                _bgLoadout.Set(_bgPickSlot, BadgerTile.YardTile());
-                Sfx.CardBump();
-                _bgStage = BadgerStage.Loadout;
-            }
-            else if (close)
-            {
-                _bgStage = BadgerStage.Loadout;
-            }
-            else if (prev && _bgPickPage > 0) _bgPickPage--;
-            else if (next && _bgPickPage < pages - 1) _bgPickPage++;
-        }
     }
 }

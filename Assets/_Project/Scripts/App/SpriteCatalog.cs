@@ -782,6 +782,21 @@ namespace FlockFive
             return arr[i];
         }
 
+        // Honey badger art: Sprites/Badger/<name> (badger_*, hive_*, honey_splat, bee_1..5).
+        // File names are stable so polished art drops in. Missing art returns null and the
+        // caller skips the draw (no placeholder over the contest).
+        static readonly System.Collections.Generic.Dictionary<string, Sprite> _badgerArt =
+            new System.Collections.Generic.Dictionary<string, Sprite>();
+
+        public static Sprite BadgerArt(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            if (_badgerArt.TryGetValue(name, out var got)) return got;
+            got = TryLoad("Sprites/Badger/" + name, 200f);
+            _badgerArt[name] = got;
+            return got;
+        }
+
         static Sprite Load(ref Sprite cache, string path, float ppu)
         {
             if (cache == null) cache = LoadNew(path, ppu);
