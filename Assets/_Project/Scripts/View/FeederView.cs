@@ -389,7 +389,7 @@ namespace FlockFive
                 _gust = Random.Range(0.55f, 1f);
             float kick = _gust * Mathf.Sin(t * 3.1f + phase);
             float ang = pendulum * 5.4f + wiggle * 2.2f + kick * 6.5f;
-            _spin = Mathf.Lerp(_spin, ang, 0.12f);
+            _spin = Mathf.Lerp(_spin, ang, FramePace.Follow(0.12f, Time.deltaTime));
             transform.localRotation = Quaternion.Euler(0f, 0f, _spin);
             transform.position = _planted + new Vector3(
                 pendulum * 0.055f + figure * 0.03f,

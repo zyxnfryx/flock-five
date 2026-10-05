@@ -10,8 +10,7 @@ namespace FlockFive
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoBoot()
         {
-            QualitySettings.vSyncCount = 0;
-            Application.targetFrameRate = 60;
+            ApplyFramePace();
             if (FindAnyObjectByType<FlockFiveApp>() != null) return;
             var go = new GameObject("FlockFiveApp");
             DontDestroyOnLoad(go);
@@ -290,6 +289,9 @@ namespace FlockFive
         bool _albumInspectOk;
         Rect _albumInspectR;
         PageSwipe _pageSwipe;
+        // Album sheet strip a page swipe starts in, GUI space. Set each album frame.
+        Rect _albumSwipeR;
+        static float AlbumSwipeMin(float s) => Mathf.Max(36f, 40f * s);
         int _wakeBranch = -1;
 #if UNITY_EDITOR
         bool _pokerPlayrun;
@@ -434,6 +436,7 @@ namespace FlockFive
             _resumeNoteFrame = Time.frameCount;
             PlayClock.DropResumeFrame();
             Ads.ArmResumeSettle();
+            ApplyFramePace();
             if (_app == null) return;
             _resumeInputUntil = PlayClock.Now + 0.35f;
             _app.FreshTutorGlove();
@@ -447,9 +450,11 @@ namespace FlockFive
                 : _board == null ? "no garden"
                 : "garden " + LevelData.DisplayNumber + (_board.Won ? ", cleared" : ", MID-STAGE");
             AdLog.Add("app started");
-            // iOS defaults to 30 fps; ask for 60 so flaps and motion read smooth.
-            QualitySettings.vSyncCount = 0;
-            Application.targetFrameRate = 60;
+            // iOS defaults to 30 fps. Ask for an even rate the panel can hold: 60 on
+            // 60/120 Hz screens, 90 on 90 Hz ones (60 judders there). See FramePace.
+            ApplyFramePace();
+            AdLog.Add("frame pace " + Application.targetFrameRate + " fps on "
+                + Mathf.RoundToInt((float)Screen.currentResolution.refreshRateRatio.value) + " Hz");
             Application.runInBackground = true;
             Screen.orientation = ScreenOrientation.Portrait;
             Screen.autorotateToPortrait = true;
@@ -3864,7 +3869,7 @@ namespace FlockFive
                     var v = _garden.Branches[i];
                     if (v == null || v.Birds == null) continue;
                     for (int k = 0; k < v.Birds.Length; k++)
-                        VeilOne(v.Birds[k]);
+                        VeilBird(v.Birds[k]);
                 }
             }
             var bees = new List<SpriteRenderer>();
@@ -3881,6 +3886,17 @@ namespace FlockFive
                     for (int k = 0; k < parts.Length; k++) VeilOne(parts[k]);
                 }
             }
+        }
+
+        // Bird bodies veil through BirdIdle so the kit, face and fx hide in the
+        // same call. Lifting the veil (forceRenderingOff off) lets LateUpdate
+        // dress the bird again wherever it is by then.
+        void VeilBird(SpriteRenderer b)
+        {
+            if (b == null) return;
+            var idle = b.GetComponent<BirdIdle>();
+            if (idle != null) idle.Veil(true);
+            VeilOne(b);
         }
 
         void VeilOne(Renderer r)
@@ -3959,7 +3975,12 @@ namespace FlockFive
             // leaves and feeders unseen until SnapBirdsHome has moved them offscreen,
             // so the new board never flashes before the fly-in.
             VeilBoard(true);
-            yield return GardenFit.Tween(_garden, _board, true);
+            // Instant fit, same frame. A nested `yield return` costs a frame
+            // even when the child never yields, and that frame drew the seated
+            // board. Drain it here so SnapBirdsHome moves the flock offscreen
+            // before anything renders. The veil stays as a backstop.
+            var fit = GardenFit.Tween(_garden, _board, true);
+            while (fit.MoveNext()) yield return fit.Current;
             yield return SnapBirdsHome();
             VeilBoard(false);
             HoldDecor(false);
@@ -4230,6 +4251,8 @@ namespace FlockFive
             sr.sortingOrder = FlockSort.Fly;
             if (shroud)
                 sr.color = FlightSilhouette;
+            else if (idle != null)
+                idle.SetFade(1f); // body, face and kit together (a cut-off collect fade)
             else
             {
                 var c = sr.color;
@@ -4869,6 +4892,8 @@ namespace FlockFive
                 }
                 return;
             }
+            // Shared tutorial tap gate: a step that waits on one control eats every other press.
+            SwallowOffTargetTap();
             if (_splash)
             {
                 // Hive, poker, and the garden do not draw the sign. Drop it here so a
@@ -4884,6 +4909,7 @@ namespace FlockFive
                 else if (_home == HomeFace.Badger) DrawBadgerPage();
                 else DrawSplash();
                 DrawBadgerLeap();
+                TickPreload();
                 return;
             }
             if (_clearReward)
@@ -4994,9 +5020,11 @@ namespace FlockFive
             return PlayerPrefs.GetInt(CoachHiveKey, 0) != 0 ? 1f : 0f;
         }
 
+        // Build 58: owning VIP keeps the slot. The offer medallion becomes the member
+        // badge (DrawNoAdsButton), so restore and reinstall show it too.
         static float VipRailGoal()
         {
-            return (!NoAds.Owned && LevelData.NextPlay >= 1) ? 1f : 0f;
+            return (NoAds.Owned || LevelData.NextPlay >= 1) ? 1f : 0f;
         }
 
         // Hidden through level 1. The lesson keeps it out of the stack until the
@@ -5265,12 +5293,10 @@ namespace FlockFive
             int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
             int hi = Mathf.Max(floor + 2, Mathf.RoundToInt(24f * s));
             string label = "Cards " + have + " / " + cap;
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var st = GuiPool.Label(GuiSlot.HiveTally);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
             float labelH = hi + 8f;
             var labelR = new Rect(anchor.x, anchor.y, anchor.width, labelH);
             st.fontSize = FitFont(st, label, labelR.width * 0.98f, labelR.height * 0.92f, floor, hi);
@@ -5568,12 +5594,10 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(disc.x + t, disc.y + t, 3f * s, disc.height - t * 2f), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(disc.xMax - t - 3f * s, disc.y + t, 3f * s, disc.height - t * 2f), Texture2D.whiteTexture);
             GUI.color = Color.white;
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = true
-            };
+            var st = GuiPool.Label(GuiSlot.ShareButton);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = true;
             string lab = "Invite";
             st.fontSize = FitFont(st, lab, disc.width * 0.78f, disc.height * 0.55f, 14, 28);
             StampOutlined(disc, lab, st, new Color(1f, 0.92f, 0.62f), 1, Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.08f)));
@@ -5593,8 +5617,20 @@ namespace FlockFive
         const int BackMedalRev = 3;
         static int _backMedalBuilt;
 
+        // Rail VIP spot. Not owned: the offer medallion ("VIP" under the crown, "No Ads"
+        // ribbon). Owned: the member badge (bigger crown, "VIP" ribbon, twinkles).
+        // Tap opens VipOffer either way (offer card or the member thank-you card).
         void DrawNoAdsButton(Rect r, float s, bool held)
         {
+            DrawVipMedal(r, s, held, NoAds.Owned, true);
+        }
+
+        // Shared VIP medallion: rail offer button, rail member badge, the member crest on
+        // the thank-you card and the "Welcome, VIP!" crown pop. ribbon=false drops the
+        // nameplate (the crest sits on the card and must not cover the panel).
+        static void DrawVipMedal(Rect r, float s, bool held, bool member, bool ribbon)
+        {
+            if (r.width < 4f || r.height < 4f) return;
             float sink = held ? r.height * 0.045f : 0f;
             var plate = new Rect(r.x, r.y + sink, r.width, r.height);
             var face = VipPlateTex();
@@ -5602,8 +5638,9 @@ namespace FlockFive
             float d = plate.width;
 
             float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 1.7f);
-            float bloom = d * (0.07f + 0.025f * breathe);
-            GUI.color = new Color(1f, 0.78f, 0.28f, (held ? 0.14f : 0.28f) * (0.75f + 0.25f * breathe));
+            float bloom = d * (0.07f + 0.025f * breathe) * (member ? 1.3f : 1f);
+            float bloomA = (held ? 0.14f : 0.28f) * (0.75f + 0.25f * breathe) * (member ? 1.35f : 1f);
+            GUI.color = new Color(1f, 0.78f, 0.28f, bloomA);
             GUI.DrawTexture(new Rect(plate.x - bloom, plate.y - bloom, d + bloom * 2f, d + bloom * 2f), glow, ScaleMode.ScaleToFit, true);
 
             GUI.color = new Color(0.05f, 0.02f, 0.02f, held ? 0.26f : 0.44f);
@@ -5614,33 +5651,51 @@ namespace FlockFive
             DrawVipShimmer(plate, held);
             DrawVipStuds(plate);
 
-            float cw = d * 0.52f;
-            float ch = cw * (VipCrownH / (float)VipCrownW);
-            float crownTop = d * 0.155f;
-            var crown = new Rect(plate.center.x - cw * 0.5f, plate.y + crownTop, cw, ch);
-            GUI.color = held ? new Color(0.92f, 0.90f, 0.84f, 1f) : Color.white;
-            GUI.DrawTexture(crown, VipCrownTex(), ScaleMode.ScaleToFit, true);
-
-            var vipSt = new GUIStyle(GUI.skin.label)
+            Rect crown;
+            if (member)
             {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
-            float vipTop = crownTop + ch + d * 0.018f;
-            float vipH = Mathf.Max(d * 0.18f, d * 0.80f - vipTop);
-            var vipR = new Rect(plate.center.x - d * 0.36f, plate.y + vipTop, d * 0.72f, vipH);
-            int vipHi = Mathf.Max(22, Mathf.RoundToInt(d * 0.40f));
-            vipSt.fontSize = FitFont(vipSt, "VIP", vipR.width * 0.94f, vipR.height * 0.90f, 13, vipHi);
-            int vipDark = Mathf.Clamp(Mathf.RoundToInt(vipSt.fontSize * 0.14f), 2, 8);
-            StampOutlined(vipR, "VIP", vipSt, new Color(1f, 0.95f, 0.62f, 1f), 1, vipDark);
+                // Member: the crown owns the disc. "VIP" moves to the ribbon.
+                float cw = d * 0.62f;
+                float ch = cw * (VipCrownH / (float)VipCrownW);
+                crown = new Rect(plate.center.x - cw * 0.5f, plate.center.y - ch * 0.56f, cw, ch);
+                GUI.color = new Color(0.10f, 0.05f, 0.02f, held ? 0.20f : 0.34f);
+                GUI.DrawTexture(new Rect(crown.x + d * 0.012f, crown.y + d * 0.022f, cw, ch), VipCrownTex(), ScaleMode.ScaleToFit, true);
+                GUI.color = held ? new Color(0.92f, 0.90f, 0.84f, 1f) : Color.white;
+                GUI.DrawTexture(crown, VipCrownTex(), ScaleMode.ScaleToFit, true);
+            }
+            else
+            {
+                float cw = d * 0.52f;
+                float ch = cw * (VipCrownH / (float)VipCrownW);
+                float crownTop = d * 0.155f;
+                crown = new Rect(plate.center.x - cw * 0.5f, plate.y + crownTop, cw, ch);
+                GUI.color = held ? new Color(0.92f, 0.90f, 0.84f, 1f) : Color.white;
+                GUI.DrawTexture(crown, VipCrownTex(), ScaleMode.ScaleToFit, true);
 
-            DrawVipRibbon(plate, held, s);
+                var vipSt = GuiPool.Label(GuiSlot.NoAdsVip);
+                vipSt.fontStyle = FontStyle.Bold;
+                vipSt.alignment = TextAnchor.MiddleCenter;
+                vipSt.wordWrap = false;
+                float vipTop = crownTop + ch + d * 0.018f;
+                float vipH = Mathf.Max(d * 0.18f, d * 0.80f - vipTop);
+                var vipR = new Rect(plate.center.x - d * 0.36f, plate.y + vipTop, d * 0.72f, vipH);
+                int vipHi = Mathf.Max(22, Mathf.RoundToInt(d * 0.40f));
+                vipSt.fontSize = FitFont(vipSt, "VIP", vipR.width * 0.94f, vipR.height * 0.90f, 13, vipHi);
+                int vipDark = Mathf.Clamp(Mathf.RoundToInt(vipSt.fontSize * 0.14f), 2, 8);
+                StampOutlined(vipR, "VIP", vipSt, new Color(1f, 0.95f, 0.62f, 1f), 1, vipDark);
+            }
+
+            if (ribbon) DrawVipRibbon(plate, held, s, member ? "VIP" : "No Ads");
             DrawVipGlints(plate, crown, held);
+            if (member && !held)
+            {
+                float g = d * 0.30f;
+                DrawVipTwinkles(new Rect(plate.x - g, plate.y - g * 0.6f, d + g * 2f, d + g * 1.6f), 0.80f, 0.11f);
+            }
             GUI.color = Color.white;
         }
 
-        static void DrawVipRibbon(Rect plate, bool held, float s)
+        static void DrawVipRibbon(Rect plate, bool held, float s, string label)
         {
             var ribbon = SplashNoAdsRibbon(plate);
             var tex = VipRibbonTex();
@@ -5649,19 +5704,18 @@ namespace FlockFive
             GUI.color = held ? new Color(0.88f, 0.86f, 0.82f, 1f) : Color.white;
             GUI.DrawTexture(ribbon, tex, ScaleMode.StretchToFill, true);
 
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var st = GuiPool.Label(GuiSlot.VipRibbon);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
             float padX = ribbon.width * 0.16f;
             var subR = new Rect(ribbon.x + padX, ribbon.y, ribbon.width - padX * 2f, ribbon.height);
             int hi = Mathf.Max(11, Mathf.RoundToInt(ribbon.height * 0.70f));
             int lo = Mathf.Min(hi, s >= 1f ? 10 : 8);
-            st.fontSize = FitFont(st, "No Ads", subR.width * 0.98f, subR.height * 0.86f, lo, hi);
+            st.fontSize = FitFont(st, label, subR.width * 0.98f, subR.height * 0.86f, lo, hi);
             int dark = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.18f), 1, 5);
-            StampOutlined(subR, "No Ads", st, new Color(1f, 0.97f, 0.88f, 1f), 1, dark);
+            var ink = label == "VIP" ? new Color(1f, 0.92f, 0.52f, 1f) : new Color(1f, 0.97f, 0.88f, 1f);
+            StampOutlined(subR, label, st, ink, 1, dark);
             GUI.color = Color.white;
         }
 
@@ -7097,32 +7151,35 @@ namespace FlockFive
             float alpha = wordAppear * (1f - tuck);
 
             float openK = Mathf.Lerp(0.82f, 1f, wordAppear);
-            // Title scale is the open and the tuck. The lamp breathe below stays on the frame.
+            // Title scale is the open and the tuck. Soft breathe stays on the frame glow.
             float titleK = Mathf.Lerp(openK, 0.72f, tuck);
             float scale = openK;
-            // Freeze the lamp clock on the way out so the strobe cannot flash after the board thins.
+            // Freeze the glow clock on the way out so breathe cannot flash after the board thins.
             float lampT = Time.unscaledTime - Mathf.Max(0f, t - beat.HoldEnd);
             if (t >= beat.AmtAt)
             {
                 float breathe = 0.5f + 0.5f * Mathf.Sin(lampT * 2.6f);
                 scale *= 1f + 0.018f * breathe * (1f - tuck);
             }
-            // Rect scale, not GUI.matrix: marquee bulbs rotate in the current matrix.
+            // Rect scale (not GUI.matrix) so nested StampFit pivots stay correct.
             scale = Mathf.Lerp(scale, 0.72f, tuck);
 
             float stampAge = t - beat.StampAt;
             bool stampLive = beat.Mul && stampAge >= 0f;
 
-            // Bulb sprite: screw at 16% from the top of the art, glass tip at ~84% outward,
-            // lit halo to 1.29 diameters. Layout reserves the glass plus a little air
-            // (1.22); the soft fringe stays inside the gap under the wordmark.
+            // Build 58: marquee bulbs are gone (same approach as Daily Bonus in build 52).
+            // Brass band stays as the frame. Board is ~12% larger than the old rest face;
+            // reclaiming the old bulb crown makes the overall card read a touch bigger still.
+            // Soft sparkles (SparkleFx) replace the chase lights.
             const float bandFrac = 0.046f;
-            const float glassOut = 1.22f;
             const float maxPop = 1.06f;
+            // ~12% over the old 0.66 × 0.58 rest fractions.
+            const float restWFrac = 0.74f;
+            const float restHFrac = 0.65f;
 
             // The payout owns the band under the wordmark, inside the safe area.
-            // Glass stops at the play-disc top (the disc starts ~10% into the bloom).
-            // Read safe area every pass so a late inset still pushes the lights down.
+            // Bottom stops at the play-disc top (the disc starts ~10% into the bloom).
+            // Read safe area every pass so a late inset still keeps the card clear.
             float titleBottom = TopHud() + (56f * 2f + 4f) * s;
             float gap = 10f * s;
             var safe = Screen.safeArea;
@@ -7146,22 +7203,15 @@ namespace FlockFive
             float faceW = Mathf.Max(120f * s, rightLimit - leftLimit) / maxPop;
             float faceH = Mathf.Max(72f * s, botLimit - topLimit) / maxPop;
 
-            // Bulbs are a fat slice of the face. Text keeps a floor; bulbs shrink first
-            // when the band between the wordmark and the play disc is short.
-            float restW = faceW * 0.66f;
-            float restH = faceH * 0.58f;
-            float szBulb = 12f * s;
-            for (int fit = 0; fit < 8; fit++)
+            // Board face. Only the brass band needs margin now (no bulb glass crown).
+            float restW = faceW * restWFrac;
+            float restH = faceH * restHFrac;
+            for (int fit = 0; fit < 6; fit++)
             {
-                szBulb = Mathf.Min(restH * 0.36f, restW * 0.22f);
-                float margin = glassOut * szBulb + restW * bandFrac * 0.5f;
+                float margin = restW * bandFrac;
                 float floorH = 64f * s;
                 if (faceH - 2f * margin < floorH)
-                {
                     margin = Mathf.Max(5f * s, (faceH - floorH) * 0.5f);
-                    szBulb = Mathf.Max(7f * s, (margin - restW * bandFrac * 0.5f) / glassOut);
-                    margin = glassOut * szBulb + restW * bandFrac * 0.5f;
-                }
                 float nextW = Mathf.Max(72f * s, faceW - 2f * margin);
                 float nextH = Mathf.Max(52f * s, faceH - 2f * margin);
                 if (nextW > nextH * 2.15f) nextW = nextH * 2.15f;
@@ -7169,29 +7219,28 @@ namespace FlockFive
                 restW = Mathf.Lerp(restW, nextW, 0.65f);
                 restH = Mathf.Lerp(restH, nextH, 0.65f);
             }
-            szBulb = Mathf.Min(restH * 0.36f, restW * 0.22f);
-            float crown = glassOut * szBulb + restW * bandFrac * 0.5f;
-            float visW = restW + 2f * crown;
-            float visH = restH + 2f * crown;
+            float bandPad = restW * bandFrac;
+            float visW = restW + 2f * bandPad;
+            float visH = restH + 2f * bandPad;
             float squeeze = Mathf.Min(1f, faceW / Mathf.Max(1f, visW), faceH / Mathf.Max(1f, visH));
             if (squeeze < 0.999f)
             {
                 restW *= squeeze;
                 restH *= squeeze;
-                szBulb *= squeeze;
-                crown = glassOut * szBulb + restW * bandFrac * 0.5f;
+                bandPad = restW * bandFrac;
             }
-            float crownFrac = crown / Mathf.Max(1f, restW);
+            // Soft aura / combo halo as a fraction of the board (replaces old bulb crownFrac).
+            float crownFrac = 0.10f;
 
             float cx = (leftLimit + rightLimit) * 0.5f;
-            float halfVis = (restW * 0.5f + crown) * maxPop;
+            float halfVis = (restW * 0.5f + bandPad) * maxPop;
             float minCx = leftLimit + halfVis;
             float maxCx = rightLimit - halfVis;
             cx = maxCx >= minCx ? Mathf.Clamp(cx, minCx, maxCx) : (leftLimit + rightLimit) * 0.5f;
             float centerY = (topLimit + botLimit) * 0.5f;
-            float visualBottom = centerY + maxPop * (restH * 0.5f + crown);
+            float visualBottom = centerY + maxPop * (restH * 0.5f + bandPad);
             if (visualBottom > botLimit) centerY -= visualBottom - botLimit;
-            float visualTop = centerY - maxPop * (restH * 0.5f + crown);
+            float visualTop = centerY - maxPop * (restH * 0.5f + bandPad);
             if (visualTop < topLimit) centerY += topLimit - visualTop;
             float restX = cx - restW * 0.5f;
             float restY = centerY - restH * 0.5f;
@@ -7209,12 +7258,11 @@ namespace FlockFive
             var glow = GlowTex();
             float glowA = 0.10f + 0.08f * (0.5f + 0.5f * Mathf.Sin(lampT * 2.3f));
             GUI.color = new Color(1f, 0.82f, 0.28f, glowA * alpha);
-            // Aura stays inside the bulb halo so it scales and tucks with the sign.
+            // Aura scales and tucks with the sign.
             float aura = board.width * crownFrac * 0.55f;
             GUI.DrawTexture(new Rect(board.x - aura, board.y - aura * 0.6f, board.width + aura * 2f, board.height + aura * 1.2f), glow, ScaleMode.ScaleToFit, true);
 
-            // Marquee frame: a solid brass band the bulbs screw into (not bulbs floating off a line).
-            // Thickness is a fraction of the animated board so the band shrinks with the tuck.
+            // Brass frame band. Thickness tracks the animated board so tuck shrinks it.
             float band = board.width * bandFrac;
             var outer = new Rect(board.x - band, board.y - band, board.width + band * 2f, board.height + band * 2f);
             float sh = 3f * s * scale;
@@ -7248,10 +7296,10 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(board.x, board.y, shade, board.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // Screw base kisses the brass outer edge. Frac is of that outer width,
-            // and scale keeps the glass the size the crown gap reserved.
-            float outerFrac = szBulb * scale / Mathf.Max(1f, outer.width);
-            DrawGiftMarquee(outer, s, lampT, alpha, -1f, outerFrac);
+            // Build 52 approach: no DrawGiftMarquee / no marquee bulbs on this frame.
+            // Subtle celebration twinkles around the brass (shared SparkleFx).
+            if (alpha > 0.05f)
+                SparkleFx.DrawAround(outer, alpha * 0.70f, gold: true, sizeFrac: 0.095f, wide: true);
 
             float padX = Mathf.Max(8f * s * scale, board.width * 0.055f);
             float padY = Mathf.Max(4f * s * scale, board.height * 0.04f);
@@ -7277,16 +7325,15 @@ namespace FlockFive
             float heroH = bodyH - metaH;
             float linesTop = inner.y + pipH;
 
-            var labelSt = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleLeft,
-                wordWrap = false
-            };
-            var heroSt = new GUIStyle(labelSt) { alignment = TextAnchor.MiddleCenter };
-            int labelHi = Mathf.Max(20, Mathf.RoundToInt(38f * s));
-            // ~28% under the build-35 hero cap so the count-up stays inside the board.
-            int heroHi = Mathf.Max(28, Mathf.RoundToInt(52f * s));
+            var labelSt = GuiPool.Label(GuiSlot.StreakLabel);
+            labelSt.fontStyle = FontStyle.Bold;
+            labelSt.alignment = TextAnchor.MiddleLeft;
+            labelSt.wordWrap = false;
+            var heroSt = GuiPool.From(GuiSlot.StreakHero, labelSt);
+            heroSt.alignment = TextAnchor.MiddleCenter;
+            // ~12% with the larger board so type stays proportional and uncropped.
+            int labelHi = Mathf.Max(20, Mathf.RoundToInt(42f * s));
+            int heroHi = Mathf.Max(28, Mathf.RoundToInt(58f * s));
             var heroInk = new Color(1f, 0.95f, 0.42f, 1f);
 
             void StampFit(Rect r, string text, GUIStyle st, Color fill, int hi, float widthFrac, float inkA)
@@ -7391,12 +7438,10 @@ namespace FlockFive
             GUI.color = Color.white;
             if (more != null)
             {
-                var extra = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleLeft,
-                    wordWrap = false
-                };
+                var extra = GuiPool.Label(GuiSlot.StreakPipsExtra);
+                extra.fontStyle = FontStyle.Bold;
+                extra.alignment = TextAnchor.MiddleLeft;
+                extra.wordWrap = false;
                 var lab = new Rect(x0 + slots * (d + gap), row.y, labelW, row.height);
                 if (lab.xMax > row.xMax) lab.x = row.xMax - lab.width;
                 int floor = Mathf.Max(8, Mathf.RoundToInt(14f * s));
@@ -7416,15 +7461,13 @@ namespace FlockFive
             float safeTop = TopHud();
             float icon = 36f * s;
             float pad = 10f * s;
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleLeft,
-                wordWrap = false
-            };
-            string tx = "×" + _board.RemainingBirds;
+            var st = GuiPool.Label(GuiSlot.RemainingBirds);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleLeft;
+            st.wordWrap = false;
+            string tx = GuiPool.Num(GuiSlot.RemainingBirds, "×", _board.RemainingBirds);
             st.fontSize = Mathf.RoundToInt(28 * s);
-            float tw = st.CalcSize(new GUIContent(tx)).x;
+            float tw = st.CalcSize(GuiPool.Text(GuiText.RemainingBirds, tx)).x;
             float x = HudTextLeft(s);
             float y = safeTop;
             var bird = SpriteCatalog.Bird(BirdColor.Gold);
@@ -7708,7 +7751,7 @@ namespace FlockFive
         // This OnGUI pass: a tiny home target (bird or name plate) owns the pointer.
         static bool _homeTapTaken;
 
-        // Finger slop around the fixed 1.15× body. Does not change the drawn bird.
+        // Finger slop around the fixed 1.30× body. Does not change the drawn bird.
         const float HomeBirdHitPad = 8f;
 
         static bool HitPad(Rect r, out bool held)
@@ -7852,7 +7895,9 @@ namespace FlockFive
         {
             _homeTapTaken = false;
             float s = Mathf.Max(Screen.height / 720f, 1f);
-            if (NoAds.Owned) VipOffer.Close();
+            // Purchase / restore / reinstall: closes the offer card and runs the one-time
+            // "Welcome, VIP!" moment when home is free. Member taps open the thank-you card.
+            VipOffer.Tick();
             bool hardModal = VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive;
             bool softModal = _streakSlide >= 0f || RewardPayBusy();
             bool modal = hardModal || softModal;
@@ -7912,8 +7957,8 @@ namespace FlockFive
                 DrawHiveButton(hiveR, s, pop: hivePop, quiet: _hivePopping && hiveOpening);
 
             // NextPlay is the next level index. Clearing level 1 (index 0) stores 1.
-            // Owned still hides the medallion and its hit target. The tap opens the
-            // offer; Buy stays on that card.
+            // Owned swaps the medallion for the member badge in the same slot. The tap
+            // opens the offer (Buy stays on that card) or the member thank-you card.
             if (vipDraw)
             {
                 if (vipTap)
@@ -8358,13 +8403,11 @@ namespace FlockFive
                 lvAlign = TextAnchor.MiddleCenter;
             }
 
-            var lv = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = lvAlign,
-                wordWrap = false
-            };
-            string level = "LEVEL " + number;
+            var lv = GuiPool.Label(GuiSlot.FlowerLevel);
+            lv.fontStyle = FontStyle.Bold;
+            lv.alignment = lvAlign;
+            lv.wordWrap = false;
+            string level = GuiPool.Num(GuiSlot.FlowerLevel, "LEVEL ", number);
             bool quad = number >= 1000;
             bool triple = number >= 100;
             string fitProbe = level;
@@ -8386,13 +8429,11 @@ namespace FlockFive
             // Shared size. Does not follow the 100+ LEVEL cap or the length of the line.
             float s = Mathf.Max(Screen.height / 720f, 1f);
             int jokePx = EaseSubtextPx(s);
-            var joke = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Normal,
-                alignment = TextAnchor.UpperCenter,
-                wordWrap = false,
-                fontSize = jokePx
-            };
+            var joke = GuiPool.Label(GuiSlot.FlowerJoke);
+            joke.fontStyle = FontStyle.Normal;
+            joke.alignment = TextAnchor.UpperCenter;
+            joke.wordWrap = false;
+            joke.fontSize = jokePx;
             if (_easeContent == null) _easeContent = new GUIContent();
             _easeContent.text = ease;
             float side = disc.width * 0.03f;
@@ -8900,12 +8941,10 @@ namespace FlockFive
             // Fallback: Bold stamp if letter art missing.
             if (!any)
             {
-                var st = new GUIStyle(GUI.skin.label)
-                {
-                    fontSize = Mathf.RoundToInt(h * 0.92f),
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter
-                };
+                var st = GuiPool.Label(GuiSlot.SplashWord);
+                st.fontSize = Mathf.RoundToInt(h * 0.92f);
+                st.fontStyle = FontStyle.Bold;
+                st.alignment = TextAnchor.MiddleCenter;
                 var fill = new Color(1f, 0.92f, 0.42f);
                 var stroke = new Color(0.02f, 0.02f, 0.04f, 1f);
                 var near = new Color(28f / 255f, 44f / 255f, 102f / 255f, 1f);
@@ -9448,7 +9487,7 @@ namespace FlockFive
             _avatarPose = landed ? AvatarPose.Perched : AvatarPose.Flying;
         }
 
-        // Same center the home bird draws at. Fixed body is HomeAvatarIcon (1.15×).
+        // Same center the home bird draws at. Fixed body is HomeAvatarIcon (1.30×).
         bool HomeAvatarFrame(float s, out Vector2 c, out float icon, out bool onPerch)
         {
             c = default;
@@ -10534,6 +10573,22 @@ namespace FlockFive
         // the same way the bet, deal and hold steps do.
         bool PokerBackHintOn() => _home == HomeFace.Poker && !PokerBackDone();
 
+        // The back step owns the table (shared StepTapGate): the first hand is paid and the
+        // draw has landed, so only the back medal may take a tap. DEAL, bet +/-, the cards and
+        // the pay table wait until Back. The stamp ceremony, an open pay table and a flying WIN
+        // keep their own taps; while they run the step is hidden and DEAL is already busy.
+        bool PokerBackGateLive()
+        {
+            if (!_splash || _home != HomeFace.Poker || PokerBackDone()) return false;
+#if UNITY_EDITOR
+            if (_pokerPlayrun || EditorShotLive) return false;
+#endif
+            if (_pokerPageOn || _pokerDealHint) return false;
+            if (BirdPoker.PhaseNow != BirdPoker.Phase.Drawn || PokerMotionBusy()) return false;
+            if (_pokerStamp || _pokerPayOpen || PokerWinFlying()) return false;
+            return true;
+        }
+
         void MarkPokerBackDone()
         {
             if (PokerBackDone()) return;
@@ -11076,12 +11131,10 @@ namespace FlockFive
                 GUI.color = new Color(0.82f, 0.08f, 0.10f, 0.92f * alpha);
                 GUI.DrawTexture(bar, Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                var st = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                    wordWrap = false
-                };
+                var st = GuiPool.Label(GuiSlot.InkStamp);
+                st.fontStyle = FontStyle.Bold;
+                st.alignment = TextAnchor.MiddleCenter;
+                st.wordWrap = false;
                 string lab = "COMPLETED";
                 st.fontSize = FitFont(st, lab, bar.width * 0.96f, bar.height * 0.92f, 8, 28);
                 StampOutlined(bar, lab, st, new Color(1f, 0.95f, 0.88f, alpha), 1, 1);
@@ -11214,19 +11267,18 @@ namespace FlockFive
             var board = new Rect(cx - boardW * 0.5f, cy - boardH * 0.5f * squash, boardW, boardH * squash);
             var paper = DrawPokerClipboard(board, s, clipTex);
 
-            var title = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter
-            };
+            var title = GuiPool.Label(GuiSlot.PokerStampTitle);
+            title.fontStyle = FontStyle.Bold;
+            title.alignment = TextAnchor.MiddleCenter;
             string boardTitle = _pokerBingo ? "FLOCK COMPLETE" : "FLOCK FIVE  PUNCH CARD";
             title.fontSize = FitFont(title, boardTitle, paper.width * 0.92f, 28f * s, 14, 26);
             StampOutlined(new Rect(paper.x, paper.y + 6f * s, paper.width, 26f * s), boardTitle, title,
                 _pokerBingo ? new Color(0.55f, 0.28f, 0.06f) : new Color(0.28f, 0.14f, 0.06f), 2, 1);
             if (BirdPoker.FullcardCount > 0 || _pokerBingo)
             {
-                var life = new GUIStyle(title) { fontStyle = FontStyle.Bold };
-                string lifeTx = "FULLCARDS  " + BirdPoker.FullcardCount;
+                var life = GuiPool.From(GuiSlot.PokerStampLife, title);
+                life.fontStyle = FontStyle.Bold;
+                string lifeTx = GuiPool.Num(GuiSlot.PokerStampLife, "FULLCARDS  ", BirdPoker.FullcardCount);
                 life.fontSize = FitFont(life, lifeTx, paper.width * 0.80f, 16f * s, 10, 16);
                 StampOutlined(new Rect(paper.x, paper.y + 30f * s, paper.width, 16f * s), lifeTx, life, new Color(0.42f, 0.22f, 0.06f), 1, 1);
             }
@@ -11309,12 +11361,10 @@ namespace FlockFive
 
             if (t >= 1.4f)
             {
-                var hint = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Italic,
-                    alignment = TextAnchor.MiddleCenter,
-                    fontSize = Mathf.RoundToInt(14 * s)
-                };
+                var hint = GuiPool.Label(GuiSlot.PokerStampHint);
+                hint.fontStyle = FontStyle.Italic;
+                hint.alignment = TextAnchor.MiddleCenter;
+                hint.fontSize = Mathf.RoundToInt(14 * s);
                 string hintTx = _pokerBingo
                     ? "FULLCARD  " + Money.Format(BirdPoker.FullcardPrize) + "   ·   lifetime " + BirdPoker.FullcardCount
                     : "tap to continue";
@@ -11963,15 +12013,16 @@ namespace FlockFive
                     r = LerpRect(from, dest, pu);
                     r.y -= Mathf.Sin(pu * Mathf.PI) * classic.height * 0.30f;
                     u = u * u * (3f - 2f * u);
-                    float pop = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((u - 0.62f) / 0.38f));
-                    float sc = Mathf.Lerp(1f, 0.08f, pop);
-                    float nw = r.width * Mathf.Max(0.02f, sc);
-                    float nh = r.height * Mathf.Max(0.02f, sc);
+                    // Shared discard pop: scale reaches exactly 0 (no 0.08 floor / 0.02 clamp),
+                    // so the card is gone when the pop finishes. Slot stays empty until inbound.
+                    float sc = PokerCardAnim.DiscardScale(u);
+                    float nw = r.width * sc;
+                    float nh = r.height * sc;
                     r = new Rect(r.center.x - nw * 0.5f, r.center.y - nh * 0.5f, nw, nh);
                     // Slow Y-axis flip while floating to the hold seat, then confetti.
                     yaw = u * 210f * (i % 2 == 0 ? 1f : -1f);
                     roll = PokerFanRoll(i) * (1f - u);
-                    showFace = pop < 0.88f;
+                    showFace = PokerCardAnim.DiscardShowFace(u);
                     face = _pokerPrev[i];
                 }
                 else
@@ -12915,7 +12966,7 @@ namespace FlockFive
                 float u = Mathf.Clamp01((_pokerMotionT - at) / 0.72f);
                 slot++;
                 if (u < 0.55f || u > 1.08f) continue;
-                float pop = Mathf.Clamp01((u - 0.62f) / 0.38f);
+                float pop = PokerCardAnim.DiscardPopLinear(u);
                 Rect r;
                 float yaw, roll;
                 bool showFace, sparkle;
@@ -13054,6 +13105,8 @@ namespace FlockFive
                 _pokerPoseR[i] = r;
             // Pose stays current for HitPokerCards. Textures only on Repaint.
             if (!GuiPaint()) return;
+            // Discard pop ends at scale 0 — skip the draw so no speck remains until redeal.
+            if (r.width < 0.5f || r.height < 0.5f) return;
 
             bool kept = _pokerMotion == PokerMotion.Draw && _pokerKept[i];
             bool held = (BirdPoker.Hold[i] || kept) && (_pokerHoldSlide[i] > 0.45f || kept);
@@ -13465,12 +13518,10 @@ namespace FlockFive
             var hiveHead = new Rect(back.xMax + 12f * s, back.center.y - hiveSize * 0.5f, hiveSize, hiveSize);
             float textX = hiveHead.xMax + 12f * s;
             float textW = Mathf.Max(48f, textRight - textX);
-            var titleSt = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleLeft,
-                wordWrap = false
-            };
+            var titleSt = GuiPool.Label(GuiSlot.AlbumTitle);
+            titleSt.fontStyle = FontStyle.Bold;
+            titleSt.alignment = TextAnchor.MiddleLeft;
+            titleSt.wordWrap = false;
             int titlePx = Mathf.Max(floor + 8, Mathf.RoundToInt(30f * s));
             float titleH = titlePx + 8f;
             var titleR = new Rect(textX, hiveHead.center.y - titleH * 0.5f, textW, titleH);
@@ -13478,17 +13529,15 @@ namespace FlockFive
 
             // Two short lines, always.
             string body = HiveSubtitle + "\n" + HiveHowTo;
-            var bodySt = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.UpperLeft,
-                wordWrap = true
-            };
+            var bodySt = GuiPool.Label(GuiSlot.AlbumBody);
+            bodySt.fontStyle = FontStyle.Bold;
+            bodySt.alignment = TextAnchor.UpperLeft;
+            bodySt.wordWrap = true;
             int bodyPx = Mathf.Max(floor - 1, Mathf.RoundToInt(17f * s));
             if (bodyPx < 15) bodyPx = 15;
             float bodyW = Mathf.Max(48f, textRight - left);
             bodySt.fontSize = bodyPx;
-            float bodyH = Mathf.Max(bodyPx + 8f, bodySt.CalcHeight(new GUIContent(body), bodyW) + 4f);
+            float bodyH = Mathf.Max(bodyPx + 8f, bodySt.CalcHeight(GuiPool.Text(GuiText.AlbumBody, body), bodyW) + 4f);
             float bodyY = Mathf.Max(hiveHead.yMax, back.yMax) + 6f * s;
             var bodyR = new Rect(left, bodyY, bodyW, bodyH);
 
@@ -13876,6 +13925,8 @@ namespace FlockFive
             float pagePad = 10f * s;
             float pageW = Screen.width - pagePad * 2f;
             var sheet = new Rect(pagePad, pageTop, pageW, pageH);
+            // Same strip WatchPageSwipe tracks; the album step's tap gate lets a swipe start here.
+            _albumSwipeR = new Rect(0f, sheet.y, Screen.width, sheet.height);
 
             // Binder spine shadow + clear sheet
             GUI.color = new Color(0.08f, 0.06f, 0.04f, 0.62f);
@@ -13953,8 +14004,8 @@ namespace FlockFive
             int albumSwipeDir = 0;
             if (_hiveInspect < 0 && !turning)
             {
-                float swipeMin = Mathf.Max(36f, 40f * s);
-                var swipeArea = new Rect(0f, sheet.y, Screen.width, sheet.height);
+                float swipeMin = AlbumSwipeMin(s);
+                var swipeArea = _albumSwipeR;
                 WatchPageSwipe(ref _pageSwipe, swipeArea, swipeMin);
                 albumSwipeDir = _pageSwipe.Dir;
             }
@@ -14002,12 +14053,10 @@ namespace FlockFive
                 first = Mathf.Clamp(_hivePage - shown / 2, 0, pages - shown);
             float tabsW = shown * pagerHit + (shown - 1) * tabGap;
             float tabX0 = (Screen.width - tabsW) * 0.5f;
-            var tabLab = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var tabLab = GuiPool.Label(GuiSlot.PageTab);
+            tabLab.fontStyle = FontStyle.Bold;
+            tabLab.alignment = TextAnchor.MiddleCenter;
+            tabLab.wordWrap = false;
             for (int n = 0; n < shown; n++)
             {
                 int p = first + n;
@@ -14046,12 +14095,10 @@ namespace FlockFive
                     TurnHivePage(p);
             }
 
-            var ofSt = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var ofSt = GuiPool.Label(GuiSlot.PageOf);
+            ofSt.fontStyle = FontStyle.Bold;
+            ofSt.alignment = TextAnchor.MiddleCenter;
+            ofSt.wordWrap = false;
             int bookHi = Mathf.Max(typeFloor + 4, Mathf.RoundToInt(24f * s));
             string ofBook = "Page " + (_hivePage + 1) + " of " + pages + "   ·   " + Hive.Found + " found";
             var bookR = new Rect(16f * s, tabY + pagerHit + footGap, Screen.width - 32f * s, pagerLab);
@@ -14152,12 +14199,10 @@ namespace FlockFive
             GUI.color = new Color(0.10f, 0.08f, 0.05f, (xHeld ? 0.92f : 0.78f) * Mathf.Clamp01(t + 0.15f));
             GUI.DrawTexture(xBtn, Texture2D.whiteTexture);
             GUI.color = Color.white;
-            var xLab = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Mathf.RoundToInt(22 * s),
-                alignment = TextAnchor.MiddleCenter,
-                fontStyle = FontStyle.Bold
-            };
+            var xLab = GuiPool.Label(GuiSlot.InspectX);
+            xLab.fontSize = Mathf.RoundToInt(22 * s);
+            xLab.alignment = TextAnchor.MiddleCenter;
+            xLab.fontStyle = FontStyle.Bold;
             xLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
             GUI.Label(xBtn, "X", xLab);
 
@@ -14295,14 +14340,12 @@ namespace FlockFive
         {
             const string wider = "Tap outside to put back";
             int hintHi = Mathf.Clamp(Mathf.RoundToInt(32f * s), 28, 56);
-            var measure = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var measure = GuiPool.Label(GuiSlot.FlipHintMeasure);
+            measure.fontStyle = FontStyle.Bold;
+            measure.alignment = TextAnchor.MiddleCenter;
+            measure.wordWrap = false;
             measure.fontSize = hintHi;
-            float hintW = Mathf.Min(Screen.width * 0.92f, measure.CalcSize(new GUIContent(wider)).x + 48f * s);
+            float hintW = Mathf.Min(Screen.width * 0.92f, measure.CalcSize(GuiPool.Text(GuiText.FlipHint, wider)).x + 48f * s);
             float hintH = hintHi * 2.45f;
             var pill = new Rect((Screen.width - hintW) * 0.5f, y, hintW, hintH);
             float edge = 28f * s;
@@ -14316,12 +14359,10 @@ namespace FlockFive
             const string a = "Tap to flip!";
             const string b = "Tap outside to put back";
             int hi = Mathf.Clamp(Mathf.RoundToInt(32f * s), 28, 56);
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var st = GuiPool.Label(GuiSlot.FlipHint);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
             st.fontSize = hi;
             var pill = FlipHintRect(y, s);
             var inner = new Rect(pill.x + 18f, pill.y + 12f, Mathf.Max(8f, pill.width - 36f), Mathf.Max(8f, pill.height - 24f));
@@ -14562,11 +14603,9 @@ namespace FlockFive
                     GUI.DrawTexture(br, lockedBee.texture, ScaleMode.ScaleToFit, true);
                     GUI.color = Color.white;
                 }
-                var mystery = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter
-                };
+                var mystery = GuiPool.Label(GuiSlot.AlbumMystery);
+                mystery.fontStyle = FontStyle.Bold;
+                mystery.alignment = TextAnchor.MiddleCenter;
                 mystery.fontSize = FitFont(mystery, "?", face.width * 0.55f, face.height * 0.40f, inspectView ? 48 : 28, inspectView ? 96 : 64);
                 StampOutlined(new Rect(face.x, face.y + face.height * 0.28f, face.width, face.height * 0.42f), "?", mystery, new Color(0.62f, 0.54f, 0.42f), 2, 1);
             }
@@ -14588,14 +14627,18 @@ namespace FlockFive
                 CardText.DrawFront(textFace, kind.Name, kind.Front, inspectView, s);
                 if (n > 1)
                 {
-                    var cnt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperRight };
+                    var cnt = GuiPool.Label(GuiSlot.AlbumCount);
+                    cnt.fontStyle = FontStyle.Bold;
+                    cnt.alignment = TextAnchor.UpperRight;
                     cnt.fontSize = Mathf.Max(inspectView ? 22 : Mathf.RoundToInt(14f * s), Mathf.RoundToInt((inspectView ? 20f : 14f) * s));
                     StampOutlined(new Rect(face.xMax - 56f * s, face.y + 4f * s, 52f * s, inspectView ? 32f * s : 20f * s), "×" + n, cnt, new Color(0.16f, 0.07f, 0.02f), inspectView ? 2 : 1, 1);
                 }
                 if (finish != BeeFinish.Normal)
                 {
                     string foil = finish == BeeFinish.Holo ? "Holo" : "Inverse Rainbow";
-                    var foilSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperLeft };
+                    var foilSt = GuiPool.Label(GuiSlot.AlbumFoil);
+                    foilSt.fontStyle = FontStyle.Bold;
+                    foilSt.alignment = TextAnchor.UpperLeft;
                     int foilPx = inspectView ? Mathf.Max(18, Mathf.RoundToInt(16f * s)) : Mathf.RoundToInt(14f * s);
                     foilSt.fontSize = foilPx;
                     Color foilCol = finish == BeeFinish.Holo
@@ -14691,15 +14734,13 @@ namespace FlockFive
 
         void DrawNewPill(Rect card, float s)
         {
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var st = GuiPool.Label(GuiSlot.NewPill);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
             st.fontSize = Mathf.Max(11, Mathf.RoundToInt(12f * s));
             float h = Mathf.Max(16f, st.fontSize + 6f);
-            float w = st.CalcSize(new GUIContent("NEW")).x + 12f;
+            float w = st.CalcSize(GuiPool.Text(GuiText.NewPill, "NEW")).x + 12f;
             var r = new Rect(card.xMax - w - 4f, card.y + 4f, w, h);
             GUI.color = new Color(0.55f, 0.28f, 0.05f, 0.95f);
             GUI.DrawTexture(new Rect(r.x + 1f, r.y + 1.5f, r.width, r.height), Texture2D.whiteTexture);
@@ -14732,12 +14773,10 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(box.xMax - edge, box.y, edge, box.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            var titleSt = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var titleSt = GuiPool.Label(GuiSlot.LevelHiveTitle);
+            titleSt.fontStyle = FontStyle.Bold;
+            titleSt.alignment = TextAnchor.MiddleCenter;
+            titleSt.wordWrap = false;
             const string roundHead = "Cards collected this round";
             int titlePx = Mathf.Max(floor + 4, Mathf.RoundToInt(26f * s));
             var titleR = new Rect(box.x + 12f * s, box.y + 12f * s, box.width - 24f * s, titlePx + 10f);
@@ -14746,12 +14785,10 @@ namespace FlockFive
 
             if (!cards)
             {
-                var howSt = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                    wordWrap = false
-                };
+                var howSt = GuiPool.Label(GuiSlot.LevelHiveHow);
+                howSt.fontStyle = FontStyle.Bold;
+                howSt.alignment = TextAnchor.MiddleCenter;
+                howSt.wordWrap = false;
                 const string empty = "Nothing yet…";
                 var howR = new Rect(box.x + 16f * s, titleR.yMax + 8f * s, box.width - 32f * s, box.yMax - titleR.yMax - 20f * s);
                 int howHi = Mathf.Max(floor + 8, Mathf.RoundToInt(28f * s));
@@ -14887,12 +14924,10 @@ namespace FlockFive
             }
             else if (count > 12)
             {
-                var pageSt = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                    wordWrap = false
-                };
+                var pageSt = GuiPool.Label(GuiSlot.LevelHivePage);
+                pageSt.fontStyle = FontStyle.Bold;
+                pageSt.alignment = TextAnchor.MiddleCenter;
+                pageSt.wordWrap = false;
                 pageSt.fontSize = floor;
                 string page = (_levelHivePick + 1) + " / " + count;
                 float pageH = floor + 8f;
@@ -15062,12 +15097,10 @@ namespace FlockFive
         {
             int floor = Mathf.Max(16, Mathf.RoundToInt(16f * s));
             int hi = Mathf.Max(floor + 2, Mathf.RoundToInt(20f * s));
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = true
-            };
+            var st = GuiPool.Label(GuiSlot.HiveColumns);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = true;
             for (int col = 1; col < 3; col++)
             {
                 string text = col == 1 ? "Holo" : "Inverse Rainbow";
@@ -15512,7 +15545,7 @@ namespace FlockFive
                 int headLo = Mathf.Max(14, Mathf.RoundToInt(16f * s));
                 int headHi = Mathf.Max(headLo + 4, Mathf.RoundToInt(40f * s));
                 title.fontSize = FitFontWrapped(title, head, headR.width, headR.height * 0.92f, headLo, headHi);
-                var headContent = new GUIContent(head);
+                var headContent = GuiPool.Text(GuiText.GiftHead, head);
                 int headGuard = 0;
                 while (title.fontSize > 8 && headGuard < 28
                     && title.CalcHeight(headContent, headR.width) > headR.height * 0.96f)
@@ -15572,7 +15605,7 @@ namespace FlockFive
             float capH = disc.height * 0.42f;
             int watchHi = Mathf.Max(16, Mathf.RoundToInt(26f * s));
             watchSt.fontSize = FitFont(watchSt, watchLab, capW, capH, 8, watchHi);
-            var watchContent = new GUIContent(watchLab);
+            var watchContent = GuiPool.Text(GuiText.GiftWatch, watchLab);
             int watchGuard = 0;
             while (watchSt.fontSize > 8 && watchGuard < 24
                 && watchSt.CalcSize(watchContent).x > capW)
@@ -15650,7 +15683,7 @@ namespace FlockFive
             float capH = disc.height * 0.46f;
             int hi = Mathf.Max(16, Mathf.RoundToInt(30f * s));
             st.fontSize = FitFont(st, lab, capW, capH, 8, hi);
-            var content = new GUIContent(lab);
+            var content = GuiPool.Text(GuiText.FreezeRetry, lab);
             int guard = 0;
             while (st.fontSize > 8 && guard < 24 && st.CalcSize(content).x > capW)
             {
@@ -15688,7 +15721,7 @@ namespace FlockFive
             const string text = "Continue";
             int hi = Mathf.Max(10, Mathf.RoundToInt(14f * s));
             st.fontSize = FitFont(st, text, lab.width, lab.height * 0.72f, 8, hi);
-            var content = new GUIContent(text);
+            var content = GuiPool.Text(GuiText.FreezeContinue, text);
             int guard = 0;
             while (st.fontSize > 8 && guard < 16 && st.CalcSize(content).x > lab.width)
             {
@@ -15959,12 +15992,10 @@ namespace FlockFive
                 GUI.DrawTexture(band, Texture2D.whiteTexture);
                 GUI.color = Color.white;
             }
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.BoldAndItalic,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = true
-            };
+            var st = GuiPool.Label(GuiSlot.GiftMovie);
+            st.fontStyle = FontStyle.BoldAndItalic;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = true;
             st.fontSize = Mathf.RoundToInt(26 * s);
             StampOutlined(stage, "Playing…", st, new Color(1f, 0.92f, 0.72f), 2, 1);
         }
@@ -15981,12 +16012,10 @@ namespace FlockFive
             float breathe = 0.5f + 0.5f * Mathf.Sin(u * 3.4f);
 
             string lab = "It's yours.";
-            var st = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+            var st = GuiPool.Label(GuiSlot.GiftThanks);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
             float w = Screen.width * 0.92f;
             float h = 120f * s;
             var r = new Rect((Screen.width - w) * 0.5f, Screen.height * 0.34f, w, h);

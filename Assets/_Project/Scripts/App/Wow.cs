@@ -42,7 +42,7 @@ namespace FlockFive
                 {
                     if (bits[i] == null) continue;
                     bits[i].transform.position += vel[i] * Time.deltaTime;
-                    vel[i] *= 0.92f;
+                    vel[i] *= FramePace.Damp(0.92f, Time.deltaTime);
                     var c = bits[i].color;
                     c.a = (1f - u) * (1f - u);
                     bits[i].color = c;
@@ -148,7 +148,7 @@ namespace FlockFive
                 age[i] += dt;
                 float u = Mathf.Clamp01(age[i] / life);
                 rs[i].transform.position += vel[i] * dt;
-                vel[i] *= 0.90f;
+                vel[i] *= FramePace.Damp(0.90f, dt);
                 rs[i].transform.Rotate(0f, 0f, (i % 2 == 0 ? 140f : -110f) * dt);
                 var c = rs[i].color;
                 c.a = (1f - u) * (1f - u);

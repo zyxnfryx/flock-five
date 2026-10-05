@@ -29,6 +29,9 @@ namespace FlockFive
         public float ResumeGateLeft;
         public float TapGateLeft;
         public float GiftGateLeft;
+        // Seconds a step tap gate (FlockFiveApp.StepTapGate) has been holding taps with no
+        // glove posed on its target. A healthy gated step poses within a frame or two.
+        public float StepGateBlind;
     }
 
     [Flags]
@@ -46,8 +49,13 @@ namespace FlockFive
         // Home lessons flagged live off the home screen: dropped.
         DropHomeLessons = 16,
         // GamePause held with no owner left (no ad, no tutorial pause): reset.
-        ResetLeakedPause = 32
+        ResetLeakedPause = 32,
+        // A step tap gate up with no glove on its target: the step is finished, taps freed.
+        FinishGatedStep = 64
     }
+
+    // One pointer event, as the step tap gate sees it.
+    public enum GatePointer { Down, Drag, Up }
 
     public static class TutorialHeal
     {
@@ -63,10 +71,27 @@ namespace FlockFive
             if (s.ResumeGateLeft > MaxGateSeconds || s.TapGateLeft > MaxGateSeconds || s.GiftGateLeft > MaxGateSeconds)
                 fix |= TutorFix.ClampGates;
             if (s.HomeLessonLive && !s.Splash) fix |= TutorFix.DropHomeLessons;
+            if (s.StepGateBlind > MaxGateSeconds) fix |= TutorFix.FinishGatedStep;
             // After the tutorial pause is accounted for, a pause with no owner is a leak.
             bool tutorHolds = s.TutorPause && (fix & TutorFix.ReleaseTutorPause) == 0;
             if (s.PauseHeld && !s.AdShowing && !tutorHolds) fix |= TutorFix.ResetLeakedPause;
             return fix;
+        }
+
+        // The step tap gate's rule, pure so an editor test can drive it. While a step that
+        // waits on one control is up, may this pointer event reach the page's controls?
+        // The glove's target always may. A press may also land in the step's swipe area so a
+        // swipe can start there, and a release outside the target counts only as the end of
+        // a real swipe. Drags pass: they only move a control that already took the press.
+        public static bool GateLets(GatePointer kind, bool inTarget, bool inSwipeArea, bool swipeTaken)
+        {
+            if (inTarget) return true;
+            switch (kind)
+            {
+                case GatePointer.Down: return inSwipeArea;
+                case GatePointer.Drag: return true;
+                default: return swipeTaken;
+            }
         }
     }
 }

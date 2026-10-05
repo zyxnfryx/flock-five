@@ -983,7 +983,7 @@ namespace FlockFive
                     if (bits[i] == null) continue;
                     vel[i].y -= 5.4f * Time.deltaTime;
                     bits[i].transform.position += vel[i] * Time.deltaTime;
-                    vel[i] *= 0.985f;
+                    vel[i] *= FramePace.Damp(0.985f, Time.deltaTime);
                     var c = bits[i].color;
                     c.a = (1f - u) * (1f - u);
                     bits[i].color = c;

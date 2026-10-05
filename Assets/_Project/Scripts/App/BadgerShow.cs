@@ -248,12 +248,21 @@ namespace FlockFive
 
         public static float Duration => LandAt(Landings - 1) + SettleSeconds;
 
-        // bee_1..bee_5, cycled by landing order.
+        // bee_1..bee_5, cycled by landing order. Names are built once: this runs for
+        // every bee on every OnGUI pass of the opening.
+        static string[] _beeNames;
+
         public static string BeeFrame(int order)
         {
             int k = order % BeeArt;
             if (k < 0) k += BeeArt;
-            return "bee_" + (k + 1);
+            if (_beeNames == null)
+            {
+                var names = new string[BeeArt];
+                for (int i = 0; i < names.Length; i++) names[i] = "bee_" + (i + 1);
+                _beeNames = names;
+            }
+            return _beeNames[k];
         }
 
         public static float BeeScale(bool yard) => yard ? YardBeeScale : 1f;

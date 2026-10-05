@@ -6,29 +6,64 @@ namespace FlockFive
     {
         static AudioSource[] _voices;
         static int _v;
-        static AudioClip[] _chirps;
-        static AudioClip[] _flaps;
-        static AudioClip[] _flutters;
-        static AudioClip[] _breaks;
-        static AudioClip[] _lifts;
-        static AudioClip[] _chings;
-        static AudioClip[] _clinks;
-        static AudioClip[] _rattles;
-        static AudioClip[] _yells;
-        static AudioClip[] _hawks;
-        static AudioClip[] _oinks;
-        static AudioClip[] _pops;
+        // Clip banks build on first use (or one clip per splash frame via WarmStep), not
+        // all at once in Start. Same Make* calls and seeds as before, so every clip is
+        // bit-identical; only when it is made moves. Each name below is a property, so
+        // every existing play site still reads a complete bank.
+        static readonly SfxBank _chirpsB = new SfxBank(LoadVoices);
+        static readonly SfxBank _flapsB = new SfxBank(null, 8, i => MakeFlap(i, 2200 + i * 131));
+        static readonly SfxBank _fluttersB = new SfxBank(null, 10, i => MakeFlutter(i, 3300 + i * 47));
+        static readonly SfxBank _breaksB = new SfxBank("Audio/Break", 12, i => MakeBreak(i, 4100 + i * 47));
+        static readonly SfxBank _liftsB = new SfxBank("Audio/Whoosh", 12, i => MakeLift(i, 4700 + i * 43));
+        static readonly SfxBank _chingsB = new SfxBank("Audio/Ching", 12, MakeChing);
+        static readonly SfxBank _clinksB = new SfxBank("Audio/Coin", 12, MakeCoin);
+        static readonly SfxBank _rattlesB = new SfxBank("Audio/Rattle", 20, MakeFeederRattle);
+        static readonly SfxBank _yellsB = new SfxBank("Audio/Yell", 6, MakeSparrowYell);
+        static readonly SfxBank _hawksB = new SfxBank("Audio/Hawk", 8, MakeHawkCry);
+        static readonly SfxBank _oinksB = new SfxBank("Audio/Oink", 8, MakeOink);
+        static readonly SfxBank _popsB = new SfxBank("Audio/Pop", 12, i => MakePop(i, 8800 + i * 29));
+        static readonly SfxBank _jinglesB = new SfxBank(null, 7, i => MakeComboJingle(i + 2));
+        static readonly SfxBank _denyB = new SfxBank(null, 1, i => MakeDeny());
+        static readonly SfxBank _pageTurnB = new SfxBank(null, 1, i => MakePageTurn());
+        static readonly SfxBank _betInB = new SfxBank(null, 6, MakeCoinIn);
+        static readonly SfxBank _betOutB = new SfxBank(null, 6, MakeCoinOut);
+        static readonly SfxBank _snoozesB = new SfxBank("Audio/Snooze", 12, i => MakeSnooze(i, 5100 + i * 53));
+        static readonly SfxBank _humsB = new SfxBank(null, 8, i => MakeHum(i, 6200 + i * 41));
+        static readonly SfxBank _scattersB = new SfxBank(null, 12, i => MakeScatter(i, 7300 + i * 37));
+        static readonly SfxBank _boomsB = new SfxBank(null, 5, i => MakeBoom(3400 + i * 71));
+        static readonly SfxBank _thundersB = new SfxBank(null, 12, i => MakeThunder(i, 2800 + i * 67));
+        // Warm order: what the splash and the first garden reach first.
+        static readonly SfxBank[] _warmOrder =
+        {
+            _chirpsB, _popsB, _clinksB, _flapsB, _fluttersB, _denyB, _pageTurnB, _humsB,
+            _breaksB, _liftsB, _chingsB, _oinksB, _jinglesB, _snoozesB, _scattersB,
+            _betInB, _betOutB, _rattlesB, _yellsB, _hawksB, _boomsB, _thundersB
+        };
+        static int _warmBank;
+        static bool _warmGate;
+        static AudioClip[] _chirps => _chirpsB.Get();
+        static AudioClip[] _flaps => _flapsB.Get();
+        static AudioClip[] _flutters => _fluttersB.Get();
+        static AudioClip[] _breaks => _breaksB.Get();
+        static AudioClip[] _lifts => _liftsB.Get();
+        static AudioClip[] _chings => _chingsB.Get();
+        static AudioClip[] _clinks => _clinksB.Get();
+        static AudioClip[] _rattles => _rattlesB.Get();
+        static AudioClip[] _yells => _yellsB.Get();
+        static AudioClip[] _hawks => _hawksB.Get();
+        static AudioClip[] _oinks => _oinksB.Get();
+        static AudioClip[] _pops => _popsB.Get();
         static AudioClip _celebrate;
-        static AudioClip[] _jingles;
-        static AudioClip _deny;
-        static AudioClip _pageTurn;
-        static AudioClip[] _betIn;
-        static AudioClip[] _betOut;
-        static AudioClip[] _booms;
-        static AudioClip[] _snoozes;
-        static AudioClip[] _hums;
-        static AudioClip[] _scatters;
-        static AudioClip[] _thunders;
+        static AudioClip[] _jingles => _jinglesB.Get();
+        static AudioClip _deny => _denyB.Get()[0];
+        static AudioClip _pageTurn => _pageTurnB.Get()[0];
+        static AudioClip[] _betIn => _betInB.Get();
+        static AudioClip[] _betOut => _betOutB.Get();
+        static AudioClip[] _booms => _boomsB.Get();
+        static AudioClip[] _snoozes => _snoozesB.Get();
+        static AudioClip[] _hums => _humsB.Get();
+        static AudioClip[] _scatters => _scattersB.Get();
+        static AudioClip[] _thunders => _thundersB.Get();
         static int _lastFlap = -1;
         static int _lastSnooze = -1;
         static int _lastHum = -1;
@@ -51,6 +86,38 @@ namespace FlockFive
         const int Rate = 44100;
 
         public static void Warm() => Ensure();
+
+        public static bool WarmDone => _warmBank >= _warmOrder.Length && _warmGate && LoneClipsWarm;
+
+        // One small piece of synthesis or one clip's audio data per call. The splash calls
+        // this once per frame, so the first chirp, gate or thunder is never a hitch.
+        public static void WarmStep()
+        {
+            while (_warmBank < _warmOrder.Length)
+            {
+                if (_warmOrder[_warmBank].Step()) return;
+                _warmBank++;
+            }
+            if (!_warmGate)
+            {
+                _warmGate = true;
+                if (_gate == null) _gate = LoadGate();
+                return;
+            }
+            WarmLoneClip();
+        }
+
+        static bool LoneClipsWarm =>
+            _celebrate != null && _lullaby != null && _fwWhistle != null && _fwCrackle != null && _feederArrive != null;
+
+        static void WarmLoneClip()
+        {
+            if (_celebrate == null) { _celebrate = MakeCelebrate(); return; }
+            if (_lullaby == null) { _lullaby = MakeLullaby(); return; }
+            if (_fwWhistle == null) { _fwWhistle = MakeFwWhistle(); return; }
+            if (_fwCrackle == null) { _fwCrackle = MakeFwCrackle(); return; }
+            if (_feederArrive == null) _feederArrive = MakeFeederArrive();
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
@@ -106,49 +173,8 @@ namespace FlockFive
                 Object.DontDestroyOnLoad(keep.gameObject);
             _host = keep;
             BindVoices();
-            if (_chirps != null) return;
-            _chirps = LoadVoices();
-            _flaps = new AudioClip[8];
-            for (int i = 0; i < _flaps.Length; i++)
-                _flaps[i] = MakeFlap(i, 2200 + i * 131);
-            _flutters = new AudioClip[10];
-            for (int i = 0; i < _flutters.Length; i++)
-                _flutters[i] = MakeFlutter(i, 3300 + i * 47);
-            _breaks = LoadBank("Audio/Break", 12, i => MakeBreak(i, 4100 + i * 47));
-            _lifts = LoadBank("Audio/Whoosh", 12, i => MakeLift(i, 4700 + i * 43));
-            _chings = LoadBank("Audio/Ching", 12, MakeChing);
-            _clinks = LoadBank("Audio/Coin", 12, MakeCoin);
-            _rattles = LoadBank("Audio/Rattle", 20, MakeFeederRattle);
-            _yells = LoadBank("Audio/Yell", 6, MakeSparrowYell);
-            _hawks = LoadBank("Audio/Hawk", 8, MakeHawkCry);
-            _oinks = LoadBank("Audio/Oink", 8, MakeOink);
-            _pops = LoadBank("Audio/Pop", 12, i => MakePop(i, 8800 + i * 29));
-            _jingles = new AudioClip[7];
-            for (int i = 0; i < _jingles.Length; i++)
-                _jingles[i] = MakeComboJingle(i + 2);
-            _deny = MakeDeny();
-            _pageTurn = MakePageTurn();
-            _betIn = new AudioClip[6];
-            for (int i = 0; i < _betIn.Length; i++)
-                _betIn[i] = MakeCoinIn(i);
-            _betOut = new AudioClip[6];
-            for (int i = 0; i < _betOut.Length; i++)
-                _betOut[i] = MakeCoinOut(i);
-            _snoozes = LoadBank("Audio/Snooze", 12, i => MakeSnooze(i, 5100 + i * 53));
-            _hums = new AudioClip[8];
-            for (int i = 0; i < _hums.Length; i++)
-                _hums[i] = MakeHum(i, 6200 + i * 41);
-            _scatters = new AudioClip[12];
-            for (int i = 0; i < _scatters.Length; i++)
-                _scatters[i] = MakeScatter(i, 7300 + i * 37);
-            _booms = new AudioClip[5];
-            for (int i = 0; i < _booms.Length; i++)
-                _booms[i] = MakeBoom(3400 + i * 71);
-            _thunders = new AudioClip[12];
-            for (int i = 0; i < _thunders.Length; i++)
-                _thunders[i] = MakeThunder(i, 2800 + i * 67);
-            var gated = Resources.Load<AudioClip>("Audio/Gate/gate_go");
-            _gate = gated != null ? gated : MakeGate();
+            // Banks are no longer synthesized here (it held the first frame). They build
+            // on first play, or ahead of time one clip per splash frame (WarmStep).
         }
 
         static void BindVoices()
@@ -467,20 +493,12 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.18f, MixDesk.DuckChirp);
         }
 
+        // The bet banks are complete whenever they are read (SfxBank), so this only
+        // forces them in for callers that want the cost paid early.
         static void WarmBetClips()
         {
-            if (_betIn == null)
-            {
-                _betIn = new AudioClip[6];
-                for (int k = 0; k < _betIn.Length; k++)
-                    _betIn[k] = MakeCoinIn(k);
-            }
-            if (_betOut == null)
-            {
-                _betOut = new AudioClip[6];
-                for (int k = 0; k < _betOut.Length; k++)
-                    _betOut[k] = MakeCoinOut(k);
-            }
+            _betInB.Get();
+            _betOutB.Get();
         }
 
         public static void BetUp()
@@ -822,5 +840,95 @@ namespace FlockFive
             if (Sfx.OwnsHost(this)) Sfx.DropHost();
         }
     }
-}
 
+    // One clip bank, built on demand. Get() always returns the complete bank (it
+    // finishes whatever is left), so a play site never sees a partial array. Step()
+    // does one small unit of work for the splash warm-up: the Resources lookup, one
+    // synthesized clip, or one imported clip's audio data (those import with
+    // preloadAudioData off, so the first Play used to read the file).
+    sealed class SfxBank
+    {
+        readonly string _path;
+        readonly int _count;
+        readonly System.Func<int, AudioClip> _make;
+        readonly System.Func<AudioClip[]> _load;
+        AudioClip[] _clips;
+        int _made;
+        int _data;
+        bool _synth;
+
+        public SfxBank(string path, int count, System.Func<int, AudioClip> make)
+        {
+            _path = path;
+            _count = count;
+            _make = make;
+        }
+
+        public SfxBank(System.Func<AudioClip[]> load)
+        {
+            _load = load;
+        }
+
+        bool Built => _clips != null && (!_synth || _made >= _clips.Length);
+
+        void Begin()
+        {
+            if (_clips != null) return;
+            if (_load != null)
+            {
+                _clips = _load() ?? new AudioClip[0];
+                return;
+            }
+            if (_path != null)
+            {
+                var found = Resources.LoadAll<AudioClip>(_path);
+                if (found != null && found.Length > 0)
+                {
+                    System.Array.Sort(found, (a, b) => string.CompareOrdinal(a.name, b.name));
+                    _clips = found;
+                    return;
+                }
+            }
+            _synth = true;
+            _made = 0;
+            _clips = new AudioClip[_count];
+        }
+
+        public AudioClip[] Get()
+        {
+            if (_clips != null && !_synth) return _clips;
+            Begin();
+            while (_synth && _made < _clips.Length)
+            {
+                _clips[_made] = _make(_made);
+                _made++;
+            }
+            return _clips;
+        }
+
+        // True when it did something; false when the bank is fully warm.
+        public bool Step()
+        {
+            if (_clips == null)
+            {
+                Begin();
+                return true;
+            }
+            if (_synth && _made < _clips.Length)
+            {
+                _clips[_made] = _make(_made);
+                _made++;
+                return true;
+            }
+            if (!Built) return true;
+            while (_data < _clips.Length)
+            {
+                var c = _clips[_data++];
+                if (c == null || c.loadState != AudioDataLoadState.Unloaded) continue;
+                c.LoadAudioData();
+                return true;
+            }
+            return false;
+        }
+    }
+}

@@ -169,10 +169,10 @@ namespace FlockFive
         const float HomeTwigTexH = 720f;
         // 2.75x sits inside the 2.5–3x ask. Kept so older notes still name it.
         const float AvatarGrow = 2.75f;
-        // Home splash body. 1.15× a garden bird (1024px @ 280ppu × BirdScale).
-        // First sight ("followed you home") and the bird after naming share this.
-        // Swatches in the name dialog do not.
-        const float HomeAvatarMul = 1.15f;
+        // Home splash body. 1.30× a garden bird (1024px @ 280ppu × BirdScale).
+        // ~13% up from the old 1.15. First sight ("followed you home") and the
+        // bird after naming share this. Swatches in the name dialog do not.
+        const float HomeAvatarMul = 1.30f;
         // Flap sheets are 1536px on the 1024 rest canvas, same ppu. DrawCatalogBird
         // grows the quad by this, so a waiting center needs the wider reach.
         const float HomeFlapFit = 1536f / 1024f;
@@ -832,7 +832,7 @@ namespace FlockFive
             PlayerPrefs.SetInt(AvatarPref, i);
             PlayerPrefs.Save();
             // No hop. A hop clears the perch, opens the flap sheet (larger quad),
-            // and lifts the bird into the leaves. Color keeps the seat, the 1.15
+            // and lifts the bird into the leaves. Color keeps the seat, the 1.30
             // size, and the facing. A tap on the bird still hops.
             Sfx.Chirp(col);
         }
@@ -1191,6 +1191,8 @@ namespace FlockFive
             st.wordWrap = false;
             StampBannerText(r, name, st, 1f, true);
             st.wordWrap = wrap;
+            // VIP: small gold crown on the tag's corner (draw-only, same rect and hit).
+            DrawVipTagAccent(r, s);
         }
 
         // Sheet quad. Flap art is wider in world units than the rest pose, so the

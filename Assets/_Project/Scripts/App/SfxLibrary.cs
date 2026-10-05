@@ -106,6 +106,19 @@ namespace FlockFive
         // The one "!" clip. Every alert plays it through Sfx.RowAlert.
         public static AudioClip Sting() => Clip("sting");
 
+        // The named clips, warmed one per splash frame so the first fanfare, badger
+        // sting, tick or cowbell is not synthesized on the frame it should sound.
+        static readonly string[] _warmNames = { "badger", "fanfare", "tick", "sting", "cowbell" };
+        static int _warmNext;
+
+        public static bool WarmDone => _warmNext >= _warmNames.Length;
+
+        public static void WarmStep()
+        {
+            if (_warmNext >= _warmNames.Length) return;
+            Clip(_warmNames[_warmNext++]);
+        }
+
         static AudioClip Clip(string name)
         {
             AudioClip clip;

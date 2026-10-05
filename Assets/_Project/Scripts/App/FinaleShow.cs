@@ -1000,7 +1000,7 @@ namespace FlockFive
                 {
                     if (rs[i] == null) continue;
                     rs[i].transform.position += vel[i] * Time.deltaTime;
-                    vel[i] *= 0.97f;
+                    vel[i] *= FramePace.Damp(0.97f, Time.deltaTime);
                     rs[i].transform.localScale = Vector3.one * sc;
                     var c = rs[i].color;
                     c.a = env;

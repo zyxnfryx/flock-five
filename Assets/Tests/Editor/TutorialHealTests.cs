@@ -60,6 +60,29 @@ namespace FlockFive.Editor
             Check("normal gates", new TutorSnapshot { ResumeGateLeft = 0.35f, TapGateLeft = 0.45f, GiftGateLeft = 1f }, TutorFix.None);
             Check("frozen resume gate", new TutorSnapshot { ResumeGateLeft = 40f }, TutorFix.ClampGates);
             Check("frozen gift lockout", new TutorSnapshot { GiftGateLeft = 9f }, TutorFix.ClampGates);
+            Check("gated step, glove posing", new TutorSnapshot { Splash = true, StepGateBlind = 0f }, TutorFix.None);
+            Check("gated step, glove settling", new TutorSnapshot { Splash = true, StepGateBlind = 0.6f }, TutorFix.None);
+            Check("gated step, no glove", new TutorSnapshot { Splash = true, StepGateBlind = 6f }, TutorFix.FinishGatedStep);
+
+            // Step tap gate rule (poker back step, album page step).
+            void Gate(string name, GatePointer kind, bool inTarget, bool inSwipe, bool swipe, bool want)
+            {
+                bool got = TutorialHeal.GateLets(kind, inTarget, inSwipe, swipe);
+                bool ok = got == want;
+                if (ok) pass++; else fail++;
+                string line = (ok ? "PASS  " : "FAIL  ") + "gate: " + name + "  want " + want + "  got " + got;
+                sb.AppendLine(line);
+                Debug.Log("[tutorial-heal] " + line);
+            }
+            Gate("press on the glove's target", GatePointer.Down, true, false, false, true);
+            Gate("release on the glove's target", GatePointer.Up, true, false, false, true);
+            Gate("press on DEAL", GatePointer.Down, false, false, false, false);
+            Gate("release on DEAL", GatePointer.Up, false, false, false, false);
+            Gate("press on bet +", GatePointer.Down, false, false, false, false);
+            Gate("drag passes", GatePointer.Drag, false, false, false, true);
+            Gate("press may start a page swipe", GatePointer.Down, false, true, false, true);
+            Gate("release that ends a swipe", GatePointer.Up, false, true, true, true);
+            Gate("tap on an album sleeve", GatePointer.Up, false, true, false, false);
 
             sb.AppendLine(fail == 0 ? "ALL OK  " + pass : "FAILED  " + fail + "  passed " + pass);
             File.WriteAllText(Out, sb.ToString());

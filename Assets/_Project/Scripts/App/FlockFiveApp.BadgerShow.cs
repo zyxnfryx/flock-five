@@ -17,7 +17,7 @@ namespace FlockFive
     // Don't Care slam: BadgerSlam (clock, zoom, lines, glint), BadgerFight.TryDontCare (roll +
     // effect), PushBadgerZoom / DrawBadgerSpeedLines / DrawBadgerGlint (small shared helpers),
     // DrawBadgerShrug / DrawBadgerColumnSplat (shared with the round beat), StampOutlined,
-    // SpriteCatalog.Sparkle, SfxLibrary.Badger + Sfx.CardBump, HealBadgerShow (interruption).
+    // SparkleFx.DrawAt (SpriteCatalog.Sparkle), SfxLibrary.Badger + Sfx.CardBump, HealBadgerShow (interruption).
     public sealed partial class FlockFiveApp
     {
         readonly BadgerLeapRun _bgLeap = new BadgerLeapRun();
@@ -445,18 +445,11 @@ namespace FlockFive
             }
         }
 
-        // Shared: a white glint. SpriteCatalog.Sparkle (the existing celebration glint) over a
-        // small white core rect; the core alone still reads if the sparkle sprite is missing.
+        // Shared sparkle helper. White core + SpriteCatalog.Sparkle via SparkleFx.DrawAt.
         static void DrawBadgerGlint(Vector2 at, float size, float alpha)
         {
             if (!GuiPaint() || alpha < 0.02f || size < 1f) return;
-            float core = size * 0.22f;
-            GUI.color = new Color(1f, 1f, 1f, alpha);
-            GUI.DrawTexture(new Rect(at.x - core * 0.5f, at.y - core * 0.5f, core, core), Texture2D.whiteTexture);
-            var spr = SpriteCatalog.Sparkle;
-            if (spr != null && spr.texture != null)
-                GUI.DrawTexture(new Rect(at.x - size * 0.5f, at.y - size * 0.5f, size, size), spr.texture, ScaleMode.ScaleToFit, true);
-            GUI.color = Color.white;
+            SparkleFx.DrawAt(at, size, alpha);
         }
 
         // Close-up face for the eye zoom: placed so its pupil sits on DontCareEyeAt.

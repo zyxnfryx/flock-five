@@ -166,20 +166,29 @@ namespace FlockFive
                 var st = Style();
                 st.wordWrap = false;
                 st.alignment = TextAnchor.MiddleCenter;
-                int baseHi = Mathf.RoundToInt(box.height * (title ? 0.62f : 0.28f));
-                int hi = Mathf.Max(floor + 2, Mathf.RoundToInt(baseHi * scale));
-                int size = hi;
-                int guard = 0;
-                while (size > floor && guard < 18)
+                // Card copy is static, so the fit (size plus wrapped lines) is cached per
+                // block. Every album card used to re-run up to 18 sizes x a word wrap
+                // (Split, concatenation, CalcSize) on every OnGUI pass.
+                if (!BlockHit(text, box, scale, title, floor, out int size, out var lines))
                 {
+                    int baseHi = Mathf.RoundToInt(box.height * (title ? 0.62f : 0.28f));
+                    int hi = Mathf.Max(floor + 2, Mathf.RoundToInt(baseHi * scale));
+                    size = hi;
+                    int guard = 0;
+                    while (size > floor && guard < 18)
+                    {
+                        st.fontSize = size;
+                        if (LineCount(st, text, box.width) <= 3) break;
+                        size -= 1;
+                        guard++;
+                    }
                     st.fontSize = size;
-                    if (LineCount(st, text, box.width) <= 3) break;
-                    size -= 1;
-                    guard++;
+                    Wrap(st, text, box.width);
+                    lines = _lines.ToArray();
+                    BlockStore(text, box, scale, title, floor, size, lines);
                 }
                 st.fontSize = size;
-                Wrap(st, text, box.width);
-                int shown = _lines.Count > 3 ? 3 : _lines.Count;
+                int shown = lines.Length > 3 ? 3 : lines.Length;
                 if (shown <= 0) return;
                 float lineH = st.fontSize * lead;
                 float blockH = shown * lineH;
@@ -188,8 +197,71 @@ namespace FlockFive
                 for (int i = 0; i < shown; i++)
                 {
                     var line = new Rect(box.x, y + i * lineH, box.width, lineH);
-                    StampOutlined(line, _lines[i], st, ink, 1, dark);
+                    StampOutlined(line, lines[i], st, ink, 1, dark);
                 }
+            }
+
+            // ---- shared block-fit cache (one per CardText) ----
+            const int BlockSlots = 64;
+            static readonly string[] _bkText = new string[BlockSlots];
+            static readonly float[] _bkW = new float[BlockSlots];
+            static readonly float[] _bkH = new float[BlockSlots];
+            static readonly float[] _bkScale = new float[BlockSlots];
+            static readonly bool[] _bkTitle = new bool[BlockSlots];
+            static readonly int[] _bkFloor = new int[BlockSlots];
+            static readonly int[] _bkSize = new int[BlockSlots];
+            static readonly string[][] _bkLines = new string[BlockSlots][];
+            static readonly int[] _bkUse = new int[BlockSlots];
+            static int _bkSerial;
+            static int _bkFont = int.MinValue;
+
+            static bool BlockHit(string text, Rect box, float scale, bool title, int floor, out int size, out string[] lines)
+            {
+                size = 0;
+                lines = null;
+                var font = Style().font;
+                int fontId = font != null ? font.GetInstanceID() : 0;
+                if (fontId != _bkFont)
+                {
+                    _bkFont = fontId;
+                    for (int i = 0; i < BlockSlots; i++) _bkText[i] = null;
+                    return false;
+                }
+                for (int i = 0; i < BlockSlots; i++)
+                {
+                    if (_bkText[i] == null || _bkTitle[i] != title || _bkFloor[i] != floor) continue;
+                    if (_bkW[i] != box.width || _bkH[i] != box.height || _bkScale[i] != scale) continue;
+                    if (!string.Equals(_bkText[i], text)) continue;
+                    _bkUse[i] = ++_bkSerial;
+                    size = _bkSize[i];
+                    lines = _bkLines[i];
+                    return true;
+                }
+                return false;
+            }
+
+            static void BlockStore(string text, Rect box, float scale, bool title, int floor, int size, string[] lines)
+            {
+                int slot = 0;
+                int oldest = int.MaxValue;
+                for (int i = 0; i < BlockSlots; i++)
+                {
+                    if (_bkText[i] == null) { slot = i; break; }
+                    if (_bkUse[i] < oldest)
+                    {
+                        oldest = _bkUse[i];
+                        slot = i;
+                    }
+                }
+                _bkText[slot] = text;
+                _bkW[slot] = box.width;
+                _bkH[slot] = box.height;
+                _bkScale[slot] = scale;
+                _bkTitle[slot] = title;
+                _bkFloor[slot] = floor;
+                _bkSize[slot] = size;
+                _bkLines[slot] = lines;
+                _bkUse[slot] = ++_bkSerial;
             }
 
             static int LineCount(GUIStyle st, string text, float width)
@@ -217,7 +289,7 @@ namespace FlockFive
                     string w = words[i];
                     if (w.Length == 0) continue;
                     string trial = cur.Length == 0 ? w : cur + " " + w;
-                    if (cur.Length == 0 || st.CalcSize(new GUIContent(trial)).x <= width)
+                    if (cur.Length == 0 || st.CalcSize(GuiPool.Text(GuiText.WrapWords, trial)).x <= width)
                         cur = trial;
                     else
                     {

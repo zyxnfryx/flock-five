@@ -9,9 +9,16 @@ namespace FlockFive
         public static void GateGo()
         {
             Ensure();
-            if (_gate == null) _gate = MakeGate();
+            if (_gate == null) _gate = LoadGate();
             Shot(_gate, 1f, 0.86f, MixLayer.Lead, MixDesk.DuckWhoosh);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(2.7f, MixDesk.DuckWhoosh);
+        }
+
+        // Imported gate_go when present, else the synthesized gate (as Start used to do).
+        static AudioClip LoadGate()
+        {
+            var gated = Resources.Load<AudioClip>("Audio/Gate/gate_go");
+            return gated != null ? gated : MakeGate();
         }
 
         static AudioClip MakeGate()

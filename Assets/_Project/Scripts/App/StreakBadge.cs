@@ -4,7 +4,7 @@ namespace FlockFive
 {
     // One chip for every streak multiplier. Garden HUD and the reward stamp both
     // draw through here. Palette, face, gold sweep, numerals, and sparkle stay together.
-    // Twinkles use SpriteCatalog.Sparkle (the celebration glint). Not the bird selection glow.
+    // Twinkles go through SparkleFx (SpriteCatalog.Sparkle). Not the bird selection glow.
     public static class StreakBadge
     {
         public struct Ink
@@ -92,10 +92,6 @@ namespace FlockFive
             Shimmer = false
         };
 
-        static readonly float[] GlintX = { -0.40f, 0.38f, 0.02f, -0.22f, 0.34f };
-        static readonly float[] GlintY = { -0.22f, -0.36f, -0.46f, 0.40f, 0.28f };
-        static readonly float[] GlintPh = { 0.2f, 1.4f, 2.5f, 3.6f, 4.7f };
-
         static Texture2D _disc;
 
         // Face, thin dark rim, gold sweep, outlined numeral, optional sparkle.
@@ -173,28 +169,10 @@ namespace FlockFive
             GUI.DrawTexture(band, disc, ScaleMode.StretchToFill, true);
         }
 
-        // Celebration twinkles. SpriteCatalog.Sparkle only — never SpriteCatalog.Glow.
+        // Celebration twinkles. Shared SparkleFx (SpriteCatalog.Sparkle only).
         static void DrawSparkle(Rect r, float alpha, bool gold)
         {
-            var spr = SpriteCatalog.Sparkle;
-            var tex = spr != null ? spr.texture : null;
-            if (tex == null || alpha < 0.02f) return;
-            float t = Time.unscaledTime;
-            var tint = gold
-                ? new Color(1f, 0.97f, 0.82f, 1f)
-                : new Color(1f, 0.98f, 0.94f, 1f);
-            for (int i = 0; i < GlintX.Length; i++)
-            {
-                float tw = 0.5f + 0.5f * Mathf.Sin(t * 2.2f + GlintPh[i]);
-                tw = tw * tw;
-                if (tw < 0.12f) continue;
-                float sz = r.height * (0.11f + 0.05f * (i & 1));
-                float x = r.center.x + GlintX[i] * r.width - sz * 0.5f;
-                float y = r.center.y + GlintY[i] * r.height - sz * 0.5f;
-                GUI.color = new Color(tint.r, tint.g, tint.b, tw * alpha);
-                GUI.DrawTexture(new Rect(x, y, sz, sz), tex, ScaleMode.ScaleToFit, true);
-            }
-            GUI.color = Color.white;
+            SparkleFx.DrawAround(r, alpha, gold, sizeFrac: 0.12f);
         }
 
         static void DrawNumeral(Rect r, string text, GUIStyle st, Color ink, int darkPx)

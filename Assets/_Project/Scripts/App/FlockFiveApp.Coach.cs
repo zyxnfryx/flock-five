@@ -2031,20 +2031,26 @@ namespace FlockFive
         }
 
         // Plate behind a tutorial sentence, including the soft corner pad.
-        static Rect CoachPanelRect(Rect r)
+        static Rect CoachPanelRect(Rect r) => CoachPanelRect(r, Vector2.zero);
+
+        // extra grows the plate past the standard pad, per side (x left/right, y top/bottom).
+        // The text box r is untouched, so the font a lesson fits stays the same.
+        static Rect CoachPanelRect(Rect r, Vector2 extra)
         {
-            const float padX = 18f;
-            const float padY = 12f;
+            float padX = 18f + (extra.x > 0f ? extra.x : 0f);
+            float padY = 12f + (extra.y > 0f ? extra.y : 0f);
             return new Rect(r.x - padX, r.y - padY, r.width + padX * 2f, r.height + padY * 2f);
         }
 
         // Shared caption plate. One rounded rect, pixel-snapped. A 9-slice of the
         // soft plate doubled alpha on the joins (top hairline, and the end-caps
         // of a short pill). DrawBevelPlate stays on the gold button gradients.
-        static void DrawCoachPanel(Rect r, float fade)
+        static void DrawCoachPanel(Rect r, float fade) => DrawCoachPanel(r, fade, Vector2.zero);
+
+        static void DrawCoachPanel(Rect r, float fade, Vector2 extra)
         {
             if (fade < 0.02f) return;
-            var box = CoachPanelRect(r);
+            var box = CoachPanelRect(r, extra);
             float rad = 18f;
             float limit = Mathf.Min(box.width, box.height) * 0.5f - 1f;
             if (rad > limit) rad = Mathf.Max(2f, limit);
@@ -2588,11 +2594,13 @@ namespace FlockFive
         static int CaptionPx(int px) => Mathf.Max(1, Mathf.RoundToInt(px * CaptionFontBoost));
 
         // Shared tutorial caption: even inset, balanced wrap, one outline weight.
-        void PaintCoachCaption(string text, Rect r, float s, int lo, int hi)
+        // platePad: extra plate per side from a caption anchor (CoachPanelRect). The text box
+        // and the fitted font do not change with it.
+        void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default)
         {
             lo = CaptionPx(lo);
             hi = CaptionPx(hi);
-            NoteTutorPlate(CoachPanelRect(r));
+            NoteTutorPlate(CoachPanelRect(r, platePad));
             var st = CoachLineStyle();
             if (_coachContent == null) _coachContent = new GUIContent();
             float padX = Mathf.Clamp(r.width * 0.055f, 10f * s, 18f * s);
@@ -2627,7 +2635,7 @@ namespace FlockFive
             st.fontSize = _coachSizedPx;
             st.wordWrap = true;
             float fade = EaseOutCubic(_coachFade);
-            DrawCoachPanel(r, fade);
+            DrawCoachPanel(r, fade, platePad);
             StampBannerText(textR, _coachShown ?? text, st, fade, true);
         }
 
@@ -3688,6 +3696,97 @@ namespace FlockFive
             return own < 0 || own == rail;
         }
 
+        // THE tutorial tap gate for a step that waits on ONE screen control, the glove's target.
+        // Home rail lessons keep HomeTapAllowed, the badger lesson its tile check, and the garden
+        // coach CoachReject; a page step that points at one control is listed here. While it is
+        // up, SwallowOffTargetTap eats every IMGUI press outside the target at the top of OnGUI,
+        // before any control sees it, so DEAL, bet +/-, the cards, the pay table, album sleeves
+        // or another Back cannot take a tap that is not the glove's. The glove still fades only
+        // on its own valid tap (GloveTapHits), and a miss never fades it.
+        // No flag: it is derived from the live lesson state on every event, so leaving the page,
+        // finishing the step, or a pause (OnGUI returns before the gate) ends it on the spot. An
+        // empty target fails open. HealInterruptedTutorials finishes a gated step that has held
+        // taps for longer than TutorialHeal.MaxGateSeconds with no glove posed on its target.
+        const int GatePokerBack = 1;
+        const int GateAlbumPage = 2;
+
+        struct StepGate
+        {
+            public int Step;
+            // GUI rect, y down: the control the glove points at.
+            public Rect Target;
+            // Optional: a swipe that starts here may end the step too (album pages).
+            public Rect SwipeArea;
+        }
+
+        float _gateBlindSince = -1f;
+
+        bool StepTapGate(out StepGate gate)
+        {
+            gate = default;
+            if (PokerBackGateLive())
+            {
+                float s = Mathf.Max(Screen.height / 720f, 1f);
+                gate.Step = GatePokerBack;
+                gate.Target = BackMedalRect(s, TopHud());
+            }
+            else if (AlbumPageGateLive())
+            {
+                gate.Step = GateAlbumPage;
+                gate.Target = _albumPagerR;
+                gate.SwipeArea = _albumSwipeR;
+            }
+            else return false;
+            if (gate.Target.width < 2f || gate.Target.height < 2f)
+            {
+                gate = default;
+                return false;
+            }
+            return true;
+        }
+
+        // Album lesson, last step: "Swipe to turn the page! Or tap a page number." The glove is
+        // on the page chips; a swipe on the sheet is the other valid answer.
+        bool AlbumPageGateLive()
+        {
+            if (!_albumTutorOn || _albumTutorStep < 3) return false;
+            if (!_splash || _home != HomeFace.Hive || _hiveInspect >= 0) return false;
+            if (!_albumPagerOk || !AlbumPageSettled() || !TutorialGateClear()) return false;
+            return true;
+        }
+
+        // Called at the top of OnGUI, after the pause early-out, like SwallowResumePointer.
+        void SwallowOffTargetTap()
+        {
+            var e = Event.current;
+            if (e == null) return;
+            var t = e.type;
+            if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
+            if (!StepTapGate(out var gate)) return;
+            var at = e.mousePosition;
+            bool inSwipe = gate.SwipeArea.width > 2f && gate.SwipeArea.Contains(at);
+            bool swipeTaken = false;
+            if (t == EventType.MouseUp && gate.SwipeArea.width > 2f && _pageSwipe.Tracking)
+            {
+                float s = Mathf.Max(Screen.height / 720f, 1f);
+                swipeTaken = PageSwipeDir(at - _pageSwipe.Origin, AlbumSwipeMin(s), out _);
+            }
+            var kind = t == EventType.MouseDown ? GatePointer.Down : t == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
+            if (TutorialHeal.GateLets(kind, gate.Target.Contains(at), inSwipe, swipeTaken)) return;
+            if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+            e.Use();
+        }
+
+        // The posing step armed this rect within the last frame (CoachGloveAt → GloveArmTap).
+        bool GloveArmedOn(Rect target)
+        {
+            if (_gloveTapFrame < 0) return false;
+            int age = Time.frameCount - _gloveTapFrame;
+            if (age < 0 || age > 1) return false;
+            if (_gloveTapHit != null || !_gloveTapRectOn) return false;
+            return _gloveTapRect.Overlaps(target);
+        }
+
         bool TutorialGuideLive() =>
             _pestCue != 0 || _hiveLevelLive || _hiveIntroLive || _pokerIntroLive
             || _dailyIntroLive || _leafIntro || _adHand || _welcomeGlove || _adoptLive
@@ -3721,7 +3820,9 @@ namespace FlockFive
                 || (_coach && _cueHand);
         }
 
-        bool TutorialStepActive() => OtherTutorialLive() || _albumTutorOn;
+        // The poker back step counts while its tap gate is up, so automatic cards wait it out,
+        // the hand ad does not cut in, and a resume restarts its glove (FreshTutorGlove).
+        bool TutorialStepActive() => OtherTutorialLive() || _albumTutorOn || PokerBackGateLive();
 
         // Ads, pause, a modal card, or a lesson that is already up. A lesson that
         // is itself running does not count. New lessons call this before they arm.
@@ -3804,6 +3905,13 @@ namespace FlockFive
         {
             float now = PlayClock.Now;
             HealBadgerShow();
+            // Step tap gate: how long it has held taps with no glove posed on its target.
+            // A pause, an ad, or the resume swallow is not blind time.
+            bool gateUp = StepTapGate(out var gate);
+            if (!gateUp || GloveArmedOn(gate.Target) || GamePause.Paused || Ads.IsShowing || now < _resumeInputUntil)
+                _gateBlindSince = -1f;
+            else if (_gateBlindSince < 0f)
+                _gateBlindSince = now;
             var snap = new TutorSnapshot
             {
                 Splash = _splash,
@@ -3818,7 +3926,8 @@ namespace FlockFive
                 HomeLessonLive = _hiveIntroLive || _pokerIntroLive || _dailyIntroLive || _bgLessonLive || BadgerGuideLive(),
                 ResumeGateLeft = _resumeInputUntil - now,
                 TapGateLeft = _swallowTapsUntil - now,
-                GiftGateLeft = _suppressGiftUntil - now
+                GiftGateLeft = _suppressGiftUntil - now,
+                StepGateBlind = _gateBlindSince < 0f ? 0f : now - _gateBlindSince
             };
             var fix = TutorialHeal.Plan(snap);
             if (fix == TutorFix.None) return;
@@ -3859,6 +3968,14 @@ namespace FlockFive
             }
             if ((fix & TutorFix.ResetLeakedPause) != 0 && GamePause.Paused && !Ads.IsShowing && _tutorPause == 0)
                 GamePause.Reset();
+            if ((fix & TutorFix.FinishGatedStep) != 0)
+            {
+                // Finish cleanly rather than hold taps behind a glove that cannot show.
+                if (gate.Step == GatePokerBack) MarkPokerBackDone();
+                else if (gate.Step == GateAlbumPage) FinishAlbumTutor();
+                _gateBlindSince = -1f;
+                _gloveVis = false;
+            }
         }
 
         // Same aim, arc restarted. The lesson flags stay. A suspension is not a tap.
@@ -4016,18 +4133,96 @@ namespace FlockFive
         // never sit at fade 0, which drew the grey text with only its outline.
         // pin seats the plate exactly at r: no glove-avoidance re-seat, no latch. Used when
         // the spot is a rule (the poker hold line stays above the cards).
-        void DrawSplashIntroLine(string line, Rect r, float s, int fontHi = 0, bool pin = false)
+        // platePad: per-side plate grow from a caption anchor (AnchoredCaptionBox).
+        void DrawSplashIntroLine(string line, Rect r, float s, int fontHi = 0, bool pin = false, Vector2 platePad = default)
         {
             if (GuiPaint())
                 _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
             int hi = fontHi > 0 ? fontHi : Mathf.Max(18, Mathf.RoundToInt(34f * s));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
-            PaintCoachCaption(line, seat, s, 12, hi);
+            PaintCoachCaption(line, seat, s, 12, hi, platePad);
         }
 
         // Measures a caption to its longest line at the biggest font in [floor, hi] that
         // fits maxW. Returns a rect at the origin (w, h). Shared by the poker intro box.
         Rect FitCaptionBox(string line, float maxW, int hi, int floor)
+        {
+            // Captions are static once a step starts, so the measure is cached per
+            // (line, width, size range). The shared cache also serves DailyIntroBox.
+            if (CaptionFitHit(CapFitBox, line, maxW, hi, floor, out var hitSize))
+                return new Rect(0f, 0f, hitSize.x, hitSize.y);
+            var fitted = MeasureCaptionBox(line, maxW, hi, floor);
+            CaptionFitStore(CapFitBox, line, maxW, hi, floor, new Vector2(fitted.width, fitted.height));
+            return fitted;
+        }
+
+        // ---- shared caption measure cache ----
+        // One small LRU for every measured tutorial plate. CalcSize/CalcHeight on the
+        // same static sentence ran every OnGUI pass (Layout and Repaint) for the poker,
+        // hive, badger, pest and daily lessons; now a step measures once.
+        const int CapFitBox = 0;
+        const int CapFitDaily = 1;
+        const int CapFitSlots = 10;
+        static readonly string[] _capFitLine = new string[CapFitSlots];
+        static readonly int[] _capFitKind = new int[CapFitSlots];
+        static readonly float[] _capFitMaxW = new float[CapFitSlots];
+        static readonly int[] _capFitHi = new int[CapFitSlots];
+        static readonly int[] _capFitFloor = new int[CapFitSlots];
+        static readonly Vector2[] _capFitSize = new Vector2[CapFitSlots];
+        static readonly int[] _capFitUse = new int[CapFitSlots];
+        static int _capFitSerial;
+        static int _capFitFont = int.MinValue;
+
+        static bool CaptionFitHit(int kind, string line, float maxW, int hi, int floor, out Vector2 size)
+        {
+            size = default;
+            if (line == null) return false;
+            // A font swap (skin change) drops every entry.
+            var font = CoachLineStyle().font;
+            int fontId = font != null ? font.GetInstanceID() : 0;
+            if (fontId != _capFitFont)
+            {
+                _capFitFont = fontId;
+                for (int i = 0; i < CapFitSlots; i++) _capFitLine[i] = null;
+                return false;
+            }
+            for (int i = 0; i < CapFitSlots; i++)
+            {
+                if (_capFitLine[i] == null || _capFitKind[i] != kind) continue;
+                if (_capFitHi[i] != hi || _capFitFloor[i] != floor) continue;
+                if (Mathf.Abs(_capFitMaxW[i] - maxW) > 0.01f) continue;
+                if (!string.Equals(_capFitLine[i], line)) continue;
+                _capFitUse[i] = ++_capFitSerial;
+                size = _capFitSize[i];
+                return true;
+            }
+            return false;
+        }
+
+        static void CaptionFitStore(int kind, string line, float maxW, int hi, int floor, Vector2 size)
+        {
+            if (line == null) return;
+            int slot = 0;
+            int oldest = int.MaxValue;
+            for (int i = 0; i < CapFitSlots; i++)
+            {
+                if (_capFitLine[i] == null) { slot = i; break; }
+                if (_capFitUse[i] < oldest)
+                {
+                    oldest = _capFitUse[i];
+                    slot = i;
+                }
+            }
+            _capFitLine[slot] = line;
+            _capFitKind[slot] = kind;
+            _capFitMaxW[slot] = maxW;
+            _capFitHi[slot] = hi;
+            _capFitFloor[slot] = floor;
+            _capFitSize[slot] = size;
+            _capFitUse[slot] = ++_capFitSerial;
+        }
+
+        Rect MeasureCaptionBox(string line, float maxW, int hi, int floor)
         {
             var st = CoachLineStyle();
             hi = CaptionPx(hi);
@@ -4089,7 +4284,7 @@ namespace FlockFive
 
         // The hive step uses the same seat as the poker step: over the LEVEL button,
         // which is fine here because the glove is driving the player to the rail.
-        Rect HiveHomeCaption(float s) => LevelCoverBox(HiveHomeLine, s);
+        Rect HiveHomeCaption(float s) => AnchoredCaptionBox(HiveHomeLine, s, CaptionAnchor.CoverDiscLettering, out _);
 
         // One line, under the Watch flower so the plate clears the button base.
         static Rect AdHandCaptionRect(float s)
@@ -4104,7 +4299,7 @@ namespace FlockFive
         void DrawHiveIntro(float s)
         {
             if (!_hiveIntroLive) return;
-            DrawSplashIntroLine(HiveHomeLine, HiveHomeCaption(s), s, PokerIntroFontHi(s));
+            DrawAnchoredIntroLine(HiveHomeLine, s, CaptionAnchor.CoverDiscLettering);
             DrawTutorOverlay(s);
         }
 
@@ -4176,7 +4371,7 @@ namespace FlockFive
         {
             if (!_pokerIntroLive) return;
             if (GuiPaint()) TickPokerWarm();
-            DrawSplashIntroLine(PokerIntroLine, PokerIntroBox(s), s, PokerIntroFontHi(s));
+            DrawAnchoredIntroLine(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering);
             DrawTutorOverlay(s);
         }
 
@@ -4185,12 +4380,65 @@ namespace FlockFive
         // caption box; this only picks the size (PokerIntroFontHi) and the seat.
         int PokerIntroFontHi(float s) => Mathf.Max(24, Mathf.RoundToInt(46f * s));
 
-        Rect PokerIntroBox(float s) => LevelCoverBox(PokerIntroLine, s);
+        Rect PokerIntroBox(float s) => AnchoredCaptionBox(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering, out _);
 
-        // Shared by the hive and poker home steps: a measured plate seated over the
-        // LEVEL button.
-        Rect LevelCoverBox(string line, float s)
+        // Where a home step seats the shared measured plate (FitCaptionBox). The step names
+        // an anchor; AnchoredCaptionBox owns the geometry, so no lesson carries an offset.
+        enum CaptionAnchor
         {
+            // Text box centered on the play flower (the seat before build 58).
+            Default,
+            // Plate covers the whole LEVEL N + difficulty stack on the play disc, a little
+            // bigger than the standard plate, so no line is left half hidden.
+            // Used by the hive and poker home steps.
+            CoverDiscLettering,
+        }
+
+        // Cover plate: this much taller than the standard plate, the extra split evenly as
+        // padding on every side. Same text box, same font.
+        const float CoverPlateGrow = 1.12f;
+        // The plate edge clears the lettering ink by at least this (reference px, times s).
+        const float CoverPlateMargin = 6f;
+
+        // Set once per step: the first frame of a line measures and seats it, then every
+        // frame reuses it. Only a new line, level label, or screen size re-measures.
+        string _anchorLine;
+        CaptionAnchor _anchorKind;
+        int _anchorScreenW;
+        int _anchorScreenH;
+        int _anchorNext = -1;
+#if UNITY_EDITOR
+        string _anchorShotEase;
+        int _anchorShotNumber;
+#endif
+        Rect _anchorSeat;
+        Vector2 _anchorPad;
+
+        // Static, pinned caption for a home step (no glove re-seat, no per-frame measure).
+        void DrawAnchoredIntroLine(string line, float s, CaptionAnchor anchor)
+        {
+            var r = AnchoredCaptionBox(line, s, anchor, out var pad);
+            DrawSplashIntroLine(line, r, s, PokerIntroFontHi(s), true, pad);
+        }
+
+        // Shared by the hive and poker home steps. Returns the text box (what
+        // PaintCoachCaption fits the font into); platePad is the extra plate per side.
+        Rect AnchoredCaptionBox(string line, float s, CaptionAnchor anchor, out Vector2 platePad)
+        {
+            // Cheap key (no joke lookup per frame): the next level index decides the label.
+            int next = LevelData.NextPlay;
+            bool same = _anchorLine == line && _anchorKind == anchor
+                && _anchorScreenW == Screen.width && _anchorScreenH == Screen.height
+                && _anchorNext == next;
+#if UNITY_EDITOR
+            same = same && ReferenceEquals(_anchorShotEase, _shotEase) && _anchorShotNumber == _shotLevelNumber;
+#endif
+            if (same)
+            {
+                platePad = _anchorPad;
+                return _anchorSeat;
+            }
+            HomeFlowerLabel(out string ease, out int number);
             float maxW = Mathf.Min(Screen.width - 48f * s, Screen.width * 0.86f);
             if (maxW < 80f * s) maxW = Mathf.Min(Screen.width * 0.62f, Screen.width - 36f * s);
             if (maxW < 8f) maxW = 8f;
@@ -4198,13 +4446,162 @@ namespace FlockFive
             float w = fit.width;
             float h = fit.height;
             var play = FlowerPlayRect();
-            float x = play.center.x - w * 0.5f;
-            float y = play.center.y - h * 0.5f;
-            if (x < 4f) x = 4f;
-            if (x + w > Screen.width - 4f) x = Screen.width - 4f - w;
-            var r = PlaceCaption(s, w, h, y - 8f * s);
-            r.x = x;
+            Rect r;
+            platePad = Vector2.zero;
+            if (anchor == CaptionAnchor.CoverDiscLettering)
+            {
+                var ink = FlowerLetteringInk(ease, number);
+                var plate = CoachPanelRect(new Rect(0f, 0f, w, h));
+                float m = CoverPlateMargin * s;
+                float grow = plate.height * (CoverPlateGrow - 1f) * 0.5f;
+                float padY = Mathf.Max(grow, (ink.height + m * 2f - plate.height) * 0.5f);
+                float padX = Mathf.Max(grow, (ink.width + m * 2f - plate.width) * 0.5f);
+                float roomX = (Screen.width - 8f - plate.width) * 0.5f;
+                if (padX > roomX) padX = roomX > 0f ? roomX : 0f;
+                platePad = new Vector2(padX, padY);
+                float cx = ink.width > 1f ? ink.center.x : play.center.x;
+                float cy = ink.height > 1f ? ink.center.y : play.center.y;
+                float x = cx - w * 0.5f;
+                float y = cy - h * 0.5f;
+                // Whole plate on screen.
+                float ex = plate.width * 0.5f - w * 0.5f + padX;
+                float ey = plate.height * 0.5f - h * 0.5f + padY;
+                if (x - ex < 4f) x = 4f + ex;
+                if (x + w + ex > Screen.width - 4f) x = Screen.width - 4f - ex - w;
+                if (y + h + ey > Screen.height - 4f) y = Screen.height - 4f - ey - h;
+                if (y - ey < 4f) y = 4f + ey;
+                r = new Rect(x, y, w, h);
+            }
+            else
+            {
+                float x = play.center.x - w * 0.5f;
+                float y = play.center.y - h * 0.5f;
+                if (x < 4f) x = 4f;
+                if (x + w > Screen.width - 4f) x = Screen.width - 4f - w;
+                r = PlaceCaption(s, w, h, y - 8f * s);
+                r.x = x;
+            }
+            _anchorLine = line;
+            _anchorKind = anchor;
+            _anchorScreenW = Screen.width;
+            _anchorScreenH = Screen.height;
+            _anchorNext = next;
+#if UNITY_EDITOR
+            _anchorShotEase = _shotEase;
+            _anchorShotNumber = _shotLevelNumber;
+#endif
+            _anchorSeat = r;
+            _anchorPad = platePad;
             return r;
+        }
+
+        // The label the splash flower shows (same source as the splash draw).
+        void HomeFlowerLabel(out string ease, out int number)
+        {
+            int next = LevelData.NextPlay;
+#if UNITY_EDITOR
+            ease = _shotEase ?? LevelData.JokeEase(next);
+            number = _shotLevelNumber > 0 ? _shotLevelNumber : next + 1;
+#else
+            ease = LevelData.JokeEase(next);
+            number = next + 1;
+#endif
+        }
+
+        // The LEVEL N + difficulty ink on the play disc at rest, in GUI pixels. Mirrors
+        // DrawFlowerCaption's stack (as FlowerLevelTop does): LEVEL at its fitted size, the
+        // joke at EaseSubtextPx with the same wrap and bottom clamp. OnGUI only (GUI.skin).
+        // Measured once per step by AnchoredCaptionBox, not per frame.
+        static Rect FlowerLetteringInk(string ease, int number)
+        {
+            var disc = FlowerDisc(FlowerPlayRect(), 0f);
+            bool hasEase = !string.IsNullOrEmpty(ease);
+            Rect lvR;
+            Rect jokeR = default;
+            TextAnchor lvAlign;
+            if (hasEase)
+            {
+                float padX = disc.width * 0.04f;
+                float stackH = disc.height * 0.56f;
+                float stackY = disc.y + (disc.height - stackH) * 0.68f;
+                float gap = disc.height * 0.005f;
+                float lvH = stackH * 0.52f;
+                float jokeH = stackH - lvH - gap;
+                lvR = new Rect(disc.x + padX, stackY, disc.width - padX * 2f, lvH);
+                jokeR = new Rect(disc.x + padX, stackY + lvH + gap, disc.width - padX * 2f, jokeH);
+                lvAlign = TextAnchor.LowerCenter;
+            }
+            else
+            {
+                float padX = disc.width * 0.04f;
+                float aloneH = disc.height * 0.55f;
+                float aloneY = disc.y + (disc.height - aloneH) * 0.5f + disc.height * 0.018f;
+                float aloneX = disc.x + padX + disc.width * 0.035f;
+                lvR = new Rect(aloneX, aloneY, disc.width - padX * 2f - disc.width * 0.035f, aloneH);
+                lvAlign = TextAnchor.MiddleCenter;
+            }
+            var lv = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = lvAlign,
+                wordWrap = false
+            };
+            string level = "LEVEL " + number;
+            bool quad = number >= 1000;
+            bool triple = number >= 100;
+            string fitProbe = level;
+            if (!quad && (hasEase || triple)) fitProbe = "LEVEL 888";
+            int lvHi = hasEase
+                ? (quad ? 72 : (triple ? 64 : 84))
+                : (quad ? 82 : (triple ? 78 : 96));
+            lv.fontSize = FitFont(
+                lv, fitProbe,
+                lvR.width * (quad ? 0.98f : (triple ? 0.96f : 0.94f)),
+                lvR.height * (hasEase ? 0.95f : 0.80f),
+                quad ? 30 : (triple ? 26 : 30), lvHi);
+            var lvInk = lv.CalcSize(new GUIContent(level));
+            float lw = Mathf.Min(lvInk.x, lvR.width);
+            float lh = Mathf.Min(lvInk.y, lvR.height);
+            float ly = lvAlign == TextAnchor.LowerCenter ? lvR.yMax - lh : lvR.center.y - lh * 0.5f;
+            var ink = new Rect(lvR.center.x - lw * 0.5f, ly, lw, lh);
+            if (!hasEase) return ink;
+
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            var joke = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Normal,
+                alignment = TextAnchor.UpperCenter,
+                wordWrap = false,
+                fontSize = EaseSubtextPx(s)
+            };
+            var jc = new GUIContent(ease);
+            float side = disc.width * 0.03f;
+            float lineW = disc.width - side * 2f;
+            if (lineW < jokeR.width) lineW = jokeR.width;
+            var jInk = joke.CalcSize(jc);
+            float textH = jInk.y;
+            float textW = jInk.x;
+            if (jInk.x > lineW)
+            {
+                joke.wordWrap = true;
+                textH = joke.CalcHeight(jc, lineW);
+                textW = lineW;
+            }
+            float y = jokeR.y;
+            float bottom = disc.yMax - 2f;
+            if (y + textH > bottom)
+            {
+                float minY = lvR.yMax + disc.height * 0.004f;
+                float y2 = bottom - textH;
+                if (y2 < minY) y2 = minY;
+                if (y2 < y) y = y2;
+            }
+            var jokeInk = new Rect(disc.center.x - textW * 0.5f, y, textW, textH);
+            return Rect.MinMaxRect(
+                Mathf.Min(ink.xMin, jokeInk.xMin),
+                Mathf.Min(ink.yMin, jokeInk.yMin),
+                Mathf.Max(ink.xMax, jokeInk.xMax),
+                Mathf.Max(ink.yMax, jokeInk.yMax));
         }
 
         // First in the splash queue. Hive and poker stay pending until this one ends.
@@ -4293,9 +4690,25 @@ namespace FlockFive
         Rect DailyIntroBox(float s)
         {
             var band = SplashIntroBand(s);
-            var st = CoachLineStyle();
             int hi = CaptionPx(Mathf.Max(18, Mathf.RoundToInt(34f * s)));
             float maxW = band.width > 48f ? band.width : Mathf.Min(Screen.width * 0.72f, 420f * s);
+            // Floor 16 is in the key; the 32*s fallback height only matters on a miss.
+            if (!CaptionFitHit(CapFitDaily, DailyIntroLine, maxW, hi, 16, out var size))
+            {
+                size = MeasureDailyIntro(maxW, hi, s);
+                CaptionFitStore(CapFitDaily, DailyIntroLine, maxW, hi, 16, size);
+            }
+            float w = size.x;
+            float h = size.y;
+            float x = band.center.x - w * 0.5f;
+            float y = band.center.y - h * 0.5f;
+            if (x < 4f) x = 4f;
+            return PlaceCaption(s, w, h, y - 8f * s);
+        }
+
+        Vector2 MeasureDailyIntro(float maxW, int hi, float s)
+        {
+            var st = CoachLineStyle();
             int br = DailyIntroLine.IndexOf('\n');
             string top = br > 0 ? DailyIntroLine.Substring(0, br) : DailyIntroLine;
             string bot = br > 0 ? DailyIntroLine.Substring(br + 1) : DailyIntroLine;
@@ -4321,10 +4734,7 @@ namespace FlockFive
                 h = th > 1f ? th : 1f;
                 break;
             }
-            float x = band.center.x - w * 0.5f;
-            float y = band.center.y - h * 0.5f;
-            if (x < 4f) x = 4f;
-            return PlaceCaption(s, w, h, y - 8f * s);
+            return new Vector2(w, h);
         }
 
         // Claim sentence, under the whole pop-up so it misses the title and the
@@ -4912,6 +5322,7 @@ namespace FlockFive
         static void EnsureGloveBody()
         {
             if (_gloveBodyDist != null) return;
+            _gloveWarmBody = null;
             var body = new float[GloveW * GloveH];
             for (int y = 0; y < GloveH; y++)
             {
@@ -4925,15 +5336,16 @@ namespace FlockFive
 
         static Texture2D RasterCoachGlove(bool rest)
         {
-            var tex = new Texture2D(GloveW, GloveH, TextureFormat.RGBA32, false)
-            {
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp,
-                hideFlags = HideFlags.HideAndDontSave,
-                name = rest ? "CoachGlove" : "CoachGloveCurl"
-            };
             var px = new Color32[GloveW * GloveH];
-            for (int y = 0; y < GloveH; y++)
+            RasterGloveRows(px, rest, 0, GloveH);
+            return FinishGloveTex(px, rest);
+        }
+
+        // Rows [y0, y1) of one glove pose. The whole-texture raster and the splash
+        // warm-up both go through here, so a warmed glove is the same pixels.
+        static void RasterGloveRows(Color32[] px, bool rest, int y0, int y1)
+        {
+            for (int y = y0; y < y1; y++)
             {
                 int row = y * GloveW;
                 float fy = y + 0.5f;
@@ -4945,10 +5357,106 @@ namespace FlockFive
                         px[row + x] = GlovePixel(x + 0.5f, fy);
                 }
             }
+        }
+
+        static Texture2D FinishGloveTex(Color32[] px, bool rest)
+        {
+            var tex = new Texture2D(GloveW, GloveH, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = rest ? "CoachGlove" : "CoachGloveCurl"
+            };
             tex.SetPixels32(px);
             tex.Apply(false, false);
             if (rest) _gloveRestPx = px;
             return tex;
+        }
+
+        // ---- splash warm-up for the shared glove ----
+        // The first glove used to raster the body field plus all four curl poses
+        // (5 x 66k pixels) on the frame the hand first showed. The splash now does
+        // it a band of rows per frame, in the same order and with the same functions.
+        // A tutorial that starts first still gets the glove synchronously, as before.
+        static float[] _gloveWarmBody;
+        static Color32[] _gloveWarmPx;
+        static int _gloveWarmFor = -1;
+        static int _gloveWarmRow;
+
+        public static bool GloveWarmDone
+        {
+            get
+            {
+                if (_gloveBodyDist == null || _gloveCurls == null) return false;
+                for (int i = 0; i < GloveCurlSteps; i++)
+                    if (_gloveCurls[i] == null) return false;
+                return true;
+            }
+        }
+
+        // Rasters up to `rows` rows of whatever the glove still needs. True while work remains.
+        static bool GloveWarmRows(int rows)
+        {
+            if (rows < 1) rows = 1;
+            if (_gloveBodyDist == null)
+            {
+                if (_gloveWarmBody == null)
+                {
+                    _gloveWarmBody = new float[GloveW * GloveH];
+                    _gloveWarmRow = 0;
+                }
+                int end = Mathf.Min(GloveH, _gloveWarmRow + rows);
+                for (int y = _gloveWarmRow; y < end; y++)
+                {
+                    int row = y * GloveW;
+                    float fy = y + 0.5f;
+                    for (int x = 0; x < GloveW; x++)
+                        _gloveWarmBody[row + x] = GloveBodyRaw(x + 0.5f, fy);
+                }
+                _gloveWarmRow = end;
+                if (end >= GloveH)
+                {
+                    _gloveBodyDist = _gloveWarmBody;
+                    _gloveWarmBody = null;
+                    _gloveWarmRow = 0;
+                }
+                return true;
+            }
+            if (_gloveCurls == null) _gloveCurls = new Texture2D[GloveCurlSteps];
+            int step = -1;
+            for (int i = 0; i < GloveCurlSteps; i++)
+            {
+                if (_gloveCurls[i] != null) continue;
+                step = i;
+                break;
+            }
+            if (step < 0)
+            {
+                _gloveWarmPx = null;
+                _gloveWarmFor = -1;
+                return false;
+            }
+            if (step != 0 && _gloveRestPx == null) step = 0;
+            if (_gloveWarmPx == null || _gloveWarmFor != step)
+            {
+                _gloveWarmPx = new Color32[GloveW * GloveH];
+                _gloveWarmFor = step;
+                _gloveWarmRow = 0;
+            }
+            _gloveIndexBow = Mathf.Lerp(GloveIndexBowRest, GloveIndexBowPress, step / (float)(GloveCurlSteps - 1));
+            int stop = Mathf.Min(GloveH, _gloveWarmRow + rows);
+            RasterGloveRows(_gloveWarmPx, step == 0, _gloveWarmRow, stop);
+            _gloveWarmRow = stop;
+            if (stop >= GloveH)
+            {
+                _gloveCurls[step] = FinishGloveTex(_gloveWarmPx, step == 0);
+                GloveTip(98f, 116f, 88f, 236f, 13f, 11f, GloveW, GloveH);
+                _gloveWarmPx = null;
+                _gloveWarmFor = -1;
+                _gloveWarmRow = 0;
+            }
+            return true;
         }
 
         // A pixel the index never reaches, at rest or at full press, keeps the resting color.

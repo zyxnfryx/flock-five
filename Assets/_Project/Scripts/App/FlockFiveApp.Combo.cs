@@ -613,7 +613,7 @@ namespace FlockFive
                 age[i] += dt;
                 float u = Mathf.Clamp01(age[i] / life);
                 rs[i].transform.position += vel[i] * dt;
-                vel[i] *= 0.94f;
+                vel[i] *= FramePace.Damp(0.94f, dt);
                 var c = rs[i].color;
                 c.a = (1f - u) * (1f - u);
                 rs[i].color = c;

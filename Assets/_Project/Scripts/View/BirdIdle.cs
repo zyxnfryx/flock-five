@@ -145,6 +145,37 @@ namespace FlockFive
             Lift = keep;
         }
 
+        // Stage reset veil. The body and everything it wears hide together, in
+        // this call, not on the next LateUpdate. enabled stays true, so LiveBird
+        // and the fly-in math still count the bird. LateUpdate re-dresses it
+        // once the veil lifts, at wherever the body is by then.
+        public void Veil(bool on)
+        {
+            if (_sr == null) _sr = GetComponent<SpriteRenderer>();
+            if (_sr == null) return;
+            if (_sr.forceRenderingOff != on) _sr.forceRenderingOff = on;
+            if (on) HideDressing();
+        }
+
+        // Body draws this frame. The one test every worn or attached sprite uses.
+        public bool BodyShown => _sr != null && BirdDress.BodyShown(_sr.enabled, _sr.forceRenderingOff);
+
+        // Everything parented to the bird except the body. Snaps, no fade, so a
+        // hidden body never leaves a bow, crown, face or sparkle behind.
+        void HideDressing()
+        {
+            if (_kit != null && _kit.enabled) _kit.enabled = false;
+            if (_face != null && _face.enabled) _face.enabled = false;
+            _selectA = 0f;
+            HideFx(_aura);
+            _cheerA = 0f;
+            HideFx(_twink);
+            HideZzz();
+            HideBang();
+            RetireRing(ref _glow, ref _glowHidden);
+            RetireRing(ref _kitGlow, ref _kitGlowHidden);
+        }
+
         public void SetFade(float a)
         {
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
@@ -203,7 +234,9 @@ namespace FlockFive
                 if (Lift < 0.05f) Flapping = false;
             }
             if (_ruffle > 0f) _ruffle -= Time.deltaTime;
-            bool show = _sr != null && _sr.enabled;
+            // Shared visibility: a veiled body (forceRenderingOff) is hidden too.
+            bool show = BodyShown;
+            if (!show) HideDressing();
             // Shrouded birds stay a still silhouette on the perch. Off the perch,
             // including a frozen takeoff, the flying cycle is mandatory.
             bool onPerch = PerchHeld();
@@ -241,10 +274,10 @@ namespace FlockFive
                     FlockSort.Apply(_sr, heldOrder);
             }
             // Draw order (back→front): kit bow → body/flaps → face
-            bool kitOn = show && !Shrouded && Sex != BirdSex.Neutral;
+            bool kitOn = BirdDress.KitOn(show, Shrouded, Sex == BirdSex.Neutral);
             if (kitOn) EnsureKit();
             PlaceKit(mood, kitOn);
-            PlaceFace(mood, show && !Shrouded);
+            PlaceFace(mood, BirdDress.FaceOn(show, Shrouded));
             // White silhouette only used to mean "selected". Selection is the colored
             // aura. A cheer (feeder clear, hawk wave, finale) is twinkles, including
             // while Frozen, and never that halo. Flight sets Lift with Frozen and stays dark.
@@ -255,7 +288,17 @@ namespace FlockFive
             if (fly && !Frozen) BeatWings();
             else if (show && !Sleeping && !Shrouded && !Frozen) MaybeRuffle();
 
-            if (Frozen) return;
+            if (Frozen)
+            {
+                // Restart and collect flights freeze the bird. Seat-only marks
+                // (Zzz, "!") do not ride along; an ice freeze keeps them.
+                if (!BirdDress.SeatFxOn(show, true, Lift))
+                {
+                    HideZzz();
+                    HideBang();
+                }
+                return;
+            }
             if (Shrouded)
             {
                 HideZzz();
@@ -276,7 +319,8 @@ namespace FlockFive
                 transform.localRotation = Quaternion.Euler(0f, 0f, lean);
                 float sc = mood.Scale * (1f + 0.05f * pulse);
                 transform.localScale = new Vector3(RestScale.x * sc, RestScale.y * sc, 1f);
-                PlaceBang(u);
+                if (show) PlaceBang(u);
+                else HideBang();
                 HideZzz();
                 return;
             }
@@ -294,7 +338,8 @@ namespace FlockFive
                 transform.localRotation = Quaternion.Euler(0f, 0f, z);
                 float breathe = 1f + snore * 0.045f;
                 transform.localScale = new Vector3(RestScale.x * scale * breathe, RestScale.y * scale * (2f - breathe) * 0.98f, 1f);
-                PlaceZzz(snore);
+                if (show) PlaceZzz(snore);
+                else HideZzz();
                 return;
             }
             HideZzz();
@@ -400,7 +445,7 @@ namespace FlockFive
         {
             if (group == null) return;
             for (int i = 0; i < group.Length; i++)
-                if (group[i] != null) group[i].gameObject.SetActive(false);
+                if (group[i] != null && group[i].gameObject.activeSelf) group[i].gameObject.SetActive(false);
         }
 
         void EnsureZzz()
@@ -973,13 +1018,13 @@ namespace FlockFive
         {
             if (fx == null) return;
             for (int i = 0; i < fx.Length; i++)
-                if (fx[i] != null) fx[i].enabled = false;
+                if (fx[i] != null && fx[i].enabled) fx[i].enabled = false;
         }
 
         void PlaceGlow(float target)
         {
             _glowA = Mathf.MoveTowards(_glowA, Mathf.Clamp01(target), 9f * Time.deltaTime);
-            bool on = _glowA > 0.01f && _sr != null && _sr.enabled && _sr.sprite != null;
+            bool on = _glowA > 0.01f && BodyShown && _sr.sprite != null;
             if (!on)
             {
                 // Faded rings leave the bird so a bob does not drag disabled copies.
@@ -1079,22 +1124,23 @@ namespace FlockFive
 
         // Per-frame male crown locals (facing-right), same row/col order as the bow.
         // _1/_2 are the spread-wing flap frames, eye-aligned to rest; their head
-        // dome sits ~44px lower, so kit Y drops 0.15-0.16u on those columns.
-        // All five share the teal body: crown rests ON the head (drawn in front), tipped 26deg so the band
-        // bottom follows the dome; every band-bottom point >=1px into feathers (no back gap).
+        // dome sits ~44px lower, so kit Y drops ~0.12u on those columns (same
+        // deltas as before, re-seated). Build 58: the old rest (-0.03, 1.374) at
+        // 26deg / 0.42 sat behind the dome and floated; seat is now on the head
+        // crown (X toward the beak), sunk into feathers, tipped 12deg, scale 0.48.
         static readonly float[,] CrownLocalX = {
-            { -0.03f, -0.168f, -0.156f, -0.168f, -0.168f, -0.03f }, // Ruby
-            { -0.03f, -0.168f, -0.156f, -0.168f, -0.168f, -0.03f }, // Gold
-            { -0.03f, -0.168f, -0.156f, -0.168f, -0.168f, -0.03f }, // Teal
-            { -0.03f, -0.168f, -0.156f, -0.168f, -0.168f, -0.03f }, // Violet
-            { -0.03f, -0.168f, -0.156f, -0.168f, -0.168f, -0.03f }, // Peach
+            { 0.12f, -0.018f, -0.006f, -0.018f, -0.018f, 0.12f }, // Ruby
+            { 0.12f, -0.018f, -0.006f, -0.018f, -0.018f, 0.12f }, // Gold
+            { 0.12f, -0.018f, -0.006f, -0.018f, -0.018f, 0.12f }, // Teal
+            { 0.12f, -0.018f, -0.006f, -0.018f, -0.018f, 0.12f }, // Violet
+            { 0.12f, -0.018f, -0.006f, -0.018f, -0.018f, 0.12f }, // Peach
         };
         static readonly float[,] CrownLocalY = {
-            { 1.374f, 1.252f, 1.264f, 1.252f, 1.252f, 1.374f }, // Ruby
-            { 1.374f, 1.252f, 1.264f, 1.252f, 1.252f, 1.374f }, // Gold
-            { 1.374f, 1.252f, 1.264f, 1.252f, 1.252f, 1.374f }, // Teal
-            { 1.374f, 1.252f, 1.264f, 1.252f, 1.252f, 1.374f }, // Violet
-            { 1.374f, 1.252f, 1.264f, 1.252f, 1.252f, 1.374f }, // Peach
+            { 1.28f, 1.158f, 1.170f, 1.158f, 1.158f, 1.28f }, // Ruby
+            { 1.28f, 1.158f, 1.170f, 1.158f, 1.158f, 1.28f }, // Gold
+            { 1.28f, 1.158f, 1.170f, 1.158f, 1.158f, 1.28f }, // Teal
+            { 1.28f, 1.158f, 1.170f, 1.158f, 1.158f, 1.28f }, // Violet
+            { 1.28f, 1.158f, 1.170f, 1.158f, 1.158f, 1.28f }, // Peach
         };
 
         // Garden accessory anchor. Locals are facing-right; faceLeft mirrors X only.
@@ -1113,8 +1159,8 @@ namespace FlockFive
             float ly = crown ? CrownLocalY[0, frame] : BowLocalY[0, frame];
             x = faceLeft ? -lx : lx;
             y = ly;
-            scale = crown ? 0.42f : SpriteCatalog.BowScale;
-            float tip = crown ? 26f : 12f;
+            scale = crown ? 0.48f : SpriteCatalog.BowScale;
+            float tip = 12f;
             flip = !faceLeft;
             tilt = flip ? -tip : tip;
             if (!buttonSeat) return;
@@ -1122,10 +1168,12 @@ namespace FlockFive
             // false, so their seat stays on the locals above. The button quad is
             // the full sheet: the crown base still clears the dome, and the bow
             // knot sits a hair high. Nudge is in the same facing space as x.
+            // Build 58 shortened the crown nudge — base locals already sit lower
+            // and farther forward than the old 26deg / 0.42 seat.
             if (crown)
             {
-                x += faceLeft ? -0.06f : 0.06f;
-                y -= 0.15f;
+                x += faceLeft ? -0.04f : 0.04f;
+                y -= 0.08f;
             }
             else
             {
