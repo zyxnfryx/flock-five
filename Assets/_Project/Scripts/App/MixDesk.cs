@@ -33,6 +33,25 @@ namespace FlockFive
         float _splashMix;
         float _splashGate = -1f;
         bool _splashLoopOn;
+        // Honey badger contest bed (stems 6-8). Exclusive over garden, combo, splash and
+        // rain while on, like the poker bed's SetPoker pattern (e225f35). Same BedDuck, so
+        // the "badger" sting, CardBump and every Lead still duck it.
+        AudioClip _bgLoopClip, _bgEntranceClip, _bgWinClip, _bgLoseClip;
+        bool _badger;
+        float _badgerMix;
+        float _badgerFade = 1f;
+        float _badgerFadeTarget = 1f;
+        bool _bgCueLive;
+        bool _bgWasPaused;
+        float _bgHandBackAt = -1f;
+        const float BadgerCap = 0.40f;
+        // Stingers play once at the bed's cap, not ducked: they ARE the moment.
+        const float BadgerStingCap = 0.40f;
+        const float BadgerFadeSeconds = 0.30f;
+        const float BadgerBarSeconds = 1.6f;   // 150 BPM, 4/4
+        const int BadgerLoopStem = 6;
+        const int BadgerCueStem = 7;
+        const int BadgerStingStem = 8;
         const float SplashPageHold = 0.45f;
         const int Rate = 22050;
         const float PlaceCap = 0.24f;
@@ -221,12 +240,16 @@ namespace FlockFive
             var combo = MakeCombo();
             var theme = LoadBed("Audio/Bed/splash-theme", MakeSplash);
             var rain = MakeRain();
-            if (_stems == null || _stems.Length < 6)
+            _bgLoopClip = LoadBadgerClip("Audio/Bed/badger-battle");
+            _bgEntranceClip = LoadBadgerClip("Audio/Bed/badger-entrance");
+            _bgWinClip = LoadBadgerClip("Audio/Bed/badger-win");
+            _bgLoseClip = LoadBadgerClip("Audio/Bed/badger-lose");
+            if (_stems == null || _stems.Length < 9)
             {
                 var old = _stems;
-                _stems = new AudioSource[6];
+                _stems = new AudioSource[9];
                 if (old != null)
-                    for (int i = 0; i < old.Length && i < 6; i++)
+                    for (int i = 0; i < old.Length && i < 9; i++)
                         _stems[i] = old[i];
             }
             for (int i = 0; i < _stems.Length; i++)
@@ -243,7 +266,165 @@ namespace FlockFive
                 _stems[4].volume = 0f;
             }
             SwapClip(5, rain, true);
+            SwapClip(BadgerLoopStem, _bgLoopClip, false);
+            SwapClip(BadgerCueStem, _bgEntranceClip, false);
+            SwapClip(BadgerStingStem, null, false);
+            // Entrance and stingers are one-shots that live on the desk (never loop).
+            if (_stems[BadgerCueStem] != null) _stems[BadgerCueStem].loop = false;
+            if (_stems[BadgerStingStem] != null) _stems[BadgerStingStem].loop = false;
+            _badger = false;
+            _badgerMix = 0f;
+            _bgCueLive = false;
+            _bgHandBackAt = -1f;
             PruneExtraLoops();
+        }
+
+        static AudioClip LoadBadgerClip(string path)
+        {
+            var clip = Resources.Load<AudioClip>(path);
+            // PlayScheduled needs the samples resident before the leap, not on first Play.
+            if (clip != null && clip.loadState != AudioDataLoadState.Loaded) clip.LoadAudioData();
+            return clip;
+        }
+
+        // ---- honey badger contest bed ----
+
+        public bool BadgerReady => _bgLoopClip != null && _stems != null && _stems.Length > BadgerStingStem;
+
+        int BadgerBarSamples(AudioClip c) => c == null ? 0 : Mathf.RoundToInt(BadgerBarSeconds * c.frequency);
+
+        // The leap starts (flower tap or garden clear). The entrance cue is scored to the
+        // BadgerLeap + BadgerOpening clocks and already contains loop bar 1 (6.40-8.00 s), so the
+        // loop is scheduled sample-accurately at the end of the cue from its bar-2 offset.
+        public void BadgerEntrance()
+        {
+            if (!BadgerReady) return;
+            StopBadgerSources();
+            _badger = true;
+            // The place bed under the leap (garden or splash) fades out over 0.3 s while
+            // the cue speaks at full level from the first hop.
+            _badgerFade = 1f;
+            _badgerFadeTarget = 1f;
+            _bgHandBackAt = -1f;
+            var loop = _stems[BadgerLoopStem];
+            var cue = _stems[BadgerCueStem];
+            if (loop == null) return;
+            if (_bgEntranceClip == null || cue == null)
+            {
+                loop.timeSamples = 0;
+                loop.Play();
+                return;
+            }
+            double t0 = AudioSettings.dspTime + 0.03;
+            cue.clip = _bgEntranceClip;
+            cue.timeSamples = 0;
+            cue.volume = BadgerCap * BedDuck;
+            cue.PlayScheduled(t0);
+            loop.timeSamples = BadgerBarSamples(loop.clip);
+            loop.PlayScheduled(t0 + _bgEntranceClip.samples / (double)_bgEntranceClip.frequency);
+            _bgCueLive = true;
+        }
+
+        // The contest is up. Normally the entrance already owns the seat (no-op). Without a
+        // leap (editor drop file, missing cue) the loop starts here with a short fade-in.
+        public void BadgerBattle()
+        {
+            if (!BadgerReady) return;
+            var loop = _stems[BadgerLoopStem];
+            if (loop == null) return;
+            if (_badger && (_bgCueLive || loop.isPlaying)) return;
+            _badger = true;
+            _bgHandBackAt = -1f;
+            _badgerFade = 0f;
+            _badgerFadeTarget = 1f;
+            loop.timeSamples = 0;
+            loop.Play();
+        }
+
+        // Result: the bed fades out over 0.3 s and the matching stinger plays once. After the
+        // stinger the seat hands back to the bed that was up before (the splash). Returns false
+        // when the clip is missing so the caller keeps its old one-shot (fanfare / Deny).
+        public bool BadgerResult(bool won)
+        {
+            var clip = won ? _bgWinClip : _bgLoseClip;
+            if (!BadgerReady || clip == null) return false;
+            _badgerFadeTarget = 0f;
+            var s = _stems[BadgerStingStem];
+            if (s == null) return false;
+            s.Stop();
+            s.loop = false;
+            s.clip = clip;
+            s.timeSamples = 0;
+            s.volume = BadgerStingCap;
+            s.Play();
+            // Lead seat for the stinger: Mid decorations wait; DuckChirp (1) so nothing dips.
+            MarkLead(clip.length, DuckChirp);
+            _bgHandBackAt = Time.unscaledTime + clip.length + 0.25f;
+            return true;
+        }
+
+        // Off: exit, back, Continue, an aborted leap, or a level load. 0.3 s fade, then the
+        // loop and cue stop and the previous bed (splash or garden) fades back in. A stinger
+        // already playing rings out.
+        public void SetBadger(bool on)
+        {
+            if (on)
+            {
+                BadgerBattle();
+                return;
+            }
+            _badger = false;
+            _bgHandBackAt = -1f;
+        }
+
+        void StopBadgerSources()
+        {
+            if (_stems == null || _stems.Length <= BadgerCueStem) return;
+            var loop = _stems[BadgerLoopStem];
+            var cue = _stems[BadgerCueStem];
+            if (loop != null) loop.Stop();
+            if (cue != null) cue.Stop();
+            _bgCueLive = false;
+        }
+
+        // GamePause (AudioListener.pause) freezes the sources but not dspTime, so a loop still
+        // waiting on its schedule would start out of step. Re-aim it from the cue's own clock.
+        void ResyncBadgerEntrance()
+        {
+            if (!_bgCueLive || _bgEntranceClip == null) return;
+            var cue = _stems[BadgerCueStem];
+            var loop = _stems[BadgerLoopStem];
+            if (cue == null || loop == null || !cue.isPlaying) return;
+            double left = (_bgEntranceClip.samples - cue.timeSamples) / (double)_bgEntranceClip.frequency;
+            if (left <= 0.02) return;
+            loop.Stop();
+            loop.timeSamples = BadgerBarSamples(loop.clip);
+            loop.PlayScheduled(AudioSettings.dspTime + left);
+        }
+
+        // Returns the share of the place seat the badger holds (0..1) and drives its stems.
+        float TickBadger(float duck)
+        {
+            if (_stems == null || _stems.Length <= BadgerStingStem) return 0f;
+            if (_bgHandBackAt > 0f && Time.unscaledTime >= _bgHandBackAt)
+            {
+                _bgHandBackAt = -1f;
+                _badger = false;
+            }
+            float dt = Time.unscaledDeltaTime;
+            float want = _badger ? 1f : 0f;
+            _badgerMix = Mathf.MoveTowards(_badgerMix, want, dt / BadgerFadeSeconds);
+            _badgerFade = Mathf.MoveTowards(_badgerFade, _badgerFadeTarget, dt / BadgerFadeSeconds);
+            var cue = _stems[BadgerCueStem];
+            if (_bgCueLive && cue != null && !cue.isPlaying && cue.timeSamples == 0
+                && _bgEntranceClip != null && _stems[BadgerLoopStem] != null && _stems[BadgerLoopStem].isPlaying)
+                _bgCueLive = false;
+            // On: badger stems at full (no fade on the first hop). Off: they ride the 0.3 s ramp down.
+            float level = _badger ? 1f : _badgerMix;
+            SetStem(BadgerLoopStem, level * _badgerFade * BadgerCap * duck);
+            SetStem(BadgerCueStem, level * BadgerCap * duck);
+            if (!_badger && _badgerMix <= 0f) StopBadgerSources();
+            return _badgerMix;
         }
 
         void SwapClip(int i, AudioClip clip, bool start)
@@ -325,7 +506,16 @@ namespace FlockFive
 
         void LateUpdate()
         {
-            if (GamePause.Paused) return;
+            if (GamePause.Paused)
+            {
+                _bgWasPaused = true;
+                return;
+            }
+            if (_bgWasPaused)
+            {
+                _bgWasPaused = false;
+                ResyncBadgerEntrance();
+            }
             if (!LeadHot) _leadDuck = 1f;
             if (_stems == null) return;
 
@@ -344,7 +534,9 @@ namespace FlockFive
             float splashT = _splash ? 1f : 0f;
             float splashRate = splashT > _splashMix ? 1.7f : 2.8f;
             _splashMix = Mathf.MoveTowards(_splashMix, splashT, Time.unscaledDeltaTime * splashRate);
-            float gardenMix = 1f - _splashMix;
+            float badgerSeat = TickBadger(duck);
+            float others = 1f - badgerSeat;
+            float gardenMix = (1f - _splashMix) * others;
             TickSplashWelcome();
             // One garden occupant: the soft porch theme. Dawn/mid/last stay
             // loaded as fallbacks but silent so two tunes never sit together.
@@ -352,7 +544,7 @@ namespace FlockFive
             SetStem(1, 0f);
             SetStem(2, 0f);
             SetStem(3, ComboGain() * ComboCap * duck * gardenMix);
-            float splashVol = _splashMix * SplashCap * duck;
+            float splashVol = _splashMix * SplashCap * duck * others;
             SetStem(4, _splashLoopOn ? splashVol : 0f);
             // Non-melodic place air. Not a fourth flute bed.
             SetStem(5, GardenStorm.Wet * RainCap * duck * gardenMix);

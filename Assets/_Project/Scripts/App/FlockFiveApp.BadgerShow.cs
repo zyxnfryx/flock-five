@@ -14,6 +14,10 @@ namespace FlockFive
     // landing frame and the live grid), DrawBadgerArt (every badger, hive, bee, and splat
     // frame, through DrawSprite), SfxLibrary.Badger ("badger" clip + MixDesk lead mark),
     // Sfx.CardBump and the "tick" clip, PlayClock, BadgerSave, BadgerCopy, TutorialHeal.
+    // Don't Care slam: BadgerSlam (clock, zoom, lines, glint), BadgerFight.TryDontCare (roll +
+    // effect), PushBadgerZoom / DrawBadgerSpeedLines / DrawBadgerGlint (small shared helpers),
+    // DrawBadgerShrug / DrawBadgerColumnSplat (shared with the round beat), StampOutlined,
+    // SpriteCatalog.Sparkle, SfxLibrary.Badger + Sfx.CardBump, HealBadgerShow (interruption).
     public sealed partial class FlockFiveApp
     {
         readonly BadgerLeapRun _bgLeap = new BadgerLeapRun();
@@ -24,6 +28,10 @@ namespace FlockFive
         float _bgOpenT;
         int _bgOpenLanded;
         int _bgPendFrame = -1;
+        BadgerDontCare _bgSlam;
+        float _bgSlamT;
+        int _bgSlamWord = -1;
+        float _bgSlamStartedAt;
         int _bgPendValue;
 #if UNITY_EDITOR
         // Editor shots hide the sitter unless this is set (debug override).
@@ -175,11 +183,20 @@ namespace FlockFive
         {
             AimBadgerLeapSplash();
             _busy = true;
+            // Entrance cue: scored to the leap + opening clocks, rolls into the battle bed.
+            if (MixDesk.Live != null) MixDesk.Live.BadgerEntrance();
             yield return BadgerLeap.Play(_bgLeap);
             _busy = false;
-            if (!_bgLeap.Live) yield break;
+            if (!_bgLeap.Live)
+            {
+                if (MixDesk.Live != null) MixDesk.Live.SetBadger(false);
+                yield break;
+            }
             if (!_splash || _home != HomeFace.Splash || !OpenBadgerFight(owed))
+            {
                 _bgLeap.Release();
+                if (MixDesk.Live != null) MixDesk.Live.SetBadger(false);
+            }
         }
 
         // From SettleIfIdle, after the flag, RememberClear, and AwardClear, before ShowSplash,
@@ -187,6 +204,7 @@ namespace FlockFive
         IEnumerator BadgerClearLeap()
         {
             AimBadgerLeapGarden();
+            if (MixDesk.Live != null) MixDesk.Live.BadgerEntrance();
             yield return BadgerLeap.Play(_bgLeap);
         }
 
@@ -202,9 +220,18 @@ namespace FlockFive
                 if (_bgFight == null && _bgStage == BadgerStage.Lesson)
                     BeginBadgerFight();
             }
+            // A slam left behind (page gone) or stuck past its end finishes now; the zoom is
+            // derived from the stage, so the contest is back at 1:1 the same frame.
+            if (DontCareSlamLive && (!(_splash && _home == HomeFace.Badger)
+                || BadgerSlam.Stuck(true, PlayClock.Now - _bgSlamStartedAt)))
+            {
+                AdLog.Add("badger heal: slam finished");
+                FinishDontCareSlam();
+            }
             if (!BadgerLeap.Stuck(_bgLeap.Live, PlayClock.Now - _bgLeap.StartedAt)) return;
             AdLog.Add("badger heal: leap dropped");
             _bgLeap.Release();
+            if (MixDesk.Live != null) MixDesk.Live.SetBadger(false);
             if (_splash) _busy = false;
             else if (!_restarting) ShowSplash();
         }
@@ -323,6 +350,182 @@ namespace FlockFive
                 float h = artH * unit;
                 DrawBadgerArt(bee, new Vector2(p.x, p.y + h * 0.5f), unit, 1f);
             }
+        }
+
+        // ---- "Honey Badger Don't Care" slam (spec 2b) ----
+
+        // THE slam beat. Starts the clock after a TryDontCare hit; TickBadger steps it and
+        // resolves the round once BadgerSlam.Done. The fight already holds the effect (power-up
+        // stripped, or this round's honey halved); the show reveals it at BadgerSlam.NastyAt.
+        void PlayDontCareSlam(BadgerDontCare slam)
+        {
+            _bgSlam = slam;
+            _bgSlamT = 0f;
+            _bgSlamWord = -1;
+            _bgSlamStartedAt = PlayClock.Now;
+            _bgStage = BadgerStage.DontCare;
+            _bgLine = "";
+        }
+
+        // Shared SFX only: the "badger" sting (MixDesk lead mark) on the first word,
+        // Sfx.CardBump on each later word and on the nasty move.
+        void StepDontCareSlam(float dt)
+        {
+            float before = _bgSlamT;
+            _bgSlamT += dt;
+            int w = BadgerSlam.WordIndexAt(_bgSlamT);
+            if (w > _bgSlamWord)
+            {
+                _bgSlamWord = w;
+                if (w == 0) SfxLibrary.Badger();
+                else Sfx.CardBump();
+            }
+            if (BadgerSlam.Crosses(before, _bgSlamT, BadgerSlam.NastyAt)) ApplyDontCareNasty();
+        }
+
+        // The visible half of the nasty move. A destroyed power-up loses its badge and lit
+        // button here (coins stay spent; BadgerFight already dropped it from the compare).
+        void ApplyDontCareNasty()
+        {
+            if (_bgSlam.Destroyed != BadgerPower.None) _bgArmed = BadgerPower.None;
+        }
+
+        // End the beat now (normal end, or the heal). Scale is derived from the stage, so
+        // leaving DontCare is what puts the contest back at 1:1.
+        void FinishDontCareSlam()
+        {
+            if (_bgStage != BadgerStage.DontCare) return;
+            _bgSlamT = BadgerSlam.Duration;
+            ApplyDontCareNasty();
+            if (_bgFight != null) ResolveBadgerRound();
+            else _bgStage = BadgerStage.Opening;
+        }
+
+        bool DontCareSlamLive => _bgStage == BadgerStage.DontCare;
+
+        // Zoom for this frame: 1 unless the slam is live. Read fresh every frame, never stored.
+        float DontCareZoom() => DontCareSlamLive ? BadgerSlam.Zoom(_bgSlamT) : 1f;
+
+        // Where the pupil sits on screen; the zoom pivots here so the eye holds still and grows.
+        static Vector2 DontCareEyeAt() => new Vector2(Screen.width * 0.5f, Screen.height * 0.42f);
+
+        // Shared: scale the GUI around a pivot. Returns the matrix to restore; callers restore
+        // it in a finally so an exception mid-draw cannot leave the screen zoomed.
+        static Matrix4x4 PushBadgerZoom(float k, Vector2 pivot)
+        {
+            var keep = GUI.matrix;
+            if (Mathf.Abs(k - 1f) > 0.0001f) GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
+            return keep;
+        }
+
+        // Shared: radial speed lines rushing toward `center`. Thin cream strokes, no art.
+        static void DrawBadgerSpeedLines(Vector2 center, float strength, float t)
+        {
+            if (!GuiPaint() || strength < 0.02f) return;
+            float diag = Mathf.Sqrt(Screen.width * (float)Screen.width + Screen.height * (float)Screen.height);
+            float thick = Mathf.Max(2f, diag * 0.004f);
+            var keep = GUI.matrix;
+            try
+            {
+                for (int i = 0; i < BadgerSlam.SpeedLineCount; i++)
+                {
+                    BadgerSlam.SpeedLine(i, t, out float deg, out float inner, out float outer);
+                    GUI.matrix = keep;
+                    GUIUtility.RotateAroundPivot(deg, center);
+                    float x0 = center.x + inner * diag;
+                    float len = Mathf.Max(1f, (outer - inner) * diag);
+                    GUI.color = new Color(BadgerCream.r, BadgerCream.g, BadgerCream.b, 0.70f * strength);
+                    GUI.DrawTexture(new Rect(x0, center.y - thick * 0.5f, len, thick), Texture2D.whiteTexture);
+                }
+            }
+            finally
+            {
+                GUI.matrix = keep;
+                GUI.color = Color.white;
+            }
+        }
+
+        // Shared: a white glint. SpriteCatalog.Sparkle (the existing celebration glint) over a
+        // small white core rect; the core alone still reads if the sparkle sprite is missing.
+        static void DrawBadgerGlint(Vector2 at, float size, float alpha)
+        {
+            if (!GuiPaint() || alpha < 0.02f || size < 1f) return;
+            float core = size * 0.22f;
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            GUI.DrawTexture(new Rect(at.x - core * 0.5f, at.y - core * 0.5f, core, core), Texture2D.whiteTexture);
+            var spr = SpriteCatalog.Sparkle;
+            if (spr != null && spr.texture != null)
+                GUI.DrawTexture(new Rect(at.x - size * 0.5f, at.y - size * 0.5f, size, size), spr.texture, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+        }
+
+        // Close-up face for the eye zoom: placed so its pupil sits on DontCareEyeAt.
+        static void DrawDontCareFace(float alpha)
+        {
+            var spr = SpriteCatalog.BadgerArt(BadgerSlam.FaceFrame);
+            float artW = spr != null ? spr.rect.width : 977f;
+            float artH = spr != null ? spr.rect.height : 669f;
+            float unit = Mathf.Min(Screen.width * 0.86f / artW, Screen.height * 0.50f / artH);
+            var eye = DontCareEyeAt();
+            float w = artW * unit;
+            float h = artH * unit;
+            float left = eye.x - BadgerSlam.EyeU * w;
+            float top = eye.y - BadgerSlam.EyeV * h;
+            DrawBadgerArt(BadgerSlam.FaceFrame, new Vector2(left + w * 0.5f, top + h), unit, alpha);
+        }
+
+        // Overlay, drawn after the page with the page matrix restored. Wash and words in screen
+        // space; the face under the same zoom as the page; lines, glint, and the nasty move's
+        // honey_splat + shrug on top. Mild and cartoonish only.
+        void DrawDontCareSlam(BadgerRects L)
+        {
+            if (!DontCareSlamLive || !GuiPaint()) return;
+            float t = _bgSlamT;
+            var eye = DontCareEyeAt();
+            float k = BadgerSlam.Zoom(t);
+
+            float wash = BadgerSlam.WashAlpha(t);
+            GUI.color = new Color(0.05f, 0.04f, 0.03f, wash);
+            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            float face = BadgerSlam.FaceAlpha(t);
+            if (face > 0.01f)
+            {
+                var keep = PushBadgerZoom(k, eye);
+                try { DrawDontCareFace(face); }
+                finally { GUI.matrix = keep; }
+            }
+
+            DrawBadgerSpeedLines(eye, BadgerSlam.SpeedLines(t), t);
+            float g = BadgerSlam.Glint(t);
+            if (g > 0f)
+            {
+                float tw = 0.85f + 0.15f * Mathf.Sin(t * 40f);
+                DrawBadgerGlint(new Vector2(eye.x - Screen.height * 0.012f * k, eye.y - Screen.height * 0.012f * k),
+                    Screen.height * 0.035f * k * tw, g);
+            }
+
+            if (BadgerSlam.ShowNasty(t))
+            {
+                float a = 1f - Mathf.Clamp01((t - BadgerSlam.NastyEnd) / BadgerSlam.ZoomOutSeconds) * 0.4f;
+                DrawBadgerShrug(L, a);
+                DrawBadgerColumnSplat(L, 0.92f * a);
+            }
+
+            string word = BadgerSlam.WordAt(t);
+            if (string.IsNullOrEmpty(word)) return;
+            float pop = BadgerSlam.Pop(t);
+            float w = Screen.width * 0.80f;
+            float h = Screen.height * 0.14f;
+            var box = new Rect(Screen.width * 0.5f - w * 0.5f, Screen.height * 0.40f - h * 0.5f, w, h);
+            var st = BadgerStyle();
+            int size = FitFont(st, word, box.width, box.height, 18, 160);
+            st.fontSize = Mathf.Max(18, Mathf.RoundToInt(size * pop));
+            var big = new Rect(box.center.x - box.width * pop * 0.5f, box.center.y - box.height * pop * 0.5f,
+                box.width * pop, box.height * pop);
+            float wa = wash > 0f ? Mathf.Clamp01(wash / BadgerSlam.WashMax) : 0f;
+            StampOutlined(big, word, st, new Color(BadgerCream.r, BadgerCream.g, BadgerCream.b, wa), 0, 3);
         }
 
         // ---- splash sitter ----

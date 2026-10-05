@@ -774,7 +774,7 @@ namespace FlockFive
                 CoachGloveAt(watchAim, dt, handS, float.NaN, false, float.NaN, GiftWatchTapRect(handS));
                 return;
             }
-            if (_bgLessonLive && _splash && _home == HomeFace.Badger)
+            if ((_bgLessonLive || BadgerGuideLive()) && _splash && _home == HomeFace.Badger)
             {
                 float handS = Mathf.Max(Screen.height / 720f, 1f);
                 PlaceBadgerLessonGlove(dt, handS);
@@ -3691,7 +3691,7 @@ namespace FlockFive
         bool TutorialGuideLive() =>
             _pestCue != 0 || _hiveLevelLive || _hiveIntroLive || _pokerIntroLive
             || _dailyIntroLive || _leafIntro || _adHand || _welcomeGlove || _adoptLive
-            || _albumTutorOn || _bgLessonLive || (_coach && _cueHand);
+            || _albumTutorOn || _bgLessonLive || BadgerGuideLive() || (_coach && _cueHand);
 
         // One arbiter for every non-tutorial card. A live lesson blocks every
         // kind except the card that lesson owns. Player taps are refused.
@@ -3717,6 +3717,7 @@ namespace FlockFive
                 || _adHand
                 || _cueGift
                 || _bgLessonLive
+                || BadgerGuideLive()
                 || (_coach && _cueHand);
         }
 
@@ -3814,7 +3815,7 @@ namespace FlockFive
                 AdShowing = Ads.IsShowing,
                 TutorPause = _tutorPause != 0,
                 SparrowCueLive = _pestCue == PestCueSparrow && PestCueAlive(),
-                HomeLessonLive = _hiveIntroLive || _pokerIntroLive || _dailyIntroLive || _bgLessonLive,
+                HomeLessonLive = _hiveIntroLive || _pokerIntroLive || _dailyIntroLive || _bgLessonLive || BadgerGuideLive(),
                 ResumeGateLeft = _resumeInputUntil - now,
                 TapGateLeft = _swallowTapsUntil - now,
                 GiftGateLeft = _suppressGiftUntil - now

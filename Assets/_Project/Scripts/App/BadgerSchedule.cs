@@ -182,4 +182,147 @@ namespace FlockFive
             }
         }
     }
+
+    // First-fight (coach) script for moves 1-3 (spec 2b tutorial guidance). Pure: built from
+    // the fight's own grids, so the album deal and the seeded boss mix stay as they are and
+    // only the picks are scripted. BadgerFight consumes it (no separate fight path):
+    //   move 1: the player's best tile vs a lower badger tile  (higher honey wins)
+    //   move 2: the next best vs the badger's best tile        (the badger bites back)
+    //   move 3: the next best vs a badger tile above half of it (the forced Don't Care halve)
+    // Power-ups are locked for all three, so the compare is plain honey (move 3 halved).
+    // If a deal would still let a column reach its target, the remaining moves fall back to
+    // the player's lowest tile vs the badger's highest. BadgerFight also caps both columns
+    // below target through move 3, so the guarantee never rests on the deal alone.
+    public sealed class BadgerTutorialScript
+    {
+        public const int Moves = 3;
+
+        readonly int[] _player = new int[Moves];
+        readonly int[] _boss = new int[Moves];
+
+        public int ExpectedPlayer { get; private set; }
+        public int ExpectedBoss { get; private set; }
+        public bool FellBack { get; private set; }
+
+        // move is 1-based. -1 outside 1..Moves.
+        public int PlayerPick(int move)
+        {
+            if (move < 1 || move > Moves) return -1;
+            return _player[move - 1];
+        }
+
+        public int BossPick(int move)
+        {
+            if (move < 1 || move > Moves) return -1;
+            return _boss[move - 1];
+        }
+
+        public static BadgerTutorialScript For(int[] player, int[] boss, int playerTarget, int badgerTarget)
+        {
+            var sc = new BadgerTutorialScript();
+            int pn = player == null ? 0 : player.Length;
+            int bn = boss == null ? 0 : boss.Length;
+            var pOpen = new bool[pn];
+            var bOpen = new bool[bn];
+            for (int i = 0; i < pn; i++) pOpen[i] = true;
+            for (int i = 0; i < bn; i++) bOpen[i] = true;
+            int ps = 0, bs = 0;
+            bool fall = false;
+            for (int m = 0; m < Moves; m++)
+            {
+                bool halve = m == Moves - 1;
+                int p, b;
+                Choose(m, fall, player, boss, pOpen, bOpen, out p, out b);
+                if (!fall && !Safe(player, boss, p, b, halve, ps, bs, playerTarget, badgerTarget))
+                {
+                    fall = true;
+                    Choose(m, true, player, boss, pOpen, bOpen, out p, out b);
+                }
+                sc._player[m] = p;
+                sc._boss[m] = b;
+                if (p >= 0) pOpen[p] = false;
+                if (b >= 0) bOpen[b] = false;
+                Gains(player, boss, p, b, halve, out int pg, out int bg);
+                ps += pg;
+                bs += bg;
+            }
+            sc.ExpectedPlayer = ps;
+            sc.ExpectedBoss = bs;
+            sc.FellBack = fall;
+            return sc;
+        }
+
+        static void Choose(int m, bool fall, int[] player, int[] boss, bool[] pOpen, bool[] bOpen, out int p, out int b)
+        {
+            if (fall)
+            {
+                p = Lowest(player, pOpen);
+                b = Highest(boss, bOpen);
+                return;
+            }
+            p = Highest(player, pOpen);
+            int ph = p >= 0 ? player[p] : 0;
+            if (m == 0)
+            {
+                b = LowestBelow(boss, bOpen, ph);
+                if (b < 0) b = Lowest(boss, bOpen);
+            }
+            else if (m == 1)
+            {
+                b = Highest(boss, bOpen);
+            }
+            else
+            {
+                b = LowestAbove(boss, bOpen, BadgerFight.HalveHoney(ph));
+                if (b < 0) b = Highest(boss, bOpen);
+            }
+        }
+
+        static void Gains(int[] player, int[] boss, int p, int b, bool halve, out int pg, out int bg)
+        {
+            int ph = p >= 0 ? player[p] : 0;
+            int bh = b >= 0 ? boss[b] : 0;
+            BadgerFight.ApplyRound(ph, bh, BadgerPower.None, false, halve, out _, out _, out pg, out bg);
+        }
+
+        static bool Safe(int[] player, int[] boss, int p, int b, bool halve, int ps, int bs, int pt, int bt)
+        {
+            Gains(player, boss, p, b, halve, out int pg, out int bg);
+            return ps + pg < pt && bs + bg < bt;
+        }
+
+        static int Highest(int[] v, bool[] open)
+        {
+            int best = -1;
+            for (int i = 0; i < open.Length; i++)
+                if (open[i] && (best < 0 || v[i] > v[best])) best = i;
+            return best;
+        }
+
+        static int Lowest(int[] v, bool[] open)
+        {
+            int best = -1;
+            for (int i = 0; i < open.Length; i++)
+                if (open[i] && (best < 0 || v[i] < v[best])) best = i;
+            return best;
+        }
+
+        // Lowest open tile strictly below `limit`.
+        static int LowestBelow(int[] v, bool[] open, int limit)
+        {
+            int best = -1;
+            for (int i = 0; i < open.Length; i++)
+                if (open[i] && v[i] < limit && (best < 0 || v[i] < v[best])) best = i;
+            return best;
+        }
+
+        // Lowest open tile strictly above `floor`.
+        static int LowestAbove(int[] v, bool[] open, int floor)
+        {
+            int best = -1;
+            for (int i = 0; i < open.Length; i++)
+                if (open[i] && v[i] > floor && (best < 0 || v[i] < v[best])) best = i;
+            return best;
+        }
+    }
 }

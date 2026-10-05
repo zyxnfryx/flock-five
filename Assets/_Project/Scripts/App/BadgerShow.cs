@@ -318,6 +318,169 @@ namespace FlockFive
         }
     }
 
+    public enum BadgerSlamBeat { Words = 0, Speed = 1, ZoomIn = 2, Nasty = 3, ZoomOut = 4, Done = 5 }
+
+    // "Honey Badger Don't Care" critical-hit beat (spec 2b), about 2.2 s:
+    // 1 word slam Honey -> Badger -> Don't -> Care on a dark wash, 2 speed lines, 3 hard zoom
+    // into the badger's eye with a sparkle glint, 4 the nasty move (honey_splat + shrug),
+    // 5 zoom back out, then the round resolves. Pure timing and shapes; BadgerFight.TryDontCare
+    // decides the hit and the effect, FlockFiveApp.PlayDontCareSlam draws it.
+    // Zoom(t) is exactly 1 outside the zoom beats and once Done, and the app derives the GUI
+    // scale from it every frame (nothing is stored), so the contest always returns to 1:1.
+    public static class BadgerSlam
+    {
+        public const float WordSeconds = 0.22f;
+        public const float SpeedSeconds = 0.30f;
+        public const float ZoomInSeconds = 0.45f;
+        public const float NastySeconds = 0.22f;
+        public const float ZoomOutSeconds = 0.35f;
+
+        // Each word lands big and settles to 1 over this share of its slot.
+        public const float PopShare = 0.45f;
+        public const float PopFrom = 1.60f;
+        public const float WashMax = 0.62f;
+        public const float WashInSeconds = 0.08f;
+        public const float FaceInSeconds = 0.10f;
+        public const float ZoomMax = 3.2f;
+        public const int SpeedLineCount = 22;
+
+        // Close-up frame for the eye zoom (toward-camera leap frame; no new art) and the
+        // pupil of its left eye as a share of the frame (0,0 = top-left).
+        public const string FaceFrame = "badger_leap_3";
+        public const float EyeU = 0.442f;
+        public const float EyeV = 0.266f;
+
+        public static int Words => BadgerCopy.DontCareWordCount;
+        public static float WordsEnd => Words * WordSeconds;
+        public static float SpeedEnd => WordsEnd + SpeedSeconds;
+        public static float ZoomInEnd => SpeedEnd + ZoomInSeconds;
+        // The nasty move lands here (power-up destroyed or the halve shown).
+        public static float NastyAt => ZoomInEnd;
+        public static float NastyEnd => NastyAt + NastySeconds;
+        public static float Duration => NastyEnd + ZoomOutSeconds;
+
+        public static bool Done(float t) => t >= Duration;
+
+        public static BadgerSlamBeat BeatAt(float t)
+        {
+            if (t < WordsEnd) return BadgerSlamBeat.Words;
+            if (t < SpeedEnd) return BadgerSlamBeat.Speed;
+            if (t < ZoomInEnd) return BadgerSlamBeat.ZoomIn;
+            if (t < NastyEnd) return BadgerSlamBeat.Nasty;
+            if (t < Duration) return BadgerSlamBeat.ZoomOut;
+            return BadgerSlamBeat.Done;
+        }
+
+        static float Ease(float u)
+        {
+            u = Mathf.Clamp01(u);
+            return u * u * (3f - 2f * u);
+        }
+
+        // True on the one step that crosses `at`.
+        public static bool Crosses(float before, float after, float at)
+        {
+            return before < at && after >= at;
+        }
+
+        // -1 before the first word and after the word beat.
+        public static int WordIndexAt(float t)
+        {
+            if (t < 0f || t >= WordsEnd) return -1;
+            int i = Mathf.FloorToInt(t / WordSeconds);
+            int last = Words - 1;
+            return i > last ? last : i;
+        }
+
+        public static string WordAt(float t)
+        {
+            return BadgerCopy.DontCareWordAt(WordIndexAt(t));
+        }
+
+        // Scale of the current word: PopFrom on its first frame, 1 once settled.
+        public static float Pop(float t)
+        {
+            int i = WordIndexAt(t);
+            if (i < 0) return 1f;
+            float u = Mathf.Clamp01((t - i * WordSeconds) / (WordSeconds * PopShare));
+            float e = 1f - (1f - u) * (1f - u);
+            return PopFrom + (1f - PopFrom) * e;
+        }
+
+        // Dark wash: quick in, held to the zoom-out, then eased to 0 by the end.
+        public static float WashAlpha(float t)
+        {
+            if (t <= 0f || t >= Duration) return 0f;
+            float a = Mathf.Clamp01(t / WashInSeconds);
+            if (t > NastyEnd) a = Mathf.Min(a, 1f - Ease((t - NastyEnd) / ZoomOutSeconds));
+            return a * WashMax;
+        }
+
+        // Close-up badger face: pops in with the speed lines, fades out with the zoom-out.
+        public static float FaceAlpha(float t)
+        {
+            if (t < WordsEnd || t >= Duration) return 0f;
+            float a = Mathf.Clamp01((t - WordsEnd) / FaceInSeconds);
+            if (t > NastyEnd) a = Mathf.Min(a, 1f - Ease((t - NastyEnd) / ZoomOutSeconds));
+            return a;
+        }
+
+        // Camera scale around the eye. 1 until the zoom-in, a hard ease-in to ZoomMax,
+        // held through the nasty move, smoothly back to exactly 1.
+        public static float Zoom(float t)
+        {
+            var beat = BeatAt(t);
+            if (beat == BadgerSlamBeat.ZoomIn)
+            {
+                float u = Mathf.Clamp01((t - SpeedEnd) / ZoomInSeconds);
+                return 1f + (ZoomMax - 1f) * u * u * u;
+            }
+            if (beat == BadgerSlamBeat.Nasty) return ZoomMax;
+            if (beat == BadgerSlamBeat.ZoomOut)
+                return ZoomMax + (1f - ZoomMax) * Ease((t - NastyEnd) / ZoomOutSeconds);
+            return 1f;
+        }
+
+        // Speed lines: full in the speed beat, fading over the first half of the zoom-in.
+        public static float SpeedLines(float t)
+        {
+            if (t < WordsEnd || t >= ZoomInEnd) return 0f;
+            if (t < SpeedEnd) return 1f;
+            return 1f - Mathf.Clamp01((t - SpeedEnd) / (ZoomInSeconds * 0.5f));
+        }
+
+        // One speed line: angle (degrees), inner and outer radius as shares of the screen
+        // diagonal. Deterministic per index; the lines rush inward over time.
+        public static void SpeedLine(int i, float t, out float degrees, out float inner, out float outer)
+        {
+            int n = SpeedLineCount < 1 ? 1 : SpeedLineCount;
+            float jitter = ((i * 7919) % 13) / 13f;
+            degrees = i * 360f / n + jitter * 9f;
+            float rush = Mathf.Repeat((t - WordsEnd) * 3.4f + jitter, 1f);
+            inner = 0.16f + 0.10f * (1f - rush) + 0.05f * jitter;
+            outer = 0.62f + 0.10f * jitter;
+        }
+
+        // White glint on the pupil: rises over the second half of the zoom-in, holds through
+        // the nasty move, gone as the zoom-out starts.
+        public static float Glint(float t)
+        {
+            float from = SpeedEnd + ZoomInSeconds * 0.5f;
+            if (t < from || t >= NastyEnd) return 0f;
+            return Mathf.Clamp01((t - from) / (ZoomInSeconds * 0.5f));
+        }
+
+        // The nasty move's honey_splat + shrug, from NastyAt to the end of the beat.
+        public static bool ShowNasty(float t) => t >= NastyAt && t < Duration;
+
+        // Same interruption rule as BadgerLeap.Stuck: a slam still live well past its end
+        // lost its driver; the app finishes it and the scale is 1 again.
+        public static bool Stuck(bool live, float elapsed)
+        {
+            return live && elapsed > Duration + TutorialHeal.MaxGateSeconds;
+        }
+    }
+
     // When the badger sits on the splash play flower. Pure, so a test covers the switch.
     public static class BadgerSitter
     {

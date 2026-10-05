@@ -17,7 +17,7 @@ namespace FlockFive
     // FitCaptionBox + CoachGloveAt (first-fight lesson), TutorialHeal, Sfx.CardBump/Deny.
     public sealed partial class FlockFiveApp
     {
-        enum BadgerStage { PostOpen, BossWait, YourPick, Reveal, Verdict, Over, Opening, Lesson }
+        enum BadgerStage { PostOpen, BossWait, YourPick, Reveal, Verdict, Over, Opening, Lesson, DontCare }
         enum BadgerLook { Face, Down, Spent }
 
         const float BadgerBossWait = 0.75f;
@@ -52,6 +52,10 @@ namespace FlockFive
         int _bgFlagDisplay;
         int _bgRoundN;
         bool _bgLessonLive;
+        // This contest ran the first-fight lesson: BadgerFight forces the move-3 slam.
+        bool _bgCoachFight;
+        // Coach fight, moves 1-3: the guided tile's rect this frame (glove aim + tap rect).
+        Rect _bgGuideAim;
         int _bgLessonStep;
         Rect _bgLessonAim;
         Rect _bgLessonCap;
@@ -99,6 +103,10 @@ namespace FlockFive
             _bgLessonStep = 0;
             _bgLessonAim = default;
             _bgLessonCap = default;
+            _bgCoachFight = false;
+            _bgSlam = default;
+            _bgSlamT = 0f;
+            _bgSlamWord = -1;
             _bgLine = "";
             _bgNeedLine = "You need " + BadgerSchedule.PlayerTarget(n) + "    Badger needs " + BadgerSchedule.BadgerTarget(n);
             RefreshBadgerPrices();
@@ -106,6 +114,8 @@ namespace FlockFive
             _home = HomeFace.Badger;
             // Phase 4: hive swipe + bee fill, PostOpen pause, then the badger leads.
             BeginBadgerOpening();
+            // Battle bed: a no-op when the leap's entrance cue already owns the seat.
+            if (MixDesk.Live != null) MixDesk.Live.BadgerBattle();
             return true;
         }
 
@@ -113,6 +123,8 @@ namespace FlockFive
         void LeaveBadger()
         {
             EndBadgerLesson();
+            // 0.3 s fade, then the splash bed comes back. A result stinger rings out.
+            if (MixDesk.Live != null) MixDesk.Live.SetBadger(false);
             bool finished = _bgStage == BadgerStage.Over
                 && _bgFight != null
                 && _bgFight.Result != BadgerResult.Playing;
@@ -127,6 +139,9 @@ namespace FlockFive
             _bgOpenT = 0f;
             _bgWashOut = 0f;
             _bgFlagDisplay = 0;
+            _bgSlam = default;
+            _bgSlamT = 0f;
+            _bgSlamWord = -1;
             if (_bgLeap.Live) _bgLeap.Release();
 #if UNITY_EDITOR
             if (_bgSwitchHeld)
@@ -164,7 +179,7 @@ namespace FlockFive
         void BeginBadgerFight()
         {
             _bgFight = new BadgerFight(_bgAppearance, _bgSeed, _bgLoadout.Honeys(),
-                BadgerSchedule.BossTileMix(_bgAppearance, _bgSeed));
+                BadgerSchedule.BossTileMix(_bgAppearance, _bgSeed), _bgCoachFight);
             _bgShownPlayer = 0;
             _bgShownBoss = 0;
             NextBadgerRound();
@@ -180,6 +195,10 @@ namespace FlockFive
             _bgT = 0f;
             _bgStage = BadgerStage.BossWait;
             _bgLine = BadgerCopy.RoundStartLine(_bgRoundN);
+            // Coach fight: the round after move 3 announces the unlocked power-ups.
+            if (_bgFight != null && _bgFight.CoachFight
+                && _bgFight.RoundsResolved == BadgerTutorialScript.Moves && !_bgFight.PowersLocked)
+                _bgLine = BadgerCopy.PowersOpen;
             _bgRoundN++;
         }
 
@@ -223,22 +242,30 @@ namespace FlockFive
                     _bgT = 0f;
                     _bgStage = BadgerStage.YourPick;
                     _bgLine = BadgerCopy.YourPick;
+                    if (_bgFight.GuidedTile >= 0)
+                    {
+                        // Coach step: static caption box owns the line; the glove starts fresh
+                        // at this step's tile (never slides over from the last one).
+                        _bgLine = "";
+                        _bgGuideAim = default;
+                        ResetBadgerGlove();
+                    }
                     Sfx.CardBump();
                     break;
                 case BadgerStage.Reveal:
                     if (_bgT < BadgerSlide + BadgerRevealHold) break;
-                    if (!_bgFight.Resolve(out _bgRound))
+                    // Both picks are in: roll the Don't Care slam (spec 2b) before the compare.
+                    if (_bgFight.TryDontCare(out var slam))
                     {
-                        NextBadgerRound();
+                        PlayDontCareSlam(slam);
                         break;
                     }
-                    _bgResolved = true;
-                    _bgT = 0f;
-                    _bgDotT = 0f;
-                    _bgStage = BadgerStage.Verdict;
-                    _bgLine = BadgerVerdict(_bgRound);
-                    if (_bgRound.PlayerGained > 0 || _bgRound.BossGained > 0 || BadgerFight.IsBlock(_bgRound.Power))
-                        Sfx.CardBump();
+                    ResolveBadgerRound();
+                    break;
+                case BadgerStage.DontCare:
+                    StepDontCareSlam(dt);
+                    if (!BadgerSlam.Done(_bgSlamT)) break;
+                    FinishDontCareSlam();
                     break;
                 case BadgerStage.Verdict:
                     StepBadgerDots(dt);
@@ -247,6 +274,23 @@ namespace FlockFive
                     else NextBadgerRound();
                     break;
             }
+        }
+
+        // The compare. A slam hit this round already stripped the power-up or set the halve.
+        void ResolveBadgerRound()
+        {
+            if (!_bgFight.Resolve(out _bgRound))
+            {
+                NextBadgerRound();
+                return;
+            }
+            _bgResolved = true;
+            _bgT = 0f;
+            _bgDotT = 0f;
+            _bgStage = BadgerStage.Verdict;
+            _bgLine = BadgerVerdict(_bgRound);
+            if (_bgRound.PlayerGained > 0 || _bgRound.BossGained > 0 || BadgerFight.IsBlock(_bgRound.Power))
+                Sfx.CardBump();
         }
 
         bool BadgerDotsBusy()
@@ -274,8 +318,14 @@ namespace FlockFive
             _bgShownPlayer = _bgFight != null ? Mathf.Min(_bgFight.PlayerScore, _bgFight.PlayerTarget) : 0;
             _bgShownBoss = _bgFight != null ? Mathf.Min(_bgFight.BossScore, _bgFight.BadgerTarget) : 0;
             _bgLine = BadgerCopy.EndLine(won ? BadgerResult.PlayerWon : BadgerResult.BadgerWon);
-            if (won) SfxLibrary.Play("fanfare", 0.40f);
-            else Sfx.Deny();
+            // Bed fades 0.3 s and the badger-win / badger-lose stinger plays once. The old
+            // one-shots stay as the fallback when the clips are missing.
+            bool stung = MixDesk.Live != null && MixDesk.Live.BadgerResult(won);
+            if (!stung)
+            {
+                if (won) SfxLibrary.Play("fanfare", 0.40f);
+                else Sfx.Deny();
+            }
         }
 
         static string BadgerVerdict(BadgerRound r) => BadgerCopy.VerdictLine(r);
@@ -330,7 +380,7 @@ namespace FlockFive
                 _bgLine = BadgerCopy.YourPick;
                 return;
             }
-            if (!_bgFight.PowerReady(p)) return;
+            if (!_bgFight.PowerReady(p) || _bgFight.PowersLocked) return;
             if (!_bgFight.CanAfford(p))
             {
                 BadgerShakeNow(BadgerPowerKey + (int)p);
@@ -368,15 +418,31 @@ namespace FlockFive
         void BeginBadgerLesson()
         {
             _bgLessonLive = true;
+            _bgCoachFight = true;
             _bgLessonStep = 0;
             _bgStage = BadgerStage.Lesson;
             _bgT = 0f;
             _bgLine = "";
             RefreshBadgerLessonAim();
+            ResetBadgerGlove();
+        }
+
+        // Shared by the lesson steps and the guided picks: the hand starts fresh at the next aim.
+        void ResetBadgerGlove()
+        {
             _gloveReady = false;
             _gloveVis = false;
             _coachFade = 0f;
             GloveVeilReset();
+        }
+
+        // Coach fight, moves 1-3, while the player is to pick. Derived from the fight each
+        // frame (no flag of its own), so nothing can leak and leave taps blocked: leaving the
+        // page, the pick, or move 3 ends it on the spot.
+        bool BadgerGuideLive()
+        {
+            return _splash && _home == HomeFace.Badger && _bgFight != null
+                && _bgStage == BadgerStage.YourPick && _bgFight.GuidedTile >= 0;
         }
 
         void EndBadgerLesson()
@@ -396,10 +462,7 @@ namespace FlockFive
         {
             if (!_bgLessonLive) return;
             _bgLessonStep++;
-            _gloveReady = false;
-            _gloveVis = false;
-            GloveVeilReset();
-            _coachFade = 0f;
+            ResetBadgerGlove();
             if (_bgLessonStep < BadgerCopy.LessonCount)
             {
                 RefreshBadgerLessonAim();
@@ -422,6 +485,16 @@ namespace FlockFive
         // step's control; a valid tap fades the hand and advances the step.
         void PlaceBadgerLessonGlove(float dt, float s)
         {
+            if (BadgerGuideLive())
+            {
+                // Guided pick: same shared glove, aimed at the scripted tile. The tile's own
+                // HitPad takes the tap; NoteGloveTap fades the hand only on that tile.
+                var tile = _bgGuideAim;
+                if (tile.width < 2f || tile.height < 2f) return;
+                _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+                CoachGloveAt(GloveTarget(tile), dt, s, float.NaN, false, float.NaN, tile);
+                return;
+            }
             if (!_bgLessonLive || _bgStage != BadgerStage.Lesson) return;
             var aim = _bgLessonAim;
             if (aim.width < 2f || aim.height < 2f) return;
@@ -450,16 +523,35 @@ namespace FlockFive
             if (_bgLessonStep == 0) _bgLessonAim = L.PlayerGrid;
             else if (_bgLessonStep == 1) _bgLessonAim = L.Power;
             else _bgLessonAim = L.ColL;
+            _bgLessonCap = DrawBadgerCoachLine(L, line);
+            DrawTutorOverlay(s);
+        }
+
+        // Shared static caption box (FitCaptionBox + pinned intro line) for the lesson and the
+        // guided picks. Returns the seat.
+        Rect DrawBadgerCoachLine(BadgerRects L, string line)
+        {
+            float s = L.S;
             float maxW = Mathf.Min(L.Caption.width, Screen.width * 0.86f);
             if (maxW < 8f) maxW = 8f;
-            var fit = FitCaptionBox(line, maxW, Mathf.Max(18, Mathf.RoundToInt(34f * s)), 14);
+            int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            var fit = FitCaptionBox(line, maxW, hi, 14);
             float x = L.Caption.center.x - fit.width * 0.5f;
             float y = L.Caption.y + (L.Caption.height - fit.height) * 0.5f;
             if (x < 4f) x = 4f;
             if (x + fit.width > Screen.width - 4f) x = Screen.width - 4f - fit.width;
-            _bgLessonCap = new Rect(x, y, fit.width, fit.height);
-            DrawSplashIntroLine(line, _bgLessonCap, s, Mathf.Max(18, Mathf.RoundToInt(34f * s)), pin: true);
-            DrawTutorOverlay(s);
+            var seat = new Rect(x, y, fit.width, fit.height);
+            DrawSplashIntroLine(line, seat, s, hi, pin: true);
+            return seat;
+        }
+
+        // Coach fight, moves 1-3: this step's caption and the shared glove.
+        void DrawBadgerGuide(BadgerRects L)
+        {
+            if (!BadgerGuideLive()) return;
+            string line = BadgerCopy.GuideLine(_bgFight.TutorialMove);
+            if (!string.IsNullOrEmpty(line)) DrawBadgerCoachLine(L, line);
+            DrawTutorOverlay(L.S);
         }
 
         // ---- layout ----
@@ -723,7 +815,19 @@ namespace FlockFive
 
         // ---- the page ----
 
+        // The Don't Care slam zooms the whole contest around the badger's eye. The scale is
+        // read from the slam clock each frame and the matrix is restored in a finally, so the
+        // page is always back at 1:1 once the slam ends (or is healed / interrupted).
         void DrawBadgerPage()
+        {
+            float zoom = DontCareZoom();
+            var keep = PushBadgerZoom(zoom, DontCareEyeAt());
+            try { DrawBadgerPageBody(); }
+            finally { GUI.matrix = keep; }
+            if (DontCareSlamLive && _home == HomeFace.Badger) DrawDontCareSlam(BadgerLayout());
+        }
+
+        void DrawBadgerPageBody()
         {
             if (_bgLoadout == null)
             {
@@ -736,7 +840,8 @@ namespace FlockFive
             DrawHomeWash(0.58f);
 
             // Opening, PostOpen, and the lesson are not skippable via the medal.
-            if (_bgStage == BadgerStage.Opening || _bgStage == BadgerStage.PostOpen || _bgStage == BadgerStage.Lesson)
+            if (_bgStage == BadgerStage.Opening || _bgStage == BadgerStage.PostOpen || _bgStage == BadgerStage.Lesson
+                || _bgStage == BadgerStage.DontCare || BadgerGuideLive())
                 PaintBackMedal(L.Back, false);
             else if (DrawBackMedal(L.Back))
             {
@@ -768,13 +873,17 @@ namespace FlockFive
             }
 
             int tapped = -1;
+            // Coach moves 1-3: only the glove's tile takes a tap; every other tile ignores it.
+            int guide = _bgFight != null && tilesLive ? _bgFight.GuidedTile : -1;
             for (int i = 0; i < BadgerSchedule.Tiles; i++)
             {
                 var t = _bgLoadout[i];
                 bool open = _bgFight == null || _bgFight.PlayerOpen(i);
                 var draw = youHex.Draw(i);
+                if (i == guide) _bgGuideAim = draw;
                 bool held = false;
-                if (tilesLive && open && HitPad(youHex.Hit(i), out held)) tapped = i;
+                bool live = tilesLive && open && (guide < 0 || i == guide);
+                if (live && HitPad(youHex.Hit(i), out held)) tapped = i;
                 if (held) draw = Inset(draw, 0.03f);
                 draw.x += BadgerShakeX(i, s);
                 BadgerTilePlate(draw, t, open ? BadgerLook.Face : BadgerLook.Spent, BadgerTileLand(i));
@@ -785,6 +894,7 @@ namespace FlockFive
             DrawBadgerPowers(L, _bgStage != BadgerStage.Lesson);
             DrawBadgerCaption(L);
             DrawBadgerLesson(L);
+            DrawBadgerGuide(L);
             if (tapped >= 0 && _bgStage != BadgerStage.Lesson) ClickBadgerTile(tapped);
 
             if (_bgWashOut > 0f) DrawBadgerWash(_bgWashOut / BadgerLeap.WashOutSeconds);
@@ -853,19 +963,27 @@ namespace FlockFive
         void DrawBadgerRoundBeat(BadgerRects L)
         {
             if (!GuiPaint()) return;
-            if (BadgerCopy.ShowShrug(_bgRound))
-            {
-                float unit = L.Arena.height * 1.20f / 654f;
-                var foot = new Vector2(L.Arena.center.x + L.Arena.width * 0.28f, L.Arena.yMax);
-                DrawBadgerArt("badger_shrug", foot, unit, 1f);
-            }
-            if (!BadgerCopy.ShowTheftSplat(_bgRound)) return;
-            // Comic honey splat over the player score column (theft), not a wound.
+            if (BadgerCopy.ShowShrug(_bgRound)) DrawBadgerShrug(L, 1f);
+            if (BadgerCopy.ShowTheftSplat(_bgRound)) DrawBadgerColumnSplat(L, 0.92f);
+        }
+
+        // Shared by the round beat and the Don't Care slam.
+        static void DrawBadgerShrug(BadgerRects L, float alpha)
+        {
+            float unit = L.Arena.height * 1.20f / 654f;
+            var foot = new Vector2(L.Arena.center.x + L.Arena.width * 0.28f, L.Arena.yMax);
+            DrawBadgerArt("badger_shrug", foot, unit, alpha);
+        }
+
+        // Comic honey splat over the player score column, not a wound. Shared by the theft
+        // beat and the Don't Care slam.
+        static void DrawBadgerColumnSplat(BadgerRects L, float alpha)
+        {
             float su = L.ColL.width * 2.4f / 775f;
             if (su < 0.01f) su = L.S * 0.12f;
             float sh = BadgerArtHeight("honey_splat", su);
             var foot2 = new Vector2(L.ColL.center.x, L.ColL.y + L.ColL.height * 0.35f + sh * 0.5f);
-            DrawBadgerArt("honey_splat", foot2, su, 0.92f);
+            DrawBadgerArt("honey_splat", foot2, su, alpha);
         }
 
         void DrawBadgerWinGlow(Rect r)
@@ -905,9 +1023,11 @@ namespace FlockFive
                 var p = (BadgerPower)(k + 1);
                 var r = new Rect(L.Power.x + k * (w + gap), L.Power.y, w, L.Power.height);
                 bool used = _bgFight != null && !_bgFight.PowerReady(p);
-                bool inPick = _bgStage == BadgerStage.YourPick;
+                // Coach fight: visibly locked (dim, no hit) until move 3 has resolved.
+                bool locked = _bgFight != null && _bgFight.PowersLocked;
+                bool inPick = _bgStage == BadgerStage.YourPick && !locked;
                 bool lit = _bgArmed == p && (inPick || _bgStage == BadgerStage.Reveal || _bgStage == BadgerStage.Verdict);
-                string sub = used ? "USED" : BadgerPowerPriceSub(p);
+                string sub = used ? "USED" : locked ? BadgerCopy.Locked : BadgerPowerPriceSub(p);
                 Color ink = p == BadgerPower.HotSauce ? new Color(1f, 0.55f, 0.35f)
                     : p == BadgerPower.FreezeSpray ? new Color(0.45f, 0.85f, 1f)
                     : Color.white;

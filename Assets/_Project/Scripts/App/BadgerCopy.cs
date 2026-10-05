@@ -31,6 +31,39 @@ namespace FlockFive
         // Honey theft beat: boss scored at least this much honey in the round.
         public const int TheftHoney = 4;
 
+        // "Honey Badger Don't Care" slam (spec 2b): one word at a time. Brandon's line for the mode.
+        public static readonly string[] DontCareWords = { "Honey", "Badger", "Don't", "Care" };
+        // Caption after the slam resolves. Short, mild, original.
+        public const string DontCareWasted = "Don't care. Your power-up did nothing.";
+        public const string DontCareHalved = "Don't care. Half your honey this round.";
+
+        public static int DontCareWordCount => DontCareWords.Length;
+
+        // Coach fight, moves 1-3: one static caption per guided pick (placeholders for Brandon).
+        public static readonly string[] Guide =
+        {
+            "Tap the glowing comb. Higher honey wins.",
+            "Tap this one. The badger bites back.",
+            "Tap this one. Watch out, he doesn't care.",
+        };
+        // Round start right after move 3 (power-ups unlock; tutorial free first use applies).
+        public const string PowersOpen = "Power-ups are open. Your first one is free.";
+        // Power-up button sub-label while the coach script holds them.
+        public const string Locked = "LOCKED";
+
+        // move is 1-based; "" outside the guided moves.
+        public static string GuideLine(int move)
+        {
+            if (move < 1 || move > Guide.Length) return "";
+            return Guide[move - 1];
+        }
+
+        public static string DontCareWordAt(int i)
+        {
+            if ((uint)i >= (uint)DontCareWords.Length) return "";
+            return DontCareWords[i];
+        }
+
         public static int LessonCount => Lesson.Length;
 
         public static string LessonAt(int step)
@@ -55,6 +88,8 @@ namespace FlockFive
 
         public static string VerdictLine(BadgerRound r)
         {
+            if (r.DontCare && r.Destroyed != BadgerPower.None) return DontCareWasted;
+            if (r.DontCare && r.Halved) return DontCareHalved;
             if (r.PlayerGained > 0) return DontCare;
             if (r.BossGained > 0) return MineNow;
             return Tie;

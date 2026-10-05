@@ -660,7 +660,11 @@ namespace FlockFive
             NoteHiveIntroLeft();
             NotePokerIntroLeft();
             NoteDailyIntroLeft();
-            if (MixDesk.Live != null) MixDesk.Live.SetSplash(false);
+            if (MixDesk.Live != null)
+            {
+                MixDesk.Live.SetBadger(false);
+                MixDesk.Live.SetSplash(false);
+            }
             _board = LevelData.Open(index);
             _seed = _board.Clone();
             for (int i = 0; i < _bonusOn.Length; i++) _bonusOn[i] = false;
@@ -3556,11 +3560,16 @@ namespace FlockFive
                 if (_restarting || _splash)
                 {
                     _bgLeap.Release();
+                    if (MixDesk.Live != null) MixDesk.Live.SetBadger(false);
                     _gardenScoring = false;
                     yield break;
                 }
                 ShowSplash();
-                if (!OpenBadgerFight(owed)) _bgLeap.Release();
+                if (!OpenBadgerFight(owed))
+                {
+                    _bgLeap.Release();
+                    if (MixDesk.Live != null) MixDesk.Live.SetBadger(false);
+                }
                 yield break;
             }
             ShowSplash();
