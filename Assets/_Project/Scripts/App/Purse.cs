@@ -222,6 +222,43 @@ namespace FlockFive
             PrefGuard.SetInt(PrefCoins, Coins);
             PlayerPrefs.Save();
         }
+
+        // Shared display hold. A reveal that plays after the credit (poker win, fullcard)
+        // credits and saves at once, so a kill can never lose the coins, but the purse
+        // label keeps showing the old total until the feature calls ReleaseDisplay at its
+        // reveal; the HUD then rolls up to the new total. Not saved: a relaunch shows Coins.
+        public static int HeldDisplay { get; private set; }
+
+        // What the coin HUD may show right now: the saved balance minus coins on hold.
+        public static int DisplayCoins => Mathf.Max(0, Coins - Mathf.Max(0, HeldDisplay));
+
+        // Credit + save now, reveal later.
+        public static void CreditHeld(int amount)
+        {
+            if (amount <= 0) return;
+            Credit(amount);
+            HoldDisplay(amount);
+        }
+
+        public static void HoldDisplay(int amount)
+        {
+            if (amount <= 0) return;
+            HeldDisplay += amount;
+        }
+
+        // Reveal up to amount of the held coins (all of them when amount < 0).
+        // Returns how much was actually released.
+        public static int ReleaseDisplay(int amount = -1)
+        {
+            if (HeldDisplay <= 0)
+            {
+                HeldDisplay = 0;
+                return 0;
+            }
+            int n = amount < 0 ? HeldDisplay : Mathf.Min(amount, HeldDisplay);
+            HeldDisplay -= n;
+            return n;
+        }
     }
 
     // Local checksum only. Do not treat these values as a server economy.

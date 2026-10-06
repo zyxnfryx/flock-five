@@ -103,6 +103,9 @@ namespace FlockFive
 
         public static void ResetRound()
         {
+            // The round is over: anything its reveal still held is shown (a skipped or
+            // abandoned celebration never leaves the purse label short).
+            Purse.ReleaseDisplay();
             PhaseNow = Phase.Idle;
             LastWin = 0;
             LastRank = Rank.Nothing;
@@ -328,13 +331,24 @@ namespace FlockFive
             if (PhaseNow != Phase.Dealt) return false;
             for (int i = 0; i < HandSize; i++)
                 if (!Hold[i]) Hand[i] = DrawOne();
-            LastRank = Evaluate(Hand, out bool natural);
+            SettleRound();
+            return true;
+        }
+
+        // One settle path for a drawn hand (Draw and the editor ForceFiveWilds): rank, pay,
+        // punch, fullcard. Every payout goes through Purse.CreditHeld: saved right away so a
+        // kill cannot lose it, but held off the purse label until the table's win reveal
+        // (FlockFiveApp.RevealPokerPay) rolls the total up.
+        static void SettleRound()
+        {
+            LastRank = Evaluate(Hand, out _);
             LastWin = PayFor(LastRank, Bet);
-            if (LastWin > 0) Purse.Credit(LastWin);
+            if (LastWin > 0) Purse.CreditHeld(LastWin);
             RefreshBet();
             LastPunchFresh = false;
             LastPunchBingo = false;
             LastPunchKind = -1;
+            LastFullcardPay = 0;
             if (IsFiveKind(LastRank))
             {
                 int kind;
@@ -346,15 +360,13 @@ namespace FlockFive
                     if (LastPunchBingo)
                     {
                         LastFullcardPay = FullcardPrize;
-                        Purse.Credit(FullcardPrize);
+                        Purse.CreditHeld(FullcardPrize);
                         FullcardCount++;
                         SaveFullcard();
                     }
-                    else LastFullcardPay = 0;
                 }
             }
             PhaseNow = Phase.Drawn;
-            return true;
         }
 
         public static void Collect()
@@ -727,26 +739,7 @@ namespace FlockFive
                 Hand[i] = Card.MakeWild();
                 Hold[i] = true;
             }
-            LastRank = Evaluate(Hand, out _); // Rank.FiveWilds
-            LastWin = PayFor(LastRank, Bet);
-            if (LastWin > 0) Purse.Credit(LastWin);
-            RefreshBet();
-            LastPunchFresh = TryPunch(Hand, out int kind);
-            LastPunchKind = kind;
-            LastPunchBingo = false;
-            LastFullcardPay = 0;
-            if (LastPunchFresh)
-            {
-                LastPunchBingo = PunchFound() == PunchKinds;
-                if (LastPunchBingo)
-                {
-                    LastFullcardPay = FullcardPrize;
-                    Purse.Credit(FullcardPrize);
-                    FullcardCount++;
-                    SaveFullcard();
-                }
-            }
-            PhaseNow = Phase.Drawn;
+            SettleRound(); // Rank.FiveWilds
         }
 #endif
     }

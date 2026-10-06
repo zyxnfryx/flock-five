@@ -50,6 +50,10 @@ namespace FlockFive
         // Displayed balance while a reward pay is ticking. -1 until the first draw.
         int _coinTick = -1;
         int _coinTickFrame = -1;
+        // Reveal roll (RevealHeldCoins): eased count from _coinRollFrom up to the purse total.
+        int _coinRollFrom;
+        float _coinRollT;
+        float _coinRollDur;
         bool _rewardPayLive;
         float _rewardHoldLeft;
         int _rewardHoldFrame = -1;
@@ -198,6 +202,9 @@ namespace FlockFive
         bool _pokerShowPay;
         float _pokerSwayT;
         float _pokerWinT = -1f;
+        // This hand's payouts still on Purse's display hold (armed by RunPokerDraw).
+        int _pokerHeldWin;
+        int _pokerHeldFull;
         string _pokerWinFitText;
         int _pokerWinFitW, _pokerWinFitH, _pokerWinFitRest, _pokerWinFitHero;
         // Bottom of the card row this frame; win speed lines never cross above it.
@@ -7504,10 +7511,11 @@ namespace FlockFive
             // In-garden: restart arrow only — purse $ lives on splash / poker.
         }
 
-        // Saved balance, minus coins still in the air.
+        // Saved balance, minus coins still in the air and coins a reveal still holds
+        // (Purse.HoldDisplay / CreditHeld).
         int CoinsShown()
         {
-            int n = Purse.Coins - _coinInFlight;
+            int n = Purse.DisplayCoins - _coinInFlight;
             if (n < 0) n = 0;
             return n;
         }
@@ -7531,10 +7539,26 @@ namespace FlockFive
             if (!_rewardPayLive)
             {
                 _coinTick = goal;
+                _coinRollDur = 0f;
                 return;
             }
+            if (_coinRollDur > 0f)
+            {
+                // Held-coin reveal: one eased roll from the old label to the new total.
+                float slice = PlayClock.Delta;
+                if (slice > 0f) _coinRollT += slice;
+                float u = Mathf.Clamp01(_coinRollT / Mathf.Max(0.05f, _coinRollDur * RewardPace));
+                float e = 1f - (1f - u) * (1f - u) * (1f - u);
+                if (u >= 1f || goal <= _coinRollFrom)
+                {
+                    _coinTick = goal;
+                    _coinRollDur = 0f;
+                }
+                else
+                    _coinTick = _coinRollFrom + (int)((long)(goal - _coinRollFrom) * (long)Mathf.RoundToInt(e * 10000f) / 10000L);
+            }
             if (goal < _coinTick) _coinTick = goal;
-            if (_coinTick != goal)
+            if (_coinRollDur <= 0f && _coinTick != goal)
             {
                 int delta = goal - _coinTick;
                 float dur = 0.45f * RewardPace;
@@ -7550,6 +7574,21 @@ namespace FlockFive
             }
             if (_coinTick == goal && _flies.Count == 0 && _coinInFlight == 0 && _rewardHoldLeft <= 0f && !Sfx.PayoutBusy)
                 _rewardPayLive = false;
+        }
+
+        // Shared reveal for coins a feature credited earlier under Purse.CreditHeld /
+        // HoldDisplay: releases amount (all held when < 0) and rolls the purse label up from
+        // what it shows now to the new total over rollSeconds (RewardPace stretches it).
+        // No flying sprites; the feature's own celebration is the visual.
+        void RevealHeldCoins(int amount, float rollSeconds)
+        {
+            int from = CoinsDrawn();
+            if (Purse.ReleaseDisplay(amount) <= 0) return;
+            _rewardPayLive = true;
+            _coinTick = from;
+            _coinRollFrom = from;
+            _coinRollT = 0f;
+            _coinRollDur = Mathf.Max(0.2f, rollSeconds);
         }
 
         // Splash is gone, so the flight cannot finish on the balance. Show the saved total.
@@ -7621,6 +7660,7 @@ namespace FlockFive
             _flies.Clear();
             _coinInFlight = 0;
             _rewardHoldLeft = 0f;
+            _coinRollDur = 0f;
             _coinTick = CoinsShown();
             Sfx.ClearPayout();
             _rewardPayLive = false;
@@ -10687,6 +10727,7 @@ namespace FlockFive
                 if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn || _pokerShowPay)
                     MarkPokerBackDone();
                 BirdPoker.ResetRound();
+                ClearPokerHeldPay();
                 _pokerMotion = PokerMotion.None;
                 _pokerFan = false;
                 _pokerChained = false;
@@ -10802,7 +10843,7 @@ namespace FlockFive
             if (GuiPaint()) TickPokerDash(s);
             TickPokerStamp();
             if (winFlying && !_pokerStamp && !payBlocked) SkipPokerWinOnTap();
-            string act = BirdPoker.PhaseNow == BirdPoker.Phase.Dealt ? "DRAW" : "DEAL";
+            string act = PokerActLabel();
             // Between hands (idle or showing a result) the bet steers the next DEAL.
             bool steppers = BirdPoker.BetOpen && !PokerMotionBusy();
             if (steppers) BirdPoker.SyncBet();
@@ -11104,6 +11145,8 @@ namespace FlockFive
                 Sfx.Crack();
                 if (_pokerBingo) Sfx.Combo(5);
             }
+            // The FULLCARD prize rolls onto the purse with the bingo cascade / FULLCARD line.
+            if (_pokerBingo && _pokerStampT >= 1.35f) RevealPokerPay(true);
             bool tap = Event.current != null && Event.current.type == EventType.MouseDown;
             float hold = _pokerBingo ? 5.2f : 2.6f;
             float tapAt = _pokerBingo ? 2.4f : 1.35f;
@@ -11111,6 +11154,7 @@ namespace FlockFive
             {
                 _pokerStamp = false;
                 _pokerBingo = false;
+                RevealPokerPay(true);
             }
         }
 
@@ -11275,7 +11319,7 @@ namespace FlockFive
             var title = GuiPool.Label(GuiSlot.PokerStampTitle);
             title.fontStyle = FontStyle.Bold;
             title.alignment = TextAnchor.MiddleCenter;
-            string boardTitle = _pokerBingo ? "FLOCK COMPLETE" : "FLOCK FIVE  PUNCH CARD";
+            string boardTitle = _pokerBingo ? "FLOCK COMPLETE" : "FLOCK FIVE PUNCH CARD";
             title.fontSize = FitFont(title, boardTitle, paper.width * 0.92f, 28f * s, 14, 26);
             StampOutlined(new Rect(paper.x, paper.y + 6f * s, paper.width, 26f * s), boardTitle, title,
                 _pokerBingo ? new Color(0.55f, 0.28f, 0.06f) : new Color(0.28f, 0.14f, 0.06f), 2, 1);
@@ -11302,7 +11346,7 @@ namespace FlockFive
                 int col = i % cols;
                 int row = i / cols;
                 var r = new Rect(x0 + col * (cell + gap), gridTop + row * (cell + gap), cell, cell);
-                bool on = BirdPoker.IsPunched(i);
+                bool on = PokerPunchInked(i, t);
                 bool focus = i == _pokerStampKind;
                 bool wildCell = BirdPoker.IsWildKind(i);
                 GUI.color = focus
@@ -11333,8 +11377,7 @@ namespace FlockFive
                     GUI.DrawTexture(new Rect(r.x + ip, r.y + ip, cell - ip * 2f, cell - ip * 2f), spr.texture, ScaleMode.ScaleToFit, true);
                     GUI.color = Color.white;
                 }
-                bool covering = focus && t >= 0.55f && t < 1.05f;
-                if (on && !covering)
+                if (on)
                     DrawInkStamp(r, -10f, 0.92f, true);
             }
 
@@ -11380,9 +11423,22 @@ namespace FlockFive
 
         const float StampDropAt = 0.55f;
         const float StampHitAt = 1.05f;
+        // fx_stamp_tool (old face-out art; face-down repaint queued for build 61).
+        // U/V is the centre of the rubber face.
         const float StampToolU = 0.41f;
         const float StampToolV = 0.82f;
         const float StampToolAspect = 0.61f;
+        // Tool height in punch cells.
+        const float StampToolCells = 4.8f;
+
+        // Punch-card ink for a spot. BirdPoker saves the punch at Draw, but the spot being
+        // stamped right now stays unmarked until the stamper hits (StampHitAt): no early
+        // COMPLETED while the clipboard slides in.
+        bool PokerPunchInked(int kind, float t)
+        {
+            if (!BirdPoker.IsPunched(kind)) return false;
+            return !_pokerStamp || kind != _pokerStampKind || t >= StampHitAt;
+        }
 
         void DrawPokerStamper(float x0, float gridTop, float cell, float gap, int cols, float t, float s)
         {
@@ -11423,7 +11479,7 @@ namespace FlockFive
             if (a < 0.02f) return;
             if (tool != null && tool.texture != null)
             {
-                float toolH = cell * 4.8f;
+                float toolH = cell * StampToolCells;
                 float toolW = toolH * StampToolAspect;
                 float x = rubberX - toolW * StampToolU;
                 float y = rubberY - toolH * StampToolV * squash;
@@ -11619,7 +11675,11 @@ namespace FlockFive
                         BeginPokerStamp(BirdPoker.LastPunchKind);
                         _pokerPendingStamp = false;
                     }
-                    if (BirdPoker.LastRank >= BirdPoker.Rank.Flush) Sfx.Celebrate();
+                    // A jackpot's fanfare plays with its rank banner (TickPokerWin), not here.
+                    if (BirdPoker.LastRank >= BirdPoker.Rank.Flush)
+                    {
+                        if (!BirdPoker.IsJackpot(BirdPoker.LastRank)) Sfx.Celebrate();
+                    }
                     else if (_pokerResultCue == 2) Sfx.Clink();
                     else if (_pokerResultCue == 1) Sfx.Deny();
                     _pokerResultCue = 0;
@@ -11648,6 +11708,7 @@ namespace FlockFive
             _pokerChained = false;
             _pokerShowPay = false;
             _pokerWinT = -1f;
+            ClearPokerHeldPay();
             _pokerChainBreak = -1f;
             _pokerHover = -1;
             for (int i = 0; i < _pokerRedraw.Length; i++)
@@ -11669,6 +11730,10 @@ namespace FlockFive
             }
             if (BirdPoker.Draw())
             {
+                // Draw already credited + saved these (Purse.CreditHeld); the purse label
+                // shows them only at the reveal (RevealPokerPay).
+                _pokerHeldWin = BirdPoker.LastWin;
+                _pokerHeldFull = BirdPoker.LastFullcardPay;
                 Ads.NotePokerHand();
                 BeginPokerDraw();
                 _pokerPendingStamp = BirdPoker.LastPunchFresh;
@@ -12222,7 +12287,8 @@ namespace FlockFive
             else if (_pokerMotion == PokerMotion.Draw)
             {
                 show = true;
-                u = 1f - Mathf.Clamp01(_pokerMotionT / 0.22f);
+                // Shared hand/arm fade: the holding hand is gone 0.22 s into the draw.
+                u = PokerHandFade(_pokerMotionT, float.NegativeInfinity, 0f, PokerFanHandGoneT, PokerFanHandGoneT, out _, out _);
             }
             if (!show || u < 0.02f) return;
             var rest = PokerHandRest(row, bump, out Vector2 restPinch);
@@ -12452,9 +12518,22 @@ namespace FlockFive
         const float WinLandT = 0.30f;
         // Speed lines / ghosts span the word's own path over this much time.
         const float WinTrailT = 0.065f;
-        const float WinWhooshAt = WinPunchT + WinHoldT;
-        const float WinLandAt = WinWhooshAt + WinWhooshT;
-        const float WinDoneAt = WinLandAt + WinLandT;
+        // Jackpot ranks (BirdPoker.IsJackpot: FIVE WILDS, NATURAL FIVE) open with a gold rank
+        // banner alone for WinTitleLeadT, then the WIN amount punches in under it, and the pair
+        // holds WinJackpotHoldT longer before the WIN word flies to the resting banner.
+        const float WinTitleLeadT = 0.70f;
+        const float WinJackpotHoldT = 1.10f;
+        const float WinJackpotBurstK = 1.35f;
+        static bool WinJackpot => BirdPoker.IsJackpot(BirdPoker.LastRank);
+        static float WinLead => WinJackpot ? WinTitleLeadT : 0f;
+        static float WinHold => WinHoldT + (WinJackpot ? WinJackpotHoldT : 0f);
+        static float WinWhooshAt => WinLead + WinPunchT + WinHold;
+        static float WinLandAt => WinWhooshAt + WinWhooshT;
+        static float WinDoneAt => WinLandAt + WinLandT;
+        // Purse roll for a revealed hand win (Purse display hold → RevealHeldCoins).
+        const float PokerWinRollT = 1.15f;
+        const float PokerJackpotRollT = 2.40f;
+        const float PokerFullcardRollT = 2.00f;
         static readonly Color PokerWinRed = new Color(0.94f, 0.12f, 0.14f, 1f);
         static readonly Color PokerWinGold = new Color(1f, 0.86f, 0.22f, 1f);
 
@@ -12465,14 +12544,64 @@ namespace FlockFive
 
         void TickPokerWin()
         {
-            if (_pokerWinT < 0f || _pokerWinT >= WinDoneAt) return;
-            // A fresh punch-card stamp plays first; the fanfare waits for it.
+            if (_pokerWinT < 0f) return;
+            // A fresh punch-card stamp plays first; the fanfare (and its purse roll) waits for it.
             if (_pokerStamp) return;
+            RevealPokerPay(true);
+            if (_pokerWinT >= WinLead) RevealPokerPay(false);
+            if (_pokerWinT >= WinDoneAt) return;
             float prev = _pokerWinT;
             _pokerWinT += Time.unscaledDeltaTime;
+            if (WinJackpot)
+            {
+                // Rank banner slams in with the poker fanfare; the WIN amount follows with a chime.
+                if (prev <= 0f && _pokerWinT > 0f)
+                {
+                    Sfx.Celebrate();
+                    PunchPoker(0.30f, 9f, 2.2f);
+                }
+                if (prev < WinLead && _pokerWinT >= WinLead)
+                {
+                    Sfx.Combo(5, 0.60f);
+                    PunchPoker(0.18f, 5f, 1.2f);
+                    RevealPokerPay(false);
+                }
+            }
             if (prev < WinWhooshAt && _pokerWinT >= WinWhooshAt) Sfx.CardWhoosh();
             if (prev < WinLandAt && _pokerWinT >= WinLandAt) LandPokerWin();
         }
+
+        // Shows this hand's held payout on the purse (rolling tick-up). fullcard = the FULLCARD
+        // prize (stamp bingo line); else the hand win (its WIN word punching in). Each amount
+        // releases once; ResetRound releases anything left if the hand is abandoned.
+        void RevealPokerPay(bool fullcard)
+        {
+            int amt = fullcard ? _pokerHeldFull : _pokerHeldWin;
+            if (amt <= 0) return;
+            if (fullcard) _pokerHeldFull = 0;
+            else _pokerHeldWin = 0;
+            float roll = fullcard ? PokerFullcardRollT
+                : (BirdPoker.IsJackpot(BirdPoker.LastRank) ? PokerJackpotRollT : PokerWinRollT);
+            RevealHeldCoins(amt, roll);
+        }
+
+        void ClearPokerHeldPay()
+        {
+            _pokerHeldWin = 0;
+            _pokerHeldFull = 0;
+        }
+
+        // DEAL/DRAW face. A drawn hand keeps reading DRAW while its cards, stamp and win
+        // fanfare play (the button is busy then); DEAL only once the result has settled.
+        string PokerActLabel()
+        {
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Dealt) return "DRAW";
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn && PokerResultPlaying()) return "DRAW";
+            return "DEAL";
+        }
+
+        bool PokerResultPlaying() =>
+            PokerMotionBusy() || _pokerStamp || (_pokerWinT >= 0f && _pokerWinT < WinLandAt);
 
         // The word hits the banner still moving: clink + a short table punch sell the impact.
         void LandPokerWin()
@@ -12485,6 +12614,8 @@ namespace FlockFive
         {
             var e = Event.current;
             if (e.type != EventType.MouseDown) return;
+            RevealPokerPay(true);
+            RevealPokerPay(false);
             _pokerWinT = WinLandAt;
             LandPokerWin();
             e.Use();
@@ -12626,16 +12757,17 @@ namespace FlockFive
         // Fanfare word pose at time t: centre + scale (1 = hero size).
         static void PokerWinPose(float t, Vector2 heroC, Vector2 restC, float restK, out Vector2 c, out float k)
         {
-            if (t < WinPunchT)
+            float tw = t - WinLead;
+            if (tw < WinPunchT)
             {
                 c = heroC;
-                k = Mathf.LerpUnclamped(0.25f, 1f, EaseOutBack(Mathf.Clamp01(t / WinPunchT)));
+                k = Mathf.LerpUnclamped(0.25f, 1f, EaseOutBack(Mathf.Clamp01(tw / WinPunchT)));
                 return;
             }
             float windUp = 0.06f * Mathf.SmoothStep(0f, 1f, (t - (WinWhooshAt - 0.14f)) / 0.14f);
             if (t < WinWhooshAt)
             {
-                float h = t - WinPunchT;
+                float h = tw - WinPunchT;
                 c = heroC;
                 k = 1f + 0.035f * Mathf.Sin(h * 9f) * Mathf.Exp(-h * 2.4f) + windUp;
                 return;
@@ -12660,22 +12792,76 @@ namespace FlockFive
             var restC = g.RestC;
             float restK = g.RestK;
 
+            bool jackpot = WinJackpot;
+            // The burst opens with the first thing on screen (the rank banner on a jackpot).
             float punch = Mathf.Clamp01(t / WinPunchT);
             float whoosh = WinWhooshEase(t);
             float burst = Mathf.SmoothStep(0f, 1f, punch) * (1f - Mathf.Clamp01(whoosh * 2.5f));
             // Bigger hands throw more rays (shared level: FIVE WILDS >= NaturalFive).
             int rays = 12 + 2 * BirdPoker.CelebrationLevel(BirdPoker.LastRank);
+            float burstK = jackpot ? WinJackpotBurstK : 1f;
             if (burst > 0.01f)
             {
-                float reach = size.x * 0.95f * (0.35f + 0.65f * Mathf.Sin(punch * Mathf.PI * 0.5f));
+                float reach = size.x * 0.95f * burstK * (0.35f + 0.65f * Mathf.Sin(punch * Mathf.PI * 0.5f));
+                // Jackpot: a slower counter-turning outer ring behind the main spokes.
+                if (jackpot) DrawPokerWinRays(heroC, reach * 1.30f, -t * 0.6f, burst * 0.45f, rays / 2);
                 DrawPokerWinRays(heroC, reach, t, burst, rays);
             }
             if (t < WinLandAt) DrawGiftConfetti(t, s, heroC);
+            if (jackpot) DrawPokerRankBanner(g, t, s, whoosh);
 
-            PokerWinPose(t, heroC, restC, restK, out Vector2 c, out float k);
-            DrawPokerWinTrail(g, t, s, Color.Lerp(PokerWinGold, PokerWinRed, whoosh), _pokerRowBottom + 10f * s);
-            DrawPokerWinWord(text, st, c, size, k, Color.Lerp(PokerWinGold, PokerWinRed, whoosh), 1f, true);
-            if (burst > 0.01f) DrawPokerWinSparkles(heroC, size, t, burst);
+            if (t >= WinLead)
+            {
+                PokerWinPose(t, heroC, restC, restK, out Vector2 c, out float k);
+                DrawPokerWinTrail(g, t, s, Color.Lerp(PokerWinGold, PokerWinRed, whoosh), _pokerRowBottom + 10f * s);
+                DrawPokerWinWord(text, st, c, size, k, Color.Lerp(PokerWinGold, PokerWinRed, whoosh), 1f, true);
+            }
+            if (burst > 0.01f) DrawPokerWinSparkles(heroC, size * burstK, t, burst);
+        }
+
+        static GUIStyle _pokerRankSt;
+        static string _pokerRankFitText;
+        static int _pokerRankFitW = -1, _pokerRankFitH = -1, _pokerRankPx;
+
+        // Jackpot rank banner ("FIVE WILDS" / "NATURAL FIVE"): big gold title above the hero WIN
+        // word. Punches in first, gently breathes through the hold, fades as WIN flies to rest.
+        void DrawPokerRankBanner(in PokerWinGeo g, float t, float s, float whoosh)
+        {
+            string title = BirdPoker.RankLabel(BirdPoker.LastRank);
+            if (string.IsNullOrEmpty(title)) return;
+            float alpha = 1f - Mathf.Clamp01(whoosh * 2.2f);
+            if (alpha < 0.02f) return;
+            var st = PokerBold(ref _pokerRankSt, TextAnchor.MiddleCenter);
+            float heroH = PokerWinHeroH(s);
+            var safe = PokerSafeGui();
+            int sw = Screen.width, sh = Screen.height;
+            if (title != _pokerRankFitText || sw != _pokerRankFitW || sh != _pokerRankFitH)
+            {
+                _pokerRankFitText = title;
+                _pokerRankFitW = sw;
+                _pokerRankFitH = sh;
+                // Room for the punch overshoot and the outline inside the safe area.
+                _pokerRankPx = FitFont(st, title, safe.width * 0.90f / WinHeroMaxK / 1.06f, heroH * 0.82f, 22,
+                    Mathf.RoundToInt(heroH * 0.82f));
+            }
+            st.fontSize = _pokerRankPx;
+            var size = st.CalcSize(PokerGui(title));
+            float gapY = Mathf.Max(g.Size.y * 0.5f, heroH * 0.40f) + size.y * 0.5f + 6f * s;
+            var c = new Vector2(g.HeroC.x, Mathf.Max(safe.y + size.y * 0.6f, g.HeroC.y - gapY));
+            float pu = Mathf.Clamp01(t / (WinPunchT * 1.15f));
+            float k = pu < 1f
+                ? Mathf.LerpUnclamped(0.30f, 1f, EaseOutBack(pu))
+                : 1f + 0.025f * Mathf.Sin((t - WinPunchT) * 4.2f);
+            // Soft gold plate behind the title so it reads over the rays and confetti.
+            float plateA = 0.42f * alpha * Mathf.SmoothStep(0f, 1f, pu);
+            GUI.color = new Color(1f, 0.78f, 0.24f, plateA);
+            var plate = new Rect(c.x - size.x * 0.70f * k, c.y - size.y * 0.85f * k, size.x * 1.40f * k, size.y * 1.70f * k);
+            GUI.DrawTexture(plate, GlowTex(), ScaleMode.StretchToFill, true);
+            GUI.color = Color.white;
+            // Light sweep: the gold brightens as a highlight passes, then settles.
+            float sheen = 0.5f + 0.5f * Mathf.Sin(t * 3.0f);
+            var fill = Color.Lerp(PokerWinGold, new Color(1f, 0.96f, 0.70f, 1f), 0.25f * sheen);
+            DrawPokerWinWord(title, st, c, size, k, fill, alpha, true);
         }
 
         // outline=false paints fill only (ghost trail) — stacked outlines turn to white smears.
@@ -13081,6 +13267,18 @@ namespace FlockFive
             }
         }
 
+        // Shared hand/arm fade for the poker hands (holding fan hand and dealing hand), so palm,
+        // thumb and the faded forearm always leave together. Returns alpha; enter ramps 0→1 over
+        // inT from inAt, exit ramps 1→0 over outT and reaches 0 exactly at goneAt.
+        const float PokerFanHandGoneT = 0.22f;
+        const float PokerDealHandOutT = 0.12f;
+        static float PokerHandFade(float t, float inAt, float inT, float goneAt, float outT, out float enter, out float exit)
+        {
+            enter = inT > 0f ? Mathf.Clamp01((t - inAt) / inT) : (t >= inAt ? 1f : 0f);
+            exit = outT > 0f ? 1f - Mathf.Clamp01((t - (goneAt - outT)) / outT) : (t < goneAt ? 1f : 0f);
+            return enter * exit;
+        }
+
         // Redeal timing shared by the inbound cards, the slap SFX and the dealer hand.
         const float DrawDealStagger = 0.15f;
         const float DrawInboundT = 0.26f;
@@ -13126,10 +13324,13 @@ namespace FlockFive
                 if (_pokerRedraw[i]) n++;
             if (n == 0) return;
             float slotX = PokerDealHandSlot(_pokerMotionT, out float flick);
-            float last = _pokerReplaceEnd + (n - 1) * DrawDealStagger + DrawInboundT;
-            float enter = Mathf.Clamp01((_pokerMotionT - _pokerReplaceEnd) / 0.16f);
-            float exit = 1f - Mathf.Clamp01((_pokerMotionT - last) / 0.18f);
-            float a = enter * exit;
+            // The hand throws the last card and leaves: fully gone (arm included) by the time
+            // that card lands, instead of hanging over the row until it had settled.
+            float lastThrow = _pokerReplaceEnd + (n - 1) * DrawDealStagger;
+            float gone = lastThrow + DrawInboundT * DrawInboundHitU - 0.01f;
+            // A single redraw throws as the hand arrives: let it reach full alpha before leaving.
+            gone = Mathf.Max(gone, _pokerReplaceEnd + 0.16f + PokerDealHandOutT);
+            float a = PokerHandFade(_pokerMotionT, _pokerReplaceEnd, 0.16f, gone, PokerDealHandOutT, out float enter, out float exit);
             if (a < 0.02f) return;
             var seat = new Rect(row.x + slotX * (cardW + gap), row.y, cardW, row.height);
             float h = seat.height * 1.88f;
