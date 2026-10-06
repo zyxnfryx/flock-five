@@ -6,6 +6,8 @@ namespace FlockFive
     // Video-poker draw: 75 birds (5 colors × 3 looks × 5 copies) + 5 wilds.
     // Pay table is a house game: pair does not pay. Exact RTP with perfect holds is
     // ~99.7% (keep-the-pairs play is within 0.04 points of perfect). Flush adds ~0.74.
+    // Build 59: FIVE WILDS (all five cards wild) pays 250x on its own row. Exact optimal
+    // RTP 99.6669% -> 99.6925% (+0.026), so NaturalFive stays 150x.
     public static class BirdPoker
     {
         public const int HandSize = 5;
@@ -45,8 +47,19 @@ namespace FlockFive
             FullHouse = 5,
             Quads = 6,
             FiveWild = 7,
-            NaturalFive = 8
+            NaturalFive = 8,
+            FiveWilds = 9 // all five cards wild (only 5 in the deck); top of the table
         }
+
+        // Every five-of-a-kind rank: punches a look on the card (WildKind for FIVE WILDS).
+        public static bool IsFiveKind(Rank r) => r == Rank.NaturalFive || r == Rank.FiveWild || r == Rank.FiveWilds;
+
+        // The jackpot rows: gold pay-table bar and the biggest win fanfare.
+        public static bool IsJackpot(Rank r) => r == Rank.NaturalFive || r == Rank.FiveWilds;
+
+        // Win fanfare size for a rank (rays, etc.). A jackpot never celebrates smaller than
+        // NaturalFive; FIVE WILDS sits above it.
+        public static int CelebrationLevel(Rank r) => IsJackpot(r) ? Mathf.Max((int)r, (int)Rank.NaturalFive) : (int)r;
 
         public const int FloorBet = 5;
 
@@ -322,7 +335,7 @@ namespace FlockFive
             LastPunchFresh = false;
             LastPunchBingo = false;
             LastPunchKind = -1;
-            if (LastRank == Rank.NaturalFive || LastRank == Rank.FiveWild)
+            if (IsFiveKind(LastRank))
             {
                 int kind;
                 LastPunchFresh = TryPunch(Hand, out kind);
@@ -358,6 +371,7 @@ namespace FlockFive
         // Paying ranks high→low — single source for UI pay table + PayFor.
         public static readonly Rank[] PayTableRows =
         {
+            Rank.FiveWilds,
             Rank.NaturalFive,
             Rank.FiveWild,
             Rank.Quads,
@@ -371,6 +385,7 @@ namespace FlockFive
         {
             switch (r)
             {
+                case Rank.FiveWilds: return "FIVE WILDS";
                 case Rank.NaturalFive: return "NATURAL FIVE";
                 case Rank.FiveWild: return "FIVE OF A KIND";
                 case Rank.Quads: return "FOUR OF A KIND";
@@ -388,6 +403,7 @@ namespace FlockFive
         {
             switch (r)
             {
+                case Rank.FiveWilds: return 250;
                 case Rank.NaturalFive: return 150;
                 case Rank.FiveWild: return 30;
                 case Rank.Quads: return 10;
@@ -595,6 +611,7 @@ namespace FlockFive
                 if (n > best) { second = best; best = n; }
                 else if (n > second) second = n;
             }
+            if (wilds >= HandSize) return Rank.FiveWilds;
             int top = best + wilds;
             if (top >= 5)
             {
@@ -675,6 +692,30 @@ namespace FlockFive
             }
         }
 
+        // Debug: the next Draw lands FIVE WILDS through the normal Draw path. Wilds already in
+        // the hand are held; every other slot is discarded and the remaining wilds are put on
+        // top of the shoe, so the drawn cards are exactly the missing wilds.
+        public static bool RigFiveWildsDraw()
+        {
+            if (PhaseNow != Phase.Dealt) return false;
+            int need = 0;
+            for (int i = 0; i < HandSize; i++)
+            {
+                Hold[i] = Hand[i].Wild;
+                if (!Hold[i]) need++;
+            }
+            // DrawOne takes from the end: lift every wild left in the shoe to the top.
+            int wilds = 0;
+            for (int i = _shoe.Count - 1; i >= 0; i--)
+            {
+                if (!_shoe[i].Wild) continue;
+                _shoe.RemoveAt(i);
+                wilds++;
+            }
+            for (int k = 0; k < wilds; k++) _shoe.Add(Card.MakeWild());
+            return wilds >= need;
+        }
+
         public static void ForceFiveWilds()
         {
             if (PhaseNow == Phase.Idle)
@@ -686,7 +727,7 @@ namespace FlockFive
                 Hand[i] = Card.MakeWild();
                 Hold[i] = true;
             }
-            LastRank = Rank.FiveWild;
+            LastRank = Evaluate(Hand, out _); // Rank.FiveWilds
             LastWin = PayFor(LastRank, Bet);
             if (LastWin > 0) Purse.Credit(LastWin);
             RefreshBet();

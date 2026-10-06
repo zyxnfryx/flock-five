@@ -215,9 +215,19 @@ namespace FlockFive
         }
 
         // Soft gold twinkles around a rect. Shared SparkleFx (same feel as streak).
+        // Medal / welcome crown only: its seats also fall inside r.
         static void DrawVipTwinkles(Rect r, float alpha, float sizeFrac)
         {
             SparkleFx.DrawAround(r, alpha, gold: true, sizeFrac: sizeFrac, wide: true);
+        }
+
+        // VIP card: twinkles on the wood frame's outer edge only (shared SparkleFx border
+        // mode), never over the dark plate or its copy. Frame = card edge to the plate.
+        static void DrawVipFrameTwinkles(Rect card, Rect plate, float alpha, float sizeFrac)
+        {
+            float frame = Mathf.Min(Mathf.Min(plate.x - card.x, card.xMax - plate.xMax),
+                Mathf.Min(plate.y - card.y, card.yMax - plate.yMax));
+            SparkleFx.DrawBorder(card, frame, alpha, gold: true, sizeFrac: sizeFrac);
         }
 
         // VIP accent on the name tag: a small gold crown tipped on the tag's top-left

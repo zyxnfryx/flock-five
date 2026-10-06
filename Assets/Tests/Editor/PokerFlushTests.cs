@@ -10,6 +10,8 @@ namespace FlockFive.Editor
     // to Flush, never lowers Full House and up, and the pay table lists it between Full House
     // and Trips. Also counts every 5-card hand of the 80-card deck against the exact figures
     // from the RTP script, so the evaluator and the deck cannot drift apart unnoticed.
+    // Build 59: FIVE WILDS (all five wild) is its own rank, 250x, top row; the one
+    // all-wild deal moves out of FiveWild (3751 -> 3750 + 1).
     // Run from the menu, or drop a file on /tmp/flock-five-flush-tests.
     [InitializeOnLoad]
     static class PokerFlushTests
@@ -92,7 +94,8 @@ namespace FlockFive.Editor
             Hand("three + wild stays quads", BirdPoker.Rank.Quads, B(R, N), B(R, N), B(R, N), Wd(), B(G, M));
             Hand("natural five stays natural five", BirdPoker.Rank.NaturalFive, B(R, N), B(R, N), B(R, N), B(R, N), B(R, N));
             Hand("five with a wild stays five of a kind", BirdPoker.Rank.FiveWild, B(R, N), B(R, N), B(R, N), B(R, N), Wd());
-            Hand("five wilds", BirdPoker.Rank.FiveWild, Wd(), Wd(), Wd(), Wd(), Wd());
+            Hand("five wilds is FIVE WILDS", BirdPoker.Rank.FiveWilds, Wd(), Wd(), Wd(), Wd(), Wd());
+            Hand("four wilds + a bird stays five of a kind", BirdPoker.Rank.FiveWild, Wd(), Wd(), Wd(), Wd(), B(R, N));
             Hand("single pair, mixed", BirdPoker.Rank.Pair, B(R, N), B(R, N), B(G, F), B(T, M), B(BirdColor.Violet, N));
             Hand("nothing", BirdPoker.Rank.Nothing, B(R, N), B(R, F), B(G, M), B(T, N), B(BirdColor.Violet, F));
 
@@ -108,6 +111,24 @@ namespace FlockFive.Editor
             Check("flush enum between trips and full house",
                 BirdPoker.Rank.Flush > BirdPoker.Rank.Trips && BirdPoker.Rank.Flush < BirdPoker.Rank.FullHouse, "");
             Check("flush label", BirdPoker.RankLabel(BirdPoker.Rank.Flush) == "FLUSH", BirdPoker.RankLabel(BirdPoker.Rank.Flush));
+            // FIVE WILDS: its own top rank, 250x, first pay-table row, punches, jackpot fanfare.
+            Check("five wilds enum value 9, existing values kept",
+                (int)BirdPoker.Rank.FiveWilds == 9 && (int)BirdPoker.Rank.NaturalFive == 8 && (int)BirdPoker.Rank.FiveWild == 7, "");
+            Check("five wilds pays 250x", BirdPoker.Multiplier(BirdPoker.Rank.FiveWilds) == 250,
+                "x" + BirdPoker.Multiplier(BirdPoker.Rank.FiveWilds));
+            Check("natural five still 150x", BirdPoker.Multiplier(BirdPoker.Rank.NaturalFive) == 150,
+                "x" + BirdPoker.Multiplier(BirdPoker.Rank.NaturalFive));
+            Check("five wilds label", BirdPoker.RankLabel(BirdPoker.Rank.FiveWilds) == "FIVE WILDS", BirdPoker.RankLabel(BirdPoker.Rank.FiveWilds));
+            Check("five wilds is the first pay-table row, natural five next",
+                BirdPoker.PayTableRows.Length > 1 && BirdPoker.PayTableRows[0] == BirdPoker.Rank.FiveWilds
+                && BirdPoker.PayTableRows[1] == BirdPoker.Rank.NaturalFive, "");
+            Check("five wilds punches like the other fives", BirdPoker.IsFiveKind(BirdPoker.Rank.FiveWilds)
+                && BirdPoker.IsFiveKind(BirdPoker.Rank.NaturalFive) && BirdPoker.IsFiveKind(BirdPoker.Rank.FiveWild)
+                && !BirdPoker.IsFiveKind(BirdPoker.Rank.Quads), "");
+            Check("five wilds celebrates at least as big as natural five",
+                BirdPoker.IsJackpot(BirdPoker.Rank.FiveWilds)
+                && BirdPoker.CelebrationLevel(BirdPoker.Rank.FiveWilds) >= BirdPoker.CelebrationLevel(BirdPoker.Rank.NaturalFive), "");
+
             var rows = BirdPoker.PayTableRows;
             int at = -1;
             bool desc = true;
@@ -121,7 +142,7 @@ namespace FlockFive.Editor
             Check("pay table fits the 8 cached row slots", rows.Length <= 8, "rows " + rows.Length);
 
             // Exhaustive: every 5-card hand of the real 80-card deck, grouped as multisets of the 16 kinds.
-            var tally = new long[9];
+            var tally = new long[10];
             bool flushNeverLow = true;
             var hand = new BirdPoker.Card[5];
             var cnt = new int[16];
@@ -149,7 +170,8 @@ namespace FlockFive.Editor
             WantCount(Check, tally, BirdPoker.Rank.Flush, 36250L);
             WantCount(Check, tally, BirdPoker.Rank.FullHouse, 73500L);
             WantCount(Check, tally, BirdPoker.Rank.Quads, 189000L);
-            WantCount(Check, tally, BirdPoker.Rank.FiveWild, 3751L);
+            WantCount(Check, tally, BirdPoker.Rank.FiveWild, 3750L);
+            WantCount(Check, tally, BirdPoker.Rank.FiveWilds, 1L);
             WantCount(Check, tally, BirdPoker.Rank.NaturalFive, 15L);
             long total = 0;
             for (int i = 0; i < tally.Length; i++) total += tally[i];

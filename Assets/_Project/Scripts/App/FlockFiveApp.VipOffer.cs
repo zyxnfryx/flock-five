@@ -311,7 +311,7 @@ namespace FlockFive
                     RowAlphas(age, outCopy * frameA);
                     DrawCopy(plate, s, card.width, titleA, _member ? MemberHeadline : Headline, _member ? MemberPerks : Benefits);
                     if (!entering && !Closing)
-                        DrawVipTwinkles(card, 0.55f, 0.055f);
+                        DrawVipFrameTwinkles(card, plate, 0.55f, 0.055f);
                     GUI.matrix = prev;
                 }
 

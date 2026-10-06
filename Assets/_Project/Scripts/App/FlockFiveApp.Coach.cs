@@ -73,6 +73,16 @@ namespace FlockFive
         // GloveRise and _gloveKeepOff, keeps the palm off the button.
         static Vector2 GloveTarget(Rect r) => r.center;
 
+        // A point inside the real control at fractions of its rect (0,0 = top-left). For a
+        // button whose art body is not centred in its square. The fingertip lands here.
+        static Vector2 GloveTargetAt(Rect r, float u, float v) => new Vector2(r.x + r.width * u, r.y + r.height * v);
+
+        // Poker rail button (fx_poker): the front card of the fan sits right of centre and
+        // the coin dish fills the bottom, so the fingertip aims a touch right of and below
+        // the hit rect's centre, on the card fan itself.
+        const float PokerGloveU = 0.56f;
+        const float PokerGloveV = 0.58f;
+
         // Same point as GloveTarget. Callers that still say TopTouch share it.
         static Vector2 TopTouch(Rect r) => GloveTarget(r);
 
@@ -808,14 +818,16 @@ namespace FlockFive
             if (_pokerIntroLive)
             {
                 float handS = Mathf.Max(Screen.height / 720f, 1f);
+                // The button grows in under the pig when this step starts. Aiming at the
+                // growing rect locked the fingertip in the gap above it, so the hand waits
+                // for the shared rail gate (as hive and daily do), then aims at the settled
+                // hit rect (the same SplashPokerRect the tap tests).
                 var box = SplashPokerRect();
-                var seat = SplashRailSeat(RailPoker);
-                var target = box.width > 12f ? box : seat;
-                Vector2 pokerAim = target.width > 2f ? target.center : box.center;
                 LessonLine(PokerIntroLine);
-                _gloveInward = true;
                 _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-                CoachGloveAt(pokerAim, dt, handS, float.NaN, false, float.NaN, target);
+                if (!RailGloveSettled(RailPoker, box)) return;
+                _gloveInward = true;
+                CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, false, float.NaN, box);
                 return;
             }
             if (_dailyIntroLive)
@@ -904,7 +916,7 @@ namespace FlockFive
             }
         }
 
-        // Shared rail-lesson gate (hive, daily): true once the rail button has stopped sliding.
+        // Shared rail-lesson gate (hive, daily, poker): true once the rail button has stopped sliding.
         // Until then a visible hand fades out where it is and a hidden one stays hidden.
         bool RailGloveSettled(int rail, Rect box, bool extra = true)
         {
@@ -1815,10 +1827,21 @@ namespace FlockFive
             _tutorPlateFrame = Time.frameCount;
         }
 
+        // THE standard tutorial caption (the garden lesson line): box width, box height and
+        // the font range PaintCoachCaption fits into (CaptionFontBoost applies on top).
+        // Garden lessons and every poker page lesson size through here.
+        static void StandardCaptionBox(float s, out float w, out float h, out int lo, out int hi)
+        {
+            w = Mathf.Min(Screen.width * 0.72f, 520f * s);
+            h = Mathf.Max(128f * s, 108f);
+            lo = 18;
+            hi = Mathf.RoundToInt(32f * s);
+        }
+
         // Same box DrawCoach paints. Gift keeps the lower PlaceCaption seat.
         void GardenLineBox(float s, out float w, out float h)
         {
-            w = Mathf.Min(Screen.width * 0.72f, 520f * s);
+            StandardCaptionBox(s, out w, out float stdH, out _, out _);
             if (_leafIntro)
                 h = 176f * s;
             else if (_pestCue != 0 && _capBoxH > 1f && _capBoxFor == _cueLine && Mathf.Abs(_capBoxS - s) < 0.01f)
@@ -1830,7 +1853,7 @@ namespace FlockFive
             else if (_pestCue != 0 || _hiveLevelLive || _hiveIntroLive)
                 h = 252f * s;
             else
-                h = Mathf.Max(128f * s, 108f);
+                h = stdH;
         }
 
         bool GardenTutorPlate(float s, out Rect plate)
@@ -2047,14 +2070,16 @@ namespace FlockFive
         // of a short pill). DrawBevelPlate stays on the gold button gradients.
         static void DrawCoachPanel(Rect r, float fade) => DrawCoachPanel(r, fade, Vector2.zero);
 
-        static void DrawCoachPanel(Rect r, float fade, Vector2 extra)
+        // opaque: full-alpha plate for a step whose plate must hide what is under it (the
+        // home poker line over the LEVEL lettering). Every other caption keeps 0.90.
+        static void DrawCoachPanel(Rect r, float fade, Vector2 extra, bool opaque = false)
         {
             if (fade < 0.02f) return;
             var box = CoachPanelRect(r, extra);
             float rad = 18f;
             float limit = Mathf.Min(box.width, box.height) * 0.5f - 1f;
             if (rad > limit) rad = Mathf.Max(2f, limit);
-            DrawSolidRound(box, rad, 0, 0.90f * fade);
+            DrawSolidRound(box, rad, 0, (opaque ? 1f : 0.90f) * fade);
         }
 
         const int SolidSlots = 12;
@@ -2182,10 +2207,11 @@ namespace FlockFive
         // preferred seat, and the same latch still clears the glove.
         void DrawCoachLine(string text, float s, float top, float boxH = 0f, int fontHi = 0, float placeY = -1f, float placeW = 0f, float placeX = -1f)
         {
-            float w = placeW > 1f ? placeW : Mathf.Min(Screen.width * 0.72f, 520f * s);
-            float h = boxH > 1f ? boxH : Mathf.Max(128f * s, 108f);
-            int hi = fontHi > 0 ? fontHi : Mathf.RoundToInt(32f * s);
-            int lo = fontHi > 0 ? 20 : 18;
+            StandardCaptionBox(s, out float stdW, out float stdH, out int stdLo, out int stdHi);
+            float w = placeW > 1f ? placeW : stdW;
+            float h = boxH > 1f ? boxH : stdH;
+            int hi = fontHi > 0 ? fontHi : stdHi;
+            int lo = fontHi > 0 ? 20 : stdLo;
             if (lo > hi) lo = hi;
             var seat = SeatTutorialCaption(text, s, top, w, h, placeY, placeX);
             _coachLineFor = text;
@@ -2596,7 +2622,7 @@ namespace FlockFive
         // Shared tutorial caption: even inset, balanced wrap, one outline weight.
         // platePad: extra plate per side from a caption anchor (CoachPanelRect). The text box
         // and the fitted font do not change with it.
-        void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default)
+        void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default, bool opaque = false)
         {
             lo = CaptionPx(lo);
             hi = CaptionPx(hi);
@@ -2635,7 +2661,7 @@ namespace FlockFive
             st.fontSize = _coachSizedPx;
             st.wordWrap = true;
             float fade = EaseOutCubic(_coachFade);
-            DrawCoachPanel(r, fade, platePad);
+            DrawCoachPanel(r, fade, platePad, opaque);
             StampBannerText(textR, _coachShown ?? text, st, fade, true);
         }
 
@@ -4134,13 +4160,13 @@ namespace FlockFive
         // pin seats the plate exactly at r: no glove-avoidance re-seat, no latch. Used when
         // the spot is a rule (the poker hold line stays above the cards).
         // platePad: per-side plate grow from a caption anchor (AnchoredCaptionBox).
-        void DrawSplashIntroLine(string line, Rect r, float s, int fontHi = 0, bool pin = false, Vector2 platePad = default)
+        void DrawSplashIntroLine(string line, Rect r, float s, int fontHi = 0, bool pin = false, Vector2 platePad = default, bool opaque = false)
         {
             if (GuiPaint())
                 _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
             int hi = fontHi > 0 ? fontHi : Mathf.Max(18, Mathf.RoundToInt(34f * s));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
-            PaintCoachCaption(line, seat, s, 12, hi, platePad);
+            PaintCoachCaption(line, seat, s, 12, hi, platePad, opaque);
         }
 
         // Measures a caption to its longest line at the biggest font in [floor, hi] that
@@ -4371,7 +4397,8 @@ namespace FlockFive
         {
             if (!_pokerIntroLive) return;
             if (GuiPaint()) TickPokerWarm();
-            DrawAnchoredIntroLine(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering);
+            // Opaque plate: LEVEL must not show through this one (Brandon, build 58).
+            DrawAnchoredIntroLine(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering, true);
             DrawTutorOverlay(s);
         }
 
@@ -4397,8 +4424,9 @@ namespace FlockFive
         // Cover plate: this much taller than the standard plate, the extra split evenly as
         // padding on every side. Same text box, same font.
         const float CoverPlateGrow = 1.12f;
-        // The plate edge clears the lettering ink by at least this (reference px, times s).
-        const float CoverPlateMargin = 6f;
+        // The plate edge clears the lettering ink (outline included) by at least this
+        // (reference px, times s). Build 59: 6 -> 10 so the rounded corners clear it too.
+        const float CoverPlateMargin = 10f;
 
         // Set once per step: the first frame of a line measures and seats it, then every
         // frame reuses it. Only a new line, level label, or screen size re-measures.
@@ -4415,10 +4443,11 @@ namespace FlockFive
         Vector2 _anchorPad;
 
         // Static, pinned caption for a home step (no glove re-seat, no per-frame measure).
-        void DrawAnchoredIntroLine(string line, float s, CaptionAnchor anchor)
+        // opaque: the step's plate is drawn at full alpha (per step, not global).
+        void DrawAnchoredIntroLine(string line, float s, CaptionAnchor anchor, bool opaque = false)
         {
             var r = AnchoredCaptionBox(line, s, anchor, out var pad);
-            DrawSplashIntroLine(line, r, s, PokerIntroFontHi(s), true, pad);
+            DrawSplashIntroLine(line, r, s, PokerIntroFontHi(s), true, pad, opaque);
         }
 
         // Shared by the hive and poker home steps. Returns the text box (what
@@ -4451,6 +4480,9 @@ namespace FlockFive
             if (anchor == CaptionAnchor.CoverDiscLettering)
             {
                 var ink = FlowerLetteringInk(ease, number);
+                // A held disc sinks its lettering by 3% of the flower (DrawPlayFlower's sink),
+                // so the cover reaches that far down too.
+                if (ink.height > 1f) ink.yMax += play.height * FlowerPressSink;
                 var plate = CoachPanelRect(new Rect(0f, 0f, w, h));
                 float m = CoverPlateMargin * s;
                 float grow = plate.height * (CoverPlateGrow - 1f) * 0.5f;
@@ -4563,7 +4595,9 @@ namespace FlockFive
             float lw = Mathf.Min(lvInk.x, lvR.width);
             float lh = Mathf.Min(lvInk.y, lvR.height);
             float ly = lvAlign == TextAnchor.LowerCenter ? lvR.yMax - lh : lvR.center.y - lh * 0.5f;
-            var ink = new Rect(lvR.center.x - lw * 0.5f, ly, lw, lh);
+            // StampBannerText rings the glyphs with a black outline this thick on every side.
+            float lvRing = BannerOutlinePx(lv.fontSize);
+            var ink = new Rect(lvR.center.x - lw * 0.5f - lvRing, ly - lvRing, lw + lvRing * 2f, lh + lvRing * 2f);
             if (!hasEase) return ink;
 
             float s = Mathf.Max(Screen.height / 720f, 1f);
@@ -4596,7 +4630,8 @@ namespace FlockFive
                 if (y2 < minY) y2 = minY;
                 if (y2 < y) y = y2;
             }
-            var jokeInk = new Rect(disc.center.x - textW * 0.5f, y, textW, textH);
+            float jokeRing = BannerOutlinePx(joke.fontSize);
+            var jokeInk = new Rect(disc.center.x - textW * 0.5f - jokeRing, y - jokeRing, textW + jokeRing * 2f, textH + jokeRing * 2f);
             return Rect.MinMaxRect(
                 Mathf.Min(ink.xMin, jokeInk.xMin),
                 Mathf.Min(ink.yMin, jokeInk.yMin),

@@ -169,10 +169,11 @@ namespace FlockFive
             GUI.DrawTexture(band, disc, ScaleMode.StretchToFill, true);
         }
 
-        // Celebration twinkles. Shared SparkleFx (SpriteCatalog.Sparkle only).
+        // Celebration twinkles on the chip's rim only (shared SparkleFx border mode), never
+        // over the face or the numeral. The ring is the dark lip plus a hair of face.
         static void DrawSparkle(Rect r, float alpha, bool gold)
         {
-            SparkleFx.DrawAround(r, alpha, gold, sizeFrac: 0.12f);
+            SparkleFx.DrawBorder(r, r.width * 0.07f, alpha, gold, sizeFrac: 0.12f, round: true);
         }
 
         static void DrawNumeral(Rect r, string text, GUIStyle st, Color ink, int darkPx)

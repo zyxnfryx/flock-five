@@ -4831,6 +4831,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-hand-qa"); } catch { }
                 StartCoroutine(ShotHandQa());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-force-five-wilds"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-force-five-wilds"); } catch { }
+                StartCoroutine(EditorForceFiveWilds());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-poker-feel"))
             {
                 _dailyShotQuiet = true;
@@ -7167,15 +7172,15 @@ namespace FlockFive
             float stampAge = t - beat.StampAt;
             bool stampLive = beat.Mul && stampAge >= 0f;
 
-            // Build 58: marquee bulbs are gone (same approach as Daily Bonus in build 52).
-            // Brass band stays as the frame. Board is ~12% larger than the old rest face;
-            // reclaiming the old bulb crown makes the overall card read a touch bigger still.
-            // Soft sparkles (SparkleFx) replace the chase lights.
+            // Build 58 dropped the marquee bulbs (kept: no bulbs) but also dropped the bulb
+            // reserve from the fit loop, so the board converged on the whole band (~1.4-1.7x
+            // the build 57 board, not the intended ~12%). Build 59: the loop keeps that reserve
+            // as plain air (old glass geometry), which lands exactly on the build 57 rest face,
+            // then RestShrink takes it a touch under. Sparkles ride the brass edge only.
             const float bandFrac = 0.046f;
             const float maxPop = 1.06f;
-            // ~12% over the old 0.66 × 0.58 rest fractions.
-            const float restWFrac = 0.74f;
-            const float restHFrac = 0.65f;
+            const float airGlass = 1.22f;    // old bulb glassOut, now just air around the band
+            const float restShrink = 0.95f;  // ~5% under the build 57 board
 
             // The payout owns the band under the wordmark, inside the safe area.
             // Bottom stops at the play-disc top (the disc starts ~10% into the bloom).
@@ -7203,15 +7208,21 @@ namespace FlockFive
             float faceW = Mathf.Max(120f * s, rightLimit - leftLimit) / maxPop;
             float faceH = Mathf.Max(72f * s, botLimit - topLimit) / maxPop;
 
-            // Board face. Only the brass band needs margin now (no bulb glass crown).
-            float restW = faceW * restWFrac;
-            float restH = faceH * restHFrac;
-            for (int fit = 0; fit < 6; fit++)
+            // Board face: same fit as build 57 (air reserve where the bulb glass was), so a
+            // short band between the wordmark and the play disc still shrinks the air first.
+            float restW = faceW * 0.66f;
+            float restH = faceH * 0.58f;
+            for (int fit = 0; fit < 8; fit++)
             {
-                float margin = restW * bandFrac;
+                float airSz = Mathf.Min(restH * 0.36f, restW * 0.22f);
+                float margin = airGlass * airSz + restW * bandFrac * 0.5f;
                 float floorH = 64f * s;
                 if (faceH - 2f * margin < floorH)
+                {
                     margin = Mathf.Max(5f * s, (faceH - floorH) * 0.5f);
+                    airSz = Mathf.Max(7f * s, (margin - restW * bandFrac * 0.5f) / airGlass);
+                    margin = airGlass * airSz + restW * bandFrac * 0.5f;
+                }
                 float nextW = Mathf.Max(72f * s, faceW - 2f * margin);
                 float nextH = Mathf.Max(52f * s, faceH - 2f * margin);
                 if (nextW > nextH * 2.15f) nextW = nextH * 2.15f;
@@ -7219,16 +7230,21 @@ namespace FlockFive
                 restW = Mathf.Lerp(restW, nextW, 0.65f);
                 restH = Mathf.Lerp(restH, nextH, 0.65f);
             }
-            float bandPad = restW * bandFrac;
-            float visW = restW + 2f * bandPad;
-            float visH = restH + 2f * bandPad;
-            float squeeze = Mathf.Min(1f, faceW / Mathf.Max(1f, visW), faceH / Mathf.Max(1f, visH));
-            if (squeeze < 0.999f)
             {
-                restW *= squeeze;
-                restH *= squeeze;
-                bandPad = restW * bandFrac;
+                float airSz = Mathf.Min(restH * 0.36f, restW * 0.22f);
+                float air = airGlass * airSz + restW * bandFrac * 0.5f;
+                float visW = restW + 2f * air;
+                float visH = restH + 2f * air;
+                float squeeze = Mathf.Min(1f, faceW / Mathf.Max(1f, visW), faceH / Mathf.Max(1f, visH));
+                if (squeeze < 0.999f)
+                {
+                    restW *= squeeze;
+                    restH *= squeeze;
+                }
             }
+            restW *= restShrink;
+            restH *= restShrink;
+            float bandPad = restW * bandFrac;
             // Soft aura / combo halo as a fraction of the board (replaces old bulb crownFrac).
             float crownFrac = 0.10f;
 
@@ -7297,9 +7313,10 @@ namespace FlockFive
             GUI.color = Color.white;
 
             // Build 52 approach: no DrawGiftMarquee / no marquee bulbs on this frame.
-            // Subtle celebration twinkles around the brass (shared SparkleFx).
+            // Twinkles sit on the brass band's outer edge only (shared SparkleFx border
+            // mode): capped under 2x the band, so none reaches the dark board or the text.
             if (alpha > 0.05f)
-                SparkleFx.DrawAround(outer, alpha * 0.70f, gold: true, sizeFrac: 0.095f, wide: true);
+                SparkleFx.DrawBorder(outer, band, alpha * 0.70f, gold: true, sizeFrac: 0.095f);
 
             float padX = Mathf.Max(8f * s * scale, board.width * 0.055f);
             float padY = Mathf.Max(4f * s * scale, board.height * 0.04f);
@@ -7331,9 +7348,9 @@ namespace FlockFive
             labelSt.wordWrap = false;
             var heroSt = GuiPool.From(GuiSlot.StreakHero, labelSt);
             heroSt.alignment = TextAnchor.MiddleCenter;
-            // ~12% with the larger board so type stays proportional and uncropped.
-            int labelHi = Mathf.Max(20, Mathf.RoundToInt(42f * s));
-            int heroHi = Mathf.Max(28, Mathf.RoundToInt(58f * s));
+            // Caps follow the board: build 57's 38/52 at RestShrink (b58 had 42/58).
+            int labelHi = Mathf.Max(20, Mathf.RoundToInt(36f * s));
+            int heroHi = Mathf.Max(28, Mathf.RoundToInt(50f * s));
             var heroInk = new Color(1f, 0.95f, 0.42f, 1f);
 
             void StampFit(Rect r, string text, GUIStyle st, Color fill, int hi, float widthFrac, float inkA)
@@ -8067,7 +8084,7 @@ namespace FlockFive
                 held = false;
             }
 
-            float sink = held ? rest.height * 0.030f : 0f;
+            float sink = held ? rest.height * FlowerPressSink : 0f;
             var flower = SpriteCatalog.PlayFlower;
             var tex = flower != null ? flower.texture : null;
             if (tex != null)
@@ -8324,6 +8341,9 @@ namespace FlockFive
             float stackY = disc.y + (disc.height - stackH) * 0.68f;
             return aloneY < stackY ? aloneY : stackY;
         }
+
+        // How far a held play flower sinks (fraction of its rect). The poker cover plate reads it.
+        const float FlowerPressSink = 0.030f;
 
         static Rect FlowerDisc(Rect rest, float sink)
         {
@@ -10432,76 +10452,76 @@ namespace FlockFive
             _pokerTutorAimOk = true;
         }
 
-        // Between the five cards and the bet/deal controls. CoachPanelRect pads
-        // 18×12 around this rect, so the plate stays inside that gap.
-        Rect PokerCoachBubble(float s, Rect row, Rect betR, Rect actR)
-        {
-            const float panelPadX = 18f;
-            const float panelPadY = 12f;
-            float top = PokerCaptionTop(s, row.yMax);
-            float bot = Mathf.Min(betR.y, actR.y) - 2f * s;
-            if (bot < top + 8f) bot = top + 8f;
-            float room = bot - top;
-            float h = Mathf.Min(58f * s, Mathf.Max(28f * s, room - panelPadY * 2f));
-            if (h > room) h = room;
-            float y = top + panelPadY;
-            if (y + h + panelPadY > bot)
-                y = Mathf.Max(top, bot - panelPadY - h);
-            float left = Mathf.Max(12f * s + panelPadX, Screen.safeArea.xMin + 8f + panelPadX);
-            float right = Screen.width - Mathf.Max(12f * s + panelPadX, Screen.width - Screen.safeArea.xMax + 8f + panelPadX);
-            float span = right - left;
-            if (span < 80f)
-            {
-                left = 8f;
-                right = Screen.width - 8f;
-                span = Mathf.Max(80f, right - left);
-            }
-            float w = Mathf.Min(span, Mathf.Min(520f * s, Screen.width * 0.86f));
-            float x = left + Mathf.Max(0f, (span - w) * 0.5f);
-            return new Rect(x, y, w, h);
-        }
+        // ---- Poker page lesson captions ----
+        // Build 59: every poker page line (bet, deal hint, hold, back) is the standard garden
+        // caption: StandardCaptionBox width, height and font range, PaintCoachCaption padding
+        // and plate. Build 58 measured poker-only plates (58*s-tall bet box, a hold plate that
+        // stepped its font down to 14) so the lines read small. Only the seat is poker's: the
+        // first band (x = top, y = bottom, GUI px) that holds the standard box wins, else the
+        // roomier band; a short band trims the box height only, and PaintCoachCaption then
+        // fits the font inside it (never under the garden floor). Set once per step: the
+        // first frame seats it, later frames reuse it (a new line or screen size re-seats).
+        string _pokerCapFor;
+        float _pokerTitleBottom;
+        int _pokerCapScreenW;
+        int _pokerCapScreenH;
+        Rect _pokerCapSeat;
 
-        // The hold step's seat: ABOVE the card row, never over the cards. Held cards and
-        // the fanned hand reach a little above the row (hover puff is ~16% of a card), so that
-        // reach stays clear too. ceilingY is the bottom of the wordmark / pay-table chip.
-        // Build 52: the plate is measured with FitCaptionBox exactly like the other tutorial
-        // captions (poker back, intro lines), so it paints in the same bold outlined size
-        // instead of being squeezed into a short fixed-height box. A cramped screen steps
-        // the font down before the plate would touch the pay-table chip or a card.
-        Rect PokerHoldBubble(float s, Rect row, float ceilingY, out int fontHi)
+        Rect PokerStandardSeat(string line, float s, Vector2 bandA, Vector2 bandB)
         {
-            float bot = row.y - row.height * 0.14f - 2f * s;
-            float room = Mathf.Max(30f * s, bot - ceilingY - 4f * s);
-            float left = Mathf.Max(12f * s + 18f, Screen.safeArea.xMin + 8f + 18f);
-            float right = Screen.width - Mathf.Max(12f * s + 18f, Screen.width - Screen.safeArea.xMax + 8f + 18f);
-            float span = right - left;
-            if (span < 80f)
+            if (_pokerCapFor == line && _pokerCapScreenW == Screen.width && _pokerCapScreenH == Screen.height)
+                return _pokerCapSeat;
+            StandardCaptionBox(s, out float w, out float h, out _, out _);
+            float plateY = 12f;            // CoachPanelRect's vertical pad, per side
+            float gapTop = 4f * s;
+            float roomA = bandA.y - bandA.x - plateY * 2f - gapTop;
+            float roomB = bandB.y - bandB.x - plateY * 2f - gapTop;
+            var band = bandA;
+            float room = roomA;
+            if (roomA < h && roomB > roomA)
             {
-                left = 8f;
-                right = Screen.width - 8f;
-                span = Mathf.Max(80f, right - left);
+                band = bandB;
+                room = roomB;
             }
-            float w = Mathf.Min(span, Mathf.Min(520f * s, Screen.width * 0.86f));
-            float maxW = Mathf.Max(48f, w - 36f * s);
-            int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
-            Rect fit = default;
-            for (int px = hi; px >= 14; px -= 2)
-            {
-                hi = px;
-                fit = FitCaptionBox(PokerHoldLine, maxW, px, 12);
-                if (fit.height + 28f * s <= room) break;
-            }
-            float pw = Mathf.Min(fit.width + 36f * s, w);
-            float h = fit.height + 28f * s;
-            float y = bot - h;
-            if (y < ceilingY + 2f) y = ceilingY + 2f;
+            float boxH = Mathf.Max(24f, Mathf.Min(h, room));
+            float y = band.x + gapTop + plateY + Mathf.Max(0f, (room - boxH) * 0.5f);
             if (y < 8f) y = 8f;
-            float x = left + Mathf.Max(0f, (span - pw) * 0.5f);
-            fontHi = hi;
-            return new Rect(x, y, pw, h);
+            float x = (Screen.width - w) * 0.5f;
+            _pokerCapFor = line;
+            _pokerCapScreenW = Screen.width;
+            _pokerCapScreenH = Screen.height;
+            _pokerCapSeat = new Rect(x, y, w, boxH);
+            return _pokerCapSeat;
         }
 
-        void DrawPokerPageTutor(float s, Rect row, Rect betR, Rect actR, float ceilingY)
+        // Standard caption for a poker page step. pin keeps a rule seat (hold, back: above
+        // the cards); unpinned lines take the shared once-per-step glove latch.
+        void DrawPokerStandardLine(string line, float s, Vector2 bandA, Vector2 bandB, bool pin)
+        {
+            var r = PokerStandardSeat(line, s, bandA, bandB);
+            StandardCaptionBox(s, out _, out _, out int lo, out int hi);
+            if (GuiPaint())
+                _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
+            var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
+            PaintCoachCaption(line, seat, s, lo, hi);
+        }
+
+        // Above the cards: under the title (or the pay-table tab when there is room under
+        // it) down to the top of the card reach (held cards and the hover puff ride ~14%
+        // of a card above the row).
+        static Vector2 PokerBandAboveCards(float s, Rect row, float ceilingY)
+        {
+            float reach = row.y - Mathf.Max(row.height * 0.14f, 14f * s) - 2f * s;
+            return new Vector2(ceilingY, reach);
+        }
+
+        // Below the cards, above the bet / deal controls.
+        static Vector2 PokerBandBelowCards(float s, Rect row, Rect betR, Rect actR)
+        {
+            return new Vector2(PokerCaptionTop(s, row.yMax), Mathf.Min(betR.y, actR.y) - 2f * s);
+        }
+
+        void DrawPokerPageTutor(float s, Rect row, Rect betR, Rect actR, float ceilingY, float titleBottom)
         {
             if (!_pokerPageOn || PokerPageTutorBlocked()) return;
             // Bet sentence leaves the moment the first hand is dealt, including
@@ -10515,10 +10535,15 @@ namespace FlockFive
                 line = PokerBetLine;
             if (line != null)
             {
-                bool hold = line == PokerHoldLine;
-                int holdHi = 0;
-                var want = hold ? PokerHoldBubble(s, row, ceilingY, out holdHi) : PokerCoachBubble(s, row, betR, actR);
-                DrawSplashIntroLine(line, want, s, holdHi, hold);
+                // Hold: above the cards (under the pay-table tab, else under the title).
+                // Bet: between the cards and the controls, else above the cards.
+                var above = PokerBandAboveCards(s, row, ceilingY);
+                var aboveTitle = PokerBandAboveCards(s, row, titleBottom);
+                var belowCards = PokerBandBelowCards(s, row, betR, actR);
+                if (line == PokerHoldLine)
+                    DrawPokerStandardLine(line, s, above, aboveTitle, true);
+                else
+                    DrawPokerStandardLine(line, s, belowCards, above, false);
             }
             DrawTutorOverlay(s);
         }
@@ -10555,8 +10580,8 @@ namespace FlockFive
             _pokerDealAim = DealPlatformAim(actR);
             _pokerDealTap = actR;
             _pokerDealAimOk = disc.width > 2f;
-            var want = PokerCoachBubble(s, row, betR, actR);
-            DrawSplashIntroLine(PokerBetLine, want, s);
+            DrawPokerStandardLine(PokerBetLine, s, PokerBandBelowCards(s, row, betR, actR),
+                PokerBandAboveCards(s, row, PokerPayTabRect(_pokerTitleBottom, s).yMax), false);
             DrawTutorOverlay(s);
         }
 
@@ -10640,18 +10665,10 @@ namespace FlockFive
             float below = logoBottom;
             var tab = PokerPayTabRect(logoBottom, s);
             if (tab.width > 2f && tab.yMax > below) below = tab.yMax;
-            // Same measured plate as the other lessons (FitCaptionBox), seated between the
-            // pay-table tab and the card row, clear of the back button and the glove.
-            int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
-            float maxW = Mathf.Min(Screen.width * 0.86f, 520f * s) - 36f * s;
-            var fit = FitCaptionBox(PokerBackLine, maxW, hi, 16);
-            float w = Mathf.Min(fit.width + 36f * s, Screen.width - 16f);
-            float h = fit.height + 28f * s;
-            var seat = PlaceCaption(s, w, h, below + 12f * s);
-            float cardTop = row.y - 14f * s;
-            if (seat.yMax > cardTop)
-                seat.y = Mathf.Max(below + 4f * s, cardTop - seat.height);
-            DrawSplashIntroLine(PokerBackLine, seat, s, hi);
+            // Standard caption, seated between the pay-table tab and the card row (else
+            // under the title), so it stays clear of the back button above the title.
+            DrawPokerStandardLine(PokerBackLine, s, PokerBandAboveCards(s, row, below + 8f * s),
+                PokerBandAboveCards(s, row, logoBottom + 4f * s), true);
             DrawTutorOverlay(s);
         }
 
@@ -10800,20 +10817,7 @@ namespace FlockFive
                 else if (BirdPoker.PhaseNow == BirdPoker.Phase.Idle)
                     TryPokerDeal();
                 else if (BirdPoker.PhaseNow == BirdPoker.Phase.Dealt)
-                {
-                    for (int i = 0; i < BirdPoker.HandSize; i++)
-                    {
-                        _pokerRedraw[i] = !BirdPoker.Hold[i];
-                        _pokerPrev[i] = BirdPoker.Hand[i];
-                    }
-                    if (BirdPoker.Draw())
-                    {
-                        Ads.NotePokerHand();
-                        BeginPokerDraw();
-                        _pokerPendingStamp = BirdPoker.LastPunchFresh;
-                        _pokerResultCue = BirdPoker.LastPunchFresh ? 3 : (BirdPoker.LastWin > 0 ? 2 : 1);
-                    }
-                }
+                    RunPokerDraw();
                 else
                 {
                     BirdPoker.Collect();
@@ -10823,7 +10827,8 @@ namespace FlockFive
             NotePokerTutorAims(actR, rowBox, cardW, gap);
             float holdCeil = payTab.yMax;
             if (rowBox.y - holdCeil < 60f * s) holdCeil = below;
-            DrawPokerPageTutor(s, rowBox, betR, actR, holdCeil);
+            _pokerTitleBottom = below;
+            DrawPokerPageTutor(s, rowBox, betR, actR, holdCeil, below);
             DrawPokerDealHint(s, rowBox, betR, actR);
             DrawPokerBackHint(s, back, rowBox, below);
             DrawPokerWinFanfare(betR, actR, s);
@@ -10969,7 +10974,7 @@ namespace FlockFive
                     float barInset = 8f * s;
                     var row = new Rect(paper.x + barInset, yRow, paper.width - barInset * 2f, rowH);
 
-                    bool jackpot = rank == BirdPoker.Rank.NaturalFive;
+                    bool jackpot = BirdPoker.IsJackpot(rank);
                     if (jackpot)
                     {
                         GUI.color = new Color(1f, 0.84f, 0.32f, 0.38f * u);
@@ -11652,6 +11657,68 @@ namespace FlockFive
                 _pokerKept[i] = false;
             }
         }
+
+        // DRAW: the button and the editor debug hand share this, so the reveal, stamp,
+        // win fanfare and result sfx all run the same way.
+        void RunPokerDraw()
+        {
+            for (int i = 0; i < BirdPoker.HandSize; i++)
+            {
+                _pokerRedraw[i] = !BirdPoker.Hold[i];
+                _pokerPrev[i] = BirdPoker.Hand[i];
+            }
+            if (BirdPoker.Draw())
+            {
+                Ads.NotePokerHand();
+                BeginPokerDraw();
+                _pokerPendingStamp = BirdPoker.LastPunchFresh;
+                _pokerResultCue = BirdPoker.LastPunchFresh ? 3 : (BirdPoker.LastWin > 0 ? 2 : 1);
+            }
+        }
+
+#if UNITY_EDITOR
+        // Flock Five/Debug/Force Five Wilds (Play Mode): opens poker, deals a real hand,
+        // rigs the draw to FIVE WILDS and draws through RunPokerDraw, so the full jackpot
+        // celebration plays (reveal, punch stamp if WildKind is unpunched, fanfare, sfx).
+        IEnumerator EditorForceFiveWilds()
+        {
+            if (_home != HomeFace.Poker) BirdPoker.BeginVisit();
+            _splash = true;
+            _home = HomeFace.Poker;
+            _pokerPayOpen = false;
+            _pokerPayAnim = 0f;
+            BirdPoker.Boot();
+            Purse.Boot();
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn) BirdPoker.Collect();
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Idle)
+            {
+                if (Purse.Coins < BirdPoker.FloorBet * 4) Purse.Credit(BirdPoker.FloorBet * 4 - Purse.Coins);
+                BirdPoker.SyncBet();
+                yield return null;
+                TryPokerDeal();
+            }
+            float wait = 0f;
+            while ((PokerMotionBusy() || BirdPoker.PhaseNow != BirdPoker.Phase.Dealt) && wait < 6f)
+            {
+                wait += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            if (BirdPoker.PhaseNow != BirdPoker.Phase.Dealt)
+            {
+                Debug.LogWarning("[poker] Force Five Wilds: no dealt hand (coins " + Purse.Coins + ")");
+                yield break;
+            }
+            yield return new WaitForSecondsRealtime(0.35f);
+            if (!BirdPoker.RigFiveWildsDraw())
+            {
+                Debug.LogWarning("[poker] Force Five Wilds: could not rig the shoe");
+                yield break;
+            }
+            yield return new WaitForSecondsRealtime(0.35f);
+            RunPokerDraw();
+            Debug.Log("[poker] Force Five Wilds: " + BirdPoker.RankLabel(BirdPoker.LastRank) + " win " + BirdPoker.LastWin);
+        }
+#endif
 
         void BeginPokerDraw()
         {
@@ -12596,8 +12663,8 @@ namespace FlockFive
             float punch = Mathf.Clamp01(t / WinPunchT);
             float whoosh = WinWhooshEase(t);
             float burst = Mathf.SmoothStep(0f, 1f, punch) * (1f - Mathf.Clamp01(whoosh * 2.5f));
-            // Bigger hands throw more rays.
-            int rays = 12 + 2 * (int)BirdPoker.LastRank;
+            // Bigger hands throw more rays (shared level: FIVE WILDS >= NaturalFive).
+            int rays = 12 + 2 * BirdPoker.CelebrationLevel(BirdPoker.LastRank);
             if (burst > 0.01f)
             {
                 float reach = size.x * 0.95f * (0.35f + 0.65f * Mathf.Sin(punch * Mathf.PI * 0.5f));

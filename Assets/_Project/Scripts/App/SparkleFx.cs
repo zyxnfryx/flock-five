@@ -17,7 +17,8 @@ namespace FlockFive
         static readonly float[] OyWide = { -0.22f, -0.36f, -0.46f, 0.40f, 0.28f, 0.06f, -0.12f };
         static readonly float[] PhWide = { 0.2f, 1.4f, 2.5f, 3.6f, 4.7f, 5.6f, 0.85f };
 
-        // Twinkles around / over a rect. gold = warm celebration tint.
+        // Twinkles around / over a rect (seats fall inside it too). gold = warm celebration tint.
+        // For a card or pop-up whose inside must stay clean, use DrawBorder.
         public static void DrawAround(Rect r, float alpha, bool gold = false, float sizeFrac = 0.12f, bool wide = false)
         {
             if (alpha < 0.02f || r.width < 4f || r.height < 4f) return;
@@ -47,6 +48,65 @@ namespace FlockFive
                 GUI.DrawTexture(new Rect(x, y, sz, sz), tex, ScaleMode.ScaleToFit, true);
             }
             GUI.color = Color.white;
+        }
+
+        // Border seats: fraction of the way round the rect, clockwise from the top-left
+        // corner. Spread so no two sides bunch up; phases keep neighbours out of step.
+        static readonly float[] Rim = { 0.035f, 0.155f, 0.275f, 0.395f, 0.53f, 0.655f, 0.78f, 0.905f };
+        static readonly float[] RimPh = { 0.2f, 1.4f, 2.5f, 3.6f, 4.7f, 5.6f, 0.85f, 3.1f };
+
+        // Twinkles that live ONLY on a frame. Each sparkle is centred on the rect's outer
+        // edge and its size is capped just under twice the frame thickness, so it may reach
+        // out into the air but never past the frame onto the panel, copy or numerals inside.
+        // border = frame thickness (outer edge to the content it must not touch).
+        // round = seats on the ellipse inscribed in r (discs, chips, medals).
+        public static void DrawBorder(Rect r, float border, float alpha, bool gold = false, float sizeFrac = 0.12f, bool round = false)
+        {
+            if (alpha < 0.02f || r.width < 4f || r.height < 4f || border < 0.5f) return;
+            var spr = SpriteCatalog.Sparkle;
+            var tex = spr != null ? spr.texture : null;
+            if (tex == null) return;
+
+            float t = Time.unscaledTime;
+            float cg = gold ? 0.97f : 0.98f;
+            float cb = gold ? 0.82f : 0.94f;
+            float baseSz = Mathf.Min(r.width, r.height) * sizeFrac;
+            float cap = border * 1.8f;
+
+            for (int i = 0; i < Rim.Length; i++)
+            {
+                float tw = 0.5f + 0.5f * Mathf.Sin(t * 2.2f + RimPh[i]);
+                tw = tw * tw;
+                if (tw < 0.12f) continue;
+                float sz = Mathf.Min(baseSz * (1f + 0.35f * (i & 1)), cap);
+                if (sz < 2f) continue;
+                var p = round ? OnEllipse(r, Rim[i]) : OnPerimeter(r, Rim[i]);
+                GUI.color = new Color(1f, cg, cb, tw * alpha);
+                GUI.DrawTexture(new Rect(p.x - sz * 0.5f, p.y - sz * 0.5f, sz, sz), tex, ScaleMode.ScaleToFit, true);
+            }
+            GUI.color = Color.white;
+        }
+
+        // Point on the rect's outline, u in [0,1) clockwise from the top-left corner.
+        static Vector2 OnPerimeter(Rect r, float u)
+        {
+            float w = r.width;
+            float h = r.height;
+            float d = Mathf.Repeat(u, 1f) * 2f * (w + h);
+            if (d < w) return new Vector2(r.x + d, r.y);
+            d -= w;
+            if (d < h) return new Vector2(r.xMax, r.y + d);
+            d -= h;
+            if (d < w) return new Vector2(r.xMax - d, r.yMax);
+            d -= w;
+            return new Vector2(r.x, r.yMax - d);
+        }
+
+        // Point on the inscribed ellipse, u in [0,1) clockwise from 12 o'clock.
+        static Vector2 OnEllipse(Rect r, float u)
+        {
+            float a = Mathf.Repeat(u, 1f) * Mathf.PI * 2f;
+            return new Vector2(r.center.x + Mathf.Sin(a) * r.width * 0.5f, r.center.y - Mathf.Cos(a) * r.height * 0.5f);
         }
 
         // Single point glint (badger eye, stamp flash): white core + sparkle sprite.
