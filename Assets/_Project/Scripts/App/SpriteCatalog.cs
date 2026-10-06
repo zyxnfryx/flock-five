@@ -26,16 +26,76 @@ namespace FlockFive
         static Sprite[] _feeders;
 
         public static Sprite GardenBg => Load(ref _bg, "Sprites/bg_garden", 96f);
-        static Sprite _bgOasis;
-        public static Sprite OasisBg => Load(ref _bgOasis, "Sprites/bg_oasis", 96f);
 
-        // Background art rotates by garden range so the look stays fresh:
-        // gardens 1-15 are the jungle garden, 16-50 the desert oasis.
-        public static Sprite GardenBgFor(int gardenNumber)
+        // Garden backdrops. bg_garden (summer) stays cached for good: the home wash and
+        // every summer garden use it. The other paintings (desert, fall, winter, spring)
+        // share ONE slot, so at most one of them is in memory at a time.
+        static Sprite _bgScene;
+        static string _bgScenePath;
+        static bool _bgSceneOwned;
+
+        static string BgPath(GardenScene scene)
         {
-            if (gardenNumber >= 16 && gardenNumber <= 50 && OasisBg != null) return OasisBg;
-            return GardenBg;
+            switch (scene)
+            {
+                case GardenScene.Desert: return "Sprites/bg_oasis";
+                case GardenScene.Fall: return "Sprites/bg_fall";
+                case GardenScene.Winter: return "Sprites/bg_winter";
+                case GardenScene.Spring: return "Sprites/bg_spring";
+                default: return null;
+            }
         }
+
+        // The only garden-backdrop picker. GardenSeason.ForLevel owns the schedule.
+        public static Sprite GardenBgFor(int gardenNumber) => GardenBgFor(GardenSeason.ForLevel(gardenNumber));
+
+        public static Sprite GardenBgFor(GardenScene scene)
+        {
+            string path = BgPath(scene);
+            if (path == null)
+            {
+                // Summer: the previous season painting is no longer in use.
+                ReleaseSceneBg(null);
+                return GardenBg;
+            }
+            if (_bgScene != null && _bgScenePath == path) return _bgScene;
+            var next = TryLoad(path, 96f);
+            ReleaseSceneBg(next);
+            if (next == null)
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                Debug.LogWarning("Missing sprite " + path + " (using bg_garden)");
+#endif
+                return GardenBg;
+            }
+            _bgScene = next;
+            _bgScenePath = path;
+            // TryLoad builds a runtime Sprite when only a Texture2D imports at the path.
+            _bgSceneOwned = next != Resources.Load<Sprite>(path);
+            return next;
+        }
+
+        // Drop the season slot and unload its texture, unless something the catalog
+        // still holds (bg_garden, or the painting replacing it) uses the same texture.
+        // The old garden's Bg renderer was Destroy()ed just before WorldBuilder.Build
+        // asked for the new backdrop; that destroy lands before the frame renders, and
+        // Unity reloads an unloaded asset if anything does touch it again.
+        static void ReleaseSceneBg(Sprite keep)
+        {
+            var old = _bgScene;
+            bool owned = _bgSceneOwned;
+            _bgScene = null;
+            _bgScenePath = null;
+            _bgSceneOwned = false;
+            if (old == null || old == keep) return;
+            var tex = old.texture;
+            bool shared = tex == null
+                || (_bg != null && _bg.texture == tex)
+                || (keep != null && keep.texture == tex);
+            if (owned) Object.Destroy(old);
+            if (!shared) Resources.UnloadAsset(tex);
+        }
+
         public static Sprite Branch => Load(ref _branch, "Sprites/branch", 140f);
         public static Sprite BranchGift => Load(ref _branchGift, "Sprites/branch_gift", 140f);
         public static Sprite AdSign => Load(ref _adSign, "Sprites/fx_ad_sign", 200f);

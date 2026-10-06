@@ -30,12 +30,15 @@ namespace FlockFive.Editor
                 ApplyAndroidOpaqueAstc(imp);
         }
 
-        // Opaque poker faces and the two backgrounds. Android override only.
+        // Opaque poker faces and the garden backgrounds. Android override only.
         // Sparse RGBA bird art is not in this list.
         public static readonly string[] AndroidOpaqueAstc =
         {
             "Assets/_Project/Art/Resources/Sprites/bg_garden.png",
             "Assets/_Project/Art/Resources/Sprites/bg_oasis.png",
+            "Assets/_Project/Art/Resources/Sprites/bg_fall.png",
+            "Assets/_Project/Art/Resources/Sprites/bg_winter.png",
+            "Assets/_Project/Art/Resources/Sprites/bg_spring.png",
             "Assets/_Project/Art/Resources/Sprites/fx_poker_face_gold.png",
             "Assets/_Project/Art/Resources/Sprites/fx_poker_face_gold_f.png",
             "Assets/_Project/Art/Resources/Sprites/fx_poker_face_gold_m.png",
