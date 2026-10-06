@@ -29,8 +29,10 @@ namespace FlockFive
             // Build 58 pacing (Brandon, build 51: the entrance felt hurried and the text moved
             // while the button glow played). One beat at a time; each starts after the last ends.
             // All ages are Time.unscaledTime deltas, so the pace is the same at any frame rate.
-            //   First open (full):  dim + rail glow 0-0.45 | crown flies 0.45-0.95, fades to 1.03
-            //                       | card eases in 1.03-1.48 (thud + burst as it lands)
+            //   First open (full):  dim + rail glow 0-0.45 | crown flies to the card centre
+            //                       0.45-0.95 | build 63: burst there at 0.95 (gold sparkles,
+            //                       light flash, pop + thud), the crown pops into it, and the
+            //                       card grows out of it 0.97-1.42
             //                       | title 1.72-1.94 | rows 1.94 / 2.10 / 2.26 | Buy pops 2.42-2.72.
             //   Later opens:        dim + glow 0-0.22 | card 0.22-0.58 | title 0.64-0.80
             //                       | rows 0.80 / 0.90 / 1.00 | Buy pops 1.12-1.40.
@@ -42,12 +44,14 @@ namespace FlockFive
             const float ShortGlow = 0.22f;
             const float CrownStart = 0.45f;
             const float CrownDur = 0.50f;
-            const float CrownFade = 0.08f;
-            const float FullPanelStart = 1.03f;
+            const float CrownFade = 0.12f;
+            // The crown lands on the card centre and the burst fires there; the card's scale
+            // pivot is that same centre, so the card comes out of the burst.
+            const float BurstAt = CrownStart + CrownDur;
+            const float FullPanelStart = BurstAt + 0.02f;
             const float FullPanelDur = 0.45f;
             const float ShortPanelDur = 0.36f;
-            const float FullThudAt = FullPanelStart + FullPanelDur * 0.37f;
-            const float BurstDur = 0.40f;
+            const float BurstDur = 0.55f;
             const float FullTitleStart = 1.72f;
             const float FullTitleFade = 0.22f;
             const float FullRowStep = 0.16f;
@@ -245,12 +249,7 @@ namespace FlockFive
                 }
                 float age = Age;
                 bool entering = !Closing && !_reduce && !_skipped && age < Span;
-                var safe = Screen.safeArea;
-                float top = TopHud();
-                float xSz = Mathf.Max(48f * s, 44f);
-                var xBtn = new Rect(
-                    Screen.width - Mathf.Max(14f, Screen.width - safe.xMax + 8f) - xSz,
-                    top, xSz, xSz);
+                var xBtn = CornerCloseRect(s, TopHud());
 
                 VipCardLayout(s, !_member, out var card, out var flower);
                 if (!_member) flower = ScaledAbout(flower, BuyScale);
@@ -260,7 +259,7 @@ namespace FlockFive
 
                 // Same hit order in both faces so control ids stay stable.
                 var discHit = _member ? default : GrowDisc(FlowerDisc(flower, 0f), s);
-                bool xHit = HitPad(xBtn, out bool xHeld);
+                bool xHit = HitPad(CloseTapRect(xBtn), out bool xHeld);
                 bool buy = HitPad(discHit, out bool buyHeld);
                 bool restore = HitPad(link, out bool linkHeld);
                 var body = card;
@@ -282,7 +281,10 @@ namespace FlockFive
                 float outDim = Closing ? 1f - PopupMotion.Smooth(PopupMotion.Beat(closeT, 0.06f, CloseDur - 0.06f)) : 1f;
 
                 float dimIn = (_reduce || _skipped) ? 1f : PopupMotion.Smooth(age / 0.25f);
-                GUI.color = new Color(0.04f, 0.03f, 0.02f, (entering ? 0.78f : 0.72f) * dimIn * outDim);
+                // Build 63: the offer face dims a little deeper so the LEVEL flower and rails
+                // under the bigger card recede (nothing behind it moves or resizes).
+                float dimTo = _member ? (entering ? 0.78f : 0.72f) : (entering ? 0.84f : 0.80f);
+                GUI.color = new Color(0.04f, 0.03f, 0.02f, dimTo * dimIn * outDim);
                 GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
                 if (!Closing) DrawArrivalGlow(glow, s, age);
@@ -294,8 +296,8 @@ namespace FlockFive
                 bool fullLive = _full && !_reduce && !_skipped && !Closing;
                 if (fullLive)
                     DrawCrownFlight(s, age, card);
-                if (fullLive && age >= FullThudAt && age < FullThudAt + BurstDur)
-                    DrawVipBurst(new Vector2(card.center.x, card.y + card.height * 0.34f), (age - FullThudAt) / BurstDur, s);
+                if (fullLive && age >= BurstAt && age < BurstAt + BurstDur)
+                    DrawVipBurst(card.center, (age - BurstAt) / BurstDur, BurstScale(s, card), 1f);
 
                 float k = Closing ? PopupMotion.ExitScale(outFrameU) : PanelScale(age);
                 float frameA = Closing ? PopupMotion.ExitAlpha(outFrameU) : PanelAlpha(age);
@@ -427,15 +429,23 @@ namespace FlockFive
                 _revealed = reveal;
             }
 
+            // The burst's sound: the shared card pop on the VIP thud, a medium haptic, and the
+            // same small camera punch the landing had.
             static void NoteThud(float age)
             {
                 if (_thud || !_full || _reduce) return;
-                if (_skipped || age < FullThudAt) return;
+                if (_skipped || age < BurstAt) return;
                 _thud = true;
+                Sfx.CardPop();
                 SfxLibrary.Play("thud", 0.40f, 0f);
+                Haptics.Play(Haptics.Tier.Medium);
                 if (CamShake.Live != null)
                     CamShake.Live.Punch(0.14f, 0.05f, 1.1f, 0.03f);
             }
+
+            // Burst reach follows the card (the old 86 px reach was sized for the standard card).
+            static float BurstScale(float s, Rect card) =>
+                s * Mathf.Max(1f, card.width / Mathf.Max(1f, StandardPopupWidth(s))) * 1.6f;
 
             static float PanelStart => _full ? FullPanelStart : ShortGlow;
             static float PanelDur => _full ? FullPanelDur : ShortPanelDur;
@@ -518,19 +528,44 @@ namespace FlockFive
                 var tex = VipCrownTex();
                 if (tex == null) return;
                 Vector2 from = _anchored ? _anchor : new Vector2(Screen.width * 0.82f, TopHud() + 36f * s);
-                Vector2 to = new Vector2(card.center.x, card.y + card.height * 0.30f);
+                // To the card centre, where the burst fires and the card grows from.
+                Vector2 to = card.center;
                 // Ease in-out: lifts off gently, glides, and slows into the card spot.
                 float e = PopupMotion.Smooth(u);
                 Vector2 p = Vector2.Lerp(from, to, e);
                 float sz = Mathf.Lerp(36f * s, 92f * s, e) * (card.width / Mathf.Max(1f, StandardPopupWidth(s)));
+                // On arrival it pops into the burst: swells while it fades.
+                if (u >= 1f) sz *= 1f + 0.4f * (1f - fade);
                 GUI.color = new Color(1f, 0.95f, 0.72f, fade);
                 GUI.DrawTexture(new Rect(p.x - sz * 0.5f, p.y - sz * 0.55f, sz, sz * 0.8f), tex, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
             }
 
-            static void DrawVipBurst(Vector2 c, float u, float s)
+            // THE VIP burst (offer crown landing, Welcome crown pop). flash > 0 adds a light
+            // flash: a warm screen wash and a white-gold bloom off the centre that fade out
+            // in the first part of the burst, plus the shared SparkleFx glint at the core.
+            static void DrawVipBurst(Vector2 c, float u, float s, float flash = 0f)
             {
                 u = Mathf.Clamp01(u);
+                if (flash > 0f)
+                {
+                    float f = Mathf.Clamp01(1f - u / 0.45f);
+                    f *= f;
+                    if (f > 0.01f)
+                    {
+                        GUI.color = new Color(1f, 0.93f, 0.70f, 0.30f * f * flash);
+                        GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+                        var bloom = GlowTex();
+                        if (bloom != null)
+                        {
+                            float d = Mathf.Lerp(60f * s, 260f * s, EaseOutCubic(u / 0.45f));
+                            GUI.color = new Color(1f, 0.90f, 0.55f, 0.85f * f * flash);
+                            GUI.DrawTexture(new Rect(c.x - d * 0.5f, c.y - d * 0.5f, d, d), bloom, ScaleMode.ScaleToFit, true);
+                        }
+                        GUI.color = Color.white;
+                        SparkleFx.DrawAt(c, Mathf.Lerp(70f * s, 40f * s, u), f * flash);
+                    }
+                }
                 var spark = SpriteCatalog.Sparkle;
                 var tex = spark != null && spark.texture != null ? spark.texture : Texture2D.whiteTexture;
                 float eu = EaseOutCubic(u);
@@ -547,71 +582,151 @@ namespace FlockFive
                 GUI.color = Color.white;
             }
 
-            // Title centred, three rows left-aligned on one check column. One bold face:
-            // the title fits its own box and ALL rows share one size (the smallest any row
-            // needs) and one outline weight. Caps grow with the card (cardW / standard
-            // width) so type stays proportional to the bigger frame. Copy fades in after the
-            // card has settled; rows rise a few pixels as they fade (they never scale).
+            // Title centred, three rows left-aligned on one check column. One bold face.
+            // Build 63 (Brandon: love the list, make it big): type comes from the standard
+            // caption (StandardCaptionBox's top size through CaptionPx), not from the card.
+            // Rows try that size first; the title rides at CopyTitleK x the rows. Both step
+            // down together until title + rows + gaps fit the panel, and no single word may be
+            // wider than its column (the wrapped fit only checks height). Checks are the shared
+            // DrawCheckMark at CopyMarkK x the row type, seated on each row's first line.
+            // Left-over height opens the gaps. Fit is cached per panel size and headline, so
+            // the open / close scale (GUI.matrix) never refits. Rows fade and rise as before.
+            const float CopyTitleK = 1.3f;
+            const float CopyMarkK = 1.1f;
+            const float CopyGapTitle = 0.6f;
+            const float CopyGapRow = 0.45f;
+
+            struct CopyFit
+            {
+                public float W, H;
+                public string Head;
+                public int TitlePx, BodyPx;
+                public float TitleH, Mark, LabW, Spare;
+                public float[] RowH;
+            }
+
+            static CopyFit _fit;
+            static GUIContent _fitContent;
+
+            static void EnsureCopyStyles()
+            {
+                if (_title == null)
+                    _title = new GUIStyle(GUI.skin.label)
+                    {
+                        fontStyle = FontStyle.Bold,
+                        alignment = TextAnchor.UpperCenter,
+                        wordWrap = true
+                    };
+                if (_body == null)
+                    _body = new GUIStyle(GUI.skin.label)
+                    {
+                        fontStyle = FontStyle.Bold,
+                        alignment = TextAnchor.UpperLeft,
+                        wordWrap = true
+                    };
+                if (_fitContent == null) _fitContent = new GUIContent();
+            }
+
+            static bool WordsFit(GUIStyle st, string text, float w)
+            {
+                var words = text.Split(' ');
+                for (int i = 0; i < words.Length; i++)
+                {
+                    _fitContent.text = words[i];
+                    if (st.CalcSize(_fitContent).x > w) return false;
+                }
+                return true;
+            }
+
+            static float WrappedH(GUIStyle st, string text, float w)
+            {
+                _fitContent.text = text;
+                return st.CalcHeight(_fitContent, w);
+            }
+
+            static CopyFit FitCopy(Rect block, float s, string headline, string[] rows, int n)
+            {
+                if (_fit.RowH != null && _fit.Head == headline
+                    && Mathf.Abs(_fit.W - block.width) < 1f && Mathf.Abs(_fit.H - block.height) < 1f)
+                    return _fit;
+                StandardCaptionBox(s, out _, out _, out int lo, out int hi);
+                lo = CaptionPx(lo);
+                hi = CaptionPx(hi);
+                int titleHi = Mathf.RoundToInt(hi * 1.10f);
+                var fit = new CopyFit { W = block.width, H = block.height, Head = headline, RowH = new float[n] };
+                bool done = false;
+                for (int bp = hi; bp >= lo && !done; bp--)
+                {
+                    float mark = bp * CopyMarkK;
+                    float labW = Mathf.Max(20f, block.width - mark - bp * 0.45f);
+                    _body.fontSize = bp;
+                    bool ok = true;
+                    for (int i = 0; i < n && ok; i++)
+                        ok = WordsFit(_body, rows[i], labW);
+                    if (!ok && bp > lo) continue;
+                    int tp = Mathf.Min(titleHi, Mathf.RoundToInt(bp * CopyTitleK));
+                    _title.fontSize = tp;
+                    while (tp > bp && !WordsFit(_title, headline, block.width))
+                        _title.fontSize = --tp;
+                    float th = WrappedH(_title, headline, block.width);
+                    float need = th + bp * CopyGapTitle + bp * CopyGapRow * (n - 1);
+                    for (int i = 0; i < n; i++)
+                    {
+                        fit.RowH[i] = WrappedH(_body, rows[i], labW);
+                        need += fit.RowH[i];
+                    }
+                    if (need > block.height && bp > lo) continue;
+                    fit.TitlePx = tp;
+                    fit.BodyPx = bp;
+                    fit.TitleH = th;
+                    fit.Mark = mark;
+                    fit.LabW = labW;
+                    fit.Spare = Mathf.Max(0f, block.height - need);
+                    done = true;
+                }
+                _fit = fit;
+                return fit;
+            }
+
             static void DrawCopy(Rect plate, float s, float cardW, float titleA, string headline, string[] rows)
             {
-                float grow = cardW / Mathf.Max(1f, StandardPopupWidth(s));
-                float insetX = Mathf.Max(12f * s, plate.width * 0.06f);
-                float insetY = Mathf.Max(10f * s, plate.height * 0.07f);
+                float insetX = Mathf.Max(14f * s, plate.width * 0.05f);
+                float insetY = Mathf.Max(12f * s, plate.height * 0.045f);
                 var block = new Rect(
                     plate.x + insetX,
                     plate.y + insetY,
                     plate.width - insetX * 2f,
                     Mathf.Max(48f, plate.height - insetY * 2f));
-                float titleH = block.height * 0.34f;
-                var titleR = new Rect(block.x, block.y, block.width, titleH);
-                if (_title == null)
-                    _title = new GUIStyle(GUI.skin.label)
-                    {
-                        fontStyle = FontStyle.Bold,
-                        alignment = TextAnchor.MiddleCenter,
-                        wordWrap = true
-                    };
+                EnsureCopyStyles();
+                int n = Mathf.Min(rows.Length, _rowA.Length);
+                var fit = FitCopy(block, s, headline, rows, n);
+                _title.fontSize = fit.TitlePx;
+                _body.fontSize = fit.BodyPx;
+                // Spare height: half a share above the title and below the last row, a full
+                // share in each gap.
+                float share = fit.Spare / Mathf.Max(1f, n + 1f);
+                float y = block.y + share * 0.5f;
                 if (titleA >= 0.04f)
                 {
-                    int titleHi = Mathf.Max(28, Mathf.RoundToInt(60f * s * grow));
-                    _title.fontSize = FitFontWrapped(_title, headline, titleR.width * 0.96f, titleR.height * 0.92f, 16, titleHi);
-                    int titleInk = Mathf.Max(3, Mathf.RoundToInt(_title.fontSize * 0.14f));
-                    StampOutlined(titleR, headline, _title, new Color(1f, 0.97f, 0.86f, titleA), 0, titleInk);
+                    int titleInk = Mathf.Max(3, Mathf.RoundToInt(fit.TitlePx * 0.14f));
+                    StampOutlined(new Rect(block.x, y, block.width, fit.TitleH), headline, _title, new Color(1f, 0.97f, 0.86f, titleA), 0, titleInk);
                 }
-
-                if (_body == null)
-                    _body = new GUIStyle(GUI.skin.label)
-                    {
-                        fontStyle = FontStyle.Bold,
-                        alignment = TextAnchor.MiddleLeft,
-                        wordWrap = true
-                    };
-                float gap = 6f * s * grow;
-                float rowsTop = titleR.yMax + gap;
-                int n = Mathf.Min(rows.Length, _rowA.Length);
-                float rowH = (block.yMax - rowsTop) / Mathf.Max(1, n);
-                int bodyHi = Mathf.Max(16, Mathf.RoundToInt(29f * s * grow));
-                float mark = Mathf.Min(rowH * 0.46f, 26f * s * grow);
-                float labX = block.x + mark + 8f * s;
-                float labW = Mathf.Max(20f, block.xMax - labX);
-                int bodyPx = bodyHi;
-                for (int i = 0; i < n; i++)
-                {
-                    int px = FitFontWrapped(_body, rows[i], labW, rowH * 0.88f, 13, bodyHi);
-                    if (px < bodyPx) bodyPx = px;
-                }
-                _body.fontSize = bodyPx;
-                int ink = Mathf.Max(3, Mathf.RoundToInt(bodyPx * 0.16f));
+                y += fit.TitleH + fit.BodyPx * CopyGapTitle + share;
+                float labX = block.xMax - fit.LabW;
+                float line = fit.BodyPx * 1.15f;
+                int ink = Mathf.Max(3, Mathf.RoundToInt(fit.BodyPx * 0.16f));
                 for (int i = 0; i < n; i++)
                 {
                     float a = _rowA[i];
-                    if (a < 0.04f) continue;
-                    float rise = (1f - a) * RowRise * s;
-                    var row = new Rect(block.x, rowsTop + rowH * i + rise, block.width, rowH);
-                    var mk = new Rect(block.x, row.center.y - mark * 0.5f, mark, mark);
-                    DrawCheckMark(mk, new Color(0.55f, 0.85f, 0.42f, a));
-                    var lab = new Rect(labX, row.y, labW, row.height);
-                    StampOutlined(lab, rows[i], _body, new Color(1f, 0.97f, 0.88f, a), 0, ink);
+                    float rowH = fit.RowH[i];
+                    if (a >= 0.04f)
+                    {
+                        float rise = (1f - a) * RowRise * s;
+                        var mk = new Rect(block.x, y + rise + (line - fit.Mark) * 0.5f, fit.Mark, fit.Mark);
+                        DrawCheckMark(mk, new Color(0.55f, 0.85f, 0.42f, a));
+                        StampOutlined(new Rect(labX, y + rise, fit.LabW, rowH), rows[i], _body, new Color(1f, 0.97f, 0.88f, a), 0, ink);
+                    }
+                    y += rowH + fit.BodyPx * CopyGapRow + share;
                 }
             }
 

@@ -599,8 +599,9 @@ namespace FlockFive
             return AdoptCaptionLine() == AdoptGreetLine;
         }
 
-        // LEVEL during the greet. Dismisses that sentence and does not start the level.
-        // In the air, the bird still flies to the tip. On the wood, the glove step starts.
+        // Any tap during the greet (StepTapGate's any-tap step, GateAdoptGreet) dismisses that
+        // sentence; the tap is eaten, so LEVEL does not start. In the air, the bird flies to
+        // the tip and the glove poses fresh once it perches. On the wood, the glove step starts.
         void AdvanceAdoptGreet()
         {
             _adoptGreetDone = true;

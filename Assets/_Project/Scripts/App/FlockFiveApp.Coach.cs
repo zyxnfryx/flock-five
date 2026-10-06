@@ -3801,8 +3801,12 @@ namespace FlockFive
         // finishing the step, or a pause (OnGUI returns before the gate) ends it on the spot. An
         // empty target fails open. HealInterruptedTutorials finishes a gated step that has held
         // taps for longer than TutorialHeal.MaxGateSeconds with no glove posed on its target.
+        // An any-tap step (AnyTap) has no glove and no target: the first press anywhere finishes
+        // it (CompleteGatedStep) and is eaten with its drag and release, so nothing under it
+        // fires. It never holds a tap, so it is not blind time for the heal.
         const int GatePokerBack = 1;
         const int GateAlbumPage = 2;
+        const int GateAdoptGreet = 3;
 
         struct StepGate
         {
@@ -3811,6 +3815,8 @@ namespace FlockFive
             public Rect Target;
             // Optional: a swipe that starts here may end the step too (album pages).
             public Rect SwipeArea;
+            // Any press anywhere finishes the step (the whole screen is the target).
+            public bool AnyTap;
         }
 
         float _gateBlindSince = -1f;
@@ -3830,6 +3836,14 @@ namespace FlockFive
                 gate.Target = _albumPagerR;
                 gate.SwipeArea = _albumSwipeR;
             }
+            else if (AdoptGreetUp() && AdoptTurn())
+            {
+                // Home adopt greet ("Look, a bird followed you home!"): any tap goes to the
+                // "Tap your bird for a closer look." step.
+                gate.Step = GateAdoptGreet;
+                gate.Target = new Rect(0f, 0f, Screen.width, Screen.height);
+                gate.AnyTap = true;
+            }
             else return false;
             if (gate.Target.width < 2f || gate.Target.height < 2f)
             {
@@ -3837,6 +3851,14 @@ namespace FlockFive
                 return false;
             }
             return true;
+        }
+
+        // Finishes a gated step: the heal (stuck, no glove) and an any-tap step's press share it.
+        void CompleteGatedStep(int step)
+        {
+            if (step == GatePokerBack) MarkPokerBackDone();
+            else if (step == GateAlbumPage) FinishAlbumTutor();
+            else if (step == GateAdoptGreet) AdvanceAdoptGreet();
         }
 
         // Album lesson, last step: "Swipe to turn the page! Or tap a page number." The glove is
@@ -3857,6 +3879,16 @@ namespace FlockFive
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
             if (!StepTapGate(out var gate)) return;
+            var kind = t == EventType.MouseDown ? GatePointer.Down : t == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
+            if (gate.AnyTap)
+            {
+                // Eaten before any control sees it: no splash play, no rail button, no bird hop.
+                // The release then finds no hotControl, so nothing fires on it either.
+                if (TutorialHeal.GateAdvances(kind, true, e.button)) CompleteGatedStep(gate.Step);
+                if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+                e.Use();
+                return;
+            }
             var at = e.mousePosition;
             bool inSwipe = gate.SwipeArea.width > 2f && gate.SwipeArea.Contains(at);
             bool swipeTaken = false;
@@ -3865,7 +3897,6 @@ namespace FlockFive
                 float s = Mathf.Max(Screen.height / 720f, 1f);
                 swipeTaken = PageSwipeDir(at - _pageSwipe.Origin, AlbumSwipeMin(s), out _);
             }
-            var kind = t == EventType.MouseDown ? GatePointer.Down : t == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
             if (TutorialHeal.GateLets(kind, gate.Target.Contains(at), inSwipe, swipeTaken)) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
             e.Use();
@@ -4002,7 +4033,7 @@ namespace FlockFive
             // Step tap gate: how long it has held taps with no glove posed on its target.
             // A pause, an ad, or the resume swallow is not blind time.
             bool gateUp = StepTapGate(out var gate);
-            if (!gateUp || GloveArmedOn(gate.Target) || GamePause.Paused || Ads.IsShowing || now < _resumeInputUntil)
+            if (!gateUp || gate.AnyTap || GloveArmedOn(gate.Target) || GamePause.Paused || Ads.IsShowing || now < _resumeInputUntil)
                 _gateBlindSince = -1f;
             else if (_gateBlindSince < 0f)
                 _gateBlindSince = now;
@@ -4065,8 +4096,7 @@ namespace FlockFive
             if ((fix & TutorFix.FinishGatedStep) != 0)
             {
                 // Finish cleanly rather than hold taps behind a glove that cannot show.
-                if (gate.Step == GatePokerBack) MarkPokerBackDone();
-                else if (gate.Step == GateAlbumPage) FinishAlbumTutor();
+                CompleteGatedStep(gate.Step);
                 _gateBlindSince = -1f;
                 _gloveVis = false;
             }

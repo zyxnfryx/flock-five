@@ -312,10 +312,7 @@ namespace FlockFive
 #endif
             var safe = Screen.safeArea;
             float top = TopHud();
-            float xSz = Mathf.Max(48f * s, 44f);
-            var xBtn = new Rect(
-                Screen.width - Mathf.Max(14f, Screen.width - safe.xMax + 8f) - xSz,
-                top, xSz, xSz);
+            var xBtn = CornerCloseRect(s, top);
 
             DailyLayout(s, out var card, out var flower, out var board, out float band);
             var disc = FlowerDisc(flower, 0f);
@@ -327,7 +324,7 @@ namespace FlockFive
             float y1 = Mathf.Max(card.yMax, flower.yMax);
             var swallow = new Rect(x0 - 12f, y0 - 12f, (x1 - x0) + 24f, (y1 - y0) + 24f);
 
-            bool xHit = HitPad(xBtn, out bool xHeld);
+            bool xHit = HitPad(CloseTapRect(xBtn), out bool xHeld);
             bool claim = HitPad(claimHit, out bool claimHeld);
             HitPad(swallow, out _);
             bool outside = HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);

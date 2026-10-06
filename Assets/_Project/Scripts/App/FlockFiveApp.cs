@@ -3358,7 +3358,8 @@ namespace FlockFive
         // PlayComboPop). Sounds fire off the same timeline, so they stay on their beats. The two
         // real-time waits in the window (combo pop spacing, the pre-finale beat) divide by it by
         // hand. Back to 1 at the finale, Load, restart, home, any pest on stage, an ad, background.
-        const float AutoResolveSpeed = 1.2f;
+        // Build 63: another 20% (1.2 x 1.2).
+        const float AutoResolveSpeed = 1.44f;
         float _autoResolveScale = 1f;
         bool _autoResolveDone;
 
@@ -6666,7 +6667,7 @@ namespace FlockFive
             BeginRewardPay(coins);
         }
 
-        void DrawStreakRewards(float s)
+        void DrawStreakRewards(float s, bool raiseSign = false)
         {
             var pig = PiggyRect(s);
             var prevM = GUI.matrix;
@@ -6689,7 +6690,16 @@ namespace FlockFive
 
             // Bigger persistent balance: "$12" + coin sprite on the right.
             DrawCoinBalance(s, pig.x - 12f, pig.center.y);
+            if (!raiseSign) DrawStreakSignLayer(s);
+        }
 
+        // The reward streak pop-up as one layer: sign (box, multiplier, brass sparkles), the
+        // coins it launches, and the piggy's catch glow. Draw-only, no hits. The home screen
+        // paints it after the side rails (DrawSplash) so the rails never cover it; every other
+        // caller gets it inside DrawStreakRewards as before.
+        void DrawStreakSignLayer(float s)
+        {
+            var pig = PiggyRect(s);
             // Streak sign holds, then fades on its own.
             DrawStreakToast(s, pig);
             DrawCoinFly(pig);
@@ -7227,7 +7237,7 @@ namespace FlockFive
             float xSz = Mathf.Max(40f, 42f * s);
             var xBtn = new Rect(card.xMax - xSz - 6f, card.y + 6f, xSz, xSz);
             bool watch = HitPad(watchR, out bool watchHeld);
-            bool close = HitPad(xBtn, out bool xHeld);
+            bool close = HitPad(CloseTapRect(xBtn), out bool xHeld);
             var disc = DrawPopupButton(watchR, watchHeld, true);
             st.wordWrap = false;
             st.fontSize = FitFont(st, "Watch", disc.width * 0.7f, disc.height * 0.45f, 14, Mathf.RoundToInt(24f * s));
@@ -8106,7 +8116,8 @@ namespace FlockFive
             DrawAmbientSplashBirds(s, behind: true);
             DrawSplashTitleMark(s);
             DrawAmbientSplashBirds(s, behind: false);
-            DrawStreakRewards(s);
+            // Piggy and balance here; the streak sign layer waits until the rails are drawn.
+            DrawStreakRewards(s, raiseSign: true);
 
             if (HomeLimbVisible())
             {
@@ -8202,11 +8213,15 @@ namespace FlockFive
             // this button, a coin payout still ticking (softModal) must not eat the tap: the
             // glove already faded on it, so the card has to open on that first tap.
             bool dailyLesson = HomeStepRail() == RailDaily;
-            if (dailyDraw && !hardModal && (!softModal || dailyLesson) && HomeTapAllowed(RailDaily)
+            // The streak sign itself (_streakSlide) always blocks the rail: it now sits on top.
+            if (dailyDraw && !hardModal && (!softModal || (dailyLesson && _streakSlide < 0f)) && HomeTapAllowed(RailDaily)
                 && HitPad(SplashDailyTapRect(), out dailyHeld))
                 OpenDailyCard();
             if (dailyDraw)
                 DrawDailyRail(dailyR, s, dailyHeld);
+            // Reward streak pop-up above the side rails (pig / hive / VIP / poker / daily), as
+            // one unit. Same rects as before; only the paint order moved.
+            DrawStreakSignLayer(s);
 
 #if UNITY_EDITOR
             string ease = _shotEase ?? LevelData.JokeEase(next);
@@ -8219,9 +8234,8 @@ namespace FlockFive
             // before the play button can arm or fire on release.
             HitHomeAvatar(s, tutorUp);
             HitAdoptTutor(s);
-            // Greet only. The flower tap dismisses that line. It does not Load.
-            if (AdoptGreetUp() && HitHomeFirst(FlowerPlayRect(), out _))
-                AdvanceAdoptGreet();
+            // The greet's taps never get here: StepTapGate's any-tap step (GateAdoptGreet)
+            // eats them at the top of OnGUI and advances to the look step.
             // Owed bird lesson keeps LEVEL from starting under the breath or the greet.
             if (DrawFlowerPlay(s, ease, number, acceptTap: !modal && !AdoptHoldsQueue() && HomeTapAllowed(-1)))
             {
@@ -16003,12 +16017,9 @@ namespace FlockFive
 
             var safe = Screen.safeArea;
             float top = TopHud();
-            float xSz = Mathf.Max(48f * s, 44f);
-            var xBtn = new Rect(
-                Screen.width - Mathf.Max(14f, Screen.width - safe.xMax + 8f) - xSz,
-                top, xSz, xSz);
+            var xBtn = CornerCloseRect(s, top);
             bool xHeld = false;
-            if (!_freezeOffer && HitPad(xBtn, out xHeld))
+            if (!_freezeOffer && HitPad(CloseTapRect(xBtn), out xHeld))
             {
                 DismissAdHand();
                 if (_keepStreak)
@@ -16324,6 +16335,38 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // Shared close button (Daily Bonus, Go VIP, gift / freeze card, restart-streak card).
+        // CornerCloseRect seats the screen-corner one; CloseTapRect is the hit for all of them.
+        // Build 63 (Brandon): the drawn x is 1.5x. Only the glyph grows: it is fitted in a
+        // label box CloseGlyphGrow times the button, centred, so its ink (about 0.6 of the
+        // button side) stays inside the button and the dark disc. The button rect, and so
+        // every seat next to the logo or a card, is unchanged.
+        const float CloseGlyphGrow = 1.5f;
+
+        // 44 pt in pixels. dpi / 150 rounds up on 2x (326 dpi) and 3x (460 dpi) iPhones.
+        static float MinTapPx()
+        {
+            float dpi = Screen.dpi;
+            float pt = dpi > 1f ? Mathf.Max(1f, dpi / 150f) : Mathf.Max(1f, Screen.height / 720f);
+            return 44f * pt;
+        }
+
+        static Rect CornerCloseRect(float s, float top)
+        {
+            var safe = Screen.safeArea;
+            float xSz = Mathf.Max(48f * s, 44f);
+            return new Rect(Screen.width - Mathf.Max(14f, Screen.width - safe.xMax + 8f) - xSz, top, xSz, xSz);
+        }
+
+        // Tap area at least MinTapPx on each side, centred on the drawn button.
+        static Rect CloseTapRect(Rect xBtn)
+        {
+            float min = MinTapPx();
+            float w = Mathf.Max(xBtn.width, min);
+            float h = Mathf.Max(xBtn.height, min);
+            return new Rect(xBtn.center.x - w * 0.5f, xBtn.center.y - h * 0.5f, w, h);
+        }
+
         static void DrawGiftCloseX(Rect xBtn, bool held, float s)
         {
             var glow = GlowTex();
@@ -16339,10 +16382,13 @@ namespace FlockFive
                 };
             var xLab = _giftX;
             int xLo = Mathf.Max(18, Mathf.RoundToInt(22f * s));
-            int xHi = Mathf.Max(xLo + 4, Mathf.RoundToInt(36f * s));
-            xLab.fontSize = FitFont(xLab, "×", xBtn.width * 0.84f, xBtn.height * 0.84f, 8, xHi);
-            int xInk = Mathf.Clamp(Mathf.RoundToInt(xLab.fontSize * 0.12f), 2, 6);
-            StampOutlined(xBtn, "×", xLab, new Color(1f, 0.94f, 0.62f, held ? 1f : 0.96f), 2, xInk);
+            int xHi = Mathf.Max(xLo + 4, Mathf.RoundToInt(36f * s * CloseGlyphGrow));
+            float gw = xBtn.width * CloseGlyphGrow;
+            float gh = xBtn.height * CloseGlyphGrow;
+            var glyph = new Rect(xBtn.center.x - gw * 0.5f, xBtn.center.y - gh * 0.5f, gw, gh);
+            xLab.fontSize = FitFont(xLab, "×", glyph.width * 0.84f, glyph.height * 0.84f, 8, xHi);
+            int xInk = Mathf.Clamp(Mathf.RoundToInt(xLab.fontSize * 0.12f), 2, 8);
+            StampOutlined(glyph, "×", xLab, new Color(1f, 0.94f, 0.62f, held ? 1f : 0.96f), 2, xInk);
         }
 
         // `plate` is the OUTER frame rect. grow < 0 keeps that edge; a positive grow

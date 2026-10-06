@@ -83,6 +83,13 @@ namespace FlockFive
         // The glove's target always may. A press may also land in the step's swipe area so a
         // swipe can start there, and a release outside the target counts only as the end of
         // a real swipe. Drags pass: they only move a control that already took the press.
+        // An any-tap step: the first left press anywhere finishes it. Drags and the release only
+        // get eaten (GateLets is never asked), so the finishing tap reaches nothing beneath.
+        public static bool GateAdvances(GatePointer kind, bool anyTap, int button)
+        {
+            return anyTap && kind == GatePointer.Down && button == 0;
+        }
+
         public static bool GateLets(GatePointer kind, bool inTarget, bool inSwipeArea, bool swipeTaken)
         {
             if (inTarget) return true;

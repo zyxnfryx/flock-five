@@ -84,6 +84,22 @@ namespace FlockFive.Editor
             Gate("release that ends a swipe", GatePointer.Up, false, true, true, true);
             Gate("tap on an album sleeve", GatePointer.Up, false, true, false, false);
 
+            // Any-tap step (home adopt greet): only a left press finishes it.
+            void Any(string name, GatePointer kind, bool anyTap, int button, bool want)
+            {
+                bool got = TutorialHeal.GateAdvances(kind, anyTap, button);
+                bool ok = got == want;
+                if (ok) pass++; else fail++;
+                string line = (ok ? "PASS  " : "FAIL  ") + "any-tap: " + name + "  want " + want + "  got " + got;
+                sb.AppendLine(line);
+                Debug.Log("[tutorial-heal] " + line);
+            }
+            Any("press anywhere advances", GatePointer.Down, true, 0, true);
+            Any("release does not advance again", GatePointer.Up, true, 0, false);
+            Any("drag does not advance", GatePointer.Drag, true, 0, false);
+            Any("right button does not advance", GatePointer.Down, true, 1, false);
+            Any("one-control gate never advances on a miss", GatePointer.Down, false, 0, false);
+
             sb.AppendLine(fail == 0 ? "ALL OK  " + pass : "FAILED  " + fail + "  passed " + pass);
             File.WriteAllText(Out, sb.ToString());
             Debug.Log("[tutorial-heal] " + (fail == 0 ? "ALL OK " + pass : "FAILED " + fail));
