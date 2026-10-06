@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace FlockFive
 {
     // One tile on the player's 4x4 grid. Kind -1 is a yard-honey tile (not an album bee).
-    // Honey always comes from Hive.HoneyOfFinish (the one 2/3/5 table), or the yard value.
+    // Honey comes from Hive.HoneyOf (base finish + card upgrades), or the yard value.
     public struct BadgerTile
     {
         public int Kind;
@@ -15,7 +15,7 @@ namespace FlockFive
 
         public static BadgerTile Bee(int kind, BeeFinish finish)
         {
-            return new BadgerTile { Kind = kind, Finish = finish, Honey = Hive.HoneyOfFinish(finish) };
+            return new BadgerTile { Kind = kind, Finish = finish, Honey = Hive.HoneyOf(kind, finish) };
         }
 
         public static BadgerTile YardTile()

@@ -46,6 +46,7 @@ namespace FlockFive
         const string PrefCollected = "flockfive.hive.collected";
         const string PrefMigrated = "flockfive.hive.collected.mig";
         const string PrefLegacy = "flockfive.hive.collected.legacy";
+        const string PrefUpgrades = "flockfive.hive.up.v1";
         const char Pair = ';';
         const char Kv = ':';
         public const int Finishes = 3;
@@ -454,6 +455,7 @@ namespace FlockFive
         };
 
         static int[] _counts;
+        static int[] _upgrades;
         static bool _ready;
 
         public static int Kinds => Roster.Length;
@@ -469,8 +471,9 @@ namespace FlockFive
         public static int KindOfSlot(int slot) => slot / Finishes;
         public static BeeFinish FinishOfSlot(int slot) => (BeeFinish)(slot % Finishes);
 
-        // Honey a finish is worth in the badger contest. Foil is Holo.
+        // Base honey a finish is worth in the badger contest. Foil is Holo.
         // Regular 2, foil 3, Inverse Rainbow 5. Yard tiles are not a finish.
+        // Card upgrades add on top (see HoneyOfSlot); this is the floor only.
         public static int HoneyOfFinish(BeeFinish finish)
         {
             if (finish == BeeFinish.Holo) return 3;
@@ -478,18 +481,75 @@ namespace FlockFive
             return 2;
         }
 
-        // "H2" / "H3" / "H5". The inspect-back chip and the battle tile digit both
-        // read HoneyOfFinish, so the 2/3/5 table lives in one place.
+        // Build 64: coin upgrades raise honey. Caps by rarity — Normal 1, Holo 2, Inverse 3.
+        public const int UpgradeCost = 1000;
+
+        public static int MaxUpgrades(BeeFinish finish)
+        {
+            if (finish == BeeFinish.InverseRainbow) return 3;
+            if (finish == BeeFinish.Holo) return 2;
+            return 1;
+        }
+
+        public static int UpgradeOfSlot(int slot)
+        {
+            Warm();
+            if ((uint)slot >= (uint)_upgrades.Length) return 0;
+            int n = _upgrades[slot];
+            int cap = MaxUpgrades(FinishOfSlot(slot));
+            return n > cap ? cap : n;
+        }
+
+        public static int UpgradeOf(int kind, BeeFinish finish) =>
+            UpgradeOfSlot(SlotOf(kind, finish));
+
+        // Live honey for album + badger: base finish value + purchased upgrades.
+        public static int HoneyOfSlot(int slot)
+        {
+            Warm();
+            return HoneyOfFinish(FinishOfSlot(slot)) + UpgradeOfSlot(slot);
+        }
+
+        public static int HoneyOf(int kind, BeeFinish finish) =>
+            HoneyOfSlot(SlotOf(kind, finish));
+
+        public static bool UpgradeRoom(int slot)
+        {
+            Warm();
+            if ((uint)slot >= (uint)AlbumSlots) return false;
+            if (CountOfSlot(slot) <= 0) return false;
+            return UpgradeOfSlot(slot) < MaxUpgrades(FinishOfSlot(slot));
+        }
+
+        // Upgrade UI + tutor wait for the first honey-badger encounter (coach stamp).
+        public static bool UpgradesUnlocked =>
+            BadgerSchedule.Enabled && BadgerCopy.CoachDone();
+
+        public static bool CanUpgrade(int slot) =>
+            UpgradesUnlocked && UpgradeRoom(slot) && Purse.Coins >= UpgradeCost;
+
+        // Spends UpgradeCost and bumps the slot. False if maxed or broke.
+        public static bool TryUpgrade(int slot)
+        {
+            if (!UpgradesUnlocked || !UpgradeRoom(slot)) return false;
+            if (!Purse.TrySpend(UpgradeCost)) return false;
+            _upgrades[slot] = UpgradeOfSlot(slot) + 1;
+            SaveUpgrades();
+            return true;
+        }
+
+        // "H2" / "H3" / … Live label includes upgrades for the owned slot when known.
         public static string HoneyLabel(BeeFinish finish)
         {
             return "H" + HoneyOfFinish(finish);
         }
 
+        public static string HoneyLabelOfSlot(int slot) => "H" + HoneyOfSlot(slot);
+
         static string[][] _honeyChips;
 
-        // Four chip slots for CardText.DrawAttrs: the honey label, then three empty.
-        // Cached so OnGUI does not allocate. Null while the badger switch is off,
-        // so the card back is unchanged until the contest ships.
+        // Legacy text-chip helper. Album inspect draws honeycomb tiles via
+        // CardText.DrawHoneyRow + HoneyOfSlot instead — no empty placeholders.
         public static string[] HoneyChips(BeeFinish finish)
         {
             if (!BadgerSchedule.Enabled) return null;
@@ -497,7 +557,7 @@ namespace FlockFive
             {
                 _honeyChips = new string[Finishes][];
                 for (int f = 0; f < Finishes; f++)
-                    _honeyChips[f] = new[] { HoneyLabel((BeeFinish)f), "", "", "" };
+                    _honeyChips[f] = new[] { HoneyLabel((BeeFinish)f) };
             }
             int ix = (int)finish;
             if ((uint)ix >= (uint)Finishes) return null;
@@ -718,14 +778,17 @@ namespace FlockFive
 
         static void Warm()
         {
-            if (_ready && _counts != null && _counts.Length == AlbumSlots) return;
+            if (_ready && _counts != null && _counts.Length == AlbumSlots
+                && _upgrades != null && _upgrades.Length == AlbumSlots) return;
             _counts = new int[AlbumSlots];
+            _upgrades = new int[AlbumSlots];
             _ready = true;
 
             var raw = PlayerPrefs.GetString(Pref, "");
             if (!string.IsNullOrEmpty(raw))
             {
                 LoadFlat(raw);
+                LoadUpgrades();
                 return;
             }
 
@@ -744,6 +807,7 @@ namespace FlockFive
                 if (kind >= 0) _counts[SlotOf(kind, BeeFinish.Normal)] = n;
             }
             Save();
+            LoadUpgrades();
         }
 
         // v2 format: id|finish:count  (finish is 0/1/2); also accepts legacy id:count as Normal.
@@ -796,6 +860,60 @@ namespace FlockFive
                 }
             }
             PlayerPrefs.SetString(Pref, sb.ToString());
+            PlayerPrefs.Save();
+        }
+
+        // Same id|finish:n shape as counts. Missing keys stay 0.
+        static void LoadUpgrades()
+        {
+            if (_upgrades == null || _upgrades.Length != AlbumSlots)
+                _upgrades = new int[AlbumSlots];
+            for (int i = 0; i < _upgrades.Length; i++) _upgrades[i] = 0;
+            var raw = PlayerPrefs.GetString(PrefUpgrades, "");
+            if (string.IsNullOrEmpty(raw)) return;
+            var parts = raw.Split(Pair);
+            for (int p = 0; p < parts.Length; p++)
+            {
+                var bit = parts[p];
+                int cut = bit.IndexOf(Kv);
+                if (cut <= 0) continue;
+                var key = bit.Substring(0, cut);
+                if (!int.TryParse(bit.Substring(cut + 1), out int n) || n <= 0) continue;
+                int kind;
+                BeeFinish finish = BeeFinish.Normal;
+                int bar = key.IndexOf('|');
+                if (bar > 0)
+                {
+                    kind = IndexOf(key.Substring(0, bar));
+                    if (int.TryParse(key.Substring(bar + 1), out int f) && f >= 0 && f < Finishes)
+                        finish = (BeeFinish)f;
+                }
+                else kind = IndexOf(key);
+                if (kind < 0) continue;
+                int slot = SlotOf(kind, finish);
+                int cap = MaxUpgrades(finish);
+                _upgrades[slot] = n > cap ? cap : n;
+            }
+        }
+
+        static void SaveUpgrades()
+        {
+            if (_upgrades == null) return;
+            var sb = new System.Text.StringBuilder();
+            for (int kind = 0; kind < Kinds; kind++)
+            {
+                for (int f = 0; f < Finishes; f++)
+                {
+                    int slot = SlotOf(kind, (BeeFinish)f);
+                    int n = _upgrades[slot];
+                    if (n <= 0) continue;
+                    int cap = MaxUpgrades((BeeFinish)f);
+                    if (n > cap) n = cap;
+                    if (sb.Length > 0) sb.Append(Pair);
+                    sb.Append(Roster[kind].Id).Append('|').Append(f).Append(Kv).Append(n);
+                }
+            }
+            PlayerPrefs.SetString(PrefUpgrades, sb.ToString());
             PlayerPrefs.Save();
         }
     }

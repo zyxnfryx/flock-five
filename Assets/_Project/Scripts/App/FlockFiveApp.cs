@@ -270,9 +270,14 @@ namespace FlockFive
         const string CoachHiveAlbumKey = "flockfive.coach.hivealbum";
         const string AlbumTapLine = "Tap a card you have\nto enlarge it.";
         const string AlbumFlipLine = "Tap again to flip.";
+        // After flip: honeycombs by rarity (shared CardText / HoneyOfFinish floor).
+        const string AlbumHoneyLine = "Honeycombs are honey.\n2 normal · 3 foil · 5 inverse.";
+        // Separate post-badger step (CoachHiveUpgradeKey).
+        const string AlbumUpgradeLine = "Upgrade adds honey for 1000 coins.\nMax 1 · 2 · 3 by rarity.";
         const string AlbumPageLine = "Swipe to turn the page!\nOr tap a page number.";
         // Empty book: nothing to enlarge yet, so the glove points at the grid itself.
         const string AlbumEmptyLine = "Tap a card to take\na closer look!";
+        const string CoachHiveUpgradeKey = "flockfive.coach.hiveupgrade";
         static readonly Color AlbumInk = new Color(1f, 0.98f, 0.90f, 1f);
         bool _hiveTutorOn;
         float _hiveTutorT;
@@ -286,6 +291,13 @@ namespace FlockFive
         int _albumTutorSlot = -1;
         bool _albumTutorAimOk;
         Vector2 _albumTutorAim;
+        // Separate Collection step after first honey-badger encounter.
+        bool _upgradeTutorOn;
+        bool _upgradeTutorKnown;
+        bool _upgradeTutorDone;
+        bool _upgradeTutorAimOk;
+        Vector2 _upgradeTutorAim;
+        Rect _upgradeBtnR;
         float _albumOpenAt = -1f;
         int _albumOpenFrames;
         int _albumAgeFrame = -1;
@@ -3371,6 +3383,10 @@ namespace FlockFive
             return _board.Solved;
         }
 
+        // In-garden collection panel or bee-card inspect. One gate for "hive UI is up":
+        // SettleIfIdle holds the finale on it so the board can finish resolving underneath.
+        bool HiveCollectionOpen() => _levelHive || _hiveInspect >= 0;
+
         void SyncAutoResolveSpeed()
         {
             SetAutoResolveSpeed(AutoResolveLive() ? AutoResolveSpeed : 1f);
@@ -3611,7 +3627,7 @@ namespace FlockFive
             _finaleHold = true;
             _busy = true;
             StopPests();
-            _levelHive = false;
+            // Keep an open collection / inspect up: resolve finishes under it; finale waits.
             while (_comboPopPump || _comboPopLive > 0 || _comboShows.Count > 0)
             {
                 if (GamePause.Paused)
@@ -3634,9 +3650,19 @@ namespace FlockFive
                 _gardenScoring = false;
                 yield break;
             }
-            // The auto-resolve window ends where the finale starts: back to 1x for good.
+            // Auto-resolve window ends here (garden work done). Hive browse is real-time.
             _autoResolveDone = true;
             SetAutoResolveSpeed(1f);
+            // Hold the finale until the player dismisses the collection / inspect.
+            while (HiveCollectionOpen())
+            {
+                if (_restarting || _splash)
+                {
+                    _gardenScoring = false;
+                    yield break;
+                }
+                yield return null;
+            }
             yield return FinaleShow.Play(_garden, this);
             if (_restarting || _splash)
             {
@@ -14080,7 +14106,8 @@ namespace FlockFive
             var titleR = new Rect(textX, hiveHead.center.y - titleH * 0.5f, textW, titleH);
             titleSt.fontSize = FitFont(titleSt, HiveTitle, titleR.width, titleR.height * 0.9f, floor, titlePx);
 
-            // Two short lines, always.
+            // Two short lines, always. Content rects go to DrawCoachPanel (shared pad);
+            // do not pre-inflate or the plate overlaps the Back medal.
             string body = HiveSubtitle + "\n" + HiveHowTo;
             var bodySt = GuiPool.Label(GuiSlot.AlbumBody);
             bodySt.fontStyle = FontStyle.Bold;
@@ -14090,18 +14117,13 @@ namespace FlockFive
             if (bodyPx < 15) bodyPx = 15;
             float bodyW = Mathf.Max(48f, textRight - left);
             bodySt.fontSize = bodyPx;
-            float bodyH = Mathf.Max(bodyPx + 8f, bodySt.CalcHeight(GuiPool.Text(GuiText.AlbumBody, body), bodyW) + 4f);
-            float bodyY = Mathf.Max(hiveHead.yMax, back.yMax) + 6f * s;
+            float bodyH = Mathf.Max(bodyPx + 6f, bodySt.CalcHeight(GuiPool.Text(GuiText.AlbumBody, body), bodyW) + 2f);
+            float bodyY = Mathf.Max(hiveHead.yMax, CaptionBelowBack(s, TopHud()));
             var bodyR = new Rect(left, bodyY, bodyW, bodyH);
 
-            var titlePlate = new Rect(
-                hiveHead.x - 6f * s,
-                hiveHead.y - 4f * s,
-                Mathf.Max(48f, textRight - hiveHead.x + 12f * s),
-                hiveHead.height + 8f * s);
-            var plate = new Rect(left - 6f * s, bodyR.y - 4f * s, Mathf.Max(48f, textRight - left + 12f * s), bodyR.height + 8f * s);
+            var titlePlate = new Rect(hiveHead.x, hiveHead.y, Mathf.Max(48f, textRight - hiveHead.x), hiveHead.height);
             DrawCoachPanel(titlePlate, 1f);
-            DrawCoachPanel(plate, 1f);
+            DrawCoachPanel(bodyR, 1f);
             DrawHiveButton(hiveHead, s);
             StampReadable(titleR, HiveTitle, titleSt, AlbumInk);
             GUI.color = new Color(1f, 0.84f, 0.38f, 0.92f);
@@ -14109,7 +14131,7 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(titleR.x, titleR.yMax - 1f, ruleW, Mathf.Max(2f, 3f * Mathf.Min(s, 1.35f))), Texture2D.whiteTexture);
             GUI.color = Color.white;
             StampReadable(bodyR, body, bodySt, AlbumInk);
-            return plate.yMax + 4f * s;
+            return CoachPanelRect(bodyR).yMax + 4f * s;
         }
 
         void NoteAlbumOpen()
@@ -14197,7 +14219,7 @@ namespace FlockFive
             _hivePageTurn = 0f;
             _hiveFlip = -1;
             Sfx.PageTurn();
-            if (_albumTutorOn && _albumTutorStep >= 3)
+            if (_albumTutorOn && _albumTutorStep >= AlbumStepPage)
                 FinishAlbumTutor();
             return true;
         }
@@ -14207,9 +14229,14 @@ namespace FlockFive
             return _hiveInspect >= 0 && !_hiveInspectClosing && _hiveInspectT >= 0.28f;
         }
 
+        // Steps: 1 enlarge · 2 flip · 3 honeycombs by rarity · 4 page.
+        // Upgrade is a separate post-badger tutor (CoachHiveUpgradeKey).
+        const int AlbumStepPage = 4;
+
         string AlbumTutorLine()
         {
-            if (_albumTutorStep >= 3) return AlbumPageLine;
+            if (_albumTutorStep >= AlbumStepPage) return AlbumPageLine;
+            if (_albumTutorStep == 3) return AlbumHoneyLine;
             if (_albumTutorStep == 2) return AlbumFlipLine;
             return Hive.Found <= 0 ? AlbumEmptyLine : AlbumTapLine;
         }
@@ -14250,7 +14277,8 @@ namespace FlockFive
             _gloveVis = false;
             _gloveReady = false;
             if (was) GloveVeilReset();
-            if (_cueLine == AlbumTapLine || _cueLine == AlbumFlipLine || _cueLine == AlbumPageLine || _cueLine == AlbumEmptyLine)
+            if (_cueLine == AlbumTapLine || _cueLine == AlbumFlipLine || _cueLine == AlbumHoneyLine
+                || _cueLine == AlbumPageLine || _cueLine == AlbumEmptyLine)
                 _cueLine = null;
             _cueSpoken = null;
 #if UNITY_EDITOR
@@ -14276,6 +14304,69 @@ namespace FlockFive
                 save = true;
             }
             if (save) PlayerPrefs.Save();
+        }
+
+        bool UpgradeTutorDone()
+        {
+            if (_upgradeTutorKnown) return _upgradeTutorDone;
+            _upgradeTutorKnown = true;
+            _upgradeTutorDone = PlayerPrefs.GetInt(CoachHiveUpgradeKey, 0) != 0;
+            return _upgradeTutorDone;
+        }
+
+        void BeginUpgradeTutor()
+        {
+            _upgradeTutorOn = true;
+            _upgradeTutorAimOk = false;
+            _coachFade = 0f;
+            _tutorSeatOn = false;
+            _cueSpoken = null;
+            _cueLine = null;
+            GloveVeilReset();
+            _gloveVis = false;
+            _gloveReady = false;
+            CueLine(AlbumUpgradeLine);
+        }
+
+        void FinishUpgradeTutor()
+        {
+            bool was = _upgradeTutorOn;
+            _upgradeTutorOn = false;
+            _upgradeTutorAimOk = false;
+            _upgradeTutorDone = true;
+            _upgradeTutorKnown = true;
+            _gloveVis = false;
+            _gloveReady = false;
+            if (was) GloveVeilReset();
+            if (_cueLine == AlbumUpgradeLine) _cueLine = null;
+            _cueSpoken = null;
+#if UNITY_EDITOR
+            if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive)
+            {
+                _upgradeTutorDone = false;
+                _upgradeTutorKnown = false;
+                return;
+            }
+#endif
+            if (PlayerPrefs.GetInt(CoachHiveUpgradeKey, 0) == 0)
+            {
+                PlayerPrefs.SetInt(CoachHiveUpgradeKey, 1);
+                PlayerPrefs.Save();
+            }
+        }
+
+        void TryArmUpgradeTutor()
+        {
+            if (_home != HomeFace.Hive) return;
+            if (_upgradeTutorOn || UpgradeTutorDone()) return;
+            if (!Hive.UpgradesUnlocked) return;
+            if (_albumTutorOn || !AlbumTutorDone()) return;
+            if (!AlbumPageSettled() || !TutorialGateClear()) return;
+            // Needs an open owned inspect so the Upgrade control is on screen.
+            if (_hiveInspect < 0 || !AlbumInspectReady()) return;
+            if (Hive.CountOfSlot(_hiveInspect) <= 0) return;
+            if (!Hive.UpgradeRoom(_hiveInspect)) return;
+            BeginUpgradeTutor();
         }
 
         void TryArmAlbumTutor()
@@ -14332,10 +14423,11 @@ namespace FlockFive
                 _gloveVis = false;
                 return true;
             }
+            // Flip done → honeycombs-by-rarity step (stay on the open back).
             if (_albumTutorStep == 2 && _albumTutorFlipped)
             {
+                AdvanceAlbumTutor(3);
                 _gloveVis = false;
-                if (_hiveInspect < 0) AdvanceAlbumTutor(3);
                 return true;
             }
             if (_albumTutorStep == 2 && _hiveInspect < 0)
@@ -14349,7 +14441,22 @@ namespace FlockFive
                 _gloveVis = false;
                 return true;
             }
-            if (_albumTutorStep >= 3 && _hiveInspect >= 0)
+            // Honey step: any put-away advances to the page lesson.
+            if (_albumTutorStep == 3)
+            {
+                if (_hiveInspect < 0)
+                {
+                    AdvanceAlbumTutor(AlbumStepPage);
+                    _gloveVis = false;
+                    return true;
+                }
+                if (!AlbumInspectReady())
+                {
+                    _gloveVis = false;
+                    return true;
+                }
+            }
+            if (_albumTutorStep >= AlbumStepPage && _hiveInspect >= 0)
             {
                 _gloveVis = false;
                 return true;
@@ -14357,7 +14464,7 @@ namespace FlockFive
             Vector2 aim = _albumTutorAim;
             Rect tap = default;
             bool aimed = false;
-            if (_albumTutorStep >= 3)
+            if (_albumTutorStep >= AlbumStepPage)
             {
                 aimed = _albumPagerOk;
                 if (aimed)
@@ -14366,7 +14473,7 @@ namespace FlockFive
                     tap = _albumPagerR;
                 }
             }
-            else if (_albumTutorStep == 2)
+            else if (_albumTutorStep == 3 || _albumTutorStep == 2)
             {
                 aimed = _albumInspectOk && AlbumInspectReady();
                 if (aimed)
@@ -14399,32 +14506,96 @@ namespace FlockFive
             return true;
         }
 
+        bool TickUpgradeTutor(float dt)
+        {
+            if (!_upgradeTutorOn) return false;
+            if (_home != HomeFace.Hive || !Hive.UpgradesUnlocked)
+            {
+                _gloveVis = false;
+                _upgradeTutorAimOk = false;
+                return false;
+            }
+            if (!AlbumPageSettled() || !TutorialGateClear())
+            {
+                _gloveVis = false;
+                if (OtherTutorialLive()) return false;
+                return true;
+            }
+            if (_hiveInspect < 0 || !AlbumInspectReady() || Hive.CountOfSlot(_hiveInspect) <= 0)
+            {
+                _gloveVis = false;
+                _upgradeTutorAimOk = false;
+                return true;
+            }
+            if (_upgradeBtnR.width < 8f)
+            {
+                _gloveVis = false;
+                _upgradeTutorAimOk = false;
+                return true;
+            }
+            if (dt < 0f) dt = 0f;
+            CueLine(AlbumUpgradeLine);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            var aim = GloveTarget(_upgradeBtnR);
+            _upgradeTutorAim = aim;
+            _upgradeTutorAimOk = true;
+            float handS = Mathf.Max(Screen.height / 720f, 1f);
+            CoachGloveAt(aim, dt, handS, float.NaN, false, float.NaN, _upgradeBtnR);
+            return true;
+        }
+
         void DrawAlbumTutor(float s)
         {
+            if (_upgradeTutorOn)
+            {
+                DrawUpgradeTutor(s);
+                return;
+            }
             if (!_albumTutorOn || _home != HomeFace.Hive) return;
             if (!AlbumPageSettled() || !TutorialGateClear()) return;
             if (_albumTutorStep == 2 && (_albumTutorFlipped || !AlbumInspectReady())) return;
-            if (_albumTutorStep >= 3 && _hiveInspect >= 0) return;
+            if (_albumTutorStep == 3 && !AlbumInspectReady()) return;
+            if (_albumTutorStep >= AlbumStepPage && _hiveInspect >= 0) return;
             if (_albumTutorStep <= 1 && _hiveInspect >= 0) return;
             if (!_albumTutorAimOk) return;
             string line = AlbumTutorLine();
             if (string.IsNullOrEmpty(line)) return;
-            float w = Mathf.Min(Screen.width * 0.78f, 460f * s);
-            float h = line.IndexOf('\n') >= 0 ? 78f * s : 52f * s;
-            float y = TopHud() + 8f * s;
-            if (_albumTutorStep >= 3 && _albumPagerOk)
+            DrawAlbumCoachLine(line, s, _albumTutorStep);
+            DrawTutorOverlay(s);
+        }
+
+        void DrawUpgradeTutor(float s)
+        {
+            if (!_upgradeTutorOn || _home != HomeFace.Hive) return;
+            if (!AlbumPageSettled() || !TutorialGateClear()) return;
+            if (!_upgradeTutorAimOk || _upgradeBtnR.width < 8f) return;
+            DrawAlbumCoachLine(AlbumUpgradeLine, s, -1);
+            DrawTutorOverlay(s);
+        }
+
+        // Shared Collection caption: StandardCaptionBox + PaintCoachCaption + Back clearance.
+        void DrawAlbumCoachLine(string line, float s, int step)
+        {
+            if (string.IsNullOrEmpty(line)) return;
+            StandardCaptionBox(s, out float stdW, out float stdH, out _, out _);
+            float w = stdW;
+            float h = line.IndexOf('\n') >= 0 ? stdH * 0.72f : stdH * 0.48f;
+            float top = TopHud();
+            float minY = CaptionBelowBack(s, top);
+            float y = minY;
+            if (step < 0 && _upgradeBtnR.width > 8f)
+                y = _upgradeBtnR.y - h - 14f * s;
+            else if (step >= AlbumStepPage && _albumPagerOk)
                 y = _albumPagerR.y - h - 18f * s;
-            else if (_albumTutorStep == 2 && _albumInspectOk)
+            else if ((step == 2 || step == 3) && _albumInspectOk)
                 y = _albumInspectR.y - h - 12f * s;
             else if (_albumCardOk)
                 y = _albumCardR.y - h - 16f * s;
-            float minY = TopHud() + 4f;
             if (y < minY) y = minY;
             float maxY = Screen.height - h - 8f;
             if (y > maxY) y = maxY;
             var seat = new Rect((Screen.width - w) * 0.5f, y, w, h);
-            DrawSplashIntroLine(line, seat, s);
-            DrawTutorOverlay(s);
+            PaintCoachCaption(line, seat, s, 12, Mathf.RoundToInt(28f * s), default, false, StandardCaptionSlack);
         }
 
         void DrawHivePage()
@@ -14668,6 +14839,7 @@ namespace FlockFive
                 _albumInspectOk = false;
             NoteEmptyAlbumTap(turning);
             TryArmAlbumTutor();
+            TryArmUpgradeTutor();
             DrawAlbumTutor(s);
         }
 
@@ -14733,8 +14905,12 @@ namespace FlockFive
             DrawBeeAlbumCard(big, ix, s, true);
             if (t > 0.4f)
                 DrawFlipArrows(big, s, Mathf.Clamp01(t));
+            float hintTop = big.yMax + 12f * s;
             if (t > 0.4f)
-                DrawFlipHint(big.yMax + 12f * s, s, Mathf.Clamp01(t));
+                DrawFlipHint(hintTop, s, Mathf.Clamp01(t));
+            bool upgradeHit = false;
+            if (t > 0.55f && !_hiveInspectClosing && !_hiveTutorOn)
+                upgradeHit = DrawHiveUpgrade(ix, hintTop, s, Mathf.Clamp01(t));
             if (_hiveTutorOn)
                 DrawHiveTutorGlove(big, s);
 
@@ -14763,12 +14939,12 @@ namespace FlockFive
             // Card taps during the demo are swallowed so they neither flip nor dismiss.
             if (_hiveTutorOn)
                 HitPad(big, out _);
-            else if (fullyOpen && HitPad(big, out _) && !PageSwipeAte)
+            else if (fullyOpen && !upgradeHit && HitPad(big, out _) && !PageSwipeAte)
                 BeginHiveFlip(ix);
 
-            // Tap dim outside card closes (after card/X/Back so they win hit tests)
+            // Tap dim outside card closes (after card/X/Back/upgrade so they win hit tests)
             var full = new Rect(0f, 0f, Screen.width, Screen.height);
-            bool outside = !_hiveInspectClosing && u > 0.85f && HitPad(full, out _);
+            bool outside = !upgradeHit && !_hiveInspectClosing && u > 0.85f && HitPad(full, out _);
             if ((outside || xHit || backHit) && !_hiveInspectClosing)
                 BeginPutAwayInspect();
 
@@ -14904,6 +15080,62 @@ namespace FlockFive
             float edge = 28f * s;
             if (pill.yMax > Screen.height - edge) pill.y = Screen.height - edge - pill.height;
             return pill;
+        }
+
+        // Hidden until first honey-badger encounter (Hive.UpgradesUnlocked).
+        // Returns true when the finger is on the control (blocks flip / dismiss).
+        bool DrawHiveUpgrade(int slot, float hintTop, float s, float alpha)
+        {
+            _upgradeBtnR = default;
+            if (alpha < 0.04f || (uint)slot >= (uint)Hive.AlbumSlots) return false;
+            if (!Hive.UpgradesUnlocked || Hive.CountOfSlot(slot) <= 0) return false;
+            var pill = FlipHintRect(hintTop, s);
+            float btnH = Mathf.Max(44f, 48f * Mathf.Min(s, 1.35f));
+            float btnW = Mathf.Min(Screen.width * 0.72f, 420f * s);
+            float y = pill.yMax + 10f * s;
+            var btn = new Rect((Screen.width - btnW) * 0.5f, y, btnW, btnH);
+            _upgradeBtnR = btn;
+            bool room = Hive.UpgradeRoom(slot);
+            bool can = Hive.CanUpgrade(slot);
+            string line = !room
+                ? "Max honey"
+                : "Upgrade  ·  " + Money.Format(Hive.UpgradeCost);
+            bool held;
+            bool hit = HitPad(btn, out held);
+            float fade = alpha * (room ? 1f : 0.55f);
+            Color plate = can
+                ? new Color(0.18f, 0.12f, 0.05f, (held ? 0.96f : 0.88f) * fade)
+                : new Color(0.12f, 0.10f, 0.08f, 0.72f * fade);
+            GUI.color = plate;
+            GUI.DrawTexture(btn, Texture2D.whiteTexture);
+            GUI.color = can
+                ? new Color(1f, 0.82f, 0.28f, 0.95f * fade)
+                : new Color(0.70f, 0.64f, 0.50f, 0.55f * fade);
+            float edge = Mathf.Max(2f, 3f * s);
+            GUI.DrawTexture(new Rect(btn.x, btn.y, btn.width, edge), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(btn.x, btn.yMax - edge, btn.width, edge), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(btn.x, btn.y, edge, btn.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(btn.xMax - edge, btn.y, edge, btn.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var st = GuiPool.Label(GuiSlot.FlipHint);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
+            st.fontSize = FitFont(st, line, btn.width * 0.90f, btn.height * 0.70f, 16, Mathf.RoundToInt(28f * s));
+            Color ink = can ? new Color(1f, 0.96f, 0.82f, fade) : new Color(0.78f, 0.74f, 0.64f, fade * 0.9f);
+            StampOutlined(btn, line, st, ink, 1, 2);
+            if (hit)
+            {
+                if (room && Hive.TryUpgrade(slot))
+                {
+                    Sfx.CardBump();
+                    Haptics.Play(Haptics.Tier.Light);
+                    if (_upgradeTutorOn) FinishUpgradeTutor();
+                }
+                else
+                    Sfx.Deny();
+            }
+            return hit || held;
         }
 
         void DrawFlipHint(float y, float s, float alpha)
@@ -15203,12 +15435,9 @@ namespace FlockFive
             else
             {
                 string backCopy = HiveBackCopy(kind.Back);
-                int stars = finish == BeeFinish.InverseRainbow ? 3 : finish == BeeFinish.Holo ? 2 : 1;
-                string ownedLine = n == 1 ? "Owned 1" : "Owned " + n;
-                if (finish == BeeFinish.Holo) ownedLine = "Holo  ·  " + ownedLine;
-                else if (finish == BeeFinish.InverseRainbow) ownedLine = "Inverse  ·  " + ownedLine;
-                var chips = kind.Attrs != null && kind.Attrs.Length > 0 ? kind.Attrs : Hive.HoneyChips(finish);
-                CardText.DrawBack(face, kind.Name, backCopy, ownedLine, stars, chips, inspectView, s, DrawHiveStars);
+                // Flip attributes: honeycombs only. Base by finish + purchased upgrades.
+                int honey = BadgerSchedule.Enabled ? Hive.HoneyOfSlot(i) : 0;
+                CardText.DrawBack(face, kind.Name, backCopy, honey, kind.Tint, finish, inspectView, s);
             }
 
             if (!inspectView && owned && HiveCardFresh(i))

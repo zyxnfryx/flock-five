@@ -36,7 +36,9 @@ namespace FlockFive
         const string AdHandLine = "Tap to unlock your bonus!";
         const string GiftStuckLine = "Stuck? Tap the gift branch for a bonus spot.";
         // Old clear CoachLineY rest under the hud, in reference pixels. Not the logo floor.
-        const float TutorCaptionGap = 8f;
+        // Gap under top chrome (back medal / logo row) for caption text boxes.
+        // Build 64: a little more air so plates clear the gold Back.
+        const float TutorCaptionGap = 14f;
         // Gap between a caption plate and the glove sweep, in reference pixels.
         const float CaptionGloveMargin = 12f;
         // GUI y is down. An aim below this fraction of the screen is a low target.
@@ -461,7 +463,7 @@ namespace FlockFive
             if (_splash || _board == null || _garden.Cam == null)
             {
                 // Home lessons keep the tap cycle. A full release would restart it every frame.
-                if ((_hiveIntro || _pokerIntro || _dailyIntro || _welcomeGlove || _adoptLive || _pokerPageOn || _pokerDealHint || PokerBackHintOn() || _albumTutorOn) && _splash) return;
+                if ((_hiveIntro || _pokerIntro || _dailyIntro || _welcomeGlove || _adoptLive || _pokerPageOn || _pokerDealHint || PokerBackHintOn() || _albumTutorOn || _upgradeTutorOn) && _splash) return;
                 CoachRelease();
                 return;
             }
@@ -756,6 +758,7 @@ namespace FlockFive
                 _coachGlowKick = Mathf.Max(0f, _coachGlowKick - dt / 0.24f);
             CoachTickRipples(dt);
             if (TickAlbumTutor(dt)) return;
+            if (TickUpgradeTutor(dt)) return;
             if (_adoptLive && _splash)
             {
                 float adoptS = Mathf.Max(Screen.height / 720f, 1f);
@@ -2110,6 +2113,15 @@ namespace FlockFive
             float ox = Mathf.Max(cx, 0f);
             float oy = Mathf.Max(cy, 0f);
             return Mathf.Sqrt(ox * ox + oy * oy) + Mathf.Min(Mathf.Max(cx, cy), 0f) - rad;
+        }
+
+        // Lowest Y for a caption text box whose CoachPanelRect plate must clear the Back medal.
+        // Used by DrawCoachLine (via TutorCaptionGap), DrawAlbumHeader, and DrawAlbumTutor.
+        static float CaptionBelowBack(float s, float top)
+        {
+            var back = BackMedalRect(s, top);
+            const float platePadY = 12f; // CoachPanelRect vertical pad
+            return back.yMax + TutorCaptionGap * s + platePadY;
         }
 
         // Plate behind a tutorial sentence, including the soft corner pad.
@@ -3807,6 +3819,7 @@ namespace FlockFive
         const int GatePokerBack = 1;
         const int GateAlbumPage = 2;
         const int GateAdoptGreet = 3;
+        const int GateAlbumUpgrade = 4;
 
         struct StepGate
         {
@@ -3829,6 +3842,11 @@ namespace FlockFive
                 float s = Mathf.Max(Screen.height / 720f, 1f);
                 gate.Step = GatePokerBack;
                 gate.Target = BackMedalRect(s, TopHud());
+            }
+            else if (AlbumUpgradeGateLive())
+            {
+                gate.Step = GateAlbumUpgrade;
+                gate.Target = _upgradeBtnR;
             }
             else if (AlbumPageGateLive())
             {
@@ -3858,6 +3876,7 @@ namespace FlockFive
         {
             if (step == GatePokerBack) MarkPokerBackDone();
             else if (step == GateAlbumPage) FinishAlbumTutor();
+            else if (step == GateAlbumUpgrade) FinishUpgradeTutor();
             else if (step == GateAdoptGreet) AdvanceAdoptGreet();
         }
 
@@ -3865,9 +3884,18 @@ namespace FlockFive
         // on the page chips; a swipe on the sheet is the other valid answer.
         bool AlbumPageGateLive()
         {
-            if (!_albumTutorOn || _albumTutorStep < 3) return false;
+            if (!_albumTutorOn || _albumTutorStep < AlbumStepPage) return false;
             if (!_splash || _home != HomeFace.Hive || _hiveInspect >= 0) return false;
             if (!_albumPagerOk || !AlbumPageSettled() || !TutorialGateClear()) return false;
+            return true;
+        }
+
+        // Post-badger Collection step: glove on the Upgrade control under inspect.
+        bool AlbumUpgradeGateLive()
+        {
+            if (!_upgradeTutorOn || !Hive.UpgradesUnlocked) return false;
+            if (!_splash || _home != HomeFace.Hive || _hiveInspect < 0) return false;
+            if (_upgradeBtnR.width < 8f || !AlbumPageSettled() || !TutorialGateClear()) return false;
             return true;
         }
 
@@ -3915,7 +3943,7 @@ namespace FlockFive
         bool TutorialGuideLive() =>
             _pestCue != 0 || _hiveLevelLive || _hiveIntroLive || _pokerIntroLive
             || _dailyIntroLive || _leafIntro || _adHand || _welcomeGlove || _adoptLive
-            || _albumTutorOn || _bgLessonLive || BadgerGuideLive() || (_coach && _cueHand);
+            || _albumTutorOn || _upgradeTutorOn || _bgLessonLive || BadgerGuideLive() || (_coach && _cueHand);
 
         // One arbiter for every non-tutorial card. A live lesson blocks every
         // kind except the card that lesson owns. Player taps are refused.
@@ -3947,7 +3975,7 @@ namespace FlockFive
 
         // The poker back step counts while its tap gate is up, so automatic cards wait it out,
         // the hand ad does not cut in, and a resume restarts its glove (FreshTutorGlove).
-        bool TutorialStepActive() => OtherTutorialLive() || _albumTutorOn || PokerBackGateLive();
+        bool TutorialStepActive() => OtherTutorialLive() || _albumTutorOn || _upgradeTutorOn || PokerBackGateLive();
 
         // Ads, pause, a modal card, or a lesson that is already up. A lesson that
         // is itself running does not count. New lessons call this before they arm.

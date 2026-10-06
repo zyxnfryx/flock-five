@@ -66,11 +66,16 @@ namespace FlockFive
     }
 
     // Even column of tiny bees beside a pulled-out card. Same size, equal gaps.
+    // One draw path for both flanks: faceInward mirrors the right column so bees
+    // look toward the card (sprite faces right by default).
     public static class BeeFlare
     {
         public const int Count = 5;
 
-        public static void Draw(Rect card, bool left, float s, float alpha)
+        public static void Draw(Rect card, bool left, float s, float alpha) =>
+            DrawColumn(card, left, s, alpha, faceInward: true);
+
+        public static void DrawColumn(Rect card, bool left, float s, float alpha, bool faceInward)
         {
             var bee = SpriteCatalog.Bee;
             if (bee == null || bee.texture == null || alpha < 0.04f) return;
@@ -81,6 +86,8 @@ namespace FlockFive
             float x = left ? card.x - sz - 8f * s : card.xMax + 8f * s;
             if (x < 6f) x = 6f;
             if (x + sz > Screen.width - 6f) x = Screen.width - 6f - sz;
+            // Default art faces right. Left column already looks in; right column flips.
+            bool mirror = faceInward && !left;
             float t = Time.unscaledTime;
             for (int i = 0; i < Count; i++)
             {
@@ -89,7 +96,15 @@ namespace FlockFive
                 float flit = Mathf.Sin(t * 3.4f + phase * 1.7f) * sz * 0.10f;
                 var r = new Rect(x + flit, y0 + i * (sz + gap) + bob, sz, sz);
                 GUI.color = new Color(1f, 0.96f, 0.82f, alpha);
-                GUI.DrawTexture(r, bee.texture, ScaleMode.ScaleToFit, true);
+                if (mirror)
+                {
+                    var prev = GUI.matrix;
+                    GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), r.center);
+                    GUI.DrawTexture(r, bee.texture, ScaleMode.ScaleToFit, true);
+                    GUI.matrix = prev;
+                }
+                else
+                    GUI.DrawTexture(r, bee.texture, ScaleMode.ScaleToFit, true);
             }
             GUI.color = Color.white;
         }

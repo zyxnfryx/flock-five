@@ -17,7 +17,7 @@ namespace FlockFive
             }
 
             public static readonly Scale Mid = new Scale { Title = 1.55f, Flavor = 1.50f, Status = 1.40f };
-            public static readonly Scale Full = new Scale { Title = 1.70f, Flavor = 1.55f, Status = 1.40f };
+            public static readonly Scale Full = new Scale { Title = 1.85f, Flavor = 1.35f, Status = 1.30f };
 
             static readonly List<string> _lines = new List<string>(6);
             static readonly List<string> _audit = new List<string>(8);
@@ -30,47 +30,103 @@ namespace FlockFive
                 var scale = full ? Full : Mid;
                 Split(face, false, scale, out var titleR, out var flavorR, out _, out _, out _);
                 var ink = new Color(0.16f, 0.07f, 0.02f, 1f);
-                DrawBlock(titleR, title, scale.Title, true, full ? 22 : 13, ink, 1.15f);
-                DrawBlock(flavorR, flavor, scale.Flavor, false, full ? 16 : 11, ink, 1.35f);
+                // Name first, then flavor under it. Flavor hi is capped to the title size so
+                // a tall inspect flavor band cannot outrank the name (shared for grid + inspect).
+                int titlePx = DrawBlock(titleR, title, scale.Title, true, full ? 22 : 13, ink, full ? 1.12f : 1.15f);
+                int flavorFloor = full ? 16 : 11;
+                int flavorHi = titlePx > 0
+                    ? Mathf.Max(flavorFloor, Mathf.RoundToInt(titlePx * (full ? 0.62f : 0.72f)))
+                    : 0;
+                DrawBlock(flavorR, flavor, scale.Flavor, false, flavorFloor, ink, full ? 1.22f : 1.35f, flavorHi);
             }
 
+            // Flip side: name, flavor, then honeycombs only (2 / 3 / 5 by finish).
+            // No text chips, stars, or Owned line — those fought the flavor on inspect.
             public static void DrawBack(
-                Rect face, string title, string flavor, string status, int stars, string[] attrs,
-                bool full, float s, StarDraw starsDraw)
+                Rect face, string title, string flavor, int honey, Color tint, BeeFinish finish,
+                bool full, float s)
             {
                 var scale = full ? Full : Mid;
-                bool empty = attrs == null || attrs.Length == 0;
-                Split(face, !empty, scale, out var titleR, out var flavorR, out var attrR, out var starR, out var ownR);
+                bool showHoney = honey > 0;
+                Split(face, showHoney, scale, out var titleR, out var flavorR, out var honeyR, out _, out _);
                 var ink = new Color(0.16f, 0.07f, 0.02f, 1f);
-                DrawBlock(titleR, title, scale.Title, true, full ? 20 : 12, ink, 1.1f);
-                DrawBlock(flavorR, flavor, scale.Flavor, false, full ? 15 : 11, new Color(0.18f, 0.08f, 0.03f, 1f), 1.35f);
-                DrawAttrs(attrR, attrs, full);
-                if (starsDraw != null && starR.height > 4f) starsDraw(starR, stars, s);
-                DrawBlock(ownR, status, scale.Status, true, full ? 14 : 11, ink, 1f);
+                int titlePx = DrawBlock(titleR, title, scale.Title, true, full ? 20 : 12, ink, full ? 1.10f : 1.1f);
+                int flavorFloor = full ? 15 : 11;
+                int flavorHi = titlePx > 0
+                    ? Mathf.Max(flavorFloor, Mathf.RoundToInt(titlePx * (full ? 0.62f : 0.72f)))
+                    : 0;
+                DrawBlock(flavorR, flavor, scale.Flavor, false, flavorFloor, new Color(0.18f, 0.08f, 0.03f, 1f), full ? 1.22f : 1.35f, flavorHi);
+                if (showHoney) DrawHoneyRow(honeyR, honey, tint, finish, full);
             }
 
-            // Empty list draws nothing. Flavor then uses the attributes band.
+            // Shared honeycomb attributes: N hex tiles from HoneyOfFinish (2/3/5).
+            // Same HoneycombTex the badger tiles use — one art path, no empty chip slots.
+            public static void DrawHoneyRow(Rect zone, int honey, Color tint, BeeFinish finish, bool full)
+            {
+                if (honey <= 0 || zone.height < 8f || zone.width < 8f) return;
+                int n = honey > 5 ? 5 : honey;
+                var tex = HoneycombTex();
+                if (tex == null) return;
+                float gap = Mathf.Max(3f, zone.width * 0.02f);
+                float cellH = zone.height * (full ? 0.92f : 0.88f);
+                float cellW = cellH * (96f / 111f);
+                float rowW = n * cellW + (n - 1) * gap;
+                if (rowW > zone.width)
+                {
+                    float k = zone.width / rowW;
+                    cellW *= k;
+                    cellH *= k;
+                    gap *= k;
+                    rowW = n * cellW + (n - 1) * gap;
+                }
+                float x = zone.center.x - rowW * 0.5f;
+                float y = zone.center.y - cellH * 0.5f;
+                Color rim = finish == BeeFinish.Holo ? new Color(0.15f, 0.48f, 0.92f, 1f)
+                    : finish == BeeFinish.InverseRainbow ? new Color(0.82f, 0.22f, 0.68f, 1f)
+                    : AlbumWood(tint, true);
+                Color face = AlbumFace(tint, true);
+                for (int i = 0; i < n; i++)
+                {
+                    var hex = new Rect(x + i * (cellW + gap), y, cellW, cellH);
+                    float lift = hex.height * 0.045f;
+                    GUI.color = new Color(0f, 0f, 0f, 0.30f);
+                    GUI.DrawTexture(new Rect(hex.x + lift * 0.4f, hex.y + lift, hex.width, hex.height), tex, ScaleMode.StretchToFill, true);
+                    GUI.color = rim;
+                    GUI.DrawTexture(hex, tex, ScaleMode.StretchToFill, true);
+                    float inset = Mathf.Min(hex.width, hex.height) * 0.07f;
+                    GUI.color = face;
+                    GUI.DrawTexture(new Rect(hex.x + inset, hex.y + inset, hex.width - inset * 2f, hex.height - inset * 2f), tex, ScaleMode.StretchToFill, true);
+                }
+                GUI.color = Color.white;
+            }
+
+            // Legacy text chips kept for any non-album caller; empty slots draw nothing.
             public static void DrawAttrs(Rect zone, string[] attrs, bool full)
             {
                 if (attrs == null || attrs.Length == 0 || zone.height < 8f) return;
-                int n = attrs.Length > 4 ? 4 : attrs.Length;
+                int n = 0;
+                for (int i = 0; i < attrs.Length && i < 4; i++)
+                    if (!string.IsNullOrEmpty(attrs[i])) n++;
+                if (n <= 0) return;
                 float gap = Mathf.Max(4f, zone.width * 0.03f);
                 float w = (zone.width - gap * (n - 1)) / n;
                 var st = Style();
                 st.alignment = TextAnchor.MiddleCenter;
                 st.wordWrap = false;
-                for (int i = 0; i < n; i++)
+                int slot = 0;
+                for (int i = 0; i < attrs.Length && i < 4; i++)
                 {
-                    var slot = new Rect(zone.x + i * (w + gap), zone.y + zone.height * 0.08f, w, zone.height * 0.84f);
-                    GUI.color = new Color(0.22f, 0.12f, 0.05f, 0.16f);
-                    GUI.DrawTexture(slot, Texture2D.whiteTexture);
-                    GUI.color = new Color(0.45f, 0.28f, 0.12f, 0.85f);
-                    GUI.DrawTexture(new Rect(slot.x, slot.y, slot.width, 2f), Texture2D.whiteTexture);
-                    GUI.color = Color.white;
                     if (string.IsNullOrEmpty(attrs[i])) continue;
-                    int hi = Mathf.Max(full ? 14 : 10, Mathf.RoundToInt(slot.height * 0.42f));
-                    st.fontSize = FitFont(st, attrs[i], slot.width * 0.86f, slot.height * 0.72f, full ? 11 : 9, hi);
-                    StampOutlined(slot, attrs[i], st, new Color(0.20f, 0.10f, 0.04f, 1f), 0, 2);
+                    var r = new Rect(zone.x + slot * (w + gap), zone.y + zone.height * 0.08f, w, zone.height * 0.84f);
+                    GUI.color = new Color(0.22f, 0.12f, 0.05f, 0.16f);
+                    GUI.DrawTexture(r, Texture2D.whiteTexture);
+                    GUI.color = new Color(0.45f, 0.28f, 0.12f, 0.85f);
+                    GUI.DrawTexture(new Rect(r.x, r.y, r.width, 2f), Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                    int hi = Mathf.Max(full ? 14 : 10, Mathf.RoundToInt(r.height * 0.42f));
+                    st.fontSize = FitFont(st, attrs[i], r.width * 0.86f, r.height * 0.72f, full ? 11 : 9, hi);
+                    StampOutlined(r, attrs[i], st, new Color(0.20f, 0.10f, 0.04f, 1f), 0, 2);
+                    slot++;
                 }
             }
 
@@ -135,50 +191,62 @@ namespace FlockFive
                 Rect face, bool attrs, Scale scale,
                 out Rect titleR, out Rect flavorR, out Rect attrR, out Rect starR, out Rect ownR)
             {
-                float padX = face.width * 0.08f;
+                // Even side margins; title band sized for hierarchy (name > flavor), not a thin strip.
+                float padX = face.width * 0.10f;
                 float x = face.x + padX;
                 float w = face.width - padX * 2f;
-                float y = face.y + face.height * 0.035f;
-                float titleH = face.height * (0.105f * scale.Title);
+                float topPad = face.height * 0.04f;
+                float y = face.y + topPad;
+                float titleH = face.height * (0.14f * Mathf.Clamp(scale.Title, 1f, 1.85f));
                 titleR = new Rect(x, y, w, titleH);
-                float bot = face.yMax - face.height * 0.03f;
-                float ownH = face.height * (0.075f * Mathf.Clamp(scale.Status, 1f, 1.5f));
-                float starH = face.height * 0.09f;
-                ownR = new Rect(x, bot - ownH, w, ownH);
-                starR = new Rect(x, ownR.y - starH, w, starH);
-                float midTop = titleR.yMax + face.height * 0.02f;
-                float midBot = starR.y - face.height * 0.015f;
+                float bot = face.yMax - face.height * 0.04f;
+                // Star / Owned bands retired on the flip (honeycombs only). Keep zero rects
+                // so the Split signature stays shared with any leftover callers.
+                ownR = new Rect(x, bot, w, 0f);
+                starR = new Rect(x, bot, w, 0f);
+                float midTop = titleR.yMax + face.height * 0.025f;
+                float midBot = bot;
                 float midH = Mathf.Max(8f, midBot - midTop);
                 if (!attrs)
                 {
-                    flavorR = new Rect(x, midTop, w, midH);
+                    // Front: flavor sits under the name, not floating in a huge leftover.
+                    float flavorH = Mathf.Min(midH, Mathf.Max(face.height * 0.22f, titleH * 1.35f));
+                    flavorR = new Rect(x, midTop, w, flavorH);
                     attrR = new Rect(x, midBot, w, 0f);
                     return;
                 }
-                float attrH = Mathf.Clamp(midH * 0.34f, face.height * 0.12f, midH * 0.42f);
+                // Back: honey row at the bottom; flavor gets the clear band above it.
+                float attrH = Mathf.Clamp(midH * 0.28f, face.height * 0.14f, midH * 0.36f);
                 attrR = new Rect(x, midBot - attrH, w, attrH);
-                flavorR = new Rect(x, midTop, w, Mathf.Max(8f, attrR.y - midTop - face.height * 0.01f));
+                flavorR = new Rect(x, midTop, w, Mathf.Max(8f, attrR.y - midTop - face.height * 0.02f));
             }
 
-            static void DrawBlock(Rect box, string text, float scale, bool title, int floor, Color ink, float lead)
+            // Returns the fitted font size (0 if nothing drew). Optional hiCap keeps flavor
+            // under the name on tall inspect bands without a separate draw path.
+            static int DrawBlock(Rect box, string text, float scale, bool title, int floor, Color ink, float lead, int hiCap = 0)
             {
-                if (box.height < 4f || string.IsNullOrEmpty(text)) return;
+                if (box.height < 4f || string.IsNullOrEmpty(text)) return 0;
                 var st = Style();
                 st.wordWrap = false;
-                st.alignment = TextAnchor.MiddleCenter;
+                // Title: top of its band. Flavor: top of its band under the name (not vertically centered in a huge leftover).
+                st.alignment = title ? TextAnchor.UpperCenter : TextAnchor.UpperCenter;
                 // Card copy is static, so the fit (size plus wrapped lines) is cached per
                 // block. Every album card used to re-run up to 18 sizes x a word wrap
                 // (Split, concatenation, CalcSize) on every OnGUI pass.
-                if (!BlockHit(text, box, scale, title, floor, out int size, out var lines))
+                // Cache key ignores hiCap; callers that cap flavor pass a stable title-derived cap.
+                if (!BlockHit(text, box, scale, title, floor, out int size, out var lines) || (hiCap > 0 && size > hiCap))
                 {
-                    int baseHi = Mathf.RoundToInt(box.height * (title ? 0.62f : 0.28f));
+                    int baseHi = Mathf.RoundToInt(box.height * (title ? 0.72f : 0.36f));
                     int hi = Mathf.Max(floor + 2, Mathf.RoundToInt(baseHi * scale));
+                    if (hiCap > 0 && hi > hiCap) hi = hiCap;
+                    if (hi < floor) hi = floor;
                     size = hi;
+                    int maxLines = title ? 2 : 3;
                     int guard = 0;
                     while (size > floor && guard < 18)
                     {
                         st.fontSize = size;
-                        if (LineCount(st, text, box.width) <= 3) break;
+                        if (LineCount(st, text, box.width) <= maxLines) break;
                         size -= 1;
                         guard++;
                     }
@@ -187,18 +255,24 @@ namespace FlockFive
                     lines = _lines.ToArray();
                     BlockStore(text, box, scale, title, floor, size, lines);
                 }
+                if (hiCap > 0 && size > hiCap) size = hiCap;
                 st.fontSize = size;
-                int shown = lines.Length > 3 ? 3 : lines.Length;
-                if (shown <= 0) return;
+                int shown = lines.Length > (title ? 2 : 3) ? (title ? 2 : 3) : lines.Length;
+                if (shown <= 0) return 0;
                 float lineH = st.fontSize * lead;
                 float blockH = shown * lineH;
-                float y = box.y + Mathf.Max(0f, (box.height - blockH) * 0.5f);
-                int dark = Mathf.Clamp(Mathf.RoundToInt(size * 0.10f), 2, 6);
+                // Top-align in the band with a small inset so outline rings stay inside the face.
+                float inset = Mathf.Max(2f, size * 0.08f);
+                float y = box.y + inset;
+                if (y + blockH > box.yMax - inset)
+                    y = Mathf.Max(box.y, box.yMax - inset - blockH);
+                int dark = Mathf.Clamp(Mathf.RoundToInt(size * 0.08f), 1, title ? 5 : 4);
                 for (int i = 0; i < shown; i++)
                 {
                     var line = new Rect(box.x, y + i * lineH, box.width, lineH);
                     StampOutlined(line, lines[i], st, ink, 1, dark);
                 }
+                return size;
             }
 
             // ---- shared block-fit cache (one per CardText) ----
