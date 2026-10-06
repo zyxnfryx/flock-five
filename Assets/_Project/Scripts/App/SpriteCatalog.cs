@@ -4,7 +4,7 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _handPalm, _handPinky, _handRing, _handMiddle, _handIndex, _handThumb, _handThumbShadow, _dash, _chain, _padlock, _stampRing, _stampTool, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk, _pokerFaceWild;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _handPalm, _handPinky, _handRing, _handMiddle, _handIndex, _handThumb, _handThumbShadow, _dash, _chain, _padlock, _stampRing, _waxSeal, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk, _pokerFaceWild;
         static Sprite[] _pokerFaces;
         static Sprite[] _flames;
         static bool _sparrowPlaceholder;
@@ -141,7 +141,7 @@ namespace FlockFive
             _handIndex = null;
             _handThumb = null;
             _handThumbShadow = null;
-            _stampTool = null;
+            _waxSeal = null;
             _pokerWildFoil = null;
             _padlock = null;
             _chain = null;
@@ -382,12 +382,14 @@ namespace FlockFive
             return (Mathf.FloorToInt(Mathf.Abs(t)) % 2 == 0) ? a : b;
         }
 
-        public static Sprite StampTool
+        // Punch-card mark: painted red wax seal with an embossed hummingbird (square, round art).
+        // fx_stamp_tool.png (the old rubber-stamp art) stays in Resources but is no longer loaded.
+        public static Sprite WaxSeal
         {
             get
             {
-                if (_stampTool == null) _stampTool = TryLoad("Sprites/fx_stamp_tool", 200f);
-                return _stampTool;
+                if (_waxSeal == null) _waxSeal = TryLoad("Sprites/fx_wax_seal", 200f);
+                return _waxSeal;
             }
         }
         public static Sprite StampRing

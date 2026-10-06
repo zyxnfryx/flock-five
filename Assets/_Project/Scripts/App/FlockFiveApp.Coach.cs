@@ -53,9 +53,12 @@ namespace FlockFive
         // A feeder collect calls Board.Breeze, which lifts the tip leaf.
         const string LeafIntroLine = "Leaves hide these birds.\nCollect at a feeder\nto blow them away.";
         // A tap does not scare a sparrow. One full match (five birds) into its feeder does.
-        const string SparrowIntroLine = "A sparrow!\nIt blocks a feeder.\nCollect five matching birds there\nto chase it off.";
+        // Build 61: pest intros draw in the shared StandardCaptionBox at the standard lesson
+        // font, so the copy is one sentence the box wraps (three lines on SE, like the other
+        // garden lessons). The old four- and five-line forced wraps only fit at a small font.
+        const string SparrowIntroLine = "A sparrow blocks a feeder! Match five birds there to chase it off.";
         // HitsNeeded is two collects on the blocked feeder. Five birds twice is ten.
-        const string HawkIntroLine = "A hawk!\nIt needs two collects\non its feeder to clear.\nMatch five birds twice\nto drive it off.";
+        const string HawkIntroLine = "A hawk blocks a feeder! Match five there twice to drive it off.";
         const int PestCueSparrow = 1;
         const int PestCueHawk = 2;
         const float PestCueSeconds = 4.5f;
@@ -1830,6 +1833,13 @@ namespace FlockFive
         // THE standard tutorial caption (the garden lesson line): box width, box height and
         // the font range PaintCoachCaption fits into (CaptionFontBoost applies on top).
         // Garden lessons and every poker page lesson size through here.
+        // StandardCaptionSlack: share of the empty plate above/below the fitted text that the
+        // standard caption keeps (build 61: 0.5, half of build 60's). The text box (w, h), and so
+        // the fitted font, is unchanged; only the painted plate hugs the lines, centred on the
+        // same box. Plates that must cover something (the opaque LEVEL cover on the home poker
+        // step, VIP, splash intro lines) do not use the standard box and keep 1.
+        const float StandardCaptionSlack = 0.5f;
+
         static void StandardCaptionBox(float s, out float w, out float h, out int lo, out int hi)
         {
             w = Mathf.Min(Screen.width * 0.72f, 520f * s);
@@ -1838,19 +1848,67 @@ namespace FlockFive
             hi = Mathf.RoundToInt(32f * s);
         }
 
+        // Painted plate height (CoachPanelRect pad included) of a line in a w x h caption box with
+        // the standard font range and StandardCaptionSlack: the same fit PaintCoachCaption runs.
+        // Lets a seat place the plate itself instead of trimming the box (which shrinks the font).
+        static string _stdPlateFor;
+        static float _stdPlateBoxW, _stdPlateBoxH;
+        static float _stdPlateVal;
+        static GUIContent _stdPlateContent;
+
+        // The full standard box (standard font).
+        static float StandardPlateHeight(string text, float s)
+        {
+            StandardCaptionBox(s, out float w, out float h, out _, out _);
+            return CaptionPlateHeight(text, s, w, h);
+        }
+
+        static float CaptionPlateHeight(string text, float s, float w, float h)
+        {
+            if (_stdPlateFor == text && Mathf.Abs(_stdPlateBoxW - w) < 0.5f && Mathf.Abs(_stdPlateBoxH - h) < 0.5f)
+                return _stdPlateVal;
+            StandardCaptionBox(s, out _, out _, out int lo, out int hi);
+            lo = CaptionPx(lo);
+            hi = CaptionPx(hi);
+            var st = CoachLineStyle();
+            if (_stdPlateContent == null) _stdPlateContent = new GUIContent();
+            float padX = Mathf.Clamp(w * 0.055f, 10f * s, 18f * s);
+            float padY = Mathf.Clamp(h * 0.10f, 6f * s, 14f * s);
+            float tw = Mathf.Max(48f, w - padX * 2f);
+            float th = Mathf.Max(24f, h - padY * 2f);
+            int keep = st.fontSize;
+            int px = FitFontWrapped(st, text, tw, th, lo, hi);
+            st.wordWrap = true;
+            st.fontSize = px;
+            _stdPlateContent.text = BalanceWrap(st, text, tw, px);
+            int guard = 0;
+            while (px > lo && guard < 24 && st.CalcHeight(_stdPlateContent, tw) > th + 1f)
+            {
+                px--;
+                st.fontSize = px;
+                _stdPlateContent.text = BalanceWrap(st, text, tw, px);
+                guard++;
+            }
+            float textH = st.CalcHeight(_stdPlateContent, tw);
+            st.fontSize = keep;
+            var box = CaptionPlateBox(new Rect(0f, 0f, w, h), default, textH, th, StandardCaptionSlack);
+            _stdPlateFor = text;
+            _stdPlateBoxW = w;
+            _stdPlateBoxH = h;
+            _stdPlateVal = CoachPanelRect(box).height;
+            return _stdPlateVal;
+        }
+
         // Same box DrawCoach paints. Gift keeps the lower PlaceCaption seat.
         void GardenLineBox(float s, out float w, out float h)
         {
             StandardCaptionBox(s, out w, out float stdH, out _, out _);
-            if (_leafIntro)
+            // Pest intros (sparrow, hawk, any later pest) are standard captions: same box.
+            if (_pestCue != 0)
+                h = stdH;
+            else if (_leafIntro)
                 h = 176f * s;
-            else if (_pestCue != 0 && _capBoxH > 1f && _capBoxFor == _cueLine && Mathf.Abs(_capBoxS - s) < 0.01f)
-            {
-                // Measured by FitCaptionBox in DrawCoach, so the plate hugs the lines.
-                w = _capBoxW;
-                h = _capBoxH;
-            }
-            else if (_pestCue != 0 || _hiveLevelLive || _hiveIntroLive)
+            else if (_hiveLevelLive || _hiveIntroLive)
                 h = 252f * s;
             else
                 h = stdH;
@@ -2043,6 +2101,7 @@ namespace FlockFive
         static float _coachSizedW;
         static float _coachSizedH;
         static int _coachSizedPx;
+        static float _coachSizedTextH;
 
         static float PanelSdf(float x, float y, float w, float h, float rad)
         {
@@ -2219,7 +2278,7 @@ namespace FlockFive
             _coachLineHoldX = seat.x;
             _coachHoldXOn = true;
             _coachLineHeld = true;
-            PaintCoachCaption(text, seat, s, lo, hi);
+            PaintCoachCaption(text, seat, s, lo, hi, default, false, StandardCaptionSlack);
         }
 
         // One x,y per tutorial sentence. The first call after this frame's pose
@@ -2619,14 +2678,31 @@ namespace FlockFive
 
         static int CaptionPx(int px) => Mathf.Max(1, Mathf.RoundToInt(px * CaptionFontBoost));
 
+        // Box whose CoachPanelRect plate keeps only `slack` of the empty space above and below
+        // the text (the text is drawn MiddleCenter in the unchanged text box, so it stays put).
+        static Rect CaptionPlateBox(Rect r, Vector2 platePad, float textH, float textBoxH, float slack)
+        {
+            if (slack >= 0.999f || textH <= 1f) return r;
+            float pad = 12f + (platePad.y > 0f ? platePad.y : 0f);  // CoachPanelRect, per side
+            float plateH = r.height + pad * 2f;
+            float inkH = textH;  // an overflowing line keeps the full box
+            float slackH = Mathf.Max(0f, plateH - inkH) * Mathf.Clamp01(slack);
+            float boxH = Mathf.Max(4f, inkH + slackH - pad * 2f);
+            if (boxH >= r.height) return r;
+            return new Rect(r.x, r.center.y - boxH * 0.5f, r.width, boxH);
+        }
+
         // Shared tutorial caption: even inset, balanced wrap, one outline weight.
         // platePad: extra plate per side from a caption anchor (CoachPanelRect). The text box
         // and the fitted font do not change with it.
-        void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default, bool opaque = false)
+        // slack: share of the plate's empty space above/below the fitted text to keep (1 = the
+        // full box, StandardCaptionSlack for the standard caption). Text box and font unchanged.
+        // topAlign: a top-anchored seat (poker hold/back) keeps its plate top where the full
+        // plate's top was and lifts the text with it, so the gap above stays the seat's gap.
+        void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default, bool opaque = false, float slack = 1f, bool topAlign = false)
         {
             lo = CaptionPx(lo);
             hi = CaptionPx(hi);
-            NoteTutorPlate(CoachPanelRect(r, platePad));
             var st = CoachLineStyle();
             if (_coachContent == null) _coachContent = new GUIContent();
             float padX = Mathf.Clamp(r.width * 0.055f, 10f * s, 18f * s);
@@ -2653,6 +2729,7 @@ namespace FlockFive
                     guard++;
                 }
                 _coachSizedPx = px;
+                _coachSizedTextH = st.CalcHeight(_coachContent, textR.width);
                 _coachShown = shown;
                 _coachSizedFor = text;
                 _coachSizedW = textR.width;
@@ -2660,8 +2737,16 @@ namespace FlockFive
             }
             st.fontSize = _coachSizedPx;
             st.wordWrap = true;
+            var plateBox = CaptionPlateBox(r, platePad, _coachSizedTextH, textR.height, slack);
+            if (topAlign && plateBox.y > r.y)
+            {
+                float lift = plateBox.y - r.y;
+                plateBox.y -= lift;
+                textR.y -= lift;
+            }
+            NoteTutorPlate(CoachPanelRect(plateBox, platePad));
             float fade = EaseOutCubic(_coachFade);
-            DrawCoachPanel(r, fade, platePad, opaque);
+            DrawCoachPanel(plateBox, fade, platePad, opaque);
             StampBannerText(textR, _coachShown ?? text, st, fade, true);
         }
 
@@ -2687,6 +2772,7 @@ namespace FlockFive
                 AddRestPose(_restTravelHi, s, s, pad);
             }
             AddPestBlock(pad);
+            AddComboBlock(pad);
             AddLiftedBirds(pad);
             AddGardenObstacles(pad);
             AddStampBlock(s, pad);
@@ -3037,35 +3123,17 @@ namespace FlockFive
             if (_cueLine != null)
             {
                 int capHi = Mathf.RoundToInt(32f * s);
-                // Sparrow and hawk lines use the same measured box as the other lessons.
-                if (_pestCue != 0) MeasurePestCaption(s, capHi);
                 GardenLineBox(s, out float capW, out float capH);
+                // Pest intros: the shared StandardCaptionBox (width, height, font range) and the
+                // standard plate slack, exactly like the garden lessons. Seat latched, so static.
                 if (_pestCue != 0)
-                    DrawCoachLine(_cueLine, s, top, capH, capHi, -1f, capW);
+                    DrawCoachLine(_cueLine, s, top);
                 else if (_leafIntro || _hiveLevelLive || _hiveIntroLive)
                     DrawCoachLine(_cueLine, s, top, capH, capHi);
                 else
                     DrawCoachLine(_cueLine, s, top, capH);
             }
             DrawTutorOverlay(s);
-        }
-
-        string _capBoxFor;
-        float _capBoxS;
-        float _capBoxW;
-        float _capBoxH;
-
-        // Sizes a pest line with the shared FitCaptionBox and keeps the result for
-        // GardenLineBox, so the drawn plate and the glove-avoid plate are the same box.
-        void MeasurePestCaption(float s, int hi)
-        {
-            if (_capBoxFor == _cueLine && Mathf.Abs(_capBoxS - s) < 0.01f) return;
-            float maxW = Mathf.Min(Screen.width * 0.72f, 520f * s);
-            var fit = FitCaptionBox(_cueLine, maxW, hi, 16);
-            _capBoxFor = _cueLine;
-            _capBoxS = s;
-            _capBoxW = Mathf.Min(maxW, fit.width + 30f * s);
-            _capBoxH = fit.height + 24f * s;
         }
 
         // Shared tutorial overlay. The caller paints the caption first.
@@ -4022,6 +4090,8 @@ namespace FlockFive
             if (hold)
             {
                 if (_tutorPause != 0 || Ads.IsShowing) return;
+                // Shared music duck: the bed fades out over 0.6 s instead of cutting with the pause.
+                MixDesk.TutorFreeze(true);
                 GamePause.Push();
                 GamePause.TutorHold = true;
                 _tutorPause = 1;
@@ -4036,6 +4106,10 @@ namespace FlockFive
             GamePause.Pop();
             GamePause.TutorHold = false;
             _tutorPause = 0;
+            // The bed fades back up over 0.6 s (MixDesk follows the freeze state).
+            MixDesk.TutorFreeze(false);
+            // A solved board left by the scrap finishes now (also polled every idle frame).
+            TrySolvedFinish();
         }
 
         // Glove, caption, and the completing tap stay alive while the garden is frozen.
@@ -5180,6 +5254,28 @@ namespace FlockFive
             _blocks[_blockN].X1 = x1;
             _blocks[_blockN].Y1 = y1;
             _blockN++;
+        }
+
+        // A COMBO wordmark already up is a keepout band for a caption seated now (the pest
+        // intro freeze holds the wordmark on screen). Full safe width: the word is centred.
+        void AddComboBlock(float pad)
+        {
+            if (_blocks == null || ComboLanes.Count == 0) return;
+            var cam = _garden.Cam;
+            if (cam == null) return;
+            for (int i = 0; i < ComboLanes.Count && _blockN < _blocks.Length; i++)
+            {
+                var lane = ComboLanes[i];
+                if (lane == null || !lane.Live) continue;
+                var a = cam.WorldToScreenPoint(new Vector3(0f, lane.Max, 0f));
+                var c = cam.WorldToScreenPoint(new Vector3(0f, lane.Min, 0f));
+                if (a.z < 0f && c.z < 0f) continue;
+                _blocks[_blockN].X0 = 0f;
+                _blocks[_blockN].Y0 = Screen.height - Mathf.Max(a.y, c.y) - pad;
+                _blocks[_blockN].X1 = Screen.width;
+                _blocks[_blockN].Y1 = Screen.height - Mathf.Min(a.y, c.y) + pad;
+                _blockN++;
+            }
         }
 
         void CoachEnsureRipples()

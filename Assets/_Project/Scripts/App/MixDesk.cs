@@ -23,6 +23,17 @@ namespace FlockFive
         public const float DuckFloor = 0.70f;
 
         AudioSource[] _stems;
+        // Build 61: the one music duck every tutorial freeze uses (HoldTutorPause is the only
+        // writer of GamePause.TutorHold). The garden freezes on the spot, the music fades to 0
+        // over FreezeFadeSeconds and back to full over FreezeFadeSeconds once the freeze ends.
+        // The level is derived from live state every frame (freeze held and no ad showing), not
+        // latched by events, so an ad, a heal, GamePause.Reset, backgrounding or a scene reload
+        // can never leave it down: whenever no tutorial freeze holds, it slews back to 1.
+        public const float FreezeFadeSeconds = 0.6f;
+        float _freezeDuck = 1f;
+        float[] _stemBase;
+        bool _freezeThrough;
+        float _freezeLast = -1f;
         float _leadUntil;
         float _leadDuck = 1f;
         float _duckSlew = 1f;
@@ -504,11 +515,67 @@ namespace FlockFive
                 a.Stop();
         }
 
+        // Call before GamePause.Push for a tutorial freeze: the stems are set to ride through the
+        // listener pause first, so they keep playing and fade instead of stopping dead.
+        public static void TutorFreeze(bool on)
+        {
+            if (Live == null) return;
+            if (on) Live.MusicThroughPause(true);
+            // Off needs nothing here: TickFreezeDuck sees the freeze gone and fades back up.
+        }
+
+        static bool TutorFreezeHeld => GamePause.Paused && GamePause.TutorHold && !Ads.IsShowing;
+
+        void MusicThroughPause(bool on)
+        {
+            _freezeThrough = on;
+            if (_stems == null) return;
+            for (int i = 0; i < _stems.Length; i++)
+            {
+                var a = _stems[i];
+                if (a != null && a.ignoreListenerPause != on) a.ignoreListenerPause = on;
+            }
+        }
+
+        // Shared freeze duck. Runs first in LateUpdate, paused or not.
+        void TickFreezeDuck()
+        {
+            bool held = TutorFreezeHeld;
+            // An ad never plays over the bed: silence now, and let the listener pause own it.
+            if (Ads.IsShowing && _freezeThrough) _freezeDuck = 0f;
+            if (held != _freezeThrough) MusicThroughPause(held);
+            else if (held) MusicThroughPause(true);  // a stem rebuilt mid-freeze rides through too
+            float now = Time.realtimeSinceStartup;
+            // Real time between ticks, capped: a resume from background must not jump the fade.
+            float dt = _freezeLast < 0f ? 0f : Mathf.Clamp(now - _freezeLast, 0f, 0.1f);
+            _freezeLast = now;
+            _freezeDuck = Mathf.MoveTowards(_freezeDuck, held ? 0f : 1f, dt / FreezeFadeSeconds);
+        }
+
+        void OnApplicationPause(bool paused)
+        {
+            // Back from the background: restart the fade clock; the level follows live state.
+            if (!paused) _freezeLast = -1f;
+        }
+
+        void ApplyFreezeDuck()
+        {
+            if (_stems == null || _stemBase == null) return;
+            for (int i = 0; i < _stems.Length && i < _stemBase.Length; i++)
+            {
+                var a = _stems[i];
+                if (a != null) a.volume = _stemBase[i] * _freezeDuck;
+            }
+        }
+
         void LateUpdate()
         {
+            TickFreezeDuck();
             if (GamePause.Paused)
             {
                 _bgWasPaused = true;
+                // Tutorial freeze: the bed keeps playing and fades on the level it had.
+                if (_freezeThrough) ApplyFreezeDuck();
                 return;
             }
             if (_bgWasPaused)
@@ -573,13 +640,15 @@ namespace FlockFive
 
         void SetStem(int i, float vol)
         {
+            if (_stemBase == null || _stemBase.Length != _stems.Length) _stemBase = new float[_stems.Length];
+            _stemBase[i] = vol;
             var a = _stems[i];
             if (a == null)
             {
                 _stems[i] = null;
                 return;
             }
-            a.volume = vol;
+            a.volume = vol * _freezeDuck;
         }
 
         static int LoopN() => Mathf.RoundToInt(NBars * 4f * Beat * Rate);

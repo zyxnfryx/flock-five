@@ -639,6 +639,10 @@ namespace FlockFive
 
         void Load(int index)
         {
+            GiftWant.StageClear = false; // the new stage's signs start lit
+            _autoResolveDone = false;
+            _solvedMerging = false;
+            SetAutoResolveSpeed(1f);
             GardenFit.ClearBusy();
             DismissStreakSign();
             // Board never opened: still one credit. A pay beat that already ran is a no-op.
@@ -2220,7 +2224,7 @@ namespace FlockFive
                 }
                 if (gen != _comboPopGen || _comboShows.Count == 0) break;
                 var show = _comboShows.Dequeue();
-                _comboPopAt = Time.unscaledTime + ComboPopGap;
+                _comboPopAt = Time.unscaledTime + ComboPopGap / _autoResolveScale;
                 try { PlayComboShow(show.Combo, show.Celebrate); }
                 catch (System.Exception) { }
             }
@@ -2250,6 +2254,8 @@ namespace FlockFive
 
         void OnApplicationPause(bool paused)
         {
+            // Back to 1 in the background; SyncAutoResolveSpeed re-arms it from live state.
+            if (paused) SetAutoResolveSpeed(1f);
             if (paused) NoteAppBackground();
             else
             {
@@ -2266,6 +2272,10 @@ namespace FlockFive
 
         void Update()
         {
+            // Bonus signs fade on the shared stage-clear state (limb stays; see GiftWant).
+            GiftWant.StageClear = _won && !_splash;
+            // Before the pause return: the base scale is set (or handed to GamePause) every frame.
+            SyncAutoResolveSpeed();
             // Chain ended. A collect still in flight keeps the opening sting slot.
             if (!_collecting && Time.unscaledTime > _comboUntil)
                 SfxLibrary.CloseCombo();
@@ -2295,6 +2305,9 @@ namespace FlockFive
             }
             if (!_won && !_restarting)
                 TryScoreGarden();
+            // Polled every unfrozen frame, so a check skipped under a tutorial freeze, a pest
+            // scrap or a collect is never consumed: it runs the first frame the garden is idle.
+            TrySolvedFinish();
             if (!_busy && !_won && SkyCycle.Courtesy != null)
                 SkyCycle.Courtesy = null;
 #if UNITY_EDITOR
@@ -3277,6 +3290,98 @@ namespace FlockFive
             return true;
         }
 
+        // ---- Build 61: solved-board auto-resolve ----
+        // Once every perch holds one colour (Board.Solved) the game finishes the garden: it
+        // joins split flocks with MergeRun hops, the fives collect, and TryScoreGarden scores the
+        // clear. One check for every path (plain play, sparrow, hawk, PestPark redistribute),
+        // polled from Update and re-run when a tutorial freeze lets go (ReleaseTutorPause).
+        // Root cause of the build 60 stall: none of this existed. PestPark refuses a seat that
+        // would complete a five (the no-autoclear rule), so the last flock home from a scrap
+        // always landed split (4+1) and only a player hop could finish it.
+        bool _solvedMerging;
+
+        bool SolvedFinishIdle()
+        {
+            if (_board == null || _won || _gardenScoring || _restarting || _splash || _frozen) return false;
+            if (GamePause.Paused || _gift != GiftFace.None || _restartAsk != RestartAsk.None) return false;
+            if (_solvedMerging || _collecting || _collectDepth > 0 || _locked.Count > 0 || GardenFit.Busy) return false;
+            if (_pestResolving || _pestFinishing || _scatterBusy) return false;
+            // A guided garden hop is the player's to make.
+            if (_coach && _cueHand) return false;
+            return _board.Solved;
+        }
+
+        void TrySolvedFinish()
+        {
+            if (!SolvedFinishIdle()) return;
+            if (!_board.NextSolvedMerge(out int from, out int to)) return;
+            if (Locked(from) || Locked(to)) return;
+            StartCoroutine(SolvedMerge(from, to));
+        }
+
+        IEnumerator SolvedMerge(int from, int to)
+        {
+            int gen = _motionGen;
+            _solvedMerging = true;
+            if (_sel >= 0 && _garden.Branches != null && (uint)_sel < (uint)_garden.Branches.Length)
+                _garden.Branches[_sel].SetReady(false);
+            _sel = -1;
+            int fromCount = _board.Branches[from].Count;
+            int toCount = _board.Branches[to].Count;
+            var col = _board.Branches[from].Birds[0].Color;
+            Lock(from);
+            Lock(to);
+            if (!_board.MergeRun(from, to, out int run))
+            {
+                Unlock(from);
+                Unlock(to);
+                _solvedMerging = false;
+                yield break;
+            }
+            AdLog.Add("solved board: auto-join " + run + " " + col + " limb " + from + " -> " + to);
+            yield return Hop(from, to, run, fromCount, toCount, col);
+            if (gen != _motionGen) { _solvedMerging = false; yield break; }
+            Unlock(from);
+            Unlock(to);
+            SyncAll();
+            KickCollects();
+            SyncAll();
+            _solvedMerging = false;
+            if (_locked.Count == 0)
+                yield return GardenFit.Tween(_garden, _board, false);
+        }
+
+        // ---- Build 61: auto-resolve speed ----
+        // The solved-board run (merges, collects, combo pops, feeder swaps, the pre-finale beat)
+        // plays at AutoResolveSpeed. One knob: the base time scale, which every scaled timer in
+        // that run already reads (Hop, Collect, FlyHit, RetireFeeder, BreakAway, GardenFit.Tween,
+        // PlayComboPop). Sounds fire off the same timeline, so they stay on their beats. The two
+        // real-time waits in the window (combo pop spacing, the pre-finale beat) divide by it by
+        // hand. Back to 1 at the finale, Load, restart, home, any pest on stage, an ad, background.
+        const float AutoResolveSpeed = 1.2f;
+        float _autoResolveScale = 1f;
+        bool _autoResolveDone;
+
+        bool AutoResolveLive()
+        {
+            if (_board == null || _splash || _restarting || _autoResolveDone || Ads.IsShowing) return false;
+            if (_frozen || _gift != GiftFace.None) return false;
+            if (PestOnStage() || _pestResolving || _pestFinishing) return false;
+            return _board.Solved;
+        }
+
+        void SyncAutoResolveSpeed()
+        {
+            SetAutoResolveSpeed(AutoResolveLive() ? AutoResolveSpeed : 1f);
+        }
+
+        void SetAutoResolveSpeed(float scale)
+        {
+            if (Mathf.Approximately(scale, _autoResolveScale)) return;
+            _autoResolveScale = scale;
+            GamePause.SetBaseScale(scale);
+        }
+
         IEnumerator WaitGardenScore()
         {
             float guard = 0f;
@@ -3519,7 +3624,8 @@ namespace FlockFive
             float beat = 0f;
             while (beat < 0.55f * RewardPace)
             {
-                if (!GamePause.Paused) beat += Time.unscaledDeltaTime;
+                // Real-time beat, so it takes the auto-resolve speed by hand.
+                if (!GamePause.Paused) beat += Time.unscaledDeltaTime * _autoResolveScale;
                 yield return null;
             }
             if (_restarting || _splash)
@@ -3527,6 +3633,9 @@ namespace FlockFive
                 _gardenScoring = false;
                 yield break;
             }
+            // The auto-resolve window ends where the finale starts: back to 1x for good.
+            _autoResolveDone = true;
+            SetAutoResolveSpeed(1f);
             yield return FinaleShow.Play(_garden, this);
             if (_restarting || _splash)
             {
@@ -3812,6 +3921,9 @@ namespace FlockFive
             if (_won || _board == null || _board.Won) return;
             if (_board.Displaced.Count > 0) return;
             if (_gift != GiftFace.None) return;
+            // A solved board with a split flock is never iced, even when that flock has no
+            // player hop (sex rule): TrySolvedFinish joins it.
+            if (_board.NextSolvedMerge(out _, out _)) return;
             // Ice only when nothing can move. An open bonus limb counts, empty or not.
             // A search that finds no win is not enough: stage 1 still has hops.
             if (_board.HasHop() || _board.FindCollect() >= 0) return;
@@ -3918,6 +4030,8 @@ namespace FlockFive
             if (_restarting) yield break;
             _motionGen++;
             _restarting = true;
+            _solvedMerging = false;
+            SetAutoResolveSpeed(1f);
             GardenFit.ClearBusy();
             CoachHideNow();
             _busy = true;
@@ -6574,7 +6688,7 @@ namespace FlockFive
                 StepStreakReward();
 
             // Bigger persistent balance: "$12" + coin sprite on the right.
-            DrawCoinBalance(s, pig);
+            DrawCoinBalance(s, pig.x - 12f, pig.center.y);
 
             // Streak sign holds, then fades on its own.
             DrawStreakToast(s, pig);
@@ -6591,15 +6705,27 @@ namespace FlockFive
             }
         }
 
-        void DrawCoinBalance(float s, Rect pig)
+        // THE coin balance ($ amount + coin icon), shared by the home screen and the poker page:
+        // one icon size, one type scale, one font. rightX is the icon's right edge, centerY its
+        // middle (home: just left of the piggy; poker: the top-right corner on the back-medal
+        // row, where the home rail slot would sit on the PAY TABLE tab). Held-coin count-up
+        // rides CoinsDrawn() inside DrawCoinCluster, so both screens roll the same way.
+        const float CoinBalanceType = 0.95f;
+
+        // Icon edge from the rail size at rest (the piggy is the rail's size), so the poker
+        // page, which has no rail, gets the exact home size.
+        static float CoinBalanceIcon(float s) =>
+            Mathf.Clamp(SplashRailSize() * 0.48f * 0.80f, 29f * s, 51f * s);
+
+        void DrawCoinBalance(float s, float rightX, float centerY)
         {
-            float icon = Mathf.Clamp(pig.height * 0.48f * 0.80f, 29f * s, 51f * s);
-            var ir = new Rect(pig.x - 12f - icon, pig.y + (pig.height - icon) * 0.5f, icon, icon);
-            DrawCoinCluster(ir, s, 0.95f);
+            float icon = CoinBalanceIcon(s);
+            var ir = new Rect(rightX - icon, centerY - icon * 0.5f, icon, icon);
+            DrawCoinCluster(ir, s, CoinBalanceType);
         }
 
         // Amount matches the coin times typeScale, then shrinks on width only.
-        // Home passes 0.95. Poker passes 0.86.
+        // Home and poker go through DrawCoinBalance (CoinBalanceType); the badger page passes 0.86.
         void DrawCoinCluster(Rect iconR, float s, float typeScale = 1f)
         {
             var coinSpr = SpriteCatalog.Coin;
@@ -7183,11 +7309,12 @@ namespace FlockFive
             // reserve from the fit loop, so the board converged on the whole band (~1.4-1.7x
             // the build 57 board, not the intended ~12%). Build 59: the loop keeps that reserve
             // as plain air (old glass geometry), which lands exactly on the build 57 rest face,
-            // then RestShrink takes it a touch under. Sparkles ride the brass edge only.
+            // then restScale sizes it from there (b59 0.95, b61 1.05: ~10% up on b59).
+            // Sparkles ride the brass edge only.
             const float bandFrac = 0.046f;
             const float maxPop = 1.06f;
             const float airGlass = 1.22f;    // old bulb glassOut, now just air around the band
-            const float restShrink = 0.95f;  // ~5% under the build 57 board
+            const float restScale = 1.05f;   // ~5% over the build 57 board (b59-60 had 0.95)
 
             // The payout owns the band under the wordmark, inside the safe area.
             // Bottom stops at the play-disc top (the disc starts ~10% into the bloom).
@@ -7249,8 +7376,17 @@ namespace FlockFive
                     restH *= squeeze;
                 }
             }
-            restW *= restShrink;
-            restH *= restShrink;
+            restW *= restScale;
+            restH *= restScale;
+            {
+                // Fit guard for the larger board: brass band and full pop stay inside the band
+                // between the wordmark and the play disc (no-op on iPhone SE / 15 / Pro Max).
+                float fitK = Mathf.Min(1f,
+                    (rightLimit - leftLimit) / Mathf.Max(1f, maxPop * restW * (1f + 2f * bandFrac)),
+                    (botLimit - topLimit) / Mathf.Max(1f, maxPop * (restH + 2f * restW * bandFrac)));
+                restW *= fitK;
+                restH *= fitK;
+            }
             float bandPad = restW * bandFrac;
             // Soft aura / combo halo as a fraction of the board (replaces old bulb crownFrac).
             float crownFrac = 0.10f;
@@ -7355,9 +7491,9 @@ namespace FlockFive
             labelSt.wordWrap = false;
             var heroSt = GuiPool.From(GuiSlot.StreakHero, labelSt);
             heroSt.alignment = TextAnchor.MiddleCenter;
-            // Caps follow the board: build 57's 38/52 at RestShrink (b58 had 42/58).
-            int labelHi = Mathf.Max(20, Mathf.RoundToInt(36f * s));
-            int heroHi = Mathf.Max(28, Mathf.RoundToInt(50f * s));
+            // Caps follow the board: build 57's 38/52 times restScale (b58 had 42/58, b59 36/50).
+            int labelHi = Mathf.Max(20, Mathf.RoundToInt(38f * restScale * s));
+            int heroHi = Mathf.Max(28, Mathf.RoundToInt(52f * restScale * s));
             var heroInk = new Color(1f, 0.95f, 0.42f, 1f);
 
             void StampFit(Rect r, string text, GUIStyle st, Color fill, int hi, float widthFrac, float inkA)
@@ -10506,49 +10642,137 @@ namespace FlockFive
         int _pokerCapScreenW;
         int _pokerCapScreenH;
         Rect _pokerCapSeat;
+        bool _pokerCapTop;
 
-        Rect PokerStandardSeat(string line, float s, Vector2 bandA, Vector2 bandB)
+        // Build 61: each poker step picks its caption anchor here, and only here.
+        //   Bet  (deal hint too): between the cards and BET/DEAL, else above the cards (centred).
+        //   Hold: the build 60 box, unchanged (same size, so the same font), with the build 61
+        //         plate slack; only its seat moves: plate top PokerCapClearGap under the PAY TABLE
+        //         tab and the logo. The cards do not move. In the hold step the dealt cards ride
+        //         the fanned hand near BET/DEAL (a held card slides up to the flat row), so the
+        //         plate clears the fan; on a short screen it may run over the top of the cards.
+        //   Back: the full standard box under the dealt row (PokerCaptionTop gap), centred; if
+        //         BET/DEAL is close it rides up over the bottom of the (inert) cards, never shrinks.
+        // Hold and Back are pinned (static, never moved by the glove); Bet keeps the latch.
+        enum PokerCapAnchor { BetBand, UnderPayTab, BelowCards }
+
+        static PokerCapAnchor PokerStepAnchor(string line) =>
+            line == PokerHoldLine ? PokerCapAnchor.UnderPayTab
+            : line == PokerBackLine ? PokerCapAnchor.BelowCards
+            : PokerCapAnchor.BetBand;
+
+        static bool PokerStepPinned(PokerCapAnchor a) => a != PokerCapAnchor.BetBand;
+
+        // Clear air between the PAY TABLE tab / logo and the hold caption plate (x s:
+        // SE ~23 px = 12 pt, 15 ~44 px = 15 pt, Pro Max ~48 px = 16 pt).
+        const float PokerCapClearGap = 12.5f;
+        // Air kept above BET/DEAL under a below-the-cards caption plate.
+        const float PokerCapControlsGap = 8f;
+
+        // Page geometry the anchors read, refreshed by DrawPokerPage every pass.
+        struct PokerCapGeo
+        {
+            public Rect Row, Bet, Act, Tab;
+            public float TitleBottom, LogoClear;
+        }
+        PokerCapGeo _pokerCapGeo;
+
+        // Seat (the caption's text box; its plate is CoachPanelRect of it) for a step line.
+        // Set once per line and screen size.
+        Rect PokerCaptionSeat(string line, float s, out bool topAlign)
         {
             if (_pokerCapFor == line && _pokerCapScreenW == Screen.width && _pokerCapScreenH == Screen.height)
-                return _pokerCapSeat;
-            StandardCaptionBox(s, out float w, out float h, out _, out _);
-            float plateY = 12f;            // CoachPanelRect's vertical pad, per side
-            float gapTop = 4f * s;
-            float roomA = bandA.y - bandA.x - plateY * 2f - gapTop;
-            float roomB = bandB.y - bandB.x - plateY * 2f - gapTop;
-            var band = bandA;
-            float room = roomA;
-            if (roomA < h && roomB > roomA)
             {
-                band = bandB;
-                room = roomB;
+                topAlign = _pokerCapTop;
+                return _pokerCapSeat;
             }
-            float boxH = Mathf.Max(24f, Mathf.Min(h, room));
-            float y = band.x + gapTop + plateY + Mathf.Max(0f, (room - boxH) * 0.5f);
-            if (y < 8f) y = 8f;
+            StandardCaptionBox(s, out float w, out float h, out _, out _);
+            const float plateY = 12f;      // CoachPanelRect's vertical pad, per side
+            var g = _pokerCapGeo;
+            float reach = PokerBandAboveCards(s, g.Row, 0f).y;
             float x = (Screen.width - w) * 0.5f;
+            float y;
+            float boxH;
+            topAlign = false;
+            switch (PokerStepAnchor(line))
+            {
+                case PokerCapAnchor.UnderPayTab:
+                {
+                    // Build 60 box height, exactly as build 60 sized it (its two bands above the
+                    // flat row: under the tab, else under the title; the roomier when the first
+                    // is short), so the fitted font is build 60's.
+                    float ceilA = g.Tab.yMax;
+                    if (g.Row.y - ceilA < 60f * s) ceilA = g.TitleBottom;
+                    float gapTop = 4f * s;
+                    float roomA = reach - ceilA - plateY * 2f - gapTop;
+                    float roomB = reach - g.TitleBottom - plateY * 2f - gapTop;
+                    float room = (roomA < h && roomB > roomA) ? roomB : roomA;
+                    boxH = Mathf.Max(24f, Mathf.Min(h, room));
+                    // New seat: the painted plate's top PokerCapClearGap below the tab and logo.
+                    float plateH = CaptionPlateHeight(line, s, w, boxH);
+                    y = PokerHoldCeiling(g) + plateH * 0.5f - boxH * 0.5f;
+                    break;
+                }
+                case PokerCapAnchor.BelowCards:
+                {
+                    float top = PokerCaptionTop(s, g.Row.yMax);
+                    float bot = Mathf.Min(g.Bet.y, g.Act.y) - PokerCapControlsGap * s;
+                    float plateH = StandardPlateHeight(line, s);
+                    float plateTop = top;
+                    if (plateTop + plateH > bot) plateTop = bot - plateH;  // over the cards, not shrunk
+                    boxH = h;
+                    y = plateTop + plateH * 0.5f - h * 0.5f;
+                    break;
+                }
+                default:
+                {
+                    // Bet: build 59 two-band seat (first band that holds the box, else the
+                    // roomier), centred in its band.
+                    var bandA = PokerBandBelowCards(s, g.Row, g.Bet, g.Act);
+                    float ceil = g.Tab.yMax;
+                    if (g.Row.y - ceil < 60f * s) ceil = g.TitleBottom;
+                    var bandB = PokerBandAboveCards(s, g.Row, ceil);
+                    float gapTop = 4f * s;
+                    float roomA = bandA.y - bandA.x - plateY * 2f - gapTop;
+                    float roomB = bandB.y - bandB.x - plateY * 2f - gapTop;
+                    var band = bandA;
+                    float room = roomA;
+                    if (roomA < h && roomB > roomA)
+                    {
+                        band = bandB;
+                        room = roomB;
+                    }
+                    boxH = Mathf.Max(24f, Mathf.Min(h, room));
+                    y = band.x + gapTop + plateY + Mathf.Max(0f, (room - boxH) * 0.5f);
+                    break;
+                }
+            }
             _pokerCapFor = line;
             _pokerCapScreenW = Screen.width;
             _pokerCapScreenH = Screen.height;
+            _pokerCapTop = topAlign;
             _pokerCapSeat = new Rect(x, y, w, boxH);
             return _pokerCapSeat;
         }
 
-        // Standard caption for a poker page step. pin keeps a rule seat (hold, back: above
-        // the cards); unpinned lines take the shared once-per-step glove latch.
-        void DrawPokerStandardLine(string line, float s, Vector2 bandA, Vector2 bandB, bool pin)
+        // Top of the hold band: under the PAY TABLE tab and the logo halo, PokerCapClearGap clear.
+        static float PokerHoldCeiling(PokerCapGeo g) =>
+            Mathf.Max(g.LogoClear, g.Tab.width > 2f ? g.Tab.yMax : 0f) + PokerCapClearGap * Mathf.Max(Screen.height / 720f, 1f);
+
+        // Standard caption for a poker page step; the anchor and pin come from PokerStepAnchor.
+        void DrawPokerStandardLine(string line, float s)
         {
-            var r = PokerStandardSeat(line, s, bandA, bandB);
+            var r = PokerCaptionSeat(line, s, out bool topAlign);
             StandardCaptionBox(s, out _, out _, out int lo, out int hi);
             if (GuiPaint())
                 _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
+            bool pin = PokerStepPinned(PokerStepAnchor(line));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
-            PaintCoachCaption(line, seat, s, lo, hi);
+            PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign);
         }
 
-        // Above the cards: under the title (or the pay-table tab when there is room under
-        // it) down to the top of the card reach (held cards and the hover puff ride ~14%
-        // of a card above the row).
+        // Above the cards: from ceilingY down to the top of the card reach (held cards and the
+        // hover puff ride ~14% of a card above the row).
         static Vector2 PokerBandAboveCards(float s, Rect row, float ceilingY)
         {
             float reach = row.y - Mathf.Max(row.height * 0.14f, 14f * s) - 2f * s;
@@ -10574,17 +10798,7 @@ namespace FlockFive
                 && PlayerPrefs.GetInt(CoachPokerDealtKey, 0) == 0)
                 line = PokerBetLine;
             if (line != null)
-            {
-                // Hold: above the cards (under the pay-table tab, else under the title).
-                // Bet: between the cards and the controls, else above the cards.
-                var above = PokerBandAboveCards(s, row, ceilingY);
-                var aboveTitle = PokerBandAboveCards(s, row, titleBottom);
-                var belowCards = PokerBandBelowCards(s, row, betR, actR);
-                if (line == PokerHoldLine)
-                    DrawPokerStandardLine(line, s, above, aboveTitle, true);
-                else
-                    DrawPokerStandardLine(line, s, belowCards, above, false);
-            }
+                DrawPokerStandardLine(line, s);   // seat from PokerStepAnchor
             DrawTutorOverlay(s);
         }
 
@@ -10620,8 +10834,7 @@ namespace FlockFive
             _pokerDealAim = DealPlatformAim(actR);
             _pokerDealTap = actR;
             _pokerDealAimOk = disc.width > 2f;
-            DrawPokerStandardLine(PokerBetLine, s, PokerBandBelowCards(s, row, betR, actR),
-                PokerBandAboveCards(s, row, PokerPayTabRect(_pokerTitleBottom, s).yMax), false);
+            DrawPokerStandardLine(PokerBetLine, s);
             DrawTutorOverlay(s);
         }
 
@@ -10702,13 +10915,9 @@ namespace FlockFive
             _pokerBackAim = back.center;
             _pokerBackTap = back;
             _pokerBackAimOk = back.width > 2f;
-            float below = logoBottom;
-            var tab = PokerPayTabRect(logoBottom, s);
-            if (tab.width > 2f && tab.yMax > below) below = tab.yMax;
-            // Standard caption, seated between the pay-table tab and the card row (else
-            // under the title), so it stays clear of the back button above the title.
-            DrawPokerStandardLine(PokerBackLine, s, PokerBandAboveCards(s, row, below + 8f * s),
-                PokerBandAboveCards(s, row, logoBottom + 4f * s), true);
+            // Standard caption under the dealt row (PokerStepAnchor: BelowCards), clear of the
+            // PAY TABLE tab, the logo and BET/DEAL; the glove still points up at Back.
+            DrawPokerStandardLine(PokerBackLine, s);
             DrawTutorOverlay(s);
         }
 
@@ -10869,6 +11078,15 @@ namespace FlockFive
             float holdCeil = payTab.yMax;
             if (rowBox.y - holdCeil < 60f * s) holdCeil = below;
             _pokerTitleBottom = below;
+            _pokerCapGeo = new PokerCapGeo
+            {
+                Row = rowBox,
+                Bet = betR,
+                Act = actR,
+                Tab = payTab,
+                TitleBottom = below,
+                LogoClear = Mathf.Max(below, halo.yMax)
+            };
             DrawPokerPageTutor(s, rowBox, betR, actR, holdCeil, below);
             DrawPokerDealHint(s, rowBox, betR, actR);
             DrawPokerBackHint(s, back, rowBox, below);
@@ -11015,7 +11233,9 @@ namespace FlockFive
                     float barInset = 8f * s;
                     var row = new Rect(paper.x + barInset, yRow, paper.width - barInset * 2f, rowH);
 
-                    bool jackpot = BirdPoker.IsJackpot(rank);
+                    // Gold bar (and the bigger cap / warmer ink) on the top rank only (FIVE WILDS);
+                    // NATURAL FIVE and the rest take the plain alternating rows.
+                    bool jackpot = PayRowGold(rank);
                     if (jackpot)
                     {
                         GUI.color = new Color(1f, 0.84f, 0.32f, 0.38f * u);
@@ -11137,8 +11357,8 @@ namespace FlockFive
             if (!_pokerStamp) return;
             if (GuiPaint())
                 _pokerStampT += Time.unscaledDeltaTime;
-            // Stamper hits the clipboard — shake the IMGUI overlay and the garden.
-            if (_pokerStampT >= 1.05f && _pokerStampT - Time.unscaledDeltaTime < 1.05f)
+            // Seal hits the clipboard — shake the IMGUI overlay and the garden.
+            if (_pokerStampT >= StampHitAt && _pokerStampT - Time.unscaledDeltaTime < StampHitAt)
             {
                 PunchPoker(_pokerBingo ? 0.34f : 0.26f, _pokerBingo ? 28f : 20f, _pokerBingo ? 12f : 8f);
                 Sfx.Rumble();
@@ -11146,7 +11366,7 @@ namespace FlockFive
                 if (_pokerBingo) Sfx.Combo(5);
             }
             // The FULLCARD prize rolls onto the purse with the bingo cascade / FULLCARD line.
-            if (_pokerBingo && _pokerStampT >= 1.35f) RevealPokerPay(true);
+            if (_pokerBingo && _pokerStampT >= StampBingoAt) RevealPokerPay(true);
             bool tap = Event.current != null && Event.current.type == EventType.MouseDown;
             float hold = _pokerBingo ? 5.2f : 2.6f;
             float tapAt = _pokerBingo ? 2.4f : 1.35f;
@@ -11158,7 +11378,77 @@ namespace FlockFive
             }
         }
 
-        static void DrawInkStamp(Rect r, float rot, float alpha, bool word)
+        // Resting wax-seal diameter in punch cells. The art is round (aspect 1) and sits centred
+        // on its cell, just inside it so neighbours stay clear; only the impact squash briefly
+        // spills into the gap.
+        const float PunchSealCells = 0.94f;
+        // Extra size at full lift (1 = high above the card, 0 = pressed on it).
+        const float SealLiftGrow = 1.45f;
+        // Impact squash-and-settle length.
+        const float SealSettle = 0.34f;
+        // FULLCARD wave: each seal hops off the card and re-presses.
+        const float SealHop = 0.22f;
+
+        // Hand-pressed tilt per spot (-14..-4 deg), so a full card doesn't look machine-printed.
+        static float PunchSealRot(int kind) => -14f + (kind * 7 % 11);
+
+        // Wax spreading on the hit: squashes out, dips under, settles back to 1.
+        static Vector2 SealSquash(float since)
+        {
+            if (since < 0f || since >= SealSettle) return Vector2.one;
+            float v = since / SealSettle;
+            float k = 0.11f * (1f - v) * (1f - v) * Mathf.Cos(v * 3f * Mathf.PI);
+            return new Vector2(1f + k, 1f + k * 0.72f);
+        }
+
+        // The one draw path for a punch mark: the red wax seal, face-down on the card, with a
+        // contact shadow. Inked spots, the falling stamper and the FULLCARD wave all come here.
+        // c: seal centre; cell: punch cell size; lift: 0 pressed .. 1 high above the card;
+        // squash: impact spread (Vector2.one at rest).
+        static void DrawInkStamp(Vector2 c, float cell, float rot, float alpha, float lift, Vector2 squash)
+        {
+            if (alpha <= 0.02f) return;
+            lift = Mathf.Clamp01(lift);
+            float d = cell * PunchSealCells * (1f + lift * SealLiftGrow);
+            var seal = SpriteCatalog.WaxSeal;
+            if (seal == null || seal.texture == null)
+            {
+                DrawInkRing(new Rect(c.x - d * 0.5f, c.y - d * 0.5f, d, d), rot, alpha, lift < 0.05f);
+                return;
+            }
+            float spread = Mathf.Max(0f, squash.x - 1f);
+            float w = d * squash.x;
+            float h = d * squash.y;
+            float rest = cell * PunchSealCells;
+            // Soft cast shadow: drifts away and fades as the seal rises, darkens on the hit.
+            var glow = GlowTex();
+            var off = new Vector2(0.05f + lift * 0.24f, 0.08f + lift * 0.40f) * rest;
+            float shA = alpha * Mathf.Clamp01(0.46f - lift * 0.30f + spread * 2.4f);
+            float sh = d * (1.34f + lift * 0.30f);
+            GUI.color = new Color(0.10f, 0.03f, 0.02f, shA);
+            GUI.DrawTexture(new Rect(c.x + off.x - sh * squash.x * 0.5f, c.y + off.y - sh * squash.y * 0.5f,
+                sh * squash.x, sh * squash.y), glow, ScaleMode.StretchToFill, true);
+            var prev = GUI.matrix;
+            GUIUtility.RotateAroundPivot(rot, c);
+            var r = new Rect(c.x - w * 0.5f, c.y - h * 0.5f, w, h);
+            // Tight seal-shaped contact shadow, only once it is almost on the paper.
+            float tightA = alpha * Mathf.Clamp01(1f - lift * 4f) * (0.42f + spread * 2f);
+            if (tightA > 0.02f)
+            {
+                GUI.color = new Color(0.12f, 0.02f, 0.01f, Mathf.Clamp01(tightA));
+                var cr = new Rect(r.x + rest * 0.025f, r.y + rest * 0.045f, w * 1.02f, h * 1.02f);
+                GUI.DrawTexture(cr, seal.texture, ScaleMode.StretchToFill, true);
+            }
+            // The seal itself, a touch darker while it is being pressed in.
+            float lum = 1f - spread * 1.1f;
+            GUI.color = new Color(lum, lum, lum, alpha);
+            GUI.DrawTexture(r, seal.texture, ScaleMode.StretchToFill, true);
+            GUI.matrix = prev;
+            GUI.color = Color.white;
+        }
+
+        // Missing-art fallback only: the old red ink ring + COMPLETED bar.
+        static void DrawInkRing(Rect r, float rot, float alpha, bool word)
         {
             if (alpha <= 0.02f) return;
             var ring = SpriteCatalog.StampRing;
@@ -11377,34 +11667,27 @@ namespace FlockFive
                     GUI.DrawTexture(new Rect(r.x + ip, r.y + ip, cell - ip * 2f, cell - ip * 2f), spr.texture, ScaleMode.ScaleToFit, true);
                     GUI.color = Color.white;
                 }
-                if (on)
-                    DrawInkStamp(r, -10f, 0.92f, true);
+            }
+            // Seals ride above every cell (the press squash can spill into the gap).
+            for (int i = 0; i < BirdPoker.PunchKinds; i++)
+            {
+                if (!PokerPunchInked(i, t)) continue;
+                var r = new Rect(x0 + (i % cols) * (cell + gap), gridTop + (i / cols) * (cell + gap), cell, cell);
+                PokerSealPose(i, t, out float sealLift, out Vector2 sealSquash, out float sealRot);
+                DrawInkStamp(r.center, cell, PunchSealRot(i) + sealRot, 1f, sealLift, sealSquash);
             }
 
             DrawPokerStamper(x0, gridTop, cell, gap, cols, t, s);
 
-            if (_pokerBingo && t >= 1.35f)
+            if (_pokerBingo && t >= StampBingoAt)
             {
+                // The seals' hop-and-repress wave rides PokerSealPose in the grid's seal pass.
                 var glow = GlowTex();
                 float burst = 0.35f + 0.65f * Mathf.Abs(Mathf.Sin(t * 3.1f));
                 GUI.color = new Color(1f, 0.82f, 0.28f, 0.22f * burst);
                 float halo = boardW * (1.08f + 0.08f * burst);
                 GUI.DrawTexture(new Rect(board.center.x - halo * 0.5f, board.center.y - halo * 0.5f, halo, halo), glow, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
-                float cascade = t - 1.35f;
-                for (int i = 0; i < BirdPoker.PunchKinds; i++)
-                {
-                    if (i == _pokerStampKind) continue;
-                    float at = i * 0.06f;
-                    if (cascade < at) continue;
-                    int col = i % cols;
-                    int row = i / cols;
-                    var cellR = new Rect(x0 + col * (cell + gap), gridTop + row * (cell + gap), cell, cell);
-                    float u = Mathf.Clamp01((cascade - at) / 0.16f);
-                    float sz = cell * Mathf.Lerp(1.45f, 1.0f, u);
-                    var mark = new Rect(cellR.center.x - sz * 0.5f, cellR.center.y - sz * 0.5f, sz, sz);
-                    DrawInkStamp(mark, Mathf.Lerp(-16f, -8f, u), 0.55f + 0.40f * u, u > 0.35f);
-                }
             }
 
             if (t >= 1.4f)
@@ -11423,80 +11706,69 @@ namespace FlockFive
 
         const float StampDropAt = 0.55f;
         const float StampHitAt = 1.05f;
-        // fx_stamp_tool (old face-out art; face-down repaint queued for build 61).
-        // U/V is the centre of the rubber face.
-        const float StampToolU = 0.41f;
-        const float StampToolV = 0.82f;
-        const float StampToolAspect = 0.61f;
-        // Tool height in punch cells.
-        const float StampToolCells = 4.8f;
+        const float StampBingoAt = 1.35f;
 
         // Punch-card ink for a spot. BirdPoker saves the punch at Draw, but the spot being
-        // stamped right now stays unmarked until the stamper hits (StampHitAt): no early
-        // COMPLETED while the clipboard slides in.
+        // stamped right now stays unmarked until the seal hits (StampHitAt): no early
+        // seal while the clipboard slides in.
         bool PokerPunchInked(int kind, float t)
         {
             if (!BirdPoker.IsPunched(kind)) return false;
             return !_pokerStamp || kind != _pokerStampKind || t >= StampHitAt;
         }
 
+        // Pose of an inked seal: the fresh one squashes and settles from its hit; on a FULLCARD
+        // every other seal hops off the card and re-presses in a wave.
+        void PokerSealPose(int kind, float t, out float lift, out Vector2 squash, out float rotAdd)
+        {
+            lift = 0f;
+            squash = Vector2.one;
+            rotAdd = 0f;
+            if (!_pokerStamp) return;
+            if (kind == _pokerStampKind)
+            {
+                float since = t - StampHitAt;
+                squash = SealSquash(since);
+                if (since >= 0f && since < SealSettle)
+                {
+                    float v = since / SealSettle;
+                    rotAdd = 3.5f * (1f - v) * (1f - v) * Mathf.Sin(v * 2.5f * Mathf.PI);
+                }
+                return;
+            }
+            if (!_pokerBingo) return;
+            float c = t - (StampBingoAt + kind * 0.06f);
+            if (c < 0f) return;
+            if (c < SealHop)
+            {
+                float hop = Mathf.Sin(c / SealHop * Mathf.PI);
+                lift = 0.22f * hop;
+                rotAdd = -6f * hop;
+                return;
+            }
+            squash = SealSquash(c - SealHop);
+        }
+
+        // The seal on its way down, face-down out of the camera: big and soft-shadowed high up,
+        // hanging a beat, then accelerating into the paper. Pre-impact only: from StampHitAt the
+        // seal is the spot's ink and the grid's seal pass picks it up in the same pose (lift 0,
+        // same tilt) and squashes it, so the mark lands exactly on the hit.
         void DrawPokerStamper(float x0, float gridTop, float cell, float gap, int cols, float t, float s)
         {
-            if (t < StampDropAt || _pokerStampKind < 0) return;
+            if (t < StampDropAt || t >= StampHitAt || _pokerStampKind < 0) return;
             int col = _pokerStampKind % cols;
             int row = _pokerStampKind / cols;
             var cellR = new Rect(x0 + col * (cell + gap), gridTop + row * (cell + gap), cell, cell);
-            float contactX = cellR.center.x;
-            float contactY = cellR.center.y;
-            float startY = contactY - Screen.height * 0.70f;
-            float rubberX, rubberY, rot, squash;
-            float liftEnd = StampHitAt + 0.55f;
-            if (t < StampHitAt)
-            {
-                float u = Mathf.Clamp01((t - StampDropAt) / (StampHitAt - StampDropAt));
-                float drop = 1f - Mathf.Pow(1f - u, 2.8f);
-                rubberX = Mathf.Lerp(contactX + cell * 0.42f, contactX, drop);
-                rubberY = Mathf.Lerp(startY, contactY, drop);
-                rot = Mathf.Lerp(16f, -6f, drop);
-                squash = 1f;
-            }
-            else
-            {
-                float u = Mathf.Clamp01((t - StampHitAt) / 0.50f);
-                float peel = u < 0.16f ? 0f : (u - 0.16f) / 0.84f;
-                peel = peel * peel;
-                rubberX = contactX + peel * cell * 0.22f;
-                rubberY = Mathf.Lerp(contactY, startY - 30f * s, peel);
-                rot = Mathf.Lerp(-6f, 12f, peel);
-                squash = t < StampHitAt + 0.10f
-                    ? 1f - 0.13f * Mathf.Sin(Mathf.Clamp01((t - StampHitAt) / 0.10f) * Mathf.PI)
-                    : 1f;
-            }
-            var tool = SpriteCatalog.StampTool;
-            float a = 1f;
-            if (t > liftEnd - 0.14f)
-                a = Mathf.Clamp01((liftEnd - t) / 0.14f);
-            if (a < 0.02f) return;
-            if (tool != null && tool.texture != null)
-            {
-                float toolH = cell * StampToolCells;
-                float toolW = toolH * StampToolAspect;
-                float x = rubberX - toolW * StampToolU;
-                float y = rubberY - toolH * StampToolV * squash;
-                var prev = GUI.matrix;
-                GUIUtility.RotateAroundPivot(rot, new Vector2(rubberX, rubberY));
-                GUI.color = new Color(1f, 1f, 1f, a);
-                GUI.DrawTexture(new Rect(x, y, toolW, toolH * squash), tool.texture, ScaleMode.ScaleToFit, true);
-                GUI.color = Color.white;
-                GUI.matrix = prev;
-                return;
-            }
-            float stampU = Mathf.Clamp01((t - StampDropAt) / (StampHitAt - StampDropAt));
-            float dropInk = 1f - Mathf.Pow(1f - stampU, 2.6f);
-            float stampSize = Mathf.Lerp(cell * 2.15f, cell * 1.08f, dropInk);
-            var stamp = new Rect(cellR.center.x - stampSize * 0.5f, rubberY - stampSize * 0.5f, stampSize, stampSize);
-            DrawInkStamp(stamp, rot, Mathf.Clamp01(stampU * 1.5f) * a, true);
+            float u = Mathf.Clamp01((t - StampDropAt) / (StampHitAt - StampDropAt));
+            float lift = 1f - Mathf.Pow(u, 2.2f);
+            var c = cellR.center + new Vector2(cell * 0.90f, -cell * 2.20f) * lift;
+            float rot = PunchSealRot(_pokerStampKind) + 24f * lift;
+            float a = Mathf.Clamp01(u / 0.20f);
+            DrawInkStamp(c, cell, rot, a, lift, Vector2.one);
         }
+
+        // Pay table row style: only the top rank (PayTableRows[0], FIVE WILDS) is gold.
+        static bool PayRowGold(BirdPoker.Rank rank) => rank == BirdPoker.PayTableRows[0];
 
         static GUIStyle _pokerPayStyle, _pokerLed, _pokerStep, _pokerHero, _pokerWinCenter, _pokerWinLeft;
         static GUIStyle _payHead, _paySub, _payName, _payNum, _payMid;
@@ -11546,14 +11818,14 @@ namespace FlockFive
             return _pokerBetText;
         }
 
+        // Same balance as home (shared DrawCoinBalance: size, font, icon), seated in the
+        // top-right corner on the back-medal row. Build 60 drew it at the medal's height
+        // (icon = back.height, type 0.86), bigger than home.
         void DrawPokerPurse(Rect back, float top, float s)
         {
-            float icon = back.height;
             float right = Screen.width - Mathf.Max(12f, Screen.width - Screen.safeArea.xMax + 10f);
-            float y = back.y + (back.height - icon) * 0.5f;
-            if (y < top) y = top;
-            var ir = new Rect(right - icon, y, icon, icon);
-            DrawCoinCluster(ir, s, 0.86f);
+            float cy = Mathf.Max(back.center.y, top + CoinBalanceIcon(s) * 0.5f);
+            DrawCoinBalance(s, right, cy);
         }
 
         const float DealGatherT = 0.32f;
@@ -11912,11 +12184,10 @@ namespace FlockFive
                     if (prev < at && now >= at) Sfx.CardSlap();
                     di++;
                 }
+                // Row settles after the replacement cards land: bump sound only. Build 61 dropped
+                // the PunchPoker(0.20, 6.8, 1.5) table/camera shake here (not needed).
                 if (prev < _pokerRowEnd - 0.08f && now >= _pokerRowEnd - 0.08f)
-                {
                     Sfx.CardBump();
-                    PunchPoker(0.20f, 6.8f, 1.5f);
-                }
             }
         }
 

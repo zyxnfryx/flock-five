@@ -274,6 +274,92 @@ namespace FlockFive
             }
         }
 
+        // Build 61: the one solved-board check. Nothing in the air, no leaf, no bird on a locked
+        // gift, and every perch holds a single colour: only merges (and the feeder collects they
+        // set off) are left, so the game finishes it. Won counts as solved. Pest paths (sparrow,
+        // hawk, PestPark redistribute) all end on this board, so they all reach this check.
+        public bool Solved
+        {
+            get
+            {
+                if (Displaced.Count > 0) return false;
+                for (int i = 0; i < Branches.Count; i++)
+                {
+                    var b = Branches[i];
+                    if (b.Broken || b.Count == 0) continue;
+                    if (b.AdLocked) return false;
+                    var c = b.Birds[0].Color;
+                    for (int k = 0; k < b.Count; k++)
+                    {
+                        if (b.IsShrouded(k) || b.Birds[k].Color != c) return false;
+                    }
+                }
+                return true;
+            }
+        }
+
+        // Next auto-resolve merge on a Solved board: the smallest part-flock of a colour goes
+        // onto that colour's biggest other part-flock with room. PestPark never lands a seat
+        // that completes a five, so the last flock back from a scrap is always split (4+1,
+        // 3+2...); this joins it. False when nothing is left to join.
+        public bool NextSolvedMerge(out int from, out int to)
+        {
+            from = -1;
+            to = -1;
+            if (!Solved) return false;
+            int n = Branches.Count;
+            for (int a = 0; a < n; a++)
+            {
+                var src = Branches[a];
+                if (src.Broken || src.Count == 0 || src.Count >= BranchState.Cap) continue;
+                var c = src.Birds[0].Color;
+                int bestTo = -1;
+                for (int b = 0; b < n; b++)
+                {
+                    if (b == a) continue;
+                    var dst = Branches[b];
+                    if (dst.Broken || dst.AdLocked || dst.Count == 0 || dst.Free <= 0) continue;
+                    if (dst.Birds[0].Color != c) continue;
+                    // The smaller part moves (ties: the later limb), onto the fullest part.
+                    if (dst.Count < src.Count || (dst.Count == src.Count && b < a)) continue;
+                    if (bestTo < 0 || dst.Count > Branches[bestTo].Count) bestTo = b;
+                }
+                if (bestTo < 0) continue;
+                if (from < 0 || src.Count < Branches[from].Count)
+                {
+                    from = a;
+                    to = bestTo;
+                }
+            }
+            return from >= 0;
+        }
+
+        // Auto-resolve hop: the top birds of a single-colour limb onto a same-colour limb, as
+        // many as fit. A five is colour only, so the sex rule of a player hop does not apply.
+        public bool MergeRun(int from, int to, out int run)
+        {
+            run = 0;
+            if (from == to || (uint)from >= (uint)Branches.Count || (uint)to >= (uint)Branches.Count) return false;
+            var a = Branches[from];
+            var b = Branches[to];
+            if (a.Broken || b.Broken || b.AdLocked || a.Count == 0 || b.Count == 0) return false;
+            if (a.TipLocked || b.TipLocked || a.Birds[0].Color != b.Birds[0].Color) return false;
+            run = System.Math.Min(a.Count, b.Free);
+            if (run <= 0) return false;
+            a.AlignShroud();
+            b.AlignShroud();
+            for (int i = 0; i < run; i++)
+            {
+                var bird = a.Birds[a.Count - 1];
+                a.Birds.RemoveAt(a.Count - 1);
+                a.Shrouded.RemoveAt(a.Shrouded.Count - 1);
+                b.Birds.Add(bird);
+                b.Shrouded.Add(false);
+            }
+            JustUnveiled = false;
+            return true;
+        }
+
         public int RemainingBirds
         {
             get

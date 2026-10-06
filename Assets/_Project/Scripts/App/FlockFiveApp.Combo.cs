@@ -257,10 +257,15 @@ namespace FlockFive
             yTop = Mathf.Min(yTop, ComboFeederBottom(root) - 0.28f);
             if (Time.unscaledTime < _comboStreakUntil)
                 yTop = Mathf.Min(yTop, ComboWorldY(cam, camY, halfH, _comboStreakGui.yMax) - 0.2f);
-            if (_coachFade > 0.2f && (_coach || _adHand || _cueHand))
+            if (_coachFade > 0.2f && (_coach || _adHand || _cueHand || _pestCue != 0))
             {
+                // Build 61: the painted plate when one is up (a pest intro is three lines, not
+                // the old 72s guess), so a wordmark that pops under a caption stays clear of it.
                 float lineTop = _coachLineHeld ? _coachLineHold : top + 8f * s;
-                yTop = Mathf.Min(yTop, ComboWorldY(cam, camY, halfH, lineTop + 72f * s) - 0.16f);
+                float lineBot = lineTop + 72f * s;
+                if (_tutorPlateOn && _tutorPlateFrame >= 0 && Time.frameCount - _tutorPlateFrame <= 2)
+                    lineBot = Mathf.Max(lineBot, _tutorPlate.yMax + 4f * s);
+                yTop = Mathf.Min(yTop, ComboWorldY(cam, camY, halfH, lineBot) - 0.16f);
             }
             float yBot = ComboWorldY(cam, camY, halfH, restart.y) + 0.2f;
             float viewBot = camY - halfH + 0.25f;

@@ -99,6 +99,14 @@ namespace FlockFive
             AudioListener.pause = _audio;
         }
 
+        // Build 61: the unpaused time scale (1, or the solved-board auto-resolve speed). Under a
+        // pause it becomes the value Pop restores, so a freeze never strands either one.
+        public static void SetBaseScale(float scale)
+        {
+            if (_depth > 0) _scale = scale;
+            else Time.timeScale = scale;
+        }
+
         public static void Reset()
         {
             if (_depth > 0)
