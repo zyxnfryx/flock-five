@@ -2304,8 +2304,11 @@ namespace FlockFive
             TickDailyBonus();
             if (_splash) return;
             if (_restartAsk != RestartAsk.None) return;
-            if (!_restarting && _board != null && _garden.Branches != null)
-                GardenFit.SnapIfGapped(_garden, _board);
+            // A break packs the column before the collect coroutine reaches its tween.
+            // Start the shared ease here. SnapIfGapped no longer fits.
+            if (!_restarting && _board != null && _garden.Branches != null
+                && GardenFit.SnapIfGapped(_garden, _board))
+                StartCoroutine(GardenFit.Tween(_garden, _board, false));
             if (_gift != GiftFace.None || _frozen)
             {
                 if (Pressed(out var tap))
@@ -2774,8 +2777,9 @@ namespace FlockFive
             if (!_gardenScoring) SyncAll();
             int more = 0;
             if (!_gardenScoring) more = KickCollects();
+            // Survivors ease onto the packed column, including after a pest clear.
             if (!_gardenScoring && _locked.Count == 0)
-                yield return GardenFit.Tween(_garden, _board, pestScored);
+                yield return GardenFit.Tween(_garden, _board, false);
             if (gen != _motionGen || more != 0) yield break;
             if (TryScoreGarden())
                 yield return WaitGardenScore();
@@ -5181,7 +5185,7 @@ namespace FlockFive
             return PlayerPrefs.GetInt(CoachHiveKey, 0) != 0 ? 1f : 0f;
         }
 
-        // Build 58: owning VIP keeps the slot. The offer medallion becomes the member
+        // Build 58: owning VIP keeps the slot. The offer medallion becomes the diamond
         // badge (DrawNoAdsButton), so restore and reinstall show it too.
         static float VipRailGoal()
         {
@@ -5769,8 +5773,13 @@ namespace FlockFive
         const int VipStuds = 12;
         const int VipCrownW = 192;
         const int VipCrownH = 130;
+        // Cut-stone bake: half-width / half-height as a fraction of the texture.
+        // 0.48 leaves a few pixels of padding so the points stay inside the bake.
+        const float VipDiamondHx = 0.48f;
+        const float VipDiamondHy = 0.48f;
         static Texture2D _vipPlate;
         static Texture2D _vipGem;
+        static Texture2D _vipDiamond;
         static Texture2D _vipCrown;
         static Texture2D _vipGlint;
         static Texture2D _vipRibbon;
@@ -5778,17 +5787,21 @@ namespace FlockFive
         const int BackMedalRev = 3;
         static int _backMedalBuilt;
 
-        // Rail VIP spot. Not owned: the offer medallion ("VIP" under the crown, "No Ads"
-        // ribbon). Owned: the member badge (bigger crown, "VIP" ribbon, twinkles).
+        // Rail VIP spot. Not owned: the offer medallion (crown, "VIP" on the disc, "No Ads"
+        // ribbon). Owned: the member badge (big diamond hero, small crown behind it,
+        // "VIP" ribbon, twinkles). Same rect either way.
         // Tap opens VipOffer either way (offer card or the member thank-you card).
         void DrawNoAdsButton(Rect r, float s, bool held)
         {
             DrawVipMedal(r, s, held, NoAds.Owned, true);
         }
 
-        // Shared VIP medallion: rail offer button, rail member badge, the member crest on
-        // the thank-you card and the "Welcome, VIP!" crown pop. ribbon=false drops the
-        // nameplate (the crest sits on the card and must not cover the panel).
+        // Shared VIP medallion. Offer (member=false): crown, "VIP" on the disc, "No Ads"
+        // ribbon. Owned (member=true): DrawVipDiamond is the hero of the disc, a small
+        // crown sits behind the stone, ribbon reads "VIP". Used by the rail button, the
+        // member crest on the thank-you card and the welcome badge that lands on the rail.
+        // ribbon=false drops the nameplate (the crest sits on the card and must not cover
+        // the panel).
         static void DrawVipMedal(Rect r, float s, bool held, bool member, bool ribbon)
         {
             if (r.width < 4f || r.height < 4f) return;
@@ -5815,14 +5828,25 @@ namespace FlockFive
             Rect crown;
             if (member)
             {
-                // Member: the crown owns the disc. "VIP" moves to the ribbon.
-                float cw = d * 0.62f;
+                // Owned: diamond first. A small crown caps the stone; its base tucks
+                // behind the gem so the peaks read and the jewel stays the hero.
+                float cw = d * 0.40f;
                 float ch = cw * (VipCrownH / (float)VipCrownW);
-                crown = new Rect(plate.center.x - cw * 0.5f, plate.center.y - ch * 0.56f, cw, ch);
-                GUI.color = new Color(0.10f, 0.05f, 0.02f, held ? 0.20f : 0.34f);
-                GUI.DrawTexture(new Rect(crown.x + d * 0.012f, crown.y + d * 0.022f, cw, ch), VipCrownTex(), ScaleMode.ScaleToFit, true);
+                crown = new Rect(plate.center.x - cw * 0.5f, plate.y + d * 0.006f, cw, ch);
+                GUI.color = new Color(0.10f, 0.05f, 0.02f, held ? 0.16f : 0.30f);
+                GUI.DrawTexture(new Rect(crown.x + d * 0.008f, crown.y + d * 0.010f, cw, ch), VipCrownTex(), ScaleMode.ScaleToFit, true);
                 GUI.color = held ? new Color(0.92f, 0.90f, 0.84f, 1f) : Color.white;
                 GUI.DrawTexture(crown, VipCrownTex(), ScaleMode.ScaleToFit, true);
+
+                // Points sit at VipDiamondHy of the half-bake. 0.86 of the disc,
+                // set low so the crown tips stay above the stone and the bottom
+                // point stays off the ribbon.
+                float fill = VipDiamondHy / 0.5f;
+                float gem = d * (0.86f / fill);
+                float inset = (1f - fill) * 0.5f;
+                float gemTop = plate.y + d * 0.13f - gem * inset;
+                var stone = new Rect(plate.center.x - gem * 0.5f, gemTop, gem, gem);
+                DrawVipDiamond(stone, held);
             }
             else
             {
@@ -5852,6 +5876,27 @@ namespace FlockFive
             {
                 float g = d * 0.30f;
                 DrawVipTwinkles(new Rect(plate.x - g, plate.y - g * 0.6f, d + g * 2f, d + g * 1.6f), 0.80f, 0.11f);
+            }
+            GUI.color = Color.white;
+        }
+
+        // Faceted ownership diamond. Shared by every member=true DrawVipMedal
+        // (rail badge, welcome landing, thank-you crest). Not the round rim stud.
+        static void DrawVipDiamond(Rect r, bool held)
+        {
+            var tex = VipDiamondTex();
+            GUI.color = held ? new Color(0.90f, 0.88f, 0.82f, 1f) : Color.white;
+            GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
+            if (!held)
+            {
+                float tw = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.3f);
+                tw *= tw;
+                if (tw > 0.08f)
+                {
+                    float g = r.width * 0.20f;
+                    GUI.color = new Color(1f, 0.98f, 0.90f, 0.88f * tw);
+                    GUI.DrawTexture(new Rect(r.x + r.width * 0.28f, r.y + r.height * 0.20f, g, g), VipGlintTex(), ScaleMode.ScaleToFit, true);
+                }
             }
             GUI.color = Color.white;
         }
@@ -6094,6 +6139,7 @@ namespace FlockFive
             return tex;
         }
 
+        // Round blue rim stud (DrawVipStuds). Not the owned-face diamond.
         static Texture2D VipGemTex()
         {
             if (_vipGem != null) return _vipGem;
@@ -6131,6 +6177,129 @@ namespace FlockFive
             tex.SetPixels32(px);
             tex.Apply(false, true);
             _vipGem = tex;
+            return tex;
+        }
+
+        // Point-up cut stone: ice table, sapphire pavilion, one ruby facet, gold girdle.
+        // Square bake; DrawVipDiamond scales it onto the disc. Facets are colour blocks
+        // so the cut still reads when the rail badge is small.
+        static Texture2D VipDiamondTex()
+        {
+            if (_vipDiamond != null) return _vipDiamond;
+            const int n = 256;
+            var tex = NewVipTex(n, n, "VipDiamond");
+            var px = new Color32[n * n];
+            float c0 = n * 0.5f;
+            float hx = n * VipDiamondHx;
+            float hy = n * VipDiamondHy;
+            var gold = new Color(1f, 0.90f, 0.46f, 1f);
+            var goldDeep = new Color(0.55f, 0.32f, 0.07f, 1f);
+            var ice = new Color(0.78f, 0.90f, 1f, 1f);
+            var iceLit = new Color(0.96f, 0.99f, 1f, 1f);
+            var pale = new Color(0.48f, 0.72f, 0.98f, 1f);
+            var sap = new Color(0.16f, 0.38f, 0.82f, 1f);
+            var sapDeep = new Color(0.08f, 0.20f, 0.55f, 1f);
+            var ruby = new Color(0.78f, 0.12f, 0.18f, 1f);
+            var rubyLit = new Color(0.98f, 0.48f, 0.42f, 1f);
+            const float rimPx = 12f;
+            const float girdle = 0.060f;
+            for (int y = 0; y < n; y++)
+            {
+                for (int x = 0; x < n; x++)
+                {
+                    float dx = x + 0.5f - c0;
+                    float dy = y + 0.5f - c0;
+                    float u = dx / hx;
+                    float v = dy / hy;
+                    float diamond = Mathf.Abs(u) + Mathf.Abs(v);
+                    float norm = Mathf.Sqrt(1f / (hx * hx) + 1f / (hy * hy));
+                    float pin = (1f - diamond) / norm;
+                    if (pin < -1.6f)
+                    {
+                        px[y * n + x] = new Color32(0, 0, 0, 0);
+                        continue;
+                    }
+                    float up = Mathf.Clamp01(v * 0.5f + 0.5f);
+                    float tu = u / 0.38f;
+                    float tv = (v - 0.50f) / 0.13f;
+                    float td = Mathf.Abs(tu) + Mathf.Abs(tv);
+                    bool table = td <= 1f && v > 0.30f && pin >= rimPx;
+                    bool onRim = pin < rimPx;
+                    bool onGirdle = Mathf.Abs(v) < girdle && !onRim;
+                    Color c;
+                    if (onRim)
+                    {
+                        float k = Mathf.Clamp01((pin + 1.6f) / (rimPx + 1.6f));
+                        c = Color.Lerp(goldDeep, gold, Mathf.Lerp(0.20f, 1f, up) * Mathf.Lerp(0.45f, 1f, k));
+                        if (up > 0.45f)
+                            c = Color.Lerp(c, new Color(1f, 0.98f, 0.84f, 1f), (up - 0.45f) * 1.15f * k);
+                    }
+                    else if (onGirdle)
+                    {
+                        float band = 1f - Mathf.Abs(v) / girdle;
+                        c = Color.Lerp(goldDeep, gold, 0.40f + 0.60f * up);
+                        c = Color.Lerp(c, new Color(1f, 0.97f, 0.78f, 1f), band * band * 0.70f);
+                    }
+                    else if (table)
+                    {
+                        c = Color.Lerp(iceLit, Color.white, 0.72f);
+                        c = Color.Lerp(ice, c, Mathf.Clamp01(1.05f - td));
+                        if (td > 0.86f)
+                            c = Color.Lerp(c, ice, (td - 0.86f) / 0.14f * 0.55f);
+                    }
+                    else if (v >= 0.62f)
+                    {
+                        float lit = Mathf.Clamp01(0.55f + 0.45f * v - 0.12f * u);
+                        c = Color.Lerp(ice, iceLit, lit);
+                    }
+                    else if (v >= 0f)
+                    {
+                        float lit = Mathf.Clamp01(0.30f + 0.70f * v);
+                        c = u < 0f
+                            ? Color.Lerp(ice, iceLit, lit)
+                            : Color.Lerp(pale, ice, lit * 0.55f);
+                    }
+                    else if (u > 0f)
+                    {
+                        float lit = Mathf.Clamp01(0.18f + 0.82f * (1f + v));
+                        c = Color.Lerp(ruby, rubyLit, lit);
+                    }
+                    else
+                    {
+                        float lit = Mathf.Clamp01(0.12f + 0.88f * (1f + v));
+                        c = Color.Lerp(sapDeep, sap, lit);
+                    }
+                    if (!onRim && pin < rimPx + 7f)
+                    {
+                        float k = 1f - Mathf.Clamp01((pin - rimPx) / 7f);
+                        if (v >= 0f)
+                            c = Color.Lerp(c, new Color(1f, 0.99f, 0.96f, 1f), k * 0.62f);
+                        else
+                            c = Color.Lerp(c, new Color(0.05f, 0.07f, 0.16f, 1f), k * 0.40f);
+                    }
+                    float sx = (u + 0.08f) / 0.15f;
+                    float sy = (v - 0.52f) / 0.11f;
+                    float spark = sx * sx + sy * sy;
+                    if (spark < 1f && !onRim)
+                    {
+                        float k = 1f - spark;
+                        c = Color.Lerp(c, Color.white, k * k * 0.94f);
+                    }
+                    float rx = (u - 0.36f) / 0.13f;
+                    float ry = (v + 0.36f) / 0.11f;
+                    float chip = rx * rx + ry * ry;
+                    if (chip < 1f && v < -0.05f && !onRim)
+                    {
+                        float k = 1f - chip;
+                        c = Color.Lerp(c, new Color(1f, 0.86f, 0.82f, 1f), k * k * 0.85f);
+                    }
+                    c.a = Mathf.Clamp01(pin + 1.25f);
+                    px[y * n + x] = (Color32)c;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _vipDiamond = tex;
             return tex;
         }
 
@@ -8195,7 +8364,7 @@ namespace FlockFive
                 DrawHiveButton(hiveR, s, pop: hivePop, quiet: _hivePopping && hiveOpening);
 
             // NextPlay is the next level index. Clearing level 1 (index 0) stores 1.
-            // Owned swaps the medallion for the member badge in the same slot. The tap
+            // Owned swaps the offer crown for the diamond badge in the same slot. The tap
             // opens the offer (Buy stays on that card) or the member thank-you card.
             if (vipDraw)
             {

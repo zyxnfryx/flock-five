@@ -9,6 +9,7 @@ namespace FlockFive
     //   DrawVipTwinkles - soft gold twinkles (VIP glint) for the badge, frame and welcome.
     //   DrawVipTagAccent- small gold crown on the player's name tag while VIP.
     // The medallion itself is DrawVipMedal (FlockFiveApp.cs, next to its baked textures).
+    // Owned (member) faces put DrawVipDiamond on that medallion.
     public sealed partial class FlockFiveApp
     {
         // Measured on fx_ad_card.png (780 x 501): centre line of the gold rail that rings the
@@ -301,7 +302,7 @@ namespace FlockFive
         }
 
         // Soft gold twinkles around a rect. Shared SparkleFx (same feel as streak).
-        // Medal / welcome crown only: its seats also fall inside r.
+        // Medal / welcome badge only: its seats also fall inside r.
         static void DrawVipTwinkles(Rect r, float alpha, float sizeFrac)
         {
             SparkleFx.DrawAround(r, alpha, gold: true, sizeFrac: sizeFrac, wide: true);

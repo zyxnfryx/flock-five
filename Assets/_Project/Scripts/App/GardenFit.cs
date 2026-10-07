@@ -19,6 +19,10 @@ namespace FlockFive
         // when a limb is gone. Only the row pitch is recomputed.
         public static readonly Vector3 LimbScale = Vector3.one;
 
+        // Long enough that a row, or a short stack, reads as a slide.
+        const float SettleSeconds = 0.62f;
+        const float GapTol = 0.16f;
+
         static int _fitSerial;
         static bool _busy;
         static readonly List<Spot> _snapSpots = new List<Spot>(16);
@@ -36,6 +40,24 @@ namespace FlockFive
 
         public static IEnumerator Tween(WorldBuilder.Garden garden, Board board, bool instant)
         {
+            return Settle(garden, board, instant);
+        }
+
+        // One settle for every caller, including a gap noticed mid-play.
+        // X stays on the column bezel. Only Y eases. A falling limb is left to BreakAway.
+        static IEnumerator Settle(WorldBuilder.Garden garden, Board board, bool instant)
+        {
+            // A play settle already owns this gap. Wait it out. A newer serial
+            // (ClearBusy, or an instant fit) owns the pose, so do not start another ease.
+            if (!instant && _busy)
+            {
+                int waitFor = _fitSerial;
+                while (_busy && _fitSerial == waitFor)
+                    yield return null;
+                if (_fitSerial != waitFor)
+                    yield break;
+            }
+
             int run = ++_fitSerial;
             _busy = true;
             try
@@ -43,51 +65,49 @@ namespace FlockFive
                 if (garden.Branches == null || board == null) yield break;
                 var spots = new List<Spot>(board.Branches.Count);
                 Collect(board, garden.Cam, spots);
-            var views = new List<BranchView>(spots.Count);
-            var fromPos = new List<Vector3>(spots.Count);
-            var fromS = new List<Vector3>(spots.Count);
-            var toPos = new List<Vector3>(spots.Count);
-            for (int i = 0; i < spots.Count; i++)
-            {
-                int bi = spots[i].Index;
-                if ((uint)bi >= (uint)garden.Branches.Length) continue;
-                var v = garden.Branches[bi];
-                if (v == null) continue;
-                views.Add(v);
-                fromPos.Add(v.Planted);
-                fromS.Add(v.transform.localScale);
-                toPos.Add(spots[i].Pos);
-            }
+                var views = new List<BranchView>(spots.Count);
+                var fromPos = new List<Vector3>(spots.Count);
+                var fromS = new List<Vector3>(spots.Count);
+                var toPos = new List<Vector3>(spots.Count);
+                for (int i = 0; i < spots.Count; i++)
+                {
+                    int bi = spots[i].Index;
+                    if ((uint)bi >= (uint)garden.Branches.Length) continue;
+                    var v = garden.Branches[bi];
+                    if (v == null || v.Breaking) continue;
+                    views.Add(v);
+                    fromPos.Add(v.Planted);
+                    fromS.Add(v.transform.localScale);
+                    toPos.Add(spots[i].Pos);
+                }
 
-            int n = views.Count;
-            if (n <= 0) yield break;
-            if (instant)
-            {
-                for (int i = 0; i < n; i++)
-                    views[i].Fit(toPos[i], LimbScale);
-                yield break;
-            }
+                int n = views.Count;
+                if (n <= 0) yield break;
+                if (instant)
+                {
+                    for (int i = 0; i < n; i++)
+                        views[i].Fit(toPos[i], LimbScale);
+                    yield break;
+                }
+                if (!NeedsEase(views, fromPos, toPos)) yield break;
 
-            // X is already the bezel anchor. Ease the row only, so a refit
-            // cannot slide either column toward center.
-            float u = 0f;
-            const float dur = 0.42f;
-            while (u < 1f)
-            {
-                u += Time.deltaTime / dur;
-                float k = u * u * (3f - 2f * u);
+                float u = 0f;
+                while (u < 1f)
+                {
+                    if (run != _fitSerial) yield break;
+                    u += Time.deltaTime / SettleSeconds;
+                    if (u > 1f) u = 1f;
+                    float k = Mathf.SmoothStep(0f, 1f, u);
+                    for (int i = 0; i < n; i++)
+                        ApplyEase(views[i], fromPos[i], fromS[i], toPos[i], k);
+                    yield return null;
+                }
+                if (run != _fitSerial) yield break;
                 for (int i = 0; i < n; i++)
                 {
-                    var p = Vector3.Lerp(fromPos[i], toPos[i], k);
-                    p.x = toPos[i].x;
-                    var s = Vector3.Lerp(fromS[i], LimbScale, k);
-                    s.x = LimbScale.x;
-                    views[i].Fit(p, s);
+                    if (views[i] == null || views[i].Breaking) continue;
+                    views[i].Fit(toPos[i], LimbScale);
                 }
-                yield return null;
-            }
-            for (int i = 0; i < n; i++)
-                views[i].Fit(toPos[i], LimbScale);
             }
             finally
             {
@@ -95,31 +115,49 @@ namespace FlockFive
             }
         }
 
-        // Packed Y is the source of truth. Wind moves the transform, not Planted.
-        // A gap above a survivor (or a bonus sign left low) snaps the column up.
-        public static void SnapIfGapped(WorldBuilder.Garden garden, Board board)
+        static bool NeedsEase(List<BranchView> views, List<Vector3> fromPos, List<Vector3> toPos)
         {
-            if (_busy || board == null || garden.Branches == null) return;
+            const float eps = 0.0008f;
+            for (int i = 0; i < views.Count; i++)
+            {
+                var v = views[i];
+                if (v == null || v.Breaking) continue;
+                if (Mathf.Abs(fromPos[i].y - toPos[i].y) > eps) return true;
+                if (Mathf.Abs(fromPos[i].x - toPos[i].x) > eps) return true;
+                var s = v.transform.localScale;
+                if (Mathf.Abs(s.x - LimbScale.x) > eps || Mathf.Abs(s.y - LimbScale.y) > eps)
+                    return true;
+            }
+            return false;
+        }
+
+        // X locks to the packed bezel. Y eases. Scale eases onto LimbScale.
+        static void ApplyEase(BranchView view, Vector3 fromPos, Vector3 fromS, Vector3 toPos, float k)
+        {
+            if (view == null || view.Breaking) return;
+            var p = Vector3.Lerp(fromPos, toPos, k);
+            p.x = toPos.x;
+            var s = Vector3.Lerp(fromS, LimbScale, k);
+            s.x = LimbScale.x;
+            view.Fit(p, s);
+        }
+
+        // Packed Y is the source of truth. Wind moves the transform, not Planted.
+        // True when a survivor (or its bonus sign) sits off the packed Y.
+        // The caller starts one Tween(..., false). Fitting here would park the
+        // column before that ease could see a delta.
+        public static bool SnapIfGapped(WorldBuilder.Garden garden, Board board)
+        {
+            if (_busy || board == null || garden.Branches == null) return false;
             Collect(board, garden.Cam, _snapSpots);
-            const float tol = 0.16f;
-            bool gap = false;
             for (int i = 0; i < _snapSpots.Count; i++)
             {
                 var view = SpotView(garden, _snapSpots[i].Index);
                 if (view == null || view.Breaking) continue;
-                if (Mathf.Abs(view.Planted.y - _snapSpots[i].Pos.y) > tol)
-                {
-                    gap = true;
-                    break;
-                }
+                if (Mathf.Abs(view.Planted.y - _snapSpots[i].Pos.y) > GapTol)
+                    return true;
             }
-            if (!gap) return;
-            for (int i = 0; i < _snapSpots.Count; i++)
-            {
-                var view = SpotView(garden, _snapSpots[i].Index);
-                if (view == null || view.Breaking) continue;
-                view.Fit(_snapSpots[i].Pos, LimbScale);
-            }
+            return false;
         }
 
         static BranchView SpotView(WorldBuilder.Garden garden, int index)

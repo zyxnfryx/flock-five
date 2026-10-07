@@ -1143,13 +1143,14 @@ namespace FlockFive
             { 1.28f, 1.158f, 1.170f, 1.158f, 1.158f, 1.28f }, // Peach
         };
 
-        // Garden accessory anchor. Locals are facing-right; faceLeft mirrors X only.
+        // Garden accessory anchor. Locals are facing-right; faceLeft mirrors X.
         // Splash DrawAvatarKit uses this so the dialog does not keep a second offset.
-        // Bow and crown art is the mirror of the right-facing body. Build 39 flipped
-        // the sprite only when the body did not, and that flip mirrored the tilt.
-        // Build 40 copied the body's flip (flip when faceLeft) and negated tilt,
-        // which turned the kit around on the dome. flip is applied first, then tilt
-        // (SpriteRenderer order). The splash scales, then rotates.
+        // flip matches the body (flipX = FaceLeft) so the bow and the crown face
+        // the beak. Tilt is the dome seat, not a mirror of that flip: right-facing
+        // tips -12, left-facing tips +12. Flip is applied first, then tilt
+        // (SpriteRenderer order). The splash scales, then rotates. Build 39 flipped
+        // the kit opposite the body. Build 40 matched the body but negated this
+        // tilt and turned the kit around on the dome.
         public static void KitAnchor(bool crown, int frame, bool faceLeft,
             out float x, out float y, out float scale, out float tilt, out bool flip,
             bool buttonSeat = false)
@@ -1161,8 +1162,8 @@ namespace FlockFive
             y = ly;
             scale = crown ? 0.48f : SpriteCatalog.BowScale;
             float tip = 12f;
-            flip = !faceLeft;
-            tilt = flip ? -tip : tip;
+            flip = faceLeft;
+            tilt = faceLeft ? tip : -tip;
             if (!buttonSeat) return;
             // Color-row buttons only. Garden birds and the home avatar leave this
             // false, so their seat stays on the locals above. The button quad is

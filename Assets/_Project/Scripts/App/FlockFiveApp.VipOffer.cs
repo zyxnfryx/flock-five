@@ -8,10 +8,10 @@ namespace FlockFive
     // Build 58: one frame, two faces, plus a one-time welcome.
     //   Offer  (not owned): headline, perks, Buy flower, Restore link.
     //   Member (owned):     "You're a VIP!" thank-you, perks, Restore link, no Buy.
-    //   Welcome:            crown pop + sparkles + "Welcome, VIP!" caption + fanfare,
+    //   Welcome:            diamond badge pop + sparkles + "Welcome, VIP!" caption + fanfare,
     //                       once per install after purchase / restore / reinstall.
     // Shared: VipCardLayout + DrawAdCardFrame (frame and panel), PopupMotion (open/close
-    // easing), DrawVipMedal (rail badge, member crest, welcome crown), DrawVipTwinkles
+    // easing), DrawVipMedal (rail offer, owned diamond badge, member crest, welcome), DrawVipTwinkles
     // (sparkle), PaintCoachCaption (standard caption box), SfxLibrary "fanfare" (MixDesk Lead).
     public sealed partial class FlockFiveApp
     {
@@ -30,10 +30,11 @@ namespace FlockFive
             // while the button glow played). One beat at a time; each starts after the last ends.
             // All ages are Time.unscaledTime deltas, so the pace is the same at any frame rate.
             //   First open (full):  dim + rail glow 0-0.45 | crown flies to the card centre
-            //                       0.45-0.95 | build 63: burst there at 0.95 (gold sparkles,
-            //                       light flash, pop + thud), the crown pops into it, and the
-            //                       card grows out of it 0.97-1.42
-            //                       | title 1.72-1.94 | rows 1.94 / 2.10 / 2.26 | Buy pops 2.42-2.72.
+            //                       0.45-0.95 | burst at 0.95 (gold sparkles, light flash,
+            //                       pop + thud), the crown pops into it. Build 66: the card
+            //                       holds 0.32 so that sparkle pop reads, then grows out of
+            //                       it 1.27-1.72 | title 2.02-2.24 | rows 2.24 / 2.40 / 2.56
+            //                       | Buy pops 2.72-3.02.
             //   Later opens:        dim + glow 0-0.22 | card 0.22-0.58 | title 0.64-0.80
             //                       | rows 0.80 / 0.90 / 1.00 | Buy pops 1.12-1.40.
             //   Member card:        dim + glow 0-0.22 | card 0.22-0.58 | crest pops 0.58-0.88
@@ -46,17 +47,21 @@ namespace FlockFive
             const float CrownDur = 0.50f;
             const float CrownFade = 0.12f;
             // The crown lands on the card centre and the burst fires there; the card's scale
-            // pivot is that same centre, so the card comes out of the burst.
+            // pivot is that same centre. The card waits so the sparkle pop reads, then grows
+            // out of that same centre.
             const float BurstAt = CrownStart + CrownDur;
-            const float FullPanelStart = BurstAt + 0.02f;
+            const float BurstDur = 0.55f;
+            // Hold so the landing sparkle reads before the card grows over it.
+            const float PanelAfterBurst = 0.32f;
+            const float FullPanelStart = BurstAt + PanelAfterBurst;
             const float FullPanelDur = 0.45f;
             const float ShortPanelDur = 0.36f;
-            const float BurstDur = 0.55f;
-            const float FullTitleStart = 1.72f;
             const float FullTitleFade = 0.22f;
             const float FullRowStep = 0.16f;
             const float FullRowFade = 0.16f;
-            const float FullBuyStart = 2.42f;
+            // Title still waits 0.30s after the card settles; Buy still starts as the last row finishes.
+            const float FullTitleStart = FullPanelStart + FullPanelDur + 0.30f;
+            const float FullBuyStart = FullTitleStart + FullTitleFade + FullRowStep * 2f + FullRowFade;
             const float ShortTitleStart = 0.64f;
             const float ShortTitleFade = 0.16f;
             const float ShortRowStep = 0.10f;
@@ -69,8 +74,8 @@ namespace FlockFive
             const float CloseDur = 0.30f;
             const float RowRise = 6f;
 
-            // Welcome: dim 0-0.25 | crown pops 0.12-0.62 (fanfare) | burst 0.40-1.10
-            // | caption 0.72-1.00 | hold to 3.0 (tap skips) | crown flies to the badge 0.6.
+            // Welcome: dim 0-0.25 | diamond badge pops 0.12-0.62 (fanfare) | burst 0.40-1.10
+            // | caption 0.72-1.00 | hold to 3.0 (tap skips) | badge flies to the rail 0.6.
             const float WelPopStart = 0.12f;
             const float WelPopDur = 0.50f;
             const float WelBurstStart = 0.40f;
@@ -541,7 +546,7 @@ namespace FlockFive
                 GUI.color = Color.white;
             }
 
-            // THE VIP burst (offer crown landing, Welcome crown pop). flash > 0 adds a light
+            // THE VIP burst (offer crown landing, Welcome badge pop). flash > 0 adds a light
             // flash: a warm screen wash and a white-gold bloom off the centre that fade out
             // in the first part of the burst, plus the shared SparkleFx glint at the core.
             static void DrawVipBurst(Vector2 c, float u, float s, float flash = 0f)
@@ -814,9 +819,9 @@ namespace FlockFive
                 _reduce = PlayerPrefs.GetInt("flockfive.reduceMotion", 0) == 1;
             }
 
-            // Crown medallion pops in centre stage with a burst and twinkles, the caption
-            // settles under it in the standard caption box, then the medallion glides into
-            // the rail badge it becomes. A tap after the pop skips to that glide.
+            // Owned diamond badge pops in centre stage with a burst and twinkles, the caption
+            // settles under it in the standard caption box, then the badge glides into
+            // the rail slot it becomes. A tap after the pop skips to that glide.
             static void DrawWelcome(float s)
             {
                 float now = Time.unscaledTime;
