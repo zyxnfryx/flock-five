@@ -8,6 +8,10 @@ namespace FlockFive
         public bool FollowCamera;
         public Vector2 WorldSize = new Vector2(24f, 13.5f);
         public Vector3 WorldCenter = new Vector3(0f, 0.4f, 8f);
+        // SeasonCrossfade multiplies this. 1 is the normal painting.
+        public float Alpha = 1f;
+        // Home wash keeps the raw painting. The dark overlay stays in DrawHomeWash.
+        public bool Untinted;
         SpriteRenderer _sr;
         Color _tint;
         bool _tintSet;
@@ -41,15 +45,23 @@ namespace FlockFive
             }
             if (transform.position != pos) transform.position = pos;
             if (transform.localScale != scale) transform.localScale = scale;
-            float dusk = SkyCycle.Dusk;
-            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 0.28f);
-            var sunset = Color.Lerp(new Color(0.96f, 0.93f, 0.86f, 1f), new Color(1f, 0.86f, 0.68f, 1f), pulse * 0.28f);
-            var night = new Color(0.64f, 0.58f, 0.82f, 1f);
-            var sky = Color.Lerp(sunset, night, dusk);
-            var tint = Color.Lerp(sky, new Color(0.52f, 0.58f, 0.64f, 1f), GardenStorm.Wet * 0.32f);
-            float bolt = GardenStorm.SkyFlash;
-            if (bolt > 0.004f)
-                tint = Color.Lerp(tint, new Color(0.88f, 0.92f, 0.98f, 1f), bolt * 0.7f);
+            Color tint;
+            float a = Mathf.Clamp01(Alpha);
+            if (Untinted)
+                tint = new Color(1f, 1f, 1f, a);
+            else
+            {
+                float dusk = SkyCycle.Dusk;
+                float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 0.28f);
+                var sunset = Color.Lerp(new Color(0.96f, 0.93f, 0.86f, 1f), new Color(1f, 0.86f, 0.68f, 1f), pulse * 0.28f);
+                var night = new Color(0.64f, 0.58f, 0.82f, 1f);
+                var sky = Color.Lerp(sunset, night, dusk);
+                tint = Color.Lerp(sky, new Color(0.52f, 0.58f, 0.64f, 1f), GardenStorm.Wet * 0.32f);
+                float bolt = GardenStorm.SkyFlash;
+                if (bolt > 0.004f)
+                    tint = Color.Lerp(tint, new Color(0.88f, 0.92f, 0.98f, 1f), bolt * 0.7f);
+                tint.a = a;
+            }
             if (!_tintSet || !SameByte(_tint, tint))
             {
                 _tintSet = true;

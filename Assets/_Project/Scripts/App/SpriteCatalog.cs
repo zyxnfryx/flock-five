@@ -96,6 +96,42 @@ namespace FlockFive
             if (!shared) Resources.UnloadAsset(tex);
         }
 
+        // Outgoing season painting, detached from the slot so GardenBgFor can load the
+        // next one without unloading this texture mid-crossfade. Summer has no slot.
+        // A mismatch (the slot is not that scene) returns null instead of the wrong art.
+        static Sprite _bgHeld;
+        static bool _bgHeldOwned;
+
+        public static Sprite TakeHeldScene(GardenScene prev)
+        {
+            string path = BgPath(prev);
+            if (path == null || _bgScene == null || _bgScenePath != path) return null;
+            var spr = _bgScene;
+            bool owned = _bgSceneOwned;
+            _bgScene = null;
+            _bgScenePath = null;
+            _bgSceneOwned = false;
+            if (_bgHeld != null && _bgHeld != spr) ReleaseHeld();
+            _bgHeld = spr;
+            _bgHeldOwned = owned;
+            return spr;
+        }
+
+        public static void ReleaseHeld()
+        {
+            var old = _bgHeld;
+            bool owned = _bgHeldOwned;
+            _bgHeld = null;
+            _bgHeldOwned = false;
+            if (old == null) return;
+            var tex = old.texture;
+            bool shared = tex == null
+                || (_bg != null && _bg.texture == tex)
+                || (_bgScene != null && _bgScene.texture == tex);
+            if (owned) Object.Destroy(old);
+            if (!shared) Resources.UnloadAsset(tex);
+        }
+
         public static Sprite Branch => Load(ref _branch, "Sprites/branch", 140f);
         public static Sprite BranchGift => Load(ref _branchGift, "Sprites/branch_gift", 140f);
         public static Sprite AdSign => Load(ref _adSign, "Sprites/fx_ad_sign", 200f);
@@ -184,6 +220,235 @@ namespace FlockFive
             if (i < 0 || i >= _crownByColor.Length) return Crown;
             if (_crownByColor[i] == null) _crownByColor[i] = TryLoad("Sprites/fx_crown_" + CrownNames[i], 200f);
             return _crownByColor[i] != null ? _crownByColor[i] : Crown;
+        }
+
+        // Worn kit. Crown and bow are the sex defaults. Bowtie is the imported
+        // tie. Hat, flower, shades, and beanie are baked once in KitArt.
+        public static Sprite KitSprite(BirdColor color, BirdKit worn)
+        {
+            switch (worn)
+            {
+                case BirdKit.Crown: return CrownFor(color);
+                case BirdKit.Bow: return Bow;
+                case BirdKit.Bowtie: return Bowtie;
+                case BirdKit.TopHat: return KitArt.TopHat;
+                case BirdKit.Flower: return KitArt.Flower;
+                case BirdKit.Shades: return KitArt.Shades;
+                case BirdKit.Beanie: return KitArt.Beanie;
+                default: return null;
+            }
+        }
+
+        // Rest plus flap frames of the shared hummingbird sheet. Frame 5 has no art
+        // and uses the rest pose. Every color but peach aliases this silhouette.
+        static Sprite[] _rubyPose;
+
+        public static Sprite BodyPose(int frame)
+        {
+            if (frame < 0 || frame > 5) frame = 0;
+            if (frame == 0 || frame == 5) return Bird(BirdColor.Ruby);
+            if (_rubyPose == null) _rubyPose = new Sprite[5];
+            int i = frame;
+            if (_rubyPose[i] == null)
+                _rubyPose[i] = TryLoad("Sprites/bird_ruby_" + frame, 220f);
+            return _rubyPose[i] != null ? _rubyPose[i] : Bird(BirdColor.Ruby);
+        }
+
+        // Highest opaque pixel of the head column, between the eye and the back of
+        // the skull, ignoring the beak and raised wings. Bird-local units. Cached
+        // per sprite so the kit can ride every flap frame without scanning again.
+        struct DomeHit
+        {
+            public int Id;
+            public Vector2 Point;
+        }
+
+        static DomeHit[] _domes;
+        static int _domeN;
+
+        public static Vector2 HeadDome(Sprite sprite)
+        {
+            if (sprite == null) return new Vector2(0.22f, 1.20f);
+            int id = sprite.GetInstanceID();
+            if (_domes != null)
+            {
+                for (int i = 0; i < _domeN; i++)
+                    if (_domes[i].Id == id) return _domes[i].Point;
+            }
+            var point = ScanHeadDome(sprite);
+            if (_domes == null) _domes = new DomeHit[8];
+            if (_domeN >= _domes.Length)
+            {
+                var grow = new DomeHit[_domes.Length * 2];
+                for (int i = 0; i < _domes.Length; i++) grow[i] = _domes[i];
+                _domes = grow;
+            }
+            _domes[_domeN++] = new DomeHit { Id = id, Point = point };
+            return point;
+        }
+
+        static Vector2 ScanHeadDome(Sprite sprite)
+        {
+            var fallback = new Vector2(0.22f, 1.20f);
+            var tex = sprite.texture;
+            if (tex == null || !tex.isReadable) return fallback;
+            var rect = sprite.rect;
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 8 || h < 8) return fallback;
+            Color32[] px;
+            try { px = tex.GetPixels32(); }
+            catch (UnityException) { return fallback; }
+            if (px == null || px.Length < tex.width * tex.height) return fallback;
+            float ppu = sprite.pixelsPerUnit > 1f ? sprite.pixelsPerUnit : 220f;
+            float pivX = sprite.pivot.x;
+            float pivY = sprite.pivot.y;
+            int ox = Mathf.RoundToInt(rect.x);
+            int oy = Mathf.RoundToInt(rect.y);
+            int tw = tex.width;
+            int beak = -1;
+            // Rightmost thick column is the beak root. The beak itself is thinner.
+            for (int x = w - 1; x >= 0; x--)
+            {
+                if (ColumnThick(px, tw, ox, oy, x, h, ppu) > 0.40f)
+                {
+                    beak = x;
+                    break;
+                }
+            }
+            if (beak < 0) return fallback;
+            float peak = -999f;
+            float bestX = 0f;
+            float bestY = 0f;
+            bool any = false;
+            int sincePeak = 0;
+            float beakX = (beak + 0.5f - pivX) / ppu;
+            for (int x = beak; x >= 0; x--)
+            {
+                float lx = (x + 0.5f - pivX) / ppu;
+                if (beakX - lx > 0.85f) break;
+                float thick = ColumnThick(px, tw, ox, oy, x, h, ppu);
+                if (thick < 0.35f) { sincePeak++; continue; }
+                float top = ColumnTop(px, tw, ox, oy, x, h, pivY, ppu);
+                if (any && top > peak + 0.42f) break;
+                if (any && sincePeak > 8 && top < peak - 0.30f) break;
+                if (!any || top >= peak)
+                {
+                    peak = top;
+                    bestX = lx;
+                    bestY = top;
+                    sincePeak = 0;
+                    any = true;
+                }
+                else sincePeak++;
+            }
+            return any ? new Vector2(bestX, bestY) : fallback;
+        }
+
+        static float ColumnThick(Color32[] px, int tw, int ox, int oy, int x, int h, float ppu)
+        {
+            int n = 0;
+            int tx = ox + x;
+            for (int y = 0; y < h; y++)
+            {
+                int i = (oy + y) * tw + tx;
+                if ((uint)i < (uint)px.Length && px[i].a > 28) n++;
+            }
+            return n / ppu;
+        }
+
+        static float ColumnTop(Color32[] px, int tw, int ox, int oy, int x, int h, float pivY, float ppu)
+        {
+            int tx = ox + x;
+            for (int y = h - 1; y >= 0; y--)
+            {
+                int i = (oy + y) * tw + tx;
+                if ((uint)i < (uint)px.Length && px[i].a > 28)
+                    return (y + 0.5f - pivY) / ppu;
+            }
+            return -999f;
+        }
+
+        // Opaque box in the sprite's local units. Crown base and bow loops seat from this.
+        public struct OpaqueBox
+        {
+            public float Left, Right, Bottom, Top;
+            public bool Ok;
+            public float Width => Right - Left;
+            public float Height => Top - Bottom;
+        }
+
+        struct BoxHit
+        {
+            public int Id;
+            public OpaqueBox Box;
+        }
+
+        static BoxHit[] _boxes;
+        static int _boxN;
+
+        public static OpaqueBox MeasureOpaque(Sprite sprite)
+        {
+            if (sprite == null) return default;
+            int id = sprite.GetInstanceID();
+            if (_boxes != null)
+            {
+                for (int i = 0; i < _boxN; i++)
+                    if (_boxes[i].Id == id) return _boxes[i].Box;
+            }
+            var box = ScanOpaque(sprite);
+            if (_boxes == null) _boxes = new BoxHit[8];
+            if (_boxN >= _boxes.Length)
+            {
+                var grow = new BoxHit[_boxes.Length * 2];
+                for (int i = 0; i < _boxes.Length; i++) grow[i] = _boxes[i];
+                _boxes = grow;
+            }
+            _boxes[_boxN++] = new BoxHit { Id = id, Box = box };
+            return box;
+        }
+
+        static OpaqueBox ScanOpaque(Sprite sprite)
+        {
+            var tex = sprite.texture;
+            if (tex == null || !tex.isReadable) return default;
+            var rect = sprite.rect;
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 2 || h < 2) return default;
+            Color32[] px;
+            try { px = tex.GetPixels32(); }
+            catch (UnityException) { return default; }
+            if (px == null) return default;
+            float ppu = sprite.pixelsPerUnit > 1f ? sprite.pixelsPerUnit : 200f;
+            float pivX = sprite.pivot.x;
+            float pivY = sprite.pivot.y;
+            int ox = Mathf.RoundToInt(rect.x);
+            int oy = Mathf.RoundToInt(rect.y);
+            int tw = tex.width;
+            int minX = w, maxX = -1, minY = h, maxY = -1;
+            for (int y = 0; y < h; y++)
+            {
+                int row = (oy + y) * tw;
+                for (int x = 0; x < w; x++)
+                {
+                    int i = row + ox + x;
+                    if ((uint)i >= (uint)px.Length || px[i].a <= 28) continue;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+            if (maxX < 0) return default;
+            return new OpaqueBox
+            {
+                Ok = true,
+                Left = (minX + 0.5f - pivX) / ppu,
+                Right = (maxX + 0.5f - pivX) / ppu,
+                Bottom = (minY + 0.5f - pivY) / ppu,
+                Top = (maxY + 0.5f - pivY) / ppu
+            };
         }
         public static Sprite Hive => Load(ref _hive, "Sprites/fx_hive", 200f);
         public static Sprite Poker => Load(ref _poker, "Sprites/fx_poker", 200f);
@@ -433,6 +698,21 @@ namespace FlockFive
             if (c >= '0' && c <= '9') return Digit(c - '0');
             return Letter(c);
         }
+        static Sprite _usaPlane, _usaBanner;
+        static bool _usaPlaneTried, _usaBannerTried;
+
+        // Missing art draws nothing. No fallback blob over the home sky.
+        public static Sprite UsaPlane => OptionalSprite(ref _usaPlane, ref _usaPlaneTried, "Sprites/fx_usa_plane");
+        public static Sprite UsaBanner => OptionalSprite(ref _usaBanner, ref _usaBannerTried, "Sprites/fx_usa_banner");
+
+        static Sprite OptionalSprite(ref Sprite cache, ref bool tried, string path)
+        {
+            if (tried) return cache;
+            tried = true;
+            cache = TryLoad(path, 200f);
+            return cache;
+        }
+
         public static Sprite Bee => Load(ref _bee, "Sprites/fx_bee", 520f);
 
         public static Sprite BeeFrame(float t)
@@ -714,47 +994,114 @@ namespace FlockFive
 
         public static Sprite BirdFrame(BirdColor c, float t, bool flap, BirdSex sex)
         {
+            FlapPair(c, sex, t, flap, out var body, out _, out _);
+            return body;
+        }
+
+        // Current pose, the next pose in the same cycle, and the 0..1 phase
+        // inside this step. BirdIdle.KitFollow lerps the crown and bow across
+        // that phase so the accessory does not snap when the sheet steps.
+        // Not flapping: both sprites are the rest pose and phase is 0.
+        public static void FlapPair(BirdColor c, BirdSex sex, float t, bool flap,
+            out Sprite body, out Sprite next, out float phase)
+        {
             sex = PlainOr(c, sex);
             var rest = Bird(c, sex);
-            if (!flap) return rest;
+            phase = 0f;
+            if (!flap)
+            {
+                body = next = rest;
+                return;
+            }
+            LoadFlaps(c, sex, out var f1, out var f2, out var f3, out var f4);
+            // 6-pose wingbeat when the in-betweens exist: _3 lowered, _4 half-raised.
+            // Same beat as the 2-pose cycle, order 3,1,4,2,4,1. No rest in flight.
+            bool six = f3 != null && f4 != null && f1 != null && f2 != null;
+            if (six)
+            {
+                FlapStep(t, true, out int pose, out int nxt, out phase);
+                body = FlapPick(pose, f1, f2, f3, f4) ?? rest;
+                next = FlapPick(nxt, f1, f2, f3, f4) ?? body;
+                return;
+            }
+            if (f1 == null)
+            {
+                body = next = rest;
+                return;
+            }
+            if (f2 == null)
+            {
+                body = next = f1;
+                return;
+            }
+            FlapStep(t, false, out int pose2, out int nxt2, out phase);
+            body = pose2 == 2 ? f2 : f1;
+            next = nxt2 == 2 ? f2 : f1;
+        }
+
+        static void LoadFlaps(BirdColor c, BirdSex sex, out Sprite f1, out Sprite f2, out Sprite f3, out Sprite f4)
+        {
             int ci = (int)c;
             if (ci < 0 || ci >= Palette.Max) ci = 0;
-            Sprite f1, f2, f3, f4;
             if (sex == BirdSex.Neutral)
             {
                 f1 = Slot(ref _flap1, ci, FlapPath(c, sex, 1), 280f);
                 f2 = Slot(ref _flap2, ci, FlapPath(c, sex, 2), 280f);
                 f3 = OptPlain(ref _flap3, ci, FlapPath(c, sex, 3));
                 f4 = OptPlain(ref _flap4, ci, FlapPath(c, sex, 4));
+                return;
             }
-            else
+            int ix = KitIx(c, sex);
+            f1 = SlotWide(ref _kitUp, ix, FlapPath(c, sex, 1), 280f);
+            f2 = SlotWide(ref _kitMid, ix, FlapPath(c, sex, 2), 280f);
+            f3 = SlotWide(ref _kitFlap3, ix, FlapPath(c, sex, 3), 280f);
+            f4 = SlotWide(ref _kitFlap4, ix, FlapPath(c, sex, 4), 280f);
+        }
+
+        static Sprite FlapPick(int pose, Sprite f1, Sprite f2, Sprite f3, Sprite f4)
+        {
+            switch (pose)
             {
-                int ix = KitIx(c, sex);
-                f1 = SlotWide(ref _kitUp, ix, FlapPath(c, sex, 1), 280f);
-                f2 = SlotWide(ref _kitMid, ix, FlapPath(c, sex, 2), 280f);
-                f3 = SlotWide(ref _kitFlap3, ix, FlapPath(c, sex, 3), 280f);
-                f4 = SlotWide(ref _kitFlap4, ix, FlapPath(c, sex, 4), 280f);
+                case 1: return f1;
+                case 2: return f2;
+                case 3: return f3;
+                case 4: return f4;
+                default: return null;
             }
-            // 8-pose wingbeat when the in-betweens exist: _3 = wings lowered (rest.._1),
-            // _4 = wings half-raised (_1.._2). Same beat rate as the 4-pose cycle,
-            // twice the steps: rest,_3,_1,_4,_2,_4,_1,_3.
-            if (f3 != null && f4 != null && f1 != null && f2 != null)
+        }
+
+        // step is floor(|t| * rate) mod the cycle. phase is the fraction of this step.
+        static void FlapStep(float t, bool six, out int pose, out int next, out float phase)
+        {
+            float rate = six ? 24f : 8f;
+            int n = six ? 6 : 2;
+            float u = Mathf.Abs(t) * rate;
+            int step = Mathf.FloorToInt(u);
+            phase = u - step;
+            if (phase < 0f) phase = 0f;
+            int i = step % n;
+            if (i < 0) i += n;
+            if (!six)
             {
-                // No rest pose in flight: its tucked wings flashed the belly out once per
-                // beat (and pulsed the selection halo). 6 poses at the same beat length.
-                int k6 = Mathf.FloorToInt(Mathf.Abs(t) * 24f) % 6;
-                switch (k6)
-                {
-                    case 0: return f3;
-                    case 1: case 5: return f1;
-                    case 2: case 4: return f4;
-                    default: return f2;
-                }
+                pose = i == 0 ? 1 : 2;
+                next = i == 0 ? 2 : 1;
+                return;
             }
-            if (f1 == null) return rest;
-            if (f2 == null) return f1;
-            int k = Mathf.FloorToInt(Mathf.Abs(t) * 8f) % 2;
-            return k == 0 ? f1 : f2;
+            pose = Flap6(i);
+            next = Flap6((i + 1) % 6);
+        }
+
+        static int Flap6(int i)
+        {
+            switch (i)
+            {
+                case 0: return 3;
+                case 1: return 1;
+                case 2: return 4;
+                case 3: return 2;
+                case 4: return 4;
+                default: return 1;
+            }
         }
 
         // Optional in-betweens must not fall back to a placeholder sprite.

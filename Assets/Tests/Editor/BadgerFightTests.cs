@@ -71,6 +71,7 @@ namespace FlockFive.Editor
                 CheckMix(Check);
                 CheckHoney(Check);
                 CheckCompare(Check);
+                CheckMargin(Check);
                 CheckBossLeads(Check);
                 CheckTie(Check);
                 CheckBlock(Check);
@@ -211,12 +212,13 @@ namespace FlockFive.Editor
                 bool hidden = Hive.HoneyChips(BeeFinish.Holo) == null;
                 BadgerSchedule.Enabled = true;
                 var row = Hive.HoneyChips(BeeFinish.Holo);
-                bool shape = row != null && row.Length == 4 && row[0] == "H3"
-                    && row[1] == "" && row[2] == "" && row[3] == "";
+                // Album cards draw honeycomb tiles (DrawHoneyRow). HoneyChips is the
+                // leftover text helper: one live label, no empty placeholder slots.
+                bool shape = row != null && row.Length == 1 && row[0] == "H3";
                 var inv = Hive.HoneyChips(BeeFinish.InverseRainbow);
-                bool inverse = inv != null && inv[0] == "H5";
+                bool inverse = inv != null && inv.Length == 1 && inv[0] == "H5";
                 Check("honey label", labels && hidden && shape && inverse,
-                    "H2/H3/H5; chip row hidden when off, 1 label + 3 empty when on");
+                    "H2/H3/H5; chip row hidden when off, one label when on");
             }
             finally { BadgerSchedule.Enabled = keep; }
         }
@@ -344,7 +346,7 @@ namespace FlockFive.Editor
             int playerGain;
             int bossGain;
             BadgerFight.ApplyRound(4, 2, BadgerPower.None, out playerFinal, out bossFinal, out playerGain, out bossGain);
-            bool math = playerFinal == 4 && bossFinal == 2 && playerGain == 4 && bossGain == 0;
+            bool math = playerFinal == 4 && bossFinal == 2 && playerGain == 2 && bossGain == 0;
 
             var fight = new BadgerFight(1, 6, Fill(16, 4), Fill(16, 2));
             bool early = !fight.PlayerPick(0) && fight.PlayerOpen(0) && fight.PlayerLeft == 16;
@@ -353,10 +355,25 @@ namespace FlockFive.Editor
             BadgerRound extra;
             bool again = !fight.Resolve(out extra);
             bool scored = played && early && again
-                && round.PlayerGained == 4 && round.BossGained == 0
-                && fight.PlayerScore == 4 && fight.BossScore == 0
+                && round.PlayerGained == 2 && round.BossGained == 0
+                && fight.PlayerScore == 2 && fight.BossScore == 0
                 && !fight.BossOpen(round.BossIndex) && !fight.PlayerOpen(round.PlayerIndex);
-            Check("compare", math && scored, "higher honey scores that honey; early player pick blocked");
+            Check("compare", math && scored, "higher honey scores the margin; early player pick blocked");
+        }
+
+        static void CheckMargin(System.Action<string, bool, string> Check)
+        {
+            int playerFinal;
+            int bossFinal;
+            int playerGain;
+            int bossGain;
+            BadgerFight.ApplyRound(5, 3, BadgerPower.None, out playerFinal, out bossFinal, out playerGain, out bossGain);
+            bool win = playerFinal == 5 && bossFinal == 3 && playerGain == 2 && bossGain == 0;
+            BadgerFight.ApplyRound(4, 4, BadgerPower.None, out playerFinal, out bossFinal, out playerGain, out bossGain);
+            bool tie = playerFinal == 4 && bossFinal == 4 && playerGain == 0 && bossGain == 0;
+            BadgerFight.ApplyRound(2, 5, BadgerPower.None, out playerFinal, out bossFinal, out playerGain, out bossGain);
+            bool loss = playerFinal == 2 && bossFinal == 5 && playerGain == 0 && bossGain == 5;
+            Check("margin", win && tie && loss, "5 vs 3 earns 2; a tie earns 0; a loss still scores the badger's full honey");
         }
 
         static void CheckTie(System.Action<string, bool, string> Check)
@@ -469,7 +486,7 @@ namespace FlockFive.Editor
             int flipGain;
             int flipBossGain;
             BadgerFight.ApplyRound(2, 5, BadgerPower.X3, out flipFinal, out flipBoss, out flipGain, out flipBossGain);
-            bool flip = flipFinal == 6 && flipBoss == 5 && flipGain == 6 && flipBossGain == 0;
+            bool flip = flipFinal == 6 && flipBoss == 5 && flipGain == 1 && flipBossGain == 0;
 
             int tieFinal;
             int tieBoss;
@@ -493,7 +510,7 @@ namespace FlockFive.Editor
             bool first = Play(fight, 2, BadgerPower.X3, out boosted);
             int after = Purse.Coins;
             bool priced = tooSoon && first && after == start - BadgerSchedule.PowerUpPrice(BadgerPower.X3, 1)
-                && boosted.PlayerFinal == 6 && boosted.PlayerGained == 6 && boosted.BossGained == 0;
+                && boosted.PlayerFinal == 6 && boosted.PlayerGained == 1 && boosted.BossGained == 0;
 
             bool opened = fight.BossPick() >= 0 && fight.PlayerPick(1);
             bool spent = opened && !fight.TryPower(BadgerPower.X3) && !fight.PowerReady(BadgerPower.X3)
@@ -501,9 +518,9 @@ namespace FlockFive.Editor
             BadgerRound plain = default;
             bool raw = spent && fight.Resolve(out plain);
             bool once = priced && raw && plain.PlayerFinal == 2 && plain.BossGained == 5
-                && fight.PlayerScore == 6 && fight.BossScore == 5;
+                && fight.PlayerScore == 1 && fight.BossScore == 5;
 
-            Check("multiplier", flip && tied && lose && once, "x3 scores 6, x2 can tie or lose, does not stick");
+            Check("multiplier", flip && tied && lose && once, "x3 of 2 vs 5 earns the margin 1, x2 can tie or lose, does not stick");
         }
 
         static void CheckEmpty(System.Action<string, bool, string> Check)
@@ -531,7 +548,7 @@ namespace FlockFive.Editor
                 if (!Play(lead, want, BadgerPower.None, out ignored)) leadOk = false;
             }
             bool playerWins = leadOk && leadRounds == 16
-                && lead.PlayerScore == 8 && lead.BossScore == 0
+                && lead.PlayerScore == 2 && lead.BossScore == 0
                 && lead.Result == BadgerResult.PlayerWon
                 && lead.PlayerLeft == 0 && lead.BossLeft == 0;
 
@@ -549,7 +566,7 @@ namespace FlockFive.Editor
                 && trail.Result == BadgerResult.BadgerWon
                 && trail.PlayerLeft == 0 && trail.BossLeft == 0;
 
-            Check("exhaust-player", playerWins, "8 to 0 under the targets, grids empty, player wins");
+            Check("exhaust-player", playerWins, "2 to 0 under the targets, grids empty, player wins");
             Check("exhaust-badger", badgerWins, "0 to 8 under the targets, grids empty, badger wins");
         }
 
@@ -558,24 +575,28 @@ namespace FlockFive.Editor
             var first = new BadgerFight(1, 4, Fill(16, 5), Fill(16, 1));
             BadgerRound earlyA;
             BadgerRound earlyB;
+            BadgerRound earlyC;
             bool two = Play(first, 5, BadgerPower.None, out earlyA)
-                && Play(first, 5, BadgerPower.None, out earlyB);
+                && Play(first, 5, BadgerPower.None, out earlyB)
+                && Play(first, 5, BadgerPower.None, out earlyC);
             bool firstWin = two && first.Result == BadgerResult.PlayerWon
-                && first.PlayerScore == 10 && first.BossScore == 0
-                && first.BossPick() < 0 && first.PlayerScore == 10;
+                && first.PlayerScore == 12 && first.BossScore == 0
+                && first.BossPick() < 0 && first.PlayerScore == 12;
 
             var high = new BadgerFight(20, 4, Fill(16, 5), Fill(16, 1));
             BadgerRound midA;
             BadgerRound midB;
             BadgerRound midC;
-            bool three = Play(high, 5, BadgerPower.None, out midA)
-                && Play(high, 5, BadgerPower.None, out midB)
-                && Play(high, 5, BadgerPower.None, out midC);
-            bool still = three && high.Result == BadgerResult.Playing
-                && high.PlayerScore == 15 && high.PlayerTarget == 18 && high.BadgerTarget == 18;
             BadgerRound midD;
-            bool fourth = still && Play(high, 5, BadgerPower.None, out midD);
-            bool capped = fourth && high.Result == BadgerResult.PlayerWon && high.PlayerScore == 20;
+            bool four = Play(high, 5, BadgerPower.None, out midA)
+                && Play(high, 5, BadgerPower.None, out midB)
+                && Play(high, 5, BadgerPower.None, out midC)
+                && Play(high, 5, BadgerPower.None, out midD);
+            bool still = four && high.Result == BadgerResult.Playing
+                && high.PlayerScore == 16 && high.PlayerTarget == 18 && high.BadgerTarget == 18;
+            BadgerRound midE;
+            bool fifth = still && Play(high, 5, BadgerPower.None, out midE);
+            bool capped = fifth && high.Result == BadgerResult.PlayerWon && high.PlayerScore == 20;
 
             var rival = new BadgerFight(1, 8, Fill(16, 1), Fill(16, 5));
             int steps = 0;
@@ -596,7 +617,7 @@ namespace FlockFive.Editor
             bool targetFirst = BadgerFight.Decide(10, 0, 10, 18, false) == BadgerResult.PlayerWon;
 
             Check("win-player", firstWin, "visit 1 target 10");
-            Check("win-cap", capped, "visit 20 still targets 18, so 15 is short and 20 wins");
+            Check("win-cap", capped, "visit 20 still targets 18, so 16 is short and 20 wins");
             Check("win-badger", badgerHit, "badger target 18");
             Check("tie-exact", scoreTie && scoreLead && scoreTrail && scoreLive && targetFirst,
                 "equal scores on an empty grid go to the badger");
@@ -611,8 +632,8 @@ namespace FlockFive.Editor
                 && Purse.Coins == 0 && broke.PowerReady(BadgerPower.X2);
             BadgerRound free = default;
             bool played = refused && broke.Resolve(out free);
-            bool live = played && free.PlayerGained == 4 && free.BossGained == 0
-                && broke.PlayerScore == 4 && Purse.Coins == 0;
+            bool live = played && free.PlayerGained == 3 && free.BossGained == 0
+                && broke.PlayerScore == 3 && Purse.Coins == 0;
 
             SetCoins(300);
             var shorty = new BadgerFight(3, 41, Fill(16, 2), Fill(16, 5));
@@ -762,7 +783,7 @@ namespace FlockFive.Editor
             SetCoins(100);
             bool paid = fight.PlayerPlay(0, BadgerPower.X2) && Purse.Coins == 0 && !fight.PowerReady(BadgerPower.X2);
             BadgerRound round;
-            bool boosted = fight.Resolve(out round) && round.PlayerFinal == 6 && round.PlayerGained == 6 && round.Power == BadgerPower.X2;
+            bool boosted = fight.Resolve(out round) && round.PlayerFinal == 6 && round.PlayerGained == 4 && round.Power == BadgerPower.X2;
             fight.BossPick();
             SetCoins(500);
             bool once = !fight.PlayerPlay(1, BadgerPower.X2) && Purse.Coins == 500 && fight.PlayerOpen(1);
@@ -792,7 +813,7 @@ namespace FlockFive.Editor
             SetCoins(0);
             var broke = new BadgerFight(1, 5, Fill(16, 4), Fill(16, 2));
             broke.BossPick();
-            bool freeFight = broke.PlayerPlay(0, BadgerPower.None) && broke.Resolve(out a) && a.PlayerGained == 4;
+            bool freeFight = broke.PlayerPlay(0, BadgerPower.None) && broke.Resolve(out a) && a.PlayerGained == 2;
             Check("power play", short1 && paid && boosted && once && plain && price && block && freeFight,
                 "short purse picks nothing; x2 pays and doubles; one use; price +50 per visit; freeze 600; 0 coins playable");
         }
@@ -809,11 +830,12 @@ namespace FlockFive.Editor
                 int ix = FindPlayer(win, 5);
                 if (ix < 0) ix = FindPlayer(win, 3);
                 if (ix < 0) ix = FindPlayer(win, 2);
+                if (ix < 0) ix = FindPlayer(win, 1);
                 if (win.BossPick() < 0 || ix < 0 || !win.PlayerPlay(ix, BadgerPower.None)) break;
                 BadgerRound r;
                 win.Resolve(out r);
             }
-            bool won = win.Result == BadgerResult.PlayerWon && win.PlayerScore == 10 && win.BossScore == 0 && rounds == 3;
+            bool won = win.Result == BadgerResult.PlayerWon && win.PlayerScore == 9 && win.BossScore == 0 && rounds == 16;
 
             var lose = new BadgerFight(1, 9, Fill(16, 1), Fill(16, 5));
             rounds = 0;
@@ -837,7 +859,7 @@ namespace FlockFive.Editor
             }
             bool exhausted = out1.Result == BadgerResult.BadgerWon && rounds == 2 && out1.PlayerLeft == 0 && out1.BossLeft == 0;
             Check("scripted fight", won && lost && exhausted,
-                "loadout 5+3+2 beats an all-1 grid in three rounds; all-1 loses to all-5 in four; dead heat on empty goes to the badger");
+                "loadout margins sum to 9 and win on an empty grid; all-1 loses to all-5 in four; a dead heat goes to the badger");
         }
 
         static bool Play(BadgerFight fight, int honey, BadgerPower power, out BadgerRound round)

@@ -42,6 +42,21 @@ namespace FlockFive
 
         public bool Hidden => _on && !_scatter;
 
+        // A live bee the garden glove can point at. One shared aim for the bee lesson.
+        public bool TryAim(out Vector3 world)
+        {
+            world = default;
+            if (_bees == null) return false;
+            for (int i = 0; i < _bees.Length; i++)
+            {
+                var b = _bees[i];
+                if (b == null || !b.enabled || !b.gameObject.activeInHierarchy) continue;
+                world = b.bounds.center;
+                return true;
+            }
+            return false;
+        }
+
         // Restart flies the cloud with the flock. LateUpdate must not pin them mid-parade.
         public void HoldMotion(bool on) => _hold = on;
 

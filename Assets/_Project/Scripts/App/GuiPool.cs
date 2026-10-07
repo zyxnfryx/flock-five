@@ -55,6 +55,7 @@ namespace FlockFive
         GiftWatch,
         FreezeRetry,
         FreezeContinue,
+        FreezeBonus,
         WrapWords,
         Count
     }

@@ -470,6 +470,38 @@ namespace FlockFive
             return ClipLp("fw-crackle", data, 0.22f);
         }
 
+        // Splash flyby shell. A falling low thump plus a quiet band-limited breath.
+        // which 2 is the heart boom: lower fundamental, longer tail, more body.
+        static AudioClip MakeSkyBoom(int which)
+        {
+            bool heart = which == 2;
+            float dur = heart ? 0.78f : 0.48f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float low = heart ? 82f : (which == 0 ? 124f : 108f);
+            float sub = heart ? 56f : (which == 0 ? 76f : 68f);
+            float body = heart ? 142f : (which == 0 ? 188f : 166f);
+            float lp = 0f;
+            int seed = 2400 + which * 53;
+            float dropAmt = heart ? 0.50f : 0.36f;
+            float decay = heart ? 2.7f : 4.6f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float u = t / dur;
+                float drop = 1f - u * dropAmt;
+                float hit = u < 0.014f ? u / 0.014f : 1f;
+                float env = hit * Mathf.Exp(-u * decay);
+                float thump = Mathf.Sin(2f * Mathf.PI * low * drop * t);
+                thump += (heart ? 0.70f : 0.46f) * Mathf.Sin(2f * Mathf.PI * sub * drop * t);
+                float mid = Mathf.Sin(2f * Mathf.PI * body * drop * t) * Mathf.Exp(-u * (heart ? 3.4f : 5.2f));
+                float air = Soft(ref lp, seed, i, 0.04f) * Mathf.Exp(-u * 5.5f);
+                float g = heart ? 0.74f : 0.58f;
+                data[i] = (thump * 0.70f + mid * 0.32f + air * 0.08f) * env * g;
+            }
+            return ClipLp(heart ? "sky-boom-heart" : "sky-boom-" + which, data, heart ? 0.09f : 0.14f);
+        }
+
         static AudioClip MakeFeederArrive()
         {
             const float dur = 0.16f;
@@ -486,6 +518,31 @@ namespace FlockFive
                 data[i] = s * env * 0.5f;
             }
             return Clip("feeder-arrive", data);
+        }
+
+        // Propeller pass. One low buzz, no melody. The envelope fades itself;
+        // Sfx.PlanePass only pans and ducks it. Mid, so a hot lead refuses it.
+        static AudioClip MakePlaneZoom()
+        {
+            const float dur = 6.5f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float lp = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float u = t / dur;
+                float fadeIn = u < 0.14f ? u / 0.14f : 1f;
+                float fadeOut = u > 0.82f ? (1f - u) / 0.18f : 1f;
+                float env = fadeIn * fadeOut * Mathf.Sin(Mathf.PI * Mathf.Clamp01(u));
+                float f = Mathf.Lerp(112f, 94f, u);
+                float blade = 0.64f + 0.36f * Mathf.Sin(2f * Mathf.PI * 26f * t);
+                float tone = Mathf.Sin(2f * Mathf.PI * f * t);
+                tone += 0.20f * Mathf.Sin(4f * Mathf.PI * f * t);
+                float air = Soft(ref lp, 9001, i, 0.08f) * 0.05f;
+                data[i] = (tone * blade + air) * env * 0.40f;
+            }
+            return ClipLp("plane-zoom", data, 0.15f);
         }
 
         static AudioClip Clip(string name, float[] data) => ClipLp(name, data, 0.2f);

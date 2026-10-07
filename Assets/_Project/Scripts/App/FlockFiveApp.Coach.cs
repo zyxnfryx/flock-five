@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace FlockFive
@@ -55,7 +56,9 @@ namespace FlockFive
         // Break is the two-line wrap. The plate is measured to these lines.
         const string DailyIntroLine = "Tap Daily for\nyour bonus!";
         const string DailyClaimLine = "Tap to claim!";
-        // A feeder collect calls Board.Breeze, which lifts the tip leaf.
+        // Informational only. Any tap dismisses it, and so does a collect (that
+        // collect is what calls Board.Breeze). It does not point a glove, and it
+        // does not wait for the leaf to lift.
         const string LeafIntroLine = "Leaves hide these birds.\nCollect at a feeder\nto blow them away.";
         // A tap does not scare a sparrow. One full match (five birds) into its feeder does.
         // Build 61: pest intros draw in the shared StandardCaptionBox at the standard lesson
@@ -64,8 +67,14 @@ namespace FlockFive
         const string SparrowIntroLine = "A sparrow blocks a feeder! Match five birds there to chase it off.";
         // HitsNeeded is two collects on the blocked feeder. Five birds twice is ten.
         const string HawkIntroLine = "A hawk blocks a feeder! Match five there twice to drive it off.";
+        // RevealExposed frees the furthest bee once the birds stacked above it move off.
+        // That is the bee card (Hive.TakeVisitor), not a five-bird feeder match.
+        const string BeeIntroLine = "Bees cover birds on a branch! Move the birds off a bee to free it and win a bee card.";
         const int PestCueSparrow = 1;
         const int PestCueHawk = 2;
+        const int PestCueBee = 3;
+        const string CoachBeeKey = "flockfive.coach.bee";
+        const string CoachHiveGardenKey = "flockfive.coach.hive.garden";
         const float PestCueSeconds = 4.5f;
         // Hawk waits out the sparrow line, then this long, so the two never share a frame.
         const float PestCueGap = 1.05f;
@@ -132,7 +141,13 @@ namespace FlockFive
         bool _dailyGloveOnClaim;
         bool _leafIntro;
         float _leafSeen;
-        int _leafWatch = -1;
+        // Screen rect of the leafy branches, so the caption can sit off them.
+        // _leafSeatKeep is the rect the latched plate was cleared against.
+        bool _leafKeepOn;
+        Rect _leafKeep;
+        bool _leafSeatOn;
+        Rect _leafSeatKeep;
+        readonly List<SpriteRenderer> _leafMark = new List<SpriteRenderer>(24);
         int _pestCue;
         int _tutorPause;
         bool _hiveLevelCue;
@@ -445,7 +460,8 @@ namespace FlockFive
             if (!string.IsNullOrEmpty(_cueLine)
                 && _cueLine != AdHandLine
                 && _cueLine != SparrowIntroLine
-                && _cueLine != HawkIntroLine)
+                && _cueLine != HawkIntroLine
+                && _cueLine != BeeIntroLine)
                 return true;
             if (_gloveAct == TutorGloveAct.FadeOutOnTap || _gloveAct == TutorGloveAct.Reappear)
                 return true;
@@ -460,7 +476,7 @@ namespace FlockFive
                 return true;
             if (_pestCue == 0 && !_coach && !_leafIntro && !_cueGift && !_hiveLevelLive && !_adHand
                 && PlayClock.Now >= _coachGiftUntil
-                && (SparrowDue() || HawkDue()))
+                && (SparrowDue() || HawkDue() || BeeDue()))
                 return true;
             return false;
         }
@@ -516,6 +532,8 @@ namespace FlockFive
             _tutorPlateFrame = -1;
             _coachLineHeld = false;
             _coachHoldXOn = false;
+            _leafKeepOn = false;
+            _leafSeatOn = false;
             CoachHideGlow();
             CoachHideRipples();
         }
@@ -530,6 +548,8 @@ namespace FlockFive
             _tutorPlateFrame = -1;
             _coachLineHeld = false;
             _coachHoldXOn = false;
+            _leafKeepOn = false;
+            _leafSeatOn = false;
             _gloveVis = false;
             _restVis = false;
             GloveVeilReset();
@@ -564,10 +584,59 @@ namespace FlockFive
             _gloveWiggle = 1f;
         }
 
+        // A lesson caption is up, or a reset is about to show one again. The season
+        // banner waits on this so the two lines never share the screen.
+        void NoteSeasonTutor()
+        {
+            bool up = _coach || _leafIntro || _pestCue != 0 || _hiveLevelLive || _cueGift || _adHand || _cueHand;
+            if (!up && !string.IsNullOrEmpty(_cueLine)) up = true;
+            if (!up && CoachResetHolds() && ResumableCoachStep()) up = true;
+            SeasonReveal.TutorUp = up;
+        }
+
+        static GUIContent _seasonLine;
+
+        // Welcome line for a new painting. Not PaintCoachCaption: that path bails
+        // while a reset parade is up and would drop the line. The plate still hugs
+        // the sentence the way the standard caption does, so a tall phone does not
+        // cover the top branches with an empty wood box.
+        void DrawSeasonBanner(float s, float top)
+        {
+            if (!SeasonReveal.BannerLive) return;
+            float a = SeasonReveal.BannerAlpha;
+            if (a < 0.02f) return;
+            if (!SeasonReveal.HoldsPlay && CoachResetHolds()) return;
+            string line = SeasonReveal.BannerLine;
+            if (string.IsNullOrEmpty(line)) return;
+            StandardCaptionBox(s, out float w, out float h, out int lo, out int hi);
+            lo = CaptionPx(lo);
+            hi = CaptionPx(hi);
+            var st = CoachLineStyle();
+            bool wrap = st.wordWrap;
+            st.wordWrap = false;
+            st.fontSize = FitFont(st, line, w * 0.88f, h * 0.72f, lo, hi);
+            var box = new Rect((Screen.width - w) * 0.5f, top + TutorCaptionGap * s, w, h);
+            float padX = Mathf.Clamp(w * 0.055f, 10f * s, 18f * s);
+            float padY = Mathf.Clamp(h * 0.10f, 6f * s, 14f * s);
+            var textR = new Rect(
+                box.x + padX,
+                box.y + padY,
+                Mathf.Max(48f, box.width - padX * 2f),
+                Mathf.Max(24f, box.height - padY * 2f));
+            if (_seasonLine == null) _seasonLine = new GUIContent();
+            _seasonLine.text = line;
+            float textH = st.CalcSize(_seasonLine).y;
+            var plate = CaptionPlateBox(box, default, textH, textR.height, StandardCaptionSlack);
+            DrawCoachPanel(plate, a);
+            StampBannerText(textR, line, st, a, true);
+            st.wordWrap = wrap;
+        }
+
         // Which branch this frame's hint is about. Does not move _coachFrom while a hop
         // is in flight — CoachMoved still has to recognize the move that just landed.
         void CoachAdvance()
         {
+            NoteSeasonTutor();
             TickCoachReset(false, false);
             if (_gloveWiggle > 0f)
                 _gloveWiggle = Mathf.Max(0f, _gloveWiggle - PlayClock.Delta / 0.28f);
@@ -623,6 +692,9 @@ namespace FlockFive
                     LeafIntroAdvance();
                     return;
                 }
+                // Garden hive callout stays up. CoachRelease was wiping it every frame
+                // once the level-1 coach had finished.
+                if (_hiveLevelLive) return;
                 if (PestStageFree() && PestIntroAdvance())
                     return;
                 CoachRelease();
@@ -1032,6 +1104,12 @@ namespace FlockFive
                 PlacePestGlove(dt);
                 return;
             }
+            // Caption only. The soft glow marks the leafy branch. No glove, no tap cue.
+            if (_leafIntro)
+            {
+                PlaceLeafGlow();
+                return;
+            }
             if (_levelHive || !_cueHand || !CoachView(out var view) || _garden.Cam == null)
             {
                 _gloveVis = false;
@@ -1050,6 +1128,27 @@ namespace FlockFive
             var holeScreen = cam.WorldToScreenPoint(glow);
             _cueHoleGui = new Vector2(holeScreen.x, Screen.height - holeScreen.y);
 
+            ShowCoachGlow(glow, dx, dy);
+
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            if (CoachGloveAt(_cueAimGui, dt, s, float.NaN, false, float.NaN, default, FnCueTap()))
+            {
+                _coachGlowKick = 1f;
+                CoachSpawnRipple(_cueAimWorld);
+                float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.35f));
+                float breathe = 0.94f + 0.08f * pulse;
+                const float spread = 1.75f;
+                float flash = (0.40f + 0.28f * pulse + 0.62f) * EaseOutCubic(_coachFade);
+                if (flash > 1f) flash = 1f;
+                _coachGlow.transform.localScale = new Vector3(dx * breathe * spread * 1.12f, dy * breathe * spread * 1.12f, 1f);
+                _coachGlow.color = new Color(1f, 0.91f, 0.46f, flash);
+            }
+        }
+
+        // Soft gold falloff under a branch. Not a pointer. The leaf lesson and the
+        // garden coach share it. A glove tap may flash the same sprite afterward.
+        void ShowCoachGlow(Vector3 glow, float dx, float dy)
+        {
             CoachEnsureGlow();
             float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.35f));
             float breathe = 0.94f + 0.08f * pulse;
@@ -1063,17 +1162,6 @@ namespace FlockFive
             float a = (0.40f + 0.28f * pulse + 0.62f * kick) * EaseOutCubic(_coachFade);
             if (a > 1f) a = 1f;
             _coachGlow.color = new Color(1f, 0.91f, 0.46f, a);
-
-            float s = Mathf.Max(Screen.height / 720f, 1f);
-            if (CoachGloveAt(_cueAimGui, dt, s, float.NaN, false, float.NaN, default, FnCueTap()))
-            {
-                _coachGlowKick = 1f;
-                CoachSpawnRipple(_cueAimWorld);
-                float flash = (0.40f + 0.28f * pulse + 0.62f) * EaseOutCubic(_coachFade);
-                if (flash > 1f) flash = 1f;
-                _coachGlow.transform.localScale = new Vector3(dx * breathe * spread * 1.12f, dy * breathe * spread * 1.12f, 1f);
-                _coachGlow.color = new Color(1f, 0.91f, 0.46f, flash);
-            }
         }
 
         // Shared rail-lesson gate (hive, daily, poker): true once the rail button has stopped sliding.
@@ -1253,8 +1341,8 @@ namespace FlockFive
             return VipContains(box, new Vector2(screen.x, Screen.height - screen.y));
         }
 
-        // Branch, gift limb, or the feeder a leaf lesson is waiting on.
-        // Reads the cue still showing this frame. The hop has not advanced it yet.
+        // Branch or gift limb. Reads the cue still showing this frame.
+        // The hop has not advanced it yet. The leaf lesson has no glove target.
         bool CueGloveTap(Vector2 screen)
         {
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
@@ -1271,8 +1359,7 @@ namespace FlockFive
                 return other >= 0 && NearGift(other, world);
             }
             if (_cueBranch < 0) return false;
-            if (HitBranch(world) == _cueBranch) return true;
-            return _leafIntro && HitFeeder(world) >= 0;
+            return HitBranch(world) == _cueBranch;
         }
 
         // Kind is the pest the hand was pointing at. Dismiss clears _pestCue in
@@ -1416,7 +1503,7 @@ namespace FlockFive
             _gloveVis = false;
         }
 
-        // Shared pose for every glove: tap, hive, daily, gift, hawk, leaves, sparrow,
+        // Shared pose for every glove: tap, hive, daily, gift, hawk, sparrow,
         // and the home avatar. aimGui is GUI space, y down. True on the frame the
         // fingertip lands. A tap on tapRect, or tapHit when set, fades the hand out
         // where it is. The next step fades in at the start of that step's arc.
@@ -1623,7 +1710,6 @@ namespace FlockFive
         {
             float gap = 48f * s;
             bool atBird = _pestCue != 0
-                || (_leafIntro && _cueBranch >= 0)
                 || (_coach && _cueBranch >= 0 && !_cueGift);
             if (!atBird) return gap;
             var cam = _garden.Cam;
@@ -2468,7 +2554,12 @@ namespace FlockFive
                 return new Rect(x, y, w, h);
             }
             if (_tutorSeatOn && _tutorSeatFor == text)
-                return ClearCaptionOfStamp(new Rect(_tutorSeatX, _tutorSeatY, w, h), s);
+            {
+                var held = ClearCaptionOfStamp(new Rect(_tutorSeatX, _tutorSeatY, w, h), s);
+                if (text == LeafIntroLine)
+                    held = ClearCaptionOfLeaf(held, s, _leafSeatKeep, _leafSeatOn);
+                return held;
+            }
             float restX;
             float restY;
             bool gift = false;
@@ -2496,13 +2587,67 @@ namespace FlockFive
             var pref = new Rect(restX, restY, w, h);
             bool poseReady = _glovePosing || _glovePoseFrame == Time.frameCount;
             if (!poseReady)
-                return ClearCaptionOfStamp(pref, s);
+            {
+                var open = text == LeafIntroLine ? ClearCaptionOfLeaf(pref, s, _leafKeep, _leafKeepOn) : pref;
+                return ClearCaptionOfStamp(open, s);
+            }
+            if (text == LeafIntroLine && !_leafKeepOn)
+                return ClearCaptionOfStamp(ClearCaptionOfLeaf(pref, s, _leafKeep, false), s);
             var seat = PlaceTutorCaption(pref, s, gift);
+            if (text == LeafIntroLine)
+            {
+                seat = ClearCaptionOfLeaf(seat, s, _leafKeep, _leafKeepOn);
+                _leafSeatKeep = _leafKeep;
+                _leafSeatOn = _leafKeepOn;
+            }
             _tutorSeatFor = text;
             _tutorSeatX = seat.x;
             _tutorSeatY = seat.y;
             _tutorSeatOn = true;
-            return ClearCaptionOfStamp(new Rect(seat.x, seat.y, w, h), s);
+            var shown = ClearCaptionOfStamp(new Rect(seat.x, seat.y, w, h), s);
+            if (text == LeafIntroLine)
+                shown = ClearCaptionOfLeaf(shown, s, _leafSeatKeep, _leafSeatOn);
+            return shown;
+        }
+
+        // Leaf lesson only. The plate sits under the leaves when the branch is high,
+        // and above them when it is low, inside the garden band (under the top chrome,
+        // above the bottom hud). zone is the leafy-branch rect captured for this seat.
+        Rect ClearCaptionOfLeaf(Rect seat, float s, Rect leaves, bool on)
+        {
+            if (!on || leaves.width < 2f || leaves.height < 2f) return seat;
+            float gap = TutorCaptionGap * s;
+            var zone = new Rect(leaves.x - gap, leaves.y - gap, leaves.width + gap * 2f, leaves.height + gap * 2f);
+            var panel = CoachPanelRect(seat);
+            if (!panel.Overlaps(zone)) return seat;
+            HudLayout(out float hs, out float top, out float bot, out _, out _);
+            float floor = top + TutorCaptionGap * hs;
+            float limit = Screen.height - bot - 8f * hs;
+            float hangTop = seat.y - panel.y;
+            float hangBot = panel.yMax - seat.yMax;
+            var below = seat;
+            below.y = zone.yMax + gap + hangTop;
+            var above = seat;
+            above.y = zone.yMin - gap - hangBot - seat.height;
+            bool BelowOk() => below.y >= floor - 0.5f && below.y + seat.height <= limit + 0.5f;
+            bool AboveOk() => above.y >= floor - 0.5f && above.y + seat.height <= zone.yMin - 2f
+                && above.y + seat.height <= limit + 0.5f;
+            bool high = zone.center.y < Screen.height * 0.55f;
+            if (high && BelowOk()) return below;
+            if (!high && AboveOk()) return above;
+            if (BelowOk()) return below;
+            if (AboveOk()) return above;
+            float roomBelow = limit - (zone.yMax + gap);
+            float roomAbove = (zone.yMin - gap) - floor;
+            if (roomBelow >= roomAbove)
+            {
+                if (below.y + seat.height > limit) below.y = limit - seat.height;
+                if (below.y < floor) below.y = floor;
+                return below;
+            }
+            if (above.y + seat.height > zone.yMin - 2f) above.y = zone.yMin - gap - hangBot - seat.height;
+            if (above.y < floor) above.y = floor;
+            return above;
         }
 
         // Drops a tutorial plate under the garden multiplier chip. A plate that
@@ -3876,12 +4021,19 @@ namespace FlockFive
             // The home lesson stamps only while it is on the splash.
             // Opening the garden hive must not consume that one-time flag.
             if (_hiveIntroLive || (_hiveIntroSaw && !_hiveLevelLive)) MarkHiveCoach();
-            bool dropLevel = _hiveLevelLive || _levelHive;
+            // The cards pop-up being open is not a dismiss. The callout waits until it
+            // closes. Tapping the hive while the callout is up does dismiss it.
+            bool dropLevel = _hiveLevelLive;
             _hiveIntro = false;
             _hiveIntroLive = false;
             _hiveIntroSaw = false;
             if (dropLevel)
             {
+                if (PlayerPrefs.GetInt(CoachHiveGardenKey, 0) == 0)
+                {
+                    PlayerPrefs.SetInt(CoachHiveGardenKey, 1);
+                    PlayerPrefs.Save();
+                }
                 _hiveLevelCue = false;
                 _hiveLevelLive = false;
             }
@@ -3921,7 +4073,7 @@ namespace FlockFive
         void ArmLevelBeeIntro()
         {
             _hiveLevelLive = false;
-            if (PlayerPrefs.GetInt(CoachHiveKey, 0) != 0) return;
+            if (PlayerPrefs.GetInt(CoachHiveGardenKey, 0) != 0) return;
             if (Hive.LegacyAdopted) return;
             if (Ads.IsBusy) return;
             if (!BoardHasBees()) return;
@@ -3930,22 +4082,27 @@ namespace FlockFive
 
         void TickLevelBee()
         {
+            if (SeasonReveal.HoldsPlay) return;
             if (!_hiveLevelCue) return;
+            if (PlayerPrefs.GetInt(CoachHiveGardenKey, 0) != 0)
+            {
+                _hiveLevelCue = false;
+                _hiveLevelLive = false;
+                return;
+            }
             if (_hiveLevelLive)
             {
-                _hiveIntro = true;
                 _cueHand = true;
                 CueLine(HiveIntroLine);
                 _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
                 return;
             }
             if (HoldLiveLesson()) return;
-            // "You found a bee!" starts only after the first Bee card is in hand.
-            if (!Hive.Collected) return;
+            // After the first bee card, and only once the collected-cards pop-up has closed.
+            if (!Hive.Collected || _levelHive) return;
             if (_splash || _won || Ads.IsBusy || Ads.IsShowing) return;
             if (_coach || _leafIntro || _pestCue != 0 || _adHand || _gift != GiftFace.None) return;
             _hiveLevelLive = true;
-            _hiveIntro = true;
             _gloveReady = false;
             _glovePhase = 0f;
             _coachFade = 0f;
@@ -3991,12 +4148,14 @@ namespace FlockFive
         // empty target fails open. HealInterruptedTutorials finishes a gated step that has held
         // taps for longer than TutorialHeal.MaxGateSeconds with no glove posed on its target.
         // An any-tap step (AnyTap) has no glove and no target: the first press anywhere finishes
-        // it (CompleteGatedStep) and is eaten with its drag and release, so nothing under it
-        // fires. It never holds a tap, so it is not blind time for the heal.
+        // it (CompleteGatedStep). Adopt greet eats that press so nothing under it fires.
+        // Pass leaves the press alone after the step advances, so a garden tap still plays.
+        // An any-tap step never holds a tap, so it is not blind time for the heal.
         const int GatePokerBack = 1;
         const int GateAlbumPage = 2;
         const int GateAdoptGreet = 3;
         const int GateAlbumUpgrade = 4;
+        const int GateLeaf = 5;
 
         struct StepGate
         {
@@ -4007,6 +4166,8 @@ namespace FlockFive
             public Rect SwipeArea;
             // Any press anywhere finishes the step (the whole screen is the target).
             public bool AnyTap;
+            // Advance, but do not eat the press. The control under the finger still runs.
+            public bool Pass;
         }
 
         float _gateBlindSince = -1f;
@@ -4014,6 +4175,10 @@ namespace FlockFive
         bool StepTapGate(out StepGate gate)
         {
             gate = default;
+            // Daily claim ("Tap to claim!") is not an any-tap step. Only the Claim flower
+            // advances it. SwallowOffTargetTap shares this gate, so the claim is the exception
+            // rather than a second tap path. The X on the card still closes the pop-up.
+            if (_dailyIntroLive && _dailyOpen && !_dailyAskOpen) return false;
             if (PokerBackGateLive())
             {
                 float s = Mathf.Max(Screen.height / 720f, 1f);
@@ -4039,6 +4204,15 @@ namespace FlockFive
                 gate.Target = new Rect(0f, 0f, Screen.width, Screen.height);
                 gate.AnyTap = true;
             }
+            else if (LeafCaptionLive() && !LeafRestartTap(Event.current))
+            {
+                // Leaf lesson: caption only. The same any-tap advance as the greet,
+                // but the press is not eaten, so the board still takes it.
+                gate.Step = GateLeaf;
+                gate.Target = new Rect(0f, 0f, Screen.width, Screen.height);
+                gate.AnyTap = true;
+                gate.Pass = true;
+            }
             else return false;
             if (gate.Target.width < 2f || gate.Target.height < 2f)
             {
@@ -4055,6 +4229,7 @@ namespace FlockFive
             else if (step == GateAlbumPage) FinishAlbumTutor();
             else if (step == GateAlbumUpgrade) FinishUpgradeTutor();
             else if (step == GateAdoptGreet) AdvanceAdoptGreet();
+            else if (step == GateLeaf) DismissLeafIntro();
         }
 
         // Album lesson, last step: "Swipe to turn the page! Or tap a page number." The glove is
@@ -4087,9 +4262,10 @@ namespace FlockFive
             var kind = t == EventType.MouseDown ? GatePointer.Down : t == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
             if (gate.AnyTap)
             {
-                // Eaten before any control sees it: no splash play, no rail button, no bird hop.
-                // The release then finds no hotControl, so nothing fires on it either.
                 if (TutorialHeal.GateAdvances(kind, true, e.button)) CompleteGatedStep(gate.Step);
+                // Pass: the leaf caption advances and the same press still reaches the board.
+                // Every other any-tap step eats the press so nothing under it fires.
+                if (gate.Pass) return;
                 if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
                 e.Use();
                 return;
@@ -5123,7 +5299,42 @@ namespace FlockFive
             return -1;
         }
 
-        // Leaves pop on after the garden is built. Hold the line until a cover is actually up.
+        // The caption is up. A reset parade is not a tap, and the restart button
+        // suspends the step instead of finishing it.
+        bool LeafCaptionLive()
+        {
+            if (!_leafIntro || _restarting || _splash || _won) return false;
+            if (CoachResetHolds()) return false;
+            return _cueLine == LeafIntroLine;
+        }
+
+        bool LeafRestartTap(Event e)
+        {
+            if (e == null) return false;
+            if (e.type != EventType.MouseDown && e.type != EventType.MouseUp && e.type != EventType.MouseDrag)
+                return false;
+            return RestartGui(e.mousePosition);
+        }
+
+        bool RestartGui(Vector2 gui)
+        {
+            HudLayout(out _, out _, out _, out var restart, out _);
+            return restart.width > 2f && restart.Contains(gui);
+        }
+
+        // Input System press (board, hud, stamp, a frozen board). Same advance as
+        // the any-tap gate. The restart button is the parade, not a dismiss.
+        // The press is not eaten.
+        void NoteLeafTap(Vector2 screen)
+        {
+            if (!LeafCaptionLive()) return;
+            var gui = new Vector2(screen.x, Screen.height - screen.y);
+            if (RestartGui(gui)) return;
+            CompleteGatedStep(GateLeaf);
+        }
+
+        // Leaves pop on after the garden is built. Hold the line until a cover is actually up,
+        // so a reset landing cannot flash the plate before the foliage is there.
         bool LeafCoverReady(int b)
         {
             var branches = _garden.Branches;
@@ -5142,47 +5353,59 @@ namespace FlockFive
             if (_coach) return;
             if (PlayerPrefs.GetInt(CoachLeafKey, 0) != 0) return;
             if (FirstLeaf() < 0) return;
-            PlayerPrefs.SetInt(CoachLeafKey, 1);
-            PlayerPrefs.Save();
             _leafIntro = true;
             _leafSeen = 0f;
-            _leafWatch = -1;
+            _leafKeepOn = false;
+            _leafSeatOn = false;
             _coachFade = 0f;
             _gloveReady = false;
             _gloveWiggle = 0f;
             _glovePhase = 0f;
             _gloveDip = 0f;
             _tapSent = false;
+            _cueHand = false;
             _cueForce = false;
             _cueFreeze = false;
+            HideLeafGlove();
         }
 
-        // Stray taps do not call this. The glove waits for that branch or a feeder.
-        // No leaves left is what ends the lesson.
+        // Tap, or a collect while the line is up. Marks the lesson seen.
+        // Does not swallow the tap that called it.
         void DismissLeafIntro()
         {
             if (!_leafIntro) return;
             _leafIntro = false;
             _leafSeen = 0f;
-            _leafWatch = -1;
+            _leafKeepOn = false;
+            _leafSeatOn = false;
+            if (PlayerPrefs.GetInt(CoachLeafKey, 0) == 0)
+            {
+                PlayerPrefs.SetInt(CoachLeafKey, 1);
+                PlayerPrefs.Save();
+            }
             _cueHand = false;
             _cueForce = false;
             _cueFreeze = false;
             _cueGift = false;
             _cueLine = null;
+            _cueSpoken = null;
             _cueBranch = -1;
+            _tutorSeatOn = false;
             _gloveVis = false;
             _gloveReady = false;
+            HideLeafGlove();
             CoachHideGlow();
             CoachHideRipples();
         }
 
         void LeafIntroAdvance()
         {
+            if (SeasonReveal.HoldsPlay) return;
             if (_won || _restarting || _gift != GiftFace.None || _levelHive)
             {
                 _cueHand = false;
                 _gloveVis = false;
+                _leafKeepOn = false;
                 CoachHideGlow();
                 return;
             }
@@ -5192,20 +5415,22 @@ namespace FlockFive
                 DismissLeafIntro();
                 return;
             }
-            if (b != _leafWatch)
-            {
-                _leafWatch = b;
-                _leafSeen = 0f;
-            }
             if (!LeafCoverReady(b))
             {
+                // No plate until the foliage is up, and no latched seat from the parade.
                 _cueHand = false;
                 _cueLine = null;
+                _coachFade = 0f;
+                _tutorSeatOn = false;
+                _leafSeatOn = false;
                 _gloveVis = false;
                 _cueBranch = b;
+                _leafKeepOn = false;
+                HideLeafGlove();
+                CoachHideGlow();
                 return;
             }
-            _cueHand = true;
+            _cueHand = false;
             _cueForce = false;
             _cueFreeze = false;
             _cueGift = false;
@@ -5214,13 +5439,106 @@ namespace FlockFive
             _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.35f);
         }
 
-        // Level-1 coach, hive lesson, poker lesson, leaf lesson, gift, and ads keep the glove.
+        void HideLeafGlove()
+        {
+            if (_gloveVis || _gloveAlpha > 0.03f
+                || _gloveAct == TutorGloveAct.Live
+                || _gloveAct == TutorGloveAct.Reappear
+                || _gloveAct == TutorGloveAct.FadeOutOnTap)
+                GloveVeilReset();
+            _gloveVis = false;
+            _cueHolePx = 0f;
+        }
+
+        // Glow on the first leafy branch. No hand, no ripple, no dim hole.
+        void PlaceLeafGlow()
+        {
+            HideLeafGlove();
+            _cueHand = false;
+            _cueForce = false;
+            _cueFreeze = false;
+            _cueHolePx = 0f;
+            if (_cueLine != LeafIntroLine)
+            {
+                _leafKeepOn = false;
+                CoachHideGlow();
+                return;
+            }
+            if (!CoachView(out var view) || _garden.Cam == null)
+            {
+                _leafKeepOn = false;
+                CoachHideGlow();
+                return;
+            }
+            CoachFocus(view, out var aim, out var glow, out float dx, out float dy);
+            var cam = _garden.Cam;
+            _cueAimWorld = aim;
+            var screen = cam.WorldToScreenPoint(aim);
+            if (screen.z >= 0f)
+                _cueAimGui = new Vector2(screen.x, Screen.height - screen.y);
+            NoteLeafKeep(cam);
+            ShowCoachGlow(glow, dx, dy);
+        }
+
+        // Union of every leafy branch (wood, birds, and the leaf curtain), in GUI space.
+        void NoteLeafKeep(Camera cam)
+        {
+            _leafKeepOn = false;
+            if (cam == null || _board == null || _garden.Branches == null) return;
+            bool any = false;
+            Bounds world = default;
+            int n = _board.Branches.Count;
+            if (n > _garden.Branches.Length) n = _garden.Branches.Length;
+            for (int i = 0; i < n; i++)
+            {
+                var st = _board.Branches[i];
+                if (st.Broken || st.Count == 0 || !st.TipLocked) continue;
+                var view = _garden.Branches[i];
+                if (view == null) continue;
+                if (view.Wood != null && view.Wood.enabled && view.Wood.gameObject.activeInHierarchy)
+                    TakeLeafBounds(view.Wood.bounds, ref any, ref world);
+                var birds = view.Birds;
+                for (int b = 0; b < birds.Length; b++)
+                {
+                    var sr = birds[b];
+                    if (sr == null || !sr.enabled || !sr.gameObject.activeInHierarchy) continue;
+                    TakeLeafBounds(sr.bounds, ref any, ref world);
+                }
+                _leafMark.Clear();
+                view.AppendLeaves(_leafMark);
+                for (int k = 0; k < _leafMark.Count; k++)
+                {
+                    var sr = _leafMark[k];
+                    if (sr == null || !sr.enabled) continue;
+                    TakeLeafBounds(sr.bounds, ref any, ref world);
+                }
+            }
+            if (!any) return;
+            if (!ProjectGui(cam, world, 18f, out var box)) return;
+            _leafKeep = box;
+            _leafKeepOn = true;
+        }
+
+        static void TakeLeafBounds(Bounds b, ref bool any, ref Bounds world)
+        {
+            if (b.size.sqrMagnitude < 0.0001f) return;
+            if (!any)
+            {
+                world = b;
+                any = true;
+                return;
+            }
+            world.Encapsulate(b);
+        }
+
+        // Level-1 coach, hive lesson, poker lesson, leaf lesson, gift, and ads keep the stage.
         bool PestStageFree()
         {
+            if (SeasonReveal.HoldsPlay) return false;
             if (_splash || _board == null || _garden.Cam == null) return false;
             if (_restarting || _won || _frozen || _gift != GiftFace.None) return false;
             if (_coach || _leafIntro || _adHand || _levelHive) return false;
-            if (_hiveIntro || _hiveIntroLive || _pokerIntro || _pokerIntroLive) return false;
+            if (_hiveIntro || _hiveIntroLive || _hiveLevelLive || _pokerIntro || _pokerIntroLive) return false;
             if (_dailyIntro || _dailyIntroLive) return false;
             if (PlayClock.Now < _coachGiftUntil) return false;
             return true;
@@ -5280,7 +5598,24 @@ namespace FlockFive
                 BeginPestCue(PestCueHawk);
                 return true;
             }
+            if (BeeDue())
+            {
+                BeginPestCue(PestCueBee);
+                return true;
+            }
             return false;
+        }
+
+        // First garden that still has bees. Not a level number: Dawn Garden can
+        // strip same-color hides, so the board is the check.
+        bool BeeDue()
+        {
+            if (PlayerPrefs.GetInt(CoachBeeKey, 0) != 0) return false;
+            if (SparrowDue() || HawkDue()) return false;
+            if (PlayerPrefs.GetInt(CoachSparrowKey, 0) == 0 && SparrowView.Live != null) return false;
+            var hawk = HawkView.Live;
+            if (PlayerPrefs.GetInt(CoachHawkKey, 0) == 0 && hawk != null && hawk.IsBlocking && !hawk.InScrap) return false;
+            return BoardHasBees();
         }
 
         bool SparrowDue()
@@ -5306,6 +5641,7 @@ namespace FlockFive
         {
             if (_pestCue == PestCueSparrow) return SparrowView.Live != null;
             if (_pestCue == PestCueHawk) return HawkView.Live != null;
+            if (_pestCue == PestCueBee) return BoardHasBees();
             return false;
         }
 
@@ -5316,7 +5652,8 @@ namespace FlockFive
         {
             _pestHeld = 0f;
             _pestCue = kind;
-            _pestCueUntil = kind == PestCueSparrow ? float.PositiveInfinity : PlayClock.Now + PestCueSeconds;
+            _pestCueUntil = (kind == PestCueSparrow || kind == PestCueBee) ? float.PositiveInfinity : PlayClock.Now + PestCueSeconds;
+            // The bee lesson does not freeze the garden. The sparrow still does.
             if (kind == PestCueSparrow) HoldTutorPause(true);
             _coachFade = 0f;
             _gloveReady = false;
@@ -5344,7 +5681,10 @@ namespace FlockFive
             _cueGift = false;
             _cueBranch = -1;
             _cueHolePx = 0f;
-            CueLine(_pestCue == PestCueHawk ? HawkIntroLine : SparrowIntroLine);
+            string pestLine = SparrowIntroLine;
+            if (_pestCue == PestCueHawk) pestLine = HawkIntroLine;
+            else if (_pestCue == PestCueBee) pestLine = BeeIntroLine;
+            CueLine(pestLine);
             _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
         }
 
@@ -5352,6 +5692,7 @@ namespace FlockFive
         {
             if (_pestCue == 0) return;
             if (_pestCue == PestCueSparrow) PlayerPrefs.SetInt(CoachSparrowKey, 1);
+            else if (_pestCue == PestCueBee) PlayerPrefs.SetInt(CoachBeeKey, 1);
             else PlayerPrefs.SetInt(CoachHawkKey, 1);
             PlayerPrefs.Save();
             _pestNext = PlayClock.Now + PestCueGap;
@@ -5376,14 +5717,59 @@ namespace FlockFive
                 DismissPestIntro();
                 return true;
             }
+            if (_pestCue == PestCueBee && BeeTap(world))
+            {
+                DismissPestIntro();
+                return true;
+            }
             // The sparrow line freezes the garden. Once it is fully up, a tap anywhere
             // lets it go, so a missed sparrow can never leave the player stuck.
+            // The bee line does not freeze. The same tap-to-advance still finishes it
+            // once the caption is up, and the glove stays on the bee until then.
             if (_pestCue == PestCueSparrow && _tutorPause != 0 && _coachFade >= 0.99f)
             {
                 DismissPestIntro();
                 return true;
             }
+            if (_pestCue == PestCueBee && _coachFade >= 0.99f)
+            {
+                DismissPestIntro();
+                return true;
+            }
             return false;
+        }
+
+        bool BeeAim(out Vector3 world)
+        {
+            world = default;
+            var branches = _garden.Branches;
+            if (branches == null) return false;
+            for (int i = 0; i < branches.Length; i++)
+            {
+                if (branches[i] == null) continue;
+                var swarm = branches[i].GetComponent<BeeSwarm>();
+                if (swarm != null && swarm.TryAim(out world)) return true;
+            }
+            return false;
+        }
+
+        bool BeeTap(Vector2 world)
+        {
+            var branches = _garden.Branches;
+            if (branches == null) return false;
+            for (int i = 0; i < branches.Length; i++)
+            {
+                if (branches[i] == null) continue;
+                var swarm = branches[i].GetComponent<BeeSwarm>();
+                if (swarm != null && swarm.TryAim(out var aim) && PestHitAt(aim, world)) return true;
+            }
+            return false;
+        }
+
+        static bool PestHitAt(Vector3 aim, Vector2 world)
+        {
+            var p = (Vector2)aim;
+            return (p - world).sqrMagnitude <= 1.35f * 1.35f;
         }
 
         static bool PestHit(Transform t, Vector2 world)
@@ -5443,6 +5829,16 @@ namespace FlockFive
                 body = HawkView.Live.transform;
                 if (HawkView.Live.BlockingSlot >= 0) slot = HawkView.Live.BlockingSlot;
                 perch = 0.42f;
+            }
+            else if (_pestCue == PestCueBee && BeeAim(out var beeWorld))
+            {
+                world = beeWorld;
+                var camBee = _garden.Cam;
+                if (camBee == null) return false;
+                var spBee = camBee.WorldToScreenPoint(world);
+                if (spBee.z < 0f) return false;
+                gui = new Vector2(spBee.x, Screen.height - spBee.y);
+                return true;
             }
             if (body != null)
             {

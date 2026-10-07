@@ -17,7 +17,8 @@ namespace FlockFive
             }
 
             public static readonly Scale Mid = new Scale { Title = 1.55f, Flavor = 1.50f, Status = 1.40f };
-            public static readonly Scale Full = new Scale { Title = 1.85f, Flavor = 1.35f, Status = 1.30f };
+            // Inspect flavor stays close to the title. The band height, not a tiny cap, keeps it in.
+            public static readonly Scale Full = new Scale { Title = 1.85f, Flavor = 1.70f, Status = 1.30f };
 
             static readonly List<string> _lines = new List<string>(6);
             static readonly List<string> _audit = new List<string>(8);
@@ -35,9 +36,9 @@ namespace FlockFive
                 int titlePx = DrawBlock(titleR, title, scale.Title, true, full ? 22 : 13, ink, full ? 1.12f : 1.15f);
                 int flavorFloor = full ? 16 : 11;
                 int flavorHi = titlePx > 0
-                    ? Mathf.Max(flavorFloor, Mathf.RoundToInt(titlePx * (full ? 0.62f : 0.72f)))
+                    ? Mathf.Max(flavorFloor, Mathf.RoundToInt(titlePx * (full ? 0.92f : 0.84f)))
                     : 0;
-                DrawBlock(flavorR, flavor, scale.Flavor, false, flavorFloor, ink, full ? 1.22f : 1.35f, flavorHi);
+                DrawBlock(flavorR, flavor, scale.Flavor, false, flavorFloor, ink, full ? 1.12f : 1.15f, flavorHi);
             }
 
             // Flip side: name, flavor, then honeycombs only (2 / 3 / 5 by finish).
@@ -53,23 +54,21 @@ namespace FlockFive
                 int titlePx = DrawBlock(titleR, title, scale.Title, true, full ? 20 : 12, ink, full ? 1.10f : 1.1f);
                 int flavorFloor = full ? 15 : 11;
                 int flavorHi = titlePx > 0
-                    ? Mathf.Max(flavorFloor, Mathf.RoundToInt(titlePx * (full ? 0.62f : 0.72f)))
+                    ? Mathf.Max(flavorFloor, Mathf.RoundToInt(titlePx * (full ? 0.92f : 0.84f)))
                     : 0;
-                DrawBlock(flavorR, flavor, scale.Flavor, false, flavorFloor, new Color(0.18f, 0.08f, 0.03f, 1f), full ? 1.22f : 1.35f, flavorHi);
+                DrawBlock(flavorR, flavor, scale.Flavor, false, flavorFloor, new Color(0.18f, 0.08f, 0.03f, 1f), full ? 1.12f : 1.15f, flavorHi);
                 if (showHoney) DrawHoneyRow(honeyR, honey, tint, finish, full);
             }
 
             // Shared honeycomb attributes: N hex tiles from HoneyOfFinish (2/3/5).
-            // Same HoneycombTex the badger tiles use — one art path, no empty chip slots.
+            // HoneyArt is the one juicy cell (cards, badger tiles, the meter).
             public static void DrawHoneyRow(Rect zone, int honey, Color tint, BeeFinish finish, bool full)
             {
                 if (honey <= 0 || zone.height < 8f || zone.width < 8f) return;
                 int n = honey > 5 ? 5 : honey;
-                var tex = HoneycombTex();
-                if (tex == null) return;
                 float gap = Mathf.Max(3f, zone.width * 0.02f);
-                float cellH = zone.height * (full ? 0.92f : 0.88f);
-                float cellW = cellH * (96f / 111f);
+                float cellH = zone.height * (full ? 0.96f : 0.92f);
+                float cellW = cellH * (96f / 111f) * 0.78f;
                 float rowW = n * cellW + (n - 1) * gap;
                 if (rowW > zone.width)
                 {
@@ -84,20 +83,14 @@ namespace FlockFive
                 Color rim = finish == BeeFinish.Holo ? new Color(0.15f, 0.48f, 0.92f, 1f)
                     : finish == BeeFinish.InverseRainbow ? new Color(0.82f, 0.22f, 0.68f, 1f)
                     : AlbumWood(tint, true);
-                Color face = AlbumFace(tint, true);
+                // Drips live inside the cell (bottom 22%), so they stay in the honey zone.
+                // The full inspect stretches a drip on a 3s loop. The grid stays still.
+                float now = full ? Time.unscaledTime : 0f;
                 for (int i = 0; i < n; i++)
                 {
                     var hex = new Rect(x + i * (cellW + gap), y, cellW, cellH);
-                    float lift = hex.height * 0.045f;
-                    GUI.color = new Color(0f, 0f, 0f, 0.30f);
-                    GUI.DrawTexture(new Rect(hex.x + lift * 0.4f, hex.y + lift, hex.width, hex.height), tex, ScaleMode.StretchToFill, true);
-                    GUI.color = rim;
-                    GUI.DrawTexture(hex, tex, ScaleMode.StretchToFill, true);
-                    float inset = Mathf.Min(hex.width, hex.height) * 0.07f;
-                    GUI.color = face;
-                    GUI.DrawTexture(new Rect(hex.x + inset, hex.y + inset, hex.width - inset * 2f, hex.height - inset * 2f), tex, ScaleMode.StretchToFill, true);
+                    HoneyArt.DrawJuicyCell(hex, rim, now, 1f, i, true, full, true);
                 }
-                GUI.color = Color.white;
             }
 
             // Legacy text chips kept for any non-album caller; empty slots draw nothing.
@@ -191,34 +184,48 @@ namespace FlockFive
                 Rect face, bool attrs, Scale scale,
                 out Rect titleR, out Rect flavorR, out Rect attrR, out Rect starR, out Rect ownR)
             {
-                // Even side margins; title band sized for hierarchy (name > flavor), not a thin strip.
-                float padX = face.width * 0.10f;
+                // 8% inner padding. Title (2 lines) and flavor (3 lines) are separate bands.
+                float padX = face.width * 0.08f;
                 float x = face.x + padX;
                 float w = face.width - padX * 2f;
-                float topPad = face.height * 0.04f;
+                float topPad = face.height * 0.05f;
                 float y = face.y + topPad;
-                float titleH = face.height * (0.14f * Mathf.Clamp(scale.Title, 1f, 1.85f));
+                float titleH = face.height * 0.34f;
                 titleR = new Rect(x, y, w, titleH);
                 float bot = face.yMax - face.height * 0.04f;
-                // Star / Owned bands retired on the flip (honeycombs only). Keep zero rects
-                // so the Split signature stays shared with any leftover callers.
                 ownR = new Rect(x, bot, w, 0f);
                 starR = new Rect(x, bot, w, 0f);
-                float midTop = titleR.yMax + face.height * 0.025f;
+                float gap = face.height * 0.03f;
+                float midTop = titleR.yMax + gap;
                 float midBot = bot;
-                float midH = Mathf.Max(8f, midBot - midTop);
                 if (!attrs)
                 {
-                    // Front: flavor sits under the name, not floating in a huge leftover.
-                    float flavorH = Mathf.Min(midH, Mathf.Max(face.height * 0.22f, titleH * 1.35f));
+                    float flavorH = Mathf.Max(8f, midBot - midTop);
                     flavorR = new Rect(x, midTop, w, flavorH);
                     attrR = new Rect(x, midBot, w, 0f);
                     return;
                 }
-                // Back: honey row at the bottom; flavor gets the clear band above it.
-                float attrH = Mathf.Clamp(midH * 0.28f, face.height * 0.14f, midH * 0.36f);
+                // Honey owns the bottom band. Flavor stops above it, with a gap.
+                float attrH = Mathf.Clamp(face.height * 0.24f, 18f, Mathf.Max(18f, midBot - midTop - gap));
                 attrR = new Rect(x, midBot - attrH, w, attrH);
-                flavorR = new Rect(x, midTop, w, Mathf.Max(8f, attrR.y - midTop - face.height * 0.02f));
+                float flavorH2 = Mathf.Max(8f, attrR.y - gap - midTop);
+                flavorR = new Rect(x, midTop, w, flavorH2);
+            }
+
+            // EditMode probe. Bands do not intersect. Wrapped text fits each band at this rect.
+            public static bool Probe(Rect face, string title, string flavor, bool full, bool back,
+                out Rect titleR, out Rect flavorR)
+            {
+                var scale = full ? Full : Mid;
+                Split(face, back, scale, out titleR, out flavorR, out _, out _, out _);
+                var st = Style();
+                int titlePx = FitBlock(st, titleR, title, true, full ? 12 : 10, full ? 1.10f : 1.12f, 0);
+                int flavorFloor = full ? 12 : 10;
+                int flavorHi = titlePx > 0 ? Mathf.Max(flavorFloor, Mathf.RoundToInt(titlePx * (full ? 0.92f : 0.84f))) : 0;
+                int flavorPx = FitBlock(st, flavorR, flavor, false, flavorFloor, full ? 1.12f : 1.15f, flavorHi);
+                if (titleR.Overlaps(flavorR)) return false;
+                return BlockFits(st, titleR, title, titlePx, true, full ? 1.10f : 1.12f)
+                    && BlockFits(st, flavorR, flavor, flavorPx, false, full ? 1.12f : 1.15f);
             }
 
             // Returns the fitted font size (0 if nothing drew). Optional hiCap keeps flavor
@@ -236,21 +243,7 @@ namespace FlockFive
                 // Cache key ignores hiCap; callers that cap flavor pass a stable title-derived cap.
                 if (!BlockHit(text, box, scale, title, floor, out int size, out var lines) || (hiCap > 0 && size > hiCap))
                 {
-                    int baseHi = Mathf.RoundToInt(box.height * (title ? 0.72f : 0.36f));
-                    int hi = Mathf.Max(floor + 2, Mathf.RoundToInt(baseHi * scale));
-                    if (hiCap > 0 && hi > hiCap) hi = hiCap;
-                    if (hi < floor) hi = floor;
-                    size = hi;
-                    int maxLines = title ? 2 : 3;
-                    int guard = 0;
-                    while (size > floor && guard < 18)
-                    {
-                        st.fontSize = size;
-                        if (LineCount(st, text, box.width) <= maxLines) break;
-                        size -= 1;
-                        guard++;
-                    }
-                    st.fontSize = size;
+                    size = FitBlock(st, box, text, title, floor, lead, hiCap);
                     Wrap(st, text, box.width);
                     lines = _lines.ToArray();
                     BlockStore(text, box, scale, title, floor, size, lines);
@@ -338,6 +331,67 @@ namespace FlockFive
                 _bkUse[slot] = ++_bkSerial;
             }
 
+            // Shrink until the wrap is at most 2 (title) or 3 (flavor) lines, every line
+            // fits the band width, and the wrapped height fits the band. CalcHeight, not
+            // a single-line size. The cache key is the live rect, so a zoom or flip refits.
+            static int FitBlock(GUIStyle st, Rect box, string text, bool title, int floor, float lead, int hiCap)
+            {
+                if (string.IsNullOrEmpty(text) || box.width < 4f || box.height < 4f) return floor;
+                int maxLines = title ? 2 : 3;
+                float innerH = box.height * 0.90f;
+                float innerW = box.width * 0.98f;
+                int baseHi = Mathf.RoundToInt(box.height * (title ? 0.46f : 0.40f));
+                int hi = Mathf.Max(floor, baseHi);
+                if (hiCap > 0 && hi > hiCap) hi = hiCap;
+                if (hi < floor) hi = floor;
+                int size = hi;
+                // A fullscreen inspect band starts near half its height, so a long
+                // title on a narrow card needs every step down to 8. A fixed step
+                // cap stopped early and the line spilled past the band.
+                while (size > 8)
+                {
+                    st.fontSize = size;
+                    st.wordWrap = true;
+                    Wrap(st, text, innerW);
+                    bool wide = false;
+                    float h = 0f;
+                    int n = _lines.Count;
+                    for (int i = 0; i < n; i++)
+                    {
+                        float lw = st.CalcSize(GuiPool.Text(GuiText.WrapWords, _lines[i])).x;
+                        if (lw > innerW) wide = true;
+                        h += st.CalcHeight(GuiPool.Text(GuiText.WrapWords, _lines[i]), innerW);
+                    }
+                    if (n == 0) h = st.CalcHeight(GuiPool.Text(GuiText.WrapWords, text), innerW);
+                    if (h < size * lead) h = size * lead * Mathf.Max(1, n);
+                    if (n <= maxLines && !wide && h <= innerH) break;
+                    size -= 1;
+                }
+                st.fontSize = size;
+                Wrap(st, text, innerW);
+                return size;
+            }
+
+            static bool BlockFits(GUIStyle st, Rect box, string text, int size, bool title, float lead)
+            {
+                if (string.IsNullOrEmpty(text)) return true;
+                st.fontSize = Mathf.Max(1, size);
+                st.wordWrap = true;
+                float innerW = box.width * 0.98f;
+                float innerH = box.height * 0.92f;
+                Wrap(st, text, innerW);
+                int maxLines = title ? 2 : 3;
+                if (_lines.Count > maxLines) return false;
+                float h = 0f;
+                for (int i = 0; i < _lines.Count; i++)
+                {
+                    if (st.CalcSize(GuiPool.Text(GuiText.WrapWords, _lines[i])).x > box.width) return false;
+                    h += st.CalcHeight(GuiPool.Text(GuiText.WrapWords, _lines[i]), innerW);
+                }
+                if (h < size * lead) h = size * lead * Mathf.Max(1, _lines.Count);
+                return h <= innerH + 1f;
+            }
+
             static int LineCount(GUIStyle st, string text, float width)
             {
                 Wrap(st, text, width);
@@ -377,13 +431,26 @@ namespace FlockFive
             static GUIStyle Style()
             {
                 if (_style != null) return _style;
-                _style = new GUIStyle(GUI.skin.label)
+                // GUI.skin is only legal inside OnGUI. Batch suites call Probe
+                // from -executeMethod, so fall back to a plain style plus the
+                // built-in font the default skin labels actually measure with.
+                GUIStyle proto = null;
+                try
                 {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                    wordWrap = false,
-                    clipping = TextClipping.Clip
-                };
+                    var skin = GUI.skin;
+                    if (skin != null) proto = skin.label;
+                }
+                catch (System.ArgumentException)
+                {
+                    proto = null;
+                }
+                _style = proto != null ? new GUIStyle(proto) : new GUIStyle();
+                if (_style.font == null)
+                    _style.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                _style.fontStyle = FontStyle.Bold;
+                _style.alignment = TextAnchor.MiddleCenter;
+                _style.wordWrap = false;
+                _style.clipping = TextClipping.Clip;
                 return _style;
             }
         }

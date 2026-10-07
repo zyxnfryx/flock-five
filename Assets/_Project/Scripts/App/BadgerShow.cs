@@ -60,6 +60,9 @@ namespace FlockFive
         // The overlay fades the wash out over this once the contest page is up.
         public const float WashOutSeconds = 0.30f;
 
+        // Dominant sprite. BadgerAnim adds the crossfade, squash, and the leap_2 blend.
+        public static string FrameAt(float t) => BadgerAnim.Entrance(t).Frame;
+
         public static float Duration
         {
             get
@@ -102,25 +105,6 @@ namespace FlockFive
             float len = Beats[(int)beat];
             if (len <= 0f) return 1f;
             return Mathf.Clamp01((t - BeatStart(beat)) / len);
-        }
-
-        // Sprite name for this moment. Every badger frame faces left.
-        public static string FrameAt(float t)
-        {
-            var beat = BeatAt(t);
-            if (beat == BadgerLeapBeat.Hop)
-            {
-                float phase = Mathf.Repeat(t, HopStride) / HopStride;
-                return phase < HopAirShare ? "badger_hop_a" : "badger_hop_b";
-            }
-            if (beat == BadgerLeapBeat.Crouch) return "badger_crouch";
-            if (beat == BadgerLeapBeat.Leap)
-            {
-                float u = Local(t);
-                for (int i = 0; i < LeapFrameEnds.Length; i++)
-                    if (u < LeapFrameEnds[i]) return LeapFrames[i];
-            }
-            return LeapFrames[LeapFrames.Length - 1];
         }
 
         // 0..1 travel from the start anchor to the landing spot (eased, done by the crouch).
@@ -214,9 +198,9 @@ namespace FlockFive
     // player tile in grid order. Runs every time the contest screen opens. Not skippable.
     public static class BadgerOpening
     {
-        // 0.0-0.5 the swipe. The hit is BadgerSwipe.HitAt (hive swaps to hive_swiped,
-        // splat, wobble). BadgerSwipe owns the pose; this clock only gates the bees.
-        public const float SwipeSeconds = 0.50f;
+        // The swipe is the shared special-attack clock. Bees leave once it ends,
+        // so the hive hit stays on BadgerSwipe.HitAt.
+        public const float SwipeSeconds = BadgerSwipe.Duration;
         public static float SwipeHitAt => BadgerSwipe.HitAt;
         public const float SplatSeconds = 0.35f;
         public const float WobbleSeconds = 0.60f;
@@ -329,21 +313,23 @@ namespace FlockFive
         }
     }
 
-    // THE hive swipe. Every badger attack on the hive or the honey reads this clock:
-    // a short crouch, a fast lunge with a claw slash, then a return to the fight spot.
-    // Pure, so the editor test can check the beats. The app draws the frames and the
-    // streaks; it does not keep a second swipe.
+    // THE hive swipe, and the special attack. Every badger attack on the hive or the
+    // honey reads this clock. About 2x the old 0.50 s snap, with room to read each phase:
+    // anticipation (crouch + wind-up, ~0.4 s), the leap/swipe, an impact hold (~0.15 s),
+    // then recovery back to idle. BadgerAnim owns the in-betweens. Pure, so the editor
+    // test can check the beats. The app draws one posed sprite; it does not keep a second swipe.
     public static class BadgerSwipe
     {
-        public enum Phase { None = 0, Windup = 1, Strike = 2, Recover = 3 }
+        public enum Phase { None = 0, Windup = 1, Strike = 2, Recover = 3, Hold = 4 }
 
-        public const float WindupSeconds = 0.12f;
-        public const float StrikeSeconds = 0.16f;
-        // The claw sweeps the hive, then fades. Sweep stays inside 0.12-0.18 s.
-        public const float SlashSeconds = 0.15f;
-        public const float SlashFadeSeconds = 0.10f;
-        public const float RecoverSeconds = 0.22f;
-        public const float Duration = 0.50f;
+        public const float WindupSeconds = 0.40f;
+        public const float StrikeSeconds = 0.24f;
+        public const float HoldSeconds = 0.15f;
+        public const float RecoverSeconds = 0.24f;
+        // The claw sweeps during the strike, then fades.
+        public const float SlashSeconds = 0.20f;
+        public const float SlashFadeSeconds = 0.12f;
+        public const float Duration = WindupSeconds + StrikeSeconds + HoldSeconds + RecoverSeconds;
         public const float HitFrac = 0.62f;
         public const float FlashSeconds = 0.09f;
         public const float LeanBack = 11f;
@@ -352,102 +338,28 @@ namespace FlockFive
         public const int Segs = 6;
 
         public static float HitAt => WindupSeconds + SlashSeconds * HitFrac;
+        public static float HoldStart => WindupSeconds + StrikeSeconds;
+        public static float RecoverStart => HoldStart + HoldSeconds;
 
         public static Phase PhaseAt(float t)
         {
             if (t < 0f || t >= Duration) return Phase.None;
             if (t < WindupSeconds) return Phase.Windup;
-            if (t < WindupSeconds + StrikeSeconds) return Phase.Strike;
+            if (t < HoldStart) return Phase.Strike;
+            if (t < RecoverStart) return Phase.Hold;
             return Phase.Recover;
         }
 
         public static bool Active(float t) => PhaseAt(t) != Phase.None;
 
-        public static string FrameAt(float t, float now)
-        {
-            var p = PhaseAt(t);
-            if (p == Phase.Windup) return "badger_crouch";
-            if (p == Phase.Strike)
-            {
-                float u = StrikeSeconds <= 0f ? 1f : (t - WindupSeconds) / StrikeSeconds;
-                return u < 0.45f ? "badger_leap_1" : "badger_leap_3";
-            }
-            if (p == Phase.Recover)
-            {
-                float u = RecoverSeconds <= 0f ? 1f : (t - WindupSeconds - StrikeSeconds) / RecoverSeconds;
-                if (u < 0.28f) return "badger_crouch";
-                return BadgerSitter.FrameAt(now);
-            }
-            return BadgerSitter.FrameAt(now);
-        }
+        // Dominant sprite. BadgerAnim owns the blend, squash, and the in-between leap_2.
+        public static string FrameAt(float t, float now) => BadgerAnim.Swipe(t, now).Frame;
 
-        // Positive tips the head away from the hive. The strike snaps the other way.
-        public static float Lean(float t)
-        {
-            var p = PhaseAt(t);
-            if (p == Phase.Windup)
-            {
-                float u = WindupSeconds <= 0f ? 1f : t / WindupSeconds;
-                return LeanBack * Smooth(u);
-            }
-            if (p == Phase.Strike)
-            {
-                float u = StrikeSeconds <= 0f ? 1f : (t - WindupSeconds) / StrikeSeconds;
-                float e = Mathf.Clamp01(u / 0.32f);
-                return Mathf.Lerp(LeanBack, Snap, e * e);
-            }
-            if (p == Phase.Recover)
-            {
-                float u = RecoverSeconds <= 0f ? 1f : (t - WindupSeconds - StrikeSeconds) / RecoverSeconds;
-                return Mathf.Lerp(Snap, 0f, Smooth(u));
-            }
-            return 0f;
-        }
+        public static float Lean(float t) => BadgerAnim.Swipe(t, 0f).Degrees;
 
-        // 0 at the fight spot, 1 lunged at the hive, a small negative on the wind-up.
-        public static float Lunge(float t)
-        {
-            var p = PhaseAt(t);
-            if (p == Phase.Windup)
-            {
-                float u = WindupSeconds <= 0f ? 1f : t / WindupSeconds;
-                return -0.10f * Smooth(u);
-            }
-            if (p == Phase.Strike)
-            {
-                float u = StrikeSeconds <= 0f ? 1f : (t - WindupSeconds) / StrikeSeconds;
-                float e = 1f - (1f - Mathf.Clamp01(u)) * (1f - Mathf.Clamp01(u));
-                return Mathf.Lerp(-0.10f, 1f, e);
-            }
-            if (p == Phase.Recover)
-            {
-                float u = RecoverSeconds <= 0f ? 1f : (t - WindupSeconds - StrikeSeconds) / RecoverSeconds;
-                return Mathf.Lerp(1f, 0f, Smooth(u));
-            }
-            return 0f;
-        }
+        public static float Lunge(float t) => BadgerAnim.Swipe(t, 0f).Shift;
 
-        // Positive lifts the feet off the arena floor. Negative is the crouch.
-        public static float Lift(float t)
-        {
-            var p = PhaseAt(t);
-            if (p == Phase.Windup)
-            {
-                float u = WindupSeconds <= 0f ? 1f : t / WindupSeconds;
-                return -0.40f * Smooth(u);
-            }
-            if (p == Phase.Strike)
-            {
-                float u = StrikeSeconds <= 0f ? 1f : (t - WindupSeconds) / StrikeSeconds;
-                return Mathf.Lerp(-0.40f, 0.70f, Mathf.Clamp01(u) * Mathf.Clamp01(u));
-            }
-            if (p == Phase.Recover)
-            {
-                float u = RecoverSeconds <= 0f ? 1f : (t - WindupSeconds - StrikeSeconds) / RecoverSeconds;
-                return Mathf.Lerp(0.70f, 0f, Smooth(u));
-            }
-            return 0f;
-        }
+        public static float Lift(float t) => BadgerAnim.Swipe(t, 0f).Lift;
 
         // 0 before the slash, 1 once it has crossed the hive.
         public static float Sweep(float t)
@@ -517,6 +429,326 @@ namespace FlockFive
             return new Vector2(x, y);
         }
 
+    }
+
+    // One posed badger for every fight action: entrance, idle, hops, claw swipe,
+    // shrug, the special attack, and the win/lose beat. Nine drawings. The missing
+    // leap_2 is leap_1 blended into leap_3. Scale and rotation ease between keys,
+    // with squash on takeoff and landing and a short crossfade (~3 frames at 60fps).
+    // Pure. No per-frame allocs. Drawers paint Under then Frame.
+    public struct BadgerSample
+    {
+        public string Frame;
+        public string Under;
+        public float FrameAlpha;
+        public float UnderAlpha;
+        public float ScaleX;
+        public float ScaleY;
+        public float Degrees;
+        public float Lift;
+        public float Shift;
+    }
+
+    public static class BadgerAnim
+    {
+        public const float BlendSeconds = 0.050f;
+        // Share of the leap beat where the missing leap_2 lives (leap_1 into leap_3).
+        public const float Leap2From = 0.62f;
+        public const float Leap2To = 0.82f;
+
+        public static BadgerSample Idle(float now)
+        {
+            float step = BadgerSitter.BreatheSeconds;
+            if (step < 0.05f) step = 0.6f;
+            float t = now < 0f ? 0f : now;
+            int k = Mathf.FloorToInt(t / step);
+            bool a = (k & 1) == 0;
+            string cur = a ? "badger_idle_a" : "badger_idle_b";
+            string prev = a ? "badger_idle_b" : "badger_idle_a";
+            var s = Fresh(cur);
+            Cross(ref s, t - k * step, prev, cur);
+            Breathe(t, ref s, 0.030f);
+            return s;
+        }
+
+        public static BadgerSample Entrance(float t)
+        {
+            var beat = BadgerLeap.BeatAt(t);
+            if (beat == BadgerLeapBeat.Hop) return Hop(t);
+            if (beat == BadgerLeapBeat.Crouch)
+            {
+                float u = BadgerLeap.Local(t);
+                float age = t - BadgerLeap.BeatStart(BadgerLeapBeat.Crouch);
+                var s = Fresh("badger_crouch");
+                Cross(ref s, age, "badger_hop_b", "badger_crouch");
+                Squash(ref s, Mathf.Sin(u * Mathf.PI * 0.5f), 0f);
+                return s;
+            }
+            return LeapShot(t);
+        }
+
+        public static BadgerSample Swipe(float t, float now)
+        {
+            var p = BadgerSwipe.PhaseAt(t);
+            if (p == BadgerSwipe.Phase.None) return Idle(now);
+            if (p == BadgerSwipe.Phase.Windup)
+            {
+                float u = BadgerSwipe.WindupSeconds <= 0f ? 1f : t / BadgerSwipe.WindupSeconds;
+                float e = Smooth(u);
+                var s = Fresh("badger_crouch");
+                Cross(ref s, t, "badger_idle_a", "badger_crouch");
+                s.Degrees = BadgerSwipe.LeanBack * e;
+                s.Shift = -0.10f * e;
+                s.Lift = -0.40f * e;
+                Squash(ref s, e, 0f);
+                return s;
+            }
+            if (p == BadgerSwipe.Phase.Strike)
+            {
+                float u = BadgerSwipe.StrikeSeconds <= 0f ? 1f : (t - BadgerSwipe.WindupSeconds) / BadgerSwipe.StrikeSeconds;
+                u = Mathf.Clamp01(u);
+                var s = Fresh("badger_leap_1");
+                float snap = Mathf.Clamp01(u / 0.32f);
+                s.Degrees = Mathf.Lerp(BadgerSwipe.LeanBack, BadgerSwipe.Snap, snap * snap);
+                float rush = 1f - (1f - u) * (1f - u);
+                s.Shift = Mathf.Lerp(-0.10f, 1f, rush);
+                s.Lift = Mathf.Lerp(-0.40f, 0.70f, u * u);
+                if (u < 0.40f)
+                {
+                    Cross(ref s, u * BadgerSwipe.StrikeSeconds, "badger_crouch", "badger_leap_1");
+                    s.Frame = "badger_leap_1";
+                    Squash(ref s, 0f, Mathf.Clamp01(u / 0.40f));
+                }
+                else if (u < 0.72f)
+                {
+                    Pair(ref s, (u - 0.40f) / 0.32f, "badger_leap_1", "badger_leap_3");
+                    Squash(ref s, 0f, Mathf.Lerp(1f, 0.35f, (u - 0.40f) / 0.32f));
+                }
+                else
+                {
+                    Cross(ref s, (u - 0.72f) * BadgerSwipe.StrikeSeconds, "badger_leap_1", "badger_leap_3");
+                    s.Frame = "badger_leap_3";
+                    Squash(ref s, 0.25f, 0.40f);
+                }
+                return s;
+            }
+            if (p == BadgerSwipe.Phase.Hold)
+            {
+                float u = BadgerSwipe.HoldSeconds <= 0f ? 1f : (t - BadgerSwipe.HoldStart) / BadgerSwipe.HoldSeconds;
+                var s = Fresh("badger_leap_3");
+                s.Degrees = BadgerSwipe.Snap;
+                s.Shift = 1f;
+                s.Lift = 0.70f;
+                Squash(ref s, (1f - Smooth(u)) * 0.95f, 0f);
+                return s;
+            }
+            float ru = BadgerSwipe.RecoverSeconds <= 0f ? 1f : (t - BadgerSwipe.RecoverStart) / BadgerSwipe.RecoverSeconds;
+            ru = Mathf.Clamp01(ru);
+            var back = Fresh("badger_crouch");
+            back.Degrees = Mathf.Lerp(BadgerSwipe.Snap, 0f, Smooth(ru));
+            back.Shift = Mathf.Lerp(1f, 0f, Smooth(ru));
+            back.Lift = Mathf.Lerp(0.70f, 0f, Smooth(ru));
+            if (ru < 0.28f)
+            {
+                Cross(ref back, ru * BadgerSwipe.RecoverSeconds, "badger_leap_3", "badger_crouch");
+                back.Frame = "badger_crouch";
+                Squash(ref back, 1f - ru / 0.28f, 0f);
+                return back;
+            }
+            var idle = Idle(now);
+            Cross(ref back, (ru - 0.28f) * BadgerSwipe.RecoverSeconds, "badger_crouch", idle.Frame);
+            back.Frame = idle.Frame;
+            back.ScaleX = idle.ScaleX;
+            back.ScaleY = idle.ScaleY;
+            return back;
+        }
+
+        public static BadgerSample Shrug(float age, float now)
+        {
+            var s = Fresh("badger_shrug");
+            float pop = PopupMotion.SlamScale(Mathf.Clamp01(age / 0.22f), 1.12f);
+            s.ScaleX = pop;
+            s.ScaleY = pop;
+            Breathe(now, ref s, 0.018f);
+            return s;
+        }
+
+        public static BadgerSample Outro(bool playerWon, float age, float now)
+        {
+            if (playerWon) return Shrug(age, now);
+            float u = PopupMotion.Beat(age, 0f, 0.70f);
+            if (u >= 1f) return Idle(now);
+            if (u < 0.45f)
+            {
+                var s = Fresh("badger_leap_1");
+                Cross(ref s, age, "badger_idle_a", "badger_leap_1");
+                s.Frame = "badger_leap_1";
+                Squash(ref s, 0f, Mathf.Clamp01(u / 0.45f));
+                return s;
+            }
+            float blend = (u - 0.45f) / 0.55f;
+            var taunt = Fresh("badger_leap_3");
+            if (blend < 0.72f) Pair(ref taunt, blend / 0.72f, "badger_leap_1", "badger_leap_3");
+            else
+            {
+                taunt.Frame = "badger_leap_3";
+                Squash(ref taunt, blend * 0.35f, (1f - blend) * 0.35f);
+            }
+            return taunt;
+        }
+
+        public static BadgerSample Duel(BadgerDuelBeat beat, float age, float now)
+        {
+            switch (beat)
+            {
+                case BadgerDuelBeat.Swipe: return Swipe(age, now);
+                case BadgerDuelBeat.Shrug: return Shrug(age, now);
+                case BadgerDuelBeat.Lunge: return LungeHop(age, now);
+                case BadgerDuelBeat.Recoil:
+                    var c = Fresh("badger_crouch");
+                    Squash(ref c, 0.70f, 0f);
+                    return c;
+                case BadgerDuelBeat.Leap:
+                    return LeapShot(BadgerLeap.BeatStart(BadgerLeapBeat.Leap) + Mathf.Clamp01(age) * BadgerLeap.LeapSeconds);
+                default:
+                    return Idle(now);
+            }
+        }
+
+        static BadgerSample Hop(float t)
+        {
+            float stride = BadgerLeap.HopStride;
+            if (stride < 0.05f) stride = 0.4f;
+            float phase = Mathf.Repeat(t < 0f ? 0f : t, stride) / stride;
+            bool air = phase < BadgerLeap.HopAirShare;
+            string cur = air ? "badger_hop_a" : "badger_hop_b";
+            string prev = air ? "badger_hop_b" : "badger_hop_a";
+            float age = air ? phase * stride : (phase - BadgerLeap.HopAirShare) * stride;
+            var s = Fresh(cur);
+            Cross(ref s, age, prev, cur);
+            if (air) Squash(ref s, 0f, Mathf.Sin(phase / Mathf.Max(0.05f, BadgerLeap.HopAirShare) * Mathf.PI));
+            else
+            {
+                float land = (phase - BadgerLeap.HopAirShare) / Mathf.Max(0.05f, 1f - BadgerLeap.HopAirShare);
+                Squash(ref s, (1f - Smooth(land)) * 0.85f, 0f);
+            }
+            return s;
+        }
+
+        // Leap keys, then the synthetic leap_2 (leap_1 dissolved into leap_3).
+        static BadgerSample LeapShot(float t)
+        {
+            var beat = BadgerLeap.BeatAt(t);
+            float u = beat == BadgerLeapBeat.Leap ? BadgerLeap.Local(t) : 1f;
+            if (u < BadgerLeap.LeapFrameEnds[0])
+            {
+                var s = Fresh("badger_leap_0");
+                Cross(ref s, u * BadgerLeap.LeapSeconds, "badger_crouch", "badger_leap_0");
+                s.Frame = "badger_leap_0";
+                Squash(ref s, 0f, Mathf.Clamp01(u / 0.28f));
+                return s;
+            }
+            if (u < Leap2From)
+            {
+                var s = Fresh("badger_leap_1");
+                Cross(ref s, (u - BadgerLeap.LeapFrameEnds[0]) * BadgerLeap.LeapSeconds, "badger_leap_0", "badger_leap_1");
+                s.Frame = "badger_leap_1";
+                Squash(ref s, 0f, 0.65f);
+                return s;
+            }
+            if (u < Leap2To)
+            {
+                float span = Leap2To - Leap2From;
+                float blend = span <= 0.001f ? 1f : (u - Leap2From) / span;
+                var s = Fresh("badger_leap_3");
+                Pair(ref s, blend, "badger_leap_1", "badger_leap_3");
+                Squash(ref s, 0f, Mathf.Lerp(0.75f, 0.20f, blend));
+                return s;
+            }
+            var end = Fresh("badger_leap_3");
+            Cross(ref end, (u - Leap2To) * BadgerLeap.LeapSeconds, "badger_leap_1", "badger_leap_3");
+            end.Frame = "badger_leap_3";
+            float land = Mathf.Clamp01((u - Leap2To) / Mathf.Max(0.05f, 1f - Leap2To));
+            Squash(ref end, land * 0.40f, (1f - land) * 0.45f);
+            return end;
+        }
+
+        static BadgerSample LungeHop(float age, float now)
+        {
+            float u = PopupMotion.Beat(age, 0f, BadgerDuel.LungeSeconds);
+            if (u <= 0.08f || u >= 0.92f) return Idle(now);
+            const float stride = 0.28f;
+            float phase = Mathf.Repeat(age < 0f ? 0f : age, stride) / stride;
+            bool air = phase < 0.55f;
+            string cur = air ? "badger_hop_a" : "badger_hop_b";
+            string prev = air ? "badger_hop_b" : "badger_hop_a";
+            var s = Fresh(cur);
+            Cross(ref s, (air ? phase : phase - 0.55f) * stride, prev, cur);
+            if (air) Squash(ref s, 0f, Mathf.Sin(phase / 0.55f * Mathf.PI));
+            else Squash(ref s, 0.70f * (1f - (phase - 0.55f) / 0.45f), 0f);
+            return s;
+        }
+
+        static BadgerSample Fresh(string frame)
+        {
+            var s = new BadgerSample();
+            s.Frame = frame;
+            s.FrameAlpha = 1f;
+            s.ScaleX = 1f;
+            s.ScaleY = 1f;
+            return s;
+        }
+
+        static void Breathe(float now, ref BadgerSample s, float amp)
+        {
+            float w = Mathf.Sin(now * 2.6f);
+            s.ScaleY *= 1f + amp * w;
+            s.ScaleX *= 1f - amp * 0.65f * w;
+        }
+
+        static void Squash(ref BadgerSample s, float crouch, float air)
+        {
+            float k = air > 0.001f ? air : -Mathf.Clamp01(crouch);
+            s.ScaleY = 1f + 0.16f * k;
+            s.ScaleX = 1f - 0.12f * k;
+            if (s.ScaleY < 0.78f) s.ScaleY = 0.78f;
+            if (s.ScaleX < 0.78f) s.ScaleX = 0.78f;
+        }
+
+        static void Cross(ref BadgerSample s, float age, string prev, string cur)
+        {
+            s.Frame = cur;
+            s.FrameAlpha = 1f;
+            s.Under = null;
+            s.UnderAlpha = 0f;
+            if (string.IsNullOrEmpty(prev) || prev == cur || age < 0f || age >= BlendSeconds) return;
+            float u = age / BlendSeconds;
+            s.Under = prev;
+            s.UnderAlpha = 1f - u;
+            s.FrameAlpha = u;
+        }
+
+        // u 0 is all `a`, u 1 is all `b`. The louder sprite is Frame so a single draw still reads.
+        static void Pair(ref BadgerSample s, float u, string a, string b)
+        {
+            u = Mathf.Clamp01(u);
+            float keep = 1f - u;
+            if (keep >= u)
+            {
+                s.Frame = a;
+                s.FrameAlpha = keep;
+                s.Under = u > 0.04f ? b : null;
+                s.UnderAlpha = u > 0.04f ? u : 0f;
+            }
+            else
+            {
+                s.Frame = b;
+                s.FrameAlpha = u;
+                s.Under = keep > 0.04f ? a : null;
+                s.UnderAlpha = keep > 0.04f ? keep : 0f;
+            }
+        }
+
         static float Smooth(float u)
         {
             u = Mathf.Clamp01(u);
@@ -524,26 +756,62 @@ namespace FlockFive
         }
     }
 
+    // "+N" for a scored round. Player N is the margin. Boss N is the full loss honey.
+    // The strings are built once. Rise and alpha are pure so the meter total can match.
+    public static class BadgerGainFloat
+    {
+        public const float Seconds = 0.85f;
+        const int Cap = 48;
+        static string[] _plus;
+
+        public static string Text(int gain)
+        {
+            if (gain <= 0) return "";
+            if (gain > Cap) gain = Cap;
+            if (_plus == null)
+            {
+                _plus = new string[Cap + 1];
+                for (int i = 1; i <= Cap; i++) _plus[i] = "+" + i.ToString();
+            }
+            return _plus[gain];
+        }
+
+        public static float Rise(float age)
+        {
+            return PopupMotion.Smooth(PopupMotion.Beat(age, 0.04f, Seconds));
+        }
+
+        public static float Alpha(float age)
+        {
+            float u = PopupMotion.Beat(age, 0f, Seconds);
+            if (u <= 0f || u >= 1f) return 0f;
+            if (u > 0.70f) return 1f - PopupMotion.Smooth((u - 0.70f) / 0.30f);
+            return 1f;
+        }
+    }
+
     public enum BadgerSlamBeat { Words = 0, Speed = 1, ZoomIn = 2, Nasty = 3, ZoomOut = 4, Done = 5 }
 
-    // "Honey Badger Don't Care" critical-hit beat (spec 2b), about 2.2 s:
-    // 1 word slam Honey -> Badger -> Don't -> Care on a dark wash, 2 speed lines, 3 hard zoom
-    // into the badger's eye with a sparkle glint, 4 the nasty move (honey_splat + shrug),
-    // 5 zoom back out, then the round resolves. Pure timing and shapes; BadgerFight.TryDontCare
-    // decides the hit and the effect, FlockFiveApp.PlayDontCareSlam draws it.
+    // "Honey Badger Don't Care" critical-hit beat (spec 2b), about 2.9 s:
+    // the four words slam in one at a time and stay up together, then speed lines, a hard zoom
+    // into the badger's eye, the nasty move (honey_splat + shrug), zoom back out, then the round
+    // resolves. Pure timing and shapes; BadgerFight.TryDontCare decides the hit and the effect.
     // Zoom(t) is exactly 1 outside the zoom beats and once Done, and the app derives the GUI
     // scale from it every frame (nothing is stored), so the contest always returns to 1:1.
     public static class BadgerSlam
     {
-        public const float WordSeconds = 0.22f;
+        public const float WordSeconds = 0.40f;
         public const float SpeedSeconds = 0.30f;
         public const float ZoomInSeconds = 0.45f;
         public const float NastySeconds = 0.22f;
         public const float ZoomOutSeconds = 0.35f;
 
-        // Each word lands big and settles to 1 over this share of its slot.
+        // Each word slams from PopFrom down to 1 over this share of its slot (shared stamp slam).
         public const float PopShare = 0.45f;
-        public const float PopFrom = 1.60f;
+        public const float PopFrom = 1.72f;
+        // Small screen shake on each word. Decays before the next word.
+        public const float ShakeSeconds = 0.14f;
+        public const float ShakePx = 7f;
         // Word beat stays dark so the board cannot compete. The eye zoom eases lighter.
         public const float WashWord = 0.88f;
         public const float WashEye = 0.48f;
@@ -606,7 +874,7 @@ namespace FlockFive
             return before < at && after >= at;
         }
 
-        // -1 before the first word and after the word beat.
+        // -1 before the first word and after the word beat. The word that is slamming now.
         public static int WordIndexAt(float t)
         {
             if (t < 0f || t >= WordsEnd) return -1;
@@ -620,14 +888,52 @@ namespace FlockFive
             return BadgerCopy.DontCareWordAt(WordIndexAt(t));
         }
 
-        // Scale of the current word: PopFrom on its first frame, 1 once settled.
+        // How many words are on screen. All four stay until the beat ends.
+        public static int ShownCount(float t)
+        {
+            if (t < 0f || t >= Duration) return 0;
+            if (t >= WordsEnd) return Words;
+            int n = Mathf.FloorToInt(t / WordSeconds) + 1;
+            if (n > Words) n = Words;
+            return n < 0 ? 0 : n;
+        }
+
+        public static bool WordOn(float t, int i)
+        {
+            if (i < 0 || i >= Words) return false;
+            return t >= i * WordSeconds && t < Duration;
+        }
+
+        // Scale of word i: PopFrom on its first instant, 1 once the slam lands.
+        public static float WordPop(float t, int i)
+        {
+            if (!WordOn(t, i)) return 1f;
+            float u = (t - i * WordSeconds) / (WordSeconds * PopShare);
+            return PopupMotion.SlamScale(u, PopFrom);
+        }
+
+        // Scale of the word that is slamming now.
         public static float Pop(float t)
         {
             int i = WordIndexAt(t);
             if (i < 0) return 1f;
-            float u = Mathf.Clamp01((t - i * WordSeconds) / (WordSeconds * PopShare));
-            float e = 1f - (1f - u) * (1f - u);
-            return PopFrom + (1f - PopFrom) * e;
+            return WordPop(t, i);
+        }
+
+        // GUI-space shake for the newest word. Zero once that punch has decayed.
+        public static void Shake(float t, out float x, out float y)
+        {
+            x = 0f;
+            y = 0f;
+            int i = WordIndexAt(t);
+            if (i < 0 || ShakeSeconds <= 0f) return;
+            float age = t - i * WordSeconds;
+            if (age < 0f || age >= ShakeSeconds) return;
+            float d = 1f - age / ShakeSeconds;
+            d *= d;
+            float wob = age * 78f;
+            x = Mathf.Sin(wob) * ShakePx * d;
+            y = Mathf.Cos(wob * 1.31f) * ShakePx * 0.55f * d;
         }
 
         // Full-screen wash. About 0.88 through the words, lighter once the eye zooms,
@@ -718,7 +1024,7 @@ namespace FlockFive
     // The app draws one sprite from Frame; it does not stack a second badger on top.
     public static class BadgerDuel
     {
-        public const float LungeSeconds = 0.42f;
+        public const float LungeSeconds = 0.72f;
         // Kept for the old actor-only cap. The slam camera is BadgerSlam.Zoom on the page.
         public const float SlamScaleMax = 1.28f;
 
@@ -748,34 +1054,7 @@ namespace FlockFive
 
         public static string Frame(BadgerDuelBeat beat, float age, float now)
         {
-            switch (beat)
-            {
-                case BadgerDuelBeat.Swipe:
-                    return BadgerSwipe.FrameAt(age, now);
-                case BadgerDuelBeat.Lunge:
-                {
-                    float u = PopupMotion.Beat(age, 0f, LungeSeconds);
-                    if (u <= 0.08f || u >= 0.92f) return BadgerSitter.FrameAt(now);
-                    int k = Mathf.FloorToInt(age / 0.10f);
-                    return (k & 1) == 0 ? "badger_hop_a" : "badger_hop_b";
-                }
-                case BadgerDuelBeat.Recoil:
-                    return "badger_crouch";
-                case BadgerDuelBeat.Leap:
-                {
-                    var frames = BadgerLeap.LeapFrames;
-                    int n = frames.Length;
-                    if (n < 1) return "badger_leap_3";
-                    int i = Mathf.FloorToInt(Mathf.Clamp01(age) * n);
-                    if (i >= n) i = n - 1;
-                    if (i < 0) i = 0;
-                    return frames[i];
-                }
-                case BadgerDuelBeat.Shrug:
-                    return "badger_shrug";
-                default:
-                    return BadgerSitter.FrameAt(now);
-            }
+            return BadgerAnim.Duel(beat, age, now).Frame;
         }
     }
 
@@ -796,11 +1075,7 @@ namespace FlockFive
             return Visible(BadgerSave.PendingFor(enabled), leapLive, shotHidden);
         }
 
-        public static string FrameAt(float now)
-        {
-            int k = Mathf.FloorToInt(now / BreatheSeconds);
-            return (k & 1) == 0 ? "badger_idle_a" : "badger_idle_b";
-        }
+        public static string FrameAt(float now) => BadgerAnim.Idle(now).Frame;
     }
 
     // One badger actor. Idle reuses the sitter breathe. The swipe is BadgerSwipe.
@@ -809,17 +1084,7 @@ namespace FlockFive
     {
         public static string FrameAt(BadgerDuelBeat beat, float age, float now)
         {
-            switch (beat)
-            {
-                case BadgerDuelBeat.Swipe:
-                    return BadgerSwipe.FrameAt(age, now);
-                case BadgerDuelBeat.Shrug:
-                    return "badger_shrug";
-                case BadgerDuelBeat.Idle:
-                    return BadgerSitter.FrameAt(now);
-                default:
-                    return BadgerDuel.Frame(beat, age, now);
-            }
+            return BadgerDuel.Frame(beat, age, now);
         }
 
         public static bool BothVisible(BadgerStage stage)
@@ -895,7 +1160,6 @@ namespace FlockFive
     public static class DontCareSlamRects
     {
         public const float TiltDegrees = -15f;
-        static readonly Vector2[] Fit = new Vector2[4];
 
         // Unity safeArea is bottom-left. GUI space is top-left.
         public static Rect SafeGui(float screenW, float screenH, Rect safeBottomLeft)
@@ -914,9 +1178,16 @@ namespace FlockFive
             return new Rect(x, top, w, h);
         }
 
-        // Resting word rect. PopFrom scale and TiltDegrees still land inside `safe`.
-        public static Rect WordBand(Rect safe)
+        // Resting rect of word 0. PopFrom scale and TiltDegrees still land inside `safe`.
+        public static Rect WordBand(Rect safe) => WordSlot(safe, 0);
+
+        // Four stacked slots. Popped, tilted boxes stay inside `safe` and clear each other.
+        public static Rect WordSlot(Rect safe, int index)
         {
+            int n = BadgerSlam.Words;
+            if (n < 1) n = 1;
+            if (index < 0) index = 0;
+            if (index >= n) index = n - 1;
             float margin = Mathf.Max(8f, Mathf.Min(safe.width, safe.height) * 0.035f);
             var inner = new Rect(
                 safe.x + margin,
@@ -924,18 +1195,34 @@ namespace FlockFive
                 Mathf.Max(8f, safe.width - margin * 2f),
                 Mathf.Max(8f, safe.height - margin * 2f));
             float pop = BadgerSlam.PopFrom < 1f ? 1f : BadgerSlam.PopFrom;
-            float bw = inner.width * 0.78f / pop;
-            float bh = inner.height * 0.18f / pop;
-            var band = Center(inner, bw, bh);
-            for (int n = 0; n < 12; n++)
+            float pad = Mathf.Max(6f, inner.height * 0.012f);
+            float bw = inner.width * 0.86f / pop;
+            float bh = inner.height * 0.20f / pop;
+            float rad = TiltDegrees * Mathf.Deg2Rad;
+            float sn = Mathf.Abs(Mathf.Sin(rad));
+            float cs = Mathf.Abs(Mathf.Cos(rad));
+            for (int k = 0; k < 16; k++)
             {
-                RotatedCorners(band, pop, TiltDegrees, Fit);
-                if (Inside(inner, Fit, 1.5f)) return band;
+                float hw = bw * pop * 0.5f;
+                float hh = bh * pop * 0.5f;
+                float vExt = hw * sn + hh * cs;
+                float hExt = hw * cs + hh * sn;
+                float stack = (vExt * 2f + pad) * n - pad;
+                if (stack <= inner.height + 0.5f && hExt * 2f <= inner.width + 0.5f) break;
                 bw *= 0.90f;
                 bh *= 0.90f;
-                band = Center(inner, bw, bh);
             }
-            return band;
+            if (bw < 4f) bw = 4f;
+            if (bh < 4f) bh = 4f;
+            float hw2 = bw * pop * 0.5f;
+            float hh2 = bh * pop * 0.5f;
+            float vExt2 = hw2 * sn + hh2 * cs;
+            float slot = vExt2 * 2f + pad;
+            float stackH = slot * n - pad;
+            if (stackH > inner.height) stackH = inner.height;
+            float top = inner.center.y - stackH * 0.5f;
+            float cy = top + vExt2 + index * slot;
+            return Center(inner, bw, bh, cy);
         }
 
         public static void RotatedCorners(Rect band, float pop, float degrees, Vector2[] into)
@@ -958,25 +1245,18 @@ namespace FlockFive
             into[i] = new Vector2(c.x + x * cs - y * sn, c.y + x * sn + y * cs);
         }
 
-        static Rect Center(Rect inner, float w, float h)
+        static Rect Center(Rect inner, float w, float h, float cy)
         {
             if (w > inner.width) w = inner.width;
             if (h > inner.height) h = inner.height;
             if (w < 4f) w = 4f;
             if (h < 4f) h = 4f;
-            return new Rect(inner.center.x - w * 0.5f, inner.center.y - h * 0.5f, w, h);
+            float y = cy - h * 0.5f;
+            if (y < inner.y) y = inner.y;
+            if (y + h > inner.yMax) y = inner.yMax - h;
+            return new Rect(inner.center.x - w * 0.5f, y, w, h);
         }
 
-        static bool Inside(Rect r, Vector2[] corners, float pad)
-        {
-            for (int i = 0; i < 4; i++)
-            {
-                var p = corners[i];
-                if (p.x < r.x + pad || p.x > r.xMax - pad) return false;
-                if (p.y < r.y + pad || p.y > r.yMax - pad) return false;
-            }
-            return true;
-        }
     }
 
     // Resting marks in the arena band. The hummingbird is the left box, facing right
@@ -1094,9 +1374,9 @@ namespace FlockFive
     {
         public enum Kind { None = 0, Swipe = 1, Peck = 2 }
 
-        public const float PeckSeconds = 0.56f;
-        public const float PeckHit = 0.22f;
-        public const float RecoilSeconds = 0.36f;
+        public const float PeckSeconds = 0.98f;
+        public const float PeckHit = 0.38f;
+        public const float RecoilSeconds = 0.55f;
         public const float SplatSeconds = 0.35f;
         public const float PulseSeconds = 0.42f;
 
@@ -1153,11 +1433,7 @@ namespace FlockFive
 
         public static string Frame(bool playerWon, float age, float now)
         {
-            if (playerWon) return "badger_shrug";
-            float u = PopupMotion.Beat(age, 0f, 0.70f);
-            if (u < 0.45f) return "badger_leap_1";
-            if (u < 1f) return "badger_leap_3";
-            return BadgerSitter.FrameAt(now);
+            return BadgerAnim.Outro(playerWon, age, now).Frame;
         }
 
         // 0 on the mark, 1 stepped away from the bird (to the right).

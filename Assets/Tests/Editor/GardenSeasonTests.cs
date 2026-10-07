@@ -107,6 +107,34 @@ namespace FlockFive.Editor
             }
             Check("rotation-gaps", gapBad == 0, "every 8 (+1 off a badger garden)");
 
+            bool due = SeasonReveal.Due(15, false) && !SeasonReveal.Due(16, false) && !SeasonReveal.Due(14, false)
+                && !SeasonReveal.Due(15, true) && !SeasonReveal.Due(31, false)
+                && SeasonReveal.Due(25, false) && SeasonReveal.Due(32, false) && SeasonReveal.Due(40, false);
+            Check("reveal-due", due, "15, 25, 32, 40 once; 14, 16, 31 and a seen 15 never");
+
+            float desertFade = SeasonReveal.FadeOf(GardenScene.Desert);
+            float otherFade = SeasonReveal.FadeOf(GardenScene.Winter);
+            bool timing = desertFade > otherFade
+                && desertFade >= 2.2f && desertFade <= 3.2f
+                && otherFade >= 1.5f && otherFade <= 2f
+                && SeasonReveal.FadeOf(GardenScene.Summer) == otherFade
+                && SeasonReveal.BannerOf(GardenScene.Desert) >= 2f
+                && SeasonReveal.BannerOf(GardenScene.Spring) >= 1.8f && SeasonReveal.BannerOf(GardenScene.Spring) <= 2.5f;
+            Check("reveal-timing", timing, "desert wipe " + desertFade + "s, others " + otherFade + "s");
+
+            bool words = SeasonReveal.Banner(GardenScene.Desert) == "Welcome to the Desert"
+                && SeasonReveal.Banner(GardenScene.Winter) == "Welcome to the Winter"
+                && SeasonReveal.Banner(GardenScene.Spring) == "Welcome to the Spring"
+                && SeasonReveal.Banner(GardenScene.Summer) == "Welcome to the Summer"
+                && SeasonReveal.Banner(GardenScene.Fall) == "Welcome to the Fall";
+            Check("reveal-banners", words, "Welcome to the Desert / Winter / Spring / Summer / Fall");
+
+            bool blocks = SeasonReveal.BlocksIntros(GardenScene.Desert, true)
+                && !SeasonReveal.BlocksIntros(GardenScene.Desert, false)
+                && !SeasonReveal.BlocksIntros(GardenScene.Winter, true)
+                && !SeasonReveal.BlocksIntros(GardenScene.Summer, true);
+            Check("reveal-blocks", blocks, "desert holds intros only while its reveal is playing");
+
             string[] art = { "bg_fall", "bg_winter", "bg_spring" };
             for (int i = 0; i < art.Length; i++)
             {

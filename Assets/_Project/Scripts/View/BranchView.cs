@@ -253,13 +253,12 @@ namespace FlockFive
             if (_count <= 0) return 0;
             var idle = Birds[_count - 1] != null ? Birds[_count - 1].GetComponent<BirdIdle>() : null;
             if (idle == null || idle.Shrouded) return 0;
-            var c = idle.Color;
-            var sex = idle.Sex;
+            var tip = idle.AsBird();
             int n = 1;
             for (int i = _count - 2; i >= 0; i--)
             {
                 var o = Birds[i] != null ? Birds[i].GetComponent<BirdIdle>() : null;
-                if (o == null || o.Shrouded || o.Color != c || o.Sex != sex) break;
+                if (o == null || o.Shrouded || !o.AsBird().SameFlock(tip)) break;
                 n++;
             }
             return n;

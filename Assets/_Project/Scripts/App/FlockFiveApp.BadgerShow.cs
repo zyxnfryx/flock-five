@@ -58,13 +58,15 @@ namespace FlockFive
         // Every badger, hive, bee, and splat frame. Size is art px times `unit`, so frames
         // keep their true relative size; anchored bottom-center on `foot` so the feet stay
         // put between frames (no pop). Missing art draws nothing.
-        static Rect DrawBadgerArt(string name, Vector2 foot, float unit, float alpha, float degrees = 0f)
+        static Rect DrawBadgerArt(string name, Vector2 foot, float unit, float alpha, float degrees = 0f, float sx = 1f, float sy = 1f)
         {
             var spr = SpriteCatalog.BadgerArt(name);
             if (spr == null || unit <= 0f) return default;
+            if (sx < 0.05f) sx = 1f;
+            if (sy < 0.05f) sy = 1f;
             var r = spr.rect;
-            float w = r.width * unit;
-            float h = r.height * unit;
+            float w = r.width * unit * sx;
+            float h = r.height * unit * sy;
             var dest = new Rect(foot.x - w * 0.5f, foot.y - h, w, h);
             if (!GuiPaint() || alpha < 0.01f) return dest;
             var keep = GUI.matrix;
@@ -75,6 +77,16 @@ namespace FlockFive
             GUI.color = Color.white;
             GUI.matrix = keep;
             return dest;
+        }
+
+        // Under then Frame, feet planted. Scale is the sample's squash / breathe.
+        static void DrawBadgerPose(BadgerSample pose, Vector2 foot, float unit, float alpha)
+        {
+            if (alpha < 0.01f || unit <= 0f) return;
+            if (!string.IsNullOrEmpty(pose.Under) && pose.UnderAlpha > 0.02f && pose.Under != pose.Frame)
+                DrawBadgerArt(pose.Under, foot, unit, alpha * pose.UnderAlpha, pose.Degrees, pose.ScaleX, pose.ScaleY);
+            if (!string.IsNullOrEmpty(pose.Frame) && pose.FrameAlpha > 0.02f)
+                DrawBadgerArt(pose.Frame, foot, unit, alpha * pose.FrameAlpha, pose.Degrees, pose.ScaleX, pose.ScaleY);
         }
 
         static float BadgerArtHeight(string name, float unit)
@@ -139,16 +151,20 @@ namespace FlockFive
         // Drawn last, over the garden or the splash, while the leap is live.
         void DrawBadgerLeap()
         {
-            if (!_bgLeap.Live || !GuiPaint()) return;
+            if (!_bgLeap.Live) return;
+            SparkleFx.Tick(Time.unscaledDeltaTime);
+            StepBadgerLeapFx();
+            if (!GuiPaint()) return;
             float t = _bgLeap.T;
             var beat = BadgerLeap.BeatAt(t);
-            string frame = BadgerLeap.FrameAt(t);
+            var pose = BadgerAnim.Entrance(t);
             float unit = _bgLeapUnit;
             if (beat <= BadgerLeapBeat.Crouch)
             {
                 var foot = Vector2.Lerp(_bgLeapFrom, _bgLeapTo, BadgerLeap.HopTravel(t));
                 foot.y -= BadgerLeap.HopLift(t) * Screen.height * 0.06f;
-                DrawBadgerArt(frame, foot, unit, 1f);
+                _bgFxFoot = foot;
+                DrawBadgerPose(pose, foot, unit, 1f);
             }
             else
             {
@@ -160,15 +176,45 @@ namespace FlockFive
                 float lh = last != null ? last.rect.height : 669f;
                 float fill = Mathf.Max(Screen.width * 1.30f / lw, Screen.height * 0.55f / lh);
                 float u = Mathf.Lerp(unit, Mathf.Max(unit, fill), g);
-                float h0 = BadgerArtHeight(frame, unit);
+                float h0 = BadgerArtHeight(pose.Frame, unit);
                 var c0 = new Vector2(_bgLeapTo.x, _bgLeapTo.y - h0 * 0.5f);
                 var c1 = new Vector2(Screen.width * 0.5f, Screen.height * 0.48f);
                 var c = Vector2.Lerp(c0, c1, g);
                 c.y -= Mathf.Sin(g * Mathf.PI) * Screen.height * 0.08f;
-                float h = BadgerArtHeight(frame, u);
-                DrawBadgerArt(frame, new Vector2(c.x, c.y + h * 0.5f), u, 1f);
+                float h = BadgerArtHeight(pose.Frame, u);
+                var foot = new Vector2(c.x, c.y + h * 0.5f);
+                _bgFxFoot = foot;
+                DrawBadgerPose(pose, foot, u, 1f);
             }
             DrawBadgerWash(BadgerLeap.WashAlpha(t));
+            SparkleFx.DrawBits();
+        }
+
+        // Dust when a hop lands and when the crouch catches the leap. Once per crossing.
+        void StepBadgerLeapFx()
+        {
+            float t = _bgLeap.T;
+            float before = _bgLeapEmitT;
+            if (before > t) before = -1f;
+            _bgLeapEmitT = t;
+            if (before < 0f || t <= before) return;
+            var foot = Vector2.Lerp(_bgLeapFrom, _bgLeapTo, BadgerLeap.HopTravel(t));
+            foot.y -= BadgerLeap.HopLift(t) * Screen.height * 0.06f;
+            var was = BadgerLeap.BeatAt(before);
+            var now = BadgerLeap.BeatAt(t);
+            if (was == BadgerLeapBeat.Hop && now != BadgerLeapBeat.Hop)
+            {
+                SparkleFx.DustPuff(foot, 8);
+                return;
+            }
+            if (now != BadgerLeapBeat.Hop) return;
+            float stride = BadgerLeap.HopStride;
+            if (stride < 0.05f) return;
+            float p0 = Mathf.Repeat(before, stride) / stride;
+            float p1 = Mathf.Repeat(t, stride) / stride;
+            if (p1 < p0) p0 = 0f;
+            if (p0 < BadgerLeap.HopAirShare && p1 >= BadgerLeap.HopAirShare)
+                SparkleFx.DustPuff(foot, 6);
         }
 
         // Flower tap with the flag set: the leap, then the contest. Never Load.
@@ -267,6 +313,8 @@ namespace FlockFive
                 // No swipe clip. CardBump is the hit, and the hive uses the shared shake.
                 Sfx.CardBump();
                 BadgerShakeStart(BadgerHiveKey);
+                SparkleFx.HoneySplash(_bgFxHive, 14);
+                SparkleFx.DustPuff(_bgFxFoot, 6);
             }
             int landed = BadgerOpening.LandedCount(_bgOpenT);
             if (landed > _bgOpenLanded)
@@ -325,6 +373,7 @@ namespace FlockFive
             string hive = BadgerOpening.HiveSwiped(t) ? "hive_swiped" : "hive_idle";
             var hr = DrawBadgerArt(hive, hiveFoot, hiveUnit, cast, BadgerOpening.Wobble(t));
             if (hr.width < 1f) hr = fallback;
+            _bgFxHive = hr.center;
 
             float flash = BadgerSwipe.FlashAlpha(t);
             if (flash > 0.02f)
@@ -438,8 +487,8 @@ namespace FlockFive
             _bgLine = "";
         }
 
-        // Shared SFX only: the "badger" sting (MixDesk lead mark) on the first word,
-        // Sfx.CardBump on each later word and on the nasty move.
+        // Each word is a CardBump thud (Lead, shorter than the 0.40 s gap). The badger
+        // sting waits for the nasty beat so it does not sit on a word.
         void StepDontCareSlam(float dt)
         {
             float before = _bgSlamT;
@@ -448,10 +497,16 @@ namespace FlockFive
             if (w > _bgSlamWord)
             {
                 _bgSlamWord = w;
-                if (w == 0) SfxLibrary.Badger();
-                else Sfx.CardBump();
+                Sfx.CardBump();
+                var safe = DontCareSlamRects.SafeGui(Screen.width, Screen.height, Screen.safeArea);
+                var band = DontCareSlamRects.WordSlot(safe, w);
+                SparkleFx.SlamBurst(band.center);
             }
-            if (BadgerSlam.Crosses(before, _bgSlamT, BadgerSlam.NastyAt)) ApplyDontCareNasty();
+            if (BadgerSlam.Crosses(before, _bgSlamT, BadgerSlam.NastyAt))
+            {
+                ApplyDontCareNasty();
+                SfxLibrary.Badger();
+            }
         }
 
         // The visible half of the nasty move. A destroyed power-up loses its badge and lit
@@ -548,10 +603,16 @@ namespace FlockFive
                 DrawBadgerGlint(eye, Screen.height * 0.035f * tw, g);
             }
 
-            string word = BadgerSlam.WordAt(t);
-            if (string.IsNullOrEmpty(word)) return;
+            int n = BadgerSlam.ShownCount(t);
+            if (n < 1) return;
             var safe = DontCareSlamRects.SafeGui(Screen.width, Screen.height, Screen.safeArea);
-            DrawDontCareWord(DontCareSlamRects.WordBand(safe), word, BadgerSlam.Pop(t));
+            for (int i = 0; i < n; i++)
+            {
+                if (!BadgerSlam.WordOn(t, i)) continue;
+                string word = BadgerCopy.DontCareWordAt(i);
+                if (string.IsNullOrEmpty(word)) continue;
+                DrawDontCareWord(DontCareSlamRects.WordSlot(safe, i), word, BadgerSlam.WordPop(t, i));
+            }
         }
 
         // One slammed word, tilted so the right side rises. Drawn last.
@@ -605,7 +666,7 @@ namespace FlockFive
             if (!BadgerSitter.Visible(BadgerOwed(), _bgLeap.Live, BadgerShotHidden())) return;
             BadgerSitterSpot(out var foot, out var unit);
             foot.y += sink;
-            DrawBadgerArt(BadgerSitter.FrameAt(PlayClock.Now), foot, unit, 1f);
+            DrawBadgerPose(BadgerAnim.Idle(PlayClock.Now), foot, unit, 1f);
         }
     }
 }

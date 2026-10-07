@@ -31,8 +31,9 @@ namespace FlockFive
 
         // Build 58: the VIP card is ~13% larger than the shared standard card.
         const float VipCardGrow = 1.13f;
-        // Buy flower drawn 8% over the shared CTA size (unchanged from build 51).
-        const float VipBuyScale = 1.08f;
+        // Buy flower drawn about 34% over the build 51 size (1.08) so the price reads.
+        // SeatCard may shrink a tight phone back down, but never under 1.08.
+        const float VipBuyScale = 1.45f;
 
         // Bottom rail from the card's bottom edge, so a card taller than the art (the build 63
         // offer card, see DrawAdCardArt) keeps the same even gap on all four rails.

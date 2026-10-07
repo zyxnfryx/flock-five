@@ -169,10 +169,11 @@ namespace FlockFive
         const float HomeTwigTexH = 720f;
         // 2.75x sits inside the 2.5–3x ask. Kept so older notes still name it.
         const float AvatarGrow = 2.75f;
-        // Home splash body. 1.30× a garden bird (1024px @ 280ppu × BirdScale).
-        // ~13% up from the old 1.15. First sight ("followed you home") and the
-        // bird after naming share this. Swatches in the name dialog do not.
-        const float HomeAvatarMul = 1.30f;
+        // Home splash body. 1.48× a garden bird (1024px @ 280ppu × BirdScale).
+        // ~14% up from 1.30. Feet stay on the pad: LimbBirdSeated lifts the
+        // center by RestLift × birdPx, then PerchAnchor sinks a fixed fraction.
+        // First sight and the bird after naming share this. Swatches do not.
+        const float HomeAvatarMul = 1.48f;
         // Flap sheets are 1536px on the 1024 rest canvas, same ppu. DrawCatalogBird
         // grows the quad by this, so a waiting center needs the wider reach.
         const float HomeFlapFit = 1536f / 1024f;
@@ -746,7 +747,7 @@ namespace FlockFive
             var prev = GUI.color;
             GUI.color = Color.white;
             float clock = _adoptClock + i * 0.17f;
-            _adoptBirdR = DrawAvatarBird(_adoptCol, SavedAvatarKit(), c, drawIcon, faceLeft, onPerch, clock);
+            _adoptBirdR = DrawAvatarBird(_adoptCol, SavedAvatarKit(), c, drawIcon, faceLeft, onPerch, clock, false, BirdIdle.KitSlotAdopt);
             GUI.color = prev;
             if (!onPerch) return;
             bool wings = BirdIdle.UseFlyingPose(onPerch, false);
@@ -834,7 +835,7 @@ namespace FlockFive
             PlayerPrefs.SetInt(AvatarPref, i);
             PlayerPrefs.Save();
             // No hop. A hop clears the perch, opens the flap sheet (larger quad),
-            // and lifts the bird into the leaves. Color keeps the seat, the 1.30
+            // and lifts the bird into the leaves. Color keeps the seat, the 1.48
             // size, and the facing. A tap on the bird still hops.
             Sfx.Chirp(col);
         }
@@ -1232,23 +1233,24 @@ namespace FlockFive
         // Off the perch, wing frames. On the perch, folded wings. One path for
         // the adopt bird, the home bird, the name-dialog portrait, and the finale
         // rule BirdIdle.UseFlyingPose already applies to garden birds.
-        Rect DrawAvatarBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool onPerch, float clock, bool buttonSeat = false)
+        Rect DrawAvatarBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool onPerch, float clock, bool buttonSeat = false, int glideSlot = -1)
         {
             bool wings = BirdIdle.UseFlyingPose(onPerch, false);
-            return DrawDressedBird(col, kit, c, icon, faceLeft, wings, clock, buttonSeat);
+            return DrawDressedBird(col, kit, c, icon, faceLeft, wings, clock, buttonSeat, glideSlot);
         }
 
         // Bow sits behind the body. Crown sits in front. Neither path writes SexOf.
         // buttonSeat is the five color buttons. Home and adopt birds leave it false.
-        Rect DrawDressedBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool wings, float clock, bool buttonSeat = false)
+        Rect DrawDressedBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool wings, float clock, bool buttonSeat = false, int glideSlot = -1)
         {
-            if (kit == 1) DrawAvatarKit(1, col, c, icon, faceLeft, wings, clock, buttonSeat);
+            if (buttonSeat) glideSlot = -1;
+            if (kit == 1) DrawAvatarKit(1, col, c, icon, faceLeft, wings, clock, buttonSeat, glideSlot);
             var drawn = DrawCatalogBird(col, c, icon, faceLeft, wings, clock);
-            if (kit == 2) DrawAvatarKit(2, col, c, icon, faceLeft, wings, clock, buttonSeat);
+            if (kit == 2) DrawAvatarKit(2, col, c, icon, faceLeft, wings, clock, buttonSeat, glideSlot);
             return drawn;
         }
 
-        void DrawAvatarKit(int kit, BirdColor col, Vector2 c, float icon, bool faceLeft, bool wings, float clock, bool buttonSeat = false)
+        void DrawAvatarKit(int kit, BirdColor col, Vector2 c, float icon, bool faceLeft, bool wings, float clock, bool buttonSeat, int glideSlot)
         {
             if (icon < 2f) return;
             bool bow = kit == 1;
@@ -1260,15 +1262,37 @@ namespace FlockFive
                 return;
             var spr = bow ? SpriteCatalog.Bow : SpriteCatalog.CrownFor(col);
             if (spr == null || spr.texture == null || spr.texture.width < 32) return;
-            int fi = 0;
+            float t = wings ? clock * AvatarFlapRate : 0f;
+            Sprite body;
+            Sprite next;
+            float phase;
             if (wings)
+                SpriteCatalog.FlapPair(col, BirdSex.Neutral, t, true, out body, out next, out phase);
+            else
             {
-                var body = SpriteCatalog.BirdFrame(col, clock * AvatarFlapRate, true);
-                fi = SpriteCatalog.PoseIndex(body, col, BirdSex.Neutral);
-                if (fi < 0 || fi > 4) fi = 0;
+                // Same rest sprite DrawCatalogBird shows, including peach's female sheet.
+                body = SpriteCatalog.BirdFrame(col, 0f, false);
+                next = body;
+                phase = 0f;
             }
-            BirdIdle.KitAnchor(!bow, fi, faceLeft, out float lx, out float ly, out float fit, out float tilt, out bool flip, buttonSeat);
-            float unit = 280f * (icon / 1024f);
+            float lx, ly, fit, tilt;
+            bool flip;
+            if (glideSlot < 0)
+                BirdIdle.KitAnchor(!bow, 0, faceLeft, body, spr, out lx, out ly, out fit, out tilt, out flip, buttonSeat);
+            else
+            {
+                float dt = Time.unscaledDeltaTime;
+                if (dt < 0f) dt = 0f;
+                else if (dt > 0.05f) dt = 0.05f;
+                BirdIdle.KitFollow(!bow, body, next, phase, faceLeft, spr, glideSlot, dt,
+                    out lx, out ly, out fit, out tilt, out flip);
+            }
+            // One local unit in GUI pixels. The imported bird is 220 ppu on a 1024 rest
+            // sheet. Flap quads grow with the sheet, so the rest sheet keeps the unit.
+            var rest = SpriteCatalog.Bird(col);
+            float ppu = rest != null && rest.pixelsPerUnit > 1f ? rest.pixelsPerUnit : 220f;
+            float texW = rest != null && rest.rect.width > 1f ? rest.rect.width : 1024f;
+            float unit = ppu * (icon / texW);
             float dw = (spr.rect.width / 200f) * fit * unit;
             float dh = (spr.rect.height / 200f) * fit * unit;
             if (dw < 1f || dh < 1f) return;

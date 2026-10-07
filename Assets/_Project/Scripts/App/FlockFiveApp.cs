@@ -226,6 +226,7 @@ namespace FlockFive
         float _giftThanksAt;
         bool _frozen;
         bool _freezeOffer;
+        float _freezeShownAt = -1f;
         bool _iceCoating;
         // One flag per bottom gift. Stays set for the stage, including Restart.
         // Cleared only when a stage loads. Index is the gift's ordinal, not its branch.
@@ -602,6 +603,8 @@ namespace FlockFive
 
         void ShowSplash()
         {
+            SeasonCrossfade.RetireLive();
+            GardenLife.DetachHome();
             _splash = true;
             _clearReward = false;
             CancelRewardGap();
@@ -626,11 +629,17 @@ namespace FlockFive
             _iceCoating = false;
             _sel = -1;
             StopPests();
-            if (_garden.Root != null) Destroy(_garden.Root.gameObject);
+            // Destroy lands at frame end. Hide now so the old painting cannot flash over home.
+            if (_garden.Root != null)
+            {
+                _garden.Root.gameObject.SetActive(false);
+                Destroy(_garden.Root.gameObject);
+            }
             if (_garden.Cam != null) Destroy(_garden.Cam.gameObject);
             _garden = default;
             _board = null;
-            WorldBuilder.MakeCamera(transform);
+            var homeCam = WorldBuilder.MakeCamera(transform);
+            GardenLife.AttachHome(transform, homeCam);
             if (MixDesk.Live != null) MixDesk.Live.SetSplash(true);
             Purse.Boot();
             // A clear that never reached the pay step. Pending is memory-only, so a
@@ -651,6 +660,8 @@ namespace FlockFive
 
         void Load(int index)
         {
+            SeasonCrossfade.RetireLive();
+            GardenLife.DetachHome();
             GiftWant.StageClear = false; // the new stage's signs start lit
             _autoResolveDone = false;
             _solvedMerging = false;
@@ -702,7 +713,11 @@ namespace FlockFive
             ArmLeafIntro();
             ArmLevelBeeIntro();
             Purse.BeginStage();
-            if (_garden.Root != null) Destroy(_garden.Root.gameObject);
+            if (_garden.Root != null)
+            {
+                _garden.Root.gameObject.SetActive(false);
+                Destroy(_garden.Root.gameObject);
+            }
             if (_garden.Cam != null) Destroy(_garden.Cam.gameObject);
             SpriteCatalog.ForgetBirds();
             _garden = WorldBuilder.Build(transform);
@@ -1997,7 +2012,7 @@ namespace FlockFive
             }
             var br = _board.Branches[pick];
             var tip = br.Birds[0];
-            br.Birds.Add(new Bird(tip.Color, tip.Sex));
+            br.Birds.Add(tip);
             br.AlignShroud();
             SyncAll();
         }
@@ -2299,6 +2314,7 @@ namespace FlockFive
                     TickPausedTutorial();
                 return;
             }
+            TickUsaPlane(Time.unscaledDeltaTime);
             CoachAdvance();
             TickPopups();
             TickDailyBonus();
@@ -2313,6 +2329,7 @@ namespace FlockFive
             {
                 if (Pressed(out var tap))
                 {
+                    NoteLeafTap(tap);
                     if (HitHud(tap)) return;
                     if (_frozen && !_iceCoating && _gift == GiftFace.None) OpenGift();
                 }
@@ -2332,7 +2349,18 @@ namespace FlockFive
                 return;
             }
 #endif
+            // Desert welcome only. Birds stay put; restart still works. Other seasons do not hold.
+            if (SeasonReveal.HoldsPlay)
+            {
+                if (!Pressed(out var heldTap)) return;
+                NoteLeafTap(heldTap);
+                if (HitHud(heldTap)) return;
+                return;
+            }
             if (!Pressed(out var screen)) return;
+            // Same advance as the any-tap gate, before the stamp and the hud
+            // claim the press. NoteLeafTap does not eat it.
+            NoteLeafTap(screen);
             if (GardenStampHit(screen))
             {
                 _stampPulse = Time.unscaledTime;
@@ -2620,7 +2648,7 @@ namespace FlockFive
             for (int i = 0; i < n; i++)
             {
                 var idle = birds[i] != null ? birds[i].GetComponent<BirdIdle>() : null;
-                flock[i] = idle != null ? new Bird(idle.Color, idle.Sex) : new Bird(col, BirdSex.Neutral);
+                flock[i] = idle != null ? idle.AsBird() : new Bird(col, BirdSex.Neutral);
             }
             // Feeder matches score when the last bird lands. A pest scrap lifts
             // the flock now and does not pick a limb until the fight is over.
@@ -3279,6 +3307,10 @@ namespace FlockFive
         {
             _collectDepth++;
             _collecting = true;
+            // A collect while the leaf line is up is the breeze. It does not wait
+            // for the foliage to finish lifting, and a reset parade is not a collect.
+            if (_leafIntro && !_restarting && _cueLine == LeafIntroLine)
+                DismissLeafIntro();
         }
 
         void EndCollect()
@@ -5055,6 +5087,11 @@ namespace FlockFive
                     HudLayout(out float ps, out float pTop, out _, out _, out _);
                     DrawCoach(ps, pTop);
                 }
+                if (!Ads.IsShowing && !_splash && _board != null && SeasonReveal.BannerLive)
+                {
+                    HudLayout(out float bs, out float bTop, out _, out _, out _);
+                    DrawSeasonBanner(bs, bTop);
+                }
                 return;
             }
             // Shared tutorial tap gate: a step that waits on one control eats every other press.
@@ -5120,6 +5157,7 @@ namespace FlockFive
             if (_hiveInspect >= 0) DrawHiveInspect(s);
             DrawGiftSign(s);
             DrawCoach(s, top);
+            DrawSeasonBanner(s, top);
             if (_gift != GiftFace.None) DrawGiftOffer(s);
             if (_restartAsk != RestartAsk.None) DrawRestartAsk(s);
             DrawBadgerLeap();
@@ -7288,7 +7326,7 @@ namespace FlockFive
                 };
             }
             if (_rewardContent == null) _rewardContent = new GUIContent();
-            string text = "x" + mul;
+            string text = MulChip(mul);
             _rewardContent.text = text;
             var st = _rewardStampStyle;
             var content = _rewardContent;
@@ -7297,10 +7335,11 @@ namespace FlockFive
             int key = mul * 131 + rw * 17 + rh;
             if (key != _stampKey || _stampPx < 12)
             {
-                int hi = Mathf.Max(18, Mathf.RoundToInt(r.height * 0.46f));
-                st.fontSize = FitFont(st, text, r.width * 0.62f, r.height * 0.50f, 12, hi);
+                StreakBadge.NumeralFit(r, out float fitW, out float fitH);
+                int hi = Mathf.Max(18, Mathf.RoundToInt(fitH));
+                st.fontSize = FitFont(st, text, fitW, fitH, 12, hi);
                 int guard = 0;
-                while (st.fontSize > 12 && guard < 24 && st.CalcSize(content).x > r.width * 0.62f)
+                while (st.fontSize > 12 && guard < 24 && st.CalcSize(content).x > fitW)
                 {
                     st.fontSize -= 1;
                     guard++;
@@ -7356,11 +7395,12 @@ namespace FlockFive
             return !_splash && _gardenStampAt >= 0f && StreakTier.AtStake(Purse.Streak);
         }
 
-        // Top-left chip, about 1.5× the old 54px disc (44..78). TopHud keeps it
-        // under the notch / Dynamic Island. Glints stay inside this rect.
+        // Top-left chip, about 1.7× the previous 81px disc (66..117). TopHud keeps it
+        // under the notch / Dynamic Island. The cap stays clear of the feeders.
+        // Glints stay inside this rect. The reward-stamp pop keeps its own rect.
         Rect GardenStampRect(float s)
         {
-            float d = Mathf.Clamp(81f * s, 66f, 117f);
+            float d = Mathf.Clamp(138f * s, 112f, 190f);
             float x = Mathf.Max(10f * s, Screen.safeArea.xMin + 8f);
             float y = TopHud() + 10f * s;
             var safe = Screen.safeArea;
@@ -7404,26 +7444,24 @@ namespace FlockFive
             if (_giftTitle == null)
                 _giftTitle = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = true };
             var st = _giftTitle;
+            float bw = inner.width * 0.44f;
+            float bh = Mathf.Max(PopupBarHeight(s, w) * 1.28f, 56f * s);
             if (sure)
             {
                 const string ask = "Are you sure you want to restart?";
-                var titleR = new Rect(inner.x, inner.y, inner.width, inner.height * 0.46f);
+                var titleR = new Rect(inner.x, inner.y, inner.width, Mathf.Max(40f, inner.height - bh - 12f * s));
                 st.wordWrap = true;
-                int hi = Mathf.Max(18, Mathf.RoundToInt(28f * s));
-                st.fontSize = FitFontWrapped(st, ask, titleR.width, titleR.height * 0.9f, 14, hi);
-                StampOutlined(titleR, ask, st, new Color(1f, 0.96f, 0.78f, 1f), 0, 3);
-                float bw = inner.width * 0.42f;
-                float bh = PopupBarHeight(s, w);
+                int hi = Mathf.Max(20, Mathf.RoundToInt(36f * s));
+                st.fontSize = FitFontWrapped(st, ask, titleR.width, titleR.height * 0.9f, 16, hi);
+                StampOutlined(titleR, ask, st, new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.12f)));
                 var noR = new Rect(inner.x, inner.yMax - bh, bw, bh);
                 var yesR = new Rect(inner.xMax - bw, inner.yMax - bh, bw, bh);
                 bool no = HitPad(noR, out bool noHeld);
                 bool yes = HitPad(yesR, out bool yesHeld);
-                var noDisc = DrawPopupButton(noR, noHeld, false);
-                var yesDisc = DrawPopupButton(yesR, yesHeld, true);
-                st.wordWrap = false;
-                st.fontSize = FitFont(st, "Yes", yesDisc.width * 0.7f, yesDisc.height * 0.5f, 14, hi);
-                StampOutlined(noDisc, "No", st, new Color(0.28f, 0.12f, 0.04f, 1f), 1, 2);
-                StampOutlined(yesDisc, "Yes", st, new Color(0.28f, 0.12f, 0.04f, 1f), 1, 2);
+                DrawPopupButton(noR, noHeld, PopupTint.Red);
+                DrawPopupButton(yesR, yesHeld, PopupTint.Green);
+                DrawPopupWord(noR, "No", st, s);
+                DrawPopupWord(yesR, "Yes", st, s);
                 if (no) { _restartAsk = RestartAsk.None; Sfx.CardTap(); return; }
                 if (yes)
                 {
@@ -7433,25 +7471,39 @@ namespace FlockFive
                 }
                 return;
             }
-            var head = new Rect(inner.x, inner.y, inner.width, inner.height * 0.62f);
+            var head = new Rect(inner.x, inner.y, inner.width, Mathf.Max(48f, inner.height - bh - 10f * s));
             DrawStreakCaution(head, s, st);
-            float watchH = PopupBarHeight(s, w);
-            var watchR = new Rect(inner.center.x - inner.width * 0.28f, inner.yMax - watchH, inner.width * 0.56f, watchH);
+            var noThanks = new Rect(inner.x, inner.yMax - bh, bw, bh);
+            var watchR = new Rect(inner.xMax - bw, inner.yMax - bh, bw, bh);
             float xSz = Mathf.Max(40f, 42f * s);
             var xBtn = new Rect(card.xMax - xSz - 6f, card.y + 6f, xSz, xSz);
+            bool decline = HitPad(noThanks, out bool declineHeld);
             bool watch = HitPad(watchR, out bool watchHeld);
             bool close = HitPad(CloseTapRect(xBtn), out bool xHeld);
-            var disc = DrawPopupButton(watchR, watchHeld, true);
-            st.wordWrap = false;
-            st.fontSize = FitFont(st, "Watch", disc.width * 0.7f, disc.height * 0.45f, 14, Mathf.RoundToInt(24f * s));
-            StampOutlined(disc, "Watch", st, new Color(0.28f, 0.12f, 0.04f, 1f), 1, 2);
+            DrawPopupButton(noThanks, declineHeld, PopupTint.Red);
+            DrawPopupButton(watchR, watchHeld, PopupTint.Green);
+            DrawPopupWord(noThanks, "No thanks", st, s);
+            DrawPopupWord(watchR, "Watch Ad", st, s);
             DrawGiftCloseX(xBtn, xHeld, s);
             if (watch)
             {
                 StartCoroutine(WatchKeepStreak());
                 return;
             }
-            if (close) StartCoroutine(FinishRestart(false));
+            if (decline || close) StartCoroutine(FinishRestart(false));
+        }
+
+        // White face, dark outline, about 60% of the drawn button. Hit rect stays the button.
+        static void DrawPopupWord(Rect btn, string word, GUIStyle st, float s)
+        {
+            var lab = new Rect(btn.x + btn.width * 0.04f, btn.y + btn.height * 0.20f, btn.width * 0.92f, btn.height * 0.60f);
+            int cap = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            st.wordWrap = false;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.fontStyle = FontStyle.Bold;
+            st.fontSize = FitFont(st, word, lab.width, lab.height, 14, cap);
+            int dark = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.16f), 2, 8);
+            StampOutlined(lab, word, st, Color.white, 0, dark);
         }
 
         IEnumerator WatchKeepStreak()
@@ -8112,9 +8164,13 @@ namespace FlockFive
         void DrawHomeWash(float a)
         {
             if (!GuiPaint()) return;
-            var bg = SpriteCatalog.GardenBg;
-            if (bg != null && bg.texture != null)
-                GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), bg.texture, ScaleMode.ScaleAndCrop);
+            // The living painting is the world backdrop. The wash stays so the pages read.
+            if (!GardenLife.HomeLive)
+            {
+                var bg = SpriteCatalog.GardenBg;
+                if (bg != null && bg.texture != null)
+                    GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), bg.texture, ScaleMode.ScaleAndCrop);
+            }
             GUI.color = new Color(0.10f, 0.09f, 0.08f, a);
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
@@ -8157,7 +8213,7 @@ namespace FlockFive
         // This OnGUI pass: a tiny home target (bird or name plate) owns the pointer.
         static bool _homeTapTaken;
 
-        // Finger slop around the fixed 1.30× body. Does not change the drawn bird.
+        // Finger slop around the fixed 1.48× body. Does not change the drawn bird.
         const float HomeBirdHitPad = 8f;
 
         static bool HitPad(Rect r, out bool held)
@@ -8313,6 +8369,8 @@ namespace FlockFive
             // Rail steps hold until their own button. A miss does not skip poker or Daily,
             // and the looping glove does not open the card.
             DrawHomeWash(0.18f);
+            // Sky first. The plane crosses in front of it and behind the title.
+            DrawUsaPlane(s);
 
             // Home title: stacked FLOCK / FIVE via letter sprites + navy block extrude
             // (same mark family as FinaleShow smash hold — correlate, not shatter).
@@ -8340,13 +8398,15 @@ namespace FlockFive
             var noAdsR = SplashNoAdsRect();
             bool noAdsHeld = false;
             bool vipTap = false;
-            if (vipDraw && offerVip && !modal && HomeTapAllowed(RailVip))
+            // Welcome fly owns the slot. The seat stays packed so the medal has a stable home.
+            bool vipHold = VipOffer.VipWelcomeHoldsRail;
+            if (vipDraw && offerVip && !modal && !vipHold && HomeTapAllowed(RailVip))
                 vipTap = HitVip(noAdsR, out noAdsHeld);
 
             // Pig above hive: hit-test before the album so taps don't open it.
             // The offer card swallows the rail so a dismiss tap cannot oink.
             var pigR = PiggyRect(s);
-            if (!modal && HomeTapAllowed(RailPig) && HitPad(pigR, out _) && !(vipDraw && offerVip && VipContains(noAdsR, Event.current.mousePosition)))
+            if (!modal && HomeTapAllowed(RailPig) && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
                 TryPigPoke();
 
             // Hive lesson hides that slot. The packer closes it; poker slides up under the pig.
@@ -8366,7 +8426,7 @@ namespace FlockFive
             // NextPlay is the next level index. Clearing level 1 (index 0) stores 1.
             // Owned swaps the offer crown for the diamond badge in the same slot. The tap
             // opens the offer (Buy stays on that card) or the member thank-you card.
-            if (vipDraw)
+            if (vipDraw && !vipHold)
             {
                 if (vipTap)
                 {
@@ -8520,22 +8580,28 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        static Texture2D _popupGold;
-        static Texture2D _popupWood;
-        static Texture2D _popupGoldFlat;
-        static Texture2D _popupWoodFlat;
+        // Shared clay for wide pop-up bars. Gold and wood stay the flower / wood pair.
+        // Red and green are the restart confirm and the keep-multiplier ask.
+        enum PopupTint { Gold, Wood, Red, Green }
+
+        static readonly Texture2D[] _popupFace = new Texture2D[8];
 
         // Square pop-up CTAs reuse the clay flower (DEAL / LEVEL / Watch).
         // Wide ones get a rounded plate in the same clay. Returns the label rect.
         // shadow is the dark slab under the face. Streak ask and welcome pass false.
         static Rect DrawPopupButton(Rect r, bool held, bool gold, float glow = 1f, bool shadow = true)
         {
+            return DrawPopupButton(r, held, gold ? PopupTint.Gold : PopupTint.Wood, glow, shadow);
+        }
+
+        static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true)
+        {
             if (r.width < 2f || r.height < 2f) return r;
             bool square = r.width > 8f && r.height < r.width * 1.25f && r.width < r.height * 1.25f;
             var bloom = SpriteCatalog.PlayFlower;
-            if (square && bloom != null && bloom.texture != null)
-                return DrawPedestalFace(r, held, gold, bloom.texture, glow, shadow);
-            return DrawRoundedFace(r, held, gold, shadow);
+            if (square && bloom != null && bloom.texture != null && (tint == PopupTint.Gold || tint == PopupTint.Wood))
+                return DrawPedestalFace(r, held, tint == PopupTint.Gold, bloom.texture, glow, shadow);
+            return DrawRoundedFace(r, held, tint, shadow);
         }
 
         static Rect DrawPedestalFace(Rect r, bool held, bool gold, Texture tex, float glow, bool shadow)
@@ -8557,18 +8623,18 @@ namespace FlockFive
             return FlowerDisc(r, sink);
         }
 
-        static Rect DrawRoundedFace(Rect r, bool held, bool gold, bool shadow)
+        static Rect DrawRoundedFace(Rect r, bool held, PopupTint tint, bool shadow)
         {
             float sink = held ? Mathf.Max(2f, r.height * 0.07f) : 0f;
             var face = new Rect(r.x, r.y + sink, r.width, Mathf.Max(8f, r.height - sink));
-            var tex = PopupButtonTex(gold, shadow);
+            var tex = PopupButtonTex(tint, shadow);
             if (shadow)
             {
                 float drop = held ? 1.5f : Mathf.Max(3f, r.height * 0.11f);
                 GUI.color = new Color(0.05f, 0.03f, 0.015f, held ? 0.22f : 0.40f);
                 DrawBevelPlate(tex, new Rect(face.x + 1.2f, face.y + drop, face.width, face.height), 28f);
             }
-            GUI.color = held ? new Color(0.84f, 0.78f, 0.66f, 1f) : Color.white;
+            GUI.color = held ? new Color(0.86f, 0.86f, 0.86f, 1f) : Color.white;
             DrawBevelPlate(tex, face, 28f);
             GUI.color = Color.white;
             float ix = face.width * 0.05f;
@@ -8576,30 +8642,44 @@ namespace FlockFive
             return new Rect(face.x + ix, face.y + iy, Mathf.Max(4f, face.width - ix * 2f), Mathf.Max(4f, face.height - iy * 2f));
         }
 
-        static Texture2D PopupButtonTex(bool gold, bool shadow)
+        static Texture2D PopupButtonTex(PopupTint tint, bool shadow)
         {
-            if (gold)
+            int i = ((int)tint) * 2 + (shadow ? 1 : 0);
+            if (i < 0 || i >= _popupFace.Length) i = shadow ? 1 : 0;
+            if (_popupFace[i] == null) _popupFace[i] = BakePopupButton(tint, shadow);
+            return _popupFace[i];
+        }
+
+        static void PopupClay(PopupTint tint, out Color mid, out Color top, out Color bot)
+        {
+            switch (tint)
             {
-                if (shadow)
-                {
-                    if (_popupGold == null) _popupGold = BakePopupButton(true, true);
-                    return _popupGold;
-                }
-                if (_popupGoldFlat == null) _popupGoldFlat = BakePopupButton(true, false);
-                return _popupGoldFlat;
+                case PopupTint.Wood:
+                    mid = new Color(0.46f, 0.27f, 0.12f, 1f);
+                    top = new Color(0.74f, 0.52f, 0.28f, 1f);
+                    bot = new Color(0.16f, 0.08f, 0.03f, 1f);
+                    break;
+                case PopupTint.Red:
+                    mid = new Color(0.78f, 0.16f, 0.13f, 1f);
+                    top = new Color(1f, 0.48f, 0.40f, 1f);
+                    bot = new Color(0.36f, 0.05f, 0.04f, 1f);
+                    break;
+                case PopupTint.Green:
+                    mid = new Color(0.16f, 0.58f, 0.24f, 1f);
+                    top = new Color(0.55f, 0.88f, 0.46f, 1f);
+                    bot = new Color(0.05f, 0.28f, 0.08f, 1f);
+                    break;
+                default:
+                    mid = new Color(0.93f, 0.66f, 0.22f, 1f);
+                    top = new Color(1f, 0.95f, 0.74f, 1f);
+                    bot = new Color(0.40f, 0.20f, 0.05f, 1f);
+                    break;
             }
-            if (shadow)
-            {
-                if (_popupWood == null) _popupWood = BakePopupButton(false, true);
-                return _popupWood;
-            }
-            if (_popupWoodFlat == null) _popupWoodFlat = BakePopupButton(false, false);
-            return _popupWoodFlat;
         }
 
         // shadow keeps the dark foot and the rim that reads as a slab.
         // Without it the plate stays the same rounded fill, with only the top sheen.
-        static Texture2D BakePopupButton(bool gold, bool shadow)
+        static Texture2D BakePopupButton(PopupTint tint, bool shadow)
         {
             const int n = 96;
             const float rad = 28f;
@@ -8608,14 +8688,10 @@ namespace FlockFive
                 filterMode = FilterMode.Bilinear,
                 wrapMode = TextureWrapMode.Clamp,
                 hideFlags = HideFlags.HideAndDontSave,
-                name = gold
-                    ? (shadow ? "PopupGold" : "PopupGoldFlat")
-                    : (shadow ? "PopupWood" : "PopupWoodFlat")
+                name = "Popup" + tint + (shadow ? "" : "Flat")
             };
             var px = new Color32[n * n];
-            Color mid = gold ? new Color(0.93f, 0.66f, 0.22f, 1f) : new Color(0.46f, 0.27f, 0.12f, 1f);
-            Color top = gold ? new Color(1f, 0.95f, 0.74f, 1f) : new Color(0.74f, 0.52f, 0.28f, 1f);
-            Color bot = gold ? new Color(0.40f, 0.20f, 0.05f, 1f) : new Color(0.16f, 0.08f, 0.03f, 1f);
+            PopupClay(tint, out Color mid, out Color top, out Color bot);
             Color sheen = new Color(1f, 0.98f, 0.90f, 1f);
             for (int y = 0; y < n; y++)
             {
@@ -9900,7 +9976,7 @@ namespace FlockFive
             _avatarPose = landed ? AvatarPose.Perched : AvatarPose.Flying;
         }
 
-        // Same center the home bird draws at. Fixed body is HomeAvatarIcon (1.30×).
+        // Same center the home bird draws at. Fixed body is HomeAvatarIcon (1.48×).
         bool HomeAvatarFrame(float s, out Vector2 c, out float icon, out bool onPerch)
         {
             c = default;
@@ -9949,7 +10025,7 @@ namespace FlockFive
                 GUIUtility.RotateAroundPivot(preen, new Vector2(c.x, c.y + icon * 0.31f));
             var prev = GUI.color;
             GUI.color = Color.white;
-            var drawn = DrawAvatarBird(_avatarCol, SavedAvatarKit(), c, icon, _avatarFaceLeft, onPerch, _avatarClock);
+            var drawn = DrawAvatarBird(_avatarCol, SavedAvatarKit(), c, icon, _avatarFaceLeft, onPerch, _avatarClock, false, BirdIdle.KitSlotHome);
             GUI.matrix = prevMat;
             GUI.color = prev;
             if (drawn.width <= 2f) return;
@@ -10696,17 +10772,22 @@ namespace FlockFive
         }
 
         // Deal button is up, the draw and the payout are finished, nothing else is on screen.
+        // Shared with the tap (PokerDealGate.AdCanShow). The table is a splash-shell face,
+        // so _splash must not count as "not on the table" — that left every 10th-hand ad
+        // unready and the DEAL tap discarded the press.
         bool PokerHandAdReady()
         {
-            if (_home != HomeFace.Poker || _splash) return false;
-            if (_pokerPageOn) return false;
-            if (Ads.IsBusy || Ads.IsShowing) return false;
-            if (IsTutorialBlocking || TutorialOwnPopup() != PopupKind.None || _welcomeOpen) return false;
-            if (BirdPoker.PhaseNow == BirdPoker.Phase.Dealt) return false;
-            if (PokerMotionBusy() || _pokerStamp) return false;
-            if (_pokerPayOpen || _pokerPayAnim > 0.2f) return false;
-            if (_pokerWinT >= 0f && _pokerWinT < WinDoneAt) return false;
-            return true;
+            return PokerDealGate.AdCanShow(
+                _home == HomeFace.Poker,
+                _pokerPageOn,
+                Ads.IsBusy || Ads.IsShowing,
+                IsTutorialBlocking || TutorialOwnPopup() != PopupKind.None,
+                _welcomeOpen,
+                BirdPoker.PhaseNow == BirdPoker.Phase.Dealt,
+                PokerMotionBusy(),
+                _pokerStamp,
+                _pokerPayOpen || _pokerPayAnim > 0.2f,
+                _pokerWinT >= 0f && _pokerWinT < WinDoneAt);
         }
 
         IEnumerator PokerHandAd()
@@ -11274,24 +11355,9 @@ namespace FlockFive
             // Between hands (idle or showing a result) the bet steers the next DEAL.
             bool steppers = BirdPoker.BetOpen && !PokerMotionBusy();
             if (steppers) BirdPoker.SyncBet();
-            if (DrawPokerDash(betR, actR, s, busy, steppers, act) && !busy && !_pokerAdRunning)
-            {
-                bool nextHand = BirdPoker.PhaseNow != BirdPoker.Phase.Dealt;
-                if (nextHand && Ads.PokerAdDue)
-                {
-                    if (PokerHandAdReady())
-                        MaybePokerHandAd();
-                }
-                else if (BirdPoker.PhaseNow == BirdPoker.Phase.Idle)
-                    TryPokerDeal();
-                else if (BirdPoker.PhaseNow == BirdPoker.Phase.Dealt)
-                    RunPokerDraw();
-                else
-                {
-                    BirdPoker.Collect();
-                    TryPokerDeal();
-                }
-            }
+            if (DrawPokerDash(betR, actR, s, busy, steppers, act))
+                OnPokerDealPressed();
+            DrawPokerBrokeHint(betR, actR, s);
             NotePokerTutorAims(actR, rowBox, cardW, gap);
             float holdCeil = payTab.yMax;
             if (rowBox.y - holdCeil < 60f * s) holdCeil = below;
@@ -12121,9 +12187,72 @@ namespace FlockFive
             };
         }
 
+        // One DEAL press. PokerDealGate owns the gates (motion, stamp, pay table,
+        // win flight, a due ad, the $5 floor). A settled no-pay hand drops a leftover
+        // lock here, then deals. Coins under the bet step down inside SyncBet.
+        void OnPokerDealPressed()
+        {
+            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f;
+            var tap = PokerDealGate.Tap(new PokerDealGate.Snap
+            {
+                Phase = BirdPoker.PhaseNow,
+                MotionBusy = PokerMotionBusy(),
+                Stamp = _pokerStamp,
+                PayBlocked = payBlocked,
+                WinFlying = PokerWinFlying(),
+                AdRunning = _pokerAdRunning,
+                AdShowing = Ads.IsShowing,
+                AdDue = Ads.PokerAdDue,
+                AdReady = PokerHandAdReady(),
+                Coins = Purse.Coins,
+                Ceremony = BirdPoker.LastWin > 0
+            });
+            if (tap.DropAdLock) _pokerAdRunning = false;
+            if (tap.DropWin) _pokerWinT = -1f;
+            if (tap.DropStamp)
+            {
+                _pokerStamp = false;
+                _pokerPendingStamp = false;
+            }
+            switch (tap.Act)
+            {
+                case PokerDealGate.Act.Ad:
+                    MaybePokerHandAd();
+                    break;
+                case PokerDealGate.Act.Draw:
+                    RunPokerDraw();
+                    break;
+                case PokerDealGate.Act.Deal:
+                    if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn)
+                        BirdPoker.Collect();
+                    BirdPoker.SyncBet();
+                    TryPokerDeal();
+                    break;
+                case PokerDealGate.Act.Broke:
+                    Sfx.Deny();
+                    break;
+            }
+        }
+
+        void DrawPokerBrokeHint(Rect betR, Rect actR, float s)
+        {
+            if (!PokerDealGate.ShowBrokeHint(Purse.Coins, BirdPoker.PhaseNow)) return;
+            int type = Mathf.RoundToInt(Mathf.Clamp(22f * s, 18f, 34f));
+            var st = PokerBold(ref _pokerLed, TextAnchor.MiddleCenter);
+            st.fontSize = type;
+            float h = type * 1.35f;
+            float top = Mathf.Min(betR.y, actR.y);
+            float y = top - h - 8f * s;
+            if (y < 8f) y = 8f;
+            StampLight(new Rect(0f, y, Screen.width, h), PokerDealGate.BrokeHint, st,
+                new Color(0.94f, 0.12f, 0.14f, 1f));
+        }
+
         void TryPokerDeal()
         {
             FinishPokerWarm();
+            if (BirdPoker.PhaseNow != BirdPoker.Phase.Dealt)
+                BirdPoker.SyncBet();
             if (!BirdPoker.CanDeal() || !BirdPoker.Deal())
                 Sfx.Deny();
             else
@@ -16221,6 +16350,7 @@ namespace FlockFive
             if (_gift == GiftFace.Card) return;
             if (!GatePopup(PopupKind.Gift, false)) return;
             _gift = GiftFace.Card;
+            if (_freezeOffer) _freezeShownAt = Time.unscaledTime;
             AdLog.Add("branch offer shown (" + OfferReason() + ")");
         }
 
@@ -16268,7 +16398,14 @@ namespace FlockFive
             // GateGo is splash-only (long Lead). Ad start gets a short leave whoosh.
             Sfx.FeederLeave();
             yield return Ads.Rewarded();
-            if (!Ads.LastGranted)
+            // Freeze continue pays only for a finished view (or ads switched off).
+            // Cancel and a show that never played leave the card up. The gift
+            // sign keeps the older permissive grant.
+            bool freeze = _frozen || _freezeOffer;
+            bool pay = freeze
+                ? BonusBranches.ContinuePays(Ads.LastEarned, Ads.LastGranted, Ads.Enabled)
+                : Ads.LastGranted;
+            if (!pay)
             {
                 _busy = false;
                 RaiseGiftCard();
@@ -16281,9 +16418,11 @@ namespace FlockFive
                 _busy = false;
                 yield break;
             }
-            var popAt = GrantSpare();
+            // Ice first, then the same claim the sign uses, so the limb shakes
+            // and bursts on the open garden instead of under the pane.
             if (_frozen && _garden.Ice != null)
                 yield return _garden.Ice.Shatter(_garden.Root);
+            var popAt = GrantSpare();
             StillBirds(false);
             _frozen = false;
             _freezeOffer = false;
@@ -16317,45 +16456,24 @@ namespace FlockFive
 
         Vector3 GrantSpare()
         {
-            int i = _giftBranch;
-            if (i < 0) i = FirstLockedBonus();
+            int i = BonusBranches.ContinueIndex(_board, _bonusOn, _giftBranch);
             return UnlockBonus(i);
         }
 
-        int FirstLockedBonus()
-        {
-            if (_board == null) return -1;
-            for (int i = 0; i < _board.Branches.Count; i++)
-            {
-                var st = _board.Branches[i];
-                if (st == null || !st.IsBonus || !st.AdLocked || st.Broken) continue;
-                int ord = BonusBranches.Ordinal(_board, i);
-                if (ord >= 0 && ord < _bonusOn.Length && _bonusOn[ord]) continue;
-                return i;
-            }
-            return -1;
-        }
-
         // One grant per gift per stage. Never grows a new limb, so a later tap
-        // cannot run the ad again.
+        // cannot run the ad again. A stale preferred index falls through to the
+        // next locked gift (freeze continue after an earlier claim).
         Vector3 UnlockBonus(int i)
         {
-            if (_board == null || (uint)i >= (uint)_board.Branches.Count) return Vector3.zero;
-            var st = _board.Branches[i];
-            if (st == null || !st.IsBonus) return Vector3.zero;
-            int ord = BonusBranches.Ordinal(_board, i);
-            if (ord < 0 || ord >= _bonusOn.Length) return Vector3.zero;
-            if (_bonusOn[ord])
+            int grant = BonusBranches.Claim(_board, _bonusOn, i);
+            if (grant == 0)
             {
-                st.AdLocked = false;
-                st.Broken = false;
                 RefreshBonusSigns();
                 return Vector3.zero;
             }
-            _bonusOn[ord] = true;
+            if (grant < 0) return Vector3.zero;
             // Conserve below puts short birds on the perch with the most free
-            // seats. Open empty first, and FindSeat will not use a gift.
-            BonusBranches.OpenEmpty(st);
+            // seats. Claim opens empty first, and FindSeat will not use a gift.
             var v = i < _garden.Branches.Length ? _garden.Branches[i] : null;
             if (v != null)
             {
@@ -16381,26 +16499,63 @@ namespace FlockFive
         static GUIStyle _giftTitle, _giftWatch, _giftX, _freezeCont;
 
         const string StreakKeepTitle = "Wait!";
-        const string StreakKeepBody = "Restarting will reset your streak. Watch an Ad to keep your multiplier?";
+        static string _streakKeepBody;
+        static int _streakKeepMul = -1;
+
+        static readonly string[] _mulChip = { "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10" };
+
+        static string MulChip(int mul)
+        {
+            int d = StreakTier.Display(mul);
+            if ((uint)d < (uint)_mulChip.Length) return _mulChip[d];
+            return "x" + d;
+        }
+
+        static string StreakKeepLine(int mul)
+        {
+            int shown = StreakTier.Display(mul);
+            if (shown < 2) shown = 2;
+            if (_streakKeepMul != shown)
+            {
+                _streakKeepMul = shown;
+                _streakKeepBody = "Restarting resets your x" + shown + " streak. Watch an ad to keep it?";
+            }
+            return _streakKeepBody;
+        }
 
         void DrawStreakCaution(Rect headR, float s, GUIStyle title)
         {
-            float mark = Mathf.Min(headR.width * 0.22f, 52f * s);
-            var tri = new Rect(headR.center.x - mark * 0.5f, headR.y, mark, mark * 0.88f);
-            DrawCautionMark(tri);
-            float titleH = Mathf.Max(22f * s, headR.height * 0.22f);
-            var titleR = new Rect(headR.x, tri.yMax + 2f * s, headR.width, titleH);
-            float bodyTop = titleR.yMax + 2f * s;
-            var bodyR = new Rect(headR.x, bodyTop, headR.width, Mathf.Max(20f, headR.yMax - bodyTop));
-            var fill = new Color(1f, 0.96f, 0.72f, 1f);
+            int mul = _restartSavedMul >= 2 ? _restartSavedMul : 2;
+            float d = Mathf.Min(headR.width * 0.30f, 78f * s);
+            var chip = new Rect(headR.center.x - d * 0.5f, headR.y, d, d);
+            string numeral = MulChip(mul);
+            var ink = StreakBadge.Colors(mul);
             title.wordWrap = false;
             title.alignment = TextAnchor.MiddleCenter;
-            int hi = Mathf.Max(18, Mathf.RoundToInt(28f * s));
-            DrawPopupTitle(titleR, StreakKeepTitle, title, fill, 14, hi, 1f, 0.9f, 1, 2, 0f, 0.04f, 1f, titleR.center);
+            title.fontStyle = FontStyle.Bold;
+            StreakBadge.NumeralFit(chip, out float fitW, out float fitH);
+            int chipHi = Mathf.Max(16, Mathf.RoundToInt(fitH));
+            title.fontSize = FitFont(title, numeral, fitW, fitH, 12, chipHi);
+            StreakBadge.Draw(chip, numeral, title, ink, 1f, 0.4f);
+            float g = d * 0.40f;
+            var tri = new Rect(chip.xMax - g * 0.55f, chip.y - g * 0.06f, g, g * 0.88f);
+            DrawCautionMark(tri);
+            title.fontSize = FitFont(title, "!", tri.width * 0.7f, tri.height * 0.55f, 12, Mathf.Max(14, Mathf.RoundToInt(g * 0.55f)));
+            StampOutlined(new Rect(tri.x, tri.y + tri.height * 0.18f, tri.width, tri.height * 0.62f), "!", title, Color.white, 0, 2);
+            float titleH = Mathf.Max(28f * s, headR.height * 0.22f);
+            var titleR = new Rect(headR.x, chip.yMax + 4f * s, headR.width, titleH);
+            float bodyTop = titleR.yMax + 2f * s;
+            var bodyR = new Rect(headR.x, bodyTop, headR.width, Mathf.Max(20f, headR.yMax - bodyTop));
+            var fill = new Color(1f, 0.98f, 0.92f, 1f);
+            title.wordWrap = false;
+            int hi = Mathf.Max(22, Mathf.RoundToInt(40f * s));
+            DrawPopupTitle(titleR, StreakKeepTitle, title, fill, 16, hi, 1f, 0.9f, 0, 3, 0f, 0.04f, 1f, titleR.center);
             title.wordWrap = true;
-            int bodyHi = Mathf.Max(13, Mathf.RoundToInt(18f * s));
-            title.fontSize = FitFontWrapped(title, StreakKeepBody, bodyR.width, bodyR.height * 0.92f, 11, bodyHi);
-            StampOutlined(bodyR, StreakKeepBody, title, fill, 1, 2);
+            string body = StreakKeepLine(mul);
+            int bodyHi = Mathf.Max(16, Mathf.RoundToInt(26f * s));
+            title.fontSize = FitFontWrapped(title, body, bodyR.width, bodyR.height * 0.92f, 13, bodyHi);
+            int bodyInk = Mathf.Max(2, Mathf.RoundToInt(title.fontSize * 0.12f));
+            StampOutlined(bodyR, body, title, fill, 0, bodyInk);
         }
 
         void DrawGiftOffer(float s)
@@ -16441,6 +16596,22 @@ namespace FlockFive
             GiftCardPlaced(s, out var card, out var cta);
             Rect cont = default;
             if (_freezeOffer) PlaceFreeze(s, out card, out cta, out cont);
+            var retryRest = cta;
+            float retryU = 1f;
+            float contU = 1f;
+            float frostA = 1f;
+            if (_freezeOffer)
+            {
+                float age = _freezeShownAt < 0f ? 0f : Time.unscaledTime - _freezeShownAt;
+                float signU = PopupMotion.Beat(age, 0f, 0.48f);
+                card.y += PopupMotion.Fall(signU, -Mathf.Max(40f * s, card.height * 0.42f));
+                retryU = PopupMotion.Beat(age, 0.18f, 0.32f);
+                contU = PopupMotion.Beat(age, 0.30f, 0.34f);
+                frostA = PopupMotion.EnterAlpha(signU);
+                SparkleFx.Tick(Time.unscaledDeltaTime);
+                SparkleFx.DriftSnow(new Rect(0f, 0f, Screen.width, Screen.height), FoliageSway.LowPower ? 3 : 6);
+                DrawFrostVignette(s, frostA);
+            }
 
             float t = Time.unscaledTime;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
@@ -16477,11 +16648,11 @@ namespace FlockFive
             string head = _freezeOffer
                 ? "No more moves, you're frozen!"
                 : "Watch AD for an extra branch";
-            // Inset past the screw bases so the headline never sits under a bulb.
-            // The freeze line sits lower so the top bulbs keep a clear band.
+            // Inset past the screw bases so the gift headline never sits under a bulb.
+            // The freeze sign has no bulbs, so its line uses that same inset on every side.
             float insetX = Mathf.Max(12f * s, plate.width * 0.08f);
             float insetY = Mathf.Max(10f * s, plate.height * 0.12f);
-            float topInset = _freezeOffer ? Mathf.Max(insetY, plate.height * 0.20f) : insetY;
+            float topInset = insetY;
             var headR = new Rect(plate.x + insetX, plate.y + topInset, plate.width - insetX * 2f, plate.height - topInset - insetY);
             GUI.color = new Color(1f, 0.72f, 0.16f, 0.40f + 0.22f * breathe);
             GUI.DrawTexture(new Rect(headR.x - 8f * s, headR.y - 6f * s, headR.width + 16f * s, headR.height + 12f * s), glow, ScaleMode.ScaleToFit, true);
@@ -16499,7 +16670,14 @@ namespace FlockFive
                 DrawStreakCaution(headR, s, title);
             else
             {
-                int headLo = Mathf.Max(14, Mathf.RoundToInt(16f * s));
+                if (_freezeOffer)
+                {
+                    var cap = CoachLineStyle();
+                    if (cap != null && cap.font != null) title.font = cap.font;
+                }
+                int headLo = _freezeOffer
+                    ? Mathf.Max(15, Mathf.RoundToInt(17f * s))
+                    : Mathf.Max(14, Mathf.RoundToInt(16f * s));
                 int headHi = Mathf.Max(headLo + 4, Mathf.RoundToInt(40f * s));
                 title.fontSize = FitFontWrapped(title, head, headR.width, headR.height * 0.92f, headLo, headHi);
                 var headContent = GuiPool.Text(GuiText.GiftHead, head);
@@ -16515,18 +16693,39 @@ namespace FlockFive
             }
 
             // Fewer, smaller lamps than the shared 16-bulb floor. FitMarquee keeps
-            // the ring mirrored and evenly spaced. Streak and VIP keep the default.
-            DrawGiftMarquee(plate, s, t, 1f, -1f, 0f, 10, 0.048f, false, 0.16f, 0f, card);
+            // the ring mirrored and evenly spaced. The freeze page has no bulbs.
+            if (_freezeOffer)
+                DrawIceCrystals(card, s, frostA);
+            else
+                DrawGiftMarquee(plate, s, t, 1f, -1f, 0f, 10, 0.048f, false, 0.16f, 0f, card);
 
             if (_freezeOffer)
             {
-                var retryDisc = FlowerDisc(cta, 0f);
+                bool retryReady = retryU > 0.62f;
+                bool contReady = contU > 0.62f;
+                var retryDisc = FlowerDisc(retryRest, 0f);
                 float pad = 8f * s;
                 var retryHit = new Rect(retryDisc.x - pad, retryDisc.y - pad * 0.35f, retryDisc.width + pad * 2f, retryDisc.height + pad * 0.7f);
-                bool retry = HitPad(retryHit, out bool retryHeld);
-                bool contGo = HitPad(cont, out bool contHeld);
-                DrawFreezeRetry(cta, retryHeld, s);
-                DrawFreezeContinue(cont, contHeld, s, t);
+                // Held stays false when the pop has not opened the hit yet.
+                bool retryHeld = false;
+                bool contHeld = false;
+                bool retry = retryReady && HitPad(retryHit, out retryHeld);
+                bool contGo = contReady && HitPad(cont, out contHeld);
+                float retryPop = PopupMotion.PopScale(retryU);
+                if (retryPop > 0.04f)
+                {
+                    var prev = GUI.matrix;
+                    GUIUtility.ScaleAroundPivot(new Vector2(retryPop, retryPop), retryRest.center);
+                    DrawFreezeRetry(retryRest, retryHeld, s);
+                    GUI.matrix = prev;
+                }
+                float pulse = 1f;
+                if (!contHeld && contU >= 1f)
+                    pulse = 1f + 0.028f * Mathf.Sin(t * 2.5f);
+                float contPop = PopupMotion.PopScale(contU) * pulse;
+                if (contPop > 0.04f)
+                    DrawFreezeWatch(cont, contHeld, s, contPop);
+                if (GuiPaint()) SparkleFx.DrawDrift(frostA);
                 if (retry)
                 {
                     DismissAdHand();
@@ -16587,36 +16786,63 @@ namespace FlockFive
             }
         }
 
-        // Frozen board: Retry is the big flower. Continue is a smaller ad sign under it.
+        // Frozen board: the wood sign, the round Retry, then a wide green
+        // continue bar. The stack stays above the hive and the back arrow.
         static void PlaceFreeze(float s, out Rect card, out Rect retry, out Rect cont)
         {
+            HudLayout(out _, out _, out _, out var restart, out var hive);
+            float topLimit = TopHud() + 6f * s;
+            float botLimit = Mathf.Min(restart.y, hive.y) - 12f * s;
+            if (botLimit < topLimit + 48f) botLimit = topLimit + 48f;
+            float room = botLimit - topLimit;
+
             float cardW = StandardPopupWidth(s);
             float cardH = cardW * (501f / 780f);
             float retrySz = PopupButtonSize(s, cardW);
             float overlap = retrySz * 0.36f;
-            const float signAspect = 530f / 1126f;
-            float contW = retrySz * 0.66f;
-            float contH = contW * signAspect;
-            float gap = 14f * s;
-            float stackH = cardH + retrySz - overlap + gap + contH;
-            float hiveY = Screen.height - (88f + 12f + 64f) * s;
-            float minY = Screen.height * 0.10f;
-            float cardY = hiveY - 12f * s - stackH;
-            if (cardY < minY) cardY = minY;
+            float contH = Mathf.Max(74f * s, PopupBarHeight(s, cardW) * 1.9f);
+            float contW = Mathf.Min(cardW * 0.98f, Screen.width - 20f * s);
+            if (contW < 8f) contW = 8f;
+            float gap = 12f * s;
+            float stack = cardH + retrySz - overlap + gap + contH;
+            if (stack > room && room > 1f)
+            {
+                float fit = room / stack;
+                if (fit < 0.62f) fit = 0.62f;
+                cardW *= fit;
+                cardH *= fit;
+                retrySz *= fit;
+                overlap = retrySz * 0.36f;
+                contW *= fit;
+                contH = Mathf.Max(60f * s, contH * fit);
+                stack = cardH + retrySz - overlap + gap + contH;
+                if (stack > room)
+                {
+                    float cut = stack - room;
+                    float cardCut = Mathf.Min(cut, cardH * 0.22f);
+                    cardH -= cardCut;
+                    cut -= cardCut;
+                    if (cut > 0f) contH = Mathf.Max(56f * s, contH - cut);
+                    stack = cardH + retrySz - overlap + gap + contH;
+                }
+            }
+            float cardY = botLimit - stack;
+            if (cardY < topLimit) cardY = topLimit;
             card = new Rect((Screen.width - cardW) * 0.5f, cardY, cardW, cardH);
             retry = new Rect((Screen.width - retrySz) * 0.5f, card.yMax - overlap, retrySz, retrySz);
             cont = new Rect((Screen.width - contW) * 0.5f, retry.yMax + gap, contW, contH);
-            float limit = hiveY - 8f * s;
-            if (cont.yMax > limit)
+            if (cont.yMax > botLimit)
             {
-                float shift = cont.yMax - limit;
+                float shift = cont.yMax - botLimit;
                 card.y -= shift;
                 retry.y -= shift;
                 cont.y -= shift;
             }
-            if (card.y < minY)
+            if (card.y < topLimit)
             {
-                float push = minY - card.y;
+                float push = topLimit - card.y;
+                float roomLeft = botLimit - cont.yMax;
+                if (push > roomLeft) push = roomLeft > 0f ? roomLeft : 0f;
                 card.y += push;
                 retry.y += push;
                 cont.y += push;
@@ -16650,42 +16876,166 @@ namespace FlockFive
             StampOutlined(disc, lab, st, new Color(0.28f, 0.12f, 0.04f), 1, ink);
         }
 
-        // Small watch-ad sign under Retry. Bulbs use the same marquee as the card.
-        static void DrawFreezeContinue(Rect sign, bool held, float s, float t)
+        // Wide green continue. Same clay as the restart Keep button. Play mark
+        // on the left, two lines of the shared caption face.
+        static void DrawFreezeWatch(Rect bar, bool held, float s, float pop)
         {
-            if (held) sign.y += sign.height * 0.04f;
-            var tex = SpriteCatalog.AdSign != null ? SpriteCatalog.AdSign.texture : null;
-            if (tex != null)
+            var prev = GUI.matrix;
+            GUIUtility.ScaleAroundPivot(new Vector2(pop, pop), bar.center);
+            if (!held)
             {
-                GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.28f);
-                GUI.DrawTexture(new Rect(sign.x + 3f, sign.y + 5f, sign.width, sign.height), tex, ScaleMode.ScaleToFit, true);
-                GUI.color = held ? new Color(0.86f, 0.86f, 0.86f, 1f) : Color.white;
-                GUI.DrawTexture(sign, tex, ScaleMode.ScaleToFit, true);
+                float wave = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.5f);
+                var glow = GlowTex();
+                float pad = bar.height * (0.16f + 0.05f * wave);
+                GUI.color = new Color(0.50f, 0.95f, 0.58f, 0.18f + 0.10f * wave);
+                GUI.DrawTexture(new Rect(bar.x - pad, bar.y - pad * 0.45f, bar.width + pad * 2f, bar.height + pad), glow, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
             }
-            // The plank is the left of the art. The arrow head is the right third.
-            var board = new Rect(sign.x + sign.width * 0.04f, sign.y + sign.height * 0.16f, sign.width * 0.58f, sign.height * 0.68f);
-            DrawGiftMarquee(board, s, t, 1f, -1f, 0f, 8, 0.11f);
-            var lab = new Rect(board.x + board.width * 0.22f, board.y, board.width * 0.74f, board.height);
+            var face = DrawPopupButton(bar, held, PopupTint.Green);
+            DrawPlayAdIcon(new Rect(face.x, face.center.y - face.height * 0.42f, face.height * 0.84f, face.height * 0.84f));
+            float textX = face.x + face.height * 0.92f;
+            var words = new Rect(textX, face.y, Mathf.Max(8f, face.xMax - textX), face.height);
+            // Two bands with a gap so the title outline does not sit on the bonus line.
+            float gap = Mathf.Max(2f, words.height * 0.04f);
+            float titleH = (words.height - gap) * 0.58f;
+            var titleR = new Rect(words.x, words.y, words.width, titleH);
+            var subR = new Rect(words.x, titleR.yMax + gap, words.width, Mathf.Max(8f, words.yMax - titleR.yMax - gap));
+            if (_giftWatch == null)
+                _giftWatch = new GUIStyle(GUI.skin.label)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = false
+                };
+            var st = _giftWatch;
+            var cap = CoachLineStyle();
+            if (cap != null && cap.font != null) st.font = cap.font;
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
+            const string watch = "Watch Ad to Continue";
+            int hi = Mathf.Max(16, Mathf.RoundToInt(26f * s));
+            st.fontSize = FitFont(st, watch, titleR.width, titleR.height, 11, hi);
+            var content = GuiPool.Text(GuiText.FreezeContinue, watch);
+            int guard = 0;
+            while (st.fontSize > 10 && guard < 20 && st.CalcSize(content).x > titleR.width)
+            {
+                st.fontSize -= 1;
+                guard++;
+            }
+            int ink = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 2, 6);
+            StampOutlined(titleR, watch, st, Color.white, 0, ink);
             if (_freezeCont == null)
                 _freezeCont = new GUIStyle(GUI.skin.label)
                 {
                     alignment = TextAnchor.MiddleCenter,
                     wordWrap = false
                 };
-            var st = _freezeCont;
-            st.fontStyle = FontStyle.Bold;
-            const string text = "Continue";
-            int hi = Mathf.Max(10, Mathf.RoundToInt(14f * s));
-            st.fontSize = FitFont(st, text, lab.width, lab.height * 0.72f, 8, hi);
-            var content = GuiPool.Text(GuiText.FreezeContinue, text);
-            int guard = 0;
-            while (st.fontSize > 8 && guard < 16 && st.CalcSize(content).x > lab.width)
+            var sub = _freezeCont;
+            if (cap != null && cap.font != null) sub.font = cap.font;
+            sub.fontStyle = FontStyle.Bold;
+            sub.alignment = TextAnchor.MiddleCenter;
+            sub.wordWrap = false;
+            const string bonus = "+ Bonus Branch";
+            int subHi = Mathf.Max(12, Mathf.RoundToInt(st.fontSize * 0.72f));
+            sub.fontSize = FitFont(sub, bonus, subR.width, subR.height, 10, subHi);
+            var subContent = GuiPool.Text(GuiText.FreezeBonus, bonus);
+            int subGuard = 0;
+            while (sub.fontSize > 9 && subGuard < 16 && sub.CalcSize(subContent).x > subR.width)
             {
-                st.fontSize -= 1;
-                guard++;
+                sub.fontSize -= 1;
+                subGuard++;
             }
-            StampOutlined(lab, text, st, new Color(0.28f, 0.12f, 0.04f), 1, 1);
+            StampOutlined(subR, bonus, sub, new Color(0.93f, 1f, 0.86f, 1f), 0, Mathf.Max(1, ink - 1));
+            GUI.matrix = prev;
+            GUI.color = Color.white;
+        }
+
+        static Texture2D _playAdIcon;
+
+        static void DrawPlayAdIcon(Rect r)
+        {
+            if (r.width < 4f || r.height < 4f) return;
+            var tex = PlayAdIcon();
+            GUI.color = Color.white;
+            GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
+        }
+
+        static Texture2D PlayAdIcon()
+        {
+            if (_playAdIcon != null) return _playAdIcon;
+            const int n = 48;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = "PlayAd"
+            };
+            var px = new Color32[n * n];
+            float cx = n * 0.46f;
+            float cy = n * 0.50f;
+            float rad = n * 0.36f;
+            for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+            {
+                float nx = (x + 0.5f - cx) / rad;
+                float ny = (y + 0.5f - cy) / rad;
+                const float left = -0.70f;
+                const float right = 0.96f;
+                float t = (nx - left) / (right - left);
+                if (t < 0f || t > 1f) continue;
+                if (Mathf.Abs(ny) > (1f - t) * 0.92f) continue;
+                px[y * n + x] = new Color32(255, 255, 255, 255);
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _playAdIcon = tex;
+            return tex;
+        }
+
+        static void DrawFrostVignette(float s, float alpha)
+        {
+            if (alpha < 0.02f) return;
+            var glow = GlowTex();
+            if (glow == null) return;
+            float w = Screen.width;
+            float h = Screen.height;
+            float d = Mathf.Max(w, h) * 0.62f;
+            GUI.color = new Color(0.68f, 0.88f, 1f, 0.18f * alpha);
+            GUI.DrawTexture(new Rect(-d * 0.32f, -d * 0.34f, d, d), glow, ScaleMode.ScaleToFit, true);
+            GUI.DrawTexture(new Rect(w - d * 0.68f, -d * 0.34f, d, d), glow, ScaleMode.ScaleToFit, true);
+            GUI.DrawTexture(new Rect(-d * 0.32f, h - d * 0.66f, d, d), glow, ScaleMode.ScaleToFit, true);
+            GUI.DrawTexture(new Rect(w - d * 0.68f, h - d * 0.66f, d, d), glow, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+        }
+
+        // Angles are fixed. Positions are computed in the loop so OnGUI does not allocate.
+        static readonly float[] IceAng = { -16f, 22f, 14f, -26f };
+
+        static void DrawIceCrystals(Rect card, float s, float alpha)
+        {
+            if (alpha < 0.02f) return;
+            var spr = SpriteCatalog.IceShard;
+            if (spr == null || spr.texture == null) return;
+            float sz = Mathf.Clamp(card.width * 0.10f, 16f * s, 40f * s);
+            var tex = spr.texture;
+            var prev = GUI.matrix;
+            GUI.color = new Color(0.88f, 0.96f, 1f, 0.78f * alpha);
+            for (int i = 0; i < IceAng.Length; i++)
+            {
+                float x;
+                float y;
+                if (i == 0) { x = card.x + sz * 0.15f; y = card.y + sz * 0.05f; }
+                else if (i == 1) { x = card.xMax - sz * 0.2f; y = card.y + sz * 0.2f; }
+                else if (i == 2) { x = card.x + sz * 0.05f; y = card.yMax - sz * 0.35f; }
+                else { x = card.xMax - sz * 0.1f; y = card.yMax - sz * 0.15f; }
+                var at = new Vector2(x, y);
+                GUI.matrix = prev;
+                GUIUtility.RotateAroundPivot(IceAng[i], at);
+                GUI.DrawTexture(new Rect(at.x - sz * 0.5f, at.y - sz * 0.5f, sz, sz * 0.72f), tex, ScaleMode.ScaleToFit, true);
+            }
+            GUI.matrix = prev;
+            GUI.color = Color.white;
         }
 
         // Card plus the flower the Watch label sits on. Shared with the ad-hand aim
@@ -16852,32 +17202,6 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        // Round icons. radius is the circle's outer edge. Bulbs sit just outside it,
-        // screw toward the center. avoid skips a body that would cover a ribbon or flame.
-        static void DrawGiftMarqueeRing(Vector2 origin, float radius, float s, float t, float alpha, float glassPx, int lampWant, bool steady, Rect avoid)
-        {
-            if (radius < 8f || alpha < 0.02f) return;
-            var bulb = SpriteCatalog.AdBulb;
-            var glow = GlowTex();
-            var tex = bulb != null ? bulb.texture : null;
-            int n = Mathf.Clamp(lampWant, 6, 16);
-            float szOn = glassPx > 0f ? glassPx : Mathf.Max(10f * s, radius * 0.28f);
-            float pitch = (Mathf.PI * 2f * radius) / n;
-            float cap = pitch * 0.62f;
-            if (szOn > cap) szOn = cap;
-            if (szOn < 4f) return;
-            float szOff = szOn * 0.82f;
-            for (int i = 0; i < n; i++)
-            {
-                float lit = MarqueeLit(i, n, t);
-                float sz = steady ? szOn : Mathf.Lerp(szOff, szOn, lit);
-                WorldBuilder.RadialSeat(origin, radius, i, n, sz * 0.5f, out var rim, out var seat, out var outward, out float spin);
-                if (BulbBlocked(seat, sz, avoid)) continue;
-                DrawMarqueeLamp(rim, seat, spin, outward, sz, lit, alpha, 0.72f, tex, glow);
-            }
-            GUI.color = Color.white;
-        }
-
         // One readable chase (~2.6s) plus a slower counter-glow.
         static float MarqueeLit(int i, int n, float t)
         {
@@ -16953,13 +17277,6 @@ namespace FlockFive
             if (body.Overlaps(botLeft)) return true;
             if (body.Overlaps(botRight)) return true;
             return false;
-        }
-
-        static bool BulbBlocked(Vector2 c, float sz, Rect block)
-        {
-            if (block.width < 4f || block.height < 4f) return false;
-            var body = new Rect(c.x - sz * 0.5f, c.y - sz * 0.5f, sz, sz);
-            return body.Overlaps(block);
         }
 
         void DrawGiftMovie(float s)

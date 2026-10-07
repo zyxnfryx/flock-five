@@ -254,6 +254,57 @@ namespace FlockFive
             PlayVoice(clip, pitch, vol);
         }
 
+        static AudioSource _planeSrc;
+        static AudioClip _planeClip;
+        static bool _planeHeld;
+
+        // Splash flyby. One voice, not a loop and not a bed. Pan is +1 on the
+        // right and -1 on the left. env is 0..1. Mid refuses while lead is hot.
+        public static void PlaneBegin()
+        {
+            _planeHeld = false;
+            PrepareSkyBoom();
+        }
+
+        public static void PlanePass(float pan, float env)
+        {
+            Ensure();
+            if (_host == null) return;
+            if (MixDesk.Live != null && !MixDesk.Live.AllowMid)
+            {
+                if (_planeSrc != null && _planeSrc.isPlaying) _planeSrc.Stop();
+                _planeHeld = true;
+                return;
+            }
+            if (_planeClip == null) _planeClip = MakePlaneZoom();
+            if (_planeSrc == null)
+            {
+                _planeSrc = _host.gameObject.AddComponent<AudioSource>();
+                _planeSrc.playOnAwake = false;
+                _planeSrc.loop = false;
+                _planeSrc.spatialBlend = 0f;
+                ShareListener(_planeSrc);
+            }
+            if (_planeHeld && !_planeSrc.isPlaying) return;
+            if (!_planeSrc.isPlaying)
+            {
+                _planeSrc.clip = _planeClip;
+                _planeSrc.Play();
+                _planeHeld = true;
+            }
+            if (pan < -1f) pan = -1f;
+            else if (pan > 1f) pan = 1f;
+            _planeSrc.panStereo = pan;
+            float vol = env < 0f ? 0f : (env > 1f ? 1f : env);
+            _planeSrc.volume = SfxLibrary.Level(0.22f * vol);
+        }
+
+        public static void PlaneStop()
+        {
+            _planeHeld = false;
+            if (_planeSrc != null && _planeSrc.isPlaying) _planeSrc.Stop();
+        }
+
         public static void PlayProc(AudioClip clip, float pitch, float vol, MixLayer layer)
         {
             Ensure();
@@ -600,6 +651,27 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.32f, MixDesk.DuckWhoosh);
         }
 
+        // Season arrive. Lead whoosh from the existing bank, under a feeder leave.
+        // Desert adds one quiet Ching after the whoosh has left the seat. No new clip.
+        public static void SeasonArrive(bool rich)
+        {
+            Ensure();
+            if (_lifts == null || _lifts.Length == 0) return;
+            int i = Next(_lifts.Length, ref _lastLift);
+            float vol = rich ? 0.48f : 0.36f;
+            Shot(_lifts[i], Random.Range(0.97f, 1.01f), vol, MixLayer.Lead, MixDesk.DuckWhoosh);
+            if (!rich || _host == null || _chings == null || _chings.Length == 0) return;
+            _host.StartCoroutine(DesertChing());
+        }
+
+        static System.Collections.IEnumerator DesertChing()
+        {
+            yield return PlayClock.Wait(0.62f);
+            if (_chings == null || _chings.Length == 0) yield break;
+            int i = Next(_chings.Length, ref _lastChing);
+            Shot(_chings[i], 1f, 0.20f, MixLayer.Lead, MixDesk.DuckChirp);
+        }
+
         public static void Sleep()
         {
             Ensure();
@@ -638,6 +710,7 @@ namespace FlockFive
         static AudioClip _fwWhistle;
         static AudioClip _fwCrackle;
         static float _fwCrackleAt;
+        static AudioClip[] _skyBoom;
 
         public static void FireworkLaunch()
         {
@@ -664,6 +737,34 @@ namespace FlockFive
                 return;
             }
             Shot(_fwCrackle, pitch, vol, MixLayer.Mid);
+        }
+
+        // Flyby shells. Mid, so a hot lead ducks them instead of sharing the seat.
+        // which 0 and 1 are the round bursts. which 2 is the heart: lower, longer, louder.
+        public static void SkyBoom(int which)
+        {
+            Ensure();
+            PrepareSkyBoom();
+            if (which < 0) which = 0;
+            if (which > 2) which = 2;
+            var clip = _skyBoom[which];
+            if (clip == null) return;
+            float vol = 0.20f;
+            if (which == 1) vol = 0.23f;
+            if (which == 2) vol = 0.28f;
+            if (MixDesk.Live != null && !MixDesk.Live.AllowMid)
+            {
+                PlayVoice(clip, 1f, vol * 0.45f);
+                return;
+            }
+            Shot(clip, 1f, vol, MixLayer.Mid);
+        }
+
+        public static void PrepareSkyBoom()
+        {
+            if (_skyBoom == null) _skyBoom = new AudioClip[3];
+            for (int i = 0; i < 3; i++)
+                if (_skyBoom[i] == null) _skyBoom[i] = MakeSkyBoom(i);
         }
 
         static AudioClip MakeFwWhistle()

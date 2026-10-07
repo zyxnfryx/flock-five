@@ -48,5 +48,56 @@ namespace FlockFive
             st.Birds.Clear();
             st.Shrouded.Clear();
         }
+
+        // Freeze continue pays for a finished view. Ads switched off use the
+        // same free grant as the gift sign. A cancel, or a show that never
+        // played, pays nothing.
+        public static bool ContinuePays(bool earned, bool granted, bool adsEnabled)
+        {
+            if (earned) return true;
+            return !adsEnabled && granted;
+        }
+
+        // The gift a continue (or a sign tap) should open. A preferred limb
+        // that is still locked wins. A stale or already-claimed one falls
+        // through to the next locked gift. -1 when none is left.
+        public static int ContinueIndex(Board b, bool[] claimed, int preferred)
+        {
+            if (LockedGift(b, claimed, preferred)) return preferred;
+            if (b == null) return -1;
+            for (int i = 0; i < b.Branches.Count; i++)
+                if (LockedGift(b, claimed, i)) return i;
+            return -1;
+        }
+
+        // 1 = a new empty perch, 0 = that gift was already claimed (lock cleared),
+        // -1 = nothing to open. The view shake and burst stay with the caller.
+        public static int Claim(Board b, bool[] claimed, int i)
+        {
+            if (b == null || claimed == null || (uint)i >= (uint)b.Branches.Count) return -1;
+            var st = b.Branches[i];
+            if (st == null || !st.IsBonus) return -1;
+            int ord = Ordinal(b, i);
+            if (ord < 0 || ord >= claimed.Length) return -1;
+            if (claimed[ord])
+            {
+                st.AdLocked = false;
+                st.Broken = false;
+                return 0;
+            }
+            claimed[ord] = true;
+            OpenEmpty(st);
+            return 1;
+        }
+
+        static bool LockedGift(Board b, bool[] claimed, int i)
+        {
+            if (b == null || claimed == null || (uint)i >= (uint)b.Branches.Count) return false;
+            var st = b.Branches[i];
+            if (st == null || !st.IsBonus || !st.AdLocked || st.Broken) return false;
+            int ord = Ordinal(b, i);
+            if (ord < 0 || ord >= claimed.Length || claimed[ord]) return false;
+            return true;
+        }
     }
 }

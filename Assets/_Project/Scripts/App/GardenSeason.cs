@@ -22,6 +22,7 @@ namespace FlockFive
     //          on a honey badger garden slides +1 (repeat until clean), and the next
     //          8 counts from where it actually landed.
     // Brandon's rule: a backdrop change never lands on a honey badger garden.
+    // SeasonReveal plays that change once, the first time the garden is entered.
     public static class GardenSeason
     {
         public const int DesertFrom = 15;

@@ -78,7 +78,8 @@ namespace FlockFive
             Fill = new Color(0.92f, 0.64f, 0.12f, 1f),
             Sheen = new Color(1f, 0.97f, 0.80f, 1f),
             Edge = new Color(0.12f, 0.06f, 0.02f, 1f),
-            Numeral = new Color(0.22f, 0.09f, 0.02f, 1f),
+            // Cream, not the antique brown: brown sat on the gold face and disappeared.
+            Numeral = new Color(1f, 0.98f, 0.94f, 1f),
             Shimmer = true
         };
 
@@ -126,9 +127,11 @@ namespace FlockFive
             GUI.color = fill;
             GUI.DrawTexture(upper, disc, ScaleMode.ScaleToFit, true);
 
-            float capW = face.width * 0.62f;
-            float capH = face.height * 0.36f;
-            var cap = new Rect(face.center.x - capW * 0.5f, face.y + face.height * 0.06f, capW, capH);
+            // Upper-left gloss, above the numeral. A wide cap across the middle
+            // sat behind "x10" and washed the digits out.
+            float capW = face.width * 0.34f;
+            float capH = face.height * 0.20f;
+            var cap = new Rect(face.x + face.width * 0.08f, face.y + face.height * 0.045f, capW, capH);
             var sheen = ink.Sheen;
             sheen.a = (ink.Shimmer ? 0.90f : 0.58f) * a;
             GUI.color = sheen;
@@ -136,15 +139,15 @@ namespace FlockFive
 
             if (ink.Shimmer)
             {
-                float dot = face.width * 0.15f;
-                var spec = new Rect(face.x + face.width * 0.24f, face.y + face.height * 0.14f, dot, dot * 0.70f);
-                GUI.color = new Color(1f, 0.99f, 0.94f, 0.50f * a);
+                float dot = face.width * 0.10f;
+                var spec = new Rect(face.x + face.width * 0.12f, face.y + face.height * 0.07f, dot, dot * 0.62f);
+                GUI.color = new Color(1f, 0.99f, 0.94f, 0.55f * a);
                 GUI.DrawTexture(spec, disc, ScaleMode.ScaleToFit, true);
                 DrawSweep(face, a, disc);
             }
 
             GUI.color = Color.white;
-            int dark = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.11f), 2, 4);
+            int dark = Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.20f), 3, 8);
             var numeral = ink.Numeral;
             numeral.a = a;
             DrawNumeral(r, text, st, numeral, dark);
@@ -161,10 +164,11 @@ namespace FlockFive
             float u = Mathf.Repeat(Time.unscaledTime * 0.16f, 1f);
             float fade = Mathf.Sin(u * Mathf.PI);
             if (fade < 0.04f) return;
-            float travel = Mathf.Lerp(0.08f, 0.70f, u);
-            float w = face.width * 0.16f;
-            float h = face.height * 0.62f;
-            var band = new Rect(face.x + face.width * travel, face.y + face.height * 0.19f, w, h);
+            // Stay in the upper-left gloss. A tall band crossed the numeral.
+            float travel = Mathf.Lerp(0.06f, 0.32f, u);
+            float w = face.width * 0.12f;
+            float h = face.height * 0.18f;
+            var band = new Rect(face.x + face.width * travel, face.y + face.height * 0.04f, w, h);
             GUI.color = new Color(1f, 0.99f, 0.90f, 0.24f * fade * alpha);
             GUI.DrawTexture(band, disc, ScaleMode.StretchToFill, true);
         }
@@ -176,16 +180,38 @@ namespace FlockFive
             SparkleFx.DrawBorder(r, r.width * 0.07f, alpha, gold, sizeFrac: 0.12f, round: true);
         }
 
+        // Box the caller fits "x10" into, so the thick outline and the drop shadow
+        // stay inside the rim. Width is the tight axis on "x10".
+        public static void NumeralFit(Rect disc, out float width, out float height)
+        {
+            width = disc.width * 0.56f;
+            height = disc.height * 0.42f;
+        }
+
         static void DrawNumeral(Rect r, string text, GUIStyle st, Color ink, int darkPx)
         {
             if (string.IsNullOrEmpty(text)) return;
             float a = Mathf.Clamp01(ink.a);
             if (a < 0.04f) return;
+            var prevStyle = st.fontStyle;
+            var prevAlign = st.alignment;
+            var prevWrap = st.wordWrap;
+            var prevClip = st.clipping;
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
+            st.clipping = TextClipping.Overflow;
+            // Soft drop, down-right, under the outline.
+            float sh = Mathf.Max(2f, st.fontSize * 0.08f);
+            Paint(st, new Color(0.10f, 0.05f, 0.02f, a * 0.28f));
+            GUI.Label(new Rect(r.x + sh * 0.55f, r.y + sh * 0.70f, r.width, r.height), text, st);
+            Paint(st, new Color(0.08f, 0.04f, 0.02f, a * 0.45f));
+            GUI.Label(new Rect(r.x + sh, r.y + sh * 1.15f, r.width, r.height), text, st);
             Paint(st, new Color(0.05f, 0.02f, 0.01f, a));
             int px = darkPx < 1 ? 1 : darkPx;
             for (int ring = 1; ring <= px; ring++)
             {
-                int n = ring >= 3 ? 12 : 8;
+                int n = ring >= 4 ? 16 : ring >= 2 ? 12 : 8;
                 for (int i = 0; i < n; i++)
                 {
                     float ang = i * (Mathf.PI * 2f / n);
@@ -196,6 +222,10 @@ namespace FlockFive
             face.a = a;
             Paint(st, face);
             GUI.Label(r, text, st);
+            st.fontStyle = prevStyle;
+            st.alignment = prevAlign;
+            st.wordWrap = prevWrap;
+            st.clipping = prevClip;
         }
 
         static void Paint(GUIStyle st, Color c)

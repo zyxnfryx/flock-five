@@ -245,6 +245,8 @@ namespace FlockFive
             }
         }
 
+        // Sex is one per color so a flock can still gather. An accessory the
+        // level already set rides through; Pack chooses cosmetic kits after.
         static void StampFlocks(Board b)
         {
             for (int i = 0; i < b.Branches.Count; i++)
@@ -252,8 +254,11 @@ namespace FlockFive
                 var br = b.Branches[i];
                 for (int k = 0; k < br.Birds.Count; k++)
                 {
-                    var c = br.Birds[k].Color;
-                    br.Birds[k] = new Bird(c, SexOf(c));
+                    var prev = br.Birds[k];
+                    var next = new Bird(prev.Color, SexOf(prev.Color));
+                    next.Kit = prev.Kit;
+                    next.KitBinds = prev.KitBinds;
+                    br.Birds[k] = next;
                 }
             }
             MixGenders(b);
@@ -304,7 +309,9 @@ namespace FlockFive
                 for (int k = 0; k < br.Birds.Count; k++)
                 {
                     if (br.Birds[k].Color != color) continue;
-                    br.Birds[k] = new Bird(color, sex);
+                    var bird = br.Birds[k];
+                    bird.Sex = sex;
+                    br.Birds[k] = bird;
                 }
             }
         }

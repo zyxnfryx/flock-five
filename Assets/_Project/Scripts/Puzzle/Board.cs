@@ -182,15 +182,17 @@ namespace FlockFive
             if (!CanMove(from, to, out run)) return false;
             var a = Branches[from];
             var b = Branches[to];
-            var c = a.Tip.Value;
             a.AlignShroud();
             b.AlignShroud();
+            // Each bird, not a copy of the tip, so a cosmetic accessory stays put.
             for (int i = 0; i < run; i++)
             {
-                a.Birds.RemoveAt(a.Birds.Count - 1);
+                int at = a.Birds.Count - 1;
+                var bird = a.Birds[at];
+                a.Birds.RemoveAt(at);
                 if (a.Shrouded.Count > a.Birds.Count)
                     a.Shrouded.RemoveAt(a.Shrouded.Count - 1);
-                b.Birds.Add(c);
+                b.Birds.Add(bird);
                 b.Shrouded.Add(false);
             }
             JustUnveiled = a.RevealExposed() > 0;

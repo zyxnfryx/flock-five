@@ -126,6 +126,11 @@ namespace FlockFive
             // True while a card or the welcome owns the screen (home treats it as modal).
             public static bool IsOpen => _open || _welcome;
 
+            // Purchase landed, or the welcome diamond is still flying home. The rail slot
+            // stays packed (SplashNoAdsRect stays put) but does not draw or take taps until
+            // the flying medal finishes, so the rail badge is the one that landed.
+            public static bool VipWelcomeHoldsRail { get; private set; }
+
             [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
             static void Reset()
             {
@@ -140,6 +145,7 @@ namespace FlockFive
                 _welcome = false;
                 _welAt = -1f;
                 _welExitAt = -1f;
+                VipWelcomeHoldsRail = false;
             }
 
             public static void Anchor(Rect rail)
@@ -179,6 +185,9 @@ namespace FlockFive
                 _open = false;
                 _closeAt = -1f;
                 _welcome = false;
+                // Left home. A welcome in flight will not resume (it is already marked shown),
+                // so the owner's rail badge comes back. Returning welcomed owners never hold.
+                VipWelcomeHoldsRail = false;
             }
 
             // Home face, every pass. Owned while the offer is up (Buy or Restore landed):
@@ -186,12 +195,36 @@ namespace FlockFive
             // once the home is free (no card, lesson, reward pay or streak board).
             public static void Tick()
             {
-                if (!NoAds.Owned) return;
+                // Before the home rail draws: a finished fly hands the slot to the rail badge
+                // on this same frame, at SplashNoAdsRect, with no second medal.
+                SettleWelcome();
+                if (!NoAds.Owned)
+                {
+                    VipWelcomeHoldsRail = false;
+                    return;
+                }
                 if (_open && !_member && !Closing) BeginClose(true);
                 if (_open || _welcome) return;
-                if (PlayerPrefs.GetInt(WelcomedKey, 0) != 0) return;
+                if (PlayerPrefs.GetInt(WelcomedKey, 0) != 0)
+                {
+                    VipWelcomeHoldsRail = false;
+                    return;
+                }
                 if (_app == null || !WelcomeClear()) return;
                 StartWelcome();
+            }
+
+            // Age and the skip / reduce-motion exit share this. exitU >= 1 ends the hold.
+            static void SettleWelcome()
+            {
+                if (!_welcome) return;
+                float now = Time.unscaledTime;
+                if (_welExitAt < 0f && now - _welAt >= WelHold) _welExitAt = now;
+                if (_welExitAt < 0f) return;
+                float exitU = PopupMotion.Beat(now - _welExitAt, 0f, _reduce ? 0.2f : WelExit);
+                if (exitU < 1f) return;
+                _welcome = false;
+                VipWelcomeHoldsRail = false;
             }
 
             static bool WelcomeClear()
@@ -204,6 +237,9 @@ namespace FlockFive
             static void BeginClose(bool quiet)
             {
                 if (!_open || Closing) return;
+                // Buy / Restore just landed on the offer face. Hide the rail badge until the
+                // welcome medal flies into that slot. A member card closing does not hold.
+                if (NoAds.Owned && !_member) VipWelcomeHoldsRail = true;
                 if (!quiet) Sfx.CardTap();
                 if (_reduce)
                 {
@@ -477,6 +513,11 @@ namespace FlockFive
                 return u <= 0f ? 0f : PopupMotion.PopScale(u);
             }
 
+            // Opaque clay starts about 13% down the flower square (PopupCtaOverlap).
+            const float VipPedestalFrac = 0.13f;
+
+            static float FlowerArtTop(Rect flower) => flower.y + flower.height * VipPedestalFrac;
+
             static void SeatCard(float s, Rect status, ref Rect card, ref Rect flower)
             {
                 float ceiling = status.y - 12f * s;
@@ -500,10 +541,34 @@ namespace FlockFive
                 }
                 if (flower.yMax > ceiling && flower.height > 8f)
                 {
+                    // Last resort, and never under today's 1.08 (flower is already at VipBuyScale).
                     float over = flower.yMax - ceiling;
-                    float k = Mathf.Clamp(1f - over / flower.height, 0.62f, 1f);
+                    float minK = 1.08f / Mathf.Max(0.01f, VipBuyScale);
+                    float k = Mathf.Clamp(1f - over / flower.height, minK, 1f);
                     flower = ScaledAbout(flower, k);
                     flower.y = ceiling - flower.height;
+                }
+                // Offer only. The bigger flower must not cover the perks plate. Shift the card
+                // up off the art first. Shrink only if the title (or the close X band) blocks
+                // that shift, and never below today's size. The member crest does not come here.
+                if (_member || flower.height < 8f) return;
+                var plate = AdCardPlate(card);
+                float cover = plate.yMax - FlowerArtTop(flower);
+                if (cover <= 1f) return;
+                float can = card.y - floor;
+                if (can < 0f) can = 0f;
+                float shiftUp = cover < can ? cover : can;
+                card.y -= shiftUp;
+                cover -= shiftUp;
+                if (cover <= 1f) return;
+                float minScale = 1.08f / Mathf.Max(0.01f, VipBuyScale);
+                float center = flower.center.y;
+                float kClear = (center - plate.yMax) / Mathf.Max(1f, flower.height * (0.5f - VipPedestalFrac));
+                if (kClear < minScale) kClear = minScale;
+                if (kClear < 0.999f)
+                {
+                    flower = ScaledAbout(flower, kClear);
+                    if (flower.yMax > ceiling) flower.y = ceiling - flower.height;
                 }
             }
 
@@ -749,19 +814,21 @@ namespace FlockFive
                     };
                 string price = NoAds.PriceLabel();
                 bool priced = !string.IsNullOrEmpty(price);
+                var cream = new Color(1f, 0.98f, 0.93f, 1f);
                 var verb = priced
-                    ? new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.30f)
+                    ? new Rect(disc.x, disc.y + disc.height * 0.14f, disc.width, disc.height * 0.32f)
                     : new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.52f);
                 int hi = Mathf.Max(18, Mathf.RoundToInt(36f * s));
                 _buy.fontSize = FitFont(_buy, BuyLabel, verb.width * 0.78f, verb.height * 0.92f, 12, hi);
-                int ink = Mathf.Clamp(Mathf.RoundToInt(_buy.fontSize * 0.12f), 2, 6);
-                StampOutlined(verb, BuyLabel, _buy, new Color(0.28f, 0.12f, 0.04f), 2, ink);
+                int ink = Mathf.Clamp(Mathf.RoundToInt(_buy.fontSize * 0.14f), 2, 7);
+                StampOutlined(verb, BuyLabel, _buy, cream, 0, ink);
                 if (priced)
                 {
-                    var priceR = new Rect(disc.x + disc.width * 0.08f, verb.yMax, disc.width * 0.84f, disc.height * 0.22f);
-                    int phi = Mathf.Max(12, Mathf.RoundToInt(20f * s));
-                    _buy.fontSize = FitFont(_buy, price, priceR.width, priceR.height * 0.92f, 10, phi);
-                    StampOutlined(priceR, price, _buy, new Color(0.28f, 0.12f, 0.04f), 1, 2);
+                    var priceR = new Rect(disc.x + disc.width * 0.06f, verb.yMax, disc.width * 0.88f, disc.height * 0.30f);
+                    int phi = Mathf.Max(16, Mathf.RoundToInt(34f * s));
+                    _buy.fontSize = FitFont(_buy, price, priceR.width * 0.96f, priceR.height * 0.92f, 12, phi);
+                    int pink = Mathf.Clamp(Mathf.RoundToInt(_buy.fontSize * 0.16f), 2, 8);
+                    StampOutlined(priceR, price, _buy, cream, 0, pink);
                 }
                 if (shineU >= 0f && shineU <= 1f) DrawVipShine(disc, shineU);
                 if (!sparkle) return;
@@ -813,6 +880,7 @@ namespace FlockFive
                 PlayerPrefs.SetInt(WelcomedKey, 1);
                 PlayerPrefs.Save();
                 _welcome = true;
+                VipWelcomeHoldsRail = true;
                 _welAt = Time.unscaledTime;
                 _welExitAt = -1f;
                 _welFanfare = false;
@@ -830,7 +898,9 @@ namespace FlockFive
                 float exitU = _welExitAt >= 0f ? PopupMotion.Beat(now - _welExitAt, 0f, _reduce ? 0.2f : WelExit) : 0f;
                 if (exitU >= 1f)
                 {
+                    // Tick settles this before the rail draw. If Draw runs first, end the same way.
                     _welcome = false;
+                    VipWelcomeHoldsRail = false;
                     return;
                 }
                 bool tap = HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);

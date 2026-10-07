@@ -46,7 +46,8 @@ namespace FlockFive
 
     // One honey-badger contest. Each side has its own grid (4x4 in a real visit).
     // The badger always picks first, at random from the tiles still open.
-    // Higher final honey scores that honey. A tie scores nothing.
+    // Higher final honey scores the margin (winner minus the other). A tie scores nothing.
+    // A loss still scores the badger's full honey. The one place that math lives is ApplyRound.
     // The only side effect is Purse.TrySpend when a power-up is bought.
     public sealed class BadgerFight
     {
@@ -467,6 +468,8 @@ namespace FlockFive
 
         // halvePlayer: the Don't Care debuff (no power-up that round) halves the player's
         // final honey for this compare only.
+        // A player win scores only the margin (playerFinal - bossFinal). 5 vs 3 earns 2.
+        // A badger win still scores the badger's full final honey. A tie scores nothing.
         public static void ApplyRound(int playerHoney, int bossHoney, BadgerPower power, bool forceSkip, bool halvePlayer,
             out int playerFinal, out int bossFinal, out int playerGain, out int bossGain)
         {
@@ -475,7 +478,7 @@ namespace FlockFive
             bossFinal = (forceSkip || IsBlock(power)) ? 0 : bossHoney;
             playerGain = 0;
             bossGain = 0;
-            if (playerFinal > bossFinal) playerGain = playerFinal;
+            if (playerFinal > bossFinal) playerGain = playerFinal - bossFinal;
             else if (bossFinal > playerFinal) bossGain = bossFinal;
         }
 

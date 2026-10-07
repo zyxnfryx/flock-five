@@ -368,7 +368,9 @@ namespace FlockFive
                 else ClaimDaily();
                 return;
             }
-            if (xHit || outside) DismissDaily();
+            // The Daily lesson stays on Claim. A miss must not send the glove back to the rail.
+            // The X is the explicit escape (DismissDaily keeps the lesson alive).
+            if (xHit || (outside && !_dailyIntroLive)) DismissDaily();
         }
 
         void ClaimDaily()

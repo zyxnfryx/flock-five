@@ -94,12 +94,20 @@ namespace FlockFive.Editor
             bool crouch = BadgerLeap.FrameAt(1.0f) == "badger_crouch";
             bool leap = BadgerLeap.FrameAt(1.45f) == "badger_leap_0" && BadgerLeap.FrameAt(2.0f) == "badger_leap_1"
                 && BadgerLeap.FrameAt(2.5f) == "badger_leap_3" && BadgerLeap.FrameAt(2.9f) == "badger_leap_3";
+            var mid = BadgerAnim.Entrance(2.24f);
+            bool blend = mid.Frame == "badger_leap_1" && mid.Under == "badger_leap_3"
+                && mid.UnderAlpha > 0.2f && mid.FrameAlpha > 0.4f;
+            var squat = BadgerAnim.Entrance(1.0f);
+            bool squash = squat.Frame == "badger_crouch" && squat.ScaleY < 0.98f && squat.ScaleX > 1.01f;
+            var fade = BadgerAnim.Idle(0.6f);
+            bool cross = fade.Frame == "badger_idle_b" && fade.Under == "badger_idle_a" && fade.FrameAlpha < 0.05f;
+            bool breathe = BadgerAnim.Idle(0.604f).ScaleY > 1.02f;
             bool grow = Near(BadgerLeap.Grow(1.0f), 0f) && Near(BadgerLeap.Grow(2.6f), 1f)
                 && BadgerLeap.Grow(2.0f) > 0f && BadgerLeap.Grow(2.0f) < 1f && Near(BadgerLeap.Grow(2.9f), 1f);
             bool travel = Near(BadgerLeap.HopTravel(0f), 0f) && Near(BadgerLeap.HopTravel(0.8f), 1f)
                 && Near(BadgerLeap.HopTravel(1.2f), 1f) && Near(BadgerLeap.HopLift(1.0f), 0f);
-            Check("leap frames", hop && crouch && leap && grow && travel,
-                "hop_a/hop_b alternate, crouch, leap_0 -> leap_1 -> leap_3, scale grows to full by 2.6 s");
+            Check("leap frames", hop && crouch && leap && blend && squash && cross && breathe && grow && travel,
+                "hop_a/hop_b alternate, crouch, leap_0 -> leap_1 -> leap_3, leap_2 is a blend, scale grows to full by 2.6 s");
         }
 
         static void CheckLeapWashAndSting(System.Action<string, bool, string> Check)
@@ -135,15 +143,17 @@ namespace FlockFive.Editor
         static void CheckOpeningTiming(System.Action<string, bool, string> Check)
         {
             float d = BadgerOpening.Duration;
-            bool about = d > 2.3f && d < 2.7f;
+            bool about = d > 2.85f && d < 3.30f;
             bool stagger = Near(BadgerOpening.LandAt(1) - BadgerOpening.LandAt(0), 0.1f);
             bool counts = BadgerOpening.LandedCount(0f) == 0
                 && BadgerOpening.LandedCount(BadgerOpening.LandAt(0)) == 1
                 && BadgerOpening.LandedCount(d) == 16;
             bool flip = Near(BadgerOpening.TileLand(3, 0f), 0f) && Near(BadgerOpening.TileLand(3, BadgerOpening.LandAt(3)), 1f)
                 && Near(BadgerOpening.TileLand(15, d), 1f);
-            bool swipe = !BadgerOpening.HiveSwiped(0.1f) && BadgerOpening.HiveSwiped(0.3f)
-                && BadgerOpening.SplatAlpha(0.3f) > 0f && Near(BadgerOpening.SplatAlpha(1.5f), 0f);
+            float hit = BadgerOpening.SwipeHitAt;
+            bool swipe = !BadgerOpening.HiveSwiped(hit - 0.05f) && BadgerOpening.HiveSwiped(hit + 0.02f)
+                && BadgerOpening.SplatAlpha(hit + 0.05f) > 0f
+                && Near(BadgerOpening.SplatAlpha(hit + BadgerOpening.SplatSeconds + 0.05f), 0f);
             bool fly = BadgerOpening.Flight(0, 0f) < 0f && BadgerOpening.Flight(0, BadgerOpening.LandAt(0)) > 1f;
             bool post = Near(BadgerOpening.PostSeconds, 0.6f);
             Check("opening timing", about && stagger && counts && flip && swipe && fly && post,
@@ -346,8 +356,8 @@ namespace FlockFive.Editor
             bool peck = Near(BadgerRoundAct.Peck(0f), 0f)
                 && BadgerRoundAct.Peck(BadgerRoundAct.PeckSeconds * 0.5f) > 0.9f
                 && Near(BadgerRoundAct.Peck(BadgerRoundAct.PeckSeconds), 0f)
-                && BadgerRoundAct.PeckHits(0.10f, 0.30f)
-                && !BadgerRoundAct.PeckHits(0.30f, 0.40f);
+                && BadgerRoundAct.PeckHits(0.30f, 0.48f)
+                && !BadgerRoundAct.PeckHits(0.48f, 0.60f);
             bool splat = BadgerRoundAct.SplatAlpha(hit + 0.02f) > 0.8f
                 && Near(BadgerRoundAct.SplatAlpha(0f), 0f);
             Check("round act", kind && recoil && swipe && peck && splat,
@@ -377,15 +387,21 @@ namespace FlockFive.Editor
 
         static void CheckSwipe(System.Action<string, bool, string> Check)
         {
-            float sum = BadgerSwipe.WindupSeconds + BadgerSwipe.StrikeSeconds + BadgerSwipe.RecoverSeconds;
+            float sum = BadgerSwipe.WindupSeconds + BadgerSwipe.StrikeSeconds
+                + BadgerSwipe.HoldSeconds + BadgerSwipe.RecoverSeconds;
             bool clock = Near(sum, BadgerSwipe.Duration) && Near(BadgerSwipe.Duration, BadgerOpening.SwipeSeconds)
-                && BadgerSwipe.SlashSeconds >= 0.12f && BadgerSwipe.SlashSeconds <= 0.18f
+                && BadgerSwipe.SlashSeconds >= 0.18f && BadgerSwipe.SlashSeconds <= 0.30f
+                && BadgerSwipe.WindupSeconds >= 0.38f && BadgerSwipe.WindupSeconds <= 0.42f
+                && BadgerSwipe.HoldSeconds >= 0.14f && BadgerSwipe.HoldSeconds <= 0.16f
                 && BadgerSwipe.Streaks == 3;
             bool hit = BadgerSwipe.HitAt > BadgerSwipe.WindupSeconds
                 && BadgerSwipe.HitAt < BadgerSwipe.WindupSeconds + BadgerSwipe.SlashSeconds
-                && !BadgerOpening.HiveSwiped(0.1f) && BadgerOpening.HiveSwiped(0.3f);
+                && !BadgerOpening.HiveSwiped(BadgerSwipe.HitAt - 0.05f)
+                && BadgerOpening.HiveSwiped(BadgerSwipe.HitAt + 0.02f);
             bool wind = BadgerSwipe.FrameAt(0.06f, 0f) == "badger_crouch"
-                && BadgerSwipe.Lean(0.08f) > 4f && BadgerSwipe.Lunge(0.08f) < 0f;
+                && BadgerSwipe.Lean(0.32f) > 4f && BadgerSwipe.Lunge(0.32f) < 0f;
+            bool hold = BadgerSwipe.PhaseAt(BadgerSwipe.HoldStart + 0.02f) == BadgerSwipe.Phase.Hold
+                && BadgerSwipe.FrameAt(BadgerSwipe.HoldStart + 0.02f, 0f) == "badger_leap_3";
             float early = BadgerSwipe.WindupSeconds + BadgerSwipe.StrikeSeconds * 0.20f;
             float late = BadgerSwipe.WindupSeconds + BadgerSwipe.StrikeSeconds * 0.80f;
             bool strike = BadgerSwipe.FrameAt(early, 0f) == "badger_leap_1"
@@ -432,8 +448,8 @@ namespace FlockFive.Editor
             float zc;
             bool quiet = !BadgerSwipe.Segment(0, 0, 0f, hive, out za, out zb, out zw, out zc);
             bool cross = each && n >= 3 && minX < hive.center.x && maxX > hive.center.x && tipW > 0f && midW > tipW;
-            Check("swipe", clock && hit && wind && strike && back && quiet && cross,
-                "crouch, leap_1/leap_3 snap, 0.15 s claw, hit inside the slash, back to idle");
+            Check("swipe", clock && hit && wind && hold && strike && back && quiet && cross,
+                "0.40 s wind-up, leap_1/leap_3 snap, 0.15 s hold, hit inside the slash, back to idle");
         }
 
         static bool SlamPhone(float w, float h, Rect safeBl)
@@ -452,6 +468,34 @@ namespace FlockFive.Editor
             return rightY < leftY - 1f && band.width > 8f && band.height > 8f;
         }
 
+        static bool SlamStack(float w, float h, Rect safeBl)
+        {
+            var safe = DontCareSlamRects.SafeGui(w, h, safeBl);
+            float prevMax = -100000f;
+            var c = new Vector2[4];
+            for (int i = 0; i < 4; i++)
+            {
+                var band = DontCareSlamRects.WordSlot(safe, i);
+                DontCareSlamRects.RotatedCorners(band, BadgerSlam.PopFrom, DontCareSlamRects.TiltDegrees, c);
+                float minX = c[0].x;
+                float maxX = c[0].x;
+                float minY = c[0].y;
+                float maxY = c[0].y;
+                for (int k = 0; k < 4; k++)
+                {
+                    if (c[k].x < minX) minX = c[k].x;
+                    if (c[k].x > maxX) maxX = c[k].x;
+                    if (c[k].y < minY) minY = c[k].y;
+                    if (c[k].y > maxY) maxY = c[k].y;
+                }
+                if (minX < safe.x + 1f || maxX > safe.xMax - 1f) return false;
+                if (minY < safe.y + 1f || maxY > safe.yMax - 1f) return false;
+                if (minY < prevMax + 2f) return false;
+                prevMax = maxY;
+            }
+            return true;
+        }
+
         static void CheckSlamWords(System.Action<string, bool, string> Check)
         {
             float early = BadgerSlam.WashAlpha(0.10f);
@@ -464,8 +508,23 @@ namespace FlockFive.Editor
             bool phones = SlamPhone(750f, 1334f, new Rect(0f, 0f, 750f, 1294f))
                 && SlamPhone(1179f, 2556f, new Rect(0f, 102f, 1179f, 2277f))
                 && SlamPhone(1290f, 2796f, new Rect(0f, 102f, 1290f, 2517f));
-            Check("slam words", wash && tilt && phones,
-                "0.88 wash on the words, lighter on the eye zoom, -15 deg band inside SE 750x1334, 15 1179x2556, Pro Max 1290x2796");
+            bool pace = BadgerSlam.WordSeconds >= 0.35f && BadgerSlam.WordSeconds <= 0.45f;
+            float late = BadgerSlam.Duration - 0.05f;
+            bool stay = BadgerSlam.ShownCount(BadgerSlam.WordSeconds * 3f + 0.05f) == 4
+                && BadgerSlam.ShownCount(late) == 4
+                && BadgerSlam.ShownCount(BadgerSlam.Duration) == 0
+                && BadgerSlam.WordOn(late, 0) && BadgerSlam.WordOn(late, 3);
+            bool pop = Near(BadgerSlam.WordPop(0f, 0), BadgerSlam.PopFrom)
+                && Near(BadgerSlam.WordPop(BadgerSlam.WordSeconds * 0.5f, 0), 1f);
+            BadgerSlam.Shake(0.02f, out float sx, out float sy);
+            BadgerSlam.Shake(0.30f, out float zx, out float zy);
+            bool shake = sx * sx + sy * sy > 1f && zx * zx + zy * zy < 0.01f;
+            bool stack = SlamStack(750f, 1334f, new Rect(0f, 0f, 750f, 1294f))
+                && SlamStack(1179f, 2556f, new Rect(0f, 102f, 1179f, 2277f))
+                && SlamStack(1290f, 2796f, new Rect(0f, 102f, 1290f, 2517f));
+            bool plus = BadgerGainFloat.Text(2) == "+2" && BadgerGainFloat.Text(0) == "" && BadgerGainFloat.Text(5) == "+5";
+            Check("slam words", wash && tilt && phones && pace && stay && pop && shake && stack && plus,
+                "four words 0.40 s apart, slam from big, stay until the beat ends, inside the safe area");
         }
     }
 }

@@ -30,7 +30,7 @@ namespace FlockFive
         const float BadgerBossWait = 0.75f;
         const float BadgerSlide = 0.35f;
         const float BadgerRevealHold = 0.80f;
-        const float BadgerVerdictHold = 1.20f;
+        const float BadgerVerdictHold = 1.45f;
         const float BadgerDotStep = 0.11f;
         const float BadgerShake = 0.35f;
         const int BadgerPowerKey = 100;
@@ -44,6 +44,15 @@ namespace FlockFive
         int _bgSeed;
         float _bgT;
         float _bgDotT;
+        Vector2 _bgFxFoot;
+        Vector2 _bgFxBird;
+        Vector2 _bgFxHive;
+        float _bgFxSpan = 48f;
+        float _bgWindAcc;
+        float _bgClawAcc;
+        float _bgLeapEmitT = -1f;
+        float _bgHopPhase = -1f;
+        int _bgSwipePhase = -1;
         float _bgBossAt;
         float _bgPlayerAt;
         int _bgBossIx = -1;
@@ -75,7 +84,6 @@ namespace FlockFive
         Rect _bgLessonCap;
         static GUIStyle _bgStyle;
         static GUIStyle _bgWrap;
-        static Texture2D _bgHex;
 #if UNITY_EDITOR
         bool _bgSwitchWas;
         bool _bgSwitchHeld;
@@ -220,6 +228,7 @@ namespace FlockFive
         void TickBadger(float dt)
         {
             if (dt > 0.1f) dt = 0.1f;
+            SparkleFx.Tick(dt);
             if (_bgShakeT > 0f) _bgShakeT = Mathf.Max(0f, _bgShakeT - dt);
             if (_bgPulseWho != 0)
             {
@@ -229,6 +238,7 @@ namespace FlockFive
             if (_bgStage == BadgerStage.Opening)
             {
                 StepBadgerOpening(dt);
+                StepBadgerFx(dt);
                 return;
             }
             _bgT += dt;
@@ -296,6 +306,14 @@ namespace FlockFive
                         && BadgerRoundAct.Of(_bgRound.PlayerGained, _bgRound.BossGained) == BadgerRoundAct.Kind.Peck
                         && BadgerRoundAct.PeckHits(_bgT - dt, _bgT))
                         BadgerShakeStart(BadgerBodyKey);
+                    if (_bgResolved
+                        && BadgerRoundAct.Of(_bgRound.PlayerGained, _bgRound.BossGained) == BadgerRoundAct.Kind.Swipe
+                        && BadgerSwipe.PhaseAt(_bgT - dt) != BadgerSwipe.Phase.Hold
+                        && BadgerSwipe.PhaseAt(_bgT) == BadgerSwipe.Phase.Hold)
+                    {
+                        SparkleFx.HoneySplash(_bgFxBird, 12);
+                        SparkleFx.StreakSparks(_bgFxBird, 6);
+                    }
                     if (_bgT < BadgerVerdictHold || BadgerDotsBusy()) break;
                     if (_bgFight.Result != BadgerResult.Playing) BeginBadgerOutro();
                     else NextBadgerRound();
@@ -305,6 +323,66 @@ namespace FlockFive
                     ShowBadgerResult();
                     break;
             }
+            StepBadgerFx(dt);
+        }
+
+        // Dust, claw sparks, and the special-attack charge. Positions are the last drawn marks.
+        void StepBadgerFx(float dt)
+        {
+            float swipeT = -1f;
+            bool swipe = false;
+            if (_bgStage == BadgerStage.Opening && _bgWashOut <= 0f)
+            {
+                swipeT = _bgOpenT;
+                swipe = BadgerSwipe.Active(swipeT);
+            }
+            else if (_bgResolved && _bgStage == BadgerStage.Verdict
+                && BadgerRoundAct.Of(_bgRound.PlayerGained, _bgRound.BossGained) == BadgerRoundAct.Kind.Swipe
+                && BadgerSwipe.Active(_bgT))
+            {
+                swipeT = _bgT;
+                swipe = true;
+            }
+
+            int phase = swipe ? (int)BadgerSwipe.PhaseAt(swipeT) : -1;
+            if (phase == (int)BadgerSwipe.Phase.Windup)
+            {
+                _bgWindAcc += dt;
+                float radius = _bgFxSpan * 0.55f;
+                while (_bgWindAcc >= 0.05f)
+                {
+                    _bgWindAcc -= 0.05f;
+                    SparkleFx.ChargeSwirl(_bgFxFoot, radius);
+                }
+            }
+            else _bgWindAcc = 0f;
+
+            if (phase == (int)BadgerSwipe.Phase.Strike)
+            {
+                _bgClawAcc += dt;
+                var aim = _bgStage == BadgerStage.Opening ? _bgFxHive : _bgFxBird;
+                while (_bgClawAcc >= 0.045f)
+                {
+                    _bgClawAcc -= 0.045f;
+                    var mid = Vector2.Lerp(_bgFxFoot, aim, 0.72f);
+                    SparkleFx.StreakSparks(mid, 3);
+                }
+            }
+            else _bgClawAcc = 0f;
+
+            if (_bgSwipePhase == (int)BadgerSwipe.Phase.Strike && phase == (int)BadgerSwipe.Phase.Hold)
+                SparkleFx.DustPuff(_bgFxFoot, 8);
+            _bgSwipePhase = phase;
+
+            if (_bgStage == BadgerStage.YourPick && _bgBossIx >= 0)
+            {
+                float age = Time.unscaledTime - _bgBossAt;
+                float phaseHop = Mathf.Repeat(age < 0f ? 0f : age, 0.28f) / 0.28f;
+                if (_bgHopPhase >= 0f && _bgHopPhase < 0.55f && phaseHop >= 0.55f && age < BadgerDuel.LungeSeconds)
+                    SparkleFx.DustPuff(_bgFxFoot, 7);
+                _bgHopPhase = phaseHop;
+            }
+            else _bgHopPhase = -1f;
         }
 
         // The compare. A slam hit this round already stripped the power-up or set the halve.
@@ -363,6 +441,11 @@ namespace FlockFive
             _bgShownPlayer = _bgFight != null ? Mathf.Min(_bgFight.PlayerScore, _bgFight.PlayerTarget) : 0;
             _bgShownBoss = _bgFight != null ? Mathf.Min(_bgFight.BossScore, _bgFight.BadgerTarget) : 0;
             bool stung = MixDesk.Live != null && MixDesk.Live.BadgerResult(won);
+            if (won)
+            {
+                var at = _bgFxBird.sqrMagnitude > 4f ? _bgFxBird : _bgFxFoot;
+                SparkleFx.Celebrate(at);
+            }
             if (!stung)
             {
                 if (won) SfxLibrary.Play("fanfare", 0.40f);
@@ -779,66 +862,26 @@ namespace FlockFive
             return _bgWrap;
         }
 
-        // White pointy-top hexagon with a soft edge. Tinted by GUI.color, stretched to any cell.
-        static Texture2D HoneycombTex()
-        {
-            if (_bgHex != null) return _bgHex;
-            const int W = 96;
-            const int H = 111;
-            var px = new Color32[W * H];
-            float a = W * 0.5f;
-            float r = H * 0.5f;
-            float k = r / (2f * a);
-            float norm = Mathf.Sqrt(1f + k * k);
-            for (int iy = 0; iy < H; iy++)
-            {
-                for (int ix = 0; ix < W; ix++)
-                {
-                    float x = Mathf.Abs(ix + 0.5f - a);
-                    float y = Mathf.Abs(iy + 0.5f - r);
-                    float d = Mathf.Min(a - x, (r - k * x - y) / norm);
-                    float al = Mathf.Clamp01(d + 0.5f);
-                    px[iy * W + ix] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(al * 255f));
-                }
-            }
-            var tex = new Texture2D(W, H, TextureFormat.RGBA32, false);
-            tex.wrapMode = TextureWrapMode.Clamp;
-            tex.filterMode = FilterMode.Bilinear;
-            tex.hideFlags = HideFlags.HideAndDontSave;
-            tex.SetPixels32(px);
-            tex.Apply(false, true);
-            _bgHex = tex;
-            return tex;
-        }
+        // The shared hex mask. HoneyArt bakes it once with the juicy fill.
+        static Texture2D HoneycombTex() => HoneyArt.Mask();
 
         // The one honeycomb tile: grids, arena, and picker. Plate colors are the album's.
         // No pizza art, no foil sheen, no swarm. A foil or inverse bee gets a colored rim.
         static void DrawBadgerTile(Rect hex, BadgerLook look, int honey, Color tint, BeeFinish finish, float alpha, string label)
         {
             if (!GuiPaint() || alpha < 0.02f || hex.width < 4f) return;
-            var tex = HoneycombTex();
             if (look == BadgerLook.Spent)
             {
-                GUI.color = new Color(0.10f, 0.07f, 0.04f, 0.28f * alpha);
-                GUI.DrawTexture(hex, tex, ScaleMode.StretchToFill, true);
-                GUI.color = Color.white;
+                HoneyArt.DrawJuicyCell(hex, new Color(0.10f, 0.07f, 0.04f, 0.28f * alpha), 0f, 1f, 0, false, false, false);
                 return;
             }
-            float lift = hex.height * 0.045f;
-            GUI.color = new Color(0f, 0f, 0f, 0.35f * alpha);
-            GUI.DrawTexture(new Rect(hex.x + lift * 0.4f, hex.y + lift, hex.width, hex.height), tex, ScaleMode.StretchToFill, true);
             Color rim = finish == BeeFinish.Holo ? BadgerFoilRim
                 : finish == BeeFinish.InverseRainbow ? BadgerInverseRim
                 : AlbumWood(tint, true);
             rim.a = alpha;
-            GUI.color = rim;
-            GUI.DrawTexture(hex, tex, ScaleMode.StretchToFill, true);
+            // Tight grid: juicy fill, no hanging drips into the next tile.
+            HoneyArt.DrawJuicyCell(hex, rim, 0f, 1f, honey, true, false, false);
             var inner = Inset(hex, 0.07f);
-            Color face = look == BadgerLook.Down ? new Color(0.36f, 0.25f, 0.10f, 1f) : AlbumFace(tint, true);
-            face.a = alpha;
-            GUI.color = face;
-            GUI.DrawTexture(inner, tex, ScaleMode.StretchToFill, true);
-            GUI.color = Color.white;
             bool named = !string.IsNullOrEmpty(label);
             var digit = named
                 ? new Rect(inner.x, inner.y + inner.height * 0.08f, inner.width, inner.height * 0.56f)
@@ -868,7 +911,7 @@ namespace FlockFive
                 GUI.DrawTexture(new Rect(hit.x - pad, hit.y - pad, hit.width + pad * 2f, hit.height + pad * 2f), GlowTex(), ScaleMode.StretchToFill, true);
                 GUI.color = Color.white;
             }
-            var lab = DrawRoundedFace(hit, held, gold && !dim, true);
+            var lab = DrawRoundedFace(hit, held, gold && !dim ? PopupTint.Gold : PopupTint.Wood, true);
             var st = BadgerStyle();
             float a = dim ? 0.55f : 1f;
             bool two = !string.IsNullOrEmpty(sub);
@@ -898,14 +941,15 @@ namespace FlockFive
                     var pivot = new Vector2(col.center.x, (top + col.yMax) * 0.5f);
                     GUIUtility.ScaleAroundPivot(new Vector2(pulse, pulse), pivot);
                 }
-                var tex = HoneycombTex();
                 int n = filled > target ? target : filled;
                 if (n < 0) n = 0;
                 for (int i = 0; i < target; i++)
                 {
                     var seg = BadgerMeter.Comb(col, i, unit);
-                    GUI.color = i < n ? BadgerGold : new Color(0.16f, 0.11f, 0.05f, 0.72f);
-                    GUI.DrawTexture(seg, tex, ScaleMode.StretchToFill, true);
+                    if (i < n)
+                        HoneyArt.DrawJuicyCell(seg, BadgerGold, 0f, 1f, i, true, false, false);
+                    else
+                        HoneyArt.DrawJuicyCell(seg, new Color(0.16f, 0.11f, 0.05f, 0.72f), 0f, 1f, i, false, false, false);
                 }
             }
             finally
@@ -937,29 +981,42 @@ namespace FlockFive
         void DrawBadgerPage()
         {
             bool slam = DontCareSlamLive && _home == HomeFace.Badger;
-            bool zoomDraw = slam && GuiPaint();
-            var keep = GUI.matrix;
-            Vector2 pivot = default;
-            float zoom = 1f;
-            if (zoomDraw)
-            {
-                var L = BadgerLayout();
-                var spot = BadgerActorNow(L);
-                zoom = BadgerSlam.Zoom(_bgSlamT);
-                // Stay on the leap pupil so the shrug does not yank the camera.
-                pivot = BadgerSlamPivot(spot, zoom);
-                keep = PushBadgerZoom(zoom, pivot);
-            }
+            bool paint = GuiPaint();
+            BadgerSlam.Shake(slam ? _bgSlamT : -1f, out float sx, out float sy);
+            bool doShake = slam && paint && (Mathf.Abs(sx) > 0.2f || Mathf.Abs(sy) > 0.2f);
+            var root = GUI.matrix;
+            if (doShake)
+                GUI.matrix = Matrix4x4.Translate(new Vector3(sx, sy, 0f)) * root;
             try
             {
-                DrawBadgerPageBody();
+                bool zoomDraw = slam && paint;
+                var keep = GUI.matrix;
+                Vector2 pivot = default;
+                float zoom = 1f;
+                if (zoomDraw)
+                {
+                    var L = BadgerLayout();
+                    var spot = BadgerActorNow(L);
+                    zoom = BadgerSlam.Zoom(_bgSlamT);
+                    // Stay on the leap pupil so the shrug does not yank the camera.
+                    pivot = BadgerSlamPivot(spot, zoom);
+                    keep = PushBadgerZoom(zoom, pivot);
+                }
+                try
+                {
+                    DrawBadgerPageBody();
+                }
+                finally
+                {
+                    if (zoomDraw) GUI.matrix = keep;
+                }
+                if (slam && paint) DrawDontCareSlam(pivot, zoom);
+                if (paint && !_bgLeap.Live) SparkleFx.DrawBits();
             }
             finally
             {
-                if (zoomDraw) GUI.matrix = keep;
+                GUI.matrix = root;
             }
-            if (!slam || !DontCareSlamLive || _home != HomeFace.Badger || !GuiPaint()) return;
-            DrawDontCareSlam(pivot, zoom);
         }
 
         void DrawBadgerPageBody()
@@ -1063,6 +1120,23 @@ namespace FlockFive
             if (tapped >= 0 && _bgStage != BadgerStage.Lesson) ClickBadgerTile(tapped);
         }
 
+        // "+N" over the winner. Player N is the margin. Boss N is the full loss honey.
+        void DrawBadgerGain(Rect tile, int gain, float age)
+        {
+            if (!GuiPaint()) return;
+            string text = BadgerGainFloat.Text(gain);
+            if (text.Length == 0) return;
+            float a = BadgerGainFloat.Alpha(age);
+            if (a < 0.04f) return;
+            float rise = BadgerGainFloat.Rise(age) * tile.height * 0.55f;
+            var r = new Rect(tile.x, tile.y - tile.height * 0.38f - rise, tile.width, tile.height * 0.34f);
+            var st = BadgerStyle();
+            st.fontSize = FitFont(st, text, r.width * 0.92f, r.height * 0.88f, 10, 64);
+            var fill = BadgerGold;
+            fill.a = a;
+            StampOutlined(r, text, st, fill, 1, Mathf.Max(2, st.fontSize / 10));
+        }
+
         static Rect BadgerSlotTile(Rect slot)
         {
             float h = slot.height * 0.90f;
@@ -1105,6 +1179,8 @@ namespace FlockFive
                 bool win = _bgResolved && _bgRound.BossGained > 0;
                 if (win) DrawBadgerWinGlow(r);
                 DrawBadgerTile(r, BadgerLook.Face, honey, BadgerHide, BeeFinish.Normal, block ? 0.55f : 1f, null);
+                if (win && _bgStage == BadgerStage.Verdict)
+                    DrawBadgerGain(r, _bgRound.BossGained, _bgT);
                 if (block) DrawBadgerSplat(r);
             }
             if (_bgFight != null && _bgPlayerIx >= 0)
@@ -1115,6 +1191,8 @@ namespace FlockFive
                 var r = LerpRect(youHex.Draw(_bgPlayerIx), youSlot, u);
                 if (_bgResolved && _bgRound.PlayerGained > 0) DrawBadgerWinGlow(r);
                 DrawBadgerTile(r, BadgerLook.Face, honey, BadgerTint(t), t.Finish, 1f, null);
+                if (_bgResolved && _bgStage == BadgerStage.Verdict && _bgRound.PlayerGained > 0)
+                    DrawBadgerGain(r, _bgRound.PlayerGained, _bgT);
                 if (_bgArmed != BadgerPower.None && GuiPaint())
                 {
                     var badge = new Rect(r.center.x - r.width * 0.45f, r.y - r.height * 0.10f, r.width * 0.9f, r.height * 0.26f);
@@ -1131,6 +1209,11 @@ namespace FlockFive
         struct BadgerActorSpot
         {
             public string Frame;
+            public string Under;
+            public float FrameAlpha;
+            public float UnderAlpha;
+            public float Sx;
+            public float Sy;
             public Vector2 Foot;
             public float Unit;
             public float Degrees;
@@ -1153,7 +1236,7 @@ namespace FlockFive
             var box = BadgerArenaRects.Split(L.Arena);
             BadgerDuelPose(out var beat, out float age);
             float now = PlayClock.Now;
-            spot.Frame = BadgerFighter.FrameAt(beat, age, now);
+            var pose = BadgerAnim.Duel(beat, age, now);
             spot.Alpha = BadgerFighter.Alpha(_bgStage);
             BadgerArtSize("badger_idle_b", 1f, out float aw, out float ah);
             var mark = BadgerFighterPlace.Rest(box, aw, ah);
@@ -1163,8 +1246,6 @@ namespace FlockFive
             var foot = mark.Foot;
             var bird = mark.Bird;
             float icon = mark.Icon;
-            float degrees = 0f;
-
             float jolt = BadgerDuel.Jolt(age) * 8f * L.S;
             float travel = beat == BadgerDuelBeat.Lunge ? BadgerDuel.Travel(age) : 0f;
             float reach = (box.BossFighter.center.x - box.Middle.center.x) * 0.55f;
@@ -1180,7 +1261,7 @@ namespace FlockFive
             {
                 bool playerWon = _bgFight.Result == BadgerResult.PlayerWon;
                 float oage = _bgStage == BadgerStage.Over ? BadgerOutro.Duration : _bgT;
-                spot.Frame = BadgerOutro.Frame(playerWon, oage, now);
+                pose = BadgerAnim.Outro(playerWon, oage, now);
                 float shift = BadgerOutro.BackOff(playerWon, oage) * box.BossFighter.width * 0.42f;
                 foot.x += shift;
                 bird.y -= BadgerOutro.Proud(playerWon, oage) * icon;
@@ -1199,7 +1280,6 @@ namespace FlockFive
                 if (gap < 8f) gap = box.BossFighter.width;
                 foot.x -= BadgerSwipe.Lunge(_bgT) * gap * 0.48f;
                 foot.y -= BadgerSwipe.Lift(_bgT) * bh * 0.10f;
-                degrees = BadgerSwipe.Lean(_bgT);
                 float recoil = BadgerRoundAct.Recoil(_bgT);
                 bird.x -= recoil * icon * 0.55f;
                 bird.y += recoil * icon * 0.08f;
@@ -1221,27 +1301,36 @@ namespace FlockFive
                 if (gap < 8f) gap = box.BossFighter.width;
                 foot.x -= BadgerSwipe.Lunge(age) * gap * 0.62f;
                 foot.y -= BadgerSwipe.Lift(age) * bh * 0.12f;
-                degrees = BadgerSwipe.Lean(age);
             }
 
             foot.x += BadgerShakeX(BadgerBodyKey, L.S);
             float minBird = L.ColL.x + icon * 0.45f;
             if (bird.x < minBird) bird.x = minBird;
 
+            spot.Frame = pose.Frame;
+            spot.Under = pose.Under;
+            spot.FrameAlpha = pose.FrameAlpha;
+            spot.UnderAlpha = pose.UnderAlpha;
+            spot.Sx = pose.ScaleX;
+            spot.Sy = pose.ScaleY;
+            spot.Degrees = pose.Degrees;
             BadgerArtSize(spot.Frame, spot.Unit, out float w, out float h);
             // Stay left of ColR on every beat (SE wide crouch/leap/shrug frames).
+            // Squash widens the sprite; keep that width inside the column too.
+            float wide = w * (spot.Sx > 1f ? spot.Sx : 1f);
             float rightLimit = L.ColR.x - 2f;
-            foot.x = BadgerFighterPlace.ClampFootX(foot.x, w, rightLimit);
+            foot.x = BadgerFighterPlace.ClampFootX(foot.x, wide, rightLimit);
 
             spot.Foot = foot;
-            spot.Degrees = degrees;
             spot.Bird = bird;
             spot.Icon = icon;
             spot.BirdBox = new Rect(bird.x - icon * 0.5f, bird.y - icon * 0.5f, icon, icon);
             BadgerSlam.EyeUv(spot.Frame, out float eu, out float ev);
+            float ew = w * (spot.Sx > 0.05f ? spot.Sx : 1f);
+            float eh = h * (spot.Sy > 0.05f ? spot.Sy : 1f);
             spot.Eye = new Vector2(
-                foot.x - w * 0.5f + w * eu,
-                foot.y - h + h * ev);
+                foot.x - ew * 0.5f + ew * eu,
+                foot.y - eh + eh * ev);
             return spot;
         }
 
@@ -1280,10 +1369,13 @@ namespace FlockFive
             var spot = BadgerActorNow(L);
             _bgDuelEye = spot.Eye;
             _bgDuelEyeOn = spot.Alpha > 0.01f;
+            _bgFxFoot = spot.Foot;
+            _bgFxBird = spot.Bird;
+            if (spot.Icon > 4f) _bgFxSpan = spot.Icon;
             if (!GuiPaint() || spot.Alpha < 0.01f) return;
 
-            float now = PlayClock.Now;
-            if (!spot.BirdInFront) DrawBadgerBird(spot, now);
+            float clock = BadgerBirdClock();
+            if (!spot.BirdInFront) DrawBadgerBird(spot, clock);
 
             var keep = GUI.matrix;
             var drawn = new Rect();
@@ -1291,7 +1383,9 @@ namespace FlockFive
             {
                 if (Mathf.Abs(spot.Degrees) > 0.01f)
                     GUIUtility.RotateAroundPivot(spot.Degrees, spot.Foot);
-                drawn = DrawBadgerArt(spot.Frame, spot.Foot, spot.Unit, spot.Alpha);
+                if (!string.IsNullOrEmpty(spot.Under) && spot.UnderAlpha > 0.02f && spot.Under != spot.Frame)
+                    DrawBadgerArt(spot.Under, spot.Foot, spot.Unit, spot.Alpha * spot.UnderAlpha, 0f, spot.Sx, spot.Sy);
+                drawn = DrawBadgerArt(spot.Frame, spot.Foot, spot.Unit, spot.Alpha * spot.FrameAlpha, 0f, spot.Sx, spot.Sy);
             }
             finally
             {
@@ -1305,8 +1399,27 @@ namespace FlockFive
                     drawn.y + drawn.height * ev);
             }
 
-            if (spot.BirdInFront) DrawBadgerBird(spot, now);
+            if (spot.BirdInFront) DrawBadgerBird(spot, clock);
             DrawBadgerRoundHit(spot);
+        }
+
+        // One wingbeat across the peck or the recoil. AvatarFlapRate is 1.25 and a
+        // six-pose cycle is 0.25 of that clock, so 0.20 of fight-time is one flap.
+        float BadgerBirdClock()
+        {
+            if (_bgResolved && _bgStage == BadgerStage.Verdict)
+            {
+                var act = BadgerRoundAct.Of(_bgRound.PlayerGained, _bgRound.BossGained);
+                if (act == BadgerRoundAct.Kind.Peck && BadgerRoundAct.PeckSeconds > 0.01f)
+                    return (_bgT / BadgerRoundAct.PeckSeconds) * 0.20f;
+                if (act == BadgerRoundAct.Kind.Swipe && BadgerRoundAct.RecoilSeconds > 0.01f)
+                {
+                    float age = _bgT - BadgerSwipe.HitAt;
+                    if (age < 0f) age = 0f;
+                    return (age / BadgerRoundAct.RecoilSeconds) * 0.20f;
+                }
+            }
+            return PlayClock.Now;
         }
 
         // The player's hummingbird. faceLeft stays false so the art faces the badger.
@@ -1320,7 +1433,7 @@ namespace FlockFive
                 GUI.color = Color.white;
                 if (Mathf.Abs(spot.BirdDegrees) > 0.01f)
                     GUIUtility.RotateAroundPivot(spot.BirdDegrees, spot.Bird);
-                DrawAvatarBird(SavedAvatar(), SavedAvatarKit(), spot.Bird, spot.Icon, spot.FaceLeft, spot.BirdFolded, now);
+                DrawAvatarBird(SavedAvatar(), SavedAvatarKit(), spot.Bird, spot.Icon, spot.FaceLeft, spot.BirdFolded, now, false, BirdIdle.KitSlotBadger);
             }
             finally
             {

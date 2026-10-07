@@ -27,6 +27,9 @@ namespace FlockFive
             EnqueueShiftedFeeders(src, b);
             OfferPeach(b);
             StampFlocks(b);
+            // After the sex stamp, so a doubled color (two orange crown sets)
+            // is split here and nowhere else.
+            FlockKit.Assign(b);
             OfferGift(b);
             return b;
         }
@@ -44,7 +47,8 @@ namespace FlockFive
             for (int i = 0; i < src.Birds.Count; i++)
             {
                 var bird = src.Birds[i];
-                br.Birds.Add(new Bird(Shift(bird.Color), bird.Sex));
+                bird.Color = Shift(bird.Color);
+                br.Birds.Add(bird);
             }
             br.Shrouded.AddRange(src.Shrouded);
             br.AlignShroud();

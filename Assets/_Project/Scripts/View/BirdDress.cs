@@ -1,7 +1,8 @@
 namespace FlockFive
 {
     // One visibility rule for a garden bird and everything it wears: the kit
-    // bow or crown, the face, the select aura, cheer twinkles, Zzz and the "!".
+    // (bow, crown, or a duplicate-set accessory), the face, the select aura,
+    // cheer twinkles, Zzz and the "!".
     // BirdIdle reads these every LateUpdate, so nothing a bird wears can draw
     // while its body is hidden. Pure, so the console harness can test it.
     public static class BirdDress
@@ -13,8 +14,9 @@ namespace FlockFive
         // Both count: a veiled body is a hidden body.
         public static bool BodyShown(bool enabled, bool forcedOff) => enabled && !forcedOff;
 
-        public static bool KitOn(bool bodyShown, bool shrouded, bool neutral) =>
-            bodyShown && !shrouded && !neutral;
+        // bare: nothing worn (a plain neutral). A sex kit or a set accessory draws.
+        public static bool KitOn(bool bodyShown, bool shrouded, bool bare) =>
+            bodyShown && !shrouded && !bare;
 
         public static bool FaceOn(bool bodyShown, bool shrouded) => bodyShown && !shrouded;
 

@@ -116,7 +116,20 @@ namespace FlockFive
             var cam = MakeCamera(parent);
             float limbX = EdgeX(cam, 1f);
 
-            var bg = Sprite("Bg", SpriteCatalog.GardenBgFor(LevelData.DisplayNumber), new Vector3(0f, -0.15f, 8f), 1f, -20, root);
+            int level = LevelData.DisplayNumber;
+            var scene = GardenSeason.ForLevel(level);
+            // Drop a fade that is still up before pinning the outgoing painting.
+            // Begin does not retire, or it would unload the pin it is about to wipe.
+            SeasonCrossfade.RetireLive();
+            Sprite oldSpr = null;
+            var prev = GardenScene.Summer;
+            bool reveal = SeasonReveal.Due(level);
+            if (reveal)
+            {
+                prev = GardenSeason.ForLevel(level - 1);
+                oldSpr = prev == GardenScene.Summer ? SpriteCatalog.GardenBg : SpriteCatalog.TakeHeldScene(prev);
+            }
+            var bg = Sprite("Bg", SpriteCatalog.GardenBgFor(scene), new Vector3(0f, -0.15f, 8f), 1f, -20, root);
             var fit = bg.AddComponent<BackgroundFitter>();
             fit.Cam = cam;
             fit.FollowCamera = false;
@@ -126,9 +139,13 @@ namespace FlockFive
             // Tall phones: PortraitLock letterboxes the 9:16 play area; a bleed camera
             // paints this layer into the bands so the garden art reaches the bezel.
             bg.layer = PortraitLock.BleedLayer;
+            var bgSr = bg.GetComponent<SpriteRenderer>();
+            FoliageSway.Apply(bgSr, scene);
             SkyCycle.Attach(root, cam);
-            GardenLife.Attach(root);
+            GardenLife.Attach(root, scene, cam);
             GardenStorm.Attach(root);
+            if (reveal)
+                SeasonCrossfade.Begin(root, bgSr, oldSpr, cam, level, scene, prev);
 
             var branches = new BranchView[Rows * Cols + GiftCount];
             for (int row = 0; row < Rows; row++)
@@ -323,20 +340,6 @@ namespace FlockFive
             }
             center = new Vector2(rim.x + g.x * half, rim.y - g.y * half);
             spin = -angDeg;
-        }
-
-        // Circle: index 0 is the top, then clockwise in GUI space. Same seat rule as SeatBulb.
-        public static void RadialSeat(Vector2 origin, float radius, int i, int n, float half, out Vector2 rim, out Vector2 center, out Vector2 outward, out float spin)
-        {
-            float turns = n > 0 ? i / (float)n : 0f;
-            float rad = -Mathf.PI * 0.5f + turns * Mathf.PI * 2f;
-            outward = new Vector2(Mathf.Cos(rad), Mathf.Sin(rad));
-            if (radius < 0f) radius = 0f;
-            rim = origin + outward * radius;
-            if (half < 0f) half = 0f;
-            center = rim + outward * half;
-            var inward = new Vector2(-outward.x, -outward.y);
-            spin = Mathf.Atan2(inward.x, -inward.y) * Mathf.Rad2Deg;
         }
 
         // fx_ad_sign's board is the rectangle on the left of the texture. The arrow

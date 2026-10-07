@@ -84,11 +84,10 @@ for ci, c in enumerate(COLORS):
         a = np.array(Image.open(p).convert("RGBA"))[..., 3]
         tip, ft = feet(a)
         # Every frame a SEATED bird can show must end its toes on the one shared
-        # seat row. _1/_2 are the spread-wing flight frames: BirdIdle only shows
-        # them when airborne (Frozen coroutine flight, Lift > 0.05, or Flapping
-        # outside a seated Flutter); seated flutter/ruffle stays on the rest
-        # frame. _3.._5 would be seated-flap extras and must still meet the row.
-        FLIGHT_ONLY = {"_1", "_2"}
+        # seat row. _1.._4 are the wingbeat: BirdIdle only shows them when airborne
+        # (UseFlyingPose). Seated flutter/ruffle stays on the rest frame.
+        # _5 would be a seated extra and must still meet the row.
+        FLIGHT_ONLY = {"_1", "_2", "_3", "_4"}
         for fr in [""] + [f"_{i}" for i in range(1, 6)]:
             if fr in FLIGHT_ONLY:
                 continue

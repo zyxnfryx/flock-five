@@ -14,6 +14,33 @@ namespace FlockFive.Editor
     {
         const string PlayCmd = "/tmp/flock-five-play";
 
+        // One batch entry for the edit-mode suites. Unity -executeMethod FlockFive.Editor.EnsurePlayable.RunEditorTests
+        public static void RunEditorTests()
+        {
+            Suite("board", BoardLayoutTests.Run);
+            Suite("badger", BadgerFightTests.Run);
+            Suite("badger-show", BadgerShowTests.Run);
+            Suite("garden-season", GardenSeasonTests.Run);
+            Suite("card-fit", CardTextFitTests.Run);
+            Suite("poker-deal", PokerDealGateTests.Run);
+            Suite("poker-flush", PokerFlushTests.Run);
+            Suite("heal", TutorialHealTests.Run);
+            Suite("reset-guard", CoachResetGuardTests.Run);
+            Suite("poker-bet", PokerBetTests.Run);
+            Suite("discard-anim", PokerDiscardAnimTests.Run);
+            Debug.Log("EDITOR_SUITES_DONE");
+        }
+
+        // One suite throwing used to skip every suite after it.
+        static void Suite(string name, System.Action run)
+        {
+            try { run(); }
+            catch (System.Exception ex)
+            {
+                Debug.LogError("[suite] " + name + " THREW " + ex.GetType().Name + ": " + ex.Message);
+            }
+        }
+
         static EnsurePlayable()
         {
             EditorApplication.delayCall += Pin;

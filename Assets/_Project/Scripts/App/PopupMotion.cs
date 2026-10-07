@@ -53,6 +53,18 @@ namespace FlockFive
         // Close alpha: holds briefly, then fades to 0 by the end of the beat.
         public static float ExitAlpha(float u) => 1f - Smooth((u - 0.15f) / 0.85f);
 
+        // GUI drop. `from` is the start offset (negative sits above). Lands on 0
+        // with a soft bounce, then stays exactly 0 so a settled sign does not hover.
+        public static float Fall(float u, float from)
+        {
+            u = Mathf.Clamp01(u);
+            if (u >= 1f || Mathf.Abs(from) < 0.01f) return 0f;
+            const float c1 = 1.35f;
+            float v = u - 1f;
+            float e = 1f + (c1 + 1f) * v * v * v + c1 * v * v;
+            return Mathf.LerpUnclamped(from, 0f, e);
+        }
+
         // Pop for a celebratory icon: bigger overshoot than a frame, still exact 1 at rest.
         public static float PopScale(float u)
         {
@@ -61,6 +73,22 @@ namespace FlockFive
             const float c1 = 1.9f;
             float v = u - 1f;
             return 1f + (c1 + 1f) * v * v * v + c1 * v * v;
+        }
+
+        // Shared caption / stamp slam. Scale-down-from-big: `from` on the first instant,
+        // a punch through 1, then exactly 1. EaseOutBack (c1 = 2.2), same landing as the
+        // reward stamp. Callers measure u with their own clock.
+        public const float SlamBack = 2.2f;
+
+        public static float SlamScale(float u, float from)
+        {
+            u = Mathf.Clamp01(u);
+            if (u >= 1f || from < 1f) return 1f;
+            float v = u - 1f;
+            float e = 1f + (SlamBack + 1f) * v * v * v + SlamBack * v * v;
+            float s = Mathf.LerpUnclamped(from, 1f, e);
+            if (s < 0.86f) s = 0.86f;
+            return s;
         }
     }
 }
