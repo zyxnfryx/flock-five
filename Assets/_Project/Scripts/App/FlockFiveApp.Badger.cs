@@ -269,6 +269,9 @@ namespace FlockFive
                         _bgLine = "";
                         _bgGuideAim = default;
                         ResetBadgerGlove();
+                        // CoachPlace runs before OnGUI. Fill the tile now so the first pose
+                        // already has this step's rect.
+                        RefreshBadgerGuideAim();
                     }
                     Sfx.CardBump();
                     break;
@@ -499,6 +502,15 @@ namespace FlockFive
                 && _bgStage == BadgerStage.YourPick && _bgFight.GuidedTile >= 0;
         }
 
+        // Guided comb from the same hex fit the page paints. CoachPlace runs before
+        // OnGUI, so the glove must not wait on the tile loop to store this rect.
+        void RefreshBadgerGuideAim()
+        {
+            if (!BadgerGuideLive()) return;
+            var L = BadgerLayout();
+            _bgGuideAim = BadgerHex.Fit(L.PlayerGrid, 4, 4).Draw(_bgFight.GuidedTile);
+        }
+
         void EndBadgerLesson()
         {
             if (!_bgLessonLive && _bgStage != BadgerStage.Lesson) return;
@@ -543,6 +555,7 @@ namespace FlockFive
             {
                 // Guided pick: same shared glove, aimed at the scripted tile. The tile's own
                 // HitPad takes the tap; NoteGloveTap fades the hand only on that tile.
+                RefreshBadgerGuideAim();
                 var tile = _bgGuideAim;
                 if (tile.width < 2f || tile.height < 2f) return;
                 _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
@@ -613,12 +626,29 @@ namespace FlockFive
         }
 
         // Coach fight, moves 1-3: this step's caption and the shared glove.
+        // The comb bloom is painted with the grid (DrawBadgerGuideGlow) so it stays
+        // under the arena, the powers, and this caption.
         void DrawBadgerGuide(BadgerRects L)
         {
             if (!BadgerGuideLive()) return;
+            RefreshBadgerGuideAim();
             string line = BadgerCopy.GuideLine(_bgFight.TutorialMove);
             if (!string.IsNullOrEmpty(line)) DrawBadgerCoachLine(L, line);
             DrawTutorOverlay(L.S);
+        }
+
+        // Pulsing gold/cream GlowTex under the guided comb. Wider than DrawBadgerWinGlow
+        // and breathed so the caption's "glowing" tile is the tap.
+        void DrawBadgerGuideGlow(Rect r)
+        {
+            if (!GuiPaint() || r.width < 2f || r.height < 2f) return;
+            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6.5f);
+            float pad = r.width * Mathf.Lerp(0.36f, 0.62f, pulse);
+            var c = Color.Lerp(BadgerGold, BadgerCream, pulse);
+            c.a = Mathf.Lerp(0.70f, 1f, pulse);
+            GUI.color = c;
+            GUI.DrawTexture(new Rect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f), GlowTex(), ScaleMode.StretchToFill, true);
+            GUI.color = Color.white;
         }
 
         // ---- layout ----
@@ -982,6 +1012,8 @@ namespace FlockFive
             int tapped = -1;
             // Coach moves 1-3: only the glove's tile takes a tap; every other tile ignores it.
             int guide = _bgFight != null && tilesLive ? _bgFight.GuidedTile : -1;
+            Rect guidePaint = default;
+            bool guideBloom = false;
             for (int i = 0; i < BadgerSchedule.Tiles; i++)
             {
                 var t = _bgLoadout[i];
@@ -993,7 +1025,21 @@ namespace FlockFive
                 if (live && HitPad(youHex.Hit(i), out held)) tapped = i;
                 if (held) draw = Inset(draw, 0.03f);
                 draw.x += BadgerShakeX(i, s);
+                // Defer the guided comb so its bloom sits above the other tiles and under this plate.
+                if (i == guide && BadgerGuideLive())
+                {
+                    guidePaint = draw;
+                    guideBloom = true;
+                    continue;
+                }
                 BadgerTilePlate(draw, t, open ? BadgerLook.Face : BadgerLook.Spent, BadgerTileLand(i));
+            }
+            if (guideBloom)
+            {
+                DrawBadgerGuideGlow(guidePaint);
+                var gt = _bgLoadout[guide];
+                bool gOpen = _bgFight != null && _bgFight.PlayerOpen(guide);
+                BadgerTilePlate(guidePaint, gt, gOpen ? BadgerLook.Face : BadgerLook.Spent, BadgerTileLand(guide));
             }
 
             DrawBadgerArena(L, bossHex, youHex);
