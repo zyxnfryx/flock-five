@@ -54,6 +54,14 @@ namespace FlockFive.Editor
             CheckSitterSwitch(Check);
             CheckArt(Check);
             CheckPhase5Copy(Check);
+            CheckFighters(Check);
+            CheckArenaBoxes(Check);
+            CheckFighterPlace(Check);
+            CheckMeter(Check);
+            CheckRoundAct(Check);
+            CheckOutro(Check);
+            CheckSwipe(Check);
+            CheckSlamWords(Check);
 
             Line(fail == 0 ? "ALL OK  " + pass : "FAILED  " + fail + "  passed " + pass);
         }
@@ -203,6 +211,237 @@ namespace FlockFive.Editor
                 && !BadgerCopy.ShowTheftSplat(winRound);
             Check("phase5 copy", ends && verdict && beats,
                 "win/lose/opening/verdict lines; shrug + theft splat rules");
+        }
+
+        static void CheckFighters(System.Action<string, bool, string> Check)
+        {
+            var stages = (BadgerStage[])System.Enum.GetValues(typeof(BadgerStage));
+            string[] need =
+            {
+                "PostOpen", "BossWait", "YourPick", "Reveal", "Verdict", "Outro", "Over", "Opening", "Lesson", "DontCare"
+            };
+            bool named = stages.Length >= need.Length;
+            for (int i = 0; i < need.Length; i++)
+            {
+                bool found = false;
+                for (int s = 0; s < stages.Length; s++)
+                    if (stages[s].ToString() == need[i]) found = true;
+                if (!found) named = false;
+            }
+            bool shown = true;
+            for (int s = 0; s < stages.Length; s++)
+            {
+                if (!BadgerFighter.BothVisible(stages[s]) || BadgerFighter.Alpha(stages[s]) < 0.99f)
+                    shown = false;
+            }
+            bool fade = BadgerOpening.CastAlpha(BadgerOpening.Duration) < 0.05f
+                && BadgerFighter.Alpha(BadgerStage.Opening) > 0.99f
+                && BadgerFighter.Alpha(BadgerStage.PostOpen) > 0.99f
+                && BadgerFighter.Alpha(BadgerStage.DontCare) > 0.99f;
+            bool frames = BadgerFighter.FrameAt(BadgerDuelBeat.Idle, 0f, 0.1f) == BadgerSitter.FrameAt(0.1f)
+                && BadgerFighter.FrameAt(BadgerDuelBeat.Shrug, 0f, 0f) == "badger_shrug"
+                && BadgerFighter.FrameAt(BadgerDuelBeat.Swipe, 0.05f, 0f) == BadgerSwipe.FrameAt(0.05f, 0f)
+                && BadgerDuel.Frame(BadgerDuelBeat.Swipe, 0.05f, 0f) == BadgerSwipe.FrameAt(0.05f, 0f);
+            Check("fighters", named && shown && fade && frames,
+                "both fighters stay at full alpha in every stage; hive cast fade does not hide them; one swipe frame");
+        }
+
+        static void CheckArenaBoxes(System.Action<string, bool, string> Check)
+        {
+            var arena = new Rect(12f, 40f, 360f, 96f);
+            var b = BadgerArenaRects.Split(arena);
+            Rect[] box = { b.YouFighter, b.YouSlot, b.Middle, b.BossSlot, b.BossFighter };
+            float[] want = { 0.20f, 0.22f, 0.10f, 0.22f, 0.20f };
+            bool inside = true;
+            bool order = true;
+            bool gap = true;
+            bool ratio = true;
+            for (int i = 0; i < box.Length; i++)
+            {
+                var r = box[i];
+                if (r.width < 4f || r.x < arena.x - 0.2f || r.xMax > arena.xMax + 0.2f) inside = false;
+                if (Mathf.Abs(r.y - arena.y) > 0.2f || Mathf.Abs(r.height - arena.height) > 0.2f) inside = false;
+                float frac = r.width / arena.width;
+                if (frac < want[i] - 0.03f || frac > want[i] + 0.02f) ratio = false;
+                if (i == 0) continue;
+                if (r.x < box[i - 1].xMax - 0.05f) order = false;
+                float g = r.x - box[i - 1].xMax;
+                if (g < arena.width * 0.005f || g > arena.width * 0.03f) gap = false;
+            }
+            bool sides = b.YouFighter.center.x < b.Middle.center.x && b.BossFighter.center.x > b.Middle.center.x;
+            Check("arena boxes", inside && order && gap && ratio && sides,
+                "five non-overlapping boxes, about 0.20/0.22/0.10/0.22/0.20, fighters on the outside");
+        }
+
+        static void CheckFighterPlace(System.Action<string, bool, string> Check)
+        {
+            var arena = new Rect(40f, 280f, 670f, 220f);
+            var box = BadgerArenaRects.Split(arena);
+            var mark = BadgerFighterPlace.Rest(box, 480f, 640f);
+            bool read = BadgerFighterPlace.Readable(mark, arena);
+            bool birdInYou = mark.BirdBox.xMin >= box.YouFighter.xMin - 0.5f
+                && mark.BirdBox.xMax <= box.YouFighter.xMax + 0.5f;
+            bool badgerInBoss = mark.BadgerBox.xMin >= box.BossFighter.xMin - 0.5f
+                && mark.BadgerBox.xMax <= box.BossFighter.xMax + 0.5f
+                && mark.BadgerBox.height > box.BossFighter.height * 0.5f;
+            bool face = !mark.FaceLeft && mark.Bird.x < box.Middle.center.x && mark.Foot.x > box.Middle.center.x;
+            Check("fighter place", read && birdInYou && badgerInBoss && face,
+                "hummingbird in the left box facing right, badger in the right box, both inside the stage");
+        }
+
+        static void CheckMeter(System.Action<string, bool, string> Check)
+        {
+            var col = new Rect(8f, 120f, 78f, 900f);
+            float unit = BadgerMeter.Unit(col, 18);
+            var n0 = BadgerMeter.Comb(col, 0, unit);
+            var n1 = BadgerMeter.Comb(col, 1, unit);
+            var top = BadgerMeter.Comb(col, 17, unit);
+            var num = BadgerMeter.Number(col);
+            bool order = n0.y > n1.y && n1.y > top.y && top.y >= num.yMax - 1f;
+            bool gap = n0.yMin >= n1.yMax - 0.2f;
+            float you = 10f * unit;
+            float boss = 18f * unit;
+            bool shorter = you < boss - 4f && boss <= col.height - num.height + 1f;
+            bool pulse = Near(BadgerRoundAct.Pulse(0f), 1f)
+                && Near(BadgerRoundAct.Pulse(BadgerRoundAct.PulseSeconds), 1f)
+                && BadgerRoundAct.Pulse(BadgerRoundAct.PulseSeconds * 0.5f) > 1.05f;
+            Check("meter", order && gap && shorter && pulse && unit > 4f,
+                "combs stack from the bottom under a number band, 10 shorter than 18, pulse returns to 1");
+        }
+
+        static void CheckRoundAct(System.Action<string, bool, string> Check)
+        {
+            bool kind = BadgerRoundAct.Of(0, 4) == BadgerRoundAct.Kind.Swipe
+                && BadgerRoundAct.Of(3, 0) == BadgerRoundAct.Kind.Peck
+                && BadgerRoundAct.Of(0, 0) == BadgerRoundAct.Kind.None;
+            float hit = BadgerSwipe.HitAt;
+            bool recoil = Near(BadgerRoundAct.Recoil(hit - 0.02f), 0f)
+                && BadgerRoundAct.Recoil(hit + 0.08f) > 0.4f
+                && Near(BadgerRoundAct.Recoil(hit + BadgerRoundAct.RecoilSeconds + 0.05f), 0f);
+            bool swipe = BadgerFighter.FrameAt(BadgerDuelBeat.Swipe, hit, 0f) == BadgerSwipe.FrameAt(hit, 0f);
+            bool peck = Near(BadgerRoundAct.Peck(0f), 0f)
+                && BadgerRoundAct.Peck(BadgerRoundAct.PeckSeconds * 0.5f) > 0.9f
+                && Near(BadgerRoundAct.Peck(BadgerRoundAct.PeckSeconds), 0f)
+                && BadgerRoundAct.PeckHits(0.10f, 0.30f)
+                && !BadgerRoundAct.PeckHits(0.30f, 0.40f);
+            bool splat = BadgerRoundAct.SplatAlpha(hit + 0.02f) > 0.8f
+                && Near(BadgerRoundAct.SplatAlpha(0f), 0f);
+            Check("round act", kind && recoil && swipe && peck && splat,
+                "badger score swipes, player score pecks, tie is quiet, splat follows the claw");
+        }
+
+        static void CheckOutro(System.Action<string, bool, string> Check)
+        {
+            bool len = BadgerOutro.Duration >= 1f && BadgerOutro.Duration <= 1.5f;
+            bool taunt = BadgerOutro.Frame(false, 0.1f, 0.1f) == "badger_leap_1"
+                && BadgerOutro.Frame(false, 0.5f, 0.1f) == "badger_leap_3"
+                && BadgerOutro.Frame(false, 1.1f, 0.1f) == BadgerSitter.FrameAt(0.1f);
+            bool shrug = BadgerOutro.Frame(true, 0.2f, 0f) == "badger_shrug"
+                && BadgerOutro.Frame(true, BadgerOutro.Duration, 0f) == "badger_shrug";
+            bool back = Near(BadgerOutro.BackOff(true, 0f), 0f)
+                && Near(BadgerOutro.BackOff(true, BadgerOutro.Duration), 1f)
+                && Near(BadgerOutro.BackOff(false, 1f), 0f);
+            bool droop = Near(BadgerOutro.Droop(false, 0f), 0f)
+                && Near(BadgerOutro.Droop(false, BadgerOutro.Duration), BadgerOutro.DroopDegrees)
+                && Near(BadgerOutro.Droop(true, 1f), 0f);
+            bool proud = BadgerOutro.Proud(true, BadgerOutro.Duration) > 0.05f
+                && Near(BadgerOutro.Proud(false, 1f), 0f);
+            bool pop = !BadgerOutro.PopUp(BadgerOutro.Duration - 0.05f) && BadgerOutro.PopUp(BadgerOutro.Duration);
+            Check("outro", len && taunt && shrug && back && droop && proud && pop,
+                "1.25 s, taunt + droop or shrug + back-off, line after the beat");
+        }
+
+        static void CheckSwipe(System.Action<string, bool, string> Check)
+        {
+            float sum = BadgerSwipe.WindupSeconds + BadgerSwipe.StrikeSeconds + BadgerSwipe.RecoverSeconds;
+            bool clock = Near(sum, BadgerSwipe.Duration) && Near(BadgerSwipe.Duration, BadgerOpening.SwipeSeconds)
+                && BadgerSwipe.SlashSeconds >= 0.12f && BadgerSwipe.SlashSeconds <= 0.18f
+                && BadgerSwipe.Streaks == 3;
+            bool hit = BadgerSwipe.HitAt > BadgerSwipe.WindupSeconds
+                && BadgerSwipe.HitAt < BadgerSwipe.WindupSeconds + BadgerSwipe.SlashSeconds
+                && !BadgerOpening.HiveSwiped(0.1f) && BadgerOpening.HiveSwiped(0.3f);
+            bool wind = BadgerSwipe.FrameAt(0.06f, 0f) == "badger_crouch"
+                && BadgerSwipe.Lean(0.08f) > 4f && BadgerSwipe.Lunge(0.08f) < 0f;
+            float early = BadgerSwipe.WindupSeconds + BadgerSwipe.StrikeSeconds * 0.20f;
+            float late = BadgerSwipe.WindupSeconds + BadgerSwipe.StrikeSeconds * 0.80f;
+            bool strike = BadgerSwipe.FrameAt(early, 0f) == "badger_leap_1"
+                && BadgerSwipe.FrameAt(late, 0f) == "badger_leap_3"
+                && BadgerSwipe.Lean(late) < -8f && BadgerSwipe.Lunge(late) > 0.5f
+                && BadgerSwipe.SlashAlpha(late) > 0.9f;
+            float backT = BadgerSwipe.Duration - 0.02f;
+            bool back = BadgerSwipe.FrameAt(backT, 0.1f) == BadgerSitter.FrameAt(0.1f)
+                && Near(BadgerSwipe.Lunge(BadgerSwipe.Duration), 0f)
+                && Near(BadgerSwipe.Lean(BadgerSwipe.Duration), 0f)
+                && Near(BadgerSwipe.SlashAlpha(0f), 0f)
+                && BadgerSwipe.FlashAlpha(BadgerSwipe.HitAt) > 0.9f;
+            var hive = new Rect(100f, 80f, 140f, 120f);
+            int n = 0;
+            float minX = 9999f;
+            float maxX = -9999f;
+            float tipW = 0f;
+            float midW = 0f;
+            bool each = true;
+            for (int s = 0; s < BadgerSwipe.Streaks; s++)
+            {
+                int got = 0;
+                for (int i = 0; i < BadgerSwipe.Segs; i++)
+                {
+                    Vector2 a;
+                    Vector2 b;
+                    float w;
+                    float cover;
+                    if (!BadgerSwipe.Segment(s, i, 1f, hive, out a, out b, out w, out cover)) continue;
+                    got++;
+                    n++;
+                    if (a.x < minX) minX = a.x;
+                    if (b.x < minX) minX = b.x;
+                    if (a.x > maxX) maxX = a.x;
+                    if (b.x > maxX) maxX = b.x;
+                    if (i == 3) midW = w;
+                    if (i >= BadgerSwipe.Segs - 1) tipW = w;
+                }
+                if (got < 1) each = false;
+            }
+            Vector2 za;
+            Vector2 zb;
+            float zw;
+            float zc;
+            bool quiet = !BadgerSwipe.Segment(0, 0, 0f, hive, out za, out zb, out zw, out zc);
+            bool cross = each && n >= 3 && minX < hive.center.x && maxX > hive.center.x && tipW > 0f && midW > tipW;
+            Check("swipe", clock && hit && wind && strike && back && quiet && cross,
+                "crouch, leap_1/leap_3 snap, 0.15 s claw, hit inside the slash, back to idle");
+        }
+
+        static bool SlamPhone(float w, float h, Rect safeBl)
+        {
+            var safe = DontCareSlamRects.SafeGui(w, h, safeBl);
+            var band = DontCareSlamRects.WordBand(safe);
+            var c = new Vector2[4];
+            DontCareSlamRects.RotatedCorners(band, BadgerSlam.PopFrom, DontCareSlamRects.TiltDegrees, c);
+            for (int i = 0; i < 4; i++)
+            {
+                if (c[i].x < safe.x + 1f || c[i].x > safe.xMax - 1f) return false;
+                if (c[i].y < safe.y + 1f || c[i].y > safe.yMax - 1f) return false;
+            }
+            float leftY = (c[0].y + c[3].y) * 0.5f;
+            float rightY = (c[1].y + c[2].y) * 0.5f;
+            return rightY < leftY - 1f && band.width > 8f && band.height > 8f;
+        }
+
+        static void CheckSlamWords(System.Action<string, bool, string> Check)
+        {
+            float early = BadgerSlam.WashAlpha(0.10f);
+            float eye = BadgerSlam.WashAlpha(BadgerSlam.ZoomInEnd - 0.01f);
+            bool wash = early > 0.80f && early < 0.92f && eye > 0.30f && eye < 0.60f
+                && Near(BadgerSlam.WashAlpha(BadgerSlam.Duration), 0f);
+            bool tilt = Near(DontCareSlamRects.TiltDegrees, -15f);
+            // Pixels, portrait, safeArea bottom-left. SE status bar 40px. 15 and Pro Max
+            // are 3x of 59pt top / 34pt bottom.
+            bool phones = SlamPhone(750f, 1334f, new Rect(0f, 0f, 750f, 1294f))
+                && SlamPhone(1179f, 2556f, new Rect(0f, 102f, 1179f, 2277f))
+                && SlamPhone(1290f, 2796f, new Rect(0f, 102f, 1290f, 2517f));
+            Check("slam words", wash && tilt && phones,
+                "0.88 wash on the words, lighter on the eye zoom, -15 deg band inside SE 750x1334, 15 1179x2556, Pro Max 1290x2796");
         }
     }
 }

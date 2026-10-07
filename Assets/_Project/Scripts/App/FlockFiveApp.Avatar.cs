@@ -659,6 +659,7 @@ namespace FlockFive
 
         void DrawAdoptBubble(string line, float s)
         {
+            if (CoachResetHolds()) return;
             var bubble = _adoptLineR;
             if (bubble.width < 2f) return;
             NoteTutorPlate(CoachPanelRect(bubble));

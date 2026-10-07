@@ -15,9 +15,10 @@ namespace FlockFive
     // frame, through DrawSprite), SfxLibrary.Badger ("badger" clip + MixDesk lead mark),
     // Sfx.CardBump and the "tick" clip, PlayClock, BadgerSave, BadgerCopy, TutorialHeal.
     // Don't Care slam: BadgerSlam (clock, zoom, lines, glint), BadgerFight.TryDontCare (roll +
-    // effect), PushBadgerZoom / DrawBadgerSpeedLines / DrawBadgerGlint (small shared helpers),
-    // DrawBadgerShrug / DrawBadgerColumnSplat (shared with the round beat), StampOutlined,
-    // SparkleFx.DrawAt (SpriteCatalog.Sparkle), SfxLibrary.Badger + Sfx.CardBump, HealBadgerShow (interruption).
+    // effect), PushBadgerZoom on the whole page around the boss eye, then a full-screen wash,
+    // DrawBadgerSpeedLines / DrawBadgerGlint, and the tilted words last. DontCareSlamRects keeps
+    // that word band inside the safe area. BadgerSwipe is the one hive swipe. SparkleFx + DrawWaxSplat
+    // are the honey-drop burst. Sfx.CardBump is the hit (no separate swipe clip). HealBadgerShow.
     public sealed partial class FlockFiveApp
     {
         readonly BadgerLeapRun _bgLeap = new BadgerLeapRun();
@@ -262,7 +263,11 @@ namespace FlockFive
             float before = _bgOpenT;
             _bgOpenT += dt;
             if (!BadgerOpening.HiveSwiped(before) && BadgerOpening.HiveSwiped(_bgOpenT))
+            {
+                // No swipe clip. CardBump is the hit, and the hive uses the shared shake.
                 Sfx.CardBump();
+                BadgerShakeStart(BadgerHiveKey);
+            }
             int landed = BadgerOpening.LandedCount(_bgOpenT);
             if (landed > _bgOpenLanded)
             {
@@ -305,22 +310,31 @@ namespace FlockFive
                 DrawBadgerTile(r, look, t.Honey, Color.Lerp(BadgerWax, tint, (land - 0.5f) * 2f), t.Finish, 1f, null);
         }
 
-        // Hive, badger swipe, splat, and the bees in flight. Drawn over the grids.
-        void DrawBadgerOpeningCast(BadgerRects L, BadgerHex youHex)
+        // Hive, the comic splat, a hit flash, and a honey-drop burst. The badger is the
+        // duel actor, not a second sprite here. Returns the hive rect the claws cross.
+        Rect DrawBadgerOpeningHive(BadgerRects L)
         {
-            if (_bgStage != BadgerStage.Opening || !GuiPaint()) return;
-            float t = _bgWashOut > 0f ? 0f : _bgOpenT;
-            float cast = BadgerOpening.CastAlpha(t);
             var a = L.Arena;
+            var hiveFoot = new Vector2(a.center.x, a.yMax);
+            var fallback = new Rect(hiveFoot.x - a.height * 0.6f, a.y, a.height * 1.2f, a.height);
+            if (_bgStage != BadgerStage.Opening || !GuiPaint()) return fallback;
+            float t = _bgWashOut > 0f ? 0f : _bgOpenT;
+            hiveFoot.x += BadgerShakeX(BadgerHiveKey, L.S);
+            float cast = BadgerOpening.CastAlpha(t);
             float hiveUnit = a.height * 1.25f / 681f;
-            var hiveFoot = new Vector2(a.center.x - a.width * 0.10f, a.yMax);
             string hive = BadgerOpening.HiveSwiped(t) ? "hive_swiped" : "hive_idle";
             var hr = DrawBadgerArt(hive, hiveFoot, hiveUnit, cast, BadgerOpening.Wobble(t));
-            if (hr.width < 1f) hr = new Rect(hiveFoot.x - a.height * 0.6f, a.y, a.height * 1.2f, a.height);
+            if (hr.width < 1f) hr = fallback;
 
-            float swing = BadgerOpening.Swing(t);
-            var badgerFoot = new Vector2(a.center.x + a.width * 0.30f - swing * a.width * 0.10f, a.yMax);
-            DrawBadgerArt("badger_idle_b", badgerFoot, a.height * 1.35f / 640f, cast);
+            float flash = BadgerSwipe.FlashAlpha(t);
+            if (flash > 0.02f)
+            {
+                float pad = hr.width * 0.08f;
+                GUI.color = new Color(1f, 0.96f, 0.78f, 0.72f * flash * cast);
+                GUI.DrawTexture(new Rect(hr.x - pad, hr.y - pad, hr.width + pad * 2f, hr.height + pad * 2f),
+                    GlowTex(), ScaleMode.StretchToFill, true);
+                GUI.color = Color.white;
+            }
 
             float splat = BadgerOpening.SplatAlpha(t);
             if (splat > 0f)
@@ -330,7 +344,64 @@ namespace FlockFive
                 DrawBadgerArt("honey_splat", new Vector2(hr.center.x, hr.center.y + sh * 0.5f), su, splat * cast);
             }
 
-            var from = hr.center;
+            float age = t - BadgerSwipe.HitAt;
+            if (age >= 0f && age < 0.42f && hr.width > 2f)
+            {
+                float drop = cast * (1f - age / 0.42f);
+                DrawWaxSplat(hr, BadgerGold, new Color(0.72f, 0.38f, 0.06f, 1f), age, drop);
+                SparkleFx.DrawAround(hr, drop, true, 0.16f);
+            }
+            return hr;
+        }
+
+        // Three curved claw streaks across the hive. White core, warm edge, drawn with the
+        // same texture quads as the speed lines. BadgerSwipe owns the shape.
+        static void DrawBadgerClaws(Rect hive, float t)
+        {
+            if (!GuiPaint() || hive.width < 4f || hive.height < 4f) return;
+            if (BadgerSwipe.SlashAlpha(t) < 0.02f) return;
+            var keep = GUI.matrix;
+            try
+            {
+                for (int s = 0; s < BadgerSwipe.Streaks; s++)
+                {
+                    float lag = s * 0.02f;
+                    float sweep = BadgerSwipe.Sweep(t - lag);
+                    float a = BadgerSwipe.SlashAlpha(t - lag);
+                    if (a < 0.02f || sweep <= 0f) continue;
+                    for (int i = 0; i < BadgerSwipe.Segs; i++)
+                    {
+                        if (!BadgerSwipe.Segment(s, i, sweep, hive, out var p0, out var p1, out float width, out float cover))
+                            continue;
+                        var dir = p1 - p0;
+                        float len = dir.magnitude;
+                        if (len < 0.4f || width < 0.3f) continue;
+                        float ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                        GUI.matrix = keep;
+                        GUIUtility.RotateAroundPivot(ang, p0);
+                        float fade = a * cover;
+                        float extra = width * 0.65f;
+                        GUI.color = new Color(1f, 0.72f, 0.22f, 0.82f * fade);
+                        GUI.DrawTexture(new Rect(p0.x - extra * 0.25f, p0.y - width, len + extra, width * 2f), Texture2D.whiteTexture);
+                        float core = width * 0.38f;
+                        GUI.color = new Color(1f, 1f, 1f, 0.95f * fade);
+                        GUI.DrawTexture(new Rect(p0.x, p0.y - core, len, core * 2f), Texture2D.whiteTexture);
+                    }
+                }
+            }
+            finally
+            {
+                GUI.matrix = keep;
+                GUI.color = Color.white;
+            }
+        }
+
+        // Bees in flight, drawn in front of the fighters so a landing reads over the arena.
+        void DrawBadgerOpeningBees(BadgerRects L, BadgerHex youHex, Vector2 from)
+        {
+            if (_bgStage != BadgerStage.Opening || !GuiPaint()) return;
+            float t = _bgWashOut > 0f ? 0f : _bgOpenT;
+            var a = L.Arena;
             float beeH = youHex.Cw * 0.62f;
             for (int k = 0; k < BadgerOpening.Landings; k++)
             {
@@ -403,14 +474,10 @@ namespace FlockFive
 
         bool DontCareSlamLive => _bgStage == BadgerStage.DontCare;
 
-        // Zoom for this frame: 1 unless the slam is live. Read fresh every frame, never stored.
-        float DontCareZoom() => DontCareSlamLive ? BadgerSlam.Zoom(_bgSlamT) : 1f;
-
-        // Where the pupil sits on screen; the zoom pivots here so the eye holds still and grows.
-        static Vector2 DontCareEyeAt() => new Vector2(Screen.width * 0.5f, Screen.height * 0.42f);
-
         // Shared: scale the GUI around a pivot. Returns the matrix to restore; callers restore
         // it in a finally so an exception mid-draw cannot leave the screen zoomed.
+        // The Don't Care slam scales the whole page around the boss eye, and only while
+        // painting, so hit rects stay in layout space.
         static Matrix4x4 PushBadgerZoom(float k, Vector2 pivot)
         {
             var keep = GUI.matrix;
@@ -419,11 +486,13 @@ namespace FlockFive
         }
 
         // Shared: radial speed lines rushing toward `center`. Thin cream strokes, no art.
-        static void DrawBadgerSpeedLines(Vector2 center, float strength, float t)
+        // maxRadius > 0 keeps every stroke inside that circle so the lines cannot cross the caption.
+        static void DrawBadgerSpeedLines(Vector2 center, float strength, float t, float maxRadius)
         {
             if (!GuiPaint() || strength < 0.02f) return;
             float diag = Mathf.Sqrt(Screen.width * (float)Screen.width + Screen.height * (float)Screen.height);
-            float thick = Mathf.Max(2f, diag * 0.004f);
+            float reach = maxRadius > 1f ? maxRadius : diag;
+            float thick = Mathf.Max(2f, reach * 0.012f);
             var keep = GUI.matrix;
             try
             {
@@ -432,8 +501,8 @@ namespace FlockFive
                     BadgerSlam.SpeedLine(i, t, out float deg, out float inner, out float outer);
                     GUI.matrix = keep;
                     GUIUtility.RotateAroundPivot(deg, center);
-                    float x0 = center.x + inner * diag;
-                    float len = Mathf.Max(1f, (outer - inner) * diag);
+                    float x0 = center.x + inner * reach;
+                    float len = Mathf.Max(1f, (outer - inner) * reach);
                     GUI.color = new Color(BadgerCream.r, BadgerCream.g, BadgerCream.b, 0.70f * strength);
                     GUI.DrawTexture(new Rect(x0, center.y - thick * 0.5f, len, thick), Texture2D.whiteTexture);
                 }
@@ -452,73 +521,58 @@ namespace FlockFive
             SparkleFx.DrawAt(at, size, alpha);
         }
 
-        // Close-up face for the eye zoom: placed so its pupil sits on DontCareEyeAt.
-        static void DrawDontCareFace(float alpha)
-        {
-            var spr = SpriteCatalog.BadgerArt(BadgerSlam.FaceFrame);
-            float artW = spr != null ? spr.rect.width : 977f;
-            float artH = spr != null ? spr.rect.height : 669f;
-            float unit = Mathf.Min(Screen.width * 0.86f / artW, Screen.height * 0.50f / artH);
-            var eye = DontCareEyeAt();
-            float w = artW * unit;
-            float h = artH * unit;
-            float left = eye.x - BadgerSlam.EyeU * w;
-            float top = eye.y - BadgerSlam.EyeV * h;
-            DrawBadgerArt(BadgerSlam.FaceFrame, new Vector2(left + w * 0.5f, top + h), unit, alpha);
-        }
-
-        // Overlay, drawn after the page with the page matrix restored. Wash and words in screen
-        // space; the face under the same zoom as the page; lines, glint, and the nasty move's
-        // honey_splat + shrug on top. Mild and cartoonish only.
-        void DrawDontCareSlam(BadgerRects L)
+        // After the zoomed page. Full-screen wash, then speed lines, then the eye glint,
+        // then the tilted words. Nothing in this method draws after the words.
+        void DrawDontCareSlam(Vector2 pivot, float zoom)
         {
             if (!DontCareSlamLive || !GuiPaint()) return;
             float t = _bgSlamT;
-            var eye = DontCareEyeAt();
-            float k = BadgerSlam.Zoom(t);
 
             float wash = BadgerSlam.WashAlpha(t);
-            GUI.color = new Color(0.05f, 0.04f, 0.03f, wash);
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-
-            float face = BadgerSlam.FaceAlpha(t);
-            if (face > 0.01f)
+            if (wash > 0.01f)
             {
-                var keep = PushBadgerZoom(k, eye);
-                try { DrawDontCareFace(face); }
-                finally { GUI.matrix = keep; }
+                GUI.color = new Color(0.05f, 0.04f, 0.03f, wash);
+                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+                GUI.color = Color.white;
             }
 
-            DrawBadgerSpeedLines(eye, BadgerSlam.SpeedLines(t), t);
+            Vector2 local = _bgDuelEyeOn ? _bgDuelEye : pivot;
+            var eye = new Vector2(
+                pivot.x + (local.x - pivot.x) * zoom,
+                pivot.y + (local.y - pivot.y) * zoom);
+            DrawBadgerSpeedLines(eye, BadgerSlam.SpeedLines(t), t, 0f);
             float g = BadgerSlam.Glint(t);
             if (g > 0f)
             {
                 float tw = 0.85f + 0.15f * Mathf.Sin(t * 40f);
-                DrawBadgerGlint(new Vector2(eye.x - Screen.height * 0.012f * k, eye.y - Screen.height * 0.012f * k),
-                    Screen.height * 0.035f * k * tw, g);
-            }
-
-            if (BadgerSlam.ShowNasty(t))
-            {
-                float a = 1f - Mathf.Clamp01((t - BadgerSlam.NastyEnd) / BadgerSlam.ZoomOutSeconds) * 0.4f;
-                DrawBadgerShrug(L, a);
-                DrawBadgerColumnSplat(L, 0.92f * a);
+                DrawBadgerGlint(eye, Screen.height * 0.035f * tw, g);
             }
 
             string word = BadgerSlam.WordAt(t);
             if (string.IsNullOrEmpty(word)) return;
-            float pop = BadgerSlam.Pop(t);
-            float w = Screen.width * 0.80f;
-            float h = Screen.height * 0.14f;
-            var box = new Rect(Screen.width * 0.5f - w * 0.5f, Screen.height * 0.40f - h * 0.5f, w, h);
+            var safe = DontCareSlamRects.SafeGui(Screen.width, Screen.height, Screen.safeArea);
+            DrawDontCareWord(DontCareSlamRects.WordBand(safe), word, BadgerSlam.Pop(t));
+        }
+
+        // One slammed word, tilted so the right side rises. Drawn last.
+        static void DrawDontCareWord(Rect band, string word, float pop)
+        {
+            if (!GuiPaint() || band.width < 4f || band.height < 4f || string.IsNullOrEmpty(word)) return;
             var st = BadgerStyle();
-            int size = FitFont(st, word, box.width, box.height, 18, 160);
-            st.fontSize = Mathf.Max(18, Mathf.RoundToInt(size * pop));
-            var big = new Rect(box.center.x - box.width * pop * 0.5f, box.center.y - box.height * pop * 0.5f,
-                box.width * pop, box.height * pop);
-            float wa = wash > 0f ? Mathf.Clamp01(wash / BadgerSlam.WashMax) : 0f;
-            StampOutlined(big, word, st, new Color(BadgerCream.r, BadgerCream.g, BadgerCream.b, wa), 0, 3);
+            st.fontSize = FitFont(st, word, band.width * 0.92f, band.height * 0.88f, 14, 140);
+            var keep = GUI.matrix;
+            try
+            {
+                var c = band.center;
+                GUIUtility.RotateAroundPivot(DontCareSlamRects.TiltDegrees, c);
+                if (Mathf.Abs(pop - 1f) > 0.001f)
+                    GUIUtility.ScaleAroundPivot(new Vector2(pop, pop), c);
+                StampOutlined(band, word, st, BadgerCream, 1, Mathf.Max(2, st.fontSize / 10));
+            }
+            finally
+            {
+                GUI.matrix = keep;
+            }
         }
 
         // ---- splash sitter ----

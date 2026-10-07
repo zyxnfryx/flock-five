@@ -35,6 +35,9 @@ namespace FlockFive
         // Badger first-fight lesson stamp lives on BadgerCopy.CoachPref (PrefGuard).
         const string AdHandLine = "Tap to unlock your bonus!";
         const string GiftStuckLine = "Stuck? Tap the gift branch for a bonus spot.";
+        // How long the bonus-branch caption stays up. A reset restarts this whole
+        // window so the landing frame cannot replay the 0.5s fade-out tail.
+        const float GiftHintSeconds = 4.5f;
         // Old clear CoachLineY rest under the hud, in reference pixels. Not the logo floor.
         // Gap under top chrome (back medal / logo row) for caption text boxes.
         // Build 64: a little more air so plates clear the gold Back.
@@ -144,6 +147,12 @@ namespace FlockFive
         int _coachFrom = -1, _coachTo = -1;
         float _coachFade;
         float _coachGiftUntil = -1f;
+        // Board-reset vs tutorial. See CoachResetGuard.
+        CoachResetGuard _coachReset;
+        CoachResetVerb _coachResetVerb;
+        bool _coachResetWant;
+        // Gift caption only: the next frames fade in from 0 instead of the countdown.
+        bool _coachResumeFade;
 
         bool _cueHand;
         bool _cueForce;
@@ -308,7 +317,7 @@ namespace FlockFive
             PlayerPrefs.SetInt(CoachKey, 1);
             if (PlayerPrefs.GetInt(CoachGiftKey, 0) == 0 && GiftBranch() >= 0)
             {
-                _coachGiftUntil = PlayClock.Now + 4.5f;
+                _coachGiftUntil = PlayClock.Now + GiftHintSeconds;
                 PlayerPrefs.SetInt(CoachGiftKey, 1);
             }
             PlayerPrefs.Save();
@@ -417,6 +426,123 @@ namespace FlockFive
             _pestSlot = -1;
         }
 
+        // Parade in flight, or the landing frame that must stay dark.
+        bool CoachResetHolds() =>
+            _coachReset.Flying || CoachResetGuard.BlocksDraw(_coachResetVerb);
+
+        // Steps the reset keeps and shows again from the start: the garden coach,
+        // the bonus-branch hint, the leaf lesson, and the level-bee lesson.
+        // A pest cue and the watch-ad glove are dropped (their subject is gone)
+        // and re-arm at the next natural trigger. Same split HealInterruptedTutorials
+        // uses when a lesson's screen is gone.
+        bool ResumableCoachStep()
+        {
+            bool garden = _coach || _cueGift || _leafIntro || _hiveLevelLive;
+            if (_pestCue != 0 && !garden) return false;
+            if (_adHand && !garden && _pestCue == 0) return false;
+            if (garden) return true;
+            if (_coachFade > 0.02f) return true;
+            if (!string.IsNullOrEmpty(_cueLine)
+                && _cueLine != AdHandLine
+                && _cueLine != SparrowIntroLine
+                && _cueLine != HawkIntroLine)
+                return true;
+            if (_gloveAct == TutorGloveAct.FadeOutOnTap || _gloveAct == TutorGloveAct.Reappear)
+                return true;
+            if (_gloveVis && _gloveAlpha > 0.03f) return true;
+            return false;
+        }
+
+        // A lesson that is not up yet but would arm if the parade were not in the way.
+        bool CoachArmDue()
+        {
+            if (_hiveLevelCue && !_hiveLevelLive && !_coach && !_leafIntro && !_cueGift && _pestCue == 0)
+                return true;
+            if (_pestCue == 0 && !_coach && !_leafIntro && !_cueGift && !_hiveLevelLive && !_adHand
+                && PlayClock.Now >= _coachGiftUntil
+                && (SparrowDue() || HawkDue()))
+                return true;
+            return false;
+        }
+
+        CoachFadePhase CoachFadeNow()
+        {
+            if (_gloveAct == TutorGloveAct.FadeOutOnTap) return CoachFadePhase.Out;
+            if (_cueGift && _coachFade > 0.02f && _coachFade < 0.98f
+                && PlayClock.Now >= _coachGiftUntil - 0.5f)
+                return CoachFadePhase.Out;
+            if (_gloveAct == TutorGloveAct.Reappear) return CoachFadePhase.In;
+            if (_coachFade <= 0.02f) return CoachFadePhase.None;
+            if (_coachFade >= 0.98f) return CoachFadePhase.Held;
+            return CoachFadePhase.In;
+        }
+
+        // resetEdge on the frame a reset starts (and on a second tap during the first).
+        // landedEdge once the formation has finished landing.
+        void TickCoachReset(bool resetEdge, bool landedEdge)
+        {
+            bool showing = ResumableCoachStep();
+            var fade = showing ? CoachFadeNow() : CoachFadePhase.None;
+            bool want = _coachResetWant || (!showing && CoachArmDue());
+            _coachResetWant = false;
+            _coachResetVerb = _coachReset.Tick(resetEdge, _restarting, landedEdge, showing, want, fade);
+            if (resetEdge || CoachResetGuard.BlocksDraw(_coachResetVerb))
+                CutCoachDraw();
+            if ((_coachResetVerb & CoachResetVerb.Resume) != 0)
+                FreshCoachResume();
+        }
+
+        // Alpha 0 this frame. No fade-out, no stale plate. Lesson flags that resume stay.
+        void CutCoachDraw()
+        {
+            bool garden = _coach || _cueGift || _leafIntro || _hiveLevelLive;
+            if (_pestCue != 0 && !garden) PestIntroHide();
+            if (_adHand && !garden && _pestCue == 0)
+            {
+                DismissAdHand();
+                if (_cueLine == AdHandLine)
+                {
+                    _cueLine = null;
+                    _cueSpoken = null;
+                    _cueHand = false;
+                }
+            }
+            _coachFade = 0f;
+            _gloveVis = false;
+            _restVis = false;
+            GloveVeilReset();
+            _tutorSeatOn = false;
+            _tutorPlateOn = false;
+            _tutorPlateFrame = -1;
+            _coachLineHeld = false;
+            _coachHoldXOn = false;
+            CoachHideGlow();
+            CoachHideRipples();
+        }
+
+        // Landing: the interrupted step's caption is set once and fades in from 0.
+        // The bonus hint restarts its whole window so the fade-out tail cannot flash.
+        void FreshCoachResume()
+        {
+            _coachFade = 0f;
+            _tutorSeatOn = false;
+            _tutorPlateOn = false;
+            _tutorPlateFrame = -1;
+            _coachLineHeld = false;
+            _coachHoldXOn = false;
+            _gloveVis = false;
+            _restVis = false;
+            GloveVeilReset();
+            CoachHideGlow();
+            CoachHideRipples();
+            if (_cueGift || _cueLine == GiftStuckLine)
+            {
+                _coachGiftUntil = PlayClock.Now + GiftHintSeconds;
+                _coachResumeFade = true;
+                _cueSpoken = null;
+            }
+        }
+
         void CoachRelease()
         {
             CoachHideNow();
@@ -442,8 +568,11 @@ namespace FlockFive
         // is in flight — CoachMoved still has to recognize the move that just landed.
         void CoachAdvance()
         {
+            TickCoachReset(false, false);
             if (_gloveWiggle > 0f)
                 _gloveWiggle = Mathf.Max(0f, _gloveWiggle - PlayClock.Delta / 0.28f);
+            // Parade owns the screen. Lesson flags stay; the draw is already cut.
+            if (CoachResetHolds()) return;
             TickAdopt();
             TickHivePop();
             TickHiveIntro();
@@ -467,10 +596,10 @@ namespace FlockFive
                 CoachRelease();
                 return;
             }
-            if (_restarting || _won || _gift != GiftFace.None)
+            if (_won || _gift != GiftFace.None)
             {
                 // Tutorial stays down on the gift card. The one-shot ad glove keeps its tap cycle.
-                if (_adHand && _gift == GiftFace.Card && !_restarting && !_won)
+                if (_adHand && _gift == GiftFace.Card && !_won)
                 {
                     _cueHand = false;
                     _cueForce = false;
@@ -488,6 +617,7 @@ namespace FlockFive
             }
             if (!_coach && PlayClock.Now >= _coachGiftUntil)
             {
+                _coachResumeFade = false;
                 if (_leafIntro)
                 {
                     LeafIntroAdvance();
@@ -508,15 +638,28 @@ namespace FlockFive
                     CoachHideGlow();
                     _gloveReady = false;
                     _coachFade = 0f;
+                    _coachResumeFade = false;
                     return;
                 }
                 float left = (_coachGiftUntil - PlayClock.Now) / 0.5f;
-                _coachFade = Mathf.Clamp01(Mathf.Min(1f, left));
                 _cueHand = true;
                 _cueForce = true;
                 _cueGift = true;
                 _cueBranch = g;
-                CueLine(GiftStuckLine);
+                // A reset resumes this hint from a fresh fade-in. The countdown is the
+                // exit only, and only after that fade-in has finished, so the landing
+                // frame cannot snap the plate back to a leftover tail.
+                if (_coachResumeFade)
+                {
+                    CueLine(GiftStuckLine);
+                    _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.35f);
+                    if (_coachFade >= 1f) _coachResumeFade = false;
+                }
+                else
+                {
+                    _coachFade = Mathf.Clamp01(Mathf.Min(1f, left));
+                    CueLine(GiftStuckLine);
+                }
                 return;
             }
 
@@ -716,6 +859,11 @@ namespace FlockFive
         // CoachAdvance clears _cueLine and then calls this again with the same text.
         void CueLine(string text)
         {
+            if (CoachResetHolds())
+            {
+                _coachResetWant = true;
+                return;
+            }
             _cueLine = text;
             if (_cueSpoken == text) return;
             _cueSpoken = text;
@@ -748,6 +896,12 @@ namespace FlockFive
 
         void CoachPlace()
         {
+            if (CoachResetHolds())
+            {
+                _gloveVis = false;
+                _restVis = false;
+                return;
+            }
             _gloveKeepOff = default;
             _gloveInward = false;
             _glovePoseFrame = Time.frameCount;
@@ -1270,6 +1424,12 @@ namespace FlockFive
         // when a nudge would flip it.
         bool CoachGloveAt(Vector2 aimGui, float dt, float s, float perchLift = float.NaN, bool fromLeft = false, float approachDeg = float.NaN, Rect tapRect = default, System.Func<Vector2, bool> tapHit = null)
         {
+            if (CoachResetHolds())
+            {
+                _coachResetWant = true;
+                _gloveVis = false;
+                return false;
+            }
             _gloveClaimFrame = Time.frameCount;
             bool same = GloveSameStep(aimGui, s, fromLeft, approachDeg);
             bool ready = GloveStepReady(aimGui);
@@ -2078,6 +2238,7 @@ namespace FlockFive
 
         void CoachDim()
         {
+            if (CoachResetHolds()) return;
             if (_levelHive || !_cueHand || _coachFade < 0.03f || _cueHolePx < 8f) return;
             var tex = CoachDimTex();
             if (tex == null) return;
@@ -2299,6 +2460,13 @@ namespace FlockFive
         // including one under a button. The gift line is the one that drops.
         Rect SeatTutorialCaption(string text, float s, float top, float w, float h, float placeY = -1f, float placeX = -1f)
         {
+            // A parade must not latch a plate against birds that are off the perch.
+            if (CoachResetHolds())
+            {
+                float x = placeX >= 0f ? placeX : (Screen.width - w) * 0.5f;
+                float y = placeY >= 0f ? placeY : top;
+                return new Rect(x, y, w, h);
+            }
             if (_tutorSeatOn && _tutorSeatFor == text)
                 return ClearCaptionOfStamp(new Rect(_tutorSeatX, _tutorSeatY, w, h), s);
             float restX;
@@ -2713,6 +2881,9 @@ namespace FlockFive
         // plate's top was and lifts the text with it, so the gap above stays the seat's gap.
         void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default, bool opaque = false, float slack = 1f, bool topAlign = false)
         {
+            // Shared caption paint. Every lesson draws through here, so a reset
+            // cuts the plate before a stale rect or a leftover alpha can flash.
+            if (CoachResetHolds()) return;
             lo = CaptionPx(lo);
             hi = CaptionPx(hi);
             var st = CoachLineStyle();
@@ -3124,6 +3295,11 @@ namespace FlockFive
 
         void DrawCoach(float s, float top)
         {
+            if (CoachResetHolds())
+            {
+                _restVis = false;
+                return;
+            }
             // The gift wash covers this pass. The Watch lesson is painted after it.
             if (_adHand) return;
             if (_levelHive)
@@ -3152,6 +3328,7 @@ namespace FlockFive
         // The glove is last, over the plate and every other tutorial mark.
         void DrawTutorOverlay(float s)
         {
+            if (CoachResetHolds()) return;
             if (_restVis)
                 DrawRestGlove(s);
             DrawCoachGlove(s);
@@ -4294,6 +4471,7 @@ namespace FlockFive
         // platePad: per-side plate grow from a caption anchor (AnchoredCaptionBox).
         void DrawSplashIntroLine(string line, Rect r, float s, int fontHi = 0, bool pin = false, Vector2 platePad = default, bool opaque = false)
         {
+            if (CoachResetHolds()) return;
             if (GuiPaint())
                 _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
             int hi = fontHi > 0 ? fontHi : Mathf.Max(18, Mathf.RoundToInt(34f * s));

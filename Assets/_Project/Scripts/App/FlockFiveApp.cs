@@ -4054,13 +4054,19 @@ namespace FlockFive
 
         IEnumerator SnapRound()
         {
-            if (_restarting) yield break;
+            if (_restarting)
+            {
+                // Second tap during the parade. Stay cut; do not resume in the gap.
+                TickCoachReset(true, false);
+                yield break;
+            }
             _motionGen++;
             _restarting = true;
             _solvedMerging = false;
             SetAutoResolveSpeed(1f);
             GardenFit.ClearBusy();
-            CoachHideNow();
+            // Cut the caption and glove this frame, before the flock moves.
+            TickCoachReset(true, false);
             _busy = true;
             // Stage attempt only. Album copies already saved stay in the collection.
             _levelBees.Clear();
@@ -4133,7 +4139,9 @@ namespace FlockFive
             VeilBoard(false);
             HoldDecor(false);
             Conserve("restart");
+            // Formation is home. This frame stays dark; the interrupted step fades in next.
             _restarting = false;
+            TickCoachReset(false, true);
             StillBirds(false);
             _busy = false;
             ArmGardenStamp();
@@ -10802,6 +10810,7 @@ namespace FlockFive
         // Standard caption for a poker page step; the anchor and pin come from PokerStepAnchor.
         void DrawPokerStandardLine(string line, float s)
         {
+            if (CoachResetHolds()) return;
             var r = PokerCaptionSeat(line, s, out bool topAlign);
             StandardCaptionBox(s, out _, out _, out int lo, out int hi);
             if (GuiPaint())
