@@ -592,7 +592,7 @@ namespace FlockFive
             if (_splash || _board == null || _garden.Cam == null)
             {
                 // Home lessons keep the tap cycle. A full release would restart it every frame.
-                if ((_hiveIntro || _pokerIntro || _dailyIntro || _welcomeGlove || _adoptLive || _pokerPageOn || _pokerDealHint || PokerBackHintOn() || _albumTutorOn || _upgradeTutorOn) && _splash) return;
+                if ((_hiveIntro || _pokerIntro || _dailyIntro || _welcomeGlove || _adoptLive || _pokerPageOn || _pokerDealHint || PokerBackHintOn() || _albumTutorOn || _upgradeTutorOn || _bgLessonLive || BadgerGuideLive()) && _splash) return;
                 CoachRelease();
                 return;
             }
