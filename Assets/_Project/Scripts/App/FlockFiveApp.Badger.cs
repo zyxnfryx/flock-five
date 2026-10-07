@@ -1136,10 +1136,6 @@ namespace FlockFive
                 float oage = _bgStage == BadgerStage.Over ? BadgerOutro.Duration : _bgT;
                 spot.Frame = BadgerOutro.Frame(playerWon, oage, now);
                 float shift = BadgerOutro.BackOff(playerWon, oage) * box.BossFighter.width * 0.42f;
-                BadgerArtSize(spot.Frame, spot.Unit, out float bw, out _);
-                float maxX = L.ColR.xMax - 4f;
-                if (foot.x + shift + bw * 0.5f > maxX) shift = maxX - bw * 0.5f - foot.x;
-                if (shift < 0f) shift = 0f;
                 foot.x += shift;
                 bird.y -= BadgerOutro.Proud(playerWon, oage) * icon;
                 spot.BirdDegrees = BadgerOutro.Droop(playerWon, oage);
@@ -1186,12 +1182,16 @@ namespace FlockFive
             float minBird = L.ColL.x + icon * 0.45f;
             if (bird.x < minBird) bird.x = minBird;
 
+            BadgerArtSize(spot.Frame, spot.Unit, out float w, out float h);
+            // Stay left of ColR on every beat (SE wide crouch/leap/shrug frames).
+            float rightLimit = L.ColR.x - 2f;
+            foot.x = BadgerFighterPlace.ClampFootX(foot.x, w, rightLimit);
+
             spot.Foot = foot;
             spot.Degrees = degrees;
             spot.Bird = bird;
             spot.Icon = icon;
             spot.BirdBox = new Rect(bird.x - icon * 0.5f, bird.y - icon * 0.5f, icon, icon);
-            BadgerArtSize(spot.Frame, spot.Unit, out float w, out float h);
             BadgerSlam.EyeUv(spot.Frame, out float eu, out float ev);
             spot.Eye = new Vector2(
                 foot.x - w * 0.5f + w * eu,

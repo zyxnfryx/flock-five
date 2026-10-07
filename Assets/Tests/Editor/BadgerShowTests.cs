@@ -285,8 +285,32 @@ namespace FlockFive.Editor
                 && mark.BadgerBox.xMax <= box.BossFighter.xMax + 0.5f
                 && mark.BadgerBox.height > box.BossFighter.height * 0.5f;
             bool face = !mark.FaceLeft && mark.Bird.x < box.Middle.center.x && mark.Foot.x > box.Middle.center.x;
-            Check("fighter place", read && birdInYou && badgerInBoss && face,
-                "hummingbird in the left box facing right, badger in the right box, both inside the stage");
+
+            // SE 750x1334: wide crouch / leap_1 / leap_3 / shrug must stay left of ColR.
+            float seW = 750f, seH = 1334f;
+            float colW = 64f;
+            float gx = 8f + colW + 10f;
+            float gw = seW - colW - 10f - gx - colW;
+            var seArena = new Rect(gx, 400f, gw, seH * 0.16f);
+            var seBox = BadgerArenaRects.Split(seArena);
+            float colR = seW - 8f - colW; // left edge of ColR
+            var idle = BadgerFighterPlace.Rest(seBox, 480f, 640f);
+            string[] wide = { "badger_crouch", "badger_leap_1", "badger_leap_3", "badger_shrug" };
+            // Approximate aspect from the idle-fitted unit: scale width by typical frame ratios.
+            float[] wideW = { 560f, 620f, 640f, 600f };
+            float[] wideH = { 640f, 640f, 640f, 640f };
+            bool seClear = true;
+            for (int i = 0; i < wide.Length; i++)
+            {
+                float unit = idle.Unit;
+                float w = wideW[i] * unit;
+                float footX = BadgerFighterPlace.ClampFootX(idle.Foot.x, w, colR - 2f);
+                float right = footX + w * 0.5f;
+                if (right > colR - 1.5f) seClear = false;
+            }
+
+            Check("fighter place", read && birdInYou && badgerInBoss && face && seClear,
+                "hummingbird in the left box facing right, badger in the right box; SE wide frames stay left of ColR");
         }
 
         static void CheckMeter(System.Action<string, bool, string> Check)

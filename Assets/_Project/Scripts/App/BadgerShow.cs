@@ -556,10 +556,10 @@ namespace FlockFive
         // Eye shares are of that frame, top-left origin, on the left pupil.
         // ShrugEye is the half-closed eye of badger_shrug, so the glint follows the pose.
         public const string FaceFrame = "badger_leap_3";
-        public const float EyeU = 0.405f;
-        public const float EyeV = 0.356f;
-        public const float ShrugEyeU = 0.436f;
-        public const float ShrugEyeV = 0.264f;
+        public const float EyeU = 0.440f;
+        public const float EyeV = 0.270f;
+        public const float ShrugEyeU = 0.510f;
+        public const float ShrugEyeV = 0.185f;
 
         public static void EyeUv(string frame, out float u, out float v)
         {
@@ -1029,6 +1029,17 @@ namespace FlockFive
             if (m.BirdBox.width < arena.height * 0.35f) return false;
             if (m.BadgerBox.height < arena.height * 0.55f) return false;
             return Contains(arena, m.BirdBox) && Contains(arena, m.BadgerBox);
+        }
+
+        // Keep every beat's drawn sprite left of ColR (the meter column). Shared by
+        // rest, lunge, swipe, strike and outro so SE wide frames never cover Continue.
+        public static float ClampFootX(float footX, float artW, float rightLimit)
+        {
+            float half = artW * 0.5f;
+            if (half < 1f) half = 1f;
+            float right = footX + half;
+            if (right > rightLimit) footX -= right - rightLimit;
+            return footX;
         }
 
         static bool Contains(Rect outer, Rect inner)
