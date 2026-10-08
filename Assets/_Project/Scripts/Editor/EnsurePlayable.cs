@@ -28,6 +28,8 @@ namespace FlockFive.Editor
             Suite("reset-guard", CoachResetGuardTests.Run);
             Suite("poker-bet", PokerBetTests.Run);
             Suite("discard-anim", PokerDiscardAnimTests.Run);
+            Suite("pest", PestScheduleTests.Run);
+            Suite("honey-drip", HoneyDripTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

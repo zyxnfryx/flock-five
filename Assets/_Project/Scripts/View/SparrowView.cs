@@ -37,10 +37,12 @@ namespace FlockFive
                 yield return null;
             }
             yield return PlayClock.Wait(Random.Range(12f, 22f));
+            // The wait can outlast the solve. A timer that fires then is ignored.
+            if (!PestSchedule.TimerOpens(PestSchedule.PestKind.Sparrow, true)) yield break;
             int left = visits;
             while (parent != null && left > 0)
             {
-                if (PestSchedule.StageFull) yield break;
+                if (PestSchedule.SolvedNow || PestSchedule.StageFull) yield break;
                 if (allow != null && allow() && HasEnabled(feeders) && PestSchedule.TryReserve())
                 {
                     yield return Visit(feeders, parent);
@@ -55,6 +57,7 @@ namespace FlockFive
 
         public static IEnumerator Visit(FeederView[] feeders, Transform parent)
         {
+            if (PestSchedule.SolvedNow) yield break;
             if (parent == null || feeders == null) yield break;
             var picks = Enabled(feeders);
             if (picks.Length == 0) yield break;
@@ -82,7 +85,7 @@ namespace FlockFive
             float t = 0f;
             const float inDur = 0.95f;
             bool chirped = false;
-            while (t < inDur)
+            while (t < inDur && !view._evict)
             {
                 if (parent == null || go == null) yield break;
                 PestPool.Prewarm(parent, 4);
@@ -101,7 +104,8 @@ namespace FlockFive
             }
 
             // Land + perch (block feeder) until collect eviction (or feeder vanishes).
-            if (go != null && target != null)
+            // A solve that started the flee already owns the exit.
+            if (!view._evict && go != null && target != null)
             {
                 go.transform.position = target.Mouth + new Vector3(0f, 0.35f, 0f);
                 view.BlockingSlot = target.Slot;
@@ -170,6 +174,17 @@ namespace FlockFive
             if (_done || _evict) return;
             _evict = true;
             BlockingSlot = -1;
+        }
+
+        // The board solved under this bird. Drop the perch and bolt, so a
+        // feeder block cannot hold the finale. Idempotent once the flee starts.
+        public void LeaveForSolve()
+        {
+            if (_done || _fleeing || _evict) return;
+            _evict = true;
+            BlockingSlot = -1;
+            Settled = false;
+            StartCoroutine(PanicFlee(false));
         }
 
         // Restart aborted the scrap before PanicFlee. Let Visit destroy this sparrow.

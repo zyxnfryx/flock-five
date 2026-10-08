@@ -629,6 +629,7 @@ namespace FlockFive
             _iceCoating = false;
             _sel = -1;
             StopPests();
+            PestSchedule.Watch(null, null);
             // Destroy lands at frame end. Hide now so the old painting cannot flash over home.
             if (_garden.Root != null)
             {
@@ -727,6 +728,7 @@ namespace FlockFive
             Sfx.GardenWake();
             StopPests();
             PestSchedule.BeginStage(LevelData.DisplayNumber);
+            PestSchedule.Watch(_board, () => _solvedMerging || _gardenScoring || _won);
             SyncOrbitHive();
             _sparrowRun = StartCoroutine(SparrowView.Patrol(
                 CanSparrowVisit, PestsArmed, LevelData.SparrowVisits, _garden.Feeders, _garden.Root));
@@ -770,12 +772,14 @@ namespace FlockFive
         }
 
         bool CanSparrowVisit() =>
-            !_splash && !_busy && !_won && !_frozen && !_levelHive
+            !PestSchedule.SolvedNow
+            && !_splash && !_busy && !_won && !_frozen && !_levelHive
             && _gift == GiftFace.None && _board != null && !_board.Won
             && (HawkView.Live == null || !HawkView.Live.IsBlocking);
 
         bool CanHawkVisit() =>
-            !_splash && !_busy && !_won && !_frozen && !_levelHive
+            !PestSchedule.SolvedNow
+            && !_splash && !_busy && !_won && !_frozen && !_levelHive
             && _gift == GiftFace.None && _board != null && !_board.Won;
 
         bool PestsArmed() => _pestsArmed;
@@ -2301,6 +2305,9 @@ namespace FlockFive
         {
             // Bonus signs fade on the shared stage-clear state (limb stays; see GiftWant).
             GiftWant.StageClear = _won && !_splash;
+            // Before the pause return and the speed sync: a solved board sends
+            // a perched pest off so the freeze and the finale are not held.
+            ReleaseSolvedPests();
             // Before the pause return: the base scale is set (or handed to GamePause) every frame.
             SyncAutoResolveSpeed();
             // Chain ended. A collect still in flight keeps the opening sting slot.
@@ -3324,6 +3331,28 @@ namespace FlockFive
             return SparrowView.Live != null || HawkView.Live != null;
         }
 
+        // A bird already bolting (perch dropped) does not hold the resolve.
+        // One still on a feeder does, until ReleaseSolvedPests sends it off.
+        bool PestBlocksResolve()
+        {
+            var s = SparrowView.Live;
+            if (s != null && s.IsBlocking) return true;
+            var h = HawkView.Live;
+            if (h != null && h.IsBlocking) return true;
+            return false;
+        }
+
+        void ReleaseSolvedPests()
+        {
+            if (_splash || _board == null || !PestSchedule.SolvedNow) return;
+            if (SparrowView.Live != null) SparrowView.Live.LeaveForSolve();
+            if (HawkView.Live != null) HawkView.Live.LeaveForSolve();
+            bool blocking = (SparrowView.Live != null && SparrowView.Live.IsBlocking)
+                || (HawkView.Live != null && HawkView.Live.IsBlocking);
+            if (!blocking && (_pestCue == PestCueSparrow || _pestCue == PestCueHawk))
+                PestIntroHide();
+        }
+
         // One win latch. A pest on a solved garden does not wait for locks or the fit tween.
         bool TryScoreGarden()
         {
@@ -3331,7 +3360,7 @@ namespace FlockFive
             if (_restarting || _splash || _frozen) return false;
             if (_board == null || _board.Displaced.Count > 0 || !_board.Won) return false;
             if (_collectDepth > 0 || _collecting) return false;
-            if (!PestOnStage() && (_locked.Count > 0 || GardenFit.Busy)) return false;
+            if (!PestBlocksResolve() && (_locked.Count > 0 || GardenFit.Busy)) return false;
             _gardenScoring = true;
             StopPests();
             StartCoroutine(SettleIfIdle());
@@ -3405,7 +3434,7 @@ namespace FlockFive
         // that run already reads (Hop, Collect, FlyHit, RetireFeeder, BreakAway, GardenFit.Tween,
         // PlayComboPop). Sounds fire off the same timeline, so they stay on their beats. The two
         // real-time waits in the window (combo pop spacing, the pre-finale beat) divide by it by
-        // hand. Back to 1 at the finale, Load, restart, home, any pest on stage, an ad, background.
+        // hand. Back to 1 at the finale, Load, restart, home, a pest still on a feeder, an ad, background.
         // Build 63: another 20% (1.2 x 1.2).
         const float AutoResolveSpeed = 1.44f;
         float _autoResolveScale = 1f;
@@ -3415,7 +3444,7 @@ namespace FlockFive
         {
             if (_board == null || _splash || _restarting || _autoResolveDone || Ads.IsShowing) return false;
             if (_frozen || _gift != GiftFace.None) return false;
-            if (PestOnStage() || _pestResolving || _pestFinishing) return false;
+            if (PestBlocksResolve() || _pestResolving || _pestFinishing) return false;
             return _board.Solved;
         }
 
@@ -12323,6 +12352,8 @@ namespace FlockFive
             }
             _pokerMotion = PokerMotion.Deal;
             _pokerMotionT = 0f;
+            _pokerKickT = 0f;
+            _pokerKick = Vector2.zero;
             _pokerFan = false;
             _pokerChained = false;
             _pokerShowPay = false;
@@ -12408,6 +12439,8 @@ namespace FlockFive
         {
             _pokerMotion = PokerMotion.Draw;
             _pokerMotionT = 0f;
+            _pokerKickT = 0f;
+            _pokerKick = Vector2.zero;
             _pokerPluckN = 0;
             for (int i = 0; i < BirdPoker.HandSize; i++)
             {
@@ -12431,7 +12464,6 @@ namespace FlockFive
             _pokerPluckEnd = 0.16f;
             _pokerReplaceEnd = _pokerPluckEnd + 0.12f * Mathf.Max(0, disc - 1) + 0.72f;
             _pokerRowEnd = _pokerReplaceEnd + 0.16f * Mathf.Max(1, disc) + 0.40f;
-            PunchPoker(0.16f, 4.2f, 1.0f);
         }
 
         void TickHoldSlide()
@@ -12445,14 +12477,20 @@ namespace FlockFive
             }
         }
 
-        void PunchPoker(float dur, float amp, float twist)
+        // Table nudge for a stamp or a win landing. Screen shake is opt-in:
+        // this helper used to punch the camera on every call, and the deal,
+        // the draw, and the card flips all call it. The home camera is the
+        // garden behind every splash face (GardenLife since build 69), so
+        // those punches shook the screen. Nothing in poker opts in. The
+        // badger word slam is BadgerSlam.Shake, not this.
+        void PunchPoker(float dur, float amp, float twist, bool shake = false)
         {
             _pokerKickDur = Mathf.Max(0.08f, dur);
             _pokerKickAmp = amp;
             _pokerKickTwist = twist;
             _pokerKickT = _pokerKickDur;
-            if (CamShake.Live != null)
-                CamShake.Live.Punch(dur, amp * 0.012f, twist * 0.45f, amp * 0.004f);
+            if (!shake || CamShake.Live == null) return;
+            CamShake.Live.Punch(dur, amp * 0.012f, twist * 0.45f, amp * 0.004f);
         }
 
         void TickPokerKick()
@@ -12481,16 +12519,10 @@ namespace FlockFive
             if (_pokerMotion == PokerMotion.Deal)
             {
                 if (prev < DealGatherT && now >= DealGatherT)
-                {
                     Sfx.Riffle();
-                    PunchPoker(0.28f, 5.5f, 1.4f);
-                }
                 float fanAt = DealGatherT + DealRiffleT;
                 if (prev < fanAt && now >= fanAt)
-                {
                     Sfx.CardRustle();
-                    PunchPoker(0.16f, 3.2f, 0.8f);
-                }
                 for (int i = 0; i < BirdPoker.HandSize; i++)
                 {
                     float slap = fanAt + 0.08f + i * 0.07f;
@@ -12498,28 +12530,19 @@ namespace FlockFive
                 }
                 float bumpAt = fanAt + DealFanT;
                 if (prev < bumpAt && now >= bumpAt)
-                {
                     Sfx.CardBump();
-                    PunchPoker(0.22f, 9.5f, 2.2f);
-                }
             }
             else if (_pokerMotion == PokerMotion.Draw)
             {
                 if (prev < 0.04f && now >= 0.04f && _pokerChainBreak >= 0f)
-                {
                     Sfx.ChainSnap();
-                    PunchPoker(0.28f, 10.5f, 2.4f);
-                }
                 int fi = 0;
                 for (int i = 0; i < BirdPoker.HandSize; i++)
                 {
                     if (!_pokerRedraw[i]) continue;
                     float at = _pokerPluckEnd + fi * 0.16f;
                     if (prev < at + 0.12f && now >= at + 0.12f)
-                    {
                         Sfx.CardPop();
-                        PunchPoker(0.12f, 5.2f, 1.1f);
-                    }
                     fi++;
                 }
                 int di = 0;

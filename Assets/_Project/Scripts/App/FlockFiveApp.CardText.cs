@@ -83,7 +83,7 @@ namespace FlockFive
                 Color rim = finish == BeeFinish.Holo ? new Color(0.15f, 0.48f, 0.92f, 1f)
                     : finish == BeeFinish.InverseRainbow ? new Color(0.82f, 0.22f, 0.68f, 1f)
                     : AlbumWood(tint, true);
-                // Drips live inside the cell (bottom 22%), so they stay in the honey zone.
+                // Drips hang from the hex tip and stay inside the honey zone.
                 // The full inspect stretches a drip on a 3s loop. The grid stays still.
                 float now = full ? Time.unscaledTime : 0f;
                 for (int i = 0; i < n; i++)

@@ -49,10 +49,11 @@ namespace FlockFive
                 yield return null;
             }
             yield return PlayClock.Wait(Random.Range(40f, 70f));
+            if (!PestSchedule.TimerOpens(PestSchedule.PestKind.Hawk, true)) yield break;
             int left = visits;
             while (parent != null && left > 0)
             {
-                if (PestSchedule.StageFull) yield break;
+                if (PestSchedule.SolvedNow || PestSchedule.StageFull) yield break;
                 if (allow != null && allow() && HasEnabled(feeders) && Live == null && PestSchedule.TryReserve())
                 {
                     yield return Visit(feeders, parent);
@@ -67,6 +68,7 @@ namespace FlockFive
 
         public static IEnumerator Visit(FeederView[] feeders, Transform parent)
         {
+            if (PestSchedule.SolvedNow) yield break;
             if (parent == null || feeders == null || Live != null) yield break;
             var picks = Enabled(feeders);
             if (picks.Length == 0) yield break;
@@ -96,7 +98,7 @@ namespace FlockFive
             float t = 0f;
             const float inDur = 1.05f;
             bool cried = false;
-            while (t < inDur)
+            while (t < inDur && !view._evict)
             {
                 if (parent == null || go == null) yield break;
                 PestPool.Prewarm(parent, 4);
@@ -115,9 +117,11 @@ namespace FlockFive
             }
 
             // Land + boot any sparrow (hawk presence clears sparrow).
-            BootSparrow();
+            // A solve that started the flee skips the perch.
+            if (!view._evict)
+                BootSparrow();
 
-            if (go != null && target != null)
+            if (!view._evict && go != null && target != null)
             {
                 go.transform.position = target.Mouth + new Vector3(0f, 0.42f, 0f);
                 view.BlockingSlot = target.Slot;
@@ -183,6 +187,18 @@ namespace FlockFive
                 if (view != null && Live == view) Live = null;
                 if (go != null) Object.Destroy(go);
             }
+        }
+
+        // The board solved under this hawk. A scrap still in the air finishes
+        // itself; a perched hawk drops the feeder and bolts.
+        public void LeaveForSolve()
+        {
+            if (_done || _fleeing || _evict || _scrap) return;
+            _evict = true;
+            BlockingSlot = -1;
+            Settled = false;
+            Calm();
+            StartCoroutine(PanicFlee(false));
         }
 
         // Collect dive-fight owns pose; BlockingSlot stays set (still blocking).
