@@ -30,6 +30,7 @@ namespace FlockFive.Editor
             Suite("discard-anim", PokerDiscardAnimTests.Run);
             Suite("pest", PestScheduleTests.Run);
             Suite("honey-drip", HoneyDripTests.Run);
+            Suite("build71", Build71Tests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

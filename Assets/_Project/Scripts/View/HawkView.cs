@@ -48,7 +48,7 @@ namespace FlockFive
                 if (parent == null) yield break;
                 yield return null;
             }
-            yield return PlayClock.Wait(Random.Range(40f, 70f));
+            yield return PestSchedule.Wait(Random.Range(40f, 70f));
             if (!PestSchedule.TimerOpens(PestSchedule.PestKind.Hawk, true)) yield break;
             int left = visits;
             while (parent != null && left > 0)

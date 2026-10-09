@@ -15,6 +15,7 @@ namespace FlockFive
         static Texture2D _dripA;
         static Texture2D _dripB;
         static bool _warm;
+        static int _warmStep;
 
         // A card or popup hangs indices 0..DripCombCells-1 together. LayoutCell sizes
         // those drips from DripGroupSeed so the row cannot share a length or a width.
@@ -37,16 +38,30 @@ namespace FlockFive
             public float Width;
         }
 
+        public static bool WarmDone => _warmStep >= 6;
+
+        // One bake per call so the splash budget can spread the drip/lattice/gloss
+        // work. Warm() still finishes anything a first use needs on the spot.
+        public static bool WarmStep()
+        {
+            if (_warmStep >= 6) return false;
+            switch (_warmStep)
+            {
+                case 0: _mask = BakeMask(); break;
+                case 1: _fill = BakeFill(); break;
+                case 2: _lattice = BakeLattice(); break;
+                case 3: _gloss = BakeGloss(); break;
+                case 4: _dripA = BakeDrip(0); break;
+                default: _dripB = BakeDrip(1); break;
+            }
+            _warmStep++;
+            _warm = _warmStep >= 6;
+            return true;
+        }
+
         public static void Warm()
         {
-            if (_warm) return;
-            _warm = true;
-            _mask = BakeMask();
-            _fill = BakeFill();
-            _lattice = BakeLattice();
-            _gloss = BakeGloss();
-            _dripA = BakeDrip(0);
-            _dripB = BakeDrip(1);
+            while (WarmStep()) { }
         }
 
         public static Texture2D Mask()
@@ -496,8 +511,12 @@ namespace FlockFive
             float power = cot * span / Mathf.Max(0.001f, joinHalf - neckHalf);
             if (power < 1.15f) power = 1.15f;
             if (power > 4.5f) power = 4.5f;
+            float neck = Mathf.Max(1f, topY - joinY);
+            // Above the mass (the bulb plus the neck) and up into the neck.
+            // iy 0 is the bulb, so a higher fy is closer to the hex.
             float specX = cx - rad * 0.26f;
-            float specY = bulbCy + rad * 0.22f;
+            float specY = joinY + neck * 0.22f;
+            float glowY = joinY + neck * 0.08f;
             float specS = (rad * 0.10f) * (rad * 0.10f);
             var deep = new Color(0.62f, 0.24f, 0.04f, 1f);
             var gold = new Color(1f, 0.84f, 0.28f, 1f);
@@ -518,7 +537,7 @@ namespace FlockFive
                     float baseT = (0.25f + 0.75f * depth) * (0.55f + 0.45f * low);
                     var c = Color.Lerp(deep, gold, baseT);
                     float gx = (fx - (cx - rad * 0.05f)) / (rad * 2.2f);
-                    float gy = (fy - (bulbCy + rad * 0.25f)) / (rad * 2.2f);
+                    float gy = (fy - glowY) / (rad * 2.2f);
                     float g = Mathf.Max(0f, 0.55f - Mathf.Sqrt(gx * gx + gy * gy)) * depth;
                     c = Color.Lerp(c, glow, g * 0.75f);
                     float sdx = fx - specX;

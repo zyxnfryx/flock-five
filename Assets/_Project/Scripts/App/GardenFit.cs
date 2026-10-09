@@ -21,6 +21,14 @@ namespace FlockFive
 
         // Long enough that a row, or a short stack, reads as a slide.
         const float SettleSeconds = 0.62f;
+        // One hitch cannot swallow the whole ease (two RowGap steps in a frame).
+        public const float EaseStepCap = 1f / 30f;
+
+        public static float EaseDelta(float dt)
+        {
+            if (dt < 0f) dt = 0f;
+            return dt > EaseStepCap ? EaseStepCap : dt;
+        }
         const float GapTol = 0.16f;
 
         static int _fitSerial;
@@ -95,7 +103,7 @@ namespace FlockFive
                 while (u < 1f)
                 {
                     if (run != _fitSerial) yield break;
-                    u += Time.deltaTime / SettleSeconds;
+                    u += EaseDelta(Time.deltaTime) / SettleSeconds;
                     if (u > 1f) u = 1f;
                     float k = Mathf.SmoothStep(0f, 1f, u);
                     for (int i = 0; i < n; i++)
@@ -106,7 +114,11 @@ namespace FlockFive
                 for (int i = 0; i < n; i++)
                 {
                     if (views[i] == null || views[i].Breaking) continue;
-                    views[i].Fit(toPos[i], LimbScale);
+                    var end = toPos[i];
+                    end.x = fromPos[i].x;
+                    var endS = LimbScale;
+                    endS.x = fromS[i].x;
+                    views[i].Fit(end, endS);
                 }
             }
             finally
@@ -131,14 +143,13 @@ namespace FlockFive
             return false;
         }
 
-        // X locks to the packed bezel. Y eases. Scale eases onto LimbScale.
+        // Outer X and width stay. Only the vertical slide eases, so a column
+        // cannot jump sideways or change width on the first sample.
         static void ApplyEase(BranchView view, Vector3 fromPos, Vector3 fromS, Vector3 toPos, float k)
         {
             if (view == null || view.Breaking) return;
-            var p = Vector3.Lerp(fromPos, toPos, k);
-            p.x = toPos.x;
-            var s = Vector3.Lerp(fromS, LimbScale, k);
-            s.x = LimbScale.x;
+            var p = new Vector3(fromPos.x, Mathf.Lerp(fromPos.y, toPos.y, k), fromPos.z);
+            var s = new Vector3(fromS.x, Mathf.Lerp(fromS.y, LimbScale.y, k), fromS.z);
             view.Fit(p, s);
         }
 

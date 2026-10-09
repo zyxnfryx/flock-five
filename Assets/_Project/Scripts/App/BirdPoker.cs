@@ -64,6 +64,9 @@ namespace FlockFive
         public const int FloorBet = 5;
 
         public static Phase PhaseNow { get; private set; }
+        // Settled result still face-up after the phase returns to Idle. Deal and
+        // ResetRound clear it. Collect does not use this: it still wipes the hand.
+        public static bool ResultOnTable { get; private set; }
         public static int Bet { get; private set; } = FloorBet;
         public static int MinBet { get; private set; } = FloorBet;
         public static int MaxBet { get; private set; } = FloorBet;
@@ -107,6 +110,7 @@ namespace FlockFive
             // abandoned celebration never leaves the purse label short).
             Purse.ReleaseDisplay();
             PhaseNow = Phase.Idle;
+            ResultOnTable = false;
             LastWin = 0;
             LastRank = Rank.Nothing;
             for (int i = 0; i < HandSize; i++)
@@ -306,6 +310,7 @@ namespace FlockFive
             if (PhaseNow != Phase.Idle) return false;
             if (Purse.Coins < FloorBet || Bet < FloorBet) return false;
             if (!Purse.TrySpend(Bet)) return false;
+            ResultOnTable = false;
             ShuffleShoe();
             for (int i = 0; i < HandSize; i++)
             {
@@ -377,6 +382,20 @@ namespace FlockFive
             ResetRound();
             LastWin = win;
             LastRank = rank;
+            RefreshBet();
+        }
+
+        // Idle so DEAL can show (CanDeal is true), but the result stays on the table.
+        // ResetRound still wipes the hand for every other caller. Hold is cleared so the
+        // next deal is not a kept selection; LastWin and LastRank stay for the banner.
+        public static void Settle()
+        {
+            if (PhaseNow != Phase.Drawn) return;
+            Purse.ReleaseDisplay();
+            PhaseNow = Phase.Idle;
+            for (int i = 0; i < HandSize; i++)
+                Hold[i] = false;
+            ResultOnTable = true;
             RefreshBet();
         }
 

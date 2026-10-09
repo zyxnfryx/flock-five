@@ -17,6 +17,19 @@ namespace FlockFive
 
         public enum Act { None, Ad, Draw, Deal, Broke }
 
+        // One check for the floral control. DRAW only while a hand is dealt.
+        // DEAL only when CanDeal is true. A Drawn result stays hidden: CanDeal
+        // is false until the hand is back to Idle, so the label cannot say DEAL early.
+        public static string ActLabel(BirdPoker.Phase phase, bool canDeal)
+        {
+            if (phase == BirdPoker.Phase.Dealt) return "DRAW";
+            if (phase == BirdPoker.Phase.Drawn || !canDeal) return null;
+            return "DEAL";
+        }
+
+        public static bool ActShown(BirdPoker.Phase phase, bool canDeal) =>
+            ActLabel(phase, canDeal) != null;
+
         public struct Snap
         {
             public BirdPoker.Phase Phase;

@@ -232,6 +232,7 @@ namespace FlockFive
         }
 
         static bool Live;
+        public static bool Playing => Live;
         static bool Glow;
         static bool _cut;
         const float PulseDur = 1.6f;

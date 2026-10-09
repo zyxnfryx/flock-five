@@ -4882,7 +4882,6 @@ namespace FlockFive
         void DrawPokerIntro(float s)
         {
             if (!_pokerIntroLive) return;
-            if (GuiPaint()) TickPokerWarm();
             // Opaque plate: LEVEL must not show through this one (Brandon, build 58).
             DrawAnchoredIntroLine(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering, true);
             DrawTutorOverlay(s);
@@ -5375,6 +5374,7 @@ namespace FlockFive
         {
             if (!_leafIntro) return;
             _leafIntro = false;
+            PestSchedule.SetTutorialPause(false);
             _leafSeen = 0f;
             _leafKeepOn = false;
             _leafSeatOn = false;

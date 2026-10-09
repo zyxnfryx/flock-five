@@ -583,6 +583,13 @@ namespace FlockFive
 #endif
         }
 
+        // Clears the inspect, the flip, and a stale album tutor together.
+        void CloseHiveInspect()
+        {
+            HiveOverlay.Close(ref _hiveInspect, ref _hiveInspectClosing, ref _hiveInspectT,
+                ref _hiveFlip, ref _hiveFlipT, ref _albumTutorOn);
+        }
+
         void Restart()
         {
             if (_splash) return;
@@ -603,6 +610,7 @@ namespace FlockFive
 
         void ShowSplash()
         {
+            CloseHiveInspect();
             SeasonCrossfade.RetireLive();
             GardenLife.DetachHome();
             _splash = true;
@@ -613,6 +621,7 @@ namespace FlockFive
             _collectDepth = 0;
             GardenFit.ClearBusy();
             _leafIntro = false;
+            PestSchedule.SetTutorialPause(false);
             NoteHiveIntroLeft();
             NotePokerIntroLeft();
             NoteDailyIntroLeft();
@@ -661,6 +670,9 @@ namespace FlockFive
 
         void Load(int index)
         {
+            // Before the garden (and its season banner) is built. A solved board
+            // that is still browsing the inspect does not come through here.
+            CloseHiveInspect();
             SeasonCrossfade.RetireLive();
             GardenLife.DetachHome();
             GiftWant.StageClear = false; // the new stage's signs start lit
@@ -728,6 +740,7 @@ namespace FlockFive
             Sfx.GardenWake();
             StopPests();
             PestSchedule.BeginStage(LevelData.DisplayNumber);
+            PestSchedule.SetTutorialPause(_leafIntro);
             PestSchedule.Watch(_board, () => _solvedMerging || _gardenScoring || _won);
             SyncOrbitHive();
             _sparrowRun = StartCoroutine(SparrowView.Patrol(
@@ -3316,7 +3329,7 @@ namespace FlockFive
             _collecting = true;
             // A collect while the leaf line is up is the breeze. It does not wait
             // for the foliage to finish lifting, and a reset parade is not a collect.
-            if (_leafIntro && !_restarting && _cueLine == LeafIntroLine)
+            if (_leafIntro && !_restarting)
                 DismissLeafIntro();
         }
 
@@ -4143,11 +4156,7 @@ namespace FlockFive
             _levelHiveDragX = 0f;
             _incomingHalo.Clear();
             _wakeBranch = -1;
-            _hiveInspect = -1;
-            _hiveInspectClosing = false;
-            _hiveInspectT = 0f;
-            _hiveFlip = -1;
-            _hiveFlipT = 0f;
+            CloseHiveInspect();
             if (_garden.Hive != null) _garden.Hive.CancelVisitors();
             HoldDecor(true);
             _gift = GiftFace.None;
@@ -5173,13 +5182,8 @@ namespace FlockFive
             else
             {
                 if (_levelHive) CloseLevelHive();
-                if (_hiveInspect >= 0)
-                {
-                    _hiveInspect = -1;
-                    _hiveInspectClosing = false;
-                    _hiveInspectT = 0f;
-                    _hiveFlip = -1;
-                }
+                if (_hiveInspect >= 0 || _albumTutorOn)
+                    CloseHiveInspect();
             }
             if (quake) GUI.matrix = hudM;
             if (_levelHive) DrawLevelHive(s);
@@ -5190,6 +5194,7 @@ namespace FlockFive
             if (_gift != GiftFace.None) DrawGiftOffer(s);
             if (_restartAsk != RestartAsk.None) DrawRestartAsk(s);
             DrawBadgerLeap();
+            TickPreload();
         }
 
         // Original splash hive size — pig matches this, then both bump together.
@@ -8398,14 +8403,13 @@ namespace FlockFive
             // Rail steps hold until their own button. A miss does not skip poker or Daily,
             // and the looping glove does not open the card.
             DrawHomeWash(0.18f);
-            // Sky first. The plane crosses in front of it and behind the title.
-            DrawUsaPlane(s);
-
             // Home title: stacked FLOCK / FIVE via letter sprites + navy block extrude
             // (same mark family as FinaleShow smash hold — correlate, not shatter).
             DrawAmbientSplashBirds(s, behind: true);
             DrawSplashTitleMark(s);
             DrawAmbientSplashBirds(s, behind: false);
+            // After the wordmark, on a path that clears it.
+            DrawUsaPlane(s);
             // Piggy and balance here; the streak sign layer waits until the rails are drawn.
             DrawStreakRewards(s, raiseSign: true);
 
@@ -8491,10 +8495,7 @@ namespace FlockFive
                 _home = HomeFace.Poker;
             }
             if (pokerDraw)
-            {
-                if (GuiPaint()) TickPokerWarm();
                 DrawSplashPokerButton(pokerR);
-            }
 
             // Daily gift sits above VIP on the same rail gap. Absent until level 1 is cleared. A fresh
             // unlock stays out of the pack until its lesson, then grows into the gap.
@@ -9328,16 +9329,55 @@ namespace FlockFive
             st.fontStyle = prev;
         }
 
+        static GUIContent _rimContent;
+        static readonly float[] RimX = { 1f, 0.70710678f, 0f, -0.70710678f, -1f, -0.70710678f, 0f, 0.70710678f };
+        static readonly float[] RimY = { 0f, 0.70710678f, 1f, 0.70710678f, 0f, -0.70710678f, -1f, -0.70710678f };
+
+        static GUIContent RimContent(string text)
+        {
+            if (_rimContent == null) _rimContent = new GUIContent();
+            if (_rimContent.text != text) _rimContent.text = text ?? "";
+            return _rimContent;
+        }
+
+        // Eight samples at the outline radius, then the same eight every 2 px inward
+        // down to 1. A single ring at px >= 3 leaves holes in a thick stroke
+        // (StampOutlined's white+black rim, the wordmark). The cached GUIContent is
+        // the only text object; the loop allocates nothing. Ring walked 8*d labels
+        // per pixel of radius and rebuilt a text mesh for each one.
+        static void Rim(Rect r, GUIContent text, GUIStyle st, float px)
+        {
+            if (px <= 0.01f || text == null) return;
+            float x = r.x;
+            float y = r.y;
+            float w = r.width;
+            float h = r.height;
+            float rad = px;
+            while (true)
+            {
+                for (int i = 0; i < 8; i++)
+                    GUI.Label(new Rect(x + RimX[i] * rad, y + RimY[i] * rad, w, h), text, st);
+                if (rad <= 1.01f) break;
+                float next = rad - 2f;
+                if (next < 1f) next = 1f;
+                rad = next;
+            }
+        }
+
         static void StampOutlined(Rect r, string text, GUIStyle st, Color fill, int whitePx, int blackPx, float minA = 0.04f)
         {
             float a = Mathf.Clamp01(fill.a);
             if (a < minA) return;
+            var body = RimContent(text);
             Paint(st, new Color(0.02f, 0.02f, 0.02f, a));
-            Ring(r, text, st, whitePx + blackPx);
-            Paint(st, new Color(1f, 1f, 1f, a));
-            Ring(r, text, st, whitePx);
+            Rim(r, body, st, whitePx + blackPx);
+            if (whitePx > 0)
+            {
+                Paint(st, new Color(1f, 1f, 1f, a));
+                Rim(r, body, st, whitePx);
+            }
             Paint(st, fill);
-            GUI.Label(r, text, st);
+            GUI.Label(r, body, st);
         }
 
         // Busy backgrounds. Thin dark rim, a soft shadow down-right, then the bright fill.
@@ -9352,10 +9392,11 @@ namespace FlockFive
             GUI.Label(new Rect(r.x + drop * 1.7f, r.y + drop * 2.2f, r.width, r.height), text, st);
             Paint(st, new Color(0.02f, 0.03f, 0.06f, a * 0.40f));
             GUI.Label(new Rect(r.x + drop * 0.75f, r.y + drop, r.width, r.height), text, st);
+            var body = RimContent(text);
             Paint(st, new Color(0.05f, 0.04f, 0.03f, a));
-            Ring(r, text, st, 1);
+            Rim(r, body, st, 1f);
             Paint(st, fill);
-            GUI.Label(r, text, st);
+            GUI.Label(r, body, st);
         }
 
         // Eight-point rim instead of Ring. Poker chrome calls this every event
@@ -9365,20 +9406,13 @@ namespace FlockFive
         {
             float a = Mathf.Clamp01(fill.a);
             if (a < 0.04f) return;
+            var body = RimContent(text);
             Paint(st, new Color(0.02f, 0.02f, 0.02f, a));
-            for (int i = 0; i < 8; i++)
-            {
-                float ang = i * 0.78539816f;
-                GUI.Label(new Rect(r.x + Mathf.Cos(ang) * 2f, r.y + Mathf.Sin(ang) * 2f, r.width, r.height), text, st);
-            }
+            Rim(r, body, st, 2f);
             Paint(st, new Color(1f, 1f, 1f, a));
-            for (int i = 0; i < 8; i++)
-            {
-                float ang = i * 0.78539816f;
-                GUI.Label(new Rect(r.x + Mathf.Cos(ang), r.y + Mathf.Sin(ang), r.width, r.height), text, st);
-            }
+            Rim(r, body, st, 1f);
             Paint(st, fill);
-            GUI.Label(r, text, st);
+            GUI.Label(r, body, st);
         }
 
         // Home wordmark vs the 0.72-wide mark. Top edge stays; FIVE clears the coin rail.
@@ -9473,9 +9507,10 @@ namespace FlockFive
                 for (int d = steps; d >= 1; d--)
                     GUI.Label(new Rect(r.x + d * step * 0.78f, r.y + d * step, r.width, r.height), word, st);
                 Paint(st, stroke);
-                Ring(r, word, st, Mathf.Max(2, Mathf.RoundToInt(2.4f * s)));
+                var body = RimContent(word);
+                Rim(r, body, st, Mathf.Max(2, Mathf.RoundToInt(2.4f * s)));
                 Paint(st, fill);
-                GUI.Label(r, word, st);
+                GUI.Label(r, body, st);
                 return;
             }
 
@@ -10671,20 +10706,6 @@ namespace FlockFive
             return true;
         }
 
-        static void Ring(Rect r, string text, GUIStyle st, int px)
-        {
-            if (px <= 0) return;
-            for (int d = 1; d <= px; d++)
-            {
-                int n = Mathf.Max(8, 8 * d);
-                for (int i = 0; i < n; i++)
-                {
-                    float a = (i / (float)n) * Mathf.PI * 2f;
-                    GUI.Label(new Rect(r.x + Mathf.Cos(a) * d, r.y + Mathf.Sin(a) * d, r.width, r.height), text, st);
-                }
-            }
-        }
-
         static readonly Vector2[] FlowerGlints =
         {
             new Vector2(0.50f, 0.12f),
@@ -11377,6 +11398,12 @@ namespace FlockFive
             if (GuiPaint()) TickPokerWin();
             bool winFlying = PokerWinFlying();
             bool busy = PokerMotionBusy() || _pokerStamp || payBlocked || winFlying;
+            // A settled Drawn hand is not a deal yet (CanDeal is false). Settle it
+            // back to Idle once nothing is playing and the back lesson is not holding
+            // the result, so DEAL appears only when a deal can actually start.
+            // The result cards stay face-up until the next deal's own motion.
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn && !busy && !PokerBackGateLive())
+                BirdPoker.Settle();
             if (GuiPaint()) TickPokerDash(s);
             TickPokerStamp();
             if (winFlying && !_pokerStamp && !payBlocked) SkipPokerWinOnTap();
@@ -11384,6 +11411,8 @@ namespace FlockFive
             // Between hands (idle or showing a result) the bet steers the next DEAL.
             bool steppers = BirdPoker.BetOpen && !PokerMotionBusy();
             if (steppers) BirdPoker.SyncBet();
+            // Always paint the bet bar and the win banner. The floral control
+            // itself stays out until ActLabel has a word (DEAL or DRAW).
             if (DrawPokerDash(betR, actR, s, busy, steppers, act))
                 OnPokerDealPressed();
             DrawPokerBrokeHint(betR, actR, s);
@@ -12698,7 +12727,11 @@ namespace FlockFive
             yaw = 0f;
             roll = 0f;
             face = BirdPoker.Hand[i];
-            showFace = BirdPoker.PhaseNow != BirdPoker.Phase.Idle;
+            // Idle hides faces, except a settled result left on the table. The next
+            // deal's own motion takes over the moment it starts (gather plays from
+            // these seats, face-down).
+            showFace = BirdPoker.PhaseNow != BirdPoker.Phase.Idle
+                || (BirdPoker.ResultOnTable && _pokerMotion != PokerMotion.Deal);
             sparkle = false;
             var stack = PokerStackSeat(row);
 
@@ -13147,6 +13180,7 @@ namespace FlockFive
             var actBox = actR;
             DrawPokerBetBar(bet, s, busy, steppers);
             DrawPokerWinBanner(betR, actR, s);
+            if (string.IsNullOrEmpty(act)) return false;
             bool fire = DrawFloralBtn(actBox, act, s, true);
             return fire;
         }
@@ -13232,13 +13266,10 @@ namespace FlockFive
             _pokerHeldFull = 0;
         }
 
-        // DEAL/DRAW face. A drawn hand keeps reading DRAW while its cards, stamp and win
-        // fanfare play (the button is busy then); DEAL only once the result has settled.
+        // DEAL/DRAW face. Drawn from CanDeal: hidden while the phase is still Drawn.
         string PokerActLabel()
         {
-            if (BirdPoker.PhaseNow == BirdPoker.Phase.Dealt) return "DRAW";
-            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn && PokerResultPlaying()) return "DRAW";
-            return "DEAL";
+            return PokerDealGate.ActLabel(BirdPoker.PhaseNow, BirdPoker.CanDeal());
         }
 
         bool PokerResultPlaying() =>

@@ -36,7 +36,7 @@ namespace FlockFive
                 if (parent == null) yield break;
                 yield return null;
             }
-            yield return PlayClock.Wait(Random.Range(12f, 22f));
+            yield return PestSchedule.Wait(Random.Range(12f, 22f));
             // The wait can outlast the solve. A timer that fires then is ignored.
             if (!PestSchedule.TimerOpens(PestSchedule.PestKind.Sparrow, true)) yield break;
             int left = visits;

@@ -96,9 +96,43 @@ namespace FlockFive
             if (!shared) Resources.UnloadAsset(tex);
         }
 
-        // Outgoing season painting, detached from the slot so GardenBgFor can load the
-        // next one without unloading this texture mid-crossfade. Summer has no slot.
-        // A mismatch (the slot is not that scene) returns null instead of the wrong art.
+        // Next season, held beside the live slot so warming it does not unload
+        // the garden that is still on screen. Summer is GardenBg and stays put.
+        // TakeHeldScene detaches the outgoing painting so GardenBgFor can load the
+        // next one without unloading that pin mid-crossfade.
+        static Sprite _nextBgHold;
+        static string _nextBgPath;
+
+        public static bool WarmNextScene(GardenScene scene)
+        {
+            string path = BgPath(scene);
+            if (path == null)
+            {
+                var summer = GardenBg;
+                return summer != null;
+            }
+            if (_bgScene != null && _bgScenePath == path) return true;
+            if (_nextBgHold != null && _nextBgPath == path) return true;
+            var spr = TryLoad(path, 96f);
+            if (spr == null) return false;
+            if (spr == _bgScene) return true;
+            _nextBgHold = spr;
+            _nextBgPath = path;
+            return true;
+        }
+
+        // Card back, then one face per color the next deal can draw. Not every
+        // sex sheet, foil, or hand. Caller steps once per frame.
+        public const int DealColorSteps = 1 + Palette.Max;
+
+        public static Sprite WarmDealColor(int step)
+        {
+            if (step <= 0) return CardBack;
+            int color = step - 1;
+            if (color < 0 || color >= Palette.Max) return null;
+            return PokerFace(BirdPoker.Card.Of((BirdColor)color, BirdSex.Neutral));
+        }
+
         static Sprite _bgHeld;
         static bool _bgHeldOwned;
 

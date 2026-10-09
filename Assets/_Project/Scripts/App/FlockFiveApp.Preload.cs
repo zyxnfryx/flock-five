@@ -37,6 +37,10 @@ namespace FlockFive
         static int _preloadBadger;
         static int _preloadTex;
         static bool _preloadDone;
+        static int _dealWarm;
+        static int _nextBgFor = -1;
+        static int _albumWarmedPage = int.MinValue;
+        static bool _albumWarmDue;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetPreload()
@@ -45,50 +49,97 @@ namespace FlockFive
             _preloadBadger = 0;
             _preloadTex = 0;
             _preloadDone = false;
+            _dealWarm = 0;
+            _nextBgFor = -1;
+            _albumWarmedPage = int.MinValue;
+            _albumWarmDue = false;
         }
 
         public static bool PreloadDone => _preloadDone;
 
-        // Splash repaint only (OnGUI). One budgeted slice per frame, round-robin over the
-        // jobs so sound and art both finish early.
+        // One budgeted slice per repaint. Splash jobs (including HoneyArt, one bake
+        // at a time) run on the home face. After that, a single phase slice warms
+        // only the next season background, the next deal's colors, or the album
+        // page that just popped. Themes are not pulled in here.
         void TickPreload()
         {
-            if (_preloadDone || Ads.IsShowing) return;
+            if (Ads.IsShowing) return;
             if (Event.current == null || Event.current.type != EventType.Repaint) return;
-            if (++_preloadFrames <= PreloadDelayFrames) return;
             _preloadClock.Restart();
-            bool any = true;
-            while (any && _preloadClock.Elapsed.TotalMilliseconds < PreloadBudgetMs)
+            if (!_preloadDone && _splash && _home == HomeFace.Splash)
             {
-                any = false;
-                if (!Sfx.WarmDone) { Sfx.WarmStep(); any = true; }
-                if (_preloadClock.Elapsed.TotalMilliseconds >= PreloadBudgetMs) break;
-                if (!GloveWarmDone) { GloveWarmRows(PreloadGloveRows); any = true; }
-                if (_preloadClock.Elapsed.TotalMilliseconds >= PreloadBudgetMs) break;
-                if (!SfxLibrary.WarmDone) { SfxLibrary.WarmStep(); any = true; }
-                if (_preloadClock.Elapsed.TotalMilliseconds >= PreloadBudgetMs) break;
-                if (_preloadBadger < _preloadBadgerArt.Length)
+                if (++_preloadFrames <= PreloadDelayFrames)
                 {
-                    // Load plus an offscreen, near-invisible draw so the texture is
-                    // uploaded now rather than on the leap's first frame.
-                    TouchPokerSprite(SpriteCatalog.BadgerArt(_preloadBadgerArt[_preloadBadger++]));
-                    any = true;
+                    _preloadClock.Stop();
+                    return;
                 }
-                if (_preloadClock.Elapsed.TotalMilliseconds >= PreloadBudgetMs) break;
-                if (_preloadTex < 4)
+                bool any = true;
+                while (any && _preloadClock.Elapsed.TotalMilliseconds < PreloadBudgetMs)
                 {
-                    switch (_preloadTex++)
+                    any = false;
+                    if (!Sfx.WarmDone) { Sfx.WarmStep(); any = true; }
+                    if (_preloadClock.Elapsed.TotalMilliseconds >= PreloadBudgetMs) break;
+                    if (!GloveWarmDone) { GloveWarmRows(PreloadGloveRows); any = true; }
+                    if (_preloadClock.Elapsed.TotalMilliseconds >= PreloadBudgetMs) break;
+                    if (!SfxLibrary.WarmDone) { SfxLibrary.WarmStep(); any = true; }
+                    if (_preloadClock.Elapsed.TotalMilliseconds >= PreloadBudgetMs) break;
+                    if (_preloadBadger < _preloadBadgerArt.Length)
                     {
-                        case 0: CoachDimTex(); break;
-                        case 1: CoachGlowSprite(); break;
-                        case 2: CoachRippleSprite(); break;
-                        default: HoneycombTex(); break;
+                        // Load plus an offscreen, near-invisible draw so the texture is
+                        // uploaded now rather than on the leap's first frame.
+                        TouchPokerSprite(SpriteCatalog.BadgerArt(_preloadBadgerArt[_preloadBadger++]));
+                        any = true;
                     }
-                    any = true;
+                    if (_preloadClock.Elapsed.TotalMilliseconds >= PreloadBudgetMs) break;
+                    if (_preloadTex < 4)
+                    {
+                        switch (_preloadTex++)
+                        {
+                            case 0: CoachDimTex(); break;
+                            case 1: CoachGlowSprite(); break;
+                            case 2: CoachRippleSprite(); break;
+                            default: HoneycombTex(); break;
+                        }
+                        any = true;
+                    }
+                    if (_preloadClock.Elapsed.TotalMilliseconds >= PreloadBudgetMs) break;
+                    if (!HoneyArt.WarmDone) { HoneyArt.WarmStep(); any = true; }
                 }
+                if (!any) _preloadDone = true;
             }
+            if (_preloadClock.Elapsed.TotalMilliseconds < PreloadBudgetMs)
+                TickPreloadPhase();
             _preloadClock.Stop();
-            if (!any) _preloadDone = true;
+        }
+
+        // One slice. Never the whole catalog: the next backdrop, the colors a
+        // deal can show, or the album page under the hive button that just popped.
+        void TickPreloadPhase()
+        {
+            if (_hivePopping) _albumWarmDue = true;
+            if (_albumWarmDue && _albumWarmedPage != _hivePage)
+            {
+                TouchPokerSprite(SpriteCatalog.Bee);
+                if (!HoneyArt.WarmDone) HoneyArt.WarmStep();
+                _albumWarmedPage = _hivePage;
+                _albumWarmDue = false;
+                return;
+            }
+            if (FinaleShow.Playing)
+            {
+                int next = LevelData.DisplayNumber + 1;
+                if (_nextBgFor != next)
+                {
+                    SpriteCatalog.WarmNextScene(GardenSeason.ForLevel(next));
+                    _nextBgFor = next;
+                }
+                return;
+            }
+            if (_splash && _home == HomeFace.Splash && _dealWarm < SpriteCatalog.DealColorSteps)
+            {
+                TouchPokerSprite(SpriteCatalog.WarmDealColor(_dealWarm));
+                _dealWarm++;
+            }
         }
 
         // Frame-rate target for the panel the app is on. Mobile ignores vSyncCount; it is

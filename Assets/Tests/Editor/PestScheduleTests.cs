@@ -108,6 +108,36 @@ namespace FlockFive.Editor
             Check("spawner-open", openSlot, "unsolved still reserves");
             if (openSlot) PestSchedule.NoteGone();
 
+            PestSchedule.BeginStage(20);
+            PestSchedule.Watch(open, () => false);
+            PestSchedule.SetTutorialPause(true);
+            Check("tutor-pauses-spawn",
+                PestSchedule.TutorialPausesPests
+                && !PestSchedule.MaySpawn(PestSchedule.PestKind.Sparrow, open, false)
+                && !PestSchedule.MaySpawn(PestSchedule.PestKind.Hawk, open, false),
+                "both kinds");
+            Check("tutor-pauses-timer",
+                !PestSchedule.TimerOpens(PestSchedule.PestKind.Sparrow, true, open, false)
+                && !PestSchedule.TimerOpens(PestSchedule.PestKind.Hawk, true, open, false),
+                "arrive timer held");
+            Check("tutor-pauses-reserve", !PestSchedule.TryReserve(), "no visit while the lesson is up");
+            Check("tutor-extends-elapsed",
+                Mathf.Abs(PestSchedule.ExtendedReady(5f, 10f, 4f) - 14f) < 0.001f,
+                "elapsed cooldown waits out the pause");
+            Check("tutor-extends-future",
+                Mathf.Abs(PestSchedule.ExtendedReady(20f, 10f, 4f) - 24f) < 0.001f,
+                "future cooldown gains the paused seconds");
+            Check("tutor-extends-unarmed",
+                PestSchedule.ExtendedReady(0f, 10f, 4f) == 0f,
+                "arrive wait stays with Wait, no extra cooldown");
+            PestSchedule.HoldTutorial(12f);
+            PestSchedule.SetTutorialPause(false);
+            Check("tutor-unpause-opens",
+                !PestSchedule.TutorialPausesPests
+                && PestSchedule.MaySpawn(PestSchedule.PestKind.Hawk, open, false)
+                && PestSchedule.TimerOpens(PestSchedule.PestKind.Hawk, true, open, false),
+                "lesson down, board still open");
+
             PestSchedule.BeginStage(1);
             Line(fail == 0 ? "ALL OK  " + pass : "FAILED  " + fail + "  passed " + pass);
         }

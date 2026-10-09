@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace FlockFive
@@ -29,8 +30,17 @@ namespace FlockFive
         static int _collectsLeft;
         static Board _watch;
         static System.Func<bool> _resolveBegun;
+        static bool _tutorialPause;
+        static float _pauseAt;
+        static float _pauseDebt;
 
         public static bool StageFull => _cap <= 0 || _spawned >= _cap;
+
+        // Leaf lesson (and any other tutorial that asks). While this is set, no
+        // time-driven pest may arrive. The arrive wait and the cooldown both
+        // freeze, then the missed seconds are added back so nothing fires the
+        // instant the lesson closes.
+        public static bool TutorialPausesPests => _tutorialPause;
 
         // Every remaining bird sits in a single-colour set, or the solved-board
         // resolve has started. Either one means no new sparrow and no new hawk.
@@ -56,7 +66,66 @@ namespace FlockFive
         public static bool MaySpawn(PestKind kind, Board board, bool resolveBegun)
         {
             if (kind != PestKind.Sparrow && kind != PestKind.Hawk) return false;
+            if (_tutorialPause) return false;
             return !IsBoardSolved(board, resolveBegun);
+        }
+
+        // Foreground wait that does not advance while a tutorial is holding pests.
+        public static IEnumerator Wait(float seconds)
+        {
+            if (seconds < 0f) seconds = 0f;
+            float t = 0f;
+            while (t < seconds)
+            {
+                if (!_tutorialPause)
+                    t += PlayClock.Delta;
+                yield return null;
+            }
+        }
+
+        public static void SetTutorialPause(bool on)
+        {
+            if (on == _tutorialPause) return;
+            if (on)
+            {
+                _tutorialPause = true;
+                _pauseAt = PlayClock.Now;
+                _pauseDebt = 0f;
+                return;
+            }
+            float held = PlayClock.Now - _pauseAt;
+            if (held < 0f) held = 0f;
+            held += _pauseDebt;
+            _pauseDebt = 0f;
+            _readyAt = ExtendedReady(_readyAt, PlayClock.Now, held);
+            _tutorialPause = false;
+        }
+
+        // A cooldown that ran out while pests were paused does not open on the
+        // next frame. An unarmed timer (readyAt <= 0) is left alone; the arrive
+        // wait itself is frozen in Wait.
+        public static float ExtendedReady(float readyAt, float now, float held)
+        {
+            if (held <= 0f || readyAt <= 0f) return readyAt;
+            float at = readyAt + held;
+            if (at < now) at = now + held;
+            return at;
+        }
+
+        // Edit-mode suites have no ticking clock. Add seconds the unpause must give back.
+        public static void HoldTutorial(float seconds)
+        {
+            if (!_tutorialPause || seconds <= 0f) return;
+            _pauseDebt += seconds;
+        }
+
+        public static float SecondsUntilReady
+        {
+            get
+            {
+                float d = _readyAt - PlayClock.Now;
+                return d > 0f ? d : 0f;
+            }
         }
 
         // An arrive timer that elapses after the solve does not open a visit.
@@ -80,6 +149,9 @@ namespace FlockFive
             _cap = CapFor(displayLevel);
             _watch = null;
             _resolveBegun = null;
+            _tutorialPause = false;
+            _pauseAt = 0f;
+            _pauseDebt = 0f;
         }
 
         public static int CapFor(int displayLevel)
@@ -94,6 +166,7 @@ namespace FlockFive
         // True only when this caller may spawn. Arms the shared cooldown immediately.
         public static bool TryReserve()
         {
+            if (_tutorialPause) return false;
             if (SolvedNow) return false;
             if (_cap <= 0 || _spawned >= _cap) return false;
             if (Busy) return false;

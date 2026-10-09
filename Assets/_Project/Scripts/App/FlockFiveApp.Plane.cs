@@ -6,7 +6,8 @@ namespace FlockFive
     public sealed partial class FlockFiveApp
     {
         // Home-screen flyby. Once per calendar day, after 10 quiet seconds.
-        // The rail and the title paint after this, so the plane stays behind them.
+        // Drawn after the wordmark, and the rail sits below it, so the banner
+        // is never hidden behind FLOCK FIVE.
         const string UsaPlaneDayKey = "flockfive.plane.day";
         const float UsaPlaneWait = 10f;
         const float UsaPlaneDur = 6.5f;
@@ -149,7 +150,7 @@ namespace FlockFive
             }
         }
 
-        // Behind the title and the rails, in front of the sky wash. No hit target.
+        // In front of the wordmark, clear of it. No hit target.
         // Fireworks paint first so the plane and the banner cross in front of them.
         void DrawUsaPlane(float s)
         {
@@ -170,7 +171,8 @@ namespace FlockFive
             float gap = 8f * s;
             float total = planeW + gap + banW;
             float left = Mathf.Lerp(Screen.width + 12f, -total - 12f, u);
-            float y = TopHud() + 6f * s + bob;
+            float titleH = (56f * 2f + 4f) * SplashLogoScale * s;
+            float y = TopHud() + titleH + 16f * s + bob;
             if (plane != null)
                 DrawSpriteTex(plane, new Rect(left, y + planeH * 0.06f, planeW, planeH));
             float banX = left + planeW + gap;
