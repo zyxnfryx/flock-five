@@ -7,7 +7,7 @@ namespace FlockFive.Editor
     public sealed class SpriteImport : AssetPostprocessor
     {
         // Bump forces a reimport so the platform overrides land without hand-editing metas.
-        public override uint GetVersion() => 71;
+        public override uint GetVersion() => 72;
 
         void OnPreprocessTexture()
         {
@@ -16,10 +16,13 @@ namespace FlockFive.Editor
             imp.textureType = TextureImporterType.Sprite;
             imp.spriteImportMode = SpriteImportMode.Single;
             imp.alphaIsTransparency = true;
+            // NPOT plus a mip chain makes this Unity ignore the ASTC override and
+            // store RGBA32. These sprites are drawn near screen size, so no mips.
             imp.mipmapEnabled = false;
+            imp.npotScale = TextureImporterNPOTScale.None;
             imp.filterMode = FilterMode.Bilinear;
             imp.textureCompression = TextureImporterCompression.Uncompressed;
-            imp.isReadable = true;
+            imp.isReadable = NeedsCpuPixels(assetPath);
             if (assetPath.Contains("bg_")) imp.spritePixelsPerUnit = 96f;
             else if (assetPath.Contains("branch")) imp.spritePixelsPerUnit = 140f;
             else if (assetPath.Contains("feeder")) imp.spritePixelsPerUnit = 180f;
@@ -31,10 +34,24 @@ namespace FlockFive.Editor
             else imp.spritePivot = new Vector2(0.5f, 0.5f);
             if (TryCompressedFormat(assetPath, out var format))
             {
-                imp.mipmapEnabled = true;
                 ApplyPlatformAstc(imp, "iPhone", format);
                 ApplyPlatformAstc(imp, "Android", format);
             }
+        }
+
+        // CPU copy doubles imported size. Only the sprites whose pixels drive
+        // behavior stay readable. Hands and letters already tolerate a miss.
+        public static bool NeedsCpuPixels(string assetPath)
+        {
+            int slash = string.IsNullOrEmpty(assetPath) ? -1 : assetPath.LastIndexOf('/');
+            string name = slash >= 0 ? assetPath.Substring(slash + 1) : assetPath;
+            if (string.IsNullOrEmpty(name)) return false;
+            if (name.StartsWith("bird_")) return true;
+            if (name == "branch.png" || name == "branch_gift.png") return true;
+            if (name.StartsWith("fx_flame_")) return true;
+            if (name.StartsWith("fx_crown")) return true;
+            if (name == "fx_bow.png" || name == "fx_bowtie.png") return true;
+            return false;
         }
 
         public static bool IsAndroidOpaqueAstc(string assetPath)
@@ -96,17 +113,30 @@ namespace FlockFive.Editor
                 if (!TryCompressedFormat(path, out var format)) continue;
                 var imp = AssetImporter.GetAtPath(path) as TextureImporter;
                 if (imp == null) throw new System.Exception("ANDROIDBUILD missing " + path);
-                if (!imp.mipmapEnabled || !PlatformReady(imp, "Android", format) || !PlatformReady(imp, "iPhone", format))
+                bool readable = NeedsCpuPixels(path);
+                if (imp.mipmapEnabled || imp.isReadable != readable
+                    || !PlatformReady(imp, "Android", format) || !PlatformReady(imp, "iPhone", format))
                 {
-                    imp.mipmapEnabled = true;
+                    imp.mipmapEnabled = false;
+                    imp.npotScale = TextureImporterNPOTScale.None;
+                    imp.isReadable = readable;
                     ApplyPlatformAstc(imp, "Android", format);
                     ApplyPlatformAstc(imp, "iPhone", format);
                     imp.SaveAndReimport();
                     imp = AssetImporter.GetAtPath(path) as TextureImporter;
                     if (imp == null) throw new System.Exception("ANDROIDBUILD reimport failed " + path);
                 }
+                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                var want = format == TextureImporterFormat.ASTC_4x4 ? TextureFormat.ASTC_4x4 : TextureFormat.ASTC_6x6;
+                if (tex == null || tex.format != want || tex.mipmapCount > 1)
+                    throw new System.Exception("ANDROIDBUILD " + path
+                        + " format=" + (tex == null ? "null" : tex.format.ToString())
+                        + " mips=" + (tex == null ? 0 : tex.mipmapCount)
+                        + " want=" + want);
                 string tag = format == TextureImporterFormat.ASTC_4x4 ? "astc4x4" : "astc6x6";
-                UnityEngine.Debug.Log("ANDROIDBUILD " + tag + " " + path);
+                UnityEngine.Debug.Log("ANDROIDBUILD " + tag + " " + path
+                    + " " + tex.width + "x" + tex.height
+                    + " readable=" + tex.isReadable);
             }
         }
 
