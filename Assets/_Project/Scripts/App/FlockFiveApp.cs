@@ -5120,15 +5120,18 @@ namespace FlockFive
                 // glove does not jump ahead on the unscaled clock while the ad is up.
                 if (!Ads.IsShowing && _hiveTutorOn && _hiveInspect >= 0 && _home == HomeFace.Hive)
                     DrawHiveInspect(Mathf.Max(Screen.height / 720f, 1f));
-                if ((TutorialGuideLive() || _tutorPause != 0) && !Ads.IsShowing && !_splash && _board != null)
+                // The sparrow lesson freezes here and used to return before the chip,
+                // so the multiplier badge vanished for the whole lesson. Paint it at
+                // full alpha before the caption. An ad or a full-screen popup still
+                // suppresses it inside GardenStampLive.
+                if (!Ads.IsShowing && !_splash && _board != null)
                 {
                     HudLayout(out float ps, out float pTop, out _, out _, out _);
-                    DrawCoach(ps, pTop);
-                }
-                if (!Ads.IsShowing && !_splash && _board != null && SeasonReveal.BannerLive)
-                {
-                    HudLayout(out float bs, out float bTop, out _, out _, out _);
-                    DrawSeasonBanner(bs, bTop);
+                    DrawGardenStamp(ps);
+                    if (TutorialGuideLive() || _tutorPause != 0)
+                        DrawCoach(ps, pTop);
+                    if (SeasonReveal.BannerLive)
+                        DrawSeasonBanner(ps, pTop);
                 }
                 return;
             }
@@ -5162,6 +5165,8 @@ namespace FlockFive
             VipOffer.Close();
             FoldCoinFlies();
             if (_board == null) return;
+            // Veil first. The chip is drawn after it, at full alpha, so a coach
+            // dim cannot grey the multiplier out.
             CoachDim();
             HudLayout(out float s, out float top, out _, out var restart, out var hive);
             var hudM = GUI.matrix;
@@ -7423,10 +7428,62 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        // Garden play only. Home, hive, and poker do not draw the chip.
+        // Garden play only. One gate for the draw, the glove keep-out, and the
+        // caption drop. Lessons never hide the chip. Splash, an ad, and a
+        // full-screen popup do. The finale smash is a world logo, so it does not.
         bool GardenStampLive()
         {
-            return !_splash && _gardenStampAt >= 0f && StreakTier.AtStake(Purse.Streak);
+            return GardenStampVis.Shown(new GardenStampQuery
+            {
+                Splash = _splash,
+                ChipArmed = _gardenStampAt >= 0f && StreakTier.AtStake(Purse.Streak),
+                AdCover = Ads.IsShowing,
+                FullPopup = StampPopupCover(),
+                FinaleSmash = FinaleShow.Playing,
+                Lesson = StampLessons()
+            });
+        }
+
+        // Gift card, restart ask, the clear-reward board, and the bee-card inspect
+        // each paint a wash over the whole glass. The level-hive panel does not.
+        bool StampPopupCover()
+        {
+            if (_clearReward) return true;
+            if (_gift != GiftFace.None) return true;
+            if (_restartAsk != RestartAsk.None) return true;
+            if (_hiveInspect >= 0) return true;
+            return false;
+        }
+
+        // Every live lesson, passed through so the shared check can exempt them.
+        GardenLesson StampLessons()
+        {
+            var lesson = GardenLesson.None;
+            if (_pestCue == PestCueSparrow) lesson |= GardenLesson.Sparrow;
+            if (_pestCue == PestCueHawk) lesson |= GardenLesson.Hawk;
+            if (_pestCue == PestCueBee) lesson |= GardenLesson.Bee;
+            if (_leafIntro) lesson |= GardenLesson.Leaf;
+            if (BadgerGuideLive()) lesson |= GardenLesson.BadgerGuide;
+            if (_bgLessonLive) lesson |= GardenLesson.BadgerLesson;
+            if (_coach && _cueHand) lesson |= GardenLesson.Coach;
+            if (_cueHand && _coachFade >= 0.03f && _cueHolePx >= 8f) lesson |= GardenLesson.CoachDim;
+            if (_hiveLevelLive) lesson |= GardenLesson.HiveGarden;
+            if (_hiveIntroLive) lesson |= GardenLesson.HiveHome;
+            if (_hiveTutorOn) lesson |= GardenLesson.HiveAlbum;
+            if (_pokerIntroLive) lesson |= GardenLesson.PokerHome;
+            if (_pokerPageOn) lesson |= GardenLesson.PokerPage;
+            if (_pokerDealHint) lesson |= GardenLesson.PokerDeal;
+            if (PokerBackGateLive()) lesson |= GardenLesson.PokerBack;
+            if (_dailyIntroLive) lesson |= GardenLesson.Daily;
+            if (_adHand) lesson |= GardenLesson.AdHand;
+            if (_welcomeGlove) lesson |= GardenLesson.Welcome;
+            if (_adoptLive) lesson |= GardenLesson.Adopt;
+            if (_cueGift) lesson |= GardenLesson.GiftCue;
+            if (_albumTutorOn) lesson |= GardenLesson.Album;
+            if (_upgradeTutorOn) lesson |= GardenLesson.Upgrade;
+            if (_tutorPause != 0) lesson |= GardenLesson.TutorPause;
+            if (!string.IsNullOrEmpty(_cueLine)) lesson |= GardenLesson.CoachCaption;
+            return lesson;
         }
 
         // Top-left chip, about 1.7× the previous 81px disc (66..117). TopHud keeps it
@@ -7452,6 +7509,8 @@ namespace FlockFive
         {
             _gardenStampRect = default;
             if (!GardenStampLive()) return;
+            // A leftover veil tint must not fade the chip. Lessons draw it at full alpha.
+            GUI.color = Color.white;
             var r = GardenStampRect(s);
             _gardenStampRect = r;
             float age = Time.unscaledTime - _gardenStampAt;
@@ -9330,8 +9389,10 @@ namespace FlockFive
         }
 
         static GUIContent _rimContent;
-        static readonly float[] RimX = { 1f, 0.70710678f, 0f, -0.70710678f, -1f, -0.70710678f, 0f, 0.70710678f };
-        static readonly float[] RimY = { 0f, 0.70710678f, 1f, 0.70710678f, 0f, -0.70710678f, -1f, -0.70710678f };
+        static System.Func<Vector2, Vector2> _unclip;
+        static bool _unclipFailed;
+        static System.Func<float> _pixels;
+        static bool _pixelsFailed;
 
         static GUIContent RimContent(string text)
         {
@@ -9340,27 +9401,121 @@ namespace FlockFive
             return _rimContent;
         }
 
-        // Eight samples at the outline radius, then the same eight every 2 px inward
-        // down to 1. A single ring at px >= 3 leaves holes in a thick stroke
-        // (StampOutlined's white+black rim, the wordmark). The cached GUIContent is
-        // the only text object; the loop allocates nothing. Ring walked 8*d labels
-        // per pixel of radius and rebuilt a text mesh for each one.
-        static void Rim(Rect r, GUIContent text, GUIStyle st, float px)
+        // Group offset lives on the clip stack, not in GUI.matrix. Three probes rebuild
+        // the affine map IMGUI actually uses, so the snap is in that space. Outside OnGUI
+        // (or if the clip probe is junk) GUI.matrix alone is the map.
+        static Matrix4x4 PixelMatrix(float x, float y)
         {
-            if (px <= 0.01f || text == null) return;
-            float x = r.x;
-            float y = r.y;
-            float w = r.width;
-            float h = r.height;
-            float rad = px;
-            while (true)
+            if (Event.current != null && TryPixelMatrix(x, y, out Matrix4x4 full))
+                return full;
+            return GUI.matrix;
+        }
+
+        static bool TryPixelMatrix(float x, float y, out Matrix4x4 full)
+        {
+            full = Matrix4x4.identity;
+            if (!TryUnclip(new Vector2(x, y), out Vector2 o)) return false;
+            if (!TryUnclip(new Vector2(x + 1f, y), out Vector2 ox)) return false;
+            if (!TryUnclip(new Vector2(x, y + 1f), out Vector2 oy)) return false;
+            float a00 = ox.x - o.x;
+            float a10 = ox.y - o.y;
+            float a01 = oy.x - o.x;
+            float a11 = oy.y - o.y;
+            float col0 = a00 * a00 + a10 * a10;
+            float col1 = a01 * a01 + a11 * a11;
+            if (col0 < 0.0025f || col0 > 400f || col1 < 0.0025f || col1 > 400f) return false;
+            full = Matrix4x4.identity;
+            full.m00 = a00;
+            full.m10 = a10;
+            full.m01 = a01;
+            full.m11 = a11;
+            full.m03 = o.x - (a00 * x + a01 * y);
+            full.m13 = o.y - (a10 * x + a11 * y);
+            return true;
+        }
+
+        static bool TryUnclip(Vector2 p, out Vector2 w)
+        {
+            w = p;
+            var fn = UnclipFn();
+            if (fn == null) return false;
+            w = fn(p);
+            return true;
+        }
+
+        static System.Func<Vector2, Vector2> UnclipFn()
+        {
+            if (_unclip != null || _unclipFailed) return _unclip;
+            try
             {
-                for (int i = 0; i < 8; i++)
-                    GUI.Label(new Rect(x + RimX[i] * rad, y + RimY[i] * rad, w, h), text, st);
-                if (rad <= 1.01f) break;
-                float next = rad - 2f;
-                if (next < 1f) next = 1f;
-                rad = next;
+                var t = typeof(GUI).Assembly.GetType("UnityEngine.GUIClip");
+                var m = t != null
+                    ? t.GetMethod("UnclipToWindow",
+                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic,
+                        null, new[] { typeof(Vector2) }, null)
+                    : null;
+                if (m == null) { _unclipFailed = true; return null; }
+                _unclip = (System.Func<Vector2, Vector2>)System.Delegate.CreateDelegate(typeof(System.Func<Vector2, Vector2>), m);
+            }
+            catch
+            {
+                _unclipFailed = true;
+                _unclip = null;
+            }
+            return _unclip;
+        }
+
+        // pixelsPerPoint is assembly-internal. One cached delegate, then 1 if the
+        // lookup is stripped. Integer offsets stay locked to the fill either way.
+        static float GuiPixels()
+        {
+            var fn = PixelsFn();
+            float p = fn != null ? fn() : 1f;
+            return p < 0.01f ? 1f : p;
+        }
+
+        static System.Func<float> PixelsFn()
+        {
+            if (_pixels != null || _pixelsFailed) return _pixels;
+            try
+            {
+                var flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+                var prop = typeof(GUIUtility).GetProperty("pixelsPerPoint", flags);
+                var m = prop != null ? prop.GetGetMethod(true) : null;
+                if (m == null) m = typeof(GUIUtility).GetMethod("get_pixelsPerPoint", flags);
+                if (m == null) { _pixelsFailed = true; return null; }
+                _pixels = (System.Func<float>)System.Delegate.CreateDelegate(typeof(System.Func<float>), m);
+            }
+            catch
+            {
+                _pixelsFailed = true;
+                _pixels = null;
+            }
+            return _pixels;
+        }
+
+        static LabelRim.Seat LockSeat(Rect r)
+        {
+            return LabelRim.Lock(r, PixelMatrix(r.x, r.y), GuiPixels());
+        }
+
+        static void LabelAt(LabelRim.Seat seat, int dx, int dy, GUIContent text, GUIStyle st)
+        {
+            seat.Local(dx, dy, out float x, out float y);
+            GUI.Label(new Rect(x, y, seat.Width, seat.Height), text, st);
+        }
+
+        // Solid disc of integer offsets from one snapped origin. Cached per radius.
+        // The cached GUIContent is the only text object; the loop allocates nothing.
+        static void Rim(LabelRim.Seat seat, GUIContent text, GUIStyle st, float px)
+        {
+            int rad = LabelRim.Radius(px);
+            if (rad <= 0 || text == null) return;
+            int n = LabelRim.Count(rad);
+            for (int i = 0; i < n; i++)
+            {
+                LabelRim.At(rad, i, out int dx, out int dy);
+                LabelAt(seat, dx, dy, text, st);
             }
         }
 
@@ -9369,50 +9524,57 @@ namespace FlockFive
             float a = Mathf.Clamp01(fill.a);
             if (a < minA) return;
             var body = RimContent(text);
+            var seat = LockSeat(r);
             Paint(st, new Color(0.02f, 0.02f, 0.02f, a));
-            Rim(r, body, st, whitePx + blackPx);
+            Rim(seat, body, st, whitePx + blackPx);
             if (whitePx > 0)
             {
                 Paint(st, new Color(1f, 1f, 1f, a));
-                Rim(r, body, st, whitePx);
+                Rim(seat, body, st, whitePx);
             }
             Paint(st, fill);
-            GUI.Label(r, body, st);
+            LabelAt(seat, 0, 0, body, st);
         }
 
         // Busy backgrounds. Thin dark rim, a soft shadow down-right, then the bright fill.
         // StampOutlined stays the thick white-and-black rim. This is the lighter one.
+        // The shadow is one drop, not a second stroke. It shares the snapped origin.
         static void StampReadable(Rect r, string text, GUIStyle st, Color fill)
         {
             if (string.IsNullOrEmpty(text) || st == null) return;
             float a = Mathf.Clamp01(fill.a);
             if (a < 0.04f) return;
             float drop = Mathf.Max(1.5f, st.fontSize * 0.07f);
-            Paint(st, new Color(0.02f, 0.03f, 0.06f, a * 0.20f));
-            GUI.Label(new Rect(r.x + drop * 1.7f, r.y + drop * 2.2f, r.width, r.height), text, st);
-            Paint(st, new Color(0.02f, 0.03f, 0.06f, a * 0.40f));
-            GUI.Label(new Rect(r.x + drop * 0.75f, r.y + drop, r.width, r.height), text, st);
             var body = RimContent(text);
+            var seat = LockSeat(r);
+            int farX = Mathf.Max(1, Mathf.RoundToInt(drop * 1.7f));
+            int farY = Mathf.Max(1, Mathf.RoundToInt(drop * 2.2f));
+            int nearX = Mathf.Max(1, Mathf.RoundToInt(drop * 0.75f));
+            int nearY = Mathf.Max(1, Mathf.RoundToInt(drop));
+            Paint(st, new Color(0.02f, 0.03f, 0.06f, a * 0.20f));
+            LabelAt(seat, farX, farY, body, st);
+            Paint(st, new Color(0.02f, 0.03f, 0.06f, a * 0.40f));
+            LabelAt(seat, nearX, nearY, body, st);
             Paint(st, new Color(0.05f, 0.04f, 0.03f, a));
-            Rim(r, body, st, 1f);
+            Rim(seat, body, st, 1f);
             Paint(st, fill);
-            GUI.Label(r, body, st);
+            LabelAt(seat, 0, 0, body, st);
         }
 
-        // Eight-point rim instead of Ring. Poker chrome calls this every event
-        // (same GUI.Label count on Layout and Repaint, or HitPad ids drift).
-        // Ring's 8*radius samples were hundreds of GUI.Labels per label.
+        // Poker chrome. Black disc at 2, white disc at 1, fill on the same snapped origin.
+        // Label count is stable across Layout and Repaint (HitPad ids).
         static void StampLight(Rect r, string text, GUIStyle st, Color fill)
         {
             float a = Mathf.Clamp01(fill.a);
             if (a < 0.04f) return;
             var body = RimContent(text);
+            var seat = LockSeat(r);
             Paint(st, new Color(0.02f, 0.02f, 0.02f, a));
-            Rim(r, body, st, 2f);
+            Rim(seat, body, st, 2f);
             Paint(st, new Color(1f, 1f, 1f, a));
-            Rim(r, body, st, 1f);
+            Rim(seat, body, st, 1f);
             Paint(st, fill);
-            GUI.Label(r, body, st);
+            LabelAt(seat, 0, 0, body, st);
         }
 
         // Home wordmark vs the 0.72-wide mark. Top edge stays; FIVE clears the coin rail.
@@ -9503,14 +9665,17 @@ namespace FlockFive
                 int steps = Mathf.Max(8, Mathf.RoundToInt(10f * s));
                 float step = 1.35f * s * scale;
                 var r = new Rect(x, y, tw, h);
+                var body = RimContent(word);
+                var seat = LockSeat(r);
+                int sx = Mathf.Max(1, Mathf.RoundToInt(step * 0.78f));
+                int sy = Mathf.Max(1, Mathf.RoundToInt(step));
                 Paint(st, near);
                 for (int d = steps; d >= 1; d--)
-                    GUI.Label(new Rect(r.x + d * step * 0.78f, r.y + d * step, r.width, r.height), word, st);
+                    LabelAt(seat, d * sx, d * sy, body, st);
                 Paint(st, stroke);
-                var body = RimContent(word);
-                Rim(r, body, st, Mathf.Max(2, Mathf.RoundToInt(2.4f * s)));
+                Rim(seat, body, st, Mathf.Max(2, Mathf.RoundToInt(2.4f * s)));
                 Paint(st, fill);
-                GUI.Label(r, body, st);
+                LabelAt(seat, 0, 0, body, st);
                 return;
             }
 
