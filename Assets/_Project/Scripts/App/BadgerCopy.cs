@@ -10,11 +10,15 @@ namespace FlockFive
         public const string CoachPref = "flockfive.coach.badger";
 
         // First-fight lesson. Static captions; the app aims the shared glove at each step.
+        // The column step breaks on purpose: line 1, then "Honey badger don't care."
+        // A width wrap that puts "Honey" on line 1 is wrong.
+        public const string LessonColumnTop = "Fill your column first.";
+        public const string LessonColumnBot = "Honey badger don't care.";
         public static readonly string[] Lesson =
         {
             "Pick one honeycomb. Higher honey wins the round.",
             "Hot Sauce stops one bite. Freeze Spray stops two.",
-            "Fill your column first. Honey badger don't care.",
+            LessonColumnTop + "\n" + LessonColumnBot,
         };
 
         public const string OpenLater = "Hive's mine. Your bees took their tiles.";

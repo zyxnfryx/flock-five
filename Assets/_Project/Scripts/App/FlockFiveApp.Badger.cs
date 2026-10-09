@@ -651,8 +651,18 @@ namespace FlockFive
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             // Pose the shared glove. Its return is the demo poke beat, not a player tap.
             CoachGloveAt(GloveTarget(aim), dt, s, float.NaN, false, float.NaN, aim);
-            // Advance only on a real tap of the demonstrated control (glove fades via NoteGloveTap).
-            if (BadgerLessonTapNow(aim))
+            var step = CoachTap.BadgerLesson(_bgLessonStep);
+            if (CoachTap.AnyTap(step))
+            {
+                // SwallowOffTargetTap owns the press. This covers a press that arrived
+                // only through the Input System, and the ate flag stops a second step.
+                if (!CoachAteThisFrame() && Pressed(out _))
+                {
+                    MarkCoachAte();
+                    AdvanceBadgerLesson();
+                }
+            }
+            else if (BadgerLessonTapNow(aim))
                 AdvanceBadgerLesson();
         }
 
@@ -677,6 +687,53 @@ namespace FlockFive
             DrawTutorOverlay(s);
         }
 
+        // Caption band shared by the badger plate and PreviewBadgerColumn.
+        static void BadgerCaptionLimits(float screenW, float screenH, Rect safe, out float maxW, out float roomH, out float scale, out int hi)
+        {
+            scale = Mathf.Max(screenH / 720f, 1f);
+            float top = TopHudBox(screenH, safe, 0f);
+            var back = BackMedalBox(scale, top, safe);
+            bool have = safe.width >= 2f && safe.height >= 2f;
+            float xL = Mathf.Max(8f * scale, have ? safe.xMin + 6f : 0f);
+            float xR = Mathf.Min(screenW - 8f * scale, have ? safe.xMax - 6f : screenW);
+            float y0 = back.yMax + 4f * scale;
+            float yEnd = screenH - Mathf.Max(8f * scale, have ? safe.yMin + 4f : 0f);
+            float gap = 6f * scale;
+            float room = Mathf.Max(100f, yEnd - y0 - gap * 4f);
+            float capH = room * 0.14f;
+            float capW = xR - xL;
+            const float plateX = 18f;
+            const float plateY = 12f;
+            maxW = capW - plateX * 2f;
+            if (maxW > screenW * 0.86f) maxW = screenW * 0.86f;
+            if (maxW < 8f) maxW = 8f;
+            roomH = capH - plateY * 2f;
+            if (roomH < 8f) roomH = 8f;
+            hi = Mathf.Max(18, Mathf.RoundToInt(34f * scale));
+        }
+
+        // Column lesson, as PaintCoachCaption will draw it at this screen. Shown keeps
+        // the authored newline. TextW/TextH are the inner text rect.
+        public static CoachCaptionPreview PreviewBadgerColumn(float screenW, float screenH, Rect safe)
+        {
+            BadgerCaptionLimits(screenW, screenH, safe, out float maxW, out float roomH, out float scale, out int hi);
+            string line = BadgerCopy.LessonAt(2);
+            var fit = MeasureCaptionBox(line, maxW, hi, 14);
+            float seatW = fit.width < maxW ? fit.width : maxW;
+            float seatH = fit.height < roomH ? fit.height : roomH;
+            CaptionTextRect(new Rect(0f, 0f, seatW, seatH), scale, out var textR);
+            int lo = CaptionPx(12);
+            int hiScaled = CaptionPx(hi);
+            string shown = CaptionLayout.LockBreaks(CoachLineStyle(), line, textR.width, textR.height, lo, hiScaled, out int font);
+            return new CoachCaptionPreview
+            {
+                Shown = shown,
+                Font = font,
+                TextW = textR.width,
+                TextH = textR.height,
+            };
+        }
+
         // Shared static caption box (FitCaptionBox + pinned intro line) for the lesson, the
         // guided picks, and the Don't Care line. The painted plate stays inside L.Caption
         // so it cannot sit on the cards, the fighters, or a second caption.
@@ -684,16 +741,10 @@ namespace FlockFive
         {
             float s = L.S;
             const float plateX = 18f;
-            const float plateY = 12f;
-            float maxW = L.Caption.width - plateX * 2f;
-            if (maxW > Screen.width * 0.86f) maxW = Screen.width * 0.86f;
-            if (maxW < 8f) maxW = 8f;
-            int hi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            BadgerCaptionLimits(Screen.width, Screen.height, Screen.safeArea, out float maxW, out float roomH, out _, out int hi);
             var fit = FitCaptionBox(line, maxW, hi, 14);
             float boxW = fit.width;
             if (boxW > maxW) boxW = maxW;
-            float roomH = L.Caption.height - plateY * 2f;
-            if (roomH < 8f) roomH = 8f;
             float boxH = fit.height;
             if (boxH > roomH) boxH = roomH;
             float x = L.Caption.center.x - boxW * 0.5f;

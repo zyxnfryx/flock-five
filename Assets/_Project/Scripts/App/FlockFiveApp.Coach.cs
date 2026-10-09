@@ -9,8 +9,8 @@ namespace FlockFive
     // target on the right half mirrors the sprite into a left hand from the left,
     // pointing right. The cuff sits off to that side and above the target. The
     // tap lifts, arcs over the top, and the fingertip descends onto the target.
-    // A tap on the step's own target fades that hand out in place on the tap frame.
-    // Any other tap leaves it demonstrating. It stays hidden
+    // A required step fades the hand only on its own target. An informational
+    // step (CoachTap) advances on a tap anywhere and eats that tap. It stays hidden
     // until the next step's start pose is locked, then fades in on that arc.
     // It is never drawn at a stale or default perch, and never dragged while visible.
     // SeatTutorialCaption places the plate once. PlaceTutorCaption keeps a clear
@@ -2508,16 +2508,35 @@ namespace FlockFive
         }
 
         // Cream fill, thick black edge. Every step sets _cueLine and draws through here.
+        // GUI.skin throws outside OnGUI, so a batch suite gets the built-in font.
         static GUIStyle CoachLineStyle()
         {
             if (_coachLine != null) return _coachLine;
-            _coachLine = new GUIStyle(GUI.skin.label)
+            GUIStyle proto = null;
+            try
             {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = true
-            };
+                var skin = GUI.skin;
+                if (skin != null) proto = skin.label;
+            }
+            catch (System.ArgumentException)
+            {
+                proto = null;
+            }
+            _coachLine = proto != null ? new GUIStyle(proto) : new GUIStyle();
+            if (_coachLine.font == null)
+                _coachLine.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _coachLine.fontStyle = FontStyle.Bold;
+            _coachLine.alignment = TextAnchor.MiddleCenter;
+            _coachLine.wordWrap = true;
             return _coachLine;
+        }
+
+        // A copy the fit tests can measure with. Does not mutate the shared style.
+        public static GUIStyle CoachCaptionStyle()
+        {
+            var copy = new GUIStyle(CoachLineStyle());
+            copy.wordWrap = false;
+            return copy;
         }
 
         // Shared garden/tutorial line. SeatTutorialCaption latches the plate.
@@ -3017,6 +3036,19 @@ namespace FlockFive
             return new Rect(r.x, r.center.y - boxH * 0.5f, r.width, boxH);
         }
 
+        // Text rect inside a caption seat. The plate pad is why a line that fits the
+        // outer box can still wrap. LockBreaks measures this inner width.
+        static void CaptionTextRect(Rect r, float s, out Rect textR)
+        {
+            float padX = Mathf.Clamp(r.width * 0.055f, 10f * s, 18f * s);
+            float padY = Mathf.Clamp(r.height * 0.10f, 6f * s, 14f * s);
+            textR = new Rect(
+                r.x + padX,
+                r.y + padY,
+                Mathf.Max(48f, r.width - padX * 2f),
+                Mathf.Max(24f, r.height - padY * 2f));
+        }
+
         // Shared tutorial caption: even inset, balanced wrap, one outline weight.
         // platePad: extra plate per side from a caption anchor (CoachPanelRect). The text box
         // and the fitted font do not change with it.
@@ -3033,28 +3065,35 @@ namespace FlockFive
             hi = CaptionPx(hi);
             var st = CoachLineStyle();
             if (_coachContent == null) _coachContent = new GUIContent();
-            float padX = Mathf.Clamp(r.width * 0.055f, 10f * s, 18f * s);
-            float padY = Mathf.Clamp(r.height * 0.10f, 6f * s, 14f * s);
-            var textR = new Rect(
-                r.x + padX,
-                r.y + padY,
-                Mathf.Max(48f, r.width - padX * 2f),
-                Mathf.Max(24f, r.height - padY * 2f));
+            CaptionTextRect(r, s, out var textR);
             if (_coachSizedFor != text || Mathf.Abs(_coachSizedW - textR.width) > 1f || Mathf.Abs(_coachSizedH - textR.height) > 1f)
             {
-                int px = FitFontWrapped(st, text, textR.width, textR.height, lo, hi);
-                string shown = BalanceWrap(st, text, textR.width, px);
-                st.wordWrap = true;
-                st.fontSize = px;
-                _coachContent.text = shown;
-                int guard = 0;
-                while (px > lo && guard < 24 && st.CalcHeight(_coachContent, textR.width) > textR.height + 1f)
+                string shown;
+                int px;
+                // Authored newlines stay. The font shrinks so a piece is not wrapped again.
+                if (text != null && text.IndexOf('\n') >= 0)
                 {
-                    px--;
+                    shown = CaptionLayout.LockBreaks(st, text, textR.width, textR.height, lo, hi, out px);
+                    st.wordWrap = false;
                     st.fontSize = px;
-                    shown = BalanceWrap(st, text, textR.width, px);
                     _coachContent.text = shown;
-                    guard++;
+                }
+                else
+                {
+                    px = FitFontWrapped(st, text, textR.width, textR.height, lo, hi);
+                    shown = BalanceWrap(st, text, textR.width, px);
+                    st.wordWrap = true;
+                    st.fontSize = px;
+                    _coachContent.text = shown;
+                    int guard = 0;
+                    while (px > lo && guard < 24 && st.CalcHeight(_coachContent, textR.width) > textR.height + 1f)
+                    {
+                        px--;
+                        st.fontSize = px;
+                        shown = BalanceWrap(st, text, textR.width, px);
+                        _coachContent.text = shown;
+                        guard++;
+                    }
                 }
                 _coachSizedPx = px;
                 _coachSizedTextH = st.CalcHeight(_coachContent, textR.width);
@@ -3064,7 +3103,8 @@ namespace FlockFive
                 _coachSizedH = textR.height;
             }
             st.fontSize = _coachSizedPx;
-            st.wordWrap = true;
+            // An authored newline is already the break. Wrapping would split a piece.
+            st.wordWrap = text == null || text.IndexOf('\n') < 0;
             var plateBox = CaptionPlateBox(r, platePad, _coachSizedTextH, textR.height, slack);
             if (topAlign && plateBox.y > r.y)
             {
@@ -4136,26 +4176,25 @@ namespace FlockFive
             return own < 0 || own == rail;
         }
 
-        // THE tutorial tap gate for a step that waits on ONE screen control, the glove's target.
-        // Home rail lessons keep HomeTapAllowed, the badger lesson its tile check, and the garden
-        // coach CoachReject; a page step that points at one control is listed here. While it is
-        // up, SwallowOffTargetTap eats every IMGUI press outside the target at the top of OnGUI,
-        // before any control sees it, so DEAL, bet +/-, the cards, the pay table, album sleeves
-        // or another Back cannot take a tap that is not the glove's. The glove still fades only
-        // on its own valid tap (GloveTapHits), and a miss never fades it.
-        // No flag: it is derived from the live lesson state on every event, so leaving the page,
-        // finishing the step, or a pause (OnGUI returns before the gate) ends it on the spot. An
-        // empty target fails open. HealInterruptedTutorials finishes a gated step that has held
-        // taps for longer than TutorialHeal.MaxGateSeconds with no glove posed on its target.
-        // An any-tap step (AnyTap) has no glove and no target: the first press anywhere finishes
-        // it (CompleteGatedStep). Adopt greet eats that press so nothing under it fires.
-        // Pass leaves the press alone after the step advances, so a garden tap still plays.
-        // An any-tap step never holds a tap, so it is not blind time for the heal.
+        // THE tutorial tap gate. CoachTap decides any-tap versus the glove's target.
+        // Home rails keep HomeTapAllowed, the garden coach keeps CoachReject, and a guided
+        // comb keeps its tile HitPad. A step listed here is eaten at the top of OnGUI,
+        // before any control sees it, so DEAL, bet +/-, the cards, the pay table, album
+        // sleeves or another Back cannot take a tap that is not the step's.
+        // Informational (CoachTap.AnyTap): the first press anywhere finishes the step and
+        // is eaten, so the control under the finger does not also fire. Required: only the
+        // target (and a listed swipe) gets through. Claim-only Daily is not in this gate.
+        // No stored flag for which step: it is derived from the live lesson on every event,
+        // so leaving the page, finishing the step, or a pause (OnGUI returns before the gate)
+        // ends it on the spot. An empty target fails open. An any-tap step is not blind time.
         const int GatePokerBack = 1;
         const int GateAlbumPage = 2;
         const int GateAdoptGreet = 3;
         const int GateAlbumUpgrade = 4;
         const int GateLeaf = 5;
+        const int GateBadgerLesson = 6;
+        const int GateAlbumHoney = 7;
+        const int GatePest = 8;
 
         struct StepGate
         {
@@ -4171,49 +4210,122 @@ namespace FlockFive
         }
 
         float _gateBlindSince = -1f;
+        int _coachAteFrame = -1;
+
+        void MarkCoachAte() => _coachAteFrame = Time.frameCount;
+
+        bool CoachAteThisFrame() => _coachAteFrame == Time.frameCount;
+
+        // One application of CoachTap. Informational fills the screen and eats the press.
+        // Required keeps the target the caller set. Pass is only an informational step
+        // that does not consume; none of the current lessons are that.
+        static void ApplyCoachRule(ref StepGate gate, CoachStep step)
+        {
+            bool any = CoachTap.AnyTap(step);
+            gate.AnyTap = any;
+            gate.Pass = any && !CoachTap.Consumes(step);
+            if (!any) return;
+            gate.Target = new Rect(0f, 0f, Mathf.Max(2f, Screen.width), Mathf.Max(2f, Screen.height));
+        }
+
+        bool BadgerLessonGateLive()
+        {
+            if (!_splash || _home != HomeFace.Badger || !_bgLessonLive || _bgStage != BadgerStage.Lesson)
+                return false;
+            if (_bgLessonStep < 0 || _bgLessonStep >= BadgerCopy.LessonCount) return false;
+            return CoachTap.AnyTap(CoachTap.BadgerLesson(_bgLessonStep));
+        }
+
+        CoachStep PestCoachStep()
+        {
+            if (_pestCue == PestCueHawk) return CoachStep.Hawk;
+            if (_pestCue == PestCueBee) return CoachStep.Bee;
+            return CoachStep.Sparrow;
+        }
+
+        bool PestAnyTapLive(out CoachStep step)
+        {
+            step = default;
+            if (_pestCue == 0) return false;
+            step = PestCoachStep();
+            return CoachTap.AnyTap(step);
+        }
+
+        // Honeycombs-by-rarity. Any tap advances. It must not also flip or close the card.
+        bool AlbumHoneyGateLive()
+        {
+            if (!_albumTutorOn || _albumTutorStep != 3) return false;
+            if (!_splash || _home != HomeFace.Hive) return false;
+            if (!AlbumInspectReady() || !AlbumPageSettled() || !TutorialGateClear()) return false;
+            return CoachTap.AnyTap(CoachStep.AlbumHoney);
+        }
 
         bool StepTapGate(out StepGate gate)
         {
             gate = default;
-            // Daily claim ("Tap to claim!") is not an any-tap step. Only the Claim flower
-            // advances it. SwallowOffTargetTap shares this gate, so the claim is the exception
-            // rather than a second tap path. The X on the card still closes the pop-up.
-            if (_dailyIntroLive && _dailyOpen && !_dailyAskOpen) return false;
-            if (PokerBackGateLive())
+            // Daily claim ("Tap to claim!") is ClaimOnly. Only the Claim flower advances
+            // it. The X on the card still closes the pop-up. CoachTap owns that exception.
+            if (_dailyIntroLive && _dailyOpen && !_dailyAskOpen && !CoachTap.AnyTap(CoachStep.DailyClaim))
+                return false;
+            CoachStep rule = default;
+            bool have = false;
+            if (BadgerLessonGateLive())
+            {
+                gate.Step = GateBadgerLesson;
+                rule = CoachTap.BadgerLesson(_bgLessonStep);
+                have = true;
+            }
+            else if (PestAnyTapLive(out rule))
+            {
+                // Restart starts the parade. It is not a dismiss.
+                if (LeafRestartTap(Event.current)) return false;
+                gate.Step = GatePest;
+                have = true;
+            }
+            else if (PokerBackGateLive())
             {
                 float s = Mathf.Max(Screen.height / 720f, 1f);
                 gate.Step = GatePokerBack;
                 gate.Target = BackMedalRect(s, TopHud());
+                rule = CoachStep.PokerBack;
+                have = true;
             }
             else if (AlbumUpgradeGateLive())
             {
                 gate.Step = GateAlbumUpgrade;
                 gate.Target = _upgradeBtnR;
+                rule = CoachStep.AlbumUpgrade;
+                have = true;
+            }
+            else if (AlbumHoneyGateLive())
+            {
+                gate.Step = GateAlbumHoney;
+                rule = CoachStep.AlbumHoney;
+                have = true;
             }
             else if (AlbumPageGateLive())
             {
                 gate.Step = GateAlbumPage;
                 gate.Target = _albumPagerR;
                 gate.SwipeArea = _albumSwipeR;
+                rule = CoachStep.AlbumPage;
+                have = true;
             }
             else if (AdoptGreetUp() && AdoptTurn())
             {
-                // Home adopt greet ("Look, a bird followed you home!"): any tap goes to the
-                // "Tap your bird for a closer look." step.
                 gate.Step = GateAdoptGreet;
-                gate.Target = new Rect(0f, 0f, Screen.width, Screen.height);
-                gate.AnyTap = true;
+                rule = CoachStep.AdoptGreet;
+                have = true;
             }
-            else if (LeafCaptionLive() && !LeafRestartTap(Event.current))
+            else if (LeafCaptionLive())
             {
-                // Leaf lesson: caption only. The same any-tap advance as the greet,
-                // but the press is not eaten, so the board still takes it.
+                if (LeafRestartTap(Event.current)) return false;
                 gate.Step = GateLeaf;
-                gate.Target = new Rect(0f, 0f, Screen.width, Screen.height);
-                gate.AnyTap = true;
-                gate.Pass = true;
+                rule = CoachStep.Leaf;
+                have = true;
             }
-            else return false;
+            if (!have) return false;
+            ApplyCoachRule(ref gate, rule);
             if (gate.Target.width < 2f || gate.Target.height < 2f)
             {
                 gate = default;
@@ -4230,6 +4342,9 @@ namespace FlockFive
             else if (step == GateAlbumUpgrade) FinishUpgradeTutor();
             else if (step == GateAdoptGreet) AdvanceAdoptGreet();
             else if (step == GateLeaf) DismissLeafIntro();
+            else if (step == GateBadgerLesson) AdvanceBadgerLesson();
+            else if (step == GateAlbumHoney) AdvanceAlbumTutor(AlbumStepPage);
+            else if (step == GatePest) DismissPestIntro();
         }
 
         // Album lesson, last step: "Swipe to turn the page! Or tap a page number." The glove is
@@ -4258,13 +4373,24 @@ namespace FlockFive
             if (e == null) return;
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
+            // A press already advanced an informational step this frame (IMGUI or the
+            // Input System). Eat the rest of it, including the mouse-up, so the next
+            // step does not take the same tap and a button underneath does not fire.
+            if (CoachAteThisFrame())
+            {
+                if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+                e.Use();
+                return;
+            }
             if (!StepTapGate(out var gate)) return;
             var kind = t == EventType.MouseDown ? GatePointer.Down : t == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
             if (gate.AnyTap)
             {
-                if (TutorialHeal.GateAdvances(kind, true, e.button)) CompleteGatedStep(gate.Step);
-                // Pass: the leaf caption advances and the same press still reaches the board.
-                // Every other any-tap step eats the press so nothing under it fires.
+                if (TutorialHeal.GateAdvances(kind, true, e.button))
+                {
+                    if (!gate.Pass) MarkCoachAte();
+                    CompleteGatedStep(gate.Step);
+                }
                 if (gate.Pass) return;
                 if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
                 e.Use();
@@ -4734,7 +4860,7 @@ namespace FlockFive
             _capFitUse[slot] = ++_capFitSerial;
         }
 
-        Rect MeasureCaptionBox(string line, float maxW, int hi, int floor)
+        static Rect MeasureCaptionBox(string line, float maxW, int hi, int floor)
         {
             var st = CoachLineStyle();
             hi = CaptionPx(hi);
@@ -5321,15 +5447,28 @@ namespace FlockFive
             return restart.width > 2f && restart.Contains(gui);
         }
 
-        // Input System press (board, hud, stamp, a frozen board). Same advance as
+        // Input System press (board, hud, stamp, a frozen board). Same decision as
         // the any-tap gate. The restart button is the parade, not a dismiss.
-        // The press is not eaten.
-        void NoteLeafTap(Vector2 screen)
+        // True when the caller must not also play the tap.
+        bool NoteLeafTap(Vector2 screen)
         {
-            if (!LeafCaptionLive()) return;
+            if (!LeafCaptionLive()) return false;
             var gui = new Vector2(screen.x, Screen.height - screen.y);
-            if (RestartGui(gui)) return;
-            CompleteGatedStep(GateLeaf);
+            if (RestartGui(gui)) return false;
+            if (!CoachTap.Advances(CoachStep.Leaf, false)) return false;
+            MarkCoachAte();
+            DismissLeafIntro();
+            return CoachTap.Consumes(CoachStep.Leaf);
+        }
+
+        // Leaf and pest lessons share this. A tap already eaten this frame, or one
+        // that just dismissed the lesson, does not also move a bird or pulse a stamp.
+        bool EatGardenLessonTap(Vector2 screen)
+        {
+            if (CoachAteThisFrame()) return true;
+            if (NoteLeafTap(screen)) return true;
+            if (_pestCue != 0 && PestIntroTap(screen)) return true;
+            return false;
         }
 
         // Leaves pop on after the garden is built. Hold the line until a cover is actually up,
@@ -5369,7 +5508,7 @@ namespace FlockFive
         }
 
         // Tap, or a collect while the line is up. Marks the lesson seen.
-        // Does not swallow the tap that called it.
+        // The caller eats an informational tap. This only clears the lesson.
         void DismissLeafIntro()
         {
             if (!_leafIntro) return;
@@ -5699,44 +5838,35 @@ namespace FlockFive
             PestIntroHide();
         }
 
-        // True when this tap completed the lesson. The caller must not also
-        // hand it to the board.
+        // True when this tap completed the lesson and must not also reach the board.
+        // Informational pest lines advance on any tap immediately. The restart button
+        // is exempt. A required pest would still need a hit on the animal.
         bool PestIntroTap(Vector2 screen)
         {
             if (_pestCue == 0) return false;
+            var step = PestCoachStep();
+            if (CoachTap.AnyTap(step))
+            {
+                var gui = new Vector2(screen.x, Screen.height - screen.y);
+                if (RestartGui(gui)) return false;
+                if (!CoachTap.Advances(step, false)) return false;
+                MarkCoachAte();
+                DismissPestIntro();
+                return CoachTap.Consumes(step);
+            }
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return false;
             var world = (Vector2)cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
-            if (_pestCue == PestCueSparrow && SparrowView.Live != null && PestHit(SparrowView.Live.transform, world))
-            {
-                DismissPestIntro();
-                return true;
-            }
-            if (_pestCue == PestCueHawk && HawkView.Live != null && PestHit(HawkView.Live.transform, world))
-            {
-                DismissPestIntro();
-                return true;
-            }
-            if (_pestCue == PestCueBee && BeeTap(world))
-            {
-                DismissPestIntro();
-                return true;
-            }
-            // The sparrow line freezes the garden. Once it is fully up, a tap anywhere
-            // lets it go, so a missed sparrow can never leave the player stuck.
-            // The bee line does not freeze. The same tap-to-advance still finishes it
-            // once the caption is up, and the glove stays on the bee until then.
-            if (_pestCue == PestCueSparrow && _tutorPause != 0 && _coachFade >= 0.99f)
-            {
-                DismissPestIntro();
-                return true;
-            }
-            if (_pestCue == PestCueBee && _coachFade >= 0.99f)
-            {
-                DismissPestIntro();
-                return true;
-            }
-            return false;
+            bool hit = false;
+            if (_pestCue == PestCueSparrow && SparrowView.Live != null)
+                hit = PestHit(SparrowView.Live.transform, world);
+            else if (_pestCue == PestCueHawk && HawkView.Live != null)
+                hit = PestHit(HawkView.Live.transform, world);
+            else if (_pestCue == PestCueBee)
+                hit = BeeTap(world);
+            if (!hit || !CoachTap.Advances(step, true)) return false;
+            DismissPestIntro();
+            return true;
         }
 
         bool BeeAim(out Vector3 world)

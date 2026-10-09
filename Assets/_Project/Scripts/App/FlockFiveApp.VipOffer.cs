@@ -972,7 +972,7 @@ namespace FlockFive
                     _app.PaintWelcomeCaption(WelcomeLine, new Rect((Screen.width - w) * 0.5f, y, w, h), s, capA);
                 }
 
-                if (tap && age >= WelSkipAfter && _welExitAt < 0f)
+                if (tap && age >= WelSkipAfter && _welExitAt < 0f && CoachTap.AnyTap(CoachStep.VipWelcome))
                     _welExitAt = now;
             }
 

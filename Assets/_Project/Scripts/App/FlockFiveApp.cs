@@ -2349,7 +2349,7 @@ namespace FlockFive
             {
                 if (Pressed(out var tap))
                 {
-                    NoteLeafTap(tap);
+                    if (EatGardenLessonTap(tap)) return;
                     if (HitHud(tap)) return;
                     if (_frozen && !_iceCoating && _gift == GiftFace.None) OpenGift();
                 }
@@ -2373,20 +2373,19 @@ namespace FlockFive
             if (SeasonReveal.HoldsPlay)
             {
                 if (!Pressed(out var heldTap)) return;
-                NoteLeafTap(heldTap);
+                if (EatGardenLessonTap(heldTap)) return;
                 if (HitHud(heldTap)) return;
                 return;
             }
             if (!Pressed(out var screen)) return;
-            // Same advance as the any-tap gate, before the stamp and the hud
-            // claim the press. NoteLeafTap does not eat it.
-            NoteLeafTap(screen);
+            // Informational leaf and pest lessons eat the press before a stamp,
+            // the hud, or a branch move. Restart is exempt inside the helper.
+            if (EatGardenLessonTap(screen)) return;
             if (GardenStampHit(screen))
             {
                 _stampPulse = Time.unscaledTime;
                 return;
             }
-            if (_pestCue != 0 && PestIntroTap(screen)) return;
             if (HitHud(screen)) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
