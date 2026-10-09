@@ -36,6 +36,7 @@ namespace FlockFive.Editor
             Suite("build75", Build75Tests.Run);
             Suite("build76", Build76Tests.Run);
             Suite("build76-rules", Build76RuleTests.Run);
+            Suite("build77-ads", Build77AdsTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

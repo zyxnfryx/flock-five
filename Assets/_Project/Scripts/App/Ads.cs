@@ -7,10 +7,10 @@ namespace FlockFive
     // Rewarded bonus_branch stays opt-in. Stage-clear interstitial is clears
     // 2, 5, 8… Video poker has its own every-10-hands interstitial on the
     // same show path. No Ads silences both. No banners.
-    // TestFlight ad log: every ad request / show / close plus app pause and
-    // resume, stamped with local time and what the player was doing. Hold
-    // four fingers for 2 seconds to open the list; tap to close. Kept across
-    // relaunches (last 60 lines). Remove with TestSuite before launch.
+    // Ad log: every ad request / show / close plus app pause and resume,
+    // stamped with local time and what the player was doing. Kept across
+    // relaunches (last 60 lines). The on-screen four-finger list is compiled
+    // only with FF_ADS_DEV.
     public static class AdLog
     {
         const string Pref = "flockfive.adlog";
@@ -123,9 +123,15 @@ namespace FlockFive
     {
         public static bool Enabled = true;
 
-        // TestFlight only: hidden LevelPlay test suite (hold three fingers
-        // on the screen for 2 seconds). Set false before App Store launch.
+        // Release leaves the LevelPlay test suite off. The is_test_suite
+        // metadata, the three-finger suite launch, and the four-finger
+        // on-screen ad log are compiled only when FF_ADS_DEV is set. That
+        // define is not added to Player Settings.
+#if FF_ADS_DEV
         public const bool TestSuite = true;
+#else
+        public const bool TestSuite = false;
+#endif
         public static bool LastGranted;
         // True only when a rewarded ad actually paid (or the editor simulate). No-fill stays false.
         public static bool LastEarned;
@@ -372,8 +378,10 @@ namespace FlockFive
             }
             else
                 Object.DontDestroyOnLoad(keep.gameObject);
+            keep.gameObject.name = "Ads";
+            keep.gameObject.SetActive(true);
             _host = keep;
-            _host.Boot();
+            AdConsent.Begin(keep);
         }
 
         internal static bool OwnsHost(AdsHost h) => _host == h;
@@ -407,7 +415,9 @@ namespace FlockFive
             LevelPlay.OnInitFailed -= OnInitFail;
             LevelPlay.OnInitSuccess += OnInitOk;
             LevelPlay.OnInitFailed += OnInitFail;
-            if (Ads.TestSuite) LevelPlay.SetMetaData("is_test_suite", "enable");
+#if FF_ADS_DEV
+            LevelPlay.SetMetaData("is_test_suite", "enable");
+#endif
             LevelPlay.Init(Ads.AppKey);
         }
 
@@ -671,10 +681,6 @@ namespace FlockFive
             _waiting = false;
         }
 
-        float _suiteHold, _logHold;
-        bool _showLog, _logArm;
-        Vector2 _logScroll;
-
         bool _leftApp;
 
         void OnApplicationPause(bool paused)
@@ -711,7 +717,32 @@ namespace FlockFive
                 ReleaseAfterResume();
                 Ads.ForceClear();
             }
-            if (!Ads.TestSuite) return;
+#if FF_ADS_DEV
+            DevGestures();
+#endif
+        }
+
+        // ATT completion from FlockFiveTracking.mm (UnitySendMessage "Ads").
+        public void OnAttComplete(string status)
+        {
+            Tracking.NoteComplete(status);
+        }
+
+        void OnGUI()
+        {
+            AdConsent.DrawPrompt();
+#if FF_ADS_DEV
+            DrawDevLog();
+#endif
+        }
+
+#if FF_ADS_DEV
+        float _suiteHold, _logHold;
+        bool _showLog, _logArm;
+        Vector2 _logScroll;
+
+        void DevGestures()
+        {
             var ts = UnityEngine.InputSystem.Touchscreen.current;
             if (ts == null) { _suiteHold = 0f; _logHold = 0f; return; }
             int down = 0;
@@ -751,7 +782,7 @@ namespace FlockFive
             else if (down == 0) _suiteHold = 0f;
         }
 
-        void OnGUI()
+        void DrawDevLog()
         {
             if (!_showLog) return;
             float s = Screen.width / 400f;
@@ -778,6 +809,7 @@ namespace FlockFive
             }
             GUI.matrix = old;
         }
+#endif
 
         void OnDestroy()
         {
