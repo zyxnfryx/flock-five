@@ -4948,13 +4948,15 @@ namespace FlockFive
 
         // Below the notch / Dynamic Island. Safe area is read every pass, so a
         // rotation or a late inset still clears the island.
-        static float TopHud(float extra = 0f)
+        static float TopHud(float extra = 0f) => TopHudBox(Screen.height, Screen.safeArea, extra);
+
+        // Screen-explicit so the album grid test uses the same top inset as play.
+        static float TopHudBox(float screenH, Rect safe, float extra)
         {
-            float s = Mathf.Max(Screen.height / 720f, 1f);
-            var safe = Screen.safeArea;
+            float s = Mathf.Max(screenH / 720f, 1f);
             float inset = (safe.width < 2f || safe.height < 2f)
                 ? 0f
-                : Mathf.Max(0f, Screen.height - safe.yMax);
+                : Mathf.Max(0f, screenH - safe.yMax);
             return Mathf.Max(12f, inset + 10f * s + extra);
         }
 
@@ -5532,19 +5534,16 @@ namespace FlockFive
             int have = Hive.Found;
             int cap = Mathf.Max(1, Hive.AlbumSlots);
             float u = Mathf.Clamp01(have / (float)cap);
-            int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
-            int hi = Mathf.Max(floor + 2, Mathf.RoundToInt(24f * s));
+            TallyMetrics(s, out float labelH, out float barH, out int floor, out int hi);
             string label = "Cards " + have + " / " + cap;
             var st = GuiPool.Label(GuiSlot.HiveTally);
             st.fontStyle = FontStyle.Bold;
             st.alignment = TextAnchor.MiddleCenter;
             st.wordWrap = false;
-            float labelH = hi + 8f;
             var labelR = new Rect(anchor.x, anchor.y, anchor.width, labelH);
             st.fontSize = FitFont(st, label, labelR.width * 0.98f, labelR.height * 0.92f, floor, hi);
             StampReadable(labelR, label, st, AlbumInk);
 
-            float barH = Mathf.Clamp(12f * s, 10f, 18f * s);
             var plate = new Rect(anchor.x, labelR.yMax + 4f * s, anchor.width, barH);
             GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.84f);
             GUI.DrawTexture(plate, Texture2D.whiteTexture);
@@ -5562,7 +5561,22 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(plate.x, plate.y, plate.width, t), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(plate.x, plate.yMax - t, plate.width, t), Texture2D.whiteTexture);
             GUI.color = Color.white;
-            return plate.yMax;
+            return TallyBottom(anchor.y - 4f * s, s);
+        }
+
+        // Shared with CardText.ShellBottom. labelH is the point size plus 8, not the measured glyphs.
+        static void TallyMetrics(float s, out float labelH, out float barH, out int floor, out int hi)
+        {
+            floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
+            hi = Mathf.Max(floor + 2, Mathf.RoundToInt(24f * s));
+            labelH = hi + 8f;
+            barH = Mathf.Clamp(12f * s, 10f, 18f * s);
+        }
+
+        static float TallyBottom(float textBottom, float s)
+        {
+            TallyMetrics(s, out float labelH, out float barH, out _, out _);
+            return textBottom + 4f * s + labelH + 4f * s + barH;
         }
 
         void ArmIncomingHalo(BeeVisit visit)
@@ -6767,9 +6781,10 @@ namespace FlockFive
         }
 
         // Shared disc for every screen that leaves. About 15% over the old 88pt, never under 44.
-        static Rect BackMedalRect(float s, float top)
+        static Rect BackMedalRect(float s, float top) => BackMedalBox(s, top, Screen.safeArea);
+
+        static Rect BackMedalBox(float s, float top, Rect safe)
         {
-            var safe = Screen.safeArea;
             float size = 101.2f * Mathf.Clamp(s, 1f, 1.35f);
             if (size < 44f) size = 44f;
             float x = Mathf.Max(16f, safe.xMin + 10f);
@@ -9284,7 +9299,7 @@ namespace FlockFive
         }
 
         // At most two sentence breaks, so the card starts at three lines before width wrap.
-        static string HiveBackCopy(string back)
+        public static string HiveBackCopy(string back)
         {
             if (string.IsNullOrEmpty(back)) return "";
             var sb = new System.Text.StringBuilder(back.Length + 4);
@@ -15159,22 +15174,15 @@ namespace FlockFive
 
             // Ultra Pro clear page: 3×3 sleeves on a binder sheet.
             // Pager hit is the painted chip and is at least 48pt.
+            // Card size comes from the same GridOf the thumbnail fit test measures.
             int typeFloor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
-            float colH = typeFloor * 2.2f + 6f * s;
-            float colGap = 6f * s;
-            float pagerHit = Mathf.Max(48f, 56f * s);
-            float pagerLab = Mathf.Max(36f, 30f * s);
-            float botInset = Mathf.Max(8f * s, Screen.safeArea.yMin + 4f);
-            // footGap is text-to-chip air. DrawCoachPanel pads 12px, so the plate clears the chips
-            // and the safe inset (tab row sits 6*s under pageBottom).
-            float footGap = 22f;
-            float pageBottom = Screen.height - botInset - pagerHit - pagerLab - footGap - 16f - 6f * s;
-            float pageTop = hiveBottom + colH + colGap;
-            float pageH = pageBottom - pageTop;
-            if (pageH < 72f * s) pageH = 72f * s;
-            float pagePad = 10f * s;
-            float pageW = Screen.width - pagePad * 2f;
-            var sheet = new Rect(pagePad, pageTop, pageW, pageH);
+            const float footGap = 22f;
+            var grid = CardText.GridOf(Screen.width, Screen.height, Screen.safeArea, hiveBottom);
+            float colH = grid.ColH;
+            float pagerHit = grid.PagerHit;
+            float pagerLab = grid.PagerLab;
+            float pageBottom = grid.PageBottom;
+            var sheet = grid.Sheet;
             // Same strip WatchPageSwipe tracks; the album step's tap gate lets a swipe start here.
             _albumSwipeR = new Rect(0f, sheet.y, Screen.width, sheet.height);
 
@@ -15184,22 +15192,14 @@ namespace FlockFive
             GUI.color = new Color(0.86f, 0.93f, 0.96f, 0.30f);
             GUI.DrawTexture(sheet, Texture2D.whiteTexture);
             GUI.color = new Color(0.55f, 0.62f, 0.68f, 0.35f);
-            // Sleeve grid lines
-            float inner = 8f * s;
-            float gap = 10f * s;
-            float cellW = (sheet.width - inner * 2f - gap * 2f) / 3f;
-            float cellH = (sheet.height - inner * 2f - gap * 2f) / 3f;
-            if (cellW < 8f) cellW = 8f;
-            if (cellH < 8f) cellH = 8f;
-            // Keep cards portrait-ish inside sleeves, with air around each one.
-            float cardW = cellW - 6f * s;
-            float cardH = Mathf.Min(cellH - 6f * s, cardW * 1.35f);
-            if (cardW < 8f) cardW = 8f;
-            if (cardH < 8f) cardH = 8f;
-            float gridW = 3f * cellW + 2f * gap;
-            float gridH = 3f * cellH + 2f * gap;
-            float gx0 = sheet.x + (sheet.width - gridW) * 0.5f;
-            float gy0 = sheet.y + (sheet.height - gridH) * 0.5f;
+            // Sleeve grid. Same cell and card size GridOf just measured.
+            float gap = grid.Gap;
+            float cellW = grid.CellW;
+            float cellH = grid.CellH;
+            float cardW = grid.CardW;
+            float cardH = grid.CardH;
+            float gx0 = grid.Gx0;
+            float gy0 = grid.Gy0;
             GUI.color = Color.white;
             DrawHiveColumns(hiveBottom + 4f * s, colH, gx0, cellW, gap, s);
 
@@ -15397,20 +15397,11 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // Large portrait card ~1:1.4, fill the screen for 55+ reading
-            float maxW = Screen.width * 0.86f;
-            float maxH = Screen.height * 0.62f;
-            float bigW, bigH;
-            if (maxW * 1.4f <= maxH)
-            {
-                bigW = maxW;
-                bigH = maxW * 1.4f;
-            }
-            else
-            {
-                bigH = maxH;
-                bigW = maxH / 1.4f;
-            }
+            // Large portrait card ~1:1.4, fill the screen for 55+ reading.
+            // Same size the card-fit suite measures.
+            var bigSize = CardText.InspectCard(Screen.width, Screen.height);
+            float bigW = bigSize.x;
+            float bigH = bigSize.y;
             var to = new Rect(
                 (Screen.width - bigW) * 0.5f,
                 (Screen.height - bigH) * 0.42f,
@@ -15876,8 +15867,9 @@ namespace FlockFive
             GUI.DrawTexture(r, Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // Inner face — use the plate; type needs every pixel for 55+ reading
-            var face = new Rect(r.x + r.width * 0.045f, r.y + r.height * 0.035f, r.width * 0.91f, r.height * 0.93f);
+            // Inner face — use the plate; type needs every pixel for 55+ reading.
+            // FaceOf is the rect the thumbnail fit test measures.
+            var face = CardText.FaceOf(r);
             Color faceFill = AlbumFace(kind.Tint, owned);
             GUI.color = faceFill;
             GUI.DrawTexture(face, Texture2D.whiteTexture);
@@ -15933,8 +15925,7 @@ namespace FlockFive
                     GUI.DrawTexture(br, bee.texture, ScaleMode.ScaleToFit, true);
                     GUI.color = Color.white;
                 }
-                float textTop = face.height * (inspectView ? 0.30f : 0.48f);
-                var textFace = new Rect(face.x, face.y + textTop, face.width, face.height * (0.96f - (inspectView ? 0.30f : 0.48f)));
+                var textFace = CardText.TextFaceOf(face, inspectView);
                 CardText.DrawFront(textFace, kind.Name, kind.Front, inspectView, s);
                 if (n > 1)
                 {
@@ -15947,15 +15938,10 @@ namespace FlockFive
                 if (finish != BeeFinish.Normal)
                 {
                     string foil = finish == BeeFinish.Holo ? "Holo" : "Inverse Rainbow";
-                    var foilSt = GuiPool.Label(GuiSlot.AlbumFoil);
-                    foilSt.fontStyle = FontStyle.Bold;
-                    foilSt.alignment = TextAnchor.UpperLeft;
-                    int foilPx = inspectView ? Mathf.Max(18, Mathf.RoundToInt(16f * s)) : Mathf.RoundToInt(14f * s);
-                    foilSt.fontSize = foilPx;
                     Color foilCol = finish == BeeFinish.Holo
                         ? new Color(0.15f, 0.48f, 0.92f)
                         : new Color(0.82f, 0.22f, 0.68f);
-                    StampOutlined(new Rect(face.x + 4f * s, face.y + 4f * s, face.width * 0.62f, foilPx + 6f), foil, foilSt, foilCol, 1, 1);
+                    CardText.DrawFinish(CardText.FinishOf(face, inspectView), foil, inspectView, s, foilCol);
                 }
             }
             else
@@ -16403,12 +16389,6 @@ namespace FlockFive
 
         void DrawHiveColumns(float y, float h, float gx0, float cellW, float gap, float s)
         {
-            int floor = Mathf.Max(16, Mathf.RoundToInt(16f * s));
-            int hi = Mathf.Max(floor + 2, Mathf.RoundToInt(20f * s));
-            var st = GuiPool.Label(GuiSlot.HiveColumns);
-            st.fontStyle = FontStyle.Bold;
-            st.alignment = TextAnchor.MiddleCenter;
-            st.wordWrap = true;
             for (int col = 1; col < 3; col++)
             {
                 string text = col == 1 ? "Holo" : "Inverse Rainbow";
@@ -16416,8 +16396,7 @@ namespace FlockFive
                     ? new Color(0.72f, 0.93f, 1f)
                     : new Color(1f, 0.74f, 0.94f);
                 var r = new Rect(gx0 + col * (cellW + gap), y, cellW, h);
-                st.fontSize = FitFontWrapped(st, text, r.width * 0.96f, r.height * 0.90f, floor, hi);
-                StampReadable(r, text, st, ink);
+                CardText.DrawColumn(r, text, s, ink);
             }
         }
 
