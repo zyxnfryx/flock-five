@@ -605,6 +605,7 @@ namespace FlockFive
         // the tip and the glove poses fresh once it perches. On the wood, the glove step starts.
         void AdvanceAdoptGreet()
         {
+            NoteLessonDismiss(CoachStep.AdoptGreet);
             _adoptGreetDone = true;
             int pick = _adoptPick;
             if (pick < 0 || pick > 4) pick = 1;

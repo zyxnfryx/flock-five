@@ -610,16 +610,19 @@ namespace FlockFive
         void AdvanceBadgerLesson()
         {
             if (!_bgLessonLive) return;
+            var step = CoachTap.BadgerLesson(_bgLessonStep);
             _bgLessonStep++;
             ResetBadgerGlove();
             if (_bgLessonStep < BadgerCopy.LessonCount)
             {
                 RefreshBadgerLessonAim();
+                NoteLessonDismiss(step);
                 return;
             }
             BadgerCopy.MarkCoach();
             EndBadgerLesson();
             BeginBadgerFight();
+            NoteLessonDismiss(step);
         }
 
         void RefreshBadgerLessonAim()

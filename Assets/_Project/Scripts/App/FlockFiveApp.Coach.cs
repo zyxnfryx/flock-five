@@ -336,6 +336,7 @@ namespace FlockFive
                 PlayerPrefs.SetInt(CoachGiftKey, 1);
             }
             PlayerPrefs.Save();
+            NoteLessonDismiss(CoachStep.CoachPlace);
         }
 
         int GiftBranch()
@@ -1215,6 +1216,7 @@ namespace FlockFive
             _adHand = false;
             _gloveVis = false;
             _gloveReady = false;
+            NoteLessonDismiss(CoachStep.AdHand);
         }
 
         // Hard hide. A fade that was still running does not keep a frozen hand.
@@ -4063,6 +4065,7 @@ namespace FlockFive
             if (_hiveIntroLive || (_hiveIntroSaw && !_hiveLevelLive)) MarkHiveCoach();
             // The cards pop-up being open is not a dismiss. The callout waits until it
             // closes. Tapping the hive while the callout is up does dismiss it.
+            var step = (_hiveLevelLive || _hiveLevelCue) ? CoachStep.HiveGarden : CoachStep.HiveHome;
             bool dropLevel = _hiveLevelLive;
             _hiveIntro = false;
             _hiveIntroLive = false;
@@ -4082,6 +4085,7 @@ namespace FlockFive
             _gloveVis = false;
             _gloveReady = false;
             _coachFade = 0f;
+            NoteLessonDismiss(step);
         }
 
         void NoteHiveIntroLeft()
@@ -4211,10 +4215,69 @@ namespace FlockFive
 
         float _gateBlindSince = -1f;
         int _coachAteFrame = -1;
+        // Unscaled. A lesson dismiss arms this. Board and HUD taps wait it out.
+        static float _lessonGuardUntil;
 
         void MarkCoachAte() => _coachAteFrame = Time.frameCount;
 
         bool CoachAteThisFrame() => _coachAteFrame == Time.frameCount;
+
+        static bool LessonGuardUp() => CoachDismiss.GuardBlocks(Time.unscaledTime, _lessonGuardUntil);
+
+        // The tap that just dismissed a lesson, and any tap during the guard.
+        bool LessonTapBlocked() => CoachAteThisFrame() || LessonGuardUp();
+
+        // Every lesson dismiss comes through here. Informational steps eat the
+        // tap. Required and claim steps do not, so their own control still runs.
+        // The guard always arms.
+        void NoteLessonDismiss(CoachStep step)
+        {
+            var r = CoachDismiss.Resolve(new CoachDismiss.Input
+            {
+                LessonUp = true,
+                Step = step,
+                OnTarget = !CoachTap.Consumes(step),
+                Now = Time.unscaledTime,
+                GuardUntil = _lessonGuardUntil,
+            });
+            _lessonGuardUntil = r.GuardUntil;
+            if (r.Consumed) MarkCoachAte();
+        }
+
+        // One application of CoachDismiss for a tap that is finishing a lesson.
+        // True when the board, the gift branch, and the HUD must not also see it.
+        // deliverBoard is the required step whose target is a branch hop. That tap
+        // falls through. Every other dismiss, including a finger on the gift, is eaten.
+        bool FinishLessonTap(CoachStep step, bool onTarget, bool deliverBoard, System.Action dismiss)
+        {
+            var r = CoachDismiss.Resolve(new CoachDismiss.Input
+            {
+                LessonUp = true,
+                Step = step,
+                OnTarget = onTarget,
+                OverBranch = deliverBoard,
+                OverGift = true,
+                OverHud = true,
+                Now = Time.unscaledTime,
+                GuardUntil = _lessonGuardUntil,
+            });
+            if (r.DeliveredTarget && r.BranchPick) return false;
+            _lessonGuardUntil = r.GuardUntil;
+            if (r.Dismissed && dismiss != null) dismiss();
+            if (r.Consumed || r.Dismissed) MarkCoachAte();
+            return true;
+        }
+
+        void SwallowLessonGuard()
+        {
+            if (!LessonGuardUp()) return;
+            var e = Event.current;
+            if (e == null) return;
+            var t = e.type;
+            if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
+            if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+            e.Use();
+        }
 
         // One application of CoachTap. Informational fills the screen and eats the press.
         // Required keeps the target the caller set. Pass is only an informational step
@@ -4995,6 +5058,7 @@ namespace FlockFive
             _gloveVis = false;
             _gloveReady = false;
             _coachFade = 0f;
+            NoteLessonDismiss(CoachStep.PokerIntro);
         }
 
         void NotePokerIntroLeft()
@@ -5305,6 +5369,7 @@ namespace FlockFive
         void DismissDailyIntro()
         {
             if (!_dailyIntro) return;
+            var step = (_dailyOpen || _dailyGloveOnClaim) ? CoachStep.DailyClaim : CoachStep.DailyRail;
             if (_dailyIntroSaw) MarkDailyCoach();
             _dailyIntro = false;
             _dailyIntroLive = false;
@@ -5313,6 +5378,7 @@ namespace FlockFive
             _gloveVis = false;
             _gloveReady = false;
             _coachFade = 0f;
+            NoteLessonDismiss(step);
         }
 
         void NoteDailyIntroLeft()
@@ -5455,10 +5521,7 @@ namespace FlockFive
             if (!LeafCaptionLive()) return false;
             var gui = new Vector2(screen.x, Screen.height - screen.y);
             if (RestartGui(gui)) return false;
-            if (!CoachTap.Advances(CoachStep.Leaf, false)) return false;
-            MarkCoachAte();
-            DismissLeafIntro();
-            return CoachTap.Consumes(CoachStep.Leaf);
+            return FinishLessonTap(CoachStep.Leaf, false, false, DismissLeafIntro);
         }
 
         // Leaf and pest lessons share this. A tap already eaten this frame, or one
@@ -5535,6 +5598,7 @@ namespace FlockFive
             HideLeafGlove();
             CoachHideGlow();
             CoachHideRipples();
+            NoteLessonDismiss(CoachStep.Leaf);
         }
 
         void LeafIntroAdvance()
@@ -5834,8 +5898,10 @@ namespace FlockFive
             else if (_pestCue == PestCueBee) PlayerPrefs.SetInt(CoachBeeKey, 1);
             else PlayerPrefs.SetInt(CoachHawkKey, 1);
             PlayerPrefs.Save();
+            var step = PestCoachStep();
             _pestNext = PlayClock.Now + PestCueGap;
             PestIntroHide();
+            NoteLessonDismiss(step);
         }
 
         // True when this tap completed the lesson and must not also reach the board.
@@ -5849,10 +5915,7 @@ namespace FlockFive
             {
                 var gui = new Vector2(screen.x, Screen.height - screen.y);
                 if (RestartGui(gui)) return false;
-                if (!CoachTap.Advances(step, false)) return false;
-                MarkCoachAte();
-                DismissPestIntro();
-                return CoachTap.Consumes(step);
+                return FinishLessonTap(step, false, false, DismissPestIntro);
             }
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return false;
@@ -5864,9 +5927,8 @@ namespace FlockFive
                 hit = PestHit(HawkView.Live.transform, world);
             else if (_pestCue == PestCueBee)
                 hit = BeeTap(world);
-            if (!hit || !CoachTap.Advances(step, true)) return false;
-            DismissPestIntro();
-            return true;
+            if (!hit) return FinishLessonTap(step, false, false, null);
+            return FinishLessonTap(step, true, false, DismissPestIntro);
         }
 
         bool BeeAim(out Vector3 world)

@@ -639,6 +639,7 @@ namespace FlockFive
             _sel = -1;
             StopPests();
             PestSchedule.Watch(null, null);
+            _lessonGuardUntil = 0f;
             // Destroy lands at frame end. Hide now so the old painting cannot flash over home.
             if (_garden.Root != null)
             {
@@ -678,6 +679,7 @@ namespace FlockFive
             GiftWant.StageClear = false; // the new stage's signs start lit
             _autoResolveDone = false;
             _solvedMerging = false;
+            _lessonGuardUntil = 0f;
             SetAutoResolveSpeed(1f);
             GardenFit.ClearBusy();
             DismissStreakSign();
@@ -787,13 +789,13 @@ namespace FlockFive
         bool CanSparrowVisit() =>
             !PestSchedule.SolvedNow
             && !_splash && !_busy && !_won && !_frozen && !_levelHive
-            && _gift == GiftFace.None && _board != null && !_board.Won
+            && _gift == GiftFace.None && _board != null && !SolvedRule.FinaleDue(_board)
             && (HawkView.Live == null || !HawkView.Live.IsBlocking);
 
         bool CanHawkVisit() =>
             !PestSchedule.SolvedNow
             && !_splash && !_busy && !_won && !_frozen && !_levelHive
-            && _gift == GiftFace.None && _board != null && !_board.Won;
+            && _gift == GiftFace.None && _board != null && !SolvedRule.FinaleDue(_board);
 
         bool PestsArmed() => _pestsArmed;
 
@@ -2350,6 +2352,7 @@ namespace FlockFive
                 if (Pressed(out var tap))
                 {
                     if (EatGardenLessonTap(tap)) return;
+                    if (LessonTapBlocked()) return;
                     if (HitHud(tap)) return;
                     if (_frozen && !_iceCoating && _gift == GiftFace.None) OpenGift();
                 }
@@ -2374,13 +2377,17 @@ namespace FlockFive
             {
                 if (!Pressed(out var heldTap)) return;
                 if (EatGardenLessonTap(heldTap)) return;
+                if (LessonTapBlocked()) return;
                 if (HitHud(heldTap)) return;
                 return;
             }
             if (!Pressed(out var screen)) return;
             // Informational leaf and pest lessons eat the press before a stamp,
             // the hud, or a branch move. Restart is exempt inside the helper.
+            // The dismiss also arms the short guard, so this same tap cannot
+            // fall through onto a gift branch.
             if (EatGardenLessonTap(screen)) return;
+            if (LessonTapBlocked()) return;
             if (GardenStampHit(screen))
             {
                 _stampPulse = Time.unscaledTime;
@@ -2401,6 +2408,7 @@ namespace FlockFive
 
         void HandleTap(Vector2 world)
         {
+            if (LessonTapBlocked()) return;
             if (_busy || _won || _board == null) return;
             if (PlayClock.Now < _swallowTapsUntil) return;
             if (Time.unscaledTime < _nextTap) return;
@@ -3370,7 +3378,7 @@ namespace FlockFive
         {
             if (_gardenScoring || _won) return true;
             if (_restarting || _splash || _frozen) return false;
-            if (_board == null || _board.Displaced.Count > 0 || !_board.Won) return false;
+            if (!SolvedRule.FinaleDue(_board)) return false;
             if (_collectDepth > 0 || _collecting) return false;
             if (!PestBlocksResolve() && (_locked.Count > 0 || GardenFit.Busy)) return false;
             _gardenScoring = true;
@@ -3379,14 +3387,13 @@ namespace FlockFive
             return true;
         }
 
-        // ---- Build 61: solved-board auto-resolve ----
-        // Once every perch holds one colour (Board.Solved) the game finishes the garden: it
-        // joins split flocks with MergeRun hops, the fives collect, and TryScoreGarden scores the
-        // clear. One check for every path (plain play, sparrow, hawk, PestPark redistribute),
-        // polled from Update and re-run when a tutorial freeze lets go (ReleaseTutorPause).
-        // Root cause of the build 60 stall: none of this existed. PestPark refuses a seat that
-        // would complete a five (the no-autoclear rule), so the last flock home from a scrap
-        // always landed split (4+1) and only a player hop could finish it.
+        // ---- Solved-board auto-resolve ----
+        // SolvedRule.IsSolved: every remaining bird is already in a complete set of
+        // five (or the board is empty). A 4+1 pest park is not solved, so it does not
+        // join, does not clear, and does not start the finale. The player hop that
+        // completes the five does. Polled from Update, and again when a tutorial
+        // freeze lets go (ReleaseTutorPause). PestPark still refuses a seat that
+        // would complete a five, so the flock home from a scrap stays split.
         bool _solvedMerging;
 
         bool SolvedFinishIdle()
@@ -3397,7 +3404,7 @@ namespace FlockFive
             if (_pestResolving || _pestFinishing || _scatterBusy) return false;
             // A guided garden hop is the player's to make.
             if (_coach && _cueHand) return false;
-            return _board.Solved;
+            return SolvedRule.IsSolved(_board);
         }
 
         void TrySolvedFinish()
@@ -3457,7 +3464,7 @@ namespace FlockFive
             if (_board == null || _splash || _restarting || _autoResolveDone || Ads.IsShowing) return false;
             if (_frozen || _gift != GiftFace.None) return false;
             if (PestBlocksResolve() || _pestResolving || _pestFinishing) return false;
-            return _board.Solved;
+            return SolvedRule.IsSolved(_board);
         }
 
         // In-garden collection panel or bee-card inspect. One gate for "hive UI is up":
@@ -3694,7 +3701,7 @@ namespace FlockFive
 
         IEnumerator SettleIfIdle()
         {
-            if (_won || _board == null || !_board.Won)
+            if (_won || !SolvedRule.FinaleDue(_board))
             {
                 _gardenScoring = false;
                 yield break;
@@ -3731,7 +3738,7 @@ namespace FlockFive
             _autoResolveDone = true;
             SetAutoResolveSpeed(1f);
             // Hold the finale until the player dismisses the collection / inspect.
-            while (HiveCollectionOpen())
+            while (SolvedRule.FinaleHeldByHive(HiveCollectionOpen()))
             {
                 if (_restarting || _splash)
                 {
@@ -4022,11 +4029,11 @@ namespace FlockFive
         void CheckOver()
         {
             if (_busy || _collecting || _locked.Count > 0 || _frozen) return;
-            if (_won || _board == null || _board.Won) return;
-            if (_board.Displaced.Count > 0) return;
+            if (_won || SolvedRule.FinaleDue(_board)) return;
+            if (_board == null || _board.Displaced.Count > 0) return;
             if (_gift != GiftFace.None) return;
-            // A solved board with a split flock is never iced, even when that flock has no
-            // player hop (sex rule): TrySolvedFinish joins it.
+            // A strict solve has nothing left to join. A 4+1 with a legal hop is
+            // not iced; the player finishes the five. A split with no hop can ice.
             if (_board.NextSolvedMerge(out _, out _)) return;
             // Ice only when nothing can move. An open bonus limb counts, empty or not.
             // A search that finds no win is not enough: stage 1 still has hops.
@@ -4830,7 +4837,7 @@ namespace FlockFive
         void RestorePerch()
         {
             _sel = -1;
-            _won = _board != null && _board.Won;
+            _won = SolvedRule.FinaleDue(_board);
             if (_garden.Branches == null) return;
             for (int i = 0; i < _garden.Branches.Length; i++)
             {
@@ -4931,6 +4938,7 @@ namespace FlockFive
         {
             screen = default;
             if (PlayClock.Now < _resumeInputUntil) return false;
+            if (LessonGuardUp()) return false;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
                 screen = Mouse.current.position.ReadValue();
@@ -5084,6 +5092,7 @@ namespace FlockFive
 
         bool HitHud(Vector2 screen)
         {
+            if (LessonTapBlocked()) return false;
             HudLayout(out _, out float top, out _, out var restart, out var hive);
             float gy = Screen.height - screen.y;
             var gui = new Vector2(screen.x, gy);
@@ -5113,6 +5122,7 @@ namespace FlockFive
 
         void OnGUI()
         {
+            SwallowLessonGuard();
             SwallowResumePointer();
             SwallowBadgerShowPointer();
             if (GamePause.Paused)
@@ -8404,8 +8414,8 @@ namespace FlockFive
 
         // Shared hit for every tiny home target that sits on the play flower.
         // Call before DrawFlowerPlay. HitPad Uses the event: MouseDown takes
-        // hotControl, and MouseUp Uses the release, so the flower cannot arm
-        // on that press and cannot fire when the finger comes up.
+        // hotControl, and MouseUp Uses the release. DrawFlowerPlay reads
+        // _homeTapTaken as a gate, so the flower neither sinks nor starts.
         static bool HitHomeFirst(Rect r, out bool held)
         {
             var e = Event.current;
@@ -8420,44 +8430,10 @@ namespace FlockFive
             return fired;
         }
 
-        // Medallion disc, plus the ribbon under it. Corners of the square outside the rim are cold.
+        // Medallion disc, plus the ribbon under it. Same test the VIP press and its open use.
         static bool VipContains(Rect medal, Vector2 m)
         {
-            float dx = m.x - medal.center.x;
-            float dy = m.y - medal.center.y;
-            float rad = medal.width * 0.5f;
-            return dx * dx + dy * dy <= rad * rad || SplashNoAdsRibbon(medal).Contains(m);
-        }
-
-        static bool HitVip(Rect medal, out bool held)
-        {
-            int id = GUIUtility.GetControlID(FocusType.Passive);
-            var e = Event.current;
-            bool inside = VipContains(medal, e.mousePosition);
-            bool fired = false;
-            switch (e.GetTypeForControl(id))
-            {
-                case EventType.MouseDown:
-                    if (inside && e.button == 0)
-                    {
-                        GUIUtility.hotControl = id;
-                        e.Use();
-                    }
-                    break;
-                case EventType.MouseUp:
-                    if (GUIUtility.hotControl == id)
-                    {
-                        GUIUtility.hotControl = 0;
-                        e.Use();
-                        if (inside) fired = true;
-                    }
-                    break;
-                case EventType.MouseDrag:
-                    if (GUIUtility.hotControl == id) e.Use();
-                    break;
-            }
-            held = GUIUtility.hotControl == id;
-            return fired;
+            return SplashPress.DiscContains(medal, SplashNoAdsRibbon(medal), m);
         }
 
         void DrawSplash()
@@ -8467,8 +8443,7 @@ namespace FlockFive
             // Purchase / restore / reinstall: closes the offer card and runs the one-time
             // "Welcome, VIP!" moment when home is free. Member taps open the thank-you card.
             VipOffer.Tick();
-            bool hardModal = VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive;
-            bool softModal = _streakSlide >= 0f || RewardPayBusy();
+            HomeModals(out bool hardModal, out bool softModal);
             bool modal = hardModal || softModal;
             // Captured before the dismiss taps below, so that same click cannot poke the bird.
             bool tutorUp = HomeTutorLive();
@@ -8502,12 +8477,19 @@ namespace FlockFive
             bool offerVip = VipRailGoal() > 0.5f;
             bool vipDraw = RailLive(RailVip);
             var noAdsR = SplashNoAdsRect();
-            bool noAdsHeld = false;
-            bool vipTap = false;
             // Welcome fly owns the slot. The seat stays packed so the medal has a stable home.
             bool vipHold = VipOffer.VipWelcomeHoldsRail;
-            if (vipDraw && offerVip && !modal && !vipHold && HomeTapAllowed(RailVip))
-                vipTap = HitVip(noAdsR, out noAdsHeld);
+            if (vipDraw)
+                SplashPress.LayoutDisc(SplashPress.Id.Vip, noAdsR, SplashNoAdsRibbon(noAdsR));
+            var vipGates = HomePressGates(RailVip);
+            vipGates.Hidden = !vipDraw;
+            vipGates.WelcomeHold = vipHold;
+            vipGates.Inactive = !offerVip;
+            vipGates.PopupGate = PopupBlocked(PopupKind.Vip);
+            vipGates.StepGate = StepGateBlocks(SplashPress.PressHit(SplashPress.Id.Vip).Rect);
+            var vipView = StepHomePress(SplashPress.Id.Vip, !SplashPress.Blocks(vipGates));
+            bool noAdsHeld = vipView.Pressed;
+            bool vipTap = vipView.Launch;
 
             // Pig above hive: hit-test before the album so taps don't open it.
             // The offer card swallows the rail so a dismiss tap cannot oink.
@@ -8521,7 +8503,12 @@ namespace FlockFive
             bool hiveOpening = hiveDraw && !RailSettled(RailHive);
             bool hivePop = _hivePopping && !hiveOpening;
             var hiveHit = HivePopRect(hiveR, hivePop);
-            if (hiveDraw && SplashHiveShown() && !modal && HomeTapAllowed(RailHive) && HitPad(hiveHit, out _))
+            SplashPress.Layout(SplashPress.Id.Hive, hiveHit);
+            var hiveGates = HomePressGates(RailHive);
+            hiveGates.Hidden = !hiveDraw;
+            hiveGates.Inactive = !SplashHiveShown();
+            hiveGates.StepGate = StepGateBlocks(hiveHit);
+            if (StepHomePress(SplashPress.Id.Hive, !SplashPress.Blocks(hiveGates)).Launch)
             {
                 DismissHiveIntro();
                 OpenHiveAlbum();
@@ -8546,7 +8533,11 @@ namespace FlockFive
             // so the rail closes under the hive. Its hit is the sliding rect.
             bool pokerDraw = RailLive(RailPoker);
             var pokerR = SplashPokerRect();
-            if (pokerDraw && !modal && HomeTapAllowed(RailPoker) && HitPad(pokerR, out _))
+            SplashPress.Layout(SplashPress.Id.Poker, pokerR);
+            var pokerGates = HomePressGates(RailPoker);
+            pokerGates.Hidden = !pokerDraw;
+            pokerGates.StepGate = StepGateBlocks(pokerR);
+            if (StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates)).Launch)
             {
                 DismissPokerIntro();
                 BirdPoker.Boot();
@@ -8574,17 +8565,24 @@ namespace FlockFive
             // unlock stays out of the pack until its lesson, then grows into the gap.
             bool dailyDraw = RailLive(RailDaily);
             var dailyR = SplashDailyRect();
-            bool dailyHeld = false;
-            // Hit = RailTapRect (drawn plate + flame, padded). While the Daily lesson points at
-            // this button, a coin payout still ticking (softModal) must not eat the tap: the
-            // glove already faded on it, so the card has to open on that first tap.
+            // Hit = RailTapRect (drawn plate + flame, padded). The sink and the open
+            // both use that rect. While the Daily lesson points at this button, a coin
+            // payout still ticking (soft modal) must not eat the tap: the glove already
+            // faded on it, so the card has to open on that first tap. The streak sign
+            // itself still blocks the rail: it sits on top.
+            var dailyTap = SplashDailyTapRect();
+            SplashPress.Layout(SplashPress.Id.Daily, dailyTap);
             bool dailyLesson = HomeStepRail() == RailDaily;
-            // The streak sign itself (_streakSlide) always blocks the rail: it now sits on top.
-            if (dailyDraw && !hardModal && (!softModal || (dailyLesson && _streakSlide < 0f)) && HomeTapAllowed(RailDaily)
-                && HitPad(SplashDailyTapRect(), out dailyHeld))
+            var dailyGates = HomePressGates(RailDaily);
+            dailyGates.Hidden = !dailyDraw;
+            dailyGates.DailySoftOk = dailyLesson && _streakSlide < 0f;
+            dailyGates.PopupGate = PopupBlocked(PopupKind.Daily);
+            dailyGates.StepGate = StepGateBlocks(dailyTap);
+            var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates));
+            if (dailyView.Launch)
                 OpenDailyCard();
             if (dailyDraw)
-                DrawDailyRail(dailyR, s, dailyHeld);
+                DrawDailyRail(dailyR, s, dailyView.Pressed);
             // Reward streak pop-up above the side rails (pig / hive / VIP / poker / daily), as
             // one unit. Same rects as before; only the paint order moved.
             DrawStreakSignLayer(s);
@@ -8603,7 +8601,7 @@ namespace FlockFive
             // The greet's taps never get here: StepTapGate's any-tap step (GateAdoptGreet)
             // eats them at the top of OnGUI and advances to the look step.
             // Owed bird lesson keeps LEVEL from starting under the breath or the greet.
-            if (DrawFlowerPlay(s, ease, number, acceptTap: !modal && !AdoptHoldsQueue() && HomeTapAllowed(-1)))
+            if (DrawFlowerPlay(s, ease, number))
             {
                 // Badger owed: the leap, then the contest. The flower never reaches Load.
                 if (!TakeBadgerFlower())
@@ -8627,18 +8625,19 @@ namespace FlockFive
             if (_avatarRename) DrawAvatarRename(s);
         }
 
-        bool DrawFlowerPlay(float s, string ease, int number, bool acceptTap)
+        bool DrawFlowerPlay(float s, string ease, int number)
         {
-            var rest = FlowerPlayRect();
-            bool held = false;
-            // HitPad stays in the id sequence. A tiny target that already Used this
-            // press — down or release — must not arm the flower or start the level.
-            bool fired = acceptTap && HitPad(rest, out held);
-            if (_homeTapTaken)
-            {
-                fired = false;
-                held = false;
-            }
+            // Layout writes the one LEVEL hit. The sink and the launch both read it.
+            FlowerPlayRect();
+            var hit = SplashPress.PressHit(SplashPress.Id.Level);
+            var rest = hit.Rect;
+            var gates = HomePressGates(-1);
+            gates.AdoptQueue = AdoptHoldsQueue();
+            gates.HomeTaken = _homeTapTaken;
+            gates.StepGate = StepGateBlocks(rest);
+            var view = StepHomePress(SplashPress.Id.Level, !SplashPress.Blocks(gates));
+            bool held = view.Pressed;
+            bool fired = view.Launch;
 
             float sink = held ? rest.height * FlowerPressSink : 0f;
             var flower = SpriteCatalog.PlayFlower;
@@ -10322,21 +10321,10 @@ namespace FlockFive
 
         float AvatarIcon(float s) => HomeBirdIcon(s);
 
-        // Sits on the safe-area floor. The old pad left a spare band under the tier.
-        static float PlayFlowerBotPad()
-        {
-            float s = Mathf.Max(Screen.height / 720f, 1f);
-            float clear = Mathf.Max(4f, Screen.safeArea.yMin + 2f);
-            float old = Mathf.Max(14f, Screen.safeArea.yMin + 8f);
-            float pad = old - 28f * s;
-            return pad < clear ? clear : pad;
-        }
-
+        // The LEVEL square, and the shared hit the press and the launch both use.
         static Rect FlowerPlayRect()
         {
-            float botPad = PlayFlowerBotPad();
-            float size = Mathf.Min(Screen.width * 0.94f, Screen.height * 0.50f);
-            return new Rect((Screen.width - size) * 0.5f, Screen.height - botPad - size, size, size);
+            return SplashPress.LayoutLevel(Screen.width, Screen.height, Screen.safeArea).Rect;
         }
 
         void AvatarGap(float s, float icon, out float top, out float bot, out float left, out float right)
@@ -11407,6 +11395,7 @@ namespace FlockFive
             _gloveVis = false;
             PlayerPrefs.SetInt(CoachPokerBackKey, 1);
             PlayerPrefs.Save();
+            NoteLessonDismiss(CoachStep.PokerBack);
         }
 
         // After the result is up. Hidden through the next deal; dismissed on Back.
@@ -14773,6 +14762,14 @@ namespace FlockFive
         // Upgrade is a separate post-badger tutor (CoachHiveUpgradeKey).
         const int AlbumStepPage = 4;
 
+        static CoachStep AlbumCoachStep(int step)
+        {
+            if (step >= AlbumStepPage) return CoachStep.AlbumPage;
+            if (step == 3) return CoachStep.AlbumHoney;
+            if (step == 2) return CoachStep.AlbumFlip;
+            return step <= 0 ? CoachStep.AlbumEmpty : CoachStep.AlbumTap;
+        }
+
         string AlbumTutorLine()
         {
             if (_albumTutorStep >= AlbumStepPage) return AlbumPageLine;
@@ -14799,6 +14796,7 @@ namespace FlockFive
         void AdvanceAlbumTutor(int step)
         {
             if (_albumTutorStep == step) return;
+            if (_albumTutorOn) NoteLessonDismiss(AlbumCoachStep(_albumTutorStep));
             _albumTutorStep = step;
             _tutorSeatOn = false;
             _coachFade = 0f;
@@ -14808,6 +14806,7 @@ namespace FlockFive
         void FinishAlbumTutor()
         {
             bool was = _albumTutorOn;
+            var step = AlbumCoachStep(_albumTutorStep);
             _albumTutorOn = false;
             _albumTutorStep = 0;
             _albumTutorFlipped = false;
@@ -14821,6 +14820,7 @@ namespace FlockFive
                 || _cueLine == AlbumPageLine || _cueLine == AlbumEmptyLine)
                 _cueLine = null;
             _cueSpoken = null;
+            if (was) NoteLessonDismiss(step);
 #if UNITY_EDITOR
             // Shots must not write the done flags. A later real visit can still teach.
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive)
@@ -14880,6 +14880,7 @@ namespace FlockFive
             if (was) GloveVeilReset();
             if (_cueLine == AlbumUpgradeLine) _cueLine = null;
             _cueSpoken = null;
+            if (was) NoteLessonDismiss(CoachStep.AlbumUpgrade);
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive)
             {
@@ -16439,6 +16440,7 @@ namespace FlockFive
 
         void OpenBonus(int branch)
         {
+            if (LessonTapBlocked()) return;
             if (!CanOfferBonus(branch)) return;
             if (!GatePopup(PopupKind.Gift, true)) return;
             _giftBranch = branch;

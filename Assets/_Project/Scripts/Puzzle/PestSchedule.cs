@@ -42,13 +42,11 @@ namespace FlockFive
         // instant the lesson closes.
         public static bool TutorialPausesPests => _tutorialPause;
 
-        // Every remaining bird sits in a single-colour set, or the solved-board
-        // resolve has started. Either one means no new sparrow and no new hawk.
-        public static bool IsBoardSolved(Board board, bool resolveBegun)
-        {
-            if (resolveBegun) return true;
-            return board != null && board.Solved;
-        }
+        // SolvedRule: every bird is in a complete set of five, or the win
+        // sequence has already started. A 4+1 park is not solved, so the
+        // schedule stays open while that pest is out.
+        public static bool IsBoardSolved(Board board, bool resolveBegun) =>
+            SolvedRule.BlocksNewPests(board, resolveBegun);
 
         // The live garden. BeginStage clears it; Load watches the new board.
         public static void Watch(Board board, System.Func<bool> resolveBegun)

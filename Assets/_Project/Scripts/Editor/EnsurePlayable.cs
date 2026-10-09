@@ -34,6 +34,8 @@ namespace FlockFive.Editor
             Suite("build73", Build73Tests.Run);
             Suite("stamp", GardenStampVisTests.Run);
             Suite("build75", Build75Tests.Run);
+            Suite("build76", Build76Tests.Run);
+            Suite("build76-rules", Build76RuleTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

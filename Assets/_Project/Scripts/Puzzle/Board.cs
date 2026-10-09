@@ -276,39 +276,19 @@ namespace FlockFive
             }
         }
 
-        // Build 61: the one solved-board check. Nothing in the air, no leaf, no bird on a locked
-        // gift, and every perch holds a single colour: only merges (and the feeder collects they
-        // set off) are left, so the game finishes it. Won counts as solved. Pest paths (sparrow,
-        // hawk, PestPark redistribute) all end on this board, so they all reach this check.
-        public bool Solved
-        {
-            get
-            {
-                if (Displaced.Count > 0) return false;
-                for (int i = 0; i < Branches.Count; i++)
-                {
-                    var b = Branches[i];
-                    if (b.Broken || b.Count == 0) continue;
-                    if (b.AdLocked) return false;
-                    var c = b.Birds[0].Color;
-                    for (int k = 0; k < b.Count; k++)
-                    {
-                        if (b.IsShrouded(k) || b.Birds[k].Color != c) return false;
-                    }
-                }
-                return true;
-            }
-        }
+        // SolvedRule.IsSolved. Every bird is in a complete set of five, or the
+        // board is empty. A 4+1 split is not solved, so a pest park does not
+        // auto-join and does not open the finale.
+        public bool Solved => SolvedRule.IsSolved(this);
 
-        // Next auto-resolve merge on a Solved board: the smallest part-flock of a colour goes
-        // onto that colour's biggest other part-flock with room. PestPark never lands a seat
-        // that completes a five, so the last flock back from a scrap is always split (4+1,
-        // 3+2...); this joins it. False when nothing is left to join.
+        // Next join once the board is already solved. A strict solve has no
+        // partial flock left, so this stays false for a 4+1 park. False when
+        // nothing is left to join.
         public bool NextSolvedMerge(out int from, out int to)
         {
             from = -1;
             to = -1;
-            if (!Solved) return false;
+            if (!SolvedRule.IsSolved(this)) return false;
             int n = Branches.Count;
             for (int a = 0; a < n; a++)
             {
