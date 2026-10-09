@@ -34,11 +34,6 @@ namespace FlockFive.Editor
             Suite("build73", Build73Tests.Run);
             Suite("stamp", GardenStampVisTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
-            try { VipOutlineStill.Save(); }
-            catch (System.Exception ex)
-            {
-                Debug.LogError("[vip-still] " + ex.GetType().Name + ": " + ex.Message);
-            }
         }
 
         // One suite throwing used to skip every suite after it.
