@@ -86,3 +86,22 @@ extern "C" void FlockFive_RequestTracking(void)
         FlockFive_SendAtt(3);
     }
 }
+
+// simctl launch args are on the process. IL2CPP's GetCommandLineArgs is not:
+// UnityInitScripting calls InitializeIl2CppFromMain with argc 1.
+extern "C" int FlockFive_HasLaunchArg(const char *needle)
+{
+    if (needle == NULL || needle[0] == '\0') return 0;
+    @autoreleasepool
+    {
+        NSArray<NSString *> *args = [[NSProcessInfo processInfo] arguments];
+        if (args == nil) return 0;
+        NSString *want = [NSString stringWithUTF8String:needle];
+        if (want == nil) return 0;
+        for (NSString *arg in args)
+        {
+            if (arg != nil && [arg isEqualToString:want]) return 1;
+        }
+    }
+    return 0;
+}

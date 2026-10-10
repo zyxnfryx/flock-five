@@ -218,12 +218,19 @@ namespace FlockFive.Editor
                 && PlayerPrefs.GetInt(AdConsent.ChoiceKey, 0) == raw;
 
             string app = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.cs"));
+            string settings = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.Settings.cs"));
             string consent = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/AdConsent.cs"));
+            string native = File.ReadAllText(Path.Combine(Application.dataPath, "Plugins/iOS/FlockFiveTracking.mm"));
             bool wired = app.IndexOf("FF_LEVEL_STARTED") >= 0
                 && app.IndexOf("PressLevelButton()") >= 0
                 && app.IndexOf("Tracking.AskOnce") < 0
                 && consent.IndexOf("GetCommandLineArgs") >= 0
                 && consent.IndexOf("\"-ffSmokeAutoPlay\"") >= 0
+                && consent.IndexOf("GetEnvironmentVariable(\"FF_SMOKE_AUTOPLAY\")") >= 0
+                && consent.IndexOf("FlockFive_HasLaunchArg") >= 0
+                && native.IndexOf("FlockFive_HasLaunchArg") >= 0
+                && native.IndexOf("NSProcessInfo") >= 0
+                && settings.IndexOf("FF_SMOKE state=") >= 0
                 && !AdConsent.SmokeAutoPlay();
             Check("smoke-dismiss-does-not-persist",
                 painted && released && choiceSame && wired,

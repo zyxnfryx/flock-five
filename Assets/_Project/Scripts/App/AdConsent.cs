@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using UnityEngine;
 using Unity.Services.LevelPlay;
 
@@ -165,6 +166,11 @@ namespace FlockFive
             _block = default;
             EditorHoldAtt = false;
             FirstFrameReady = false;
+            _smokeProbed = false;
+            SmokeArgc = 0;
+            SmokeArgv = false;
+            SmokeNative = false;
+            SmokeEnv = false;
         }
 
         // After the first scene is loaded. The component waits until that frame
@@ -440,17 +446,55 @@ namespace FlockFive
             _block = default;
         }
 
-        // Launch argument for the simulator smoke test. Inert when the argument is absent.
+        // Which smoke signal was present. Filled by SmokeAutoPlay. All false when inert.
+        public static int SmokeArgc { get; private set; }
+        public static bool SmokeArgv { get; private set; }
+        public static bool SmokeNative { get; private set; }
+        public static bool SmokeEnv { get; private set; }
+
+        static bool _smokeProbed;
+
+        // Simulator smoke hook. Inert unless one signal is present:
+        // managed argv (-ffSmokeAutoPlay), NSProcessInfo arguments (iOS IL2CPP
+        // stores only a single path in GetCommandLineArgs), or FF_SMOKE_AUTOPLAY=1
+        // (simctl: SIMCTL_CHILD_FF_SMOKE_AUTOPLAY=1).
         public static bool SmokeAutoPlay()
         {
-            string[] args;
-            try { args = System.Environment.GetCommandLineArgs(); }
-            catch (System.Exception) { return false; }
-            if (args == null) return false;
-            for (int i = 0; i < args.Length; i++)
-                if (args[i] == "-ffSmokeAutoPlay") return true;
-            return false;
+            if (!_smokeProbed) ProbeSmoke();
+            return SmokeArgv || SmokeNative || SmokeEnv;
         }
+
+        static void ProbeSmoke()
+        {
+            _smokeProbed = true;
+            SmokeArgc = 0;
+            SmokeArgv = false;
+            SmokeNative = false;
+            SmokeEnv = false;
+            string[] args = null;
+            try { args = System.Environment.GetCommandLineArgs(); }
+            catch (System.Exception) { args = null; }
+            if (args != null)
+            {
+                SmokeArgc = args.Length;
+                for (int i = 0; i < args.Length; i++)
+                    if (args[i] == "-ffSmokeAutoPlay") SmokeArgv = true;
+            }
+            try
+            {
+                SmokeEnv = System.Environment.GetEnvironmentVariable("FF_SMOKE_AUTOPLAY") == "1";
+            }
+            catch (System.Exception) { SmokeEnv = false; }
+#if UNITY_IOS && !UNITY_EDITOR
+            try { SmokeNative = FlockFive_HasLaunchArg("-ffSmokeAutoPlay") != 0; }
+            catch (System.Exception) { SmokeNative = false; }
+#endif
+        }
+
+#if UNITY_IOS && !UNITY_EDITOR
+        [DllImport("__Internal")]
+        static extern int FlockFive_HasLaunchArg(string needle);
+#endif
 
         // True only while a card is painted and the point is inside that card.
         public static bool BlocksPoint(Vector2 p)

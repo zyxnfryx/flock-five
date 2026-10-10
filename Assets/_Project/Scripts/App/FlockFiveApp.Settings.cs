@@ -6,6 +6,7 @@ namespace FlockFive
     {
         bool _settingsOpen;
         bool _smokePlayed;
+        bool _smokeNoted;
         AdConsent.HomeCard _homePrompt;
 
         static Texture2D _gearTex;
@@ -186,10 +187,24 @@ namespace FlockFive
             return true;
         }
 
-        // Simulator hook. Absent the argument, this returns before it touches consent or the level.
+        // Simulator hook. Absent the argument and the env var, this returns before it touches consent or the level.
         void MaybeSmokeLaunch()
         {
-            if (_smokePlayed || !AdConsent.FirstFrameReady || !AdConsent.SmokeAutoPlay()) return;
+            if (_smokePlayed || !AdConsent.SmokeAutoPlay()) return;
+            if (!AdConsent.FirstFrameReady) return;
+            if (!_smokeNoted)
+            {
+                _smokeNoted = true;
+                Debug.Log("FF_SMOKE state=played=" + (_smokePlayed ? 1 : 0)
+                    + " first=" + (AdConsent.FirstFrameReady ? 1 : 0)
+                    + " argc=" + AdConsent.SmokeArgc
+                    + " argv=" + (AdConsent.SmokeArgv ? 1 : 0)
+                    + " native=" + (AdConsent.SmokeNative ? 1 : 0)
+                    + " env=" + (AdConsent.SmokeEnv ? 1 : 0)
+                    + " splash=" + (_splash ? 1 : 0)
+                    + " home=" + _home
+                    + " badger=" + BadgerOwed());
+            }
             if (!_splash || _home != HomeFace.Splash) return;
             _smokePlayed = true;
             AdConsent.DismissTransient();
