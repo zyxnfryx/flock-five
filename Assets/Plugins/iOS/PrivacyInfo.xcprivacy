@@ -17,10 +17,6 @@
 		<string>cdp.cloud.unity3d.com</string>
 		<string>webview.unityads.unity3d.com</string>
 		<string>gateway.unityads.unity3d.com</string>
-		<string>applovin.com</string>
-		<string>applvn.com</string>
-		<string>facebook.com</string>
-		<string>ep1.facebook.com</string>
 	</array>
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>

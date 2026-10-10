@@ -41,6 +41,10 @@ namespace FlockFive
         HiveColumns,
         GiftMovie,
         GiftThanks,
+        SettingsEntry,
+        SettingsTitle,
+        SettingsLink,
+        SettingsRow,
         Count
     }
 

@@ -7,8 +7,10 @@ using UnityEngine;
 
 namespace FlockFive.Editor
 {
-    // Build 77. Release ads stay off the test suite. Consent, ATT ordering,
-    // the privacy manifest, and the AppLovin / Meta adapter lists are checked here.
+    // Build 77, plus the build 78 hotfix. Release ads stay off the test suite.
+    // Consent waits for the first rendered frame. ATT waits until the app is
+    // active, then the callback or the 45s timeout, before LevelPlay init.
+    // AppLovin and Meta stay out of the build.
     static class Build77AdsTests
     {
         [MenuItem("Flock Five/Build 77 Ads Tests")]
@@ -122,6 +124,13 @@ namespace FlockFive.Editor
             var other = AdConsent.Decide(AdConsent.RegionClass.Other, false, false);
             Check("other-no-prompt", !other.Prompt && other.Ready && other.Consent && !other.ApplyDoNotSell, "other");
 
+            Check("consent-after-first-frame",
+                !AdConsent.MayShowConsent(false, true)
+                && AdConsent.MayShowConsent(true, true)
+                && !AdConsent.MayShowConsent(true, false)
+                && ConsentWaitsForFirstFrame(),
+                "first=" + AdConsent.FirstFrameReady);
+
             Check("region-eea",
                 AdConsent.Classify("DE") == AdConsent.RegionClass.EeaUk
                 && AdConsent.Classify("gb") == AdConsent.RegionClass.EeaUk
@@ -179,14 +188,84 @@ namespace FlockFive.Editor
                 && !gateWait.Init,
                 "callback=" + answered.FromCallback + " timeout=" + timed.FromTimeout);
 
+            var stalled = new AdConsent.AttSession();
+            stalled.Start();
+            stalled.Tick(0f, AdConsent.AttTimeoutSeconds);
+            stalled.Tick(-1f, AdConsent.AttTimeoutSeconds);
+            bool held = stalled.Finished;
+            stalled.CatchUp(44.9f, AdConsent.AttTimeoutSeconds);
+            bool before45 = stalled.Finished;
+            stalled.CatchUp(AdConsent.AttTimeoutSeconds, AdConsent.AttTimeoutSeconds);
+
             Check("boot-after-consent-and-att",
                 !AdConsent.MayBoot(false, true, gateCallback)
                 && AdConsent.MayBoot(true, false, gateWait)
                 && !AdConsent.MayBoot(true, true, gateWait)
                 && AdConsent.MayBoot(true, true, gateCallback)
                 && AdConsent.MayBoot(true, true, gateTimeout)
+                && !held && !before45
+                && stalled.Finished && stalled.FromTimeout && !stalled.FromCallback
+                && AdConsent.MayBoot(true, true, stalled.Gate)
+                && AdConsent.AttTimeoutSeconds == 45f
                 && !Tracking.AttRequired,
-                "editor att=" + Tracking.AttRequired);
+                "editor att=" + Tracking.AttRequired + " timeout=" + stalled.FromTimeout);
+
+            Check("att-after-active",
+                AttWaitsForActive() && AttUsesWallClock(),
+                "native active + 45s wall clock");
+
+            bool nullSafe = true;
+            try
+            {
+                var ready = AdConsent.Decide(AdConsent.RegionClass.Other, false, false);
+                Tracking.NoteComplete(null);
+                AdConsent.DrawPrompt();
+                AdConsent.ApplyToLevelPlay(ready);
+                AdConsent.ApplyToLevelPlay(default(AdConsent.Plan));
+            }
+            catch (System.Exception e)
+            {
+                nullSafe = false;
+                Check("null-callbacks", false, e.GetType().Name + " " + e.Message);
+            }
+            if (nullSafe) Check("null-callbacks", true, "consent, LevelPlay, callback");
+        }
+
+        static bool ConsentWaitsForFirstFrame()
+        {
+            string path = Path.Combine(Application.dataPath, "_Project/Scripts/App/AdConsent.cs");
+            string src = File.ReadAllText(path);
+            int wait = src.IndexOf("while (!FirstFrameReady)");
+            int prompt = src.IndexOf("_prompt = true");
+            int log = src.IndexOf("Debug.Log(\"FF_FIRST_SCENE_READY\")");
+            int end = src.IndexOf("WaitForEndOfFrame");
+            return wait >= 0 && prompt > wait && log > 0 && end > 0
+                && src.IndexOf("ConsentCanvas") > 0;
+        }
+
+        static bool AttWaitsForActive()
+        {
+            string path = Path.Combine(Application.dataPath, "Plugins/iOS/FlockFiveTracking.mm");
+            string src = File.ReadAllText(path);
+            int fn = src.IndexOf("void FlockFive_RequestTracking(void)");
+            int note = src.IndexOf("UIApplicationDidBecomeActiveNotification");
+            int call = src.IndexOf("requestTrackingAuthorizationWithCompletionHandler");
+            if (fn < 0) return false;
+            string body = src.Substring(fn);
+            return note >= 0 && note < fn
+                && call >= 0 && call < fn
+                && body.IndexOf("UIApplicationStateActive") >= 0
+                && body.IndexOf("FlockFive_WaitUntilActive") >= 0
+                && body.IndexOf("requestTrackingAuthorizationWithCompletionHandler") < 0;
+        }
+
+        static bool AttUsesWallClock()
+        {
+            string path = Path.Combine(Application.dataPath, "_Project/Scripts/App/Tracking.cs");
+            string src = File.ReadAllText(path);
+            return src.IndexOf("realtimeSinceStartup") >= 0
+                && src.IndexOf("AttTimeoutSeconds") >= 0
+                && src.IndexOf("dt > 0.5f") < 0;
         }
 
         static void CheckPrivacy(System.Action<string, bool, string> Check)
@@ -241,8 +320,8 @@ namespace FlockFive.Editor
 
             bool domainOk = domains.Contains("supersonicads.com")
                 && domains.Contains("unityads.unity3d.com")
-                && domains.Contains("applovin.com")
-                && domains.Contains("facebook.com");
+                && !domains.Contains("applovin.com")
+                && !domains.Contains("facebook.com");
             Check("privacy-domains", domainOk, string.Join(",", domains.ToArray()));
 
             bool reasonsOk = reasons.Contains("CA92.1") && reasons.Contains("C617.1")
@@ -296,15 +375,16 @@ namespace FlockFive.Editor
             {
                 if (!once.Add(merged[i])) dup = true;
             }
-            bool applovin = once.Contains("ludvb6z3bs.skadnetwork");
-            bool metaA = once.Contains("v9wttpbfk9.skadnetwork");
-            bool metaB = once.Contains("n38lu8286q.skadnetwork");
+            bool applovinOnly = once.Contains("ludvb6z3bs.skadnetwork");
+            bool metaOnly = once.Contains("n38lu8286q.skadnetwork");
 
             string dir = SkAdNetworkIds.Folder;
             var baseline = new List<string>();
             baseline.AddRange(SkAdNetworkIds.Parse(File.ReadAllText(Path.Combine(dir, "skadnetworks.ironsource.plist.xml"))));
             baseline.AddRange(SkAdNetworkIds.Parse(File.ReadAllText(Path.Combine(dir, "skadnetworks.unityads.plist.xml"))));
             int baseCount = SkAdNetworkIds.Dedup(baseline).Count;
+            bool droppedLists = !File.Exists(Path.Combine(dir, "skadnetworks.applovin.plist.xml"))
+                && !File.Exists(Path.Combine(dir, "skadnetworks.meta.plist.xml"));
 
             var forced = SkAdNetworkIds.Dedup(new[]
             {
@@ -313,27 +393,30 @@ namespace FlockFive.Editor
                 "ludvb6z3bs.skadnetwork"
             });
 
-            Check("skad-applovin-meta",
-                !dup && applovin && metaA && metaB && merged.Count > baseCount && baseCount == 82 && forced.Count == 2,
+            Check("skad-unity-ironsource",
+                !dup && droppedLists && !applovinOnly && !metaOnly
+                && merged.Count == baseCount && baseCount == 82 && forced.Count == 2,
                 "n=" + merged.Count + " base=" + baseCount + " dup=" + dup + " forced=" + forced.Count);
         }
 
         static void CheckDeps(System.Action<string, bool, string> Check)
         {
             string editor = Path.Combine(Application.dataPath, "LevelPlay/Editor");
-            string app = File.ReadAllText(Path.Combine(editor, "ISAppLovinAdapterDependencies.xml"));
-            string meta = File.ReadAllText(Path.Combine(editor, "ISFacebookAdapterDependencies.xml"));
-            bool appOk = app.Contains("5.12.0.0")
-                && app.Contains("com.unity3d.ads-mediation:applovin-adapter:5.9.0")
-                && app.Contains("com.applovin:applovin-sdk:13.6.4")
-                && app.Contains("IronSourceAppLovinAdapter")
-                && app.Contains("5.9.0.0");
-            bool metaOk = meta.Contains("5.7.0.0")
-                && meta.Contains("com.unity3d.ads-mediation:facebook-adapter:5.4.0")
-                && meta.Contains("com.facebook.android:audience-network-sdk:6.22.0")
-                && meta.Contains("IronSourceFacebookAdapter")
-                && meta.Contains("5.4.0.0");
-            Check("adapter-xml", appOk && metaOk, "applovin=" + appOk + " meta=" + metaOk);
+            bool noXml = !File.Exists(Path.Combine(editor, "ISAppLovinAdapterDependencies.xml"))
+                && !File.Exists(Path.Combine(editor, "ISFacebookAdapterDependencies.xml"));
+            bool keptXml = File.Exists(Path.Combine(editor, "IronSourceSDKDependencies.xml"))
+                && File.Exists(Path.Combine(editor, "ISUnityAdsAdapterDependencies.xml"));
+            string gradlePath = Path.Combine(Application.dataPath, "Plugins/Android/mainTemplate.gradle");
+            string gradle = File.Exists(gradlePath) ? File.ReadAllText(gradlePath) : "";
+            string g = gradle.ToLowerInvariant();
+            bool gradleClean = g.IndexOf("applovin") < 0
+                && g.IndexOf("facebook") < 0
+                && g.IndexOf("audience-network") < 0;
+            bool gradleKept = gradle.Contains("com.unity3d.ads:unity-ads:")
+                && gradle.Contains("com.unity3d.ads-mediation:mediation-sdk:")
+                && gradle.Contains("com.unity3d.ads-mediation:unityads-adapter:");
+            Check("adapter-xml", noXml && keptXml && gradleClean && gradleKept,
+                "xml=" + noXml + " kept=" + keptXml + " gradle=" + gradleClean);
         }
     }
 }

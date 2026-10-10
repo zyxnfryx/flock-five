@@ -8,8 +8,7 @@ namespace FlockFive.Editor
 {
     // Local copies of the LevelPlay SKAdNetwork lists. The package post-process
     // downloads the same lists for each installed adapter at iOS build time.
-    // IronSource plus Unity Ads is 82 ids. AppLovin and Meta are merged here,
-    // and again into Info.plist, with duplicates dropped.
+    // IronSource plus Unity Ads is 82 ids. Duplicates are dropped.
     public static class SkAdNetworkIds
     {
         // Absolute so batchmode and the iOS post-process do not depend on cwd.

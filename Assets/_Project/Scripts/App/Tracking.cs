@@ -48,31 +48,64 @@ namespace FlockFive
             session.Start();
             if (!AttRequired) yield break;
 #if UNITY_IOS && !UNITY_EDITOR
-            float focus = 0f;
-            while (!Application.isFocused && focus < 2f)
-            {
-                focus += Time.unscaledDeltaTime;
-                yield return null;
-            }
-            yield return null;
-            if (FlockFive_TrackingStatus() != 0)
-                session.Callback = true;
-            else
-            {
-                PlayerPrefs.SetInt(AskedKey, 1);
-                PlayerPrefs.Save();
-                FlockFive_RequestTracking();
-            }
+            // Wall clock, not unscaledDeltaTime. A hitch or a stalled player
+            // loop must not freeze the 45s fallback short of LevelPlay init.
+            // The native call waits until UIApplication is active.
+            float start = Time.realtimeSinceStartup;
+            bool asked = false;
             while (!session.Finished)
             {
-                if (Completed || FlockFive_TrackingStatus() != 0)
+                if (!asked)
+                {
+                    asked = true;
+                    int status = 0;
+                    bool known = false;
+                    try
+                    {
+                        status = FlockFive_TrackingStatus();
+                        known = true;
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogWarning("ATT status unavailable: " + e.Message);
+                    }
+                    if (known && status != 0)
+                        session.Callback = true;
+                    else
+                    {
+                        try
+                        {
+                            PlayerPrefs.SetInt(AskedKey, 1);
+                            PlayerPrefs.Save();
+                            FlockFive_RequestTracking();
+                        }
+                        catch (System.Exception e)
+                        {
+                            Debug.LogWarning("ATT request skipped: " + e.Message);
+                        }
+                    }
+                }
+                else if (Completed)
                     session.Callback = true;
-                float dt = Time.unscaledDeltaTime;
-                if (dt < 0f || dt > 0.5f) dt = 0f;
-                session.Tick(dt, AdConsent.AttTimeoutSeconds);
+                else
+                {
+                    try
+                    {
+                        if (FlockFive_TrackingStatus() != 0)
+                            session.Callback = true;
+                    }
+                    catch (System.Exception) { }
+                }
+
+                float elapsed = Time.realtimeSinceStartup - start;
+                if (float.IsNaN(elapsed) || float.IsInfinity(elapsed) || elapsed < 0f)
+                    elapsed = session.Elapsed;
+                session.CatchUp(elapsed, AdConsent.AttTimeoutSeconds);
                 if (session.Finished) yield break;
                 yield return null;
             }
+            if (!session.Finished)
+                session.CatchUp(AdConsent.AttTimeoutSeconds, AdConsent.AttTimeoutSeconds);
 #else
             yield break;
 #endif

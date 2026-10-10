@@ -20,7 +20,7 @@ namespace FlockFive
         // Hard cards and the soft payout / streak sign. Pig and the rails share this.
         void HomeModals(out bool hard, out bool soft)
         {
-            hard = VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive;
+            hard = VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive || _settingsOpen;
             soft = _streakSlide >= 0f || RewardPayBusy();
         }
 

@@ -37,9 +37,9 @@ public static class IosExportCompliance
         proj.WriteToFile(projPath);
     }
 
-    // IronSource plus Unity Ads is the previous 82-id set. AppLovin and Meta
-    // lists are in the same folder. LevelPlay's own post-process also merges
-    // the installed adapters and skips ids that are already present.
+    // IronSource plus Unity Ads is the 82-id set in this folder. LevelPlay's
+    // own post-process also merges the installed adapters and skips ids that
+    // are already present.
     static void AddSkAdNetworkIds(PlistDocument plist)
     {
         var ids = SkAdNetworkIds.LoadMerged();

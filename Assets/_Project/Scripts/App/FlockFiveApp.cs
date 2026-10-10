@@ -5158,6 +5158,7 @@ namespace FlockFive
                     VipOffer.Close();
                     FoldCoinFlies();
                 }
+                if (_home != HomeFace.Splash) _settingsOpen = false;
                 if (_home == HomeFace.Hive) DrawHivePage();
                 else if (_home == HomeFace.Poker) DrawPokerPage();
                 else if (_home == HomeFace.Badger) DrawBadgerPage();
@@ -8623,6 +8624,15 @@ namespace FlockFive
             if (_welcomeGlove || (_dailyIntroLive && _dailyOpen && !_dailyAskOpen))
                 DrawTutorOverlay(s);
             if (_avatarRename) DrawAvatarRename(s);
+            if (!_settingsOpen && !modal && !tutorUp)
+            {
+                if (DrawSettingsEntry(s))
+                {
+                    _settingsOpen = true;
+                    Sfx.CardTap();
+                }
+            }
+            if (_settingsOpen) DrawSettingsSheet(s);
         }
 
         bool DrawFlowerPlay(float s, string ease, int number)
@@ -10282,7 +10292,7 @@ namespace FlockFive
         bool HitHomeAvatar(float s, bool tutorUp)
         {
             if (!HomeAvatarFrame(s, out var c, out float icon, out bool onPerch)) return false;
-            if (VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive) return false;
+            if (VipOffer.IsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || _adoptLive || _settingsOpen) return false;
             float pad = HomeBirdHitPad * s;
             var bird = new Rect(
                 c.x - icon * 0.5f - pad,

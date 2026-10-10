@@ -381,7 +381,7 @@ namespace FlockFive
             keep.gameObject.name = "Ads";
             keep.gameObject.SetActive(true);
             _host = keep;
-            AdConsent.Begin(keep);
+            if (keep != null) AdConsent.Begin(keep);
         }
 
         internal static bool OwnsHost(AdsHost h) => _host == h;
@@ -405,20 +405,28 @@ namespace FlockFive
         public void Boot()
         {
             if (!Ads.HasKeys) return;
-            if (_inited)
+            try
             {
-                if (_rv == null) CreateRewarded();
-                if (_int == null) CreateInterstitial();
-                return;
-            }
-            LevelPlay.OnInitSuccess -= OnInitOk;
-            LevelPlay.OnInitFailed -= OnInitFail;
-            LevelPlay.OnInitSuccess += OnInitOk;
-            LevelPlay.OnInitFailed += OnInitFail;
+                if (_inited)
+                {
+                    if (_rv == null) CreateRewarded();
+                    if (_int == null) CreateInterstitial();
+                    return;
+                }
+                LevelPlay.OnInitSuccess -= OnInitOk;
+                LevelPlay.OnInitFailed -= OnInitFail;
+                LevelPlay.OnInitSuccess += OnInitOk;
+                LevelPlay.OnInitFailed += OnInitFail;
 #if FF_ADS_DEV
-            LevelPlay.SetMetaData("is_test_suite", "enable");
+                LevelPlay.SetMetaData("is_test_suite", "enable");
 #endif
-            LevelPlay.Init(Ads.AppKey);
+                LevelPlay.Init(Ads.AppKey);
+            }
+            catch (System.Exception e)
+            {
+                _initFailed = true;
+                Debug.LogWarning("LevelPlay init skipped: " + e.Message);
+            }
         }
 
         public IEnumerator RunRewarded()
@@ -517,8 +525,15 @@ namespace FlockFive
         {
             _inited = true;
             _initFailed = false;
-            CreateRewarded();
-            CreateInterstitial();
+            try
+            {
+                CreateRewarded();
+                CreateInterstitial();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("LevelPlay ads skipped: " + e.Message);
+            }
         }
 
         void OnInitFail(LevelPlayInitError error)
@@ -529,13 +544,31 @@ namespace FlockFive
         void CreateRewarded()
         {
             if (_rv != null || string.IsNullOrEmpty(Ads.RewardedUnitId)) return;
-            _rv = new LevelPlayRewardedAd(Ads.RewardedUnitId);
-            _rv.OnAdRewarded += OnRewarded;
-            _rv.OnAdClosed += OnClosed;
-            _rv.OnAdLoadFailed += OnLoadFail;
-            _rv.OnAdDisplayFailed += OnDisplayFail;
-            _rv.OnAdDisplayed += OnRvShown;
-            _rv.LoadAd();
+            LevelPlayRewardedAd created = null;
+            try
+            {
+                created = new LevelPlayRewardedAd(Ads.RewardedUnitId);
+                if (created == null) return;
+                created.OnAdRewarded += OnRewarded;
+                created.OnAdClosed += OnClosed;
+                created.OnAdLoadFailed += OnLoadFail;
+                created.OnAdDisplayFailed += OnDisplayFail;
+                created.OnAdDisplayed += OnRvShown;
+                created.LoadAd();
+                _rv = created;
+            }
+            catch (System.Exception e)
+            {
+                if (created != null)
+                {
+                    created.OnAdRewarded -= OnRewarded;
+                    created.OnAdClosed -= OnClosed;
+                    created.OnAdLoadFailed -= OnLoadFail;
+                    created.OnAdDisplayFailed -= OnDisplayFail;
+                    created.OnAdDisplayed -= OnRvShown;
+                }
+                Debug.LogWarning("LevelPlay rewarded skipped: " + e.Message);
+            }
         }
 
         public IEnumerator RunInterstitial()
@@ -584,12 +617,29 @@ namespace FlockFive
         void CreateInterstitial()
         {
             if (_int != null || string.IsNullOrEmpty(Ads.InterstitialUnitId)) return;
-            _int = new LevelPlayInterstitialAd(Ads.InterstitialUnitId);
-            _int.OnAdClosed += OnIntClosed;
-            _int.OnAdLoadFailed += OnIntLoadFail;
-            _int.OnAdDisplayFailed += OnIntDisplayFail;
-            _int.OnAdDisplayed += OnIntShown;
-            _int.LoadAd();
+            LevelPlayInterstitialAd created = null;
+            try
+            {
+                created = new LevelPlayInterstitialAd(Ads.InterstitialUnitId);
+                if (created == null) return;
+                created.OnAdClosed += OnIntClosed;
+                created.OnAdLoadFailed += OnIntLoadFail;
+                created.OnAdDisplayFailed += OnIntDisplayFail;
+                created.OnAdDisplayed += OnIntShown;
+                created.LoadAd();
+                _int = created;
+            }
+            catch (System.Exception e)
+            {
+                if (created != null)
+                {
+                    created.OnAdClosed -= OnIntClosed;
+                    created.OnAdLoadFailed -= OnIntLoadFail;
+                    created.OnAdDisplayFailed -= OnIntDisplayFail;
+                    created.OnAdDisplayed -= OnIntShown;
+                }
+                Debug.LogWarning("LevelPlay interstitial skipped: " + e.Message);
+            }
         }
 
         void OnIntShown(LevelPlayAdInfo info)
@@ -725,7 +775,11 @@ namespace FlockFive
         // ATT completion from FlockFiveTracking.mm (UnitySendMessage "Ads").
         public void OnAttComplete(string status)
         {
-            Tracking.NoteComplete(status);
+            try { Tracking.NoteComplete(status); }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("ATT callback skipped: " + e.Message);
+            }
         }
 
         void OnGUI()

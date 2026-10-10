@@ -23,17 +23,28 @@ namespace FlockFive
     // the result is Unknown and the prompt is required. Missing data is not
     // treated as "outside the EEA".
     //
-    // A stored choice skips the prompt on every later launch. CCPA is opt-out:
-    // with no stored denial, a US player is do_not_sell false. A stored denial
-    // maps to do_not_sell true. Granted consent maps to false.
+    // A stored GDPR choice skips the prompt on every later launch.
+    // CCPA is a separate opt-out on the Settings screen, shown to everyone.
+    // AdConsent.DoNotSell persists in PlayerPrefs ("ff_do_not_sell"), default
+    // off. LevelPlay gets do_not_sell "true" or "false" from that flag before
+    // Ads.Boot, and again when the toggle changes. Decide() still fills
+    // Plan.DoNotSell from the US consent mapping (no stored denial is "false",
+    // a stored denial is "true", granted consent is "false"). The flag that
+    // is sent is the stored toggle, not that plan field.
     //
+    // The consent UI waits until the first scene has rendered a frame.
     // iOS then waits for the ATT callback (Tracking / FlockFiveTracking.mm)
-    // before LevelPlay.Init. Editor and Android skip ATT. A timeout still
-    // inits if the callback never arrives.
+    // before LevelPlay.Init. The native request runs only once the app is
+    // active. Editor and Android skip ATT. The 45s timeout still inits if
+    // the callback never arrives.
     public static class AdConsent
     {
         public const string ChoiceKey = "flockfive.ads.consent";
+        public const string DoNotSellKey = "ff_do_not_sell";
         public const float AttTimeoutSeconds = 45f;
+
+        // Set at the end of the first rendered frame. Consent stays hidden until then.
+        public static bool FirstFrameReady { get; private set; }
 
         public enum RegionClass
         {
@@ -95,6 +106,33 @@ namespace FlockFive
             _prompt = false;
             _promptDone = false;
             _promptYes = false;
+            FirstFrameReady = false;
+        }
+
+        // After the first scene is loaded. The component waits until that frame
+        // has rendered, then opens the consent gate.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        static void WatchFirstScene()
+        {
+            if (FirstFrameReady) return;
+            var go = new GameObject("FFFirstScene");
+            if (go == null) return;
+            UnityEngine.Object.DontDestroyOnLoad(go);
+            go.AddComponent<FirstSceneFrame>();
+        }
+
+        // One log for the launch smoke test. Later calls do not log again.
+        public static void NoteFirstSceneFrame()
+        {
+            if (FirstFrameReady) return;
+            FirstFrameReady = true;
+            Debug.Log("FF_FIRST_SCENE_READY");
+        }
+
+        // The prompt is drawn only after the first frame, and only when a choice is due.
+        public static bool MayShowConsent(bool firstFrameReady, bool wantsPrompt)
+        {
+            return firstFrameReady && wantsPrompt;
         }
 
         public static RegionClass Classify(string regionCode)
@@ -204,6 +242,24 @@ namespace FlockFive
             PlayerPrefs.Save();
         }
 
+        // Player opt-out. Missing key is off, which sends do_not_sell "false".
+        public static bool DoNotSell
+        {
+            get => PlayerPrefs.GetInt(DoNotSellKey, 0) != 0;
+            set
+            {
+                PlayerPrefs.SetInt(DoNotSellKey, value ? 1 : 0);
+                PlayerPrefs.Save();
+                ApplyStoredDoNotSell();
+            }
+        }
+
+        // The string LevelPlay.SetMetaData expects for the stored toggle.
+        public static string DoNotSellMeta(bool stored)
+        {
+            return stored ? "true" : "false";
+        }
+
         internal static void Begin(AdsHost host)
         {
             if (host == null || _running) return;
@@ -215,6 +271,22 @@ namespace FlockFive
         {
             try
             {
+                // Never paint consent on the frame the host was created. The
+                // watcher logs FF_FIRST_SCENE_READY once the first frame renders.
+                // A few frames of slack still opens the gate if that watcher is gone.
+                int guard = 0;
+                while (!FirstFrameReady)
+                {
+                    guard++;
+                    if (guard > 2)
+                    {
+                        NoteFirstSceneFrame();
+                        break;
+                    }
+                    yield return null;
+                }
+
+                if (host == null) yield break;
                 RegionClass region = DeviceRegion();
                 bool has = HasChoice();
                 bool granted = has && SavedConsent();
@@ -223,44 +295,126 @@ namespace FlockFive
                 {
                     _prompt = true;
                     _promptDone = false;
-                    while (!_promptDone) yield return null;
+                    SyncConsentCanvas(true);
+                    while (!_promptDone)
+                    {
+                        if (host == null) yield break;
+                        yield return null;
+                    }
                     granted = _promptYes;
                     SaveChoice(granted);
                     plan = Decide(region, true, granted);
                     _prompt = false;
+                    SyncConsentCanvas(false);
                 }
 
                 var att = new AttSession();
-                bool attRequired = Tracking.AttRequired;
+                bool attRequired = false;
+                try { attRequired = Tracking.AttRequired; }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning("ATT requirement skipped: " + e.Message);
+                }
                 if (attRequired)
                     yield return Tracking.WaitForAds(att);
 
+                // The wait returns on the callback or the 45s timeout. If it
+                // returned without opening the gate, the timeout still inits.
+                if (attRequired && !att.Finished)
+                    att.CatchUp(AttTimeoutSeconds, AttTimeoutSeconds);
                 if (!MayBoot(plan.Ready, attRequired, att.Gate)) yield break;
                 ApplyToLevelPlay(plan);
+                // Stored CCPA choice before init. The Settings toggle applies it again later.
+                ApplyStoredDoNotSell();
                 if (host != null) host.Boot();
             }
             finally
             {
                 _prompt = false;
+                SyncConsentCanvas(false);
                 _running = false;
             }
+        }
+
+        // Optional scene canvas. A missing canvas, or a missing Canvas on it,
+        // leaves the OnGUI prompt as the form. Neither path may throw.
+        static void SyncConsentCanvas(bool show)
+        {
+            GameObject canvas = null;
+            try { canvas = GameObject.Find("ConsentCanvas"); }
+            catch (System.Exception) { return; }
+            if (canvas == null) return;
+            try
+            {
+                if (canvas.GetComponent<Canvas>() == null) return;
+                if (canvas.activeSelf != show) canvas.SetActive(show);
+            }
+            catch (System.Exception) { }
         }
 
         public static void ApplyToLevelPlay(Plan plan)
         {
             if (!plan.Ready) return;
+            try
+            {
 #pragma warning disable CS0618 // 9.5.1 still exposes SetConsent; it forwards to the GDPR consent flag.
-            LevelPlay.SetConsent(plan.Consent);
+                LevelPlay.SetConsent(plan.Consent);
 #pragma warning restore CS0618
-            if (!plan.ApplyDoNotSell || string.IsNullOrEmpty(plan.DoNotSell)) return;
-            LevelPlay.SetMetaData("do_not_sell", plan.DoNotSell);
-            // 9.4+ also reads the CCPA flag. Same meaning: true is opt-out.
-            LevelPlayPrivacySettings.SetCCPA(plan.DoNotSell == "true");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("LevelPlay consent skipped: " + e.Message);
+            }
+        }
+
+        // do_not_sell from the stored toggle. Safe when LevelPlay is missing or not inited:
+        // the SDK null-checks its bridge, and a native throw is swallowed so launch and the
+        // Settings toggle keep going. Metadata is applied before init and again after it.
+        public static void ApplyStoredDoNotSell()
+        {
+            string meta = DoNotSellMeta(DoNotSell);
+            if (string.IsNullOrEmpty(meta)) return;
+            try
+            {
+                LevelPlay.SetMetaData("do_not_sell", meta);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("LevelPlay do_not_sell skipped: " + e.Message);
+            }
+            ApplyCcpa(DoNotSell);
+        }
+
+        // com.unity.services.levelplay in this project exposes LevelPlayPrivacySettings.SetCCPA(bool).
+        // true is the CCPA opt-out, the same bit as do_not_sell "true". The call is skipped
+        // when that method is not on this SDK. A null or unready bridge is caught below.
+        static void ApplyCcpa(bool optedOut)
+        {
+            var method = typeof(LevelPlayPrivacySettings).GetMethod(
+                "SetCCPA",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+                null,
+                new[] { typeof(bool) },
+                null);
+            if (method == null) return;
+            try
+            {
+                // Direct call so the player build keeps the method. Same guard as the lookup.
+                LevelPlayPrivacySettings.SetCCPA(optedOut);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("LevelPlay CCPA skipped: " + e.Message);
+            }
         }
 
         public static void DrawPrompt()
         {
-            if (!_prompt || _promptDone) return;
+            if (!MayShowConsent(FirstFrameReady, _prompt) || _promptDone) return;
+            if (Event.current == null) return;
+            GUISkin skin = GUI.skin;
+            if (skin == null || skin.label == null || skin.button == null) return;
+            if (Texture2D.whiteTexture == null) return;
             float s = Screen.width / 400f;
             if (s < 0.5f) s = 0.5f;
             Matrix4x4 old = GUI.matrix;
@@ -309,13 +463,33 @@ namespace FlockFive
             public void Tick(float dt, float timeout)
             {
                 if (!Started || Finished) return;
-                if (dt > 0f) Elapsed += dt;
+                if (dt > 0f && !float.IsNaN(dt) && !float.IsInfinity(dt)) Elapsed += dt;
+                CatchUp(Elapsed, timeout);
+            }
+
+            // Wall-clock path. A stalled unscaled delta still expires at the timeout.
+            public void CatchUp(float elapsedSeconds, float timeout)
+            {
+                if (!Started || Finished) return;
+                if (!float.IsNaN(elapsedSeconds) && !float.IsInfinity(elapsedSeconds) && elapsedSeconds > Elapsed)
+                    Elapsed = elapsedSeconds;
                 Gate = EvaluateAtt(Elapsed, Callback, timeout);
                 if (!Gate.Init) return;
                 Finished = true;
                 FromCallback = Gate.FromCallback;
                 FromTimeout = Gate.FromTimeout;
             }
+        }
+    }
+
+    // Renders nothing. Marks the first scene frame so consent can open.
+    sealed class FirstSceneFrame : MonoBehaviour
+    {
+        IEnumerator Start()
+        {
+            yield return new WaitForEndOfFrame();
+            AdConsent.NoteFirstSceneFrame();
+            Destroy(gameObject);
         }
     }
 }

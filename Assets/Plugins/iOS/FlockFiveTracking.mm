@@ -1,4 +1,4 @@
-#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import <AppTrackingTransparency/AppTrackingTransparency.h>
 
 extern void UnitySendMessage(const char *obj, const char *method, const char *msg);
@@ -21,14 +21,64 @@ static void FlockFive_SendAtt(int status)
     });
 }
 
+// One in-flight prompt. A second call while the system dialog is up is ignored.
+static BOOL s_attInFlight;
+static id s_attObserver;
+
+static void FlockFive_WaitUntilActive(void);
+static void FlockFive_RequestTrackingNow(void)
+{
+    if (s_attInFlight) return;
+    s_attInFlight = YES;
+    if (@available(iOS 14, *))
+    {
+        [ATTrackingManager requestTrackingAuthorizationWithCompletionHandler:^(ATTrackingManagerAuthorizationStatus status) {
+            s_attInFlight = NO;
+            FlockFive_SendAtt((int)status);
+        }];
+    }
+    else
+    {
+        s_attInFlight = NO;
+        FlockFive_SendAtt(3);
+    }
+}
+
+// Apple drops the prompt, and may never call the handler, unless the
+// application is active. If it is not, wait for DidBecomeActive.
+static void FlockFive_WaitUntilActive(void)
+{
+    if (s_attObserver != nil) return;
+    s_attObserver = [[NSNotificationCenter defaultCenter]
+        addObserverForName:UIApplicationDidBecomeActiveNotification
+                    object:nil
+                     queue:[NSOperationQueue mainQueue]
+                usingBlock:^(NSNotification *note) {
+        (void)note;
+        id obs = s_attObserver;
+        s_attObserver = nil;
+        if (obs != nil)
+            [[NSNotificationCenter defaultCenter] removeObserver:obs];
+        UIApplication *app = [UIApplication sharedApplication];
+        if (app != nil && app.applicationState != UIApplicationStateActive)
+        {
+            FlockFive_WaitUntilActive();
+            return;
+        }
+        FlockFive_RequestTrackingNow();
+    }];
+}
+
 extern "C" void FlockFive_RequestTracking(void)
 {
     if (@available(iOS 14, *))
     {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [ATTrackingManager requestTrackingAuthorizationWithCompletionHandler:^(ATTrackingManagerAuthorizationStatus status) {
-                FlockFive_SendAtt((int)status);
-            }];
+            UIApplication *app = [UIApplication sharedApplication];
+            if (app != nil && app.applicationState == UIApplicationStateActive)
+                FlockFive_RequestTrackingNow();
+            else
+                FlockFive_WaitUntilActive();
         });
     }
     else
