@@ -40,6 +40,8 @@ namespace FlockFive.Editor
             Suite("build78", Build78Tests.Run);
             Suite("build79", Build79Tests.Run);
             Suite("build80", Build80Tests.Run);
+            Suite("build81", Build81Tests.Run);
+            Suite("build81-reward", Build81RewardTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

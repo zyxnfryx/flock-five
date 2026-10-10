@@ -90,5 +90,22 @@ namespace FlockFive
             if (s < 0.86f) s = 0.86f;
             return s;
         }
+
+        // Cubic ease-in. Slow to leave, then off. Same blend ExitScale uses.
+        public static float EaseInCubic(float u)
+        {
+            u = Mathf.Clamp01(u);
+            return u * u * u;
+        }
+
+        // Cubic ease-out. Fast start, then sits on 1. No overshoot: Fall's
+        // back-ease is for a short drop, and a screen-tall slide would dip
+        // the card past its seat.
+        public static float EaseOutCubic(float u)
+        {
+            u = Mathf.Clamp01(u);
+            float v = 1f - u;
+            return 1f - v * v * v;
+        }
     }
 }

@@ -77,21 +77,27 @@ namespace FlockFive.Editor
                 + " tipDuty=" + tipDuty.ToString("0.00") + " tooth=" + tooth.ToString("0.00"));
 
             var safe = new Rect(0f, 102f, W, H - 102f - 177f);
-            float s = H / 720f;
-            float old = Mathf.Max(44f, FlockFiveApp.SettingsGearRef * s);
+            float b80 = FlockFiveApp.SettingsGearBuild80Size(H);
+            var drawn = FlockFiveApp.SettingsGearDrawnRect(W, H, safe);
             var gear = FlockFiveApp.SettingsGearRect(W, H, safe);
-            float ratio = old > 1f ? gear.width / old : 0f;
+            float ratio = b80 > 1f ? drawn.width / b80 : 0f;
             float logoW = W * 0.72f * 0.91f;
             float logoLeft = (W - logoW) * 0.5f;
+            // Build 81 draws 0.75 of the build-80 side. The 1.3 grow stays the baseline.
             Check("gear-size-and-hit",
                 gear.width >= 44f && gear.height >= 44f
+                && drawn.width == drawn.height
                 && gear.width == gear.height
-                && ratio >= 1.25f && ratio <= 1.35f
-                && Mathf.Abs(ratio - FlockFiveApp.SettingsGearGrow) < 0.02f
+                && gear.width + 0.01f >= drawn.width
+                && Mathf.Abs(FlockFiveApp.SettingsGearGrow - 1.3f) < 0.001f
+                && ratio >= 0.70f && ratio <= 0.80f
+                && Mathf.Abs(ratio - FlockFiveApp.SettingsGearShrink) < 0.02f
                 && gear.xMax < logoLeft - 4f
+                && drawn.xMax < logoLeft - 4f
                 && gear.y >= H - safe.yMax
                 && gear.xMax < W * 0.5f,
-                "gear=" + gear + " ratio=" + ratio.ToString("0.00") + " logoLeft=" + logoLeft.ToString("0.0"));
+                "gear=" + gear + " drawn=" + drawn + " ratio=" + ratio.ToString("0.00")
+                + " logoLeft=" + logoLeft.ToString("0.0"));
         }
 
         static void CheckPointer(System.Action<string, bool, string> Check)

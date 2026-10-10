@@ -541,18 +541,30 @@ namespace FlockFive
             _dailyAdBusy = true;
             try
             {
-                yield return Ads.Rewarded(Ads.PlacementDailyDouble);
-                if (Ads.LastEarned && _dailyOpen)
+                int coins = DailyBonus.SpinCoins;
+                yield return Ads.Rewarded(Ads.PlacementDailyDouble, coins, false);
+                // Ads.LastEarned mirrors the callback. The pay is RewardedGrant.
+                if (RewardedGrant.Earned)
                 {
-                    _wheelPayMul = 2;
-                    float shown = 0f;
-                    while (shown < 0.70f && _dailyOpen)
+                    if (_dailyOpen && RewardedGrant.HasUnapplied)
                     {
-                        shown += Time.unscaledDeltaTime;
-                        yield return null;
+                        _wheelPayMul = 2;
+                        float shown = 0f;
+                        while (shown < 0.70f && _dailyOpen && RewardedGrant.HasUnapplied)
+                        {
+                            shown += Time.unscaledDeltaTime;
+                            yield return null;
+                        }
                     }
+                    RewardedGrant.Flush();
                 }
-                ResolveDailyGrant(Ads.LastEarned);
+                else if (!DailyBonus.Resolved)
+                {
+                    // Skip or failure pays the documented 1x, even if the popup already closed.
+                    if (_dailyOpen) ResolveDailyGrant(false);
+                    else if (DailyBonus.TryResolve(false, out int paid) && paid > 0)
+                        BeginRewardPay(paid);
+                }
             }
             finally
             {

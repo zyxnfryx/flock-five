@@ -24,6 +24,13 @@ namespace FlockFive.Editor
             EditorApplication.isPlaying = true;
         }
 
+        public static void Capture81()
+        {
+            SetGameView(1179, 2556);
+            File.WriteAllText("/tmp/flock-five-b81-stills", "1");
+            EditorApplication.isPlaying = true;
+        }
+
         // Home airplane with the heart shell up. Pose is capture-only.
         public static void CapturePlane()
         {

@@ -449,6 +449,43 @@ namespace FlockFive
             return n.Year * 10000 + n.Month * 100 + n.Day;
         }
 
+        // Doubled spin from a rewarded ad, including one that was saved while the
+        // app was paused or killed. A 1x resolve is topped up. Already at 2x is a
+        // no-op. False only when today's claim cannot take the pay yet.
+        public static bool PayStoredDouble(int baseCoins)
+        {
+            if (baseCoins < 100 || (baseCoins % 100) != 0) return false;
+            if (!_booted) Boot();
+            if (_resolved && _payout >= baseCoins * 2) return true;
+            if (_resolved && _payout == baseCoins)
+            {
+                Purse.Credit(baseCoins);
+                _payout = baseCoins * 2;
+                _payN = -1;
+                PrefGuard.SetInt(PrefPay, _payout);
+                PlayerPrefs.Save();
+                CacheLines(_streak < 1 ? 1 : _streak);
+                return true;
+            }
+            if (_resolved) return true;
+            _spinCoins = baseCoins;
+            _landed = true;
+            _tutorialSpin = false;
+            if (_gate != Gate.Claimed) return false;
+            return TryResolve(true, out _);
+        }
+
+        // Drop the in-memory spin so the next Boot reads the saved day again.
+        public static void TestDropMemory()
+        {
+            _booted = false;
+            _spinWedge = -1;
+            _spinCoins = 0;
+            _landed = false;
+            _resolved = false;
+            _tutorialSpin = false;
+        }
+
         public static int TestToday
         {
             get => _testToday;

@@ -32,6 +32,9 @@ namespace FlockFive
         // Seconds a step tap gate (FlockFiveApp.StepTapGate) has been holding taps with no
         // glove posed on its target. A healthy gated step poses within a frame or two.
         public float StepGateBlind;
+        // The rewarded ad's lesson is waiting on its grant. Do not drop the glove.
+        // A dead ad screen still closes (ClearWatchStage). Splash still drops the hand.
+        public bool RewardInFlight;
     }
 
     [Flags]
@@ -65,7 +68,9 @@ namespace FlockFive
         public static TutorFix Plan(TutorSnapshot s)
         {
             var fix = TutorFix.None;
-            if (s.AdHand && (s.Splash || !s.GiftCard)) fix |= TutorFix.DropAdHand;
+            // The glove stays while its ad is on screen and until that reward is applied.
+            if (s.AdHand && (s.Splash || !s.GiftCard) && !s.RewardInFlight && !s.WatchRunning)
+                fix |= TutorFix.DropAdHand;
             if (s.TutorPause && (s.Splash || !s.SparrowCueLive)) fix |= TutorFix.ReleaseTutorPause;
             if (s.GiftMovie && !s.WatchRunning) fix |= TutorFix.ClearWatchStage;
             if (s.ResumeGateLeft > MaxGateSeconds || s.TapGateLeft > MaxGateSeconds || s.GiftGateLeft > MaxGateSeconds)

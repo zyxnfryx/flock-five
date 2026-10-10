@@ -46,6 +46,24 @@ namespace FlockFive
                 Close = close;
                 Body = body;
             }
+
+            // Slide the whole card. Hits and paint share this, so a moving
+            // panel keeps its controls on the wood. Zero returns the same seat.
+            public Frame OffsetY(float dy)
+            {
+                if (dy > -0.01f && dy < 0.01f) return this;
+                return new Frame(
+                    MoveY(Card, dy),
+                    MoveY(Content, dy),
+                    MoveY(Title, dy),
+                    MoveY(Close, dy),
+                    new Rows(MoveY(Body.PrivacyLink, dy), MoveY(Body.Label, dy), MoveY(Body.Toggle, dy)));
+            }
+
+            static Rect MoveY(Rect r, float dy)
+            {
+                return new Rect(r.x, r.y + dy, r.width, r.height);
+            }
         }
 
         public static Frame Layout(float screenW, float screenH, Rect safe, float topHud)
@@ -136,6 +154,153 @@ namespace FlockFive
             if (y + h > bot) y = bot - h;
             if (y < top) y = top;
             return new Rect(x, y, w, h);
+        }
+    }
+
+    public enum SettingsPhase
+    {
+        Closed = 0,
+        Opening = 1,
+        Open = 2,
+        Closing = 3
+    }
+
+    // Settings open / close. Pure, so the editor suite can step the machine
+    // without a frame. Curves come from PopupMotion: ease-out cubic on the
+    // way in (0.4s), ease-in cubic on the way out (0.3s), Smooth on the dim.
+    public static class SettingsMotion
+    {
+        public const float OpenSeconds = 0.40f;
+        public const float CloseSeconds = 0.30f;
+        public const float OverlayBlack = 0.60f;
+        // Clockwise on the way open. A multiple of the 8-tooth step so the
+        // last opening frame matches the unrotated cog. Inside 180–360.
+        public const float SpinDegrees = 270f;
+
+        public enum Hit
+        {
+            None = 0,
+            Gear = 1,
+            Overlay = 2,
+            Close = 3,
+            Sheet = 4
+        }
+
+        // Where the cog paints. AboveOverlay is after the settings dim.
+        public enum GearPass
+        {
+            Hidden = 0,
+            AboveDimmer = 1,
+            AboveOverlay = 2
+        }
+
+        public static bool BlocksInput(SettingsPhase phase)
+        {
+            return phase == SettingsPhase.Opening || phase == SettingsPhase.Closing;
+        }
+
+        public static GearPass GearPassFor(bool home, SettingsPhase phase)
+        {
+            if (!home) return GearPass.Hidden;
+            if (phase == SettingsPhase.Closed) return GearPass.AboveDimmer;
+            return GearPass.AboveOverlay;
+        }
+
+        public static SettingsPhase AfterGearTap(SettingsPhase phase)
+        {
+            if (phase == SettingsPhase.Closed) return SettingsPhase.Opening;
+            if (phase == SettingsPhase.Open) return SettingsPhase.Closing;
+            return phase;
+        }
+
+        public static SettingsPhase AfterDismiss(SettingsPhase phase)
+        {
+            if (phase == SettingsPhase.Open) return SettingsPhase.Closing;
+            return phase;
+        }
+
+        // Gear toggles. Overlay and the X dismiss, and only while Open.
+        // Opening and Closing ignore every hit.
+        public static SettingsPhase AfterHit(SettingsPhase phase, Hit hit)
+        {
+            if (BlocksInput(phase)) return phase;
+            if (hit == Hit.Gear) return AfterGearTap(phase);
+            if (phase != SettingsPhase.Open) return phase;
+            if (hit == Hit.Overlay || hit == Hit.Close) return AfterDismiss(phase);
+            return phase;
+        }
+
+        public static SettingsPhase Settled(SettingsPhase phase, float age)
+        {
+            if (phase == SettingsPhase.Opening && age >= OpenSeconds) return SettingsPhase.Open;
+            if (phase == SettingsPhase.Closing && age >= CloseSeconds) return SettingsPhase.Closed;
+            return phase;
+        }
+
+        public static float Age(float now, float started)
+        {
+            float age = now - started;
+            if (age < 0f) return 0f;
+            return age;
+        }
+
+        // Travel that parks the card's bottom `pad` pixels above the screen.
+        public static float DropTravel(float cardBottom, float pad)
+        {
+            if (cardBottom < 0f) cardBottom = 0f;
+            if (pad < 0f) pad = 0f;
+            return cardBottom + pad;
+        }
+
+        // GUI y offset. Negative is above the seat. 0 is seated.
+        public static float PanelOffset(SettingsPhase phase, float age, float travel)
+        {
+            if (travel < 0f) travel = 0f;
+            if (phase == SettingsPhase.Opening)
+            {
+                float u = PopupMotion.Beat(age, 0f, OpenSeconds);
+                return -travel * (1f - PopupMotion.EaseOutCubic(u));
+            }
+            if (phase == SettingsPhase.Closing)
+            {
+                float u = PopupMotion.Beat(age, 0f, CloseSeconds);
+                return -travel * PopupMotion.EaseInCubic(u);
+            }
+            return 0f;
+        }
+
+        public static float OverlayAlpha(SettingsPhase phase, float age)
+        {
+            if (phase == SettingsPhase.Open) return OverlayBlack;
+            if (phase == SettingsPhase.Opening)
+            {
+                float u = PopupMotion.Beat(age, 0f, OpenSeconds);
+                return OverlayBlack * PopupMotion.Smooth(u);
+            }
+            if (phase == SettingsPhase.Closing)
+            {
+                float u = PopupMotion.Beat(age, 0f, CloseSeconds);
+                return OverlayBlack * (1f - PopupMotion.Smooth(u));
+            }
+            return 0f;
+        }
+
+        // Positive degrees are clockwise (RotateAroundPivot, same as the wheel).
+        // Open and Closed stay at 0 so the settled icon is not a filtered spin.
+        // SpinDegrees is one tooth-step multiple, so that 0 matches the last frame.
+        public static float GearDegrees(SettingsPhase phase, float age)
+        {
+            if (phase == SettingsPhase.Opening)
+            {
+                float u = PopupMotion.Beat(age, 0f, OpenSeconds);
+                return SpinDegrees * PopupMotion.EaseOutCubic(u);
+            }
+            if (phase == SettingsPhase.Closing)
+            {
+                float u = PopupMotion.Beat(age, 0f, CloseSeconds);
+                return SpinDegrees * (1f - PopupMotion.EaseInCubic(u));
+            }
+            return 0f;
         }
     }
 }

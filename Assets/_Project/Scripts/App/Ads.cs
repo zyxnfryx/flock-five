@@ -141,6 +141,7 @@ namespace FlockFive
         public const string PlacementBonus = "bonus_branch";
         public const string PlacementClear = "stage_clear";
         public const string PlacementDailyDouble = "daily_double";
+        public const string PlacementKeep = "keep_multiplier";
         public static string ActivePlacement = PlacementBonus;
 
         const string PrefClears = "flockfive.session_clears";
@@ -336,9 +337,13 @@ namespace FlockFive
             yield return _host.RunInterstitial();
         }
 
-        public static IEnumerator Rewarded() => Rewarded(PlacementBonus);
+        public static IEnumerator Rewarded() => Rewarded(PlacementBonus, 0, false);
 
-        public static IEnumerator Rewarded(string placement)
+        public static IEnumerator Rewarded(string placement) => Rewarded(placement, 0, false);
+
+        // payload is the branch index, the wheel's 1x coins, or the streak to keep.
+        // tutorialGoal finishes the glove step when this reward lands.
+        public static IEnumerator Rewarded(string placement, int payload, bool tutorialGoal)
         {
             ActivePlacement = string.IsNullOrEmpty(placement) ? PlacementBonus : placement;
             AdLog.Add("gift ad requested (" + ActivePlacement + ")");
@@ -350,19 +355,79 @@ namespace FlockFive
                 yield return new WaitForSeconds(0.35f);
                 yield break;
             }
+            RewardedGrant.Begin(PlaceFor(ActivePlacement), payload, tutorialGoal, LevelData.DisplayNumber);
             Ensure();
             if (_host == null)
             {
 #if FF_ADS_DEV
                 yield return Ads.Simulate();
-                LastGranted = true;
-                LastEarned = true;
+                DeliverDisplayedCallback();
+                DeliverRewardedCallback();
 #else
-                LastGranted = true;
+                DeliverFailedCallback();
 #endif
+                LastEarned = RewardedGrant.Earned;
+                LastGranted = RewardedGrant.Earned;
+                RewardedGrant.Flush();
                 yield break;
             }
             yield return _host.RunRewarded();
+            LastEarned = RewardedGrant.Earned;
+            LastGranted = RewardedGrant.Earned;
+            RewardedGrant.Flush();
+        }
+
+        public static RewardedGrant.Place PlaceFor(string placement)
+        {
+            if (placement == PlacementDailyDouble) return RewardedGrant.Place.Wheel;
+            if (placement == PlacementKeep) return RewardedGrant.Place.Keep;
+            return RewardedGrant.Place.Branch;
+        }
+
+        // LevelPlay OnAdRewarded. Safe before or after OnAdClosed, and while paused.
+        public static void DeliverRewardedCallback()
+        {
+            bool newly = RewardedGrant.OnRewarded();
+            if (RewardedGrant.Earned)
+            {
+                LastEarned = true;
+                LastGranted = true;
+            }
+            AdLog.Add(newly ? "gift ad reward callback (earned)" : "gift ad reward callback (duplicate)");
+        }
+
+        // LevelPlay OnAdClosed. Does not decide the grant.
+        public static void DeliverClosedCallback()
+        {
+            RewardedGrant.OnClosed();
+            AdLog.Add("gift ad closed" + (RewardedGrant.Earned ? " (rewarded)" : " (no reward yet)"));
+        }
+
+        public static void DeliverDisplayedCallback()
+        {
+            RewardedGrant.OnDisplayed();
+        }
+
+        // No-fill or a display error. Pays nothing.
+        public static void DeliverFailedCallback()
+        {
+            RewardedGrant.OnFailed();
+            if (!RewardedGrant.Earned)
+            {
+                LastEarned = false;
+                LastGranted = false;
+            }
+            AdLog.Add("gift ad failed");
+        }
+
+        public static void DeliverPause(bool paused)
+        {
+            RewardedGrant.OnPause(paused);
+        }
+
+        public static void DeliverFocus(bool focus)
+        {
+            RewardedGrant.OnFocus(focus);
         }
 
 #if FF_ADS_DEV
@@ -484,10 +549,10 @@ namespace FlockFive
                 {
 #if FF_ADS_DEV
                     yield return Ads.Simulate();
-                    Ads.LastGranted = true;
-                    Ads.LastEarned = true;
+                    Ads.DeliverDisplayedCallback();
+                    Ads.DeliverRewardedCallback();
 #else
-                    Ads.LastGranted = true;
+                    Ads.DeliverFailedCallback();
 #endif
                     yield break;
                 }
@@ -503,16 +568,16 @@ namespace FlockFive
 
                 if (!_inited)
                 {
-                    AdLog.Add("gift ad unavailable (ads not ready) -> gift granted anyway");
-                    Ads.LastGranted = true;
+                    AdLog.Add("gift ad unavailable (ads not ready)");
+                    Ads.DeliverFailedCallback();
                     yield break;
                 }
 
                 if (_rv == null) CreateRewarded();
                 if (_rv == null)
                 {
-                    AdLog.Add("gift ad unavailable (no ad unit) -> gift granted anyway");
-                    Ads.LastGranted = true;
+                    AdLog.Add("gift ad unavailable (no ad unit)");
+                    Ads.DeliverFailedCallback();
                     yield break;
                 }
 
@@ -529,8 +594,8 @@ namespace FlockFive
 
                 if (!_rv.IsAdReady())
                 {
-                    AdLog.Add("gift ad did not load -> gift granted anyway");
-                    Ads.LastGranted = true;
+                    AdLog.Add("gift ad did not load");
+                    Ads.DeliverFailedCallback();
                     _rv.LoadAd();
                     yield break;
                 }
@@ -552,11 +617,11 @@ namespace FlockFive
                     yield return null;
                 }
                 if (_waiting) AdLog.Add("gift ad wait TIMED OUT after 180s; game resumed");
-                // Permissive: only withhold the gift when an ad really played and the
-                // player closed it before the reward. Any failure still grants it.
-                Ads.LastGranted = _didReward || !_shown;
-                Ads.LastEarned = _didReward;
-                if (!_didReward && !_shown) AdLog.Add("gift ad failed to show -> gift granted anyway");
+                // The reward callback grants. Close, resume, and this wait ending do not.
+                // A show that never appeared is a failure and pays nothing.
+                if (!RewardedGrant.Earned && !_shown) Ads.DeliverFailedCallback();
+                Ads.LastEarned = RewardedGrant.Earned;
+                Ads.LastGranted = RewardedGrant.Earned;
                 _rv.LoadAd();
             }
             finally
@@ -721,6 +786,7 @@ namespace FlockFive
         void OnRvShown(LevelPlayAdInfo info)
         {
             _shown = true;
+            Ads.DeliverDisplayedCallback();
             bool owned = _waiting;
             AdLog.Add("GIFT AD ON SCREEN" + (owned ? "" : " (NOT requested by game!)"));
             if (owned || _orphanRv) return;
@@ -731,13 +797,12 @@ namespace FlockFive
         void OnRewarded(LevelPlayAdInfo info, LevelPlayReward reward)
         {
             _didReward = true;
-            Ads.LastGranted = true;
-            Ads.LastEarned = true;
+            Ads.DeliverRewardedCallback();
         }
 
         void OnClosed(LevelPlayAdInfo info)
         {
-            AdLog.Add("gift ad closed" + (_didReward ? " (rewarded)" : " (no reward)"));
+            Ads.DeliverClosedCallback();
             _waiting = false;
             if (!_orphanRv) return;
             _orphanRv = false;
@@ -746,6 +811,7 @@ namespace FlockFive
 
         void OnLoadFail(LevelPlayAdError error)
         {
+            if (_waiting && !_shown) Ads.DeliverFailedCallback();
             _waiting = false;
         }
 
@@ -774,6 +840,7 @@ namespace FlockFive
 
         void OnDisplayFail(LevelPlayAdInfo info, LevelPlayAdError error)
         {
+            Ads.DeliverFailedCallback();
             _waiting = false;
         }
 
@@ -782,6 +849,7 @@ namespace FlockFive
         void OnApplicationPause(bool paused)
         {
             AdLog.Add(paused ? "app left foreground" : "app back in foreground");
+            Ads.DeliverPause(paused);
             if (paused)
             {
                 _leftApp = true;
@@ -799,6 +867,7 @@ namespace FlockFive
 
         void OnApplicationFocus(bool focus)
         {
+            Ads.DeliverFocus(focus);
             if (!focus || !_leftApp || !Ads.IsShowing) return;
             Ads.ArmResumeSettle();
             _leftApp = false;

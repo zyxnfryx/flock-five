@@ -5,24 +5,86 @@ namespace FlockFive
     public sealed partial class FlockFiveApp
     {
         bool _settingsOpen;
+        SettingsPhase _settingsPhase;
+        float _settingsAt;
         bool _smokePlayed;
         bool _smokeNoted;
         bool _gearHeld;
         AdConsent.HomeCard _homePrompt;
 
         // Build 79 drew the gear at 40px times scale. Build 80 grows that by 1.3.
+        // Build 81 draws 0.75 of that and pins the top-left to the safe-area corner.
         public const float SettingsGearRef = 40f;
         public const float SettingsGearGrow = 1.3f;
+        public const float SettingsGearShrink = 0.75f;
+        // 10pt sits in the 8–12 pt corner margin.
+        public const float SettingsGearMarginPt = 10f;
 
-        // Square gear in the top-left safe band. 44pt minimum. Clears the wordmark.
-        public static Rect SettingsGearRect(float w, float h, Rect safe)
+        // Pixels per point. 1179×2556 is 393×852 at 3×, so height / 852 is 3.
+        public static float SettingsGearPxPerPt(float h)
+        {
+            float pt = h / 852f;
+            if (pt < 1f) pt = 1f;
+            return pt;
+        }
+
+        public static float SettingsGearScale(float h)
         {
             float s = h / 720f;
             if (s < 0.5f) s = 0.5f;
-            float size = Mathf.Max(44f, SettingsGearRef * SettingsGearGrow * s);
-            float x = Mathf.Max(8f, safe.xMin + 8f);
-            float y = TopHudBox(h, safe, 0f) + 2f * s;
-            return new Rect(x, y, size, size);
+            return s;
+        }
+
+        // Build 80 drawn side, before the build 81 shrink.
+        public static float SettingsGearBuild80Size(float h)
+        {
+            return Mathf.Max(44f, SettingsGearRef * SettingsGearGrow * SettingsGearScale(h));
+        }
+
+        public static float SettingsGearDrawnSize(float h)
+        {
+            return SettingsGearBuild80Size(h) * SettingsGearShrink;
+        }
+
+        // 44pt. The hit uses this when the shrunk icon is smaller.
+        public static float SettingsGearMinHit(float h)
+        {
+            return 44f * SettingsGearPxPerPt(h);
+        }
+
+        public static float SettingsGearMargin(float h)
+        {
+            return SettingsGearMarginPt * SettingsGearPxPerPt(h);
+        }
+
+        // Safe-area top-left plus the corner margin. Empty safe area is the screen corner.
+        static Vector2 SettingsGearOrigin(float h, Rect safe)
+        {
+            float m = SettingsGearMargin(h);
+            float safeTop = 0f;
+            float x = m;
+            if (safe.width >= 2f && safe.height >= 2f)
+            {
+                safeTop = Mathf.Max(0f, h - safe.yMax);
+                x = safe.xMin + m;
+            }
+            if (x < m) x = m;
+            return new Vector2(x, safeTop + m);
+        }
+
+        public static Rect SettingsGearDrawnRect(float w, float h, Rect safe)
+        {
+            var o = SettingsGearOrigin(h, safe);
+            float size = SettingsGearDrawnSize(h);
+            return new Rect(o.x, o.y, size, size);
+        }
+
+        // Hit. Same top-left as the icon. Extends down and right past a small icon.
+        public static Rect SettingsGearRect(float w, float h, Rect safe)
+        {
+            var drawn = SettingsGearDrawnRect(w, h, safe);
+            float hit = Mathf.Max(drawn.width, SettingsGearMinHit(h));
+            return new Rect(drawn.x, drawn.y, hit, hit);
         }
 
         HomeGearQuery HomeGearNow()
@@ -54,6 +116,7 @@ namespace FlockFive
         }
 
         // Hit before the popups. A forced glove step keeps the gear up and drops the tap.
+        // An open sheet owns the gear (tap again closes). Transitions swallow later.
         void PollHomeGear()
         {
             _gearHeld = false;
@@ -67,9 +130,36 @@ namespace FlockFive
             }
             if (HitPad(r, out _gearHeld))
             {
-                _settingsOpen = true;
-                Sfx.CardTap();
+                ApplySettingsHit(SettingsMotion.Hit.Gear);
+                _hitLock = 1;
             }
+        }
+
+        void TickSettingsMotion()
+        {
+            var next = SettingsMotion.Settled(_settingsPhase, SettingsMotion.Age(Time.unscaledTime, _settingsAt));
+            if (next == _settingsPhase) return;
+            _settingsPhase = next;
+            _settingsAt = Time.unscaledTime;
+            _settingsOpen = next != SettingsPhase.Closed;
+        }
+
+        void ApplySettingsHit(SettingsMotion.Hit hit)
+        {
+            var next = SettingsMotion.AfterHit(_settingsPhase, hit);
+            if (next == _settingsPhase) return;
+            _settingsPhase = next;
+            _settingsAt = Time.unscaledTime;
+            _settingsOpen = next != SettingsPhase.Closed;
+            Sfx.CardTap();
+        }
+
+        // Editor stills plant a settled pose. Play taps go through AfterHit.
+        void PoseSettings(bool open)
+        {
+            _settingsOpen = open;
+            _settingsPhase = open ? SettingsPhase.Open : SettingsPhase.Closed;
+            _settingsAt = Time.unscaledTime;
         }
 
         static void SwallowGearTap(Rect r)
@@ -83,27 +173,14 @@ namespace FlockFive
             e.Use();
         }
 
-        // Painted after the home dimmers. The open sheet covers it.
+        // Painted after the home dimmers. The open sheet paints the cog itself,
+        // above its overlay, so this pass stays out while Settings is up.
         void PaintHomeGear()
         {
             var q = HomeGearNow();
             if (!HomeGear.Shown(q) || !HomeGear.AboveDimmer(q) || _settingsOpen) return;
-            var r = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
-            var tex = GearIcon.Texture();
-            if (tex == null) return;
-            // Press sinks and darkens. The hit rect stays r. The drop shadow is
-            // baked into the cog, so a second silhouette is not drawn under it.
-            var draw = r;
-            if (_gearHeld)
-            {
-                float k = 0.93f;
-                float ox = r.width * (1f - k) * 0.5f;
-                float oy = r.height * (1f - k) * 0.5f + r.height * 0.028f;
-                draw = new Rect(r.x + ox, r.y + oy, r.width * k, r.height * k);
-            }
-            GUI.color = _gearHeld ? new Color(0.62f, 0.52f, 0.40f, 1f) : Color.white;
-            GUI.DrawTexture(draw, tex, ScaleMode.ScaleToFit, true);
-            GUI.color = Color.white;
+            if (SettingsMotion.GearPassFor(q.Home, _settingsPhase) != SettingsMotion.GearPass.AboveDimmer) return;
+            DrawSettingsGear(0f, _gearHeld);
         }
 
         // Informational any-tap lessons leave the gear alone so it can open Settings.
@@ -118,93 +195,176 @@ namespace FlockFive
 
         // Privacy link, then the Do Not Sell checkbox on the next row. The whole
         // checkbox row is the hit. The card is a flat wood panel (no oval vignette).
+        // The dim fades under the card. The cog is painted after both.
         void DrawSettingsSheet(float s)
         {
             _hitLock = 0;
             if (s < 0.5f) s = 0.5f;
-            if (Texture2D.whiteTexture == null) return;
-            GUI.color = new Color(0.05f, 0.04f, 0.03f, 0.42f);
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-
+            float age = SettingsMotion.Age(Time.unscaledTime, _settingsAt);
             var frame = SettingsSheet.Layout(Screen.width, Screen.height, Screen.safeArea, TopHud());
+            float pad = Mathf.Max(16f, 12f * s);
+            float travel = SettingsMotion.DropTravel(frame.Card.yMax, pad);
+            float dy = SettingsMotion.PanelOffset(_settingsPhase, age, travel);
+            float dim = SettingsMotion.OverlayAlpha(_settingsPhase, age);
+            float spin = SettingsMotion.GearDegrees(_settingsPhase, age);
+            frame = frame.OffsetY(dy);
             var card = frame.Card;
             var rows = frame.Body;
             var titleR = frame.Title;
-            DrawWoodPanel(card, s);
 
-            var title = GuiPool.Label(GuiSlot.SettingsTitle);
-            title.fontStyle = FontStyle.Bold;
-            title.alignment = TextAnchor.MiddleCenter;
-            title.wordWrap = false;
-            title.fontSize = FitFont(title, "Settings", titleR.width * 0.9f, titleR.height * 0.8f, 16, Mathf.Max(22, Mathf.RoundToInt(32f * s)));
-            StampOutlined(titleR, "Settings", title, new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(3, Mathf.RoundToInt(title.fontSize * 0.12f)));
-
-            bool link = HitPad(rows.PrivacyLink, out bool linkHeld);
-            var linkSt = GuiPool.Label(GuiSlot.SettingsLink);
-            linkSt.fontStyle = FontStyle.Bold;
-            linkSt.alignment = TextAnchor.MiddleLeft;
-            linkSt.wordWrap = false;
-            float textW = Mathf.Max(8f, rows.Toggle.xMin - rows.PrivacyLink.x - 8f * s);
-            linkSt.fontSize = FitFont(
-                linkSt, SettingsSheet.PrivacyLabel,
-                textW, rows.PrivacyLink.height * 0.62f,
-                14, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
-            var linkCol = linkHeld ? new Color(1f, 1f, 0.94f, 1f) : new Color(1f, 0.97f, 0.90f, 1f);
-            StampOutlined(rows.PrivacyLink, SettingsSheet.PrivacyLabel, linkSt, linkCol, 0, Mathf.Max(2, Mathf.RoundToInt(linkSt.fontSize * 0.16f)));
-
-            float sw = rows.Toggle.width;
-            var chev = new Rect(
-                rows.Toggle.x,
-                rows.PrivacyLink.y + (rows.PrivacyLink.height - sw) * 0.5f,
-                sw, sw);
-            var chevSt = GuiPool.Label(GuiSlot.SettingsChevron);
-            chevSt.fontStyle = FontStyle.Bold;
-            chevSt.alignment = TextAnchor.MiddleCenter;
-            chevSt.wordWrap = false;
-            chevSt.fontSize = FitFont(chevSt, "\u203A", chev.width * 0.8f, chev.height * 0.8f, 16, Mathf.Max(20, Mathf.RoundToInt(28f * s)));
-            StampOutlined(chev, "\u203A", chevSt, linkCol, 0, Mathf.Max(2, Mathf.RoundToInt(chevSt.fontSize * 0.12f)));
-
-            var rowHit = new Rect(rows.Label.x, rows.Label.y, rows.Toggle.xMax - rows.Label.x, rows.Label.height);
-            bool flip = HitPad(rowHit, out bool rowHeld);
-            var rowSt = GuiPool.Label(GuiSlot.SettingsRow);
-            rowSt.fontStyle = FontStyle.Bold;
-            rowSt.alignment = TextAnchor.MiddleLeft;
-            rowSt.wordWrap = true;
-            rowSt.fontSize = FitFontWrapped(
-                rowSt, SettingsSheet.DoNotSellLabel,
-                rows.Label.width * 0.96f, rows.Label.height * 0.88f,
-                13, Mathf.Max(16, Mathf.RoundToInt(20f * s)));
-            StampOutlined(
-                rows.Label, SettingsSheet.DoNotSellLabel, rowSt,
-                new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(2, Mathf.RoundToInt(rowSt.fontSize * 0.14f)));
-
-            bool on = AdConsent.DoNotSell;
-            DrawCheckbox(rows.Toggle, on, rowHeld);
-            if (on) DrawCheckMark(Inset(rows.Toggle, 0.22f), new Color(0.20f, 0.42f, 0.16f, 1f));
-
-            var xBtn = frame.Close;
-            bool close = HitPad(CloseTapRect(xBtn), out bool xHeld);
-            DrawGiftCloseX(xBtn, xHeld, s);
-
-            if (link)
+            bool gearHeld = false;
+            bool linkHeld = false;
+            bool rowHeld = false;
+            bool xHeld = false;
+            bool link = false;
+            bool flip = false;
+            var hit = SettingsMotion.Hit.None;
+            if (SettingsMotion.BlocksInput(_settingsPhase))
+                SwallowSettingsPointer();
+            else
             {
-                Sfx.CardTap();
-                if (!string.IsNullOrEmpty(SettingsSheet.PrivacyUrl))
-                    Application.OpenURL(SettingsSheet.PrivacyUrl);
+                var gearHit = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
+                var screen = new Rect(0f, 0f, Screen.width, Screen.height);
+                bool gearFire = HitPad(gearHit, out gearHeld);
+                bool close = HitPad(CloseTapRect(frame.Close), out xHeld);
+                link = HitPad(rows.PrivacyLink, out linkHeld);
+                var rowHit = new Rect(rows.Label.x, rows.Label.y, rows.Toggle.xMax - rows.Label.x, rows.Label.height);
+                flip = HitPad(rowHit, out rowHeld);
+                HitPad(card, out _);
+                bool overlay = HitPad(screen, out _);
+                if (gearFire) hit = SettingsMotion.Hit.Gear;
+                else if (close) hit = SettingsMotion.Hit.Close;
+                else if (overlay) hit = SettingsMotion.Hit.Overlay;
+            }
+
+            if (Texture2D.whiteTexture != null)
+            {
+                DrawSettingsDim(dim);
+                DrawWoodPanel(card, s);
+
+                var title = GuiPool.Label(GuiSlot.SettingsTitle);
+                title.fontStyle = FontStyle.Bold;
+                title.alignment = TextAnchor.MiddleCenter;
+                title.wordWrap = false;
+                title.fontSize = FitFont(title, "Settings", titleR.width * 0.9f, titleR.height * 0.8f, 16, Mathf.Max(22, Mathf.RoundToInt(32f * s)));
+                StampOutlined(titleR, "Settings", title, new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(3, Mathf.RoundToInt(title.fontSize * 0.12f)));
+
+                var linkSt = GuiPool.Label(GuiSlot.SettingsLink);
+                linkSt.fontStyle = FontStyle.Bold;
+                linkSt.alignment = TextAnchor.MiddleLeft;
+                linkSt.wordWrap = false;
+                float textW = Mathf.Max(8f, rows.Toggle.xMin - rows.PrivacyLink.x - 8f * s);
+                linkSt.fontSize = FitFont(
+                    linkSt, SettingsSheet.PrivacyLabel,
+                    textW, rows.PrivacyLink.height * 0.62f,
+                    14, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
+                var linkCol = linkHeld ? new Color(1f, 1f, 0.94f, 1f) : new Color(1f, 0.97f, 0.90f, 1f);
+                StampOutlined(rows.PrivacyLink, SettingsSheet.PrivacyLabel, linkSt, linkCol, 0, Mathf.Max(2, Mathf.RoundToInt(linkSt.fontSize * 0.16f)));
+
+                float sw = rows.Toggle.width;
+                var chev = new Rect(
+                    rows.Toggle.x,
+                    rows.PrivacyLink.y + (rows.PrivacyLink.height - sw) * 0.5f,
+                    sw, sw);
+                var chevSt = GuiPool.Label(GuiSlot.SettingsChevron);
+                chevSt.fontStyle = FontStyle.Bold;
+                chevSt.alignment = TextAnchor.MiddleCenter;
+                chevSt.wordWrap = false;
+                chevSt.fontSize = FitFont(chevSt, "\u203A", chev.width * 0.8f, chev.height * 0.8f, 16, Mathf.Max(20, Mathf.RoundToInt(28f * s)));
+                StampOutlined(chev, "\u203A", chevSt, linkCol, 0, Mathf.Max(2, Mathf.RoundToInt(chevSt.fontSize * 0.12f)));
+
+                var rowSt = GuiPool.Label(GuiSlot.SettingsRow);
+                rowSt.fontStyle = FontStyle.Bold;
+                rowSt.alignment = TextAnchor.MiddleLeft;
+                rowSt.wordWrap = true;
+                rowSt.fontSize = FitFontWrapped(
+                    rowSt, SettingsSheet.DoNotSellLabel,
+                    rows.Label.width * 0.96f, rows.Label.height * 0.88f,
+                    13, Mathf.Max(16, Mathf.RoundToInt(20f * s)));
+                StampOutlined(
+                    rows.Label, SettingsSheet.DoNotSellLabel, rowSt,
+                    new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(2, Mathf.RoundToInt(rowSt.fontSize * 0.14f)));
+
+                bool on = AdConsent.DoNotSell;
+                DrawCheckbox(rows.Toggle, on, rowHeld);
+                if (on) DrawCheckMark(Inset(rows.Toggle, 0.22f), new Color(0.20f, 0.42f, 0.16f, 1f));
+
+                var xBtn = frame.Close;
+                DrawGiftCloseX(xBtn, xHeld, s);
+                var pass = SettingsMotion.GearPassFor(HomeGearNow().Home, _settingsPhase);
+                if (pass == SettingsMotion.GearPass.AboveOverlay || _settingsOpen)
+                    DrawSettingsGear(spin, gearHeld);
+
+                var next = SettingsMotion.AfterHit(_settingsPhase, hit);
+                if (next != _settingsPhase)
+                {
+                    ApplySettingsHit(hit);
+                    return;
+                }
+                if (SettingsMotion.BlocksInput(_settingsPhase)) return;
+                if (link)
+                {
+                    Sfx.CardTap();
+                    if (!string.IsNullOrEmpty(SettingsSheet.PrivacyUrl))
+                        Application.OpenURL(SettingsSheet.PrivacyUrl);
+                    return;
+                }
+                if (flip)
+                {
+                    AdConsent.DoNotSell = !on;
+                    Sfx.CardTap();
+                }
                 return;
             }
-            if (flip)
+
+            DrawSettingsGear(spin, gearHeld);
+            ApplySettingsHit(hit);
+        }
+
+        // Full-screen black under the card. The cog is drawn after this, at full color.
+        void DrawSettingsDim(float alpha)
+        {
+            if (Texture2D.whiteTexture == null || alpha < 0.004f) return;
+            if (alpha > 1f) alpha = 1f;
+            GUI.color = new Color(0f, 0f, 0f, alpha);
+            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+
+        // Corner cog. Positive degrees spin clockwise. Alpha stays 1 so the dim cannot grey it.
+        void DrawSettingsGear(float degrees, bool held)
+        {
+            var q = HomeGearNow();
+            if (!HomeGear.Shown(q) || !HomeGear.AboveDimmer(q)) return;
+            var tex = GearIcon.Texture();
+            if (tex == null) return;
+            var drawn = SettingsGearDrawnRect(Screen.width, Screen.height, Screen.safeArea);
+            var draw = drawn;
+            if (held)
             {
-                AdConsent.DoNotSell = !on;
-                Sfx.CardTap();
-                return;
+                float k = 0.93f;
+                float ox = drawn.width * (1f - k) * 0.5f;
+                float oy = drawn.height * (1f - k) * 0.5f + drawn.height * 0.028f;
+                draw = new Rect(drawn.x + ox, drawn.y + oy, drawn.width * k, drawn.height * k);
             }
-            if (close)
-            {
-                _settingsOpen = false;
-                Sfx.CardTap();
-            }
+            var prevM = GUI.matrix;
+            var prevC = GUI.color;
+            if (Mathf.Abs(degrees) > 0.05f)
+                GUIUtility.RotateAroundPivot(degrees, draw.center);
+            GUI.color = held ? new Color(0.62f, 0.52f, 0.40f, 1f) : Color.white;
+            GUI.DrawTexture(draw, tex, ScaleMode.ScaleToFit, true);
+            GUI.matrix = prevM;
+            GUI.color = prevC;
+        }
+
+        static void SwallowSettingsPointer()
+        {
+            var e = Event.current;
+            if (e == null) return;
+            var t = e.type;
+            if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
+            if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+            e.Use();
         }
 
         // Square box. Empty when off. The check is drawn by the caller when on.

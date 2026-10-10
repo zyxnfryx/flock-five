@@ -435,10 +435,14 @@ namespace FlockFive
         void OnEnable()
         {
             _app = this;
+            RewardedGrant.TryApply = ApplyRewardedTicket;
+            RewardedGrant.Boot();
         }
 
         void OnDisable()
         {
+            if (RewardedGrant.TryApply == ApplyRewardedTicket)
+                RewardedGrant.TryApply = null;
             if (_app == this) _app = null;
         }
 
@@ -446,6 +450,9 @@ namespace FlockFive
         // resume spike, keeps the live lesson, and lets a shown ad settle once.
         public static void NoteAppBackground()
         {
+            // A reward that arrives while we are away must stick. Do not apply it
+            // until resume, and do not drop it if heal closes the gift.
+            Ads.DeliverPause(true);
             // Leaving mid-lesson: settle anything already half-done before the suspend.
             if (_app != null) _app.HealInterruptedTutorials();
         }
@@ -457,11 +464,25 @@ namespace FlockFive
             PlayClock.DropResumeFrame();
             Ads.ArmResumeSettle();
             ApplyFramePace();
-            if (_app == null) return;
-            _resumeInputUntil = PlayClock.Now + 0.35f;
-            _app.FreshTutorGlove();
-            // The suspend may have cut a step off. Settle it before the first tap lands.
-            _app.HealInterruptedTutorials();
+            // Heal may close the gift before the reward callback. Hold the apply
+            // until that close has been recorded, then grant.
+            bool held = RewardedGrant.UiBusy;
+            RewardedGrant.UiBusy = true;
+            try
+            {
+                if (_app != null)
+                {
+                    _resumeInputUntil = PlayClock.Now + 0.35f;
+                    _app.FreshTutorGlove();
+                    // The suspend may have cut a step off. Settle it before the first tap lands.
+                    _app.HealInterruptedTutorials();
+                }
+            }
+            finally
+            {
+                RewardedGrant.UiBusy = held;
+            }
+            Ads.DeliverPause(false);
         }
 
         void Start()
@@ -503,6 +524,11 @@ namespace FlockFive
             {
                 try { System.IO.File.Delete("/tmp/flock-five-b80-stills"); } catch { }
                 StartCoroutine(ShotBuild80());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-b81-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b81-stills"); } catch { }
+                StartCoroutine(ShotBuild81());
             }
             if (System.IO.File.Exists("/tmp/flock-five-b80-plane"))
             {
@@ -753,6 +779,7 @@ namespace FlockFive
             _garden = WorldBuilder.Build(transform);
             AlignBranchViews();
             SyncAll();
+            RewardedGrant.Flush();
             StartCoroutine(GardenFit.Tween(_garden, _board, true));
             Sfx.GardenWake();
             StopPests();
@@ -1097,6 +1124,29 @@ namespace FlockFive
             if (method != null) method.Invoke(null, new object[] { 0 });
         }
 
+        IEnumerator ShotBuild81()
+        {
+            const string dir = "/Users/zfxgames/wkspaces/birdshot/gb";
+            System.IO.Directory.CreateDirectory(dir);
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            PlayerPrefs.SetInt("flockfive.next", 0);
+            PlayerPrefs.Save();
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            Screen.SetResolution(1179, 2556, false);
+            yield return WaitForHomePaint();
+            yield return SnapBuild79(dir + "/b81-home.png", false, false);
+            yield return SnapBuild79(dir + "/b81-settings-open.png", true, false);
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            PlayerPrefs.Save();
+            Debug.Log("B81_STILL_DONE");
+            var exit = System.Type.GetType("UnityEditor.EditorApplication, UnityEditor");
+            var method = exit != null ? exit.GetMethod("Exit", new[] { typeof(int) }) : null;
+            if (method != null) method.Invoke(null, new object[] { 0 });
+        }
+
         IEnumerator ShotPlaneFlyby()
         {
             const string path = "/Users/zfxgames/wkspaces/birdshot/gb/b80-plane.png";
@@ -1155,7 +1205,7 @@ namespace FlockFive
         {
             _splash = true;
             _home = HomeFace.Splash;
-            _settingsOpen = false;
+            PoseSettings(false);
             _welcomeOpen = false;
             _welcomeGlove = false;
             _welcomeQueued = false;
@@ -1245,7 +1295,7 @@ namespace FlockFive
         {
             _splash = true;
             _home = HomeFace.Splash;
-            _settingsOpen = settings;
+            PoseSettings(settings);
             _welcomeOpen = false;
             _welcomeGlove = false;
             _dailyOpen = false;
@@ -2594,6 +2644,7 @@ namespace FlockFive
         {
             MaybeSmokeLaunch();
             PollHomeAtt();
+            TickSettingsMotion();
             // Bonus signs fade on the shared stage-clear state (limb stays; see GiftWant).
             GiftWant.StageClear = _won && !_splash;
             // Before the pause return and the speed sync: a solved board sends
@@ -2612,6 +2663,7 @@ namespace FlockFive
                     TickPausedTutorial();
                 return;
             }
+            RewardedGrant.Flush();
             TickUsaPlane(Time.unscaledDeltaTime);
             CoachAdvance();
             TickPopups();
@@ -5433,7 +5485,11 @@ namespace FlockFive
                     VipOffer.Close();
                     FoldCoinFlies();
                 }
-                if (_home != HomeFace.Splash) _settingsOpen = false;
+                if (_home != HomeFace.Splash)
+                {
+                    _settingsOpen = false;
+                    _settingsPhase = SettingsPhase.Closed;
+                }
                 if (_home == HomeFace.Hive) DrawHivePage();
                 else if (_home == HomeFace.Poker) DrawPokerPage();
                 else if (_home == HomeFace.Badger) DrawBadgerPage();
@@ -7904,10 +7960,14 @@ namespace FlockFive
             if (_restartAd) yield break;
             _restartAd = true;
             int saved = _restartSavedMul;
-            yield return Ads.Rewarded();
+            yield return Ads.Rewarded(Ads.PlacementKeep, saved, false);
             _restartAd = false;
             _restartAsk = RestartAsk.None;
-            if (Ads.LastEarned && saved >= 2) Purse.SetStreak(saved);
+            if (!Ads.Enabled)
+            {
+                if (Ads.LastGranted) RewardEffects.Keep(saved);
+            }
+            else if (RewardedGrant.Earned) RewardedGrant.Flush();
             yield return SnapRound();
         }
 
@@ -16888,6 +16948,8 @@ namespace FlockFive
         IEnumerator WatchGiftBody()
         {
             bool keep = _keepStreak;
+            // Release has no mock movie. The grant is the reward callback, which
+            // does not wait on GiftFace.Movie or GiftFace.Wait.
 #if FF_ADS_DEV
             _gift = GiftFace.Movie;
 #else
@@ -16896,14 +16958,21 @@ namespace FlockFive
             _busy = true;
             // GateGo is splash-only (long Lead). Ad start gets a short leave whoosh.
             Sfx.FeederLeave();
-            yield return Ads.Rewarded();
-            // Freeze continue pays only for a finished view (or ads switched off).
-            // Cancel and a show that never played leave the card up. The gift
-            // sign keeps the older permissive grant.
+            int payload = keep ? _restartSavedMul : _giftBranch;
+            string placement = keep ? Ads.PlacementKeep : Ads.PlacementBonus;
+            bool tutorial = _adHand && !keep;
+            yield return Ads.Rewarded(placement, payload, tutorial);
+            // Freeze continue pays for a finished view (or ads switched off).
+            // A skip or a failed show leaves the card up. A late reward still
+            // grants after this coroutine has gone.
+            // Ads off is the free grant and does not open a ticket. A skip is not that.
+            bool adsOn = Ads.Enabled;
+            bool earned = adsOn && RewardedGrant.Earned;
+            bool free = !adsOn && Ads.LastGranted;
             bool freeze = _frozen || _freezeOffer;
             bool pay = freeze
-                ? BonusBranches.ContinuePays(Ads.LastEarned, Ads.LastGranted, Ads.Enabled)
-                : Ads.LastGranted;
+                ? BonusBranches.ContinuePays(earned, Ads.LastGranted, adsOn)
+                : (earned || free);
             if (!pay)
             {
                 _busy = false;
@@ -16912,32 +16981,20 @@ namespace FlockFive
             }
             if (keep)
             {
+                if (free) RewardEffects.Keep(_restartSavedMul);
+                else RewardedGrant.Flush();
                 yield return SnapRound();
                 _gift = GiftFace.None;
                 _busy = false;
                 yield break;
             }
-            // Ice first, then the same claim the sign uses, so the limb shakes
-            // and bursts on the open garden instead of under the pane.
-            if (_frozen && _garden.Ice != null)
-                yield return _garden.Ice.Shatter(_garden.Root);
-            var popAt = GrantSpare();
-            StillBirds(false);
-            _frozen = false;
-            _freezeOffer = false;
-            yield return GardenFit.Tween(_garden, _board, false);
-            _giftThanksAt = Time.unscaledTime;
-            _gift = GiftFace.Thanks;
-            if (_garden.Root != null)
-                StartCoroutine(GiftPopBursts(popAt));
-            BeginRewardPay(0, 2.45f);
-            yield return WaitRewardPay();
-            _gift = GiftFace.None;
-            _swallowTapsUntil = PlayClock.Now + 0.45f;
-            _suppressGiftUntil = PlayClock.Now + 1f;
-            _busy = false;
-            Conserve("bonus");
-            CheckOver();
+            if (free)
+            {
+                OpenRewardBranch(_giftBranch);
+                if (tutorial) FinishAdHandGoal();
+            }
+            else RewardedGrant.Flush();
+            yield return PresentBranchReward();
         }
 
         IEnumerator GiftPopBursts(Vector3 pos)
@@ -16955,25 +17012,25 @@ namespace FlockFive
 
         Vector3 GrantSpare()
         {
-            int i = BonusBranches.ContinueIndex(_board, _bonusOn, _giftBranch);
-            return UnlockBonus(i);
+            return OpenRewardBranch(_giftBranch);
         }
 
         // One grant per gift per stage. Never grows a new limb, so a later tap
         // cannot run the ad again. A stale preferred index falls through to the
         // next locked gift (freeze continue after an earlier claim).
-        Vector3 UnlockBonus(int i)
+        Vector3 OpenRewardBranch(int preferred)
         {
-            int grant = BonusBranches.Claim(_board, _bonusOn, i);
-            if (grant == 0)
-            {
-                RefreshBonusSigns();
-                return Vector3.zero;
-            }
-            if (grant < 0) return Vector3.zero;
+            if (_board == null) return Vector3.zero;
+            int n = RewardEffects.Branch(_board, _bonusOn, preferred, out int i);
+            if (n < 0 || i < 0) return Vector3.zero;
+            return ShowBonusOpen(i);
+        }
+
+        Vector3 ShowBonusOpen(int i)
+        {
             // Conserve below puts short birds on the perch with the most free
             // seats. Claim opens empty first, and FindSeat will not use a gift.
-            var v = i < _garden.Branches.Length ? _garden.Branches[i] : null;
+            var v = _garden.Branches != null && i < _garden.Branches.Length ? _garden.Branches[i] : null;
             if (v != null)
             {
                 var want = v.GetComponent<GiftWant>();
@@ -16987,6 +17044,7 @@ namespace FlockFive
                 StartCoroutine(Wow.Burst(pos, BirdColor.Gold, _garden.Root, 3));
             SyncAll();
             Conserve("bonus");
+            RefreshBonusSigns();
             return pos;
         }
 
@@ -17244,7 +17302,6 @@ namespace FlockFive
                 }
                 if (contGo)
                 {
-                    DismissAdHand();
                     StartCoroutine(WatchGift());
                     return;
                 }
@@ -17290,7 +17347,6 @@ namespace FlockFive
             }
             if (watch)
             {
-                DismissAdHand();
                 StartCoroutine(WatchGift());
                 return;
             }

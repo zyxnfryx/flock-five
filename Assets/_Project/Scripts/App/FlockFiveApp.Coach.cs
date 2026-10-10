@@ -668,9 +668,11 @@ namespace FlockFive
             }
             if (_won || _gift != GiftFace.None)
             {
-                // Tutorial stays down on the gift card. The one-shot ad glove keeps its tap cycle.
-                if (_adHand && _gift == GiftFace.Card && !_won)
+                // The glove stays on the card, through the ad, and until its reward lands.
+                // Wait and Thanks are not the card, so they do not rebuild the card cue.
+                if (_adHand && !_won && (_gift == GiftFace.Card || _watchGiftLive || RewardedGrant.ProtectsTutorial))
                 {
+                    if (_gift != GiftFace.Card) return;
                     _cueHand = false;
                     _cueForce = false;
                     _cueFreeze = false;
@@ -999,6 +1001,8 @@ namespace FlockFive
             {
                 if (_gift != GiftFace.Card)
                 {
+                    // The ad, or a reward that has not landed, is still this step.
+                    if (_watchGiftLive || RewardedGrant.ProtectsTutorial) return;
                     _adHand = false;
                     _gloveVis = false;
                     CoachHideGlow();
@@ -4599,6 +4603,11 @@ namespace FlockFive
         // this applies. A healthy lesson plans nothing and is never touched.
         void HealInterruptedTutorials()
         {
+            // A reward callback during the close stays queued until the screen is recorded.
+            bool heldBusy = RewardedGrant.UiBusy;
+            RewardedGrant.UiBusy = true;
+            try
+            {
             float now = PlayClock.Now;
             HealBadgerShow();
             // Step tap gate: how long it has held taps with no glove posed on its target.
@@ -4614,6 +4623,7 @@ namespace FlockFive
                 GiftCard = _gift == GiftFace.Card,
                 GiftMovie = _gift == GiftFace.Movie || _gift == GiftFace.Wait,
                 WatchRunning = _watchGiftLive,
+                RewardInFlight = RewardedGrant.ProtectsTutorial,
                 AdHand = _adHand,
                 PauseHeld = GamePause.Paused,
                 AdShowing = Ads.IsShowing,
@@ -4639,6 +4649,8 @@ namespace FlockFive
                 PestIntroHide();
             if ((fix & TutorFix.ClearWatchStage) != 0)
             {
+                // The screen is gone. A reward that already fired still applies.
+                RewardedGrant.NoteUiClosed();
                 _gift = GiftFace.None;
                 _busy = false;
                 _swallowTapsUntil = now + 0.45f;
@@ -4670,6 +4682,11 @@ namespace FlockFive
                 CompleteGatedStep(gate.Step);
                 _gateBlindSince = -1f;
                 _gloveVis = false;
+            }
+            }
+            finally
+            {
+                RewardedGrant.UiBusy = heldBusy;
             }
         }
 
