@@ -223,6 +223,12 @@ namespace FlockFive
             PlayerPrefs.Save();
         }
 
+        // Editor tests restore the coin pref, then pull that value back into the static.
+        public static void ReloadCoins()
+        {
+            Coins = Mathf.Max(0, PrefGuard.GetInt(PrefCoins, 0));
+        }
+
         // Shared display hold. A reveal that plays after the credit (poker win, fullcard)
         // credits and saves at once, so a kill can never lose the coins, but the purse
         // label keeps showing the old total until the feature calls ReleaseDisplay at its

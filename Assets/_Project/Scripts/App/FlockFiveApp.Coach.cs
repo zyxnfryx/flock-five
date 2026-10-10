@@ -4449,6 +4449,7 @@ namespace FlockFive
             var kind = t == EventType.MouseDown ? GatePointer.Down : t == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
             if (gate.AnyTap)
             {
+                if (HomeGearExempt(e.mousePosition)) return;
                 if (TutorialHeal.GateAdvances(kind, true, e.button))
                 {
                     if (!gate.Pass) MarkCoachAte();
@@ -4611,7 +4612,7 @@ namespace FlockFive
             {
                 Splash = _splash,
                 GiftCard = _gift == GiftFace.Card,
-                GiftMovie = _gift == GiftFace.Movie,
+                GiftMovie = _gift == GiftFace.Movie || _gift == GiftFace.Wait,
                 WatchRunning = _watchGiftLive,
                 AdHand = _adHand,
                 PauseHeld = GamePause.Paused,

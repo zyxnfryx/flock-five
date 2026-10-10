@@ -221,7 +221,7 @@ namespace FlockFive
         bool _pokerPayJewelHeld;
         bool _pokerAdRunning;
         bool _pokerBingo;
-        enum GiftFace { None, Card, Movie, Thanks }
+        enum GiftFace { None, Card, Movie, Wait, Thanks }
         GiftFace _gift;
         float _giftThanksAt;
         bool _frozen;
@@ -498,6 +498,16 @@ namespace FlockFive
             {
                 try { System.IO.File.Delete("/tmp/flock-five-b79-stills"); } catch { }
                 StartCoroutine(ShotBuild79());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-b80-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b80-stills"); } catch { }
+                StartCoroutine(ShotBuild80());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-b80-plane"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b80-plane"); } catch { }
+                StartCoroutine(ShotPlaneFlyby());
             }
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
@@ -1038,6 +1048,143 @@ namespace FlockFive
             var method = exit != null ? exit.GetMethod("Exit", new[] { typeof(int) }) : null;
             if (method != null) method.Invoke(null, new object[] { 0 });
         }
+
+#if UNITY_EDITOR
+        IEnumerator ShotBuild80()
+        {
+            const string dir = "/Users/zfxgames/wkspaces/birdshot/gb";
+            System.IO.Directory.CreateDirectory(dir);
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            bool hadSell = PlayerPrefs.HasKey(AdConsent.DoNotSellKey);
+            int sell = PlayerPrefs.GetInt(AdConsent.DoNotSellKey, 0);
+            PlayerPrefs.SetInt("flockfive.next", 0);
+            PlayerPrefs.Save();
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            Screen.SetResolution(1179, 2556, false);
+            yield return WaitForHomePaint();
+
+            yield return SnapBuild79(dir + "/b80-home.png", false, false);
+            AdConsent.DoNotSell = false;
+            yield return SnapBuild79(dir + "/b80-settings.png", true, false);
+
+            string reclaim = dir + "/b80-daily-reclaim.png";
+            if (System.IO.File.Exists(reclaim)) System.IO.File.Delete(reclaim);
+
+            yield return SnapDailyWheel(dir + "/b80-wheel-spin.png", 1);
+            yield return SnapDailyWheel(dir + "/b80-wheel-result.png", 2);
+
+            ShotDailyWheel = 0;
+            Ads.SetReadyOverride(-1);
+            DailyBonus.ClearWheelShot();
+            _dailyOpen = false;
+            AdConsent.EditorHoldAtt = false;
+            AdConsent.ResetTransient();
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            if (hadSell) AdConsent.DoNotSell = sell != 0;
+            else
+            {
+                AdConsent.DoNotSell = false;
+                PlayerPrefs.DeleteKey(AdConsent.DoNotSellKey);
+            }
+            PlayerPrefs.Save();
+            Debug.Log("B80_STILLS_DONE");
+            var exit = System.Type.GetType("UnityEditor.EditorApplication, UnityEditor");
+            var method = exit != null ? exit.GetMethod("Exit", new[] { typeof(int) }) : null;
+            if (method != null) method.Invoke(null, new object[] { 0 });
+        }
+
+        IEnumerator ShotPlaneFlyby()
+        {
+            const string path = "/Users/zfxgames/wkspaces/birdshot/gb/b80-plane.png";
+            System.IO.Directory.CreateDirectory("/Users/zfxgames/wkspaces/birdshot/gb");
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            PlayerPrefs.SetInt("flockfive.next", 0);
+            PlayerPrefs.Save();
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            Screen.SetResolution(1179, 2556, false);
+            yield return WaitForHomePaint();
+            for (int i = 0; i < 6; i++)
+            {
+                PosePlaneFlybyShot();
+                yield return null;
+            }
+            PosePlaneFlybyShot();
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(path);
+            yield return new WaitForSecondsRealtime(0.7f);
+            ClearPlaneShot();
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            PlayerPrefs.Save();
+            Debug.Log("B80_PLANE_STILL_DONE");
+            var exit = System.Type.GetType("UnityEditor.EditorApplication, UnityEditor");
+            var method = exit != null ? exit.GetMethod("Exit", new[] { typeof(int) }) : null;
+            if (method != null) method.Invoke(null, new object[] { 0 });
+        }
+
+        IEnumerator SnapDailyWheel(string path, int mode)
+        {
+            ShotDailyWheel = mode;
+            Ads.SetReadyOverride(mode == 2 ? 1 : 0);
+            float t = 0f;
+            while (t < 0.45f)
+            {
+                PoseBuild79(false, false);
+                PoseDailyWheelShot();
+                t += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            PoseBuild79(false, false);
+            PoseDailyWheelShot();
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(path);
+            yield return new WaitForSecondsRealtime(0.55f);
+        }
+
+        // mode 1 is mid-spin. mode 2 lands the 10x wedge with the x2 button up.
+        // Pose does not write the daily prefs. DrawSplash calls this again so a
+        // home pose cannot close the card before the repaint.
+        void PoseDailyWheelShot()
+        {
+            _splash = true;
+            _home = HomeFace.Splash;
+            _settingsOpen = false;
+            _welcomeOpen = false;
+            _welcomeGlove = false;
+            _welcomeQueued = false;
+            _dailyAskOpen = false;
+            _adoptLive = false;
+            _avatarRename = false;
+            _hiveIntroLive = false;
+            _pokerIntroLive = false;
+            _dailyIntroLive = false;
+            _streakSlide = -1f;
+            _dailyOpen = true;
+            _dailyPopAt = -1f;
+            _dailyTutorSpin = false;
+            _dailyAdBusy = false;
+            if (ShotDailyWheel == 2)
+            {
+                DailyBonus.PoseWheelShot(2, 7);
+                _dailyPhase = DailyWheelPhase.Landed;
+                _dailyAngle = DailyBonus.PointerAngle(7);
+                Ads.SetReadyOverride(1);
+            }
+            else
+            {
+                DailyBonus.PoseWheelShot(1, 3);
+                _dailyPhase = DailyWheelPhase.Spin;
+                // Mid-wedge. 22.5° sits on a spoke and reads as parked.
+                _dailyAngle = 11f;
+                Ads.SetReadyOverride(0);
+            }
+        }
+#endif
 
         // Sample a spot under the logo and left of the coins. Cyan means the
         // painting has not reached the camera yet.
@@ -1661,6 +1808,8 @@ namespace FlockFive
 
 #if UNITY_EDITOR
         public static bool EditorShotLive;
+        // 0 off, 1 mid-spin still, 2 landed result with the x2 button.
+        public static int ShotDailyWheel;
 #endif
 
         IEnumerator ShotPokerFaces()
@@ -8448,8 +8597,15 @@ namespace FlockFive
         // Finger slop around the fixed 1.48× body. Does not change the drawn bird.
         const float HomeBirdHitPad = 8f;
 
+        static int _hitLock;
+
         static bool HitPad(Rect r, out bool held)
         {
+            if (_hitLock != 0)
+            {
+                held = false;
+                return false;
+            }
             int id = GUIUtility.GetControlID(FocusType.Passive);
             var e = Event.current;
             bool inside = r.Contains(e.mousePosition);
@@ -8555,6 +8711,11 @@ namespace FlockFive
         {
             _homeTapTaken = false;
             float s = Mathf.Max(Screen.height / 720f, 1f);
+#if UNITY_EDITOR
+            if (ShotDailyWheel != 0) PoseDailyWheelShot();
+#endif
+            _hitLock = _settingsOpen ? 1 : 0;
+            PollHomeGear();
             // Purchase / restore / reinstall: closes the offer card and runs the one-time
             // "Welcome, VIP!" moment when home is free. Member taps open the thank-you card.
             VipOffer.Tick();
@@ -8736,16 +8897,12 @@ namespace FlockFive
             if (_welcomeGlove || (_dailyIntroLive && _dailyOpen && !_dailyAskOpen))
                 DrawTutorOverlay(s);
             if (_avatarRename) DrawAvatarRename(s);
-            if (!_settingsOpen && !modal && !tutorUp)
-            {
-                if (DrawSettingsEntry(s))
-                {
-                    _settingsOpen = true;
-                    Sfx.CardTap();
-                }
-            }
+            PaintHomeGear();
+            _hitLock = 0;
             if (_settingsOpen) DrawSettingsSheet(s);
             else DrawSoftPrompt(s);
+            if (_dailyAdBusy && Ads.IsLoading && !Ads.IsShowing && !Ads.MockRewarded)
+                DrawAdSpinner(s);
         }
 
         bool DrawFlowerPlay(float s, string ease, int number)
@@ -10224,6 +10381,9 @@ namespace FlockFive
                 _avatarFaceLeft = dest.x < _avatarPos.x;
         }
 
+        // Left-to-right settle onto the home branch. Not the airplane flyby.
+        public const float AvatarCrossSeconds = 1.15f;
+
         void BeginAvatarCross(float icon)
         {
             _avatarCrossing = true;
@@ -10231,7 +10391,7 @@ namespace FlockFive
             _avatarGliding = false;
             _avatarPose = AvatarPose.Flying;
             _avatarCrossT = 0f;
-            _avatarCrossDur = 1.15f;
+            _avatarCrossDur = AvatarCrossSeconds;
             var home = AvatarHomePoint();
             float s = Mathf.Max(Screen.height / 720f, 1f);
             var box = HomeWanderBounds(s, icon);
@@ -16691,7 +16851,7 @@ namespace FlockFive
         void CloseGift()
         {
             DismissAdHand();
-            if (_gift == GiftFace.Movie) return;
+            if (_gift == GiftFace.Movie || _gift == GiftFace.Wait) return;
             _gift = GiftFace.None;
             _swallowTapsUntil = PlayClock.Now + 0.45f;
             _suppressGiftUntil = PlayClock.Now + 1f;
@@ -16716,7 +16876,11 @@ namespace FlockFive
         IEnumerator WatchGiftBody()
         {
             bool keep = _keepStreak;
+#if FF_ADS_DEV
             _gift = GiftFace.Movie;
+#else
+            _gift = GiftFace.Wait;
+#endif
             _busy = true;
             // GateGo is splash-only (long Lead). Ad start gets a short leave whoosh.
             Sfx.FeederLeave();
@@ -16883,17 +17047,28 @@ namespace FlockFive
 
         void DrawGiftOffer(float s)
         {
+            if (_gift == GiftFace.Wait)
+            {
+                if (Ads.IsLoading && !Ads.IsShowing && !Ads.MockRewarded)
+                    DrawAdSpinner(s);
+                return;
+            }
+#if FF_ADS_DEV
+            if (_gift == GiftFace.Movie)
+            {
+                GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.82f);
+                GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                DrawGiftMovie(s);
+                return;
+            }
+#endif
             float wash = _gift == GiftFace.Card ? 0.72f
                 : (_gift == GiftFace.Thanks ? 0.28f : 0.82f);
             GUI.color = new Color(0.04f, 0.03f, 0.02f, wash);
             GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            if (_gift == GiftFace.Movie)
-            {
-                DrawGiftMovie(s);
-                return;
-            }
             if (_gift == GiftFace.Thanks)
             {
                 DrawGiftThanks(s);
@@ -17602,6 +17777,30 @@ namespace FlockFive
             return false;
         }
 
+        void DrawAdSpinner(float s)
+        {
+            if (Texture2D.whiteTexture == null) return;
+            float radius = Mathf.Max(16f, 14f * s);
+            var c = new Vector2(Screen.width * 0.5f, Screen.height * 0.46f);
+            const int n = 8;
+            float phase = Time.unscaledTime * 8f;
+            for (int i = 0; i < n; i++)
+            {
+                float ang = (i / (float)n) * Mathf.PI * 2f - Mathf.PI * 0.5f;
+                float fade = 1f - Mathf.Repeat(phase - i, n) / n;
+                GUI.color = new Color(1f, 0.97f, 0.90f, 0.22f + 0.72f * fade);
+                float len = radius * 0.52f;
+                float thick = Mathf.Max(3f, radius * 0.16f);
+                var p = new Vector2(c.x + Mathf.Cos(ang) * radius, c.y + Mathf.Sin(ang) * radius);
+                var prev = GUI.matrix;
+                GUIUtility.RotateAroundPivot(ang * Mathf.Rad2Deg + 90f, p);
+                GUI.DrawTexture(new Rect(p.x - thick * 0.5f, p.y - len * 0.5f, thick, len), Texture2D.whiteTexture);
+                GUI.matrix = prev;
+            }
+            GUI.color = Color.white;
+        }
+
+#if FF_ADS_DEV
         void DrawGiftMovie(float s)
         {
             float w = StandardPopupWidth(s);
@@ -17631,6 +17830,7 @@ namespace FlockFive
             st.fontSize = Mathf.RoundToInt(26 * s);
             StampOutlined(stage, "Playing…", st, new Color(1f, 0.92f, 0.72f), 2, 1);
         }
+#endif
 
         void DrawGiftThanks(float s)
         {

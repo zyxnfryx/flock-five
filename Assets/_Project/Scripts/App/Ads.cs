@@ -129,8 +129,10 @@ namespace FlockFive
         // define is not added to Player Settings.
 #if FF_ADS_DEV
         public const bool TestSuite = true;
+        public const bool MockRewarded = true;
 #else
         public const bool TestSuite = false;
+        public const bool MockRewarded = false;
 #endif
         public static bool LastGranted;
         // True only when a rewarded ad actually paid (or the editor simulate). No-fill stays false.
@@ -138,6 +140,8 @@ namespace FlockFive
 
         public const string PlacementBonus = "bonus_branch";
         public const string PlacementClear = "stage_clear";
+        public const string PlacementDailyDouble = "daily_double";
+        public static string ActivePlacement = PlacementBonus;
 
         const string PrefClears = "flockfive.session_clears";
         const string PrefPokerHands = "flockfive.ads.pokerhands";
@@ -169,6 +173,8 @@ namespace FlockFive
 
         static AdsHost _host;
         static int _showDepth;
+        // -1 follows the real rewarded unit. 0 forces not ready. 1 forces ready (stills).
+        static int _readyOverride = -1;
         // Foreground seconds the current show has been up. The resume frame's
         // unscaled step is the whole suspension, so it must not move this.
         static float _shownForeground;
@@ -176,6 +182,19 @@ namespace FlockFive
 
         public static bool IsLoading { get; private set; }
         public static bool IsShowing => _showDepth > 0;
+
+        public static bool RewardedReady
+        {
+            get
+            {
+                if (!Enabled) return false;
+                if (_readyOverride == 0) return false;
+                if (_readyOverride > 0) return true;
+                return _host != null && _host.AdReady();
+            }
+        }
+
+        public static void SetReadyOverride(int mode) => _readyOverride = mode;
         public static bool IsBusy => IsLoading || IsShowing;
         public static bool JustShown => _showDepth > 0 && _shownForeground < 0.75f;
         public static float ShownFor => _shownForeground;
@@ -244,6 +263,8 @@ namespace FlockFive
             _host = null;
             LastGranted = false;
             LastEarned = false;
+            ActivePlacement = PlacementBonus;
+            _readyOverride = -1;
             SessionClears = PlayerPrefs.GetInt(PrefClears, 0);
             IsLoading = false;
             _showDepth = 0;
@@ -315,9 +336,12 @@ namespace FlockFive
             yield return _host.RunInterstitial();
         }
 
-        public static IEnumerator Rewarded()
+        public static IEnumerator Rewarded() => Rewarded(PlacementBonus);
+
+        public static IEnumerator Rewarded(string placement)
         {
-            AdLog.Add("gift ad requested (gift tapped)");
+            ActivePlacement = string.IsNullOrEmpty(placement) ? PlacementBonus : placement;
+            AdLog.Add("gift ad requested (" + ActivePlacement + ")");
             LastGranted = false;
             LastEarned = false;
             if (!Enabled)
@@ -329,14 +353,19 @@ namespace FlockFive
             Ensure();
             if (_host == null)
             {
-                yield return Simulate();
+#if FF_ADS_DEV
+                yield return Ads.Simulate();
                 LastGranted = true;
                 LastEarned = true;
+#else
+                LastGranted = true;
+#endif
                 yield break;
             }
             yield return _host.RunRewarded();
         }
 
+#if FF_ADS_DEV
         internal static IEnumerator Simulate()
         {
             BeginShow();
@@ -354,6 +383,7 @@ namespace FlockFive
                 EndShow();
             }
         }
+#endif
 
         static void Ensure()
         {
@@ -402,6 +432,18 @@ namespace FlockFive
         bool _orphanRv;
         bool _orphanInt;
 
+        public bool AdReady()
+        {
+            try
+            {
+                return _inited && _rv != null && _rv.IsAdReady();
+            }
+            catch (System.Exception)
+            {
+                return false;
+            }
+        }
+
         public void Boot()
         {
             if (!Ads.HasKeys) return;
@@ -440,9 +482,13 @@ namespace FlockFive
             {
                 if (!Ads.HasKeys)
                 {
+#if FF_ADS_DEV
                     yield return Ads.Simulate();
                     Ads.LastGranted = true;
                     Ads.LastEarned = true;
+#else
+                    Ads.LastGranted = true;
+#endif
                     yield break;
                 }
 
@@ -498,7 +544,7 @@ namespace FlockFive
                 Ads.BeginShow();
                 showing = true;
                 AdLog.Add("gift ad show called");
-                _rv.ShowAd(Ads.PlacementBonus);
+                _rv.ShowAd(Ads.ActivePlacement);
                 t = 0f;
                 while (_waiting && t < 180f)
                 {

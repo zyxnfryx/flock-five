@@ -9,6 +9,21 @@ namespace FlockFive
         // keeps tapping that button and does not open it. Welcome does not open it either.
         // The ask card is the in-game reminder prompt after a claim.
         bool _dailyOpen;
+        bool _dailyAdBusy;
+        bool _dailyClaimFollowUp;
+        bool _dailyClaimFirst;
+        bool _dailyTutorSpin;
+        enum DailyWheelPhase { Ready, Spin, Landed }
+        DailyWheelPhase _dailyPhase;
+        float _dailyAngle;
+        float _dailySpinFrom;
+        float _dailySpinTo;
+        float _dailySpinAt = -1f;
+        const float DailySpinDur = 3.15f;
+        int _dailyTickWedge = -1;
+        static GUIStyle _dailyWatch;
+        const string DailyDoubleLabel = "Watch Ad: x2";
+        const string DailyCollectLabel = "Collect";
         bool _dailyAskOpen;
         float _dailyPopAt = -1f;
         float _dailyAskAt = -1f;
@@ -91,6 +106,7 @@ namespace FlockFive
             DailyReminder.Tick();
             TickDailyOsRequest();
             DailyBonus.RefreshDay();
+            TickDailyWheel();
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive)
             {
@@ -160,6 +176,19 @@ namespace FlockFive
             DailyBonus.Boot();
             _dailyOpen = true;
             _dailyPopAt = Time.unscaledTime;
+            _dailyTutorSpin = false;
+            _dailyAdBusy = false;
+            if (DailyBonus.ClaimedToday)
+            {
+                _dailyPhase = DailyWheelPhase.Landed;
+                int wedge = DailyBonus.SpinWedge;
+                _dailyAngle = wedge >= 0 ? DailyBonus.PointerAngle(wedge) : 0f;
+            }
+            else
+            {
+                _dailyPhase = DailyWheelPhase.Ready;
+                _dailyAngle = 0f;
+            }
             Sfx.CardTap();
         }
 
@@ -308,24 +337,55 @@ namespace FlockFive
         {
             if (!_dailyOpen) return;
 #if UNITY_EDITOR
-            if (_dailyShotQuiet || EditorShotLive) return;
+            if ((_dailyShotQuiet || EditorShotLive) && ShotDailyWheel == 0) return;
 #endif
-            var safe = Screen.safeArea;
             float top = TopHud();
             var xBtn = CornerCloseRect(s, top);
 
-            DailyLayout(s, out var card, out var flower, out var board, out float band);
-            var disc = FlowerDisc(flower, 0f);
-            var claimHit = DailyClaimTapRect(s);
+            int chrome = DailyChrome();
+            DailyLayout(s, chrome, out var card, out var flower, out var board, out float band, out var collect, out var watch);
+            bool flowerOn = chrome == 0 && flower.width > 2f;
+            var disc = flowerOn ? FlowerDisc(flower, 0f) : flower;
+            var claimHit = flowerOn ? FlowerHit(flower, s) : flower;
 
-            float x0 = Mathf.Min(card.x, flower.x);
-            float y0 = Mathf.Min(card.y, flower.y);
-            float x1 = Mathf.Max(card.xMax, flower.xMax);
-            float y1 = Mathf.Max(card.yMax, flower.yMax);
+            float x0 = card.x;
+            float y0 = card.y;
+            float x1 = card.xMax;
+            float y1 = card.yMax;
+            if (flowerOn)
+            {
+                x0 = Mathf.Min(x0, flower.x);
+                y0 = Mathf.Min(y0, flower.y);
+                x1 = Mathf.Max(x1, flower.xMax);
+                y1 = Mathf.Max(y1, flower.yMax);
+            }
+            if (chrome == 2 || chrome == 3)
+            {
+                x0 = Mathf.Min(x0, collect.x);
+                x1 = Mathf.Max(x1, collect.xMax);
+                y1 = Mathf.Max(y1, collect.yMax);
+            }
+            if (chrome == 3)
+            {
+                x0 = Mathf.Min(x0, watch.x);
+                x1 = Mathf.Max(x1, watch.xMax);
+                y1 = Mathf.Max(y1, watch.yMax);
+            }
             var swallow = new Rect(x0 - 12f, y0 - 12f, (x1 - x0) + 24f, (y1 - y0) + 24f);
 
             bool xHit = HitPad(CloseTapRect(xBtn), out bool xHeld);
-            bool claim = HitPad(claimHit, out bool claimHeld);
+            bool watchHit = false;
+            bool watchHeld = false;
+            bool collectHit = false;
+            bool collectHeld = false;
+            if (chrome == 3 && !_dailyAdBusy)
+                watchHit = HitPad(watch, out watchHeld);
+            if ((chrome == 2 || chrome == 3) && !_dailyAdBusy)
+                collectHit = HitPad(collect, out collectHeld);
+            bool claim = false;
+            bool claimHeld = false;
+            if (flowerOn && _dailyPhase != DailyWheelPhase.Spin)
+                claim = HitPad(claimHit, out claimHeld);
             HitPad(swallow, out _);
             bool outside = HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
             if (outside && swallow.Contains(Event.current.mousePosition)) outside = false;
@@ -333,62 +393,198 @@ namespace FlockFive
             float t = Time.unscaledTime;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
             var glow = GlowTex();
-            GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.72f);
+            // White LEVEL type still reads through a 0.72 scrim in the slot between
+            // Collect and Watch Ad. Cover the home behind the daily popup.
+            GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.98f);
             GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // Hits stay on the resting layout. The picture eases in around the same pivot.
             float k = DailyPop(_dailyPopAt);
-            var pivot = DailyPivot(card, flower);
+            var pivot = flowerOn ? DailyPivot(card, flower) : card.center;
             var prev = GUI.matrix;
             if (k < 0.999f)
                 GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
 
             DrawDailyFrame(card, board, band, s, breathe, glow);
             EnsureDailyStyles();
-            DailyRows(s, board, out var titleR, out var streakR, out var bonusR, out var row, out float gap, out float unit);
-            EnsureDailyFit(s, band, titleR, streakR, bonusR, disc, unit, row.height);
-            DrawDailyCopy(titleR, streakR, bonusR, s, breathe, glow);
-            DrawDailyTiles(row, gap, unit, s, breathe, glow);
+            DailyRows(s, board, chrome == 0, out var titleR, out var streakR, out var wheelR);
+            EnsureDailyFit(s, titleR, streakR, disc, wheelR.width);
+            DrawDailyCopy(titleR, streakR, default, s, breathe, glow);
+            DrawDailyWheel(wheelR, s, breathe, glow);
             GUI.matrix = prev;
 
-            // Build 52: the marquee bulbs around this pop-up frame are gone (DrawPopupBulbs is
-            // no longer called). The claim flower still paints after the frame.
-            if (k < 0.999f)
-                GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
-            DrawDailyClaim(flower, claimHeld, s, t);
-            GUI.matrix = prev;
+            if (flowerOn)
+            {
+                if (k < 0.999f)
+                    GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
+                DrawDailyClaim(flower, claimHeld, s, t);
+                GUI.matrix = prev;
+            }
+            if (chrome == 2 || chrome == 3)
+                DrawDailyBar(collect, collectHeld, PopupTint.Gold, DailyCollectLabel, s);
+            if (chrome == 3)
+                DrawDailyBar(watch, watchHeld, PopupTint.Green, DailyDoubleLabel, s);
             DrawGiftCloseX(xBtn, xHeld, s);
             GUI.color = Color.white;
 
+            if (watchHit)
+            {
+                StartCoroutine(WatchDailyDouble());
+                return;
+            }
+            if (collectHit)
+            {
+                ResolveDailyGrant(false);
+                return;
+            }
             if (claim)
             {
-                // Claimed: the pedestal still takes taps, for the clunk only.
                 if (!DailyBonus.OfferReady && DailyBonus.ClaimedToday) ClunkClaimed();
-                else ClaimDaily();
+                else StartDailySpin();
                 return;
             }
             // The Daily lesson stays on Claim. A miss must not send the glove back to the rail.
-            // The X is the explicit escape (DismissDaily keeps the lesson alive).
+            // The X is the explicit escape (DismissDaily keeps the lesson alive until Claim).
             if (xHit || (outside && !_dailyIntroLive)) DismissDaily();
         }
 
-        void ClaimDaily()
+        // 0 claim flower, 1 wheel only, 2 collect bar, 3 collect plus the x2 ad.
+        int DailyChrome()
         {
-            if (!DailyBonus.TryClaim(out int coins, out bool firstEver))
+            if (_dailyPhase == DailyWheelPhase.Spin) return 1;
+            bool fresh = _dailyPhase == DailyWheelPhase.Landed && DailyBonus.Landed && !DailyBonus.Resolved;
+            if (!fresh) return 0;
+            if (_dailyTutorSpin || _dailyIntroLive) return 1;
+            if (DailyBonus.ShowDouble(Ads.RewardedReady, false)) return 3;
+            return 2;
+        }
+
+        void TickDailyWheel()
+        {
+#if UNITY_EDITOR
+            if (ShotDailyWheel != 0) return;
+#endif
+            if (_dailyPhase != DailyWheelPhase.Spin || !_dailyOpen) return;
+            float dur = DailySpinDur;
+            if (dur < 0.2f) dur = 0.2f;
+            float u = (Time.unscaledTime - _dailySpinAt) / dur;
+            if (u < 0f) u = 0f;
+            if (u >= 1f)
+            {
+                _dailyAngle = _dailySpinTo;
+                LandDailyWheel();
+                return;
+            }
+            float inv = 1f - u;
+            float eased = 1f - inv * inv * inv;
+            float angle = Mathf.Lerp(_dailySpinFrom, _dailySpinTo, eased);
+            int under = DailyBonus.WedgeUnderPointer(angle);
+            if (under != _dailyTickWedge)
+            {
+                _dailyTickWedge = under;
+                SfxLibrary.Play("tick", 0.28f, 0f);
+            }
+            _dailyAngle = angle;
+        }
+
+        void StartDailySpin()
+        {
+            if (_dailyPhase == DailyWheelPhase.Spin || _dailyAdBusy) return;
+            bool tutorial = _dailyIntroLive;
+            if (!DailyBonus.TryBeginSpin(tutorial, out int wedge, out _, out bool firstEver))
             {
                 if (DailyBonus.ClaimedToday) ClunkClaimed();
                 return;
             }
+            _dailyTutorSpin = tutorial;
+            _dailyClaimFirst = firstEver;
+            _dailyClaimFollowUp = true;
+            _dailyPhase = DailyWheelPhase.Spin;
+            _dailySpinFrom = 0f;
+            _dailySpinTo = DailyBonus.PointerAngle(wedge) + 360f * 5f;
+            _dailySpinAt = Time.unscaledTime;
+            _dailyAngle = 0f;
+            _dailyTickWedge = DailyBonus.WedgeUnderPointer(0f);
             Sfx.CardTap();
+            DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
+            if (tutorial) DismissDailyIntro();
+        }
+
+        void LandDailyWheel()
+        {
+            _dailyPhase = DailyWheelPhase.Landed;
+            _dailyAngle = _dailySpinTo;
+            DailyBonus.MarkLanded();
+            Sfx.Clink();
+            Haptics.Play(Haptics.Tier.Light);
+            if (_dailyTutorSpin)
+                StartCoroutine(ResolveDailySoon(false, 0.55f));
+        }
+
+        IEnumerator ResolveDailySoon(bool doubled, float wait)
+        {
+            if (wait > 0f) yield return new WaitForSecondsRealtime(wait);
+            if (!_dailyOpen || DailyBonus.Resolved) yield break;
+            ResolveDailyGrant(doubled);
+        }
+
+        IEnumerator WatchDailyDouble()
+        {
+            if (_dailyAdBusy || _dailyTutorSpin || _dailyIntroLive) yield break;
+            if (!DailyBonus.ShowDouble(Ads.RewardedReady, false)) yield break;
+            _dailyAdBusy = true;
+            try
+            {
+                yield return Ads.Rewarded(Ads.PlacementDailyDouble);
+                ResolveDailyGrant(Ads.LastEarned);
+            }
+            finally
+            {
+                _dailyAdBusy = false;
+            }
+        }
+
+        void ResolveDailyGrant(bool doubled)
+        {
+            if (!_dailyOpen) return;
+            if (_dailyPhase == DailyWheelPhase.Spin)
+            {
+                _dailyPhase = DailyWheelPhase.Landed;
+                _dailyAngle = _dailySpinTo;
+            }
+            if (!DailyBonus.TryResolve(doubled, out int coins) || coins <= 0)
+            {
+                _dailyOpen = false;
+                _dailyPopAt = -1f;
+                _dailyPhase = DailyWheelPhase.Ready;
+                return;
+            }
             Sfx.Clink();
             Haptics.Play(Haptics.Tier.Medium);
-            BeginRewardPay(coins);
+            bool first = _dailyClaimFirst;
+            bool follow = _dailyClaimFollowUp;
+            _dailyClaimFollowUp = false;
             _dailyOpen = false;
             _dailyPopAt = -1f;
-            DismissDailyIntro();
+            _dailyTutorSpin = false;
+            _dailyPhase = DailyWheelPhase.Ready;
+            BeginRewardPay(coins);
             DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
-            StartCoroutine(FinishDailyClaim(firstEver));
+            if (follow) StartCoroutine(FinishDailyClaim(first));
+        }
+
+        void DrawDailyBar(Rect bar, bool held, PopupTint tint, string label, float s)
+        {
+            if (bar.width < 8f || bar.height < 8f || string.IsNullOrEmpty(label)) return;
+            DrawPopupButton(bar, held, tint);
+            if (_dailyWatch == null)
+                _dailyWatch = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = false
+                };
+            DrawPopupWord(bar, label, _dailyWatch, s);
         }
 
         // Ask card or welcome only after the claim coins, balance, and clink are done.
@@ -538,10 +734,22 @@ namespace FlockFive
         void DismissDaily()
         {
             if (!_dailyOpen) return;
+            // Leaving after the spin has been picked still pays 1x. The lesson
+            // stays until Claim, so an X before the spin does not finish it.
+            if (_dailyPhase == DailyWheelPhase.Spin || (DailyBonus.Landed && !DailyBonus.Resolved))
+            {
+                ResolveDailyGrant(false);
+                return;
+            }
             _dailyOpen = false;
             _dailyPopAt = -1f;
-            // X and the dim close the card only. The lesson stays until Claim.
+            _dailyPhase = DailyWheelPhase.Ready;
             Sfx.CardTap();
+            if (_dailyClaimFollowUp)
+            {
+                _dailyClaimFollowUp = false;
+                StartCoroutine(FinishDailyClaim(_dailyClaimFirst));
+            }
         }
 
         // Claim flower, same pad DrawDailyBonus hits. Not today's tile.
@@ -613,73 +821,104 @@ namespace FlockFive
             _gloveKeepOff = disc;
         }
 
-        // Content-sized. Rows are reserved up front, including an empty bonus line,
-        // so opening and a later week-bonus string cannot reflow the tiles.
+        // Claim flower for the glove. The live card passes a chrome so the wheel
+        // can sit above two bars instead of the pedestal.
         static void DailyLayout(float s, out Rect card, out Rect flower, out Rect board, out float band)
+        {
+            DailyLayout(s, 0, out card, out flower, out board, out band, out _, out _);
+        }
+
+        // chrome: 0 claim flower, 1 wheel only, 2 collect bar, 3 collect plus x2.
+        static void DailyLayout(float s, int chrome, out Rect card, out Rect flower, out Rect board, out float band, out Rect collect, out Rect watch)
         {
             float cardW = StandardPopupWidth(s);
             band = Mathf.Clamp(cardW * 0.05f, 11f * s, 20f * s);
-            // Brass outer edge is the card edge, so each bulb base sits on the border.
             float boardW = cardW - band * 2f;
-            DailyBoardSize(s, boardW, out float boardH, out _, out _, out _, out _, out _, out _);
+            bool flowerOn = chrome == 0;
+            float flowerSz = flowerOn ? PopupButtonSize(s, cardW) : 0f;
+            float overlap = flowerOn ? PopupCtaOverlap(flowerSz, band + 8f * s) : 0f;
+            float reserve = flowerOn ? Mathf.Max(0f, overlap - band) : 0f;
+            DailyWheelBoard(s, boardW, reserve, out float boardH, out _, out _, out _);
             float lip = band;
             float cardH = lip + boardH + lip;
-            // Same square CTA as Watch / Retry. Caption stays under the face.
-            float flowerSz = PopupButtonSize(s, cardW);
-            // Pedestal art starts ~13% down the square (1024×811 letterboxed). A lip of
-            // band*0.35 left the dim wash showing as a dark seam under the gold frame.
-            // Cap at the brass plus the board's bottom pad so the day tiles stay clear.
-            // PopupCtaOverlap closes the gap under the brass so the bulbs on the bottom
-            // edge no longer show between the card and the pedestal. The pedestal
-            // still sinks at most band + the board's bottom pad, so the tiles stay clear.
-            float overlap = PopupCtaOverlap(flowerSz, band + 8f * s);
-            float stack = cardH + flowerSz - overlap;
-            var placed = PlacePopup(s, cardW, stack, 0.36f);
+            float barH = 0f;
+            float barGap = 0f;
+            int bars = 0;
+            if (chrome == 2 || chrome == 3)
+            {
+                barH = PopupBarHeight(s, cardW);
+                barGap = 10f * s;
+                bars = chrome == 3 ? 2 : 1;
+            }
+            float stack = cardH + (flowerOn ? flowerSz - overlap : 0f) + barGap + barH * bars + (bars == 2 ? barGap : 0f);
+            var placed = PlacePopup(s, cardW, stack, 0.34f);
             card = new Rect(placed.x, placed.y, cardW, cardH);
             board = new Rect(card.x + (cardW - boardW) * 0.5f, card.y + lip, boardW, boardH);
-            flower = new Rect(card.center.x - flowerSz * 0.5f, card.yMax - overlap, flowerSz, flowerSz);
+            flower = flowerOn
+                ? new Rect(card.center.x - flowerSz * 0.5f, card.yMax - overlap, flowerSz, flowerSz)
+                : default;
+            float barW = cardW - band * 2f;
+            if (barW < 8f) barW = 8f;
+            float barX = card.x + (cardW - barW) * 0.5f;
+            float y = card.yMax + barGap;
+            if (chrome == 3)
+            {
+                collect = new Rect(barX, y, barW, barH);
+                watch = new Rect(barX, collect.yMax + barGap, barW, barH);
+            }
+            else if (chrome == 2)
+            {
+                collect = new Rect(barX, y, barW, barH);
+                watch = default;
+            }
+            else
+            {
+                collect = default;
+                watch = default;
+            }
         }
 
-        static void DailyBoardSize(float s, float boardW, out float boardH, out float titleH, out float streakH, out float bonusH, out float tileH, out float gap, out float unit)
+        static void DailyWheelBoard(float s, float boardW, float reserve, out float boardH, out float titleH, out float streakH, out float wheel)
         {
-            float pad = 8f * s;
+            float pad = 10f * s;
             titleH = Mathf.Clamp(26f * s, 22f, 36f * s);
             streakH = Mathf.Clamp(16f * s, 14f, 22f * s);
-            bonusH = Mathf.Clamp(14f * s, 12f, 18f * s);
-            gap = Mathf.Max(6f, 7f * s);
-            int days = DailyBonus.CycleDays;
-            if (days < 1) days = 1;
-            int seams = days - 1;
+            float gap = 6f * s;
             float inner = boardW - pad * 2f;
             if (inner < 40f) inner = 40f;
-            unit = (inner - gap * seams) / days;
-            if (unit < 8f)
-            {
-                gap = 4f;
-                unit = (inner - gap * seams) / days;
-                if (unit < 4f) unit = 4f;
-            }
-            tileH = unit * 1.22f;
-            boardH = pad + titleH + streakH + bonusH + 6f * s + tileH + pad;
+            wheel = inner;
+            float cap = 520f * s;
+            if (wheel > cap) wheel = cap;
+            if (reserve < 0f) reserve = 0f;
+            boardH = pad + titleH + gap + streakH + gap + wheel + reserve + pad;
         }
 
-        static void DailyRows(float s, Rect board, out Rect title, out Rect streak, out Rect bonus, out Rect row, out float gap, out float unit)
+        static void DailyRows(float s, Rect board, bool flower, out Rect title, out Rect streak, out Rect wheelR)
         {
-            DailyBoardSize(s, board.width, out _, out float titleH, out float streakH, out float bonusH, out float tileH, out gap, out unit);
-            float pad = 8f * s;
+            float cardW = StandardPopupWidth(s);
+            float band = Mathf.Clamp(cardW * 0.05f, 11f * s, 20f * s);
+            float reserve = 0f;
+            if (flower)
+            {
+                float flowerSz = PopupButtonSize(s, cardW);
+                float overlap = PopupCtaOverlap(flowerSz, band + 8f * s);
+                reserve = Mathf.Max(0f, overlap - band);
+            }
+            DailyWheelBoard(s, board.width, reserve, out _, out float titleH, out float streakH, out float wheel);
+            float pad = 10f * s;
+            float gap = 6f * s;
             float x = board.x + pad;
             float w = board.width - pad * 2f;
             float y = board.y + pad;
             title = new Rect(x, y, w, titleH);
-            y += titleH;
+            y += titleH + gap;
             streak = new Rect(x, y, w, streakH);
-            y += streakH;
-            bonus = new Rect(x, y, w, bonusH);
-            y += bonusH + 6f * s;
-            int days = DailyBonus.CycleDays;
-            if (days < 1) days = 1;
-            float rowW = unit * days + gap * (days - 1);
-            row = new Rect(board.center.x - rowW * 0.5f, y, rowW, tileH);
+            y += streakH + gap;
+            float side = wheel;
+            float room = board.yMax - pad - reserve - y;
+            if (side > room) side = room;
+            if (side < 8f) side = 8f;
+            wheelR = new Rect(board.center.x - side * 0.5f, y, side, side);
         }
 
         // Shared pop-up frame. Bulbs are not drawn here. flatGold is a flat band
@@ -867,19 +1106,26 @@ namespace FlockFive
             _dailyLine = new GUIStyle(_dailyTitle);
         }
 
-        static void EnsureDailyFit(float s, float band, Rect titleR, Rect streakR, Rect bonusR, Rect disc, float unit, float tileH)
+        static void EnsureDailyFit(float s, Rect titleR, Rect streakR, Rect disc, float wheel)
         {
             int key = Screen.width * 73856093 ^ Screen.height * 19349663
                 ^ Mathf.RoundToInt(titleR.width) * 83492791
                 ^ Mathf.RoundToInt(disc.width) * 50331653
-                ^ Mathf.RoundToInt(unit) * 2718281
-                ^ DailyBonus.StreakLine.Length * 97;
+                ^ Mathf.RoundToInt(wheel) * 2718281
+                ^ DailyBonus.StreakLine.Length * 97
+                ^ DailyBonus.PayLine.Length * 13;
             if (key == _dailyFitKey) return;
             _dailyFitKey = key;
             _dailyLinePx = FitFont(_dailyLine, DailyBonus.StreakLine, streakR.width * 0.88f, streakR.height * 0.90f, 10, Mathf.Max(12, Mathf.RoundToInt(18f * s)));
-            _dailyBonusPx = FitFont(_dailyLine, "streak +$25", bonusR.width * 0.88f, bonusR.height * 0.90f, 9, Mathf.Max(11, Mathf.RoundToInt(16f * s)));
-            _dailyTilePx = FitFont(_dailyTile, "$100", unit * 0.90f, tileH * 0.32f, 8, Mathf.Max(10, Mathf.RoundToInt(16f * s)));
-            _dailyClaimPx = FitFont(_dailyClaim, "Claimed", disc.width * 0.72f, disc.height * 0.52f, 12, Mathf.Max(16, Mathf.RoundToInt(30f * s)));
+            float labelW = Mathf.Max(8f, wheel * 0.20f);
+            float labelH = Mathf.Max(8f, wheel * 0.09f);
+            _dailyTilePx = FitFont(_dailyTile, "$1,000", labelW, labelH, 8, Mathf.Max(12, Mathf.RoundToInt(22f * s)));
+            float hubW = Mathf.Max(8f, wheel * 0.22f);
+            float hubH = Mathf.Max(8f, wheel * 0.12f);
+            _dailyBonusPx = FitFont(_dailyLine, "$10,000", hubW, hubH, 10, Mathf.Max(16, Mathf.RoundToInt(28f * s)));
+            float claimW = disc.width > 2f ? disc.width * 0.72f : 80f;
+            float claimH = disc.height > 2f ? disc.height * 0.52f : 40f;
+            _dailyClaimPx = FitFont(_dailyClaim, "Claimed", claimW, claimH, 12, Mathf.Max(16, Mathf.RoundToInt(30f * s)));
         }
 
         static void DrawDailyCopy(Rect titleR, Rect streakR, Rect bonusR, float s, float breathe, Texture2D glow)
@@ -898,68 +1144,208 @@ namespace FlockFive
             StampOutlined(bonusR, bonus, _dailyLine, new Color(1f, 0.86f, 0.42f), 1, 1);
         }
 
-        static void DrawDailyTiles(Rect row, float gap, float unit, float s, float breathe, Texture2D glow)
-        {
-            if (unit < 4f) return;
-            int today = DailyBonus.Cycle;
-            bool claimed = DailyBonus.ClaimedToday;
-            float x = row.x;
-            int days = DailyBonus.CycleDays;
-            for (int i = 0; i < days; i++)
-            {
-                bool now = i == today && DailyBonus.OfferReady;
-                bool done = i < today || (i == today && claimed);
-                var tile = new Rect(x, row.y, unit, row.height);
-                DrawDailyTile(tile, i, now, done, s, breathe, glow);
-                x += unit + gap;
-            }
-        }
-
-        // The one box path for all five rewards ($10 to $100). Only the amount and the
-        // now / done state differ. The amount fills the whole box and the style is
-        // MiddleCenter, so every figure sits dead center both ways. No crown, no stars.
-        static void DrawDailyTile(Rect tile, int day, bool now, bool done, float s, float breathe, Texture2D glow)
-        {
-            if (now)
-            {
-                float pad = 4f * s + 1.5f * breathe;
-                GUI.color = new Color(1f, 0.82f, 0.28f, 0.30f + 0.22f * breathe);
-                GUI.DrawTexture(new Rect(tile.x - pad, tile.y - pad, tile.width + pad * 2f, tile.height + pad * 2f), glow, ScaleMode.ScaleToFit, true);
-            }
-            Color fill = now
-                ? new Color(0.98f, 0.78f, 0.28f, 1f)
-                : done
-                    ? new Color(0.30f, 0.17f, 0.07f, 0.94f)
-                    : new Color(0.16f, 0.09f, 0.04f, 0.90f);
-            GUI.color = fill;
-            GUI.DrawTexture(tile, Texture2D.whiteTexture);
-            GUI.color = new Color(1f, 0.86f, 0.42f, now ? 1f : done ? 0.55f : 0.40f);
-            float edge = Mathf.Max(1.5f, (now ? 2.6f : 1.6f) * s);
-            GUI.DrawTexture(new Rect(tile.x, tile.y, tile.width, edge), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(tile.x, tile.yMax - edge, tile.width, edge), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(tile.x, tile.y, edge, tile.height), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(tile.xMax - edge, tile.y, edge, tile.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-
-            var amt = new Rect(tile.x + 1f, tile.y, tile.width - 2f, tile.height);
-            _dailyTile.fontSize = _dailyTilePx;
-            Color ink = now
-                ? new Color(0.32f, 0.14f, 0.04f, 1f)
-                : new Color(1f, 0.94f, 0.74f, done ? 0.72f : 0.92f);
-            StampOutlined(amt, DailyBonus.TileLabel(day), _dailyTile, ink, 1, 1);
-            if (!done) return;
-            // Shared one-piece check (DrawCheckMark), seated in the bottom of the tile.
-            float cw = tile.width * 0.40f;
-            float ch = Mathf.Min(tile.height * 0.30f, cw);
-            var mark = new Rect(tile.center.x - cw * 0.5f, tile.yMax - tile.height * 0.05f - ch, cw, ch);
-            DrawCheckMark(mark, new Color(1f, 0.88f, 0.40f, 0.96f));
-        }
-
         static string DailyVerb()
         {
             if (DailyBonus.OfferReady) return "Claim";
             if (DailyBonus.ClaimedToday) return "Claimed";
             return "Later";
+        }
+
+        static Texture2D _wheelDisc;
+        static Texture2D _wheelHi;
+        static Texture2D _wheelPointer;
+
+        void DrawDailyWheel(Rect wheel, float s, float breathe, Texture2D glow)
+        {
+            if (wheel.width < 8f) return;
+            EnsureWheelArt();
+            bool spinning = _dailyPhase == DailyWheelPhase.Spin;
+            bool landed = _dailyPhase == DailyWheelPhase.Landed && (DailyBonus.Landed || DailyBonus.ClaimedToday);
+            float angle = _dailyAngle;
+            var prev = GUI.matrix;
+            if (spinning)
+            {
+                // Ghosts trail the live disc so a frozen frame still reads as a spin.
+                GUIUtility.RotateAroundPivot(angle - 36f, wheel.center);
+                GUI.color = new Color(1f, 0.94f, 0.78f, 0.22f);
+                GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
+                GUI.matrix = prev;
+                GUIUtility.RotateAroundPivot(angle - 18f, wheel.center);
+                GUI.color = new Color(1f, 0.96f, 0.86f, 0.42f);
+                GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
+                GUI.matrix = prev;
+                GUI.color = Color.white;
+            }
+            GUIUtility.RotateAroundPivot(angle, wheel.center);
+            GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
+            GUI.matrix = prev;
+
+            EnsureDailyStyles();
+            _dailyTile.fontSize = _dailyTilePx;
+            int level = DailyBonus.HighestLevel;
+            float radius = wheel.width * 0.33f;
+            for (int i = 0; i < DailyBonus.WedgeCount; i++)
+            {
+                var at = wheel.center + DailyBonus.WedgeOffset(i, angle, radius);
+                float lw = wheel.width * 0.22f;
+                float lh = wheel.width * 0.10f;
+                var lab = new Rect(at.x - lw * 0.5f, at.y - lh * 0.5f, lw, lh);
+                string text = Money.Format(DailyBonus.Prize(level, i));
+                StampOutlined(lab, text, _dailyTile, new Color(1f, 0.96f, 0.82f), 1, 1);
+            }
+
+            if (landed && DailyBonus.SpinWedge >= 0)
+            {
+                GUI.color = new Color(1f, 0.92f, 0.45f, 0.55f + 0.15f * breathe);
+                GUI.DrawTexture(wheel, _wheelHi, ScaleMode.ScaleToFit, true);
+                GUI.color = Color.white;
+                float aura = wheel.width * (0.04f + 0.015f * breathe);
+                GUI.color = new Color(1f, 0.84f, 0.28f, 0.22f + 0.10f * breathe);
+                GUI.DrawTexture(new Rect(wheel.x - aura, wheel.y - aura, wheel.width + aura * 2f, wheel.height + aura * 2f), glow, ScaleMode.ScaleToFit, true);
+                GUI.color = Color.white;
+            }
+
+            float pw = wheel.width * 0.11f;
+            float ph = pw * 1.25f;
+            // Tip stays on the rim. The base used to cover the streak line.
+            float stick = 4f * s;
+            if (stick < 6f) stick = 6f;
+            var pointer = new Rect(wheel.center.x - pw * 0.5f, wheel.y - stick, pw, ph);
+            GUI.DrawTexture(pointer, _wheelPointer, ScaleMode.ScaleToFit, true);
+
+            float hub = wheel.width * 0.28f;
+            var hubR = new Rect(wheel.center.x - hub * 0.5f, wheel.center.y - hub * 0.5f, hub, hub);
+            if (landed && DailyBonus.SpinCoins >= 100)
+            {
+                _dailyLine.fontSize = _dailyBonusPx;
+                string won = Money.Format(DailyBonus.SpinCoins);
+                StampOutlined(hubR, won, _dailyLine, new Color(1f, 0.95f, 0.72f), 1, 2);
+            }
+        }
+
+        static void EnsureWheelArt()
+        {
+            if (_wheelDisc != null) return;
+            _wheelDisc = BakeWheelDisc(512);
+            _wheelHi = BakeWheelHighlight(512);
+            _wheelPointer = BakeWheelPointer(64, 80);
+        }
+
+        static Texture2D WheelTex(string name, int w, int h)
+        {
+            return new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = name
+            };
+        }
+
+        static Texture2D BakeWheelDisc(int n)
+        {
+            var tex = WheelTex("DailyWheel", n, n);
+            var px = new Color32[n * n];
+            float c = (n - 1) * 0.5f;
+            float rad = c - 1f;
+            for (int y = 0; y < n; y++)
+            {
+                float ny = (y + 0.5f - c) / rad;
+                for (int x = 0; x < n; x++)
+                {
+                    float nx = (x + 0.5f - c) / rad;
+                    float dist = Mathf.Sqrt(nx * nx + ny * ny);
+                    float edge = Mathf.Clamp01((1.02f - dist) * rad * 0.5f);
+                    if (edge <= 0f) continue;
+                    float ang = Mathf.Atan2(nx, ny) * Mathf.Rad2Deg;
+                    if (ang < 0f) ang += 360f;
+                    int wedge = Mathf.FloorToInt((ang + 22.5f) / 45f) % 8;
+                    bool jackpot = wedge == 7;
+                    bool gold = (wedge & 1) == 1;
+                    Color face = jackpot
+                        ? new Color(0.98f, 0.78f, 0.28f, 1f)
+                        : gold
+                            ? new Color(0.80f, 0.58f, 0.20f, 1f)
+                            : new Color(0.48f, 0.27f, 0.11f, 1f);
+                    face = Color.Lerp(face, new Color(0.24f, 0.12f, 0.04f, 1f), dist * 0.16f);
+                    float within = Mathf.Repeat(ang + 22.5f, 45f);
+                    float spoke = Mathf.Min(within, 45f - within);
+                    if (spoke < 1.15f)
+                        face = Color.Lerp(new Color(0.98f, 0.88f, 0.52f, 1f), face, spoke / 1.15f);
+                    if (dist > 0.90f)
+                    {
+                        float k = Mathf.InverseLerp(0.90f, 1f, dist);
+                        Color rim = Color.Lerp(new Color(1f, 0.90f, 0.55f, 1f), new Color(0.42f, 0.24f, 0.08f, 1f), k);
+                        face = Color.Lerp(face, rim, Mathf.Clamp01((dist - 0.90f) / 0.05f));
+                    }
+                    if (dist < 0.20f)
+                    {
+                        float k = Mathf.Clamp01(Mathf.InverseLerp(0.20f, 0.12f, dist));
+                        face = Color.Lerp(face, new Color(0.30f, 0.16f, 0.06f, 1f), k);
+                        if (dist > 0.155f && dist < 0.20f)
+                            face = Color.Lerp(face, new Color(0.95f, 0.80f, 0.36f, 1f), 0.85f);
+                    }
+                    face.a *= edge;
+                    px[y * n + x] = face;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        static Texture2D BakeWheelHighlight(int n)
+        {
+            var tex = WheelTex("DailyWheelHi", n, n);
+            var px = new Color32[n * n];
+            float c = (n - 1) * 0.5f;
+            float rad = c - 1f;
+            for (int y = 0; y < n; y++)
+            {
+                float ny = (y + 0.5f - c) / rad;
+                for (int x = 0; x < n; x++)
+                {
+                    float nx = (x + 0.5f - c) / rad;
+                    float dist = Mathf.Sqrt(nx * nx + ny * ny);
+                    if (dist > 0.98f || dist < 0.20f) continue;
+                    float ang = Mathf.Atan2(nx, ny) * Mathf.Rad2Deg;
+                    if (ang < 0f) ang += 360f;
+                    float fromTop = ang > 180f ? 360f - ang : ang;
+                    if (fromTop > 22.5f) continue;
+                    float side = 1f - fromTop / 22.5f;
+                    float a = Mathf.Clamp01(side * 1.4f) * Mathf.Clamp01((0.98f - dist) * 8f) * Mathf.Clamp01((dist - 0.20f) * 8f);
+                    var col = new Color(1f, 0.94f, 0.62f, 0.72f * a);
+                    px[y * n + x] = col;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        static Texture2D BakeWheelPointer(int w, int h)
+        {
+            var tex = WheelTex("DailyWheelPointer", w, h);
+            var px = new Color32[w * h];
+            float cx = (w - 1) * 0.5f;
+            for (int y = 0; y < h; y++)
+            {
+                float v = y / (float)(h - 1);
+                float half = Mathf.Lerp(cx * 0.92f, 1.2f, v);
+                for (int x = 0; x < w; x++)
+                {
+                    float d = Mathf.Abs(x - cx);
+                    float edge = Mathf.Clamp01(half - d + 0.8f);
+                    if (edge <= 0f) continue;
+                    float k = v;
+                    Color col = Color.Lerp(new Color(1f, 0.92f, 0.55f, 1f), new Color(0.62f, 0.36f, 0.10f, 1f), k);
+                    col.a = edge;
+                    px[y * w + x] = col;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            return tex;
         }
 
         static void DrawDailyClaim(Rect flower, bool held, float s, float t)

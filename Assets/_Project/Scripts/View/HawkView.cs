@@ -19,6 +19,9 @@ namespace FlockFive
         // True only after the perch settle, so the tutorial does not talk over the arrival.
         public bool Settled { get; private set; }
 
+        // Fly-in from off the garden. Not the home airplane.
+        public const float ArriveSeconds = 1.05f;
+
         float _scale = 1.1f;
         SpriteRenderer _art;
         bool _done;
@@ -96,7 +99,7 @@ namespace FlockFive
 
             // Fly in. Same warm-up as the sparrow so a hawk scrap does not allocate feathers.
             float t = 0f;
-            const float inDur = 1.05f;
+            const float inDur = ArriveSeconds;
             bool cried = false;
             while (t < inDur && !view._evict)
             {
@@ -665,8 +668,12 @@ namespace FlockFive
 
     // Beaten flyby after a hawk clear. Cosmetic only: no collider, not HawkView.Live,
     // so it cannot block a feeder or input. Clear() on stage load and restart.
-    sealed class HawkPass : MonoBehaviour
+    public sealed class HawkPass : MonoBehaviour
     {
+        public const float Lead = 0.6f;
+        public const float Dur = 0.48f;
+        public const float Feather = 0.72f;
+
         static HawkPass _live;
 
         public static void Clear()
@@ -689,7 +696,7 @@ namespace FlockFive
 
         IEnumerator Run(bool fromLeft, float y, float scale, float edge, Color body, Color feather)
         {
-            yield return new WaitForSeconds(0.6f);
+            yield return new WaitForSeconds(Lead);
             if (this == null) yield break;
             float x0 = fromLeft ? -edge : edge;
             float x1 = -x0;
@@ -704,7 +711,7 @@ namespace FlockFive
             art.color = body;
             float droop = fromLeft ? -13f : 13f;
             go.transform.rotation = Quaternion.Euler(0f, 0f, droop);
-            float dur = 0.48f;
+            float dur = Dur;
             float t = 0f;
             float flap = 0f;
             int dropped = 0;
@@ -734,7 +741,7 @@ namespace FlockFive
             if (go != null) Object.Destroy(go);
             // Feathers are children of this host. Let them finish, unless Clear()
             // already tore the pass down (restart / stage load).
-            yield return new WaitForSeconds(0.72f);
+            yield return new WaitForSeconds(Feather);
             if (this != null) Clear();
         }
 

@@ -15,6 +15,9 @@ namespace FlockFive
         public bool InScrap => _evict || _fleeing;
         public bool Settled { get; private set; }
 
+        // Fly-in onto a feeder. Not the home airplane.
+        public const float ArriveSeconds = 0.95f;
+
         const float Scale = 0.78f; // bigger pest than hummingbirds (0.42)
         SpriteRenderer _art;
         bool _done;
@@ -83,7 +86,7 @@ namespace FlockFive
 
             // Fly in. Warm the feather pool across these frames, before any hit.
             float t = 0f;
-            const float inDur = 0.95f;
+            const float inDur = ArriveSeconds;
             bool chirped = false;
             while (t < inDur && !view._evict)
             {

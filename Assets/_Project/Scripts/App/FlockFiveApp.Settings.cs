@@ -7,65 +7,124 @@ namespace FlockFive
         bool _settingsOpen;
         bool _smokePlayed;
         bool _smokeNoted;
+        bool _gearHeld;
         AdConsent.HomeCard _homePrompt;
 
-        static Texture2D _gearTex;
+        // Build 79 drew the gear at 40px times scale. Build 80 grows that by 1.3.
+        public const float SettingsGearRef = 40f;
+        public const float SettingsGearGrow = 1.3f;
 
         // Square gear in the top-left safe band. 44pt minimum. Clears the wordmark.
         public static Rect SettingsGearRect(float w, float h, Rect safe)
         {
             float s = h / 720f;
             if (s < 0.5f) s = 0.5f;
-            float size = Mathf.Max(44f, 40f * s);
+            float size = Mathf.Max(44f, SettingsGearRef * SettingsGearGrow * s);
             float x = Mathf.Max(8f, safe.xMin + 8f);
             float y = TopHudBox(h, safe, 0f) + 2f * s;
             return new Rect(x, y, size, size);
         }
 
-        bool DrawSettingsEntry(float s)
+        HomeGearQuery HomeGearNow()
         {
-            var r = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
-            bool fire = HitPad(r, out bool held);
-            var tex = GearTex();
-            if (tex != null)
+            bool home = _splash && _home == HomeFace.Splash;
+            HomeCover cover = HomeCover.None;
+            if (_hiveIntroLive) cover |= HomeCover.HiveIntro;
+            if (_pokerIntroLive) cover |= HomeCover.PokerIntro;
+            if (_dailyIntroLive && !_dailyOpen) cover |= HomeCover.DailyIntro;
+            if (_dailyIntroLive && _dailyOpen) cover |= HomeCover.DailyClaim;
+            if (_welcomeOpen || _welcomeGlove) cover |= HomeCover.Welcome;
+            if (_dailyAskOpen) cover |= HomeCover.DailyAsk;
+            if (_adoptLive) cover |= HomeCover.Adopt;
+            if (_avatarRename) cover |= HomeCover.AvatarRename;
+            if (_streakSlide >= 0f) cover |= HomeCover.Streak;
+            if (_restartAsk != RestartAsk.None) cover |= HomeCover.KeepMultiplier;
+            if (VipOffer.IsOpen) cover |= HomeCover.Vip;
+            if (_dailyOpen) cover |= HomeCover.DailyCard;
+            if (_settingsOpen) cover |= HomeCover.Settings;
+            bool forced = false;
+            if (home)
             {
-                GUI.color = new Color(0.12f, 0.07f, 0.03f, held ? 0.20f : 0.32f);
-                GUI.DrawTexture(new Rect(r.x + 2f, r.y + 3f, r.width, r.height), tex, ScaleMode.ScaleToFit, true);
-                GUI.color = held ? new Color(0.78f, 0.78f, 0.78f, 1f) : Color.white;
-                GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
-                GUI.color = Color.white;
+                // Rail gloves, the Daily Claim step, and the adopt look step.
+                if (HomeStepRail() >= 0) forced = true;
+                if (_dailyIntroLive && _dailyOpen && !_dailyAskOpen) forced = true;
+                if (_adoptLive && _adoptStep == AdoptStep.Look) forced = true;
             }
-            return fire;
+            return new HomeGearQuery { Home = home, Cover = cover, ForcedTap = forced };
+        }
+
+        // Hit before the popups. A forced glove step keeps the gear up and drops the tap.
+        void PollHomeGear()
+        {
+            _gearHeld = false;
+            if (_settingsOpen) return;
+            var q = HomeGearNow();
+            var r = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
+            if (!HomeGear.AcceptsTap(q))
+            {
+                if (HomeGear.Shown(q)) SwallowGearTap(r);
+                return;
+            }
+            if (HitPad(r, out _gearHeld))
+            {
+                _settingsOpen = true;
+                Sfx.CardTap();
+            }
+        }
+
+        static void SwallowGearTap(Rect r)
+        {
+            var e = Event.current;
+            if (e == null || r.width < 2f) return;
+            if (!r.Contains(e.mousePosition)) return;
+            var t = e.type;
+            if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
+            if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+            e.Use();
+        }
+
+        // Painted after the home dimmers. The open sheet covers it.
+        void PaintHomeGear()
+        {
+            var q = HomeGearNow();
+            if (!HomeGear.Shown(q) || !HomeGear.AboveDimmer(q) || _settingsOpen) return;
+            var r = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
+            var tex = GearIcon.Texture();
+            if (tex == null) return;
+            GUI.color = Color.white;
+            GUI.color = new Color(0.12f, 0.07f, 0.03f, _gearHeld ? 0.20f : 0.32f);
+            GUI.DrawTexture(new Rect(r.x + 2f, r.y + 3f, r.width, r.height), tex, ScaleMode.ScaleToFit, true);
+            GUI.color = _gearHeld ? new Color(0.78f, 0.78f, 0.78f, 1f) : Color.white;
+            GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
+            GUI.color = Color.white;
+        }
+
+        // Informational any-tap lessons leave the gear alone so it can open Settings.
+        bool HomeGearExempt(Vector2 p)
+        {
+            if (_settingsOpen) return false;
+            var q = HomeGearNow();
+            if (!HomeGear.AcceptsTap(q)) return false;
+            var r = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
+            return r.width >= 2f && r.Contains(p);
         }
 
         // Privacy link, then the Do Not Sell checkbox on the next row. The whole
         // checkbox row is the hit. The card is a flat wood panel (no oval vignette).
         void DrawSettingsSheet(float s)
         {
+            _hitLock = 0;
             if (s < 0.5f) s = 0.5f;
             if (Texture2D.whiteTexture == null) return;
             GUI.color = new Color(0.05f, 0.04f, 0.03f, 0.42f);
             GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            float w = StandardPopupWidth(s);
-            float titleH = Mathf.Max(40f, 44f * s);
-            float pad = 18f * s;
-            float innerW = Mathf.Max(8f, w - pad * 2f);
-            var probe = SettingsSheet.Place(new Rect(0f, 0f, innerW, 8f), s);
-            float body = probe.Label.yMax - probe.PrivacyLink.yMin;
-            float h = titleH + body + pad * 2.4f;
-            var card = PlacePopup(s, w, h, 0.34f);
+            var frame = SettingsSheet.Layout(Screen.width, Screen.height, Screen.safeArea, TopHud());
+            var card = frame.Card;
+            var rows = frame.Body;
+            var titleR = frame.Title;
             DrawWoodPanel(card, s);
-
-            float edge = Mathf.Max(10f, 14f * s);
-            var inner = new Rect(
-                card.x + edge,
-                card.y + edge,
-                Mathf.Max(8f, card.width - edge * 2f),
-                Mathf.Max(8f, card.height - edge * 2f));
-            var titleR = new Rect(inner.x, inner.y + 4f * s, inner.width, titleH);
-            var rows = SettingsSheet.Place(new Rect(inner.x, titleR.yMax + 6f * s, inner.width, inner.yMax - titleR.yMax), s);
 
             var title = GuiPool.Label(GuiSlot.SettingsTitle);
             title.fontStyle = FontStyle.Bold;
@@ -117,8 +176,7 @@ namespace FlockFive
             DrawCheckbox(rows.Toggle, on, rowHeld);
             if (on) DrawCheckMark(Inset(rows.Toggle, 0.22f), new Color(0.20f, 0.42f, 0.16f, 1f));
 
-            float xSz = Mathf.Max(40f, 42f * s);
-            var xBtn = new Rect(card.xMax - xSz - 6f, card.y + 6f, xSz, xSz);
+            var xBtn = frame.Close;
             bool close = HitPad(CloseTapRect(xBtn), out bool xHeld);
             DrawGiftCloseX(xBtn, xHeld, s);
 
@@ -281,55 +339,6 @@ namespace FlockFive
             st.fontSize = FitFont(st, label, face.width * 0.9f, face.height * 0.62f, 13, Mathf.Max(16, Mathf.RoundToInt(20f * s)));
             StampOutlined(face, label, st, new Color(1f, 0.98f, 0.92f, 1f), 0, Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.16f)));
             return fire;
-        }
-
-        // Gold gear, transparent outside the disc. Procedural so it matches the wood buttons.
-        static Texture2D GearTex()
-        {
-            if (_gearTex != null) return _gearTex;
-            const int n = 128;
-            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
-            {
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp,
-                hideFlags = HideFlags.HideAndDontSave,
-                name = "SettingsGear"
-            };
-            var px = new Color32[n * n];
-            float c = (n - 1) * 0.5f;
-            float hole = n * 0.07f;
-            float body = n * 0.32f;
-            float toothIn = n * 0.28f;
-            float outer = n * 0.46f;
-            for (int y = 0; y < n; y++)
-            {
-                for (int x = 0; x < n; x++)
-                {
-                    float dx = x + 0.5f - c;
-                    float dy = y + 0.5f - c;
-                    float d = Mathf.Sqrt(dx * dx + dy * dy);
-                    if (d > outer + 1.1f || d < hole - 0.8f) continue;
-                    float ang = Mathf.Atan2(dy, dx);
-                    // Short teeth on a wood disc. The hole in the middle keeps it a cog.
-                    float phase = Mathf.Repeat(ang * 8f / (Mathf.PI * 2f) + 0.5f, 1f);
-                    bool tooth = phase < 0.48f && d <= outer + 0.7f && d >= toothIn;
-                    bool disc = d <= body && d >= hole;
-                    if (!tooth && !disc) continue;
-                    float edge = tooth ? outer + 0.7f - d : body + 0.7f - d;
-                    edge = Mathf.Min(edge, d - hole + 0.7f);
-                    float a = Mathf.Clamp01(edge);
-                    float light = Mathf.Clamp01(0.32f + (c - y) / (n * 0.85f));
-                    var wood = Color.Lerp(new Color(0.40f, 0.22f, 0.07f), new Color(0.74f, 0.48f, 0.16f), light);
-                    var gold = Color.Lerp(new Color(0.62f, 0.40f, 0.10f), new Color(1f, 0.88f, 0.42f), light);
-                    var col = tooth ? gold : wood;
-                    if (d < hole + n * 0.03f) col = Color.Lerp(col, new Color(0.28f, 0.16f, 0.05f), 0.55f);
-                    px[y * n + x] = new Color(col.r, col.g, col.b, a);
-                }
-            }
-            tex.SetPixels32(px);
-            tex.Apply(false, true);
-            _gearTex = tex;
-            return tex;
         }
     }
 }

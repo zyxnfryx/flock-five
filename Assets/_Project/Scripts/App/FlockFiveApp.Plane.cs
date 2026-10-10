@@ -5,12 +5,18 @@ namespace FlockFive
 {
     public sealed partial class FlockFiveApp
     {
-        // Home-screen flyby. Once per calendar day, after 10 quiet seconds.
-        // Drawn after the wordmark, and the rail sits below it, so the banner
-        // is never hidden behind FLOCK FIVE.
+        // Home-screen flyby. Once per calendar day, after PlaneIdleDelay quiet
+        // seconds (was 10). Drawn after the wordmark, and the rail sits below
+        // it, so the banner is never hidden behind FLOCK FIVE.
+        // The crossing stays PlaneCrossSeconds. The sky show is six shells
+        // (was three) on the same burst helpers and point tables, so the last
+        // heart fades at twice the old show without a denser frame.
         const string UsaPlaneDayKey = "flockfive.plane.day";
-        const float UsaPlaneWait = 10f;
-        const float UsaPlaneDur = 6.5f;
+        public const float PlaneIdleDelay = 15f;
+        public const float PlaneCrossSeconds = 6.5f;
+        public const int PlaneSkyBursts = 6;
+        public const int PlaneSkyHeartPoints = 48;
+        public const int PlaneSkyRoundPoints = 24;
 
         static bool _usaForce;
         static string _usaToday;
@@ -21,6 +27,11 @@ namespace FlockFive
         float _fwClock = -1f;
         float _fwDuck;
         int _fwPop;
+#if UNITY_EDITOR
+        bool _planeShot;
+        float _planeShotU;
+        float _planeShotFw;
+#endif
 
         public static void ForceUsaPlane() => _usaForce = true;
 
@@ -66,26 +77,51 @@ namespace FlockFive
 
         void TickUsaPlane(float dt)
         {
+#if UNITY_EDITOR
+            if (_planeShot)
+            {
+                ApplyPlaneShot();
+                return;
+            }
+#endif
             if (dt > 0.1f) dt = 0.1f;
             if (dt < 0f) dt = 0f;
             if (PointerHeld()) _usaIdle = 0f;
-            if (_usaU >= 0f)
+            bool crossing = _usaU >= 0f;
+            bool sky = _fwClock >= 0f;
+            if (crossing || sky)
             {
                 if (UsaPlaneBlocked())
                 {
                     EndUsaPlane();
                     return;
                 }
-                _usaU += dt / UsaPlaneDur;
-                _fwClock += dt;
-                _fwDuck -= dt * 1.7f;
-                if (_fwDuck < 0f) _fwDuck = 0f;
-                TickSkyBooms();
-                float u = _usaU < 0f ? 0f : (_usaU > 1f ? 1f : _usaU);
-                float env = Mathf.Sin(Mathf.PI * u);
-                float duck = 1f - 0.48f * _fwDuck;
-                Sfx.PlanePass(Mathf.Lerp(1f, -1f, u), env * duck);
-                if (_usaU >= 1f) EndUsaPlane();
+                if (crossing)
+                {
+                    _usaU += dt / PlaneCrossSeconds;
+                    float u = _usaU < 0f ? 0f : (_usaU > 1f ? 1f : _usaU);
+                    float env = Mathf.Sin(Mathf.PI * u);
+                    float duck = 1f - 0.48f * _fwDuck;
+                    Sfx.PlanePass(Mathf.Lerp(1f, -1f, u), env * duck);
+                    if (_usaU >= 1f)
+                    {
+                        _usaU = -1f;
+                        Sfx.PlaneStop();
+                    }
+                }
+                if (sky)
+                {
+                    _fwClock += dt;
+                    _fwDuck -= dt * 1.7f;
+                    if (_fwDuck < 0f) _fwDuck = 0f;
+                    TickSkyBooms();
+                    if (_fwClock >= PlaneSkyShowEnd(PlaneSkyBursts))
+                    {
+                        _fwClock = -1f;
+                        _fwDuck = 0f;
+                        _fwPop = 0;
+                    }
+                }
                 return;
             }
             if (UsaPlaneBlocked())
@@ -100,7 +136,7 @@ namespace FlockFive
                 return;
             }
             _usaIdle += dt;
-            if (_usaIdle < UsaPlaneWait) return;
+            if (_usaIdle < PlaneIdleDelay) return;
             _usaIdle = 0f;
             if (UsaFlownToday()) return;
             BeginUsaPlane();
@@ -129,24 +165,49 @@ namespace FlockFive
             Sfx.PlaneStop();
         }
 
-        // Pops are 0.85s then 0.90s apart. The rise is shared, so the booms match.
-        static float FwWhen(int i)
+        // Original pops stay at 0.95, 1.80, 2.70 (0.85s then 0.90s). Three more
+        // shells cover that same show length again, so six fade at twice the old
+        // show. The rise is shared, so each boom still matches its shell.
+        public static float PlaneSkyWhen(int i)
         {
             if (i <= 0) return 0.95f;
             if (i == 1) return 1.80f;
-            return 2.70f;
+            if (i == 2) return 2.70f;
+            float prior = 2.70f + FwRise + HeartForm + HeartHold + HeartFade;
+            return 2.70f + (prior / 3f) * (i - 2);
+        }
+
+        public static float PlaneSkyTail(int i)
+        {
+            if (FwKind(i) == 2) return FwRise + HeartForm + HeartHold + HeartFade;
+            return FwRise + RoundLife;
+        }
+
+        // Seconds from the start of the crossing until shell (bursts-1) has faded.
+        public static float PlaneSkyShowEnd(int bursts)
+        {
+            if (bursts < 1) return 0f;
+            int last = bursts - 1;
+            return PlaneSkyWhen(last) + PlaneSkyTail(last);
+        }
+
+        static int FwKind(int i)
+        {
+            int k = i % 3;
+            if (k < 0) k += 3;
+            return k;
         }
 
         void TickSkyBooms()
         {
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < PlaneSkyBursts; i++)
             {
                 int bit = 1 << i;
                 if ((_fwPop & bit) != 0) continue;
-                if (_fwClock < FwWhen(i) + FwRise) continue;
+                if (_fwClock < PlaneSkyWhen(i) + FwRise) continue;
                 _fwPop |= bit;
                 _fwDuck = 1f;
-                Sfx.SkyBoom(i);
+                Sfx.SkyBoom(FwKind(i));
             }
         }
 
@@ -154,8 +215,12 @@ namespace FlockFive
         // Fireworks paint first so the plane and the banner cross in front of them.
         void DrawUsaPlane(float s)
         {
+#if UNITY_EDITOR
+            if (_planeShot) ApplyPlaneShot();
+#endif
+            if (_usaU < 0f && _fwClock < 0f) return;
+            if (_fwClock >= 0f) DrawSkyFireworks(s);
             if (_usaU < 0f) return;
-            DrawSkyFireworks(s);
             var plane = SpriteCatalog.UsaPlane;
             var banner = SpriteCatalog.UsaBanner;
             if (plane == null && banner == null) return;
@@ -294,8 +359,8 @@ namespace FlockFive
         // Sky shells while the plane crosses. Drawn before the plane.
         // 0 white round, 1 blue round, 2 red heart (holds, then droops).
         const float FwRise = 0.50f;
-        const int HeartN = 48;
-        const int RoundN = 24;
+        const int HeartN = PlaneSkyHeartPoints;
+        const int RoundN = PlaneSkyRoundPoints;
         const float HeartForm = 0.18f;
         const float HeartHold = 0.60f;
         const float HeartFade = 0.85f;
@@ -352,22 +417,48 @@ namespace FlockFive
             if (bottom > limit) heartY -= bottom - limit;
             if (heartY < bannerClear) heartY = bannerClear;
             float sky = TopHud() + 28f * s;
-            DrawFwBurst(0, w * 0.68f, Mathf.Lerp(sky, heartY, 0.42f), s, unit);
-            DrawFwBurst(1, w * 0.30f, Mathf.Lerp(sky, heartY, 0.62f), s, unit);
-            DrawFwBurst(2, w * 0.50f, heartY, s, unit);
+            for (int i = 0; i < PlaneSkyBursts; i++)
+            {
+                SkySeat(i, w, sky, heartY, out float bx, out float by);
+                DrawFwBurst(i, bx, by, s, unit);
+            }
             GUI.color = Color.white;
+        }
+
+        // Wave 0 keeps the original seats. Wave 1 sits aside so a second shell
+        // does not redraw on top of a shell that is still fading.
+        static void SkySeat(int i, float w, float sky, float heartY, out float x, out float y)
+        {
+            int wave = i / 3;
+            int k = i - wave * 3;
+            if (k < 0) k = 0;
+            if (k == 2)
+            {
+                x = w * (wave == 0 ? 0.50f : 0.42f);
+                y = heartY;
+                return;
+            }
+            if (k == 0)
+            {
+                x = w * (wave == 0 ? 0.68f : 0.22f);
+                y = Mathf.Lerp(sky, heartY, wave == 0 ? 0.42f : 0.50f);
+                return;
+            }
+            x = w * (wave == 0 ? 0.30f : 0.78f);
+            y = Mathf.Lerp(sky, heartY, wave == 0 ? 0.62f : 0.36f);
         }
 
         static Color FwTint(int i)
         {
-            if (i <= 0) return new Color(1f, 0.94f, 0.78f);
-            if (i == 1) return new Color(0.42f, 0.70f, 1f);
+            int k = FwKind(i);
+            if (k == 0) return new Color(1f, 0.94f, 0.78f);
+            if (k == 1) return new Color(0.42f, 0.70f, 1f);
             return new Color(1f, 0.18f, 0.28f);
         }
 
         void DrawFwBurst(int i, float x, float y, float s, float unit)
         {
-            float age = _fwClock - FwWhen(i);
+            float age = _fwClock - PlaneSkyWhen(i);
             if (age < 0f) return;
             var tint = FwTint(i);
             float risePx = 108f * s;
@@ -384,7 +475,7 @@ namespace FlockFive
                 DrawFwTrail(age, from, tip, s, tint);
             if (age < FwRise) return;
             float t = age - FwRise;
-            if (i == 2) DrawFwHeart(t, x, y, unit);
+            if (FwKind(i) == 2) DrawFwHeart(t, x, y, unit);
             else DrawFwRound(t, x, y, s, tint);
         }
 
@@ -532,5 +623,30 @@ namespace FlockFive
                 }
             }
         }
+
+#if UNITY_EDITOR
+        // Capture only. Holds the crossing and a formed heart. Does not write
+        // the daily flown flag and does not change the idle wait.
+        void PosePlaneFlybyShot()
+        {
+            PoseBuild79(false, false);
+            _planeShot = true;
+            _planeShotU = 0.48f;
+            _planeShotFw = PlaneSkyWhen(2) + FwRise + HeartForm + 0.22f;
+            ApplyPlaneShot();
+        }
+
+        void ApplyPlaneShot()
+        {
+            if (!_planeShot) return;
+            _usaU = _planeShotU;
+            _fwClock = _planeShotFw;
+            _fwDuck = 0f;
+            _fwPop = 0x7fffffff;
+            _usaIdle = 0f;
+        }
+
+        void ClearPlaneShot() => _planeShot = false;
+#endif
     }
 }
