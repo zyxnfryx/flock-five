@@ -545,6 +545,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-b80-plane"); } catch { }
                 StartCoroutine(ShotPlaneFlyby());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-b81-pass4"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b81-pass4"); } catch { }
+                StartCoroutine(ShotBuild81Pass4());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
@@ -1189,6 +1194,160 @@ namespace FlockFive
             if (method != null) method.Invoke(null, new object[] { 0 });
         }
 
+        IEnumerator ShotBuild81Pass4()
+        {
+            const string dir = "/Users/zfxgames/wkspaces/birdshot/gb";
+            System.IO.Directory.CreateDirectory(dir);
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            PlayerPrefs.SetInt("flockfive.next", 0);
+            PlayerPrefs.Save();
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            Screen.SetResolution(1179, 2556, false);
+            yield return WaitForHomePaint();
+
+            for (int i = 0; i < 4; i++)
+            {
+                PosePlaneFlybyShot();
+                yield return null;
+            }
+            PosePlaneFlybyShot();
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b81-plane.png");
+            ClearPlaneShot();
+            EndUsaPlane();
+
+            ShotDailyWheel = 1;
+            yield return PoseWheelFrames();
+            SaveWheelCrops(dir + "/b81-pointer-spin.png", 512, true, dir + "/b81-wheel-spin.png", 1024);
+
+            ShotDailyWheel = 2;
+            yield return PoseWheelFrames();
+            SaveWheelCrops(dir + "/b81-pointer-stop.png", 512, true, dir + "/b81-wheel-stop.png", 1024);
+
+            ShotDailyWheel = 3;
+            yield return PoseWheelFrames();
+            SaveFrame(dir + "/b81-wheel-doubled.png");
+
+            ShotDailyWheel = 0;
+            Ads.SetReadyOverride(-1);
+            DailyBonus.ClearWheelShot();
+            _dailyOpen = false;
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            PlayerPrefs.Save();
+            Debug.Log("B81_PASS4_STILL_DONE");
+            var exit = System.Type.GetType("UnityEditor.EditorApplication, UnityEditor");
+            var method = exit != null ? exit.GetMethod("Exit", new[] { typeof(int) }) : null;
+            if (method != null) method.Invoke(null, new object[] { 0 });
+        }
+
+        IEnumerator PoseWheelFrames()
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                PoseBuild79(false, false);
+                PoseDailyWheelShot();
+                yield return null;
+            }
+            PoseBuild79(false, false);
+            PoseDailyWheelShot();
+            yield return new WaitForEndOfFrame();
+        }
+
+        void SaveWheelCrops(string pointerPath, int pointerPx, bool pointer, string wheelPath, int wheelPx)
+        {
+            var tex = ScreenCapture.CaptureScreenshotAsTexture();
+            if (tex == null) return;
+            try
+            {
+                if (pointer && _shotPointerGui.width > 2f)
+                    WriteCrop(tex, _shotPointerGui, pointerPx, 0.55f, pointerPath);
+                if (_shotWheelGui.width > 2f)
+                {
+                    var wheel = _shotWheelGui;
+                    if (_shotPointerGui.width > 2f)
+                    {
+                        float x0 = Mathf.Min(wheel.xMin, _shotPointerGui.xMin);
+                        float y0 = Mathf.Min(wheel.yMin, _shotPointerGui.yMin);
+                        float x1 = Mathf.Max(wheel.xMax, _shotPointerGui.xMax);
+                        float y1 = Mathf.Max(wheel.yMax, _shotPointerGui.yMax);
+                        wheel = Rect.MinMaxRect(x0, y0, x1, y1);
+                    }
+                    WriteCrop(tex, wheel, wheelPx, 0.08f, wheelPath);
+                }
+            }
+            finally
+            {
+                Destroy(tex);
+            }
+        }
+
+        static void SaveFrame(string path)
+        {
+            var tex = ScreenCapture.CaptureScreenshotAsTexture();
+            if (tex == null) return;
+            try { System.IO.File.WriteAllBytes(path, tex.EncodeToPNG()); }
+            finally { UnityEngine.Object.Destroy(tex); }
+        }
+
+        // GUI rect (y down) into a square PNG. pad grows the crop before the scale.
+        static void WriteCrop(Texture2D src, Rect gui, int outPx, float pad, string path)
+        {
+            var srcPx = src.GetPixels32();
+            int w = src.width;
+            int h = src.height;
+            float sx = w / Mathf.Max(1f, Screen.width);
+            float sy = h / Mathf.Max(1f, Screen.height);
+            float side = Mathf.Max(gui.width * sx, gui.height * sy) * (1f + pad);
+            float cx = gui.center.x * sx;
+            float cy = h - gui.center.y * sy;
+            var dst = new Texture2D(outPx, outPx, TextureFormat.RGBA32, false);
+            var px = new Color32[outPx * outPx];
+            float half = side * 0.5f;
+            for (int y = 0; y < outPx; y++)
+            {
+                float v = (y + 0.5f) / outPx;
+                float syPx = cy - half + v * side;
+                for (int x = 0; x < outPx; x++)
+                {
+                    float u = (x + 0.5f) / outPx;
+                    float sxPx = cx - half + u * side;
+                    px[y * outPx + x] = SampleBilinear(srcPx, w, h, sxPx, syPx);
+                }
+            }
+            dst.SetPixels32(px);
+            dst.Apply(false, false);
+            System.IO.File.WriteAllBytes(path, dst.EncodeToPNG());
+            UnityEngine.Object.Destroy(dst);
+        }
+
+        static Color32 SampleBilinear(Color32[] src, int w, int h, float x, float y)
+        {
+            if (w < 1 || h < 1 || src == null) return new Color32(0, 0, 0, 255);
+            x -= 0.5f;
+            y -= 0.5f;
+            int x0 = Mathf.FloorToInt(x);
+            int y0 = Mathf.FloorToInt(y);
+            float tx = x - x0;
+            float ty = y - y0;
+            Color a = TexAt(src, w, h, x0, y0);
+            Color b = TexAt(src, w, h, x0 + 1, y0);
+            Color c = TexAt(src, w, h, x0, y0 + 1);
+            Color d = TexAt(src, w, h, x0 + 1, y0 + 1);
+            return Color.Lerp(Color.Lerp(a, b, tx), Color.Lerp(c, d, tx), ty);
+        }
+
+        static Color TexAt(Color32[] src, int w, int h, int x, int y)
+        {
+            if (x < 0) x = 0;
+            if (y < 0) y = 0;
+            if (x >= w) x = w - 1;
+            if (y >= h) y = h - 1;
+            return src[y * w + x];
+        }
+
         IEnumerator SnapDailyWheel(string path, int mode)
         {
             ShotDailyWheel = mode;
@@ -1237,6 +1396,8 @@ namespace FlockFive
                 _dailyPhase = DailyWheelPhase.Landed;
                 _dailyAngle = DailyBonus.PointerAngle(7);
                 _wheelPayMul = 2;
+                _wheelFlickAt = -1f;
+                _wheelX2At = Time.unscaledTime - 1.5f;
                 Ads.SetReadyOverride(0);
             }
             else if (ShotDailyWheel == 2)
@@ -1245,6 +1406,8 @@ namespace FlockFive
                 _dailyPhase = DailyWheelPhase.Landed;
                 _dailyAngle = DailyBonus.PointerAngle(7);
                 _wheelPayMul = 1;
+                _wheelFlickAt = -1f;
+                _wheelX2At = Time.unscaledTime - 1.5f;
                 Ads.SetReadyOverride(1);
             }
             else
@@ -1254,6 +1417,9 @@ namespace FlockFive
                 // Mid-wedge. 22.5° sits on a spoke and reads as parked.
                 _dailyAngle = 11f;
                 _wheelPayMul = 1;
+                _wheelFlickSign = -1f;
+                _wheelFlickAt = Time.unscaledTime - 0.04f;
+                _wheelX2At = -1f;
                 Ads.SetReadyOverride(0);
             }
         }
@@ -7622,7 +7788,8 @@ namespace FlockFive
         }
 
         // Oversized disc on the top-right corner. Higher streaks grow a little more.
-        static Rect RewardStampRect(Rect board, int mul)
+        // The daily x2 uses this same seat. Do not place that badge by hand.
+        public static Rect RewardStampRect(Rect board, int mul)
         {
             float sc = RewardStampScale(mul);
             float grow = Mathf.Lerp(1f, 1.12f, Mathf.Clamp01((sc - 1f) / 0.85f));
@@ -7703,17 +7870,26 @@ namespace FlockFive
         }
 
         // sparkle 0 still lets x10 twinkle inside StreakBadge.Draw.
-        void DrawRewardStamp(Rect r, int mul, float alpha, float age, float sparkle = 0f)
+        // thud is the reward card's one-shot bump. The wheel passes false so it
+        // gets the same pop, tilt, wax, and sparkle without taking that gate.
+        void DrawRewardStamp(Rect r, int mul, float alpha, float age, float sparkle = 0f, bool thud = true)
         {
             if (r.width < 8f || alpha < 0.02f || age < 0f) return;
             mul = StreakTier.Display(mul);
             float land = RewardStampDur * RewardStampLandU();
-            if (GuiPaint() && !_rewardStampHit && age >= land)
+            float waxAge;
+            if (thud)
             {
-                _rewardStampHit = true;
-                _waxBorn = Time.unscaledTime;
-                Sfx.CardBump();
+                if (GuiPaint() && !_rewardStampHit && age >= land)
+                {
+                    _rewardStampHit = true;
+                    _waxBorn = Time.unscaledTime;
+                    Sfx.CardBump();
+                }
+                waxAge = _waxBorn < 0f ? 9f : Time.unscaledTime - _waxBorn;
             }
+            else
+                waxAge = age - land;
             float pop = RewardStampPop(age);
             if (_stampPulse >= 0f)
             {
@@ -7761,8 +7937,7 @@ namespace FlockFive
             GUIUtility.RotateAroundPivot(-15f, pivot);
             GUIUtility.ScaleAroundPivot(new Vector2(pop, pop), pivot);
             StreakBadge.Draw(r, text, st, ink, alpha, sparkle);
-            float wax = _waxBorn < 0f ? 9f : Time.unscaledTime - _waxBorn;
-            if (wax >= 0f && wax < 0.5f) DrawWaxSplat(r, ink.Fill, ink.Edge, wax, alpha);
+            if (waxAge >= 0f && waxAge < 0.5f) DrawWaxSplat(r, ink.Fill, ink.Edge, waxAge, alpha);
             GUI.matrix = prev;
             GUI.color = Color.white;
         }

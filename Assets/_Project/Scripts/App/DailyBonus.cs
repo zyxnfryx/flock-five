@@ -36,6 +36,10 @@ namespace FlockFive
         public const int BaseCap = 1000;
         public const int WedgeCount = 8;
         public const float WedgeArc = 45f;
+        // Last wedge, clockwise from the top. 10× the base ($1,000 at base 100).
+        public const int JackpotWedge = 7;
+        public const float PointerFlickSeconds = 0.16f;
+        public const float PointerFlickPeak = 14f;
 
         // Around the wheel from the top, clockwise. Two low wedges, then the climb.
         public static readonly int[] WedgeMul = { 1, 1, 2, 2, 3, 4, 5, 10 };
@@ -228,6 +232,91 @@ namespace FlockFive
             float rad = deg * Mathf.Deg2Rad;
             return new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * radius;
         }
+
+        // Boundaries lie halfway between wedge centers (22.5°, 67.5°, …).
+        // Counts each line the spin crosses from `fromDeg` to `toDeg`, including
+        // a boundary the spin lands on and excluding one it starts on.
+        // The total for a spin that begins and ends on wedge centers equals
+        // |delta| / WedgeArc.
+        public static int BoundaryCrossings(float fromDeg, float toDeg)
+        {
+            return BoundaryCrossings(fromDeg, toDeg, WedgeArc * 0.5f, WedgeArc);
+        }
+
+        public static int BoundaryCrossings(float fromDeg, float toDeg, float origin, float step)
+        {
+            if (step <= 0.0001f) return 0;
+            float ka = (fromDeg - origin) / step;
+            float kb = (toDeg - origin) / step;
+            const float eps = 0.0001f;
+            int n;
+            if (kb >= ka)
+            {
+                int k0 = Mathf.FloorToInt(ka + eps) + 1;
+                int k1 = Mathf.FloorToInt(kb + eps);
+                n = k1 - k0 + 1;
+            }
+            else
+            {
+                int hi = Mathf.FloorToInt(ka - eps);
+                int lo = Mathf.CeilToInt(kb - eps);
+                n = hi - lo + 1;
+            }
+            return n > 0 ? n : 0;
+        }
+
+        // Degrees for GUIUtility.RotateAroundPivot. Positive is clockwise on
+        // screen. Local +x (the reading direction) then points from the hub
+        // out along the wedge center, toward the rim.
+        public static float WedgeLabelDegrees(int wedge, float clockwiseDegrees)
+        {
+            if (WedgeCount < 1) return -90f;
+            int w = wedge % WedgeCount;
+            if (w < 0) w += WedgeCount;
+            float deg = w * WedgeArc + clockwiseDegrees;
+            return deg - 90f;
+        }
+
+        // Clockwise rotation in GUI space (+x right, +y down). Same sense as
+        // RotateAroundPivot: (1, 0) at +90° lands on (0, 1), down the screen.
+        public static Vector2 RotateClockwise(Vector2 v, float degrees)
+        {
+            float r = degrees * Mathf.Deg2Rad;
+            float c = Mathf.Cos(r);
+            float s = Mathf.Sin(r);
+            return new Vector2(v.x * c - v.y * s, v.x * s + v.y * c);
+        }
+
+        // Tip flicks against the spin, then springs back to rest. againstSign
+        // is -1 while the wheel turns clockwise (angle increasing).
+        public static float PointerFlick(float age, float againstSign)
+        {
+            if (age < 0f || age >= PointerFlickSeconds) return 0f;
+            float u = age / PointerFlickSeconds;
+            float env = Mathf.Sin(u * Mathf.PI) * (1f - 0.35f * u);
+            float sign = againstSign < 0f ? -1f : 1f;
+            return sign * PointerFlickPeak * env;
+        }
+
+        // Ruby jackpot, warm gold and brown for the rest. dist is 0 at the hub.
+        public static Color WedgeFace(int wedge, float dist)
+        {
+            if (dist < 0f) dist = 0f;
+            if (wedge == JackpotWedge)
+            {
+                var ruby = new Color(0.74f, 0.07f, 0.13f, 1f);
+                var deep = new Color(0.40f, 0.02f, 0.06f, 1f);
+                return Color.Lerp(ruby, deep, dist * 0.28f);
+            }
+            bool gold = (wedge & 1) == 1;
+            Color face = gold
+                ? new Color(0.80f, 0.58f, 0.20f, 1f)
+                : new Color(0.48f, 0.27f, 0.11f, 1f);
+            return Color.Lerp(face, new Color(0.24f, 0.12f, 0.04f, 1f), dist * 0.16f);
+        }
+
+        public static readonly Color JackpotTrim = new Color(1f, 0.86f, 0.42f, 1f);
+        public static readonly Color JackpotStar = new Color(1f, 0.95f, 0.62f, 1f);
 
         // Ready wins, so a collectable day never keeps yesterday's flame.
         // Flame is claimed-today or clock-held behind that claim, with a streak.

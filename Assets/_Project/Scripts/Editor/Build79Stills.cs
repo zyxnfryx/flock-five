@@ -31,6 +31,14 @@ namespace FlockFive.Editor
             EditorApplication.isPlaying = true;
         }
 
+        // Plane finale, doubled wheel, pointer zooms, and wheel zooms.
+        public static void Capture81Pass4()
+        {
+            SetGameView(1179, 2556);
+            File.WriteAllText("/tmp/flock-five-b81-pass4", "1");
+            EditorApplication.isPlaying = true;
+        }
+
         // Home airplane with the heart shell up. Pose is capture-only.
         public static void CapturePlane()
         {

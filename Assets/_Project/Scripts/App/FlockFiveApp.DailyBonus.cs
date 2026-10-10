@@ -20,12 +20,18 @@ namespace FlockFive
         float _dailySpinTo;
         float _dailySpinAt = -1f;
         const float DailySpinDur = 3.15f;
-        int _dailyTickWedge = -1;
         // 2 while the landed spin is showing its doubled result. 1 otherwise.
         int _wheelPayMul = 1;
+        // One flick of the single pointer sprite. Age is unscaled time at the click.
+        float _wheelFlickAt = -1f;
+        float _wheelFlickSign = -1f;
+        // Shared stamp age. Armed when the x2 first draws, reset when the double lands.
+        float _wheelX2At = -1f;
         static GUIStyle _dailyWatch;
-        static int _wheelX2Px;
-        static int _wheelX2Key = int.MinValue;
+#if UNITY_EDITOR
+        Rect _shotPointerGui;
+        Rect _shotWheelGui;
+#endif
         const string DailyDoubleLabel = "Watch Ad: x2";
         const string DailyCollectLabel = "Collect";
         bool _dailyAskOpen;
@@ -42,6 +48,7 @@ namespace FlockFive
         static int _dailyFitKey = int.MinValue;
         static int _dailyClaimPx = 22;
         static int _dailyTilePx = 12;
+        static int _dailyJackpotPx = 16;
         static int _dailyLinePx = 12;
         static int _dailyBonusPx = 12;
         static int _railDigitPx;
@@ -183,6 +190,8 @@ namespace FlockFive
             _dailyTutorSpin = false;
             _dailyAdBusy = false;
             _wheelPayMul = 1;
+            _wheelX2At = -1f;
+            _wheelFlickAt = -1f;
             if (DailyBonus.ClaimedToday)
             {
                 _dailyPhase = DailyWheelPhase.Landed;
@@ -416,6 +425,10 @@ namespace FlockFive
             EnsureDailyFit(s, titleR, streakR, disc, wheelR.width);
             DrawDailyCopy(titleR, streakR, default, s, breathe, glow);
             DrawDailyWheel(wheelR, s, breathe, glow);
+            if (_wheelPayMul >= 2
+                && _dailyPhase == DailyWheelPhase.Landed
+                && (DailyBonus.Landed || DailyBonus.ClaimedToday))
+                DrawWheelX2(board, 0.48f);
             GUI.matrix = prev;
 
             if (flowerOn)
@@ -476,6 +489,7 @@ namespace FlockFive
             if (u < 0f) u = 0f;
             if (u >= 1f)
             {
+                TickWheelClicks(_dailyAngle, _dailySpinTo);
                 _dailyAngle = _dailySpinTo;
                 LandDailyWheel();
                 return;
@@ -483,13 +497,21 @@ namespace FlockFive
             float inv = 1f - u;
             float eased = 1f - inv * inv * inv;
             float angle = Mathf.Lerp(_dailySpinFrom, _dailySpinTo, eased);
-            int under = DailyBonus.WedgeUnderPointer(angle);
-            if (under != _dailyTickWedge)
-            {
-                _dailyTickWedge = under;
-                SfxLibrary.Play("tick", 0.28f, 0f);
-            }
+            TickWheelClicks(_dailyAngle, angle);
             _dailyAngle = angle;
+        }
+
+        // One existing tick per boundary the pointer crosses, and one flick of
+        // the same pointer sprite. The count is BoundaryCrossings, so a spin of
+        // N wedge-angles clicks N times and the clicks slow with the wheel.
+        void TickWheelClicks(float fromDeg, float toDeg)
+        {
+            int ticks = DailyBonus.BoundaryCrossings(fromDeg, toDeg);
+            if (ticks <= 0) return;
+            _wheelFlickSign = toDeg >= fromDeg ? -1f : 1f;
+            _wheelFlickAt = Time.unscaledTime;
+            for (int n = 0; n < ticks; n++)
+                SfxLibrary.Play("tick", 0.22f, 0f);
         }
 
         void StartDailySpin()
@@ -502,6 +524,8 @@ namespace FlockFive
                 return;
             }
             _wheelPayMul = 1;
+            _wheelX2At = -1f;
+            _wheelFlickAt = -1f;
             _dailyTutorSpin = tutorial;
             _dailyClaimFirst = firstEver;
             _dailyClaimFollowUp = true;
@@ -510,7 +534,6 @@ namespace FlockFive
             _dailySpinTo = DailyBonus.PointerAngle(wedge) + 360f * 5f;
             _dailySpinAt = Time.unscaledTime;
             _dailyAngle = 0f;
-            _dailyTickWedge = DailyBonus.WedgeUnderPointer(0f);
             Sfx.CardTap();
             DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
             if (tutorial) DismissDailyIntro();
@@ -549,6 +572,7 @@ namespace FlockFive
                     if (_dailyOpen && RewardedGrant.HasUnapplied)
                     {
                         _wheelPayMul = 2;
+                        _wheelX2At = Time.unscaledTime;
                         float shown = 0f;
                         while (shown < 0.70f && _dailyOpen && RewardedGrant.HasUnapplied)
                         {
@@ -616,12 +640,12 @@ namespace FlockFive
                 };
             if (label == DailyDoubleLabel)
             {
-                float d = bar.height * 0.74f;
-                float pad = bar.height * 0.16f;
-                var chip = new Rect(bar.xMax - pad - d, bar.center.y - d * 0.5f, d, d);
-                var word = new Rect(bar.x, bar.y, Mathf.Max(8f, chip.x - bar.x - pad * 0.25f), bar.height);
+                var seat = RewardStampRect(bar, 2);
+                float wordW = seat.xMin - bar.x - 6f;
+                if (wordW < bar.width * 0.4f) wordW = bar.width * 0.55f;
+                var word = new Rect(bar.x, bar.y, wordW, bar.height);
                 DrawPopupWord(word, "Watch Ad", _dailyWatch, s);
-                DrawWheelX2(chip, 0.28f);
+                DrawWheelX2(bar, 0.48f);
                 return;
             }
             DrawPopupWord(bar, label, _dailyWatch, s);
@@ -1162,9 +1186,13 @@ namespace FlockFive
             if (key == _dailyFitKey) return;
             _dailyFitKey = key;
             _dailyLinePx = FitFont(_dailyLine, DailyBonus.StreakLine, streakR.width * 0.88f, streakR.height * 0.90f, 10, Mathf.Max(12, Mathf.RoundToInt(18f * s)));
-            float labelW = Mathf.Max(8f, wheel * 0.20f);
-            float labelH = Mathf.Max(8f, wheel * 0.09f);
+            float labelW = Mathf.Max(8f, wheel * 0.26f);
+            float labelH = Mathf.Max(8f, wheel * 0.10f);
             _dailyTilePx = FitFont(_dailyTile, "$1,000", labelW, labelH, 8, Mathf.Max(12, Mathf.RoundToInt(22f * s)));
+            float jackW = Mathf.Max(8f, wheel * 0.30f);
+            float jackH = Mathf.Max(8f, wheel * 0.125f);
+            _dailyJackpotPx = FitFont(_dailyTile, "$1,000", jackW, jackH, 10, Mathf.Max(16, Mathf.RoundToInt(28f * s)));
+            if (_dailyJackpotPx < _dailyTilePx) _dailyJackpotPx = _dailyTilePx;
             float hubW = Mathf.Max(8f, wheel * 0.22f);
             float hubH = Mathf.Max(8f, wheel * 0.12f);
             _dailyBonusPx = FitFont(_dailyLine, "$10,000", hubW, hubH, 10, Mathf.Max(16, Mathf.RoundToInt(28f * s)));
@@ -1226,17 +1254,26 @@ namespace FlockFive
             GUI.matrix = prev;
 
             EnsureDailyStyles();
-            _dailyTile.fontSize = _dailyTilePx;
             int level = DailyBonus.HighestLevel;
-            float radius = wheel.width * 0.33f;
+            float radius = wheel.width * 0.32f;
             for (int i = 0; i < DailyBonus.WedgeCount; i++)
             {
+                bool jack = i == DailyBonus.JackpotWedge;
                 var at = wheel.center + DailyBonus.WedgeOffset(i, angle, radius);
-                float lw = wheel.width * 0.22f;
-                float lh = wheel.width * 0.10f;
+                float lw = wheel.width * (jack ? 0.30f : 0.26f);
+                float lh = wheel.width * (jack ? 0.125f : 0.10f);
                 var lab = new Rect(at.x - lw * 0.5f, at.y - lh * 0.5f, lw, lh);
                 string text = Money.Format(DailyBonus.Prize(level, i));
-                StampOutlined(lab, text, _dailyTile, new Color(1f, 0.96f, 0.82f), 1, 1);
+                _dailyTile.fontSize = jack ? _dailyJackpotPx : _dailyTilePx;
+                _dailyTile.fontStyle = FontStyle.Bold;
+                var hold = GUI.matrix;
+                GUIUtility.RotateAroundPivot(DailyBonus.WedgeLabelDegrees(i, angle), lab.center);
+                StampOutlined(lab, text, _dailyTile, new Color(1f, 0.97f, 0.88f), jack ? 2 : 1, jack ? 3 : 1);
+                GUI.matrix = hold;
+                if (!jack) continue;
+                var starAt = wheel.center + DailyBonus.WedgeOffset(i, angle, wheel.width * 0.36f);
+                float tw = 0.55f + 0.45f * Mathf.Sin(Time.unscaledTime * 3.2f);
+                SparkleFx.DrawAt(starAt, wheel.width * 0.05f, 0.40f + 0.45f * tw, DailyBonus.JackpotStar);
             }
 
             if (landed && DailyBonus.SpinWedge >= 0)
@@ -1255,23 +1292,20 @@ namespace FlockFive
             int payMul = _wheelPayMul < 1 ? 1 : _wheelPayMul;
             if (landed && DailyBonus.SpinCoins >= 100)
             {
-                if (payMul >= 2)
-                {
-                    // Shared streak x2, between the winning label and the hub.
-                    float d = wheel.width * 0.16f;
-                    float reach = wheel.width * 0.205f;
-                    var at = wheel.center + DailyBonus.PointerTipDir * reach;
-                    DrawWheelX2(new Rect(at.x - d * 0.5f, at.y - d * 0.5f, d, d), 0.35f);
-                }
                 _dailyLine.fontSize = _dailyBonusPx;
                 int shown = DailyBonus.SpinCoins * payMul;
                 string won = Money.Format(shown);
                 StampOutlined(hubR, won, _dailyLine, new Color(1f, 0.95f, 0.72f), 1, 2);
             }
 
-            // Flapper above the rim. Texture tip is the bottom of the rect, and
-            // PointerTipDir points from the center up to that tip, so the point
-            // aims down into the wedge. Drawn last so it sits on top of the disc.
+            DrawWheelPointer(wheel);
+        }
+
+        // One gold triangle and one round pin. Ticks rotate this same sprite
+        // around the pin. There is no second pointer and no extra frame.
+        void DrawWheelPointer(Rect wheel)
+        {
+            if (_wheelPointer == null || wheel.width < 8f) return;
             float pw = wheel.width * 0.118f;
             float ph = pw * (WheelPointerH / (float)WheelPointerW);
             float dip = ph * 0.60f;
@@ -1279,39 +1313,48 @@ namespace FlockFive
             Vector2 pinAt = tipAt + DailyBonus.PointerTipDir * ph;
             float top = tipAt.y < pinAt.y ? tipAt.y : pinAt.y;
             var pointer = new Rect(tipAt.x - pw * 0.5f, top, pw, ph);
+            float pinFrac = WheelPointerPinFrac();
+            var pivot = new Vector2(pointer.center.x, pointer.yMax - pointer.height * pinFrac);
+            float flick = _wheelFlickAt < 0f
+                ? 0f
+                : DailyBonus.PointerFlick(Time.unscaledTime - _wheelFlickAt, _wheelFlickSign);
+            var prev = GUI.matrix;
+            GUIUtility.RotateAroundPivot(flick, pivot);
             GUI.DrawTexture(pointer, _wheelPointer, ScaleMode.ScaleToFit, true);
+            GUI.matrix = prev;
+#if UNITY_EDITOR
+            if (ShotDailyWheel != 0)
+            {
+                _shotPointerGui = pointer;
+                _shotWheelGui = wheel;
+            }
+#endif
         }
 
-        // Same StreakBadge.Draw and disc the garden streak chip uses. x2 only.
-        void DrawWheelX2(Rect r, float sparkle)
+        // Fraction up the pointer texture where the pin center sits. y=0 is the tip.
+        public static float WheelPointerPinFrac()
         {
-            if (r.width < 6f) return;
-            var ink = StreakBadge.Colors(2);
-            if (_dailyWatch == null)
-                _dailyWatch = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                    wordWrap = false,
-                    clipping = TextClipping.Overflow
-                };
-            var st = _dailyWatch;
-            string text = MulChip(2);
-            int key = Mathf.RoundToInt(r.width) * 17 + Mathf.RoundToInt(r.height);
-            if (key != _wheelX2Key)
-            {
-                StreakBadge.NumeralFit(r, out float fitW, out float fitH);
-                int hi = Mathf.Max(12, Mathf.RoundToInt(fitH));
-                st.fontSize = FitFont(st, text, fitW, fitH, 10, hi);
-                _wheelX2Px = st.fontSize;
-                _wheelX2Key = key;
-            }
-            else
-                st.fontSize = _wheelX2Px;
-            st.alignment = TextAnchor.MiddleCenter;
-            st.fontStyle = FontStyle.Bold;
-            st.wordWrap = false;
-            StreakBadge.Draw(r, text, st, ink, 1f, sparkle);
+            float w = WheelPointerW;
+            float h = WheelPointerH;
+            float pinR = w * 0.155f;
+            float margin = w * 0.072f;
+            float pinCy = h - margin - pinR;
+            return pinCy / h;
+        }
+
+        // Top-right of the panel, same stamp the streak slams down. thud stays
+        // with the reward card so this draw does not steal its bump.
+        void DrawWheelX2(Rect panel, float sparkle)
+        {
+            if (panel.width < 6f) return;
+            if (_wheelX2At < 0f) _wheelX2At = Time.unscaledTime;
+            float age = Time.unscaledTime - _wheelX2At;
+            float s = Mathf.Max(Screen.height / 720f, 1f);
+            var shake = RewardCardShake(age, s);
+            var seat = RewardStampRect(panel, 2);
+            seat.x += shake.x;
+            seat.y += shake.y;
+            DrawRewardStamp(seat, 2, 1f, age, sparkle, false);
         }
 
         static void EnsureWheelArt()
@@ -1426,9 +1469,24 @@ namespace FlockFive
         static Texture2D BakeWheelDisc(int n)
         {
             var tex = WheelTex("DailyWheel", n, n);
+            tex.SetPixels32(WheelDiscPixels(n));
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        // Ruby jackpot with gold trim and one small star. Other wedges stay gold and brown.
+        public static Color32[] WheelDiscPixels(int n)
+        {
+            if (n < 32) n = 32;
             var px = new Color32[n * n];
             float c = (n - 1) * 0.5f;
             float rad = c - 1f;
+            const float starAng = 315f;
+            float starRad = starAng * Mathf.Deg2Rad;
+            float starDist = 0.72f;
+            float scx = Mathf.Sin(starRad) * starDist;
+            float scy = Mathf.Cos(starRad) * starDist;
+            float tip = Mathf.Atan2(scy, scx);
             for (int y = 0; y < n; y++)
             {
                 float ny = (y + 0.5f - c) / rad;
@@ -1441,18 +1499,29 @@ namespace FlockFive
                     float ang = Mathf.Atan2(nx, ny) * Mathf.Rad2Deg;
                     if (ang < 0f) ang += 360f;
                     int wedge = Mathf.FloorToInt((ang + 22.5f) / 45f) % 8;
-                    bool jackpot = wedge == 7;
-                    bool gold = (wedge & 1) == 1;
-                    Color face = jackpot
-                        ? new Color(0.98f, 0.78f, 0.28f, 1f)
-                        : gold
-                            ? new Color(0.80f, 0.58f, 0.20f, 1f)
-                            : new Color(0.48f, 0.27f, 0.11f, 1f);
-                    face = Color.Lerp(face, new Color(0.24f, 0.12f, 0.04f, 1f), dist * 0.16f);
+                    bool jackpot = wedge == DailyBonus.JackpotWedge;
+                    Color face = DailyBonus.WedgeFace(wedge, dist);
                     float within = Mathf.Repeat(ang + 22.5f, 45f);
                     float spoke = Mathf.Min(within, 45f - within);
-                    if (spoke < 1.15f)
+                    if (jackpot && spoke < 2.6f)
+                        face = Color.Lerp(DailyBonus.JackpotTrim, face, spoke / 2.6f);
+                    else if (spoke < 1.15f)
                         face = Color.Lerp(new Color(0.98f, 0.88f, 0.52f, 1f), face, spoke / 1.15f);
+                    if (jackpot && dist > 0.80f && dist < 0.92f)
+                    {
+                        float band = 1f - Mathf.Abs(dist - 0.86f) / 0.06f;
+                        face = Color.Lerp(face, DailyBonus.JackpotTrim, Mathf.Clamp01(band) * 0.85f);
+                    }
+                    if (jackpot)
+                    {
+                        float glow = Mathf.Clamp01(1f - spoke / 16f) * Mathf.Clamp01((dist - 0.28f) * 2.2f);
+                        face = Color.Lerp(face, new Color(1f, 0.42f, 0.40f, 1f), glow * 0.22f);
+                        float sdx = nx - scx;
+                        float sdy = ny - scy;
+                        float sd = Mathf.Sqrt(sdx * sdx + sdy * sdy);
+                        if (sd < 0.10f && sd > 0.048f)
+                            face = Color.Lerp(face, DailyBonus.JackpotTrim, (1f - (sd - 0.048f) / 0.052f) * 0.45f);
+                    }
                     if (dist > 0.90f)
                     {
                         float k = Mathf.InverseLerp(0.90f, 1f, dist);
@@ -1466,13 +1535,27 @@ namespace FlockFive
                         if (dist > 0.155f && dist < 0.20f)
                             face = Color.Lerp(face, new Color(0.95f, 0.80f, 0.36f, 1f), 0.85f);
                     }
+                    if (jackpot && InPointStar(nx, ny, scx, scy, 0.046f, 0.018f, tip))
+                        face = DailyBonus.JackpotStar;
                     face.a *= edge;
                     px[y * n + x] = face;
                 }
             }
-            tex.SetPixels32(px);
-            tex.Apply(false, true);
-            return tex;
+            return px;
+        }
+
+        // Five-point star. tipAngle is the direction of one point, in radians.
+        static bool InPointStar(float x, float y, float cx, float cy, float outer, float inner, float tipAngle)
+        {
+            float dx = x - cx;
+            float dy = y - cy;
+            float r = Mathf.Sqrt(dx * dx + dy * dy);
+            if (r > outer || outer <= 0.0001f) return false;
+            float a = Mathf.Atan2(dy, dx) - tipAngle;
+            const float sector = Mathf.PI * 2f / 5f;
+            float u = Mathf.Repeat(a, sector) / sector;
+            float k = u < 0.5f ? u * 2f : (1f - u) * 2f;
+            return r <= Mathf.Lerp(outer, inner, k);
         }
 
         static Texture2D BakeWheelHighlight(int n)
@@ -1571,52 +1654,32 @@ namespace FlockFive
             return rgb;
         }
 
-        // Negative inside. p0, p1, p2 wind either way.
+        // Negative inside. Distance to the nearest edge, signed by the barycentric
+        // test, so the exterior cones at the vertices stay empty. The old closest-edge
+        // sign filled those cones and left a pin and a gold sliver beside the triangle.
         static float SdTriangle(float px, float py, float ax, float ay, float bx, float by, float cx, float cy)
         {
-            float e0x = bx - ax;
-            float e0y = by - ay;
-            float e1x = cx - bx;
-            float e1y = cy - by;
-            float e2x = ax - cx;
-            float e2y = ay - cy;
-            float v0x = px - ax;
-            float v0y = py - ay;
-            float v1x = px - bx;
-            float v1y = py - by;
-            float v2x = px - cx;
-            float v2y = py - cy;
-            float d0 = e0x * e0x + e0y * e0y;
-            float d1 = e1x * e1x + e1y * e1y;
-            float d2 = e2x * e2x + e2y * e2y;
-            float t0 = d0 <= 1e-8f ? 0f : Mathf.Clamp01((v0x * e0x + v0y * e0y) / d0);
-            float t1 = d1 <= 1e-8f ? 0f : Mathf.Clamp01((v1x * e1x + v1y * e1y) / d1);
-            float t2 = d2 <= 1e-8f ? 0f : Mathf.Clamp01((v2x * e2x + v2y * e2y) / d2);
-            float q0x = v0x - e0x * t0;
-            float q0y = v0y - e0y * t0;
-            float q1x = v1x - e1x * t1;
-            float q1y = v1y - e1y * t1;
-            float q2x = v2x - e2x * t2;
-            float q2y = v2y - e2y * t2;
-            float s = Mathf.Sign(e0x * e2y - e0y * e2x);
-            float c0 = s * (v0x * e0y - v0y * e0x);
-            float c1 = s * (v1x * e1y - v1y * e1x);
-            float c2 = s * (v2x * e2y - v2y * e2x);
-            float best = q0x * q0x + q0y * q0y;
-            float side = c0;
-            float b1 = q1x * q1x + q1y * q1y;
-            if (b1 < best)
-            {
-                best = b1;
-                side = c1;
-            }
-            float b2 = q2x * q2x + q2y * q2y;
-            if (b2 < best)
-            {
-                best = b2;
-                side = c2;
-            }
-            return -Mathf.Sqrt(best) * Mathf.Sign(side);
+            float d0 = DistToSeg(px, py, ax, ay, bx, by);
+            float d1 = DistToSeg(px, py, bx, by, cx, cy);
+            float d2 = DistToSeg(px, py, cx, cy, ax, ay);
+            float d = d0 < d1 ? d0 : d1;
+            if (d2 < d) d = d2;
+            float c0 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+            float c1 = (cx - bx) * (py - by) - (cy - by) * (px - bx);
+            float c2 = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
+            bool inside = (c0 >= 0f && c1 >= 0f && c2 >= 0f) || (c0 <= 0f && c1 <= 0f && c2 <= 0f);
+            return inside ? -d : d;
+        }
+
+        static float DistToSeg(float px, float py, float ax, float ay, float bx, float by)
+        {
+            float ex = bx - ax;
+            float ey = by - ay;
+            float len = ex * ex + ey * ey;
+            float t = len <= 1e-8f ? 0f : Mathf.Clamp01(((px - ax) * ex + (py - ay) * ey) / len);
+            float qx = px - (ax + ex * t);
+            float qy = py - (ay + ey * t);
+            return Mathf.Sqrt(qx * qx + qy * qy);
         }
 
         static void DrawDailyClaim(Rect flower, bool held, float s, float t)

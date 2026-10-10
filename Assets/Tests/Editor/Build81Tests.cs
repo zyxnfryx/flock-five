@@ -127,6 +127,7 @@ namespace FlockFive.Editor
 
             CheckSettingsMotion(Check);
             CheckGearLaunch(Check);
+            CheckPass4(Check);
 
             Debug.Log("[build81] " + (fail == 0 ? "BUILD81_OK " + pass : "BUILD81_FAIL " + fail + " passed " + pass));
             if (fail > 0)
@@ -348,6 +349,246 @@ namespace FlockFive.Editor
                 "sprite=" + (baked != null) + " shown=" + (shown != null)
                 + " ms=" + load.Elapsed.TotalMilliseconds.ToString("0.0"));
             GearIcon.ResetForTests();
+        }
+
+        static void CheckPass4(System.Action<string, bool, string> Check)
+        {
+            int bursts = FlockFiveApp.PlaneSkyBursts;
+            int last = bursts - 1;
+            int whites = 0;
+            int blues = 0;
+            int hearts = 0;
+            bool alt = true;
+            bool noLate = true;
+            for (int i = 0; i < bursts; i++)
+            {
+                int k = FlockFiveApp.PlaneSkyKind(i);
+                if (k == 0) whites++;
+                else if (k == 1) blues++;
+                else hearts++;
+                if (i < last && k != (i & 1)) alt = false;
+                float when = FlockFiveApp.PlaneSkyWhen(i);
+                if (when >= FlockFiveApp.PlaneCrossSeconds) noLate = false;
+                if (FlockFiveApp.PlaneSkyMayLaunch(i, 0f, true)) noLate = false;
+                if (!FlockFiveApp.PlaneSkyMayLaunch(i, when + 0.01f, true)) noLate = false;
+                if (FlockFiveApp.PlaneSkyMayLaunch(i, when - 0.05f, true)) noLate = false;
+            }
+            FlockFiveApp.PlaneRigSize(W, H, 485f / 264f, 724f / 184f, out float planeW, out float totalW);
+            float exitU = FlockFiveApp.PlaneRigExitU(W, planeW, totalW);
+            float exitT = exitU * FlockFiveApp.PlaneCrossSeconds;
+            float fire = FlockFiveApp.PlaneSkyWhen(last) + FlockFiveApp.PlaneSkyRise;
+            float life = FlockFiveApp.PlaneSkyHeartLife / FlockFiveApp.PlaneSkyHeartLifeWas;
+            Check("plane-no-launch-after-exit",
+                noLate && bursts == 7
+                && fire < exitT
+                && fire < FlockFiveApp.PlaneCrossSeconds
+                && FlockFiveApp.PlaneSkyShowEnd(bursts) > FlockFiveApp.PlaneCrossSeconds,
+                "fire=" + fire.ToString("0.00")
+                + " spriteExit=" + exitT.ToString("0.00")
+                + " rigExit=" + FlockFiveApp.PlaneCrossSeconds.ToString("0.00")
+                + " show=" + FlockFiveApp.PlaneSkyShowEnd(bursts).ToString("0.00"));
+            Check("plane-heart-last",
+                hearts == 1 && FlockFiveApp.PlaneSkyKind(last) == 2 && alt,
+                "hearts=" + hearts + " last=" + FlockFiveApp.PlaneSkyKind(last));
+            Check("plane-white-blue-alt",
+                whites == 3 && blues == 3 && whites + blues == last && alt,
+                "white=" + whites + " blue=" + blues);
+            Check("plane-heart-life",
+                life >= 1.5f && life <= 2f
+                && FlockFiveApp.PlaneSkyHeartAlpha(0.5f) > FlockFiveApp.PlaneSkyHeartFadeWasAt(0.5f) + 0.25f
+                && FlockFiveApp.PlaneSkyHeartDrift > 0f
+                && FlockFiveApp.PlaneSkyHeartDrift < FlockFiveApp.PlaneSkyHeartDriftWas,
+                "life=" + FlockFiveApp.PlaneSkyHeartLife.ToString("0.00")
+                + " was=" + FlockFiveApp.PlaneSkyHeartLifeWas.ToString("0.00")
+                + " ratio=" + life.ToString("0.00")
+                + " fade=" + FlockFiveApp.PlaneSkyHeartAlpha(0.5f).ToString("0.00")
+                + " drift=" + FlockFiveApp.PlaneSkyHeartDrift.ToString("0.00"));
+
+            string root = Application.dataPath;
+            string daily = System.IO.File.ReadAllText(System.IO.Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.DailyBonus.cs"));
+            string app = System.IO.File.ReadAllText(System.IO.Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.cs"));
+            int ptr = daily.IndexOf("void DrawWheelPointer(");
+            int ptrEnd = daily.IndexOf("public static float WheelPointerPinFrac(", ptr);
+            string ptrBody = ptr >= 0 && ptrEnd > ptr ? daily.Substring(ptr, ptrEnd - ptr) : "";
+            int wheelFn = daily.IndexOf("void DrawDailyWheel(");
+            int wheelEnd = daily.IndexOf("void DrawWheelPointer(", wheelFn);
+            string wheelBody = wheelFn >= 0 && wheelEnd > wheelFn ? daily.Substring(wheelFn, wheelEnd - wheelFn) : "";
+            int draws = CountOf(ptrBody, "GUI.DrawTexture(");
+            int calls = CountOf(daily, "DrawWheelPointer(");
+            var px = FlockFiveApp.WheelPointerPixels(out int pw, out int ph);
+            int parts = OpaqueParts(px, pw, ph, 90);
+            bool cornerClear = CornerClear(px, pw, ph);
+            Check("pointer-one-draw",
+                draws == 1 && calls == 2
+                && wheelBody.IndexOf("DrawWheelPointer(") >= 0
+                && wheelBody.IndexOf("_wheelPointer") < 0
+                && parts == 1
+                && cornerClear
+                && FlockFiveApp.PointerPointsDown(px, pw, ph),
+                "draws=" + draws + " calls=" + calls + " parts=" + parts + " clear=" + cornerClear);
+
+            bool ticks = true;
+            string tickDetail = "";
+            for (int w = 0; w < DailyBonus.WedgeCount; w++)
+            {
+                float to = DailyBonus.PointerAngle(w) + 360f * 5f;
+                int n = DailyBonus.BoundaryCrossings(0f, to);
+                int expect = Mathf.RoundToInt(Mathf.Abs(to) / DailyBonus.WedgeArc);
+                int sum = 0;
+                float a = 0f;
+                while (a < to - 0.0001f)
+                {
+                    float b = Mathf.Min(to, a + 10f);
+                    sum += DailyBonus.BoundaryCrossings(a, b);
+                    a = b;
+                }
+                if (n != expect || sum != n)
+                {
+                    ticks = false;
+                    tickDetail = "w=" + w + " n=" + n + " expect=" + expect + " sum=" + sum;
+                    break;
+                }
+            }
+            int tickFn = daily.IndexOf("void TickWheelClicks(");
+            int tickEnd = daily.IndexOf("void StartDailySpin(", tickFn);
+            string tickBody = tickFn >= 0 && tickEnd > tickFn ? daily.Substring(tickFn, tickEnd - tickFn) : "";
+            float flick = DailyBonus.PointerFlick(DailyBonus.PointerFlickSeconds * 0.5f, -1f);
+            float back = DailyBonus.PointerFlick(DailyBonus.PointerFlickSeconds * 0.5f, 1f);
+            Check("pointer-tick-per-boundary",
+                ticks
+                && tickBody.IndexOf("BoundaryCrossings") >= 0
+                && tickBody.IndexOf("Play(\"tick\", 0.22f, 0f)") >= 0
+                && Mathf.Abs(DailyBonus.PointerFlick(0f, -1f)) < 0.001f
+                && Mathf.Abs(DailyBonus.PointerFlick(DailyBonus.PointerFlickSeconds, -1f)) < 0.001f
+                && flick < -1f && back > 1f,
+                tickDetail.Length == 0 ? "flick=" + flick.ToString("0.00") : tickDetail);
+
+            bool radial = true;
+            float worst = 0f;
+            for (int w = 0; w < DailyBonus.WedgeCount; w++)
+            {
+                for (int s = 0; s < 4; s++)
+                {
+                    float spin = s * 20f;
+                    var want = DailyBonus.WedgeOffset(w, spin, 1f);
+                    var got = DailyBonus.RotateClockwise(new Vector2(1f, 0f), DailyBonus.WedgeLabelDegrees(w, spin));
+                    float err = (want - got).magnitude;
+                    if (err > worst) worst = err;
+                    if (err > 0.02f) radial = false;
+                }
+            }
+            Check("wedge-labels-radial",
+                radial && wheelBody.IndexOf("WedgeLabelDegrees") >= 0,
+                "worst=" + worst.ToString("0.000"));
+
+            var face = DailyBonus.WedgeFace(DailyBonus.JackpotWedge, 0.45f);
+            var other = DailyBonus.WedgeFace(0, 0.45f);
+            var disc = FlockFiveApp.WheelDiscPixels(256);
+            int stars = 0;
+            var star = (Color32)DailyBonus.JackpotStar;
+            for (int i = 0; i < disc.Length; i++)
+            {
+                var c = disc[i];
+                if (c.a < 200) continue;
+                if (Mathf.Abs(c.r - star.r) <= 2 && Mathf.Abs(c.g - star.g) <= 2 && Mathf.Abs(c.b - star.b) <= 2)
+                    stars++;
+            }
+            bool ruby = face.r > face.g + 0.25f && face.r > face.b + 0.25f && face.r > 0.45f;
+            bool notRuby = other.r < other.g + 0.15f || other.g > 0.25f;
+            Check("jackpot-stands-out",
+                ruby && notRuby && stars >= 12 && stars < 800
+                && daily.IndexOf("WedgeFace(") >= 0
+                && daily.IndexOf("JackpotStar") >= 0
+                && daily.IndexOf("JackpotTrim") >= 0
+                && wheelBody.IndexOf("_dailyJackpotPx") >= 0,
+                "face=" + face + " other=" + other + " stars=" + stars);
+
+            int helper = daily.IndexOf("void DrawWheelX2(");
+            int claim = daily.IndexOf("void DrawDailyClaim(");
+            string helperBody = helper >= 0 && claim > helper ? daily.Substring(helper, claim - helper) : "";
+            int stamp = app.IndexOf("void DrawRewardStamp(");
+            int wax = app.IndexOf("static void DrawWaxSplat(");
+            string stampBody = stamp >= 0 && wax > stamp ? app.Substring(stamp, wax - stamp) : "";
+            var panel = new Rect(80f, 200f, 640f, 880f);
+            var seat = FlockFiveApp.RewardStampRect(panel, 2);
+            bool topRight = seat.center.x > panel.xMax - panel.width * 0.28f
+                && seat.center.y < panel.y + panel.height * 0.28f;
+            int x2Uses = CountOf(daily, "DrawWheelX2(");
+            Check("wheel-x2-stamp",
+                topRight
+                && x2Uses >= 3
+                && helperBody.IndexOf("DrawRewardStamp(seat, 2, 1f, age, sparkle, false)") >= 0
+                && helperBody.IndexOf("RewardStampRect(") >= 0
+                && helperBody.IndexOf("RewardCardShake(") >= 0
+                && helperBody.IndexOf("PointerTipDir") < 0
+                && stampBody.IndexOf("RewardStampPop") >= 0
+                && stampBody.IndexOf("StreakBadge.Draw") >= 0
+                && stampBody.IndexOf("if (thud)") >= 0
+                && daily.IndexOf("DrawWheelX2(board,") >= 0
+                && daily.IndexOf("DrawWheelX2(bar,") >= 0,
+                "seat=" + seat + " uses=" + x2Uses);
+        }
+
+        static int CountOf(string hay, string needle)
+        {
+            if (string.IsNullOrEmpty(hay) || string.IsNullOrEmpty(needle)) return 0;
+            int n = 0;
+            int from = 0;
+            while (from >= 0)
+            {
+                int i = hay.IndexOf(needle, from);
+                if (i < 0) break;
+                n++;
+                from = i + needle.Length;
+            }
+            return n;
+        }
+
+        static int OpaqueParts(Color32[] px, int w, int h, byte minA)
+        {
+            if (px == null || w < 2 || h < 2 || px.Length < w * h) return -1;
+            var seen = new bool[w * h];
+            int parts = 0;
+            var stack = new int[w * h];
+            for (int i = 0; i < px.Length; i++)
+            {
+                if (seen[i] || px[i].a <= minA) continue;
+                parts++;
+                int n = 0;
+                stack[n++] = i;
+                seen[i] = true;
+                while (n > 0)
+                {
+                    int k = stack[--n];
+                    int x = k % w;
+                    int y = k / w;
+                    if (x > 0) Push(px, seen, stack, ref n, k - 1, minA);
+                    if (x + 1 < w) Push(px, seen, stack, ref n, k + 1, minA);
+                    if (y > 0) Push(px, seen, stack, ref n, k - w, minA);
+                    if (y + 1 < h) Push(px, seen, stack, ref n, k + w, minA);
+                }
+            }
+            return parts;
+        }
+
+        static void Push(Color32[] px, bool[] seen, int[] stack, ref int n, int i, byte minA)
+        {
+            if (seen[i] || px[i].a <= minA) return;
+            seen[i] = true;
+            stack[n++] = i;
+        }
+
+        static bool CornerClear(Color32[] px, int w, int h)
+        {
+            int n = 10;
+            for (int y = h - n; y < h; y++)
+            {
+                for (int x = w - n; x < w; x++)
+                    if (px[y * w + x].a > 20) return false;
+                for (int x = 0; x < n; x++)
+                    if (px[y * w + x].a > 20) return false;
+            }
+            return true;
         }
     }
 }

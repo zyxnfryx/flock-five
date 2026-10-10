@@ -152,32 +152,46 @@ namespace FlockFive.Editor
             bool sprite = disc != null && disc.name == StreakBadge.DiscName
                 && badge.IndexOf("DiscName") >= 0
                 && badge.IndexOf("SharedDisc") >= 0;
-            bool shared = helperBody.IndexOf("StreakBadge.Draw") >= 0
-                && helperBody.IndexOf("StreakBadge.Colors(2)") >= 0
+            var board = new Rect(40f, 120f, 700f, 900f);
+            var seat = FlockFiveApp.RewardStampRect(board, 2);
+            bool corner = seat.center.x > board.xMax - board.width * 0.30f
+                && seat.center.y < board.y + board.height * 0.30f;
+            bool shared = helperBody.IndexOf("DrawRewardStamp(") >= 0
+                && helperBody.IndexOf("RewardStampRect(") >= 0
+                && helperBody.IndexOf("RewardCardShake(") >= 0
+                && helperBody.IndexOf("PointerTipDir") < 0
                 && stampBody.IndexOf("StreakBadge.Draw") >= 0
+                && stampBody.IndexOf("StreakBadge.Colors") >= 0
+                && stampBody.IndexOf("RewardStampPop") >= 0
                 && gardenBody.IndexOf("DrawRewardStamp") >= 0
                 && uses >= 3
+                && corner
                 && daily.IndexOf("BakeWheelBadge") < 0
                 && daily.IndexOf("DailyX2") < 0;
             Check("wheel-x2-shared-badge", sprite && shared,
                 "uses=" + uses + " sprite=" + (disc != null ? disc.name : "null")
-                + " helper=" + (helperBody.Length > 0) + " stamp=" + (stampBody.IndexOf("StreakBadge.Draw") >= 0));
+                + " corner=" + corner + " seat=" + seat
+                + " stamp=" + (stampBody.IndexOf("StreakBadge.Draw") >= 0));
         }
 
         static void CheckPlane(System.Action<string, bool, string> Check)
         {
             const float oldIdle = 10f;
             const float oldShow = 2.70f + 0.50f + 0.18f + 0.60f + 0.85f;
-            float show3 = FlockFiveApp.PlaneSkyShowEnd(3);
-            float show6 = FlockFiveApp.PlaneSkyShowEnd(FlockFiveApp.PlaneSkyBursts);
-            bool times = Mathf.Abs(FlockFiveApp.PlaneSkyWhen(0) - 0.95f) < 0.001f
-                && Mathf.Abs(FlockFiveApp.PlaneSkyWhen(1) - 1.80f) < 0.001f
-                && Mathf.Abs(FlockFiveApp.PlaneSkyWhen(2) - 2.70f) < 0.001f;
+            int bursts = FlockFiveApp.PlaneSkyBursts;
+            int last = bursts - 1;
+            float show = FlockFiveApp.PlaneSkyShowEnd(bursts);
+            bool times = true;
+            for (int i = 0; i < bursts; i++)
+            {
+                if (FlockFiveApp.PlaneSkyWhen(i) >= FlockFiveApp.PlaneCrossSeconds) times = false;
+                if (i > 0 && FlockFiveApp.PlaneSkyWhen(i) <= FlockFiveApp.PlaneSkyWhen(i - 1)) times = false;
+            }
             bool shells = FlockFiveApp.PlaneSkyHeartPoints == 48
                 && FlockFiveApp.PlaneSkyRoundPoints == 24
                 && Mathf.Abs(FlockFiveApp.PlaneSkyTail(0) - (0.50f + 1.12f)) < 0.001f
-                && Mathf.Abs(FlockFiveApp.PlaneSkyTail(2) - (0.50f + 0.18f + 0.60f + 0.85f)) < 0.001f
-                && Mathf.Abs(FlockFiveApp.PlaneSkyTail(5) - FlockFiveApp.PlaneSkyTail(2)) < 0.001f;
+                && FlockFiveApp.PlaneSkyKind(last) == 2
+                && FlockFiveApp.PlaneSkyTail(last) > FlockFiveApp.PlaneSkyTail(0);
             Check("plane-idle-plus-5",
                 Mathf.Abs(FlockFiveApp.PlaneIdleDelay - (oldIdle + 5f)) < 0.001f
                 && FlockFiveApp.PlaneCrossSeconds == 6.5f,
@@ -186,14 +200,13 @@ namespace FlockFive.Editor
                 + " cross=" + FlockFiveApp.PlaneCrossSeconds.ToString("0.00"));
             Check("plane-sky-longer",
                 times && shells
-                && FlockFiveApp.PlaneSkyBursts == 6
-                && Mathf.Abs(show3 - oldShow) < 0.02f
-                && Mathf.Abs(show6 - oldShow * 2f) < 0.05f
-                && show6 > show3 * 1.9f,
-                "bursts=" + FlockFiveApp.PlaneSkyBursts
-                + " show3=" + show3.ToString("0.00")
-                + " show6=" + show6.ToString("0.00")
-                + " old=" + oldShow.ToString("0.00"));
+                && bursts == 7
+                && show > oldShow
+                && FlockFiveApp.PlaneSkyWhen(last) + FlockFiveApp.PlaneSkyRise < FlockFiveApp.PlaneCrossSeconds,
+                "bursts=" + bursts
+                + " show=" + show.ToString("0.00")
+                + " old=" + oldShow.ToString("0.00")
+                + " last=" + FlockFiveApp.PlaneSkyWhen(last).ToString("0.00"));
             Check("other-flybys-unchanged",
                 Mathf.Abs(HawkPass.Lead - 0.6f) < 0.001f
                 && Mathf.Abs(HawkPass.Dur - 0.48f) < 0.001f
