@@ -780,6 +780,11 @@ namespace FlockFive
             {
                 Debug.LogWarning("ATT callback skipped: " + e.Message);
             }
+            try { AdConsent.NoteAttAnswered(); }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("ATT consent update skipped: " + e.Message);
+            }
         }
 
         void OnGUI()

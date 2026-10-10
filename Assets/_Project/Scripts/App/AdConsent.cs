@@ -32,19 +32,37 @@ namespace FlockFive
     // a stored denial is "true", granted consent is "false"). The flag that
     // is sent is the stored toggle, not that plan field.
     //
-    // The consent UI waits until the first scene has rendered a frame.
-    // iOS then waits for the ATT callback (Tracking / FlockFiveTracking.mm)
-    // before LevelPlay.Init. The native request runs only once the app is
-    // active. Editor and Android skip ATT. The 45s timeout still inits if
-    // the callback never arrives.
+    // The GDPR card waits until the first scene has rendered a frame. It is a
+    // wood panel that does not cover the LEVEL flower, and it blocks a control
+    // only while that card is painted and actually overlaps the control.
+    // Ads (LevelPlay) start as soon as GDPR is ready. They do not wait on ATT.
+    // Until the player answers ATT, ads are non-personalized.
+    //
+    // The iOS ATT system prompt is not shown at launch and not during the first
+    // gardens. Back on the home screen after the level 2 win, a short in-game
+    // pre-prompt asks first. Continue requests the system dialog (only while the
+    // app is active, never mid-level, never over a coach). Not now asks once
+    // more after a later win, then never.
     public static class AdConsent
     {
         public const string ChoiceKey = "flockfive.ads.consent";
         public const string DoNotSellKey = "ff_do_not_sell";
-        public const float AttTimeoutSeconds = 45f;
+        public const string AttAskKey = "ff.att.ask";
+        public const string AttSnoozeKey = "ff.att.snooze";
+
+        public const string GdprBody = "Ads keep Flock Five free. Allow personalized ads on this device?";
+        public const string AttBody = "Ads keep Flock Five free. Allow tracking for ads that fit you better?";
+        public const string AllowLabel = "Allow";
+        public const string ContinueLabel = "Continue";
+        public const string NotNowLabel = "Not now";
 
         // Set at the end of the first rendered frame. Consent stays hidden until then.
         public static bool FirstFrameReady { get; private set; }
+
+        // Screenshot hold. Forces the ATT pre-prompt without writing prefs.
+        public static bool EditorHoldAtt { get; set; }
+
+        public static bool SystemPending => _systemPending;
 
         public enum RegionClass
         {
@@ -52,6 +70,19 @@ namespace FlockFive
             EeaUk = 1,
             UnitedStates = 2,
             Other = 3
+        }
+
+        public enum Sheet
+        {
+            None = 0,
+            Gdpr = 1,
+            Att = 2
+        }
+
+        public enum AttMoment
+        {
+            None = 0,
+            PrePrompt = 1
         }
 
         public readonly struct Plan
@@ -86,6 +117,24 @@ namespace FlockFive
             }
         }
 
+        public readonly struct HomeCard
+        {
+            public readonly Sheet Kind;
+            public readonly Rect Card;
+            public readonly Rect Body;
+            public readonly Rect Accept;
+            public readonly Rect Decline;
+
+            public HomeCard(Sheet kind, Rect card, Rect body, Rect accept, Rect decline)
+            {
+                Kind = kind;
+                Card = card;
+                Body = body;
+                Accept = accept;
+                Decline = decline;
+            }
+        }
+
         // ISO 3166-1 alpha-2. UK is accepted as an alias of GB. EEA plus the UK.
         static readonly HashSet<string> EeaUk = new HashSet<string>
         {
@@ -98,6 +147,10 @@ namespace FlockFive
         static bool _prompt;
         static bool _promptDone;
         static bool _promptYes;
+        static bool _transientDismissed;
+        static bool _systemPending;
+        static bool _painted;
+        static Rect _block;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void Reset()
@@ -106,6 +159,11 @@ namespace FlockFive
             _prompt = false;
             _promptDone = false;
             _promptYes = false;
+            _transientDismissed = false;
+            _systemPending = false;
+            _painted = false;
+            _block = default;
+            EditorHoldAtt = false;
             FirstFrameReady = false;
         }
 
@@ -207,23 +265,23 @@ namespace FlockFive
             return new Plan(false, true, true, false, null);
         }
 
-        // Init only after the ATT callback, or after the timeout. A callback
-        // wins when both are true so the reason stays the player's answer.
-        public static Gate EvaluateAtt(float elapsedSeconds, bool callbackArrived, float timeoutSeconds)
-        {
-            if (timeoutSeconds <= 0f) timeoutSeconds = AttTimeoutSeconds;
-            if (callbackArrived) return new Gate(true, true, false);
-            if (elapsedSeconds >= timeoutSeconds) return new Gate(true, false, true);
-            return new Gate(false, false, false);
-        }
-
-        // Editor and Android pass attRequired false and boot as soon as consent
-        // is ready. iOS boots only once the ATT gate says init.
+        // ATT does not gate the boot. consentReady is the only requirement.
+        // attRequired and att stay in the signature so older call sites compile;
+        // both are ignored. Personalized ads wait for an ATT answer separately.
         public static bool MayBoot(bool consentReady, bool attRequired, Gate att)
         {
-            if (!consentReady) return false;
+            // ATT is not a boot gate. The parameters stay so existing call sites compile.
+            if (!consentReady && attRequired && att.FromTimeout) return false;
+            return consentReady;
+        }
+
+        // Non-personalized until iOS ATT is authorized (status 3). Editor and
+        // Android are not att-required, so the GDPR choice is the ad choice.
+        public static bool Personalized(bool gdprConsent, bool attRequired, int attStatus)
+        {
+            if (!gdprConsent) return false;
             if (!attRequired) return true;
-            return att.Init;
+            return attStatus == 3;
         }
 
         public static bool HasChoice()
@@ -260,6 +318,247 @@ namespace FlockFive
             return stored ? "true" : "false";
         }
 
+        // 0 never asked, 1 snoozed once, 2 finished (continued, or the second Not now).
+        // Pre-prompt only on the home screen, after the level 2 win (nextPlay >= 2),
+        // and never over a coach or another modal. A snooze asks once more after a
+        // later win (nextPlay moved past the stored value), then never.
+        public static AttMoment Consider(int nextPlay, bool onHome, bool coachOrModal, int ask, int snoozeAt)
+        {
+            if (!onHome || coachOrModal) return AttMoment.None;
+            if (ask >= 2) return AttMoment.None;
+            if (nextPlay < 2) return AttMoment.None;
+            if (ask <= 0) return AttMoment.PrePrompt;
+            if (nextPlay > snoozeAt) return AttMoment.PrePrompt;
+            return AttMoment.None;
+        }
+
+        public static bool ShouldRequestSystem(bool pending, bool appActive, bool midLevel, bool coachOrModal)
+        {
+            return pending && appActive && !midLevel && !coachOrModal;
+        }
+
+        // Continue on the pre-prompt. Persists "done" and arms the system request.
+        // PollSystem performs the native call once the app is active and calm.
+        public static void ContinueAtt()
+        {
+            PlayerPrefs.SetInt(AttAskKey, 2);
+            PlayerPrefs.Save();
+            _systemPending = true;
+            EditorHoldAtt = false;
+        }
+
+        // Not now. First tap snoozes at this nextPlay. The next tap finishes forever.
+        public static void NotNow(int nextPlay)
+        {
+            _systemPending = false;
+            int ask = PlayerPrefs.GetInt(AttAskKey, 0);
+            if (ask >= 2) return;
+            if (ask <= 0)
+            {
+                PlayerPrefs.SetInt(AttAskKey, 1);
+                PlayerPrefs.SetInt(AttSnoozeKey, nextPlay);
+            }
+            else
+                PlayerPrefs.SetInt(AttAskKey, 2);
+            PlayerPrefs.Save();
+        }
+
+        public static void AcceptGdpr()
+        {
+            _promptYes = true;
+            _promptDone = true;
+        }
+
+        public static void DeclineGdpr()
+        {
+            _promptYes = false;
+            _promptDone = true;
+        }
+
+        // True when the native request was started this call. A pending request
+        // stays pending until the app is active, on the home screen, and not under a coach.
+        public static bool PollSystem(bool appActive, bool midLevel, bool coachOrModal)
+        {
+            if (!ShouldRequestSystem(_systemPending, appActive, midLevel, coachOrModal))
+                return false;
+            _systemPending = false;
+            Tracking.RequestWhenActive();
+            return true;
+        }
+
+        // ATT status arrived after boot. Raise or keep the LevelPlay consent bit.
+        // A GDPR choice that is still outstanding is left alone.
+        public static void NoteAttAnswered()
+        {
+            bool attRequired = false;
+            try { attRequired = Tracking.AttRequired; }
+            catch (System.Exception) { return; }
+            RegionClass region = DeviceRegion();
+            bool has = HasChoice();
+            Plan plan = Decide(region, has, has && SavedConsent());
+            if (!plan.Ready) return;
+            bool personal = Personalized(plan.Consent, attRequired, Tracking.CompletedStatus);
+            ApplyToLevelPlay(new Plan(false, true, personal, plan.ApplyDoNotSell, plan.DoNotSell));
+        }
+
+        // Drops the in-game cards for this session without writing a GDPR or ATT choice.
+        public static void DismissTransient()
+        {
+            _transientDismissed = true;
+            _prompt = false;
+            _promptDone = true;
+            _systemPending = false;
+            _painted = false;
+            _block = default;
+            SyncConsentCanvas(false);
+        }
+
+        // Fresh-install stand-in for tests. Does not write PlayerPrefs.
+        public static void ArmLaunch(RegionClass region)
+        {
+            _transientDismissed = false;
+            _promptDone = false;
+            _promptYes = false;
+            _systemPending = false;
+            EditorHoldAtt = false;
+            _painted = false;
+            _block = default;
+            Plan plan = Decide(region, false, false);
+            _prompt = plan.Prompt;
+            FirstFrameReady = true;
+        }
+
+        public static void ResetTransient()
+        {
+            _prompt = false;
+            _promptDone = false;
+            _promptYes = false;
+            _transientDismissed = false;
+            _systemPending = false;
+            EditorHoldAtt = false;
+            _painted = false;
+            _block = default;
+        }
+
+        // Launch argument for the simulator smoke test. Inert when the argument is absent.
+        public static bool SmokeAutoPlay()
+        {
+            string[] args;
+            try { args = System.Environment.GetCommandLineArgs(); }
+            catch (System.Exception) { return false; }
+            if (args == null) return false;
+            for (int i = 0; i < args.Length; i++)
+                if (args[i] == "-ffSmokeAutoPlay") return true;
+            return false;
+        }
+
+        // True only while a card is painted and the point is inside that card.
+        public static bool BlocksPoint(Vector2 p)
+        {
+            if (!_painted || _block.width < 2f || _block.height < 2f) return false;
+            return _block.Contains(p);
+        }
+
+        // True only while a card is painted and the control actually overlaps it.
+        public static bool BlocksControl(Rect control)
+        {
+            if (!_painted || _block.width < 2f || _block.height < 2f) return false;
+            if (control.width < 1f || control.height < 1f) return false;
+            return _block.Overlaps(control);
+        }
+
+        // Wood card between the wordmark and the LEVEL flower. Never covers the flower.
+        public static Rect PromptCard(float w, float h, Rect safe)
+        {
+            float s = h / 720f;
+            if (s < 1f) s = 1f;
+            Rect level = SplashPress.LevelRect(w, h, safe);
+            float topInset = (safe.width < 2f || safe.height < 2f) ? 0f : Mathf.Max(0f, h - safe.yMax);
+            float hud = Mathf.Max(12f, topInset + 10f * s);
+            float fit = s * 0.91f;
+            float logoBottom = hud + (56f * 2f + 4f) * fit;
+            float gap = 18f * s;
+            float top = logoBottom + gap;
+            float pad = 22f * s;
+            float body = 72f * s;
+            float btn = Mathf.Max(44f, 52f * s);
+            float cardH = pad + body + 16f * s + btn + pad;
+            float roof = level.yMin - 12f;
+            if (top < hud) top = hud;
+            if (top + cardH > roof)
+            {
+                float minH = Mathf.Min(cardH, roof - hud);
+                if (minH < 8f) minH = 8f;
+                if (roof - top < minH) top = roof - minH;
+                if (top < 0f) top = 0f;
+                cardH = roof - top;
+                if (cardH < 8f) cardH = 8f;
+            }
+            float cardW = w * 0.86f;
+            float cap = 520f * s;
+            if (cardW > cap) cardW = cap;
+            if (cardW < 8f) cardW = 8f;
+            if (cardW > w - 16f) cardW = Mathf.Max(8f, w - 16f);
+            float x = (w - cardW) * 0.5f;
+            return new Rect(x, top, cardW, cardH);
+        }
+
+        public static void PlaceButtons(Rect card, float scale, out Rect accept, out Rect decline)
+        {
+            if (scale < 1f) scale = 1f;
+            float pad = 18f * scale;
+            float gap = 12f * scale;
+            float bh = Mathf.Max(44f, 48f * scale);
+            float maxH = card.height * 0.38f;
+            if (bh > maxH && maxH > 36f) bh = maxH;
+            if (bh > card.height - pad * 2f) bh = Mathf.Max(8f, card.height - pad * 2f);
+            float y = card.yMax - pad - bh;
+            if (y < card.y) y = card.y;
+            float innerW = card.width - pad * 2f;
+            float bw = (innerW - gap) * 0.5f;
+            if (bw < 8f) bw = 8f;
+            accept = new Rect(card.x + pad, y, bw, bh);
+            decline = new Rect(accept.xMax + gap, y, bw, bh);
+        }
+
+        // Lays out the card that should be on the home screen this frame and arms
+        // BlocksPoint / BlocksControl. A flow that is only waiting paints nothing.
+        public static HomeCard LayoutHome(float w, float h, Rect safe, bool onHome, bool coachOrModal, int nextPlay)
+        {
+            Sheet kind = Due(onHome, coachOrModal, nextPlay);
+            if (kind == Sheet.None)
+            {
+                _painted = false;
+                _block = default;
+                return default;
+            }
+            Rect card = PromptCard(w, h, safe);
+            float scale = h / 720f;
+            PlaceButtons(card, scale, out Rect accept, out Rect decline);
+            float pad = 20f * scale;
+            float bodyBottom = accept.y - 12f * scale;
+            if (bodyBottom < card.y + pad) bodyBottom = card.y + pad;
+            var body = new Rect(card.x + pad, card.y + pad, Mathf.Max(8f, card.width - pad * 2f), Mathf.Max(8f, bodyBottom - card.y - pad));
+            _painted = card.width > 2f && card.height > 2f;
+            _block = _painted ? card : default;
+            return new HomeCard(kind, card, body, accept, decline);
+        }
+
+        static Sheet Due(bool onHome, bool coachOrModal, int nextPlay)
+        {
+            if (!onHome || coachOrModal) return Sheet.None;
+            if (MayShowConsent(FirstFrameReady, _prompt) && !_promptDone && !_transientDismissed)
+                return Sheet.Gdpr;
+            if (EditorHoldAtt) return Sheet.Att;
+            if (_systemPending) return Sheet.None;
+            if (!Tracking.Undecided()) return Sheet.None;
+            int ask = PlayerPrefs.GetInt(AttAskKey, 0);
+            int snooze = PlayerPrefs.GetInt(AttSnoozeKey, 0);
+            if (Consider(nextPlay, true, false, ask, snooze) == AttMoment.PrePrompt)
+                return Sheet.Att;
+            return Sheet.None;
+        }
+
         internal static void Begin(AdsHost host)
         {
             if (host == null || _running) return;
@@ -291,39 +590,36 @@ namespace FlockFive
                 bool has = HasChoice();
                 bool granted = has && SavedConsent();
                 Plan plan = Decide(region, has, granted);
-                if (plan.Prompt)
+                if (plan.Prompt && !_transientDismissed)
                 {
                     _prompt = true;
                     _promptDone = false;
                     SyncConsentCanvas(true);
-                    while (!_promptDone)
+                    while (!_promptDone && !_transientDismissed)
                     {
                         if (host == null) yield break;
                         yield return null;
                     }
-                    granted = _promptYes;
-                    SaveChoice(granted);
-                    plan = Decide(region, true, granted);
                     _prompt = false;
                     SyncConsentCanvas(false);
+                    if (!_transientDismissed && _promptDone)
+                    {
+                        granted = _promptYes;
+                        SaveChoice(granted);
+                        plan = Decide(region, true, granted);
+                    }
                 }
 
-                var att = new AttSession();
                 bool attRequired = false;
                 try { attRequired = Tracking.AttRequired; }
                 catch (System.Exception e)
                 {
                     Debug.LogWarning("ATT requirement skipped: " + e.Message);
                 }
-                if (attRequired)
-                    yield return Tracking.WaitForAds(att);
-
-                // The wait returns on the callback or the 45s timeout. If it
-                // returned without opening the gate, the timeout still inits.
-                if (attRequired && !att.Finished)
-                    att.CatchUp(AttTimeoutSeconds, AttTimeoutSeconds);
-                if (!MayBoot(plan.Ready, attRequired, att.Gate)) yield break;
-                ApplyToLevelPlay(plan);
+                bool personal = Personalized(plan.Consent, attRequired, Tracking.CompletedStatus);
+                var boot = new Plan(false, plan.Ready, personal, plan.ApplyDoNotSell, plan.DoNotSell);
+                if (!MayBoot(boot.Ready, attRequired, default)) yield break;
+                ApplyToLevelPlay(boot);
                 // Stored CCPA choice before init. The Settings toggle applies it again later.
                 ApplyStoredDoNotSell();
                 if (host != null) host.Boot();
@@ -331,6 +627,8 @@ namespace FlockFive
             finally
             {
                 _prompt = false;
+                _painted = false;
+                _block = default;
                 SyncConsentCanvas(false);
                 _running = false;
             }
@@ -408,77 +706,11 @@ namespace FlockFive
             }
         }
 
+        // Kept so a call outside OnGUI cannot throw. The home sheet draws the card.
+        // This used to be an IMGUI form whose Not now button sat on the LEVEL flower.
         public static void DrawPrompt()
         {
-            if (!MayShowConsent(FirstFrameReady, _prompt) || _promptDone) return;
             if (Event.current == null) return;
-            GUISkin skin = GUI.skin;
-            if (skin == null || skin.label == null || skin.button == null) return;
-            if (Texture2D.whiteTexture == null) return;
-            float s = Screen.width / 400f;
-            if (s < 0.5f) s = 0.5f;
-            Matrix4x4 old = GUI.matrix;
-            GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1f));
-            float w = 400f;
-            float h = Screen.height / Mathf.Max(s, 0.01f);
-            Color prev = GUI.color;
-            GUI.color = new Color(0.05f, 0.12f, 0.08f, 0.94f);
-            GUI.DrawTexture(new Rect(0f, 0f, w, h), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            var title = new GUIStyle(GUI.skin.label) { fontSize = 22, alignment = TextAnchor.MiddleCenter, wordWrap = true };
-            title.normal.textColor = new Color(0.96f, 0.93f, 0.82f);
-            var body = new GUIStyle(title) { fontSize = 16 };
-            GUI.Label(new Rect(24f, h * 0.28f, w - 48f, 40f), "Ads keep Flock Five free", title);
-            GUI.Label(new Rect(24f, h * 0.28f + 48f, w - 48f, 70f), "Allow personalized ads on this device?", body);
-            if (GUI.Button(new Rect(24f, h * 0.62f, w - 48f, 52f), "Allow"))
-            {
-                _promptYes = true;
-                _promptDone = true;
-            }
-            if (GUI.Button(new Rect(24f, h * 0.62f + 64f, w - 48f, 52f), "Not now"))
-            {
-                _promptYes = false;
-                _promptDone = true;
-            }
-            GUI.color = prev;
-            GUI.matrix = old;
-        }
-
-        // Shared with Tracking.WaitForAds. Tests drive Tick without a device.
-        public sealed class AttSession
-        {
-            public bool Started;
-            public bool Callback;
-            public float Elapsed;
-            public bool Finished;
-            public bool FromCallback;
-            public bool FromTimeout;
-            public Gate Gate;
-
-            public void Start()
-            {
-                Started = true;
-            }
-
-            public void Tick(float dt, float timeout)
-            {
-                if (!Started || Finished) return;
-                if (dt > 0f && !float.IsNaN(dt) && !float.IsInfinity(dt)) Elapsed += dt;
-                CatchUp(Elapsed, timeout);
-            }
-
-            // Wall-clock path. A stalled unscaled delta still expires at the timeout.
-            public void CatchUp(float elapsedSeconds, float timeout)
-            {
-                if (!Started || Finished) return;
-                if (!float.IsNaN(elapsedSeconds) && !float.IsInfinity(elapsedSeconds) && elapsedSeconds > Elapsed)
-                    Elapsed = elapsedSeconds;
-                Gate = EvaluateAtt(Elapsed, Callback, timeout);
-                if (!Gate.Init) return;
-                Finished = true;
-                FromCallback = Gate.FromCallback;
-                FromTimeout = Gate.FromTimeout;
-            }
         }
     }
 

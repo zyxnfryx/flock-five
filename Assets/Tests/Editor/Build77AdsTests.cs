@@ -8,9 +8,9 @@ using UnityEngine;
 namespace FlockFive.Editor
 {
     // Build 77, plus the build 78 hotfix. Release ads stay off the test suite.
-    // Consent waits for the first rendered frame. ATT waits until the app is
-    // active, then the callback or the 45s timeout, before LevelPlay init.
-    // AppLovin and Meta stay out of the build.
+    // Consent waits for the first rendered frame. Ads boot without waiting on
+    // ATT. The native ATT request, when it is asked later, still waits until
+    // the app is active. AppLovin and Meta stay out of the build.
     static class Build77AdsTests
     {
         [MenuItem("Flock Five/Build 77 Ads Tests")]
@@ -153,66 +153,21 @@ namespace FlockFive.Editor
 
         static void CheckAtt(System.Action<string, bool, string> Check)
         {
-            var waiting = new AdConsent.AttSession();
-            waiting.Start();
-            waiting.Tick(1f, 10f);
-            bool early = waiting.Finished;
-
-            var answered = new AdConsent.AttSession();
-            answered.Start();
-            answered.Tick(0.2f, 10f);
-            answered.Callback = true;
-            answered.Tick(0f, 10f);
-
-            var timed = new AdConsent.AttSession();
-            timed.Start();
-            timed.Tick(9.9f, 10f);
-            bool before = timed.Finished;
-            timed.Tick(0.2f, 10f);
-
-            var idle = new AdConsent.AttSession();
-            idle.Callback = true;
-            idle.Tick(5f, 10f);
-
-            var gateCallback = AdConsent.EvaluateAtt(0f, true, 10f);
-            var gateTimeout = AdConsent.EvaluateAtt(10f, false, 10f);
-            var gateWait = AdConsent.EvaluateAtt(9.9f, false, 10f);
-
-            Check("att-order",
-                !early
-                && answered.Finished && answered.FromCallback && !answered.FromTimeout
-                && !before && timed.Finished && timed.FromTimeout && !timed.FromCallback
-                && !idle.Finished
-                && gateCallback.Init && gateCallback.FromCallback
-                && gateTimeout.Init && gateTimeout.FromTimeout
-                && !gateWait.Init,
-                "callback=" + answered.FromCallback + " timeout=" + timed.FromTimeout);
-
-            var stalled = new AdConsent.AttSession();
-            stalled.Start();
-            stalled.Tick(0f, AdConsent.AttTimeoutSeconds);
-            stalled.Tick(-1f, AdConsent.AttTimeoutSeconds);
-            bool held = stalled.Finished;
-            stalled.CatchUp(44.9f, AdConsent.AttTimeoutSeconds);
-            bool before45 = stalled.Finished;
-            stalled.CatchUp(AdConsent.AttTimeoutSeconds, AdConsent.AttTimeoutSeconds);
-
-            Check("boot-after-consent-and-att",
-                !AdConsent.MayBoot(false, true, gateCallback)
-                && AdConsent.MayBoot(true, false, gateWait)
-                && !AdConsent.MayBoot(true, true, gateWait)
-                && AdConsent.MayBoot(true, true, gateCallback)
-                && AdConsent.MayBoot(true, true, gateTimeout)
-                && !held && !before45
-                && stalled.Finished && stalled.FromTimeout && !stalled.FromCallback
-                && AdConsent.MayBoot(true, true, stalled.Gate)
-                && AdConsent.AttTimeoutSeconds == 45f
-                && !Tracking.AttRequired,
-                "editor att=" + Tracking.AttRequired + " timeout=" + stalled.FromTimeout);
+            var gate = default(AdConsent.Gate);
+            Check("boot-without-att-wait",
+                !AdConsent.MayBoot(false, true, gate)
+                && AdConsent.MayBoot(true, true, gate)
+                && AdConsent.MayBoot(true, false, gate)
+                && !AdConsent.Personalized(true, true, 0)
+                && AdConsent.Personalized(true, true, 3)
+                && AdConsent.Personalized(true, false, 0)
+                && !Tracking.AttRequired
+                && !LaunchWaitsForAtt(),
+                "editor att=" + Tracking.AttRequired);
 
             Check("att-after-active",
-                AttWaitsForActive() && AttUsesWallClock(),
-                "native active + 45s wall clock");
+                AttWaitsForActive() && !LaunchWaitsForAtt(),
+                "native active, no launch wait");
 
             bool nullSafe = true;
             try
@@ -259,13 +214,16 @@ namespace FlockFive.Editor
                 && body.IndexOf("requestTrackingAuthorizationWithCompletionHandler") < 0;
         }
 
-        static bool AttUsesWallClock()
+        // The launch path must not wait on ATT or keep the old 45s gate.
+        static bool LaunchWaitsForAtt()
         {
-            string path = Path.Combine(Application.dataPath, "_Project/Scripts/App/Tracking.cs");
-            string src = File.ReadAllText(path);
-            return src.IndexOf("realtimeSinceStartup") >= 0
-                && src.IndexOf("AttTimeoutSeconds") >= 0
-                && src.IndexOf("dt > 0.5f") < 0;
+            string consent = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/AdConsent.cs"));
+            string tracking = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/Tracking.cs"));
+            return consent.IndexOf("WaitForAds") >= 0
+                || consent.IndexOf("AttTimeoutSeconds") >= 0
+                || tracking.IndexOf("AttTimeoutSeconds") >= 0
+                || tracking.IndexOf("realtimeSinceStartup") >= 0
+                || tracking.IndexOf("AskOnce") >= 0;
         }
 
         static void CheckPrivacy(System.Action<string, bool, string> Check)

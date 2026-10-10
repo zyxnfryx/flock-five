@@ -31,9 +31,11 @@ namespace FlockFive
             if (scale < 0.5f) scale = 0.5f;
             if (inner.width < 8f) inner.width = 8f;
             float gap = RowGap * scale;
-            float linkH = Mathf.Max(44f, 40f * scale);
+            // Privacy and Do Not Sell share one row height and one left edge.
             float rowH = Mathf.Max(64f, 56f * scale);
-            float sw = Mathf.Max(44f, 48f * scale);
+            float linkH = rowH;
+            float sw = Mathf.Max(44f, 44f * scale);
+            if (sw > rowH) sw = rowH;
             if (sw > inner.width * 0.45f) sw = Mathf.Max(8f, inner.width * 0.45f);
             var privacy = new Rect(inner.x, inner.y, inner.width, linkH);
             float y = privacy.yMax + gap;

@@ -61,6 +61,9 @@ namespace FlockFive
             public bool Hidden;
             public bool WelcomeHold;
             public bool Inactive;
+            // A consent or ATT card that is actually on screen and covers this control.
+            // A flow that is only waiting, or a card that misses the control, stays false.
+            public bool Consent;
         }
 
         public static bool Blocks(Gates g)
@@ -69,9 +72,24 @@ namespace FlockFive
                 return true;
             if (g.Hidden || g.WelcomeHold || g.Inactive || g.PopupGate)
                 return true;
-            if (g.HardModal) return true;
+            if (g.HardModal || g.Consent) return true;
             if (g.SoftModal && !g.DailySoftOk) return true;
             if (g.AdoptQueue || g.RailLesson || g.HomeTaken) return true;
+            return false;
+        }
+
+        // MouseDown is the editor click. A touch that began this frame is the device
+        // path: an IMGUI control that already Used the mouse event (the old consent
+        // buttons did this) must not stop the finger from arming.
+        public static bool CanBegin(EventType type, int button, IList<Sample> samples)
+        {
+            if (button == 0 && type == EventType.MouseDown) return true;
+            if (samples == null) return false;
+            for (int i = 0; i < samples.Count; i++)
+            {
+                var phase = samples[i].Phase;
+                if (phase == Phase.Began || phase == Phase.Tap) return true;
+            }
             return false;
         }
 

@@ -5,41 +5,45 @@ namespace FlockFive
     public sealed partial class FlockFiveApp
     {
         bool _settingsOpen;
+        bool _smokePlayed;
+        AdConsent.HomeCard _homePrompt;
 
-        // Top-left of the home splash, under the notch. Everyone can open it.
-        static Rect SettingsEntryRect(float s)
+        static Texture2D _gearTex;
+
+        // Square gear in the top-left safe band. 44pt minimum. Clears the wordmark.
+        public static Rect SettingsGearRect(float w, float h, Rect safe)
         {
+            float s = h / 720f;
             if (s < 0.5f) s = 0.5f;
-            float h = Mathf.Max(44f, 36f * s);
-            float w = Mathf.Clamp(156f * s, 112f, 200f);
-            var safe = Screen.safeArea;
+            float size = Mathf.Max(44f, 40f * s);
             float x = Mathf.Max(8f, safe.xMin + 8f);
-            float y = TopHud() + 2f * s;
-            return new Rect(x, y, w, h);
+            float y = TopHudBox(h, safe, 0f) + 2f * s;
+            return new Rect(x, y, size, size);
         }
 
         bool DrawSettingsEntry(float s)
         {
-            var r = SettingsEntryRect(s);
+            var r = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
             bool fire = HitPad(r, out bool held);
-            var st = GuiPool.Label(GuiSlot.SettingsEntry);
-            st.fontStyle = FontStyle.Bold;
-            st.alignment = TextAnchor.MiddleLeft;
-            st.wordWrap = false;
-            const string lab = "Settings";
-            st.fontSize = FitFont(st, lab, r.width * 0.92f, r.height * 0.72f, 13, Mathf.Max(16, Mathf.RoundToInt(18f * s)));
-            var col = held ? new Color(1f, 1f, 0.94f, 1f) : new Color(1f, 0.97f, 0.90f, 0.92f);
-            StampOutlined(r, lab, st, col, 0, Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.16f)));
+            var tex = GearTex();
+            if (tex != null)
+            {
+                GUI.color = new Color(0.12f, 0.07f, 0.03f, held ? 0.20f : 0.32f);
+                GUI.DrawTexture(new Rect(r.x + 2f, r.y + 3f, r.width, r.height), tex, ScaleMode.ScaleToFit, true);
+                GUI.color = held ? new Color(0.78f, 0.78f, 0.78f, 1f) : Color.white;
+                GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
+                GUI.color = Color.white;
+            }
             return fire;
         }
 
-        // Privacy link, then the Do Not Sell switch on the next row. Same card
-        // frame as the other home sheets. The switch writes AdConsent.DoNotSell.
+        // Privacy link, then the Do Not Sell checkbox on the next row. The whole
+        // checkbox row is the hit. The card is a flat wood panel (no oval vignette).
         void DrawSettingsSheet(float s)
         {
             if (s < 0.5f) s = 0.5f;
             if (Texture2D.whiteTexture == null) return;
-            GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.78f);
+            GUI.color = new Color(0.05f, 0.04f, 0.03f, 0.42f);
             GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
@@ -49,22 +53,18 @@ namespace FlockFive
             float innerW = Mathf.Max(8f, w - pad * 2f);
             var probe = SettingsSheet.Place(new Rect(0f, 0f, innerW, 8f), s);
             float body = probe.Label.yMax - probe.PrivacyLink.yMin;
-            float h = titleH + body + pad * 2.2f;
-            var card = PlacePopup(s, w, h, 0.38f);
-            float band = Mathf.Clamp(w * 0.045f, 10f * s, 18f * s);
-            var board = new Rect(
-                card.x + band,
-                card.y + band,
-                Mathf.Max(8f, card.width - band * 2f),
-                Mathf.Max(8f, card.height - band * 2f));
-            DrawDailyFrame(card, board, band, s, 0.5f, GlowTex());
+            float h = titleH + body + pad * 2.4f;
+            var card = PlacePopup(s, w, h, 0.34f);
+            DrawWoodPanel(card, s);
+
+            float edge = Mathf.Max(10f, 14f * s);
             var inner = new Rect(
-                board.x + 10f * s,
-                board.y + 10f * s,
-                Mathf.Max(8f, board.width - 20f * s),
-                Mathf.Max(8f, board.height - 20f * s));
-            var titleR = new Rect(inner.x, inner.y + 8f * s, inner.width, titleH);
-            var rows = SettingsSheet.Place(new Rect(inner.x, titleR.yMax, inner.width, inner.yMax - titleR.yMax), s);
+                card.x + edge,
+                card.y + edge,
+                Mathf.Max(8f, card.width - edge * 2f),
+                Mathf.Max(8f, card.height - edge * 2f));
+            var titleR = new Rect(inner.x, inner.y + 4f * s, inner.width, titleH);
+            var rows = SettingsSheet.Place(new Rect(inner.x, titleR.yMax + 6f * s, inner.width, inner.yMax - titleR.yMax), s);
 
             var title = GuiPool.Label(GuiSlot.SettingsTitle);
             title.fontStyle = FontStyle.Bold;
@@ -78,18 +78,25 @@ namespace FlockFive
             linkSt.fontStyle = FontStyle.Bold;
             linkSt.alignment = TextAnchor.MiddleLeft;
             linkSt.wordWrap = false;
+            float textW = Mathf.Max(8f, rows.Toggle.xMin - rows.PrivacyLink.x - 8f * s);
             linkSt.fontSize = FitFont(
                 linkSt, SettingsSheet.PrivacyLabel,
-                rows.PrivacyLink.width * 0.92f, rows.PrivacyLink.height * 0.7f,
-                13, Mathf.Max(16, Mathf.RoundToInt(20f * s)));
+                textW, rows.PrivacyLink.height * 0.62f,
+                14, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
             var linkCol = linkHeld ? new Color(1f, 1f, 0.94f, 1f) : new Color(1f, 0.97f, 0.90f, 1f);
             StampOutlined(rows.PrivacyLink, SettingsSheet.PrivacyLabel, linkSt, linkCol, 0, Mathf.Max(2, Mathf.RoundToInt(linkSt.fontSize * 0.16f)));
-            GUI.color = linkCol;
-            float ruleW = Mathf.Min(rows.PrivacyLink.width * 0.46f, 168f * s);
-            GUI.DrawTexture(
-                new Rect(rows.PrivacyLink.x, rows.PrivacyLink.yMax - 10f * s, ruleW, Mathf.Max(1.5f, 2f * s)),
-                Texture2D.whiteTexture);
-            GUI.color = Color.white;
+
+            float sw = rows.Toggle.width;
+            var chev = new Rect(
+                rows.Toggle.x,
+                rows.PrivacyLink.y + (rows.PrivacyLink.height - sw) * 0.5f,
+                sw, sw);
+            var chevSt = GuiPool.Label(GuiSlot.SettingsChevron);
+            chevSt.fontStyle = FontStyle.Bold;
+            chevSt.alignment = TextAnchor.MiddleCenter;
+            chevSt.wordWrap = false;
+            chevSt.fontSize = FitFont(chevSt, "\u203A", chev.width * 0.8f, chev.height * 0.8f, 16, Mathf.Max(20, Mathf.RoundToInt(28f * s)));
+            StampOutlined(chev, "\u203A", chevSt, linkCol, 0, Mathf.Max(2, Mathf.RoundToInt(chevSt.fontSize * 0.12f)));
 
             var rowHit = new Rect(rows.Label.x, rows.Label.y, rows.Toggle.xMax - rows.Label.x, rows.Label.height);
             bool flip = HitPad(rowHit, out bool rowHeld);
@@ -99,15 +106,15 @@ namespace FlockFive
             rowSt.wordWrap = true;
             rowSt.fontSize = FitFontWrapped(
                 rowSt, SettingsSheet.DoNotSellLabel,
-                rows.Label.width * 0.96f, rows.Label.height * 0.9f,
-                12, Mathf.Max(15, Mathf.RoundToInt(18f * s)));
+                rows.Label.width * 0.96f, rows.Label.height * 0.88f,
+                13, Mathf.Max(16, Mathf.RoundToInt(20f * s)));
             StampOutlined(
                 rows.Label, SettingsSheet.DoNotSellLabel, rowSt,
                 new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(2, Mathf.RoundToInt(rowSt.fontSize * 0.14f)));
 
             bool on = AdConsent.DoNotSell;
-            DrawPopupButton(rows.Toggle, rowHeld, on ? PopupTint.Gold : PopupTint.Wood);
-            if (on) DrawCheckMark(Inset(rows.Toggle, 0.22f));
+            DrawCheckbox(rows.Toggle, on, rowHeld);
+            if (on) DrawCheckMark(Inset(rows.Toggle, 0.22f), new Color(0.20f, 0.42f, 0.16f, 1f));
 
             float xSz = Mathf.Max(40f, 42f * s);
             var xBtn = new Rect(card.xMax - xSz - 6f, card.y + 6f, xSz, xSz);
@@ -132,6 +139,182 @@ namespace FlockFive
                 _settingsOpen = false;
                 Sfx.CardTap();
             }
+        }
+
+        // Square box. Empty when off. The check is drawn by the caller when on.
+        static void DrawCheckbox(Rect box, bool on, bool held)
+        {
+            if (box.width < 2f || box.height < 2f || Texture2D.whiteTexture == null) return;
+            var tex = Texture2D.whiteTexture;
+            GUI.color = held ? new Color(0.95f, 0.78f, 0.32f, 1f) : new Color(0.62f, 0.42f, 0.14f, 1f);
+            GUI.DrawTexture(box, tex);
+            float inset = Mathf.Max(3f, box.width * 0.14f);
+            var inner = new Rect(box.x + inset, box.y + inset, box.width - inset * 2f, box.height - inset * 2f);
+            GUI.color = on ? new Color(0.99f, 0.96f, 0.88f, 1f) : new Color(0.93f, 0.88f, 0.76f, 1f);
+            GUI.DrawTexture(inner, tex);
+            GUI.color = Color.white;
+        }
+
+        // Flat wood slab and a gold rim. White texture only, so the blanket oval stays out.
+        static void DrawWoodPanel(Rect card, float s)
+        {
+            var tex = Texture2D.whiteTexture;
+            if (tex == null || card.width < 4f || card.height < 4f) return;
+            float edge = Mathf.Max(8f, 11f * s);
+            GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.28f);
+            GUI.DrawTexture(new Rect(card.x + 3f * s, card.y + 5f * s, card.width, card.height), tex);
+            GUI.color = new Color(0.34f, 0.18f, 0.07f, 1f);
+            GUI.DrawTexture(card, tex);
+            GUI.color = new Color(0.86f, 0.68f, 0.30f, 1f);
+            GUI.DrawTexture(new Rect(card.x + 3f, card.y + 3f, card.width - 6f, card.height - 6f), tex);
+            GUI.color = new Color(0.55f, 0.36f, 0.12f, 1f);
+            float lip = Mathf.Max(2f, 3f * s);
+            GUI.DrawTexture(new Rect(card.x + edge, card.y + edge, card.width - edge * 2f, card.height - edge * 2f), tex);
+            GUI.color = new Color(0.48f, 0.29f, 0.12f, 1f);
+            GUI.DrawTexture(new Rect(card.x + edge + lip, card.y + edge + lip, card.width - (edge + lip) * 2f, card.height - (edge + lip) * 2f), tex);
+            GUI.color = new Color(1f, 0.90f, 0.55f, 0.55f);
+            GUI.DrawTexture(new Rect(card.x + edge, card.y + edge, card.width - edge * 2f, Mathf.Max(2f, 3f * s)), tex);
+            GUI.color = Color.white;
+        }
+
+        // Same path as the LEVEL flower: badger leap, otherwise the gate sting and Load.
+        bool PressLevelButton()
+        {
+            if (TakeBadgerFlower()) return true;
+            Sfx.GateGo();
+            Load(LevelData.NextPlay);
+            return true;
+        }
+
+        // Simulator hook. Absent the argument, this returns before it touches consent or the level.
+        void MaybeSmokeLaunch()
+        {
+            if (_smokePlayed || !AdConsent.FirstFrameReady || !AdConsent.SmokeAutoPlay()) return;
+            if (!_splash || _home != HomeFace.Splash) return;
+            _smokePlayed = true;
+            AdConsent.DismissTransient();
+            PressLevelButton();
+        }
+
+        void PollHomeAtt()
+        {
+            bool mid = !_splash;
+            bool coach;
+            if (_splash)
+            {
+                HomeModals(out bool hard, out bool soft);
+                coach = hard || soft || HomeTutorLive() || TutorialGuideLive();
+            }
+            else
+                coach = TutorialGuideLive();
+            AdConsent.PollSystem(Application.isFocused, mid, coach);
+        }
+
+        void PrepareSoftPrompt(bool coachOrModal)
+        {
+            bool onHome = _splash && _home == HomeFace.Splash && !_settingsOpen;
+            _homePrompt = AdConsent.LayoutHome(
+                Screen.width, Screen.height, Screen.safeArea,
+                onHome, coachOrModal || !onHome, LevelData.NextPlay);
+        }
+
+        void DrawSoftPrompt(float s)
+        {
+            var card = _homePrompt;
+            if (card.Kind == AdConsent.Sheet.None) return;
+            if (Texture2D.whiteTexture == null) return;
+            if (s < 0.5f) s = 0.5f;
+            GUI.color = new Color(0.05f, 0.04f, 0.03f, 0.28f);
+            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            DrawWoodPanel(card.Card, s);
+
+            string body = card.Kind == AdConsent.Sheet.Att ? AdConsent.AttBody : AdConsent.GdprBody;
+            var st = GuiPool.Label(GuiSlot.PromptBody);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = true;
+            st.fontSize = FitFontWrapped(
+                st, body, card.Body.width * 0.92f, card.Body.height * 0.92f,
+                15, Mathf.Max(18, Mathf.RoundToInt(22f * s)));
+            StampOutlined(card.Body, body, st, new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.14f)));
+
+            string yes = card.Kind == AdConsent.Sheet.Att ? AdConsent.ContinueLabel : AdConsent.AllowLabel;
+            if (DrawSheetButton(card.Accept, yes, true, s))
+            {
+                if (card.Kind == AdConsent.Sheet.Att) AdConsent.ContinueAtt();
+                else AdConsent.AcceptGdpr();
+                Sfx.CardTap();
+                return;
+            }
+            if (DrawSheetButton(card.Decline, AdConsent.NotNowLabel, false, s))
+            {
+                if (card.Kind == AdConsent.Sheet.Att) AdConsent.NotNow(LevelData.NextPlay);
+                else AdConsent.DeclineGdpr();
+                Sfx.CardTap();
+            }
+        }
+
+        bool DrawSheetButton(Rect rect, string label, bool gold, float s)
+        {
+            bool fire = HitPad(rect, out bool held);
+            var face = DrawPopupButton(rect, held, gold ? PopupTint.Gold : PopupTint.Wood);
+            var st = GuiPool.Label(GuiSlot.PromptButton);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
+            st.fontSize = FitFont(st, label, face.width * 0.9f, face.height * 0.62f, 13, Mathf.Max(16, Mathf.RoundToInt(20f * s)));
+            StampOutlined(face, label, st, new Color(1f, 0.98f, 0.92f, 1f), 0, Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.16f)));
+            return fire;
+        }
+
+        // Gold gear, transparent outside the disc. Procedural so it matches the wood buttons.
+        static Texture2D GearTex()
+        {
+            if (_gearTex != null) return _gearTex;
+            const int n = 128;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = "SettingsGear"
+            };
+            var px = new Color32[n * n];
+            float c = (n - 1) * 0.5f;
+            float hole = n * 0.07f;
+            float body = n * 0.32f;
+            float toothIn = n * 0.28f;
+            float outer = n * 0.46f;
+            for (int y = 0; y < n; y++)
+            {
+                for (int x = 0; x < n; x++)
+                {
+                    float dx = x + 0.5f - c;
+                    float dy = y + 0.5f - c;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (d > outer + 1.1f || d < hole - 0.8f) continue;
+                    float ang = Mathf.Atan2(dy, dx);
+                    // Short teeth on a wood disc. The hole in the middle keeps it a cog.
+                    float phase = Mathf.Repeat(ang * 8f / (Mathf.PI * 2f) + 0.5f, 1f);
+                    bool tooth = phase < 0.48f && d <= outer + 0.7f && d >= toothIn;
+                    bool disc = d <= body && d >= hole;
+                    if (!tooth && !disc) continue;
+                    float edge = tooth ? outer + 0.7f - d : body + 0.7f - d;
+                    edge = Mathf.Min(edge, d - hole + 0.7f);
+                    float a = Mathf.Clamp01(edge);
+                    float light = Mathf.Clamp01(0.32f + (c - y) / (n * 0.85f));
+                    var wood = Color.Lerp(new Color(0.40f, 0.22f, 0.07f), new Color(0.74f, 0.48f, 0.16f), light);
+                    var gold = Color.Lerp(new Color(0.62f, 0.40f, 0.10f), new Color(1f, 0.88f, 0.42f), light);
+                    var col = tooth ? gold : wood;
+                    if (d < hole + n * 0.03f) col = Color.Lerp(col, new Color(0.28f, 0.16f, 0.05f), 0.55f);
+                    px[y * n + x] = new Color(col.r, col.g, col.b, a);
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _gearTex = tex;
+            return tex;
         }
     }
 }

@@ -494,6 +494,11 @@ namespace FlockFive
 #endif
             }
 #if UNITY_EDITOR
+            if (System.IO.File.Exists("/tmp/flock-five-b79-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b79-stills"); } catch { }
+                StartCoroutine(ShotBuild79());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
@@ -750,6 +755,9 @@ namespace FlockFive
             _hawkRun = StartCoroutine(HawkView.Patrol(
                 CanHawkVisit, PestsArmed, LevelData.HawkVisits, _garden.Feeders, _garden.Root));
             ArmGardenStamp();
+            // Board is open and the garden is built. The smoke test waits for this line.
+            if (_board != null && !_splash)
+                Debug.Log("FF_LEVEL_STARTED");
 #if UNITY_EDITOR
             if (WantFinalePreview())
                 StartCoroutine(PreviewFinale());
@@ -987,6 +995,111 @@ namespace FlockFive
             yield return new WaitForSecondsRealtime(0.38f);
             yield return SnapShot(dir + "/gift-thanks.png");
             _gift = GiftFace.None;
+        }
+
+        IEnumerator ShotBuild79()
+        {
+            const string dir = "/Users/zfxgames/wkspaces/birdshot/gb";
+            System.IO.Directory.CreateDirectory(dir);
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            bool hadSell = PlayerPrefs.HasKey(AdConsent.DoNotSellKey);
+            int sell = PlayerPrefs.GetInt(AdConsent.DoNotSellKey, 0);
+            PlayerPrefs.SetInt("flockfive.next", 0);
+            PlayerPrefs.Save();
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            Screen.SetResolution(1179, 2556, false);
+            // The first frames are the camera clear (a flat cyan) until the home
+            // painting is on the camera. Hold the splash until that paint is up.
+            yield return WaitForHomePaint();
+
+            yield return SnapBuild79(dir + "/b79-home.png", false, false);
+            AdConsent.DoNotSell = false;
+            yield return SnapBuild79(dir + "/b79-settings-off.png", true, false);
+            AdConsent.DoNotSell = true;
+            yield return SnapBuild79(dir + "/b79-settings-on.png", true, false);
+            AdConsent.DoNotSell = false;
+            yield return SnapBuild79(dir + "/b79-att-preprompt.png", false, true);
+
+            AdConsent.EditorHoldAtt = false;
+            AdConsent.ResetTransient();
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            if (hadSell) AdConsent.DoNotSell = sell != 0;
+            else
+            {
+                AdConsent.DoNotSell = false;
+                PlayerPrefs.DeleteKey(AdConsent.DoNotSellKey);
+            }
+            PlayerPrefs.Save();
+            Debug.Log("B79_STILLS_DONE");
+            var exit = System.Type.GetType("UnityEditor.EditorApplication, UnityEditor");
+            var method = exit != null ? exit.GetMethod("Exit", new[] { typeof(int) }) : null;
+            if (method != null) method.Invoke(null, new object[] { 0 });
+        }
+
+        // Sample a spot under the logo and left of the coins. Cyan means the
+        // painting has not reached the camera yet.
+        IEnumerator WaitForHomePaint()
+        {
+            float t = 0f;
+            while (t < 8f)
+            {
+                PoseBuild79(false, false);
+                yield return new WaitForEndOfFrame();
+                Texture2D tex = null;
+                try { tex = ScreenCapture.CaptureScreenshotAsTexture(); }
+                catch (System.Exception) { tex = null; }
+                bool ready = false;
+                if (tex != null)
+                {
+                    int x = Mathf.Clamp(Mathf.RoundToInt(tex.width * 0.18f), 0, tex.width - 1);
+                    int yTop = Mathf.RoundToInt(tex.height * 0.16f);
+                    int y = Mathf.Clamp(tex.height - 1 - yTop, 0, tex.height - 1);
+                    var c = tex.GetPixel(x, y);
+                    ready = !(c.r < 0.12f && c.g > 0.70f && c.b > 0.70f);
+                    Destroy(tex);
+                }
+                if (ready && t > 0.3f) yield break;
+                t += Time.unscaledDeltaTime;
+                yield return null;
+            }
+        }
+
+        IEnumerator SnapBuild79(string path, bool settings, bool att)
+        {
+            float t = 0f;
+            while (t < 0.45f)
+            {
+                PoseBuild79(settings, att);
+                t += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            PoseBuild79(settings, att);
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(path);
+            yield return new WaitForSecondsRealtime(0.55f);
+        }
+
+        void PoseBuild79(bool settings, bool att)
+        {
+            _splash = true;
+            _home = HomeFace.Splash;
+            _settingsOpen = settings;
+            _welcomeOpen = false;
+            _welcomeGlove = false;
+            _dailyOpen = false;
+            _dailyAskOpen = false;
+            _adoptLive = false;
+            _avatarRename = false;
+            _hiveIntroLive = false;
+            _pokerIntroLive = false;
+            _dailyIntroLive = false;
+            _streakSlide = -1f;
+            VipOffer.Close();
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = att && !settings;
         }
 
         IEnumerator ShotHome()
@@ -2318,6 +2431,8 @@ namespace FlockFive
 
         void Update()
         {
+            MaybeSmokeLaunch();
+            PollHomeAtt();
             // Bonus signs fade on the shared stage-clear state (limb stays; see GiftWant).
             GiftWant.StageClear = _won && !_splash;
             // Before the pause return and the speed sync: a solved board sends
@@ -3759,7 +3874,6 @@ namespace FlockFive
                 _gardenScoring = false;
                 yield break;
             }
-            yield return Tracking.AskOnce();
             yield return Ads.Interstitial();
             if (_restarting || _splash)
             {
@@ -8448,6 +8562,7 @@ namespace FlockFive
             bool modal = hardModal || softModal;
             // Captured before the dismiss taps below, so that same click cannot poke the bird.
             bool tutorUp = HomeTutorLive();
+            PrepareSoftPrompt(modal || tutorUp);
             DismissAvatarRename(s);
             // Rail steps hold until their own button. A miss does not skip poker or Daily,
             // and the looping glove does not open the card.
@@ -8483,6 +8598,7 @@ namespace FlockFive
             if (vipDraw)
                 SplashPress.LayoutDisc(SplashPress.Id.Vip, noAdsR, SplashNoAdsRibbon(noAdsR));
             var vipGates = HomePressGates(RailVip);
+            vipGates.Consent = AdConsent.BlocksControl(SplashPress.PressHit(SplashPress.Id.Vip).Rect);
             vipGates.Hidden = !vipDraw;
             vipGates.WelcomeHold = vipHold;
             vipGates.Inactive = !offerVip;
@@ -8495,7 +8611,7 @@ namespace FlockFive
             // Pig above hive: hit-test before the album so taps don't open it.
             // The offer card swallows the rail so a dismiss tap cannot oink.
             var pigR = PiggyRect(s);
-            if (!modal && HomeTapAllowed(RailPig) && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
+            if (!modal && HomeTapAllowed(RailPig) && !AdConsent.BlocksControl(pigR) && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
                 TryPigPoke();
 
             // Hive lesson hides that slot. The packer closes it; poker slides up under the pig.
@@ -8506,6 +8622,7 @@ namespace FlockFive
             var hiveHit = HivePopRect(hiveR, hivePop);
             SplashPress.Layout(SplashPress.Id.Hive, hiveHit);
             var hiveGates = HomePressGates(RailHive);
+            hiveGates.Consent = AdConsent.BlocksControl(hiveHit);
             hiveGates.Hidden = !hiveDraw;
             hiveGates.Inactive = !SplashHiveShown();
             hiveGates.StepGate = StepGateBlocks(hiveHit);
@@ -8536,6 +8653,7 @@ namespace FlockFive
             var pokerR = SplashPokerRect();
             SplashPress.Layout(SplashPress.Id.Poker, pokerR);
             var pokerGates = HomePressGates(RailPoker);
+            pokerGates.Consent = AdConsent.BlocksControl(pokerR);
             pokerGates.Hidden = !pokerDraw;
             pokerGates.StepGate = StepGateBlocks(pokerR);
             if (StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates)).Launch)
@@ -8575,6 +8693,7 @@ namespace FlockFive
             SplashPress.Layout(SplashPress.Id.Daily, dailyTap);
             bool dailyLesson = HomeStepRail() == RailDaily;
             var dailyGates = HomePressGates(RailDaily);
+            dailyGates.Consent = AdConsent.BlocksControl(dailyTap);
             dailyGates.Hidden = !dailyDraw;
             dailyGates.DailySoftOk = dailyLesson && _streakSlide < 0f;
             dailyGates.PopupGate = PopupBlocked(PopupKind.Daily);
@@ -8603,14 +8722,7 @@ namespace FlockFive
             // eats them at the top of OnGUI and advances to the look step.
             // Owed bird lesson keeps LEVEL from starting under the breath or the greet.
             if (DrawFlowerPlay(s, ease, number))
-            {
-                // Badger owed: the leap, then the contest. The flower never reaches Load.
-                if (!TakeBadgerFlower())
-                {
-                    Sfx.GateGo();
-                    Load(next);
-                }
-            }
+                PressLevelButton();
             DrawHomeAvatar(s);
             if (_adoptLive) DrawAdoptScene(s);
             DrawHiveIntro(s);
@@ -8633,6 +8745,7 @@ namespace FlockFive
                 }
             }
             if (_settingsOpen) DrawSettingsSheet(s);
+            else DrawSoftPrompt(s);
         }
 
         bool DrawFlowerPlay(float s, string ease, int number)
@@ -8642,6 +8755,7 @@ namespace FlockFive
             var hit = SplashPress.PressHit(SplashPress.Id.Level);
             var rest = hit.Rect;
             var gates = HomePressGates(-1);
+            gates.Consent = AdConsent.BlocksControl(rest);
             gates.AdoptQueue = AdoptHoldsQueue();
             gates.HomeTaken = _homeTapTaken;
             gates.StepGate = StepGateBlocks(rest);

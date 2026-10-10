@@ -164,7 +164,7 @@ namespace FlockFive.Editor
             int link = src.IndexOf("StampOutlined(rows.PrivacyLink, SettingsSheet.PrivacyLabel");
             int label = src.IndexOf("rows.Label, SettingsSheet.DoNotSellLabel");
             int read = src.IndexOf("bool on = AdConsent.DoNotSell");
-            int toggle = src.IndexOf("DrawPopupButton(rows.Toggle");
+            int toggle = src.IndexOf("DrawCheckbox(rows.Toggle");
             int mark = src.IndexOf("DrawCheckMark(Inset(rows.Toggle");
             int assign = src.IndexOf("AdConsent.DoNotSell = !on");
             string appPath = Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.cs");

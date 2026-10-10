@@ -45,6 +45,9 @@ namespace FlockFive
         SettingsTitle,
         SettingsLink,
         SettingsRow,
+        SettingsChevron,
+        PromptBody,
+        PromptButton,
         Count
     }
 

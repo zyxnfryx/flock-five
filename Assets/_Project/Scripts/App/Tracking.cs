@@ -1,17 +1,14 @@
-using System.Collections;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
 namespace FlockFive
 {
-    // Apple App Tracking Transparency. AdConsent waits for the native
-    // completion (or a timeout) before LevelPlay init. Editor and Android
-    // skip the request. AskOnce still runs after the first garden clear and
-    // does nothing once this launch already asked or the status is decided.
+    // Apple App Tracking Transparency. The system prompt is not shown at launch.
+    // AdConsent asks later, on the home screen, and only then calls RequestWhenActive.
+    // The native request still waits until UIApplication is active. Editor and Android
+    // skip the request. Completion is delivered to AdsHost.OnAttComplete.
     public static class Tracking
     {
-        const string AskedKey = "flockfive.att.asked";
-
         public static bool Completed { get; private set; }
         public static int CompletedStatus { get; private set; }
 
@@ -27,6 +24,18 @@ namespace FlockFive
             }
         }
 
+        // True when iOS has not recorded a choice yet. Editor and Android stay
+        // "undecided" so the in-game pre-prompt can be exercised without a device.
+        public static bool Undecided()
+        {
+#if UNITY_IOS && !UNITY_EDITOR
+            try { return FlockFive_TrackingStatus() == 0; }
+            catch (System.Exception) { return false; }
+#else
+            return true;
+#endif
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void Reset()
         {
@@ -35,6 +44,7 @@ namespace FlockFive
         }
 
         // UnitySendMessage target is the Ads host. status is the ATTrackingManager code.
+        // 0 not determined, 1 restricted, 2 denied, 3 authorized.
         public static void NoteComplete(string status)
         {
             Completed = true;
@@ -42,92 +52,16 @@ namespace FlockFive
             CompletedStatus = int.TryParse(status, out n) ? n : -1;
         }
 
-        public static IEnumerator WaitForAds(AdConsent.AttSession session)
-        {
-            if (session == null) yield break;
-            session.Start();
-            if (!AttRequired) yield break;
-#if UNITY_IOS && !UNITY_EDITOR
-            // Wall clock, not unscaledDeltaTime. A hitch or a stalled player
-            // loop must not freeze the 45s fallback short of LevelPlay init.
-            // The native call waits until UIApplication is active.
-            float start = Time.realtimeSinceStartup;
-            bool asked = false;
-            while (!session.Finished)
-            {
-                if (!asked)
-                {
-                    asked = true;
-                    int status = 0;
-                    bool known = false;
-                    try
-                    {
-                        status = FlockFive_TrackingStatus();
-                        known = true;
-                    }
-                    catch (System.Exception e)
-                    {
-                        Debug.LogWarning("ATT status unavailable: " + e.Message);
-                    }
-                    if (known && status != 0)
-                        session.Callback = true;
-                    else
-                    {
-                        try
-                        {
-                            PlayerPrefs.SetInt(AskedKey, 1);
-                            PlayerPrefs.Save();
-                            FlockFive_RequestTracking();
-                        }
-                        catch (System.Exception e)
-                        {
-                            Debug.LogWarning("ATT request skipped: " + e.Message);
-                        }
-                    }
-                }
-                else if (Completed)
-                    session.Callback = true;
-                else
-                {
-                    try
-                    {
-                        if (FlockFive_TrackingStatus() != 0)
-                            session.Callback = true;
-                    }
-                    catch (System.Exception) { }
-                }
-
-                float elapsed = Time.realtimeSinceStartup - start;
-                if (float.IsNaN(elapsed) || float.IsInfinity(elapsed) || elapsed < 0f)
-                    elapsed = session.Elapsed;
-                session.CatchUp(elapsed, AdConsent.AttTimeoutSeconds);
-                if (session.Finished) yield break;
-                yield return null;
-            }
-            if (!session.Finished)
-                session.CatchUp(AdConsent.AttTimeoutSeconds, AdConsent.AttTimeoutSeconds);
-#else
-            yield break;
-#endif
-        }
-
-        public static IEnumerator AskOnce()
+        // Native request only. Does not spin, does not block input, does not write prefs.
+        // FlockFiveTracking.mm waits until the app is active before the system dialog.
+        public static void RequestWhenActive()
         {
 #if UNITY_IOS && !UNITY_EDITOR
-            if (PlayerPrefs.GetInt(AskedKey, 0) == 1) yield break;
-            PlayerPrefs.SetInt(AskedKey, 1);
-            PlayerPrefs.Save();
-            if (FlockFive_TrackingStatus() != 0) yield break;
-            FlockFive_RequestTracking();
-            float t = 0f;
-            yield return null;
-            while (FlockFive_TrackingStatus() == 0 && !Completed && t < 90f)
+            try { FlockFive_RequestTracking(); }
+            catch (System.Exception e)
             {
-                t += Time.unscaledDeltaTime;
-                yield return null;
+                Debug.LogWarning("ATT request skipped: " + e.Message);
             }
-#else
-            yield break;
 #endif
         }
 

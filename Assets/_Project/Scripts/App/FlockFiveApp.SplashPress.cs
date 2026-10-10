@@ -57,7 +57,9 @@ namespace FlockFive
         {
             ReadHomePointers(_homeSamples, out bool live);
             var e = Event.current;
-            bool canBegin = e != null && e.button == 0 && e.type == EventType.MouseDown;
+            var type = e != null ? e.type : EventType.Ignore;
+            int button = e != null ? e.button : -1;
+            bool canBegin = SplashPress.CanBegin(type, button, _homeSamples);
             var view = _homePress[(int)id].Apply(
                 SplashPress.PressHit(id), !allow, _homeSamples, canBegin, live, Time.frameCount);
             if (view.Handled) EatHomePointer();
