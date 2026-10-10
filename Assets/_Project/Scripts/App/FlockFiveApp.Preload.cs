@@ -109,7 +109,10 @@ namespace FlockFive
             }
             if (_preloadClock.Elapsed.TotalMilliseconds < PreloadBudgetMs)
                 TickPreloadPhase();
+            double preloadMs = _preloadClock.Elapsed.TotalMilliseconds;
             _preloadClock.Stop();
+            if (preloadMs >= 1.0)
+                StartupTrace.Note("Preload", preloadMs, Time.frameCount);
         }
 
         // One slice. Never the whole catalog: the next backdrop, the colors a

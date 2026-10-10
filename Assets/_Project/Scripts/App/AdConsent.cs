@@ -630,7 +630,9 @@ namespace FlockFive
                 }
 
                 if (host == null) yield break;
-                RegionClass region = DeviceRegion();
+                RegionClass region;
+                using (StartupTrace.Begin("AdConsent.Region"))
+                    region = DeviceRegion();
                 bool has = HasChoice();
                 bool granted = has && SavedConsent();
                 Plan plan = Decide(region, has, granted);
@@ -663,9 +665,12 @@ namespace FlockFive
                 bool personal = Personalized(plan.Consent, attRequired, Tracking.CompletedStatus);
                 var boot = new Plan(false, plan.Ready, personal, plan.ApplyDoNotSell, plan.DoNotSell);
                 if (!MayBoot(boot.Ready, attRequired, default)) yield break;
-                ApplyToLevelPlay(boot);
-                // Stored CCPA choice before init. The Settings toggle applies it again later.
-                ApplyStoredDoNotSell();
+                using (StartupTrace.Begin("AdConsent.Apply"))
+                {
+                    ApplyToLevelPlay(boot);
+                    // Stored CCPA choice before init. The Settings toggle applies it again later.
+                    ApplyStoredDoNotSell();
+                }
                 if (host != null) host.Boot();
             }
             finally

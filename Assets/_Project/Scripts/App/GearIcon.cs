@@ -22,24 +22,153 @@ namespace FlockFive
         const float Corner = 0.014f;
         const float Root = 0.70f * Body;
 
+        // Edit-time bake. The 512² supersampled fill is about four seconds on
+        // the main thread, which froze the home halo on the first paint.
+        public const string BakedResource = "Sprites/settings_gear";
+
         static Texture2D _tex;
         static Color32[] _px;
+        static int _filled;
+        static int _sliceFrame = -1;
+        static bool _owned;
+        // Tests turn this off to prove the draw path does not fill the whole icon at once.
+        public static bool AllowBaked = true;
+
+        public static int FilledRows => _filled;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
         {
-            if (_tex != null)
-            {
-                Object.Destroy(_tex);
-                _tex = null;
-            }
+            ReleaseOwned();
+            _tex = null;
             _px = null;
+            _filled = 0;
+            _sliceFrame = -1;
+            AllowBaked = true;
+        }
+
+        public static void ResetForTests()
+        {
+            ReleaseOwned();
+            _tex = null;
+            _px = null;
+            _filled = 0;
+            _sliceFrame = -1;
+            AllowBaked = true;
+        }
+
+        static void ReleaseOwned()
+        {
+            if (!_owned || _tex == null) return;
+            if (Application.isPlaying) Object.Destroy(_tex);
+            else Object.DestroyImmediate(_tex);
+            _owned = false;
         }
 
         public static Texture2D Texture()
         {
             if (_tex != null) return _tex;
-            var px = Pixels();
+            var trace = StartupTrace.Begin("GearIcon.Texture");
+            try
+            {
+                if (AllowBaked && TryLoadBaked()) return _tex;
+                // One row. A full pass is thousands of milliseconds.
+                WarmSlice();
+                return _tex;
+            }
+            finally
+            {
+                trace.Dispose();
+            }
+        }
+
+        // One row of the procedural icon. Safe to call from a frame budget.
+        // Returns false when the texture is ready.
+        public static bool WarmSlice()
+        {
+            if (_tex != null) return false;
+            int frame = Time.frameCount;
+            if (_sliceFrame == frame) return _filled < Resolution;
+            _sliceFrame = frame;
+            EnsureBuffer();
+            if (_filled < Resolution)
+            {
+                FillRow(_filled);
+                _filled++;
+            }
+            if (_filled >= Resolution) Upload();
+            return _tex == null;
+        }
+
+        static bool TryLoadBaked()
+        {
+            Texture2D tex = null;
+            var spr = Resources.Load<Sprite>(BakedResource);
+            if (spr != null) tex = spr.texture;
+            if (tex == null) tex = Resources.Load<Texture2D>(BakedResource);
+            if (tex == null) return false;
+            _tex = tex;
+            _owned = false;
+            return true;
+        }
+
+        public static Color32[] Pixels()
+        {
+            if (_px != null && _filled >= Resolution) return _px;
+            var trace = StartupTrace.Begin("GearIcon.Pixels");
+            try
+            {
+                EnsureBuffer();
+                while (_filled < Resolution)
+                {
+                    FillRow(_filled);
+                    _filled++;
+                }
+                return _px;
+            }
+            finally
+            {
+                trace.Dispose();
+            }
+        }
+
+        static void EnsureBuffer()
+        {
+            int n = Resolution;
+            if (_px != null && _px.Length == n * n) return;
+            _px = new Color32[n * n];
+            _filled = 0;
+        }
+
+        static void FillRow(int y)
+        {
+            int n = Resolution;
+            var px = _px;
+            float c = (n - 1) * 0.5f;
+            float scale = c;
+            int row = y * n;
+            for (int x = 0; x < n; x++)
+            {
+                Color acc = Color.clear;
+                const int k = 2;
+                float step = 1f / k;
+                for (int sy = 0; sy < k; sy++)
+                {
+                    for (int sx = 0; sx < k; sx++)
+                    {
+                        float nx = (x + (sx + 0.5f) * step - c) / scale;
+                        float ny = (y + (sy + 0.5f) * step - c) / scale;
+                        acc += Sample(nx, ny);
+                    }
+                }
+                acc /= (k * k);
+                px[row + x] = (Color32)acc;
+            }
+        }
+
+        static void Upload()
+        {
+            if (_tex != null || _px == null) return;
             var tex = new Texture2D(Resolution, Resolution, TextureFormat.RGBA32, false)
             {
                 filterMode = FilterMode.Bilinear,
@@ -47,41 +176,10 @@ namespace FlockFive
                 hideFlags = HideFlags.HideAndDontSave,
                 name = "SettingsGear"
             };
-            tex.SetPixels32(px);
+            tex.SetPixels32(_px);
             tex.Apply(false, false);
             _tex = tex;
-            return tex;
-        }
-
-        public static Color32[] Pixels()
-        {
-            if (_px != null) return _px;
-            int n = Resolution;
-            var px = new Color32[n * n];
-            float c = (n - 1) * 0.5f;
-            float scale = c;
-            for (int y = 0; y < n; y++)
-            {
-                for (int x = 0; x < n; x++)
-                {
-                    Color acc = Color.clear;
-                    const int k = 2;
-                    float step = 1f / k;
-                    for (int sy = 0; sy < k; sy++)
-                    {
-                        for (int sx = 0; sx < k; sx++)
-                        {
-                            float nx = (x + (sx + 0.5f) * step - c) / scale;
-                            float ny = (y + (sy + 0.5f) * step - c) / scale;
-                            acc += Sample(nx, ny);
-                        }
-                    }
-                    acc /= (k * k);
-                    px[y * n + x] = (Color32)acc;
-                }
-            }
-            _px = px;
-            return px;
+            _owned = true;
         }
 
         // Opaque runs outside the ring. A tooth that crosses angle 0 counts once.

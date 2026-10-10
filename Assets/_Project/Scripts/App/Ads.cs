@@ -512,6 +512,7 @@ namespace FlockFive
         public void Boot()
         {
             if (!Ads.HasKeys) return;
+            var trace = StartupTrace.Begin("Ads.Boot");
             try
             {
                 if (_inited)
@@ -527,12 +528,17 @@ namespace FlockFive
 #if FF_ADS_DEV
                 LevelPlay.SetMetaData("is_test_suite", "enable");
 #endif
-                LevelPlay.Init(Ads.AppKey);
+                using (StartupTrace.Begin("LevelPlay.Init"))
+                    LevelPlay.Init(Ads.AppKey);
             }
             catch (System.Exception e)
             {
                 _initFailed = true;
                 Debug.LogWarning("LevelPlay init skipped: " + e.Message);
+            }
+            finally
+            {
+                trace.Dispose();
             }
         }
 
@@ -638,8 +644,11 @@ namespace FlockFive
             _initFailed = false;
             try
             {
-                CreateRewarded();
-                CreateInterstitial();
+                using (StartupTrace.Begin("Ads.CreateUnits"))
+                {
+                    CreateRewarded();
+                    CreateInterstitial();
+                }
             }
             catch (System.Exception e)
             {

@@ -502,12 +502,22 @@ namespace FlockFive
             Screen.autorotateToPortraitUpsideDown = false;
             Screen.autorotateToLandscapeLeft = false;
             Screen.autorotateToLandscapeRight = false;
-            Sfx.Warm();
-            Ads.Warm();
-            NoAds.Warm();
-            Invite.Warm();
-            SpriteCatalog.DropPokerArt();
-            try { ShowSplash(); HealInterruptedTutorials(); }
+            using (StartupTrace.Begin("Sfx.Warm"))
+                Sfx.Warm();
+            using (StartupTrace.Begin("Ads.Warm"))
+                Ads.Warm();
+            using (StartupTrace.Begin("NoAds.Warm"))
+                NoAds.Warm();
+            using (StartupTrace.Begin("Invite.Warm"))
+                Invite.Warm();
+            using (StartupTrace.Begin("DropPokerArt"))
+                SpriteCatalog.DropPokerArt();
+            try
+            {
+                using (StartupTrace.Begin("ShowSplash"))
+                    ShowSplash();
+                HealInterruptedTutorials();
+            }
             catch (System.Exception e)
             {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -691,7 +701,8 @@ namespace FlockFive
             _garden = default;
             _board = null;
             var homeCam = WorldBuilder.MakeCamera(transform);
-            GardenLife.AttachHome(transform, homeCam);
+            using (StartupTrace.Begin("GardenLife.AttachHome"))
+                GardenLife.AttachHome(transform, homeCam);
             if (MixDesk.Live != null) MixDesk.Live.SetSplash(true);
             Purse.Boot();
             // A clear that never reached the pay step. Pending is memory-only, so a
@@ -2642,6 +2653,7 @@ namespace FlockFive
 
         void Update()
         {
+            StartupTrace.NoteFrame();
             MaybeSmokeLaunch();
             PollHomeAtt();
             TickSettingsMotion();
@@ -8781,6 +8793,9 @@ namespace FlockFive
 
         void DrawSplash()
         {
+            var trace = StartupTrace.Begin("DrawSplash");
+            try
+            {
             _homeTapTaken = false;
             float s = Mathf.Max(Screen.height / 720f, 1f);
 #if UNITY_EDITOR
@@ -8975,6 +8990,11 @@ namespace FlockFive
             else DrawSoftPrompt(s);
             if (_dailyAdBusy && Ads.IsLoading && !Ads.IsShowing && !Ads.MockRewarded)
                 DrawAdSpinner(s);
+            }
+            finally
+            {
+                trace.Dispose();
+            }
         }
 
         bool DrawFlowerPlay(float s, string ease, int number)
@@ -11024,6 +11044,9 @@ namespace FlockFive
 
         void DrawHaloBirds(ref SplashFlutter[] flutters, Rect h, float s, bool behind, float icon, ref int stepFrame)
         {
+            var trace = StartupTrace.Begin("HaloBirds");
+            try
+            {
             if (!GuiPaint()) return;
             if (flutters == null || flutters.Length == 0) return;
             Vector2 c = h.center;
@@ -11081,12 +11104,20 @@ namespace FlockFive
                     GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
             }
             GUI.color = prev;
+            }
+            finally
+            {
+                trace.Dispose();
+            }
         }
 
         // Widest flight frame vs the rest pose. GUI sizes by this, so the gap has to too.
         static float TitleWingMul()
         {
             if (_titleWing > 0f) return _titleWing;
+            var trace = StartupTrace.Begin("TitleWingMul");
+            try
+            {
             var rest = SpriteCatalog.BirdFrame(BirdColor.Gold, 0f, false);
             if (rest == null || rest.pixelsPerUnit <= 0f) return 1f;
             float rw = rest.rect.width / rest.pixelsPerUnit;
@@ -11101,6 +11132,11 @@ namespace FlockFive
             }
             _titleWing = Mathf.Clamp(max / rw, 1f, 1.9f);
             return _titleWing;
+            }
+            finally
+            {
+                trace.Dispose();
+            }
         }
 
         // Same offset the drawer uses (ellipse + bob), so the gap test matches pixels.

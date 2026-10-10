@@ -126,6 +126,7 @@ namespace FlockFive.Editor
                 "home shown");
 
             CheckSettingsMotion(Check);
+            CheckGearLaunch(Check);
 
             Debug.Log("[build81] " + (fail == 0 ? "BUILD81_OK " + pass : "BUILD81_FAIL " + fail + " passed " + pass));
             if (fail > 0)
@@ -304,6 +305,49 @@ namespace FlockFive.Editor
             Check("settings-drawn-and-wired", wired,
                 "block=" + block + " gearHit=" + gearHit + " dim=" + dim
                 + " wood=" + wood + " gearDraw=" + gearDraw);
+        }
+
+        // The home paint used to fill the whole 512² cog on the first frame (~4 s).
+        // The draw path may finish at most one row when the bake is hidden.
+        static void CheckGearLaunch(System.Action<string, bool, string> Check)
+        {
+            GearIcon.ResetForTests();
+            GearIcon.AllowBaked = false;
+            Texture2D sliced = null;
+            int rows = -1;
+            double sliceMs = 0;
+            try
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                sliced = GearIcon.Texture();
+                watch.Stop();
+                sliceMs = watch.Elapsed.TotalMilliseconds;
+                rows = GearIcon.FilledRows;
+            }
+            finally
+            {
+                GearIcon.ResetForTests();
+            }
+
+            Check("gear-slice-not-sync",
+                sliced == null && rows == 1 && sliceMs < 80.0,
+                "tex=" + (sliced == null ? "null" : sliced.name)
+                + " rows=" + rows
+                + " ms=" + sliceMs.ToString("0.0"));
+
+            var baked = AssetDatabase.LoadAssetAtPath<Sprite>(GearBake.AssetPath);
+            bool size = baked != null && baked.texture != null
+                && baked.texture.width == GearIcon.Resolution
+                && baked.texture.height == GearIcon.Resolution;
+            GearIcon.ResetForTests();
+            var load = System.Diagnostics.Stopwatch.StartNew();
+            var shown = GearIcon.Texture();
+            load.Stop();
+            Check("gear-shows-from-bake",
+                size && shown != null && load.Elapsed.TotalMilliseconds < 80.0,
+                "sprite=" + (baked != null) + " shown=" + (shown != null)
+                + " ms=" + load.Elapsed.TotalMilliseconds.ToString("0.0"));
+            GearIcon.ResetForTests();
         }
     }
 }

@@ -1548,6 +1548,9 @@ namespace FlockFive
 
         static Sprite TryLoad(string path, float ppu)
         {
+            var trace = StartupTrace.BeginSprite(path);
+            try
+            {
             var ready = Resources.Load<Sprite>(path);
             Texture2D tex = null;
             if (ready == null)
@@ -1568,6 +1571,11 @@ namespace FlockFive
             if (path.Contains("fx_vine")) pivot = new Vector2(0.5f, 0.94f);
             else if (path.Contains("fx_leaf")) pivot = new Vector2(0.5f, 0.08f);
             return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), pivot, ppu, 0, SpriteMeshType.FullRect);
+            }
+            finally
+            {
+                trace.Dispose();
+            }
         }
 
         static Sprite Recolor(Sprite src, Color mul)

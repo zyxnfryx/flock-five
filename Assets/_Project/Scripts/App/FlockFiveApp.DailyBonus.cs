@@ -1317,9 +1317,17 @@ namespace FlockFive
         static void EnsureWheelArt()
         {
             if (_wheelDisc != null) return;
-            _wheelDisc = BakeWheelDisc(512);
-            _wheelHi = BakeWheelHighlight(512);
-            _wheelPointer = BakeWheelPointer(WheelPointerW, WheelPointerH);
+            var trace = StartupTrace.Begin("Wheel.Ensure");
+            try
+            {
+                _wheelDisc = BakeWheelDisc(512);
+                _wheelHi = BakeWheelHighlight(512);
+                _wheelPointer = BakeWheelPointer(WheelPointerW, WheelPointerH);
+            }
+            finally
+            {
+                trace.Dispose();
+            }
         }
 
         public const int WheelPointerW = 160;

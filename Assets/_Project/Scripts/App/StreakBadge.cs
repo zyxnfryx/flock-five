@@ -250,6 +250,9 @@ namespace FlockFive
         static Texture2D Disc()
         {
             if (_disc != null) return _disc;
+            var trace = StartupTrace.Begin("StreakBadge.Disc");
+            try
+            {
             const int n = 96;
             var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
             {
@@ -278,6 +281,11 @@ namespace FlockFive
             tex.Apply(false, true);
             _disc = tex;
             return tex;
+            }
+            finally
+            {
+                trace.Dispose();
+            }
         }
     }
 }
