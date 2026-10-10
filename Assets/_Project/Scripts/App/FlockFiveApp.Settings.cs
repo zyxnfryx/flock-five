@@ -91,11 +91,18 @@ namespace FlockFive
             var r = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
             var tex = GearIcon.Texture();
             if (tex == null) return;
-            GUI.color = Color.white;
-            GUI.color = new Color(0.12f, 0.07f, 0.03f, _gearHeld ? 0.20f : 0.32f);
-            GUI.DrawTexture(new Rect(r.x + 2f, r.y + 3f, r.width, r.height), tex, ScaleMode.ScaleToFit, true);
-            GUI.color = _gearHeld ? new Color(0.78f, 0.78f, 0.78f, 1f) : Color.white;
-            GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
+            // Press sinks and darkens. The hit rect stays r. The drop shadow is
+            // baked into the cog, so a second silhouette is not drawn under it.
+            var draw = r;
+            if (_gearHeld)
+            {
+                float k = 0.93f;
+                float ox = r.width * (1f - k) * 0.5f;
+                float oy = r.height * (1f - k) * 0.5f + r.height * 0.028f;
+                draw = new Rect(r.x + ox, r.y + oy, r.width * k, r.height * k);
+            }
+            GUI.color = _gearHeld ? new Color(0.62f, 0.52f, 0.40f, 1f) : Color.white;
+            GUI.DrawTexture(draw, tex, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
         }
 

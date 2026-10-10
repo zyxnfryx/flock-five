@@ -93,7 +93,15 @@ namespace FlockFive
             Shimmer = false
         };
 
+        public const string DiscName = "StreakBadgeDisc";
+
         static Texture2D _disc;
+
+        // The one disc Draw paints. Wheel x2 and the streak chip share it.
+        public static Texture2D SharedDisc()
+        {
+            return Disc();
+        }
 
         // Face, thin dark rim, gold sweep, outlined numeral, optional sparkle.
         // sparkle 0 still twinkles x10, so the reward card keeps a light glint.
@@ -248,7 +256,7 @@ namespace FlockFive
                 filterMode = FilterMode.Bilinear,
                 wrapMode = TextureWrapMode.Clamp,
                 hideFlags = HideFlags.HideAndDontSave,
-                name = "StreakBadgeDisc"
+                name = DiscName
             };
             var px = new Color32[n * n];
             float c = n * 0.5f;

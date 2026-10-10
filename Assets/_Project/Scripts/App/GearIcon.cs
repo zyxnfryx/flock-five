@@ -2,8 +2,8 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Settings cog. A solid ring, eight short trapezoid teeth, a clear hole,
-    // and a thick dark rim. One silhouette: the teeth run into the ring.
+    // Settings cog. One solid ring, eight short rectangular teeth, a round hole.
+    // Tooth and gap are about the same width at the tip, so it cannot read as a sun.
     // Baked once at high resolution with a 2x2 sample grid so the edges stay smooth.
     // GuiPool only pools labels, so this is the shared icon bake the button draws.
     public static class GearIcon
@@ -11,19 +11,16 @@ namespace FlockFive
         public const int Teeth = 8;
         public const int Resolution = 512;
 
-        // Geometric edge, before the stroke grows both ways. The stroke is about
-        // 6% of the visual diameter. Body, hole, and tooth length are set so the
-        // opaque silhouette lands near 0.72 / 0.28 / 0.28 of the tip radius.
-        const float Tip = 0.86f;
-        const float Body = 0.701f * Tip;
-        const float HoleR = 0.362f * Tip;
-        const float Stroke = 0.1277f * Tip;
-        const float Corner = 0.022f * Tip;
-        // Deep into the ring, outside the hole, so the rim does not cut a seam.
-        const float Root = HoleR + Stroke + 0.03f;
-        // Slight taper. Wide enough that the gold face survives the rim.
-        const float HalfRoot = 0.132f;
-        const float HalfTip = 0.096f;
+        // SDF edge, before the stroke grows both ways. Stroke is the full rim.
+        // Visual tip lands near 0.90, body near 0.75 of that, hole near 0.30,
+        // and each tooth near 0.21 of the diameter so the tip duty stays above 0.45.
+        const float Tip = 0.868f;
+        const float Body = 0.741f * Tip;
+        const float HoleR = 0.348f * Tip;
+        const float Stroke = 0.064f;
+        const float Half = 0.176f * Tip;
+        const float Corner = 0.014f;
+        const float Root = 0.70f * Body;
 
         static Texture2D _tex;
         static Color32[] _px;
@@ -137,7 +134,7 @@ namespace FlockFive
             return true;
         }
 
-        // Outer body radius over tooth-tip radius. About 0.72 for a solid ring.
+        // Outer body radius over tooth-tip radius. About 0.75 for a solid ring.
         public static float RingRatio(Color32[] px, int n)
         {
             float tip = MeanOuter(px, n, true);
@@ -145,7 +142,7 @@ namespace FlockFive
             return tip > 0.05f ? body / tip : 0f;
         }
 
-        // Clear hole radius over tooth-tip radius. About 0.28.
+        // Clear hole radius over tooth-tip radius. About 0.30.
         public static float HoleRatio(Color32[] px, int n)
         {
             float tip = MeanOuter(px, n, true);
@@ -154,14 +151,53 @@ namespace FlockFive
         }
 
         // Opaque fraction on a circle just outside the ring, where the teeth leave
-        // the body. About half: tooth width at the base matches the gap.
+        // the body. Kept for callers that still want the root duty.
         public static float DutyCycle(Color32[] px, int n)
         {
             if (px == null || n < 8) return 0f;
             float tip = MeanOuter(px, n, true);
             float body = MeanOuter(px, n, false);
             float r = body + (tip - body) * 0.12f;
-            if (r < 0.05f) return 0f;
+            return ArcDuty(px, n, r);
+        }
+
+        // Opaque fraction on a circle near the tooth tip. Rectangular teeth are
+        // narrowest in angle here, so this is the duty that has to stay chunky.
+        public static float TipDuty(Color32[] px, int n)
+        {
+            float tip = MeanOuter(px, n, true);
+            if (tip < 0.05f) return 0f;
+            return ArcDuty(px, n, tip * 0.90f);
+        }
+
+        // Narrowest tooth, measured across the flat near the tip, over the
+        // opaque diameter. A cog tooth is a wide block, not a ray.
+        public static float MinToothWidth(Color32[] px, int n)
+        {
+            if (px == null || n < 8) return 0f;
+            float tip = MeanOuter(px, n, true);
+            if (tip < 0.05f) return 0f;
+            float c = (n - 1) * 0.5f;
+            float rr = tip * 0.90f;
+            float min = 99f;
+            for (int i = 0; i < Teeth; i++)
+            {
+                float ang = Mathf.PI * 0.5f + i * (Mathf.PI * 2f / Teeth);
+                float dx = Mathf.Cos(ang);
+                float dy = Mathf.Sin(ang);
+                float tx = -dy;
+                float ty = dx;
+                float hi = Span(px, n, c, dx * rr, dy * rr, tx, ty, 1f);
+                float lo = Span(px, n, c, dx * rr, dy * rr, tx, ty, -1f);
+                float width = hi + lo;
+                if (width < min) min = width;
+            }
+            return min / (tip * 2f);
+        }
+
+        static float ArcDuty(Color32[] px, int n, float r)
+        {
+            if (px == null || n < 8 || r < 0.05f) return 0f;
             float c = (n - 1) * 0.5f;
             const int steps = 720;
             int on = 0;
@@ -171,6 +207,18 @@ namespace FlockFive
                 if (OpaqueAt(px, n, c, Mathf.Cos(a) * r, Mathf.Sin(a) * r)) on++;
             }
             return on / (float)steps;
+        }
+
+        static float Span(Color32[] px, int n, float c, float ox, float oy, float tx, float ty, float sign)
+        {
+            float last = 0f;
+            for (int s = 0; s <= 160; s++)
+            {
+                float t = s * 0.003f * sign;
+                if (!OpaqueAt(px, n, c, ox + tx * t, oy + ty * t)) break;
+                last = Mathf.Abs(t);
+            }
+            return last;
         }
 
         static float MeanOuter(Color32[] px, int n, bool tooth)
@@ -256,22 +304,77 @@ namespace FlockFive
             float d = GearSdf(x, y);
             float half = Stroke * 0.5f;
             float aa = 1.6f / (Resolution * 0.5f);
-            if (d > half + aa) return Color.clear;
+            float r = Mathf.Sqrt(x * x + y * y);
+            // Soft shadow sits down-screen. Texture +y is up, so the shape is
+            // sampled shifted up and the shadow lands below the cog.
+            float sd = GearSdf(x - 0.012f, y + 0.026f);
+            float shadow = Mathf.Clamp01(1f - Smooth(Mathf.InverseLerp(-0.004f, 0.040f, sd))) * 0.40f;
 
-            // Top-left highlight, bottom-right shade. +y is up.
-            float light = Mathf.Clamp01(0.38f + (-x) * 0.42f + y * 0.46f);
-            Color wood = Color.Lerp(new Color(0.40f, 0.22f, 0.07f, 1f), new Color(0.78f, 0.52f, 0.18f, 1f), light);
-            Color gold = Color.Lerp(new Color(0.62f, 0.40f, 0.10f, 1f), new Color(1f, 0.90f, 0.48f, 1f), light);
-            float rad = Mathf.Sqrt(x * x + y * y);
-            float metal = rad > Body - 0.01f ? 0.62f : 0.38f;
-            Color fill = Color.Lerp(wood, gold, metal);
+            if (d > half + aa)
+            {
+                Color under = Color.clear;
+                if (r < HoleR - half * 0.35f) under = HoleShade(x, y, r);
+                if (shadow < 0.012f) return under;
+                var sh = new Color(0.05f, 0.025f, 0.012f, shadow);
+                if (under.a < 0.004f) return sh;
+                float a = under.a + sh.a * (1f - under.a);
+                if (a > 0.42f) a = 0.42f;
+                Color rgb = (under * under.a + sh * (sh.a * (1f - under.a))) / Mathf.Max(0.001f, under.a + sh.a * (1f - under.a));
+                rgb.a = a;
+                return rgb;
+            }
 
-            float shade = Mathf.Clamp01(0.32f + (-x) * 0.18f + y * 0.28f);
-            Color outline = Color.Lerp(new Color(0.07f, 0.035f, 0.012f, 1f), new Color(0.18f, 0.09f, 0.03f, 1f), shade);
+            float e = 0.0065f;
+            float gx = GearSdf(x + e, y) - GearSdf(x - e, y);
+            float gy = GearSdf(x, y + e) - GearSdf(x, y - e);
+            float gl = Mathf.Sqrt(gx * gx + gy * gy);
+            float nx = gl > 1e-5f ? gx / gl : 0f;
+            float ny = gl > 1e-5f ? gy / gl : 1f;
+            // Light from the top-left. Outward normals facing it catch the bevel.
+            float ldot = nx * -0.52f + ny * 0.85f;
+            float light = Mathf.Clamp01(0.30f + (-x) * 0.62f + y * 0.70f);
+            Color deep = new Color(0.28f, 0.13f, 0.04f, 1f);
+            Color wood = new Color(0.62f, 0.38f, 0.12f, 1f);
+            Color gold = new Color(1f, 0.88f, 0.46f, 1f);
+            Color fill = Color.Lerp(deep, wood, Mathf.Clamp01(light * 1.05f));
+            fill = Color.Lerp(fill, gold, Mathf.Clamp01((light - 0.28f) * 0.95f));
+            float toothish = Mathf.Clamp01((r - (Body - 0.01f)) / 0.07f);
+            fill = Color.Lerp(fill, Color.Lerp(wood, gold, 0.72f), toothish * 0.28f);
+
+            float inside = -half - d;
+            float bevel = Mathf.Clamp01(1f - inside / 0.055f);
+            if (ldot >= 0f)
+                fill = Color.Lerp(fill, new Color(1f, 0.97f, 0.78f, 1f), bevel * ldot * 0.82f);
+            else
+                fill = Color.Lerp(fill, new Color(0.16f, 0.07f, 0.02f, 1f), bevel * (-ldot) * 0.62f);
+
+            float shade = Mathf.Clamp01(0.22f + (-x) * 0.16f + y * 0.24f);
+            Color outline = Color.Lerp(new Color(0.07f, 0.03f, 0.012f, 1f), new Color(0.18f, 0.09f, 0.03f, 1f), shade);
             float fillW = Mathf.Clamp01((-half - d) / aa + 1f);
-            Color rgb = Color.Lerp(outline, fill, fillW);
-            rgb.a = Mathf.Clamp01((half + aa - d) / (aa * 2f));
-            return rgb;
+            Color rgbM = Color.Lerp(outline, fill, fillW);
+            rgbM.a = Mathf.Clamp01((half + aa - d) / (aa * 2f));
+            return rgbM;
+        }
+
+        // Darker ring just inside the hole. The center stays clear so the
+        // garden shows through, and the alpha stays under the tooth test.
+        static Color HoleShade(float x, float y, float r)
+        {
+            float inner = HoleR - Stroke * 0.5f;
+            if (r > inner || r < inner * 0.38f) return Color.clear;
+            float t = Mathf.Clamp01((r - inner * 0.38f) / (inner * 0.62f));
+            float face = 1f;
+            if (r > 0.001f)
+                face = Mathf.Clamp01(0.20f + (-x / r) * 0.55f + (y / r) * 0.70f);
+            float a = t * (0.10f + 0.62f * face) * 0.72f;
+            if (a > 0.40f) a = 0.40f;
+            return new Color(0.04f, 0.02f, 0.01f, a);
+        }
+
+        static float Smooth(float t)
+        {
+            t = Mathf.Clamp01(t);
+            return t * t * (3f - 2f * t);
         }
 
         // Negative inside the solid. The stroke sits on this edge.
@@ -292,49 +395,22 @@ namespace FlockFive
             return d;
         }
 
+        // Rounded rectangle. Constant width, so the tip is as chunky as the root.
         static float ToothSdf(float lx, float ly)
         {
             float cr = Corner;
-            float x0 = Root + cr;
-            float x1 = Tip - cr;
-            float hr = HalfRoot - cr;
-            float ht = HalfTip - cr;
-            if (hr < 0.01f) hr = 0.01f;
-            if (ht < 0.01f) ht = 0.01f;
-            if (x1 < x0 + 0.01f) x1 = x0 + 0.01f;
-            return SdTrap(lx, ly, x0, x1, hr, ht) - cr;
-        }
-
-        // Sharp trapezoid, negative inside. Rounded by subtracting the corner radius.
-        static float SdTrap(float px, float py, float x0, float x1, float hr, float ht)
-        {
-            // Same winding as the bake preview: each edge runs toward the previous vertex.
-            float d = (px - x0) * (px - x0) + (py + hr) * (py + hr);
-            float s = 1f;
-            s = Edge(px, py, x0, -hr, x0, hr, s, ref d);
-            s = Edge(px, py, x1, -ht, x0, -hr, s, ref d);
-            s = Edge(px, py, x1, ht, x1, -ht, s, ref d);
-            s = Edge(px, py, x0, hr, x1, ht, s, ref d);
-            return s * Mathf.Sqrt(d);
-        }
-
-        static float Edge(float px, float py, float ax, float ay, float bx, float by, float s, ref float d)
-        {
-            float ex = bx - ax;
-            float ey = by - ay;
-            float wx = px - ax;
-            float wy = py - ay;
-            float denom = ex * ex + ey * ey;
-            float t = denom <= 1e-12f ? 0f : Mathf.Clamp01((wx * ex + wy * ey) / denom);
-            float bx2 = wx - ex * t;
-            float by2 = wy - ey * t;
-            float dd = bx2 * bx2 + by2 * by2;
-            if (dd < d) d = dd;
-            bool c1 = py >= ay;
-            bool c2 = py < by;
-            bool c3 = ex * wy > ey * wx;
-            if ((c1 && c2 && c3) || (!c1 && !c2 && !c3)) s = -s;
-            return s;
+            float cx = (Root + Tip) * 0.5f;
+            float hx = (Tip - Root) * 0.5f - cr;
+            float hy = Half - cr;
+            if (hx < 0.008f) hx = 0.008f;
+            if (hy < 0.008f) hy = 0.008f;
+            float ax = Mathf.Abs(lx - cx) - hx;
+            float ay = Mathf.Abs(ly) - hy;
+            float ox = Mathf.Max(ax, 0f);
+            float oy = Mathf.Max(ay, 0f);
+            float outside = Mathf.Sqrt(ox * ox + oy * oy);
+            float inside = Mathf.Min(Mathf.Max(ax, ay), 0f);
+            return outside + inside - cr;
         }
     }
 }

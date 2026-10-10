@@ -191,7 +191,12 @@ namespace FlockFive
             return WedgeForRoll(UnityEngine.Random.Range(0, sum));
         }
 
-        // Clockwise degrees that put wedge i's center under the top pointer.
+        // From the wheel center to the flapper tip, in screen space (+x right, +y down).
+        // The tip sits on the top rim and points down into the wedge, so the
+        // winning wedge's center lies straight up the screen, along this vector.
+        public static Vector2 PointerTipDir => new Vector2(0f, -1f);
+
+        // Clockwise degrees that put wedge i's center under the pointer tip.
         // Positive rotation turns the wheel clockwise, so the wedge that was
         // counter-clockwise of the pointer arrives at the top.
         public static float PointerAngle(int wedge)

@@ -1074,6 +1074,7 @@ namespace FlockFive
 
             yield return SnapDailyWheel(dir + "/b80-wheel-spin.png", 1);
             yield return SnapDailyWheel(dir + "/b80-wheel-result.png", 2);
+            yield return SnapDailyWheel(dir + "/b80-wheel-doubled.png", 3);
 
             ShotDailyWheel = 0;
             Ads.SetReadyOverride(-1);
@@ -1147,6 +1148,7 @@ namespace FlockFive
         }
 
         // mode 1 is mid-spin. mode 2 lands the 10x wedge with the x2 button up.
+        // mode 3 is that same land after the double, badge on the result.
         // Pose does not write the daily prefs. DrawSplash calls this again so a
         // home pose cannot close the card before the repaint.
         void PoseDailyWheelShot()
@@ -1168,11 +1170,20 @@ namespace FlockFive
             _dailyPopAt = -1f;
             _dailyTutorSpin = false;
             _dailyAdBusy = false;
-            if (ShotDailyWheel == 2)
+            if (ShotDailyWheel == 3)
             {
                 DailyBonus.PoseWheelShot(2, 7);
                 _dailyPhase = DailyWheelPhase.Landed;
                 _dailyAngle = DailyBonus.PointerAngle(7);
+                _wheelPayMul = 2;
+                Ads.SetReadyOverride(0);
+            }
+            else if (ShotDailyWheel == 2)
+            {
+                DailyBonus.PoseWheelShot(2, 7);
+                _dailyPhase = DailyWheelPhase.Landed;
+                _dailyAngle = DailyBonus.PointerAngle(7);
+                _wheelPayMul = 1;
                 Ads.SetReadyOverride(1);
             }
             else
@@ -1181,6 +1192,7 @@ namespace FlockFive
                 _dailyPhase = DailyWheelPhase.Spin;
                 // Mid-wedge. 22.5° sits on a spoke and reads as parked.
                 _dailyAngle = 11f;
+                _wheelPayMul = 1;
                 Ads.SetReadyOverride(0);
             }
         }

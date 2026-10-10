@@ -21,7 +21,11 @@ namespace FlockFive
         float _dailySpinAt = -1f;
         const float DailySpinDur = 3.15f;
         int _dailyTickWedge = -1;
+        // 2 while the landed spin is showing its doubled result. 1 otherwise.
+        int _wheelPayMul = 1;
         static GUIStyle _dailyWatch;
+        static int _wheelX2Px;
+        static int _wheelX2Key = int.MinValue;
         const string DailyDoubleLabel = "Watch Ad: x2";
         const string DailyCollectLabel = "Collect";
         bool _dailyAskOpen;
@@ -178,6 +182,7 @@ namespace FlockFive
             _dailyPopAt = Time.unscaledTime;
             _dailyTutorSpin = false;
             _dailyAdBusy = false;
+            _wheelPayMul = 1;
             if (DailyBonus.ClaimedToday)
             {
                 _dailyPhase = DailyWheelPhase.Landed;
@@ -422,7 +427,7 @@ namespace FlockFive
             }
             if (chrome == 2 || chrome == 3)
                 DrawDailyBar(collect, collectHeld, PopupTint.Gold, DailyCollectLabel, s);
-            if (chrome == 3)
+            if (chrome == 3 && _wheelPayMul < 2)
                 DrawDailyBar(watch, watchHeld, PopupTint.Green, DailyDoubleLabel, s);
             DrawGiftCloseX(xBtn, xHeld, s);
             GUI.color = Color.white;
@@ -496,6 +501,7 @@ namespace FlockFive
                 if (DailyBonus.ClaimedToday) ClunkClaimed();
                 return;
             }
+            _wheelPayMul = 1;
             _dailyTutorSpin = tutorial;
             _dailyClaimFirst = firstEver;
             _dailyClaimFollowUp = true;
@@ -536,6 +542,16 @@ namespace FlockFive
             try
             {
                 yield return Ads.Rewarded(Ads.PlacementDailyDouble);
+                if (Ads.LastEarned && _dailyOpen)
+                {
+                    _wheelPayMul = 2;
+                    float shown = 0f;
+                    while (shown < 0.70f && _dailyOpen)
+                    {
+                        shown += Time.unscaledDeltaTime;
+                        yield return null;
+                    }
+                }
                 ResolveDailyGrant(Ads.LastEarned);
             }
             finally
@@ -547,6 +563,8 @@ namespace FlockFive
         void ResolveDailyGrant(bool doubled)
         {
             if (!_dailyOpen) return;
+            if (_wheelPayMul >= 2) doubled = true;
+            _wheelPayMul = 1;
             if (_dailyPhase == DailyWheelPhase.Spin)
             {
                 _dailyPhase = DailyWheelPhase.Landed;
@@ -584,6 +602,16 @@ namespace FlockFive
                     alignment = TextAnchor.MiddleCenter,
                     wordWrap = false
                 };
+            if (label == DailyDoubleLabel)
+            {
+                float d = bar.height * 0.74f;
+                float pad = bar.height * 0.16f;
+                var chip = new Rect(bar.xMax - pad - d, bar.center.y - d * 0.5f, d, d);
+                var word = new Rect(bar.x, bar.y, Mathf.Max(8f, chip.x - bar.x - pad * 0.25f), bar.height);
+                DrawPopupWord(word, "Watch Ad", _dailyWatch, s);
+                DrawWheelX2(chip, 0.28f);
+                return;
+            }
             DrawPopupWord(bar, label, _dailyWatch, s);
         }
 
@@ -744,6 +772,7 @@ namespace FlockFive
             _dailyOpen = false;
             _dailyPopAt = -1f;
             _dailyPhase = DailyWheelPhase.Ready;
+            _wheelPayMul = 1;
             Sfx.CardTap();
             if (_dailyClaimFollowUp)
             {
@@ -890,8 +919,12 @@ namespace FlockFive
             float cap = 520f * s;
             if (wheel > cap) wheel = cap;
             if (reserve < 0f) reserve = 0f;
-            boardH = pad + titleH + gap + streakH + gap + wheel + reserve + pad;
+            // Air for the flapper pin, so the cap sits above the rim and under the streak.
+            float air = wheel * PointerAirFrac;
+            boardH = pad + titleH + gap + streakH + gap + air + wheel + reserve + pad;
         }
+
+        const float PointerAirFrac = 0.08f;
 
         static void DailyRows(float s, Rect board, bool flower, out Rect title, out Rect streak, out Rect wheelR)
         {
@@ -913,7 +946,7 @@ namespace FlockFive
             title = new Rect(x, y, w, titleH);
             y += titleH + gap;
             streak = new Rect(x, y, w, streakH);
-            y += streakH + gap;
+            y += streakH + gap + wheel * PointerAirFrac;
             float side = wheel;
             float room = board.yMax - pad - reserve - y;
             if (side > room) side = room;
@@ -1205,22 +1238,68 @@ namespace FlockFive
                 GUI.color = Color.white;
             }
 
-            float pw = wheel.width * 0.11f;
-            float ph = pw * 1.25f;
-            // Tip stays on the rim. The base used to cover the streak line.
-            float stick = 4f * s;
-            if (stick < 6f) stick = 6f;
-            var pointer = new Rect(wheel.center.x - pw * 0.5f, wheel.y - stick, pw, ph);
-            GUI.DrawTexture(pointer, _wheelPointer, ScaleMode.ScaleToFit, true);
-
             float hub = wheel.width * 0.28f;
             var hubR = new Rect(wheel.center.x - hub * 0.5f, wheel.center.y - hub * 0.5f, hub, hub);
+            int payMul = _wheelPayMul < 1 ? 1 : _wheelPayMul;
             if (landed && DailyBonus.SpinCoins >= 100)
             {
+                if (payMul >= 2)
+                {
+                    // Shared streak x2, between the winning label and the hub.
+                    float d = wheel.width * 0.16f;
+                    float reach = wheel.width * 0.205f;
+                    var at = wheel.center + DailyBonus.PointerTipDir * reach;
+                    DrawWheelX2(new Rect(at.x - d * 0.5f, at.y - d * 0.5f, d, d), 0.35f);
+                }
                 _dailyLine.fontSize = _dailyBonusPx;
-                string won = Money.Format(DailyBonus.SpinCoins);
+                int shown = DailyBonus.SpinCoins * payMul;
+                string won = Money.Format(shown);
                 StampOutlined(hubR, won, _dailyLine, new Color(1f, 0.95f, 0.72f), 1, 2);
             }
+
+            // Flapper above the rim. Texture tip is the bottom of the rect, and
+            // PointerTipDir points from the center up to that tip, so the point
+            // aims down into the wedge. Drawn last so it sits on top of the disc.
+            float pw = wheel.width * 0.118f;
+            float ph = pw * (WheelPointerH / (float)WheelPointerW);
+            float dip = ph * 0.60f;
+            Vector2 tipAt = wheel.center + DailyBonus.PointerTipDir * (wheel.width * 0.5f - dip);
+            Vector2 pinAt = tipAt + DailyBonus.PointerTipDir * ph;
+            float top = tipAt.y < pinAt.y ? tipAt.y : pinAt.y;
+            var pointer = new Rect(tipAt.x - pw * 0.5f, top, pw, ph);
+            GUI.DrawTexture(pointer, _wheelPointer, ScaleMode.ScaleToFit, true);
+        }
+
+        // Same StreakBadge.Draw and disc the garden streak chip uses. x2 only.
+        void DrawWheelX2(Rect r, float sparkle)
+        {
+            if (r.width < 6f) return;
+            var ink = StreakBadge.Colors(2);
+            if (_dailyWatch == null)
+                _dailyWatch = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = false,
+                    clipping = TextClipping.Overflow
+                };
+            var st = _dailyWatch;
+            string text = MulChip(2);
+            int key = Mathf.RoundToInt(r.width) * 17 + Mathf.RoundToInt(r.height);
+            if (key != _wheelX2Key)
+            {
+                StreakBadge.NumeralFit(r, out float fitW, out float fitH);
+                int hi = Mathf.Max(12, Mathf.RoundToInt(fitH));
+                st.fontSize = FitFont(st, text, fitW, fitH, 10, hi);
+                _wheelX2Px = st.fontSize;
+                _wheelX2Key = key;
+            }
+            else
+                st.fontSize = _wheelX2Px;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.fontStyle = FontStyle.Bold;
+            st.wordWrap = false;
+            StreakBadge.Draw(r, text, st, ink, 1f, sparkle);
         }
 
         static void EnsureWheelArt()
@@ -1228,7 +1307,89 @@ namespace FlockFive
             if (_wheelDisc != null) return;
             _wheelDisc = BakeWheelDisc(512);
             _wheelHi = BakeWheelHighlight(512);
-            _wheelPointer = BakeWheelPointer(64, 80);
+            _wheelPointer = BakeWheelPointer(WheelPointerW, WheelPointerH);
+        }
+
+        public const int WheelPointerW = 160;
+        public const int WheelPointerH = 220;
+
+        public static Color32[] WheelPointerPixels(out int w, out int h)
+        {
+            var px = BakeWheelPointerPixels(WheelPointerW, WheelPointerH);
+            w = WheelPointerW;
+            h = WheelPointerH;
+            return px;
+        }
+
+        // Tip at texture y=0 (bottom of the rect, down into the wedge). The round
+        // cap is at the top. Widest shoulder sits up by the cap, not at the point.
+        public static bool PointerPointsDown(Color32[] px, int w, int h)
+        {
+            if (px == null || w < 16 || h < 16 || px.Length < w * h) return false;
+            int ymin = h;
+            int ymax = -1;
+            for (int y = 0; y < h; y++)
+            {
+                if (SpanOf(px, w, y) <= 0) continue;
+                if (y < ymin) ymin = y;
+                if (y > ymax) ymax = y;
+            }
+            int spanH = ymax - ymin;
+            if (spanH < h / 3) return false;
+            int maxS = 0;
+            int maxY = ymin;
+            for (int y = ymin; y <= ymax; y++)
+            {
+                int s = SpanOf(px, w, y);
+                if (s > maxS)
+                {
+                    maxS = s;
+                    maxY = y;
+                }
+            }
+            if (maxS < w / 3) return false;
+            float shoulder = (maxY - ymin) / (float)spanH;
+            int tip = SpanOf(px, w, ymin + 1);
+            int crown = SpanOf(px, w, ymax - 1);
+            int equator = SpanOf(px, w, ymax - spanH / 10);
+            int midTip = SpanOf(px, w, ymin + spanH / 8);
+            bool sharp = tip * 3 < maxS && midTip > tip && midTip * 2 < maxS;
+            bool cap = crown < equator && equator < maxS && equator > tip * 2;
+            bool highShoulder = shoulder > 0.55f;
+            int tipX = OpaqueCenterX(px, w, ymin + 1);
+            bool centered = tipX >= 0 && Mathf.Abs(tipX - w * 0.5f) < w * 0.12f;
+            return sharp && cap && highShoulder && centered;
+        }
+
+        static int SpanOf(Color32[] px, int w, int y)
+        {
+            if (y < 0) return 0;
+            int n = px.Length / w;
+            if (y >= n) return 0;
+            int lo = -1;
+            int hi = -1;
+            int row = y * w;
+            for (int x = 0; x < w; x++)
+            {
+                if (px[row + x].a <= 90) continue;
+                if (lo < 0) lo = x;
+                hi = x;
+            }
+            return lo < 0 ? 0 : hi - lo + 1;
+        }
+
+        static int OpaqueCenterX(Color32[] px, int w, int y)
+        {
+            int row = y * w;
+            int lo = -1;
+            int hi = -1;
+            for (int x = 0; x < w; x++)
+            {
+                if (px[row + x].a <= 90) continue;
+                if (lo < 0) lo = x;
+                hi = x;
+            }
+            return lo < 0 ? -1 : (lo + hi) / 2;
         }
 
         static Texture2D WheelTex(string name, int w, int h)
@@ -1326,26 +1487,116 @@ namespace FlockFive
         static Texture2D BakeWheelPointer(int w, int h)
         {
             var tex = WheelTex("DailyWheelPointer", w, h);
-            var px = new Color32[w * h];
-            float cx = (w - 1) * 0.5f;
-            for (int y = 0; y < h; y++)
-            {
-                float v = y / (float)(h - 1);
-                float half = Mathf.Lerp(cx * 0.92f, 1.2f, v);
-                for (int x = 0; x < w; x++)
-                {
-                    float d = Mathf.Abs(x - cx);
-                    float edge = Mathf.Clamp01(half - d + 0.8f);
-                    if (edge <= 0f) continue;
-                    float k = v;
-                    Color col = Color.Lerp(new Color(1f, 0.92f, 0.55f, 1f), new Color(0.62f, 0.36f, 0.10f, 1f), k);
-                    col.a = edge;
-                    px[y * w + x] = col;
-                }
-            }
+            var px = BakeWheelPointerPixels(w, h);
             tex.SetPixels32(px);
             tex.Apply(false, true);
             return tex;
+        }
+
+        // y=0 is the tip (down into the wedge). The round pin sits at the top.
+        static Color32[] BakeWheelPointerPixels(int w, int h)
+        {
+            var px = new Color32[w * h];
+            float cx = (w - 1) * 0.5f;
+            float pinR = w * 0.155f;
+            float margin = w * 0.072f;
+            float pinCy = h - margin - pinR;
+            float tipY = margin;
+            float baseY = pinCy - pinR * 0.70f;
+            float baseHalf = w * 0.34f;
+            float outline = w * 0.090f;
+            float halfO = outline * 0.5f;
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    Color acc = Color.clear;
+                    const int k = 2;
+                    float step = 1f / k;
+                    for (int sy = 0; sy < k; sy++)
+                    {
+                        for (int sx = 0; sx < k; sx++)
+                        {
+                            float pxX = x + (sx + 0.5f) * step;
+                            float pxY = y + (sy + 0.5f) * step;
+                            acc += SamplePointer(pxX, pxY, cx, pinCy, pinR, tipY, baseY, baseHalf, halfO);
+                        }
+                    }
+                    acc /= (k * k);
+                    px[y * w + x] = (Color32)acc;
+                }
+            }
+            return px;
+        }
+
+        static Color SamplePointer(float x, float y, float cx, float pinCy, float pinR, float tipY, float baseY, float baseHalf, float halfO)
+        {
+            float dPin = Mathf.Sqrt((x - cx) * (x - cx) + (y - pinCy) * (y - pinCy)) - pinR;
+            float dTri = SdTriangle(x, y, cx, tipY, cx + baseHalf, baseY, cx - baseHalf, baseY);
+            float d = dPin < dTri ? dPin : dTri;
+            float aa = 1.15f;
+            if (d > halfO + aa) return Color.clear;
+            float v = Mathf.Clamp01((y - tipY) / Mathf.Max(1f, (pinCy + pinR) - tipY));
+            float light = Mathf.Clamp01(0.28f + (cx - x) / (baseHalf * 2.2f) * 0.85f + v * 0.45f);
+            Color gold = Color.Lerp(new Color(0.70f, 0.44f, 0.10f, 1f), new Color(1f, 0.94f, 0.58f, 1f), light);
+            if (dPin < 0f && x < cx && y > pinCy)
+            {
+                float spec = Mathf.Clamp01(1f + dPin / (pinR * 0.75f));
+                gold = Color.Lerp(gold, new Color(1f, 0.98f, 0.82f, 1f), spec * 0.55f);
+            }
+            Color edge = new Color(0.10f, 0.04f, 0.012f, 1f);
+            float fillW = Mathf.Clamp01((-halfO - d) / aa + 1f);
+            Color rgb = Color.Lerp(edge, gold, fillW);
+            rgb.a = Mathf.Clamp01((halfO + aa - d) / (aa * 2f));
+            return rgb;
+        }
+
+        // Negative inside. p0, p1, p2 wind either way.
+        static float SdTriangle(float px, float py, float ax, float ay, float bx, float by, float cx, float cy)
+        {
+            float e0x = bx - ax;
+            float e0y = by - ay;
+            float e1x = cx - bx;
+            float e1y = cy - by;
+            float e2x = ax - cx;
+            float e2y = ay - cy;
+            float v0x = px - ax;
+            float v0y = py - ay;
+            float v1x = px - bx;
+            float v1y = py - by;
+            float v2x = px - cx;
+            float v2y = py - cy;
+            float d0 = e0x * e0x + e0y * e0y;
+            float d1 = e1x * e1x + e1y * e1y;
+            float d2 = e2x * e2x + e2y * e2y;
+            float t0 = d0 <= 1e-8f ? 0f : Mathf.Clamp01((v0x * e0x + v0y * e0y) / d0);
+            float t1 = d1 <= 1e-8f ? 0f : Mathf.Clamp01((v1x * e1x + v1y * e1y) / d1);
+            float t2 = d2 <= 1e-8f ? 0f : Mathf.Clamp01((v2x * e2x + v2y * e2y) / d2);
+            float q0x = v0x - e0x * t0;
+            float q0y = v0y - e0y * t0;
+            float q1x = v1x - e1x * t1;
+            float q1y = v1y - e1y * t1;
+            float q2x = v2x - e2x * t2;
+            float q2y = v2y - e2y * t2;
+            float s = Mathf.Sign(e0x * e2y - e0y * e2x);
+            float c0 = s * (v0x * e0y - v0y * e0x);
+            float c1 = s * (v1x * e1y - v1y * e1x);
+            float c2 = s * (v2x * e2y - v2y * e2x);
+            float best = q0x * q0x + q0y * q0y;
+            float side = c0;
+            float b1 = q1x * q1x + q1y * q1y;
+            if (b1 < best)
+            {
+                best = b1;
+                side = c1;
+            }
+            float b2 = q2x * q2x + q2y * q2y;
+            if (b2 < best)
+            {
+                best = b2;
+                side = c2;
+            }
+            return -Mathf.Sqrt(best) * Mathf.Sign(side);
         }
 
         static void DrawDailyClaim(Rect flower, bool held, float s, float t)

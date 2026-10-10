@@ -27,6 +27,8 @@ namespace FlockFive.Editor
             }
 
             CheckGear(Check);
+            CheckPointer(Check);
+            CheckBadge(Check);
             CheckPlane(Check);
             CheckSheet(Check);
             CheckMock(Check);
@@ -58,17 +60,21 @@ namespace FlockFive.Editor
             int teeth = GearIcon.CountTeeth(px, n);
             float ring = GearIcon.RingRatio(px, n);
             float hole = GearIcon.HoleRatio(px, n);
-            float duty = GearIcon.DutyCycle(px, n);
+            float tipDuty = GearIcon.TipDuty(px, n);
+            float tooth = GearIcon.MinToothWidth(px, n);
             Check("gear-eight-teeth",
                 GearIcon.Teeth == 8 && teeth == 8 && GearIcon.HoleClear(px, n) && GearIcon.FlatTops(px, n),
                 "teeth=" + teeth + " hole=" + GearIcon.HoleClear(px, n) + " flat=" + GearIcon.FlatTops(px, n));
-            // Ring outer / tip about 0.72, clear hole / tip about 0.28, tooth and
-            // gap about equal just outside the ring (not thin spokes).
+            // Solid ring about 0.75 of the tip, hole about 0.30. Tip duty is the
+            // angular fill at the tooth tip (not the root), and the flat tooth
+            // is at least 0.18 of the diameter so it cannot read as a ray.
             Check("gear-proportions",
                 ring >= 0.66f && ring <= 0.78f
                 && hole >= 0.22f && hole <= 0.34f
-                && duty >= 0.46f && duty <= 0.70f,
-                "ring=" + ring.ToString("0.00") + " hole=" + hole.ToString("0.00") + " duty=" + duty.ToString("0.00"));
+                && tipDuty >= 0.45f
+                && tooth >= 0.18f,
+                "ring=" + ring.ToString("0.00") + " hole=" + hole.ToString("0.00")
+                + " tipDuty=" + tipDuty.ToString("0.00") + " tooth=" + tooth.ToString("0.00"));
 
             var safe = new Rect(0f, 102f, W, H - 102f - 177f);
             float s = H / 720f;
@@ -86,6 +92,70 @@ namespace FlockFive.Editor
                 && gear.y >= H - safe.yMax
                 && gear.xMax < W * 0.5f,
                 "gear=" + gear + " ratio=" + ratio.ToString("0.00") + " logoLeft=" + logoLeft.ToString("0.0"));
+        }
+
+        static void CheckPointer(System.Action<string, bool, string> Check)
+        {
+            var tip = DailyBonus.PointerTipDir;
+            bool land = Mathf.Abs(tip.magnitude - 1f) < 0.001f && tip.y < -0.9f && Mathf.Abs(tip.x) < 0.05f;
+            float worst = 0f;
+            for (int w = 0; w < DailyBonus.WedgeCount; w++)
+            {
+                float ang = DailyBonus.PointerAngle(w);
+                float spun = ang + 360f * 5f;
+                if (DailyBonus.WedgeUnderPointer(ang) != w) land = false;
+                if (DailyBonus.WedgeUnderPointer(spun) != w) land = false;
+                var off = DailyBonus.WedgeOffset(w, spun, 1f);
+                float along = off.x * tip.x + off.y * tip.y;
+                float side = off.x * (-tip.y) + off.y * tip.x;
+                float err = Mathf.Abs(side) + Mathf.Abs(1f - along);
+                if (err > worst) worst = err;
+                if (along < 0.985f || Mathf.Abs(side) > 0.02f) land = false;
+            }
+            var px = FlockFiveApp.WheelPointerPixels(out int pw, out int ph);
+            bool down = FlockFiveApp.PointerPointsDown(px, pw, ph);
+            Check("wheel-pointer-lands", land && down,
+                "worst=" + worst.ToString("0.000") + " down=" + down + " px=" + pw + "x" + ph);
+        }
+
+        static void CheckBadge(System.Action<string, bool, string> Check)
+        {
+            string root = Application.dataPath;
+            string daily = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.DailyBonus.cs"));
+            string app = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.cs"));
+            string badge = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/StreakBadge.cs"));
+            int stamp = app.IndexOf("void DrawRewardStamp(");
+            int wax = app.IndexOf("static void DrawWaxSplat(");
+            string stampBody = stamp >= 0 && wax > stamp ? app.Substring(stamp, wax - stamp) : "";
+            int garden = app.IndexOf("void DrawGardenStamp(");
+            int restart = app.IndexOf("void DrawRestartAsk(");
+            string gardenBody = garden >= 0 && restart > garden ? app.Substring(garden, restart - garden) : "";
+            int helper = daily.IndexOf("void DrawWheelX2(");
+            int claim = daily.IndexOf("void DrawDailyClaim(");
+            string helperBody = helper >= 0 && claim > helper ? daily.Substring(helper, claim - helper) : "";
+            int uses = 0;
+            int from = 0;
+            while (from >= 0)
+            {
+                int i = daily.IndexOf("DrawWheelX2(", from);
+                if (i < 0) break;
+                uses++;
+                from = i + 12;
+            }
+            var disc = StreakBadge.SharedDisc();
+            bool sprite = disc != null && disc.name == StreakBadge.DiscName
+                && badge.IndexOf("DiscName") >= 0
+                && badge.IndexOf("SharedDisc") >= 0;
+            bool shared = helperBody.IndexOf("StreakBadge.Draw") >= 0
+                && helperBody.IndexOf("StreakBadge.Colors(2)") >= 0
+                && stampBody.IndexOf("StreakBadge.Draw") >= 0
+                && gardenBody.IndexOf("DrawRewardStamp") >= 0
+                && uses >= 3
+                && daily.IndexOf("BakeWheelBadge") < 0
+                && daily.IndexOf("DailyX2") < 0;
+            Check("wheel-x2-shared-badge", sprite && shared,
+                "uses=" + uses + " sprite=" + (disc != null ? disc.name : "null")
+                + " helper=" + (helperBody.Length > 0) + " stamp=" + (stampBody.IndexOf("StreakBadge.Draw") >= 0));
         }
 
         static void CheckPlane(System.Action<string, bool, string> Check)
