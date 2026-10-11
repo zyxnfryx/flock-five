@@ -32,6 +32,10 @@ namespace FlockFive
         // short-sighted player).
         public const Play EasePlay = Play.Random;
 
+        // An ostrich garden is exempt from the hidden-info trap probe.
+        // The pecks already scramble the line.
+        public static bool Exempt(Level level) => level != null && level.Ostrich;
+
         public struct Report
         {
             public int Runs;

@@ -3379,8 +3379,16 @@ namespace FlockFive
                 branchView.Sync(_board.Branches[i], _board.IsSleeping(i));
                 branchView.SetReady(i == _sel);
             }
-            for (int i = 0; i < 2; i++)
-                _garden.Feeders[i].Show(_board.Live[i], !_restarting);
+            if (_garden.Feeders != null && _board.Live != null)
+            {
+                for (int i = 0; i < _garden.Feeders.Length; i++)
+                {
+                    if (_garden.Feeders[i] == null) continue;
+                    BirdColor? color = i < _board.Live.Length ? _board.Live[i] : null;
+                    _garden.Feeders[i].Show(color, !_restarting);
+                }
+            }
+            if (_garden.Ostrich != null) _garden.Ostrich.Sync(_board);
         }
 
         bool Locked(int i) => _locked.Contains(i);
@@ -3726,6 +3734,8 @@ namespace FlockFive
             if (gen != _motionGen) yield break;
             Unlock(from);
             Unlock(to);
+            if (_board.Ostrich != null && _board.Ostrich.Alive)
+                GardenSolve.AfterMove(_board);
             SyncAll();
 
             int kicked = KickCollects();
@@ -5419,6 +5429,7 @@ namespace FlockFive
                 yield return _garden.Ice.Shatter(_garden.Root);
             yield return FlyOffAll(flock);
             if (_seed != null) _board = _seed.Clone();
+            if (_board != null && _board.Ostrich != null) _board.Ostrich.Reset();
             BonusBranches.ApplyClaims(_board, _bonusOn);
             LightningStrike.ApplyBurns(_board, _offerBurned);
             _census = BoardValidator.Counts(_board);
@@ -5960,12 +5971,13 @@ namespace FlockFive
                     b.transform.position = from;
                 }
             }
-            var fFrom = new Vector3[2];
-            var fTo = new Vector3[2];
-            var fDelay = new float[2];
+            int fn = _garden.Feeders != null ? _garden.Feeders.Length : 0;
+            var fFrom = new Vector3[fn];
+            var fTo = new Vector3[fn];
+            var fDelay = new float[fn];
             if (_garden.Feeders != null)
             {
-                for (int i = 0; i < 2; i++)
+                for (int i = 0; i < fn; i++)
                 {
                     if (_garden.Feeders[i] == null) continue;
                     fTo[i] = _garden.Feeders[i].transform.position;
@@ -6037,7 +6049,7 @@ namespace FlockFive
                 PoseLeaves(leaves, leafS, leafD, leafDelay, leafRot, t, dur, false);
                 if (_garden.Feeders != null)
                 {
-                    for (int i = 0; i < 2; i++)
+                    for (int i = 0; i < fn; i++)
                     {
                         if (_garden.Feeders[i] == null) continue;
                         float fu = Mathf.Clamp01((t - fDelay[i]) / 0.92f);

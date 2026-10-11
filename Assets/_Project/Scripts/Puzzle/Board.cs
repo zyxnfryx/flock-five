@@ -98,7 +98,11 @@ namespace FlockFive
     public sealed class Board
     {
         public readonly List<BranchState> Branches = new List<BranchState>();
-        public readonly BirdColor?[] Live = new BirdColor?[2];
+        // 1-3 feeders. Length 2 is every shipped garden. Resize with SetFeeders
+        // before writing a third slot.
+        public BirdColor?[] Live = new BirdColor?[2];
+        // Null when this stage has no ostrich. Cloned with the board.
+        public OstrichState Ostrich;
         public readonly List<BirdColor> Queue = new List<BirdColor>();
         // Flock a pest knocked off a limb and has not seated yet. No branch is
         // reserved for them. They still count, so a win or a stuck check is not
@@ -112,15 +116,51 @@ namespace FlockFive
             var n = new Board();
             for (int i = 0; i < Branches.Count; i++)
                 n.Branches.Add(Branches[i].Clone());
-            n.Live[0] = Live[0];
-            n.Live[1] = Live[1];
+            n.Live = Live != null ? (BirdColor?[])Live.Clone() : new BirdColor?[2];
+            n.Ostrich = Ostrich != null ? Ostrich.Clone() : null;
             n.Queue.AddRange(Queue);
             n.Displaced.AddRange(Displaced);
             n.BreezeOnCollect = BreezeOnCollect;
             return n;
         }
 
-        public bool LiveHas(BirdColor c) => Live[0] == c || Live[1] == c;
+        // n is clamped to 1-3. Colors already in range stay put.
+        public void SetFeeders(int n)
+        {
+            if (n < 1) n = 1;
+            if (n > 3) n = 3;
+            if (Live != null && Live.Length == n) return;
+            var next = new BirdColor?[n];
+            if (Live != null)
+            {
+                int m = Live.Length < n ? Live.Length : n;
+                for (int i = 0; i < m; i++) next[i] = Live[i];
+            }
+            Live = next;
+        }
+
+        public void CopyFeedersFrom(Board src)
+        {
+            if (src == null || src.Live == null || src.Live.Length == 0)
+            {
+                SetFeeders(2);
+                return;
+            }
+            SetFeeders(src.Live.Length);
+            for (int i = 0; i < Live.Length && i < src.Live.Length; i++)
+                Live[i] = src.Live[i];
+        }
+
+        public static bool SameLive(BirdColor?[] a, BirdColor?[] b)
+        {
+            if (a == b) return true;
+            if (a == null || b == null || a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+                if (a[i] != b[i]) return false;
+            return true;
+        }
+
+        public bool LiveHas(BirdColor c) => FeederSlotFor(c) >= 0;
 
         public bool IsSleeping(int i)
         {
@@ -141,8 +181,9 @@ namespace FlockFive
 
         public int FeederSlotFor(BirdColor c)
         {
-            if (Live[0] == c) return 0;
-            if (Live[1] == c) return 1;
+            if (Live == null) return -1;
+            for (int i = 0; i < Live.Length; i++)
+                if (Live[i] == c) return i;
             return -1;
         }
 
@@ -205,6 +246,8 @@ namespace FlockFive
 
         public int FindCollect()
         {
+            // A living ostrich takes the set. Nothing flies to a feeder yet.
+            if (Ostrich != null && Ostrich.Alive) return -1;
             for (int i = 0; i < Branches.Count; i++)
             {
                 if (Branches[i].Broken) continue;
@@ -214,23 +257,19 @@ namespace FlockFive
             return -1;
         }
 
-        // One feeder collect lifts one leaf set. The locked tip on the same
-        // column as the feeder that just paid is the set that collect hits;
-        // otherwise the locked tip nearest the feeders (higher row). Bees
-        // under a leaf stay until that tip is exposed.
+        // One feeder collect lifts one leaf. Slots 0 and 1 prefer the column
+        // under that feeder. A third feeder has no column: it lifts the locked
+        // tip nearest the feeders (row 0). A tie keeps the earlier limb.
+        // Bees under a leaf stay until that tip is exposed.
         public int Breeze(int feederSlot = -1)
         {
             int pick = -1;
             int best = int.MaxValue;
-            int wantCol = feederSlot == 0 ? 0 : (feederSlot == 1 ? 1 : -1);
             for (int i = 0; i < Branches.Count; i++)
             {
                 var br = Branches[i];
                 if (br.Broken || br.Count == 0 || !br.TipLocked) continue;
-                int row = i >> 1;
-                int col = i & 1;
-                int score = row * 4;
-                if (wantCol >= 0 && col != wantCol) score += 6;
+                int score = LeafScore(i, feederSlot);
                 if (score >= best) continue;
                 best = score;
                 pick = i;
@@ -239,11 +278,29 @@ namespace FlockFive
             return Branches[pick].LiftLeaf() ? 1 : 0;
         }
 
+        // Lower is nearer the feeders. Row 0 is the top row.
+        public static int LeafScore(int branch, int feederSlot)
+        {
+            int row = branch >> 1;
+            int col = branch & 1;
+            int score = row * 4;
+            if (feederSlot >= 2) return score;
+            int want = feederSlot == 0 ? 0 : (feederSlot == 1 ? 1 : -1);
+            if (want >= 0 && col != want) score += 6;
+            return score;
+        }
+
         public int ApplyCollect(int branchIndex, bool scoreFeeder = true)
         {
             var br = Branches[branchIndex];
             br.IsFullMatch(out var col);
             int slot = FeederSlotFor(col);
+            // The ostrich is in the way. The set stays, the feeder does not advance.
+            if (Ostrich != null && Ostrich.Alive)
+            {
+                OstrichPest.Bonk(this, branchIndex, slot);
+                return slot;
+            }
             br.Birds.Clear();
             br.Broken = true;
             // A pest scrap does not retire a feeder. Scoring it here would

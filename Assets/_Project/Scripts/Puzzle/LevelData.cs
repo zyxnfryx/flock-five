@@ -11,6 +11,13 @@ namespace FlockFive
         public bool Solo;
         // Authored kits for the packed garden (FlockKit.PaintMap format). Null = FlockKit run order.
         public string Kits;
+        // 1-3 feeders. 2 is every current garden. An ostrich stage uses 3.
+        public int Feeders = 2;
+        // Present from the open. Not a timed sparrow or hawk visit.
+        public bool Ostrich;
+        public int PeckSeed;
+        // 0 keeps OstrichState.DefaultPecks (2). A positive value overrides.
+        public int PecksPerMove;
     }
 
     public static partial class LevelData
@@ -145,7 +152,23 @@ namespace FlockFive
             // Garden 16 is one empty limb short once three sparrow snaps are in play.
             if (DisplayNumber == 16)
                 InsertEmptyLimb(b);
+            ApplyAuthored(b, Current);
             return b;
+        }
+
+        // Feeders and the ostrich come from the level, after Pack has copied the maker.
+        public static void ApplyAuthored(Board b, Level level)
+        {
+            if (b == null || level == null) return;
+            int n = level.Feeders;
+            if (n < 1) n = b.Live != null && b.Live.Length > 0 ? b.Live.Length : 2;
+            GardenGen.Apply(b, new GardenGen.Knobs
+            {
+                Feeders = n,
+                Ostrich = level.Ostrich,
+                PeckSeed = level.PeckSeed,
+                PecksPerMove = level.PecksPerMove
+            });
         }
 
         static void InsertEmptyLimb(Board b)

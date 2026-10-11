@@ -11,8 +11,7 @@ namespace FlockFive
             bool solo = level != null && level.Solo;
             var b = new Board();
             b.BreezeOnCollect = src.BreezeOnCollect;
-            b.Live[0] = src.Live[0];
-            b.Live[1] = src.Live[1];
+            b.CopyFeedersFrom(src);
             b.Queue.AddRange(src.Queue);
 
             int keep = src.Branches.Count;
@@ -73,8 +72,11 @@ namespace FlockFive
 
         static void EnqueueShiftedFeeders(Board src, Board b)
         {
-            Extra(src.Live[0], b);
-            Extra(src.Live[1], b);
+            if (src.Live != null)
+            {
+                for (int i = 0; i < src.Live.Length; i++)
+                    Extra(src.Live[i], b);
+            }
             for (int i = 0; i < src.Queue.Count; i++)
                 Extra(src.Queue[i], b);
         }

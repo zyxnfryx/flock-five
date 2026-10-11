@@ -87,7 +87,7 @@ namespace FlockFive.Editor
                         if (!b.Won) froze = true;
                         break;
                     }
-                    GardenSolve.Drain(b);
+                    GardenSolve.AfterMove(b);
                 }
                 if (froze) n++;
             }
@@ -110,10 +110,9 @@ namespace FlockFive.Editor
                     if (c >= 0)
                     {
                         var before = BoardValidator.Counts(b);
-                        var live0 = b.Live[0];
-                        var live1 = b.Live[1];
+                        var live = (BirdColor?[])b.Live.Clone();
                         PestPark.Apply(b, c, hawk: false);
-                        if (b.Live[0] != live0 || b.Live[1] != live1) fails++;
+                        if (!Board.SameLive(live, b.Live)) fails++;
                         if (!BoardValidator.Same(BoardValidator.Counts(b), before)) fails++;
                         if (b.RemainingBirds > 0 && PestPark.FreeSeats(b) < 1) fails++;
                         var hawkBoard = b.Clone();
@@ -129,7 +128,7 @@ namespace FlockFive.Editor
                         continue;
                     }
                     if (!RandomHop(b)) break;
-                    GardenSolve.Drain(b);
+                    GardenSolve.AfterMove(b);
                 }
             }
             return fails;

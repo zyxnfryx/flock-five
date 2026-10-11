@@ -103,6 +103,7 @@ namespace FlockFive
             public Transform Root;
             public BranchView[] Branches;
             public FeederView[] Feeders;
+            public OstrichMark Ostrich;
             public HiveView Hive;
             public Camera Cam;
             public GardenIce Ice;
@@ -157,9 +158,21 @@ namespace FlockFive
             for (int g = 0; g < GiftCount; g++)
                 branches[GiftIndex + g] = MakeGift(GiftIndex + g, g == 1, root);
 
-            var feeders = new FeederView[2];
-            feeders[0] = MakeFeeder(0, new Vector3(-1.22f, FeederY, 0f), root);
-            feeders[1] = MakeFeeder(1, new Vector3(1.22f, FeederY, 0f), root);
+            int feedersN = 2;
+            var level = LevelData.Current;
+            if (level != null)
+            {
+                int n = level.Feeders;
+                if (n < 1) n = 2;
+                if (level.Ostrich && n < 3) n = 3;
+                feedersN = FeederRow.Clamp(n);
+            }
+            var feeders = new FeederView[feedersN];
+            for (int i = 0; i < feedersN; i++)
+                feeders[i] = MakeFeeder(i, new Vector3(FeederRow.X(i, feedersN), FeederY, 0f), root);
+            OstrichMark ostrich = null;
+            if (level != null && level.Ostrich)
+                ostrich = OstrichMark.Attach(root, feedersN);
             var hive = HiveView.Attach(root);
             var ice = GardenIce.Attach(root, cam);
 
@@ -168,6 +181,7 @@ namespace FlockFive
                 Root = root,
                 Branches = branches,
                 Feeders = feeders,
+                Ostrich = ostrich,
                 Hive = hive,
                 Cam = cam,
                 Ice = ice

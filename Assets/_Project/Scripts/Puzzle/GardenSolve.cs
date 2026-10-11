@@ -33,7 +33,7 @@ namespace FlockFive
             if (board == null) return new Report { Outlook = Outlook.Tangled };
             var start = board.Clone();
             Drain(start);
-            if (start.Won) return new Report { Outlook = Outlook.Winnable, Moves = 0, Nodes = 1 };
+            if (Cleared(start)) return new Report { Outlook = Outlook.Winnable, Moves = 0, Nodes = 1 };
             if (!start.HasHop() && start.FindCollect() < 0)
                 return new Report { Outlook = Outlook.Tangled, Moves = 0, Nodes = 1 };
 
@@ -45,8 +45,8 @@ namespace FlockFive
                 if (!BestHop(greedy, hops, out int from, out int to)) break;
                 if (!greedy.TryMove(from, to, out _)) break;
                 gMoves++;
-                Drain(greedy);
-                if (greedy.Won)
+                AfterMove(greedy);
+                if (Cleared(greedy))
                     return new Report { Outlook = Outlook.Winnable, Moves = gMoves, Nodes = step + 1 };
             }
 
@@ -68,8 +68,8 @@ namespace FlockFive
                 {
                     var next = cur.board.Clone();
                     if (!next.TryMove(hops[m].from, hops[m].to, out _)) continue;
-                    Drain(next);
-                    if (next.Won)
+                    AfterMove(next);
+                    if (Cleared(next))
                         return new Report
                         {
                             Outlook = Outlook.Winnable,
@@ -87,6 +87,12 @@ namespace FlockFive
         public static void Drain(Board b)
         {
             if (b == null) return;
+            // Opening sets bonk the ostrich. They do not peck: pecks follow a move.
+            if (b.Ostrich != null && b.Ostrich.Alive)
+            {
+                OstrichPest.Settle(b);
+                return;
+            }
             for (int n = 0; n < 32; n++)
             {
                 int i = b.FindCollect();
@@ -94,6 +100,21 @@ namespace FlockFive
                 b.ApplyCollect(i);
             }
         }
+
+        // The hop is already on the board. An ostrich bonks and pecks.
+        // Anything else collects the ready sets.
+        public static void AfterMove(Board b)
+        {
+            if (b == null) return;
+            if (b.Ostrich != null && b.Ostrich.Alive)
+                OstrichPest.AfterMove(b);
+            else
+                Drain(b);
+        }
+
+        // The garden is clear only once a living ostrich has fled.
+        public static bool Cleared(Board b) =>
+            b != null && b.Won && (b.Ostrich == null || !b.Ostrich.Alive);
 
         static bool BestHop(Board b, List<Hop> hops, out int from, out int to)
         {
@@ -151,10 +172,22 @@ namespace FlockFive
                 }
             }
             Mix(4);
-            Mix(b.Live[0].HasValue ? 40 + (int)b.Live[0].Value : 49);
-            Mix(b.Live[1].HasValue ? 40 + (int)b.Live[1].Value : 49);
+            if (b.Live != null)
+            {
+                for (int f = 0; f < b.Live.Length; f++)
+                    Mix(b.Live[f].HasValue ? 40 + (int)b.Live[f].Value : 49);
+            }
             Mix(5);
             for (int i = 0; i < b.Queue.Count; i++) Mix(50 + (int)b.Queue[i]);
+            if (b.Ostrich != null)
+            {
+                var o = b.Ostrich;
+                Mix(60 + o.Hits);
+                Mix((int)(o.Bonked & 0xffffffffUL));
+                Mix((int)(o.Bonked >> 32));
+                // Peck index drops out of the key once the bird has fled.
+                Mix(o.Alive ? 80 + (o.PeckIndex & 0xffff) : 79);
+            }
             return new Stamp { A = a, B = h };
         }
 
@@ -180,6 +213,8 @@ namespace FlockFive
 
         static int Score(Board b, int from, int to)
         {
+            if (b.Ostrich != null && b.Ostrich.Alive)
+                return OstrichScore(b, from, to);
             var a = b.Branches[from];
             var dst = b.Branches[to];
             int run = a.TipRun();
@@ -188,6 +223,18 @@ namespace FlockFive
             if (dst.Count + run == BranchState.Cap) s += 80;
             if (a.Count == run) s += 20;
             return s;
+        }
+
+        // Build onto a run first. An empty perch is last. Same order the
+        // ostrich harness searches, and only while the bird is still up.
+        static int OstrichScore(Board b, int from, int to)
+        {
+            var a = b.Branches[from];
+            var dst = b.Branches[to];
+            int run = a.TipRun();
+            bool whole = run == a.Count;
+            if (dst.Empty) return whole ? 0 : 10;
+            return 100 + dst.TipRun() + run;
         }
 
         public struct HopChoice
@@ -235,11 +282,20 @@ namespace FlockFive
                 }
             }
             sb.Append('L');
-            sb.Append(b.Live[0].HasValue ? ((int)b.Live[0].Value).ToString() : "-");
-            sb.Append(b.Live[1].HasValue ? ((int)b.Live[1].Value).ToString() : "-");
+            if (b.Live != null)
+            {
+                for (int f = 0; f < b.Live.Length; f++)
+                    sb.Append(b.Live[f].HasValue ? ((int)b.Live[f].Value).ToString() : "-");
+            }
             sb.Append('Q');
             for (int i = 0; i < b.Queue.Count; i++)
                 sb.Append((int)b.Queue[i]);
+            if (b.Ostrich != null)
+            {
+                var o = b.Ostrich;
+                sb.Append('#').Append(o.Hits).Append(',').Append(o.Bonked).Append(',');
+                sb.Append(o.Alive ? o.PeckIndex : -1);
+            }
             return sb.ToString();
         }
     }
