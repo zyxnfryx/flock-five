@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import <AVFoundation/AVFoundation.h>
 #import <AppTrackingTransparency/AppTrackingTransparency.h>
 
 extern void UnitySendMessage(const char *obj, const char *method, const char *msg);
@@ -104,4 +105,39 @@ extern "C" int FlockFive_HasLaunchArg(const char *needle)
         }
     }
     return 0;
+}
+
+// Game session. muteOtherAudioSources is off, so Ambient (silent switch
+// honored, other apps keep playing). SoloAmbient is the exclusive twin and
+// also honors the switch. Options stay 0: no DuckOthers, no MixWithOthers.
+// An interruption end is forwarded to AudioGuard.Restore. ShouldResume is
+// not required; iOS often omits it and the mix stays ducked if we wait for it.
+static id s_audioObs;
+static BOOL s_audioInstalled;
+
+extern "C" void FlockFive_AudioInstall(void)
+{
+    if (s_audioInstalled) return;
+    s_audioInstalled = YES;
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+    s_audioObs = [[NSNotificationCenter defaultCenter]
+        addObserverForName:AVAudioSessionInterruptionNotification
+                    object:session
+                     queue:[NSOperationQueue mainQueue]
+                usingBlock:^(NSNotification *note) {
+        NSNumber *typeNum = note.userInfo[AVAudioSessionInterruptionTypeKey];
+        if (typeNum == nil) return;
+        if (typeNum.unsignedIntegerValue != AVAudioSessionInterruptionTypeEnded) return;
+        UnitySendMessage("AudioGuard", "OnAudioInterruption", "ended");
+    }];
+}
+
+extern "C" void FlockFive_AudioActivate(int solo)
+{
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+    AVAudioSessionCategory category = solo
+        ? AVAudioSessionCategorySoloAmbient
+        : AVAudioSessionCategoryAmbient;
+    [session setCategory:category withOptions:0 error:nil];
+    [session setActive:YES error:nil];
 }

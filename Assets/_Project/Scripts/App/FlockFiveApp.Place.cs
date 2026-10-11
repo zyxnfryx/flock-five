@@ -172,11 +172,35 @@ namespace FlockFive
         static float HomeAvatarIcon(float s)
         {
             float h = Screen.height > 2f ? Screen.height : s * 720f;
-            float ppu = h / (WorldBuilder.CamOrtho * 2f);
+            return HomeAvatarBirdPx(h);
+        }
+
+        // Home splash body in GUI pixels. Same formula as the drawn icon.
+        public static float HomeAvatarBirdPx(float screenH)
+        {
+            if (screenH < 2f) screenH = 720f;
+            float ppu = screenH / (WorldBuilder.CamOrtho * 2f);
             if (ppu < 1f) ppu = 1f;
             float icon = AvatarBirdWorld() * ppu * HomeAvatarMul;
             if (icon < 8f) icon = 8f;
             return icon;
+        }
+
+        // Garden body texture in screen pixels. Tall phones letterbox the play
+        // camera, so the bird is smaller than a full-height mapping of CamOrtho.
+        public static float GardenBirdPx(float screenW, float screenH, float spriteWorldWidth)
+        {
+            if (screenH < 2f) screenH = 720f;
+            if (screenW < 2f) screenW = screenH * WorldBuilder.PortraitAspect;
+            float window = screenW / screenH;
+            float want = WorldBuilder.PortraitAspect;
+            float viewH = screenH;
+            if (window + 0.0001f < want)
+                viewH = screenH * (window / Mathf.Max(0.05f, want));
+            float ppu = viewH / (WorldBuilder.CamOrtho * 2f);
+            if (ppu < 1f) ppu = 1f;
+            if (spriteWorldWidth < 0.05f) spriteWorldWidth = 0.05f;
+            return spriteWorldWidth * BranchView.BirdScale.y * ppu;
         }
 
         static Texture2D _notifyBadge;

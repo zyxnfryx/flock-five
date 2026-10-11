@@ -1154,13 +1154,76 @@ namespace FlockFive
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetKitSlots() => _kitSlots = null;
 
+        // Opaque width of a worn kit, as a fraction of the skull (HeadSpan).
+        // Not a world size: a larger head, home or garden, grows the kit with it.
+        // Home avatar on a 2556-tall phone must clear KitReadableMinPx.
+        // Garden birds share the fraction, and stay under KitMaxOfBird of the body.
+        public const float KitReadableMinPx = 72f;
+        public const float KitMaxOfBird = 0.72f;
+
+        public static float ShareOf(BirdKit worn)
+        {
+            switch (worn)
+            {
+                case BirdKit.Bow: return 1.82f;
+                case BirdKit.Bowtie: return 1.85f;
+                case BirdKit.Crown: return 1.55f;
+                case BirdKit.Flower: return 1.00f;
+                case BirdKit.Shades: return 1.35f;
+                case BirdKit.TopHat: return 1.60f;
+                case BirdKit.Beanie: return 1.20f;
+                default: return 1.45f;
+            }
+        }
+
+        // Local scale so the kit's opaque width is ShareOf(worn) skulls wide.
+        public static float KitFit(float headSpan, float kitWidth, BirdKit worn)
+        {
+            if (headSpan < 0.05f) headSpan = 0.05f;
+            if (kitWidth < 0.05f) kitWidth = 0.05f;
+            return headSpan * ShareOf(worn) / kitWidth;
+        }
+
+        public static float KitScale(BirdKit worn, Sprite body, Sprite kit)
+        {
+            float head = SpriteCatalog.HeadSpan(body);
+            var box = SpriteCatalog.MeasureOpaque(kit);
+            float native = box.Ok ? box.Width : 1f;
+            return KitFit(head, native, worn);
+        }
+
+        // On-screen pixels of the kit's opaque width when the body texture is
+        // drawn birdPx wide. Home GUI and the garden camera both use this.
+        public static float KitOpaquePx(Sprite body, Sprite kit, float scale, float birdPx)
+        {
+            if (birdPx < 1f || scale <= 0f) return 0f;
+            float unit = BirdUnitPx(body, birdPx);
+            var box = kit != null ? SpriteCatalog.MeasureOpaque(kit) : default;
+            float w = box.Ok ? box.Width : 0f;
+            if (w < 0.01f && kit != null && kit.pixelsPerUnit > 1f)
+                w = kit.rect.width / kit.pixelsPerUnit;
+            return w * scale * unit;
+        }
+
+        public static float HeadScreenPx(Sprite body, float birdPx)
+        {
+            if (birdPx < 1f) return 0f;
+            return SpriteCatalog.HeadSpan(body) * BirdUnitPx(body, birdPx);
+        }
+
+        static float BirdUnitPx(Sprite body, float birdPx)
+        {
+            float ppu = body != null && body.pixelsPerUnit > 1f ? body.pixelsPerUnit : 220f;
+            float texW = body != null && body.rect.width > 1f ? body.rect.width : 1024f;
+            return ppu * (birdPx / texW);
+        }
+
         // Garden accessory anchor. The crown base and the bow knot sit on
         // SpriteCatalog.HeadDome of the live body sprite (every color, every flap).
+        // Scale follows HeadSpan, from fitBody when a raised wing clips the walk.
         // Locals are facing-right; faceLeft mirrors X. flip matches the body.
         // Tilt is KitTiltDeg toward the beak: right-facing tips negative, left-facing positive.
-        // buttonSeat remains so the color-row buttons share this seat. The dome
-        // measurement replaced the old per-color nudge. Worn birds use KitFollow,
-        // which blends this seat across the flap step so the kit does not pop.
+        // buttonSeat remains so the color-row buttons share this seat.
         public static void KitAnchor(bool crown, int frame, bool faceLeft,
             out float x, out float y, out float scale, out float tilt, out bool flip,
             bool buttonSeat = false)
@@ -1172,83 +1235,71 @@ namespace FlockFive
             out float x, out float y, out float scale, out float tilt, out bool flip,
             bool buttonSeat = false)
         {
-            if (frame < 0 || frame > 5) frame = 0;
-            if (body == null) body = SpriteCatalog.BodyPose(frame);
-            scale = crown ? 0.48f : SpriteCatalog.BowScale;
-            if (kit == null) kit = crown ? SpriteCatalog.Crown : SpriteCatalog.Bow;
-            Seat(crown ? FlockKit.Seat.Head : FlockKit.Seat.Tuck, scale, body, kit, faceLeft,
-                out x, out y, out tilt, out flip);
+            var worn = crown ? BirdKit.Crown : BirdKit.Bow;
+            // Color-row chips pass buttonSeat and stay on this same dome seat.
+            _ = buttonSeat;
+            KitAnchor(worn, frame, faceLeft, body, null, kit, out x, out y, out scale, out tilt, out flip);
         }
 
-        // Same dome seat as the bool overload. Headwear uses the crown sink,
-        // bows and ties use the tuck, shades hang just under the dome.
         public static void KitAnchor(BirdKit worn, int frame, bool faceLeft, Sprite body, Sprite kit,
+            out float x, out float y, out float scale, out float tilt, out bool flip)
+        {
+            KitAnchor(worn, frame, faceLeft, body, null, kit, out x, out y, out scale, out tilt, out flip);
+        }
+
+        // fitBody is the skull the scale is measured on (the rest pose). body is
+        // the pose whose dome the kit follows. Null fitBody measures body.
+        public static void KitAnchor(BirdKit worn, int frame, bool faceLeft, Sprite body, Sprite fitBody, Sprite kit,
             out float x, out float y, out float scale, out float tilt, out bool flip)
         {
             if (frame < 0 || frame > 5) frame = 0;
             if (body == null) body = SpriteCatalog.BodyPose(frame);
-            scale = ScaleOf(worn);
-            if (kit == null) kit = SpriteCatalog.KitSprite(BirdColor.Gold, worn == BirdKit.Plain ? BirdKit.Crown : worn);
-            var seat = FlockKit.SeatOf(worn);
-            if (seat == FlockKit.Seat.Face)
-            {
-                SeatFace(scale, body, kit, faceLeft, out x, out y, out tilt, out flip);
-                return;
-            }
-            Seat(seat, scale, body, kit, faceLeft, out x, out y, out tilt, out flip);
+            if (fitBody == null) fitBody = body;
+            if (worn == BirdKit.Plain) worn = BirdKit.Crown;
+            if (kit == null) kit = SpriteCatalog.KitSprite(BirdColor.Gold, worn);
+            float fitHead = SpriteCatalog.HeadSpan(fitBody);
+            float liveHead = SpriteCatalog.HeadSpan(body);
+            float head = liveHead < fitHead * 0.75f ? fitHead : liveHead;
+            var box = SpriteCatalog.MeasureOpaque(kit);
+            float native = box.Ok ? box.Width : 1f;
+            scale = KitFit(fitHead, native, worn);
+            Seat(worn, scale, head, body, kit, faceLeft, out x, out y, out tilt, out flip);
         }
 
-        // World size near the crown (0.48 on a ~375px sprite). Bowtie art is wider.
-        static float ScaleOf(BirdKit worn)
-        {
-            switch (worn)
-            {
-                case BirdKit.Bow: return SpriteCatalog.BowScale;
-                case BirdKit.Bowtie: return 0.26f;
-                case BirdKit.Flower: return 0.50f;
-                case BirdKit.Shades: return 0.42f;
-                case BirdKit.TopHat: return 0.62f;
-                case BirdKit.Beanie: return 0.58f;
-                default: return 0.48f;
-            }
-        }
-
-        static void Seat(FlockKit.Seat seat, float scale, Sprite body, Sprite kit, bool faceLeft,
+        static void Seat(BirdKit worn, float scale, float head, Sprite body, Sprite kit, bool faceLeft,
             out float x, out float y, out float tilt, out bool flip)
         {
             var dome = SpriteCatalog.HeadDome(body);
             var box = SpriteCatalog.MeasureOpaque(kit);
+            if (head < 0.05f) head = 0.05f;
+            float midX = box.Ok ? (box.Left + box.Right) * 0.5f : 0f;
+            float midY = box.Ok ? (box.Bottom + box.Top) * 0.5f : 0f;
+            float sink = head * 0.08f;
+            var seat = FlockKit.SeatOf(worn);
             float lx;
             float ly;
             if (seat == FlockKit.Seat.Head)
             {
-                float height = box.Ok ? box.Height : 1.56f;
-                float bottom = box.Ok ? box.Bottom : -0.76f;
-                float sink = 0.18f * height * scale;
-                lx = dome.x;
+                float bottom = box.Ok ? box.Bottom : -0.5f;
+                lx = dome.x - midX * scale;
                 ly = dome.y - sink - bottom * scale;
+            }
+            else if (seat == FlockKit.Seat.Face)
+            {
+                float top = box.Ok ? box.Top : 0.2f;
+                lx = dome.x - midX * scale;
+                ly = dome.y - head * 0.40f - top * scale;
+            }
+            else if (worn == BirdKit.Bowtie)
+            {
+                lx = dome.x - midX * scale;
+                ly = dome.y - head * 0.46f - midY * scale;
             }
             else
             {
-                float width = box.Ok ? box.Width : 1.95f;
-                float top = box.Ok ? box.Top : 0.83f;
-                lx = dome.x - width * scale / 6f;
-                ly = dome.y - 0.06f - top * scale;
+                lx = dome.x - head * 0.06f - midX * scale;
+                ly = dome.y - sink - midY * scale;
             }
-            x = faceLeft ? -lx : lx;
-            y = ly;
-            flip = faceLeft;
-            tilt = faceLeft ? KitTiltDeg : -KitTiltDeg;
-        }
-
-        static void SeatFace(float scale, Sprite body, Sprite kit, bool faceLeft,
-            out float x, out float y, out float tilt, out bool flip)
-        {
-            var dome = SpriteCatalog.HeadDome(body);
-            var box = SpriteCatalog.MeasureOpaque(kit);
-            float top = box.Ok ? box.Top : 0.25f;
-            float lx = dome.x;
-            float ly = dome.y - 0.36f - top * scale;
             x = faceLeft ? -lx : lx;
             y = ly;
             flip = faceLeft;
@@ -1261,48 +1312,56 @@ namespace FlockFive
         public static void KitFollow(bool crown, Sprite body, Sprite next, float phase, bool faceLeft, Sprite kit,
             int slot, float dt, out float x, out float y, out float scale, out float tilt, out bool flip)
         {
+            KitFollow(crown, body, next, phase, faceLeft, kit, null, slot, dt,
+                out x, out y, out scale, out tilt, out flip);
+        }
+
+        public static void KitFollow(bool crown, Sprite body, Sprite next, float phase, bool faceLeft, Sprite kit,
+            Sprite fitBody, int slot, float dt, out float x, out float y, out float scale, out float tilt, out bool flip)
+        {
             if ((uint)slot >= (uint)KitSlotCount)
             {
-                KitIdeal(crown, body, next, phase, faceLeft, kit, out x, out y, out scale, out tilt, out flip);
+                KitIdeal(crown, body, next, phase, faceLeft, kit, fitBody, out x, out y, out scale, out tilt, out flip);
                 return;
             }
             if (_kitSlots == null) _kitSlots = new KitGlide[KitSlotCount];
             KitGlide g = _kitSlots[slot];
-            KitGlideTo(crown, body, next, phase, faceLeft, kit, ref g, dt, out x, out y, out scale, out tilt, out flip);
+            KitGlideTo(crown, body, next, phase, faceLeft, kit, fitBody, ref g, dt, out x, out y, out scale, out tilt, out flip);
             _kitSlots[slot] = g;
         }
 
-        static void KitGlideTo(bool crown, Sprite body, Sprite next, float phase, bool faceLeft, Sprite kit,
+        static void KitGlideTo(bool crown, Sprite body, Sprite next, float phase, bool faceLeft, Sprite kit, Sprite fitBody,
             ref KitGlide g, float dt, out float x, out float y, out float scale, out float tilt, out bool flip)
         {
-            KitIdeal(crown, body, next, phase, faceLeft, kit, out float tx, out float ty, out scale, out tilt, out flip);
+            KitIdeal(crown, body, next, phase, faceLeft, kit, fitBody, out float tx, out float ty, out scale, out tilt, out flip);
             Glide(ref g, tx, ty, tilt, faceLeft, dt, out x, out y, out tilt);
         }
 
         static void KitGlideWorn(BirdKit worn, Sprite body, Sprite next, float phase, bool faceLeft, Sprite kit,
-            ref KitGlide g, float dt, out float x, out float y, out float scale, out float tilt, out bool flip)
+            Sprite fitBody, ref KitGlide g, float dt, out float x, out float y, out float scale, out float tilt, out bool flip)
         {
-            KitIdealWorn(worn, body, next, phase, faceLeft, kit, out float tx, out float ty, out scale, out tilt, out flip);
+            KitIdealWorn(worn, body, next, phase, faceLeft, kit, fitBody, out float tx, out float ty, out scale, out tilt, out flip);
             Glide(ref g, tx, ty, tilt, faceLeft, dt, out x, out y, out tilt);
         }
 
-        static void KitIdeal(bool crown, Sprite body, Sprite next, float phase, bool faceLeft, Sprite kit,
+        static void KitIdeal(bool crown, Sprite body, Sprite next, float phase, bool faceLeft, Sprite kit, Sprite fitBody,
             out float x, out float y, out float scale, out float tilt, out bool flip)
         {
-            KitAnchor(crown, 0, faceLeft, body, kit, out x, out y, out scale, out tilt, out flip);
+            var worn = crown ? BirdKit.Crown : BirdKit.Bow;
+            KitAnchor(worn, 0, faceLeft, body, fitBody, kit, out x, out y, out scale, out tilt, out flip);
             if (next == null || phase <= 0f) return;
-            KitAnchor(crown, 0, faceLeft, next, kit, out float x1, out float y1, out _, out _, out _);
+            KitAnchor(worn, 0, faceLeft, next, fitBody, kit, out float x1, out float y1, out _, out _, out _);
             float u = phase > 1f ? 1f : phase;
             x += (x1 - x) * u;
             y += (y1 - y) * u;
         }
 
-        static void KitIdealWorn(BirdKit worn, Sprite body, Sprite next, float phase, bool faceLeft, Sprite kit,
+        static void KitIdealWorn(BirdKit worn, Sprite body, Sprite next, float phase, bool faceLeft, Sprite kit, Sprite fitBody,
             out float x, out float y, out float scale, out float tilt, out bool flip)
         {
-            KitAnchor(worn, 0, faceLeft, body, kit, out x, out y, out scale, out tilt, out flip);
+            KitAnchor(worn, 0, faceLeft, body, fitBody, kit, out x, out y, out scale, out tilt, out flip);
             if (next == null || phase <= 0f) return;
-            KitAnchor(worn, 0, faceLeft, next, kit, out float x1, out float y1, out _, out _, out _);
+            KitAnchor(worn, 0, faceLeft, next, fitBody, kit, out float x1, out float y1, out _, out _, out _);
             float u = phase > 1f ? 1f : phase;
             x += (x1 - x) * u;
             y += (y1 - y) * u;
@@ -1463,7 +1522,9 @@ namespace FlockFive
             }
             SpriteCatalog.FlapPair(Color, Sex, flapT, wings, out var body, out var next, out float phase);
             var kitSpr = _kit.sprite;
-            KitGlideWorn(worn, body, next, phase, FaceLeft, kitSpr, ref _kitGlide, Time.deltaTime,
+            // Rest skull sizes the kit. A raised wing clips HeadSpan and would shrink the bow.
+            var rest = SpriteCatalog.Bird(Color, Sex);
+            KitGlideWorn(worn, body, next, phase, FaceLeft, kitSpr, rest, ref _kitGlide, Time.deltaTime,
                 out float bowX, out float bowY, out float ks, out float tiltZ, out bool kitFlip);
             var kitPos = new Vector3(bowX, bowY, 0f);
             if (_kit.transform.localPosition != kitPos) _kit.transform.localPosition = kitPos;

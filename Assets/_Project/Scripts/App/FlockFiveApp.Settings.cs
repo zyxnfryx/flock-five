@@ -142,6 +142,8 @@ namespace FlockFive
             _settingsPhase = next;
             _settingsAt = Time.unscaledTime;
             _settingsOpen = next != SettingsPhase.Closed;
+            if (next == SettingsPhase.Closed) AudioGuard.OnSceneOrPopupClosed();
+            else AudioGuard.Hold("settings");
         }
 
         void ApplySettingsHit(SettingsMotion.Hit hit)
@@ -151,6 +153,8 @@ namespace FlockFive
             _settingsPhase = next;
             _settingsAt = Time.unscaledTime;
             _settingsOpen = next != SettingsPhase.Closed;
+            if (next == SettingsPhase.Closed) AudioGuard.OnSceneOrPopupClosed();
+            else AudioGuard.Hold("settings");
             Sfx.CardTap();
         }
 
@@ -461,7 +465,12 @@ namespace FlockFive
         void DrawSoftPrompt(float s)
         {
             var card = _homePrompt;
-            if (card.Kind == AdConsent.Sheet.None) return;
+            if (card.Kind == AdConsent.Sheet.None)
+            {
+                AudioGuard.ReleaseReason("sheet");
+                return;
+            }
+            AudioGuard.Hold("sheet");
             if (Texture2D.whiteTexture == null) return;
             if (s < 0.5f) s = 0.5f;
             GUI.color = new Color(0.05f, 0.04f, 0.03f, 0.28f);

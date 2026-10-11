@@ -31,7 +31,22 @@ namespace FlockFive.Editor
             EditorApplication.isPlaying = true;
         }
 
+        // Home avatar with a bow, then a crown, then one garden bird wearing a kit.
+        public static void Capture81Kit()
+        {
+            SetGameView(1179, 2556);
+            File.WriteAllText("/tmp/flock-five-b81-kit", "1");
+            EditorApplication.isPlaying = true;
+        }
+
         // Plane finale, doubled wheel, pointer zooms, and wheel zooms.
+        public static void Capture81PassH()
+        {
+            SetGameView(1179, 2556);
+            File.WriteAllText("/tmp/flock-five-b81-hud", "1");
+            EditorApplication.isPlaying = true;
+        }
+
         public static void Capture81Pass4()
         {
             SetGameView(1179, 2556);

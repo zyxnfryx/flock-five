@@ -918,6 +918,19 @@ namespace FlockFive
 
             // Front copy uses the lower text face. The back uses the whole face, and a
             // honey row shortens the flavor the same way DrawBack does.
+            // Title, flavor, and the honey icon band for a lesson that points at this card.
+            // Body is empty: these faces have no third text block. Honey is icons, not text.
+            public static void LessonBands(Rect card, bool full, bool back, bool honey,
+                out Rect title, out Rect body, out Rect flavor, out Rect icons)
+            {
+                body = default;
+                icons = default;
+                var face = FaceOf(card);
+                var host = back ? face : TextFaceOf(face, full);
+                Split(host, back && honey, full ? Full : Mid, out title, out flavor, out icons, out _, out _);
+                if (!(back && honey)) icons = default;
+            }
+
             public static void CopyBands(Rect card, bool full, bool back, bool honey, out Rect title, out Rect flavor)
             {
                 var face = FaceOf(card);

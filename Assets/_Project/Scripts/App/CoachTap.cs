@@ -163,7 +163,7 @@ namespace FlockFive
                 case CoachStep.Hawk: return "A hawk blocks a feeder! Match five there twice to drive it off.";
                 case CoachStep.Bee: return "Bees cover birds on a branch! Move the birds off a bee to free it and win a bee card.";
                 case CoachStep.Leaf: return "Leaves hide these birds. Collect at a feeder to blow them away.";
-                case CoachStep.HiveGarden: return "You found a bee! Click the hive to view them.";
+                case CoachStep.HiveGarden: return CaptionLayout.HiveGardenLine;
                 case CoachStep.HiveHome: return "Tap the hive to see your bee collection.";
                 case CoachStep.PokerIntro: return "You earned coins! Tap poker to bet them.";
                 case CoachStep.PokerBet: return "Pick your bet, then tap Deal.";
@@ -176,7 +176,7 @@ namespace FlockFive
                 case CoachStep.AlbumTap: return "Tap a card you have to enlarge it.";
                 case CoachStep.AlbumEmpty: return "Tap a card to take a closer look!";
                 case CoachStep.AlbumFlip: return "Tap again to flip.";
-                case CoachStep.AlbumHoney: return "Honeycombs are honey. 2 normal · 3 foil · 5 inverse.";
+                case CoachStep.AlbumHoney: return CaptionLayout.AlbumHoneyBlock;
                 case CoachStep.AlbumPage: return "Swipe to turn the page! Or tap a page number.";
                 case CoachStep.AlbumUpgrade: return "Upgrade adds honey for 1000 coins.";
                 case CoachStep.AdHand: return "Tap to unlock your bonus!";

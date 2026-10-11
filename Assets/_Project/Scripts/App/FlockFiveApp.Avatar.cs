@@ -1278,24 +1278,29 @@ namespace FlockFive
             }
             float lx, ly, fit, tilt;
             bool flip;
+            // Rest skull sizes the kit. The live pose only moves the dome.
+            var rest = SpriteCatalog.Bird(col);
+            var worn = bow ? BirdKit.Bow : BirdKit.Crown;
             if (glideSlot < 0)
-                BirdIdle.KitAnchor(!bow, 0, faceLeft, body, spr, out lx, out ly, out fit, out tilt, out flip, buttonSeat);
+                BirdIdle.KitAnchor(worn, 0, faceLeft, body, rest, spr, out lx, out ly, out fit, out tilt, out flip);
             else
             {
                 float dt = Time.unscaledDeltaTime;
                 if (dt < 0f) dt = 0f;
                 else if (dt > 0.05f) dt = 0.05f;
-                BirdIdle.KitFollow(!bow, body, next, phase, faceLeft, spr, glideSlot, dt,
+                BirdIdle.KitFollow(!bow, body, next, phase, faceLeft, spr, rest, glideSlot, dt,
                     out lx, out ly, out fit, out tilt, out flip);
             }
-            // One local unit in GUI pixels. The imported bird is 220 ppu on a 1024 rest
-            // sheet. Flap quads grow with the sheet, so the rest sheet keeps the unit.
-            var rest = SpriteCatalog.Bird(col);
+            // Color chips pass buttonSeat and stay on this same dome seat.
+            _ = buttonSeat;
+            // One local unit in GUI pixels. The rest sheet keeps the unit when a flap
+            // quad grows, so the kit stays on the same skull.
             float ppu = rest != null && rest.pixelsPerUnit > 1f ? rest.pixelsPerUnit : 220f;
             float texW = rest != null && rest.rect.width > 1f ? rest.rect.width : 1024f;
             float unit = ppu * (icon / texW);
-            float dw = (spr.rect.width / 200f) * fit * unit;
-            float dh = (spr.rect.height / 200f) * fit * unit;
+            float kitPpu = spr.pixelsPerUnit > 1f ? spr.pixelsPerUnit : 200f;
+            float dw = (spr.rect.width / kitPpu) * fit * unit;
+            float dh = (spr.rect.height / kitPpu) * fit * unit;
             if (dw < 1f || dh < 1f) return;
             float x = c.x + lx * unit;
             float y = c.y - ly * unit;

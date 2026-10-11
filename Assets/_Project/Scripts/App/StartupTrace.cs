@@ -23,10 +23,27 @@ namespace FlockFive
             public int Frame;
         }
 
+        struct AudioSnap
+        {
+            public float Vol;
+            public int Pause;
+            public float Duck;
+            public int Tokens;
+            public float Freeze;
+            public int Dsp;
+            public int Rate;
+            public int Speakers;
+            public bool Ok;
+        }
+
         static readonly long[] _t0 = new long[StackMax];
         static readonly string[] _name = new string[StackMax];
+        static readonly AudioSnap[] _snap = new AudioSnap[StackMax];
         static readonly Hit[] _hits = new Hit[HitMax];
         static int _depth;
+
+        // Last FF_AUDIO line. Editor tests read this. Device logs read Debug.Log.
+        public static string LastAudioLog { get; private set; }
         static int _hitN;
         static double _worst = -1;
         static int _worstFrame;
@@ -70,6 +87,7 @@ namespace FlockFive
             if (_depth >= StackMax) return default;
             _name[_depth] = name;
             _t0[_depth] = Stopwatch.GetTimestamp();
+            _snap[_depth] = ReadAudio();
             _depth++;
             return new Span(_depth);
         }
@@ -88,8 +106,10 @@ namespace FlockFive
             long dt = Stopwatch.GetTimestamp() - _t0[i];
             double ms = dt * 1000.0 / Stopwatch.Frequency;
             string name = _name[i];
+            AudioSnap before = _snap[i];
             _depth = i;
             Note(name, ms, Time.frameCount);
+            LogAudio(name, ms, before, ReadAudio());
         }
 
         public static void Note(string name, double ms, int frame)
@@ -141,6 +161,7 @@ namespace FlockFive
         public static void ResetWindow()
         {
             _depth = 0;
+            LastAudioLog = null;
             _hitN = 0;
             _worst = -1;
             _worstFrame = 0;
@@ -187,6 +208,71 @@ namespace FlockFive
             UnityEngine.Debug.Log(line);
             try { System.IO.File.WriteAllText("/tmp/ff-startup-result.txt", line); }
             catch (System.Exception) { }
+        }
+
+        // Before and after each named startup step. A step that does not move
+        // the listener, the duck, or the audio configuration stays quiet unless
+        // it is slow or it is one of the ad / clip-load steps Brandon's blip
+        // lines up with. AudioSettings.Reset is not called anywhere; this log
+        // is how a device run shows that.
+        static void LogAudio(string name, double ms, AudioSnap before, AudioSnap after)
+        {
+            if (string.IsNullOrEmpty(name) || name.StartsWith("Sprite:")) return;
+            bool changed = before.Ok && after.Ok && (
+                before.Vol != after.Vol || before.Pause != after.Pause
+                || before.Duck != after.Duck || before.Tokens != after.Tokens
+                || before.Freeze != after.Freeze || before.Dsp != after.Dsp
+                || before.Rate != after.Rate || before.Speakers != after.Speakers);
+            bool named = name.StartsWith("Ads") || name.StartsWith("LevelPlay")
+                || name.StartsWith("AdConsent") || name.StartsWith("Sfx.Warm")
+                || name.StartsWith("Sfx.Load") || name.StartsWith("MixDesk.Load")
+                || name.StartsWith("GearIcon");
+            if (!changed && ms < 5.0 && !named) return;
+            var culture = CultureInfo.InvariantCulture;
+            string line = "FF_AUDIO step=" + name
+                + " ms=" + ms.ToString("0.0", culture)
+                + " changed=" + (changed ? "1" : "0")
+                + " before=[" + FmtAudio(before) + "] after=[" + FmtAudio(after) + "]";
+            LastAudioLog = line;
+            UnityEngine.Debug.Log(line);
+        }
+
+        static AudioSnap ReadAudio()
+        {
+            var s = new AudioSnap();
+            try
+            {
+                s.Vol = AudioListener.volume;
+                s.Pause = AudioListener.pause ? 1 : 0;
+                s.Duck = AudioGuard.TokenScale;
+                s.Tokens = AudioGuard.LiveTokens;
+                s.Freeze = MixDesk.Live != null ? MixDesk.Live.FreezeDuck : -1f;
+                var c = AudioSettings.GetConfiguration();
+                s.Dsp = c.dspBufferSize;
+                s.Rate = c.sampleRate;
+                s.Speakers = (int)c.speakerMode;
+                s.Ok = true;
+            }
+            catch (System.Exception)
+            {
+                s.Ok = false;
+            }
+            return s;
+        }
+
+        static string FmtAudio(AudioSnap s)
+        {
+            if (!s.Ok) return "unread";
+            var culture = CultureInfo.InvariantCulture;
+            string freeze = s.Freeze < 0f ? "na" : s.Freeze.ToString("0.00", culture);
+            return "vol=" + s.Vol.ToString("0.00", culture)
+                + " pause=" + s.Pause.ToString(culture)
+                + " duck=" + s.Duck.ToString("0.00", culture)
+                + " tokens=" + s.Tokens.ToString(culture)
+                + " freeze=" + freeze
+                + " dsp=" + s.Dsp.ToString(culture)
+                + " rate=" + s.Rate.ToString(culture)
+                + " spk=" + s.Speakers.ToString(culture);
         }
     }
 }

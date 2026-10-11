@@ -187,6 +187,47 @@ namespace FlockFive
 
         public float BedDuck => LeadHot ? _leadDuck : 1f;
 
+        public float FreezeDuck => _freezeDuck;
+        public float SlewDuck => _duckSlew;
+        public float LeadDuck => _leadDuck;
+
+        // Editor tests attach a desk without synthesizing the beds.
+        public void AttachForTests() => Live = this;
+
+        public static void DetachForTests(MixDesk desk)
+        {
+            if (Live == desk) Live = null;
+        }
+
+        public void ForceDuckForTests(float freeze, float slew, float lead, float leadFor)
+        {
+            _freezeDuck = freeze;
+            _duckSlew = slew;
+            _leadDuck = lead;
+            _leadUntil = Time.unscaledTime + Mathf.Max(0f, leadFor);
+        }
+
+        // Popup and ad ducks go back to the user mix. A tutorial freeze that is
+        // still held keeps fading; everything else snaps to full.
+        public void ResetToUser()
+        {
+            _leadDuck = 1f;
+            _leadUntil = Time.unscaledTime;
+            _duckSlew = 1f;
+            if (!TutorFreezeHeld)
+            {
+                _freezeDuck = 1f;
+                if (_freezeThrough) MusicThroughPause(false);
+            }
+            if (_stems == null || _stemBase == null || TutorFreezeHeld) return;
+            float user = AudioGuard.MusicScale;
+            for (int i = 0; i < _stems.Length && i < _stemBase.Length; i++)
+            {
+                var a = _stems[i];
+                if (a != null) a.volume = _stemBase[i] * _freezeDuck * user;
+            }
+        }
+
         public void MarkLead(float seconds, float duckRemain = DuckChirp)
         {
             if (duckRemain < DuckFloor) duckRemain = DuckFloor;
@@ -294,7 +335,14 @@ namespace FlockFive
         {
             var clip = Resources.Load<AudioClip>(path);
             // PlayScheduled needs the samples resident before the leap, not on first Play.
-            if (clip != null && clip.loadState != AudioDataLoadState.Loaded) clip.LoadAudioData();
+            // preloadAudioData is already on for these clips. LoadAudioData does not
+            // touch the listener or the session; the span is here so a device log can
+            // show that next to LevelPlay.Init.
+            if (clip != null && clip.loadState != AudioDataLoadState.Loaded)
+            {
+                using (StartupTrace.Begin("MixDesk.LoadAudioData"))
+                    clip.LoadAudioData();
+            }
             return clip;
         }
 
@@ -564,7 +612,7 @@ namespace FlockFive
             for (int i = 0; i < _stems.Length && i < _stemBase.Length; i++)
             {
                 var a = _stems[i];
-                if (a != null) a.volume = _stemBase[i] * _freezeDuck;
+                if (a != null) a.volume = _stemBase[i] * _freezeDuck * AudioGuard.MusicScale;
             }
         }
 
@@ -648,7 +696,7 @@ namespace FlockFive
                 _stems[i] = null;
                 return;
             }
-            a.volume = vol * _freezeDuck;
+            a.volume = vol * _freezeDuck * AudioGuard.MusicScale;
         }
 
         static int LoopN() => Mathf.RoundToInt(NBars * 4f * Beat * Rate);

@@ -127,6 +127,134 @@ namespace FlockFive
             return _scratch.CalcHeight(_content, Mathf.Max(8f, maxW)) <= maxH + 1f;
         }
 
+        // Garden bee lesson, without a glyph. Paint inserts the bee only when the
+        // coach font actually has it.
+        public const string HiveGardenLine =
+            "You found a bee!\nBees earn cards for your collection.\nTap the hive to see them.";
+
+        public const string HiveGardenEmojiLine =
+            "You found a bee! \U0001F41D\nBees earn cards for your collection.\nTap the hive to see them.";
+
+        // Inspect back: honey sentence stacked with the flip hints, one plate.
+        public const string AlbumHoneyBlock =
+            "Honeycombs are honey.\n2 normal \u00b7 3 foil \u00b7 5 inverse.\nTap to flip!\nTap outside to put back";
+
+        // Plate pad. Unscaled minimums, and larger on a tall phone.
+        public const float PadXMin = 28f;
+        public const float PadYMin = 18f;
+
+        public static Vector2 BoxPad(float screenH)
+        {
+            float s = Mathf.Max(screenH / 720f, 1f);
+            float x = Mathf.Max(PadXMin, 16f * s);
+            float y = Mathf.Max(PadYMin, 11f * s);
+            return new Vector2(x, y);
+        }
+
+        // True only when the font draws the bee (U+1F41D). LegacyRuntime does not.
+        // Font.HasCharacter misses non-BMP, so this asks for the glyph and checks
+        // that both UTF-16 units come back with a real advance.
+        public static bool DrawsEmoji(Font font)
+        {
+            const string mark = "\U0001F41D";
+            if (font == null) return false;
+            font.RequestCharactersInTexture(mark, 32, FontStyle.Bold);
+            if (mark.Length < 2) return false;
+            if (!font.GetCharacterInfo(mark[0], out var hi, 32, FontStyle.Bold)) return false;
+            if (!font.GetCharacterInfo(mark[1], out var lo, 32, FontStyle.Bold)) return false;
+            float adv = hi.advance + lo.advance;
+            int wide = hi.glyphWidth > lo.glyphWidth ? hi.glyphWidth : lo.glyphWidth;
+            return adv > 8f && wide > 8;
+        }
+
+        // Paint-time swap. The cue string stays the plain sentence so a repeat
+        // does not restart the fade.
+        public static string LessonShown(string text, Font font)
+        {
+            if (text == HiveGardenLine && DrawsEmoji(font)) return HiveGardenEmojiLine;
+            return text ?? "";
+        }
+
+        public struct CaptionFit
+        {
+            public string Shown;
+            public int Font;
+            public float TextH;
+        }
+
+        // Shrink from hi down to floor. Authored newlines stay. At the floor the
+        // fitter wraps a piece onto more lines instead of going smaller. The
+        // caller grows the plate when TextH is taller than the seat.
+        public static CaptionFit FitFloor(GUIStyle style, string text, float maxW, float maxH, int floor, int hi)
+        {
+            var fit = new CaptionFit { Shown = text ?? "", Font = 1, TextH = 1f };
+            if (string.IsNullOrEmpty(text)) return fit;
+            if (hi < 1) hi = 1;
+            if (floor < 1) floor = 1;
+            if (floor > hi) floor = hi;
+            if (maxW < 8f) maxW = 8f;
+            int chosen = floor;
+            string shown = text;
+            float textH = 1f;
+            for (int px = hi; px >= floor; px--)
+            {
+                shown = WrapAt(style, text, maxW, px);
+                Bind(style, shown, px, true);
+                textH = _scratch.CalcHeight(_content, maxW);
+                if (textH < 1f) textH = 1f;
+                chosen = px;
+                bool wide = WidthsFit(style, shown.Split('\n'), maxW, px);
+                bool tall = maxH <= 1f || textH <= maxH + 1f;
+                if (wide && tall) break;
+                if (px == floor) break;
+            }
+            fit.Shown = shown;
+            fit.Font = chosen;
+            fit.TextH = textH;
+            return fit;
+        }
+
+        static string WrapAt(GUIStyle style, string text, float maxW, int px)
+        {
+            var parts = text.Split('\n');
+            var sb = new System.Text.StringBuilder();
+            for (int p = 0; p < parts.Length; p++)
+            {
+                if (p > 0) sb.Append('\n');
+                sb.Append(WrapPiece(style, parts[p], maxW, px));
+            }
+            return sb.ToString();
+        }
+
+        static string WrapPiece(GUIStyle style, string piece, float maxW, int px)
+        {
+            if (string.IsNullOrEmpty(piece)) return "";
+            if (LineFits(style, piece, maxW, px)) return piece;
+            var words = piece.Split(' ');
+            var sb = new System.Text.StringBuilder();
+            string cur = "";
+            for (int i = 0; i < words.Length; i++)
+            {
+                string w = words[i];
+                if (w.Length == 0) continue;
+                string trial = cur.Length == 0 ? w : cur + " " + w;
+                if (cur.Length == 0 || LineFits(style, trial, maxW, px))
+                    cur = trial;
+                else
+                {
+                    if (sb.Length > 0) sb.Append('\n');
+                    sb.Append(cur);
+                    cur = w;
+                }
+            }
+            if (cur.Length > 0)
+            {
+                if (sb.Length > 0) sb.Append('\n');
+                sb.Append(cur);
+            }
+            return sb.Length > 0 ? sb.ToString() : piece;
+        }
+
         // Splits a long sentence at the space nearest its middle. Short or
         // break-free text comes back unchanged. Explicit newlines are not this path.
         public static string BalanceTwoLines(string line)

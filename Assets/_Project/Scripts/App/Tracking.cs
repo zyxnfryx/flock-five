@@ -50,6 +50,10 @@ namespace FlockFive
             Completed = true;
             int n;
             CompletedStatus = int.TryParse(status, out n) ? n : -1;
+            // System ATT dialog has ended. The session interruption often
+            // does not resume on its own.
+            AudioGuard.ReleaseReason("att-system");
+            AudioGuard.Restore();
         }
 
         // Native request only. Does not spin, does not block input, does not write prefs.

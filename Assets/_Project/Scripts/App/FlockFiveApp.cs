@@ -272,7 +272,7 @@ namespace FlockFive
         const string AlbumTapLine = "Tap a card you have\nto enlarge it.";
         const string AlbumFlipLine = "Tap again to flip.";
         // After flip: honeycombs by rarity (shared CardText / HoneyOfFinish floor).
-        const string AlbumHoneyLine = "Honeycombs are honey.\n2 normal · 3 foil · 5 inverse.";
+        const string AlbumHoneyLine = CaptionLayout.AlbumHoneyBlock;
         // Separate post-badger step (CoachHiveUpgradeKey).
         const string AlbumUpgradeLine = "Upgrade adds honey for 1000 coins.\nMax 1 · 2 · 3 by rarity.";
         const string AlbumPageLine = "Swipe to turn the page!\nOr tap a page number.";
@@ -461,6 +461,7 @@ namespace FlockFive
         {
             if (_resumeNoteFrame == Time.frameCount) return;
             _resumeNoteFrame = Time.frameCount;
+            AudioGuard.Restore();
             PlayClock.DropResumeFrame();
             Ads.ArmResumeSettle();
             ApplyFramePace();
@@ -549,6 +550,16 @@ namespace FlockFive
             {
                 try { System.IO.File.Delete("/tmp/flock-five-b81-pass4"); } catch { }
                 StartCoroutine(ShotBuild81Pass4());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-b81-kit"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b81-kit"); } catch { }
+                StartCoroutine(ShotBuild81Kit());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-b81-hud"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b81-hud"); } catch { }
+                StartCoroutine(ShotBuild81PassH());
             }
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
@@ -666,6 +677,7 @@ namespace FlockFive
 
         void ShowSplash()
         {
+            AudioGuard.OnSceneOrPopupClosed();
             CloseHiveInspect();
             SeasonCrossfade.RetireLive();
             GardenLife.DetachHome();
@@ -728,6 +740,7 @@ namespace FlockFive
 
         void Load(int index)
         {
+            AudioGuard.OnSceneOrPopupClosed();
             // Before the garden (and its season banner) is built. A solved board
             // that is still browsing the inspect does not come through here.
             CloseHiveInspect();
@@ -1163,6 +1176,93 @@ namespace FlockFive
             if (method != null) method.Invoke(null, new object[] { 0 });
         }
 
+        // Bee lesson, mirrored garden corners, and the card-inspect honey lesson.
+        // The card lesson must paint, so this shot does not set EditorShotLive.
+        IEnumerator ShotBuild81PassH()
+        {
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+#endif
+            const string dir = "/Users/zfxgames/wkspaces/birdshot/gb";
+            System.IO.Directory.CreateDirectory(dir);
+            string[] keys =
+            {
+                "flockfive.hive.v1", "flockfive.hive.v2", "flockfive.hive.collected",
+                "flockfive.hive.collected.mig", "flockfive.hive.collected.legacy",
+                "flockfive.hive.up.v1", "flockfive.coach.hive.garden",
+                "flockfive.coach.hive", "flockfive.coach.hivealbum", "flockfive.next",
+            };
+            var had = new bool[keys.Length];
+            var vals = new string[keys.Length];
+            for (int i = 0; i < keys.Length; i++)
+            {
+                had[i] = PlayerPrefs.HasKey(keys[i]);
+                vals[i] = had[i] ? PlayerPrefs.GetString(keys[i], "") : "";
+                if (had[i] && string.IsNullOrEmpty(vals[i]))
+                    vals[i] = PlayerPrefs.GetInt(keys[i], 0).ToString();
+            }
+            PlayerPrefs.SetInt("flockfive.coach.hive.garden", 0);
+            PlayerPrefs.Save();
+            GamePause.Reset();
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            Screen.SetResolution(1179, 2556, false);
+            Load(0);
+            _shotBeeLesson = true;
+            _shotCardLesson = false;
+            yield return new WaitForSecondsRealtime(1.3f);
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b81-bee-lesson.png");
+
+            _shotBeeLesson = false;
+            _shotGlovePin = false;
+            _coach = false;
+            _leafIntro = false;
+            _hiveLevelLive = false;
+            _hiveLevelCue = false;
+            _cueHand = false;
+            _cueLine = null;
+            _gloveVis = false;
+            _coachFade = 0f;
+            PlayerPrefs.SetInt("flockfive.coach.hive", 1);
+            yield return null;
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b81-garden-hud.png");
+
+            if (Hive.Found <= 0) Hive.GrantVisitor();
+            _shotCardSlot = -1;
+            _shotCardLesson = true;
+            _shotGlovePin = true;
+            yield return new WaitForSecondsRealtime(1.4f);
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b81-card-lesson.png");
+
+            _shotBeeLesson = false;
+            _shotCardLesson = false;
+            _shotGlovePin = false;
+            for (int i = 0; i < keys.Length; i++)
+            {
+                if (!had[i]) PlayerPrefs.DeleteKey(keys[i]);
+                else if (keys[i].IndexOf("hive.v", System.StringComparison.Ordinal) >= 0
+                    || keys[i].IndexOf("hive.up", System.StringComparison.Ordinal) >= 0)
+                    PlayerPrefs.SetString(keys[i], vals[i]);
+                else
+                {
+                    int n;
+                    if (int.TryParse(vals[i], out n)) PlayerPrefs.SetInt(keys[i], n);
+                    else PlayerPrefs.SetString(keys[i], vals[i]);
+                }
+            }
+            PlayerPrefs.Save();
+            Debug.Log("B81_PASS_H_DONE");
+#if UNITY_EDITOR
+            var exitH = System.Type.GetType("UnityEditor.EditorApplication, UnityEditor");
+            var methodH = exitH != null ? exitH.GetMethod("Exit", new[] { typeof(int) }) : null;
+            if (methodH != null) methodH.Invoke(null, new object[] { 0 });
+#endif
+        }
+
         IEnumerator ShotPlaneFlyby()
         {
             const string path = "/Users/zfxgames/wkspaces/birdshot/gb/b80-plane.png";
@@ -1241,6 +1341,223 @@ namespace FlockFive
             var exit = System.Type.GetType("UnityEditor.EditorApplication, UnityEditor");
             var method = exit != null ? exit.GetMethod("Exit", new[] { typeof(int) }) : null;
             if (method != null) method.Invoke(null, new object[] { 0 });
+        }
+
+        // Adopted teal "Pip" on the home twig, bow then crown, then one garden bird.
+        // Does not write b81-home.png. Prefs are put back before the editor exits.
+        IEnumerator ShotBuild81Kit()
+        {
+#if UNITY_EDITOR
+            EditorShotLive = true;
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+#endif
+            const string dir = "/Users/zfxgames/wkspaces/birdshot/gb";
+            System.IO.Directory.CreateDirectory(dir);
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            int colorKeep = PlayerPrefs.GetInt(AvatarPref, 0);
+            bool hadColor = PlayerPrefs.HasKey(AvatarPref);
+            string nameKeep = PlayerPrefs.GetString(AvatarNamePref, "");
+            bool hadName = PlayerPrefs.HasKey(AvatarNamePref);
+            int adoptedKeep = PlayerPrefs.GetInt(AvatarAdoptedPref, 0);
+            bool hadAdopted = PlayerPrefs.HasKey(AvatarAdoptedPref);
+            int kitKeep = PlayerPrefs.GetInt(AvatarKitPref, 0);
+            bool hadKit = PlayerPrefs.HasKey(AvatarKitPref);
+            int namedKeep = PlayerPrefs.GetInt(AvatarNamedPref, 0);
+            bool hadNamed = PlayerPrefs.HasKey(AvatarNamedPref);
+            int coachKeep = PlayerPrefs.GetInt("flockfive.coach.done", 0);
+            bool hadCoach = PlayerPrefs.HasKey("flockfive.coach.done");
+            PlayerPrefs.SetInt("flockfive.next", 1);
+            PlayerPrefs.SetInt(AvatarPref, (int)BirdColor.Teal);
+            PlayerPrefs.SetString(AvatarNamePref, "Pip");
+            PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
+            PlayerPrefs.SetInt(AvatarNamedPref, 1);
+            PlayerPrefs.SetInt(AvatarKitPref, 1);
+            PlayerPrefs.SetInt("flockfive.coach.done", 1);
+            PlayerPrefs.Save();
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            Screen.SetResolution(1179, 2556, false);
+            yield return WaitForHomePaint();
+            ParkHomeAvatar();
+            yield return null;
+            ParkHomeAvatar();
+            for (int i = 0; i < 8; i++)
+            {
+                PoseBuild79(false, false);
+                ParkHomeAvatar();
+                yield return null;
+            }
+            yield return new WaitForEndOfFrame();
+            if (_avatarDrawR.width > 8f)
+                SaveAvatarCrop(dir + "/b81-avatar-bow.png");
+            else
+                Debug.Log("B81_KIT_BOW_MISS");
+
+            PlayerPrefs.SetInt(AvatarKitPref, 2);
+            PlayerPrefs.Save();
+            for (int i = 0; i < 6; i++)
+            {
+                PoseBuild79(false, false);
+                ParkHomeAvatar();
+                yield return null;
+            }
+            yield return new WaitForEndOfFrame();
+            if (_avatarDrawR.width > 8f)
+                SaveAvatarCrop(dir + "/b81-avatar-crown.png");
+            else
+                Debug.Log("B81_KIT_CROWN_MISS");
+
+            Load(0);
+            float wait = 0f;
+            while (wait < 2.4f && !GardenKitGui(out _))
+            {
+                wait += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            yield return new WaitForEndOfFrame();
+            var tex = ScreenCapture.CaptureScreenshotAsTexture();
+            if (tex != null)
+            {
+                try
+                {
+                    if (GardenKitGui(out var gui))
+                        WriteCrop(tex, gui, 768, 0.18f, dir + "/b81-garden-kit.png");
+                    else
+                        Debug.Log("B81_KIT_GARDEN_MISS");
+                }
+                finally
+                {
+                    Destroy(tex);
+                }
+            }
+
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            if (hadColor) PlayerPrefs.SetInt(AvatarPref, colorKeep);
+            else PlayerPrefs.DeleteKey(AvatarPref);
+            if (hadName) PlayerPrefs.SetString(AvatarNamePref, nameKeep);
+            else PlayerPrefs.DeleteKey(AvatarNamePref);
+            if (hadAdopted) PlayerPrefs.SetInt(AvatarAdoptedPref, adoptedKeep);
+            else PlayerPrefs.DeleteKey(AvatarAdoptedPref);
+            if (hadKit) PlayerPrefs.SetInt(AvatarKitPref, kitKeep);
+            else PlayerPrefs.DeleteKey(AvatarKitPref);
+            if (hadNamed) PlayerPrefs.SetInt(AvatarNamedPref, namedKeep);
+            else PlayerPrefs.DeleteKey(AvatarNamedPref);
+            if (hadCoach) PlayerPrefs.SetInt("flockfive.coach.done", coachKeep);
+            else PlayerPrefs.DeleteKey("flockfive.coach.done");
+            PlayerPrefs.Save();
+            Debug.Log("B81_KIT_STILL_DONE");
+#if UNITY_EDITOR
+            EditorShotLive = false;
+            UnityEditor.EditorApplication.Exit(0);
+#endif
+        }
+
+        void ParkHomeAvatar()
+        {
+            _adoptLive = false;
+            _adoptStep = AdoptStep.Off;
+            _adoptOwed = false;
+            _avatarRename = false;
+            _avatarHold = false;
+            _avatarCrossing = false;
+            _avatarGliding = false;
+            _avatarHappy = 0f;
+            _avatarPreenT = 0f;
+            _avatarFlapT = 0f;
+            _avatarPlaced = true;
+            _avatarPose = AvatarPose.Perched;
+            _avatarPerchIx = HomeBranchAnchor();
+            _avatarCol = BirdColor.Teal;
+            _avatarNextGlide = _avatarClock + 80f;
+            _avatarNextFlap = _avatarClock + 80f;
+            FillAvatarPerches(Mathf.Max(Screen.height / 720f, 1f));
+            StickAvatarToPerch();
+        }
+
+        void SaveAvatarCrop(string path)
+        {
+            var tex = ScreenCapture.CaptureScreenshotAsTexture();
+            if (tex == null) return;
+            try
+            {
+                var r = _avatarDrawR;
+                float up = r.height * 0.50f;
+                float side = r.width * 0.14f;
+                float down = r.height * 0.16f;
+                var gui = new Rect(r.x - side, r.y - up, r.width + side * 2f, r.height + up + down);
+                WriteCrop(tex, gui, 768, 0.06f, path);
+            }
+            finally
+            {
+                Destroy(tex);
+            }
+        }
+
+        // Screen rect of one perched bird plus its kit. Glow rings and face
+        // bits stay out, or the crop grows to the whole branch.
+        bool GardenKitGui(out Rect gui)
+        {
+            gui = default;
+            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
+            if (cam == null) return false;
+            var birds = Object.FindObjectsByType<BirdIdle>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            BirdIdle best = null;
+            int bestRank = 0;
+            float bestD = 1e12f;
+            var mid = new Vector2(Screen.width * 0.5f, Screen.height * 0.42f);
+            for (int i = 0; i < birds.Length; i++)
+            {
+                var b = birds[i];
+                if (b == null || b.Shrouded) continue;
+                var worn = FlockKit.Worn(b.Sex, b.Kit);
+                int rank = worn == BirdKit.Bow || worn == BirdKit.Crown ? 2
+                    : worn != BirdKit.Plain ? 1 : 0;
+                if (rank == 0) continue;
+                var sr = b.GetComponent<SpriteRenderer>();
+                if (sr == null || !sr.enabled || sr.sprite == null) continue;
+                var kit = KitRenderer(b.transform);
+                if (rank == 2 && (kit == null || !kit.enabled)) continue;
+                var c = cam.WorldToScreenPoint(sr.bounds.center);
+                if (c.z < 0f) continue;
+                if (c.x < 80f || c.y < 80f || c.x > Screen.width - 80f || c.y > Screen.height - 80f) continue;
+                float d = (new Vector2(c.x, c.y) - mid).sqrMagnitude;
+                if (rank > bestRank || (rank == bestRank && d < bestD))
+                {
+                    bestRank = rank;
+                    bestD = d;
+                    best = b;
+                }
+            }
+            if (best == null) return false;
+            var body = best.GetComponent<SpriteRenderer>();
+            var kitSr = KitRenderer(best.transform);
+            var box = body.bounds;
+            if (kitSr != null && kitSr.enabled && kitSr.sprite != null)
+                box.Encapsulate(kitSr.bounds);
+            float pad = box.size.y * 0.12f;
+            var top = cam.WorldToScreenPoint(new Vector3(box.min.x - pad, box.max.y + pad, box.center.z));
+            var bot = cam.WorldToScreenPoint(new Vector3(box.max.x + pad, box.min.y - pad * 0.35f, box.center.z));
+            float x0 = top.x < bot.x ? top.x : bot.x;
+            float x1 = top.x > bot.x ? top.x : bot.x;
+            float yHi = top.y > bot.y ? top.y : bot.y;
+            float yLo = top.y < bot.y ? top.y : bot.y;
+            gui = new Rect(x0, Screen.height - yHi, Mathf.Max(8f, x1 - x0), Mathf.Max(8f, yHi - yLo));
+            return gui.width > 8f && gui.height > 8f;
+        }
+
+        static SpriteRenderer KitRenderer(Transform bird)
+        {
+            if (bird == null) return null;
+            for (int i = 0; i < bird.childCount; i++)
+            {
+                var child = bird.GetChild(i);
+                if (child.name != "Kit") continue;
+                return child.GetComponent<SpriteRenderer>();
+            }
+            return null;
         }
 
         IEnumerator PoseWheelFrames()
@@ -2820,6 +3137,7 @@ namespace FlockFive
         void Update()
         {
             StartupTrace.NoteFrame();
+            AudioGuard.Tick();
             MaybeSmokeLaunch();
             PollHomeAtt();
             TickSettingsMotion();
@@ -5474,22 +5792,18 @@ namespace FlockFive
 
         static void HudLayout(out float scale, out float top, out float bot, out Rect restart, out Rect hive)
         {
-            scale = Mathf.Max(Screen.height / 720f, 1f);
             var safe = Screen.safeArea;
-            float safeTop = Screen.height - safe.yMax;
-            float safeBot = safe.yMin;
-            top = 72f * scale + safeTop;
-            // Extra bottom inset so the wood restart arrow clears home-indicator / clipped edge.
-            bot = 88f * scale + safeBot;
-            float y = Screen.height - bot - 12f * scale;
-            float h = 64f * scale;
-            float x = Mathf.Max(40f * scale, safe.xMin + 32f * scale);
-            restart = new Rect(x, y, h, h);
-            float hiveS = 80f * scale;
-            float hiveY = y + h - hiveS;
-            hive = new Rect(
-                Mathf.Min(Screen.width - hiveS - 10f, safe.xMax - hiveS - 8f),
-                hiveY, hiveS, hiveS);
+            CornerAnchor.Garden(Screen.width, Screen.height, safe, out scale, out top, out bot, out restart, out hive);
+        }
+
+        // Hits and the world hive. The OnGUI buttons stay unshaken inside the
+        // matrix; this applies that same offset once.
+        static void HudShaken(out Rect restart, out Rect hive)
+        {
+            HudLayout(out _, out _, out _, out restart, out hive);
+            var pivot = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+            restart = CornerAnchor.Shake(restart, CamShake.HudOffset, CamShake.HudTwist, pivot);
+            hive = CornerAnchor.Shake(hive, CamShake.HudOffset, CamShake.HudTwist, pivot);
         }
 
         void SeatFeeders()
@@ -5505,7 +5819,7 @@ namespace FlockFive
             if (_splash || _garden.Hive == null) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
-            HudLayout(out _, out _, out _, out _, out var hive);
+            HudShaken(out _, out var hive);
             _garden.Hive.TrackHud(cam, hive);
         }
 
@@ -5587,6 +5901,9 @@ namespace FlockFive
                 StartCoroutine(ShotPokerFeel());
             }
 #endif
+#if UNITY_EDITOR
+            ApplyShotLesson();
+#endif
             SeatFeeders();
             SnapHiveToHud();
             SyncOrbitHive();
@@ -5598,7 +5915,8 @@ namespace FlockFive
         bool HitHud(Vector2 screen)
         {
             if (LessonTapBlocked()) return false;
-            HudLayout(out _, out float top, out _, out var restart, out var hive);
+            HudShaken(out var restart, out var hive);
+            HudLayout(out _, out float top, out _, out _, out _);
             float gy = Screen.height - screen.y;
             var gui = new Vector2(screen.x, gy);
             if (_hiveInspect >= 0)
@@ -15599,6 +15917,15 @@ namespace FlockFive
                     tap = _albumCardR;
                 }
             }
+            float approach = float.NaN;
+            if (aimed && _albumTutorStep >= 1 && _albumTutorStep <= 3)
+            {
+                Rect focus = _albumTutorStep <= 1 ? _albumCardR : _albumInspectR;
+                string lesson = AlbumTutorLine();
+                var pose = PoseLesson(_albumTutorStep, focus, Screen.width, Screen.height, lesson);
+                aim = pose.Aim;
+                approach = pose.Approach;
+            }
             _albumTutorAim = aim;
             _albumTutorAimOk = aimed;
             if (!aimed)
@@ -15610,7 +15937,7 @@ namespace FlockFive
             CueLine(AlbumTutorLine());
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             float handS = Mathf.Max(Screen.height / 720f, 1f);
-            CoachGloveAt(aim, dt, handS, float.NaN, false, float.NaN, tap);
+            CoachGloveAt(aim, dt, handS, float.NaN, false, approach, tap);
             return true;
         }
 
@@ -15654,6 +15981,9 @@ namespace FlockFive
 
         void DrawAlbumTutor(float s)
         {
+#if UNITY_EDITOR
+            if (_shotCardLesson) _upgradeTutorOn = false;
+#endif
             if (_upgradeTutorOn)
             {
                 DrawUpgradeTutor(s);
@@ -15685,6 +16015,16 @@ namespace FlockFive
         void DrawAlbumCoachLine(string line, float s, int step)
         {
             if (string.IsNullOrEmpty(line)) return;
+            if (step >= 1 && step <= 3)
+            {
+                Rect focus = step <= 1 ? _albumCardR : _albumInspectR;
+                if (focus.width > 8f && focus.height > 8f)
+                {
+                    var pose = PoseLesson(step, focus, Screen.width, Screen.height, line);
+                    PaintCoachCaption(line, pose.Seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+                    return;
+                }
+            }
             StandardCaptionBox(s, out float stdW, out float stdH, out _, out _);
             float w = stdW;
             float h = line.IndexOf('\n') >= 0 ? stdH * 0.72f : stdH * 0.48f;
@@ -15974,6 +16314,30 @@ namespace FlockFive
                 (Screen.height - bigH) * 0.42f,
                 bigW,
                 bigH);
+            // Honey lesson: the readable caption lives in the strip under the card.
+            // Lift, then shrink, until that plate stays on screen.
+            if (_albumTutorOn && _albumTutorStep == 3)
+            {
+                float seatW = LessonSeatWidth(Screen.width, bigW);
+                float seatH = LessonSeatHeight(AlbumHoneyLine, Screen.width, Screen.height, seatW);
+                float drop = LessonPlateDrop(Screen.height, seatH);
+                float limit = Screen.height - 8f;
+                if (to.yMax + drop > limit)
+                    to.y -= to.yMax + drop - limit;
+                float topLimit = BackMedalRect(s, TopHud()).yMax + 8f;
+                if (to.y < topLimit)
+                {
+                    float room = limit - topLimit;
+                    float h = Mathf.Max(320f, room - drop);
+                    float w = h / 1.4f;
+                    if (w > Screen.width * 0.9f)
+                    {
+                        w = Screen.width * 0.9f;
+                        h = w * 1.4f;
+                    }
+                    to = new Rect((Screen.width - w) * 0.5f, topLimit, w, h);
+                }
+            }
             var from = _hiveInspectFrom;
             var big = new Rect(
                 Mathf.Lerp(from.x, to.x, t),
@@ -15990,10 +16354,10 @@ namespace FlockFive
             if (t > 0.4f)
                 DrawFlipArrows(big, s, Mathf.Clamp01(t));
             float hintTop = big.yMax + 12f * s;
-            if (t > 0.4f)
+            if (t > 0.4f && !(_albumTutorOn && _albumTutorStep == 3))
                 DrawFlipHint(hintTop, s, Mathf.Clamp01(t));
             bool upgradeHit = false;
-            if (t > 0.55f && !_hiveInspectClosing && !_hiveTutorOn)
+            if (t > 0.55f && !_hiveInspectClosing && !_hiveTutorOn && !(_albumTutorOn && _albumTutorStep == 3))
                 upgradeHit = DrawHiveUpgrade(ix, hintTop, s, Mathf.Clamp01(t));
             if (_hiveTutorOn)
                 DrawHiveTutorGlove(big, s);

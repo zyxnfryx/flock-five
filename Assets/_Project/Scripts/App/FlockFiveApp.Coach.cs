@@ -49,7 +49,7 @@ namespace FlockFive
         const float TutorAimLow = 0.68f;
         // Gift line only. Reference pixels under the shared PlaceCaption seat.
         const float GiftCaptionDrop = 24f;
-        const string HiveIntroLine = "You found a bee!\nFinding bees awards cards\nthat are stored in your collection.\nClick the hive to view them.";
+        const string HiveIntroLine = CaptionLayout.HiveGardenLine;
         const string HiveHomeLine = "Tap the hive to see your bee collection.";
         // Two lines, snug. The break is the wrap; the plate is measured to these lines.
         const string PokerIntroLine = "You earned coins!\nTap poker to bet them.";
@@ -1596,6 +1596,19 @@ namespace FlockFive
                 _gloveDip = TapDip(posePhase);
                 travel = TapTravel(posePhase);
             }
+#if UNITY_EDITOR
+            // Stills pin the fingertip on the target so the frame is the landed pose.
+            if (_shotGlovePin && _gloveLockOn)
+            {
+                _gloveAct = TutorGloveAct.Live;
+                _gloveAlpha = 1f;
+                _glovePhase = TapHover + TapPress;
+                _gloveDip = 1f;
+                posePhase = _glovePhase;
+                travel = 1f;
+                fire = false;
+            }
+#endif
             bool angled = !float.IsNaN(_gloveApproach);
             Vector2 aim = _gloveLockOn ? _gloveLockAim : aimGui;
             Vector2 arcPos;
@@ -2373,7 +2386,7 @@ namespace FlockFive
         static float CaptionBelowBack(float s, float top)
         {
             var back = BackMedalRect(s, top);
-            const float platePadY = 12f; // CoachPanelRect vertical pad
+            float platePadY = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f).y;
             return back.yMax + TutorCaptionGap * s + platePadY;
         }
 
@@ -2384,8 +2397,9 @@ namespace FlockFive
         // The text box r is untouched, so the font a lesson fits stays the same.
         static Rect CoachPanelRect(Rect r, Vector2 extra)
         {
-            float padX = 18f + (extra.x > 0f ? extra.x : 0f);
-            float padY = 12f + (extra.y > 0f ? extra.y : 0f);
+            var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+            float padX = hang.x + (extra.x > 0f ? extra.x : 0f);
+            float padY = hang.y + (extra.y > 0f ? extra.y : 0f);
             return new Rect(r.x - padX, r.y - padY, r.width + padX * 2f, r.height + padY * 2f);
         }
 
@@ -2395,7 +2409,7 @@ namespace FlockFive
         static void DrawCoachPanel(Rect r, float fade) => DrawCoachPanel(r, fade, Vector2.zero);
 
         // opaque: full-alpha plate for a step whose plate must hide what is under it (the
-        // home poker line over the LEVEL lettering). Every other caption keeps 0.90.
+        // home poker line over the LEVEL lettering). Every other caption keeps a darker 0.97.
         static void DrawCoachPanel(Rect r, float fade, Vector2 extra, bool opaque = false)
         {
             if (fade < 0.02f) return;
@@ -2403,7 +2417,7 @@ namespace FlockFive
             float rad = 18f;
             float limit = Mathf.Min(box.width, box.height) * 0.5f - 1f;
             if (rad > limit) rad = Mathf.Max(2f, limit);
-            DrawSolidRound(box, rad, 0, (opaque ? 1f : 0.90f) * fade);
+            DrawSolidRound(box, rad, 0, (opaque ? 1f : 0.97f) * fade);
         }
 
         const int SolidSlots = 12;
@@ -2490,7 +2504,7 @@ namespace FlockFive
                     float alpha = d <= -0.85f ? 1f : Mathf.Clamp01((0.85f - d) / 1.7f);
                     Color c;
                     if (kind == 0)
-                        c = new Color(0.07f, 0.05f, 0.03f, alpha);
+                        c = new Color(0.015f, 0.01f, 0.008f, alpha);
                     else
                     {
                         const float border = 2.4f;
@@ -3033,7 +3047,7 @@ namespace FlockFive
         static Rect CaptionPlateBox(Rect r, Vector2 platePad, float textH, float textBoxH, float slack)
         {
             if (slack >= 0.999f || textH <= 1f) return r;
-            float pad = 12f + (platePad.y > 0f ? platePad.y : 0f);  // CoachPanelRect, per side
+            float pad = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f).y + (platePad.y > 0f ? platePad.y : 0f);
             float plateH = r.height + pad * 2f;
             float inkH = textH;  // an overflowing line keeps the full box
             float slackH = Mathf.Max(0f, plateH - inkH) * Mathf.Clamp01(slack);
@@ -3067,61 +3081,43 @@ namespace FlockFive
             // Shared caption paint. Every lesson draws through here, so a reset
             // cuts the plate before a stale rect or a leftover alpha can flash.
             if (CoachResetHolds()) return;
-            lo = CaptionPx(lo);
-            hi = CaptionPx(hi);
             var st = CoachLineStyle();
             if (_coachContent == null) _coachContent = new GUIContent();
             CaptionTextRect(r, s, out var textR);
             if (_coachSizedFor != text || Mathf.Abs(_coachSizedW - textR.width) > 1f || Mathf.Abs(_coachSizedH - textR.height) > 1f)
             {
-                string shown;
-                int px;
-                // Authored newlines stay. The font shrinks so a piece is not wrapped again.
-                if (text != null && text.IndexOf('\n') >= 0)
-                {
-                    shown = CaptionLayout.LockBreaks(st, text, textR.width, textR.height, lo, hi, out px);
-                    st.wordWrap = false;
-                    st.fontSize = px;
-                    _coachContent.text = shown;
-                }
-                else
-                {
-                    px = FitFontWrapped(st, text, textR.width, textR.height, lo, hi);
-                    shown = BalanceWrap(st, text, textR.width, px);
-                    st.wordWrap = true;
-                    st.fontSize = px;
-                    _coachContent.text = shown;
-                    int guard = 0;
-                    while (px > lo && guard < 24 && st.CalcHeight(_coachContent, textR.width) > textR.height + 1f)
-                    {
-                        px--;
-                        st.fontSize = px;
-                        shown = BalanceWrap(st, text, textR.width, px);
-                        _coachContent.text = shown;
-                        guard++;
-                    }
-                }
-                _coachSizedPx = px;
-                _coachSizedTextH = st.CalcHeight(_coachContent, textR.width);
-                _coachShown = shown;
+                // Floor is the daily-line size. FitFloor wraps extra lines there
+                // instead of shrinking further. Authored newlines stay.
+                var fit = FitLessonText(text, textR.width, textR.height, lo, hi, Screen.width, Screen.height);
+                _coachSizedPx = fit.Font;
+                _coachSizedTextH = fit.TextH;
+                _coachShown = fit.Shown;
                 _coachSizedFor = text;
                 _coachSizedW = textR.width;
                 _coachSizedH = textR.height;
             }
             st.fontSize = _coachSizedPx;
-            // An authored newline is already the break. Wrapping would split a piece.
-            st.wordWrap = text == null || text.IndexOf('\n') < 0;
-            var plateBox = CaptionPlateBox(r, platePad, _coachSizedTextH, textR.height, slack);
-            if (topAlign && plateBox.y > r.y)
+            st.wordWrap = false;
+            _coachContent.text = _coachShown ?? text;
+            var drawR = r;
+            var drawText = textR;
+            if (_coachSizedTextH > drawText.height + 1f)
             {
-                float lift = plateBox.y - r.y;
+                float grow = _coachSizedTextH - drawText.height;
+                drawText.height += grow;
+                drawR.height += grow;
+            }
+            var plateBox = CaptionPlateBox(drawR, platePad, _coachSizedTextH, drawText.height, slack);
+            if (topAlign && plateBox.y > drawR.y)
+            {
+                float lift = plateBox.y - drawR.y;
                 plateBox.y -= lift;
-                textR.y -= lift;
+                drawText.y -= lift;
             }
             NoteTutorPlate(CoachPanelRect(plateBox, platePad));
             float fade = EaseOutCubic(_coachFade);
             DrawCoachPanel(plateBox, fade, platePad, opaque);
-            StampBannerText(textR, _coachShown ?? text, st, fade, true);
+            StampBannerText(drawText, _coachShown ?? text, st, fade, true);
         }
 
         // Glove poke plus each lifted bird, once per line placement. The scan below only
@@ -3597,11 +3593,9 @@ namespace FlockFive
                 if (_blocks == null || _blockN >= _blocks.Length) GrowBlocks();
                 if (_blocks != null && _blockN < _blocks.Length)
                 {
-                    // CoachPanelRect hangs 18×12 past the text. A smaller pad still covers the frame.
-                    float px = 6f * s;
-                    float py = 6f * s;
-                    if (px < 18f) px = 18f;
-                    if (py < 12f) py = 12f;
+                    var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+                    float px = hang.x;
+                    float py = hang.y;
                     _blocks[_blockN].X0 = obstacle.xMin - px;
                     _blocks[_blockN].Y0 = obstacle.yMin - py;
                     _blocks[_blockN].X1 = obstacle.xMax + px;
@@ -5527,7 +5521,7 @@ namespace FlockFive
 
         bool RestartGui(Vector2 gui)
         {
-            HudLayout(out _, out _, out _, out var restart, out _);
+            HudShaken(out var restart, out _);
             return restart.width > 2f && restart.Contains(gui);
         }
 

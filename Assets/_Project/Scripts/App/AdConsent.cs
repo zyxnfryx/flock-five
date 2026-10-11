@@ -351,12 +351,18 @@ namespace FlockFive
             PlayerPrefs.Save();
             _systemPending = true;
             EditorHoldAtt = false;
+            AudioGuard.ReleaseReason("sheet");
+            AudioGuard.ReleaseReason("att");
+            AudioGuard.Restore();
         }
 
         // Not now. First tap snoozes at this nextPlay. The next tap finishes forever.
         public static void NotNow(int nextPlay)
         {
             _systemPending = false;
+            AudioGuard.ReleaseReason("sheet");
+            AudioGuard.ReleaseReason("att");
+            AudioGuard.Restore();
             int ask = PlayerPrefs.GetInt(AttAskKey, 0);
             if (ask >= 2) return;
             if (ask <= 0)
@@ -373,12 +379,18 @@ namespace FlockFive
         {
             _promptYes = true;
             _promptDone = true;
+            AudioGuard.ReleaseReason("gdpr");
+            AudioGuard.ReleaseReason("sheet");
+            AudioGuard.Restore();
         }
 
         public static void DeclineGdpr()
         {
             _promptYes = false;
             _promptDone = true;
+            AudioGuard.ReleaseReason("gdpr");
+            AudioGuard.ReleaseReason("sheet");
+            AudioGuard.Restore();
         }
 
         // True when the native request was started this call. A pending request
@@ -388,6 +400,7 @@ namespace FlockFive
             if (!ShouldRequestSystem(_systemPending, appActive, midLevel, coachOrModal))
                 return false;
             _systemPending = false;
+            AudioGuard.Hold("att-system");
             Tracking.RequestWhenActive();
             return true;
         }
@@ -417,6 +430,8 @@ namespace FlockFive
             _painted = false;
             _block = default;
             SyncConsentCanvas(false);
+            AudioGuard.OnSceneOrPopupClosed();
+            AudioGuard.Restore();
         }
 
         // Fresh-install stand-in for tests. Does not write PlayerPrefs.
@@ -641,6 +656,7 @@ namespace FlockFive
                     _prompt = true;
                     _promptDone = false;
                     SyncConsentCanvas(true);
+                    AudioGuard.Hold("gdpr");
                     while (!_promptDone && !_transientDismissed)
                     {
                         if (host == null) yield break;
@@ -648,6 +664,8 @@ namespace FlockFive
                     }
                     _prompt = false;
                     SyncConsentCanvas(false);
+                    AudioGuard.ReleaseReason("gdpr");
+                    AudioGuard.Restore();
                     if (!_transientDismissed && _promptDone)
                     {
                         granted = _promptYes;
@@ -671,6 +689,21 @@ namespace FlockFive
                     // Stored CCPA choice before init. The Settings toggle applies it again later.
                     ApplyStoredDoNotSell();
                 }
+                // LevelPlay.Init loads Unity Ads and IronSource on this thread.
+                // Those binaries call AVAudioSession setCategory / setActive and
+                // can duck the mix. Do not do it on the opening frames. Wait
+                // until the home has been idle, then boot. Level 1 stays tappable
+                // the whole time (the wait yields).
+                int idleFrames = 0;
+                float quietFor = 0f;
+                float idleAt = Time.unscaledTime;
+                while (!Ads.IdleDue(idleFrames, Time.unscaledTime - idleAt, quietFor, Ads.PointerHeld()))
+                {
+                    if (Ads.PointerHeld()) quietFor = 0f;
+                    else if (Time.unscaledDeltaTime > 0f) quietFor += Time.unscaledDeltaTime;
+                    idleFrames++;
+                    yield return null;
+                }
                 if (host != null) host.Boot();
             }
             finally
@@ -679,6 +712,7 @@ namespace FlockFive
                 _painted = false;
                 _block = default;
                 SyncConsentCanvas(false);
+                AudioGuard.ReleaseReason("gdpr");
                 _running = false;
             }
         }

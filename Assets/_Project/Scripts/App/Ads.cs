@@ -117,6 +117,16 @@ namespace FlockFive
             _depth = 0;
             TutorHold = false;
         }
+
+        // Pop restores the pause bit Push saved. A dialog that paused the
+        // listener first makes that bit true, and the game stays silent.
+        // Restore clears the saved bit and the live pause together.
+        public static void UnstickAudio()
+        {
+            _audio = false;
+            AudioListener.pause = false;
+            AudioListener.volume = 1f;
+        }
     }
 
     public static class Ads
@@ -218,6 +228,7 @@ namespace FlockFive
                 _shownForeground = 0f;
                 _settleLeft = -1f;
                 GamePause.Push();
+                AudioGuard.Hold("ad");
             }
             _showDepth++;
         }
@@ -229,6 +240,37 @@ namespace FlockFive
             if (_showDepth > 0) return;
             _settleLeft = -1f;
             GamePause.Pop();
+            // Pop can put back a pause that was already true when the ad began.
+            AudioGuard.Restore();
+        }
+
+        // Home is interactive. Never the first frames. Then either half a
+        // second with no pointer, or two seconds even if the player is still
+        // touching. LevelPlay.Init waits for this so it cannot hitch the
+        // opening frames or leave the audio session ducked under them.
+        public static bool IdleDue(int framesSeen, float sinceHome, float quietFor, bool pointerDown)
+        {
+            if (framesSeen < 2) return false;
+            if (sinceHome >= 2f) return true;
+            return !pointerDown && quietFor >= 0.5f;
+        }
+
+        public static bool PointerHeld()
+        {
+            try
+            {
+                var ts = UnityEngine.InputSystem.Touchscreen.current;
+                if (ts != null)
+                {
+                    var touches = ts.touches;
+                    for (int i = 0; i < touches.Count; i++)
+                        if (touches[i].press.isPressed) return true;
+                }
+                var mouse = UnityEngine.InputSystem.Mouse.current;
+                if (mouse != null && mouse.leftButton.isPressed) return true;
+            }
+            catch (System.Exception) { }
+            return false;
         }
 
         // Missed close, focus return, or a host that died mid-ad. Idempotent.
@@ -394,6 +436,7 @@ namespace FlockFive
                 LastGranted = true;
             }
             AdLog.Add(newly ? "gift ad reward callback (earned)" : "gift ad reward callback (duplicate)");
+            AudioGuard.Restore();
         }
 
         // LevelPlay OnAdClosed. Does not decide the grant.
@@ -401,6 +444,13 @@ namespace FlockFive
         {
             RewardedGrant.OnClosed();
             AdLog.Add("gift ad closed" + (RewardedGrant.Earned ? " (rewarded)" : " (no reward yet)"));
+            AudioGuard.Restore();
+        }
+
+        // Interstitial close and display failure. Same audio undo as a rewarded close.
+        public static void DeliverInterstitialClosed()
+        {
+            AudioGuard.Restore();
         }
 
         public static void DeliverDisplayedCallback()
@@ -418,6 +468,7 @@ namespace FlockFive
                 LastGranted = false;
             }
             AdLog.Add("gift ad failed");
+            AudioGuard.Restore();
         }
 
         public static void DeliverPause(bool paused)
@@ -539,6 +590,11 @@ namespace FlockFive
             finally
             {
                 trace.Dispose();
+                // Init returns on this thread and the Unity Ads / IronSource
+                // binaries may already have changed the session. Put it back
+                // before the next frame plays. The async success callback
+                // reasserts again after the ad units load.
+                AudioGuard.Reassert();
             }
         }
 
@@ -590,6 +646,7 @@ namespace FlockFive
                 if (!_rv.IsAdReady())
                 {
                     _rv.LoadAd();
+                    AfterSdk();
                     t = 0f;
                     while (!_rv.IsAdReady() && t < 6f)
                     {
@@ -603,6 +660,7 @@ namespace FlockFive
                     AdLog.Add("gift ad did not load");
                     Ads.DeliverFailedCallback();
                     _rv.LoadAd();
+                    AfterSdk();
                     yield break;
                 }
 
@@ -616,6 +674,7 @@ namespace FlockFive
                 showing = true;
                 AdLog.Add("gift ad show called");
                 _rv.ShowAd(Ads.ActivePlacement);
+                AfterSdk();
                 t = 0f;
                 while (_waiting && t < 180f)
                 {
@@ -629,6 +688,7 @@ namespace FlockFive
                 Ads.LastEarned = RewardedGrant.Earned;
                 Ads.LastGranted = RewardedGrant.Earned;
                 _rv.LoadAd();
+                AfterSdk();
             }
             finally
             {
@@ -654,12 +714,17 @@ namespace FlockFive
             {
                 Debug.LogWarning("LevelPlay ads skipped: " + e.Message);
             }
+            AfterSdk();
         }
 
         void OnInitFail(LevelPlayInitError error)
         {
             _initFailed = true;
+            AfterSdk();
         }
+
+        // Category and full listener gain after the SDK touches the session.
+        void AfterSdk() => AudioGuard.Reassert();
 
         void CreateRewarded()
         {
@@ -675,6 +740,7 @@ namespace FlockFive
                 created.OnAdDisplayFailed += OnDisplayFail;
                 created.OnAdDisplayed += OnRvShown;
                 created.LoadAd();
+                AfterSdk();
                 _rv = created;
             }
             catch (System.Exception e)
@@ -717,6 +783,7 @@ namespace FlockFive
                 showing = true;
                 AdLog.Add("interstitial show called");
                 _int.ShowAd(Ads.PlacementClear);
+                AfterSdk();
                 t = 0f;
                 while (_intWaiting && t < 180f)
                 {
@@ -725,6 +792,7 @@ namespace FlockFive
                 }
                 if (_intWaiting) AdLog.Add("interstitial wait TIMED OUT after 180s; game resumed");
                 _int.LoadAd();
+                AfterSdk();
             }
             finally
             {
@@ -747,6 +815,7 @@ namespace FlockFive
                 created.OnAdDisplayFailed += OnIntDisplayFail;
                 created.OnAdDisplayed += OnIntShown;
                 created.LoadAd();
+                AfterSdk();
                 _int = created;
             }
             catch (System.Exception e)
@@ -775,6 +844,7 @@ namespace FlockFive
         {
             AdLog.Add("interstitial closed");
             _intWaiting = false;
+            Ads.DeliverInterstitialClosed();
             if (!_orphanInt) return;
             _orphanInt = false;
             Ads.EndShow();
@@ -783,13 +853,16 @@ namespace FlockFive
         void OnIntLoadFail(LevelPlayAdError error)
         {
             if (_intWaiting) AdLog.Add("interstitial load failed while waiting");
+            bool waiting = _intWaiting;
             _intWaiting = false;
+            if (waiting) Ads.DeliverInterstitialClosed();
         }
 
         void OnIntDisplayFail(LevelPlayAdInfo info, LevelPlayAdError error)
         {
             AdLog.Add("interstitial display failed");
             _intWaiting = false;
+            Ads.DeliverInterstitialClosed();
         }
 
         void OnRvShown(LevelPlayAdInfo info)
@@ -872,11 +945,13 @@ namespace FlockFive
             if (_leftApp && Ads.IsShowing)
                 Ads.ArmResumeSettle();
             _leftApp = false;
+            AudioGuard.Restore();
         }
 
         void OnApplicationFocus(bool focus)
         {
             Ads.DeliverFocus(focus);
+            if (focus) AudioGuard.Restore();
             if (!focus || !_leftApp || !Ads.IsShowing) return;
             Ads.ArmResumeSettle();
             _leftApp = false;

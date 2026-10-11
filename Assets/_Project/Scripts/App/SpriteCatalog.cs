@@ -242,6 +242,8 @@ namespace FlockFive
         }
         public static Sprite Bow => Load(ref _bow, "Sprites/fx_bow", 200f);
         // Female kit bow. Was 0.42 on every draw site; 1.12 grows it around that same point.
+        // Legacy constant. Worn bows take their size from BirdIdle.KitFit,
+        // which follows HeadSpan of the body instead of this fixed scale.
         public const float BowScale = 0.42f * 1.12f;
         public static Sprite Bowtie => Load(ref _bowtie, "Sprites/fx_bowtie", 200f);
         public static Sprite Crown => Load(ref _crown, "Sprites/fx_crown", 200f);
@@ -319,6 +321,81 @@ namespace FlockFive
             }
             _domes[_domeN++] = new DomeHit { Id = id, Point = point };
             return point;
+        }
+
+        // Skull width in the sprite's local units. The same dome walk as
+        // HeadDome, then the columns whose tops still sit on that crown.
+        // A raised wing is too high and the beak is too low, so neither
+        // stretches the fit. Cached per sprite.
+        struct SpanHit
+        {
+            public int Id;
+            public float Span;
+        }
+
+        static SpanHit[] _spans;
+        static int _spanN;
+
+        public static float HeadSpan(Sprite sprite)
+        {
+            if (sprite == null) return 0.90f;
+            int id = sprite.GetInstanceID();
+            if (_spans != null)
+            {
+                for (int i = 0; i < _spanN; i++)
+                    if (_spans[i].Id == id) return _spans[i].Span;
+            }
+            float span = ScanHeadSpan(sprite);
+            if (_spans == null) _spans = new SpanHit[8];
+            if (_spanN >= _spans.Length)
+            {
+                var grow = new SpanHit[_spans.Length * 2];
+                for (int i = 0; i < _spans.Length; i++) grow[i] = _spans[i];
+                _spans = grow;
+            }
+            _spans[_spanN++] = new SpanHit { Id = id, Span = span };
+            return span;
+        }
+
+        static float ScanHeadSpan(Sprite sprite)
+        {
+            var dome = HeadDome(sprite);
+            float ppu = sprite.pixelsPerUnit > 1f ? sprite.pixelsPerUnit : 220f;
+            float fallback = sprite.rect.height > 8f ? sprite.rect.height / ppu * 0.18f : 0.90f;
+            var tex = sprite.texture;
+            if (tex == null || !tex.isReadable) return fallback;
+            var rect = sprite.rect;
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 8 || h < 8) return fallback;
+            Color32[] px;
+            try { px = tex.GetPixels32(); }
+            catch (UnityException) { return fallback; }
+            if (px == null || px.Length < tex.width * tex.height) return fallback;
+            float pivX = sprite.pivot.x;
+            float pivY = sprite.pivot.y;
+            int ox = Mathf.RoundToInt(rect.x);
+            int oy = Mathf.RoundToInt(rect.y);
+            int tw = tex.width;
+            int x0 = Mathf.RoundToInt((dome.x - 0.95f) * ppu + pivX - 0.5f);
+            int x1 = Mathf.RoundToInt((dome.x + 0.95f) * ppu + pivX - 0.5f);
+            if (x0 < 0) x0 = 0;
+            if (x1 >= w) x1 = w - 1;
+            float lo = 999f;
+            float hi = -999f;
+            int n = 0;
+            for (int x = x0; x <= x1; x++)
+            {
+                float top = ColumnTop(px, tw, ox, oy, x, h, pivY, ppu);
+                if (top < dome.y - 0.28f || top > dome.y + 0.06f) continue;
+                if (ColumnThick(px, tw, ox, oy, x, h, ppu) < 0.20f) continue;
+                float lx = (x + 0.5f - pivX) / ppu;
+                if (lx < lo) lo = lx;
+                if (lx > hi) hi = lx;
+                n++;
+            }
+            if (n < 4 || hi <= lo) return fallback;
+            return hi - lo;
         }
 
         static Vector2 ScanHeadDome(Sprite sprite)

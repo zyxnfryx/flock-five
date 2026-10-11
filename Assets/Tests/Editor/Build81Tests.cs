@@ -128,6 +128,8 @@ namespace FlockFive.Editor
             CheckSettingsMotion(Check);
             CheckGearLaunch(Check);
             CheckPass4(Check);
+            CheckAvatarKit(Check);
+            CheckPassH(Check);
 
             Debug.Log("[build81] " + (fail == 0 ? "BUILD81_OK " + pass : "BUILD81_FAIL " + fail + " passed " + pass));
             if (fail > 0)
@@ -589,6 +591,275 @@ namespace FlockFive.Editor
                     if (px[y * w + x].a > 20) return false;
             }
             return true;
+        }
+
+        // Home avatar grew. Every bow and crown (and the other head kits) takes
+        // its scale from the measured skull, so the home bird and the garden
+        // birds keep one proportion. The home bird must clear a readable size.
+        static void CheckAvatarKit(System.Action<string, bool, string> Check)
+        {
+            const float screenW = 1179f;
+            const float screenH = 2556f;
+            var colors = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet };
+            var body = SpriteCatalog.Bird(BirdColor.Teal);
+            bool bodyOk = body != null && body.texture != null && body.texture.isReadable;
+            float head = bodyOk ? SpriteCatalog.HeadSpan(body) : 0f;
+            float homePx = FlockFiveApp.HomeAvatarBirdPx(screenH);
+            float world = bodyOk && body.pixelsPerUnit > 1f ? body.rect.width / body.pixelsPerUnit : 0f;
+            float gardenPx = FlockFiveApp.GardenBirdPx(screenW, screenH, world);
+            var birdBox = SpriteCatalog.MeasureOpaque(body);
+            Check("kit-head-measured",
+                bodyOk && head > 0.4f && head < 1.6f && homePx > gardenPx && gardenPx > 8f,
+                "head=" + head.ToString("0.000") + " home=" + homePx.ToString("0") + " garden=" + gardenPx.ToString("0"));
+
+            bool sameSkull = bodyOk;
+            string skullDetail = "";
+            for (int i = 0; i < colors.Length; i++)
+            {
+                var b = SpriteCatalog.Bird(colors[i]);
+                float h = b != null ? SpriteCatalog.HeadSpan(b) : 0f;
+                if (b == null || Mathf.Abs(h - head) > 0.04f)
+                {
+                    sameSkull = false;
+                    skullDetail = colors[i] + " " + h.ToString("0.000");
+                    break;
+                }
+            }
+            Check("kit-head-shared-silhouette", sameSkull, skullDetail.Length == 0 ? "span=" + head.ToString("0.000") : skullDetail);
+
+            float twice = BirdIdle.KitFit(head * 2f, 2f, BirdKit.Bow);
+            float once = BirdIdle.KitFit(head, 2f, BirdKit.Bow);
+            Check("kit-scale-tracks-head",
+                head > 0.2f && once > 0.05f && Mathf.Abs(twice / once - 2f) < 0.001f,
+                "once=" + once.ToString("0.000") + " twice=" + twice.ToString("0.000"));
+
+            var worn = new[]
+            {
+                BirdKit.Bow, BirdKit.Bowtie, BirdKit.Crown,
+                BirdKit.TopHat, BirdKit.Flower, BirdKit.Shades, BirdKit.Beanie
+            };
+            bool proportion = true;
+            bool readable = true;
+            bool gardenOk = true;
+            bool onDome = true;
+            string proportionDetail = "";
+            string readableDetail = "";
+            string gardenDetail = "";
+            string domeDetail = "";
+            for (int i = 0; i < worn.Length; i++)
+            {
+                var kitKind = worn[i];
+                int colorsN = kitKind == BirdKit.Crown ? 5 : 1;
+                for (int c = 0; c < colorsN; c++)
+                {
+                    var col = (BirdColor)c;
+                    var kitBody = SpriteCatalog.Bird(col);
+                    if (kitBody == null) kitBody = body;
+                    var kit = SpriteCatalog.KitSprite(col, kitKind);
+                    if (kit == null || kitBody == null)
+                    {
+                        proportion = false;
+                        if (proportionDetail.Length == 0) proportionDetail = kitKind + " " + col + " missing";
+                        continue;
+                    }
+                    float span = SpriteCatalog.HeadSpan(kitBody);
+                    var box = SpriteCatalog.MeasureOpaque(kit);
+                    BirdIdle.KitAnchor(kitKind, 0, false, kitBody, kit, out float x, out float y, out float scale, out float tilt, out bool flip);
+                    float native = box.Ok ? box.Width : 1f;
+                    float fit = BirdIdle.KitFit(span, native, kitKind);
+                    float gpx = kitBody.pixelsPerUnit > 1f
+                        ? FlockFiveApp.GardenBirdPx(screenW, screenH, kitBody.rect.width / kitBody.pixelsPerUnit)
+                        : gardenPx;
+                    float homeKit = BirdIdle.KitOpaquePx(kitBody, kit, scale, homePx);
+                    float gardenKit = BirdIdle.KitOpaquePx(kitBody, kit, scale, gpx);
+                    float homeHead = BirdIdle.HeadScreenPx(kitBody, homePx);
+                    float gardenHead = BirdIdle.HeadScreenPx(kitBody, gpx);
+                    float homeRatio = homeHead > 1f ? homeKit / homeHead : 0f;
+                    float gardenRatio = gardenHead > 1f ? gardenKit / gardenHead : 0f;
+                    float birdW = BirdIdle.KitOpaquePx(kitBody, kitBody, 1f, gpx);
+                    bool bowOrCrown = kitKind == BirdKit.Bow || kitKind == BirdKit.Bowtie || kitKind == BirdKit.Crown;
+                    if (proportion && (Mathf.Abs(scale - fit) > 0.002f
+                        || Mathf.Abs(homeRatio - BirdIdle.ShareOf(kitKind)) > 0.03f
+                        || Mathf.Abs(homeRatio - gardenRatio) > 0.02f
+                        || Mathf.Abs(homeKit / Mathf.Max(1f, gardenKit) - homePx / Mathf.Max(1f, gpx)) > 0.03f))
+                    {
+                        proportion = false;
+                        proportionDetail = kitKind + " " + col
+                            + " scale=" + scale.ToString("0.000") + " fit=" + fit.ToString("0.000")
+                            + " home=" + homeRatio.ToString("0.00") + " garden=" + gardenRatio.ToString("0.00")
+                            + " px=" + homeKit.ToString("0") + "/" + gardenKit.ToString("0");
+                    }
+                    if (readable && bowOrCrown && homeKit + 0.5f < BirdIdle.KitReadableMinPx)
+                    {
+                        readable = false;
+                        readableDetail = kitKind + " " + col + " px=" + homeKit.ToString("0.0");
+                    }
+                    if (gardenOk && (gardenKit + 1f >= homeKit || (birdW > 1f && gardenKit > birdW * BirdIdle.KitMaxOfBird)))
+                    {
+                        gardenOk = false;
+                        gardenDetail = kitKind + " garden=" + gardenKit.ToString("0")
+                            + " home=" + homeKit.ToString("0") + " bird=" + birdW.ToString("0");
+                    }
+                    var dome = SpriteCatalog.HeadDome(kitBody);
+                    float contactY = y;
+                    float yLimit = span * 0.22f;
+                    var seat = FlockKit.SeatOf(kitKind);
+                    if (seat == FlockKit.Seat.Head && box.Ok)
+                        contactY = y + box.Bottom * scale;
+                    else if (seat == FlockKit.Seat.Face && box.Ok)
+                    {
+                        contactY = y + box.Top * scale;
+                        yLimit = span * 0.55f;
+                    }
+                    else if (kitKind == BirdKit.Bowtie)
+                        yLimit = span * 0.60f;
+                    else if (box.Ok)
+                        contactY = y + (box.Bottom + box.Top) * 0.5f * scale;
+                    float dx = Mathf.Abs(x - dome.x);
+                    float dy = Mathf.Abs(contactY - dome.y);
+                    BirdIdle.KitAnchor(kitKind, 0, true, kitBody, kit, out float mx, out _, out _, out _, out bool mflip);
+                    if (onDome && (dx > span * 0.30f || dy > yLimit || flip || Mathf.Abs(tilt) < 1f
+                        || !mflip || Mathf.Abs(mx + x) > 0.02f))
+                    {
+                        onDome = false;
+                        domeDetail = kitKind + " " + col
+                            + " anchor=" + x.ToString("0.00") + "," + contactY.ToString("0.00")
+                            + " dome=" + dome.x.ToString("0.00") + "," + dome.y.ToString("0.00")
+                            + " dx=" + dx.ToString("0.00") + " dy=" + dy.ToString("0.00");
+                    }
+                }
+            }
+            Check("kit-scale-proportional", proportion,
+                proportionDetail.Length == 0 ? "home and garden share the skull" : proportionDetail);
+            Check("kit-home-readable", readable,
+                readableDetail.Length == 0 ? "bows and crowns >= " + BirdIdle.KitReadableMinPx.ToString("0") : readableDetail);
+            Check("kit-garden-not-oversized", gardenOk,
+                gardenDetail.Length == 0 ? "under " + BirdIdle.KitMaxOfBird.ToString("0.00") + " of the body" : gardenDetail);
+            Check("kit-anchor-on-dome", onDome,
+                domeDetail.Length == 0 ? "seat on the skull" : domeDetail);
+        }
+
+        static void CheckPassH(System.Action<string, bool, string> Check)
+        {
+            int oldFloor = FlockFiveApp.CaptionPxOf(FlockFiveApp.CaptionFloorRef);
+            int floor = FlockFiveApp.LessonCaptionFloor(W, H);
+            Debug.Log("[build81] caption-floor old=" + oldFloor + " new=" + floor
+                + " ref=" + FlockFiveApp.CaptionFloorRef);
+            var lines = FlockFiveApp.PaintedLessonLines();
+            bool fonts = true;
+            bool taps = true;
+            string fontDetail = "n=" + lines.Length + " floor=" + floor;
+            string tapDetail = "no Click";
+            var seen = new System.Collections.Generic.HashSet<string>();
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i] ?? "";
+                if (!seen.Add(line)) continue;
+                string shown = FlockFiveApp.LessonCaptionShown(line);
+                if (shown.IndexOf("Click", System.StringComparison.Ordinal) >= 0
+                    || line.IndexOf("Click", System.StringComparison.Ordinal) >= 0)
+                {
+                    taps = false;
+                    tapDetail = shown;
+                }
+                int px = FlockFiveApp.LessonCaptionFont(line, W, H);
+                if (px < floor)
+                {
+                    fonts = false;
+                    fontDetail = px + " < " + floor + " [" + shown.Replace("\n", " / ") + "]";
+                }
+            }
+            var beeShown = FlockFiveApp.LessonCaptionShown(CaptionLayout.HiveGardenLine);
+            bool emojiOk = beeShown.Contains("\U0001F41D")
+                == CaptionLayout.DrawsEmoji(FlockFiveApp.CoachCaptionStyle().font);
+            Check("caption-floor", floor > oldFloor && fonts && emojiOk,
+                "old=" + oldFloor + " new=" + floor + " " + fontDetail
+                + " bee=[" + beeShown.Replace("\n", " / ") + "]");
+            Check("caption-says-tap", taps
+                && beeShown.IndexOf("Tap", System.StringComparison.Ordinal) >= 0
+                && CaptionLayout.AlbumHoneyBlock.IndexOf("Tap", System.StringComparison.Ordinal) >= 0
+                && CaptionLayout.AlbumHoneyBlock.IndexOf("Click", System.StringComparison.Ordinal) < 0,
+                tapDetail);
+
+            var pad = CaptionLayout.BoxPad(H);
+            Check("caption-pad",
+                pad.x + 0.01f >= CaptionLayout.PadXMin && pad.y + 0.01f >= CaptionLayout.PadYMin
+                && pad.x > 18f && pad.y > 12f,
+                "pad=" + pad.x.ToString("0.0") + "x" + pad.y.ToString("0.0"));
+
+            var safe = new Rect(0f, 102f, W, H - 102f - 177f);
+            FlockFiveApp.GardenCorners(W, H, safe, out var restart, out var hive);
+            float pt = H / 852f;
+            float left = restart.xMin - safe.xMin;
+            float right = safe.xMax - hive.xMax;
+            Check("hud-mirror",
+                Mathf.Abs(left - right) <= pt
+                && Mathf.Abs(restart.center.y - hive.center.y) <= pt
+                && Mathf.Abs(restart.width - hive.width) <= pt
+                && restart.width > 8f,
+                "left=" + left.ToString("0.0") + " right=" + right.ToString("0.0")
+                + " cy=" + restart.center.y.ToString("0.0") + "/" + hive.center.y.ToString("0.0")
+                + " size=" + restart.width.ToString("0.0") + "/" + hive.width.ToString("0.0"));
+
+            var shifted = new Rect(36f, 102f, W - 36f - 18f, H - 102f - 177f);
+            FlockFiveApp.GardenCorners(W, H, shifted, out var r2, out var h2);
+            float left2 = r2.xMin - shifted.xMin;
+            float right2 = shifted.xMax - h2.xMax;
+            Check("hud-mirror-safe",
+                Mathf.Abs(left2 - right2) <= pt
+                && Mathf.Abs(r2.center.y - h2.center.y) <= pt,
+                "left=" + left2.ToString("0.0") + " right=" + right2.ToString("0.0"));
+
+            var off = new Vector2(13.5f, -8.25f);
+            FlockFiveApp.GardenCornersShaken(W, H, safe, off, 0f, out var sr, out var sh);
+            var dr = sr.center - restart.center;
+            var dh = sh.center - hive.center;
+            Check("hud-shake",
+                Mathf.Abs(dr.x - dh.x) <= 0.05f && Mathf.Abs(dr.y - dh.y) <= 0.05f
+                && Mathf.Abs(dr.x - off.x) <= 0.05f && Mathf.Abs(dr.y - off.y) <= 0.05f,
+                "dRestart=" + dr + " dHive=" + dh);
+
+            string root = System.IO.Path.GetDirectoryName(Application.dataPath);
+            string app = System.IO.File.ReadAllText(System.IO.Path.Combine(root, "Assets/_Project/Scripts/App/FlockFiveApp.cs"));
+            string coach = System.IO.File.ReadAllText(System.IO.Path.Combine(root, "Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs"));
+            Check("hud-shared-helper",
+                app.Contains("CornerAnchor.Garden") && app.Contains("HudShaken")
+                && app.Contains("CornerAnchor.Shake") && coach.Contains("HudShaken"),
+                "garden + shake");
+
+            var phone = new Rect(0f, 102f, W, H - 102f - 177f);
+            bool lessons = true;
+            string lessonDetail = "card lessons clear";
+            int[] steps = { 1, 2, 3 };
+            for (int i = 0; i < steps.Length; i++)
+            {
+                int step = steps[i];
+                Rect focus = step <= 1
+                    ? FlockFiveApp.AlbumGridRect(W, H, phone, 0)
+                    : FlockFiveApp.AlbumInspectRect(W, H);
+                string line = step == 3 ? CaptionLayout.AlbumHoneyBlock
+                    : step == 2 ? "Tap again to flip."
+                    : "Tap a card you have\nto enlarge it.";
+                var pose = FlockFiveApp.PoseLesson(step, focus, W, H, line);
+                var text = new CoachSeat.FocusText { Title = pose.Title, Body = pose.Body, Flavor = pose.Flavor };
+                bool below = step != 3 || pose.Plate.y + 1f >= focus.yMax;
+                bool honeyAim = step != 3 || pose.Honey.width < 2f
+                    || pose.Honey.Contains(pose.Aim) || pose.Glove.Overlaps(pose.Honey);
+                if (!pose.Clear || text.Hits(pose.Plate) || text.Hits(pose.Glove) || !below || !honeyAim)
+                {
+                    lessons = false;
+                    lessonDetail = "step " + step
+                        + " clear=" + pose.Clear
+                        + " plate=" + pose.Plate
+                        + " glove=" + pose.Glove
+                        + " title=" + pose.Title
+                        + " flavor=" + pose.Flavor
+                        + " honey=" + pose.Honey
+                        + " aim=" + pose.Aim;
+                    break;
+                }
+            }
+            Check("card-lesson-clear", lessons, lessonDetail);
         }
     }
 }

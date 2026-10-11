@@ -237,7 +237,7 @@ namespace FlockFive
         {
             if (clip == null) return;
             // One level rule for every one-shot, so no sound jumps out of the mix.
-            vol = SfxLibrary.Level(vol);
+            vol = SfxLibrary.Level(vol) * AudioGuard.SfxScale;
             if (layer == MixLayer.Lead)
             {
                 if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.55f, leadDuck);
@@ -1026,7 +1026,10 @@ namespace FlockFive
             {
                 var c = _clips[_data++];
                 if (c == null || c.loadState != AudioDataLoadState.Unloaded) continue;
-                c.LoadAudioData();
+                // One clip. Decompress-on-load with preloadAudioData off. This does
+                // not call AudioSettings.Reset and does not write the listener.
+                using (StartupTrace.Begin("Sfx.LoadAudioData"))
+                    c.LoadAudioData();
                 return true;
             }
             return false;

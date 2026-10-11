@@ -743,7 +743,9 @@ namespace FlockFive
         Rect DrawBadgerCoachLine(BadgerRects L, string line)
         {
             float s = L.S;
-            const float plateX = 18f;
+            var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+            float plateX = hang.x;
+            float plateY = hang.y;
             BadgerCaptionLimits(Screen.width, Screen.height, Screen.safeArea, out float maxW, out float roomH, out _, out int hi);
             var fit = FitCaptionBox(line, maxW, hi, 14);
             float boxW = fit.width;
@@ -756,7 +758,9 @@ namespace FlockFive
             if (maxX < minX) maxX = minX;
             if (x < minX) x = minX;
             if (x > maxX) x = maxX;
-            float y = L.Caption.y + (L.Caption.height - boxH) * 0.5f;
+            float yRoom = L.Caption.height - plateY * 2f;
+            float y = L.Caption.y + plateY + (yRoom - boxH) * 0.5f;
+            if (y < L.Caption.y + plateY) y = L.Caption.y + plateY;
             var seat = new Rect(x, y, boxW, boxH);
             DrawSplashIntroLine(line, seat, s, hi, pin: true);
             return seat;
