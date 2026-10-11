@@ -74,6 +74,29 @@ namespace FlockFive
 
         public bool RewardChoiceUp => _rewardAtHold && _streakSlide >= 0f && _rewardChoice == 0;
 
+        // Drawn last, over the LEVEL flower and the badger, as a modal: the home dims
+        // around the REWARD card and only the choice buttons take taps.
+        void DrawRewardChoiceTop()
+        {
+            if (!_splash || _home != HomeFace.Splash) { _rewardAtHold = false; return; }
+            DrawRewardChoice(Mathf.Max(Screen.height / 720f, 1f));
+        }
+
+        void PaintChoiceScrim(float a)
+        {
+            var c = new Color(0.05f, 0.04f, 0.03f, 0.58f * a);
+            var keep = GUI.color;
+            GUI.color = c;
+            var f = _rewardFace;
+            float W = Screen.width, H = Screen.height;
+            var tex = Texture2D.whiteTexture;
+            GUI.DrawTexture(new Rect(0f, 0f, W, Mathf.Max(0f, f.y)), tex);
+            GUI.DrawTexture(new Rect(0f, f.yMax, W, Mathf.Max(0f, H - f.yMax)), tex);
+            GUI.DrawTexture(new Rect(0f, f.y, Mathf.Max(0f, f.x), f.height), tex);
+            GUI.DrawTexture(new Rect(f.xMax, f.y, Mathf.Max(0f, W - f.xMax), f.height), tex);
+            GUI.color = keep;
+        }
+
         void DrawRewardChoice(float s)
         {
             _rewardAtHold = false;
@@ -93,6 +116,7 @@ namespace FlockFive
             if (_choiceWord == null)
                 _choiceWord = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
 
+            if (GuiPaint()) PaintChoiceScrim(a);
             bool priHeld, secHeld = false;
             bool priHit = HitPad(lay.Primary, out priHeld);
             bool secHit = hasAd && HitPad(lay.Secondary, out secHeld);

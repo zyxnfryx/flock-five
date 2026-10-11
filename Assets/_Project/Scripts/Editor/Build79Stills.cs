@@ -102,6 +102,12 @@ namespace FlockFive.Editor
         }
 
         // Eased gardens 18-25.
+        public static void Capture83c()
+        {
+            SetGameView(1179, 2556);
+            File.WriteAllText("/tmp/flock-five-b83c-stills", "1");
+            EditorApplication.isPlaying = true;
+        }
         public static void Capture83Gardens()
         {
             SetGameView(1179, 2556);

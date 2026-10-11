@@ -12,7 +12,7 @@ namespace FlockFive
     // Update belong to the gap that just closed.
     public static class StartupTrace
     {
-        public const double WindowSec = 5.0;
+        public const double WindowSec = 7.0;
         const int StackMax = 16;
         const int HitMax = 48;
 
@@ -126,9 +126,65 @@ namespace FlockFive
                 _hits[small] = new Hit { Name = name, Ms = ms, Frame = frame };
             }
             if (ms < 1.0) return;
-            if (_frameSteps != null && _frameSteps.Length > 480) return;
+            if (_frameSteps != null && _frameSteps.Length > 1600) return;
             string bit = name + ":" + ms.ToString("0.0", CultureInfo.InvariantCulture);
             _frameSteps = _frameSteps == null ? bit : _frameSteps + "," + bit;
+        }
+
+        static long _lapT;
+        // Item 8: worst gap once the home is visible (warm cover lifting or no cover).
+        static bool _visible;
+        static double _worstVisible = -1;
+        static int _worstVisibleFrame;
+        static string _worstVisibleSteps;
+        public static double WorstVisible => _worstVisible;
+        static int _visibleAt;
+        public static void MarkVisible() { if (!_visible) _visibleAt = Time.frameCount; _visible = true; }
+        // Item 8 probe: engine markers between our own spans.
+        static readonly string[] _mkNames = { "GC.Collect", "Shader.CreateGPUProgram", "Gfx.WaitForPresentOnGfxThread",
+            "EditorLoop", "PlayerLoop", "Loading.ReadObject", "Gfx.UploadTexture", "Font.CacheFontForText", "TextRendering.Cleanup",
+            "Camera.Render", "Canvas.SendWillRenderCanvases", "Gfx.WaitForGfxCommandsFromMainThread", "Shader.Parse", "Texture.AwakeFromLoad" };
+        static Unity.Profiling.ProfilerRecorder[] _mk;
+
+        static void MarkersSample()
+        {
+            if (_mk == null)
+            {
+                _mk = new Unity.Profiling.ProfilerRecorder[_mkNames.Length];
+                for (int i = 0; i < _mk.Length; i++)
+                {
+                    try { _mk[i] = Unity.Profiling.ProfilerRecorder.StartNew(Unity.Profiling.ProfilerCategory.Internal, _mkNames[i], 4); }
+                    catch { }
+                }
+                return;
+            }
+            for (int i = 0; i < _mk.Length; i++)
+            {
+                if (!_mk[i].Valid) continue;
+                double ms = _mk[i].LastValue / 1e6;
+                if (ms >= 1.0) Note("M." + _mkNames[i], ms, Time.frameCount);
+            }
+        }
+
+        static void MarkersStop()
+        {
+            if (_mk == null) return;
+            for (int i = 0; i < _mk.Length; i++) _mk[i].Dispose();
+            _mk = null;
+        }
+        // Item 8 probe: time since the previous Lap (a new section starts at LapStart).
+        public static void LapStart()
+        {
+            if (_closed) return;
+            _lapT = Stopwatch.GetTimestamp();
+        }
+
+        public static void Lap(string name)
+        {
+            if (_closed || _lapT == 0) return;
+            long now = Stopwatch.GetTimestamp();
+            Note(name, (now - _lapT) * 1000.0 / Stopwatch.Frequency, Time.frameCount);
+            _lapT = now;
         }
 
         // Call once at the start of Update. The first call closes the boot gap.
@@ -136,6 +192,7 @@ namespace FlockFive
         {
             if (_closed) return;
             Arm();
+            MarkersSample();
             long now = Stopwatch.GetTimestamp();
             double ms = (now - _frameT0) * 1000.0 / Stopwatch.Frequency;
             _frameT0 = now;
@@ -145,6 +202,13 @@ namespace FlockFive
                 _boot = ms;
                 _bootSteps = _frameSteps;
             }
+            if (_frames > 1 && _visible && ms > _worstVisible)
+            {
+                _worstVisible = ms;
+                _worstVisibleFrame = Time.frameCount;
+                _worstVisibleSteps = _frameSteps;
+            }
+            if (_frames == 1) { }
             else if (ms > _worst)
             {
                 _worst = ms;
@@ -178,6 +242,7 @@ namespace FlockFive
         {
             if (_closed) return;
             _closed = true;
+            MarkersStop();
             for (int i = 1; i < _hitN; i++)
             {
                 var key = _hits[i];
@@ -191,7 +256,7 @@ namespace FlockFive
             }
             var culture = CultureInfo.InvariantCulture;
             var top = "";
-            int n = _hitN < 8 ? _hitN : 8;
+            int n = _hitN < 20 ? _hitN : 20;
             for (int i = 0; i < n; i++)
             {
                 if (i > 0) top += ",";
@@ -202,6 +267,8 @@ namespace FlockFive
                 + "ms frame=" + _worstFrame.ToString(culture)
                 + " boot=" + _boot.ToString("0.0", culture)
                 + "ms frames=" + _frames.ToString(culture)
+                + " worstVisible=" + _worstVisible.ToString("0.0", CultureInfo.InvariantCulture) + "ms@" + _worstVisibleFrame
+                + " visibleAt=" + _visibleAt + " visSteps=" + (_worstVisibleSteps ?? "")
                 + " top=" + top
                 + " worstSteps=" + (_worstSteps ?? "")
                 + " bootSteps=" + (_bootSteps ?? "");

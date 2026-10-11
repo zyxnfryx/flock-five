@@ -95,16 +95,30 @@ namespace FlockFive
         {
             while (_warmBank < _warmOrder.Length)
             {
-                if (_warmOrder[_warmBank].Step()) return;
+                bool more;
+                using (StartupTrace.Begin("Sfx.Bank" + _warmBank)) more = _warmOrder[_warmBank].Step();
+                if (more) return;
                 _warmBank++;
             }
             if (!_warmGate)
             {
                 _warmGate = true;
-                if (_gate == null) _gate = LoadGate();
+                if (_gate == null) using (StartupTrace.Begin("Sfx.Gate")) _gate = LoadGate();
                 return;
             }
-            WarmLoneClip();
+            using (StartupTrace.Begin("Sfx.Lone")) WarmLoneClip();
+        }
+
+        // Build 83 item 8: the lone clips are ~25ms each; the app builds them under the warm cover.
+        public static void WarmGateClip()
+        {
+            if (_gate == null) _gate = LoadGate();
+        }
+
+        public static void WarmLoneClips()
+        {
+            int guard = 0;
+            while (!LoneClipsWarm && guard++ < 8) WarmLoneClip();
         }
 
         static bool LoneClipsWarm =>

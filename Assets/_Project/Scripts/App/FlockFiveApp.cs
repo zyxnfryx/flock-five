@@ -598,6 +598,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-b82g-stills"); } catch { }
                 StartCoroutine(ShotBuild82g());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-b83c-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b83c-stills"); } catch { }
+                StartCoroutine(ShotBuild83c());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-b83-gardens"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-b83-gardens"); } catch { }
@@ -3515,6 +3520,13 @@ namespace FlockFive
         void Update()
         {
             StartupTrace.NoteFrame();
+            if (!StartupTrace.Open) { UpdateBody(); return; }
+            if (!_traceTailRunning) { _traceTailRunning = true; StartCoroutine(TraceRenderTail()); }
+            using (StartupTrace.Begin("Update")) UpdateBody();
+        }
+
+        void UpdateBody()
+        {
             AudioGuard.Tick();
             if (_shot82e) MuteShotAudio();
             MaybeSmokeLaunch();
@@ -6353,7 +6365,40 @@ namespace FlockFive
             return gui.y > Screen.height - bot - 8f;
         }
 
+        // Item 8 profiling: OnGUI by event, and the render tail to end of frame.
         void OnGUI()
+        {
+            // Item 8: the warm cover eats taps until the home is shown.
+            if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
+                Event.current.Use();
+            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); return; }
+            var ev = Event.current != null ? Event.current.type : EventType.Ignore;
+            var sp = StartupTrace.Begin(ev == EventType.Repaint ? "GUI.Repaint" : ev == EventType.Layout ? "GUI.Layout" : "GUI.Input");
+            try { OnGUIBody(); }
+            finally { sp.Dispose(); }
+            DrawRewardChoiceTop();
+            DrawWarmCover();
+            if (ev == EventType.Repaint) _guiEndTick = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+
+        long _guiEndTick;
+        bool _traceTailRunning;
+
+        System.Collections.IEnumerator TraceRenderTail()
+        {
+            var eof = new WaitForEndOfFrame();
+            while (StartupTrace.Open)
+            {
+                yield return eof;
+                if (_guiEndTick == 0) continue;
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                double ms = (now - _guiEndTick) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                _guiEndTick = 0;
+                StartupTrace.Note("Render.Tail", ms, Time.frameCount);
+            }
+        }
+
+        void OnGUIBody()
         {
             SwallowLessonGuard();
             SwallowResumePointer();
@@ -8267,7 +8312,6 @@ namespace FlockFive
             var pig = PiggyRect(s);
             // Streak sign holds, then fades on its own.
             DrawStreakToast(s, pig);
-            DrawRewardChoice(s);
             DrawCoinFly(pig);
             if (_pigBurst > 0f)
             {
@@ -9715,6 +9759,7 @@ namespace FlockFive
         void DrawSplash()
         {
             var trace = StartupTrace.Begin("DrawSplash");
+            StartupTrace.LapStart();
             try
             {
             _homeTapTaken = false;
@@ -9727,6 +9772,7 @@ namespace FlockFive
             // "Welcome, VIP!" moment when home is free. Member taps open the thank-you card.
             VipOffer.Tick();
             HomeModals(out bool hardModal, out bool softModal);
+            StartupTrace.Lap("L.Modals");
             bool modal = hardModal || softModal;
             // Captured before the dismiss taps below, so that same click cannot poke the bird.
             bool tutorUp = HomeTutorLive();
@@ -9735,17 +9781,24 @@ namespace FlockFive
             PollHomeGear();
             DismissAvatarRename(s);
             // Rail steps hold until their own button. A miss does not skip poker or Daily,
+            StartupTrace.Lap("L.Prep");
             // and the looping glove does not open the card.
             DrawHomeWash(0.18f);
+            StartupTrace.Lap("L.Wash");
             // Home title: stacked FLOCK / FIVE via letter sprites + navy block extrude
             // (same mark family as FinaleShow smash hold — correlate, not shatter).
             DrawAmbientSplashBirds(s, behind: true);
+            StartupTrace.Lap("L.BirdsBack");
             DrawSplashTitleMark(s);
+            StartupTrace.Lap("L.Title");
             DrawAmbientSplashBirds(s, behind: false);
+            StartupTrace.Lap("L.BirdsFront");
             // After the wordmark, on a path that clears it.
             DrawUsaPlane(s);
+            StartupTrace.Lap("L.Plane");
             // Piggy and balance here; the streak sign layer waits until the rails are drawn.
             DrawStreakRewards(s, raiseSign: true);
+            StartupTrace.Lap("L.Streak");
 
             if (HomeLimbVisible())
             {
@@ -9760,6 +9813,7 @@ namespace FlockFive
             // VIP before the pig so a medallion tap cannot run TryPigPoke.
             // Drawn from the packed rect so a shrink-out keeps its hit on the icon.
             EnsureSplashRails();
+            StartupTrace.Lap("L.Rails");
             bool offerVip = VipRailGoal() > 0.5f;
             bool vipDraw = RailLive(RailVip);
             var noAdsR = SplashNoAdsRect();
@@ -9797,6 +9851,7 @@ namespace FlockFive
             hiveGates.Inactive = !SplashHiveShown();
             hiveGates.StepGate = StepGateBlocks(hiveHit);
             var hiveView = StepHomePress(SplashPress.Id.Hive, !SplashPress.Blocks(hiveGates));
+            StartupTrace.Lap("L.Hive");
             if (hiveView.Launch)
             {
                 DismissHiveIntro();
@@ -9828,6 +9883,7 @@ namespace FlockFive
             pokerGates.Hidden = !pokerDraw;
             pokerGates.StepGate = StepGateBlocks(pokerR);
             var pokerView = StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates));
+            StartupTrace.Lap("L.Poker");
             if (pokerView.Launch)
             {
                 DismissPokerIntro();
@@ -9874,6 +9930,7 @@ namespace FlockFive
             dailyGates.PopupGate = PopupBlocked(PopupKind.Daily);
             dailyGates.StepGate = StepGateBlocks(dailyTap);
             var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates));
+            StartupTrace.Lap("L.Daily");
             if (dailyView.Launch)
                 OpenDailyCard();
             if (dailyDraw)
@@ -9881,6 +9938,7 @@ namespace FlockFive
             // Reward streak pop-up above the side rails (pig / hive / VIP / poker / daily), as
             // one unit. Same rects as before; only the paint order moved.
             DrawStreakSignLayer(s);
+            StartupTrace.Lap("L.Sign");
 
 #if UNITY_EDITOR
             string ease = _shotEase ?? LevelData.JokeEase(next);
@@ -9893,28 +9951,35 @@ namespace FlockFive
             // before the play button can arm or fire on release.
             HitHomeAvatar(s, tutorUp);
             HitAdoptTutor(s);
+            StartupTrace.Lap("L.Hits");
             // The greet's taps never get here: StepTapGate's any-tap step (GateAdoptGreet)
             // eats them at the top of OnGUI and advances to the look step.
             // Owed bird lesson keeps LEVEL from starting under the breath or the greet.
             if (DrawFlowerPlay(s, ease, number))
                 PressLevelButton();
             DrawHomeAvatar(s);
+            StartupTrace.Lap("L.Avatar");
             if (_adoptLive) DrawAdoptScene(s);
+            StartupTrace.Lap("L.Adopt");
             DrawHiveIntro(s);
             DrawPokerIntro(s);
             DrawDailyIntro(s);
+            StartupTrace.Lap("L.Intros");
             if (VipOffer.IsOpen) VipOffer.Draw(s);
             if (_dailyOpen) DrawDailyBonus(s);
             if (_dailyAskOpen) DrawDailyAsk(s);
             if (_welcomeOpen) DrawWelcome(s);
             if (_dailyOpen) DrawDailyClaimLine(s);
+            StartupTrace.Lap("L.Daily2");
             if (_welcomeGlove || (_dailyIntroLive && _dailyOpen && !_dailyAskOpen))
                 DrawTutorOverlay(s);
             if (_avatarRename) DrawAvatarRename(s);
             PaintHomeGear();
+            StartupTrace.Lap("L.Gear");
             _hitLock = 0;
             if (_settingsOpen) DrawSettingsSheet(s);
             else DrawSoftPrompt(s);
+            StartupTrace.Lap("L.Soft");
             if (_dailyAdBusy && Ads.IsLoading && !Ads.IsShowing && !Ads.MockRewarded)
                 DrawAdSpinner(s);
             }
@@ -9936,6 +10001,7 @@ namespace FlockFive
             gates.HomeTaken = _homeTapTaken;
             gates.StepGate = StepGateBlocks(rest);
             var view = StepHomePress(SplashPress.Id.Level, !SplashPress.Blocks(gates));
+            StartupTrace.Lap("L.LevelGate");
             bool held = view.Pressed;
             bool fired = view.Launch;
             bool paint = GuiPaint();
@@ -9971,6 +10037,7 @@ namespace FlockFive
             }
 
             DrawBadgerSitter(visual.y - rest.y);
+            StartupTrace.Lap("L.Level");
             var disc = PushButton.Follow(FlowerDisc(rest, 0f), rest, visual, GuiPixels());
             DrawFlowerCaption(disc, ease, number);
             return fired;
