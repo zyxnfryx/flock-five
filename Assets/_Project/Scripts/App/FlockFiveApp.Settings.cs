@@ -111,6 +111,7 @@ namespace FlockFive
                 if (HomeStepRail() >= 0) forced = true;
                 if (_dailyIntroLive && _dailyOpen && !_dailyAskOpen) forced = true;
                 if (_adoptLive && _adoptStep == AdoptStep.Look) forced = true;
+                if (ForcedGloveUp()) forced = true;
             }
             return new HomeGearQuery { Home = home, Cover = cover, ForcedTap = forced };
         }

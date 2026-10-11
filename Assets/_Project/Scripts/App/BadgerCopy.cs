@@ -16,12 +16,12 @@ namespace FlockFive
         public const string LessonColumnBot = "Honey badger don't care.";
         public static readonly string[] Lesson =
         {
-            "Pick one honeycomb. Higher honey wins the round.",
-            "Hot Sauce stops one bite. Freeze Spray stops two.",
+            "Pick one honeycomb.\nHigher honey wins.",
+            "Hot Sauce stops one bite.\nFreeze Spray stops two.",
             LessonColumnTop + "\n" + LessonColumnBot,
         };
 
-        public const string OpenLater = "Hive's mine. Your bees took their tiles.";
+        public const string OpenLater = "Hive's mine.\nYour bees took their tiles.";
         public const string GoesFirst = "Honey badger goes first.";
         public const string HowMany = "How many do you want?";
         public const string Tie = "That didn't prove much.";
@@ -30,7 +30,7 @@ namespace FlockFive
         public const string CoinsShort = "Coins short.";
         public const string Win = "Fine. Take the yard.";
         public const string Lose = "Yard's still mine.";
-        public const string YourPick = "Your pick. Tap a power-up first if you want one.";
+        public const string YourPick = "Your pick.\nTap a power-up first.";
 
         // Honey theft beat: boss scored at least this much honey in the round.
         public const int TheftHoney = 4;
@@ -38,20 +38,20 @@ namespace FlockFive
         // "Honey Badger Don't Care" slam (spec 2b): one word at a time. Brandon's line for the mode.
         public static readonly string[] DontCareWords = { "Honey", "Badger", "Don't", "Care" };
         // Caption after the slam resolves. Short, mild, original.
-        public const string DontCareWasted = "Don't care. Your power-up did nothing.";
-        public const string DontCareHalved = "Don't care. Half your honey this round.";
+        public const string DontCareWasted = "Don't care.\nYour power-up did nothing.";
+        public const string DontCareHalved = "Don't care.\nHalf your honey this round.";
 
         public static int DontCareWordCount => DontCareWords.Length;
 
         // Coach fight, moves 1-3: one static caption per guided pick (placeholders for Brandon).
         public static readonly string[] Guide =
         {
-            "Tap the glowing comb. Higher honey wins.",
-            "Tap this one. The badger bites back.",
-            "Tap this one. Watch out, he doesn't care.",
+            "Tap the glowing comb.\nHigher honey wins.",
+            "Tap this one.\nThe badger bites back.",
+            "Tap this one.\nHe doesn't care.",
         };
         // Round start right after move 3 (power-ups unlock; tutorial free first use applies).
-        public const string PowersOpen = "Power-ups are open. Your first one is free.";
+        public const string PowersOpen = "Power-ups are open.\nYour first one is free.";
         // Power-up button sub-label while the coach script holds them.
         public const string Locked = "LOCKED";
 

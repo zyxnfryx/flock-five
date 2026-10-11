@@ -1042,8 +1042,24 @@ namespace FlockFive.Editor
                 var text = new CoachSeat.FocusText { Title = pose.Title, Body = pose.Body, Flavor = pose.Flavor };
                 bool below = step != 3 || pose.Plate.y + 1f >= focus.yMax;
                 bool onGlass = step != 3 || (pose.Plate.yMax <= H - 2f && pose.Plate.yMin >= 2f);
-                bool honeyAim = step != 3 || pose.Honey.width < 2f
-                    || pose.Honey.Contains(pose.Aim) || pose.Glove.Overlaps(pose.Honey);
+                bool honeyAim = true;
+                if (step == 3 && pose.Honey.width >= 2f)
+                {
+                    var cells = new Rect[5];
+                    int n = FlockFiveApp.CardText.HoneyCells(pose.Honey, 5, true, cells);
+                    bool side = pose.Approach == 0f || pose.Approach == -90f || pose.Approach == 90f;
+                    bool miss = n > 0;
+                    float edge = 999f;
+                    for (int c = 0; c < n; c++)
+                    {
+                        if (pose.Glove.Overlaps(cells[c])) miss = false;
+                        float dx = Mathf.Min(Mathf.Abs(pose.Aim.x - cells[c].xMin), Mathf.Abs(pose.Aim.x - cells[c].xMax));
+                        float dy = Mathf.Abs(pose.Aim.y - cells[c].yMax);
+                        float d = Mathf.Abs(pose.Approach) < 1f ? dy : dx;
+                        if (d < edge) edge = d;
+                    }
+                    honeyAim = miss && side && edge <= 6f;
+                }
                 if (!pose.Clear || text.Hits(pose.Plate) || text.Hits(pose.Glove) || !below || !onGlass || !honeyAim)
                 {
                     lessons = false;

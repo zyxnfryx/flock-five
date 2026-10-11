@@ -83,7 +83,6 @@ namespace FlockFive
         Rect _bgLessonAim;
         Rect _bgLessonCap;
         static GUIStyle _bgStyle;
-        static GUIStyle _bgWrap;
 #if UNITY_EDITOR
         bool _bgSwitchWas;
         bool _bgSwitchHeld;
@@ -907,19 +906,6 @@ namespace FlockFive
             return _bgStyle;
         }
 
-        static GUIStyle BadgerWrapStyle()
-        {
-            if (_bgWrap != null) return _bgWrap;
-            _bgWrap = new GUIStyle(GUI.skin.label)
-            {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = true,
-                clipping = TextClipping.Clip
-            };
-            return _bgWrap;
-        }
-
         // The shared hex mask. HoneyArt bakes it once with the juicy fill.
         static Texture2D HoneycombTex() => HoneyArt.Mask();
 
@@ -1657,12 +1643,15 @@ namespace FlockFive
         void DrawBadgerCaption(BadgerRects L)
         {
             if (!GuiPaint() || string.IsNullOrEmpty(_bgLine)) return;
-            var panel = Inset(L.Caption, 0.03f);
-            DrawSolidRound(panel, 18f, 0, 0.92f);
-            var st = BadgerWrapStyle();
-            var tr = new Rect(panel.x + panel.width * 0.04f, panel.y + panel.height * 0.08f, panel.width * 0.92f, panel.height * 0.84f);
-            st.fontSize = FitFontWrapped(st, _bgLine, tr.width, tr.height, 10, 64);
-            StampOutlined(tr, _bgLine, st, BadgerCream, 0, 2);
+            float s = L.S;
+            var gold = GoldCaption(_bgLine, Screen.width, Screen.height);
+            float w = gold.PlateW;
+            float h = gold.PlateH;
+            var band = L.Caption;
+            if (w > band.width) w = band.width;
+            if (h > band.height) h = band.height;
+            var seat = new Rect(band.center.x - w * 0.5f, band.center.y - h * 0.5f, w, h);
+            PaintCoachCaption(_bgLine, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
         }
 
     }

@@ -127,17 +127,53 @@ namespace FlockFive
             return _scratch.CalcHeight(_content, Mathf.Max(8f, maxW)) <= maxH + 1f;
         }
 
-        // Garden bee lesson, without a glyph. Paint inserts the bee only when the
-        // coach font actually has it.
+        // Garden bee lesson. Headline plus two short lines. Paint draws a bee
+        // icon on the left of this plate. The emoji swap stays for fonts that have it.
         public const string HiveGardenLine =
-            "You found a bee!\nBees earn cards for your collection.\nTap the hive to see them.";
+            "You found a bee!\nBees earn album cards.\nTap the hive.";
 
         public const string HiveGardenEmojiLine =
-            "You found a bee! \U0001F41D\nBees earn cards for your collection.\nTap the hive to see them.";
+            "You found a bee! \U0001F41D\nBees earn album cards.\nTap the hive.";
 
-        // Inspect back: honey sentence stacked with the flip hints, one plate.
+        // Inspect back. The value sentence is exact. The two tap lines stay with it.
         public const string AlbumHoneyBlock =
-            "Honeycombs are honey.\n2 normal \u00b7 3 foil \u00b7 5 inverse.\nTap to flip!\nTap outside to put back";
+            "Honeycombs show the card's value based on rarity.\nTap to flip!\nTap outside to put back";
+
+        public const string LeafLine =
+            "Leaves hide these birds.\nCollect at a feeder to clear them.";
+
+        public const string SparrowLine =
+            "A sparrow blocks a feeder!\nMatch five birds to chase it off.";
+
+        public const string HawkLine =
+            "A hawk blocks a feeder!\nMatch five there twice.";
+
+        public const string BeePestLine =
+            "Bees cover a branch!\nMove birds off to free a card.";
+
+        public const string CoachPlaceLine =
+            "Tap a branch with the same color, or an empty one.";
+
+        public const string CoachNowhereLine =
+            "Nowhere to go yet.\nTry another branch.";
+
+        public const string VipPitchLine = "Tap VIP anytime to drop ads.";
+
+        public const string AlbumUpgradeLine = "Upgrade adds honey for 1000 coins.";
+
+        public const string AdoptGreetLine = "Look, a bird followed you home!";
+
+        // Small bee on the left of the garden bee plate. Slot is the icon plus a gap.
+        public static bool WantsBeeIcon(string text)
+        {
+            return text == HiveGardenLine || text == HiveGardenEmojiLine;
+        }
+
+        public static float BeeIconSlot(float lineH)
+        {
+            if (lineH < 8f) lineH = 8f;
+            return lineH * 0.85f + lineH * 0.22f;
+        }
 
         // Plate pad. Unscaled minimums, and larger on a tall phone.
         public const float PadXMin = 28f;
@@ -252,11 +288,99 @@ namespace FlockFive
             return text ?? "";
         }
 
+        // Glass inside the side margins. Plates stay inside this. Text stays
+        // inside it minus the shared box pad, so a line cannot run off either edge.
+        public static float SafeMargin(float screenW, float screenH)
+        {
+            float s = screenH > 2f ? screenH / 720f : 1f;
+            if (s < 1f) s = 1f;
+            float m = 12f * s;
+            if (m < 18f) m = 18f;
+            if (screenW > 2f && m > screenW * 0.2f) m = screenW * 0.2f;
+            return m;
+        }
+
+        public static float SafePlateWidth(float screenW, float screenH)
+        {
+            float w = screenW - SafeMargin(screenW, screenH) * 2f;
+            if (w < 48f) w = screenW > 48f ? 48f : Mathf.Max(8f, screenW);
+            return w;
+        }
+
+        public static float SafeTextWidth(float screenW, float screenH)
+        {
+            float w = SafePlateWidth(screenW, screenH) - BoxPad(screenH).x * 2f;
+            if (w < 48f) w = 48f;
+            return w;
+        }
+
+        // Text width whose snug plate (the larger of TextPad and BoxPad) stays
+        // inside the safe plate. SafeTextWidth uses only BoxPad, which is smaller
+        // than TextPad at the lesson font, so a line that fills it spills the glass.
+        public static float GoldTextWidth(GUIStyle style, float screenW, float screenH, int font)
+        {
+            if (font < 1) font = 1;
+            float hang = BoxPad(screenH).x;
+            float want = TextPad(LineHeight(style, font)).x;
+            float pad = want > hang ? want : hang;
+            float w = SafePlateWidth(screenW, screenH) - pad * 2f - 1f;
+            if (w < 48f) w = 48f;
+            return w;
+        }
+
         public struct CaptionFit
         {
             public string Shown;
             public int Font;
             public float TextH;
+        }
+
+        // What PaintCoachCaption draws: floor font, wraps inside the safe text
+        // width, snug plate. Overflow is a rendered line wider than that width,
+        // or a plate wider than the safe plate.
+        public struct GoldFit
+        {
+            public string Shown;
+            public int Font;
+            public float TextW;
+            public float TextH;
+            public float PlateW;
+            public float PlateH;
+            public int Lines;
+            public bool Overflow;
+        }
+
+        public static GoldFit FitGold(GUIStyle style, string text, float screenW, float screenH, int floor, int hi)
+        {
+            var gold = new GoldFit { Shown = text ?? "", Font = 1, Lines = 1 };
+            int size = hi > floor ? hi : floor;
+            float maxW = GoldTextWidth(style, screenW, screenH, size);
+            var fit = FitFloor(style, text, maxW, 4096f, floor, hi);
+            var hang = BoxPad(screenH);
+            var snug = MeasureSnug(style, fit.Shown, fit.Font, hang.x, hang.y);
+            int lines = 1;
+            bool overflow = false;
+            string shown = fit.Shown ?? "";
+            if (shown.Length > 0)
+            {
+                var parts = shown.Split('\n');
+                lines = parts.Length;
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (parts[i].Length == 0) continue;
+                    if (!LineFits(style, parts[i], maxW, fit.Font)) overflow = true;
+                }
+            }
+            if (snug.PlateW > SafePlateWidth(screenW, screenH) + 0.5f) overflow = true;
+            gold.Shown = shown;
+            gold.Font = fit.Font;
+            gold.TextW = snug.TextW;
+            gold.TextH = snug.TextH;
+            gold.PlateW = snug.PlateW;
+            gold.PlateH = snug.PlateH;
+            gold.Lines = lines;
+            gold.Overflow = overflow;
+            return gold;
         }
 
         // Shrink from hi down to floor. Authored newlines stay. At the floor the

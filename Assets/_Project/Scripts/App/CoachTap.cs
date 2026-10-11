@@ -155,14 +155,14 @@ namespace FlockFive
                 case CoachStep.BadgerComb2: return BadgerCopy.GuideLine(2);
                 case CoachStep.BadgerComb3: return BadgerCopy.GuideLine(3);
                 case CoachStep.CoachPickup: return "Tap a branch to pick up its top birds.";
-                case CoachStep.CoachPlace: return "Now tap a branch with the same color on top, or an empty one.";
+                case CoachStep.CoachPlace: return CaptionLayout.CoachPlaceLine;
                 case CoachStep.CoachSecondHop: return "Second guided hop (glove on the next branch).";
-                case CoachStep.CoachNowhere: return "Those birds have nowhere to go yet. Try another branch.";
+                case CoachStep.CoachNowhere: return CaptionLayout.CoachNowhereLine;
                 case CoachStep.GiftStuck: return "Stuck? Tap the gift branch for a bonus spot.";
-                case CoachStep.Sparrow: return "A sparrow blocks a feeder! Match five birds there to chase it off.";
-                case CoachStep.Hawk: return "A hawk blocks a feeder! Match five there twice to drive it off.";
-                case CoachStep.Bee: return "Bees cover birds on a branch! Move the birds off a bee to free it and win a bee card.";
-                case CoachStep.Leaf: return "Leaves hide these birds. Collect at a feeder to blow them away.";
+                case CoachStep.Sparrow: return CaptionLayout.SparrowLine;
+                case CoachStep.Hawk: return CaptionLayout.HawkLine;
+                case CoachStep.Bee: return CaptionLayout.BeePestLine;
+                case CoachStep.Leaf: return CaptionLayout.LeafLine;
                 case CoachStep.HiveGarden: return CaptionLayout.HiveGardenLine;
                 case CoachStep.HiveHome: return "Tap the hive to see your bee collection.";
                 case CoachStep.PokerIntro: return "You earned coins! Tap poker to bet them.";
@@ -178,16 +178,48 @@ namespace FlockFive
                 case CoachStep.AlbumFlip: return "Tap again to flip.";
                 case CoachStep.AlbumHoney: return CaptionLayout.AlbumHoneyBlock;
                 case CoachStep.AlbumPage: return "Swipe to turn the page! Or tap a page number.";
-                case CoachStep.AlbumUpgrade: return "Upgrade adds honey for 1000 coins.";
+                case CoachStep.AlbumUpgrade: return CaptionLayout.AlbumUpgradeLine;
                 case CoachStep.AdHand: return "Tap to unlock your bonus!";
-                case CoachStep.AdoptGreet: return "Look, a bird followed you home!";
+                case CoachStep.AdoptGreet: return CaptionLayout.AdoptGreetLine;
                 case CoachStep.AdoptLook: return "Tap your bird for a closer look.";
                 case CoachStep.VipWelcome: return "Welcome, VIP!";
-                case CoachStep.VipPitch: return "Ready to remove ads and support the game? Tap the VIP button anytime.";
+                case CoachStep.VipPitch: return CaptionLayout.VipPitchLine;
                 case CoachStep.RestartSure: return "Are you sure you want to restart?";
                 case CoachStep.RestartKeep: return "Keep multiplier (Watch Ad / No thanks).";
             }
             return step.ToString();
+        }
+    }
+
+    // Home buttons a forced glove can point at. None is not a button.
+    public enum HomeControl
+    {
+        None = 0,
+        Poker = 1,
+        Daily = 2,
+        Vip = 3,
+        Hive = 4,
+        Gear = 5,
+    }
+
+    // One decision for a tap while a glove step owns the home screen.
+    // AllowPress is the sink. Navigate is the button's action. Advance dismisses the glove.
+    public struct GlovePress
+    {
+        public bool AllowPress;
+        public bool Navigate;
+        public bool Advance;
+    }
+
+    public static class GloveGate
+    {
+        public static GlovePress Resolve(bool forced, HomeControl target, HomeControl tapped)
+        {
+            if (!forced || tapped == HomeControl.None)
+                return new GlovePress { AllowPress = true, Navigate = true, Advance = false };
+            if (target != HomeControl.None && tapped == target)
+                return new GlovePress { AllowPress = true, Navigate = true, Advance = true };
+            return default;
         }
     }
 }

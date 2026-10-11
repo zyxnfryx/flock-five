@@ -70,7 +70,7 @@ namespace FlockFive
         const int WelcomeBonusCoins = 1000;
         const string WelcomeTitle = "Welcome bonus!";
         static string WelcomeAmountText() => Money.Format(WelcomeBonusCoins);
-        const string WelcomeLine = "Ready to remove ads and support the game? Tap the VIP button anytime.";
+        const string WelcomeLine = CaptionLayout.VipPitchLine;
         const string WelcomeThanks = "Thanks!";
 
         // Screw lip of fx_ad_bulb: metal ends and the glass starts about 28% down the art.

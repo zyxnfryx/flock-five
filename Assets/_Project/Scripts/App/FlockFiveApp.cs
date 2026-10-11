@@ -274,7 +274,7 @@ namespace FlockFive
         // After flip: honeycombs by rarity (shared CardText / HoneyOfFinish floor).
         const string AlbumHoneyLine = CaptionLayout.AlbumHoneyBlock;
         // Separate post-badger step (CoachHiveUpgradeKey).
-        const string AlbumUpgradeLine = "Upgrade adds honey for 1000 coins.\nMax 1 · 2 · 3 by rarity.";
+        const string AlbumUpgradeLine = CaptionLayout.AlbumUpgradeLine;
         const string AlbumPageLine = "Swipe to turn the page!\nOr tap a page number.";
         // Empty book: nothing to enlarge yet, so the glove points at the grid itself.
         const string AlbumEmptyLine = "Tap a card to take\na closer look!";
@@ -560,6 +560,11 @@ namespace FlockFive
             {
                 try { System.IO.File.Delete("/tmp/flock-five-b81-hud"); } catch { }
                 StartCoroutine(ShotBuild81PassH());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-b82-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b82-stills"); } catch { }
+                StartCoroutine(ShotBuild82());
             }
             if (System.IO.File.Exists("/tmp/flock-five-b82-gardens"))
             {
@@ -1266,6 +1271,82 @@ namespace FlockFive
             var exitH = System.Type.GetType("UnityEditor.EditorApplication, UnityEditor");
             var methodH = exitH != null ? exitH.GetMethod("Exit", new[] { typeof(int) }) : null;
             if (methodH != null) methodH.Invoke(null, new object[] { 0 });
+#endif
+        }
+
+        // Bee, card honey, the bird-followed greet, and the daily caption.
+        // The card lesson must paint, so this shot does not set EditorShotLive.
+        IEnumerator ShotBuild82()
+        {
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+#endif
+            const string dir = "/Users/zfxgames/wkspaces/birdshot/gb/b82out";
+            System.IO.Directory.CreateDirectory(dir);
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            PlayerPrefs.SetInt("flockfive.next", 1);
+            PlayerPrefs.Save();
+            GamePause.Reset();
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            Screen.SetResolution(1179, 2556, false);
+            Load(0);
+            _shotBeeLesson = true;
+            _shotCardLesson = false;
+            _shotBirdHome = false;
+            _shotDailyCaption = false;
+            yield return new WaitForSecondsRealtime(1.4f);
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-bee-lesson.png");
+
+            _shotBeeLesson = false;
+            _shotGlovePin = false;
+            _hiveLevelLive = false;
+            _hiveLevelCue = false;
+            _cueHand = false;
+            _cueLine = null;
+            _gloveVis = false;
+            if (Hive.Found <= 0) Hive.GrantVisitor();
+            _shotCardSlot = -1;
+            _shotCardLesson = true;
+            yield return new WaitForSecondsRealtime(1.5f);
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-card-lesson.png");
+
+            _shotCardLesson = false;
+            _shotGlovePin = false;
+            _albumTutorOn = false;
+            _hiveInspect = -1;
+            _home = HomeFace.Splash;
+            _splash = true;
+            _shotBirdHome = true;
+            yield return new WaitForSecondsRealtime(1.3f);
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-bird-followed.png");
+
+            _shotBirdHome = false;
+            _adoptLive = false;
+            _shotDailyCaption = true;
+            yield return new WaitForSecondsRealtime(1.2f);
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-daily-caption.png");
+
+            _shotBeeLesson = false;
+            _shotCardLesson = false;
+            _shotBirdHome = false;
+            _shotDailyCaption = false;
+            _dailyIntroLive = false;
+            _adoptLive = false;
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            PlayerPrefs.Save();
+            Debug.Log("B82_STILLS_DONE");
+#if UNITY_EDITOR
+            var exit82 = System.Type.GetType("UnityEditor.EditorApplication, UnityEditor");
+            var method82 = exit82 != null ? exit82.GetMethod("Exit", new[] { typeof(int) }) : null;
+            if (method82 != null) method82.Invoke(null, new object[] { 0 });
 #endif
         }
 
@@ -6377,9 +6458,11 @@ namespace FlockFive
                 hive.width * k, hive.height * k);
         }
 
-        void DrawHiveButton(Rect hive, float s, bool orbit = false, bool pop = false, bool quiet = false)
+        void DrawHiveButton(Rect hive, float s, bool orbit = false, bool pop = false, bool quiet = false, bool held = false)
         {
             hive = HivePopRect(hive, pop);
+            if (held)
+                hive.y += hive.height * 0.04f;
             float pulse = quiet || (pop && _hivePopping) ? 0f : HiveView.GuiPulse;
             bool freshCue = _home == HomeFace.Splash && _hiveFreshSlots.Count > 0 && !quiet && !(pop && _hivePopping);
             if (freshCue)
@@ -9453,13 +9536,14 @@ namespace FlockFive
             hiveGates.Hidden = !hiveDraw;
             hiveGates.Inactive = !SplashHiveShown();
             hiveGates.StepGate = StepGateBlocks(hiveHit);
-            if (StepHomePress(SplashPress.Id.Hive, !SplashPress.Blocks(hiveGates)).Launch)
+            var hiveView = StepHomePress(SplashPress.Id.Hive, !SplashPress.Blocks(hiveGates));
+            if (hiveView.Launch)
             {
                 DismissHiveIntro();
                 OpenHiveAlbum();
             }
             if (hiveDraw)
-                DrawHiveButton(hiveR, s, pop: hivePop, quiet: _hivePopping && hiveOpening);
+                DrawHiveButton(hiveR, s, pop: hivePop, quiet: _hivePopping && hiveOpening, held: hiveView.Pressed);
 
             // NextPlay is the next level index. Clearing level 1 (index 0) stores 1.
             // Owned swaps the offer crown for the diamond badge in the same slot. The tap
@@ -9483,9 +9567,13 @@ namespace FlockFive
             pokerGates.Consent = AdConsent.BlocksControl(pokerR);
             pokerGates.Hidden = !pokerDraw;
             pokerGates.StepGate = StepGateBlocks(pokerR);
-            if (StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates)).Launch)
+            var pokerView = StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates));
+            if (pokerView.Launch)
             {
                 DismissPokerIntro();
+                _pokerIntroLive = false;
+                _gloveVis = false;
+                _gloveReady = false;
                 BirdPoker.Boot();
                 BirdPoker.BeginVisit();
                 _pokerKeepHint = true;
@@ -9505,7 +9593,7 @@ namespace FlockFive
                 _home = HomeFace.Poker;
             }
             if (pokerDraw)
-                DrawSplashPokerButton(pokerR);
+                DrawSplashPokerButton(pokerR, pokerView.Pressed);
 
             // Daily gift sits above VIP on the same rail gap. Absent until level 1 is cleared. A fresh
             // unlock stays out of the pack until its lesson, then grows into the gap.
@@ -11915,8 +12003,10 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        void DrawSplashPokerButton(Rect r)
+        void DrawSplashPokerButton(Rect r, bool held = false)
         {
+            if (held)
+                r.y += r.height * 0.045f;
             var spr = SpriteCatalog.Poker;
             if (spr != null && spr.texture != null && spr.rect.width > 32f)
             {
@@ -15749,6 +15839,17 @@ namespace FlockFive
             return Hive.Found <= 0 ? AlbumEmptyLine : AlbumTapLine;
         }
 
+        // Combs on the open card. Same count DrawBack paints. Five is the wide row.
+        int AlbumHoneyCount()
+        {
+            if (_albumTutorStep != 3) return 0;
+            int slot = _hiveInspect >= 0 ? _hiveInspect : 0;
+            int honey = Hive.HoneyOfSlot(slot);
+            if (honey < 1) honey = 5;
+            if (honey > 5) honey = 5;
+            return honey;
+        }
+
         void BeginAlbumTutor(int step)
         {
             _albumTutorOn = true;
@@ -16008,7 +16109,7 @@ namespace FlockFive
             {
                 Rect focus = _albumTutorStep <= 1 ? _albumCardR : _albumInspectR;
                 string lesson = AlbumTutorLine();
-                var pose = PoseLesson(_albumTutorStep, focus, Screen.width, Screen.height, lesson);
+                var pose = PoseLesson(_albumTutorStep, focus, Screen.width, Screen.height, lesson, AlbumHoneyCount());
                 aim = pose.Aim;
                 approach = pose.Approach;
             }
@@ -16106,7 +16207,7 @@ namespace FlockFive
                 Rect focus = step <= 1 ? _albumCardR : _albumInspectR;
                 if (focus.width > 8f && focus.height > 8f)
                 {
-                    var pose = PoseLesson(step, focus, Screen.width, Screen.height, line);
+                    var pose = PoseLesson(step, focus, Screen.width, Screen.height, line, AlbumHoneyCount());
                     PaintCoachCaption(line, pose.Seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
                     return;
                 }

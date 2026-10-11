@@ -59,17 +59,17 @@ namespace FlockFive
         // Informational only. Any tap dismisses it, and so does a collect (that
         // collect is what calls Board.Breeze). It does not point a glove, and it
         // does not wait for the leaf to lift.
-        const string LeafIntroLine = "Leaves hide these birds.\nCollect at a feeder\nto blow them away.";
+        const string LeafIntroLine = CaptionLayout.LeafLine;
         // A tap does not scare a sparrow. One full match (five birds) into its feeder does.
         // Build 61: pest intros draw in the shared StandardCaptionBox at the standard lesson
         // font, so the copy is one sentence the box wraps (three lines on SE, like the other
         // garden lessons). The old four- and five-line forced wraps only fit at a small font.
-        const string SparrowIntroLine = "A sparrow blocks a feeder! Match five birds there to chase it off.";
+        const string SparrowIntroLine = CaptionLayout.SparrowLine;
         // HitsNeeded is two collects on the blocked feeder. Five birds twice is ten.
-        const string HawkIntroLine = "A hawk blocks a feeder! Match five there twice to drive it off.";
+        const string HawkIntroLine = CaptionLayout.HawkLine;
         // RevealExposed frees the furthest bee once the birds stacked above it move off.
         // That is the bee card (Hive.TakeVisitor), not a five-bird feeder match.
-        const string BeeIntroLine = "Bees cover birds on a branch! Move the birds off a bee to free it and win a bee card.";
+        const string BeeIntroLine = CaptionLayout.BeePestLine;
         const int PestCueSparrow = 1;
         const int PestCueHawk = 2;
         const int PestCueBee = 3;
@@ -781,7 +781,7 @@ namespace FlockFive
                     if (b != _sel && !Locked(b) && !GiftLocked(b) && _board.CanMove(_sel, b, out _)) dest = b;
             if (dest < 0)
             {
-                CueLine("Those birds have nowhere to go yet. Try another branch.");
+                CueLine(CaptionLayout.CoachNowhereLine);
                 CoachHideGlow();
                 _gloveReady = false;
                 return;
@@ -791,7 +791,7 @@ namespace FlockFive
             _cueHand = true;
             _cueForce = true;
             _cueBranch = dest;
-            CueLine("Now tap a branch with the same color on top, or an empty one.");
+            CueLine(CaptionLayout.CoachPlaceLine);
         }
 
         bool CoachReject(Vector2 world)
@@ -2186,6 +2186,11 @@ namespace FlockFive
         {
             plate = default;
             if (_adHand || _splash || _levelHive || string.IsNullOrEmpty(_cueLine)) return false;
+            if (_hiveLevelLive && _cueLine == HiveIntroLine)
+            {
+                plate = BeeGardenPlate(s);
+                return plate.width > 2f && plate.height > 2f;
+            }
             HudLayout(out _, out float top, out _, out _, out _);
             GardenLineBox(s, out float w, out float h);
             var seat = SeatTutorialCaption(_cueLine, s, top, w, h);
@@ -2557,6 +2562,31 @@ namespace FlockFive
             var copy = new GUIStyle(CoachLineStyle());
             copy.wordWrap = false;
             return copy;
+        }
+
+        // Garden bee callout. Snug plate just above the hive, bee icon on the left.
+        void DrawBeeGardenLine(string text, float s)
+        {
+            var full = BeeGardenPlate(s);
+            var fit = LessonCaptionFit(text, Screen.width, Screen.height);
+            float slot = CaptionLayout.BeeIconSlot(fit.LineH);
+            var snug = new Rect(full.x + slot, full.y, Mathf.Max(8f, full.width - slot), full.height);
+            var textR = new Rect(
+                snug.center.x - fit.TextW * 0.5f,
+                snug.center.y - fit.TextH * 0.5f,
+                Mathf.Max(48f, fit.TextW),
+                Mathf.Max(24f, fit.TextH));
+            var seat = SeatAroundText(textR, s);
+            PaintCoachCaption(text, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+        }
+
+        Rect BeeGardenPlate(float s)
+        {
+            HudLayout(out _, out _, out _, out _, out var hive);
+            string line = string.IsNullOrEmpty(_cueLine) ? HiveIntroLine : _cueLine;
+            var fit = LessonCaptionFit(line, Screen.width, Screen.height);
+            float slot = CaptionLayout.BeeIconSlot(fit.LineH);
+            return BeeCaptionSeat(Screen.width, Screen.height, hive, fit.PlateW, fit.PlateH, slot);
         }
 
         // Shared garden/tutorial line. SeatTutorialCaption latches the plate.
@@ -3130,8 +3160,18 @@ namespace FlockFive
                     plate.y + hangY,
                     Mathf.Max(4f, plate.width - hangX * 2f),
                     Mathf.Max(4f, plate.height - hangY * 2f));
+                if (CaptionLayout.WantsBeeIcon(text))
+                {
+                    float slot = CaptionLayout.BeeIconSlot(snug.LineH);
+                    plate.x -= slot;
+                    plate.width += slot;
+                    inner.x -= slot;
+                    inner.width += slot;
+                }
                 NoteTutorPlate(plate);
                 DrawCoachPanel(inner, fade, platePad, opaque);
+                if (CaptionLayout.WantsBeeIcon(text))
+                    DrawCaptionBee(plate, snug.LineH, fade);
                 StampBannerText(drawText, _coachShown ?? text, st, fade, true);
                 return;
             }
@@ -3145,6 +3185,21 @@ namespace FlockFive
             NoteTutorPlate(CoachPanelRect(plateBox, platePad));
             DrawCoachPanel(plateBox, fade, platePad, opaque);
             StampBannerText(drawText, _coachShown ?? text, st, fade, true);
+        }
+
+        // Bee glyph in the left of an already-widened plate. The words stay put.
+        static void DrawCaptionBee(Rect plate, float lineH, float fade)
+        {
+            var spr = SpriteCatalog.Bee;
+            if (spr == null || spr.texture == null || fade < 0.02f) return;
+            float icon = lineH * 0.85f;
+            if (icon < 18f) icon = 18f;
+            float x = plate.x + lineH * 0.28f;
+            float y = plate.center.y - icon * 0.5f;
+            var prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, fade);
+            GUI.DrawTexture(new Rect(x, y, icon, icon), spr.texture, ScaleMode.ScaleToFit, true);
+            GUI.color = prev;
         }
 
         // Glove poke plus each lifted bird, once per line placement. The scan below only
@@ -3530,6 +3585,8 @@ namespace FlockFive
                 // standard plate slack, exactly like the garden lessons. Seat latched, so static.
                 if (_pestCue != 0)
                     DrawCoachLine(_cueLine, s, top);
+                else if (_hiveLevelLive && _cueLine == HiveIntroLine)
+                    DrawBeeGardenLine(_cueLine, s);
                 else if (_leafIntro || _hiveLevelLive || _hiveIntroLive)
                     DrawCoachLine(_cueLine, s, top, capH, capHi);
                 else

@@ -44,6 +44,7 @@ namespace FlockFive.Editor
             Suite("build81-reward", Build81RewardTests.Run);
             Suite("build81-audio", Build81AudioTests.Run);
             Suite("build82-levels", Build82LevelTests.Run);
+            Suite("build82", Build82Tests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 
@@ -329,6 +330,7 @@ namespace FlockFive.Editor
             "/tmp/flock-five-hive-inspect",
             "/tmp/flock-five-poker-feel",
             "/tmp/flock-five-b81-hud",
+            "/tmp/flock-five-b82-stills",
             "/tmp/flock-five-b82-gardens"
         };
 
@@ -379,6 +381,7 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-hand-qa", "ShotHandQa");
                         TryStartShot(app, "/tmp/flock-five-hive-inspect", "ShotHiveInspect");
                         TryStartShot(app, "/tmp/flock-five-b81-hud", "ShotBuild81PassH");
+                        TryStartShot(app, "/tmp/flock-five-b82-stills", "ShotBuild82");
                         TryStartShot(app, "/tmp/flock-five-b82-gardens", "ShotBuild82Gardens");
                         TryStartShot(app, "/tmp/flock-five-poker-feel", "ShotPokerFeel");
                     }

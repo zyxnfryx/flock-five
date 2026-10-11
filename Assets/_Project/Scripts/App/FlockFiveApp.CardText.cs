@@ -63,13 +63,27 @@ namespace FlockFive
 
             // Shared honeycomb attributes: N hex tiles from HoneyOfFinish (2/3/5).
             // HoneyArt is the one juicy cell (cards, badger tiles, the meter).
-            public static void DrawHoneyRow(Rect zone, int honey, Color tint, BeeFinish finish, bool full)
+            // Same cells DrawHoneyRow paints. Drips stay inside each rect.
+            public static int HoneyCells(Rect zone, int honey, bool full, Rect[] into)
             {
-                if (honey <= 0 || zone.height < 8f || zone.width < 8f) return;
-                int n = honey > 5 ? 5 : honey;
-                float gap = Mathf.Max(3f, zone.width * 0.02f);
-                float cellH = zone.height * (full ? 0.96f : 0.92f);
-                float cellW = cellH * (96f / 111f) * 0.78f;
+                if (into == null || into.Length == 0) return 0;
+                if (!LayoutHoney(zone, honey, full, out float x, out float y, out float cellW, out float cellH, out float gap, out int n))
+                    return 0;
+                int wrote = n < into.Length ? n : into.Length;
+                for (int i = 0; i < wrote; i++)
+                    into[i] = new Rect(x + i * (cellW + gap), y, cellW, cellH);
+                return wrote;
+            }
+
+            static bool LayoutHoney(Rect zone, int honey, bool full, out float x, out float y, out float cellW, out float cellH, out float gap, out int n)
+            {
+                x = y = cellW = cellH = gap = 0f;
+                n = 0;
+                if (honey <= 0 || zone.height < 8f || zone.width < 8f) return false;
+                n = honey > 5 ? 5 : honey;
+                gap = Mathf.Max(3f, zone.width * 0.02f);
+                cellH = zone.height * (full ? 0.96f : 0.92f);
+                cellW = cellH * (96f / 111f) * 0.78f;
                 float rowW = n * cellW + (n - 1) * gap;
                 if (rowW > zone.width)
                 {
@@ -79,8 +93,15 @@ namespace FlockFive
                     gap *= k;
                     rowW = n * cellW + (n - 1) * gap;
                 }
-                float x = zone.center.x - rowW * 0.5f;
-                float y = zone.center.y - cellH * 0.5f;
+                x = zone.center.x - rowW * 0.5f;
+                y = zone.center.y - cellH * 0.5f;
+                return true;
+            }
+
+            public static void DrawHoneyRow(Rect zone, int honey, Color tint, BeeFinish finish, bool full)
+            {
+                if (!LayoutHoney(zone, honey, full, out float x, out float y, out float cellW, out float cellH, out float gap, out int n))
+                    return;
                 Color rim = finish == BeeFinish.Holo ? new Color(0.15f, 0.48f, 0.92f, 1f)
                     : finish == BeeFinish.InverseRainbow ? new Color(0.82f, 0.22f, 0.68f, 1f)
                     : AlbumWood(tint, true);

@@ -29,6 +29,7 @@ namespace FlockFive
         SplashPress.Gates HomePressGates(int rail)
         {
             HomeModals(out bool hard, out bool soft);
+            var glove = GloveGate.Resolve(ForcedGloveUp(), ForcedGloveTarget(), RailControl(rail));
             return new SplashPress.Gates
             {
                 Paused = GamePause.Paused,
@@ -38,8 +39,38 @@ namespace FlockFive
                 LessonGuard = LessonGuardUp(),
                 HardModal = hard,
                 SoftModal = soft,
-                RailLesson = !HomeTapAllowed(rail),
+                RailLesson = !HomeTapAllowed(rail) || !glove.AllowPress,
             };
+        }
+
+        static HomeControl RailControl(int rail)
+        {
+            if (rail == RailPoker) return HomeControl.Poker;
+            if (rail == RailDaily) return HomeControl.Daily;
+            if (rail == RailVip) return HomeControl.Vip;
+            if (rail == RailHive) return HomeControl.Hive;
+            return HomeControl.None;
+        }
+
+        // A glove step that owns a home button. Adopt look and the daily claim
+        // glove have no button target, so every listed control stays blocked.
+        bool ForcedGloveUp()
+        {
+            if (!_splash || _home != HomeFace.Splash) return false;
+            if (_pokerIntroLive || _hiveIntroLive || _welcomeGlove) return true;
+            if (_dailyIntroLive && !_dailyAskOpen) return true;
+            if (_adoptLive && _adoptStep == AdoptStep.Look) return true;
+            return false;
+        }
+
+        HomeControl ForcedGloveTarget()
+        {
+            if (!_splash || _home != HomeFace.Splash) return HomeControl.None;
+            if (_pokerIntroLive) return HomeControl.Poker;
+            if (_hiveIntroLive) return HomeControl.Hive;
+            if (_dailyIntroLive && !_dailyOpen && !_dailyAskOpen) return HomeControl.Daily;
+            if (_welcomeGlove && !_welcomeOpen) return HomeControl.Vip;
+            return HomeControl.None;
         }
 
         // A step gate already ate this event, or it will. Any-tap eats the whole

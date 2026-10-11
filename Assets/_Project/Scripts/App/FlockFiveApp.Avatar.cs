@@ -148,7 +148,7 @@ namespace FlockFive
         const string AvatarAdoptedPref = "flockfive.avatar.adopted";
         const string AvatarKitPref = "flockfive.avatar.kit";
         const string AvatarNamedPref = "flockfive.avatar.named";
-        const string AdoptGreetLine = "Look, a bird followed you home!";
+        const string AdoptGreetLine = CaptionLayout.AdoptGreetLine;
         const string AdoptLookLine = "Tap your bird for a closer look.";
         const string AdoptNameLine = "Please give me a name!";
         const string AvatarRenameLine = "What should we call them?";
@@ -579,11 +579,26 @@ namespace FlockFive
             PlayerPrefs.Save();
         }
 
-        static Rect AdoptCaptionRect(float s)
+        // Gold seat: the clear splash band, snug to the wrapped line. Not a full-width bar.
+        Rect AdoptCaptionRect(float s)
         {
-            float textH = Mathf.Clamp(84f * s, 68f * s, 120f * s);
-            float capW = Mathf.Min(460f * s, Mathf.Max(120f, Screen.width - 24f));
-            return PlaceCaption(s, capW, textH, CaptionFloorY(s));
+            var band = SplashIntroBand(s);
+            string line = AdoptCaptionLine();
+            float maxW = band.width;
+            float safe = CaptionLayout.SafeTextWidth(Screen.width, Screen.height);
+            if (maxW > safe) maxW = safe;
+            if (maxW < 48f) maxW = 48f;
+            var fit = FitLessonText(line, maxW, 4096f, 12, Mathf.RoundToInt(32f * s), Screen.width, Screen.height);
+            var hang = CaptionLayout.BoxPad(Screen.height);
+            var snug = CaptionLayout.MeasureSnug(CoachLineStyle(), fit.Shown, fit.Font, hang.x, hang.y);
+            var text = new Rect(
+                band.center.x - snug.TextW * 0.5f,
+                band.center.y - snug.TextH * 0.5f,
+                Mathf.Max(48f, snug.TextW),
+                Mathf.Max(24f, snug.TextH));
+            if (text.x < 8f) text.x = 8f;
+            if (text.xMax > Screen.width - 8f) text.x = Screen.width - 8f - text.width;
+            return SeatAroundText(text, s);
         }
 
         // Greet until a LEVEL tap or the perch glove. Each sentence latches once.
@@ -664,13 +679,7 @@ namespace FlockFive
             if (CoachResetHolds()) return;
             var bubble = _adoptLineR;
             if (bubble.width < 2f) return;
-            NoteTutorPlate(CoachPanelRect(bubble));
-            DrawCoachPanel(bubble, EaseOutCubic(_coachFade));
-            var text = _adoptLineR;
-            var st = CoachLineStyle();
-            int hi = Mathf.Max(18, Mathf.RoundToInt(30f * s));
-            st.fontSize = FitFontWrapped(st, line, text.width, text.height, 15, hi);
-            StampBannerText(text, line, st, EaseOutCubic(_coachFade), true);
+            PaintCoachCaption(line, bubble, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
         }
 
         // Before DrawFlowerPlay. HitHomeFirst Uses the press so the LEVEL flower
@@ -1629,7 +1638,7 @@ namespace FlockFive
             right -= extra;
             if (_adoptLive)
             {
-                float under = AdoptCaptionRect(s).yMax + half;
+                float under = AdoptCaptionRect(s).yMax + CaptionLayout.BoxPad(Screen.height).y + half;
                 if (under > top) top = under;
             }
             float minX = reach;

@@ -94,6 +94,13 @@ namespace FlockFive
             return CaptionLayout.MeasureSnug(CoachCaptionStyle(), fit.Shown, fit.Font, hang.x, hang.y);
         }
 
+        // Same floor and style PaintCoachCaption uses, measured inside the safe width.
+        public static CaptionLayout.GoldFit GoldCaption(string text, float screenW, float screenH)
+        {
+            int floor = LessonCaptionFloor(screenW, screenH);
+            return CaptionLayout.FitGold(CoachLineStyle(), text, screenW, screenH, floor, floor);
+        }
+
         // Every sentence a lesson plate can paint, including the multiline forms.
         public static string[] PaintedLessonLines()
         {
@@ -106,21 +113,21 @@ namespace FlockFive
                 "You earned coins!\nTap poker to bet them.",
                 "Tap Daily for\nyour bonus!",
                 "Tap to claim!",
-                "Leaves hide these birds.\nCollect at a feeder\nto blow them away.",
-                "A sparrow blocks a feeder! Match five birds there to chase it off.",
-                "A hawk blocks a feeder! Match five there twice to drive it off.",
-                "Bees cover birds on a branch! Move the birds off a bee to free it and win a bee card.",
+                CaptionLayout.LeafLine,
+                CaptionLayout.SparrowLine,
+                CaptionLayout.HawkLine,
+                CaptionLayout.BeePestLine,
                 "Tap a card you have\nto enlarge it.",
                 "Tap again to flip.",
-                "Upgrade adds honey for 1000 coins.\nMax 1 · 2 · 3 by rarity.",
+                CaptionLayout.AlbumUpgradeLine,
                 "Swipe to turn the page!\nOr tap a page number.",
                 "Tap a card to take\na closer look!",
                 "Tap to unlock your bonus!",
                 "Stuck? Tap the gift branch for a bonus spot.",
-                "Look, a bird followed you home!",
+                CaptionLayout.AdoptGreetLine,
                 "Tap your bird for a closer look.",
                 "Welcome, VIP!",
-                "Ready to remove ads and support the game? Tap the VIP button anytime.",
+                CaptionLayout.VipPitchLine,
                 "Are you sure you want to restart?",
                 "Keep multiplier (Watch Ad / No thanks).",
                 "TAP A CARD TO KEEP",
@@ -129,15 +136,27 @@ namespace FlockFive
                 "Pick your bet, then tap Deal. (later visit)",
                 "Tap the back button to return home.",
                 "Tap a branch to pick up its top birds.",
-                "Now tap a branch with the same color on top, or an empty one.",
+                CaptionLayout.CoachPlaceLine,
                 "Second guided hop (glove on the next branch).",
-                "Those birds have nowhere to go yet. Try another branch.",
+                CaptionLayout.CoachNowhereLine,
                 BadgerCopy.LessonAt(0),
                 BadgerCopy.LessonAt(1),
                 BadgerCopy.LessonAt(2),
                 BadgerCopy.GuideLine(1),
                 BadgerCopy.GuideLine(2),
                 BadgerCopy.GuideLine(3),
+                BadgerCopy.OpenLater,
+                BadgerCopy.GoesFirst,
+                BadgerCopy.HowMany,
+                BadgerCopy.YourPick,
+                BadgerCopy.PowersOpen,
+                BadgerCopy.DontCareWasted,
+                BadgerCopy.DontCareHalved,
+                BadgerCopy.Tie,
+                BadgerCopy.MineNow,
+                BadgerCopy.CoinsShort,
+                BadgerCopy.Win,
+                BadgerCopy.Lose,
             };
             var all = new string[steps.Length + extra.Length];
             for (int i = 0; i < steps.Length; i++)
@@ -157,6 +176,8 @@ namespace FlockFive
             // The floor is the lesson size. A tall seat must not grow the type.
             if (hi > floor) hi = floor;
             if (hi < lo) hi = lo;
+            float goldW = CaptionLayout.GoldTextWidth(CoachLineStyle(), screenW, screenH, hi);
+            if (textW > goldW) textW = goldW;
             return CaptionLayout.FitFloor(CoachLineStyle(), text, textW, textH, lo, hi);
         }
 
@@ -176,8 +197,9 @@ namespace FlockFive
 
         // Album lessons that point at a card. Step 1 is a grid sleeve, 2 is the
         // inspect front, 3 is the inspect back (honey icons).
-        public static LessonPose PoseLesson(int step, Rect focus, float screenW, float screenH, string line)
+        public static LessonPose PoseLesson(int step, Rect focus, float screenW, float screenH, string line, int honey = -1)
         {
+            if (honey < 0) honey = step == 3 ? 5 : 0;
             bool inspect = step >= 2;
             bool honeyOn = step == 3;
             CardText.LessonBands(focus, inspect, honeyOn, honeyOn, out var title, out var body, out var flavor, out var icons);
@@ -191,7 +213,14 @@ namespace FlockFive
             float gap = hang.y + 10f;
             var seat = CoachSeat.PlaceCaption(screenW, screenH, focus, seatW, seatH, text, gap);
             var plate = new Rect(seat.x - hang.x, seat.y - hang.y, seat.width + hang.x * 2f, seat.height + hang.y * 2f);
-            ResolveLessonGlove(focus, icons, plate, text, s, screenW, screenH, out var aim, out float approach, out var glove);
+            Rect[] cells = null;
+            int cellN = 0;
+            if (honeyOn && honey > 0 && icons.width > 2f)
+            {
+                cells = new Rect[5];
+                cellN = CardText.HoneyCells(icons, honey, inspect, cells);
+            }
+            ResolveLessonGlove(focus, icons, plate, text, s, screenW, screenH, cells, cellN, out var aim, out float approach, out var glove);
             bool clear = !text.Hits(plate) && !text.Hits(glove);
             return new LessonPose
             {
@@ -261,10 +290,106 @@ namespace FlockFive
             return new Rect(x0, y0, Mathf.Max(1f, x1 - x0), Mathf.Max(1f, y1 - y0));
         }
 
-        // Below the focus (finger up), then above (finger down), then the side.
-        static void ResolveLessonGlove(Rect focus, Rect honey, Rect plate, CoachSeat.FocusText text, float s,
-            float screenW, float screenH, out Vector2 aim, out float approach, out Rect glove)
+        // Opaque hand. The texture's transparent lead past the fingertip is clipped
+        // off, so a pivot on a comb edge does not count as covering the comb.
+        public static Rect GloveBody(Vector2 pivot, float ang, float s, bool mirror)
         {
+            float dh = GlovePx * s;
+            var tex = CoachGloveTex();
+            float dw = tex == null ? dh * (220f / 300f) : dh * (tex.width / (float)Mathf.Max(1, tex.height));
+            float left = pivot.x - _gloveTipU * dw;
+            float top = pivot.y - (1f - _gloveTipV) * dh;
+            float widen = 1f;
+            float squash = 1f;
+            float sx = mirror ? -widen : widen;
+            float rad = ang * Mathf.Deg2Rad;
+            float c = Mathf.Cos(rad);
+            float sn = Mathf.Sin(rad);
+            var finger = new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad));
+            float minX = 0f, minY = 0f, maxX = 0f, maxY = 0f;
+            for (int i = 0; i < 4; i++)
+            {
+                float x = (i & 1) == 0 ? left : left + dw;
+                float y = (i & 2) == 0 ? top : top + dh;
+                float dx = (x - pivot.x) * sx;
+                float dy = (y - pivot.y) * squash;
+                float rx = pivot.x + dx * c - dy * sn;
+                float ry = pivot.y + dx * sn + dy * c;
+                float along = (rx - pivot.x) * finger.x + (ry - pivot.y) * finger.y;
+                if (along > 0f)
+                {
+                    rx -= finger.x * along;
+                    ry -= finger.y * along;
+                }
+                if (i == 0)
+                {
+                    minX = maxX = rx;
+                    minY = maxY = ry;
+                }
+                else
+                {
+                    if (rx < minX) minX = rx;
+                    if (rx > maxX) maxX = rx;
+                    if (ry < minY) minY = ry;
+                    if (ry > maxY) maxY = ry;
+                }
+            }
+            return new Rect(minX, minY, Mathf.Max(1f, maxX - minX), Mathf.Max(1f, maxY - minY));
+        }
+
+        // Full plate (icon included) just above the hive, in the lower garden.
+        public static Rect BeeCaptionSeat(float screenW, float screenH, Rect hive, float plateW, float plateH, float iconW)
+        {
+            float fullW = plateW + (iconW > 0f ? iconW : 0f);
+            float fullH = plateH > 8f ? plateH : 8f;
+            if (fullW < 8f) fullW = 8f;
+            float margin = CaptionLayout.SafeMargin(screenW, screenH);
+            float gap = screenH * 0.008f;
+            if (gap < 10f) gap = 10f;
+            float x = hive.xMin - gap - fullW;
+            float y = hive.yMin - gap - fullH;
+            if (x < margin) x = margin;
+            if (y < margin) y = margin;
+            if (x + fullW > screenW - margin) x = screenW - margin - fullW;
+            if (y + fullH > screenH - margin) y = screenH - margin - fullH;
+            if (x < margin) x = margin;
+            if (y < margin) y = margin;
+            var seat = new Rect(x, y, fullW, fullH);
+            if (hive.width > 2f && seat.Overlaps(hive))
+            {
+                seat.x = hive.xMin - gap - fullW;
+                seat.y = hive.yMin - gap - fullH;
+                if (seat.x < margin) seat.x = margin;
+                if (seat.y < margin) seat.y = margin;
+            }
+            return seat;
+        }
+
+        // Outer seat whose CaptionTextRect is `text`. PaintCoachCaption insets this way.
+        static Rect SeatAroundText(Rect text, float s)
+        {
+            if (s < 1f) s = 1f;
+            float padX = 10f * s;
+            float padY = 6f * s;
+            for (int i = 0; i < 3; i++)
+            {
+                float w = text.width + padX * 2f;
+                float h = text.height + padY * 2f;
+                padX = Mathf.Clamp(w * 0.055f, 10f * s, 18f * s);
+                padY = Mathf.Clamp(h * 0.10f, 6f * s, 14f * s);
+            }
+            float seatW = text.width + padX * 2f;
+            float seatH = text.height + padY * 2f;
+            return new Rect(text.center.x - seatW * 0.5f, text.center.y - seatH * 0.5f, seatW, seatH);
+        }
+
+        // Honey lesson: fingertip on a comb edge, hand from the side or from below.
+        // Other lessons: below the focus, then above, then the side.
+        static void ResolveLessonGlove(Rect focus, Rect honey, Rect plate, CoachSeat.FocusText text, float s,
+            float screenW, float screenH, Rect[] cells, int cellN, out Vector2 aim, out float approach, out Rect glove)
+        {
+            if (cellN > 0 && cells != null && TryHoneyGlove(cells, cellN, plate, text, s, screenW, screenH, out aim, out approach, out glove))
+                return;
             bool haveHoney = honey.width > 2f && honey.height > 2f;
             var band = haveHoney ? honey : focus;
             float[] angs = { 0f, 180f, -90f, 90f };
@@ -324,6 +449,59 @@ namespace FlockFive
             glove = GloveAabb(aim, approach, s, false);
         }
 
+        // Fingertip on the comb edge. The body stays on the hand side of that edge,
+        // so the combs and their drips stay clear. Side first, then below.
+        static bool TryHoneyGlove(Rect[] cells, int n, Rect plate, CoachSeat.FocusText text, float s,
+            float screenW, float screenH, out Vector2 aim, out float approach, out Rect glove)
+        {
+            aim = cells[n - 1].center;
+            approach = -90f;
+            glove = GloveBody(aim, approach, s, false);
+            var right = cells[n - 1];
+            var left = cells[0];
+            var low = cells[0];
+            for (int i = 1; i < n; i++)
+                if (cells[i].yMax > low.yMax) low = cells[i];
+            Vector2[] aims =
+            {
+                new Vector2(right.xMax + 1f, right.center.y),
+                new Vector2(right.xMax + 1f, right.yMax - 2f),
+                new Vector2(left.xMin - 1f, left.center.y),
+                new Vector2(left.xMin - 1f, left.yMax - 2f),
+                new Vector2(low.center.x, low.yMax + 1f),
+            };
+            float[] angs = { -90f, -90f, 90f, 90f, 0f };
+            for (int i = 0; i < aims.Length; i++)
+            {
+                var g = GloveBody(aims[i], angs[i], s, false);
+                if (CombHit(g, cells, n)) continue;
+                if (text.Hits(g) || CoachSeat.FocusText.Over(g, plate)) continue;
+                if (g.xMax < 4f || g.yMax < 4f || g.xMin > screenW - 4f || g.yMin > screenH - 4f) continue;
+                aim = aims[i];
+                approach = angs[i];
+                glove = g;
+                return true;
+            }
+            // Stay on the right edge and walk down until the card text is clear.
+            aim = new Vector2(right.xMax + 1f, right.center.y);
+            approach = -90f;
+            for (int k = 0; k < 14; k++)
+            {
+                glove = GloveBody(aim, approach, s, false);
+                if (!CombHit(glove, cells, n) && !text.Hits(glove)) return true;
+                aim.y += 16f * s;
+            }
+            glove = GloveBody(aim, approach, s, false);
+            return !CombHit(glove, cells, n);
+        }
+
+        static bool CombHit(Rect glove, Rect[] cells, int n)
+        {
+            for (int i = 0; i < n; i++)
+                if (glove.Overlaps(cells[i])) return true;
+            return false;
+        }
+
         public static void GardenCorners(float screenW, float screenH, Rect safe, out Rect restart, out Rect hive)
         {
             CornerAnchor.Garden(screenW, screenH, safe, out _, out _, out _, out restart, out hive);
@@ -340,6 +518,8 @@ namespace FlockFive
 
         bool _shotBeeLesson;
         bool _shotCardLesson;
+        bool _shotBirdHome;
+        bool _shotDailyCaption;
         bool _shotGlovePin;
         int _shotCardSlot = -1;
 
@@ -389,44 +569,69 @@ namespace FlockFive
                 _shotGlovePin = true;
                 return;
             }
-            if (!_shotCardLesson) return;
-            _shotBeeLesson = false;
-            ClearShotModals();
-            _hiveLevelLive = false;
-            _hiveLevelCue = false;
-            _cueHand = false;
-            _hiveTutorOn = false;
-            _upgradeTutorOn = false;
-            _splash = true;
-            _home = HomeFace.Hive;
-            _hivePageTurn = 99f;
-            _albumOpenFrames = 8;
-            _albumOpenAt = PlayClock.Now - 1f;
-            if (_shotCardSlot < 0)
+            if (_shotCardLesson)
             {
-                _shotCardSlot = 0;
-                for (int k = 0; k < Hive.AlbumSlots; k++)
+                ClearShotModals();
+                _hiveLevelLive = false;
+                _hiveLevelCue = false;
+                _cueHand = false;
+                _hiveTutorOn = false;
+                _upgradeTutorOn = false;
+                _splash = true;
+                _home = HomeFace.Hive;
+                _hivePageTurn = 99f;
+                _albumOpenFrames = 8;
+                _albumOpenAt = PlayClock.Now - 1f;
+                if (_shotCardSlot < 0)
                 {
-                    if (Hive.CountOfSlot(k) <= 0) continue;
-                    _shotCardSlot = k;
-                    break;
+                    _shotCardSlot = 0;
+                    for (int k = 0; k < Hive.AlbumSlots; k++)
+                    {
+                        if (Hive.CountOfSlot(k) <= 0) continue;
+                        _shotCardSlot = k;
+                        break;
+                    }
                 }
+                int ix = _shotCardSlot;
+                if (_hiveInspect != ix)
+                {
+                    _hiveInspect = ix;
+                    _hiveInspectFrom = AlbumInspectRect(Screen.width > 2f ? Screen.width : 1179f, Screen.height > 2f ? Screen.height : 2556f);
+                }
+                _hiveInspectT = 1f;
+                _hiveInspectClosing = false;
+                _hiveFlip = -1;
+                if ((uint)ix < (uint)_hiveFaceBack.Length) _hiveFaceBack[ix] = true;
+                _albumTutorOn = true;
+                _albumTutorStep = 3;
+                _albumTutorFlipped = true;
+                _coachFade = 1f;
+                _shotGlovePin = true;
+                return;
             }
-            int ix = _shotCardSlot;
-            if (_hiveInspect != ix)
+            if (_shotBirdHome)
             {
-                _hiveInspect = ix;
-                _hiveInspectFrom = AlbumInspectRect(Screen.width > 2f ? Screen.width : 1179f, Screen.height > 2f ? Screen.height : 2556f);
+                ClearShotModals();
+                _shotBirdHome = true;
+                _splash = true;
+                _home = HomeFace.Splash;
+                if (_adoptStep != AdoptStep.Fly)
+                    BeginAdopt();
+                _adoptLive = true;
+                _adoptGreetDone = false;
+                _coachFade = 1f;
+                return;
             }
-            _hiveInspectT = 1f;
-            _hiveInspectClosing = false;
-            _hiveFlip = -1;
-            if ((uint)ix < (uint)_hiveFaceBack.Length) _hiveFaceBack[ix] = true;
-            _albumTutorOn = true;
-            _albumTutorStep = 3;
-            _albumTutorFlipped = true;
+            if (!_shotDailyCaption) return;
+            ClearShotModals();
+            _shotDailyCaption = true;
+            _splash = true;
+            _home = HomeFace.Splash;
+            _dailyIntro = true;
+            _dailyIntroLive = true;
+            _dailyOpen = false;
+            _dailyAskOpen = false;
             _coachFade = 1f;
-            _shotGlovePin = true;
         }
 #endif
     }
