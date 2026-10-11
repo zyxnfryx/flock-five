@@ -109,6 +109,7 @@ namespace FlockFive
             return ModalBlock.BlocksPoint(veil, gui);
         }
 
+#if UNITY_EDITOR
         bool _shot82f;
 
         public IEnumerator ShotBuild82f()
@@ -282,5 +283,6 @@ namespace FlockFive
             StartCoroutine(PerchOnRemain(birds.ToArray(), n, plan));
             Debug.Log("b82f redistribute birds=" + n);
         }
+#endif
     }
 }

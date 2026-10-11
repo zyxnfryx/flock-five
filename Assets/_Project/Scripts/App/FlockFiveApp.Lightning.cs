@@ -73,6 +73,7 @@ namespace FlockFive
             AudioListener.pause = true;
         }
 
+#if UNITY_EDITOR
         public IEnumerator ShotBuild82e()
         {
             if (_shot82e) yield break;
@@ -504,5 +505,6 @@ namespace FlockFive
             }
             return 48;
         }
+#endif
     }
 }

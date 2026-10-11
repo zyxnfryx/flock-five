@@ -582,6 +582,7 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-b82d-stills"); } catch { }
                 StartCoroutine(ShotBuild82d());
             }
+#if UNITY_EDITOR
             if (System.IO.File.Exists("/tmp/flock-five-b82e-stills"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-b82e-stills"); } catch { }
@@ -597,6 +598,7 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-b82g-stills"); } catch { }
                 StartCoroutine(ShotBuild82g());
             }
+#endif
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
