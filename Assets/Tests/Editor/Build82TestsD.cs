@@ -262,8 +262,8 @@ namespace FlockFive.Editor
             bool seat = lay.Caption.width <= safe + 0.5f
                 && lay.Caption.yMin >= H * 0.18f
                 && lay.Go.yMin > lay.Caption.yMax
-                && lay.Skip.yMin > lay.Caption.yMax
-                && lay.Go.xMax <= lay.Skip.xMin + 0.5f
+                && lay.Skip.yMin > lay.Go.yMax // b83 10c: smaller secondary centered under the primary
+                && lay.Skip.width < lay.Go.width
                 && lay.Skip.yMax < H * 0.90f
                 && lay.Go.xMin >= lay.Caption.xMin - 1f
                 && lay.Skip.xMax <= lay.Caption.xMax + 1f;
@@ -317,10 +317,11 @@ namespace FlockFive.Editor
             string stored = Slice(bonus, "public static bool PayStoredDouble(", "public static void TestDropMemory");
             bool rounds = resolve.IndexOf("RoundUp100") >= 0 && stored.IndexOf("RoundUp100") >= 0;
 
+            // b83 10d: the mid-clear offer is gone (2X lives in the home REWARD popup).
             int offerAt = app.IndexOf("yield return OfferClearDouble();");
-            int adAt = app.IndexOf("yield return Ads.Interstitial();", offerAt < 0 ? 0 : offerAt);
+            int adAt = app.IndexOf("yield return Ads.Interstitial();");
             int softAt = app.IndexOf("Ads.TryConsumeVipSoft()", adAt < 0 ? 0 : adAt);
-            bool order = offerAt >= 0 && adAt > offerAt && softAt > adAt;
+            bool order = offerAt < 0 && adAt >= 0 && softAt > adAt;
 
             string closed = Slice(ads, "public static void DeliverInterstitialClosed()", "public static void DeliverDisplayedCallback");
             bool shownGate = closed.IndexOf("_intDisplayed") >= 0

@@ -18,6 +18,7 @@ namespace FlockFive
                 case RewardedGrant.Place.Wheel: return ApplyWheelTicket(t);
                 case RewardedGrant.Place.Keep: return ApplyKeepTicket(t);
                 case RewardedGrant.Place.Clear: return ApplyClearTicket(t);
+                case RewardedGrant.Place.Repeat: return ApplyRepeatTicket(t);
                 default: return false;
             }
         }
@@ -48,6 +49,15 @@ namespace FlockFive
         {
             if (!RewardEffects.Keep(t.Payload)) return false;
             _restartAsk = RestartAsk.None;
+            return true;
+        }
+
+        // REWARD popup 2X: the same prize again, flown to the piggy like the first pay.
+        bool ApplyRepeatTicket(RewardedGrant.Ticket t)
+        {
+            if (t.Payload <= 0) return false;
+            Purse.Credit(t.Payload);
+            BeginRewardPay(t.Payload);
             return true;
         }
 

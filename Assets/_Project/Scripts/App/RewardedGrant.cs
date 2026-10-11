@@ -16,7 +16,8 @@ namespace FlockFive
             Branch = 1,
             Wheel = 2,
             Keep = 3,
-            Clear = 4
+            Clear = 4,
+            Repeat = 5
         }
 
         public struct Ticket
@@ -304,7 +305,7 @@ namespace FlockFive
             if (part.Length != 7) return false;
             if (!int.TryParse(part[0], out int token) || token < 1) return false;
             if (!int.TryParse(part[1], out int place)) return false;
-            if (place < (int)Place.Branch || place > (int)Place.Clear) return false;
+            if (place < (int)Place.Branch || place > (int)Place.Repeat) return false;
             if (!int.TryParse(part[2], out int payload)) return false;
             if (!int.TryParse(part[3], out int tutorial)) return false;
             if (!int.TryParse(part[4], out int level)) return false;

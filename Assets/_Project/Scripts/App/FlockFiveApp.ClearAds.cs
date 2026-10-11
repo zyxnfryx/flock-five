@@ -7,7 +7,7 @@ namespace FlockFive
     {
         // Stage-clear finale offer and the soft Go VIP ask. Both captions go
         // through PaintCoachCaption. The x2 chip is RewardStampRect (StreakBadge).
-        public const string ClearDoubleLine = "Double your coins.";
+        public const string ClearDoubleLine = "Double your coins?";
         public const string ClearDoubleWatch = "Watch Ad: 2x coins";
         public const string ClearDoubleSkip = "Not now";
         public const string VipSoftLine = "Skip ads between stages.";
@@ -49,11 +49,9 @@ namespace FlockFive
             float y = screenH * 0.36f;
             var caption = new Rect(x, y, w, capH);
             float bw = Mathf.Min(w, screenW * 0.78f);
-            float bh = Mathf.Max(78f * s, 68f);
-            var watch = new Rect((screenW - bw) * 0.5f, caption.yMax + 22f * s, bw, bh);
-            float sw = bw * 0.62f;
-            float sh = Mathf.Max(64f * s, 56f);
-            var skip = new Rect((screenW - sw) * 0.5f, watch.yMax + 14f * s, sw, sh);
+            var btn = OfferButtons(screenW * 0.5f, caption.yMax + 22f * s, bw, s, true);
+            var watch = btn.Primary;
+            var skip = btn.Secondary;
             var badge = RewardStampRect(watch, 2);
             return new ClearOfferLayout
             {
@@ -75,15 +73,12 @@ namespace FlockFive
             float x = (screenW - w) * 0.5f;
             float y = screenH * 0.38f;
             var caption = new Rect(x, y, w, capH);
-            float gap = 14f * s;
-            float bh = Mathf.Max(72f * s, 64f);
-            float bw = (w - gap) * 0.5f;
-            float by = caption.yMax + 22f * s;
+            var btn = OfferButtons(screenW * 0.5f, caption.yMax + 22f * s, Mathf.Min(w, screenW * 0.78f), s, true);
             return new VipSoftLayout
             {
                 Caption = caption,
-                Go = new Rect(x, by, bw, bh),
-                Skip = new Rect(x + bw + gap, by, bw, bh)
+                Go = btn.Primary,
+                Skip = btn.Secondary
             };
         }
 

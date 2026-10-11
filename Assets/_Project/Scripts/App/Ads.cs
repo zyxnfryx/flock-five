@@ -158,6 +158,17 @@ namespace FlockFive
         public const string PlacementClearDouble = "clear_double";
         public const string PlacementDailyDouble = "daily_double";
         public const string PlacementKeep = "keep_multiplier";
+        public const string PlacementRewardRepeat = "reward_repeat";
+
+        // Build 83 item 10i: the REWARD popup's 2X needs a loaded rewarded ad that is
+        // not held back by the cooldown or the new-player grace.
+        public static bool RewardRepeatAvailable(bool enabled, bool ready, int clears, double now, double lastAnyAd)
+        {
+            return enabled && ready && !GraceBlocks(clears) && !Cooling(now, lastAnyAd);
+        }
+
+        public static bool RewardRepeatReady =>
+            RewardRepeatAvailable(Enabled, RewardedReady, SessionClears, AdClock, LastAnyAd);
         public static string ActivePlacement = PlacementBonus;
 
         const string PrefClears = "flockfive.session_clears";
@@ -598,6 +609,7 @@ namespace FlockFive
             if (placement == PlacementDailyDouble) return RewardedGrant.Place.Wheel;
             if (placement == PlacementKeep) return RewardedGrant.Place.Keep;
             if (placement == PlacementClearDouble) return RewardedGrant.Place.Clear;
+            if (placement == PlacementRewardRepeat) return RewardedGrant.Place.Repeat;
             return RewardedGrant.Place.Branch;
         }
 

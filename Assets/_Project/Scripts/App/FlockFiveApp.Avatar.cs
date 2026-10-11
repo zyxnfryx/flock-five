@@ -591,9 +591,14 @@ namespace FlockFive
             var fit = FitLessonText(line, maxW, 4096f, 12, Mathf.RoundToInt(32f * s), Screen.width, Screen.height);
             var hang = CaptionLayout.BoxPad(Screen.height);
             var snug = CaptionLayout.MeasureSnug(CoachLineStyle(), fit.Shown, fit.Font, hang.x, hang.y);
+            // Item 11b: top of the band, centered on the screen when the band allows it.
+            float cx = Screen.width * 0.5f;
+            float half = snug.TextW * 0.5f;
+            if (cx - half < band.x) cx = band.x + half;
+            if (cx + half > band.xMax) cx = band.xMax - half;
             var text = new Rect(
-                band.center.x - snug.TextW * 0.5f,
-                band.center.y - snug.TextH * 0.5f,
+                cx - half,
+                band.y + hang.y,
                 Mathf.Max(48f, snug.TextW),
                 Mathf.Max(24f, snug.TextH));
             if (text.x < 8f) text.x = 8f;

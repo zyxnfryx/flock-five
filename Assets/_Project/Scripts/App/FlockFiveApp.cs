@@ -4978,12 +4978,6 @@ namespace FlockFive
                 _gardenScoring = false;
                 yield break;
             }
-            yield return OfferClearDouble();
-            if (_restarting || _splash)
-            {
-                _gardenScoring = false;
-                yield break;
-            }
             yield return Ads.Interstitial();
             if (_restarting || _splash)
             {
@@ -8199,6 +8193,8 @@ namespace FlockFive
             _streakFlyArmed = false;
             _rewardStampHit = false;
             _waxBorn = -1f;
+            _rewardChoice = 0;
+            _rewardRepeatAmt = 0;
         }
 
         void StepStreakReward()
@@ -8217,7 +8213,7 @@ namespace FlockFive
             float dur = beat.SeqDur > 0.05f ? beat.SeqDur : 0.05f;
             float t = _streakSlide * dur;
             // Tuck waits until the shared flight, the balance tick, and the payout sound finish.
-            bool fadeGate = t >= beat.HoldEnd && RewardPayBusy();
+            bool fadeGate = t >= beat.HoldEnd && (RewardPayBusy() || RewardChoicePending());
             if (!fadeGate)
                 _streakSlide = Mathf.Min(1f, _streakSlide + PlayClock.Delta / dur);
             t = _streakSlide * dur;
@@ -8231,6 +8227,7 @@ namespace FlockFive
         {
             if (_streakFlyArmed) return;
             _streakFlyArmed = true;
+            _rewardRepeatAmt = coins;
             FoldCoinFlies();
             BeginRewardPay(coins);
         }
@@ -8270,6 +8267,7 @@ namespace FlockFive
             var pig = PiggyRect(s);
             // Streak sign holds, then fades on its own.
             DrawStreakToast(s, pig);
+            DrawRewardChoice(s);
             DrawCoinFly(pig);
             if (_pigBurst > 0f)
             {
@@ -9165,6 +9163,7 @@ namespace FlockFive
             }
 
             var wordFace = new Rect(x + kick.x, y + kick.y, restW, restH);
+            _rewardFace = new Rect(x, y, restW, restH);
             var wordRest = RewardWordRect(wordFace, s, showPips);
             DrawRewardRow(wordRest, wordAppear, 1f - tuck, labelSt, labelHi, titleK, wordFace.center);
 

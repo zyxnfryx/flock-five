@@ -4897,7 +4897,7 @@ namespace FlockFive
             }
             float h = Mathf.Min(176f * s, Mathf.Max(96f * s, y1 - y0));
             float y = y0;
-            if (y1 - y0 > h) y = y0 + (y1 - y0 - h) * 0.36f;
+            // Build 83 item 11b: home captions sit across the top, right under the title/HUD row.
             if (y + h > y1) y = Mathf.Max(8f, y1 - h);
 
             float left = Mathf.Max(18f * s, Screen.safeArea.xMin + 12f);
