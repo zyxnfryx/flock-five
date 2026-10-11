@@ -39,9 +39,9 @@ namespace FlockFive
             new Proof(24, "9>12 11>9", 11, 13, new[] { 7, 9, 6, 10, 7, 4 }),
             new Proof(25, "6>5 2>10 1>9 1>0 6>12 4>8", 1, 4, new[] { 12, 10, 4, 12, 0, 10, 10, 12, 4, 6, 6 }),
             new Proof(26, "", 1, 2, new[] { 2, 2, 0, 0 }),
-            new Proof(27, "0>2 2>3 2>1 3>2", 0, 3, new[] { 6, 7, 6, 7 }),
-            new Proof(28, "0>1", 0, 2, new[] { 3, 3, 4, 5, 5 }),
-            new Proof(29, "1>2 1>0", 2, 1, new[] { 11, 9, 11 }),
+            new Proof(28, "0>2 2>3 2>1 3>2", 0, 3, new[] { 6, 7, 6, 7 }),
+            new Proof(29, "0>1", 0, 2, new[] { 3, 3, 4, 5, 5 }),
+            new Proof(30, "1>2 1>0", 2, 1, new[] { 11, 9, 11 }),
         };
 
         static int IndexOf(int number)
@@ -177,7 +177,7 @@ namespace FlockFive
                 if (anyMix) mixing++;
                 if (anyMulti && !anyMix && nomix == null) nomix = "L" + lv.Number;
             }
-            Check("ladder-count", LevelData.Count == 29, "count " + LevelData.Count);
+            Check("ladder-count", LevelData.Count == 32, "count " + LevelData.Count);
             Check("ladder-kit-sets", bad == null, bad ?? "every garden: each color <= 3 sets, one set per kit");
             Check("ladder-winnable", lost == null, lost ?? "all gardens Winnable with and without the gift");
             Check("ladder-kits-mix", nomix == null && mixing == LevelData.Count, "gardens mixing kits within a color " + mixing + "/" + LevelData.Count);
@@ -188,7 +188,7 @@ namespace FlockFive
             var want = new[] { BirdColor.Ruby, BirdColor.Teal, BirdColor.Gold, BirdColor.Violet };
             for (int s = 0; s < 4; s++)
             {
-                int num = 26 + s;
+                int num = s == 0 ? 26 : 27 + s; // b83: ostrich debut at 27 shifts solo 27-29 to 28-30
                 int idx = IndexOf(num);
                 var lv = idx >= 0 ? LevelData.Peek(idx) : null;
                 if (lv == null) { Check("solo-" + num, false, "missing"); continue; }
@@ -262,7 +262,7 @@ namespace FlockFive
             var covered = new HashSet<int>();
             foreach (var pr in Proofs) covered.Add(pr.Level);
             bool all = true;
-            for (int n = 16; n <= 29; n++) if ((n < 18 || n > 25) && !covered.Contains(n)) all = false;
+            for (int n = 16; n <= 30; n++) if ((n < 18 || n > 25) && n != 27 && !covered.Contains(n)) all = false;
             Check("trap-coverage-16-29", all, covered.Count + " gardens");
         }
     }

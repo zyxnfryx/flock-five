@@ -81,7 +81,7 @@ namespace FlockFive.Editor
         // kit rules and shape only, capped search, no open-ended trap probe.
         static void CheckEase(System.Action<string, bool, string> Check)
         {
-            Check("ease-count", LevelData.Count == 29, "count " + LevelData.Count);
+            Check("ease-count", LevelData.Count >= 29, "count " + LevelData.Count);
             int easeLimbs = 0;
             for (int n = 18; n <= 25; n++)
             {

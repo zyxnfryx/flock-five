@@ -62,10 +62,95 @@ namespace FlockFive
             new Level { Number = 25, Id = "garden-25", Title = "Garden 25", Make = Garden25,
                 Kits = "NNBN/CNCB/BBCN/BBBB/BNNBB/CCCC/CCNCB/CBNN/NBNN/NNNC/NNNN/NCCBN/BBBB/NNBNC" },
             new Level { Number = 26, Id = "garden-26", Title = "Garden 26", Make = Garden26, Solo = true },
-            new Level { Number = 27, Id = "garden-27", Title = "Garden 27", Make = Garden27, Solo = true },
-            new Level { Number = 28, Id = "garden-28", Title = "Garden 28", Make = Garden28, Solo = true },
-            new Level { Number = 29, Id = "garden-29", Title = "Garden 29", Make = Garden29, Solo = true }
+            // Build 83: ostrich debut (3 feeders) at 27; b82's solo 27-29 move to 28-30 unchanged.
+            new Level { Number = 27, Id = "garden-27", Title = "Garden 27", Make = Garden27Ostrich, Solo = true,
+                Feeders = 3, Ostrich = true, PeckSeed = 686559 },
+            new Level { Number = 28, Id = "garden-28", Title = "Garden 28", Make = Garden27, Solo = true },
+            new Level { Number = 29, Id = "garden-29", Title = "Garden 29", Make = Garden28, Solo = true },
+            new Level { Number = 30, Id = "garden-30", Title = "Garden 30", Make = Garden29, Solo = true },
+            new Level { Number = 31, Id = "garden-31", Title = "Garden 31", Make = Garden31 },
+            new Level { Number = 32, Id = "garden-32", Title = "Garden 32", Make = Garden32Ostrich, Solo = true,
+                Feeders = 3, Ostrich = true, PeckSeed = 832449 }
         };
+
+        // Garden 38 (ostrich + bees + leaf-lock) is authored now and joins the ladder when 33-37 land.
+        public static readonly Level Garden38Level = new Level
+        {
+            Number = 38, Id = "garden-38", Title = "Garden 38", Make = Garden38Ostrich, Solo = true,
+            Feeders = 3, Ostrich = true, PeckSeed = 941734
+        };
+
+        // Authored ostrich boards (ostrich-impl.txt), notation shared with the C# harness and
+        // ostrich.py: limbs ' / ' trunk->tip; bird = [?=shrouded]Color(RGTVP)+Kit(NCB); '-' empty.
+        public const string Garden27Spec = "VCVCTCRC / VCTBRCTB / GCTC / GCRCGCTB / GCTCGCRC / TCTCTB / TBVCRCVC | live=GTT queue=RV";
+        public const string Garden32Spec = "RBVCTCRB / ?TCGC / VCGCGC / VCVCVC / RBTBRCTB / GCTCRCRB / TBRCRB / RCGCTC / ?TBRCTCTB / - | live=TTV queue=GRR";
+        public const string Garden38Spec = "TCRB / RCTBTBTC / RCTB / ?RBVCRB / ?RBVCVCTC / RBGCGC?TB / TCVCRCRC / RCTBTC / VCGCGCGC / - | live=TGV queue=RTR breeze";
+
+        static Board Garden27Ostrich() => ParseAuthored(Garden27Spec);
+        static Board Garden32Ostrich() => ParseAuthored(Garden32Spec);
+        static Board Garden38Ostrich() => ParseAuthored(Garden38Spec);
+
+        public static Board ParseAuthored(string spec)
+        {
+            const string C = "RGTVP", K = "NCB";
+            var parts = spec.Split('|');
+            var b = new Board();
+            foreach (var limb in parts[0].Split(new[] { " / " }, System.StringSplitOptions.None))
+            {
+                var br = new BranchState();
+                var t = limb.Trim();
+                if (t != "-")
+                {
+                    for (int i = 0; i < t.Length;)
+                    {
+                        bool hid = t[i] == '?';
+                        if (hid) i++;
+                        br.Birds.Add(new Bird((BirdColor)C.IndexOf(t[i]), (BirdKit)K.IndexOf(t[i + 1])));
+                        br.Shrouded.Add(hid);
+                        i += 2;
+                    }
+                }
+                b.Branches.Add(br);
+            }
+            string tail = parts.Length > 1 ? parts[1] : "";
+            string live = Field(tail, "live=");
+            string queue = Field(tail, "queue=");
+            b.SetFeeders(live.Length > 0 ? live.Length : 2);
+            for (int i = 0; i < live.Length; i++) b.Live[i] = (BirdColor)C.IndexOf(live[i]);
+            for (int i = 0; i < queue.Length; i++) b.Queue.Add((BirdColor)C.IndexOf(queue[i]));
+            b.BreezeOnCollect = tail.Contains("breeze");
+            return b;
+        }
+
+        static string Field(string tail, string key)
+        {
+            int at = tail.IndexOf(key, System.StringComparison.Ordinal);
+            if (at < 0) return "";
+            at += key.Length;
+            int end = tail.IndexOf(' ', at);
+            return end < 0 ? tail.Substring(at).Trim() : tail.Substring(at, end - at);
+        }
+
+        // Badger + spring garden: no new mechanic. Two live feeders, bees on one limb. Gold calls twice.
+        static Board Garden31()
+        {
+            var b = Eight(
+                Row(BirdColor.Gold, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Teal, BirdColor.Teal),
+                Row(BirdColor.Gold, BirdColor.Teal, BirdColor.Violet, BirdColor.Violet, BirdColor.Ruby),
+                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Violet, BirdColor.Ruby, BirdColor.Violet),
+                Row(BirdColor.Gold),
+                Row(BirdColor.Gold, BirdColor.Teal),
+                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Gold, BirdColor.Violet),
+                Row(BirdColor.Gold, BirdColor.Teal, BirdColor.Ruby),
+                new BranchState());
+            b.Live[0] = BirdColor.Gold;
+            b.Live[1] = BirdColor.Teal;
+            b.Queue.Add(BirdColor.Gold);
+            b.Queue.Add(BirdColor.Ruby);
+            b.Queue.Add(BirdColor.Violet);
+            HideInner(b.Branches[5], 3);
+            return Prep(b);
+        }
 
         public static int Count => All.Length;
         public static bool HasNext => All.Length > 0;

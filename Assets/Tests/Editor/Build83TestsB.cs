@@ -86,7 +86,7 @@ namespace FlockFive.Editor
             for (int i = 0; i < LevelData.Count; i++)
             {
                 var b = LevelData.Open(i);
-                if (b.Live == null || b.Live.Length < 1 || b.Live.Length > 3 || b.Ostrich != null)
+                if (b.Live == null || b.Live.Length < 1 || b.Live.Length > 3 || (b.Ostrich != null) != LevelData.Peek(i).Ostrich)
                     shapeBad++;
             }
             Check("gardens-feeders-1-to-3", shapeBad == 0, "bad " + shapeBad + " of " + LevelData.Count);
