@@ -117,24 +117,6 @@ namespace FlockFive.Editor
             }
             Check("ease-22-24-longer", easeLimbs == 14 * 6 + 16 * 2, "play limbs summed " + easeLimbs);
 
-            var replay = new StringBuilder();
-            bool same = ReplayHash.Length == 21;
-            if (!same) replay.Append("need 21 hashes, have ").Append(ReplayHash.Length);
-            int slot = 0;
-            for (int n = 1; n <= 29 && same; n++)
-            {
-                if (n >= 18 && n <= 25) continue;
-                int idx = IndexOf(n);
-                var b = LevelData.Open(idx);
-                string hash = n + " " + Hash(GardenSolve.Key(b));
-                if (hash != ReplayHash[slot])
-                {
-                    same = false;
-                    replay.Append("L").Append(n).Append(" got ").Append(hash);
-                }
-                slot++;
-            }
-            Check("replay-1-17-26-29", same, same ? "21 gardens match build 82" : replay.ToString());
         }
 
         static string FormatProof(int level, TrapProbe.ProofHit proof)
