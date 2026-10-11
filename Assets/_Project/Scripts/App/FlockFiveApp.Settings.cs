@@ -220,9 +220,11 @@ namespace FlockFive
             bool gearHeld = false;
             bool linkHeld = false;
             bool rowHeld = false;
+            bool animHeld = false;
             bool xHeld = false;
             bool link = false;
             bool flip = false;
+            bool flipAnim = false;
             var hit = SettingsMotion.Hit.None;
             if (SettingsMotion.BlocksInput(_settingsPhase))
                 SwallowSettingsPointer();
@@ -235,6 +237,8 @@ namespace FlockFive
                 link = HitPad(rows.PrivacyLink, out linkHeld);
                 var rowHit = new Rect(rows.Label.x, rows.Label.y, rows.Toggle.xMax - rows.Label.x, rows.Label.height);
                 flip = HitPad(rowHit, out rowHeld);
+                var animHit = new Rect(rows.AnimateLabel.x, rows.AnimateLabel.y, rows.AnimateToggle.xMax - rows.AnimateLabel.x, rows.AnimateLabel.height);
+                flipAnim = HitPad(animHit, out animHeld);
                 HitPad(card, out _);
                 bool overlay = HitPad(screen, out _);
                 if (gearFire) hit = SettingsMotion.Hit.Gear;
@@ -294,6 +298,21 @@ namespace FlockFive
                 DrawCheckbox(rows.Toggle, on, rowHeld);
                 if (on) DrawCheckMark(Inset(rows.Toggle, 0.22f), new Color(0.20f, 0.42f, 0.16f, 1f));
 
+                var animSt = GuiPool.Label(GuiSlot.SettingsAnimate);
+                animSt.fontStyle = FontStyle.Bold;
+                animSt.alignment = TextAnchor.MiddleLeft;
+                animSt.wordWrap = true;
+                animSt.fontSize = FitFontWrapped(
+                    animSt, SettingsSheet.AnimateLabel,
+                    rows.AnimateLabel.width * 0.96f, rows.AnimateLabel.height * 0.88f,
+                    13, Mathf.Max(16, Mathf.RoundToInt(20f * s)));
+                StampOutlined(
+                    rows.AnimateLabel, SettingsSheet.AnimateLabel, animSt,
+                    new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(2, Mathf.RoundToInt(animSt.fontSize * 0.14f)));
+                bool animOn = BackgroundMotion.On;
+                DrawCheckbox(rows.AnimateToggle, animOn, animHeld);
+                if (animOn) DrawCheckMark(Inset(rows.AnimateToggle, 0.22f), new Color(0.20f, 0.42f, 0.16f, 1f));
+
                 var xBtn = frame.Close;
                 DrawGiftCloseX(xBtn, xHeld, s);
                 var pass = SettingsMotion.GearPassFor(HomeGearNow().Home, _settingsPhase);
@@ -317,6 +336,11 @@ namespace FlockFive
                 if (flip)
                 {
                     AdConsent.DoNotSell = !on;
+                    Sfx.CardTap();
+                }
+                if (flipAnim)
+                {
+                    BackgroundMotion.On = !animOn;
                     Sfx.CardTap();
                 }
                 return;

@@ -47,6 +47,7 @@ namespace FlockFive
         Vector4 _wipe;
         float _phase;
         bool _on;
+        GardenScene _scene;
 
         public static void Apply(SpriteRenderer sr, GardenScene scene)
         {
@@ -59,6 +60,8 @@ namespace FlockFive
         public void Boot(GardenScene scene)
         {
             _sr = GetComponent<SpriteRenderer>();
+            _scene = scene;
+            SeasonMotion.Scene = scene;
             _phase = scene == GardenScene.Desert ? 0.4f : 1.7f + (int)scene * 0.6f;
             _wipe = new Vector4(-0.2f, 0.14f, 0f, 0f);
             Fill(scene, LowPower);
@@ -91,11 +94,31 @@ namespace FlockFive
             if (_block == null || _sr == null) return;
             var tex = _sr.sprite != null ? _sr.sprite.texture : null;
             if (tex != null) _block.SetTexture(MainTexId, tex);
+            _block.SetVector(WipeId, _wipe);
+            bool move = BackgroundMotion.On;
+            if (!move)
+            {
+                var z = Vector4.zero;
+                _block.SetVector(P0, z);
+                _block.SetVector(P1, z);
+                _block.SetVector(P2, z);
+                _block.SetVector(P3, z);
+                _block.SetVector(A0, _a0);
+                _block.SetVector(A1, _a1);
+                _block.SetVector(A2, _a2);
+                _block.SetVector(A3, _a3);
+                _block.SetVector(WindId, Vector4.zero);
+                _sr.SetPropertyBlock(_block);
+                return;
+            }
+            var tune = SeasonMotion.For(_scene);
             float t = Time.time + _phase;
-            float gust = 0.12f + 0.10f * Mathf.Sin(t * 0.21f);
-            float u = Mathf.Repeat(t, 8.4f);
+            float hz = tune.GustHz;
+            float gust = 0.12f + 0.10f * Mathf.Sin(t * 0.21f * hz);
+            float u = Mathf.Repeat(t * hz, 8.4f);
             if (u > 6.2f)
                 gust += Mathf.Sin((u - 6.2f) / 1.5f * Mathf.PI) * 0.9f;
+            gust *= tune.Gust;
             if (gust < 0f) gust = 0f;
             else if (gust > 1f) gust = 1f;
             _block.SetVector(P0, _p0);
@@ -106,8 +129,7 @@ namespace FlockFive
             _block.SetVector(A1, _a1);
             _block.SetVector(A2, _a2);
             _block.SetVector(A3, _a3);
-            _block.SetVector(WindId, new Vector4(gust, 0f, 0f, 0f));
-            _block.SetVector(WipeId, _wipe);
+            _block.SetVector(WindId, new Vector4(gust, tune.WaveHz, 0f, 0f));
             _sr.SetPropertyBlock(_block);
         }
 
@@ -121,33 +143,37 @@ namespace FlockFive
                 // the top, then the droop under the crown. The cactus and mesas sit outside.
                 Put(0, 0.00f, 1.00f, 0.046f, 0.86f, 0.98f, -0.16f, 0.58f, 0.35f);
                 Put(1, 0.00f, 0.88f, 0.038f, 0.40f, 0.55f, -0.84f, 0.48f, 1.7f);
-                return;
             }
-            if (scene == GardenScene.Winter)
+            else if (scene == GardenScene.Winter)
             {
                 // Foreground boughs only. The moon and the far pines stay still.
                 Put(0, 0.02f, 0.00f, 0.030f, 0.30f, 0.25f, 0.97f, 0.62f, 0.2f);
                 if (!low) Put(1, 0.98f, 0.00f, 0.028f, 0.28f, -0.30f, 0.95f, 0.58f, 1.4f);
-                return;
             }
-            if (scene == GardenScene.Fall)
+            else if (scene == GardenScene.Fall)
             {
                 // Corner leaves. The tree line is too broad to sway cleanly.
                 Put(0, 0.00f, 1.00f, 0.046f, 0.28f, 0.62f, -0.78f, 0.85f, 0.6f);
-                return;
             }
-            if (scene == GardenScene.Spring)
+            else if (scene == GardenScene.Spring)
             {
                 Put(0, 0.00f, 0.98f, 0.040f, 0.52f, 0.78f, -0.42f, 0.70f, 0.3f);
                 Put(1, 1.00f, 0.80f, 0.032f, 0.22f, -0.70f, -0.30f, 0.70f, 1.1f);
                 if (!low) Put(2, 0.02f, 0.02f, 0.026f, 0.28f, 0.40f, 0.92f, 0.60f, 2.0f);
                 if (!low) Put(3, 0.98f, 0.04f, 0.026f, 0.26f, -0.45f, 0.90f, 0.60f, 2.6f);
-                return;
             }
-            // Summer jungle, also the home painting. Right palm and the left crown.
-            // The hibiscus and the center banana stay still so the perches do not swim.
-            Put(0, 0.99f, 0.78f, 0.042f, 0.48f, -0.88f, 0.20f, 0.75f, 0.5f);
-            Put(1, 0.02f, 0.98f, 0.032f, 0.42f, 0.25f, -0.97f, 0.65f, 1.3f);
+            else
+            {
+                // Summer jungle, also the home painting. Right palm and the left crown.
+                // The hibiscus and the center banana stay still so the perches do not swim.
+                Put(0, 0.99f, 0.78f, 0.042f, 0.48f, -0.88f, 0.20f, 0.75f, 0.5f);
+                Put(1, 0.02f, 0.98f, 0.032f, 0.42f, 0.25f, -0.97f, 0.65f, 1.3f);
+            }
+            float sway = SeasonMotion.For(scene).Sway;
+            _p0.z *= sway;
+            _p1.z *= sway;
+            _p2.z *= sway;
+            _p3.z *= sway;
         }
 
         void Put(int i, float px, float py, float angle, float radius, float ax, float ay, float half, float phase)

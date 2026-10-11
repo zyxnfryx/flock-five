@@ -476,6 +476,41 @@ namespace FlockFive
             }
         }
 
+        // Char, a short burn, then the shared limb drop. Sync skips a breaking limb.
+        public void BeginScorch(Transform fxRoot)
+        {
+            _breaking = true;
+            if (Sign != null) Sign.gameObject.SetActive(false);
+            if (Wood != null) Wood.color = new Color(0.18f, 0.12f, 0.09f, 1f);
+            var root = fxRoot != null ? fxRoot : transform.parent;
+            StrikeFx.Play(root, transform.position);
+            Sfx.Crackle();
+            StartCoroutine(ScorchDrop());
+        }
+
+        IEnumerator ScorchDrop()
+        {
+            int act = _act;
+            float t = 0f;
+            const float burn = 0.58f;
+            while (t < burn)
+            {
+                if (act != _act)
+                {
+                    _breaking = false;
+                    yield break;
+                }
+                t += Time.deltaTime;
+                yield return null;
+            }
+            if (act != _act)
+            {
+                _breaking = false;
+                yield break;
+            }
+            yield return BreakAway();
+        }
+
         public IEnumerator BreakAway()
         {
             int act = _act;

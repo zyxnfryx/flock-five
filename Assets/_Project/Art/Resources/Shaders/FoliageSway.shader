@@ -74,7 +74,8 @@ Shader "FlockFive/FoliageSway"
 
             fixed4 frag (v2f i) : SV_Target
             {
-                float t = _Time.y;
+                float speed = _Wind.y < 0.05 ? 1.0 : _Wind.y;
+                float t = _Time.y * speed;
                 float gust = saturate(_Wind.x);
                 float2 uv = i.uv;
                 uv = Sway(uv, _P0, _A0, gust, t);

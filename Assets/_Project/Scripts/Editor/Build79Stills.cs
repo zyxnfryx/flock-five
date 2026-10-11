@@ -77,6 +77,14 @@ namespace FlockFive.Editor
             EditorApplication.isPlaying = true;
         }
 
+        // Home and two gardens in motion, the settings checkbox, and one forced bolt.
+        public static void Capture82e()
+        {
+            SetGameView(1179, 2556);
+            File.WriteAllText("/tmp/flock-five-b82e-stills", "1");
+            EditorApplication.isPlaying = true;
+        }
+
         public static void Capture81Pass4()
         {
             SetGameView(1179, 2556);

@@ -721,6 +721,16 @@ namespace FlockFive
             Shot(_fwWhistle, Random.Range(0.96f, 1.05f), 0.38f * g, MixLayer.Mid);
         }
 
+        // Wood fire under a lightning burn. Mid, under the thunder, and quiet
+        // when a lead hop or snap already owns the seat. Pitched down.
+        public static void Crackle()
+        {
+            Ensure();
+            if (MixDesk.Live != null && !MixDesk.Live.AllowMid) return;
+            if (_fwCrackle == null) _fwCrackle = MakeFwCrackle();
+            Shot(_fwCrackle, Random.Range(0.72f, 0.86f), 0.22f, MixLayer.Mid);
+        }
+
         public static void Firework()
         {
             Ensure();

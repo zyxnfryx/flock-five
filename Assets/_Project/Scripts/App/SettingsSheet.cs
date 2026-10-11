@@ -9,6 +9,7 @@ namespace FlockFive
     {
         public const string PrivacyLabel = "Privacy Policy";
         public const string DoNotSellLabel = "Do Not Sell or Share My Personal Information";
+        public const string AnimateLabel = BackgroundMotion.Label;
         public const string PrivacyUrl = "https://zyxnfryx.github.io/zfx-legal/flock-five-privacy.html";
         public const float RowGap = 8f;
         // Inner buffer on each side of the wood, as a fraction of the card width.
@@ -19,12 +20,16 @@ namespace FlockFive
             public readonly Rect PrivacyLink;
             public readonly Rect Label;
             public readonly Rect Toggle;
+            public readonly Rect AnimateLabel;
+            public readonly Rect AnimateToggle;
 
-            public Rows(Rect privacyLink, Rect label, Rect toggle)
+            public Rows(Rect privacyLink, Rect label, Rect toggle, Rect animateLabel, Rect animateToggle)
             {
                 PrivacyLink = privacyLink;
                 Label = label;
                 Toggle = toggle;
+                AnimateLabel = animateLabel;
+                AnimateToggle = animateToggle;
             }
         }
 
@@ -57,7 +62,12 @@ namespace FlockFive
                     MoveY(Content, dy),
                     MoveY(Title, dy),
                     MoveY(Close, dy),
-                    new Rows(MoveY(Body.PrivacyLink, dy), MoveY(Body.Label, dy), MoveY(Body.Toggle, dy)));
+                    new Rows(
+                        MoveY(Body.PrivacyLink, dy),
+                        MoveY(Body.Label, dy),
+                        MoveY(Body.Toggle, dy),
+                        MoveY(Body.AnimateLabel, dy),
+                        MoveY(Body.AnimateToggle, dy)));
             }
 
             static Rect MoveY(Rect r, float dy)
@@ -80,7 +90,7 @@ namespace FlockFive
             float gap = Mathf.Max(RowGap * s, cardW * 0.028f);
             float titleH = Mathf.Max(44f, 46f * s);
             var probe = Place(new Rect(0f, 0f, contentW, 8f), s, gap);
-            float bodyH = probe.Label.yMax - probe.PrivacyLink.yMin;
+            float bodyH = probe.AnimateLabel.yMax - probe.PrivacyLink.yMin;
             float xSz = Mathf.Max(44f, 42f * s);
             float xMargin = Mathf.Max(cardW * 0.035f, 12f * s);
             float titleGap = Mathf.Max(10f * s, 8f);
@@ -117,7 +127,10 @@ namespace FlockFive
             float labelW = toggle.xMin - gap - inner.x;
             if (labelW < 8f) labelW = 8f;
             var label = new Rect(inner.x, y, labelW, rowH);
-            return new Rows(privacy, label, toggle);
+            float y2 = label.yMax + gap;
+            var animateToggle = new Rect(inner.xMax - sw, y2 + (rowH - sw) * 0.5f, sw, sw);
+            var animateLabel = new Rect(inner.x, y2, labelW, rowH);
+            return new Rows(privacy, label, toggle, animateLabel, animateToggle);
         }
 
         // Same width rule as the other standard cards (88% of the glass, cap 600s).

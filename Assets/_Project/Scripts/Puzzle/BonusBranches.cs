@@ -32,6 +32,11 @@ namespace FlockFive
             for (int i = 0; i < b.Branches.Count; i++)
             {
                 if (!b.Branches[i].IsBonus) continue;
+                if (b.Branches[i].Burned)
+                {
+                    n++;
+                    continue;
+                }
                 if (n < claimed.Length && claimed[n])
                     OpenEmpty(b.Branches[i]);
                 n++;
@@ -76,7 +81,7 @@ namespace FlockFive
         {
             if (b == null || claimed == null || (uint)i >= (uint)b.Branches.Count) return -1;
             var st = b.Branches[i];
-            if (st == null || !st.IsBonus) return -1;
+            if (st == null || !st.IsBonus || st.Burned) return -1;
             int ord = Ordinal(b, i);
             if (ord < 0 || ord >= claimed.Length) return -1;
             if (claimed[ord])
@@ -94,7 +99,7 @@ namespace FlockFive
         {
             if (b == null || claimed == null || (uint)i >= (uint)b.Branches.Count) return false;
             var st = b.Branches[i];
-            if (st == null || !st.IsBonus || !st.AdLocked || st.Broken) return false;
+            if (st == null || !st.IsBonus || st.Burned || !st.AdLocked || st.Broken) return false;
             int ord = Ordinal(b, i);
             if (ord < 0 || ord >= claimed.Length || claimed[ord]) return false;
             return true;

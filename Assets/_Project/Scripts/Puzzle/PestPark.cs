@@ -161,7 +161,7 @@ namespace FlockFive
                 st.AlignShroud();
                 plan.Homes[index] = new Home { Branch = home, Seat = seat, Bird = h.Bird };
             }
-            if (src.IsBonus) src.Broken = false;
+            if (src.IsBonus && !src.Burned) src.Broken = false;
             plan.Spawn += extra;
             return plan;
         }

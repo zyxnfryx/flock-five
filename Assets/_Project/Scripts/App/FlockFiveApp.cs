@@ -495,6 +495,7 @@ namespace FlockFive
             // iOS defaults to 30 fps. Ask for an even rate the panel can hold: 60 on
             // 60/120 Hz screens, 90 on 90 Hz ones (60 judders there). See FramePace.
             ApplyFramePace();
+            BackgroundMotion.Probe();
             AdLog.Add("frame pace " + Application.targetFrameRate + " fps on "
                 + Mathf.RoundToInt((float)Screen.currentResolution.refreshRateRatio.value) + " Hz");
             Application.runInBackground = true;
@@ -580,6 +581,11 @@ namespace FlockFive
             {
                 try { System.IO.File.Delete("/tmp/flock-five-b82d-stills"); } catch { }
                 StartCoroutine(ShotBuild82d());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-b82e-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b82e-stills"); } catch { }
+                StartCoroutine(ShotBuild82e());
             }
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
@@ -812,6 +818,7 @@ namespace FlockFive
             _board = LevelData.Open(index);
             _seed = _board.Clone();
             for (int i = 0; i < _bonusOn.Length; i++) _bonusOn[i] = false;
+            ResetLightning();
             _giftBranch = -1;
             _census = BoardValidator.Counts(_board);
             CoachBegin(index);
@@ -3484,6 +3491,7 @@ namespace FlockFive
         {
             StartupTrace.NoteFrame();
             AudioGuard.Tick();
+            if (_shot82e) MuteShotAudio();
             MaybeSmokeLaunch();
             PollHomeAtt();
             TickSettingsMotion();
@@ -3511,6 +3519,7 @@ namespace FlockFive
             TickPopups();
             TickDailyBonus();
             if (_splash) return;
+            TickLightning();
             if (ClearAdOfferUp()) return;
             if (_restartAsk != RestartAsk.None) return;
             // A break packs the column before the collect coroutine reaches its tween.
@@ -4471,7 +4480,9 @@ namespace FlockFive
             {
                 yield return view.BreakAway();
                 if (gen != _motionGen) { _pestFinishing = false; yield break; }
-                bool regrow = !plan.Break || (branch >= 0 && branch < _board.Branches.Count && _board.Branches[branch].IsBonus);
+                bool burned = branch >= 0 && branch < _board.Branches.Count && _board.Branches[branch].Burned;
+                bool bonus = !burned && branch >= 0 && branch < _board.Branches.Count && _board.Branches[branch].IsBonus;
+                bool regrow = !burned && (!plan.Break || bonus);
                 if (regrow) view.Revive();
             }
             if (gen != _motionGen) { _pestFinishing = false; yield break; }
@@ -5384,6 +5395,7 @@ namespace FlockFive
             yield return FlyOffAll(flock);
             if (_seed != null) _board = _seed.Clone();
             BonusBranches.ApplyClaims(_board, _bonusOn);
+            LightningStrike.ApplyBurns(_board, _offerBurned);
             _census = BoardValidator.Counts(_board);
             AlignBranchViews();
             RefreshBonusSigns();
@@ -17817,9 +17829,10 @@ namespace FlockFive
             if (_gift != GiftFace.None) return false;
             if (_board == null || (uint)branch >= (uint)_board.Branches.Count) return false;
             var st = _board.Branches[branch];
-            if (st == null || !st.IsBonus || st.Broken || !st.AdLocked) return false;
+            if (st == null || !st.IsBonus || st.Burned || st.Broken || !st.AdLocked) return false;
             int ord = BonusBranches.Ordinal(_board, branch);
             if (ord < 0 || ord >= _bonusOn.Length || _bonusOn[ord]) return false;
+            if (ord < _offerBurned.Length && _offerBurned[ord]) return false;
             return true;
         }
 

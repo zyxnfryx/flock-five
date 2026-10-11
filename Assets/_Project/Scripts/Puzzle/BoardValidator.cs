@@ -64,7 +64,7 @@ namespace FlockFive
                     sb.Append("null branch ").Append(i).Append("; ");
                     continue;
                 }
-                if (br.IsBonus && br.Broken)
+                if (br.IsBonus && br.Broken && !br.Burned)
                 {
                     ok = false;
                     sb.Append("bonus ").Append(i).Append(" stayed broken; ");
@@ -117,7 +117,7 @@ namespace FlockFive
             {
                 var br = b.Branches[i];
                 if (br == null) continue;
-                if (br.IsBonus && br.Broken) br.Broken = false;
+                if (br.IsBonus && br.Broken && !br.Burned) br.Broken = false;
                 if (!br.Broken || br.Count == 0) continue;
                 pile.AddRange(br.Birds);
                 br.Birds.Clear();

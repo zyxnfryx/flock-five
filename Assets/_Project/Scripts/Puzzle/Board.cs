@@ -9,7 +9,10 @@ namespace FlockFive
         public readonly List<bool> Shrouded = new List<bool>(Cap);
         public bool Broken;
         public bool AdLocked;
-        // Bottom gift limb. A pest may snap it, but it always comes back.
+        // Lightning burned the unused ad offer. The limb stays gone.
+        public bool Burned;
+        // Bottom gift limb. A pest may snap it, but it always comes back,
+        // unless lightning burned the offer.
         public bool IsBonus;
 
         public int Count => Birds.Count;
@@ -85,7 +88,7 @@ namespace FlockFive
 
         public BranchState Clone()
         {
-            var b = new BranchState { Broken = Broken, AdLocked = AdLocked, IsBonus = IsBonus };
+            var b = new BranchState { Broken = Broken, AdLocked = AdLocked, Burned = Burned, IsBonus = IsBonus };
             b.Birds.AddRange(Birds);
             b.Shrouded.AddRange(Shrouded);
             return b;

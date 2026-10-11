@@ -16,6 +16,8 @@ namespace FlockFive
         const byte Seed = 4;
         const byte Wisp = 5;
         const byte Tumble = 6;
+        const byte Cloud = 7;
+        const byte Glint = 8;
 
         sealed class Sheet
         {
@@ -39,6 +41,10 @@ namespace FlockFive
         Camera _cam;
         bool _home;
         int _wraps;
+        float _drift = 1f;
+        float _cloud = 1f;
+        float _shimmer = 1f;
+        bool _motion = true;
 
         public static bool HomeLive => _homeRoot != null;
 
@@ -89,25 +95,24 @@ namespace FlockFive
         void Build(GardenScene scene)
         {
             bool low = FoliageSway.LowPower;
-            _sheets = new Sheet[2];
+            _sheets = new Sheet[4];
             _sheetN = 0;
+            var tune = SeasonMotion.For(scene);
+            _drift = tune.Drift;
+            _cloud = tune.Cloud;
+            _shimmer = tune.Shimmer;
+            SeasonMotion.Scene = scene;
+            var n = SeasonMotion.Lively(scene, low);
             var rng = new System.Random(scene == GardenScene.Desert ? 29 : 17 + (int)scene * 3);
-            if (scene == GardenScene.Winter)
-                AddSheet(SpriteCatalog.Glow, low ? 8 : 18, Snow, rng);
-            else if (scene == GardenScene.Fall)
-                AddSheet(SpriteCatalog.PetalPeach, low ? 3 : 6, Leaf, rng);
-            else if (scene == GardenScene.Spring)
-                AddSheet(SpriteCatalog.PetalPink, low ? 3 : 7, Petal, rng);
-            else if (scene == GardenScene.Desert)
-            {
-                AddSheet(SpriteCatalog.Glow, low ? 3 : 6, Wisp, rng);
-                AddSheet(SpriteCatalog.PetalPeach, 1, Tumble, rng);
-            }
-            else
-            {
-                AddSheet(SpriteCatalog.Firefly, low ? 3 : 6, Fly, rng);
-                AddSheet(SpriteCatalog.Glow, low ? 2 : 5, Seed, rng);
-            }
+            if (n.Snow > 0) AddSheet(SpriteCatalog.Glow, n.Snow, Snow, rng);
+            if (n.Leaf > 0) AddSheet(SpriteCatalog.PetalPeach, n.Leaf, Leaf, rng);
+            if (n.Petal > 0) AddSheet(SpriteCatalog.PetalPink, n.Petal, Petal, rng);
+            if (n.Wisp > 0) AddSheet(SpriteCatalog.Glow, n.Wisp, Wisp, rng);
+            if (n.Tumble > 0) AddSheet(SpriteCatalog.PetalPeach, n.Tumble, Tumble, rng);
+            if (n.Fly > 0) AddSheet(SpriteCatalog.Firefly, n.Fly, Fly, rng);
+            if (n.Seed > 0) AddSheet(SpriteCatalog.Glow, n.Seed, Seed, rng);
+            if (n.Cloud > 0) AddSheet(SpriteCatalog.Glow, n.Cloud, Cloud, rng);
+            if (n.Glint > 0) AddSheet(SpriteCatalog.Glow, n.Glint, Glint, rng);
         }
 
         void AddSheet(Sprite spr, int n, byte kind, System.Random rng)
@@ -267,6 +272,34 @@ namespace FlockFive
                 sheet.Y[i] = -4.2f;
                 sheet.Phase[i] = 5f;
             }
+            else if (kind == Cloud)
+            {
+                sheet.HW[i] = Mathf.Lerp(0.85f, 1.45f, u);
+                sheet.HH[i] = Mathf.Lerp(0.22f, 0.38f, (float)rng.NextDouble());
+                sheet.VX[i] = 0.28f + 0.08f * (float)rng.NextDouble();
+                sheet.VY[i] = 0f;
+                sheet.Spin[i] = 0f;
+                sheet.R[i] = 255;
+                sheet.G[i] = 250;
+                sheet.B[i] = 244;
+                sheet.A[i] = 52;
+                sheet.X[i] = Mathf.Lerp(-3.4f, 3.4f, (float)rng.NextDouble());
+                sheet.Y[i] = Mathf.Lerp(3.6f, 7.4f, (float)rng.NextDouble());
+            }
+            else if (kind == Glint)
+            {
+                sheet.HW[i] = Mathf.Lerp(0.08f, 0.16f, u);
+                sheet.HH[i] = sheet.HW[i] * 0.35f;
+                sheet.VX[i] = 0.12f + 0.08f * (float)rng.NextDouble();
+                sheet.VY[i] = 0f;
+                sheet.Spin[i] = 0f;
+                sheet.R[i] = 255;
+                sheet.G[i] = 248;
+                sheet.B[i] = 220;
+                sheet.A[i] = 140;
+                sheet.X[i] = Mathf.Lerp(-3.2f, 3.2f, (float)rng.NextDouble());
+                sheet.Y[i] = Mathf.Lerp(-6.4f, -3.6f, (float)rng.NextDouble());
+            }
             else
             {
                 sheet.HW[i] = Mathf.Lerp(0.035f, 0.06f, u);
@@ -284,6 +317,15 @@ namespace FlockFive
         void LateUpdate()
         {
             if (_sheetN == 0) return;
+            bool on = BackgroundMotion.On;
+            if (!on)
+            {
+                if (_motion) HoldStill();
+                _motion = false;
+                return;
+            }
+            if (!_motion) ShowAgain();
+            _motion = true;
             float dt = PlayClock.Delta;
             if (dt <= 0f) return;
             float t = PlayClock.Now;
@@ -305,7 +347,17 @@ namespace FlockFive
                 byte kind = sheet.Kind[i];
                 float x = sheet.X[i];
                 float y = sheet.Y[i];
-                if (kind == Tumble)
+                if (kind == Cloud)
+                {
+                    x += sheet.VX[i] * _cloud * dt;
+                    if (x > right + 1.4f) x = left - 1.2f;
+                }
+                else if (kind == Glint)
+                {
+                    x += sheet.VX[i] * _shimmer * dt;
+                    if (x > right + 0.4f) x = left - 0.4f;
+                }
+                else if (kind == Tumble)
                 {
                     if (sheet.Phase[i] > 0f)
                     {
@@ -314,8 +366,8 @@ namespace FlockFive
                     }
                     else
                     {
-                        x += sheet.VX[i] * dt;
-                        y = -4.2f + Mathf.Sin(t * 2.2f + i) * 0.08f;
+                        x += sheet.VX[i] * _drift * dt;
+                        y = -4.2f + Mathf.Sin(t * 2.2f * _drift + i) * 0.08f;
                         if (x > right + 1.2f)
                         {
                             x = left - 1.6f;
@@ -325,12 +377,12 @@ namespace FlockFive
                 }
                 else
                 {
-                    float sway = Mathf.Sin(t * 0.7f + sheet.Phase[i]);
-                    x += (sheet.VX[i] + sway * (kind == Wisp ? 0.04f : 0.18f)) * dt;
-                    y += sheet.VY[i] * dt;
+                    float sway = Mathf.Sin(t * 0.7f * _drift + sheet.Phase[i]);
+                    x += (sheet.VX[i] * _drift + sway * (kind == Wisp ? 0.04f : 0.18f)) * dt;
+                    y += sheet.VY[i] * _drift * dt;
                     if (kind == Fly || kind == Seed)
                     {
-                        y += Mathf.Sin(t * 0.45f + sheet.Phase[i]) * 0.12f * dt;
+                        y += Mathf.Sin(t * 0.45f * _drift + sheet.Phase[i]) * 0.12f * _drift * dt;
                         if (x < left) x = right;
                         else if (x > right) x = left;
                         if (y < bottom) y = top;
@@ -349,7 +401,16 @@ namespace FlockFive
                 sheet.Y[i] = y;
 
                 byte a = sheet.A[i];
-                if (kind == Fly)
+                if (kind == Glint)
+                {
+                    float w = 0.35f + 0.65f * Mathf.Sin(t * 2.2f * _shimmer + sheet.Phase[i]);
+                    if (w < 0f) w = 0f;
+                    int av = (int)(a * w * w * wet);
+                    if (av < 0) av = 0;
+                    else if (av > 255) av = 255;
+                    a = (byte)av;
+                }
+                else if (kind == Fly)
                 {
                     float w = 0.5f + 0.5f * Mathf.Sin(t * sheet.Spin[i] + sheet.Phase[i]);
                     float blink = w * w * w;
@@ -376,13 +437,43 @@ namespace FlockFive
                 float sn = Mathf.Sin(ang);
                 float hw = sheet.HW[i];
                 float hh = sheet.HH[i];
-                Put(sheet.Verts, v, x, y, -hw, -hh, cs, sn);
-                Put(sheet.Verts, v + 1, x, y, hw, -hh, cs, sn);
-                Put(sheet.Verts, v + 2, x, y, -hw, hh, cs, sn);
-                Put(sheet.Verts, v + 3, x, y, hw, hh, cs, sn);
+                float drawY = y;
+                if (kind == Cloud)
+                    drawY += Mathf.Sin(t * 0.35f * _cloud + sheet.Phase[i]) * 0.18f;
+                Put(sheet.Verts, v, x, drawY, -hw, -hh, cs, sn);
+                Put(sheet.Verts, v + 1, x, drawY, hw, -hh, cs, sn);
+                Put(sheet.Verts, v + 2, x, drawY, -hw, hh, cs, sn);
+                Put(sheet.Verts, v + 3, x, drawY, hw, hh, cs, sn);
             }
             sheet.Mesh.SetVertices(sheet.Verts, 0, sheet.Verts.Length, MeshUpdateFlags.DontRecalculateBounds);
             sheet.Mesh.SetColors(sheet.Cols, 0, sheet.Cols.Length, MeshUpdateFlags.DontRecalculateBounds);
+        }
+
+        void HoldStill()
+        {
+            for (int s = 0; s < _sheetN; s++)
+            {
+                var sheet = _sheets[s];
+                if (sheet == null || sheet.Cols == null) continue;
+                for (int i = 0; i < sheet.Cols.Length; i++)
+                {
+                    var c = sheet.Cols[i];
+                    c.a = 0;
+                    sheet.Cols[i] = c;
+                }
+                if (sheet.Mesh != null)
+                    sheet.Mesh.SetColors(sheet.Cols, 0, sheet.Cols.Length, MeshUpdateFlags.DontRecalculateBounds);
+                if (sheet.Rend != null) sheet.Rend.enabled = false;
+            }
+        }
+
+        void ShowAgain()
+        {
+            for (int s = 0; s < _sheetN; s++)
+            {
+                var sheet = _sheets[s];
+                if (sheet != null && sheet.Rend != null) sheet.Rend.enabled = true;
+            }
         }
 
         static void Put(Vector3[] verts, int v, float cx, float cy, float x, float y, float c, float s)

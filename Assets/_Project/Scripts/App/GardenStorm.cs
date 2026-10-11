@@ -85,6 +85,10 @@ namespace FlockFive
         float _step;
         float _rumbleIn = -1f;
         float _rumblePow;
+        bool _aimOn;
+        float _aimX;
+        float _aimY;
+        float _strikeDark;
         static float _skyAt = -100f;
         static float _skyPow;
         static bool _skyBig;
@@ -104,6 +108,39 @@ namespace FlockFive
             var go = new GameObject("Storm");
             go.transform.SetParent(root, false);
             return go.AddComponent<GardenStorm>();
+        }
+
+        // Dev capture. The first storm is otherwise 70s out.
+        public void JumpToStorm()
+        {
+            _play = FirstWait + 4f;
+            _wet = 1f;
+            Wet = 1f;
+            _nextBoom = 9f;
+            _wasDry = false;
+        }
+
+        // Showcase bolt. Branching fork, a brief darker sky, a light shake.
+        // The fire and the falling limb are StrikeFx and BranchView.
+        public static void StrikeAt(Vector3 world)
+        {
+            if (Instance == null) return;
+            Instance.StrikeBranch(world);
+        }
+
+        void StrikeBranch(Vector3 world)
+        {
+            _aimOn = true;
+            _aimX = world.x;
+            _aimY = world.y;
+            _strikeDark = 0.5f;
+            _skyAt = PlayClock.Now - 0.012f;
+            _skyBig = true;
+            _skyPow = 0.9f;
+            Sfx.ThunderCrack(0.72f);
+            CamShake.Bolt(0.2f);
+            Haptics.Play(Haptics.Tier.Light);
+            SpawnBolt(0.75f, true);
         }
 
         void OnEnable()
@@ -132,6 +169,8 @@ namespace FlockFive
             _skyAt = -100f;
             _skyPow = 0f;
             _skyBig = false;
+            _aimOn = false;
+            _strikeDark = 0f;
             _barQ = -1;
             _fadeQ = -1;
             _cueOn = false;
@@ -454,6 +493,12 @@ namespace FlockFive
 
             // Steady rain keeps one veil alpha. A strike opens it so the sky pulse reads.
             float veilA = _wet > 0.001f ? 0.62f * _wet : 0f;
+            if (_strikeDark > 0f)
+            {
+                _strikeDark -= dt;
+                float u = Mathf.Clamp01(_strikeDark / 0.5f);
+                veilA = Mathf.Max(veilA, 0.78f * u);
+            }
             float sky = SkyFlash;
             if (sky > 0f) veilA *= 1f - 0.7f * sky;
             if (_veil != null && veilA != _veilA)
@@ -518,7 +563,8 @@ namespace FlockFive
                             continue;
                         }
                         float fall = _spd[i] * dt * Mathf.Lerp(0.18f, 1f, wet);
-                        float nx = _x[i] - (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * dt * wet;
+                        float lean = (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * SeasonMotion.RainLean();
+                        float nx = _x[i] - lean * dt * wet;
                         float ny = _y[i] - fall;
                         if (ny < _floor || nx < left - Edge || nx > right + Edge)
                         {
@@ -652,8 +698,20 @@ namespace FlockFive
             Frame(out float left, out float right, out float bottom, out float top);
             float x0 = Random.Range(left * 0.62f, right * 0.62f);
             float y0 = top - 0.05f;
-            float x1 = x0 + Random.Range(-1.8f, 1.8f);
-            float y1 = Mathf.Lerp(bottom + 2.6f, bottom + 0.55f, Mathf.Clamp01(power));
+            float x1;
+            float y1;
+            if (_aimOn)
+            {
+                x1 = _aimX;
+                y1 = _aimY;
+                x0 = Mathf.Lerp(x1, x0, 0.35f);
+                _aimOn = false;
+            }
+            else
+            {
+                x1 = x0 + Random.Range(-1.8f, 1.8f);
+                y1 = Mathf.Lerp(bottom + 2.6f, bottom + 0.55f, Mathf.Clamp01(power));
+            }
             float thick = big ? 0.36f : 0.22f;
             Lay(x0, y0, x1, y1, big ? 8 : 6, big ? 0.9f : 0.55f, thick, true);
             int forks = big ? (LeanFrame() ? 2 : 4) : (LeanFrame() ? 1 : 2);
