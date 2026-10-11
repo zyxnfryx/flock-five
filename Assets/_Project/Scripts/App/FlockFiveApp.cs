@@ -587,6 +587,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-b82e-stills"); } catch { }
                 StartCoroutine(ShotBuild82e());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-b82f-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b82f-stills"); } catch { }
+                StartCoroutine(ShotBuild82f());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
@@ -3533,6 +3538,7 @@ namespace FlockFive
                 {
                     if (EatGardenLessonTap(tap)) return;
                     if (LessonTapBlocked()) return;
+                    if (VeilDrops(tap)) return;
                     if (HitHud(tap)) return;
                     if (_frozen && !_iceCoating && _gift == GiftFace.None) OpenGift();
                 }
@@ -3558,6 +3564,7 @@ namespace FlockFive
                 if (!Pressed(out var heldTap)) return;
                 if (EatGardenLessonTap(heldTap)) return;
                 if (LessonTapBlocked()) return;
+                if (VeilDrops(heldTap)) return;
                 if (HitHud(heldTap)) return;
                 return;
             }
@@ -3568,6 +3575,7 @@ namespace FlockFive
             // fall through onto a gift branch.
             if (EatGardenLessonTap(screen)) return;
             if (LessonTapBlocked()) return;
+            if (VeilDrops(screen)) return;
             if (GardenStampHit(screen))
             {
                 _stampPulse = Time.unscaledTime;
@@ -4723,38 +4731,37 @@ namespace FlockFive
 
             Sfx.FlockFlutter(Mathf.Max(1, n));
             _perchWave++;
-            float wait = 1.15f;
+            float fleet = 0.05f;
             for (int i = 0; i < n; i++)
             {
                 if (birds[i] == null) continue;
-                float delay = i * 0.08f;
-                wait = Mathf.Max(wait, delay + 0.88f);
+                fleet = Mathf.Max(fleet, FlockRedistribute.Duration(i));
                 bool faceLeft = parked[i] ? dests[i].x >= 0f : birds[i].transform.position.x >= 0f;
+                BranchView limb = null;
                 if (parked[i] && homes != null && i < homes.Length)
                 {
                     int home = homes[i].Branch;
                     if (_garden.Branches != null && (uint)home < (uint)_garden.Branches.Length && _garden.Branches[home] != null)
-                        faceLeft = _garden.Branches[home].FromRight;
+                    {
+                        limb = _garden.Branches[home];
+                        faceLeft = limb.FromRight;
+                    }
                 }
-                if (parked[i])
-                    StartCoroutine(PerchOne(birds[i].transform, dests[i], delay, faceLeft));
-                else
-                    StartCoroutine(PerchOne(birds[i].transform, birds[i].transform.position + Vector3.up * 0.4f, delay, faceLeft));
+                var dest = parked[i] ? dests[i] : birds[i].transform.position + Vector3.up * 0.4f;
+                StartCoroutine(PerchOne(birds[i].transform, dest, i, faceLeft, limb));
             }
-            yield return new WaitForSeconds(wait);
+            yield return new WaitForSeconds(fleet);
             if (gen != _motionGen) yield break;
-            yield return new WaitForSeconds(0.35f);
         }
 
-        static IEnumerator PerchOne(Transform tr, Vector3 dest, float delay, bool faceLeft)
+        static IEnumerator PerchOne(Transform tr, Vector3 dest, int index, bool faceLeft, BranchView limb)
         {
             int gen = _motionGen;
             if (tr == null) yield break;
-            if (delay > 0f) yield return new WaitForSeconds(delay);
             if (gen != _motionGen || tr == null) yield break;
             var start = tr.position;
             var scale = BranchView.BirdScale;
-            float dur = 0.78f;
+            float dur = FlockRedistribute.Duration(index);
             var idle = tr.GetComponent<BirdIdle>();
             if (idle != null)
             {
@@ -4774,21 +4781,27 @@ namespace FlockFive
             }
             tr.gameObject.SetActive(true);
             float t = 0f;
+            bool swayed = false;
             while (t < dur)
             {
                 if (gen != _motionGen || tr == null) yield break;
                 t += Time.deltaTime;
-                float u = Mathf.SmoothStep(0f, 1f, t / dur);
-                var p = Vector3.Lerp(start, dest, u);
-                p.y += Mathf.Sin(u * Mathf.PI) * 2.45f;
-                tr.position = p;
+                if (t > dur) t = dur;
+                float sway = FlockRedistribute.Sway(index, t);
+                if (!swayed && sway > 0.05f)
+                {
+                    swayed = true;
+                    if (limb != null) limb.LandSway();
+                }
+                tr.position = FlockRedistribute.Sample(start, dest, index, t);
                 tr.localScale = scale;
                 if (sr != null) sr.flipX = faceLeft;
                 if (idle != null) idle.FaceLeft = faceLeft;
+                if (t >= dur) break;
                 yield return null;
             }
             if (gen != _motionGen || tr == null) yield break;
-            tr.position = dest;
+            tr.position = FlockRedistribute.Sample(start, dest, index, dur);
             tr.localScale = scale;
             if (sr != null) sr.flipX = faceLeft;
             if (idle != null) idle.FaceLeft = faceLeft;
@@ -8776,9 +8789,7 @@ namespace FlockFive
         void DrawRestartAsk(float s)
         {
             if (_restartAsk == RestartAsk.None) return;
-            GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.78f);
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            ModalBlock.Paint(ModalBlock.Id.Restart, new Color(0.04f, 0.03f, 0.02f, 0.78f));
             float w = StandardPopupWidth(s);
             bool sure = _restartAsk == RestartAsk.Sure;
             float h = sure ? Mathf.Max(220f * s, w * 0.46f) : Mathf.Max(300f * s, w * 0.58f);
@@ -9423,9 +9434,7 @@ namespace FlockFive
         void DrawClearReward()
         {
             float s = Mathf.Max(Screen.height / 720f, 1f);
-            GUI.color = new Color(0.05f, 0.04f, 0.03f, 0.45f);
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            ModalBlock.Paint(ModalBlock.Id.ClearReward, new Color(0.05f, 0.04f, 0.03f, 0.45f));
             DrawStreakRewards(s);
         }
 
@@ -9689,7 +9698,6 @@ namespace FlockFive
             if (ShotDailyWheel != 0) PoseDailyWheelShot();
 #endif
             _hitLock = _settingsOpen ? 1 : 0;
-            PollHomeGear();
             // Purchase / restore / reinstall: closes the offer card and runs the one-time
             // "Welcome, VIP!" moment when home is free. Member taps open the thank-you card.
             VipOffer.Tick();
@@ -9697,7 +9705,9 @@ namespace FlockFive
             bool modal = hardModal || softModal;
             // Captured before the dismiss taps below, so that same click cannot poke the bird.
             bool tutorUp = HomeTutorLive();
+            // The sheet has to be laid out before gear and the rails ask the veil.
             PrepareSoftPrompt(modal || tutorUp);
+            PollHomeGear();
             DismissAvatarRename(s);
             // Rail steps hold until their own button. A miss does not skip poker or Daily,
             // and the looping glove does not open the card.
@@ -9733,7 +9743,7 @@ namespace FlockFive
             if (vipDraw)
                 SplashPress.LayoutDisc(SplashPress.Id.Vip, noAdsR, SplashNoAdsRibbon(noAdsR));
             var vipGates = HomePressGates(RailVip);
-            vipGates.Consent = AdConsent.BlocksControl(SplashPress.PressHit(SplashPress.Id.Vip).Rect);
+            vipGates.Consent = VeilBlocks(SplashPress.PressHit(SplashPress.Id.Vip).Rect);
             vipGates.Hidden = !vipDraw;
             vipGates.WelcomeHold = vipHold;
             vipGates.Inactive = !offerVip;
@@ -9746,7 +9756,7 @@ namespace FlockFive
             // Pig above hive: hit-test before the album so taps don't open it.
             // The offer card swallows the rail so a dismiss tap cannot oink.
             var pigR = PiggyRect(s);
-            if (!modal && HomeTapAllowed(RailPig) && !AdConsent.BlocksControl(pigR) && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
+            if (!modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR) && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
                 TryPigPoke();
 
             // Hive lesson hides that slot. The packer closes it; poker slides up under the pig.
@@ -9757,7 +9767,7 @@ namespace FlockFive
             var hiveHit = HivePopRect(hiveR, hivePop);
             SplashPress.Layout(SplashPress.Id.Hive, hiveHit);
             var hiveGates = HomePressGates(RailHive);
-            hiveGates.Consent = AdConsent.BlocksControl(hiveHit);
+            hiveGates.Consent = VeilBlocks(hiveHit);
             hiveGates.Hidden = !hiveDraw;
             hiveGates.Inactive = !SplashHiveShown();
             hiveGates.StepGate = StepGateBlocks(hiveHit);
@@ -9789,7 +9799,7 @@ namespace FlockFive
             var pokerR = SplashPokerRect();
             SplashPress.Layout(SplashPress.Id.Poker, pokerR);
             var pokerGates = HomePressGates(RailPoker);
-            pokerGates.Consent = AdConsent.BlocksControl(pokerR);
+            pokerGates.Consent = VeilBlocks(pokerR);
             pokerGates.Hidden = !pokerDraw;
             pokerGates.StepGate = StepGateBlocks(pokerR);
             var pokerView = StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates));
@@ -9833,7 +9843,7 @@ namespace FlockFive
             SplashPress.Layout(SplashPress.Id.Daily, dailyTap);
             bool dailyLesson = HomeStepRail() == RailDaily;
             var dailyGates = HomePressGates(RailDaily);
-            dailyGates.Consent = AdConsent.BlocksControl(dailyTap);
+            dailyGates.Consent = VeilBlocks(dailyTap);
             dailyGates.Hidden = !dailyDraw;
             dailyGates.DailySoftOk = dailyLesson && _streakSlide < 0f;
             dailyGates.PopupGate = PopupBlocked(PopupKind.Daily);
@@ -9896,7 +9906,7 @@ namespace FlockFive
             var hit = SplashPress.PressHit(SplashPress.Id.Level);
             var rest = hit.Rect;
             var gates = HomePressGates(-1);
-            gates.Consent = AdConsent.BlocksControl(rest);
+            gates.Consent = VeilBlocks(rest);
             gates.AdoptQueue = AdoptHoldsQueue();
             gates.HomeTaken = _homeTapTaken;
             gates.StepGate = StepGateBlocks(rest);
@@ -11620,6 +11630,7 @@ namespace FlockFive
                 icon + pad * 2f);
             bool wings = BirdIdle.UseFlyingPose(onPerch, false);
             var plate = NameTagRect(c, icon, s, _avatarCol, SavedAvatarName(), _avatarFaceLeft, wings, _avatarClock, true);
+            if (VeilBlocks(bird) && (plate.width <= 2f || VeilBlocks(plate))) return false;
             bool birdHit = HitHomeFirst(bird, out _);
             bool plateHit = plate.width > 2f && HitHomeFirst(plate, out _);
             if (tutorUp || HomeTutorLive()) return false;
@@ -13002,11 +13013,7 @@ namespace FlockFive
 
             float u = _pokerPayAnim;
             if (u > 0.02f)
-            {
-                GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.55f * u);
-                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-                GUI.color = Color.white;
-            }
+                ModalBlock.Paint(ModalBlock.Id.PokerPay, new Color(0.04f, 0.03f, 0.02f, 0.55f * u));
 
             var tab = PokerPayTabRect(top, s);
             if (u > 0.01f)
@@ -16772,10 +16779,7 @@ namespace FlockFive
             float t = _hiveInspectClosing ? (1f - ease) : ease;
             if (tick) TickHiveFlip();
 
-            // Dim overlay
-            GUI.color = new Color(0.02f, 0.02f, 0.04f, 0.72f * t);
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            ModalBlock.Paint(ModalBlock.Id.Inspect, new Color(0.02f, 0.02f, 0.04f, 0.72f * t));
 
             // Large portrait card ~1:1.4, the same rect the card-fit suite measures.
             // The honey caption sits in the strip under the card. Do not shrink it.
@@ -18144,18 +18148,14 @@ namespace FlockFive
 #if FF_ADS_DEV
             if (_gift == GiftFace.Movie)
             {
-                GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.82f);
-                GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
-                GUI.color = Color.white;
+                ModalBlock.Paint(ModalBlock.Id.Gift, new Color(0.04f, 0.03f, 0.02f, 0.82f));
                 DrawGiftMovie(s);
                 return;
             }
 #endif
             float wash = _gift == GiftFace.Card ? 0.72f
                 : (_gift == GiftFace.Thanks ? 0.28f : 0.82f);
-            GUI.color = new Color(0.04f, 0.03f, 0.02f, wash);
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            ModalBlock.Paint(ModalBlock.Id.Gift, new Color(0.04f, 0.03f, 0.02f, wash));
 
             if (_gift == GiftFace.Thanks)
             {

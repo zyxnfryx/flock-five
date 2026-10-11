@@ -124,9 +124,9 @@ namespace FlockFive
             if (_settingsOpen) return;
             var q = HomeGearNow();
             var r = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
-            if (!HomeGear.AcceptsTap(q))
+            if (!HomeGear.AcceptsTap(q) || VeilBlocks(r))
             {
-                if (HomeGear.Shown(q)) SwallowGearTap(r);
+                if (HomeGear.Shown(q) || VeilBlocks(r)) SwallowGearTap(r);
                 return;
             }
             if (HitPad(r, out _gearHeld))
@@ -353,11 +353,8 @@ namespace FlockFive
         // Full-screen black under the card. The cog is drawn after this, at full color.
         void DrawSettingsDim(float alpha)
         {
-            if (Texture2D.whiteTexture == null || alpha < 0.004f) return;
             if (alpha > 1f) alpha = 1f;
-            GUI.color = new Color(0f, 0f, 0f, alpha);
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            ModalBlock.Paint(ModalBlock.Id.Settings, new Color(0f, 0f, 0f, alpha));
         }
 
         // Corner cog. Positive degrees spin clockwise. Alpha stays 1 so the dim cannot grey it.
@@ -508,9 +505,8 @@ namespace FlockFive
             AudioGuard.Hold("sheet");
             if (Texture2D.whiteTexture == null) return;
             if (s < 0.5f) s = 0.5f;
-            GUI.color = new Color(0.05f, 0.04f, 0.03f, 0.28f);
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            var sheet = card.Kind == AdConsent.Sheet.Att ? ModalBlock.Id.Att : ModalBlock.Id.Consent;
+            ModalBlock.Paint(sheet, new Color(0.05f, 0.04f, 0.03f, 0.28f));
             DrawWoodPanel(card.Card, s);
 
             string body = card.Kind == AdConsent.Sheet.Att ? AdConsent.AttBody : AdConsent.GdprBody;
@@ -537,6 +533,9 @@ namespace FlockFive
                 else AdConsent.DeclineGdpr();
                 Sfx.CardTap();
             }
+            float sw = Screen.width > 2f ? Screen.width : 2f;
+            float sh = Screen.height > 2f ? Screen.height : 2f;
+            ModalBlock.SwallowRest(ModalBlock.Raise(sheet, sw, sh));
         }
 
         bool DrawSheetButton(Rect rect, string label, bool gold, float s)

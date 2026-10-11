@@ -32,6 +32,7 @@ namespace FlockFive
         Vector3 _woodPos;
         bool _woodRemembered;
         float _shake;
+        float _land;
         bool _breaking;
         GameObject _fly;
         int _act;
@@ -63,6 +64,9 @@ namespace FlockFive
         public bool LeavesOn => _leaves != null && _leaves.Locked;
 
         public void Shake() => _shake = 0.22f;
+
+        // Soft bow when a redistributed bird lands. Not the deny buzz.
+        public void LandSway() => _land = 0.28f;
 
         public void FlutterTip()
         {
@@ -359,6 +363,15 @@ namespace FlockFive
                 float u = Mathf.Clamp01(_shake / 0.22f);
                 transform.position = _planted + new Vector3(Mathf.Sin(Time.time * 48f) * 0.08f * u, 0f, 0f);
                 transform.rotation = Quaternion.identity;
+            }
+            else if (_land > 0f)
+            {
+                _land -= Time.unscaledDeltaTime;
+                float u = Mathf.Clamp01(_land / 0.28f);
+                float dip = Mathf.Sin(u * Mathf.PI) * 0.045f * u;
+                float tilt = Mathf.Sin(u * Mathf.PI) * 1.6f * (FromRight ? -1f : 1f);
+                transform.position = _planted + new Vector3(0f, -dip, 0f);
+                transform.rotation = Quaternion.Euler(0f, 0f, tilt);
             }
             else ApplyIdle();
 

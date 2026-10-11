@@ -1,4 +1,5 @@
 using System;
+using UnityEngine;
 
 namespace FlockFive
 {
@@ -110,6 +111,13 @@ namespace FlockFive
             throw new ArgumentOutOfRangeException(nameof(step), step, "Classify this lesson step");
         }
 
+        // Required and the daily claim. Informational lessons are not forced.
+        public static bool Forced(CoachStep step)
+        {
+            var kind = Kind(step);
+            return kind == CoachTapKind.Required || kind == CoachTapKind.ClaimOnly;
+        }
+
         // True when a tap anywhere advances. Claim and required controls are not this.
         public static bool AnyTap(CoachStep step) => Kind(step) == CoachTapKind.Informational;
 
@@ -217,9 +225,21 @@ namespace FlockFive
         {
             if (!forced || tapped == HomeControl.None)
                 return new GlovePress { AllowPress = true, Navigate = true, Advance = false };
-            if (target != HomeControl.None && tapped == target)
+            var screen = new Rect(0f, 0f, 200f, 40f);
+            var hole = HomeSlot(target);
+            var tap = HomeSlot(tapped);
+            var hit = ModalBlock.ResolveLesson(true, screen, hole, tap.center, false);
+            if (hit.Deliver && hit.Advance)
                 return new GlovePress { AllowPress = true, Navigate = true, Advance = true };
             return default;
+        }
+
+        // Distinct holes so the shared cut-out can tell the buttons apart.
+        static Rect HomeSlot(HomeControl control)
+        {
+            int i = (int)control;
+            if (i <= 0) return default;
+            return new Rect(i * 24f, 8f, 16f, 16f);
         }
     }
 }

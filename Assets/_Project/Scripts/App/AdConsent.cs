@@ -511,7 +511,8 @@ namespace FlockFive
         static extern int FlockFive_HasLaunchArg(string needle);
 #endif
 
-        // True only while a card is painted and the point is inside that card.
+        // Card overlap only. The wood rect is layout: it sits above the LEVEL
+        // flower and misses the rails. Full-screen input is ModalBlock.
         public static bool BlocksPoint(Vector2 p)
         {
             if (!_painted || _block.width < 2f || _block.height < 2f) return false;
@@ -519,6 +520,7 @@ namespace FlockFive
         }
 
         // True only while a card is painted and the control actually overlaps it.
+        // Home taps do not use this for the veil. See ModalBlock.
         public static bool BlocksControl(Rect control)
         {
             if (!_painted || _block.width < 2f || _block.height < 2f) return false;

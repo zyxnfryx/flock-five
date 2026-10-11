@@ -409,9 +409,7 @@ namespace FlockFive
             var glow = GlowTex();
             // White LEVEL type still reads through a 0.72 scrim in the slot between
             // Collect and Watch Ad. Cover the home behind the daily popup.
-            GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.98f);
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            ModalBlock.Paint(ModalBlock.Id.Daily, new Color(0.04f, 0.03f, 0.02f, 0.98f));
 
             float k = DailyPop(_dailyPopAt);
             var pivot = flowerOn ? DailyPivot(card, flower) : card.center;
@@ -1977,9 +1975,7 @@ namespace FlockFive
             float t = Time.unscaledTime;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
             var glow = GlowTex();
-            GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.72f);
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            ModalBlock.Paint(ModalBlock.Id.DailyAsk, new Color(0.04f, 0.03f, 0.02f, 0.72f));
 
             float k = DailyPop(_dailyAskAt);
             var prev = GUI.matrix;
@@ -2118,9 +2114,7 @@ namespace FlockFive
             float t = Time.unscaledTime;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
             var glow = GlowTex();
-            GUI.color = new Color(0.04f, 0.03f, 0.02f, 0.72f);
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            ModalBlock.Paint(ModalBlock.Id.Welcome, new Color(0.04f, 0.03f, 0.02f, 0.72f));
 
             float k = DailyPop(_welcomeAt);
             var prev = GUI.matrix;

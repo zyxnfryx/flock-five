@@ -251,9 +251,7 @@ namespace FlockFive
                 }
                 if (_app == null) return;
                 var lay = LayoutVipSoft(Screen.width, Screen.height);
-                GUI.color = new Color(0.05f, 0.04f, 0.03f, 0.58f);
-                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-                GUI.color = Color.white;
+                ModalBlock.Paint(ModalBlock.Id.VipSoft, new Color(0.05f, 0.04f, 0.03f, 0.58f));
                 bool goHit = false;
                 bool goHeld = false;
                 bool skipHit = false;
@@ -420,9 +418,7 @@ namespace FlockFive
                 // Build 63: the offer face dims a little deeper so the LEVEL flower and rails
                 // under the bigger card recede (nothing behind it moves or resizes).
                 float dimTo = _member ? (entering ? 0.78f : 0.72f) : (entering ? 0.84f : 0.80f);
-                GUI.color = new Color(0.04f, 0.03f, 0.02f, dimTo * dimIn * outDim);
-                GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
-                GUI.color = Color.white;
+                ModalBlock.Paint(ModalBlock.Id.Vip, new Color(0.04f, 0.03f, 0.02f, dimTo * dimIn * outDim));
                 if (!Closing) DrawArrivalGlow(glow, s, age);
 
                 int reveal = RevealCount(age);
@@ -1009,9 +1005,7 @@ namespace FlockFive
                 }
 
                 float dimA = 0.66f * PopupMotion.Smooth(age / 0.25f) * (1f - PopupMotion.Smooth(PopupMotion.Beat(exitU, 0.35f, 0.65f)));
-                GUI.color = new Color(0.04f, 0.03f, 0.02f, dimA);
-                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-                GUI.color = Color.white;
+                ModalBlock.Paint(ModalBlock.Id.Vip, new Color(0.04f, 0.03f, 0.02f, dimA));
 
                 float d = Mathf.Min(Screen.width * 0.36f, Screen.height * 0.19f);
                 float floorY = SplashTitleHalo().yMax + 12f * s;

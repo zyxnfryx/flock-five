@@ -85,6 +85,14 @@ namespace FlockFive.Editor
             EditorApplication.isPlaying = true;
         }
 
+        // ATT veil, sparrow caption gap, bee lesson gate, and the perch clip.
+        public static void Capture82f()
+        {
+            SetGameView(1179, 2556);
+            File.WriteAllText("/tmp/flock-five-b82f-stills", "1");
+            EditorApplication.isPlaying = true;
+        }
+
         public static void Capture81Pass4()
         {
             SetGameView(1179, 2556);

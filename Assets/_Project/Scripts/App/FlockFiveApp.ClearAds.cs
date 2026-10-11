@@ -156,9 +156,7 @@ namespace FlockFive
 #endif
             if (!show) return;
             var lay = LayoutClearOffer(Screen.width, Screen.height);
-            GUI.color = new Color(0.05f, 0.04f, 0.03f, 0.58f);
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            ModalBlock.Paint(ModalBlock.Id.ClearDouble, new Color(0.05f, 0.04f, 0.03f, 0.58f));
 
             bool watchHit = false;
             bool watchHeld = false;

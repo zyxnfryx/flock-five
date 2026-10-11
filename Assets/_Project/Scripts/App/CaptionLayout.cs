@@ -143,7 +143,7 @@ namespace FlockFive
             "Leaves hide these birds.\nCollect at a feeder to clear them.";
 
         public const string SparrowLine =
-            "A sparrow blocks a feeder!\nMatch five birds to chase it off.";
+            "A sparrow blocks a feeder!\nMatch five birds there to chase it off.";
 
         public const string HawkLine =
             "A hawk blocks a feeder!\nMatch five there twice.";
@@ -281,11 +281,54 @@ namespace FlockFive
         }
 
         // Paint-time swap. The cue string stays the plain sentence so a repeat
-        // does not restart the fade.
+        // does not restart the fade. The blank line is applied here and again
+        // in FitFloor; HeadlineGap is idempotent so the two agree.
         public static string LessonShown(string text, Font font)
         {
-            if (text == HiveGardenLine && DrawsEmoji(font)) return HiveGardenEmojiLine;
-            return text ?? "";
+            if (text == HiveGardenLine && DrawsEmoji(font)) text = HiveGardenEmojiLine;
+            return HeadlineGap(text);
+        }
+
+        // One empty line between the first sentence and the rest. A single
+        // sentence, including one that already wraps, stays as authored.
+        // Trailing marks on the headline (the bee emoji) stay on that line.
+        public static string HeadlineGap(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text ?? "";
+            int split = FirstSentenceEnd(text);
+            if (split < 0) return text;
+            int body = split + 1;
+            while (body < text.Length && text[body] != '\n' && text[body] != '\r' && !char.IsLetterOrDigit(text[body]))
+                body++;
+            int rest = body;
+            while (rest < text.Length && (text[rest] == ' ' || text[rest] == '\n' || text[rest] == '\r'))
+                rest++;
+            if (rest >= text.Length || !HasAlnum(text, rest)) return text;
+            string between = text.Substring(body, rest - body);
+            if (between.IndexOf("\n\n", System.StringComparison.Ordinal) >= 0) return text;
+            string head = text.Substring(0, body).TrimEnd(' ', '\r');
+            return head + "\n\n" + text.Substring(rest);
+        }
+
+        static int FirstSentenceEnd(string text)
+        {
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c != '.' && c != '!' && c != '?') continue;
+                int j = i;
+                while (j + 1 < text.Length && text[j + 1] == c) j++;
+                if (j + 1 < text.Length && char.IsDigit(text[j + 1])) continue;
+                return j;
+            }
+            return -1;
+        }
+
+        static bool HasAlnum(string text, int from)
+        {
+            for (int i = from; i < text.Length; i++)
+                if (char.IsLetterOrDigit(text[i])) return true;
+            return false;
         }
 
         // Glass inside the side margins. Plates stay inside this. Text stays
@@ -364,12 +407,14 @@ namespace FlockFive
             if (shown.Length > 0)
             {
                 var parts = shown.Split('\n');
-                lines = parts.Length;
+                lines = 0;
                 for (int i = 0; i < parts.Length; i++)
                 {
                     if (parts[i].Length == 0) continue;
+                    lines++;
                     if (!LineFits(style, parts[i], maxW, fit.Font)) overflow = true;
                 }
+                if (lines < 1) lines = 1;
             }
             if (snug.PlateW > SafePlateWidth(screenW, screenH) + 0.5f) overflow = true;
             gold.Shown = shown;
@@ -388,6 +433,7 @@ namespace FlockFive
         // caller grows the plate when TextH is taller than the seat.
         public static CaptionFit FitFloor(GUIStyle style, string text, float maxW, float maxH, int floor, int hi)
         {
+            text = HeadlineGap(text);
             var fit = new CaptionFit { Shown = text ?? "", Font = 1, TextH = 1f };
             if (string.IsNullOrEmpty(text)) return fit;
             if (hi < 1) hi = 1;
