@@ -70,6 +70,7 @@ namespace FlockFive
         const string PrefLoginDay = "flockfive.login.day";
         const string PrefLoginN = "flockfive.login.n";
         const string PrefOwed = "flockfive.owed";
+        const string PrefClearDouble = "flockfive.clear.double";
         // Clear pay before streak and login. Level 1 is 25, then +5 a level (20 + 5n).
         public static int StageBase(int level)
         {
@@ -88,6 +89,7 @@ namespace FlockFive
         public static int Pending { get; set; }
         // Stage-clear coins waiting for the reward sign's pay step. Not the balance.
         static int Owed;
+        static bool _clearDouble;
         public static int LoginDays { get; private set; }
         public static int LoginMul => Mathf.Clamp(LoginDays, 1, 3);
         public static int LastStagePay { get; private set; }
@@ -104,6 +106,7 @@ namespace FlockFive
             if (Streak != saved) PrefGuard.SetInt(PrefStreak, Streak);
             LoginDays = Mathf.Max(1, PrefGuard.GetInt(PrefLoginN, 1));
             Owed = Mathf.Max(0, PrefGuard.GetInt(PrefOwed, 0));
+            _clearDouble = PlayerPrefs.GetInt(PrefClearDouble, 0) == 1;
             TickLogin();
             bool inStage = PlayerPrefs.GetInt(PrefStage, 0) == 1;
             if (inStage)
@@ -153,7 +156,7 @@ namespace FlockFive
             LastStagePay = basePay;
             LastStreak = Streak;
             LastLogin = LoginMul;
-            int pay = basePay * Streak * LastLogin;
+            int pay = ApplyClearDouble(basePay * Streak * LastLogin);
             LastWin = pay;
             // The reward sign credits this once, after its roll (or amount fade).
             Pending = pay;
@@ -213,6 +216,34 @@ namespace FlockFive
             PrefGuard.SetInt(PrefCoins, Coins);
             PlayerPrefs.Save();
             return true;
+        }
+
+        // What AwardClear will pay before a watched 2x. Same formula, no write.
+        public static int PeekClearPay()
+        {
+            int streak = StreakTier.Next(Streak);
+            int login = LoginMul < 1 ? 1 : LoginMul;
+            return ClearRewardFor(LevelData.DisplayNumber) * streak * login;
+        }
+
+        public static bool ClearDoubleArmed => _clearDouble;
+
+        // The clear-double reward. The next AwardClear pays twice and clears this.
+        public static bool ArmClearDouble()
+        {
+            _clearDouble = true;
+            PlayerPrefs.SetInt(PrefClearDouble, 1);
+            PlayerPrefs.Save();
+            return true;
+        }
+
+        public static int ApplyClearDouble(int pay)
+        {
+            if (!_clearDouble || pay <= 0) return pay;
+            _clearDouble = false;
+            PlayerPrefs.DeleteKey(PrefClearDouble);
+            PlayerPrefs.Save();
+            return pay * 2;
         }
 
         public static void Credit(int amount)

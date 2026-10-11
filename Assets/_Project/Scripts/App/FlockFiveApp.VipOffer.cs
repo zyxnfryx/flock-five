@@ -15,7 +15,7 @@ namespace FlockFive
     // (sparkle), PaintCoachCaption (standard caption box), SfxLibrary "fanfare" (MixDesk Lead).
     public sealed partial class FlockFiveApp
     {
-        static class VipOffer
+        public static class VipOffer
         {
             const string Headline = "Go VIP: play without interruptions";
             const string MemberHeadline = "You're a VIP! Thank you";
@@ -123,6 +123,20 @@ namespace FlockFive
             static float _welExitAt = -1f;
             static bool _welFanfare;
 
+            // Post-interstitial ask. Not the purchase card. Go VIP only remembers
+            // a request; Tick opens the real card once home is the splash.
+            static bool _soft;
+#if UNITY_EDITOR
+            static bool _softShot;
+            public static bool ShotSoft
+            {
+                get => _softShot;
+                set => _softShot = value;
+            }
+#endif
+            public static bool SoftUp => _soft;
+            public static bool FullRequested { get; private set; }
+
             // True while a card or the welcome owns the screen (home treats it as modal).
             public static bool IsOpen => _open || _welcome;
 
@@ -145,6 +159,11 @@ namespace FlockFive
                 _welcome = false;
                 _welAt = -1f;
                 _welExitAt = -1f;
+                _soft = false;
+                FullRequested = false;
+#if UNITY_EDITOR
+                _softShot = false;
+#endif
                 VipWelcomeHoldsRail = false;
             }
 
@@ -180,6 +199,7 @@ namespace FlockFive
             }
 
             // Hard stop (left the home face). The welcome stays marked as shown.
+            // The garden soft ask is not this card, so a garden frame must not drop it.
             public static void Close()
             {
                 _open = false;
@@ -190,6 +210,72 @@ namespace FlockFive
                 VipWelcomeHoldsRail = false;
             }
 
+            // Light ask after an interstitial actually closed. Owners never see it.
+            public static void OpenSoft()
+            {
+                if (NoAds.Owned) return;
+                _soft = true;
+            }
+
+            // Not now, a tap outside, or the timeout. Go VIP only flags the real card.
+            public static void DismissSoft(bool openFull)
+            {
+                _soft = false;
+#if UNITY_EDITOR
+                _softShot = false;
+#endif
+                if (openFull && !NoAds.Owned) FullRequested = true;
+            }
+
+            public static bool TakeFullRequest()
+            {
+                bool open = FullRequested;
+                FullRequested = false;
+                return open;
+            }
+
+            // Caption plus two buttons. Hit tests run only while the ask is live,
+            // so a still can paint it without eating the pointer.
+            public static void DrawSoft(float s)
+            {
+#if UNITY_EDITOR
+                bool show = _soft || _softShot;
+#else
+                bool show = _soft;
+#endif
+                if (!show) return;
+                if (NoAds.Owned)
+                {
+                    _soft = false;
+                    return;
+                }
+                if (_app == null) return;
+                var lay = LayoutVipSoft(Screen.width, Screen.height);
+                GUI.color = new Color(0.05f, 0.04f, 0.03f, 0.58f);
+                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                bool goHit = false;
+                bool goHeld = false;
+                bool skipHit = false;
+                bool skipHeld = false;
+                bool outside = false;
+                if (_soft)
+                {
+                    goHit = HitPad(lay.Go, out goHeld);
+                    skipHit = HitPad(lay.Skip, out skipHeld);
+                    outside = HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
+                }
+                _app.PaintOfferCaption(VipSoftLine, lay.Caption, s);
+                EnsureOfferWord();
+                DrawPopupButton(lay.Go, goHeld, PopupTint.Gold);
+                DrawPopupWord(lay.Go, VipSoftGo, _offerWord, s);
+                DrawPopupButton(lay.Skip, skipHeld, PopupTint.Wood);
+                DrawPopupWord(lay.Skip, VipSoftSkip, _offerWord, s);
+                if (!_soft) return;
+                if (goHit) DismissSoft(true);
+                else if (skipHit || outside) DismissSoft(false);
+            }
+
             // Home face, every pass. Owned while the offer is up (Buy or Restore landed):
             // the offer closes. Owned and never welcomed on this install: the welcome runs
             // once the home is free (no card, lesson, reward pay or streak board).
@@ -198,6 +284,15 @@ namespace FlockFive
                 // Before the home rail draws: a finished fly hands the slot to the rail badge
                 // on this same frame, at SplashNoAdsRect, with no second medal.
                 SettleWelcome();
+                // Go VIP from the soft ask. Splash home only, so a badger fight
+                // keeps the flag until the player is back on the plain splash.
+                if (FullRequested && NoAds.Owned) FullRequested = false;
+                if (FullRequested && !_open && !_welcome && _app != null
+                    && _app._splash && _app._home == HomeFace.Splash && !NoAds.Owned)
+                {
+                    Show();
+                    if (_open) FullRequested = false;
+                }
                 if (!NoAds.Owned)
                 {
                     VipWelcomeHoldsRail = false;

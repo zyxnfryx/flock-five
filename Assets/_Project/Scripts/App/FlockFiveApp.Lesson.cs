@@ -128,6 +128,8 @@ namespace FlockFive
                 "Tap your bird for a closer look.",
                 "Welcome, VIP!",
                 CaptionLayout.VipPitchLine,
+                ClearDoubleLine,
+                VipSoftLine,
                 "Are you sure you want to restart?",
                 "Keep multiplier (Watch Ad / No thanks).",
                 "TAP A CARD TO KEEP",

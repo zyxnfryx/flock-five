@@ -69,6 +69,14 @@ namespace FlockFive.Editor
             EditorApplication.isPlaying = true;
         }
 
+        // Stage-clear 2x, soft Go VIP, and the odd-wedge wheel x2.
+        public static void Capture82d()
+        {
+            SetGameView(1179, 2556);
+            File.WriteAllText("/tmp/flock-five-b82d-stills", "1");
+            EditorApplication.isPlaying = true;
+        }
+
         public static void Capture81Pass4()
         {
             SetGameView(1179, 2556);

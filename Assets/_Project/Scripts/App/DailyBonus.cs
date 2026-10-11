@@ -23,9 +23,11 @@ namespace FlockFive
     // multiplier × base, so every prize is a multiple of 100 and at least 100.
     // Weights below are the only odds. The spin is chosen with UnityEngine.Random
     // before the wheel moves, then the wheel lands on that wedge.
-    // After it lands, a rewarded ad may double that spin once. A skip or a failed
-    // show pays the spin once. The once-per-day gate is the same day key as the
-    // claim (flockfive.daily.last). The tutorial spin does not offer the double.
+    // After it lands, a rewarded ad may double that spin once. A prize that is
+    // not a multiple of 100 still offers the double; the doubled result rounds
+    // up to a multiple of 100. A skip or a failed show pays the spin once.
+    // The once-per-day gate is the same day key as the claim (flockfive.daily.last).
+    // The tutorial spin does not offer the double.
     public static class DailyBonus
     {
         const string PrefLast = "flockfive.daily.last";
@@ -72,6 +74,7 @@ namespace FlockFive
         static bool _resolved;
         static bool _tutorialSpin;
         static bool _pose;
+        static int _oddCoins;
 
         public enum Gate
         {
@@ -107,6 +110,7 @@ namespace FlockFive
             _resolved = false;
             _tutorialSpin = false;
             _pose = false;
+            _oddCoins = 0;
         }
 
         public static bool OfferReady => _booted && _gate == Gate.Ready;
@@ -173,7 +177,19 @@ namespace FlockFive
             if (mul < 1) mul = 1;
             int p = mul * BaseFor(highestLevel);
             if (p < 100) p = 100;
+#if UNITY_EDITOR
+            if (_pose && _oddCoins > 0 && wedge == _spinWedge) return _oddCoins;
+#endif
             return p;
+        }
+
+        // Doubled wheel coins. 260 becomes 300. A multiple of 100 stays put.
+        public static int RoundUp100(int amount)
+        {
+            if (amount <= 0) return 0;
+            int rem = amount % 100;
+            if (rem == 0) return amount;
+            return amount + (100 - rem);
         }
 
         // roll is 0 .. WeightSum-1. The only mapping from a roll to a wedge.
@@ -413,7 +429,7 @@ namespace FlockFive
             if (_last >= today) return false;
             wedge = RollWedge();
             coins = Prize(HighestLevel, wedge);
-            if (coins < 100 || (coins % 100) != 0) return false;
+            if (coins <= 0) return false;
             firstEver = _last <= 0;
             _spinWedge = wedge;
             _spinCoins = coins;
@@ -440,13 +456,14 @@ namespace FlockFive
         }
 
         // After today's spin has landed, once, when an ad is ready and this spin
-        // is not the tutorial. The day key is the claim itself.
+        // is not the tutorial. The day key is the claim itself. A spin that is
+        // not a multiple of 100 still offers; TryResolve rounds the double up.
         public static bool ShowDouble(bool adReady, bool tutorial)
         {
             if (tutorial || _tutorialSpin || !adReady) return false;
             if (!_booted || !_landed || _resolved) return false;
             if (_gate != Gate.Claimed) return false;
-            return _spinCoins >= 100 && (_spinCoins % 100) == 0;
+            return _spinCoins > 0;
         }
 
         // One payout for the spin. doubled pays 2× only while ShowDouble would
@@ -460,8 +477,13 @@ namespace FlockFive
             if (!_landed) _landed = true;
             if (_gate != Gate.Claimed) return false;
             if (doubled && !ShowDouble(true, false)) doubled = false;
-            coins = doubled ? _spinCoins * 2 : _spinCoins;
-            if (coins < 100 || (coins % 100) != 0)
+            coins = doubled ? RoundUp100(_spinCoins * 2) : _spinCoins;
+            if (coins <= 0)
+            {
+                coins = 0;
+                return false;
+            }
+            if (doubled && (coins < 100 || (coins % 100) != 0))
             {
                 coins = 0;
                 return false;
@@ -562,13 +584,15 @@ namespace FlockFive
         // no-op. False only when today's claim cannot take the pay yet.
         public static bool PayStoredDouble(int baseCoins)
         {
-            if (baseCoins < 100 || (baseCoins % 100) != 0) return false;
+            if (baseCoins <= 0) return false;
+            int doubled = RoundUp100(baseCoins * 2);
+            if (doubled < 100 || (doubled % 100) != 0) return false;
             if (!_booted) Boot();
-            if (_resolved && _payout >= baseCoins * 2) return true;
-            if (_resolved && _payout == baseCoins)
+            if (_resolved && _payout >= doubled) return true;
+            if (_resolved && _payout > 0 && _payout < doubled)
             {
-                Purse.Credit(baseCoins);
-                _payout = baseCoins * 2;
+                Purse.Credit(doubled - _payout);
+                _payout = doubled;
                 _payN = -1;
                 PrefGuard.SetInt(PrefPay, _payout);
                 PlayerPrefs.Save();
@@ -592,6 +616,22 @@ namespace FlockFive
             _landed = false;
             _resolved = false;
             _tutorialSpin = false;
+        }
+
+        // A landed spin whose coins are not a multiple of 100. The x2 offer
+        // still shows, and the doubled pay rounds up.
+        public static void TestLand(int coins, bool tutorial)
+        {
+            if (!_booted) Boot();
+            _pose = false;
+            _oddCoins = 0;
+            _spinCoins = coins;
+            _payout = coins;
+            _payN = -1;
+            _landed = true;
+            _resolved = false;
+            _tutorialSpin = tutorial;
+            _gate = Gate.Claimed;
         }
 
         public static int TestToday
@@ -651,6 +691,7 @@ namespace FlockFive
             _booted = true;
             _tutorialSpin = false;
             _resolved = false;
+            _oddCoins = 0;
             _spinWedge = wedge;
             _spinCoins = Prize(HighestLevel, wedge);
             _payout = _spinCoins;
@@ -667,9 +708,24 @@ namespace FlockFive
             CacheLines(3);
         }
 
+        public static void PoseOddCoins(int coins)
+        {
+            if (coins < 1) coins = 1;
+            _oddCoins = coins;
+            _spinCoins = coins;
+            _payout = coins;
+            _payN = -1;
+            _landed = true;
+            _resolved = false;
+            _tutorialSpin = false;
+            _gate = Gate.Claimed;
+            CacheLines(_streak < 1 ? 1 : _streak);
+        }
+
         public static void ClearWheelShot()
         {
             _pose = false;
+            _oddCoins = 0;
             _testToday = 0;
             _booted = false;
             _spinWedge = -1;

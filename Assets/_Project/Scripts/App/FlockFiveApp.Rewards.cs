@@ -17,6 +17,7 @@ namespace FlockFive
                 case RewardedGrant.Place.Branch: return ApplyBranchTicket(t);
                 case RewardedGrant.Place.Wheel: return ApplyWheelTicket(t);
                 case RewardedGrant.Place.Keep: return ApplyKeepTicket(t);
+                case RewardedGrant.Place.Clear: return ApplyClearTicket(t);
                 default: return false;
             }
         }
@@ -48,6 +49,11 @@ namespace FlockFive
             if (!RewardEffects.Keep(t.Payload)) return false;
             _restartAsk = RestartAsk.None;
             return true;
+        }
+
+        bool ApplyClearTicket(RewardedGrant.Ticket t)
+        {
+            return RewardEffects.ClearDouble();
         }
 
         // The glove step's goal is the branch. Finish it when that reward lands,

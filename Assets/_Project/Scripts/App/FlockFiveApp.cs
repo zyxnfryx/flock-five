@@ -576,6 +576,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-b82c-stills"); } catch { }
                 StartCoroutine(ShotBuild82c());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-b82d-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b82d-stills"); } catch { }
+                StartCoroutine(ShotBuild82d());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
@@ -1996,6 +2001,7 @@ namespace FlockFive
 
         // mode 1 is mid-spin. mode 2 lands the 10x wedge with the x2 button up.
         // mode 3 is that same land after the double, badge on the result.
+        // mode 4 lands an odd wedge ($130) with the x2 offer still up.
         // Pose does not write the daily prefs. DrawSplash calls this again so a
         // home pose cannot close the card before the repaint.
         void PoseDailyWheelShot()
@@ -2032,6 +2038,18 @@ namespace FlockFive
                 DailyBonus.PoseWheelShot(2, 7);
                 _dailyPhase = DailyWheelPhase.Landed;
                 _dailyAngle = DailyBonus.PointerAngle(7);
+                _wheelPayMul = 1;
+                _wheelFlickAt = -1f;
+                _wheelX2At = Time.unscaledTime - 1.5f;
+                Ads.SetReadyOverride(1);
+            }
+            else if (ShotDailyWheel == 4)
+            {
+                // Odd landed wedge ($130). The x2 offer is up; the pay rounds up.
+                DailyBonus.PoseWheelShot(2, 1);
+                DailyBonus.PoseOddCoins(130);
+                _dailyPhase = DailyWheelPhase.Landed;
+                _dailyAngle = DailyBonus.PointerAngle(1);
                 _wheelPayMul = 1;
                 _wheelFlickAt = -1f;
                 _wheelX2At = Time.unscaledTime - 1.5f;
@@ -3493,6 +3511,7 @@ namespace FlockFive
             TickPopups();
             TickDailyBonus();
             if (_splash) return;
+            if (ClearAdOfferUp()) return;
             if (_restartAsk != RestartAsk.None) return;
             // A break packs the column before the collect coroutine reaches its tween.
             // Start the shared ease here. SnapIfGapped no longer fits.
@@ -4911,7 +4930,25 @@ namespace FlockFive
                 _gardenScoring = false;
                 yield break;
             }
+            yield return OfferClearDouble();
+            if (_restarting || _splash)
+            {
+                _gardenScoring = false;
+                yield break;
+            }
             yield return Ads.Interstitial();
+            if (_restarting || _splash)
+            {
+                _gardenScoring = false;
+                yield break;
+            }
+            // Soft Go VIP only after a shown interstitial closed. The full card
+            // waits until the splash home, including when a badger fight is next.
+            if (Ads.TryConsumeVipSoft())
+            {
+                VipOffer.OpenSoft();
+                yield return WaitVipSoft();
+            }
             if (_restarting || _splash)
             {
                 _gardenScoring = false;
@@ -6372,6 +6409,8 @@ namespace FlockFive
             DrawSeasonBanner(s, top);
             if (_gift != GiftFace.None) DrawGiftOffer(s);
             if (_restartAsk != RestartAsk.None) DrawRestartAsk(s);
+            DrawClearDoubleOffer(s);
+            VipOffer.DrawSoft(s);
             DrawBadgerLeap();
             TickPreload();
             FinishLevelCurtain();

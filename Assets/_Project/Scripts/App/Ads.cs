@@ -1,12 +1,17 @@
+using System;
 using System.Collections;
+using System.Globalization;
 using UnityEngine;
 using Unity.Services.LevelPlay;
+using Object = UnityEngine.Object;
 
 namespace FlockFive
 {
     // Rewarded bonus_branch stays opt-in. Stage-clear interstitial is clears
-    // 2, 5, 8… Video poker has its own every-10-hands interstitial on the
-    // same show path. No Ads silences both. No banners.
+    // 2, 5, 8… except a new player sees none before lifetime clear 6, and none
+    // within 75s of any ad (rewarded included). A watched clear-double skips
+    // that clear's interstitial. No Ads silences interstitials only.
+    // Video poker uses the same interstitial gates. No banners.
     // Ad log: every ad request / show / close plus app pause and resume,
     // stamped with local time and what the player was doing. Kept across
     // relaunches (last 60 lines). The on-screen four-finger list is compiled
@@ -150,13 +155,19 @@ namespace FlockFive
 
         public const string PlacementBonus = "bonus_branch";
         public const string PlacementClear = "stage_clear";
+        public const string PlacementClearDouble = "clear_double";
         public const string PlacementDailyDouble = "daily_double";
         public const string PlacementKeep = "keep_multiplier";
         public static string ActivePlacement = PlacementBonus;
 
         const string PrefClears = "flockfive.session_clears";
         const string PrefPokerHands = "flockfive.ads.pokerhands";
+        const string PrefLastAd = "flockfive.ads.lastany";
+        public const string PrefVipSoft = "flockfive.vip.soft";
         public const int PokerHandCadence = 10;
+        // No interstitial on lifetime clears 1–5. Clear 6 is the first that may.
+        public const int InterstitialGraceClears = 6;
+        public const double InterstitialCooldownSec = 75;
 
         // Garden clears toward 2, 5, 8… Survives quit/relaunch. Not ladder instage.
         public static int SessionClears;
@@ -184,6 +195,13 @@ namespace FlockFive
 
         static AdsHost _host;
         static int _showDepth;
+        static bool _skipClearInterstitial;
+        static bool _intDisplayed;
+        static double _lastAnyAd;
+        static bool _clockSet;
+        static double _clock;
+        static int _softDay;
+        static readonly DateTime UnixEpoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         // -1 follows the real rewarded unit. 0 forces not ready. 1 forces ready (stills).
         static int _readyOverride = -1;
         // Foreground seconds the current show has been up. The resume frame's
@@ -313,6 +331,13 @@ namespace FlockFive
             _showDepth = 0;
             _shownForeground = 0f;
             _settleLeft = -1f;
+            _skipClearInterstitial = false;
+            _intDisplayed = false;
+            VipSoftPending = false;
+            _clockSet = false;
+            _clock = 0;
+            _softDay = 0;
+            LoadLastAd();
             GamePause.Reset();
         }
 
@@ -325,7 +350,150 @@ namespace FlockFive
         public static bool CadenceHit()
         {
             int n = SessionClears;
-            return n >= 2 && (n - 2) % 3 == 0;
+            return CadenceHit(n);
+        }
+
+        public static bool CadenceHit(int lifetimeClears)
+        {
+            return lifetimeClears >= 2 && (lifetimeClears - 2) % 3 == 0;
+        }
+
+        // Unix seconds. Tests pin this; play mode follows UTC.
+        public static double AdClock
+        {
+            get
+            {
+                if (_clockSet) return _clock;
+                return (DateTime.UtcNow - UnixEpoch).TotalSeconds;
+            }
+        }
+
+        public static double LastAnyAd => _lastAnyAd;
+
+        // Set when an interstitial actually closed on screen. The clear flow
+        // reads it once and may show the soft Go VIP card.
+        public static bool VipSoftPending { get; private set; }
+
+        public static void SetClockForTest(double unix)
+        {
+            _clock = unix;
+            _clockSet = true;
+        }
+
+        public static void ClearClockForTest()
+        {
+            _clockSet = false;
+            _clock = 0;
+        }
+
+        public static void SetLastAnyForTest(double unix) => _lastAnyAd = unix;
+
+        public static void SetSoftDayForTest(int stamp) => _softDay = stamp;
+
+        public static int SoftDay
+        {
+            get
+            {
+                if (_softDay > 0) return _softDay;
+                var n = DateTime.Now;
+                return n.Year * 10000 + n.Month * 100 + n.Day;
+            }
+        }
+
+        // Rewarded clear-double is optional and is not silenced by VIP.
+        public static bool ClearRewardOffered(bool enabled, bool rewardedReady)
+        {
+            return enabled && rewardedReady;
+        }
+
+        // The watched clear-double skips only the interstitial for this clear.
+        public static void MarkClearRewardWatched() => _skipClearInterstitial = true;
+
+        public static bool TakeClearSkip()
+        {
+            bool skip = _skipClearInterstitial;
+            _skipClearInterstitial = false;
+            return skip;
+        }
+
+        public static bool GraceBlocks(int lifetimeClears)
+        {
+            return lifetimeClears < InterstitialGraceClears;
+        }
+
+        public static bool Cooling(double now, double lastAnyAd)
+        {
+            return lastAnyAd > 0 && now - lastAnyAd < InterstitialCooldownSec;
+        }
+
+        // Shared interstitial gate. VIP suppresses interstitials only.
+        // rewardSkip is the watched clear-double. Cadence is the caller's.
+        public static bool InterstitialBlocked(int lifetimeClears, bool vip, bool enabled, bool rewardSkip, double now, double lastAnyAd)
+        {
+            if (!enabled) return true;
+            if (vip) return true;
+            if (rewardSkip) return true;
+            if (GraceBlocks(lifetimeClears)) return true;
+            if (Cooling(now, lastAnyAd)) return true;
+            return false;
+        }
+
+        public static bool StageInterstitialDue(int lifetimeClears, bool vip, bool enabled, bool rewardSkip, double now, double lastAnyAd)
+        {
+            if (InterstitialBlocked(lifetimeClears, vip, enabled, rewardSkip, now, lastAnyAd)) return false;
+            return CadenceHit(lifetimeClears);
+        }
+
+        public static bool PokerInterstitialDue(int lifetimeClears, int hands, bool vip, bool enabled, double now, double lastAnyAd)
+        {
+            if (hands < PokerHandCadence) return false;
+            return !InterstitialBlocked(lifetimeClears, vip, enabled, false, now, lastAnyAd);
+        }
+
+        // Not for VIP owners. A different calendar day may ask again.
+        public static bool VipSoftDue(bool owned, int today, int savedDay)
+        {
+            if (owned || today <= 0) return false;
+            return savedDay != today;
+        }
+
+        public static void NoteAnyAd()
+        {
+            double now = AdClock;
+            if (now < 0) now = 0;
+            _lastAnyAd = now;
+            PlayerPrefs.SetString(PrefLastAd, now.ToString("R", CultureInfo.InvariantCulture));
+            PlayerPrefs.Save();
+        }
+
+        public static void NoteInterstitialDisplayed()
+        {
+            _intDisplayed = true;
+            NoteAnyAd();
+        }
+
+        static void LoadLastAd()
+        {
+            string raw = PlayerPrefs.GetString(PrefLastAd, "");
+            double v;
+            if (!string.IsNullOrEmpty(raw)
+                && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out v)
+                && v > 0)
+                _lastAnyAd = v;
+            else
+                _lastAnyAd = 0;
+        }
+
+        // True once, when a shown interstitial may ask. Marks the day.
+        public static bool TryConsumeVipSoft()
+        {
+            if (!VipSoftPending) return false;
+            VipSoftPending = false;
+            int today = SoftDay;
+            if (!VipSoftDue(NoAds.Owned, today, PlayerPrefs.GetInt(PrefVipSoft, 0))) return false;
+            PlayerPrefs.SetInt(PrefVipSoft, today);
+            PlayerPrefs.Save();
+            return true;
         }
 
         public static IEnumerator Interstitial()
@@ -333,12 +501,16 @@ namespace FlockFive
             SessionClears++;
             PlayerPrefs.SetInt(PrefClears, SessionClears);
             PlayerPrefs.Save();
-            bool hit = CadenceHit();
-            AdLog.Add("clear #" + SessionClears + (hit ? " -> ad turn" : " -> no ad turn")
-                + (!Enabled ? " (ads off)" : "") + (NoAds.Owned ? " (No Ads owned)" : ""));
-            if (!Enabled) yield break;
-            if (NoAds.Owned) yield break;
-            if (!hit) yield break;
+            bool skip = TakeClearSkip();
+            bool vip = NoAds.Owned;
+            bool due = StageInterstitialDue(SessionClears, vip, Enabled, skip, AdClock, LastAnyAd);
+            AdLog.Add("clear #" + SessionClears + (due ? " -> ad turn" : " -> no ad turn")
+                + (!Enabled ? " (ads off)" : "")
+                + (vip ? " (No Ads owned)" : "")
+                + (skip ? " (2x watched)" : "")
+                + (GraceBlocks(SessionClears) ? " (grace)" : "")
+                + (Cooling(AdClock, LastAnyAd) ? " (cooldown)" : ""));
+            if (!due) yield break;
             Ensure();
             if (_host == null) { AdLog.Add("interstitial skipped: no ad host"); yield break; }
             yield return _host.RunInterstitial();
@@ -363,11 +535,13 @@ namespace FlockFive
         {
             int n = PokerHands;
             bool owned = NoAds.Owned;
-            bool allow = Enabled && !owned && n >= PokerHandCadence;
+            bool allow = PokerInterstitialDue(SessionClears, n, owned, Enabled, AdClock, LastAnyAd);
             AdLog.Add("poker hands " + n
                 + (allow ? " -> show" : " -> skipped")
                 + (!Enabled ? " (ads off)" : "")
-                + (owned ? " (No Ads owned)" : ""));
+                + (owned ? " (No Ads owned)" : "")
+                + (GraceBlocks(SessionClears) ? " (grace)" : "")
+                + (Cooling(AdClock, LastAnyAd) ? " (cooldown)" : ""));
             if (n >= PokerHandCadence)
             {
                 PlayerPrefs.SetInt(PrefPokerHands, 0);
@@ -423,6 +597,7 @@ namespace FlockFive
         {
             if (placement == PlacementDailyDouble) return RewardedGrant.Place.Wheel;
             if (placement == PlacementKeep) return RewardedGrant.Place.Keep;
+            if (placement == PlacementClearDouble) return RewardedGrant.Place.Clear;
             return RewardedGrant.Place.Branch;
         }
 
@@ -448,14 +623,20 @@ namespace FlockFive
         }
 
         // Interstitial close and display failure. Same audio undo as a rewarded close.
+        // A real on-screen close (not a load or display failure) may ask Go VIP once.
         public static void DeliverInterstitialClosed()
         {
             AudioGuard.Restore();
+            bool shown = _intDisplayed;
+            _intDisplayed = false;
+            if (!shown || NoAds.Owned) return;
+            VipSoftPending = true;
         }
 
         public static void DeliverDisplayedCallback()
         {
             RewardedGrant.OnDisplayed();
+            NoteAnyAd();
         }
 
         // No-fill or a display error. Pays nothing.
@@ -834,6 +1015,7 @@ namespace FlockFive
         void OnIntShown(LevelPlayAdInfo info)
         {
             bool owned = _intWaiting;
+            Ads.NoteInterstitialDisplayed();
             AdLog.Add("INTERSTITIAL ON SCREEN" + (owned ? "" : " (NOT requested by game!)"));
             if (owned || _orphanInt) return;
             _orphanInt = true;

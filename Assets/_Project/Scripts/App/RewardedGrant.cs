@@ -15,7 +15,8 @@ namespace FlockFive
             None = 0,
             Branch = 1,
             Wheel = 2,
-            Keep = 3
+            Keep = 3,
+            Clear = 4
         }
 
         public struct Ticket
@@ -303,7 +304,7 @@ namespace FlockFive
             if (part.Length != 7) return false;
             if (!int.TryParse(part[0], out int token) || token < 1) return false;
             if (!int.TryParse(part[1], out int place)) return false;
-            if (place < (int)Place.Branch || place > (int)Place.Keep) return false;
+            if (place < (int)Place.Branch || place > (int)Place.Clear) return false;
             if (!int.TryParse(part[2], out int payload)) return false;
             if (!int.TryParse(part[3], out int tutorial)) return false;
             if (!int.TryParse(part[4], out int level)) return false;
@@ -372,6 +373,12 @@ namespace FlockFive
             if (mul < 2) return false;
             Purse.SetStreak(mul);
             return true;
+        }
+
+        // Stage-clear 2x. AwardClear applies it to that clear's coins.
+        public static bool ClearDouble()
+        {
+            return Purse.ArmClearDouble();
         }
     }
 }
