@@ -10,7 +10,19 @@ namespace FlockFive
     {
         // Build 83 c2/c3 stills: REWARD popup with 2X + Collect and the no-ad Collect (10g-10i),
         // home caption at the top (11b), and the sparkle curtain frame strip (5/5b).
+        // Run on its own host so app-side StopAllCoroutines (sign tuck, splash) cannot end the shot.
+        static ShotHost83 _host83;
         public IEnumerator ShotBuild83c()
+        {
+            if (_host83 == null)
+            {
+                _host83 = new GameObject("ShotHost83").AddComponent<ShotHost83>();
+                _host83.StartCoroutine(ShotBuild83cBody());
+            }
+            yield break;
+        }
+
+        IEnumerator ShotBuild83cBody()
         {
             if (_shot83) yield break;
             _shot83 = true;
@@ -91,5 +103,7 @@ namespace FlockFive
             EditorApplication.Exit(0);
         }
     }
+
+    public sealed class ShotHost83 : MonoBehaviour { }
 }
 #endif

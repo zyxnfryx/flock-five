@@ -316,7 +316,8 @@ namespace FlockFive
 
         void LateUpdate()
         {
-            if (_sheetN == 0) return;
+            if (_sheetN == 0 || _sheets == null) return;
+            if (_sheetN > _sheets.Length) _sheetN = _sheets.Length;
             bool on = BackgroundMotion.On;
             if (!on)
             {
