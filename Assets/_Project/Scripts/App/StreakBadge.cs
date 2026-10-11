@@ -103,6 +103,16 @@ namespace FlockFive
             return Disc();
         }
 
+        // Top-right of the thing the multiplier modifies. Inset matches the reward stamp.
+        public static Rect TopRight(Rect host, float diameter)
+        {
+            float d = diameter < 4f ? 4f : diameter;
+            float inset = d * 0.22f;
+            float cx = host.xMax - inset;
+            float cy = host.y + inset;
+            return new Rect(cx - d * 0.5f, cy - d * 0.5f, d, d);
+        }
+
         // Face, thin dark rim, gold sweep, outlined numeral, optional sparkle.
         // sparkle 0 still twinkles x10, so the reward card keeps a light glint.
         public static void Draw(Rect r, string text, GUIStyle st, Ink ink, float alpha, float sparkle)

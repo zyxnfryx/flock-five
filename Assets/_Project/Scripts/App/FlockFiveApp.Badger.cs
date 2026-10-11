@@ -66,6 +66,10 @@ namespace FlockFive
         float _bgShakeT;
         int _bgPulseWho;
         float _bgPulseAge;
+        int _bgLeftL = -1;
+        int _bgLeftR = -1;
+        float _bgLeftAtL = -1f;
+        float _bgLeftAtR = -1f;
         string _bgLine = "";
         readonly string[] _bgPrice = new string[5];
         int _bgFlagDisplay;
@@ -117,6 +121,10 @@ namespace FlockFive
             _bgResolved = false;
             _bgShownPlayer = 0;
             _bgShownBoss = 0;
+            _bgLeftL = -1;
+            _bgLeftR = -1;
+            _bgLeftAtL = -1f;
+            _bgLeftAtR = -1f;
             _bgShakeKey = -1;
             _bgShakeT = 0f;
             _bgPulseWho = 0;
@@ -204,6 +212,10 @@ namespace FlockFive
                 BadgerSchedule.BossTileMix(_bgAppearance, _bgSeed), _bgCoachFight);
             _bgShownPlayer = 0;
             _bgShownBoss = 0;
+            _bgLeftL = -1;
+            _bgLeftR = -1;
+            _bgLeftAtL = -1f;
+            _bgLeftAtR = -1f;
             NextBadgerRound();
             Sfx.CardBump();
         }
@@ -955,7 +967,7 @@ namespace FlockFive
                 GUI.DrawTexture(new Rect(hit.x - pad, hit.y - pad, hit.width + pad * 2f, hit.height + pad * 2f), GlowTex(), ScaleMode.StretchToFill, true);
                 GUI.color = Color.white;
             }
-            var lab = DrawRoundedFace(hit, held, gold && !dim ? PopupTint.Gold : PopupTint.Wood, true);
+            var lab = DrawPopupButton(hit, held, gold && !dim ? PopupTint.Gold : PopupTint.Wood);
             var st = BadgerStyle();
             float a = dim ? 0.55f : 1f;
             bool two = !string.IsNullOrEmpty(sub);
@@ -972,8 +984,9 @@ namespace FlockFive
         }
 
         // Honeycomb stack for one side. Same comb height on both, so 10 is shorter than 18.
-        // The count uses the caption font. `pulse` is 1 at rest and bumps when a point lands.
-        void DrawBadgerMeter(Rect col, int target, int filled, float unit, float pulse)
+        // The number on the end of the bar is points LEFT, not points scored.
+        // side 0 is YOU, side 1 is BADGER. `pulse` bumps the stack when a point lands.
+        void DrawBadgerMeter(Rect col, int target, int filled, float unit, float pulse, int side)
         {
             if (!GuiPaint() || target < 1 || col.width < 4f) return;
             var keep = GUI.matrix;
@@ -1001,14 +1014,64 @@ namespace FlockFive
                 GUI.matrix = keep;
                 GUI.color = Color.white;
             }
-            string num = filled.ToString();
-            var nr = BadgerMeter.Number(col);
+            int left = BadgerMeter.LeftToGo(target, filled);
+            float now = Time.unscaledTime;
+            float tickAt = side == 0 ? _bgLeftAtL : _bgLeftAtR;
+            int shown = side == 0 ? _bgLeftL : _bgLeftR;
+            if (shown >= 0 && left < shown) tickAt = now;
+            if (side == 0) { _bgLeftL = left; _bgLeftAtL = tickAt; }
+            else { _bgLeftR = left; _bgLeftAtR = tickAt; }
+            float tick = BadgerMeter.Tick(tickAt < 0f ? -1f : now - tickAt);
+            string who = side == 0 ? "YOU" : "BADGER";
+            var plate = BadgerMeter.EndPlate(col, target, unit);
+            float pop = 1f + 0.16f * tick;
+            if (pop > 1.001f)
+            {
+                var c = plate.center;
+                plate.width *= pop;
+                plate.height *= pop;
+                plate.x = c.x - plate.width * 0.5f;
+                plate.y = c.y - plate.height * 0.5f;
+            }
+            DrawSolidRound(plate, Mathf.Min(16f, plate.height * 0.28f), 0, 0.97f);
             var st = CoachLineStyle();
             bool wrap = st.wordWrap;
             st.wordWrap = false;
-            st.fontSize = FitFont(st, num, nr.width * 0.92f, nr.height * 0.90f, CaptionPx(22), CaptionPx(72));
-            StampOutlined(nr, num, st, BadgerCream, 1, Mathf.Max(2, st.fontSize / 12));
+            var whoR = new Rect(plate.x, plate.y + plate.height * 0.04f, plate.width, plate.height * 0.22f);
+            st.fontSize = FitFont(st, who, whoR.width * 0.92f, whoR.height * 0.92f, CaptionPx(9), CaptionPx(22));
+            StampOutlined(whoR, who, st, BadgerCream, 0, Mathf.Max(1, st.fontSize / 10));
+            string num = left.ToString();
+            var numR = new Rect(plate.x, plate.y + plate.height * 0.24f, plate.width, plate.height * 0.48f);
+            st.fontSize = FitFont(st, num, numR.width * 0.86f, numR.height * 0.92f, CaptionPx(16), CaptionPx(48));
+            StampOutlined(numR, num, st, BadgerGold, 1, Mathf.Max(2, st.fontSize / 12));
+            var leftR = new Rect(plate.x, plate.y + plate.height * 0.72f, plate.width, plate.height * 0.24f);
+            st.fontSize = FitFont(st, "LEFT", leftR.width * 0.90f, leftR.height * 0.90f, CaptionPx(9), CaptionPx(22));
+            StampOutlined(leftR, "LEFT", st, BadgerCream, 0, Mathf.Max(1, st.fontSize / 10));
             st.wordWrap = wrap;
+        }
+
+        // x2 / x3 sit on the comb's top-right as the shared streak badge.
+        // Other powers keep a short name; they are not multipliers.
+        void DrawBadgerPowerBadge(Rect comb, BadgerPower power)
+        {
+            if (power == BadgerPower.X2 || power == BadgerPower.X3)
+            {
+                int mul = power == BadgerPower.X3 ? 3 : 2;
+                float d = Mathf.Min(comb.width, comb.height) * 0.42f;
+                var seat = StreakBadge.TopRight(comb, d);
+                var st = BadgerStyle();
+                string text = mul >= 3 ? "x3" : "x2";
+                StreakBadge.NumeralFit(seat, out float fitW, out float fitH);
+                st.fontSize = FitFont(st, text, fitW, fitH, 10, Mathf.Max(16, Mathf.RoundToInt(fitH)));
+                StreakBadge.Draw(seat, text, st, StreakBadge.Colors(mul), 1f, 0.35f);
+                return;
+            }
+            var badge = new Rect(comb.center.x - comb.width * 0.45f, comb.y - comb.height * 0.10f, comb.width * 0.9f, comb.height * 0.26f);
+            DrawSolidRound(badge, badge.height * 0.5f, 0, 0.95f);
+            var nameSt = BadgerStyle();
+            string name = BadgerPowerName(power);
+            nameSt.fontSize = FitFont(nameSt, name, badge.width * 0.86f, badge.height * 0.80f, 8, 40);
+            StampLight(badge, name, nameSt, BadgerGold);
         }
 
         static Color BadgerTint(BadgerTile t)
@@ -1097,8 +1160,8 @@ namespace FlockFive
             float meterUnit = BadgerMeter.Unit(L.ColL, meterMax);
             float pulseYou = _bgPulseWho == 1 ? BadgerRoundAct.Pulse(_bgPulseAge) : 1f;
             float pulseBoss = _bgPulseWho == 2 ? BadgerRoundAct.Pulse(_bgPulseAge) : 1f;
-            DrawBadgerMeter(L.ColL, BadgerSchedule.PlayerTarget(_bgAppearance), _bgShownPlayer, meterUnit, pulseYou);
-            DrawBadgerMeter(L.ColR, BadgerSchedule.BadgerTarget(_bgAppearance), _bgShownBoss, meterUnit, pulseBoss);
+            DrawBadgerMeter(L.ColL, BadgerSchedule.PlayerTarget(_bgAppearance), _bgShownPlayer, meterUnit, pulseYou, 0);
+            DrawBadgerMeter(L.ColR, BadgerSchedule.BadgerTarget(_bgAppearance), _bgShownBoss, meterUnit, pulseBoss, 1);
 
             var bossHex = BadgerHex.Fit(L.BossGrid, 4, 4);
             var youHex = BadgerHex.Fit(L.PlayerGrid, 4, 4);
@@ -1238,14 +1301,7 @@ namespace FlockFive
                 if (_bgResolved && _bgStage == BadgerStage.Verdict && _bgRound.PlayerGained > 0)
                     DrawBadgerGain(r, _bgRound.PlayerGained, _bgT);
                 if (_bgArmed != BadgerPower.None && GuiPaint())
-                {
-                    var badge = new Rect(r.center.x - r.width * 0.45f, r.y - r.height * 0.10f, r.width * 0.9f, r.height * 0.26f);
-                    DrawSolidRound(badge, badge.height * 0.5f, 0, 0.95f);
-                    var st = BadgerStyle();
-                    string name = BadgerPowerName(_bgArmed);
-                    st.fontSize = FitFont(st, name, badge.width * 0.86f, badge.height * 0.80f, 8, 40);
-                    StampLight(badge, name, st, BadgerGold);
-                }
+                    DrawBadgerPowerBadge(r, _bgArmed);
             }
 
         }
@@ -1427,9 +1483,16 @@ namespace FlockFive
             {
                 if (Mathf.Abs(spot.Degrees) > 0.01f)
                     GUIUtility.RotateAroundPivot(spot.Degrees, spot.Foot);
-                if (!string.IsNullOrEmpty(spot.Under) && spot.UnderAlpha > 0.02f && spot.Under != spot.Frame)
-                    DrawBadgerArt(spot.Under, spot.Foot, spot.Unit, spot.Alpha * spot.UnderAlpha, 0f, spot.Sx, spot.Sy);
-                drawn = DrawBadgerArt(spot.Frame, spot.Foot, spot.Unit, spot.Alpha * spot.FrameAlpha, 0f, spot.Sx, spot.Sy);
+                float fa = spot.FrameAlpha;
+                float ua = spot.UnderAlpha;
+                bool frameOk = !string.IsNullOrEmpty(spot.Frame) && SpriteCatalog.BadgerArt(spot.Frame) != null;
+                bool underOk = !string.IsNullOrEmpty(spot.Under) && spot.Under != spot.Frame
+                    && SpriteCatalog.BadgerArt(spot.Under) != null;
+                SpriteAnim.Cover(ref fa, ref ua, frameOk, underOk);
+                if (underOk && ua > 0.02f)
+                    DrawBadgerArt(spot.Under, spot.Foot, spot.Unit, spot.Alpha * ua, 0f, spot.Sx, spot.Sy);
+                if (frameOk && fa > 0.02f)
+                    drawn = DrawBadgerArt(spot.Frame, spot.Foot, spot.Unit, spot.Alpha * fa, 0f, spot.Sx, spot.Sy);
             }
             finally
             {

@@ -726,6 +726,7 @@ namespace FlockFive
             s.Under = prev;
             s.UnderAlpha = 1f - u;
             s.FrameAlpha = u;
+            SpriteAnim.Cover(ref s.FrameAlpha, ref s.UnderAlpha, true, true);
         }
 
         // u 0 is all `a`, u 1 is all `b`. The louder sprite is Frame so a single draw still reads.
@@ -747,6 +748,9 @@ namespace FlockFive
                 s.Under = keep > 0.04f ? a : null;
                 s.UnderAlpha = keep > 0.04f ? keep : 0f;
             }
+            bool frameReady = !string.IsNullOrEmpty(s.Frame);
+            bool underReady = !string.IsNullOrEmpty(s.Under);
+            SpriteAnim.Cover(ref s.FrameAlpha, ref s.UnderAlpha, frameReady, underReady);
         }
 
         static float Smooth(float u)
@@ -1365,6 +1369,43 @@ namespace FlockFive
             float y = col.yMax - (index + 1) * unit + gap * 0.5f;
             float inset = col.width * 0.06f;
             return new Rect(col.x + inset, y, Mathf.Max(2f, col.width - inset * 2f), h);
+        }
+
+        // Points still needed. Clamped so a full bar reads 0.
+        public static int LeftToGo(int target, int filled)
+        {
+            int t = target < 0 ? 0 : target;
+            int f = filled < 0 ? 0 : filled;
+            if (f > t) f = t;
+            return t - f;
+        }
+
+        // Plate on the top end of the stack. Its body covers that comb so the
+        // countdown reads as the end of the bar, not a chip floating above it.
+        public static Rect EndPlate(Rect col, int target, float unit)
+        {
+            int n = target < 1 ? 1 : target;
+            var top = Comb(col, n - 1, unit);
+            float h = top.height * 1.65f;
+            if (h < 52f) h = 52f;
+            float cap = col.width * 1.55f;
+            if (h > cap) h = cap;
+            float y = top.yMax - h * 0.78f;
+            if (y < col.y) y = col.y;
+            if (y + h > col.yMax) y = col.yMax - h;
+            if (y < col.y) y = col.y;
+            return new Rect(col.x, y, col.width, h);
+        }
+
+        public const float TickSeconds = 0.28f;
+
+        // 1 on the frame the countdown drops, back to 0. Callers scale the plate with it.
+        public static float Tick(float age)
+        {
+            if (age < 0f || TickSeconds <= 0.001f) return 0f;
+            float u = age / TickSeconds;
+            if (u >= 1f) return 0f;
+            return 1f - u;
         }
     }
 

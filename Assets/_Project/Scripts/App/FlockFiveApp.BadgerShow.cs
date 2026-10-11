@@ -55,9 +55,9 @@ namespace FlockFive
 
         // ---- shared art ----
 
-        // Every badger, hive, bee, and splat frame. Size is art px times `unit`, so frames
-        // keep their true relative size; anchored bottom-center on `foot` so the feet stay
-        // put between frames (no pop). Missing art draws nothing.
+        // Every badger, hive, bee, and splat frame. Size is art px times `unit`.
+        // SpriteAnim plants the opaque foot on `foot` so idle_a / idle_b and the leap
+        // frames do not pop. Missing art draws nothing.
         static Rect DrawBadgerArt(string name, Vector2 foot, float unit, float alpha, float degrees = 0f, float sx = 1f, float sy = 1f)
         {
             var spr = SpriteCatalog.BadgerArt(name);
@@ -65,13 +65,11 @@ namespace FlockFive
             if (sx < 0.05f) sx = 1f;
             if (sy < 0.05f) sy = 1f;
             var r = spr.rect;
-            float w = r.width * unit * sx;
-            float h = r.height * unit * sy;
-            var dest = new Rect(foot.x - w * 0.5f, foot.y - h, w, h);
+            var dest = SpriteAnim.Dest(name, r.width, r.height, foot, unit, sx, sy);
             if (!GuiPaint() || alpha < 0.01f) return dest;
             var keep = GUI.matrix;
             if (Mathf.Abs(degrees) > 0.01f)
-                GUIUtility.RotateAroundPivot(degrees, new Vector2(foot.x, foot.y - h * 0.5f));
+                GUIUtility.RotateAroundPivot(degrees, new Vector2(foot.x, dest.center.y));
             GUI.color = new Color(1f, 1f, 1f, alpha);
             DrawSprite(dest, spr, false);
             GUI.color = Color.white;
@@ -83,10 +81,16 @@ namespace FlockFive
         static void DrawBadgerPose(BadgerSample pose, Vector2 foot, float unit, float alpha)
         {
             if (alpha < 0.01f || unit <= 0f) return;
-            if (!string.IsNullOrEmpty(pose.Under) && pose.UnderAlpha > 0.02f && pose.Under != pose.Frame)
-                DrawBadgerArt(pose.Under, foot, unit, alpha * pose.UnderAlpha, pose.Degrees, pose.ScaleX, pose.ScaleY);
-            if (!string.IsNullOrEmpty(pose.Frame) && pose.FrameAlpha > 0.02f)
-                DrawBadgerArt(pose.Frame, foot, unit, alpha * pose.FrameAlpha, pose.Degrees, pose.ScaleX, pose.ScaleY);
+            float fa = pose.FrameAlpha;
+            float ua = pose.UnderAlpha;
+            bool frameOk = !string.IsNullOrEmpty(pose.Frame) && SpriteCatalog.BadgerArt(pose.Frame) != null;
+            bool underOk = !string.IsNullOrEmpty(pose.Under) && pose.Under != pose.Frame
+                && SpriteCatalog.BadgerArt(pose.Under) != null;
+            SpriteAnim.Cover(ref fa, ref ua, frameOk, underOk);
+            if (underOk && ua > 0.02f)
+                DrawBadgerArt(pose.Under, foot, unit, alpha * ua, pose.Degrees, pose.ScaleX, pose.ScaleY);
+            if (frameOk && fa > 0.02f)
+                DrawBadgerArt(pose.Frame, foot, unit, alpha * fa, pose.Degrees, pose.ScaleX, pose.ScaleY);
         }
 
         static float BadgerArtHeight(string name, float unit)

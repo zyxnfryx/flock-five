@@ -802,9 +802,10 @@ namespace FlockFive
 
             static void DrawBuy(Rect flower, bool held, float s, float shineU, bool sparkle)
             {
-                float pulse = sparkle ? 1f + 0.035f * Mathf.Sin(Time.unscaledTime * 2.5f) : 1f;
-                var sized = pulse > 1.001f ? ScaledAbout(flower, pulse) : flower;
-                var disc = DrawPopupButton(sized, held, true);
+                // Idle size stays put. PushButton owns the press. The sheen is the idle motion.
+                var disc = DrawPopupButton(flower, held, true);
+                if (sparkle)
+                    PushButton.DrawSheen(flower, PushButton.SheenU(Time.unscaledTime), 0.9f, false);
                 if (_buy == null)
                     _buy = new GUIStyle(GUI.skin.label)
                     {

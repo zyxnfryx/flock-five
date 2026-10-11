@@ -411,9 +411,19 @@ namespace FlockFive
         // Same path as the LEVEL flower: badger leap, otherwise the gate sting and Load.
         bool PressLevelButton()
         {
-            if (TakeBadgerFlower()) return true;
-            Sfx.GateGo();
-            Load(LevelData.NextPlay);
+            if (TakeBadgerFlower())
+            {
+                if (!LevelCurtain.LoadStarted) LevelCurtain.Clear();
+                return true;
+            }
+            if (!LevelCurtain.Armed) LevelCurtain.Arm(Time.unscaledTime);
+            if (!LevelCurtain.LoadStarted)
+            {
+                LevelCurtain.BeginLoad();
+                Sfx.GateGo();
+                Load(LevelData.NextPlay);
+                LevelCurtain.MarkReady();
+            }
             return true;
         }
 

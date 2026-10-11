@@ -1303,10 +1303,25 @@ namespace FlockFive
         public static Sprite BadgerArt(string name)
         {
             if (string.IsNullOrEmpty(name)) return null;
-            if (_badgerArt.TryGetValue(name, out var got)) return got;
+            if (_badgerArt.TryGetValue(name, out var got) && got != null) return got;
             got = TryLoad("Sprites/Badger/" + name, 200f);
+            if (got == null)
+            {
+                _badgerArt.Remove(name);
+                return null;
+            }
             _badgerArt[name] = got;
             return got;
+        }
+
+        // Every fight and idle frame, before the first swap. A miss is not cached.
+        public static int PreloadBadgerArt()
+        {
+            int n = 0;
+            var names = SpriteAnim.Frames;
+            for (int i = 0; i < names.Length; i++)
+                if (BadgerArt(names[i]) != null) n++;
+            return n;
         }
 
         static Sprite Load(ref Sprite cache, string path, float ppu)

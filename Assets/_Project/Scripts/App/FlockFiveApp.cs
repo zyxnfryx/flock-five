@@ -571,6 +571,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-b82-gardens"); } catch { }
                 StartCoroutine(ShotBuild82Gardens());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-b82c-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b82c-stills"); } catch { }
+                StartCoroutine(ShotBuild82c());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
@@ -1347,6 +1352,162 @@ namespace FlockFive
             var exit82 = System.Type.GetType("UnityEditor.EditorApplication, UnityEditor");
             var method82 = exit82 != null ? exit82.GetMethod("Exit", new[] { typeof(int) }) : null;
             if (method82 != null) method82.Invoke(null, new object[] { 0 });
+#endif
+        }
+
+        // Pass c stills: badger home, scoreboard, honey badge, VIP label, press, curtain.
+        IEnumerator ShotBuild82c()
+        {
+#if UNITY_EDITOR
+            EditorShotLive = true;
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+#endif
+            const string dir = "/Users/zfxgames/wkspaces/birdshot/gb/b82out";
+            System.IO.Directory.CreateDirectory(dir);
+            Screen.SetResolution(1179, 2556, false);
+            GamePause.Reset();
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            BadgerSchedule.Enabled = true;
+            BadgerSave.Set(15, true);
+#if UNITY_EDITOR
+            BadgerShotOverride = true;
+#endif
+            _splash = true;
+            _home = HomeFace.Splash;
+            _settingsOpen = false;
+            yield return new WaitForSecondsRealtime(0.9f);
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-badger-home.png");
+
+            OpenBadgerFight(15);
+            BeginBadgerFight();
+            _bgStage = BadgerStage.YourPick;
+            _bgShownPlayer = 4;
+            _bgShownBoss = 6;
+            _bgArmed = BadgerPower.X2;
+            _bgPlayerIx = 0;
+            _bgPlayerAt = Time.unscaledTime - 2f;
+            _bgBossIx = -1;
+            yield return null;
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-badger-score-p1.png");
+            SaveFrame(dir + "/b82-honey-badge.png");
+            _bgShownPlayer = 5;
+            _bgLeftL = 14;
+            _bgLeftAtL = Time.unscaledTime;
+            _bgPulseWho = 1;
+            _bgPulseAge = BadgerRoundAct.PulseSeconds * 0.35f;
+            yield return null;
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-badger-score-p2.png");
+
+            _home = HomeFace.Splash;
+            _splash = true;
+            _bgFight = null;
+            _bgStage = BadgerStage.Opening;
+            VipOffer.Show();
+            // Full entrance parks the buy flower at about 3.0s. Capture after it is at rest.
+            yield return new WaitForSecondsRealtime(3.6f);
+            for (int i = 1; i <= 6; i++)
+            {
+                yield return new WaitForEndOfFrame();
+                SaveFrame(dir + "/b82-vip-label-f" + i + ".png");
+            }
+            float sheenWait = 0f;
+            while (sheenWait < 3.2f)
+            {
+                float u = PushButton.SheenU(Time.unscaledTime);
+                if (u > 0.38f && u < 0.62f) break;
+                sheenWait += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-vip-sheen.png");
+            VipOffer.Close();
+
+            PushButton.Pose[] poses =
+            {
+                PushButton.Rest(),
+                PushButton.At(true, -1f),
+                PushButton.At(false, PushButton.ReleaseSeconds * 0.42f),
+                PushButton.Rest()
+            };
+            PushButton.Force = true;
+            for (int i = 0; i < poses.Length; i++)
+            {
+                PushButton.Forced = poses[i];
+                yield return null;
+                yield return new WaitForEndOfFrame();
+                SaveFrame(dir + "/b82-press-f" + (i + 1) + ".png");
+            }
+            PushButton.Force = false;
+
+            // Garden behind the tear. The curtain is recorded only after the load is up.
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            PlayerPrefs.SetInt("flockfive.next", 1);
+            PlayerPrefs.SetInt(CoachKey, 1);
+            PlayerPrefs.Save();
+            Load(0);
+            _coach = false;
+            _leafIntro = false;
+            _hiveLevelLive = false;
+            _hiveLevelCue = false;
+            _cueHand = false;
+            _cueLine = null;
+            _gloveVis = false;
+            _coachFade = 0f;
+            _splash = false;
+            float gardenWait = 0f;
+            while (gardenWait < 4f && _board == null)
+            {
+                gardenWait += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            yield return new WaitForSecondsRealtime(0.6f);
+            LevelCurtain.Reset();
+            LevelCurtain.Arm(0f);
+            LevelCurtain.BeginLoad();
+            LevelCurtain.MarkReady();
+            const int frames = 16;
+            for (int i = 0; i < frames; i++)
+            {
+                LevelCurtain.PreviewNow = LevelCurtain.Duration * i / (frames - 1);
+                yield return null;
+                yield return new WaitForEndOfFrame();
+                SaveFrame(dir + "/b82-curtain-" + i.ToString("00") + ".png");
+            }
+            LevelCurtain.Clear();
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            PlayerPrefs.Save();
+            string seq = dir + "/b82-curtain-%02d.png";
+            string mp4 = dir + "/b82-level-curtain.mp4";
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "/opt/homebrew/bin/ffmpeg",
+                Arguments = "-y -framerate 16 -i \"" + seq + "\" -vf pad=ceil(iw/2)*2:ceil(ih/2)*2 -c:v libx264 -pix_fmt yuv420p \"" + mp4 + "\"",
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            try
+            {
+                using (var proc = System.Diagnostics.Process.Start(psi))
+                {
+                    if (proc != null) proc.WaitForExit(8000);
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("b82c ffmpeg " + e.Message);
+            }
+            Debug.Log("B82C_STILLS_DONE");
+#if UNITY_EDITOR
+            var exit = System.Type.GetType("UnityEditor.EditorApplication, UnityEditor");
+            var method = exit != null ? exit.GetMethod("Exit", new[] { typeof(int) }) : null;
+            if (method != null) method.Invoke(null, new object[] { 0 });
 #endif
         }
 
@@ -6134,6 +6295,7 @@ namespace FlockFive
                     if (SeasonReveal.BannerLive)
                         DrawSeasonBanner(ps, pTop);
                 }
+                FinishLevelCurtain();
                 return;
             }
             // Shared tutorial tap gate: a step that waits on one control eats every other press.
@@ -6159,18 +6321,24 @@ namespace FlockFive
                 else DrawSplash();
                 DrawBadgerLeap();
                 TickPreload();
+                FinishLevelCurtain();
                 return;
             }
             if (_clearReward)
             {
                 DrawClearReward();
                 DrawBadgerLeap();
+                FinishLevelCurtain();
                 return;
             }
             DismissStreakSign();
             VipOffer.Close();
             FoldCoinFlies();
-            if (_board == null) return;
+            if (_board == null)
+            {
+                FinishLevelCurtain();
+                return;
+            }
             // Veil first. The chip is drawn after it, at full alpha, so a coach
             // dim cannot grey the multiplier out.
             CoachDim();
@@ -6206,6 +6374,15 @@ namespace FlockFive
             if (_restartAsk != RestartAsk.None) DrawRestartAsk(s);
             DrawBadgerLeap();
             TickPreload();
+            FinishLevelCurtain();
+        }
+
+        // Flood on top of whichever face is up. Load runs once, on the committed press.
+        void FinishLevelCurtain()
+        {
+            if (!LevelCurtain.Armed) return;
+            if (GuiPaint()) LevelCurtain.Draw(Time.unscaledTime);
+            if (LevelCurtain.Finished(Time.unscaledTime)) LevelCurtain.Clear();
         }
 
         // Original splash hive size — pig matches this, then both bump together.
@@ -8281,10 +8458,7 @@ namespace FlockFive
             float sc = RewardStampScale(mul);
             float grow = Mathf.Lerp(1f, 1.12f, Mathf.Clamp01((sc - 1f) / 0.85f));
             float d = Mathf.Min(board.width * 0.46f, board.height * 0.70f) * grow;
-            float inset = d * 0.22f;
-            float cx = board.xMax - inset;
-            float cy = board.y + inset;
-            return new Rect(cx - d * 0.5f, cy - d * 0.5f, d, d);
+            return StreakBadge.TopRight(board, d);
         }
 
         static Texture2D RewardDiscTex()
@@ -9678,25 +9852,38 @@ namespace FlockFive
             var view = StepHomePress(SplashPress.Id.Level, !SplashPress.Blocks(gates));
             bool held = view.Pressed;
             bool fired = view.Launch;
+            bool paint = GuiPaint();
+            var motion = PushButton.Sample(PushButton.Level, held, Time.unscaledTime, paint);
+            if (paint && motion.ReleasedEdge && (BadgerOwed() > 0 || !LevelCurtain.Armed))
+            {
+                SparkleFx.DrawAround(rest, 0.95f, true, 0.12f);
+                PushButton.DrawSheen(rest, 0.55f, 1f, true);
+            }
+            if (held && BadgerOwed() <= 0)
+                LevelCurtain.Arm(Time.unscaledTime);
+            else if (!held && !fired && LevelCurtain.Armed && !LevelCurtain.LoadStarted)
+                LevelCurtain.Clear();
 
-            float sink = held ? rest.height * FlowerPressSink : 0f;
+            var visual = PushButton.Visual(rest, motion.Pose);
             var flower = SpriteCatalog.PlayFlower;
             var tex = flower != null ? flower.texture : null;
             if (tex != null)
             {
-                var shadow = new Rect(rest.x + 6f, rest.y + 16f, rest.width, rest.height);
-                GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.40f);
+                float drop = held || motion.Pose.Sink > 0.01f ? 6f : 16f;
+                var shadow = new Rect(visual.x + 6f, visual.y + drop, visual.width, visual.height);
+                GUI.color = new Color(0.10f, 0.06f, 0.03f, held ? 0.22f : 0.40f);
                 GUI.DrawTexture(shadow, tex, ScaleMode.ScaleToFit, true);
-                if (!held) DrawFlowerHalo(rest, 0f);
+                if (!held && motion.Pose.Sink <= 0.001f) DrawFlowerHalo(visual, 0f);
                 GUI.color = Color.white;
-                GUI.DrawTexture(rest, tex, ScaleMode.ScaleToFit, true);
+                GUI.DrawTexture(visual, tex, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
-                if (!held) DrawFlowerShimmer(rest, 0f);
-                if (held) DrawDiscPress(rest, sink);
+                if (!held && motion.Pose.Sink <= 0.001f) DrawFlowerShimmer(visual, 0f);
+                if (held) DrawDiscPress(visual, 0f);
             }
 
-            DrawBadgerSitter(sink);
-            DrawFlowerCaption(rest, sink, ease, number);
+            DrawBadgerSitter(visual.y - rest.y);
+            var disc = PushButton.Follow(FlowerDisc(rest, 0f), rest, visual, GuiPixels());
+            DrawFlowerCaption(disc, ease, number);
             return fired;
         }
 
@@ -9739,21 +9926,41 @@ namespace FlockFive
         static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true)
         {
             if (r.width < 2f || r.height < 2f) return r;
+            bool paint = GuiPaint();
+            var motion = PushButton.Sample(PushButton.Slot(r), held, Time.unscaledTime, paint);
+            var visual = PushButton.Visual(r, motion.Pose);
+            if (paint && motion.ReleasedEdge)
+            {
+                SparkleFx.DrawAround(visual, 0.95f, true, 0.14f);
+                PushButton.DrawSheen(visual, 0.55f, 1f, true);
+            }
+            bool sunk = held || motion.Pose.Sink > 0.01f;
             bool square = r.width > 8f && r.height < r.width * 1.25f && r.width < r.height * 1.25f;
             var bloom = SpriteCatalog.PlayFlower;
+            Rect layoutLabel;
             if (square && bloom != null && bloom.texture != null && (tint == PopupTint.Gold || tint == PopupTint.Wood))
-                return DrawPedestalFace(r, held, tint == PopupTint.Gold, bloom.texture, glow, shadow);
-            return DrawRoundedFace(r, held, tint, shadow);
+            {
+                DrawPedestalFace(visual, sunk, tint == PopupTint.Gold, bloom.texture, glow, shadow);
+                layoutLabel = FlowerDisc(r, 0f);
+            }
+            else
+            {
+                DrawRoundedFace(visual, sunk, tint, shadow);
+                float ix = r.width * 0.05f;
+                float iy = r.height * 0.14f;
+                layoutLabel = new Rect(r.x + ix, r.y + iy, Mathf.Max(4f, r.width - ix * 2f), Mathf.Max(4f, r.height - iy * 2f));
+            }
+            return PushButton.Follow(layoutLabel, r, visual, GuiPixels());
         }
 
         static Rect DrawPedestalFace(Rect r, bool held, bool gold, Texture tex, float glow, bool shadow)
         {
-            float sink = held ? r.height * 0.028f : 0f;
+            float sink = 0f;
             if (shadow)
             {
-                float drop = r.height * 0.15f;
-                if (drop < 12f) drop = 12f;
-                GUI.color = new Color(0.10f, 0.06f, 0.03f, gold ? 0.38f : 0.20f);
+                float drop = held ? r.height * 0.045f : r.height * 0.15f;
+                if (!held && drop < 12f) drop = 12f;
+                GUI.color = new Color(0.10f, 0.06f, 0.03f, held ? 0.22f : (gold ? 0.38f : 0.20f));
                 GUI.DrawTexture(new Rect(r.x + 5f, r.y + drop, r.width, r.height), tex, ScaleMode.ScaleToFit, true);
             }
             GUI.color = gold ? Color.white : new Color(0.84f, 0.82f, 0.76f, 1f);
@@ -9767,7 +9974,7 @@ namespace FlockFive
 
         static Rect DrawRoundedFace(Rect r, bool held, PopupTint tint, bool shadow)
         {
-            float sink = held ? Mathf.Max(2f, r.height * 0.07f) : 0f;
+            float sink = 0f;
             var face = new Rect(r.x, r.y + sink, r.width, Mathf.Max(8f, r.height - sink));
             var tex = PopupButtonTex(tint, shadow);
             if (shadow)
@@ -10000,9 +10207,8 @@ namespace FlockFive
             return px;
         }
 
-        static void DrawFlowerCaption(Rect rest, float sink, string ease, int number)
+        static void DrawFlowerCaption(Rect disc, string ease, int number)
         {
-            var disc = FlowerDisc(rest, sink);
             bool hasEase = !string.IsNullOrEmpty(ease);
             // LEVEL over joke as one field, biased down off the top rim.
             // Blank: LEVEL alone slightly down + right. Flat type (no plate tilt squash).
@@ -10554,8 +10760,37 @@ namespace FlockFive
 
         static void LabelAt(LabelRim.Seat seat, int dx, int dy, GUIContent text, GUIStyle st)
         {
-            seat.Local(dx, dy, out float x, out float y);
-            GUI.Label(new Rect(x, y, seat.Width, seat.Height), text, st);
+            // Pure translation is already one snapped origin plus integer steps.
+            // A scaled matrix inverse-maps those steps, then IMGUI snaps each local
+            // origin again and the stroke walks. Draw the scaled case in window
+            // space from LabelRim.Drawn so every pass shares one rounding.
+            if (seat.Simple || seat.ScreenW < 1f)
+            {
+                seat.Local(dx, dy, out float x, out float y);
+                GUI.Label(new Rect(x, y, seat.Width, seat.Height), text, st);
+                return;
+            }
+            LabelRim.Drawn(seat, GuiPixels(), dx, dy, out float wx, out float wy);
+            var prev = GUI.matrix;
+            int font = st != null ? st.fontSize : 0;
+            try
+            {
+                GUI.matrix = Matrix4x4.identity;
+                Vector2 origin = Vector2.zero;
+                if (Event.current != null && TryUnclip(Vector2.zero, out Vector2 win0))
+                    origin = win0;
+                float sc = seat.Width > 1f ? seat.ScreenW / seat.Width : 1f;
+                if (st != null && sc > 0.05f && Mathf.Abs(sc - 1f) > 0.02f)
+                    st.fontSize = Mathf.Max(1, Mathf.RoundToInt(font * sc));
+                if (Mathf.Abs(seat.Degrees) > 0.05f)
+                    GUIUtility.RotateAroundPivot(seat.Degrees, new Vector2(seat.ScreenX - origin.x, seat.ScreenY - origin.y));
+                GUI.Label(new Rect(wx - origin.x, wy - origin.y, seat.ScreenW, seat.ScreenH), text, st);
+            }
+            finally
+            {
+                if (st != null) st.fontSize = font;
+                GUI.matrix = prev;
+            }
         }
 
         // Solid disc of integer offsets from one snapped origin. Cached per radius.

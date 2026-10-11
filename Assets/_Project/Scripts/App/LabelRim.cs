@@ -59,6 +59,8 @@ namespace FlockFive
             public float ScreenX, ScreenY;
             public float LocalX, LocalY;
             public float Width, Height;
+            public float ScreenW, ScreenH;
+            public float Degrees;
             public Matrix4x4 Inverse;
             public bool Simple;
 
@@ -109,6 +111,10 @@ namespace FlockFive
                     ly = back.y;
                 }
             }
+            float col0 = Mathf.Sqrt(matrix.m00 * matrix.m00 + matrix.m10 * matrix.m10);
+            float col1 = Mathf.Sqrt(matrix.m01 * matrix.m01 + matrix.m11 * matrix.m11);
+            if (col0 < 1e-4f) col0 = 1f;
+            if (col1 < 1e-4f) col1 = 1f;
             return new Seat
             {
                 ScreenX = sx,
@@ -117,9 +123,20 @@ namespace FlockFive
                 LocalY = ly,
                 Width = r.width,
                 Height = r.height,
+                ScreenW = r.width * col0,
+                ScreenH = r.height * col1,
+                Degrees = Mathf.Atan2(matrix.m10, matrix.m00) * Mathf.Rad2Deg,
                 Inverse = inv,
                 Simple = simple
             };
+        }
+
+        // Window position after the same snap the fill uses. Offsets are integers
+        // in that space, so a second snap cannot walk the stroke as scale changes.
+        public static void Drawn(Seat seat, float pixelsPerPoint, int dx, int dy, out float x, out float y)
+        {
+            x = Snap(seat.ScreenX + dx, pixelsPerPoint);
+            y = Snap(seat.ScreenY + dy, pixelsPerPoint);
         }
 
         static bool IsPureTranslation(Matrix4x4 m)
