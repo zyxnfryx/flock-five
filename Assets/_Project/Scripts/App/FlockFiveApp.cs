@@ -592,6 +592,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-b82f-stills"); } catch { }
                 StartCoroutine(ShotBuild82f());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-b82g-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b82g-stills"); } catch { }
+                StartCoroutine(ShotBuild82g());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }

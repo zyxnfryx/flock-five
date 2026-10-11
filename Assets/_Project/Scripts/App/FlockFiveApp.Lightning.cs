@@ -192,7 +192,7 @@ namespace FlockFive
             MuteShotAudio();
         }
 
-        IEnumerator RecordClip(string frames, string mp4, float seconds, string stillPath)
+        IEnumerator RecordClip(string frames, string mp4, float seconds, string stillPath, System.Action tick = null)
         {
             try { if (Directory.Exists(frames)) Directory.Delete(frames, true); } catch { }
             Directory.CreateDirectory(frames);
@@ -202,6 +202,7 @@ namespace FlockFive
             const float step = 1f / 12f;
             while (Time.unscaledTime - t0 < seconds)
             {
+                if (tick != null) tick();
                 MuteShotAudio();
                 yield return new WaitForEndOfFrame();
                 MuteShotAudio();
@@ -267,6 +268,241 @@ namespace FlockFive
             {
                 Debug.LogWarning("b82e ffmpeg " + e.Message);
             }
+        }
+
+        bool _shot82g;
+
+        // Finish pass. Lessons the earlier shots never wrote, the badger caption,
+        // one clip per garden season, the unused-gift bolt, and a Go VIP press.
+        public IEnumerator ShotBuild82g()
+        {
+            if (_shot82g) yield break;
+            _shot82g = true;
+            MuteShotAudio();
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+#endif
+            const string dir = "/Users/zfxgames/wkspaces/birdshot/gb/b82out";
+            Directory.CreateDirectory(dir);
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            int coachKeep = PlayerPrefs.GetInt(CoachKey, 0);
+            bool hadCoach = PlayerPrefs.HasKey(CoachKey);
+            int leafKeep = PlayerPrefs.GetInt(CoachLeafKey, 0);
+            bool hadLeaf = PlayerPrefs.HasKey(CoachLeafKey);
+            int hiveKeep = PlayerPrefs.GetInt(CoachHiveGardenKey, 0);
+            bool hadHive = PlayerPrefs.HasKey(CoachHiveGardenKey);
+            bool hadAnim = PlayerPrefs.HasKey(BackgroundMotion.PrefKey);
+            int animKeep = PlayerPrefs.GetInt(BackgroundMotion.PrefKey, 1);
+            bool hadBolt = PlayerPrefs.HasKey(LightningStrike.PrefKey);
+            int boltKeep = PlayerPrefs.GetInt(LightningStrike.PrefKey, 0);
+            const string seenKey = "flockfive.season.seen";
+            bool hadSeen = PlayerPrefs.HasKey(seenKey);
+            string seenKeep = PlayerPrefs.GetString(seenKey, "");
+            bool reduceKeep = BackgroundMotion.ReduceMotion;
+            bool badgerKeep = BadgerSchedule.Enabled;
+            int badgerFlag = PrefGuard.GetInt(BadgerSave.Pref, 0);
+            bool hadBadgerFlag = PlayerPrefs.HasKey(BadgerSave.Pref);
+
+            BackgroundMotion.ReduceMotion = false;
+            BackgroundMotion.On = true;
+            LightningStrike.Enabled = false;
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            GamePause.Reset();
+            Screen.SetResolution(1179, 2556, false);
+            MuteShotAudio();
+
+            PlayerPrefs.SetInt("flockfive.next", 1);
+            PlayerPrefs.Save();
+            Load(0);
+            _shotBeeLesson = true;
+            _shotCardLesson = false;
+            _shotBirdHome = false;
+            _shotDailyCaption = false;
+            yield return new WaitForSecondsRealtime(1.5f);
+            MuteShotAudio();
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-bee-lesson.png");
+
+            _shotBeeLesson = false;
+            _shotGlovePin = false;
+            _hiveLevelLive = false;
+            _hiveLevelCue = false;
+            _cueHand = false;
+            _cueLine = null;
+            _gloveVis = false;
+            if (Hive.Found <= 0) Hive.GrantVisitor();
+            _shotCardSlot = -1;
+            _shotCardLesson = true;
+            yield return new WaitForSecondsRealtime(1.6f);
+            MuteShotAudio();
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-card-lesson.png");
+
+            _shotCardLesson = false;
+            _shotGlovePin = false;
+            _albumTutorOn = false;
+            _hiveInspect = -1;
+            _home = HomeFace.Splash;
+            _splash = true;
+            _shotBirdHome = true;
+            yield return new WaitForSecondsRealtime(1.4f);
+            MuteShotAudio();
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-bird-followed.png");
+
+            _shotBirdHome = false;
+            _adoptLive = false;
+            _shotDailyCaption = true;
+            yield return new WaitForSecondsRealtime(1.3f);
+            MuteShotAudio();
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-daily-caption.png");
+            _shotDailyCaption = false;
+            _dailyIntroLive = false;
+            _adoptLive = false;
+            Debug.Log("b82g lessons written");
+
+#if UNITY_EDITOR
+            EditorShotLive = true;
+            BadgerShotOverride = true;
+#endif
+            BadgerSchedule.Enabled = true;
+            BadgerSave.Set(15, true);
+            OpenBadgerFight(15);
+            BeginBadgerFight();
+            _bgStage = BadgerStage.Lesson;
+            _bgLessonLive = true;
+            _bgLessonStep = 2;
+            _coachFade = 1f;
+            _bgLine = BadgerCopy.LessonAt(2);
+            yield return new WaitForSecondsRealtime(0.6f);
+            MuteShotAudio();
+            yield return new WaitForEndOfFrame();
+            SaveFrame(dir + "/b82-badger-caption.png");
+            _bgLessonLive = false;
+            _home = HomeFace.Splash;
+            _bgFight = null;
+            _splash = true;
+            Debug.Log("b82g badger caption written");
+
+            yield return WaitForHomePaint();
+            for (int i = 0; i < 3; i++)
+            {
+                PoseBuild79(true, false);
+                MuteShotAudio();
+                yield return null;
+            }
+            PoseBuild79(true, false);
+            yield return new WaitForEndOfFrame();
+            MuteShotAudio();
+            SaveFrame(dir + "/b82-settings.png");
+            PoseBuild79(false, false);
+
+            yield return RecordClip("/tmp/b82g-home", dir + "/b82-bg-home.mp4", 6f, null);
+
+            var scenes = new[]
+            {
+                GardenScene.Summer, GardenScene.Desert, GardenScene.Fall,
+                GardenScene.Winter, GardenScene.Spring,
+            };
+            for (int i = 0; i < scenes.Length; i++)
+            {
+                int level = SeasonShotLevel(scenes[i]);
+                string name = scenes[i].ToString().ToLowerInvariant();
+                Debug.Log("b82g season " + name + " level " + level);
+                SeasonReveal.Mark(level);
+                PrepGardenShot(level - 1);
+                yield return new WaitForSecondsRealtime(1.5f);
+                MuteShotAudio();
+                yield return RecordClip("/tmp/b82g-" + name, dir + "/b82-bg-" + name + ".mp4", 6f, null);
+            }
+
+            SeasonReveal.Mark(1);
+            PrepGardenShot(0);
+            yield return new WaitForSecondsRealtime(1.3f);
+            if (GardenStorm.Instance != null) GardenStorm.Instance.JumpToStorm();
+            int aim = LightningStrike.Target(_board, _bonusOn, _offerBurned);
+            bool solvable = aim >= 0 && LightningStrike.KeepsSolvable(_board, aim);
+            Debug.Log("b82g lightning aim=" + aim + " solvable=" + solvable);
+            LightningStrike.Force = true;
+            _shot82eStill = false;
+            _shot82e = true;
+            yield return RecordClip("/tmp/b82g-bolt", dir + "/b82-lightning.mp4", 9f, dir + "/b82-lightning.png");
+            LightningStrike.Force = false;
+            _shot82e = false;
+            Debug.Log("b82g lightning still=" + _shot82eStill + " plays=" + LightningStrike.Plays);
+
+            _home = HomeFace.Splash;
+            _splash = true;
+            _coach = false;
+            _cueLine = null;
+            _gloveVis = false;
+            VipOffer.Show();
+            yield return new WaitForSecondsRealtime(3.4f);
+            MuteShotAudio();
+            float pressAt = Time.unscaledTime;
+            PushButton.Force = true;
+            yield return RecordClip("/tmp/b82g-vip", dir + "/b82-vip-press.mp4", 1.15f, dir + "/b82-vip-press.png", () =>
+            {
+                float age = Time.unscaledTime - pressAt;
+                PushButton.Force = false;
+                var pose = age < 0.18f
+                    ? PushButton.At(true, -1f)
+                    : PushButton.At(false, age - 0.18f);
+                PushButton.Forced = pose;
+                PushButton.Force = true;
+                MuteShotAudio();
+            });
+            PushButton.Force = false;
+            VipOffer.Close();
+
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            if (hadCoach) PlayerPrefs.SetInt(CoachKey, coachKeep);
+            else PlayerPrefs.DeleteKey(CoachKey);
+            if (hadLeaf) PlayerPrefs.SetInt(CoachLeafKey, leafKeep);
+            else PlayerPrefs.DeleteKey(CoachLeafKey);
+            if (hadHive) PlayerPrefs.SetInt(CoachHiveGardenKey, hiveKeep);
+            else PlayerPrefs.DeleteKey(CoachHiveGardenKey);
+            if (hadAnim) PlayerPrefs.SetInt(BackgroundMotion.PrefKey, animKeep);
+            else PlayerPrefs.DeleteKey(BackgroundMotion.PrefKey);
+            if (hadBolt) PlayerPrefs.SetInt(LightningStrike.PrefKey, boltKeep);
+            else PlayerPrefs.DeleteKey(LightningStrike.PrefKey);
+            if (hadSeen) PlayerPrefs.SetString(seenKey, seenKeep);
+            else PlayerPrefs.DeleteKey(seenKey);
+            if (hadBadgerFlag) PrefGuard.SetInt(BadgerSave.Pref, badgerFlag);
+            else
+            {
+                PlayerPrefs.DeleteKey(BadgerSave.Pref);
+                PlayerPrefs.DeleteKey(BadgerSave.Pref + ".x");
+            }
+            PlayerPrefs.Save();
+            BackgroundMotion.ReduceMotion = reduceKeep;
+            BadgerSchedule.Enabled = badgerKeep;
+            LightningStrike.Force = false;
+            Debug.Log("B82G_STILLS_DONE");
+#if UNITY_EDITOR
+            EditorShotLive = false;
+            UnityEditor.EditorApplication.Exit(0);
+#endif
+        }
+
+        static int SeasonShotLevel(GardenScene scene)
+        {
+            if (scene == GardenScene.Summer) return 1;
+            if (scene == GardenScene.Desert) return GardenSeason.DesertFrom;
+            if (scene == GardenScene.Winter) return GardenSeason.WinterFrom;
+            if (scene == GardenScene.Spring) return GardenSeason.SpringFrom;
+            for (int level = GardenSeason.RotateFrom; level < 96; level++)
+            {
+                if (GardenSeason.ForLevel(level) != GardenScene.Fall) continue;
+                if (GardenSeason.IsBadgerLevel(level)) continue;
+                return level;
+            }
+            return 48;
         }
     }
 }

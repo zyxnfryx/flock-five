@@ -121,7 +121,7 @@ namespace FlockFive
             UnityEditor.EditorApplication.isPaused = false;
             Application.runInBackground = true;
 #endif
-            const string dir = "/Users/zfxgames/wkspaces/wt-b82/out";
+            const string dir = "/Users/zfxgames/wkspaces/birdshot/gb/b82out";
             Directory.CreateDirectory(dir);
             int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
             bool hadNext = PlayerPrefs.HasKey("flockfive.next");

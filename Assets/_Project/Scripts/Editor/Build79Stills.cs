@@ -93,6 +93,14 @@ namespace FlockFive.Editor
             EditorApplication.isPlaying = true;
         }
 
+        // Lessons, badger caption, season clips, lightning, and the Go VIP press.
+        public static void Capture82g()
+        {
+            SetGameView(1179, 2556);
+            File.WriteAllText("/tmp/flock-five-b82g-stills", "1");
+            EditorApplication.isPlaying = true;
+        }
+
         public static void Capture81Pass4()
         {
             SetGameView(1179, 2556);
