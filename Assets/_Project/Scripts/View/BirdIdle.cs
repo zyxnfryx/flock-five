@@ -1127,6 +1127,8 @@ namespace FlockFive
         // ~0.07s. Short enough that a leftover error stays inside the crown sink.
         public const float KitGlideTime = 0.07f;
         const float KitTiltDeg = 12f;
+        // How far the knot / crown base sinks into the dome, as a fraction of HeadSpan.
+        public const float KitNest = 0.04f;
         // Max distance the smoothed seat may leave the interpolated dome point.
         const float KitSeatSlack = 0.04f;
         static KitGlide[] _kitSlots;
@@ -1206,8 +1208,8 @@ namespace FlockFive
         // Garden accessory anchor. The crown base and the bow knot sit on
         // SpriteCatalog.HeadDome of the live body sprite (every color, every flap).
         // Scale follows HeadSpan, from fitBody when a raised wing clips the walk.
-        // Locals are facing-right; faceLeft mirrors X. flip matches the body.
-        // Tilt is KitTiltDeg toward the beak: right-facing tips negative, left-facing positive.
+        // The kit rotates with the skull and around that contact, so the knot
+        // stays on the dome instead of swinging forward. faceLeft mirrors X.
         // buttonSeat remains so the color-row buttons share this seat.
         public static void KitAnchor(bool crown, int frame, bool faceLeft,
             out float x, out float y, out float scale, out float tilt, out bool flip,
@@ -1255,29 +1257,38 @@ namespace FlockFive
             out float x, out float y, out float tilt, out bool flip)
         {
             var dome = SpriteCatalog.HeadDome(body);
-            var box = SpriteCatalog.MeasureOpaque(kit);
             if (head < 0.05f) head = 0.05f;
-            float midX = box.Ok ? (box.Left + box.Right) * 0.5f : 0f;
-            float midY = box.Ok ? (box.Bottom + box.Top) * 0.5f : 0f;
-            float sink = head * 0.08f;
-            var seat = FlockKit.SeatOf(worn);
-            float lx;
-            float ly;
-            if (seat == FlockKit.Seat.Head)
-            {
-                float bottom = box.Ok ? box.Bottom : -0.5f;
-                lx = dome.x - midX * scale;
-                ly = dome.y - sink - bottom * scale;
-            }
-            else
-            {
-                lx = dome.x - head * 0.06f - midX * scale;
-                ly = dome.y - sink - midY * scale;
-            }
-            x = faceLeft ? -lx : lx;
-            y = ly;
+            float lean = SpriteCatalog.HeadTilt(body);
+            if (lean < 1f) lean = KitTiltDeg;
+            if (lean > 26f) lean = 26f;
+            tilt = faceLeft ? lean : -lean;
             flip = faceLeft;
-            tilt = faceLeft ? KitTiltDeg : -KitTiltDeg;
+            var contact = SpriteCatalog.KitSeatPoint(kit, worn);
+            float sx = (flip ? -contact.x : contact.x) * scale;
+            float sy = contact.y * scale;
+            float rad = tilt * Mathf.Deg2Rad;
+            float cs = Mathf.Cos(rad);
+            float sn = Mathf.Sin(rad);
+            float rx = cs * sx - sn * sy;
+            float ry = sn * sx + cs * sy;
+            float domeX = faceLeft ? -dome.x : dome.x;
+            x = domeX - rx;
+            y = dome.y - head * KitNest - ry;
+        }
+
+        // Where the knot or crown base lands, in the same local space as KitAnchor.
+        public static void KitTouch(BirdKit worn, int frame, bool faceLeft, Sprite body, Sprite kit,
+            out float x, out float y)
+        {
+            KitAnchor(worn, frame, faceLeft, body, null, kit, out float px, out float py, out float scale, out float tilt, out bool flip);
+            var contact = kit != null ? SpriteCatalog.KitSeatPoint(kit, worn) : Vector2.zero;
+            float sx = (flip ? -contact.x : contact.x) * scale;
+            float sy = contact.y * scale;
+            float rad = tilt * Mathf.Deg2Rad;
+            float cs = Mathf.Cos(rad);
+            float sn = Mathf.Sin(rad);
+            x = px + cs * sx - sn * sy;
+            y = py + sn * sx + cs * sy;
         }
 
         // Shared worn-kit seat. Lerps KitAnchor from this pose to the next by

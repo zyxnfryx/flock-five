@@ -180,7 +180,8 @@ namespace FlockFive.Editor
             var back = PushButton.At(false, PushButton.ReleaseSeconds);
             bool settled = Mathf.Abs(back.Sink) < 0.001f && Mathf.Abs(back.SquashY - 1f) < 0.001f;
             var label = new Rect(150.2f, 860.4f, 140f, 48f);
-            var first = Vector2.zero;
+            float wantX = (label.center.x - layout.x) / layout.width;
+            float wantY = (label.center.y - layout.y) / layout.height;
             bool rigid = true;
             float[] ages = { -1f, 0.02f, 0.13f, 0.28f };
             for (int i = 0; i < ages.Length; i++)
@@ -188,10 +189,9 @@ namespace FlockFive.Editor
                 var pose = i == 0 ? held : PushButton.At(false, ages[i]);
                 var moved = PushButton.Visual(layout, pose);
                 var followed = PushButton.Follow(label, layout, moved, 2f);
-                float dx = followed.x - LabelRim.Snap(moved.x, 2f);
-                float dy = followed.y - LabelRim.Snap(moved.y, 2f);
-                if (i == 0) first = new Vector2(dx, dy);
-                else if (Mathf.Abs(dx - first.x) > 0.001f || Mathf.Abs(dy - first.y) > 0.001f) rigid = false;
+                float nx = (followed.center.x - moved.x) / moved.width;
+                float ny = (followed.center.y - moved.y) / moved.height;
+                if (Mathf.Abs(nx - wantX) > 0.02f || Mathf.Abs(ny - wantY) > 0.02f) rigid = false;
                 var hitNow = PushButton.HitRect(layout);
                 if (hitNow.y != layout.y || hitNow.height != layout.height) rigid = false;
             }

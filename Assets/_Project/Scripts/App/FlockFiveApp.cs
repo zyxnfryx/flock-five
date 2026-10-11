@@ -8068,7 +8068,7 @@ namespace FlockFive
         bool DrawBackMedal(Rect hit)
         {
             bool fire = HitPad(hit, out bool held);
-            if (!held && GlovePresses(hit)) held = true;
+            held = PushButton.Finger(held, GlovePresses(hit));
             if (fire) Sfx.CardTap();
             PaintBackMedal(hit, held);
             return fire;
@@ -9947,7 +9947,10 @@ namespace FlockFive
                 PushButton.DrawSheen(rest, 0.55f, 1f, true);
             }
             if (held && BadgerOwed() <= 0)
+            {
+                LevelCurtain.Aim(rest);
                 LevelCurtain.Arm(Time.unscaledTime);
+            }
             else if (!held && !fired && LevelCurtain.Armed && !LevelCurtain.LoadStarted)
                 LevelCurtain.Clear();
 
@@ -10252,11 +10255,9 @@ namespace FlockFive
 
         static Rect FlowerDisc(Rect rest, float sink)
         {
-            return new Rect(
-                rest.x + rest.width * 0.205f,
-                rest.y + sink + rest.height * 0.10f,
-                rest.width * 0.59f,
-                rest.height * 0.38f);
+            var cap = PushButton.FlowerCap(rest);
+            if (sink != 0f) cap.y += sink;
+            return cap;
         }
 
         // Same pad the Watch and Claim flowers use. The glove accepts this rect, not the square.
@@ -15946,7 +15947,7 @@ namespace FlockFive
         {
             bool fire = HitPad(r, out bool held);
             var pressDisc = FlowerDisc(r, 0f);
-            if (!held && GlovePresses(pressDisc)) held = true;
+            held = PushButton.Finger(held, GlovePresses(pressDisc));
             float sink = held ? r.height * 0.04f : 0f;
             if (GuiPaint())
             {
@@ -18355,7 +18356,7 @@ namespace FlockFive
             var discHit = FlowerHit(cta, s);
             bool watch = HitPad(discHit, out bool held);
             var pressDisc = FlowerDisc(cta, 0f);
-            if (!held && GlovePresses(pressDisc)) held = true;
+            held = PushButton.Finger(held, GlovePresses(pressDisc));
             var disc = DrawPopupButton(cta, held, true, 0.35f);
             if (_giftWatch == null)
                 _giftWatch = new GUIStyle(GUI.skin.label)

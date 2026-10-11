@@ -109,17 +109,37 @@ namespace FlockFive
             return new Rect(x, y, w, h);
         }
 
-        // Label rect moves by the same snapped delta as the visual's top-left.
+        // Raised disc on the clay flower. Square LEVEL / Watch / Claim faces use it.
+        public static Rect FlowerCap(Rect face)
+        {
+            return new Rect(
+                face.x + face.width * 0.205f,
+                face.y + face.height * 0.10f,
+                face.width * 0.59f,
+                face.height * 0.38f);
+        }
+
+        // The label keeps its center fraction on the cap. A squash widens the
+        // plate around its center, so a top-left delta walks the word off the disc.
         // Width and height stay the rest size so the glyphs do not reflow.
         public static Rect Follow(Rect restLabel, Rect rest, Rect visual, float pixelsPerPoint)
         {
-            float dx = LabelRim.Snap(visual.x, pixelsPerPoint) - LabelRim.Snap(rest.x, pixelsPerPoint);
-            float dy = LabelRim.Snap(visual.y, pixelsPerPoint) - LabelRim.Snap(rest.y, pixelsPerPoint);
+            float nx = rest.width > 1f ? (restLabel.center.x - rest.x) / rest.width : 0.5f;
+            float ny = rest.height > 1f ? (restLabel.center.y - rest.y) / rest.height : 0.5f;
+            float cx = visual.x + visual.width * nx;
+            float cy = visual.y + visual.height * ny;
             return new Rect(
-                LabelRim.Snap(restLabel.x, pixelsPerPoint) + dx,
-                LabelRim.Snap(restLabel.y, pixelsPerPoint) + dy,
+                LabelRim.Snap(cx - restLabel.width * 0.5f, pixelsPerPoint),
+                LabelRim.Snap(cy - restLabel.height * 0.5f, pixelsPerPoint),
                 restLabel.width,
                 restLabel.height);
+        }
+
+        // A tutorial glove is a cue. Only a real pointer squashes the cap.
+        public static bool Finger(bool pointerHeld, bool glovePosing)
+        {
+            if (glovePosing && !pointerHeld) return false;
+            return pointerHeld;
         }
 
         public static int Slot(Rect r)

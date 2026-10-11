@@ -833,22 +833,18 @@ namespace FlockFive.Editor
                             + " home=" + homeKit.ToString("0") + " bird=" + birdW.ToString("0");
                     }
                     var dome = SpriteCatalog.HeadDome(kitBody);
-                    float contactY = y;
-                    float yLimit = span * 0.22f;
-                    var seat = FlockKit.SeatOf(kitKind);
-                    if (seat == FlockKit.Seat.Head && box.Ok)
-                        contactY = y + box.Bottom * scale;
-                    else if (box.Ok)
-                        contactY = y + (box.Bottom + box.Top) * 0.5f * scale;
-                    float dx = Mathf.Abs(x - dome.x);
-                    float dy = Mathf.Abs(contactY - dome.y);
+                    BirdIdle.KitTouch(kitKind, 0, false, kitBody, kit, out float tx, out float ty);
+                    float nest = span * BirdIdle.KitNest;
+                    float dx = Mathf.Abs(tx - dome.x);
+                    float dy = Mathf.Abs(ty - (dome.y - nest));
+                    float yLimit = Mathf.Max(0.05f, span * 0.12f);
                     BirdIdle.KitAnchor(kitKind, 0, true, kitBody, kit, out float mx, out _, out _, out _, out bool mflip);
-                    if (onDome && (dx > span * 0.30f || dy > yLimit || flip || Mathf.Abs(tilt) < 1f
+                    if (onDome && (dx > yLimit || dy > yLimit || flip || Mathf.Abs(tilt) < 1f
                         || !mflip || Mathf.Abs(mx + x) > 0.02f))
                     {
                         onDome = false;
                         domeDetail = kitKind + " " + col
-                            + " anchor=" + x.ToString("0.00") + "," + contactY.ToString("0.00")
+                            + " touch=" + tx.ToString("0.00") + "," + ty.ToString("0.00")
                             + " dome=" + dome.x.ToString("0.00") + "," + dome.y.ToString("0.00")
                             + " dx=" + dx.ToString("0.00") + " dy=" + dy.ToString("0.00");
                     }

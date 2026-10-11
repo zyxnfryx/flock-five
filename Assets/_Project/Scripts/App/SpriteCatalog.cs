@@ -445,7 +445,201 @@ namespace FlockFive
                 }
                 else sincePeak++;
             }
-            return any ? new Vector2(bestX, bestY) : fallback;
+            if (!any) return fallback;
+            // Center of the crown plateau. bestX is only the back edge of the max.
+            float minX = 999f;
+            float maxX = -999f;
+            int band = 0;
+            for (int x = beak; x >= 0; x--)
+            {
+                float lx = (x + 0.5f - pivX) / ppu;
+                if (beakX - lx > 0.85f) break;
+                if (ColumnThick(px, tw, ox, oy, x, h, ppu) < 0.35f) continue;
+                float top = ColumnTop(px, tw, ox, oy, x, h, pivY, ppu);
+                if (top > peak + 0.18f) break;
+                if (top < peak - 0.04f) continue;
+                if (lx < minX) minX = lx;
+                if (lx > maxX) maxX = lx;
+                band++;
+            }
+            if (band >= 3) return new Vector2((minX + maxX) * 0.5f, peak);
+            return new Vector2(bestX, bestY);
+        }
+
+        // Degrees the skull leans toward +X (the beak on right-facing art).
+        // Wings above the crown are ignored. 0 when the pose has no readable skull.
+        struct TiltHit
+        {
+            public int Id;
+            public float Deg;
+        }
+
+        static TiltHit[] _tilts;
+        static int _tiltN;
+
+        public static float HeadTilt(Sprite sprite)
+        {
+            if (sprite == null) return 0f;
+            int id = sprite.GetInstanceID();
+            if (_tilts != null)
+            {
+                for (int i = 0; i < _tiltN; i++)
+                    if (_tilts[i].Id == id) return _tilts[i].Deg;
+            }
+            float deg = ScanHeadTilt(sprite);
+            if (_tilts == null) _tilts = new TiltHit[8];
+            if (_tiltN >= _tilts.Length)
+            {
+                var grow = new TiltHit[_tilts.Length * 2];
+                for (int i = 0; i < _tilts.Length; i++) grow[i] = _tilts[i];
+                _tilts = grow;
+            }
+            _tilts[_tiltN++] = new TiltHit { Id = id, Deg = deg };
+            return deg;
+        }
+
+        static float ScanHeadTilt(Sprite sprite)
+        {
+            var dome = HeadDome(sprite);
+            var tex = sprite.texture;
+            if (tex == null || !tex.isReadable) return 0f;
+            var rect = sprite.rect;
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 8 || h < 8) return 0f;
+            Color32[] px;
+            try { px = tex.GetPixels32(); }
+            catch (UnityException) { return 0f; }
+            if (px == null || px.Length < tex.width * tex.height) return 0f;
+            float ppu = sprite.pixelsPerUnit > 1f ? sprite.pixelsPerUnit : 220f;
+            float pivX = sprite.pivot.x;
+            float pivY = sprite.pivot.y;
+            int ox = Mathf.RoundToInt(rect.x);
+            int oy = Mathf.RoundToInt(rect.y);
+            int tw = tex.width;
+            float sx = 0f;
+            float sy = 0f;
+            int n = 0;
+            for (int x = 0; x < w; x++)
+            {
+                float lx = (x + 0.5f - pivX) / ppu;
+                if (lx < dome.x - 0.42f || lx > dome.x + 0.42f) continue;
+                if (ColumnThick(px, tw, ox, oy, x, h, ppu) < 0.28f) continue;
+                float top = ColumnTop(px, tw, ox, oy, x, h, pivY, ppu);
+                if (top > dome.y + 0.06f || top < dome.y - 0.32f) continue;
+                sx += lx;
+                sy += top - 0.16f;
+                n++;
+            }
+            if (n < 4) return 0f;
+            float ux = dome.x - sx / n;
+            float uy = dome.y - sy / n;
+            if (uy < 0.02f) return 0f;
+            float ang = Mathf.Atan2(ux, uy) * Mathf.Rad2Deg;
+            if (ang > 26f) ang = 26f;
+            if (ang < -6f) ang = -6f;
+            return ang;
+        }
+
+        // Point on the kit, in the kit's local units, that sits on the skull.
+        // Crown: center of the base. Bow: the knot (center of the loop band),
+        // not the tail-weighted opaque box.
+        struct KnotHit
+        {
+            public int Id;
+            public int Worn;
+            public Vector2 Point;
+        }
+
+        static KnotHit[] _knots;
+        static int _knotN;
+
+        public static Vector2 KitSeatPoint(Sprite kit, BirdKit worn)
+        {
+            if (kit == null) return Vector2.zero;
+            int id = kit.GetInstanceID();
+            int kind = (int)worn;
+            if (_knots != null)
+            {
+                for (int i = 0; i < _knotN; i++)
+                    if (_knots[i].Id == id && _knots[i].Worn == kind) return _knots[i].Point;
+            }
+            var point = ScanKitSeat(kit, worn);
+            if (_knots == null) _knots = new KnotHit[8];
+            if (_knotN >= _knots.Length)
+            {
+                var grow = new KnotHit[_knots.Length * 2];
+                for (int i = 0; i < _knots.Length; i++) grow[i] = _knots[i];
+                _knots = grow;
+            }
+            _knots[_knotN++] = new KnotHit { Id = id, Worn = kind, Point = point };
+            return point;
+        }
+
+        static Vector2 ScanKitSeat(Sprite kit, BirdKit worn)
+        {
+            var box = MeasureOpaque(kit);
+            if (!box.Ok) return Vector2.zero;
+            float midX = (box.Left + box.Right) * 0.5f;
+            if (worn != BirdKit.Bow) return new Vector2(midX, box.Bottom);
+            var tex = kit.texture;
+            if (tex == null || !tex.isReadable) return new Vector2(midX, (box.Bottom + box.Top) * 0.5f);
+            var rect = kit.rect;
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 4 || h < 4) return new Vector2(midX, (box.Bottom + box.Top) * 0.5f);
+            Color32[] px;
+            try { px = tex.GetPixels32(); }
+            catch (UnityException) { return new Vector2(midX, (box.Bottom + box.Top) * 0.5f); }
+            if (px == null) return new Vector2(midX, (box.Bottom + box.Top) * 0.5f);
+            float ppu = kit.pixelsPerUnit > 1f ? kit.pixelsPerUnit : 200f;
+            float pivX = kit.pivot.x;
+            float pivY = kit.pivot.y;
+            int ox = Mathf.RoundToInt(rect.x);
+            int oy = Mathf.RoundToInt(rect.y);
+            int tw = tex.width;
+            int max = 0;
+            var rows = new int[h];
+            for (int y = 0; y < h; y++)
+            {
+                int row = (oy + y) * tw;
+                int count = 0;
+                for (int x = 0; x < w; x++)
+                {
+                    int i = row + ox + x;
+                    if ((uint)i < (uint)px.Length && px[i].a > 28) count++;
+                }
+                rows[y] = count;
+                if (count > max) max = count;
+            }
+            if (max < 4) return new Vector2(midX, (box.Bottom + box.Top) * 0.5f);
+            int thresh = (int)(max * 0.80f);
+            int y0 = -1;
+            int y1 = -1;
+            for (int y = 0; y < h; y++)
+            {
+                if (rows[y] < thresh) continue;
+                if (y0 < 0) y0 = y;
+                y1 = y;
+            }
+            if (y0 < 0) return new Vector2(midX, (box.Bottom + box.Top) * 0.5f);
+            double sumX = 0.0;
+            int n = 0;
+            for (int y = y0; y <= y1; y++)
+            {
+                int row = (oy + y) * tw;
+                for (int x = 0; x < w; x++)
+                {
+                    int i = row + ox + x;
+                    if ((uint)i >= (uint)px.Length || px[i].a <= 28) continue;
+                    sumX += x;
+                    n++;
+                }
+            }
+            if (n < 4) return new Vector2(midX, (box.Bottom + box.Top) * 0.5f);
+            float knotX = ((float)(sumX / n) + 0.5f - pivX) / ppu;
+            float knotY = ((y0 + y1) * 0.5f + 0.5f - pivY) / ppu;
+            return new Vector2(knotX, knotY);
         }
 
         static float ColumnThick(Color32[] px, int tw, int ox, int oy, int x, int h, float ppu)
