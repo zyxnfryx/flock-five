@@ -40,6 +40,8 @@ namespace FlockFive
         // Required and claim-only steps. Informational lessons (sparrow, hawk, pest bee, leaf) stay open.
         int LiveCoachStep()
         {
+            // The ostrich lesson is required. The shared veil keeps every other tap.
+            if (_pestCue == PestCueOstrich) return (int)CoachStep.Ostrich;
             if (_hiveLevelLive) return (int)CoachStep.HiveGarden;
             if (_cueGift && (_cueForce || _cueHand)) return (int)CoachStep.GiftStuck;
             if (_coach && _cueForce && _cueHand)

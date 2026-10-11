@@ -3544,6 +3544,8 @@ namespace FlockFive
             TickPopups();
             TickDailyBonus();
             if (_splash) return;
+            if (_garden.Ostrich != null)
+                _garden.Ostrich.SetCalm(_sel >= 0 || _locked.Count > 0);
             TickLightning();
             if (ClearAdOfferUp()) return;
             if (_restartAsk != RestartAsk.None) return;

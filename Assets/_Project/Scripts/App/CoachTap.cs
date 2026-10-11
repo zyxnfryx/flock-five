@@ -58,6 +58,7 @@ namespace FlockFive
         VipPitch = 35,
         RestartSure = 36,
         RestartKeep = 37,
+        Ostrich = 38,
     }
 
     public static class CoachTap
@@ -106,6 +107,7 @@ namespace FlockFive
                 case CoachStep.VipPitch:
                 case CoachStep.RestartSure:
                 case CoachStep.RestartKeep:
+                case CoachStep.Ostrich:
                     return CoachTapKind.Required;
             }
             throw new ArgumentOutOfRangeException(nameof(step), step, "Classify this lesson step");
@@ -169,6 +171,7 @@ namespace FlockFive
                 case CoachStep.GiftStuck: return "Stuck? Tap the gift branch for a bonus spot.";
                 case CoachStep.Sparrow: return CaptionLayout.SparrowLine;
                 case CoachStep.Hawk: return CaptionLayout.HawkLine;
+                case CoachStep.Ostrich: return CaptionLayout.OstrichLine;
                 case CoachStep.Bee: return CaptionLayout.BeePestLine;
                 case CoachStep.Leaf: return CaptionLayout.LeafLine;
                 case CoachStep.HiveGarden: return CaptionLayout.HiveGardenLine;

@@ -22,7 +22,7 @@ namespace FlockFive.Editor
             }
 
             var all = CoachTap.All;
-            Check("step-count", all != null && all.Length == 38, "n=" + (all == null ? 0 : all.Length));
+            Check("step-count", all != null && all.Length == 39, "n=" + (all == null ? 0 : all.Length));
             if (all != null)
             {
                 for (int i = 0; i < all.Length; i++)
@@ -166,6 +166,7 @@ namespace FlockFive.Editor
                 case CoachStep.VipPitch:
                 case CoachStep.RestartSure:
                 case CoachStep.RestartKeep:
+                case CoachStep.Ostrich:
                     return CoachTapKind.Required;
             }
             throw new System.ArgumentOutOfRangeException(nameof(step), step, "Classify this lesson step");

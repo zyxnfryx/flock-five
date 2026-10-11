@@ -31,6 +31,19 @@ namespace FlockFive
 
         public static void Cowbell() => Play("cowbell", CowbellVolume);
 
+        // Ostrich taunt. One low honk on the mid seat, and only while lead is quiet.
+        public const float HonkVolume = 0.22f;
+
+        public static AudioClip HonkClip() => Clip("honk");
+
+        public static void Honk()
+        {
+            if (!Sfx.QuietMid) return;
+            var clip = HonkClip();
+            if (clip == null) return;
+            Sfx.PlayProc(clip, 1f, HonkVolume, MixLayer.Mid);
+        }
+
         // Honey badger takeoff. The one "badger" clip plus a lead mark the way
         // Sfx.CardBump does, so the splash bed ducks under it.
         public const float BadgerVolume = 0.62f;
@@ -128,6 +141,7 @@ namespace FlockFive
             else if (name == "badger") clip = MakeBadger();
             else if (name == "tick") clip = MakeTick();
             else if (name == "sting") clip = MakeSting();
+            else if (name == "honk") clip = MakeHonk();
             else return null;
             _clips[name] = clip;
             return clip;
@@ -241,6 +255,28 @@ namespace FlockFive
         // for long), a slightly detuned twin for width, a 9 ms eased attack so there
         // is no click or bite, and a smooth exponential decay. 0.46 s. Peak 0.78.
         // Bake low-passes the sum again, which rounds the top further.
+        // One ostrich honk. Low and short, mid layer. The slide stays under 200 Hz
+        // so it does not sit on the hummingbird chips.
+        static AudioClip MakeHonk()
+        {
+            const float dur = 0.36f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float u = t / 0.018f;
+                float atk = u >= 1f ? 1f : u * u * (3f - 2f * u);
+                float env = atk * Mathf.Exp(-t * 6.2f);
+                float f = Mathf.Lerp(168f, 122f, t / dur);
+                float w = 2f * Mathf.PI * f * t;
+                float tone = Mathf.Sin(w) + 0.32f * Mathf.Sin(2f * w) * Mathf.Exp(-t * 9f);
+                data[i] = tone * env;
+            }
+            PeakUnder(data, 0.70f);
+            return Bake("honk", data, 0.11f);
+        }
+
         static AudioClip MakeSting()
         {
             const float dur = 0.46f;

@@ -148,6 +148,10 @@ namespace FlockFive
         public const string HawkLine =
             "A hawk blocks a feeder!\nMatch five there twice.";
 
+        // First ostrich garden. HeadlineGap inserts the blank line at paint time.
+        public const string OstrichLine =
+            "An ostrich blocks feeders!\nMatch three sets to chase it off.";
+
         public const string BeePestLine =
             "Bees cover a branch!\nMove birds off to free a card.";
 

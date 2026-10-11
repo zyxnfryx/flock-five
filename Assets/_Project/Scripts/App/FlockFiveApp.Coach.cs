@@ -33,6 +33,7 @@ namespace FlockFive
         const string CoachLeafKey = "flockfive.coach.leaf";
         const string CoachSparrowKey = "flockfive.coach.sparrow";
         const string CoachHawkKey = "flockfive.coach.hawk";
+        const string CoachOstrichKey = "flockfive.coach.ostrich";
         // Badger first-fight lesson stamp lives on BadgerCopy.CoachPref (PrefGuard).
         const string AdHandLine = "Tap to unlock your bonus!";
         const string GiftStuckLine = "Stuck? Tap the gift branch for a bonus spot.";
@@ -70,9 +71,11 @@ namespace FlockFive
         // RevealExposed frees the furthest bee once the birds stacked above it move off.
         // That is the bee card (Hive.TakeVisitor), not a five-bird feeder match.
         const string BeeIntroLine = CaptionLayout.BeePestLine;
+        const string OstrichIntroLine = CaptionLayout.OstrichLine;
         const int PestCueSparrow = 1;
         const int PestCueHawk = 2;
         const int PestCueBee = 3;
+        const int PestCueOstrich = 4;
         const string CoachBeeKey = "flockfive.coach.bee";
         const string CoachHiveGardenKey = "flockfive.coach.hive.garden";
         const float PestCueSeconds = 4.5f;
@@ -462,7 +465,8 @@ namespace FlockFive
                 && _cueLine != AdHandLine
                 && _cueLine != SparrowIntroLine
                 && _cueLine != HawkIntroLine
-                && _cueLine != BeeIntroLine)
+                && _cueLine != BeeIntroLine
+                && _cueLine != OstrichIntroLine)
                 return true;
             if (_gloveAct == TutorGloveAct.FadeOutOnTap || _gloveAct == TutorGloveAct.Reappear)
                 return true;
@@ -1381,6 +1385,8 @@ namespace FlockFive
                 return PestHit(SparrowView.Live.transform, world);
             if (kind == PestCueHawk && HawkView.Live != null)
                 return PestHit(HawkView.Live.transform, world);
+            if (kind == PestCueOstrich && _garden.Ostrich != null)
+                return PestHit(_garden.Ostrich.Aim, world);
             return false;
         }
 
@@ -1796,6 +1802,8 @@ namespace FlockFive
                 body = SparrowView.Live.transform;
             else if (_pestCue == PestCueHawk && HawkView.Live != null)
                 body = HawkView.Live.transform;
+            else if (_pestCue == PestCueOstrich && _garden.Ostrich != null && _garden.Ostrich.OnStage)
+                body = _garden.Ostrich.Aim;
             if (body == null) return false;
             var sr = body.GetComponent<SpriteRenderer>();
             if (sr == null || !sr.enabled || sr.sprite == null) return false;
@@ -4383,6 +4391,7 @@ namespace FlockFive
 
         CoachStep PestCoachStep()
         {
+            if (_pestCue == PestCueOstrich) return CoachStep.Ostrich;
             if (_pestCue == PestCueHawk) return CoachStep.Hawk;
             if (_pestCue == PestCueBee) return CoachStep.Bee;
             return CoachStep.Sparrow;
@@ -5866,7 +5875,7 @@ namespace FlockFive
         // True while a pest line is up. Caller skips CoachRelease so the tap ripples stay.
         bool PestIntroAdvance()
         {
-            if (_pestCue == PestCueSparrow)
+            if (_pestCue == PestCueSparrow || _pestCue == PestCueOstrich)
             {
                 if (!PestCueAlive())
                 {
@@ -5887,6 +5896,11 @@ namespace FlockFive
                 return true;
             }
             if (PlayClock.Now < _pestNext) return false;
+            if (OstrichDue())
+            {
+                BeginPestCue(PestCueOstrich);
+                return true;
+            }
             if (SparrowDue())
             {
                 BeginPestCue(PestCueSparrow);
@@ -5936,11 +5950,20 @@ namespace FlockFive
             return h != null && h.IsBlocking && h.Settled && !h.InScrap;
         }
 
+        bool OstrichDue()
+        {
+            if (PlayerPrefs.GetInt(CoachOstrichKey, 0) != 0) return false;
+            var mark = _garden.Ostrich;
+            if (mark == null || !mark.Settled || !mark.OnStage) return false;
+            return _board != null && _board.Ostrich != null && _board.Ostrich.Alive;
+        }
+
         bool PestCueAlive()
         {
             if (_pestCue == PestCueSparrow) return SparrowView.Live != null;
             if (_pestCue == PestCueHawk) return HawkView.Live != null;
             if (_pestCue == PestCueBee) return BoardHasBees();
+            if (_pestCue == PestCueOstrich) return OstrichDue() || (_garden.Ostrich != null && _garden.Ostrich.OnStage);
             return false;
         }
 
@@ -5951,8 +5974,11 @@ namespace FlockFive
         {
             _pestHeld = 0f;
             _pestCue = kind;
-            _pestCueUntil = (kind == PestCueSparrow || kind == PestCueBee) ? float.PositiveInfinity : PlayClock.Now + PestCueSeconds;
+            _pestCueUntil = (kind == PestCueSparrow || kind == PestCueBee || kind == PestCueOstrich)
+                ? float.PositiveInfinity
+                : PlayClock.Now + PestCueSeconds;
             // The bee lesson does not freeze the garden. The sparrow still does.
+            // The ostrich lesson stays live and the shared veil gates the tap.
             if (kind == PestCueSparrow) HoldTutorPause(true);
             _coachFade = 0f;
             _gloveReady = false;
@@ -5969,6 +5995,8 @@ namespace FlockFive
                 _pestSlot = SparrowView.Live.BlockingSlot;
             else if (kind == PestCueHawk && HawkView.Live != null)
                 _pestSlot = HawkView.Live.BlockingSlot;
+            else if (kind == PestCueOstrich && _board != null && _board.Ostrich != null)
+                _pestSlot = _board.Ostrich.BlockSlot;
             ApplyPestCue();
         }
 
@@ -5983,6 +6011,7 @@ namespace FlockFive
             string pestLine = SparrowIntroLine;
             if (_pestCue == PestCueHawk) pestLine = HawkIntroLine;
             else if (_pestCue == PestCueBee) pestLine = BeeIntroLine;
+            else if (_pestCue == PestCueOstrich) pestLine = OstrichIntroLine;
             CueLine(pestLine);
             _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
         }
@@ -5992,6 +6021,7 @@ namespace FlockFive
             if (_pestCue == 0) return;
             if (_pestCue == PestCueSparrow) PlayerPrefs.SetInt(CoachSparrowKey, 1);
             else if (_pestCue == PestCueBee) PlayerPrefs.SetInt(CoachBeeKey, 1);
+            else if (_pestCue == PestCueOstrich) PlayerPrefs.SetInt(CoachOstrichKey, 1);
             else PlayerPrefs.SetInt(CoachHawkKey, 1);
             PlayerPrefs.Save();
             var step = PestCoachStep();
@@ -6021,6 +6051,8 @@ namespace FlockFive
                 hit = PestHit(SparrowView.Live.transform, world);
             else if (_pestCue == PestCueHawk && HawkView.Live != null)
                 hit = PestHit(HawkView.Live.transform, world);
+            else if (_pestCue == PestCueOstrich && _garden.Ostrich != null)
+                hit = PestHit(_garden.Ostrich.Aim, world);
             else if (_pestCue == PestCueBee)
                 hit = BeeTap(world);
             if (!hit) return FinishLessonTap(step, false, false, null);
@@ -6118,6 +6150,11 @@ namespace FlockFive
                 if (HawkView.Live.BlockingSlot >= 0) slot = HawkView.Live.BlockingSlot;
                 perch = 0.42f;
             }
+            else if (_pestCue == PestCueOstrich && _garden.Ostrich != null && _garden.Ostrich.OnStage)
+            {
+                body = _garden.Ostrich.Aim;
+                perch = 0.2f;
+            }
             else if (_pestCue == PestCueBee && BeeAim(out var beeWorld))
             {
                 world = beeWorld;
@@ -6157,6 +6194,7 @@ namespace FlockFive
             Transform body = null;
             if (_pestCue == PestCueSparrow && SparrowView.Live != null) body = SparrowView.Live.transform;
             else if (_pestCue == PestCueHawk && HawkView.Live != null) body = HawkView.Live.transform;
+            else if (_pestCue == PestCueOstrich && _garden.Ostrich != null) body = _garden.Ostrich.Aim;
             if (body == null) return;
             var sr = body.GetComponent<SpriteRenderer>();
             var cam = _garden.Cam;
