@@ -76,29 +76,37 @@ namespace FlockFive.Editor
             Debug.Log("[build83] " + end);
         }
 
-        // One policy: uniform random hops. A game is fatal when it freezes or the
-        // solver proves the perch Tangled. Caps stay small enough that a hard win
-        // returns Unknown instead of burning a deep search.
-        public static void ProbeOutlook()
+        // Gardens 18-25 use the maps Level Design proved in its C# harness (winnable
+        // without the gift, trap kept, 33-55% band; 23 at 28.3%). Here: winnability,
+        // kit rules and shape only, capped search, no open-ended trap probe.
+        static void CheckEase(System.Action<string, bool, string> Check)
         {
-            var sb = new StringBuilder();
-            void Log(string line, bool console = true)
+            Check("ease-count", LevelData.Count == 29, "count " + LevelData.Count);
+            int easeLimbs = 0;
+            for (int n = 18; n <= 25; n++)
             {
-                sb.AppendLine(line);
-                File.WriteAllText(DiscoverOut, sb.ToString());
-                if (console) Debug.Log("[b83-probe] " + line);
-            }
-            try
-            {
-                foreach (int cap in new[] { 400, 800, 1500 })
+                int idx = IndexOf(n);
+                var lv = idx >= 0 ? LevelData.Peek(idx) : null;
+                if (lv == null)
                 {
-                    bool band = true;
-                    for (int n = 18; n <= 25; n++)
-                    {
-                        var b = LevelData.Open(IndexOf(n));
-                        Log("start L" + n + " closed cap " + cap);
-                        var sw = System.Diagnostics.Stopwatch.StartNew();
-                        // Trap band (33-55%, 23 at 28.3%) was proven by Level Design in its C# harness; no open-ended trap search here.
+                    Check("ease-" + n, false, "missing");
+                    continue;
+                }
+                var b = LevelData.Open(idx);
+                string want = Kits[n - 18];
+                string have = lv.Kits ?? "";
+                bool map = have == want;
+                string fit = KitFit(lv, b);
+                var sets = BoardValidator.CheckKitSets(b);
+                var bare = GardenSolve.Search(b, TrapProbe.NodeCap);
+                var gift = GardenSolve.Search(Unlock(b), TrapProbe.NodeCap);
+                int play = PlayLimbs(b);
+                int wantPlay = (n == 22 || n == 24) ? 16 : 14;
+                bool shape = play == wantPlay && BonusLimbs(b) == 2;
+                if (n == 23)
+                    shape = shape && b.Branches.Count > 0 && b.Branches[0].Count == 1
+                        && b.Branches[0].Birds[0].Color == BirdColor.Teal
+                        && b.Live[0] == BirdColor.Gold && b.Live[1] == BirdColor.Ruby;
                 bool win = bare.Outlook == GardenSolve.Outlook.Winnable
                     && gift.Outlook == GardenSolve.Outlook.Winnable;
                 Check("ease-" + n,
