@@ -159,19 +159,19 @@ namespace FlockFive
                 branches[GiftIndex + g] = MakeGift(GiftIndex + g, g == 1, root);
 
             int feedersN = 2;
-            var level = LevelData.Current;
-            if (level != null)
+            var curLv = LevelData.Current;
+            if (curLv != null)
             {
-                int n = level.Feeders;
+                int n = curLv.Feeders;
                 if (n < 1) n = 2;
-                if (level.Ostrich && n < 3) n = 3;
+                if (curLv.Ostrich && n < 3) n = 3;
                 feedersN = FeederRow.Clamp(n);
             }
             var feeders = new FeederView[feedersN];
             for (int i = 0; i < feedersN; i++)
                 feeders[i] = MakeFeeder(i, new Vector3(FeederRow.X(i, feedersN), FeederY, 0f), root);
             OstrichMark ostrich = null;
-            if (level != null && level.Ostrich)
+            if (curLv != null && curLv.Ostrich)
                 ostrich = OstrichMark.Attach(root, feedersN);
             var hive = HiveView.Attach(root);
             var ice = GardenIce.Attach(root, cam);
