@@ -428,7 +428,7 @@ namespace FlockFive
             if (_wheelPayMul >= 2
                 && _dailyPhase == DailyWheelPhase.Landed
                 && (DailyBonus.Landed || DailyBonus.ClaimedToday))
-                DrawWheelX2(board, 0.48f);
+                DrawWheelX2(wheelR, 0.48f, titleR);
             GUI.matrix = prev;
 
             if (flowerOn)
@@ -1342,9 +1342,10 @@ namespace FlockFive
             return pinCy / h;
         }
 
-        // Top-right of the panel, same stamp the streak slams down. thud stays
-        // with the reward card so this draw does not steal its bump.
-        void DrawWheelX2(Rect panel, float sparkle)
+        // Top-right of the result (the wheel), same stamp the streak slams down.
+        // A title rect pushes the seat below that line. thud stays with the
+        // reward card so this draw does not steal its bump.
+        void DrawWheelX2(Rect panel, float sparkle, Rect title = default)
         {
             if (panel.width < 6f) return;
             if (_wheelX2At < 0f) _wheelX2At = Time.unscaledTime;
@@ -1352,9 +1353,28 @@ namespace FlockFive
             float s = Mathf.Max(Screen.height / 720f, 1f);
             var shake = RewardCardShake(age, s);
             var seat = RewardStampRect(panel, 2);
+            seat = BadgeBelowTitle(seat, title);
             seat.x += shake.x;
             seat.y += shake.y;
             DrawRewardStamp(seat, 2, 1f, age, sparkle, false);
+        }
+
+        // Resting x2 seat: the shared stamp on the result, clear of the title.
+        public static Rect WheelResultBadgeRect(Rect title, Rect result, int mul)
+        {
+            return BadgeBelowTitle(RewardStampRect(result, mul), title);
+        }
+
+        // Drop the seat so its top clears the title. A miss stays put.
+        public static Rect BadgeBelowTitle(Rect seat, Rect title)
+        {
+            if (seat.width < 2f || seat.height < 2f) return seat;
+            if (title.width < 2f || title.height < 2f) return seat;
+            if (seat.xMax <= title.xMin || title.xMax <= seat.xMin) return seat;
+            if (seat.yMax <= title.yMin || title.yMax <= seat.yMin) return seat;
+            float y = title.yMax + 6f;
+            seat.y += y - seat.yMin;
+            return seat;
         }
 
         static void EnsureWheelArt()

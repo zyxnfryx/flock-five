@@ -16304,40 +16304,9 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            // Large portrait card ~1:1.4, fill the screen for 55+ reading.
-            // Same size the card-fit suite measures.
-            var bigSize = CardText.InspectCard(Screen.width, Screen.height);
-            float bigW = bigSize.x;
-            float bigH = bigSize.y;
-            var to = new Rect(
-                (Screen.width - bigW) * 0.5f,
-                (Screen.height - bigH) * 0.42f,
-                bigW,
-                bigH);
-            // Honey lesson: the readable caption lives in the strip under the card.
-            // Lift, then shrink, until that plate stays on screen.
-            if (_albumTutorOn && _albumTutorStep == 3)
-            {
-                float seatW = LessonSeatWidth(Screen.width, bigW);
-                float seatH = LessonSeatHeight(AlbumHoneyLine, Screen.width, Screen.height, seatW);
-                float drop = LessonPlateDrop(Screen.height, seatH);
-                float limit = Screen.height - 8f;
-                if (to.yMax + drop > limit)
-                    to.y -= to.yMax + drop - limit;
-                float topLimit = BackMedalRect(s, TopHud()).yMax + 8f;
-                if (to.y < topLimit)
-                {
-                    float room = limit - topLimit;
-                    float h = Mathf.Max(320f, room - drop);
-                    float w = h / 1.4f;
-                    if (w > Screen.width * 0.9f)
-                    {
-                        w = Screen.width * 0.9f;
-                        h = w * 1.4f;
-                    }
-                    to = new Rect((Screen.width - w) * 0.5f, topLimit, w, h);
-                }
-            }
+            // Large portrait card ~1:1.4, the same rect the card-fit suite measures.
+            // The honey caption sits in the strip under the card. Do not shrink it.
+            var to = AlbumInspectRect(Screen.width, Screen.height);
             var from = _hiveInspectFrom;
             var big = new Rect(
                 Mathf.Lerp(from.x, to.x, t),

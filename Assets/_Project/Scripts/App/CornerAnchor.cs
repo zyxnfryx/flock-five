@@ -10,6 +10,8 @@ namespace FlockFive
     {
         public const float SizeRef = 72f;
         public const float InsetRef = 40f;
+        // Air inside the safe area, above the home-indicator inset. Scaled by screen.
+        public const float BottomMarginRef = 72f;
 
         public static void Garden(float screenW, float screenH, Rect safe,
             out float scale, out float top, out float bot, out Rect restart, out Rect hive)
@@ -22,14 +24,14 @@ namespace FlockFive
             if (safeTop < 0f) safeTop = 0f;
             if (safeBot < 0f) safeBot = 0f;
             top = 72f * scale + safeTop;
-            bot = 88f * scale + safeBot;
             float size = SizeRef * scale;
             float inset = InsetRef * scale;
-            // Old restart center: the 64px row sat 12px above the bottom chrome.
-            float rowTop = screenH - bot - 12f * scale;
-            float centerY = rowTop + 32f * scale;
-            float y = centerY - size * 0.5f;
+            float margin = BottomMarginRef * scale;
+            // Whole icon inside the safe glass: bottom inset, then this margin.
+            float y = screenH - safeBot - margin - size;
+            if (y < safeTop) y = safeTop;
             if (y < 0f) y = 0f;
+            bot = screenH - y;
             float left = safe.xMin + inset;
             float right = safe.xMax - inset - size;
             if (left < 0f) left = 0f;

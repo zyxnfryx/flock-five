@@ -2110,7 +2110,7 @@ namespace FlockFive
 
         static void StandardCaptionBox(float s, out float w, out float h, out int lo, out int hi)
         {
-            w = Mathf.Min(Screen.width * 0.72f, 520f * s);
+            w = LessonColumnWidth(Screen.width, Screen.height);
             h = Mathf.Max(128f * s, 108f);
             lo = 18;
             hi = Mathf.RoundToInt(32f * s);

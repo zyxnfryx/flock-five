@@ -8,13 +8,32 @@ namespace FlockFive
         // grow with the phone, so a long lesson dropped to about 21px.
         public const int CaptionFloorRef = 18;
 
+        // Lesson type on a 2556-tall phone. Scales with screen height. 60–70px there.
+        public const float CaptionFloorPhonePx = 64f;
+        public const float CaptionFloorPhoneH = 2556f;
+
         public static int CaptionPxOf(int px) => CaptionPx(px);
+
+        // Seat width shared by the garden lesson and the measured caption box.
+        // Wide enough that the bee sentence wraps in a few lines, and the plate
+        // (BoxPad on each side) still sits on the glass.
+        public static float LessonColumnWidth(float screenW, float screenH)
+        {
+            float s = Mathf.Max(screenH / 720f, 1f);
+            float plate = CaptionLayout.BoxPad(screenH).x;
+            float maxSeat = screenW - 16f - plate * 2f;
+            float want = Mathf.Min(screenW * 0.92f, 720f * s);
+            if (want > maxSeat) want = maxSeat;
+            if (want < 160f) want = Mathf.Min(Mathf.Max(48f, maxSeat), 160f);
+            if (want < 48f) want = 48f;
+            return want;
+        }
 
         // Inner text size of the standard lesson box on this phone.
         public static void LessonTextBox(float screenW, float screenH, out float textW, out float textH)
         {
             float s = Mathf.Max(screenH / 720f, 1f);
-            float boxW = Mathf.Min(screenW * 0.72f, 520f * s);
+            float boxW = LessonColumnWidth(screenW, screenH);
             float boxH = Mathf.Max(128f * s, 108f);
             float padX = Mathf.Clamp(boxW * 0.055f, 10f * s, 18f * s);
             float padY = Mathf.Clamp(boxH * 0.10f, 6f * s, 14f * s);
@@ -22,26 +41,31 @@ namespace FlockFive
             textH = Mathf.Max(24f, boxH - padY * 2f);
         }
 
-        // Font the short daily line ("Tap Daily for") actually fits at, inside
-        // the standard lesson box. That is the readable floor. Never below the
-        // old boosted 18.
+        // Shared lesson size. About 64px on a 2556-tall phone, scaled by height.
+        // Never below the old boosted 18.
         public static int LessonCaptionFloor(float screenW, float screenH)
         {
-            float s = Mathf.Max(screenH / 720f, 1f);
-            int hi = CaptionPx(Mathf.RoundToInt(32f * s));
+            float h = screenH > 2f ? screenH : CaptionFloorPhoneH;
+            int floor = Mathf.RoundToInt(CaptionFloorPhonePx * (h / CaptionFloorPhoneH));
+            if (floor < 1) floor = 1;
             int old = CaptionPx(CaptionFloorRef);
-            if (hi < old) hi = old;
-            LessonTextBox(screenW, screenH, out float textW, out _);
-            var st = CoachCaptionStyle();
-            const string reference = "Tap Daily for";
-            for (int px = hi; px >= old; px--)
-            {
-                st.wordWrap = false;
-                st.fontSize = px;
-                if (st.CalcSize(new GUIContent(reference)).x <= textW + 0.5f)
-                    return px;
-            }
-            return old;
+            if (floor < old) floor = old;
+            return floor;
+        }
+
+        // Wrapped line count at the lesson floor, in the shared column.
+        public static int LessonCaptionLines(string text, float screenW, float screenH)
+        {
+            float s = Mathf.Max(screenH / 720f, 1f);
+            float seatW = LessonColumnWidth(screenW, screenH);
+            float padX = Mathf.Clamp(seatW * 0.055f, 10f * s, 18f * s);
+            float textW = Mathf.Max(48f, seatW - padX * 2f);
+            var fit = FitLessonText(text, textW, 4096f, 12, Mathf.RoundToInt(32f * s), screenW, screenH);
+            int lines = 1;
+            string shown = fit.Shown ?? "";
+            for (int i = 0; i < shown.Length; i++)
+                if (shown[i] == '\n') lines++;
+            return lines;
         }
 
         public static string LessonCaptionShown(string text)
@@ -117,6 +141,8 @@ namespace FlockFive
             hi = CaptionPx(hi);
             int floor = LessonCaptionFloor(screenW, screenH);
             if (lo < floor) lo = floor;
+            // The floor is the lesson size. A tall seat must not grow the type.
+            if (hi > floor) hi = floor;
             if (hi < lo) hi = lo;
             return CaptionLayout.FitFloor(CoachLineStyle(), text, textW, textH, lo, hi);
         }

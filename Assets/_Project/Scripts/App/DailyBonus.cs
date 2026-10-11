@@ -266,15 +266,30 @@ namespace FlockFive
         }
 
         // Degrees for GUIUtility.RotateAroundPivot. Positive is clockwise on
-        // screen. Local +x (the reading direction) then points from the hub
-        // out along the wedge center, toward the rim.
+        // screen. Hub-to-rim (local +x along the wedge center, toward the rim),
+        // then flipped 180° when that would read upside down. The result stays
+        // in (-90, 90] of upright at the wedge's resting angle.
         public static float WedgeLabelDegrees(int wedge, float clockwiseDegrees)
         {
-            if (WedgeCount < 1) return -90f;
+            if (WedgeCount < 1) return 0f;
             int w = wedge % WedgeCount;
             if (w < 0) w += WedgeCount;
             float deg = w * WedgeArc + clockwiseDegrees;
-            return deg - 90f;
+            float theta = SignedDegrees(deg - 90f);
+            if (theta <= -90f || theta > 90f)
+                theta = SignedDegrees(theta + 180f);
+            if (theta <= -90f) theta += 180f;
+            if (theta > 90f) theta -= 180f;
+            return theta;
+        }
+
+        // Signed degrees in (-180, 180].
+        public static float SignedDegrees(float deg)
+        {
+            deg %= 360f;
+            if (deg > 180f) deg -= 360f;
+            if (deg <= -180f) deg += 360f;
+            return deg;
         }
 
         // Clockwise rotation in GUI space (+x right, +y down). Same sense as

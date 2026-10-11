@@ -466,22 +466,39 @@ namespace FlockFive.Editor
                 tickDetail.Length == 0 ? "flick=" + flick.ToString("0.00") : tickDetail);
 
             bool radial = true;
+            bool upright = true;
             float worst = 0f;
+            string radialDetail = "";
             for (int w = 0; w < DailyBonus.WedgeCount; w++)
             {
-                for (int s = 0; s < 4; s++)
+                float land = DailyBonus.PointerAngle(w);
+                float[] spins = { 0f, land, land + 360f * 5f };
+                for (int i = 0; i < spins.Length; i++)
                 {
-                    float spin = s * 20f;
+                    float spin = spins[i];
+                    float theta = DailyBonus.SignedDegrees(DailyBonus.WedgeLabelDegrees(w, spin));
+                    if (theta <= -90f || theta > 90f)
+                    {
+                        upright = false;
+                        if (radialDetail.Length == 0)
+                            radialDetail = "w=" + w + " spin=" + spin.ToString("0.0") + " theta=" + theta.ToString("0.0");
+                    }
                     var want = DailyBonus.WedgeOffset(w, spin, 1f);
                     var got = DailyBonus.RotateClockwise(new Vector2(1f, 0f), DailyBonus.WedgeLabelDegrees(w, spin));
-                    float err = (want - got).magnitude;
+                    float dot = want.x * got.x + want.y * got.y;
+                    float err = Mathf.Abs(Mathf.Abs(dot) - 1f);
                     if (err > worst) worst = err;
-                    if (err > 0.02f) radial = false;
+                    if (err > 0.02f)
+                    {
+                        radial = false;
+                        if (radialDetail.Length == 0)
+                            radialDetail = "w=" + w + " dot=" + dot.ToString("0.000");
+                    }
                 }
             }
             Check("wedge-labels-radial",
-                radial && wheelBody.IndexOf("WedgeLabelDegrees") >= 0,
-                "worst=" + worst.ToString("0.000"));
+                radial && upright && wheelBody.IndexOf("WedgeLabelDegrees") >= 0,
+                radialDetail.Length == 0 ? "worst=" + worst.ToString("0.000") : radialDetail);
 
             var face = DailyBonus.WedgeFace(DailyBonus.JackpotWedge, 0.45f);
             var other = DailyBonus.WedgeFace(0, 0.45f);
@@ -515,20 +532,28 @@ namespace FlockFive.Editor
             var seat = FlockFiveApp.RewardStampRect(panel, 2);
             bool topRight = seat.center.x > panel.xMax - panel.width * 0.28f
                 && seat.center.y < panel.y + panel.height * 0.28f;
+            var title = new Rect(120f, 160f, 700f, 80f);
+            var wheel = new Rect(140f, 360f, 660f, 660f);
+            var onWheel = FlockFiveApp.WheelResultBadgeRect(title, wheel, 2);
+            var onPanel = FlockFiveApp.WheelResultBadgeRect(title, new Rect(120f, 160f, 700f, 980f), 2);
+            bool clear = !title.Overlaps(onWheel) && !title.Overlaps(onPanel);
             int x2Uses = CountOf(daily, "DrawWheelX2(");
             Check("wheel-x2-stamp",
                 topRight
+                && clear
                 && x2Uses >= 3
                 && helperBody.IndexOf("DrawRewardStamp(seat, 2, 1f, age, sparkle, false)") >= 0
                 && helperBody.IndexOf("RewardStampRect(") >= 0
                 && helperBody.IndexOf("RewardCardShake(") >= 0
+                && helperBody.IndexOf("BadgeBelowTitle(") >= 0
                 && helperBody.IndexOf("PointerTipDir") < 0
                 && stampBody.IndexOf("RewardStampPop") >= 0
                 && stampBody.IndexOf("StreakBadge.Draw") >= 0
                 && stampBody.IndexOf("if (thud)") >= 0
-                && daily.IndexOf("DrawWheelX2(board,") >= 0
-                && daily.IndexOf("DrawWheelX2(bar,") >= 0,
-                "seat=" + seat + " uses=" + x2Uses);
+                && daily.IndexOf("DrawWheelX2(wheelR,") >= 0
+                && daily.IndexOf("DrawWheelX2(bar,") >= 0
+                && daily.IndexOf("DrawWheelX2(board,") < 0,
+                "seat=" + seat + " wheel=" + onWheel + " panel=" + onPanel + " uses=" + x2Uses);
         }
 
         static int CountOf(string hay, string needle)
@@ -763,18 +788,31 @@ namespace FlockFive.Editor
                     tapDetail = shown;
                 }
                 int px = FlockFiveApp.LessonCaptionFont(line, W, H);
-                if (px < floor)
+                if (px < 60 || px > 70)
                 {
                     fonts = false;
-                    fontDetail = px + " < " + floor + " [" + shown.Replace("\n", " / ") + "]";
+                    fontDetail = px + " outside 60-70 [" + shown.Replace("\n", " / ") + "]";
                 }
             }
+            int halfH = 1280;
+            int halfFloor = FlockFiveApp.LessonCaptionFloor(W, halfH);
+            int halfWant = Mathf.Max(oldFloor, Mathf.RoundToInt(FlockFiveApp.CaptionFloorPhonePx * (halfH / FlockFiveApp.CaptionFloorPhoneH)));
+            int shortFloor = FlockFiveApp.LessonCaptionFloor(W, 720f);
+            int shortWant = Mathf.Max(oldFloor, Mathf.RoundToInt(FlockFiveApp.CaptionFloorPhonePx * (720f / FlockFiveApp.CaptionFloorPhoneH)));
             var beeShown = FlockFiveApp.LessonCaptionShown(CaptionLayout.HiveGardenLine);
             bool emojiOk = beeShown.Contains("\U0001F41D")
                 == CaptionLayout.DrawsEmoji(FlockFiveApp.CoachCaptionStyle().font);
-            Check("caption-floor", floor > oldFloor && fonts && emojiOk,
-                "old=" + oldFloor + " new=" + floor + " " + fontDetail
+            int phoneWant = Mathf.Max(oldFloor, Mathf.RoundToInt(FlockFiveApp.CaptionFloorPhonePx * (H / FlockFiveApp.CaptionFloorPhoneH)));
+            Check("caption-floor",
+                floor >= 60 && floor <= 70 && floor == phoneWant
+                && halfFloor == halfWant && shortFloor == shortWant
+                && fonts && emojiOk,
+                "old=" + oldFloor + " new=" + floor + " half=" + halfFloor + "/" + halfWant
+                + " short=" + shortFloor + "/" + shortWant + " " + fontDetail
                 + " bee=[" + beeShown.Replace("\n", " / ") + "]");
+            int beeLines = FlockFiveApp.LessonCaptionLines(CaptionLayout.HiveGardenLine, W, H);
+            Check("caption-bee-wrap", beeLines >= 2 && beeLines <= 4,
+                "lines=" + beeLines + " [" + beeShown.Replace("\n", " / ") + "]");
             Check("caption-says-tap", taps
                 && beeShown.IndexOf("Tap", System.StringComparison.Ordinal) >= 0
                 && CaptionLayout.AlbumHoneyBlock.IndexOf("Tap", System.StringComparison.Ordinal) >= 0
@@ -819,6 +857,21 @@ namespace FlockFive.Editor
                 && Mathf.Abs(dr.x - off.x) <= 0.05f && Mathf.Abs(dr.y - off.y) <= 0.05f,
                 "dRestart=" + dr + " dHive=" + dh);
 
+            float hudScale = Mathf.Max(H / 720f, 1f);
+            float hudMargin = CornerAnchor.BottomMarginRef * hudScale;
+            bool HudIn(Rect r, Rect area)
+            {
+                float guiTop = H - area.yMax;
+                float guiBot = H - area.yMin;
+                return r.width > 8f && r.height > 8f
+                    && r.xMin >= area.xMin - 0.5f && r.xMax <= area.xMax + 0.5f
+                    && r.yMin >= guiTop - 0.5f
+                    && r.yMax <= guiBot - hudMargin + 0.5f;
+            }
+            Check("hud-safe",
+                HudIn(restart, safe) && HudIn(hive, safe) && HudIn(r2, shifted) && HudIn(h2, shifted),
+                "restart=" + restart + " hive=" + hive + " margin=" + hudMargin.ToString("0.0"));
+
             string root = System.IO.Path.GetDirectoryName(Application.dataPath);
             string app = System.IO.File.ReadAllText(System.IO.Path.Combine(root, "Assets/_Project/Scripts/App/FlockFiveApp.cs"));
             string coach = System.IO.File.ReadAllText(System.IO.Path.Combine(root, "Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs"));
@@ -843,9 +896,10 @@ namespace FlockFive.Editor
                 var pose = FlockFiveApp.PoseLesson(step, focus, W, H, line);
                 var text = new CoachSeat.FocusText { Title = pose.Title, Body = pose.Body, Flavor = pose.Flavor };
                 bool below = step != 3 || pose.Plate.y + 1f >= focus.yMax;
+                bool onGlass = step != 3 || (pose.Plate.yMax <= H - 2f && pose.Plate.yMin >= 2f);
                 bool honeyAim = step != 3 || pose.Honey.width < 2f
                     || pose.Honey.Contains(pose.Aim) || pose.Glove.Overlaps(pose.Honey);
-                if (!pose.Clear || text.Hits(pose.Plate) || text.Hits(pose.Glove) || !below || !honeyAim)
+                if (!pose.Clear || text.Hits(pose.Plate) || text.Hits(pose.Glove) || !below || !onGlass || !honeyAim)
                 {
                     lessons = false;
                     lessonDetail = "step " + step
@@ -859,7 +913,17 @@ namespace FlockFive.Editor
                     break;
                 }
             }
-            Check("card-lesson-clear", lessons, lessonDetail);
+            var spec = FlockFiveApp.CardText.InspectCard(W, H);
+            var fullCard = FlockFiveApp.AlbumInspectRect(W, H);
+            bool fullSize = Mathf.Abs(fullCard.width - spec.x) < 1f
+                && Mathf.Abs(fullCard.height - spec.y) < 1f
+                && fullCard.height > H * 0.50f
+                && app.IndexOf("AlbumInspectRect(") >= 0
+                && app.IndexOf("room - drop") < 0;
+            if (!fullSize)
+                lessonDetail = "card " + fullCard.width.ToString("0") + "x" + fullCard.height.ToString("0")
+                    + " spec=" + spec.x.ToString("0") + "x" + spec.y.ToString("0");
+            Check("card-lesson-clear", lessons && fullSize, lessonDetail);
         }
     }
 }
