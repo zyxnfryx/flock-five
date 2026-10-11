@@ -40,21 +40,20 @@ namespace FlockFive
             new Level { Number = 17, Id = "garden-17", Title = "Garden 17", Make = Garden17,
                 Kits = "CCCCN/NNNN/CCCNN/CCCNN/CCCCN/B/NNBBB/CBBBB/NBBB/BCNNC/NBBNC/CNNBB/N/BBCBB" },
             new Level { Number = 18, Id = "garden-18", Title = "Garden 18", Make = Garden18,
-                Kits = "BCC/BBCBC/CNNCC/BBBBB/BBBCB/NCC/CCCC/NCB/CNNNN/CNNNB/CCCNN/NNBNN/NNN/BBBB" },
+                Kits = "NBB/BBCBC/CCCCB/CCCBC/BBCBB/NCC/CCCC/NCN/CNNNB/BNNBN/NNNNC/NNBBN/NNN/BBBB" },
             new Level { Number = 19, Id = "garden-19", Title = "Garden 19", Make = Garden19,
-                Kits = "BBBCN/NNNBC/NCCB/BNNB/BBBN/CCNN/BBBB/BBBNC/CCCNN/BNNC/BCCC/NCNN/BCNN/CCCC" },
+                Kits = "BBBCN/BBBNC/NCCB/BNBB/BBBN/NCCN/BBBB/CCCNN/BCCCC/BCCN/CNNN/NNNC/BCCC/NNNN" },
             new Level { Number = 20, Id = "garden-20", Title = "Garden 20", Make = Garden20,
-                Kits = "N/CCCCN/BCCCC/NNNNN/CBBB/CBCCB/NNBBB/C/BBBBN/BCNNC/CNNNC/CCCC/BCNCC/CNNNN" },
+                Kits = "N/CCCCB/NCBBB/NNNNN/CBBB/CBCBB/CNBNB/B/NNNNN/BCCCN/CCCCN/CCCC/CCCNC/CBNNN" },
             new Level { Number = 21, Id = "garden-21", Title = "Garden 21", Make = Garden21,
-                Kits = "NNCCN/CCB/BBCCB/CCC/BBNB/BCCNN/CCBCB/NNBBC/NNB/NNNBC/BBB/NCBC/NNNCB/CNNBN" },
+                Kits = "NNCNC/CCB/NBCCB/CCC/NBBB/CCCBB/BNCNC/NNBCC/BNN/CNNBC/BBB/NNBN/BBBNB/CNCNN" },
             new Level { Number = 22, Id = "garden-22", Title = "Garden 22", Make = Garden22,
-                Kits = "NNNBN/BBBNB/CBCBB/NNNBB/BCCCC/NBNCN//CCCCN/CCCCN/CBBNN/NNNNN/BCCBC/BBBBC" },
-            new Level { Number = 23, Id = "garden-23", Title = "Garden 23", Make = Garden23,
-                Kits = "CCNCB/BCCCC/BNBNN/CNCBB/NNCCC/NNCNN//BBNNC/CBBBB/BNNBB/CBCNN/BBCCC/NNNBB" },
+                Kits = "CNNCC/BBBBB/CCCNN/NNNCB/BBCCC/NBNBC///NNNNC/CCNCC/CBBCN/NNNCN/CBBBB/BBBBN//" },
+            new Level { Number = 23, Id = "garden-23", Title = "Garden 23", Make = Garden23 },
             new Level { Number = 24, Id = "garden-24", Title = "Garden 24", Make = Garden24,
-                Kits = "NCBBC/NCCBC/CBCBB/BNNCB/NCCC/NBB/NNC/NCNCN/NBBBN/CCCBN/NNNCC/CBBB/BNN/BNB" },
+                Kits = "NCBCN/CBBNB/NCNCB/BCBCC/NCCC/NBB/BBC//NCCCN/NNNNB/NBCBB/CCBNN/CNBB/NNN/BCB/" },
             new Level { Number = 25, Id = "garden-25", Title = "Garden 25", Make = Garden25,
-                Kits = "NNNN/CNNB/BBCN/BBBB/BNNNN/CCCC/CBBBC/CCCN/NCNN/CCBB/NNNN/NBBCN/BBBB/NNBNN" },
+                Kits = "NNBN/CNCB/BBCN/BBBB/BNNBB/CCCC/CCNCB/CBNN/NBNN/NNNC/NNNN/NCCBN/BBBB/NNBNC" },
             new Level { Number = 26, Id = "garden-26", Title = "Garden 26", Make = Garden26, Solo = true },
             new Level { Number = 27, Id = "garden-27", Title = "Garden 27", Make = Garden27, Solo = true },
             new Level { Number = 28, Id = "garden-28", Title = "Garden 28", Make = Garden28, Solo = true },
@@ -761,6 +760,7 @@ namespace FlockFive
                 Row(BirdColor.Ruby, BirdColor.Gold, BirdColor.Ruby, BirdColor.Gold, BirdColor.Violet),
                 new BranchState(),
                 new BranchState());
+            b.Branches.Add(new BranchState()); // ease: third empty limb
             b.Live[0] = BirdColor.Gold;
             b.Live[1] = BirdColor.Teal;
             b.Queue.Add(BirdColor.Violet);
@@ -776,27 +776,25 @@ namespace FlockFive
             return b;
         }
 
-        // Both feeders live, long queue. Ruby calls twice; topping up Gold before the bees show tangles.
+        // Regenerated (GardenGen band T1, gen seed 2755557184). Two live feeders, bees on two limbs; run-order kits (no Kits map).
         static Board Garden23()
         {
             var b = Eight(
-                Row(BirdColor.Violet, BirdColor.Violet, BirdColor.Ruby, BirdColor.Gold, BirdColor.Violet),
-                Row(BirdColor.Violet, BirdColor.Gold, BirdColor.Gold, BirdColor.Ruby, BirdColor.Ruby),
-                Row(BirdColor.Violet, BirdColor.Ruby, BirdColor.Teal, BirdColor.Ruby, BirdColor.Ruby),
-                Row(BirdColor.Ruby, BirdColor.Teal, BirdColor.Ruby, BirdColor.Teal, BirdColor.Teal),
-                Row(BirdColor.Teal, BirdColor.Ruby, BirdColor.Violet, BirdColor.Violet, BirdColor.Violet),
-                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Ruby, BirdColor.Violet, BirdColor.Violet),
-                new BranchState(),
+                Row(BirdColor.Teal),
+                Row(BirdColor.Violet),
+                Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Violet, BirdColor.Ruby, BirdColor.Ruby),
+                Row(BirdColor.Violet, BirdColor.Gold, BirdColor.Ruby, BirdColor.Ruby),
+                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Teal, BirdColor.Teal, BirdColor.Ruby),
+                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Violet, BirdColor.Ruby, BirdColor.Violet),
+                Row(BirdColor.Teal, BirdColor.Ruby, BirdColor.Teal, BirdColor.Ruby),
                 new BranchState());
-            b.Live[0] = BirdColor.Violet;
-            b.Live[1] = BirdColor.Teal;
+            b.Live[0] = BirdColor.Gold;
+            b.Live[1] = BirdColor.Ruby;
+            b.Queue.Add(BirdColor.Ruby);
+            b.Queue.Add(BirdColor.Teal);
             b.Queue.Add(BirdColor.Violet);
-            b.Queue.Add(BirdColor.Ruby);
-            b.Queue.Add(BirdColor.Ruby);
-            b.Queue.Add(BirdColor.Gold);
-            HideInner(b.Branches[0], 3);
-            HideInner(b.Branches[1], 1);
-            HideInner(b.Branches[2], 1);
+            HideInner(b.Branches[6], 2);
+            HideInner(b.Branches[5], 3);
             return Prep(b);
         }
 
@@ -812,6 +810,7 @@ namespace FlockFive
                 Row(BirdColor.Teal, BirdColor.Violet, BirdColor.Violet),
                 Row(BirdColor.Violet, BirdColor.Gold, BirdColor.Violet),
                 new BranchState());
+            b.Branches.Add(new BranchState()); // ease: third empty limb
             b.Live[0] = BirdColor.Ruby;
             b.Live[1] = BirdColor.Teal;
             b.Queue.Add(BirdColor.Violet);

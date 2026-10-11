@@ -598,6 +598,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-b82g-stills"); } catch { }
                 StartCoroutine(ShotBuild82g());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-b83-gardens"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b83-gardens"); } catch { }
+                StartCoroutine(ShotBuild83Gardens());
+            }
 #endif
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {

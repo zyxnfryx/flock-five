@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -36,11 +37,12 @@ namespace FlockFive
             if (!start.HasHop() && start.FindCollect() < 0)
                 return new Report { Outlook = Outlook.Tangled, Moves = 0, Nodes = 1 };
 
+            var hops = new List<Hop>(32);
             var greedy = start.Clone();
             int gMoves = 0;
             for (int step = 0; step < 120; step++)
             {
-                if (!BestHop(greedy, out int from, out int to)) break;
+                if (!BestHop(greedy, hops, out int from, out int to)) break;
                 if (!greedy.TryMove(from, to, out _)) break;
                 gMoves++;
                 Drain(greedy);
@@ -48,10 +50,10 @@ namespace FlockFive
                     return new Report { Outlook = Outlook.Winnable, Moves = gMoves, Nodes = step + 1 };
             }
 
-            var seen = new HashSet<string>();
+            var seen = new HashSet<Stamp>();
             var stack = new Stack<(Board board, int depth)>();
             stack.Push((start, 0));
-            seen.Add(Key(start));
+            seen.Add(StampOf(start));
             int nodes = 0;
 
             while (stack.Count > 0)
@@ -61,7 +63,7 @@ namespace FlockFive
                 if (nodes > nodeCap)
                     return new Report { Outlook = Outlook.Unknown, Moves = cur.depth, Nodes = nodes };
 
-                var hops = ListHops(cur.board);
+                FillHops(cur.board, hops);
                 for (int m = hops.Count - 1; m >= 0; m--)
                 {
                     var next = cur.board.Clone();
@@ -74,7 +76,7 @@ namespace FlockFive
                             Moves = cur.depth + 1,
                             Nodes = nodes
                         };
-                    if (!seen.Add(Key(next))) continue;
+                    if (!seen.Add(StampOf(next))) continue;
                     stack.Push((next, cur.depth + 1));
                 }
             }
@@ -93,46 +95,87 @@ namespace FlockFive
             }
         }
 
-        static bool BestHop(Board b, out int from, out int to)
+        static bool BestHop(Board b, List<Hop> hops, out int from, out int to)
         {
+            FillHops(b, hops);
             from = -1;
             to = -1;
-            int best = int.MinValue;
-            var hops = ListHops(b);
-            for (int i = 0; i < hops.Count; i++)
-            {
-                int s = Score(b, hops[i].from, hops[i].to);
-                if (s <= best) continue;
-                best = s;
-                from = hops[i].from;
-                to = hops[i].to;
-            }
-            return from >= 0;
+            if (hops.Count == 0) return false;
+            from = hops[0].from;
+            to = hops[0].to;
+            return true;
         }
 
         struct Hop
         {
             public int from;
             public int to;
+            public int score;
         }
 
-        static List<Hop> ListHops(Board b)
+        // Two independent mixes of the same fields Key writes. The search
+        // visited-set stays allocation-free; a collision would have to hit both.
+        struct Stamp : IEquatable<Stamp>
         {
-            var hops = new List<Hop>(32);
+            public ulong A;
+            public ulong B;
+            public bool Equals(Stamp other) => A == other.A && B == other.B;
+            public override bool Equals(object obj) => obj is Stamp other && Equals(other);
+            public override int GetHashCode() =>
+                unchecked((int)A ^ (int)(A >> 32) ^ (int)B ^ (int)(B >> 32));
+        }
+
+        static Stamp StampOf(Board b)
+        {
+            ulong a = 14695981039346656037UL;
+            ulong h = 0x6C62272E07BB0142UL;
+            void Mix(int v)
+            {
+                a ^= (ulong)(uint)v;
+                a *= 1099511628211UL;
+                h ^= (ulong)(uint)v;
+                h *= 0xBF58476D1CE4E5B9UL;
+                h ^= h >> 31;
+            }
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var br = b.Branches[i];
+                if (br.Broken) { Mix(1); continue; }
+                if (br.AdLocked) { Mix(2); continue; }
+                Mix(3);
+                for (int k = 0; k < br.Count; k++)
+                {
+                    Mix(10 + (int)br.Birds[k].Color);
+                    Mix(20 + (int)br.Birds[k].Kit);
+                    Mix(br.IsShrouded(k) ? 31 : 30);
+                }
+            }
+            Mix(4);
+            Mix(b.Live[0].HasValue ? 40 + (int)b.Live[0].Value : 49);
+            Mix(b.Live[1].HasValue ? 40 + (int)b.Live[1].Value : 49);
+            Mix(5);
+            for (int i = 0; i < b.Queue.Count; i++) Mix(50 + (int)b.Queue[i]);
+            return new Stamp { A = a, B = h };
+        }
+
+        static readonly Comparison<Hop> ByScore = (x, y) => y.score.CompareTo(x.score);
+
+        static void FillHops(Board b, List<Hop> hops)
+        {
+            hops.Clear();
             int n = b.Branches.Count;
             for (int from = 0; from < n; from++)
             {
-                var a = b.Branches[from];
-                if (a.Broken || a.Empty || a.TipLocked) continue;
-                if (a.IsFullMatch(out _)) continue;
+                var br = b.Branches[from];
+                if (br.Broken || br.Empty || br.TipLocked) continue;
+                if (br.IsFullMatch(out _)) continue;
                 for (int to = 0; to < n; to++)
                 {
                     if (!b.CanMove(from, to, out int run) || run <= 0) continue;
-                    hops.Add(new Hop { from = from, to = to });
+                    hops.Add(new Hop { from = from, to = to, score = Score(b, from, to) });
                 }
             }
-            hops.Sort((x, y) => Score(b, y.from, y.to).CompareTo(Score(b, x.from, x.to)));
-            return hops;
+            hops.Sort(ByScore);
         }
 
         static int Score(Board b, int from, int to)
@@ -147,7 +190,35 @@ namespace FlockFive
             return s;
         }
 
-        static string Key(Board b)
+        public struct HopChoice
+        {
+            public int From;
+            public int To;
+            public int Score;
+        }
+
+        // Legal hops, highest score first. Same score the solver uses for its greedy hop.
+        public static void CollectHops(Board b, System.Collections.Generic.List<HopChoice> into)
+        {
+            if (into == null) return;
+            into.Clear();
+            if (b == null) return;
+            int n = b.Branches.Count;
+            for (int from = 0; from < n; from++)
+            {
+                var a = b.Branches[from];
+                if (a.Broken || a.Empty || a.TipLocked) continue;
+                if (a.IsFullMatch(out _)) continue;
+                for (int to = 0; to < n; to++)
+                {
+                    if (!b.CanMove(from, to, out int run) || run <= 0) continue;
+                    into.Add(new HopChoice { From = from, To = to, Score = Score(b, from, to) });
+                }
+            }
+            into.Sort((x, y) => y.Score.CompareTo(x.Score));
+        }
+
+        public static string Key(Board b)
         {
             var sb = new StringBuilder(256);
             for (int i = 0; i < b.Branches.Count; i++)
