@@ -38,25 +38,6 @@ namespace FlockFive
             _shotBirdHome = false;
             _adoptLive = false;
 
-            PrepGardenShot(4);
-            yield return new WaitForSecondsRealtime(2.5f);
-            float W = Screen.width, H = Screen.height;
-            LevelCurtain.Reset();
-            LevelCurtain.Aim(new Rect(W * 0.5f - W * 0.17f, H * 0.80f, W * 0.34f, W * 0.34f));
-            LevelCurtain.Arm(0f);
-            LevelCurtain.BeginLoad();
-            LevelCurtain.MarkReady();
-            float[] ages = { 0.10f, 0.34f, 0.60f, 0.90f };
-            string[] names = { "burst", "apex", "fall", "reveal" };
-            for (int i = 0; i < ages.Length; i++)
-            {
-                LevelCurtain.PreviewNow = ages[i];
-                yield return null;
-                yield return new WaitForEndOfFrame();
-                SaveFrame(dir + "/b83-curtain-" + i + "-" + names[i] + ".png");
-            }
-            LevelCurtain.Reset();
-            Debug.Log("B83C curtain done");
             for (int pass = 0; pass < 2; pass++)
             {
                 ShotRewardAd = pass == 0 ? 0 : 1;
@@ -83,6 +64,26 @@ namespace FlockFive
                 DismissStreakSign();
             }
             ShotRewardAd = -1;
+            PrepGardenShot(4);
+            yield return new WaitForSecondsRealtime(2.5f);
+            float W = Screen.width, H = Screen.height;
+            LevelCurtain.Reset();
+            LevelCurtain.Aim(new Rect(W * 0.5f - W * 0.17f, H * 0.80f, W * 0.34f, W * 0.34f));
+            LevelCurtain.Arm(0f);
+            LevelCurtain.BeginLoad();
+            LevelCurtain.MarkReady();
+            float[] ages = { 0.10f, 0.34f, 0.60f, 0.90f };
+            string[] names = { "burst", "apex", "fall", "reveal" };
+            for (int i = 0; i < ages.Length; i++)
+            {
+                Debug.Log("B83C curtain " + i);
+                LevelCurtain.PreviewNow = ages[i];
+                yield return null;
+                yield return new WaitForEndOfFrame();
+                SaveFrame(dir + "/b83-curtain-" + i + "-" + names[i] + ".png");
+            }
+            LevelCurtain.Reset();
+            Debug.Log("B83C curtain done");
             PrefGuard.SetInt("flockfive.streak", streakKeep);
             PlayerPrefs.Save();
             Debug.Log("B83C_STILLS_DONE");

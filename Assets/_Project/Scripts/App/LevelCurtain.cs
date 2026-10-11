@@ -11,7 +11,7 @@ namespace FlockFive
     {
         public const float Duration = 1.0f;
         public const float Flood = 0.40f;
-        public const int Count = 240;
+        public const int Count = 560; // polish: a real flood (was 240, read as sparse dots)
 
         public static bool Armed { get; private set; }
         public static bool LoadStarted { get; private set; }
@@ -122,8 +122,8 @@ namespace FlockFive
                 float y = _buf[i].Y - sz * 0.5f;
                 if (_buf[i].Hot == 0)
                 {
-                    float g = sz * 1.55f;
-                    GUI.color = new Color(1f, 0.82f, 0.28f, a * 0.22f);
+                    float g = sz * 2.1f;
+                    GUI.color = new Color(1f, 0.82f, 0.28f, a * 0.34f);
                     GUI.DrawTexture(new Rect(_buf[i].X - g * 0.5f, _buf[i].Y - g * 0.5f, g, g), glowTex, ScaleMode.ScaleToFit, true);
                 }
                 GUI.color = _buf[i].Hot == 1
@@ -197,7 +197,7 @@ namespace FlockFive
             nx = x0 + (xTarget - x0) * ease;
             nx += Mathf.Sin(t * 8.5f + h2 * 6.283f) * (0.012f + 0.012f * h4);
             hot = h2 > 0.74f;
-            sizeN = (hot ? 0.012f : 0.020f) + (hot ? 0.018f : 0.042f) * h4;
+            sizeN = (hot ? 0.016f : 0.026f) + (hot ? 0.022f : 0.052f) * h4;
             float tw = 0.45f + 0.55f * Mathf.Sin(t * 16f + h4 * 11f);
             if (tw < 0f) tw = 0f;
             tw = 0.55f + 0.45f * tw * tw;

@@ -582,29 +582,22 @@ namespace FlockFive
         // Gold seat: the clear splash band, snug to the wrapped line. Not a full-width bar.
         Rect AdoptCaptionRect(float s)
         {
-            var band = SplashIntroBand(s);
+            // Item 11b: across the top, centered on the screen right under the title
+            // (the shared HomeTopCaptionY), snug plate, at most two short lines.
             string line = AdoptCaptionLine();
-            float maxW = band.width;
             float safe = CaptionLayout.SafeTextWidth(Screen.width, Screen.height);
-            if (maxW > safe) maxW = safe;
+            float maxW = Mathf.Min(safe, Screen.width * 0.64f);
             if (maxW < 48f) maxW = 48f;
             var fit = FitLessonText(line, maxW, 4096f, 12, Mathf.RoundToInt(32f * s), Screen.width, Screen.height);
             var hang = CaptionLayout.BoxPad(Screen.height);
             var snug = CaptionLayout.MeasureSnug(CoachLineStyle(), fit.Shown, fit.Font, hang.x, hang.y);
-            // Item 11b: top of the band, centered on the screen when the band allows it.
-            float cx = Screen.width * 0.5f;
-            float half = snug.TextW * 0.5f;
-            if (cx - half < band.x) cx = band.x + half;
-            if (cx + half > band.xMax) cx = band.xMax - half;
-            var text = new Rect(
-                cx - half,
-                band.y + hang.y,
-                Mathf.Max(48f, snug.TextW),
-                Mathf.Max(24f, snug.TextH));
-            if (text.x < 8f) text.x = 8f;
-            if (text.xMax > Screen.width - 8f) text.x = Screen.width - 8f - text.width;
+            float w = Mathf.Max(48f, snug.TextW);
+            var text = new Rect(Screen.width * 0.5f - w * 0.5f, HomeTopCaptionY(s) + hang.y, w, Mathf.Max(24f, snug.TextH));
             return SeatAroundText(text, s);
         }
+
+        // Shared top seat for home captions: just under the FLOCK FIVE title.
+        float HomeTopCaptionY(float s) => TopHud() + (56f * 2f + 4f) * s + 10f * s;
 
         // Greet until a LEVEL tap or the perch glove. Each sentence latches once.
         string AdoptCaptionLine()

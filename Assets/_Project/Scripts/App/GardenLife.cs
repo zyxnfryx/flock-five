@@ -335,7 +335,7 @@ namespace FlockFive
             float wet = 1f - GardenStorm.Wet * 0.85f;
             if (wet < 0.15f) wet = 0.15f;
             for (int s = 0; s < _sheetN; s++)
-                Step(_sheets[s], dt, t, left, right, bottom, top, dusk, wet);
+                if (_sheets[s] != null) Step(_sheets[s], dt, t, left, right, bottom, top, dusk, wet);
         }
 
         void Step(Sheet sheet, float dt, float t, float left, float right, float bottom, float top, float dusk, float wet)
