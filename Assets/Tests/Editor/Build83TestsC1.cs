@@ -335,11 +335,11 @@ namespace FlockFive.Editor
             string shown = CaptionLayout.HeadlineGap(CaptionLayout.OstrichLine);
             StampCaption(cam, parent, shown, new Vector3(0f, -2.85f, -0.4f));
 
-            var finger = SpriteCatalog.HandIndex;
+            var finger = SpriteCatalog.HandIndex; // the game glove sprite, uncropped (no hard edge)
             if (finger != null)
             {
-                // The index sheet is mostly empty. The fingertip is above-left of the pivot,
-                // so the pivot sits down-right of the head and the finger points at it.
+                // The sheet's fingertip sits above-left of the pivot. Feather the
+                // cropped edges so the lesson does not show a hard rectangle.
                 const float glove = 1.15f;
                 var aim = mark.Aim.position;
                 var pivot = aim + new Vector3(0.42f + 0.60f * glove, -0.05f - 1.92f * glove, 0f);
@@ -463,6 +463,51 @@ namespace FlockFive.Editor
             bool ok = File.Exists(mp4) && new FileInfo(mp4).Length > 2000;
             if (ok && Directory.Exists(dir)) Directory.Delete(dir, true);
             return ok;
+        }
+
+        // The index art is a hard vertical crop. Soften the cut edges for the still.
+        static Sprite SoftIndex()
+        {
+            string path = Application.dataPath + "/_Project/Art/Resources/Sprites/fx_hand_index.png";
+            if (!File.Exists(path)) return SpriteCatalog.HandIndex;
+            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            if (!tex.LoadImage(File.ReadAllBytes(path))) return SpriteCatalog.HandIndex;
+            var px = tex.GetPixels32();
+            int w = tex.width;
+            int h = tex.height;
+            int minX = w;
+            int maxX = 0;
+            int minY = h;
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    if (px[y * w + x].a < 40) continue;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                }
+            }
+            if (maxX <= minX) return SpriteCatalog.HandIndex;
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    int i = y * w + x;
+                    if (px[i].a < 8) continue;
+                    float side = Mathf.Min(x - minX, maxX - x) / 16f;
+                    float palm = (y - minY) / 28f;
+                    float fade = Mathf.Clamp01(side) * Mathf.Clamp01(palm);
+                    fade = fade * fade * (3f - 2f * fade);
+                    px[i].a = (byte)(px[i].a * fade);
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, false);
+            tex.filterMode = FilterMode.Bilinear;
+            var sprite = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 200f);
+            sprite.name = "soft-index";
+            return sprite;
         }
 
         // Same near-black rounded plate DrawCoachPanel bakes for a lesson.

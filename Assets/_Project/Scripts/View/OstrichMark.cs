@@ -12,7 +12,7 @@ namespace FlockFive
         public const int NeckOrder = 9;
         public const int HeadOrder = 10;
         public const int NeckParts = 8;
-        public const float BodyDrop = 1.08f;
+        public const float BodyDrop = 2.18f;
         // Feeder sprites pivot at the glass. The port is the flower on the tray.
         public const float PortX = 0.16f;
         public const float PortY = -0.88f;
@@ -31,6 +31,8 @@ namespace FlockFive
         Transform[] _neck;
         SpriteRenderer _bodySr;
         SpriteRenderer[] _neckSr;
+        LineRenderer _line;
+        const int NeckSamples = 26;
         OstrichAct _act = OstrichAct.Idle;
         OstrichAct _queued = OstrichAct.Idle;
         int _frame;
@@ -77,11 +79,12 @@ namespace FlockFive
                 go.transform.SetParent(transform, false);
                 var sr = go.AddComponent<SpriteRenderer>();
                 sr.sprite = neckSprite;
-                sr.color = Color.Lerp(new Color(0.86f, 0.68f, 0.50f, 1f), new Color(0.97f, 0.88f, 0.76f, 1f), i / (float)(NeckParts - 1));
+                sr.enabled = false;
                 FlockSort.Apply(sr, NeckOrder);
                 _neck[i] = go.transform;
                 _neckSr[i] = sr;
             }
+            EnsureLine();
 
             var headGo = new GameObject("Head");
             _head = headGo.transform;
@@ -361,13 +364,14 @@ namespace FlockFive
             bool flee = _act == OstrichAct.Flee;
             float headX = aimX + PortX;
             float headY = aimY + PortY + sample.Bob * 0.35f;
-            headY += sample.Wind * 0.08f - sample.Strike * 0.10f;
-            float sway = _act == OstrichAct.Strut ? Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.18f : 0f;
-            float bodyX = flee ? headX - 0.42f : sway;
-            float drop = flee ? 0.92f : BodyDrop;
-            float bodyY = headY - drop + sample.Bob;
+            headY += sample.Wind * 0.18f - sample.Strike * 0.12f;
+            float sway = 0f;
+            if (_act == OstrichAct.Strut) sway = Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.28f;
+            if (_act == OstrichAct.Daze) sway += Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.36f;
+            float bodyX = flee ? headX - 0.55f : sway;
+            float bodyY = headY - BodyDrop + sample.Bob;
             float face = headX < bodyX - 0.08f ? -1f : 1f;
-            headX += face * (sample.Strike * 0.22f - sample.Wind * 0.16f);
+            headX += face * (sample.Strike * 0.50f - sample.Wind * 0.42f);
 
             _bodySr.sprite = OstrichPaint.Body(_act, _frame);
             _bodySr.flipX = face < 0f;
@@ -380,32 +384,72 @@ namespace FlockFive
             _head.position = headPos;
             _head.localRotation = Quaternion.Euler(0f, 0f, (sample.Tilt + sample.Shake) * face);
 
-            Vector3 neckA = _body.position + new Vector3(0.02f * face, 0.04f, 0f);
-            Vector3 neckB = headPos + new Vector3(-0.02f * face, -0.02f, 0f);
+            // Start inside the plumage and end inside the chin, so the tube
+            // reads as one neck in every pose.
+            Vector3 neckA = _body.position + _body.rotation * new Vector3(0f, -0.24f, 0f);
+            Vector3 neckB = headPos + _head.rotation * new Vector3(0f, 0.06f, 0f);
             Vector3 ctrl = (neckA + neckB) * 0.5f;
-            ctrl.x += (-sample.Wind * 0.55f + sample.Shake * 0.012f) * face;
-            ctrl.y += sample.Wind * 0.20f - sample.Strike * 0.26f;
-            if (_act == OstrichAct.Daze) ctrl.y -= 0.34f;
-            if (_act == OstrichAct.Honk) ctrl.y += 0.10f;
-            float span = Vector3.Distance(neckA, neckB);
-            if (span < 0.25f) span = 0.25f;
-            const float neckLen = 88f / 64f;
-            float along = span / NeckParts * 3.15f;
-            var neckSprite = OstrichPaint.Neck();
-            for (int i = 0; i < NeckParts; i++)
+            ctrl.x += (-sample.Wind * 0.90f + sample.Shake * 0.006f) * face;
+            ctrl.y += sample.Wind * 0.42f - sample.Strike * 0.60f;
+            if (_act == OstrichAct.Daze) ctrl.y -= 0.72f;
+            if (_act == OstrichAct.Honk) ctrl.y += 0.16f;
+            if (_act == OstrichAct.Idle) ctrl.x += 0.10f * face;
+            WriteNeck(neckA, ctrl, neckB);
+        }
+
+        void EnsureLine()
+        {
+            if (_line != null) return;
+            var go = new GameObject("NeckRibbon");
+            go.transform.SetParent(transform, false);
+            _line = go.AddComponent<LineRenderer>();
+            _line.useWorldSpace = true;
+            _line.loop = false;
+            _line.positionCount = NeckSamples;
+            _line.numCapVertices = 1;
+            _line.numCornerVertices = 5;
+            _line.textureMode = LineTextureMode.Stretch;
+            _line.alignment = LineAlignment.View;
+            _line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _line.receiveShadows = false;
+            _line.sortingOrder = NeckOrder;
+            _line.widthMultiplier = 1f;
+            var curve = new AnimationCurve(
+                new Keyframe(0f, 0.58f),
+                new Keyframe(0.14f, 0.40f),
+                new Keyframe(1f, 0.20f));
+            _line.widthCurve = curve;
+            var grad = new Gradient();
+            grad.SetKeys(
+                new[]
+                {
+                    new GradientColorKey(new Color(0.82f, 0.80f, 0.82f, 1f), 0f),
+                    new GradientColorKey(Color.white, 1f)
+                },
+                new[]
+                {
+                    new GradientAlphaKey(1f, 0f),
+                    new GradientAlphaKey(1f, 1f)
+                });
+            _line.colorGradient = grad;
+            var shader = Shader.Find("Unlit/Transparent");
+            if (shader == null) shader = Shader.Find("Sprites/Default");
+            var mat = new Material(shader);
+            mat.mainTexture = OstrichPaint.NeckTexture();
+            mat.color = Color.white;
+            mat.hideFlags = HideFlags.HideAndDontSave;
+            _line.material = mat;
+        }
+
+        void WriteNeck(Vector3 neckA, Vector3 ctrl, Vector3 neckB)
+        {
+            EnsureLine();
+            _line.enabled = true;
+            _line.sortingOrder = NeckOrder;
+            for (int i = 0; i < NeckSamples; i++)
             {
-                float t = (i + 0.5f) / NeckParts;
-                Vector3 p = Bez(neckA, ctrl, neckB, t);
-                float t2 = Mathf.Min(1f, t + 0.08f);
-                Vector3 ahead = Bez(neckA, ctrl, neckB, t2);
-                Vector3 dir = ahead - p;
-                float ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-                float thick = Mathf.Lerp(0.58f, 0.32f, t);
-                _neck[i].position = p;
-                _neck[i].localRotation = Quaternion.Euler(0f, 0f, ang);
-                _neck[i].localScale = new Vector3(along / neckLen, thick, 1f);
-                if (_neckSr[i].sprite != neckSprite) _neckSr[i].sprite = neckSprite;
-                _neckSr[i].enabled = true;
+                float t = i / (float)(NeckSamples - 1);
+                _line.SetPosition(i, Bez(neckA, ctrl, neckB, t));
             }
         }
 
@@ -420,12 +464,14 @@ namespace FlockFive
             if (!gameObject.activeSelf) gameObject.SetActive(true);
             if (_bodySr != null) _bodySr.enabled = true;
             if (Head != null) Head.enabled = true;
+            if (_line != null) _line.enabled = true;
         }
 
         void Hide()
         {
             if (_bodySr != null) _bodySr.enabled = false;
             if (Head != null) Head.enabled = false;
+            if (_line != null) _line.enabled = false;
             if (_neckSr == null) return;
             for (int i = 0; i < _neckSr.Length; i++)
                 if (_neckSr[i] != null) _neckSr[i].enabled = false;
