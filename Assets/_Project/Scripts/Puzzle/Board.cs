@@ -42,9 +42,10 @@ namespace FlockFive
             if (Broken || Count != Cap) return false;
             for (int i = 0; i < Count; i++)
                 if (IsShrouded(i)) return false;
-            color = Birds[0].Color;
+            var first = Birds[0];
             for (int i = 1; i < Cap; i++)
-                if (Birds[i].Color != color) return false;
+                if (!Birds[i].SameFlock(first)) return false;
+            color = first.Color;
             return true;
         }
 
@@ -56,11 +57,11 @@ namespace FlockFive
             // A hidden run (consecutive same-color shrouded bees at the tip)
             // lifts together. Inner bees behind a different color stay.
             if (!IsShrouded(Count - 1)) return 0;
-            var c = Birds[Count - 1].Color;
+            var c = Birds[Count - 1];
             int n = 0;
             for (int i = Count - 1; i >= 0; i--)
             {
-                if (Birds[i].Color != c || !Shrouded[i]) break;
+                if (!Birds[i].SameFlock(c) || !Shrouded[i]) break;
                 Shrouded[i] = false;
                 n++;
             }
@@ -294,14 +295,14 @@ namespace FlockFive
             {
                 var src = Branches[a];
                 if (src.Broken || src.Count == 0 || src.Count >= BranchState.Cap) continue;
-                var c = src.Birds[0].Color;
+                var c = src.Birds[0];
                 int bestTo = -1;
                 for (int b = 0; b < n; b++)
                 {
                     if (b == a) continue;
                     var dst = Branches[b];
                     if (dst.Broken || dst.AdLocked || dst.Count == 0 || dst.Free <= 0) continue;
-                    if (dst.Birds[0].Color != c) continue;
+                    if (!dst.Birds[0].SameFlock(c)) continue;
                     // The smaller part moves (ties: the later limb), onto the fullest part.
                     if (dst.Count < src.Count || (dst.Count == src.Count && b < a)) continue;
                     if (bestTo < 0 || dst.Count > Branches[bestTo].Count) bestTo = b;
@@ -325,7 +326,7 @@ namespace FlockFive
             var a = Branches[from];
             var b = Branches[to];
             if (a.Broken || b.Broken || b.AdLocked || a.Count == 0 || b.Count == 0) return false;
-            if (a.TipLocked || b.TipLocked || a.Birds[0].Color != b.Birds[0].Color) return false;
+            if (a.TipLocked || b.TipLocked || !a.Birds[0].SameFlock(b.Birds[0])) return false;
             run = System.Math.Min(a.Count, b.Free);
             if (run <= 0) return false;
             a.AlignShroud();

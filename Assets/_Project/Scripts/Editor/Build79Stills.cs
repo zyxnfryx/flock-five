@@ -47,6 +47,14 @@ namespace FlockFive.Editor
             EditorApplication.isPlaying = true;
         }
 
+        // Device-layout gardens 19, 21, 25 and the 6-branch solo gardens 26-29.
+        public static void Capture82Gardens()
+        {
+            SetGameView(1179, 2556);
+            File.WriteAllText("/tmp/flock-five-b82-gardens", "1");
+            EditorApplication.isPlaying = true;
+        }
+
         public static void Capture81Pass4()
         {
             SetGameView(1179, 2556);

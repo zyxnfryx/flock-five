@@ -187,9 +187,8 @@ namespace FlockFive.Editor
         static BranchState Flock(int n, BirdColor color)
         {
             var limb = new BranchState();
-            var sex = BirdSex.Female;
             for (int i = 0; i < n; i++)
-                limb.Birds.Add(new Bird(color, sex));
+                limb.Birds.Add(new Bird(color));
             return limb;
         }
 

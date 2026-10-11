@@ -183,7 +183,7 @@ namespace FlockFive
                     idle.Bind(state.Birds[i], rest);
                     idle.Sleeping = sleeping;
                     idle.Shrouded = hid;
-                    bird.sprite = SpriteCatalog.Bird(state.Birds[i].Color, state.Birds[i].Sex);
+                    bird.sprite = SpriteCatalog.Bird(state.Birds[i].Color);
                     FlockSort.Apply(bird, hid ? FlockSort.Shroud : FlockSort.Perch);
                     bird.color = hid ? new Color(0.04f, 0.03f, 0.05f, 1f) : Color.white;
                 }

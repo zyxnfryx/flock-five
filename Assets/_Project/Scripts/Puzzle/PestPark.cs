@@ -274,7 +274,7 @@ namespace FlockFive
                 if (b.IsSleeping(i)) continue;
                 if (!allowFull && WouldFill(st, bird)) continue;
                 bool empty = st.Count == 0;
-                bool same = !empty && HoldsColor(st, bird.Color);
+                bool same = !empty && HoldsFlock(st, bird);
                 if (!empty && !same)
                 {
                     if (st.Free > openFree)
@@ -297,10 +297,10 @@ namespace FlockFive
             return open >= 0 ? open : fall;
         }
 
-        static bool HoldsColor(BranchState st, BirdColor color)
+        static bool HoldsFlock(BranchState st, Bird bird)
         {
             for (int i = 0; i < st.Count; i++)
-                if (st.Birds[i].Color == color) return true;
+                if (st.Birds[i].SameFlock(bird)) return true;
             return false;
         }
 
@@ -312,7 +312,7 @@ namespace FlockFive
             for (int i = 0; i < st.Count; i++)
             {
                 if (st.IsShrouded(i)) return false;
-                if (st.Birds[i].Color != bird.Color) return false;
+                if (!st.Birds[i].SameFlock(bird)) return false;
             }
             return true;
         }

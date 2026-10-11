@@ -129,12 +129,19 @@ namespace FlockFive
                 int c = (int)pile[i].Color;
                 if ((uint)c < (uint)have.Length) have[c]++;
             }
+            var kitHave = FlockCounts(b);
+            for (int i = 0; i < pile.Count; i++)
+                kitHave[FlockIndex(pile[i])]++;
             for (int c = 0; c < Palette.Max && c < expect.Length; c++)
             {
                 int shortBy = expect[c] - (c < have.Length ? have[c] : 0);
-                var sex = SexOn(b, pile, (BirdColor)c);
                 for (int k = 0; k < shortBy; k++)
-                    pile.Add(new Bird((BirdColor)c, sex));
+                {
+                    var kit = ShortKit(kitHave, (BirdColor)c);
+                    var bird = new Bird((BirdColor)c, kit);
+                    kitHave[FlockIndex(bird)]++;
+                    pile.Add(bird);
+                }
             }
             for (int i = 0; i < pile.Count; i++)
             {
@@ -154,18 +161,85 @@ namespace FlockFive
             return placed;
         }
 
-        static BirdSex SexOn(Board b, List<Bird> pile, BirdColor color)
+        public static int FlockIndex(Bird bird) => (int)bird.Color * Palette.Kits + (int)bird.Kit;
+
+        // Birds per (color, kit), live limbs plus Displaced.
+        public static int[] FlockCounts(Board b)
         {
+            var n = new int[Palette.Max * Palette.Kits];
+            if (b == null) return n;
             for (int i = 0; i < b.Branches.Count; i++)
             {
                 var br = b.Branches[i];
                 if (br == null || br.Broken) continue;
                 for (int k = 0; k < br.Count; k++)
-                    if (br.Birds[k].Color == color) return br.Birds[k].Sex;
+                {
+                    int f = FlockIndex(br.Birds[k]);
+                    if ((uint)f < (uint)n.Length) n[f]++;
+                }
             }
-            for (int i = 0; i < pile.Count; i++)
-                if (pile[i].Color == color) return pile[i].Sex;
-            return LevelData.SexFor(color);
+            for (int i = 0; i < b.Displaced.Count; i++)
+            {
+                int f = FlockIndex(b.Displaced[i]);
+                if ((uint)f < (uint)n.Length) n[f]++;
+            }
+            return n;
+        }
+
+        // The kit a restored bird of this color must wear: the first kit group of
+        // that color that is short of a whole set; else the first unused kit.
+        static BirdKit ShortKit(int[] kitHave, BirdColor c)
+        {
+            for (int k = 0; k < Palette.Kits; k++)
+            {
+                int n = kitHave[(int)c * Palette.Kits + k];
+                if (n % BranchState.Cap != 0) return (BirdKit)k;
+            }
+            for (int s = 0; s < FlockKit.Order.Length; s++)
+            {
+                var kit = FlockKit.Order[s];
+                if (kitHave[(int)c * Palette.Kits + (int)kit] == 0) return kit;
+            }
+            return BirdKit.Plain;
+        }
+
+        // Build 82 set rule, shared by LevelSolve, BoardValidator users and tests:
+        // every (color, kit) group is exactly one set of Cap birds, so a color has
+        // at most MaxSetsPerColor (3) sets on one garden. Run on a freshly opened
+        // garden (nothing collected yet).
+        public static Report CheckKitSets(Board b)
+        {
+            if (b == null) return new Report { Ok = false, Message = "no board" };
+            var n = FlockCounts(b);
+            var sb = new StringBuilder();
+            for (int c = 0; c < Palette.Max; c++)
+            {
+                int sets = 0;
+                for (int k = 0; k < Palette.Kits; k++)
+                {
+                    int have = n[c * Palette.Kits + k];
+                    if (have == 0) continue;
+                    sets++;
+                    if (have != BranchState.Cap)
+                        sb.Append((BirdColor)c).Append('/').Append((BirdKit)k).Append('=').Append(have).Append(" not one set; ");
+                }
+                int total = 0;
+                for (int k = 0; k < Palette.Kits; k++) total += n[c * Palette.Kits + k];
+                if (total > FlockKit.MaxSetsPerColor * BranchState.Cap)
+                    sb.Append((BirdColor)c).Append(" has ").Append(total / BranchState.Cap).Append(" sets (max ").Append(FlockKit.MaxSetsPerColor).Append("); ");
+                else if (sets > FlockKit.MaxSetsPerColor)
+                    sb.Append((BirdColor)c).Append(" has ").Append(sets).Append(" sets; ");
+            }
+            bool ok = sb.Length == 0;
+            return new Report { Ok = ok, Message = ok ? "ok" : sb.ToString() };
+        }
+
+        // Sets of each color (birds / Cap), for summaries.
+        public static int[] SetsPerColor(Board b)
+        {
+            var have = Counts(b);
+            for (int c = 0; c < have.Length; c++) have[c] /= BranchState.Cap;
+            return have;
         }
 
         static int FindSeat(Board b, Bird bird, bool allowFull)

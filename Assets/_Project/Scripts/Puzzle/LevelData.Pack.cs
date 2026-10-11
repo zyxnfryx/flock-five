@@ -6,8 +6,9 @@ namespace FlockFive
         // with a +1 color shift so Violet's copy is Peach. Clone flocks need
         // their own feeder visits, so the shifted live+queue is appended.
         // Never stuff Peach into an empty Live slot (pinched stays pinched).
-        static Board Pack(Board src)
+        static Board Pack(Board src, Level level = null)
         {
+            bool solo = level != null && level.Solo;
             var b = new Board();
             b.BreezeOnCollect = src.BreezeOnCollect;
             b.Live[0] = src.Live[0];
@@ -19,17 +20,25 @@ namespace FlockFive
                 keep--;
             if (keep < 1) keep = src.Branches.Count;
 
-            for (int i = 0; i < keep; i++)
-                b.Branches.Add(src.Branches[i].Clone());
-            for (int i = 0; i < keep; i++)
-                b.Branches.Add(ShiftClone(src.Branches[i]));
-
-            EnqueueShiftedFeeders(src, b);
-            OfferPeach(b);
-            StampFlocks(b);
-            // After the sex stamp, so a doubled color (two orange crown sets)
-            // is split here and nowhere else.
-            FlockKit.Assign(b);
+            if (solo)
+            {
+                // Single-color garden: the seed is the garden. No clones, no
+                // shifted feeders, no Peach call; kits come from the maker.
+                for (int i = 0; i < src.Branches.Count; i++)
+                    b.Branches.Add(src.Branches[i].Clone());
+            }
+            else
+            {
+                for (int i = 0; i < keep; i++)
+                    b.Branches.Add(src.Branches[i].Clone());
+                for (int i = 0; i < keep; i++)
+                    b.Branches.Add(ShiftClone(src.Branches[i]));
+                EnqueueShiftedFeeders(src, b);
+                OfferPeach(b);
+                FlockKit.Assign(b, level != null ? level.Number : 0, level != null ? level.Kits : null);
+            }
+            // Kits are identity now: a bee over its own flock is not hiding anything.
+            UnhideSameColorBees(b);
             OfferGift(b);
             return b;
         }

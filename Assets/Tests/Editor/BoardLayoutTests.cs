@@ -121,7 +121,7 @@ namespace FlockFive.Editor
             var b = new Board();
             var gift = new BranchState { IsBonus = true };
             for (int i = 0; i < 5; i++)
-                gift.Birds.Add(new Bird(BirdColor.Violet, LevelData.SexFor(BirdColor.Violet)));
+                gift.Birds.Add(new Bird(BirdColor.Violet));
             b.Branches.Add(gift);
             b.Live[0] = BirdColor.Violet;
             var expect = BoardValidator.Counts(b);
@@ -240,248 +240,38 @@ namespace FlockFive.Editor
             return true;
         }
 
-        // Two full sets of one color and sex must not share a crown. Set 0 keeps
-        // the sex kit. Later sets differ. Hops still match by color unless the
-        // level already split the flock by accessory.
+        // Each garden: every (color, kit) group is one set of five, and no color
+        // has more than three sets. A color with two or more sets wears different kits.
         static void CheckKitSets(System.Action<string, bool, string> Check)
         {
-            Board orange = null;
-            int orangeAt = -1;
             string bad = null;
+            string same = null;
+            int multi = 0;
             for (int i = 0; i < LevelData.Count; i++)
             {
                 var b = LevelData.Open(i);
-                if (orange == null && PeachSets(b) >= 2)
+                var r = BoardValidator.CheckKitSets(b);
+                if (bad == null && !r.Ok)
+                    bad = "L" + LevelData.Peek(i).Number + " " + r.Message;
+                var n = BoardValidator.FlockCounts(b);
+                for (int c = 0; c < Palette.Max; c++)
                 {
-                    orange = b;
-                    orangeAt = i;
-                }
-                if (bad == null && !SetsDiffer(b, out var why))
-                    bad = "L" + (i + 1) + " " + why;
-            }
-            Check("kit-sets", bad == null, bad ?? "each extra set wears its own accessory");
-            if (orange == null)
-                Check("orange-two-sets", false, "no garden has two peach sets");
-            else
-            {
-                bool ok = OrangeSets(orange, out var detail);
-                Check("orange-two-sets", ok, "L" + (orangeAt + 1) + " " + detail);
-            }
-
-            var dawn = LevelData.Open(0);
-            bool one = OnePeachSet(dawn, out var oneDetail);
-            Check("orange-one-set", one, oneDetail);
-
-            bool authored = AuthoredKitsBind(out var auth);
-            Check("authored-kit-binds", authored, auth);
-
-            bool kept = MoveKeepsKit(out var move);
-            Check("kit-rides-hop", kept, move);
-        }
-
-        static int PeachSets(Board b)
-        {
-            int n = 0;
-            bool male = true;
-            for (int i = 0; i < b.Branches.Count; i++)
-            {
-                var br = b.Branches[i];
-                for (int k = 0; k < br.Birds.Count; k++)
-                {
-                    if (br.Birds[k].Color != BirdColor.Peach) continue;
-                    n++;
-                    if (br.Birds[k].Sex != BirdSex.Male) male = false;
-                }
-            }
-            if (!male || n < BranchState.Cap * 2 || n % BranchState.Cap != 0) return 0;
-            return n / BranchState.Cap;
-        }
-
-        static bool OrangeSets(Board b, out string detail)
-        {
-            int n = 0;
-            var look = new int[8];
-            var raw = new int[8];
-            var rawSeen = new bool[8];
-            bool male = true;
-            bool binds = false;
-            bool flock = true;
-            bool rawMix = false;
-            bool have = false;
-            Bird first = default;
-            for (int i = 0; i < b.Branches.Count; i++)
-            {
-                var br = b.Branches[i];
-                for (int k = 0; k < br.Birds.Count; k++)
-                {
-                    var bird = br.Birds[k];
-                    if (bird.Color != BirdColor.Peach) continue;
-                    int worn = (int)FlockKit.Worn(bird);
-                    if ((uint)worn < (uint)look.Length) look[worn]++;
-                    n++;
-                    if (bird.Sex != BirdSex.Male) male = false;
-                    if (bird.KitBinds) binds = true;
-                    if ((uint)worn < (uint)raw.Length)
+                    int kits = 0;
+                    int total = 0;
+                    for (int k = 0; k < Palette.Kits; k++)
                     {
-                        if (!rawSeen[worn]) { rawSeen[worn] = true; raw[worn] = (int)bird.Kit; }
-                        else if (raw[worn] != (int)bird.Kit) rawMix = true;
+                        int have = n[c * Palette.Kits + k];
+                        total += have;
+                        if (have > 0) kits++;
                     }
-                    if (!have) { first = bird; have = true; }
-                    else if (!first.SameFlock(bird)) flock = false;
+                    if (total < BranchState.Cap * 2) continue;
+                    multi++;
+                    if (kits < 2 && same == null)
+                        same = "L" + LevelData.Peek(i).Number + " " + (BirdColor)c + " sets share one kit";
                 }
             }
-            int kinds = 0;
-            bool fives = true;
-            for (int i = 0; i < look.Length; i++)
-            {
-                if (look[i] == 0) continue;
-                kinds++;
-                if (look[i] != BranchState.Cap) fives = false;
-            }
-            int sets = n / BranchState.Cap;
-            int crowns = look[(int)BirdKit.Crown];
-            bool ok = male && !binds && flock && !rawMix && crowns == BranchState.Cap
-                && n >= BranchState.Cap * 2 && n % BranchState.Cap == 0 && kinds == sets && fives;
-            detail = "peach " + n + " kinds " + kinds + " crowns " + crowns
-                + " male " + male + " binds " + binds + " flock " + flock + " mix " + rawMix;
-            return ok;
-        }
-
-        static bool SetsDiffer(Board b, out string why)
-        {
-            why = "";
-            var n = new int[Palette.Max * 3];
-            for (int i = 0; i < b.Branches.Count; i++)
-            {
-                var br = b.Branches[i];
-                for (int k = 0; k < br.Birds.Count; k++)
-                {
-                    int key = (int)br.Birds[k].Color * 3 + (int)br.Birds[k].Sex;
-                    if ((uint)key < (uint)n.Length) n[key]++;
-                }
-            }
-            for (int key = 0; key < n.Length; key++)
-            {
-                if (n[key] < BranchState.Cap * 2 || n[key] % BranchState.Cap != 0) continue;
-                var color = (BirdColor)(key / 3);
-                var sex = (BirdSex)(key % 3);
-                if (!GroupOk(b, color, sex, n[key], out why)) return false;
-            }
-            return true;
-        }
-
-        static bool GroupOk(Board b, BirdColor color, BirdSex sex, int count, out string why)
-        {
-            why = "";
-            var look = new int[8];
-            bool binds = false;
-            bool flock = true;
-            bool have = false;
-            Bird first = default;
-            for (int i = 0; i < b.Branches.Count; i++)
-            {
-                var br = b.Branches[i];
-                for (int k = 0; k < br.Birds.Count; k++)
-                {
-                    var bird = br.Birds[k];
-                    if (bird.Color != color || bird.Sex != sex) continue;
-                    int worn = (int)FlockKit.Worn(bird);
-                    if ((uint)worn < (uint)look.Length) look[worn]++;
-                    if (bird.KitBinds) binds = true;
-                    if (!have) { first = bird; have = true; }
-                    else if (!first.SameFlock(bird)) flock = false;
-                }
-            }
-            int kinds = 0;
-            bool fives = true;
-            for (int i = 0; i < look.Length; i++)
-            {
-                if (look[i] == 0) continue;
-                kinds++;
-                if (look[i] != BranchState.Cap) fives = false;
-            }
-            int sets = count / BranchState.Cap;
-            if (!binds && flock && fives && kinds == sets) return true;
-            why = color + "/" + sex + " n" + count + " kinds " + kinds + " binds " + binds + " flock " + flock;
-            return false;
-        }
-
-        static bool OnePeachSet(Board b, out string detail)
-        {
-            int n = 0;
-            bool crowns = true;
-            for (int i = 0; i < b.Branches.Count; i++)
-            {
-                var br = b.Branches[i];
-                for (int k = 0; k < br.Birds.Count; k++)
-                {
-                    var bird = br.Birds[k];
-                    if (bird.Color != BirdColor.Peach) continue;
-                    n++;
-                    if (bird.KitBinds || bird.Kit != BirdKit.Plain || FlockKit.Worn(bird) != BirdKit.Crown)
-                        crowns = false;
-                }
-            }
-            detail = "dawn peach " + n + " crowns " + crowns;
-            return n == BranchState.Cap && crowns;
-        }
-
-        static bool AuthoredKitsBind(out string detail)
-        {
-            var b = new Board();
-            var crowns = new BranchState();
-            var hats = new BranchState();
-            for (int i = 0; i < BranchState.Cap; i++)
-            {
-                var crown = new Bird(BirdColor.Peach, BirdSex.Male);
-                crown.Kit = BirdKit.Crown;
-                crowns.Birds.Add(crown);
-                var hat = new Bird(BirdColor.Peach, BirdSex.Male);
-                hat.Kit = BirdKit.TopHat;
-                hats.Birds.Add(hat);
-            }
-            b.Branches.Add(crowns);
-            b.Branches.Add(hats);
-            FlockKit.Assign(b);
-            bool kept = true;
-            for (int i = 0; i < BranchState.Cap; i++)
-            {
-                var c = b.Branches[0].Birds[i];
-                var h = b.Branches[1].Birds[i];
-                if (c.Kit != BirdKit.Crown || !c.KitBinds) kept = false;
-                if (h.Kit != BirdKit.TopHat || !h.KitBinds) kept = false;
-                if (!c.SameFlock(b.Branches[0].Birds[0])) kept = false;
-                if (c.SameFlock(h)) kept = false;
-            }
-            detail = kept ? "crown and hat stay separate flocks" : "authored kits were overwritten";
-            return kept;
-        }
-
-        static bool MoveKeepsKit(out string detail)
-        {
-            // Four, not five: a full color stack is not a hop. Two crowns under
-            // two hats. Copying the tip would turn the whole run into hats.
-            var b = new Board();
-            var src = new BranchState();
-            for (int i = 0; i < 4; i++)
-            {
-                var bird = new Bird(BirdColor.Peach, BirdSex.Male);
-                bird.Kit = i < 2 ? BirdKit.Crown : BirdKit.TopHat;
-                src.Birds.Add(bird);
-            }
-            b.Branches.Add(src);
-            b.Branches.Add(new BranchState());
-            bool moved = b.TryMove(0, 1, out int run);
-            int crowns = 0;
-            int hats = 0;
-            var dst = b.Branches[1];
-            for (int i = 0; i < dst.Birds.Count; i++)
-            {
-                if (dst.Birds[i].Kit == BirdKit.Crown) crowns++;
-                else if (dst.Birds[i].Kit == BirdKit.TopHat) hats++;
-            }
-            detail = "run " + run + " crowns " + crowns + " hats " + hats;
-            return moved && run == 4 && crowns == 2 && hats == 2 && src.Count == 0;
+            Check("kit-sets", bad == null, bad ?? "each color is at most 3 sets, one set per kit");
+            Check("kits-differ", same == null && multi > 0, same ?? multi + " multi-set colors wear different kits");
         }
 
         static void CheckLevels(System.Action<string, bool, string> Check)
@@ -558,7 +348,7 @@ namespace FlockFive.Editor
 
             var only = new Board();
             var src = new BranchState();
-            src.Birds.Add(new Bird(BirdColor.Ruby, LevelData.SexFor(BirdColor.Ruby)));
+            src.Birds.Add(new Bird(BirdColor.Ruby));
             only.Branches.Add(src);
             only.Branches.Add(new BranchState { IsBonus = true, AdLocked = true });
             Check("locked-bonus-not-a-move", !only.HasHop() && !only.CanMove(0, 1, out _),
@@ -652,8 +442,8 @@ namespace FlockFive.Editor
             var teal = new BranchState();
             for (int i = 0; i < 3; i++)
             {
-                ruby.Birds.Add(new Bird(BirdColor.Ruby, LevelData.SexFor(BirdColor.Ruby)));
-                teal.Birds.Add(new Bird(BirdColor.Teal, LevelData.SexFor(BirdColor.Teal)));
+                ruby.Birds.Add(new Bird(BirdColor.Ruby));
+                teal.Birds.Add(new Bird(BirdColor.Teal));
             }
             b.Branches.Add(ruby);
             b.Branches.Add(teal);
@@ -667,7 +457,7 @@ namespace FlockFive.Editor
             var b = new Board();
             var br = new BranchState();
             for (int i = 0; i < BranchState.Cap; i++)
-                br.Birds.Add(new Bird(BirdColor.Ruby, LevelData.SexFor(BirdColor.Ruby)));
+                br.Birds.Add(new Bird(BirdColor.Ruby));
             b.Branches.Add(br);
             b.Live[0] = BirdColor.Ruby;
             return b;

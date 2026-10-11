@@ -34,7 +34,9 @@ namespace FlockFive
 
             public static Card Of(BirdColor c, BirdSex s) => new Card { Color = c, Sex = s };
             public static Card MakeWild() => new Card { Wild = true };
-            public Bird AsBird() => new Bird(Color, Sex);
+            // Garden birds have no sex. A card's look maps onto the three kits.
+            public Bird AsBird() => new Bird(Color,
+                Sex == BirdSex.Female ? BirdKit.Bow : Sex == BirdSex.Male ? BirdKit.Crown : BirdKit.Plain);
         }
 
         public enum Rank

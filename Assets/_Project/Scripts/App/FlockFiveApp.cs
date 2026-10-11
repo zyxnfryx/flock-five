@@ -373,7 +373,7 @@ namespace FlockFive
         // Missing or out of range reads as gold. The bird stays hidden until level 1 is
         // cleared (flockfive.next >= 1) and flockfive.avatar.adopted is set. The name
         // lives in flockfive.avatar.name. Kit is flockfive.avatar.kit (0 none, 1 bow,
-        // 2 crown) and does not change garden SexOf. The five halo birds stay on the logo.
+        // 2 crown) and does not change garden kits. The five halo birds stay on the logo.
         const string AvatarPref = "flockfive.avatar";
         const float AvatarFlapRate = 1.25f;
         BirdColor _avatarCol = BirdColor.Gold;
@@ -560,6 +560,11 @@ namespace FlockFive
             {
                 try { System.IO.File.Delete("/tmp/flock-five-b81-hud"); } catch { }
                 StartCoroutine(ShotBuild81PassH());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-b82-gardens"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-b82-gardens"); } catch { }
+                StartCoroutine(ShotBuild82Gardens());
             }
             if (System.IO.File.Exists("/tmp/flock-five-shot"))
             {
@@ -1264,6 +1269,68 @@ namespace FlockFive
 #endif
         }
 
+        // Device layout of the kit gardens. Garden 26 is also the three-kit still.
+        IEnumerator ShotBuild82Gardens()
+        {
+#if UNITY_EDITOR
+            EditorShotLive = true;
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+#endif
+            const string dir = "/Users/zfxgames/wkspaces/birdshot/gb/b82out";
+            System.IO.Directory.CreateDirectory(dir);
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            int coachKeep = PlayerPrefs.GetInt(CoachKey, 0);
+            bool hadCoach = PlayerPrefs.HasKey(CoachKey);
+            int leafKeep = PlayerPrefs.GetInt(CoachLeafKey, 0);
+            bool hadLeaf = PlayerPrefs.HasKey(CoachLeafKey);
+            int hiveKeep = PlayerPrefs.GetInt(CoachHiveGardenKey, 0);
+            bool hadHive = PlayerPrefs.HasKey(CoachHiveGardenKey);
+            PlayerPrefs.SetInt("flockfive.next", 18);
+            PlayerPrefs.SetInt(CoachKey, 1);
+            PlayerPrefs.SetInt(CoachLeafKey, 1);
+            PlayerPrefs.SetInt(CoachHiveGardenKey, 1);
+            PlayerPrefs.Save();
+            GamePause.Reset();
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            Screen.SetResolution(1179, 2556, false);
+            int[] levels = { 19, 21, 25, 26, 27, 28, 29 };
+            for (int i = 0; i < levels.Length; i++)
+            {
+                int number = levels[i];
+                Load(number - 1);
+                _coach = false;
+                _leafIntro = false;
+                _hiveLevelLive = false;
+                _hiveLevelCue = false;
+                _cueHand = false;
+                _cueLine = null;
+                _gloveVis = false;
+                _coachFade = 0f;
+                yield return new WaitForSecondsRealtime(2.8f);
+                yield return new WaitForEndOfFrame();
+                SaveFrame(dir + "/b82-garden-" + number + ".png");
+                if (number == 26)
+                    SaveFrame(dir + "/b82-garden-kits.png");
+            }
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            if (hadCoach) PlayerPrefs.SetInt(CoachKey, coachKeep);
+            else PlayerPrefs.DeleteKey(CoachKey);
+            if (hadLeaf) PlayerPrefs.SetInt(CoachLeafKey, leafKeep);
+            else PlayerPrefs.DeleteKey(CoachLeafKey);
+            if (hadHive) PlayerPrefs.SetInt(CoachHiveGardenKey, hiveKeep);
+            else PlayerPrefs.DeleteKey(CoachHiveGardenKey);
+            PlayerPrefs.Save();
+            Debug.Log("B82_GARDEN_STILLS_DONE");
+#if UNITY_EDITOR
+            EditorShotLive = false;
+            UnityEditor.EditorApplication.Exit(0);
+#endif
+        }
+
         IEnumerator ShotPlaneFlyby()
         {
             const string path = "/Users/zfxgames/wkspaces/birdshot/gb/b80-plane.png";
@@ -1513,7 +1580,7 @@ namespace FlockFive
             {
                 var b = birds[i];
                 if (b == null || b.Shrouded) continue;
-                var worn = FlockKit.Worn(b.Sex, b.Kit);
+                var worn = FlockKit.Worn(b.AsBird());
                 int rank = worn == BirdKit.Bow || worn == BirdKit.Crown ? 2
                     : worn != BirdKit.Plain ? 1 : 0;
                 if (rank == 0) continue;
@@ -2842,7 +2909,7 @@ namespace FlockFive
                 if (st.Broken || st.AdLocked || st.Count != 4) continue;
                 bool same = true;
                 for (int k = 1; k < st.Count; k++)
-                    if (st.Birds[k].Color != st.Birds[0].Color) { same = false; break; }
+                    if (!st.Birds[k].SameFlock(st.Birds[0])) { same = false; break; }
                 if (!same) continue;
                 if (_board.LiveHas(st.Birds[0].Color)) continue;
                 pick = i;
@@ -2857,7 +2924,7 @@ namespace FlockFive
                     var col = (BirdColor)((st.Count + i) % Palette.Shipped);
                     while (st.Count < BranchState.Cap)
                     {
-                        st.Birds.Add(new Bird(col, BirdSex.Neutral));
+                        st.Birds.Add(new Bird(col));
                         col = (BirdColor)(((int)col + 1) % Palette.Shipped);
                     }
                     st.AlignShroud();
@@ -3518,7 +3585,7 @@ namespace FlockFive
             for (int i = 0; i < n; i++)
             {
                 var idle = birds[i] != null ? birds[i].GetComponent<BirdIdle>() : null;
-                flock[i] = idle != null ? idle.AsBird() : new Bird(col, BirdSex.Neutral);
+                flock[i] = idle != null ? idle.AsBird() : new Bird(col);
             }
             // Feeder matches score when the last bird lands. A pest scrap lifts
             // the flock now and does not pick a limb until the fight is over.

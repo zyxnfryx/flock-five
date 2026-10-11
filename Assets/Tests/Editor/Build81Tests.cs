@@ -769,11 +769,7 @@ namespace FlockFive.Editor
                 head > 0.2f && once > 0.05f && Mathf.Abs(twice / once - 2f) < 0.001f,
                 "once=" + once.ToString("0.000") + " twice=" + twice.ToString("0.000"));
 
-            var worn = new[]
-            {
-                BirdKit.Bow, BirdKit.Bowtie, BirdKit.Crown,
-                BirdKit.TopHat, BirdKit.Flower, BirdKit.Shades, BirdKit.Beanie
-            };
+            var worn = new[] { BirdKit.Crown, BirdKit.Bow };
             bool proportion = true;
             bool readable = true;
             bool gardenOk = true;
@@ -813,7 +809,7 @@ namespace FlockFive.Editor
                     float homeRatio = homeHead > 1f ? homeKit / homeHead : 0f;
                     float gardenRatio = gardenHead > 1f ? gardenKit / gardenHead : 0f;
                     float birdW = BirdIdle.KitOpaquePx(kitBody, kitBody, 1f, gpx);
-                    bool bowOrCrown = kitKind == BirdKit.Bow || kitKind == BirdKit.Bowtie || kitKind == BirdKit.Crown;
+                    bool bowOrCrown = kitKind == BirdKit.Bow || kitKind == BirdKit.Crown;
                     if (proportion && (Mathf.Abs(scale - fit) > 0.002f
                         || Mathf.Abs(homeRatio - BirdIdle.ShareOf(kitKind)) > 0.03f
                         || Mathf.Abs(homeRatio - gardenRatio) > 0.02f
@@ -842,13 +838,6 @@ namespace FlockFive.Editor
                     var seat = FlockKit.SeatOf(kitKind);
                     if (seat == FlockKit.Seat.Head && box.Ok)
                         contactY = y + box.Bottom * scale;
-                    else if (seat == FlockKit.Seat.Face && box.Ok)
-                    {
-                        contactY = y + box.Top * scale;
-                        yLimit = span * 0.55f;
-                    }
-                    else if (kitKind == BirdKit.Bowtie)
-                        yLimit = span * 0.60f;
                     else if (box.Ok)
                         contactY = y + (box.Bottom + box.Top) * 0.5f * scale;
                     float dx = Mathf.Abs(x - dome.x);

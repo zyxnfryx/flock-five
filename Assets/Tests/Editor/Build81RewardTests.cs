@@ -545,8 +545,8 @@ namespace FlockFive.Editor
             var teal = new BranchState();
             for (int i = 0; i < 3; i++)
             {
-                ruby.Birds.Add(new Bird(BirdColor.Ruby, LevelData.SexFor(BirdColor.Ruby)));
-                teal.Birds.Add(new Bird(BirdColor.Teal, LevelData.SexFor(BirdColor.Teal)));
+                ruby.Birds.Add(new Bird(BirdColor.Ruby));
+                teal.Birds.Add(new Bird(BirdColor.Teal));
             }
             board.Branches.Add(ruby);
             board.Branches.Add(teal);

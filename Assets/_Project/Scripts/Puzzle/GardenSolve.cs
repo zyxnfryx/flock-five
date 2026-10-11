@@ -159,12 +159,7 @@ namespace FlockFive
                 for (int k = 0; k < br.Count; k++)
                 {
                     sb.Append((int)br.Birds[k].Color);
-                    sb.Append((int)br.Birds[k].Sex);
-                    if (br.Birds[k].KitBinds)
-                    {
-                        sb.Append('k');
-                        sb.Append((int)br.Birds[k].Kit);
-                    }
+                    sb.Append((int)br.Birds[k].Kit);
                     sb.Append(br.IsShrouded(k) ? 'h' : '.');
                 }
             }

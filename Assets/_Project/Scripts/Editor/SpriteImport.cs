@@ -50,7 +50,7 @@ namespace FlockFive.Editor
             if (name == "branch.png" || name == "branch_gift.png") return true;
             if (name.StartsWith("fx_flame_")) return true;
             if (name.StartsWith("fx_crown")) return true;
-            if (name == "fx_bow.png" || name == "fx_bowtie.png") return true;
+            if (name == "fx_bow.png") return true;
             return false;
         }
 

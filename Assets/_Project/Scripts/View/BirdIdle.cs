@@ -4,9 +4,9 @@ using UnityEngine;
 namespace FlockFive
 {
     /// <summary>
-    /// Idle bird. The kit (bow, crown, or a duplicate-set accessory) is a sibling
-    /// SpriteRenderer. Bow and bowtie tuck behind the head. Crowns and hats sit
-    /// on the dome, in front of the body and under the face. Shades sit over the face.
+    /// Idle bird. The kit (bow or crown) is a sibling SpriteRenderer.
+    /// A bow tucks behind the head. A crown sits on the dome, in front of the body
+    /// and under the face. Bare (Plain) draws no kit.
     /// </summary>
     public sealed class BirdIdle : MonoBehaviour
     {
@@ -20,9 +20,7 @@ namespace FlockFive
         public bool Shrouded;
         public bool FaceLeft;
         public BirdColor Color;
-        public BirdSex Sex;
         public BirdKit Kit;
-        public bool KitBinds;
         SpriteRenderer _sr;
         SpriteRenderer _face;
         SpriteRenderer _kit;
@@ -68,14 +66,12 @@ namespace FlockFive
         }
 
         public void Bind(BirdColor color, Vector3 restLocal) =>
-            Bind(new Bird(color, BirdSex.Female), restLocal);
+            Bind(new Bird(color, BirdKit.Bow), restLocal);
 
         public void Bind(Bird bird, Vector3 restLocal)
         {
             Color = bird.Color;
-            Sex = bird.Sex;
             Kit = bird.Kit;
-            KitBinds = bird.KitBinds;
             RestLocal = restLocal;
             Frozen = false;
             Flapping = false;
@@ -87,8 +83,8 @@ namespace FlockFive
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
             if (_sr != null) _sr.flipX = FaceLeft;
             EnsureFace();
-            // Plain neutral stays bare. Anything Worn returns gets a kit sprite.
-            if (FlockKit.Worn(Sex, Kit) == BirdKit.Plain)
+            // Plain stays bare. Crown and bow get a kit sprite.
+            if (Kit == BirdKit.Plain)
             {
                 if (_kit != null) _kit.enabled = false;
             }
@@ -98,13 +94,7 @@ namespace FlockFive
             }
         }
 
-        public Bird AsBird()
-        {
-            var bird = new Bird(Color, Sex);
-            bird.Kit = Kit;
-            bird.KitBinds = KitBinds;
-            return bird;
-        }
+        public Bird AsBird() => new Bird(Color, Kit);
 
         public void Flutter(float seconds)
         {
@@ -274,7 +264,7 @@ namespace FlockFive
                 float mul = FlapMul < 0.05f ? 1f : FlapMul;
                 float flap = wings ? FlapRate * mul : 0.06f;
                 flapT = (Time.time + _phase) * flap;
-                var frame = SpriteCatalog.BirdFrame(Color, flapT, wings, Sex);
+                var frame = SpriteCatalog.BirdFrame(Color, flapT, wings);
                 // Read before the assign. A sprite swap must not stick the body at 0
                 // (behind wood and leaves). Frozen flight keeps Fly; it does not drop to Perch.
                 int heldOrder = _sr.sortingOrder;
@@ -291,8 +281,8 @@ namespace FlockFive
                 else
                     FlockSort.Apply(_sr, heldOrder);
             }
-            // Draw order (back→front): tuck kit → body/flaps → head kit → face → shades
-            bool kitOn = BirdDress.KitOn(show, Shrouded, FlockKit.Worn(Sex, Kit) == BirdKit.Plain);
+            // Draw order (back→front): tuck kit → body/flaps → head kit → face
+            bool kitOn = BirdDress.KitOn(show, Shrouded, Kit == BirdKit.Plain);
             if (kitOn) EnsureKit();
             PlaceKit(kitOn, wings, flapT);
             PlaceFace(mood, BirdDress.FaceOn(show, Shrouded));
@@ -686,10 +676,10 @@ namespace FlockFive
             _bang.enabled = true;
             float pop = Mathf.Sin(Mathf.Clamp01(u / 0.28f) * Mathf.PI * 0.5f);
             float fade = u < 0.72f ? 1f : Mathf.Clamp01((1f - u) / 0.28f);
-            int frame = SpriteCatalog.PoseIndex(_sr != null ? _sr.sprite : null, Color, Sex);
+            int frame = SpriteCatalog.PoseIndex(_sr != null ? _sr.sprite : null, Color, BirdSex.Neutral);
             float bird = transform.localScale.x;
             if (bird < 0f) bird = -bird;
-            AlertAnchor(frame, FaceLeft, bird, FlockKit.Worn(Sex, Kit), Color, out float ax, out float ay, out float fit);
+            AlertAnchor(frame, FaceLeft, bird, Kit, Color, out float ax, out float ay, out float fit);
             // Pivot is the bottom, so the pop grows up and the gap under it stays.
             float sc = fit * Mathf.Lerp(0.78f, 1f, pop);
             float y = ay + pop * 0.05f;
@@ -1102,7 +1092,7 @@ namespace FlockFive
 
         void EnsureKit()
         {
-            var worn = FlockKit.Worn(Sex, Kit);
+            var worn = Kit;
             if (worn == BirdKit.Plain)
             {
                 if (_kit != null) _kit.enabled = false;
@@ -1166,12 +1156,7 @@ namespace FlockFive
             switch (worn)
             {
                 case BirdKit.Bow: return 1.82f;
-                case BirdKit.Bowtie: return 1.85f;
                 case BirdKit.Crown: return 1.55f;
-                case BirdKit.Flower: return 1.00f;
-                case BirdKit.Shades: return 1.35f;
-                case BirdKit.TopHat: return 1.60f;
-                case BirdKit.Beanie: return 1.20f;
                 default: return 1.45f;
             }
         }
@@ -1283,17 +1268,6 @@ namespace FlockFive
                 float bottom = box.Ok ? box.Bottom : -0.5f;
                 lx = dome.x - midX * scale;
                 ly = dome.y - sink - bottom * scale;
-            }
-            else if (seat == FlockKit.Seat.Face)
-            {
-                float top = box.Ok ? box.Top : 0.2f;
-                lx = dome.x - midX * scale;
-                ly = dome.y - head * 0.40f - top * scale;
-            }
-            else if (worn == BirdKit.Bowtie)
-            {
-                lx = dome.x - midX * scale;
-                ly = dome.y - head * 0.46f - midY * scale;
             }
             else
             {
@@ -1506,7 +1480,7 @@ namespace FlockFive
 
         void PlaceKit(bool on, bool wings, float flapT)
         {
-            var worn = FlockKit.Worn(Sex, Kit);
+            var worn = Kit;
             if (worn == BirdKit.Plain)
             {
                 if (_kit != null && _kit.enabled) _kit.enabled = false;
@@ -1520,10 +1494,10 @@ namespace FlockFive
                 _kitGlide.Ready = false;
                 return;
             }
-            SpriteCatalog.FlapPair(Color, Sex, flapT, wings, out var body, out var next, out float phase);
+            SpriteCatalog.FlapPair(Color, BirdSex.Neutral, flapT, wings, out var body, out var next, out float phase);
             var kitSpr = _kit.sprite;
             // Rest skull sizes the kit. A raised wing clips HeadSpan and would shrink the bow.
-            var rest = SpriteCatalog.Bird(Color, Sex);
+            var rest = SpriteCatalog.Bird(Color);
             KitGlideWorn(worn, body, next, phase, FaceLeft, kitSpr, rest, ref _kitGlide, Time.deltaTime,
                 out float bowX, out float bowY, out float ks, out float tiltZ, out bool kitFlip);
             var kitPos = new Vector3(bowX, bowY, 0f);
@@ -1532,11 +1506,8 @@ namespace FlockFive
             if (_kit.transform.localRotation != kitRot) _kit.transform.localRotation = kitRot;
             if (_kit.flipX != kitFlip) _kit.flipX = kitFlip;
             // Tuck sits behind the body. Headwear sits in front, under the face.
-            // Shades have to clear the eye overlay or they disappear into it.
             int bodyOrder = _sr != null ? _sr.sortingOrder : FlockSort.Perch;
-            int kitOrder = FlockKit.OverFace(worn) ? bodyOrder + 3
-                : FlockKit.BehindBody(worn) ? bodyOrder - 1
-                : bodyOrder + 1;
+            int kitOrder = FlockKit.BehindBody(worn) ? bodyOrder - 1 : bodyOrder + 1;
             FlockSort.Apply(_kit, kitOrder);
             var kitScale = new Vector3(ks, ks, 1f);
             if (_kit.transform.localScale != kitScale) _kit.transform.localScale = kitScale;

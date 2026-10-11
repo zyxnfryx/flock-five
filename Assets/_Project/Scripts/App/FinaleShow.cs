@@ -1291,7 +1291,7 @@ namespace FlockFive
             idle.Frozen = true;
             idle.Flapping = false;
             // Clear celebration: plain birds — no bow/crown kits.
-            idle.Bind(new Bird(col, BirdSex.Neutral), local);
+            idle.Bind(new Bird(col), local);
             idle.Frozen = true;
             idle.Flapping = false;
             var sr = go.GetComponent<SpriteRenderer>();

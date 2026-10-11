@@ -2,142 +2,121 @@ using System.Collections.Generic;
 
 namespace FlockFive
 {
-    // One place that gives duplicate flocks different accessories.
-    // Called once, after the sex stamp, on the packed garden.
+    // The only place garden birds get a kit. Build 82: Crown, Bow, Plain (bare).
+    // A color may fill at most three sets on one garden, one set per kit.
     public static class FlockKit
     {
+        public const int MaxSetsPerColor = 3;
+        public static readonly BirdKit[] Order = { BirdKit.Crown, BirdKit.Bow, BirdKit.Plain };
+
         public enum Seat
         {
             Head,
-            Tuck,
-            Face
+            Tuck
         }
 
-        struct Spot
+        public static BirdKit Worn(Bird bird) => bird.Kit;
+        public static bool BehindBody(BirdKit worn) => worn == BirdKit.Bow;
+        public static Seat SeatOf(BirdKit worn) => worn == BirdKit.Bow ? Seat.Tuck : Seat.Head;
+
+        // Kit of set `set` (0-based) of `color` on garden `levelNumber`. The start of
+        // the Crown/Bow/Plain cycle rotates with level and color, so a one-set color
+        // is not always Crown and the same color reads differently garden to garden.
+        public static BirdKit KitFor(int levelNumber, BirdColor color, int set)
         {
-            public int Branch;
-            public int Index;
+            int rot = ((levelNumber + (int)color) % 3 + 3) % 3;
+            if (set < 0) set = 0;
+            if (set >= MaxSetsPerColor) set = MaxSetsPerColor - 1;
+            return Order[(set + rot) % 3];
         }
 
-        // Later sets, in order. Set 0 keeps whatever the bird already wears
-        // (plain crown / bow / bare, or one authored kit on the whole flock).
-        static readonly BirdKit[] MaleAlt = { BirdKit.TopHat, BirdKit.Shades, BirdKit.Beanie, BirdKit.Flower };
-        static readonly BirdKit[] FemaleAlt = { BirdKit.Flower, BirdKit.Bowtie, BirdKit.Shades, BirdKit.Beanie };
-        static readonly BirdKit[] NeutralAlt = { BirdKit.Beanie, BirdKit.Shades, BirdKit.Bowtie, BirdKit.Flower };
-
-        public static BirdKit Worn(Bird bird) => Worn(bird.Sex, bird.Kit);
-
-        public static BirdKit Worn(BirdSex sex, BirdKit kit)
-        {
-            if (kit != BirdKit.Plain) return kit;
-            if (sex == BirdSex.Female) return BirdKit.Bow;
-            if (sex == BirdSex.Male) return BirdKit.Crown;
-            return BirdKit.Plain;
-        }
-
-        public static bool BehindBody(BirdKit worn) =>
-            worn == BirdKit.Bow || worn == BirdKit.Bowtie;
-
-        public static bool OverFace(BirdKit worn) => worn == BirdKit.Shades;
-
-        public static Seat SeatOf(BirdKit worn)
-        {
-            if (worn == BirdKit.Shades) return Seat.Face;
-            if (BehindBody(worn)) return Seat.Tuck;
-            return Seat.Head;
-        }
-
-        // Two or more full sets of the same color and sex each get their own
-        // accessory. Five birds inside a set stay identical. A group that
-        // already wears more than one kit is a level-authored split: leave
-        // the kits, and let them count in the hop.
-        public static void Assign(Board b)
+        // Deterministic per garden. With a level kit map (Level.Kits) the packed
+        // garden is painted from it (PaintMap). Without one, for each color, cut
+        // the packed garden into runs (consecutive birds of that color on one
+        // limb, trunk to tip, branch 0..n). Runs are dealt first-fit, in board
+        // order, into the color's sets of five so a run stays one kit whenever it
+        // fits; a run that fits nowhere whole is split bird by bird into the first
+        // sets with room. Set s wears KitFor(levelNumber, color, s). Pack calls
+        // this once, after the Shift clones and before the gifts. Nothing else
+        // writes Bird.Kit except Paint (single-color gardens paint in the maker).
+        public static void Assign(Board b, int levelNumber, string kitMap = null)
         {
             if (b == null) return;
-            var buckets = new List<Spot>[Palette.Max * 3];
-            for (int i = 0; i < b.Branches.Count; i++)
+            if (!string.IsNullOrEmpty(kitMap))
             {
-                var br = b.Branches[i];
-                if (br == null) continue;
-                for (int k = 0; k < br.Birds.Count; k++)
+                PaintMap(b, kitMap);
+                return;
+            }
+            for (int c = 0; c < Palette.Max; c++)
+            {
+                var runs = new List<int[]>(); // {branch, start, length}
+                int total = 0;
+                for (int i = 0; i < b.Branches.Count; i++)
                 {
-                    var bird = br.Birds[k];
-                    int key = (int)bird.Color * 3 + (int)bird.Sex;
-                    if ((uint)key >= (uint)buckets.Length) continue;
-                    var list = buckets[key];
-                    if (list == null)
+                    var br = b.Branches[i];
+                    if (br == null) continue;
+                    int k = 0;
+                    while (k < br.Birds.Count)
                     {
-                        list = new List<Spot>();
-                        buckets[key] = list;
+                        if ((int)br.Birds[k].Color != c) { k++; continue; }
+                        int start = k;
+                        while (k < br.Birds.Count && (int)br.Birds[k].Color == c) k++;
+                        runs.Add(new[] { i, start, k - start });
+                        total += k - start;
                     }
-                    list.Add(new Spot { Branch = i, Index = k });
                 }
-            }
-            for (int key = 0; key < buckets.Length; key++)
-            {
-                var list = buckets[key];
-                if (list == null || list.Count == 0) continue;
-                if (AlreadySplit(b, list))
+                if (total == 0) continue;
+                int sets = (total + BranchState.Cap - 1) / BranchState.Cap;
+                var room = new int[sets];
+                for (int s = 0; s < sets; s++) room[s] = BranchState.Cap;
+                for (int r = 0; r < runs.Count; r++)
                 {
-                    Bind(b, list);
-                    continue;
+                    var run = runs[r];
+                    var br = b.Branches[run[0]];
+                    int whole = -1;
+                    for (int s = 0; s < sets; s++)
+                        if (room[s] >= run[2]) { whole = s; break; }
+                    for (int j = 0; j < run[2]; j++)
+                    {
+                        int s = whole;
+                        if (s < 0)
+                        {
+                            s = sets - 1;
+                            for (int t = 0; t < sets; t++) if (room[t] > 0) { s = t; break; }
+                        }
+                        room[s]--;
+                        var bird = br.Birds[run[1] + j];
+                        bird.Kit = KitFor(levelNumber, (BirdColor)c, s);
+                        br.Birds[run[1] + j] = bird;
+                    }
                 }
-                int sets = list.Count / BranchState.Cap;
-                if (sets < 2) continue;
-                var sex = (BirdSex)(key % 3);
-                var keep = At(b, list[0]).Kit;
-                for (int i = 0; i < list.Count; i++)
-                {
-                    int set = i / BranchState.Cap;
-                    if (set >= sets) set = 0;
-                    var br = b.Branches[list[i].Branch];
-                    var bird = br.Birds[list[i].Index];
-                    bird.Kit = set == 0 ? keep : Look(sex, set, keep);
-                    bird.KitBinds = false;
-                    br.Birds[list[i].Index] = bird;
-                }
             }
         }
 
-        static bool AlreadySplit(Board b, List<Spot> list)
+        // Level-authored kits for the packed garden: one group per branch in board
+        // order, separated by '/', one letter per bird trunk to tip (C Crown,
+        // B Bow, N bare). Branches past the map (gifts) are left alone.
+        public static void PaintMap(Board b, string kitMap)
         {
-            var worn = Worn(At(b, list[0]));
-            for (int i = 1; i < list.Count; i++)
-                if (Worn(At(b, list[i])) != worn) return true;
-            return false;
+            var limbs = kitMap.Split('/');
+            for (int i = 0; i < b.Branches.Count && i < limbs.Length; i++)
+                Paint(b.Branches[i], limbs[i]);
         }
 
-        static void Bind(Board b, List<Spot> list)
+        // Authored kits (single-color gardens). "C" Crown, "B" Bow, "N" bare, one
+        // letter per bird trunk to tip. Same validator rules apply afterwards.
+        public static void Paint(BranchState br, string kits)
         {
-            for (int i = 0; i < list.Count; i++)
+            if (br == null || kits == null) return;
+            for (int k = 0; k < br.Birds.Count && k < kits.Length; k++)
             {
-                var br = b.Branches[list[i].Branch];
-                var bird = br.Birds[list[i].Index];
-                bird.KitBinds = true;
-                br.Birds[list[i].Index] = bird;
+                var bird = br.Birds[k];
+                char ch = kits[k];
+                bird.Kit = ch == 'C' ? BirdKit.Crown : ch == 'B' ? BirdKit.Bow : BirdKit.Plain;
+                br.Birds[k] = bird;
             }
         }
 
-        static Bird At(Board b, Spot spot) => b.Branches[spot.Branch].Birds[spot.Index];
-
-        static BirdKit Look(BirdSex sex, int set, BirdKit keep)
-        {
-            var pool = sex == BirdSex.Female ? FemaleAlt : sex == BirdSex.Male ? MaleAlt : NeutralAlt;
-            var wornKeep = Worn(sex, keep);
-            int usable = 0;
-            for (int i = 0; i < pool.Length; i++)
-                if (pool[i] != keep && Worn(sex, pool[i]) != wornKeep) usable++;
-            if (usable == 0 || set <= 0) return keep;
-            int pick = (set - 1) % usable;
-            int seen = 0;
-            for (int i = 0; i < pool.Length; i++)
-            {
-                var kit = pool[i];
-                if (kit == keep || Worn(sex, kit) == wornKeep) continue;
-                if (seen == pick) return kit;
-                seen++;
-            }
-            return keep;
-        }
+        public static char Letter(BirdKit k) => k == BirdKit.Crown ? 'C' : k == BirdKit.Bow ? 'B' : 'N';
     }
 }

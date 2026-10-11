@@ -6,6 +6,11 @@ namespace FlockFive
         public string Id;
         public string Title;
         public System.Func<Board> Make;
+        // Single-color garden: Pack skips Shift clones, shifted feeders and OfferPeach,
+        // and keeps the kits the maker painted (FlockKit.Paint).
+        public bool Solo;
+        // Authored kits for the packed garden (FlockKit.PaintMap format). Null = FlockKit run order.
+        public string Kits;
     }
 
     public static partial class LevelData
@@ -30,23 +35,37 @@ namespace FlockFive
             new Level { Number = 13, Id = "nectar-pinch", Title = "Nectar Pinch", Make = NectarPinch },
             new Level { Number = 14, Id = "twin-swarm", Title = "Twin Swarm", Make = TwinSwarm },
             new Level { Number = 15, Id = "last-light", Title = "Last Light", Make = LastLight },
-            new Level { Number = 16, Id = "garden-16", Title = "Garden 16", Make = Garden16 },
-            new Level { Number = 17, Id = "garden-17", Title = "Garden 17", Make = Garden17 },
-            new Level { Number = 18, Id = "garden-18", Title = "Garden 18", Make = Garden18 },
-            new Level { Number = 19, Id = "garden-19", Title = "Garden 19", Make = Garden19 },
-            new Level { Number = 20, Id = "garden-20", Title = "Garden 20", Make = Garden20 },
-            new Level { Number = 21, Id = "garden-21", Title = "Garden 21", Make = Garden21 },
-            new Level { Number = 22, Id = "garden-22", Title = "Garden 22", Make = Garden22 },
-            new Level { Number = 23, Id = "garden-23", Title = "Garden 23", Make = Garden23 },
-            new Level { Number = 24, Id = "garden-24", Title = "Garden 24", Make = Garden24 },
-            new Level { Number = 25, Id = "garden-25", Title = "Garden 25", Make = Garden25 }
+            new Level { Number = 16, Id = "garden-16", Title = "Garden 16", Make = Garden16,
+                Kits = "NCCCB/NNNCN/BBNBB/NNNCN/CBBB/CCNN/BC/CCNBB/BBBBN/BBCCC/BBNCC/NNNN/CCCC/BN" },
+            new Level { Number = 17, Id = "garden-17", Title = "Garden 17", Make = Garden17,
+                Kits = "CCCCN/NNNN/CCCNN/CCCNN/CCCCN/B/NNBBB/CBBBB/NBBB/BCNNC/NBBNC/CNNBB/N/BBCBB" },
+            new Level { Number = 18, Id = "garden-18", Title = "Garden 18", Make = Garden18,
+                Kits = "BCC/BBCBC/CNNCC/BBBBB/BBBCB/NCC/CCCC/NCB/CNNNN/CNNNB/CCCNN/NNBNN/NNN/BBBB" },
+            new Level { Number = 19, Id = "garden-19", Title = "Garden 19", Make = Garden19,
+                Kits = "BBBCN/NNNBC/NCCB/BNNB/BBBN/CCNN/BBBB/BBBNC/CCCNN/BNNC/BCCC/NCNN/BCNN/CCCC" },
+            new Level { Number = 20, Id = "garden-20", Title = "Garden 20", Make = Garden20,
+                Kits = "N/CCCCN/BCCCC/NNNNN/CBBB/CBCCB/NNBBB/C/BBBBN/BCNNC/CNNNC/CCCC/BCNCC/CNNNN" },
+            new Level { Number = 21, Id = "garden-21", Title = "Garden 21", Make = Garden21,
+                Kits = "NNCCN/CCB/BBCCB/CCC/BBNB/BCCNN/CCBCB/NNBBC/NNB/NNNBC/BBB/NCBC/NNNCB/CNNBN" },
+            new Level { Number = 22, Id = "garden-22", Title = "Garden 22", Make = Garden22,
+                Kits = "NNNBN/BBBNB/CBCBB/NNNBB/BCCCC/NBNCN//CCCCN/CCCCN/CBBNN/NNNNN/BCCBC/BBBBC" },
+            new Level { Number = 23, Id = "garden-23", Title = "Garden 23", Make = Garden23,
+                Kits = "CCNCB/BCCCC/BNBNN/CNCBB/NNCCC/NNCNN//BBNNC/CBBBB/BNNBB/CBCNN/BBCCC/NNNBB" },
+            new Level { Number = 24, Id = "garden-24", Title = "Garden 24", Make = Garden24,
+                Kits = "NCBBC/NCCBC/CBCBB/BNNCB/NCCC/NBB/NNC/NCNCN/NBBBN/CCCBN/NNNCC/CBBB/BNN/BNB" },
+            new Level { Number = 25, Id = "garden-25", Title = "Garden 25", Make = Garden25,
+                Kits = "NNNN/CNNB/BBCN/BBBB/BNNNN/CCCC/CBBBC/CCCN/NCNN/CCBB/NNNN/NBBCN/BBBB/NNBNN" },
+            new Level { Number = 26, Id = "garden-26", Title = "Garden 26", Make = Garden26, Solo = true },
+            new Level { Number = 27, Id = "garden-27", Title = "Garden 27", Make = Garden27, Solo = true },
+            new Level { Number = 28, Id = "garden-28", Title = "Garden 28", Make = Garden28, Solo = true },
+            new Level { Number = 29, Id = "garden-29", Title = "Garden 29", Make = Garden29, Solo = true }
         };
 
         public static int Count => All.Length;
         public static bool HasNext => All.Length > 0;
         const string PrefNext = "flockfive.next";
 
-        // Climb is unbounded. Layouts cycle through the 15 gardens.
+        // Climb is unbounded. Layouts cycle through every garden (29 in build 82).
         // The flower shows LEVEL 16, 17, … instead of wrapping to Dawn Garden as level 1.
         public static int DisplayNumber => Index + 1;
 
@@ -123,7 +142,7 @@ namespace FlockFive
             if (All.Length == 0) return new Board();
             Index = index < 0 ? 0 : index;
             Current = All[Index % All.Length];
-            var b = Pack(Current.Make());
+            var b = Pack(Current.Make(), Current);
             // Garden 16 is one empty limb short once three sparrow snaps are in play.
             if (DisplayNumber == 16)
                 InsertEmptyLimb(b);
@@ -191,13 +210,12 @@ namespace FlockFive
                     b.Branches[i].Birds.RemoveAt(b.Branches[i].Birds.Count - 1);
                 b.Branches[i].AlignShroud();
             }
-            StampFlocks(b);
             return b;
         }
 
-        // Bees hide a different color, never a same-color completion under a
-        // visible run. Hopping 3 gold off a limb should not unveil 2 more gold
-        // that you then hop back. Tip leaves (HideTip) stay — those are locked.
+        // Bees hide a different flock (color and kit), never a same-flock completion
+        // under a visible run. Hopping 3 gold off a limb should not unveil 2 more
+        // of that flock that you then hop back. Tip leaves (HideTip) stay locked.
         static void UnhideSameColorBees(Board b)
         {
             if (b == null) return;
@@ -231,91 +249,6 @@ namespace FlockFive
         // Same-sex flocks: hops need color AND sex, so every bird of a color
         // shares a sex (otherwise a 5-stack can never gather). Colors cycle
         // Female / Male / Neutral so a stage is never all one gender.
-        public static BirdSex SexFor(BirdColor c) => SexOf(c);
-
-        static BirdSex SexOf(BirdColor c)
-        {
-            switch (c)
-            {
-                case BirdColor.Ruby: return BirdSex.Female;
-                case BirdColor.Gold: return BirdSex.Male;
-                case BirdColor.Teal: return BirdSex.Neutral;
-                case BirdColor.Violet: return BirdSex.Female;
-                default: return BirdSex.Male;
-            }
-        }
-
-        // Sex is one per color so a flock can still gather. An accessory the
-        // level already set rides through; Pack chooses cosmetic kits after.
-        static void StampFlocks(Board b)
-        {
-            for (int i = 0; i < b.Branches.Count; i++)
-            {
-                var br = b.Branches[i];
-                for (int k = 0; k < br.Birds.Count; k++)
-                {
-                    var prev = br.Birds[k];
-                    var next = new Bird(prev.Color, SexOf(prev.Color));
-                    next.Kit = prev.Kit;
-                    next.KitBinds = prev.KitBinds;
-                    br.Birds[k] = next;
-                }
-            }
-            MixGenders(b);
-        }
-
-        static void MixGenders(Board b)
-        {
-            bool hasF = false, hasM = false, hasN = false;
-            var seen = new bool[Palette.Max];
-            for (int i = 0; i < b.Branches.Count; i++)
-            {
-                var br = b.Branches[i];
-                for (int k = 0; k < br.Birds.Count; k++)
-                {
-                    var bird = br.Birds[k];
-                    int ci = (int)bird.Color;
-                    if ((uint)ci < (uint)seen.Length) seen[ci] = true;
-                    if (bird.Sex == BirdSex.Female) hasF = true;
-                    else if (bird.Sex == BirdSex.Male) hasM = true;
-                    else hasN = true;
-                }
-            }
-            int kinds = 0;
-            if (hasF) kinds++;
-            if (hasM) kinds++;
-            if (hasN) kinds++;
-            if (kinds >= 2) return;
-
-            int colors = 0;
-            int flip = -1;
-            for (int c = 0; c < seen.Length; c++)
-            {
-                if (!seen[c]) continue;
-                colors++;
-                flip = c;
-            }
-            if (colors < 2 || flip < 0) return;
-
-            var want = hasF ? BirdSex.Male : BirdSex.Female;
-            PaintColor(b, (BirdColor)flip, want);
-        }
-
-        static void PaintColor(Board b, BirdColor color, BirdSex sex)
-        {
-            for (int i = 0; i < b.Branches.Count; i++)
-            {
-                var br = b.Branches[i];
-                for (int k = 0; k < br.Birds.Count; k++)
-                {
-                    if (br.Birds[k].Color != color) continue;
-                    var bird = br.Birds[k];
-                    bird.Sex = sex;
-                    br.Birds[k] = bird;
-                }
-            }
-        }
-
         static Board DawnGarden()
         {
             var b = Eight(
@@ -747,15 +680,15 @@ namespace FlockFive
             return b;
         }
 
-        // Pinched nectar, long queue. Lifting the Violet four off a bee into the empty limb tangles.
+        // Pinched nectar, long queue. Build 82: one Teal set became Ruby (Violet was 4 sets after Pack).
         static Board Garden19()
         {
             var b = Eight(
                 Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Teal, BirdColor.Ruby),
-                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet),
+                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Gold, BirdColor.Ruby, BirdColor.Violet),
                 Row(BirdColor.Ruby, BirdColor.Violet, BirdColor.Violet, BirdColor.Violet),
-                Row(BirdColor.Gold, BirdColor.Teal, BirdColor.Teal, BirdColor.Teal),
-                Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Teal, BirdColor.Teal),
+                Row(BirdColor.Gold, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby),
+                Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Teal, BirdColor.Ruby),
                 Row(BirdColor.Gold, BirdColor.Teal, BirdColor.Violet, BirdColor.Violet),
                 Row(BirdColor.Violet, BirdColor.Violet, BirdColor.Violet, BirdColor.Violet),
                 new BranchState());
@@ -763,7 +696,7 @@ namespace FlockFive
             b.Live[1] = null;
             b.Queue.Add(BirdColor.Violet);
             b.Queue.Add(BirdColor.Violet);
-            b.Queue.Add(BirdColor.Teal);
+            b.Queue.Add(BirdColor.Ruby);
             b.Queue.Add(BirdColor.Teal);
             b.Queue.Add(BirdColor.Gold);
             HideInner(b.Branches[2], 1);
@@ -793,23 +726,23 @@ namespace FlockFive
             return Prep(b);
         }
 
-        // Shift density. Ruby clones turn Gold, so Gold flocks four times. Parking a full Gold flock early tangles.
+        // Shift density. Build 82: one Gold set became Teal (Gold was 4 sets after Pack).
         static Board Garden21()
         {
             var b = Eight(
-                Row(BirdColor.Violet, BirdColor.Violet, BirdColor.Gold, BirdColor.Gold, BirdColor.Gold),
-                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Ruby),
+                Row(BirdColor.Violet, BirdColor.Violet, BirdColor.Teal, BirdColor.Teal, BirdColor.Teal),
+                Row(BirdColor.Teal, BirdColor.Gold, BirdColor.Ruby),
                 Row(BirdColor.Gold, BirdColor.Violet, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby),
                 Row(BirdColor.Violet, BirdColor.Violet, BirdColor.Violet),
                 Row(BirdColor.Violet, BirdColor.Ruby, BirdColor.Violet, BirdColor.Ruby),
                 Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Gold, BirdColor.Violet),
-                Row(BirdColor.Ruby, BirdColor.Violet, BirdColor.Gold, BirdColor.Gold, BirdColor.Gold),
+                Row(BirdColor.Ruby, BirdColor.Violet, BirdColor.Gold, BirdColor.Teal, BirdColor.Gold),
                 new BranchState());
             b.Live[0] = BirdColor.Violet;
             b.Live[1] = BirdColor.Ruby;
             b.Queue.Add(BirdColor.Violet);
             b.Queue.Add(BirdColor.Ruby);
-            b.Queue.Add(BirdColor.Gold);
+            b.Queue.Add(BirdColor.Teal);
             b.Queue.Add(BirdColor.Gold);
             HideInner(b.Branches[1], 2);
             HideInner(b.Branches[5], 3);
@@ -893,13 +826,13 @@ namespace FlockFive
             return b;
         }
 
-        // Dawn-shaped rows with the late kit: pinch, two stubborn tips, bees. Most blind Gold moves tangle.
+        // Dawn-shaped rows with the late kit: pinch, two stubborn tips, bees. Build 82: one Gold set became Teal.
         static Board Garden25()
         {
             var b = Eight(
-                Row(BirdColor.Gold, BirdColor.Ruby, BirdColor.Gold, BirdColor.Violet),
-                Row(BirdColor.Violet, BirdColor.Ruby, BirdColor.Violet, BirdColor.Gold),
-                Row(BirdColor.Gold, BirdColor.Gold, BirdColor.Gold, BirdColor.Gold),
+                Row(BirdColor.Teal, BirdColor.Ruby, BirdColor.Teal, BirdColor.Violet),
+                Row(BirdColor.Violet, BirdColor.Ruby, BirdColor.Violet, BirdColor.Teal),
+                Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Gold, BirdColor.Gold),
                 Row(BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby),
                 Row(BirdColor.Gold, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Ruby, BirdColor.Violet),
                 Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Teal, BirdColor.Teal),
@@ -907,7 +840,7 @@ namespace FlockFive
                 new BranchState());
             b.Live[0] = BirdColor.Gold;
             b.Live[1] = null;
-            b.Queue.Add(BirdColor.Gold);
+            b.Queue.Add(BirdColor.Teal);
             b.Queue.Add(BirdColor.Violet);
             b.Queue.Add(BirdColor.Teal);
             b.Queue.Add(BirdColor.Ruby);
@@ -921,12 +854,101 @@ namespace FlockFive
             return b;
         }
 
+        // Single-color series (Build 82). One color, three kits, four limbs, no
+        // empty limb; Level.Solo keeps Pack from cloning. Kits are painted here,
+        // before Prep, so Prep's bee and five rules see real flocks.
+
+        // Ruby. Three kits, inner bees only. Both feeders Ruby.
+        static Board Garden26()
+        {
+            var b = new Board();
+            b.Branches.Add(SoloRow(BirdColor.Ruby, "NNCN"));
+            b.Branches.Add(SoloRow(BirdColor.Ruby, "CB"));
+            b.Branches.Add(SoloRow(BirdColor.Ruby, "BCCB"));
+            b.Branches.Add(SoloRow(BirdColor.Ruby, "BNNBC"));
+            b.Live[0] = BirdColor.Ruby;
+            b.Live[1] = BirdColor.Ruby;
+            b.Queue.Add(BirdColor.Ruby);
+            HideInner(b.Branches[2], 3);
+            HideInner(b.Branches[3], 4);
+            return Prep(b);
+        }
+
+        // Teal. Heavier bees on three limbs.
+        static Board Garden27()
+        {
+            var b = new Board();
+            b.Branches.Add(SoloRow(BirdColor.Teal, "NNCNB"));
+            b.Branches.Add(SoloRow(BirdColor.Teal, "BNC"));
+            b.Branches.Add(SoloRow(BirdColor.Teal, "BCCB"));
+            b.Branches.Add(SoloRow(BirdColor.Teal, "CNB"));
+            b.Live[0] = BirdColor.Teal;
+            b.Live[1] = BirdColor.Teal;
+            b.Queue.Add(BirdColor.Teal);
+            HideInner(b.Branches[0], 4);
+            HideInner(b.Branches[2], 3);
+            HideInner(b.Branches[3], 2);
+            return Prep(b);
+        }
+
+        // Gold. Adds one leaf tip; each collect breezes.
+        static Board Garden28()
+        {
+            var b = new Board();
+            b.Branches.Add(SoloRow(BirdColor.Gold, "BBNC"));
+            b.Branches.Add(SoloRow(BirdColor.Gold, "NNC"));
+            b.Branches.Add(SoloRow(BirdColor.Gold, "BCNN"));
+            b.Branches.Add(SoloRow(BirdColor.Gold, "CBBC"));
+            b.Live[0] = BirdColor.Gold;
+            b.Live[1] = BirdColor.Gold;
+            b.Queue.Add(BirdColor.Gold);
+            HideInner(b.Branches[0], 3);
+            HideInner(b.Branches[1], 2);
+            b.BreezeOnCollect = true;
+            Prep(b, keepTipShrouds: true);
+            HideTip(b.Branches[3]);
+            return b;
+        }
+
+        // Violet. Adds the pinched feeder (one live slot) on top of bees and a leaf.
+        static Board Garden29()
+        {
+            var b = new Board();
+            b.Branches.Add(SoloRow(BirdColor.Violet, "CC"));
+            b.Branches.Add(SoloRow(BirdColor.Violet, "CCNCN"));
+            b.Branches.Add(SoloRow(BirdColor.Violet, "BBN"));
+            b.Branches.Add(SoloRow(BirdColor.Violet, "NBBBN"));
+            b.Live[0] = BirdColor.Violet;
+            b.Live[1] = null;
+            b.Queue.Add(BirdColor.Violet);
+            b.Queue.Add(BirdColor.Violet);
+            HideInner(b.Branches[2], 2);
+            HideInner(b.Branches[3], 4);
+            b.BreezeOnCollect = true;
+            Prep(b, keepTipShrouds: true);
+            HideTip(b.Branches[3]);
+            return b;
+        }
+
+        // One color with authored kits, trunk to tip ("C" Crown, "B" Bow, "N" bare).
+        static BranchState SoloRow(BirdColor color, string kits)
+        {
+            var br = new BranchState();
+            for (int i = 0; i < kits.Length; i++)
+            {
+                br.Birds.Add(new Bird(color));
+                br.Shrouded.Add(false);
+            }
+            FlockKit.Paint(br, kits);
+            return br;
+        }
+
         static BranchState Row(params BirdColor[] birds)
         {
             var br = new BranchState();
             for (int i = 0; i < birds.Length; i++)
             {
-                br.Birds.Add(new Bird(birds[i], SexOf(birds[i])));
+                br.Birds.Add(new Bird(birds[i]));
                 br.Shrouded.Add(false);
             }
             return br;

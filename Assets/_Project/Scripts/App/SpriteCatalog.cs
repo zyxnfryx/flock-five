@@ -4,7 +4,7 @@ namespace FlockFive
 {
     public static class SpriteCatalog
     {
-        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _bowtie, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _handPalm, _handPinky, _handRing, _handMiddle, _handIndex, _handThumb, _handThumbShadow, _dash, _chain, _padlock, _stampRing, _waxSeal, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk, _pokerFaceWild;
+        static Sprite _bg, _branch, _branchGift, _leaf, _vine, _petalPink, _petalPeach, _firefly, _glow, _rain, _smoke, _blanket, _zee, _sparkle, _moon, _logo, _bee, _beeFlap, _feather, _bow, _crown, _hive, _playFlower, _adSign, _adBulb, _adCard, _iceA, _iceB, _iceShard, _restart, _piggy, _coin, _poker, _cardBack, _cardPaper, _handFan, _handFanFront, _handPluck, _handPalm, _handPinky, _handRing, _handMiddle, _handIndex, _handThumb, _handThumbShadow, _dash, _chain, _padlock, _stampRing, _waxSeal, _joker, _clipboard, _sparrow, _sparrowFlap1, _sparrowFlap2, _hawk, _pokerFaceWild;
         static Sprite[] _pokerFaces;
         static Sprite[] _flames;
         static bool _sparrowPlaceholder;
@@ -241,11 +241,9 @@ namespace FlockFive
             return rest;
         }
         public static Sprite Bow => Load(ref _bow, "Sprites/fx_bow", 200f);
-        // Female kit bow. Was 0.42 on every draw site; 1.12 grows it around that same point.
         // Legacy constant. Worn bows take their size from BirdIdle.KitFit,
         // which follows HeadSpan of the body instead of this fixed scale.
         public const float BowScale = 0.42f * 1.12f;
-        public static Sprite Bowtie => Load(ref _bowtie, "Sprites/fx_bowtie", 200f);
         public static Sprite Crown => Load(ref _crown, "Sprites/fx_crown", 200f);
         static readonly Sprite[] _crownByColor = new Sprite[5];
         static readonly string[] CrownNames = { "ruby", "gold", "teal", "violet", "peach" };
@@ -258,19 +256,13 @@ namespace FlockFive
             return _crownByColor[i] != null ? _crownByColor[i] : Crown;
         }
 
-        // Worn kit. Crown and bow are the sex defaults. Bowtie is the imported
-        // tie. Hat, flower, shades, and beanie are baked once in KitArt.
+        // Worn kit. Crown and bow are the only accessories. Plain draws nothing.
         public static Sprite KitSprite(BirdColor color, BirdKit worn)
         {
             switch (worn)
             {
                 case BirdKit.Crown: return CrownFor(color);
                 case BirdKit.Bow: return Bow;
-                case BirdKit.Bowtie: return Bowtie;
-                case BirdKit.TopHat: return KitArt.TopHat;
-                case BirdKit.Flower: return KitArt.Flower;
-                case BirdKit.Shades: return KitArt.Shades;
-                case BirdKit.Beanie: return KitArt.Beanie;
                 default: return null;
             }
         }

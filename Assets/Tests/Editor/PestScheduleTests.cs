@@ -145,8 +145,8 @@ namespace FlockFive.Editor
         static Board SolvedBoard()
         {
             var b = new Board();
-            b.Branches.Add(Set(BirdColor.Ruby, BirdSex.Female));
-            b.Branches.Add(Set(BirdColor.Gold, BirdSex.Male));
+            b.Branches.Add(Set(BirdColor.Ruby));
+            b.Branches.Add(Set(BirdColor.Gold));
             b.Branches.Add(new BranchState());
             return b;
         }
@@ -155,17 +155,17 @@ namespace FlockFive.Editor
         {
             var b = new Board();
             var mix = new BranchState();
-            mix.Birds.Add(new Bird(BirdColor.Ruby, BirdSex.Female));
-            mix.Birds.Add(new Bird(BirdColor.Gold, BirdSex.Male));
+            mix.Birds.Add(new Bird(BirdColor.Ruby));
+            mix.Birds.Add(new Bird(BirdColor.Gold));
             b.Branches.Add(mix);
             return b;
         }
 
-        static BranchState Set(BirdColor color, BirdSex sex)
+        static BranchState Set(BirdColor color)
         {
             var limb = new BranchState();
             for (int i = 0; i < BranchState.Cap; i++)
-                limb.Birds.Add(new Bird(color, sex));
+                limb.Birds.Add(new Bird(color));
             return limb;
         }
     }

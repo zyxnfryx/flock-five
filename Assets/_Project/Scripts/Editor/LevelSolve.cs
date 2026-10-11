@@ -40,25 +40,24 @@ namespace FlockFive.Editor
                 var level = LevelData.Peek(i);
                 var board = LevelData.Open(i);
                 string flocks = FlockSummary(board);
-                bool mixed = SexKinds(board) >= 2;
-                bool split = ColorSplit(board);
                 bool fakeHide = SameColorUnderBees(board);
                 var result = GardenSolve.Search(board, NodeCap);
                 int tangle = RandomTangles(i, Trials);
                 int parkFail = FuzzPestPark(i, ParkTrials);
-                bool ok = result.Outlook == GardenSolve.Outlook.Winnable && mixed && !split && !fakeHide && parkFail == 0;
+                var kitSets = BoardValidator.CheckKitSets(board);
+                bool ok = result.Outlook == GardenSolve.Outlook.Winnable && kitSets.Ok && !fakeHide && parkFail == 0;
                 if (!ok) all = false;
                 sb.Append(level.Number).Append(' ').Append(level.Id);
                 sb.Append(ok ? " OK" : " FAIL");
                 sb.Append(" outlook=").Append(result.Outlook);
                 sb.Append(" moves=").Append(result.Moves);
-                sb.Append(" mixed=").Append(mixed);
-                sb.Append(" split=").Append(split);
+                sb.Append(" kit-sets=").Append(kitSets.Message);
                 sb.Append(" fake-hide=").Append(fakeHide);
                 sb.Append(" random-tangle=").Append(tangle).Append('/').Append(Trials);
                 sb.Append(" pest-park-fail=").Append(parkFail);
                 sb.Append(" pests=s").Append(LevelData.SparrowVisits).Append("/h").Append(LevelData.HawkVisits);
                 sb.Append(" | ").Append(flocks);
+                sb.Append(" sets=").Append(SetLine(board));
                 sb.Append('\n');
                 Debug.Log("Flock Five solve " + level.Number + " " + level.Id +
                     (ok ? " OK" : " FAIL") + " " + result.Outlook +
@@ -158,27 +157,6 @@ namespace FlockFive.Editor
             return b.TryMove(pick.from, pick.to, out _);
         }
 
-        static int SexKinds(Board b)
-        {
-            bool f = false, m = false, n = false;
-            for (int i = 0; i < b.Branches.Count; i++)
-            {
-                var br = b.Branches[i];
-                for (int k = 0; k < br.Birds.Count; k++)
-                {
-                    var s = br.Birds[k].Sex;
-                    if (s == BirdSex.Female) f = true;
-                    else if (s == BirdSex.Male) m = true;
-                    else n = true;
-                }
-            }
-            int kinds = 0;
-            if (f) kinds++;
-            if (m) kinds++;
-            if (n) kinds++;
-            return kinds;
-        }
-
         static bool SameColorUnderBees(Board b)
         {
             if (b == null) return false;
@@ -198,50 +176,50 @@ namespace FlockFive.Editor
             return false;
         }
 
-        static bool ColorSplit(Board b)
+        static string SetLine(Board b)
         {
-            var sex = new int[Palette.Max];
-            var have = new bool[Palette.Max];
-            for (int i = 0; i < sex.Length; i++) sex[i] = -1;
-            for (int i = 0; i < b.Branches.Count; i++)
+            var sets = BoardValidator.SetsPerColor(b);
+            string[] cn = { "R", "G", "T", "V", "P" };
+            var sb = new StringBuilder();
+            for (int c = 0; c < sets.Length && c < cn.Length; c++)
             {
-                var br = b.Branches[i];
-                for (int k = 0; k < br.Birds.Count; k++)
-                {
-                    int c = (int)br.Birds[k].Color;
-                    if ((uint)c >= (uint)sex.Length) continue;
-                    int s = (int)br.Birds[k].Sex;
-                    if (!have[c]) { have[c] = true; sex[c] = s; }
-                    else if (sex[c] != s) return true;
-                }
+                if (sets[c] == 0) continue;
+                if (sb.Length > 0) sb.Append(' ');
+                sb.Append(cn[c]).Append(sets[c]);
             }
-            return false;
+            return sb.ToString();
         }
 
+        // One letter per kit that color wears: N bare, C crown, B bow.
         static string FlockSummary(Board b)
         {
-            var n = new int[Palette.Max * 3];
+            var n = new int[Palette.Max * Palette.Kits];
             for (int i = 0; i < b.Branches.Count; i++)
             {
                 var br = b.Branches[i];
                 for (int k = 0; k < br.Birds.Count; k++)
                 {
                     var bird = br.Birds[k];
-                    n[(int)bird.Color * 3 + (int)bird.Sex]++;
+                    int ix = (int)bird.Color * Palette.Kits + (int)bird.Kit;
+                    if ((uint)ix < (uint)n.Length) n[ix]++;
                 }
             }
             var sb = new StringBuilder();
             string[] cn = { "R", "G", "T", "V", "P" };
-            string[] sn = { "N", "F", "M" };
+            string[] kn = { "N", "C", "B" };
             for (int c = 0; c < Palette.Max; c++)
             {
-                for (int s = 0; s < 3; s++)
+                int sets = 0;
+                var letters = new StringBuilder();
+                for (int k = 0; k < Palette.Kits; k++)
                 {
-                    int k = n[c * 3 + s];
-                    if (k == 0) continue;
-                    if (sb.Length > 0) sb.Append(' ');
-                    sb.Append(cn[c]).Append(sn[s]).Append(k);
+                    if (n[c * Palette.Kits + k] == 0) continue;
+                    sets++;
+                    letters.Append(kn[k]);
                 }
+                if (sets == 0) continue;
+                if (sb.Length > 0) sb.Append(' ');
+                sb.Append(cn[c]).Append(sets).Append('(').Append(letters).Append(')');
             }
             return sb.ToString();
         }

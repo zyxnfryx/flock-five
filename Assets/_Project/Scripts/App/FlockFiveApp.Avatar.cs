@@ -282,7 +282,7 @@ namespace FlockFive
         // The open Daily card holds the bird on the fixed pad. It does not resize it.
         bool DailyCardHoldsBird() => _dailyOpen && _avatarPlaced;
 
-        // 0 none, 1 bow, 2 crown. Out of range stays bare. Never writes SexOf.
+        // 0 none, 1 bow, 2 crown. Out of range stays bare. Never writes a garden kit.
         static int SavedAvatarKit()
         {
             int k = PlayerPrefs.GetInt(AvatarKitPref, 0);
@@ -813,7 +813,7 @@ namespace FlockFive
             if (look) BeginSettle();
         }
 
-        // SexOf stays the garden rule. This only writes the splash color.
+        // Garden kits stay on the board. This only writes the splash color.
         void PickAvatarColor(int i)
         {
             if (i < 0 || i > 4) return;
@@ -1240,7 +1240,7 @@ namespace FlockFive
             return DrawDressedBird(col, kit, c, icon, faceLeft, wings, clock, buttonSeat, glideSlot);
         }
 
-        // Bow sits behind the body. Crown sits in front. Neither path writes SexOf.
+        // Bow sits behind the body. Crown sits in front. Neither path writes a garden kit.
         // buttonSeat is the five color buttons. Home and adopt birds leave it false.
         Rect DrawDressedBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool wings, float clock, bool buttonSeat = false, int glideSlot = -1)
         {
