@@ -76,6 +76,10 @@ namespace FlockFive.Editor
                 "ring=" + ring.ToString("0.00") + " hole=" + hole.ToString("0.00")
                 + " tipDuty=" + tipDuty.ToString("0.00") + " tooth=" + tooth.ToString("0.00"));
 
+            float fillVar = GearIcon.FillVariance(px, n);
+            Check("gear-flat-fill", fillVar < 4f,
+                "var=" + fillVar.ToString("0.00"));
+
             var safe = new Rect(0f, 102f, W, H - 102f - 177f);
             float b80 = FlockFiveApp.SettingsGearBuild80Size(H);
             var drawn = FlockFiveApp.SettingsGearDrawnRect(W, H, safe);

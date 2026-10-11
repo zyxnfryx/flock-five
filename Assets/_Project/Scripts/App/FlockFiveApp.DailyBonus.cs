@@ -962,6 +962,12 @@ namespace FlockFive
 
         const float PointerAirFrac = 0.08f;
 
+        // Hub radius as a fraction of the wheel radius (0 at the center, 1 at the rim).
+        // The inner disc is this minus the gold ring. "$20,000" (10× at the 1000 cap, doubled)
+        // fits that disc with WheelHubPadPx on each side.
+        public const float WheelHubOuter = 0.36f;
+        public const float WheelHubRing = 0.042f;
+
         static void DailyRows(float s, Rect board, bool flower, out Rect title, out Rect streak, out Rect wheelR)
         {
             float cardW = StandardPopupWidth(s);
@@ -1164,15 +1170,184 @@ namespace FlockFive
         static void EnsureDailyStyles()
         {
             if (_dailyTitle != null) return;
-            _dailyTitle = new GUIStyle(GUI.skin.label)
+            // GUI.skin throws outside OnGUI. A batch suite gets the built-in font.
+            GUIStyle proto = null;
+            try
             {
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false
-            };
+                var skin = GUI.skin;
+                if (skin != null) proto = skin.label;
+            }
+            catch (System.ArgumentException)
+            {
+                proto = null;
+            }
+            _dailyTitle = proto != null ? new GUIStyle(proto) : new GUIStyle();
+            if (_dailyTitle.font == null)
+                _dailyTitle.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _dailyTitle.fontStyle = FontStyle.Bold;
+            _dailyTitle.alignment = TextAnchor.MiddleCenter;
+            _dailyTitle.wordWrap = false;
             _dailyClaim = new GUIStyle(_dailyTitle);
             _dailyTile = new GUIStyle(_dailyTitle);
             _dailyLine = new GUIStyle(_dailyTitle);
+        }
+
+        public static float WheelHubInnerDiameter(float wheelWidth)
+        {
+            float inner = WheelHubOuter - WheelHubRing;
+            if (inner < 0.08f) inner = 0.08f;
+            return Mathf.Max(8f, wheelWidth) * inner;
+        }
+
+        public static float WheelHubPadPx(float wheelWidth)
+        {
+            return Mathf.Max(8f, Mathf.Max(8f, wheelWidth) * 0.030f);
+        }
+
+        public static float WheelHubBudgetW(float wheelWidth)
+        {
+            return Mathf.Max(8f, WheelHubInnerDiameter(wheelWidth) - WheelHubPadPx(wheelWidth) * 2f);
+        }
+
+        // Full dollars. Money.Format turns 20000 into "$20K"; the hub keeps "$20,000".
+        public static string WheelHubText(int coins)
+        {
+            if (coins < 0) coins = 0;
+            return "$" + coins.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        public static int WheelHubFontFloor(float wheelWidth)
+        {
+            int floor = Mathf.RoundToInt(Mathf.Max(8f, wheelWidth) * 0.036f);
+            if (floor < 16) floor = 16;
+            if (floor > 40) floor = 40;
+            return floor;
+        }
+
+        // Largest size that fits the inner disc. Shrinks only as far as the string needs.
+        public static int WheelHubFont(string text, float wheelWidth)
+        {
+            EnsureDailyStyles();
+            float budgetW = WheelHubBudgetW(wheelWidth);
+            float budgetH = Mathf.Max(8f, WheelHubInnerDiameter(wheelWidth) * 0.70f);
+            int hi = Mathf.RoundToInt(Mathf.Max(8f, wheelWidth) * 0.14f);
+            if (hi < 18) hi = 18;
+            if (hi > 96) hi = 96;
+            int lo = WheelHubFontFloor(wheelWidth);
+            if (lo > hi) lo = hi;
+            int size = FitFont(_dailyLine, text ?? "", budgetW, budgetH, lo, hi);
+            int keep = _dailyLine.fontSize;
+            bool wrap = _dailyLine.wordWrap;
+            _dailyLine.wordWrap = false;
+            var content = new GUIContent(text ?? "");
+            while (size > 8)
+            {
+                _dailyLine.fontSize = size;
+                var sz = _dailyLine.CalcSize(content);
+                if (sz.x <= budgetW + 0.5f && sz.y <= budgetH + 0.5f) break;
+                size--;
+            }
+            _dailyLine.fontSize = keep;
+            _dailyLine.wordWrap = wrap;
+            return size;
+        }
+
+        public static float WheelHubMeasure(string text, float wheelWidth)
+        {
+            EnsureDailyStyles();
+            int font = WheelHubFont(text, wheelWidth);
+            int keep = _dailyLine.fontSize;
+            bool wrap = _dailyLine.wordWrap;
+            _dailyLine.wordWrap = false;
+            _dailyLine.fontSize = font;
+            float w = _dailyLine.CalcSize(new GUIContent(text ?? "")).x;
+            _dailyLine.fontSize = keep;
+            _dailyLine.wordWrap = wrap;
+            return w;
+        }
+
+        // Radial label box. Stays outside the hub and inside the rim. The box
+        // shrinks only when the grown hub would otherwise eat the label.
+        public static void WheelLabelMetrics(float wheelWidth, bool jackpot, out float radius, out float boxW, out float boxH)
+        {
+            float w = Mathf.Max(8f, wheelWidth);
+            float hubR = w * WheelHubOuter * 0.5f;
+            float rim = w * 0.455f;
+            float gap = Mathf.Max(4f, w * 0.014f);
+            float room = rim - hubR - gap;
+            if (room < w * 0.12f) room = w * 0.12f;
+            float wantW = w * (jackpot ? 0.30f : 0.26f);
+            boxW = wantW < room ? wantW : room;
+            boxH = w * (jackpot ? 0.125f : 0.10f);
+            float half = boxW * 0.5f;
+            float minRad = hubR + gap + half;
+            float maxRad = rim - half;
+            float rad = w * 0.32f;
+            if (rad < minRad) rad = minRad;
+            if (rad > maxRad) rad = maxRad;
+            if (rad < 1f) rad = 1f;
+            radius = rad;
+        }
+
+        // Distance from the wheel center to the pointer tip. Same dip as DrawWheelPointer.
+        public static float WheelPointerTipRadius(float wheelWidth)
+        {
+            float w = Mathf.Max(8f, wheelWidth);
+            float pw = w * 0.118f;
+            float ph = pw * (WheelPointerH / (float)WheelPointerW);
+            float dip = ph * 0.60f;
+            return w * 0.5f - dip;
+        }
+
+        public static Rect WheelWedgeLabelRect(Rect wheel, int wedge, float clockwiseDegrees)
+        {
+            bool jack = wedge == DailyBonus.JackpotWedge;
+            WheelLabelMetrics(wheel.width, jack, out float radius, out float lw, out float lh);
+            // The landed wedge points straight at the tip. Pull that one label
+            // inside the tip so the amount stays readable. The other wedges keep
+            // the full box.
+            if (wedge == DailyBonus.WedgeUnderPointer(clockwiseDegrees))
+            {
+                float w = Mathf.Max(8f, wheel.width);
+                float outer = WheelPointerTipRadius(w) - Mathf.Max(4f, w * 0.010f);
+                float hubR = w * WheelHubOuter * 0.5f;
+                float gap = Mathf.Max(4f, w * 0.014f);
+                float room = outer - hubR - gap;
+                if (room < 8f) room = 8f;
+                if (lw > room) lw = room;
+                float half = lw * 0.5f;
+                radius = hubR + gap + half;
+                float maxRad = outer - half;
+                if (radius > maxRad) radius = maxRad;
+                if (radius < 1f) radius = 1f;
+            }
+            var at = wheel.center + DailyBonus.WedgeOffset(wedge, clockwiseDegrees, radius);
+            return new Rect(at.x - lw * 0.5f, at.y - lh * 0.5f, lw, lh);
+        }
+
+        // Axis-aligned bounds of the rotated label. Same clockwise sense as RotateAroundPivot.
+        public static Rect WheelWedgeLabelAabb(Rect wheel, int wedge, float clockwiseDegrees)
+        {
+            var lab = WheelWedgeLabelRect(wheel, wedge, clockwiseDegrees);
+            float deg = DailyBonus.WedgeLabelDegrees(wedge, clockwiseDegrees);
+            var c = lab.center;
+            float hw = lab.width * 0.5f;
+            float hh = lab.height * 0.5f;
+            float x0 = float.PositiveInfinity;
+            float y0 = float.PositiveInfinity;
+            float x1 = float.NegativeInfinity;
+            float y1 = float.NegativeInfinity;
+            for (int i = 0; i < 4; i++)
+            {
+                float sx = (i & 1) == 0 ? -hw : hw;
+                float sy = (i & 2) == 0 ? -hh : hh;
+                var q = c + DailyBonus.RotateClockwise(new Vector2(sx, sy), deg);
+                if (q.x < x0) x0 = q.x;
+                if (q.y < y0) y0 = q.y;
+                if (q.x > x1) x1 = q.x;
+                if (q.y > y1) y1 = q.y;
+            }
+            return Rect.MinMaxRect(x0, y0, x1, y1);
         }
 
         static void EnsureDailyFit(float s, Rect titleR, Rect streakR, Rect disc, float wheel)
@@ -1255,23 +1430,22 @@ namespace FlockFive
 
             EnsureDailyStyles();
             int level = DailyBonus.HighestLevel;
-            float radius = wheel.width * 0.32f;
             for (int i = 0; i < DailyBonus.WedgeCount; i++)
             {
                 bool jack = i == DailyBonus.JackpotWedge;
-                var at = wheel.center + DailyBonus.WedgeOffset(i, angle, radius);
-                float lw = wheel.width * (jack ? 0.30f : 0.26f);
-                float lh = wheel.width * (jack ? 0.125f : 0.10f);
-                var lab = new Rect(at.x - lw * 0.5f, at.y - lh * 0.5f, lw, lh);
+                var lab = WheelWedgeLabelRect(wheel, i, angle);
                 string text = Money.Format(DailyBonus.Prize(level, i));
-                _dailyTile.fontSize = jack ? _dailyJackpotPx : _dailyTilePx;
+                int cap = jack ? _dailyJackpotPx : _dailyTilePx;
+                int lo = 8;
+                if (lo > cap) lo = cap;
+                _dailyTile.fontSize = FitFont(_dailyTile, text, lab.width * 0.94f, lab.height * 0.90f, lo, cap);
                 _dailyTile.fontStyle = FontStyle.Bold;
                 var hold = GUI.matrix;
                 GUIUtility.RotateAroundPivot(DailyBonus.WedgeLabelDegrees(i, angle), lab.center);
                 StampOutlined(lab, text, _dailyTile, new Color(1f, 0.97f, 0.88f), jack ? 2 : 1, jack ? 3 : 1);
                 GUI.matrix = hold;
                 if (!jack) continue;
-                var starAt = wheel.center + DailyBonus.WedgeOffset(i, angle, wheel.width * 0.36f);
+                var starAt = wheel.center + DailyBonus.WedgeOffset(i, angle + DailyBonus.JackpotStarLean, wheel.width * 0.36f);
                 float tw = 0.55f + 0.45f * Mathf.Sin(Time.unscaledTime * 3.2f);
                 SparkleFx.DrawAt(starAt, wheel.width * 0.05f, 0.40f + 0.45f * tw, DailyBonus.JackpotStar);
             }
@@ -1287,14 +1461,15 @@ namespace FlockFive
                 GUI.color = Color.white;
             }
 
-            float hub = wheel.width * 0.28f;
-            var hubR = new Rect(wheel.center.x - hub * 0.5f, wheel.center.y - hub * 0.5f, hub, hub);
             int payMul = _wheelPayMul < 1 ? 1 : _wheelPayMul;
             if (landed && DailyBonus.SpinCoins >= 100)
             {
-                _dailyLine.fontSize = _dailyBonusPx;
                 int shown = DailyBonus.SpinCoins * payMul;
-                string won = Money.Format(shown);
+                string won = WheelHubText(shown);
+                float budgetW = WheelHubBudgetW(wheel.width);
+                float budgetH = Mathf.Max(8f, WheelHubInnerDiameter(wheel.width) * 0.70f);
+                _dailyLine.fontSize = WheelHubFont(won, wheel.width);
+                var hubR = new Rect(wheel.center.x - budgetW * 0.5f, wheel.center.y - budgetH * 0.5f, budgetW, budgetH);
                 StampOutlined(hubR, won, _dailyLine, new Color(1f, 0.95f, 0.72f), 1, 2);
             }
 
@@ -1308,8 +1483,7 @@ namespace FlockFive
             if (_wheelPointer == null || wheel.width < 8f) return;
             float pw = wheel.width * 0.118f;
             float ph = pw * (WheelPointerH / (float)WheelPointerW);
-            float dip = ph * 0.60f;
-            Vector2 tipAt = wheel.center + DailyBonus.PointerTipDir * (wheel.width * 0.5f - dip);
+            Vector2 tipAt = wheel.center + DailyBonus.PointerTipDir * WheelPointerTipRadius(wheel.width);
             Vector2 pinAt = tipAt + DailyBonus.PointerTipDir * ph;
             float top = tipAt.y < pinAt.y ? tipAt.y : pinAt.y;
             var pointer = new Rect(tipAt.x - pw * 0.5f, top, pw, ph);
@@ -1354,15 +1528,53 @@ namespace FlockFive
             var shake = RewardCardShake(age, s);
             var seat = RewardStampRect(panel, 2);
             seat = BadgeBelowTitle(seat, title);
+            seat = WheelBadgeInCorner(seat, title, panel);
             seat.x += shake.x;
             seat.y += shake.y;
             DrawRewardStamp(seat, 2, 1f, age, sparkle, false);
         }
 
-        // Resting x2 seat: the shared stamp on the result, clear of the title.
+        // Resting x2 seat: the shared stamp on the result, clear of the title
+        // and of every wedge label, tucked into the panel's top-right corner.
         public static Rect WheelResultBadgeRect(Rect title, Rect result, int mul)
         {
-            return BadgeBelowTitle(RewardStampRect(result, mul), title);
+            return WheelBadgeInCorner(BadgeBelowTitle(RewardStampRect(result, mul), title), title, result);
+        }
+
+        // An empty title (the Watch Ad bar) keeps the shared stamp. A wheel that
+        // sits under the title moves the seat up into the corner, shrunk so it
+        // stays below the title and above every rotated wedge label.
+        public static Rect WheelBadgeInCorner(Rect seat, Rect title, Rect wheel)
+        {
+            if (seat.width < 2f || seat.height < 2f) return seat;
+            if (title.width < 2f || title.height < 2f) return seat;
+            if (wheel.width < 8f || wheel.height < 8f) return seat;
+            if (wheel.yMin < title.yMax - 2f) return seat;
+
+            float labelTop = float.PositiveInfinity;
+            int n = DailyBonus.WedgeCount;
+            for (int land = 0; land < n; land++)
+            {
+                float ang = DailyBonus.PointerAngle(land);
+                for (int w = 0; w < n; w++)
+                {
+                    float top = WheelWedgeLabelAabb(wheel, w, ang).yMin;
+                    if (top < labelTop) labelTop = top;
+                }
+            }
+            if (labelTop > 1e8f) return seat;
+            const float gap = 8f;
+            float y0 = title.yMax + 6f;
+            float y1 = labelTop - gap;
+            float pocket = y1 - y0;
+            if (pocket < 8f) return seat;
+            float size = seat.width < seat.height ? seat.width : seat.height;
+            if (size > pocket) size = pocket;
+            float right = title.xMax > wheel.xMax ? title.xMax : wheel.xMax;
+            float x = right - size;
+            float y = y0;
+            if (y + size > y1) y = y1 - size;
+            return new Rect(x, y, size, size);
         }
 
         // Drop the seat so its top clears the title. A miss stays put.
@@ -1501,7 +1713,7 @@ namespace FlockFive
             var px = new Color32[n * n];
             float c = (n - 1) * 0.5f;
             float rad = c - 1f;
-            const float starAng = 315f;
+            float starAng = DailyBonus.JackpotWedge * DailyBonus.WedgeArc + DailyBonus.JackpotStarLean;
             float starRad = starAng * Mathf.Deg2Rad;
             float starDist = 0.72f;
             float scx = Mathf.Sin(starRad) * starDist;
@@ -1534,7 +1746,7 @@ namespace FlockFive
                     }
                     if (jackpot)
                     {
-                        float glow = Mathf.Clamp01(1f - spoke / 16f) * Mathf.Clamp01((dist - 0.28f) * 2.2f);
+                        float glow = Mathf.Clamp01(1f - spoke / 16f) * Mathf.Clamp01((dist - WheelHubOuter) * 2.2f);
                         face = Color.Lerp(face, new Color(1f, 0.42f, 0.40f, 1f), glow * 0.22f);
                         float sdx = nx - scx;
                         float sdy = ny - scy;
@@ -1548,11 +1760,12 @@ namespace FlockFive
                         Color rim = Color.Lerp(new Color(1f, 0.90f, 0.55f, 1f), new Color(0.42f, 0.24f, 0.08f, 1f), k);
                         face = Color.Lerp(face, rim, Mathf.Clamp01((dist - 0.90f) / 0.05f));
                     }
-                    if (dist < 0.20f)
+                    if (dist < WheelHubOuter)
                     {
-                        float k = Mathf.Clamp01(Mathf.InverseLerp(0.20f, 0.12f, dist));
+                        float ringIn = WheelHubOuter - WheelHubRing;
+                        float k = Mathf.Clamp01(Mathf.InverseLerp(WheelHubOuter, ringIn - 0.02f, dist));
                         face = Color.Lerp(face, new Color(0.30f, 0.16f, 0.06f, 1f), k);
-                        if (dist > 0.155f && dist < 0.20f)
+                        if (dist > ringIn && dist < WheelHubOuter)
                             face = Color.Lerp(face, new Color(0.95f, 0.80f, 0.36f, 1f), 0.85f);
                     }
                     if (jackpot && InPointStar(nx, ny, scx, scy, 0.046f, 0.018f, tip))
@@ -1591,13 +1804,13 @@ namespace FlockFive
                 {
                     float nx = (x + 0.5f - c) / rad;
                     float dist = Mathf.Sqrt(nx * nx + ny * ny);
-                    if (dist > 0.98f || dist < 0.20f) continue;
+                    if (dist > 0.98f || dist < WheelHubOuter) continue;
                     float ang = Mathf.Atan2(nx, ny) * Mathf.Rad2Deg;
                     if (ang < 0f) ang += 360f;
                     float fromTop = ang > 180f ? 360f - ang : ang;
                     if (fromTop > 22.5f) continue;
                     float side = 1f - fromTop / 22.5f;
-                    float a = Mathf.Clamp01(side * 1.4f) * Mathf.Clamp01((0.98f - dist) * 8f) * Mathf.Clamp01((dist - 0.20f) * 8f);
+                    float a = Mathf.Clamp01(side * 1.4f) * Mathf.Clamp01((0.98f - dist) * 8f) * Mathf.Clamp01((dist - WheelHubOuter) * 8f);
                     var col = new Color(1f, 0.94f, 0.62f, 0.72f * a);
                     px[y * n + x] = col;
                 }

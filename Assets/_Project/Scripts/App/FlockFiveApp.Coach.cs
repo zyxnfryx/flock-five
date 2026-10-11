@@ -3107,6 +3107,34 @@ namespace FlockFive
                 drawText.height += grow;
                 drawR.height += grow;
             }
+            float fade = EaseOutCubic(_coachFade);
+            if (slack < 0.999f && _coachSizedTextH > 1f)
+            {
+                var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+                float hangX = hang.x + (platePad.x > 0f ? platePad.x : 0f);
+                float hangY = hang.y + (platePad.y > 0f ? platePad.y : 0f);
+                var snug = CaptionLayout.MeasureSnug(st, _coachShown ?? text, _coachSizedPx, hangX, hangY);
+                float cx = drawText.center.x;
+                float cy = drawText.center.y;
+                if (topAlign)
+                {
+                    var full = CoachPanelRect(drawR, platePad);
+                    cy = full.y + snug.PlateH * 0.5f;
+                    float lift = drawText.center.y - cy;
+                    if (lift > 0.5f) drawText.y -= lift;
+                    cx = drawText.center.x;
+                }
+                var plate = new Rect(cx - snug.PlateW * 0.5f, cy - snug.PlateH * 0.5f, snug.PlateW, snug.PlateH);
+                var inner = new Rect(
+                    plate.x + hangX,
+                    plate.y + hangY,
+                    Mathf.Max(4f, plate.width - hangX * 2f),
+                    Mathf.Max(4f, plate.height - hangY * 2f));
+                NoteTutorPlate(plate);
+                DrawCoachPanel(inner, fade, platePad, opaque);
+                StampBannerText(drawText, _coachShown ?? text, st, fade, true);
+                return;
+            }
             var plateBox = CaptionPlateBox(drawR, platePad, _coachSizedTextH, drawText.height, slack);
             if (topAlign && plateBox.y > drawR.y)
             {
@@ -3115,7 +3143,6 @@ namespace FlockFive
                 drawText.y -= lift;
             }
             NoteTutorPlate(CoachPanelRect(plateBox, platePad));
-            float fade = EaseOutCubic(_coachFade);
             DrawCoachPanel(plateBox, fade, platePad, opaque);
             StampBannerText(drawText, _coachShown ?? text, st, fade, true);
         }

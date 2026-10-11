@@ -554,6 +554,117 @@ namespace FlockFive.Editor
                 && daily.IndexOf("DrawWheelX2(bar,") >= 0
                 && daily.IndexOf("DrawWheelX2(board,") < 0,
                 "seat=" + seat + " wheel=" + onWheel + " panel=" + onPanel + " uses=" + x2Uses);
+
+            bool hubFit = true;
+            string hubDetail = "fits";
+            float[] hubWidths = { 480f, 720f, 860f, 1000f };
+            for (int wi = 0; wi < hubWidths.Length && hubFit; wi++)
+            {
+                float ww = hubWidths[wi];
+                float budget = FlockFiveApp.WheelHubBudgetW(ww);
+                for (int b = 100; b <= DailyBonus.BaseCap && hubFit; b += 100)
+                {
+                    for (int m = 0; m < DailyBonus.WedgeMul.Length && hubFit; m++)
+                    {
+                        int mul = DailyBonus.WedgeMul[m];
+                        if (mul < 1) mul = 1;
+                        for (int pay = 1; pay <= 2; pay++)
+                        {
+                            int coins = b * mul * pay;
+                            string shown = FlockFiveApp.WheelHubText(coins);
+                            float measured = FlockFiveApp.WheelHubMeasure(shown, ww);
+                            if (measured <= budget + 0.5f) continue;
+                            hubFit = false;
+                            hubDetail = shown + " w=" + ww.ToString("0")
+                                + " measured=" + measured.ToString("0.0")
+                                + " budget=" + budget.ToString("0.0");
+                            break;
+                        }
+                    }
+                }
+            }
+            int hubPx = FlockFiveApp.WheelHubFont(FlockFiveApp.WheelHubText(20000), 860f);
+            FlockFiveApp.WheelLabelMetrics(860f, false, out _, out float labelW, out _);
+            FlockFiveApp.WheelLabelMetrics(860f, true, out _, out float jackW, out _);
+            Check("hub-text-fits",
+                hubFit && hubPx >= 28
+                && FlockFiveApp.WheelHubText(20000) == "$20,000"
+                && FlockFiveApp.WheelHubText(2000) == "$2,000"
+                && labelW >= 860f * 0.18f
+                && jackW >= 860f * 0.18f,
+                hubDetail + " font=" + hubPx
+                + " label=" + labelW.ToString("0.0")
+                + " jack=" + jackW.ToString("0.0"));
+
+            bool labelsClear = true;
+            string labelDetail = "clear";
+            float[] spinWidths = { 480f, 660f, 860f };
+            for (int wi = 0; wi < spinWidths.Length && labelsClear; wi++)
+            {
+                float ww = spinWidths[wi];
+                var spin = new Rect(40f, 200f, ww, ww);
+                float hubR = ww * FlockFiveApp.WheelHubOuter * 0.5f;
+                float tip = FlockFiveApp.WheelPointerTipRadius(ww);
+                for (int land = 0; land < DailyBonus.WedgeCount && labelsClear; land++)
+                {
+                    float ang = DailyBonus.PointerAngle(land);
+                    for (int w = 0; w < DailyBonus.WedgeCount; w++)
+                    {
+                        var lab = FlockFiveApp.WheelWedgeLabelRect(spin, w, ang);
+                        var d = lab.center - spin.center;
+                        float rad = Mathf.Sqrt(d.x * d.x + d.y * d.y);
+                        float inner = rad - lab.width * 0.5f;
+                        float outer = rad + lab.width * 0.5f;
+                        bool under = w == DailyBonus.WedgeUnderPointer(ang);
+                        bool clearsTip = !under || outer <= tip - 1f;
+                        if (inner + 0.5f >= hubR && outer <= ww * 0.49f && clearsTip) continue;
+                        labelsClear = false;
+                        labelDetail = "w=" + w + " land=" + land
+                            + " inner=" + inner.ToString("0.0")
+                            + " hub=" + hubR.ToString("0.0")
+                            + " outer=" + outer.ToString("0.0")
+                            + " tip=" + tip.ToString("0.0");
+                        break;
+                    }
+                }
+            }
+            Check("wedge-label-clears-hub", labelsClear, labelDetail);
+
+            bool badgeClear = true;
+            string badgeDetail = "clear";
+            var badge = FlockFiveApp.WheelResultBadgeRect(title, wheel, 2);
+            if (title.Overlaps(badge))
+            {
+                badgeClear = false;
+                badgeDetail = "title " + badge;
+            }
+            for (int land = 0; land < DailyBonus.WedgeCount && badgeClear; land++)
+            {
+                float ang = DailyBonus.PointerAngle(land);
+                for (int w = 0; w < DailyBonus.WedgeCount; w++)
+                {
+                    var box = FlockFiveApp.WheelWedgeLabelAabb(wheel, w, ang);
+                    if (!badge.Overlaps(box)) continue;
+                    badgeClear = false;
+                    badgeDetail = "land=" + land + " w=" + w + " badge=" + badge + " lab=" + box;
+                    break;
+                }
+            }
+            var bar = new Rect(40f, 900f, 700f, 90f);
+            var barStamp = FlockFiveApp.RewardStampRect(bar, 2);
+            var barSeat = FlockFiveApp.WheelResultBadgeRect(default, bar, 2);
+            bool barKept = Mathf.Abs(barSeat.x - barStamp.x) < 0.5f
+                && Mathf.Abs(barSeat.y - barStamp.y) < 0.5f
+                && Mathf.Abs(barSeat.width - barStamp.width) < 0.5f;
+            bool cornerish = badge.xMax > wheel.xMax - wheel.width * 0.08f
+                && badge.yMin <= title.yMax + 8f
+                && badge.yMax <= title.yMax + 8f + badge.height + 0.5f;
+            Check("wheel-badge-clears-labels",
+                badgeClear && barKept && cornerish
+                && !title.Overlaps(badge)
+                && daily.IndexOf("StreakBadge.Draw") < 0
+                && app.IndexOf("StreakBadge.Draw") >= 0,
+                badgeDetail + " badge=" + badge + " barKept=" + barKept);
         }
 
         static int CountOf(string hay, string needle)
@@ -824,6 +935,51 @@ namespace FlockFive.Editor
                 pad.x + 0.01f >= CaptionLayout.PadXMin && pad.y + 0.01f >= CaptionLayout.PadYMin
                 && pad.x > 18f && pad.y > 12f,
                 "pad=" + pad.x.ToString("0.0") + "x" + pad.y.ToString("0.0"));
+
+            bool snug = true;
+            string snugDetail = "snug";
+            var seenCap = new System.Collections.Generic.HashSet<string>();
+            var capLines = FlockFiveApp.PaintedLessonLines();
+            for (int i = 0; i < capLines.Length; i++)
+            {
+                string line = capLines[i];
+                if (string.IsNullOrEmpty(line) || !seenCap.Add(line)) continue;
+                var fit = FlockFiveApp.LessonCaptionFit(line, W, H);
+                if (fit.LineH < 8f || fit.TextW < 8f || fit.TextH < 8f)
+                {
+                    snug = false;
+                    snugDetail = "empty [" + line + "]";
+                    break;
+                }
+                var want = CaptionLayout.TextPad(fit.LineH);
+                float wantX = want.x > pad.x ? want.x : pad.x;
+                float wantY = want.y > pad.y ? want.y : pad.y;
+                float extraX = (fit.PlateW - fit.TextW) * 0.5f;
+                float extraY = (fit.PlateH - fit.TextH) * 0.5f;
+                bool padMatch = Mathf.Abs(fit.PadX - wantX) <= 1.5f
+                    && Mathf.Abs(fit.PadY - wantY) <= 1.5f
+                    && Mathf.Abs(extraX - fit.PadX) <= 1.5f
+                    && Mathf.Abs(extraY - fit.PadY) <= 1.5f;
+                if (padMatch) continue;
+                snug = false;
+                snugDetail = "pad " + fit.PadX.ToString("0.0") + "x" + fit.PadY.ToString("0.0")
+                    + " want " + wantX.ToString("0.0") + "x" + wantY.ToString("0.0")
+                    + " [" + line.Replace("\n", " / ") + "]";
+                break;
+            }
+            var bee = FlockFiveApp.LessonCaptionFit(CaptionLayout.HiveGardenLine, W, H);
+            bool beeTight = bee.PlateH < bee.TextH + bee.LineH * 1.8f
+                && bee.PlateW < bee.TextW + bee.LineH * 2.4f
+                && bee.PlateW < W * 0.92f;
+            string coachSrc = System.IO.File.ReadAllText(System.IO.Path.Combine(
+                System.IO.Path.GetDirectoryName(Application.dataPath),
+                "Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs"));
+            Check("caption-snug",
+                snug && beeTight && coachSrc.IndexOf("MeasureSnug(") >= 0,
+                snugDetail
+                + " bee=" + bee.PlateW.ToString("0") + "x" + bee.PlateH.ToString("0")
+                + " text=" + bee.TextW.ToString("0") + "x" + bee.TextH.ToString("0")
+                + " line=" + bee.LineH.ToString("0.0"));
 
             var safe = new Rect(0f, 102f, W, H - 102f - 177f);
             FlockFiveApp.GardenCorners(W, H, safe, out var restart, out var hive);

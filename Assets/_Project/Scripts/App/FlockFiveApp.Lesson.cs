@@ -81,6 +81,19 @@ namespace FlockFive
             return fit.Font;
         }
 
+        // Painted plate of a standard caption: the same wrap and font the coach
+        // fits, then CaptionLayout.MeasureSnug so the box hugs the lines.
+        public static CaptionLayout.SnugPlate LessonCaptionFit(string text, float screenW, float screenH)
+        {
+            float s = Mathf.Max(screenH / 720f, 1f);
+            float seatW = LessonColumnWidth(screenW, screenH);
+            float padX = Mathf.Clamp(seatW * 0.055f, 10f * s, 18f * s);
+            float textW = Mathf.Max(48f, seatW - padX * 2f);
+            var fit = FitLessonText(text, textW, 4096f, 12, Mathf.RoundToInt(32f * s), screenW, screenH);
+            var hang = CaptionLayout.BoxPad(screenH);
+            return CaptionLayout.MeasureSnug(CoachCaptionStyle(), fit.Shown, fit.Font, hang.x, hang.y);
+        }
+
         // Every sentence a lesson plate can paint, including the multiline forms.
         public static string[] PaintedLessonLines()
         {

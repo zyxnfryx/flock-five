@@ -151,6 +151,83 @@ namespace FlockFive
             return new Vector2(x, y);
         }
 
+        public struct SnugPlate
+        {
+            public int Font;
+            public float TextW;
+            public float TextH;
+            public float LineH;
+            public float PadX;
+            public float PadY;
+            public float PlateW;
+            public float PlateH;
+        }
+
+        // One line of the coach font, used as the caption's padding unit.
+        public static float LineHeight(GUIStyle style, int font)
+        {
+            if (font < 1) font = 1;
+            Bind(style, "Mg", font, false);
+            float h = _scratch.CalcSize(_content).y;
+            if (h < font * 0.8f) h = font;
+            return h;
+        }
+
+        // About one line across and 0.6 of a line down. The plate uses this
+        // unless the shared BoxPad hang is already larger.
+        public static Vector2 TextPad(float lineH)
+        {
+            if (lineH < 1f) lineH = 1f;
+            return new Vector2(lineH * 1f, lineH * 0.6f);
+        }
+
+        // Plate that hugs `shown`. Pad is the larger of TextPad and the hang
+        // CoachPanelRect already adds, so the hang is part of the padding
+        // instead of extra empty plate.
+        public static SnugPlate MeasureSnug(GUIStyle style, string shown, int font, float hangX, float hangY)
+        {
+            var plate = new SnugPlate();
+            plate.Font = font < 1 ? 1 : font;
+            string text = shown ?? "";
+            float lineH = LineHeight(style, plate.Font);
+            plate.LineH = lineH;
+            float textW = 8f;
+            float textH = lineH;
+            if (text.Length > 0)
+            {
+                var parts = text.Split('\n');
+                textW = 0f;
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (parts[i].Length == 0) continue;
+                    Bind(style, parts[i], plate.Font, false);
+                    float w = _scratch.CalcSize(_content).x;
+                    if (w > textW) textW = w;
+                }
+                if (textW < 8f) textW = 8f;
+                Bind(style, text, plate.Font, true);
+                textH = _scratch.CalcHeight(_content, textW);
+                int rows = 1;
+                for (int i = 0; i < text.Length; i++)
+                    if (text[i] == '\n') rows++;
+                float stack = lineH * rows;
+                if (textH < stack * 0.85f) textH = stack;
+                if (textH < lineH) textH = lineH;
+            }
+            var want = TextPad(lineH);
+            float padX = want.x > hangX ? want.x : hangX;
+            float padY = want.y > hangY ? want.y : hangY;
+            if (hangX < 0f) hangX = 0f;
+            if (hangY < 0f) hangY = 0f;
+            plate.TextW = textW;
+            plate.TextH = textH;
+            plate.PadX = padX;
+            plate.PadY = padY;
+            plate.PlateW = textW + padX * 2f;
+            plate.PlateH = textH + padY * 2f;
+            return plate;
+        }
+
         // True only when the font draws the bee (U+1F41D). LegacyRuntime does not.
         // Font.HasCharacter misses non-BMP, so this asks for the glyph and checks
         // that both UTF-16 units come back with a real advance.

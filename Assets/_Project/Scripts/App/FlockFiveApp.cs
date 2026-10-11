@@ -1166,6 +1166,7 @@ namespace FlockFive
             Screen.SetResolution(1179, 2556, false);
             yield return WaitForHomePaint();
             yield return SnapBuild79(dir + "/b81-home.png", false, false);
+            yield return SnapGearZoom(dir + "/b81-gear-zoom.png");
             yield return SnapBuild79(dir + "/b81-settings-open.png", true, false);
             if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
             else PlayerPrefs.DeleteKey("flockfive.next");
@@ -1767,6 +1768,24 @@ namespace FlockFive
                 if (ready && t > 0.3f) yield break;
                 t += Time.unscaledDeltaTime;
                 yield return null;
+            }
+        }
+
+        // Gear bbox plus 20% of that side on each edge, square 512.
+        IEnumerator SnapGearZoom(string path)
+        {
+            PoseBuild79(false, false);
+            yield return new WaitForEndOfFrame();
+            var tex = ScreenCapture.CaptureScreenshotAsTexture();
+            if (tex == null) yield break;
+            try
+            {
+                var gear = SettingsGearDrawnRect(Screen.width, Screen.height, Screen.safeArea);
+                WriteCrop(tex, gear, 512, 0.40f, path);
+            }
+            finally
+            {
+                Destroy(tex);
             }
         }
 

@@ -397,82 +397,78 @@ namespace FlockFive
             return best;
         }
 
+        // One gold. The thick stroke is the only other tone. The hole is clear.
+        static readonly Color FillTone = new Color(0.86f, 0.58f, 0.18f, 1f);
+        static readonly Color OutlineTone = new Color(0.10f, 0.045f, 0.015f, 1f);
+
         static Color Sample(float x, float y)
         {
             float d = GearSdf(x, y);
             float half = Stroke * 0.5f;
             float aa = 1.6f / (Resolution * 0.5f);
-            float r = Mathf.Sqrt(x * x + y * y);
-            // Soft shadow sits down-screen. Texture +y is up, so the shape is
-            // sampled shifted up and the shadow lands below the cog.
-            float sd = GearSdf(x - 0.012f, y + 0.026f);
-            float shadow = Mathf.Clamp01(1f - Smooth(Mathf.InverseLerp(-0.004f, 0.040f, sd))) * 0.40f;
-
-            if (d > half + aa)
-            {
-                Color under = Color.clear;
-                if (r < HoleR - half * 0.35f) under = HoleShade(x, y, r);
-                if (shadow < 0.012f) return under;
-                var sh = new Color(0.05f, 0.025f, 0.012f, shadow);
-                if (under.a < 0.004f) return sh;
-                float a = under.a + sh.a * (1f - under.a);
-                if (a > 0.42f) a = 0.42f;
-                Color rgb = (under * under.a + sh * (sh.a * (1f - under.a))) / Mathf.Max(0.001f, under.a + sh.a * (1f - under.a));
-                rgb.a = a;
-                return rgb;
-            }
-
-            float e = 0.0065f;
-            float gx = GearSdf(x + e, y) - GearSdf(x - e, y);
-            float gy = GearSdf(x, y + e) - GearSdf(x, y - e);
-            float gl = Mathf.Sqrt(gx * gx + gy * gy);
-            float nx = gl > 1e-5f ? gx / gl : 0f;
-            float ny = gl > 1e-5f ? gy / gl : 1f;
-            // Light from the top-left. Outward normals facing it catch the bevel.
-            float ldot = nx * -0.52f + ny * 0.85f;
-            float light = Mathf.Clamp01(0.30f + (-x) * 0.62f + y * 0.70f);
-            Color deep = new Color(0.28f, 0.13f, 0.04f, 1f);
-            Color wood = new Color(0.62f, 0.38f, 0.12f, 1f);
-            Color gold = new Color(1f, 0.88f, 0.46f, 1f);
-            Color fill = Color.Lerp(deep, wood, Mathf.Clamp01(light * 1.05f));
-            fill = Color.Lerp(fill, gold, Mathf.Clamp01((light - 0.28f) * 0.95f));
-            float toothish = Mathf.Clamp01((r - (Body - 0.01f)) / 0.07f);
-            fill = Color.Lerp(fill, Color.Lerp(wood, gold, 0.72f), toothish * 0.28f);
-
-            float inside = -half - d;
-            float bevel = Mathf.Clamp01(1f - inside / 0.055f);
-            if (ldot >= 0f)
-                fill = Color.Lerp(fill, new Color(1f, 0.97f, 0.78f, 1f), bevel * ldot * 0.82f);
-            else
-                fill = Color.Lerp(fill, new Color(0.16f, 0.07f, 0.02f, 1f), bevel * (-ldot) * 0.62f);
-
-            float shade = Mathf.Clamp01(0.22f + (-x) * 0.16f + y * 0.24f);
-            Color outline = Color.Lerp(new Color(0.07f, 0.03f, 0.012f, 1f), new Color(0.18f, 0.09f, 0.03f, 1f), shade);
+            if (d > half + aa) return Color.clear;
             float fillW = Mathf.Clamp01((-half - d) / aa + 1f);
-            Color rgbM = Color.Lerp(outline, fill, fillW);
-            rgbM.a = Mathf.Clamp01((half + aa - d) / (aa * 2f));
-            return rgbM;
+            Color rgb = Color.Lerp(OutlineTone, FillTone, fillW);
+            rgb.a = Mathf.Clamp01((half + aa - d) / (aa * 2f));
+            return rgb;
         }
 
-        // Darker ring just inside the hole. The center stays clear so the
-        // garden shows through, and the alpha stays under the tooth test.
-        static Color HoleShade(float x, float y, float r)
+        // Max channel variance of the solid fill, in 0–255 units squared.
+        // Outline, hole, and the antialiased rim are left out.
+        public static float FillVariance(Color32[] px, int n)
         {
-            float inner = HoleR - Stroke * 0.5f;
-            if (r > inner || r < inner * 0.38f) return Color.clear;
-            float t = Mathf.Clamp01((r - inner * 0.38f) / (inner * 0.62f));
-            float face = 1f;
-            if (r > 0.001f)
-                face = Mathf.Clamp01(0.20f + (-x / r) * 0.55f + (y / r) * 0.70f);
-            float a = t * (0.10f + 0.62f * face) * 0.72f;
-            if (a > 0.40f) a = 0.40f;
-            return new Color(0.04f, 0.02f, 0.01f, a);
-        }
-
-        static float Smooth(float t)
-        {
-            t = Mathf.Clamp01(t);
-            return t * t * (3f - 2f * t);
+            if (px == null || n < 8 || px.Length < n * n) return 999f;
+            float c = (n - 1) * 0.5f;
+            float half = Stroke * 0.5f;
+            float aa = 1.6f / (n * 0.5f);
+            float inset = half + aa * 3f;
+            double sr = 0, sg = 0, sb = 0;
+            int count = 0;
+            for (int y = 0; y < n; y++)
+            {
+                float ny = (y + 0.5f - c) / c;
+                int row = y * n;
+                for (int x = 0; x < n; x++)
+                {
+                    float nx = (x + 0.5f - c) / c;
+                    if (GearSdf(nx, ny) > -inset) continue;
+                    var p = px[row + x];
+                    if (p.a < 250) continue;
+                    sr += p.r;
+                    sg += p.g;
+                    sb += p.b;
+                    count++;
+                }
+            }
+            if (count < 64) return 999f;
+            double mr = sr / count;
+            double mg = sg / count;
+            double mb = sb / count;
+            double vr = 0, vg = 0, vb = 0;
+            for (int y = 0; y < n; y++)
+            {
+                float ny = (y + 0.5f - c) / c;
+                int row = y * n;
+                for (int x = 0; x < n; x++)
+                {
+                    float nx = (x + 0.5f - c) / c;
+                    if (GearSdf(nx, ny) > -inset) continue;
+                    var p = px[row + x];
+                    if (p.a < 250) continue;
+                    double dr = p.r - mr;
+                    double dg = p.g - mg;
+                    double db = p.b - mb;
+                    vr += dr * dr;
+                    vg += dg * dg;
+                    vb += db * db;
+                }
+            }
+            vr /= count;
+            vg /= count;
+            vb /= count;
+            double v = vr > vg ? vr : vg;
+            if (vb > v) v = vb;
+            return (float)v;
         }
 
         // Negative inside the solid. The stroke sits on this edge.

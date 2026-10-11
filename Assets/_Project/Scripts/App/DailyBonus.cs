@@ -38,6 +38,10 @@ namespace FlockFive
         public const float WedgeArc = 45f;
         // Last wedge, clockwise from the top. 10× the base ($1,000 at base 100).
         public const int JackpotWedge = 7;
+
+        // Degrees off the jackpot centerline. The radial amount owns the center;
+        // the star sits beside it, still inside the ruby wedge.
+        public const float JackpotStarLean = 16f;
         public const float PointerFlickSeconds = 0.16f;
         public const float PointerFlickPeak = 14f;
 
