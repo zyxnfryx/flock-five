@@ -73,6 +73,12 @@ namespace FlockFive.Editor
                 format = TextureImporterFormat.ASTC_4x4;
                 return true;
             }
+            if (name.StartsWith("studio_"))
+            {
+                // Boot studio card: logo strokes stay crisp.
+                format = TextureImporterFormat.ASTC_4x4;
+                return true;
+            }
             if (name.StartsWith("bg_")) return true;
             if (!name.StartsWith("bird_")) return false;
             return name.EndsWith("_1.png") || name.EndsWith("_2.png")

@@ -106,6 +106,9 @@ namespace FlockFive.Editor
         {
             SetGameView(1179, 2556);
             File.WriteAllText("/tmp/flock-five-b83c-stills", "1");
+            // No mid-shot recompiles: an asset refresh during play reloaded scripts and froze the shot.
+            EditorPrefs.SetInt("ScriptCompilationDuringPlay", 1);
+            AssetDatabase.DisallowAutoRefresh();
             EditorApplication.isPlaying = true;
         }
         public static void Capture83Gardens()

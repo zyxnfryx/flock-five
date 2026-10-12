@@ -853,6 +853,16 @@ namespace FlockFive
                 return _handMiddle;
             }
         }
+        static Sprite _studioLogo;
+        // Boot studio card (ZFX Gaming), shown on white, unaltered.
+        public static Sprite StudioLogo
+        {
+            get
+            {
+                if (_studioLogo == null) _studioLogo = TryLoad("Sprites/studio_zfx_logo", 100f);
+                return _studioLogo;
+            }
+        }
         public static Sprite HandIndex
         {
             get
