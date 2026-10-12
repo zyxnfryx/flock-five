@@ -120,7 +120,7 @@ namespace FlockFive.Editor
                 bool fanOk = true; float lastOn = 0f; bool backUnder = false, frontOver = false;
                 for (int b = 0; b < StudioBirds.Count; b++)
                 {
-                    fanOk &= Mathf.Abs(StudioBirds.BreakOut(b) - (1.70f + 0.04f * b)) < 1e-4f;
+                    fanOk &= Mathf.Abs(StudioBirds.BreakOut(b) - (1.62f + Wow.ComboStagger * b)) < 1e-4f && StudioBirds.BreakOut(b) < 2.0f;
                     for (float t = 0f; t <= 3.0f; t += 1f / 60f)
                     {
                         var s = StudioBirds.At(b, t);
@@ -131,7 +131,7 @@ namespace FlockFive.Editor
                         fanOk &= s.Pose >= 1 && s.Pose <= 4 && StudioBirds.Sprite(b, s.Pose) != null;
                     }
                 }
-                Check("birds-v5-breakout-sprites", fanOk, "break-out 1.70-1.86s, real 6-pose sprites");
+                Check("birds-v5-breakout-sprites", fanOk, "combo-stagger break-outs 1.62-1.99s, real 6-pose sprites");
                 Check("birds-v5-exit-by-2.95", lastOn > 2.80f && lastOn < 2.99f, "last visible " + lastOn.ToString("0.000"));
                 // Every bird flies fully off screen before it is dropped (tall and 16:9 phones).
                 string offMsg = "";
@@ -155,6 +155,11 @@ namespace FlockFive.Editor
                     var wt = StudioBirds.CardWhite(0, 3) as Texture2D;
                     bool okTex = ct != null && wt != null && ct.mipmapCount > 1 && ct.width == StudioBirds.CardTexPx;
                     Check("birds-card-art-opaque-pale", okTex, "mipmapped colour + white-silhouette copies (pale = colour blend, not alpha)");
+                }
+                {
+                    bool noRed = true;
+                    for (int b = 0; b < StudioBirds.Count; b++) noRed &= StudioBirds.Colors[b] != BirdColor.Ruby;
+                    Check("birds-card-palette-not-festive", noRed, "no ruby, so no red+green neighbours");
                 }
                 Check("birds-v5-depth-layers", backUnder && frontOver, "back arc under, front arc over");
                 var r = new Rect(108f, 900f, 864f, 415f);

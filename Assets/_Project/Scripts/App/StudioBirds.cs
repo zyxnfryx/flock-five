@@ -14,22 +14,25 @@ namespace FlockFive
         public const float LogoOx = 60f;              // (1080-960)/2
         public const float LogoOy = 609f;             // (1920-461)/2 - 120
         public const float RingCx = 540f, RingCy = 812f, RingA = 470f, RingB = 225f, RingRot = -15f;
-        public const float Omega = 3.30f, TScatter = 1.70f, Lag = 0.04f, FadeIn = 0.12f, TGone = 3.0f;
+        public const float Omega = 3.30f, TScatter = 1.62f, Lag = Wow.ComboStagger, FadeIn = 0.12f, TGone = 3.0f;
         public const float FlapRate = 1.25f, ScatterGrow = 1.30f;
         public static readonly int[] Flap6 = { 3, 1, 4, 2, 4, 1 };
-        public static readonly string[] Prefix = { "bird_ruby", "bird_gold", "bird_teal", "bird_violet", "bird_peach_f" };
-        static readonly float[] BaseScale = { 0.080f, 0.075f, 0.077f, 0.073f, 0.075f };
+        // Brandon 12:20 AM: no Christmas read. No ruby, so no red+green neighbours; varied order.
+        public static readonly string[] Prefix = { "bird_violet", "bird_teal", "bird_gold", "bird_violet", "bird_peach_f" };
+        static readonly float[] BaseScale = { 0.077f, 0.077f, 0.077f, 0.077f, 0.077f }; // one size: an ordered flock
         static readonly float[] Phase = { 0.00f, 0.37f, 0.74f, 1.11f, 1.48f };
-        static readonly float[] ExitT = { 1.20f, 1.20f, 1.18f, 1.15f, 1.12f };
+        // Combo-style cascade: break-outs every ComboStagger (1.62-1.99s, all before the 2.000s pop)
+        // and one burst length, so exits land on the same spacing (about 2.55-2.92s).
+        static readonly float[] ExitT = { 0.93f, 0.93f, 0.93f, 0.93f, 0.93f };
+        // Ordered fan: five evenly spaced headings from down-left to right, same curve shape,
+        // ending well past the edges on tall phones.
         static readonly Vector2[,] Ctrl =
         {
-            // Brandon 10:42 PM: longer burst, every bird flies fully off screen (tall phones too:
-            // a 1179x2556 card reaches mock y~2330 at the bottom, x~-160 / ~1240 at the sides).
-            { new Vector2(80, 1150), new Vector2(40, 1500), new Vector2(-380, 1760) },
-            { new Vector2(260, 1260), new Vector2(330, 1750), new Vector2(320, 2620) },
-            { new Vector2(520, 1320), new Vector2(820, 1800), new Vector2(940, 2600) },
-            { new Vector2(700, 1250), new Vector2(1120, 1350), new Vector2(1500, 1520) },
-            { new Vector2(740, 1160), new Vector2(1040, 1130), new Vector2(1520, 1150) },
+            { new Vector2(120, 1180), new Vector2(-40, 1500), new Vector2(-420, 1900) },
+            { new Vector2(330, 1260), new Vector2(300, 1800), new Vector2(200, 2650) },
+            { new Vector2(560, 1300), new Vector2(760, 1850), new Vector2(980, 2650) },
+            { new Vector2(760, 1250), new Vector2(1130, 1500), new Vector2(1550, 1900) },
+            { new Vector2(820, 1150), new Vector2(1150, 1150), new Vector2(1560, 1180) },
         };
         public const int Count = 5;
         const float TH1 = 2.5f * Mathf.PI;
@@ -124,7 +127,7 @@ namespace FlockFive
         public static float SourcePx(int pose) => pose == 2 ? 1536f : 1504f;
 
         // Shared garden art path: the same SpriteCatalog wingbeat sheets the garden birds fly.
-        public static readonly BirdColor[] Colors = { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet, BirdColor.Peach };
+        public static readonly BirdColor[] Colors = { BirdColor.Violet, BirdColor.Teal, BirdColor.Gold, BirdColor.Violet, BirdColor.Peach };
         public static Sprite Sprite(int b, int pose) => SpriteCatalog.BirdPose(Colors[b], pose);
 
         // ROOT CAUSE of the flat "paper" birds (b83 v5 card): the 1504px bird sheets have no

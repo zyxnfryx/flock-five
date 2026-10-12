@@ -157,6 +157,10 @@ namespace FlockFive
         }
 
         // Pivot gap so neighbors clear the tallest flap pose, the sine bob, and the small bank.
+        // Launch spacing of the combo flock (0.078s at the 15% slower pace). Shared with the
+        // studio card's bird cascade.
+        public const float ComboStagger = 0.078f / 0.85f;
+
         static float ComboFlockLane(float scaleX, float scaleY, float bobAmp, float bankDeg)
         {
             float maxTop = 0f;
@@ -525,7 +529,7 @@ namespace FlockFive
             const float pace = 1f / 0.85f;
             float dur = (0.70f + 0.02f * Mathf.Min(n, 8)) * pace;
             float t = 0f;
-            float stagger = 0.078f * pace;
+            float stagger = ComboStagger;
             float span = dur + n * stagger;
             while (t < span)
             {
