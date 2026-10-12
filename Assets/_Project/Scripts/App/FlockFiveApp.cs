@@ -10043,6 +10043,7 @@ namespace FlockFive
                 GUI.DrawTexture(visual, tex, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
                 if (!held && motion.Pose.Sink <= 0.001f) DrawFlowerShimmer(visual, 0f);
+                if (!held && motion.Pose.Sink <= 0.001f) DrawLevelIdleLife(visual);
                 if (held) DrawDiscPress(visual, 0f);
             }
 
