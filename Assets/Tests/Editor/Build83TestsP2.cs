@@ -28,9 +28,14 @@ namespace FlockFive.Editor
             Check("2x-ad-lost-watchdog", rc.Contains("RewardAdWatchdog"), "ad never returns (pause/kill) -> Collect");
 
             // Studio card timing: sparkle and pop finish inside the hold.
-            float sparkEnd = FlockFiveApp.StudioSparkIn + FlockFiveApp.StudioSparkSec * 1.70f;
-            Check("studio-hold-covers-sparkle", FlockFiveApp.StudioMinSec >= sparkEnd - 0.05f && FlockFiveApp.StudioMinSec >= 1.2f,
-                "hold " + FlockFiveApp.StudioMinSec + " spark end " + sparkEnd.ToString("0.00"));
+            Check("studio-hold-covers-jingle", FlockFiveApp.StudioMinSec >= StudioSync.FadeEnd - 0.01f && StudioSync.BurstGone < StudioSync.FadeEnd,
+                "hold " + FlockFiveApp.StudioMinSec + " fade end " + StudioSync.FadeEnd);
+            Check("studio-sync-keys", Mathf.Abs(StudioSync.U(2.0f) - 1f) < 1e-4f && Mathf.Abs(StudioSync.U(0.5f) - 0.12f) < 1e-3f
+                && Mathf.Abs(StudioSync.U(1.46f) - 0.54f) < 1e-3f && StudioSync.U(0.004f) == 0f, "tip at 2.000s");
+            Check("studio-sync-curve", StudioSync.Brightness.Length == 181 && StudioSync.PopT == 2.0f, "frames " + StudioSync.Brightness.Length);
+            float g0; float b1 = StudioSync.Burst(2.06f, out g0), b2 = StudioSync.Burst(2.771f, out g0);
+            Check("studio-burst-shape", b1 > 0.99f && b2 < 0.011f && StudioSync.Burst(1.99f, out g0) == 0f, "hold " + b1.ToString("0.00") + " gone " + b2.ToString("0.000"));
+            Check("studio-pop-matches-jingle", Mathf.Abs(FlockFiveApp.StudioPopAt - 2.0f) < 1e-4f, "");
             var a = FlockFiveApp.StudioLogoRect(1179f, 2556f, SpriteCatalog.StudioLogo);
             var b = FlockFiveApp.StudioLogoRect(1536f, 2048f, SpriteCatalog.StudioLogo);
             Check("studio-logo-fits", a.xMin >= 0f && a.xMax <= 1179f && b.xMin >= 0f && b.xMax <= 1536f && b.height <= 2048f * 0.4f,

@@ -46,14 +46,14 @@ namespace FlockFive
 
             Debug.Log("B83C loading start");
             Directory.CreateDirectory(dir + "/studio");
-            for (int f = 0; f <= 60; f++)
+            for (int f = 0; f <= 90; f++)
             {
                 ShotLoadingProgress = f / 30f;
                 yield return null;
                 yield return new WaitForEndOfFrame();
                 SaveFrame(dir + "/studio/f" + f.ToString("000") + ".png");
-                if (f == 27) SaveFrame(dir + "/b83-studio-card.png");
-                if (f == 36) SaveFrame(dir + "/b83-studio-card-pop.png");
+                if (f == 44) SaveFrame(dir + "/b83-studio-card.png");
+                if (f == 62) SaveFrame(dir + "/b83-studio-card-pop.png");
             }
             ShotLoadingProgress = -1f;
             Debug.Log("B83C loading saved");

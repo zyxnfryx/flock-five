@@ -56,10 +56,11 @@ namespace FlockFive
         // logo fades in unaltered, and a warm gold sparkle (soft darker edge so it reads on
         // white) runs along the Z's top swoosh left to right with trailing glitter. All the
         // preload runs underneath; held at least StudioMinSec, then it fades into the game.
-        public const float StudioWhiteSec = 0.25f;
-        public const float StudioLogoIn = 0.20f, StudioLogoSec = 0.30f;
-        public const float StudioSparkIn = 0.68f, StudioSparkSec = 0.62f; // pop (tip) at 1.30s = jingle pop
-        public const float StudioMinSec = 1.75f; // sparkle run + pop done (pop 1.30s + 0.42s fade)
+        public const float StudioWhiteSec = 0.15f;
+        public const float StudioLogoIn = 0.05f, StudioLogoSec = 0.30f;
+        // Sparkle timing lives in StudioSync (jingle v4). These two remain for the tests.
+        public const float StudioSparkIn = 0.004f, StudioSparkSec = 1.996f;
+        public const float StudioMinSec = 3.0f; // the whole jingle: pop 2.000s, logo out by 3.000s
         static readonly Color StudioWhite = new Color(0.992f, 0.984f, 0.965f, 1f);
 
         // Top EDGE of the Z's upper swoosh in logo UV (x right, y down), left to right. Sampled
@@ -115,13 +116,14 @@ namespace FlockFive
             return new Rect(Mathf.Round((W - w) * 0.5f), Mathf.Round((H - h) * 0.46f), w, h);
         }
 
-        // Jingle hook: Resources/Audio/zfx_jingle (from the producer, /workspace/ff/b83/zfx-jingle/).
-        // Plays once on the frame the card appears. zfx-jingle.ogg (1.95s) has its pop at 1.300s,
-        // which is StudioPopAt (the sparkle reaching the tip). Missing file = silent.
-        // Pending Brandon's listen approval.
+        // Jingle v4 (Resources/Audio/zfx_jingle, 3.000s) starts on the frame the card shows. The
+        // card animation is driven by the AUDIO's playback time through StudioSync (generated
+        // from the producer's sparkle-sync.json), so the sparkle stays on the music. Missing
+        // file = silent, clocked by real time. Pending Brandon's listen approval.
         public const string StudioJinglePath = "Audio/zfx_jingle";
-        public static float StudioPopAt => StudioSparkIn + StudioSparkSec; // seconds after the card appears
+        public static float StudioPopAt => StudioSync.PopT;
         static bool _jingleTried;
+        static AudioSource _jingleSrc;
 
         static void StudioJingle()
         {
@@ -132,17 +134,32 @@ namespace FlockFive
 #endif
             var clip = Resources.Load<AudioClip>(StudioJinglePath);
             if (clip == null) return;
-            Sfx.PlayProc(clip, 1f, 0.9f, MixLayer.Lead);
+            var go = new GameObject("StudioJingle");
+            Object.DontDestroyOnLoad(go);
+            _jingleSrc = go.AddComponent<AudioSource>();
+            _jingleSrc.playOnAwake = false;
+            _jingleSrc.spatialBlend = 0f;
+            _jingleSrc.volume = 0.9f;
+            _jingleSrc.clip = clip;
+            _jingleSrc.Play();
+            Object.Destroy(go, clip.length + 0.5f);
+        }
+
+        // Card time: the jingle's playback position while it plays, else time since the card showed.
+        static float StudioClock(float since)
+        {
+            if (_jingleSrc != null && _jingleSrc.isPlaying && _jingleSrc.time > 0f) return _jingleSrc.time;
+            return since;
         }
 
         bool DrawLoadingScreen(float a, float since)
         {
             var logo = SpriteCatalog.StudioLogo;
             if (logo == null) return false;
-            StudioJingle(); // starts on the frame the card appears
+            StudioJingle();
+            float t = StudioClock(since);
             float W = Screen.width, H = Screen.height;
             var keep = GUI.color;
-            // Launch color underneath, warm white fading over it.
             var dark = WarmCoverColor; dark.a = a;
             GUI.color = dark;
             GUI.DrawTexture(new Rect(0f, 0f, W, H), Texture2D.whiteTexture);
@@ -150,108 +167,124 @@ namespace FlockFive
             white.a = a * Mathf.SmoothStep(0f, 1f, since / StudioWhiteSec);
             GUI.color = white;
             GUI.DrawTexture(new Rect(0f, 0f, W, H), Texture2D.whiteTexture);
-            float la = a * Mathf.SmoothStep(0f, 1f, (since - StudioLogoIn) / StudioLogoSec);
+            float la = Mathf.SmoothStep(0f, 1f, (since - StudioLogoIn) / StudioLogoSec);
+            la *= 1f - Mathf.SmoothStep(0f, 1f, (t - StudioSync.FadeStart) / (StudioSync.FadeEnd - StudioSync.FadeStart));
+            la *= a;
             var r = StudioLogoRect(W, H, logo);
             if (la > 0.01f)
             {
                 GUI.color = new Color(1f, 1f, 1f, la);
                 DrawSprite(r, logo, true);
+                DrawSwooshSparkle(r, t, la);
             }
-            float u = (since - StudioSparkIn) / StudioSparkSec;
-            if (u > -0.05f && u < 1.75f) DrawSwooshSparkle(r, u, a);
             GUI.color = keep;
             return true;
         }
 
-        void DrawSwooshSparkle(Rect r, float u, float a)
+        void DrawSwooshSparkle(Rect r, float t, float a)
         {
             var glow = SpriteCatalog.Glow;
             Texture gt = glow != null && glow.texture != null ? glow.texture : Texture2D.whiteTexture;
             var dot = LevelCurtainDot();
-            float unit = r.width * 0.017f; // polish: reads at phone size
-            // Trailing glitter: points behind the head, fading and drifting down a touch.
-            for (int i = 0; i < 34; i++)
+            float unit = r.width * 0.017f;
+            float t0 = StudioSync.KeyT[0];
+            float bright = Mathf.Clamp01(StudioSync.Bright(t));
+            float flash = StudioSync.Flash(t, out bool hook);
+            float u = StudioSync.U(t);
+            bool travelling = t >= t0 && t < StudioSync.PopT;
+            float fadeIn = Mathf.Clamp01((t - t0) / 0.12f);
+
+            // Glitter trail: sampled back along the path in time, so it bunches where the star is
+            // slow and streaks where it speeds up into the tip. Stronger than v3 for phone size.
+            if (t >= t0)
             {
-                float lag = i * 0.016f;
-                float tu = u - lag;
-                if (tu < 0f || tu > 1f) continue;
-                float h1 = Mathf.Repeat(i * 0.6180339f, 1f);
-                var p = SwooshPoint(tu);
-                float fade = (1f - i / 34f) * Mathf.Clamp01((1.30f - u) / 0.30f) * (0.6f + 0.4f * Mathf.Clamp01(u));
-                float px = r.x + p.x * r.width + (h1 - 0.5f) * unit * 2.2f;
-                float py = r.y + p.y * r.height + (h1 * 1.2f + lag * 10f) * unit * 0.6f; // settles just under the edge
-                float sz = unit * (0.55f + 0.7f * Mathf.Repeat(h1 * 7.3f, 1f)) * (0.6f + 0.4f * fade);
-                float tw = 0.6f + 0.4f * Mathf.Sin(Time.realtimeSinceStartup * 19f + i * 2.1f);
-                // Soft darker amber edge first so the gold reads on white.
-                GUI.color = new Color(0.62f, 0.38f, 0.04f, a * fade * 0.55f);
-                GUI.DrawTexture(new Rect(px - sz * 0.7f, py - sz * 0.7f, sz * 1.4f, sz * 1.4f), dot, ScaleMode.StretchToFill, true);
-                GUI.color = new Color(1f, 0.80f, 0.22f, a * fade * tw);
-                GUI.DrawTexture(new Rect(px - sz * 0.5f, py - sz * 0.5f, sz, sz), dot, ScaleMode.StretchToFill, true);
+                float tail = travelling ? 1f : Mathf.Clamp01(1f - (t - StudioSync.PopT) / 0.45f);
+                for (int i = 0; i < 40; i++)
+                {
+                    float lagT = t - 0.012f - i * 0.018f;
+                    if (lagT < t0 || lagT > StudioSync.PopT) continue;
+                    float tu = StudioSync.U(lagT);
+                    float h1 = Mathf.Repeat(i * 0.6180339f, 1f);
+                    var p = SwooshPoint(tu);
+                    float age = (t - lagT);
+                    float fade = Mathf.Exp(-age / 0.32f) * tail * (0.55f + 0.45f * bright);
+                    if (fade < 0.03f) continue;
+                    float px = r.x + p.x * r.width + (h1 - 0.5f) * unit * 2.0f;
+                    float py = r.y + p.y * r.height + (h1 * 1.0f + age * 6f) * unit * 0.7f;
+                    float sz = unit * (0.75f + 0.9f * Mathf.Repeat(h1 * 7.3f, 1f)) * (0.6f + 0.4f * fade);
+                    float tw = 0.65f + 0.35f * Mathf.Sin(t * 21f + i * 2.1f);
+                    GUI.color = new Color(0.58f, 0.34f, 0.03f, a * fade * 0.75f);
+                    GUI.DrawTexture(new Rect(px - sz * 0.72f, py - sz * 0.72f, sz * 1.44f, sz * 1.44f), dot, ScaleMode.StretchToFill, true);
+                    GUI.color = new Color(1f, 0.80f, 0.22f, a * Mathf.Clamp01(fade * tw * 1.35f));
+                    GUI.DrawTexture(new Rect(px - sz * 0.5f, py - sz * 0.5f, sz, sz), dot, ScaleMode.StretchToFill, true);
+                }
             }
-            // The head glint: warm halo plus a 4-point star that ROTATES as it travels and
-            // brightens toward the tip.
-            if (u >= 0f && u <= 1.0f)
+
+            // The traveling glint: a rotating 4-point star, brightness from the audio curve,
+            // a size kick on every hook / pickup note.
+            if (travelling)
             {
                 var p = SwooshPoint(u);
                 float px = r.x + p.x * r.width, py = r.y + p.y * r.height;
-                float build = 0.5f + 0.5f * Mathf.SmoothStep(0f, 1f, u);
-                float g = unit * 9f * (0.75f + 0.45f * build);
-                GUI.color = new Color(0.85f, 0.55f, 0.08f, a * 0.32f * build);
+                float kick = flash * (hook ? 0.55f : 0.30f);
+                float level = Mathf.Clamp01(0.35f + 0.65f * bright) * fadeIn;
+                float g = unit * 9f * (0.7f + 0.5f * bright + kick);
+                GUI.color = new Color(0.85f, 0.55f, 0.08f, a * 0.36f * level);
                 GUI.DrawTexture(new Rect(px - g * 0.5f, py - g * 0.5f, g, g), gt, ScaleMode.StretchToFill, true);
-                float sl = unit * 6.5f * (0.7f + 0.5f * build), sw = unit * 0.75f;
+                float sl = unit * 6.5f * (0.7f + 0.5f * bright + kick), sw = unit * 0.78f;
                 var m = GUI.matrix;
-                GUIUtility.RotateAroundPivot(u * 540f, new Vector2(px, py));
-                GUI.color = new Color(0.58f, 0.34f, 0.03f, a * 0.65f);
+                GUIUtility.RotateAroundPivot(u * 540f + t * 60f, new Vector2(px, py));
+                GUI.color = new Color(0.58f, 0.34f, 0.03f, a * 0.65f * level);
                 GUI.DrawTexture(new Rect(px - sl * 0.5f - 1f, py - sw * 0.5f - 1f, sl + 2f, sw + 2f), dot, ScaleMode.StretchToFill, true);
                 GUI.DrawTexture(new Rect(px - sw * 0.5f - 1f, py - sl * 0.5f - 1f, sw + 2f, sl + 2f), dot, ScaleMode.StretchToFill, true);
-                GUI.color = new Color(1f, 0.88f, 0.40f, a * (0.75f + 0.25f * build));
+                GUI.color = new Color(1f, 0.88f, 0.40f, a * level);
                 GUI.DrawTexture(new Rect(px - sl * 0.5f, py - sw * 0.5f, sl, sw), dot, ScaleMode.StretchToFill, true);
                 GUI.DrawTexture(new Rect(px - sw * 0.5f, py - sl * 0.5f, sw, sl), dot, ScaleMode.StretchToFill, true);
                 GUI.matrix = m;
-                GUI.color = new Color(1f, 1f, 0.92f, a * build);
-                GUI.DrawTexture(new Rect(px - unit, py - unit, unit * 2f, unit * 2f), dot, ScaleMode.StretchToFill, true);
+                GUI.color = new Color(1f, 1f, 0.92f, a * level);
+                float c = unit * 2f * (1f + kick);
+                GUI.DrawTexture(new Rect(px - c * 0.5f, py - c * 0.5f, c, c), dot, ScaleMode.StretchToFill, true);
             }
-            // End of the swoosh: flare and pop (small starburst + a few twinkles), then fade.
-            if (u > 1f) DrawSwooshPop(r, (u - 1f) * StudioSparkSec / 0.42f, a, unit, gt, dot);
+
+            float burst = StudioSync.Burst(t, out float grow);
+            if (burst > 0.01f) DrawSwooshPop(r, t - StudioSync.PopT, burst, grow, a, unit, gt, dot);
         }
 
-        void DrawSwooshPop(Rect r, float k, float a, float unit, Texture gt, Texture2D dot)
+        // Starburst at the tip: grows (ease-out cubic), holds, decays with the audio.
+        void DrawSwooshPop(Rect r, float k, float level, float grow, float a, float unit, Texture gt, Texture2D dot)
         {
-            if (k <= 0f || k >= 1f) return;
             var p = SwooshPoint(1f);
             float px = r.x + p.x * r.width, py = r.y + p.y * r.height;
-            float grow = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(k / 0.25f));
-            float fade = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((k - 0.25f) / 0.75f));
-            float al = a * fade;
-            float g = unit * 16f * (0.6f + 0.6f * grow);
-            GUI.color = new Color(0.88f, 0.58f, 0.10f, al * 0.38f);
+            float al = a * level;
+            float g = unit * 17f * (0.55f + 0.6f * grow);
+            GUI.color = new Color(0.88f, 0.58f, 0.10f, al * 0.40f);
             GUI.DrawTexture(new Rect(px - g * 0.5f, py - g * 0.5f, g, g), gt, ScaleMode.StretchToFill, true);
             var m = GUI.matrix;
             for (int i = 0; i < 8; i++)
             {
-                float len = unit * (i % 2 == 0 ? 11f : 6.5f) * grow * (0.85f + 0.3f * k);
-                float wid = unit * (i % 2 == 0 ? 0.75f : 0.5f);
-                GUIUtility.RotateAroundPivot(i * 45f + 8f, new Vector2(px, py));
-                GUI.color = new Color(0.60f, 0.36f, 0.04f, al * 0.55f);
+                float len = unit * (i % 2 == 0 ? 11.5f : 6.5f) * grow * (0.9f + 0.25f * Mathf.Clamp01(k / 0.6f));
+                float wid = unit * (i % 2 == 0 ? 0.78f : 0.52f);
+                GUIUtility.RotateAroundPivot(i * 45f + 8f + k * 20f, new Vector2(px, py));
+                GUI.color = new Color(0.58f, 0.34f, 0.03f, al * 0.55f);
                 GUI.DrawTexture(new Rect(px - 1f, py - wid * 0.5f - 1f, len + 2f, wid + 2f), dot, ScaleMode.StretchToFill, true);
                 GUI.color = new Color(1f, 0.86f, 0.36f, al);
                 GUI.DrawTexture(new Rect(px, py - wid * 0.5f, len, wid), dot, ScaleMode.StretchToFill, true);
                 GUI.matrix = m;
             }
             GUI.color = new Color(1f, 1f, 0.9f, al);
-            float c = unit * 2.6f * (0.7f + 0.5f * grow);
+            float c = unit * 2.8f * (0.7f + 0.5f * grow);
             GUI.DrawTexture(new Rect(px - c * 0.5f, py - c * 0.5f, c, c), dot, ScaleMode.StretchToFill, true);
-            // A few twinkles thrown out around the pop, each blinking once.
+            // Twinkles thrown out around the pop, each blinking once while the burst decays.
             for (int i = 0; i < 6; i++)
             {
                 float h = Mathf.Repeat(i * 0.381966f + 0.17f, 1f);
                 float ang = (i * 61f + 20f) * Mathf.Deg2Rad;
-                float dist = unit * (7f + 9f * h) * (0.4f + 0.6f * k);
+                float dist = unit * (7f + 9f * h) * (0.4f + 0.6f * Mathf.Clamp01(k / 0.4f));
                 float tx = px + Mathf.Cos(ang) * dist, ty = py + Mathf.Sin(ang) * dist;
-                float blink = Mathf.Sin(Mathf.Clamp01((k - 0.1f * i * 0.5f) / 0.55f) * Mathf.PI);
+                float blink = Mathf.Sin(Mathf.Clamp01((k - 0.03f * i) / 0.45f) * Mathf.PI);
                 if (blink <= 0.01f) continue;
                 float ts = unit * (1.6f + 1.4f * h) * blink;
-                GUI.color = new Color(0.60f, 0.36f, 0.04f, a * blink * 0.5f);
+                GUI.color = new Color(0.58f, 0.34f, 0.03f, a * blink * 0.5f);
                 GUI.DrawTexture(new Rect(tx - ts * 0.6f, ty - ts * 0.6f, ts * 1.2f, ts * 1.2f), dot, ScaleMode.StretchToFill, true);
                 GUI.color = new Color(1f, 0.88f, 0.40f, a * blink);
                 GUI.DrawTexture(new Rect(tx - ts * 0.5f, ty - ts * 0.08f, ts, ts * 0.16f), dot, ScaleMode.StretchToFill, true);
