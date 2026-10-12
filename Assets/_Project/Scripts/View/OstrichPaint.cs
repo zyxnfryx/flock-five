@@ -176,10 +176,15 @@ namespace FlockFive
     public static class OstrichPaint
     {
         public const float BodyPpu = 140f;
-        public const float HeadPpu = BodyPpu / 1.2f; // review: head ~20% bigger, same chin pivot
+        // Hi-res head (ostrich-head-hires.jpg, colour-matched to the master). Review: 2x the
+        // previous on-screen head (beak to back of head 0.76u -> 1.52u at RigScale).
+        public const float HeadPpu = 398f;
+        public const float HeadSpanPx = 840f; // beak tip to back of the head in the head art
+        public static float HeadScreenSpan => HeadSpanPx / HeadPpu * OstrichMark.RigScale;
+        public const float PrevHeadScreenSpan = 123f / (BodyPpu / 1.2f) * 0.72f;
         // Pivots (sprite-normalized, y up). Body: the neck root. Head: the neck top under the jaw.
         public static readonly Vector2 BodyPivot = new Vector2(527.5f / 566f, 1f - 102f / 323f);
-        public static readonly Vector2 HeadPivot = new Vector2(42f / 160f, 1f - 114f / 124f);
+        public static readonly Vector2 HeadPivot = new Vector2(200.5f / 892f, 1f - 583f / 700f);
         static readonly Vector2 BackLegPivot = new Vector2(47.25f / 88f, 1f - 22f / 279f);
         static readonly Vector2 FrontLegPivot = new Vector2(49.5f / 155f, 1f - 30f / 278f);
         // Hips relative to the body pivot, in units (facing right, before lean).
@@ -190,8 +195,8 @@ namespace FlockFive
 
         public const string BodyPath = "Sprites/ostrich_body";
         public const string BodyHurtPath = "Sprites/ostrich_body_hurt";
-        public const string HeadPath = "Sprites/ostrich_head";
-        public const string BlinkPath = "Sprites/ostrich_head_blink";
+        public const string HeadPath = "Sprites/ostrich_head_hd";
+        public const string BlinkPath = "Sprites/ostrich_head_hd_blink";
         public const string NeckPath = "Sprites/ostrich_neck";
         public const string BackLegPath = "Sprites/ostrich_leg_back";
         public const string FrontLegPath = "Sprites/ostrich_leg_front";

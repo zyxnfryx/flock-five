@@ -111,7 +111,8 @@ namespace FlockFive.Editor
                 else bad += p + " ";
             }
             Check("real-art-parts-astc", okParts == parts.Length, okParts + "/" + parts.Length + " " + bad);
-            Check("real-art-head-bigger", Mathf.Abs(OstrichPaint.BodyPpu / OstrichPaint.HeadPpu - 1.2f) < 0.01f, "head x" + (OstrichPaint.BodyPpu / OstrichPaint.HeadPpu));
+            float span = OstrichPaint.HeadScreenSpan / OstrichPaint.PrevHeadScreenSpan;
+            Check("real-art-head-2x", span > 1.9f && span < 2.1f, "head x" + span.ToString("0.00") + " of the previous on-screen size");
         }
 
         static void CheckLesson(System.Action<string, bool, string> Check)
@@ -450,12 +451,14 @@ namespace FlockFive.Editor
             string dir = "/tmp/b83c1-fight";
             if (Directory.Exists(dir)) Directory.Delete(dir, true);
             Directory.CreateDirectory(dir);
-            const int frames = 64;
+            // 60fps through the live rig: every frame is driven (eased keys, state blends, lag).
             const float span = 8f;
+            const int frames = 480;
+            mark.Preview(OstrichAct.Idle, 0, 0f, y, false);
             for (int i = 0; i < frames; i++)
             {
-                float t = i / (float)(frames - 1) * span;
-                FightPose(mark, t, y);
+                float t = i / 60f;
+                FightDrive(mark, t, y);
                 var tex = Render(cam, w, h);
                 File.WriteAllBytes(dir + "/frame-" + i.ToString("000") + ".png", tex.EncodeToPNG());
                 Object.DestroyImmediate(tex);
@@ -465,7 +468,7 @@ namespace FlockFive.Editor
             var psi = new ProcessStartInfo
             {
                 FileName = ff,
-                Arguments = "-y -framerate 8 -i \"" + dir + "/frame-%03d.png\" -vf pad=ceil(iw/2)*2:ceil(ih/2)*2 -c:v libx264 -pix_fmt yuv420p \"" + mp4 + "\"",
+                Arguments = "-y -framerate 60 -i \"" + dir + "/frame-%03d.png\" -vf pad=ceil(iw/2)*2:ceil(ih/2)*2 -c:v libx264 -pix_fmt yuv420p \"" + mp4 + "\"",
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
@@ -546,6 +549,21 @@ namespace FlockFive.Editor
             tex.SetPixels32(px);
             tex.Apply();
             return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        static void FightDrive(OstrichMark mark, float t, float y)
+        {
+            OstrichAct act = OstrichAct.Idle;
+            float x = 0f;
+            if (t < 1.1f) { act = OstrichAct.Idle; }
+            else if (t < 2.1f) { act = OstrichAct.Shake; x = FeederRow.X(0, 3); }
+            else if (t < 3.2f) { act = OstrichAct.Peck; x = FeederRow.X(0, 3); }
+            else if (t < 4.2f) { act = OstrichAct.Hit1; x = FeederRow.X(0, 3); }
+            else if (t < 5.2f) { act = OstrichAct.Peck; x = FeederRow.X(1, 3); }
+            else if (t < 6.1f) { act = OstrichAct.Hit2; x = FeederRow.X(1, 3); }
+            else if (t < 7.0f) { act = OstrichAct.Daze; }
+            else { act = OstrichAct.Flee; }
+            mark.Drive(act, x, y, 1f / 60f);
         }
 
         static void FightPose(OstrichMark mark, float t, float y)

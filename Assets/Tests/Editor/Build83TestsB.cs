@@ -519,18 +519,46 @@ namespace FlockFive.Editor
                 }
                 WriteStrip(frames, ShotDir + "/b83-ostrich-swing-strip.png");
                 for (int i = 0; i < frames.Count; i++) Object.DestroyImmediate(frames[i]);
+                // Swing clip at 60fps through the live rig: reach left, centre, right, then hits and flee.
+                string sdir = "/tmp/b83-swing60";
+                if (Directory.Exists(sdir)) Directory.Delete(sdir, true);
+                Directory.CreateDirectory(sdir);
+                {
+                    var root = BuildRow(3, -1, y, 0);
+                    var mark = OstrichMark.Attach(root.transform, 3);
+                    mark.Preview(OstrichAct.Idle, 0, left, y, false);
+                    for (int i = 0; i < 450; i++)
+                    {
+                        float t = i / 60f;
+                        OstrichAct act = OstrichAct.Idle;
+                        float x = left;
+                        if (t < 1.2f) x = left;
+                        else if (t < 2.4f) x = mid;
+                        else if (t < 3.6f) x = right;
+                        else if (t < 4.4f) { x = right; act = OstrichAct.Hit1; }
+                        else if (t < 5.2f) { x = right; act = OstrichAct.Hit2; }
+                        else if (t < 6.0f) { x = right; act = OstrichAct.Daze; }
+                        else { x = right; act = OstrichAct.Flee; }
+                        mark.Drive(act, x, y, 1f / 60f);
+                        var tex = Render(cam, w, h);
+                        File.WriteAllBytes(sdir + "/f" + i.ToString("000") + ".png", tex.EncodeToPNG());
+                        Object.DestroyImmediate(tex);
+                    }
+                    Object.DestroyImmediate(root);
+                }
                 string ff = File.Exists("/opt/homebrew/bin/ffmpeg") ? "/opt/homebrew/bin/ffmpeg" : "ffmpeg";
                 string mp4 = ShotDir + "/b83-ostrich-swing.mp4";
                 var psi = new ProcessStartInfo
                 {
                     FileName = ff,
-                    Arguments = "-y -framerate 8 -i \"" + ShotDir + "/b83-ostrich-swing-%02d.png\" -vf pad=ceil(iw/2)*2:ceil(ih/2)*2 -c:v libx264 -pix_fmt yuv420p \"" + mp4 + "\"",
+                    Arguments = "-y -framerate 60 -i \"" + sdir + "/f%03d.png\" -vf pad=ceil(iw/2)*2:ceil(ih/2)*2 -c:v libx264 -pix_fmt yuv420p \""
+                        + mp4 + "\"",
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
                 using (var proc = Process.Start(psi))
                 {
-                    if (proc != null) proc.WaitForExit(20000);
+                    if (proc != null) proc.WaitForExit(60000);
                 }
                 bool png = File.Exists(ShotDir + "/b83-feeders-3.png") && File.Exists(ShotDir + "/b83-ostrich-block.png");
                 bool clip = File.Exists(mp4) && new FileInfo(mp4).Length > 1000;

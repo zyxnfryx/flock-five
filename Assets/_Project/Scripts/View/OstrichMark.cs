@@ -67,6 +67,26 @@ namespace FlockFive
         float _drawX;
         float _drawY;
         bool _placed;
+        // Smooth motion: the rig is driven every frame from eased, interpolated pose keys;
+        // a new state blends in over BlendSec; the neck lags the body and the head lags the neck.
+        public const float BlendSec = 0.2f;
+        OstrichSample _cur, _from;
+        OstrichAct _lastAct = OstrichAct.Idle;
+        float _blend = 1f;
+        float _dt;
+        bool _snap = true;
+        float _velX, _velY;
+        Vector3 _headLag, _ctrlLag;
+        float _tiltLag;
+        float _faceS = 1f, _faceGoal = 1f, _faceVel;
+        OstrichAct _driveAct = OstrichAct.Idle;
+        public void Drive(OstrichAct act, float x, float y, float dt)
+        {
+            // Start each requested state once; its own chain (back to idle, daze -> flee) plays out.
+            if (act != _driveAct) { _driveAct = act; if (act == OstrichAct.Daze) _fleeAfterDaze = false; Begin(act); }
+            _headX = x; _headY = y; _placed = true;
+            Tick(dt);
+        }
 
         public static OstrichMark Attach(Transform parent, int feeders)
         {
@@ -138,6 +158,7 @@ namespace FlockFive
             leg.localPosition = new Vector3(hip.x * face, hip.y, 0.02f);
             leg.localRotation = Quaternion.Euler(0f, 0f, angle * face);
             sr.flipX = face < 0f;
+            // (legs are children of the body, which carries the turn squash)
         }
 
         public void SetCalm(bool calm) => _calm = calm;
@@ -224,6 +245,11 @@ namespace FlockFive
             _drawX = x;
             _drawY = y;
             _placed = true;
+            _frameT = 0f;
+            _snap = true;
+            _blend = 1f;
+            _lastAct = act;
+            _driveAct = act;
             Apply();
         }
 
@@ -246,6 +272,8 @@ namespace FlockFive
         public void Tick(float dt)
         {
             if (dt < 0f) dt = 0f;
+            _dt = dt;
+            _blend = Mathf.Min(1f, _blend + dt / BlendSec);
             if (_gone)
             {
                 Hide();
@@ -289,14 +317,16 @@ namespace FlockFive
             float step = speed * dt;
             if (_act == OstrichAct.Flee)
             {
-                var flee = OstrichAnim.At(_act, _frame, false);
+                var flee = SmoothAt(_act, _frame + _frameT, false);
                 _drawX = Mathf.Lerp(_headX, _headX + 5.4f, flee.Flee);
                 _drawY = Mathf.Lerp(_headY, _headY + 0.35f, flee.Flee);
             }
             else
             {
-                _drawX = Mathf.MoveTowards(_drawX, _headX, step);
-                _drawY = Mathf.MoveTowards(_drawY, _headY, step);
+                // Eased reach (critically damped): starts soft, settles without a stop-pop.
+                float st = _calm ? 0.34f : 0.16f;
+                _drawX = Mathf.SmoothDamp(_drawX, _headX, ref _velX, st, speed, Mathf.Max(dt, 1e-4f));
+                _drawY = Mathf.SmoothDamp(_drawY, _headY, ref _velY, st, speed, Mathf.Max(dt, 1e-4f));
             }
             ApplyAt(_drawX, _drawY);
         }
@@ -407,7 +437,10 @@ namespace FlockFive
         void ApplyAt(float aimX, float aimY)
         {
             if (_body == null || _head == null) return;
-            var sample = OstrichAnim.At(_act, _frame, _calm);
+            if (_act != _lastAct) { _from = _cur; _blend = 0f; _lastAct = _act; }
+            var sample = SmoothAt(_act, _frame + _frameT, _calm);
+            if (_blend < 1f && !_snap) sample = Mix(_from, sample, Ease(_blend));
+            _cur = sample;
             bool flee = _act == OstrichAct.Flee;
             float headX = aimX + PortX;
             float headY = aimY + PortY + sample.Bob * 0.35f;
@@ -417,31 +450,50 @@ namespace FlockFive
             if (_act == OstrichAct.Daze) sway += Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.36f;
             // Face the side the head reaches to; keep the whole body (tail end) on screen.
             float half = ViewHalfWidth();
-            float face = flee ? 1f : (headX < -0.4f ? -1f : 1f);
+            // Turning is eased, not snapped: face swings through 0 over ~0.25s (hysteresis on the side).
+            if (flee || headX > -0.3f) _faceGoal = 1f;
+            else if (headX < -0.5f) _faceGoal = -1f;
+            if (_snap || _dt <= 0f) { _faceS = _faceGoal; _faceVel = 0f; }
+            else _faceS = Mathf.SmoothDamp(_faceS, _faceGoal, ref _faceVel, 0.09f, 40f, _dt);
+            float face = _faceS;
+            float side = face < 0f ? -1f : 1f;
+            float turn = Mathf.Max(Mathf.Abs(face), 0.18f);
+            float bodyR = Mathf.Clamp(headX - 0.9f, -half + BodyBack + 0.12f, half - BodyFront - 0.12f);
+            float bodyL = Mathf.Clamp(headX + 0.9f, -half + BodyFront + 0.12f, half - BodyBack - 0.12f);
             float bodyX;
-            if (flee) bodyX = headX - 0.55f;
-            else if (face > 0f) bodyX = Mathf.Clamp(headX - 0.9f, -half + BodyBack + 0.12f, half - BodyFront - 0.12f) + sway;
-            else bodyX = Mathf.Clamp(headX + 0.9f, -half + BodyFront + 0.12f, half - BodyBack - 0.12f) + sway;
+            if (flee) bodyX = Mathf.Lerp(bodyL, headX - 0.55f, (face + 1f) * 0.5f);
+            else bodyX = Mathf.Lerp(bodyL, bodyR, (face + 1f) * 0.5f) + sway;
+            _body.localScale = new Vector3(RigScale * turn, RigScale, 1f);
+            _head.localScale = new Vector3(RigScale * turn, RigScale, 1f);
             float bodyY = headY - BodyDrop + sample.Bob;
             headX += face * (sample.Strike * 0.50f - sample.Wind * 0.42f);
 
             _bodySr.sprite = OstrichPaint.Body(_act, _frame);
-            _bodySr.flipX = face < 0f;
-            if (_collarSr != null) { _collarSr.flipX = face < 0f; }
+            _bodySr.flipX = side < 0f;
+            if (_collarSr != null) { _collarSr.flipX = side < 0f; }
             _body.position = new Vector3(bodyX, bodyY, 0f);
             _body.localRotation = Quaternion.Euler(0f, 0f, sample.Lean * face);
             // Stride from the timeline: legs swing in opposition around the hips.
             float stride = Mathf.Sin(sample.Step * Mathf.PI * 2f);
             float swing = flee ? 26f : (_act == OstrichAct.Strut || _act == OstrichAct.Daze ? 14f : 3f);
             float brace = -sample.Lean * 0.5f; // feet stay planted while the body leans
-            PoseLeg(_legBack, _legBackSr, OstrichPaint.BackHip, brace + stride * swing, face);
-            PoseLeg(_legFront, _legFrontSr, OstrichPaint.FrontHip, brace - stride * swing, face);
+            PoseLeg(_legBack, _legBackSr, OstrichPaint.BackHip, brace + stride * swing, side);
+            PoseLeg(_legFront, _legFrontSr, OstrichPaint.FrontHip, brace - stride * swing, side);
 
             var headPos = new Vector3(headX, headY, 0f);
             Head.sprite = OstrichPaint.Head(_act, _frame);
-            Head.flipX = face < 0f;
+            Head.flipX = side < 0f;
+            // Follow-through: the head trails its target a touch, and its tilt trails the body.
+            float tilt = (sample.Tilt + sample.Shake) * face;
+            if (_snap || _dt <= 0f) { _headLag = headPos; _tiltLag = tilt; }
+            else
+            {
+                _headLag = Vector3.Lerp(_headLag, headPos, 1f - Mathf.Exp(-_dt * 18f));
+                _tiltLag = Mathf.LerpAngle(_tiltLag, tilt, 1f - Mathf.Exp(-_dt * 14f));
+            }
+            headPos = _headLag;
             _head.position = headPos;
-            _head.localRotation = Quaternion.Euler(0f, 0f, (sample.Tilt + sample.Shake) * face);
+            _head.localRotation = Quaternion.Euler(0f, 0f, _tiltLag);
 
             // Start inside the plumage and end inside the chin, so the tube
             // reads as one neck in every pose.
@@ -453,7 +505,45 @@ namespace FlockFive
             if (_act == OstrichAct.Daze) ctrl.y -= 0.72f * RigScale;
             if (_act == OstrichAct.Honk) ctrl.y += 0.16f;
             if (_act == OstrichAct.Idle) ctrl.x += 0.10f * face;
-            WriteNeck(neckA, ctrl, neckB);
+            // The neck's bend lags the body: it catches up over ~0.1s.
+            if (_snap || _dt <= 0f) _ctrlLag = ctrl;
+            else _ctrlLag = Vector3.Lerp(_ctrlLag, ctrl, 1f - Mathf.Exp(-_dt * 11f));
+            _snap = false;
+            WriteNeck(neckA, _ctrlLag, neckB);
+        }
+
+        static float Ease(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
+
+        // Pose keys interpolated with an ease between frames (no stepped poses).
+        public static OstrichSample SmoothAt(OstrichAct act, float f, bool calm)
+        {
+            int n = OstrichAnim.Count(act);
+            if (f < 0f) f = 0f;
+            int i = Mathf.Min((int)f, n - 1);
+            int j = Mathf.Min(i + 1, n - 1);
+            var a = OstrichAnim.At(act, i, calm);
+            if (j == i) return a;
+            return Mix(a, OstrichAnim.At(act, j, calm), Ease(f - i));
+        }
+
+        public static OstrichSample Mix(OstrichSample a, OstrichSample b, float t)
+        {
+            var s = new OstrichSample();
+            s.Bob = Mathf.Lerp(a.Bob, b.Bob, t);
+            s.Tilt = Mathf.Lerp(a.Tilt, b.Tilt, t);
+            s.Lean = Mathf.Lerp(a.Lean, b.Lean, t);
+            s.Shake = Mathf.Lerp(a.Shake, b.Shake, t);
+            s.Wind = Mathf.Lerp(a.Wind, b.Wind, t);
+            s.Strike = Mathf.Lerp(a.Strike, b.Strike, t);
+            s.Blink = t < 0.5f ? a.Blink : b.Blink;
+            s.Ruffle = Mathf.Lerp(a.Ruffle, b.Ruffle, t);
+            s.Beak = Mathf.Lerp(a.Beak, b.Beak, t);
+            s.Step = Mathf.Lerp(a.Step, b.Step, t);
+            s.Spread = Mathf.Lerp(a.Spread, b.Spread, t);
+            s.Damage = t < 0.5f ? a.Damage : b.Damage;
+            s.Flee = Mathf.Lerp(a.Flee, b.Flee, t);
+            s.Dip = Mathf.Lerp(a.Dip, b.Dip, t);
+            return s;
         }
 
         void EnsureLine()
@@ -475,8 +565,8 @@ namespace FlockFive
             _line.widthMultiplier = 1f;
             var curve = new AnimationCurve(
                 new Keyframe(0f, OstrichPaint.NeckWidth * 2.9f * RigScale),
-                new Keyframe(0.30f, OstrichPaint.NeckWidth * 1.75f * RigScale),
-                new Keyframe(1f, OstrichPaint.NeckWidth * 1.45f * RigScale));
+                new Keyframe(0.30f, OstrichPaint.NeckWidth * 2.45f * RigScale),
+                new Keyframe(1f, OstrichPaint.NeckWidth * 2.30f * RigScale));
             _line.widthCurve = curve;
             var grad = new Gradient();
             grad.SetKeys(
