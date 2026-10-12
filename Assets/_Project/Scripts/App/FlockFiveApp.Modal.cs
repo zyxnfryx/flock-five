@@ -212,7 +212,7 @@ namespace FlockFive
             yield return new WaitForEndOfFrame();
             MuteShotAudio();
             Debug.Log("b82f sparrow caption cue=" + _pestCue + " line=" + (_cueLine ?? ""));
-            SaveFrame(dir + "/b82f-sparrow-caption.png");
+            SaveFrame(dir + "/b82f-sparrow-caption.png"); System.IO.File.WriteAllText("/tmp/b85-banner-skip.txt", "uses=" + BannerUses + " snug=" + SnugUses + " skip=" + BannerSkip);
             _pestCue = 0;
             _cueLine = null;
             _cueHand = false;

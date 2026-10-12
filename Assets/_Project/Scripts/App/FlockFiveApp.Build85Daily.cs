@@ -62,7 +62,7 @@ namespace FlockFive
             Application.runInBackground = true;
             UnityEditor.EditorApplication.isPaused = false;
             Screen.SetResolution(1179, 2556, false);
-            yield return new WaitForSecondsRealtime(1.0f);
+            yield return new WaitForSecondsRealtime(6.0f); // past the studio card
             // Fresh save with level 1 cleared, as on a first install after the first garden.
             PlayerPrefs.DeleteAll();
             PlayerPrefs.SetInt("flockfive.next", 1);
@@ -80,7 +80,7 @@ namespace FlockFive
                 // Clear earlier home beats (reward sign, adopt) the way a player would.
                 if (_streakSlide >= 0f && _rewardChoice == 0 && RewardChoiceUp) _rewardChoice = 2;
                 // Greet taps: the adopt fly/greet steps advance on any tap, like a player would.
-                if (AdoptGreetUp() && t > 3f) { AdvanceAdoptGreet(); Log("greet tapped: " + DailyDiag()); }
+                if (AdoptGreetUp() && t > 9f && !StudioCardHold) { yield return new WaitForEndOfFrame(); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/b85-caption-adopt-greet.png"); AdvanceAdoptGreet(); Log("greet tapped: " + DailyDiag()); }
                 if (!_adoptLive && !_dailyIntro && !_dailyOpen && AvatarAdopted() && PlayerPrefs.GetInt(CoachDailyKey, 0) == 0)
                 {
                     ArmDailyIntro();
@@ -89,6 +89,7 @@ namespace FlockFive
                 // Adopt lesson: name the bird at the Look step (the player's Done).
                 if (_adoptLive && _adoptStep == AdoptStep.Look)
                 {
+                    yield return new WaitForSecondsRealtime(1.2f); yield return new WaitForEndOfFrame(); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/b85-caption-adopt-look.png");
                     MarkAdopted(_adoptCol, "Pip");
                     _avatarRenameText = "Pip";
                     CommitAvatarRename();
@@ -98,6 +99,7 @@ namespace FlockFive
                 }
                 yield return null;
             }
+            yield return new WaitForSecondsRealtime(0.6f); yield return new WaitForEndOfFrame(); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/b85-caption-daily-rail.png");
             Log("glove up after " + t.ToString("0.0") + "s: " + DailyDiag());
             var r = SplashDailyTapRect();
             var p = new Vector2(r.center.x, Screen.height - r.center.y);
@@ -114,6 +116,7 @@ namespace FlockFive
             yield return new WaitForSecondsRealtime(1.0f);
             yield return new WaitForEndOfFrame();
             SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/daily-after-tap.png");
+            SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/b85-caption-daily-claim.png");
             Log("after: " + DailyDiag());
             Log("events: " + DbgDaily);
             bool ok = _dailyOpen && _dailyIntroLive;

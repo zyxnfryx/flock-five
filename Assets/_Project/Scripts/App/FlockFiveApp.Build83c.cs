@@ -66,7 +66,7 @@ namespace FlockFive
             MuteShotAudio();
             yield return new WaitForEndOfFrame();
             SaveFrame(dir + "/b83-home-caption-top.png");
-            Debug.Log("B83C caption saved");
+            Debug.Log("B83C caption saved"); System.IO.File.WriteAllText("/tmp/b85-banner-skip.txt", "uses=" + BannerUses + " snug=" + SnugUses + " skip=" + BannerSkip + " modal=" + OpenModal() + " last=" + BannerLast);
             _shotBirdHome = false;
             _adoptLive = false;
 

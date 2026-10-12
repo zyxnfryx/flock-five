@@ -3135,6 +3135,69 @@ namespace FlockFive
         // full box, StandardCaptionSlack for the standard caption). Text box and font unchanged.
         // topAlign: a top-anchored seat (poker hold/back) keeps its plate top where the full
         // plate's top was and lifts the text with it, so the gap above stays the seat's gap.
+        public static bool CaptionBanner = true;
+        public static int BannerUses, SnugUses;
+        public static string BannerSkip = "", BannerLast = "";
+        GUIContent _bandContent;
+        string BannerText;
+
+        // Banner unless it cannot apply: a popup owns the screen (the caption belongs to that
+        // card), the bee callout (tied to its icon), or the band would cover the glove's
+        // target (captions and the glove never cover required UI).
+        bool CaptionBannerFits(string text, Rect seat, float s, out Rect band, out int px)
+        {
+            band = default; px = 0;
+            if (!CaptionBanner || string.IsNullOrEmpty(text)) return false;
+            var om = OpenModal();
+            // The adopt scene is a home lesson, not a card: its captions take the banner.
+            bool popup = om != ModalBlock.Id.None && om != ModalBlock.Id.Adopt && om != ModalBlock.Id.Streak;
+            if (popup || CaptionLayout.WantsBeeIcon(text)) { SnugUses++; BannerSkip = popup ? "popup " + OpenModal() : "bee"; return false; }
+            var st = CoachLineStyle();
+            if (_bandContent == null) _bandContent = new GUIContent();
+            _bandContent.text = text;
+            float w = Screen.width;
+            int hi = Mathf.Max(22, Mathf.RoundToInt(44f * Mathf.Max(1f, Screen.height / 720f) * 0.62f));
+            int keep = st.fontSize; bool wrap = st.wordWrap;
+            st.wordWrap = true;
+            float th = 0f;
+            for (px = hi; px >= 18; px -= 2)
+            {
+                st.fontSize = px;
+                th = st.CalcHeight(_bandContent, w * 0.92f);
+                if (th <= st.lineHeight * 2.2f) break;
+            }
+            // Polish: two balanced lines (like 'Look, a bird / followed you home!'), not a
+            // long first line and an orphan word: break at the space nearest the middle.
+            st.wordWrap = false;
+            BannerText = text;
+            float one = st.CalcSize(_bandContent).x;
+            if (one > w * 0.92f && text.IndexOf('\n') < 0)
+            {
+                int best = -1; float bestD = float.MaxValue;
+                for (int i = 1; i < text.Length - 1; i++)
+                {
+                    if (text[i] != ' ') continue;
+                    _bandContent.text = text.Substring(0, i);
+                    float a1 = st.CalcSize(_bandContent).x;
+                    _bandContent.text = text.Substring(i + 1);
+                    float a2 = st.CalcSize(_bandContent).x;
+                    float d = Mathf.Abs(a1 - a2);
+                    if (a1 <= w * 0.92f && a2 <= w * 0.92f && d < bestD) { bestD = d; best = i; }
+                }
+                if (best > 0) BannerText = text.Substring(0, best) + "\n" + text.Substring(best + 1);
+                _bandContent.text = text;
+            }
+            st.fontSize = keep; st.wordWrap = wrap;
+            float h = th + px * 0.9f;
+            band = new Rect(0f, seat.center.y - h * 0.5f, w, h);
+            if (band.y < 0f) band.y = 0f;
+            if (band.yMax > Screen.height) band.y = Screen.height - h;
+            if (_gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
+            BannerSkip = "";
+            BannerUses++;
+            return true;
+        }
+
         void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default, bool opaque = false, float slack = 1f, bool topAlign = false)
         {
             // Shared caption paint. Every lesson draws through here, so a reset
@@ -3167,6 +3230,24 @@ namespace FlockFive
                 drawR.height += grow;
             }
             float fade = EaseOutCubic(_coachFade);
+            if (CaptionBannerFits(text, drawR, s, out var band, out int bandPx))
+            {
+                // Build 85 (Brandon): the full-width translucent banner is the default caption.
+                // Edge to edge, large bold centered text, dims whatever row sits behind it.
+                NoteTutorPlate(band);
+                BannerLast = band + " fade " + fade + " ev " + (Event.current != null ? Event.current.type.ToString() : "-") + " px " + bandPx;
+                var prevC = GUI.color;
+                GUI.color = new Color(0f, 0f, 0f, 0.58f * fade);
+                GUI.DrawTexture(band, Texture2D.whiteTexture);
+                GUI.color = prevC;
+                int keep = st.fontSize;
+                st.fontSize = bandPx;
+                st.wordWrap = true;
+                StampBannerText(new Rect(band.x + band.width * 0.04f, band.y, band.width * 0.92f, band.height), BannerText ?? text, st, fade, true);
+                st.fontSize = keep;
+                st.wordWrap = false;
+                return;
+            }
             if (slack < 0.999f && _coachSizedTextH > 1f)
             {
                 var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
