@@ -2739,6 +2739,14 @@ namespace FlockFive
 
 #if UNITY_EDITOR
         public static bool EditorShotLive;
+        public static string DbgDaily = "";
+        static string DbgGates(SplashPress.Gates g)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var fi in typeof(SplashPress.Gates).GetFields())
+                if (fi.FieldType == typeof(bool) && (bool)fi.GetValue(g)) sb.Append(fi.Name).Append(',');
+            return sb.ToString();
+        }
         // 0 off, 1 mid-spin still, 2 landed result with the x2 button.
         public static int ShotDailyWheel;
 #endif
@@ -9964,6 +9972,11 @@ namespace FlockFive
                 dailyGates.ResumeSwallow = false;
             }
             var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates));
+#if UNITY_EDITOR
+            if (ShotKeepAwake && _homeSamples.Count > 0 && DbgDaily.Length < 4000)
+                DbgDaily += (Event.current != null ? Event.current.type.ToString() : "-") + "/f" + Time.frameCount + ":" + _homeSamples[0].Phase
+                    + (SplashPress.Blocks(dailyGates) ? " BLOCK[" + DbgGates(dailyGates) + "]" : "") + (dailyView.Pressed ? " P" : "") + (dailyView.Launch ? " L" : "") + (dailyView.Handled ? " H" : "") + "; ";
+#endif
             StartupTrace.Lap("L.Daily");
             if (dailyView.Launch)
                 OpenDailyCard();

@@ -79,6 +79,9 @@ namespace FlockFive
             return _gloveTapRectOn && _gloveTapRect.Contains(gui);
         }
 
+        Rect _veilCut;
+        int _veilCutStep = -1;
+
         ModalBlock.Veil ActiveVeil()
         {
             float w = Screen.width > 2f ? Screen.width : 2f;
@@ -89,6 +92,14 @@ namespace FlockFive
             if (ForcedLessonUp())
             {
                 Rect cut = _gloveTapRectOn && GloveTargetFresh() ? _gloveTapRect : default;
+                // Build 85 ROOT CAUSE of the device strand (Daily gift, build 84): the hole in
+                // the lesson veil followed the glove. The press fades the glove (NoteGloveTap),
+                // the hole closed on the next frame, and the veil then covered the very button
+                // the lesson pointed at, so the release was blocked (Consent gate): glove gone,
+                // caption up, no card. The step's target stays cut until the step changes.
+                int step = LiveCoachStep();
+                if (cut.width >= 2f && cut.height >= 2f) { _veilCut = cut; _veilCutStep = step; }
+                else if (step >= 0 && step == _veilCutStep) cut = _veilCut;
                 return ModalBlock.RaiseLesson(w, h, cut);
             }
             return default;

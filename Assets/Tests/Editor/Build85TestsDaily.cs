@@ -68,7 +68,19 @@ namespace FlockFive.Editor
                 int step = (int)t.GetMethod("LiveCoachStep", F).Invoke(app, null);
                 Check("daily-lesson-tap-opens-card", open, "open=" + open);
                 Check("daily-claim-step-next", step == (int)CoachStep.DailyClaim, "step " + (CoachStep)step);
-                Set("_albumTutorOn", false); Set("_dailyOpen", false); Set("_dailyIntro", false); Set("_dailyIntroLive", false);
+                // ROOT CAUSE regression: the press fades the glove; the veil hole must stay on the
+                // gift for the release, or the Consent gate eats it (build 84 strand).
+                Set("_albumTutorOn", false); Set("_dailyOpen", false);
+                var tap = new Rect(4f, 4f, 40f, 40f);
+                Set("_gloveTapRect", tap); Set("_gloveTapRectOn", true); Set("_gloveTapFrame", Time.frameCount);
+                bool Veil(Rect r) => (bool)t.GetMethod("VeilBlocks", F).Invoke(app, new object[] { r });
+                bool openHole = !Veil(tap);
+                Set("_gloveTapRectOn", false); Set("_gloveTapFrame", -1); // glove faded on the press
+                bool keptHole = !Veil(tap);
+                bool elsewhere = Veil(new Rect(Screen.width * 0.5f, Screen.height * 0.5f, 20f, 20f));
+                Check("daily-veil-hole-survives-glove-fade", openHole && keptHole && elsewhere,
+                    "hole " + openHole + " after fade " + keptHole + " rest veiled " + elsewhere);
+                Set("_dailyIntro", false); Set("_dailyIntroLive", false);
 
                 // Kit seat: one seat for every flying flap frame (no jerk with the wings).
                 float Jerk(bool stable, out string w)
