@@ -41,6 +41,7 @@ namespace FlockFive
         }
 
         Touchscreen _greetTs;
+        int _dailyFirstN;
         IEnumerator GreetTap()
         {
             _greetTs = InputSystem.AddDevice<Touchscreen>();
@@ -77,6 +78,13 @@ namespace FlockFive
             {
                 t += Mathf.Min(Time.unscaledDeltaTime, 0.1f);
                 if (Mathf.Repeat(t, 2f) < Time.unscaledDeltaTime) Log("wait " + t.ToString("0.0") + ": " + DailyDiag());
+                if (_dailyIntroLive && _dailyFirstN < 30)
+                {
+                    yield return new WaitForEndOfFrame();
+                    if (_dailyFirstN == 0) System.IO.Directory.CreateDirectory("/Users/zfxgames/wkspaces/birdshot/gb/b85/dailyfirst");
+                    SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/dailyfirst/f" + (_dailyFirstN++).ToString("00") + ".png");
+                    continue;
+                }
                 // Clear earlier home beats (reward sign, adopt) the way a player would.
                 if (_streakSlide >= 0f && _rewardChoice == 0 && RewardChoiceUp) _rewardChoice = 2;
                 // Greet taps: the adopt fly/greet steps advance on any tap, like a player would.
@@ -110,6 +118,8 @@ namespace FlockFive
             InputSystem.QueueStateEvent(ts, new TouchState { touchId = 1, phase = UnityEngine.InputSystem.TouchPhase.Ended, position = p });
             yield return null;
             Log("up: " + DailyDiag());
+            System.IO.Directory.CreateDirectory("/Users/zfxgames/wkspaces/birdshot/gb/b85/wheelfirst");
+            for (int wf = 0; wf < 24; wf++) { yield return new WaitForEndOfFrame(); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/wheelfirst/f" + wf.ToString("00") + ".png"); }
             InputSystem.QueueStateEvent(ts, new TouchState { touchId = 1, phase = UnityEngine.InputSystem.TouchPhase.None, position = p });
             float w = 0f;
             while (!_dailyOpen && w < 2f) { w += Time.unscaledDeltaTime; yield return null; }

@@ -8284,7 +8284,9 @@ namespace FlockFive
             float dur = beat.SeqDur > 0.05f ? beat.SeqDur : 0.05f;
             float t = _streakSlide * dur;
             // Tuck waits until the shared flight, the balance tick, and the payout sound finish.
-            bool fadeGate = t >= beat.HoldEnd && (RewardPayBusy() || RewardChoicePending());
+            // Build 86 (Brandon): no dead pause. The sign stops right after the multiplier
+            // lands (ChoiceAt) and the buttons come up; the post-pay hold plays after the tap.
+            bool fadeGate = (t >= beat.ChoiceAt && RewardChoicePending()) || (t >= beat.HoldEnd && RewardPayBusy());
             if (!fadeGate)
                 _streakSlide = Mathf.Min(1f, _streakSlide + PlayClock.Delta / dur);
             t = _streakSlide * dur;
@@ -8527,6 +8529,7 @@ namespace FlockFive
         const float RewardStampDur = 0.40f * RewardPace;
         const float RewardRollDur = 0.55f * RewardPace;
         const float RewardHoldDur = 1.20f * RewardPace;
+        const float RewardChoiceLag = 0.12f; // b86: badge settles, then the buttons
         const float RewardFadeDur = 0.75f * RewardPace;
         const float RewardShakeDur = 0.22f * RewardPace;
         // Breath after the homepage streak board tucks, before the bird lesson.
@@ -8541,6 +8544,7 @@ namespace FlockFive
             public float RollAt;
             public float PayAt;
             public float HoldEnd;
+            public float ChoiceAt;
             public float SeqDur;
             public bool Mul;
         }
@@ -8574,6 +8578,7 @@ namespace FlockFive
             beat.RollAt = beat.StampAt + RewardStampDur;
             beat.PayAt = mul ? beat.RollAt + RewardRollDur : beat.StampAt;
             beat.HoldEnd = beat.PayAt + RewardHoldDur;
+            beat.ChoiceAt = beat.PayAt + RewardChoiceLag;
             beat.SeqDur = beat.HoldEnd + RewardFadeDur;
             return beat;
         }

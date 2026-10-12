@@ -125,7 +125,7 @@ namespace FlockFive
             RewardPays(out streak, out fromPay, out toPay);
             var beat = RewardBeats(RewardMulOn(streak, fromPay, toPay));
             float t = _streakSlide * (beat.SeqDur > 0.05f ? beat.SeqDur : 0.05f);
-            if (t < beat.HoldEnd - 0.001f || RewardPayBusy()) { _rewardChoiceBorn = -1f; return; }
+            if (t < beat.ChoiceAt - 0.001f || RewardPayBusy()) { _rewardChoiceBorn = -1f; return; }
             _rewardAtHold = true;
             if (_rewardChoiceBorn < 0f) _rewardChoiceBorn = AdPause.Unscaled;
             float a = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((AdPause.Unscaled - _rewardChoiceBorn) / 0.22f));

@@ -683,6 +683,12 @@ namespace FlockFive
             if (CoachResetHolds()) return;
             var bubble = _adoptLineR;
             if (bubble.width < 2f) return;
+            int pk = _adoptPick < 0 || _adoptPick > 4 ? 1 : _adoptPick;
+            float ic = HomeAvatarIcon(s);
+            var bc = AdoptBirdCenter(pk, ic, s, out _);
+            // The arriving bird is the subject (its flight is kept under the band, see HomeWanderBounds).
+            Rect subj = new Rect(bc.x - ic * 0.7f, bc.y - ic * 0.7f, ic * 1.4f, ic * 1.4f);
+            NoteCaptionSubject(subj);
             PaintCoachCaption(line, bubble, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
         }
 
@@ -1643,6 +1649,9 @@ namespace FlockFive
             if (_adoptLive)
             {
                 float under = AdoptCaptionRect(s).yMax + CaptionLayout.BoxPad(Screen.height).y + half;
+                // b86: the banner is taller than the old plate; fly under its real band.
+                if (_bannerLastFrame >= Time.frameCount - 2 && _bannerLast.width > 2f)
+                    under = Mathf.Max(under, _bannerLast.yMax + half);
                 if (under > top) top = under;
             }
             float minX = reach;

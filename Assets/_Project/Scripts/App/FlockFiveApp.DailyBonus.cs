@@ -412,7 +412,11 @@ namespace FlockFive
             // Collect and Watch Ad. Cover the home behind the daily popup.
             ModalBlock.Paint(ModalBlock.Id.Daily, new Color(0.04f, 0.03f, 0.02f, 0.98f));
 
-            float k = DailyPop(_dailyPopAt);
+            // Build 86 (Brandon): the wheel appears fully assembled from frame 1. The scale pop
+            // scaled the disc and rim, but the outlined labels, star and pointer snap to the
+            // pixel grid outside that matrix, so they slid into place: it looked built piece by
+            // piece. No per-piece motion now; the wheel art is baked during preload.
+            float k = 1f;
             var pivot = flowerOn ? DailyPivot(card, flower) : card.center;
             var prev = GUI.matrix;
             if (k < 0.999f)
@@ -876,10 +880,12 @@ namespace FlockFive
         void DailyClaimGlove(float s, out Vector2 aim, out float perchLift, out bool fromLeft)
         {
             DailyLayout(s, out var card, out var flower, out _, out _);
-            float k = DailyPop(_dailyPopAt);
+            float k = 1f; // b86: no pop scale (the wheel appears assembled)
             var pivot = DailyPivot(card, flower);
             var disc = DailyScaleRect(FlowerDisc(flower, 0f), pivot, k);
-            aim = GloveTarget(disc);
+            // Build 86 (Brandon): the glove never covers the 'Claim' label. Tap the button's
+            // lower-right rim; the hand hangs down and out, clear of the centered word.
+            aim = new Vector2(disc.xMax - disc.width * 0.17f, disc.yMax - disc.height * 0.13f);
             perchLift = float.NaN;
             fromLeft = false;
             _gloveKeepOff = disc;
@@ -1587,6 +1593,8 @@ namespace FlockFive
             seat.y += y - seat.yMin;
             return seat;
         }
+
+        public static void WarmWheelArt() => EnsureWheelArt();
 
         static void EnsureWheelArt()
         {

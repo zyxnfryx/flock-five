@@ -522,6 +522,8 @@ namespace FlockFive
                     }
                     if (_preloadClock.Elapsed.TotalMilliseconds >= budget) break;
                     if (!HoneyArt.WarmDone) { using (StartupTrace.Begin("Pre.Honey")) HoneyArt.WarmStep(); any = true; }
+                    // b86: the Daily wheel disc/highlight/pointer bake on the dark screen too.
+                    if (_wheelDisc == null && _preloadClock.Elapsed.TotalMilliseconds < budget) { using (StartupTrace.Begin("Pre.Wheel")) WarmWheelArt(); any = true; }
                     if (_preloadOst < OstrichPaint.WarmCount && _preloadClock.Elapsed.TotalMilliseconds < budget)
                     {
                         // Painted ostrich parts load and upload behind the studio card.

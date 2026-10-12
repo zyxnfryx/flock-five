@@ -3139,12 +3139,44 @@ namespace FlockFive
         public static int BannerUses, SnugUses;
         public static string BannerSkip = "", BannerLast = "";
         GUIContent _bandContent;
+        Rect _captionSubject;
+        Rect _bannerLast;
+        int _bannerLastFrame = -10;
+        int _captionSubjectFrame = -10;
+        // A lesson names what its caption is about; the banner keeps off it.
+        void NoteCaptionSubject(Rect r) { _captionSubject = r; _captionSubjectFrame = Time.frameCount; }
         string BannerText;
 
         // Banner unless it cannot apply: a popup owns the screen (the caption belongs to that
         // card), the bee callout (tied to its icon), or the band would cover the glove's
         // target (captions and the glove never cover required UI).
+        // Build 86: a caption picks banner or snug ONCE, before its first frame, and keeps it.
+        // Before, the Daily line showed as a banner until its glove posed, then snapped to
+        // the snug box. The decision now also knows the lesson's target up front.
+        string _bandStyleFor;
+        bool _bandStyleBanner;
         bool CaptionBannerFits(string text, Rect seat, float s, out Rect band, out int px)
+        {
+            bool fits = CaptionBannerFitsRaw(text, seat, s, out band, out px);
+            if (_bandStyleFor != text)
+            {
+                _bandStyleFor = text;
+                _bandStyleBanner = fits && !BandCoversStepTarget(band);
+                if (!_bandStyleBanner) { SnugUses++; BannerSkip = "step target"; }
+            }
+            return _bandStyleBanner && fits;
+        }
+
+        // The live step's own control, known before its glove poses (home rail lessons).
+        bool BandCoversStepTarget(Rect band)
+        {
+            int rail = HomeStepRail();
+            if (rail < 0) return false;
+            var r = RailTapRect(rail);
+            return r.width > 2f && band.Overlaps(r);
+        }
+
+        bool CaptionBannerFitsRaw(string text, Rect seat, float s, out Rect band, out int px)
         {
             band = default; px = 0;
             if (!CaptionBanner || string.IsNullOrEmpty(text)) return false;
@@ -3189,8 +3221,28 @@ namespace FlockFive
             }
             st.fontSize = keep; st.wordWrap = wrap;
             float h = th + px * 0.9f;
-            band = new Rect(0f, seat.center.y - h * 0.5f, w, h);
-            if (band.y < 0f) band.y = 0f;
+            // Build 86: sit high, under the title (grow up from the old seat, over the VIP/coin
+            // row like the older banner), never over the lesson's subject (the arriving bird,
+            // the glove's target): hop above it if there is room under the title, else below.
+            float minTop = Mathf.Max(Screen.safeArea.yMin, TopHud() + (56f * 2f + 4f) * s * 0.92f);
+            float y = seat.y - (h - seat.height) * 0.85f;
+            if (y < minTop) y = minTop;
+            band = new Rect(0f, y, w, h);
+            float gap = 8f * s;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                bool moved = false;
+                for (int k = 0; k < 2; k++)
+                {
+                    Rect subj = k == 0 ? (_captionSubjectFrame >= Time.frameCount - 1 ? _captionSubject : default)
+                        : (_gloveTapRectOn && GloveTargetFresh() ? _gloveTapRect : default);
+                    if (subj.width < 2f || !band.Overlaps(subj)) continue;
+                    float up = subj.yMin - h - gap;
+                    band.y = up >= minTop ? up : subj.yMax + gap;
+                    moved = true;
+                }
+                if (!moved) break;
+            }
             if (band.yMax > Screen.height) band.y = Screen.height - h;
             if (_gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
             BannerSkip = "";
@@ -3235,6 +3287,7 @@ namespace FlockFive
                 // Build 85 (Brandon): the full-width translucent banner is the default caption.
                 // Edge to edge, large bold centered text, dims whatever row sits behind it.
                 NoteTutorPlate(band);
+                _bannerLast = band; _bannerLastFrame = Time.frameCount;
                 BannerLast = band + " fade " + fade + " ev " + (Event.current != null ? Event.current.type.ToString() : "-") + " px " + bandPx;
                 var prevC = GUI.color;
                 GUI.color = new Color(0f, 0f, 0f, 0.58f * fade);
