@@ -36,9 +36,9 @@ namespace FlockFive.Editor
             float g0; float b1 = StudioSync.Burst(2.06f, out g0), b2 = StudioSync.Burst(2.771f, out g0);
             Check("studio-burst-shape", b1 > 0.99f && b2 < 0.011f && StudioSync.Burst(1.99f, out g0) == 0f, "hold " + b1.ToString("0.00") + " gone " + b2.ToString("0.000"));
             var tip = FlockFiveApp.SwooshPoint(1f);
-            Check("studio-path-traced", StudioSync.PathX.Length == 96 && StudioSync.PathY.Length == 96
-                && tip.x == StudioSync.PathX[95] && tip.y == StudioSync.PathY[95] && FlockFiveApp.SwooshPoint(0f).x < tip.x,
-                "96 pts, tip " + tip);
+            Check("studio-path-traced", StudioSync.PathX.Length >= 192 && StudioSync.PathY.Length == StudioSync.PathX.Length
+                && tip.x == StudioSync.PathX[StudioSync.PathX.Length - 1] && tip.y == StudioSync.PathY[StudioSync.PathY.Length - 1] && FlockFiveApp.SwooshPoint(0f).x < tip.x,
+                StudioSync.PathX.Length + " pts, tip " + tip);
             bool starOk = StudioSync.StarAngle.Length == 181 && StudioSync.StarScale.Length == 181 && StudioSync.StarRay.Length == 181 && StudioSync.StarSharp.Length == 181;
             float minS = 9f, maxS = 0f, minSh = 9f, maxSh = 0f;
             for (int i = 1; i <= 120; i++) { minS = Mathf.Min(minS, StudioSync.StarScale[i]); maxS = Mathf.Max(maxS, StudioSync.StarScale[i]); minSh = Mathf.Min(minSh, StudioSync.StarSharp[i]); maxSh = Mathf.Max(maxSh, StudioSync.StarSharp[i]); }
@@ -56,6 +56,27 @@ namespace FlockFive.Editor
             }
             Check("studio-path-ends-at-tail-tip", tip.x > 0.93f && tip.y > 0.55f && tip.y < 0.70f && corner && lowX < 0.20f,
                 "tip " + tip + " corner " + corner + " diag low x " + lowX);
+            // Every path point sits on the logo's dark outline stroke (2px tolerance, source PNG).
+            {
+                var png = new Texture2D(2, 2);
+                png.LoadImage(System.IO.File.ReadAllBytes("Assets/_Project/Art/Resources/Sprites/studio_zfx_logo.png"));
+                var lp = png.GetPixels32(); int pw = png.width, ph = png.height, off = 0;
+                for (int i = 0; i < StudioSync.PathX.Length; i++)
+                {
+                    int cx = Mathf.RoundToInt(StudioSync.PathX[i] * pw), cy = ph - 1 - Mathf.RoundToInt(StudioSync.PathY[i] * ph);
+                    bool hit = false;
+                    for (int dy = -2; dy <= 2 && !hit; dy++)
+                    for (int dx = -2; dx <= 2 && !hit; dx++)
+                    {
+                        int x = Mathf.Clamp(cx + dx, 0, pw - 1), y = Mathf.Clamp(cy + dy, 0, ph - 1);
+                        var c = lp[y * pw + x];
+                        hit = c.a > 128 && c.r < 70 && c.g < 70 && c.b < 70;
+                    }
+                    if (!hit) off++;
+                }
+                Check("studio-path-on-outline", off == 0, off + " of " + StudioSync.PathX.Length + " off the dark outline");
+                Object.DestroyImmediate(png);
+            }
             Check("studio-pop-matches-jingle", Mathf.Abs(FlockFiveApp.StudioPopAt - 2.0f) < 1e-4f, "");
             var a = FlockFiveApp.StudioLogoRect(1179f, 2556f, SpriteCatalog.StudioLogo);
             var b = FlockFiveApp.StudioLogoRect(1536f, 2048f, SpriteCatalog.StudioLogo);
