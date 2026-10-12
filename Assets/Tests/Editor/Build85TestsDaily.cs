@@ -41,6 +41,7 @@ namespace FlockFive.Editor
                 Set("_dailyRailLocked", false);
                 Set("_dailyIntro", true); Set("_dailyIntroLive", false);
                 Set("_adoptOwed", true); Set("_adoptLive", true);
+                Check("card-end-hold", FlockFiveApp.CardEndHoldSec >= 0.45f && FlockFiveApp.CardEndHoldSec <= 0.8f, "hold " + FlockFiveApp.CardEndHoldSec);
                 Check("daily-hidden-under-adopt", Goal() == 0f, "goal " + Goal());
                 Set("_adoptLive", false); Set("_adoptOwed", false);
                 Check("daily-hidden-until-its-lesson", Goal() == 0f, "goal " + Goal());

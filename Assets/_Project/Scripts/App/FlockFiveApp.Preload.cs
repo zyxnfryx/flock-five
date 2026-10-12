@@ -40,6 +40,9 @@ namespace FlockFive
         static readonly Color WarmCoverColor = new Color(0.12156863f, 0.12156863f, 0.1254902f, 1f);
         static float _warmCoverT0 = -1f;
         static float _warmCoverFadeT0 = -1f;
+        // Build 85 (Brandon): a fixed breath after the studio card ends, before the splash
+        // fades in, on top of any load time (loading already finished on the dark screen).
+        public const float CardEndHoldSec = 0.5f;
         static int _warmCoverPaints;
         static bool _warmCoverOff;
         static bool _warmHeavyDone;
@@ -387,7 +390,7 @@ namespace FlockFive
                 _loadArtT0 = now;
                 UnityEngine.Debug.Log("FF_CARD_AT dark=" + ((now - _warmCoverT0) * 1000f).ToString("0") + "ms preloadDone=" + _preloadDone);
             }
-            if (_warmCoverFadeT0 < 0f && _loadArtT0 >= 0f && now - _loadArtT0 >= StudioMinSec)
+            if (_warmCoverFadeT0 < 0f && _loadArtT0 >= 0f && now - _loadArtT0 >= StudioMinSec + CardEndHoldSec)
                 _warmCoverFadeT0 = now;
             float a = 1f;
             if (_warmCoverFadeT0 >= 0f)
