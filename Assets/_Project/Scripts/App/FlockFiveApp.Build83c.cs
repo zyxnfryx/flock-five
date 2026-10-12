@@ -118,6 +118,14 @@ namespace FlockFive
                 yield return new WaitForEndOfFrame();
                 SaveFrame(dir + "/b83-curtain-" + i + "-" + names[i] + ".png");
             }
+            Directory.CreateDirectory(dir + "/curtain");
+            for (int f = 0; f <= 36; f++)
+            {
+                LevelCurtain.PreviewNow = f / 30f;
+                yield return null;
+                yield return new WaitForEndOfFrame();
+                SaveFrame(dir + "/curtain/f" + f.ToString("000") + ".png");
+            }
             LevelCurtain.Reset();
             Debug.Log("B83C curtain done");
             PrefGuard.SetInt("flockfive.streak", streakKeep);

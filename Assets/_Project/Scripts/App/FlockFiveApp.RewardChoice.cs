@@ -64,8 +64,26 @@ namespace FlockFive
             return Ads.RewardRepeatReady;
         }
 
+        float _rewardAdT0 = -1f;
+        float _rewardAdIdle = -1f;
+
+        // RewardAdWatchdog: if the ad never comes back (app paused/killed mid-ad, SDK drops
+        // the callback, the coroutine host goes away) the popup must not hang. Once no ad is
+        // showing for 1.5s after it started, pay what was earned and treat it as Collect.
+        void RewardAdWatchdog()
+        {
+            if (_rewardChoice != 1) { _rewardAdIdle = -1f; return; }
+            float now = Time.unscaledTime;
+            if (Ads.IsShowing) { _rewardAdIdle = -1f; return; }
+            if (_rewardAdIdle < 0f) _rewardAdIdle = now;
+            if (now - _rewardAdIdle < 1.5f || now - _rewardAdT0 < 2f) return;
+            if (RewardedGrant.Earned) RewardedGrant.Flush();
+            _rewardChoice = 2;
+        }
+
         bool RewardChoicePending()
         {
+            RewardAdWatchdog();
 #if UNITY_EDITOR
             if (RewardAutoCollect && _rewardChoice == 0) _rewardChoice = 2;
 #endif
@@ -141,6 +159,7 @@ namespace FlockFive
         IEnumerator WatchRewardRepeat()
         {
             _rewardChoice = 1;
+            _rewardAdT0 = Time.unscaledTime;
             int amt = _rewardRepeatAmt;
             yield return Ads.Rewarded(Ads.PlacementRewardRepeat, amt, false);
             if (RewardedGrant.Earned) RewardedGrant.Flush();

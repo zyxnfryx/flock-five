@@ -1241,7 +1241,8 @@ namespace FlockFive
         {
             if (frame < 0 || frame > 5) frame = 0;
             if (body == null) body = SpriteCatalog.BodyPose(frame);
-            if (fitBody == null) fitBody = body;
+            // Polish 2: size the kit on the rest skull so it does not shrink on wings-up flaps.
+            if (fitBody == null) fitBody = frame == 0 ? body : SpriteCatalog.BodyPose(0);
             if (worn == BirdKit.Plain) worn = BirdKit.Crown;
             if (kit == null) kit = SpriteCatalog.KitSprite(BirdColor.Gold, worn);
             float fitHead = SpriteCatalog.HeadSpan(fitBody);
