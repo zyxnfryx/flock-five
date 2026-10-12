@@ -150,6 +150,12 @@ namespace FlockFive.Editor
                     }
                 }
                 Check("birds-v5-fly-off-screen", offOk, offOk ? "all five leave the screen" : offMsg);
+                {
+                    var ct = StudioBirds.CardTex(0, 3, out _) as Texture2D;
+                    var wt = StudioBirds.CardWhite(0, 3) as Texture2D;
+                    bool okTex = ct != null && wt != null && ct.mipmapCount > 1 && ct.width == StudioBirds.CardTexPx;
+                    Check("birds-card-art-opaque-pale", okTex, "mipmapped colour + white-silhouette copies (pale = colour blend, not alpha)");
+                }
                 Check("birds-v5-depth-layers", backUnder && frontOver, "back arc under, front arc over");
                 var r = new Rect(108f, 900f, 864f, 415f);
                 var c = StudioBirds.ToCard(new Vector2(StudioBirds.LogoOx, StudioBirds.LogoOy), r);

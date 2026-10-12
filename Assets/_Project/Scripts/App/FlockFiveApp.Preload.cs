@@ -379,7 +379,9 @@ namespace FlockFive
             // Brandon 10:42 PM: ALL loading happens on the dark screen after Made with Unity; the
             // studio card (and its jingle) starts only once the preload is done, and nothing
             // loads under the card. The card then plays its full StudioMinSec and lifts.
-            if (_loadArtT0 < 0f && (_preloadDone || !_splash || _home != HomeFace.Splash || now - _warmCoverT0 > WarmCoverMaxSec)
+            // Card bird textures are built on the dark screen too (one pose per frame).
+            bool birdsReady = _loadArtT0 >= 0f || StudioBirds.WarmStep();
+            if (_loadArtT0 < 0f && birdsReady && (_preloadDone || !_splash || _home != HomeFace.Splash || now - _warmCoverT0 > WarmCoverMaxSec)
                 && _warmCoverPaints >= 4)
             {
                 _loadArtT0 = now;

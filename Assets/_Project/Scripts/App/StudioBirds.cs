@@ -127,14 +127,81 @@ namespace FlockFive
         public static readonly BirdColor[] Colors = { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet, BirdColor.Peach };
         public static Sprite Sprite(int b, int pose) => SpriteCatalog.BirdPose(Colors[b], pose);
 
-        public static void Warm()
+        // ROOT CAUSE of the flat "paper" birds (b83 v5 card): the 1504px bird sheets have no
+        // mipmaps (SpriteImport policy) and the card drew them straight into ~110-180px with
+        // bilinear sampling, a 9-14x minify that skips most texels, so the feather shading
+        // aliased into flat facets. The mocks were Lanczos-downsampled. Fix: once, on the dark
+        // preload screen, each pose is box-filtered on the GPU (2:1 bilinear halvings) into a
+        // 256px trilinear mipmapped copy, and the card draws that. Same art, same proportions.
+        public const int CardTexPx = 384; // ~2x the largest on-card bird (~180px)
+        static Texture2D[,] _col, _white;
+
+        // Colour copy (and a white silhouette of it) per pose, 256px, mipmapped, trilinear.
+        public static Texture CardTex(int b, int pose, out Rect uv) { uv = new Rect(0f, 0f, 1f, 1f); Build(b, pose); return _col[b, pose]; }
+        public static Texture CardWhite(int b, int pose) { Build(b, pose); return _white[b, pose]; }
+
+        static void Build(int b, int pose)
         {
-            for (int b = 0; b < Count; b++)
-                for (int p = 1; p <= 4; p++) Sprite(b, p);
+            if (_col == null) { _col = new Texture2D[Count, 5]; _white = new Texture2D[Count, 5]; }
+            if (_col[b, pose] != null) return;
+            var spr = Sprite(b, pose);
+            if (spr == null || spr.texture == null) return;
+            var src = spr.texture;
+            var prevActive = RenderTexture.active;
+            Texture cur = src;
+            int w = src.width, h = src.height;
+            RenderTexture tmp = null;
+            while (w / 2 >= CardTexPx * 1.4f)
+            {
+                w /= 2; h /= 2;
+                var nx = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+                nx.filterMode = FilterMode.Bilinear;
+                Graphics.Blit(cur, nx);
+                if (tmp != null) RenderTexture.ReleaseTemporary(tmp);
+                tmp = nx; cur = nx;
+            }
+            var fin = RenderTexture.GetTemporary(CardTexPx, CardTexPx, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+            fin.filterMode = FilterMode.Bilinear;
+            Graphics.Blit(cur, fin);
+            if (tmp != null) RenderTexture.ReleaseTemporary(tmp);
+            RenderTexture.active = fin;
+            var col = new Texture2D(CardTexPx, CardTexPx, TextureFormat.RGBA32, true, false)
+            { name = "StudioBird" + b + "_" + pose, filterMode = FilterMode.Trilinear, wrapMode = TextureWrapMode.Clamp, mipMapBias = -0.6f, anisoLevel = 2 };
+            col.ReadPixels(new Rect(0, 0, CardTexPx, CardTexPx), 0, 0, false);
+            RenderTexture.active = prevActive;
+            RenderTexture.ReleaseTemporary(fin);
+            var px = col.GetPixels32();
+            col.Apply(true, false);
+            for (int i = 0; i < px.Length; i++) { px[i].r = 255; px[i].g = 255; px[i].b = 255; }
+            var wt = new Texture2D(CardTexPx, CardTexPx, TextureFormat.RGBA32, true, false)
+            { name = "StudioBirdW" + b + "_" + pose, filterMode = FilterMode.Trilinear, wrapMode = TextureWrapMode.Clamp, mipMapBias = -0.6f };
+            wt.SetPixels32(px);
+            wt.Apply(true, true);
+            col.Apply(true, true);
+            _col[b, pose] = col;
+            _white[b, pose] = wt;
         }
 
-        // GUI draw for one layer (back = under the logo). Back-arc birds are paler: on the white
-        // card, drawing at (1 - 0.30*|d|) alpha is the mockup's 30%*|d| blend toward white.
+        // One pose per call (20 total), run on the dark preload screen before the card.
+        static int _warmI;
+        public static bool WarmStep()
+        {
+            if (_warmI >= Count * 4) return true;
+            int b = _warmI / 4, p = _warmI % 4 + 1;
+            CardTex(b, p, out _);
+            _warmI++;
+            return _warmI >= Count * 4;
+        }
+
+        public static void Warm()
+        {
+            while (!WarmStep()) { }
+        }
+
+        // GUI draw for one layer (back = under the logo). Back-arc birds are paler like the mock:
+        // the bird stays OPAQUE and its colour is blended 30%*|d| toward white by a white
+        // silhouette laid over it. (v5 faded alpha instead, so overlapping birds and the logo
+        // showed through each other: the see-through "paper/tissue" look Brandon flagged.)
         public static void Draw(Rect logo, float t, bool back, float cardA)
         {
             var order = new int[Count];
@@ -154,21 +221,28 @@ namespace FlockFive
             {
                 int b = order[i];
                 var s = st[b];
-                var spr = Sprite(b, s.Pose);
-                if (spr == null || spr.texture == null) continue;
+                var tex = CardTex(b, s.Pose, out var uv);
+                if (tex == null) continue;
                 float size = SourcePx(s.Pose) * s.Scale * k;
                 var c = ToCard(s.Pos, logo);
-                float pale = s.Behind ? 1f - 0.30f * -s.Depth : 1f;
-                float al = s.Alpha * cardA * pale;
+                float pale = s.Behind ? 0.30f * -s.Depth : 0f;
+                float al = s.Alpha * cardA;
                 if (al < 0.01f) continue;
                 GUI.matrix = keepM;
                 GUIUtility.RotateAroundPivot(-s.Tilt * s.Face, c);
-                var tex = spr.texture;
-                var tr = spr.textureRect;
-                var uv = new Rect(tr.x / tex.width, tr.y / tex.height, tr.width / tex.width, tr.height / tex.height);
                 if (s.Face < 0f) uv = new Rect(uv.xMax, uv.y, -uv.width, uv.height);
+                var dst = new Rect(c.x - size * 0.5f, c.y - size * 0.5f, size, size);
                 GUI.color = new Color(1f, 1f, 1f, al);
-                GUI.DrawTextureWithTexCoords(new Rect(c.x - size * 0.5f, c.y - size * 0.5f, size, size), tex, uv, true);
+                GUI.DrawTextureWithTexCoords(dst, tex, uv, true);
+                if (pale > 0.005f)
+                {
+                    var wt = CardWhite(b, s.Pose);
+                    if (wt != null)
+                    {
+                        GUI.color = new Color(1f, 1f, 1f, al * pale);
+                        GUI.DrawTextureWithTexCoords(dst, wt, uv, true);
+                    }
+                }
             }
             GUI.matrix = keepM;
             GUI.color = keepC;
