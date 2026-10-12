@@ -218,6 +218,10 @@ namespace FlockFive
         bool _gloveMirror;
         // One veil for every lesson glove, including the home avatar.
         enum TutorGloveAct { None, Reappear, Live, FadeOutOnTap, Hidden }
+        int _gloveHidStep = -1;
+        float _gloveHidAt;
+        const float GloveReturnSec = 0.9f;
+        public static int GloveReturns;
         TutorGloveAct _gloveAct;
         float _gloveAlpha;
         float _gloveFadeFrom;
@@ -1404,10 +1408,27 @@ namespace FlockFive
                     _gloveVis = false;
                     _gloveHoldPose = false;
                     _gloveReady = false;
+                    _gloveHidStep = LiveCoachStep();
+                    _gloveHidAt = AdPause.Unscaled;
                     return;
                 }
                 _gloveAlpha = _gloveFadeFrom * (1f - u);
                 _gloveVis = true;
+                return;
+            }
+            if (_gloveAct == TutorGloveAct.Hidden)
+            {
+                // Build 85: a faded glove whose tap did not move the lesson on (the press was
+                // blocked or missed the control) comes back, so a forced step can never be
+                // left with its caption up and no hand. A step that advanced re-poses anyway.
+                if (_gloveHidStep >= 0 && LiveCoachStep() == _gloveHidStep && !Pressed(out _)
+                    && AdPause.Unscaled - _gloveHidAt > GloveReturnSec)
+                {
+                    _gloveHidStep = -1;
+                    GloveVeilReset();
+                    _gloveVis = false;
+                    GloveReturns++;
+                }
                 return;
             }
             if (_gloveAct != TutorGloveAct.Reappear) return;

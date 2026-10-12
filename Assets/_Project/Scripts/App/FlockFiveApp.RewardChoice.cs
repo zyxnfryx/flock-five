@@ -14,6 +14,7 @@ namespace FlockFive
         // 0 waiting, 1 ad running, 2 chosen.
         int _rewardChoice;
         int _rewardRepeatAmt;
+        int _rewardHasAd = -1; // b85: decided once, before the buttons show
         bool _rewardAtHold;
         Rect _rewardFace;
         float _rewardChoiceBorn = -1f;
@@ -129,7 +130,13 @@ namespace FlockFive
             if (_rewardChoiceBorn < 0f) _rewardChoiceBorn = AdPause.Unscaled;
             float a = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((AdPause.Unscaled - _rewardChoiceBorn) / 0.22f));
 
-            bool hasAd = RewardAdNow() && _rewardRepeatAmt > 0;
+            // Decide 2X vs Collect first (the owed pay is the 2X prize), then show, then wait.
+            if (_rewardHasAd < 0)
+            {
+                if (_rewardRepeatAmt <= 0) _rewardRepeatAmt = Purse.OwedPay;
+                _rewardHasAd = RewardAdNow() && _rewardRepeatAmt > 0 ? 1 : 0;
+            }
+            bool hasAd = _rewardHasAd == 1;
             var lay = LayoutRewardChoice(_rewardFace, Screen.width, Screen.height, hasAd);
             if (_choiceWord == null)
                 _choiceWord = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };

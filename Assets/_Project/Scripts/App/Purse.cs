@@ -89,6 +89,7 @@ namespace FlockFive
         public static int Pending { get; set; }
         // Stage-clear coins waiting for the reward sign's pay step. Not the balance.
         static int Owed;
+        public static int OwedPay => Owed; // b85: the held REWARD popup reads its prize
         static bool _clearDouble;
         public static int LoginDays { get; private set; }
         public static int LoginMul => Mathf.Clamp(LoginDays, 1, 3);

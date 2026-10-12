@@ -1133,6 +1133,7 @@ namespace FlockFive
         const float KitSeatSlack = 0.04f;
         // Fractions of the head span: how far behind the dome peak the kit seats, and how much
         // lower it settles there. Static (not const) so the b85 before/after still can set 0.
+        public static bool KitStableSeat = true;
         public static float KitBack = 0.30f;
         public static float KitBackDrop = 0.07f;
         static KitGlide[] _kitSlots;
@@ -1255,6 +1256,12 @@ namespace FlockFive
             var box = SpriteCatalog.MeasureOpaque(kit);
             float native = box.Ok ? box.Width : 1f;
             scale = KitFit(fitHead, native, worn);
+            // Build 85 (Brandon: the crown jerks with the wing flaps): every flying flap frame
+            // shares one painted head (template match: same skull pixels within 2 px on _1.._4),
+            // but the per-frame dome scan read the raised wing on _2 as the crown. Seat all
+            // flap frames on the _1 skull so the kit stays put in the garden, the home avatar
+            // and the name picker. The perched rest pose is its own painting and keeps its own.
+            if (KitStableSeat) body = SpriteCatalog.FlapSeatBody(body);
             Seat(worn, scale, head, body, kit, faceLeft, out x, out y, out tilt, out flip);
         }
 

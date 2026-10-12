@@ -6606,7 +6606,14 @@ namespace FlockFive
         float SplashDailyGoal()
         {
             if (LevelData.NextPlay < 1) return 0f;
-            if (_dailyRailLocked && _dailyIntro && !_dailyIntroLive) return 0f;
+            // Build 85 (device strand on a fresh install): the Daily button stays out of the
+            // rail until its own lesson is live. Before, it only hid when level 1 was cleared in
+            // this session (_dailyRailLocked), so after a relaunch it showed under the adopt
+            // lesson, a tap on it was blocked (adopt owns the turn) and only dismissed the
+            // greet glove. The adopt lesson now always runs first with no Daily on screen; the
+            // Daily lesson then grows the button in and its glove points at it.
+            if (_dailyIntro && !_dailyIntroLive) return 0f;
+            if (AdoptHoldsQueue() && PlayerPrefs.GetInt(CoachDailyKey, 0) == 0) return 0f;
             return 1f;
         }
 
@@ -8250,6 +8257,7 @@ namespace FlockFive
             _waxBorn = -1f;
             _rewardChoice = 0;
             _rewardRepeatAmt = 0;
+            _rewardHasAd = -1;
         }
 
         void StepStreakReward()
@@ -8272,7 +8280,9 @@ namespace FlockFive
             if (!fadeGate)
                 _streakSlide = Mathf.Min(1f, _streakSlide + PlayClock.Delta / dur);
             t = _streakSlide * dur;
-            if (t >= beat.PayAt)
+            // Build 85 (Brandon): the popup plays its intro, then HOLDS. Coins fly and the
+            // balance moves only after the tap (Collect, or 2X once its ad is done).
+            if (t >= beat.PayAt && !RewardChoicePending())
                 PayStreakStep();
             if (_streakSlide >= 1f && !RewardPayBusy())
                 DismissStreakSign();
@@ -9939,6 +9949,20 @@ namespace FlockFive
             dailyGates.DailySoftOk = dailyLesson && _streakSlide < 0f;
             dailyGates.PopupGate = PopupBlocked(PopupKind.Daily);
             dailyGates.StepGate = StepGateBlocks(dailyTap);
+            if (dailyLesson)
+            {
+                // Build 85 (device strand, build 84): the Daily lesson's own target must always
+                // open the card. The glove fades on the press (NoteGloveTap), so any lesson-side
+                // gate that also ate that tap (the coach-ate frame, the dismiss guard, the step
+                // gate or the tutorial popup gate) left the caption up, the glove gone and the
+                // card shut. Those gates guard OTHER controls from the lesson; they never apply
+                // to the control the glove points at.
+                dailyGates.CoachAte = false;
+                dailyGates.LessonGuard = false;
+                dailyGates.StepGate = false;
+                dailyGates.PopupGate = false;
+                dailyGates.ResumeSwallow = false;
+            }
             var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates));
             StartupTrace.Lap("L.Daily");
             if (dailyView.Launch)

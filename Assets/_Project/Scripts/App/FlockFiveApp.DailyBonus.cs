@@ -180,7 +180,8 @@ namespace FlockFive
         void OpenDailyCard()
         {
             if (_dailyOpen || _dailyAskOpen || _welcomeOpen) return;
-            if (!GatePopup(PopupKind.Daily, true)) return;
+            // The Daily lesson owns this open: its glove points here. Never gate it on itself.
+            if (HomeStepRail() != RailDaily && !GatePopup(PopupKind.Daily, true)) return;
 #if UNITY_EDITOR
             if (_dailyShotQuiet || EditorShotLive) return;
 #endif

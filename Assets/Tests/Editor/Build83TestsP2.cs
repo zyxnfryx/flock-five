@@ -102,7 +102,7 @@ namespace FlockFive.Editor
                 BirdIdle.KitTouch(kitKind, f, left, body, kit, out float tx, out float ty);
                 BirdIdle.KitBack = kb; BirdIdle.KitBackDrop = kd;
                 BirdIdle.KitTouch(kitKind, f, left, body, kit, out float bx, out float by);
-                var dome = SpriteCatalog.HeadDome(body);
+                var dome = SpriteCatalog.HeadDome(SpriteCatalog.FlapSeatBody(body)); // b85: flap frames share the _1 skull
                 float dx = tx - (left ? -dome.x : dome.x);
                 float backBy = (left ? bx - tx : tx - bx);
                 float head = Mathf.Max(0.05f, SpriteCatalog.HeadSpan(body));
