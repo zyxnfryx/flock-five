@@ -669,6 +669,8 @@ namespace FlockFive
         {
             if (!_splash) return;
             if (_splashGate <= 0f || Time.unscaledTime < _splashGate) return;
+            // Only the jingle plays on the studio card; the splash music starts after it.
+            if (FlockFiveApp.StudioCardHold) return;
             _splashGate = -1f;
             if (_stems != null && _stems.Length > 4 && _stems[4] != null)
             {

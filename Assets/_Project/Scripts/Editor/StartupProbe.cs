@@ -101,7 +101,7 @@ namespace FlockFive.Editor
             }
             Pump();
             bool done = File.Exists(Result);
-            bool timedOut = EditorApplication.timeSinceStartup - _playAt > 16.0;
+            bool timedOut = EditorApplication.timeSinceStartup - _playAt > 22.0;
             if (done)
             {
                 EditorApplication.Exit(0);

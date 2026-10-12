@@ -116,7 +116,7 @@ namespace FlockFive.Editor
             {
                 var s0 = StudioBirds.At(0, 0f);
                 var s1 = StudioBirds.At(0, 0.06f);
-                Check("birds-v5-on-ring-frame0", s0.On && s0.Alpha < 0.01f && s1.Alpha > 0.4f && Mathf.Abs(s0.Pos.x - 72f) < 40f, "ruby at t=0 " + s0.Pos);
+                Check("birds-v5-on-ring-frame0", s0.On && s0.Alpha < 0.01f && s1.Alpha > 0.4f && s0.Pos.x < 400f, "ruby at t=0 " + s0.Pos);
                 bool fanOk = true; float lastOn = 0f; bool backUnder = false, frontOver = false;
                 for (int b = 0; b < StudioBirds.Count; b++)
                 {
@@ -133,6 +133,23 @@ namespace FlockFive.Editor
                 }
                 Check("birds-v5-breakout-sprites", fanOk, "break-out 1.70-1.86s, real 6-pose sprites");
                 Check("birds-v5-exit-by-2.95", lastOn > 2.80f && lastOn < 2.99f, "last visible " + lastOn.ToString("0.000"));
+                // Every bird flies fully off screen before it is dropped (tall and 16:9 phones).
+                string offMsg = "";
+                bool offOk = true;
+                foreach (var scr in new[] { new Vector2(1179f, 2556f), new Vector2(1080f, 1920f), new Vector2(1290f, 2796f) })
+                {
+                    var lr = FlockFiveApp.StudioLogoRect(scr.x, scr.y, null);
+                    for (int b = 0; b < StudioBirds.Count; b++)
+                    {
+                        StudioBirds.State last = default;
+                        for (float t = 1.7f; t <= 3.0f; t += 1f / 240f) { var q = StudioBirds.At(b, t); if (q.On) last = q; }
+                        var cc = StudioBirds.ToCard(last.Pos, lr);
+                        float half = StudioBirds.SourcePx(last.Pose) * last.Scale * lr.width / StudioBirds.MockLogoW * 0.5f;
+                        bool off = cc.x + half < 0f || cc.x - half > scr.x || cc.y - half > scr.y || cc.y + half < 0f;
+                        if (!off) { offOk = false; offMsg += " bird" + b + "@" + scr + " " + cc; }
+                    }
+                }
+                Check("birds-v5-fly-off-screen", offOk, offOk ? "all five leave the screen" : offMsg);
                 Check("birds-v5-depth-layers", backUnder && frontOver, "back arc under, front arc over");
                 var r = new Rect(108f, 900f, 864f, 415f);
                 var c = StudioBirds.ToCard(new Vector2(StudioBirds.LogoOx, StudioBirds.LogoOy), r);

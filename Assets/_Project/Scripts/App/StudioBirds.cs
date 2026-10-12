@@ -14,7 +14,7 @@ namespace FlockFive
         public const float LogoOx = 60f;              // (1080-960)/2
         public const float LogoOy = 609f;             // (1920-461)/2 - 120
         public const float RingCx = 540f, RingCy = 812f, RingA = 470f, RingB = 225f, RingRot = -15f;
-        public const float Omega = 2.75f, TScatter = 1.70f, Lag = 0.04f, FadeIn = 0.12f, TGone = 3.0f;
+        public const float Omega = 3.30f, TScatter = 1.70f, Lag = 0.04f, FadeIn = 0.12f, TGone = 3.0f;
         public const float FlapRate = 1.25f, ScatterGrow = 1.30f;
         public static readonly int[] Flap6 = { 3, 1, 4, 2, 4, 1 };
         public static readonly string[] Prefix = { "bird_ruby", "bird_gold", "bird_teal", "bird_violet", "bird_peach_f" };
@@ -23,11 +23,13 @@ namespace FlockFive
         static readonly float[] ExitT = { 1.20f, 1.20f, 1.18f, 1.15f, 1.12f };
         static readonly Vector2[,] Ctrl =
         {
-            { new Vector2(80, 1150), new Vector2(140, 1450), new Vector2(-70, 1640) },
-            { new Vector2(260, 1250), new Vector2(380, 1600), new Vector2(360, 1960) },
-            { new Vector2(520, 1300), new Vector2(800, 1600), new Vector2(880, 1960) },
-            { new Vector2(680, 1250), new Vector2(1000, 1350), new Vector2(1150, 1470) },
-            { new Vector2(720, 1160), new Vector2(960, 1150), new Vector2(1150, 1190) },
+            // Brandon 10:42 PM: longer burst, every bird flies fully off screen (tall phones too:
+            // a 1179x2556 card reaches mock y~2330 at the bottom, x~-160 / ~1240 at the sides).
+            { new Vector2(80, 1150), new Vector2(40, 1500), new Vector2(-380, 1760) },
+            { new Vector2(260, 1260), new Vector2(330, 1750), new Vector2(320, 2620) },
+            { new Vector2(520, 1320), new Vector2(820, 1800), new Vector2(940, 2600) },
+            { new Vector2(700, 1250), new Vector2(1120, 1350), new Vector2(1500, 1520) },
+            { new Vector2(740, 1160), new Vector2(1040, 1130), new Vector2(1520, 1150) },
         };
         public const int Count = 5;
         const float TH1 = 2.5f * Mathf.PI;
@@ -107,7 +109,8 @@ namespace FlockFive
             float ds = Mathf.Lerp(0.75f, 1.15f, (d + 1f) * 0.5f);
             s.Scale = BaseScale[b] * ds * k;
             s.Depth = d;
-            s.Alpha = Mathf.Clamp01((t - b * Lag) / FadeIn) * Mathf.Clamp01((3.0f - t) / 0.3f);
+            // No card-fade dimming: they leave by flying off the edges, not by fading.
+            s.Alpha = Mathf.Clamp01((t - b * Lag) / FadeIn);
             s.Pos = p;
             s.On = true;
             return s;
@@ -120,13 +123,9 @@ namespace FlockFive
 
         public static float SourcePx(int pose) => pose == 2 ? 1536f : 1504f;
 
-        static Sprite[,] _spr;
-        public static Sprite Sprite(int b, int pose)
-        {
-            if (_spr == null) _spr = new Sprite[Count, 5];
-            if (_spr[b, pose] == null) _spr[b, pose] = Resources.Load<Sprite>("Sprites/" + Prefix[b] + "_" + pose);
-            return _spr[b, pose];
-        }
+        // Shared garden art path: the same SpriteCatalog wingbeat sheets the garden birds fly.
+        public static readonly BirdColor[] Colors = { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet, BirdColor.Peach };
+        public static Sprite Sprite(int b, int pose) => SpriteCatalog.BirdPose(Colors[b], pose);
 
         public static void Warm()
         {

@@ -12,7 +12,7 @@ namespace FlockFive
     // Update belong to the gap that just closed.
     public static class StartupTrace
     {
-        public const double WindowSec = 7.0;
+        public const double WindowSec = 11.0; // b83: dark preload, then the 3s studio card
         const int StackMax = 16;
         const int HitMax = 48;
 

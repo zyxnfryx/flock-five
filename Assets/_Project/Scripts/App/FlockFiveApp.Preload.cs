@@ -34,7 +34,7 @@ namespace FlockFive
         // Budget is per frame so the sparkle stays smooth; the plain launch-color cover is only
         // the fallback when the logo is missing. The home is laid out underneath.
         const int WarmCoverDelayFrames = 2;
-        const double WarmCoverBudgetMs = 22.0;
+        const double WarmCoverBudgetMs = 40.0; // dark screen only, nothing animates
         const float WarmCoverMaxSec = 6.0f;
         const float WarmCoverFadeSec = 0.25f;
         static readonly Color WarmCoverColor = new Color(0.12156863f, 0.12156863f, 0.1254902f, 1f);
@@ -376,15 +376,17 @@ namespace FlockFive
             float now = Time.realtimeSinceStartup;
             if (_warmCoverT0 < 0f) _warmCoverT0 = now;
             _warmCoverPaints++;
-            if (_warmCoverFadeT0 < 0f)
+            // Brandon 10:42 PM: ALL loading happens on the dark screen after Made with Unity; the
+            // studio card (and its jingle) starts only once the preload is done, and nothing
+            // loads under the card. The card then plays its full StudioMinSec and lifts.
+            if (_loadArtT0 < 0f && (_preloadDone || !_splash || _home != HomeFace.Splash || now - _warmCoverT0 > WarmCoverMaxSec)
+                && _warmCoverPaints >= 4)
             {
-                // Lift only once every preload job is done and the bar shows full.
-                bool artUp = _loadArtT0 >= 0f;
-                bool artHeld = !artUp || now - _loadArtT0 >= StudioMinSec;
-                bool warm = (_preloadDone && artHeld) || !_splash || _home != HomeFace.Splash;
-                if ((_warmCoverPaints >= 4 && warm) || now - _warmCoverT0 > WarmCoverMaxSec)
-                    _warmCoverFadeT0 = now;
+                _loadArtT0 = now;
+                UnityEngine.Debug.Log("FF_CARD_AT dark=" + ((now - _warmCoverT0) * 1000f).ToString("0") + "ms preloadDone=" + _preloadDone);
             }
+            if (_warmCoverFadeT0 < 0f && _loadArtT0 >= 0f && now - _loadArtT0 >= StudioMinSec)
+                _warmCoverFadeT0 = now;
             float a = 1f;
             if (_warmCoverFadeT0 >= 0f)
             {
@@ -392,8 +394,7 @@ namespace FlockFive
                 if (a < 1f) StartupTrace.MarkVisible();
                 if (a <= 0f) { _warmCoverOff = true; return; }
             }
-            if (_loadArtT0 < 0f) _loadArtT0 = _warmCoverT0;
-            if (DrawLoadingScreen(a, now - _warmCoverT0)) return;
+            if (_loadArtT0 >= 0f && DrawLoadingScreen(a, now - _loadArtT0)) return;
             // Fallback: the plain launch-color cover.
             var keep = GUI.color;
             var c = WarmCoverColor;
@@ -404,6 +405,8 @@ namespace FlockFive
         }
 
         public static bool WarmCoverLive => !_warmCoverOff;
+        // The studio card is up (or still to come): splash music waits until it lifts.
+        public static bool StudioCardHold => !_warmCoverOff && _warmCoverFadeT0 < 0f;
 
         static readonly string[] _preloadBadgerArt =
         {
@@ -456,6 +459,8 @@ namespace FlockFive
             if (Ads.IsShowing) return;
             if (Event.current == null || Event.current.type != EventType.Repaint) return;
             _preloadClock.Restart();
+            // Nothing loads under the studio card: it runs only on the dark screen before it.
+            if (WarmCoverUp && _loadArtT0 >= 0f) { _preloadClock.Stop(); return; }
             double budget = WarmCoverUp ? WarmCoverBudgetMs : PreloadBudgetMs;
             if (!_preloadDone && _splash && _home == HomeFace.Splash)
             {

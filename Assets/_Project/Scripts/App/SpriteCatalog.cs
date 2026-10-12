@@ -1365,6 +1365,15 @@ namespace FlockFive
             f4 = SlotWide(ref _kitFlap4, ix, FlapPath(c, sex, 4), 280f);
         }
 
+        // One pose (1..4) of a bird's wingbeat through the same loaders the garden uses
+        // (plain sheet, or the female sheet for colours without one, e.g. peach).
+        public static Sprite BirdPose(BirdColor c, int pose)
+        {
+            var sex = PlainOr(c, BirdSex.Neutral);
+            LoadFlaps(c, sex, out var f1, out var f2, out var f3, out var f4);
+            return FlapPick(pose, f1, f2, f3, f4) ?? Bird(c, sex);
+        }
+
         static Sprite FlapPick(int pose, Sprite f1, Sprite f2, Sprite f3, Sprite f4)
         {
             switch (pose)
