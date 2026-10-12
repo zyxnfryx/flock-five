@@ -885,9 +885,11 @@ namespace FlockFive
             var disc = DailyScaleRect(FlowerDisc(flower, 0f), pivot, k);
             // Build 86 (Brandon): the glove never covers the 'Claim' label. Tap the button's
             // lower-right rim; the hand hangs down and out, clear of the centered word.
-            aim = new Vector2(disc.xMax - disc.width * 0.17f, disc.yMax - disc.height * 0.13f);
+            // The hand meets the left rim from the left (cuff toward the screen edge), so the
+            // glove sits beside the button and the centered word stays clear.
+            aim = new Vector2(disc.x + disc.width * 0.12f, disc.center.y + disc.height * 0.10f);
             perchLift = float.NaN;
-            fromLeft = false;
+            fromLeft = true;
             _gloveKeepOff = disc;
         }
 

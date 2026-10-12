@@ -78,7 +78,7 @@ namespace FlockFive
             {
                 t += Mathf.Min(Time.unscaledDeltaTime, 0.1f);
                 if (Mathf.Repeat(t, 2f) < Time.unscaledDeltaTime) Log("wait " + t.ToString("0.0") + ": " + DailyDiag());
-                if (_dailyIntroLive && _dailyFirstN < 30)
+                if (_dailyIntroLive && _dailyFirstN < 45)
                 {
                     yield return new WaitForEndOfFrame();
                     if (_dailyFirstN == 0) System.IO.Directory.CreateDirectory("/Users/zfxgames/wkspaces/birdshot/gb/b85/dailyfirst");
@@ -107,6 +107,8 @@ namespace FlockFive
                 }
                 yield return null;
             }
+            // b86: keep recording the caption's first frames (no banner flash).
+            while (_dailyFirstN < 45) { yield return new WaitForEndOfFrame(); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/dailyfirst/f" + (_dailyFirstN++).ToString("00") + ".png"); }
             yield return new WaitForSecondsRealtime(0.6f); yield return new WaitForEndOfFrame(); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/b85-caption-daily-rail.png");
             Log("glove up after " + t.ToString("0.0") + "s: " + DailyDiag());
             var r = SplashDailyTapRect();
