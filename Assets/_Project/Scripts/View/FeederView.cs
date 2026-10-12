@@ -23,6 +23,7 @@ namespace FlockFive
         public bool InTransit => _departing || _arriving;
 
         void Awake() => _planted = transform.position;
+        public void PlantHere() => _planted = transform.position; // edit-mode clips/tests
 
         static Sprite _px;
         // Hanging cord from the art's hook up past the real screen top, so the feeder never floats.
@@ -117,6 +118,7 @@ namespace FlockFive
         public void BeginScore()
         {
             if (_departing) return;
+            if (!_scoring) _baseLive = false;
             _scoring = true;
             _held = true;
         }
@@ -163,42 +165,50 @@ namespace FlockFive
             _held = false;
         }
 
-        public void Pulse()
+        // FeederArrivalFx impulses, ticked in LateUpdate on scaled time. A new call restarts
+        // the same impulse (overlapping arrivals refresh, never stack).
+        float _squashT = -1f, _popT = -1f;
+        Vector3 _baseScale; Quaternion _baseRot = Quaternion.identity; bool _baseLive;
+        public void Squash()
         {
-            _held = true;
-            StartCoroutine(PulseCo());
+            if (_departing) return;
+            _scoring = true; _held = true;
+            _squashT = 0f;
         }
 
-        IEnumerator PulseCo()
+        public void SetPop()
         {
-            float t = 0f;
-            const float dur = 0.14f;
-            while (t < dur)
-            {
-                t += Time.deltaTime;
-                float u = Mathf.Sin(Mathf.Clamp01(t / dur) * Mathf.PI);
-                transform.localScale = Vector3.one * (Scale * (1f + 0.18f * u));
-                yield return null;
-            }
-            transform.localScale = Vector3.one * Scale;
+            if (_departing) return;
+            _scoring = true; _held = true;
+            _popT = 0f;
+            BurstGlints();
         }
 
-        public IEnumerator Cheer()
+        public bool SetPopLive => _popT >= 0f;
+
+        // Squash (1.12, 0.88) -> overshoot (0.96, 1.08) -> settle, over BirdSec.
+        public static Vector2 SquashScale(float u)
         {
-            _held = true;
-            float t = 0f;
-            while (t < 0.55f)
+            if (u <= 0f || u >= 1f) return Vector2.one;
+            float d = FeederArrivalFx.BirdPeak - 1f;
+            if (u < 0.4f) { float e = Mathf.SmoothStep(0f, 1f, u / 0.4f); return new Vector2(1f + d * e, 1f - d * e); }
+            if (u < 0.75f)
             {
-                t += Time.deltaTime;
-                float u = Mathf.Sin(t / 0.55f * Mathf.PI);
-                transform.localScale = Vector3.one * (Scale * (1f + 0.16f * u));
-                transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(t * 14f) * 7f * (1f - t / 0.55f));
-                if (Art != null) Art.color = Color.Lerp(Color.white, new Color(1f, 0.95f, 0.55f), u);
-                yield return null;
+                float e = Mathf.SmoothStep(0f, 1f, (u - 0.4f) / 0.35f);
+                return new Vector2(Mathf.Lerp(1f + d, 0.96f, e), Mathf.Lerp(1f - d, 1.08f, e));
             }
-            transform.localScale = Vector3.one * Scale;
-            if (Art != null) Art.color = Color.white;
-            _held = false;
+            float k = Mathf.SmoothStep(0f, 1f, (u - 0.75f) / 0.25f);
+            return new Vector2(Mathf.Lerp(0.96f, 1f, k), Mathf.Lerp(1.08f, 1f, k));
+        }
+
+        // Fast rise to SetPeak by 35%, eased settle to 1 by the end.
+        public static float SetPopScale(float u)
+        {
+            if (u <= 0f || u >= 1f) return 1f;
+            float d = FeederArrivalFx.SetPeak - 1f;
+            if (u < 0.35f) return 1f + d * Mathf.Sin(u / 0.35f * Mathf.PI * 0.5f);
+            float k = (u - 0.35f) / 0.65f;
+            return 1f + d * (1f - Mathf.SmoothStep(0f, 1f, k));
         }
 
         public IEnumerator PullAway()
@@ -207,6 +217,9 @@ namespace FlockFive
             _arriving = false;
             _scoring = false;
             _scoreAmp = 0f;
+            _squashT = _popT = -1f;
+            _baseLive = false;
+            if (Art != null) Art.color = Color.white;
             _held = true;
             StopCoroutine(nameof(Arrive));
             Sfx.FeederLeave();
@@ -328,6 +341,21 @@ namespace FlockFive
             }
         }
 
+        // Set-pop glints fly out around the jar instead of stacking on it.
+        void SpreadGlints(float u)
+        {
+            if (_glint == null) return;
+            float e = 1f - (1f - u) * (1f - u);
+            for (int i = 0; i < _glint.Length; i++)
+            {
+                if (_glint[i] == null || !_glint[i].enabled) continue;
+                float ang = (i * 90f + 45f + u * 50f) * Mathf.Deg2Rad;
+                float r = Mathf.Lerp(0.9f, 1.9f, e);
+                _glint[i].transform.localPosition = new Vector3(Mathf.Cos(ang) * r, 0.6f + Mathf.Sin(ang) * r * 0.8f, 0f);
+                _glint[i].transform.localScale = Vector3.one * (0.30f * (1f - u * 0.6f));
+            }
+        }
+
         void ClearGlints()
         {
             if (_glint == null) return;
@@ -343,6 +371,8 @@ namespace FlockFive
             _departing = false;
             _arriving = false;
             _scoreAmp = 0f;
+            _squashT = _popT = -1f;
+            _baseLive = false;
             ClearGlints();
             transform.position = _planted;
             transform.localRotation = Quaternion.identity;
@@ -350,23 +380,54 @@ namespace FlockFive
             if (Art != null) Art.color = Color.white;
         }
 
-        void LateUpdate()
+        void LateUpdate() => Step(Time.deltaTime, Time.time);
+
+        // One frame of feeder motion (LateUpdate; tests and clips drive it directly).
+        public void Step(float dt, float now)
         {
             if (_departing) return;
             if (_scoring)
             {
-                _scoreAmp = Mathf.MoveTowards(_scoreAmp, 0f, Time.deltaTime / 0.16f);
+                _scoreAmp = Mathf.MoveTowards(_scoreAmp, 0f, dt / 0.16f);
                 float a = _scoreAmp;
-                float wob = Mathf.Sin(Time.time * 32f) * 7f * a;
-                float hop = Mathf.Sin(Time.time * 21f) * 0.05f * a;
-                float sway = Mathf.Sin(Time.time * 26f) * 0.035f * a;
+                float wob = Mathf.Sin(now * 32f) * 7f * a;
+                float hop = Mathf.Sin(now * 21f) * 0.05f * a;
+                float sway = Mathf.Sin(now * 26f) * 0.035f * a;
                 var pose = _planted + new Vector3(sway, hop, 0f);
                 var rot = Quaternion.Euler(0f, 0f, wob);
                 var scale = Vector3.one * (Scale * (1f + 0.07f * a));
-                float k = 1f - Mathf.Exp(-16f * Time.deltaTime);
+                float k = 1f - Mathf.Exp(-16f * dt);
                 transform.position = Vector3.Lerp(transform.position, pose, k);
-                transform.localRotation = Quaternion.Slerp(transform.localRotation, rot, k);
-                transform.localScale = Vector3.Lerp(transform.localScale, scale, k);
+                // Smooth the base pose in fields so the impulses below never feed back into it.
+                if (!_baseLive) { _baseScale = transform.localScale; _baseRot = transform.localRotation; _baseLive = true; }
+                _baseRot = Quaternion.Slerp(_baseRot, rot, k);
+                _baseScale = Vector3.Lerp(_baseScale, scale, k);
+                transform.localRotation = _baseRot;
+                transform.localScale = _baseScale;
+                // Arrival impulses ride on top (exact, unsmoothed so the squash reads crisp).
+                var mul = Vector2.one;
+                if (_squashT >= 0f)
+                {
+                    _squashT += dt;
+                    float su = _squashT / FeederArrivalFx.BirdSec;
+                    mul = Vector2.Scale(mul, SquashScale(su));
+                    if (su >= 1f) _squashT = -1f;
+                }
+                if (_popT >= 0f)
+                {
+                    _popT += dt;
+                    float pu = _popT / FeederArrivalFx.SetSec;
+                    float ps = SetPopScale(pu);
+                    mul *= ps;
+                    float fall = Mathf.Clamp01(1f - pu);
+                    transform.localRotation *= Quaternion.Euler(0f, 0f, Mathf.Sin(pu * Mathf.PI * 2f) * 10f * fall);
+                    if (Art != null) Art.color = Color.Lerp(Color.white, new Color(1f, 0.95f, 0.62f), Mathf.Sin(Mathf.Clamp01(pu) * Mathf.PI) * 0.55f);
+                    TickGlints(fall);
+                    SpreadGlints(Mathf.Clamp01(pu));
+                    if (pu >= 1f) { _popT = -1f; ClearGlints(); if (Art != null) Art.color = Color.white; }
+                }
+                if (mul != Vector2.one)
+                    transform.localScale = new Vector3(transform.localScale.x * mul.x, transform.localScale.y * mul.y, transform.localScale.z);
                 return;
             }
             if (_held) return;
@@ -377,19 +438,19 @@ namespace FlockFive
                 transform.localScale = Vector3.one * Scale;
                 return;
             }
-            float t = Time.time;
+            float t = now;
             float phase = Slot * 2.15f + 0.35f;
             float lazy = Slot == 0 ? 0.38f : 0.52f;
             float pendulum = Mathf.Sin(t * lazy + phase);
             float wiggle = Mathf.Sin(t * 1.55f + phase * 1.8f);
             float bob = Mathf.Sin(t * 0.82f + phase * 0.6f);
             float figure = Mathf.Sin(t * 0.64f + phase * 0.5f);
-            _gust = Mathf.MoveTowards(_gust, 0f, Time.deltaTime * 1.4f);
+            _gust = Mathf.MoveTowards(_gust, 0f, dt * 1.4f);
             if (_gust <= 0.02f && Mathf.Sin(t * 0.21f + phase * 2.4f) > 0.92f)
                 _gust = Random.Range(0.55f, 1f);
             float kick = _gust * Mathf.Sin(t * 3.1f + phase);
             float ang = pendulum * 5.4f + wiggle * 2.2f + kick * 6.5f;
-            _spin = Mathf.Lerp(_spin, ang, FramePace.Follow(0.12f, Time.deltaTime));
+            _spin = Mathf.Lerp(_spin, ang, FramePace.Follow(0.12f, dt));
             transform.localRotation = Quaternion.Euler(0f, 0f, _spin);
             transform.position = _planted + new Vector3(
                 pendulum * 0.055f + figure * 0.03f,

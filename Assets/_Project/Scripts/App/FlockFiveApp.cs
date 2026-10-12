@@ -4017,6 +4017,18 @@ namespace FlockFive
                 _board.ApplyCollect(branch, scoreFeeder: true);
                 _wakeBranch = WakeBranchFor(slot, liveBefore, branch);
                 StartCoroutine(view.BreakAway());
+                // Set complete: one bigger pop + Ching, peaking before the retire step starts.
+                if (feeder != null && !pest && !FeederFxQuiet)
+                {
+                    FeederArrivalFx.Play(feeder, expect, true);
+                    float lead = 0f;
+                    while (lead < FeederArrivalFx.SetLead)
+                    {
+                        if (gen != _motionGen) break;
+                        if (!GamePause.Paused) lead += Time.deltaTime;
+                        yield return null;
+                    }
+                }
                 // Birds are already off the perch. Hold the next row until this feeder
                 // has left and the next one has landed, so the two motions do not overlap.
                 if (feeder != null)
@@ -4696,6 +4708,8 @@ namespace FlockFive
         // In-garden collection panel or bee-card inspect. One gate for "hive UI is up":
         // SettleIfIdle holds the finale on it so the board can finish resolving underneath.
         bool HiveCollectionOpen() => _levelHive || _hiveInspect >= 0;
+        // Feeder arrival extras stay off while the finale runs or the hive inspect is open.
+        bool FeederFxQuiet => _finaleHold || _won || HiveCollectionOpen();
 
         void SyncAutoResolveSpeed()
         {
@@ -5226,8 +5240,7 @@ namespace FlockFive
                 if (!scored && u >= 0.92f)
                 {
                     scored = true;
-                    Sfx.ScorePop(pop);
-                    if (feeder != null) feeder.ScoreTick();
+                    FeederArrivalFx.Play(feeder, pop + 1, false, FeederFxQuiet);
                 }
                 yield return null;
             }
@@ -5241,10 +5254,7 @@ namespace FlockFive
             tr.rotation = Quaternion.identity;
             tr.localScale = crest * 0.80f;
             if (!scored)
-            {
-                Sfx.ScorePop(pop);
-                if (feeder != null) feeder.ScoreTick();
-            }
+                FeederArrivalFx.Play(feeder, pop + 1, false, FeederFxQuiet);
             if (idle != null) idle.SetFade(1f);
             else if (sr != null)
             {
