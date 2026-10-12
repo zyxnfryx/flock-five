@@ -34,6 +34,7 @@ namespace FlockFive
         {
             public float X, Y, Size, Alpha;
             public byte Hot;
+            public byte Tint; // 0 gold, 1 peach, 2 cream (paint only)
         }
 
         static Glint[] _buf;
@@ -187,12 +188,16 @@ namespace FlockFive
                     GUI.color = new Color(1f, 0.82f, 0.28f, a * 0.34f);
                     GUI.DrawTexture(new Rect(_buf[i].X - g * 0.5f, _buf[i].Y - g * 0.5f, g, g), glowTex, ScaleMode.ScaleToFit, true);
                 }
+                byte tn = _buf[i].Tint;
                 GUI.color = _buf[i].Hot == 1
                     ? new Color(1f, 0.98f, 0.90f, a)
+                    : tn == 1 ? new Color(1f, 0.74f, 0.46f, a)
+                    : tn == 2 ? new Color(1f, 0.93f, 0.72f, a)
                     : new Color(1f, 0.84f, 0.28f, a);
                 GUI.DrawTexture(new Rect(x, y, sz, sz), tex, ScaleMode.ScaleToFit, true);
             }
             DrawBloomOver(bloom, at, side, tex, glowTex);
+            DrawEmbers(bloom, at, side, tex, glowTex);
             GUI.color = prev;
         }
 
@@ -336,7 +341,8 @@ namespace FlockFive
                     Y = ny * screenH,
                     Size = sizeN * minSide,
                     Alpha = alpha,
-                    Hot = hot ? (byte)1 : (byte)0
+                    Hot = hot ? (byte)1 : (byte)0,
+                    Tint = TintOf(i)
                 };
                 dst[n++] = g;
             }
@@ -385,6 +391,47 @@ namespace FlockFive
             if (hot) alpha = alpha > 0.92f ? 0.92f : alpha * 1.15f;
             if (alpha < 0.04f) return false;
             return true;
+        }
+
+        // Mostly gold, a quarter peach, the rest cream. Stable per glint, so no flicker.
+        static byte TintOf(int i)
+        {
+            float h = Hash(i, 5);
+            return h < 0.60f ? (byte)0 : h < 0.85f ? (byte)1 : (byte)2;
+        }
+
+        // Handoff into the stage: embers thrown out with the burst slow on drag, drift
+        // and settle over the new garden as the fountain rains, fading by BloomLife.
+        // They are what carries the press across the cut.
+        const int EmberCount = 40;
+
+        static void DrawEmbers(float b, Vector2 at, float side, Texture tex, Texture glowTex)
+        {
+            if (b < 0f || b > BloomLife) return;
+            const float drag = 3.5f;
+            for (int i = 0; i < EmberCount; i++)
+            {
+                float h1 = Hash(i, 21), h2 = Hash(i, 22), h3 = Hash(i, 23), h4 = Hash(i, 24);
+                float t = b - (0.03f + h1 * 0.10f);
+                if (t <= 0f) continue;
+                float life = BloomLife - 0.10f - h1 * 0.10f;
+                float u = t / life;
+                if (u >= 1f) continue;
+                // Bias the throw upward so the embers arc over the flower into the scene.
+                float ang = -1.5708f + (h2 - 0.5f) * 4.2f;
+                float sp = side * (2.4f + 2.6f * h3);
+                float travel = (1f - Mathf.Exp(-drag * t)) / drag;
+                float x = at.x + Mathf.Cos(ang) * sp * travel + Mathf.Sin(t * 5f + h4 * 6.283f) * side * 0.05f;
+                float y = at.y + Mathf.Sin(ang) * sp * travel + side * 0.9f * t * t;
+                float tw = 0.6f + 0.4f * Mathf.Sin(t * 14f + h4 * 9f);
+                float fin = t < 0.04f ? t / 0.04f : 1f;
+                float a = fin * tw * Mathf.Pow(1f - u, 1.2f);
+                if (a < 0.03f) continue;
+                float sz = side * (0.045f + 0.055f * h4) * (1f - 0.35f * u);
+                var c = h2 < 0.55f ? BGold : h2 < 0.80f ? BPeach : BCream;
+                Blit(new Vector2(x, y), sz * 2.3f, glowTex, new Color(c.r, c.g, c.b, a * 0.28f));
+                Blit(new Vector2(x, y), sz, tex, new Color(c.r, c.g, c.b, a));
+            }
         }
 
         static float Hash(int i, int salt)
