@@ -1,0 +1,27 @@
+import numpy as np, sys
+from PIL import Image
+from scipy import ndimage as nd
+def rule(n,r,g,b):
+    V=np.maximum(np.maximum(r,g),b); mn=np.minimum(np.minimum(r,g),b); S=(V-mn)/np.maximum(V,1e-3)
+    if n=='bg_oasis':  return (g>=r*0.86)|(V<0.46)
+    if n=='bg_fall':   return (r>b+0.06)&(S>0.30)
+    if n=='bg_spring': return ((g>r+0.01)&(g>b)&(S>0.11))|(S>0.38)|(V<0.35)
+    if n=='bg_winter': return np.ones_like(r,bool)
+    return ~((r>g)&(V>0.58)&(S<0.48))
+out=[]
+for n in ['bg_oasis','bg_winter','bg_fall','bg_spring','bg_garden']:
+    a=np.asarray(Image.open(n+'.png').convert('RGB')).astype(np.float32)/255
+    sm=nd.uniform_filter(a,(5,5,1))[::4,::4]
+    f=rule(n,sm[...,0],sm[...,1],sm[...,2])
+    if n=='bg_oasis': f[int(f.shape[0]*0.46):]=False  # palm crown only; water, cactus, mesas rigid
+    f=nd.binary_opening(f,iterations=1); f=nd.binary_closing(f,iterations=2)
+    f=nd.binary_dilation(f,iterations=1)   # leaf edge owns a 4px rim so edges carry with the leaf
+    m=nd.gaussian_filter(f.astype(np.float32),1.2)
+    if n=='bg_oasis':  # feather the palm cut-off so it never reads as a straight seam
+        y=np.arange(m.shape[0])[:,None]/m.shape[0]; m*=np.clip((0.46-y)/0.06,0,1)
+    Image.fromarray((m*255).astype(np.uint8)).save(sys.argv[1]+'/'+n+'_sway.png')
+    vis=(a[::4,::4]*0.35+np.stack([m*0.65,m*0.65,m*0],-1))
+    out.append(Image.fromarray((np.clip(vis,0,1)*255).astype(np.uint8)))
+s=Image.new('RGB',(270*5,480))
+for k,i in enumerate(out): s.paste(i,(270*k,0))
+s.save('/Users/zfxgames/wkspaces/birdshot/gb/b85/fmask.png')

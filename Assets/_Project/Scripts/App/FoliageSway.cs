@@ -22,6 +22,22 @@ namespace FlockFive
         static readonly int WindId = Shader.PropertyToID("_Wind");
         static readonly int WipeId = Shader.PropertyToID("_Wipe");
         static readonly int MainTexId = Shader.PropertyToID("_MainTex");
+        static readonly int MaskId = Shader.PropertyToID("_SwayMask");
+        Texture _mask;
+
+        // Foliage mask for a painting (white = sways). Winter has none: its masks only cover
+        // foreground boughs. Missing mask = white, the pre-85 behaviour.
+        public static string MaskPath(GardenScene scene)
+        {
+            switch (scene)
+            {
+                case GardenScene.Desert: return "SwayMasks/bg_oasis_sway";
+                case GardenScene.Fall: return "SwayMasks/bg_fall_sway";
+                case GardenScene.Spring: return "SwayMasks/bg_spring_sway";
+                case GardenScene.Winter: return null;
+                default: return "SwayMasks/bg_garden_sway";
+            }
+        }
 
         static bool _lowReady;
         static bool _low;
@@ -65,6 +81,9 @@ namespace FlockFive
             _phase = scene == GardenScene.Desert ? 0.4f : 1.7f + (int)scene * 0.6f;
             _wipe = new Vector4(-0.2f, 0.14f, 0f, 0f);
             Fill(scene, LowPower);
+            string mp = MaskPath(scene);
+            _mask = mp != null ? Resources.Load<Texture2D>(mp) : null;
+            if (_mask == null) _mask = Texture2D.whiteTexture;
             if (_block == null) _block = new MaterialPropertyBlock();
             _on = EnsureMat() && _sr != null;
             if (!_on) return;
@@ -83,6 +102,11 @@ namespace FlockFive
             if (_on) Push();
         }
 
+        // Tests/clips: a fixed shader time (seconds, > 0) and a forced mask; 0 / null = live.
+        public static float TestTime;
+        public static Texture TestMask;
+        public void PushForTest() { if (_on) Push(); }
+
         void LateUpdate()
         {
             if (!_on || _sr == null) return;
@@ -95,6 +119,8 @@ namespace FlockFive
             var tex = _sr.sprite != null ? _sr.sprite.texture : null;
             if (tex != null) _block.SetTexture(MainTexId, tex);
             _block.SetVector(WipeId, _wipe);
+            var mk = TestMask != null ? TestMask : _mask;
+            if (mk != null) _block.SetTexture(MaskId, mk);
             bool move = BackgroundMotion.On;
             if (!move)
             {
@@ -112,7 +138,7 @@ namespace FlockFive
                 return;
             }
             var tune = SeasonMotion.For(_scene);
-            float t = Time.time + _phase;
+            float t = (TestTime > 0f ? TestTime : Time.time) + _phase;
             float hz = tune.GustHz;
             float gust = 0.12f + 0.10f * Mathf.Sin(t * 0.21f * hz);
             float u = Mathf.Repeat(t * hz, 8.4f);
@@ -129,7 +155,7 @@ namespace FlockFive
             _block.SetVector(A1, _a1);
             _block.SetVector(A2, _a2);
             _block.SetVector(A3, _a3);
-            _block.SetVector(WindId, new Vector4(gust, tune.WaveHz, 0f, 0f));
+            _block.SetVector(WindId, new Vector4(gust, tune.WaveHz, TestTime, 0f));
             _sr.SetPropertyBlock(_block);
         }
 
