@@ -132,6 +132,40 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // Ring of glints on an ellipse around `c`. Shared burst layer (the LEVEL release
+        // bloom uses three). Golden-ratio jitter keeps it hand-placed, not a clock face;
+        // each glint gets a soft glow under the star so it reads painted, not stamped.
+        public static void DrawRing(Vector2 c, float rx, float ry, int count, float spin, float size,
+            float alpha, Color from, Color to, float jitter = 0f)
+        {
+            if (alpha < 0.02f || count < 1 || size < 1f) return;
+            var spr = SpriteCatalog.Sparkle;
+            var tex = spr != null ? spr.texture : null;
+            if (tex == null) return;
+            var glow = SpriteCatalog.Glow;
+            Texture glowTex = glow != null ? glow.texture : null;
+            float step = Mathf.PI * 2f / count;
+            for (int i = 0; i < count; i++)
+            {
+                float h = Mathf.Repeat(i * 0.618034f + 0.13f, 1f);
+                float ang = i * step + spin + (h - 0.5f) * step * 0.6f;
+                float rr = 1f + jitter * (h - 0.5f);
+                float x = c.x + Mathf.Cos(ang) * rx * rr;
+                float y = c.y + Mathf.Sin(ang) * ry * rr;
+                float sz = size * (0.70f + 0.60f * h);
+                var tint = Color.Lerp(from, to, h);
+                if (glowTex != null)
+                {
+                    float g = sz * 2.2f;
+                    GUI.color = new Color(tint.r, tint.g, tint.b, alpha * 0.30f);
+                    GUI.DrawTexture(new Rect(x - g * 0.5f, y - g * 0.5f, g, g), glowTex, ScaleMode.ScaleToFit, true);
+                }
+                GUI.color = new Color(tint.r, tint.g, tint.b, alpha);
+                GUI.DrawTexture(new Rect(x - sz * 0.5f, y - sz * 0.5f, sz, sz), tex, ScaleMode.ScaleToFit, true);
+            }
+            GUI.color = Color.white;
+        }
+
         // Soft disc. SpriteCatalog.Glow is built once. No per-frame texture.
         public static void DrawGlow(Vector2 at, float size, Color tint)
         {

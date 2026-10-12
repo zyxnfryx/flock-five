@@ -215,40 +215,97 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(at.x - size * 0.5f, at.y - size * 0.5f, size, size), tex, ScaleMode.ScaleToFit, true);
         }
 
-        // Timing pass. b = seconds since release.
-        //   0-30 ms   light swells out of the flower (attack)
-        //   30-250 ms light decays while it widens (handoff into the fountain)
-        //   0-0.60 s  shock ring ease-out-quint, fades on (1-u)^1.6
-        //   0-0.40 s  centre star pops on ease-out-back, then eases away
+        // Timing, b = seconds since release (Fire):
+        //   0-30 ms    light swells out of the flower (attack), then a 75 ms tail
+        //   0-0.42 s   hot inner ring;  0-0.62 s gold ring;  0.06-0.78 s peach/rose ring
+        //   0-0.50 s   eight glint rays;  0-0.43 s centre star (ease-out-back pop)
+        //   all rings ease-out-quint, so the spread is front-loaded and the tail drifts
+        // Painterly palette: warm gold, cream, peach and a touch of rose. No pure white
+        // except the hot cores, so it reads as gilded paint, not a lens flare.
+        static readonly Color BGold = new Color(1f, 0.84f, 0.36f, 1f);
+        static readonly Color BCream = new Color(1f, 0.96f, 0.84f, 1f);
+        static readonly Color BPeach = new Color(1f, 0.74f, 0.52f, 1f);
+        static readonly Color BRose = new Color(1f, 0.66f, 0.62f, 1f);
+        static readonly Color BHot = new Color(1f, 0.99f, 0.94f, 1f);
+
         static void DrawBloomUnder(float b, Vector2 at, float side, Texture glowTex)
         {
             if (b < 0f || b > BloomLife) return;
             float f = FlashEnv(b);
             if (f > 0.02f)
-                Blit(at, side * (1.3f + 1.6f * EaseOutCubic(b / 0.25f)), glowTex, new Color(1f, 0.90f, 0.62f, 0.75f * f));
+            {
+                // Two-tone light: wide amber wash under a tight cream core.
+                float grow = EaseOutCubic(b / 0.25f);
+                Blit(at, side * (1.6f + 2.2f * grow), glowTex, new Color(1f, 0.78f, 0.40f, 0.55f * f));
+                Blit(at, side * (1.0f + 1.0f * grow), glowTex, new Color(1f, 0.95f, 0.80f, 0.80f * f));
+            }
+            // Wide, faint afterglow behind the rings (alpha <= 0.22, gone by 0.7 s).
+            float u = b / 0.70f;
+            if (u < 1f)
+            {
+                float r = side * (0.9f + 3.0f * EaseOutQuint(u));
+                float a = 0.22f * (1f - u) * (1f - u);
+                Blit(at, r * 2f, glowTex, new Color(1f, 0.86f, 0.55f, a));
+            }
         }
 
         static void DrawBloomOver(float b, Vector2 at, float side, Texture tex, Texture glowTex)
         {
             if (b < 0f || b > BloomLife) return;
-            float u = b / 0.60f;
-            if (u < 1f)
+            // Three rings, staggered so the spread reads as depth: hot inner, gold main,
+            // peach/rose outer lagging behind and travelling furthest.
+            float u1 = b / 0.42f;
+            if (u1 < 1f)
             {
-                float r = side * (0.45f + 1.6f * EaseOutQuint(u));
-                float a = Mathf.Pow(1f - u, 1.6f);
-                float sz = side * 0.10f * (1f - 0.5f * u);
-                for (int i = 0; i < 20; i++)
+                float r = side * (0.30f + 1.05f * EaseOutQuint(u1));
+                SparkleFx.DrawRing(at, r, r * 0.88f, 12, b * 1.6f, side * 0.075f * (1f - 0.4f * u1),
+                    Mathf.Pow(1f - u1, 1.3f), BHot, BCream, 0.25f);
+            }
+            float u2 = b / 0.62f;
+            if (u2 < 1f)
+            {
+                float r = side * (0.45f + 1.9f * EaseOutQuint(u2));
+                SparkleFx.DrawRing(at, r, r * 0.86f, 28, 0.11f + b * 0.8f, side * 0.115f * (1f - 0.45f * u2),
+                    Mathf.Pow(1f - u2, 1.5f), BGold, BCream, 0.35f);
+            }
+            float u3 = (b - 0.06f) / 0.72f;
+            if (u3 > 0f && u3 < 1f)
+            {
+                float r = side * (0.55f + 2.7f * EaseOutQuint(u3));
+                SparkleFx.DrawRing(at, r, r * 0.84f, 20, 0.27f - b * 0.6f, side * 0.10f * (1f - 0.4f * u3),
+                    0.85f * Mathf.Pow(1f - u3, 1.7f), BPeach, BRose, 0.45f);
+            }
+
+            // Eight rays of glint trains shooting out between the rings (spread + speed).
+            float ur = b / 0.50f;
+            if (ur < 1f)
+            {
+                float reach = side * (0.4f + 2.3f * EaseOutCubic(ur));
+                float ra = Mathf.Pow(1f - ur, 1.4f);
+                for (int k = 0; k < 8; k++)
                 {
-                    float ang = i * 0.31416f + b * 0.8f;
-                    var p = new Vector2(at.x + Mathf.Cos(ang) * r, at.y + Mathf.Sin(ang) * r * 0.86f);
-                    Blit(p, sz, tex, new Color(1f, 0.90f, 0.55f, a));
+                    float ang = k * 0.7854f + 0.39f;
+                    float cx = Mathf.Cos(ang), cy = Mathf.Sin(ang) * 0.88f;
+                    for (int j = 0; j < 3; j++)
+                    {
+                        float d = reach * (1f - j * 0.16f);
+                        var p = new Vector2(at.x + cx * d, at.y + cy * d);
+                        float sz = side * (0.13f - j * 0.035f) * (1f - 0.5f * ur);
+                        Blit(p, sz, tex, new Color(1f, j == 0 ? 0.97f : 0.86f, j == 0 ? 0.88f : 0.50f, ra * (1f - j * 0.28f)));
+                    }
                 }
             }
+
+            // Centre star: glow halo, gold star, then a smaller cream star on top.
             float pop = EaseOutBack(b / 0.22f);
-            float fade = 1f - Mathf.Clamp01((b - 0.15f) / 0.25f);
+            float fade = 1f - Mathf.Clamp01((b - 0.15f) / 0.28f);
             fade = fade * fade * (3f - 2f * fade);
             if (fade > 0.01f)
-                Blit(at, side * 0.9f * pop, tex, new Color(1f, 0.97f, 0.86f, fade));
+            {
+                Blit(at, side * 1.5f * pop, glowTex, new Color(1f, 0.88f, 0.52f, 0.55f * fade));
+                Blit(at, side * 1.05f * pop, tex, new Color(BGold.r, BGold.g, BGold.b, 0.9f * fade));
+                Blit(at, side * 0.62f * pop, tex, new Color(BHot.r, BHot.g, BHot.b, fade));
+            }
         }
 
         // Individual glints in GUI pixels (y grows down). Nothing here is a screen fill.
