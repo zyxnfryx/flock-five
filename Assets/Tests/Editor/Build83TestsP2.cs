@@ -35,6 +35,17 @@ namespace FlockFive.Editor
             Check("studio-sync-curve", StudioSync.Brightness.Length == 181 && StudioSync.PopT == 2.0f, "frames " + StudioSync.Brightness.Length);
             float g0; float b1 = StudioSync.Burst(2.06f, out g0), b2 = StudioSync.Burst(2.771f, out g0);
             Check("studio-burst-shape", b1 > 0.99f && b2 < 0.011f && StudioSync.Burst(1.99f, out g0) == 0f, "hold " + b1.ToString("0.00") + " gone " + b2.ToString("0.000"));
+            var tip = FlockFiveApp.SwooshPoint(1f);
+            Check("studio-path-traced", StudioSync.PathX.Length == 96 && StudioSync.PathY.Length == 96
+                && tip.x == StudioSync.PathX[95] && tip.y == StudioSync.PathY[95] && FlockFiveApp.SwooshPoint(0f).x < tip.x,
+                "96 pts, tip " + tip);
+            bool starOk = StudioSync.StarAngle.Length == 181 && StudioSync.StarScale.Length == 181 && StudioSync.StarRay.Length == 181 && StudioSync.StarSharp.Length == 181;
+            float minS = 9f, maxS = 0f, minSh = 9f, maxSh = 0f;
+            for (int i = 1; i <= 120; i++) { minS = Mathf.Min(minS, StudioSync.StarScale[i]); maxS = Mathf.Max(maxS, StudioSync.StarScale[i]); minSh = Mathf.Min(minSh, StudioSync.StarSharp[i]); maxSh = Mathf.Max(maxSh, StudioSync.StarSharp[i]); }
+            Check("studio-star-per-frame", starOk && minS >= 0.44f && maxS <= 1.0f && minSh >= 0.34f && maxSh <= 0.96f,
+                "scale " + minS + "-" + maxS + " sharp " + minSh + "-" + maxSh);
+            float g1; StudioSync.Burst(2.0f, out g1);
+            Check("studio-star-not-small-at-pop", StudioSync.Scale(2.0f) >= 0.9f && StudioSync.Burst(2.001f, out g1) > 0f, "scale at 2.000s " + StudioSync.Scale(2.0f));
             Check("studio-pop-matches-jingle", Mathf.Abs(FlockFiveApp.StudioPopAt - 2.0f) < 1e-4f, "");
             var a = FlockFiveApp.StudioLogoRect(1179f, 2556f, SpriteCatalog.StudioLogo);
             var b = FlockFiveApp.StudioLogoRect(1536f, 2048f, SpriteCatalog.StudioLogo);

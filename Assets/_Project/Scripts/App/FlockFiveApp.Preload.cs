@@ -77,33 +77,10 @@ namespace FlockFive
             new Vector2(0.3660f, 0.1033f), new Vector2(0.3852f, 0.0883f), new Vector2(0.4048f, 0.0733f),
             new Vector2(0.4244f, 0.0592f), new Vector2(0.4270f, 0.0578f)
         };
-        const float LogoAspect = 2500f / 1200f;
-        // Glint sits just inside the stroke edge, not floating above it.
-        const float SwooshInset = 0.010f;
-        static float[] _swooshLen;
 
-        // Point at fraction u of the edge's ARC LENGTH (even speed along the curve).
-        public static Vector2 SwooshPoint(float u)
-        {
-            if (_swooshLen == null)
-            {
-                _swooshLen = new float[ZSwoosh.Length];
-                for (int i = 1; i < ZSwoosh.Length; i++)
-                {
-                    var d = ZSwoosh[i] - ZSwoosh[i - 1];
-                    _swooshLen[i] = _swooshLen[i - 1] + Mathf.Sqrt(d.x * d.x * LogoAspect * LogoAspect + d.y * d.y);
-                }
-            }
-            float total = _swooshLen[_swooshLen.Length - 1];
-            float want = Mathf.Clamp01(u) * total;
-            int k = 1;
-            while (k < _swooshLen.Length - 1 && _swooshLen[k] < want) k++;
-            float seg = _swooshLen[k] - _swooshLen[k - 1];
-            float t = seg > 1e-6f ? (want - _swooshLen[k - 1]) / seg : 0f;
-            var p = Vector2.Lerp(ZSwoosh[k - 1], ZSwoosh[k], t);
-            p.y += SwooshInset;
-            return p;
-        }
+        // Point at fraction u of the path. The producer's traced path (StudioSync.PathX/Y, 96
+        // points evenly spaced by arc length, offset onto the outline) replaces the v3 samples.
+        public static Vector2 SwooshPoint(float u) => StudioSync.PathAt(u);
 
         public static int SwooshSamples => ZSwoosh.Length;
         public static Vector2 SwooshSample(int i) => ZSwoosh[i];
@@ -220,71 +197,129 @@ namespace FlockFive
                 }
             }
 
-            // The traveling glint: a rotating 4-point star, brightness from the audio curve,
-            // a size kick on every hook / pickup note.
-            if (travelling)
-            {
-                var p = SwooshPoint(u);
-                float px = r.x + p.x * r.width, py = r.y + p.y * r.height;
-                float kick = flash * (hook ? 0.55f : 0.30f);
-                float level = Mathf.Clamp01(0.35f + 0.65f * bright) * fadeIn;
-                float g = unit * 9f * (0.7f + 0.5f * bright + kick);
-                GUI.color = new Color(0.85f, 0.55f, 0.08f, a * 0.36f * level);
-                GUI.DrawTexture(new Rect(px - g * 0.5f, py - g * 0.5f, g, g), gt, ScaleMode.StretchToFill, true);
-                float sl = unit * 6.5f * (0.7f + 0.5f * bright + kick), sw = unit * 0.78f;
-                var m = GUI.matrix;
-                GUIUtility.RotateAroundPivot(u * 540f + t * 60f, new Vector2(px, py));
-                GUI.color = new Color(0.58f, 0.34f, 0.03f, a * 0.65f * level);
-                GUI.DrawTexture(new Rect(px - sl * 0.5f - 1f, py - sw * 0.5f - 1f, sl + 2f, sw + 2f), dot, ScaleMode.StretchToFill, true);
-                GUI.DrawTexture(new Rect(px - sw * 0.5f - 1f, py - sl * 0.5f - 1f, sw + 2f, sl + 2f), dot, ScaleMode.StretchToFill, true);
-                GUI.color = new Color(1f, 0.88f, 0.40f, a * level);
-                GUI.DrawTexture(new Rect(px - sl * 0.5f, py - sw * 0.5f, sl, sw), dot, ScaleMode.StretchToFill, true);
-                GUI.DrawTexture(new Rect(px - sw * 0.5f, py - sl * 0.5f, sw, sl), dot, ScaleMode.StretchToFill, true);
-                GUI.matrix = m;
-                GUI.color = new Color(1f, 1f, 0.92f, a * level);
-                float c = unit * 2f * (1f + kick);
-                GUI.DrawTexture(new Rect(px - c * 0.5f, py - c * 0.5f, c, c), dot, ScaleMode.StretchToFill, true);
-            }
-
+            // The traveling star, per frame from StudioSync: pointed gold 4-point star plus a
+            // 45-degree layer (8-point twinkle) and a soft core. Angle, scale, ray length (hook
+            // flares baked in) and sharpness follow the jingle. It stays at the tip through the
+            // burst so it never shrinks at 2.000s; it is absorbed as the burst decays.
             float burst = StudioSync.Burst(t, out float grow);
-            if (burst > 0.01f) DrawSwooshPop(r, t - StudioSync.PopT, burst, grow, a, unit, gt, dot);
+            // At exactly PopT the burst is still 0 (it grows from there): keep the star at full
+            // strength over the grow so there is no empty or shrunken frame at 2.000s.
+            float starHold = t < StudioSync.PopT ? fadeIn : Mathf.Max(burst, 1f - Mathf.Clamp01((t - StudioSync.PopT - 0.05f) / 0.03f));
+            if (t >= t0 && starHold > 0.01f)
+            {
+                var p = SwooshPoint(travelling ? u : 1f);
+                float px = r.x + p.x * r.width, py = r.y + p.y * r.height;
+                float keepA = starHold;
+                DrawPointedStar(new Vector2(px, py), r.width, StudioSync.Angle(t), StudioSync.Scale(t),
+                    StudioSync.Ray(t), StudioSync.Sharp(t), a * keepA * Mathf.Clamp01(0.45f + 0.55f * bright + flash * 0.3f), gt, dot);
+            }
+            if (burst > 0.01f) DrawSwooshPop(r, t, burst, grow, a, gt, dot);
         }
 
-        // Starburst at the tip: grows (ease-out cubic), holds, decays with the audio.
-        void DrawSwooshPop(Rect r, float k, float level, float grow, float a, float unit, Texture gt, Texture2D dot)
+        // Tapered ray texture (horizontal, base at x=0, point at x=1). Higher sharpness = thinner,
+        // more needle-like taper. Four bakes, nearest is used.
+        static Texture2D[] _rayTex;
+        static Texture2D RayTex(float sharp)
+        {
+            if (_rayTex == null) _rayTex = new Texture2D[4];
+            int k = Mathf.Clamp(Mathf.RoundToInt((sharp - 0.35f) / 0.6f * 3f), 0, 3);
+            if (_rayTex[k] != null) return _rayTex[k];
+            float pow = 0.8f + k * 0.6f;
+            const int w = 128, h = 32;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { name = "StudioRay" + k, wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                float fx = (x + 0.5f) / w;
+                float half = Mathf.Pow(1f - fx, pow) * 0.5f;
+                float dy = Mathf.Abs((y + 0.5f) / h - 0.5f);
+                float edge = (half - dy) * h;
+                float al = Mathf.Clamp01(edge * 0.9f + 0.5f);
+                px[y * w + x] = new Color32(255, 255, 255, (byte)(255f * al));
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _rayTex[k] = tex;
+            return tex;
+        }
+
+        void DrawRay(Vector2 c, float ang, float len, float wid, Texture2D tex, Color col)
+        {
+            if (len < 1f) return;
+            var m = GUI.matrix;
+            GUIUtility.RotateAroundPivot(ang, c);
+            GUI.color = col;
+            GUI.DrawTexture(new Rect(c.x, c.y - wid * 0.5f, len, wid), tex, ScaleMode.StretchToFill, true);
+            GUI.matrix = m;
+        }
+
+        void DrawPointedStar(Vector2 c, float logoW, float angle, float scale, float ray, float sharp, float al, Texture gt, Texture2D dot)
+        {
+            if (al < 0.01f) return;
+            float nom = StudioSync.StarNominalPx * logoW / 1024f * scale;
+            float len = nom * 0.5f * ray;
+            float wid = nom * 0.30f * (1.25f - sharp);
+            var tex = RayTex(sharp);
+            float g = nom * 1.6f;
+            GUI.color = new Color(0.88f, 0.58f, 0.10f, al * 0.35f);
+            GUI.DrawTexture(new Rect(c.x - g * 0.5f, c.y - g * 0.5f, g, g), gt, ScaleMode.StretchToFill, true);
+            // Dark amber edge pass first so the gold reads on white, then the gold.
+            for (int pass = 0; pass < 2; pass++)
+            {
+                var col = pass == 0 ? new Color(0.55f, 0.32f, 0.03f, al * 0.6f) : new Color(1f, 0.84f, 0.32f, al);
+                float grow = pass == 0 ? 1.12f : 1f;
+                for (int i = 0; i < 4; i++)
+                {
+                    DrawRay(c, angle + i * 90f, len * grow, wid * grow * 1.15f, tex, col);
+                    DrawRay(c, angle + 45f + i * 90f, len * 0.55f * grow, wid * 0.8f * grow, tex, col);
+                }
+            }
+            GUI.color = new Color(1f, 1f, 0.92f, al);
+            float core = nom * 0.28f;
+            GUI.DrawTexture(new Rect(c.x - core * 0.5f, c.y - core * 0.5f, core, core), dot, ScaleMode.StretchToFill, true);
+        }
+
+        // Starburst at the tip: 16 needle rays, 8 at the star's angle plus 8 shorter at 22.5 deg.
+        // Grows (ease-out cubic), holds, decays with the audio.
+        void DrawSwooshPop(Rect r, float t, float level, float grow, float a, Texture gt, Texture2D dot)
         {
             var p = SwooshPoint(1f);
-            float px = r.x + p.x * r.width, py = r.y + p.y * r.height;
+            var c = new Vector2(r.x + p.x * r.width, r.y + p.y * r.height);
             float al = a * level;
-            float g = unit * 17f * (0.55f + 0.6f * grow);
+            float nom = StudioSync.StarNominalPx * r.width / 1024f;
+            float g = nom * 4.2f * (0.55f + 0.6f * grow);
             GUI.color = new Color(0.88f, 0.58f, 0.10f, al * 0.40f);
-            GUI.DrawTexture(new Rect(px - g * 0.5f, py - g * 0.5f, g, g), gt, ScaleMode.StretchToFill, true);
-            var m = GUI.matrix;
-            for (int i = 0; i < 8; i++)
+            GUI.DrawTexture(new Rect(c.x - g * 0.5f, c.y - g * 0.5f, g, g), gt, ScaleMode.StretchToFill, true);
+            float ang = StudioSync.Angle(Mathf.Min(t, StudioSync.PopT));
+            var tex = RayTex(0.95f);
+            float k = t - StudioSync.PopT;
+            for (int pass = 0; pass < 2; pass++)
             {
-                float len = unit * (i % 2 == 0 ? 11.5f : 6.5f) * grow * (0.9f + 0.25f * Mathf.Clamp01(k / 0.6f));
-                float wid = unit * (i % 2 == 0 ? 0.78f : 0.52f);
-                GUIUtility.RotateAroundPivot(i * 45f + 8f + k * 20f, new Vector2(px, py));
-                GUI.color = new Color(0.58f, 0.34f, 0.03f, al * 0.55f);
-                GUI.DrawTexture(new Rect(px - 1f, py - wid * 0.5f - 1f, len + 2f, wid + 2f), dot, ScaleMode.StretchToFill, true);
-                GUI.color = new Color(1f, 0.86f, 0.36f, al);
-                GUI.DrawTexture(new Rect(px, py - wid * 0.5f, len, wid), dot, ScaleMode.StretchToFill, true);
-                GUI.matrix = m;
+                var col = pass == 0 ? new Color(0.55f, 0.32f, 0.03f, al * 0.55f) : new Color(1f, 0.86f, 0.36f, al);
+                float pg = pass == 0 ? 1.1f : 1f;
+                for (int i = 0; i < 16; i++)
+                {
+                    bool longRay = i % 2 == 0;
+                    float len = nom * (longRay ? 3.0f : 1.8f) * grow * (0.9f + 0.3f * Mathf.Clamp01(k / 0.6f)) * pg;
+                    float wid = nom * (longRay ? 0.16f : 0.11f) * pg;
+                    DrawRay(c, ang + i * 22.5f, len, wid, tex, col);
+                }
             }
             GUI.color = new Color(1f, 1f, 0.9f, al);
-            float c = unit * 2.8f * (0.7f + 0.5f * grow);
-            GUI.DrawTexture(new Rect(px - c * 0.5f, py - c * 0.5f, c, c), dot, ScaleMode.StretchToFill, true);
-            // Twinkles thrown out around the pop, each blinking once while the burst decays.
+            float cc = nom * 0.7f * (0.7f + 0.5f * grow);
+            GUI.DrawTexture(new Rect(c.x - cc * 0.5f, c.y - cc * 0.5f, cc, cc), dot, ScaleMode.StretchToFill, true);
+            // Twinkles thrown out around the pop, each blinking once.
             for (int i = 0; i < 6; i++)
             {
                 float h = Mathf.Repeat(i * 0.381966f + 0.17f, 1f);
-                float ang = (i * 61f + 20f) * Mathf.Deg2Rad;
-                float dist = unit * (7f + 9f * h) * (0.4f + 0.6f * Mathf.Clamp01(k / 0.4f));
-                float tx = px + Mathf.Cos(ang) * dist, ty = py + Mathf.Sin(ang) * dist;
+                float an = (i * 61f + 20f) * Mathf.Deg2Rad;
+                float dist = nom * (1.8f + 2.2f * h) * (0.4f + 0.6f * Mathf.Clamp01(k / 0.4f));
+                float tx = c.x + Mathf.Cos(an) * dist, ty = c.y + Mathf.Sin(an) * dist;
                 float blink = Mathf.Sin(Mathf.Clamp01((k - 0.03f * i) / 0.45f) * Mathf.PI);
                 if (blink <= 0.01f) continue;
-                float ts = unit * (1.6f + 1.4f * h) * blink;
-                GUI.color = new Color(0.58f, 0.34f, 0.03f, a * blink * 0.5f);
+                float ts = nom * (0.4f + 0.35f * h) * blink;
+                GUI.color = new Color(0.55f, 0.32f, 0.03f, a * blink * 0.5f);
                 GUI.DrawTexture(new Rect(tx - ts * 0.6f, ty - ts * 0.6f, ts * 1.2f, ts * 1.2f), dot, ScaleMode.StretchToFill, true);
                 GUI.color = new Color(1f, 0.88f, 0.40f, a * blink);
                 GUI.DrawTexture(new Rect(tx - ts * 0.5f, ty - ts * 0.08f, ts, ts * 0.16f), dot, ScaleMode.StretchToFill, true);
