@@ -596,8 +596,14 @@ namespace FlockFive
             return SeatAroundText(text, s);
         }
 
-        // Shared top seat for home captions: just under the FLOCK FIVE title.
-        float HomeTopCaptionY(float s) => TopHud() + (56f * 2f + 4f) * s + 10f * s;
+        // Below the HUD row: clear of the title, the piggy and the coin balance.
+        float HomeTopCaptionY(float s)
+        {
+            float title = TopHud() + (56f * 2f + 4f) * s;
+            var pig = PiggyRect(s);
+            float coins = pig.center.y + CoinBalanceIcon(s) * 0.5f;
+            return Mathf.Max(title, Mathf.Max(pig.yMax, coins)) + 14f * s;
+        }
 
         // Greet until a LEVEL tap or the perch glove. Each sentence latches once.
         string AdoptCaptionLine()

@@ -12,6 +12,13 @@ namespace FlockFive
         // home caption at the top (11b), and the sparkle curtain frame strip (5/5b).
         // Run on its own host so app-side StopAllCoroutines (sign tuck, splash) cannot end the shot.
         static ShotHost83 _host83;
+
+        // Stills: the shared coach glove (same raster the lessons draw) with its fingertip.
+        public static Texture2D ShotGloveTex(out float tipU, out float tipV)
+        {
+            tipU = _gloveTipU; tipV = _gloveTipV;
+            return CoachGloveCurl(0f);
+        }
         public IEnumerator ShotBuild83c()
         {
             if (_host83 == null)
@@ -55,15 +62,19 @@ namespace FlockFive
                 ShotRewardAd = pass == 0 ? 0 : 1;
                 PrefGuard.SetInt("flockfive.streak", 5);
                 PlayerPrefs.SetInt("flockfive.instage", 0);
+                Debug.Log("B83C reward " + pass + " splash");
                 ShowSplash();
                 Purse.CueWin(5, Purse.StagePay * 5 * Mathf.Max(1, Purse.LoginMul));
                 ArmStreakSlide();
                 RewardPays(out _, out _, out int toPay);
                 _rewardRepeatAmt = toPay;
+                Debug.Log("B83C reward " + pass + " armed " + toPay);
                 float guard = 0f;
+                int fr = 0;
                 while (!RewardChoiceUp && guard < 10f)
                 {
                     guard += Time.unscaledDeltaTime;
+                    if ((++fr % 30) == 0) Debug.Log("B83C wait f" + fr + " g" + guard.ToString("0.0") + " slide " + _streakSlide.ToString("0.00"));
                     MuteShotAudio();
                     yield return null;
                 }

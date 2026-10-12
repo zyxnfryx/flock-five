@@ -280,6 +280,7 @@ namespace FlockFive.Editor
                 }
                 WriteIdleStrip(cam, mark, feederY, ShotDir + "/b83-ostrich-idle-strip.png");
                 WriteLesson(cam, mark, stage.transform, feederY, w, h);
+                Check("lesson-glove-clear-of-text", LessonGloveClear, LessonGloveInfo);
                 bool clip = WriteFight(cam, mark, feederY, w, h);
                 Check("stills", birds == names.Length && clip, "poses " + birds + " clip " + clip);
             }
@@ -327,6 +328,8 @@ namespace FlockFive.Editor
             Object.DestroyImmediate(strip);
         }
 
+        static bool LessonGloveClear;
+        static string LessonGloveInfo = "no glove";
         static void WriteLesson(Camera cam, OstrichMark mark, Transform parent, float y, int w, int h)
         {
             mark.Preview(OstrichAct.Idle, 2, 0f, y, true);
@@ -335,15 +338,21 @@ namespace FlockFive.Editor
             string shown = CaptionLayout.HeadlineGap(CaptionLayout.OstrichLine);
             StampCaption(cam, parent, shown, new Vector3(0f, -2.85f, -0.4f));
 
-            var finger = SpriteCatalog.HandIndex; // the game glove sprite, uncropped (no hard edge)
-            if (finger != null)
+            // The shared coach glove, fingertip just beside the ostrich body, palm below,
+            // kept above the caption plate.
+            var gt = FlockFiveApp.ShotGloveTex(out float tu, out float tv);
+            GameObject gloveGo = null;
+            if (gt != null)
             {
-                // The sheet's fingertip sits above-left of the pivot. Feather the
-                // cropped edges so the lesson does not show a hard rectangle.
-                const float glove = 1.15f;
+                const float dh = 1.5f;
+                float ppu = gt.height / dh;
+                var sp = Sprite.Create(gt, new Rect(0, 0, gt.width, gt.height), new Vector2(tu, tv), ppu);
                 var aim = mark.Aim.position;
-                var pivot = aim + new Vector3(0.42f + 0.60f * glove, -0.05f - 1.92f * glove, 0f);
-                WorldBuilder.Sprite("Glove", finger, pivot, glove, 80, parent);
+                gloveGo = WorldBuilder.Sprite("Glove", sp, aim + new Vector3(0.38f, -0.30f, 0f), 1f, 80, parent);
+                var gb = gloveGo.GetComponent<SpriteRenderer>().bounds;
+                var pb = plate.GetComponent<SpriteRenderer>().bounds;
+                LessonGloveClear = gb.min.y > pb.max.y + 0.02f;
+                LessonGloveInfo = "glove " + gb.min.y.ToString("0.00") + " plate top " + pb.max.y.ToString("0.00");
             }
             var tex = Render(cam, w, h);
             File.WriteAllBytes(ShotDir + "/b83-ostrich-lesson.png", tex.EncodeToPNG());
