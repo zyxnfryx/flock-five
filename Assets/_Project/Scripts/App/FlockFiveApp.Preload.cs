@@ -101,6 +101,7 @@ namespace FlockFive
         public const string StudioJinglePath = "Audio/zfx_jingle";
         public static float StudioPopAt => StudioSync.PopT;
         static bool _jingleTried;
+        static bool _birdsWarm;
         static AudioSource _jingleSrc;
 
         static void StudioJingle()
@@ -135,6 +136,7 @@ namespace FlockFive
             var logo = SpriteCatalog.StudioLogo;
             if (logo == null) return false;
             StudioJingle();
+            if (!_birdsWarm) { _birdsWarm = true; StudioBirds.Warm(); }
             float t = StudioClock(since);
             float W = Screen.width, H = Screen.height;
             var keep = GUI.color;
@@ -149,12 +151,16 @@ namespace FlockFive
             la *= 1f - Mathf.SmoothStep(0f, 1f, (t - StudioSync.FadeStart) / (StudioSync.FadeEnd - StudioSync.FadeStart));
             la *= a;
             var r = StudioLogoRect(W, H, logo);
+            // Birds v5 halo: back arc under the logo, front arc over it, under the sparkle.
+            // Their own fade-in from frame 0 and the card fade (x(3.0-t)/0.3) are in StudioBirds.
+            StudioBirds.Draw(r, t, true, a);
             if (la > 0.01f)
             {
                 GUI.color = new Color(1f, 1f, 1f, la);
                 DrawSprite(r, logo, true);
-                DrawSwooshSparkle(r, t, la);
             }
+            StudioBirds.Draw(r, t, false, a);
+            if (la > 0.01f) DrawSwooshSparkle(r, t, la);
             GUI.color = keep;
             return true;
         }

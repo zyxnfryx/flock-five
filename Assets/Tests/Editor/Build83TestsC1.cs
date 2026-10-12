@@ -112,6 +112,32 @@ namespace FlockFive.Editor
             }
             Check("real-art-parts-astc", okParts == parts.Length, okParts + "/" + parts.Length + " " + bad);
             float span = OstrichPaint.HeadScreenSpan / OstrichPaint.PrevHeadScreenSpan;
+            // Birds v5 studio card (birds-sync.md).
+            {
+                var s0 = StudioBirds.At(0, 0f);
+                var s1 = StudioBirds.At(0, 0.06f);
+                Check("birds-v5-on-ring-frame0", s0.On && s0.Alpha < 0.01f && s1.Alpha > 0.4f && Mathf.Abs(s0.Pos.x - 72f) < 40f, "ruby at t=0 " + s0.Pos);
+                bool fanOk = true; float lastOn = 0f; bool backUnder = false, frontOver = false;
+                for (int b = 0; b < StudioBirds.Count; b++)
+                {
+                    fanOk &= Mathf.Abs(StudioBirds.BreakOut(b) - (1.70f + 0.04f * b)) < 1e-4f;
+                    for (float t = 0f; t <= 3.0f; t += 1f / 60f)
+                    {
+                        var s = StudioBirds.At(b, t);
+                        if (!s.On) continue;
+                        if (s.Alpha > 0.02f) lastOn = Mathf.Max(lastOn, t);
+                        if (t < 1.6f && s.Behind) backUnder = true;
+                        if (t < 1.6f && !s.Behind) frontOver = true;
+                        fanOk &= s.Pose >= 1 && s.Pose <= 4 && StudioBirds.Sprite(b, s.Pose) != null;
+                    }
+                }
+                Check("birds-v5-breakout-sprites", fanOk, "break-out 1.70-1.86s, real 6-pose sprites");
+                Check("birds-v5-exit-by-2.95", lastOn > 2.80f && lastOn < 2.99f, "last visible " + lastOn.ToString("0.000"));
+                Check("birds-v5-depth-layers", backUnder && frontOver, "back arc under, front arc over");
+                var r = new Rect(108f, 900f, 864f, 415f);
+                var c = StudioBirds.ToCard(new Vector2(StudioBirds.LogoOx, StudioBirds.LogoOy), r);
+                Check("birds-v5-logo-map", (c - r.position).magnitude < 0.01f, "logo origin maps to the card logo rect");
+            }
             Check("real-art-head-2x", span > 1.9f && span < 2.1f, "head x" + span.ToString("0.00") + " of the previous on-screen size");
         }
 
