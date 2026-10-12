@@ -46,6 +46,16 @@ namespace FlockFive.Editor
                 "scale " + minS + "-" + maxS + " sharp " + minSh + "-" + maxSh);
             float g1; StudioSync.Burst(2.0f, out g1);
             Check("studio-star-not-small-at-pop", StudioSync.Scale(2.0f) >= 0.9f && StudioSync.Burst(2.001f, out g1) > 0f, "scale at 2.000s " + StudioSync.Scale(2.0f));
+            // Full outer Z edge: top bar corner (upper right), diagonal low-left, ends at the tail's right tip.
+            float topY = 9f, lowX = 9f; bool corner = false;
+            for (int i = 0; i < StudioSync.PathX.Length; i++)
+            {
+                if (StudioSync.PathX[i] > 0.38f && StudioSync.PathY[i] < 0.10f) corner = true;
+                if (StudioSync.PathY[i] > 0.55f) lowX = Mathf.Min(lowX, StudioSync.PathX[i]);
+                topY = Mathf.Min(topY, StudioSync.PathY[i]);
+            }
+            Check("studio-path-ends-at-tail-tip", tip.x > 0.93f && tip.y > 0.55f && tip.y < 0.70f && corner && lowX < 0.20f,
+                "tip " + tip + " corner " + corner + " diag low x " + lowX);
             Check("studio-pop-matches-jingle", Mathf.Abs(FlockFiveApp.StudioPopAt - 2.0f) < 1e-4f, "");
             var a = FlockFiveApp.StudioLogoRect(1179f, 2556f, SpriteCatalog.StudioLogo);
             var b = FlockFiveApp.StudioLogoRect(1536f, 2048f, SpriteCatalog.StudioLogo);
