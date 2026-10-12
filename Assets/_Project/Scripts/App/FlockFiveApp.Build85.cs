@@ -51,7 +51,9 @@ namespace FlockFive
                 PlayerPrefs.SetInt("flockfive.instage", 0);
                 ShowSplash();
                 yield return new WaitForSecondsRealtime(0.6f);
-                Purse.CueWin(1, Purse.StagePay * Mathf.Max(1, Purse.LoginMul));
+                // Real owed clear pay, live pay path (EditorShotLive off): the hold is the only thing stopping it.
+                EditorShotLive = false;
+                Purse.AwardClear();
                 int coins0 = Purse.Coins, shown0 = CoinsShown();
                 ArmStreakSlide();
                 float g = 0f;
@@ -90,6 +92,7 @@ namespace FlockFive
                 }
                 Check("pays-after-tap-" + tag, flew && Purse.Coins > coins0, "coins " + coins0 + " -> " + Purse.Coins);
                 DismissStreakSign();
+                EditorShotLive = true;
                 yield return new WaitForSecondsRealtime(0.5f);
             }
             ShotRewardAd = -1;
