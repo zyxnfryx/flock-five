@@ -835,8 +835,10 @@ namespace FlockFive.Editor
                     var dome = SpriteCatalog.HeadDome(kitBody);
                     BirdIdle.KitTouch(kitKind, 0, false, kitBody, kit, out float tx, out float ty);
                     float nest = span * BirdIdle.KitNest;
-                    float dx = Mathf.Abs(tx - dome.x);
-                    float dy = Mathf.Abs(ty - (dome.y - nest));
+                    // Build 85: seated KitBack behind the dome peak, KitBackDrop lower.
+                    bool bowK = kitKind == BirdKit.Bow;
+                    float dx = Mathf.Abs(tx - (dome.x - span * BirdIdle.KitBack * (bowK ? 1.4f : 1f)));
+                    float dy = Mathf.Abs(ty - (dome.y - nest - (bowK ? 0f : span * BirdIdle.KitBackDrop)));
                     float yLimit = Mathf.Max(0.05f, span * 0.12f);
                     BirdIdle.KitAnchor(kitKind, 0, true, kitBody, kit, out float mx, out _, out _, out _, out bool mflip);
                     if (onDome && (dx > yLimit || dy > yLimit || flip || Mathf.Abs(tilt) < 1f

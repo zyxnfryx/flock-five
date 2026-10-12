@@ -1131,6 +1131,10 @@ namespace FlockFive
         public const float KitNest = 0.04f;
         // Max distance the smoothed seat may leave the interpolated dome point.
         const float KitSeatSlack = 0.04f;
+        // Fractions of the head span: how far behind the dome peak the kit seats, and how much
+        // lower it settles there. Static (not const) so the b85 before/after still can set 0.
+        public static float KitBack = 0.30f;
+        public static float KitBackDrop = 0.07f;
         static KitGlide[] _kitSlots;
 
         struct KitGlide
@@ -1272,9 +1276,14 @@ namespace FlockFive
             float sn = Mathf.Sin(rad);
             float rx = cs * sx - sn * sy;
             float ry = sn * sx + cs * sy;
-            float domeX = faceLeft ? -dome.x : dome.x;
+            // Build 85 (Brandon): seat a little further back on the skull, away from the eye and
+            // beak, settling down the back slope of the dome by the same small amount.
+            // Polish 2: the bow's wide loops reach the eye first, so it sits a touch further back.
+            float back = head * KitBack * (worn == BirdKit.Bow ? 1.4f : 1f);
+            float drop = worn == BirdKit.Bow ? 0f : KitBackDrop; // loops hang down; do not lower the knot
+            float domeX = faceLeft ? -(dome.x - back) : dome.x - back;
             x = domeX - rx;
-            y = dome.y - head * KitNest - ry;
+            y = dome.y - head * (KitNest + drop) - ry;
         }
 
         // Where the knot or crown base lands, in the same local space as KitAnchor.
