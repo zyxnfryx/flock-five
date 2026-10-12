@@ -73,6 +73,12 @@ namespace FlockFive.Editor
                 format = TextureImporterFormat.ASTC_4x4;
                 return true;
             }
+            if (name.StartsWith("ostrich_"))
+            {
+                // Painted ostrich rig parts (cut from the master): feather detail stays crisp.
+                format = TextureImporterFormat.ASTC_4x4;
+                return true;
+            }
             if (name.StartsWith("studio_"))
             {
                 // Boot studio card: logo strokes stay crisp.

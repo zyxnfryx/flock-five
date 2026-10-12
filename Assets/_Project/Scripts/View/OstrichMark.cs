@@ -30,6 +30,8 @@ namespace FlockFive
         Transform _head;
         Transform[] _neck;
         SpriteRenderer _bodySr;
+        Transform _legBack, _legFront;
+        SpriteRenderer _legBackSr, _legFrontSr;
         SpriteRenderer[] _neckSr;
         LineRenderer _line;
         const int NeckSamples = 26;
@@ -69,6 +71,9 @@ namespace FlockFive
             _body.SetParent(transform, false);
             _bodySr = _body.gameObject.AddComponent<SpriteRenderer>();
             FlockSort.Apply(_bodySr, BodyOrder);
+            // Legs: same layer as the body, just behind it (z), hinged at the hip.
+            _legBackSr = MakeLeg("LegBack", OstrichPaint.BackLeg(), out _legBack);
+            _legFrontSr = MakeLeg("LegFront", OstrichPaint.FrontLeg(), out _legFront);
 
             _neck = new Transform[NeckParts];
             _neckSr = new SpriteRenderer[NeckParts];
@@ -91,6 +96,25 @@ namespace FlockFive
             _head.SetParent(transform, false);
             Head = headGo.AddComponent<SpriteRenderer>();
             FlockSort.Apply(Head, HeadOrder);
+        }
+
+        SpriteRenderer MakeLeg(string name, Sprite sprite, out Transform t)
+        {
+            var go = new GameObject(name);
+            t = go.transform;
+            t.SetParent(_body, false);
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = sprite;
+            FlockSort.Apply(sr, BodyOrder);
+            return sr;
+        }
+
+        void PoseLeg(Transform leg, SpriteRenderer sr, Vector2 hip, float angle, float face)
+        {
+            if (leg == null) return;
+            leg.localPosition = new Vector3(hip.x * face, hip.y, 0.02f);
+            leg.localRotation = Quaternion.Euler(0f, 0f, angle * face);
+            sr.flipX = face < 0f;
         }
 
         public void SetCalm(bool calm) => _calm = calm;
@@ -377,6 +401,12 @@ namespace FlockFive
             _bodySr.flipX = face < 0f;
             _body.position = new Vector3(bodyX, bodyY, 0f);
             _body.localRotation = Quaternion.Euler(0f, 0f, sample.Lean * face);
+            // Stride from the timeline: legs swing in opposition around the hips.
+            float stride = Mathf.Sin(sample.Step * Mathf.PI * 2f);
+            float swing = flee ? 26f : (_act == OstrichAct.Strut || _act == OstrichAct.Daze ? 14f : 3f);
+            float brace = -sample.Lean * 0.5f; // feet stay planted while the body leans
+            PoseLeg(_legBack, _legBackSr, OstrichPaint.BackHip, brace + stride * swing, face);
+            PoseLeg(_legFront, _legFrontSr, OstrichPaint.FrontHip, brace - stride * swing, face);
 
             var headPos = new Vector3(headX, headY, 0f);
             Head.sprite = OstrichPaint.Head(_act, _frame);
@@ -386,7 +416,7 @@ namespace FlockFive
 
             // Start inside the plumage and end inside the chin, so the tube
             // reads as one neck in every pose.
-            Vector3 neckA = _body.position + _body.rotation * new Vector3(0f, -0.24f, 0f);
+            Vector3 neckA = _body.position + _body.rotation * new Vector3(-0.16f * face, -0.20f, 0f);
             Vector3 neckB = headPos + _head.rotation * new Vector3(0f, 0.06f, 0f);
             Vector3 ctrl = (neckA + neckB) * 0.5f;
             ctrl.x += (-sample.Wind * 0.90f + sample.Shake * 0.006f) * face;
@@ -415,15 +445,15 @@ namespace FlockFive
             _line.sortingOrder = NeckOrder;
             _line.widthMultiplier = 1f;
             var curve = new AnimationCurve(
-                new Keyframe(0f, 0.58f),
-                new Keyframe(0.14f, 0.40f),
-                new Keyframe(1f, 0.20f));
+                new Keyframe(0f, OstrichPaint.NeckWidth * 1.95f),
+                new Keyframe(0.18f, OstrichPaint.NeckWidth * 1.40f),
+                new Keyframe(1f, OstrichPaint.NeckWidth * 1.22f));
             _line.widthCurve = curve;
             var grad = new Gradient();
             grad.SetKeys(
                 new[]
                 {
-                    new GradientColorKey(new Color(0.82f, 0.80f, 0.82f, 1f), 0f),
+                    new GradientColorKey(Color.white, 0f),
                     new GradientColorKey(Color.white, 1f)
                 },
                 new[]
@@ -463,6 +493,7 @@ namespace FlockFive
         {
             if (!gameObject.activeSelf) gameObject.SetActive(true);
             if (_bodySr != null) _bodySr.enabled = true;
+            if (_legBackSr != null) { _legBackSr.enabled = true; _legFrontSr.enabled = true; }
             if (Head != null) Head.enabled = true;
             if (_line != null) _line.enabled = true;
         }
@@ -470,6 +501,7 @@ namespace FlockFive
         void Hide()
         {
             if (_bodySr != null) _bodySr.enabled = false;
+            if (_legBackSr != null) { _legBackSr.enabled = false; _legFrontSr.enabled = false; }
             if (Head != null) Head.enabled = false;
             if (_line != null) _line.enabled = false;
             if (_neckSr == null) return;

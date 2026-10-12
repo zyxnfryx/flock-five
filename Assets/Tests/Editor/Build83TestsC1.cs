@@ -95,19 +95,23 @@ namespace FlockFive.Editor
             int healthy = OstrichPaint.OpaqueCount(OstrichPaint.Body(OstrichAct.Idle, 0));
             int torn = OstrichPaint.OpaqueCount(OstrichPaint.Body(OstrichAct.Hit2, 3));
             Check("missing-feathers", torn < healthy, "healthy " + healthy + " torn " + torn);
-            int a = OstrichPaint.OpaqueCount(OstrichPaint.Body(OstrichAct.Idle, 0));
-            int b = OstrichPaint.OpaqueCount(OstrichPaint.Body(OstrichAct.Idle, 12));
-            bool differ = a != b;
-            if (!differ)
+            // Real art: idle moves the rig (bob, tilt), the painting itself is the master.
+            var i0 = OstrichAnim.At(OstrichAct.Idle, 0, false);
+            var i12 = OstrichAnim.At(OstrichAct.Idle, 12, false);
+            Check("idle-frames-differ", Mathf.Abs(i0.Bob - i12.Bob) + Mathf.Abs(i0.Tilt - i12.Tilt) > 0.01f, "bob/tilt move");
+            // Every rig part is the painted master, imported ASTC through SpriteImport.
+            string[] parts = { OstrichPaint.BodyPath, OstrichPaint.BodyHurtPath, OstrichPaint.HeadPath, OstrichPaint.BlinkPath,
+                OstrichPaint.NeckPath, OstrichPaint.BackLegPath, OstrichPaint.FrontLegPath };
+            int okParts = 0; string bad = "";
+            foreach (var p in parts)
             {
-                var pa = OstrichPaint.Body(OstrichAct.Idle, 0).texture.GetPixels32();
-                var pb = OstrichPaint.Body(OstrichAct.Idle, 12).texture.GetPixels32();
-                for (int i = 0; i < pa.Length; i += 17)
-                {
-                    if (pa[i].r != pb[i].r || pa[i].a != pb[i].a) { differ = true; break; }
-                }
+                var imp = UnityEditor.AssetImporter.GetAtPath("Assets/_Project/Art/Resources/" + p + ".png") as UnityEditor.TextureImporter;
+                var ios = imp != null ? imp.GetPlatformTextureSettings("iPhone") : null;
+                if (Resources.Load<Texture2D>(p) != null && ios != null && ios.overridden && ios.format == UnityEditor.TextureImporterFormat.ASTC_4x4) okParts++;
+                else bad += p + " ";
             }
-            Check("idle-frames-differ", differ, "a " + a + " b " + b);
+            Check("real-art-parts-astc", okParts == parts.Length, okParts + "/" + parts.Length + " " + bad);
+            Check("real-art-head-bigger", Mathf.Abs(OstrichPaint.BodyPpu / OstrichPaint.HeadPpu - 1.2f) < 0.01f, "head x" + (OstrichPaint.BodyPpu / OstrichPaint.HeadPpu));
         }
 
         static void CheckLesson(System.Action<string, bool, string> Check)

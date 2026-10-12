@@ -56,6 +56,7 @@ namespace FlockFive
         // logo fades in unaltered, and a warm gold sparkle (soft darker edge so it reads on
         // white) runs along the Z's top swoosh left to right with trailing glitter. All the
         // preload runs underneath; held at least StudioMinSec, then it fades into the game.
+        int _preloadOst;
         public const float StudioWhiteSec = 0.15f;
         public const float StudioLogoIn = 0.05f, StudioLogoSec = 0.30f;
         // Sparkle timing lives in StudioSync (jingle v4). These two remain for the tests.
@@ -505,6 +506,12 @@ namespace FlockFive
                     }
                     if (_preloadClock.Elapsed.TotalMilliseconds >= budget) break;
                     if (!HoneyArt.WarmDone) { using (StartupTrace.Begin("Pre.Honey")) HoneyArt.WarmStep(); any = true; }
+                    if (_preloadOst < OstrichPaint.WarmCount && _preloadClock.Elapsed.TotalMilliseconds < budget)
+                    {
+                        // Painted ostrich parts load and upload behind the studio card.
+                        using (StartupTrace.Begin("Pre.Ostrich")) OstrichPaint.Warm(_preloadOst++);
+                        any = true;
+                    }
                 }
                 if (!any) _preloadDone = true;
             }
