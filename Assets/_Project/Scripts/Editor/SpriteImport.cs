@@ -175,6 +175,18 @@ namespace FlockFive.Editor
             imp.defaultSampleSettings = s;
             imp.forceToMono = true;
             imp.loadInBackground = theme;
+            if (assetPath.Contains("zfx_jingle"))
+            {
+                // Studio card jingle: decompress on load, preloaded, stereo, not normalized.
+                s.loadType = AudioClipLoadType.DecompressOnLoad;
+                s.preloadAudioData = true;
+                imp.defaultSampleSettings = s;
+                imp.forceToMono = false;
+                imp.loadInBackground = false;
+                var so = new SerializedObject(imp);
+                var norm = so.FindProperty("m_Normalize");
+                if (norm != null) { norm.boolValue = false; so.ApplyModifiedPropertiesWithoutUndo(); }
+            }
         }
     }
 }

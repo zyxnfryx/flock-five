@@ -179,20 +179,20 @@ namespace FlockFive
         public const int HeadW = 168;
         public const int HeadH = 128;
         public const float BodyPpu = 100f;
-        public const float HeadPpu = 190f;
+        public const float HeadPpu = 190f / 1.2f; // review: head ~20% bigger, same chin pivot
         // Neck root, and the chin where the ribbon meets the head. y up.
         public static readonly Vector2 BodyPivot = new Vector2(210f / BodyW, 430f / BodyH);
         public static readonly Vector2 HeadPivot = new Vector2(48f / HeadW, 34f / HeadH);
 
-        static readonly Color Skin = new Color(0.82f, 0.66f, 0.62f, 1f);
-        static readonly Color SkinHi = new Color(0.96f, 0.86f, 0.80f, 1f);
-        static readonly Color SkinSh = new Color(0.55f, 0.42f, 0.42f, 1f);
-        static readonly Color BodyC = new Color(0.20f, 0.19f, 0.21f, 1f);
-        static readonly Color BodyHi = new Color(0.46f, 0.44f, 0.47f, 1f);
-        static readonly Color BodyLo = new Color(0.09f, 0.08f, 0.10f, 1f);
+        static readonly Color Skin = new Color(0.90f, 0.56f, 0.60f, 1f); // pinker neck
+        static readonly Color SkinHi = new Color(1.00f, 0.80f, 0.78f, 1f);
+        static readonly Color SkinSh = new Color(0.60f, 0.30f, 0.36f, 1f);
+        static readonly Color BodyC = new Color(0.12f, 0.10f, 0.13f, 1f); // darker plumes
+        static readonly Color BodyHi = new Color(0.36f, 0.32f, 0.38f, 1f);
+        static readonly Color BodyLo = new Color(0.035f, 0.025f, 0.045f, 1f);
         static readonly Color PlumeC = new Color(0.97f, 0.95f, 0.91f, 1f);
         static readonly Color PlumeSh = new Color(0.68f, 0.66f, 0.62f, 1f);
-        static readonly Color Horn = new Color(0.78f, 0.56f, 0.52f, 1f);
+        static readonly Color Horn = new Color(0.86f, 0.52f, 0.48f, 1f);
         static readonly Color HornDk = new Color(0.50f, 0.32f, 0.30f, 1f);
 
         struct Pix
@@ -572,11 +572,8 @@ namespace FlockFive
                 float a = p.A;
                 if (a < 0.004f) { raw[i] = new Color32(0, 0, 0, 0); continue; }
                 float inv = 1f / a;
-                raw[i] = new Color32(
-                    ToByte(p.R * inv),
-                    ToByte(p.G * inv),
-                    ToByte(p.B * inv),
-                    ToByte(a));
+                Grade(p.R * inv, p.G * inv, p.B * inv, out float gr, out float gg, out float gb);
+                raw[i] = new Color32(ToByte(gr), ToByte(gg), ToByte(gb), ToByte(a));
             }
             tex.SetPixels32(raw);
             tex.Apply(false, false);
@@ -584,6 +581,18 @@ namespace FlockFive
             sprite.name = name;
             sprite.hideFlags = HideFlags.HideAndDontSave;
             return sprite;
+        }
+
+        // Review: the painterly pass washed the bird out. Every baked frame gets more
+        // saturation and contrast; the brush texture (per-pixel variation) is kept.
+        public const float GradeSat = 1.35f, GradeContrast = 1.18f;
+        static void Grade(float r, float g, float b, out float or, out float og, out float ob)
+        {
+            float l = r * 0.299f + g * 0.587f + b * 0.114f;
+            r = l + (r - l) * GradeSat; g = l + (g - l) * GradeSat; b = l + (b - l) * GradeSat;
+            or = (r - 0.5f) * GradeContrast + 0.5f;
+            og = (g - 0.5f) * GradeContrast + 0.5f;
+            ob = (b - 0.5f) * GradeContrast + 0.5f;
         }
 
         static byte ToByte(float v)

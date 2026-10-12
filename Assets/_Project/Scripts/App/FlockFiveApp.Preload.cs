@@ -58,24 +58,54 @@ namespace FlockFive
         // preload runs underneath; held at least StudioMinSec, then it fades into the game.
         public const float StudioWhiteSec = 0.25f;
         public const float StudioLogoIn = 0.20f, StudioLogoSec = 0.30f;
-        public const float StudioSparkIn = 0.45f, StudioSparkSec = 0.62f;
-        public const float StudioMinSec = 1.55f; // sparkle run + flare done
+        public const float StudioSparkIn = 0.68f, StudioSparkSec = 0.62f; // pop (tip) at 1.30s = jingle pop
+        public const float StudioMinSec = 1.75f; // sparkle run + pop done (pop 1.30s + 0.42s fade)
         static readonly Color StudioWhite = new Color(0.992f, 0.984f, 0.965f, 1f);
 
-        // Top edge of the Z's upper swoosh in logo UV (x right, y down), left to right.
+        // Top EDGE of the Z's upper swoosh in logo UV (x right, y down), left to right. Sampled
+        // from the logo's alpha: the first opaque row (alpha > 0.5) of every column, outline
+        // included, so the glint rides the real curve and slant up to the tip.
         static readonly Vector2[] ZSwoosh =
         {
-            new Vector2(0.025f, 0.265f), new Vector2(0.10f, 0.248f), new Vector2(0.18f, 0.222f),
-            new Vector2(0.26f, 0.188f), new Vector2(0.33f, 0.148f), new Vector2(0.39f, 0.108f),
-            new Vector2(0.43f, 0.072f)
+            new Vector2(0.0220f, 0.2640f), new Vector2(0.0344f, 0.2608f), new Vector2(0.0540f, 0.2592f),
+            new Vector2(0.0732f, 0.2542f), new Vector2(0.0928f, 0.2492f), new Vector2(0.1124f, 0.2425f),
+            new Vector2(0.1320f, 0.2367f), new Vector2(0.1512f, 0.2292f), new Vector2(0.1708f, 0.2217f),
+            new Vector2(0.1904f, 0.2125f), new Vector2(0.2100f, 0.2025f), new Vector2(0.2292f, 0.1925f),
+            new Vector2(0.2488f, 0.1825f), new Vector2(0.2684f, 0.1708f), new Vector2(0.2880f, 0.1583f),
+            new Vector2(0.3072f, 0.1458f), new Vector2(0.3268f, 0.1333f), new Vector2(0.3464f, 0.1183f),
+            new Vector2(0.3660f, 0.1033f), new Vector2(0.3852f, 0.0883f), new Vector2(0.4048f, 0.0733f),
+            new Vector2(0.4244f, 0.0592f), new Vector2(0.4270f, 0.0578f)
         };
+        const float LogoAspect = 2500f / 1200f;
+        // Glint sits just inside the stroke edge, not floating above it.
+        const float SwooshInset = 0.010f;
+        static float[] _swooshLen;
 
+        // Point at fraction u of the edge's ARC LENGTH (even speed along the curve).
         public static Vector2 SwooshPoint(float u)
         {
-            u = Mathf.Clamp01(u) * (ZSwoosh.Length - 1);
-            int k = Mathf.Min((int)u, ZSwoosh.Length - 2);
-            return Vector2.Lerp(ZSwoosh[k], ZSwoosh[k + 1], u - k);
+            if (_swooshLen == null)
+            {
+                _swooshLen = new float[ZSwoosh.Length];
+                for (int i = 1; i < ZSwoosh.Length; i++)
+                {
+                    var d = ZSwoosh[i] - ZSwoosh[i - 1];
+                    _swooshLen[i] = _swooshLen[i - 1] + Mathf.Sqrt(d.x * d.x * LogoAspect * LogoAspect + d.y * d.y);
+                }
+            }
+            float total = _swooshLen[_swooshLen.Length - 1];
+            float want = Mathf.Clamp01(u) * total;
+            int k = 1;
+            while (k < _swooshLen.Length - 1 && _swooshLen[k] < want) k++;
+            float seg = _swooshLen[k] - _swooshLen[k - 1];
+            float t = seg > 1e-6f ? (want - _swooshLen[k - 1]) / seg : 0f;
+            var p = Vector2.Lerp(ZSwoosh[k - 1], ZSwoosh[k], t);
+            p.y += SwooshInset;
+            return p;
         }
+
+        public static int SwooshSamples => ZSwoosh.Length;
+        public static Vector2 SwooshSample(int i) => ZSwoosh[i];
 
         public static Rect StudioLogoRect(float W, float H, Sprite logo)
         {
@@ -85,10 +115,31 @@ namespace FlockFive
             return new Rect(Mathf.Round((W - w) * 0.5f), Mathf.Round((H - h) * 0.46f), w, h);
         }
 
+        // Jingle hook: Resources/Audio/zfx_jingle (from the producer, /workspace/ff/b83/zfx-jingle/).
+        // Plays once on the frame the card appears. zfx-jingle.ogg (1.95s) has its pop at 1.300s,
+        // which is StudioPopAt (the sparkle reaching the tip). Missing file = silent.
+        // Pending Brandon's listen approval.
+        public const string StudioJinglePath = "Audio/zfx_jingle";
+        public static float StudioPopAt => StudioSparkIn + StudioSparkSec; // seconds after the card appears
+        static bool _jingleTried;
+
+        static void StudioJingle()
+        {
+            if (_jingleTried) return;
+            _jingleTried = true;
+#if UNITY_EDITOR
+            if (EditorShotLive || ShotLoadingProgress >= 0f) return;
+#endif
+            var clip = Resources.Load<AudioClip>(StudioJinglePath);
+            if (clip == null) return;
+            Sfx.PlayProc(clip, 1f, 0.9f, MixLayer.Lead);
+        }
+
         bool DrawLoadingScreen(float a, float since)
         {
             var logo = SpriteCatalog.StudioLogo;
             if (logo == null) return false;
+            StudioJingle(); // starts on the frame the card appears
             float W = Screen.width, H = Screen.height;
             var keep = GUI.color;
             // Launch color underneath, warm white fading over it.
@@ -119,16 +170,16 @@ namespace FlockFive
             var dot = LevelCurtainDot();
             float unit = r.width * 0.017f; // polish: reads at phone size
             // Trailing glitter: points behind the head, fading and drifting down a touch.
-            for (int i = 0; i < 26; i++)
+            for (int i = 0; i < 34; i++)
             {
-                float lag = i * 0.022f;
+                float lag = i * 0.016f;
                 float tu = u - lag;
                 if (tu < 0f || tu > 1f) continue;
                 float h1 = Mathf.Repeat(i * 0.6180339f, 1f);
                 var p = SwooshPoint(tu);
-                float fade = (1f - i / 26f) * Mathf.Clamp01((1.30f - u) / 0.30f) * (0.6f + 0.4f * Mathf.Clamp01(u));
+                float fade = (1f - i / 34f) * Mathf.Clamp01((1.30f - u) / 0.30f) * (0.6f + 0.4f * Mathf.Clamp01(u));
                 float px = r.x + p.x * r.width + (h1 - 0.5f) * unit * 2.2f;
-                float py = r.y + p.y * r.height + (h1 * 2.4f + lag * 18f) * unit * 0.6f;
+                float py = r.y + p.y * r.height + (h1 * 1.2f + lag * 10f) * unit * 0.6f; // settles just under the edge
                 float sz = unit * (0.55f + 0.7f * Mathf.Repeat(h1 * 7.3f, 1f)) * (0.6f + 0.4f * fade);
                 float tw = 0.6f + 0.4f * Mathf.Sin(Time.realtimeSinceStartup * 19f + i * 2.1f);
                 // Soft darker amber edge first so the gold reads on white.
@@ -137,25 +188,27 @@ namespace FlockFive
                 GUI.color = new Color(1f, 0.80f, 0.22f, a * fade * tw);
                 GUI.DrawTexture(new Rect(px - sz * 0.5f, py - sz * 0.5f, sz, sz), dot, ScaleMode.StretchToFill, true);
             }
-            // The head glint: warm halo plus a bright four-point star.
+            // The head glint: warm halo plus a 4-point star that ROTATES as it travels and
+            // brightens toward the tip.
             if (u >= 0f && u <= 1.0f)
             {
-                var p = SwooshPoint(Mathf.Min(u, 1f));
+                var p = SwooshPoint(u);
                 float px = r.x + p.x * r.width, py = r.y + p.y * r.height;
-                float g = unit * 9f;
-                float ga = a;
-                float build = 0.55f + 0.45f * Mathf.SmoothStep(0f, 1f, u); // brightens along the run
-                g *= 0.75f + 0.45f * build;
-                GUI.color = new Color(0.85f, 0.55f, 0.08f, ga * 0.30f * build);
+                float build = 0.5f + 0.5f * Mathf.SmoothStep(0f, 1f, u);
+                float g = unit * 9f * (0.75f + 0.45f * build);
+                GUI.color = new Color(0.85f, 0.55f, 0.08f, a * 0.32f * build);
                 GUI.DrawTexture(new Rect(px - g * 0.5f, py - g * 0.5f, g, g), gt, ScaleMode.StretchToFill, true);
-                float sl = unit * 6f * (0.7f + 0.5f * build), sw = unit * 0.7f;
-                GUI.color = new Color(0.60f, 0.36f, 0.04f, ga * 0.6f);
+                float sl = unit * 6.5f * (0.7f + 0.5f * build), sw = unit * 0.75f;
+                var m = GUI.matrix;
+                GUIUtility.RotateAroundPivot(u * 540f, new Vector2(px, py));
+                GUI.color = new Color(0.58f, 0.34f, 0.03f, a * 0.65f);
                 GUI.DrawTexture(new Rect(px - sl * 0.5f - 1f, py - sw * 0.5f - 1f, sl + 2f, sw + 2f), dot, ScaleMode.StretchToFill, true);
                 GUI.DrawTexture(new Rect(px - sw * 0.5f - 1f, py - sl * 0.5f - 1f, sw + 2f, sl + 2f), dot, ScaleMode.StretchToFill, true);
-                GUI.color = new Color(1f, 0.90f, 0.45f, ga);
+                GUI.color = new Color(1f, 0.88f, 0.40f, a * (0.75f + 0.25f * build));
                 GUI.DrawTexture(new Rect(px - sl * 0.5f, py - sw * 0.5f, sl, sw), dot, ScaleMode.StretchToFill, true);
                 GUI.DrawTexture(new Rect(px - sw * 0.5f, py - sl * 0.5f, sw, sl), dot, ScaleMode.StretchToFill, true);
-                GUI.color = new Color(1f, 1f, 0.92f, ga);
+                GUI.matrix = m;
+                GUI.color = new Color(1f, 1f, 0.92f, a * build);
                 GUI.DrawTexture(new Rect(px - unit, py - unit, unit * 2f, unit * 2f), dot, ScaleMode.StretchToFill, true);
             }
             // End of the swoosh: flare and pop (small starburst + a few twinkles), then fade.
@@ -312,6 +365,7 @@ namespace FlockFive
             _warmCoverOff = false;
             _warmHeavyDone = false;
             _warmHeavyStep = 0;
+            _jingleTried = false;
             _loadShown = 0f;
             _loadArtT0 = -1f;
         }
