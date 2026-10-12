@@ -10016,6 +10016,7 @@ namespace FlockFive
             bool fired = view.Launch;
             bool paint = GuiPaint();
             var motion = PushButton.Sample(PushButton.Level, held, Time.unscaledTime, paint);
+            if (motion.PressedEdge) _levelPressAt = Time.unscaledTime;
             if (paint && motion.ReleasedEdge && (BadgerOwed() > 0 || !LevelCurtain.Armed))
             {
                 SparkleFx.DrawAround(rest, 0.95f, true, 0.12f);
@@ -10038,6 +10039,7 @@ namespace FlockFive
                 var shadow = new Rect(visual.x + 6f, visual.y + drop, visual.width, visual.height);
                 GUI.color = new Color(0.10f, 0.06f, 0.03f, held ? 0.22f : 0.40f);
                 GUI.DrawTexture(shadow, tex, ScaleMode.ScaleToFit, true);
+                if (held) DrawLevelPressUnder(visual, Time.unscaledTime - _levelPressAt);
                 if (!held && motion.Pose.Sink <= 0.001f) DrawFlowerHalo(visual, 0f);
                 GUI.color = Color.white;
                 GUI.DrawTexture(visual, tex, ScaleMode.ScaleToFit, true);
@@ -10045,6 +10047,7 @@ namespace FlockFive
                 if (!held && motion.Pose.Sink <= 0.001f) DrawFlowerShimmer(visual, 0f);
                 if (!held && motion.Pose.Sink <= 0.001f) DrawLevelIdleLife(visual);
                 if (held) DrawDiscPress(visual, 0f);
+                if (held) DrawLevelPressOver(visual, Time.unscaledTime - _levelPressAt);
             }
 
             DrawBadgerSitter(visual.y - rest.y);

@@ -75,5 +75,52 @@ namespace FlockFive
             }
             GUI.color = Color.white;
         }
+
+        // Press-down time for the LEVEL flower. Paint clock only; set on the PressedEdge frame.
+        float _levelPressAt = -1f;
+
+        // Under the flower while held: a warm pool of light the disc sinks into.
+        // Ease-out over 0.12 s so it lands with the thunk, not after it.
+        static void DrawLevelPressUnder(Rect visual, float age)
+        {
+            if (!GuiPaint() || visual.width < 16f) return;
+            if (age < 0f) age = 1f;
+            float u = Mathf.Clamp01(age / 0.12f);
+            float e = 1f - (1f - u) * (1f - u) * (1f - u);
+            var c = new Vector2(visual.center.x, visual.y + visual.height * 0.42f);
+            SparkleFx.DrawGlow(c, visual.width * (1.05f + 0.20f * e), new Color(1f, 0.74f, 0.32f, 0.42f * e));
+            GUI.color = Color.white;
+        }
+
+        // Over the sunk disc while held. Frame 0 gets a contact flash so the tap reads
+        // instantly; then six glints spiral in from the petals and circle tight, a
+        // charge-up that the release burst pays off.
+        static void DrawLevelPressOver(Rect visual, float age)
+        {
+            if (!GuiPaint() || visual.width < 16f) return;
+            if (age < 0f) age = 1f;
+            float t = Time.unscaledTime;
+            float w = visual.width;
+            var disc = FlowerDisc(visual, 0f);
+            var c = disc.center;
+
+            float flash = 1f - Mathf.Clamp01(age / 0.10f);
+            if (flash > 0.01f)
+                SparkleFx.DrawGlow(c, disc.width * (1.1f + 0.4f * (1f - flash)), new Color(1f, 0.95f, 0.78f, 0.55f * flash * flash));
+
+            float gather = Mathf.Clamp01(age / 0.40f);
+            float ge = 1f - (1f - gather) * (1f - gather);
+            float r = w * Mathf.Lerp(0.62f, 0.40f, ge);
+            for (int k = 0; k < 6; k++)
+            {
+                float ang = k * 1.0472f + t * 2.6f + (1f - ge) * 1.4f;
+                var p = new Vector2(c.x + Mathf.Cos(ang) * r, c.y + Mathf.Sin(ang) * r * 0.78f);
+                float tw = 0.6f + 0.4f * Mathf.Sin(t * 9f + k * 1.3f);
+                float a = (0.35f + 0.55f * ge) * tw;
+                float sz = w * (0.055f + 0.025f * ge);
+                SparkleFx.DrawAt(p, sz, a, (k & 1) == 0 ? new Color(1f, 0.90f, 0.58f, 1f) : new Color(1f, 0.97f, 0.88f, 1f));
+            }
+            GUI.color = Color.white;
+        }
     }
 }
