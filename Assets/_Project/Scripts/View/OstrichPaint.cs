@@ -195,6 +195,10 @@ namespace FlockFive
         public const string NeckPath = "Sprites/ostrich_neck";
         public const string BackLegPath = "Sprites/ostrich_leg_back";
         public const string FrontLegPath = "Sprites/ostrich_leg_front";
+        // Feathered collar from the body's own plumage: laps over the neck root, soft alpha.
+        public const string CollarPath = "Sprites/ostrich_collar";
+        static readonly Vector2 CollarPivot = new Vector2(135.5f / 168f, 1f - 48f / 164f);
+        public static Sprite Collar() => Load(CollarPath, BodyPpu, CollarPivot);
 
         static readonly Dictionary<string, Sprite> _sprites = new Dictionary<string, Sprite>();
         static Sprite _neck;
@@ -253,7 +257,7 @@ namespace FlockFive
         }
 
         // Boot-gap preload (studio card): load every part and upload it now.
-        public static int WarmCount => 7;
+        public static int WarmCount => 8;
         public static void Warm(int i)
         {
             switch (i)
@@ -265,6 +269,7 @@ namespace FlockFive
                 case 4: NeckTexture(); break;
                 case 5: BackLeg(); break;
                 case 6: FrontLeg(); break;
+                case 7: Collar(); break;
             }
         }
 

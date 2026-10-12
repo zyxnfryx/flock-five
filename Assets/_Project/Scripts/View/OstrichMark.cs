@@ -12,7 +12,20 @@ namespace FlockFive
         public const int NeckOrder = 9;
         public const int HeadOrder = 10;
         public const int NeckParts = 8;
-        public const float BodyDrop = 2.18f;
+        public const float BodyDrop = 1.50f; // body high and close: the neck is not stretched
+        // Whole bird at 72%: it fits the screen width, legs included, and the 160px master
+        // head is drawn at or under its native size on device.
+        public const float RigScale = 0.72f;
+        // Half the visible width; the game camera when there is one, else the stills camera.
+        public static float ViewHalfWidth()
+        {
+            var cam = Camera.main;
+            if (cam != null && cam.orthographic) return cam.orthographicSize * cam.aspect;
+            return 5.55f * 9f / 16f;
+        }
+        // Body width from the pivot (neck root) back to the tail, and in front of it, at RigScale.
+        public static float BodyBack => 527.5f / OstrichPaint.BodyPpu * RigScale;
+        public static float BodyFront => (566f - 527.5f) / OstrichPaint.BodyPpu * RigScale;
         // Feeder sprites pivot at the glass. The port is the flower on the tray.
         public const float PortX = 0.16f;
         public const float PortY = -0.88f;
@@ -30,7 +43,8 @@ namespace FlockFive
         Transform _head;
         Transform[] _neck;
         SpriteRenderer _bodySr;
-        Transform _legBack, _legFront;
+        Transform _legBack, _legFront, _collar;
+        SpriteRenderer _collarSr;
         SpriteRenderer _legBackSr, _legFrontSr;
         SpriteRenderer[] _neckSr;
         LineRenderer _line;
@@ -74,6 +88,14 @@ namespace FlockFive
             // Legs: same layer as the body, just behind it (z), hinged at the hip.
             _legBackSr = MakeLeg("LegBack", OstrichPaint.BackLeg(), out _legBack);
             _legFrontSr = MakeLeg("LegFront", OstrichPaint.FrontLeg(), out _legFront);
+            var collarGo = new GameObject("Collar");
+            _collar = collarGo.transform;
+            _collar.SetParent(_body, false);
+            _collar.localPosition = new Vector3(0f, 0f, 0.01f);
+            _collarSr = collarGo.AddComponent<SpriteRenderer>();
+            _collarSr.sprite = OstrichPaint.Collar();
+            FlockSort.Apply(_collarSr, HeadOrder);
+            _body.localScale = new Vector3(RigScale, RigScale, 1f);
 
             _neck = new Transform[NeckParts];
             _neckSr = new SpriteRenderer[NeckParts];
@@ -94,6 +116,7 @@ namespace FlockFive
             var headGo = new GameObject("Head");
             _head = headGo.transform;
             _head.SetParent(transform, false);
+            _head.localScale = new Vector3(RigScale, RigScale, 1f);
             Head = headGo.AddComponent<SpriteRenderer>();
             FlockSort.Apply(Head, HeadOrder);
         }
@@ -392,13 +415,19 @@ namespace FlockFive
             float sway = 0f;
             if (_act == OstrichAct.Strut) sway = Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.28f;
             if (_act == OstrichAct.Daze) sway += Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.36f;
-            float bodyX = flee ? headX - 0.55f : sway;
+            // Face the side the head reaches to; keep the whole body (tail end) on screen.
+            float half = ViewHalfWidth();
+            float face = flee ? 1f : (headX < -0.4f ? -1f : 1f);
+            float bodyX;
+            if (flee) bodyX = headX - 0.55f;
+            else if (face > 0f) bodyX = Mathf.Clamp(headX - 0.9f, -half + BodyBack + 0.12f, half - BodyFront - 0.12f) + sway;
+            else bodyX = Mathf.Clamp(headX + 0.9f, -half + BodyFront + 0.12f, half - BodyBack - 0.12f) + sway;
             float bodyY = headY - BodyDrop + sample.Bob;
-            float face = headX < bodyX - 0.08f ? -1f : 1f;
             headX += face * (sample.Strike * 0.50f - sample.Wind * 0.42f);
 
             _bodySr.sprite = OstrichPaint.Body(_act, _frame);
             _bodySr.flipX = face < 0f;
+            if (_collarSr != null) { _collarSr.flipX = face < 0f; }
             _body.position = new Vector3(bodyX, bodyY, 0f);
             _body.localRotation = Quaternion.Euler(0f, 0f, sample.Lean * face);
             // Stride from the timeline: legs swing in opposition around the hips.
@@ -416,12 +445,12 @@ namespace FlockFive
 
             // Start inside the plumage and end inside the chin, so the tube
             // reads as one neck in every pose.
-            Vector3 neckA = _body.position + _body.rotation * new Vector3(-0.16f * face, -0.20f, 0f);
-            Vector3 neckB = headPos + _head.rotation * new Vector3(0f, 0.06f, 0f);
+            Vector3 neckA = _body.position + _body.rotation * new Vector3(-0.16f * face, -0.32f, 0f) * RigScale;
+            Vector3 neckB = headPos + _head.rotation * new Vector3(0f, 0.10f * RigScale, 0f);
             Vector3 ctrl = (neckA + neckB) * 0.5f;
-            ctrl.x += (-sample.Wind * 0.90f + sample.Shake * 0.006f) * face;
-            ctrl.y += sample.Wind * 0.42f - sample.Strike * 0.60f;
-            if (_act == OstrichAct.Daze) ctrl.y -= 0.72f;
+            ctrl.x += (-sample.Wind * 0.90f + sample.Shake * 0.006f) * face * RigScale;
+            ctrl.y += (sample.Wind * 0.42f - sample.Strike * 0.60f) * RigScale;
+            if (_act == OstrichAct.Daze) ctrl.y -= 0.72f * RigScale;
             if (_act == OstrichAct.Honk) ctrl.y += 0.16f;
             if (_act == OstrichAct.Idle) ctrl.x += 0.10f * face;
             WriteNeck(neckA, ctrl, neckB);
@@ -445,9 +474,9 @@ namespace FlockFive
             _line.sortingOrder = NeckOrder;
             _line.widthMultiplier = 1f;
             var curve = new AnimationCurve(
-                new Keyframe(0f, OstrichPaint.NeckWidth * 1.95f),
-                new Keyframe(0.18f, OstrichPaint.NeckWidth * 1.40f),
-                new Keyframe(1f, OstrichPaint.NeckWidth * 1.22f));
+                new Keyframe(0f, OstrichPaint.NeckWidth * 2.9f * RigScale),
+                new Keyframe(0.30f, OstrichPaint.NeckWidth * 1.75f * RigScale),
+                new Keyframe(1f, OstrichPaint.NeckWidth * 1.45f * RigScale));
             _line.widthCurve = curve;
             var grad = new Gradient();
             grad.SetKeys(
@@ -494,6 +523,7 @@ namespace FlockFive
             if (!gameObject.activeSelf) gameObject.SetActive(true);
             if (_bodySr != null) _bodySr.enabled = true;
             if (_legBackSr != null) { _legBackSr.enabled = true; _legFrontSr.enabled = true; }
+            if (_collarSr != null) _collarSr.enabled = true;
             if (Head != null) Head.enabled = true;
             if (_line != null) _line.enabled = true;
         }
@@ -502,6 +532,7 @@ namespace FlockFive
         {
             if (_bodySr != null) _bodySr.enabled = false;
             if (_legBackSr != null) { _legBackSr.enabled = false; _legFrontSr.enabled = false; }
+            if (_collarSr != null) _collarSr.enabled = false;
             if (Head != null) Head.enabled = false;
             if (_line != null) _line.enabled = false;
             if (_neckSr == null) return;
