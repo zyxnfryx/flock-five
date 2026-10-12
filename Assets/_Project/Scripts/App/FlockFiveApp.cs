@@ -614,6 +614,12 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
                 StartCoroutine(ShotHome());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-press-shot"))
+            {
+                _dailyShotQuiet = true;
+                try { System.IO.File.Delete("/tmp/flock-five-press-shot"); } catch { }
+                StartCoroutine(ShotSplashPress());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-gift-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-gift-shot"); } catch { }
@@ -6307,6 +6313,12 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
                 StartCoroutine(ShotHome());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-press-shot"))
+            {
+                _dailyShotQuiet = true;
+                try { System.IO.File.Delete("/tmp/flock-five-press-shot"); } catch { }
+                StartCoroutine(ShotSplashPress());
+            }
             if (System.IO.File.Exists("/tmp/flock-five-badger-fight"))
                 EditorOpenBadgerFight();
             if (System.IO.File.Exists("/tmp/flock-five-poker-stamp"))
@@ -10012,8 +10024,8 @@ namespace FlockFive
             gates.StepGate = StepGateBlocks(rest);
             var view = StepHomePress(SplashPress.Id.Level, !SplashPress.Blocks(gates));
             StartupTrace.Lap("L.LevelGate");
-            bool held = view.Pressed;
-            bool fired = view.Launch;
+            bool held = view.Pressed || _pressShotHeld;
+            bool fired = view.Launch || TakePressShotFire();
             bool paint = GuiPaint();
             var motion = PushButton.Sample(PushButton.Level, held, Time.unscaledTime, paint);
             if (motion.PressedEdge) _levelPressAt = Time.unscaledTime;

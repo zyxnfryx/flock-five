@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace FlockFive
@@ -121,6 +122,86 @@ namespace FlockFive
                 SparkleFx.DrawAt(p, sz, a, (k & 1) == 0 ? new Color(1f, 0.90f, 0.58f, 1f) : new Color(1f, 0.97f, 0.88f, 1f));
             }
             GUI.color = Color.white;
+        }
+
+        // Capture hook (/tmp/flock-five-press-shot). DrawFlowerPlay ORs these into the
+        // real held / launch, so the shot drives the same press path a finger does.
+        bool _pressShotHeld;
+        bool _pressShotFire;
+
+        bool TakePressShotFire()
+        {
+            if (!_pressShotFire) return false;
+            _pressShotFire = false;
+            return true;
+        }
+
+        static void SavePressShotFrame(string frames, int index, string still)
+        {
+            var tex = ScreenCapture.CaptureScreenshotAsTexture();
+            if (tex == null) return;
+            try
+            {
+                System.IO.File.WriteAllBytes(frames + "/" + index.ToString("D4") + ".jpg", tex.EncodeToJPG(92));
+                if (still != null) System.IO.File.WriteAllBytes(still, tex.EncodeToPNG());
+            }
+            finally { UnityEngine.Object.Destroy(tex); }
+        }
+
+        // 1 s of idle, a 100 ms press, release (Load fires that frame), then 2.4 s on.
+        // Time.captureFramerate = 60 locks the clock to one 60 fps step per captured frame.
+        IEnumerator ShotSplashPress()
+        {
+            const string dir = "/tmp/paradice";
+            string frames = dir + "/splash-press-60fps";
+            System.IO.Directory.CreateDirectory(dir);
+            try { if (System.IO.Directory.Exists(frames)) System.IO.Directory.Delete(frames, true); } catch { }
+            System.IO.Directory.CreateDirectory(frames);
+            int keepRate = Time.captureFramerate;
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            int keepNext = PlayerPrefs.GetInt("flockfive.next", 0);
+            _pressShotHeld = false;
+            _pressShotFire = false;
+            LevelCurtain.Reset();
+            ShowSplash();
+            _home = HomeFace.Splash;
+            yield return new WaitForSecondsRealtime(0.8f);
+            Time.captureFramerate = 60;
+            int f = 0;
+            for (int i = 0; i < 60; i++)
+            {
+                yield return new WaitForEndOfFrame();
+                SavePressShotFrame(frames, f++, i == 30 ? dir + "/splash-press-0-idle.png" : null);
+            }
+            _pressShotHeld = true;
+            for (int i = 0; i < 6; i++)
+            {
+                yield return new WaitForEndOfFrame();
+                SavePressShotFrame(frames, f++, i == 3 ? dir + "/splash-press-1-press.png" : null);
+            }
+            _pressShotHeld = false;
+            _pressShotFire = true;
+            for (int k = 0; k < 144; k++)
+            {
+                yield return new WaitForEndOfFrame();
+                string still = k == 5 ? dir + "/splash-press-2-burst-peak.png"
+                    : k == 24 ? dir + "/splash-press-3-handoff.png"
+                    : k == 66 ? dir + "/splash-press-4-settle.png"
+                    : null;
+                SavePressShotFrame(frames, f++, still);
+            }
+            Time.captureFramerate = keepRate;
+            _pressShotHeld = false;
+            _pressShotFire = false;
+            EncodeSmashVideo(frames, dir + "/splash-press-60fps.mp4", 60f);
+            yield return new WaitForSecondsRealtime(0.4f);
+            LevelCurtain.Reset();
+            ShowSplash();
+            _home = HomeFace.Splash;
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", keepNext);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            PlayerPrefs.Save();
+            Debug.Log("FF_PRESS_SHOT_DONE frames=" + f);
         }
     }
 }
