@@ -18,6 +18,12 @@ namespace FlockFive
         public static bool Ready { get; private set; }
         public static float StartedAt { get; private set; }
 
+        // Release bloom. Fire stamps the clock on the committed press, the same frame
+        // as Load; nothing waits on it. Negative until then, and the bloom rides
+        // StartedAt instead (shot previews arm and preview without a fire).
+        public static float FiredAt { get; private set; } = -1f;
+        public const float BloomLife = 0.85f;
+
         // Button the fountain leaves. Empty until Aim.
         public static Rect Source;
 
@@ -42,6 +48,7 @@ namespace FlockFive
             LoadStarted = false;
             Ready = false;
             StartedAt = 0f;
+            FiredAt = -1f;
             Source = default;
             PreviewNow = -1f;
         }
@@ -70,6 +77,56 @@ namespace FlockFive
 
         public static void MarkReady() => Ready = true;
 
+        // Committed press, right after Load. Paint clock only. A long hold parked the
+        // fountain at the apex; re-seat the clock there so the fall and reveal still
+        // play instead of snapping off on release.
+        public static void Fire(float now)
+        {
+            if (!Armed) return;
+            FiredAt = now;
+            if (now - StartedAt > Flood) StartedAt = now - Flood;
+        }
+
+        // Seconds since the release (or since Arm in a preview). Negative when idle.
+        public static float BloomAge(float now)
+        {
+            if (!Armed) return -1f;
+            float from = FiredAt >= 0f && PreviewNow < 0f ? FiredAt : StartedAt;
+            float a = Clock(now) - from;
+            return a < 0f ? 0f : a;
+        }
+
+        public static float EaseOutCubic(float u)
+        {
+            u = Mathf.Clamp01(u);
+            float v = 1f - u;
+            return 1f - v * v * v;
+        }
+
+        public static float EaseOutQuint(float u)
+        {
+            u = Mathf.Clamp01(u);
+            float v = 1f - u;
+            return 1f - v * v * v * v * v;
+        }
+
+        public static float EaseOutBack(float u)
+        {
+            u = Mathf.Clamp01(u);
+            const float c1 = 1.70158f;
+            const float c3 = c1 + 1f;
+            float v = u - 1f;
+            return 1f + c3 * v * v * v + c1 * v * v;
+        }
+
+        // Light envelope: 30 ms attack, then an exponential tail (tau 75 ms).
+        public static float FlashEnv(float b)
+        {
+            if (b < 0f) return 0f;
+            if (b < 0.03f) return b / 0.03f;
+            return Mathf.Exp(-(b - 0.03f) / 0.075f);
+        }
+
         public static float Clock(float now) => PreviewNow >= 0f ? PreviewNow : now;
 
         public static float VisualAge(float now)
@@ -85,6 +142,8 @@ namespace FlockFive
         public static bool Finished(float now)
         {
             if (!Armed || !Ready) return false;
+            // A fired bloom finishes its tail over the garden before the clear.
+            if (FiredAt >= 0f && PreviewNow < 0f && now - FiredAt < BloomLife) return false;
             return Clock(now) - StartedAt >= Duration;
         }
 
@@ -105,13 +164,15 @@ namespace FlockFive
             if (w < 2f || h < 2f) return;
             if (_buf == null || _buf.Length < Count * 2) _buf = new Glint[Count * 2];
             int n = Fill(VisualAge(now), w, h, Source, _buf);
-            if (n < 1) return;
+            float bloom = BloomAge(now);
             var spark = SpriteCatalog.Sparkle;
             Texture tex = spark != null ? spark.texture : null;
             if (tex == null) tex = Dot();
             var glow = SpriteCatalog.Glow;
             Texture glowTex = glow != null && glow.texture != null ? glow.texture : tex;
             var prev = GUI.color;
+            BloomSeat(w, h, out Vector2 at, out float side);
+            DrawBloomUnder(bloom, at, side, glowTex);
             for (int i = 0; i < n; i++)
             {
                 float a = _buf[i].Alpha;
@@ -131,7 +192,63 @@ namespace FlockFive
                     : new Color(1f, 0.84f, 0.28f, a);
                 GUI.DrawTexture(new Rect(x, y, sz, sz), tex, ScaleMode.ScaleToFit, true);
             }
+            DrawBloomOver(bloom, at, side, tex, glowTex);
             GUI.color = prev;
+        }
+
+        static void BloomSeat(float w, float h, out Vector2 at, out float side)
+        {
+            if (Source.width > 2f && Source.height > 2f)
+            {
+                at = new Vector2(Source.center.x, Source.y + Source.height * 0.40f);
+                side = Source.width;
+                return;
+            }
+            at = new Vector2(w * 0.5f, h * 0.74f);
+            side = (w < h ? w : h) * 0.34f;
+        }
+
+        static void Blit(Vector2 at, float size, Texture tex, Color c)
+        {
+            if (c.a < 0.02f || size < 1f || tex == null) return;
+            GUI.color = c;
+            GUI.DrawTexture(new Rect(at.x - size * 0.5f, at.y - size * 0.5f, size, size), tex, ScaleMode.ScaleToFit, true);
+        }
+
+        // Timing pass. b = seconds since release.
+        //   0-30 ms   light swells out of the flower (attack)
+        //   30-250 ms light decays while it widens (handoff into the fountain)
+        //   0-0.60 s  shock ring ease-out-quint, fades on (1-u)^1.6
+        //   0-0.40 s  centre star pops on ease-out-back, then eases away
+        static void DrawBloomUnder(float b, Vector2 at, float side, Texture glowTex)
+        {
+            if (b < 0f || b > BloomLife) return;
+            float f = FlashEnv(b);
+            if (f > 0.02f)
+                Blit(at, side * (1.3f + 1.6f * EaseOutCubic(b / 0.25f)), glowTex, new Color(1f, 0.90f, 0.62f, 0.75f * f));
+        }
+
+        static void DrawBloomOver(float b, Vector2 at, float side, Texture tex, Texture glowTex)
+        {
+            if (b < 0f || b > BloomLife) return;
+            float u = b / 0.60f;
+            if (u < 1f)
+            {
+                float r = side * (0.45f + 1.6f * EaseOutQuint(u));
+                float a = Mathf.Pow(1f - u, 1.6f);
+                float sz = side * 0.10f * (1f - 0.5f * u);
+                for (int i = 0; i < 20; i++)
+                {
+                    float ang = i * 0.31416f + b * 0.8f;
+                    var p = new Vector2(at.x + Mathf.Cos(ang) * r, at.y + Mathf.Sin(ang) * r * 0.86f);
+                    Blit(p, sz, tex, new Color(1f, 0.90f, 0.55f, a));
+                }
+            }
+            float pop = EaseOutBack(b / 0.22f);
+            float fade = 1f - Mathf.Clamp01((b - 0.15f) / 0.25f);
+            fade = fade * fade * (3f - 2f * fade);
+            if (fade > 0.01f)
+                Blit(at, side * 0.9f * pop, tex, new Color(1f, 0.97f, 0.86f, fade));
         }
 
         // Individual glints in GUI pixels (y grows down). Nothing here is a screen fill.

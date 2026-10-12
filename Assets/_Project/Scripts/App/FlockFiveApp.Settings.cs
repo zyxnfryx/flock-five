@@ -444,6 +444,7 @@ namespace FlockFive
                 Sfx.GateGo();
                 Load(LevelData.NextPlay);
                 LevelCurtain.MarkReady();
+                LevelCurtain.Fire(Time.unscaledTime);
             }
             return true;
         }
