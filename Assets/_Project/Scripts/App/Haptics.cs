@@ -55,7 +55,7 @@ namespace FlockFive
         {
             if (!CanPlay(tier)) return;
             int t = (int)tier;
-            float now = Time.unscaledTime;
+            float now = AdPause.Unscaled;
             // Spacing window: a stronger tap replaces a lighter one still waiting.
             if (now < _next)
             {
@@ -116,13 +116,13 @@ namespace FlockFive
                 return;
             }
             if (_pending == 0) return;
-            if (Time.unscaledTime < _next) return;
+            if (AdPause.Unscaled < _next) return;
             int t = _pending;
             _pending = 0;
             if (!CanPlay((Tier)t)) return;
             try { Handheld.Vibrate(); }
             catch (System.Exception) { }
-            _next = Time.unscaledTime + Gap;
+            _next = AdPause.Unscaled + Gap;
             _held = t;
         }
 

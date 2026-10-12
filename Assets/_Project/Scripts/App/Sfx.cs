@@ -393,9 +393,9 @@ namespace FlockFive
         static void FlapAt(float vol, float pitch, float gate, MixLayer layer)
         {
             Ensure();
-            if (Time.unscaledTime - _flapGate < gate) return;
+            if (AdPause.Unscaled - _flapGate < gate) return;
             if (layer == MixLayer.Mid && MixDesk.Live != null && !MixDesk.Live.AllowMid) return;
-            _flapGate = Time.unscaledTime;
+            _flapGate = AdPause.Unscaled;
             PlayFlap(vol, pitch, layer);
         }
 
@@ -750,8 +750,8 @@ namespace FlockFive
             Ensure();
             float g = Mathf.Clamp01(FireworkGain);
             if (g < 0.04f) return;
-            if (Time.unscaledTime - _fwCrackleAt < 0.14f) return;
-            _fwCrackleAt = Time.unscaledTime;
+            if (AdPause.Unscaled - _fwCrackleAt < 0.14f) return;
+            _fwCrackleAt = AdPause.Unscaled;
             if (_fwCrackle == null) _fwCrackle = MakeFwCrackle();
             float vol = 0.26f * g;
             float pitch = Random.Range(0.92f, 1.04f);
@@ -869,8 +869,8 @@ namespace FlockFive
         {
             Ensure();
             if (MixDesk.Live != null && !MixDesk.Live.AllowMid) return;
-            if (Time.unscaledTime - _humGate < 2.6f) return;
-            _humGate = Time.unscaledTime;
+            if (AdPause.Unscaled - _humGate < 2.6f) return;
+            _humGate = AdPause.Unscaled;
             int i = Next(_hums.Length, ref _lastHum);
             Shot(_hums[i], Random.Range(0.94f, 1.03f), Random.Range(0.28f, 0.36f), MixLayer.Mid);
         }

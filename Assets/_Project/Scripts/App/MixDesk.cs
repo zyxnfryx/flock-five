@@ -179,11 +179,11 @@ namespace FlockFive
             if (Live == this) Live = null;
         }
 
-        public bool LeadHot => Time.unscaledTime < _leadUntil;
+        public bool LeadHot => AdPause.Unscaled < _leadUntil;
 
-        public bool AllowMid => Time.unscaledTime >= _leadUntil;
+        public bool AllowMid => AdPause.Unscaled >= _leadUntil;
 
-        public bool AllowBed => Time.unscaledTime >= _leadUntil + 1.6f;
+        public bool AllowBed => AdPause.Unscaled >= _leadUntil + 1.6f;
 
         public float BedDuck => LeadHot ? _leadDuck : 1f;
 
@@ -204,7 +204,7 @@ namespace FlockFive
             _freezeDuck = freeze;
             _duckSlew = slew;
             _leadDuck = lead;
-            _leadUntil = Time.unscaledTime + Mathf.Max(0f, leadFor);
+            _leadUntil = AdPause.Unscaled + Mathf.Max(0f, leadFor);
         }
 
         // Popup and ad ducks go back to the user mix. A tutorial freeze that is
@@ -212,7 +212,7 @@ namespace FlockFive
         public void ResetToUser()
         {
             _leadDuck = 1f;
-            _leadUntil = Time.unscaledTime;
+            _leadUntil = AdPause.Unscaled;
             _duckSlew = 1f;
             if (!TutorFreezeHeld)
             {
@@ -232,7 +232,7 @@ namespace FlockFive
         {
             if (duckRemain < DuckFloor) duckRemain = DuckFloor;
             bool wasHot = LeadHot;
-            float until = Time.unscaledTime + Mathf.Max(0.05f, seconds);
+            float until = AdPause.Unscaled + Mathf.Max(0.05f, seconds);
             if (until > _leadUntil) _leadUntil = until;
             _leadDuck = wasHot ? Mathf.Min(_leadDuck, duckRemain) : duckRemain;
         }
@@ -242,18 +242,18 @@ namespace FlockFive
         {
             if (until <= 0f) return;
             if (_leadUntil > until + 0.05f) return;
-            _leadUntil = Time.unscaledTime;
+            _leadUntil = AdPause.Unscaled;
             _leadDuck = 1f;
         }
 
         public void MoonLift(float seconds = 2.4f)
         {
-            _moonLiftUntil = Time.unscaledTime + Mathf.Max(0.4f, seconds);
+            _moonLiftUntil = AdPause.Unscaled + Mathf.Max(0.4f, seconds);
         }
 
         public void ComboWarm()
         {
-            _comboUntil = Time.unscaledTime + ComboWindow;
+            _comboUntil = AdPause.Unscaled + ComboWindow;
         }
 
         public void SetSplash(bool on)
@@ -266,7 +266,7 @@ namespace FlockFive
         void ArmSplashWelcome()
         {
             _splashMix = 1f; // mute garden immediately — no stray bed before the band
-            _splashGate = Time.unscaledTime + SplashPageHold;
+            _splashGate = AdPause.Unscaled + SplashPageHold;
             _splashLoopOn = false;
             if (_stems != null && _stems.Length > 4 && _stems[4] != null)
             {
@@ -418,7 +418,7 @@ namespace FlockFive
             s.Play();
             // Lead seat for the stinger: Mid decorations wait; DuckChirp (1) so nothing dips.
             MarkLead(clip.length, DuckChirp);
-            _bgHandBackAt = Time.unscaledTime + clip.length + 0.25f;
+            _bgHandBackAt = AdPause.Unscaled + clip.length + 0.25f;
             return true;
         }
 
@@ -465,12 +465,12 @@ namespace FlockFive
         float TickBadger(float duck)
         {
             if (_stems == null || _stems.Length <= BadgerStingStem) return 0f;
-            if (_bgHandBackAt > 0f && Time.unscaledTime >= _bgHandBackAt)
+            if (_bgHandBackAt > 0f && AdPause.Unscaled >= _bgHandBackAt)
             {
                 _bgHandBackAt = -1f;
                 _badger = false;
             }
-            float dt = Time.unscaledDeltaTime;
+            float dt = AdPause.UnscaledDelta;
             float want = _badger ? 1f : 0f;
             _badgerMix = Mathf.MoveTowards(_badgerMix, want, dt / BadgerFadeSeconds);
             _badgerFade = Mathf.MoveTowards(_badgerFade, _badgerFadeTarget, dt / BadgerFadeSeconds);
@@ -637,18 +637,18 @@ namespace FlockFive
             float target = BedDuck;
             // Gentle both ways: a 0.3 duck takes ~0.1 s in and ~0.2 s out, no snap.
             float rate = target < _duckSlew ? 3f : 1.5f;
-            _duckSlew = Mathf.MoveTowards(_duckSlew, target, Time.unscaledDeltaTime * rate);
+            _duckSlew = Mathf.MoveTowards(_duckSlew, target, AdPause.UnscaledDelta * rate);
 
-            bool moon = Time.unscaledTime < _moonLiftUntil;
+            bool moon = AdPause.Unscaled < _moonLiftUntil;
             float capWant = moon ? PlaceMax : PlaceCap;
             // The moon lift eases the bed cap over half a second, no step in level.
             if (_capNow <= 0f) _capNow = capWant;
-            _capNow = Mathf.MoveTowards(_capNow, capWant, Time.unscaledDeltaTime * (PlaceMax - PlaceCap) * 2f);
+            _capNow = Mathf.MoveTowards(_capNow, capWant, AdPause.UnscaledDelta * (PlaceMax - PlaceCap) * 2f);
             float cap = _capNow;
             float duck = _duckSlew;
             float splashT = _splash ? 1f : 0f;
             float splashRate = splashT > _splashMix ? 1.7f : 2.8f;
-            _splashMix = Mathf.MoveTowards(_splashMix, splashT, Time.unscaledDeltaTime * splashRate);
+            _splashMix = Mathf.MoveTowards(_splashMix, splashT, AdPause.UnscaledDelta * splashRate);
             float badgerSeat = TickBadger(duck);
             float others = 1f - badgerSeat;
             float gardenMix = (1f - _splashMix) * others;
@@ -668,7 +668,7 @@ namespace FlockFive
         void TickSplashWelcome()
         {
             if (!_splash) return;
-            if (_splashGate <= 0f || Time.unscaledTime < _splashGate) return;
+            if (_splashGate <= 0f || AdPause.Unscaled < _splashGate) return;
             // Only the jingle plays on the studio card; the splash music starts after it.
             if (FlockFiveApp.StudioCardHold) return;
             _splashGate = -1f;
@@ -682,8 +682,8 @@ namespace FlockFive
 
         float ComboGain()
         {
-            float age = Time.unscaledTime - (_comboUntil - ComboWindow);
-            if (age < 0f || Time.unscaledTime >= _comboUntil) return 0f;
+            float age = AdPause.Unscaled - (_comboUntil - ComboWindow);
+            if (age < 0f || AdPause.Unscaled >= _comboUntil) return 0f;
             if (age < ComboIn) return age / ComboIn;
             return 1f - (age - ComboIn) / (ComboWindow - ComboIn);
         }

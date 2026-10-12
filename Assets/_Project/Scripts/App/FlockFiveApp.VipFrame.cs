@@ -336,7 +336,7 @@ namespace FlockFive
             GUI.color = Color.white;
             GUI.DrawTexture(r, crown, ScaleMode.ScaleToFit, true);
             GUI.matrix = prev;
-            float tw = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 1.7f);
+            float tw = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * 1.7f);
             tw *= tw;
             var glint = VipGlintTex();
             if (glint != null && tw > 0.15f)

@@ -359,14 +359,14 @@ namespace FlockFive
             if (_breaking) return;
             if (_shake > 0f)
             {
-                _shake -= Time.unscaledDeltaTime;
+                _shake -= AdPause.UnscaledDelta;
                 float u = Mathf.Clamp01(_shake / 0.22f);
                 transform.position = _planted + new Vector3(Mathf.Sin(Time.time * 48f) * 0.08f * u, 0f, 0f);
                 transform.rotation = Quaternion.identity;
             }
             else if (_land > 0f)
             {
-                _land -= Time.unscaledDeltaTime;
+                _land -= AdPause.UnscaledDelta;
                 float u = Mathf.Clamp01(_land / 0.28f);
                 float dip = Mathf.Sin(u * Mathf.PI) * 0.045f * u;
                 float tilt = Mathf.Sin(u * Mathf.PI) * 1.6f * (FromRight ? -1f : 1f);

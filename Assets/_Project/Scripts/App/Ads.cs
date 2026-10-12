@@ -106,6 +106,8 @@ namespace FlockFive
 
         // Build 61: the unpaused time scale (1, or the solved-board auto-resolve speed). Under a
         // pause it becomes the value Pop restores, so a freeze never strands either one.
+        public static float BaseScale => _depth > 0 ? _scale : (Time.timeScale > 0f ? Time.timeScale : (_scale > 0f ? _scale : 1f));
+
         public static void SetBaseScale(float scale)
         {
             if (_depth > 0) _scale = scale;
@@ -258,6 +260,7 @@ namespace FlockFive
                 _settleLeft = -1f;
                 GamePause.Push();
                 AudioGuard.Hold("ad");
+                AdPause.Begin();
             }
             _showDepth++;
         }
@@ -271,6 +274,8 @@ namespace FlockFive
             GamePause.Pop();
             // Pop can put back a pause that was already true when the ad began.
             AudioGuard.Restore();
+            // Everything restored; only now does a reward earned during the ad apply.
+            AdPause.End();
         }
 
         // Home is interactive. Never the first frames. Then either half a
@@ -320,6 +325,7 @@ namespace FlockFive
 
         public static void TickShowClock()
         {
+            AdPause.Hold();
             if (_showDepth > 0)
                 _shownForeground += ForegroundDt();
             if (_settleLeft < 0f) return;
@@ -1124,6 +1130,7 @@ namespace FlockFive
 
         void OnApplicationPause(bool paused)
         {
+            AdPause.OnAppPause(paused);
             AdLog.Add(paused ? "app left foreground" : "app back in foreground");
             Ads.DeliverPause(paused);
             if (paused)

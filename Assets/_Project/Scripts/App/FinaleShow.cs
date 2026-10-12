@@ -196,7 +196,7 @@ namespace FlockFive
                     yield return null;
                     continue;
                 }
-                float dt = Time.unscaledDeltaTime;
+                float dt = AdPause.UnscaledDelta;
                 if (_launching)
                 {
                     wait -= dt;
@@ -223,8 +223,8 @@ namespace FlockFive
             {
                 if (!GamePause.Paused)
                 {
-                    t += Time.unscaledDeltaTime;
-                    Sfx.FireworkGain = Mathf.MoveTowards(Sfx.FireworkGain, 0f, Time.unscaledDeltaTime * 0.7f);
+                    t += AdPause.UnscaledDelta;
+                    Sfx.FireworkGain = Mathf.MoveTowards(Sfx.FireworkGain, 0f, AdPause.UnscaledDelta * 0.7f);
                 }
                 yield return null;
             }

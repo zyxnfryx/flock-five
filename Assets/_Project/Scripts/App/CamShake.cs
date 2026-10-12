@@ -84,7 +84,7 @@ namespace FlockFive
                 return;
             }
             if (_t <= 0f) return;
-            _t -= Time.unscaledDeltaTime;
+            _t -= AdPause.UnscaledDelta;
             if (_t <= 0f)
             {
                 Settle();
@@ -92,7 +92,7 @@ namespace FlockFive
             }
             float u = Mathf.Clamp01(_t / _dur);
             float decay = u * u;
-            float w = Time.unscaledTime * 62f + _seed;
+            float w = AdPause.Unscaled * 62f + _seed;
             transform.localPosition = _rest + new Vector3(
                 Mathf.Sin(w) * _amp * decay,
                 Mathf.Cos(w * 1.17f) * _amp * 0.72f * decay,
@@ -105,7 +105,7 @@ namespace FlockFive
 
         void ApplyBolt()
         {
-            _bolt -= Time.unscaledDeltaTime;
+            _bolt -= AdPause.UnscaledDelta;
             if (_bolt <= 0f)
             {
                 Settle();

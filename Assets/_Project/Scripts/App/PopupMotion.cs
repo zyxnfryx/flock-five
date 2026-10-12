@@ -3,7 +3,7 @@ using UnityEngine;
 namespace FlockFive
 {
     // Shared pop-up open / close motion. Pure functions of an age in seconds that the
-    // caller measures with Time.unscaledTime, so a card paces the same at 30, 60 or
+    // caller measures with AdPause.Unscaled, so a card paces the same at 30, 60 or
     // 120 fps and keeps moving under timeScale 0. One beat at a time: the caller
     // chains beats with Beat(), and nothing here peeks at a frame count.
     public static class PopupMotion

@@ -175,7 +175,7 @@ namespace FlockFive
             {
                 var live = SparrowView.Live;
                 if (live != null && live.Settled && live.IsBlocking) break;
-                arrive += Time.unscaledDeltaTime;
+                arrive += AdPause.UnscaledDelta;
                 yield return null;
             }
             var perched = SparrowView.Live;
@@ -193,7 +193,7 @@ namespace FlockFive
                 if (SparrowView.Live != null && _pestCue != PestCueSparrow)
                     BeginPestCue(PestCueSparrow);
                 _coachFade = 1f;
-                shown += Time.unscaledDeltaTime;
+                shown += AdPause.UnscaledDelta;
                 yield return null;
             }
             _coachFade = 1f;

@@ -156,7 +156,7 @@ namespace FlockFive
         void DrawBadgerLeap()
         {
             if (!_bgLeap.Live) return;
-            SparkleFx.Tick(Time.unscaledDeltaTime);
+            SparkleFx.Tick(AdPause.UnscaledDelta);
             StepBadgerLeapFx();
             if (!GuiPaint()) return;
             float t = _bgLeap.T;

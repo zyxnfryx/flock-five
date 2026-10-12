@@ -34,7 +34,7 @@ namespace FlockFive
         void NoteComboStreak(Rect gui)
         {
             _comboStreakGui = gui;
-            _comboStreakUntil = Time.unscaledTime + 0.25f;
+            _comboStreakUntil = AdPause.Unscaled + 0.25f;
         }
 
         // Ease-out back. Starts near half size, overshoots a little, settles at 1.
@@ -255,7 +255,7 @@ namespace FlockFive
             HudLayout(out _, out float top, out _, out var restart, out _);
             float yTop = ComboWorldY(cam, camY, halfH, top);
             yTop = Mathf.Min(yTop, ComboFeederBottom(root) - 0.28f);
-            if (Time.unscaledTime < _comboStreakUntil)
+            if (AdPause.Unscaled < _comboStreakUntil)
                 yTop = Mathf.Min(yTop, ComboWorldY(cam, camY, halfH, _comboStreakGui.yMax) - 0.2f);
             if (_coachFade > 0.2f && (_coach || _adHand || _cueHand || _pestCue != 0))
             {

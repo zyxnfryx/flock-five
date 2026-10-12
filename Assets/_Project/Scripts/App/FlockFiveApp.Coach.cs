@@ -1144,7 +1144,7 @@ namespace FlockFive
             {
                 _coachGlowKick = 1f;
                 CoachSpawnRipple(_cueAimWorld);
-                float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.35f));
+                float pulse = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * (Mathf.PI * 2f / 1.35f));
                 float breathe = 0.94f + 0.08f * pulse;
                 const float spread = 1.75f;
                 float flash = (0.40f + 0.28f * pulse + 0.62f) * EaseOutCubic(_coachFade);
@@ -1159,7 +1159,7 @@ namespace FlockFive
         void ShowCoachGlow(Vector3 glow, float dx, float dy)
         {
             CoachEnsureGlow();
-            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.35f));
+            float pulse = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * (Mathf.PI * 2f / 1.35f));
             float breathe = 0.94f + 0.08f * pulse;
             // Quad is larger than the limb so the soft falloff, not the hard edge, covers it.
             const float spread = 1.75f;
@@ -1622,7 +1622,7 @@ namespace FlockFive
                 arcPos = Vector2.Lerp(_gloveTip, aim, Mathf.Clamp01(travel));
             else
                 TapArc(_gloveTip, aim, _gloveAway, s, travel, out arcPos, out _, _gloveMirror, _gloveApexMinY);
-            float wig = hold ? 0f : Mathf.Sin(Time.unscaledTime * 46f) * 7f * _gloveWiggle;
+            float wig = hold ? 0f : Mathf.Sin(AdPause.Unscaled * 46f) * 7f * _gloveWiggle;
             var axis = _gloveAway.sqrMagnitude > 0.0001f ? _gloveAway : Vector2.right;
             _gloveShown = arcPos - axis.normalized * wig * (1f - travel);
             _gloveShownAng = _gloveRestAng;
@@ -3482,7 +3482,7 @@ namespace FlockFive
             // Small poke along the finger, not a vertical bob. Zero at full dip so the
             // tap frame's fingertip is the pivot. Held still while a tap fades the hand.
             // Unscaled so GamePause does not freeze it.
-            float bob = _gloveHoldPose ? 0f : Mathf.Sin(Time.unscaledTime * 2.35f) * dh * 0.028f * (1f - dip);
+            float bob = _gloveHoldPose ? 0f : Mathf.Sin(AdPause.Unscaled * 2.35f) * dh * 0.028f * (1f - dip);
             float rad = ang * Mathf.Deg2Rad;
             pivot += new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
             float dw = dh * (tex.width / (float)tex.height);
@@ -4312,7 +4312,7 @@ namespace FlockFive
 
         bool CoachAteThisFrame() => _coachAteFrame == Time.frameCount;
 
-        static bool LessonGuardUp() => CoachDismiss.GuardBlocks(Time.unscaledTime, _lessonGuardUntil);
+        static bool LessonGuardUp() => CoachDismiss.GuardBlocks(AdPause.Unscaled, _lessonGuardUntil);
 
         // The tap that just dismissed a lesson, and any tap during the guard.
         bool LessonTapBlocked() => CoachAteThisFrame() || LessonGuardUp();
@@ -4327,7 +4327,7 @@ namespace FlockFive
                 LessonUp = true,
                 Step = step,
                 OnTarget = !CoachTap.Consumes(step),
-                Now = Time.unscaledTime,
+                Now = AdPause.Unscaled,
                 GuardUntil = _lessonGuardUntil,
             });
             _lessonGuardUntil = r.GuardUntil;
@@ -4348,7 +4348,7 @@ namespace FlockFive
                 OverBranch = deliverBoard,
                 OverGift = true,
                 OverHud = true,
-                Now = Time.unscaledTime,
+                Now = AdPause.Unscaled,
                 GuardUntil = _lessonGuardUntil,
             });
             if (r.DeliveredTarget && r.BranchPick) return false;
@@ -4828,7 +4828,7 @@ namespace FlockFive
                     return;
                 }
                 // Watchdog: a frozen garden never waits on one lesson for long.
-                _pestHeld += Mathf.Min(Time.unscaledDeltaTime, 0.1f);
+                _pestHeld += Mathf.Min(AdPause.UnscaledDelta, 0.1f);
                 if (_pestHeld > PestHoldMax && !Ads.IsShowing)
                 {
                     DismissPestIntro();
@@ -4943,7 +4943,7 @@ namespace FlockFive
         {
             if (CoachResetHolds()) return;
             if (GuiPaint())
-                _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
+                _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
             int hi = fontHi > 0 ? fontHi : Mathf.Max(18, Mathf.RoundToInt(34f * s));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
             PaintCoachCaption(line, seat, s, 12, hi, platePad, opaque);
@@ -6114,7 +6114,7 @@ namespace FlockFive
                 return;
             }
             CoachEnsureGlow();
-            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.35f));
+            float pulse = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * (Mathf.PI * 2f / 1.35f));
             float breathe = 0.94f + 0.08f * pulse;
             float a = (0.40f + 0.28f * pulse) * _coachFade;
             if (a > 1f) a = 1f;

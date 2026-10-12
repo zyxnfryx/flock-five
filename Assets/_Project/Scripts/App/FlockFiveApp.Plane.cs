@@ -327,7 +327,7 @@ namespace FlockFive
                 DrawSpriteTex(plane, new Rect(left, y + planeH * 0.06f, planeW, planeH));
             float banX = left + planeW + gap;
             float banY = y + planeH * 0.28f;
-            float time = Time.unscaledTime;
+            float time = AdPause.Unscaled;
             float lead = BannerDy(0.04f, time, banH);
             DrawPlaneRope(new Vector2(left + planeW * 0.92f, y + planeH * 0.48f), new Vector2(banX, banY + banH * 0.45f + lead), s);
             if (banner != null)
@@ -357,7 +357,7 @@ namespace FlockFive
             const int Segs = 6;
             float thick = Mathf.Max(2f, 2.4f * s);
             GUI.color = new Color(0.55f, 0.42f, 0.24f, 0.9f);
-            float time = Time.unscaledTime;
+            float time = AdPause.Unscaled;
             for (int i = 0; i < Segs; i++)
             {
                 float u0 = i / (float)Segs;

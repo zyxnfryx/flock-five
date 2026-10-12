@@ -47,7 +47,7 @@ namespace FlockFive
             }
             if (GamePause.Paused) return;
             float fade = SignFade();
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
             if (Glow != null)
             {
@@ -96,7 +96,7 @@ namespace FlockFive
                 _signFade = 1f;
                 return 1f;
             }
-            _signFade = Mathf.Max(0f, _signFade - Time.unscaledDeltaTime / SignFadeDur);
+            _signFade = Mathf.Max(0f, _signFade - AdPause.UnscaledDelta / SignFadeDur);
             return Mathf.SmoothStep(0f, 1f, _signFade);
         }
 

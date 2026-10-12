@@ -73,7 +73,7 @@ namespace FlockFive
         void RewardAdWatchdog()
         {
             if (_rewardChoice != 1) { _rewardAdIdle = -1f; return; }
-            float now = Time.unscaledTime;
+            float now = AdPause.Unscaled;
             if (Ads.IsShowing) { _rewardAdIdle = -1f; return; }
             if (_rewardAdIdle < 0f) _rewardAdIdle = now;
             if (now - _rewardAdIdle < 1.5f || now - _rewardAdT0 < 2f) return;
@@ -126,8 +126,8 @@ namespace FlockFive
             float t = _streakSlide * (beat.SeqDur > 0.05f ? beat.SeqDur : 0.05f);
             if (t < beat.HoldEnd - 0.001f || RewardPayBusy()) { _rewardChoiceBorn = -1f; return; }
             _rewardAtHold = true;
-            if (_rewardChoiceBorn < 0f) _rewardChoiceBorn = Time.unscaledTime;
-            float a = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((Time.unscaledTime - _rewardChoiceBorn) / 0.22f));
+            if (_rewardChoiceBorn < 0f) _rewardChoiceBorn = AdPause.Unscaled;
+            float a = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((AdPause.Unscaled - _rewardChoiceBorn) / 0.22f));
 
             bool hasAd = RewardAdNow() && _rewardRepeatAmt > 0;
             var lay = LayoutRewardChoice(_rewardFace, Screen.width, Screen.height, hasAd);
@@ -159,7 +159,7 @@ namespace FlockFive
         IEnumerator WatchRewardRepeat()
         {
             _rewardChoice = 1;
-            _rewardAdT0 = Time.unscaledTime;
+            _rewardAdT0 = AdPause.Unscaled;
             int amt = _rewardRepeatAmt;
             yield return Ads.Rewarded(Ads.PlacementRewardRepeat, amt, false);
             if (RewardedGrant.Earned) RewardedGrant.Flush();

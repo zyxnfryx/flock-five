@@ -107,7 +107,7 @@ namespace FlockFive
                     : AlbumWood(tint, true);
                 // Drips hang from the hex tip and stay inside the honey zone.
                 // The full inspect stretches a drip on a 3s loop. The grid stays still.
-                float now = full ? Time.unscaledTime : 0f;
+                float now = full ? AdPause.Unscaled : 0f;
                 for (int i = 0; i < n; i++)
                 {
                     var hex = new Rect(x + i * (cellW + gap), y, cellW, cellH);

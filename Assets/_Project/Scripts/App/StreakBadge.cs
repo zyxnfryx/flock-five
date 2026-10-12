@@ -179,7 +179,7 @@ namespace FlockFive
         // Slow pale band across the gold face. Disc stretched thin, not a glow sprite.
         static void DrawSweep(Rect face, float alpha, Texture disc)
         {
-            float u = Mathf.Repeat(Time.unscaledTime * 0.16f, 1f);
+            float u = Mathf.Repeat(AdPause.Unscaled * 0.16f, 1f);
             float fade = Mathf.Sin(u * Mathf.PI);
             if (fade < 0.04f) return;
             // Stay in the upper-left gloss. A tall band crossed the numeral.

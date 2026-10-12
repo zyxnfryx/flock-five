@@ -117,7 +117,7 @@ namespace FlockFive
                     yield return null;
                     continue;
                 }
-                t += Time.unscaledDeltaTime;
+                t += AdPause.UnscaledDelta;
                 float u = Mathf.Clamp01(t / 1.65f);
                 float k = u * u * (3f - 2f * u);
                 if (_a != null)
@@ -185,7 +185,7 @@ namespace FlockFive
                 if (t > 1.35f) fade = Mathf.Clamp01(1f - (t - 1.35f) / 0.45f);
                 bit.T.localPosition = Vector3.Lerp(bit.From, bit.To, k);
                 bit.T.localScale = Vector3.one * Mathf.Lerp(0.06f, bit.Scale, k);
-                bit.T.Rotate(0f, 0f, bit.Spin * Time.unscaledDeltaTime);
+                bit.T.Rotate(0f, 0f, bit.Spin * AdPause.UnscaledDelta);
                 if (bit.Sr != null)
                     bit.Sr.color = new Color(0.82f, 0.94f, 1f, k * fade);
             }
