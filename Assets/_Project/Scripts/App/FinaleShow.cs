@@ -299,6 +299,7 @@ namespace FlockFive
                 || name.StartsWith("Burst")
                 || name.StartsWith("Boom")
                 || name.StartsWith("Petal")
+                || name.StartsWith("Feather")
                 || name == "Rocket"
                 || name == "Shine";
         }
@@ -429,6 +430,7 @@ namespace FlockFive
                 float u = Smooth01(t / pull);
                 peach.localPosition = new Vector3(0f, 1.4f, Mathf.Lerp(5.6f, 6.8f, u));
                 peach.localScale = Vector3.one * Mathf.Lerp(0.07f, 0.05f, u);
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(0f, 11f, u));
                 yield return null;
             }
 
@@ -464,23 +466,34 @@ namespace FlockFive
             host.StartCoroutine(Burst(hold, false));
             host.StartCoroutine(ScatterOutro(hold, letters, crew, hit));
             host.StartCoroutine(Shards(hold, hit));
+            if (hold != null) Wow.Shed(hit, BirdColor.Peach, hold);
 
             t = 0f;
             const float through = 0.62f;
+            float ghostAt = 0f;
             while (t < through && peach != null)
             {
                 t += Time.deltaTime;
                 float u = Mathf.Clamp01(t / through);
                 float k = EaseOutCubic(u);
-                peach.localPosition = new Vector3(0f, Mathf.Lerp(1.18f, 0.55f, k), Mathf.Lerp(0.18f, -8.4f, k));
-                peach.localScale = Vector3.one * Mathf.Lerp(1.15f, 5.4f, k);
+                float sway = Mathf.Sin(u * Mathf.PI) * 0.36f;
+                peach.localPosition = new Vector3(sway, Mathf.Lerp(1.18f, 0.40f, k), Mathf.Lerp(0.18f, -8.4f, k));
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-4f, 16f, k));
+                float s = Mathf.Lerp(1.15f, 5.5f, k);
+                peach.localScale = new Vector3(s * (1f + 0.05f * k), s * (1f - 0.03f * k), 1f);
                 int order = 72 + Mathf.RoundToInt(k * 20f);
                 if (sr != null)
                 {
                     sr.sortingOrder = order;
                     var c = sr.color;
-                    c.a = u > 0.62f ? 1f - Smooth01((u - 0.62f) / 0.38f) : 1f;
+                    c.a = u > 0.74f ? 1f - Smooth01((u - 0.74f) / 0.26f) : 1f;
                     sr.color = c;
+                }
+                ghostAt -= Time.deltaTime;
+                if (ghostAt <= 0f && u < 0.7f)
+                {
+                    ghostAt = 0.07f;
+                    StampGhost(peach, sr, host);
                 }
                 yield return null;
             }
@@ -490,6 +503,40 @@ namespace FlockFive
 
 
         const float HitStop = 0.06f;
+
+        static void StampGhost(Transform peach, SpriteRenderer sr, MonoBehaviour host)
+        {
+            if (peach == null || sr == null || sr.sprite == null || peach.parent == null || host == null) return;
+            int order = Mathf.Max(1, sr.sortingOrder - 2);
+            var go = WorldBuilder.Sprite("BurstGhost", sr.sprite, peach.position, 1f, order, peach.parent);
+            go.transform.localRotation = peach.localRotation;
+            go.transform.localScale = peach.localScale;
+            var g = go.GetComponent<SpriteRenderer>();
+            g.flipX = sr.flipX;
+            var c = Color.white;
+            c.a = 0.28f * sr.color.a;
+            g.color = c;
+            host.StartCoroutine(FadeGhost(g));
+        }
+
+        static IEnumerator FadeGhost(SpriteRenderer g)
+        {
+            const float life = 0.2f;
+            float t = 0f;
+            float a0 = g != null ? g.color.a : 0f;
+            var baseScale = g != null ? g.transform.localScale : Vector3.one;
+            while (t < life && g != null)
+            {
+                t += Time.deltaTime;
+                float u = Smooth01(t / life);
+                var c = g.color;
+                c.a = a0 * (1f - u);
+                g.color = c;
+                g.transform.localScale = baseScale * Mathf.Lerp(1f, 1.06f, u);
+                yield return null;
+            }
+            if (g != null) Object.Destroy(g.gameObject);
+        }
 
         // Swept by SweepSparkles: names start with "Burst".
         // Rays and the flash sit behind the peach (order 72). Their inner tips stay

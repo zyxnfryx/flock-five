@@ -1331,6 +1331,7 @@ namespace FlockFive
             if (pose <= 0) return Bird(c, sex);
             sex = PlainOr(c, sex);
             LoadFlaps(c, sex, out var f1, out var f2, out _, out _);
+            // Missing mid prefers the up frame, then the rest pose.
             if (pose == 2)
                 return f2 != null ? f2 : (f1 != null ? f1 : Bird(c, sex));
             return f1 != null ? f1 : Bird(c, sex);
