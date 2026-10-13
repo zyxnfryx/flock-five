@@ -60,6 +60,9 @@ namespace FlockFive.Editor
             Suite("build83d", Build83TestsD.Run);
             Suite("build83p2", Build83TestsP2.Run);
             Suite("build84-feeder", Build84TestsFeeder.Run);
+            Suite("build85-adpause", Build85TestsAdPause.Run);
+            Suite("build85-look", Build85TestsLook.Run);
+            Suite("build85-daily", Build85TestsDaily.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 
@@ -353,7 +356,9 @@ namespace FlockFive.Editor
             "/tmp/flock-five-b82f-stills",
             "/tmp/flock-five-b82g-stills",
             "/tmp/flock-five-b83-gardens",
-            "/tmp/flock-five-b83c-stills"
+            "/tmp/flock-five-b83c-stills",
+            "/tmp/flock-five-b85-reward",
+            "/tmp/flock-five-b85-daily"
         };
 
         static bool AnyShotCmd()
@@ -374,7 +379,8 @@ namespace FlockFive.Editor
         {
             if (File.Exists("/tmp/flock-five-unpause")
                 || AnyShotCmd()
-                || FlockFive.FlockFiveApp.EditorShotLive)
+                || FlockFive.FlockFiveApp.EditorShotLive
+                || FlockFive.FlockFiveApp.ShotKeepAwake)
             {
                 EditorApplication.isPaused = false;
                 try { if (File.Exists("/tmp/flock-five-unpause")) File.Delete("/tmp/flock-five-unpause"); } catch { }
@@ -412,6 +418,8 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-b82g-stills", "ShotBuild82g");
                         TryStartShot(app, "/tmp/flock-five-b83-gardens", "ShotBuild83Gardens");
                         TryStartShot(app, "/tmp/flock-five-b83c-stills", "ShotBuild83c");
+                        TryStartShot(app, "/tmp/flock-five-b85-reward", "ShotBuild85Reward");
+                        TryStartShot(app, "/tmp/flock-five-b85-daily", "ShotBuild85Daily");
                         TryStartShot(app, "/tmp/flock-five-poker-feel", "ShotPokerFeel");
                     }
                 }

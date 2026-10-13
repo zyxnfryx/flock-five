@@ -14,6 +14,7 @@ namespace FlockFive
         // 0 waiting, 1 ad running, 2 chosen.
         int _rewardChoice;
         int _rewardRepeatAmt;
+        int _rewardHasAd = -1; // b85: decided once, before the buttons show
         bool _rewardAtHold;
         Rect _rewardFace;
         float _rewardChoiceBorn = -1f;
@@ -73,7 +74,7 @@ namespace FlockFive
         void RewardAdWatchdog()
         {
             if (_rewardChoice != 1) { _rewardAdIdle = -1f; return; }
-            float now = Time.unscaledTime;
+            float now = AdPause.Unscaled;
             if (Ads.IsShowing) { _rewardAdIdle = -1f; return; }
             if (_rewardAdIdle < 0f) _rewardAdIdle = now;
             if (now - _rewardAdIdle < 1.5f || now - _rewardAdT0 < 2f) return;
@@ -124,12 +125,18 @@ namespace FlockFive
             RewardPays(out streak, out fromPay, out toPay);
             var beat = RewardBeats(RewardMulOn(streak, fromPay, toPay));
             float t = _streakSlide * (beat.SeqDur > 0.05f ? beat.SeqDur : 0.05f);
-            if (t < beat.HoldEnd - 0.001f || RewardPayBusy()) { _rewardChoiceBorn = -1f; return; }
+            if (t < beat.ChoiceAt - 0.001f || RewardPayBusy()) { _rewardChoiceBorn = -1f; return; }
             _rewardAtHold = true;
-            if (_rewardChoiceBorn < 0f) _rewardChoiceBorn = Time.unscaledTime;
-            float a = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((Time.unscaledTime - _rewardChoiceBorn) / 0.22f));
+            if (_rewardChoiceBorn < 0f) _rewardChoiceBorn = AdPause.Unscaled;
+            float a = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((AdPause.Unscaled - _rewardChoiceBorn) / 0.22f));
 
-            bool hasAd = RewardAdNow() && _rewardRepeatAmt > 0;
+            // Decide 2X vs Collect first (the owed pay is the 2X prize), then show, then wait.
+            if (_rewardHasAd < 0)
+            {
+                if (_rewardRepeatAmt <= 0) _rewardRepeatAmt = Purse.OwedPay;
+                _rewardHasAd = RewardAdNow() && _rewardRepeatAmt > 0 ? 1 : 0;
+            }
+            bool hasAd = _rewardHasAd == 1;
             var lay = LayoutRewardChoice(_rewardFace, Screen.width, Screen.height, hasAd);
             if (_choiceWord == null)
                 _choiceWord = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
@@ -159,7 +166,7 @@ namespace FlockFive
         IEnumerator WatchRewardRepeat()
         {
             _rewardChoice = 1;
-            _rewardAdT0 = Time.unscaledTime;
+            _rewardAdT0 = AdPause.Unscaled;
             int amt = _rewardRepeatAmt;
             yield return Ads.Rewarded(Ads.PlacementRewardRepeat, amt, false);
             if (RewardedGrant.Earned) RewardedGrant.Flush();

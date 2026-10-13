@@ -105,7 +105,7 @@ namespace FlockFive
                 SetCloud(true);
                 LayoutCloud(Time.time);
                 if (fresh)
-                    _nextHum = Time.unscaledTime + Random.Range(0.4f, 1.2f);
+                    _nextHum = AdPause.Unscaled + Random.Range(0.4f, 1.2f);
                 return;
             }
             if (_on && !_scatter)
@@ -306,10 +306,10 @@ namespace FlockFive
                 return;
             }
             if (!_on) return;
-            if (Time.unscaledTime >= _nextHum)
+            if (AdPause.Unscaled >= _nextHum)
             {
                 Sfx.BeeHum();
-                _nextHum = Time.unscaledTime + Random.Range(3.2f, 5.4f);
+                _nextHum = AdPause.Unscaled + Random.Range(3.2f, 5.4f);
             }
             LayoutCloud(Time.time);
         }

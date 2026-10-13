@@ -138,10 +138,10 @@ namespace FlockFive
 
         void TickSettingsMotion()
         {
-            var next = SettingsMotion.Settled(_settingsPhase, SettingsMotion.Age(Time.unscaledTime, _settingsAt));
+            var next = SettingsMotion.Settled(_settingsPhase, SettingsMotion.Age(AdPause.Unscaled, _settingsAt));
             if (next == _settingsPhase) return;
             _settingsPhase = next;
-            _settingsAt = Time.unscaledTime;
+            _settingsAt = AdPause.Unscaled;
             _settingsOpen = next != SettingsPhase.Closed;
             if (next == SettingsPhase.Closed) AudioGuard.OnSceneOrPopupClosed();
             else AudioGuard.Hold("settings");
@@ -152,7 +152,7 @@ namespace FlockFive
             var next = SettingsMotion.AfterHit(_settingsPhase, hit);
             if (next == _settingsPhase) return;
             _settingsPhase = next;
-            _settingsAt = Time.unscaledTime;
+            _settingsAt = AdPause.Unscaled;
             _settingsOpen = next != SettingsPhase.Closed;
             if (next == SettingsPhase.Closed) AudioGuard.OnSceneOrPopupClosed();
             else AudioGuard.Hold("settings");
@@ -164,7 +164,7 @@ namespace FlockFive
         {
             _settingsOpen = open;
             _settingsPhase = open ? SettingsPhase.Open : SettingsPhase.Closed;
-            _settingsAt = Time.unscaledTime;
+            _settingsAt = AdPause.Unscaled;
         }
 
         static void SwallowGearTap(Rect r)
@@ -205,7 +205,7 @@ namespace FlockFive
         {
             _hitLock = 0;
             if (s < 0.5f) s = 0.5f;
-            float age = SettingsMotion.Age(Time.unscaledTime, _settingsAt);
+            float age = SettingsMotion.Age(AdPause.Unscaled, _settingsAt);
             var frame = SettingsSheet.Layout(Screen.width, Screen.height, Screen.safeArea, TopHud());
             float pad = Mathf.Max(16f, 12f * s);
             float travel = SettingsMotion.DropTravel(frame.Card.yMax, pad);
@@ -437,14 +437,14 @@ namespace FlockFive
                 if (!LevelCurtain.LoadStarted) LevelCurtain.Clear();
                 return true;
             }
-            if (!LevelCurtain.Armed) LevelCurtain.Arm(Time.unscaledTime);
+            if (!LevelCurtain.Armed) LevelCurtain.Arm(AdPause.Unscaled);
             if (!LevelCurtain.LoadStarted)
             {
                 LevelCurtain.BeginLoad();
                 Sfx.GateGo();
                 Load(LevelData.NextPlay);
                 LevelCurtain.MarkReady();
-                LevelCurtain.Fire(Time.unscaledTime);
+                LevelCurtain.Fire(AdPause.Unscaled);
             }
             return true;
         }

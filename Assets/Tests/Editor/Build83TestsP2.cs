@@ -95,12 +95,19 @@ namespace FlockFive.Editor
                 var body = f == 0 ? SpriteCatalog.Bird(c) : SpriteCatalog.BodyPose(f);
                 var kit = SpriteCatalog.KitSprite(c, kitKind);
                 if (body == null || kit == null) continue;
+                // Build 85: the centred seat (KitBack 0) still sits on the dome; the live seat is
+                // that point moved back, away from the beak, by 0.1-0.3 of the head.
+                float kb = BirdIdle.KitBack, kd = BirdIdle.KitBackDrop;
+                BirdIdle.KitBack = 0f; BirdIdle.KitBackDrop = 0f;
                 BirdIdle.KitTouch(kitKind, f, left, body, kit, out float tx, out float ty);
-                var dome = SpriteCatalog.HeadDome(body);
+                BirdIdle.KitBack = kb; BirdIdle.KitBackDrop = kd;
+                BirdIdle.KitTouch(kitKind, f, left, body, kit, out float bx, out float by);
+                var dome = SpriteCatalog.HeadDome(SpriteCatalog.FlapSeatBody(body)); // b85: flap frames share the _1 skull
                 float dx = tx - (left ? -dome.x : dome.x);
+                float backBy = (left ? bx - tx : tx - bx);
                 float head = Mathf.Max(0.05f, SpriteCatalog.HeadSpan(body));
                 total++;
-                if (Mathf.Abs(dx) > head * 0.18f) { bad++; worst = c + " " + kitKind + " f" + f + (left ? " L" : " R") + " dx " + dx.ToString("0.000"); }
+                if (Mathf.Abs(dx) > head * 0.18f || backBy < head * 0.10f || backBy > Mathf.Max(head, SpriteCatalog.HeadSpan(SpriteCatalog.BodyPose(0))) * 0.48f || by > ty + 0.001f) { bad++; worst = c + " " + kitKind + " f" + f + (left ? " L" : " R") + " dx " + dx.ToString("0.000") + " back " + backBy.ToString("0.000") + " head " + head.ToString("0.000") + " dy " + (by - ty).ToString("0.000"); }
             }
             Check("kits-centered-on-dome", total > 0 && bad == 0, bad + " of " + total + " off " + worst);
             Sheet();
@@ -115,7 +122,9 @@ namespace FlockFive.Editor
         }
 
         // Zoomed sheet: rows = color x kit, cols = frame x facing.
-        static void Sheet()
+        static void Sheet() => Sheet(ShotDir + "/b83-kits-sheet.png");
+
+        public static void Sheet(string path)
         {
             const int cell = 150;
             var colors = (BirdColor[])System.Enum.GetValues(typeof(BirdColor));
@@ -146,7 +155,7 @@ namespace FlockFive.Editor
                 float top = bb.max.y, bot = bsr.bounds.center.y;
                 float half = Mathf.Max((top - bot) * 0.5f, bb.extents.x * 0.5f) * 1.12f;
                 cam.orthographicSize = half;
-                cam.transform.position = new Vector3(bb.center.x, (top + bot) * 0.5f, -10f);
+                cam.transform.position = new Vector3(bsr.bounds.center.x, (top + bot) * 0.5f, -10f); // b85: frame on the body so seat moves read
                 cam.targetTexture = rt; cam.Render(); RenderTexture.active = rt;
                 var t = new Texture2D(cell, cell, TextureFormat.RGB24, false);
                 t.ReadPixels(new Rect(0, 0, cell, cell), 0, 0); t.Apply();
@@ -155,7 +164,7 @@ namespace FlockFive.Editor
             }
             cam.targetTexture = null; RenderTexture.active = null;
             sheet.Apply();
-            File.WriteAllBytes(ShotDir + "/b83-kits-sheet.png", sheet.EncodeToPNG());
+            File.WriteAllBytes(path, sheet.EncodeToPNG());
             Object.DestroyImmediate(sheet); Object.DestroyImmediate(rt); Object.DestroyImmediate(camGo);
         }
     }

@@ -11,6 +11,26 @@ namespace FlockFive.Editor
 
         void OnPreprocessTexture()
         {
+            if (assetPath.IndexOf("/Art/Resources/SwayMasks/") >= 0)
+            {
+                // Build 85 foliage masks: single channel data, linear, no mips, clamped,
+                // quarter-res (270x480) so they cost ~130 KB each.
+                var m = (TextureImporter)assetImporter;
+                m.textureType = TextureImporterType.SingleChannel;
+                m.sRGBTexture = false;
+                m.alphaSource = TextureImporterAlphaSource.None;
+                m.mipmapEnabled = false;
+                m.npotScale = TextureImporterNPOTScale.None;
+                m.wrapMode = TextureWrapMode.Clamp;
+                m.filterMode = FilterMode.Bilinear;
+                m.textureCompression = TextureImporterCompression.Uncompressed;
+                m.isReadable = false;
+                var ts = new TextureImporterSettings();
+                m.ReadTextureSettings(ts);
+                ts.singleChannelComponent = TextureImporterSingleChannelComponent.Red; // shader reads .r
+                m.SetTextureSettings(ts);
+                return;
+            }
             if (assetPath.IndexOf("/Art/Resources/Sprites/") < 0) return;
             var imp = (TextureImporter)assetImporter;
             imp.textureType = TextureImporterType.Sprite;

@@ -26,7 +26,7 @@ namespace FlockFive
         static void DrawLevelIdleLife(Rect visual)
         {
             if (!GuiPaint() || visual.width < 16f || visual.height < 16f) return;
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float w = visual.width;
             float h = visual.height;
             var c = new Vector2(visual.center.x, visual.y + h * 0.47f);
@@ -100,7 +100,7 @@ namespace FlockFive
         {
             if (!GuiPaint() || visual.width < 16f) return;
             if (age < 0f) age = 1f;
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float w = visual.width;
             var disc = FlowerDisc(visual, 0f);
             var c = disc.center;

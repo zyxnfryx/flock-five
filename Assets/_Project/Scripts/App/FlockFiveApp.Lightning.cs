@@ -198,10 +198,10 @@ namespace FlockFive
             try { if (Directory.Exists(frames)) Directory.Delete(frames, true); } catch { }
             Directory.CreateDirectory(frames);
             int n = 0;
-            float t0 = Time.unscaledTime;
+            float t0 = AdPause.Unscaled;
             float next = t0;
             const float step = 1f / 12f;
-            while (Time.unscaledTime - t0 < seconds)
+            while (AdPause.Unscaled - t0 < seconds)
             {
                 if (tick != null) tick();
                 MuteShotAudio();
@@ -218,7 +218,7 @@ namespace FlockFive
                         Debug.Log("b82e bolt frame flash=" + flash + " fx=" + fx);
                     }
                 }
-                if (Time.unscaledTime < next) continue;
+                if (AdPause.Unscaled < next) continue;
                 var tex = ScreenCapture.CaptureScreenshotAsTexture();
                 if (tex == null) continue;
                 try
@@ -231,7 +231,7 @@ namespace FlockFive
                     Debug.LogWarning("b82e frame " + e.Message);
                 }
                 Destroy(tex);
-                next = Time.unscaledTime + step;
+                next = AdPause.Unscaled + step;
             }
             float fps = n / Mathf.Max(0.5f, seconds);
             if (fps < 4f) fps = 8f;
@@ -444,11 +444,11 @@ namespace FlockFive
             VipOffer.Show();
             yield return new WaitForSecondsRealtime(3.4f);
             MuteShotAudio();
-            float pressAt = Time.unscaledTime;
+            float pressAt = AdPause.Unscaled;
             PushButton.Force = true;
             yield return RecordClip("/tmp/b82g-vip", dir + "/b82-vip-press.mp4", 1.15f, dir + "/b82-vip-press.png", () =>
             {
-                float age = Time.unscaledTime - pressAt;
+                float age = AdPause.Unscaled - pressAt;
                 PushButton.Force = false;
                 var pose = age < 0.18f
                     ? PushButton.At(true, -1f)

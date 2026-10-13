@@ -88,7 +88,7 @@ namespace FlockFive
             if (x + sz > Screen.width - 6f) x = Screen.width - 6f - sz;
             // Default art faces right. Left column already looks in; right column flips.
             bool mirror = faceInward && !left;
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             for (int i = 0; i < Count; i++)
             {
                 float phase = i * 0.85f + (left ? 0.2f : 1.4f);

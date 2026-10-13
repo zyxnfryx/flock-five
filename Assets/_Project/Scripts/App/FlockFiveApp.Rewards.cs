@@ -97,7 +97,7 @@ namespace FlockFive
             _freezeOffer = false;
             if (_board != null)
                 yield return GardenFit.Tween(_garden, _board, false);
-            _giftThanksAt = Time.unscaledTime;
+            _giftThanksAt = AdPause.Unscaled;
             _gift = GiftFace.Thanks;
             if (_garden.Root != null)
                 StartCoroutine(GiftPopBursts(popAt));

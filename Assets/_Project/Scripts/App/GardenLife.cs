@@ -350,8 +350,11 @@ namespace FlockFive
                 float y = sheet.Y[i];
                 if (kind == Cloud)
                 {
+                    // Build 85: rigid sideways drift that wraps off-screen on both sides (a cloud
+                    // re-enters only once fully out of view, keeping the same spacing).
                     x += sheet.VX[i] * _cloud * dt;
-                    if (x > right + 1.4f) x = left - 1.2f;
+                    float pad = sheet.HW[i] + 0.25f;
+                    if (x > right + pad) x -= (right - left) + 2f * pad;
                 }
                 else if (kind == Glint)
                 {
@@ -439,8 +442,6 @@ namespace FlockFive
                 float hw = sheet.HW[i];
                 float hh = sheet.HH[i];
                 float drawY = y;
-                if (kind == Cloud)
-                    drawY += Mathf.Sin(t * 0.35f * _cloud + sheet.Phase[i]) * 0.18f;
                 Put(sheet.Verts, v, x, drawY, -hw, -hh, cs, sn);
                 Put(sheet.Verts, v + 1, x, drawY, hw, -hh, cs, sn);
                 Put(sheet.Verts, v + 2, x, drawY, -hw, hh, cs, sn);

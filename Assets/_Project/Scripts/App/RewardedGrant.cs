@@ -184,6 +184,8 @@ namespace FlockFive
 
         public static bool Flush()
         {
+            // Never mid-ad: AdPause.End flushes once the game is restored.
+            if (AdPause.DeferGrant()) return false;
             bool did = false;
             if (_owed.Earned && !_owed.Applied)
                 did |= Apply(ref _owed);

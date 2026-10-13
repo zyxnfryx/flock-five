@@ -180,13 +180,14 @@ namespace FlockFive
         void OpenDailyCard()
         {
             if (_dailyOpen || _dailyAskOpen || _welcomeOpen) return;
-            if (!GatePopup(PopupKind.Daily, true)) return;
+            // The Daily lesson owns this open: its glove points here. Never gate it on itself.
+            if (HomeStepRail() != RailDaily && !GatePopup(PopupKind.Daily, true)) return;
 #if UNITY_EDITOR
             if (_dailyShotQuiet || EditorShotLive) return;
 #endif
             DailyBonus.Boot();
             _dailyOpen = true;
-            _dailyPopAt = Time.unscaledTime;
+            _dailyPopAt = AdPause.Unscaled;
             _dailyTutorSpin = false;
             _dailyAdBusy = false;
             _wheelPayMul = 1;
@@ -217,7 +218,7 @@ namespace FlockFive
             if (icon == DailyBonusIconState.Badge)
             {
                 var glow = GlowTex();
-                float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.6f);
+                float breathe = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * 2.6f);
                 float bloom = plate.width * (0.05f + 0.025f * breathe);
                 GUI.color = new Color(0.90f, 0.18f, 0.12f, 0.16f + 0.14f * breathe);
                 GUI.DrawTexture(new Rect(plate.x - bloom, plate.y - bloom, plate.width + bloom * 2f, plate.height + bloom * 2f), glow, ScaleMode.ScaleToFit, true);
@@ -259,7 +260,7 @@ namespace FlockFive
             float fh = plate.width * 0.92f;
             float fw = fh * (289f / 672f);
             var flame = DailyFlameRect(plate);
-            int frame = (int)(Time.unscaledTime * 8f) % FlameFrames;
+            int frame = (int)(AdPause.Unscaled * 8f) % FlameFrames;
             if (frame < 0) frame = 0;
             var spr = SpriteCatalog.Flame(frame);
             var tex = spr != null ? spr.texture : null;
@@ -404,14 +405,18 @@ namespace FlockFive
             bool outside = HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
             if (outside && swallow.Contains(Event.current.mousePosition)) outside = false;
 
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
             var glow = GlowTex();
             // White LEVEL type still reads through a 0.72 scrim in the slot between
             // Collect and Watch Ad. Cover the home behind the daily popup.
             ModalBlock.Paint(ModalBlock.Id.Daily, new Color(0.04f, 0.03f, 0.02f, 0.98f));
 
-            float k = DailyPop(_dailyPopAt);
+            // Build 86 (Brandon): the wheel appears fully assembled from frame 1. The scale pop
+            // scaled the disc and rim, but the outlined labels, star and pointer snap to the
+            // pixel grid outside that matrix, so they slid into place: it looked built piece by
+            // piece. No per-piece motion now; the wheel art is baked during preload.
+            float k = 1f;
             var pivot = flowerOn ? DailyPivot(card, flower) : card.center;
             var prev = GUI.matrix;
             if (k < 0.999f)
@@ -483,7 +488,7 @@ namespace FlockFive
             if (_dailyPhase != DailyWheelPhase.Spin || !_dailyOpen) return;
             float dur = DailySpinDur;
             if (dur < 0.2f) dur = 0.2f;
-            float u = (Time.unscaledTime - _dailySpinAt) / dur;
+            float u = (AdPause.Unscaled - _dailySpinAt) / dur;
             if (u < 0f) u = 0f;
             if (u >= 1f)
             {
@@ -507,7 +512,7 @@ namespace FlockFive
             int ticks = DailyBonus.BoundaryCrossings(fromDeg, toDeg);
             if (ticks <= 0) return;
             _wheelFlickSign = toDeg >= fromDeg ? -1f : 1f;
-            _wheelFlickAt = Time.unscaledTime;
+            _wheelFlickAt = AdPause.Unscaled;
             for (int n = 0; n < ticks; n++)
                 SfxLibrary.Play("tick", 0.22f, 0f);
         }
@@ -530,7 +535,7 @@ namespace FlockFive
             _dailyPhase = DailyWheelPhase.Spin;
             _dailySpinFrom = 0f;
             _dailySpinTo = DailyBonus.PointerAngle(wedge) + 360f * 5f;
-            _dailySpinAt = Time.unscaledTime;
+            _dailySpinAt = AdPause.Unscaled;
             _dailyAngle = 0f;
             Sfx.CardTap();
             DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
@@ -570,11 +575,11 @@ namespace FlockFive
                     if (_dailyOpen && RewardedGrant.HasUnapplied)
                     {
                         _wheelPayMul = 2;
-                        _wheelX2At = Time.unscaledTime;
+                        _wheelX2At = AdPause.Unscaled;
                         float shown = 0f;
                         while (shown < 0.70f && _dailyOpen && RewardedGrant.HasUnapplied)
                         {
-                            shown += Time.unscaledDeltaTime;
+                            shown += AdPause.UnscaledDelta;
                             yield return null;
                         }
                     }
@@ -659,7 +664,7 @@ namespace FlockFive
                 if (GatePopup(PopupKind.Ask, false))
                 {
                     _dailyAskOpen = true;
-                    _dailyAskAt = Time.unscaledTime;
+                    _dailyAskAt = AdPause.Unscaled;
                 }
                 NoteWelcomeClaim(firstEver);
                 yield break;
@@ -740,7 +745,7 @@ namespace FlockFive
             _welcomeQueued = false;
             if (!GatePopup(PopupKind.Welcome, false)) yield break;
             _welcomeOpen = true;
-            _welcomeAt = Time.unscaledTime;
+            _welcomeAt = AdPause.Unscaled;
             _welcomeGlove = false;
         }
 
@@ -750,7 +755,7 @@ namespace FlockFive
             if (!GatePopup(PopupKind.Ask, false)) return;
             if (_dailyAskOpen || _welcomeOpen) return;
             _dailyAskOpen = true;
-            _dailyAskAt = Time.unscaledTime;
+            _dailyAskAt = AdPause.Unscaled;
         }
 
         // Welcome card remembered while a lesson owned the screen.
@@ -766,7 +771,7 @@ namespace FlockFive
 #endif
                 _welcomeQueued = false;
                 _welcomeOpen = true;
-                _welcomeAt = Time.unscaledTime;
+                _welcomeAt = AdPause.Unscaled;
                 _welcomeGlove = false;
                 return;
             }
@@ -790,7 +795,7 @@ namespace FlockFive
         void ClunkClaimed()
         {
             SfxLibrary.Cowbell();
-            _claimClunk = Time.unscaledTime;
+            _claimClunk = AdPause.Unscaled;
         }
 
         void DismissDaily()
@@ -826,7 +831,7 @@ namespace FlockFive
         static float DailyPop(float at)
         {
             if (at < 0f) return 1f;
-            float u = (Time.unscaledTime - at) / 0.34f;
+            float u = (AdPause.Unscaled - at) / 0.34f;
             if (u >= 1f) return 1f;
             if (u < 0f) u = 0f;
             float inv = 1f - u;
@@ -875,12 +880,16 @@ namespace FlockFive
         void DailyClaimGlove(float s, out Vector2 aim, out float perchLift, out bool fromLeft)
         {
             DailyLayout(s, out var card, out var flower, out _, out _);
-            float k = DailyPop(_dailyPopAt);
+            float k = 1f; // b86: no pop scale (the wheel appears assembled)
             var pivot = DailyPivot(card, flower);
             var disc = DailyScaleRect(FlowerDisc(flower, 0f), pivot, k);
-            aim = GloveTarget(disc);
+            // Build 86 (Brandon): the glove never covers the 'Claim' label. Tap the button's
+            // lower-right rim; the hand hangs down and out, clear of the centered word.
+            // The hand meets the left rim from the left (cuff toward the screen edge), so the
+            // glove sits beside the button and the centered word stays clear.
+            aim = new Vector2(disc.x + disc.width * 0.12f, disc.center.y + disc.height * 0.10f);
             perchLift = float.NaN;
-            fromLeft = false;
+            fromLeft = true;
             _gloveKeepOff = disc;
         }
 
@@ -1444,7 +1453,7 @@ namespace FlockFive
                 GUI.matrix = hold;
                 if (!jack) continue;
                 var starAt = wheel.center + DailyBonus.WedgeOffset(i, angle + DailyBonus.JackpotStarLean, wheel.width * 0.36f);
-                float tw = 0.55f + 0.45f * Mathf.Sin(Time.unscaledTime * 3.2f);
+                float tw = 0.55f + 0.45f * Mathf.Sin(AdPause.Unscaled * 3.2f);
                 SparkleFx.DrawAt(starAt, wheel.width * 0.05f, 0.40f + 0.45f * tw, DailyBonus.JackpotStar);
             }
 
@@ -1489,7 +1498,7 @@ namespace FlockFive
             var pivot = new Vector2(pointer.center.x, pointer.yMax - pointer.height * pinFrac);
             float flick = _wheelFlickAt < 0f
                 ? 0f
-                : DailyBonus.PointerFlick(Time.unscaledTime - _wheelFlickAt, _wheelFlickSign);
+                : DailyBonus.PointerFlick(AdPause.Unscaled - _wheelFlickAt, _wheelFlickSign);
             var prev = GUI.matrix;
             GUIUtility.RotateAroundPivot(flick, pivot);
             GUI.DrawTexture(pointer, _wheelPointer, ScaleMode.ScaleToFit, true);
@@ -1520,8 +1529,8 @@ namespace FlockFive
         void DrawWheelX2(Rect panel, float sparkle, Rect title = default)
         {
             if (panel.width < 6f) return;
-            if (_wheelX2At < 0f) _wheelX2At = Time.unscaledTime;
-            float age = Time.unscaledTime - _wheelX2At;
+            if (_wheelX2At < 0f) _wheelX2At = AdPause.Unscaled;
+            float age = AdPause.Unscaled - _wheelX2At;
             float s = Mathf.Max(Screen.height / 720f, 1f);
             var shake = RewardCardShake(age, s);
             var seat = RewardStampRect(panel, 2);
@@ -1586,6 +1595,8 @@ namespace FlockFive
             seat.y += y - seat.yMin;
             return seat;
         }
+
+        public static void WarmWheelArt() => EnsureWheelArt();
 
         static void EnsureWheelArt()
         {
@@ -1919,7 +1930,7 @@ namespace FlockFive
             float squish = 1f;
             if (_claimClunk >= 0f)
             {
-                float age = Time.unscaledTime - _claimClunk;
+                float age = AdPause.Unscaled - _claimClunk;
                 if (age >= 0f && age < 0.18f)
                 {
                     float u = age / 0.18f;
@@ -1972,7 +1983,7 @@ namespace FlockFive
             bool no = HitPad(noR, out bool noHeld);
             HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
 
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
             var glow = GlowTex();
             ModalBlock.Paint(ModalBlock.Id.DailyAsk, new Color(0.04f, 0.03f, 0.02f, 0.72f));
@@ -2111,7 +2122,7 @@ namespace FlockFive
             bool thanks = HitPad(btn, out bool held);
             HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
 
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
             var glow = GlowTex();
             ModalBlock.Paint(ModalBlock.Id.Welcome, new Color(0.04f, 0.03f, 0.02f, 0.72f));

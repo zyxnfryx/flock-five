@@ -1106,7 +1106,7 @@ namespace FlockFive
             _gift = GiftFace.Card;
             yield return null;
             yield return SnapShot(dir + "/gift-dialog.png");
-            _giftThanksAt = Time.unscaledTime;
+            _giftThanksAt = AdPause.Unscaled;
             _gift = GiftFace.Thanks;
             if (_garden.Root != null && _garden.Branches != null && _garden.Branches.Length > WorldBuilder.GiftIndex)
             {
@@ -1428,7 +1428,7 @@ namespace FlockFive
             _bgShownBoss = 6;
             _bgArmed = BadgerPower.X2;
             _bgPlayerIx = 0;
-            _bgPlayerAt = Time.unscaledTime - 2f;
+            _bgPlayerAt = AdPause.Unscaled - 2f;
             _bgBossIx = -1;
             yield return null;
             yield return new WaitForEndOfFrame();
@@ -1436,7 +1436,7 @@ namespace FlockFive
             SaveFrame(dir + "/b82-honey-badge.png");
             _bgShownPlayer = 5;
             _bgLeftL = 14;
-            _bgLeftAtL = Time.unscaledTime;
+            _bgLeftAtL = AdPause.Unscaled;
             _bgPulseWho = 1;
             _bgPulseAge = BadgerRoundAct.PulseSeconds * 0.35f;
             yield return null;
@@ -1458,9 +1458,9 @@ namespace FlockFive
             float sheenWait = 0f;
             while (sheenWait < 3.2f)
             {
-                float u = PushButton.SheenU(Time.unscaledTime);
+                float u = PushButton.SheenU(AdPause.Unscaled);
                 if (u > 0.38f && u < 0.62f) break;
-                sheenWait += Time.unscaledDeltaTime;
+                sheenWait += AdPause.UnscaledDelta;
                 yield return null;
             }
             yield return new WaitForEndOfFrame();
@@ -1503,7 +1503,7 @@ namespace FlockFive
             float gardenWait = 0f;
             while (gardenWait < 4f && _board == null)
             {
-                gardenWait += Time.unscaledDeltaTime;
+                gardenWait += AdPause.UnscaledDelta;
                 yield return null;
             }
             yield return new WaitForSecondsRealtime(0.6f);
@@ -1763,7 +1763,7 @@ namespace FlockFive
             float wait = 0f;
             while (wait < 2.4f && !GardenKitGui(out _))
             {
-                wait += Time.unscaledDeltaTime;
+                wait += AdPause.UnscaledDelta;
                 yield return null;
             }
             yield return new WaitForEndOfFrame();
@@ -2024,7 +2024,7 @@ namespace FlockFive
             {
                 PoseBuild79(false, false);
                 PoseDailyWheelShot();
-                t += Time.unscaledDeltaTime;
+                t += AdPause.UnscaledDelta;
                 yield return null;
             }
             PoseBuild79(false, false);
@@ -2065,7 +2065,7 @@ namespace FlockFive
                 _dailyAngle = DailyBonus.PointerAngle(7);
                 _wheelPayMul = 2;
                 _wheelFlickAt = -1f;
-                _wheelX2At = Time.unscaledTime - 1.5f;
+                _wheelX2At = AdPause.Unscaled - 1.5f;
                 Ads.SetReadyOverride(0);
             }
             else if (ShotDailyWheel == 2)
@@ -2075,7 +2075,7 @@ namespace FlockFive
                 _dailyAngle = DailyBonus.PointerAngle(7);
                 _wheelPayMul = 1;
                 _wheelFlickAt = -1f;
-                _wheelX2At = Time.unscaledTime - 1.5f;
+                _wheelX2At = AdPause.Unscaled - 1.5f;
                 Ads.SetReadyOverride(1);
             }
             else if (ShotDailyWheel == 4)
@@ -2087,7 +2087,7 @@ namespace FlockFive
                 _dailyAngle = DailyBonus.PointerAngle(1);
                 _wheelPayMul = 1;
                 _wheelFlickAt = -1f;
-                _wheelX2At = Time.unscaledTime - 1.5f;
+                _wheelX2At = AdPause.Unscaled - 1.5f;
                 Ads.SetReadyOverride(1);
             }
             else
@@ -2098,7 +2098,7 @@ namespace FlockFive
                 _dailyAngle = 11f;
                 _wheelPayMul = 1;
                 _wheelFlickSign = -1f;
-                _wheelFlickAt = Time.unscaledTime - 0.04f;
+                _wheelFlickAt = AdPause.Unscaled - 0.04f;
                 _wheelX2At = -1f;
                 Ads.SetReadyOverride(0);
             }
@@ -2128,7 +2128,7 @@ namespace FlockFive
                     Destroy(tex);
                 }
                 if (ready && t > 0.3f) yield break;
-                t += Time.unscaledDeltaTime;
+                t += AdPause.UnscaledDelta;
                 yield return null;
             }
         }
@@ -2157,7 +2157,7 @@ namespace FlockFive
             while (t < 0.45f)
             {
                 PoseBuild79(settings, att);
-                t += Time.unscaledDeltaTime;
+                t += AdPause.UnscaledDelta;
                 yield return null;
             }
             PoseBuild79(settings, att);
@@ -2372,12 +2372,12 @@ namespace FlockFive
         {
             int i = 0;
             _recordFrameCount = 0;
-            float next = Time.unscaledTime;
+            float next = AdPause.Unscaled;
             const float step = 1f / 30f;
             while (_recordSmash)
             {
                 yield return new WaitForEndOfFrame();
-                if (Time.unscaledTime < next) continue;
+                if (AdPause.Unscaled < next) continue;
                 var tex = ScreenCapture.CaptureScreenshotAsTexture();
                 if (tex == null) continue;
                 try
@@ -2387,7 +2387,7 @@ namespace FlockFive
                         tex.EncodeToJPG(82));
                     i++;
                     _recordFrameCount = i;
-                    next = Time.unscaledTime + step;
+                    next = AdPause.Unscaled + step;
                 }
                 catch { }
                 Destroy(tex);
@@ -2745,6 +2745,14 @@ namespace FlockFive
 
 #if UNITY_EDITOR
         public static bool EditorShotLive;
+        public static string DbgDaily = "";
+        static string DbgGates(SplashPress.Gates g)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var fi in typeof(SplashPress.Gates).GetFields())
+                if (fi.FieldType == typeof(bool) && (bool)fi.GetValue(g)) sb.Append(fi.Name).Append(',');
+            return sb.ToString();
+        }
         // 0 off, 1 mid-spin still, 2 landed result with the x2 button.
         public static int ShotDailyWheel;
 #endif
@@ -3055,7 +3063,7 @@ namespace FlockFive
         {
             _feelRec = true;
             var times = new System.Text.StringBuilder();
-            float t0 = Time.unscaledTime;
+            float t0 = AdPause.Unscaled;
             int n = 0;
             while (_feelRec)
             {
@@ -3063,7 +3071,7 @@ namespace FlockFive
                 var tex = ScreenCapture.CaptureScreenshotAsTexture();
                 System.IO.File.WriteAllBytes(FeelDir + "/frames/f" + n.ToString("D4") + ".jpg", tex.EncodeToJPG(88));
                 Destroy(tex);
-                times.Append(n).Append(' ').Append((Time.unscaledTime - t0).ToString("F4")).Append('\n');
+                times.Append(n).Append(' ').Append((AdPause.Unscaled - t0).ToString("F4")).Append('\n');
                 n++;
             }
             System.IO.File.WriteAllText(FeelDir + "/frames/times.txt", times.ToString());
@@ -3410,7 +3418,7 @@ namespace FlockFive
 
         int NextCombo()
         {
-            if (Time.unscaledTime > _comboUntil)
+            if (AdPause.Unscaled > _comboUntil)
             {
                 _combo = 0;
                 SfxLibrary.CloseCombo();
@@ -3419,7 +3427,7 @@ namespace FlockFive
             else
                 SfxLibrary.SealComboStart();
             _combo = Mathf.Min(_combo + 1, Palette.ComboMax);
-            _comboUntil = Time.unscaledTime + 4.5f;
+            _comboUntil = AdPause.Unscaled + 4.5f;
             return _combo;
         }
 
@@ -3469,15 +3477,15 @@ namespace FlockFive
         {
             while (gen == _comboPopGen && _comboShows.Count > 0)
             {
-                while (gen == _comboPopGen && (GamePause.Paused || Time.unscaledTime < _comboPopAt))
+                while (gen == _comboPopGen && (GamePause.Paused || AdPause.Unscaled < _comboPopAt))
                 {
                     if (GamePause.Paused && _comboPopAt > -90f)
-                        _comboPopAt += Time.unscaledDeltaTime;
+                        _comboPopAt += AdPause.UnscaledDelta;
                     yield return null;
                 }
                 if (gen != _comboPopGen || _comboShows.Count == 0) break;
                 var show = _comboShows.Dequeue();
-                _comboPopAt = Time.unscaledTime + ComboPopGap / _autoResolveScale;
+                _comboPopAt = AdPause.Unscaled + ComboPopGap / _autoResolveScale;
                 try { PlayComboShow(show.Combo, show.Celebrate); }
                 catch (System.Exception) { }
             }
@@ -3546,7 +3554,7 @@ namespace FlockFive
             // Before the pause return: the base scale is set (or handed to GamePause) every frame.
             SyncAutoResolveSpeed();
             // Chain ended. A collect still in flight keeps the opening sting slot.
-            if (!_collecting && Time.unscaledTime > _comboUntil)
+            if (!_collecting && AdPause.Unscaled > _comboUntil)
                 SfxLibrary.CloseCombo();
             // Interrupted-tutorial check: cheap, and it only acts on a stuck state.
             if ((Time.frameCount & 7) == 0) HealInterruptedTutorials();
@@ -3557,7 +3565,7 @@ namespace FlockFive
                 return;
             }
             RewardedGrant.Flush();
-            TickUsaPlane(Time.unscaledDeltaTime);
+            TickUsaPlane(AdPause.UnscaledDelta);
             CoachAdvance();
             TickPopups();
             TickDailyBonus();
@@ -3618,7 +3626,7 @@ namespace FlockFive
             if (VeilDrops(screen)) return;
             if (GardenStampHit(screen))
             {
-                _stampPulse = Time.unscaledTime;
+                _stampPulse = AdPause.Unscaled;
                 return;
             }
             if (HitHud(screen)) return;
@@ -3639,8 +3647,8 @@ namespace FlockFive
             if (LessonTapBlocked()) return;
             if (_busy || _won || _board == null) return;
             if (PlayClock.Now < _swallowTapsUntil) return;
-            if (Time.unscaledTime < _nextTap) return;
-            _nextTap = Time.unscaledTime + 0.10f;
+            if (AdPause.Unscaled < _nextTap) return;
+            _nextTap = AdPause.Unscaled + 0.10f;
             if (CoachReject(world)) return;
 
             int sign = HitGiftSign(world);
@@ -4734,7 +4742,7 @@ namespace FlockFive
             float guard = 0f;
             while (_gardenScoring && !_splash && guard < 40f)
             {
-                guard += Time.unscaledDeltaTime;
+                guard += AdPause.UnscaledDelta;
                 yield return null;
             }
         }
@@ -4748,7 +4756,7 @@ namespace FlockFive
                 _gardenStampAt = -1f;
                 return;
             }
-            _gardenStampAt = Time.unscaledTime;
+            _gardenStampAt = AdPause.Unscaled;
         }
 
         bool GardenStampHit(Vector2 screen)
@@ -4977,7 +4985,7 @@ namespace FlockFive
             while (beat < 0.55f * RewardPace)
             {
                 // Real-time beat, so it takes the auto-resolve speed by hand.
-                if (!GamePause.Paused) beat += Time.unscaledDeltaTime * _autoResolveScale;
+                if (!GamePause.Paused) beat += AdPause.UnscaledDelta * _autoResolveScale;
                 yield return null;
             }
             if (_restarting || _splash)
@@ -6532,8 +6540,8 @@ namespace FlockFive
         void FinishLevelCurtain()
         {
             if (!LevelCurtain.Armed) return;
-            if (GuiPaint()) LevelCurtain.Draw(Time.unscaledTime);
-            if (LevelCurtain.Finished(Time.unscaledTime)) LevelCurtain.Clear();
+            if (GuiPaint()) LevelCurtain.Draw(AdPause.Unscaled);
+            if (LevelCurtain.Finished(AdPause.Unscaled)) LevelCurtain.Clear();
         }
 
         // Original splash hive size — pig matches this, then both bump together.
@@ -6558,7 +6566,7 @@ namespace FlockFive
             float vip = VipRailGoal();
             float poker = SplashPokerGoal();
             float daily = SplashDailyGoal();
-            float now = Time.unscaledTime;
+            float now = AdPause.Unscaled;
             if (!_railInit)
             {
                 _railInit = true;
@@ -6618,7 +6626,14 @@ namespace FlockFive
         float SplashDailyGoal()
         {
             if (LevelData.NextPlay < 1) return 0f;
-            if (_dailyRailLocked && _dailyIntro && !_dailyIntroLive) return 0f;
+            // Build 85 (device strand on a fresh install): the Daily button stays out of the
+            // rail until its own lesson is live. Before, it only hid when level 1 was cleared in
+            // this session (_dailyRailLocked), so after a relaunch it showed under the adopt
+            // lesson, a tap on it was blocked (adopt owns the turn) and only dismissed the
+            // greet glove. The adopt lesson now always runs first with no Daily on screen; the
+            // Daily lesson then grows the button in and its glove points at it.
+            if (_dailyIntro && !_dailyIntroLive) return 0f;
+            if (AdoptHoldsQueue() && PlayerPrefs.GetInt(CoachDailyKey, 0) == 0) return 0f;
             return 1f;
         }
 
@@ -6794,7 +6809,7 @@ namespace FlockFive
             float pulse = quiet || (pop && _hivePopping) ? 0f : HiveView.GuiPulse;
             bool freshCue = _home == HomeFace.Splash && _hiveFreshSlots.Count > 0 && !quiet && !(pop && _hivePopping);
             if (freshCue)
-                pulse = Mathf.Max(pulse, 0.55f + 0.45f * Mathf.Sin(Time.unscaledTime * 5.2f));
+                pulse = Mathf.Max(pulse, 0.55f + 0.45f * Mathf.Sin(AdPause.Unscaled * 5.2f));
             Rect draw = hive;
             if (pulse > 0.01f)
             {
@@ -6841,7 +6856,7 @@ namespace FlockFive
             var spr = SpriteCatalog.Sparkle;
             var tex = spr != null && spr.texture != null ? spr.texture : GlowTex();
             if (tex == null) return;
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             for (int i = 0; i < HiveGlintX.Length; i++)
             {
                 float tw = 0.5f + 0.5f * Mathf.Sin(t * (1.6f + i * 0.11f) + HiveGlintPh[i]);
@@ -6918,7 +6933,7 @@ namespace FlockFive
             var tint = visit.Kind.Tint;
             if (visit.Finish != BeeFinish.Normal)
                 tint = Color.Lerp(tint, Color.white, visit.Finish == BeeFinish.Holo ? 0.18f : 0.28f);
-            float now = Time.unscaledTime;
+            float now = AdPause.Unscaled;
             if (!_haloEbbReady)
             {
                 _haloEbbPhase = Random.Range(0f, Mathf.PI * 2f);
@@ -6951,7 +6966,7 @@ namespace FlockFive
 
         void PruneIncomingHalo()
         {
-            float now = Time.unscaledTime;
+            float now = AdPause.Unscaled;
             bool removed = false;
             for (int i = _incomingHalo.Count - 1; i >= 0; i--)
             {
@@ -7083,12 +7098,12 @@ namespace FlockFive
         {
             if (behind) PruneIncomingHalo();
             if (_incomingHalo.Count == 0) return;
-            float now = Time.unscaledTime;
+            float now = AdPause.Unscaled;
             // Shared spin: every bee advances by the same angle, so slots stay even.
             if (behind)
             {
                 float ebb = 1f + HaloEbbAmp * Mathf.Sin(now * HaloEbbOmega + _haloEbbPhase);
-                _haloSpin = Mathf.Repeat(_haloSpin + HaloOrbitSpeed * ebb * Time.unscaledDeltaTime, Mathf.PI * 2f);
+                _haloSpin = Mathf.Repeat(_haloSpin + HaloOrbitSpeed * ebb * AdPause.UnscaledDelta, Mathf.PI * 2f);
             }
             // Tight neighborhood around the skep (bottom right). The old lap grew
             // until twelve icons fit and the red/yellow paths reached screen center.
@@ -7146,7 +7161,7 @@ namespace FlockFive
                 float life = b.Expire == float.MaxValue ? Mathf.Clamp01((now - b.Appear) / 0.22f) : Mathf.Clamp01((b.Expire - now) / 0.22f);
                 float scale = (isBehind ? 0.86f : 1.06f) * Mathf.Lerp(0.55f, 1f, life);
                 float iw = icon * scale;
-                var spr = SpriteCatalog.BeeFrame(Time.unscaledTime * 14f + i * 2.4f);
+                var spr = SpriteCatalog.BeeFrame(AdPause.Unscaled * 14f + i * 2.4f);
                 if (spr == null || spr.texture == null) continue;
                 var r = new Rect(x - iw * 0.5f, y - iw * 0.5f, iw, iw);
                 var tint = b.Tint;
@@ -7236,7 +7251,7 @@ namespace FlockFive
             var glow = GlowTex();
             float d = plate.width;
 
-            float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 1.7f);
+            float breathe = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * 1.7f);
             float bloom = d * (0.07f + 0.025f * breathe) * (member ? 1.3f : 1f);
             float bloomA = (held ? 0.14f : 0.28f) * (0.75f + 0.25f * breathe) * (member ? 1.35f : 1f);
             GUI.color = new Color(1f, 0.78f, 0.28f, bloomA);
@@ -7314,7 +7329,7 @@ namespace FlockFive
             GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
             if (!held)
             {
-                float tw = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.3f);
+                float tw = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * 2.3f);
                 tw *= tw;
                 if (tw > 0.08f)
                 {
@@ -7354,7 +7369,7 @@ namespace FlockFive
         {
             const float period = 4.8f;
             const float dur = 0.9f;
-            float phase = Mathf.Repeat(Time.unscaledTime, period);
+            float phase = Mathf.Repeat(AdPause.Unscaled, period);
             if (phase >= dur) return;
             float t = phase / dur;
             float fade = Mathf.Sin(t * Mathf.PI);
@@ -7400,7 +7415,7 @@ namespace FlockFive
         {
             var tex = VipGlintTex();
             int n = VipGlintStud.Length;
-            float phase = Mathf.Repeat(Time.unscaledTime / 2.2f, 1f) * n;
+            float phase = Mathf.Repeat(AdPause.Unscaled / 2.2f, 1f) * n;
             float sz = plate.width * 0.048f;
             float dim = held ? 0.55f : 1f;
             for (int i = 0; i < n; i++)
@@ -8262,6 +8277,7 @@ namespace FlockFive
             _waxBorn = -1f;
             _rewardChoice = 0;
             _rewardRepeatAmt = 0;
+            _rewardHasAd = -1;
         }
 
         void StepStreakReward()
@@ -8280,11 +8296,15 @@ namespace FlockFive
             float dur = beat.SeqDur > 0.05f ? beat.SeqDur : 0.05f;
             float t = _streakSlide * dur;
             // Tuck waits until the shared flight, the balance tick, and the payout sound finish.
-            bool fadeGate = t >= beat.HoldEnd && (RewardPayBusy() || RewardChoicePending());
+            // Build 86 (Brandon): no dead pause. The sign stops right after the multiplier
+            // lands (ChoiceAt) and the buttons come up; the post-pay hold plays after the tap.
+            bool fadeGate = (t >= beat.ChoiceAt && RewardChoicePending()) || (t >= beat.HoldEnd && RewardPayBusy());
             if (!fadeGate)
                 _streakSlide = Mathf.Min(1f, _streakSlide + PlayClock.Delta / dur);
             t = _streakSlide * dur;
-            if (t >= beat.PayAt)
+            // Build 85 (Brandon): the popup plays its intro, then HOLDS. Coins fly and the
+            // balance moves only after the tap (Collect, or 2X once its ad is done).
+            if (t >= beat.PayAt && !RewardChoicePending())
                 PayStreakStep();
             if (_streakSlide >= 1f && !RewardPayBusy())
                 DismissStreakSign();
@@ -8305,7 +8325,7 @@ namespace FlockFive
             var prevM = GUI.matrix;
             if (_pigJiggle > 0f)
             {
-                _pigJiggle = Mathf.Max(0f, _pigJiggle - Time.unscaledDeltaTime / 0.30f);
+                _pigJiggle = Mathf.Max(0f, _pigJiggle - AdPause.UnscaledDelta / 0.30f);
                 float j = _pigJiggle;
                 float wobble = Mathf.Sin(j * Mathf.PI * 3.2f) * 7f * j;
                 float sx = 1f + 0.14f * Mathf.Sin(j * Mathf.PI);
@@ -8337,7 +8357,7 @@ namespace FlockFive
             DrawCoinFly(pig);
             if (_pigBurst > 0f)
             {
-                _pigBurst = Mathf.Max(0f, _pigBurst - Time.unscaledDeltaTime / 0.55f);
+                _pigBurst = Mathf.Max(0f, _pigBurst - AdPause.UnscaledDelta / 0.55f);
                 var glow = GlowTex();
                 float b = _pigBurst;
                 float pad = pig.width * (0.12f + 0.22f * b);
@@ -8434,7 +8454,7 @@ namespace FlockFive
         {
             if (!_coinArmed) ArmCoinIdle();
             const float spinDur = 2.6f;
-            float dt = Time.unscaledDeltaTime;
+            float dt = AdPause.UnscaledDelta;
             bool spinning = _coinSpinT >= 0f;
             float yaw = 0f;
             if (spinning)
@@ -8521,6 +8541,7 @@ namespace FlockFive
         const float RewardStampDur = 0.40f * RewardPace;
         const float RewardRollDur = 0.55f * RewardPace;
         const float RewardHoldDur = 1.20f * RewardPace;
+        const float RewardChoiceLag = 0.12f; // b86: badge settles, then the buttons
         const float RewardFadeDur = 0.75f * RewardPace;
         const float RewardShakeDur = 0.22f * RewardPace;
         // Breath after the homepage streak board tucks, before the bird lesson.
@@ -8535,6 +8556,7 @@ namespace FlockFive
             public float RollAt;
             public float PayAt;
             public float HoldEnd;
+            public float ChoiceAt;
             public float SeqDur;
             public bool Mul;
         }
@@ -8568,6 +8590,7 @@ namespace FlockFive
             beat.RollAt = beat.StampAt + RewardStampDur;
             beat.PayAt = mul ? beat.RollAt + RewardRollDur : beat.StampAt;
             beat.HoldEnd = beat.PayAt + RewardHoldDur;
+            beat.ChoiceAt = beat.PayAt + RewardChoiceLag;
             beat.SeqDur = beat.HoldEnd + RewardFadeDur;
             return beat;
         }
@@ -8698,17 +8721,17 @@ namespace FlockFive
                 if (GuiPaint() && !_rewardStampHit && age >= land)
                 {
                     _rewardStampHit = true;
-                    _waxBorn = Time.unscaledTime;
+                    _waxBorn = AdPause.Unscaled;
                     Sfx.CardBump();
                 }
-                waxAge = _waxBorn < 0f ? 9f : Time.unscaledTime - _waxBorn;
+                waxAge = _waxBorn < 0f ? 9f : AdPause.Unscaled - _waxBorn;
             }
             else
                 waxAge = age - land;
             float pop = RewardStampPop(age);
             if (_stampPulse >= 0f)
             {
-                float since = Time.unscaledTime - _stampPulse;
+                float since = AdPause.Unscaled - _stampPulse;
                 if (since >= 0f && since < 0.22f)
                     pop *= 1f + 0.08f * Mathf.Sin(since / 0.22f * Mathf.PI);
             }
@@ -8871,7 +8894,7 @@ namespace FlockFive
             GUI.color = Color.white;
             var r = GardenStampRect(s);
             _gardenStampRect = r;
-            float age = Time.unscaledTime - _gardenStampAt;
+            float age = AdPause.Unscaled - _gardenStampAt;
             // Gentle twinkle on every tier. x10 adds the gold sweep inside Draw.
             DrawRewardStamp(r, StreakTier.Display(Purse.Streak), 1f, age, 0.48f);
         }
@@ -9011,7 +9034,7 @@ namespace FlockFive
             float titleK = Mathf.Lerp(openK, 0.72f, tuck);
             float scale = openK;
             // Freeze the glow clock on the way out so breathe cannot flash after the board thins.
-            float lampT = Time.unscaledTime - Mathf.Max(0f, t - beat.HoldEnd);
+            float lampT = AdPause.Unscaled - Mathf.Max(0f, t - beat.HoldEnd);
             if (t >= beat.AmtAt)
             {
                 float breathe = 0.5f + 0.5f * Mathf.Sin(lampT * 2.6f);
@@ -9566,7 +9589,7 @@ namespace FlockFive
             var spr = SpriteCatalog.Coin;
             var tex = spr != null ? spr.texture : null;
             var glow = GlowTex();
-            float dt = Time.unscaledDeltaTime;
+            float dt = AdPause.UnscaledDelta;
             float size = 68f * Mathf.Max(Screen.height / 720f, 1f);
             var dest = new Vector2(pig.x + pig.width * 0.5f, pig.y + pig.height * 0.42f);
             for (int i = _flies.Count - 1; i >= 0; i--)
@@ -9951,7 +9974,26 @@ namespace FlockFive
             dailyGates.DailySoftOk = dailyLesson && _streakSlide < 0f;
             dailyGates.PopupGate = PopupBlocked(PopupKind.Daily);
             dailyGates.StepGate = StepGateBlocks(dailyTap);
+            if (dailyLesson)
+            {
+                // Build 85 (device strand, build 84): the Daily lesson's own target must always
+                // open the card. The glove fades on the press (NoteGloveTap), so any lesson-side
+                // gate that also ate that tap (the coach-ate frame, the dismiss guard, the step
+                // gate or the tutorial popup gate) left the caption up, the glove gone and the
+                // card shut. Those gates guard OTHER controls from the lesson; they never apply
+                // to the control the glove points at.
+                dailyGates.CoachAte = false;
+                dailyGates.LessonGuard = false;
+                dailyGates.StepGate = false;
+                dailyGates.PopupGate = false;
+                dailyGates.ResumeSwallow = false;
+            }
             var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates));
+#if UNITY_EDITOR
+            if (ShotKeepAwake && _homeSamples.Count > 0 && DbgDaily.Length < 4000)
+                DbgDaily += (Event.current != null ? Event.current.type.ToString() : "-") + "/f" + Time.frameCount + ":" + _homeSamples[0].Phase
+                    + (SplashPress.Blocks(dailyGates) ? " BLOCK[" + DbgGates(dailyGates) + "]" : "") + (dailyView.Pressed ? " P" : "") + (dailyView.Launch ? " L" : "") + (dailyView.Handled ? " H" : "") + "; ";
+#endif
             StartupTrace.Lap("L.Daily");
             if (dailyView.Launch)
                 OpenDailyCard();
@@ -10027,8 +10069,8 @@ namespace FlockFive
             bool held = view.Pressed || _pressShotHeld;
             bool fired = view.Launch || TakePressShotFire();
             bool paint = GuiPaint();
-            var motion = PushButton.Sample(PushButton.Level, held, Time.unscaledTime, paint);
-            if (motion.PressedEdge) _levelPressAt = Time.unscaledTime;
+            var motion = PushButton.Sample(PushButton.Level, held, AdPause.Unscaled, paint);
+            if (motion.PressedEdge) _levelPressAt = AdPause.Unscaled;
             if (paint && motion.ReleasedEdge && (BadgerOwed() > 0 || !LevelCurtain.Armed))
             {
                 SparkleFx.DrawAround(rest, 0.95f, true, 0.12f);
@@ -10037,7 +10079,7 @@ namespace FlockFive
             if (held && BadgerOwed() <= 0)
             {
                 LevelCurtain.Aim(rest);
-                LevelCurtain.Arm(Time.unscaledTime);
+                LevelCurtain.Arm(AdPause.Unscaled);
             }
             else if (!held && !fired && LevelCurtain.Armed && !LevelCurtain.LoadStarted)
                 LevelCurtain.Clear();
@@ -10051,7 +10093,7 @@ namespace FlockFive
                 var shadow = new Rect(visual.x + 6f, visual.y + drop, visual.width, visual.height);
                 GUI.color = new Color(0.10f, 0.06f, 0.03f, held ? 0.22f : 0.40f);
                 GUI.DrawTexture(shadow, tex, ScaleMode.ScaleToFit, true);
-                if (held) DrawLevelPressUnder(visual, Time.unscaledTime - _levelPressAt);
+                if (held) DrawLevelPressUnder(visual, AdPause.Unscaled - _levelPressAt);
                 if (!held && motion.Pose.Sink <= 0.001f) DrawFlowerHalo(visual, 0f);
                 GUI.color = Color.white;
                 GUI.DrawTexture(visual, tex, ScaleMode.ScaleToFit, true);
@@ -10059,7 +10101,7 @@ namespace FlockFive
                 if (!held && motion.Pose.Sink <= 0.001f) DrawFlowerShimmer(visual, 0f);
                 if (!held && motion.Pose.Sink <= 0.001f) DrawLevelIdleLife(visual);
                 if (held) DrawDiscPress(visual, 0f);
-                if (held) DrawLevelPressOver(visual, Time.unscaledTime - _levelPressAt);
+                if (held) DrawLevelPressOver(visual, AdPause.Unscaled - _levelPressAt);
             }
 
             DrawBadgerSitter(visual.y - rest.y);
@@ -10109,7 +10151,7 @@ namespace FlockFive
         {
             if (r.width < 2f || r.height < 2f) return r;
             bool paint = GuiPaint();
-            var motion = PushButton.Sample(PushButton.Slot(r), held, Time.unscaledTime, paint);
+            var motion = PushButton.Sample(PushButton.Slot(r), held, AdPause.Unscaled, paint);
             var visual = PushButton.Visual(r, motion.Pose);
             if (paint && motion.ReleasedEdge)
             {
@@ -11309,7 +11351,7 @@ namespace FlockFive
                 return;
             }
             _avatarTail = AvatarPlateDrop(s);
-            float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.05f);
+            float dt = Mathf.Clamp(AdPause.UnscaledDelta, 0f, 0.05f);
             _avatarClock += dt;
             if (_avatarFlapT > 0f) _avatarFlapT = Mathf.Max(0f, _avatarFlapT - dt);
             if (_avatarHappy > 0f) _avatarHappy = Mathf.Max(0f, _avatarHappy - dt / 0.36f);
@@ -11889,7 +11931,7 @@ namespace FlockFive
             if (!HomeTutorLive()) return false;
             float dh = GloveDh(s);
             var pivot = _gloveShown;
-            float bob = Mathf.Sin(Time.unscaledTime * 2.35f) * dh * 0.028f * (1f - _gloveDip);
+            float bob = Mathf.Sin(AdPause.Unscaled * 2.35f) * dh * 0.028f * (1f - _gloveDip);
             float rad = _gloveShownAng * Mathf.Deg2Rad;
             pivot += new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
             var rect = GloveRect(pivot, dh, _gloveMirror);
@@ -12161,7 +12203,7 @@ namespace FlockFive
                 // Same wingbeat as perched birds (BirdIdle FlapRate 1.25 = 40 poses/s).
                 // It was *11 (352 poses/s): far above the screen rate, so each
                 // frame showed a random pose and the flap strobed.
-                var spr = SpriteCatalog.BirdFrame(f.Col, Time.unscaledTime * HaloFlapRate + i * 0.37f, true);
+                var spr = SpriteCatalog.BirdFrame(f.Col, AdPause.Unscaled * HaloFlapRate + i * 0.37f, true);
                 if (spr == null || spr.texture == null) continue;
                 // Flight frames are bigger canvases (1504 px at a different PPU)
                 // than the rest pose (1024 px). GUI ignores PPU, so size each
@@ -12225,12 +12267,12 @@ namespace FlockFive
         // Same offset the drawer uses (ellipse + bob), so the gap test matches pixels.
         static Vector2 TitleOffset(SplashFlutter f, float s)
         {
-            float rk = 1f + 0.018f * Mathf.Sin(Time.unscaledTime * 0.85f + f.BobPhase);
+            float rk = 1f + 0.018f * Mathf.Sin(AdPause.Unscaled * 0.85f + f.BobPhase);
             float x = Mathf.Cos(f.Angle) * f.RadiusX * rk;
             float y = Mathf.Sin(f.Angle) * f.RadiusY * rk;
             float bobHz = 1.75f + 0.35f * Mathf.Sin(f.BobPhase * 1.3f);
             float bob = (1.3f + 0.5f * (0.5f + 0.5f * Mathf.Sin(f.BobPhase))) * s;
-            y += Mathf.Sin(Time.unscaledTime * bobHz + f.BobPhase) * bob;
+            y += Mathf.Sin(AdPause.Unscaled * bobHz + f.BobPhase) * bob;
             return new Vector2(x, y);
         }
 
@@ -12242,7 +12284,7 @@ namespace FlockFive
             int n = fl.Length;
             if (n <= 0) return;
             if (n > _titleOrd.Length) n = _titleOrd.Length;
-            float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.05f);
+            float dt = Mathf.Clamp(AdPause.UnscaledDelta, 0f, 0.05f);
             if (n == 1)
             {
                 var only = fl[0];
@@ -12305,7 +12347,7 @@ namespace FlockFive
                 int idx = _titleOrd[k];
                 var f = fl[idx];
                 float bias = Mathf.Clamp((f.Speed - rate) * 2.4f, -slack, slack);
-                float wob = Mathf.Sin(Time.unscaledTime * (0.42f + 0.07f * idx) + f.BobPhase) * slack * 0.40f;
+                float wob = Mathf.Sin(AdPause.Unscaled * (0.42f + 0.07f * idx) + f.BobPhase) * slack * 0.40f;
                 float slot = mean + k * step + bias + wob;
                 f.Slot = slot;
                 float err = Mathf.DeltaAngle(f.Angle * Mathf.Rad2Deg, slot * Mathf.Rad2Deg) * Mathf.Deg2Rad;
@@ -12368,7 +12410,7 @@ namespace FlockFive
         static void DrawFlowerHalo(Rect rest, float sink, float gain = 1f)
         {
             if (!GuiPaint()) return;
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 1.7f);
             float pad = rest.width * (0.03f + 0.035f * breathe);
             var glow = GlowTex();
@@ -12381,7 +12423,7 @@ namespace FlockFive
         static void DrawFlowerShimmer(Rect rest, float sink, float gain = 1f)
         {
             if (!GuiPaint()) return;
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             var glow = GlowTex();
             var face = new Rect(rest.x, rest.y + sink, rest.width, rest.height);
             gain = Mathf.Clamp01(gain);
@@ -12758,7 +12800,7 @@ namespace FlockFive
             var r = PokerCaptionSeat(line, s, out bool topAlign);
             StandardCaptionBox(s, out _, out _, out int lo, out int hi);
             if (GuiPaint())
-                _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
+                _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
             bool pin = PokerStepPinned(PokerStepAnchor(line));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
             PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign);
@@ -13099,7 +13141,7 @@ namespace FlockFive
             if (GuiPaint())
             {
                 float target = _pokerPayOpen ? 1f : 0f;
-                _pokerPayAnim = Mathf.MoveTowards(_pokerPayAnim, target, Time.unscaledDeltaTime * 7f);
+                _pokerPayAnim = Mathf.MoveTowards(_pokerPayAnim, target, AdPause.UnscaledDelta * 7f);
             }
 
             var tab = PokerPayTabRect(top, s);
@@ -13339,9 +13381,9 @@ namespace FlockFive
         {
             if (!_pokerStamp) return;
             if (GuiPaint())
-                _pokerStampT += Time.unscaledDeltaTime;
+                _pokerStampT += AdPause.UnscaledDelta;
             // Seal hits the clipboard — shake the IMGUI overlay and the garden.
-            if (_pokerStampT >= StampHitAt && _pokerStampT - Time.unscaledDeltaTime < StampHitAt)
+            if (_pokerStampT >= StampHitAt && _pokerStampT - AdPause.UnscaledDelta < StampHitAt)
             {
                 PunchPoker(_pokerBingo ? 0.34f : 0.26f, _pokerBingo ? 28f : 20f, _pokerBingo ? 12f : 8f);
                 Sfx.Rumble();
@@ -13862,7 +13904,7 @@ namespace FlockFive
         {
             // Frozen through a draw so the plucked cards' captured poses still match the fading hand.
             if (_pokerMotion == PokerMotion.Draw) return;
-            _pokerSwayT += Time.unscaledDeltaTime;
+            _pokerSwayT += AdPause.UnscaledDelta;
         }
 
         float PokerSwayTurn()
@@ -13977,7 +14019,7 @@ namespace FlockFive
         {
             if (_pokerMotion == PokerMotion.None) return;
             float prev = _pokerMotionT;
-            _pokerMotionT += Time.unscaledDeltaTime;
+            _pokerMotionT += AdPause.UnscaledDelta;
             FirePokerCineSfx(prev, _pokerMotionT);
             if (_pokerMotionT >= PokerMotionDur())
             {
@@ -14085,7 +14127,7 @@ namespace FlockFive
             float wait = 0f;
             while ((PokerMotionBusy() || BirdPoker.PhaseNow != BirdPoker.Phase.Dealt) && wait < 6f)
             {
-                wait += Time.unscaledDeltaTime;
+                wait += AdPause.UnscaledDelta;
                 yield return null;
             }
             if (BirdPoker.PhaseNow != BirdPoker.Phase.Dealt)
@@ -14138,7 +14180,7 @@ namespace FlockFive
 
         void TickHoldSlide()
         {
-            float sp = Time.unscaledDeltaTime * 4.6f;
+            float sp = AdPause.UnscaledDelta * 4.6f;
             for (int i = 0; i < BirdPoker.HandSize; i++)
             {
                 bool keep = BirdPoker.Hold[i] || (_pokerMotion == PokerMotion.Draw && _pokerKept[i]);
@@ -14170,7 +14212,7 @@ namespace FlockFive
                 _pokerKick = Vector2.zero;
                 return;
             }
-            _pokerKickT -= Time.unscaledDeltaTime;
+            _pokerKickT -= AdPause.UnscaledDelta;
             if (_pokerKickT <= 0f)
             {
                 _pokerKick = Vector2.zero;
@@ -14178,7 +14220,7 @@ namespace FlockFive
             }
             float u = Mathf.Clamp01(_pokerKickT / _pokerKickDur);
             float decay = u * u;
-            float w = Time.unscaledTime * 58f;
+            float w = AdPause.Unscaled * 58f;
             _pokerKick = new Vector2(
                 Mathf.Sin(w) * _pokerKickAmp * decay + Mathf.Cos(w * 1.31f) * _pokerKickTwist * 0.35f * decay,
                 Mathf.Cos(w * 1.19f) * _pokerKickAmp * 0.72f * decay);
@@ -14799,9 +14841,9 @@ namespace FlockFive
         void TickPokerDash(float s)
         {
             if (_pokerChainBreak >= 0f)
-                _pokerChainBreak += Time.unscaledDeltaTime / 0.72f;
+                _pokerChainBreak += AdPause.UnscaledDelta / 0.72f;
             float want = PokerBetBarAway() ? 1f : 0f;
-            _pokerDash = Mathf.MoveTowards(_pokerDash, want, Time.unscaledDeltaTime * 3.4f);
+            _pokerDash = Mathf.MoveTowards(_pokerDash, want, AdPause.UnscaledDelta * 3.4f);
         }
 
         // Bet bar tucks under the screen while the fan hand needs the space
@@ -14867,7 +14909,7 @@ namespace FlockFive
             if (_pokerWinT >= WinLead) RevealPokerPay(false);
             if (_pokerWinT >= WinDoneAt) return;
             float prev = _pokerWinT;
-            _pokerWinT += Time.unscaledDeltaTime;
+            _pokerWinT += AdPause.UnscaledDelta;
             if (WinJackpot)
             {
                 // Rank banner slams in with the poker fanfare; the WIN amount follows with a chime.
@@ -15319,7 +15361,7 @@ namespace FlockFive
             float hit = landing ? 1f - land : 0f;
             // Glow plate eases in over the landing (it used to pop in at the handoff frame).
             float plateIn = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(land / 0.7f));
-            float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.2f);
+            float breathe = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * 2.2f);
             var plate = new Rect(textR.x - r.height * 0.5f, textR.y - r.height * 0.3f, textR.width + r.height, textR.height * 1.6f);
             GUI.color = new Color(1f, 0.80f, 0.28f, (0.30f + 0.12f * breathe) * plateIn);
             GUI.DrawTexture(plate, GlowTex(), ScaleMode.StretchToFill, true);
@@ -15898,7 +15940,7 @@ namespace FlockFive
             // masked to the gold frame, stars, ribbon and WILD lettering) crossfade so the rainbow
             // drifts across the card; paper and jester stay clean. cos^2 weights over three phases
             // sum to a constant, so overall foil strength never pulses.
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float cyc = Mathf.Repeat(t * 0.28f + phase, 1f);
             for (int i = 0; i < 3; i++)
             {
@@ -16676,7 +16718,7 @@ namespace FlockFive
             _hivePage = Mathf.Clamp(_hivePage, 0, pages - 1);
 
             bool turning = _hivePageTurn < 0.55f;
-            if (turning) _hivePageTurn += Time.unscaledDeltaTime;
+            if (turning) _hivePageTurn += AdPause.UnscaledDelta;
 
             // Ultra Pro clear page: 3×3 sleeves on a binder sheet.
             // Pager hit is the painted chip and is at least 48pt.
@@ -16892,7 +16934,7 @@ namespace FlockFive
         {
             bool tick = HiveGuiTick();
             const float dur = 0.28f;
-            if (tick) _hiveInspectT += Time.unscaledDeltaTime;
+            if (tick) _hiveInspectT += AdPause.UnscaledDelta;
             float u = Mathf.Clamp01(_hiveInspectT / dur);
             float ease = 1f - (1f - u) * (1f - u); // easeOut quad
             float t = _hiveInspectClosing ? (1f - ease) : ease;
@@ -16978,7 +17020,7 @@ namespace FlockFive
         void TickHiveFlip()
         {
             if (_hiveFlip < 0) return;
-            _hiveFlipT += Time.unscaledDeltaTime;
+            _hiveFlipT += AdPause.UnscaledDelta;
             if (_hiveFlipT < 0.28f) return;
             if ((uint)_hiveFlip < (uint)_hiveFaceBack.Length)
                 _hiveFaceBack[_hiveFlip] = !_hiveFaceBack[_hiveFlip];
@@ -17230,7 +17272,7 @@ namespace FlockFive
 
         void DrawFoilSheen(Rect face, BeeFinish finish, int slot, bool inspectView)
         {
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float phase = slot * 0.37f;
             float amp = inspectView ? 1.15f : 1f;
 
@@ -17334,7 +17376,7 @@ namespace FlockFive
             if ((uint)i >= (uint)Hive.AlbumSlots) return;
             if (!inspectView && HiveCardFresh(i))
             {
-                float p = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 5.2f);
+                float p = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * 5.2f);
                 GUI.color = new Color(1f, 0.82f, 0.28f, 0.28f + 0.50f * p);
                 float m = (3f + 3f * p) * Mathf.Max(1f, s);
                 GUI.DrawTexture(new Rect(card.x - m, card.y - m, card.width + m * 2f, card.height + m * 2f), Texture2D.whiteTexture);
@@ -17604,7 +17646,7 @@ namespace FlockFive
                 _levelHiveFrame = Time.frameCount;
                 if (count > 1 && _hiveInspect < 0 && !_levelHiveDrag)
                 {
-                    _levelHiveAuto += Time.unscaledDeltaTime;
+                    _levelHiveAuto += AdPause.UnscaledDelta;
                     if (_levelHiveAuto >= HiveCarouselStep)
                     {
                         _levelHiveAuto = 0f;
@@ -17912,7 +17954,7 @@ namespace FlockFive
                 return;
             }
             float d = HiveWrap(_levelHivePick - _levelHiveShown, count);
-            float step = Time.unscaledDeltaTime / 0.28f;
+            float step = AdPause.UnscaledDelta / 0.28f;
             if (Mathf.Abs(d) <= step) _levelHiveShown = _levelHivePick;
             else _levelHiveShown += Mathf.Sign(d) * step;
             if (_levelHiveShown < 0f) _levelHiveShown += count;
@@ -18046,7 +18088,7 @@ namespace FlockFive
             if (_gift == GiftFace.Card) return;
             if (!GatePopup(PopupKind.Gift, false)) return;
             _gift = GiftFace.Card;
-            if (_freezeOffer) _freezeShownAt = Time.unscaledTime;
+            if (_freezeOffer) _freezeShownAt = AdPause.Unscaled;
             AdLog.Add("branch offer shown (" + OfferReason() + ")");
         }
 
@@ -18307,18 +18349,18 @@ namespace FlockFive
             float frostA = 1f;
             if (_freezeOffer)
             {
-                float age = _freezeShownAt < 0f ? 0f : Time.unscaledTime - _freezeShownAt;
+                float age = _freezeShownAt < 0f ? 0f : AdPause.Unscaled - _freezeShownAt;
                 float signU = PopupMotion.Beat(age, 0f, 0.48f);
                 card.y += PopupMotion.Fall(signU, -Mathf.Max(40f * s, card.height * 0.42f));
                 retryU = PopupMotion.Beat(age, 0.18f, 0.32f);
                 contU = PopupMotion.Beat(age, 0.30f, 0.34f);
                 frostA = PopupMotion.EnterAlpha(signU);
-                SparkleFx.Tick(Time.unscaledDeltaTime);
+                SparkleFx.Tick(AdPause.UnscaledDelta);
                 SparkleFx.DriftSnow(new Rect(0f, 0f, Screen.width, Screen.height), FoliageSway.LowPower ? 3 : 6);
                 DrawFrostVignette(s, frostA);
             }
 
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
             var glow = GlowTex();
             float aura = card.width * (0.06f + 0.02f * breathe);
@@ -18587,7 +18629,7 @@ namespace FlockFive
             GUIUtility.ScaleAroundPivot(new Vector2(pop, pop), bar.center);
             if (!held)
             {
-                float wave = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.5f);
+                float wave = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * 2.5f);
                 var glow = GlowTex();
                 float pad = bar.height * (0.16f + 0.05f * wave);
                 GUI.color = new Color(0.50f, 0.95f, 0.58f, 0.18f + 0.10f * wave);
@@ -18988,7 +19030,7 @@ namespace FlockFive
             float radius = Mathf.Max(16f, 14f * s);
             var c = new Vector2(Screen.width * 0.5f, Screen.height * 0.46f);
             const int n = 8;
-            float phase = Time.unscaledTime * 8f;
+            float phase = AdPause.Unscaled * 8f;
             for (int i = 0; i < n; i++)
             {
                 float ang = (i / (float)n) * Mathf.PI * 2f - Mathf.PI * 0.5f;
@@ -19019,7 +19061,7 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(stage.x - 4f, stage.y, 4f, stage.height), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(stage.xMax, stage.y, 4f, stage.height), Texture2D.whiteTexture);
             GUI.color = Color.white;
-            float sheen = Mathf.Repeat(Time.unscaledTime * 0.55f, 1.4f);
+            float sheen = Mathf.Repeat(AdPause.Unscaled * 0.55f, 1.4f);
             if (sheen < 1f)
             {
                 float fade = Mathf.Sin(sheen * Mathf.PI);
@@ -19039,7 +19081,7 @@ namespace FlockFive
 
         void DrawGiftThanks(float s)
         {
-            float u = Mathf.Max(0f, Time.unscaledTime - _giftThanksAt);
+            float u = Mathf.Max(0f, AdPause.Unscaled - _giftThanksAt);
             DrawGiftConfetti(u, s);
 
             float pop = Mathf.Clamp01(u / 0.22f);

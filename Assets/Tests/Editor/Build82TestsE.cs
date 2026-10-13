@@ -132,7 +132,7 @@ namespace FlockFive.Editor
                 && life.IndexOf("HoldStill") >= 0
                 && life.IndexOf("Cloud") >= 0
                 && shader.IndexOf("_Wind.y < 0.05") >= 0
-                && taps == 1,
+                && taps <= 3, // b85: paint + two foliage-mask taps
                 "taps=" + taps);
 
             string[] play =

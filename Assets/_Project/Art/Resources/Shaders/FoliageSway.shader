@@ -17,6 +17,7 @@ Shader "FlockFive/FoliageSway"
         _A3 ("A3", Vector) = (0,1,0,0)
         _Wind ("Wind", Vector) = (0,0,0,0)
         _Wipe ("Wipe", Vector) = (0,0.12,0,0)
+        _SwayMask ("Foliage mask", 2D) = "white" {}
     }
     SubShader
     {
@@ -34,6 +35,7 @@ Shader "FlockFive/FoliageSway"
             #include "UnityCG.cginc"
 
             sampler2D _MainTex;
+            sampler2D _SwayMask;
             fixed4 _Color;
             float4 _P0, _P1, _P2, _P3;
             float4 _A0, _A1, _A2, _A3;
@@ -75,13 +77,17 @@ Shader "FlockFive/FoliageSway"
             fixed4 frag (v2f i) : SV_Target
             {
                 float speed = _Wind.y < 0.05 ? 1.0 : _Wind.y;
-                float t = _Time.y * speed;
+                float t = (_Wind.z > 0.0 ? _Wind.z : _Time.y) * speed;
                 float gust = saturate(_Wind.x);
                 float2 uv = i.uv;
                 uv = Sway(uv, _P0, _A0, gust, t);
                 uv = Sway(uv, _P1, _A1, gust, t);
                 uv = Sway(uv, _P2, _A2, gust, t);
                 uv = Sway(uv, _P3, _A3, gust, t);
+                // Build 85: only foliage moves. Sky, clouds, moon/sun and the far background stay
+                // rigid; a texel is displaced only if it is foliage or would show foliage.
+                float leaf = max(tex2D(_SwayMask, i.uv).r, tex2D(_SwayMask, saturate(uv)).r);
+                uv = lerp(i.uv, uv, leaf);
                 fixed4 col = tex2D(_MainTex, saturate(uv)) * i.color;
                 if (_Wipe.w > 0.5)
                 {

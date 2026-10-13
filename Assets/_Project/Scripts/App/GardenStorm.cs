@@ -943,13 +943,24 @@ namespace FlockFive
             }
         }
 
+        // Tests: one frame with the given unscaled step through the same rules.
+        public static void StepForTest(float unscaledDt)
+        {
+            float dt = unscaledDt;
+            if (AdPause.Active || (GamePause.Paused && !(GamePause.TutorHold && !Ads.IsShowing))) dt = 0f;
+            else if (dt > Spike) dt = 0f;
+            _delta = dt;
+            _now += dt;
+            _frame = Time.frameCount;
+        }
+
         static void Tick()
         {
             int frame = Time.frameCount;
             if (frame == _frame) return;
             _frame = frame;
             float dt = Time.unscaledDeltaTime;
-            if (GamePause.Paused && !(GamePause.TutorHold && !Ads.IsShowing))
+            if (AdPause.Active || (GamePause.Paused && !(GamePause.TutorHold && !Ads.IsShowing)))
                 dt = 0f;
             else if (_drop > 0)
             {

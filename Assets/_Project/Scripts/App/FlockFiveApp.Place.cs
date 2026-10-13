@@ -249,7 +249,7 @@ namespace FlockFive
         // Pulse and disc stay here so the two icons cannot drift.
         static void DrawReadyBadge(float cx, float cy, float plateWidth)
         {
-            float breathe = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.6f);
+            float breathe = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * 2.6f);
             float dot = plateWidth * (0.16f + 0.02f * breathe);
             DrawNotifyBadge(cx, cy, dot, null);
         }

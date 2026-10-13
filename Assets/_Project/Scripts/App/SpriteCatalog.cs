@@ -282,6 +282,29 @@ namespace FlockFive
             return _rubyPose[i] != null ? _rubyPose[i] : Bird(BirdColor.Ruby);
         }
 
+        // Build 85: the flap frame whose skull seats the kit for every flap frame of that
+        // bird (bird_<color>[_f]_2..4 -> _1). Rest and unknown sprites come back unchanged.
+        static readonly System.Collections.Generic.Dictionary<int, Sprite> _seatBody = new System.Collections.Generic.Dictionary<int, Sprite>();
+        public static Sprite FlapSeatBody(Sprite s)
+        {
+            if (s == null) return null;
+            int id = s.GetInstanceID();
+            if (_seatBody.TryGetValue(id, out var hit)) return hit;
+            var res = s;
+            string n = s.texture != null ? s.texture.name : s.name;
+            if (n.StartsWith("bird_") && n.Length > 2 && n[n.Length - 2] == '_')
+            {
+                char k = n[n.Length - 1];
+                if (k >= '2' && k <= '4')
+                {
+                    var one = TryLoad("Sprites/" + n.Substring(0, n.Length - 1) + "1", s.pixelsPerUnit);
+                    if (one != null) res = one;
+                }
+            }
+            _seatBody[id] = res;
+            return res;
+        }
+
         // Highest opaque pixel of the head column, between the eye and the back of
         // the skull, ignoring the beak and raised wings. Bird-local units. Cached
         // per sprite so the kit can ride every flap frame without scanning again.

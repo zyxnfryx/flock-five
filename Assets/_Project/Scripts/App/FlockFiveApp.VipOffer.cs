@@ -28,7 +28,7 @@ namespace FlockFive
 
             // Build 58 pacing (Brandon, build 51: the entrance felt hurried and the text moved
             // while the button glow played). One beat at a time; each starts after the last ends.
-            // All ages are Time.unscaledTime deltas, so the pace is the same at any frame rate.
+            // All ages are AdPause.Unscaled deltas, so the pace is the same at any frame rate.
             //   First open (full):  dim + rail glow 0-0.45 | crown flies to the card centre
             //                       0.45-0.95 | burst at 0.95 (gold sparkles, light flash,
             //                       pop + thud), the crown pops into it. Build 66: the card
@@ -181,7 +181,7 @@ namespace FlockFive
                 _member = NoAds.Owned;
                 _open = true;
                 _closeAt = -1f;
-                _showAt = Time.unscaledTime;
+                _showAt = AdPause.Unscaled;
                 _skipped = false;
                 _thud = false;
                 _revealed = 0;
@@ -311,7 +311,7 @@ namespace FlockFive
             static void SettleWelcome()
             {
                 if (!_welcome) return;
-                float now = Time.unscaledTime;
+                float now = AdPause.Unscaled;
                 if (_welExitAt < 0f && now - _welAt >= WelHold) _welExitAt = now;
                 if (_welExitAt < 0f) return;
                 float exitU = PopupMotion.Beat(now - _welExitAt, 0f, _reduce ? 0.2f : WelExit);
@@ -339,14 +339,14 @@ namespace FlockFive
                     _open = false;
                     return;
                 }
-                _closeAt = Time.unscaledTime;
+                _closeAt = AdPause.Unscaled;
             }
 
             static void Dismiss() => BeginClose(false);
 
             static bool Closing => _closeAt >= 0f;
 
-            static float Age => _showAt < 0f ? 99f : Time.unscaledTime - _showAt;
+            static float Age => _showAt < 0f ? 99f : AdPause.Unscaled - _showAt;
 
             static float Span
             {
@@ -368,12 +368,12 @@ namespace FlockFive
                 if (!_open) return;
                 SyncNote();
                 string note = NoAds.RestoreNote;
-                float noteLife = _noteUntil - Time.unscaledTime;
+                float noteLife = _noteUntil - AdPause.Unscaled;
                 bool showNote = !string.IsNullOrEmpty(note) && noteLife > 0f;
                 if (!_member && NoAds.Owned && !Closing) BeginClose(true);
                 if (!_open) return;
 
-                float now = Time.unscaledTime;
+                float now = AdPause.Unscaled;
                 float closeT = Closing ? now - _closeAt : 0f;
                 if (Closing && closeT >= CloseDur)
                 {
@@ -518,7 +518,7 @@ namespace FlockFive
             {
                 if (NoAds.RestoreSerial == _noteSerial) return;
                 _noteSerial = NoAds.RestoreSerial;
-                _noteUntil = string.IsNullOrEmpty(NoAds.RestoreNote) ? 0f : Time.unscaledTime + 3.6f;
+                _noteUntil = string.IsNullOrEmpty(NoAds.RestoreNote) ? 0f : AdPause.Unscaled + 3.6f;
             }
 
             static float TitleStart => _member ? MemberTitleStart : (_full ? FullTitleStart : ShortTitleStart);
@@ -896,7 +896,7 @@ namespace FlockFive
                 // Idle size stays put. PushButton owns the press. The sheen is the idle motion.
                 var disc = DrawPopupButton(flower, held, true);
                 if (sparkle)
-                    PushButton.DrawSheen(flower, PushButton.SheenU(Time.unscaledTime), 0.9f, false);
+                    PushButton.DrawSheen(flower, PushButton.SheenU(AdPause.Unscaled), 0.9f, false);
                 if (_buy == null)
                     _buy = new GUIStyle(GUI.skin.label)
                     {
@@ -929,7 +929,7 @@ namespace FlockFive
                 float sz = disc.width * 0.22f;
                 var sr = new Rect(disc.xMax - sz * 0.7f, disc.y - sz * 0.08f, sz, sz);
                 var prev = GUI.matrix;
-                GUIUtility.RotateAroundPivot(Time.unscaledTime * 40f, sr.center);
+                GUIUtility.RotateAroundPivot(AdPause.Unscaled * 40f, sr.center);
                 GUI.color = new Color(1f, 0.96f, 0.75f, 0.9f);
                 GUI.DrawTexture(sr, spark.texture, ScaleMode.ScaleToFit, true);
                 GUI.matrix = prev;
@@ -973,7 +973,7 @@ namespace FlockFive
                 PlayerPrefs.Save();
                 _welcome = true;
                 VipWelcomeHoldsRail = true;
-                _welAt = Time.unscaledTime;
+                _welAt = AdPause.Unscaled;
                 _welExitAt = -1f;
                 _welFanfare = false;
                 _reduce = PlayerPrefs.GetInt("flockfive.reduceMotion", 0) == 1;
@@ -984,7 +984,7 @@ namespace FlockFive
             // the rail slot it becomes. A tap after the pop skips to that glide.
             static void DrawWelcome(float s)
             {
-                float now = Time.unscaledTime;
+                float now = AdPause.Unscaled;
                 float age = now - _welAt;
                 if (_welExitAt < 0f && age >= WelHold) _welExitAt = now;
                 float exitU = _welExitAt >= 0f ? PopupMotion.Beat(now - _welExitAt, 0f, _reduce ? 0.2f : WelExit) : 0f;

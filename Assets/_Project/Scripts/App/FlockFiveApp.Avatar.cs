@@ -431,7 +431,7 @@ namespace FlockFive
                 _gloveVis = false;
             }
             _adoptLive = true;
-            float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.05f);
+            float dt = Mathf.Clamp(AdPause.UnscaledDelta, 0f, 0.05f);
             _adoptClock += dt;
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             TickAdoptMotion(dt);
@@ -683,6 +683,12 @@ namespace FlockFive
             if (CoachResetHolds()) return;
             var bubble = _adoptLineR;
             if (bubble.width < 2f) return;
+            int pk = _adoptPick < 0 || _adoptPick > 4 ? 1 : _adoptPick;
+            float ic = HomeAvatarIcon(s);
+            var bc = AdoptBirdCenter(pk, ic, s, out _);
+            // The arriving bird is the subject (its flight is kept under the band, see HomeWanderBounds).
+            Rect subj = new Rect(bc.x - ic * 0.7f, bc.y - ic * 0.7f, ic * 1.4f, ic * 1.4f);
+            NoteCaptionSubject(subj);
             PaintCoachCaption(line, bubble, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
         }
 
@@ -1163,7 +1169,7 @@ namespace FlockFive
             {
                 if (_nameTagFrame != frame)
                 {
-                    BirdNameTag.Follow(ref _nameTagDx, ref _nameTagDy, ref _nameTagReady, wantDx, wantDy, Time.unscaledDeltaTime);
+                    BirdNameTag.Follow(ref _nameTagDx, ref _nameTagDy, ref _nameTagReady, wantDx, wantDy, AdPause.UnscaledDelta);
                     _nameTagFrame = frame;
                 }
                 dx = _nameTagDx;
@@ -1173,7 +1179,7 @@ namespace FlockFive
             {
                 if (_adoptTagFrame != frame)
                 {
-                    BirdNameTag.Follow(ref _adoptTagDx, ref _adoptTagDy, ref _adoptTagReady, wantDx, wantDy, Time.unscaledDeltaTime);
+                    BirdNameTag.Follow(ref _adoptTagDx, ref _adoptTagDy, ref _adoptTagReady, wantDx, wantDy, AdPause.UnscaledDelta);
                     _adoptTagFrame = frame;
                 }
                 dx = _adoptTagDx;
@@ -1298,7 +1304,7 @@ namespace FlockFive
                 BirdIdle.KitAnchor(worn, 0, faceLeft, body, rest, spr, out lx, out ly, out fit, out tilt, out flip);
             else
             {
-                float dt = Time.unscaledDeltaTime;
+                float dt = AdPause.UnscaledDelta;
                 if (dt < 0f) dt = 0f;
                 else if (dt > 0.05f) dt = 0.05f;
                 BirdIdle.KitFollow(!bow, body, next, phase, faceLeft, spr, rest, glideSlot, dt,
@@ -1643,6 +1649,9 @@ namespace FlockFive
             if (_adoptLive)
             {
                 float under = AdoptCaptionRect(s).yMax + CaptionLayout.BoxPad(Screen.height).y + half;
+                // b86: the banner is taller than the old plate; fly under its real band.
+                if (_bannerLastFrame >= Time.frameCount - 2 && _bannerLast.width > 2f)
+                    under = Mathf.Max(under, _bannerLast.yMax + half);
                 if (under > top) top = under;
             }
             float minX = reach;
@@ -1964,7 +1973,7 @@ namespace FlockFive
             var leaf = SpriteCatalog.Leaf;
             if (leaf == null || leaf.texture == null || px < 0.5f) return;
             float lh = Mathf.Clamp(px * 0.42f, visH * 0.16f, visH * 0.38f);
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             DrawOneLeaf(leaf, center, px, true, HomeBranchAnchor(), -0.20f, lh * 0.90f, -18f, t, 0);
             DrawOneLeaf(leaf, center, px, true, HomeBranchAnchor(), 0.12f, lh * 0.70f, 14f, t, 1);
             DrawOneLeaf(leaf, center, px, true, HomeBranchAnchor(), 0.30f, lh * 0.82f, 22f, t, 2);

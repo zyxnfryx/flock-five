@@ -3,7 +3,7 @@ using UnityEngine;
 namespace FlockFive
 {
     // Shared GUI sparkle / twinkle. SpriteCatalog.Sparkle (celebration glint) only —
-    // never the bird-selection glow. Clock is Time.unscaledTime so twinkles stay
+    // never the bird-selection glow. Clock is AdPause.Unscaled so twinkles stay
     // smooth under pause / timeScale 0. Static offset tables; no per-frame allocs.
     public static class SparkleFx
     {
@@ -29,7 +29,7 @@ namespace FlockFive
             float[] ox = wide ? OxWide : Ox;
             float[] oy = wide ? OyWide : Oy;
             float[] ph = wide ? PhWide : Ph;
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float cr = gold ? 1f : 1f;
             float cg = gold ? 0.97f : 0.98f;
             float cb = gold ? 0.82f : 0.94f;
@@ -67,7 +67,7 @@ namespace FlockFive
             var tex = spr != null ? spr.texture : null;
             if (tex == null) return;
 
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             float cg = gold ? 0.97f : 0.98f;
             float cb = gold ? 0.82f : 0.94f;
             float baseSz = Mathf.Min(r.width, r.height) * sizeFrac;
@@ -382,7 +382,7 @@ namespace FlockFive
             var spark = SpriteCatalog.Sparkle;
             Texture tex = spark != null ? spark.texture : null;
             if (tex == null) return;
-            float t = Time.unscaledTime;
+            float t = AdPause.Unscaled;
             for (int i = 0; i < Cap; i++)
             {
                 if (_bits[i].On == 0 || _bits[i].Kind != Snow) continue;

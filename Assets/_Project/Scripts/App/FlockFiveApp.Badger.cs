@@ -279,7 +279,7 @@ namespace FlockFive
                         break;
                     }
                     _bgBossIx = ix;
-                    _bgBossAt = Time.unscaledTime;
+                    _bgBossAt = AdPause.Unscaled;
                     _bgT = 0f;
                     _bgStage = BadgerStage.YourPick;
                     _bgLine = BadgerCopy.YourPick;
@@ -387,7 +387,7 @@ namespace FlockFive
 
             if (_bgStage == BadgerStage.YourPick && _bgBossIx >= 0)
             {
-                float age = Time.unscaledTime - _bgBossAt;
+                float age = AdPause.Unscaled - _bgBossAt;
                 float phaseHop = Mathf.Repeat(age < 0f ? 0f : age, 0.28f) / 0.28f;
                 if (_bgHopPhase >= 0f && _bgHopPhase < 0.55f && phaseHop >= 0.55f && age < BadgerDuel.LungeSeconds)
                     SparkleFx.DustPuff(_bgFxFoot, 7);
@@ -556,7 +556,7 @@ namespace FlockFive
                 return;
             }
             _bgPlayerIx = i;
-            _bgPlayerAt = Time.unscaledTime;
+            _bgPlayerAt = AdPause.Unscaled;
             _bgT = 0f;
             _bgStage = BadgerStage.Reveal;
             _bgLine = "";
@@ -794,7 +794,7 @@ namespace FlockFive
         void DrawBadgerGuideGlow(Rect r)
         {
             if (!GuiPaint() || r.width < 2f || r.height < 2f) return;
-            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6.5f);
+            float pulse = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * 6.5f);
             float pad = r.width * Mathf.Lerp(0.36f, 0.62f, pulse);
             var c = Color.Lerp(BadgerGold, BadgerCream, pulse);
             c.a = Mathf.Lerp(0.70f, 1f, pulse);
@@ -1015,7 +1015,7 @@ namespace FlockFive
                 GUI.color = Color.white;
             }
             int left = BadgerMeter.LeftToGo(target, filled);
-            float now = Time.unscaledTime;
+            float now = AdPause.Unscaled;
             float tickAt = side == 0 ? _bgLeftAtL : _bgLeftAtR;
             int shown = side == 0 ? _bgLeftL : _bgLeftR;
             if (shown >= 0 && left < shown) tickAt = now;
@@ -1133,7 +1133,7 @@ namespace FlockFive
                 _home = HomeFace.Splash;
                 return;
             }
-            if (Event.current.type == EventType.Layout) TickBadger(Time.unscaledDeltaTime);
+            if (Event.current.type == EventType.Layout) TickBadger(AdPause.UnscaledDelta);
             var L = BadgerLayout();
             float s = L.S;
             DrawHomeWash(0.58f);
@@ -1278,11 +1278,11 @@ namespace FlockFive
 
             if (_bgFight != null && _bgBossIx >= 0)
             {
-                float u = Mathf.SmoothStep(0f, 1f, (Time.unscaledTime - _bgBossAt) / BadgerSlide);
+                float u = Mathf.SmoothStep(0f, 1f, (AdPause.Unscaled - _bgBossAt) / BadgerSlide);
                 bool block = _bgResolved && BadgerFight.IsBlock(_bgRound.Power);
                 int honey = _bgResolved ? _bgRound.BossFinal : _bgFight.BossHoney(_bgBossIx);
                 var r = LerpRect(bossHex.Draw(_bgBossIx), bossSlot, u);
-                if (block) r.x += Mathf.Sin(Time.unscaledTime * 38f) * 5f * s * Mathf.Clamp01(1.2f - _bgT);
+                if (block) r.x += Mathf.Sin(AdPause.Unscaled * 38f) * 5f * s * Mathf.Clamp01(1.2f - _bgT);
                 bool win = _bgResolved && _bgRound.BossGained > 0;
                 if (win) DrawBadgerWinGlow(r);
                 DrawBadgerTile(r, BadgerLook.Face, honey, BadgerHide, BeeFinish.Normal, block ? 0.55f : 1f, null);
@@ -1292,7 +1292,7 @@ namespace FlockFive
             }
             if (_bgFight != null && _bgPlayerIx >= 0)
             {
-                float u = Mathf.SmoothStep(0f, 1f, (Time.unscaledTime - _bgPlayerAt) / BadgerSlide);
+                float u = Mathf.SmoothStep(0f, 1f, (AdPause.Unscaled - _bgPlayerAt) / BadgerSlide);
                 var t = _bgLoadout[_bgPlayerIx];
                 int honey = _bgResolved ? _bgRound.PlayerFinal : _bgFight.PlayerHoney(_bgPlayerIx);
                 var r = LerpRect(youHex.Draw(_bgPlayerIx), youSlot, u);
@@ -1614,7 +1614,7 @@ namespace FlockFive
             }
             if (_bgBossIx >= 0 && _bgStage == BadgerStage.YourPick)
             {
-                age = Time.unscaledTime - _bgBossAt;
+                age = AdPause.Unscaled - _bgBossAt;
                 if (age < BadgerDuel.LungeSeconds) beat = BadgerDuelBeat.Lunge;
             }
         }

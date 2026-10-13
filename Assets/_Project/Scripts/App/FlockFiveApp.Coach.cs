@@ -218,6 +218,10 @@ namespace FlockFive
         bool _gloveMirror;
         // One veil for every lesson glove, including the home avatar.
         enum TutorGloveAct { None, Reappear, Live, FadeOutOnTap, Hidden }
+        int _gloveHidStep = -1;
+        float _gloveHidAt;
+        const float GloveReturnSec = 0.9f;
+        public static int GloveReturns;
         TutorGloveAct _gloveAct;
         float _gloveAlpha;
         float _gloveFadeFrom;
@@ -1144,7 +1148,7 @@ namespace FlockFive
             {
                 _coachGlowKick = 1f;
                 CoachSpawnRipple(_cueAimWorld);
-                float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.35f));
+                float pulse = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * (Mathf.PI * 2f / 1.35f));
                 float breathe = 0.94f + 0.08f * pulse;
                 const float spread = 1.75f;
                 float flash = (0.40f + 0.28f * pulse + 0.62f) * EaseOutCubic(_coachFade);
@@ -1159,7 +1163,7 @@ namespace FlockFive
         void ShowCoachGlow(Vector3 glow, float dx, float dy)
         {
             CoachEnsureGlow();
-            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.35f));
+            float pulse = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * (Mathf.PI * 2f / 1.35f));
             float breathe = 0.94f + 0.08f * pulse;
             // Quad is larger than the limb so the soft falloff, not the hard edge, covers it.
             const float spread = 1.75f;
@@ -1404,10 +1408,27 @@ namespace FlockFive
                     _gloveVis = false;
                     _gloveHoldPose = false;
                     _gloveReady = false;
+                    _gloveHidStep = LiveCoachStep();
+                    _gloveHidAt = AdPause.Unscaled;
                     return;
                 }
                 _gloveAlpha = _gloveFadeFrom * (1f - u);
                 _gloveVis = true;
+                return;
+            }
+            if (_gloveAct == TutorGloveAct.Hidden)
+            {
+                // Build 85: a faded glove whose tap did not move the lesson on (the press was
+                // blocked or missed the control) comes back, so a forced step can never be
+                // left with its caption up and no hand. A step that advanced re-poses anyway.
+                if (_gloveHidStep >= 0 && LiveCoachStep() == _gloveHidStep && !Pressed(out _)
+                    && AdPause.Unscaled - _gloveHidAt > GloveReturnSec)
+                {
+                    _gloveHidStep = -1;
+                    GloveVeilReset();
+                    _gloveVis = false;
+                    GloveReturns++;
+                }
                 return;
             }
             if (_gloveAct != TutorGloveAct.Reappear) return;
@@ -1622,7 +1643,7 @@ namespace FlockFive
                 arcPos = Vector2.Lerp(_gloveTip, aim, Mathf.Clamp01(travel));
             else
                 TapArc(_gloveTip, aim, _gloveAway, s, travel, out arcPos, out _, _gloveMirror, _gloveApexMinY);
-            float wig = hold ? 0f : Mathf.Sin(Time.unscaledTime * 46f) * 7f * _gloveWiggle;
+            float wig = hold ? 0f : Mathf.Sin(AdPause.Unscaled * 46f) * 7f * _gloveWiggle;
             var axis = _gloveAway.sqrMagnitude > 0.0001f ? _gloveAway : Vector2.right;
             _gloveShown = arcPos - axis.normalized * wig * (1f - travel);
             _gloveShownAng = _gloveRestAng;
@@ -3114,6 +3135,121 @@ namespace FlockFive
         // full box, StandardCaptionSlack for the standard caption). Text box and font unchanged.
         // topAlign: a top-anchored seat (poker hold/back) keeps its plate top where the full
         // plate's top was and lifts the text with it, so the gap above stays the seat's gap.
+        public static bool CaptionBanner = true;
+        public static int BannerUses, SnugUses;
+        public static string BannerSkip = "", BannerLast = "";
+        GUIContent _bandContent;
+        Rect _captionSubject;
+        Rect _bannerLast;
+        int _bannerLastFrame = -10;
+        int _captionSubjectFrame = -10;
+        // A lesson names what its caption is about; the banner keeps off it.
+        void NoteCaptionSubject(Rect r) { _captionSubject = r; _captionSubjectFrame = Time.frameCount; }
+        string BannerText;
+
+        // Banner unless it cannot apply: a popup owns the screen (the caption belongs to that
+        // card), the bee callout (tied to its icon), or the band would cover the glove's
+        // target (captions and the glove never cover required UI).
+        // Build 86: a caption picks banner or snug ONCE, before its first frame, and keeps it.
+        // Before, the Daily line showed as a banner until its glove posed, then snapped to
+        // the snug box. The decision now also knows the lesson's target up front.
+        string _bandStyleFor;
+        bool _bandStyleBanner;
+        bool CaptionBannerFits(string text, Rect seat, float s, out Rect band, out int px)
+        {
+            bool fits = CaptionBannerFitsRaw(text, seat, s, out band, out px);
+            if (_bandStyleFor != text)
+            {
+                _bandStyleFor = text;
+                _bandStyleBanner = fits && !BandCoversStepTarget(band);
+                if (!_bandStyleBanner) { SnugUses++; BannerSkip = "step target"; }
+            }
+            return _bandStyleBanner && fits;
+        }
+
+        // The live step's own control, known before its glove poses (home rail lessons).
+        bool BandCoversStepTarget(Rect band)
+        {
+            int rail = HomeStepRail();
+            if (rail < 0) return false;
+            var r = RailTapRect(rail);
+            return r.width > 2f && band.Overlaps(r);
+        }
+
+        bool CaptionBannerFitsRaw(string text, Rect seat, float s, out Rect band, out int px)
+        {
+            band = default; px = 0;
+            if (!CaptionBanner || string.IsNullOrEmpty(text)) return false;
+            var om = OpenModal();
+            // The adopt scene is a home lesson, not a card: its captions take the banner.
+            bool popup = om != ModalBlock.Id.None && om != ModalBlock.Id.Adopt && om != ModalBlock.Id.Streak;
+            if (popup || CaptionLayout.WantsBeeIcon(text)) { SnugUses++; BannerSkip = popup ? "popup " + OpenModal() : "bee"; return false; }
+            var st = CoachLineStyle();
+            if (_bandContent == null) _bandContent = new GUIContent();
+            _bandContent.text = text;
+            float w = Screen.width;
+            int hi = Mathf.Max(22, Mathf.RoundToInt(44f * Mathf.Max(1f, Screen.height / 720f) * 0.62f));
+            int keep = st.fontSize; bool wrap = st.wordWrap;
+            st.wordWrap = true;
+            float th = 0f;
+            for (px = hi; px >= 18; px -= 2)
+            {
+                st.fontSize = px;
+                th = st.CalcHeight(_bandContent, w * 0.92f);
+                if (th <= st.lineHeight * 2.2f) break;
+            }
+            // Polish: two balanced lines (like 'Look, a bird / followed you home!'), not a
+            // long first line and an orphan word: break at the space nearest the middle.
+            st.wordWrap = false;
+            BannerText = text;
+            float one = st.CalcSize(_bandContent).x;
+            if (one > w * 0.92f && text.IndexOf('\n') < 0)
+            {
+                int best = -1; float bestD = float.MaxValue;
+                for (int i = 1; i < text.Length - 1; i++)
+                {
+                    if (text[i] != ' ') continue;
+                    _bandContent.text = text.Substring(0, i);
+                    float a1 = st.CalcSize(_bandContent).x;
+                    _bandContent.text = text.Substring(i + 1);
+                    float a2 = st.CalcSize(_bandContent).x;
+                    float d = Mathf.Abs(a1 - a2);
+                    if (a1 <= w * 0.92f && a2 <= w * 0.92f && d < bestD) { bestD = d; best = i; }
+                }
+                if (best > 0) BannerText = text.Substring(0, best) + "\n" + text.Substring(best + 1);
+                _bandContent.text = text;
+            }
+            st.fontSize = keep; st.wordWrap = wrap;
+            float h = th + px * 0.9f;
+            // Build 86: sit high, under the title (grow up from the old seat, over the VIP/coin
+            // row like the older banner), never over the lesson's subject (the arriving bird,
+            // the glove's target): hop above it if there is room under the title, else below.
+            float minTop = Mathf.Max(Screen.safeArea.yMin, TopHud() + (56f * 2f + 4f) * s * 0.92f);
+            float y = seat.y - (h - seat.height) * 0.85f;
+            if (y < minTop) y = minTop;
+            band = new Rect(0f, y, w, h);
+            float gap = 8f * s;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                bool moved = false;
+                for (int k = 0; k < 2; k++)
+                {
+                    Rect subj = k == 0 ? (_captionSubjectFrame >= Time.frameCount - 1 ? _captionSubject : default)
+                        : (_gloveTapRectOn && GloveTargetFresh() ? _gloveTapRect : default);
+                    if (subj.width < 2f || !band.Overlaps(subj)) continue;
+                    float up = subj.yMin - h - gap;
+                    band.y = up >= minTop ? up : subj.yMax + gap;
+                    moved = true;
+                }
+                if (!moved) break;
+            }
+            if (band.yMax > Screen.height) band.y = Screen.height - h;
+            if (_gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
+            BannerSkip = "";
+            BannerUses++;
+            return true;
+        }
+
         void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default, bool opaque = false, float slack = 1f, bool topAlign = false)
         {
             // Shared caption paint. Every lesson draws through here, so a reset
@@ -3146,6 +3282,25 @@ namespace FlockFive
                 drawR.height += grow;
             }
             float fade = EaseOutCubic(_coachFade);
+            if (CaptionBannerFits(text, drawR, s, out var band, out int bandPx))
+            {
+                // Build 85 (Brandon): the full-width translucent banner is the default caption.
+                // Edge to edge, large bold centered text, dims whatever row sits behind it.
+                NoteTutorPlate(band);
+                _bannerLast = band; _bannerLastFrame = Time.frameCount;
+                BannerLast = band + " fade " + fade + " ev " + (Event.current != null ? Event.current.type.ToString() : "-") + " px " + bandPx;
+                var prevC = GUI.color;
+                GUI.color = new Color(0f, 0f, 0f, 0.58f * fade);
+                GUI.DrawTexture(band, Texture2D.whiteTexture);
+                GUI.color = prevC;
+                int keep = st.fontSize;
+                st.fontSize = bandPx;
+                st.wordWrap = true;
+                StampBannerText(new Rect(band.x + band.width * 0.04f, band.y, band.width * 0.92f, band.height), BannerText ?? text, st, fade, true);
+                st.fontSize = keep;
+                st.wordWrap = false;
+                return;
+            }
             if (slack < 0.999f && _coachSizedTextH > 1f)
             {
                 var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
@@ -3482,7 +3637,7 @@ namespace FlockFive
             // Small poke along the finger, not a vertical bob. Zero at full dip so the
             // tap frame's fingertip is the pivot. Held still while a tap fades the hand.
             // Unscaled so GamePause does not freeze it.
-            float bob = _gloveHoldPose ? 0f : Mathf.Sin(Time.unscaledTime * 2.35f) * dh * 0.028f * (1f - dip);
+            float bob = _gloveHoldPose ? 0f : Mathf.Sin(AdPause.Unscaled * 2.35f) * dh * 0.028f * (1f - dip);
             float rad = ang * Mathf.Deg2Rad;
             pivot += new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
             float dw = dh * (tex.width / (float)tex.height);
@@ -4312,7 +4467,7 @@ namespace FlockFive
 
         bool CoachAteThisFrame() => _coachAteFrame == Time.frameCount;
 
-        static bool LessonGuardUp() => CoachDismiss.GuardBlocks(Time.unscaledTime, _lessonGuardUntil);
+        static bool LessonGuardUp() => CoachDismiss.GuardBlocks(AdPause.Unscaled, _lessonGuardUntil);
 
         // The tap that just dismissed a lesson, and any tap during the guard.
         bool LessonTapBlocked() => CoachAteThisFrame() || LessonGuardUp();
@@ -4327,7 +4482,7 @@ namespace FlockFive
                 LessonUp = true,
                 Step = step,
                 OnTarget = !CoachTap.Consumes(step),
-                Now = Time.unscaledTime,
+                Now = AdPause.Unscaled,
                 GuardUntil = _lessonGuardUntil,
             });
             _lessonGuardUntil = r.GuardUntil;
@@ -4348,7 +4503,7 @@ namespace FlockFive
                 OverBranch = deliverBoard,
                 OverGift = true,
                 OverHud = true,
-                Now = Time.unscaledTime,
+                Now = AdPause.Unscaled,
                 GuardUntil = _lessonGuardUntil,
             });
             if (r.DeliveredTarget && r.BranchPick) return false;
@@ -4828,7 +4983,7 @@ namespace FlockFive
                     return;
                 }
                 // Watchdog: a frozen garden never waits on one lesson for long.
-                _pestHeld += Mathf.Min(Time.unscaledDeltaTime, 0.1f);
+                _pestHeld += Mathf.Min(AdPause.UnscaledDelta, 0.1f);
                 if (_pestHeld > PestHoldMax && !Ads.IsShowing)
                 {
                     DismissPestIntro();
@@ -4943,7 +5098,7 @@ namespace FlockFive
         {
             if (CoachResetHolds()) return;
             if (GuiPaint())
-                _coachFade = Mathf.Min(1f, _coachFade + Time.unscaledDeltaTime / 0.30f);
+                _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
             int hi = fontHi > 0 ? fontHi : Mathf.Max(18, Mathf.RoundToInt(34f * s));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
             PaintCoachCaption(line, seat, s, 12, hi, platePad, opaque);
@@ -6114,7 +6269,7 @@ namespace FlockFive
                 return;
             }
             CoachEnsureGlow();
-            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * (Mathf.PI * 2f / 1.35f));
+            float pulse = 0.5f + 0.5f * Mathf.Sin(AdPause.Unscaled * (Mathf.PI * 2f / 1.35f));
             float breathe = 0.94f + 0.08f * pulse;
             float a = (0.40f + 0.28f * pulse) * _coachFade;
             if (a > 1f) a = 1f;
