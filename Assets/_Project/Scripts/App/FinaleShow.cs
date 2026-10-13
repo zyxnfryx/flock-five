@@ -441,6 +441,7 @@ namespace FlockFive
                 float k = Mathf.Pow(Mathf.Clamp01(t / approach), 2.4f);
                 peach.localPosition = new Vector3(0f, Mathf.Lerp(1.4f, 1.18f, k), Mathf.Lerp(6.8f, 0.18f, k));
                 peach.localScale = Vector3.one * Mathf.Lerp(0.05f, 1.15f, k);
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(11f, -4f, k));
                 if (sr != null) sr.sortingOrder = 8;
                 yield return null;
             }
@@ -455,7 +456,8 @@ namespace FlockFive
             {
                 stop += Time.unscaledDeltaTime;
                 float j = 1f - stop / HitStop;
-                peach.localScale = Vector3.one * 1.15f * (1f + 0.06f * j);
+                peach.localScale = new Vector3(1.15f * Mathf.Lerp(1f, 1.16f, j), 1.15f * Mathf.Lerp(1f, 0.84f, j), 1f);
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-4f, -9f, j));
                 yield return null;
             }
             if (CamShake.Live != null) CamShake.Live.Punch(0.46f, 0.27f, 3.8f, 0.22f);
@@ -561,9 +563,12 @@ namespace FlockFive
             for (int i = 0; i < n; i++)
             {
                 float ang = (i / (float)n) * Mathf.PI * 2f + Random.Range(-0.2f, 0.2f);
-                vel[i] = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang) + 0.25f, 0f) * Random.Range(4.5f, 8.5f);
+                var dir = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang) + 0.25f, 0f);
+                if (dir.sqrMagnitude < 0.01f) dir = Vector3.up;
+                dir.Normalize();
+                vel[i] = dir * Random.Range(4.5f, 8.5f);
                 spin[i] = Random.Range(-720f, 720f);
-                var go = WorldBuilder.Sprite("BurstShard", SpriteCatalog.Sparkle, hit, 0.1f, 69, parent);
+                var go = WorldBuilder.Sprite("BurstShard", SpriteCatalog.Sparkle, hit + dir * 1.25f, 0.1f, 69, parent);
                 go.transform.localScale = new Vector3(Random.Range(0.05f, 0.1f), Random.Range(0.02f, 0.04f), 1f);
                 rs[i] = go.GetComponent<SpriteRenderer>();
                 rs[i].color = tint[i % tint.Length];
@@ -1107,7 +1112,10 @@ namespace FlockFive
                 vel[i] = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang), 0f) * Random.Range(vmin, vmax);
                 var go = WorldBuilder.Sprite("Burst", SpriteCatalog.Sparkle, origin, 0.04f, 36, parent);
                 rs[i] = go.GetComponent<SpriteRenderer>();
-                rs[i].color = new Color(1f, 0.96f, 0.82f, 0f);
+                // Pulse sparkles stay cream. The bust burst is peach so it cannot read as neck specks.
+                var rgb = gentle ? new Color(1f, 0.96f, 0.82f, 0f) : Wow.Of(BirdColor.Peach);
+                rgb.a = 0f;
+                rs[i].color = rgb;
             }
             float b = 0f;
             while (b < life)
