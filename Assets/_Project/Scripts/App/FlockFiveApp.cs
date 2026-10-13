@@ -6384,8 +6384,10 @@ namespace FlockFive
         }
 
         // Item 8 profiling: OnGUI by event, and the render tail to end of frame.
+        public static bool ShotNoGui; // editor clips: background only
         void OnGUI()
         {
+            if (ShotNoGui) return;
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
                 Event.current.Use();

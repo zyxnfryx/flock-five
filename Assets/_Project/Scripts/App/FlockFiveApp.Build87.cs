@@ -160,6 +160,136 @@ namespace FlockFive
             EditorApplication.delayCall += () => EditorApplication.Exit(0);
         }
 
+        static ShotHost83 _host87x;
+        public IEnumerator ShotBuild87Extra()
+        {
+            if (_host87x == null)
+            {
+                _host87x = new GameObject("ShotHost87x").AddComponent<ShotHost83>();
+                _host87x.StartCoroutine(ShotBuild87ExtraBody());
+            }
+            yield break;
+        }
+
+        void HideGardenActors(bool hide)
+        {
+            if (_garden.Root == null) return;
+            foreach (var bv in _garden.Root.GetComponentsInChildren<BranchView>(true)) bv.gameObject.SetActive(!hide);
+            if (_garden.Feeders != null) foreach (var fv in _garden.Feeders) if (fv != null) fv.gameObject.SetActive(!hide);
+            if (_garden.Hive != null) _garden.Hive.gameObject.SetActive(!hide);
+            ShotNoGui = hide;
+        }
+
+        IEnumerator ShotBuild87ExtraBody()
+        {
+            ShotKeepAwake = true;
+            MuteShotAudio();
+            EditorShotLive = true;
+            EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+            string root = "/Users/zfxgames/wkspaces/birdshot/gb/b87/x";
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+            Directory.CreateDirectory(root);
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            int animKeep = PlayerPrefs.GetInt(BackgroundMotion.PrefKey, 1);
+            PlayerPrefs.SetInt(BackgroundMotion.PrefKey, 1);
+            int[][] res = { new[] { 1179, 2556 }, new[] { 1536, 2048 } };
+            string[] dev = { "iphone", "ipad" };
+            for (int d = 0; d < 2; d++)
+            {
+                if (EditorGameSize != null) EditorGameSize(res[d][0], res[d][1]);
+                yield return new WaitForSecondsRealtime(1.2f);
+                // Pay table.
+                ShowSplash();
+                yield return new WaitForSecondsRealtime(0.8f);
+                _home = HomeFace.Poker; _splash = true; _pokerPayOpen = true; _pokerPayAnim = 1f;
+                yield return new WaitForSecondsRealtime(1.2f);
+                yield return new WaitForEndOfFrame();
+                SaveFrame(root + "/paytable-" + dev[d] + ".png");
+                _pokerPayOpen = false; _pokerPayAnim = 0f;
+                ShowSplash();
+                yield return new WaitForSecondsRealtime(0.8f);
+                // VIP sheen.
+                VipOffer.Show();
+                yield return new WaitForSecondsRealtime(0.8f);
+                yield return Rec87(root + "/sheen-" + dev[d], 3f);
+                VipOffer.Close();
+                yield return new WaitForSecondsRealtime(0.6f);
+                // Adopt (flying + under the banner) with each kit.
+                int adoptKeep = PlayerPrefs.GetInt(AvatarAdoptedPref, 0), kitKeep = PlayerPrefs.GetInt(AvatarKitPref, 0);
+                for (int kit = 1; kit <= 2; kit++)
+                {
+                    PlayerPrefs.SetInt(AvatarKitPref, kit);
+                    PlayerPrefs.SetInt(AvatarAdoptedPref, 0);
+                    ShowSplash();
+                    yield return new WaitForSecondsRealtime(0.5f);
+                    ArmAdopt();
+                    yield return new WaitForSecondsRealtime(0.2f);
+                    if (!_adoptLive) { _adoptLive = true; }
+                    BeginAdopt();
+                    yield return new WaitForSecondsRealtime(0.7f);
+                    yield return new WaitForEndOfFrame();
+                    SaveFrame(root + "/kit" + kit + "-flying-" + dev[d] + ".png");
+                    yield return new WaitForSecondsRealtime(3.5f);
+                    yield return new WaitForEndOfFrame();
+                    SaveFrame(root + "/adopt-kit" + kit + "-" + dev[d] + ".png");
+                    _adoptLive = false; _adoptStep = AdoptStep.Off;
+                    PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
+                    ShowSplash();
+                    yield return new WaitForSecondsRealtime(2.0f);
+                    yield return new WaitForEndOfFrame();
+                    SaveFrame(root + "/kit" + kit + "-perched-" + dev[d] + ".png");
+                }
+                PlayerPrefs.SetInt(AvatarAdoptedPref, adoptKeep); PlayerPrefs.SetInt(AvatarKitPref, kitKeep);
+                // Leaf-only sway: birds, feeders, hive and GUI hidden.
+                GardenScene[] sc = { GardenScene.Summer, GardenScene.Desert, GardenScene.Fall, GardenScene.Winter, GardenScene.Spring };
+                string[] nm = { "summer", "desert", "fall", "winter", "spring" };
+                for (int k = 0; k < sc.Length && d == 1; k++)
+                {
+                    int lvl = 0;
+                    for (int L = 0; L < 400; L++) if (GardenSeason.ForLevel(L + 1) == sc[k]) { lvl = L + 2; break; }
+                    PrepGardenShot(lvl);
+                    yield return new WaitForSecondsRealtime(3f);
+                    HideGardenActors(true);
+                    for (int pass = 0; pass < 2; pass++)
+                    {
+                        Texture2D om = null;
+                        string old = k == 0 ? "garden" : k == 1 ? "oasis" : k == 2 ? "fall" : k == 4 ? "spring" : null;
+                        if (pass == 0)
+                        {
+                            if (old != null && File.Exists("/tmp/sway86/bg_" + old + "_sway.png")) { om = new Texture2D(2, 2); om.LoadImage(File.ReadAllBytes("/tmp/sway86/bg_" + old + "_sway.png")); }
+                            FoliageSway.TestMask = om != null ? (Texture)om : Texture2D.whiteTexture;
+                            FoliageSway.TestLegacy = true;
+                        }
+                        yield return Rec87(root + "/leafsway-" + nm[k] + "-" + (pass == 0 ? "before" : "after"), 6f);
+                        FoliageSway.TestMask = null; FoliageSway.TestLegacy = false;
+                    }
+                    HideGardenActors(false);
+                }
+                // Home sway, GUI hidden.
+                if (d == 1)
+                {
+                    ShowSplash();
+                    yield return new WaitForSecondsRealtime(1.5f);
+                    ShotNoGui = true;
+                    var om = new Texture2D(2, 2); om.LoadImage(File.ReadAllBytes("/tmp/sway86/bg_garden_sway.png"));
+                    FoliageSway.TestMask = om; FoliageSway.TestLegacy = true;
+                    yield return Rec87(root + "/leafsway-home-before", 6f);
+                    FoliageSway.TestMask = null; FoliageSway.TestLegacy = false;
+                    yield return Rec87(root + "/leafsway-home-after", 6f);
+                    ShotNoGui = false;
+                }
+            }
+            PlayerPrefs.SetInt(BackgroundMotion.PrefKey, animKeep);
+            PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            PlayerPrefs.Save();
+            File.WriteAllText("/tmp/flock-five-b87x.txt", "B87X_DONE\n");
+            EditorShotLive = false;
+            ShotKeepAwake = false;
+            EditorApplication.isPlaying = false;
+            EditorApplication.delayCall += () => EditorApplication.Exit(0);
+        }
+
         IEnumerator ShotBuild87Body()
         {
             ShotKeepAwake = true;
