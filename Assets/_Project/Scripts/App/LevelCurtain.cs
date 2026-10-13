@@ -35,7 +35,8 @@ namespace FlockFive
         {
             public float X, Y, Size, Alpha;
             public byte Hot;
-            public byte Tint; // 0 gold, 1 peach, 2 cream (paint only)
+            public byte Tint; // 0 gold, 1 peach, 2 cream, 3 rose (paint only)
+            public float Bloom; // 0..1, brighter as it nears (paint only)
         }
 
         static Glint[] _buf;
@@ -183,19 +184,26 @@ namespace FlockFive
                 if (sz < 1.5f) continue;
                 float x = _buf[i].X - sz * 0.5f;
                 float y = _buf[i].Y - sz * 0.5f;
-                if (_buf[i].Hot == 0)
-                {
-                    float g = sz * 2.1f;
-                    GUI.color = new Color(1f, 0.82f, 0.28f, a * 0.34f);
-                    GUI.DrawTexture(new Rect(_buf[i].X - g * 0.5f, _buf[i].Y - g * 0.5f, g, g), glowTex, ScaleMode.ScaleToFit, true);
-                }
+                float bl = _buf[i].Bloom;
                 byte tn = _buf[i].Tint;
-                GUI.color = _buf[i].Hot == 1
-                    ? new Color(1f, 0.98f, 0.90f, a)
-                    : tn == 1 ? new Color(1f, 0.74f, 0.46f, a)
-                    : tn == 2 ? new Color(1f, 0.93f, 0.72f, a)
-                    : new Color(1f, 0.84f, 0.28f, a);
+                var c = _buf[i].Hot == 1 ? BHot
+                    : tn == 1 ? new Color(1f, 0.74f, 0.46f, 1f)
+                    : tn == 2 ? new Color(1f, 0.93f, 0.72f, 1f)
+                    : tn == 3 ? BRose
+                    : new Color(1f, 0.84f, 0.28f, 1f);
+                // Warm glow that strengthens as the glint nears.
+                float g = sz * 2.1f;
+                GUI.color = new Color(c.r, c.g * 0.96f, c.b * 0.8f, a * (0.20f + 0.26f * bl));
+                GUI.DrawTexture(new Rect(_buf[i].X - g * 0.5f, _buf[i].Y - g * 0.5f, g, g), glowTex, ScaleMode.ScaleToFit, true);
+                c = Color.Lerp(c, BCream, 0.5f * bl);
+                GUI.color = new Color(c.r, c.g, c.b, a);
                 GUI.DrawTexture(new Rect(x, y, sz, sz), tex, ScaleMode.ScaleToFit, true);
+                if (bl > 0.4f)
+                {
+                    float k = sz * 0.42f;
+                    GUI.color = new Color(1f, 0.99f, 0.94f, a * (bl - 0.4f));
+                    GUI.DrawTexture(new Rect(_buf[i].X - k * 0.5f, _buf[i].Y - k * 0.5f, k, k), tex, ScaleMode.ScaleToFit, true);
+                }
             }
             DrawBloomOver(bloom, at, side, tex, glowTex);
             DrawEmbers(bloom, at, side, tex, glowTex);
@@ -223,7 +231,7 @@ namespace FlockFive
 
         // Timing, b = seconds since release (Fire):
         //   0-30 ms    light swells out of the flower (attack), then a 75 ms tail
-        //   0-0.79 s   forward shell: 48 glints fan out radially, lift, grow ~3x, fade late
+        //   0-0.79 s   forward shell: 64 glints fan out radially, lift, grow 1x->3.5x, fade late
         //   0-0.43 s   centre star (ease-out-back pop)
         //   0.03-0.85  embers: slower forward spokes that carry over the cut
         // Painterly palette: warm gold, cream, peach and a touch of rose. No pure white
@@ -255,7 +263,7 @@ namespace FlockFive
             }
         }
 
-        const int ShellCount = 48;
+        const int ShellCount = 64;
 
         static void DrawBloomOver(float b, Vector2 at, float side, Texture tex, Texture glowTex)
         {
@@ -268,10 +276,10 @@ namespace FlockFive
                 float ang = i * 2.39996f;
                 if (!SparkleFx.TowardAt(b - h1 * 0.04f, 0.45f + 0.30f * h2, at.x, at.y,
                         Mathf.Cos(ang), Mathf.Sin(ang) * 0.85f,
-                        side * (1.1f + 1.5f * h3), side * 0.55f, side * 0.4f, 3.0f, out var p))
+                        side * (1.1f + 1.6f * h3), side * 0.60f, side * 0.4f, 3.5f, out var p))
                     continue;
-                var c = h4 < 0.5f ? BGold : h4 < 0.8f ? BCream : BPeach;
-                SparkleFx.DrawToward(p, side * (0.05f + 0.04f * h4), c, 1f);
+                var c = h4 < 0.45f ? BGold : h4 < 0.70f ? BCream : h4 < 0.90f ? BPeach : BRose;
+                SparkleFx.DrawToward(p, side * (0.04f + 0.035f * h4), c, 1f);
             }
 
             // Centre star: glow halo, gold star, then a smaller cream star on top.
@@ -306,7 +314,7 @@ namespace FlockFive
             int cap = dst.Length;
             for (int i = 0; i < Count && n < cap; i++)
             {
-                if (!Place(i, age, ox, oy, minSide / screenW, minSide / screenH, out float nx, out float ny, out float alpha, out float sizeN, out bool hot))
+                if (!Place(i, age, ox, oy, minSide / screenW, minSide / screenH, out float nx, out float ny, out float alpha, out float sizeN, out bool hot, out float bloom))
                     continue;
                 var g = new Glint
                 {
@@ -315,7 +323,8 @@ namespace FlockFive
                     Size = sizeN * minSide,
                     Alpha = alpha,
                     Hot = hot ? (byte)1 : (byte)0,
-                    Tint = TintOf(i)
+                    Tint = TintOf(i),
+                    Bloom = bloom
                 };
                 dst[n++] = g;
             }
@@ -326,12 +335,12 @@ namespace FlockFive
         // (SparkleFx.TowardAt) on its own spoke out of the button: it lifts, fans out and
         // grows toward the player, sinks a touch, and fades late. Spoke maths runs in
         // min-side units (sx, sy map them to normalized x / y) so the fan stays round.
-        public const float ScaleTo = 3.0f;
+        public const float ScaleTo = 3.5f;
 
         static bool Place(int i, float age, float ox, float oy, float sx, float sy,
-            out float nx, out float ny, out float alpha, out float sizeN, out bool hot)
+            out float nx, out float ny, out float alpha, out float sizeN, out bool hot, out float bloom)
         {
-            nx = ny = alpha = sizeN = 0f;
+            nx = ny = alpha = sizeN = bloom = 0f;
             hot = false;
             float h1 = Hash(i, 1);
             float h2 = Hash(i, 2);
@@ -348,7 +357,8 @@ namespace FlockFive
             ny = oy + p.Y * sy;
             if (ny > 1.12f) return false;
             hot = h2 > 0.74f;
-            sizeN = ((hot ? 0.012f : 0.016f) + (hot ? 0.010f : 0.022f) * h4) * p.Scale;
+            sizeN = ((hot ? 0.010f : 0.013f) + (hot ? 0.008f : 0.018f) * h4) * p.Scale;
+            bloom = p.Bloom;
             float tw = 0.45f + 0.55f * Mathf.Sin(t * 16f + h4 * 11f);
             if (tw < 0f) tw = 0f;
             tw = 0.55f + 0.45f * tw * tw;
@@ -358,17 +368,17 @@ namespace FlockFive
             return true;
         }
 
-        // Mostly gold, a quarter peach, the rest cream. Stable per glint, so no flicker.
+        // Mostly gold, then peach, cream and a touch of rose. Stable per glint (no flicker).
         static byte TintOf(int i)
         {
             float h = Hash(i, 5);
-            return h < 0.60f ? (byte)0 : h < 0.85f ? (byte)1 : (byte)2;
+            return h < 0.55f ? (byte)0 : h < 0.77f ? (byte)1 : h < 0.92f ? (byte)2 : (byte)3;
         }
 
         // Handoff into the stage: embers on slower forward spokes. They fan out from the
         // flower, lift and grow as they come at the player, and fade by BloomLife over
         // the new garden. What carries the press across the cut. No sideways drift.
-        const int EmberCount = 40;
+        const int EmberCount = 48;
 
         static void DrawEmbers(float b, Vector2 at, float side, Texture tex, Texture glowTex)
         {
@@ -380,10 +390,10 @@ namespace FlockFive
                 float life = BloomLife - 0.10f - h1 * 0.10f;
                 float ang = h2 * 6.2832f;
                 if (!SparkleFx.TowardAt(t, life, at.x, at.y, Mathf.Cos(ang), Mathf.Sin(ang) * 0.85f,
-                        side * (1.6f + 2.0f * h3), side * 1.0f, side * 0.8f, 3.5f, out var p))
+                        side * (1.6f + 2.0f * h3), side * 1.0f, side * 0.8f, 4.0f, out var p))
                     continue;
-                var c = h4 < 0.55f ? BGold : h4 < 0.80f ? BPeach : BCream;
-                SparkleFx.DrawToward(p, side * (0.03f + 0.035f * h4), c, 1f);
+                var c = h4 < 0.50f ? BGold : h4 < 0.75f ? BPeach : h4 < 0.92f ? BCream : BRose;
+                SparkleFx.DrawToward(p, side * (0.025f + 0.03f * h4), c, 0.9f);
             }
         }
 

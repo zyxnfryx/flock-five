@@ -154,14 +154,20 @@ namespace FlockFive
             p.Y = oy + dirY * reach * travel - lift * travel + sink * u * u;
             float grow = 1f - v * v;
             p.Scale = 1f + (scaleTo - 1f) * grow;
+            // Fade late: full until 60% of life, then a smoothstep out.
             float fin = age < 0.04f ? age / 0.04f : 1f;
-            float fout = u < 0.55f ? 1f : 1f - (u - 0.55f) / 0.45f;
-            p.Alpha = fin * fout;
-            p.Bloom = grow;
+            float q = u < 0.60f ? 0f : (u - 0.60f) / 0.40f;
+            p.Alpha = fin * (1f - q * q * (3f - 2f * q));
+            // Brightness bloom rises as it nears and crests around 70% of life.
+            p.Bloom = grow * grow * (1f - 0.5f * q);
             return p.Alpha > 0.01f;
         }
 
-        // One forward particle: the sparkle star at baseSize * Scale.
+        // One forward particle, painted in three layers: a soft glow that warms up as
+        // it nears, the tinted star (lifted toward cream by Bloom), and a small hot core
+        // on the nearest ones. Reads as gilded paint catching light, not a lens flare.
+        static readonly Color NearCream = new Color(1f, 0.97f, 0.88f, 1f);
+
         public static void DrawToward(Toward p, float baseSize, Color tint, float alpha)
         {
             float a = p.Alpha * alpha;
@@ -171,8 +177,23 @@ namespace FlockFive
             if (tex == null) return;
             float sz = baseSize * p.Scale;
             if (sz < 1f) return;
-            GUI.color = new Color(tint.r, tint.g, tint.b, a);
+            float bl = Mathf.Clamp01(p.Bloom);
+            var glow = SpriteCatalog.Glow;
+            if (glow != null && glow.texture != null)
+            {
+                float g = sz * 2.0f;
+                GUI.color = new Color(tint.r, tint.g, tint.b, a * (0.16f + 0.30f * bl));
+                GUI.DrawTexture(new Rect(p.X - g * 0.5f, p.Y - g * 0.5f, g, g), glow.texture, ScaleMode.ScaleToFit, true);
+            }
+            var c = Color.Lerp(tint, NearCream, 0.55f * bl);
+            GUI.color = new Color(c.r, c.g, c.b, a);
             GUI.DrawTexture(new Rect(p.X - sz * 0.5f, p.Y - sz * 0.5f, sz, sz), tex, ScaleMode.ScaleToFit, true);
+            if (bl > 0.35f)
+            {
+                float k = sz * 0.45f;
+                GUI.color = new Color(1f, 0.99f, 0.94f, a * (bl - 0.35f) * 1.1f);
+                GUI.DrawTexture(new Rect(p.X - k * 0.5f, p.Y - k * 0.5f, k, k), tex, ScaleMode.ScaleToFit, true);
+            }
             GUI.color = Color.white;
         }
 
