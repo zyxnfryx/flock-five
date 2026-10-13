@@ -1,0 +1,33 @@
+# b87 fresh sway masks: tight per-cluster foliage cutouts, hard edges, sky/clouds/ground excluded.
+import numpy as np
+from PIL import Image
+from scipy import ndimage as nd
+def hsv(h):
+    r,g,b=h[...,0],h[...,1],h[...,2]; V=h.max(-1); mn=h.min(-1); S=(V-mn)/np.maximum(V,1e-3); return r,g,b,V,S
+def rule(n,h):
+    r,g,b,V,S=hsv(h); H,W=r.shape; y=np.arange(H)[:,None]/H+np.zeros((1,W)); x=np.zeros((H,1))+np.arange(W)[None,:]/W
+    green=(g>r*0.92)&(g>b*0.9)&(S>0.18)
+    if n=='bg_garden':  m=(green|(V<0.30)) & ~((V>0.55)&(S<0.45))
+    elif n=='bg_oasis': m=((green|(V<0.42))&(y<0.42)) | (green&(x<0.28)&(y>0.38)&(y<0.75))
+    elif n=='bg_fall':  m=((((r>b+0.10)&(S>0.35))|(green&(S>0.3)))&(((y>0.49)&(y<0.66))|(y<0.13)))
+    elif n=='bg_spring':m=(((green&(S>0.32))&((y<0.14)&(x<0.45)|(y>0.82)|(x>0.92)&(y>0.2)&(y<0.35)))|(((r>g+0.12)&(S>0.45))&(y<0.16)&(x<0.45)))
+    elif n=='bg_winter':m=((g>=r*0.95)&(b<0.62)&(V<0.6)&(S>0.15)) & ((y>0.70)|(y<0.40)&((x<0.14)|(x>0.86)))
+    sky=(V>0.62)&(S<0.30)   # clouds, moon, snow glare
+    return m&~sky
+sheet=[]
+for n in ['bg_garden','bg_oasis','bg_winter','bg_fall','bg_spring']:
+    h=np.asarray(Image.open('Sprites/'+n+'.png').convert('RGB')).astype(np.float32)/255
+    f=rule(n,h)
+    f=nd.binary_opening(f,iterations=1)
+    lab,k=nd.label(f); sz=nd.sum(f,lab,range(1,k+1)); f=np.isin(lab,1+np.where(sz>=300)[0])
+    holes=nd.binary_fill_holes(f)&~f; hl,hk=nd.label(holes); hs=nd.sum(holes,hl,range(1,hk+1))
+    f|=np.isin(hl,1+np.where(hs<=60)[0])          # pin pores inside a leaf, never real sky gaps
+    f=nd.binary_erosion(f,iterations=1)
+    m=(f*255).astype(np.uint8)
+    Image.fromarray(m).resize((540,960),Image.NEAREST).save('out2/'+n+'_sway.png')
+    vis=h*0.35+np.stack([f*0.65,f*0.65,f*0],-1)
+    sheet.append(Image.fromarray((np.clip(vis,0,1)*255).astype(np.uint8)).resize((270,480)))
+    print(n, round(f.mean(),3))
+s=Image.new('RGB',(270*5,480))
+for k,i in enumerate(sheet): s.paste(i,(270*k,0))
+s.save('sheet2.png')

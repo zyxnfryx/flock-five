@@ -46,7 +46,9 @@ namespace FlockFive
         public static int LessonCaptionFloor(float screenW, float screenH)
         {
             float h = screenH > 2f ? screenH : CaptionFloorPhoneH;
-            int floor = Mathf.RoundToInt(CaptionFloorPhonePx * (h / CaptionFloorPhoneH));
+            // b87: wide screens (iPad) ease the caption down with the shared device scale.
+            float tab = screenW > 2f && screenH > 2f ? DeviceFit.Ui(screenW, screenH) / Mathf.Max(screenH / 720f, 1f) : 1f;
+            int floor = Mathf.RoundToInt(CaptionFloorPhonePx * (h / CaptionFloorPhoneH) * tab);
             if (floor < 1) floor = 1;
             int old = CaptionPx(CaptionFloorRef);
             if (floor < old) floor = old;

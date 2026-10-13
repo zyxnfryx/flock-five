@@ -34,6 +34,27 @@ namespace FlockFive
             yield break;
         }
 
+        static void SaveHalf(string path)
+        {
+            var tex = ScreenCapture.CaptureScreenshotAsTexture();
+            if (tex == null) return;
+            int w = tex.width / 2, h = tex.height / 2;
+            var rt = RenderTexture.GetTemporary(w, h, 0);
+            Graphics.Blit(tex, rt);
+            var prev = RenderTexture.active; RenderTexture.active = rt;
+            var o = new Texture2D(w, h, TextureFormat.RGB24, false);
+            o.ReadPixels(new Rect(0, 0, w, h), 0, 0); o.Apply();
+            RenderTexture.active = prev; RenderTexture.ReleaseTemporary(rt);
+            File.WriteAllBytes(path, o.EncodeToJPG(90));
+            Object.Destroy(o); Object.Destroy(tex);
+        }
+
+        // The fight's peck feedback, fired on a beat so before/after both show hits.
+        IEnumerator PestTaps87()
+        {
+            for (int i = 0; i < 7; i++) { yield return new WaitForSeconds(0.65f); CamShake.PestTap(); }
+        }
+
         IEnumerator Rec87(string dir, float secs)
         {
             if (Directory.Exists(dir)) Directory.Delete(dir, true);
@@ -46,7 +67,7 @@ namespace FlockFive
             {
                 MuteShotAudio();
                 yield return new WaitForEndOfFrame();
-                SaveFrame(dir + "/f" + f.ToString("0000") + ".png");
+                SaveHalf(dir + "/f" + f.ToString("0000") + ".jpg");
             }
             Time.captureDeltaTime = 0f;
             File.WriteAllText(dir + "/fps.txt", "30 unscaledSpan=" + (Time.unscaledTime - u0).ToString("0.00"));
@@ -64,19 +85,50 @@ namespace FlockFive
             int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
             if (EditorGameSize != null) EditorGameSize(1536, 2048);
             yield return new WaitForSecondsRealtime(1.2f);
+            // Foliage sway per season, build-86 mask + soft blend vs b87 cutouts.
+            {
+                int animKeep = PlayerPrefs.GetInt(BackgroundMotion.PrefKey, 1); bool animHad = PlayerPrefs.HasKey(BackgroundMotion.PrefKey);
+                PlayerPrefs.SetInt(BackgroundMotion.PrefKey, 1);
+                string[] names = { "home", "summer", "desert", "fall", "winter", "spring" };
+                GardenScene[] sc = { GardenScene.Summer, GardenScene.Summer, GardenScene.Desert, GardenScene.Fall, GardenScene.Winter, GardenScene.Spring };
+                string[] old = { "garden", "garden", "oasis", "fall", null, "spring" };
+                for (int k = 0; k < names.Length; k++)
+                {
+                    int lvl = 0;
+                    for (int L = 0; L < 400; L++) if (GardenSeason.ForLevel(L + 1) == sc[k]) { lvl = L + 2; break; } // past the season reveal
+                    for (int pass = 0; pass < 2; pass++)
+                    {
+                        Texture2D om = null;
+                        if (pass == 0)
+                        {
+                            if (old[k] != null && File.Exists("/tmp/sway86/bg_" + old[k] + "_sway.png"))
+                            { om = new Texture2D(2, 2); om.LoadImage(File.ReadAllBytes("/tmp/sway86/bg_" + old[k] + "_sway.png")); }
+                            FoliageSway.TestMask = om != null ? (Texture)om : Texture2D.whiteTexture;
+                            FoliageSway.TestLegacy = true;
+                        }
+                        if (k == 0) ShowSplash(); else PrepGardenShot(lvl);
+                        yield return new WaitForSecondsRealtime(3f);
+                        yield return Rec87(root + "/sway-" + names[k] + "-" + (pass == 0 ? "before" : "after"), 4f);
+                        FoliageSway.TestMask = null; FoliageSway.TestLegacy = false;
+                    }
+                }
+                if (animHad) PlayerPrefs.SetInt(BackgroundMotion.PrefKey, animKeep); else PlayerPrefs.DeleteKey(BackgroundMotion.PrefKey);
+            }
+            bool swayOnly = File.Exists("/tmp/flock-five-b87v-swayonly");
             // Sparrow fight at iPad aspect: old punch vs the new crisp tap.
-            for (int pass = 0; pass < 2; pass++)
+            for (int pass = 0; pass < (swayOnly ? 0 : 2); pass++)
             {
                 CamShake.LegacyPestPunch = pass == 0;
                 PrepGardenShot(6);
                 yield return new WaitForSecondsRealtime(1.5f);
                 if (_garden.Feeders != null && _garden.Root != null)
                     StartCoroutine(SparrowView.Visit(_garden.Feeders, _garden.Root));
+                StartCoroutine(PestTaps87());
                 yield return Rec87(root + "/sparrow-" + (pass == 0 ? "before" : "after"), 5f);
             }
             CamShake.LegacyPestPunch = false;
             // Streak popup: tap Collect, popup tucks as the coins fly (before = old hold).
-            for (int pass = 0; pass < 2; pass++)
+            for (int pass = 0; pass < (swayOnly ? 0 : 2); pass++)
             {
                 StreakTuckOnFly = pass == 1;
                 int streakKeep = PlayerPrefs.GetInt("flockfive.streak", 0);

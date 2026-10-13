@@ -3193,7 +3193,7 @@ namespace FlockFive
             if (_bandContent == null) _bandContent = new GUIContent();
             _bandContent.text = text;
             float w = Screen.width;
-            int hi = Mathf.Max(22, Mathf.RoundToInt(44f * Mathf.Max(1f, Screen.height / 720f) * 0.62f));
+            int hi = Mathf.Max(22, Mathf.RoundToInt(44f * DeviceFit.Ui() * 0.62f));
             int keep = st.fontSize; bool wrap = st.wordWrap;
             st.wordWrap = true;
             float th = 0f;

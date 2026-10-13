@@ -15,7 +15,7 @@ namespace FlockFive
         // same burst helpers and point tables.
         const string UsaPlaneDayKey = "flockfive.plane.day";
         public const float PlaneIdleDelay = 15f; // legacy
-        // b87: first-ever home screen flies after 12s idle; later visits after 30s.
+        // b87: first home screen each day flies after 12s idle; later home screens that day after 30s.
         public const float PlaneIdleFirst = 12f;
         public const float PlaneIdleLater = 30f;
         public const string PlaneFirstKey = "flockfive.plane.first";
@@ -43,6 +43,7 @@ namespace FlockFive
         static int _usaTodayStamp = -1;
         static int _usaDoneStamp = -2;
         float _usaIdle;
+        bool _usaVisitFlown;
         float _usaU = -1f;
         float _fwClock = -1f;
         float _fwDuck;
@@ -150,6 +151,7 @@ namespace FlockFive
             if (UsaPlaneBlocked())
             {
                 _usaIdle = 0f;
+                _usaVisitFlown = false; // left the home screen: the next home screen is a new visit
                 return;
             }
             if (_usaForce)
@@ -159,9 +161,12 @@ namespace FlockFive
                 return;
             }
             _usaIdle += dt;
-            if (_usaIdle < PlaneIdleFor(PlayerPrefs.GetInt(PlaneFirstKey, 0) == 1)) return;
+            if (_usaVisitFlown) return;
+            // b87: first home screen of the day flies after 12s idle; later home screens
+            // that day after 30s. The day key resets it each calendar day.
+            if (_usaIdle < PlaneIdleFor(UsaFlownToday())) return;
             _usaIdle = 0f;
-            if (UsaFlownToday()) return;
+            _usaVisitFlown = true;
             BeginUsaPlane();
         }
 
