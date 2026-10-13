@@ -41,6 +41,27 @@ namespace FlockFive.Editor
                 Set("_dailyRailLocked", false);
                 Set("_dailyIntro", true); Set("_dailyIntroLive", false);
                 Set("_adoptOwed", true); Set("_adoptLive", true);
+                // b86: fixed caption table.
+                Check("caption-table-fixed", CaptionStyles.IsBanner("adopt.greet") && !CaptionStyles.IsBanner("home.daily") && !CaptionStyles.IsBanner("daily.claim")
+                    && !CaptionStyles.IsBanner("bee.garden") && !CaptionStyles.IsBanner("home.poker") && !CaptionStyles.IsBanner("") && CaptionStyles.BannerAlpha >= 0.8f, "table");
+                // b86: hub count-up is monotone, never jumps by more than an eased step, lands exactly.
+                { int last = 0; bool mono = true; int maxStep = 0;
+                  for (int i = 0; i <= 42; i++) { int v = FlockFiveApp.HubEaseAt(0, 2000, i / 42f); if (v < last) mono = false; maxStep = Mathf.Max(maxStep, v - last); last = v; }
+                  Check("wheel-hub-countup", mono && last == 2000 && maxStep < 2000 / 6, "mono " + mono + " end " + last + " maxStep " + maxStep); }
+                // b86: during a spin each label keeps a fixed radius and size (rigid with the disc).
+                { var wr = new Rect(0, 0, 400, 400); bool rigid = true;
+                  for (int a = 0; a < 360; a += 3) for (int i = 0; i < DailyBonus.WedgeCount; i++)
+                  { var r = FlockFiveApp.WheelWedgeLabelRect(wr, i, a, false); var r0 = FlockFiveApp.WheelWedgeLabelRect(wr, i, 0f, false);
+                    if (Mathf.Abs(r.width - r0.width) > 0.01f || Mathf.Abs((r.center - wr.center).magnitude - (r0.center - wr.center).magnitude) > 0.01f) rigid = false; }
+                  Check("wheel-labels-rigid", rigid, "rigid " + rigid); }
+                // b86: poker down-swipe releases a held card only; taps unchanged.
+                Check("poker-swipe-down-release",
+                    FlockFiveApp.PokerCardReleaseToggles(true, new Vector2(4f, 80f), 34f)
+                    && !FlockFiveApp.PokerCardReleaseToggles(false, new Vector2(4f, 80f), 34f)
+                    && FlockFiveApp.PokerCardReleaseToggles(false, new Vector2(2f, 3f), 34f)
+                    && FlockFiveApp.PokerCardReleaseToggles(true, new Vector2(2f, 3f), 34f)
+                    && FlockFiveApp.PokerCardReleaseToggles(false, new Vector2(80f, 20f), 34f)
+                    && !FlockFiveApp.PokerSwipeDown(new Vector2(0f, -80f), 34f), "swipe");
                 Check("card-end-hold", FlockFiveApp.CardEndHoldSec >= 0.45f && FlockFiveApp.CardEndHoldSec <= 0.8f, "hold " + FlockFiveApp.CardEndHoldSec);
                 Check("daily-hidden-under-adopt", Goal() == 0f, "goal " + Goal());
                 Set("_adoptLive", false); Set("_adoptOwed", false);

@@ -1106,7 +1106,9 @@ namespace FlockFive
             }
             if (_kit != null)
             {
-                int kitHeld = _kit.sortingOrder;
+                // b86: the kit sorts with its OWN body, so a bird crossing another (flying,
+                // landing) hides that bird's kit instead of stacking crowns and bows.
+                int kitHeld = _sr != null ? _sr.sortingOrder + 3 : _kit.sortingOrder;
                 if (_kit.sprite != spr) _kit.sprite = spr;
                 if (!_kit.enabled) _kit.enabled = true;
                 FlockSort.Apply(_kit, kitHeld);
@@ -1115,7 +1117,7 @@ namespace FlockFive
             var go = WorldBuilder.Sprite("Kit", spr, transform.position, 0.3f, FlockSort.Perch + 1, transform);
             go.transform.localRotation = Quaternion.identity;
             _kit = go.GetComponent<SpriteRenderer>();
-            FlockSort.Apply(_kit, FlockSort.Perch + 1);
+            FlockSort.Apply(_kit, _sr != null ? _sr.sortingOrder + 3 : FlockSort.Perch + 1);
         }
 
         // One critically damped follow for every worn crown and bow.
@@ -1134,8 +1136,8 @@ namespace FlockFive
         // Fractions of the head span: how far behind the dome peak the kit seats, and how much
         // lower it settles there. Static (not const) so the b85 before/after still can set 0.
         public static bool KitStableSeat = true;
-        public static float KitBack = 0.30f;
-        public static float KitBackDrop = 0.07f;
+        public static float KitBack = 0.12f; // b86: 0.30 overshot behind the skull (iPad photos); sit on the crest
+        public static float KitBackDrop = 0.02f;
         static KitGlide[] _kitSlots;
 
         struct KitGlide
@@ -1286,7 +1288,7 @@ namespace FlockFive
             // Build 85 (Brandon): seat a little further back on the skull, away from the eye and
             // beak, settling down the back slope of the dome by the same small amount.
             // Polish 2: the bow's wide loops reach the eye first, so it sits a touch further back.
-            float back = head * KitBack * (worn == BirdKit.Bow ? 1.4f : 1f);
+            float back = head * KitBack * (worn == BirdKit.Bow ? 1.15f : 1f);
             float drop = worn == BirdKit.Bow ? 0f : KitBackDrop; // loops hang down; do not lower the knot
             float domeX = faceLeft ? -(dome.x - back) : dome.x - back;
             x = domeX - rx;

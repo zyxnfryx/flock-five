@@ -155,7 +155,7 @@ namespace FlockFive.Editor
             bool still = buyBody.IndexOf("0.035f") < 0 && buyBody.IndexOf("PushButton.SheenU") >= 0
                 && buyBody.IndexOf("PushButton.IdleScale") < 0;
             bool idle = Mathf.Abs(PushButton.IdleScale(1.7f) - 1f) < 0.0001f
-                && PushButton.SheenPeriod >= 2.5f && PushButton.SheenPeriod <= 3f;
+                && PushButton.SheenPeriod >= 1.2f && PushButton.SheenPeriod <= 1.6f; // b86: 2x faster
             float u0 = PushButton.SheenU(0f);
             float u1 = PushButton.SheenU(PushButton.SheenPeriod);
             float mid = PushButton.SheenU(PushButton.SheenPeriod * 0.5f);

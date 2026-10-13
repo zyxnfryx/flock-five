@@ -91,7 +91,7 @@ namespace FlockFive
             int frame = _tutorPlateFrame;
             _coachFade = 1f;
             StandardCaptionBox(s, out _, out _, out int lo, out int hi);
-            PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack);
+            CapSpot("offer.clearads"); PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack);
             _coachFade = keepFade;
             _tutorPlateOn = plateOn;
             _tutorPlate = plate;

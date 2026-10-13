@@ -773,6 +773,7 @@ namespace FlockFive
             float y = L.Caption.y + plateY + (yRoom - boxH) * 0.5f;
             if (y < L.Caption.y + plateY) y = L.Caption.y + plateY;
             var seat = new Rect(x, y, boxW, boxH);
+            CapSpot("badger.lesson");
             DrawSplashIntroLine(line, seat, s, hi, pin: true);
             return seat;
         }
@@ -1714,7 +1715,7 @@ namespace FlockFive
             if (w > band.width) w = band.width;
             if (h > band.height) h = band.height;
             var seat = new Rect(band.center.x - w * 0.5f, band.center.y - h * 0.5f, w, h);
-            PaintCoachCaption(_bgLine, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+            CapSpot("badger.caption"); PaintCoachCaption(_bgLine, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
         }
 
     }

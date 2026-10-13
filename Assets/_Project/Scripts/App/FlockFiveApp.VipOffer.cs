@@ -896,7 +896,7 @@ namespace FlockFive
                 // Idle size stays put. PushButton owns the press. The sheen is the idle motion.
                 var disc = DrawPopupButton(flower, held, true);
                 if (sparkle)
-                    PushButton.DrawSheen(flower, PushButton.SheenU(AdPause.Unscaled), 0.9f, false);
+                    PushButton.DrawSheen(disc.width > 8f ? disc : flower, PushButton.SheenU(AdPause.Unscaled), 0.9f, false); // b86: fitted to the top face
                 if (_buy == null)
                     _buy = new GUIStyle(GUI.skin.label)
                     {
@@ -1103,7 +1103,7 @@ namespace FlockFive
             var r = new Rect(slot.center.x - w * 0.5f, slot.y, w, h);
             float keep = _coachFade;
             _coachFade = Mathf.Clamp01(alpha);
-            PaintCoachCaption(line, r, s, 12, hi);
+            CapSpot("vip.welcome"); PaintCoachCaption(line, r, s, 12, hi);
             _coachFade = keep;
         }
     }

@@ -141,7 +141,18 @@ namespace FlockFive
             if (_choiceWord == null)
                 _choiceWord = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
 
-            if (GuiPaint()) PaintChoiceScrim(a);
+            if (GuiPaint())
+            {
+                PaintChoiceScrim(a);
+                // b86 (Brandon, iPad): the x2 badge sticks out past the REWARD card; the scrim
+                // washed its outer half. Repaint the whole badge over the scrim, full color.
+                if (_stampFrame == Time.frameCount)
+                {
+                    _stampRepaint = true;
+                    DrawRewardStamp(_stampR, _stampMul, _stampA, _stampAge, _stampSpark, false);
+                    _stampRepaint = false;
+                }
+            }
             bool priHeld, secHeld = false;
             bool priHit = HitPad(lay.Primary, out priHeld);
             bool secHit = hasAd && HitPad(lay.Secondary, out secHeld);

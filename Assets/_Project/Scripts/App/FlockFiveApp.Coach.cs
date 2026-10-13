@@ -1072,7 +1072,7 @@ namespace FlockFive
                 _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
                 if (!RailGloveSettled(RailPoker, box)) return;
                 _gloveInward = true;
-                CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, false, float.NaN, box);
+                CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, false, GloveBelowDeg, box); // b86: from below, off the $ total
                 return;
             }
             if (_dailyIntroLive)
@@ -2606,7 +2606,7 @@ namespace FlockFive
                 Mathf.Max(48f, fit.TextW),
                 Mathf.Max(24f, fit.TextH));
             var seat = SeatAroundText(textR, s);
-            PaintCoachCaption(text, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+            CapSpot("bee.garden"); PaintCoachCaption(text, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
         }
 
         Rect BeeGardenPlate(float s)
@@ -2635,7 +2635,7 @@ namespace FlockFive
             _coachLineHoldX = seat.x;
             _coachHoldXOn = true;
             _coachLineHeld = true;
-            PaintCoachCaption(text, seat, s, lo, hi, default, false, StandardCaptionSlack);
+            CapSpot("coach.line"); PaintCoachCaption(text, seat, s, lo, hi, default, false, StandardCaptionSlack);
         }
 
         // One x,y per tutorial sentence. The first call after this frame's pose
@@ -3155,16 +3155,21 @@ namespace FlockFive
         // the snug box. The decision now also knows the lesson's target up front.
         string _bandStyleFor;
         bool _bandStyleBanner;
+        string _capSpot; bool _capNoGate;
+        void CapSpot(string id) { _capSpot = id; }
+
         bool CaptionBannerFits(string text, Rect seat, float s, out Rect band, out int px)
         {
+            // Build 86 (Brandon): every caption spot has a FIXED hand-assigned style from
+            // CaptionStyles. No runtime switching: the style holds through press and fade.
+            string spot = _capSpot ?? "";
+            _capSpot = null;
+            band = default; px = 0;
+            if (!CaptionStyles.IsBanner(spot)) { SnugUses++; BannerSkip = "table snug " + spot; return false; }
+            _capNoGate = true;
             bool fits = CaptionBannerFitsRaw(text, seat, s, out band, out px);
-            if (_bandStyleFor != text)
-            {
-                _bandStyleFor = text;
-                _bandStyleBanner = fits && !BandCoversStepTarget(band);
-                if (!_bandStyleBanner) { SnugUses++; BannerSkip = "step target"; }
-            }
-            return _bandStyleBanner && fits;
+            _capNoGate = false;
+            return fits;
         }
 
         // The live step's own control, known before its glove poses (home rail lessons).
@@ -3183,7 +3188,7 @@ namespace FlockFive
             var om = OpenModal();
             // The adopt scene is a home lesson, not a card: its captions take the banner.
             bool popup = om != ModalBlock.Id.None && om != ModalBlock.Id.Adopt && om != ModalBlock.Id.Streak;
-            if (popup || CaptionLayout.WantsBeeIcon(text)) { SnugUses++; BannerSkip = popup ? "popup " + OpenModal() : "bee"; return false; }
+            if (!_capNoGate && (popup || CaptionLayout.WantsBeeIcon(text))) { SnugUses++; BannerSkip = popup ? "popup " + OpenModal() : "bee"; return false; }
             var st = CoachLineStyle();
             if (_bandContent == null) _bandContent = new GUIContent();
             _bandContent.text = text;
@@ -3227,6 +3232,9 @@ namespace FlockFive
             float minTop = Mathf.Max(Screen.safeArea.yMin, TopHud() + (56f * 2f + 4f) * s * 0.92f);
             float y = seat.y - (h - seat.height) * 0.85f;
             if (y < minTop) y = minTop;
+            // b86 (Brandon): the adopt banner sits right under the title (pre-4d831f3 seat),
+            // over the dimmed VIP/coin row; the arriving bird hovers under it.
+            if (_adoptLive) y = Mathf.Max(Screen.safeArea.yMin, (_pokerTitleBottom > 8f ? _pokerTitleBottom : Screen.height * 0.17f) + 4f * s);
             band = new Rect(0f, y, w, h);
             float gap = 8f * s;
             for (int pass = 0; pass < 2; pass++)
@@ -3290,7 +3298,7 @@ namespace FlockFive
                 _bannerLast = band; _bannerLastFrame = Time.frameCount;
                 BannerLast = band + " fade " + fade + " ev " + (Event.current != null ? Event.current.type.ToString() : "-") + " px " + bandPx;
                 var prevC = GUI.color;
-                GUI.color = new Color(0f, 0f, 0f, 0.58f * fade);
+                GUI.color = new Color(0f, 0f, 0f, CaptionStyles.BannerAlpha * fade); // b86: darker, near the snug box
                 GUI.DrawTexture(band, Texture2D.whiteTexture);
                 GUI.color = prevC;
                 int keep = st.fontSize;
@@ -5101,6 +5109,7 @@ namespace FlockFive
                 _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
             int hi = fontHi > 0 ? fontHi : Mathf.Max(18, Mathf.RoundToInt(34f * s));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
+            if (_capSpot == null) CapSpot("home.intro");
             PaintCoachCaption(line, seat, s, 12, hi, platePad, opaque);
         }
 
@@ -5333,7 +5342,11 @@ namespace FlockFive
         {
             if (!_pokerIntroLive) return;
             // Opaque plate: LEVEL must not show through this one (Brandon, build 58).
-            DrawAnchoredIntroLine(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering, true);
+            // Build 86 (Brandon): a solid snug box clear of the LEVEL disc, the rail and the
+            // poker card, in the open sky between the coin row and the disc.
+            var pr = PokerIntroBox(s);
+            CapSpot("home.poker");
+            DrawSplashIntroLine(PokerIntroLine, pr, s, PokerIntroFontHi(s), true, _anchorPad, true);
             DrawTutorOverlay(s);
         }
 
@@ -5342,7 +5355,19 @@ namespace FlockFive
         // caption box; this only picks the size (PokerIntroFontHi) and the seat.
         int PokerIntroFontHi(float s) => Mathf.Max(24, Mathf.RoundToInt(46f * s));
 
-        Rect PokerIntroBox(float s) => AnchoredCaptionBox(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering, out _);
+        Rect PokerIntroBox(float s)
+        {
+            var r = AnchoredCaptionBox(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering, out _);
+            var disc = FlowerPlayRect();
+            float railW = Screen.width * 0.17f;
+            float maxW = Screen.width - railW * 2f;
+            if (r.width > maxW) { r.x += (r.width - maxW) * 0.5f; r.width = maxW; }
+            r.x = (Screen.width - r.width) * 0.5f;
+            if (disc.width > 2f) r.y = disc.yMin - r.height - 18f * s;
+            float floorY = TopHud() + (56f * 2f + 4f) * s + 64f * s;
+            if (r.y < floorY) r.y = floorY;
+            return r;
+        }
 
         // Where a home step seats the shared measured plate (FitCaptionBox). The step names
         // an anchor; AnchoredCaptionBox owns the geometry, so no lesson carries an offset.
@@ -5382,6 +5407,7 @@ namespace FlockFive
         void DrawAnchoredIntroLine(string line, float s, CaptionAnchor anchor, bool opaque = false)
         {
             var r = AnchoredCaptionBox(line, s, anchor, out var pad);
+            CapSpot(line == PokerIntroLine ? "home.poker" : "home.anchored");
             DrawSplashIntroLine(line, r, s, PokerIntroFontHi(s), true, pad, opaque);
         }
 
@@ -5654,6 +5680,7 @@ namespace FlockFive
         void DrawDailyIntro(float s)
         {
             if (!_dailyIntroLive || _dailyOpen || _dailyAskOpen) return;
+            CapSpot("home.daily");
             DrawSplashIntroLine(DailyIntroLine, DailyIntroBox(s), s);
             DrawTutorOverlay(s);
         }
@@ -5735,6 +5762,7 @@ namespace FlockFive
                 if (y + h <= block.y - 4f)
                     r = PlaceCaption(s, w, h, y - 8f * s);
             }
+            CapSpot("daily.claim");
             DrawSplashIntroLine(line, r, s);
         }
 

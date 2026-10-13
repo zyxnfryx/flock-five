@@ -115,11 +115,14 @@ namespace FlockFive
             var p = new Vector2(r.center.x, Screen.height - r.center.y);
             InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus; InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
             var ts = InputSystem.AddDevice<Touchscreen>(); ts.MakeCurrent();
+            for (int i = 0; i < 10; i++) { yield return new WaitForEndOfFrame(); System.IO.Directory.CreateDirectory("/Users/zfxgames/wkspaces/birdshot/gb/b85/prepress"); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/prepress/f" + i.ToString("00") + ".png"); }
             InputSystem.QueueStateEvent(ts, new TouchState { touchId = 1, phase = UnityEngine.InputSystem.TouchPhase.Began, position = p });
-            for (int i = 0; i < 4; i++) { yield return null; Log("down" + i + ": " + DailyDiag()); }
+            System.IO.Directory.CreateDirectory("/Users/zfxgames/wkspaces/birdshot/gb/b85/press");
+            for (int i = 0; i < 6; i++) { yield return new WaitForEndOfFrame(); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/press/f" + i.ToString("00") + ".png"); Log("down" + i + ": " + DailyDiag()); }
             InputSystem.QueueStateEvent(ts, new TouchState { touchId = 1, phase = UnityEngine.InputSystem.TouchPhase.Ended, position = p });
             yield return null;
             Log("up: " + DailyDiag());
+            Log("press frames saved");
             System.IO.Directory.CreateDirectory("/Users/zfxgames/wkspaces/birdshot/gb/b85/wheelfirst");
             for (int wf = 0; wf < 24; wf++) { yield return new WaitForEndOfFrame(); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/wheelfirst/f" + wf.ToString("00") + ".png"); }
             InputSystem.QueueStateEvent(ts, new TouchState { touchId = 1, phase = UnityEngine.InputSystem.TouchPhase.None, position = p });
@@ -133,6 +136,25 @@ namespace FlockFive
             Log("events: " + DbgDaily);
             bool ok = _dailyOpen && _dailyIntroLive;
             Log(ok ? "B85DAILY_OK card open, wheel lesson live" : "B85DAILY_FAIL card did not open");
+            // b86: 60fps-paced spin and payout clip (frame per frame, timing logged).
+            if (ok)
+            {
+                System.IO.Directory.CreateDirectory("/Users/zfxgames/wkspaces/birdshot/gb/b85/spin");
+                StartDailySpin();
+                float t0 = Time.realtimeSinceStartup; int n = 0;
+                while (Time.realtimeSinceStartup - t0 < 9f && n < 700) { yield return new WaitForEndOfFrame(); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/spin/f" + (n++).ToString("000") + ".png"); }
+                Log("SPINCLIP frames " + n + " sec " + (Time.realtimeSinceStartup - t0).ToString("0.00") + " phase " + _dailyPhase + " coins " + DailyBonus.SpinCoins);
+                SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/b86-wheel-landed.png");
+                ResolveDailyGrant(false);
+                yield return new WaitForSecondsRealtime(2.5f);
+                // Poker intro caption (snug, clear of the disc, glove from below).
+                _dailyIntroLive = false; _dailyIntro = false; _dailyOpen = false;
+                PlayerPrefs.SetInt(CoachDailyKey, 1);
+                ArmPokerIntro();
+                yield return new WaitForSecondsRealtime(3.0f); yield return new WaitForEndOfFrame();
+                SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/b86-caption-poker.png");
+                Log("poker intro live " + _pokerIntroLive + " banner " + BannerSkip);
+            }
             InputSystem.RemoveDevice(ts);
             ShotKeepAwake = false;
             if (File.Exists("/tmp/flock-five-b85-exit")) { UnityEditor.EditorApplication.isPlaying = false; UnityEditor.EditorApplication.delayCall += () => UnityEditor.EditorApplication.Exit(0); }

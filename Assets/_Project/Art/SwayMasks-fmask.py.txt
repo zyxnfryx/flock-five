@@ -8,20 +8,31 @@ def rule(n,r,g,b):
     if n=='bg_spring': return ((g>r+0.01)&(g>b)&(S>0.11))|(S>0.38)|(V<0.35)
     if n=='bg_winter': return np.ones_like(r,bool)
     return ~((r>g)&(V>0.58)&(S<0.48))
-out=[]
-for n in ['bg_oasis','bg_winter','bg_fall','bg_spring','bg_garden']:
-    a=np.asarray(Image.open(n+'.png').convert('RGB')).astype(np.float32)/255
-    sm=nd.uniform_filter(a,(5,5,1))[::4,::4]
-    f=rule(n,sm[...,0],sm[...,1],sm[...,2])
-    if n=='bg_oasis': f[int(f.shape[0]*0.46):]=False  # palm crown only; water, cactus, mesas rigid
-    f=nd.binary_opening(f,iterations=1); f=nd.binary_closing(f,iterations=2)
-    f=nd.binary_dilation(f,iterations=1)   # leaf edge owns a 4px rim so edges carry with the leaf
-    m=nd.gaussian_filter(f.astype(np.float32),1.2)
-    if n=='bg_oasis':  # feather the palm cut-off so it never reads as a straight seam
-        y=np.arange(m.shape[0])[:,None]/m.shape[0]; m*=np.clip((0.46-y)/0.06,0,1)
-    Image.fromarray((m*255).astype(np.uint8)).save(sys.argv[1]+'/'+n+'_sway.png')
-    vis=(a[::4,::4]*0.35+np.stack([m*0.65,m*0.65,m*0],-1))
-    out.append(Image.fromarray((np.clip(vis,0,1)*255).astype(np.uint8)))
+D=2
+sheet=[]
+for n in ['bg_garden','bg_oasis','bg_winter','bg_fall','bg_spring']:
+    a=np.asarray(Image.open('../Resources/Sprites/'+n+'.png').convert('RGB')).astype(np.float32)/255
+    h=a[::D,::D]
+    f=rule(n,h[...,0],h[...,1],h[...,2])
+    L=h.mean(-1)
+    mu=nd.uniform_filter(L,5); sd=np.sqrt(np.maximum(nd.uniform_filter(L*L,5)-mu*mu,0))
+    tex=np.clip((sd-0.012)/0.03,0,1)          # smooth sky -> 0
+    V=h.max(-1); mn=h.min(-1); S=(V-mn)/np.maximum(V,1e-3)
+    sky=(V>0.55)&(S<0.42)&~((h[...,1]>h[...,0]+0.03)&(h[...,1]>h[...,2]))  # bright, pale, not green
+    pale=(V>0.50)&(S<0.50)
+    w=f.astype(np.float32)*np.where(pale,tex*0,1.0)*(~sky)
+    if n=='bg_winter': w=np.zeros_like(w)   # winter: snowy rigid scene (no foliage sway)
+    if n=='bg_oasis':
+        y=np.arange(w.shape[0])[:,None]/w.shape[0]; w*=np.clip((0.46-y)/0.06,0,1)
+    fb=nd.binary_opening(w>0.5,iterations=1); fb=nd.binary_closing(fb,iterations=1)&(w>0.5)
+    lab,k=nd.label(fb); sz=nd.sum(fb,lab,range(1,k+1)); keep=np.isin(lab,1+np.where(sz>=40)[0])
+    w=w*keep
+    w=nd.binary_erosion(w>0.5,iterations=1).astype(np.float32)   # leaf interior only: no sky rim
+    m=nd.gaussian_filter(w,0.7)
+    Image.fromarray((m*255).astype(np.uint8)).save('out/'+n+'_sway.png')
+    vis=h*0.35+np.stack([m*0.65,m*0.65,m*0],-1)
+    sheet.append(Image.fromarray((np.clip(vis,0,1)*255).astype(np.uint8)).resize((270,480)))
+    old=np.asarray(Image.open('SwayMasks/'+n+'_sway.png')) if n!='bg_winter' else None
 s=Image.new('RGB',(270*5,480))
-for k,i in enumerate(out): s.paste(i,(270*k,0))
-s.save('/Users/zfxgames/wkspaces/birdshot/gb/b85/fmask.png')
+for k,i in enumerate(sheet): s.paste(i,(270*k,0))
+s.save('sheet.png')
