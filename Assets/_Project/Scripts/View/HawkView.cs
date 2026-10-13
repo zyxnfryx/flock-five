@@ -287,7 +287,7 @@ namespace FlockFive
             if (index == 0 || index == 3)
                 Sfx.FeederRattle();
             if (CamShake.Live != null)
-                CamShake.Live.Punch(0.12f, 0.08f + 0.012f * index, 2.6f, 0.09f);
+                CamShake.PestTap();
             SparrowBits.Burst(pos + new Vector3(0f, 0.1f, 0f), parent, _tint);
 
             float flash = 0f;
@@ -423,7 +423,7 @@ namespace FlockFive
             transform.localRotation = Quaternion.identity;
             if (_art != null) _art.color = Color.white;
             if (CamShake.Live != null)
-                CamShake.Live.Punch(0.14f, 0.08f, 1.6f, 0.05f);
+                CamShake.PestTap();
 
             float hold = 0f;
             while (hold < 0.12f && !_abort)

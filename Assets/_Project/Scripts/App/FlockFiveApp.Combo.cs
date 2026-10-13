@@ -251,7 +251,7 @@ namespace FlockFive
                 x1 = camX + halfW - 0.2f;
             }
 
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             HudLayout(out _, out float top, out _, out var restart, out _);
             float yTop = ComboWorldY(cam, camY, halfH, top);
             yTop = Mathf.Min(yTop, ComboFeederBottom(root) - 0.28f);

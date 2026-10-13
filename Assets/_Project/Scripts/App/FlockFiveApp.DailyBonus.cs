@@ -1588,7 +1588,7 @@ namespace FlockFive
             if (panel.width < 6f) return;
             if (_wheelX2At < 0f) _wheelX2At = AdPause.Unscaled;
             float age = AdPause.Unscaled - _wheelX2At;
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             var shake = RewardCardShake(age, s);
             var seat = RewardStampRect(panel, 2);
             seat = BadgeBelowTitle(seat, title);

@@ -14,7 +14,12 @@ namespace FlockFive
         // plane sprite is still on screen. Rounds and the heart share the
         // same burst helpers and point tables.
         const string UsaPlaneDayKey = "flockfive.plane.day";
-        public const float PlaneIdleDelay = 15f;
+        public const float PlaneIdleDelay = 15f; // legacy
+        // b87: first-ever home screen flies after 12s idle; later visits after 30s.
+        public const float PlaneIdleFirst = 12f;
+        public const float PlaneIdleLater = 30f;
+        public const string PlaneFirstKey = "flockfive.plane.first";
+        public static float PlaneIdleFor(bool flownBefore) => flownBefore ? PlaneIdleLater : PlaneIdleFirst;
         public const float PlaneCrossSeconds = 6.5f;
         public const int PlaneSkyBursts = 7;
         public const int PlaneSkyHeartPoints = 48;
@@ -154,7 +159,7 @@ namespace FlockFive
                 return;
             }
             _usaIdle += dt;
-            if (_usaIdle < PlaneIdleDelay) return;
+            if (_usaIdle < PlaneIdleFor(PlayerPrefs.GetInt(PlaneFirstKey, 0) == 1)) return;
             _usaIdle = 0f;
             if (UsaFlownToday()) return;
             BeginUsaPlane();
@@ -171,6 +176,7 @@ namespace FlockFive
             _fwPlaneLeft = false;
             string day = UsaToday();
             PlayerPrefs.SetString(UsaPlaneDayKey, day);
+            PlayerPrefs.SetInt(PlaneFirstKey, 1);
             _usaDoneStamp = _usaTodayStamp;
             PlayerPrefs.Save();
             Sfx.PlaneBegin();

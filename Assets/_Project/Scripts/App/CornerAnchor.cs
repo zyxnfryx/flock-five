@@ -16,7 +16,7 @@ namespace FlockFive
         public static void Garden(float screenW, float screenH, Rect safe,
             out float scale, out float top, out float bot, out Rect restart, out Rect hive)
         {
-            scale = Mathf.Max(screenH / 720f, 1f);
+            scale = DeviceFit.Ui(screenW, screenH);
             if (safe.width < 2f || safe.height < 2f)
                 safe = new Rect(0f, 0f, screenW, screenH);
             float safeTop = screenH - safe.yMax;

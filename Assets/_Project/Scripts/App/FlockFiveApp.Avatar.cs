@@ -456,7 +456,7 @@ namespace FlockFive
             CloseAvatarRename();
             // Same prefs the old accept path wrote, so a later splash does not ask again.
             MarkAdopted(_adoptCol, _adoptName);
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             var seed = HomeWanderBounds(s, HomeAvatarIcon(s)).center;
             for (int i = 0; i < 5; i++)
             {
@@ -467,7 +467,7 @@ namespace FlockFive
 
         void TickAdoptMotion(float dt)
         {
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             _avatarTail = AvatarPlateDrop(s);
             int pick = _adoptPick;
             if (pick < 0 || pick > 4) pick = 1;
@@ -528,7 +528,7 @@ namespace FlockFive
             _gloveVis = false;
             _gloveReady = false;
             GUIUtility.keyboardControl = 0;
-            PlaceHomeBranch(Mathf.Max(Screen.height / 720f, 1f));
+            PlaceHomeBranch(DeviceFit.Ui());
             _avatarPos = AvatarHomePoint();
             FinishAdopt();
         }
@@ -537,7 +537,7 @@ namespace FlockFive
         {
             if (_adoptStep != AdoptStep.Settle) return;
             _birdSettledOnBranch = true;
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             _avatarTail = AvatarPlateDrop(s);
             FillAvatarPerches(s);
             _avatarPos = AvatarHomePoint();
@@ -734,7 +734,7 @@ namespace FlockFive
             if (_adoptStep != AdoptStep.Look) return false;
             int i = _adoptPick;
             if (i < 0 || i > 4) return false;
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             float drawIcon = HomeAvatarIcon(s);
             if (drawIcon < 8f) drawIcon = icon;
             if (drawIcon < 8f) return false;
@@ -785,7 +785,7 @@ namespace FlockFive
         bool HitAdoptBird(int i, float icon)
         {
             if (i < 0 || i > 4) return false;
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             float pad = 8f * s;
             var c = _adoptShown[i];
             var r = new Rect(c.x - icon * 0.55f - pad, c.y - icon * 0.55f - pad, icon * 1.1f + pad * 2f, icon * 1.1f + pad * 2f);
@@ -1363,7 +1363,7 @@ namespace FlockFive
         bool AdoptGloveTap(Vector2 screen)
         {
             if (!_adoptLive || _avatarPose != AvatarPose.GlovePointing) return false;
-            if (!AdoptLookRects(HomeAvatarIcon(Mathf.Max(Screen.height / 720f, 1f)), out var bird, out var plate))
+            if (!AdoptLookRects(HomeAvatarIcon(DeviceFit.Ui()), out var bird, out var plate))
                 return false;
             var gui = new Vector2(screen.x, Screen.height - screen.y);
             if (bird.Contains(gui)) return true;
@@ -1911,7 +1911,7 @@ namespace FlockFive
         void DrawHomeLimbSide(bool edgeRoot)
         {
             if (!_limbOn) return;
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             var rail = SplashRailColumn(true, 3, s);
             float cut = rail.width > 2f ? rail.xMin : Screen.width;
             if (edgeRoot)

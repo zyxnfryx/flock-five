@@ -154,7 +154,8 @@ namespace FlockFive
             if (old < 14f) old = 14f;
             float pad = old - 28f * s;
             if (pad < clear) pad = clear;
-            float size = w * 0.94f;
+            // b87: on wide screens the disc is capped so the side rails keep their columns.
+            float size = w * (0.94f - 0.40f * DeviceFit.Wide(DeviceFit.TestWindow ?? (Application.isBatchMode ? DeviceFit.PhoneAspect : w / Mathf.Max(1f, h))));
             float half = h * 0.50f;
             if (half < size) size = half;
             return new Rect((w - size) * 0.5f, h - pad - size, size, size);

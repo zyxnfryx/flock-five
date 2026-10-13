@@ -998,7 +998,7 @@ namespace FlockFive
             if (TickUpgradeTutor(dt)) return;
             if (_adoptLive && _splash)
             {
-                float adoptS = Mathf.Max(Screen.height / 720f, 1f);
+                float adoptS = DeviceFit.Ui();
                 AdoptPlaceGlove(dt, adoptS);
                 return;
             }
@@ -1018,7 +1018,7 @@ namespace FlockFive
                 }
                 CoachHideGlow();
                 CoachHideRipples();
-                float handS = Mathf.Max(Screen.height / 720f, 1f);
+                float handS = DeviceFit.Ui();
                 _cueLine = AdHandLine;
                 _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
                 GiftCardLayout(handS, out _, out var watchFlower);
@@ -1031,13 +1031,13 @@ namespace FlockFive
             }
             if ((_bgLessonLive || BadgerGuideLive()) && _splash && _home == HomeFace.Badger)
             {
-                float handS = Mathf.Max(Screen.height / 720f, 1f);
+                float handS = DeviceFit.Ui();
                 PlaceBadgerLessonGlove(dt, handS);
                 return;
             }
             if (_hiveIntroLive || _hiveLevelLive)
             {
-                float handS = Mathf.Max(Screen.height / 720f, 1f);
+                float handS = DeviceFit.Ui();
                 if (_hiveIntroLive && _splash)
                 {
                     // Rail is still sliding or the skep is still popping. Sampling
@@ -1062,7 +1062,7 @@ namespace FlockFive
             }
             if (_pokerIntroLive)
             {
-                float handS = Mathf.Max(Screen.height / 720f, 1f);
+                float handS = DeviceFit.Ui();
                 // The button grows in under the pig when this step starts. Aiming at the
                 // growing rect locked the fingertip in the gap above it, so the hand waits
                 // for the shared rail gate (as hive and daily do), then aims at the settled
@@ -1077,7 +1077,7 @@ namespace FlockFive
             }
             if (_dailyIntroLive)
             {
-                float handS = Mathf.Max(Screen.height / 720f, 1f);
+                float handS = DeviceFit.Ui();
                 bool onClaim = _dailyOpen;
                 if (onClaim != _dailyGloveOnClaim)
                 {
@@ -1143,7 +1143,7 @@ namespace FlockFive
 
             ShowCoachGlow(glow, dx, dy);
 
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             if (CoachGloveAt(_cueAimGui, dt, s, float.NaN, false, float.NaN, default, FnCueTap()))
             {
                 _coachGlowKick = 1f;
@@ -2086,7 +2086,7 @@ namespace FlockFive
         // on this pose when the paint already ran (the hive-card hint).
         bool TutorCaptionPlate(out Rect plate)
         {
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             if (_adHand && _gift == GiftFace.Card)
             {
                 var pref = AdHandCaptionRect(s);
@@ -3649,6 +3649,10 @@ namespace FlockFive
             float rad = ang * Mathf.Deg2Rad;
             pivot += new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
             float dw = dh * (tex.width / (float)tex.height);
+            // b87: every glove stays fully on screen. Keep the fingertip on target and
+            // turn the hand to the in-screen side (mirror / swing) when its body would
+            // leave the glass; a pivot that is itself off-glass is pulled inside.
+            GloveOnScreen(ref pivot, ref ang, ref mirror, dw, dh);
             var rect = new Rect(
                 pivot.x - _gloveTipU * dw,
                 pivot.y - (1f - _gloveTipV) * dh,
@@ -3668,6 +3672,56 @@ namespace FlockFive
             GUI.DrawTexture(rect, tex, ScaleMode.ScaleToFit, true);
             GUI.matrix = prev;
             GUI.color = Color.white;
+        }
+
+        public const float GloveScreenMargin = 6f;
+
+        // Overflow (px) of the glove quad past the screen for a pose.
+        float GloveOverflow(Vector2 pivot, float ang, bool mirror, float dw, float dh)
+        {
+            float u = _gloveTipU, v = 1f - _gloveTipV;
+            var q = Quaternion.Euler(0f, 0f, ang);
+            float sx = mirror ? -1f : 1f;
+            float over = 0f, m = GloveScreenMargin, W = Screen.width, H = Screen.height;
+            for (int i = 0; i < 4; i++)
+            {
+                float lx = ((i & 1) == 0 ? -u : 1f - u) * dw * sx;
+                float ly = ((i & 2) == 0 ? -v : 1f - v) * dh;
+                Vector3 p = q * new Vector3(lx, ly, 0f);
+                float x = pivot.x + p.x, y = pivot.y + p.y;
+                if (x < m) over += m - x;
+                if (x > W - m) over += x - (W - m);
+                if (y < m) over += m - y;
+                if (y > H - m) over += y - (H - m);
+            }
+            return over;
+        }
+
+        void GloveOnScreen(ref Vector2 pivot, ref float ang, ref bool mirror, float dw, float dh)
+        {
+            if (Screen.width < 4 || Screen.height < 4) return;
+            float m = GloveScreenMargin;
+            pivot.x = Mathf.Clamp(pivot.x, m, Screen.width - m);
+            pivot.y = Mathf.Clamp(pivot.y, m, Screen.height - m);
+            float best = GloveOverflow(pivot, ang, mirror, dw, dh);
+            if (best <= 0.5f) return;
+            float bestAng = ang; bool bestMir = mirror;
+            for (int k = 0; k < 2; k++)
+            {
+                bool mir = k == 0 ? !mirror : mirror;
+                for (int step = 0; step <= 12; step++)
+                {
+                    foreach (float sign in new[] { 1f, -1f })
+                    {
+                        float a = (k == 0 ? -ang : ang) + sign * step * 15f;
+                        float o = GloveOverflow(pivot, a, mir, dw, dh);
+                        if (o + 0.5f < best) { best = o; bestAng = a; bestMir = mir; }
+                    }
+                    if (best <= 0.5f) break;
+                }
+                if (best <= 0.5f) break;
+            }
+            ang = bestAng; mirror = bestMir;
         }
 
         // One glove. The mirrored pair on the second reward sign is not posed.
@@ -4601,7 +4655,7 @@ namespace FlockFive
             }
             else if (PokerBackGateLive())
             {
-                float s = Mathf.Max(Screen.height / 720f, 1f);
+                float s = DeviceFit.Ui();
                 gate.Step = GatePokerBack;
                 gate.Target = BackMedalRect(s, TopHud());
                 rule = CoachStep.PokerBack;
@@ -4719,7 +4773,7 @@ namespace FlockFive
             bool swipeTaken = false;
             if (t == EventType.MouseUp && gate.SwipeArea.width > 2f && _pageSwipe.Tracking)
             {
-                float s = Mathf.Max(Screen.height / 720f, 1f);
+                float s = DeviceFit.Ui();
                 swipeTaken = PageSwipeDir(at - _pageSwipe.Origin, AlbumSwipeMin(s), out _);
             }
             if (TutorialHeal.GateLets(kind, gate.Target.Contains(at), inSwipe, swipeTaken)) return;
@@ -5561,7 +5615,7 @@ namespace FlockFive
             var ink = new Rect(lvR.center.x - lw * 0.5f - lvRing, ly - lvRing, lw + lvRing * 2f, lh + lvRing * 2f);
             if (!hasEase) return ink;
 
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             var joke = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Normal,
@@ -5944,19 +5998,20 @@ namespace FlockFive
         // Glow on the first leafy branch. No hand, no ripple, no dim hole.
         void PlaceLeafGlow()
         {
-            HideLeafGlove();
             _cueHand = false;
             _cueForce = false;
             _cueFreeze = false;
             _cueHolePx = 0f;
             if (_cueLine != LeafIntroLine)
             {
+                HideLeafGlove();
                 _leafKeepOn = false;
                 CoachHideGlow();
                 return;
             }
             if (!CoachView(out var view) || _garden.Cam == null)
             {
+                HideLeafGlove();
                 _leafKeepOn = false;
                 CoachHideGlow();
                 return;
@@ -5969,6 +6024,10 @@ namespace FlockFive
                 _cueAimGui = new Vector2(screen.x, Screen.height - screen.y);
             NoteLeafKeep(cam);
             ShowCoachGlow(glow, dx, dy);
+            // b87: the first leaves intro also shows the glove on the leafy branch
+            // (it was caption + glow only, so a fresh stage never showed a hand).
+            if (screen.z >= 0f)
+                CoachGloveAt(_cueAimGui, PlayClock.Delta, DeviceFit.Ui());
         }
 
         // Union of every leafy branch (wood, birds, and the leaf curtain), in GUI space.
@@ -6305,7 +6364,7 @@ namespace FlockFive
             _coachGlow.transform.position = world;
             _coachGlow.transform.localScale = new Vector3(2.3f * breathe, 2.3f * breathe, 1f);
             _coachGlow.color = new Color(1f, 0.91f, 0.46f, a);
-            float handS = Mathf.Max(Screen.height / 720f, 1f);
+            float handS = DeviceFit.Ui();
             _glovePestKind = _pestCue;
             if (CoachGloveAt(gui, dt, handS, float.NaN, false, float.NaN, default, FnPestTap()))
             {

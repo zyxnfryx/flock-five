@@ -185,7 +185,7 @@ namespace FlockFive
 
         public static Vector2 BoxPad(float screenH)
         {
-            float s = Mathf.Max(screenH / 720f, 1f);
+            float s = DeviceFit.UiH(screenH);
             float x = Mathf.Max(PadXMin, 16f * s);
             float y = Mathf.Max(PadYMin, 11f * s);
             return new Vector2(x, y);
@@ -339,7 +339,7 @@ namespace FlockFive
         // inside it minus the shared box pad, so a line cannot run off either edge.
         public static float SafeMargin(float screenW, float screenH)
         {
-            float s = screenH > 2f ? screenH / 720f : 1f;
+            float s = screenH > 2f ? DeviceFit.UiH(screenH) : 1f;
             if (s < 1f) s = 1f;
             float m = 12f * s;
             if (m < 18f) m = 18f;

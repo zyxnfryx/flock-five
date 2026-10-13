@@ -39,7 +39,7 @@ namespace FlockFive
 
         public static ClearOfferLayout LayoutClearOffer(float screenW, float screenH)
         {
-            float s = screenH > 2f ? screenH / 720f : 1f;
+            float s = screenH > 2f ? DeviceFit.UiH(screenH) : 1f;
             if (s < 1f) s = 1f;
             float safe = CaptionLayout.SafePlateWidth(screenW, screenH);
             float w = safe;
@@ -64,7 +64,7 @@ namespace FlockFive
 
         public static VipSoftLayout LayoutVipSoft(float screenW, float screenH)
         {
-            float s = screenH > 2f ? screenH / 720f : 1f;
+            float s = screenH > 2f ? DeviceFit.UiH(screenH) : 1f;
             if (s < 1f) s = 1f;
             float safe = CaptionLayout.SafePlateWidth(screenW, screenH);
             float w = safe;

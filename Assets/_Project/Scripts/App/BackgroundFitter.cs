@@ -37,6 +37,12 @@ namespace FlockFive
                 float y = FollowCamera ? Cam.transform.position.y : WorldCenter.y;
                 pos = new Vector3(x, y, WorldCenter.z);
                 scale = new Vector3(w / size.x, h / size.y, 1f);
+                // b87 wide screens: cover without stretching the painting.
+                if (Cam.aspect > DeviceFit.PhoneAspect + 0.01f)
+                {
+                    float k = Mathf.Max(w / size.x, (h / size.y));
+                    scale = new Vector3(k, k, 1f);
+                }
             }
             else
             {
