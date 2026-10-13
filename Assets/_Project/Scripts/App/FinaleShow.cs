@@ -154,26 +154,27 @@ namespace FlockFive
             if (idle != null)
             {
                 idle.Frozen = true;
-                idle.Flapping = true;
-                idle.Lift = 0.2f;
-                idle.RestScale = Vector3.one * 0.5f;
+                idle.Flapping = false;
+                idle.Lift = 0f;
+                idle.SuppressMood();
+                idle.enabled = false;
             }
             // Leave the lockup so the letter blast cannot drag her with it.
             if (hold != null && hold.parent != null)
                 peach.SetParent(hold.parent, true);
 
-            // Fix (build 85 "two white bits at the neck"): neutral peach is the gold art
-            // recoloured, which already has a painted eye. The procedural "Mood" face
-            // (two white sclera ovals) sat on the neck and was never hidden. Drop it and
-            // any other child sprite so only the painted bird zooms.
-            var kids = peach.GetComponentsInChildren<SpriteRenderer>(true);
-            for (int i = 0; i < kids.Length; i++)
-                if (kids[i] != null && kids[i].transform != peach) Object.Destroy(kids[i].gameObject);
-
             var sr = peach.GetComponent<SpriteRenderer>();
             peach.localPosition = new Vector3(0f, 1.4f, 5.6f);
             peach.localScale = Vector3.one * 0.07f;
-            if (sr != null) sr.sortingOrder = 8;
+            peach.localRotation = Quaternion.identity;
+            if (sr != null)
+            {
+                // One wings-up frame. Flap cycling was swapping highlight specks across the neck.
+                sr.sprite = SpriteCatalog.FlapPose(BirdColor.Peach, 1);
+                sr.color = Color.white;
+                sr.flipX = false;
+                sr.sortingOrder = 8;
+            }
 
             float t = 0f;
             const float pull = 0.28f;
@@ -204,7 +205,7 @@ namespace FlockFive
             Sfx.Rumble();
             if (sr != null) sr.sortingOrder = 72;
             var hit = peach.position;
-            // Pass 1: impact. Crack flash (sorted above the peach, 96-97) first, then a ~60ms hit-stop on contact.
+            // Impact. Flash and cracks sit behind the peach, then a ~60ms hit-stop.
             host.StartCoroutine(CrackFlash(hold, hit));
             float stop = 0f;
             while (stop < HitStop && peach != null)
@@ -221,8 +222,6 @@ namespace FlockFive
 
             t = 0f;
             const float through = 0.62f;
-            var face = peach != null ? peach.Find("Mood") : null;
-            var faceSr = face != null ? face.GetComponent<SpriteRenderer>() : null;
             while (t < through && peach != null)
             {
                 t += Time.deltaTime;
@@ -238,13 +237,6 @@ namespace FlockFive
                     c.a = u > 0.62f ? 1f - Smooth01((u - 0.62f) / 0.38f) : 1f;
                     sr.color = c;
                 }
-                if (faceSr != null)
-                {
-                    faceSr.sortingOrder = order + 1;
-                    var c = faceSr.color;
-                    c.a = sr != null ? sr.color.a : 1f;
-                    faceSr.color = c;
-                }
                 yield return null;
             }
             if (peach != null) Object.Destroy(peach.gameObject);
@@ -254,22 +246,29 @@ namespace FlockFive
         const float HitStop = 0.06f;
 
         // Swept by SweepSparkles: names start with "Burst".
+        // Rays and the flash sit behind the peach (order 72). Their inner tips stay
+        // outside the body so a sparkle centre never lands on the neck.
         static IEnumerator CrackFlash(Transform parent, Vector3 hit)
         {
             const int rays = 9;
+            const float bodyR = 1.2f;
             var rs = new SpriteRenderer[rays + 1];
             var len = new float[rays];
-            var flash = WorldBuilder.Sprite("BurstFlash", SpriteCatalog.Glow, hit, 0.6f, 96, parent);
+            var peach = Wow.Of(BirdColor.Peach);
+            var gold = Wow.Of(BirdColor.Gold);
+            var flash = WorldBuilder.Sprite("BurstFlash", SpriteCatalog.Glow, hit, 0.8f, 60, parent);
             rs[rays] = flash.GetComponent<SpriteRenderer>();
-            rs[rays].color = new Color(1f, 0.97f, 0.88f, 0.95f);
+            rs[rays].color = new Color(gold.r, gold.g, gold.b, 0.42f);
+            float sparkW = SpriteCatalog.Sparkle != null ? SpriteCatalog.Sparkle.bounds.size.x : 5.12f;
             for (int i = 0; i < rays; i++)
             {
                 float ang = i * 360f / rays + Random.Range(-14f, 14f);
-                var go = WorldBuilder.Sprite("BurstCrack", SpriteCatalog.Sparkle, hit, 0.1f, 97, parent);
+                var go = WorldBuilder.Sprite("BurstCrack", SpriteCatalog.Sparkle, hit, 0.1f, 64, parent);
                 go.transform.rotation = Quaternion.Euler(0f, 0f, ang);
                 rs[i] = go.GetComponent<SpriteRenderer>();
-                rs[i].color = new Color(1f, 0.95f, 0.8f, 1f);
-                len[i] = Random.Range(1.6f, 2.6f);
+                var tint = Color.Lerp(peach, gold, (i % 2) * 0.65f);
+                rs[i].color = new Color(tint.r, tint.g, tint.b, 1f);
+                len[i] = Random.Range(1.5f, 2.4f);
             }
             const float life = 0.24f;
             float t = 0f;
@@ -282,16 +281,17 @@ namespace FlockFive
                 for (int i = 0; i < rays; i++)
                 {
                     if (rs[i] == null) continue;
+                    float scaleX = len[i] * grow * 0.195f;
+                    float half = sparkW * scaleX * 0.5f;
                     var dir = rs[i].transform.right;
-                    rs[i].transform.position = hit + dir * len[i] * 0.5f * grow;
-                    // Sparkle art is ~5.12u wide; 0.195 maps len to world units.
-                    rs[i].transform.localScale = new Vector3(len[i] * grow * 0.195f, 0.03f * (1f - u * 0.6f), 1f);
+                    rs[i].transform.position = hit + dir * (bodyR + half);
+                    rs[i].transform.localScale = new Vector3(scaleX, 0.028f * (1f - u * 0.55f), 1f);
                     var c = rs[i].color; c.a = a; rs[i].color = c;
                 }
                 if (rs[rays] != null)
                 {
-                    rs[rays].transform.localScale = Vector3.one * Mathf.Lerp(0.6f, 4.2f, grow);
-                    var c = rs[rays].color; c.a = 0.95f * a * a; rs[rays].color = c;
+                    rs[rays].transform.localScale = Vector3.one * Mathf.Lerp(1.5f, 4.8f, grow);
+                    var c = rs[rays].color; c.a = 0.42f * a * a; rs[rays].color = c;
                 }
                 yield return null;
             }
@@ -306,11 +306,13 @@ namespace FlockFive
             var rs = new SpriteRenderer[n];
             var vel = new Vector3[n];
             var spin = new float[n];
+            var peachTint = Wow.Of(BirdColor.Peach);
+            var goldTint = Wow.Of(BirdColor.Gold);
             var tint = new[]
             {
-                new Color(1f, 0.86f, 0.42f, 1f),
-                new Color(1f, 0.97f, 0.88f, 1f),
-                new Color(1f, 0.62f, 0.3f, 1f)
+                peachTint,
+                goldTint,
+                Color.Lerp(peachTint, goldTint, 0.45f)
             };
             for (int i = 0; i < n; i++)
             {

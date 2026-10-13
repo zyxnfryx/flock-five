@@ -14,6 +14,7 @@ namespace FlockFive
         public bool FaceLeft;
         public BirdColor Color;
         public BirdSex Sex;
+        public bool MoodOn = true;
         SpriteRenderer _sr;
         SpriteRenderer _face;
         SpriteRenderer _kit;
@@ -52,6 +53,21 @@ namespace FlockFive
             if (_kit != null) _kit.enabled = false;
         }
 
+        // Neutral peach is recoloured gold and already has a painted eye. The Mood
+        // face is two white sclera that land on the neck once the bird fills the screen.
+        public void SuppressMood()
+        {
+            MoodOn = false;
+            var kids = GetComponentsInChildren<SpriteRenderer>(true);
+            for (int i = 0; i < kids.Length; i++)
+            {
+                if (kids[i] == null || kids[i].transform == transform) continue;
+                Object.Destroy(kids[i].gameObject);
+            }
+            _face = null;
+            _kit = null;
+        }
+
         public void Flutter(float seconds)
         {
             Flapping = true;
@@ -61,6 +77,7 @@ namespace FlockFive
 
         void EnsureFace()
         {
+            if (!MoodOn) return;
             if (_face != null)
             {
                 _face.sprite = BirdMood.Face(Color);
@@ -136,7 +153,11 @@ namespace FlockFive
 
         void PlaceFace(BirdMood.Pose mood, bool on)
         {
-            if (_face == null) return;
+            if (!MoodOn || _face == null)
+            {
+                if (_face != null) _face.enabled = false;
+                return;
+            }
             _face.enabled = on;
             if (!on) return;
             if (Time.time >= _nextBlink)
