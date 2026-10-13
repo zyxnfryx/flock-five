@@ -12,6 +12,8 @@ namespace FlockFive
         static ShotHost83 _host87;
         public static System.Action<int, int> EditorGameSize;
         public static string Shot87Tag = "";
+        // Shot coroutine owns the adopt clock. TickAdopt only keeps the scene alive.
+        bool _shotForceAdopt;
 
         public IEnumerator ShotBuild87()
         {
@@ -180,6 +182,128 @@ namespace FlockFive
             ShotNoGui = hide;
         }
 
+        // Wings-up flap (bird_gold_2). Pose 1 is swept back and reads as perched.
+        bool ShotAdoptAirborne()
+        {
+            if (!_adoptLive || _avatarPose != AvatarPose.Flying) return false;
+            float s = DeviceFit.Ui();
+            float icon = HomeAvatarIcon(s);
+            if (icon < 8f) return false;
+            int pick = _adoptPick;
+            if (pick < 0 || pick > 4) pick = 1;
+            var c = AdoptBirdCenter(pick, icon, s, out bool onPerch);
+            if (onPerch) return false;
+            var perch = AvatarHomePoint();
+            float dx = c.x - perch.x;
+            float dy = c.y - perch.y;
+            bool above = c.y < perch.y - icon * 0.28f;
+            bool aside = Mathf.Abs(dx) > icon * 0.75f;
+            if (!above && !aside) return false;
+            if (dx * dx + dy * dy < icon * icon * 0.30f) return false;
+            var flower = FlowerPlayRect();
+            if (flower.height > 2f && c.y > flower.yMin - icon * 0.08f) return false;
+            float clock = _adoptClock + pick * 0.17f;
+            SpriteCatalog.FlapPair(_adoptCol, BirdSex.Neutral, clock * AvatarFlapRate, true, out var body, out _, out _);
+            return SpriteCatalog.PoseIndex(body, _adoptCol, BirdSex.Neutral) == 2;
+        }
+
+        string ShotAdoptStatus()
+        {
+            float s = DeviceFit.Ui();
+            float icon = HomeAvatarIcon(s);
+            int pick = _adoptPick < 0 || _adoptPick > 4 ? 1 : _adoptPick;
+            var c = icon > 2f ? AdoptBirdCenter(pick, icon, s, out _) : _avatarPos;
+            var perch = AvatarHomePoint();
+            float clock = _adoptClock + pick * 0.17f;
+            SpriteCatalog.FlapPair(_adoptCol, BirdSex.Neutral, clock * AvatarFlapRate, true, out var body, out _, out _);
+            int pose = SpriteCatalog.PoseIndex(body, _adoptCol, BirdSex.Neutral);
+            return "pose=" + _avatarPose + " flap=" + pose + " live=" + _adoptLive
+                + " clock=" + _adoptClock.ToString("0.00")
+                + " bird=" + c.x.ToString("0") + "," + c.y.ToString("0")
+                + " perch=" + perch.x.ToString("0") + "," + perch.y.ToString("0")
+                + " icon=" + icon.ToString("0");
+        }
+
+        // One frame of wander. Substeps so a long editor frame cannot skip wings-up.
+        void ShotStepAdoptFly()
+        {
+            _shotForceAdopt = true;
+            _adoptLive = true;
+            if (_adoptStep != AdoptStep.Fly)
+                BeginAdopt();
+            float dt = Time.unscaledDeltaTime;
+            if (dt < 0.008f) dt = 0.016f;
+            if (dt > 0.05f) dt = 0.05f;
+            float left = dt;
+            while (left > 0.0001f)
+            {
+                float step = left > 0.012f ? 0.012f : left;
+                _adoptClock += step;
+                TickAdoptMotion(step);
+                left -= step;
+                if (ShotAdoptAirborne()) return;
+            }
+        }
+
+        IEnumerator WaitShotAdoptAirborne(string logPath)
+        {
+            _shotForceAdopt = true;
+            BeginAdopt();
+            float waited = 0f;
+            while (waited < 8f)
+            {
+                MuteShotAudio();
+                ShotStepAdoptFly();
+                if (ShotAdoptAirborne())
+                {
+                    yield return new WaitForEndOfFrame();
+                    File.AppendAllText(logPath, "AIR " + ShotAdoptStatus() + " waited=" + waited.ToString("0.00") + "\n");
+                    yield break;
+                }
+                waited += Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+                yield return null;
+            }
+            yield return new WaitForEndOfFrame();
+            File.AppendAllText(logPath, "TIMEOUT " + ShotAdoptStatus() + "\n");
+        }
+
+        void ShotSeatAvatar()
+        {
+            _shotForceAdopt = false;
+            _adoptLive = false;
+            _adoptStep = AdoptStep.Off;
+            CloseAvatarRename();
+            float s = DeviceFit.Ui();
+            FillAvatarPerches(s);
+            _avatarPlaced = true;
+            _avatarHold = false;
+            _avatarCrossing = false;
+            _avatarCross = false;
+            _avatarGliding = false;
+            _avatarPose = AvatarPose.Perched;
+            _avatarPerchIx = HomeBranchAnchor();
+            _avatarPos = AvatarHomePoint();
+            _avatarFlapT = 0f;
+            _avatarPreenT = 0f;
+            _avatarHappy = 0f;
+            _avatarNextFlap = _avatarClock + 30f;
+            _avatarNextGlide = _avatarClock + 30f;
+            _awayOn = false;
+        }
+
+        void SaveFlyingShot(string framePath, string cropPath)
+        {
+            var tex = ScreenCapture.CaptureScreenshotAsTexture();
+            if (tex == null) return;
+            try
+            {
+                File.WriteAllBytes(framePath, tex.EncodeToPNG());
+                if (!string.IsNullOrEmpty(cropPath) && _adoptBirdR.width > 2f)
+                    WriteCrop(tex, _adoptBirdR, 900, 1.35f, cropPath);
+            }
+            finally { UnityEngine.Object.Destroy(tex); }
+        }
+
         IEnumerator ShotBuild87ExtraBody()
         {
             ShotKeepAwake = true;
@@ -187,9 +311,12 @@ namespace FlockFive
             EditorShotLive = true;
             EditorApplication.isPaused = false;
             Application.runInBackground = true;
+            bool kitsOnly = File.Exists("/tmp/flock-five-b87x-kits");
             string root = "/Users/zfxgames/wkspaces/birdshot/gb/b87/x";
-            if (Directory.Exists(root)) Directory.Delete(root, true);
+            if (!kitsOnly && Directory.Exists(root)) Directory.Delete(root, true);
             Directory.CreateDirectory(root);
+            string kitLog = "/tmp/flock-five-b87x-kitlog.txt";
+            File.WriteAllText(kitLog, kitsOnly ? "kits-only\n" : "full\n");
             int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
             int animKeep = PlayerPrefs.GetInt(BackgroundMotion.PrefKey, 1);
             PlayerPrefs.SetInt(BackgroundMotion.PrefKey, 1);
@@ -199,52 +326,66 @@ namespace FlockFive
             {
                 if (EditorGameSize != null) EditorGameSize(res[d][0], res[d][1]);
                 yield return new WaitForSecondsRealtime(1.2f);
-                // Pay table.
-                ShowSplash();
-                yield return new WaitForSecondsRealtime(0.8f);
-                _home = HomeFace.Poker; _splash = true; _pokerPayOpen = true; _pokerPayAnim = 1f;
-                yield return new WaitForSecondsRealtime(1.2f);
-                yield return new WaitForEndOfFrame();
-                SaveFrame(root + "/paytable-" + dev[d] + ".png");
-                _pokerPayOpen = false; _pokerPayAnim = 0f;
-                ShowSplash();
-                yield return new WaitForSecondsRealtime(0.8f);
-                // VIP sheen.
-                VipOffer.Show();
-                yield return new WaitForSecondsRealtime(0.8f);
-                yield return Rec87(root + "/sheen-" + dev[d], 3f);
-                VipOffer.Close();
-                yield return new WaitForSecondsRealtime(0.6f);
+                if (!kitsOnly)
+                {
+                    // Pay table.
+                    ShowSplash();
+                    yield return new WaitForSecondsRealtime(0.8f);
+                    _home = HomeFace.Poker; _splash = true; _pokerPayOpen = true; _pokerPayAnim = 1f;
+                    yield return new WaitForSecondsRealtime(1.2f);
+                    yield return new WaitForEndOfFrame();
+                    SaveFrame(root + "/paytable-" + dev[d] + ".png");
+                    _pokerPayOpen = false; _pokerPayAnim = 0f;
+                    ShowSplash();
+                    yield return new WaitForSecondsRealtime(0.8f);
+                    // VIP sheen.
+                    VipOffer.Show();
+                    yield return new WaitForSecondsRealtime(0.8f);
+                    yield return Rec87(root + "/sheen-" + dev[d], 3f);
+                    VipOffer.Close();
+                    yield return new WaitForSecondsRealtime(0.6f);
+                }
                 // Adopt (flying + under the banner) with each kit.
+                // Flying waits until the adopt bird is off the twig on the wings-up frame.
                 int adoptKeep = PlayerPrefs.GetInt(AvatarAdoptedPref, 0), kitKeep = PlayerPrefs.GetInt(AvatarKitPref, 0);
+                string cropDir = "/Users/zfxgames/wkspaces/birdshot/gb/b87post";
+                Directory.CreateDirectory(cropDir);
                 for (int kit = 1; kit <= 2; kit++)
                 {
                     PlayerPrefs.SetInt(AvatarKitPref, kit);
                     PlayerPrefs.SetInt(AvatarAdoptedPref, 0);
                     ShowSplash();
-                    yield return new WaitForSecondsRealtime(0.5f);
+                    MuteShotAudio();
+                    yield return new WaitForSecondsRealtime(0.45f);
                     ArmAdopt();
-                    yield return new WaitForSecondsRealtime(0.2f);
-                    if (!_adoptLive) { _adoptLive = true; }
-                    BeginAdopt();
-                    yield return new WaitForSecondsRealtime(0.7f);
-                    yield return new WaitForEndOfFrame();
-                    SaveFrame(root + "/kit" + kit + "-flying-" + dev[d] + ".png");
-                    yield return new WaitForSecondsRealtime(3.5f);
-                    yield return new WaitForEndOfFrame();
-                    SaveFrame(root + "/adopt-kit" + kit + "-" + dev[d] + ".png");
+                    File.AppendAllText(kitLog, "kit" + kit + "-" + dev[d] + " before " + ShotAdoptStatus() + "\n");
+                    yield return WaitShotAdoptAirborne(kitLog);
+                    MuteShotAudio();
+                    string flyPath = root + "/kit" + kit + "-flying-" + dev[d] + ".png";
+                    string cropPath = kit == 1 && d == 0 ? cropDir + "/b86-sparkle-crop.png" : null;
+                    SaveFlyingShot(flyPath, cropPath);
+                    _shotForceAdopt = false;
                     _adoptLive = false; _adoptStep = AdoptStep.Off;
                     PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
                     ShowSplash();
-                    yield return new WaitForSecondsRealtime(2.0f);
+                    MuteShotAudio();
+                    for (int seat = 0; seat < 6; seat++)
+                    {
+                        ShotSeatAvatar();
+                        MuteShotAudio();
+                        yield return null;
+                    }
+                    ShotSeatAvatar();
                     yield return new WaitForEndOfFrame();
                     SaveFrame(root + "/kit" + kit + "-perched-" + dev[d] + ".png");
+                    File.AppendAllText(kitLog, "PERCH kit" + kit + "-" + dev[d] + " " + ShotAdoptStatus() + "\n");
                 }
+                _shotForceAdopt = false;
                 PlayerPrefs.SetInt(AvatarAdoptedPref, adoptKeep); PlayerPrefs.SetInt(AvatarKitPref, kitKeep);
                 // Leaf-only sway: birds, feeders, hive and GUI hidden.
                 GardenScene[] sc = { GardenScene.Summer, GardenScene.Desert, GardenScene.Fall, GardenScene.Winter, GardenScene.Spring };
                 string[] nm = { "summer", "desert", "fall", "winter", "spring" };
-                for (int k = 0; k < sc.Length && d == 1; k++)
+                for (int k = 0; k < sc.Length && d == 1 && !kitsOnly; k++)
                 {
                     int lvl = 0;
                     for (int L = 0; L < 400; L++) if (GardenSeason.ForLevel(L + 1) == sc[k]) { lvl = L + 2; break; }
@@ -267,7 +408,7 @@ namespace FlockFive
                     HideGardenActors(false);
                 }
                 // Home sway, GUI hidden.
-                if (d == 1)
+                if (d == 1 && !kitsOnly)
                 {
                     ShowSplash();
                     yield return new WaitForSecondsRealtime(1.5f);

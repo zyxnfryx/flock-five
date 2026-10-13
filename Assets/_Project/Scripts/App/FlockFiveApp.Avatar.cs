@@ -413,6 +413,13 @@ namespace FlockFive
 
         void TickAdopt()
         {
+            // Kit stills drive the wander themselves. AdoptTurn is false while
+            // EditorShotLive, which used to drop the flight and leave a perched bird.
+            if (_shotForceAdopt)
+            {
+                _adoptLive = true;
+                return;
+            }
             if (!AdoptTurn())
             {
                 if (_adoptLive && _adoptStep != AdoptStep.Settle)
