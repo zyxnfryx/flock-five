@@ -416,15 +416,15 @@ namespace FlockFive
             if (pose <= 0) return Bird(c, sex);
             string tag = sex == BirdSex.Female ? "_f" : sex == BirdSex.Male ? "_m" : "";
             int ix = KitIx(c, sex);
-            bool up = pose != 2;
-            Sprite got = tag.Length == 0
-                ? (up
-                    ? Slot(ref _flap1, (int)c, "Sprites/bird_" + Name(c) + "_1", 280f)
-                    : Slot(ref _flap2, (int)c, "Sprites/bird_" + Name(c) + "_2", 280f))
-                : (up
-                    ? SlotWide(ref _kitUp, ix, "Sprites/bird_" + Name(c) + tag + "_1", 280f)
-                    : SlotWide(ref _kitMid, ix, "Sprites/bird_" + Name(c) + tag + "_2", 280f));
-            return got != null ? got : Bird(c, sex);
+            Sprite up = tag.Length == 0
+                ? Slot(ref _flap1, (int)c, "Sprites/bird_" + Name(c) + "_1", 280f)
+                : SlotWide(ref _kitUp, ix, "Sprites/bird_" + Name(c) + tag + "_1", 280f);
+            if (pose != 2) return up != null ? up : Bird(c, sex);
+            Sprite mid = tag.Length == 0
+                ? Slot(ref _flap2, (int)c, "Sprites/bird_" + Name(c) + "_2", 280f)
+                : SlotWide(ref _kitMid, ix, "Sprites/bird_" + Name(c) + tag + "_2", 280f);
+            if (mid != null) return mid;
+            return up != null ? up : Bird(c, sex);
         }
 
         public static Sprite BirdFrame(BirdColor c, float t, bool flap, BirdSex sex)
