@@ -8710,9 +8710,13 @@ namespace FlockFive
         // sparkle 0 still lets x10 twinkle inside StreakBadge.Draw.
         // thud is the reward card's one-shot bump. The wheel passes false so it
         // gets the same pop, tilt, wax, and sparkle without taking that gate.
+        // b86: last stamp drawn this frame, so the choice scrim can repaint it on top (one layer, full color).
+        Rect _stampR; int _stampMul, _stampFrame = -10; float _stampA, _stampAge, _stampSpark; bool _stampThud;
+        bool _stampRepaint;
         void DrawRewardStamp(Rect r, int mul, float alpha, float age, float sparkle = 0f, bool thud = true)
         {
             if (r.width < 8f || alpha < 0.02f || age < 0f) return;
+            if (!_stampRepaint) { _stampR = r; _stampMul = mul; _stampA = alpha; _stampAge = age; _stampSpark = sparkle; _stampThud = thud; _stampFrame = Time.frameCount; }
             mul = StreakTier.Display(mul);
             float land = RewardStampDur * RewardStampLandU();
             float waxAge;
@@ -12804,7 +12808,7 @@ namespace FlockFive
                 _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
             bool pin = PokerStepPinned(PokerStepAnchor(line));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
-            PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign);
+            CapSpot("poker.table"); PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign);
         }
 
         // Above the cards: from ceilingY down to the top of the card reach (held cards and the
@@ -13196,13 +13200,19 @@ namespace FlockFive
                 float panelH = headH + rows * rowH + pad * 2f;
                 if (panelTop + panelH > floor)
                 {
-                    panelH = floor - panelTop;
-                    rowH = Mathf.Max(28f * s, (panelH - headH - pad * 2f) / rows);
+                    // b86 (iPad 3:4): the panel never outgrows its room, and the rows always
+                    // fit INSIDE it (no floor that pushes TWO PAIR past the border); the
+                    // header gives up height first on short screens.
+                    panelH = Mathf.Max(floor - panelTop, 160f * s);
+                    headH = Mathf.Clamp(panelH * 0.12f, 34f * s, headH);
+                    rowH = (panelH - headH - pad * 2f) / rows;
                 }
                 float cx = Screen.width * 0.5f;
                 float ease = 1f - Mathf.Pow(1f - u, 2.4f);
                 float y = Mathf.Lerp(panelTop - 24f * s, panelTop, ease);
                 var panel = new Rect(cx - panelW * 0.5f, y, panelW, panelH * Mathf.Lerp(0.92f, 1f, ease));
+                // Rows follow the drawn panel (also during the open ease), so they never spill.
+                rowH = (panel.height - 14f * s - headH - 4f * s) / rows;
 
                 GUI.color = new Color(0.10f, 0.07f, 0.04f, 0.55f * u);
                 GUI.DrawTexture(new Rect(panel.x + 4f, panel.y + 6f, panel.width, panel.height), Texture2D.whiteTexture);
@@ -15804,6 +15814,7 @@ namespace FlockFive
                         if (canHold && i == top && e.button == 0)
                         {
                             GUIUtility.hotControl = id;
+                            _pokerDownAt = e.mousePosition;
                             e.Use();
                         }
                         break;
@@ -15812,7 +15823,8 @@ namespace FlockFive
                         {
                             GUIUtility.hotControl = 0;
                             e.Use();
-                            if (canHold && i == top)
+                            if (canHold && i == top
+                                && PokerCardReleaseToggles(BirdPoker.Hold[i], e.mousePosition - _pokerDownAt, PokerSwipeMin(Mathf.Max(Screen.height / 720f, 1f))))
                                 ApplyPokerHold(i);
                         }
                         break;
@@ -15821,6 +15833,18 @@ namespace FlockFive
                         break;
                 }
             }
+        }
+
+        // b86 (Brandon): a downward swipe on a HELD card releases its hold (same path,
+        // sound and animation as a second tap). A down-swipe on an unheld card does nothing.
+        // Anything else is a tap, as before.
+        Vector2 _pokerDownAt;
+        public static float PokerSwipeMin(float s) => Mathf.Max(28f, 34f * s);
+        public static bool PokerSwipeDown(Vector2 delta, float minPx) => delta.y >= minPx && delta.y > Mathf.Abs(delta.x) * 1.2f;
+        public static bool PokerCardReleaseToggles(bool held, Vector2 delta, float minPx)
+        {
+            if (PokerSwipeDown(delta, minPx)) return held;
+            return true;
         }
 
         void ApplyPokerHold(int i)
@@ -16663,7 +16687,7 @@ namespace FlockFive
                 if (focus.width > 8f && focus.height > 8f)
                 {
                     var pose = PoseLesson(step, focus, Screen.width, Screen.height, line, AlbumHoneyCount());
-                    PaintCoachCaption(line, pose.Seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+                    CapSpot("album.coach"); PaintCoachCaption(line, pose.Seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
                     return;
                 }
             }
@@ -16685,7 +16709,7 @@ namespace FlockFive
             float maxY = Screen.height - h - 8f;
             if (y > maxY) y = maxY;
             var seat = new Rect((Screen.width - w) * 0.5f, y, w, h);
-            PaintCoachCaption(line, seat, s, 12, Mathf.RoundToInt(28f * s), default, false, StandardCaptionSlack);
+            CapSpot("album.coach"); PaintCoachCaption(line, seat, s, 12, Mathf.RoundToInt(28f * s), default, false, StandardCaptionSlack);
         }
 
         void DrawHivePage()
@@ -18522,7 +18546,7 @@ namespace FlockFive
             if (!_freezeOffer) DrawGiftCloseX(xBtn, xHeld, s);
             if (_adHand)
             {
-                DrawSplashIntroLine(AdHandLine, AdHandCaptionRect(s), s);
+                CapSpot("ad.hand"); DrawSplashIntroLine(AdHandLine, AdHandCaptionRect(s), s);
                 DrawTutorOverlay(s);
             }
             if (watch)

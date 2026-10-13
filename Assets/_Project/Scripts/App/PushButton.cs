@@ -13,7 +13,7 @@ namespace FlockFive
         public const int Claim = 1;
         public const int Vip = 2;
         public const float ReleaseSeconds = 0.32f;
-        public const float SheenPeriod = 2.75f;
+        public const float SheenPeriod = 1.40f; // b86: sweep about 2x faster
         public const float SinkFrac = 0.055f;
 
         public struct Pose

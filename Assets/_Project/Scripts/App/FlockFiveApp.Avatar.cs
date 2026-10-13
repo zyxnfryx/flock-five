@@ -688,8 +688,8 @@ namespace FlockFive
             var bc = AdoptBirdCenter(pk, ic, s, out _);
             // The arriving bird is the subject (its flight is kept under the band, see HomeWanderBounds).
             Rect subj = new Rect(bc.x - ic * 0.7f, bc.y - ic * 0.7f, ic * 1.4f, ic * 1.4f);
-            NoteCaptionSubject(subj);
-            PaintCoachCaption(line, bubble, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+            // b86: the bird moves under the band (AdoptBirdCenter), so the band need not dodge it.
+            CapSpot("adopt.greet"); PaintCoachCaption(line, bubble, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
         }
 
         // Before DrawFlowerPlay. HitHomeFirst Uses the press so the LEVEL flower
@@ -715,7 +715,15 @@ namespace FlockFive
         Vector2 AdoptBirdCenter(int i, float icon, float s, out bool onPerch)
         {
             onPerch = AvatarPoseOnWood() && _adoptHop[i] <= 0.05f;
-            return PerchAnchor(_adoptShown[i], icon, onPerch, _adoptHop[i], 14f * s);
+            var c = PerchAnchor(_adoptShown[i], icon, onPerch, _adoptHop[i], 14f * s);
+            // Build 86 (Brandon): the arriving bird hovers BELOW the high banner, on screen,
+            // as in earlier builds; the band stays put under the title.
+            if (_adoptLive && _bannerLastFrame >= Time.frameCount - 2 && _bannerLast.width > 2f)
+            {
+                float under = _bannerLast.yMax + icon * 0.62f + 6f * s;
+                if (c.y < under) { c.y = Mathf.Min(under, Screen.height - icon); onPerch = false; }
+            }
+            return c;
         }
 
         bool AdoptLookRects(float icon, out Rect bird, out Rect plate)

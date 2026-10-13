@@ -1306,14 +1306,19 @@ namespace FlockFive
             return w * 0.5f - dip;
         }
 
-        public static Rect WheelWedgeLabelRect(Rect wheel, int wedge, float clockwiseDegrees)
+        public static Rect WheelWedgeLabelRect(Rect wheel, int wedge, float clockwiseDegrees) => WheelWedgeLabelRect(wheel, wedge, clockwiseDegrees, true);
+
+        // pullTip: only the LANDED wedge pulls its label inside the pointer tip. During a
+        // spin every label keeps its fixed radius and size, so none jumps as it passes
+        // under the pointer (b86: labels rigid with the disc).
+        public static Rect WheelWedgeLabelRect(Rect wheel, int wedge, float clockwiseDegrees, bool pullTip)
         {
             bool jack = wedge == DailyBonus.JackpotWedge;
             WheelLabelMetrics(wheel.width, jack, out float radius, out float lw, out float lh);
             // The landed wedge points straight at the tip. Pull that one label
             // inside the tip so the amount stays readable. The other wedges keep
             // the full box.
-            if (wedge == DailyBonus.WedgeUnderPointer(clockwiseDegrees))
+            if (pullTip && wedge == DailyBonus.WedgeUnderPointer(clockwiseDegrees))
             {
                 float w = Mathf.Max(8f, wheel.width);
                 float outer = WheelPointerTipRadius(w) - Mathf.Max(4f, w * 0.010f);
@@ -1440,12 +1445,12 @@ namespace FlockFive
             for (int i = 0; i < DailyBonus.WedgeCount; i++)
             {
                 bool jack = i == DailyBonus.JackpotWedge;
-                var lab = WheelWedgeLabelRect(wheel, i, angle);
+                var lab = WheelWedgeLabelRect(wheel, i, angle, landed);
                 string text = Money.Format(DailyBonus.Prize(level, i));
-                int cap = jack ? _dailyJackpotPx : _dailyTilePx;
-                int lo = 8;
-                if (lo > cap) lo = cap;
-                _dailyTile.fontSize = FitFont(_dailyTile, text, lab.width * 0.94f, lab.height * 0.90f, lo, cap);
+                // b86: one font size per label kind (fit once on the fixed box), so sizes are
+                // consistent and never change frame to frame while the disc turns.
+                var fixedLab = WheelWedgeLabelRect(wheel, i, 0f, false);
+                _dailyTile.fontSize = WheelLabelPx(text, jack, fixedLab);
                 _dailyTile.fontStyle = FontStyle.Bold;
                 var hold = GUI.matrix;
                 GUIUtility.RotateAroundPivot(DailyBonus.WedgeLabelDegrees(i, angle), lab.center);
@@ -1471,11 +1476,12 @@ namespace FlockFive
             int payMul = _wheelPayMul < 1 ? 1 : _wheelPayMul;
             if (landed && DailyBonus.SpinCoins >= 100)
             {
-                int shown = DailyBonus.SpinCoins * payMul;
+                int target = DailyBonus.SpinCoins * payMul;
+                int shown = WheelHubCount(target);
                 string won = WheelHubText(shown);
                 float budgetW = WheelHubBudgetW(wheel.width);
                 float budgetH = Mathf.Max(8f, WheelHubInnerDiameter(wheel.width) * 0.70f);
-                _dailyLine.fontSize = WheelHubFont(won, wheel.width);
+                _dailyLine.fontSize = WheelHubFont(WheelHubText(target), wheel.width); // sized on the final total
                 var hubR = new Rect(wheel.center.x - budgetW * 0.5f, wheel.center.y - budgetH * 0.5f, budgetW, budgetH);
                 StampOutlined(hubR, won, _dailyLine, new Color(1f, 0.95f, 0.72f), 1, 2);
             }
@@ -1485,6 +1491,57 @@ namespace FlockFive
 
         // One gold triangle and one round pin. Ticks rotate this same sprite
         // around the pin. There is no second pointer and no extra frame.
+        // b86: the win total counts up eased on the ad-excluded clock (AdPause.Unscaled),
+        // one step per frame, no skipped jumps at the end, and lands exactly on target.
+        public const float HubCountSec = 0.70f;
+        int _hubFrom, _hubTo = -1; float _hubAt;
+        int WheelHubCount(int target)
+        {
+            if (target != _hubTo)
+            {
+                _hubFrom = _hubTo < 0 ? 0 : WheelHubEase(_hubFrom, _hubTo, _hubAt);
+                _hubTo = target; _hubAt = AdPause.Unscaled;
+            }
+            return WheelHubEase(_hubFrom, _hubTo, _hubAt);
+        }
+        static int WheelHubEase(int from, int to, float at)
+        {
+            float u = Mathf.Clamp01((AdPause.Unscaled - at) / HubCountSec);
+            if (u >= 1f) return to;
+            float e = 1f - (1f - u) * (1f - u) * (1f - u);
+            return Mathf.RoundToInt(Mathf.Lerp(from, to, e));
+        }
+        public static int HubEaseAt(int from, int to, float u)
+        {
+            u = Mathf.Clamp01(u); if (u >= 1f) return to;
+            float e = 1f - (1f - u) * (1f - u) * (1f - u);
+            return Mathf.RoundToInt(Mathf.Lerp(from, to, e));
+        }
+
+        readonly System.Collections.Generic.Dictionary<string, int> _wheelLabelPx = new System.Collections.Generic.Dictionary<string, int>();
+        int _wheelLabelKey;
+        int WheelLabelPx(string text, bool jack, Rect fixedLab)
+        {
+            int key = _dailyTilePx * 31 + _dailyJackpotPx * 7 + Mathf.RoundToInt(fixedLab.width);
+            if (key != _wheelLabelKey) { _wheelLabelPx.Clear(); _wheelLabelKey = key; }
+            // One size per kind (every plain wedge alike, the jackpot its own), fit to the
+            // widest amount of that kind on this wheel.
+            string k = (jack ? "J" : "T") + DailyBonus.HighestLevel;
+            if (_wheelLabelPx.TryGetValue(k, out int px)) return px;
+            int cap = jack ? _dailyJackpotPx : _dailyTilePx;
+            int lo = 8; if (lo > cap) lo = cap;
+            px = cap;
+            for (int i = 0; i < DailyBonus.WedgeCount; i++)
+            {
+                if ((i == DailyBonus.JackpotWedge) != jack) continue;
+                string t = Money.Format(DailyBonus.Prize(DailyBonus.HighestLevel, i));
+                int p = FitFont(_dailyTile, t, fixedLab.width * 0.94f, fixedLab.height * 0.90f, lo, cap);
+                if (p < px) px = p;
+            }
+            _wheelLabelPx[k] = px;
+            return px;
+        }
+
         void DrawWheelPointer(Rect wheel)
         {
             if (_wheelPointer == null || wheel.width < 8f) return;

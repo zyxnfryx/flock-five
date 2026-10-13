@@ -572,6 +572,7 @@ namespace FlockFive
             // Off needs nothing here: TickFreezeDuck sees the freeze gone and fades back up.
         }
 
+        public const float TutorFreezeMusic = 1f;
         static bool TutorFreezeHeld => GamePause.Paused && GamePause.TutorHold && !Ads.IsShowing;
 
         void MusicThroughPause(bool on)
@@ -597,7 +598,9 @@ namespace FlockFive
             // Real time between ticks, capped: a resume from background must not jump the fade.
             float dt = _freezeLast < 0f ? 0f : Mathf.Clamp(now - _freezeLast, 0f, 0.1f);
             _freezeLast = now;
-            _freezeDuck = Mathf.MoveTowards(_freezeDuck, held ? 0f : 1f, dt / FreezeFadeSeconds);
+            // b86 (Brandon): the sparrow tutorial pause keeps the music playing at full level
+            // (it rides through the listener pause); ads still silence it above.
+            _freezeDuck = Mathf.MoveTowards(_freezeDuck, held ? TutorFreezeMusic : 1f, dt / FreezeFadeSeconds);
         }
 
         void OnApplicationPause(bool paused)
