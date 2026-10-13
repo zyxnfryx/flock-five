@@ -148,24 +148,130 @@ namespace FlockFive
             finally { UnityEngine.Object.Destroy(tex); }
         }
 
-        // 1 s of idle, a 100 ms press, release (Load fires that frame), then 2.4 s on.
-        // Time.captureFramerate = 60 locks the clock to one 60 fps step per captured frame.
+        // The shot is running. StartupProbe keeps batch play mode alive while it is set.
+        public static bool PressShotLive;
+
+        // DrawFlowerPlay notes every repaint it makes and the LEVEL gates it saw, so the
+        // shot can wait for a button that is really on screen and really pressable.
+        int _levelDrawFrame = -1;
+        int _levelDrawRun;
+        SplashPress.Gates _levelGates;
+
+        void NoteLevelDrawn(SplashPress.Gates gates)
+        {
+            if (!GuiPaint()) return;
+            int f = Time.frameCount;
+            if (f == _levelDrawFrame) return;
+            _levelDrawRun = f == _levelDrawFrame + 1 ? _levelDrawRun + 1 : 1;
+            _levelDrawFrame = f;
+            _levelGates = gates;
+        }
+
+        // Null when the home splash is idle and LEVEL would take a real press. Otherwise
+        // the first thing in the way, for the timeout log.
+        string PressShotBlocker()
+        {
+            if (WarmCoverLive) return StudioCardHold ? "studio-card" : "warm-cover-fading";
+            if (!_splash) return "not-splash";
+            if (_home != HomeFace.Splash) return "home-face-" + _home;
+            if (Ads.IsShowing) return "ad-showing";
+            if (AdPause.Active) return "ad-pause";
+            if (GamePause.Paused) return "game-paused";
+            if (VipOffer.IsOpen) return "vip-offer";
+            if (_dailyOpen) return "daily-card";
+            if (_dailyAskOpen) return "daily-ask";
+            if (_welcomeOpen) return "welcome-card";
+            if (_adoptLive) return "adopt";
+            if (_settingsOpen) return "settings";
+            if (_avatarRename) return "avatar-rename";
+            if (_streakSlide >= 0f) return "streak-sign";
+            if (RewardPayBusy()) return "reward-pay";
+            if (HomeTutorLive()) return "home-lesson";
+            if (TutorialGuideLive()) return "tutorial-guide";
+            if (LeafCaptionLive()) return "caption";
+            if (BadgerOwed() > 0) return "badger-owed";
+            if (LevelCurtain.Armed) return "curtain-armed";
+            if (Time.frameCount - _levelDrawFrame > 2) return "level-not-drawn";
+            if (_levelDrawRun < 4) return "level-drawn-" + _levelDrawRun + "-frames";
+            var g = _levelGates;
+            if (g.Consent) return "gate-consent";
+            if (g.StepGate) return "gate-step";
+            if (g.AdoptQueue) return "gate-adopt-queue";
+            if (g.RailLesson) return "gate-glove";
+            if (g.LessonGuard) return "gate-lesson-guard";
+            if (g.ShowHolds) return "gate-badger-show";
+            if (g.ResumeSwallow) return "gate-resume";
+            if (g.CoachAte) return "gate-coach";
+            if (g.HomeTaken) return "gate-home-taken";
+            if (SplashPress.Blocks(g)) return "gate-other";
+            return null;
+        }
+
+        // Session-only dismissals through the game's own close paths. Nothing here
+        // writes a consent / ATT / reminder choice or skips a lesson. The streak sign
+        // pays out exactly as it does when LEVEL is pressed under it.
+        void PressShotClearSoft(string why)
+        {
+            if (why == null) return;
+            if (why == "gate-consent") AdConsent.DismissTransient();
+            else if (why == "vip-offer") VipOffer.Close();
+            else if (why == "welcome-card") CloseWelcome();
+            else if (why == "settings") _settingsOpen = false;
+            else if (why == "avatar-rename") CloseAvatarRename();
+            else if (why == "streak-sign") DismissStreakSign();
+        }
+
+        // Waits for an idle, interactive home splash (30 s cap), settles 0.5 s, then
+        // records 1 s idle, a 100 ms press, release (Load fires that frame) and 2.4 s on.
+        // Time.captureFramerate = 60 steps the clock one 60 fps frame per capture.
         IEnumerator ShotSplashPress()
         {
             const string dir = "/tmp/paradice";
             string frames = dir + "/splash-press-60fps";
-            System.IO.Directory.CreateDirectory(dir);
-            try { if (System.IO.Directory.Exists(frames)) System.IO.Directory.Delete(frames, true); } catch { }
-            System.IO.Directory.CreateDirectory(frames);
+            PressShotLive = true;
+            _dailyShotQuiet = true;
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPaused = false;
+#endif
+            Application.runInBackground = true;
+            _pressShotHeld = false;
+            _pressShotFire = false;
             int keepRate = Time.captureFramerate;
             bool hadNext = PlayerPrefs.HasKey("flockfive.next");
             int keepNext = PlayerPrefs.GetInt("flockfive.next", 0);
-            _pressShotHeld = false;
-            _pressShotFire = false;
-            LevelCurtain.Reset();
-            ShowSplash();
-            _home = HomeFace.Splash;
-            yield return new WaitForSecondsRealtime(0.8f);
+
+            float t0 = Time.realtimeSinceStartup;
+            float clearSince = -1f;
+            string why = "start";
+            string lastWhy = null;
+            while (true)
+            {
+                yield return null;
+                why = PressShotBlocker();
+                if (why != lastWhy)
+                {
+                    Debug.Log("FF_PRESS_SHOT_WAIT " + (why ?? "clear") + " t=" + (Time.realtimeSinceStartup - t0).ToString("0.00"));
+                    lastWhy = why;
+                }
+                if (why != null)
+                {
+                    clearSince = -1f;
+                    PressShotClearSoft(why);
+                }
+                else if (clearSince < 0f) clearSince = Time.realtimeSinceStartup;
+                else if (Time.realtimeSinceStartup - clearSince >= 0.5f) break;
+                if (Time.realtimeSinceStartup - t0 > 30f)
+                {
+                    Debug.Log("FF_PRESS_SHOT_TIMEOUT blocker=" + (why ?? "settling") + " after=30s");
+                    PressShotLive = false;
+                    yield break;
+                }
+            }
+
+            System.IO.Directory.CreateDirectory(dir);
+            try { if (System.IO.Directory.Exists(frames)) System.IO.Directory.Delete(frames, true); } catch { }
+            System.IO.Directory.CreateDirectory(frames);
+            Debug.Log("FF_PRESS_SHOT_START waited=" + (Time.realtimeSinceStartup - t0).ToString("0.00") + "s");
             Time.captureFramerate = 60;
             int f = 0;
             for (int i = 0; i < 60; i++)
@@ -173,22 +279,54 @@ namespace FlockFive
                 yield return new WaitForEndOfFrame();
                 SavePressShotFrame(frames, f++, i == 30 ? dir + "/splash-press-0-idle.png" : null);
             }
+            string late = PressShotBlocker();
+            if (late != null) Debug.Log("FF_PRESS_SHOT_WARN blocker before press=" + late);
             _pressShotHeld = true;
             for (int i = 0; i < 6; i++)
             {
                 yield return new WaitForEndOfFrame();
                 SavePressShotFrame(frames, f++, i == 3 ? dir + "/splash-press-1-press.png" : null);
             }
+            bool armed = LevelCurtain.Armed;
             _pressShotHeld = false;
             _pressShotFire = true;
+            LevelCurtain.DrawMsSum = 0.0;
+            LevelCurtain.DrawMsMax = 0.0;
+            LevelCurtain.DrawCount = 0;
+            double gapSum = 0.0, gapMax = 0.0;
+            int gapN = 0;
+            float lastAfterCapture = -1f;
             for (int k = 0; k < 144; k++)
             {
                 yield return new WaitForEndOfFrame();
+                // Frame time without the capture: from the end of the last save to here.
+                float now = Time.realtimeSinceStartup;
+                if (lastAfterCapture >= 0f && k <= 60)
+                {
+                    double ms = (now - lastAfterCapture) * 1000.0;
+                    gapSum += ms;
+                    if (ms > gapMax) gapMax = ms;
+                    gapN++;
+                }
+                if (k == 0)
+                    Debug.Log("FF_PRESS_SHOT_PRESS armedOnHold=" + armed + " loadFired=" + LevelCurtain.LoadStarted
+                        + " fired=" + (LevelCurtain.FiredAt >= 0f) + " splash=" + _splash + " shotFireLeft=" + _pressShotFire);
                 string still = k == 5 ? dir + "/splash-press-2-burst-peak.png"
                     : k == 24 ? dir + "/splash-press-3-handoff.png"
                     : k == 66 ? dir + "/splash-press-4-settle.png"
                     : null;
                 SavePressShotFrame(frames, f++, still);
+                lastAfterCapture = Time.realtimeSinceStartup;
+                if (k == 60)
+                {
+                    int n = LevelCurtain.DrawCount;
+                    var ci = System.Globalization.CultureInfo.InvariantCulture;
+                    Debug.Log("FF_PRESS_SHOT_PERF burst=1.0s curtainDrawAvgMs=" + (n > 0 ? LevelCurtain.DrawMsSum / n : 0.0).ToString("0.00", ci)
+                        + " curtainDrawMaxMs=" + LevelCurtain.DrawMsMax.ToString("0.00", ci) + " draws=" + n
+                        + " frameAvgMs=" + (gapN > 0 ? gapSum / gapN : 0.0).ToString("0.00", ci)
+                        + " frameMaxMs=" + gapMax.ToString("0.00", ci)
+                        + " (frame time excludes capture; editor/batch, not device)");
+                }
             }
             Time.captureFramerate = keepRate;
             _pressShotHeld = false;
@@ -202,6 +340,7 @@ namespace FlockFive
             else PlayerPrefs.DeleteKey("flockfive.next");
             PlayerPrefs.Save();
             Debug.Log("FF_PRESS_SHOT_DONE frames=" + f);
+            PressShotLive = false;
         }
     }
 }

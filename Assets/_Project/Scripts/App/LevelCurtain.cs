@@ -159,9 +159,24 @@ namespace FlockFive
             return "reveal";
         }
 
+        // Perf reading for the press shot: wall time spent in Draw. Two timestamp
+        // reads per paint; nothing else reads these.
+        public static double DrawMsSum, DrawMsMax;
+        public static int DrawCount;
+
         public static void Draw(float now)
         {
             if (!Armed) return;
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            DrawInner(now);
+            double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            DrawMsSum += ms;
+            if (ms > DrawMsMax) DrawMsMax = ms;
+            DrawCount++;
+        }
+
+        static void DrawInner(float now)
+        {
             float w = Screen.width;
             float h = Screen.height;
             if (w < 2f || h < 2f) return;

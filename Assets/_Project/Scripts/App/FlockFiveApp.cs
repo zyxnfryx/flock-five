@@ -10108,6 +10108,7 @@ namespace FlockFive
             StartupTrace.Lap("L.Level");
             var disc = PushButton.Follow(FlowerDisc(rest, 0f), rest, visual, GuiPixels());
             DrawFlowerCaption(disc, ease, number);
+            NoteLevelDrawn(gates);
             return fired;
         }
 
