@@ -1322,6 +1322,20 @@ namespace FlockFive
 
         static readonly System.Collections.Generic.HashSet<string> _missingFlap = new System.Collections.Generic.HashSet<string>();
 
+        // pose 0 rest, 1 wings up, 2 wings mid. Uses the same loaders as the garden
+        // (plain sheet, or the female sheet when a colour has no plain art).
+        public static Sprite FlapPose(BirdColor c, int pose) => FlapPose(c, pose, BirdSex.Neutral);
+
+        public static Sprite FlapPose(BirdColor c, int pose, BirdSex sex)
+        {
+            if (pose <= 0) return Bird(c, sex);
+            sex = PlainOr(c, sex);
+            LoadFlaps(c, sex, out var f1, out var f2, out _, out _);
+            if (pose == 2)
+                return f2 != null ? f2 : (f1 != null ? f1 : Bird(c, sex));
+            return f1 != null ? f1 : Bird(c, sex);
+        }
+
         public static Sprite BirdFrame(BirdColor c, float t, bool flap, BirdSex sex)
         {
             FlapPair(c, sex, t, flap, out var body, out _, out _);
@@ -1913,6 +1927,11 @@ namespace FlockFive
                     Mathf.RoundToInt(rect.x),
                     Mathf.RoundToInt(rect.y),
                     w, h);
+                // Straight alpha with a black or white matte fringes when the bust
+                // zooms the bird. Un-premultiply only pixels that are actually stored
+                // premultiplied, then dilate the opaque colour into the matte.
+                UnpremultiplyFringe(pix);
+                SealFringe(pix, w, h);
                 for (int i = 0; i < pix.Length; i++)
                 {
                     var p = pix[i];
@@ -1932,7 +1951,69 @@ namespace FlockFive
             var pivot = new Vector2(
                 src.pivot.x / Mathf.Max(1f, rect.width),
                 src.pivot.y / Mathf.Max(1f, rect.height));
-            return Sprite.Create(tex, new Rect(0, 0, w, h), pivot, src.pixelsPerUnit);
+            return Sprite.Create(tex, new Rect(0, 0, w, h), pivot, src.pixelsPerUnit, 1, SpriteMeshType.Tight);
+        }
+
+        // Premultiplied fringe is dark RGB that never exceeds alpha. Straight-alpha
+        // art (rgb > a) is left alone so we don't blow the edge out to white.
+        static void UnpremultiplyFringe(Color[] pix)
+        {
+            for (int i = 0; i < pix.Length; i++)
+            {
+                var p = pix[i];
+                if (p.a < 0.04f || p.a > 0.65f) continue;
+                if (p.r > p.a + 0.02f || p.g > p.a + 0.02f || p.b > p.a + 0.02f) continue;
+                if (p.maxColorComponent > 0.4f) continue;
+                float a = Mathf.Max(0.04f, p.a);
+                pix[i] = new Color(
+                    Mathf.Clamp01(p.r / a),
+                    Mathf.Clamp01(p.g / a),
+                    Mathf.Clamp01(p.b / a),
+                    p.a);
+            }
+        }
+
+        // Copy opaque RGB into empty texels and into near-white partial alpha
+        // (the white matte that reads as specks once the bird is huge).
+        static void SealFringe(Color[] pix, int w, int h)
+        {
+            var src = new Color[pix.Length];
+            for (int pass = 0; pass < 4; pass++)
+            {
+                System.Array.Copy(pix, src, pix.Length);
+                for (int y = 0; y < h; y++)
+                {
+                    int row = y * w;
+                    for (int x = 0; x < w; x++)
+                    {
+                        int i = row + x;
+                        var p = src[i];
+                        bool empty = p.a < 0.08f;
+                        bool whiteMatte = p.a < 0.55f && p.r > 0.78f && p.g > 0.78f && p.b > 0.78f;
+                        if (!empty && !whiteMatte) continue;
+                        float bestA = -1f;
+                        Color best = p;
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            int yy = y + dy;
+                            if ((uint)yy >= (uint)h) continue;
+                            int nrow = yy * w;
+                            for (int dx = -1; dx <= 1; dx++)
+                            {
+                                if (dx == 0 && dy == 0) continue;
+                                int xx = x + dx;
+                                if ((uint)xx >= (uint)w) continue;
+                                var n = src[nrow + xx];
+                                if (n.a <= bestA) continue;
+                                bestA = n.a;
+                                best = n;
+                            }
+                        }
+                        if (bestA > p.a)
+                            pix[i] = new Color(best.r, best.g, best.b, p.a);
+                    }
+                }
+            }
         }
 
         static Sprite Fallback(float ppu)
