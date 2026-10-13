@@ -38,8 +38,7 @@ namespace FlockFive
 
             for (int i = 0; i < ox.Length; i++)
             {
-                float tw = 0.5f + 0.5f * Mathf.Sin(t * 2.2f + ph[i]);
-                tw = tw * tw;
+                float tw = Twinkle(t, ph[i]);
                 if (tw < 0.12f) continue;
                 float sz = baseSz * (1f + 0.35f * (i & 1));
                 float x = r.center.x + ox[i] * r.width - sz * 0.5f;
@@ -75,8 +74,7 @@ namespace FlockFive
 
             for (int i = 0; i < Rim.Length; i++)
             {
-                float tw = 0.5f + 0.5f * Mathf.Sin(t * 2.2f + RimPh[i]);
-                tw = tw * tw;
+                float tw = Twinkle(t, RimPh[i]);
                 if (tw < 0.12f) continue;
                 float sz = Mathf.Min(baseSz * (1f + 0.35f * (i & 1)), cap);
                 if (sz < 2f) continue;
@@ -117,12 +115,17 @@ namespace FlockFive
         }
 
         // tint colors the star. The core stays white so the point still glows.
-        public static void DrawAt(Vector2 at, float size, float alpha, Color tint)
+        // core false is the kit-bird halo: the sparkle sprite already has a bright heart,
+        // and a white box on the bow would read as a sticker.
+        public static void DrawAt(Vector2 at, float size, float alpha, Color tint, bool core = true)
         {
             if (alpha < 0.02f || size < 1f) return;
-            float core = size * 0.22f;
-            GUI.color = new Color(1f, 1f, 1f, alpha);
-            GUI.DrawTexture(new Rect(at.x - core * 0.5f, at.y - core * 0.5f, core, core), Texture2D.whiteTexture);
+            if (core)
+            {
+                float heart = size * 0.22f;
+                GUI.color = new Color(1f, 1f, 1f, alpha);
+                GUI.DrawTexture(new Rect(at.x - heart * 0.5f, at.y - heart * 0.5f, heart, heart), Texture2D.whiteTexture);
+            }
             var spr = SpriteCatalog.Sparkle;
             if (spr != null && spr.texture != null)
             {
@@ -130,6 +133,160 @@ namespace FlockFive
                 GUI.DrawTexture(new Rect(at.x - size * 0.5f, at.y - size * 0.5f, size, size), spr.texture, ScaleMode.ScaleToFit, true);
             }
             GUI.color = Color.white;
+        }
+
+        // 0..1. Same pulse DrawAround uses, so a capture can wait for a bright seat
+        // instead of guessing the sine.
+        public static float Twinkle(float time, float phase)
+        {
+            float s = Mathf.Sin(time * 2.2f + phase);
+            float tw = 0.5f + 0.5f * s;
+            return tw * tw;
+        }
+
+        // Kit / adopted avatar. Seats are fractions of the drawn sheet from its
+        // center, for a bird facing right (beak toward +x). GUI y grows downward.
+        // The sheet is mostly empty: the rest pose sits in the middle, the
+        // wings-up flap sits high and toward the tail. Seats hug that opaque
+        // bird. The bow and the beak stay empty, and so does the name under
+        // the feet. ui is DeviceFit.Ui(), so an iPad eases the stars with the HUD.
+        public const int KitStarCount = 5;
+        public const float KitStarPx = 16f;
+        public const float KitStarBright = 0.55f;
+        // Rest pose. Above the back (clear of the bow loops), beside the tail,
+        // under the tail, in front of the chest, and low in front of the belly.
+        static readonly float[] PerchOx = { -0.42f, -0.34f, -0.40f, 0.24f, 0.46f };
+        static readonly float[] PerchOy = { -0.40f, 0.02f, 0.32f, 0.24f, 0.34f };
+        // Wings-up. Above the raised wing, beside the tail, under the tail,
+        // in front of the chest, and low in front. The beak side of this sheet
+        // is empty, so those two sit closer than the same fractions on the rest pose.
+        static readonly float[] FlyOx = { -0.32f, -0.36f, -0.40f, 0.32f, 0.44f };
+        static readonly float[] FlyOy = { -0.54f, 0.02f, 0.26f, 0.14f, 0.32f };
+        static readonly float[] KitPh = { 0.20f, 1.46f, 2.72f, 3.98f, 5.24f };
+        static readonly KitStar[] _kitStars = new KitStar[KitStarCount];
+
+        public struct KitStar
+        {
+            public float X, Y, Size, Alpha;
+            public byte On;
+        }
+
+        public static void DrawKitBird(Rect body, bool faceLeft, float ui, bool wings)
+        {
+            var e = Event.current;
+            if (e != null && e.type != EventType.Repaint) return;
+            int n = PlaceKitBird(body, faceLeft, ui, Screen.width, Screen.height, AdPause.Unscaled, wings, _kitStars);
+            if (n < 1) return;
+            var tint = new Color(1f, 0.97f, 0.82f, 1f);
+            for (int i = 0; i < KitStarCount; i++)
+            {
+                if (_kitStars[i].On == 0) continue;
+                DrawAt(new Vector2(_kitStars[i].X, _kitStars[i].Y), _kitStars[i].Size, _kitStars[i].Alpha * 0.95f, tint, false);
+            }
+        }
+
+        // Brightest star that would actually draw. 0 when every seat is dark,
+        // clipped, or sitting on the bow, beak or name.
+        public static float KitBirdPeak(Rect body, bool faceLeft, float ui, float screenW, float screenH, float time, bool wings)
+        {
+            if (PlaceKitBird(body, faceLeft, ui, screenW, screenH, time, wings, _kitStars) < 1) return 0f;
+            float peak = 0f;
+            for (int i = 0; i < KitStarCount; i++)
+                if (_kitStars[i].On != 0 && _kitStars[i].Alpha > peak) peak = _kitStars[i].Alpha;
+            return peak;
+        }
+
+        public static int PlaceKitBird(Rect body, bool faceLeft, float ui, float screenW, float screenH, float time, bool wings, KitStar[] into)
+        {
+            if (into == null || into.Length < KitStarCount) return 0;
+            for (int i = 0; i < KitStarCount; i++) into[i].On = 0;
+            if (ui < 0.25f) ui = 0.25f;
+            if (body.width < 4f || body.height < 4f || screenW < 8f || screenH < 8f) return 0;
+            float sign = faceLeft ? -1f : 1f;
+            float minSide = Mathf.Min(body.width, body.height);
+            var ox = wings ? FlyOx : PerchOx;
+            var oy = wings ? FlyOy : PerchOy;
+            int n = 0;
+            var c = body.center;
+            for (int i = 0; i < KitStarCount; i++)
+            {
+                float tw = Twinkle(time, KitPh[i]);
+                if (tw < 0.12f) continue;
+                float sz = KitStarPx * ui * (1f + 0.22f * (i & 1));
+                float cap = minSide * 0.30f;
+                if (sz > cap) sz = cap;
+                if (sz < 2f) continue;
+                float x = c.x + ox[i] * sign * body.width;
+                float y = c.y + oy[i] * body.height;
+                // Leave a star that would leave the screen. Dragging it inward
+                // parks the point on the bow or the name.
+                float half = sz * 0.5f;
+                if (x - half < 1f || y - half < 1f || x + half > screenW - 1f || y + half > screenH - 1f) continue;
+                if (CoversBody(body, faceLeft, wings, x, y, sz)) continue;
+                if (CoversHead(body, faceLeft, x, y, sz)) continue;
+                if (CoversPlate(body, wings, x, y, sz)) continue;
+                into[i].X = x;
+                into[i].Y = y;
+                into[i].Size = sz;
+                into[i].Alpha = tw;
+                into[i].On = 1;
+                n++;
+            }
+            return n;
+        }
+
+        // Torso only. The sheet's empty padding is where the stars live, so the
+        // whole drawn square is not the bird.
+        static bool CoversBody(Rect body, bool faceLeft, bool wings, float x, float y, float sz)
+        {
+            if (wings)
+                return KitBox(body, faceLeft, -0.22f, -0.36f, 0.12f, 0.10f, x, y, sz * 0.20f);
+            return KitBox(body, faceLeft, -0.16f, -0.12f, 0.14f, 0.10f, x, y, sz * 0.20f);
+        }
+
+        // Bow loops on the skull, and the beak in front of them. Crown shares
+        // the skull seat. A star whose points meet either box is not drawn.
+        static bool CoversHead(Rect body, bool faceLeft, float x, float y, float sz)
+        {
+            if (KitBox(body, faceLeft, -0.20f, -0.52f, 0.22f, -0.14f, x, y, sz * 0.46f)) return true;
+            return KitBox(body, faceLeft, 0.08f, -0.14f, 0.42f, 0.02f, x, y, sz * 0.40f);
+        }
+
+        // Name plaque under the opaque feet. The flap sheet's feet sit higher
+        // in the square than the rest pose.
+        static bool CoversPlate(Rect body, bool wings, float x, float y, float sz)
+        {
+            float oy0 = wings ? 0.32f : 0.48f;
+            float oh = wings ? 0.24f : 0.30f;
+            float hw = wings ? 0.24f : 0.32f;
+            var c = body.center;
+            var plate = new Rect(c.x - hw * body.width, c.y + oy0 * body.height, hw * 2f * body.width, oh * body.height);
+            return DiscHits(plate, x, y, sz * 0.40f);
+        }
+
+        static bool KitBox(Rect body, bool faceLeft, float ox0, float oy0, float ox1, float oy1, float x, float y, float rad)
+        {
+            if (faceLeft)
+            {
+                float a = -ox1;
+                ox1 = -ox0;
+                ox0 = a;
+            }
+            var c = body.center;
+            return DiscHits(new Rect(
+                c.x + ox0 * body.width,
+                c.y + oy0 * body.height,
+                (ox1 - ox0) * body.width,
+                (oy1 - oy0) * body.height), x, y, rad);
+        }
+
+        static bool DiscHits(Rect r, float x, float y, float rad)
+        {
+            float cx = Mathf.Clamp(x, r.xMin, r.xMax);
+            float cy = Mathf.Clamp(y, r.yMin, r.yMax);
+            float dx = x - cx;
+            float dy = y - cy;
+            return dx * dx + dy * dy < rad * rad;
         }
 
         // Soft disc. SpriteCatalog.Glow is built once. No per-frame texture.

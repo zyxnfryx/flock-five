@@ -784,9 +784,13 @@ namespace FlockFive
             float clock = _adoptClock + i * 0.17f;
             _adoptBirdR = DrawAvatarBird(_adoptCol, SavedAvatarKit(), c, drawIcon, faceLeft, onPerch, clock, false, BirdIdle.KitSlotAdopt);
             GUI.color = prev;
-            if (!onPerch) return;
-            bool wings = BirdIdle.UseFlyingPose(onPerch, false);
-            DrawAvatarPlate(c, drawIcon, _adoptName, s, _adoptCol, faceLeft, wings, clock, false);
+            if (onPerch)
+            {
+                bool wings = BirdIdle.UseFlyingPose(onPerch, false);
+                DrawAvatarPlate(c, drawIcon, _adoptName, s, _adoptCol, faceLeft, wings, clock, false);
+            }
+            if (SavedAvatarKit() != 0)
+                SparkleFx.DrawKitBird(_adoptBirdR, faceLeft, DeviceFit.Ui(), !onPerch);
         }
 
         bool HitAdoptBird(int i, float icon)

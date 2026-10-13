@@ -245,26 +245,97 @@ namespace FlockFive
             }
         }
 
+        static float ShotDt()
+        {
+            float d = Time.unscaledDeltaTime;
+            return d > 0f ? d : 0.016f;
+        }
+
+        void LogBirdRect(string logPath, string tag, Rect r, bool faceLeft, bool wings)
+        {
+            float peak = r.width > 2f
+                ? SparkleFx.KitBirdPeak(r, faceLeft, DeviceFit.Ui(), Screen.width, Screen.height, AdPause.Unscaled, wings)
+                : 0f;
+            File.AppendAllText(logPath, "RECT " + tag
+                + " x=" + r.x.ToString("0.0")
+                + " y=" + r.y.ToString("0.0")
+                + " w=" + r.width.ToString("0.0")
+                + " h=" + r.height.ToString("0.0")
+                + " face=" + (faceLeft ? 1 : 0)
+                + " screen=" + Screen.width + "x" + Screen.height
+                + " peak=" + peak.ToString("0.00")
+                + "\n");
+        }
+
+        // Wings-up first, then hold that pose until a kit star is actually bright.
+        // The adopt clock stays put so the flap does not walk off the wings-up frame
+        // while AdPause.Unscaled carries the twinkle.
         IEnumerator WaitShotAdoptAirborne(string logPath)
         {
             _shotForceAdopt = true;
             BeginAdopt();
             float waited = 0f;
-            while (waited < 8f)
+            bool held = false;
+            while (waited < 8f && !held)
             {
                 MuteShotAudio();
                 ShotStepAdoptFly();
-                if (ShotAdoptAirborne())
+                held = ShotAdoptAirborne();
+                waited += ShotDt();
+                yield return null;
+            }
+            float spark = 0f;
+            while (held && spark < 3f)
+            {
+                MuteShotAudio();
+                var r = _adoptBirdR;
+                float peak = r.width > 2f
+                    ? SparkleFx.KitBirdPeak(r, _avatarFaceLeft, DeviceFit.Ui(), Screen.width, Screen.height, AdPause.Unscaled, true)
+                    : 0f;
+                if (peak >= SparkleFx.KitStarBright)
                 {
                     yield return new WaitForEndOfFrame();
-                    File.AppendAllText(logPath, "AIR " + ShotAdoptStatus() + " waited=" + waited.ToString("0.00") + "\n");
+                    File.AppendAllText(logPath, "AIR " + ShotAdoptStatus() + " waited=" + waited.ToString("0.00")
+                        + " peak=" + peak.ToString("0.00") + "\n");
                     yield break;
                 }
-                waited += Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+                spark += ShotDt();
                 yield return null;
             }
             yield return new WaitForEndOfFrame();
-            File.AppendAllText(logPath, "TIMEOUT " + ShotAdoptStatus() + "\n");
+            File.AppendAllText(logPath, (held ? "SPARKLE-TIMEOUT " : "TIMEOUT ") + ShotAdoptStatus() + "\n");
+        }
+
+        // Home bird, already seated. Wait until the drawn rect is the perch and a star is bright.
+        IEnumerator WaitShotPerchSparkle(string logPath)
+        {
+            float spark = 0f;
+            while (spark < 3f)
+            {
+                MuteShotAudio();
+                var r = _avatarDrawR;
+                var perch = AvatarHomePoint();
+                bool seated = r.width > 2f
+                    && Mathf.Abs(r.center.x - perch.x) < r.width
+                    && Mathf.Abs(r.center.y - perch.y) < r.height;
+                float peak = seated
+                    ? SparkleFx.KitBirdPeak(r, _avatarFaceLeft, DeviceFit.Ui(), Screen.width, Screen.height, AdPause.Unscaled, false)
+                    : 0f;
+                // Seat after the read. ShotSeatAvatar keeps the home bird down for the
+                // paint that follows. The rect stays the one the last paint stored.
+                ShotSeatAvatar();
+                if (peak >= SparkleFx.KitStarBright)
+                {
+                    yield return new WaitForEndOfFrame();
+                    File.AppendAllText(logPath, "PERCH-SPARK peak=" + peak.ToString("0.00") + "\n");
+                    yield break;
+                }
+                spark += ShotDt();
+                yield return null;
+            }
+            ShotSeatAvatar();
+            yield return new WaitForEndOfFrame();
+            File.AppendAllText(logPath, "PERCH-SPARK-TIMEOUT " + ShotAdoptStatus() + "\n");
         }
 
         void ShotSeatAvatar()
@@ -361,6 +432,8 @@ namespace FlockFive
                     File.AppendAllText(kitLog, "kit" + kit + "-" + dev[d] + " before " + ShotAdoptStatus() + "\n");
                     yield return WaitShotAdoptAirborne(kitLog);
                     MuteShotAudio();
+                    string flyTag = "kit" + kit + "-flying-" + dev[d];
+                    LogBirdRect(kitLog, flyTag, _adoptBirdR, _avatarFaceLeft, true);
                     string flyPath = root + "/kit" + kit + "-flying-" + dev[d] + ".png";
                     string cropPath = kit == 1 && d == 0 ? cropDir + "/b86-sparkle-crop.png" : null;
                     SaveFlyingShot(flyPath, cropPath);
@@ -369,16 +442,11 @@ namespace FlockFive
                     PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
                     ShowSplash();
                     MuteShotAudio();
-                    for (int seat = 0; seat < 6; seat++)
-                    {
-                        ShotSeatAvatar();
-                        MuteShotAudio();
-                        yield return null;
-                    }
-                    ShotSeatAvatar();
-                    yield return new WaitForEndOfFrame();
+                    yield return WaitShotPerchSparkle(kitLog);
+                    string perchTag = "kit" + kit + "-perched-" + dev[d];
+                    LogBirdRect(kitLog, perchTag, _avatarDrawR, _avatarFaceLeft, false);
                     SaveFrame(root + "/kit" + kit + "-perched-" + dev[d] + ".png");
-                    File.AppendAllText(kitLog, "PERCH kit" + kit + "-" + dev[d] + " " + ShotAdoptStatus() + "\n");
+                    File.AppendAllText(kitLog, "PERCH " + perchTag + " " + ShotAdoptStatus() + "\n");
                 }
                 _shotForceAdopt = false;
                 PlayerPrefs.SetInt(AvatarAdoptedPref, adoptKeep); PlayerPrefs.SetInt(AvatarKitPref, kitKeep);

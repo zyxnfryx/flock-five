@@ -11801,6 +11801,9 @@ namespace FlockFive
             _avatarDrew = true;
             bool wings = BirdIdle.UseFlyingPose(onPerch, false);
             _avatarPlateR = DrawAvatarPlate(c, icon, SavedAvatarName(), s, _avatarCol, _avatarFaceLeft, wings, _avatarClock, true);
+            // Bow and crown keep a halo. Bare birds do not. Stars scale with DeviceFit.Ui().
+            if (SavedAvatarKit() != 0)
+                SparkleFx.DrawKitBird(drawn, _avatarFaceLeft, DeviceFit.Ui(), wings);
         }
 
         // Rails already took their taps. The play flower has not. A lesson click
