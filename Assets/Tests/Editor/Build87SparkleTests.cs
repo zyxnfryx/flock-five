@@ -33,7 +33,8 @@ namespace FlockFive.Editor
                 Check("ipad-ui-eased", padUi < phoneUi * 0.75f && padUi > phoneUi * 0.55f,
                     "phone " + phoneUi.ToString("0.00") + " ipad " + padUi.ToString("0.00"));
 
-                float t0 = (Mathf.PI * 0.5f - 0.20f) / 2.2f;
+                // 0.20 is the first kit phase, so this time puts that star at its peak.
+                float t0 = (Mathf.PI * 0.5f - 0.20f) / SparkleFx.KitTwinkleRate;
                 var body = new Rect(100f, 100f, 500f, 500f);
                 int n2 = SparkleFx.PlaceKitBird(body, false, 2f, 2000f, 3000f, t0, false, stars);
                 float s2 = StarSize(stars, 0);
@@ -99,7 +100,7 @@ namespace FlockFive.Editor
         static void Sweep(Rect body, bool faceLeft, bool wings, float ui, float sw, float sh, SparkleFx.KitStar[] stars, ref int dark, ref int hits, ref int samples)
         {
             const int n = 48;
-            float period = Mathf.PI * 2f / 2.2f;
+            float period = Mathf.PI * 2f / SparkleFx.KitTwinkleRate;
             for (int k = 0; k < n; k++)
             {
                 float t = k * period / n;
@@ -119,7 +120,7 @@ namespace FlockFive.Editor
         static void Edge(Rect body, bool wings, float ui, float sw, float sh, SparkleFx.KitStar[] stars, ref int dark, ref int hits, ref int samples, ref int off)
         {
             const int n = 48;
-            float period = Mathf.PI * 2f / 2.2f;
+            float period = Mathf.PI * 2f / SparkleFx.KitTwinkleRate;
             for (int k = 0; k < n; k++)
             {
                 float t = k * period / n;

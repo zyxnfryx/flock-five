@@ -135,11 +135,14 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // Radians per second for badges, frames, and the other shared seats.
+        public const float TwinkleRate = 2.2f;
+
         // 0..1. Same pulse DrawAround uses, so a capture can wait for a bright seat
-        // instead of guessing the sine. rate is radians per second.
+        // instead of guessing the sine.
         public static float Twinkle(float time, float phase)
         {
-            return Twinkle(time, phase, 2.2f);
+            return Twinkle(time, phase, TwinkleRate);
         }
 
         public static float Twinkle(float time, float phase, float rate)
@@ -160,11 +163,11 @@ namespace FlockFive
         // to read beside the bird without covering the bow.
         public const float KitStarPx = 22f;
         public const float KitStarBright = 0.55f;
-        // Slower than the shared UI twinkle (2.2). A star under the gate is not
-        // drawn; one that is on stays at least KitStarFloor, so the dim phase
-        // does not vanish into the garden.
+        // Slower than TwinkleRate. KitStarGate drops a seat; KitStarFloor is the
+        // dimmest a drawn star gets, so it still reads on the garden.
         public const float KitTwinkleRate = 1.45f;
         public const float KitStarFloor = 0.70f;
+        const float KitStarGate = 0.12f;
         // Rest pose, bird facing right. Above the back (clear of the bow),
         // beside the tail, under the tail, in front of the chest, low in front.
         static readonly float[] PerchOx = { -0.36f, -0.32f, -0.38f, 0.22f, 0.40f };
@@ -222,8 +225,9 @@ namespace FlockFive
             var c = body.center;
             for (int i = 0; i < KitStarCount; i++)
             {
-                float raw = Twinkle(time, KitPh[i], KitTwinkleRate);
-                if (raw < 0.12f) continue;
+                float alpha = KitAlpha(time, i);
+                if (alpha <= 0f) continue;
+                // Even seats are KitStarPx * ui. Odd seats are a little larger.
                 float sz = KitStarPx * ui * (1f + 0.22f * (i & 1));
                 float cap = minSide * 0.30f;
                 if (sz > cap) sz = cap;
@@ -240,11 +244,19 @@ namespace FlockFive
                 into[i].X = x;
                 into[i].Y = y;
                 into[i].Size = sz;
-                into[i].Alpha = KitStarFloor + (1f - KitStarFloor) * raw;
+                into[i].Alpha = alpha;
                 into[i].On = 1;
                 n++;
             }
             return n;
+        }
+
+        // 0 in the dark phase. Otherwise KitStarFloor..1 on KitTwinkleRate.
+        static float KitAlpha(float time, int index)
+        {
+            float raw = Twinkle(time, KitPh[index], KitTwinkleRate);
+            if (raw < KitStarGate) return 0f;
+            return KitStarFloor + (1f - KitStarFloor) * raw;
         }
 
         // Torso only. The sheet's empty padding is where the stars live, so the
