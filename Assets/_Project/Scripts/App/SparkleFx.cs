@@ -136,10 +136,15 @@ namespace FlockFive
         }
 
         // 0..1. Same pulse DrawAround uses, so a capture can wait for a bright seat
-        // instead of guessing the sine.
+        // instead of guessing the sine. rate is radians per second.
         public static float Twinkle(float time, float phase)
         {
-            float s = Mathf.Sin(time * 2.2f + phase);
+            return Twinkle(time, phase, 2.2f);
+        }
+
+        public static float Twinkle(float time, float phase, float rate)
+        {
+            float s = Mathf.Sin(time * rate + phase);
             float tw = 0.5f + 0.5f * s;
             return tw * tw;
         }
@@ -151,17 +156,24 @@ namespace FlockFive
         // bird. The bow and the beak stay empty, and so does the name under
         // the feet. ui is DeviceFit.Ui(), so an iPad eases the stars with the HUD.
         public const int KitStarCount = 5;
-        public const float KitStarPx = 16f;
+        // Sheet pixels at UI scale 1. Phone UI is ~3.5, so a star is large enough
+        // to read beside the bird without covering the bow.
+        public const float KitStarPx = 22f;
         public const float KitStarBright = 0.55f;
-        // Rest pose. Above the back (clear of the bow loops), beside the tail,
-        // under the tail, in front of the chest, and low in front of the belly.
-        static readonly float[] PerchOx = { -0.42f, -0.34f, -0.40f, 0.24f, 0.46f };
-        static readonly float[] PerchOy = { -0.40f, 0.02f, 0.32f, 0.24f, 0.34f };
+        // Slower than the shared UI twinkle (2.2). A star under the gate is not
+        // drawn; one that is on stays at least KitStarFloor, so the dim phase
+        // does not vanish into the garden.
+        public const float KitTwinkleRate = 1.45f;
+        public const float KitStarFloor = 0.70f;
+        // Rest pose, bird facing right. Above the back (clear of the bow),
+        // beside the tail, under the tail, in front of the chest, low in front.
+        static readonly float[] PerchOx = { -0.36f, -0.32f, -0.38f, 0.22f, 0.40f };
+        static readonly float[] PerchOy = { -0.36f, 0.00f, 0.28f, 0.22f, 0.32f };
         // Wings-up. Above the raised wing, beside the tail, under the tail,
-        // in front of the chest, and low in front. The beak side of this sheet
-        // is empty, so those two sit closer than the same fractions on the rest pose.
-        static readonly float[] FlyOx = { -0.32f, -0.36f, -0.40f, 0.32f, 0.44f };
-        static readonly float[] FlyOy = { -0.54f, 0.02f, 0.26f, 0.14f, 0.32f };
+        // below the beak, and low in front. Closer than the rest pose because
+        // the flap sheet's bird sits higher in the square.
+        static readonly float[] FlyOx = { -0.32f, -0.36f, -0.34f, 0.28f, 0.40f };
+        static readonly float[] FlyOy = { -0.50f, 0.02f, 0.24f, 0.18f, 0.34f };
         static readonly float[] KitPh = { 0.20f, 1.46f, 2.72f, 3.98f, 5.24f };
         static readonly KitStar[] _kitStars = new KitStar[KitStarCount];
 
@@ -177,11 +189,11 @@ namespace FlockFive
             if (e != null && e.type != EventType.Repaint) return;
             int n = PlaceKitBird(body, faceLeft, ui, Screen.width, Screen.height, AdPause.Unscaled, wings, _kitStars);
             if (n < 1) return;
-            var tint = new Color(1f, 0.97f, 0.82f, 1f);
+            var tint = new Color(1f, 0.98f, 0.90f, 1f);
             for (int i = 0; i < KitStarCount; i++)
             {
                 if (_kitStars[i].On == 0) continue;
-                DrawAt(new Vector2(_kitStars[i].X, _kitStars[i].Y), _kitStars[i].Size, _kitStars[i].Alpha * 0.95f, tint, false);
+                DrawAt(new Vector2(_kitStars[i].X, _kitStars[i].Y), _kitStars[i].Size, _kitStars[i].Alpha, tint, false);
             }
         }
 
@@ -210,8 +222,8 @@ namespace FlockFive
             var c = body.center;
             for (int i = 0; i < KitStarCount; i++)
             {
-                float tw = Twinkle(time, KitPh[i]);
-                if (tw < 0.12f) continue;
+                float raw = Twinkle(time, KitPh[i], KitTwinkleRate);
+                if (raw < 0.12f) continue;
                 float sz = KitStarPx * ui * (1f + 0.22f * (i & 1));
                 float cap = minSide * 0.30f;
                 if (sz > cap) sz = cap;
@@ -228,7 +240,7 @@ namespace FlockFive
                 into[i].X = x;
                 into[i].Y = y;
                 into[i].Size = sz;
-                into[i].Alpha = tw;
+                into[i].Alpha = KitStarFloor + (1f - KitStarFloor) * raw;
                 into[i].On = 1;
                 n++;
             }
