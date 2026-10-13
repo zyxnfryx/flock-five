@@ -349,7 +349,7 @@ namespace FlockFive
         {
             from = -1;
             to = -1;
-            if (!SolvedRule.IsSolved(this)) return false;
+            if (!SolvedRule.IsSolved(this) && !SolvedRule.SplitOnly(this)) return false;
             int n = Branches.Count;
             for (int a = 0; a < n; a++)
             {

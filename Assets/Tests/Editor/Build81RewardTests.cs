@@ -50,6 +50,36 @@ namespace FlockFive.Editor
                     "opens=" + glove.Opens + " apply=" + RewardedGrant.ApplyCount
                     + " goal=" + glove.Last.TutorialGoal);
 
+                // b87 (Brandon: double grant): nothing applies while the ad is up; one grant after close.
+                var during = Fresh();
+                Show(RewardedGrant.Place.Branch, 2, false);
+                AdPause.Begin();
+                Ads.DeliverRewardedCallback();
+                int whileUp = RewardedGrant.ApplyCount;
+                Ads.DeliverRewardedCallback();
+                Ads.DeliverClosedCallback();
+                whileUp += RewardedGrant.ApplyCount; // still frozen: nothing yet
+                AdPause.End();
+                Ads.DeliverRewardedCallback();
+                RewardedGrant.Flush();
+                Check("b87-no-grant-while-ad-up", whileUp == 0 && RewardedGrant.ApplyCount == 1 && during.Opens == 1,
+                    "whileUp=" + whileUp + " apply=" + RewardedGrant.ApplyCount + " opens=" + during.Opens);
+                var after = Fresh();
+                Show(RewardedGrant.Place.Branch, 2, false);
+                Ads.DeliverClosedCallback();
+                Ads.DeliverRewardedCallback();
+                Ads.DeliverRewardedCallback();
+                Check("b87-close-then-reward-once", RewardedGrant.ApplyCount == 1 && after.Opens == 1,
+                    "apply=" + RewardedGrant.ApplyCount);
+                var lost = Fresh();
+                Show(RewardedGrant.Place.Branch, 2, false);
+                AdPause.Begin();
+                Ads.DeliverRewardedCallback();
+                int frozen = RewardedGrant.ApplyCount;
+                AdPause.End(); // watchdog: the close never came
+                Check("b87-missing-close-grants-once", frozen == 0 && RewardedGrant.ApplyCount == 1 && lost.Opens == 1,
+                    "frozen=" + frozen + " apply=" + RewardedGrant.ApplyCount);
+
                 var thenClose = Fresh();
                 Show(RewardedGrant.Place.Branch, 2, false);
                 Ads.DeliverRewardedCallback();

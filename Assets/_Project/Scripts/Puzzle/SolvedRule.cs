@@ -26,6 +26,34 @@ namespace FlockFive
             return true;
         }
 
+        // b87 (Brandon, iPad: reds left 4+1 after a sparrow, solve never completed): a board
+        // whose every perched limb is one unshrouded colour, with nothing displaced, has no
+        // decision left. Once the pest is gone it is merged automatically into fives.
+        public static bool SplitOnly(Board board)
+        {
+            if (board == null || board.Displaced.Count > 0) return false;
+            bool split = false;
+            var seen = new System.Collections.Generic.Dictionary<Bird, int>();
+            var branches = board.Branches;
+            for (int i = 0; i < branches.Count; i++)
+            {
+                var b = branches[i];
+                if (b == null || b.Broken || b.Count == 0) continue;
+                var first = b.Birds[0];
+                for (int k = 0; k < b.Count; k++)
+                {
+                    if (b.IsShrouded(k)) return false;
+                    if (!b.Birds[k].SameFlock(first)) return false;
+                }
+                if (b.Count < BranchState.Cap)
+                {
+                    if (seen.ContainsKey(first)) split = true;
+                    seen[first] = i;
+                }
+            }
+            return split;
+        }
+
         // The finale is the cleared garden: solved, and no bird left perched.
         // Complete sets still waiting on a feeder are solved (no new pests) but
         // the show waits until those sets have left. A 4+1 park is neither.
