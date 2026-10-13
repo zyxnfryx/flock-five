@@ -94,13 +94,12 @@ namespace FlockFive
         }
 
         // Over the sunk disc while held. Frame 0 gets a contact flash so the tap reads
-        // instantly; then six glints spiral in from the petals and circle tight, a
-        // charge-up that the release burst pays off.
+        // instantly; then small glints keep leaving the disc on six spokes toward the
+        // player, a simmer that the release burst pays off.
         static void DrawLevelPressOver(Rect visual, float age)
         {
             if (!GuiPaint() || visual.width < 16f) return;
             if (age < 0f) age = 1f;
-            float t = AdPause.Unscaled;
             float w = visual.width;
             var disc = FlowerDisc(visual, 0f);
             var c = disc.center;
@@ -109,17 +108,18 @@ namespace FlockFive
             if (flash > 0.01f)
                 SparkleFx.DrawGlow(c, disc.width * (1.1f + 0.4f * (1f - flash)), new Color(1f, 0.95f, 0.78f, 0.55f * flash * flash));
 
-            float gather = Mathf.Clamp01(age / 0.40f);
-            float ge = 1f - (1f - gather) * (1f - gather);
-            float r = w * Mathf.Lerp(0.62f, 0.40f, ge);
+            // Simmer: small forward glints keep leaving the disc on six fixed spokes,
+            // growing as they come at the player. The release burst pays it off.
+            float build = Mathf.Clamp01(age / 0.30f);
             for (int k = 0; k < 6; k++)
             {
-                float ang = k * 1.0472f + t * 2.6f + (1f - ge) * 1.4f;
-                var p = new Vector2(c.x + Mathf.Cos(ang) * r, c.y + Mathf.Sin(ang) * r * 0.78f);
-                float tw = 0.6f + 0.4f * Mathf.Sin(t * 9f + k * 1.3f);
-                float a = (0.35f + 0.55f * ge) * tw;
-                float sz = w * (0.055f + 0.025f * ge);
-                SparkleFx.DrawAt(p, sz, a, (k & 1) == 0 ? new Color(1f, 0.90f, 0.58f, 1f) : new Color(1f, 0.97f, 0.88f, 1f));
+                float ang = k * 1.0472f + 0.52f;
+                float ta = Mathf.Repeat(age + k * 0.083f, 0.5f);
+                if (!SparkleFx.TowardAt(ta, 0.5f, c.x, c.y, Mathf.Cos(ang), Mathf.Sin(ang) * 0.8f,
+                        w * 0.38f, w * 0.10f, 0f, 2.2f, out var p))
+                    continue;
+                SparkleFx.DrawToward(p, w * 0.035f, (k & 1) == 0 ? new Color(1f, 0.90f, 0.58f, 1f) : new Color(1f, 0.97f, 0.88f, 1f),
+                    0.35f + 0.55f * build);
             }
             GUI.color = Color.white;
         }

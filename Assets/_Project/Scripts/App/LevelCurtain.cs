@@ -2,7 +2,8 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Gold sparkles fountain out of LEVEL, hang at the apex, then fall as rain.
+    // Gold sparkles burst out of LEVEL toward the player: they fan out radially, lift,
+    // grow as they near, then sink a touch and fade.
     // The garden shows through every gap. No frame is a solid or near-solid fill.
     // The clock starts when LEVEL is pressed. Load begins on that same press.
     // Until the load is ready the clock holds at the apex, so a slow load waits
@@ -222,9 +223,9 @@ namespace FlockFive
 
         // Timing, b = seconds since release (Fire):
         //   0-30 ms    light swells out of the flower (attack), then a 75 ms tail
-        //   0-0.42 s   hot inner ring;  0-0.62 s gold ring;  0.06-0.78 s peach/rose ring
-        //   0-0.50 s   eight glint rays;  0-0.43 s centre star (ease-out-back pop)
-        //   all rings ease-out-quint, so the spread is front-loaded and the tail drifts
+        //   0-0.79 s   forward shell: 48 glints fan out radially, lift, grow ~3x, fade late
+        //   0-0.43 s   centre star (ease-out-back pop)
+        //   0.03-0.85  embers: slower forward spokes that carry over the cut
         // Painterly palette: warm gold, cream, peach and a touch of rose. No pure white
         // except the hot cores, so it reads as gilded paint, not a lens flare.
         static readonly Color BGold = new Color(1f, 0.84f, 0.36f, 1f);
@@ -254,51 +255,23 @@ namespace FlockFive
             }
         }
 
+        const int ShellCount = 48;
+
         static void DrawBloomOver(float b, Vector2 at, float side, Texture tex, Texture glowTex)
         {
             if (b < 0f || b > BloomLife) return;
-            // Three rings, staggered so the spread reads as depth: hot inner, gold main,
-            // peach/rose outer lagging behind and travelling furthest.
-            float u1 = b / 0.42f;
-            if (u1 < 1f)
+            // Forward shell: glints thrown radially from the flower toward the player,
+            // each on its own spoke (golden angle), lifting, growing ~3x as it nears.
+            for (int i = 0; i < ShellCount; i++)
             {
-                float r = side * (0.30f + 1.05f * EaseOutQuint(u1));
-                SparkleFx.DrawRing(at, r, r * 0.88f, 12, b * 1.6f, side * 0.075f * (1f - 0.4f * u1),
-                    Mathf.Pow(1f - u1, 1.3f), BHot, BCream, 0.25f);
-            }
-            float u2 = b / 0.62f;
-            if (u2 < 1f)
-            {
-                float r = side * (0.45f + 1.9f * EaseOutQuint(u2));
-                SparkleFx.DrawRing(at, r, r * 0.86f, 28, 0.11f + b * 0.8f, side * 0.115f * (1f - 0.45f * u2),
-                    Mathf.Pow(1f - u2, 1.5f), BGold, BCream, 0.35f);
-            }
-            float u3 = (b - 0.06f) / 0.72f;
-            if (u3 > 0f && u3 < 1f)
-            {
-                float r = side * (0.55f + 2.7f * EaseOutQuint(u3));
-                SparkleFx.DrawRing(at, r, r * 0.84f, 20, 0.27f - b * 0.6f, side * 0.10f * (1f - 0.4f * u3),
-                    0.85f * Mathf.Pow(1f - u3, 1.7f), BPeach, BRose, 0.45f);
-            }
-
-            // Eight rays of glint trains shooting out between the rings (spread + speed).
-            float ur = b / 0.50f;
-            if (ur < 1f)
-            {
-                float reach = side * (0.4f + 2.3f * EaseOutCubic(ur));
-                float ra = Mathf.Pow(1f - ur, 1.4f);
-                for (int k = 0; k < 8; k++)
-                {
-                    float ang = k * 0.7854f + 0.39f;
-                    float cx = Mathf.Cos(ang), cy = Mathf.Sin(ang) * 0.88f;
-                    for (int j = 0; j < 3; j++)
-                    {
-                        float d = reach * (1f - j * 0.16f);
-                        var p = new Vector2(at.x + cx * d, at.y + cy * d);
-                        float sz = side * (0.13f - j * 0.035f) * (1f - 0.5f * ur);
-                        Blit(p, sz, tex, new Color(1f, j == 0 ? 0.97f : 0.86f, j == 0 ? 0.88f : 0.50f, ra * (1f - j * 0.28f)));
-                    }
-                }
+                float h1 = Hash(i, 31), h2 = Hash(i, 32), h3 = Hash(i, 33), h4 = Hash(i, 34);
+                float ang = i * 2.39996f;
+                if (!SparkleFx.TowardAt(b - h1 * 0.04f, 0.45f + 0.30f * h2, at.x, at.y,
+                        Mathf.Cos(ang), Mathf.Sin(ang) * 0.85f,
+                        side * (1.1f + 1.5f * h3), side * 0.55f, side * 0.4f, 3.0f, out var p))
+                    continue;
+                var c = h4 < 0.5f ? BGold : h4 < 0.8f ? BCream : BPeach;
+                SparkleFx.DrawToward(p, side * (0.05f + 0.04f * h4), c, 1f);
             }
 
             // Centre star: glow halo, gold star, then a smaller cream star on top.
@@ -333,7 +306,7 @@ namespace FlockFive
             int cap = dst.Length;
             for (int i = 0; i < Count && n < cap; i++)
             {
-                if (!Place(i, age, ox, oy, out float nx, out float ny, out float alpha, out float sizeN, out bool hot))
+                if (!Place(i, age, ox, oy, minSide / screenW, minSide / screenH, out float nx, out float ny, out float alpha, out float sizeN, out bool hot))
                     continue;
                 var g = new Glint
                 {
@@ -349,8 +322,13 @@ namespace FlockFive
             return n;
         }
 
-        // Normalized GUI space. y = 0 is the top. Up is negative vy.
-        static bool Place(int i, float age, float ox, float oy,
+        // Normalized GUI space, y = 0 at the top. Each glint is a forward particle
+        // (SparkleFx.TowardAt) on its own spoke out of the button: it lifts, fans out and
+        // grows toward the player, sinks a touch, and fades late. Spoke maths runs in
+        // min-side units (sx, sy map them to normalized x / y) so the fan stays round.
+        public const float ScaleTo = 3.0f;
+
+        static bool Place(int i, float age, float ox, float oy, float sx, float sy,
             out float nx, out float ny, out float alpha, out float sizeN, out bool hot)
         {
             nx = ny = alpha = sizeN = 0f;
@@ -359,35 +337,22 @@ namespace FlockFive
             float h2 = Hash(i, 2);
             float h3 = Hash(i, 3);
             float h4 = Hash(i, 4);
-            float birth = h1 * 0.16f;
-            float t = age - birth;
+            float h6 = Hash(i, 6);
+            float t = age - h1 * 0.16f;
             if (t < 0f) return false;
-            float g = 11.4f * (0.78f + 0.44f * h2);
-            float vy0 = -0.34f * g * (0.88f + 0.22f * h3);
-            float y0 = oy + (h4 - 0.5f) * 0.045f;
-            ny = y0 + vy0 * t + 0.5f * g * t * t;
+            float ang = h6 * 6.2832f;
+            if (!SparkleFx.TowardAt(t, 0.70f + 0.25f * h3, 0f, 0f, Mathf.Cos(ang), Mathf.Sin(ang) * 0.8f,
+                    0.30f + 0.55f * h4, 0.85f + 0.25f * h3, 1.0f, ScaleTo, out var p))
+                return false;
+            nx = ox + p.X * sx;
+            ny = oy + p.Y * sy;
             if (ny > 1.12f) return false;
-            float rise = 0.28f + 0.12f * h3;
-            float u = t / rise;
-            if (u < 0f) u = 0f;
-            else if (u > 1f) u = 1f;
-            float ease = u * u * (3f - 2f * u);
-            float x0 = ox + (h2 - 0.5f) * 0.08f;
-            float xTarget = 0.04f + h1 * 0.92f;
-            nx = x0 + (xTarget - x0) * ease;
-            nx += Mathf.Sin(t * 8.5f + h2 * 6.283f) * (0.012f + 0.012f * h4);
             hot = h2 > 0.74f;
-            sizeN = (hot ? 0.016f : 0.026f) + (hot ? 0.022f : 0.052f) * h4;
+            sizeN = ((hot ? 0.012f : 0.016f) + (hot ? 0.010f : 0.022f) * h4) * p.Scale;
             float tw = 0.45f + 0.55f * Mathf.Sin(t * 16f + h4 * 11f);
             if (tw < 0f) tw = 0f;
             tw = 0.55f + 0.45f * tw * tw;
-            float fadeIn = t / 0.045f;
-            if (fadeIn > 1f) fadeIn = 1f;
-            else if (fadeIn < 0f) fadeIn = 0f;
-            float fadeOut = (1.08f - ny) / 0.16f;
-            if (fadeOut > 1f) fadeOut = 1f;
-            else if (fadeOut < 0f) fadeOut = 0f;
-            alpha = tw * fadeIn * fadeOut;
+            alpha = tw * p.Alpha;
             if (hot) alpha = alpha > 0.92f ? 0.92f : alpha * 1.15f;
             if (alpha < 0.04f) return false;
             return true;
@@ -400,37 +365,25 @@ namespace FlockFive
             return h < 0.60f ? (byte)0 : h < 0.85f ? (byte)1 : (byte)2;
         }
 
-        // Handoff into the stage: embers thrown out with the burst slow on drag, drift
-        // and settle over the new garden as the fountain rains, fading by BloomLife.
-        // They are what carries the press across the cut.
+        // Handoff into the stage: embers on slower forward spokes. They fan out from the
+        // flower, lift and grow as they come at the player, and fade by BloomLife over
+        // the new garden. What carries the press across the cut. No sideways drift.
         const int EmberCount = 40;
 
         static void DrawEmbers(float b, Vector2 at, float side, Texture tex, Texture glowTex)
         {
             if (b < 0f || b > BloomLife) return;
-            const float drag = 3.5f;
             for (int i = 0; i < EmberCount; i++)
             {
                 float h1 = Hash(i, 21), h2 = Hash(i, 22), h3 = Hash(i, 23), h4 = Hash(i, 24);
                 float t = b - (0.03f + h1 * 0.10f);
-                if (t <= 0f) continue;
                 float life = BloomLife - 0.10f - h1 * 0.10f;
-                float u = t / life;
-                if (u >= 1f) continue;
-                // Bias the throw upward so the embers arc over the flower into the scene.
-                float ang = -1.5708f + (h2 - 0.5f) * 4.2f;
-                float sp = side * (2.4f + 2.6f * h3);
-                float travel = (1f - Mathf.Exp(-drag * t)) / drag;
-                float x = at.x + Mathf.Cos(ang) * sp * travel + Mathf.Sin(t * 5f + h4 * 6.283f) * side * 0.05f;
-                float y = at.y + Mathf.Sin(ang) * sp * travel + side * 0.9f * t * t;
-                float tw = 0.6f + 0.4f * Mathf.Sin(t * 14f + h4 * 9f);
-                float fin = t < 0.04f ? t / 0.04f : 1f;
-                float a = fin * tw * Mathf.Pow(1f - u, 1.2f);
-                if (a < 0.03f) continue;
-                float sz = side * (0.045f + 0.055f * h4) * (1f - 0.35f * u);
-                var c = h2 < 0.55f ? BGold : h2 < 0.80f ? BPeach : BCream;
-                Blit(new Vector2(x, y), sz * 2.3f, glowTex, new Color(c.r, c.g, c.b, a * 0.28f));
-                Blit(new Vector2(x, y), sz, tex, new Color(c.r, c.g, c.b, a));
+                float ang = h2 * 6.2832f;
+                if (!SparkleFx.TowardAt(t, life, at.x, at.y, Mathf.Cos(ang), Mathf.Sin(ang) * 0.85f,
+                        side * (1.6f + 2.0f * h3), side * 1.0f, side * 0.8f, 3.5f, out var p))
+                    continue;
+                var c = h4 < 0.55f ? BGold : h4 < 0.80f ? BPeach : BCream;
+                SparkleFx.DrawToward(p, side * (0.03f + 0.035f * h4), c, 1f);
             }
         }
 
