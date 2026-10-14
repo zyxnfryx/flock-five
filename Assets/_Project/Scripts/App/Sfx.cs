@@ -174,21 +174,35 @@ namespace FlockFive
                     var h = found[i];
                     if (h == null) continue;
                     if (keep == null) keep = h;
-                    else Object.Destroy(h.gameObject);
+                    else Retire(h.gameObject);
                 }
             }
             if (keep == null)
             {
                 var go = new GameObject("Sfx");
-                Object.DontDestroyOnLoad(go);
+                PinHost(go);
                 keep = go.AddComponent<SfxHost>();
             }
             else
-                Object.DontDestroyOnLoad(keep.gameObject);
+                PinHost(keep.gameObject);
             _host = keep;
             BindVoices();
             // Banks are no longer synthesized here (it held the first frame). They build
             // on first play, or ahead of time one clip per splash frame (WarmStep).
+        }
+
+        // Edit-mode suites call Chirp. DontDestroyOnLoad is play mode only.
+        static void PinHost(GameObject go)
+        {
+            if (go == null || !Application.isPlaying) return;
+            Object.DontDestroyOnLoad(go);
+        }
+
+        static void Retire(Object obj)
+        {
+            if (obj == null) return;
+            if (Application.isPlaying) Object.Destroy(obj);
+            else Object.DestroyImmediate(obj);
         }
 
         static void BindVoices()

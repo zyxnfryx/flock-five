@@ -50,6 +50,16 @@ namespace FlockFive.Editor
             {
                 Check("chirp", false, ex.GetType().Name + " " + ex.Message);
             }
+            finally
+            {
+                // The host is only for this check. Later suites must not inherit a desk.
+                for (int n = 0; n < 8; n++)
+                {
+                    var go = GameObject.Find("Sfx");
+                    if (go == null) break;
+                    Object.DestroyImmediate(go);
+                }
+            }
 
             string end = fail == 0 ? "BUILD88CHIRP_OK " + pass : "BUILD88CHIRP_FAIL " + fail + " passed " + pass;
             sb.AppendLine(end);
