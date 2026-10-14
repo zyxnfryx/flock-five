@@ -9673,11 +9673,39 @@ namespace FlockFive
             DrawStreakRewards(s);
         }
 
+        // Shared coin sprinkle timing (streak sign, daily wheel Collect / 2X). Seconds of
+        // real time after the pay starts; any hold before the pay (reward choice) is not here.
+        // Until b88 the flight stepped once per OnGUI event (Layout + Repaint, about 2x a
+        // frame), so 0.10 / 1.32 x RewardPace played as ~0.066 s / ~0.87 s. 73a237f stepped it
+        // once per frame, which doubled the on-screen time. These are the snappy values.
+        public const float CoinFlyStaggerSec = 0.045f * RewardPace;
+        public const float CoinFlyDurSec = 0.60f * RewardPace;
+        public const int CoinFlyMax = 12;
+        // A hitch frame (the Collect tap, an ad return) must not teleport coins mid-arc.
+        public const float CoinFlyMaxStep = 1f / 20f;
+
+        // Last coin lands this long after the pay starts, for n sprites.
+        public static float CoinFlySpanSec(int coins)
+        {
+            int n = Mathf.Clamp(coins, 0, CoinFlyMax);
+            return n <= 0 ? 0f : (n - 1) * CoinFlyStaggerSec + CoinFlyDurSec;
+        }
+
+        // Leaves the wheel moving (no dead ease-in after the tap), still settles into the pig.
+        // Half smoothstep, half ease-out quad: start speed 1, end speed 0.
+        public static float CoinFlyEase(float u)
+        {
+            u = Mathf.Clamp01(u);
+            float smooth = u * u * (3f - 2f * u);
+            float outQuad = 1f - (1f - u) * (1f - u);
+            return 0.5f * (smooth + outQuad);
+        }
+
         // Streak sign and daily claim. The purse already has the coins; each sprite
         // carries an even share, and the balance counts that share when it lands.
         void FlyCoinsToBalance(int coins)
         {
-            int n = Mathf.Clamp(coins, 0, 12);
+            int n = Mathf.Clamp(coins, 0, CoinFlyMax);
             if (n <= 0) return;
             int share = coins / n;
             int extra = coins - share * n;
@@ -9693,7 +9721,7 @@ namespace FlockFive
                     A = new Vector2(Screen.width * 0.5f + Random.Range(-70f, 70f), Screen.height * 0.30f + Random.Range(-24f, 36f)),
                     B = dest,
                     T = 0f,
-                    Delay = i * 0.10f * RewardPace,
+                    Delay = i * CoinFlyStaggerSec,
                     Spin = Random.Range(300f, 420f) * (Random.value < 0.5f ? -1f : 1f),
                     Worth = worth
                 });
@@ -9713,7 +9741,7 @@ namespace FlockFive
             // A second paint (daily pay, above the scrim) must not step the flight twice.
             bool step = _coinFlyFrame != Time.frameCount;
             _coinFlyFrame = Time.frameCount;
-            float dt = step ? AdPause.UnscaledDelta : 0f;
+            float dt = step ? Mathf.Min(AdPause.UnscaledDelta, CoinFlyMaxStep) : 0f;
             float size = 68f * DeviceFit.Ui();
             var dest = new Vector2(pig.x + pig.width * 0.5f, pig.y + pig.height * 0.42f);
             for (int i = _flies.Count - 1; i >= 0; i--)
@@ -9725,9 +9753,12 @@ namespace FlockFive
                     _flies[i] = f;
                     continue;
                 }
-                f.T += dt / (1.32f * RewardPace);
+                // Only the time past Delay flies, so the stagger stays even at any frame rate.
+                float run = Mathf.Min(dt, -f.Delay);
+                f.Delay = 0f;
+                f.T += run / CoinFlyDurSec;
                 float u = Mathf.Clamp01(f.T);
-                float k = u * u * (3f - 2f * u);
+                float k = CoinFlyEase(u);
                 var p = Vector2.Lerp(f.A, dest, k);
                 p.y -= Mathf.Sin(u * Mathf.PI) * 160f;
                 float sc = size * Mathf.Lerp(1.22f, 0.48f, k);
