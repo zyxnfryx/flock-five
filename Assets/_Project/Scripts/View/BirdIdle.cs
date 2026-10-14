@@ -138,7 +138,8 @@ namespace FlockFive
         void TickFlapDrive()
         {
             // Two open poses per cycle. Catch up at most one pose on a long frame.
-            _poseAccum += Time.unscaledDeltaTime * _flapHz * 2f;
+            // ShowClock follows the capture step so a slow editor frame does not skip the flap.
+            _poseAccum += ShowClock.Delta * _flapHz * 2f;
             if (_poseAccum >= 1f)
             {
                 _poseIndex += 1;
