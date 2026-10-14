@@ -38,6 +38,8 @@ namespace FlockFive
             try { if (Directory.Exists(FlutterFrames)) Directory.Delete(FlutterFrames, true); } catch { }
             Directory.CreateDirectory(FlutterFrames);
             Directory.CreateDirectory(FlutterOut);
+            try { File.Delete(Path.Combine(FlutterOut, "b88-peach-flutter-1.png")); } catch { }
+            try { File.Delete(Path.Combine(FlutterOut, "b88-peach-flutter-2.png")); } catch { }
             try { if (File.Exists(FlutterDone)) File.Delete(FlutterDone); } catch { }
 
             var log = new StringBuilder();
@@ -101,6 +103,12 @@ namespace FlockFive
                     if (flap.WingPose == 2) poseMid++;
                     else if (flap.WingPose == 0) poseRest++;
                     else poseUp++;
+                    var psr = peach.GetComponent<SpriteRenderer>();
+                    log.Append("pose ").Append(flap.WingPose)
+                        .Append(" s ").Append(peach.transform.localScale.x.ToString("0.00"))
+                        .Append(" o ").Append(psr != null ? psr.sortingOrder : -1)
+                        .Append(" a ").Append(psr != null ? psr.color.a.ToString("0.00") : "?")
+                        .AppendLine();
                 }
                 Destroy(tex);
                 concat.Append("file '").Append(path).Append("'\n");
@@ -127,9 +135,9 @@ namespace FlockFive
             float alpha = sr != null ? sr.color.a : 1f;
             int pose = idle.WingPose;
             if (pose != 1 && pose != 2) return;
-            if (sr != null && sr.sortingOrder < 40) return;
-            if (alpha < 0.72f || scale < 1.05f || scale > 3.4f) return;
-            float score = 1f - Mathf.Abs(scale - 1.9f) / 1.9f;
+            if (sr != null && sr.sortingOrder < 60) return;
+            if (alpha < 0.55f || scale < 1.0f || scale > 4.6f) return;
+            float score = 1f - Mathf.Abs(scale - 2.1f) / 2.1f;
             if (pose == 1 && score > _bestUp)
             {
                 _bestUp = score;

@@ -132,6 +132,8 @@ namespace FlockFive
         bool _flapDrive;
         float _flapHz = 6f;
         float _flapClock;
+        float _poseAccum;
+        int _poseIndex = 1;
         int _wingPose;
         Vector2 _flapAnchor;
         bool _flapAnchored;
@@ -149,6 +151,8 @@ namespace FlockFive
             Frozen = true;
             // BirdFrame step 1 is wings up. Open there instead of the tucked rest.
             _flapClock = 1.5f / 16f;
+            _poseAccum = 0f;
+            _poseIndex = 1;
             var up = SpriteCatalog.FlapPose(Color, 1);
             if (up != null)
             {
@@ -300,11 +304,14 @@ namespace FlockFive
 
         void TickFlapDrive()
         {
-            // Two open poses per cycle. The tucked rest reads as a parked wing in the bust.
-            float poseSteps = Time.unscaledDeltaTime * _flapHz * 2f;
-            // A long frame must not lap the cycle and land on the same wing.
-            if (poseSteps > 1.05f) poseSteps = 1.05f;
-            _flapClock += poseSteps / 16f;
+            // Two open poses per cycle. Catch up at most one pose on a long frame.
+            _poseAccum += Time.unscaledDeltaTime * _flapHz * 2f;
+            if (_poseAccum >= 1f)
+            {
+                _poseIndex += 1;
+                _poseAccum -= 1f;
+                if (_poseAccum > 1f) _poseAccum = 1f;
+            }
             ApplyFlapFrame();
             if (_flapAnchored) transform.localPosition += FlapBodyPull();
         }
@@ -314,10 +321,10 @@ namespace FlockFive
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
             if (_sr == null) return;
             _sr.flipX = FaceLeft;
-            // Open poses only: wings mid and wings up. Skip the tucked rest.
-            // FlapPose uses the garden loaders, so kit BirdFrame stays on the 6-pose cycle.
-            int open = SpriteCatalog.FlapStep(_flapClock) % 2;
-            int pose = open == 0 ? 2 : 1;
+            // Wings up and wings mid. Skip the tucked rest. FlapPose keeps the
+            // garden BirdFrame on the 6-pose kit cycle.
+            bool mid = (_poseIndex & 1) == 0;
+            int pose = mid ? 2 : 1;
             var spr = SpriteCatalog.FlapPose(Color, pose);
             if (spr != null) _sr.sprite = spr;
             _wingPose = pose;
