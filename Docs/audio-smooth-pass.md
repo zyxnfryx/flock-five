@@ -50,3 +50,17 @@ Phone sim: band-pass 300 Hz–8 kHz (2nd order), +6 dB peak at 3 kHz (Q 1.1), +1
 | rain after (0.068) | -10.3 dB | -8.0 dB |
 
 Thunder is unchanged: it was already about level with the bed full-band (+0.4 dB) and stays so. It is now ~10.7 dB over the rain (was ~2.7), which is what a strike over steady rain should be.
+
+### Crisp rain (Brandon: "a little more crisp, just as a personal touch")
+`MakeRain` changes:
+- The dense bed gets a second high-pass pole at 600 Hz (less 200–600 Hz mush) and a gentle top roll at 3.2 kHz (less fizz). Its RMS target drops from 0.12 to 0.08.
+- New `AddRainTicks` layer: 300 sparse drop ticks over the 8 s loop. Each is a band-limited noise burst (about 1.3–3.4 kHz) with a 0.6 ms raised-cosine attack and ~2.6 ms decay. The ticks are added after `FlattenRms`, so its AGC can't smear them, and they wrap around the loop end.
+
+`RainCap` goes from 0.068 to 0.089, which plays the crisp rain at the same approved loudness: phone −7.73 dB vs the bed (soft −7.98), full-band −10.75 dB (soft −10.32).
+
+| rain clip | 200–600 Hz | 1.4–3 kHz | 3–8 kHz | >8 kHz | crest | p99.5 env/RMS | phone harsh | phone sibilance |
+|---|---|---|---|---|---|---|---|---|
+| soft | 6.4% | 30.2% | 22.8% | 16.0% | 13.5 dB | 4.2 dB | +2.0 dB | −8.0 dB |
+| crisp | 4.7% | 40.0% | 18.7% | 10.1% | 16.1 dB | 5.1 dB | +1.8 dB | −9.5 dB |
+
+Lead over rain, phone sim (soft → crisp): hop +11.3 → +11.1, chirp +14.0 → +13.8, snap +14.5 → +14.3.

@@ -72,10 +72,11 @@ namespace FlockFive
         const float PlaceMax = 0.35f;
         const float ComboCap = 0.04f;
         const float SplashCap = 0.76f;
-        // Build 89 rain balance: was 0.17 (-8.0 dB). At 0.17 the rain matched the garden bed on a
-        // phone speaker (-0.1 dB); 0.068 sits it 8 dB under the bed in the phone band and
-        // 10 dB under full-band, well under every Lead (hop, chirp, snap). Thunder unchanged.
-        const float RainCap = 0.068f;
+        // Build 89 rain balance: 0.17 was level with the garden bed on a phone speaker. The
+        // approved soft mix was 0.068 (-8.0 dB): 8 dB under the bed on a phone, 10 dB full-band.
+        // The crisp rain (sparse ticks, lighter bed) peaks higher inside its 0.46-peak clip, so
+        // 0.089 plays it at the same loudness: phone -7.7 dB, full-band -10.8 dB vs the bed.
+        const float RainCap = 0.089f;
         const float ComboWindow = 4f;
         const float ComboIn = 0.35f;
         const float Bpm = 84f;
@@ -985,12 +986,16 @@ namespace FlockFive
         static AudioClip MakeRain()
         {
             // Steady garden rain: dense leaf-hits, no wind whoosh, no loop swell.
+            // Build 89 crisp pass: a second high-pass pole trims the 200-600 Hz mush, the
+            // bed sits a little lower, and a sparse tick layer (below) adds distinct drops.
             int n = Mathf.RoundToInt(8.0f * Rate);
             var bus = new float[n * 2];
             var hiss = new float[n];
             int h = 91331;
-            float hp = 0f, lp = 0f, bp = 0f;
+            float hp = 0f, hp2 = 0f, lp = 0f, bp = 0f, dk = 0f;
             float aHp = OnePoleA(820f);
+            float aHp2 = OnePoleA(RainMushHz);
+            float aDk = OnePoleA(RainBedTopHz);
             float aLp = OnePoleA(1680f);
             float aBp = OnePoleA(1100f);
             for (int i = 0; i < n; i++)
@@ -999,9 +1004,13 @@ namespace FlockFive
                 float nz = (h / 1073741824f) - 1f;
                 hp += aHp * (nz - hp);
                 float hi = nz - hp;
+                hp2 += aHp2 * (hi - hp2);
+                hi -= hp2;
                 lp += aLp * (hi - lp);
                 bp += aBp * (lp - bp);
-                hiss[i] = lp - 0.35f * bp;
+                float wet = lp - 0.35f * bp;
+                dk += aDk * (wet - dk);
+                hiss[i] = dk;
             }
             for (int i = 0; i < n; i++)
             {
@@ -1036,9 +1045,63 @@ namespace FlockFive
                 }
             }
 
-            FlattenRms(bus, 0.12f);
+            FlattenRms(bus, RainBedRms);
+            AddRainTicks(bus, n);
             LoopSeam(bus, 0.028f);
             return PeakClip("garden-rain", bus, 0.46f);
+        }
+
+        const float RainMushHz = 600f;   // second high-pass pole on the hiss: less 200-600 Hz mush
+        const float RainBedRms = 0.08f;  // dense bed, was 0.12, so the ticks read over it
+        const float RainBedTopHz = 3200f; // gentle top roll on the dense bed: less fizz above 8 kHz
+        const int RainTicks = 300;       // ~37 per second over the 8 s loop: sparse, never a click train
+        const float RainTickGain = 1.0f;
+
+        // Crisp layer: sparse leaf ticks after FlattenRms, so its 25 ms AGC cannot smear them.
+        // Each tick is a burst of band-limited noise (about 1.3-3.4 kHz, under the 3-8 kHz de-ess
+        // band), 0.6 ms raised-cosine attack and ~2.6 ms decay. Noise, not a tone, so it never
+        // reads as a pitched SFX click. Ticks wrap around the loop end, so the seam stays clean.
+        static void AddRainTicks(float[] bus, int n)
+        {
+            var src = new float[n];
+            int h = 52711;
+            float hp = 0f, lp1 = 0f, lp2 = 0f;
+            float aHp = OnePoleA(1300f), aLp = OnePoleA(3400f);
+            for (int i = 0; i < n; i++)
+            {
+                h = (h * 1103515245 + 12345) & 0x7fffffff;
+                float nz = (h / 1073741824f) - 1f;
+                hp += aHp * (nz - hp);
+                lp1 += aLp * ((nz - hp) - lp1);
+                lp2 += aLp * (lp1 - lp2);
+                src[i] = lp2;
+            }
+            int len = Mathf.RoundToInt(0.014f * Rate);
+            int att = Mathf.Max(2, Mathf.RoundToInt(0.0006f * Rate));
+            float tau = 0.0026f * Rate;
+            int hh = 60607;
+            for (int d = 0; d < RainTicks; d++)
+            {
+                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
+                int at = (int)((hh / 2147483647f) * n);
+                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
+                float u = hh / 2147483647f;
+                float amp = RainTickGain * (0.35f + 0.65f * u * u); // mostly soft, a few closer drops
+                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
+                float pan = (hh / 1073741824f) - 1f;
+                hh = (hh * 1103515245 + 12345) & 0x7fffffff;
+                int from = hh % n;
+                float gl = Mathf.Cos((pan + 1f) * 0.25f * Mathf.PI);
+                float gr = Mathf.Sin((pan + 1f) * 0.25f * Mathf.PI);
+                for (int k = 0; k < len; k++)
+                {
+                    float e = k < att ? 0.5f - 0.5f * Mathf.Cos(Mathf.PI * k / att) : Mathf.Exp(-(k - att) / tau);
+                    float s = src[(from + k) % n] * e * amp;
+                    int o = ((at + k) % n) * 2;
+                    bus[o] += s * gl;
+                    bus[o + 1] += s * gr;
+                }
+            }
         }
 
         static void FlattenRms(float[] stereo, float target)
