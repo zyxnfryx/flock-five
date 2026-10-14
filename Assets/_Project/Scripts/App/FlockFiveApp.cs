@@ -10604,23 +10604,13 @@ namespace FlockFive
             return st.padding.top + asc;
         }
 
-        static bool HasDescender(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return false;
-            for (int i = 0; i < text.Length; i++)
-            {
-                char c = text[i];
-                if (c == 'g' || c == 'j' || c == 'p' || c == 'q' || c == 'y' || c == ',') return true;
-            }
-            return false;
-        }
-
-        // Move that puts inkMid on the target, bounded either way.
+        // Move that puts inkMid on the target. Down only (the stack reads high, never
+        // lift it), bounded by InkNudgeMax.
         static float InkNudge(Rect disc, float inkMid)
         {
             float d = InkTarget(disc) - inkMid;
             float cap = disc.height * InkNudgeMax;
-            return d > cap ? cap : (d < -cap ? -cap : d);
+            return d > cap ? cap : (d < 0f ? 0f : d);
         }
 
         static void DrawFlowerCaption(Rect disc, string ease, int number)
@@ -10723,7 +10713,7 @@ namespace FlockFive
             float jokeLineH = joke.CalcSize(_easeContent).y;
             joke.wordWrap = wrapKeep;
             float lastTop = jokeR.y + textH - jokeLineH;
-            float inkBottom = lastTop + InkBaseline(joke) + (HasDescender(ease) ? InkDescent * jokePx : 0f);
+            float inkBottom = lastTop + InkBaseline(joke) + (CardText.HasDescender(ease) ? InkDescent * jokePx : 0f);
             float nudge = InkNudge(disc, 0.5f * (capTop + inkBottom));
             float room = bottom - (jokeR.y + textH);
             if (nudge > room) nudge = room > 0f ? room : 0f;
