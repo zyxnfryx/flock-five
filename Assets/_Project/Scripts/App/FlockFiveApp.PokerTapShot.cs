@@ -130,9 +130,10 @@ namespace FlockFive
                     n++;
                 }
                 Time.captureDeltaTime = 0f;
-                bool rearm = _pokerIntroLive || (_home == HomeFace.Splash && _gloveVis);
+                bool rearm = _pokerIntroLive || _gloveVis || _gloveAlpha > 0.05f;
                 Log("opened=" + opened + " home=" + _home + " intro=" + _pokerIntroLive
-                    + " glove=" + _gloveVis + " rearm=" + rearm + " frames=" + n + " " + w + "x" + h);
+                    + " glove=" + _gloveVis + " a=" + _gloveAlpha.ToString("0.00")
+                    + " rearm=" + rearm + " frames=" + n + " " + w + "x" + h);
                 string ff = File.Exists("/opt/homebrew/bin/ffmpeg") ? "/opt/homebrew/bin/ffmpeg" : "ffmpeg";
                 var psi = new ProcessStartInfo
                 {
@@ -145,6 +146,7 @@ namespace FlockFive
                 {
                     if (proc != null) proc.WaitForExit(120000);
                 }
+                try { if (Directory.Exists(frames)) Directory.Delete(frames, true); } catch { }
                 Log(opened && !rearm ? "POKER_TAP_OK" : "POKER_TAP_FAIL");
             }
             finally

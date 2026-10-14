@@ -4741,8 +4741,12 @@ namespace FlockFive
             _lessonGuardUntil = r.GuardUntil;
             if (r.Consumed) MarkCoachAte();
             // The step moved. A fade that starts or finishes after this must not bring the hand back.
+            // Alpha drops here so a repaint later in this same OnGUI cannot still paint the hand.
             _gloveHidStep = -1;
             _gloveFadeDismissed = true;
+            _gloveAlpha = 0f;
+            _gloveVis = false;
+            _gloveHoldPose = false;
         }
 
         // One application of CoachDismiss for a tap that is finishing a lesson.

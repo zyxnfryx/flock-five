@@ -154,7 +154,8 @@ namespace FlockFive.Editor
                 && pokerBody.Contains("pokerGates.LessonOwn")
                 && coach.Contains("RailTapRect(RailPoker)")
                 && coach.Contains("_gloveHidStep = -1")
-                && coach.Contains("_gloveFadeDismissed");
+                && coach.Contains("_gloveFadeDismissed")
+                && coach.Contains("_gloveAlpha = 0f");
             Check("shared-path-wired", wired, "poker=" + (pokerAt >= 0));
 
             sb.AppendLine("pass " + pass + " fail " + fail);
