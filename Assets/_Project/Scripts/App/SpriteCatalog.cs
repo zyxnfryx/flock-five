@@ -430,9 +430,9 @@ namespace FlockFive
             var cur = new bool[cw * ch];
             for (int y = 0; y < ch; y++)
             {
-                int sy = y * step;
+                int row = y * step;
                 for (int x = 0; x < cw; x++)
-                    if (pix[sy * w + x * step].a > 0.22f) cur[y * cw + x] = true;
+                    if (pix[row * w + x * step].a > 0.22f) cur[y * cw + x] = true;
             }
             var nxt = new bool[cur.Length];
             for (int n = 0; n < 4; n++)
@@ -454,21 +454,21 @@ namespace FlockFive
                 nxt = swap;
                 System.Array.Clear(nxt, 0, nxt.Length);
             }
-            double sx = 0, sy = 0;
+            double sumX = 0, sumY = 0;
             int count = 0;
             for (int y = 0; y < ch; y++)
             {
                 for (int x = 0; x < cw; x++)
                 {
                     if (!cur[y * cw + x]) continue;
-                    sx += x;
-                    sy += y;
+                    sumX += x;
+                    sumY += y;
                     count++;
                 }
             }
             if (count < 8) return Vector2.zero;
-            float px = (float)(sx / count) * step;
-            float py = (float)(sy / count) * step;
+            float px = (float)(sumX / count) * step;
+            float py = (float)(sumY / count) * step;
             float ppu = Mathf.Max(1f, sprite.pixelsPerUnit);
             var pivot = sprite.pivot;
             return new Vector2((px - pivot.x) / ppu, (py - pivot.y) / ppu);
