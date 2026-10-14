@@ -66,6 +66,7 @@ namespace FlockFive.Editor
             Suite("build87-sparkle", Build87SparkleTests.Run);
             Suite("build88-wing", Build88WingTests.Run);
             Suite("build88-mute", Build88MuteTests.Run);
+            Suite("sky", SkyCycleTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 
@@ -294,6 +295,14 @@ namespace FlockFive.Editor
             EnterPlay();
         }
 
+        // Batch play-mode entry for the night-to-dawn clip. The flag stays until the
+        // app exists, so BeforeSceneLoad can mute before the shot deletes it.
+        public static void RunSkyShot()
+        {
+            File.WriteAllText("/tmp/flock-five-b88-sky", "1");
+            EnterPlay();
+        }
+
         static bool _enterQueued;
 
         [MenuItem("Flock Five/Play Slice")]
@@ -365,7 +374,8 @@ namespace FlockFive.Editor
             "/tmp/flock-five-b87",
             "/tmp/flock-five-b87v",
             "/tmp/flock-five-b87x",
-            "/tmp/flock-five-b88-mute"
+            "/tmp/flock-five-b88-mute",
+            "/tmp/flock-five-b88-sky"
         };
 
         static bool AnyShotCmd()
@@ -431,6 +441,7 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-b87v", "ShotBuild87Video");
                         TryStartShot(app, "/tmp/flock-five-b87x", "ShotBuild87Extra");
                         TryStartShot(app, "/tmp/flock-five-b88-mute", "ShotBuild88Mute");
+                        TryStartShot(app, "/tmp/flock-five-b88-sky", "ShotSkyTransition");
                         TryStartShot(app, "/tmp/flock-five-poker-feel", "ShotPokerFeel");
                     }
                 }

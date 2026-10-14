@@ -115,6 +115,10 @@ namespace FlockFive
             root.SetParent(parent, false);
 
             var cam = MakeCamera(parent);
+            // Before the painting is tinted, so the first frame is this level's
+            // sky (or the carried phase), not a dawn flash.
+            SkyCycle.Attach(root, cam);
+            SkyCycle.Present(LevelData.Index);
             float limbX = EdgeX(cam, 1f);
 
             int level = LevelData.DisplayNumber;
@@ -142,7 +146,6 @@ namespace FlockFive
             bg.layer = PortraitLock.BleedLayer;
             var bgSr = bg.GetComponent<SpriteRenderer>();
             FoliageSway.Apply(bgSr, scene);
-            SkyCycle.Attach(root, cam);
             GardenLife.Attach(root, scene, cam);
             GardenStorm.Attach(root);
             if (reveal)
