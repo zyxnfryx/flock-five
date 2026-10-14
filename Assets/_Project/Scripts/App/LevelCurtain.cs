@@ -4,7 +4,8 @@ namespace FlockFive
 {
     // Gold sparkles leave LEVEL together like the far end of a rainbow, rise off the
     // top of the screen and come back down at the player, large and bright.
-    // The garden shows through every gap. No frame is a solid or near-solid fill.
+    // The garden shows through every gap. No frame is a solid or near-solid fill: the
+    // wash is a translucent veil (combined alpha < ~0.4), never an opaque cover.
     // The clock starts when LEVEL is pressed. Load begins on that same press.
     // Until the load is ready the clock holds at the apex, so a slow load waits
     // on the fountain instead of adding time after the reveal.
@@ -37,6 +38,7 @@ namespace FlockFive
             public byte Hot;
             public byte Tint; // 0 gold, 1 peach, 2 cream, 3 rose (paint only)
             public float Bloom; // 0..1, brighter as it nears (paint only)
+            public float Soft;  // 0..1, defocus as it passes the lens (paint only)
         }
 
         static Glint[] _buf;
@@ -191,34 +193,20 @@ namespace FlockFive
             var prev = GUI.color;
             BloomSeat(w, h, out Vector2 at, out float side);
             DrawBloomUnder(bloom, at, side, glowTex);
+            DrawWash(VisualAge(now), w, h, at, glowTex);
             for (int i = 0; i < n; i++)
             {
                 float a = _buf[i].Alpha;
                 if (a < 0.03f) continue;
                 float sz = _buf[i].Size;
                 if (sz < 1.5f) continue;
-                float x = _buf[i].X - sz * 0.5f;
-                float y = _buf[i].Y - sz * 0.5f;
-                float bl = _buf[i].Bloom;
                 byte tn = _buf[i].Tint;
                 var c = _buf[i].Hot == 1 ? BHot
-                    : tn == 1 ? new Color(1f, 0.74f, 0.46f, 1f)
-                    : tn == 2 ? new Color(1f, 0.93f, 0.72f, 1f)
+                    : tn == 1 ? BPeach
+                    : tn == 2 ? BCream
                     : tn == 3 ? BRose
-                    : new Color(1f, 0.84f, 0.28f, 1f);
-                // Warm glow that strengthens as the glint nears.
-                float g = sz * 2.1f;
-                GUI.color = new Color(c.r, c.g * 0.96f, c.b * 0.8f, a * (0.20f + 0.26f * bl));
-                GUI.DrawTexture(new Rect(_buf[i].X - g * 0.5f, _buf[i].Y - g * 0.5f, g, g), glowTex, ScaleMode.ScaleToFit, true);
-                c = Color.Lerp(c, BCream, 0.5f * bl);
-                GUI.color = new Color(c.r, c.g, c.b, a);
-                GUI.DrawTexture(new Rect(x, y, sz, sz), tex, ScaleMode.ScaleToFit, true);
-                if (bl > 0.4f)
-                {
-                    float k = sz * 0.42f;
-                    GUI.color = new Color(1f, 0.99f, 0.94f, a * (bl - 0.4f));
-                    GUI.DrawTexture(new Rect(_buf[i].X - k * 0.5f, _buf[i].Y - k * 0.5f, k, k), tex, ScaleMode.ScaleToFit, true);
-                }
+                    : BGold;
+                SparkleFx.DrawDepthGlint(_buf[i].X, _buf[i].Y, sz, a, _buf[i].Bloom, _buf[i].Soft, c, tex, glowTex);
             }
             DrawBloomOver(bloom, at, side, tex, glowTex);
             DrawEmbers(bloom, at, side, tex, glowTex);
@@ -278,7 +266,36 @@ namespace FlockFive
             }
         }
 
-        const int ShellCount = 64;
+        // Full-screen wash as the near wave arrives: a warm, painterly light veil, not a
+        // flat fill. Soft cream base plus three large glows in rainbow band order (rose
+        // highest, peach, then gold nearest the button), all centred, so nothing reads
+        // left to right. Peaks at ~0.80 s, clears by Duration to reveal the stage.
+        // Combined alpha stays under ~0.4, so the scene shows through.
+        public const float WashPeak = 0.80f;
+        public const float WashBase = 0.20f;
+
+        public static float WashLevel(float age)
+        {
+            if (age <= 0.58f || age >= Duration) return 0f;
+            float u = age < WashPeak ? (age - 0.58f) / (WashPeak - 0.58f) : (Duration - age) / (Duration - WashPeak);
+            u = Mathf.Clamp01(u);
+            return u * u * (3f - 2f * u);
+        }
+
+        static void DrawWash(float age, float w, float h, Vector2 at, Texture glowTex)
+        {
+            float k = WashLevel(age);
+            if (k < 0.01f) return;
+            GUI.color = new Color(1f, 0.94f, 0.80f, WashBase * k);
+            GUI.DrawTexture(new Rect(0f, 0f, w, h), Texture2D.whiteTexture);
+            float big = (w > h ? w : h) * 1.25f;
+            float cx = w * 0.5f;
+            Blit(new Vector2(cx, h * 0.18f), big, glowTex, new Color(BRose.r, BRose.g, BRose.b, 0.10f * k));
+            Blit(new Vector2(cx, h * 0.40f), big, glowTex, new Color(BPeach.r, BPeach.g, BPeach.b, 0.12f * k));
+            Blit(new Vector2(cx, at.y - h * 0.10f), big * 0.85f, glowTex, new Color(BGold.r, BGold.g, BGold.b, 0.14f * k));
+        }
+
+        const int ShellCount = 72;
 
         static void DrawBloomOver(float b, Vector2 at, float side, Texture tex, Texture glowTex)
         {
@@ -293,7 +310,7 @@ namespace FlockFive
                 float h2 = Hash(lane, 32), h4 = Hash(lane, 34), h7 = Hash(lane, 37);
                 float tx = W * 0.5f + SparkleFx.Lane(i, ShellCount, h7, W * 0.62f);
                 if (!SparkleFx.DepthArcAt(b, 0.62f + 0.14f * h2, at.x, at.y, tx,
-                        -0.28f * H, 1.25f * H, 0.6f, 1.4f, 0.78f, out var p))
+                        -0.28f * H, 1.25f * H, 0.6f, 1.4f, 0.82f, out var p))
                     continue;
                 var c = h4 < 0.45f ? BGold : h4 < 0.70f ? BCream : h4 < 0.90f ? BPeach : BRose;
                 SparkleFx.DrawDepth(p, side * (0.035f + 0.03f * h4), c, 1f);
@@ -335,7 +352,7 @@ namespace FlockFive
             int cap = dst.Length;
             for (int i = 0; i < Count && n < cap; i++)
             {
-                if (!Place(i, age, ox, oy, minSide / screenW, minSide / screenH, out float nx, out float ny, out float alpha, out float sizeN, out bool hot, out float bloom))
+                if (!Place(i, age, ox, oy, minSide / screenW, minSide / screenH, out float nx, out float ny, out float alpha, out float sizeN, out bool hot, out float bloom, out float soft))
                     continue;
                 var g = new Glint
                 {
@@ -345,7 +362,8 @@ namespace FlockFive
                     Alpha = alpha,
                     Hot = hot ? (byte)1 : (byte)0,
                     Tint = TintOf(i >> 1),
-                    Bloom = bloom
+                    Bloom = bloom,
+                    Soft = soft
                 };
                 dst[n++] = g;
             }
@@ -361,12 +379,12 @@ namespace FlockFive
         public const float ArcHalfSpan = 0.62f;
         public const float ScaleFar = 0.6f;
         public const float ScalePeak = 1.4f;
-        public const float ZMax = 0.78f;
+        public const float ZMax = 0.82f;
 
         static bool Place(int i, float age, float ox, float oy, float sx, float sy,
-            out float nx, out float ny, out float alpha, out float sizeN, out bool hot, out float bloom)
+            out float nx, out float ny, out float alpha, out float sizeN, out bool hot, out float bloom, out float soft)
         {
-            nx = ny = alpha = sizeN = bloom = 0f;
+            nx = ny = alpha = sizeN = bloom = soft = 0f;
             hot = false;
             if (age < 0f) return false;
             int lane = i >> 1;
@@ -384,6 +402,7 @@ namespace FlockFive
             hot = h2 > 0.74f;
             sizeN = ((hot ? 0.009f : 0.010f) + (hot ? 0.006f : 0.008f) * h4) * p.Scale;
             bloom = p.Bloom;
+            soft = p.Soft;
             float tw = 0.45f + 0.55f * Mathf.Sin(age * 16f + h4 * 11f);
             if (tw < 0f) tw = 0f;
             tw = 0.55f + 0.45f * tw * tw;
@@ -415,7 +434,7 @@ namespace FlockFive
                 float h3 = Hash(lane, 23), h4 = Hash(lane, 24), h7 = Hash(lane, 27);
                 float tx = W * 0.5f + SparkleFx.Lane(i, EmberCount, h7, W * 0.58f);
                 if (!SparkleFx.DepthArcAt(b, 0.74f + 0.08f * h3, at.x, at.y, tx,
-                        -0.22f * H, 1.25f * H, 0.5f, 1.2f, 0.80f, out var p))
+                        -0.22f * H, 1.25f * H, 0.5f, 1.2f, 0.84f, out var p))
                     continue;
                 var c = h4 < 0.50f ? BGold : h4 < 0.75f ? BPeach : h4 < 0.92f ? BCream : BRose;
                 SparkleFx.DrawDepth(p, side * (0.022f + 0.022f * h4), c, 0.9f);

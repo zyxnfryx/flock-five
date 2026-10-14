@@ -197,29 +197,43 @@ namespace FlockFive
             return (i & 1) == 0 ? -d : d;
         }
 
-        // One depth particle: soft glow, the tinted star, and a hot core as it nears.
+        // One depth particle, painted in layers. As it nears (Bloom) the star warms to
+        // cream and a hot core lights; as it passes the lens (Soft) it defocuses: the
+        // glow widens and the hard star fades, so the near wave reads as soft light.
         static readonly Color NearCream = new Color(1f, 0.97f, 0.88f, 1f);
 
         public static void DrawDepth(Depth p, float baseSize, Color tint, float alpha)
         {
-            float a = p.Alpha * alpha;
-            if (a < 0.02f) return;
             var spr = SpriteCatalog.Sparkle;
-            var tex = spr != null ? spr.texture : null;
-            if (tex == null) return;
-            float sz = baseSize * p.Scale;
-            if (sz < 1f) return;
-            float bl = Mathf.Clamp01(p.Bloom);
             var glow = SpriteCatalog.Glow;
-            if (glow != null && glow.texture != null)
+            DrawDepthGlint(p.X, p.Y, baseSize * p.Scale, p.Alpha * alpha, p.Bloom, p.Soft, tint,
+                spr != null ? spr.texture : null, glow != null ? glow.texture : null);
+        }
+
+        // Shared painter for depth glints (LevelCurtain fountain draws through this too).
+        public static void DrawDepthGlint(float x, float y, float sz, float a, float bloom, float soft,
+            Color tint, Texture star, Texture glowTex)
+        {
+            if (a < 0.02f || sz < 1f || star == null) return;
+            float bl = Mathf.Clamp01(bloom);
+            float sf = Mathf.Clamp01(soft);
+            if (glowTex != null)
             {
-                float g = sz * 2.0f;
-                GUI.color = new Color(tint.r, tint.g, tint.b, a * (0.16f + 0.30f * bl));
-                GUI.DrawTexture(new Rect(p.X - g * 0.5f, p.Y - g * 0.5f, g, g), glow.texture, ScaleMode.ScaleToFit, true);
+                float g = sz * (2.0f + 1.6f * sf);
+                GUI.color = new Color(tint.r, tint.g * 0.97f, tint.b * 0.85f, a * (0.16f + 0.26f * bl + 0.10f * sf));
+                GUI.DrawTexture(new Rect(x - g * 0.5f, y - g * 0.5f, g, g), glowTex, ScaleMode.ScaleToFit, true);
             }
             var c = Color.Lerp(tint, NearCream, 0.55f * bl);
-            GUI.color = new Color(c.r, c.g, c.b, a);
-            GUI.DrawTexture(new Rect(p.X - sz * 0.5f, p.Y - sz * 0.5f, sz, sz), tex, ScaleMode.ScaleToFit, true);
+            float s2 = sz * (1f + 0.25f * sf);
+            GUI.color = new Color(c.r, c.g, c.b, a * (1f - 0.55f * sf));
+            GUI.DrawTexture(new Rect(x - s2 * 0.5f, y - s2 * 0.5f, s2, s2), star, ScaleMode.ScaleToFit, true);
+            float core = (bl - 0.35f) * (1f - sf);
+            if (core > 0.02f)
+            {
+                float k = sz * 0.42f;
+                GUI.color = new Color(1f, 0.99f, 0.94f, a * core * 1.2f);
+                GUI.DrawTexture(new Rect(x - k * 0.5f, y - k * 0.5f, k, k), star, ScaleMode.ScaleToFit, true);
+            }
             GUI.color = Color.white;
         }
 
