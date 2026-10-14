@@ -363,6 +363,9 @@ namespace FlockFive
         public static void TickShowClock()
         {
             AdPause.Hold();
+            // The ad token times out in 10s. A show is longer than that, so the
+            // hold is refreshed every tick until close, fail, or skip.
+            if (IsShowing) HoldAdAudio();
             if (_showDepth > 0)
                 _shownForeground += ForegroundDt();
             if (_settleLeft < 0f) return;
