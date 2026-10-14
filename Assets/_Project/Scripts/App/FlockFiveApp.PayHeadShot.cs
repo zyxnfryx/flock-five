@@ -15,7 +15,10 @@ namespace FlockFive
         internal static Vector2Int _payHeadPxDbg;
         internal static Vector2 _payHeadTitleSzDbg, _payHeadBetSzDbg, _payHeadRowsDbg;
         internal static float _payHeadFloorDbg;
-        public static string PayHeadShotDir = "/Users/zfxgames/wkspaces/wingout/b89-payhead";
+        internal static Vector4 _payCashDbg;
+        internal static Vector2 _payMultDbg;
+        internal static string _payCashTxDbg;
+        public static string PayHeadShotDir = "/Users/zfxgames/wkspaces/wingout/b89-payhead-followup";
 
         public IEnumerator ShotPayHead()
         {
@@ -97,7 +100,11 @@ namespace FlockFive
                 + " panel " + p + " tab " + t + " floor " + _payHeadFloorDbg.ToString("0")
                 + " titleFits " + titleFits + " betFits " + betFits
                 + " clearTab " + (p.yMin >= t.yMax) + " rowsInPanel " + (rowsEnd <= p.yMax)
-                + " aboveFloor " + (p.yMax <= _payHeadFloorDbg + 0.5f);
+                + " aboveFloor " + (p.yMax <= _payHeadFloorDbg + 0.5f)
+                + " cashPx " + _payCashDbg.x + " cashWidest " + _payCashDbg.y.ToString("0.0") + " cashCol " + _payCashDbg.z.ToString("0.0")
+                + " cashFits " + (_payCashDbg.y <= _payCashDbg.z + 0.5f)
+                + " multPx " + _payCashDbg.w + " multWidest " + _payMultDbg.x.ToString("0.0") + " multCol " + _payMultDbg.y.ToString("0.0")
+                + " multFits " + (_payMultDbg.x <= _payMultDbg.y + 0.5f) + " cash [" + _payCashTxDbg + "]";
             File.AppendAllText(log, line + "\n");
             Debug.Log("[payhead] " + line);
             _pokerPayOpen = false; _pokerPayAnim = 0f;

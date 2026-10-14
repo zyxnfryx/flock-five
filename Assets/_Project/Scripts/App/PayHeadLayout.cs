@@ -12,13 +12,13 @@ namespace FlockFive
     public static class PayHeadLayout
     {
         public const float TitleShare = 0.60f;
-        public const float BetShare = 0.34f;
+        public const float BetShare = 0.40f;
         public const float TitleFill = 0.94f;
         public const float BetFill = 0.96f;
         public const float TitleWidth = 0.86f;
         public const float BetWidth = 0.70f;
         // The bet line stays visibly second: never above this share of the title px.
-        public const float BetToTitle = 0.82f;
+        public const float BetToTitle = 0.93f;
         public const int TitleMinPx = 24;
         public const int TitleMaxPx = 160;
         public const int BetMinPx = 16;
@@ -48,6 +48,48 @@ namespace FlockFive
             b.BetMaxW = paper.width * BetWidth;
             b.BetMaxH = betH * BetFill;
             return b;
+        }
+
+        // Payout row columns, one place for the draw and the tests. Name left, multiplier
+        // centered, payout right-aligned; all rows share these widths.
+        public const float RowTextPad = 0.06f;
+        public const float NameShare = 0.50f;
+        public const float MultShare = 0.18f;
+
+        public struct Cols
+        {
+            public float InnerW, NameW, MultW, CashW;
+        }
+
+        public static Cols Columns(float rowWidth)
+        {
+            var c = new Cols();
+            c.InnerW = rowWidth - rowWidth * RowTextPad * 2f;
+            c.NameW = c.InnerW * NameShare;
+            c.MultW = c.InnerW * MultShare;
+            c.CashW = c.InnerW - c.NameW - c.MultW;
+            return c;
+        }
+
+        // Room a payout / multiplier string may fill inside its column (matches the old
+        // per-row margins) and the height share of the row it may use.
+        public const float CashMargin = 6f;
+        public const float MultMargin = 4f;
+        public const float RowTextHeight = 0.62f;
+
+        // ONE size for a whole column: the largest size at which the widest string still
+        // fits. fitOne(text) is the largest size at which that single string fits, so the
+        // column size is the smallest of them. No row is squeezed below it or drawn above it.
+        public static int CommonPx(System.Collections.Generic.IList<string> texts, int count,
+            System.Func<string, int> fitOne)
+        {
+            int px = int.MaxValue;
+            for (int i = 0; i < count; i++)
+            {
+                int f = fitOne(texts[i]);
+                if (f < px) px = f;
+            }
+            return px == int.MaxValue ? 0 : px;
         }
 
         public static int BetCap(int titlePx) =>

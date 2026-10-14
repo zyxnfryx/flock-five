@@ -20,11 +20,12 @@ namespace FlockFive.Editor
                 catch (System.Exception e) { log.AppendLine("ERROR " + n + " " + e.Message); }
             }
             Try("Build89PayHeadTests", Build89PayHeadTests.Run);
+            Try("Build89PayoutTests", Build89PayoutTests.Run);
             Try("PokerFlushTests", PokerFlushTests.Run);
             Try("PokerDealGateTests", PokerDealGateTests.Run);
             Try("PokerBetTests", PokerBetTests.Run);
             File.WriteAllText("/tmp/b89-payhead-testrun.txt", log.ToString());
-            Directory.CreateDirectory("/Users/zfxgames/wkspaces/wingout/b89-payhead");
+            Directory.CreateDirectory("/Users/zfxgames/wkspaces/wingout/b89-payhead-followup");
             Build79Stills.SetGameView(1179, 2556);
             File.WriteAllText("/tmp/flock-five-b89-payhead", "1");
             EditorApplication.isPlaying = true;
