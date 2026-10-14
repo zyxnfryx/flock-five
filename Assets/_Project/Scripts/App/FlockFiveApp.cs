@@ -2320,6 +2320,55 @@ namespace FlockFive
             float fps = _recordFrameCount / 4.2f;
             if (fps < 5f) fps = 15f;
             EncodeSmashVideo(frames, dir + "/splash-birds.mp4", fps);
+            yield return ShotLevelCaptionStills(dir);
+        }
+
+        // LEVEL disc caption proof: blank, short / medium / long jokes (Levels 2, 4, 6),
+        // a 3-digit level and LEVEL 1000, as /tmp/paradice/splash-level-<device>-*.png.
+        // iPhone 1179x2556 always; add /tmp/flock-five-level6-ipad and/or
+        // /tmp/flock-five-level6-android (with the level6 flag) for iPad 2048x2732 and
+        // Android 1080x2400 passes. Editor only (game view sizing + shot level).
+        static readonly int[] CaptionShotLevel = { 1, 2, 4, 6, 123, 1000, 1000 };
+        static readonly string[] CaptionShotEase = { "", "Easy", "Super Easy", "Super Duper Easy", "Super Easy", "", "Super Duper Easy" };
+        static readonly string[] CaptionShotTag = { "1-blank", "2-short", "4-medium", "6-long", "123-medium", "1000-blank", "1000-long" };
+
+        IEnumerator ShotLevelCaptionStills(string dir)
+        {
+#if UNITY_EDITOR
+            bool ipad = System.IO.File.Exists("/tmp/flock-five-level6-ipad");
+            try { System.IO.File.Delete("/tmp/flock-five-level6-ipad"); } catch { }
+            bool android = System.IO.File.Exists("/tmp/flock-five-level6-android");
+            try { System.IO.File.Delete("/tmp/flock-five-level6-android"); } catch { }
+            LevelNudgeLog = true;
+            _levelNudgeKey = null;
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            int keepNext = PlayerPrefs.GetInt("flockfive.next", 0);
+            var keepWindow = DeviceFit.TestWindow;
+            int[][] res = { new[] { 1179, 2556 }, new[] { 2048, 2732 }, new[] { 1080, 2400 } };
+            string[] dev = { "iphone", "ipad", "android" };
+            for (int d = 0; d < 3; d++)
+            {
+                if ((d == 1 && !ipad) || (d == 2 && !android)) continue;
+                _levelNudgeKey = null;
+                if (EditorGameSize != null) EditorGameSize(res[d][0], res[d][1]);
+                DeviceFit.TestWindow = res[d][0] / (float)res[d][1];
+                yield return new WaitForSecondsRealtime(0.8f);
+                for (int i = 0; i < CaptionShotLevel.Length; i++)
+                    yield return ShotSplashLevel(CaptionShotLevel[i], 0, CaptionShotEase[i],
+                        dir + "/splash-level-" + dev[d] + "-" + CaptionShotTag[i] + ".png");
+            }
+            if ((ipad || android) && EditorGameSize != null) EditorGameSize(1179, 2556);
+            LevelNudgeLog = false;
+            DeviceFit.TestWindow = keepWindow;
+            _shotLevelNumber = 1;
+            _shotEase = "";
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", keepNext);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            PlayerPrefs.Save();
+            Debug.Log("FF_LEVEL_CAPTION_STILLS_DONE ipad=" + ipad + " android=" + android);
+#else
+            yield break;
+#endif
         }
 
         IEnumerator ShotStreak()
@@ -10465,6 +10514,138 @@ namespace FlockFive
             return px;
         }
 
+        // Geometric centre of the LEVEL disc's flat top face, as a fraction of the FlowerCap
+        // rect (disc) height. Measured on fx_play_flower.png down the centre column: the
+        // face runs 0.097..0.978 of the cap rect and the wood lip sits below it.
+        const float FaceMidFrac = 0.537f;
+        // The face tilts toward the player, so its near half reads bigger and the optical
+        // centre sits below the geometric one (Brandon's LEVEL 6 still: ink centred on the
+        // face still read high).
+        const float OpticalDrop = 0.018f;
+        // Blank LEVEL's layout drop below the rect centre (was an inline 0.018f). The ink
+        // centring below supersedes it for the final position.
+        const float LevelAloneDrop = 0.018f;
+        // Safety bound on the ink-centring move, in disc heights.
+        const float InkNudgeMax = 0.06f;
+        // Fallback type metrics per em when the font has none (Unity's default Arial).
+        const float InkAscent = 0.905f;
+        const float InkCap = 0.716f;
+        const float InkDescent = 0.212f;
+
+        static GUIContent _lvInk;
+
+        static float InkTarget(Rect disc) => disc.y + disc.height * (FaceMidFrac + OpticalDrop);
+
+        // Baseline offset from a laid-out line's top, from the style's real font.
+        static float InkBaseline(GUIStyle st)
+        {
+            float fs = st.fontSize > 0 ? st.fontSize : 14f;
+            Font f = st.font != null ? st.font : (GUI.skin != null ? GUI.skin.font : null);
+            float asc = InkAscent * fs;
+            if (f != null && f.fontSize > 0 && f.ascent > 0)
+                asc = f.ascent * fs / f.fontSize;
+            return st.padding.top + asc;
+        }
+
+        // Real glyph ink of a line, measured, not modelled: TextGenerator lays out "H"
+        // with the style's own font, size and weight, and the quad gives the cap top
+        // and the baseline as offsets from the line top. IMGUI places glyphs the same
+        // way, so these hold for any font (the fixed em fractions did not). Cached.
+        static TextGenerator _inkGen;
+        static Font _inkFont;
+        static int _inkSize = -1;
+        static FontStyle _inkStyle;
+        static float _inkCapOff, _inkBaseOff;
+
+        static void InkOffsets(GUIStyle st, out float capOff, out float baseOff)
+        {
+            float fs = st.fontSize > 0 ? st.fontSize : 14f;
+            Font f = st.font != null ? st.font : (GUI.skin != null ? GUI.skin.font : null);
+            // Fallback: the em model.
+            baseOff = InkBaseline(st) - st.padding.top;
+            capOff = baseOff - InkCap * fs;
+            if (f == null) return;
+            int size = Mathf.RoundToInt(fs);
+            if (f == _inkFont && size == _inkSize && st.fontStyle == _inkStyle)
+            {
+                capOff = _inkCapOff;
+                baseOff = _inkBaseOff;
+                return;
+            }
+            if (_inkGen == null) _inkGen = new TextGenerator(8);
+            var set = new TextGenerationSettings
+            {
+                font = f,
+                fontSize = size,
+                fontStyle = st.fontStyle,
+                color = Color.white,
+                lineSpacing = 1f,
+                richText = false,
+                scaleFactor = 1f,
+                textAnchor = TextAnchor.UpperLeft,
+                alignByGeometry = false,
+                resizeTextForBestFit = false,
+                updateBounds = false,
+                horizontalOverflow = HorizontalWrapMode.Overflow,
+                verticalOverflow = VerticalWrapMode.Overflow,
+                generationExtents = new Vector2(4096f, 4096f),
+                pivot = new Vector2(0f, 1f),
+                generateOutOfBounds = true,
+            };
+            if (!_inkGen.Populate("H", set) || _inkGen.vertexCount < 4 || _inkGen.lineCount < 1) return;
+            var verts = _inkGen.verts;
+            float hi = float.MinValue, lo = float.MaxValue;
+            for (int i = 0; i < 4 && i < verts.Count; i++)
+            {
+                float y = verts[i].position.y;
+                if (y > hi) hi = y;
+                if (y < lo) lo = y;
+            }
+            float lineTop = _inkGen.lines[0].topY;
+            if (hi - lo < fs * 0.3f || hi - lo > fs * 1.2f) return; // junk probe: keep the model
+            capOff = lineTop - hi;
+            baseOff = lineTop - lo;
+            _inkFont = f;
+            _inkSize = size;
+            _inkStyle = st.fontStyle;
+            _inkCapOff = capOff;
+            _inkBaseOff = baseOff;
+        }
+
+        // Top of the first (index 0) or last (index = text length) laid-out line, where
+        // IMGUI itself puts it for this rect and alignment.
+        static float InkLineTop(GUIStyle st, Rect r, GUIContent c, int index)
+        {
+            return st.GetCursorPixelPosition(r, c, index).y;
+        }
+
+        // Move that puts inkMid on the target. Down only (the stack reads high, never
+        // lift it), bounded by InkNudgeMax.
+        static float InkNudge(Rect disc, float inkMid)
+        {
+            float d = InkTarget(disc) - inkMid;
+            float cap = disc.height * InkNudgeMax;
+            return d > cap ? cap : (d < 0f ? 0f : d);
+        }
+
+        // Joke-stack drop, in disc heights (0.020 x 421px ~ 8px on iPhone).
+        const float JokeStackDrop = 0.020f;
+
+        // Capture-mode proof: one line per distinct level / joke / disc.
+        public static bool LevelNudgeLog;
+        static string _levelNudgeKey;
+        static void LogLevelNudge(int number, string ease, Rect disc, float nudge, bool clamped)
+        {
+            if (!LevelNudgeLog || !GuiPaint()) return;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            string key = number + "|" + ease + "|" + disc.width.ToString("0", ci) + "x" + disc.height.ToString("0", ci);
+            if (key == _levelNudgeKey) return;
+            _levelNudgeKey = key;
+            Debug.Log("FF_LEVEL_NUDGE level=" + number + " joke=\"" + ease + "\" disc=" + disc.width.ToString("0", ci) + "x"
+                + disc.height.ToString("0", ci) + "@" + disc.y.ToString("0", ci) + " nudgePx=" + nudge.ToString("0.0", ci)
+                + " clamped=" + (clamped ? "true" : "false") + " screen=" + Screen.width + "x" + Screen.height);
+        }
+
         static void DrawFlowerCaption(Rect disc, string ease, int number)
         {
             bool hasEase = !string.IsNullOrEmpty(ease);
@@ -10491,7 +10672,7 @@ namespace FlockFive
                 float padX = disc.width * 0.04f;
                 float aloneH = disc.height * 0.55f;
                 // Hairline: blank LEVEL up a smidge (was +0.045f).
-                float aloneY = disc.y + (disc.height - aloneH) * 0.5f + disc.height * 0.018f;
+                float aloneY = disc.y + (disc.height - aloneH) * 0.5f + disc.height * LevelAloneDrop;
                 float aloneX = disc.x + padX + disc.width * 0.035f;
                 lvR = new Rect(aloneX, aloneY, disc.width - padX * 2f - disc.width * 0.035f, aloneH);
                 jokeR = default;
@@ -10517,9 +10698,19 @@ namespace FlockFive
                 lvR.width * (quad ? 0.98f : (triple ? 0.96f : 0.94f)),
                 lvR.height * (hasEase ? 0.95f : 0.80f),
                 quad ? 30 : (triple ? 26 : 30), lvHi);
-            StampBannerText(lvR, level, lv, 1f, true);
-
-            if (!hasEase) return;
+            if (!hasEase)
+            {
+                // One line, MiddleCenter: ink is cap top to baseline (no descenders).
+                if (_lvInk == null) _lvInk = new GUIContent();
+                _lvInk.text = level;
+                InkOffsets(lv, out float capOff, out float baseOff);
+                float lineTop = InkLineTop(lv, lvR, _lvInk, 0);
+                float blankNudge = InkNudge(disc, lineTop + 0.5f * (capOff + baseOff));
+                LogLevelNudge(number, "", disc, blankNudge, false);
+                lvR.y += blankNudge;
+                StampBannerText(lvR, level, lv, 1f, true);
+                return;
+            }
 
             // Shared size. Does not follow the 100+ LEVEL cap or the length of the line.
             float s = DeviceFit.Ui();
@@ -10541,10 +10732,27 @@ namespace FlockFive
                 joke.wordWrap = true;
                 textH = joke.CalcHeight(_easeContent, lineW);
             }
+            float bottom = disc.yMax;
+            // Joke stack: a fixed, measured drop (the captures read the stack 8px high on
+            // the 421px iPhone disc). The ink estimate this replaces came out <= 0 and the
+            // down-only bound in InkNudge clamped it to 0, so joke levels never moved.
+            // Clamp only if the joke would really cross the disc's bottom edge.
+            float nudge = disc.height * JokeStackDrop;
+            bool clamped = false;
+            float over = jokeR.y + nudge + textH - disc.yMax;
+            if (over > 0f)
+            {
+                nudge -= over;
+                if (nudge < 0f) nudge = 0f;
+                clamped = true;
+            }
+            LogLevelNudge(number, ease, disc, nudge, clamped);
+            lvR.y += nudge;
+            jokeR.y += nudge;
+            StampBannerText(lvR, level, lv, 1f, true);
             float bandH = textH + 4f;
             if (bandH < jokeR.height) bandH = jokeR.height;
             float y = jokeR.y;
-            float bottom = disc.yMax - 2f;
             if (y + textH > bottom)
             {
                 float minY = lvR.yMax + disc.height * 0.004f;
