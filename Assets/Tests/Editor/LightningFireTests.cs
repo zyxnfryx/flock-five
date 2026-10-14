@@ -92,17 +92,33 @@ namespace FlockFive.Editor
             var claimed = Spare();
             claimed.Branches.Add(new BranchState { IsBonus = true, AdLocked = true });
             int fell = LightningFire.Target(claimed, new[] { true, false }, new bool[2]);
-            var occupied = Spare();
-            var full = new BranchState { IsBonus = true, AdLocked = true };
-            full.Birds.Add(new Bird(BirdColor.Gold));
-            occupied.Branches.Add(full);
-            int skipOcc = LightningFire.Target(occupied, new bool[2], new bool[2]);
             var burned = Spare();
             burned.Branches.Add(new BranchState { IsBonus = true, AdLocked = true, Burned = true, Broken = true });
             int skipBurn = LightningFire.Target(burned, new bool[2], new[] { true, false });
-            Check("skip-claimed-occupied-burned",
-                fell == 1 && skipOcc == 1 && skipBurn == 1,
-                "claimed=" + fell + " occupied=" + skipOcc + " burned=" + skipBurn);
+            Check("skip-claimed-and-burned", fell == 1 && skipBurn == 1,
+                "claimed=" + fell + " burned=" + skipBurn);
+
+            // A gift with birds is not an offer. A complete set on it still
+            // collects, so the spare empty perch can burn. A trapped single
+            // bird means the puzzle is not winnable, so the bolt stays dry.
+            var seated = new Board();
+            seated.Live = new BirdColor?[] { BirdColor.Ruby, BirdColor.Gold };
+            var rubies = new BranchState();
+            for (int i = 0; i < BranchState.Cap; i++) rubies.Birds.Add(new Bird(BirdColor.Ruby));
+            var gift = new BranchState { IsBonus = true, AdLocked = true };
+            for (int i = 0; i < BranchState.Cap; i++) gift.Birds.Add(new Bird(BirdColor.Gold));
+            seated.Branches.Add(rubies);
+            seated.Branches.Add(new BranchState());
+            seated.Branches.Add(gift);
+            int skipOcc = LightningFire.Target(seated, new bool[2], new bool[2]);
+            var trapped = Spare();
+            var stuckGift = new BranchState { IsBonus = true, AdLocked = true };
+            stuckGift.Birds.Add(new Bird(BirdColor.Gold));
+            trapped.Branches.Add(stuckGift);
+            int noOcc = LightningFire.Target(trapped, new bool[2], new bool[2]);
+            Check("occupied-gift-is-not-the-offer",
+                skipOcc == 1 && noOcc < 0 && noOcc != 2,
+                "seated=" + skipOcc + " trapped=" + noOcc);
 
             var stuck = new Board();
             var one = new BranchState();
