@@ -206,6 +206,17 @@ namespace FlockFive
             return new Vector2(x, y);
         }
 
+        // Box that hugs its content: content size plus a fixed pad per side, capped at
+        // maxW. Depends only on the content, never on the screen aspect, so a 20:9
+        // Android phone gets the same snug plate as an iPhone.
+        public static Vector2 SnugBox(float contentW, float contentH, float pad, float maxW)
+        {
+            if (pad < 0f) pad = 0f;
+            float w = contentW + pad * 2f;
+            if (maxW > 1f && w > maxW) w = maxW;
+            return new Vector2(Mathf.Max(2f, w), Mathf.Max(2f, contentH + pad * 2f));
+        }
+
         public struct SnugPlate
         {
             public int Font;
