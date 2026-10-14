@@ -40,7 +40,7 @@ namespace FlockFive
                 PlayerPrefs.Save();
                 if (EditorGameSize != null) EditorGameSize(1179, 2556);
                 Screen.SetResolution(1179, 2556, false);
-                yield return new WaitForSecondsRealtime(0.8f);
+                yield return new WaitForSecondsRealtime(0.4f);
                 MuteShotAudio();
                 DailyBonus.TestBegin(20261013, 0, 2);
                 ShowSplash();
@@ -52,9 +52,9 @@ namespace FlockFive
                 _welcomeQueued = false;
                 _welcomeGlove = false;
                 _dailyAskOpen = false;
+                _dailyOpen = false;
                 _dailyShotQuiet = false;
-                yield return null;
-                yield return null;
+                yield return WaitStudioCardDown("DAILY_DISMISS_HOME");
                 _dailyOpen = true;
                 _dailyPopAt = AdPause.Unscaled;
                 _dailyPhase = DailyWheelPhase.Ready;
@@ -62,13 +62,13 @@ namespace FlockFive
                 StartDailySpin();
                 _dailyIntroLive = false;
                 _dailyClaimFollowUp = false;
-                float guard = 0f;
-                while (_dailyPhase != DailyWheelPhase.Landed && guard < 8f)
+                float spinT0 = Time.realtimeSinceStartup;
+                while (_dailyPhase != DailyWheelPhase.Landed && Time.realtimeSinceStartup - spinT0 < 12f)
                 {
-                    guard += Time.unscaledDeltaTime;
                     MuteShotAudio();
                     yield return null;
                 }
+                if (WarmCoverLive) yield return WaitStudioCardDown("DAILY_DISMISS_STILL");
                 Time.captureDeltaTime = 1f / 60f;
                 int n = 0;
                 int tail = 0;
@@ -119,6 +119,22 @@ namespace FlockFive
             }
             EditorApplication.isPlaying = false;
             EditorApplication.Exit(0);
+        }
+
+        // The studio card paints last. A single unscaled hitch must not skip this wait.
+        IEnumerator WaitStudioCardDown(string tag)
+        {
+            float t0 = Time.realtimeSinceStartup;
+            int calm = 0;
+            while (calm < 8 && Time.realtimeSinceStartup - t0 < 22f)
+            {
+                if (!WarmCoverLive) calm++;
+                else calm = 0;
+                MuteShotAudio();
+                yield return null;
+            }
+            yield return new WaitForSecondsRealtime(0.12f);
+            UnityEngine.Debug.Log(tag + " cover " + (Time.realtimeSinceStartup - t0).ToString("0.00") + " warm " + WarmCoverLive);
         }
     }
 }

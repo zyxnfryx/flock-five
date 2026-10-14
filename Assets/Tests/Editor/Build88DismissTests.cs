@@ -70,6 +70,14 @@ namespace FlockFive.Editor
                     coach.IndexOf("|| _dailyPayHold || _dailyCloseAt >= 0f) return;") > 0
                     && home.IndexOf("if (_dailyOpen && !_dailyPayHold && _dailyCloseAt < 0f) DrawDailyClaimLine(s);") > 0,
                     "claim");
+                int tick = daily.IndexOf("void TickDailyDismiss(");
+                Check("exit-paces-with-capture",
+                    daily.IndexOf("float DailyExitNow()") > 0
+                    && daily.IndexOf("Time.captureDeltaTime > 0f") > 0
+                    && daily.IndexOf("return PlayClock.Now;") > 0
+                    && tick > 0
+                    && daily.IndexOf("DailyExitNow()", tick) > tick,
+                    "tick " + tick);
 
                 int keepCoins = PlayerPrefs.GetInt("flockfive.coins", 0);
                 int keepCoinsX = PlayerPrefs.GetInt("flockfive.coins.x", 0);

@@ -61,7 +61,7 @@ namespace FlockFive
         {
             if (EditorGameSize != null) EditorGameSize(w, h);
             Screen.SetResolution(w, h, false);
-            yield return new WaitForSecondsRealtime(0.7f);
+            yield return new WaitForSecondsRealtime(0.4f);
             MuteShotAudio();
             ShowSplash();
             _dailyIntro = false;
@@ -74,11 +74,11 @@ namespace FlockFive
             _welcomeGlove = false;
             _dailyOpen = false;
             _dailyAskOpen = false;
+            yield return WaitStudioCardDown("POKER_GLOVE_HOME " + tag);
             ArmPokerIntro();
-            float guard = 0f;
-            while ((!_pokerIntroLive || !_gloveVis) && guard < 6f)
+            float gloveT0 = Time.realtimeSinceStartup;
+            while ((!_pokerIntroLive || !_gloveVis) && Time.realtimeSinceStartup - gloveT0 < 8f)
             {
-                guard += Time.unscaledDeltaTime;
                 MuteShotAudio();
                 yield return null;
             }

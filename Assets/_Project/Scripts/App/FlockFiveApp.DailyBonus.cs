@@ -413,7 +413,7 @@ namespace FlockFive
 
             float t = AdPause.Unscaled;
             bool closing = _dailyCloseAt >= 0f;
-            float closeT = closing ? t - _dailyCloseAt : 0f;
+            float closeT = closing ? DailyExitNow() - _dailyCloseAt : 0f;
             float k = 1f;
             float fade = 1f;
             if (closing) DailyExitMotion(closeT, out k, out fade);
@@ -656,6 +656,14 @@ namespace FlockFive
             return c;
         }
 
+        // Screenshot encode hitches Time.unscaledTime. A clip steps captureDeltaTime,
+        // so the exit beat follows PlayClock and stays one frame per captured frame.
+        float DailyExitNow()
+        {
+            if (Time.captureDeltaTime > 0f) return PlayClock.Now;
+            return AdPause.Unscaled;
+        }
+
         void TickDailyDismiss()
         {
             if (!_dailyOpen) return;
@@ -663,10 +671,10 @@ namespace FlockFive
             {
                 if (RewardPayBusy()) return;
                 _dailyPayHold = false;
-                _dailyCloseAt = AdPause.Unscaled;
+                _dailyCloseAt = DailyExitNow();
             }
             if (_dailyCloseAt < 0f) return;
-            if (AdPause.Unscaled - _dailyCloseAt >= DailyCloseDur)
+            if (DailyExitNow() - _dailyCloseAt >= DailyCloseDur)
                 EndDailyPopup();
         }
 
