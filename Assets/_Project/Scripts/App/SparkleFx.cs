@@ -152,6 +152,60 @@ namespace FlockFive
             return tw * tw;
         }
 
+        // Level button curtain. One clock for the home tear: sparkles build out of
+        // the button, wash the glass, then the sheet pulls apart from the center.
+        // A left-to-right wipe would shove every glint the same way. CurtainShiftX
+        // sends the left half left and the right half right, by the same distance.
+        public const float CurtainDuration = 1f;
+        public const float CurtainBuildEnd = 0.30f;
+        public const float CurtainWashEnd = 0.52f;
+
+        public static string CurtainPhase(float age)
+        {
+            if (age < CurtainBuildEnd) return "build";
+            if (age < CurtainWashEnd) return "wash";
+            return "part";
+        }
+
+        // 0 while the sheet is shut (build and wash). 1 when the two halves have left.
+        public static float CurtainOpen(float age)
+        {
+            if (age <= CurtainWashEnd) return 0f;
+            float span = CurtainDuration - CurtainWashEnd;
+            if (span < 0.05f) span = 0.05f;
+            float u = (age - CurtainWashEnd) / span;
+            if (u < 0f) u = 0f;
+            else if (u > 1f) u = 1f;
+            return u * u * (3f - 2f * u);
+        }
+
+        // Normalized GUI x, y grows down. open is CurtainOpen. The return is added to nx.
+        // Travel is just past half the screen so a full open clears both halves.
+        public static float CurtainShiftX(float nx, float open)
+        {
+            if (open <= 0f) return 0f;
+            if (open > 1f) open = 1f;
+            float side = nx < 0.5f ? -1f : 1f;
+            return side * open * 0.58f;
+        }
+
+        // One curtain glint. Glow under the shared sparkle so the wash is a sheet
+        // of stars, not a painted rect. Core stays off: the sprite already has a heart.
+        public static void DrawCurtainGlint(float x, float y, float size, float alpha, bool hot)
+        {
+            if (alpha < 0.03f || size < 1.5f) return;
+            var at = new Vector2(x, y);
+            var tint = hot
+                ? new Color(1f, 0.98f, 0.92f, 1f)
+                : new Color(1f, 0.84f, 0.28f, 1f);
+            DrawGlow(at, size * 1.9f, new Color(1f, 0.78f, 0.24f, alpha * 0.50f));
+            var spr = SpriteCatalog.Sparkle;
+            if (spr != null && spr.texture != null)
+                DrawAt(at, size, alpha, tint, false);
+            else
+                DrawAt(at, size, alpha, tint, true);
+        }
+
         // Kit / adopted avatar. Seats are fractions of the drawn sheet from its
         // center, for a bird facing right (beak toward +x). GUI y grows downward.
         // The sheet is mostly empty: the rest pose sits in the middle, the

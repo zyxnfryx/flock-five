@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace FlockFive.Editor
 {
-    // Build 83 pass c2. Sparkle fountain curtain (5/5b), glove never presses and labels stay on the cap (9).
+    // Build 83 pass c2. Level curtain is the b88 tear (build/wash/part), glove never presses and labels stay on the cap (9).
     // Kit seat on the skull (6) is covered by Build81Tests kit-on-dome via BirdIdle.KitTouch.
     static class Build83TestsC2
     {
@@ -30,50 +30,44 @@ namespace FlockFive.Editor
             const float W = 1179f, H = 2556f;
             var src = new Rect(390f, 1800f, 400f, 400f);
             var buf = new LevelCurtain.Glint[LevelCurtain.Count * 2];
-            const int GX = 24, GY = 48;
-            float worst = 0f, worstAge = 0f;
-            float apexTop = 1f;
-            bool fellLater = false;
-            float minYApex = 9f, minYFall = 9f;
-            for (int k = 0; k <= 24; k++)
-            {
-                float age = k * 0.05f;
-                int n = LevelCurtain.Fill(age, W, H, src, buf);
-                var cell = new bool[GX * GY];
-                float meanY = 0f; int my = 0;
-                for (int i = 0; i < n; i++)
-                {
-                    var g = buf[i];
-                    float r = g.Size * 0.5f;
-                    for (int cy = 0; cy < GY; cy++)
-                    for (int cx = 0; cx < GX; cx++)
-                    {
-                        float px = (cx + 0.5f) * W / GX, py = (cy + 0.5f) * H / GY;
-                        if (Mathf.Abs(px - g.X) <= r && Mathf.Abs(py - g.Y) <= r) cell[cy * GX + cx] = true;
-                    }
-                    meanY += g.Y / H; my++;
-                }
-                int on = 0; foreach (var c in cell) if (c) on++;
-                float cover = on / (float)(GX * GY);
-                if (cover > worst) { worst = cover; worstAge = age; }
-                if (my > 0)
-                {
-                    meanY /= my;
-                    string beat = LevelCurtain.BeatName(age);
-                    if (beat == "apex" && meanY < minYApex) minYApex = meanY;
-                    if (beat == "fall" && meanY < minYFall) minYFall = meanY;
-                }
-                if (age >= 0.9f && n > 0) fellLater = true;
-            }
-            Check("curtain-no-solid-fill", worst < 0.55f, "max grid cover " + worst.ToString("0.00") + " at " + worstAge.ToString("0.00") + "s");
-            float oy = src.center.y / H;
-            Check("curtain-fountain-rises", minYApex < oy - 0.2f, "apex mean y " + minYApex.ToString("0.00") + " source y " + oy.ToString("0.00"));
-            Check("curtain-rain-falls", minYFall > minYApex, "fall mean y " + minYFall.ToString("0.00") + " > apex " + minYApex.ToString("0.00"));
-            Check("curtain-beats", LevelCurtain.BeatName(0.1f) == "burst" && LevelCurtain.BeatName(0.3f) == "apex"
-                && LevelCurtain.BeatName(0.6f) == "fall" && LevelCurtain.BeatName(0.9f) == "reveal", "burst/apex/fall/reveal");
+            float build = Cover(0.12f, W, H, src, buf);
+            float wash = Cover(LevelCurtain.Flood, W, H, src, buf);
+            float left = SparkleFx.CurtainShiftX(0.22f, 0.55f);
+            float right = SparkleFx.CurtainShiftX(0.78f, 0.55f);
+            bool tear = left < -0.15f && right > 0.15f && Mathf.Abs(left + right) < 0.04f;
+            Check("curtain-wash-covers", wash > 0.80f && wash > build + 0.25f,
+                "wash " + wash.ToString("0.00") + " build " + build.ToString("0.00"));
+            Check("curtain-tear-sides", tear, "L " + left.ToString("0.00") + " R " + right.ToString("0.00"));
+            Check("curtain-beats", LevelCurtain.BeatName(0.1f) == "build" && LevelCurtain.BeatName(LevelCurtain.Flood) == "wash"
+                && LevelCurtain.BeatName(0.75f) == "part", "build/wash/part");
             int end = LevelCurtain.Fill(1.6f, W, H, src, buf);
             Check("curtain-clears", end < LevelCurtain.Count / 6, "glints left at 1.6s " + end);
             Check("curtain-duration", LevelCurtain.Duration >= 0.8f && LevelCurtain.Duration <= 1.2f, "dur " + LevelCurtain.Duration);
+            float biggest = 0f;
+            int n = LevelCurtain.Fill(LevelCurtain.Flood, W, H, src, buf);
+            for (int i = 0; i < n; i++) if (buf[i].Size > biggest) biggest = buf[i].Size;
+            Check("curtain-no-fullscreen-quad", biggest < Mathf.Min(W, H) * 0.22f, "max glint " + biggest.ToString("0"));
+        }
+
+        static float Cover(float age, float w, float h, Rect src, LevelCurtain.Glint[] buf)
+        {
+            const int GX = 16, GY = 32;
+            int n = LevelCurtain.Fill(age, w, h, src, buf);
+            var cell = new bool[GX * GY];
+            for (int i = 0; i < n; i++)
+            {
+                var g = buf[i];
+                float r = g.Size * 0.5f;
+                for (int cy = 0; cy < GY; cy++)
+                for (int cx = 0; cx < GX; cx++)
+                {
+                    float px = (cx + 0.5f) * w / GX, py = (cy + 0.5f) * h / GY;
+                    if (Mathf.Abs(px - g.X) <= r && Mathf.Abs(py - g.Y) <= r) cell[cy * GX + cx] = true;
+                }
+            }
+            int on = 0;
+            for (int i = 0; i < cell.Length; i++) if (cell[i]) on++;
+            return on / (float)cell.Length;
         }
 
         static void CheckPress(System.Action<string, bool, string> Check)
