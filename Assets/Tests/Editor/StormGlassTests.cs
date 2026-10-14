@@ -274,10 +274,12 @@ namespace FlockFive.Editor
             float mergeSpawn = 1f;
             int mergeSpeck = 0;
             int mn = Step(beads, 2, 1f / 60f, true, 0f, blocks, 0, ref mergeRng, ref mergeSpawn, specks, ref mergeSpeck);
+            StormGlass.Shape(beads[0].Age, beads[0].Radius, out _, out _, out float joinSplat);
             Check("merge-grows-and-speeds-up",
                 mn == 1 && beads[0].Radius > prevRad + 4f && -beads[0].Vy > prevSpeed + 2f
-                && beads[0].Kind == StormGlass.Slide,
-                "n " + mn + " r " + beads[0].Radius.ToString("0.0") + " vy " + beads[0].Vy.ToString("0.0"));
+                && beads[0].Kind == StormGlass.Slide && joinSplat > 0.35f,
+                "n " + mn + " r " + beads[0].Radius.ToString("0.0") + " vy " + beads[0].Vy.ToString("0.0")
+                + " splat " + joinSplat.ToString("0.00"));
 
             beads[0] = new StormGlass.Bead
             {

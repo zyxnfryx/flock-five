@@ -407,7 +407,12 @@ namespace FlockFive
             float remA = a.Life - a.Age;
             float remB = b.Life - b.Age;
             if (remB > remA) a.Life = a.Age + remB;
-            if (a.Age < SplatDur) a.Age = SplatDur;
+            // A gathered pair flashes the impact ring again, then beads up bigger.
+            if (a.Kind == Slide)
+            {
+                float join = SplatDur * 0.5f;
+                if (join < a.Life && a.Age > join) a.Age = join;
+            }
         }
 
         static int DropAt(Bead[] beads, int n, int i)
@@ -450,18 +455,18 @@ namespace FlockFive
             bool allowCover = KeepOver(rng.Next01());
             for (int t = 0; t < SpawnTries; t++)
             {
-                // Three lanes in the open middle, so a fat bead runs down
-                // the clear column and catches the ones ahead of it.
+                // Two lanes in the clear column, so a fat bead runs into
+                // the one ahead instead of sliding down a bird.
                 float x;
-                if (rng.Next01() < 0.80f)
+                if (rng.Next01() < 0.86f)
                 {
-                    int lane = (int)(rng.Next01() * 3f);
-                    if (lane > 2) lane = 2;
+                    int lane = (int)(rng.Next01() * 2f);
+                    if (lane > 1) lane = 1;
                     float span = x1 - x0;
-                    float band0 = x0 + span * 0.20f;
-                    float band1 = x0 + span * 0.80f;
-                    float laneX = band0 + (band1 - band0) * ((lane + 0.5f) / 3f);
-                    x = laneX + rng.Range(-22f, 22f) * scale;
+                    float band0 = x0 + span * 0.36f;
+                    float band1 = x0 + span * 0.64f;
+                    float laneX = band0 + (band1 - band0) * ((lane + 0.5f) / 2f);
+                    x = laneX + rng.Range(-14f, 14f) * scale;
                     if (x < x0) x = x0;
                     else if (x > x1) x = x1;
                 }
