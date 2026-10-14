@@ -183,6 +183,10 @@ namespace FlockFive
             Arm();
         }
 
+        // Restart dropped the visitor this frame. The visit's own NoteGone arms
+        // the cooldown when that coroutine finishes. This only clears the hold.
+        public static void ReleaseHold() => _held = false;
+
         public static void NoteCollect()
         {
             if (_collectsLeft > 0) _collectsLeft--;

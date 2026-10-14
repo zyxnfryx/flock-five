@@ -5448,9 +5448,6 @@ namespace FlockFive
             EndPest();
             _locked.Clear();
             HaltBreaks();
-            SparrowView.ClearFx();
-            if (HawkView.Live != null) HawkView.Live.EndScrap();
-            if (SparrowView.Live != null) SparrowView.Live.FinishEvict();
             // Own every visible bird before any yield, including ones already in the air
             // and silhouettes under bees or leaves, so a limb break or hop cannot hide them.
             var flock = ClaimFlock();
@@ -5458,7 +5455,7 @@ namespace FlockFive
                 yield return _garden.Ice.Shatter(_garden.Root);
             yield return FlyOffAll(flock);
             if (_seed != null) _board = _seed.Clone();
-            if (_board != null && _board.Ostrich != null) _board.Ostrich.Reset();
+            PestReset.Apply(_board);
             BonusBranches.ApplyClaims(_board, _bonusOn);
             LightningStrike.ApplyBurns(_board, _offerBurned);
             _census = BoardValidator.Counts(_board);
