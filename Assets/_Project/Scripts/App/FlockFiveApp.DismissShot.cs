@@ -121,20 +121,25 @@ namespace FlockFive
             EditorApplication.Exit(0);
         }
 
-        // The studio card paints last. A single unscaled hitch must not skip this wait.
+        // The studio card paints last. Count frames, not wall clock: a modal
+        // freezes the player while realtime keeps moving, and that used to
+        // expire this wait with the card still up so the clip started mid-pay.
         IEnumerator WaitStudioCardDown(string tag)
         {
             float t0 = Time.realtimeSinceStartup;
             int calm = 0;
-            while (calm < 8 && Time.realtimeSinceStartup - t0 < 22f)
+            int frames = 0;
+            while (calm < 8 && frames < 60 * 45)
             {
+                frames++;
                 if (!WarmCoverLive) calm++;
                 else calm = 0;
                 MuteShotAudio();
                 yield return null;
             }
             yield return new WaitForSecondsRealtime(0.12f);
-            UnityEngine.Debug.Log(tag + " cover " + (Time.realtimeSinceStartup - t0).ToString("0.00") + " warm " + WarmCoverLive);
+            UnityEngine.Debug.Log(tag + " cover " + (Time.realtimeSinceStartup - t0).ToString("0.00")
+                + " frames " + frames + " warm " + WarmCoverLive);
         }
     }
 }
