@@ -60,6 +60,15 @@ namespace FlockFive
         static Pending _owed;
         static bool _queued;
 
+        // b89 (Brandon, TestFlight 88: double credit after an App Store click-through).
+        // One grant per show token, whichever path asks: the reward callback, close,
+        // resume, AdPause.End, or a Flush started from inside the apply itself.
+        static readonly System.Collections.Generic.HashSet<int> _appliedTokens =
+            new System.Collections.Generic.HashSet<int>();
+        static bool _applying;
+
+        public static bool TokenApplied(int token) => token != 0 && _appliedTokens.Contains(token);
+
         // This show, or a latched show that has not been applied yet.
         // An already-applied latch must not make the next skip look earned.
         public static bool Earned => _cur.Earned || (_owed.Earned && !_owed.Applied);
@@ -260,7 +269,17 @@ namespace FlockFive
         static bool Apply(ref Pending p)
         {
             if (!p.Earned || p.Applied || !CanApply()) return false;
+            if (TokenApplied(p.Token))
+            {
+                // A copy of a show that already paid (_owed and _cur can share a token).
+                p.Applied = true;
+                AdLog.Add("reward duplicate ignored " + p.Place + " token " + p.Token);
+                return false;
+            }
+            // The apply can start UI (branch reveal) that calls Flush before Applied is set.
+            if (_applying) return false;
             bool ok = false;
+            _applying = true;
             try
             {
                 ok = TryApply(ToTicket(p));
@@ -269,12 +288,17 @@ namespace FlockFive
             {
                 Debug.LogWarning("reward apply skipped: " + e.Message);
             }
+            finally
+            {
+                _applying = false;
+            }
             if (!ok)
             {
                 _queued = true;
                 return false;
             }
             p.Applied = true;
+            if (p.Token != 0) _appliedTokens.Add(p.Token);
             _queued = false;
             ApplyCount++;
             if (PrefToken() == p.Token) ClearPersisted();
@@ -346,6 +370,8 @@ namespace FlockFive
         {
             _cur = default;
             _owed = default;
+            _appliedTokens.Clear();
+            _applying = false;
             TutorialUp = false;
             CoachGuard = false;
             GiftClosed = false;
