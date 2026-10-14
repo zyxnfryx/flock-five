@@ -2392,7 +2392,8 @@ namespace FlockFive
         static void EncodeSmashVideo(string frames, string mp4, float fps, string wav = null)
         {
             string rate = fps.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-            string args = "-y -framerate " + rate + " -i \"" + frames + "/%04d.jpg\" ";
+            // libx264 + yuv420p needs even dimensions; iPhone 1179 wide made a 0-byte mp4.
+            string args = "-y -loglevel error -framerate " + rate + " -i \"" + frames + "/%04d.jpg\" -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" ";
             if (!string.IsNullOrEmpty(wav) && System.IO.File.Exists(wav))
                 args += "-i \"" + wav + "\" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -crf 23 -movflags +faststart \"" + mp4 + "\"";
             else
@@ -6531,9 +6532,15 @@ namespace FlockFive
         // Flood on top of whichever face is up. Load runs once, on the committed press.
         void FinishLevelCurtain()
         {
-            if (!LevelCurtain.Armed) return;
-            if (GuiPaint()) LevelCurtain.Draw(AdPause.Unscaled);
-            if (LevelCurtain.Finished(AdPause.Unscaled)) LevelCurtain.Clear();
+            bool paint = GuiPaint();
+            if (LevelCurtain.Armed)
+            {
+                if (paint) LevelCurtain.Draw(AdPause.Unscaled);
+                if (LevelCurtain.Finished(AdPause.Unscaled)) LevelCurtain.Clear();
+            }
+            // The release rainbow is its own overlay with its own clock: it outlives the
+            // curtain and the splash, and paints last, above the button, star and garden.
+            if (paint) PressRainbow.Draw(AdPause.Unscaled);
         }
 
         // Original splash hive size — pig matches this, then both bump together.

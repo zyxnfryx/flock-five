@@ -89,6 +89,7 @@ namespace FlockFive
         {
             if (!Armed) return;
             FiredAt = now;
+            PressRainbow.Start(now, Source);
             if (now - StartedAt > Flood) StartedAt = now - Flood;
         }
 
@@ -193,7 +194,8 @@ namespace FlockFive
             var prev = GUI.color;
             BloomSeat(w, h, out Vector2 at, out float side);
             DrawBloomUnder(bloom, at, side, glowTex);
-            DrawWash(VisualAge(now), w, h, at, glowTex);
+            bool rainbow = PressRainbow.Live(now);
+            if (!rainbow) DrawWash(VisualAge(now), w, h, at, glowTex);
             for (int i = 0; i < n; i++)
             {
                 float a = _buf[i].Alpha;
@@ -208,8 +210,8 @@ namespace FlockFive
                     : BGold;
                 SparkleFx.DrawDepthGlint(_buf[i].X, _buf[i].Y, sz, a, _buf[i].Bloom, _buf[i].Soft, c, tex, glowTex);
             }
-            DrawBloomOver(bloom, at, side, tex, glowTex);
-            DrawEmbers(bloom, at, side, tex, glowTex);
+            DrawBloomOver(bloom, at, side, tex, glowTex, !rainbow);
+            if (!rainbow) DrawEmbers(bloom, at, side, tex, glowTex);
             GUI.color = prev;
         }
 
@@ -239,11 +241,11 @@ namespace FlockFive
         //   0.03-0.85  embers: slower forward spokes that carry over the cut
         // Painterly palette: warm gold, cream, peach and a touch of rose. No pure white
         // except the hot cores, so it reads as gilded paint, not a lens flare.
-        static readonly Color BGold = new Color(1f, 0.84f, 0.36f, 1f);
-        static readonly Color BCream = new Color(1f, 0.96f, 0.84f, 1f);
-        static readonly Color BPeach = new Color(1f, 0.74f, 0.52f, 1f);
-        static readonly Color BRose = new Color(1f, 0.66f, 0.62f, 1f);
-        static readonly Color BHot = new Color(1f, 0.99f, 0.94f, 1f);
+        internal static readonly Color BGold = new Color(1f, 0.84f, 0.36f, 1f);
+        internal static readonly Color BCream = new Color(1f, 0.96f, 0.84f, 1f);
+        internal static readonly Color BPeach = new Color(1f, 0.74f, 0.52f, 1f);
+        internal static readonly Color BRose = new Color(1f, 0.66f, 0.62f, 1f);
+        internal static readonly Color BHot = new Color(1f, 0.99f, 0.94f, 1f);
 
         static void DrawBloomUnder(float b, Vector2 at, float side, Texture glowTex)
         {
@@ -297,14 +299,14 @@ namespace FlockFive
 
         const int ShellCount = 72;
 
-        static void DrawBloomOver(float b, Vector2 at, float side, Texture tex, Texture glowTex)
+        static void DrawBloomOver(float b, Vector2 at, float side, Texture tex, Texture glowTex, bool shell)
         {
             if (b < 0f || b > BloomLife) return;
             // Release wave: every glint leaves the flower on this frame, on its own
             // landing column across the full width (mirrored, stratified lanes), up past
             // the top edge and back down at the camera.
             float W = Screen.width, H = Screen.height;
-            for (int i = 0; i < ShellCount; i++)
+            for (int i = 0; shell && i < ShellCount; i++)
             {
                 int lane = i >> 1;
                 float h2 = Hash(lane, 32), h4 = Hash(lane, 34), h7 = Hash(lane, 37);
@@ -318,13 +320,13 @@ namespace FlockFive
 
             // Centre star: glow halo, gold star, then a smaller cream star on top.
             float pop = EaseOutBack(b / 0.22f);
-            float fade = 1f - Mathf.Clamp01((b - 0.15f) / 0.28f);
+            float fade = 1f - Mathf.Clamp01((b - 0.04f) / 0.12f);
             fade = fade * fade * (3f - 2f * fade);
             if (fade > 0.01f)
             {
-                Blit(at, side * 1.5f * pop, glowTex, new Color(1f, 0.88f, 0.52f, 0.55f * fade));
-                Blit(at, side * 1.05f * pop, tex, new Color(BGold.r, BGold.g, BGold.b, 0.9f * fade));
-                Blit(at, side * 0.62f * pop, tex, new Color(BHot.r, BHot.g, BHot.b, fade));
+                Blit(at, side * 1.1f * pop, glowTex, new Color(1f, 0.88f, 0.52f, 0.55f * fade));
+                Blit(at, side * 0.62f * pop, tex, new Color(BGold.r, BGold.g, BGold.b, 0.9f * fade));
+                Blit(at, side * 0.36f * pop, tex, new Color(BHot.r, BHot.g, BHot.b, fade));
             }
         }
 
@@ -479,6 +481,164 @@ namespace FlockFive
             _dot.SetPixels32(px);
             _dot.Apply(false, true);
             return _dot;
+        }
+    }
+
+    // Release rainbow. One overlay, its own clock (stamped by LevelCurtain.Fire on the
+    // committed press, same frame as Load; nothing waits on it). It is not part of the
+    // splash or the curtain: FinishLevelCurtain paints it last on every face, so the
+    // whole arc plays over the cut into the garden. ~1.55 s:
+    //   0.00-0.20  launch: every glint leaves the button together, fan opens to the
+    //              full screen width within ~0.12 s
+    //   0.06-0.45  rise: streaks up past the top edge (out of frame ~0.42-0.55)
+    //   0.52-1.18  return: re-enters from the top, swelling with depth to 6-22% of
+    //              screen width, brightening, then defocusing as it passes the lens
+    //   0.95-1.55  wash: warm veil peaks ~1.18 s, clears to reveal the stage
+    // Timing never depends on x: lanes are mirrored pairs hashed by pair.
+    public static class PressRainbow
+    {
+        public const float Life = 1.55f;
+        public const int N = 128;
+        const float RiseEnd = 0.45f, BackStart = 0.52f, BackEnd = 1.18f;
+        const float WashUp = 0.95f, WashPeak = 1.18f;
+        const int Ghosts = 6;
+        const float GhostStep = 0.007f;
+
+        static float _at = -1f;
+        static Rect _src;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => _at = -1f;
+
+        public static void Start(float now, Rect src)
+        {
+            _at = now;
+            _src = src;
+        }
+
+        public static void Stop() => _at = -1f;
+
+        public static bool Live(float now) => _at >= 0f && now - _at >= 0f && now - _at < Life;
+
+        static float H01(int i, int salt)
+        {
+            uint h = (uint)(i * 374761393 + salt * 668265263);
+            h = (h ^ (h >> 13)) * 1274126177u;
+            return ((h ^ (h >> 16)) & 0xFFFFFF) / 16777215f;
+        }
+
+        // Position, scale (px), alpha, bloom, soft at time t for glint i. False when out
+        // of frame or not alive. Shared by the head and its streak ghosts.
+        static bool At(int i, float t, float W, float H, float ox, float oy, out float x, out float y,
+            out float sz, out float a, out float bloom, out float soft)
+        {
+            x = y = sz = a = bloom = soft = 0f;
+            if (t < 0f) return false;
+            int pair = i >> 1;
+            float hj = H01(pair, 7), hs = H01(pair, 11), hd = H01(pair, 13);
+            float D = Mathf.Sqrt(W * W + H * H);
+            float cx = W * 0.5f;
+            // Landing column, mirrored about centre, a touch past the edges.
+            float tx = cx + SparkleFx.Lane(i, N, hj, W * 0.58f);
+            float far = D * (0.010f + 0.006f * hs);
+            float yTop = -0.30f * H;
+            if (t < RiseEnd)
+            {
+                float r = t / RiseEnd;
+                float e = 1f - Mathf.Pow(1f - r, 2.4f);
+                float fan = Mathf.Clamp01(r / 0.27f);
+                fan = 1f - (1f - fan) * (1f - fan);
+                x = ox + (tx - ox) * fan;
+                y = oy + (yTop - oy) * e;
+                sz = far * (1f + 0.5f * e);
+                a = Mathf.Clamp01(t / 0.03f);
+                bloom = 0.15f;
+            }
+            else if (t < BackStart) return false; // the beat out of frame
+            else if (t < BackEnd)
+            {
+                float w = (t - BackStart) / (BackEnd - BackStart);
+                // Back from above, accelerating down at the camera, spreading outward.
+                y = -0.20f * H + 1.45f * H * Mathf.Pow(w, 1.35f);
+                x = cx + (tx - cx) * (1f + 0.55f * w);
+                float near = W * (0.06f + 0.16f * hd * hd);
+                float z = w * w;
+                sz = far * 1.5f + (near - far * 1.5f) * z;
+                a = 1f - Mathf.Clamp01((w - 0.80f) / 0.20f);
+                bloom = 0.4f + 0.6f * w;
+                soft = Mathf.Clamp01((w - 0.45f) / 0.45f);
+            }
+            else return false;
+            return y > -sz && y < H + sz && x > -sz && x < W + sz;
+        }
+
+        public static void Draw(float now)
+        {
+            if (!Live(now)) return;
+            float t = now - _at;
+            float W = Screen.width, H = Screen.height;
+            if (W < 2f || H < 2f) return;
+            var spr = SpriteCatalog.Sparkle;
+            var glow = SpriteCatalog.Glow;
+            Texture star = spr != null ? spr.texture : null;
+            Texture glowTex = glow != null ? glow.texture : null;
+            if (star == null) return;
+            if (glowTex == null) glowTex = star;
+            var prev = GUI.color;
+            float ox = _src.width > 2f ? _src.center.x : W * 0.5f;
+            float oy = _src.width > 2f ? _src.y + _src.height * 0.30f : H * 0.78f;
+
+            DrawWash(t, W, H, glowTex);
+
+            for (int i = 0; i < N; i++)
+            {
+                int pair = i >> 1;
+                float h4 = H01(pair, 17);
+                var c = h4 < 0.40f ? LevelCurtain.BGold : h4 < 0.62f ? LevelCurtain.BCream
+                    : h4 < 0.84f ? LevelCurtain.BPeach : LevelCurtain.BRose;
+                // Streak: ghosts trail the head while it climbs, so the rise reads as
+                // light shooting up and out of the top.
+                if (t < RiseEnd + Ghosts * GhostStep)
+                {
+                    for (int g = Ghosts; g >= 1; g--)
+                    {
+                        float tg = t - g * GhostStep;
+                        if (tg >= RiseEnd) continue;
+                        if (!At(i, tg, W, H, ox, oy, out float gx, out float gy, out float gs, out float ga, out _, out _))
+                            continue;
+                        float k = 1f - g / (float)(Ghosts + 1);
+                        SparkleFx.DrawDepthGlint(gx, gy, gs * (0.55f + 0.4f * k), ga * 0.55f * k, 0f, 0.3f, c, star, glowTex);
+                    }
+                }
+                if (!At(i, t, W, H, ox, oy, out float x, out float y, out float sz, out float a, out float bl, out float sf))
+                    continue;
+                SparkleFx.DrawDepthGlint(x, y, sz, a, bl, sf, c, star, glowTex);
+            }
+            GUI.color = prev;
+        }
+
+        // Warm painterly veil: cream base plus centred rose / peach / gold glows (rainbow
+        // band order, top to bottom). Translucent, so the garden shows through.
+        static void DrawWash(float t, float W, float H, Texture glowTex)
+        {
+            if (t <= WashUp || t >= Life) return;
+            float u = t < WashPeak ? (t - WashUp) / (WashPeak - WashUp) : (Life - t) / (Life - WashPeak);
+            u = Mathf.Clamp01(u);
+            float k = u * u * (3f - 2f * u);
+            if (k < 0.01f) return;
+            GUI.color = new Color(1f, 0.94f, 0.80f, 0.20f * k);
+            GUI.DrawTexture(new Rect(0f, 0f, W, H), Texture2D.whiteTexture);
+            float big = Mathf.Max(W, H) * 1.25f;
+            float cx = W * 0.5f;
+            Glow(cx, H * 0.18f, big, glowTex, LevelCurtain.BRose, 0.10f * k);
+            Glow(cx, H * 0.42f, big, glowTex, LevelCurtain.BPeach, 0.12f * k);
+            Glow(cx, H * 0.70f, big * 0.85f, glowTex, LevelCurtain.BGold, 0.14f * k);
+        }
+
+        static void Glow(float x, float y, float d, Texture tex, Color c, float a)
+        {
+            GUI.color = new Color(c.r, c.g, c.b, a);
+            GUI.DrawTexture(new Rect(x - d * 0.5f, y - d * 0.5f, d, d), tex, ScaleMode.ScaleToFit, true);
         }
     }
 }
