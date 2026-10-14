@@ -172,6 +172,8 @@ namespace FlockFive.Editor
                 parted && far != null && body != null && far.pixelsPerUnit == pose.pixelsPerUnit
                 && Mathf.Abs(far.rect.width - pose.rect.width) < 1.5f,
                 parted ? far.name : "no");
+            int farVerts = parted && far != null && far.vertices != null ? far.vertices.Length : 0;
+            check(tag + "-tight-mesh-not-quad", farVerts > 4, "far " + farVerts);
         }
     }
 }

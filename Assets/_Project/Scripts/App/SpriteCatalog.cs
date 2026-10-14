@@ -2250,8 +2250,96 @@ namespace FlockFive
             var pivot = new Vector2(
                 src.pivot.x / Mathf.Max(1f, rect.width),
                 src.pivot.y / Mathf.Max(1f, rect.height));
+            // One pixel of the cut lives on both slices, so bilinear filtering
+            // does not open a sky crack between the far wing and the body.
+            OverlapCut(farPx, bodyPx, mask, w, h);
+            BleedColor(farPx, w, h);
+            BleedColor(bodyPx, w, h);
             far = MakeSlice(src.name + "Far", farPx, w, h, pivot, src.pixelsPerUnit);
             body = MakeSlice(src.name + "Body", bodyPx, w, h, pivot, src.pixelsPerUnit);
+        }
+
+        static void OverlapCut(Color32[] farPx, Color32[] bodyPx, byte[] mask, int w, int h)
+        {
+            int n = w * h;
+            var ring = new byte[n];
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    int i = row + x;
+                    bool wing = mask[i] != 0;
+                    bool touch = false;
+                    for (int dy = -1; dy <= 1 && !touch; dy++)
+                    {
+                        int ny = y + dy;
+                        if ((uint)ny >= (uint)h) continue;
+                        int nrow = ny * w;
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            if (dx == 0 && dy == 0) continue;
+                            int nx = x + dx;
+                            if ((uint)nx >= (uint)w) continue;
+                            if ((mask[nrow + nx] != 0) != wing)
+                            {
+                                touch = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!touch) continue;
+                    if (wing) ring[i] = 2;
+                    else if (bodyPx[i].a > 28) ring[i] = 1;
+                }
+            }
+            for (int i = 0; i < n; i++)
+            {
+                if (ring[i] == 2) bodyPx[i] = farPx[i];
+                else if (ring[i] == 1) farPx[i] = bodyPx[i];
+            }
+        }
+
+        // Straight-alpha bleed. Transparent texels keep alpha 0 and borrow the
+        // neighbor color so a filtered edge does not turn black.
+        static void BleedColor(Color32[] px, int w, int h)
+        {
+            int n = w * h;
+            var src = new Color32[n];
+            for (int pass = 0; pass < 2; pass++)
+            {
+                for (int i = 0; i < n; i++) src[i] = px[i];
+                for (int y = 0; y < h; y++)
+                {
+                    int row = y * w;
+                    for (int x = 0; x < w; x++)
+                    {
+                        int i = row + x;
+                        if (src[i].a != 0) continue;
+                        int br = 0, bg = 0, bb = 0, bn = 0;
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            int ny = y + dy;
+                            if ((uint)ny >= (uint)h) continue;
+                            int nrow = ny * w;
+                            for (int dx = -1; dx <= 1; dx++)
+                            {
+                                if (dx == 0 && dy == 0) continue;
+                                int nx = x + dx;
+                                if ((uint)nx >= (uint)w) continue;
+                                var c = src[nrow + nx];
+                                if (c.a == 0) continue;
+                                br += c.r;
+                                bg += c.g;
+                                bb += c.b;
+                                bn++;
+                            }
+                        }
+                        if (bn == 0) continue;
+                        px[i] = new Color32((byte)(br / bn), (byte)(bg / bn), (byte)(bb / bn), 0);
+                    }
+                }
+            }
         }
 
         static Sprite MakeSlice(string name, Color32[] px, int w, int h, Vector2 pivot, float ppu)
@@ -2264,8 +2352,10 @@ namespace FlockFive
                 hideFlags = HideFlags.HideAndDontSave
             };
             tex.SetPixels32(px);
-            tex.Apply(false, true);
-            var spr = Sprite.Create(tex, new Rect(0f, 0f, w, h), pivot, ppu, 0, SpriteMeshType.FullRect);
+            // Tight, not a full-rect quad. The quad's diagonal cracks the sky
+            // between the raised wing and the head. Readable so the outline builds.
+            tex.Apply(false, false);
+            var spr = Sprite.Create(tex, new Rect(0f, 0f, w, h), pivot, ppu, 0, SpriteMeshType.Tight);
             spr.name = name;
             spr.hideFlags = HideFlags.HideAndDontSave;
             return spr;
