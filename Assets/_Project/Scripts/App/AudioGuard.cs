@@ -268,19 +268,49 @@ namespace FlockFive
 
         // Full undo. Clears every duck token, puts the bed back on the user
         // mix, unsticks the listener, and reactivates the game session.
+        // An ad that is still up keeps its token and the pause. The reward
+        // callback and a focus return both come through here, and neither
+        // may talk over the ad. Close, fail, and skip call this only after
+        // the show depth has already dropped.
         public static void Restore()
         {
+            if (Ads.IsShowing)
+            {
+                DropExcept("ad");
+                Ads.HoldAdAudio();
+                return;
+            }
             _n = 0;
             if (MixDesk.Live != null) MixDesk.Live.ResetToUser();
             GamePause.UnstickAudio();
             ActivateNative();
         }
 
+        static void DropExcept(string keep)
+        {
+            bool any = false;
+            for (int i = 0; i < _n; i++)
+            {
+                if (!_tok[i].Live || _tok[i].Reason == keep) continue;
+                var t = _tok[i];
+                t.Live = false;
+                _tok[i] = t;
+                any = true;
+            }
+            if (any) Compact();
+        }
+
         // Session and listener gain only. An ad that is still up keeps the
-        // pause GamePause pushed; the category still comes back to Ambient.
+        // pause; the category still comes back to Ambient.
         public static void Reassert()
         {
             AudioListener.volume = 1f;
+            if (Ads.IsShowing)
+            {
+                Ads.HoldAdAudio();
+                ActivateNative();
+                return;
+            }
             if (!GamePause.Paused)
                 AudioListener.pause = false;
             ActivateNative();
