@@ -8,7 +8,7 @@ namespace FlockFive
 {
     public partial class FlockFiveApp
     {
-        // Home settings, one garden, and the poker table. The speaker stays up on each.
+        // Settings open, Sound On beside a mid slider. iPhone, then iPad.
         public IEnumerator ShotBuild88Mute()
         {
             ShotKeepAwake = true;
@@ -21,33 +21,24 @@ namespace FlockFive
             AudioListener.volume = 0f;
             AudioListener.pause = true;
 
-            int streak = PlayerPrefs.GetInt("flockfive.streak", 0);
-            int next = PlayerPrefs.GetInt("flockfive.next", 0);
-            int hive = PlayerPrefs.GetInt("flockfive.coach.hive", 0);
-            int poker = PlayerPrefs.GetInt("flockfive.coach.poker", 0);
-            int page = PlayerPrefs.GetInt("flockfive.coach.pokerpage", 0);
-            int dealt = PlayerPrefs.GetInt("flockfive.coach.pokerdealt", 0);
-            int back = PlayerPrefs.GetInt("flockfive.coach.pokerback", 0);
-            int coach = PlayerPrefs.GetInt("flockfive.coach.done", 0);
-            int leaf = PlayerPrefs.GetInt("flockfive.coach.leaf", 0);
-            int hiveGarden = PlayerPrefs.GetInt("flockfive.coach.hive.garden", 0);
+            bool hadVol = PlayerPrefs.HasKey(AudioGuard.VolumeKey);
+            float vol = PlayerPrefs.GetFloat(AudioGuard.VolumeKey, 1f);
+            bool hadMute = PlayerPrefs.HasKey(AudioGuard.MuteKey);
+            int mute = PlayerPrefs.GetInt(AudioGuard.MuteKey, 0);
 
             const string dir = "/Users/zfxgames/wkspaces/wingout";
             Directory.CreateDirectory(dir);
             try
             {
-                PlayerPrefs.SetInt("flockfive.coach.poker", 1);
-                PlayerPrefs.SetInt("flockfive.coach.pokerpage", 1);
-                PlayerPrefs.SetInt("flockfive.coach.pokerdealt", 1);
-                PlayerPrefs.SetInt("flockfive.coach.pokerback", 1);
-                PlayerPrefs.Save();
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.SetMasterVolume(0.62f, false);
 
                 if (EditorGameSize != null) EditorGameSize(1179, 2556);
-                yield return new WaitForSecondsRealtime(1.2f);
+                yield return new WaitForSecondsRealtime(1.0f);
                 MuteShotAudio();
                 ShowSplash();
                 float t = 0f;
-                while (t < 0.7f)
+                while (t < 0.8f)
                 {
                     PoseBuild79(true, false);
                     MuteShotAudio();
@@ -56,60 +47,30 @@ namespace FlockFive
                 }
                 PoseBuild79(true, false);
                 yield return new WaitForEndOfFrame();
-                MuteShotAudio();
-                SaveFrame(dir + "/b88-mute-over-settings.png");
-
-                PoseBuild79(false, false);
-                Purse.SetStreak(3);
-                PlayerPrefs.SetInt("flockfive.coach.hive", 1);
-                PlayerPrefs.Save();
-                PrepGardenShot(4);
-                yield return QuietGarden(2.0f);
-                HoldGardenQuiet();
                 yield return new WaitForEndOfFrame();
                 MuteShotAudio();
-                SaveFrame(dir + "/b88-mute-garden-iphone.png");
-
-                QuietPoker();
-                MuteShotAudio();
-                yield return new WaitForSecondsRealtime(1.4f);
-                yield return new WaitForEndOfFrame();
-                MuteShotAudio();
-                SaveFrame(dir + "/b88-mute-poker-iphone.png");
+                SaveFrame(dir + "/b88-settings-mute-iphone.png");
 
                 if (EditorGameSize != null) EditorGameSize(1536, 2048);
-                yield return new WaitForSecondsRealtime(1.2f);
-                Purse.SetStreak(3);
-                PlayerPrefs.SetInt("flockfive.coach.hive", 1);
-                PrepGardenShot(4);
-                yield return QuietGarden(2.0f);
-                HoldGardenQuiet();
+                yield return new WaitForSecondsRealtime(0.8f);
+                PoseBuild79(true, false);
+                yield return new WaitForEndOfFrame();
                 yield return new WaitForEndOfFrame();
                 MuteShotAudio();
-                SaveFrame(dir + "/b88-mute-garden-ipad.png");
-
-                QuietPoker();
-                MuteShotAudio();
-                yield return new WaitForSecondsRealtime(1.4f);
-                yield return new WaitForEndOfFrame();
-                MuteShotAudio();
-                SaveFrame(dir + "/b88-mute-poker-ipad.png");
+                SaveFrame(dir + "/b88-settings-mute-ipad.png");
 
                 File.WriteAllText("/tmp/flock-five-b88-mute-done", "OK\n");
             }
             finally
             {
-                Purse.SetStreak(streak);
-                PlayerPrefs.SetInt("flockfive.next", next);
-                PlayerPrefs.SetInt("flockfive.coach.hive", hive);
-                PlayerPrefs.SetInt("flockfive.coach.poker", poker);
-                PlayerPrefs.SetInt("flockfive.coach.pokerpage", page);
-                PlayerPrefs.SetInt("flockfive.coach.pokerdealt", dealt);
-                PlayerPrefs.SetInt("flockfive.coach.pokerback", back);
-                PlayerPrefs.SetInt("flockfive.coach.done", coach);
-                PlayerPrefs.SetInt("flockfive.coach.leaf", leaf);
-                PlayerPrefs.SetInt("flockfive.coach.hive.garden", hiveGarden);
+                if (hadVol) PlayerPrefs.SetFloat(AudioGuard.VolumeKey, vol);
+                else PlayerPrefs.DeleteKey(AudioGuard.VolumeKey);
+                if (hadMute) PlayerPrefs.SetInt(AudioGuard.MuteKey, mute);
+                else PlayerPrefs.DeleteKey(AudioGuard.MuteKey);
                 PlayerPrefs.Save();
+                AudioGuard.ResetForTests();
+                AudioGuard.LoadMuted();
+                AudioGuard.LoadVolume();
                 EditorShotLive = false;
                 ShotKeepAwake = false;
                 AudioListener.volume = 0f;
@@ -119,9 +80,8 @@ namespace FlockFive
             EditorApplication.Exit(0);
         }
 
-        // The bee-thicket lesson paints over this garden. Hold it down so the
-        // still shows the speaker against the stamp, the hive, and the feeders.
-        // Call HoldGardenQuiet after Update and before the frame is drawn.
+        // The bee-thicket lesson paints over this garden. Call after Update and
+        // before the frame is drawn.
         void HoldGardenQuiet()
         {
             PlayerPrefs.SetInt("flockfive.coach.hive.garden", 1);
@@ -133,44 +93,6 @@ namespace FlockFive
             _coachFade = 0f;
             _shotBeeLesson = false;
             MuteShotAudio();
-        }
-
-        IEnumerator QuietGarden(float seconds)
-        {
-            float t = 0f;
-            while (t < seconds)
-            {
-                HoldGardenQuiet();
-                t += Time.unscaledDeltaTime;
-                yield return null;
-            }
-        }
-
-        void QuietPoker()
-        {
-            ShowSplash();
-            _home = HomeFace.Poker;
-            _splash = true;
-            _settingsOpen = false;
-            _settingsPhase = SettingsPhase.Closed;
-            _pokerPayOpen = false;
-            _pokerPayAnim = 0f;
-            _pokerIntro = false;
-            _pokerIntroLive = false;
-            _hiveIntro = false;
-            _hiveIntroLive = false;
-            _dailyIntro = false;
-            _dailyIntroLive = false;
-            _adoptLive = false;
-            _welcomeOpen = false;
-            _welcomeGlove = false;
-            _dailyOpen = false;
-            _dailyAskOpen = false;
-            _streakSlide = -1f;
-            DismissStreakSign();
-            VipOffer.Close();
-            AdConsent.DismissTransient();
-            AdConsent.EditorHoldAtt = false;
         }
     }
 }

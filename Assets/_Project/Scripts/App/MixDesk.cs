@@ -191,6 +191,23 @@ namespace FlockFive
         public float SlewDuck => _duckSlew;
         public float LeadDuck => _leadDuck;
 
+        // Shared master. The Settings slider times any live duck token. An ad
+        // that is showing forces 0, so the slider cannot talk over the ad.
+        // Mute is the channel enables in AudioGuard, not this value: Sound On
+        // returns the same slider. Stems multiply it through MusicScale.
+        // One-shots multiply it through SfxScale. Never writes the listener.
+        public static float MasterGain
+        {
+            get
+            {
+                if (Ads.IsShowing) return 0f;
+                float slider = AudioGuard.MasterVolume;
+                if (slider < 0f) slider = 0f;
+                if (slider > 1f) slider = 1f;
+                return slider * AudioGuard.TokenScale;
+            }
+        }
+
         // Editor tests attach a desk without synthesizing the beds.
         public void AttachForTests() => Live = this;
 
@@ -701,6 +718,7 @@ namespace FlockFive
                 _stems[i] = null;
                 return;
             }
+            // MusicScale folds in MasterGain: slider, duck, and ad silence.
             a.volume = vol * _freezeDuck * AudioGuard.MusicScale;
         }
 

@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace FlockFive.Editor
 {
-    // Mute stays above every popup. One helper seats it on home, garden, and poker.
+    // Sound lives in Settings. No mute button on home, garden, or poker.
     public static class Build88MuteTests
     {
         const string Out = "/tmp/flock-five-b88-mute-tests.txt";
@@ -22,103 +22,130 @@ namespace FlockFive.Editor
                 Debug.Log("[build88mute] " + line);
             }
 
-            float? keep = DeviceFit.TestWindow;
+            float? keepWindow = DeviceFit.TestWindow;
+            bool hadVol = PlayerPrefs.HasKey(AudioGuard.VolumeKey);
+            float oldVol = PlayerPrefs.GetFloat(AudioGuard.VolumeKey, 1f);
+            bool hadMute = PlayerPrefs.HasKey(AudioGuard.MuteKey);
+            int oldMute = PlayerPrefs.GetInt(AudioGuard.MuteKey, 0);
+            float oldListener = 1f;
+            bool oldPause = false;
+            int shows = 0;
             try
             {
-                Check("sort-above-popup",
-                    MuteChrome.AbovePopup == ModalBlock.PopupSort + 1
-                    && MuteChrome.Sort(MuteChrome.Face.Home) == MuteChrome.AbovePopup
-                    && MuteChrome.Sort(MuteChrome.Face.Garden) == MuteChrome.AbovePopup
-                    && MuteChrome.Sort(MuteChrome.Face.Poker) == MuteChrome.AbovePopup
-                    && MuteChrome.Sort(MuteChrome.Face.Off) == 0
-                    && MuteChrome.AboveOverlay(MuteChrome.Face.Home)
-                    && MuteChrome.AboveOverlay(MuteChrome.Face.Garden)
-                    && MuteChrome.AboveOverlay(MuteChrome.Face.Poker)
-                    && !MuteChrome.AboveOverlay(MuteChrome.Face.Off),
-                    "popup " + ModalBlock.PopupSort + " mute " + MuteChrome.AbovePopup);
-
-                var phone = new Rect(0f, 102f, 1179f, 2277f);
-                var pad = new Rect(0f, 20f, 1536f, 2008f);
-                Face(Check, "iphone", 1179f, 2556f, phone);
-                Face(Check, "ipad", 1536f, 2048f, pad);
-
-                var nudgeSafe = phone;
-                DeviceFit.TestWindow = 1179f / 2556f;
-                var want = MuteChrome.Home(1179f, 2556f, nudgeSafe);
-                var block = new Rect(want.x - 20f, want.y - 20f, want.width + 80f, want.height + 80f);
-                var moved = MuteChrome.Seat(1179f, 2556f, nudgeSafe, want, block,
-                    new Rect(8f, 2400f, 40f, 40f), new Rect(1100f, 2400f, 40f, 40f));
-                float gap = MuteChrome.Gap(2556f);
-                Check("garden-seat-nudges-off-corner",
-                    moved.width > 8f
-                    && (moved.y > want.y + 1f || moved.x < want.x - 1f)
-                    && MuteChrome.Clear(moved, block, gap),
-                    "want " + want + " moved " + moved);
-
-                var empty = MuteChrome.Home(1179f, 2556f, new Rect(0f, 0f, 0f, 0f));
-                Check("home-empty-safe-stays-on-screen",
-                    empty.width > 40f && empty.height > 40f
-                    && empty.xMin >= -0.5f && empty.yMin >= -0.5f
-                    && empty.xMax <= 1179.5f && empty.yMax <= 2556.5f,
-                    empty.ToString());
+                oldListener = AudioListener.volume;
+                oldPause = AudioListener.pause;
 
                 string root = Application.dataPath;
                 string app = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.cs"));
                 string settings = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.Settings.cs"));
-                string helper = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/MuteChrome.cs"));
-                int onGui = app.IndexOf("void OnGUI()");
-                int onGuiEnd = onGui >= 0 ? app.IndexOf("long _guiEndTick", onGui) : -1;
-                string onGuiBody = onGui >= 0 && onGuiEnd > onGui ? app.Substring(onGui, onGuiEnd - onGui) : "";
-                int pollAt = onGuiBody.IndexOf("PollMuteChrome()");
-                int bodyAt = onGuiBody.IndexOf("OnGUIBody()");
-                int finishFn = app.IndexOf("void FinishMuteChrome()");
-                int finishEnd = finishFn >= 0 ? app.IndexOf("void OnGUI()", finishFn) : -1;
-                string finish = finishFn >= 0 && finishEnd > finishFn ? app.Substring(finishFn, finishEnd - finishFn) : "";
-                int reward = finish.IndexOf("DrawRewardChoiceTop()");
-                int paint = finish.IndexOf("PaintMuteChrome()");
-                int cover = finish.IndexOf("DrawWarmCover()");
-                int pollFn = app.IndexOf("void PollMuteChrome()");
-                int pollEnd = pollFn >= 0 ? app.IndexOf("void PaintMuteChrome()", pollFn) : -1;
-                string poll = pollFn >= 0 && pollEnd > pollFn ? app.Substring(pollFn, pollEnd - pollFn) : "";
-                int sheet = settings.IndexOf("void DrawSettingsSheet");
-                int sheetEnd = sheet >= 0 ? settings.IndexOf("void DrawSettingsDim", sheet) : -1;
-                string sheetBody = sheet >= 0 && sheetEnd > sheet ? settings.Substring(sheet, sheetEnd - sheet) : "";
-                int hud = app.IndexOf("bool HitHud(");
-                int hudEnd = hud >= 0 ? app.IndexOf("MuteChrome.Face MuteFace()", hud) : -1;
-                string hudBody = hud >= 0 && hudEnd > hud ? app.Substring(hud, hudEnd - hud) : "";
+                string daily = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.DailyBonus.cs"));
+                string vip = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.VipOffer.cs"));
+                bool chromeGone = !File.Exists(Path.Combine(root, "_Project/Scripts/App/MuteChrome.cs"))
+                    && app.IndexOf("MuteChrome") < 0
+                    && app.IndexOf("PollMuteChrome") < 0
+                    && app.IndexOf("PaintMuteChrome") < 0
+                    && app.IndexOf("DrawSpeakerIcon") < 0
+                    && settings.IndexOf("MuteChrome") < 0
+                    && settings.IndexOf("DrawSpeakerIcon") < 0
+                    && settings.IndexOf("HomeMuteRect") < 0;
+                Check("no-onscreen-mute", chromeGone, "home garden poker have no speaker");
 
-                Check("paint-after-popups",
-                    reward >= 0 && paint > reward && cover > paint
-                    && pollAt >= 0 && bodyAt > pollAt
-                    && onGuiBody.IndexOf("FinishMuteChrome()") > bodyAt,
-                    "reward " + reward + " paint " + paint + " cover " + cover
-                    + " poll " + pollAt + " body " + bodyAt);
-                Check("settings-does-not-own-mute",
-                    sheetBody.IndexOf("Mute") < 0
-                    && sheetBody.IndexOf("Speaker") < 0
-                    && sheetBody.IndexOf("MuteChrome") < 0
-                    && app.IndexOf("PaintHomeMute") < 0
-                    && app.IndexOf("PollHomeMute") < 0
-                    && settings.IndexOf("PaintHomeMute") < 0
-                    && settings.IndexOf("PollHomeMute") < 0
-                    && poll.IndexOf("_settingsOpen") < 0
-                    && poll.IndexOf("VeilBlocks") < 0,
-                    "sheet " + sheet + " poll " + pollFn);
-                Check("one-helper-three-faces",
-                    helper.IndexOf("Home(") >= 0
-                    && helper.IndexOf("Garden(") >= 0
-                    && helper.IndexOf("Poker(") >= 0
-                    && app.IndexOf("MuteChrome.Home(") >= 0
-                    && app.IndexOf("MuteChrome.Garden(") >= 0
-                    && app.IndexOf("MuteChrome.Poker(") >= 0
-                    && app.IndexOf("LayoutPokerChrome(") >= 0
-                    && hudBody.IndexOf("MuteRect(MuteFace())") >= 0
-                    && app.IndexOf("const float SplashLogoScale = 0.91f;") >= 0,
-                    "helper seats home, garden, poker");
-                Check("gear-still-redraws-for-settings-only",
-                    settings.IndexOf("if (!HomeGear.Shown(q) || !HomeGear.AboveDimmer(q) || _settingsOpen) return;") >= 0
-                    && sheetBody.IndexOf("DrawSettingsGear(") >= 0,
-                    "gear path unchanged");
+                int sheet = settings.IndexOf("void DrawSettingsSheet");
+                int toggle = settings.IndexOf("AudioGuard.ToggleMuted()", sheet);
+                int slider = settings.IndexOf("AudioGuard.SetMasterVolume", sheet);
+                int words = settings.IndexOf("SettingsSheet.SoundOnLabel", sheet);
+                Check("settings-wires-sound",
+                    sheet >= 0 && toggle > sheet && slider > sheet && words > sheet
+                    && settings.IndexOf("DrawSoundRow(") > sheet,
+                    "toggle " + toggle + " slider " + slider);
+
+                var phoneSafe = new Rect(0f, 102f, 1179f, 2556f - 102f - 34f);
+                var padSafe = new Rect(0f, 20f, 1536f, 2048f - 40f);
+                Sheet(Check, "iphone", 1179f, 2556f, phoneSafe, 220f);
+                Sheet(Check, "ipad", 1536f, 2048f, padSafe, 80f);
+
+                var card = new Rect(90f, 420f, 980f, 1200f);
+                var x = FlockFiveApp.DailyCloseInFrame(card, 2.6f);
+                var glyph = FlockFiveApp.CloseGlyphBox(x);
+                bool dailyIn = Holds(card, x) && Holds(card, glyph)
+                    && x.center.x > card.center.x
+                    && x.y < card.y + card.height * 0.28f;
+                var small = new Rect(40f, 200f, 640f, 860f);
+                var x2 = FlockFiveApp.DailyCloseInFrame(small, 1.4f);
+                var g2 = FlockFiveApp.CloseGlyphBox(x2);
+                bool dailySmall = Holds(small, x2) && Holds(small, g2);
+                bool dailySrc = daily.IndexOf("DailyCloseInFrame(card, s)") >= 0
+                    && daily.IndexOf("CornerCloseRect") < 0
+                    && vip.IndexOf("CornerCloseRect") >= 0
+                    && app.IndexOf("card.xMax - xSz - 6f") >= 0;
+                Check("daily-x-inside-frame", dailyIn && dailySmall && dailySrc,
+                    "x " + x + " glyph " + glyph + " small " + x2);
+
+                AudioGuard.ResetForTests();
+                GamePause.Reset();
+                AdPause.ResetForTest();
+                AudioListener.volume = 1f;
+                AudioListener.pause = false;
+
+                float listener = AudioListener.volume;
+                AudioGuard.SetMasterVolume(0.33f, true);
+                AudioGuard.SetMuted(true, true);
+                bool stored = PlayerPrefs.GetInt(AudioGuard.MuteKey, 0) == 1
+                    && Mathf.Abs(PlayerPrefs.GetFloat(AudioGuard.VolumeKey, -1f) - 0.33f) < 0.001f
+                    && Mathf.Abs(AudioListener.volume - listener) < 0.001f;
+                AudioGuard.ResetForTests();
+                AudioGuard.LoadMuted();
+                AudioGuard.LoadVolume();
+                bool loaded = AudioGuard.Muted
+                    && Mathf.Abs(AudioGuard.MasterVolume - 0.33f) < 0.001f
+                    && AudioGuard.MusicScale == 0f
+                    && AudioGuard.SfxScale == 0f;
+                AudioGuard.SetMuted(false, false);
+                bool restored = !AudioGuard.Muted
+                    && Mathf.Abs(AudioGuard.MasterVolume - 0.33f) < 0.001f
+                    && Mathf.Abs(AudioGuard.MusicScale - 0.33f) < 0.001f
+                    && Mathf.Abs(AudioGuard.SfxScale - 0.33f) < 0.001f;
+                Check("slider-persists-and-unmute-restores", stored && loaded && restored,
+                    "stored=" + stored + " loaded=" + loaded + " back=" + AudioGuard.MusicScale.ToString("0.00"));
+
+                AudioGuard.ResetForTests();
+                AudioGuard.SetMasterVolume(0.8f, false);
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.PushDuck("ad");
+                float ducked = AudioGuard.MusicScale;
+                float gain = MixDesk.MasterGain;
+                bool mul = Mathf.Abs(ducked - 0.8f * AudioGuard.DuckGain) < 0.001f
+                    && Mathf.Abs(gain - 0.8f * AudioGuard.DuckGain) < 0.001f
+                    && Mathf.Abs(AudioGuard.MasterVolume - 0.8f) < 0.001f
+                    && Mathf.Abs(ducked - 0.8f) > 0.05f;
+                AudioGuard.SetMuted(true, false);
+                bool off = AudioGuard.MusicScale == 0f && Mathf.Abs(AudioGuard.MasterVolume - 0.8f) < 0.001f;
+                AudioGuard.SetMuted(false, false);
+                bool duckBack = Mathf.Abs(AudioGuard.MusicScale - ducked) < 0.001f;
+                Check("duck-multiplies-slider", mul && off && duckBack,
+                    "scale=" + ducked.ToString("0.000") + " gain=" + gain.ToString("0.000"));
+
+                AudioGuard.ResetForTests();
+                AudioGuard.SetMasterVolume(1f, false);
+                AudioGuard.SetMuted(false, false);
+                GamePause.Reset();
+                AdPause.ResetForTest();
+                Ads.BeginShow();
+                shows++;
+                bool silent = Ads.IsShowing
+                    && MixDesk.MasterGain == 0f
+                    && AudioGuard.MusicScale == 0f
+                    && AudioGuard.SfxScale == 0f
+                    && Mathf.Abs(AudioGuard.MasterVolume - 1f) < 0.001f
+                    && AudioListener.pause;
+                Ads.EndShow();
+                shows--;
+                bool afterAd = !Ads.IsShowing
+                    && Mathf.Abs(MixDesk.MasterGain - 1f) < 0.001f
+                    && Mathf.Abs(AudioGuard.MusicScale - 1f) < 0.001f
+                    && Mathf.Abs(AudioGuard.MasterVolume - 1f) < 0.001f;
+                Check("ad-mute-silences-over-slider", silent && afterAd,
+                    "silent=" + silent + " after=" + AudioGuard.MusicScale.ToString("0.00"));
             }
             catch (System.Exception ex)
             {
@@ -126,7 +153,26 @@ namespace FlockFive.Editor
             }
             finally
             {
-                DeviceFit.TestWindow = keep;
+                while (shows > 0)
+                {
+                    Ads.EndShow();
+                    shows--;
+                }
+                if (Ads.IsShowing) Ads.EndShow();
+                GamePause.Reset();
+                AdPause.ResetForTest();
+                Time.timeScale = 1f;
+                AudioListener.pause = oldPause;
+                AudioListener.volume = oldListener;
+                if (hadVol) PlayerPrefs.SetFloat(AudioGuard.VolumeKey, oldVol);
+                else PlayerPrefs.DeleteKey(AudioGuard.VolumeKey);
+                if (hadMute) PlayerPrefs.SetInt(AudioGuard.MuteKey, oldMute);
+                else PlayerPrefs.DeleteKey(AudioGuard.MuteKey);
+                PlayerPrefs.Save();
+                AudioGuard.ResetForTests();
+                AudioGuard.LoadMuted();
+                AudioGuard.LoadVolume();
+                DeviceFit.TestWindow = keepWindow;
             }
 
             string end = fail == 0 ? "BUILD88MUTE_OK " + pass : "BUILD88MUTE_FAIL " + fail + " passed " + pass;
@@ -136,67 +182,43 @@ namespace FlockFive.Editor
             if (fail > 0) throw new System.Exception(end);
         }
 
-        static void Face(System.Action<string, bool, string> check, string tag, float w, float h, Rect safe)
+        static void Sheet(System.Action<string, bool, string> check, string tag, float w, float h, Rect safe, float top)
         {
-            DeviceFit.TestWindow = w / h;
-            float gap = MuteChrome.Gap(h);
-            var gear = FlockFiveApp.SettingsGearRect(w, h, safe);
-            var home = MuteChrome.Home(w, h, safe);
-            float s = DeviceFit.Ui(w, h);
-            float fit = s * 0.91f;
-            float titleTop = FlockFiveApp.TopHudBox(h, safe, 0f);
-            float cap = 56f * fit;
-            float blockH = cap * 2f + 4f * fit;
-            float logoW = w * 0.72f * 0.91f;
-            var word = new Rect((w - logoW) * 0.5f, titleTop, logoW, blockH);
-            bool homeOk = home.width > 40f
-                && Mathf.Abs(home.y - gear.y) < 0.05f
-                && Mathf.Abs(home.width - gear.width) < 0.05f
-                && Mathf.Abs((safe.xMax - home.xMax) - (gear.xMin - safe.xMin)) < 0.05f
-                && home.center.x > w * 0.7f
-                && home.yMax < h * 0.35f
-                && MuteChrome.Clear(home, gear, gap)
-                && MuteChrome.Clear(home, word, 4f)
-                && home.xMin >= word.xMax + 8f;
-            check(tag + "-home-top-right-clears-gear-and-title", homeOk,
-                "mute " + home + " gear " + gear + " word " + word);
+            var frame = SettingsSheet.Layout(w, h, safe, top);
+            var b = frame.Body;
+            bool row = b.SoundToggle.width >= 44f
+                && b.SoundSlider.width >= 44f
+                && b.SoundToggle.height >= 44f
+                && b.SoundSlider.xMin >= b.SoundToggle.xMax - 0.5f
+                && Mathf.Abs(b.SoundToggle.y - b.SoundSlider.y) < 0.5f
+                && !b.SoundToggle.Overlaps(b.SoundSlider)
+                && b.SoundToggle.xMin >= frame.Content.x - 0.5f
+                && b.SoundSlider.xMax <= frame.Content.xMax + 0.5f
+                && b.SoundToggle.yMax <= b.PrivacyLink.y + 0.5f
+                && !b.SoundToggle.Overlaps(b.PrivacyLink)
+                && b.AnimateLabel.yMax <= frame.Content.yMax + 0.5f
+                && frame.Card.yMax <= h + 0.5f
+                && frame.Card.yMin >= -0.5f;
+            bool x = frame.Close.width >= 44f
+                && frame.Close.center.x > frame.Card.center.x
+                && frame.Close.yMin >= frame.Card.y
+                && frame.Close.xMax <= frame.Card.xMax + 0.5f
+                && frame.Close.yMax <= frame.Title.y + 0.5f
+                && !frame.Close.Overlaps(frame.Title)
+                && !frame.Close.Overlaps(b.SoundToggle)
+                && !frame.Close.Overlaps(b.SoundSlider);
+            check(tag + "-sound-row-and-close",
+                row && x && SettingsSheet.SoundOnLabel == "Sound On" && SettingsSheet.SoundOffLabel == "Sound Off",
+                "toggle " + b.SoundToggle + " slider " + b.SoundSlider + " close " + frame.Close + " card " + frame.Card);
+        }
 
-            var garden = MuteChrome.Garden(w, h, safe);
-            bool gardenOk = garden.Mute.width > 40f
-                && garden.Mute.center.x > w * 0.62f
-                && garden.Mute.yMax < h * 0.4f
-                && garden.Mute.yMax < garden.Restart.y - gap
-                && garden.Mute.yMax < garden.Hive.y - gap
-                && MuteChrome.Clear(garden.Mute, garden.Stamp, gap)
-                && MuteChrome.Clear(garden.Mute, garden.Restart, gap)
-                && MuteChrome.Clear(garden.Mute, garden.Hive, gap);
-            check(tag + "-garden-clears-stamp-restart-hive", gardenOk,
-                "mute " + garden.Mute + " stamp " + garden.Stamp
-                + " restart " + garden.Restart + " hive " + garden.Hive);
-
-            var poker = MuteChrome.Poker(w, h, safe);
-            float drawn = FlockFiveApp.SettingsGearDrawnSize(h);
-            float under = poker.Mute.y - poker.Coins.yMax;
-            float tuck = Mathf.Max(4f, gap * MuteChrome.PokerTuck);
-            bool pokerOk = poker.Mute.width > 16f
-                && poker.Mute.width <= drawn * MuteChrome.PokerScale + 0.6f
-                && poker.Mute.width <= poker.Coins.width * MuteChrome.PokerCoinFit + 1.5f
-                && poker.Mute.width < drawn * 0.8f
-                && Mathf.Abs(poker.Mute.center.x - poker.Coins.center.x) < 2f
-                && poker.Mute.xMax <= poker.Coins.xMax + 1f
-                && under >= tuck - 0.6f
-                && under <= tuck + 1.5f
-                && poker.Mute.yMax <= poker.PayTab.y - gap + 0.6f
-                && MuteChrome.Clear(poker.Mute, poker.Coins, 1f)
-                && MuteChrome.Clear(poker.Mute, poker.Title, gap)
-                && MuteChrome.Clear(poker.Mute, poker.Halo, gap)
-                && MuteChrome.Clear(poker.Mute, poker.Back, gap)
-                && MuteChrome.Clear(poker.Mute, poker.PayTab, gap);
-            check(tag + "-poker-under-coins-above-pay-tab", pokerOk,
-                "mute " + poker.Mute + " coins " + poker.Coins
-                + " title " + poker.Title + " halo " + poker.Halo
-                + " back " + poker.Back + " tab " + poker.PayTab
-                + " under " + under.ToString("0.0") + " gap " + gap.ToString("0.0"));
+        static bool Holds(Rect frame, Rect r)
+        {
+            return r.width > 8f
+                && r.xMin >= frame.xMin - 0.5f
+                && r.yMin >= frame.yMin - 0.5f
+                && r.xMax <= frame.xMax + 0.5f
+                && r.yMax <= frame.yMax + 0.5f;
         }
     }
 }

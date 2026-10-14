@@ -354,11 +354,9 @@ namespace FlockFive
 #if UNITY_EDITOR
             if ((_dailyShotQuiet || EditorShotLive) && ShotDailyWheel == 0) return;
 #endif
-            float top = TopHud();
-            var xBtn = CornerCloseRect(s, top);
-
             int chrome = DailyChrome();
             DailyLayout(s, chrome, out var card, out var flower, out var board, out float band, out var collect, out var watch);
+            var xBtn = DailyCloseInFrame(card, s);
             bool flowerOn = chrome == 0 && flower.width > 2f;
             var disc = flowerOn ? FlowerDisc(flower, 0f) : flower;
             var claimHit = flowerOn ? FlowerHit(flower, s) : flower;

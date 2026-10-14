@@ -6359,8 +6359,6 @@ namespace FlockFive
             HudLayout(out _, out float top, out _, out _, out _);
             float gy = Screen.height - screen.y;
             var gui = new Vector2(screen.x, gy);
-            var mute = MuteRect(MuteFace());
-            if (mute.width >= 2f && mute.Contains(gui)) return true;
             if (_hiveInspect >= 0)
                 return true;
             if (_levelHive)
@@ -6385,68 +6383,6 @@ namespace FlockFive
             return gui.y > Screen.height - bot - 8f;
         }
 
-        // One mute for home, garden, and poker. Polled before any popup can Use
-        // the event, painted after every wash so the dim cannot cover it.
-        MuteChrome.Face MuteFace()
-        {
-            if (Ads.IsShowing) return MuteChrome.Face.Off;
-            if (_splash && _home == HomeFace.Splash) return MuteChrome.Face.Home;
-            if (_splash && _home == HomeFace.Poker) return MuteChrome.Face.Poker;
-            if (!_splash && _board != null) return MuteChrome.Face.Garden;
-            return MuteChrome.Face.Off;
-        }
-
-        Rect MuteRect(MuteChrome.Face face)
-        {
-            float w = Screen.width;
-            float h = Screen.height;
-            var safe = Screen.safeArea;
-            switch (face)
-            {
-                case MuteChrome.Face.Home: return MuteChrome.Home(w, h, safe);
-                case MuteChrome.Face.Garden: return MuteChrome.Garden(w, h, safe).Mute;
-                case MuteChrome.Face.Poker: return MuteChrome.Poker(w, h, safe).Mute;
-                default: return default;
-            }
-        }
-
-        void PollMuteChrome()
-        {
-            _muteHeld = false;
-            if (Event.current == null) return;
-            var face = MuteFace();
-            if (!MuteChrome.AboveOverlay(face)) return;
-            var r = MuteRect(face);
-            if (r.width < 2f) return;
-            if (HitPad(r, out _muteHeld))
-            {
-                AudioGuard.ToggleMuted();
-                if (!AudioGuard.Muted) Sfx.CardTap();
-                _hitLock = 1;
-            }
-        }
-
-        void PaintMuteChrome()
-        {
-            var face = MuteFace();
-            if (!MuteChrome.AboveOverlay(face)) return;
-            var r = MuteRect(face);
-            if (r.width < 2f) return;
-            var prev = GUI.color;
-            GUI.color = Color.white;
-            DrawSpeakerIcon(r, MuteChrome.DrawSize(face, r, Screen.height), AudioGuard.Muted, _muteHeld);
-            GUI.color = prev;
-        }
-
-        // Reward choice, then the mute, then the launch cover. The mute stays
-        // above every popup the body just painted, and the cover still hides boot.
-        void FinishMuteChrome()
-        {
-            DrawRewardChoiceTop();
-            PaintMuteChrome();
-            DrawWarmCover();
-        }
-
         // Item 8 profiling: OnGUI by event, and the render tail to end of frame.
         public static bool ShotNoGui; // editor clips: background only
         void OnGUI()
@@ -6455,14 +6391,13 @@ namespace FlockFive
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
                 Event.current.Use();
-            else
-                PollMuteChrome();
-            if (!StartupTrace.Open) { OnGUIBody(); FinishMuteChrome(); return; }
+            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); return; }
             var ev = Event.current != null ? Event.current.type : EventType.Ignore;
             var sp = StartupTrace.Begin(ev == EventType.Repaint ? "GUI.Repaint" : ev == EventType.Layout ? "GUI.Layout" : "GUI.Input");
             try { OnGUIBody(); }
             finally { sp.Dispose(); }
-            FinishMuteChrome();
+            DrawRewardChoiceTop();
+            DrawWarmCover();
             if (ev == EventType.Repaint) _guiEndTick = System.Diagnostics.Stopwatch.GetTimestamp();
         }
 
@@ -13061,8 +12996,7 @@ namespace FlockFive
             DrawTutorOverlay(s);
         }
 
-        // Back medal, coin icon, wordmark, halo, and PAY TABLE tab. MuteChrome
-        // reads this same layout, so the speaker cannot drift off the live chrome.
+        // Back medal, coin icon, wordmark, halo, and PAY TABLE tab.
         public struct PokerChrome
         {
             public Rect Back;
@@ -19016,6 +18950,33 @@ namespace FlockFive
             var safe = Screen.safeArea;
             float xSz = Mathf.Max(48f * s, 44f);
             return new Rect(Screen.width - Mathf.Max(14f, Screen.width - safe.xMax + 8f) - xSz, top, xSz, xSz);
+        }
+
+        // Daily Bonus close. The screen-corner seat sat above the wood. This one
+        // stays inside the card, and so does the 1.5× glyph.
+        public static Rect DailyCloseInFrame(Rect card, float scale)
+        {
+            if (scale < 1f) scale = 1f;
+            float sz = Mathf.Max(48f * scale, 44f);
+            float hang = sz * (CloseGlyphGrow - 1f) * 0.5f;
+            float pad = Mathf.Max(8f, 6f * scale);
+            float inset = hang + pad;
+            float x = card.xMax - inset - sz;
+            float y = card.y + inset;
+            if (x < card.x + pad) x = card.x + pad;
+            if (y < card.y + pad) y = card.y + pad;
+            if (x + sz > card.xMax - pad) x = card.xMax - pad - sz;
+            if (y + sz > card.yMax - pad) y = card.yMax - pad - sz;
+            if (x < card.x) x = card.x;
+            if (y < card.y) y = card.y;
+            return new Rect(x, y, sz, sz);
+        }
+
+        public static Rect CloseGlyphBox(Rect button)
+        {
+            float gw = button.width * CloseGlyphGrow;
+            float gh = button.height * CloseGlyphGrow;
+            return new Rect(button.center.x - gw * 0.5f, button.center.y - gh * 0.5f, gw, gh);
         }
 
         // Tap area at least MinTapPx on each side, centred on the drawn button.
