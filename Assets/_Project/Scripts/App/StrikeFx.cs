@@ -7,14 +7,15 @@ namespace FlockFive
     // destroyed. The bolt, flash, and shake stay on GardenStorm.
     public sealed class StrikeFx : MonoBehaviour
     {
-        public const float SplitDelay = 0.18f;
-        const int N = 36;
+        public const float SplitDelay = 0.28f;
+        const int N = 44;
         const float Dur = 2.05f;
 
         struct Bit
         {
             public Transform T;
             public SpriteRenderer Sr;
+            public SpriteRenderer Halo;
             public Vector3 Base;
             public float VX, VY, Spin, Life, Delay;
             public byte Kind;
@@ -57,7 +58,7 @@ namespace FlockFive
             int debris = 0;
             for (int i = 0; i < N; i++)
             {
-                byte kind = i < 10 ? (byte)0 : i < 16 ? (byte)1 : i < 22 ? (byte)2 : i < 30 ? (byte)3 : (byte)4;
+                byte kind = i < 12 ? (byte)0 : i < 20 ? (byte)1 : i < 28 ? (byte)2 : i < 38 ? (byte)3 : (byte)4;
                 float scale = kind == 2 ? Random.Range(0.55f, 0.95f)
                     : kind == 1 ? Random.Range(0.28f, 0.48f)
                     : kind == 0 ? Random.Range(0.07f, 0.15f)
@@ -83,6 +84,15 @@ namespace FlockFive
                 var bit = new Bit();
                 bit.T = go.transform;
                 bit.Sr = sr;
+                if (kind == 4)
+                {
+                    var halo = WorldBuilder.Sprite("Halo", SpriteCatalog.Glow, go.transform.position, 1f, 14, go.transform);
+                    halo.transform.localPosition = Vector3.zero;
+                    halo.transform.localScale = new Vector3(2.6f, 3.4f, 1f);
+                    bit.Halo = halo.GetComponent<SpriteRenderer>();
+                    bit.Halo.color = new Color(1f, 0.46f, 0.08f, 0f);
+                    bit.Halo.enabled = false;
+                }
                 bit.Base = go.transform.localScale;
                 bit.Kind = kind;
                 bit.Life = kind == 4 ? Random.Range(1.05f, 1.35f) : Random.Range(0.55f, 1.15f);
@@ -162,11 +172,17 @@ namespace FlockFive
                 if (bit.Kind == 1) a *= 0.9f;
                 if (bit.Kind == 4)
                 {
-                    var hot = new Color(1f, 0.78f, 0.32f, 1f);
-                    var ash = new Color(0.16f, 0.07f, 0.04f, 1f);
+                    var hot = new Color(1f, 0.86f, 0.42f, 1f);
+                    var ash = new Color(0.14f, 0.06f, 0.03f, 1f);
                     c = Color.Lerp(hot, ash, Mathf.Clamp01(life * 1.15f));
                     a = Mathf.Clamp01(1.15f - life);
                     if (bit.Sr != null && !bit.Sr.enabled) bit.Sr.enabled = true;
+                    if (bit.Halo != null)
+                    {
+                        bit.Halo.enabled = true;
+                        float glow = a * (0.35f + 0.4f * Mathf.Clamp01(1f - life));
+                        bit.Halo.color = new Color(1f, 0.42f, 0.06f, glow);
+                    }
                 }
                 c.a = a < 0f ? 0f : a;
                 if (bit.Sr != null) bit.Sr.color = c;

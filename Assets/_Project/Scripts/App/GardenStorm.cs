@@ -86,6 +86,7 @@ namespace FlockFive
         float _rumbleIn = -1f;
         float _rumblePow;
         bool _aimOn;
+        bool _showcase;
         float _aimX;
         float _aimY;
         float _strikeDark;
@@ -147,15 +148,16 @@ namespace FlockFive
             _aimOn = true;
             _aimX = world.x;
             _aimY = world.y;
-            _strikeDark = 0.95f;
+            _showcase = true;
+            _strikeDark = 1.25f;
             _skyAt = PlayClock.Now - 0.012f;
             _skyBig = true;
             _skyPow = 1f;
             Sfx.ThunderCrack(0.72f);
-            CamShake.Bolt(0.26f);
+            CamShake.Bolt(0.30f);
             Haptics.Play(Haptics.Tier.Light);
-            SpawnBolt(0.85f, true);
-            _boltLife = 0.62f;
+            SpawnBolt(0.9f, true);
+            _boltLife = 0.72f;
         }
 
         bool AimFire()
@@ -193,6 +195,7 @@ namespace FlockFive
             _skyPow = 0f;
             _skyBig = false;
             _aimOn = false;
+            _showcase = false;
             _strikeDark = 0f;
             _barQ = -1;
             _fadeQ = -1;
@@ -519,8 +522,8 @@ namespace FlockFive
             if (_strikeDark > 0f)
             {
                 _strikeDark -= dt;
-                float u = Mathf.Clamp01(_strikeDark / 0.95f);
-                veilA = Mathf.Max(veilA, 0.88f * u);
+                float u = Mathf.Clamp01(_strikeDark / 1.25f);
+                veilA = Mathf.Max(veilA, 0.94f * u);
             }
             float sky = SkyFlash;
             if (sky > 0f) veilA *= 1f - 0.7f * sky;
@@ -647,6 +650,7 @@ namespace FlockFive
         void Boom(float power, bool big)
         {
             if (AimFire()) return;
+            _showcase = false;
             _skyAt = PlayClock.Now - 0.012f;
             _skyBig = big;
             _skyPow = big ? 1f : Mathf.Lerp(0.62f, 0.84f, Mathf.Clamp01(power));
@@ -736,9 +740,9 @@ namespace FlockFive
                 x1 = x0 + Random.Range(-1.8f, 1.8f);
                 y1 = Mathf.Lerp(bottom + 2.6f, bottom + 0.55f, Mathf.Clamp01(power));
             }
-            float thick = big ? 0.36f : 0.22f;
-            Lay(x0, y0, x1, y1, big ? 8 : 6, big ? 0.9f : 0.55f, thick, true);
-            int forks = big ? (LeanFrame() ? 2 : 4) : (LeanFrame() ? 1 : 2);
+            float thick = big ? (_showcase ? 0.52f : 0.36f) : 0.22f;
+            Lay(x0, y0, x1, y1, big ? (_showcase ? 10 : 8) : 6, big ? 0.9f : 0.55f, thick, true);
+            int forks = big ? (LeanFrame() ? 2 : (_showcase ? 6 : 4)) : (LeanFrame() ? 1 : 2);
             for (int f = 0; f < forks; f++)
             {
                 if (_pn < 3) break;
@@ -832,8 +836,12 @@ namespace FlockFive
             int q = (int)(a * 32f);
             if (q == _boltQ) return;
             _boltQ = q;
-            var core = new Color(0.95f, 0.97f, 1f, a);
-            var limb = new Color(0.70f, 0.84f, 1f, a * 0.86f);
+            var core = _showcase
+                ? new Color(1f, 1f, 1f, a)
+                : new Color(0.95f, 0.97f, 1f, a);
+            var limb = _showcase
+                ? new Color(0.82f, 0.90f, 1f, a * 0.92f)
+                : new Color(0.70f, 0.84f, 1f, a * 0.86f);
             int n = _boltHi;
             for (int i = 0; i < n; i++)
             {

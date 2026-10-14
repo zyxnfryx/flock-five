@@ -439,30 +439,30 @@ namespace FlockFive
             return ClipLp("lullaby", data, 0.14f);
         }
 
-        // Limb catching. Four low wood pops, no noise floor, under the thunder.
+        // Limb catching. Low wood pops, no noise floor, sat under the thunder.
         static AudioClip MakeWoodFire()
         {
-            const float dur = 0.62f;
+            const float dur = 0.84f;
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
-            float[] at = { 0.012f, 0.11f, 0.23f, 0.39f };
-            float[] freq = { 168f, 142f, 196f, 124f };
+            float[] at = { 0.01f, 0.09f, 0.20f, 0.34f, 0.52f };
+            float[] freq = { 172f, 138f, 188f, 126f, 154f };
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
                 float s = 0f;
-                for (int k = 0; k < 4; k++)
+                for (int k = 0; k < 5; k++)
                 {
                     float dt = t - at[k];
-                    if (dt < 0f || dt > 0.22f) continue;
-                    float e = Mathf.Exp(-dt * 14f);
+                    if (dt < 0f || dt > 0.26f) continue;
+                    float e = Mathf.Exp(-dt * 12f);
                     float pop = Mathf.Sin(2f * Mathf.PI * freq[k] * dt);
-                    pop += 0.35f * Mathf.Sin(2f * Mathf.PI * freq[k] * 0.5f * dt);
-                    s += pop * e;
+                    pop += 0.42f * Mathf.Sin(2f * Mathf.PI * freq[k] * 0.5f * dt);
+                    s += pop * e * (k == 4 ? 0.65f : 1f);
                 }
-                data[i] = s * 0.42f;
+                data[i] = s * 0.36f;
             }
-            return ClipLp("wood-fire", data, 0.18f);
+            return ClipLp("wood-fire", data, 0.16f);
         }
 
         // Short low thump plus a band-limited crack. Not a gunshot.
