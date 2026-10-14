@@ -142,10 +142,10 @@ namespace FlockFive.Editor
             Caption(b, "Moth Guest. A fuzzy moth, and a rare kind.");
             var card = new Rect(175, 240, 400, 560);
             var kind = Find("moth");
-            PaintCard(b, card, kind, true, false);
+            PaintCard(b, card, kind, false, false);
             var tex = MothArt.Texture();
-            int side = 260;
-            b.Blit(tex, (int)card.center.x - side / 2, (int)card.y + 150, side, side);
+            int side = 360;
+            b.Blit(tex, (int)card.center.x - side / 2, (int)card.y + 70, side, side);
             Stamp(b, new Rect(card.x + 30, card.yMax - 160, card.width - 60, 120), "Moth Guest", "Wrong party.", "");
         }
 

@@ -24,9 +24,14 @@ namespace FlockFive
                     float body = Body(nx, ny);
                     float a = Mathf.Max(wing, body);
                     if (a < 0.02f) continue;
+                    // Wings were cream-on-cream. A dusty membrane and a spot keep the moth
+                    // readable on the album plate without changing the alpha silhouette.
                     Color rgb = body > wing
-                        ? new Color(0.55f, 0.42f, 0.28f, 1f)
-                        : new Color(0.86f, 0.78f, 0.62f, 1f);
+                        ? new Color(0.40f, 0.28f, 0.16f, 1f)
+                        : new Color(0.58f, 0.44f, 0.30f, 1f);
+                    float spot = Mathf.Max(WingSpot(nx + 0.40f, ny - 0.02f), WingSpot(nx - 0.40f, ny - 0.02f));
+                    if (wing > body && spot > 0f)
+                        rgb = Color.Lerp(rgb, new Color(0.22f, 0.13f, 0.07f), spot * 0.9f);
                     float eye = Eye(nx, ny);
                     if (eye > 0f)
                     {
@@ -84,6 +89,12 @@ namespace FlockFive
             float edge = Mathf.Clamp01((1f - core) * 1.6f);
             float fuzz = 0.35f + 0.65f * Hash01(Mathf.RoundToInt(nx * 120f) + 3, Mathf.RoundToInt(ny * 120f) + 9);
             return Mathf.Lerp(1f, fuzz, edge * 0.85f);
+        }
+
+        static float WingSpot(float dx, float dy)
+        {
+            float e = (dx * dx) / 0.012f + (dy * dy) / 0.007f;
+            return Mathf.Clamp01(1f - e);
         }
 
         static float Eye(float nx, float ny)
