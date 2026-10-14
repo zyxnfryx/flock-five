@@ -54,9 +54,13 @@ namespace FlockFive
                 float a = Alpha(now, _sm[i].Born);
                 if (a < 0.03f) continue;
                 float sz = Mathf.Max(8f, _sm[i].Size);
-                var r = new Rect(_sm[i].At.x - sz * 0.5f, _sm[i].At.y - sz * 0.5f, sz, sz);
-                GUI.color = new Color(0.95f, 0.72f, 0.16f, 0.78f * a);
+                // Darker than Normal, Holo, and Inverse wax, or the drip vanishes on the comb.
+                var r = new Rect(_sm[i].At.x - sz * 0.5f, _sm[i].At.y - sz * 0.58f, sz, sz * 1.08f);
+                GUI.color = new Color(0.36f, 0.16f, 0.04f, 0.90f * a);
                 GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
+                var hot = new Rect(r.x + sz * 0.30f, r.y + sz * 0.22f, sz * 0.32f, sz * 0.26f);
+                GUI.color = new Color(1f, 0.84f, 0.40f, 0.62f * a);
+                GUI.DrawTexture(hot, tex, ScaleMode.ScaleToFit, true);
             }
             GUI.color = Color.white;
         }
@@ -80,7 +84,8 @@ namespace FlockFive
                 {
                     float dx = (x - c) / c;
                     float dy = (y - c) / c;
-                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    float lobe = 0.07f * Mathf.Sin(dx * 5.5f + dy * 2f);
+                    float d = Mathf.Sqrt(dx * dx * 0.86f + (dy + lobe) * (dy + lobe) * 1.12f);
                     float a = Mathf.Clamp01(1f - d);
                     a = a * a;
                     px[y * n + x] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(a * 255f));

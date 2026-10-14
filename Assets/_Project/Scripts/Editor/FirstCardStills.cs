@@ -28,6 +28,63 @@ namespace FlockFive.Editor
             Debug.Log("FIRST_CARD_STILLS_DONE " + n);
         }
 
+        // Proof frames for the bee-card queue. Names are the review set.
+        public static void SaveProofs()
+        {
+            const string dir = "/Users/zfxgames/wkspaces/bcout";
+            Directory.CreateDirectory(dir);
+            var honey = Find("honey");
+            int n = 0;
+            n += Write(dir, "first-card-option-held.png", board => OptionHeld(board, honey));
+            n += Write(dir, "first-card-option-peek.png", board => OptionPeek(board, honey));
+            n += Write(dir, "first-card-option-value.png", board => OptionValue(board, honey));
+            n += Write(dir, "carousel.png", CarouselProof);
+            n += Write(dir, "honeycomb-smudges.png", SmudgeProof);
+            n += Write(dir, "moth-guest.png", MothProof);
+            n += Write(dir, "warm-rims.png", WarmProof);
+            Debug.Log("BCOUT_STILLS_DONE " + n);
+        }
+
+        static void CarouselProof(Board b)
+        {
+            Caption(b, "Current opener. Last card earned sits center. Neighbors peek. Nothing advances alone.");
+            var panel = new Rect(40, 220, W - 80, 860);
+            b.Fill(panel, new Color(0.10f, 0.07f, 0.04f, 0.94f));
+            var kinds = new[] { Find("coal"), Find("onyx"), Find("ink") };
+            float[] scale = { 0.72f, 1f, 0.72f };
+            float cardW = 210f;
+            float cardH = cardW * 1.35f;
+            for (int i = 0; i < 3; i++)
+            {
+                float w = cardW * scale[i];
+                float h = cardH * scale[i];
+                float x = 375f + (i - 1) * 168f - w * 0.5f;
+                float y = 430f - h * 0.5f;
+                PaintCard(b, new Rect(x, y, w, h), kinds[i], true, i != 1);
+            }
+            Dots(b, 3, 1, 980);
+            Stamp(b, new Rect(70, 1040, W - 140, 160), "Onyx Shade", "Last card earned. Coal and Ink peek in.", "");
+        }
+
+        static void SmudgeProof(Board b)
+        {
+            Caption(b, "A honeycomb tap does not flip. Five smudges fade. Later taps still squish.");
+            var card = new Rect(145, 240, 460, 644);
+            var kind = Find("amber");
+            PaintCard(b, card, kind, false, false);
+            var rim = HoneyRim.For(BeeFinish.Normal);
+            int n = 5;
+            for (int i = 0; i < n; i++)
+            {
+                int cx = 210 + i * 78;
+                int cy = 760;
+                Hex(b, cx, cy, 34, 40, rim);
+                float a = 1f - (i / 4f) * (i / 4f);
+                b.SmudgeAt(cx + (i - 2) * 4, cy - 4, 30 + (i % 3) * 3, new Color(0.36f, 0.16f, 0.04f, 0.90f * a));
+                b.SmudgeAt(cx + (i - 2) * 4 - 4, cy - 10, 12, new Color(1f, 0.84f, 0.40f, 0.62f * a));
+            }
+        }
+
         static int Write(string dir, string name, System.Action<Board> paint)
         {
             var board = new Board(W, H);
@@ -265,6 +322,24 @@ namespace FlockFive.Editor
                         float ny = (py - cy) / (h * 0.5f);
                         if (nx * nx + ny * ny > 1f) continue;
                         _px[row + px] = src.a >= 250 ? src : Over(_px[row + px], src);
+                    }
+                }
+            }
+
+            public void SmudgeAt(int cx, int cy, int rad, Color c)
+            {
+                if (rad < 2) return;
+                for (int y = cy - rad; y <= cy + rad; y++)
+                {
+                    for (int x = cx - rad; x <= cx + rad; x++)
+                    {
+                        float dx = (x - cx) / (float)rad;
+                        float dy = (y - cy) / (float)rad;
+                        float wobble = 0.08f * Mathf.Sin(dx * 6f + dy * 3f);
+                        float d = Mathf.Sqrt(dx * dx + dy * dy) + wobble;
+                        if (d > 1f) continue;
+                        float a = (1f - d) * (1f - d) * c.a;
+                        Plot(x, y, new Color(c.r, c.g, c.b, a));
                     }
                 }
             }
