@@ -46,6 +46,14 @@ namespace FlockFive.Editor
                 var stayed = FlockFiveApp.LiftPokerCaption(clear, 12f, 10f, button, hand, 8f, 12f);
                 Check("clear-plate-stays", Mathf.Abs(stayed.y - clear.y) < 0.01f, stayed.ToString());
 
+                // Floor pins the plate on the hand. It slides left of the hand and the button.
+                var pinned = new Rect(700f, 600f, 280f, 70f);
+                var slid = FlockFiveApp.LiftPokerCaption(pinned, 16f, 12f, button, hand, 590f, 12f);
+                var slidPlate = new Rect(slid.x - 16f, slid.y - 12f, slid.width + 32f, slid.height + 24f);
+                Check("floor-slides-the-plate-clear",
+                    slid.x < pinned.x && !slidPlate.Overlaps(button) && !slidPlate.Overlaps(hand),
+                    slidPlate.ToString());
+
                 string coach = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.Coach.cs"));
                 int spot = coach.IndexOf("if (_pokerIntroLive)");
                 int end = coach.IndexOf("if (_dailyIntroLive)", spot);

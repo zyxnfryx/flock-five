@@ -5513,7 +5513,7 @@ namespace FlockFive
             var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
             float padX = hang.x + (_anchorPad.x > 0f ? _anchorPad.x : 0f);
             float padY = hang.y + (_anchorPad.y > 0f ? _anchorPad.y : 0f);
-            return LiftPokerCaption(r, padX, padY, button, hand, floorY, 12f * s);
+            return LiftPokerCaption(r, padX, padY, button, hand, floorY, 18f * s);
         }
 
         // Landed poker glove: fingertip on the aim, body to the left, finger pointing right.
@@ -5543,6 +5543,20 @@ namespace FlockFive
             if (y > text.y) y = text.y;
             if (y < floorY) y = floorY;
             text.y = y;
+            // A floor under the coin row can pin the plate back onto the hand.
+            // Slide it to the left of the hand and the rail button.
+            var seated = new Rect(text.x - padX, text.y - padY, text.width + padX * 2f, text.height + padY * 2f);
+            float block = float.PositiveInfinity;
+            if (button.width > 2f && button.height > 2f && seated.Overlaps(button))
+                block = button.xMin;
+            if (hand.width > 2f && hand.height > 2f && seated.Overlaps(hand) && hand.xMin < block)
+                block = hand.xMin;
+            if (block < float.PositiveInfinity)
+            {
+                float nx = block - gap - text.width - padX;
+                if (nx < 8f) nx = 8f;
+                if (nx < text.x) text.x = nx;
+            }
             return text;
         }
 
