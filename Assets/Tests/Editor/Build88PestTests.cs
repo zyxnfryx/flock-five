@@ -58,6 +58,10 @@ namespace FlockFive.Editor
                     && hawk != null && hawk.IsBlocking && hawk.HitsTaken == 1 && hawk.BlockingSlot == 0,
                     "busy " + PestSchedule.Busy + " hawkHits " + (hawk != null ? hawk.HitsTaken : -1));
 
+                // A scrap already in the air, and a sparrow the collect has started to evict.
+                sparrow.BeginEvict();
+                hawk.BeginScrap();
+                float ready = PestSchedule.SecondsUntilReady;
                 PestReset.Apply(board);
                 mark.Sync(board);
 
@@ -75,6 +79,10 @@ namespace FlockFive.Editor
                     "on " + mark.OnStage + " act " + mark.Act);
                 Check("displaced-cleared", board.Displaced.Count == 0, "n " + board.Displaced.Count);
                 Check("schedule-hold-dropped", !PestSchedule.Busy, "busy " + PestSchedule.Busy);
+                Check("hold-not-rearmed",
+                    Mathf.Abs(PestSchedule.SecondsUntilReady - ready) < 0.001f,
+                    "ready " + PestSchedule.SecondsUntilReady.ToString("0.00")
+                    + " was " + ready.ToString("0.00"));
 
                 PestReset.Apply(board);
                 Check("second-reset-stays-clear",
