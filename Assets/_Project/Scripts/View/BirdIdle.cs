@@ -133,11 +133,9 @@ namespace FlockFive
 
         void TickFlapDrive()
         {
-            int k = SpriteCatalog.FlapStep(_flapClock);
-            float poseSteps = Time.unscaledDeltaTime * _flapHz * 4f;
-            // Tucked rest is the downbeat. Cross it fast so the wings don't look parked.
-            if (k == 0) poseSteps *= 2.6f;
-            // A long frame must not lap the whole cycle and land on the same wing.
+            // Two open poses per cycle. The tucked rest reads as a parked wing in the bust.
+            float poseSteps = Time.unscaledDeltaTime * _flapHz * 2f;
+            // A long frame must not lap the cycle and land on the same wing.
             if (poseSteps > 1.05f) poseSteps = 1.05f;
             _flapClock += poseSteps / 16f;
             ApplyFlapFrame();
@@ -149,9 +147,11 @@ namespace FlockFive
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
             if (_sr == null) return;
             _sr.flipX = FaceLeft;
-            _sr.sprite = SpriteCatalog.BirdFrame(Color, _flapClock, true, Sex);
-            int k = SpriteCatalog.FlapStep(_flapClock);
-            _wingPose = k == 2 ? 2 : (k == 0 ? 0 : 1);
+            // BirdFrame steps 1 and 2 are wings up and wings mid. Skip the tucked rest.
+            int open = SpriteCatalog.FlapStep(_flapClock) % 2;
+            float shown = (open == 0 ? 2.5f : 1.5f) / 16f;
+            _sr.sprite = SpriteCatalog.BirdFrame(Color, shown, true, Sex);
+            _wingPose = open == 0 ? 2 : 1;
         }
 
         void LateUpdate()

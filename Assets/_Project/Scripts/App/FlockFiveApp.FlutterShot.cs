@@ -127,8 +127,9 @@ namespace FlockFive
             float alpha = sr != null ? sr.color.a : 1f;
             int pose = idle.WingPose;
             if (pose != 1 && pose != 2) return;
-            if (alpha < 0.5f || scale < 0.9f || scale > 4.4f) return;
-            float score = scale <= 2.2f ? scale : 2.2f - (scale - 2.2f) * 0.35f;
+            if (sr != null && sr.sortingOrder < 40) return;
+            if (alpha < 0.72f || scale < 1.05f || scale > 3.4f) return;
+            float score = 1f - Mathf.Abs(scale - 1.9f) / 1.9f;
             if (pose == 1 && score > _bestUp)
             {
                 _bestUp = score;
