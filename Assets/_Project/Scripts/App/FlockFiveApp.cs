@@ -6221,7 +6221,7 @@ namespace FlockFive
         static float TopHud(float extra = 0f) => TopHudBox(Screen.height, Screen.safeArea, extra);
 
         // Screen-explicit so the album grid test uses the same top inset as play.
-        static float TopHudBox(float screenH, Rect safe, float extra)
+        public static float TopHudBox(float screenH, Rect safe, float extra)
         {
             float s = DeviceFit.UiH(screenH);
             float inset = (safe.width < 2f || safe.height < 2f)
@@ -6359,6 +6359,8 @@ namespace FlockFive
             HudLayout(out _, out float top, out _, out _, out _);
             float gy = Screen.height - screen.y;
             var gui = new Vector2(screen.x, gy);
+            var mute = MuteRect(MuteFace());
+            if (mute.width >= 2f && mute.Contains(gui)) return true;
             if (_hiveInspect >= 0)
                 return true;
             if (_levelHive)
@@ -6383,6 +6385,68 @@ namespace FlockFive
             return gui.y > Screen.height - bot - 8f;
         }
 
+        // One mute for home, garden, and poker. Polled before any popup can Use
+        // the event, painted after every wash so the dim cannot cover it.
+        MuteChrome.Face MuteFace()
+        {
+            if (Ads.IsShowing) return MuteChrome.Face.Off;
+            if (_splash && _home == HomeFace.Splash) return MuteChrome.Face.Home;
+            if (_splash && _home == HomeFace.Poker) return MuteChrome.Face.Poker;
+            if (!_splash && _board != null) return MuteChrome.Face.Garden;
+            return MuteChrome.Face.Off;
+        }
+
+        Rect MuteRect(MuteChrome.Face face)
+        {
+            float w = Screen.width;
+            float h = Screen.height;
+            var safe = Screen.safeArea;
+            switch (face)
+            {
+                case MuteChrome.Face.Home: return MuteChrome.Home(w, h, safe);
+                case MuteChrome.Face.Garden: return MuteChrome.Garden(w, h, safe).Mute;
+                case MuteChrome.Face.Poker: return MuteChrome.Poker(w, h, safe).Mute;
+                default: return default;
+            }
+        }
+
+        void PollMuteChrome()
+        {
+            _muteHeld = false;
+            if (Event.current == null) return;
+            var face = MuteFace();
+            if (!MuteChrome.AboveOverlay(face)) return;
+            var r = MuteRect(face);
+            if (r.width < 2f) return;
+            if (HitPad(r, out _muteHeld))
+            {
+                AudioGuard.ToggleMuted();
+                if (!AudioGuard.Muted) Sfx.CardTap();
+                _hitLock = 1;
+            }
+        }
+
+        void PaintMuteChrome()
+        {
+            var face = MuteFace();
+            if (!MuteChrome.AboveOverlay(face)) return;
+            var r = MuteRect(face);
+            if (r.width < 2f) return;
+            var prev = GUI.color;
+            GUI.color = Color.white;
+            DrawSpeakerIcon(r, MuteChrome.DrawSize(face, r, Screen.height), AudioGuard.Muted, _muteHeld);
+            GUI.color = prev;
+        }
+
+        // Reward choice, then the mute, then the launch cover. The mute stays
+        // above every popup the body just painted, and the cover still hides boot.
+        void FinishMuteChrome()
+        {
+            DrawRewardChoiceTop();
+            PaintMuteChrome();
+            DrawWarmCover();
+        }
+
         // Item 8 profiling: OnGUI by event, and the render tail to end of frame.
         public static bool ShotNoGui; // editor clips: background only
         void OnGUI()
@@ -6391,13 +6455,14 @@ namespace FlockFive
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
                 Event.current.Use();
-            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); return; }
+            else
+                PollMuteChrome();
+            if (!StartupTrace.Open) { OnGUIBody(); FinishMuteChrome(); return; }
             var ev = Event.current != null ? Event.current.type : EventType.Ignore;
             var sp = StartupTrace.Begin(ev == EventType.Repaint ? "GUI.Repaint" : ev == EventType.Layout ? "GUI.Layout" : "GUI.Input");
             try { OnGUIBody(); }
             finally { sp.Dispose(); }
-            DrawRewardChoiceTop();
-            DrawWarmCover();
+            FinishMuteChrome();
             if (ev == EventType.Repaint) _guiEndTick = System.Diagnostics.Stopwatch.GetTimestamp();
         }
 
@@ -6535,13 +6600,18 @@ namespace FlockFive
         }
 
         // Original splash hive size — pig matches this, then both bump together.
-        static float SplashRailAnchor() =>
-            Mathf.Clamp(Screen.width * 0.11f, 52f, 108f);
+        static float SplashRailAnchor() => SplashRailAnchor(Screen.width);
+
+        public static float SplashRailAnchor(float screenW) =>
+            Mathf.Clamp(screenW * 0.11f, 52f, 108f);
 
         // One scale for pig, hive, poker, VIP, and the daily gift, about 15% over the previous rail.
         const float SplashRailScale = 1.15f;
 
-        static float SplashRailSize() => SplashRailAnchor() * 1.22f * SplashRailScale;
+        public static float SplashRailSize(float screenW) =>
+            SplashRailAnchor(screenW) * 1.22f * SplashRailScale;
+
+        static float SplashRailSize() => SplashRailSize(Screen.width);
 
         static float SplashRailGap() => Mathf.Max(24f, SplashRailSize() * 0.30f);
 
@@ -8388,8 +8458,10 @@ namespace FlockFive
 
         // Icon edge from the rail size at rest (the piggy is the rail's size), so the poker
         // page, which has no rail, gets the exact home size.
-        static float CoinBalanceIcon(float s) =>
-            Mathf.Clamp(SplashRailSize() * 0.48f * 0.80f, 29f * s, 51f * s);
+        public static float CoinBalanceIcon(float screenW, float s) =>
+            Mathf.Clamp(SplashRailSize(screenW) * 0.48f * 0.80f, 29f * s, 51f * s);
+
+        static float CoinBalanceIcon(float s) => CoinBalanceIcon(Screen.width, s);
 
         void DrawCoinBalance(float s, float rightX, float centerY)
         {
@@ -8896,21 +8968,26 @@ namespace FlockFive
         // Top-left chip, about 1.7× the previous 81px disc (66..117). TopHud keeps it
         // under the notch / Dynamic Island. The cap stays clear of the feeders.
         // Glints stay inside this rect. The reward-stamp pop keeps its own rect.
-        Rect GardenStampRect(float s)
+        public static Rect GardenStampBox(float screenW, float screenH, Rect safe, float s)
         {
             float d = Mathf.Clamp(138f * s, 112f, 190f);
-            float x = Mathf.Max(10f * s, Screen.safeArea.xMin + 8f);
-            float y = TopHud() + 10f * s;
-            var safe = Screen.safeArea;
+            float x = Mathf.Max(10f * s, safe.xMin + 8f);
+            float y = TopHudBox(screenH, safe, 0f) + 10f * s;
             if (safe.width > 8f && safe.height > 8f)
             {
                 float maxX = safe.xMax - 6f;
                 if (x + d > maxX) x = Mathf.Max(safe.xMin + 4f, maxX - d);
-                float minY = Screen.height - safe.yMax + 4f;
+                float minY = screenH - safe.yMax + 4f;
                 if (y < minY) y = minY;
             }
+            if (x < 0f) x = 0f;
+            if (y < 0f) y = 0f;
+            if (x + d > screenW) x = Mathf.Max(0f, screenW - d);
             return new Rect(x, y, d, d);
         }
+
+        Rect GardenStampRect(float s) =>
+            GardenStampBox(Screen.width, Screen.height, Screen.safeArea, s);
 
         void DrawGardenStamp(float s)
         {
@@ -9852,7 +9929,6 @@ namespace FlockFive
             // The sheet has to be laid out before gear and the rails ask the veil.
             PrepareSoftPrompt(modal || tutorUp);
             PollHomeGear();
-            PollHomeMute();
             DismissAvatarRename(s);
             // Rail steps hold until their own button. A miss does not skip poker or Daily,
             StartupTrace.Lap("L.Prep");
@@ -10068,7 +10144,6 @@ namespace FlockFive
                 DrawTutorOverlay(s);
             if (_avatarRename) DrawAvatarRename(s);
             PaintHomeGear();
-            PaintHomeMute();
             StartupTrace.Lap("L.Gear");
             _hitLock = 0;
             if (_settingsOpen) DrawSettingsSheet(s);
@@ -11131,7 +11206,7 @@ namespace FlockFive
         }
 
         // Same yellow-navy letter family as the splash mark, with POKER as the third row.
-        float PokerTitleHeight(float s)
+        public static float PokerTitleHeight(float s)
         {
             float capSmall = 22f * s;
             float capPoker = 30f * s;
@@ -12986,6 +13061,58 @@ namespace FlockFive
             DrawTutorOverlay(s);
         }
 
+        // Back medal, coin icon, wordmark, halo, and PAY TABLE tab. MuteChrome
+        // reads this same layout, so the speaker cannot drift off the live chrome.
+        public struct PokerChrome
+        {
+            public Rect Back;
+            public Rect Coins;
+            public Rect Title;
+            public Rect Halo;
+            public Rect PayTab;
+            public float Top;
+            public float Below;
+        }
+
+        public static Rect PokerPayTabBox(float w, Rect safe, float top, float s)
+        {
+            float tabW = Mathf.Clamp(211f * s, 178f, 264f);
+            float tabH = Mathf.Clamp(62f * s, 55f, 78f);
+            float right = w - Mathf.Max(6f, w - safe.xMax + 4f);
+            float tabY = top + 4f * s;
+            return new Rect(right - tabW, tabY, tabW, tabH);
+        }
+
+        public static PokerChrome LayoutPokerChrome(float w, float h, Rect safe, float s)
+        {
+            if (safe.width < 2f || safe.height < 2f)
+                safe = new Rect(0f, 0f, w, h);
+            float top = TopHudBox(h, safe, 0f);
+            var back = BackMedalBox(s, top, safe);
+            float right = w - Mathf.Max(12f, w - safe.xMax + 10f);
+            float icon = CoinBalanceIcon(w, s);
+            float cy = Mathf.Max(back.center.y, top + icon * 0.5f);
+            var coins = new Rect(right - icon, cy - icon * 0.5f, icon, icon);
+            float logoTop = top + back.height + 4f * s;
+            float logoH = PokerTitleHeight(s);
+            float markW = Mathf.Min(w * 0.50f, 240f * s);
+            float haloW = Mathf.Min(w * 0.82f, markW * 1.28f);
+            var halo = new Rect((w - haloW) * 0.5f, Mathf.Max(4f, logoTop - 8f * s), haloW, logoH + 14f * s);
+            float titleW = Mathf.Min(w * 0.62f, 280f * s);
+            var title = new Rect((w - titleW) * 0.5f, logoTop, titleW, logoH);
+            float below = logoTop + logoH;
+            return new PokerChrome
+            {
+                Back = back,
+                Coins = coins,
+                Title = title,
+                Halo = halo,
+                PayTab = PokerPayTabBox(w, safe, below, s),
+                Top = top,
+                Below = below
+            };
+        }
+
         void DrawPokerPage()
         {
             float s = DeviceFit.Ui();
@@ -12994,8 +13121,8 @@ namespace FlockFive
             ArmPokerPageTutor();
 
             var safe = Screen.safeArea;
-            float top = TopHud();
-            var back = BackMedalRect(s, top);
+            var chrome = LayoutPokerChrome(Screen.width, Screen.height, safe, s);
+            var back = chrome.Back;
             if (DrawBackMedal(back))
             {
                 if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn || _pokerShowPay)
@@ -13017,22 +13144,15 @@ namespace FlockFive
                 _pokerHover = -1;
                 _home = HomeFace.Splash;
             }
-            DrawPokerPurse(back, top, s);
+            DrawPokerPurse(chrome, s);
 
-            float logoTop = top + back.height + 4f * s;
-            float logoH = PokerTitleHeight(s);
-            float markW = Mathf.Min(Screen.width * 0.50f, 240f * s);
-            float haloW = Mathf.Min(Screen.width * 0.82f, markW * 1.28f);
-            var halo = new Rect(
-                (Screen.width - haloW) * 0.5f,
-                Mathf.Max(4f, logoTop - 8f * s),
-                haloW,
-                logoH + 14f * s);
+            float logoTop = chrome.Title.y;
+            var halo = chrome.Halo;
             EnsureHaloFlutters(ref _pokerFlutters, halo);
             DrawHaloBirds(ref _pokerFlutters, halo, s, true, HaloBirdIcon(s), ref _pokerHaloTick);
             DrawPokerTitleMark(logoTop, s);
             DrawHaloBirds(ref _pokerFlutters, halo, s, false, HaloBirdIcon(s), ref _pokerHaloTick);
-            float below = logoTop + logoH;
+            float below = chrome.Below;
 
             // Hit-test pay-table tab / dismiss early so overlay blocks cards & Deal.
             if (!_pokerStamp)
@@ -13051,7 +13171,7 @@ namespace FlockFive
             float btnSize = Mathf.Min(Screen.width * 0.46f, 200f * s);
             float botPad = Mathf.Max(12f, safe.yMin + 6f);
             float btnY = Screen.height - botPad - btnSize;
-            var payTab = PokerPayTabRect(below, s);
+            var payTab = chrome.PayTab;
             // Equal air between the wordmark and the bet/deal controls. Drop below the PAY TABLE chip when that still fits.
             float bandTop = below;
             float bandBot = btnY;
@@ -13156,14 +13276,8 @@ namespace FlockFive
         }
 
 
-        Rect PokerPayTabRect(float top, float s)
-        {
-            float tabW = Mathf.Clamp(211f * s, 178f, 264f);
-            float tabH = Mathf.Clamp(62f * s, 55f, 78f);
-            float right = Screen.width - Mathf.Max(6f, Screen.width - Screen.safeArea.xMax + 4f);
-            float tabY = top + 4f * s;
-            return new Rect(right - tabW, tabY, tabW, tabH);
-        }
+        Rect PokerPayTabRect(float top, float s) =>
+            PokerPayTabBox(Screen.width, Screen.safeArea, top, s);
 
         void TickPokerPayTable(float top, float s)
         {
@@ -13881,11 +13995,9 @@ namespace FlockFive
         // Same balance as home (shared DrawCoinBalance: size, font, icon), seated in the
         // top-right corner on the back-medal row. Build 60 drew it at the medal's height
         // (icon = back.height, type 0.86), bigger than home.
-        void DrawPokerPurse(Rect back, float top, float s)
+        void DrawPokerPurse(PokerChrome chrome, float s)
         {
-            float right = Screen.width - Mathf.Max(12f, Screen.width - Screen.safeArea.xMax + 10f);
-            float cy = Mathf.Max(back.center.y, top + CoinBalanceIcon(s) * 0.5f);
-            DrawCoinBalance(s, right, cy);
+            DrawCoinBalance(s, chrome.Coins.xMax, chrome.Coins.center.y);
         }
 
         const float DealGatherT = 0.32f;

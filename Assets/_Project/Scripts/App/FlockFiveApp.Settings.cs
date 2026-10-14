@@ -87,50 +87,21 @@ namespace FlockFive
             return new Rect(drawn.x, drawn.y, hit, hit);
         }
 
-        // b87 home speaker: the gear's size and margin mirrored into the top-right
-        // corner, below the coin pill when the HUD claims that corner.
+        // Home speaker. MuteChrome owns the seat so garden and poker share it.
         public static Rect HomeMuteRect(float w, float h, Rect safe, float hudBottom = 0f)
         {
-            var g = SettingsGearRect(w, h, safe);
-            float right = safe.xMax;
-            float gx = g.x - safe.x;
-            var r = new Rect(right - gx - g.width, g.y, g.width, g.height);
-            if (hudBottom > r.y) r.y = hudBottom + gx * 0.5f;
-            return r;
+            return MuteChrome.Home(w, h, safe, hudBottom);
         }
+
         bool _muteHeld;
-        float HomeMuteHudBottom() => 0f;
-
-        void PollHomeMute()
-        {
-            _muteHeld = false;
-            if (_settingsOpen) return;
-            var q = HomeGearNow();
-            if (!HomeGear.AcceptsTap(q)) return;
-            var r = HomeMuteRect(Screen.width, Screen.height, Screen.safeArea, HomeMuteHudBottom());
-            if (VeilBlocks(r)) return;
-            if (HitPad(r, out _muteHeld))
-            {
-                AudioGuard.ToggleMuted();
-                if (!AudioGuard.Muted) Sfx.CardTap();
-                _hitLock = 1;
-            }
-        }
-
-        void PaintHomeMute()
-        {
-            var q = HomeGearNow();
-            if (!HomeGear.Shown(q) || !HomeGear.AboveDimmer(q) || _settingsOpen) return;
-            var r = HomeMuteRect(Screen.width, Screen.height, Screen.safeArea, HomeMuteHudBottom());
-            DrawSpeakerIcon(r, AudioGuard.Muted, _muteHeld);
-        }
 
         // Speaker glyph in the gear's cream-on-dark-outline look. Muted adds a slash.
-        void DrawSpeakerIcon(Rect hit, bool muted, bool held)
+        // draw is the icon edge; the hit may be larger and the icon stays in its top-right.
+        void DrawSpeakerIcon(Rect hit, float draw, bool muted, bool held)
         {
-            var g = SettingsGearDrawnRect(Screen.width, Screen.height, Screen.safeArea);
-            float sz = g.width * (held ? 0.92f : 1f);
-            var r = new Rect(hit.xMax - g.width + (g.width - sz) * 0.5f, hit.y + (g.width - sz) * 0.5f, sz, sz);
+            if (draw < 2f) draw = hit.width;
+            float sz = draw * (held ? 0.92f : 1f);
+            var r = new Rect(hit.xMax - draw + (draw - sz) * 0.5f, hit.y + (draw - sz) * 0.5f, sz, sz);
             var ink = new Color(1f, 0.96f, 0.86f, 1f);
             var line = new Color(0.16f, 0.10f, 0.06f, 0.95f);
             var prev = GUI.color;
