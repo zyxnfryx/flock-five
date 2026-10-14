@@ -604,9 +604,44 @@ namespace FlockFive
             int k = pair % half;                   // 0 = innermost column pair
             int col = (i & 1) == 0 ? half - 1 - k : half + k;
             float cw = W / Cols, rh = H / rows;
-            lx = (col + 0.5f) * cw;
-            ly = (row + 0.5f) * rh;
+            // Stable per-glint jitter, +-35% of the cell, so the lattice dissolves.
+            lx = (col + 0.5f + (H01(i, 51) - 0.5f) * 0.70f) * cw;
+            ly = (row + 0.5f + (H01(i, 53) - 0.5f) * 0.70f) * rh;
         }
+
+        // Second, smaller layer on the half-offset lattice (cell corners), checkerboard
+        // so it is about half density. Columns 0..6 at x = (c+1) cells mirror c <-> 6-c
+        // with the same parity, rows at (r+1). Cached per row count.
+        static int[] _l2C, _l2R;
+        static int _l2Rows = -1;
+        public static int Layer2Count(int rows)
+        {
+            if (rows == _l2Rows && _l2C != null) return _l2C.Length;
+            var cs = new System.Collections.Generic.List<int>();
+            var rs = new System.Collections.Generic.List<int>();
+            for (int r = 0; r < rows - 1; r++)
+                for (int c = 0; c < Cols - 1; c++)
+                    if (((c + r) & 1) == 0) { cs.Add(c); rs.Add(r); }
+            _l2C = cs.ToArray();
+            _l2R = rs.ToArray();
+            _l2Rows = rows;
+            return _l2C.Length;
+        }
+
+        static void Cell2(int j, int rows, float W, float H, out float lx, out float ly, out int mirrorKey)
+        {
+            int c = _l2C[j], r = _l2R[j];
+            float cw = W / Cols, rh = H / rows;
+            lx = (c + 1f + (H01(j, 71) - 0.5f) * 0.70f) * cw;
+            ly = (r + 1f + (H01(j, 73) - 0.5f) * 0.70f) * rh;
+            mirrorKey = 1000 + r * Cols + System.Math.Min(c, Cols - 2 - c);
+        }
+
+        // Per-glint look: size +-25%, rotation (the star is 90-degree symmetric), and a
+        // few bright cores scattered through the mask.
+        static float SizeK(int key) => 0.75f + 0.50f * H01(key, 57);
+        public static float RotOf(int key) => H01(key, 59) * 90f;
+        static bool CoreOf(int key) => H01(key, 61) < 0.08f;
 
         static bool At(int i, int n, int rows, float t, float W, float H, float ox, float oy, out float x, out float y,
             out float sz, out float a, out float bloom, out float soft)
@@ -625,7 +660,8 @@ namespace FlockFive
             float backStart = 0.64f + 0.04f * hb;
             float arcY = oy - H * (0.08f + 0.04f * hy + 0.18f * (1f - lane01 * lane01));
             float cell = W / Cols;
-            float landBody = cell * 0.95f;
+            float landBody = cell * 0.95f * SizeK(i);
+            bool core = CoreOf(i);
             if (t < LaunchEnd)
             {
                 float q = Mathf.Clamp01(t / FanTime);
@@ -665,15 +701,15 @@ namespace FlockFive
                     sz = (far + (landBody - far) * pz) / StarBody;
                     a = 1f;
                     bloom = 0.4f + 0.5f * w;
-                    soft = 0.5f * w;
+                    soft = core ? 0.05f : 0.5f * w;
                 }
                 else if (t < RevealAt)
                 {
                     x = lx; y = ly;
                     sz = landBody / StarBody;
                     a = 1f;
-                    bloom = 0.9f;
-                    soft = 0.5f;
+                    bloom = core ? 1f : 0.9f;
+                    soft = core ? 0.05f : 0.5f;
                 }
                 else if (t < RevealEnd + 0.05f)
                 {
@@ -711,6 +747,72 @@ namespace FlockFive
 
         // Per-pair reveal phase (+-0.05 s): sparkle-out, uncorrelated with row or side.
         static float RevealJitter(int pair) => (H01(pair, 43) - 0.5f) * 0.10f;
+
+        // Layer-2 sparkle: comes in with the return, lands on its offset cell, reveals
+        // with everyone else. Same timing as layer 1.
+        static bool At2(int j, int rows, float t, float W, float H, out float x, out float y,
+            out float sz, out float a, out float bloom, out float soft, out int key)
+        {
+            x = y = sz = a = bloom = soft = 0f;
+            Cell2(j, rows, W, H, out float lx, out float ly, out key);
+            int g = 5000 + j;
+            float backStart = 0.66f + 0.04f * H01(g, 23);
+            if (t < backStart || t >= RevealEnd + 0.05f) return false;
+            float cell = W / Cols;
+            float body = cell * 0.55f * SizeK(g);
+            float cx = W * 0.5f;
+            bool core = CoreOf(g);
+            if (t < CoverAt)
+            {
+                float w = (t - backStart) / (CoverAt - backStart);
+                float e = 1f - (1f - w) * (1f - w) * (1f - w);
+                float sx = lx + (lx - cx) * 0.15f * (1f - e); // slight inward converge
+                x = sx;
+                y = -0.08f * H + (ly + 0.08f * H) * e;
+                float pz = (1f / (1f - 0.8f * w) - 1f) / 4f;
+                sz = body * (0.25f + 0.75f * pz) / StarBody;
+                a = Mathf.Clamp01(w * 3f);
+                bloom = 0.5f + 0.5f * w;
+                soft = core ? 0.05f : 0.35f * w;
+            }
+            else if (t < RevealAt)
+            {
+                x = lx; y = ly; sz = body / StarBody; a = 1f;
+                bloom = core ? 1f : 0.85f;
+                soft = core ? 0.05f : 0.35f;
+            }
+            else
+            {
+                float u = Mathf.Clamp01((t - RevealAt - RevealJitter(key)) / (RevealEnd - RevealAt - 0.05f));
+                if (u >= 1f) return false;
+                float drift = 0.30f * u * u;
+                x = lx + (lx - cx) * drift;
+                y = ly + (ly - H * 0.5f) * drift;
+                sz = body * (1f - 0.45f * u) / StarBody;
+                float f = 1f - u;
+                a = f * f * (3f - 2f * f);
+                bloom = 0.85f;
+                soft = 0.35f + 0.5f * u;
+            }
+            key = g;
+            return y > -sz && y < H + sz && x > -sz && x < W + sz;
+        }
+
+        // One mask glint: bokeh body, then the star rotated about its centre.
+        static void PaintMaskGlint(float x, float y, float sz, float a, float bl, float sf, Color c, float rot,
+            Texture star, Texture glowTex)
+        {
+            if (sf > 0.02f)
+            {
+                float bk = sz * StarBody * 2.4f;
+                GUI.color = new Color(c.r, c.g * 0.96f, c.b * 0.88f, a * 0.50f * sf);
+                GUI.DrawTexture(new Rect(x - bk * 0.5f, y - bk * 0.5f, bk, bk), glowTex, ScaleMode.StretchToFill, true);
+            }
+            var m = GUI.matrix;
+            if (rot > 0.5f) GUIUtility.RotateAroundPivot(rot, new Vector2(x, y));
+            SparkleFx.DrawDepthGlint(x, y, sz, a, bl, sf, c, star, glowTex);
+            GUI.matrix = m;
+        }
 
         // Even mask base under the glints: uniform full-screen veil, so coverage does
         // not depend on where the glints sit. Ramps with the return, holds, clears.
@@ -807,17 +909,20 @@ namespace FlockFive
                 }
                 if (!At(i, n, rows, t, W, H, ox, oy, out float x, out float y, out float sz, out float a, out float bl, out float sf))
                     continue;
-                if (sf > 0.02f)
-                {
-                    // Soft bokeh disc: the mask body. ~2 cells wide, so neighbours overlap.
-                    float bk = sz * StarBody * 2.4f;
-                    GUI.color = new Color(c.r, c.g * 0.96f, c.b * 0.88f, a * 0.50f * sf);
-                    GUI.DrawTexture(new Rect(x - bk * 0.5f, y - bk * 0.5f, bk, bk), glowTex, ScaleMode.StretchToFill, true);
-                }
-                SparkleFx.DrawDepthGlint(x, y, sz, a, bl, sf, c, star, glowTex);
+                // Rotation only once it is heading for its cell (the launch stays upright).
+                PaintMaskGlint(x, y, sz, a, bl, sf, c, t >= 0.62f ? RotOf(i) : 0f, star, glowTex);
                 if (a > 0.1f && sz > LastMaxRectPx) LastMaxRectPx = sz;
                 if (x < LastXMin) LastXMin = x;
                 if (x > LastXMax) LastXMax = x;
+                drawn++;
+            }
+            int n2 = Layer2Count(rows);
+            for (int j = 0; j < n2; j++)
+            {
+                if (!At2(j, rows, t, W, H, out float x, out float y, out float sz, out float a, out float bl, out float sf, out int key))
+                    continue;
+                Cell2(j, rows, W, H, out _, out _, out int mk);
+                PaintMaskGlint(x, y, sz, a, bl, sf, Tint(mk), RotOf(key), star, glowTex);
                 drawn++;
             }
             GUI.color = prev;
