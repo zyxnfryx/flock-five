@@ -808,38 +808,23 @@ namespace FlockFive
                 x1 = x0 + Random.Range(-1.8f, 1.8f);
                 y1 = Mathf.Lerp(bottom + 2.6f, bottom + 0.55f, Mathf.Clamp01(power));
             }
-            _boltLife = big ? (_showcase ? 0.62f : 0.46f) : 0.28f;
-            float thick = big ? (_showcase ? 0.64f : 0.36f) : 0.22f;
-            int trunk = big ? (_showcase ? 12 : 8) : 6;
-            Lay(x0, y0, x1, y1, trunk, big ? 0.9f : 0.55f, thick, true);
-            int forks = big ? (LeanFrame() ? 2 : (_showcase ? 6 : 4)) : (LeanFrame() ? 1 : 2);
+            _boltLife = big ? (_showcase ? 0.34f : 0.46f) : 0.28f;
+            float thick = big ? (_showcase ? 0.18f : 0.36f) : 0.22f;
+            int trunk = big ? (_showcase ? 14 : 8) : 6;
+            Lay(x0, y0, x1, y1, trunk, big ? (_showcase ? 0.42f : 0.9f) : 0.55f, thick, true);
+            int forks = big ? (LeanFrame() ? 2 : (_showcase ? 3 : 4)) : (LeanFrame() ? 1 : 2);
             for (int f = 0; f < forks; f++)
             {
                 if (_pn < 3) break;
                 int at = 1 + (f * 2) % (_pn - 1);
+                // Fire forks stay in the sky. Only the main stroke reaches the limb.
+                if (_showcase && _py[at] < _aimY + 2.4f) continue;
                 float dir = ((f & 1) == 0) ? -1f : 1f;
                 if (Random.value < 0.15f) dir = -dir;
-                float len = Random.Range(0.9f, big ? (_showcase ? 2.4f : 2.6f) : 1.7f);
+                float len = Random.Range(0.9f, big ? (_showcase ? 1.6f : 2.6f) : 1.7f);
                 float endY = _py[at] - Random.Range(0.35f, 1.15f);
-                if (_showcase && endY < _aimY + 0.02f) endY = _aimY + 0.02f;
-                Lay(_px[at], _py[at], _px[at] + dir * len, endY, big ? 4 : 3, 0.35f, thick * 0.48f, false);
-            }
-            // A second generation off the trunk, so the fire bolt reads as a tree
-            // and not a single stroke with side ticks.
-            if (_showcase && !LeanFrame() && _pn > 4)
-            {
-                for (int c = 0; c < 3; c++)
-                {
-                    int at = 2 + c * 3;
-                    if (at >= _pn) break;
-                    float dir = c == 1 ? -1f : 1f;
-                    float endY = _py[at] - Random.Range(0.35f, 0.9f);
-                    if (endY < _aimY + 0.02f) endY = _aimY + 0.02f;
-                    Lay(_px[at], _py[at],
-                        _px[at] + dir * Random.Range(0.7f, 1.45f),
-                        endY,
-                        3, 0.28f, thick * 0.32f, false);
-                }
+                if (_showcase && endY < _aimY + 2.2f) endY = _aimY + 2.2f;
+                Lay(_px[at], _py[at], _px[at] + dir * len, endY, big ? 4 : 3, 0.35f, thick * (_showcase ? 0.7f : 0.48f), false);
             }
             // The fire bolt is the one that hits the limb. A second stroke
             // beside it reads as a miss, so ordinary storms keep it.
@@ -915,8 +900,8 @@ namespace FlockFive
             {
                 float mx = t.position.x - _aimX;
                 float my = t.position.y - _aimY;
-                // Shaft sits behind bark, birds, and leaves. The tip lands on the limb.
-                sr.sortingOrder = (mx * mx + my * my) < 1.05f * 1.05f ? 4 : 1;
+                // Shaft sits behind bark, birds, and leaves. Only the tip sits on the limb.
+                sr.sortingOrder = (mx * mx + my * my) < 0.42f * 0.42f ? 4 : 1;
             }
             sr.enabled = true;
             _segMul[i] = thick >= 0.2f ? 1f : 0.8f;
@@ -925,8 +910,9 @@ namespace FlockFive
         void FadeBolt(float age)
         {
             if (_boltSr == null) return;
-            float tail = _boltLife > 0.16f ? _boltLife - 0.10f : 0.16f;
-            float hold = age < 0.10f ? 1f : 1f - (age - 0.10f) / tail;
+            float tail = _boltLife > 0.16f ? _boltLife - (_showcase ? 0.04f : 0.10f) : 0.16f;
+            float hold = age < 0.08f ? 1f : 1f - (age - 0.08f) / tail;
+            if (_showcase) hold = hold * hold;
             if (hold < 0f) hold = 0f;
             // Same double peak as the screen flash, with a floor so the fork stays readable in the dip.
             float shape = FlashShape(age + 0.012f, _skyBig);
