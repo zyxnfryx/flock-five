@@ -95,6 +95,7 @@ namespace FlockFive.Editor
                     "during=" + muteDuring + " held=" + muteHeld + " back=" + AudioGuard.MusicScale.ToString("0.00"));
 
                 Check("bed-stays-silent-if-pause-stolen", BedHolds(out string bedDetail), bedDetail);
+                Check("ad-token-holds-for-long-show", TokenHolds(out string tokenDetail), tokenDetail);
             }
             catch (System.Exception ex)
             {
@@ -162,6 +163,34 @@ namespace FlockFive.Editor
             bool skipHeld = Silent();
             Ads.SkipShow();
             check(kind + "-restored-after-skip", skipHeld && Back(0.64f, false), State());
+        }
+
+        static bool TokenHolds(out string detail)
+        {
+            detail = "";
+            double now = 80;
+            AudioGuard.Clock = () => now;
+            try
+            {
+                Arm(1f, false);
+                AudioGuard.Clock = () => now;
+                Ads.Present(() => { });
+                bool opened = AudioGuard.LiveTokens >= 1 && Silent();
+                now += 30;
+                Ads.TickShowClock();
+                AudioGuard.Tick();
+                bool held = opened && AudioGuard.LiveTokens >= 1 && Silent();
+                Ads.EndShow();
+                bool back = held && Back(1f, false) && AudioGuard.LiveTokens == 0;
+                detail = "opened=" + opened + " held=" + held + " tokens=" + AudioGuard.LiveTokens;
+                return back;
+            }
+            finally
+            {
+                AudioGuard.Clock = null;
+                if (Ads.IsShowing) Ads.EndShow();
+                Quiet();
+            }
         }
 
         static bool BedHolds(out string detail)
