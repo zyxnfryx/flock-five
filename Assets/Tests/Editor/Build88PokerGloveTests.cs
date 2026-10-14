@@ -64,6 +64,14 @@ namespace FlockFive.Editor
                     cut.width < wide.width && !cutPlate.Overlaps(wideHand) && !cutPlate.Overlaps(wideBtn),
                     cutPlate.ToString());
 
+                // A phone-wide plate pinned on the hand stays right of the left rail.
+                var railText = new Rect(220f, 600f, 640f, 140f);
+                var railed = FlockFiveApp.LiftPokerCaption(railText, 36f, 24f, button, hand, 580f, 12f, 160f);
+                var railPlate = new Rect(railed.x - 36f, railed.y - 24f, railed.width + 72f, railed.height + 48f);
+                Check("plate-stays-right-of-the-rail",
+                    railPlate.x >= 160f - 0.6f && !railPlate.Overlaps(button) && !railPlate.Overlaps(hand),
+                    railPlate.ToString());
+
                 string coach = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.Coach.cs"));
                 int spot = coach.IndexOf("if (_pokerIntroLive)");
                 int end = coach.IndexOf("if (_dailyIntroLive)", spot);
@@ -74,6 +82,14 @@ namespace FlockFive.Editor
                 Check("poker-box-counts-paint-growth",
                     boxAt > 0 && growAt > boxAt && liftAt > growAt,
                     "box " + boxAt + " grow " + growAt + " lift " + liftAt);
+                int pigAt = coach.IndexOf("pig.yMax", boxAt);
+                Check("poker-box-seats-under-the-pig",
+                    pigAt > boxAt && pigAt < liftAt,
+                    "pig " + pigAt + " lift " + liftAt);
+                int handEdge = coach.IndexOf("hand.xMin", boxAt);
+                Check("poker-box-stops-at-the-glove",
+                    handEdge > boxAt && handEdge < liftAt,
+                    "hand " + handEdge + " lift " + liftAt);
 
                 Check("poker-spot-notes-then-points",
                     body.IndexOf("NoteTutorPlate(") > 0

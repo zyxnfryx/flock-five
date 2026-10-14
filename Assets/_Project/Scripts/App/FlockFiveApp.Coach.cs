@@ -1076,7 +1076,7 @@ namespace FlockFive
                 // Note the plate this frame, before the glove locks, so the perch
                 // does not re-seat when the caption paints a frame later.
                 var pokerText = PokerIntroBox(handS);
-                NoteTutorPlate(CoachPanelRect(pokerText, _anchorPad));
+                NoteTutorPlate(CoachPanelRect(pokerText));
                 _gloveInward = true;
                 // From the left, pointing right. Facing stays in the shared helper.
                 CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, PokerGloveFromLeft, float.NaN, box);
@@ -5487,7 +5487,7 @@ namespace FlockFive
             // poker card, in the open sky between the coin row and the disc.
             var pr = PokerIntroBox(s);
             CapSpot("home.poker");
-            DrawSplashIntroLine(PokerIntroLine, pr, s, PokerIntroFontHi(s), true, _anchorPad, true);
+            DrawSplashIntroLine(PokerIntroLine, pr, s, PokerIntroFontHi(s), true, default, true);
             DrawTutorOverlay(s);
         }
 
@@ -5498,37 +5498,55 @@ namespace FlockFive
 
         Rect PokerIntroBox(float s)
         {
-            var r = AnchoredCaptionBox(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering, out _);
-            var disc = FlowerPlayRect();
-            float railW = Screen.width * 0.17f;
-            float maxW = Screen.width - railW * 2f;
-            if (r.width > maxW) { r.x += (r.width - maxW) * 0.5f; r.width = maxW; }
-            r.x = (Screen.width - r.width) * 0.5f;
-            if (disc.width > 2f) r.y = disc.yMin - r.height - 18f * s;
-            float floorY = TopHud() + (56f * 2f + 4f) * s + 64f * s;
-            if (r.y < floorY) r.y = floorY;
             var button = SplashPokerRect();
             var aim = GloveTargetAt(button, PokerGloveU, PokerGloveV);
             var hand = PokerPointHand(aim, s);
+            var pig = PiggyRect(s);
             var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
-            float padX = hang.x + (_anchorPad.x > 0f ? _anchorPad.x : 0f);
-            float padY = hang.y + (_anchorPad.y > 0f ? _anchorPad.y : 0f);
-            float gap = 18f * s;
-            // Paint fits the line into the inset and grows the box downward when
-            // the floor size needs another line. Count that hang before the seat,
-            // or the glove under the corner ends up inside the plate.
-            r.height += PokerCaptionGrow(r, s);
-            float wide = r.width;
-            r = LiftPokerCaption(r, padX, padY, button, hand, floorY, gap);
-            if (r.width < wide - 1f)
+            // Disc-cover padding belongs on the LEVEL lettering. This line sits
+            // under the balance, so the plate is only the shared caption pad.
+            float padX = hang.x;
+            float padY = hang.y;
+            // A tall phone's 18*s gap pushed a two-line plate into the poker row.
+            float gap = 6f;
+            float railW = Screen.width * 0.17f;
+            if (railW < 8f) railW = 8f;
+            // Column between the left rail and the glove (and the button). The
+            // plate stays left of both, so a tall wrap does not cover the hand.
+            float right = Screen.width - railW;
+            if (hand.width > 2f && hand.xMin - gap < right) right = hand.xMin - gap;
+            if (button.width > 2f && button.xMin - gap < right) right = button.xMin - gap;
+            float plateW = right - railW;
+            if (plateW < 160f) plateW = 160f;
+            float seatW = plateW - padX * 2f;
+            if (seatW < 80f) seatW = 80f;
+            float ix = Mathf.Clamp(seatW * 0.055f, 10f * s, 18f * s);
+            float textW = Mathf.Max(48f, seatW - ix * 2f);
+            var fit = FitLessonText(PokerIntroLine, textW, 4096f, 12, PokerIntroFontHi(s), Screen.width, Screen.height);
+            // Same inner pad CaptionTextRect will apply, solved so paint does not
+            // grow the seat another line after this measures.
+            float seatH = fit.TextH + 4f;
+            for (int i = 0; i < 4; i++)
             {
-                var fit = FitCaptionBox(PokerIntroLine, r.width, PokerIntroFontHi(s), 16);
-                r.width = fit.width;
-                r.height = fit.height;
-                r.height += PokerCaptionGrow(r, s);
-                r = LiftPokerCaption(r, padX, padY, button, hand, floorY, gap);
+                float iy = Mathf.Clamp(seatH * 0.10f, 6f * s, 14f * s);
+                float need = fit.TextH + iy * 2f;
+                if (need <= seatH + 0.5f) break;
+                seatH = need;
             }
-            return r;
+            float textTopMin = TopHud() + (56f * 2f + 4f) * s + 64f * s;
+            // The balance is centered on the pig. Start under that row.
+            if (pig.height > 2f)
+            {
+                float under = pig.yMax + gap + padY;
+                if (under > textTopMin) textTopMin = under;
+            }
+            float spanL = railW + padX;
+            float spanR = right - padX;
+            if (spanR < spanL + 80f) spanR = spanL + 80f;
+            float x = spanL + Mathf.Max(0f, (spanR - spanL - seatW) * 0.5f);
+            var r = new Rect(x, textTopMin, seatW, seatH);
+            r.height += PokerCaptionGrow(r, s);
+            return LiftPokerCaption(r, padX, padY, button, hand, textTopMin, gap, railW);
         }
 
         // How far PaintCoachCaption will grow this seat downward. Same fit the paint uses.
@@ -5549,12 +5567,13 @@ namespace FlockFive
 
         // The poker line shares a row with the rail button. Lift the plate above
         // that row and above the hand that reaches in from the left.
-        public static Rect LiftPokerCaption(Rect text, float padX, float padY, Rect button, Rect hand, float floorY, float gap)
+        public static Rect LiftPokerCaption(Rect text, float padX, float padY, Rect button, Rect hand, float floorY, float gap, float minX = 8f)
         {
             if (text.width < 2f || text.height < 2f) return text;
             if (padX < 0f) padX = 0f;
             if (padY < 0f) padY = 0f;
             if (gap < 0f) gap = 0f;
+            if (minX < 0f) minX = 0f;
             var plate = new Rect(text.x - padX, text.y - padY, text.width + padX * 2f, text.height + padY * 2f);
             bool shareBtn = button.width > 2f && button.height > 2f
                 && plate.yMax > button.yMin && button.yMax > plate.yMin;
@@ -5568,7 +5587,8 @@ namespace FlockFive
             if (y < floorY) y = floorY;
             text.y = y;
             // A floor under the coin row can pin the plate back onto the hand.
-            // Slide it to the left of the hand and the rail button.
+            // Move it left only by the overlap, and never across the left rail.
+            // Width that is still on the hand is cut off the right edge.
             var seated = new Rect(text.x - padX, text.y - padY, text.width + padX * 2f, text.height + padY * 2f);
             float block = float.PositiveInfinity;
             if (button.width > 2f && button.height > 2f && seated.Overlaps(button))
@@ -5577,30 +5597,33 @@ namespace FlockFive
                 block = hand.xMin;
             if (block < float.PositiveInfinity)
             {
-                float nx = block - gap - text.width - padX;
-                if (nx < 8f) nx = 8f;
-                if (nx < text.x) text.x = nx;
-            }
-            // Sliding a near-screen-wide plate still leaves it on the hand.
-            // Cut the width so the right edge stops short of the hand.
-            var cut = new Rect(text.x - padX, text.y - padY, text.width + padX * 2f, text.height + padY * 2f);
-            float limit = float.PositiveInfinity;
-            if (button.width > 2f && button.height > 2f && cut.Overlaps(button))
-                limit = button.xMin;
-            if (hand.width > 2f && hand.height > 2f && cut.Overlaps(hand) && hand.xMin < limit)
-                limit = hand.xMin;
-            if (limit < float.PositiveInfinity)
-            {
-                float right = limit - gap;
-                float maxW = right - text.x - padX;
-                if (maxW < 80f) maxW = 80f;
-                if (text.width > maxW) text.width = maxW;
+                float plateRightMax = block - gap;
+                float plateLeft = text.x - padX;
                 float plateRight = text.x + text.width + padX;
-                if (plateRight > right)
+                if (plateRight > plateRightMax)
                 {
-                    text.x -= plateRight - right;
-                    float minX = 8f + padX;
-                    if (text.x < minX) text.x = minX;
+                    float over = plateRight - plateRightMax;
+                    float room = plateLeft - minX;
+                    if (room < 0f) room = 0f;
+                    float shift = over < room ? over : room;
+                    text.x -= shift;
+                    float still = over - shift;
+                    if (still > 0.5f)
+                    {
+                        text.width -= still;
+                        if (text.width < 80f) text.width = 80f;
+                    }
+                }
+                plateLeft = text.x - padX;
+                if (plateLeft < minX)
+                {
+                    text.x += minX - plateLeft;
+                    float plateRightNow = text.x + text.width + padX;
+                    if (plateRightNow > plateRightMax)
+                    {
+                        text.width -= plateRightNow - plateRightMax;
+                        if (text.width < 80f) text.width = 80f;
+                    }
                 }
             }
             return text;

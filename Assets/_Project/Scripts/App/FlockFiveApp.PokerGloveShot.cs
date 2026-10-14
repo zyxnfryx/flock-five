@@ -29,6 +29,7 @@ namespace FlockFive
             try
             {
                 Directory.CreateDirectory(dir);
+                File.WriteAllText("/tmp/b88-poker-glove-shot.txt", "");
                 PlayerPrefs.SetInt("flockfive.next", 2);
                 PlayerPrefs.SetInt(CoachDailyKey, 1);
                 PlayerPrefs.SetInt(CoachHiveKey, 1);
@@ -101,7 +102,7 @@ namespace FlockFive
                 + " fromLeft " + _gloveFromLeft + " ang " + _gloveShownAng.ToString("0")
                 + " aim " + aim + " hand " + hand + " plate " + plate
                 + " button " + box
-                + " clear " + (!plate.Overlaps(hand) && !(plate.yMax > box.yMin && box.yMax > plate.yMin));
+                + " clear " + (!plate.Overlaps(hand) && !plate.Overlaps(box));
             File.AppendAllText("/tmp/b88-poker-glove-shot.txt", line + "\n");
             UnityEngine.Debug.Log("[poker-glove] " + line);
         }
