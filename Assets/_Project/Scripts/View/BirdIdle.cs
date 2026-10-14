@@ -133,6 +133,8 @@ namespace FlockFive
         float _flapHz = 6f;
         float _flapClock;
         int _wingPose;
+        Vector2 _flapAnchor;
+        bool _flapAnchored;
 
         public int WingPose => _wingPose;
         public bool FlapDriven => _flapDrive;
@@ -147,6 +149,12 @@ namespace FlockFive
             Frozen = true;
             // BirdFrame step 1 is wings up. Open there instead of the tucked rest.
             _flapClock = 1.5f / 16f;
+            var up = SpriteCatalog.FlapPose(Color, 1);
+            if (up != null)
+            {
+                _flapAnchor = SpriteCatalog.CoreFromPivot(up);
+                _flapAnchored = true;
+            }
             ApplyFlapFrame();
         }
 
@@ -246,6 +254,15 @@ namespace FlockFive
             sr.color = c;
         }
 
+        // Parent-space shift that keeps the body on the wings-up anchor.
+        // The sling writes the path position first; this does not stick across frames.
+        public Vector3 FlapBodyPull()
+        {
+            if (!_flapAnchored || _sr == null || _sr.sprite == null) return Vector3.zero;
+            var delta = _flapAnchor - SpriteCatalog.CoreFromPivot(_sr.sprite);
+            var s = transform.localScale;
+            return transform.localRotation * new Vector3(delta.x * s.x, delta.y * s.y, 0f);
+        }
 
         void EnsureFace()
         {
@@ -285,6 +302,7 @@ namespace FlockFive
         {
             _flapClock += Time.unscaledDeltaTime * (_flapHz / 4f);
             ApplyFlapFrame();
+            if (_flapAnchored) transform.localPosition += FlapBodyPull();
         }
 
         void ApplyFlapFrame()
