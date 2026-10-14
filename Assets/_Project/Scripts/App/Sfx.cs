@@ -250,6 +250,10 @@ namespace FlockFive
         static void Shot(AudioClip clip, float pitch, float vol, MixLayer layer, float leadDuck = MixDesk.DuckChirp)
         {
             if (clip == null) return;
+            LastShots++;
+            LastClipName = clip.name;
+            LastPitch = pitch;
+            LastLayer = layer;
             // One level rule for every one-shot, so no sound jumps out of the mix.
             vol = SfxLibrary.Level(vol) * AudioGuard.SfxScale;
             if (layer == MixLayer.Lead)
@@ -329,8 +333,14 @@ namespace FlockFive
 
         public static bool QuietMid => MixDesk.Live == null || MixDesk.Live.AllowMid;
 
+        public static int LastShots { get; private set; }
+        public static string LastClipName { get; private set; }
+        public static float LastPitch { get; private set; }
+        public static MixLayer LastLayer { get; private set; }
+
         public static void Chirp() => Chirp(BirdColor.Ruby);
 
+        // One real hum_sel chip per color. Pitch stays 1 so the recording does not turn into a whistle.
         public static void Chirp(BirdColor c)
         {
             Ensure();
@@ -350,6 +360,10 @@ namespace FlockFive
             {
                 var col = (BirdColor)i;
                 string n = VoiceName(col);
+                // Ruby hum_sel_00, Gold 01, Teal 02, Violet 03, Peach 04. Not the firework whistle.
+                string chip = "hum_sel_" + i.ToString("00");
+                clips[i] = Resources.Load<AudioClip>("Audio/Select/" + chip);
+                if (clips[i] != null) continue;
                 clips[i] = Resources.Load<AudioClip>("Audio/Select/" + n)
                         ?? Resources.Load<AudioClip>("Audio/Chirp/" + n);
                 if (clips[i] == null && bank != null)
