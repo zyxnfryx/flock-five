@@ -6419,6 +6419,9 @@ namespace FlockFive
             if (PressShotLive && t >= 0f && (_rainbowLogN++ % 10) == 0)
                 Debug.Log("FF_RAINBOW_DRAW t=" + t.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)
                     + " glints=" + glints + " washA=" + washA.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                    + " maxGlintPx=" + PressRainbow.LastMaxBodyPx.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " maxGlintPctW=" + (100f * PressRainbow.LastMaxBodyPx / Mathf.Max(1f, Screen.width)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " maxRectPx=" + PressRainbow.LastMaxRectPx.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
                     + " frame=" + Time.frameCount);
         }
 

@@ -501,8 +501,14 @@ namespace FlockFive
     {
         public const float Life = 1.55f;
         public const int N = 128;
-        const float WashUp = 0.95f, WashPeak = 1.20f;
+        const float WashUp = 0.92f, WashPeak = 1.20f;
         const int Ghosts = 6;
+        // fx_sparkle.png is a thin four-point star: only 21% of its 1024 px rect is
+        // opaque and the solid body spans ~45% of the rect. Sizes are visible-body px,
+        // so the drawn rect is body / StarBody (the old code sized the rect, which read
+        // at ~half: 6-22% targets landed at 4-6% on screen).
+        public const float StarBody = 0.45f;
+        public static float LastMaxRectPx, LastMaxBodyPx;
         const float GhostStep = 0.007f;
 
         static float _at = -1f;
@@ -555,7 +561,14 @@ namespace FlockFive
             float riseEnd = 0.36f + 0.14f * hr;
             float yTop = -(0.18f + 0.22f * hy) * H;
             float backStart = riseEnd + 0.05f + 0.12f * hb;
-            float backEnd = backStart + 0.62f + 0.10f * hd;
+            // Depth class by pair: mid (most), near (15-25% W) and the closest few (~30% W).
+            // Visible body sizes; the sprite rect is body / StarBody.
+            float vis = hd < 0.55f ? W * (0.07f + 0.10f * hd)
+                : hd < 0.90f ? W * (0.15f + 0.10f * (hd - 0.55f) / 0.35f)
+                : W * 0.30f;
+            float nearK = Mathf.Clamp01((vis / W - 0.07f) / 0.23f); // 0 mid .. 1 closest
+            // Near ones come at the camera faster.
+            float backEnd = backStart + (0.70f - 0.22f * nearK) + 0.06f * hd;
             if (t < riseEnd)
             {
                 float r = t / riseEnd;
@@ -572,15 +585,21 @@ namespace FlockFive
             else if (t < backEnd)
             {
                 float w = (t - backStart) / (backEnd - backStart);
-                float entry = -(0.10f + 0.25f * hy) * H;
-                y = entry + (1.25f * H - entry) * Mathf.Pow(w, 1.35f);
-                x = cx + (tx - cx) * (1f + 0.55f * w);
-                float near = W * (0.06f + 0.16f * hd * hd);
-                float z = w * w;
-                sz = far + (near - far) * z;
-                a = 1f - Mathf.Clamp01((w - 0.80f) / 0.20f);
+                // Perspective: scale ~ 1/(1 - 0.85 w), normalised 0..1 over the return,
+                // so it grows continuously and hard at the end, while still on screen.
+                float pw = 1f / (1f - 0.85f * w);
+                // Normalised so the target size lands at w = 0.9 (still on screen), then
+                // keeps swelling to 1.25x as it fades out of focus.
+                float pz = Mathf.Min(1.25f, (pw - 1f) / (1f / 0.15f - 1f) / 0.575f);
+                float entry = -(0.10f + 0.20f * hy) * H;
+                y = entry + (0.98f * H - entry) * Mathf.Pow(w, 1.5f);
+                // Parallax: near glints swing outward from centre as they close in.
+                x = cx + (tx - cx) * (0.75f + (0.35f + 0.75f * nearK) * pz);
+                float start = far * StarBody;
+                sz = (start + (vis - start) * pz) / StarBody;
+                a = 1f - Mathf.Clamp01((w - 0.90f) / 0.10f);
                 bloom = 0.4f + 0.6f * w;
-                soft = Mathf.Clamp01((w - 0.45f) / 0.45f);
+                soft = Mathf.Clamp01((pz - 0.35f) / 0.5f);
             }
             else return false;
             return y > -sz && y < H + sz && x > -sz && x < W + sz;
@@ -606,6 +625,7 @@ namespace FlockFive
 
             washA = DrawWash(t, W, H, glowTex);
             int drawn = 0;
+            LastMaxRectPx = 0f;
             for (int i = 0; i < N; i++)
             {
                 int pair = i >> 1;
@@ -626,16 +646,25 @@ namespace FlockFive
                 }
                 if (!At(i, t, W, H, ox, oy, out float x, out float y, out float sz, out float a, out float bl, out float sf))
                     continue;
+                if (sf > 0.02f)
+                {
+                    // Out-of-focus bokeh disc at the near end.
+                    float bk = sz * StarBody * 1.15f;
+                    GUI.color = new Color(c.r, c.g * 0.96f, c.b * 0.88f, a * 0.30f * sf);
+                    GUI.DrawTexture(new Rect(x - bk * 0.5f, y - bk * 0.5f, bk, bk), glowTex, ScaleMode.StretchToFill, true);
+                }
                 SparkleFx.DrawDepthGlint(x, y, sz, a, bl, sf, c, star, glowTex);
+                if (a > 0.1f && sz > LastMaxRectPx) LastMaxRectPx = sz;
                 drawn++;
             }
             GUI.color = prev;
+            LastMaxBodyPx = LastMaxRectPx * StarBody;
             return drawn;
         }
 
-        // Warm veil as centred radial glows (no flat fill, no bands): one big cream
-        // bloom on screen centre, a peach halo round it, a rose crown above. Combined
-        // peak ~0.45 at the centre, falling off to the edges, so the garden shows.
+        // Wash: an even full-screen warm cream/gold veil, top to bottom, plus centred
+        // radial glows for the painterly bloom (rose crown, peach body, gold low).
+        // Peak combined alpha ~0.7 at ~1.2 s, smooth clear by 1.55 s. Never pure white.
         static float DrawWash(float t, float W, float H, Texture glowTex)
         {
             if (t <= WashUp || t >= Life) return 0f;
@@ -645,10 +674,15 @@ namespace FlockFive
             if (k < 0.01f) return 0f;
             float D = Mathf.Sqrt(W * W + H * H);
             float cx = W * 0.5f, cy = H * 0.5f;
-            Glow(cx, cy, D * 1.30f, glowTex, LevelCurtain.BPeach, 0.16f * k);
-            Glow(cx, cy, D * 0.90f, glowTex, LevelCurtain.BCream, 0.20f * k);
-            Glow(cx, H * 0.30f, D * 0.70f, glowTex, LevelCurtain.BRose, 0.09f * k);
-            return 0.45f * k;
+            const float Veil = 0.50f;
+            GUI.color = new Color(1f, 0.90f, 0.70f, Veil * k);
+            GUI.DrawTexture(new Rect(0f, 0f, W, H), Texture2D.whiteTexture);
+            Glow(cx, cy, D * 1.30f, glowTex, LevelCurtain.BCream, 0.22f * k);
+            Glow(cx, H * 0.25f, D * 0.80f, glowTex, LevelCurtain.BRose, 0.12f * k);
+            Glow(cx, H * 0.50f, D * 0.80f, glowTex, LevelCurtain.BPeach, 0.12f * k);
+            Glow(cx, H * 0.78f, D * 0.80f, glowTex, LevelCurtain.BGold, 0.12f * k);
+            // Centre: 1 - (1-0.50)(1-0.22)(1-0.12) ~ 0.66-0.70 at the peak.
+            return (1f - (1f - Veil) * (1f - 0.22f) * (1f - 0.12f)) * k;
         }
 
         static void Glow(float x, float y, float d, Texture tex, Color c, float a)
