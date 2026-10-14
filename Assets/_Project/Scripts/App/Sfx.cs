@@ -139,6 +139,8 @@ namespace FlockFive
             _voices = null;
             _host = null;
             _v = 0;
+            _squish = null;
+            _squishAt = -1f;
         }
 
         static bool VoicesAlive()
@@ -515,7 +517,7 @@ namespace FlockFive
         static AudioClip _squish;
         static float _squishAt = -1f;
         public const string SquishPath = "Audio/Honey/sfx_honey_squish";
-        const float SquishSeat = 0.15f;      // Lead seat; Shot(Lead) would hold 0.55 s and mute bees/thunder
+        const float SquishSeat = 0.24f;      // Lead seat; Shot(Lead) would hold 0.55 s and mute bees/thunder
         const float SquishRetrigger = 0.06f; // one squish per tap even when pads overlap
 
         // Honeycomb press. Lead, short, and not the page turn. Lazy so warm-up
@@ -523,7 +525,7 @@ namespace FlockFive
         // (Resources/Audio/Honey/sfx_honey_squish) wins; MakeSquish is the fallback.
         public static void Squish()
         {
-            float now = Time.unscaledTime;
+            float now = AdPause.Unscaled;
             if (_squishAt >= 0f && now - _squishAt >= 0f && now - _squishAt < SquishRetrigger) return;
             _squishAt = now;
             Ensure();
