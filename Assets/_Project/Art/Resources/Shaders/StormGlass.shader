@@ -41,7 +41,7 @@ Shader "FlockFive/StormGlass"
                 float2 rad = max(_Rad.xy, float2(1e-5, 1e-5));
                 float2 n = (uv - _Bead.xy) / rad;
                 float r = length(n);
-                float edge = smoothstep(1.02, 0.90, r);
+                float edge = smoothstep(1.005, 0.96, r);
                 float a = _Bead.z * edge;
                 if (a < 0.003)
                     return float4(0, 0, 0, 0);
@@ -57,9 +57,9 @@ Shader "FlockFive/StormGlass"
                 lens *= lerp(1.05, 1.0, saturate(r));
 
                 float2 spec = n - float2(-0.28, 0.32);
-                float hot = exp(-dot(spec, spec) * 55.0);
-                float soft = exp(-dot(spec, spec) * 10.0);
-                lens += (hot * 0.85 + soft * 0.16) * float3(1.0, 0.985, 0.93);
+                float hot = exp(-dot(spec, spec) * 40.0);
+                float soft = exp(-dot(spec, spec) * 8.0);
+                lens += (hot * 0.70 + soft * 0.22) * float3(1.0, 0.985, 0.93);
 
                 return float4(lens, a);
             }
