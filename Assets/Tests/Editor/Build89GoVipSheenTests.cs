@@ -70,6 +70,39 @@ namespace FlockFive.Editor
             {
                 Check("exception", false, e.Message);
             }
+            try
+            {
+                // Pass 2: the face mask is the sprite's top-face silhouette.
+                // Gold top face centre is in, the thickness band and the petals are out.
+                Check("face-centre-in", PushButton.FaceCover(0.50f, 0.25f, PushButton.FaceInset) > 0.99f, "");
+                Check("face-side-band-out", PushButton.FaceCover(0.50f, 0.50f, 1f, 0f) == 0f
+                    && PushButton.FaceCover(0.50f, 0.60f, 1f, 0f) == 0f, "");
+                Check("face-above-out", PushButton.FaceCover(0.50f, 0.01f, 1f, 0f) == 0f, "");
+                Check("face-left-petals-out", PushButton.FaceCover(0.17f, 0.25f, 1f, 0f) == 0f
+                    && PushButton.FaceCover(0.86f, 0.25f, 1f, 0f) == 0f, "");
+
+                // Zero sheen pixels outside the face across the sweep, at several draw sizes.
+                int spill = 0;
+                foreach (var sz in new[] { new Vector2(878f, 695f), new Vector2(1300f, 1030f), new Vector2(800f, 634f) })
+                    foreach (float u in new[] { 0f, 0.05f, 0.25f, 0.5f, 0.75f, 0.95f, 1f })
+                        spill += PushButton.FaceSpillPixels(sz.x, sz.y, u);
+                Check("face-spill-zero", spill == 0, "spill=" + spill);
+
+                // Trace starts on the left rim: u = 0 band sits at the leftmost covered point.
+                float best = 0f, bx = 1f;
+                for (int y = 0; y < 200; y++)
+                    for (int x = 0; x < 256; x++)
+                    {
+                        float c = PushButton.FaceSheenAt((x + 0.5f) / 256f, (y + 0.5f) / 200f, 0.02f);
+                        if (c > best) { best = c; bx = (x + 0.5f) / 256f; }
+                    }
+                Check("face-start-left-rim", best > 0.5f && bx < 0.30f, "best=" + best.ToString("0.00") + " su=" + bx.ToString("0.000"));
+                Check("face-mid-bright", PushButton.FaceSheenAt(0.5f, 0.25f, 0.5f) > 0.5f, "");
+            }
+            catch (System.Exception e)
+            {
+                Check("exception-face", false, e.Message);
+            }
             sb.AppendLine(fail == 0 ? "BUILD89GOVIP_OK " + pass : "BUILD89GOVIP_FAIL " + fail + " passed " + pass);
             File.WriteAllText(Out, sb.ToString());
         }

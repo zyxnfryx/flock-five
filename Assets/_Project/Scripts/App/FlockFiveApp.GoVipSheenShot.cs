@@ -13,6 +13,7 @@ namespace FlockFive
         // on iPhone, iPad and Android. Full frame plus a crop of the disc.
         const string Dir89GoVipSheen = "/Users/zfxgames/wkspaces/birdshot/b89govip-sheen";
         internal static Rect Shot89BuyDisc;
+        internal static Rect Shot89BuyFace;
         public const string GoVipSheenArmKey = "ff.b89.govip-sheen";
 
         // Env-armed so parallel editors sharing /tmp cannot start or swallow it.
@@ -58,7 +59,7 @@ namespace FlockFive
                     yield return new WaitForSecondsRealtime(0.8f);
                     VipOffer.Show();
                     yield return new WaitForSecondsRealtime(3.8f);
-                    foreach (var (name, lo, hi) in new[] { ("start", 0.05f, 0.09f), ("mid", 0.48f, 0.54f) })
+                    foreach (var (name, lo, hi) in new[] { ("start", 0.08f, 0.11f), ("mid", 0.48f, 0.54f) })
                     {
                         float waited = 0f;
                         float u = PushButton.SheenU(AdPause.Unscaled);
@@ -80,7 +81,8 @@ namespace FlockFive
                         sb.AppendLine(dev + " " + name + " u=" + u.ToString("0.000") + " " + tex.width + "x" + tex.height
                             + " disc=" + d.x.ToString("0") + "," + d.y.ToString("0") + " " + d.width.ToString("0") + "x" + d.height.ToString("0")
                             + " edgeGapPx=" + (PushButton.OvalEdgeGap * d.width).ToString("0.0")
-                            + " oldEdgeGapPx=" + ((0.5f - 0.47f * Mathf.Sqrt(0.9f)) * d.width).ToString("0.0"));
+                            + " oldEdgeGapPx=" + ((0.5f - 0.47f * Mathf.Sqrt(0.9f)) * d.width).ToString("0.0")
+                            + " spillPx=" + SpillAt(Shot89BuyFace, 0, u));
                         Object.Destroy(tex);
                     }
                     VipOffer.Close();
@@ -98,6 +100,16 @@ namespace FlockFive
                 EditorApplication.isPlaying = false;
                 EditorApplication.delayCall += () => EditorApplication.Exit(0);
             }
+        }
+
+        // Sheen pixels outside the traced face at this sweep position, over the drawn fit rect.
+        static string SpillAt(Rect drawn, int tex2, float u)
+        {
+            var bloom = SpriteCatalog.PlayFlower;
+            if (drawn.width < 8f || bloom == null || bloom.texture == null) return "n/a";
+            var fit = PushButton.FitRect(drawn, bloom.texture.width, bloom.texture.height);
+            int bad = PushButton.FaceSpillPixels(fit.width, fit.height, u);
+            return bad + " (fit " + fit.width.ToString("0") + "x" + fit.height.ToString("0") + ")";
         }
     }
 }

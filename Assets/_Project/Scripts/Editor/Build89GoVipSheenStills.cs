@@ -10,6 +10,8 @@ namespace FlockFive.Editor
     {
         public static void CapturePass1() => Capture("pass1");
         public static void CapturePass2() => Capture("pass2");
+        public static void CapturePass2A() => Capture("pass2a");
+        public static void CapturePass2B() => Capture("pass2b");
         public static void Capture() => Capture(System.Environment.GetEnvironmentVariable("FF_GOVIP_TAG") ?? "after");
 
         static void Capture(string tag)
