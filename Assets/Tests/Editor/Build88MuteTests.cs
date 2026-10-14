@@ -187,7 +187,7 @@ namespace FlockFive.Editor
             var frame = SettingsSheet.Layout(w, h, safe, top);
             var b = frame.Body;
             bool row = b.SoundToggle.width >= 44f
-                && b.SoundSlider.width >= 44f
+                && b.SoundSlider.width >= frame.Content.width * 0.45f
                 && b.SoundToggle.height >= 44f
                 && b.SoundSlider.xMin >= b.SoundToggle.xMax - 0.5f
                 && Mathf.Abs(b.SoundToggle.y - b.SoundSlider.y) < 0.5f

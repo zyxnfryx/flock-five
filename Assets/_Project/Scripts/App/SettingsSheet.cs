@@ -123,19 +123,21 @@ namespace FlockFive
             if (scale < 0.5f) scale = 0.5f;
             if (inner.width < 8f) inner.width = 8f;
             float gap = gapOverride >= 0f ? gapOverride : RowGap * scale;
-            // Sound sits on the first row: the words on the left, the slider beside them.
+            // Sound sits on the first row: the words on the left, the slider half the row
+            // so the level is readable on a phone, not a short stub beside a wide button.
             float soundH = Mathf.Max(52f, 48f * scale);
-            float sliderW = Mathf.Max(88f, inner.width * 0.42f);
-            float toggleW = inner.width - sliderW - gap;
-            float minToggle = Mathf.Max(128f, 108f * scale);
+            float soundGap = Mathf.Max(gap, 12f * scale);
+            float sliderW = Mathf.Max(88f, inner.width * 0.50f);
+            float toggleW = inner.width - sliderW - soundGap;
+            float minToggle = Mathf.Max(112f, 92f * scale);
             if (toggleW < minToggle)
             {
-                toggleW = Mathf.Min(minToggle, Mathf.Max(72f, inner.width * 0.58f));
-                sliderW = inner.width - toggleW - gap;
+                toggleW = Mathf.Min(minToggle, Mathf.Max(72f, inner.width * 0.48f));
+                sliderW = inner.width - toggleW - soundGap;
             }
             if (sliderW < 48f) sliderW = 48f;
-            if (toggleW + gap + sliderW > inner.width)
-                toggleW = Mathf.Max(48f, inner.width - gap - sliderW);
+            if (toggleW + soundGap + sliderW > inner.width)
+                toggleW = Mathf.Max(48f, inner.width - soundGap - sliderW);
             var soundToggle = new Rect(inner.x, inner.y, toggleW, soundH);
             var soundSlider = new Rect(inner.xMax - sliderW, inner.y, sliderW, soundH);
             // Privacy and Do Not Sell share one row height and one left edge.
