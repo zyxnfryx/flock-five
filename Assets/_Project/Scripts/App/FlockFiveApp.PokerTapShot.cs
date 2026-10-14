@@ -20,8 +20,13 @@ namespace FlockFive
             AudioListener.pause = true;
         }
 
+        static bool _shotPokerTapOn;
+
         public IEnumerator ShotPokerTap()
         {
+            // A second trigger while the first clip is running would tap twice.
+            if (_shotPokerTapOn) yield break;
+            _shotPokerTapOn = true;
             const string mp4 = "/Users/zfxgames/wkspaces/wingout/b88-poker-tap.mp4";
             const string frames = "/tmp/b88-poker-tap-frames";
             const string log = "/tmp/flock-five-b88-poker-tap.txt";
@@ -55,7 +60,14 @@ namespace FlockFive
                 Directory.CreateDirectory(frames);
                 if (EditorGameSize != null) EditorGameSize(1179, 2556);
                 Screen.SetResolution(1179, 2556, false);
-                yield return new WaitForSecondsRealtime(6f);
+                // A modal (package errors) freezes the player, then one frame
+                // reports the whole stall. Cap the step so the splash still settles.
+                for (float settle = 0f; settle < 6f;)
+                {
+                    settle += Mathf.Min(Time.unscaledDeltaTime, 0.05f);
+                    MuteShotAudio();
+                    yield return null;
+                }
                 MuteShotAudio();
                 PlayerPrefs.SetInt("flockfive.next", 1);
                 PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
@@ -69,18 +81,62 @@ namespace FlockFive
                 PlayerPrefs.Save();
                 ShowSplash();
                 _streakSlide = -1f;
+                // Boot already armed daily and hive from the saved prefs. Those
+                // in-memory flags block the poker hand even after the prefs flip.
+                NoteDailyIntroLeft();
+                NoteHiveIntroLeft();
+                _dailyIntro = false;
+                _dailyIntroLive = false;
+                _dailyOpen = false;
+                _hiveIntro = false;
+                _hiveIntroLive = false;
+                _welcomeQueued = false;
+                _welcomeOpen = false;
+                _welcomeGlove = false;
+                _adoptLive = false;
+                _adoptOwed = false;
+                _adoptStep = AdoptStep.Off;
+                // ShowSplash stamps the poker lesson done if boot already saw it.
+                PlayerPrefs.SetInt(CoachPokerKey, 0);
                 ArmPokerIntro();
                 float wait = 0f;
-                while ((!_pokerIntroLive || !_gloveVis || _gloveAlpha < 0.9f) && wait < 12f)
+                while ((!_pokerIntroLive || !_gloveVis || _gloveAlpha < 0.9f) && wait < 20f)
                 {
-                    wait += Time.unscaledDeltaTime;
+                    wait += Mathf.Min(Time.unscaledDeltaTime, 0.05f);
                     MuteShotAudio();
                     if (_home != HomeFace.Splash) _home = HomeFace.Splash;
+                    _dailyIntro = false;
+                    _dailyIntroLive = false;
+                    _hiveIntro = false;
+                    _hiveIntroLive = false;
+                    _welcomeQueued = false;
+                    _welcomeOpen = false;
+                    _welcomeGlove = false;
+                    // Arm resets the fade, so only call it when the lesson is off.
+                    // A stamped key would make that call clear the lesson.
+                    if (!_pokerIntro)
+                    {
+                        PlayerPrefs.SetInt(CoachPokerKey, 0);
+                        ArmPokerIntro();
+                    }
                     yield return null;
                 }
+                bool gloveUp = _pokerIntroLive && _gloveVis && _gloveAlpha >= 0.9f;
                 Log("glove live=" + _pokerIntroLive + " vis=" + _gloveVis + " a=" + _gloveAlpha.ToString("0.00")
                     + " home=" + _home + " wait=" + wait.ToString("0.00")
+                    + " up=" + gloveUp
+                    + " splash=" + _splash + " rail=" + _railInit
+                    + " poker=" + _pokerIntro + " daily=" + _dailyIntro + " hive=" + _hiveIntro
+                    + " adopt=" + _adoptLive + "/" + _adoptStep + " owed=" + _adoptOwed
+                    + " welcome=" + _welcomeQueued + "/" + _welcomeOpen + "/" + _welcomeGlove
+                    + " shot=" + EditorShotLive + " next=" + LevelData.NextPlay
+                    + " pause=" + GamePause.Paused + " ads=" + Ads.IsBusy
                     + " tap=" + RailTapRect(RailPoker));
+                if (!gloveUp)
+                {
+                    Log("POKER_TAP_FAIL");
+                    yield break;
+                }
                 InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
                 InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
                 ts = InputSystem.AddDevice<Touchscreen>();
@@ -130,7 +186,10 @@ namespace FlockFive
                     n++;
                 }
                 Time.captureDeltaTime = 0f;
-                bool rearm = _pokerIntroLive || _gloveVis || _gloveAlpha > 0.05f;
+                // Home coach must stay down. The deal lesson on the poker table
+                // is the next step, not the home hand coming back.
+                bool homeHand = _home != HomeFace.Poker && (_gloveVis || _gloveAlpha > 0.05f);
+                bool rearm = _pokerIntroLive || homeHand;
                 Log("opened=" + opened + " home=" + _home + " intro=" + _pokerIntroLive
                     + " glove=" + _gloveVis + " a=" + _gloveAlpha.ToString("0.00")
                     + " rearm=" + rearm + " frames=" + n + " " + w + "x" + h);
@@ -151,6 +210,7 @@ namespace FlockFive
             }
             finally
             {
+                _shotPokerTapOn = false;
                 Time.captureDeltaTime = 0f;
                 ShotKeepAwake = false;
                 if (ts != null) InputSystem.RemoveDevice(ts);
