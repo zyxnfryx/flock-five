@@ -230,8 +230,8 @@ namespace FlockFive
                 float y1 = rect.w + rect.y;
                 float ex = cx + bead.x;
                 float ey = cy + bead.y;
-                float px = rx * 0.45f;
-                float py = ry * 0.45f;
+                float px = rx * 0.9f;
+                float py = ry * 0.9f;
                 if (ex - px < x0) x0 = ex - px;
                 if (ey - py < y0) y0 = ey - py;
                 if (ex + px > x1) x1 = ex + px;

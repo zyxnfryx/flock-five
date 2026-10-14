@@ -56,7 +56,7 @@ Shader "FlockFive/StormGlass"
                 float2 bn = local / max(rad * radMul, float2(1e-5, 1e-5));
                 float br = length(bn);
                 float disc = smoothstep(1.08, 0.55, br) * (1.0 - body);
-                float ba = disc * beadA * 0.82;
+                float ba = disc * beadA * 0.95;
                 if (ba <= a) return;
                 float reach = lerp(1.65, 2.15, saturate(br * br));
                 scene = SampleScene(_Bead.xy + at - local * reach);
@@ -87,17 +87,21 @@ Shader "FlockFive/StormGlass"
                 float3 scene = SampleScene(_Bead.xy - from * reach);
                 scene *= lerp(1.07, 1.14, splat);
 
-                float rim = smoothstep(0.975, 1.0, r) * body;
-                scene = lerp(scene, scene * float3(0.90, 0.92, 0.95), rim * (1.0 - splat * 0.35));
+                float rim = smoothstep(0.94, 1.0, r) * body;
+                scene = lerp(scene, scene * float3(0.86, 0.90, 0.96), rim * (1.0 - splat * 0.35));
+                float lip = smoothstep(0.93, 1.0, r) * body * (1.0 - splat);
+                scene += lip * float3(0.78, 0.88, 0.98) * 0.85;
 
-                float ring = smoothstep(0.48, 0.70, r) * smoothstep(1.04, 0.82, r) * splat;
-                scene += ring * float3(1.0, 0.98, 0.96) * 0.9;
-                float splashEdge = smoothstep(0.76, 0.98, r) * splat * body;
-                scene += splashEdge * 0.62;
+                float ring = smoothstep(0.30, 0.55, r) * smoothstep(1.08, 0.70, r) * splat;
+                scene += ring * float3(1.0, 0.98, 0.96) * 2.4;
+                float splashEdge = smoothstep(0.72, 0.98, r) * splat * body;
+                scene += splashEdge * 1.35;
 
                 float2 spec = n - float2(-0.30, 0.36);
-                float hot = exp(-dot(spec, spec) * 140.0);
-                scene += hot * 1.2 * float3(1.0, 0.99, 0.96) * body * (1.0 - splat);
+                float hot = exp(-dot(spec, spec) * 72.0);
+                scene += hot * 2.05 * float3(1.0, 0.99, 0.96) * body * (1.0 - splat);
+                float2 spec2 = n - float2(-0.08, 0.12);
+                scene += exp(-dot(spec2, spec2) * 200.0) * 0.65 * body * (1.0 - splat);
 
                 float a = _Bead.z * body;
 
@@ -107,20 +111,21 @@ Shader "FlockFive/StormGlass"
                 {
                     float along = dot(from, trail) / trailLen2;
                     float2 side = (from - trail * along) / rad;
-                    float halfW = lerp(0.16, 0.028, saturate(along));
-                    float streak = smoothstep(0.02, 0.08, along) * smoothstep(1.08, 0.55, along);
-                    streak *= smoothstep(halfW, halfW * 0.25, length(side));
-                    streak *= (1.0 - body) * _Bead.z * 0.5;
+                    float halfW = lerp(0.36, 0.07, saturate(along));
+                    float streak = smoothstep(0.0, 0.05, along) * smoothstep(1.05, 0.40, along);
+                    streak *= smoothstep(halfW, halfW * 0.22, length(side));
+                    streak *= (1.0 - body) * _Bead.z;
                     if (streak > a)
                     {
-                        scene = SampleScene(pos) * float3(1.04, 1.06, 1.09);
-                        a = streak;
+                        scene = SampleScene(pos) * float3(1.08, 1.12, 1.18);
+                        scene += float3(0.50, 0.64, 0.76) * 0.62;
+                        a = streak * 0.78;
                     }
 
                     // Tiny beads riding the wet line, largest near the drop.
-                    TrailBead(from, rad, trail * 0.40, 0.34, body, _Bead.z, a, scene);
-                    TrailBead(from, rad, trail * 0.68, 0.26, body, _Bead.z, a, scene);
-                    TrailBead(from, rad, trail * 0.92, 0.18, body, _Bead.z, a, scene);
+                    TrailBead(from, rad, trail * 0.34, 0.46, body, _Bead.z, a, scene);
+                    TrailBead(from, rad, trail * 0.62, 0.34, body, _Bead.z, a, scene);
+                    TrailBead(from, rad, trail * 0.88, 0.24, body, _Bead.z, a, scene);
                 }
 
                 if (a < 0.003)

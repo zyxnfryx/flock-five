@@ -145,19 +145,6 @@ namespace FlockFive
             int count = _rig._count;
             var blocks = _rig._blocks;
             int blockN = _rig._blockN;
-            for (int i = 0; i < count && n < cap; i++)
-            {
-                float a = StormGlass.Alpha(src[i].Age, src[i].Life, src[i].Kind);
-                a *= StormGlass.CoverMul(src[i].X, src[i].Y, blocks, blockN);
-                if (a < 0.02f) continue;
-                StormGlass.Shape(src[i].Age, src[i].Radius, out float prx, out float pry, out float splat);
-                if (!Write(area, texW, texH, src[i].X, src[i].Y, prx, pry, a, splat,
-                        src[i].Kind == StormGlass.Slide ? src[i].Vx : 0f,
-                        src[i].Kind == StormGlass.Slide ? src[i].Vy : 0f,
-                        src[i].Radius * 2.55f * (1f - splat),
-                        rects, beads, ref n))
-                    break;
-            }
             var specks = _rig._specks;
             int speckN = _rig._speckN;
             for (int i = 0; i < speckN && n < cap; i++)
@@ -169,6 +156,26 @@ namespace FlockFive
                 if (!Write(area, texW, texH, specks[i].X, specks[i].Y, r, r, a, 0f, 0f, 0f, 0f,
                         rects, beads, ref n))
                     break;
+            }
+            // Small beads first so a fat merge is the one you see on top.
+            for (int pass = 0; pass < 2; pass++)
+            {
+                for (int i = 0; i < count && n < cap; i++)
+                {
+                    bool fat = src[i].Radius >= 36f;
+                    if (pass == 0 && fat) continue;
+                    if (pass == 1 && !fat) continue;
+                    float a = StormGlass.Alpha(src[i].Age, src[i].Life, src[i].Kind);
+                    a *= StormGlass.CoverMul(src[i].X, src[i].Y, blocks, blockN);
+                    if (a < 0.02f) continue;
+                    StormGlass.Shape(src[i].Age, src[i].Radius, out float prx, out float pry, out float splat);
+                    if (!Write(area, texW, texH, src[i].X, src[i].Y, prx, pry, a, splat,
+                            src[i].Kind == StormGlass.Slide ? src[i].Vx : 0f,
+                            src[i].Kind == StormGlass.Slide ? src[i].Vy : 0f,
+                            src[i].Radius * 3.8f * (1f - splat),
+                            rects, beads, ref n))
+                        break;
+                }
             }
             if (n > 0 && !_rig._logged)
             {

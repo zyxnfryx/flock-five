@@ -15,24 +15,24 @@ namespace FlockFive
         public const byte Sticky = 1;
         public const bool BlocksTaps = false;
 
-        public const float LifeMin = 2.4f;
-        public const float LifeMax = 4.2f;
-        public const float StickyLifeMin = 3.2f;
-        public const float StickyLifeMax = 5.0f;
+        public const float LifeMin = 2.8f;
+        public const float LifeMax = 5.6f;
+        public const float StickyLifeMin = 3.4f;
+        public const float StickyLifeMax = 6.4f;
         public const float WetOn = 0.22f;
         public const float RadiusMin = 8f;
-        public const float RadiusMax = 46f;
-        public const float RadiusCap = 72f;
-        public const float SplatDur = 0.22f;
+        public const float RadiusMax = 88f;
+        public const float RadiusCap = 130f;
+        public const float SplatDur = 0.36f;
         public const float CoverKeep = 0.18f;
         public const float CoverFade = 0.32f;
-        public const float GapMin = 0.08f;
-        public const float GapMax = 0.18f;
+        public const float GapMin = 0.055f;
+        public const float GapMax = 0.12f;
         public const float StickyCreep = 10f;
 
         const int SpawnTries = 18;
         const float RefH = 2556f;
-        const float TrailStep = 18f;
+        const float TrailStep = 16f;
         const float Touch = 0.92f;
 
         public struct Bead
@@ -129,7 +129,7 @@ namespace FlockFive
             if (tail > 1f) tail = 1f;
             if (tail < 0f) tail = 0f;
             float a = inn < tail ? inn : tail;
-            return a * 0.78f;
+            return a * 0.92f;
         }
 
         // Impact is a small flat splat. It gathers into a round bead.
@@ -284,8 +284,11 @@ namespace FlockFive
                 b.Vy = -StickyCreep * scale;
                 return;
             }
-            float side = Mathf.Sin(b.Phase) * wob * scale;
-            float side2 = Mathf.Sin(b.Phase * 0.41f + 1.3f) * wob * 0.28f * scale;
+            // The phase rate stays high enough that a planted bead still
+            // switches sides inside a short window. The gain is what makes
+            // the wander a visible meander on a phone-height pane.
+            float side = Mathf.Sin(b.Phase) * wob * 3.2f * scale;
+            float side2 = Mathf.Sin(b.Phase * 0.41f + 1.3f) * wob * 0.7f * scale;
             b.Vx = b.Drift * scale + side + side2;
             b.Vy -= Accel(b.Radius, scale) * dt;
             float term = Terminal(b.Radius, scale);
@@ -327,13 +330,13 @@ namespace FlockFive
             if (b.Trail > step) b.Trail = step * 0.5f;
             float inv = 1f / dist;
             float back = b.Radius * 0.2f;
-            float sr = b.Radius * 0.15f;
-            float lo = 6.0f * scale;
-            float hi = 10.5f * scale;
+            float sr = b.Radius * 0.16f;
+            float lo = 12f * scale;
+            float hi = 22f * scale;
             if (sr < lo) sr = lo;
             if (sr > hi) sr = hi;
-            float life = 0.62f + (b.Radius / (RadiusCap * scale)) * 0.28f;
-            if (life > 1.05f) life = 1.05f;
+            float life = 0.85f + (b.Radius / (RadiusCap * scale)) * 0.7f;
+            if (life > 1.7f) life = 1.7f;
             AddSpeck(specks, ref speckN, b.X - dx * inv * back, b.Y - dy * inv * back, sr, life);
         }
 
@@ -367,7 +370,8 @@ namespace FlockFive
             if (sum < 1e-3f) return;
             a.X = (a.X * a1 + b.X * a2) / sum;
             a.Y = (a.Y * a1 + b.Y * a2) / sum;
-            float nr = Mathf.Sqrt(sum);
+            // A little fuller than the two areas, so the join reads on the pane.
+            float nr = Mathf.Sqrt(sum) * 1.18f;
             float cap = RadiusCap * scale;
             if (nr > cap) nr = cap;
             float prev = a.Vy < 0f ? -a.Vy : a.Vy;
@@ -422,12 +426,12 @@ namespace FlockFive
             if (n >= BeadCap || n >= beads.Length) return false;
             float roll = rng.Next01();
             float radRef;
-            if (roll < 0.52f) radRef = rng.Range(8f, 15f);
-            else if (roll < 0.84f) radRef = rng.Range(17f, 29f);
-            else radRef = rng.Range(32f, 46f);
+            if (roll < 0.36f) radRef = rng.Range(9f, 16f);
+            else if (roll < 0.70f) radRef = rng.Range(28f, 52f);
+            else radRef = rng.Range(60f, RadiusMax);
             byte kind = Slide;
             float life;
-            if (radRef < 15.5f && rng.Next01() < 0.40f)
+            if (radRef < 15.5f && rng.Next01() < 0.42f)
             {
                 kind = Sticky;
                 life = rng.Range(StickyLifeMin, StickyLifeMax);
@@ -440,20 +444,24 @@ namespace FlockFive
             float x1 = areaX + areaW - inset;
             float y1 = areaY + areaH - inset;
             if (x1 <= x0 || y1 <= y0) return false;
-            float yLo = y0 + (y1 - y0) * 0.30f;
+            float yLo = y0 + (y1 - y0) * 0.12f;
             // One cover roll for the whole attempt. Retries look for open glass,
             // so a bird does not fill up, and a fully covered pane stays thin.
             bool allowCover = KeepOver(rng.Next01());
             for (int t = 0; t < SpawnTries; t++)
             {
-                // Most drops share a lane, so a fat bead runs down into the ones ahead.
+                // Three lanes in the open middle, so a fat bead runs down
+                // the clear column and catches the ones ahead of it.
                 float x;
-                if (rng.Next01() < 0.72f)
+                if (rng.Next01() < 0.80f)
                 {
-                    int lane = (int)(rng.Next01() * 5f);
-                    if (lane > 4) lane = 4;
-                    float laneX = x0 + (x1 - x0) * ((lane + 0.5f) / 5f);
-                    x = laneX + rng.Range(-38f, 38f) * scale;
+                    int lane = (int)(rng.Next01() * 3f);
+                    if (lane > 2) lane = 2;
+                    float span = x1 - x0;
+                    float band0 = x0 + span * 0.20f;
+                    float band1 = x0 + span * 0.80f;
+                    float laneX = band0 + (band1 - band0) * ((lane + 0.5f) / 3f);
+                    x = laneX + rng.Range(-22f, 22f) * scale;
                     if (x < x0) x = x0;
                     else if (x > x1) x = x1;
                 }
@@ -463,9 +471,9 @@ namespace FlockFive
                     continue;
                 if (!ClearOf(x, y, rad, beads, n))
                     continue;
-                float drift = kind == Sticky ? rng.Range(-4f, 4f) : rng.Range(-16f, 16f);
-                float wobble = kind == Sticky ? rng.Range(4f, 10f) : rng.Range(18f, 46f);
-                float vy = kind == Sticky ? -StickyCreep : -rng.Range(6f, 18f);
+                float drift = kind == Sticky ? rng.Range(-4f, 4f) : rng.Range(-22f, 22f);
+                float wobble = kind == Sticky ? rng.Range(4f, 10f) : rng.Range(32f, 72f);
+                float vy = kind == Sticky ? -StickyCreep : -rng.Range(4f, 12f);
                 beads[n] = new Bead
                 {
                     X = x,
@@ -502,14 +510,14 @@ namespace FlockFive
 
         static void Burst(Speck[] specks, ref int speckN, float x, float y, float rad, float scale, ref Rng rng)
         {
-            for (int k = 0; k < 3; k++)
+            for (int k = 0; k < 4; k++)
             {
                 float ang = rng.Range(0f, 6.28318f);
-                float d = rad * rng.Range(0.85f, 1.45f);
-                float sr = rng.Range(5.5f, 9.0f) * scale;
+                float d = rad * rng.Range(0.9f, 1.35f);
+                float sr = rng.Range(9f, 16f) * scale;
                 AddSpeck(specks, ref speckN,
                     x + Mathf.Cos(ang) * d, y + Mathf.Sin(ang) * d,
-                    sr, rng.Range(0.26f, 0.48f));
+                    sr, rng.Range(0.40f, 0.75f));
             }
         }
 

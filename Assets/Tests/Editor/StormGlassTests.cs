@@ -88,7 +88,7 @@ namespace FlockFive.Editor
             Check("pool-fills", peak >= 10 && speckPeak >= 8,
                 "beads " + peak + " specks " + speckPeak);
             Check("spawns-many", spawned > 120, "spawned " + spawned);
-            Check("sizes-vary", radLo < 16f && radHi > 30f && radHi <= StormGlass.RadiusMax + 0.01f,
+            Check("sizes-vary", radLo < 16f && radHi > 55f && radHi <= StormGlass.RadiusMax + 0.01f,
                 "r " + radLo.ToString("0.0") + ".." + radHi.ToString("0.0"));
             Check("some-stick", stickies > 8, "sticky " + stickies);
             Check("life-in-range", lifeBad == 0 && lifeLo >= StormGlass.LifeMin - 0.001f && lifeHi <= StormGlass.StickyLifeMax + 0.001f,
