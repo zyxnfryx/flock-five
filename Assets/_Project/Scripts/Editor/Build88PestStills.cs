@@ -13,10 +13,12 @@ namespace FlockFive.Editor
     {
         const string Arm = "/tmp/flock-five-wt-b88-pest-arm";
         const string Trigger = "/tmp/flock-five-wt-b88-pest";
+        static bool _watching;
 
         static Build88PestStills()
         {
-            EditorApplication.update += Watch;
+            if (!Application.isBatchMode && File.Exists(Arm))
+                ArmWatch();
         }
 
         public static void Capture()
@@ -26,14 +28,26 @@ namespace FlockFive.Editor
             Directory.CreateDirectory("/Users/zfxgames/wkspaces/wingout");
             Build79Stills.SetGameView(1179, 2556);
             File.WriteAllText(Arm, "1");
+            ArmWatch();
         }
 
-        // Keep asking until play mode is actually up. A one-shot delayCall
-        // was lost when a define-symbol reload cancelled the first entry.
+        static void ArmWatch()
+        {
+            if (_watching) return;
+            _watching = true;
+            EditorApplication.update += Watch;
+        }
+
+        // Keep asking until play mode is actually up. Drop the hook once the
+        // arm file is gone so a normal editor session does not stat it forever.
         static void Watch()
         {
-            if (Application.isBatchMode) return;
-            if (!File.Exists(Arm)) return;
+            if (Application.isBatchMode || !File.Exists(Arm))
+            {
+                EditorApplication.update -= Watch;
+                _watching = false;
+                return;
+            }
             if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
             if (EditorApplication.isPlayingOrWillChangePlaymode) return;
             AudioListener.volume = 0f;
