@@ -2,8 +2,8 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Gold sparkles burst out of LEVEL toward the player: they fan out radially, lift,
-    // grow as they near, then sink a touch and fade.
+    // Gold sparkles leave LEVEL together like the far end of a rainbow, rise off the
+    // top of the screen and come back down at the player, large and bright.
     // The garden shows through every gap. No frame is a solid or near-solid fill.
     // The clock starts when LEVEL is pressed. Load begins on that same press.
     // Until the load is ready the clock holds at the apex, so a slow load waits
@@ -283,18 +283,20 @@ namespace FlockFive
         static void DrawBloomOver(float b, Vector2 at, float side, Texture tex, Texture glowTex)
         {
             if (b < 0f || b > BloomLife) return;
-            // Forward shell: glints thrown radially from the flower toward the player,
-            // each on its own spoke (golden angle), lifting, growing ~3x as it nears.
+            // Release wave: every glint leaves the flower on this frame, on its own
+            // landing column across the full width (mirrored, stratified lanes), up past
+            // the top edge and back down at the camera.
+            float W = Screen.width, H = Screen.height;
             for (int i = 0; i < ShellCount; i++)
             {
-                float h1 = Hash(i, 31), h2 = Hash(i, 32), h3 = Hash(i, 33), h4 = Hash(i, 34);
-                float ang = i * 2.39996f;
-                if (!SparkleFx.TowardAt(b - h1 * 0.04f, 0.45f + 0.30f * h2, at.x, at.y,
-                        Mathf.Cos(ang), Mathf.Sin(ang) * 0.85f,
-                        side * (1.1f + 1.6f * h3), side * 0.60f, side * 0.4f, 3.5f, out var p))
+                int lane = i >> 1;
+                float h2 = Hash(lane, 32), h4 = Hash(lane, 34), h7 = Hash(lane, 37);
+                float tx = W * 0.5f + SparkleFx.Lane(i, ShellCount, h7, W * 0.62f);
+                if (!SparkleFx.DepthArcAt(b, 0.62f + 0.14f * h2, at.x, at.y, tx,
+                        -0.28f * H, 1.25f * H, 0.6f, 1.4f, 0.78f, out var p))
                     continue;
                 var c = h4 < 0.45f ? BGold : h4 < 0.70f ? BCream : h4 < 0.90f ? BPeach : BRose;
-                SparkleFx.DrawToward(p, side * (0.04f + 0.035f * h4), c, 1f);
+                SparkleFx.DrawDepth(p, side * (0.035f + 0.03f * h4), c, 1f);
             }
 
             // Centre star: glow halo, gold star, then a smaller cream star on top.
@@ -310,6 +312,7 @@ namespace FlockFive
         }
 
         // Individual glints in GUI pixels (y grows down). Nothing here is a screen fill.
+        // Every glint starts on the same frame; nothing is ordered by index or x.
         public static int Fill(float age, float screenW, float screenH, Rect sourcePx, Glint[] dst)
         {
             if (dst == null || dst.Length < 1 || screenW < 2f || screenH < 2f) return 0;
@@ -325,6 +328,9 @@ namespace FlockFive
             if (oy < 0.08f) oy = 0.08f;
             else if (oy > 0.94f) oy = 0.94f;
             float minSide = screenW < screenH ? screenW : screenH;
+            // Glint size follows a phone-width reference, so a 3:4 tablet does not read
+            // as a solid fill when the near wave arrives.
+            float sizeRef = minSide < screenH * 0.5625f ? minSide : screenH * 0.5625f;
             int n = 0;
             int cap = dst.Length;
             for (int i = 0; i < Count && n < cap; i++)
@@ -335,10 +341,10 @@ namespace FlockFive
                 {
                     X = nx * screenW,
                     Y = ny * screenH,
-                    Size = sizeN * minSide,
+                    Size = sizeN * sizeRef,
                     Alpha = alpha,
                     Hot = hot ? (byte)1 : (byte)0,
-                    Tint = TintOf(i),
+                    Tint = TintOf(i >> 1),
                     Bloom = bloom
                 };
                 dst[n++] = g;
@@ -346,35 +352,39 @@ namespace FlockFive
             return n;
         }
 
-        // Normalized GUI space, y = 0 at the top. Each glint is a forward particle
-        // (SparkleFx.TowardAt) on its own spoke out of the button: it lifts, fans out and
-        // grows toward the player, sinks a touch, and fades late. Spoke maths runs in
-        // min-side units (sx, sy map them to normalized x / y) so the fan stays round.
-        public const float ScaleTo = 3.5f;
+        // Normalized GUI space, y = 0 at the top. Each glint rides SparkleFx.DepthArcAt:
+        // it leaves the button with all the others, rises off the top of the screen,
+        // then comes back down at the camera (scale ~ 1/(1 - z)) onto its own landing
+        // column. Columns are mirrored, stratified lanes across the full width.
+        public const float ArcTop = -0.30f;
+        public const float ArcLand = 1.25f;
+        public const float ArcHalfSpan = 0.62f;
+        public const float ScaleFar = 0.6f;
+        public const float ScalePeak = 1.4f;
+        public const float ZMax = 0.78f;
 
         static bool Place(int i, float age, float ox, float oy, float sx, float sy,
             out float nx, out float ny, out float alpha, out float sizeN, out bool hot, out float bloom)
         {
             nx = ny = alpha = sizeN = bloom = 0f;
             hot = false;
-            float h1 = Hash(i, 1);
-            float h2 = Hash(i, 2);
-            float h3 = Hash(i, 3);
-            float h4 = Hash(i, 4);
-            float h6 = Hash(i, 6);
-            float t = age - h1 * 0.16f;
-            if (t < 0f) return false;
-            float ang = h6 * 6.2832f;
-            if (!SparkleFx.TowardAt(t, 0.70f + 0.25f * h3, 0f, 0f, Mathf.Cos(ang), Mathf.Sin(ang) * 0.8f,
-                    0.30f + 0.55f * h4, 0.85f + 0.25f * h3, 1.0f, ScaleTo, out var p))
+            if (age < 0f) return false;
+            int lane = i >> 1;
+            float h2 = Hash(lane, 2);
+            float h3 = Hash(lane, 3);
+            float h4 = Hash(lane, 4);
+            float h7 = Hash(lane, 7);
+            float tx = 0.5f + SparkleFx.Lane(i, Count, h7, ArcHalfSpan);
+            if (!SparkleFx.DepthArcAt(age, 0.85f + 0.20f * h3, ox, oy, tx, ArcTop, ArcLand,
+                    ScaleFar, ScalePeak, ZMax, out var p))
                 return false;
-            nx = ox + p.X * sx;
-            ny = oy + p.Y * sy;
+            nx = p.X;
+            ny = p.Y;
             if (ny > 1.12f) return false;
             hot = h2 > 0.74f;
-            sizeN = ((hot ? 0.010f : 0.013f) + (hot ? 0.008f : 0.018f) * h4) * p.Scale;
+            sizeN = ((hot ? 0.009f : 0.010f) + (hot ? 0.006f : 0.008f) * h4) * p.Scale;
             bloom = p.Bloom;
-            float tw = 0.45f + 0.55f * Mathf.Sin(t * 16f + h4 * 11f);
+            float tw = 0.45f + 0.55f * Mathf.Sin(age * 16f + h4 * 11f);
             if (tw < 0f) tw = 0f;
             tw = 0.55f + 0.45f * tw * tw;
             alpha = tw * p.Alpha;
@@ -390,25 +400,25 @@ namespace FlockFive
             return h < 0.55f ? (byte)0 : h < 0.77f ? (byte)1 : h < 0.92f ? (byte)2 : (byte)3;
         }
 
-        // Handoff into the stage: embers on slower forward spokes. They fan out from the
-        // flower, lift and grow as they come at the player, and fade by BloomLife over
-        // the new garden. What carries the press across the cut. No sideways drift.
+        // Handoff into the stage: a second, slower depth wave from the release. Same
+        // synchronized arc on interleaved lanes; it re-enters just behind the release
+        // wave and carries the light over the new garden. Fades by BloomLife.
         const int EmberCount = 48;
 
         static void DrawEmbers(float b, Vector2 at, float side, Texture tex, Texture glowTex)
         {
             if (b < 0f || b > BloomLife) return;
+            float W = Screen.width, H = Screen.height;
             for (int i = 0; i < EmberCount; i++)
             {
-                float h1 = Hash(i, 21), h2 = Hash(i, 22), h3 = Hash(i, 23), h4 = Hash(i, 24);
-                float t = b - (0.03f + h1 * 0.10f);
-                float life = BloomLife - 0.10f - h1 * 0.10f;
-                float ang = h2 * 6.2832f;
-                if (!SparkleFx.TowardAt(t, life, at.x, at.y, Mathf.Cos(ang), Mathf.Sin(ang) * 0.85f,
-                        side * (1.6f + 2.0f * h3), side * 1.0f, side * 0.8f, 4.0f, out var p))
+                int lane = i >> 1;
+                float h3 = Hash(lane, 23), h4 = Hash(lane, 24), h7 = Hash(lane, 27);
+                float tx = W * 0.5f + SparkleFx.Lane(i, EmberCount, h7, W * 0.58f);
+                if (!SparkleFx.DepthArcAt(b, 0.74f + 0.08f * h3, at.x, at.y, tx,
+                        -0.22f * H, 1.25f * H, 0.5f, 1.2f, 0.80f, out var p))
                     continue;
                 var c = h4 < 0.50f ? BGold : h4 < 0.75f ? BPeach : h4 < 0.92f ? BCream : BRose;
-                SparkleFx.DrawToward(p, side * (0.025f + 0.03f * h4), c, 0.9f);
+                SparkleFx.DrawDepth(p, side * (0.022f + 0.022f * h4), c, 0.9f);
             }
         }
 

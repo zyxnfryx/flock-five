@@ -132,43 +132,75 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        // Depth-forward burst particle: thrown from a centre toward the player. It fans
-        // out along its own radial direction with an upward lift (ease-out travel), grows
-        // as it nears (perspective), then sinks a touch and fades late. Pure math, no
-        // state, no sideways sweep. Units are the caller's (pixels or normalized).
-        public struct Toward
+        // Rainbow depth arc. Every particle leaves the button at the same moment, small
+        // and far (the far end of the rainbow). It rises and grows modestly, leaves past
+        // the top edge, then comes back down at the camera on a perspective curve,
+        // scale ~ 1/(1 - z), and washes past the viewer (the near end). tx is the
+        // particle's own landing column, so the spread is set by the caller's lanes,
+        // never by emission order or a sweep. Pure math, no state. Caller's units.
+        public struct Depth
         {
-            public float X, Y, Scale, Alpha, Bloom;
+            public float X, Y, Scale, Alpha, Bloom, Soft;
         }
 
-        public static bool TowardAt(float age, float life, float ox, float oy, float dirX, float dirY,
-            float reach, float lift, float sink, float scaleTo, out Toward p)
+        // Fraction of life spent on the rise; the top of the arc is off screen.
+        public const float ArcPeak = 0.42f;
+
+        public static bool DepthArcAt(float age, float life, float ox, float oy, float tx,
+            float yTop, float yLand, float scaleFar, float scalePeak, float zMax, out Depth d)
         {
-            p = default(Toward);
+            d = default(Depth);
             if (age < 0f || life <= 0.001f) return false;
             float u = age / life;
             if (u >= 1f) return false;
-            float v = 1f - u;
-            float travel = 1f - v * v * v;
-            p.X = ox + dirX * reach * travel;
-            p.Y = oy + dirY * reach * travel - lift * travel + sink * u * u;
-            float grow = 1f - v * v;
-            p.Scale = 1f + (scaleTo - 1f) * grow;
-            // Fade late: full until 60% of life, then a smoothstep out.
-            float fin = age < 0.04f ? age / 0.04f : 1f;
-            float q = u < 0.60f ? 0f : (u - 0.60f) / 0.40f;
-            p.Alpha = fin * (1f - q * q * (3f - 2f * q));
-            // Brightness bloom rises as it nears and crests around 70% of life.
-            p.Bloom = grow * grow * (1f - 0.5f * q);
-            return p.Alpha > 0.01f;
+            float sx, w;
+            if (u < ArcPeak)
+            {
+                // Thrown up: ease-out rise, spreading and growing a little.
+                float r = u / ArcPeak;
+                float e = 1f - (1f - r) * (1f - r);
+                d.Y = oy + (yTop - oy) * e;
+                sx = 0.35f * e;
+                d.Scale = scaleFar + (scalePeak - scaleFar) * e;
+                w = 0f;
+            }
+            else
+            {
+                // Coming at the camera: ease-in fall, spread and scale on perspective.
+                w = (u - ArcPeak) / (1f - ArcPeak);
+                d.Y = yTop + (yLand - yTop) * w * w;
+                sx = 0.35f + 0.65f * w * Mathf.Sqrt(w);
+                d.Scale = scalePeak / (1f - zMax * w);
+            }
+            d.X = ox + (tx - ox) * sx;
+            float fin = age < 0.03f ? age / 0.03f : 1f;
+            d.Alpha = fin * (1f - Smooth01((w - 0.85f) / 0.15f));
+            d.Bloom = w;
+            d.Soft = Smooth01((w - 0.6f) / 0.4f);
+            return d.Alpha > 0.01f;
         }
 
-        // One forward particle, painted in three layers: a soft glow that warms up as
-        // it nears, the tinted star (lifted toward cream by Bloom), and a small hot core
-        // on the nearest ones. Reads as gilded paint catching light, not a lens flare.
+        static float Smooth01(float x)
+        {
+            x = Mathf.Clamp01(x);
+            return x * x * (3f - 2f * x);
+        }
+
+        // Landing column offset for particle i of n, from the centre. Mirrored pairs
+        // (i, i ^ 1) sit the same distance either side; lanes are stratified so the
+        // columns cover [-halfSpan, halfSpan] evenly. jitter01 must hash the lane (i >> 1).
+        public static float Lane(int i, int n, float jitter01, float halfSpan)
+        {
+            int lanes = n / 2;
+            if (lanes < 1) lanes = 1;
+            float d = ((i >> 1) + 0.5f + (jitter01 - 0.5f) * 0.9f) / lanes * halfSpan;
+            return (i & 1) == 0 ? -d : d;
+        }
+
+        // One depth particle: soft glow, the tinted star, and a hot core as it nears.
         static readonly Color NearCream = new Color(1f, 0.97f, 0.88f, 1f);
 
-        public static void DrawToward(Toward p, float baseSize, Color tint, float alpha)
+        public static void DrawDepth(Depth p, float baseSize, Color tint, float alpha)
         {
             float a = p.Alpha * alpha;
             if (a < 0.02f) return;
@@ -188,12 +220,6 @@ namespace FlockFive
             var c = Color.Lerp(tint, NearCream, 0.55f * bl);
             GUI.color = new Color(c.r, c.g, c.b, a);
             GUI.DrawTexture(new Rect(p.X - sz * 0.5f, p.Y - sz * 0.5f, sz, sz), tex, ScaleMode.ScaleToFit, true);
-            if (bl > 0.35f)
-            {
-                float k = sz * 0.45f;
-                GUI.color = new Color(1f, 0.99f, 0.94f, a * (bl - 0.35f) * 1.1f);
-                GUI.DrawTexture(new Rect(p.X - k * 0.5f, p.Y - k * 0.5f, k, k), tex, ScaleMode.ScaleToFit, true);
-            }
             GUI.color = Color.white;
         }
 
