@@ -204,7 +204,6 @@ namespace FlockFive
         }
 
         static Texture2D _notifyBadge;
-        static Texture2D _cautionMark;
         static GUIStyle _notifyDigits;
 
         // Hard antialiased disc: dark outer edge, cream ring, red face.
@@ -594,55 +593,6 @@ namespace FlockFive
             float cy = body.y - pad.y - oy;
             var num = new Rect(cx - boxW * 0.5f, cy - boxH * 0.5f, boxW, boxH);
             StampOutlined(num, text, style, color, 0, blackPx);
-        }
-
-        static Texture2D CautionMarkTex()
-        {
-            if (_cautionMark != null) return _cautionMark;
-            const int n = 64;
-            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
-            {
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp,
-                hideFlags = HideFlags.HideAndDontSave,
-                name = "CautionMark"
-            };
-            var px = new Color32[n * n];
-            for (int y = 0; y < n; y++)
-            {
-                float ny = 1f - (y + 0.5f) / n;
-                for (int x = 0; x < n; x++)
-                {
-                    float nx = (x + 0.5f) / n;
-                    float half = Mathf.Lerp(0.06f, 0.48f, ny);
-                    float dx = Mathf.Abs(nx - 0.5f);
-                    if (dx > half) continue;
-                    float edge = (half - dx) * n;
-                    float baseE = ny * n;
-                    float a = Mathf.Clamp01(Mathf.Min(edge, baseE));
-                    if (a <= 0f) continue;
-                    float rim = Mathf.Clamp01(Mathf.Min(edge, baseE) / 3.2f);
-                    Color col = rim < 1f
-                        ? new Color(0.10f, 0.06f, 0.04f, 1f)
-                        : new Color(1f, 0.78f, 0.18f, 1f);
-                    if (rim > 1f && dx > half - 5.5f / n)
-                        col = Color.Lerp(col, new Color(1f, 0.96f, 0.78f, 1f), 0.65f);
-                    col.a *= a;
-                    px[y * n + x] = col;
-                }
-            }
-            tex.SetPixels32(px);
-            tex.Apply(false, true);
-            _cautionMark = tex;
-            return tex;
-        }
-
-        static void DrawCautionMark(Rect r)
-        {
-            var tex = CautionMarkTex();
-            if (tex == null || r.width < 2f) return;
-            GUI.color = Color.white;
-            GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
         }
 
         // ONE shared check mark (VIP benefit lines, Daily Bonus claimed tiles). It is a

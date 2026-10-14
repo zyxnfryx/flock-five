@@ -29,6 +29,8 @@ namespace FlockFive
         bool _keepStreak;
         enum RestartAsk { None, Sure, Keep }
         RestartAsk _restartAsk;
+        // Seconds into the kept-badge heal. Negative means the chip is still at risk.
+        float _streakHealAge = -1f;
         int _restartSavedMul;
         bool _restartAd;
         float _gardenStampAt = -1f;
@@ -715,6 +717,7 @@ namespace FlockFive
                 if (!GatePopup(PopupKind.Streak, true)) return;
                 _restartSavedMul = StreakTier.Normalize(Purse.Streak);
                 _restartAsk = RestartAsk.Sure;
+                _streakHealAge = -1f;
                 _gift = GiftFace.None;
                 _freezeOffer = false;
                 Sfx.CardTap();
@@ -8977,6 +8980,7 @@ namespace FlockFive
                 {
                     Purse.BreakStreak();
                     _restartAsk = RestartAsk.Keep;
+                    _streakHealAge = -1f;
                     Sfx.CardTap();
                 }
                 return;
@@ -8987,9 +8991,14 @@ namespace FlockFive
             var watchR = new Rect(inner.xMax - bw, inner.yMax - bh, bw, bh);
             float xSz = Mathf.Max(40f, 42f * s);
             var xBtn = new Rect(card.xMax - xSz - 6f, card.y + 6f, xSz, xSz);
-            bool decline = HitPad(noThanks, out bool declineHeld);
-            bool watch = HitPad(watchR, out bool watchHeld);
-            bool close = HitPad(CloseTapRect(xBtn), out bool xHeld);
+            // The heal owns the card. A tap here would restart under the sweep.
+            bool healing = _streakHealAge >= 0f;
+            bool declineHeld = false;
+            bool watchHeld = false;
+            bool xHeld = false;
+            bool decline = !healing && HitPad(noThanks, out declineHeld);
+            bool watch = !healing && HitPad(watchR, out watchHeld);
+            bool close = !healing && HitPad(CloseTapRect(xBtn), out xHeld);
             DrawPopupButton(noThanks, declineHeld, PopupTint.Red);
             DrawPopupButton(watchR, watchHeld, PopupTint.Green);
             DrawPopupWord(noThanks, "No thanks", st, s);
@@ -9001,6 +9010,14 @@ namespace FlockFive
                 return;
             }
             if (decline || close) StartCoroutine(FinishRestart(false));
+#if UNITY_EDITOR
+            if (_streakShotVeil > 0.02f)
+            {
+                GUI.color = new Color(0.04f, 0.025f, 0.015f, 0.94f * _streakShotVeil);
+                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
+#endif
         }
 
         // White face, dark outline, about 60% of the drawn button. Hit rect stays the button.
@@ -9021,20 +9038,53 @@ namespace FlockFive
             if (_restartAd) yield break;
             _restartAd = true;
             int saved = _restartSavedMul;
+            // Rewarded returns after the ad has closed. The grant is inside that
+            // wait (or just after it, when ads are off). The heal plays on the
+            // badge that is still up, then the round snaps.
             yield return Ads.Rewarded(Ads.PlacementKeep, saved, false);
             _restartAd = false;
-            _restartAsk = RestartAsk.None;
+            bool kept = false;
             if (!Ads.Enabled)
             {
-                if (Ads.LastGranted) RewardEffects.Keep(saved);
+                if (Ads.LastGranted) kept = RewardEffects.Keep(saved);
             }
-            else if (RewardedGrant.Earned) RewardedGrant.Flush();
+            else if (RewardedGrant.Earned)
+            {
+                RewardedGrant.Flush();
+                kept = Purse.Streak >= 2;
+            }
+            if (kept)
+            {
+                BeginStreakHeal();
+                yield return HoldStreakHeal();
+            }
+            _streakHealAge = -1f;
+            _restartAsk = RestartAsk.None;
             yield return SnapRound();
+        }
+
+        void BeginStreakHeal()
+        {
+            if (_streakHealAge >= 0f) return;
+            _streakHealAge = 0f;
+        }
+
+        IEnumerator HoldStreakHeal()
+        {
+            while (_streakHealAge < StreakBadge.RestoreSeconds)
+            {
+                float dt = AdPause.UnscaledDelta;
+                if (dt <= 0f || dt > 0.05f) dt = Time.unscaledDeltaTime;
+                if (dt <= 0f || dt > 0.05f) dt = 0.016f;
+                _streakHealAge += dt;
+                yield return null;
+            }
         }
 
         IEnumerator FinishRestart(bool keep)
         {
             _restartAsk = RestartAsk.None;
+            _streakHealAge = -1f;
             if (keep && _restartSavedMul >= 2) Purse.SetStreak(_restartSavedMul);
             yield return SnapRound();
         }
@@ -18358,7 +18408,7 @@ namespace FlockFive
         void DrawStreakCaution(Rect headR, float s, GUIStyle title)
         {
             int mul = _restartSavedMul >= 2 ? _restartSavedMul : 2;
-            float d = Mathf.Min(headR.width * 0.30f, 78f * s);
+            float d = Mathf.Min(headR.width * 0.36f, 92f * s);
             var chip = new Rect(headR.center.x - d * 0.5f, headR.y, d, d);
             string numeral = MulChip(mul);
             var ink = StreakBadge.Colors(mul);
@@ -18368,12 +18418,12 @@ namespace FlockFive
             StreakBadge.NumeralFit(chip, out float fitW, out float fitH);
             int chipHi = Mathf.Max(16, Mathf.RoundToInt(fitH));
             title.fontSize = FitFont(title, numeral, fitW, fitH, 12, chipHi);
-            StreakBadge.Draw(chip, numeral, title, ink, 1f, 0.4f);
-            float g = d * 0.40f;
-            var tri = new Rect(chip.xMax - g * 0.55f, chip.y - g * 0.06f, g, g * 0.88f);
-            DrawCautionMark(tri);
-            title.fontSize = FitFont(title, "!", tri.width * 0.7f, tri.height * 0.55f, 12, Mathf.Max(14, Mathf.RoundToInt(g * 0.55f)));
-            StampOutlined(new Rect(tri.x, tri.y + tri.height * 0.18f, tri.width, tri.height * 0.62f), "!", title, Color.white, 0, 2);
+            float clock = AdPause.Unscaled;
+#if UNITY_EDITOR
+            if (_streakShotClock >= 0f) clock = _streakShotClock;
+#endif
+            var risk = _streakHealAge >= 0f ? StreakBadge.Restored(_streakHealAge) : StreakBadge.AtRisk(clock);
+            StreakBadge.Draw(chip, numeral, title, ink, 1f, 0.4f, risk);
             float titleH = Mathf.Max(28f * s, headR.height * 0.22f);
             var titleR = new Rect(headR.x, chip.yMax + 4f * s, headR.width, titleH);
             float bodyTop = titleR.yMax + 2f * s;
