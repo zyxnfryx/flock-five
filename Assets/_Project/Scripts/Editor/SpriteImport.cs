@@ -201,6 +201,17 @@ namespace FlockFive.Editor
             imp.defaultSampleSettings = s;
             imp.forceToMono = true;
             imp.loadInBackground = theme;
+            bool music = assetPath.Contains("/Audio/Bed/");
+            if (music)
+            {
+                // Smoothness pass: music beds keep stereo, are not normalized, and preload.
+                s.preloadAudioData = true;
+                imp.defaultSampleSettings = s;
+                imp.forceToMono = false;
+                var soBed = new SerializedObject(imp);
+                var normBed = soBed.FindProperty("normalize") ?? soBed.FindProperty("m_Normalize");
+                if (normBed != null) { normBed.boolValue = false; soBed.ApplyModifiedPropertiesWithoutUndo(); }
+            }
             if (assetPath.Contains("zfx_jingle"))
             {
                 // Studio card jingle: decompress on load, preloaded, stereo, not normalized.
@@ -210,7 +221,7 @@ namespace FlockFive.Editor
                 imp.forceToMono = false;
                 imp.loadInBackground = false;
                 var so = new SerializedObject(imp);
-                var norm = so.FindProperty("m_Normalize");
+                var norm = so.FindProperty("normalize") ?? so.FindProperty("m_Normalize");
                 if (norm != null) { norm.boolValue = false; so.ApplyModifiedPropertiesWithoutUndo(); }
             }
         }

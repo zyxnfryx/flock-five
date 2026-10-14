@@ -9,6 +9,13 @@ namespace FlockFive.Editor
     // stereo, no normalize, preload on.
     static class SmoothPassAudioTests
     {
+        // AudioImporter has no public normalize property; read the serialized field.
+        static bool Normalize(AudioImporter imp)
+        {
+            var p = new SerializedObject(imp).FindProperty("normalize");
+            return p != null && p.boolValue;
+        }
+
         [MenuItem("Flock Five/Smooth Pass Audio Tests")]
         public static void Run()
         {
@@ -78,9 +85,9 @@ namespace FlockFive.Editor
             foreach (var path in music)
             {
                 var imp = AssetImporter.GetAtPath(path) as AudioImporter;
-                bool ok = imp != null && !imp.forceToMono && !imp.normalize && imp.defaultSampleSettings.preloadAudioData;
+                bool ok = imp != null && !imp.forceToMono && !Normalize(imp) && imp.defaultSampleSettings.preloadAudioData;
                 Check("import " + System.IO.Path.GetFileName(path), ok,
-                    imp == null ? "missing" : "mono=" + imp.forceToMono + " normalize=" + imp.normalize
+                    imp == null ? "missing" : "mono=" + imp.forceToMono + " normalize=" + Normalize(imp)
                         + " preload=" + imp.defaultSampleSettings.preloadAudioData);
             }
 

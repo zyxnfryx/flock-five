@@ -121,15 +121,21 @@ namespace FlockFive
             _jingleSrc = go.AddComponent<AudioSource>();
             _jingleSrc.playOnAwake = false;
             _jingleSrc.spatialBlend = 0f;
-            _jingleSrc.volume = 0.65f; // smoothness pass: was 0.9, the loudest thing in the game
+            // Shared mixer path: base level times SfxScale (Sound toggle, Settings slider,
+            // duck tokens, and 0 while an ad shows). Re-applied every card frame below.
+            _jingleSrc.volume = StudioJingleVolume;
             _jingleSrc.clip = clip;
             _jingleSrc.Play();
             Object.Destroy(go, clip.length + 0.5f);
         }
 
+        public const float StudioJingleBase = 0.65f; // smoothness pass: was 0.9, the loudest thing in the game
+        public static float StudioJingleVolume => StudioJingleBase * AudioGuard.SfxScale;
+
         // Card time: the jingle's playback position while it plays, else time since the card showed.
         static float StudioClock(float since)
         {
+            if (_jingleSrc != null) _jingleSrc.volume = StudioJingleVolume;
             if (_jingleSrc != null && _jingleSrc.isPlaying && _jingleSrc.time > 0f) return _jingleSrc.time;
             return since;
         }
