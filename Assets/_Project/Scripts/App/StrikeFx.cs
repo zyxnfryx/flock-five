@@ -47,7 +47,6 @@ namespace FlockFive
         Vector3 _axis;
         static readonly System.Collections.Generic.List<StrikeFx> Live = new System.Collections.Generic.List<StrikeFx>();
         static Material _add;
-        static Material _sil;
 
         public static float CharSpread(float age)
         {
@@ -254,7 +253,7 @@ namespace FlockFive
                 bit.Sr.enabled = false;
                 var tip = trunk + dir * (span * clip);
                 var ember = WorldBuilder.Sprite("Ember", glow, tip, 1f, 6, bit.T);
-                WorldScale(ember.transform, Random.Range(0.32f, 0.62f));
+                WorldScale(ember.transform, Random.Range(0.14f, 0.26f));
                 bit.Halo = ember.GetComponent<SpriteRenderer>();
                 if (add != null) bit.Halo.sharedMaterial = add;
                 bit.Halo.color = new Color(1f, 0.46f, 0.08f, 0f);
@@ -354,7 +353,6 @@ namespace FlockFive
         {
             var all = root.GetComponentsInChildren<SpriteRenderer>(false);
             var list = new System.Collections.Generic.List<Rim>(16);
-            var sil = Silhouette();
             for (int i = 0; i < all.Length; i++)
             {
                 var sr = all[i];
@@ -366,19 +364,8 @@ namespace FlockFive
                 if (d > RimRadius) continue;
                 float k = 1f - d / RimRadius;
                 if (k < 0.08f) continue;
-                var go = new GameObject("StrikeRim");
-                go.transform.SetParent(sr.transform, false);
-                go.transform.localPosition = Vector3.zero;
-                go.transform.localRotation = Quaternion.identity;
-                go.transform.localScale = Vector3.one * 1.14f;
-                var glow = go.AddComponent<SpriteRenderer>();
-                glow.sprite = sr.sprite;
-                glow.flipX = sr.flipX;
-                glow.flipY = sr.flipY;
-                glow.sortingOrder = sr.sortingOrder > 0 ? sr.sortingOrder - 1 : 0;
-                if (sil != null) glow.sharedMaterial = sil;
-                glow.color = new Color(1f, 0.72f, 0.32f, 0f);
-                list.Add(new Rim { Body = sr, Glow = glow, K = k });
+                // Tint the sprite itself. A scaled silhouette copy read as a white sticker.
+                list.Add(new Rim { Body = sr, Glow = null, K = k });
                 if (list.Count >= 16) break;
             }
             _rims = list.ToArray();
@@ -514,7 +501,7 @@ namespace FlockFive
                 if (u < 0f) u = 0f;
                 else if (u > 1f) u = 1f;
                 float pulse = 0.75f + 0.25f * Mathf.Sin(_age * 9f + bit.Home.x * 6f);
-                bit.Halo.color = new Color(1f, 0.42f, 0.06f, (1f - u) * 0.75f * pulse);
+                bit.Halo.color = new Color(1f, 0.42f, 0.06f, (1f - u) * 0.4f * pulse);
             }
         }
 
@@ -543,13 +530,11 @@ namespace FlockFive
             for (int i = 0; i < _rims.Length; i++)
             {
                 float a = rim * _rims[i].K;
-                if (_rims[i].Glow != null)
-                    _rims[i].Glow.color = new Color(1f, 0.74f, 0.34f, 0.9f * a);
                 var body = _rims[i].Body;
                 if (body != null && a > 0.02f)
                 {
                     var c = body.color;
-                    body.color = Color.Lerp(c, new Color(1f, 0.9f, 0.68f, c.a), 0.62f * a);
+                    body.color = Color.Lerp(c, new Color(1f, 0.78f, 0.42f, c.a), 0.85f * a);
                 }
             }
         }
@@ -591,16 +576,6 @@ namespace FlockFive
             if (sh == null) return null;
             _add = new Material(sh) { name = "SpriteAdd", hideFlags = HideFlags.HideAndDontSave };
             return _add;
-        }
-
-        static Material Silhouette()
-        {
-            if (_sil != null) return _sil;
-            var sh = Shader.Find("FlockFive/SpriteSilhouette");
-            if (sh == null) sh = Shader.Find("FlockFive/SpriteSilhouette");
-            if (sh == null) return null;
-            _sil = new Material(sh) { name = "StrikeSil", hideFlags = HideFlags.HideAndDontSave };
-            return _sil;
         }
     }
 
