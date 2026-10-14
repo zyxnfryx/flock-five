@@ -140,22 +140,23 @@ namespace FlockFive.Editor
         {
             string line = CaptionLayout.HiveGardenLine;
             bool copy = line.StartsWith("You found a bee!\n")
-                && CaptionLayout.WantsBeeIcon(line)
+                && !CaptionLayout.WantsBeeIcon(line)
                 && !CaptionLayout.WantsBeeIcon("Tap Daily for\nyour bonus!");
+            float? keep = DeviceFit.TestWindow;
+            DeviceFit.TestWindow = W / H;
             var safe = new Rect(0f, 102f, W, H - 102f - 177f);
             FlockFiveApp.GardenCorners(W, H, safe, out _, out var hive);
-            var fit = FlockFiveApp.LessonCaptionFit(line, W, H);
-            float slot = CaptionLayout.BeeIconSlot(fit.LineH);
-            var seat = FlockFiveApp.BeeCaptionSeat(W, H, hive, fit.PlateW, fit.PlateH, slot);
-            bool placed = slot > 20f
-                && seat.width > 8f
-                && !seat.Overlaps(hive)
-                && seat.center.y > H * 0.55f
-                && seat.xMin >= -1f && seat.yMin >= -1f
-                && seat.xMax <= W + 1f && seat.yMax <= H + 1f;
+            float s = DeviceFit.Ui(W, H);
+            int adopt = CaptionLayout.BannerFont(W, H);
+            var fit = CaptionLayout.FitBanner(FlockFiveApp.CoachCaptionStyle(), line, W * 0.92f, adopt);
+            var band = FlockFiveApp.BannerRect("bee.garden", line, W, H, safe, new Rect(0f, H * 0.5f, W * 0.6f, 120f), 0f, false, s, out int px);
+            bool placed = px == adopt && fit.Font == adopt && fit.Lines >= 2 && fit.Lines <= CaptionLayout.BannerMaxLines
+                && band.width > 8f && !band.Overlaps(hive) && band.yMax < hive.yMin - 4f
+                && band.center.y < H * 0.45f;
             var gold = FlockFiveApp.GoldCaption(line, W, H);
+            DeviceFit.TestWindow = keep;
             Check("bee-callout", copy && placed && gold.Lines >= 2 && gold.Lines <= 4 && !gold.Overflow,
-                "lines=" + gold.Lines + " seat=" + seat + " hive=" + hive + " slot=" + slot.ToString("0"));
+                "lines=" + fit.Lines + " px=" + px + "/" + adopt + " band=" + band + " hive=" + hive + " gold=" + gold.Lines);
         }
 
         static void CheckGate(System.Action<string, bool, string> Check)
