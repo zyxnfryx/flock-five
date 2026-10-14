@@ -427,11 +427,14 @@ namespace FlockFive
             return up != null ? up : Bird(c, sex);
         }
 
+        // Same 4-step the idle birds use: rest, wings up, wings mid, wings up.
+        public static int FlapStep(float t) => Mathf.FloorToInt(Mathf.Abs(t) * 16f) % 4;
+
         public static Sprite BirdFrame(BirdColor c, float t, bool flap, BirdSex sex)
         {
             var rest = Bird(c, sex);
             if (!flap) return rest;
-            int k = Mathf.FloorToInt(Mathf.Abs(t) * 16f) % 4;
+            int k = FlapStep(t);
             if (k == 0) return rest;
             return FlapPose(c, k == 2 ? 2 : 1, sex);
         }

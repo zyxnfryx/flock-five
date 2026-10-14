@@ -75,6 +75,29 @@ namespace FlockFive
             _nextWing = 0f;
         }
 
+        // Sling owns position, scale, and rotation. This only cycles wing frames.
+        // Unscaled time so a hit-stop that freezes timeScale still flaps.
+        bool _flapDrive;
+        float _flapHz = 6f;
+        float _flapClock;
+        int _wingPose;
+
+        public int WingPose => _wingPose;
+        public bool FlapDriven => _flapDrive;
+
+        public void DriveFlap(float cyclesPerSec)
+        {
+            _flapHz = Mathf.Max(0.4f, cyclesPerSec);
+            if (_flapDrive) return;
+            _flapDrive = true;
+            enabled = true;
+            Flapping = true;
+            Frozen = true;
+            // BirdFrame step 1 is wings up. Open there instead of the tucked rest.
+            _flapClock = 1.5f / 16f;
+            ApplyFlapFrame();
+        }
+
         void EnsureFace()
         {
             if (!MoodOn) return;
@@ -90,9 +113,30 @@ namespace FlockFive
             _face.sortingOrder = 13;
         }
 
+        void TickFlapDrive()
+        {
+            _flapClock += Time.unscaledDeltaTime * (_flapHz / 4f);
+            ApplyFlapFrame();
+        }
+
+        void ApplyFlapFrame()
+        {
+            if (_sr == null) _sr = GetComponent<SpriteRenderer>();
+            if (_sr == null) return;
+            _sr.flipX = FaceLeft;
+            _sr.sprite = SpriteCatalog.BirdFrame(Color, _flapClock, true, Sex);
+            int k = SpriteCatalog.FlapStep(_flapClock);
+            _wingPose = k == 2 ? 2 : (k == 0 ? 0 : 1);
+        }
+
         void LateUpdate()
         {
             if (!isActiveAndEnabled) return;
+            if (_flapDrive)
+            {
+                TickFlapDrive();
+                return;
+            }
             if (_flutterUntil > 0f && Time.time >= _flutterUntil)
             {
                 _flutterUntil = 0f;
