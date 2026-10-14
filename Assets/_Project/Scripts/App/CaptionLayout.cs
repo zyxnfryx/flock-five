@@ -562,6 +562,26 @@ namespace FlockFive
             return AuthoredBanner(style, text, maxW, font) != null;
         }
 
+        public static float WidestRow(GUIStyle style, string shown, int font)
+        {
+            if (string.IsNullOrEmpty(shown)) return 0f;
+            float widest = 0f;
+            int i = 0;
+            while (i <= shown.Length)
+            {
+                int j = shown.IndexOf('\n', i);
+                if (j < 0) j = shown.Length;
+                if (j > i)
+                {
+                    float row = LineWidth(style, shown.Substring(i, j - i), font);
+                    if (row > widest) widest = row;
+                }
+                if (j >= shown.Length) break;
+                i = j + 1;
+            }
+            return widest;
+        }
+
         public static bool ShownFits(GUIStyle style, string shown, float maxW, int font)
         {
             if (string.IsNullOrEmpty(shown)) return true;

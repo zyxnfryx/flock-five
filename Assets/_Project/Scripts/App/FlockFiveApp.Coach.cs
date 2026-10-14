@@ -3469,7 +3469,12 @@ namespace FlockFive
                 st.wordWrap = true;
                 float inner = CaptionLayout.BannerMeasureWidth(band.width, st, text, bandPx);
                 float ix = band.x + (band.width - inner) * 0.5f;
-                StampBannerText(new Rect(ix, band.y, inner, band.height), BannerText ?? text, st, fade, true);
+                // Same face and size as the adopt greet. A row that reaches the
+                // screen edge keeps a stroke that fits, instead of a sliced rim.
+                int ring = BannerOutlinePx(bandPx);
+                float room = (inner - CaptionLayout.WidestRow(st, BannerText ?? text, bandPx)) * 0.5f;
+                if (room < ring) ring = Mathf.Max(2, Mathf.FloorToInt(Mathf.Max(0f, room)));
+                StampBannerText(new Rect(ix, band.y, inner, band.height), BannerText ?? text, st, fade, true, ring);
                 st.fontSize = keep;
                 st.wordWrap = false;
                 return;

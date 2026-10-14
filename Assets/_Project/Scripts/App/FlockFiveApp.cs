@@ -10896,12 +10896,13 @@ namespace FlockFive
             return px;
         }
 
-        static void StampBannerText(Rect r, string text, GUIStyle st, float alpha, bool bold)
+        static void StampBannerText(Rect r, string text, GUIStyle st, float alpha, bool bold, int outlinePx = -1)
         {
             if (st == null || string.IsNullOrEmpty(text) || alpha < 0.04f) return;
             var prev = st.fontStyle;
             st.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
-            StampOutlined(r, text, st, new Color(1f, 1f, 1f, alpha), 0, BannerOutlinePx(st.fontSize));
+            int ring = outlinePx >= 0 ? outlinePx : BannerOutlinePx(st.fontSize);
+            StampOutlined(r, text, st, new Color(1f, 1f, 1f, alpha), 0, ring);
             st.fontStyle = prev;
         }
 
