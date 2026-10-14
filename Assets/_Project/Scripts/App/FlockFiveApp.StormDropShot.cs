@@ -53,10 +53,10 @@ namespace FlockFive
             bool hadSeen = PlayerPrefs.HasKey(seenKey);
             string seen = PlayerPrefs.GetString(seenKey, "");
 
-            const string mp4 = "/Users/zfxgames/wkspaces/post88/storm-drops.mp4";
-            const string still = "/Users/zfxgames/wkspaces/post88/storm-drop-closeup.png";
+            const string mp4 = "/Users/zfxgames/wkspaces/post88/storm-drops-v2.mp4";
+            const string still = "/Users/zfxgames/wkspaces/post88/storm-drops-v2.png";
             const string frames = "/tmp/storm-drop-frames";
-            const string look = "/tmp/drops-look";
+            const string look = "/tmp/drops3-look";
             var lives = new StormGlassRig.Live[StormGlass.Cap];
             try
             {
@@ -81,7 +81,7 @@ namespace FlockFive
                 HoldGardenQuiet();
 
                 float wait = 0f;
-                while (wait < 8f && !BrightBead(lives))
+                while (wait < 8f && StormGlassRig.CopyLive(lives) < 8)
                 {
                     MuteShotAudio();
                     HoldGardenQuiet();
@@ -93,9 +93,12 @@ namespace FlockFive
                     + " beads " + StormGlassRig.CopyLive(lives));
 
                 Time.captureDeltaTime = 1f / 60f;
-                float bestA = 0.4f;
+                float bestScore = 0f;
                 int saved = 0;
-                const int total = 240;
+                int sawSplat = 0;
+                int sawSlide = 0;
+                float maxR = 0f;
+                const int total = 360;
                 for (int f = 0; f < total; f++)
                 {
                     yield return null;
@@ -107,26 +110,43 @@ namespace FlockFive
                     File.WriteAllBytes(frames + "/f" + f.ToString("0000") + ".jpg", tex.EncodeToJPG(92));
                     saved++;
                     int liveN = StormGlassRig.CopyLive(lives);
-                    float a = 0f;
+                    float score = 0f;
                     int pick = -1;
+                    int splatN = 0;
+                    int slideN = 0;
                     for (int i = 0; i < liveN; i++)
                     {
-                        if (lives[i].Alpha > a)
+                        var bead = lives[i];
+                        if (bead.Radius > maxR) maxR = bead.Radius;
+                        if (bead.Splat > 0.62f && bead.Alpha > 0.35f) splatN++;
+                        if (bead.Splat < 0.18f && bead.Vy < -36f && bead.Alpha > 0.45f) slideN++;
+                        if (bead.Splat < 0.2f && bead.Alpha > 0.5f && bead.Vy < -28f && bead.Kind == StormGlass.Slide)
                         {
-                            a = lives[i].Alpha;
-                            pick = i;
+                            float s = bead.Alpha * bead.Radius * (-bead.Vy);
+                            if (s > score)
+                            {
+                                score = s;
+                                pick = i;
+                            }
                         }
                     }
-                    if (pick >= 0 && a > bestA)
+                    if (splatN > 0) sawSplat++;
+                    if (slideN > 0) sawSlide++;
+                    if (f > 40 && slideN > 0 && liveN >= 6 && score > bestScore && pick >= 0)
                     {
-                        bestA = a;
-                        SaveCloseup(tex, lives[pick], still);
-                        File.WriteAllBytes(look + "/full.png", tex.EncodeToPNG());
+                        bestScore = score;
+                        File.WriteAllBytes(still, tex.EncodeToPNG());
+                        SaveCloseup(tex, lives[pick], look + "/lens.png");
                     }
-                    if (f == 30 || f == 90 || f == 150 || f == 210)
+                    if (f == 180 && !File.Exists(still))
+                        File.WriteAllBytes(still, tex.EncodeToPNG());
+                    if (f == 20 || f == 80 || f == 140 || f == 200 || f == 260 || f == 320)
                         File.WriteAllBytes(look + "/f" + f.ToString("0000") + ".png", tex.EncodeToPNG());
                     Object.Destroy(tex);
                 }
+                UnityEngine.Debug.Log("STORM_DROP_LOOK splatFrames " + sawSplat
+                    + " slideFrames " + sawSlide + " maxR " + maxR.ToString("0.0")
+                    + " score " + bestScore.ToString("0"));
                 Time.captureDeltaTime = 0f;
                 string ff = File.Exists("/opt/homebrew/bin/ffmpeg") ? "/opt/homebrew/bin/ffmpeg" : "ffmpeg";
                 var psi = new ProcessStartInfo
@@ -141,7 +161,9 @@ namespace FlockFive
                     if (proc != null) proc.WaitForExit(120000);
                 }
                 File.WriteAllText("/tmp/storm-drop-clip-done.txt",
-                    "STORM_DROP_CLIP frames " + saved + " best " + bestA.ToString("0.00")
+                    "STORM_DROP_CLIP frames " + saved + " score " + bestScore.ToString("0")
+                    + " splat " + sawSplat + " slide " + sawSlide
+                    + " maxR " + maxR.ToString("0.0")
                     + " still " + (File.Exists(still) ? "yes" : "no") + "\n");
                 UnityEngine.Debug.Log("STORM_DROP_CLIP_DONE " + saved);
             }
@@ -176,14 +198,6 @@ namespace FlockFive
                 EditorApplication.isPlaying = false;
                 EditorApplication.delayCall += () => EditorApplication.Exit(0);
             }
-        }
-
-        static bool BrightBead(StormGlassRig.Live[] lives)
-        {
-            int n = StormGlassRig.CopyLive(lives);
-            for (int i = 0; i < n; i++)
-                if (lives[i].Alpha > 0.45f) return true;
-            return false;
         }
 
         static void SaveCloseup(Texture2D tex, StormGlassRig.Live bead, string path)

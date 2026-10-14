@@ -33,7 +33,7 @@ Shader "FlockFive/StormGlass"
             #pragma fragment Frag
             #pragma target 3.5
 
-            float4 _Bead; // xy center in pos01, z alpha
+            float4 _Bead; // xy center in pos01, z alpha, w splat (1 impact, 0 bead)
             float4 _Rad;  // xy circle half-size in pos01, zw trail end offset
 
             float3 SampleScene(float2 pos01)
@@ -58,21 +58,25 @@ Shader "FlockFive/StormGlass"
                 float2 n = from / rad;
                 float r = length(n);
                 float body = smoothstep(1.015, 0.96, r);
+                float splat = saturate(_Bead.w);
 
-                // One continuous inverted lens. Negative scale flips the garden
-                // through the center. The field is a bit wider than the bead
-                // so the picture beside the glass is in the drop, enlarged
-                // against that wider view, with no second contour inside.
+                // One continuous inverted lens once the drop has gathered.
+                // At the impact the reach eases off so the splat reads flat,
+                // then the garden flips and enlarges inside the bead.
                 float reach = lerp(1.85, 2.35, r * r);
+                reach = lerp(reach, 0.28, splat);
                 float3 scene = SampleScene(_Bead.xy - from * reach);
-                scene *= 1.07;
+                scene *= lerp(1.07, 1.14, splat);
 
                 float rim = smoothstep(0.975, 1.0, r) * body;
-                scene = lerp(scene, scene * float3(0.90, 0.92, 0.95), rim);
+                scene = lerp(scene, scene * float3(0.90, 0.92, 0.95), rim * (1.0 - splat * 0.35));
+
+                float ring = smoothstep(0.55, 0.74, r) * smoothstep(1.02, 0.84, r) * splat;
+                scene += ring * float3(1.0, 0.98, 0.96) * 0.42;
 
                 float2 spec = n - float2(-0.30, 0.36);
                 float hot = exp(-dot(spec, spec) * 140.0);
-                scene += hot * 1.2 * float3(1.0, 0.99, 0.96) * body;
+                scene += hot * 1.2 * float3(1.0, 0.99, 0.96) * body * (1.0 - splat);
 
                 float a = _Bead.z * body;
 
@@ -82,13 +86,13 @@ Shader "FlockFive/StormGlass"
                 {
                     float along = dot(from, trail) / trailLen2;
                     float2 side = (from - trail * along) / rad;
-                    float halfW = lerp(0.58, 0.05, saturate(along));
-                    float streak = smoothstep(0.04, 0.22, along) * smoothstep(1.05, 0.28, along);
-                    streak *= smoothstep(halfW, halfW * 0.35, length(side));
-                    streak *= (1.0 - body) * _Bead.z * 0.42;
+                    float halfW = lerp(0.22, 0.035, saturate(along));
+                    float streak = smoothstep(0.02, 0.10, along) * smoothstep(1.12, 0.62, along);
+                    streak *= smoothstep(halfW, halfW * 0.28, length(side));
+                    streak *= (1.0 - body) * _Bead.z * 0.38;
                     if (streak > a)
                     {
-                        scene = SampleScene(pos) * float3(1.04, 1.05, 1.07);
+                        scene = SampleScene(pos) * float3(1.03, 1.05, 1.08);
                         a = streak;
                     }
                 }

@@ -6,9 +6,48 @@ namespace FlockFive
     {
         // Splash, hive, poker, and the badger page are not storm gardens.
         public static bool GardenOpen => _app != null && !_app._splash && _app._board != null;
+
+        // One block per perched bird, hawk, sparrow, or ostrich. Walks the
+        // roster the garden already keeps, so the glass does not allocate.
+        public static int CopyGlassCritters(Camera cam, StormGlass.Block[] blocks, int n)
+        {
+            if (_app == null || cam == null || blocks == null) return n;
+            var branches = _app._garden.Branches;
+            if (branches != null)
+            {
+                for (int i = 0; i < branches.Length; i++)
+                {
+                    var br = branches[i];
+                    if (br == null) continue;
+                    var birds = br.Birds;
+                    for (int k = 0; k < birds.Length; k++)
+                    {
+                        var sr = birds[k];
+                        if (sr == null || !sr.enabled || !sr.gameObject.activeInHierarchy) continue;
+                        n = StormGlassRig.AddHost(cam, sr.transform, blocks, n);
+                        if (n >= blocks.Length) return n;
+                    }
+                }
+            }
+            if (HawkView.Live != null)
+            {
+                n = StormGlassRig.AddHost(cam, HawkView.Live.transform, blocks, n);
+                if (n >= blocks.Length) return n;
+            }
+            if (SparrowView.Live != null)
+            {
+                n = StormGlassRig.AddHost(cam, SparrowView.Live.transform, blocks, n);
+                if (n >= blocks.Length) return n;
+            }
+            var ostrich = _app._garden.Ostrich;
+            if (ostrich != null)
+                n = StormGlassRig.AddHost(cam, ostrich.transform, blocks, n);
+            return n;
+        }
     }
 
-    // Ticks the glass beads and hands the live ones to the lens pass.
+    // Ticks the glass and hands the live lenses to the pass. No colliders,
+    // no canvas, no raycast target: taps fall through to the garden.
     public sealed class StormGlassRig : MonoBehaviour
     {
         public struct Live
@@ -17,17 +56,23 @@ namespace FlockFive
             public float Y;
             public float Radius;
             public float Alpha;
+            public float Vy;
+            public float Splat;
+            public byte Kind;
         }
 
         const int BlockCap = 96;
         static StormGlassRig _rig;
         static int _visible;
 
-        StormGlass.Bead[] _beads = new StormGlass.Bead[StormGlass.Cap];
+        StormGlass.Bead[] _beads = new StormGlass.Bead[StormGlass.BeadCap];
+        StormGlass.Speck[] _specks = new StormGlass.Speck[StormGlass.SpeckCap];
         StormGlass.Block[] _blocks = new StormGlass.Block[BlockCap];
         StormGlass.Rng _rng;
         float _spawnIn = 0.05f;
         int _count;
+        int _speckN;
+        int _blockN;
         bool _logged;
 
         public static bool WantDraw => _visible > 0;
@@ -38,6 +83,7 @@ namespace FlockFive
             _rng.State = 0x5EED1u;
             _spawnIn = 0.05f;
             _count = 0;
+            _speckN = 0;
             _visible = 0;
             StormGlassFeature.Install();
         }
@@ -63,17 +109,23 @@ namespace FlockFive
                 _visible = 0;
                 return;
             }
-            int blocks = Gather(cam, _blocks);
+            _blockN = Gather(cam, _blocks);
             bool garden = FlockFiveApp.GardenOpen;
             _count = StormGlass.Tick(
                 _beads, _count, PlayClock.Delta,
                 garden, GardenStorm.Wet,
                 area.x, area.y, area.width, area.height,
-                _blocks, blocks, ref _rng, ref _spawnIn);
+                _blocks, _blockN, ref _rng, ref _spawnIn,
+                _specks, ref _speckN);
             int vis = 0;
             for (int i = 0; i < _count; i++)
             {
-                if (StormGlass.Alpha(_beads[i].Age, _beads[i].Life) > 0.02f)
+                if (StormGlass.Alpha(_beads[i].Age, _beads[i].Life, _beads[i].Kind) > 0.02f)
+                    vis++;
+            }
+            for (int i = 0; i < _speckN; i++)
+            {
+                if (StormGlass.SpeckAlpha(_specks[i].Age, _specks[i].Life) > 0.02f)
                     vis++;
             }
             _visible = vis;
@@ -83,44 +135,40 @@ namespace FlockFive
         public static int Fill(Camera cam, int texW, int texH, Vector4[] rects, Vector4[] beads)
         {
             if (_rig == null || cam == null || texW < 2 || texH < 2) return 0;
+            if (rects == null || beads == null) return 0;
             var area = cam.pixelRect;
             if (area.width < 2f || area.height < 2f) return 0;
+            int cap = rects.Length < beads.Length ? rects.Length : beads.Length;
+            if (cap > StormGlass.DrawCap) cap = StormGlass.DrawCap;
             int n = 0;
-            int count = _rig._count;
             var src = _rig._beads;
-            for (int i = 0; i < count && n < rects.Length && n < beads.Length; i++)
+            int count = _rig._count;
+            var blocks = _rig._blocks;
+            int blockN = _rig._blockN;
+            for (int i = 0; i < count && n < cap; i++)
             {
-                float a = StormGlass.Alpha(src[i].Age, src[i].Life);
+                float a = StormGlass.Alpha(src[i].Age, src[i].Life, src[i].Kind);
+                a *= StormGlass.CoverMul(src[i].X, src[i].Y, blocks, blockN);
                 if (a < 0.02f) continue;
-                float rad = StormGlass.ShownRadius(src[i].Age, src[i].Radius);
-                float cx = (src[i].X - area.x) / area.width * texW;
-                float cy = (src[i].Y - area.y) / area.height * texH;
-                float rx = rad / area.width * texW;
-                float ry = rad / area.height * texH;
-                float scaleX = rx * 2f / texW;
-                float scaleY = ry * 2f / texH;
-                float offX = (cx - rx) / texW;
-                // Bottom-left, same as the sim and the screenshot. A top-left
-                // offY put the bead on the opposite half of the glass.
-                float offY = (cy - ry) / texH;
-                rects[n] = new Vector4(scaleX, scaleY, offX, offY);
-                // Trail sits behind the slide, about one radius long. xy is the
-                // offset in this same pos01 space; the lens pass derives the center.
-                float su = src[i].Vx / area.width;
-                float sv = src[i].Vy / area.height;
-                float sp = Mathf.Sqrt(su * su + sv * sv);
-                float trailU = 0f;
-                float trailV = 0f;
-                if (sp > 1e-5f)
-                {
-                    float lenU = rad / area.width;
-                    float lenV = rad / area.height;
-                    float len = Mathf.Sqrt(lenU * lenU + lenV * lenV) * 1.25f;
-                    trailU = -su / sp * len;
-                    trailV = -sv / sp * len;
-                }
-                beads[n] = new Vector4(trailU, trailV, a, 0f);
-                n++;
+                StormGlass.Shape(src[i].Age, src[i].Radius, out float prx, out float pry, out float splat);
+                if (!Write(area, texW, texH, src[i].X, src[i].Y, prx, pry, a, splat,
+                        src[i].Kind == StormGlass.Slide ? src[i].Vx : 0f,
+                        src[i].Kind == StormGlass.Slide ? src[i].Vy : 0f,
+                        src[i].Radius * 2.15f * (1f - splat),
+                        rects, beads, ref n))
+                    break;
+            }
+            var specks = _rig._specks;
+            int speckN = _rig._speckN;
+            for (int i = 0; i < speckN && n < cap; i++)
+            {
+                float a = StormGlass.SpeckAlpha(specks[i].Age, specks[i].Life);
+                a *= StormGlass.CoverMul(specks[i].X, specks[i].Y, blocks, blockN);
+                if (a < 0.02f) continue;
+                float r = specks[i].Radius;
+                if (!Write(area, texW, texH, specks[i].X, specks[i].Y, r, r, a, 0f, 0f, 0f, 0f,
+                        rects, beads, ref n))
+                    break;
             }
             if (n > 0 && !_rig._logged)
             {
@@ -130,9 +178,40 @@ namespace FlockFive
                     + " " + area.width.ToString("0") + "x" + area.height.ToString("0")
                     + " tex " + texW + "x" + texH
                     + " rect " + rects[0].ToString("0.000")
-                    + " trail " + beads[0].ToString("0.000"));
+                    + " bead " + beads[0].ToString("0.000"));
             }
             return n;
+        }
+
+        static bool Write(
+            Rect area, int texW, int texH,
+            float x, float y, float prx, float pry, float alpha, float splat,
+            float vx, float vy, float trailPx,
+            Vector4[] rects, Vector4[] beads, ref int n)
+        {
+            if (n >= rects.Length || n >= beads.Length) return false;
+            float cx = (x - area.x) / area.width * texW;
+            float cy = (y - area.y) / area.height * texH;
+            float rx = prx / area.width * texW;
+            float ry = pry / area.height * texH;
+            if (cx < -rx || cy < -ry || cx > texW + rx || cy > texH + ry) return true;
+            float scaleX = rx * 2f / texW;
+            float scaleY = ry * 2f / texH;
+            float offX = (cx - rx) / texW;
+            float offY = (cy - ry) / texH;
+            rects[n] = new Vector4(scaleX, scaleY, offX, offY);
+            float trailU = 0f;
+            float trailV = 0f;
+            float sp = Mathf.Sqrt(vx * vx + vy * vy);
+            if (sp > 1f && trailPx > 1f)
+            {
+                float len = trailPx / sp;
+                trailU = -vx * len / area.width;
+                trailV = -vy * len / area.height;
+            }
+            beads[n] = new Vector4(trailU, trailV, alpha, splat);
+            n++;
+            return true;
         }
 
         public static int CopyLive(Live[] into)
@@ -140,16 +219,24 @@ namespace FlockFive
             if (_rig == null || into == null) return 0;
             int n = 0;
             int count = _rig._count;
+            var blocks = _rig._blocks;
+            int blockN = _rig._blockN;
             for (int i = 0; i < count && n < into.Length; i++)
             {
-                float a = StormGlass.Alpha(_rig._beads[i].Age, _rig._beads[i].Life);
+                var b = _rig._beads[i];
+                float a = StormGlass.Alpha(b.Age, b.Life, b.Kind);
+                a *= StormGlass.CoverMul(b.X, b.Y, blocks, blockN);
                 if (a < 0.02f) continue;
+                StormGlass.Shape(b.Age, b.Radius, out _, out _, out float splat);
                 into[n++] = new Live
                 {
-                    X = _rig._beads[i].X,
-                    Y = _rig._beads[i].Y,
-                    Radius = StormGlass.ShownRadius(_rig._beads[i].Age, _rig._beads[i].Radius),
-                    Alpha = a
+                    X = b.X,
+                    Y = b.Y,
+                    Radius = StormGlass.ShownRadius(b.Age, b.Radius),
+                    Alpha = a,
+                    Vy = b.Vy,
+                    Splat = splat,
+                    Kind = b.Kind
                 };
             }
             return n;
@@ -172,52 +259,48 @@ namespace FlockFive
                 Add(blocks, ref n, StormGlass.FromGui(hive, h));
                 Add(blocks, ref n, StormGlass.FromGui(stamp, h));
             }
-            AddBirds(cam, blocks, ref n);
+            return FlockFiveApp.CopyGlassCritters(cam, blocks, n);
+        }
+
+        internal static int AddHost(Camera cam, Transform host, StormGlass.Block[] blocks, int n)
+        {
+            if (host == null || cam == null || blocks == null || n >= blocks.Length) return n;
+            bool any = false;
+            Bounds box = default;
+            UnionSprites(host, ref any, ref box);
+            if (!any) return n;
+            var p0 = cam.WorldToScreenPoint(new Vector3(box.min.x, box.min.y, box.center.z));
+            var p1 = cam.WorldToScreenPoint(new Vector3(box.max.x, box.max.y, box.center.z));
+            if (p0.z < 0f && p1.z < 0f) return n;
+            float x0 = Mathf.Min(p0.x, p1.x);
+            float y0 = Mathf.Min(p0.y, p1.y);
+            float x1 = Mathf.Max(p0.x, p1.x);
+            float y1 = Mathf.Max(p0.y, p1.y);
+            Add(blocks, ref n, new StormGlass.Block
+            {
+                X = x0,
+                Y = y0,
+                W = Mathf.Max(1f, x1 - x0),
+                H = Mathf.Max(1f, y1 - y0)
+            });
             return n;
         }
 
-        static void AddBirds(Camera cam, StormGlass.Block[] blocks, ref int n)
+        static void UnionSprites(Transform t, ref bool any, ref Bounds box)
         {
-            var birds = Object.FindObjectsByType<BirdIdle>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-            for (int i = 0; i < birds.Length; i++)
-                AddSprites(cam, birds[i], blocks, ref n);
-            var hawks = Object.FindObjectsByType<HawkView>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-            for (int i = 0; i < hawks.Length; i++)
-                AddSprites(cam, hawks[i], blocks, ref n);
-            var sparrows = Object.FindObjectsByType<SparrowView>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-            for (int i = 0; i < sparrows.Length; i++)
-                AddSprites(cam, sparrows[i], blocks, ref n);
-            var ostriches = Object.FindObjectsByType<OstrichMark>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-            for (int i = 0; i < ostriches.Length; i++)
-                AddSprites(cam, ostriches[i], blocks, ref n);
-        }
-
-        static void AddSprites(Camera cam, MonoBehaviour host, StormGlass.Block[] blocks, ref int n)
-        {
-            if (host == null || n >= blocks.Length) return;
-            var sprites = host.GetComponentsInChildren<SpriteRenderer>(false);
-            for (int i = 0; i < sprites.Length; i++)
+            var sr = t.GetComponent<SpriteRenderer>();
+            if (sr != null && sr.enabled && sr.sprite != null && sr.color.a >= 0.05f)
             {
-                if (n >= blocks.Length) return;
-                var sr = sprites[i];
-                if (sr == null || !sr.enabled || sr.sprite == null) continue;
-                if (sr.color.a < 0.05f) continue;
-                var b = sr.bounds;
-                var p0 = cam.WorldToScreenPoint(new Vector3(b.min.x, b.min.y, b.center.z));
-                var p1 = cam.WorldToScreenPoint(new Vector3(b.max.x, b.max.y, b.center.z));
-                if (p0.z < 0f && p1.z < 0f) continue;
-                float x0 = Mathf.Min(p0.x, p1.x);
-                float y0 = Mathf.Min(p0.y, p1.y);
-                float x1 = Mathf.Max(p0.x, p1.x);
-                float y1 = Mathf.Max(p0.y, p1.y);
-                Add(blocks, ref n, new StormGlass.Block
+                if (!any)
                 {
-                    X = x0,
-                    Y = y0,
-                    W = Mathf.Max(1f, x1 - x0),
-                    H = Mathf.Max(1f, y1 - y0)
-                });
+                    box = sr.bounds;
+                    any = true;
+                }
+                else box.Encapsulate(sr.bounds);
             }
+            int c = t.childCount;
+            for (int i = 0; i < c; i++)
+                UnionSprites(t.GetChild(i), ref any, ref box);
         }
 
         static void Add(StormGlass.Block[] blocks, ref int n, StormGlass.Block block)

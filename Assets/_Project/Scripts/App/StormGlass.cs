@@ -2,24 +2,38 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Rain on the screen glass, not the world sheet. A few beads while a garden
-    // is storming. Each one lives 1–2s, creeps down, and stays off birds and buttons.
+    // Rain on the screen glass, storm gardens only. Drops hit, gather into a
+    // lens, then slide. The caller owns the bead and speck arrays. Tick only
+    // writes those slots, so a frame does not allocate.
     public static class StormGlass
     {
-        public const int Cap = 4;
-        public const float LifeMin = 1f;
-        public const float LifeMax = 2f;
+        public const int BeadCap = 16;
+        public const int SpeckCap = 28;
+        public const int DrawCap = BeadCap + SpeckCap;
+        public const int Cap = BeadCap;
+        public const byte Slide = 0;
+        public const byte Sticky = 1;
+        public const bool BlocksTaps = false;
+
+        public const float LifeMin = 2.4f;
+        public const float LifeMax = 4.2f;
+        public const float StickyLifeMin = 3.2f;
+        public const float StickyLifeMax = 5.0f;
         public const float WetOn = 0.22f;
-        public const float RadiusMin = 22f;
-        public const float RadiusMax = 44f;
-        public const float SlideMin = 20f;
-        public const float SlideMax = 42f;
-        public const float Drift = 12f;
-        public const float ClearPx = 16f;
-        public const float GapMin = 0.55f;
-        public const float GapMax = 1.15f;
-        const int SpawnTries = 14;
+        public const float RadiusMin = 8f;
+        public const float RadiusMax = 46f;
+        public const float RadiusCap = 72f;
+        public const float SplatDur = 0.22f;
+        public const float CoverKeep = 0.18f;
+        public const float CoverFade = 0.32f;
+        public const float GapMin = 0.08f;
+        public const float GapMax = 0.18f;
+        public const float StickyCreep = 10f;
+
+        const int SpawnTries = 18;
         const float RefH = 2556f;
+        const float TrailStep = 18f;
+        const float Touch = 0.92f;
 
         public struct Bead
         {
@@ -30,6 +44,21 @@ namespace FlockFive
             public float Life;
             public float Vx;
             public float Vy;
+            public float Phase;
+            public float Wobble;
+            public float Drift;
+            public float Trail;
+            public byte Kind;
+        }
+
+        // A residual droplet left on the glass. It does not slide.
+        public struct Speck
+        {
+            public float X;
+            public float Y;
+            public float Radius;
+            public float Age;
+            public float Life;
         }
 
         // Screen pixels, origin bottom-left, same space as Camera.WorldToScreenPoint.
@@ -60,6 +89,9 @@ namespace FlockFive
 
         public static bool Storming(bool garden, float wet) => garden && wet >= WetOn;
 
+        // A roll under CoverKeep is the only way a drop lands on a bird or button.
+        public static bool KeepOver(float roll) => roll < CoverKeep;
+
         // IMGUI rects are top-left. Blocks are bottom-left so they match the sim.
         public static Block FromGui(Rect gui, float screenH)
         {
@@ -72,20 +104,75 @@ namespace FlockFive
             };
         }
 
-        public static float Alpha(float age, float life)
+        public static float Alpha(float age, float life) => Alpha(age, life, Slide);
+
+        public static float Alpha(float age, float life, byte kind)
         {
-            if (life <= 0f || age <= 0f || age >= life) return 0f;
-            float inn = Mathf.Clamp01(age / 0.14f);
-            float tail = Mathf.Clamp01((life - age) / 0.42f);
-            return inn < tail ? inn : tail;
+            if (life <= 0f || age < 0f || age >= life) return 0f;
+            if (kind == Sticky)
+            {
+                float u = age / life;
+                return 1f - u * u;
+            }
+            float tail = (life - age) / 0.55f;
+            if (tail > 1f) return 1f;
+            if (tail < 0f) return 0f;
+            return tail;
         }
 
-        // The bead lands small and settles. Keep-out uses the full radius.
+        public static float SpeckAlpha(float age, float life)
+        {
+            if (life <= 0f || age < 0f || age >= life) return 0f;
+            float inn = age / 0.05f;
+            if (inn > 1f) inn = 1f;
+            float tail = (life - age) / (life * 0.72f);
+            if (tail > 1f) tail = 1f;
+            if (tail < 0f) tail = 0f;
+            float a = inn < tail ? inn : tail;
+            return a * 0.78f;
+        }
+
+        // Impact is a small flat splat. It gathers into a round bead.
+        public static void Shape(float age, float radius, out float rx, out float ry, out float splat)
+        {
+            float u = SplatDur <= 0f ? 1f : age / SplatDur;
+            if (u < 0f) u = 0f;
+            else if (u > 1f) u = 1f;
+            float k = u * u * (3f - 2f * u);
+            splat = 1f - k;
+            float wide = 1f + 0.48f * splat;
+            float flat = 1f - 0.40f * splat;
+            float spread = 1f + 0.10f * splat;
+            rx = radius * wide * spread;
+            ry = radius * flat * spread;
+        }
+
         public static float ShownRadius(float age, float radius)
         {
-            float u = age <= 0f ? 0f : Mathf.Clamp01(age / 0.09f);
-            float k = 1f - (1f - u) * (1f - u);
-            return radius * (0.58f + 0.42f * k);
+            Shape(age, radius, out float rx, out float ry, out _);
+            return rx > ry ? rx : ry;
+        }
+
+        // 1 on open glass, CoverFade when the center sits on a bird or button.
+        public static float CoverMul(float x, float y, Block[] blocks, int blockCount)
+        {
+            if (!Over(x, y, blocks, blockCount)) return 1f;
+            return CoverFade;
+        }
+
+        public static bool Over(float x, float y, Block[] blocks, int blockCount)
+        {
+            if (blocks == null || blockCount <= 0) return false;
+            int n = blockCount;
+            if (n > blocks.Length) n = blocks.Length;
+            for (int i = 0; i < n; i++)
+            {
+                var b = blocks[i];
+                if (b.W <= 0f || b.H <= 0f) continue;
+                if (x >= b.X && x <= b.X + b.W && y >= b.Y && y <= b.Y + b.H)
+                    return true;
+            }
+            return false;
         }
 
         public static int Tick(
@@ -93,11 +180,13 @@ namespace FlockFive
             bool garden, float wet,
             float areaX, float areaY, float areaW, float areaH,
             Block[] blocks, int blockCount,
-            ref Rng rng, ref float spawnIn)
+            ref Rng rng, ref float spawnIn,
+            Speck[] specks, ref int speckN)
         {
             if (!garden)
             {
                 spawnIn = 0.05f;
+                speckN = 0;
                 return 0;
             }
             if (dt < 0f) dt = 0f;
@@ -105,10 +194,30 @@ namespace FlockFive
             int n = count;
             if (n < 0) n = 0;
             if (beads == null) n = 0;
-            if (n > Cap) n = Cap;
+            if (n > BeadCap) n = BeadCap;
+            if (n > 0 && n > beads.Length) n = beads.Length;
             float scale = areaH / RefH;
             if (scale < 0.65f) scale = 0.65f;
             else if (scale > 1.4f) scale = 1.4f;
+
+            if (specks != null)
+            {
+                if (speckN < 0) speckN = 0;
+                if (speckN > specks.Length) speckN = specks.Length;
+                if (speckN > SpeckCap) speckN = SpeckCap;
+                for (int s = 0; s < speckN;)
+                {
+                    specks[s].Age += dt;
+                    if (specks[s].Age >= specks[s].Life)
+                    {
+                        speckN--;
+                        if (s < speckN) specks[s] = specks[speckN];
+                        continue;
+                    }
+                    s++;
+                }
+            }
+            else speckN = 0;
 
             for (int i = 0; i < n;)
             {
@@ -118,29 +227,37 @@ namespace FlockFive
                     n = DropAt(beads, n, i);
                     continue;
                 }
-                float x = beads[i].X + beads[i].Vx * dt;
-                float y = beads[i].Y + beads[i].Vy * dt;
+                StepMotion(ref beads[i], dt, scale);
+                float ox = beads[i].X;
+                float oy = beads[i].Y;
+                beads[i].X += beads[i].Vx * dt;
+                beads[i].Y += beads[i].Vy * dt;
                 float rad = beads[i].Radius;
-                if (Fits(x, y, rad, areaX, areaY, areaW, areaH, blocks, blockCount, beads, n, i))
+                float minX = areaX + rad;
+                float maxX = areaX + areaW - rad;
+                if (beads[i].X < minX)
                 {
-                    beads[i].X = x;
-                    beads[i].Y = y;
+                    beads[i].X = minX;
+                    if (beads[i].Drift < 0f) beads[i].Drift = -beads[i].Drift;
                 }
-                else
+                else if (beads[i].X > maxX)
                 {
-                    if (Fits(x, beads[i].Y, rad, areaX, areaY, areaW, areaH, blocks, blockCount, beads, n, i))
-                        beads[i].X = x;
-                    if (Fits(beads[i].X, y, rad, areaX, areaY, areaW, areaH, blocks, blockCount, beads, n, i))
-                        beads[i].Y = y;
+                    beads[i].X = maxX;
+                    if (beads[i].Drift > 0f) beads[i].Drift = -beads[i].Drift;
                 }
-                // A bird that walks onto a bead retires it. The glass stays clear.
-                if (!Fits(beads[i].X, beads[i].Y, rad, areaX, areaY, areaW, areaH, blocks, blockCount, beads, n, i))
+                if (beads[i].Y + rad < areaY)
                 {
                     n = DropAt(beads, n, i);
                     continue;
                 }
+                float top = areaY + areaH - rad;
+                if (beads[i].Y > top) beads[i].Y = top;
+                if (beads[i].Kind == Slide)
+                    LayTrail(ref beads[i], ox, oy, scale, specks, ref speckN);
                 i++;
             }
+
+            n = Merge(beads, n, scale);
 
             if (wet < WetOn)
             {
@@ -148,12 +265,145 @@ namespace FlockFive
                 return n;
             }
             spawnIn -= dt;
-            if (spawnIn > 0f || n >= Cap || beads == null) return n;
-            if (TrySpawn(beads, ref n, areaX, areaY, areaW, areaH, scale, blocks, blockCount, ref rng))
+            if (spawnIn > 0f || n >= BeadCap || beads == null) return n;
+            if (TrySpawn(beads, ref n, areaX, areaY, areaW, areaH, scale, blocks, blockCount, ref rng, specks, ref speckN))
                 spawnIn = rng.Range(GapMin, GapMax);
             else
-                spawnIn = 0.18f;
+                spawnIn = 0.16f;
             return n;
+        }
+
+        static void StepMotion(ref Bead b, float dt, float scale)
+        {
+            float wob = b.Wobble;
+            if (wob < 0f) wob = 0f;
+            b.Phase += dt * (1.7f + wob * 0.015f);
+            if (b.Kind == Sticky)
+            {
+                b.Vx = Mathf.Sin(b.Phase) * 6f * scale;
+                b.Vy = -StickyCreep * scale;
+                return;
+            }
+            float side = Mathf.Sin(b.Phase) * wob * scale;
+            float side2 = Mathf.Sin(b.Phase * 0.41f + 1.3f) * wob * 0.28f * scale;
+            b.Vx = b.Drift * scale + side + side2;
+            b.Vy -= Accel(b.Radius, scale) * dt;
+            float term = Terminal(b.Radius, scale);
+            if (b.Vy < -term) b.Vy = -term;
+        }
+
+        // Reference px/s. Bigger beads pull harder and top out faster.
+        public static float Terminal(float radiusPx, float scale)
+        {
+            if (scale < 0.01f) scale = 0.01f;
+            float r = radiusPx / scale;
+            float u = (r - 8f) / 56f;
+            if (u < 0f) u = 0f;
+            else if (u > 1f) u = 1f;
+            return (42f + u * u * 240f) * scale;
+        }
+
+        static float Accel(float radiusPx, float scale)
+        {
+            if (scale < 0.01f) scale = 0.01f;
+            float r = radiusPx / scale;
+            float u = (r - 8f) / 56f;
+            if (u < 0f) u = 0f;
+            else if (u > 1f) u = 1f;
+            return (70f + u * 380f) * scale;
+        }
+
+        static void LayTrail(ref Bead b, float ox, float oy, float scale, Speck[] specks, ref int speckN)
+        {
+            float dx = b.X - ox;
+            float dy = b.Y - oy;
+            float dist = Mathf.Sqrt(dx * dx + dy * dy);
+            if (dist < 0.01f) return;
+            b.Trail += dist;
+            float step = TrailStep * scale;
+            if (step < 8f) step = 8f;
+            if (b.Trail < step) return;
+            b.Trail -= step;
+            if (b.Trail > step) b.Trail = step * 0.5f;
+            float inv = 1f / dist;
+            float back = b.Radius * 0.2f;
+            float sr = b.Radius * 0.15f;
+            float lo = 4.2f * scale;
+            float hi = 7.6f * scale;
+            if (sr < lo) sr = lo;
+            if (sr > hi) sr = hi;
+            float life = 0.62f + (b.Radius / (RadiusCap * scale)) * 0.28f;
+            if (life > 1.05f) life = 1.05f;
+            AddSpeck(specks, ref speckN, b.X - dx * inv * back, b.Y - dy * inv * back, sr, life);
+        }
+
+        static int Merge(Bead[] beads, int n, float scale)
+        {
+            if (beads == null) return 0;
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = i + 1; j < n;)
+                {
+                    float dx = beads[i].X - beads[j].X;
+                    float dy = beads[i].Y - beads[j].Y;
+                    float touch = (beads[i].Radius + beads[j].Radius) * Touch;
+                    if (dx * dx + dy * dy > touch * touch)
+                    {
+                        j++;
+                        continue;
+                    }
+                    Absorb(ref beads[i], beads[j], scale);
+                    n = DropAt(beads, n, j);
+                }
+            }
+            return n;
+        }
+
+        static void Absorb(ref Bead a, Bead b, float scale)
+        {
+            float a1 = a.Radius * a.Radius;
+            float a2 = b.Radius * b.Radius;
+            float sum = a1 + a2;
+            if (sum < 1e-3f) return;
+            a.X = (a.X * a1 + b.X * a2) / sum;
+            a.Y = (a.Y * a1 + b.Y * a2) / sum;
+            float nr = Mathf.Sqrt(sum);
+            float cap = RadiusCap * scale;
+            if (nr > cap) nr = cap;
+            float prev = a.Vy < 0f ? -a.Vy : a.Vy;
+            float other = b.Vy < 0f ? -b.Vy : b.Vy;
+            if (other > prev) prev = other;
+            bool bothSticky = a.Kind == Sticky && b.Kind == Sticky;
+            a.Radius = nr;
+            if (b.Wobble > a.Wobble) a.Wobble = b.Wobble;
+            if (a2 > a1)
+            {
+                a.Phase = b.Phase;
+                a.Drift = b.Drift;
+            }
+            float stickyCut = 16f * scale;
+            if (bothSticky && nr < stickyCut)
+            {
+                a.Kind = Sticky;
+                a.Vy = -StickyCreep * scale;
+                a.Vx = 0f;
+            }
+            else
+            {
+                a.Kind = Slide;
+                float term = Terminal(nr, scale);
+                float faster = prev * 1.2f;
+                if (faster < term * 0.45f) faster = term * 0.45f;
+                if (faster > term) faster = term;
+                if (faster < prev + 0.5f && term > prev + 0.5f)
+                    faster = prev + (term - prev) * 0.35f;
+                if (faster > term) faster = term;
+                a.Vy = -faster;
+            }
+            float remA = a.Life - a.Age;
+            float remB = b.Life - b.Age;
+            if (remB > remA) a.Life = a.Age + remB;
+            if (a.Age < SplatDur) a.Age = SplatDur;
         }
 
         static int DropAt(Bead[] beads, int n, int i)
@@ -166,24 +416,45 @@ namespace FlockFive
         static bool TrySpawn(
             Bead[] beads, ref int n,
             float areaX, float areaY, float areaW, float areaH, float scale,
-            Block[] blocks, int blockCount, ref Rng rng)
+            Block[] blocks, int blockCount, ref Rng rng,
+            Speck[] specks, ref int speckN)
         {
-            float rad = rng.Range(RadiusMin, RadiusMax) * scale;
-            float life = rng.Range(LifeMin, LifeMax);
-            float vx = rng.Range(-Drift, Drift) * scale;
-            float vy = -rng.Range(SlideMin, SlideMax) * scale;
+            if (n >= BeadCap || n >= beads.Length) return false;
+            float roll = rng.Next01();
+            float radRef;
+            if (roll < 0.52f) radRef = rng.Range(8f, 15f);
+            else if (roll < 0.84f) radRef = rng.Range(17f, 29f);
+            else radRef = rng.Range(32f, 46f);
+            byte kind = Slide;
+            float life;
+            if (radRef < 15.5f && rng.Next01() < 0.40f)
+            {
+                kind = Sticky;
+                life = rng.Range(StickyLifeMin, StickyLifeMax);
+            }
+            else life = rng.Range(LifeMin, LifeMax);
+            float rad = radRef * scale;
             float inset = rad + 4f;
             float x0 = areaX + inset;
             float y0 = areaY + inset;
             float x1 = areaX + areaW - inset;
             float y1 = areaY + areaH - inset;
             if (x1 <= x0 || y1 <= y0) return false;
+            float yLo = y0 + (y1 - y0) * 0.30f;
+            // One cover roll for the whole attempt. Retries look for open glass,
+            // so a bird does not fill up, and a fully covered pane stays thin.
+            bool allowCover = KeepOver(rng.Next01());
             for (int t = 0; t < SpawnTries; t++)
             {
                 float x = rng.Range(x0, x1);
-                float y = rng.Range(y0, y1);
-                if (!Fits(x, y, rad, areaX, areaY, areaW, areaH, blocks, blockCount, beads, n, -1))
+                float y = rng.Range(yLo, y1);
+                if (Over(x, y, blocks, blockCount) && !allowCover)
                     continue;
+                if (!ClearOf(x, y, rad, beads, n))
+                    continue;
+                float drift = kind == Sticky ? rng.Range(-4f, 4f) : rng.Range(-16f, 16f);
+                float wobble = kind == Sticky ? rng.Range(4f, 10f) : rng.Range(18f, 46f);
+                float vy = kind == Sticky ? -StickyCreep : -rng.Range(6f, 18f);
                 beads[n] = new Bead
                 {
                     X = x,
@@ -191,55 +462,80 @@ namespace FlockFive
                     Radius = rad,
                     Age = 0f,
                     Life = life,
-                    Vx = vx,
-                    Vy = vy
+                    Vx = 0f,
+                    Vy = vy * scale,
+                    Phase = rng.Range(0f, 6.28318f),
+                    Wobble = wobble,
+                    Drift = drift,
+                    Trail = 0f,
+                    Kind = kind
                 };
                 n++;
+                Burst(specks, ref speckN, x, y, rad, scale, ref rng);
                 return true;
             }
             return false;
         }
 
-        static bool Fits(
-            float x, float y, float rad,
-            float areaX, float areaY, float areaW, float areaH,
-            Block[] blocks, int blockCount,
-            Bead[] beads, int beadCount, int self)
+        static bool ClearOf(float x, float y, float rad, Bead[] beads, int n)
         {
-            if (x - rad < areaX || y - rad < areaY) return false;
-            if (x + rad > areaX + areaW || y + rad > areaY + areaH) return false;
-            float keep = rad + ClearPx;
-            if (blocks != null)
+            for (int i = 0; i < n; i++)
             {
-                int bn = blockCount;
-                if (bn > blocks.Length) bn = blocks.Length;
-                for (int i = 0; i < bn; i++)
-                {
-                    if (blocks[i].W <= 0f || blocks[i].H <= 0f) continue;
-                    if (CircleHits(x, y, keep, blocks[i])) return false;
-                }
-            }
-            if (beads != null)
-            {
-                for (int i = 0; i < beadCount; i++)
-                {
-                    if (i == self) continue;
-                    float dx = x - beads[i].X;
-                    float dy = y - beads[i].Y;
-                    float need = keep + beads[i].Radius;
-                    if (dx * dx + dy * dy < need * need) return false;
-                }
+                float dx = x - beads[i].X;
+                float dy = y - beads[i].Y;
+                float need = (rad + beads[i].Radius) * 0.72f;
+                if (dx * dx + dy * dy < need * need) return false;
             }
             return true;
         }
 
-        static bool CircleHits(float x, float y, float rad, Block b)
+        static void Burst(Speck[] specks, ref int speckN, float x, float y, float rad, float scale, ref Rng rng)
         {
-            float nx = x < b.X ? b.X : (x > b.X + b.W ? b.X + b.W : x);
-            float ny = y < b.Y ? b.Y : (y > b.Y + b.H ? b.Y + b.H : y);
-            float dx = x - nx;
-            float dy = y - ny;
-            return dx * dx + dy * dy < rad * rad;
+            for (int k = 0; k < 3; k++)
+            {
+                float ang = rng.Range(0f, 6.28318f);
+                float d = rad * rng.Range(0.85f, 1.45f);
+                float sr = rng.Range(4.2f, 7.2f) * scale;
+                AddSpeck(specks, ref speckN,
+                    x + Mathf.Cos(ang) * d, y + Mathf.Sin(ang) * d,
+                    sr, rng.Range(0.26f, 0.48f));
+            }
+        }
+
+        static void AddSpeck(Speck[] specks, ref int n, float x, float y, float rad, float life)
+        {
+            if (specks == null || rad <= 0f || life <= 0f) return;
+            int cap = specks.Length;
+            if (cap > SpeckCap) cap = SpeckCap;
+            if (cap <= 0) return;
+            int i;
+            if (n < cap)
+            {
+                i = n;
+                n++;
+            }
+            else
+            {
+                i = 0;
+                float oldest = specks[0].Age;
+                int limit = n < cap ? n : cap;
+                for (int k = 1; k < limit; k++)
+                {
+                    if (specks[k].Age > oldest)
+                    {
+                        oldest = specks[k].Age;
+                        i = k;
+                    }
+                }
+            }
+            specks[i] = new Speck
+            {
+                X = x,
+                Y = y,
+                Radius = rad,
+                Age = 0f,
+                Life = life
+            };
         }
     }
 }

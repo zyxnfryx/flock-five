@@ -8,6 +8,7 @@ namespace FlockFive
 {
     // Copies the garden color, then draws each bead as a lens on top.
     // Installed for the play session only. The renderer asset stays as shipped.
+    // Draw lists are fixed pools. A frame does not allocate a new one.
     public sealed class StormGlassFeature : ScriptableRendererFeature
     {
         static StormGlassFeature _feature;
@@ -15,8 +16,8 @@ namespace FlockFive
 
         Material _mat;
         Pass _pass;
-        readonly Vector4[] _rects = new Vector4[StormGlass.Cap];
-        readonly Vector4[] _beads = new Vector4[StormGlass.Cap];
+        readonly Vector4[] _rects = new Vector4[StormGlass.DrawCap];
+        readonly Vector4[] _beads = new Vector4[StormGlass.DrawCap];
 
         public static void Install()
         {
@@ -101,6 +102,8 @@ namespace FlockFive
             readonly Material _mat;
             readonly Vector4[] _rects;
             readonly Vector4[] _beads;
+            readonly Vector4[] _snapR = new Vector4[StormGlass.DrawCap];
+            readonly Vector4[] _snapB = new Vector4[StormGlass.DrawCap];
 
             public Pass(Material mat, Vector4[] rects, Vector4[] beads)
             {
@@ -115,8 +118,8 @@ namespace FlockFive
                 public TextureHandle Destination;
                 public Material Material;
                 public int Count;
-                public Vector4 R0, R1, R2, R3;
-                public Vector4 B0, B1, B2, B3;
+                public Vector4[] Rects;
+                public Vector4[] Beads;
             }
 
             public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
@@ -134,6 +137,12 @@ namespace FlockFive
                 if (texW < 2 || texH < 2) return;
                 int n = StormGlassRig.Fill(camera.camera, texW, texH, _rects, _beads);
                 if (n <= 0) return;
+                if (n > StormGlass.DrawCap) n = StormGlass.DrawCap;
+                for (int i = 0; i < n; i++)
+                {
+                    _snapR[i] = _rects[i];
+                    _snapB[i] = _beads[i];
+                }
 
                 desc.clearBuffer = false;
                 desc.msaaSamples = MSAASamples.None;
@@ -158,14 +167,8 @@ namespace FlockFive
                     pass.Destination = shown;
                     pass.Material = _mat;
                     pass.Count = n;
-                    pass.R0 = n > 0 ? _rects[0] : default;
-                    pass.R1 = n > 1 ? _rects[1] : default;
-                    pass.R2 = n > 2 ? _rects[2] : default;
-                    pass.R3 = n > 3 ? _rects[3] : default;
-                    pass.B0 = n > 0 ? _beads[0] : default;
-                    pass.B1 = n > 1 ? _beads[1] : default;
-                    pass.B2 = n > 2 ? _beads[2] : default;
-                    pass.B3 = n > 3 ? _beads[3] : default;
+                    pass.Rects = _snapR;
+                    pass.Beads = _snapB;
                     builder.UseTexture(sample, AccessFlags.Read);
                     builder.UseTexture(shown, AccessFlags.ReadWrite);
                     builder.AllowGlobalStateModification(true);
@@ -179,6 +182,7 @@ namespace FlockFive
             static void Draw(BeadData data, UnsafeGraphContext ctx)
             {
                 if (data.Material == null || data.Count <= 0) return;
+                if (data.Rects == null || data.Beads == null) return;
                 var cmd = CommandBufferHelpers.GetNativeCommandBuffer(ctx.cmd);
                 ctx.cmd.SetRenderTarget(data.Destination);
                 var srcTex = (Texture)data.Source;
@@ -187,11 +191,12 @@ namespace FlockFive
                     var texel = new Vector4(1f / srcTex.width, 1f / srcTex.height, srcTex.width, srcTex.height);
                     cmd.SetGlobalVector(BlitTexelId, texel);
                 }
-                for (int i = 0; i < data.Count; i++)
+                int n = data.Count;
+                if (n > data.Rects.Length) n = data.Rects.Length;
+                if (n > data.Beads.Length) n = data.Beads.Length;
+                for (int i = 0; i < n; i++)
                 {
-                    Vector4 rect = i == 0 ? data.R0 : i == 1 ? data.R1 : i == 2 ? data.R2 : data.R3;
-                    Vector4 bead = i == 0 ? data.B0 : i == 1 ? data.B1 : i == 2 ? data.B2 : data.B3;
-                    Place(rect, bead, out Vector4 quad, out Vector4 center, out Vector4 rad);
+                    Place(data.Rects[i], data.Beads[i], out Vector4 quad, out Vector4 center, out Vector4 rad);
                     // Globals, not only the property block: a pass that never
                     // compiled last capture was drawing with every uniform at 0.
                     cmd.SetGlobalTexture(BlitTexId, data.Source);
@@ -212,6 +217,7 @@ namespace FlockFive
             }
 
             // rect is the circle. bead.xy is the trail offset behind the slide.
+            // bead.z is alpha. bead.w is splat (1 at the impact, 0 once gathered).
             static void Place(Vector4 rect, Vector4 bead, out Vector4 quad, out Vector4 center, out Vector4 rad)
             {
                 float cx = rect.z + rect.x * 0.5f;
@@ -224,14 +230,14 @@ namespace FlockFive
                 float y1 = rect.w + rect.y;
                 float ex = cx + bead.x;
                 float ey = cy + bead.y;
-                float px = rx * 0.5f;
-                float py = ry * 0.5f;
+                float px = rx * 0.45f;
+                float py = ry * 0.45f;
                 if (ex - px < x0) x0 = ex - px;
                 if (ey - py < y0) y0 = ey - py;
                 if (ex + px > x1) x1 = ex + px;
                 if (ey + py > y1) y1 = ey + py;
                 quad = new Vector4(x1 - x0, y1 - y0, x0, y0);
-                center = new Vector4(cx, cy, bead.z, 0f);
+                center = new Vector4(cx, cy, bead.z, bead.w);
                 rad = new Vector4(rx, ry, bead.x, bead.y);
             }
         }
