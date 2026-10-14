@@ -23,6 +23,10 @@ namespace FlockFive
         public bool InTransit => _departing || _arriving;
 
         void Awake() => _planted = transform.position;
+
+        void OnEnable() => CamShake.WatchHud(transform);
+
+        void OnDisable() => CamShake.ForgetHud(transform);
         public void PlantHere() => _planted = transform.position; // edit-mode clips/tests
 
         static Sprite _px;

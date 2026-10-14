@@ -69,12 +69,17 @@ namespace FlockFive
             return null;
         }
 
-        void BindLightningFire() => GardenStorm.FireAim = OfferFire;
+        void BindLightningFire()
+        {
+            GardenStorm.FireAim = OfferFire;
+            CamShake.AfterShake += SnapHiveToHud;
+        }
 
         void UnbindLightningFire()
         {
             if (GardenStorm.FireAim == OfferFire)
                 GardenStorm.FireAim = null;
+            CamShake.AfterShake -= SnapHiveToHud;
         }
 
         // One roll per storm bolt. Always on. A miss climbs the odds. A fire
@@ -97,7 +102,7 @@ namespace FlockFive
             }
             _fireMisses = 0;
             ApplyFire(roll.Index, view);
-            aim = view.transform.position;
+            aim = view.StrikePoint();
             return true;
         }
 
@@ -608,7 +613,7 @@ namespace FlockFive
             Directory.CreateDirectory(frames);
             int n = 0;
             float t = 0f;
-            const float seconds = 4.2f;
+            const float seconds = 5.4f;
             while (t < seconds)
             {
                 if (_fireShown == shown) LightningFire.Force = true;

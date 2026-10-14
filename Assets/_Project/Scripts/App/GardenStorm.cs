@@ -95,6 +95,8 @@ namespace FlockFive
         static float _skyPow;
         static bool _skyBig;
         Transform _cue;
+        SpriteRenderer _hot;
+        Material _hotMat;
         SpriteRenderer _track;
         SpriteRenderer _fill;
         Transform _fillT;
@@ -153,12 +155,66 @@ namespace FlockFive
             _strikeDark = DarkHold;
             _skyAt = PlayClock.Now - 0.012f;
             _skyBig = true;
-            _skyPow = 1f;
+            // Subtle sky pulse. The fullscreen sheet stays off so HUD is not flashed.
+            _skyPow = 0.46f;
+            if (_veil != null) _veil.sortingOrder = -11;
+            if (_flash != null)
+            {
+                _flash.enabled = false;
+                _flashLit = false;
+            }
+            EnsureHot();
             Sfx.ThunderCrack(0.72f);
-            CamShake.Bolt(0.30f);
+            CamShake.Bolt(0.30f, true);
             Haptics.Play(Haptics.Tier.Light);
             SpawnBolt(0.9f, true);
             _boltLife = 0.72f;
+        }
+
+        void EnsureHot()
+        {
+            if (_hot != null) return;
+            var go = WorldBuilder.Sprite("StrikeHot", SpriteCatalog.Glow, new Vector3(_aimX, _aimY, 0f), 1f, 5, transform);
+            _hot = go.GetComponent<SpriteRenderer>();
+            var sh = Shader.Find("FlockFive/SpriteAdd");
+            if (sh != null)
+            {
+                _hotMat = new Material(sh) { name = "StrikeHot", hideFlags = HideFlags.HideAndDontSave };
+                _hot.sharedMaterial = _hotMat;
+            }
+            _hot.enabled = false;
+        }
+
+        void PaintHot()
+        {
+            if (!_showcase || _hot == null) return;
+            float ft = PlayClock.Now - _skyAt;
+            float flash = (ft < 0f || ft > 0.5f) ? 0f : FlashShape(ft, true);
+            float coal = 0f;
+            if (ft >= 0f && ft < 1.35f)
+                coal = 0.42f * (1f - Mathf.Clamp01((ft - 0.28f) / 1.05f));
+            float a = flash * 0.9f + coal;
+            if (a < 0.02f)
+            {
+                if (_hot.enabled) _hot.enabled = false;
+                return;
+            }
+            _hot.enabled = true;
+            _hot.sortingOrder = 5;
+            _hot.transform.position = new Vector3(_aimX, _aimY, 0f);
+            float sc = 1.5f + 4.6f * flash + 1.3f * coal;
+            _hot.transform.localScale = new Vector3(sc, sc * 0.7f, 1f);
+            _hot.color = new Color(1f, 0.8f, 0.42f, a);
+        }
+
+        void EndShowcase()
+        {
+            if (!_showcase) return;
+            if (_strikeDark > 0f || _boltOn) return;
+            if (PlayClock.Now - _skyAt < 0.55f) return;
+            _showcase = false;
+            if (_veil != null) _veil.sortingOrder = 16;
+            if (_hot != null) _hot.enabled = false;
         }
 
         bool AimFire()
@@ -220,6 +276,7 @@ namespace FlockFive
         {
             if (_mesh != null) Destroy(_mesh);
             if (_sheetMat != null) Destroy(_sheetMat);
+            if (_hotMat != null) Destroy(_hotMat);
         }
 
         // Resume frame's unscaled step is the whole suspension. The app handler
@@ -618,6 +675,8 @@ namespace FlockFive
             }
 
             PaintFlash();
+            PaintHot();
+            EndShowcase();
             if (_boltOn)
             {
                 float age = PlayClock.Now - _boltAt;
@@ -681,6 +740,12 @@ namespace FlockFive
         void PaintFlash()
         {
             if (_flash == null) return;
+            // Fire keeps the white sheet off. SkyFlash tints only the painting.
+            if (_showcase)
+            {
+                if (_flashLit) DimFlash();
+                return;
+            }
             float ft = PlayClock.Now - _skyAt;
             if (ft < 0f || ft > 0.45f)
             {
@@ -725,7 +790,6 @@ namespace FlockFive
             EndBolt();
             _boltOn = true;
             _boltAt = PlayClock.Now;
-            _boltLife = big ? 0.46f : 0.28f;
             _boltPow = big ? 1f : Mathf.Clamp01(power);
             Frame(out float left, out float right, out float bottom, out float top);
             float x0 = Random.Range(left * 0.62f, right * 0.62f);
@@ -744,7 +808,8 @@ namespace FlockFive
                 x1 = x0 + Random.Range(-1.8f, 1.8f);
                 y1 = Mathf.Lerp(bottom + 2.6f, bottom + 0.55f, Mathf.Clamp01(power));
             }
-            float thick = big ? (_showcase ? 0.52f : 0.36f) : 0.22f;
+            _boltLife = big ? (_showcase ? 0.62f : 0.46f) : 0.28f;
+            float thick = big ? (_showcase ? 0.64f : 0.36f) : 0.22f;
             int trunk = big ? (_showcase ? 12 : 8) : 6;
             Lay(x0, y0, x1, y1, trunk, big ? 0.9f : 0.55f, thick, true);
             int forks = big ? (LeanFrame() ? 2 : (_showcase ? 6 : 4)) : (LeanFrame() ? 1 : 2);
@@ -754,8 +819,10 @@ namespace FlockFive
                 int at = 1 + (f * 2) % (_pn - 1);
                 float dir = ((f & 1) == 0) ? -1f : 1f;
                 if (Random.value < 0.15f) dir = -dir;
-                float len = Random.Range(0.9f, big ? (_showcase ? 3.1f : 2.6f) : 1.7f);
-                Lay(_px[at], _py[at], _px[at] + dir * len, _py[at] - Random.Range(0.35f, 1.35f), big ? 4 : 3, 0.35f, thick * 0.48f, false);
+                float len = Random.Range(0.9f, big ? (_showcase ? 2.4f : 2.6f) : 1.7f);
+                float endY = _py[at] - Random.Range(0.35f, 1.15f);
+                if (_showcase && endY < _aimY + 0.02f) endY = _aimY + 0.02f;
+                Lay(_px[at], _py[at], _px[at] + dir * len, endY, big ? 4 : 3, 0.35f, thick * 0.48f, false);
             }
             // A second generation off the trunk, so the fire bolt reads as a tree
             // and not a single stroke with side ticks.
@@ -766,13 +833,17 @@ namespace FlockFive
                     int at = 2 + c * 3;
                     if (at >= _pn) break;
                     float dir = c == 1 ? -1f : 1f;
+                    float endY = _py[at] - Random.Range(0.35f, 0.9f);
+                    if (endY < _aimY + 0.02f) endY = _aimY + 0.02f;
                     Lay(_px[at], _py[at],
-                        _px[at] + dir * Random.Range(1.15f, 1.9f),
-                        _py[at] - Random.Range(0.45f, 1.15f),
+                        _px[at] + dir * Random.Range(0.7f, 1.45f),
+                        endY,
                         3, 0.28f, thick * 0.32f, false);
                 }
             }
-            if (big && !LeanFrame())
+            // The fire bolt is the one that hits the limb. A second stroke
+            // beside it reads as a miss, so ordinary storms keep it.
+            if (big && !LeanFrame() && !_showcase)
             {
                 float side = Random.value < 0.5f ? -1f : 1f;
                 float ox = x0 + side * Random.Range(1.1f, 2.0f);
@@ -840,6 +911,13 @@ namespace FlockFive
             t.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(dy, dx) * Mathf.Rad2Deg - 90f);
             // RainStreak is 0.125 wide and 1 tall at scale 1.
             t.localScale = new Vector3(thick * 8f, len * 1.08f, 1f);
+            if (_showcase)
+            {
+                float mx = t.position.x - _aimX;
+                float my = t.position.y - _aimY;
+                // Shaft sits behind bark, birds, and leaves. The tip lands on the limb.
+                sr.sortingOrder = (mx * mx + my * my) < 1.05f * 1.05f ? 4 : 1;
+            }
             sr.enabled = true;
             _segMul[i] = thick >= 0.2f ? 1f : 0.8f;
         }

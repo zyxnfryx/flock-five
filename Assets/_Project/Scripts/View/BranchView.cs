@@ -31,6 +31,10 @@ namespace FlockFive
         Vector3 _woodScale = new Vector3(0.64f, 0.50f, 1f);
         Vector3 _woodPos;
         bool _woodRemembered;
+        Material _charMat;
+        Material _woodShared;
+        Vector3 _burnHome;
+        bool _burnHomeSet;
         float _shake;
         float _land;
         bool _breaking;
@@ -483,6 +487,7 @@ namespace FlockFive
 
         void RestoreWoodLook()
         {
+            DropChar();
             if (Wood == null || !_woodRemembered) return;
             Wood.enabled = true;
             Wood.color = Color.white;
@@ -491,19 +496,62 @@ namespace FlockFive
             Wood.transform.localRotation = Quaternion.identity;
         }
 
-        // Char, then the limb splits into glowing debris. Sync skips a breaking limb.
-        // The ordinary snap stays on BreakAway. This path is the fire.
+        // Where the bolt should land: the middle of the bark, not the hinge.
+        public Vector3 StrikePoint()
+        {
+            if (Wood != null) return Wood.bounds.center;
+            return transform.position;
+        }
+
+        void ArmChar()
+        {
+            if (Wood == null) return;
+            var sh = Shader.Find("FlockFive/WoodChar");
+            if (sh == null) return;
+            _woodShared = Wood.sharedMaterial;
+            _charMat = new Material(sh) { name = "WoodChar" };
+            if (Wood.sprite != null && Wood.sprite.texture != null)
+                _charMat.mainTexture = Wood.sprite.texture;
+            _charMat.SetFloat("_Hit", 0.5f);
+            _charMat.SetFloat("_Spread", 0.04f);
+            Wood.sharedMaterial = _charMat;
+            Wood.color = Color.white;
+        }
+
+        void DropChar()
+        {
+            if (Wood != null && _charMat != null)
+            {
+                if (Wood.sharedMaterial == _charMat) Wood.sharedMaterial = _woodShared;
+            }
+            if (_charMat != null)
+            {
+                Destroy(_charMat);
+                _charMat = null;
+            }
+        }
+
+        // Burn along the bark, then the limb cracks. The ordinary snap stays
+        // on BreakAway. This path is the fire.
         public void BeginScorch(Transform fxRoot)
         {
             _breaking = true;
             RememberWood();
+            _burnHome = transform.position;
+            _burnHomeSet = true;
             if (Sign != null) Sign.gameObject.SetActive(false);
-            if (Wood != null) Wood.color = new Color(1f, 0.86f, 0.45f, 1f);
+            Vector3 at = StrikePoint();
+            float half = Wood != null ? Wood.bounds.extents.x : 1.4f;
+            if (half < 0.25f) half = 1.4f;
+            float sign = FromRight ? 1f : -1f;
+            var trunk = at + new Vector3(sign * half * 0.94f, 0f, 0f);
+            var tip = at - new Vector3(sign * half * 0.94f, 0f, 0f);
             var root = fxRoot != null ? fxRoot : transform.parent;
             Sprite limb = Wood != null ? Wood.sprite : null;
             Vector3 scale = Wood != null ? Wood.transform.lossyScale : Vector3.one;
             bool flip = Wood != null && Wood.flipX;
-            StrikeFx.Play(root, transform.position, limb, scale, flip);
+            StrikeFx.Play(root, at, limb, scale, flip, trunk, tip - trunk, Wood);
+            ArmChar();
             Sfx.Crackle();
             StartCoroutine(ScorchDrop());
         }
@@ -518,30 +566,36 @@ namespace FlockFive
                 if (act != _act)
                 {
                     _breaking = false;
+                    DropChar();
                     yield break;
                 }
                 t += Time.deltaTime;
-                if (Wood != null)
+                float spread = StrikeFx.CharSpread(t);
+                if (_charMat != null)
+                    _charMat.SetFloat("_Spread", spread);
+                else if (Wood != null)
                 {
-                    float u = Mathf.Clamp01(t / burn);
-                    var hot = new Color(1f, 0.94f, 0.70f, 1f);
-                    var ash = new Color(0.05f, 0.02f, 0.015f, 1f);
-                    // Hold the gold a moment, then char hard so the burn reads
-                    // before the limb splits.
-                    float charU = Mathf.Clamp01((u - 0.22f) / 0.78f);
-                    Wood.color = Color.Lerp(hot, ash, charU * charU);
-                    float swell = 1f + 0.07f * Mathf.Sin(u * Mathf.PI);
-                    Wood.transform.localScale = new Vector3(
-                        _woodScale.x * swell, _woodScale.y * (1.06f - 0.06f * u), _woodScale.z);
+                    var hot = new Color(1f, 0.9f, 0.62f, 1f);
+                    var ash = new Color(0.07f, 0.03f, 0.015f, 1f);
+                    Wood.color = Color.Lerp(hot, ash, spread);
+                }
+                if (_burnHomeSet)
+                {
+                    float wob = Mathf.Sin(t * 42f) * 0.018f * (1f - Mathf.Clamp01(t / burn));
+                    transform.position = _burnHome + new Vector3(wob, 0f, 0f);
                 }
                 yield return null;
             }
             if (act != _act)
             {
                 _breaking = false;
+                DropChar();
                 yield break;
             }
+            DropChar();
             if (Wood != null) Wood.enabled = false;
+            Sfx.Break();
+            Haptics.BranchBreak();
             float rest = 1.15f;
             while (rest > 0f)
             {

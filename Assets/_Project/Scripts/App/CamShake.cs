@@ -9,7 +9,11 @@ namespace FlockFive
         // controls (hive, restart) shake with the scene.
         public static Vector2 HudOffset;
         public static float HudTwist;
+        public static event System.Action AfterShake;
+        static readonly System.Collections.Generic.List<Transform> HudWorld = new System.Collections.Generic.List<Transform>(4);
         Vector3 _rest;
+        Vector3 _restWorld;
+        bool _boltWorld;
         float _restSize;
         Camera _cam;
         float _t;
@@ -31,7 +35,23 @@ namespace FlockFive
             Live = this;
             _cam = GetComponent<Camera>();
             _rest = transform.localPosition;
+            _restWorld = transform.position;
             _restSize = _cam != null ? _cam.orthographicSize : 8.2f;
+            if (GetComponent<HudPin>() == null) gameObject.AddComponent<HudPin>();
+        }
+
+        // Nectar bottles and other world HUD. A world-only bolt pins these so
+        // the camera can shake the garden without dragging them.
+        public static void WatchHud(Transform t)
+        {
+            if (t == null || HudWorld.Contains(t)) return;
+            HudWorld.Add(t);
+        }
+
+        public static void ForgetHud(Transform t)
+        {
+            if (t == null) return;
+            HudWorld.Remove(t);
         }
 
         void OnEnable() => Live = this;
@@ -73,7 +93,10 @@ namespace FlockFive
             _seed = Random.Range(0f, 80f);
         }
 
-        public static void Bolt(float power)
+        public static void Bolt(float power) => Bolt(power, false);
+
+        // worldOnly shakes the camera and leaves IMGUI (undo, hive, top bar) put.
+        public static void Bolt(float power, bool worldOnly)
         {
             if (Live == null) return;
             power = Mathf.Clamp01(power);
@@ -82,10 +105,16 @@ namespace FlockFive
             Live._boltKick = Mathf.Lerp(0.022f, 0.052f, power);
             Live._boltTwist = Mathf.Lerp(0.85f, 2.1f, power);
             Live._bolt = Live._boltDur;
+            Live._boltWorld = worldOnly;
             float ang = Random.Range(0f, Mathf.PI * 2f);
             Live._boltDir = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang) * 0.52f);
             Live._boltSeed = Random.Range(0f, 40f);
             Live._t = 0f;
+            if (worldOnly)
+            {
+                HudOffset = Vector2.zero;
+                HudTwist = 0f;
+            }
         }
 
         void LateUpdate()
@@ -133,7 +162,37 @@ namespace FlockFive
             transform.localRotation = Quaternion.Euler(0f, 0f, (s1 * 0.75f + s2 * 0.4f + roll * 0.28f) * _boltTwist);
             if (_cam != null)
                 _cam.orthographicSize = _restSize * (1f - _boltKick * (s1 + 0.32f * s2));
-            Mirror();
+            if (_boltWorld)
+            {
+                HudOffset = Vector2.zero;
+                HudTwist = 0f;
+            }
+            else Mirror();
+        }
+
+        // After feeders have written their rest pose. Keeps world HUD screen-fixed
+        // while the camera shakes the garden.
+        public void PinHudLate()
+        {
+            if (!_boltWorld || _bolt <= 0f) return;
+            float zoom = _cam != null && _restSize > 0.01f ? _cam.orthographicSize / _restSize : 1f;
+            var rot = transform.rotation;
+            var cam = transform.position;
+            for (int i = HudWorld.Count - 1; i >= 0; i--)
+            {
+                var t = HudWorld[i];
+                if (t == null) { HudWorld.RemoveAt(i); continue; }
+                var restPos = t.position;
+                var restRot = t.rotation;
+                var restScale = t.localScale;
+                var rel = new Vector3(restPos.x - _restWorld.x, restPos.y - _restWorld.y, 0f) * zoom;
+                var spun = rot * rel;
+                t.position = new Vector3(cam.x + spun.x, cam.y + spun.y, restPos.z);
+                t.rotation = rot * restRot;
+                t.localScale = restScale * zoom;
+            }
+            var after = AfterShake;
+            if (after != null) after();
         }
 
         // A capture frame's wall step is the encode hitch. Follow the capture
@@ -162,6 +221,20 @@ namespace FlockFive
             transform.localPosition = _rest;
             transform.localRotation = Quaternion.identity;
             if (_cam != null) _cam.orthographicSize = _restSize;
+            _boltWorld = false;
+        }
+    }
+
+    // Runs after feeder LateUpdate so a world-only bolt can pin HUD sprites.
+    [DefaultExecutionOrder(10000)]
+    public sealed class HudPin : MonoBehaviour
+    {
+        CamShake _shake;
+
+        void LateUpdate()
+        {
+            if (_shake == null) _shake = GetComponent<CamShake>();
+            if (_shake != null) _shake.PinHudLate();
         }
     }
 }
