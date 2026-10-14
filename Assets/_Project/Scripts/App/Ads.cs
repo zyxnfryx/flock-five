@@ -101,7 +101,8 @@ namespace FlockFive
             _depth--;
             if (_depth > 0) return;
             Time.timeScale = _scale;
-            AudioListener.pause = _audio;
+            // b89: an ad still up keeps the listener paused whatever Push saved.
+            AudioListener.pause = _audio || AdAudioHold.Held;
         }
 
         // Build 61: the unpaused time scale (1, or the solved-board auto-resolve speed). Under a
@@ -119,7 +120,7 @@ namespace FlockFive
             if (_depth > 0)
             {
                 Time.timeScale = _scale;
-                AudioListener.pause = _audio;
+                AudioListener.pause = _audio || AdAudioHold.Held;
             }
             _depth = 0;
             TutorHold = false;
@@ -131,8 +132,9 @@ namespace FlockFive
         public static void UnstickAudio()
         {
             _audio = false;
-            AudioListener.pause = false;
             AudioListener.volume = 1f;
+            // b89: never unstick under an open ad; the ad's close does that.
+            AudioListener.pause = AdAudioHold.Held;
         }
     }
 
@@ -220,10 +222,9 @@ namespace FlockFive
         // Foreground seconds the current show has been up. The resume frame's
         // unscaled step is the whole suspension, so it must not move this.
         static float _shownForeground;
-        static float _settleLeft = -1f;
 
         public static bool IsLoading { get; private set; }
-        public static bool IsShowing => _showDepth > 0;
+        public static bool IsShowing => _showDepth > 0 || AdAudioHold.Held;
 
         public static bool RewardedReady
         {
@@ -260,11 +261,11 @@ namespace FlockFive
             if (_showDepth == 0)
             {
                 _shownForeground = 0f;
-                _settleLeft = -1f;
                 GamePause.Push();
                 AdPause.Begin();
             }
             _showDepth++;
+            AdAudioHold.Acquire();
             HoldAdAudio();
         }
 
@@ -306,8 +307,8 @@ namespace FlockFive
         {
             if (_showDepth == 0) return;
             _showDepth--;
+            AdAudioHold.Release();
             if (_showDepth > 0) return;
-            _settleLeft = -1f;
             GamePause.Pop();
             // Pop can put back a pause that was already true when the ad began.
             AudioGuard.Restore();
@@ -348,16 +349,20 @@ namespace FlockFive
         public static void ForceClear()
         {
             IsLoading = false;
-            _settleLeft = -1f;
             while (_showDepth > 0) EndShow();
+            AdAudioHold.ResetForTest();
         }
 
-        // Coming back while a show is up. A late reward callback still has a
-        // beat; then one release lets the owning coroutine finish the grant.
+        // Coming back while a show is up. b89: this is NOT a release. After an
+        // App Store click-through (iOS) or the same focus bounce (Android) the
+        // ad is usually still on screen, so the show, the freeze and the audio
+        // hold stay until the ad's close or fail callback. Only the safety
+        // window tightens, in case that close was lost in the hop.
         public static void ArmResumeSettle()
         {
-            if (!IsShowing || JustShown) return;
-            if (_settleLeft < 0f) _settleLeft = 0.35f;
+            if (!IsShowing) return;
+            AdAudioHold.NoteResume();
+            HoldAdAudio();
         }
 
         public static void TickShowClock()
@@ -366,13 +371,13 @@ namespace FlockFive
             // The ad token times out in 10s. A show is longer than that, so the
             // hold is refreshed every tick until close, fail, or skip.
             if (IsShowing) HoldAdAudio();
-            if (_showDepth > 0)
-                _shownForeground += ForegroundDt();
-            if (_settleLeft < 0f) return;
-            _settleLeft -= ForegroundDt();
-            if (_settleLeft > 0f) return;
-            _settleLeft = -1f;
+            if (_showDepth == 0) return;
+            float dt = ForegroundDt();
+            _shownForeground += dt;
+            if (!AdAudioHold.Tick(dt)) return;
+            AdLog.Add("ad close never arrived; safety release after " + AdAudioHold.Foreground.ToString("0") + "s");
             if (_host != null) _host.ReleaseAfterResume();
+            ForceClear();
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -387,7 +392,6 @@ namespace FlockFive
             IsLoading = false;
             _showDepth = 0;
             _shownForeground = 0f;
-            _settleLeft = -1f;
             _skipClearInterstitial = false;
             _intDisplayed = false;
             VipSoftPending = false;
@@ -1184,8 +1188,6 @@ namespace FlockFive
             _waiting = false;
         }
 
-        bool _leftApp;
-
         void OnApplicationPause(bool paused)
         {
             AdPause.OnAppPause(paused);
@@ -1193,17 +1195,14 @@ namespace FlockFive
             Ads.DeliverPause(paused);
             if (paused)
             {
-                _leftApp = true;
                 AdLog.Flush();
                 return;
             }
-            // The ad activity took the foreground. Coming back usually means it is
-            // gone, even when the close callback never arrived. JustShown still
-            // ignores the flicker some SDKs emit in the first moments of ShowAd.
-            // ArmResumeSettle waits one beat so a late reward is not dropped.
-            if (_leftApp && Ads.IsShowing)
+            // b89: coming back (App Store click-through on iOS, the ad activity
+            // bouncing focus on Android) does not mean the ad is gone. The hold
+            // stays until close or fail; Restore below keeps it while it is held.
+            if (Ads.IsShowing)
                 Ads.ArmResumeSettle();
-            _leftApp = false;
             AudioGuard.Restore();
         }
 
@@ -1211,20 +1210,15 @@ namespace FlockFive
         {
             Ads.DeliverFocus(focus);
             if (focus) AudioGuard.Restore();
-            if (!focus || !_leftApp || !Ads.IsShowing) return;
+            if (!focus || !Ads.IsShowing) return;
             Ads.ArmResumeSettle();
-            _leftApp = false;
         }
 
         void Update()
         {
             AdLog.Flush();
+            // Holds the ad audio every frame; the safety release lives in there too.
             Ads.TickShowClock();
-            if (Ads.IsShowing && Ads.ShownFor > 185f)
-            {
-                ReleaseAfterResume();
-                Ads.ForceClear();
-            }
 #if FF_ADS_DEV
             DevGestures();
 #endif
