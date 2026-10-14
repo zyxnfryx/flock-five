@@ -76,6 +76,7 @@ namespace FlockFive
             concat.Append("ffconcat version 1.0\n");
             string last = null;
             int guard = 0;
+            int poseRest = 0, poseUp = 0, poseMid = 0;
             while (_flutterLive && guard < 1800)
             {
                 yield return new WaitForEndOfFrame();
@@ -93,6 +94,14 @@ namespace FlockFive
                 string path = Path.Combine(FlutterFrames, name);
                 File.WriteAllBytes(path, tex.EncodeToJPG(86));
                 NoteFlutterStill(tex, log);
+                var peach = GameObject.Find("MascotPeach");
+                var flap = peach != null ? peach.GetComponent<BirdIdle>() : null;
+                if (flap != null && flap.FlapDriven)
+                {
+                    if (flap.WingPose == 2) poseMid++;
+                    else if (flap.WingPose == 0) poseRest++;
+                    else poseUp++;
+                }
                 Destroy(tex);
                 concat.Append("file '").Append(path).Append("'\n");
                 concat.Append("duration ").Append(dt.ToString("0.0000", CultureInfo.InvariantCulture)).Append("\n");
@@ -102,7 +111,9 @@ namespace FlockFive
             if (last != null) concat.Append("file '").Append(last).Append("'\n");
             File.WriteAllText(Path.Combine(FlutterFrames, "frames.txt"), concat.ToString());
             log.Append("frames ").Append(_flutterFrames).Append(" up ").Append(_bestUp.ToString("0.00"))
-                .Append(" mid ").Append(_bestMid.ToString("0.00")).AppendLine();
+                .Append(" mid ").Append(_bestMid.ToString("0.00"))
+                .Append(" counts ").Append(poseRest).Append('/').Append(poseUp).Append('/').Append(poseMid)
+                .AppendLine();
         }
 
         void NoteFlutterStill(Texture2D tex, StringBuilder log)

@@ -134,10 +134,12 @@ namespace FlockFive
         void TickFlapDrive()
         {
             int k = SpriteCatalog.FlapStep(_flapClock);
-            float speed = _flapHz / 4f;
+            float poseSteps = Time.unscaledDeltaTime * _flapHz * 4f;
             // Tucked rest is the downbeat. Cross it fast so the wings don't look parked.
-            if (k == 0) speed *= 2.6f;
-            _flapClock += Time.unscaledDeltaTime * speed;
+            if (k == 0) poseSteps *= 2.6f;
+            // A long frame must not lap the whole cycle and land on the same wing.
+            if (poseSteps > 1.05f) poseSteps = 1.05f;
+            _flapClock += poseSteps / 16f;
             ApplyFlapFrame();
             if (_flapAnchored) transform.localPosition += FlapBodyPull();
         }
