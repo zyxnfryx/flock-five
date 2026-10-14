@@ -95,6 +95,7 @@ namespace FlockFive
             static readonly int BlitScaleId = Shader.PropertyToID("_BlitScaleBias");
             static readonly int BlitRtId = Shader.PropertyToID("_BlitScaleBiasRt");
             static readonly int BlitMipId = Shader.PropertyToID("_BlitMipLevel");
+            static readonly int BlitTexelId = Shader.PropertyToID("_BlitTexture_TexelSize");
             static readonly MaterialPropertyBlock Block = new MaterialPropertyBlock();
 
             readonly Material _mat;
@@ -180,28 +181,58 @@ namespace FlockFive
                 if (data.Material == null || data.Count <= 0) return;
                 var cmd = CommandBufferHelpers.GetNativeCommandBuffer(ctx.cmd);
                 ctx.cmd.SetRenderTarget(data.Destination);
+                var srcTex = (Texture)data.Source;
+                if (srcTex != null && srcTex.width > 0 && srcTex.height > 0)
+                {
+                    var texel = new Vector4(1f / srcTex.width, 1f / srcTex.height, srcTex.width, srcTex.height);
+                    cmd.SetGlobalVector(BlitTexelId, texel);
+                }
                 for (int i = 0; i < data.Count; i++)
                 {
                     Vector4 rect = i == 0 ? data.R0 : i == 1 ? data.R1 : i == 2 ? data.R2 : data.R3;
                     Vector4 bead = i == 0 ? data.B0 : i == 1 ? data.B1 : i == 2 ? data.B2 : data.B3;
-                    var rad = new Vector4(rect.x * 0.5f, rect.y * 0.5f, 0f, 0f);
+                    Place(rect, bead, out Vector4 quad, out Vector4 center, out Vector4 rad);
                     // Globals, not only the property block: a pass that never
                     // compiled last capture was drawing with every uniform at 0.
                     cmd.SetGlobalTexture(BlitTexId, data.Source);
-                    cmd.SetGlobalVector(BlitScaleId, rect);
-                    cmd.SetGlobalVector(BlitRtId, rect);
+                    cmd.SetGlobalVector(BlitScaleId, quad);
+                    cmd.SetGlobalVector(BlitRtId, quad);
                     cmd.SetGlobalFloat(BlitMipId, 0f);
-                    cmd.SetGlobalVector(BeadId, bead);
+                    cmd.SetGlobalVector(BeadId, center);
                     cmd.SetGlobalVector(RadId, rad);
                     Block.Clear();
                     Block.SetTexture(BlitTexId, data.Source);
-                    Block.SetVector(BlitScaleId, rect);
-                    Block.SetVector(BlitRtId, rect);
+                    Block.SetVector(BlitScaleId, quad);
+                    Block.SetVector(BlitRtId, quad);
                     Block.SetFloat(BlitMipId, 0f);
-                    Block.SetVector(BeadId, bead);
+                    Block.SetVector(BeadId, center);
                     Block.SetVector(RadId, rad);
                     cmd.DrawProcedural(Matrix4x4.identity, data.Material, 0, MeshTopology.Quads, 4, 1, Block);
                 }
+            }
+
+            // rect is the circle. bead.xy is the trail offset behind the slide.
+            static void Place(Vector4 rect, Vector4 bead, out Vector4 quad, out Vector4 center, out Vector4 rad)
+            {
+                float cx = rect.z + rect.x * 0.5f;
+                float cy = rect.w + rect.y * 0.5f;
+                float rx = rect.x * 0.5f;
+                float ry = rect.y * 0.5f;
+                float x0 = rect.z;
+                float y0 = rect.w;
+                float x1 = rect.z + rect.x;
+                float y1 = rect.w + rect.y;
+                float ex = cx + bead.x;
+                float ey = cy + bead.y;
+                float px = rx * 0.5f;
+                float py = ry * 0.5f;
+                if (ex - px < x0) x0 = ex - px;
+                if (ey - py < y0) y0 = ey - py;
+                if (ex + px > x1) x1 = ex + px;
+                if (ey + py > y1) y1 = ey + py;
+                quad = new Vector4(x1 - x0, y1 - y0, x0, y0);
+                center = new Vector4(cx, cy, bead.z, 0f);
+                rad = new Vector4(rx, ry, bead.x, bead.y);
             }
         }
     }

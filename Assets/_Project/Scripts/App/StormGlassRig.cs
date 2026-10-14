@@ -104,7 +104,22 @@ namespace FlockFive
                 // offY put the bead on the opposite half of the glass.
                 float offY = (cy - ry) / texH;
                 rects[n] = new Vector4(scaleX, scaleY, offX, offY);
-                beads[n] = new Vector4(offX + scaleX * 0.5f, offY + scaleY * 0.5f, a, 0f);
+                // Trail sits behind the slide, about one radius long. xy is the
+                // offset in this same pos01 space; the lens pass derives the center.
+                float su = src[i].Vx / area.width;
+                float sv = src[i].Vy / area.height;
+                float sp = Mathf.Sqrt(su * su + sv * sv);
+                float trailU = 0f;
+                float trailV = 0f;
+                if (sp > 1e-5f)
+                {
+                    float lenU = rad / area.width;
+                    float lenV = rad / area.height;
+                    float len = Mathf.Sqrt(lenU * lenU + lenV * lenV) * 1.25f;
+                    trailU = -su / sp * len;
+                    trailV = -sv / sp * len;
+                }
+                beads[n] = new Vector4(trailU, trailV, a, 0f);
                 n++;
             }
             if (n > 0 && !_rig._logged)
@@ -115,7 +130,7 @@ namespace FlockFive
                     + " " + area.width.ToString("0") + "x" + area.height.ToString("0")
                     + " tex " + texW + "x" + texH
                     + " rect " + rects[0].ToString("0.000")
-                    + " bead " + beads[0].ToString("0.000"));
+                    + " trail " + beads[0].ToString("0.000"));
             }
             return n;
         }
