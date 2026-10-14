@@ -1024,9 +1024,9 @@ namespace FlockFive
             if (_avatarRenamePromptGc == null) _avatarRenamePromptGc = new GUIContent(line);
             else if (_avatarRenamePromptGc.text != line) _avatarRenamePromptGc.text = line;
             float prompt = st.CalcSize(_avatarRenamePromptGc).x + 8f * s;
-            float birds = 5f * 74f * s;
-            float kitRow = kits > 0 ? kits * 104f * s + (kits - 1) * 10f * s : 0f;
-            float nameRow = 200f * s + 10f * s + 92f * s;
+            float birds = 5f * 48f * s; // selected swatch cell, measured ~53s on stills
+            float kitRow = kits > 0 ? kits * 72f * s + (kits - 1) * 10f * s : 0f;
+            float nameRow = 140f * s + 10f * s + 92f * s;
             float w = Mathf.Max(Mathf.Max(prompt, birds), Mathf.Max(kitRow, nameRow));
             return CaptionLayout.SnugBox(w, 0f, 0f, StandardPopupWidth(s)).x;
         }
