@@ -6394,14 +6394,32 @@ namespace FlockFive
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
                 Event.current.Use();
-            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); return; }
+            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); PaintPressRainbow(); return; }
             var ev = Event.current != null ? Event.current.type : EventType.Ignore;
             var sp = StartupTrace.Begin(ev == EventType.Repaint ? "GUI.Repaint" : ev == EventType.Layout ? "GUI.Layout" : "GUI.Input");
             try { OnGUIBody(); }
             finally { sp.Dispose(); }
             DrawRewardChoiceTop();
             DrawWarmCover();
+            PaintPressRainbow();
             if (ev == EventType.Repaint) _guiEndTick = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+
+        // Release rainbow: one top-level paint, the very last thing every OnGUI does,
+        // whatever face is up (splash, garden, paused, reward). Own clock; nothing in
+        // Load / StartLevel touches it.
+        static int _rainbowLogN;
+        static void PaintPressRainbow()
+        {
+            if (!GuiPaint()) return;
+            var m = GUI.matrix;
+            GUI.matrix = Matrix4x4.identity;
+            int glints = PressRainbow.Draw(out float t, out float washA);
+            GUI.matrix = m;
+            if (PressShotLive && t >= 0f && (_rainbowLogN++ % 10) == 0)
+                Debug.Log("FF_RAINBOW_DRAW t=" + t.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)
+                    + " glints=" + glints + " washA=" + washA.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                    + " frame=" + Time.frameCount);
         }
 
         long _guiEndTick;
@@ -6538,9 +6556,6 @@ namespace FlockFive
                 if (paint) LevelCurtain.Draw(AdPause.Unscaled);
                 if (LevelCurtain.Finished(AdPause.Unscaled)) LevelCurtain.Clear();
             }
-            // The release rainbow is its own overlay with its own clock: it outlives the
-            // curtain and the splash, and paints last, above the button, star and garden.
-            if (paint) PressRainbow.Draw(AdPause.Unscaled);
         }
 
         // Original splash hive size — pig matches this, then both bump together.
