@@ -458,7 +458,7 @@ namespace FlockFive
                 stop += dt;
                 bird.localPosition = plant;
                 bird.localScale = SquashPose(1.15f, ImpactSquash * Mathf.Sin(Mathf.Clamp01(stop / HitStop) * Mathf.PI * 0.5f));
-                wings.Step(dt, 3.0f);
+                wings.Step(dt, HitStopBeat);
                 yield return null;
             }
             if (CamShake.Live != null) CamShake.Live.Punch(ShakeDur, ShakeAmp, ShakeTwist, ShakeKick);
@@ -483,27 +483,36 @@ namespace FlockFive
                 var c = sr.color;
                 c.a = u > SlingFadeAt ? 1f - Smooth01((u - SlingFadeAt) / (1f - SlingFadeAt)) : 1f;
                 sr.color = c;
-                wings.Step(Time.deltaTime, Mathf.Lerp(6.0f, 4.2f, Smooth01(u)));
+                // Ease the beat back up from the hit-stop, then let it relax as she glides out.
+                float beat = Mathf.Lerp(HitStopBeat, 6.0f, Smooth01(t / 0.12f));
+                wings.Step(Time.deltaTime, Mathf.Lerp(beat, 4.2f, Smooth01(u)));
                 yield return null;
             }
             if (bird != null) Object.Destroy(bird.gameObject);
             yield return Wait(0.85f);
         }
 
-        // Timing (pass 1 = #98 values).
-        const float SlingPull = 0.28f;
-        const float SlingApproach = 0.36f;
-        const float SlingThrough = 0.62f;
-        const float SlingFadeAt = 0.62f;
-        const float HitStop = 0.06f;
-        const float ImpactSquash = 0.16f;
-        const float SquashRecover = 0.16f;
-        const float ShakeDur = 0.46f, ShakeAmp = 0.27f, ShakeTwist = 3.8f, ShakeKick = 0.22f;
-        const float LetterStagger = 0.09f;
+        // Timing. Graceful, not jarring: a slightly longer approach that still lands
+        // fast, a 55ms hold, a softer shake, and a longer glide out before the fade.
+        const float SlingPull = 0.30f;
+        const float SlingApproach = 0.40f;
+        const float SlingThrough = 0.70f;
+        const float SlingFadeAt = 0.70f;
+        const float HitStop = 0.055f;
+        const float ImpactSquash = 0.14f;
+        const float SquashRecover = 0.18f;
+        const float ShakeDur = 0.42f, ShakeAmp = 0.22f, ShakeTwist = 3.0f, ShakeKick = 0.18f;
+        const float LetterStagger = 0.10f;
+        // Half-width of the lane the bird clears through the letters (logo units).
+        const float LaneHalf = 1.5f;
+        // Wings slow, never stop, through the hit-stop.
+        const float HitStopBeat = 4.0f;
 
-        static float ApproachEase(float u) => Mathf.Pow(u, 2.4f);
+        // Ease-in that still arrives quickly, without the u^2.4 last-frame lurch.
+        static float ApproachEase(float u) => u * u * (0.55f + 0.45f * u);
         static float ThroughEase(float u) => EaseOutCubic(u);
-        static float PathSway(float u) => 0f;
+        // Small arc so the bird reads as flying a line, not sliding straight at the lens.
+        static float PathSway(float u) => Mathf.Sin(u * Mathf.PI) * 0.3f;
 
         // Shared squash & stretch: area-preserving (x * y == s * s) for any q.
         static Vector3 SquashPose(float s, float q)
@@ -530,8 +539,11 @@ namespace FlockFive
             var d = letterLocal - hitLocal;
             d.z = 0f;
             float far = d.magnitude;
-            if (d.sqrMagnitude < 0.05f) d = Vector3.up;
-            d.y += 0.3f;
+            if (d.sqrMagnitude < 0.05f) d = Vector3.right * (letterLocal.x >= hitLocal.x ? 1f : -1f);
+            // Letters in the bird's lane part sideways so its path stays readable.
+            float inLane = 1f - Mathf.Clamp01(Mathf.Abs(d.x) / LaneHalf);
+            d.x += (d.x >= 0f ? 1f : -1f) * inLane * 1.6f;
+            d.y += 0.3f * (1f - inLane);
             d.Normalize();
             float near = 1f - Mathf.Clamp01(far / 4.6f);
             vel = d * Mathf.Lerp(9.0f, 15.5f, near) * Random.Range(0.92f, 1.08f);
