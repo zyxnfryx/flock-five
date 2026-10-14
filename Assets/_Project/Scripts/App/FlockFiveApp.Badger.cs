@@ -94,8 +94,6 @@ namespace FlockFive
 
         static readonly Color BadgerWax = new Color(1f, 0.86f, 0.40f, 1f);
         static readonly Color BadgerHide = new Color(0.52f, 0.46f, 0.43f, 1f);
-        static readonly Color BadgerFoilRim = new Color(0.15f, 0.48f, 0.92f, 1f);
-        static readonly Color BadgerInverseRim = new Color(0.82f, 0.22f, 0.68f, 1f);
         static readonly Color BadgerCream = new Color(1f, 0.95f, 0.78f, 1f);
         static readonly Color BadgerGold = new Color(0.98f, 0.74f, 0.18f, 1f);
 
@@ -932,9 +930,7 @@ namespace FlockFive
                 HoneyArt.DrawJuicyCell(hex, new Color(0.10f, 0.07f, 0.04f, 0.28f * alpha), 0f, 1f, 0, false, false, false);
                 return;
             }
-            Color rim = finish == BeeFinish.Holo ? BadgerFoilRim
-                : finish == BeeFinish.InverseRainbow ? BadgerInverseRim
-                : AlbumWood(tint, true);
+            Color rim = HoneyRim.For(finish);
             rim.a = alpha;
             // Tight grid: juicy fill, no hanging drips into the next tile.
             HoneyArt.DrawJuicyCell(hex, rim, 0f, 1f, honey, true, false, false);

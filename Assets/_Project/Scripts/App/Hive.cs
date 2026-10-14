@@ -740,23 +740,52 @@ namespace FlockFive
             return BeeFinish.InverseRainbow;
         }
 
+        // Moth Guest is a rare kind. Every other kind shares one weight.
+        public static int KindWeight(int kind)
+        {
+            if ((uint)kind >= (uint)Kinds) return 0;
+            return Roster[kind].Id == "moth" ? 1 : 8;
+        }
+
+        public static bool IsRareKind(int kind) => KindWeight(kind) == 1;
+
+        // roll is in [0, WeightSum). holesOnly skips kinds the album already has.
+        public static int KindAtWeight(int roll, bool holesOnly)
+        {
+            if (roll < 0) roll = 0;
+            Warm();
+            for (int k = 0; k < Kinds; k++)
+            {
+                if (holesOnly && CountOf(k) != 0) continue;
+                int w = KindWeight(k);
+                if (roll < w) return k;
+                roll -= w;
+            }
+            return 0;
+        }
+
+        public static int WeightSum(bool holesOnly)
+        {
+            Warm();
+            int n = 0;
+            for (int k = 0; k < Kinds; k++)
+            {
+                if (holesOnly && CountOf(k) != 0) continue;
+                n += KindWeight(k);
+            }
+            return n;
+        }
+
         static int PickKind()
         {
             // Prefer kinds with no copies of any finish (album holes).
             int holes = 0;
             for (int k = 0; k < Kinds; k++)
                 if (CountOf(k) == 0) holes++;
-            if (holes > 0 && Random.value < 0.74f)
-            {
-                int skip = Random.Range(0, holes);
-                for (int k = 0; k < Kinds; k++)
-                {
-                    if (CountOf(k) != 0) continue;
-                    if (skip == 0) return k;
-                    skip--;
-                }
-            }
-            return Random.Range(0, Kinds);
+            bool holePick = holes > 0 && Random.value < 0.74f;
+            int sum = WeightSum(holePick);
+            if (sum <= 0) return Random.Range(0, Mathf.Max(1, Kinds));
+            return KindAtWeight(Random.Range(0, sum), holePick);
         }
 
         static int CountFound()

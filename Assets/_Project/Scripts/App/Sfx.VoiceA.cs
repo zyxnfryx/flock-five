@@ -311,6 +311,27 @@ namespace FlockFive
             return Clip("page-turn", data);
         }
 
+        static AudioClip MakeSquish()
+        {
+            // Warm honey give. Falling body, a quiet fifth above it, no noise.
+            const float dur = 0.11f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float phase = 0f;
+            float phaseH = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float u = i / (float)(n - 1);
+                float f = Mathf.Lerp(150f, 68f, u);
+                phase += 2f * Mathf.PI * f / Rate;
+                phaseH += 2f * Mathf.PI * f * 1.5f / Rate;
+                float env = Mathf.Exp(-u * 6.5f) * Mathf.Sin(Mathf.Clamp01(u / 0.06f) * Mathf.PI * 0.5f);
+                float s = Mathf.Sin(phase) + 0.18f * Mathf.Sin(phaseH);
+                data[i] = s * env * 0.62f;
+            }
+            return Clip("squish", data);
+        }
+
         static AudioClip MakeBreak(int kind, int seed)
         {
             // Thick branch: three snappy splits, then a meaty pith CRUNCH.

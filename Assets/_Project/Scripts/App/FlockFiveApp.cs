@@ -253,7 +253,6 @@ namespace FlockFive
         bool _hiveHowToNudge;
         int _levelHivePick;
         float _levelHiveShown;
-        float _levelHiveAuto;
         int _levelHiveFrame = -1;
         int _levelHiveCountSeen = -1;
         Vector2 _levelHiveDrag0;
@@ -262,7 +261,7 @@ namespace FlockFive
         bool _levelHiveDrag;
         bool _levelHiveSwallow;
         Rect _levelHiveRect;
-        const float HiveCarouselStep = 1.5f;
+        static readonly Rect[] _honeyHits = new Rect[HoneyPoke.Cap];
         const string HiveTitle = "Collection";
         const string HiveSubtitle = "Find bees to earn cards.";
         const string HiveHowTo = "Tap a card to take a look, tap again to flip.";
@@ -17007,6 +17006,7 @@ namespace FlockFive
             if (tick && _hiveTutorOn && !Ads.IsShowing && !_hiveInspectClosing)
                 AdvanceHiveTutor(ix);
             DrawBeeAlbumCard(big, ix, s, true);
+            HoneyPoke.Draw(AdPause.Unscaled);
             if (t > 0.4f)
                 DrawFlipArrows(big, s, Mathf.Clamp01(t));
             float hintTop = big.yMax + 12f * s;
@@ -17037,10 +17037,12 @@ namespace FlockFive
             GUI.Label(xBtn, "X", xLab);
 
             bool fullyOpen = !_hiveInspectClosing && u >= 1f;
+            // A honeycomb is not the card. It squishes and smudges, and the flip waits.
+            bool honeyAte = fullyOpen && _hiveFlip < 0 && !_hiveTutorOn && PokeHoneycombs(big, ix);
             // Card taps during the demo are swallowed so they neither flip nor dismiss.
             if (_hiveTutorOn)
                 HitPad(big, out _);
-            else if (fullyOpen && !upgradeHit && HitPad(big, out _) && !PageSwipeAte)
+            else if (fullyOpen && !upgradeHit && !honeyAte && HitPad(big, out _) && !PageSwipeAte)
                 BeginHiveFlip(ix);
 
             // Tap dim outside card closes (after card/X/Back/upgrade so they win hit tests)
@@ -17314,6 +17316,7 @@ namespace FlockFive
             _hiveInspectT = 0f;
             _hiveFlip = -1;
             _hiveFlipT = 0f;
+            HoneyPoke.Clear();
         }
 
         void DrawFoilSheen(Rect face, BeeFinish finish, int slot, bool inspectView)
@@ -17395,13 +17398,9 @@ namespace FlockFive
 
         // The album card's wood frame and plate colors. The badger tiles read the same two,
         // so a tile and its sleeve card are the same tint.
-        static Color AlbumWood(Color tint, bool owned) => owned
-            ? Color.Lerp(new Color(0.28f, 0.16f, 0.07f), tint, 0.35f)
-            : new Color(0.14f, 0.12f, 0.10f, 0.92f);
+        static Color AlbumWood(Color tint, bool owned) => CardPlate.Wood(tint, owned);
 
-        static Color AlbumFace(Color tint, bool owned) => owned
-            ? Color.Lerp(new Color(0.98f, 0.92f, 0.72f), tint, 0.18f)
-            : new Color(0.22f, 0.20f, 0.18f, 0.95f);
+        static Color AlbumFace(Color tint, bool owned) => CardPlate.Face(tint, owned);
 
         void DrawBeeAlbumCard(Rect card, int i, float s) => DrawBeeAlbumCard(card, i, s, false, true);
 
@@ -17469,8 +17468,11 @@ namespace FlockFive
                 CardClip.End();
             }
 
+            string flavor = HiveBackCopy(CardCopy.Shown(kind));
+            int honey = showBack && BadgerSchedule.Enabled ? Hive.HoneyOfSlot(i) : 0;
             if (!owned)
             {
+                // Sleeve stripes mark a locked finish. They are not comb wax.
                 if (finish == BeeFinish.Holo || finish == BeeFinish.InverseRainbow)
                 {
                     Color edge = finish == BeeFinish.Holo
@@ -17481,37 +17483,43 @@ namespace FlockFive
                     GUI.DrawTexture(new Rect(face.x, face.y, face.width, edgeH), Texture2D.whiteTexture);
                     GUI.color = Color.white;
                 }
-                var lockedBee = SpriteCatalog.Bee;
-                if (lockedBee != null && lockedBee.texture != null)
-                {
-                    float bh = face.height * 0.46f;
-                    var br = new Rect(face.center.x - bh * 0.5f, face.y + face.height * 0.08f, bh, bh);
-                    GUI.color = new Color(kind.Tint.r * 0.45f, kind.Tint.g * 0.45f, kind.Tint.b * 0.45f, 0.80f);
-                    GUI.DrawTexture(br, lockedBee.texture, ScaleMode.ScaleToFit, true);
-                    GUI.color = Color.white;
-                }
+                float bh = face.height * 0.46f;
+                var br = new Rect(face.center.x - bh * 0.5f, face.y + face.height * 0.08f, bh, bh);
+                CardCritter.Draw(br, kind.Id, kind.Tint, 0.75f);
                 var mystery = GuiPool.Label(GuiSlot.AlbumMystery);
                 mystery.fontStyle = FontStyle.Bold;
                 mystery.alignment = TextAnchor.MiddleCenter;
                 mystery.fontSize = FitFont(mystery, "?", face.width * 0.55f, face.height * 0.40f, inspectView ? 48 : 28, inspectView ? 96 : 64);
                 StampOutlined(new Rect(face.x, face.y + face.height * 0.28f, face.width, face.height * 0.42f), "?", mystery, new Color(0.62f, 0.54f, 0.42f), 2, 1);
             }
-            else if (!showBack)
+            else
             {
-                var bee = SpriteCatalog.Bee;
-                float beeShare = inspectView ? 0.24f : 0.38f;
-                if (bee != null && bee.texture != null)
+                if (!showBack)
                 {
+                    float beeShare = inspectView ? 0.24f : 0.38f;
                     float bh = face.height * beeShare;
-                    float bw = bh;
-                    var br = new Rect(face.center.x - bw * 0.5f, face.y + face.height * 0.03f, bw, bh);
-                    GUI.color = kind.Tint;
-                    GUI.DrawTexture(br, bee.texture, ScaleMode.ScaleToFit, true);
-                    GUI.color = Color.white;
+                    var br = new Rect(face.center.x - bh * 0.5f, face.y + face.height * 0.03f, bh, bh);
+                    CardCritter.Draw(br, kind.Id, kind.Tint, 1f);
                 }
-                var textFace = CardText.TextFaceOf(face, inspectView);
-                CardText.DrawFront(textFace, kind.Name, kind.Front, inspectView, s);
-                if (n > 1)
+                if (flipping && inspectView)
+                    DrawBakedFace(card, face, kind, flavor, finish, showBack, honey);
+                else if (!showBack)
+                {
+                    var textFace = CardText.TextFaceOf(face, inspectView);
+                    CardText.DrawFront(textFace, kind.Name, flavor, inspectView, s);
+                    if (finish != BeeFinish.Normal)
+                    {
+                        CardText.DrawFinish(
+                            CardText.FinishOf(face, inspectView),
+                            FinishInk.Label(finish),
+                            inspectView,
+                            s,
+                            FinishInk.Tag(finish));
+                    }
+                }
+                else
+                    CardText.DrawBack(face, kind.Name, flavor, honey, kind.Tint, finish, inspectView, s);
+                if (!showBack && n > 1)
                 {
                     var cnt = GuiPool.Label(GuiSlot.AlbumCount);
                     cnt.fontStyle = FontStyle.Bold;
@@ -17519,21 +17527,8 @@ namespace FlockFive
                     cnt.fontSize = Mathf.Max(inspectView ? 22 : Mathf.RoundToInt(14f * s), Mathf.RoundToInt((inspectView ? 20f : 14f) * s));
                     StampOutlined(new Rect(face.xMax - 56f * s, face.y + 4f * s, 52f * s, inspectView ? 32f * s : 20f * s), "×" + n, cnt, new Color(0.16f, 0.07f, 0.02f), inspectView ? 2 : 1, 1);
                 }
-                if (finish != BeeFinish.Normal)
-                {
-                    string foil = finish == BeeFinish.Holo ? "Holo" : "Inverse Rainbow";
-                    Color foilCol = finish == BeeFinish.Holo
-                        ? new Color(0.15f, 0.48f, 0.92f)
-                        : new Color(0.82f, 0.22f, 0.68f);
-                    CardText.DrawFinish(CardText.FinishOf(face, inspectView), foil, inspectView, s, foilCol);
-                }
-            }
-            else
-            {
-                string backCopy = HiveBackCopy(kind.Back);
-                // Flip attributes: honeycombs only. Base by finish + purchased upgrades.
-                int honey = BadgerSchedule.Enabled ? Hive.HoneyOfSlot(i) : 0;
-                CardText.DrawBack(face, kind.Name, backCopy, honey, kind.Tint, finish, inspectView, s);
+                if (Hive.IsRareKind(kindIx))
+                    DrawRarePill(face, n, showBack, inspectView, s);
             }
 
             if (!inspectView && owned && HiveCardFresh(i))
@@ -17546,6 +17541,78 @@ namespace FlockFive
                 if (owned) OpenHiveInspect(i, card);
                 else _hiveHowToNudge = true;
             }
+        }
+
+        // Words are painted at the settled inspect size, then stretched. A live
+        // label would rewrap as the card pinches through the flip.
+        void DrawBakedFace(Rect card, Rect face, BeeKind kind, string flavor, BeeFinish finish, bool showBack, int honey)
+        {
+            Rect src = card;
+            var settled = AlbumInspectRect(Screen.width, Screen.height);
+            if (settled.width > src.width + 1f && settled.height > 8f)
+                src = settled;
+            var full = CardText.FaceOf(src);
+            int w = Mathf.RoundToInt(full.width);
+            int h = Mathf.RoundToInt(full.height);
+            if (w < 8) w = 8;
+            if (h < 8) h = 8;
+            var page = CardFaceBake.Build(new CardFaceBake.Request
+            {
+                Width = w,
+                Height = h,
+                Title = kind.Name ?? "",
+                Flavor = flavor ?? "",
+                Finish = showBack ? "" : FinishInk.Label(finish),
+                Full = true,
+                Back = showBack,
+                Honey = showBack && honey > 0,
+                Ink = new Color(0.16f, 0.07f, 0.02f, 1f),
+                FinishInk = FinishInk.Tag(finish),
+            });
+            if (page.Tex != null)
+                GUI.DrawTexture(face, page.Tex, ScaleMode.StretchToFill, true);
+            if (showBack && honey > 0)
+                CardText.DrawHoney(face, honey, kind.Tint, finish, true);
+        }
+
+        void DrawRarePill(Rect face, int copies, bool showBack, bool inspectView, float s)
+        {
+            var st = GuiPool.Label(GuiSlot.RarePill);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
+            st.fontSize = Mathf.Max(inspectView ? 13 : 10, Mathf.RoundToInt((inspectView ? 15f : 11f) * Mathf.Max(1f, s)));
+            const string word = "Rare";
+            float h = Mathf.Max(14f, st.fontSize + 4f);
+            float w = st.CalcSize(GuiPool.Text(GuiText.RarePill, word)).x + 10f;
+            float top = face.y + 4f * s;
+            if (!showBack && copies > 1)
+                top += (inspectView ? 34f : 20f) * s;
+            var r = new Rect(face.xMax - w - 4f * s, top, w, h);
+            GUI.color = new Color(0.42f, 0.22f, 0.06f, 0.94f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            StampOutlined(r, word, st, new Color(1f, 0.93f, 0.72f), 1, 1);
+        }
+
+        // True when a comb took the tap. The card underneath must not flip.
+        bool PokeHoneycombs(Rect card, int ix)
+        {
+            if ((uint)ix >= (uint)_hiveFaceBack.Length || !_hiveFaceBack[ix]) return false;
+            if (!BadgerSchedule.Enabled) return false;
+            int honey = Hive.HoneyOfSlot(ix);
+            if (honey <= 0) return false;
+            var face = CardText.FaceOf(card);
+            int n = CardText.HoneyBand(face, honey, true, _honeyHits);
+            bool ate = false;
+            for (int i = 0; i < n; i++)
+            {
+                if (!HitPad(_honeyHits[i], out _)) continue;
+                ate = true;
+                HoneyPoke.Place(AdPause.Unscaled, _honeyHits[i].center, _honeyHits[i].width * 0.42f);
+                Sfx.Squish();
+            }
+            return ate;
         }
 
         static Texture2D _hiveStar;
@@ -17679,7 +17746,6 @@ namespace FlockFive
             {
                 _levelHivePick = count - 1;
                 _levelHiveShown = _levelHivePick;
-                _levelHiveAuto = 0f;
                 _levelHiveCountSeen = count;
                 _levelHiveDrag = false;
                 _levelHiveDragX = 0f;
@@ -17690,15 +17756,6 @@ namespace FlockFive
             if (ev != null && ev.type == EventType.Repaint && Time.frameCount != _levelHiveFrame)
             {
                 _levelHiveFrame = Time.frameCount;
-                if (count > 1 && _hiveInspect < 0 && !_levelHiveDrag)
-                {
-                    _levelHiveAuto += AdPause.UnscaledDelta;
-                    if (_levelHiveAuto >= HiveCarouselStep)
-                    {
-                        _levelHiveAuto = 0f;
-                        _levelHivePick = (_levelHivePick + 1) % count;
-                    }
-                }
                 if (!_levelHiveDrag) EaseHiveCarousel(count);
             }
 
@@ -17716,13 +17773,7 @@ namespace FlockFive
             if (_levelHiveDrag && count > 1)
                 shown -= _levelHiveDragX / Mathf.Max(1f, stride);
 
-            int centerIx = 0;
-            float best = 999f;
-            for (int i = 0; i < count; i++)
-            {
-                float a = Mathf.Abs(HiveWrap(i - shown, count));
-                if (a < best) { best = a; centerIx = i; }
-            }
+            int centerIx = HiveCarousel.Nearest(shown, count);
 
             GUI.BeginGroup(stage);
             float cx = stage.width * 0.5f;
@@ -17766,14 +17817,22 @@ namespace FlockFive
             {
                 _levelHivePick = (_levelHivePick + dir + count) % count;
                 _levelHiveShown = _levelHivePick;
-                _levelHiveAuto = 0f;
             }
             else if (tap)
             {
-                var from = centerLocal;
-                from.x += stage.x;
-                from.y += stage.y;
-                OpenHiveInspect(_levelBees[centerIx].Slot, from);
+                int side = HiveCarousel.TapDir(_levelHiveDrag0.x, stage.width, count);
+                if (side != 0)
+                {
+                    _levelHivePick = (_levelHivePick + side + count) % count;
+                    _levelHiveShown = _levelHivePick;
+                }
+                else
+                {
+                    var from = centerLocal;
+                    from.x += stage.x;
+                    from.y += stage.y;
+                    OpenHiveInspect(_levelBees[centerIx].Slot, from);
+                }
             }
 
             if (count > 1 && count <= 12)
@@ -17790,9 +17849,8 @@ namespace FlockFive
                     {
                         _levelHivePick = i;
                         _levelHiveShown = i;
-                        _levelHiveAuto = 0f;
                     }
-                    bool on = i == _levelHivePick;
+                    bool on = i == centerIx;
                     GUI.color = on
                         ? new Color(1f, 0.82f, 0.28f, 0.95f)
                         : new Color(1f, 0.94f, 0.72f, 0.35f);
@@ -17807,7 +17865,7 @@ namespace FlockFive
                 pageSt.alignment = TextAnchor.MiddleCenter;
                 pageSt.wordWrap = false;
                 pageSt.fontSize = floor;
-                string page = (_levelHivePick + 1) + " / " + count;
+                string page = (centerIx + 1) + " / " + count;
                 float pageH = floor + 8f;
                 StampOutlined(new Rect(box.x, box.yMax - pageH - 6f * s, box.width, pageH), page, pageSt, new Color(1f, 0.94f, 0.72f), 1, 1);
             }
@@ -17831,7 +17889,6 @@ namespace FlockFive
                         _levelHiveDrag0 = e.mousePosition;
                         _levelHiveDragX = 0f;
                         _levelHiveDrag = true;
-                        _levelHiveAuto = 0f;
                         e.Use();
                     }
                     break;
@@ -17868,7 +17925,6 @@ namespace FlockFive
             int n = _levelBees.Count;
             _levelHivePick = Mathf.Max(0, n - 1);
             _levelHiveShown = _levelHivePick;
-            _levelHiveAuto = 0f;
             _levelHiveCountSeen = n;
             _levelHiveDrag = false;
             _levelHiveDragX = 0f;
@@ -17964,6 +18020,7 @@ namespace FlockFive
                 _hiveFaceBack[slot] = false;
             _hiveFlip = -1;
             _hiveFlipT = 0f;
+            HoneyPoke.Clear();
             ClearHiveFresh(slot);
             if (_albumTutorOn && _albumTutorStep <= 1)
                 AdvanceAlbumTutor(2);
@@ -17976,20 +18033,13 @@ namespace FlockFive
             for (int col = 1; col < 3; col++)
             {
                 string text = col == 1 ? "Holo" : "Inverse Rainbow";
-                Color ink = col == 1
-                    ? new Color(0.72f, 0.93f, 1f)
-                    : new Color(1f, 0.74f, 0.94f);
+                Color ink = FinishInk.Tag(col == 1 ? BeeFinish.Holo : BeeFinish.InverseRainbow);
                 var r = new Rect(gx0 + col * (cellW + gap), y, cellW, h);
                 CardText.DrawColumn(r, text, s, ink);
             }
         }
 
-        static float HiveWrap(float d, int count)
-        {
-            if (count <= 1) return 0f;
-            float n = count;
-            return Mathf.Repeat(d + n * 0.5f, n) - n * 0.5f;
-        }
+        static float HiveWrap(float d, int count) => HiveCarousel.Wrap(d, count);
 
         void EaseHiveCarousel(int count)
         {
