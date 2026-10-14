@@ -82,7 +82,15 @@ Shader "FlockFive/WoodChar"
                 fixed3 col = lerp(tex.rgb, ash, charAmt);
                 col = lerp(col, grain, 0.42 * charAmt);
                 float fringe = front * saturate(_Spread * 3.0) * (1.0 - charAmt * 0.45);
-                if (_Mask > 0.5) fringe = saturate(front * 1.45);
+                if (_Mask > 2.5)
+                {
+                    // A stump has to read as bark, not as a black gap under the embers.
+                    fixed3 bark = tex.rgb * fixed3(0.62, 0.34, 0.16);
+                    col = lerp(bark, ash, 0.28);
+                    fringe = saturate(front * 0.55);
+                }
+                else if (_Mask > 0.5)
+                    fringe = saturate(front * 1.45);
                 col = lerp(col, ember, saturate(fringe));
                 col *= i.color.rgb;
                 return fixed4(col, tex.a * i.color.a);

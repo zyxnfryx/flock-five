@@ -238,11 +238,12 @@ namespace FlockFive
             for (int i = 0; i < 5; i++)
             {
                 var spr = limb != null ? limb : glow;
-                float jag = Random.Range(-22f, 22f);
-                float clip = Random.Range(0.07f, 0.2f);
+                float jag = Random.Range(-36f, 36f);
+                float clip = Random.Range(0.22f, 0.38f);
                 var bit = Make(spr, pose, 1f, 4, 5, transform);
                 if (flip) bit.Sr.flipX = true;
-                PoseStump(bit.T, pose, woodRot, woodScale, trunk, jag);
+                float thick = Random.Range(0.92f, 1.12f);
+                PoseStump(bit.T, pose, woodRot, new Vector3(woodScale.x, woodScale.y * thick, woodScale.z), trunk, jag);
                 bit.Base = bit.T.localScale;
                 bit.Home = bit.T.position;
                 bit.Life = 4f;
@@ -251,13 +252,17 @@ namespace FlockFive
                 if (mat != null) bit.Sr.sharedMaterial = mat;
                 bit.Sr.color = new Color(1f, 1f, 1f, 0f);
                 bit.Sr.enabled = false;
-                var tip = trunk + dir * (span * clip);
-                var ember = WorldBuilder.Sprite("Ember", glow, tip, 1f, 6, bit.T);
-                WorldScale(ember.transform, Random.Range(0.14f, 0.26f));
-                bit.Halo = ember.GetComponent<SpriteRenderer>();
-                if (add != null) bit.Halo.sharedMaterial = add;
-                bit.Halo.color = new Color(1f, 0.46f, 0.08f, 0f);
-                bit.Halo.enabled = false;
+                // Two faint coals. The splinter itself is the stump.
+                if (i < 2)
+                {
+                    var tip = trunk + dir * (span * clip * 0.72f);
+                    var ember = WorldBuilder.Sprite("Ember", glow, tip, 1f, 6, bit.T);
+                    WorldScale(ember.transform, Random.Range(0.06f, 0.12f));
+                    bit.Halo = ember.GetComponent<SpriteRenderer>();
+                    if (add != null) bit.Halo.sharedMaterial = add;
+                    bit.Halo.color = new Color(1f, 0.46f, 0.08f, 0f);
+                    bit.Halo.enabled = false;
+                }
                 bits.Add(bit);
             }
 
@@ -501,7 +506,7 @@ namespace FlockFive
                 if (u < 0f) u = 0f;
                 else if (u > 1f) u = 1f;
                 float pulse = 0.75f + 0.25f * Mathf.Sin(_age * 9f + bit.Home.x * 6f);
-                bit.Halo.color = new Color(1f, 0.42f, 0.06f, (1f - u) * 0.4f * pulse);
+                bit.Halo.color = new Color(1f, 0.42f, 0.06f, (1f - u) * 0.18f * pulse);
             }
         }
 
