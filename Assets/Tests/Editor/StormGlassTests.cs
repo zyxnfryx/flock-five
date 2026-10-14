@@ -157,12 +157,12 @@ namespace FlockFive.Editor
             var wall = new StormGlass.Block[] { new StormGlass.Block { X = 0f, Y = 0f, W = W, H = H } };
             for (int step = 0; step < 240; step++)
             {
-                int before = wallN;
+                int was = wallN;
                 wallN = Step(beads, wallN, 1f / 60f, true, 1f, wall, 1, ref wallRng, ref wallSpawn, specks, ref wallSpeck);
-                if (wallN > before) coveredSpawns += wallN - before;
-                before = openN;
+                if (wallN > was) coveredSpawns += wallN - was;
+                was = openN;
                 openN = Step(again, openN, 1f / 60f, true, 1f, blocks, 0, ref openRng, ref openSpawn, specksB, ref openSpeck);
-                if (openN > before) clearSpawns += openN - before;
+                if (openN > was) clearSpawns += openN - was;
             }
             Check("covered-glass-spawns-fewer",
                 coveredSpawns > 0 && clearSpawns > coveredSpawns * 2,
