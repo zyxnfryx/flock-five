@@ -121,7 +121,7 @@ namespace FlockFive
             _jingleSrc = go.AddComponent<AudioSource>();
             _jingleSrc.playOnAwake = false;
             _jingleSrc.spatialBlend = 0f;
-            _jingleSrc.volume = 0.9f;
+            _jingleSrc.volume = 0.65f; // smoothness pass: was 0.9, the loudest thing in the game
             _jingleSrc.clip = clip;
             _jingleSrc.Play();
             Object.Destroy(go, clip.length + 0.5f);

@@ -468,11 +468,12 @@ namespace FlockFive
             // Poker full-house+ sting. Wood-pluck D-major cadence, not a gong.
             Ensure();
             if (_celebrate == null) _celebrate = MakeCelebrate();
-            Shot(_celebrate, 1f, 0.80f, MixLayer.Lead, MixDesk.DuckWhoosh);
+            Shot(_celebrate, 1f, 0.50f, MixLayer.Lead, MixDesk.DuckWhoosh);
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.72f, MixDesk.DuckWhoosh);
         }
 
-        public static void Combo(int size) => Combo(size, 0.76f);
+        // 0.48: was 0.76; at 0.76 the x5-x8 stings clipped a phone speaker at max volume.
+        public static void Combo(int size) => Combo(size, 0.48f);
 
         public static void Combo(int size, float vol)
         {

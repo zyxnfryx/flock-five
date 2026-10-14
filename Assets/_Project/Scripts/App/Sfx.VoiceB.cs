@@ -320,6 +320,7 @@ namespace FlockFive
                     data[i] += s * env * 0.42f;
                 }
             }
+            AudioPolish.Apply(data, 1, Rate);
             return ClipPunch("combo" + size, data);
         }
 
@@ -348,6 +349,7 @@ namespace FlockFive
                     data[i] += s * env * amp;
                 }
             }
+            AudioPolish.Apply(data, 1, Rate);
             return ClipPunch("celebrate", data);
         }
 

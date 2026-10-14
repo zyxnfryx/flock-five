@@ -38,6 +38,7 @@ namespace FlockFive
         float _leadDuck = 1f;
         float _duckSlew = 1f;
         float _capNow;
+        float _limiterCheckAt;
         float _moonLiftUntil;
         float _comboUntil = -99f;
         bool _splash;
@@ -55,9 +56,11 @@ namespace FlockFive
         bool _bgCueLive;
         bool _bgWasPaused;
         float _bgHandBackAt = -1f;
-        const float BadgerCap = 0.40f;
+        // Build 89 smoothness pass: assets are now mastered stereo at -17 LUFS with Normalize off,
+        // so these caps hold the old in-game level minus ~1 dB (see Docs/audio-smooth-pass.md).
+        const float BadgerCap = 0.48f;
         // Stingers play once at the bed's cap, not ducked: they ARE the moment.
-        const float BadgerStingCap = 0.40f;
+        const float BadgerStingCap = 0.54f;
         const float BadgerFadeSeconds = 0.30f;
         const float BadgerBarSeconds = 1.6f;   // 150 BPM, 4/4
         const int BadgerLoopStem = 6;
@@ -65,10 +68,10 @@ namespace FlockFive
         const int BadgerStingStem = 8;
         const float SplashPageHold = 0.45f;
         const int Rate = 22050;
-        const float PlaceCap = 0.24f;
-        const float PlaceMax = 0.28f;
+        const float PlaceCap = 0.30f;
+        const float PlaceMax = 0.35f;
         const float ComboCap = 0.04f;
-        const float SplashCap = 0.52f;
+        const float SplashCap = 0.76f;
         const float RainCap = 0.17f;
         const float ComboWindow = 4f;
         const float ComboIn = 0.35f;
@@ -85,6 +88,7 @@ namespace FlockFive
             if (Live == null) return;
             Live.Build();
             KillForeignLoops();
+            MasterSoftClip.Ensure();
         }
 
         static void Reclaim(GameObject host)
@@ -652,6 +656,12 @@ namespace FlockFive
                 ResyncBadgerEntrance();
             }
             if (!LeadHot) _leadDuck = 1f;
+            if (MasterSoftClip.Live == null && AdPause.Unscaled >= _limiterCheckAt)
+            {
+                // A scene reload can replace the listener; put the master stage back on it.
+                _limiterCheckAt = AdPause.Unscaled + 1f;
+                MasterSoftClip.Ensure();
+            }
             if (_stems == null) return;
 
             float target = BedDuck;
@@ -887,6 +897,8 @@ namespace FlockFive
 
         static AudioClip PeakClip(string name, float[] stereo, float peak)
         {
+            // Same smoothing as the authored beds; every PeakClip clip is a loop.
+            AudioPolish.Apply(stereo, 2, Rate, true);
             float p = 1e-6f;
             for (int i = 0; i < stereo.Length; i++)
             {
@@ -1087,7 +1099,7 @@ namespace FlockFive
             PizzWalk(bus, Climb.Dawn);
             Bloom(bus, Climb.Dawn);
             ApplyFades(bus);
-            return PeakClip("dawn-garden", bus, 0.40f);
+            return PeakClip("dawn-garden", bus, 0.24f);
         }
 
         static AudioClip MakeMid()
@@ -1097,7 +1109,7 @@ namespace FlockFive
             PizzWalk(bus, Climb.Mid);
             Bloom(bus, Climb.Mid);
             ApplyFades(bus);
-            return PeakClip("mid-climb", bus, 0.48f);
+            return PeakClip("mid-climb", bus, 0.27f);
         }
 
         static AudioClip MakeLast()
@@ -1107,7 +1119,7 @@ namespace FlockFive
             PizzWalk(bus, Climb.Last);
             Bloom(bus, Climb.Last);
             ApplyFades(bus);
-            return PeakClip("last-light", bus, 0.56f);
+            return PeakClip("last-light", bus, 0.37f);
         }
 
         static AudioClip MakeCombo()
@@ -1123,7 +1135,7 @@ namespace FlockFive
                 PlacePizz(bus, 45f, t, 0.14f, 0.12f);
             }
             ApplyFades(bus);
-            return PeakClip("combo-fifth", bus, 0.28f);
+            return PeakClip("combo-fifth", bus, 0.19f);
         }
 
         static AudioClip MakeSplash()
@@ -1220,7 +1232,7 @@ namespace FlockFive
             PlacePizz(bus, 57f, tLast + 3f * Beat, 0.30f, 0.16f);
 
             LoopSeam(bus, 0.58f);
-            return PeakClip("splash-theme", bus, 0.62f);
+            return PeakClip("splash-theme", bus, 0.33f);
         }
 
 
