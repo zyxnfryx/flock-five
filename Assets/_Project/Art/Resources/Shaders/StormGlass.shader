@@ -111,21 +111,24 @@ Shader "FlockFive/StormGlass"
                 {
                     float along = dot(from, trail) / trailLen2;
                     float2 side = (from - trail * along) / rad;
-                    float halfW = lerp(0.36, 0.07, saturate(along));
-                    float streak = smoothstep(0.0, 0.05, along) * smoothstep(1.05, 0.40, along);
-                    streak *= smoothstep(halfW, halfW * 0.22, length(side));
+                    // Wide enough at the bead to read on the sky, then a thin fade.
+                    float halfW = lerp(0.52, 0.16, saturate(along));
+                    float streak = smoothstep(0.0, 0.04, along) * smoothstep(1.08, 0.55, along);
+                    streak *= smoothstep(halfW, halfW * 0.18, length(side));
                     streak *= (1.0 - body) * _Bead.z;
                     if (streak > a)
                     {
-                        scene = SampleScene(pos) * float3(1.08, 1.12, 1.18);
-                        scene += float3(0.50, 0.64, 0.76) * 0.62;
-                        a = streak * 0.78;
+                        scene = SampleScene(pos) * float3(1.18, 1.24, 1.34);
+                        scene += float3(0.78, 0.88, 0.98) * 0.9;
+                        float core = smoothstep(halfW * 0.55, halfW * 0.05, length(side));
+                        scene += core * float3(0.95, 0.98, 1.0) * 0.7;
+                        a = streak * 0.94;
                     }
 
                     // Tiny beads riding the wet line, largest near the drop.
-                    TrailBead(from, rad, trail * 0.34, 0.46, body, _Bead.z, a, scene);
-                    TrailBead(from, rad, trail * 0.62, 0.34, body, _Bead.z, a, scene);
-                    TrailBead(from, rad, trail * 0.88, 0.24, body, _Bead.z, a, scene);
+                    TrailBead(from, rad, trail * 0.28, 0.62, body, _Bead.z, a, scene);
+                    TrailBead(from, rad, trail * 0.55, 0.48, body, _Bead.z, a, scene);
+                    TrailBead(from, rad, trail * 0.82, 0.36, body, _Bead.z, a, scene);
                 }
 
                 if (a < 0.003)

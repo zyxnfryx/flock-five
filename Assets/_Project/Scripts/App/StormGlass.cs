@@ -32,7 +32,7 @@ namespace FlockFive
 
         const int SpawnTries = 18;
         const float RefH = 2556f;
-        const float TrailStep = 16f;
+        const float TrailStep = 10f;
         const float Touch = 0.92f;
 
         public struct Bead
@@ -330,13 +330,13 @@ namespace FlockFive
             if (b.Trail > step) b.Trail = step * 0.5f;
             float inv = 1f / dist;
             float back = b.Radius * 0.2f;
-            float sr = b.Radius * 0.16f;
-            float lo = 12f * scale;
-            float hi = 22f * scale;
+            float sr = b.Radius * 0.22f;
+            float lo = 18f * scale;
+            float hi = 36f * scale;
             if (sr < lo) sr = lo;
             if (sr > hi) sr = hi;
-            float life = 0.85f + (b.Radius / (RadiusCap * scale)) * 0.7f;
-            if (life > 1.7f) life = 1.7f;
+            float life = 1.15f + (b.Radius / (RadiusCap * scale)) * 0.7f;
+            if (life > 2.2f) life = 2.2f;
             AddSpeck(specks, ref speckN, b.X - dx * inv * back, b.Y - dy * inv * back, sr, life);
         }
 

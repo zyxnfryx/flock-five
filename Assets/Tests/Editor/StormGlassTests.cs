@@ -203,6 +203,23 @@ namespace FlockFive.Editor
 
             beads[0] = new StormGlass.Bead
             {
+                X = 500f, Y = 1800f, Radius = 40f, Age = 0.5f, Life = 4f,
+                Vy = -90f, Kind = StormGlass.Slide, Wobble = 0f, Drift = 0f
+            };
+            var trailRng = new StormGlass.Rng { State = 8u };
+            float trailSpawn = 1f;
+            int trailSpeck = 0;
+            int tn = 1;
+            for (int step = 0; step < 40; step++)
+                tn = Step(beads, tn, 1f / 60f, true, 0f, blocks, 0, ref trailRng, ref trailSpawn, specks, ref trailSpeck);
+            float speckLo = 99f;
+            for (int i = 0; i < trailSpeck; i++)
+                if (specks[i].Radius < speckLo) speckLo = specks[i].Radius;
+            Check("lays-a-wet-trail", tn == 1 && trailSpeck >= 4 && speckLo >= 16f,
+                "specks " + trailSpeck + " r " + speckLo.ToString("0.0"));
+
+            beads[0] = new StormGlass.Bead
+            {
                 X = 220f, Y = 1900f, Radius = 12f, Age = 0.5f, Life = 4f,
                 Vy = -5f, Kind = StormGlass.Slide
             };

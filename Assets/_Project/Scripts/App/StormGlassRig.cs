@@ -172,7 +172,7 @@ namespace FlockFive
                     if (!Write(area, texW, texH, src[i].X, src[i].Y, prx, pry, a, splat,
                             src[i].Kind == StormGlass.Slide ? src[i].Vx : 0f,
                             src[i].Kind == StormGlass.Slide ? src[i].Vy : 0f,
-                            src[i].Radius * 3.8f * (1f - splat),
+                            src[i].Radius * 6.2f * (1f - splat),
                             rects, beads, ref n))
                         break;
                 }
