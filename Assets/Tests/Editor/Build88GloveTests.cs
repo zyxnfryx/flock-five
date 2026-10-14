@@ -445,29 +445,50 @@ namespace FlockFive.Editor
             var aim = daily.Spot.Aim * sc;
             var perch = daily.Perch * sc;
             var keep = new Rect(daily.Spot.Keep.x * sc, daily.Spot.Keep.y * sc, daily.Spot.Keep.width * sc, daily.Spot.Keep.height * sc);
-            const int frames = 72;
+            // Fade in already aimed, hold that heading, then travel the same line into the wheel.
+            const int frames = 150;
             for (int f = 0; f < frames; f++)
             {
                 float t = f / 60f;
                 float alpha;
                 float travel;
-                if (t < 0.18f)
+                float press;
+                if (t < 0.22f)
                 {
-                    alpha = t / 0.18f;
+                    alpha = t / 0.22f;
                     travel = 0f;
+                    press = 0f;
+                }
+                else if (t < 0.72f)
+                {
+                    alpha = 1f;
+                    travel = 0f;
+                    press = 0f;
+                }
+                else if (t < 1.85f)
+                {
+                    alpha = 1f;
+                    float u = (t - 0.72f) / 1.13f;
+                    travel = u * u * (3f - 2f * u);
+                    press = 0f;
                 }
                 else
                 {
                     alpha = 1f;
-                    float u = Mathf.Clamp01((t - 0.18f) / 0.70f);
-                    travel = u * u * (3f - 2f * u);
+                    travel = 1f;
+                    float u = Mathf.Clamp01((t - 1.85f) / 0.28f);
+                    press = u < 0.45f ? u / 0.45f : 1f - (u - 0.45f) / 0.55f;
+                    if (press < 0f) press = 0f;
                 }
                 var px = new Color32[W * H];
                 PaintPhone(px, W, H);
-                Fill(px, W, H, (int)keep.x, (int)keep.y, (int)keep.width, (int)keep.height, new Color32(196, 132, 42, 255));
-                DrawString(px, W, H, "Tap to claim!", 22, W / 2, (int)(keep.yMax + 18f), new Color32(255, 244, 220, 255));
+                PaintWheel(px, W, H, keep);
+                var ink = new Color32(255, 244, 220, 255);
+                DrawStringCentered(px, W, H, "Tap to claim!", 22, (int)keep.center.x, (int)(keep.yMax + 16f), ink);
                 var at = Vector2.Lerp(perch, aim, travel);
-                Stamp(px, W, H, src, tex.width, tex.height, tip, at, daily.Angle, daily.Mirror, dw, dh, alpha);
+                Stroke(px, W, H, perch, aim, new Color32(210, 186, 120, 180));
+                float squeeze = 1f - 0.07f * press;
+                Stamp(px, W, H, src, tex.width, tex.height, tip, at, daily.Angle, daily.Mirror, dw * squeeze, dh * squeeze, alpha);
                 if (!SavePng(px, W, H, dir + "/f" + f.ToString("0000") + ".png")) return false;
             }
             string ff = File.Exists("/opt/homebrew/bin/ffmpeg") ? "/opt/homebrew/bin/ffmpeg" : "ffmpeg";
@@ -482,10 +503,70 @@ namespace FlockFive.Editor
             };
             using (var p = Process.Start(psi))
             {
-                if (p == null || !p.WaitForExit(20000) || p.ExitCode != 0) return false;
+                if (p == null || !p.WaitForExit(60000) || p.ExitCode != 0) return false;
             }
             try { Directory.Delete(dir, true); } catch { }
             return File.Exists(mp4) && new FileInfo(mp4).Length > 8000;
+        }
+
+        static void PaintWheel(Color32[] px, int w, int h, Rect disc)
+        {
+            float cx = disc.center.x;
+            float cy = disc.center.y;
+            float rad = disc.width * 0.5f;
+            if (rad < 4f) return;
+            var wedges = new[]
+            {
+                new Color32(214, 156, 48, 255),
+                new Color32(150, 84, 32, 255),
+                new Color32(232, 196, 92, 255),
+                new Color32(112, 64, 28, 255),
+                new Color32(196, 132, 42, 255),
+                new Color32(236, 176, 78, 255)
+            };
+            var rim = new Color32(92, 58, 24, 255);
+            var hub = new Color32(255, 236, 196, 255);
+            int x0 = Mathf.Max(0, Mathf.FloorToInt(cx - rad));
+            int y0 = Mathf.Max(0, Mathf.FloorToInt(cy - rad));
+            int x1 = Mathf.Min(w - 1, Mathf.CeilToInt(cx + rad));
+            int y1 = Mathf.Min(h - 1, Mathf.CeilToInt(cy + rad));
+            float slice = Mathf.PI * 2f / wedges.Length;
+            for (int y = y0; y <= y1; y++)
+            {
+                for (int x = x0; x <= x1; x++)
+                {
+                    float dx = x - cx;
+                    float dy = y - cy;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (d > rad) continue;
+                    Color32 c;
+                    if (d > rad * 0.90f) c = rim;
+                    else if (d < rad * 0.20f) c = hub;
+                    else
+                    {
+                        float ang = Mathf.Atan2(dy, dx) + Mathf.PI;
+                        int sec = Mathf.Clamp(Mathf.FloorToInt(ang / slice), 0, wedges.Length - 1);
+                        c = wedges[sec];
+                    }
+                    px[y * w + x] = c;
+                }
+            }
+        }
+
+        static int MeasureString(string text, int size)
+        {
+            if (string.IsNullOrEmpty(text)) return 0;
+            int scale = Mathf.Max(1, size / 6);
+            return text.Length * 4 * scale;
+        }
+
+        static void DrawStringCentered(Color32[] px, int w, int h, string text, int size, int cx, int y, Color32 col)
+        {
+            int width = MeasureString(text, size);
+            int x = cx - width / 2;
+            if (x < 4) x = 4;
+            if (x + width > w - 4) x = Mathf.Max(4, w - 4 - width);
+            DrawString(px, w, h, text, size, x, y, col);
         }
 
         static void PaintPhone(Color32[] px, int w, int h)
