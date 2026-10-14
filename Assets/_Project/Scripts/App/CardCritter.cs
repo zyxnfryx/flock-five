@@ -29,6 +29,7 @@ namespace FlockFive
             GUI.color = ink;
             GUI.DrawTexture(r, bee.texture, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
+            BeeAccessoryArt.DrawFor(r, id, alpha);
         }
     }
 }
