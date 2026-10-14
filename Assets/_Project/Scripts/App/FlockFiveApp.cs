@@ -10274,6 +10274,8 @@ namespace FlockFive
             return DrawPopupButton(r, held, gold ? PopupTint.Gold : PopupTint.Wood, glow, shadow);
         }
 
+        internal static Rect LastPedestalFace;
+
         static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true)
         {
             if (r.width < 2f || r.height < 2f) return r;
@@ -10292,6 +10294,7 @@ namespace FlockFive
             if (square && bloom != null && bloom.texture != null && (tint == PopupTint.Gold || tint == PopupTint.Wood))
             {
                 DrawPedestalFace(visual, sunk, tint == PopupTint.Gold, bloom.texture, glow, shadow);
+                LastPedestalFace = visual; // b89: the drawn flower rect, for the face-shaped sheen
                 layoutLabel = FlowerDisc(r, 0f);
             }
             else

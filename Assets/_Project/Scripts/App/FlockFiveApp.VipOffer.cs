@@ -894,9 +894,20 @@ namespace FlockFive
             static void DrawBuy(Rect flower, bool held, float s, float shineU, bool sparkle)
             {
                 // Idle size stays put. PushButton owns the press. The sheen is the idle motion.
+                LastPedestalFace = default;
                 var disc = DrawPopupButton(flower, held, true);
+#if UNITY_EDITOR
+                Shot89BuyDisc = disc;
+                Shot89BuyFace = LastPedestalFace;
+#endif
                 if (sparkle)
-                    PushButton.DrawSheen(disc.width > 8f ? disc : flower, PushButton.SheenU(AdPause.Unscaled), 0.9f, false); // b86: fitted to the top face
+                {
+                    var bloom = SpriteCatalog.PlayFlower;
+                    if (LastPedestalFace.width > 8f && bloom != null && bloom.texture != null)
+                        PushButton.DrawFaceSheen(LastPedestalFace, bloom.texture, PushButton.SheenU(AdPause.Unscaled), 0.9f); // b89: clipped to the gold top face
+                    else
+                        PushButton.DrawSheen(disc.width > 8f ? disc : flower, PushButton.SheenU(AdPause.Unscaled), 0.9f, false);
+                }
                 if (_buy == null)
                     _buy = new GUIStyle(GUI.skin.label)
                     {
