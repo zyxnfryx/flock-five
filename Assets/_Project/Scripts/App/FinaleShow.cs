@@ -399,11 +399,9 @@ namespace FlockFive
             var idle = peach.GetComponent<BirdIdle>();
             if (idle != null)
             {
-                idle.Frozen = true;
-                idle.Flapping = false;
                 idle.Lift = 0f;
                 idle.SuppressMood();
-                idle.enabled = false;
+                idle.DriveFlap(6f);
             }
             // Leave the lockup so the letter blast cannot drag her with it.
             if (hold != null && hold.parent != null)
@@ -415,8 +413,6 @@ namespace FlockFive
             peach.localRotation = Quaternion.identity;
             if (sr != null)
             {
-                // One wings-up frame. Flap cycling was swapping highlight specks across the neck.
-                sr.sprite = SpriteCatalog.FlapPose(BirdColor.Peach, 1);
                 sr.color = Color.white;
                 sr.flipX = false;
                 sr.sortingOrder = 8;

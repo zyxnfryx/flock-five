@@ -127,6 +127,29 @@ namespace FlockFive
             _nextWing = 0f;
         }
 
+        // Sling owns position, scale, and rotation. This only cycles wing frames.
+        // Unscaled time so a hit-stop that freezes timeScale still flaps.
+        bool _flapDrive;
+        float _flapHz = 6f;
+        float _flapClock;
+        int _wingPose;
+
+        public int WingPose => _wingPose;
+        public bool FlapDriven => _flapDrive;
+
+        public void DriveFlap(float cyclesPerSec)
+        {
+            _flapHz = Mathf.Max(0.4f, cyclesPerSec);
+            if (_flapDrive) return;
+            _flapDrive = true;
+            enabled = true;
+            Flapping = true;
+            Frozen = true;
+            // BirdFrame step 1 is wings up. Open there instead of the tucked rest.
+            _flapClock = 1.5f / 16f;
+            ApplyFlapFrame();
+        }
+
         // Short celebratory outline. Fades on its own so a score hop never sticks.
         public void Cheer(float seconds)
         {
@@ -223,6 +246,7 @@ namespace FlockFive
             sr.color = c;
         }
 
+
         void EnsureFace()
         {
             if (!MoodOn) return;
@@ -257,9 +281,35 @@ namespace FlockFive
             return d.sqrMagnitude < 0.0256f;
         }
 
+        void TickFlapDrive()
+        {
+            _flapClock += Time.unscaledDeltaTime * (_flapHz / 4f);
+            ApplyFlapFrame();
+        }
+
+        void ApplyFlapFrame()
+        {
+            if (_sr == null) _sr = GetComponent<SpriteRenderer>();
+            if (_sr == null) return;
+            _sr.flipX = FaceLeft;
+            // Garden BirdFrame stays on the 6-pose kit cycle. The sling steps the
+            // old 4-frame beat (rest, up, mid, up) through FlapPose so a plain peach
+            // still flaps without touching kit, far-wing, or head-seat helpers.
+            int k = SpriteCatalog.FlapStep(_flapClock);
+            int pose = k == 2 ? 2 : (k == 0 ? 0 : 1);
+            var spr = pose == 0 ? SpriteCatalog.Bird(Color) : SpriteCatalog.FlapPose(Color, pose);
+            if (spr != null) _sr.sprite = spr;
+            _wingPose = pose;
+        }
+
         void LateUpdate()
         {
             if (!isActiveAndEnabled) return;
+            if (_flapDrive)
+            {
+                TickFlapDrive();
+                return;
+            }
             if (_flutterUntil > 0f && Time.time >= _flutterUntil)
             {
                 _flutterUntil = 0f;
