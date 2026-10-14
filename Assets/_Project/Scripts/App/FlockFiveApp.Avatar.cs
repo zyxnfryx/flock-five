@@ -1013,12 +1013,17 @@ namespace FlockFive
             }
         }
 
+        GUIContent _avatarRenamePromptGc; // cached: no per-frame GUIContent allocation
+
         // Natural content width of the name picker, in UI units (s), from the widest row.
         float AvatarRenameContentW(float s, int kits)
         {
             var st = CoachLineStyle();
             st.fontSize = Mathf.RoundToInt(26f * s);
-            float prompt = st.CalcSize(new GUIContent(AvatarNeedsName() ? AdoptNameLine : AvatarRenameLine)).x + 8f * s;
+            string line = AvatarNeedsName() ? AdoptNameLine : AvatarRenameLine;
+            if (_avatarRenamePromptGc == null) _avatarRenamePromptGc = new GUIContent(line);
+            else if (_avatarRenamePromptGc.text != line) _avatarRenamePromptGc.text = line;
+            float prompt = st.CalcSize(_avatarRenamePromptGc).x + 8f * s;
             float birds = 5f * 74f * s;
             float kitRow = kits > 0 ? kits * 104f * s + (kits - 1) * 10f * s : 0f;
             float nameRow = 200f * s + 10f * s + 92f * s;
