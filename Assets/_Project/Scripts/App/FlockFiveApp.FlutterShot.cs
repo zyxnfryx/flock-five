@@ -289,7 +289,7 @@ namespace FlockFive
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = ffmpeg,
-                Arguments = "-y -f concat -safe 0 -i \"" + list + "\" -vsync vfr -c:v libx264 -pix_fmt yuv420p -crf 18 -movflags +faststart \"" + mp4 + "\"",
+                Arguments = "-y -f concat -safe 0 -i \"" + list + "\" -fps_mode vfr -c:v libx264 -pix_fmt yuv420p -crf 18 -movflags +faststart \"" + mp4 + "\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardError = true,
