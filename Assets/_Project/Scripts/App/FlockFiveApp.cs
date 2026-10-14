@@ -17210,7 +17210,7 @@ namespace FlockFive
             measure.fontStyle = FontStyle.Bold;
             measure.wordWrap = false;
             measure.fontSize = Mathf.RoundToInt(btnH * 0.50f);
-            float labelW = measure.CalcSize(new GUIContent(line)).x + (maxxed ? btnH * 0.62f : 0f);
+            float labelW = measure.CalcSize(new GUIContent(line)).x + (maxxed ? btnH * 1.9f : 0f);
             float wideW = Mathf.Min(Screen.width * 0.80f, 460f * s);
             float btnW = Mathf.Clamp(labelW + btnH * 1.1f, wideW * 0.55f, wideW * 0.65f);
             btnW = Mathf.Min(btnW, Screen.width * 0.86f - (rimW + keyW) * 2f);
@@ -17219,7 +17219,11 @@ namespace FlockFive
             float y = pill.yMax + gapTop;
             float edgeB = Mathf.Max(24f, 28f * s) + rimW + keyW;
             if (y + btnH > Screen.height - edgeB) y = Screen.height - edgeB - btnH;
-            var btn = new Rect((Screen.width - btnW) * 0.5f, y, btnW, btnH);
+            float denyAge = _upDenyAt < 0f ? 99f : AdPause.Unscaled - _upDenyAt;
+            float shake = denyAge < UpDenyShake
+                ? Mathf.Sin(denyAge * 46f) * (1f - denyAge / UpDenyShake) * btnH * 0.07f
+                : 0f;
+            var btn = new Rect((Screen.width - btnW) * 0.5f + shake, y, btnW, btnH);
             var outer = new Rect(btn.x - rimW, btn.y - rimW, btn.width + rimW * 2f, btn.height + rimW * 2f);
             var key = new Rect(outer.x - keyW, outer.y - keyW, outer.width + keyW * 2f, outer.height + keyW * 2f);
             _upgradeBtnR = outer;
@@ -17271,14 +17275,23 @@ namespace FlockFive
             var lab = new Rect(face.x + face.width * 0.06f, face.y + face.height * 0.10f, face.width * 0.88f, face.height * 0.80f);
             if (maxxed)
             {
-                float lk = btnH * 0.52f;
-                st.fontSize = FitFont(st, line, lab.width - lk * 1.3f, lab.height, 16, Mathf.RoundToInt(btnH * 0.50f));
+                // MAXXED stays centered; the gem sits out in the left margin, centered between
+                // the plate's inner left edge and the word. A smaller twin balances the right.
+                float lk = btnH * 0.50f;
+                st.fontSize = FitFont(st, line, lab.width - lk * 2.6f, lab.height, 16, Mathf.RoundToInt(btnH * 0.50f));
                 float tw = st.CalcSize(new GUIContent(line)).x;
-                float total = lk + lk * 0.3f + tw;
-                float x0 = btn.center.x - total * 0.5f;
-                if (paint) DrawDiamondGlyph(new Rect(x0, btn.center.y - lk * 0.5f, lk, lk), alpha);
-                var tr = new Rect(x0 + lk * 1.3f, lab.y, tw + 4f, lab.height);
-                StampOutlined(tr, line, st, new Color(1f, 1f, 1f, alpha), 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 2, 8));
+                float textL = btn.center.x - tw * 0.5f;
+                float textR = btn.center.x + tw * 0.5f;
+                float inner = btnH * 0.22f;
+                float gx = (btn.x + inner + textL) * 0.5f;
+                float gx2 = (textR + btn.xMax - inner) * 0.5f;
+                float lk2 = lk * 0.80f;
+                if (paint)
+                {
+                    DrawDiamondGlyph(new Rect(gx - lk * 0.5f, btn.center.y - lk * 0.5f, lk, lk), alpha);
+                    DrawDiamondGlyph(new Rect(gx2 - lk2 * 0.5f, btn.center.y - lk2 * 0.5f, lk2, lk2), alpha * 0.85f);
+                }
+                StampOutlined(lab, line, st, new Color(1f, 1f, 1f, alpha), 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 2, 8));
                 if (paint) DrawDiamondTwinkles(btn, alpha);
             }
             else
@@ -17298,12 +17311,59 @@ namespace FlockFive
                     if (_upgradeTutorOn) FinishUpgradeTutor();
                 }
                 else
+                {
                     Sfx.Deny();
+                    // Retap restarts the shake + message; never stacks.
+                    _upDenyAt = AdPause.Unscaled;
+                    _upDenyShort = Mathf.Max(0, Hive.UpgradeCost - Purse.Coins);
+                }
             }
+            if (!maxxed && !can) DrawUpgradeShortfall(outer, s, alpha);
+            else _upDenyAt = -1f;
             return hit || held;
         }
 
         public const string MaxxedWord = "MAXXED";
+        const float UpDenyShake = 0.35f, UpDenyPop = 0.16f, UpDenyHold = 1.6f, UpDenyFade = 0.35f;
+        float _upDenyAt = -1f;
+        int _upDenyShort;
+
+        public static string ShortfallLine(int shortBy) => "Not enough cash yet! Need " + Money.Format(shortBy) + " more";
+
+        // Friendly red caption under the brick button after a denied tap: pops in,
+        // holds ~1.6 s, fades. Drawn on top; not a hit target.
+        void DrawUpgradeShortfall(Rect btn, float s, float alpha)
+        {
+            if (_upDenyAt < 0f || !GuiPaint()) return;
+            float age = AdPause.Unscaled - _upDenyAt;
+            float end = UpDenyHold + UpDenyFade;
+            if (age > end) { _upDenyAt = -1f; return; }
+            float a = age < UpDenyHold ? 1f : 1f - (age - UpDenyHold) / UpDenyFade;
+            float pop = Mathf.Clamp01(age / UpDenyPop);
+            float scale = Mathf.Lerp(0.82f, 1f, 1f - (1f - pop) * (1f - pop)) + Mathf.Sin(pop * Mathf.PI) * 0.05f;
+            a *= alpha * Mathf.Clamp01(age / (UpDenyPop * 0.6f));
+            string line = ShortfallLine(_upDenyShort);
+            var st = GuiPool.Label(GuiSlot.FlipHintMeasure);
+            st.fontStyle = FontStyle.Bold;
+            st.wordWrap = false;
+            st.alignment = TextAnchor.MiddleCenter;
+            int hi = Mathf.RoundToInt(btn.height * 0.36f);
+            float maxW = Screen.width * 0.90f;
+            st.fontSize = FitFont(st, line, maxW - 40f * s, hi * 1.3f, 14, hi);
+            var size = st.CalcSize(new GUIContent(line));
+            float w = (size.x + 36f * s) * scale, h = (size.y + 18f * s) * scale;
+            float y = btn.yMax + 10f * s;
+            if (y + h > Screen.height - 8f * s) y = btn.y - 10f * s - h;
+            var pill = new Rect(btn.center.x - w * 0.5f, y, w, h);
+            var keep = GUI.color;
+            GUI.color = new Color(0.30f, 0.06f, 0.04f, 0.92f * a);
+            DrawBevelPlate(PopupButtonTex(PopupTint.Red, false), pill, 28f);
+            GUI.color = new Color(0.12f, 0.02f, 0.01f, 0.55f * a);
+            GUI.DrawTexture(new Rect(pill.x + h * 0.3f, pill.y + 2f, pill.width - h * 0.6f, Mathf.Max(1f, s)), Texture2D.whiteTexture);
+            GUI.color = keep;
+            st.fontSize = Mathf.RoundToInt(st.fontSize * scale);
+            StampOutlined(pill, line, st, new Color(1f, 0.80f, 0.74f, a), 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.12f), 2, 6));
+        }
 
         // ---- MAXXED diamond look (locked) ----
         static Texture2D _diamondPlate;
