@@ -68,7 +68,9 @@ namespace FlockFive
             _adoptLive = false; _welcomeOpen = false; _welcomeQueued = false; _welcomeGlove = false;
             _dailyOpen = false; _dailyAskOpen = false;
             // Let the warm cover / studio card clear before opening the table.
-            for (int calm = 0, f = 0; calm < 8 && f < 60 * 45; f++)
+            float coverT0 = Time.realtimeSinceStartup;
+            int calm = 0;
+            while (calm < 8 && Time.realtimeSinceStartup - coverT0 < 20f)
             {
                 calm = WarmCoverLive ? 0 : calm + 1;
                 MuteShotAudio();
