@@ -2320,6 +2320,47 @@ namespace FlockFive
             float fps = _recordFrameCount / 4.2f;
             if (fps < 5f) fps = 15f;
             EncodeSmashVideo(frames, dir + "/splash-birds.mp4", fps);
+            yield return ShotLevelCaptionStills(dir);
+        }
+
+        // LEVEL disc caption proof: blank, short / medium / long jokes (Levels 2, 4, 6),
+        // a 3-digit level and LEVEL 1000, as /tmp/paradice/splash-level-<device>-*.png.
+        // iPhone 1179x2556 always; add /tmp/flock-five-level6-ipad (with the level6 flag)
+        // for a second pass at iPad 2048x2732. Editor only (game view sizing + shot level).
+        static readonly int[] CaptionShotLevel = { 1, 2, 4, 6, 123, 1000, 1000 };
+        static readonly string[] CaptionShotEase = { "", "Easy", "Super Easy", "Super Duper Easy", "Super Easy", "", "Super Duper Easy" };
+        static readonly string[] CaptionShotTag = { "1-blank", "2-short", "4-medium", "6-long", "123-medium", "1000-blank", "1000-long" };
+
+        IEnumerator ShotLevelCaptionStills(string dir)
+        {
+#if UNITY_EDITOR
+            bool ipad = System.IO.File.Exists("/tmp/flock-five-level6-ipad");
+            try { System.IO.File.Delete("/tmp/flock-five-level6-ipad"); } catch { }
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            int keepNext = PlayerPrefs.GetInt("flockfive.next", 0);
+            var keepWindow = DeviceFit.TestWindow;
+            int[][] res = { new[] { 1179, 2556 }, new[] { 2048, 2732 } };
+            string[] dev = { "iphone", "ipad" };
+            for (int d = 0; d < (ipad ? 2 : 1); d++)
+            {
+                if (EditorGameSize != null) EditorGameSize(res[d][0], res[d][1]);
+                DeviceFit.TestWindow = res[d][0] / (float)res[d][1];
+                yield return new WaitForSecondsRealtime(0.8f);
+                for (int i = 0; i < CaptionShotLevel.Length; i++)
+                    yield return ShotSplashLevel(CaptionShotLevel[i], 0, CaptionShotEase[i],
+                        dir + "/splash-level-" + dev[d] + "-" + CaptionShotTag[i] + ".png");
+            }
+            if (ipad && EditorGameSize != null) EditorGameSize(1179, 2556);
+            DeviceFit.TestWindow = keepWindow;
+            _shotLevelNumber = 1;
+            _shotEase = "";
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", keepNext);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            PlayerPrefs.Save();
+            Debug.Log("FF_LEVEL_CAPTION_STILLS_DONE ipad=" + ipad);
+#else
+            yield break;
+#endif
         }
 
         IEnumerator ShotStreak()
@@ -10530,6 +10571,22 @@ namespace FlockFive
             return px;
         }
 
+        // Optical centre of the LEVEL disc's top face, as a fraction of the FlowerCap rect
+        // (disc) height. Measured on fx_play_flower.png down the centre column: the flat
+        // face runs 0.097..0.978 of the cap rect and the wood lip sits below it, so the
+        // face centre is 0.537, not the rect centre 0.5.
+        const float FaceMidFrac = 0.537f;
+        // Blank LEVEL's existing drop below the rect centre (was an inline 0.018f).
+        const float LevelAloneDrop = 0.018f;
+
+        // Downward offset, in disc heights (so it scales with iPad), that moves text
+        // centred at rect centre + already * height onto the top-face centre. Never up.
+        static float FaceNudge(Rect disc, float already)
+        {
+            float d = FaceMidFrac - 0.5f - already;
+            return d > 0f ? d * disc.height : 0f;
+        }
+
         static void DrawFlowerCaption(Rect disc, string ease, int number)
         {
             bool hasEase = !string.IsNullOrEmpty(ease);
@@ -10556,7 +10613,7 @@ namespace FlockFive
                 float padX = disc.width * 0.04f;
                 float aloneH = disc.height * 0.55f;
                 // Hairline: blank LEVEL up a smidge (was +0.045f).
-                float aloneY = disc.y + (disc.height - aloneH) * 0.5f + disc.height * 0.018f;
+                float aloneY = disc.y + (disc.height - aloneH) * 0.5f + disc.height * LevelAloneDrop;
                 float aloneX = disc.x + padX + disc.width * 0.035f;
                 lvR = new Rect(aloneX, aloneY, disc.width - padX * 2f - disc.width * 0.035f, aloneH);
                 jokeR = default;
@@ -10582,9 +10639,13 @@ namespace FlockFive
                 lvR.width * (quad ? 0.98f : (triple ? 0.96f : 0.94f)),
                 lvR.height * (hasEase ? 0.95f : 0.80f),
                 quad ? 30 : (triple ? 26 : 30), lvHi);
-            StampBannerText(lvR, level, lv, 1f, true);
-
-            if (!hasEase) return;
+            if (!hasEase)
+            {
+                // Blank LEVEL already sits LevelAloneDrop below the rect centre.
+                lvR.y += FaceNudge(disc, LevelAloneDrop);
+                StampBannerText(lvR, level, lv, 1f, true);
+                return;
+            }
 
             // Shared size. Does not follow the 100+ LEVEL cap or the length of the line.
             float s = DeviceFit.Ui();
@@ -10606,10 +10667,18 @@ namespace FlockFive
                 joke.wordWrap = true;
                 textH = joke.CalcHeight(_easeContent, lineW);
             }
+            float bottom = disc.yMax - 2f;
+            // The LEVEL+joke stack reads centred on the cap rect; move it, as one
+            // block, onto the top-face centre. A joke that fits never leaves the disc.
+            float nudge = FaceNudge(disc, 0f);
+            float room = bottom - (jokeR.y + textH);
+            if (nudge > room) nudge = room > 0f ? room : 0f;
+            lvR.y += nudge;
+            jokeR.y += nudge;
+            StampBannerText(lvR, level, lv, 1f, true);
             float bandH = textH + 4f;
             if (bandH < jokeR.height) bandH = jokeR.height;
             float y = jokeR.y;
-            float bottom = disc.yMax - 2f;
             if (y + textH > bottom)
             {
                 float minY = lvR.yMax + disc.height * 0.004f;
