@@ -115,7 +115,7 @@ namespace FlockFive
                 LightningFire.Apply(st);
             }
             _fireShown++;
-            if (view != null) view.BeginScorch(_garden != null ? _garden.Root : null);
+            if (view != null) view.BeginScorch(_garden.Root);
             RefreshBonusSigns();
         }
 
