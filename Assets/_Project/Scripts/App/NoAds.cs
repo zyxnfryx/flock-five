@@ -329,7 +329,8 @@ namespace FlockFive
             NoAdsStoreEvents.Tick();
         }
 
-        // Apple's sheet only takes focus; a real trip to the background pauses.
+        // Background and the StoreKit sheet both pause; PurchasePending only counts its
+        // resume grace while the app is in front again.
         void OnApplicationPause(bool paused)
         {
             if (paused) PurchasePending.NoteBackground();

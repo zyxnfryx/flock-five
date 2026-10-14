@@ -10,16 +10,19 @@ namespace FlockFive
     // Two safety exits keep the state from sticking:
     //   - Timeout: 60 s of wall-clock time since Begin (the clock keeps running in
     //     the background, so a long trip away counts too).
-    //   - Resume grace: the app truly went to the background (OnApplicationPause)
-    //     and came back, and the store still has not answered a few seconds later.
-    //     A focus loss alone (Apple's purchase sheet) does not arm it.
+    //   - Resume grace: the app was paused (OnApplicationPause) and came back, and
+    //     the store still has not answered 10 s of foreground time later. On iOS the
+    //     StoreKit sheet and the password / Face ID prompt also pause the app, so the
+    //     grace only counts while we are in front: each new pause stops it, and each
+    //     resume starts it over. 10 s leaves room for the receipt to arrive after the
+    //     sheet closes; the 60 s timeout is the hard bound either way.
     public static class PurchasePending
     {
         public enum Kind { None, Buy, Restore }
         public enum Outcome { None, Success, Cancelled, Failed, Deferred, TimedOut, Interrupted }
 
         public const double TimeoutSeconds = 60.0;
-        public const double ResumeGraceSeconds = 4.0;
+        public const double ResumeGraceSeconds = 10.0;
 
         static Kind _kind;
         static double _since;
@@ -79,7 +82,9 @@ namespace FlockFive
 
         public static void NoteBackground()
         {
-            if (Active) _away = true;
+            if (!Active) return;
+            _away = true;
+            _resumeAt = -1.0; // another sheet / trip away: the grace waits for the next resume
         }
 
         public static void NoteResume()

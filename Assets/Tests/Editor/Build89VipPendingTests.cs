@@ -177,6 +177,25 @@ namespace FlockFive.Editor
             PurchasePending.Finish(O.Success, K.Buy);
             Check("background-resume-then-success", Idle() && NoAds.Owned && PurchasePending.Last == O.Success, "");
 
+            // iOS: sheet closes (resume), then the password prompt pauses again.
+            // The grace must not run out while the prompt is up.
+            Fresh();
+            PurchasePending.Begin(K.Buy);
+            PurchasePending.NoteBackground();
+            _now += 3.0;
+            PurchasePending.NoteResume();
+            _now += 2.0;
+            PurchasePending.NoteBackground();
+            _now += PurchasePending.ResumeGraceSeconds + 5.0;
+            bool heldAway = PurchasePending.Tick() == O.None && PurchasePending.Active;
+            PurchasePending.NoteResume();
+            _now += PurchasePending.ResumeGraceSeconds - 1.0;
+            bool heldFront = PurchasePending.Tick() == O.None && PurchasePending.Active;
+            NoAds.Grant();
+            PurchasePending.Finish(O.Success, K.Buy);
+            Check("second-pause-restarts-grace", heldAway && heldFront && Idle() && NoAds.Owned,
+                "heldAway=" + heldAway + " heldFront=" + heldFront);
+
             // Away longer than the timeout: first tick back ends it.
             Fresh();
             PurchasePending.Begin(K.Buy);
