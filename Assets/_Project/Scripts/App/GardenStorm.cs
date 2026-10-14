@@ -120,6 +120,20 @@ namespace FlockFive
             _wasDry = false;
         }
 
+        // The app answers each boom. True aims this bolt at a limb and the app
+        // has already started the fire. False is an ordinary sky strike.
+        public delegate bool FireHook(out Vector3 aim);
+        public static FireHook FireAim;
+
+        public bool BoltReady => _bolt != null;
+
+        // Capture. The next boom is this many seconds out.
+        public void CueBolt(float seconds)
+        {
+            if (seconds < 0.05f) seconds = 0.05f;
+            _nextBoom = seconds;
+        }
+
         // Showcase bolt. Branching fork, a brief darker sky, a light shake.
         // The fire and the falling limb are StrikeFx and BranchView.
         public static void StrikeAt(Vector3 world)
@@ -133,14 +147,23 @@ namespace FlockFive
             _aimOn = true;
             _aimX = world.x;
             _aimY = world.y;
-            _strikeDark = 0.5f;
+            _strikeDark = 0.95f;
             _skyAt = PlayClock.Now - 0.012f;
             _skyBig = true;
-            _skyPow = 0.9f;
+            _skyPow = 1f;
             Sfx.ThunderCrack(0.72f);
-            CamShake.Bolt(0.2f);
+            CamShake.Bolt(0.26f);
             Haptics.Play(Haptics.Tier.Light);
-            SpawnBolt(0.75f, true);
+            SpawnBolt(0.85f, true);
+            _boltLife = 0.62f;
+        }
+
+        bool AimFire()
+        {
+            if (FireAim == null) return false;
+            if (!FireAim(out var aim)) return false;
+            StrikeBranch(aim);
+            return true;
         }
 
         void OnEnable()
@@ -496,8 +519,8 @@ namespace FlockFive
             if (_strikeDark > 0f)
             {
                 _strikeDark -= dt;
-                float u = Mathf.Clamp01(_strikeDark / 0.5f);
-                veilA = Mathf.Max(veilA, 0.78f * u);
+                float u = Mathf.Clamp01(_strikeDark / 0.95f);
+                veilA = Mathf.Max(veilA, 0.88f * u);
             }
             float sky = SkyFlash;
             if (sky > 0f) veilA *= 1f - 0.7f * sky;
@@ -623,6 +646,7 @@ namespace FlockFive
 
         void Boom(float power, bool big)
         {
+            if (AimFire()) return;
             _skyAt = PlayClock.Now - 0.012f;
             _skyBig = big;
             _skyPow = big ? 1f : Mathf.Lerp(0.62f, 0.84f, Mathf.Clamp01(power));

@@ -439,6 +439,32 @@ namespace FlockFive
             return ClipLp("lullaby", data, 0.14f);
         }
 
+        // Limb catching. Four low wood pops, no noise floor, under the thunder.
+        static AudioClip MakeWoodFire()
+        {
+            const float dur = 0.62f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float[] at = { 0.012f, 0.11f, 0.23f, 0.39f };
+            float[] freq = { 168f, 142f, 196f, 124f };
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float s = 0f;
+                for (int k = 0; k < 4; k++)
+                {
+                    float dt = t - at[k];
+                    if (dt < 0f || dt > 0.22f) continue;
+                    float e = Mathf.Exp(-dt * 14f);
+                    float pop = Mathf.Sin(2f * Mathf.PI * freq[k] * dt);
+                    pop += 0.35f * Mathf.Sin(2f * Mathf.PI * freq[k] * 0.5f * dt);
+                    s += pop * e;
+                }
+                data[i] = s * 0.42f;
+            }
+            return ClipLp("wood-fire", data, 0.18f);
+        }
+
         // Short low thump plus a band-limited crack. Not a gunshot.
         static AudioClip MakeFwCrackle()
         {

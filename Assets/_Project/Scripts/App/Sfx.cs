@@ -723,6 +723,7 @@ namespace FlockFive
         public static float FireworkGain = 1f;
         static AudioClip _fwWhistle;
         static AudioClip _fwCrackle;
+        static AudioClip _woodFire;
         static float _fwCrackleAt;
         static AudioClip[] _skyBoom;
 
@@ -741,8 +742,8 @@ namespace FlockFive
         {
             Ensure();
             if (MixDesk.Live != null && !MixDesk.Live.AllowMid) return;
-            if (_fwCrackle == null) _fwCrackle = MakeFwCrackle();
-            Shot(_fwCrackle, Random.Range(0.72f, 0.86f), 0.22f, MixLayer.Mid);
+            if (_woodFire == null) _woodFire = MakeWoodFire();
+            Shot(_woodFire, Random.Range(0.94f, 1.03f), 0.22f, MixLayer.Mid);
         }
 
         public static void Firework()

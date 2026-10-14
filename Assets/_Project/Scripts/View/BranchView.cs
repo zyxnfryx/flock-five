@@ -315,12 +315,7 @@ namespace FlockFive
                 Destroy(cols[i]);
             transform.rotation = Quaternion.identity;
             if (Wood != null)
-            {
-                Wood.color = Color.white;
-                Wood.transform.localScale = _woodScale;
-                Wood.transform.localPosition = _woodPos;
-                Wood.transform.localRotation = Quaternion.identity;
-            }
+                RestoreWoodLook();
         }
 
         void EnsureZzz()
@@ -464,6 +459,8 @@ namespace FlockFive
         {
             _act++;
             DropFly();
+            RestoreWoodLook();
+            StrikeFx.ClearAll();
         }
 
         void DropFly()
@@ -481,22 +478,32 @@ namespace FlockFive
             _breaking = false;
             transform.rotation = Quaternion.identity;
             if (Wood != null && _woodRemembered)
-            {
-                Wood.color = Color.white;
-                Wood.transform.localScale = _woodScale;
-                Wood.transform.localPosition = _woodPos;
-                Wood.transform.localRotation = Quaternion.identity;
-            }
+                RestoreWoodLook();
         }
 
-        // Char, a short burn, then the shared limb drop. Sync skips a breaking limb.
+        void RestoreWoodLook()
+        {
+            if (Wood == null || !_woodRemembered) return;
+            Wood.enabled = true;
+            Wood.color = Color.white;
+            Wood.transform.localScale = _woodScale;
+            Wood.transform.localPosition = _woodPos;
+            Wood.transform.localRotation = Quaternion.identity;
+        }
+
+        // Char, then the limb splits into glowing debris. Sync skips a breaking limb.
+        // The ordinary snap stays on BreakAway. This path is the fire.
         public void BeginScorch(Transform fxRoot)
         {
             _breaking = true;
+            RememberWood();
             if (Sign != null) Sign.gameObject.SetActive(false);
-            if (Wood != null) Wood.color = new Color(0.18f, 0.12f, 0.09f, 1f);
+            if (Wood != null) Wood.color = new Color(1f, 0.86f, 0.45f, 1f);
             var root = fxRoot != null ? fxRoot : transform.parent;
-            StrikeFx.Play(root, transform.position);
+            Sprite limb = Wood != null ? Wood.sprite : null;
+            Vector3 scale = Wood != null ? Wood.transform.lossyScale : Vector3.one;
+            bool flip = Wood != null && Wood.flipX;
+            StrikeFx.Play(root, transform.position, limb, scale, flip);
             Sfx.Crackle();
             StartCoroutine(ScorchDrop());
         }
@@ -505,7 +512,7 @@ namespace FlockFive
         {
             int act = _act;
             float t = 0f;
-            const float burn = 0.58f;
+            float burn = StrikeFx.SplitDelay;
             while (t < burn)
             {
                 if (act != _act)
@@ -514,6 +521,13 @@ namespace FlockFive
                     yield break;
                 }
                 t += Time.deltaTime;
+                if (Wood != null)
+                {
+                    float u = Mathf.Clamp01(t / burn);
+                    var hot = new Color(1f, 0.92f, 0.62f, 1f);
+                    var ash = new Color(0.10f, 0.05f, 0.04f, 1f);
+                    Wood.color = Color.Lerp(hot, ash, u);
+                }
                 yield return null;
             }
             if (act != _act)
@@ -521,7 +535,28 @@ namespace FlockFive
                 _breaking = false;
                 yield break;
             }
-            yield return BreakAway();
+            if (Wood != null) Wood.enabled = false;
+            float rest = 1.15f;
+            while (rest > 0f)
+            {
+                if (act != _act)
+                {
+                    _breaking = false;
+                    yield break;
+                }
+                rest -= Time.deltaTime;
+                yield return null;
+            }
+            if (act != _act)
+            {
+                _breaking = false;
+                yield break;
+            }
+            RestoreWoodLook();
+            transform.position = _planted;
+            transform.rotation = Quaternion.identity;
+            _breaking = false;
+            gameObject.SetActive(false);
         }
 
         public IEnumerator BreakAway()

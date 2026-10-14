@@ -97,7 +97,7 @@ namespace FlockFive
                 return;
             }
             if (_t <= 0f) return;
-            _t -= AdPause.UnscaledDelta;
+            _t -= ShakeStep();
             if (_t <= 0f)
             {
                 Settle();
@@ -118,7 +118,7 @@ namespace FlockFive
 
         void ApplyBolt()
         {
-            _bolt -= AdPause.UnscaledDelta;
+            _bolt -= ShakeStep();
             if (_bolt <= 0f)
             {
                 Settle();
@@ -134,6 +134,14 @@ namespace FlockFive
             if (_cam != null)
                 _cam.orthographicSize = _restSize * (1f - _boltKick * (s1 + 0.32f * s2));
             Mirror();
+        }
+
+        // A capture frame's wall step is the encode hitch. Follow the capture
+        // clock so the shake lasts the right number of recorded frames.
+        static float ShakeStep()
+        {
+            if (Time.captureDeltaTime > 0f) return Time.captureDeltaTime;
+            return AdPause.UnscaledDelta;
         }
 
         void Mirror()

@@ -437,12 +437,14 @@ namespace FlockFive
             _app = this;
             RewardedGrant.TryApply = ApplyRewardedTicket;
             RewardedGrant.Boot();
+            BindLightningFire();
         }
 
         void OnDisable()
         {
             if (RewardedGrant.TryApply == ApplyRewardedTicket)
                 RewardedGrant.TryApply = null;
+            UnbindLightningFire();
             if (_app == this) _app = null;
         }
 
@@ -607,6 +609,11 @@ namespace FlockFive
             {
                 try { System.IO.File.Delete("/tmp/flock-five-b83-gardens"); } catch { }
                 StartCoroutine(ShotBuild83Gardens());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-lightning-fire"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-lightning-fire"); } catch { }
+                StartCoroutine(ShotLightningFire());
             }
 #endif
             if (System.IO.File.Exists("/tmp/flock-five-shot"))

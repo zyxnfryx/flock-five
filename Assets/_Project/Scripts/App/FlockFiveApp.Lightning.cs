@@ -12,6 +12,8 @@ namespace FlockFive
         readonly bool[] _offerBurned = new bool[WorldBuilder.GiftCount];
         int _lightningStrikes;
         bool _lightningRolled;
+        int _fireMisses;
+        int _fireShown;
         bool _shot82e;
         bool _shot82eStill;
 
@@ -65,6 +67,56 @@ namespace FlockFive
             for (int i = 0; i < views.Length; i++)
                 if (views[i] != null && views[i].Index == index) return views[i];
             return null;
+        }
+
+        void BindLightningFire() => GardenStorm.FireAim = OfferFire;
+
+        void UnbindLightningFire()
+        {
+            if (GardenStorm.FireAim == OfferFire)
+                GardenStorm.FireAim = null;
+        }
+
+        // One roll per storm bolt. Always on. A miss climbs the odds. A fire
+        // aims the bolt and burns the limb. No legal limb: the bolt stays dry.
+        bool OfferFire(out Vector3 aim)
+        {
+            aim = default;
+            if (_splash || _restarting || _won || _busy || _board == null) return false;
+            bool force = LightningFire.Force;
+            if (!force && GardenStorm.Wet <= 0.45f) return false;
+            force = LightningFire.ConsumeForce();
+            int before = _fireMisses;
+            var roll = LightningFire.Resolve(
+                _board, _bonusOn, _offerBurned, before, Random.value, force);
+            var view = roll.Fired ? ViewFor(roll.Index) : null;
+            if (!roll.Fired || view == null)
+            {
+                _fireMisses = roll.Fired ? before + 1 : roll.Misses;
+                return false;
+            }
+            _fireMisses = 0;
+            ApplyFire(roll.Index, view);
+            aim = view.transform.position;
+            return true;
+        }
+
+        void ApplyFire(int index, BranchView view)
+        {
+            var st = _board.Branches[index];
+            if (st != null && st.IsBonus)
+            {
+                int ord = BonusBranches.Ordinal(_board, index);
+                LightningFire.Apply(st);
+                if ((uint)ord < (uint)_offerBurned.Length) _offerBurned[ord] = true;
+            }
+            else
+            {
+                LightningFire.Apply(st);
+            }
+            _fireShown++;
+            if (view != null) view.BeginScorch(_garden != null ? _garden.Root : null);
+            RefreshBonusSigns();
         }
 
         static void MuteShotAudio()
@@ -489,6 +541,148 @@ namespace FlockFive
             EditorShotLive = false;
             UnityEditor.EditorApplication.Exit(0);
 #endif
+        }
+
+        bool _shotFire;
+
+        // 60 fps play-mode clip of one forced fire. The roll is still the real
+        // target rules; Force only skips the dice.
+        public IEnumerator ShotLightningFire()
+        {
+            if (_shotFire) yield break;
+            _shotFire = true;
+            ShotKeepAwake = true;
+            EditorShotLive = true;
+            MuteShotAudio();
+            UnityEditor.EditorApplication.isPaused = false;
+            Application.runInBackground = true;
+            AudioListener.volume = 0f;
+            AudioListener.pause = true;
+
+            const string frames = "/tmp/lightning-fire-frames";
+            const string mp4 = "/Users/zfxgames/wkspaces/post88/lightning-fire.mp4";
+            Directory.CreateDirectory("/Users/zfxgames/wkspaces/post88");
+
+            int nextKeep = PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = PlayerPrefs.HasKey("flockfive.next");
+            int coachKeep = PlayerPrefs.GetInt(CoachKey, 0);
+            bool hadCoach = PlayerPrefs.HasKey(CoachKey);
+            int leafKeep = PlayerPrefs.GetInt(CoachLeafKey, 0);
+            bool hadLeaf = PlayerPrefs.HasKey(CoachLeafKey);
+            int hiveKeep = PlayerPrefs.GetInt(CoachHiveGardenKey, 0);
+            bool hadHive = PlayerPrefs.HasKey(CoachHiveGardenKey);
+            bool hadBolt = PlayerPrefs.HasKey(LightningStrike.PrefKey);
+            int boltKeep = PlayerPrefs.GetInt(LightningStrike.PrefKey, 0);
+
+            LightningStrike.Enabled = false;
+            LightningStrike.Force = false;
+            LightningFire.Force = false;
+            AdConsent.DismissTransient();
+            AdConsent.EditorHoldAtt = false;
+            GamePause.Reset();
+            if (EditorGameSize != null) EditorGameSize(1179, 2556);
+            Screen.SetResolution(1179, 2556, false);
+
+            yield return null;
+            PrepGardenShot(0);
+            MuteShotAudio();
+            float wait = 0f;
+            while (wait < 8f && (GardenStorm.Instance == null || !GardenStorm.Instance.BoltReady))
+            {
+                if (GardenStorm.Instance != null) GardenStorm.Instance.JumpToStorm();
+                MuteShotAudio();
+                wait += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            if (GardenStorm.Instance != null) GardenStorm.Instance.JumpToStorm();
+            int aim = _board != null ? LightningFire.Target(_board, _bonusOn, _offerBurned) : -1;
+            Debug.Log("lightning-fire aim=" + aim + " wet=" + GardenStorm.Wet.ToString("0.00")
+                + " bolts=" + (GardenStorm.Instance != null && GardenStorm.Instance.BoltReady));
+            yield return new WaitForSecondsRealtime(0.35f);
+
+            int shown = _fireShown;
+            LightningFire.Force = true;
+            if (GardenStorm.Instance != null) GardenStorm.Instance.CueBolt(0.45f);
+            Time.captureFramerate = 60;
+            try { if (Directory.Exists(frames)) Directory.Delete(frames, true); } catch { }
+            Directory.CreateDirectory(frames);
+            int n = 0;
+            float t = 0f;
+            const float seconds = 4.2f;
+            while (t < seconds)
+            {
+                if (_fireShown == shown) LightningFire.Force = true;
+                MuteShotAudio();
+                yield return new WaitForEndOfFrame();
+                MuteShotAudio();
+                var tex = ScreenCapture.CaptureScreenshotAsTexture();
+                if (tex != null)
+                {
+                    try
+                    {
+                        File.WriteAllBytes(frames + "/" + n.ToString("D4") + ".jpg", tex.EncodeToJPG(82));
+                        n++;
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogWarning("lightning-fire frame " + e.Message);
+                    }
+                    Destroy(tex);
+                }
+                t += Time.deltaTime > 0f ? Time.deltaTime : (1f / 60f);
+            }
+            Time.captureFramerate = 0;
+            LightningFire.Force = false;
+            EncodeFireClip(frames, mp4);
+            Debug.Log("LIGHTNING_FIRE_CLIP frames=" + n + " shown=" + _fireShown + " misses=" + _fireMisses);
+            File.WriteAllText("/tmp/lightning-fire-clip-done", n + " " + _fireShown + "\n");
+
+            if (hadNext) PlayerPrefs.SetInt("flockfive.next", nextKeep);
+            else PlayerPrefs.DeleteKey("flockfive.next");
+            if (hadCoach) PlayerPrefs.SetInt(CoachKey, coachKeep);
+            else PlayerPrefs.DeleteKey(CoachKey);
+            if (hadLeaf) PlayerPrefs.SetInt(CoachLeafKey, leafKeep);
+            else PlayerPrefs.DeleteKey(CoachLeafKey);
+            if (hadHive) PlayerPrefs.SetInt(CoachHiveGardenKey, hiveKeep);
+            else PlayerPrefs.DeleteKey(CoachHiveGardenKey);
+            if (hadBolt) PlayerPrefs.SetInt(LightningStrike.PrefKey, boltKeep);
+            else PlayerPrefs.DeleteKey(LightningStrike.PrefKey);
+            PlayerPrefs.Save();
+            EditorShotLive = false;
+            ShotKeepAwake = false;
+            AudioListener.volume = 0f;
+            AudioListener.pause = true;
+            UnityEditor.EditorApplication.isPlaying = false;
+            UnityEditor.EditorApplication.Exit(0);
+        }
+
+        static void EncodeFireClip(string frames, string mp4)
+        {
+            string args = "-y -loglevel error -framerate 60 -i \"" + frames + "/%04d.jpg\""
+                + " -r 60 -vf pad=ceil(iw/2)*2:ceil(ih/2)*2 -c:v libx264 -pix_fmt yuv420p -crf 18 -movflags +faststart \""
+                + mp4 + "\"";
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "/opt/homebrew/bin/ffmpeg",
+                Arguments = args,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            try
+            {
+                using (var p = System.Diagnostics.Process.Start(psi))
+                {
+                    if (p == null) return;
+                    if (!p.WaitForExit(180000))
+                        Debug.LogWarning("lightning-fire ffmpeg timed out");
+                    else if (p.ExitCode != 0)
+                        Debug.LogWarning("lightning-fire ffmpeg exit " + p.ExitCode);
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("lightning-fire ffmpeg " + e.Message);
+            }
         }
 
         static int SeasonShotLevel(GardenScene scene)
