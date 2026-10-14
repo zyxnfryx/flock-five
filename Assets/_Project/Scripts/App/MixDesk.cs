@@ -211,6 +211,18 @@ namespace FlockFive
         // Editor tests attach a desk without synthesizing the beds.
         public void AttachForTests() => Live = this;
 
+        // Ads.HoldAdAudio. Stem levels go to 0 for the show. _stemBase stays,
+        // so ResetToUser on close puts the slider and mute back.
+        public void ApplyAdSilence()
+        {
+            if (_stems == null) return;
+            for (int i = 0; i < _stems.Length; i++)
+            {
+                var a = _stems[i];
+                if (a != null) a.volume = 0f;
+            }
+        }
+
         public static void DetachForTests(MixDesk desk)
         {
             if (Live == desk) Live = null;

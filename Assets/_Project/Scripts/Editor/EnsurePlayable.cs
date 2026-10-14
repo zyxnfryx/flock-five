@@ -66,6 +66,7 @@ namespace FlockFive.Editor
             Suite("build87-sparkle", Build87SparkleTests.Run);
             Suite("build88-wing", Build88WingTests.Run);
             Suite("build88-mute", Build88MuteTests.Run);
+            Suite("build88-adaudio", Build88AdAudioTests.Run);
             Suite("build88-banner", Build88BannerTests.Run);
             Suite("build88-dismiss", Build88DismissTests.Run);
             Suite("build88-poker-glove", Build88PokerGloveTests.Run);
