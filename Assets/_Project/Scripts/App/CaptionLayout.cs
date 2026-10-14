@@ -174,6 +174,15 @@ namespace FlockFive
         public const string CoachNowhereLine =
             "Nowhere to go yet.\nTry another branch.";
 
+        // b89: a glove box that touches the caption plate means the caption is
+        // repainted over the glove, so the words always read on top.
+        public static bool GloveHitsCaption(Rect glove, Rect caption)
+        {
+            if (glove.width < 1f || glove.height < 1f) return false;
+            if (caption.width < 1f || caption.height < 1f) return false;
+            return glove.Overlaps(caption);
+        }
+
         public const string VipPitchLine = "Tap VIP anytime to drop ads.";
 
         public const string AlbumUpgradeLine = "Upgrade adds honey for 1000 coins.";

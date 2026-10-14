@@ -3505,6 +3505,7 @@ namespace FlockFive
                 float room = (inner - CaptionLayout.WidestRow(st, BannerText ?? text, bandPx)) * 0.5f;
                 if (room < ring) ring = Mathf.Max(2, Mathf.FloorToInt(Mathf.Max(0f, room)));
                 StampBannerText(new Rect(ix, band.y, inner, band.height), BannerText ?? text, st, fade, true, ring);
+                KeepCaptionOnTop(1, band, new Rect(ix, band.y, inner, band.height), BannerText ?? text, bandPx, fade, ring);
                 st.fontSize = keep;
                 st.wordWrap = false;
                 return;
@@ -3544,6 +3545,7 @@ namespace FlockFive
                 if (CaptionLayout.WantsBeeIcon(text))
                     DrawCaptionBee(plate, snug.LineH, fade);
                 StampBannerText(drawText, _coachShown ?? text, st, fade, true);
+                KeepCaptionOnTop(2, plate, drawText, _coachShown ?? text, _coachSizedPx, fade, -1);
                 return;
             }
             var plateBox = CaptionPlateBox(drawR, platePad, _coachSizedTextH, drawText.height, slack);
@@ -3556,6 +3558,60 @@ namespace FlockFive
             NoteTutorPlate(CoachPanelRect(plateBox, platePad));
             DrawCoachPanel(plateBox, fade, platePad, opaque);
             StampBannerText(drawText, _coachShown ?? text, st, fade, true);
+            KeepCaptionOnTop(3, CoachPanelRect(plateBox, platePad), drawText, _coachShown ?? text, _coachSizedPx, fade, -1);
+        }
+
+        // b89: the glove paints after the caption. Full-width banners at a fixed
+        // size (b85, b87 f4d5f1e) can reach the glove's body. Each caption records
+        // its text paint here; DrawGloveAt stamps the words again over any glove
+        // that touches the plate, the same frame.
+        struct CaptionPaint
+        {
+            public int Frame;
+            public int Kind; // 1 banner, 2 snug, 3 boxed
+            public Rect Plate, Text;
+            public string Shown;
+            public int Px, Ring;
+            public float Fade;
+        }
+
+        CaptionPaint _capTop;
+        bool _capRepainting;
+        public static int CaptionRepaints;
+        public static int CaptionGloveHit = -1;
+
+        void KeepCaptionOnTop(int kind, Rect plate, Rect text, string shown, int px, float fade, int ring)
+        {
+            if (_capRepainting) return;
+            _capTop = new CaptionPaint { Frame = Time.frameCount, Kind = kind, Plate = plate, Text = text, Shown = shown, Px = px, Ring = ring, Fade = fade };
+        }
+
+        // Called after a glove draw with that glove's screen box.
+        void RepaintCaptionOver(Rect gloveBox)
+        {
+            if (_capRepainting || _capTop.Kind == 0 || _capTop.Frame != Time.frameCount) return;
+            if (!CaptionLayout.GloveHitsCaption(gloveBox, _capTop.Plate)) return;
+            CaptionGloveHit = Time.frameCount;
+            if (Event.current != null && Event.current.type != EventType.Repaint) return;
+            _capRepainting = true;
+            var st = CoachLineStyle();
+            int keepPx = st.fontSize; bool keepWrap = st.wordWrap;
+            var prevC = GUI.color;
+            try
+            {
+                // Words only. A second plate fill would darken the band where it
+                // already sits; the glove may show through the plate, never the words.
+                st.fontSize = _capTop.Px;
+                st.wordWrap = _capTop.Kind == 1;
+                StampBannerText(_capTop.Text, _capTop.Shown, st, _capTop.Fade, true, _capTop.Ring);
+                CaptionRepaints++;
+            }
+            finally
+            {
+                GUI.color = prevC;
+                st.fontSize = keepPx; st.wordWrap = keepWrap;
+                _capRepainting = false;
+            }
         }
 
         // Bee glyph in the left of an already-widened plate. The words stay put.
@@ -3870,6 +3926,8 @@ namespace FlockFive
             GUI.DrawTexture(rect, tex, ScaleMode.ScaleToFit, true);
             GUI.matrix = prev;
             GUI.color = Color.white;
+            if (RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 0f, out var drawn))
+                RepaintCaptionOver(drawn);
         }
 
         public const float GloveScreenMargin = 6f;
