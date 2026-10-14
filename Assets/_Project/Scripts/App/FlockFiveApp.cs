@@ -6773,11 +6773,11 @@ namespace FlockFive
             EnsureSplashRails();
             var r = _railRect[id];
             if (r.width < 2f || r.height < 2f) return r;
-            float pad = r.width * 0.06f;
-            float x0 = r.x - pad;
-            float y0 = r.y - pad;
-            float x1 = r.xMax + pad;
-            float y1 = r.yMax + Mathf.Min(pad, SplashRailGap() * 0.25f);
+            var hit = SplashPress.PadRail(r, SplashRailGap());
+            float x0 = hit.x;
+            float y0 = hit.y;
+            float x1 = hit.xMax;
+            float y1 = hit.yMax;
             if (id == RailDaily)
             {
                 DailyBonus.Boot();

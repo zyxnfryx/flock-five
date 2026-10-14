@@ -92,6 +92,16 @@ namespace FlockFive.Editor
                 "open=" + after.Open + " dismiss=" + after.Dismiss + " rearm=" + after.Rearm);
 
             const int pokerStep = (int)CoachStep.PokerIntro;
+            var icon = new Rect(100f, 200f, 150f, 150f);
+            var padded = SplashPress.PadRail(icon, 45f);
+            Check("finger-past-the-icon-still-hits",
+                padded.Contains(new Vector2(icon.x - 12f, icon.center.y))
+                && padded.Contains(new Vector2(icon.xMax + 12f, icon.center.y))
+                && padded.Contains(icon.center)
+                && !padded.Contains(new Vector2(icon.center.x, icon.y - 30f))
+                && !padded.Contains(new Vector2(icon.center.x, icon.yMax + 20f)),
+                padded.ToString());
+
             Check("fade-does-not-rearm-after-dismiss",
                 CoachPress.ReturnStep(pokerStep, pokerStep, true) < 0
                 && CoachPress.ReturnStep(pokerStep, pokerStep, false) == pokerStep

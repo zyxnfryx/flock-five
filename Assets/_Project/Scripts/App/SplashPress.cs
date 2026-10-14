@@ -145,6 +145,20 @@ namespace FlockFive
                 Hits[i] = new Hit();
         }
 
+        // The drawn rail square plus a finger of slop. Sides can grow. The
+        // vertical pad stops inside the gap so it cannot reach the next button.
+        public static Rect PadRail(Rect icon, float gap)
+        {
+            if (icon.width < 2f || icon.height < 2f) return icon;
+            float side = icon.width * 0.12f;
+            if (side < 16f) side = 16f;
+            float vertCap = gap > 1f ? gap * 0.40f : side;
+            float vert = side < vertCap ? side : vertCap;
+            float below = gap > 1f ? gap * 0.25f : vert;
+            if (below > vert) below = vert;
+            return Rect.MinMaxRect(icon.x - side, icon.y - vert, icon.xMax + side, icon.yMax + below);
+        }
+
         public static Hit PressHit(Id id) => Hits[(int)id];
         public static Hit LaunchHit(Id id) => Hits[(int)id];
 
