@@ -895,6 +895,9 @@ namespace FlockFive
             {
                 // Idle size stays put. PushButton owns the press. The sheen is the idle motion.
                 var disc = DrawPopupButton(flower, held, true);
+#if UNITY_EDITOR
+                Shot89BuyDisc = disc;
+#endif
                 if (sparkle)
                     PushButton.DrawSheen(disc.width > 8f ? disc : flower, PushButton.SheenU(AdPause.Unscaled), 0.9f, false); // b86: fitted to the top face
                 if (_buy == null)

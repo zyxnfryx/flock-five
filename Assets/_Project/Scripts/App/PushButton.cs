@@ -190,8 +190,8 @@ namespace FlockFive
         static Color32[] _bandPx;
 
         // Gloss band clipped to the button. u is 0..1 across one sweep. flash is the release pop.
-        // Baked into one bilinear texture so the sweep is smooth, and zeroed outside an inset
-        // ellipse so it cannot walk onto the card the way a rotated GUI quad does.
+        // Baked into one bilinear texture so the sweep is smooth, and zeroed outside an ellipse
+        // on the face rim so it cannot walk onto the card the way a rotated GUI quad does.
         public static void DrawSheen(Rect r, float u, float alpha, bool flash)
         {
             if (alpha < 0.02f || r.width < 8f || r.height < 8f) return;
@@ -201,6 +201,55 @@ namespace FlockFive
             GUI.color = Color.white;
             GUI.DrawTexture(r, tex, ScaleMode.StretchToFill, true);
             GUI.color = prev;
+        }
+
+        // b89 (Brandon): the sheen hugs the disc rim. It used to live in a 0.47 inset ellipse
+        // with a soft (1 - e^2) * 5 falloff, so its edge read about 5% of the face width inside
+        // the rim, and the sweep started at -0.20, well left of the face, so the first visible
+        // light showed up already inside it. Now the clip sits on the rim with a thin antialias
+        // and the band centre starts on the rim's leftmost point.
+        public const float OvalRim = 0.495f;      // clip radius, fraction of the face (was 0.47)
+        public const float OvalFeather = 0.035f;  // rim antialias, fraction of the radius
+        public const float OvalSlant = 0.48f;     // along = t + (v - 0.5) * slant: bottom leads
+        public const float OvalBand = 0.12f;
+        public const float OvalFlashBand = 0.22f;
+
+        // Leftmost and rightmost along-values on the clip ellipse (the slant tilts them).
+        public static float OvalStart => 0.5f - OvalRim * Mathf.Sqrt(1f + OvalSlant * OvalSlant);
+        public static float OvalEnd => 0.5f + OvalRim * Mathf.Sqrt(1f + OvalSlant * OvalSlant);
+
+        // Band centre at sweep position u. u = 0 is on the left rim, u = 1 on the right rim.
+        public static float OvalTravel(float u) => Mathf.Lerp(OvalStart, OvalEnd, Mathf.Clamp01(u));
+
+        // Rim clip 0..1 for a point in face units (t, v in 0..1).
+        public static float OvalClip(float t, float v)
+        {
+            float ex = (t - 0.5f) / OvalRim, ey = (v - 0.5f) / OvalRim;
+            float e = Mathf.Sqrt(ex * ex + ey * ey);
+            return Mathf.Clamp01((1f - e) / OvalFeather);
+        }
+
+        // Gap from the face edge to half coverage, as a fraction of the face width.
+        public static float OvalEdgeGap => 0.5f - OvalRim * (1f - OvalFeather * 0.5f);
+
+        // Sheen coverage 0..1 at a point in face units, before the alpha envelope.
+        public static float OvalSheenAt(float t, float v, float u, bool flash)
+        {
+            float clip = OvalClip(t, v);
+            if (clip <= 0f) return 0f;
+            float along = t + (v - 0.5f) * OvalSlant;
+            float d = (along - OvalTravel(u)) / (flash ? OvalFlashBand : OvalBand);
+            return Mathf.Exp(-d * d * 3.4f) * clip;
+        }
+
+        // Idle alpha across one sweep. A half-sine was ~0.2 at the first visible frame, so the
+        // trace seemed to start somewhere inside the face. Ramp in and out on the rims instead.
+        public const float OvalRamp = 0.10f;
+        public static float OvalFade(float u)
+        {
+            u = Mathf.Clamp01(u);
+            float k = Mathf.Clamp01(Mathf.Min(u, 1f - u) / OvalRamp);
+            return k * k * (3f - 2f * k);
         }
 
         static Texture2D SheenTex(float u, float alpha, bool flash)
@@ -217,30 +266,15 @@ namespace FlockFive
                 };
                 _bandPx = new Color32[n * n];
             }
-            float travel = Mathf.Lerp(-0.20f, 1.15f, Mathf.Clamp01(u));
-            float width = flash ? 0.22f : 0.12f;
-            float aScale = flash ? alpha : alpha * Mathf.Sin(Mathf.Clamp01(u) * Mathf.PI);
+            float aScale = flash ? alpha : alpha * OvalFade(u);
             for (int y = 0; y < n; y++)
             {
                 float v = (y + 0.5f) / n;
-                float ey = (v - 0.50f) / 0.47f;
                 for (int x = 0; x < n; x++)
                 {
-                    float t = (x + 0.5f) / n;
-                    float ex = (t - 0.50f) / 0.47f;
-                    float e2 = ex * ex + ey * ey;
-                    int i = y * n + x;
-                    if (e2 > 1f)
-                    {
-                        _bandPx[i] = new Color32(0, 0, 0, 0);
-                        continue;
-                    }
-                    float along = t + (v - 0.5f) * 0.48f;
-                    float d = (along - travel) / width;
-                    float band = Mathf.Exp(-d * d * 3.4f);
-                    float rim = Mathf.Clamp01((1f - e2) * 5f);
-                    byte a = (byte)Mathf.Clamp(band * rim * aScale * 230f, 0f, 255f);
-                    _bandPx[i] = new Color32(255, 250, 228, a);
+                    float c = OvalSheenAt((x + 0.5f) / n, v, u, flash);
+                    byte a = (byte)Mathf.Clamp(c * aScale * 230f, 0f, 255f);
+                    _bandPx[y * n + x] = new Color32(255, 250, 228, a);
                 }
             }
             _band.SetPixels32(_bandPx);
