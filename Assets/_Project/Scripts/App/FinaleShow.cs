@@ -322,10 +322,13 @@ namespace FlockFive
             var row1 = PlaceWord("FLOCK", flockY, 28, hold, 1f);
             var row2 = PlaceWord("FIVE", fiveY, 28, hold, -1f);
 
-            var ruby = Mascot(BirdColor.Ruby, new Vector3(-2.62f, flockY + CapH * 0.82f, 0f), false, 24, hold);
-            var gold = Mascot(BirdColor.Gold, new Vector3(2.62f, flockY + CapH * 0.82f, 0f), true, 24, hold);
-            var teal = Mascot(BirdColor.Teal, new Vector3(-3.55f, fiveY - CapH * 0.08f, 0f), false, 24, hold);
-            var violet = Mascot(BirdColor.Violet, new Vector3(3.55f, fiveY - CapH * 0.08f, 0f), true, 24, hold);
+            // One colour busts through the logo each finale (BustTurn rotates it); the other four hold the slots.
+            var buster = BustTurn.Next();
+            var crewCol = BustTurn.Crew(buster);
+            var ruby = Mascot(crewCol[0], new Vector3(-2.62f, flockY + CapH * 0.82f, 0f), false, 24, hold);
+            var gold = Mascot(crewCol[1], new Vector3(2.62f, flockY + CapH * 0.82f, 0f), true, 24, hold);
+            var teal = Mascot(crewCol[2], new Vector3(-3.55f, fiveY - CapH * 0.08f, 0f), false, 24, hold);
+            var violet = Mascot(crewCol[3], new Vector3(3.55f, fiveY - CapH * 0.08f, 0f), true, 24, hold);
             ruby.localScale = Vector3.zero;
             gold.localScale = Vector3.zero;
             teal.localScale = Vector3.zero;
@@ -388,93 +391,249 @@ namespace FlockFive
             Glow = false;
             SweepSparkles(hold);
 
-            var peach = Mascot(BirdColor.Peach, new Vector3(0f, 0.28f, 5.4f), false, 8, hold);
-            yield return SlingPeach(peach, hold, host, all, new[] { ruby, gold, teal, violet });
+            var bird = Mascot(buster, new Vector3(0f, 0.28f, 5.4f), false, 8, hold);
+            yield return SlingBird(buster, bird, hold, host, all, new[] { ruby, gold, teal, violet });
         }
 
-        static IEnumerator SlingPeach(Transform peach, Transform hold, MonoBehaviour host, Transform[] letters, Transform[] crew)
+        // Shared bust-through for whichever colour has the turn (BustTurn). The bird is
+        // driven here, not by BirdIdle: dressing (Mood face, kit) is stripped (#98 fix) and
+        // FlapBlend runs one continuous wing phase from pull-back to fade, contact included.
+        static IEnumerator SlingBird(BirdColor col, Transform bird, Transform hold, MonoBehaviour host, Transform[] letters, Transform[] crew)
         {
-            if (peach == null) yield break;
-            var idle = peach.GetComponent<BirdIdle>();
-            if (idle != null)
-            {
-                idle.Frozen = true;
-                idle.Flapping = true;
-                idle.Lift = 0.2f;
-                idle.RestScale = Vector3.one * 0.5f;
-            }
-            // Leave the lockup so the letter blast cannot drag her with it.
+            if (bird == null) yield break;
+            var idle = bird.GetComponent<BirdIdle>();
+            if (idle != null) idle.enabled = false;
+            StripDressing(bird);
+            // Leave the lockup so the letter blast cannot drag the bird with it.
             if (hold != null && hold.parent != null)
-                peach.SetParent(hold.parent, true);
+                bird.SetParent(hold.parent, true);
 
-            var sr = peach.GetComponent<SpriteRenderer>();
-            peach.localPosition = new Vector3(0f, 1.4f, 5.6f);
-            peach.localScale = Vector3.one * 0.07f;
-            if (sr != null) sr.sortingOrder = 8;
+            var sr = bird.GetComponent<SpriteRenderer>();
+            if (sr == null) yield break;
+            sr.color = Color.white;
+            sr.flipX = false;
+            sr.sortingOrder = 8;
+            var wings = new FlapBlend(sr, col);
+            bird.localPosition = new Vector3(0f, 1.4f, 5.6f);
+            bird.localScale = Vector3.one * 0.07f;
+            bird.localRotation = Quaternion.identity;
 
             float t = 0f;
-            const float pull = 0.28f;
-            while (t < pull && peach != null)
+            while (t < SlingPull && bird != null)
             {
                 t += Time.deltaTime;
-                float u = Smooth01(t / pull);
-                peach.localPosition = new Vector3(0f, 1.4f, Mathf.Lerp(5.6f, 6.8f, u));
-                peach.localScale = Vector3.one * Mathf.Lerp(0.07f, 0.05f, u);
+                float u = Smooth01(t / SlingPull);
+                bird.localPosition = new Vector3(0f, 1.4f, Mathf.Lerp(5.6f, 6.8f, u));
+                bird.localScale = Vector3.one * Mathf.Lerp(0.07f, 0.05f, u);
+                bird.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(0f, 9f, u));
+                wings.Step(Time.deltaTime, Mathf.Lerp(4.2f, 5.4f, u));
                 yield return null;
             }
 
             Sfx.FlockFlutter(1);
             t = 0f;
-            const float approach = 0.36f;
-            while (t < approach && peach != null)
+            while (t < SlingApproach && bird != null)
             {
                 t += Time.deltaTime;
-                float k = Mathf.Pow(Mathf.Clamp01(t / approach), 2.4f);
-                peach.localPosition = new Vector3(0f, Mathf.Lerp(1.4f, 1.18f, k), Mathf.Lerp(6.8f, 0.18f, k));
-                peach.localScale = Vector3.one * Mathf.Lerp(0.05f, 1.15f, k);
-                if (sr != null) sr.sortingOrder = 8;
+                float k = ApproachEase(Mathf.Clamp01(t / SlingApproach));
+                bird.localPosition = new Vector3(0f, Mathf.Lerp(1.4f, 1.18f, k), Mathf.Lerp(6.8f, 0.18f, k));
+                bird.localScale = Vector3.one * Mathf.Lerp(0.05f, 1.15f, k);
+                bird.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(9f, -4f, k));
+                wings.Step(Time.deltaTime, Mathf.Lerp(5.4f, 6.4f, k));
                 yield return null;
             }
+            if (bird == null) yield break;
 
             Sfx.Break();
-            if (CamShake.Live != null) CamShake.Live.Punch(0.38f, 0.18f, 2.6f, 0.14f);
-            if (sr != null) sr.sortingOrder = 72;
+            sr.sortingOrder = 72;
+            var hit = bird.position;
+            host.StartCoroutine(CrackFlash(hold, hit, col));
+            // Hit-stop: the path holds, wings keep beating (slowed), body takes a
+            // volume-preserving squash and springs back.
+            float stop = 0f;
+            var plant = bird.localPosition;
+            while (stop < HitStop && bird != null)
+            {
+                float dt = Time.unscaledDeltaTime;
+                stop += dt;
+                bird.localPosition = plant;
+                bird.localScale = SquashPose(1.15f, ImpactSquash * Mathf.Sin(Mathf.Clamp01(stop / HitStop) * Mathf.PI * 0.5f));
+                wings.Step(dt, 3.0f);
+                yield return null;
+            }
+            if (CamShake.Live != null) CamShake.Live.Punch(ShakeDur, ShakeAmp, ShakeTwist, ShakeKick);
             host.StartCoroutine(Burst(hold, false));
-            host.StartCoroutine(ScatterOutro(hold, letters, crew));
+            host.StartCoroutine(ScatterOutro(hold, letters, crew, hit));
+            host.StartCoroutine(Shards(hold, hit, col));
 
             t = 0f;
-            const float through = 0.62f;
-            var face = peach != null ? peach.Find("Mood") : null;
-            var faceSr = face != null ? face.GetComponent<SpriteRenderer>() : null;
-            while (t < through && peach != null)
+            while (t < SlingThrough && bird != null)
             {
                 t += Time.deltaTime;
-                float u = Mathf.Clamp01(t / through);
-                float k = 1f - (1f - u) * (1f - u);
-                peach.localPosition = new Vector3(0f, Mathf.Lerp(1.18f, 0.55f, k), Mathf.Lerp(0.18f, -8.4f, k));
-                peach.localScale = Vector3.one * Mathf.Lerp(1.15f, 5.4f, k);
-                int order = 72 + Mathf.RoundToInt(k * 20f);
-                if (sr != null)
+                float u = Mathf.Clamp01(t / SlingThrough);
+                float k = ThroughEase(u);
+                float s = Mathf.Lerp(1.15f, 5.4f, k);
+                // Squash releases with a small overshoot (stretch) and settles to round.
+                float rec = Mathf.Clamp01(t / SquashRecover);
+                float q = ImpactSquash * (1f - EaseOutBack(rec, 1.6f));
+                bird.localScale = SquashPose(s, q);
+                bird.localPosition = new Vector3(PathSway(u), Mathf.Lerp(1.18f, 0.5f, k), Mathf.Lerp(0.18f, -8.4f, k));
+                bird.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-4f, 10f, k));
+                sr.sortingOrder = 72 + Mathf.RoundToInt(k * 20f);
+                var c = sr.color;
+                c.a = u > SlingFadeAt ? 1f - Smooth01((u - SlingFadeAt) / (1f - SlingFadeAt)) : 1f;
+                sr.color = c;
+                wings.Step(Time.deltaTime, Mathf.Lerp(6.0f, 4.2f, Smooth01(u)));
+                yield return null;
+            }
+            if (bird != null) Object.Destroy(bird.gameObject);
+            yield return Wait(0.85f);
+        }
+
+        // Timing (pass 1 = #98 values).
+        const float SlingPull = 0.28f;
+        const float SlingApproach = 0.36f;
+        const float SlingThrough = 0.62f;
+        const float SlingFadeAt = 0.62f;
+        const float HitStop = 0.06f;
+        const float ImpactSquash = 0.16f;
+        const float SquashRecover = 0.16f;
+        const float ShakeDur = 0.46f, ShakeAmp = 0.27f, ShakeTwist = 3.8f, ShakeKick = 0.22f;
+        const float LetterStagger = 0.09f;
+
+        static float ApproachEase(float u) => Mathf.Pow(u, 2.4f);
+        static float ThroughEase(float u) => EaseOutCubic(u);
+        static float PathSway(float u) => 0f;
+
+        // Shared squash & stretch: area-preserving (x * y == s * s) for any q.
+        static Vector3 SquashPose(float s, float q)
+        {
+            float w = 1f + q;
+            return new Vector3(s * w, s / w, 1f);
+        }
+
+        // Shared #98 fix: a bird flown by the finale is bare art only (no Mood face / kit).
+        static void StripDressing(Transform bird)
+        {
+            if (bird == null) return;
+            for (int i = bird.childCount - 1; i >= 0; i--)
+            {
+                var ch = bird.GetChild(i);
+                ch.gameObject.SetActive(false);
+                Object.Destroy(ch.gameObject);
+            }
+        }
+
+        // Shared letter blast: out from the impact point, nearest letters first and fastest.
+        static void LetterKick(Vector3 letterLocal, Vector3 hitLocal, out Vector3 vel, out float spin, out float delay)
+        {
+            var d = letterLocal - hitLocal;
+            d.z = 0f;
+            float far = d.magnitude;
+            if (d.sqrMagnitude < 0.05f) d = Vector3.up;
+            d.y += 0.3f;
+            d.Normalize();
+            float near = 1f - Mathf.Clamp01(far / 4.6f);
+            vel = d * Mathf.Lerp(9.0f, 15.5f, near) * Random.Range(0.92f, 1.08f);
+            spin = (d.x >= 0f ? -1f : 1f) * Random.Range(300f, 560f);
+            delay = Mathf.Clamp01(far / 4.6f) * LetterStagger;
+        }
+
+        // Swept by SweepSparkles: names start with "Burst". Tinted by the buster's colour.
+        static IEnumerator CrackFlash(Transform parent, Vector3 hit, BirdColor col)
+        {
+            const int rays = 9;
+            const float bodyR = 1.2f;
+            var rs = new SpriteRenderer[rays + 1];
+            var len = new float[rays];
+            var tintA = Wow.Of(col);
+            var tintB = Wow.Of(BirdColor.Gold);
+            var flash = WorldBuilder.Sprite("BurstFlash", SpriteCatalog.Glow, hit, 0.8f, 60, parent);
+            rs[rays] = flash.GetComponent<SpriteRenderer>();
+            rs[rays].color = new Color(1f, 0.96f, 0.86f, 0.5f);
+            float sparkW = SpriteCatalog.Sparkle != null ? SpriteCatalog.Sparkle.bounds.size.x : 5.12f;
+            for (int i = 0; i < rays; i++)
+            {
+                float ang = i * 360f / rays + Random.Range(-14f, 14f);
+                var go = WorldBuilder.Sprite("BurstCrack", SpriteCatalog.Sparkle, hit, 0.1f, 64, parent);
+                go.transform.rotation = Quaternion.Euler(0f, 0f, ang);
+                rs[i] = go.GetComponent<SpriteRenderer>();
+                var tint = Color.Lerp(tintA, tintB, (i % 2) * 0.55f);
+                rs[i].color = new Color(tint.r, tint.g, tint.b, 1f);
+                len[i] = Random.Range(1.5f, 2.4f);
+            }
+            const float life = 0.26f;
+            float t = 0f;
+            while (t < life)
+            {
+                t += Time.unscaledDeltaTime;
+                float u = Mathf.Clamp01(t / life);
+                float grow = EaseOutCubic(Mathf.Clamp01(u / 0.35f));
+                float a = 1f - Smooth01(Mathf.Clamp01((u - 0.25f) / 0.75f));
+                for (int i = 0; i < rays; i++)
                 {
-                    sr.sortingOrder = order;
-                    var c = sr.color;
-                    c.a = u > 0.62f ? 1f - Smooth01((u - 0.62f) / 0.38f) : 1f;
-                    sr.color = c;
+                    if (rs[i] == null) continue;
+                    float scaleX = len[i] * grow * 0.195f;
+                    float half = sparkW * scaleX * 0.5f;
+                    rs[i].transform.position = hit + rs[i].transform.right * (bodyR + half);
+                    rs[i].transform.localScale = new Vector3(scaleX, 0.028f * (1f - u * 0.55f), 1f);
+                    var c = rs[i].color; c.a = a; rs[i].color = c;
                 }
-                if (faceSr != null)
+                if (rs[rays] != null)
                 {
-                    faceSr.sortingOrder = order + 1;
-                    var c = faceSr.color;
-                    c.a = sr != null ? sr.color.a : 1f;
-                    faceSr.color = c;
+                    rs[rays].transform.localScale = Vector3.one * Mathf.Lerp(1.5f, 4.8f, grow);
+                    var c = rs[rays].color; c.a = 0.5f * a * a; rs[rays].color = c;
                 }
                 yield return null;
             }
-            if (peach != null) Object.Destroy(peach.gameObject);
-            yield return new WaitForSeconds(0.85f);
+            for (int i = 0; i < rs.Length; i++)
+                if (rs[i] != null) Object.Destroy(rs[i].gameObject);
         }
 
-        static IEnumerator ScatterOutro(Transform hold, Transform[] letters, Transform[] birds)
+        // Shard debris; "Burst" prefix so SweepSparkles clears leftovers.
+        static IEnumerator Shards(Transform parent, Vector3 hit, BirdColor col)
+        {
+            const int n = 14;
+            var rs = new SpriteRenderer[n];
+            var vel = new Vector3[n];
+            var spin = new float[n];
+            var a0 = Wow.Of(col);
+            var b0 = Wow.Of(BirdColor.Gold);
+            var tint = new[] { a0, b0, Color.Lerp(a0, b0, 0.45f) };
+            for (int i = 0; i < n; i++)
+            {
+                float ang = (i / (float)n) * Mathf.PI * 2f + Random.Range(-0.2f, 0.2f);
+                var dir = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang) + 0.25f, 0f).normalized;
+                vel[i] = dir * Random.Range(4.5f, 8.5f);
+                spin[i] = Random.Range(-720f, 720f);
+                var go = WorldBuilder.Sprite("BurstShard", SpriteCatalog.Sparkle, hit + dir * 1.25f, 0.1f, 69, parent);
+                go.transform.localScale = new Vector3(Random.Range(0.05f, 0.1f), Random.Range(0.02f, 0.04f), 1f);
+                rs[i] = go.GetComponent<SpriteRenderer>();
+                rs[i].color = tint[i % tint.Length];
+            }
+            const float life = 0.9f;
+            float t = 0f;
+            while (t < life)
+            {
+                float dt = Time.deltaTime;
+                t += dt;
+                float a = 1f - Smooth01(Mathf.Clamp01((t / life - 0.35f) / 0.65f));
+                for (int i = 0; i < n; i++)
+                {
+                    if (rs[i] == null) continue;
+                    vel[i].y -= 9.5f * dt;
+                    vel[i] *= Mathf.Exp(-1.4f * dt);
+                    rs[i].transform.position += vel[i] * dt;
+                    rs[i].transform.Rotate(0f, 0f, spin[i] * dt);
+                    var c = rs[i].color; c.a = a; rs[i].color = c;
+                }
+                yield return null;
+            }
+            for (int i = 0; i < n; i++)
+                if (rs[i] != null) Object.Destroy(rs[i].gameObject);
+        }
+
+        static IEnumerator ScatterOutro(Transform hold, Transform[] letters, Transform[] birds, Vector3 hitWorld)
         {
             for (int i = 0; i < birds.Length; i++)
             {
@@ -499,14 +658,7 @@ namespace FlockFive
             {
                 if (letters[i] == null) continue;
                 rest[i] = letters[i].localScale;
-                var d = letters[i].localPosition;
-                d.z = 0f;
-                if (d.sqrMagnitude < 0.05f) d = Vector3.up;
-                d.y += 0.45f;
-                d.Normalize();
-                vel[i] = d * Random.Range(9.2f, 14.5f);
-                spin[i] = (letters[i].localPosition.x >= 0f ? 1f : -1f) * Random.Range(280f, 520f);
-                delay[i] = Mathf.Clamp01(letters[i].localPosition.magnitude / 4.4f) * 0.03f;
+                LetterKick(letters[i].localPosition, hold.InverseTransformPoint(hitWorld), out vel[i], out spin[i], out delay[i]);
                 srs[i] = letters[i].GetComponentsInChildren<SpriteRenderer>(true);
                 baseA[i] = new float[srs[i].Length];
                 for (int k = 0; k < srs[i].Length; k++)
