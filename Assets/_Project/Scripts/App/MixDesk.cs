@@ -72,7 +72,10 @@ namespace FlockFive
         const float PlaceMax = 0.35f;
         const float ComboCap = 0.04f;
         const float SplashCap = 0.76f;
-        const float RainCap = 0.17f;
+        // Build 89 rain balance: was 0.17 (-8.0 dB). At 0.17 the rain matched the garden bed on a
+        // phone speaker (-0.1 dB); 0.068 sits it 8 dB under the bed in the phone band and
+        // 10 dB under full-band, well under every Lead (hop, chirp, snap). Thunder unchanged.
+        const float RainCap = 0.068f;
         const float ComboWindow = 4f;
         const float ComboIn = 0.35f;
         const float Bpm = 84f;

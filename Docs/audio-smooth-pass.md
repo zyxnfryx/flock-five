@@ -40,3 +40,13 @@ Phone sim: band-pass 300 Hz–8 kHz (2nd order), +6 dB peak at 3 kHz (Q 1.1), +1
 | proc combo jingle x7 | 0.76 → 0.480 | -12.1 → -12.7 | -4.0 → -4.4 | 11.5 → 11.7 | 0.00 → 0.00 | -68.2 → -68.6 | -1.3 → -0.8 | -17.9 → -22.4 | 21.35 → 4.49 | -10.6 → -15.0 | -14.5 → -19.1 |
 | proc combo jingle x8 | 0.76 → 0.480 | -12.1 → -12.7 | -3.2 → -3.9 | 12.4 → 12.4 | 0.00 → 0.00 | -68.0 → -68.2 | -1.3 → -0.5 | -18.5 → -23.3 | 20.93 → 4.28 | -10.5 → -14.9 | -14.5 → -19.1 |
 | proc celebrate | 0.80 → 0.500 | -12.8 → -13.3 | -4.5 → -5.9 | 11.1 → 10.4 | 0.00 → 0.00 | -76.6 → -76.7 | -1.1 → -0.8 | -29.5 → -37.0 | 14.83 → 1.26 | -12.3 → -17.9 | -14.7 → -19.3 |
+
+## Rain balance (build 89, Brandon Oct 14 12:45 PM PT: "rain ... a bit overpowering")
+`MixDesk.RainCap` 0.17 → 0.068 (-8.0 dB), one constant on stem 5. Measured in game, Wet = 1, no duck:
+
+| | full-band vs garden bed | phone sim vs garden bed |
+|---|---|---|
+| rain before (0.17) | -2.4 dB | -0.1 dB |
+| rain after (0.068) | -10.3 dB | -8.0 dB |
+
+Thunder is unchanged: it was already about level with the bed full-band (+0.4 dB) and stays so. It is now ~10.7 dB over the rain (was ~2.7), which is what a strike over steady rain should be.
