@@ -64,6 +64,12 @@ namespace FlockFive.Editor
                     closeBody.IndexOf("_dailyPayHold = true") > 0
                     && closeBody.IndexOf("_dailyOpen = false") < 0,
                     "close");
+                string coach = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.Coach.cs"));
+                string app = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.cs"));
+                Check("claim-line-leaves-for-the-exit",
+                    coach.IndexOf("|| _dailyPayHold || _dailyCloseAt >= 0f) return;") > 0
+                    && app.IndexOf("if (_dailyOpen && !_dailyPayHold && _dailyCloseAt < 0f) DrawDailyClaimLine(s);") > 0,
+                    "claim");
 
                 int keepCoins = PlayerPrefs.GetInt("flockfive.coins", 0);
                 int keepCoinsX = PlayerPrefs.GetInt("flockfive.coins.x", 0);

@@ -10077,9 +10077,9 @@ namespace FlockFive
             if (_dailyOpen) DrawDailyBonus(s);
             if (_dailyAskOpen) DrawDailyAsk(s);
             if (_welcomeOpen) DrawWelcome(s);
-            if (_dailyOpen) DrawDailyClaimLine(s);
+            if (_dailyOpen && !_dailyPayHold && _dailyCloseAt < 0f) DrawDailyClaimLine(s);
             StartupTrace.Lap("L.Daily2");
-            if (_welcomeGlove || (_dailyIntroLive && _dailyOpen && !_dailyAskOpen))
+            if (_welcomeGlove || (_dailyIntroLive && _dailyOpen && !_dailyAskOpen && !_dailyPayHold && _dailyCloseAt < 0f))
                 DrawTutorOverlay(s);
             if (_avatarRename) DrawAvatarRename(s);
             PaintHomeGear();

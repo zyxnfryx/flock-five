@@ -5917,7 +5917,8 @@ namespace FlockFive
         // $10 tile. PlacePopupTutorCaption is the shared seat. The latch holds it.
         void DrawDailyClaimLine(float s)
         {
-            if (!_dailyIntroLive || !_dailyOpen || _dailyAskOpen) return;
+            // The pay and the exit own the screen. A full-alpha claim line would sit on the fade.
+            if (!_dailyIntroLive || !_dailyOpen || _dailyAskOpen || _dailyPayHold || _dailyCloseAt >= 0f) return;
             DailyLayout(s, out var card, out var flower, out var board, out float band);
             var frame = DailyFrameOuter(card, board, band);
             float x0 = Mathf.Min(frame.x, flower.x);

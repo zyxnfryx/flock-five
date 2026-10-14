@@ -1524,7 +1524,8 @@ namespace FlockFive
                 if (!jack) continue;
                 var starAt = wheel.center + DailyBonus.WedgeOffset(i, angle + DailyBonus.JackpotStarLean, wheel.width * 0.36f);
                 float tw = 0.55f + 0.45f * Mathf.Sin(AdPause.Unscaled * 3.2f);
-                SparkleFx.DrawAt(starAt, wheel.width * 0.05f, 0.40f + 0.45f * tw, DailyBonus.JackpotStar);
+                if (_imGuiFade > 0.98f)
+                    SparkleFx.DrawAt(starAt, wheel.width * 0.05f, 0.40f + 0.45f * tw, DailyBonus.JackpotStar);
             }
 
             if (landed && DailyBonus.SpinWedge >= 0)
