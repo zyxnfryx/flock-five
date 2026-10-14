@@ -72,6 +72,7 @@ namespace FlockFive
         void BindLightningFire()
         {
             GardenStorm.FireAim = OfferFire;
+            CamShake.AfterShake -= SnapHiveToHud; // never stack: one after-shake per fire
             CamShake.AfterShake += SnapHiveToHud;
         }
 
