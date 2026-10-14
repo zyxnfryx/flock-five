@@ -576,6 +576,10 @@ namespace FlockFive
 
         public static bool Live() { float t = Age(); return t >= 0f && t < Life; }
 
+        // Fire (the tap, same frame as Load) until the reveal starts: the garden is
+        // hidden, so garden input is swallowed. Ends exactly at RevealAt.
+        public static bool Covering() { float t = Age(); return t >= 0f && t < RevealAt; }
+
         static float H01(int i, int salt)
         {
             uint h = (uint)(i * 374761393 + salt * 668265263);

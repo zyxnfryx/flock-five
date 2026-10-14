@@ -6190,7 +6190,8 @@ namespace FlockFive
         // once, for every IMGUI control, so a lesson cannot be tapped through.
         static void SwallowResumePointer()
         {
-            if (PlayClock.Now >= _resumeInputUntil) return;
+            // Also while the level transition covers the screen (held splash / mask).
+            if (PlayClock.Now >= _resumeInputUntil && !PressRainbow.Covering()) return;
             var e = Event.current;
             if (e == null) return;
             var t = e.type;
@@ -6204,6 +6205,8 @@ namespace FlockFive
             screen = default;
             if (PlayClock.Now < _resumeInputUntil) return false;
             if (LessonGuardUp()) return false;
+            // The garden is under the held splash / mask until the reveal: no blind moves.
+            if (PressRainbow.Covering()) return false;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
                 screen = Mouse.current.position.ReadValue();
