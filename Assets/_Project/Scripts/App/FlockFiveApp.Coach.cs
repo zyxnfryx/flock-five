@@ -84,6 +84,12 @@ namespace FlockFive
         // About 20% under the old 118px lesson hand.
         const float GlovePx = 94.4f;
         static float GloveDh(float s) => GlovePx * s;
+        static float GloveDrawW(float dh)
+        {
+            var tex = CoachGloveTex();
+            if (tex == null) return dh * (220f / 300f);
+            return dh * (tex.width / (float)Mathf.Max(1, tex.height));
+        }
         // How far above the target the wind-up perch sits, in GUI pixels (y down).
         static float GloveRise(float s) => Mathf.Max(28f * s, GloveDh(s) * 0.34f);
         // Extra height of the apex above that perch, so the path rises before it falls.
@@ -227,6 +233,11 @@ namespace FlockFive
         float _gloveFadeFrom;
         float _gloveActT;
         bool _gloveLockOn;
+        // b88: approach heading, committed in GloveLockPose before the first pixel.
+        // Draw reads these and does not re-aim. Cleared with the veil.
+        bool _gloveFaceOn;
+        float _gloveFaceAng;
+        bool _gloveFaceMirror;
         bool _gloveHoldPose;
         float _gloveHoldDip;
         Vector2 _gloveLockAim;
@@ -1239,6 +1250,7 @@ namespace FlockFive
             _gloveFadeFrom = 0f;
             _gloveActT = 0f;
             _gloveLockOn = false;
+            _gloveFaceOn = false;
             _gloveHoldPose = false;
             _gloveHoldDip = 0f;
             _gloveClaimFrame = -1;
@@ -1509,8 +1521,23 @@ namespace FlockFive
             }
             else
                 _gloveTip = rest;
-            _gloveShown = _gloveTip;
-            _gloveShownAng = ang;
+            // Facing is the perch-to-aim line, locked before fade-in draws a pixel.
+            float faceDh = GloveDh(s);
+            float faceDw = GloveDrawW(faceDh);
+            Vector2 facePerch = _gloveTip;
+            CommitApproachFace(ref facePerch, aimGui, faceDh, faceDw, Screen.width, Screen.height, _gloveMirror,
+                out float faceAng, out bool faceMirror);
+            _gloveTip = facePerch;
+            _gloveShown = facePerch;
+            _gloveFaceOn = true;
+            _gloveFaceAng = faceAng;
+            _gloveFaceMirror = faceMirror;
+            _gloveMirror = faceMirror;
+            _gloveRestAng = faceAng;
+            _gloveAng = faceAng;
+            _gloveShownAng = faceAng;
+            var faceAway = facePerch - aimGui;
+            if (faceAway.sqrMagnitude > 1f) _gloveAway = faceAway.normalized;
             _glovePhase = 0f;
             _gloveDip = 0f;
             _tapSent = false;
@@ -1639,24 +1666,34 @@ namespace FlockFive
             bool angled = !float.IsNaN(_gloveApproach);
             Vector2 aim = _gloveLockOn ? _gloveLockAim : aimGui;
             Vector2 arcPos;
-            if (angled)
+            // Locked facing travels on the approach line. The old arc re-aimed
+            // at draw time whenever the perch or the bow left the glass.
+            if (_gloveFaceOn || angled)
                 arcPos = Vector2.Lerp(_gloveTip, aim, Mathf.Clamp01(travel));
             else
                 TapArc(_gloveTip, aim, _gloveAway, s, travel, out arcPos, out _, _gloveMirror, _gloveApexMinY);
             float wig = hold ? 0f : Mathf.Sin(AdPause.Unscaled * 46f) * 7f * _gloveWiggle;
             var axis = _gloveAway.sqrMagnitude > 0.0001f ? _gloveAway : Vector2.right;
             _gloveShown = arcPos - axis.normalized * wig * (1f - travel);
-            _gloveShownAng = _gloveRestAng;
-            bool hand = _gloveMirror;
-            SeatGlove(ref _gloveShown, ref _gloveShownAng, aim, s, ref hand, _gloveDip, _gloveApproach);
-            // Seat may slide the cuff. At the tap the pivot is the aim, so the
-            // drawn fingertip (bob is zero while dipped) is the target.
-            if (travel > 0.84f)
+            if (_gloveFaceOn)
             {
-                float pin = Mathf.SmoothStep(0f, 1f, (travel - 0.84f) / 0.16f);
-                _gloveShown = Vector2.Lerp(_gloveShown, arcPos, pin);
+                _gloveShownAng = _gloveFaceAng;
+                _gloveMirror = _gloveFaceMirror;
             }
-            _gloveShownAng = angled ? _gloveApproach : ClampUpright(_gloveMirror);
+            else
+            {
+                _gloveShownAng = _gloveRestAng;
+                bool hand = _gloveMirror;
+                SeatGlove(ref _gloveShown, ref _gloveShownAng, aim, s, ref hand, _gloveDip, _gloveApproach);
+                // Seat may slide the cuff. At the tap the pivot is the aim, so the
+                // drawn fingertip (bob is zero while dipped) is the target.
+                if (travel > 0.84f)
+                {
+                    float pin = Mathf.SmoothStep(0f, 1f, (travel - 0.84f) / 0.16f);
+                    _gloveShown = Vector2.Lerp(_gloveShown, arcPos, pin);
+                }
+                _gloveShownAng = angled ? _gloveApproach : ClampUpright(_gloveMirror);
+            }
             GloveArmTap(tapRect, tapHit);
             _gloveVis = _gloveAlpha > 0.03f;
             return fire;
@@ -3720,8 +3757,7 @@ namespace FlockFive
         {
             var tex = CoachGloveCurl(dip);
             if (tex == null) return;
-            if (!_gloveHoldPose && float.IsNaN(_gloveApproach))
-                ang = ClampUpright(mirror);
+            ang = ResolveDrawAngle(ang, mirror, _gloveFaceOn, _gloveHoldPose, _gloveApproach);
             // Small poke along the finger, not a vertical bob. Zero at full dip so the
             // tap frame's fingertip is the pivot. Held still while a tap fades the hand.
             // Unscaled so GamePause does not freeze it.
@@ -3729,10 +3765,9 @@ namespace FlockFive
             float rad = ang * Mathf.Deg2Rad;
             pivot += new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
             float dw = dh * (tex.width / (float)tex.height);
-            // b87: every glove stays fully on screen. Keep the fingertip on target and
-            // turn the hand to the in-screen side (mirror / swing) when its body would
-            // leave the glass; a pivot that is itself off-glass is pulled inside.
-            GloveOnScreen(ref pivot, ref ang, ref mirror, dw, dh);
+            // b88: a locked approach does not flip to fit the glass. An unlocked
+            // rest pose may still pull an off-glass pivot inside, without a new aim.
+            DrawnGlovePose(ref pivot, ref ang, ref mirror, dw, dh, Screen.width, Screen.height, _gloveFaceOn);
             var rect = new Rect(
                 pivot.x - _gloveTipU * dw,
                 pivot.y - (1f - _gloveTipV) * dh,
@@ -3756,13 +3791,93 @@ namespace FlockFive
 
         public const float GloveScreenMargin = 6f;
 
+        // Finger angle of the perch-to-aim line. 0 is up, 90 is right, -90 is left.
+        public static float GloveApproachDeg(Vector2 perch, Vector2 aim)
+        {
+            var d = aim - perch;
+            if (d.sqrMagnitude < 1f) return 0f;
+            return Mathf.Atan2(d.x, -d.y) * Mathf.Rad2Deg;
+        }
+
+        // Lock the finger to the approach line and, if the perch quad leaves the
+        // glass, slide the perch toward the aim along that same line. The angle
+        // and the mirror do not change. Called from GloveLockPose before fade-in.
+        public static void CommitApproachFace(
+            ref Vector2 perch, Vector2 aim, float dh, float dw,
+            float screenW, float screenH, bool provisionalMirror,
+            out float ang, out bool mirror)
+        {
+            CoachGloveTex();
+            var dir = aim - perch;
+            if (dir.sqrMagnitude < 1f)
+            {
+                ang = ClampUpright(provisionalMirror);
+                mirror = provisionalMirror;
+            }
+            else
+            {
+                dir.Normalize();
+                ang = Mathf.Atan2(dir.x, -dir.y) * Mathf.Rad2Deg;
+                if (dir.x > 0.18f) mirror = true;
+                else if (dir.x < -0.18f) mirror = false;
+                else mirror = provisionalMirror;
+            }
+            if (screenW < 4f || screenH < 4f || dw < 1f || dh < 1f) return;
+            if (GloveQuadOverflow(perch, ang, mirror, dw, dh, screenW, screenH) <= 0.5f) return;
+            Vector2 start = perch;
+            Vector2 kept = perch;
+            for (int i = 1; i <= 16; i++)
+            {
+                float t = i / 16f;
+                if (t > 0.82f) break;
+                var p = Vector2.Lerp(start, aim, t);
+                kept = p;
+                if (GloveQuadOverflow(p, ang, mirror, dw, dh, screenW, screenH) <= 0.5f)
+                {
+                    perch = p;
+                    return;
+                }
+            }
+            perch = kept;
+        }
+
+        // The draw's angle. A locked face is already the approach and is not
+        // replaced with the sideways ±90 pose.
+        public static float ResolveDrawAngle(float ang, bool mirror, bool faceOn, bool holdPose, float approachDeg)
+        {
+            if (!faceOn && !holdPose && float.IsNaN(approachDeg))
+                return ClampUpright(mirror);
+            return ang;
+        }
+
+        // Screen fit for one draw. A locked face returns the pose unchanged so
+        // frame 0 and the tap cannot pick different headings.
+        public static void DrawnGlovePose(ref Vector2 pivot, ref float ang, ref bool mirror, float dw, float dh,
+            float screenW, float screenH, bool faceOn)
+        {
+            if (faceOn) return;
+            if (screenW < 4f || screenH < 4f) return;
+            float m = GloveScreenMargin;
+            pivot.x = Mathf.Clamp(pivot.x, m, screenW - m);
+            pivot.y = Mathf.Clamp(pivot.y, m, screenH - m);
+        }
+
+        public static float GloveAuditDh(float s) => GloveDh(s);
+        public static float GloveAuditDw(float dh) => GloveDrawW(dh);
+        public static Texture2D GloveAuditTexture() => CoachGloveCurl(0f);
+        public static Vector2 GloveAuditTip()
+        {
+            CoachGloveTex();
+            return new Vector2(_gloveTipU, _gloveTipV);
+        }
+
         // Overflow (px) of the glove quad past the screen for a pose.
-        float GloveOverflow(Vector2 pivot, float ang, bool mirror, float dw, float dh)
+        public static float GloveQuadOverflow(Vector2 pivot, float ang, bool mirror, float dw, float dh, float screenW, float screenH)
         {
             float u = _gloveTipU, v = 1f - _gloveTipV;
             var q = Quaternion.Euler(0f, 0f, ang);
             float sx = mirror ? -1f : 1f;
-            float over = 0f, m = GloveScreenMargin, W = Screen.width, H = Screen.height;
+            float over = 0f, m = GloveScreenMargin;
             for (int i = 0; i < 4; i++)
             {
                 float lx = ((i & 1) == 0 ? -u : 1f - u) * dw * sx;
@@ -3770,38 +3885,11 @@ namespace FlockFive
                 Vector3 p = q * new Vector3(lx, ly, 0f);
                 float x = pivot.x + p.x, y = pivot.y + p.y;
                 if (x < m) over += m - x;
-                if (x > W - m) over += x - (W - m);
+                if (x > screenW - m) over += x - (screenW - m);
                 if (y < m) over += m - y;
-                if (y > H - m) over += y - (H - m);
+                if (y > screenH - m) over += y - (screenH - m);
             }
             return over;
-        }
-
-        void GloveOnScreen(ref Vector2 pivot, ref float ang, ref bool mirror, float dw, float dh)
-        {
-            if (Screen.width < 4 || Screen.height < 4) return;
-            float m = GloveScreenMargin;
-            pivot.x = Mathf.Clamp(pivot.x, m, Screen.width - m);
-            pivot.y = Mathf.Clamp(pivot.y, m, Screen.height - m);
-            float best = GloveOverflow(pivot, ang, mirror, dw, dh);
-            if (best <= 0.5f) return;
-            float bestAng = ang; bool bestMir = mirror;
-            for (int k = 0; k < 2; k++)
-            {
-                bool mir = k == 0 ? !mirror : mirror;
-                for (int step = 0; step <= 12; step++)
-                {
-                    foreach (float sign in new[] { 1f, -1f })
-                    {
-                        float a = (k == 0 ? -ang : ang) + sign * step * 15f;
-                        float o = GloveOverflow(pivot, a, mir, dw, dh);
-                        if (o + 0.5f < best) { best = o; bestAng = a; bestMir = mir; }
-                    }
-                    if (best <= 0.5f) break;
-                }
-                if (best <= 0.5f) break;
-            }
-            ang = bestAng; mirror = bestMir;
         }
 
         // One glove. The mirrored pair on the second reward sign is not posed.
