@@ -111,24 +111,24 @@ Shader "FlockFive/StormGlass"
                 {
                     float along = dot(from, trail) / trailLen2;
                     float2 side = (from - trail * along) / rad;
-                    // Wide enough at the bead to read on the sky, then a thin fade.
-                    float halfW = lerp(0.52, 0.16, saturate(along));
-                    float streak = smoothstep(0.0, 0.04, along) * smoothstep(1.08, 0.55, along);
-                    streak *= smoothstep(halfW, halfW * 0.18, length(side));
+                    // A thin sheen, not a white bar. Garden still shows through.
+                    float halfW = lerp(0.22, 0.06, saturate(along));
+                    float streak = smoothstep(0.0, 0.05, along) * smoothstep(1.05, 0.32, along);
+                    streak *= smoothstep(halfW, halfW * 0.22, length(side));
                     streak *= (1.0 - body) * _Bead.z;
                     if (streak > a)
                     {
-                        scene = SampleScene(pos) * float3(1.18, 1.24, 1.34);
-                        scene += float3(0.78, 0.88, 0.98) * 0.9;
-                        float core = smoothstep(halfW * 0.55, halfW * 0.05, length(side));
-                        scene += core * float3(0.95, 0.98, 1.0) * 0.7;
-                        a = streak * 0.94;
+                        scene = SampleScene(pos) * float3(1.10, 1.14, 1.22);
+                        scene += float3(0.42, 0.55, 0.68) * 0.40;
+                        float core = smoothstep(halfW * 0.65, 0.0, length(side));
+                        scene += core * float3(0.85, 0.92, 1.0) * 0.22;
+                        a = streak * 0.68;
                     }
 
                     // Tiny beads riding the wet line, largest near the drop.
-                    TrailBead(from, rad, trail * 0.28, 0.62, body, _Bead.z, a, scene);
-                    TrailBead(from, rad, trail * 0.55, 0.48, body, _Bead.z, a, scene);
-                    TrailBead(from, rad, trail * 0.82, 0.36, body, _Bead.z, a, scene);
+                    TrailBead(from, rad, trail * 0.30, 0.34, body, _Bead.z, a, scene);
+                    TrailBead(from, rad, trail * 0.58, 0.24, body, _Bead.z, a, scene);
+                    TrailBead(from, rad, trail * 0.84, 0.16, body, _Bead.z, a, scene);
                 }
 
                 if (a < 0.003)

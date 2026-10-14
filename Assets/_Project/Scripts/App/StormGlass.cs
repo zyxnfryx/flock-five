@@ -331,8 +331,8 @@ namespace FlockFive
             float inv = 1f / dist;
             float back = b.Radius * 0.2f;
             float sr = b.Radius * 0.22f;
-            float lo = 18f * scale;
-            float hi = 36f * scale;
+            float lo = 16f * scale;
+            float hi = 26f * scale;
             if (sr < lo) sr = lo;
             if (sr > hi) sr = hi;
             float life = 1.15f + (b.Radius / (RadiusCap * scale)) * 0.7f;
