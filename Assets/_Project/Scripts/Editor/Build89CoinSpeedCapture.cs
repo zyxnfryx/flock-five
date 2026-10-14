@@ -7,7 +7,7 @@ namespace FlockFive.Editor
 {
     // Wheel Collect sprinkle timing clip. Launch without -batchmode / -nographics:
     // Unity -projectPath <wt> -executeMethod FlockFive.Editor.Build89CoinSpeedCapture.Capture
-    // Output dir comes from /tmp/flock-five-b89-coinspeed-arg (frames, clip.mp4, timing.txt).
+    // Output dir comes from <project>/coinspeed-out.txt (frames, clip.mp4, timing.txt).
     [InitializeOnLoad]
     public static class Build89CoinSpeedCapture
     {

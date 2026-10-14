@@ -14,8 +14,10 @@ namespace FlockFive
         // tap, first and last coin landing, and the card close. Editor capture only.
         public IEnumerator ShotWheelCoinSpeed()
         {
-            string outDir = File.Exists("/tmp/flock-five-b89-coinspeed-arg")
-                ? File.ReadAllText("/tmp/flock-five-b89-coinspeed-arg").Trim()
+            // Per project, so queued before/after runs never share an output path.
+            string argFile = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "coinspeed-out.txt");
+            string outDir = File.Exists(argFile)
+                ? File.ReadAllText(argFile).Trim()
                 : "/Users/zfxgames/wkspaces/b89coin/run";
             ShotKeepAwake = true;
             MuteShotAudio();
