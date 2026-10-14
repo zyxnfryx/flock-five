@@ -17196,9 +17196,20 @@ namespace FlockFive
             var pill = FlipHintRect(hintTop, s);
             // b88 (Brandon): the game's own clay CTA (DrawPopupButton), not a thin outlined bar.
             // Gold when affordable, wood when short, dimmed wood at max honey.
-            float btnH = Mathf.Max(60f, 72f * Mathf.Min(s, 1.35f));
-            float btnW = Mathf.Min(Screen.width * 0.80f, 460f * s);
-            float y = pill.yMax + 12f * s;
+            // b88 v2 (Brandon): fatter and narrower. ~92 px tall at phone scale, width sized
+            // to the label plus padding, held to 55-65% of the old wide bar, centered.
+            float btnH = Mathf.Max(84f, 92f * Mathf.Min(s, 1.35f));
+            bool roomPre = Hive.UpgradeRoom(slot);
+            string linePre = !roomPre ? "Max honey" : "Upgrade  " + Money.Format(Hive.UpgradeCost);
+            var measure = GuiPool.Label(GuiSlot.FlipHintMeasure);
+            measure.fontStyle = FontStyle.Bold;
+            measure.wordWrap = false;
+            measure.fontSize = Mathf.RoundToInt(btnH * 0.50f);
+            float labelW = measure.CalcSize(new GUIContent(linePre)).x;
+            float wideW = Mathf.Min(Screen.width * 0.80f, 460f * s);
+            float btnW = Mathf.Clamp(labelW + btnH * 1.1f, wideW * 0.55f, wideW * 0.65f);
+            btnW = Mathf.Min(btnW, Screen.width * 0.86f);
+            float y = pill.yMax + 14f * s;
             float edgeB = 20f * s;
             if (y + btnH > Screen.height - edgeB) y = Screen.height - edgeB - btnH;
             var btn = new Rect((Screen.width - btnW) * 0.5f, y, btnW, btnH);
@@ -17214,7 +17225,12 @@ namespace FlockFive
             GUI.color = new Color(1f, 1f, 1f, alpha * (room ? 1f : 0.6f));
             var face = DrawPopupButton(btn, held && room, can ? PopupTint.Gold : PopupTint.Wood, can ? 1f : 0f);
             var st = GuiPool.Label(GuiSlot.FlipHint);
-            DrawPopupWord(face, line, st, s);
+            st.wordWrap = false;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.fontStyle = FontStyle.Bold;
+            var lab = new Rect(face.x + face.width * 0.06f, face.y + face.height * 0.10f, face.width * 0.88f, face.height * 0.80f);
+            st.fontSize = FitFont(st, line, lab.width, lab.height, 16, Mathf.RoundToInt(btnH * 0.50f));
+            StampOutlined(lab, line, st, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 2, 8));
             GUI.color = keep;
             if (hit)
             {
