@@ -934,7 +934,9 @@ namespace FlockFive
             float kitH = kits > 0 ? 48f * s : 0f;
             float rowH = 46f * s;
             float pad = 12f * s;
-            float innerW = Mathf.Min(width, StandardPopupWidth(s));
+            // Snug to the content (prompt line, bird row, kit row) with a fixed pad,
+            // not a share of the screen. Same plate on 20:9 Android as on iPhone.
+            float innerW = Mathf.Min(width, AvatarRenameContentW(s, kits) + pad * 2f);
             float innerH = pad + lineH + gap + rowH + gap + swH;
             if (kits > 0) innerH += gap + kitH;
             innerH += pad;
@@ -1009,6 +1011,19 @@ namespace FlockFive
                 float kx1 = i == kits - 1 ? cx + cw : Mathf.Round(kx + kw);
                 _avatarKitR[i] = new Rect(kx, yy, Mathf.Max(2f, kx1 - kx), kh);
             }
+        }
+
+        // Natural content width of the name picker, in UI units (s), from the widest row.
+        float AvatarRenameContentW(float s, int kits)
+        {
+            var st = CoachLineStyle();
+            st.fontSize = Mathf.RoundToInt(26f * s);
+            float prompt = st.CalcSize(new GUIContent(AvatarNeedsName() ? AdoptNameLine : AvatarRenameLine)).x + 8f * s;
+            float birds = 5f * 74f * s;
+            float kitRow = kits > 0 ? kits * 104f * s + (kits - 1) * 10f * s : 0f;
+            float nameRow = 200f * s + 10f * s + 92f * s;
+            float w = Mathf.Max(Mathf.Max(prompt, birds), Mathf.Max(kitRow, nameRow));
+            return CaptionLayout.SnugBox(w, 0f, 0f, StandardPopupWidth(s)).x;
         }
 
         void DrawAvatarRename(float s)

@@ -20,8 +20,7 @@ namespace FlockFive
         // Frame rate to ask for on a panel refreshing at refreshHz.
         // The target is always the panel rate divided by a whole number, so every frame
         // is held for the same number of refreshes (no 2-1-2-1 judder).
-        //   default: the lowest even rate that is still about 60 (60 Hz and 120 Hz -> 60,
-        //            90 Hz -> 90, 144 Hz -> 72, 50 Hz -> 50).
+        //   default: the panel rate capped at 60 (60/90/120/144 Hz -> 60, 50 Hz -> 50).
         //   high:    the highest even rate up to 120 (120 Hz -> 120, 90 Hz -> 90,
         //            144 Hz -> 72, 60 Hz -> 60).
         // Unknown refresh (0, NaN) falls back to 60.
@@ -37,15 +36,9 @@ namespace FlockFive
                 }
                 return Base;
             }
-            if (refreshHz < Floor) return (int)Math.Round(refreshHz);
-            int best = (int)Math.Round(refreshHz);
-            for (int n = 2; n <= 8; n++)
-            {
-                double r = refreshHz / n;
-                if (r < Floor) break;
-                best = (int)Math.Round(r);
-            }
-            return best;
+            // Default: the panel rate, capped at 60 (120 Hz -> 60, 90 Hz -> 60, 50 Hz -> 50).
+            // Android Optimized Frame Pacing (Swappy) asks the panel for a matching mode.
+            return Math.Min((int)Math.Round(refreshHz), Base);
         }
 
         // Per-frame multiply tuned at 60 fps (vel *= k each frame), made frame-rate
