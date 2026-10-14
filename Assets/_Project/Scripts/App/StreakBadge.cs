@@ -118,11 +118,11 @@ namespace FlockFive
         public static Risk AtRisk(float time)
         {
             float swell = Mathf.Sin(time * 4.6f);
-            float roll = Mathf.Sin(time * 3.6f) * 1.7f + Mathf.Sin(time * 7.4f + 0.6f) * 0.55f;
+            float roll = Mathf.Sin(time * 3.6f) * 3.1f + Mathf.Sin(time * 7.4f + 0.6f) * 0.9f;
             float open = 0.5f + 0.5f * swell;
             return new Risk
             {
-                Scale = 1f + 0.028f * swell,
+                Scale = 1f + 0.048f * swell,
                 Roll = roll,
                 Crack = 0.62f + 0.22f * open,
                 Mend = 0f,
@@ -330,59 +330,44 @@ namespace FlockFive
             var disc = Disc();
             if (disc == null || mend < 0.02f) return;
             var front = FaceOfTex(PointAlong(CrackMain, Mathf.Clamp01(open)));
-            float d = face.width * (0.11f + 0.07f * mend);
+            float d = face.width * (0.045f + 0.028f * mend);
             float cx = face.x + front.x * face.width;
             float cy = face.y + front.y * face.height;
-            GUI.color = new Color(0.98f, 0.86f, 0.48f, 0.42f * mend * alpha);
-            float wash = d * 1.9f;
-            GUI.DrawTexture(new Rect(cx - wash * 0.5f, cy - wash * 0.5f, wash, wash), disc, ScaleMode.ScaleToFit, true);
-            GUI.color = new Color(1f, 0.95f, 0.72f, 0.88f * mend * alpha);
-            GUI.DrawTexture(new Rect(cx - d * 0.5f, cy - d * 0.42f, d, d * 0.78f), disc, ScaleMode.ScaleToFit, true);
-            for (int i = 1; i <= 3; i++)
+            // A small warm dab of clay on the closing end. Large discs read as bubbles.
+            GUI.color = new Color(0.96f, 0.78f, 0.36f, 0.82f * mend * alpha);
+            GUI.DrawTexture(new Rect(cx - d * 0.5f, cy - d * 0.4f, d, d * 0.72f), disc, ScaleMode.ScaleToFit, true);
+            for (int i = 1; i <= 2; i++)
             {
-                float t = open + i * 0.055f;
+                float t = open + i * 0.04f;
                 if (t > 1f) break;
                 var q = FaceOfTex(PointAlong(CrackMain, t));
-                float dd = face.width * (0.09f - i * 0.018f);
+                float dd = d * (0.72f - i * 0.18f);
                 float qx = face.x + q.x * face.width;
                 float qy = face.y + q.y * face.height;
-                GUI.color = new Color(0.93f, 0.78f, 0.42f, (0.50f - i * 0.12f) * mend * alpha);
-                GUI.DrawTexture(new Rect(qx - dd * 0.5f, qy - dd * 0.5f, dd, dd * 0.7f), disc, ScaleMode.ScaleToFit, true);
+                GUI.color = new Color(0.86f, 0.62f, 0.28f, (0.40f - i * 0.12f) * mend * alpha);
+                GUI.DrawTexture(new Rect(qx - dd * 0.5f, qy - dd * 0.4f, dd, dd * 0.66f), disc, ScaleMode.ScaleToFit, true);
             }
         }
 
-        // One soft brush of the chip's own disc, sweeping the upper glaze.
-        // Overlapping round dabs stay inside the rim. A stretched rect would square it off.
+        // One fused brush across the open glaze, above the numeral. Tiny overlaps
+        // so it reads as a single sweep. Separate large dabs read as bubbles.
         static void DrawRestoreSheen(Rect face, float env, float u, float alpha)
         {
             var disc = Disc();
             if (disc == null || env < 0.02f) return;
-            float travel = Mathf.Lerp(-0.18f, 0.88f, Mathf.Clamp01(u));
-            const int n = 13;
+            float travel = Mathf.Lerp(0.02f, 0.86f, Mathf.Clamp01(u));
+            const int n = 24;
             for (int i = 0; i < n; i++)
             {
                 float k = i / (n - 1f);
                 float bow = Mathf.Sin(k * Mathf.PI);
-                float x = face.x + face.width * (travel + (k - 0.5f) * 0.50f);
-                float y = face.y + face.height * (0.20f - 0.05f * bow);
-                y += face.height * 0.012f * Mathf.Sin(i * 2.2f + 0.4f);
+                float x = face.x + face.width * (travel + (k - 0.5f) * 0.28f);
+                float y = face.y + face.height * (0.33f + 0.025f * Mathf.Sin((k + 0.15f) * Mathf.PI));
                 if (!OnGlaze(face, x, y)) continue;
-                float w = face.width * (0.05f + 0.13f * bow);
-                float h = face.height * (0.04f + 0.10f * bow);
-                GUI.color = new Color(1f, 0.985f, 0.90f, 0.62f * env * alpha * bow * bow);
+                float w = face.width * (0.055f + 0.07f * bow);
+                float h = face.height * (0.028f + 0.03f * bow);
+                GUI.color = new Color(1f, 0.99f, 0.90f, 0.90f * env * alpha * bow);
                 GUI.DrawTexture(new Rect(x - w * 0.5f, y - h * 0.5f, w, h), disc, ScaleMode.ScaleToFit, true);
-            }
-            for (int i = 0; i < 8; i++)
-            {
-                float k = i / 7f;
-                float bow = Mathf.Sin(k * Mathf.PI);
-                float x = face.x + face.width * (travel + (k - 0.5f) * 0.30f);
-                float y = face.y + face.height * 0.19f;
-                if (!OnGlaze(face, x, y)) continue;
-                float w = face.width * 0.075f * (0.45f + bow);
-                float h = face.height * 0.032f * (0.45f + bow);
-                GUI.color = new Color(1f, 1f, 0.96f, 0.92f * env * alpha * bow);
-                GUI.DrawTexture(new Rect(x - w * 0.5f, y, w, h), disc, ScaleMode.ScaleToFit, true);
             }
         }
 
