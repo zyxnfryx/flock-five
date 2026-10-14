@@ -10120,7 +10120,7 @@ namespace FlockFive
                 LevelCurtain.Aim(rest);
                 LevelCurtain.Arm(AdPause.Unscaled);
             }
-            else if (!held && !fired && LevelCurtain.Armed && !LevelCurtain.LoadStarted)
+            else if (!held && !fired && LevelCurtain.Armed && !LevelCurtain.LoadStarted && !EditorShotLive)
                 LevelCurtain.Clear();
 
             var visual = PushButton.Visual(rest, motion.Pose);
