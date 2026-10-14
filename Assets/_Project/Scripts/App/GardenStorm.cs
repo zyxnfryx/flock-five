@@ -211,7 +211,12 @@ namespace FlockFive
             if (focus && _rainSync == 0) _rainSync = 1;
         }
 
-        void Start() => StartCoroutine(Build());
+        void Start()
+        {
+            if (GetComponent<StormGlassRig>() == null)
+                gameObject.AddComponent<StormGlassRig>();
+            StartCoroutine(Build());
+        }
 
         // Drops stay off until the first storm. One mesh, built on this frame — not 177 sprites.
         System.Collections.IEnumerator Build()
