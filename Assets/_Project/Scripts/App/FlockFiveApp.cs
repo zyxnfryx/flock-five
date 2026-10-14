@@ -10206,8 +10206,13 @@ namespace FlockFive
                 LevelCurtain.Aim(rest);
                 LevelCurtain.Arm(AdPause.Unscaled);
             }
+#if UNITY_EDITOR
             else if (!held && !fired && LevelCurtain.Armed && !LevelCurtain.LoadStarted && !EditorShotLive)
                 LevelCurtain.Clear();
+#else
+            else if (!held && !fired && LevelCurtain.Armed && !LevelCurtain.LoadStarted)
+                LevelCurtain.Clear();
+#endif
 
             var visual = PushButton.Visual(rest, motion.Pose);
             var flower = SpriteCatalog.PlayFlower;

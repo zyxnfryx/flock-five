@@ -415,11 +415,13 @@ namespace FlockFive
         {
             // Kit stills drive the wander themselves. AdoptTurn is false while
             // EditorShotLive, which used to drop the flight and leave a perched bird.
+#if UNITY_EDITOR
             if (_shotForceAdopt)
             {
                 _adoptLive = true;
                 return;
             }
+#endif
             if (!AdoptTurn())
             {
                 if (_adoptLive && _adoptStep != AdoptStep.Settle)
