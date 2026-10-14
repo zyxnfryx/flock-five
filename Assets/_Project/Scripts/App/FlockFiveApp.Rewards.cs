@@ -48,7 +48,12 @@ namespace FlockFive
         bool ApplyKeepTicket(RewardedGrant.Ticket t)
         {
             if (!RewardEffects.Keep(t.Payload)) return false;
-            _restartAsk = RestartAsk.None;
+            // The popup stays up so the badge can seal. WatchKeepStreak closes it
+            // after the sweep. A grant with no card (late restore) just clears.
+            if (_restartAsk == RestartAsk.Keep)
+                BeginStreakHeal();
+            else
+                _restartAsk = RestartAsk.None;
             return true;
         }
 
