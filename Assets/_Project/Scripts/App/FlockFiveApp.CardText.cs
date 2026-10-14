@@ -61,6 +61,14 @@ namespace FlockFive
                 if (showHoney) DrawHoneyRow(honeyR, honey, tint, finish, full);
             }
 
+            // Honey only. The flip bakes the words and leaves the drips live.
+            public static void DrawHoney(Rect face, int honey, Color tint, BeeFinish finish, bool full)
+            {
+                if (honey <= 0) return;
+                Split(face, true, full ? Full : Mid, out _, out _, out var honeyR, out _, out _);
+                DrawHoneyRow(honeyR, honey, tint, finish, full);
+            }
+
             // Shared honeycomb attributes: N hex tiles from HoneyOfFinish (2/3/5).
             // HoneyArt is the one juicy cell (cards, badger tiles, the meter).
             // Same cells DrawHoneyRow paints. Drips stay inside each rect.
@@ -102,9 +110,8 @@ namespace FlockFive
             {
                 if (!LayoutHoney(zone, honey, full, out float x, out float y, out float cellW, out float cellH, out float gap, out int n))
                     return;
-                Color rim = finish == BeeFinish.Holo ? new Color(0.15f, 0.48f, 0.92f, 1f)
-                    : finish == BeeFinish.InverseRainbow ? new Color(0.82f, 0.22f, 0.68f, 1f)
-                    : AlbumWood(tint, true);
+                Color rim = HoneyRim.For(finish);
+                rim.a = tint.a <= 0f ? 1f : tint.a;
                 // Drips hang from the hex tip and stay inside the honey zone.
                 // The full inspect stretches a drip on a 3s loop. The grid stays still.
                 float now = full ? AdPause.Unscaled : 0f;
@@ -955,8 +962,24 @@ namespace FlockFive
             public static void CopyBands(Rect card, bool full, bool back, bool honey, out Rect title, out Rect flavor)
             {
                 var face = FaceOf(card);
+                FaceBands(face, full, back, honey, out title, out flavor);
+            }
+
+            // Title and flavor inside an already-inset face. The bake and the live
+            // draw share this so a stretched flip matches the settled lines.
+            public static void FaceBands(Rect face, bool full, bool back, bool honey,
+                out Rect title, out Rect flavor)
+            {
                 var host = back ? face : TextFaceOf(face, full);
                 Split(host, back && honey, full ? Full : Mid, out title, out flavor, out _, out _, out _);
+            }
+
+            // Honey cells DrawBack paints, in the face's space. Inspect hit tests these.
+            public static int HoneyBand(Rect face, int honey, bool full, Rect[] into)
+            {
+                if (honey <= 0 || into == null) return 0;
+                Split(face, true, full ? Full : Mid, out _, out _, out var honeyR, out _, out _);
+                return HoneyCells(honeyR, honey, full, into);
             }
 
             // Top band of the face, inner width, tall enough for two wrapped lines.

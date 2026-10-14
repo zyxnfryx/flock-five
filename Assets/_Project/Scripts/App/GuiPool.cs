@@ -49,6 +49,7 @@ namespace FlockFive
         SettingsChevron,
         PromptBody,
         PromptButton,
+        RarePill,
         Count
     }
 
@@ -65,6 +66,7 @@ namespace FlockFive
         FreezeContinue,
         FreezeBonus,
         WrapWords,
+        RarePill,
         Count
     }
 

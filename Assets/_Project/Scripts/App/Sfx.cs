@@ -512,6 +512,18 @@ namespace FlockFive
             Shot(_pageTurn, Random.Range(0.96f, 1.04f), 0.78f, MixLayer.Lead);
         }
 
+        static AudioClip _squish;
+
+        // Honeycomb press. Lead, short, and not the page turn. Lazy so warm-up
+        // does not build it, and a test never has to play it.
+        public static void Squish()
+        {
+            Ensure();
+            if (_squish == null) _squish = MakeSquish();
+            Shot(_squish, Random.Range(0.97f, 1.03f), 0.52f, MixLayer.Lead);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.14f, MixDesk.DuckChirp);
+        }
+
         public static void Crack() => Break();
 
         public static void Break()
