@@ -3322,7 +3322,7 @@ namespace FlockFive
                 st.wordWrap = true;
                 st.fontSize = px;
                 var content = new GUIContent(string.IsNullOrEmpty(fit.Shown) ? (text ?? "") : fit.Shown);
-                th = st.CalcHeight(content, maxW);
+                th = st.CalcHeight(content, maxW) - CaptionLayout.GapCut(st, content.text);
                 if (th < 1f) th = 1f;
             }
             finally

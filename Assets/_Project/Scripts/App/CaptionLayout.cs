@@ -190,6 +190,30 @@ namespace FlockFive
         public const float BannerPadEm = 0.5f;
         public const float BannerInkLiftEm = 0.09f;
 
+        // b89 (Brandon): the blank row HeadlineGap puts between a headline and its body
+        // is kept at this fraction of a line. 1 is the old full blank line.
+        public const float HeadlineGapKeep = 0.5f;
+        static GUIContent _gapProbe;
+
+        // Pixels a measured "\n\n" text is shorter than the full blank row. Every measure
+        // of a gapped caption subtracts this, and StampBannerText draws the two
+        // paragraphs with the smaller gap, so plate and ink stay in step.
+        public static float GapCut(GUIStyle st, string text)
+        {
+            if (st == null || string.IsNullOrEmpty(text)) return 0f;
+            int n = 0;
+            int at = text.IndexOf("\n\n", System.StringComparison.Ordinal);
+            while (at >= 0) { n++; at = text.IndexOf("\n\n", at + 2, System.StringComparison.Ordinal); }
+            if (n == 0) return 0f;
+            return n * BlankRowH(st) * (1f - HeadlineGapKeep);
+        }
+
+        public static float BlankRowH(GUIStyle st)
+        {
+            if (_gapProbe == null) _gapProbe = new GUIContent("Mg");
+            return st.CalcSize(_gapProbe).y;
+        }
+
         public static float BannerBandHeight(float textH, int px)
         {
             return textH + 2f * BannerPadEm * px;
@@ -328,11 +352,12 @@ namespace FlockFive
                 }
                 if (textW < 8f) textW = 8f;
                 Bind(style, text, plate.Font, true);
-                textH = _scratch.CalcHeight(_content, textW);
+                float cut = GapCut(_scratch, text);
+                textH = _scratch.CalcHeight(_content, textW) - cut;
                 int rows = 1;
                 for (int i = 0; i < text.Length; i++)
                     if (text[i] == '\n') rows++;
-                float stack = lineH * rows;
+                float stack = lineH * rows - cut;
                 if (textH < stack * 0.85f) textH = stack;
                 if (textH < lineH) textH = lineH;
             }
@@ -533,7 +558,7 @@ namespace FlockFive
             {
                 shown = WrapAt(style, text, maxW, px);
                 Bind(style, shown, px, true);
-                textH = _scratch.CalcHeight(_content, maxW);
+                textH = _scratch.CalcHeight(_content, maxW) - GapCut(_scratch, shown);
                 if (textH < 1f) textH = 1f;
                 chosen = px;
                 bool wide = WidthsFit(style, shown.Split('\n'), maxW, px);
@@ -694,7 +719,9 @@ namespace FlockFive
             float lineH = LineHeight(style, measure.Font);
             float stack = lineH * lines;
             Bind(style, shown, measure.Font, true);
-            float th = _scratch.CalcHeight(_content, maxW);
+            float cut = GapCut(_scratch, shown);
+            stack -= cut;
+            float th = _scratch.CalcHeight(_content, maxW) - cut;
             if (th < stack * 0.85f) th = stack;
             if (th > stack * 1.25f) th = stack;
             if (th < 1f) th = 1f;

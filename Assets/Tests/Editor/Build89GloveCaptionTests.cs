@@ -23,6 +23,10 @@ namespace FlockFive.Editor
             try
             {
                 var band = new Rect(0f, 1200f, 1179f, 260f);
+                Check("gap-cut-only-on-blank-rows",
+                    CaptionLayout.GapCut(new GUIStyle(), "One.\nTwo.") == 0f && CaptionLayout.GapCut(new GUIStyle(), null) == 0f
+                    && CaptionLayout.HeadlineGapKeep > 0f && CaptionLayout.HeadlineGapKeep < 1f,
+                    CaptionLayout.HeadlineGapKeep.ToString());
                 Check("glove over band", CaptionLayout.GloveHitsCaption(new Rect(700f, 1350f, 220f, 260f), band), "");
                 Check("glove clear of band", !CaptionLayout.GloveHitsCaption(new Rect(700f, 1500f, 220f, 260f), band), "");
                 Check("empty glove", !CaptionLayout.GloveHitsCaption(default, band), "");
