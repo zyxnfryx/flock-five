@@ -133,7 +133,11 @@ namespace FlockFive
 
         void TickFlapDrive()
         {
-            _flapClock += Time.unscaledDeltaTime * (_flapHz / 4f);
+            int k = SpriteCatalog.FlapStep(_flapClock);
+            float speed = _flapHz / 4f;
+            // Tucked rest is the downbeat. Cross it fast so the wings don't look parked.
+            if (k == 0) speed *= 2.6f;
+            _flapClock += Time.unscaledDeltaTime * speed;
             ApplyFlapFrame();
             if (_flapAnchored) transform.localPosition += FlapBodyPull();
         }
