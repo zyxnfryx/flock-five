@@ -192,7 +192,7 @@ namespace FlockFive
 
         // b89 (Brandon): the blank row HeadlineGap puts between a headline and its body
         // is kept at this fraction of a line. 1 is the old full blank line.
-        public const float HeadlineGapKeep = 0.5f;
+        public const float HeadlineGapKeep = 0.28f;
         static GUIContent _gapProbe;
 
         // Pixels a measured "\n\n" text is shorter than the full blank row. Every measure
@@ -627,7 +627,18 @@ namespace FlockFive
             float ui = DeviceFit.Ui(screenW, screenH);
             float flat = Mathf.Max(screenH / 720f, 1f);
             if (ui < 0.01f) return 1f;
-            return Mathf.Max(1f, flat / ui);
+            return Mathf.Max(1f, flat / ui) * RoomFit(screenW, screenH);
+        }
+
+        // b89 (Brandon): a wide screen (the iPad) has room a tall phone does not, so its
+        // caption type and plate grow up to this much more. Derived from the screen's own
+        // aspect (width / height): 1 at phone aspect (<= 0.5), the full boost at 0.75 (iPad).
+        public const float RoomBoost = 0.18f;
+        public static float RoomFit(float screenW, float screenH)
+        {
+            if (screenW < 2f || screenH < 2f) return 1f;
+            float wide = Mathf.Clamp01((screenW / screenH - 0.5f) / 0.25f);
+            return 1f + RoomBoost * wide;
         }
 
         public static int BannerFont(float screenW, float screenH)

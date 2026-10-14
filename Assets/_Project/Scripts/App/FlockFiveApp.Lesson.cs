@@ -49,7 +49,7 @@ namespace FlockFive
             // b89 (Brandon): the lesson type is a fixed share of the screen height. The b87
             // tablet ease (Ui / flat scale) made iPad captions about 20% too small; phones
             // have no ease (that ratio is 1), so they do not change.
-            int floor = Mathf.RoundToInt(CaptionFloorPhonePx * (h / CaptionFloorPhoneH));
+            int floor = Mathf.RoundToInt(CaptionFloorPhonePx * (h / CaptionFloorPhoneH) * CaptionLayout.RoomFit(screenW, screenH));
             if (floor < 1) floor = 1;
             int old = CaptionPx(CaptionFloorRef);
             if (floor < old) floor = old;
