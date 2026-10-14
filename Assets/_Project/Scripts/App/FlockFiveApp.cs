@@ -45,6 +45,7 @@ namespace FlockFive
             public int Worth;
         }
         readonly System.Collections.Generic.List<CoinFly> _flies = new System.Collections.Generic.List<CoinFly>();
+        int _coinFlyFrame = -1;
         // Purse coins already saved. Hidden until that sprite lands, then the balance counts them.
         int _coinInFlight;
         // Displayed balance while a reward pay is ticking. -1 until the first draw.
@@ -9629,7 +9630,10 @@ namespace FlockFive
             var spr = SpriteCatalog.Coin;
             var tex = spr != null ? spr.texture : null;
             var glow = GlowTex();
-            float dt = AdPause.UnscaledDelta;
+            // A second paint (daily pay, above the scrim) must not step the flight twice.
+            bool step = _coinFlyFrame != Time.frameCount;
+            _coinFlyFrame = Time.frameCount;
+            float dt = step ? AdPause.UnscaledDelta : 0f;
             float size = 68f * DeviceFit.Ui();
             var dest = new Vector2(pig.x + pig.width * 0.5f, pig.y + pig.height * 0.42f);
             for (int i = _flies.Count - 1; i >= 0; i--)
@@ -11067,7 +11071,7 @@ namespace FlockFive
 
         static void StampOutlined(Rect r, string text, GUIStyle st, Color fill, int whitePx, int blackPx, float minA = 0.04f)
         {
-            float a = Mathf.Clamp01(fill.a);
+            float a = Mathf.Clamp01(fill.a * _imGuiFade);
             if (a < minA) return;
             var body = RimContent(text);
             var seat = LockSeat(r);

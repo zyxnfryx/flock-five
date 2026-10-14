@@ -102,6 +102,8 @@ namespace FlockFive
         // the hit rect's centre, on the card fan itself.
         const float PokerGloveU = 0.56f;
         const float PokerGloveV = 0.58f;
+        // Right-rail button. The hand enters from the left and points right.
+        public const bool PokerGloveFromLeft = true;
 
         // Same point as GloveTarget. Callers that still say TopTouch share it.
         static Vector2 TopTouch(Rect r) => GloveTarget(r);
@@ -1071,8 +1073,13 @@ namespace FlockFive
                 LessonLine(PokerIntroLine);
                 _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
                 if (!RailGloveSettled(RailPoker, box)) return;
+                // Note the plate this frame, before the glove locks, so the perch
+                // does not re-seat when the caption paints a frame later.
+                var pokerText = PokerIntroBox(handS);
+                NoteTutorPlate(CoachPanelRect(pokerText, _anchorPad));
                 _gloveInward = true;
-                CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, false, GloveBelowDeg, box); // b86: from below, off the $ total
+                // From the left, pointing right. Facing stays in the shared helper.
+                CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, PokerGloveFromLeft, float.NaN, box);
                 return;
             }
             if (_dailyIntroLive)
@@ -5500,7 +5507,43 @@ namespace FlockFive
             if (disc.width > 2f) r.y = disc.yMin - r.height - 18f * s;
             float floorY = TopHud() + (56f * 2f + 4f) * s + 64f * s;
             if (r.y < floorY) r.y = floorY;
-            return r;
+            var button = SplashPokerRect();
+            var aim = GloveTargetAt(button, PokerGloveU, PokerGloveV);
+            var hand = PokerPointHand(aim, s);
+            var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+            float padX = hang.x + (_anchorPad.x > 0f ? _anchorPad.x : 0f);
+            float padY = hang.y + (_anchorPad.y > 0f ? _anchorPad.y : 0f);
+            return LiftPokerCaption(r, padX, padY, button, hand, floorY, 12f * s);
+        }
+
+        // Landed poker glove: fingertip on the aim, body to the left, finger pointing right.
+        public static Rect PokerPointHand(Vector2 aim, float s)
+        {
+            if (s < 0.2f) s = 0.2f;
+            return GloveBody(aim, ClampUpright(true), s, true);
+        }
+
+        // The poker line shares a row with the rail button. Lift the plate above
+        // that row and above the hand that reaches in from the left.
+        public static Rect LiftPokerCaption(Rect text, float padX, float padY, Rect button, Rect hand, float floorY, float gap)
+        {
+            if (text.width < 2f || text.height < 2f) return text;
+            if (padX < 0f) padX = 0f;
+            if (padY < 0f) padY = 0f;
+            if (gap < 0f) gap = 0f;
+            var plate = new Rect(text.x - padX, text.y - padY, text.width + padX * 2f, text.height + padY * 2f);
+            bool shareBtn = button.width > 2f && button.height > 2f
+                && plate.yMax > button.yMin && button.yMax > plate.yMin;
+            bool hitHand = hand.width > 2f && hand.height > 2f && plate.Overlaps(hand);
+            if (!shareBtn && !hitHand) return text;
+            float top = float.PositiveInfinity;
+            if (shareBtn) top = button.yMin;
+            if (hand.height > 2f && hand.yMin < top) top = hand.yMin;
+            float y = top - gap - text.height - padY - 1f;
+            if (y > text.y) y = text.y;
+            if (y < floorY) y = floorY;
+            text.y = y;
+            return text;
         }
 
         // Where a home step seats the shared measured plate (FitCaptionBox). The step names
