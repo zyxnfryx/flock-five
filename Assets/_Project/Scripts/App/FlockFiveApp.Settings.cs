@@ -240,7 +240,7 @@ namespace FlockFive
                 bool gearFire = HitPad(gearHit, out gearHeld);
                 bool close = HitPad(CloseTapRect(frame.Close), out xHeld);
                 soundFlip = HitPad(rows.SoundToggle, out soundHeld);
-                slid = DragMaster(rows.SoundSlider, slid, out slideHeld, out slideCommit);
+                slid = DragMaster(rows.SoundSlider, slid, s, out slideHeld, out slideCommit);
                 link = HitPad(rows.PrivacyLink, out linkHeld);
                 var rowHit = new Rect(rows.Label.x, rows.Label.y, rows.Toggle.xMax - rows.Label.x, rows.Label.height);
                 flip = HitPad(rowHit, out rowHeld);
@@ -437,35 +437,41 @@ namespace FlockFive
             int rim = muted ? Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.10f)) : 0;
             StampOutlined(face, label, st, ink, 0, rim);
 
-            float trackH = Mathf.Clamp(slider.height * 0.34f, 14f, 28f * scale);
-            float side = Mathf.Max(8f, slider.height * 0.12f);
-            var track = new Rect(slider.x + side, slider.center.y - trackH * 0.5f, Mathf.Max(8f, slider.width - side * 2f), trackH);
+            float level = AudioGuard.MasterVolume;
+            MasterSliderGeom(slider, scale, level, out var track, out var knob, out var fill);
             GUI.color = new Color(0.14f, 0.08f, 0.04f, 1f);
             GUI.DrawTexture(track, tex);
-
-            float level = AudioGuard.MasterVolume;
-            if (level < 0f) level = 0f;
-            if (level > 1f) level = 1f;
-            float knobW = Mathf.Clamp(track.height * 1.35f, 22f, track.height * 2.1f);
-            float travel = Mathf.Max(1f, track.width - knobW);
-            float kx = track.x + travel * level;
-            var fill = new Rect(track.x, track.y, Mathf.Max(4f, kx - track.x + knobW * 0.5f), track.height);
-            if (fill.xMax > track.xMax) fill.width = track.xMax - fill.x;
             GUI.color = muted ? new Color(0.42f, 0.30f, 0.16f, 1f) : new Color(0.93f, 0.74f, 0.26f, 1f);
             GUI.DrawTexture(fill, tex);
-
-            float knobH = knobW * 1.35f;
-            var knob = new Rect(kx, track.center.y - knobH * 0.5f, knobW, knobH);
             GUI.color = new Color(0.28f, 0.16f, 0.06f, 1f);
             GUI.DrawTexture(knob, tex);
-            float lip = Mathf.Max(3f, knobW * 0.16f);
+            float lip = Mathf.Max(3f, knob.width * 0.16f);
             GUI.color = heldSlide ? new Color(1f, 0.88f, 0.48f, 1f) : new Color(1f, 0.97f, 0.88f, 1f);
             GUI.DrawTexture(new Rect(knob.x + lip, knob.y + lip, knob.width - lip * 2f, knob.height - lip * 2f), tex);
             GUI.color = Color.white;
         }
 
+        // Track, fill, and knob. Paint and drag share this so the thumb sits under the finger.
+        static void MasterSliderGeom(Rect slider, float scale, float level, out Rect track, out Rect knob, out Rect fill)
+        {
+            if (scale < 0.5f) scale = 0.5f;
+            if (level < 0f) level = 0f;
+            if (level > 1f) level = 1f;
+            // Tall enough that the long half-row track reads as a control, not a hairline.
+            float trackH = Mathf.Clamp(slider.height * 0.46f, 16f, slider.height * 0.56f);
+            float side = Mathf.Max(6f, slider.height * 0.06f);
+            track = new Rect(slider.x + side, slider.center.y - trackH * 0.5f, Mathf.Max(8f, slider.width - side * 2f), trackH);
+            float knobW = Mathf.Clamp(track.height * 1.05f, 18f, track.height * 1.55f);
+            float travel = Mathf.Max(1f, track.width - knobW);
+            float kx = track.x + travel * level;
+            fill = new Rect(track.x, track.y, Mathf.Max(4f, kx - track.x + knobW * 0.5f), track.height);
+            if (fill.xMax > track.xMax) fill.width = track.xMax - fill.x;
+            float knobH = knobW * 1.35f;
+            knob = new Rect(kx, track.center.y - knobH * 0.5f, knobW, knobH);
+        }
+
         // Drag inside the slider row. commit is the mouse-up that should persist.
-        static float DragMaster(Rect hit, float value, out bool held, out bool commit)
+        static float DragMaster(Rect hit, float value, float scale, out bool held, out bool commit)
         {
             commit = false;
             held = false;
@@ -480,11 +486,11 @@ namespace FlockFive
                 GUIUtility.hotControl = id;
                 e.Use();
                 held = true;
-                return SliderAt(hit, e.mousePosition.x);
+                return SliderAt(hit, e.mousePosition.x, scale);
             }
             if (hot && (type == EventType.MouseDrag || type == EventType.MouseUp))
             {
-                float v = SliderAt(hit, e.mousePosition.x);
+                float v = SliderAt(hit, e.mousePosition.x, scale);
                 if (type == EventType.MouseUp)
                 {
                     GUIUtility.hotControl = 0;
@@ -498,11 +504,13 @@ namespace FlockFive
             return value;
         }
 
-        static float SliderAt(Rect hit, float x)
+        // Level from the same knob-center travel MasterSliderGeom paints.
+        static float SliderAt(Rect hit, float x, float scale)
         {
-            float pad = Mathf.Max(10f, hit.height * 0.18f);
-            float left = hit.x + pad;
-            float span = hit.width - pad * 2f;
+            MasterSliderGeom(hit, scale, 0f, out _, out var lo, out _);
+            MasterSliderGeom(hit, scale, 1f, out _, out var hi, out _);
+            float left = lo.center.x;
+            float span = hi.center.x - left;
             if (span < 1f) return 0f;
             float u = (x - left) / span;
             if (u < 0f) u = 0f;
