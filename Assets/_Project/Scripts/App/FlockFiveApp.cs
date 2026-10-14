@@ -13258,18 +13258,29 @@ namespace FlockFive
                 if (fitKey == int.MinValue) fitKey = -2;
                 bool fitMiss = fitKey != _payFitKey || rows > _payCashTx.Length;
                 if (fitMiss && rows <= _payCashTx.Length) _payFitKey = fitKey;
+                // b89: header fills its own band (PayHeadLayout), bigger bold title and a
+                // clear bet line; rows and the panel seat are unchanged.
+                var hb = PayHeadLayout.Layout(paper, headH, 2f * s);
                 if (fitMiss)
                 {
-                    head.fontSize = FitFont(head, headTx, paper.width * 0.80f, headH * 0.52f, 24, 44);
-                    sub.fontSize = Mathf.Max(16, head.fontSize - 6);
+                    head.fontSize = FitFont(head, headTx, hb.TitleMaxW, hb.TitleMaxH,
+                        PayHeadLayout.TitleMinPx, PayHeadLayout.TitleMaxPx);
+                    sub.fontSize = FitFont(sub, PokerBetText(), hb.BetMaxW, hb.BetMaxH,
+                        PayHeadLayout.BetMinPx, PayHeadLayout.BetCap(head.fontSize));
                 }
-                StampLight(new Rect(paper.x, paper.y + 2f * s, paper.width, headH * 0.58f), headTx, head,
-                    new Color(0.28f, 0.14f, 0.06f));
-                StampLight(new Rect(paper.x, paper.y + headH * 0.52f, paper.width, headH * 0.40f),
-                    PokerBetText(), sub, new Color(0.62f, 0.28f, 0.08f));
+                StampLight(hb.Title, headTx, head, new Color(0.28f, 0.14f, 0.06f));
+                StampLight(hb.Bet, PokerBetText(), sub, new Color(0.66f, 0.26f, 0.04f));
                 GUI.color = new Color(0.72f, 0.52f, 0.22f, 0.85f * u);
-                float ruleY = paper.y + headH - 2f * s;
+                float ruleY = hb.RuleY;
                 GUI.DrawTexture(new Rect(paper.x + 10f * s, ruleY, paper.width - 20f * s, 2f * s), Texture2D.whiteTexture);
+#if UNITY_EDITOR
+                _payHeadDbg = hb; _payHeadPanelDbg = panel; _payHeadTabDbg = tab;
+                _payHeadPxDbg = new Vector2Int(head.fontSize, sub.fontSize);
+                _payHeadTitleSzDbg = head.CalcSize(PokerGui(headTx));
+                _payHeadBetSzDbg = sub.CalcSize(PokerGui(PokerBetText()));
+                _payHeadRowsDbg = new Vector2(paper.y + headH + 2f * s, rowH);
+                _payHeadFloorDbg = floor;
+#endif
                 GUI.color = Color.white;
 
                 var nameSt = PokerBold(ref _payName, TextAnchor.MiddleLeft);
