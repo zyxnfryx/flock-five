@@ -5,7 +5,7 @@ using UnityEngine.InputSystem;
 
 namespace FlockFive
 {
-    public sealed class FlockFiveApp : MonoBehaviour
+    public sealed partial class FlockFiveApp : MonoBehaviour
     {
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AutoBoot()
@@ -237,6 +237,11 @@ namespace FlockFive
             {
                 try { System.IO.File.Delete("/tmp/flock-five-hand-qa"); } catch { }
                 StartCoroutine(ShotHandQa());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-peach-flutter"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-peach-flutter"); } catch { }
+                StartCoroutine(ShotPeachFlutter());
             }
 #endif
         }

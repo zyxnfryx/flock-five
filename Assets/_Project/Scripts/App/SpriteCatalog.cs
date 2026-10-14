@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace FlockFive
@@ -17,6 +18,7 @@ namespace FlockFive
         static Sprite[] _kitUp;
         static Sprite[] _kitMid;
         static Sprite[] _feeders;
+        static readonly Dictionary<int, Vector2> _core = new Dictionary<int, Vector2>();
 
         public static Sprite GardenBg => Load(ref _bg, "Sprites/bg_garden", 96f);
         public static Sprite Branch => Load(ref _branch, "Sprites/branch", 140f);
@@ -393,6 +395,83 @@ namespace FlockFive
             _sparrowPlaceholder = false;
             _hawk = null;
             _hawkPlaceholder = false;
+            _core.Clear();
+        }
+
+        // Opaque-core centroid minus the pivot, in sprite units. Flap frames share a
+        // centre pivot but the body sits in a different place once the wings open.
+        public static Vector2 CoreFromPivot(Sprite sprite)
+        {
+            if (sprite == null) return Vector2.zero;
+            int id = sprite.GetInstanceID();
+            if (_core.TryGetValue(id, out var cached)) return cached;
+            var got = MeasureCore(sprite);
+            _core[id] = got;
+            return got;
+        }
+
+        static Vector2 MeasureCore(Sprite sprite)
+        {
+            var tex = sprite.texture;
+            if (tex == null || !tex.isReadable) return Vector2.zero;
+            var rect = sprite.rect;
+            int x0 = Mathf.RoundToInt(rect.x);
+            int y0 = Mathf.RoundToInt(rect.y);
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 8 || h < 8) return Vector2.zero;
+            Color[] pix;
+            try { pix = tex.GetPixels(x0, y0, w, h); }
+            catch (System.Exception) { return Vector2.zero; }
+            const int step = 8;
+            int cw = w / step;
+            int ch = h / step;
+            if (cw < 4 || ch < 4) return Vector2.zero;
+            var cur = new bool[cw * ch];
+            for (int y = 0; y < ch; y++)
+            {
+                int row = y * step;
+                for (int x = 0; x < cw; x++)
+                    if (pix[row * w + x * step].a > 0.22f) cur[y * cw + x] = true;
+            }
+            var nxt = new bool[cur.Length];
+            for (int n = 0; n < 4; n++)
+            {
+                int alive = 0;
+                for (int y = 1; y < ch - 1; y++)
+                {
+                    for (int x = 1; x < cw - 1; x++)
+                    {
+                        int i = y * cw + x;
+                        bool on = cur[i] && cur[i - 1] && cur[i + 1] && cur[i - cw] && cur[i + cw];
+                        nxt[i] = on;
+                        if (on) alive++;
+                    }
+                }
+                if (alive < 12) break;
+                var swap = cur;
+                cur = nxt;
+                nxt = swap;
+                System.Array.Clear(nxt, 0, nxt.Length);
+            }
+            double sumX = 0, sumY = 0;
+            int count = 0;
+            for (int y = 0; y < ch; y++)
+            {
+                for (int x = 0; x < cw; x++)
+                {
+                    if (!cur[y * cw + x]) continue;
+                    sumX += x;
+                    sumY += y;
+                    count++;
+                }
+            }
+            if (count < 8) return Vector2.zero;
+            float px = (float)(sumX / count) * step;
+            float py = (float)(sumY / count) * step;
+            float ppu = Mathf.Max(1f, sprite.pixelsPerUnit);
+            var pivot = sprite.pivot;
+            return new Vector2((px - pivot.x) / ppu, (py - pivot.y) / ppu);
         }
 
         public static Sprite Bird(BirdColor c) => Slot(ref _birds, (int)c, "Sprites/bird_" + Name(c), 280f);
@@ -408,22 +487,35 @@ namespace FlockFive
         public static Sprite BirdFrame(BirdColor c, float t, bool flap) =>
             BirdFrame(c, t, flap, BirdSex.Neutral);
 
+        // pose 0 rest, 1 wings up, 2 wings mid. Neutral peach falls through Slot's recolor.
+        public static Sprite FlapPose(BirdColor c, int pose) => FlapPose(c, pose, BirdSex.Neutral);
+
+        public static Sprite FlapPose(BirdColor c, int pose, BirdSex sex)
+        {
+            if (pose <= 0) return Bird(c, sex);
+            string tag = sex == BirdSex.Female ? "_f" : sex == BirdSex.Male ? "_m" : "";
+            int ix = KitIx(c, sex);
+            Sprite up = tag.Length == 0
+                ? Slot(ref _flap1, (int)c, "Sprites/bird_" + Name(c) + "_1", 280f)
+                : SlotWide(ref _kitUp, ix, "Sprites/bird_" + Name(c) + tag + "_1", 280f);
+            if (pose != 2) return up != null ? up : Bird(c, sex);
+            Sprite mid = tag.Length == 0
+                ? Slot(ref _flap2, (int)c, "Sprites/bird_" + Name(c) + "_2", 280f)
+                : SlotWide(ref _kitMid, ix, "Sprites/bird_" + Name(c) + tag + "_2", 280f);
+            if (mid != null) return mid;
+            return up != null ? up : Bird(c, sex);
+        }
+
+        // Same 4-step the idle birds use: rest, wings up, wings mid, wings up.
+        public static int FlapStep(float t) => Mathf.FloorToInt(Mathf.Abs(t) * 16f) % 4;
+
         public static Sprite BirdFrame(BirdColor c, float t, bool flap, BirdSex sex)
         {
             var rest = Bird(c, sex);
             if (!flap) return rest;
-            string tag = sex == BirdSex.Female ? "_f" : sex == BirdSex.Male ? "_m" : "";
-            int ix = KitIx(c, sex);
-            var up = tag.Length == 0
-                ? Slot(ref _flap1, (int)c, "Sprites/bird_" + Name(c) + "_1", 280f)
-                : SlotWide(ref _kitUp, ix, "Sprites/bird_" + Name(c) + tag + "_1", 280f);
-            var mid = tag.Length == 0
-                ? Slot(ref _flap2, (int)c, "Sprites/bird_" + Name(c) + "_2", 280f)
-                : SlotWide(ref _kitMid, ix, "Sprites/bird_" + Name(c) + tag + "_2", 280f);
-            int k = Mathf.FloorToInt(Mathf.Abs(t) * 16f) % 4;
+            int k = FlapStep(t);
             if (k == 0) return rest;
-            if (k == 2) return mid != null ? mid : up;
-            return up != null ? up : rest;
+            return FlapPose(c, k == 2 ? 2 : 1, sex);
         }
 
         public static Sprite BirdFrame(BirdColor c, float t) => BirdFrame(c, t, false);
@@ -514,6 +606,11 @@ namespace FlockFive
                     Mathf.RoundToInt(rect.x),
                     Mathf.RoundToInt(rect.y),
                     w, h);
+                // Straight alpha with a black or white matte fringes when the bust
+                // zooms the bird. Un-premultiply only pixels that are actually stored
+                // premultiplied, then dilate the opaque colour into the matte.
+                UnpremultiplyFringe(pix);
+                SealFringe(pix, w, h);
                 for (int i = 0; i < pix.Length; i++)
                 {
                     var p = pix[i];
@@ -533,7 +630,69 @@ namespace FlockFive
             var pivot = new Vector2(
                 src.pivot.x / Mathf.Max(1f, rect.width),
                 src.pivot.y / Mathf.Max(1f, rect.height));
-            return Sprite.Create(tex, new Rect(0, 0, w, h), pivot, src.pixelsPerUnit);
+            return Sprite.Create(tex, new Rect(0, 0, w, h), pivot, src.pixelsPerUnit, 1, SpriteMeshType.Tight);
+        }
+
+        // Premultiplied fringe is dark RGB that never exceeds alpha. Straight-alpha
+        // art (rgb > a) is left alone so we don't blow the edge out to white.
+        static void UnpremultiplyFringe(Color[] pix)
+        {
+            for (int i = 0; i < pix.Length; i++)
+            {
+                var p = pix[i];
+                if (p.a < 0.04f || p.a > 0.65f) continue;
+                if (p.r > p.a + 0.02f || p.g > p.a + 0.02f || p.b > p.a + 0.02f) continue;
+                if (p.maxColorComponent > 0.4f) continue;
+                float a = Mathf.Max(0.04f, p.a);
+                pix[i] = new Color(
+                    Mathf.Clamp01(p.r / a),
+                    Mathf.Clamp01(p.g / a),
+                    Mathf.Clamp01(p.b / a),
+                    p.a);
+            }
+        }
+
+        // Copy opaque RGB into empty texels and into near-white partial alpha
+        // (the white matte that reads as specks once the bird is huge).
+        static void SealFringe(Color[] pix, int w, int h)
+        {
+            var src = new Color[pix.Length];
+            for (int pass = 0; pass < 4; pass++)
+            {
+                System.Array.Copy(pix, src, pix.Length);
+                for (int y = 0; y < h; y++)
+                {
+                    int row = y * w;
+                    for (int x = 0; x < w; x++)
+                    {
+                        int i = row + x;
+                        var p = src[i];
+                        bool empty = p.a < 0.08f;
+                        bool whiteMatte = p.a < 0.55f && p.r > 0.78f && p.g > 0.78f && p.b > 0.78f;
+                        if (!empty && !whiteMatte) continue;
+                        float bestA = -1f;
+                        Color best = p;
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            int yy = y + dy;
+                            if ((uint)yy >= (uint)h) continue;
+                            int nrow = yy * w;
+                            for (int dx = -1; dx <= 1; dx++)
+                            {
+                                if (dx == 0 && dy == 0) continue;
+                                int xx = x + dx;
+                                if ((uint)xx >= (uint)w) continue;
+                                var n = src[nrow + xx];
+                                if (n.a <= bestA) continue;
+                                bestA = n.a;
+                                best = n;
+                            }
+                        }
+                        if (bestA > p.a)
+                            pix[i] = new Color(best.r, best.g, best.b, p.a);
+                    }
+                }
+            }
         }
 
         static Sprite Fallback(float ppu)
