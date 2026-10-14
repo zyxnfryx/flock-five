@@ -300,11 +300,9 @@ namespace FlockFive
 
         void TickFlapDrive()
         {
-            int k = SpriteCatalog.FlapStep(_flapClock);
-            float poseSteps = Time.unscaledDeltaTime * _flapHz * 4f;
-            // Tucked rest is the downbeat. Cross it fast so the wings don't look parked.
-            if (k == 0) poseSteps *= 2.6f;
-            // A long frame must not lap the whole cycle and land on the same wing.
+            // Two open poses per cycle. The tucked rest reads as a parked wing in the bust.
+            float poseSteps = Time.unscaledDeltaTime * _flapHz * 2f;
+            // A long frame must not lap the cycle and land on the same wing.
             if (poseSteps > 1.05f) poseSteps = 1.05f;
             _flapClock += poseSteps / 16f;
             ApplyFlapFrame();
@@ -316,12 +314,11 @@ namespace FlockFive
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
             if (_sr == null) return;
             _sr.flipX = FaceLeft;
-            // Garden BirdFrame stays on the 6-pose kit cycle. The sling steps the
-            // old 4-frame beat (rest, up, mid, up) through FlapPose so a plain peach
-            // still flaps without touching kit, far-wing, or head-seat helpers.
-            int k = SpriteCatalog.FlapStep(_flapClock);
-            int pose = k == 2 ? 2 : (k == 0 ? 0 : 1);
-            var spr = pose == 0 ? SpriteCatalog.Bird(Color) : SpriteCatalog.FlapPose(Color, pose);
+            // Open poses only: wings mid and wings up. Skip the tucked rest.
+            // FlapPose uses the garden loaders, so kit BirdFrame stays on the 6-pose cycle.
+            int open = SpriteCatalog.FlapStep(_flapClock) % 2;
+            int pose = open == 0 ? 2 : 1;
+            var spr = SpriteCatalog.FlapPose(Color, pose);
             if (spr != null) _sr.sprite = spr;
             _wingPose = pose;
         }
