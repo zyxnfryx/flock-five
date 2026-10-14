@@ -61,7 +61,7 @@ The player has flagged the mix as too squeaky. Treat that as a standing mix note
 - **Feeder score:** 12 garden-till chings (`Sfx.FeederDone` / `Audio/Ching`). Wood body + muted brass + coin tap in D/A/F#/E. Not a bell, gong, or whoosh.
 - **Feeder leave:** 12 satisfying receding whooshes (`Sfx.FeederLeave` / `Audio/Whoosh`). Unhook + falling swoop + silk air. Motion of an object leaving, never coarse blowing wind, never a bell. `PullAway` uses leave; combo does not stack leave whooshes.
 - **Bee/mid:** low buzz, no melody, no raw noise. Scatter is buzz/whoosh, never a bell or pip train.
-- **Bed:** flute + pizzicato only on stems 0/1/2. 16-bar loops, payoff at bar 11. Last-light is the complete arrangement (denser pizz, flute cadence). No pad, no kick, no choir, no second flute tune. Combo fifth on stem 3. PlaceCap ~0.24. Chirps do not duck the bed.
+- **Bed:** flute + pizzicato only on stems 0/1/2. 16-bar loops, payoff at bar 11. Last-light is the complete arrangement (denser pizz, flute cadence). No pad, no kick, no choir, no second flute tune. Combo fifth on stem 3. PlaceCap ~0.30 (stereo asset at -17 LUFS, Normalize off; same ear level as the old 0.24 on a normalized mono import). Chirps do not duck the bed.
 
 ## Where the mix lives
 
@@ -69,7 +69,9 @@ Runtime mixer: `Assets/_Project/Scripts/App/MixDesk.cs` via `Sfx`.
 
 - New one-shots go through `Sfx` with a layer (`Lead` / `Mid` / `Bed`).
 - Do not add a second `AudioSource` loop from `Sfx`. All loops live on MixDesk's BedBus.
-- Garden beds (dawn / mid / last-light) crossfade from `SkyCycle.Dusk` as one Bed occupant. Combined place ≤ 0.24 (moon ≤ 0.28). Combo stem is extra warmth on the same seat, ≤ 0.04, not a fourth place bed.
+- Garden beds (dawn / mid / last-light) crossfade from `SkyCycle.Dusk` as one Bed occupant. Combined place ≤ 0.30 (moon ≤ 0.35). Combo stem is extra warmth on the same seat, ≤ 0.04, not a fourth place bed.
+- **Master stage:** `MasterSoftClip` sits on the AudioListener and is the one shared limiter for the whole mix (stems, one-shots, studio jingle): transparent under -4.7 dBFS, soft knee into a -1.7 dBFS ceiling (~-1.5 dBTP), 2 ms look-ahead. Never add per-track limiters or raise a cap to fight it.
+- **Music mastering:** authored music ships stereo, Normalize off, Preload on; beds -17 LUFS, stingers/jingles -16 LUFS, true peak ≤ -1.5 dBTP. Procedural music runs through `AudioPolish.Apply` (the same shelf / de-ess / presence / transient chain) before it becomes a clip.
 - Chirps do not duck the bed (`DuckChirp` = 1). Hummingbird chips sit 6–8 kHz; beds stay under ~1.2 kHz. Whoosh 0.88, break 0.78, both slewed. Mid decorations still wait while lead is hot.
 - Bee presence: one garden-wide hum, not one per swarm.
 - Idle ruffles: MixDesk may refuse the sample; the wing visual can still play.
@@ -80,7 +82,7 @@ Runtime mixer: `Assets/_Project/Scripts/App/MixDesk.cs` via `Sfx`.
 1. Name the layer.
 2. If Mid or Bed, add a refuse/duck path for a hot lead.
 3. Keep the clip short. Beds loop; decorations do not. Gameplay never waits on a stem.
-4. Volume: bed ~0.24 (chirps do not duck it), mid ≤ 0.28, lead 0.5–0.85. Exception: branch break plays at 1.0 — it is the hit.
+4. Volume: bed ~0.30 (chirps do not duck it), mid ≤ 0.28, lead 0.5–0.85. Exception: branch break plays at 1.0 — it is the hit.
 5. Play the noisiest frame in your head. If two pitched things speak, cut the decoration.
 
 ## Do not
