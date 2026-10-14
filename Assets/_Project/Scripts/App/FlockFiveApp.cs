@@ -6409,6 +6409,7 @@ namespace FlockFive
         // whatever face is up (splash, garden, paused, reward). Own clock; nothing in
         // Load / StartLevel touches it.
         static int _rainbowLogN;
+        static bool _rainbowMaskLogged;
         static void PaintPressRainbow()
         {
             if (!GuiPaint()) return;
@@ -6423,6 +6424,15 @@ namespace FlockFive
                     + " xMin=" + (glints > 0 ? PressRainbow.LastXMin : 0f).ToString("0", System.Globalization.CultureInfo.InvariantCulture)
                     + " xMax=" + (glints > 0 ? PressRainbow.LastXMax : 0f).ToString("0", System.Globalization.CultureInfo.InvariantCulture)
                     + " W=" + Screen.width + " frame=" + Time.frameCount);
+            if (PressShotLive && t >= PressRainbow.CoverAt && t < PressRainbow.RevealAt && !_rainbowMaskLogged)
+            {
+                _rainbowMaskLogged = true;
+                Debug.Log("FF_RAINBOW_MASK_DRAW coverageEst=" + (1f - (1f - PressRainbow.LastVeil) * 0.45f).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                    + " veil=" + PressRainbow.LastVeil.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                    + " grid=" + PressRainbow.Cols + "x" + PressRainbow.LastRows + " glints=" + glints
+                    + " heldFace=" + PressRainbow.HasFace + " frame=" + Time.frameCount);
+            }
+            if (t < 0f) _rainbowMaskLogged = false;
             if (PressShotLive && t >= 0f && (_rainbowLogN++ % 10) == 0)
                 Debug.Log("FF_RAINBOW_DRAW t=" + t.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)
                     + " glints=" + glints + " washA=" + washA.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
@@ -6562,11 +6572,28 @@ namespace FlockFive
         void FinishLevelCurtain()
         {
             bool paint = GuiPaint();
+            // Shared transition path: the frame the curtain arms, keep a GPU copy of
+            // the face so the mask can hide the world swap until full coverage.
+            if (LevelCurtain.TakeHoldRequest()) StartCoroutine(HoldCurtainFace());
             if (LevelCurtain.Armed)
             {
                 if (paint) LevelCurtain.Draw(AdPause.Unscaled);
                 if (LevelCurtain.Finished(AdPause.Unscaled)) LevelCurtain.Clear();
             }
+        }
+
+        IEnumerator HoldCurtainFace()
+        {
+            yield return new WaitForEndOfFrame();
+            // Only a face captured before Load is worth holding (an arm and a load on the
+            // same frame already shows the new world).
+            if (!LevelCurtain.Armed || LevelCurtain.LoadStarted || LevelCurtain.HeldFace != null) yield break;
+            int w = Screen.width, h = Screen.height;
+            if (w < 2 || h < 2) yield break;
+            var rt = RenderTexture.GetTemporary(w, h, 0);
+            ScreenCapture.CaptureScreenshotIntoRenderTexture(rt);
+            if (!LevelCurtain.Armed || LevelCurtain.LoadStarted) { RenderTexture.ReleaseTemporary(rt); yield break; }
+            LevelCurtain.HeldFace = rt;
         }
 
         // Original splash hive size — pig matches this, then both bump together.

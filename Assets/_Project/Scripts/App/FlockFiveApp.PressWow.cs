@@ -139,12 +139,42 @@ namespace FlockFive
 
         static void SavePressShotFrame(string frames, int index, string still)
         {
+            SavePressShotFrame(frames, index, still, false, out _, out _);
+        }
+
+        // measure: mean luma of 12 horizontal bands, sampled on a sparse grid; min/max
+        // across bands proves the mask is even top to bottom.
+        static void SavePressShotFrame(string frames, int index, string still, bool measure, out float rowMin, out float rowMax)
+        {
+            rowMin = rowMax = -1f;
             var tex = ScreenCapture.CaptureScreenshotAsTexture();
             if (tex == null) return;
             try
             {
                 System.IO.File.WriteAllBytes(frames + "/" + index.ToString("D4") + ".jpg", tex.EncodeToJPG(92));
                 if (still != null) System.IO.File.WriteAllBytes(still, tex.EncodeToPNG());
+                if (measure)
+                {
+                    const int bands = 12, sx = 48, sy = 16;
+                    rowMin = float.MaxValue; rowMax = float.MinValue;
+                    for (int b = 0; b < bands; b++)
+                    {
+                        float sum = 0f;
+                        for (int j = 0; j < sy; j++)
+                        {
+                            int py = (int)((b + (j + 0.5f) / sy) / bands * tex.height);
+                            for (int k = 0; k < sx; k++)
+                            {
+                                int px = (int)((k + 0.5f) / sx * tex.width);
+                                var c = tex.GetPixel(px, py);
+                                sum += 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
+                            }
+                        }
+                        float m = 255f * sum / (sx * sy);
+                        if (m < rowMin) rowMin = m;
+                        if (m > rowMax) rowMax = m;
+                    }
+                }
             }
             finally { UnityEngine.Object.Destroy(tex); }
         }
@@ -280,6 +310,8 @@ namespace FlockFive
             PressShotLive = false;
         }
 
+        static bool _shotCover, _shotSwap, _shotReveal, _shotGarden;
+
         IEnumerator ShotSplashPress(string tag)
         {
             const string dir = "/tmp/paradice";
@@ -352,6 +384,7 @@ namespace FlockFive
             double gapSum = 0.0, gapMax = 0.0;
             int gapN = 0;
             float lastAfterCapture = -1f;
+            _shotCover = _shotSwap = _shotReveal = _shotGarden = false;
             for (int k = 0; k < 144; k++)
             {
                 yield return new WaitForEndOfFrame();
@@ -367,11 +400,37 @@ namespace FlockFive
                 if (k == 0)
                     Debug.Log("FF_PRESS_SHOT_PRESS armedOnHold=" + armed + " loadFired=" + LevelCurtain.LoadStarted
                         + " fired=" + (LevelCurtain.FiredAt >= 0f) + " splash=" + _splash + " shotFireLeft=" + _pressShotFire);
+                // Key stills by the rainbow's own clock (frames since Fire).
+                float ra = PressRainbow.Age();
+                bool cover = !_shotCover && ra >= PressRainbow.CoverAt + 0.02f;
+                bool swap = !_shotSwap && PressRainbow.SwapFrame >= 0;
+                bool reveal = !_shotReveal && ra >= (PressRainbow.RevealAt + PressRainbow.RevealEnd) * 0.5f;
+                bool garden = !_shotGarden && (ra < 0f || ra >= PressRainbow.Life + 0.05f) && _shotSwap;
                 string still = k == 5 ? pre + "2-burst-peak.png"
                     : k == 24 ? pre + "3-handoff.png"
-                    : k == 66 ? pre + "4-settle.png"
+                    : cover ? pre + "coverage.png"
+                    : swap ? pre + "swap.png"
+                    : reveal ? pre + "reveal.png"
+                    : garden ? pre + "garden.png"
                     : null;
-                SavePressShotFrame(frames, f++, still);
+                SavePressShotFrame(frames, f++, still, cover, out float rMin, out float rMax);
+                if (cover)
+                {
+                    _shotCover = true;
+                    var ci2 = System.Globalization.CultureInfo.InvariantCulture;
+                    Debug.Log("FF_RAINBOW_MASK coverage=" + (1f - (1f - PressRainbow.LastVeil) * 0.45f).ToString("0.00", ci2)
+                        + " rowLumaMin=" + rMin.ToString("0.0", ci2) + " rowLumaMax=" + rMax.ToString("0.0", ci2)
+                        + " rowSpread=" + (rMax > 0f ? (rMax - rMin) / rMax : 0f).ToString("0.000", ci2)
+                        + " swapFrame=" + PressRainbow.SwapFrame + " t=" + ra.ToString("0.000", ci2) + " device=" + tag);
+                }
+                if (swap)
+                {
+                    _shotSwap = true;
+                    Debug.Log("FF_RAINBOW_MASK swapFrame=" + PressRainbow.SwapFrame + " shotFrame=" + Time.frameCount
+                        + " heldFaceShown=" + (PressRainbow.SwapFrame >= 0) + " device=" + tag);
+                }
+                if (reveal) _shotReveal = true;
+                if (garden) _shotGarden = true;
                 lastAfterCapture = Time.realtimeSinceStartup;
                 if (k == 60)
                 {
