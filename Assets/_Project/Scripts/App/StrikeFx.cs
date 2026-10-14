@@ -7,9 +7,9 @@ namespace FlockFive
     // destroyed. The bolt, flash, and shake stay on GardenStorm.
     public sealed class StrikeFx : MonoBehaviour
     {
-        public const float SplitDelay = 0.28f;
+        public const float SplitDelay = 0.48f;
         const int N = 44;
-        const float Dur = 2.05f;
+        const float Dur = 2.35f;
 
         struct Bit
         {
@@ -59,7 +59,7 @@ namespace FlockFive
             for (int i = 0; i < N; i++)
             {
                 byte kind = i < 12 ? (byte)0 : i < 20 ? (byte)1 : i < 28 ? (byte)2 : i < 38 ? (byte)3 : (byte)4;
-                float scale = kind == 2 ? Random.Range(0.55f, 0.95f)
+                float scale = kind == 2 ? Random.Range(0.72f, 1.15f)
                     : kind == 1 ? Random.Range(0.28f, 0.48f)
                     : kind == 0 ? Random.Range(0.07f, 0.15f)
                     : kind == 3 ? Random.Range(0.09f, 0.18f)
@@ -168,7 +168,7 @@ namespace FlockFive
                 }
                 var c = bit.Sr != null ? bit.Sr.color : Color.white;
                 float a = 1f - Mathf.Clamp01(life);
-                if (bit.Kind == 2) a *= 0.42f;
+                if (bit.Kind == 2) a *= 0.62f;
                 if (bit.Kind == 1) a *= 0.9f;
                 if (bit.Kind == 4)
                 {

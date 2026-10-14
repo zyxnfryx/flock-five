@@ -525,8 +525,11 @@ namespace FlockFive
                 {
                     float u = Mathf.Clamp01(t / burn);
                     var hot = new Color(1f, 0.94f, 0.70f, 1f);
-                    var ash = new Color(0.08f, 0.04f, 0.03f, 1f);
-                    Wood.color = Color.Lerp(hot, ash, u * u);
+                    var ash = new Color(0.05f, 0.02f, 0.015f, 1f);
+                    // Hold the gold a moment, then char hard so the burn reads
+                    // before the limb splits.
+                    float charU = Mathf.Clamp01((u - 0.22f) / 0.78f);
+                    Wood.color = Color.Lerp(hot, ash, charU * charU);
                     float swell = 1f + 0.07f * Mathf.Sin(u * Mathf.PI);
                     Wood.transform.localScale = new Vector3(
                         _woodScale.x * swell, _woodScale.y * (1.06f - 0.06f * u), _woodScale.z);

@@ -15,8 +15,9 @@ namespace FlockFive
         const int DropsDesk = 156;
         const int DropsPhone = 120;
         const float StreakW = 0.125f; // RainStreak width at scale 1
-        const int Segs = 36;
-        const int PathCap = 10;
+        const int Segs = 64;
+        const int PathCap = 16;
+        const float DarkHold = 2.05f;
         const float BarW = 1.35f;
         const float LeanDt = 0.042f; // ~24 fps — fewer bolt pieces, wider strike gap
         // Past the bezel so a streak finishes off-screen before it wraps.
@@ -149,7 +150,7 @@ namespace FlockFive
             _aimX = world.x;
             _aimY = world.y;
             _showcase = true;
-            _strikeDark = 1.25f;
+            _strikeDark = DarkHold;
             _skyAt = PlayClock.Now - 0.012f;
             _skyBig = true;
             _skyPow = 1f;
@@ -522,7 +523,7 @@ namespace FlockFive
             if (_strikeDark > 0f)
             {
                 _strikeDark -= dt;
-                float u = Mathf.Clamp01(_strikeDark / 1.25f);
+                float u = Mathf.Clamp01(_strikeDark / DarkHold);
                 veilA = Mathf.Max(veilA, 0.94f * u);
             }
             float sky = SkyFlash;
@@ -693,10 +694,13 @@ namespace FlockFive
                 if (_flashLit) DimFlash();
                 return;
             }
-            var warm = new Color(1f, 0.97f, 0.90f, a);
-            var cool = new Color(0.75f, 0.86f, 1f, a);
-            _flash.color = Color.Lerp(warm, cool, Mathf.Clamp01(ft * 8f));
-            float sc = (28f + 7f * shape) * (_skyBig ? 1.08f : 1f);
+            // A fire strike holds a white sheet through the first peak. Ordinary
+            // bolts cool toward blue on the same curve.
+            bool white = _showcase && ft < 0.12f;
+            var warm = white ? new Color(1f, 1f, 1f, a) : new Color(1f, 0.97f, 0.90f, a);
+            var cool = white ? new Color(1f, 1f, 1f, a * 0.92f) : new Color(0.75f, 0.86f, 1f, a);
+            _flash.color = Color.Lerp(warm, cool, white ? 0f : Mathf.Clamp01(ft * 8f));
+            float sc = (28f + 7f * shape) * (_skyBig ? 1.08f : 1f) * (white ? 1.28f : 1f);
             float tall = PortraitLock.TallFactor();
             _flash.transform.localScale = new Vector3(sc, sc * tall, 1f);
             if (!_flash.enabled) _flash.enabled = true;
@@ -741,7 +745,8 @@ namespace FlockFive
                 y1 = Mathf.Lerp(bottom + 2.6f, bottom + 0.55f, Mathf.Clamp01(power));
             }
             float thick = big ? (_showcase ? 0.52f : 0.36f) : 0.22f;
-            Lay(x0, y0, x1, y1, big ? (_showcase ? 10 : 8) : 6, big ? 0.9f : 0.55f, thick, true);
+            int trunk = big ? (_showcase ? 12 : 8) : 6;
+            Lay(x0, y0, x1, y1, trunk, big ? 0.9f : 0.55f, thick, true);
             int forks = big ? (LeanFrame() ? 2 : (_showcase ? 6 : 4)) : (LeanFrame() ? 1 : 2);
             for (int f = 0; f < forks; f++)
             {
@@ -749,8 +754,23 @@ namespace FlockFive
                 int at = 1 + (f * 2) % (_pn - 1);
                 float dir = ((f & 1) == 0) ? -1f : 1f;
                 if (Random.value < 0.15f) dir = -dir;
-                float len = Random.Range(0.9f, big ? 2.6f : 1.7f);
+                float len = Random.Range(0.9f, big ? (_showcase ? 3.1f : 2.6f) : 1.7f);
                 Lay(_px[at], _py[at], _px[at] + dir * len, _py[at] - Random.Range(0.35f, 1.35f), big ? 4 : 3, 0.35f, thick * 0.48f, false);
+            }
+            // A second generation off the trunk, so the fire bolt reads as a tree
+            // and not a single stroke with side ticks.
+            if (_showcase && !LeanFrame() && _pn > 4)
+            {
+                for (int c = 0; c < 3; c++)
+                {
+                    int at = 2 + c * 3;
+                    if (at >= _pn) break;
+                    float dir = c == 1 ? -1f : 1f;
+                    Lay(_px[at], _py[at],
+                        _px[at] + dir * Random.Range(1.15f, 1.9f),
+                        _py[at] - Random.Range(0.45f, 1.15f),
+                        3, 0.28f, thick * 0.32f, false);
+                }
             }
             if (big && !LeanFrame())
             {
