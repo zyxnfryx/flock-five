@@ -17195,46 +17195,91 @@ namespace FlockFive
             if (!Hive.UpgradesUnlocked || Hive.CountOfSlot(slot) <= 0) return false;
             var pill = FlipHintRect(hintTop, s);
             // b88 (Brandon): the game's own clay CTA (DrawPopupButton), not a thin outlined bar.
-            // Gold when affordable, wood when short, dimmed wood at max honey.
-            // b88 v2 (Brandon): fatter and narrower. ~92 px tall at phone scale, width sized
-            // to the label plus padding, held to 55-65% of the old wide bar, centered.
+            // v2: fatter and narrower, width sized to the label, 55-65% of the old wide bar.
+            // v3: solid dark rim + light inner bevel, clear margins, and a locked MAXXED state.
             float btnH = Mathf.Max(84f, 92f * Mathf.Min(s, 1.35f));
-            bool roomPre = Hive.UpgradeRoom(slot);
-            string linePre = !roomPre ? "Max honey" : "Upgrade  " + Money.Format(Hive.UpgradeCost);
+            // 5 px at UI scale 1, scaled with the UI, plus a thin gold keyline outside so the rim
+            // reads against the dark scrim.
+            float rimW = Mathf.Round(5f * Mathf.Max(1f, s * 0.6f));
+            float keyW = Mathf.Max(2f, Mathf.Round(rimW * 0.3f));
+            bool room = Hive.UpgradeRoom(slot);
+            bool maxxed = !room;
+            bool can = room && Hive.CanUpgrade(slot);
+            string line = maxxed ? MaxxedWord : "Upgrade  " + Money.Format(Hive.UpgradeCost);
             var measure = GuiPool.Label(GuiSlot.FlipHintMeasure);
             measure.fontStyle = FontStyle.Bold;
             measure.wordWrap = false;
             measure.fontSize = Mathf.RoundToInt(btnH * 0.50f);
-            float labelW = measure.CalcSize(new GUIContent(linePre)).x;
+            float labelW = measure.CalcSize(new GUIContent(line)).x + (maxxed ? btnH * 0.62f : 0f);
             float wideW = Mathf.Min(Screen.width * 0.80f, 460f * s);
             float btnW = Mathf.Clamp(labelW + btnH * 1.1f, wideW * 0.55f, wideW * 0.65f);
-            btnW = Mathf.Min(btnW, Screen.width * 0.86f);
-            float y = pill.yMax + 14f * s;
-            float edgeB = 20f * s;
+            btnW = Mathf.Min(btnW, Screen.width * 0.86f - (rimW + keyW) * 2f);
+            // Margin: a clear gap under the hint pill and above the screen edge, rim included.
+            float gapTop = Mathf.Max(18f, 20f * s) + rimW + keyW;
+            float y = pill.yMax + gapTop;
+            float edgeB = Mathf.Max(24f, 28f * s) + rimW + keyW;
             if (y + btnH > Screen.height - edgeB) y = Screen.height - edgeB - btnH;
             var btn = new Rect((Screen.width - btnW) * 0.5f, y, btnW, btnH);
-            _upgradeBtnR = btn;
-            bool room = Hive.UpgradeRoom(slot);
-            bool can = Hive.CanUpgrade(slot);
-            string line = !room
-                ? "Max honey"
-                : "Upgrade  " + Money.Format(Hive.UpgradeCost);
+            var outer = new Rect(btn.x - rimW, btn.y - rimW, btn.width + rimW * 2f, btn.height + rimW * 2f);
+            var key = new Rect(outer.x - keyW, outer.y - keyW, outer.width + keyW * 2f, outer.height + keyW * 2f);
+            _upgradeBtnR = outer;
             bool held;
-            bool hit = HitPad(btn, out held);
+            bool hit = HitPad(outer, out held);
+            bool pressed = held && !maxxed; // locked: no press pose
             var keep = GUI.color;
-            GUI.color = new Color(1f, 1f, 1f, alpha * (room ? 1f : 0.6f));
-            var face = DrawPopupButton(btn, held && room, can ? PopupTint.Gold : PopupTint.Wood, can ? 1f : 0f);
+            bool paint = GuiPaint();
+            // Solid dark rim, same rounded clay plate tinted near-black brown.
+            if (paint)
+            {
+                GUI.color = maxxed
+                    ? new Color(0.55f, 0.52f, 0.48f, alpha * 0.55f)
+                    : new Color(0.96f, 0.78f, 0.32f, alpha * 0.85f);
+                DrawBevelPlate(PopupButtonTex(PopupTint.Wood, false), key, 28f);
+                GUI.color = new Color(0.16f, 0.08f, 0.03f, alpha * (maxxed ? 0.80f : 1f));
+                DrawBevelPlate(PopupButtonTex(PopupTint.Wood, false), outer, 28f);
+            }
+            GUI.color = maxxed
+                ? new Color(0.62f, 0.60f, 0.58f, alpha * 0.85f)   // desaturated, dimmed
+                : new Color(1f, 1f, 1f, alpha);
+            var face = DrawPopupButton(btn, pressed, can ? PopupTint.Gold : PopupTint.Wood, can ? 1f : 0f, false);
+            // Light inner bevel along the top and a soft one down the sides.
+            if (paint)
+            {
+                float bev = Mathf.Max(2f, rimW * 0.5f);
+                float inset = btnH * 0.18f;
+                GUI.color = new Color(1f, 0.97f, 0.86f, alpha * (maxxed ? 0.18f : can ? 0.55f : 0.32f));
+                GUI.DrawTexture(new Rect(btn.x + inset, btn.y + bev, btn.width - inset * 2f, bev), Texture2D.whiteTexture);
+                GUI.color = new Color(1f, 0.97f, 0.86f, alpha * (maxxed ? 0.08f : 0.18f));
+                GUI.DrawTexture(new Rect(btn.x + bev, btn.y + inset, bev, btn.height - inset * 2f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(btn.xMax - bev * 2f, btn.y + inset, bev, btn.height - inset * 2f), Texture2D.whiteTexture);
+            }
             var st = GuiPool.Label(GuiSlot.FlipHint);
             st.wordWrap = false;
             st.alignment = TextAnchor.MiddleCenter;
             st.fontStyle = FontStyle.Bold;
             var lab = new Rect(face.x + face.width * 0.06f, face.y + face.height * 0.10f, face.width * 0.88f, face.height * 0.80f);
-            st.fontSize = FitFont(st, line, lab.width, lab.height, 16, Mathf.RoundToInt(btnH * 0.50f));
-            StampOutlined(lab, line, st, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 2, 8));
-            GUI.color = keep;
-            if (hit)
+            if (maxxed)
             {
-                if (room && Hive.TryUpgrade(slot))
+                float lk = btnH * 0.52f;
+                st.fontSize = FitFont(st, line, lab.width - lk * 1.3f, lab.height, 16, Mathf.RoundToInt(btnH * 0.50f));
+                float tw = st.CalcSize(new GUIContent(line)).x;
+                float total = lk + lk * 0.3f + tw;
+                float x0 = btn.center.x - total * 0.5f;
+                if (paint) DrawLockGlyph(new Rect(x0, btn.center.y - lk * 0.55f, lk, lk), alpha);
+                var tr = new Rect(x0 + lk * 1.3f, lab.y, tw + 4f, lab.height);
+                StampOutlined(tr, line, st, new Color(0.90f, 0.88f, 0.84f, alpha), 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.12f), 2, 7));
+            }
+            else
+            {
+                st.fontSize = FitFont(st, line, lab.width, lab.height, 16, Mathf.RoundToInt(btnH * 0.50f));
+                StampOutlined(lab, line, st, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 2, 8));
+            }
+            GUI.color = keep;
+            // Locked at max: the tap is swallowed (no flip, no dismiss) but nothing is charged
+            // and nothing plays.
+            if (hit && !maxxed)
+            {
+                if (Hive.TryUpgrade(slot))
                 {
                     Sfx.CardBump();
                     Haptics.Play(Haptics.Tier.Light);
@@ -17244,6 +17289,31 @@ namespace FlockFive
                     Sfx.Deny();
             }
             return hit || held;
+        }
+
+        public const string MaxxedWord = "MAXXED";
+
+        // Small padlock from rects: shackle (two posts + bar) over a body with a keyhole.
+        static void DrawLockGlyph(Rect r, float alpha)
+        {
+            var ink = new Color(0.90f, 0.88f, 0.84f, alpha);
+            var dark = new Color(0.16f, 0.08f, 0.03f, alpha);
+            float t = Mathf.Max(2f, r.width * 0.14f);
+            var body = new Rect(r.x, r.y + r.height * 0.42f, r.width, r.height * 0.58f);
+            float sx0 = r.x + r.width * 0.20f, sx1 = r.xMax - r.width * 0.20f - t;
+            // outline pass then ink pass
+            for (int pass = 0; pass < 2; pass++)
+            {
+                float o = pass == 0 ? Mathf.Max(1.5f, t * 0.35f) : 0f;
+                GUI.color = pass == 0 ? dark : ink;
+                GUI.DrawTexture(new Rect(sx0 - o, r.y - o, t + o * 2f, body.y - r.y + o), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(sx1 - o, r.y - o, t + o * 2f, body.y - r.y + o), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(sx0 - o, r.y - o, sx1 + t - sx0 + o * 2f, t + o * 2f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(body.x - o, body.y - o, body.width + o * 2f, body.height + o * 2f), Texture2D.whiteTexture);
+            }
+            GUI.color = dark;
+            float kh = body.height * 0.34f;
+            GUI.DrawTexture(new Rect(body.center.x - t * 0.5f, body.center.y - kh * 0.5f, t, kh), Texture2D.whiteTexture);
         }
 
         void DrawFlipHint(float y, float s, float alpha)
