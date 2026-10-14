@@ -499,17 +499,21 @@ namespace FlockFive
     // Nothing depends on x: lanes are mirrored pairs; per-pair hashes vary depth.
     public static class PressRainbow
     {
-        public const float Life = 1.55f;
+        public const float Life = 1.72f;
+        const float LaunchEnd = 0.35f, FanTime = 0.15f;
+        public const float MaxBodyFrac = 0.30f; // biggest return glint, of screen width
         public const int N = 128;
-        const float WashUp = 0.92f, WashPeak = 1.20f;
-        const int Ghosts = 6;
+        const float WashUp = 1.08f, WashPeak = 1.34f;
+        const int Ghosts = 4;
         // fx_sparkle.png is a thin four-point star: only 21% of its 1024 px rect is
         // opaque and the solid body spans ~45% of the rect. Sizes are visible-body px,
         // so the drawn rect is body / StarBody (the old code sized the rect, which read
         // at ~half: 6-22% targets landed at 4-6% on screen).
         public const float StarBody = 0.45f;
-        public static float LastMaxRectPx, LastMaxBodyPx;
-        const float GhostStep = 0.007f;
+        public static float LastMaxRectPx, LastMaxBodyPx, LastXMin, LastXMax;
+        public static Rect LastWashRect;
+        public const float LogEveryFrameUntil = 0.62f;
+        const float GhostStep = 1f / 60f; // one frame apart, so trails never stack on the head
 
         static float _at = -1f;
         static int _atFrame;
@@ -556,30 +560,46 @@ namespace FlockFive
             float D = Mathf.Sqrt(W * W + H * H);
             float cx = W * 0.5f;
             float tx = cx + SparkleFx.Lane(i, N, hj, W * 0.58f);
-            float far = D * (0.025f + 0.010f * hs);
-            // Per pair: rise length and top, return delay and entry depth.
-            float riseEnd = 0.36f + 0.14f * hr;
-            float yTop = -(0.18f + 0.22f * hy) * H;
-            float backStart = riseEnd + 0.05f + 0.12f * hb;
-            // Depth class by pair: mid (most), near (15-25% W) and the closest few (~30% W).
-            // Visible body sizes; the sprite rect is body / StarBody.
+            float far = D * (0.025f + 0.010f * hs); // visible body px, 2.5-3.5% of diagonal
+            float half = W * 0.58f;
+            float lane01 = Mathf.Clamp01(Mathf.Abs(tx - cx) / half); // symmetric, 0 centre .. 1 edge
+            // Per pair: when it clears the top (all by 0.60 s), return delay and depth.
+            float riseEnd = 0.54f + 0.06f * hr;
+            float backStart = LaunchEnd + 0.31f + 0.05f * hb; // 0.66-0.71: ~0.06-0.17 s off screen
             float vis = hd < 0.55f ? W * (0.07f + 0.10f * hd)
                 : hd < 0.90f ? W * (0.15f + 0.10f * (hd - 0.55f) / 0.35f)
                 : W * 0.30f;
             float nearK = Mathf.Clamp01((vis / W - 0.07f) / 0.23f); // 0 mid .. 1 closest
-            // Near ones come at the camera faster.
             float backEnd = backStart + (0.70f - 0.22f * nearK) + 0.06f * hd;
-            if (t < riseEnd)
+            // Launch-arc height: centre lanes highest, edges lowest (a rainbow bow), so
+            // the fan is symmetric and never reads left to right.
+            float arcY = oy - H * (0.08f + 0.04f * hy + 0.18f * (1f - lane01 * lane01));
+            if (t < LaunchEnd)
             {
-                float r = t / riseEnd;
-                float e = 1f - Mathf.Pow(1f - r, 2.4f);
-                float fan = Mathf.Clamp01(r / 0.27f);
-                fan = 1f - (1f - fan) * (1f - fan);
+                // Launch: everyone leaves the button centre on frame 0 at full alpha and
+                // fans to its lane by 0.15 s, rising into the bow by 0.35 s.
+                float q = Mathf.Clamp01(t / FanTime);
+                float fan = 1f - (1f - q) * (1f - q) * (1f - q);
+                float e = Mathf.Clamp01(t / LaunchEnd);
+                e = 1f - (1f - e) * (1f - e);
                 x = ox + (tx - ox) * fan;
-                y = oy + (yTop - oy) * e;
-                sz = far * (1f + 0.4f * e);
-                a = Mathf.Clamp01(t / 0.03f);
+                y = oy + (arcY - oy) * e;
+                sz = far * (0.85f + 0.15f * e) / StarBody;
+                a = 1f;
                 bloom = 0.2f;
+            }
+            else if (t < riseEnd)
+            {
+                // Exit: accelerating climb from the bow up through the upper screen and
+                // off the top edge by riseEnd (0.54-0.60 s).
+                float r = (t - LaunchEnd) / (riseEnd - LaunchEnd);
+                float off = -far / StarBody;
+                x = tx;
+                y = arcY + (off - arcY) * (r * r * (0.4f + 0.6f * r) + 0.0f);
+                y = Mathf.Min(y, arcY);
+                sz = far / StarBody;
+                a = 1f;
+                bloom = 0.25f;
             }
             else if (t < backStart) return false;
             else if (t < backEnd)
@@ -595,8 +615,10 @@ namespace FlockFive
                 y = entry + (0.98f * H - entry) * Mathf.Pow(w, 1.5f);
                 // Parallax: near glints swing outward from centre as they close in.
                 x = cx + (tx - cx) * (0.75f + (0.35f + 0.75f * nearK) * pz);
-                float start = far * StarBody;
-                sz = (start + (vis - start) * pz) / StarBody;
+                float start = far;
+                float body = start + (vis - start) * pz;
+                if (body > W * MaxBodyFrac) body = W * MaxBodyFrac;
+                sz = body / StarBody;
                 a = 1f - Mathf.Clamp01((w - 0.90f) / 0.10f);
                 bloom = 0.4f + 0.6f * w;
                 soft = Mathf.Clamp01((pz - 0.35f) / 0.5f);
@@ -621,18 +643,20 @@ namespace FlockFive
             if (glowTex == null) glowTex = star;
             var prev = GUI.color;
             float ox = _src.width > 2f ? _src.center.x : W * 0.5f;
-            float oy = _src.width > 2f ? _src.y + _src.height * 0.30f : H * 0.78f;
+            float oy = _src.width > 2f ? _src.center.y : H * 0.78f;
 
             washA = DrawWash(t, W, H, glowTex);
             int drawn = 0;
             LastMaxRectPx = 0f;
+            LastXMin = float.MaxValue;
+            LastXMax = float.MinValue;
             for (int i = 0; i < N; i++)
             {
                 int pair = i >> 1;
                 float h4 = H01(pair, 17);
                 var c = h4 < 0.40f ? LevelCurtain.BGold : h4 < 0.62f ? LevelCurtain.BCream
                     : h4 < 0.84f ? LevelCurtain.BPeach : LevelCurtain.BRose;
-                if (t < 0.50f + Ghosts * GhostStep)
+                if (t < 0.62f + Ghosts * GhostStep)
                 {
                     for (int g = Ghosts; g >= 1; g--)
                     {
@@ -655,6 +679,8 @@ namespace FlockFive
                 }
                 SparkleFx.DrawDepthGlint(x, y, sz, a, bl, sf, c, star, glowTex);
                 if (a > 0.1f && sz > LastMaxRectPx) LastMaxRectPx = sz;
+                if (x < LastXMin) LastXMin = x;
+                if (x > LastXMax) LastXMax = x;
                 drawn++;
             }
             GUI.color = prev;
@@ -673,14 +699,23 @@ namespace FlockFive
             float k = u * u * (3f - 2f * u);
             if (k < 0.01f) return 0f;
             float D = Mathf.Sqrt(W * W + H * H);
-            float cx = W * 0.5f, cy = H * 0.5f;
             const float Veil = 0.50f;
+            // Veil in true screen space: map screen (0,0) and (W,H) through whatever
+            // clip / matrix is live, with a margin, so it is never offset or short.
+            Vector2 p0 = GUIUtility.ScreenToGUIPoint(Vector2.zero);
+            Vector2 p1 = GUIUtility.ScreenToGUIPoint(new Vector2(W, H));
+            float pad = 0.02f * H;
+            var veil = Rect.MinMaxRect(Mathf.Min(p0.x, p1.x) - pad, Mathf.Min(p0.y, p1.y) - pad,
+                Mathf.Max(p0.x, p1.x) + pad, Mathf.Max(p0.y, p1.y) + pad);
+            LastWashRect = veil;
             GUI.color = new Color(1f, 0.90f, 0.70f, Veil * k);
-            GUI.DrawTexture(new Rect(0f, 0f, W, H), Texture2D.whiteTexture);
-            Glow(cx, cy, D * 1.30f, glowTex, LevelCurtain.BCream, 0.22f * k);
-            Glow(cx, H * 0.25f, D * 0.80f, glowTex, LevelCurtain.BRose, 0.12f * k);
-            Glow(cx, H * 0.50f, D * 0.80f, glowTex, LevelCurtain.BPeach, 0.12f * k);
-            Glow(cx, H * 0.78f, D * 0.80f, glowTex, LevelCurtain.BGold, 0.12f * k);
+            GUI.DrawTexture(veil, Texture2D.whiteTexture, ScaleMode.StretchToFill, true);
+            float cx = veil.center.x, top = veil.yMin, h = veil.height;
+            // Glows ride high so the top third is painted as much as the bottom.
+            Glow(cx, top + h * 0.40f, D * 1.40f, glowTex, LevelCurtain.BCream, 0.22f * k);
+            Glow(cx, top + h * 0.12f, D * 0.85f, glowTex, LevelCurtain.BRose, 0.12f * k);
+            Glow(cx, top + h * 0.36f, D * 0.85f, glowTex, LevelCurtain.BPeach, 0.12f * k);
+            Glow(cx, top + h * 0.64f, D * 0.85f, glowTex, LevelCurtain.BGold, 0.10f * k);
             // Centre: 1 - (1-0.50)(1-0.22)(1-0.12) ~ 0.66-0.70 at the peak.
             return (1f - (1f - Veil) * (1f - 0.22f) * (1f - 0.12f)) * k;
         }

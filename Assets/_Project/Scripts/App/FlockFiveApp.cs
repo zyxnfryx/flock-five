@@ -6416,11 +6416,19 @@ namespace FlockFive
             GUI.matrix = Matrix4x4.identity;
             int glints = PressRainbow.Draw(out float t, out float washA);
             GUI.matrix = m;
+            bool launchFrame = t >= 0f && t < PressRainbow.LogEveryFrameUntil;
+            if (PressShotLive && launchFrame)
+                Debug.Log("FF_RAINBOW_LAUNCH t=" + t.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)
+                    + " glintsVisible=" + glints
+                    + " xMin=" + (glints > 0 ? PressRainbow.LastXMin : 0f).ToString("0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " xMax=" + (glints > 0 ? PressRainbow.LastXMax : 0f).ToString("0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " W=" + Screen.width + " frame=" + Time.frameCount);
             if (PressShotLive && t >= 0f && (_rainbowLogN++ % 10) == 0)
                 Debug.Log("FF_RAINBOW_DRAW t=" + t.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)
                     + " glints=" + glints + " washA=" + washA.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
                     + " maxGlintPx=" + PressRainbow.LastMaxBodyPx.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
                     + " maxGlintPctW=" + (100f * PressRainbow.LastMaxBodyPx / Mathf.Max(1f, Screen.width)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " washRect=" + (washA > 0f ? PressRainbow.LastWashRect.ToString() : "-")
                     + " maxRectPx=" + PressRainbow.LastMaxRectPx.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
                     + " frame=" + Time.frameCount);
         }
