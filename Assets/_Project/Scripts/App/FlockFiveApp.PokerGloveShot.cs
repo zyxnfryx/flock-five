@@ -103,7 +103,7 @@ namespace FlockFive
                 + " fromLeft " + _gloveFromLeft + " ang " + _gloveShownAng.ToString("0")
                 + " aim " + aim + " hand " + hand + " plate " + plate
                 + " button " + box
-                + " clear " + (!plate.Overlaps(hand) && !plate.Overlaps(box));
+                + " clear " + (!plate.Overlaps(hand) && !plate.Overlaps(box)) + " dbg " + CapFontDbg;
             File.AppendAllText("/tmp/b88-poker-glove-shot.txt", line + "\n");
             UnityEngine.Debug.Log("[poker-glove] " + line);
         }

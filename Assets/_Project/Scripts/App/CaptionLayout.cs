@@ -618,9 +618,21 @@ namespace FlockFive
         // line wraps into at most BannerMaxLines balanced rows and the plate grows.
         public const int BannerMaxLines = 3;
 
-        public static int BannerFont(float screenW, float screenH)
+        // b89 (Brandon): caption text is a fixed share of the screen height. DeviceFit.Ui
+        // eases the UI scale down on wide (tablet) screens, which shrank captions there.
+        // This is the factor that puts the caption back at the phone's share of the
+        // height. It is 1 wherever Ui is the plain height scale (phones), so they do not move.
+        public static float TextFit(float screenW, float screenH)
         {
             float ui = DeviceFit.Ui(screenW, screenH);
+            float flat = Mathf.Max(screenH / 720f, 1f);
+            if (ui < 0.01f) return 1f;
+            return Mathf.Max(1f, flat / ui);
+        }
+
+        public static int BannerFont(float screenW, float screenH)
+        {
+            float ui = DeviceFit.Ui(screenW, screenH) * TextFit(screenW, screenH);
             int px = Mathf.RoundToInt(44f * ui * 0.62f);
             if (px < 22) px = 22;
             return px;

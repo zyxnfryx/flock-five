@@ -3194,6 +3194,7 @@ namespace FlockFive
         // full box, StandardCaptionSlack for the standard caption). Text box and font unchanged.
         // topAlign: a top-anchored seat (poker hold/back) keeps its plate top where the full
         // plate's top was and lifts the text with it, so the gap above stays the seat's gap.
+        public static string CapFontDbg = "";
         public static bool CaptionBanner = true;
         public static int BannerUses, SnugUses;
         public static string BannerSkip = "", BannerLast = "";
@@ -3477,6 +3478,7 @@ namespace FlockFive
                 // instead of shrinking further. Authored newlines stay.
                 var fit = FitLessonText(text, textR.width, textR.height, lo, hi, Screen.width, Screen.height);
                 _coachSizedPx = fit.Font;
+                CapFontDbg = "font " + fit.Font + " hi " + hi + " textR " + textR + " r " + r + " fitH " + fit.TextH + " s " + s;
                 _coachSizedTextH = fit.TextH;
                 _coachShown = fit.Shown;
                 _coachSizedFor = text;
@@ -5805,7 +5807,8 @@ namespace FlockFive
         // Poker intro caption: bigger than the standard line and seated over the LEVEL
         // button, so the player's eye (and tap) goes to Poker instead. Same shared
         // caption box; this only picks the size (PokerIntroFontHi) and the seat.
-        int PokerIntroFontHi(float s) => Mathf.Max(24, Mathf.RoundToInt(46f * s));
+        int PokerIntroFontHi(float s) => Mathf.Max(24, Mathf.RoundToInt(46f * s * CaptionLayout.TextFit(Screen.width, Screen.height)));
+        static int LessonFontHi(float s) => Mathf.RoundToInt(32f * s * CaptionLayout.TextFit(Screen.width, Screen.height));
 
         Rect PokerIntroBox(float s)
         {
