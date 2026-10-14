@@ -44,9 +44,17 @@ namespace FlockFive
             PlayerPrefs.Save();
         }
 
+        // Store requests while PurchasePending is Active are dropped (no double asks).
+        public static bool Busy => PurchasePending.Active;
+
+#if UNITY_EDITOR
+        // Edit-mode tests and stills: memory only, never touches the saved flag.
+        public static void SetOwnedForTest(bool owned) => Owned = owned;
+#endif
+
         public static void Buy()
         {
-            if (Owned) return;
+            if (Owned || Busy) return;
             Ensure();
             if (_host != null) _host.Buy();
 #if UNITY_EDITOR
@@ -56,6 +64,7 @@ namespace FlockFive
 
         public static void Restore()
         {
+            if (Busy) return;
             Ensure();
             if (_host == null)
             {
@@ -63,6 +72,14 @@ namespace FlockFive
                 return;
             }
             _host.Restore();
+        }
+
+        // Ends the shared wait and posts its note (if any). Safe when nothing waits.
+        internal static void EndWait(PurchasePending.Outcome o, PurchasePending.Kind k)
+        {
+            if (!PurchasePending.Finish(o, k)) return;
+            string note = PurchasePending.NoteFor(o, k);
+            if (!string.IsNullOrEmpty(note)) NoteRestore(note);
         }
 
         internal static void NoteRestore(string msg)
@@ -129,6 +146,9 @@ namespace FlockFive
                 var mod = StandardPurchasingModule.Instance();
                 var b = ConfigurationBuilder.Instance(mod);
                 b.AddProduct(NoAds.ProductId, ProductType.NonConsumable);
+#if UNITY_ANDROID
+                b.Configure<IGooglePlayConfiguration>().SetDeferredPurchaseListener(OnDeferred);
+#endif
                 UnityPurchasing.Initialize(this, b);
             }
             catch (System.Exception e)
@@ -159,11 +179,14 @@ namespace FlockFive
                     NoAds.NoteRestore("Not available right now");
                     return;
                 }
+                // Pending first: the store may answer synchronously inside InitiatePurchase.
+                if (!PurchasePending.Begin(PurchasePending.Kind.Buy)) return;
                 _ctl.InitiatePurchase(p);
             }
             catch (System.Exception e)
             {
                 Debug.LogWarning("[NoAds] purchase start failed: " + e.Message);
+                PurchasePending.Finish(PurchasePending.Outcome.Failed, PurchasePending.Kind.Buy);
                 NoAds.NoteRestore("Couldn't start the purchase");
             }
 #endif
@@ -190,6 +213,7 @@ namespace FlockFive
                 Boot();
                 return;
             }
+            if (!PurchasePending.Begin(PurchasePending.Kind.Restore)) return;
             _restoring = true;
             _restoreDone = false;
             _restoreOk = false;
@@ -207,6 +231,7 @@ namespace FlockFive
                 if (ext == null)
                 {
                     _restoring = false;
+                    PurchasePending.Finish(PurchasePending.Outcome.Success, PurchasePending.Kind.Restore);
                     NoAds.NoteRestore(NoAds.Owned ? "Restored" : "Nothing to restore");
                     return;
                 }
@@ -216,7 +241,7 @@ namespace FlockFive
             {
                 _restoring = false;
                 Debug.LogWarning("[NoAds] restore failed: " + e.Message);
-                NoAds.NoteRestore("Couldn't restore");
+                NoAds.EndWait(PurchasePending.Outcome.Failed, PurchasePending.Kind.Restore);
             }
 #endif
         }
@@ -227,7 +252,7 @@ namespace FlockFive
         IEnumerator RestoreSettle()
         {
             float t = 0f;
-            while (!_restoreDone && t < 8f)
+            while (!_restoreDone && t < 8f && PurchasePending.Current == PurchasePending.Kind.Restore)
             {
                 t += Time.unscaledDeltaTime;
                 yield return null;
@@ -244,6 +269,10 @@ namespace FlockFive
                 }
             }
             _restoring = false;
+            // Timeout / app resume already ended the wait (and posted its note): stay quiet.
+            if (!PurchasePending.Finish(done && ok ? PurchasePending.Outcome.Success : PurchasePending.Outcome.Failed,
+                    PurchasePending.Kind.Restore))
+                yield break;
             if (!done || !ok) NoAds.NoteRestore(NoAds.Owned ? "Restored" : (done ? "Couldn't restore" : "Couldn't reach the store"));
             else NoAds.NoteRestore(NoAds.Owned ? "Restored" : "Nothing to restore");
         }
@@ -253,6 +282,10 @@ namespace FlockFive
             _ctl = controller;
             _ext = extensions;
             _starting = false;
+#if UNITY_IOS
+            try { extensions.GetExtension<IAppleExtensions>()?.RegisterPurchaseDeferredListener(OnDeferred); }
+            catch (System.Exception e) { Debug.LogWarning("[NoAds] deferred listener: " + e.Message); }
+#endif
             var p = controller.products.WithID(NoAds.ProductId);
             if (p != null && p.hasReceipt) NoAds.Grant();
         }
@@ -271,26 +304,79 @@ namespace FlockFive
         public PurchaseProcessingResult ProcessPurchase(PurchaseEventArgs args)
         {
             if (args.purchasedProduct.definition.id == NoAds.ProductId)
+            {
                 NoAds.Grant();
+                // A restored item during Restore is settled by RestoreSettle instead.
+                PurchasePending.Finish(PurchasePending.Outcome.Success, PurchasePending.Kind.Buy);
+            }
             return PurchaseProcessingResult.Complete;
         }
 
         public void OnPurchaseFailed(Product product, PurchaseFailureReason reason)
         {
-            if (reason == PurchaseFailureReason.UserCancelled) return;
-            // Play answers "item already owned" with DuplicateTransaction.
-            if (reason == PurchaseFailureReason.DuplicateTransaction && product != null
-                && product.definition.id == NoAds.ProductId)
-            {
-                NoAds.Grant();
-                return;
-            }
-            NoAds.NoteRestore("Purchase didn't go through");
+            NoAdsStoreEvents.Failed(product != null ? product.definition.id : null, reason);
+        }
+
+        // Ask to Buy (iOS) / pending payment (Play). Not owned yet: no grant. If the
+        // approval lands later, ProcessPurchase grants then.
+        void OnDeferred(Product product)
+        {
+            NoAdsStoreEvents.Deferred();
+        }
+
+        void Update()
+        {
+            NoAdsStoreEvents.Tick();
+        }
+
+        // Apple's sheet only takes focus; a real trip to the background pauses.
+        void OnApplicationPause(bool paused)
+        {
+            if (paused) PurchasePending.NoteBackground();
+            else PurchasePending.NoteResume();
         }
 
         void OnDestroy()
         {
             if (NoAds.OwnsHost(this)) NoAds.DropHost();
+        }
+    }
+
+    // Store answers that end the wait, kept off the MonoBehaviour so edit-mode
+    // tests drive the same code the device does.
+    public static class NoAdsStoreEvents
+    {
+        public static void Failed(string productId, PurchaseFailureReason reason)
+        {
+            if (reason == PurchaseFailureReason.UserCancelled)
+            {
+                NoAds.EndWait(PurchasePending.Outcome.Cancelled, PurchasePending.Kind.Buy);
+                return;
+            }
+            // Play answers "item already owned" with DuplicateTransaction.
+            if (reason == PurchaseFailureReason.DuplicateTransaction && productId == NoAds.ProductId)
+            {
+                NoAds.Grant();
+                PurchasePending.Finish(PurchasePending.Outcome.Success, PurchasePending.Kind.Buy);
+                return;
+            }
+            // A late failure (after the timeout) still gets its note.
+            PurchasePending.Finish(PurchasePending.Outcome.Failed, PurchasePending.Kind.Buy);
+            NoAds.NoteRestore(PurchasePending.NoteFor(PurchasePending.Outcome.Failed, PurchasePending.Kind.Buy));
+        }
+
+        public static void Deferred()
+        {
+            NoAds.EndWait(PurchasePending.Outcome.Deferred, PurchasePending.Kind.Buy);
+        }
+
+        public static void Tick()
+        {
+            var kind = PurchasePending.Current;
+            var forced = PurchasePending.Tick();
+            if (forced == PurchasePending.Outcome.None) return;
+            string note = PurchasePending.NoteFor(forced, kind);
+            if (!string.IsNullOrEmpty(note)) NoAds.NoteRestore(note);
         }
     }
 }

@@ -22,6 +22,7 @@ namespace FlockFive
             const string BuyLabel = "Go VIP";
             const string RestoreLabel = "Already a VIP? Restore purchase";
             const string MemberRestoreLabel = "New device? Restore purchase";
+            const string RestoringLabel = "Restoring\u2026";
             const string WelcomeLine = "Welcome, VIP!";
             const string WelcomedKey = "flockfive.vip.welcomed";
             const float BuyScale = VipBuyScale;
@@ -366,6 +367,11 @@ namespace FlockFive
                     return;
                 }
                 if (!_open) return;
+                // b89: a store request is out (Go VIP or Restore). The popup holds still:
+                // no taps reach buy / restore / X / outside until the store answers or
+                // PurchasePending times out. Weather and sparkles keep running.
+                var waitKind = PurchasePending.Current;
+                bool waiting = waitKind != PurchasePending.Kind.None;
                 SyncNote();
                 string note = NoAds.RestoreNote;
                 float noteLife = _noteUntil - AdPause.Unscaled;
@@ -461,21 +467,27 @@ namespace FlockFive
                 {
                     float shineStart = (_full ? FullBuyStart : ShortBuyStart) + BuyPopDur + 0.04f;
                     float shineU = _reduce ? -1f : (age - shineStart) / 0.55f;
-                    DrawBuy(popK < 0.999f ? ScaledAbout(flower, popK) : flower, buyHeld, s, shineU, !entering && !Closing);
+                    DrawBuy(popK < 0.999f ? ScaledAbout(flower, popK) : flower, buyHeld && !waiting, s, shineU, !entering && !Closing,
+                        waitKind == PurchasePending.Kind.Buy);
                 }
 
                 float chromeA = dimIn * outDim;
-                DrawRestore(link, linkHeld, s, _member ? MemberRestoreLabel : RestoreLabel, chromeA);
+                bool restoring = waitKind == PurchasePending.Kind.Restore;
+                DrawRestore(link, linkHeld && !waiting, s,
+                    restoring ? RestoringLabel : (_member ? MemberRestoreLabel : RestoreLabel),
+                    waitKind == PurchasePending.Kind.Buy ? chromeA * 0.45f : chromeA, restoring);
                 if (showNote)
                 {
                     float alpha = noteLife > 0.8f ? 1f : noteLife / 0.8f;
                     DrawBottomStatus(status, note, alpha * outDim, s);
                 }
-                if (!Closing) DrawGiftCloseX(xBtn, xHeld, s);
+                if (!Closing) DrawGiftCloseX(xBtn, xHeld && !waiting, s);
                 GUI.color = Color.white;
 
                 // Closing: taps are swallowed above and do nothing else.
                 if (Closing) return;
+                // Waiting on the store: same swallow, no second request, no close.
+                if (waiting) return;
                 if (xHit)
                 {
                     Dismiss();
@@ -485,6 +497,7 @@ namespace FlockFive
                 {
                     Sfx.CardTap();
                     NoAds.Restore();
+                    SyncNote();
                     return;
                 }
                 bool buyIn = _reduce || _skipped || popK > 0.92f;
@@ -891,7 +904,7 @@ namespace FlockFive
                 }
             }
 
-            static void DrawBuy(Rect flower, bool held, float s, float shineU, bool sparkle)
+            static void DrawBuy(Rect flower, bool held, float s, float shineU, bool sparkle, bool waiting = false)
             {
                 // Idle size stays put. PushButton owns the press. The sheen is the idle motion.
                 var disc = DrawPopupButton(flower, held, true);
@@ -904,9 +917,15 @@ namespace FlockFive
                         alignment = TextAnchor.MiddleCenter,
                         wordWrap = false
                     };
+                var cream = new Color(1f, 0.98f, 0.93f, 1f);
+                if (waiting)
+                {
+                    DrawBuyWaiting(disc, s, cream);
+                    if (sparkle) DrawBuySparkle(disc);
+                    return;
+                }
                 string price = NoAds.PriceLabel();
                 bool priced = !string.IsNullOrEmpty(price);
-                var cream = new Color(1f, 0.98f, 0.93f, 1f);
                 var verb = priced
                     ? new Rect(disc.x, disc.y + disc.height * 0.14f, disc.width, disc.height * 0.32f)
                     : new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.52f);
@@ -924,6 +943,11 @@ namespace FlockFive
                 }
                 if (shineU >= 0f && shineU <= 1f) DrawVipShine(disc, shineU);
                 if (!sparkle) return;
+                DrawBuySparkle(disc);
+            }
+
+            static void DrawBuySparkle(Rect disc)
+            {
                 var spark = SpriteCatalog.Sparkle;
                 if (spark == null || spark.texture == null) return;
                 float sz = disc.width * 0.22f;
@@ -933,6 +957,51 @@ namespace FlockFive
                 GUI.color = new Color(1f, 0.96f, 0.75f, 0.9f);
                 GUI.DrawTexture(sr, spark.texture, ScaleMode.ScaleToFit, true);
                 GUI.matrix = prev;
+                GUI.color = Color.white;
+            }
+
+            // Pending face of the Go VIP flower: a small spinner over "Waiting for /
+            // App Store…" in the same cream stamp as the price. Same disc, same size.
+            static void DrawBuyWaiting(Rect disc, float s, Color cream)
+            {
+                var spin = new Rect(disc.center.x - disc.width * 0.09f, disc.y + disc.height * 0.13f, disc.width * 0.18f, disc.width * 0.18f);
+                DrawWaitSpinner(spin, cream);
+                string wait = PurchasePending.WaitLabel(Application.platform == RuntimePlatform.Android);
+                int cut = wait.IndexOf(" for ");
+                string top = cut > 0 ? wait.Substring(0, cut + 4) : wait;
+                string bottom = cut > 0 ? wait.Substring(cut + 5) : "";
+                var r1 = new Rect(disc.x + disc.width * 0.10f, spin.yMax + disc.height * 0.02f, disc.width * 0.80f, disc.height * 0.22f);
+                var r2 = new Rect(disc.x + disc.width * 0.08f, r1.yMax, disc.width * 0.84f, disc.height * 0.24f);
+                int hi = Mathf.Max(14, Mathf.RoundToInt(24f * s));
+                // One size for both lines so they read as one phrase.
+                int f1 = FitFont(_buy, top, r1.width, r1.height * 0.92f, 10, hi);
+                int f2 = string.IsNullOrEmpty(bottom) ? f1 : FitFont(_buy, bottom, r2.width, r2.height * 0.92f, 10, hi);
+                _buy.fontSize = Mathf.Min(f1, f2);
+                int ink = Mathf.Clamp(Mathf.RoundToInt(_buy.fontSize * 0.16f), 2, 7);
+                StampOutlined(r1, top, _buy, cream, 0, ink);
+                if (!string.IsNullOrEmpty(bottom)) StampOutlined(r2, bottom, _buy, cream, 0, ink);
+            }
+
+            // Eight soft dots chasing round; real time, so it keeps turning under the
+            // game pause the store sheet can trigger.
+            static void DrawWaitSpinner(Rect r, Color tint)
+            {
+                if (Event.current == null || Event.current.type != EventType.Repaint) return;
+                var glow = GlowTex();
+                float rad = r.width * 0.40f;
+                float dot = r.width * 0.30f;
+                float head = (AdPause.Unscaled * 1.4f) % 1f;
+                for (int i = 0; i < 8; i++)
+                {
+                    float u = i / 8f;
+                    float ang = u * Mathf.PI * 2f;
+                    var c = r.center + new Vector2(Mathf.Sin(ang), -Mathf.Cos(ang)) * rad;
+                    float lag = (head - u + 1f) % 1f;
+                    GUI.color = new Color(0.18f, 0.10f, 0.03f, 0.55f * (1f - lag * 0.7f));
+                    GUI.DrawTexture(new Rect(c.x - dot * 0.62f, c.y - dot * 0.62f + dot * 0.08f, dot * 1.24f, dot * 1.24f), glow);
+                    GUI.color = new Color(tint.r, tint.g, tint.b, 1f - lag * 0.75f);
+                    GUI.DrawTexture(new Rect(c.x - dot * 0.5f, c.y - dot * 0.5f, dot, dot), glow);
+                }
                 GUI.color = Color.white;
             }
 
@@ -948,7 +1017,7 @@ namespace FlockFive
                 GUI.color = Color.white;
             }
 
-            static void DrawRestore(Rect link, bool held, float s, string label, float alpha)
+            static void DrawRestore(Rect link, bool held, float s, string label, float alpha, bool spinner = false)
             {
                 if (alpha < 0.04f) return;
                 if (_link == null)
@@ -963,6 +1032,10 @@ namespace FlockFive
                 int ink = Mathf.Max(3, Mathf.RoundToInt(_link.fontSize * 0.18f));
                 var col = held ? new Color(1f, 1f, 0.94f, alpha) : new Color(1f, 0.97f, 0.90f, alpha);
                 StampOutlined(link, label, _link, col, 0, ink);
+                if (!spinner) return;
+                float w = _link.CalcSize(new GUIContent(label)).x;
+                float d = _link.fontSize * 1.1f;
+                DrawWaitSpinner(new Rect(link.center.x - w * 0.5f - d * 1.3f, link.center.y - d * 0.5f, d, d), col);
             }
 
             // ---- Welcome, VIP! (once per install) -------------------------------------
