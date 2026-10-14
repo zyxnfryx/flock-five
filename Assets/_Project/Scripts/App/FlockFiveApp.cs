@@ -17232,24 +17232,35 @@ namespace FlockFive
             if (paint)
             {
                 GUI.color = maxxed
-                    ? new Color(0.55f, 0.52f, 0.48f, alpha * 0.55f)
+                    ? new Color(0.82f, 0.93f, 1f, alpha * 0.90f)      // icy keyline
                     : new Color(0.96f, 0.78f, 0.32f, alpha * 0.85f);
                 DrawBevelPlate(PopupButtonTex(PopupTint.Wood, false), key, 28f);
-                GUI.color = new Color(0.16f, 0.08f, 0.03f, alpha * (maxxed ? 0.80f : 1f));
+                GUI.color = maxxed ? new Color(0.10f, 0.16f, 0.26f, alpha) : new Color(0.16f, 0.08f, 0.03f, alpha);
                 DrawBevelPlate(PopupButtonTex(PopupTint.Wood, false), outer, 28f);
             }
-            GUI.color = maxxed
-                ? new Color(0.62f, 0.60f, 0.58f, alpha * 0.85f)   // desaturated, dimmed
-                : new Color(1f, 1f, 1f, alpha);
-            var face = DrawPopupButton(btn, pressed, can ? PopupTint.Gold : PopupTint.Wood, can ? 1f : 0f, false);
+            // v4: can't afford is warm brick clay (Red); MAXXED is a locked diamond plate.
+            Rect face;
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            if (maxxed)
+            {
+                if (paint) DrawDiamondPlate(btn, alpha);
+                face = btn;
+            }
+            else
+            {
+                // Brick: the Red clay warmed and softened toward terracotta so it reads
+                // "not now" rather than "error".
+                if (!can) GUI.color = new Color(0.92f, 0.80f, 0.70f, alpha);
+                face = DrawPopupButton(btn, pressed, can ? PopupTint.Gold : PopupTint.Red, can ? 1f : 0f, false);
+            }
             // Light inner bevel along the top and a soft one down the sides.
             if (paint)
             {
                 float bev = Mathf.Max(2f, rimW * 0.5f);
                 float inset = btnH * 0.18f;
-                GUI.color = new Color(1f, 0.97f, 0.86f, alpha * (maxxed ? 0.18f : can ? 0.55f : 0.32f));
+                GUI.color = new Color(1f, 0.97f, 0.86f, alpha * (maxxed ? 0.60f : can ? 0.55f : 0.40f));
                 GUI.DrawTexture(new Rect(btn.x + inset, btn.y + bev, btn.width - inset * 2f, bev), Texture2D.whiteTexture);
-                GUI.color = new Color(1f, 0.97f, 0.86f, alpha * (maxxed ? 0.08f : 0.18f));
+                GUI.color = new Color(1f, 0.97f, 0.86f, alpha * (maxxed ? 0.25f : 0.18f));
                 GUI.DrawTexture(new Rect(btn.x + bev, btn.y + inset, bev, btn.height - inset * 2f), Texture2D.whiteTexture);
                 GUI.DrawTexture(new Rect(btn.xMax - bev * 2f, btn.y + inset, bev, btn.height - inset * 2f), Texture2D.whiteTexture);
             }
@@ -17265,9 +17276,10 @@ namespace FlockFive
                 float tw = st.CalcSize(new GUIContent(line)).x;
                 float total = lk + lk * 0.3f + tw;
                 float x0 = btn.center.x - total * 0.5f;
-                if (paint) DrawLockGlyph(new Rect(x0, btn.center.y - lk * 0.55f, lk, lk), alpha);
+                if (paint) DrawDiamondGlyph(new Rect(x0, btn.center.y - lk * 0.5f, lk, lk), alpha);
                 var tr = new Rect(x0 + lk * 1.3f, lab.y, tw + 4f, lab.height);
-                StampOutlined(tr, line, st, new Color(0.90f, 0.88f, 0.84f, alpha), 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.12f), 2, 7));
+                StampOutlined(tr, line, st, new Color(1f, 1f, 1f, alpha), 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 2, 8));
+                if (paint) DrawDiamondTwinkles(btn, alpha);
             }
             else
             {
@@ -17293,27 +17305,112 @@ namespace FlockFive
 
         public const string MaxxedWord = "MAXXED";
 
-        // Small padlock from rects: shackle (two posts + bar) over a body with a keyhole.
-        static void DrawLockGlyph(Rect r, float alpha)
+        // ---- MAXXED diamond look (locked) ----
+        static Texture2D _diamondPlate;
+
+        // Icy faceted plate: white-to-pale-blue with diagonal facet bands, same 96 px /
+        // 28 px-radius rounded shape as the clay buttons so DrawBevelPlate slices it alike.
+        static Texture2D DiamondPlateTex()
         {
-            var ink = new Color(0.90f, 0.88f, 0.84f, alpha);
-            var dark = new Color(0.16f, 0.08f, 0.03f, alpha);
-            float t = Mathf.Max(2f, r.width * 0.14f);
-            var body = new Rect(r.x, r.y + r.height * 0.42f, r.width, r.height * 0.58f);
-            float sx0 = r.x + r.width * 0.20f, sx1 = r.xMax - r.width * 0.20f - t;
-            // outline pass then ink pass
+            if (_diamondPlate != null) return _diamondPlate;
+            const int n = 96;
+            const float rad = 28f;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
+            { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave, name = "PopupDiamond" };
+            var px = new Color32[n * n];
+            var top = new Color(0.97f, 0.99f, 1f);
+            var mid = new Color(0.74f, 0.87f, 0.98f);
+            var bot = new Color(0.46f, 0.64f, 0.86f);
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    float d = PopupSdf(x + 0.5f, y + 0.5f, n, n, rad);
+                    float a = Mathf.Clamp01(0.65f - d);
+                    if (a <= 0f) continue;
+                    float v = y / (float)(n - 1); // 0 bottom, 1 top
+                    Color c = v > 0.5f ? Color.Lerp(mid, top, (v - 0.5f) * 2f) : Color.Lerp(bot, mid, v * 2f);
+                    // Facets: alternating diagonal bands, gently lighter/darker.
+                    float f = Mathf.Repeat((x + y * 0.9f) / 22f, 1f);
+                    float g = Mathf.Repeat((x - y * 0.9f) / 30f, 1f);
+                    c = Color.Lerp(c, Color.white, (f < 0.5f ? 0.10f : 0f) + (g < 0.35f ? 0.06f : 0f));
+                    c = Color.Lerp(c, bot, f >= 0.5f && g >= 0.35f ? 0.08f : 0f);
+                    float rim = Mathf.Clamp01((d + 3f) / 3f);
+                    c = Color.Lerp(c, bot, rim * 0.45f);
+                    c.a = a;
+                    px[y * n + x] = (Color32)c;
+                }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _diamondPlate = tex;
+            return tex;
+        }
+
+        // Plate + a slow light sweep (the shared PushButton sheen at a third speed).
+        static void DrawDiamondPlate(Rect r, float alpha)
+        {
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            DrawBevelPlate(DiamondPlateTex(), r, 28f);
+            PushButton.DrawSheen(r, Mathf.Repeat(AdPause.Unscaled / 3.6f, 1f), 0.70f * alpha, false);
+            GUI.color = Color.white;
+        }
+
+        // Small cut-diamond glyph: a stepped crown over a pointed pavilion. The pavilion is
+        // the lower half of a 45-degree square, clipped by a group at the girdle line.
+        static void DrawDiamondGlyph(Rect r, float alpha)
+        {
+            var ink = new Color(0.90f, 0.97f, 1f, alpha);
+            var dark = new Color(0.10f, 0.16f, 0.26f, alpha);
+            float o = Mathf.Max(1.5f, r.width * 0.06f);
+            float girdle = r.y + r.height * 0.40f;
             for (int pass = 0; pass < 2; pass++)
             {
-                float o = pass == 0 ? Mathf.Max(1.5f, t * 0.35f) : 0f;
+                float e = pass == 0 ? o : 0f;
                 GUI.color = pass == 0 ? dark : ink;
-                GUI.DrawTexture(new Rect(sx0 - o, r.y - o, t + o * 2f, body.y - r.y + o), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(sx1 - o, r.y - o, t + o * 2f, body.y - r.y + o), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(sx0 - o, r.y - o, sx1 + t - sx0 + o * 2f, t + o * 2f), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(body.x - o, body.y - o, body.width + o * 2f, body.height + o * 2f), Texture2D.whiteTexture);
+                var grp = new Rect(r.x - e * 2f, girdle, r.width + e * 4f, r.height * 0.62f + e * 2f);
+                GUI.BeginGroup(grp);
+                var keep = GUI.matrix;
+                var c = new Vector2(grp.width * 0.5f, 0f);
+                float side = (r.width * 0.5f + e * 1.41f) * 1.41421f;
+                GUIUtility.RotateAroundPivot(45f, c);
+                GUI.DrawTexture(new Rect(c.x - side * 0.5f, c.y - side * 0.5f, side, side), Texture2D.whiteTexture);
+                GUI.matrix = keep;
+                GUI.EndGroup();
+                GUI.DrawTexture(new Rect(r.x + r.width * 0.20f - e, r.y + r.height * 0.12f - e, r.width * 0.60f + e * 2f, r.height * 0.14f + e), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(r.x - e, r.y + r.height * 0.24f, r.width + e * 2f, r.height * 0.16f + e * 0.5f), Texture2D.whiteTexture);
             }
-            GUI.color = dark;
-            float kh = body.height * 0.34f;
-            GUI.DrawTexture(new Rect(body.center.x - t * 0.5f, body.center.y - kh * 0.5f, t, kh), Texture2D.whiteTexture);
+            GUI.color = new Color(0.55f, 0.72f, 0.92f, alpha);
+            GUI.DrawTexture(new Rect(r.x + r.width * 0.04f, girdle - Mathf.Max(1f, r.height * 0.02f), r.width * 0.92f, Mathf.Max(1.5f, r.height * 0.05f)), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+
+        // Four-point star glints that bloom and fade on staggered timers.
+        static readonly Vector3[] DiamondGlints =
+        {
+            new Vector3(0.12f, 0.28f, 0.0f), new Vector3(0.86f, 0.24f, 0.37f),
+            new Vector3(0.70f, 0.78f, 0.63f), new Vector3(0.28f, 0.80f, 0.18f),
+            new Vector3(0.50f, 0.14f, 0.81f),
+        };
+
+        static void DrawDiamondTwinkles(Rect r, float alpha)
+        {
+            const float period = 2.2f;
+            float now = AdPause.Unscaled;
+            for (int i = 0; i < DiamondGlints.Length; i++)
+            {
+                var g = DiamondGlints[i];
+                float u = Mathf.Repeat(now / period + g.z, 1f);
+                if (u > 0.35f) continue;               // each glint is up ~35% of its cycle
+                float k = Mathf.Sin(u / 0.35f * Mathf.PI); // 0 -> 1 -> 0
+                float len = r.height * 0.30f * k;
+                float th = Mathf.Max(1.5f, r.height * 0.035f);
+                var c = new Vector2(r.x + r.width * g.x, r.y + r.height * g.y);
+                GUI.color = new Color(1f, 1f, 1f, alpha * 0.95f * k);
+                GUI.DrawTexture(new Rect(c.x - len * 0.5f, c.y - th * 0.5f, len, th), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(c.x - th * 0.5f, c.y - len * 0.5f, th, len), Texture2D.whiteTexture);
+                float dot = th * 2.2f;
+                GUI.DrawTexture(new Rect(c.x - dot * 0.5f, c.y - dot * 0.5f, dot, dot), Texture2D.whiteTexture);
+            }
+            GUI.color = Color.white;
         }
 
         void DrawFlipHint(float y, float s, float alpha)
