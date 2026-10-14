@@ -50,6 +50,16 @@ namespace FlockFive.Editor
                     LevelCurtain.BeatName(0.10f) == SparkleFx.CurtainPhase(0.10f)
                     && Mathf.Abs(LevelCurtain.Duration - SparkleFx.CurtainDuration) < 0.001f,
                     "shared SparkleFx clock");
+                float keptStep = Time.captureDeltaTime;
+                Time.captureDeltaTime = 1f / 60f;
+                LevelCurtain.Reset();
+                float locked = LevelCurtain.Clock(3f);
+                float again = LevelCurtain.Clock(9f);
+                Time.captureDeltaTime = keptStep;
+                LevelCurtain.Reset();
+                Check("capture-clock-holds-the-frame",
+                    Mathf.Abs(locked - 3f) < 0.001f && Mathf.Abs(again - locked) < 0.001f,
+                    "locked " + locked.ToString("0.000") + " again " + again.ToString("0.000"));
 
                 float shut = SparkleFx.CurtainOpen(LevelCurtain.WashEnd);
                 float mid = SparkleFx.CurtainOpen(0.76f);

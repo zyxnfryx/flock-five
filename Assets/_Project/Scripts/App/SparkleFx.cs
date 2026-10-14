@@ -198,12 +198,16 @@ namespace FlockFive
             var tint = hot
                 ? new Color(1f, 0.98f, 0.92f, 1f)
                 : new Color(1f, 0.84f, 0.28f, 1f);
-            DrawGlow(at, size * 1.9f, new Color(1f, 0.78f, 0.24f, alpha * 0.50f));
+            // Wide haze under a tighter glow. The star sits in that light so the
+            // wash is a sheet of sparkles rather than a grid of stamps.
+            DrawGlow(at, size * 2.6f, new Color(1f, 0.62f, 0.16f, alpha * 0.22f));
+            DrawGlow(at, size * 1.55f, new Color(1f, 0.84f, 0.34f, alpha * 0.48f));
             var spr = SpriteCatalog.Sparkle;
+            float star = hot ? size * 0.72f : size;
             if (spr != null && spr.texture != null)
-                DrawAt(at, size, alpha, tint, false);
+                DrawAt(at, star, alpha, tint, false);
             else
-                DrawAt(at, size, alpha, tint, true);
+                DrawAt(at, star, alpha, tint, true);
         }
 
         // Kit / adopted avatar. Seats are fractions of the drawn sheet from its

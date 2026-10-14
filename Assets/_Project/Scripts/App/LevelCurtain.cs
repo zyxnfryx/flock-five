@@ -201,6 +201,8 @@ namespace FlockFive
             float e = u * u * (3f - 2f * u);
             float x = ox + (seatX - ox) * e;
             float y = oy + (seatY - oy) * e;
+            // Vertical only. A sideways drift would turn the tear into a wipe.
+            y += Mathf.Sin(age * 8.5f + h4 * 6.2831853f) * 0.0045f;
             float open = SparkleFx.CurtainOpen(age);
             x += SparkleFx.CurtainShiftX(seatX, open);
             if (x < -0.04f || x > 1.04f || y < -0.04f || y > 1.04f) return false;
