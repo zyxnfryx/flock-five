@@ -17,11 +17,34 @@ namespace FlockFive
             if (peak < 0.02f) return new Color(MinPeak, MinPeak, MinPeak, a);
             if (peak >= MinPeak) return new Color(tint.r, tint.g, tint.b, a);
             float k = MinPeak / peak;
-            return new Color(
-                Mathf.Min(1f, tint.r * k),
-                Mathf.Min(1f, tint.g * k),
-                Mathf.Min(1f, tint.b * k),
-                a);
+            float r = Mathf.Min(1f, tint.r * k);
+            float g = Mathf.Min(1f, tint.g * k);
+            float b = Mathf.Min(1f, tint.b * k);
+            // A flat lift leaves Ink Band, Coal Stripe, Onyx Shade, and the other
+            // neutral darks too close to the cream plate (under the 2.4 cutoff).
+            // Green is most of the painted bee's light, so easing it darkens the
+            // body and keeps the black stripes cut. The peak stays on red or blue.
+            var plate = CardPlate.Face(tint, true);
+            const float floor = 2.50f;
+            for (int i = 0; i < 14; i++)
+            {
+                if (Contrast(Body(new Color(r, g, b, 1f)), plate) >= floor) break;
+                bool dropG = g > 0.22f && (r + 0.001f >= MinPeak || b + 0.001f >= MinPeak || g > MinPeak);
+                bool dropR = r > 0.22f && (g + 0.001f >= MinPeak || b + 0.001f >= MinPeak || r > MinPeak);
+                if (dropG)
+                    g *= 0.96f;
+                else if (dropR)
+                    r *= 0.96f;
+                else
+                {
+                    r *= 0.96f;
+                    g *= 0.96f;
+                    b = Mathf.Max(b, MinPeak);
+                }
+                if (Mathf.Max(r, Mathf.Max(g, b)) + 0.001f < MinPeak)
+                    b = MinPeak;
+            }
+            return new Color(r, g, b, a);
         }
 
         // Approximate yellow of the painted bee under the multiply. Contrast checks
