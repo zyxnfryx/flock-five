@@ -2630,29 +2630,21 @@ namespace FlockFive
             return copy;
         }
 
-        // Garden bee callout. Snug plate just above the hive, bee icon on the left.
+        // Garden bee callout. Shared banner, high under the title row, no bee icon.
         void DrawBeeGardenLine(string text, float s)
         {
-            var full = BeeGardenPlate(s);
-            var fit = LessonCaptionFit(text, Screen.width, Screen.height);
-            float slot = CaptionLayout.BeeIconSlot(fit.LineH);
-            var snug = new Rect(full.x + slot, full.y, Mathf.Max(8f, full.width - slot), full.height);
-            var textR = new Rect(
-                snug.center.x - fit.TextW * 0.5f,
-                snug.center.y - fit.TextH * 0.5f,
-                Mathf.Max(48f, fit.TextW),
-                Mathf.Max(24f, fit.TextH));
-            var seat = SeatAroundText(textR, s);
+            var seat = BeeGardenPlate(s);
             CapSpot("bee.garden"); PaintCoachCaption(text, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
         }
 
         Rect BeeGardenPlate(float s)
         {
-            HudLayout(out _, out _, out _, out _, out var hive);
             string line = string.IsNullOrEmpty(_cueLine) ? HiveIntroLine : _cueLine;
-            var fit = LessonCaptionFit(line, Screen.width, Screen.height);
-            float slot = CaptionLayout.BeeIconSlot(fit.LineH);
-            return BeeCaptionSeat(Screen.width, Screen.height, hive, fit.PlateW, fit.PlateH, slot);
+            float w = Screen.width > 2f ? Screen.width : 1179f;
+            float h = Screen.height > 2f ? Screen.height : 2556f;
+            var safe = Screen.safeArea;
+            if (safe.width < 2f || safe.height < 2f) safe = new Rect(0f, 0f, w, h);
+            return BannerRect("bee.garden", line, w, h, safe, new Rect(0f, 0f, w, 64f), 0f, false, s, out _);
         }
 
         // Shared garden/tutorial line. SeatTutorialCaption latches the plate.
@@ -3235,47 +3227,35 @@ namespace FlockFive
             // lowers its own bottom over the VIP badge. Other spots never enter that step.
             band = BannerRect(spot, text, w, screenH, safe, seat, _pokerTitleBottom, _adoptLive, s, out px, false);
             var st = CoachLineStyle();
-            if (_bandContent == null) _bandContent = new GUIContent();
-            _bandContent.text = text;
-            int keep = st.fontSize; bool wrap = st.wordWrap;
-            st.fontSize = px;
-            st.wordWrap = false;
-            BannerText = text;
-            float one = st.CalcSize(_bandContent).x;
-            if (one > w * 0.92f && text.IndexOf('\n') < 0)
-            {
-                int best = -1; float bestD = float.MaxValue;
-                for (int i = 1; i < text.Length - 1; i++)
-                {
-                    if (text[i] != ' ') continue;
-                    _bandContent.text = text.Substring(0, i);
-                    float a1 = st.CalcSize(_bandContent).x;
-                    _bandContent.text = text.Substring(i + 1);
-                    float a2 = st.CalcSize(_bandContent).x;
-                    float d = Mathf.Abs(a1 - a2);
-                    if (a1 <= w * 0.92f && a2 <= w * 0.92f && d < bestD) { bestD = d; best = i; }
-                }
-                if (best > 0) BannerText = text.Substring(0, best) + "\n" + text.Substring(best + 1);
-                _bandContent.text = text;
-            }
-            st.fontSize = keep; st.wordWrap = wrap;
+            float maxW = CaptionLayout.BannerMeasureWidth(w, st, text, px);
+            var fitted = CaptionLayout.FitBanner(st, text, maxW, px);
+            BannerText = string.IsNullOrEmpty(fitted.Shown) ? text : fitted.Shown;
+            px = fitted.Font;
             float minTop = Mathf.Max(safe.yMin, TopHud() + (56f * 2f + 4f) * s * 0.92f);
             float gap = 8f * s;
-            for (int pass = 0; pass < 2; pass++)
+            // The bee banner stays high under the title. Sliding it under a subject
+            // would drop it onto the hive and the glove.
+            bool bee = spot == "bee.garden";
+            if (!bee)
             {
-                bool moved = false;
-                for (int k = 0; k < 2; k++)
+                for (int pass = 0; pass < 2; pass++)
                 {
-                    Rect subj = k == 0 ? (_captionSubjectFrame >= Time.frameCount - 1 ? _captionSubject : default)
-                        : (_gloveTapRectOn && GloveTargetFresh() ? _gloveTapRect : default);
-                    if (subj.width < 2f || !band.Overlaps(subj)) continue;
-                    float up = subj.yMin - band.height - gap;
-                    band.y = up >= minTop ? up : subj.yMax + gap;
-                    moved = true;
+                    bool moved = false;
+                    for (int k = 0; k < 2; k++)
+                    {
+                        Rect subj = k == 0 ? (_captionSubjectFrame >= Time.frameCount - 1 ? _captionSubject : default)
+                            : (_gloveTapRectOn && GloveTargetFresh() ? _gloveTapRect : default);
+                        if (subj.width < 2f || !band.Overlaps(subj)) continue;
+                        float up = subj.yMin - band.height - gap;
+                        band.y = up >= minTop ? up : subj.yMax + gap;
+                        moved = true;
+                    }
+                    if (!moved) break;
                 }
-                if (!moved) break;
+                if (_gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
             }
-            if (_gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
+            else if (band.y < minTop)
+                band.y = minTop;
             float drop = CaptionStyles.Drop(spot);
             if (drop > 0f)
                 CoverDown(ref band, AdoptVipBadgeRect(w, screenH, safe), drop * s, SplashWordBottom(screenH, safe, s));
@@ -3290,22 +3270,21 @@ namespace FlockFive
         // glove check) lets that one entry move down over the home VIP badge.
         public static Rect BannerRect(string spot, string text, float w, float h, Rect safe, Rect seat, float titleBottom, bool adoptLive, float s, out int px, bool cover = true)
         {
-            px = 18;
+            px = CaptionLayout.BannerFont(w, h);
             var st = CoachLineStyle();
             int keep = st.fontSize;
             bool wrap = st.wordWrap;
-            var content = new GUIContent(text ?? "");
-            int hi = Mathf.Max(22, Mathf.RoundToInt(44f * DeviceFit.Ui(w, h) * 0.62f));
-            st.wordWrap = true;
-            float th = 0f;
+            float maxW = CaptionLayout.BannerMeasureWidth(w, st, text ?? "", px);
+            float th = px;
             try
             {
-                for (px = hi; px >= 18; px -= 2)
-                {
-                    st.fontSize = px;
-                    th = st.CalcHeight(content, Mathf.Max(8f, w * 0.92f));
-                    if (th <= st.lineHeight * 2.2f) break;
-                }
+                var fit = CaptionLayout.FitBanner(st, text ?? "", maxW, px);
+                px = fit.Font;
+                st.wordWrap = true;
+                st.fontSize = px;
+                var content = new GUIContent(string.IsNullOrEmpty(fit.Shown) ? (text ?? "") : fit.Shown);
+                th = st.CalcHeight(content, maxW);
+                if (th < 1f) th = 1f;
             }
             finally
             {
@@ -3321,10 +3300,77 @@ namespace FlockFive
             // with Drop then moves down; the others keep this seat.
             if (adoptLive)
                 y = Mathf.Max(safe.yMin, (titleBottom > 8f ? titleBottom : h * 0.17f) + 4f * s);
+            // Bee callout: high under the title / coin row, clear of the hive.
+            if (spot == "bee.garden")
+                y = minTop;
             var band = new Rect(0f, y, w, bh);
+            Rect badge = default;
             if (cover && CaptionStyles.Drop(spot) > 0f)
-                CoverDown(ref band, AdoptVipBadgeRect(w, h, safe), CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s));
+            {
+                badge = AdoptVipBadgeRect(w, h, safe);
+                CoverDown(ref band, badge, CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s));
+            }
+            LiftOffMainButtons(ref band, w, h, safe, s, badge);
             return band;
+        }
+
+        // Play flower, garden restart, garden hive, settings gear. A banner may cover
+        // the adopt VIP badge; it may not cover one of these.
+        public static int FillMainButtons(float w, float h, Rect safe, Rect[] dst)
+        {
+            if (dst == null || dst.Length < 4) return 0;
+            dst[0] = SplashPress.LevelRect(w, h, safe);
+            CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
+            dst[1] = restart;
+            dst[2] = hive;
+            dst[3] = SettingsGearRect(w, h, safe);
+            return 4;
+        }
+
+        static bool CoversBadge(Rect band, Rect badge)
+        {
+            if (badge.width < 2f || badge.height < 2f) return true;
+            return band.xMin <= badge.xMin + 0.5f
+                && band.yMin <= badge.yMin + 0.5f
+                && band.xMax >= badge.xMax - 0.5f
+                && band.yMax >= badge.yMax - 0.5f;
+        }
+
+        static void LiftOffMainButtons(ref Rect band, float w, float h, Rect safe, float s, Rect mustCover)
+        {
+            var buttons = new Rect[4];
+            int n = FillMainButtons(w, h, safe, buttons);
+            float gap = 8f * (s > 0.01f ? s : 1f);
+            for (int pass = 0; pass < n; pass++)
+            {
+                int hit = -1;
+                for (int i = 0; i < n; i++)
+                {
+                    if (buttons[i].width > 2f && band.Overlaps(buttons[i])) { hit = i; break; }
+                }
+                if (hit < 0) return;
+                var btn = buttons[hit];
+                float above = btn.yMin - gap - band.height;
+                float below = btn.yMax + gap;
+                if (BannerPlaceClear(band, above, h, mustCover, buttons, n))
+                    band.y = above;
+                else if (BannerPlaceClear(band, below, h, mustCover, buttons, n))
+                    band.y = below;
+                else
+                    return;
+            }
+        }
+
+        static bool BannerPlaceClear(Rect band, float y, float h, Rect mustCover, Rect[] buttons, int n)
+        {
+            if (y < 0f) return false;
+            if (y + band.height > h + 0.5f) return false;
+            var moved = band;
+            moved.y = y;
+            if (!CoversBadge(moved, mustCover)) return false;
+            for (int i = 0; i < n; i++)
+                if (buttons[i].width > 2f && moved.Overlaps(buttons[i])) return false;
+            return true;
         }
 
         // VIP medal plus the No Ads ribbon, daily hidden (the greet packs VIP at the top of the left rail).
@@ -3421,7 +3467,9 @@ namespace FlockFive
                 int keep = st.fontSize;
                 st.fontSize = bandPx;
                 st.wordWrap = true;
-                StampBannerText(new Rect(band.x + band.width * 0.04f, band.y, band.width * 0.92f, band.height), BannerText ?? text, st, fade, true);
+                float inner = CaptionLayout.BannerMeasureWidth(band.width, st, text, bandPx);
+                float ix = band.x + (band.width - inner) * 0.5f;
+                StampBannerText(new Rect(ix, band.y, inner, band.height), BannerText ?? text, st, fade, true);
                 st.fontSize = keep;
                 st.wordWrap = false;
                 return;

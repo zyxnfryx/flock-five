@@ -31,7 +31,7 @@ public static class CaptionStyles
         { "badger.caption", new Spot(true) },     // badger fight narration
         { "home.daily",     new Spot(false) },    // 'Tap Daily for your bonus!' (rail button)
         { "daily.claim",    new Spot(false) },    // Daily card claim step (inside the card)
-        { "bee.garden",     new Spot(false) },    // bee callout (icon)
+        { "bee.garden",     new Spot(true) },     // 'You found a bee!' — high under the title, no icon
         { "home.poker",     new Spot(false) },    // 'You earned coins! Tap poker to bet them.'
         { "home.anchored",  new Spot(false) },    // other captions anchored to a small home element
         { "badger.lesson",  new Spot(false) },    // pinned badger lesson rule

@@ -43,7 +43,7 @@ namespace FlockFive.Editor
                 Set("_adoptOwed", true); Set("_adoptLive", true);
                 // b86: fixed caption table.
                 Check("caption-table-fixed", CaptionStyles.IsBanner("adopt.greet") && !CaptionStyles.IsBanner("home.daily") && !CaptionStyles.IsBanner("daily.claim")
-                    && !CaptionStyles.IsBanner("bee.garden") && !CaptionStyles.IsBanner("home.poker") && !CaptionStyles.IsBanner("") && CaptionStyles.BannerAlpha >= 0.8f, "table");
+                    && CaptionStyles.IsBanner("bee.garden") && !CaptionStyles.IsBanner("home.poker") && !CaptionStyles.IsBanner("") && CaptionStyles.BannerAlpha >= 0.8f, "table");
                 // b86: hub count-up is monotone, never jumps by more than an eased step, lands exactly.
                 { int last = 0; bool mono = true; int maxStep = 0;
                   for (int i = 0; i <= 42; i++) { int v = FlockFiveApp.HubEaseAt(0, 2000, i / 42f); if (v < last) mono = false; maxStep = Mathf.Max(maxStep, v - last); last = v; }

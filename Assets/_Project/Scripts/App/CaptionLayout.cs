@@ -105,9 +105,22 @@ namespace FlockFive
 
         public static bool LineFits(GUIStyle style, string line, float maxW, int font)
         {
-            if (string.IsNullOrEmpty(line)) return true;
-            Bind(style, line, font, false);
-            return _scratch.CalcSize(_content).x <= maxW + 0.5f;
+            return LineWidth(style, line, font) <= maxW + 0.5f;
+        }
+
+        // Same width CalcSize reports for one unwrapped row. Requests the glyphs
+        // first so a dynamic font does not answer with a short guess.
+        public static float LineWidth(GUIStyle style, string line, int font)
+        {
+            if (string.IsNullOrEmpty(line)) return 0f;
+            int size = font < 1 ? 1 : font;
+            if (style != null && style.font != null)
+                style.font.RequestCharactersInTexture(line, size, style.fontStyle);
+            Bind(style, line, size, false);
+            // Bold dynamic fonts report a short width on the first CalcSize.
+            float a = _scratch.CalcSize(_content).x;
+            float b = _scratch.CalcSize(_content).x;
+            return a > b ? a : b;
         }
 
         static bool WidthsFit(GUIStyle style, string[] parts, float maxW, int font)
@@ -167,10 +180,12 @@ namespace FlockFive
 
         public const string AdoptGreetLine = "Look, a bird followed you home!";
 
-        // Small bee on the left of the garden bee plate. Slot is the icon plus a gap.
+        // The garden bee callout is a shared banner. The plate used to draw a bee
+        // sprite on the left; that icon is gone so the words match the other banners.
         public static bool WantsBeeIcon(string text)
         {
-            return text == HiveGardenLine || text == HiveGardenEmojiLine;
+            if (string.IsNullOrEmpty(text)) return false;
+            return false;
         }
 
         public static float BeeIconSlot(float lineH)
@@ -504,6 +519,264 @@ namespace FlockFive
                 sb.Append(cur);
             }
             return sb.Length > 0 ? sb.ToString() : piece;
+        }
+
+        // Banner type. One size for every banner: the size the adopt greet already
+        // uses (the old shrink loop's start). Banners do not auto-shrink. A long
+        // line wraps into at most BannerMaxLines balanced rows and the plate grows.
+        public const int BannerMaxLines = 3;
+
+        public static int BannerFont(float screenW, float screenH)
+        {
+            float ui = DeviceFit.Ui(screenW, screenH);
+            int px = Mathf.RoundToInt(44f * ui * 0.62f);
+            if (px < 22) px = 22;
+            return px;
+        }
+
+        // Preferred text column. A long row at the fixed size (the sparrow line on
+        // a phone) does not fit here, so BannerMeasureWidth opens the column out
+        // to the screen edge instead of shrinking the font.
+        public const float BannerInsetFrac = 0.92f;
+
+        public static float BannerMeasureWidth(float screenW, GUIStyle style, string text, int font)
+        {
+            float full = screenW < 8f ? 8f : screenW;
+            float inset = full * BannerInsetFrac;
+            if (inset < 8f) inset = 8f;
+            if (inset > full) inset = full;
+            if (string.IsNullOrEmpty(text)) return inset;
+            var fit = FitBanner(style, text, inset, font);
+            if (fit.Lines >= 1 && fit.Lines <= BannerMaxLines && ShownFits(style, fit.Shown, inset, font))
+                return inset;
+            return full;
+        }
+
+        public static bool ShownFits(GUIStyle style, string shown, float maxW, int font)
+        {
+            if (string.IsNullOrEmpty(shown)) return true;
+            int i = 0;
+            while (i <= shown.Length)
+            {
+                int j = shown.IndexOf('\n', i);
+                if (j < 0) j = shown.Length;
+                if (j > i && !LineFits(style, shown.Substring(i, j - i), maxW, font)) return false;
+                if (j >= shown.Length) break;
+                i = j + 1;
+            }
+            return true;
+        }
+
+        public struct BannerMeasure
+        {
+            public string Shown;
+            public int Font;
+            public float TextH;
+            public int Lines;
+        }
+
+        // Fixed `font`. No shrink. Authored rows stay when each one fits in maxW
+        // and there are at most BannerMaxLines of them. Otherwise the words
+        // reflow into the fewest balanced rows that fit, never more than the cap.
+        public static BannerMeasure FitBanner(GUIStyle style, string text, float maxW, int font)
+        {
+            var measure = new BannerMeasure();
+            measure.Font = font < 1 ? 1 : font;
+            measure.Shown = text ?? "";
+            measure.Lines = 1;
+            measure.TextH = 1f;
+            if (string.IsNullOrEmpty(text)) return measure;
+            if (maxW < 8f) maxW = 8f;
+            string shown = AuthoredBanner(style, text, maxW, measure.Font);
+            if (shown == null) shown = BalancedBanner(style, text, maxW, measure.Font, BannerMaxLines);
+            if (string.IsNullOrEmpty(shown)) shown = text;
+            int lines = 1;
+            for (int i = 0; i < shown.Length; i++)
+                if (shown[i] == '\n') lines++;
+            if (lines < 1) lines = 1;
+            float lineH = LineHeight(style, measure.Font);
+            float stack = lineH * lines;
+            Bind(style, shown, measure.Font, true);
+            float th = _scratch.CalcHeight(_content, maxW);
+            if (th < stack * 0.85f) th = stack;
+            if (th > stack * 1.25f) th = stack;
+            if (th < 1f) th = 1f;
+            measure.Shown = shown;
+            measure.TextH = th;
+            measure.Lines = lines;
+            return measure;
+        }
+
+        // Authored newlines, when every piece fits on one row. A blank row is not
+        // this path: the balancer drops it and refolds the words.
+        static string AuthoredBanner(GUIStyle style, string text, float maxW, int font)
+        {
+            if (text.IndexOf("\n\n", System.StringComparison.Ordinal) >= 0) return null;
+            if (text.IndexOf('\n') < 0)
+                return LineFits(style, text, maxW, font) ? text : null;
+            int lines = 0;
+            int i = 0;
+            while (i <= text.Length)
+            {
+                int j = text.IndexOf('\n', i);
+                if (j < 0) j = text.Length;
+                int len = j - i;
+                if (len > 0)
+                {
+                    if (!LineFits(style, text.Substring(i, len), maxW, font)) return null;
+                    lines++;
+                    if (lines > BannerMaxLines) return null;
+                }
+                if (j >= text.Length) break;
+                i = j + 1;
+            }
+            if (lines < 1) return null;
+            return text;
+        }
+
+        static string[] _banWords = new string[48];
+        static float[] _banWordW = new float[48];
+        static float[,] _banCost = new float[4, 49];
+        static int[,] _banPrev = new int[4, 49];
+        static float[,] _spanW = new float[48, 49];
+
+        static string BalancedBanner(GUIStyle style, string text, float maxW, int font, int maxLines)
+        {
+            if (maxLines < 1) maxLines = 1;
+            if (maxLines > 3) maxLines = 3;
+            int n = TakeWords(text);
+            if (n <= 0) return text ?? "";
+            if (n == 1) return _banWords[0];
+            if (n > _banWordW.Length) return text ?? "";
+            MeasureSpans(style, n, font);
+            int use = 0;
+            for (int k = 1; k <= maxLines && k <= n; k++)
+            {
+                PackLines(n, k);
+                if (_banCost[k, n] <= maxW + 0.5f) { use = k; break; }
+            }
+            if (use < 1)
+            {
+                use = n < maxLines ? n : maxLines;
+                PackLines(n, use);
+            }
+            return JoinPacked(n, use);
+        }
+
+        // Width of words [from, to) as one drawn row. Same CalcSize LineFits uses,
+        // so a packed row cannot slip past the fit check on a short space guess.
+        static void MeasureSpans(GUIStyle style, int n, int font)
+        {
+            int cap = _banWords.Length;
+            if (_spanW.GetLength(0) < cap || _spanW.GetLength(1) < cap + 1)
+                _spanW = new float[cap, cap + 1];
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < n; i++)
+            {
+                sb.Length = 0;
+                for (int j = i; j < n; j++)
+                {
+                    if (sb.Length > 0) sb.Append(' ');
+                    sb.Append(_banWords[j]);
+                    _spanW[i, j + 1] = LineWidth(style, sb.ToString(), font);
+                }
+            }
+        }
+
+        static int TakeWords(string text)
+        {
+            int n = 0;
+            int i = 0;
+            int len = text.Length;
+            while (i < len)
+            {
+                while (i < len)
+                {
+                    char c = text[i];
+                    if (c != ' ' && c != '\n' && c != '\r' && c != '\t') break;
+                    i++;
+                }
+                if (i >= len) break;
+                int j = i + 1;
+                while (j < len)
+                {
+                    char c = text[j];
+                    if (c == ' ' || c == '\n' || c == '\r' || c == '\t') break;
+                    j++;
+                }
+                if (n >= _banWords.Length)
+                {
+                    var grown = new string[_banWords.Length * 2];
+                    for (int k = 0; k < _banWords.Length; k++) grown[k] = _banWords[k];
+                    _banWords = grown;
+                    _banWordW = new float[_banWords.Length];
+                    int rows = _banCost.GetLength(0);
+                    _banCost = new float[rows, _banWords.Length + 1];
+                    _banPrev = new int[rows, _banWords.Length + 1];
+                }
+                _banWords[n++] = text.Substring(i, j - i);
+                i = j;
+            }
+            return n;
+        }
+
+        // cost[k, i] is the narrowest "widest row" covering the first i words in k rows.
+        static void PackLines(int n, int lines)
+        {
+            int cap = _banCost.GetLength(1);
+            if (n + 1 > cap) return;
+            for (int k = 0; k <= lines; k++)
+                for (int i = 0; i <= n; i++)
+                {
+                    _banCost[k, i] = 1e9f;
+                    _banPrev[k, i] = 0;
+                }
+            _banCost[0, 0] = 0f;
+            for (int k = 1; k <= lines; k++)
+            {
+                for (int i = k; i <= n; i++)
+                {
+                    float best = 1e9f;
+                    int at = 0;
+                    int p0 = k == 1 ? 0 : k - 1;
+                    int p1 = k == 1 ? 0 : i - 1;
+                    for (int p = p0; p <= p1; p++)
+                    {
+                        float prev = k == 1 ? 0f : _banCost[k - 1, p];
+                        if (prev >= 1e8f) continue;
+                        float row = _spanW[p, i];
+                        float mx = row > prev ? row : prev;
+                        if (mx < best) { best = mx; at = p; }
+                    }
+                    _banCost[k, i] = best;
+                    _banPrev[k, i] = at;
+                }
+            }
+        }
+
+        static string JoinPacked(int n, int lines)
+        {
+            var start = new int[lines];
+            int i = n;
+            for (int k = lines; k >= 1; k--)
+            {
+                int p = _banPrev[k, i];
+                start[k - 1] = p;
+                i = p;
+            }
+            var sb = new System.Text.StringBuilder();
+            for (int k = 0; k < lines; k++)
+            {
+                int a = start[k];
+                int b = k + 1 < lines ? start[k + 1] : n;
+                if (k > 0) sb.Append('\n');
+                for (int w = a; w < b; w++)
+                {
+                    if (w > a) sb.Append(' ');
+                    sb.Append(_banWords[w]);
+                }
+            }
+            return sb.ToString();
         }
 
         // Splits a long sentence at the space nearest its middle. Short or
