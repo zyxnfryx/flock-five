@@ -377,9 +377,15 @@ namespace FlockFive.Editor
         {
             Fill(px, sheetW, sheetH, x0 + 4, y0 + 4, cellW - 8, 28, new Color32(18, 32, 24, 255));
             var ink = new Color32(236, 228, 196, 255);
+            string[] groups = { "HIVE", "ALBUM", "LEVEL", "REST" };
+            string tag = sample.Spot.Group >= 0 && sample.Spot.Group < groups.Length ? groups[sample.Spot.Group] : "";
             DrawString(px, sheetW, sheetH, sample.Spot.Name, 18, x0 + 12, y0 + 6, ink);
-            DrawString(px, sheetW, sheetH, "frame 0", 14, x0 + 16, y0 + 32, ink);
-            DrawString(px, sheetW, sheetH, "tap", 14, x0 + cellW / 2 + 8, y0 + 32, ink);
+            int tagScale = 2;
+            DrawString(px, sheetW, sheetH, tag, 14, x0 + cellW - 16 - tag.Length * 4 * tagScale, y0 + 8, ink);
+            // Same digits on both panels: the heading does not change between them.
+            string deg = Mathf.RoundToInt(sample.Angle).ToString();
+            DrawString(px, sheetW, sheetH, "FRAME 0  " + deg, 14, x0 + 16, y0 + 32, ink);
+            DrawString(px, sheetW, sheetH, "TAP  " + deg, 14, x0 + cellW / 2 + 8, y0 + 32, ink);
             float dw = dh * (sw / (float)Mathf.Max(1, sh));
             float viewW = cellW * 0.5f - 12f;
             float viewH = cellH - 58f;
@@ -401,6 +407,13 @@ namespace FlockFive.Editor
             Stroke(px, sheetW, sheetH, a, b, line);
             var at = atPerch ? a : b;
             Stamp(px, sheetW, sheetH, src, sw, sh, tip, at, ang, mirror, dw * scale, dh * scale, 1f);
+            var dir = b - a;
+            if (dir.sqrMagnitude > 4f)
+            {
+                var n = dir.normalized;
+                // Past the fingertip, along the locked heading, so a short hop still shows the poke.
+                Stroke(px, sheetW, sheetH, at, at + n * 18f, gold);
+            }
             Dot(px, sheetW, sheetH, b, gold);
         }
 
