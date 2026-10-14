@@ -3156,6 +3156,7 @@ namespace FlockFive
         string _bandStyleFor;
         bool _bandStyleBanner;
         string _capSpot; bool _capNoGate;
+        string _bannerInkSpot;
         void CapSpot(string id) { _capSpot = id; }
 
         bool CaptionBannerFits(string text, Rect seat, float s, out Rect band, out int px)
@@ -3167,7 +3168,8 @@ namespace FlockFive
             band = default; px = 0;
             if (!CaptionStyles.IsBanner(spot)) { SnugUses++; BannerSkip = "table snug " + spot; return false; }
             _capNoGate = true;
-            bool fits = CaptionBannerFitsRaw(text, seat, s, out band, out px);
+            bool fits = CaptionBannerFitsRaw(text, seat, s, spot, out band, out px);
+            if (fits) _bannerInkSpot = spot;
             _capNoGate = false;
             return fits;
         }
@@ -3181,7 +3183,7 @@ namespace FlockFive
             return r.width > 2f && band.Overlaps(r);
         }
 
-        bool CaptionBannerFitsRaw(string text, Rect seat, float s, out Rect band, out int px)
+        bool CaptionBannerFitsRaw(string text, Rect seat, float s, string spot, out Rect band, out int px)
         {
             band = default; px = 0;
             if (!CaptionBanner || string.IsNullOrEmpty(text)) return false;
@@ -3189,22 +3191,17 @@ namespace FlockFive
             // The adopt scene is a home lesson, not a card: its captions take the banner.
             bool popup = om != ModalBlock.Id.None && om != ModalBlock.Id.Adopt && om != ModalBlock.Id.Streak;
             if (!_capNoGate && (popup || CaptionLayout.WantsBeeIcon(text))) { SnugUses++; BannerSkip = popup ? "popup " + OpenModal() : "bee"; return false; }
+            float w = Screen.width;
+            float screenH = Screen.height;
+            var safe = Screen.safeArea;
+            // Shared seat first. The glove check uses this band, then a spot with Drop
+            // lowers its own bottom over the VIP badge. Other spots never enter that step.
+            band = BannerRect(spot, text, w, screenH, safe, seat, _pokerTitleBottom, _adoptLive, s, out px, false);
             var st = CoachLineStyle();
             if (_bandContent == null) _bandContent = new GUIContent();
             _bandContent.text = text;
-            float w = Screen.width;
-            int hi = Mathf.Max(22, Mathf.RoundToInt(44f * DeviceFit.Ui() * 0.62f));
             int keep = st.fontSize; bool wrap = st.wordWrap;
-            st.wordWrap = true;
-            float th = 0f;
-            for (px = hi; px >= 18; px -= 2)
-            {
-                st.fontSize = px;
-                th = st.CalcHeight(_bandContent, w * 0.92f);
-                if (th <= st.lineHeight * 2.2f) break;
-            }
-            // Polish: two balanced lines (like 'Look, a bird / followed you home!'), not a
-            // long first line and an orphan word: break at the space nearest the middle.
+            st.fontSize = px;
             st.wordWrap = false;
             BannerText = text;
             float one = st.CalcSize(_bandContent).x;
@@ -3225,17 +3222,7 @@ namespace FlockFive
                 _bandContent.text = text;
             }
             st.fontSize = keep; st.wordWrap = wrap;
-            float h = th + px * 0.9f;
-            // Build 86: sit high, under the title (grow up from the old seat, over the VIP/coin
-            // row like the older banner), never over the lesson's subject (the arriving bird,
-            // the glove's target): hop above it if there is room under the title, else below.
-            float minTop = Mathf.Max(Screen.safeArea.yMin, TopHud() + (56f * 2f + 4f) * s * 0.92f);
-            float y = seat.y - (h - seat.height) * 0.85f;
-            if (y < minTop) y = minTop;
-            // b86 (Brandon): the adopt banner sits right under the title (pre-4d831f3 seat),
-            // over the dimmed VIP/coin row; the arriving bird hovers under it.
-            if (_adoptLive) y = Mathf.Max(Screen.safeArea.yMin, (_pokerTitleBottom > 8f ? _pokerTitleBottom : Screen.height * 0.17f) + 4f * s);
-            band = new Rect(0f, y, w, h);
+            float minTop = Mathf.Max(safe.yMin, TopHud() + (56f * 2f + 4f) * s * 0.92f);
             float gap = 8f * s;
             for (int pass = 0; pass < 2; pass++)
             {
@@ -3245,17 +3232,110 @@ namespace FlockFive
                     Rect subj = k == 0 ? (_captionSubjectFrame >= Time.frameCount - 1 ? _captionSubject : default)
                         : (_gloveTapRectOn && GloveTargetFresh() ? _gloveTapRect : default);
                     if (subj.width < 2f || !band.Overlaps(subj)) continue;
-                    float up = subj.yMin - h - gap;
+                    float up = subj.yMin - band.height - gap;
                     band.y = up >= minTop ? up : subj.yMax + gap;
                     moved = true;
                 }
                 if (!moved) break;
             }
-            if (band.yMax > Screen.height) band.y = Screen.height - h;
             if (_gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
+            float drop = CaptionStyles.Drop(spot);
+            if (drop > 0f)
+                CoverDown(ref band, AdoptVipBadgeRect(w, screenH, safe), drop * s, SplashWordBottom(screenH, safe, s));
+            if (band.yMax > screenH) band.y = screenH - band.height;
             BannerSkip = "";
             BannerUses++;
             return true;
+        }
+
+        // Full-width banner rect for one caption spot. cover false is the shared seat
+        // every banner used to take. cover true (the test, and a Drop spot after the
+        // glove check) lets that one entry move down over the home VIP badge.
+        public static Rect BannerRect(string spot, string text, float w, float h, Rect safe, Rect seat, float titleBottom, bool adoptLive, float s, out int px, bool cover = true)
+        {
+            px = 18;
+            var st = CoachLineStyle();
+            int keep = st.fontSize;
+            bool wrap = st.wordWrap;
+            var content = new GUIContent(text ?? "");
+            int hi = Mathf.Max(22, Mathf.RoundToInt(44f * DeviceFit.Ui(w, h) * 0.62f));
+            st.wordWrap = true;
+            float th = 0f;
+            try
+            {
+                for (px = hi; px >= 18; px -= 2)
+                {
+                    st.fontSize = px;
+                    th = st.CalcHeight(content, Mathf.Max(8f, w * 0.92f));
+                    if (th <= st.lineHeight * 2.2f) break;
+                }
+            }
+            finally
+            {
+                st.fontSize = keep;
+                st.wordWrap = wrap;
+            }
+            float bh = th + px * 0.9f;
+            if (s < 0.01f) s = 1f;
+            float minTop = Mathf.Max(safe.yMin, TopHudBox(h, safe, 0f) + (56f * 2f + 4f) * s * 0.92f);
+            float y = seat.y - (bh - seat.height) * 0.85f;
+            if (y < minTop) y = minTop;
+            // b86: while adopt is up, every banner starts under the title. Only a spot
+            // with Drop then moves down; the others keep this seat.
+            if (adoptLive)
+                y = Mathf.Max(safe.yMin, (titleBottom > 8f ? titleBottom : h * 0.17f) + 4f * s);
+            var band = new Rect(0f, y, w, bh);
+            if (cover && CaptionStyles.Drop(spot) > 0f)
+                CoverDown(ref band, AdoptVipBadgeRect(w, h, safe), CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s));
+            return band;
+        }
+
+        // VIP medal plus the No Ads ribbon, daily hidden (the greet packs VIP at the top of the left rail).
+        public static Rect AdoptVipBadgeRect(float w, float h, Rect safe)
+        {
+            float size = SplashRailSize(w);
+            float gap = Mathf.Max(24f, size * 0.30f);
+            float y = h * 0.335f - size - gap;
+            float lx = Mathf.Max(20f, safe.xMin + 12f);
+            var medal = new Rect(lx, y, size, size);
+            var ribbon = SplashNoAdsRibbon(medal);
+            float x0 = medal.x < ribbon.x ? medal.x : ribbon.x;
+            float y0 = medal.y < ribbon.y ? medal.y : ribbon.y;
+            float x1 = medal.xMax > ribbon.xMax ? medal.xMax : ribbon.xMax;
+            float y1 = medal.yMax > ribbon.yMax ? medal.yMax : ribbon.yMax;
+            return new Rect(x0, y0, x1 - x0, y1 - y0);
+        }
+
+        // Slide the band down over `badge`, then a pad past it. Grow only when a pure
+        // move would uncover the top of the badge. Clear the wordmark when that still covers.
+        static void CoverDown(ref Rect band, Rect badge, float pad, float wordBottom)
+        {
+            if (badge.width < 2f || badge.height < 2f) return;
+            if (pad < 0f) pad = 0f;
+            float top = badge.yMin - pad;
+            float bottom = badge.yMax + pad;
+            if (band.y > top)
+            {
+                float lift = band.y - top;
+                band.y -= lift;
+                band.height += lift;
+            }
+            if (band.yMax < bottom)
+            {
+                float need = bottom - band.yMax;
+                float room = top - band.y;
+                if (room < 0f) room = 0f;
+                float move = need < room ? need : room;
+                band.y += move;
+                band.height += need - move;
+            }
+            if (wordBottom > band.y && wordBottom <= top)
+                band.y = wordBottom;
+        }
+
+        static float SplashWordBottom(float screenH, Rect safe, float s)
+        {
+            return TopHudBox(screenH, safe, 0f) + (56f * 2f + 4f) * s * SplashLogoScale;
         }
 
         void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default, bool opaque = false, float slack = 1f, bool topAlign = false)
@@ -3298,7 +3378,7 @@ namespace FlockFive
                 _bannerLast = band; _bannerLastFrame = Time.frameCount;
                 BannerLast = band + " fade " + fade + " ev " + (Event.current != null ? Event.current.type.ToString() : "-") + " px " + bandPx;
                 var prevC = GUI.color;
-                GUI.color = new Color(0f, 0f, 0f, CaptionStyles.BannerAlpha * fade); // b86: darker, near the snug box
+                GUI.color = new Color(0f, 0f, 0f, CaptionStyles.Ink(_bannerInkSpot) * fade); // b86 shared tint; adopt greet is solid
                 GUI.DrawTexture(band, Texture2D.whiteTexture);
                 GUI.color = prevC;
                 int keep = st.fontSize;
