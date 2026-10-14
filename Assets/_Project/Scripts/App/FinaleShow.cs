@@ -401,7 +401,7 @@ namespace FlockFive
             {
                 idle.Lift = 0f;
                 idle.SuppressMood();
-                idle.DriveFlap(6f);
+                idle.DriveFlap(6.2f);
             }
             // Leave the lockup so the letter blast cannot drag her with it.
             if (hold != null && hold.parent != null)
@@ -427,6 +427,7 @@ namespace FlockFive
                 peach.localPosition = new Vector3(0f, 1.4f, Mathf.Lerp(5.6f, 6.8f, u));
                 peach.localScale = Vector3.one * Mathf.Lerp(0.07f, 0.05f, u);
                 peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(0f, 11f, u));
+                if (idle != null) idle.DriveFlap(Mathf.Lerp(6.2f, 8f, u));
                 yield return null;
             }
 
@@ -441,6 +442,7 @@ namespace FlockFive
                 peach.localScale = Vector3.one * Mathf.Lerp(0.05f, 1.15f, k);
                 peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(11f, -4f, k));
                 if (sr != null) sr.sortingOrder = 8;
+                if (idle != null) idle.DriveFlap(Mathf.Lerp(9.2f, 11.5f, k));
                 yield return null;
             }
 
@@ -451,6 +453,7 @@ namespace FlockFive
             host.StartCoroutine(CrackFlash(hold, hit));
             float stop = 0f;
             var plant = new Vector3(0f, 1.18f, 0.18f);
+            if (idle != null) idle.DriveFlap(8.2f);
             while (stop < HitStop && peach != null)
             {
                 stop += Time.unscaledDeltaTime;
@@ -488,6 +491,7 @@ namespace FlockFive
                     c.a = u > 0.74f ? 1f - Smooth01((u - 0.74f) / 0.26f) : 1f;
                     sr.color = c;
                 }
+                if (idle != null) idle.DriveFlap(Mathf.Lerp(7.6f, 4.6f, Smooth01(u)));
                 ghostAt -= Time.deltaTime;
                 if (ghostAt <= 0f && u < 0.7f)
                 {
