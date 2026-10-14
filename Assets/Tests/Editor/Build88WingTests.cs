@@ -110,6 +110,42 @@ namespace FlockFive.Editor
                     && avatar.Contains("DrawColorSwatch"),
                     "home, adopt, name picker");
                 Check("finale-uses-birdidle", finale.Contains("BirdIdle"), "finale birds");
+
+                var flock = new[] { BirdColor.Ruby, BirdColor.Gold, BirdColor.Teal, BirdColor.Violet, BirdColor.Peach };
+                var wornKits = new[] { BirdKit.Bow, BirdKit.Crown };
+                int cases = 0, splitCases = 0;
+                for (int ci = 0; ci < flock.Length; ci++)
+                for (int frame = 0; frame <= 4; frame++)
+                {
+                    var pose = frame == 0 ? SpriteCatalog.Bird(flock[ci]) : SpriteCatalog.BirdPose(flock[ci], frame);
+                    bool splitPose = pose != null && SpriteCatalog.TrySplitFarWing(pose, out _, out _);
+                    for (int ki = 0; ki < wornKits.Length; ki++)
+                    for (int face = 0; face < 2; face++)
+                    {
+                        bool faceLeft = face == 1;
+                        var side = BirdIdle.FarWingSide(faceLeft);
+                        bool sideOk = faceLeft
+                            ? side == BirdIdle.WingSide.Right
+                            : side == BirdIdle.WingSide.Left;
+                        var layerKinds = new int[3];
+                        int layerN = BirdIdle.KitPaintSequence(wornKits[ki], splitPose, layerKinds);
+                        int farAt = -1, topAt = -1;
+                        for (int k = 0; k < layerN; k++)
+                        {
+                            if (layerKinds[k] == BirdIdle.KitLayerFar) farAt = k;
+                            if (layerKinds[k] == BirdIdle.KitLayerTopper) topAt = k;
+                        }
+                        bool orderOk = splitPose ? farAt >= 0 && topAt > farAt : farAt < 0 && topAt >= 0;
+                        cases++;
+                        if (splitPose) splitCases++;
+                        if (pose == null || !sideOk || !orderOk)
+                            Check("avatar-layer-" + flock[ci] + "-f" + frame + "-" + wornKits[ki] + (faceLeft ? "-L" : "-R"),
+                                false, "missing " + (pose == null) + " side " + sideOk + " far " + farAt + " top " + topAt);
+                    }
+                }
+                // Flap 2 splits on every color (2 kits x 2 facings). Other poses may too.
+                Check("avatar-every-bird-facing-flap", cases == 100 && splitCases >= 20,
+                    cases + " cases, " + splitCases + " with a far wing behind the topper");
             }
             catch (System.Exception ex)
             {

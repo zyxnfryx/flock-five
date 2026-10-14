@@ -71,6 +71,7 @@ namespace FlockFive.Editor
             Suite("build88-glove", Build88GloveTests.Run);
             Suite("build88-streak", Build88StreakTests.Run);
             Suite("build88-pest", Build88PestTests.Run);
+            Suite("build88-curtain", Build88CurtainTests.Run);
             Suite("sky", SkyCycleTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
@@ -308,6 +309,22 @@ namespace FlockFive.Editor
             EnterPlay();
         }
 
+        // Play-mode curtain clip. Launch without -batchmode and without -nographics.
+        // Do not enter play from -executeMethod: that nests inside "Finish Loading Project".
+        public static void ArmCurtainEditor()
+        {
+            Debug.Log("CURTAIN_EDITOR_READY");
+            File.WriteAllText("/tmp/curtain-editor-ready", "1");
+        }
+
+        public static void RunCurtainShot()
+        {
+            AudioListener.volume = 0f;
+            AudioListener.pause = true;
+            File.WriteAllText("/tmp/flock-five-b88-curtain", "1");
+            EnterPlay();
+        }
+
         static bool _enterQueued;
 
         [MenuItem("Flock Five/Play Slice")]
@@ -384,7 +401,8 @@ namespace FlockFive.Editor
             "/tmp/flock-five-b88-banner",
             "/tmp/flock-five-b88-caption",
             "/tmp/flock-five-b88-streak",
-            "/tmp/flock-five-wt-b88-pest"
+            "/tmp/flock-five-wt-b88-pest",
+            "/tmp/flock-five-b88-curtain"
         };
 
         static bool AnyShotCmd()
@@ -414,6 +432,9 @@ namespace FlockFive.Editor
             }
             if (AnyShotCmd())
             {
+                if (File.Exists("/tmp/flock-five-b88-curtain") && !File.Exists("/tmp/curtain-flag-seen"))
+                    File.WriteAllText("/tmp/curtain-flag-seen",
+                        EditorApplication.isPlaying ? "playing" : "enter");
                 EditorApplication.isPaused = false;
                 if (!EditorApplication.isPlaying)
                 {
@@ -456,6 +477,7 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-b88-caption", "ShotBuild88Caption");
                         TryStartShot(app, "/tmp/flock-five-b88-streak", "ShotKeepStreak");
                         TryStartShot(app, "/tmp/flock-five-wt-b88-pest", "ShotPestReset");
+                        TryStartShot(app, "/tmp/flock-five-b88-curtain", "ShotLevelCurtain");
                         TryStartShot(app, "/tmp/flock-five-poker-feel", "ShotPokerFeel");
                     }
                 }
