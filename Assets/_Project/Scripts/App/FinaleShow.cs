@@ -456,7 +456,7 @@ namespace FlockFive
             if (idle != null) idle.DriveFlap(8.2f);
             while (stop < HitStop && peach != null)
             {
-                stop += Time.unscaledDeltaTime;
+                stop += ShowClock.Delta;
                 float j = 1f - stop / HitStop;
                 // Rewrite the path each frame. The flap drive offsets from it in LateUpdate.
                 peach.localPosition = plant;
@@ -573,7 +573,7 @@ namespace FlockFive
             float t = 0f;
             while (t < life)
             {
-                t += Time.unscaledDeltaTime;
+                t += ShowClock.Delta;
                 float u = Mathf.Clamp01(t / life);
                 float grow = EaseOutCubic(Mathf.Clamp01(u / 0.35f));
                 float a = 1f - Smooth01(Mathf.Clamp01((u - 0.25f) / 0.75f));

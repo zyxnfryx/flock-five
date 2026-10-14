@@ -31,8 +31,6 @@ namespace FlockFive
             UnityEditor.EditorApplication.isPaused = false;
             Application.runInBackground = true;
             Time.timeScale = 1f;
-            // Real frames. captureFramerate would step through the hit-stop instead of showing it.
-            Time.captureFramerate = 0;
             AudioListener.volume = 0f;
 
             try { if (Directory.Exists(FlutterFrames)) Directory.Delete(FlutterFrames, true); } catch { }
@@ -50,6 +48,9 @@ namespace FlockFive
             _busy = true;
             _won = true;
 
+            // One rendered frame is 1/60s of show time. Hit-stop and flap read ShowClock,
+            // because captureDeltaTime does not move unscaled time.
+            Time.captureDeltaTime = 1f / 60f;
             _flutterLive = true;
             _flutterFrames = 0;
             var rec = StartCoroutine(RecordFlutter(log));
@@ -71,27 +72,27 @@ namespace FlockFive
 
         IEnumerator RecordFlutter(StringBuilder log)
         {
-            float prev = Time.unscaledTime;
-            float next = prev;
-            const float step = 1f / 60f;
-            var concat = new StringBuilder();
-            concat.Append("ffconcat version 1.0\n");
-            string last = null;
             int guard = 0;
             int poseRest = 0, poseUp = 0, poseMid = 0;
-            while (_flutterLive && guard < 1800)
+            int hold = 0, holdChanges = 0, prevHoldPose = -1;
+            bool loggedClock = false;
+            var holdPoses = new StringBuilder();
+            while (_flutterLive && guard < 2400)
             {
                 yield return new WaitForEndOfFrame();
                 guard++;
                 if (!_flutterLive) break;
-                float now = Time.unscaledTime;
-                if (_flutterFrames > 0 && now + 0.0005f < next) continue;
+                if (!loggedClock)
+                {
+                    loggedClock = true;
+                    log.Append("clock d ").Append(Time.deltaTime.ToString("0.0000", CultureInfo.InvariantCulture))
+                        .Append(" u ").Append(Time.unscaledDeltaTime.ToString("0.0000", CultureInfo.InvariantCulture))
+                        .Append(" cap ").Append(Time.captureDeltaTime.ToString("0.0000", CultureInfo.InvariantCulture))
+                        .AppendLine();
+                }
                 var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
                 var tex = GrabFlutter(cam, log);
                 if (tex == null) continue;
-                float dt = _flutterFrames == 0 ? step : Mathf.Clamp(now - prev, 0.001f, 0.25f);
-                prev = now;
-                next = now + step;
                 string name = _flutterFrames.ToString("D4") + ".jpg";
                 string path = Path.Combine(FlutterFrames, name);
                 File.WriteAllBytes(path, tex.EncodeToJPG(86));
@@ -104,24 +105,38 @@ namespace FlockFive
                     else if (flap.WingPose == 0) poseRest++;
                     else poseUp++;
                     var psr = peach.GetComponent<SpriteRenderer>();
+                    var pos = peach.transform.localPosition;
+                    var sc = peach.transform.localScale;
+                    bool planted = psr != null && psr.sortingOrder >= 70
+                        && Mathf.Abs(pos.x) < 0.03f
+                        && Mathf.Abs(pos.y - 1.18f) < 0.02f
+                        && Mathf.Abs(pos.z - 0.18f) < 0.05f
+                        && sc.x > 1.05f && sc.x < 1.45f;
+                    if (planted)
+                    {
+                        hold++;
+                        if (prevHoldPose >= 0 && flap.WingPose != prevHoldPose) holdChanges++;
+                        prevHoldPose = flap.WingPose;
+                        if (holdPoses.Length > 0) holdPoses.Append(',');
+                        holdPoses.Append(flap.WingPose);
+                    }
                     log.Append("pose ").Append(flap.WingPose)
-                        .Append(" s ").Append(peach.transform.localScale.x.ToString("0.00"))
+                        .Append(" f ").Append(_flutterFrames)
+                        .Append(" s ").Append(sc.x.ToString("0.00"))
                         .Append(" o ").Append(psr != null ? psr.sortingOrder : -1)
                         .Append(" a ").Append(psr != null ? psr.color.a.ToString("0.00") : "?")
                         .AppendLine();
                 }
                 Destroy(tex);
-                concat.Append("file '").Append(path).Append("'\n");
-                concat.Append("duration ").Append(dt.ToString("0.0000", CultureInfo.InvariantCulture)).Append("\n");
-                last = path;
                 _flutterFrames++;
             }
-            if (last != null) concat.Append("file '").Append(last).Append("'\n");
-            File.WriteAllText(Path.Combine(FlutterFrames, "frames.txt"), concat.ToString());
+            File.WriteAllText(Path.Combine(FlutterFrames, "frames.txt"), _flutterFrames.ToString());
             log.Append("frames ").Append(_flutterFrames).Append(" up ").Append(_bestUp.ToString("0.00"))
                 .Append(" mid ").Append(_bestMid.ToString("0.00"))
                 .Append(" counts ").Append(poseRest).Append('/').Append(poseUp).Append('/').Append(poseMid)
                 .AppendLine();
+            log.Append("hold ").Append(hold).Append(" changes ").Append(holdChanges)
+                .Append(" poses ").Append(holdPoses).AppendLine();
         }
 
         void NoteFlutterStill(Texture2D tex, StringBuilder log)
@@ -300,7 +315,9 @@ namespace FlockFive
         static void EncodeFlutter(string frames, string mp4, StringBuilder log)
         {
             string list = Path.Combine(frames, "frames.txt");
-            if (!File.Exists(list) || new FileInfo(list).Length < 16)
+            int n = 0;
+            if (File.Exists(list)) int.TryParse(File.ReadAllText(list).Trim(), out n);
+            if (n < 60)
             {
                 log.AppendLine("no frames");
                 return;
@@ -309,7 +326,7 @@ namespace FlockFive
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = ffmpeg,
-                Arguments = "-y -f concat -safe 0 -i \"" + list + "\" -fps_mode vfr -c:v libx264 -pix_fmt yuv420p -crf 18 -movflags +faststart \"" + mp4 + "\"",
+                Arguments = "-y -framerate 60 -start_number 0 -i \"" + frames + "/%04d.jpg\" -c:v libx264 -pix_fmt yuv420p -crf 18 -movflags +faststart \"" + mp4 + "\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardError = true,
