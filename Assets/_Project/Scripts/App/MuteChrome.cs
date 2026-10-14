@@ -9,7 +9,9 @@ namespace FlockFive
     {
         public const int AbovePopup = ModalBlock.PopupSort + 1;
         // Poker draws smaller than the home speaker so it fits under the coin.
-        public const float PokerScale = 0.55f;
+        public const float PokerScale = 0.70f;
+        // Never wider than the coin icon, so the speaker stays tucked under it.
+        public const float PokerCoinFit = 0.86f;
         // Share of the corner gap kept between the coin icon and the poker speaker.
         public const float PokerTuck = 0.35f;
 
@@ -164,8 +166,10 @@ namespace FlockFive
             leftLimit += gap;
             float room = right - leftLimit;
             if (size > room) size = room;
+            float coinFit = chrome.Coins.width * PokerCoinFit;
+            if (coinFit >= 8f && size > coinFit) size = coinFit;
             float min = 22f * FlockFiveApp.SettingsGearPxPerPt(h);
-            if (size < min && room >= min) size = min;
+            if (size < min && room >= min && min <= coinFit) size = min;
             if (size < 8f) size = 8f;
             float tuck = gap * PokerTuck;
             if (tuck < 4f) tuck = 4f;

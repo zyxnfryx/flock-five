@@ -64,7 +64,8 @@ namespace FlockFive
                 PlayerPrefs.SetInt("flockfive.coach.hive", 1);
                 PlayerPrefs.Save();
                 PrepGardenShot(4);
-                yield return QuietGarden(2.2f);
+                yield return QuietGarden(2.0f);
+                HoldGardenQuiet();
                 yield return new WaitForEndOfFrame();
                 MuteShotAudio();
                 SaveFrame(dir + "/b88-mute-garden-iphone.png");
@@ -81,7 +82,8 @@ namespace FlockFive
                 Purse.SetStreak(3);
                 PlayerPrefs.SetInt("flockfive.coach.hive", 1);
                 PrepGardenShot(4);
-                yield return QuietGarden(2.2f);
+                yield return QuietGarden(2.0f);
+                HoldGardenQuiet();
                 yield return new WaitForEndOfFrame();
                 MuteShotAudio();
                 SaveFrame(dir + "/b88-mute-garden-ipad.png");
@@ -119,20 +121,26 @@ namespace FlockFive
 
         // The bee-thicket lesson paints over this garden. Hold it down so the
         // still shows the speaker against the stamp, the hive, and the feeders.
+        // Call HoldGardenQuiet after Update and before the frame is drawn.
+        void HoldGardenQuiet()
+        {
+            PlayerPrefs.SetInt("flockfive.coach.hive.garden", 1);
+            _hiveLevelCue = false;
+            _hiveLevelLive = false;
+            _cueHand = false;
+            _cueLine = null;
+            _gloveVis = false;
+            _coachFade = 0f;
+            _shotBeeLesson = false;
+            MuteShotAudio();
+        }
+
         IEnumerator QuietGarden(float seconds)
         {
             float t = 0f;
             while (t < seconds)
             {
-                PlayerPrefs.SetInt("flockfive.coach.hive.garden", 1);
-                _hiveLevelCue = false;
-                _hiveLevelLive = false;
-                _cueHand = false;
-                _cueLine = null;
-                _gloveVis = false;
-                _coachFade = 0f;
-                _shotBeeLesson = false;
-                MuteShotAudio();
+                HoldGardenQuiet();
                 t += Time.unscaledDeltaTime;
                 yield return null;
             }

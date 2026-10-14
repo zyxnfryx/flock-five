@@ -180,6 +180,7 @@ namespace FlockFive.Editor
             float tuck = Mathf.Max(4f, gap * MuteChrome.PokerTuck);
             bool pokerOk = poker.Mute.width > 16f
                 && poker.Mute.width <= drawn * MuteChrome.PokerScale + 0.6f
+                && poker.Mute.width <= poker.Coins.width * MuteChrome.PokerCoinFit + 1.5f
                 && poker.Mute.width < drawn * 0.8f
                 && Mathf.Abs(poker.Mute.center.x - poker.Coins.center.x) < 2f
                 && poker.Mute.xMax <= poker.Coins.xMax + 1f
