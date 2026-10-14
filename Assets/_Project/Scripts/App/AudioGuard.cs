@@ -90,9 +90,34 @@ namespace FlockFive
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void Boot()
         {
+            LoadMuted();
             EnsureHost();
             InstallNative();
         }
+
+        // b87: one shared mute for the home speaker button and anything else that
+        // toggles audio. Muted silences all music and SFX and is persisted.
+        public const string MuteKey = "flockfive.audio.muted";
+        public static bool Muted => !MusicEnabled && !SfxEnabled;
+        public static event Action<bool> MutedChanged;
+
+        public static void LoadMuted()
+        {
+            bool m = PlayerPrefs.GetInt(MuteKey, 0) == 1;
+            MusicEnabled = !m;
+            SfxEnabled = !m;
+        }
+
+        public static void SetMuted(bool m, bool persist = true)
+        {
+            bool was = Muted;
+            MusicEnabled = !m;
+            SfxEnabled = !m;
+            if (persist) { PlayerPrefs.SetInt(MuteKey, m ? 1 : 0); PlayerPrefs.Save(); }
+            if (was != m) MutedChanged?.Invoke(m);
+        }
+
+        public static void ToggleMuted() => SetMuted(!Muted);
 
         public static void ResetForTests()
         {

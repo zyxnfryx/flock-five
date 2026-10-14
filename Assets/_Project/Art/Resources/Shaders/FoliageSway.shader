@@ -18,6 +18,7 @@ Shader "FlockFive/FoliageSway"
         _Wind ("Wind", Vector) = (0,0,0,0)
         _Wipe ("Wipe", Vector) = (0,0.12,0,0)
         _SwayMask ("Foliage mask", 2D) = "white" {}
+        _SwayLegacy ("Legacy blend (clips only)", Float) = 0
     }
     SubShader
     {
@@ -41,6 +42,7 @@ Shader "FlockFive/FoliageSway"
             float4 _A0, _A1, _A2, _A3;
             float4 _Wind;
             float4 _Wipe;
+            float _SwayLegacy;
 
             struct appdata { float4 vertex : POSITION; float4 color : COLOR; float2 uv : TEXCOORD0; };
             struct v2f { float4 pos : SV_POSITION; fixed4 color : COLOR; float2 uv : TEXCOORD0; };
@@ -86,7 +88,12 @@ Shader "FlockFive/FoliageSway"
                 uv = Sway(uv, _P3, _A3, gust, t);
                 // Build 85: only foliage moves. Sky, clouds, moon/sun and the far background stay
                 // rigid; a texel is displaced only if it is foliage or would show foliage.
-                float leaf = max(tex2D(_SwayMask, i.uv).r, tex2D(_SwayMask, saturate(uv)).r);
+                // b87: hard cutouts both ways. A texel moves only if it IS foliage and the paint
+                // it would show is foliage too, so sky (and clouds) between leaves never move.
+                float mHere = tex2D(_SwayMask, i.uv).r;
+                float mFrom = tex2D(_SwayMask, saturate(uv)).r;
+                float leaf = step(0.5, mHere) * step(0.5, mFrom);
+                if (_SwayLegacy > 0.5) leaf = max(mHere, mFrom);
                 uv = lerp(i.uv, uv, leaf);
                 fixed4 col = tex2D(_MainTex, saturate(uv)) * i.color;
                 if (_Wipe.w > 0.5)

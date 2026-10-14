@@ -62,6 +62,24 @@ namespace FlockFive.Editor
                     && FlockFiveApp.PokerCardReleaseToggles(true, new Vector2(2f, 3f), 34f)
                     && FlockFiveApp.PokerCardReleaseToggles(false, new Vector2(80f, 20f), 34f)
                     && !FlockFiveApp.PokerSwipeDown(new Vector2(0f, -80f), 34f), "swipe");
+                // b87: many seeds through sparrow/hawk parks: no trivial split is left stuck.
+                { int stuck = 0, runs = 0; var rng = new System.Random(87);
+                  for (int seed = 0; seed < 400; seed++)
+                  {
+                      var b = new Board();
+                      int k = 1 + rng.Next(Mathf.Min(3, b.Live.Length));
+                      var pool = new System.Collections.Generic.List<Bird>();
+                      for (int c = 0; c < k; c++) { b.Live[c] = (BirdColor)c; for (int i = 0; i < BranchState.Cap; i++) pool.Add(new Bird((BirdColor)c)); }
+                      int nb = k + 1 + rng.Next(2);
+                      for (int i = 0; i < nb; i++) b.Branches.Add(new BranchState());
+                      foreach (var bird in pool) { int tq; do tq = rng.Next(nb); while (b.Branches[tq].Count >= BranchState.Cap); b.Branches[tq].Birds.Add(bird); }
+                      int pest = rng.Next(nb); if (b.Branches[pest].Count == 0) continue;
+                      PestPark.Apply(b, pest, rng.Next(2) == 0);
+                      runs++;
+                      for (int g = 0; g < 30 && b.NextSolvedMerge(out int fr, out int to); g++) b.MergeRun(fr, to, out _);
+                      if (SolvedRule.SplitOnly(b)) stuck++;
+                  }
+                  Check("b87-no-stuck-split-after-pest", stuck == 0 && runs > 100, "stuck " + stuck + " of " + runs); }
                 Check("card-end-hold", FlockFiveApp.CardEndHoldSec >= 0.45f && FlockFiveApp.CardEndHoldSec <= 0.8f, "hold " + FlockFiveApp.CardEndHoldSec);
                 Check("daily-hidden-under-adopt", Goal() == 0f, "goal " + Goal());
                 Set("_adoptLive", false); Set("_adoptOwed", false);

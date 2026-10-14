@@ -1823,7 +1823,7 @@ namespace FlockFive
             _avatarCol = BirdColor.Teal;
             _avatarNextGlide = _avatarClock + 80f;
             _avatarNextFlap = _avatarClock + 80f;
-            FillAvatarPerches(Mathf.Max(Screen.height / 720f, 1f));
+            FillAvatarPerches(DeviceFit.Ui());
             StickAvatarToPerch();
         }
 
@@ -4656,7 +4656,7 @@ namespace FlockFive
             if (_pestResolving || _pestFinishing || _scatterBusy) return false;
             // A guided garden hop is the player's to make.
             if (_coach && _cueHand) return false;
-            return SolvedRule.IsSolved(_board);
+            return SolvedRule.IsSolved(_board) || SolvedRule.SplitOnly(_board);
         }
 
         void TrySolvedFinish()
@@ -6229,7 +6229,7 @@ namespace FlockFive
         // Screen-explicit so the album grid test uses the same top inset as play.
         static float TopHudBox(float screenH, Rect safe, float extra)
         {
-            float s = Mathf.Max(screenH / 720f, 1f);
+            float s = DeviceFit.UiH(screenH);
             float inset = (safe.width < 2f || safe.height < 2f)
                 ? 0f
                 : Mathf.Max(0f, screenH - safe.yMax);
@@ -6396,8 +6396,10 @@ namespace FlockFive
         }
 
         // Item 8 profiling: OnGUI by event, and the render tail to end of frame.
+        public static bool ShotNoGui; // editor clips: background only
         void OnGUI()
         {
+            if (ShotNoGui) return;
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
                 Event.current.Use();
@@ -6438,7 +6440,7 @@ namespace FlockFive
                 // Card-flip tutor keeps running through a pause. An ad hides it so the
                 // glove does not jump ahead on the unscaled clock while the ad is up.
                 if (!Ads.IsShowing && _hiveTutorOn && _hiveInspect >= 0 && _home == HomeFace.Hive)
-                    DrawHiveInspect(Mathf.Max(Screen.height / 720f, 1f));
+                    DrawHiveInspect(DeviceFit.Ui());
                 // The sparrow lesson freezes here and used to return before the chip,
                 // so the multiplier badge vanished for the whole lesson. Paint it at
                 // full alpha before the caption. An ad or a full-screen popup still
@@ -8132,6 +8134,20 @@ namespace FlockFive
         // Shared disc for every screen that leaves. About 15% over the old 88pt, never under 44.
         static Rect BackMedalRect(float s, float top) => BackMedalBox(s, top, Screen.safeArea);
 
+        public const float InspectInsetRef = 12f;
+
+        public static void InspectCorners(float s, Rect safe, out Rect back, out Rect x)
+        {
+            if (safe.width < 2f) safe = new Rect(0f, 0f, Screen.width, Screen.height);
+            float inset = Mathf.Max(10f, InspectInsetRef * s);
+            float safeTop = Screen.height - safe.yMax;
+            if (safeTop < 0f) safeTop = 0f;
+            float size = Mathf.Max(44f, 84f * Mathf.Clamp(s, 1f, 1.35f));
+            back = new Rect(safe.xMin + inset, safeTop + inset, size, size);
+            float xs = Mathf.Max(44f, size * 0.62f);
+            x = new Rect(safe.xMax - inset - xs, back.center.y - xs * 0.5f, xs, xs);
+        }
+
         static Rect BackMedalBox(float s, float top, Rect safe)
         {
             float size = 101.2f * Mathf.Clamp(s, 1f, 1.35f);
@@ -8298,17 +8314,25 @@ namespace FlockFive
             // Tuck waits until the shared flight, the balance tick, and the payout sound finish.
             // Build 86 (Brandon): no dead pause. The sign stops right after the multiplier
             // lands (ChoiceAt) and the buttons come up; the post-pay hold plays after the tap.
-            bool fadeGate = (t >= beat.ChoiceAt && RewardChoicePending()) || (t >= beat.HoldEnd && RewardPayBusy());
+            // b87 (Brandon): the popup starts tucking away as the coin fly-in starts; the
+            // balance tick is unchanged (the flight and the tick run on their own clocks).
+            bool fadeGate = t >= beat.ChoiceAt && RewardChoicePending();
             if (!fadeGate)
                 _streakSlide = Mathf.Min(1f, _streakSlide + PlayClock.Delta / dur);
             t = _streakSlide * dur;
             // Build 85 (Brandon): the popup plays its intro, then HOLDS. Coins fly and the
             // balance moves only after the tap (Collect, or 2X once its ad is done).
             if (t >= beat.PayAt && !RewardChoicePending())
+            {
                 PayStreakStep();
+                if (_streakFlyArmed && t < beat.HoldEnd && StreakTuckOnFly)
+                    _streakSlide = Mathf.Min(1f, beat.HoldEnd / dur);
+            }
             if (_streakSlide >= 1f && !RewardPayBusy())
                 DismissStreakSign();
         }
+
+        public static bool StreakTuckOnFly = true;
 
         void ArmStreakCoins(int coins)
         {
@@ -8673,18 +8697,28 @@ namespace FlockFive
 
         // REWARD at the full-open seat. openK is the appear/tuck scale only.
         // The lamp breathe stays on the frame and must not reach this rect.
+        // b87 reward popup text: warm cream for the word, warm gold for the amount.
+        public const float RewardButtonsReserve = 190f;
+        public static readonly Color RewardCream = new Color(1f, 0.93f, 0.74f, 1f);
+        public static readonly Color RewardGold = new Color(1f, 0.84f, 0.40f, 1f);
         void DrawRewardRow(Rect rest, float appear, float alpha, GUIStyle labelSt, int labelHi, float openK, Vector2 pivot)
         {
             appear = Mathf.Clamp01(appear);
             if (appear <= 0.04f || rest.width < 4f || rest.height < 4f) return;
             labelSt.alignment = TextAnchor.MiddleLeft;
             labelSt.wordWrap = false;
-            var shadow = rest;
-            shadow.x += 2f;
-            shadow.y += 2f;
-            var shade = new Color(0.16f, 0.07f, 0.02f, appear * alpha * 0.62f);
+            // b87: soft dark outline (ring of offsets + a drop) under warm cream-gold.
+            var shade = new Color(0.14f, 0.06f, 0.02f, appear * alpha * 0.55f);
+            float ol = Mathf.Max(1.5f, labelHi * 0.05f);
+            for (int k = 0; k < 8; k++)
+            {
+                float an = k * Mathf.PI * 0.25f;
+                var o = rest; o.x += Mathf.Cos(an) * ol; o.y += Mathf.Sin(an) * ol;
+                DrawPopupTitle(o, "REWARD", labelSt, shade, 12, labelHi, 0.92f, 0.90f, 0, -1, 0.16f, 0.001f, openK, pivot);
+            }
+            var shadow = rest; shadow.x += ol * 1.4f; shadow.y += ol * 1.8f;
             DrawPopupTitle(shadow, "REWARD", labelSt, shade, 12, labelHi, 0.92f, 0.90f, 0, -1, 0.16f, 0.001f, openK, pivot);
-            var gold = new Color(1f, 0.91f, 0.58f, appear * alpha);
+            var gold = RewardCream; gold.a = appear * alpha;
             DrawPopupTitle(rest, "REWARD", labelSt, gold, 12, labelHi, 0.92f, 0.90f, 0, -1, 0.16f, 0.001f, openK, pivot);
         }
 
@@ -9082,6 +9116,8 @@ namespace FlockFive
             float flowerTop = playBloom.y;
             float topLimit = titleBottom + gap;
             float botLimit = Mathf.Min(Screen.height - botPad - 6f, flowerTop + playBloom.height * 0.06f);
+            // b87 iPad: keep the card AND its 2X / Collect buttons off the LEVEL disc.
+            botLimit -= DeviceFit.Wide() * RewardButtonsReserve * s;
             if (botLimit < topLimit + 88f * s)
                 botLimit = Mathf.Min(Screen.height - botPad - 6f, topLimit + 88f * s);
             float faceW = Mathf.Max(120f * s, rightLimit - leftLimit) / maxPop;
@@ -9239,7 +9275,7 @@ namespace FlockFive
             // Caps follow the board: build 57's 38/52 times restScale (b58 had 42/58, b59 36/50).
             int labelHi = Mathf.Max(20, Mathf.RoundToInt(38f * restScale * s));
             int heroHi = Mathf.Max(28, Mathf.RoundToInt(52f * restScale * s));
-            var heroInk = new Color(1f, 0.95f, 0.42f, 1f);
+            var heroInk = RewardGold;
 
             void StampFit(Rect r, string text, GUIStyle st, Color fill, int hi, float widthFrac, float inkA)
             {
@@ -9551,7 +9587,7 @@ namespace FlockFive
         // Not the streak payoff. Those coins launch on the homepage sign.
         void DrawClearReward()
         {
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             ModalBlock.Paint(ModalBlock.Id.ClearReward, new Color(0.05f, 0.04f, 0.03f, 0.45f));
             DrawStreakRewards(s);
         }
@@ -9564,7 +9600,7 @@ namespace FlockFive
             if (n <= 0) return;
             int share = coins / n;
             int extra = coins - share * n;
-            var pig = PiggyRect(Mathf.Max(Screen.height / 720f, 1f));
+            var pig = PiggyRect(DeviceFit.Ui());
             var dest = new Vector2(pig.x + pig.width * 0.5f, pig.y + pig.height * 0.42f);
             _coinInFlight += coins;
             for (int i = 0; i < n; i++)
@@ -9594,7 +9630,7 @@ namespace FlockFive
             var tex = spr != null ? spr.texture : null;
             var glow = GlowTex();
             float dt = AdPause.UnscaledDelta;
-            float size = 68f * Mathf.Max(Screen.height / 720f, 1f);
+            float size = 68f * DeviceFit.Ui();
             var dest = new Vector2(pig.x + pig.width * 0.5f, pig.y + pig.height * 0.42f);
             for (int i = _flies.Count - 1; i >= 0; i--)
             {
@@ -9812,7 +9848,7 @@ namespace FlockFive
             try
             {
             _homeTapTaken = false;
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
 #if UNITY_EDITOR
             if (ShotDailyWheel != 0) PoseDailyWheelShot();
 #endif
@@ -9828,6 +9864,7 @@ namespace FlockFive
             // The sheet has to be laid out before gear and the rails ask the veil.
             PrepareSoftPrompt(modal || tutorUp);
             PollHomeGear();
+            PollHomeMute();
             DismissAvatarRename(s);
             // Rail steps hold until their own button. A miss does not skip poker or Daily,
             StartupTrace.Lap("L.Prep");
@@ -10043,6 +10080,7 @@ namespace FlockFive
                 DrawTutorOverlay(s);
             if (_avatarRename) DrawAvatarRename(s);
             PaintHomeGear();
+            PaintHomeMute();
             StartupTrace.Lap("L.Gear");
             _hitLock = 0;
             if (_settingsOpen) DrawSettingsSheet(s);
@@ -10491,7 +10529,7 @@ namespace FlockFive
             if (!hasEase) return;
 
             // Shared size. Does not follow the 100+ LEVEL cap or the length of the line.
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             int jokePx = EaseSubtextPx(s);
             var joke = GuiPool.Label(GuiSlot.FlowerJoke);
             joke.fontStyle = FontStyle.Normal;
@@ -11299,7 +11337,7 @@ namespace FlockFive
         static Rect SplashTitleHalo()
         {
             float top = TopHud();
-            float ui = Mathf.Max(Screen.height / 720f, 1f);
+            float ui = DeviceFit.Ui();
             float capH = 56f * ui;
             float rowGap = 4f * ui;
             float titleH = capH * 2f + rowGap;
@@ -11349,7 +11387,7 @@ namespace FlockFive
             if (_avatarTick == Time.frameCount) return;
             _avatarTick = Time.frameCount;
 
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             if (!AvatarHomeOn())
             {
                 _avatarTail = 0f;
@@ -11614,7 +11652,7 @@ namespace FlockFive
             _avatarCrossT = 0f;
             _avatarCrossDur = AvatarCrossSeconds;
             var home = AvatarHomePoint();
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             var box = HomeWanderBounds(s, icon);
             var from = _avatarDrew ? _avatarPos : new Vector2(box.xMin, box.center.y);
             if (from.x < 0f || from.y < 0f || from.x > Screen.width || from.y > Screen.height)
@@ -12150,7 +12188,7 @@ namespace FlockFive
 
         Rect AvatarBody(Vector2 c, float icon, float pad)
         {
-            float ui = Mathf.Max(Screen.height / 720f, 1f);
+            float ui = DeviceFit.Ui();
             float plateW = AvatarPlateW(icon, ui);
             float w = Mathf.Max(icon, plateW) + pad * 2f;
             float h = icon + pad * 2f + _avatarTail;
@@ -12635,7 +12673,7 @@ namespace FlockFive
                 }
                 return true;
             }
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBetLine);
             CoachGloveAt(_pokerTutorAim, dt, s, float.NaN, false, float.NaN, _pokerTutorTap);
@@ -12796,7 +12834,7 @@ namespace FlockFive
 
         // Top of the hold band: under the PAY TABLE tab and the logo halo, PokerCapClearGap clear.
         static float PokerHoldCeiling(PokerCapGeo g) =>
-            Mathf.Max(g.LogoClear, g.Tab.width > 2f ? g.Tab.yMax : 0f) + PokerCapClearGap * Mathf.Max(Screen.height / 720f, 1f);
+            Mathf.Max(g.LogoClear, g.Tab.width > 2f ? g.Tab.yMax : 0f) + PokerCapClearGap * DeviceFit.Ui();
 
         // Standard caption for a poker page step; the anchor and pin come from PokerStepAnchor.
         void DrawPokerStandardLine(string line, float s)
@@ -12855,7 +12893,7 @@ namespace FlockFive
                 _tapSent = false;
                 return true;
             }
-            float handS = Mathf.Max(Screen.height / 720f, 1f);
+            float handS = DeviceFit.Ui();
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBetLine);
             CoachGloveAt(_pokerDealAim, dt, handS, float.NaN, false, float.NaN, _pokerDealTap);
@@ -12936,7 +12974,7 @@ namespace FlockFive
                 _tapSent = false;
                 return true;
             }
-            float handS = Mathf.Max(Screen.height / 720f, 1f);
+            float handS = DeviceFit.Ui();
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBackLine);
             // Standard shared arc: the hand rides over the top and the fingertip comes straight
@@ -12964,7 +13002,7 @@ namespace FlockFive
 
         void DrawPokerPage()
         {
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             DrawHomeWash(0.28f);
             BirdPoker.Boot();
             ArmPokerPageTutor();
@@ -14376,7 +14414,7 @@ namespace FlockFive
             float x = x0 + span * t;
             float mid = 1f - Mathf.Abs(t * 2f - 1f);
             // Idle row is centered under the logo. The dealt fan stays just above the deal disc.
-            float sc = Mathf.Max(Screen.height / 720f, 1f);
+            float sc = DeviceFit.Ui();
             float btnSize = Mathf.Min(Screen.width * 0.46f, 200f * sc);
             float botPad = Mathf.Max(12f, Screen.safeArea.yMin + 6f);
             float btnY = Screen.height - botPad - btnSize;
@@ -15824,7 +15862,7 @@ namespace FlockFive
                             GUIUtility.hotControl = 0;
                             e.Use();
                             if (canHold && i == top
-                                && PokerCardReleaseToggles(BirdPoker.Hold[i], e.mousePosition - _pokerDownAt, PokerSwipeMin(Mathf.Max(Screen.height / 720f, 1f))))
+                                && PokerCardReleaseToggles(BirdPoker.Hold[i], e.mousePosition - _pokerDownAt, PokerSwipeMin(DeviceFit.Ui())))
                                 ApplyPokerHold(i);
                         }
                         break;
@@ -16602,7 +16640,7 @@ namespace FlockFive
             if (dt < 0f) dt = 0f;
             CueLine(AlbumTutorLine());
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-            float handS = Mathf.Max(Screen.height / 720f, 1f);
+            float handS = DeviceFit.Ui();
             CoachGloveAt(aim, dt, handS, float.NaN, false, approach, tap);
             return true;
         }
@@ -16640,7 +16678,7 @@ namespace FlockFive
             var aim = GloveTarget(_upgradeBtnR);
             _upgradeTutorAim = aim;
             _upgradeTutorAimOk = true;
-            float handS = Mathf.Max(Screen.height / 720f, 1f);
+            float handS = DeviceFit.Ui();
             CoachGloveAt(aim, dt, handS, float.NaN, false, float.NaN, _upgradeBtnR);
             return true;
         }
@@ -16714,7 +16752,7 @@ namespace FlockFive
 
         void DrawHivePage()
         {
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             DrawHomeWash(0.28f);
 
             float top = TopHud();
@@ -16995,14 +17033,11 @@ namespace FlockFive
                 DrawHiveTutorGlove(big, s);
 
             // Shared Back medallion, painted above the dim. Same control as Poker and the album.
-            float top = TopHud();
-            var back = BackMedalRect(s, top);
-            bool backHit = DrawBackMedal(back);
-
-            // Close X top-right of overlay. 44pt, opposite the shared Back.
+            // b87 (Brandon): Back and X tucked into the top corners at one inset from the
+            // safe edges, on a shared centre line, so the card title stays clear.
             var safe = Screen.safeArea;
-            float xSz = Mathf.Max(44f, 44f * Mathf.Min(s, 1.4f));
-            var xBtn = new Rect(Screen.width - Mathf.Max(16f, Screen.width - safe.xMax + 10f) - xSz, top, xSz, xSz);
+            InspectCorners(s, safe, out var back, out var xBtn);
+            bool backHit = DrawBackMedal(back);
             bool xHeld;
             bool xHit = HitPad(xBtn, out xHeld);
             GUI.color = new Color(0.10f, 0.08f, 0.05f, (xHeld ? 0.92f : 0.78f) * Mathf.Clamp01(t + 0.15f));

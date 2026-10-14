@@ -34,7 +34,7 @@ namespace FlockFive
                 case GardenScene.Desert: return "SwayMasks/bg_oasis_sway";
                 case GardenScene.Fall: return "SwayMasks/bg_fall_sway";
                 case GardenScene.Spring: return "SwayMasks/bg_spring_sway";
-                case GardenScene.Winter: return null;
+                case GardenScene.Winter: return "SwayMasks/bg_winter_sway";
                 default: return "SwayMasks/bg_garden_sway";
             }
         }
@@ -105,6 +105,8 @@ namespace FlockFive
         // Tests/clips: a fixed shader time (seconds, > 0) and a forced mask; 0 / null = live.
         public static float TestTime;
         public static Texture TestMask;
+        public static bool TestLegacy; // clips only: the build-86 soft blend for a before clip
+        static readonly int LegacyId = Shader.PropertyToID("_SwayLegacy");
         public void PushForTest() { if (_on) Push(); }
 
         void LateUpdate()
@@ -121,6 +123,7 @@ namespace FlockFive
             _block.SetVector(WipeId, _wipe);
             var mk = TestMask != null ? TestMask : _mask;
             if (mk != null) _block.SetTexture(MaskId, mk);
+            _block.SetFloat(LegacyId, TestLegacy ? 1f : 0f);
             bool move = BackgroundMotion.On;
             if (!move)
             {

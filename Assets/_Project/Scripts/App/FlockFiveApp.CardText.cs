@@ -824,7 +824,7 @@ namespace FlockFive
             // card-fit suite measures the same card on 1170×2532 and 750×1334.
             public static Grid GridOf(float screenW, float screenH, Rect safe, float hiveBottom)
             {
-                float s = Mathf.Max(screenH / 720f, 1f);
+                float s = DeviceFit.UiH(screenH);
                 int typeFloor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
                 float colH = typeFloor * 2.2f + 6f * s;
                 float colGap = 6f * s;
@@ -874,7 +874,7 @@ namespace FlockFive
             // (LegacyRuntime, bold, word wrap), the same constants DrawAlbumHeader uses.
             public static float ShellBottom(float screenW, float screenH, Rect safe)
             {
-                float s = Mathf.Max(screenH / 720f, 1f);
+                float s = DeviceFit.UiH(screenH);
                 float top = TopHudBox(screenH, safe, 0f);
                 var back = BackMedalBox(s, top, safe);
                 int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));

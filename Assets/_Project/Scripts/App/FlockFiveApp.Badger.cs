@@ -704,7 +704,7 @@ namespace FlockFive
         // Caption band shared by the badger plate and PreviewBadgerColumn.
         static void BadgerCaptionLimits(float screenW, float screenH, Rect safe, out float maxW, out float roomH, out float scale, out int hi)
         {
-            scale = Mathf.Max(screenH / 720f, 1f);
+            scale = DeviceFit.UiH(screenH);
             float top = TopHudBox(screenH, safe, 0f);
             var back = BackMedalBox(scale, top, safe);
             bool have = safe.width >= 2f && safe.height >= 2f;
@@ -818,7 +818,7 @@ namespace FlockFive
         BadgerRects BadgerLayout()
         {
             var L = new BadgerRects();
-            float s = Mathf.Max(Screen.height / 720f, 1f);
+            float s = DeviceFit.Ui();
             L.S = s;
             float top = TopHud();
             L.Back = BackMedalRect(s, top);

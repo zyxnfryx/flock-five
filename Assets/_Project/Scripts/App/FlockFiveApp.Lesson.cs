@@ -19,7 +19,7 @@ namespace FlockFive
         // (BoxPad on each side) still sits on the glass.
         public static float LessonColumnWidth(float screenW, float screenH)
         {
-            float s = Mathf.Max(screenH / 720f, 1f);
+            float s = DeviceFit.UiH(screenH);
             float plate = CaptionLayout.BoxPad(screenH).x;
             float maxSeat = screenW - 16f - plate * 2f;
             float want = Mathf.Min(screenW * 0.92f, 720f * s);
@@ -32,7 +32,7 @@ namespace FlockFive
         // Inner text size of the standard lesson box on this phone.
         public static void LessonTextBox(float screenW, float screenH, out float textW, out float textH)
         {
-            float s = Mathf.Max(screenH / 720f, 1f);
+            float s = DeviceFit.UiH(screenH);
             float boxW = LessonColumnWidth(screenW, screenH);
             float boxH = Mathf.Max(128f * s, 108f);
             float padX = Mathf.Clamp(boxW * 0.055f, 10f * s, 18f * s);
@@ -46,7 +46,9 @@ namespace FlockFive
         public static int LessonCaptionFloor(float screenW, float screenH)
         {
             float h = screenH > 2f ? screenH : CaptionFloorPhoneH;
-            int floor = Mathf.RoundToInt(CaptionFloorPhonePx * (h / CaptionFloorPhoneH));
+            // b87: wide screens (iPad) ease the caption down with the shared device scale.
+            float tab = screenW > 2f && screenH > 2f ? DeviceFit.Ui(screenW, screenH) / Mathf.Max(screenH / 720f, 1f) : 1f;
+            int floor = Mathf.RoundToInt(CaptionFloorPhonePx * (h / CaptionFloorPhoneH) * tab);
             if (floor < 1) floor = 1;
             int old = CaptionPx(CaptionFloorRef);
             if (floor < old) floor = old;
@@ -56,7 +58,7 @@ namespace FlockFive
         // Wrapped line count at the lesson floor, in the shared column.
         public static int LessonCaptionLines(string text, float screenW, float screenH)
         {
-            float s = Mathf.Max(screenH / 720f, 1f);
+            float s = DeviceFit.UiH(screenH);
             float seatW = LessonColumnWidth(screenW, screenH);
             float padX = Mathf.Clamp(seatW * 0.055f, 10f * s, 18f * s);
             float textW = Mathf.Max(48f, seatW - padX * 2f);
@@ -76,7 +78,7 @@ namespace FlockFive
         public static int LessonCaptionFont(string text, float screenW, float screenH)
         {
             LessonTextBox(screenW, screenH, out float textW, out float textH);
-            float s = Mathf.Max(screenH / 720f, 1f);
+            float s = DeviceFit.UiH(screenH);
             var fit = FitLessonText(text, textW, textH, 12, Mathf.RoundToInt(32f * s), screenW, screenH);
             return fit.Font;
         }
@@ -85,7 +87,7 @@ namespace FlockFive
         // fits, then CaptionLayout.MeasureSnug so the box hugs the lines.
         public static CaptionLayout.SnugPlate LessonCaptionFit(string text, float screenW, float screenH)
         {
-            float s = Mathf.Max(screenH / 720f, 1f);
+            float s = DeviceFit.UiH(screenH);
             float seatW = LessonColumnWidth(screenW, screenH);
             float padX = Mathf.Clamp(seatW * 0.055f, 10f * s, 18f * s);
             float textW = Mathf.Max(48f, seatW - padX * 2f);
@@ -206,7 +208,7 @@ namespace FlockFive
             bool honeyOn = step == 3;
             CardText.LessonBands(focus, inspect, honeyOn, honeyOn, out var title, out var body, out var flavor, out var icons);
             var text = new CoachSeat.FocusText { Title = title, Body = body, Flavor = flavor };
-            float s = Mathf.Max(screenH / 720f, 1f);
+            float s = DeviceFit.UiH(screenH);
             var hang = CaptionLayout.BoxPad(screenH);
             // Seat is the box PaintCoachCaption insets. Fit the inner width once
             // so the paint does not wrap again and grow off the bottom.
@@ -250,7 +252,7 @@ namespace FlockFive
         // floor fit used. PaintCoachCaption insets this same way.
         public static float LessonSeatHeight(string line, float screenW, float screenH, float seatW)
         {
-            float s = Mathf.Max(screenH / 720f, 1f);
+            float s = DeviceFit.UiH(screenH);
             float padX = Mathf.Clamp(seatW * 0.055f, 10f * s, 18f * s);
             float textW = Mathf.Max(48f, seatW - padX * 2f);
             var fit = FitLessonText(line, textW, 4096f, 12, Mathf.RoundToInt(32f * s), screenW, screenH);

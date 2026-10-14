@@ -56,6 +56,8 @@ namespace FlockFive
         bool ApplyRepeatTicket(RewardedGrant.Ticket t)
         {
             if (t.Payload <= 0) return false;
+            // b87 (Brandon: double grant): the doubled amount rides the single Collect pay.
+            if (Purse.AddOwed(t.Payload)) return true;
             Purse.Credit(t.Payload);
             BeginRewardPay(t.Payload);
             return true;

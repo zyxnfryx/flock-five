@@ -138,9 +138,14 @@ namespace FlockFive
         }
 
         // LevelPlay OnAdClosed. A reward may still arrive after this.
+        public static void NoteAdOver() { if (_cur.Shown) Closed = true; }
+
         public static void OnClosed()
         {
             Closed = true;
+            // Reward arrived first: it applies now that the ad is gone (or on the restore,
+            // AdPause.End -> Flush, when the game is still frozen).
+            if (HasUnapplied && !AdPause.Active) Flush();
         }
 
         // No-fill or a display error. A show that never appeared cannot be earned
@@ -247,7 +252,10 @@ namespace FlockFive
             return true;
         }
 
-        static bool CanApply() => !Paused && !UiBusy && TryApply != null;
+        // b87 (Brandon: reward heard while the ad was still up): an earn only latches while
+        // the ad is on screen. It applies once the ad has closed and the game is restored.
+        public static bool AdUp => _cur.Open && _cur.Shown && !Closed && !_cur.Failed && (AdPause.Active || Ads.IsShowing);
+        static bool CanApply() => !Paused && !UiBusy && TryApply != null && !AdUp && !AdPause.Active;
 
         static bool Apply(ref Pending p)
         {

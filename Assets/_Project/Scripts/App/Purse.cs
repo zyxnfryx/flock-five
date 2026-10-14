@@ -169,6 +169,19 @@ namespace FlockFive
             return pay;
         }
 
+        // b87: the 2X ad top-up joins the held stage pay, so the player gets ONE grant
+        // (one coin fly, one sound) after the ad. False when nothing is held.
+        public static bool AddOwed(int extra)
+        {
+            if (extra <= 0 || Owed <= 0) return false;
+            Owed += extra;
+            Pending = Owed;
+            LastWin = Owed;
+            PrefGuard.SetInt(PrefOwed, Owed);
+            PlayerPrefs.Save();
+            return true;
+        }
+
         // Single stage-clear credit. A second call is a no-op until the next clear.
         public static bool CommitStreakPay()
         {

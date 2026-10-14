@@ -50,6 +50,19 @@ namespace FlockFive
             Live.Punch(0.16f + 0.07f * n, 0.09f + 0.07f * n, 1.5f + 1.2f * n, 0.10f + 0.05f * n);
         }
 
+        // b87 (Brandon, iPad): sparrow / hawk hits made the whole field "breathe" — each
+        // peck zoomed the camera (kick 3-9%) and twisted it 1-2.6 deg. Pest hits now use
+        // one tiny crisp shake: no zoom, no twist, short and small, so branches stay steady.
+        public const float PestTapDur = 0.07f;
+        public const float PestTapAmp = 0.022f;
+        public static bool LegacyPestPunch; // shot harness only: replays the old pest punch for a before clip
+        public static void PestTap()
+        {
+            if (Live == null) return;
+            if (LegacyPestPunch) { Live.Punch(0.10f, 0.07f, 2.4f, 0.08f); return; }
+            Live.Punch(PestTapDur, PestTapAmp, 0f, 0f);
+        }
+
         public void Punch(float dur, float amp, float twist, float kick)
         {
             _dur = Mathf.Max(0.08f, dur);

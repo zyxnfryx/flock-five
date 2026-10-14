@@ -133,7 +133,7 @@ namespace FlockFive.Editor
             EditorApplication.isPlaying = true;
         }
 
-        static void SetGameView(int width, int height)
+        internal static void SetGameView(int width, int height)
         {
             var asm = typeof(EditorWindow).Assembly;
             var gvType = asm.GetType("UnityEditor.GameView");

@@ -41,7 +41,7 @@ namespace FlockFive
         // Resting 9:16 playfield. Not the live orthographic size: a combo or
         // sparrow punch shrinks that for a few frames, and a refit during the
         // punch would park both columns closer to center after the camera settles.
-        public static float PlayHalfWidth() => CamOrtho * PortraitAspect;
+        public static float PlayHalfWidth() => CamOrtho * DeviceFit.PlayAspect();
 
         // Sprite center for a unit-scale limb whose outer bark kisses the bezel.
         // Screen width and the constant wood length only — never the remaining
@@ -491,7 +491,7 @@ namespace FlockFive
             var cam = go.AddComponent<Camera>();
             cam.orthographic = true;
             cam.orthographicSize = CamOrtho;
-            cam.aspect = PortraitAspect;
+            cam.aspect = DeviceFit.PlayAspect();
             cam.rect = new Rect(0f, 0f, 1f, 1f);
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = new Color(0.22f, 0.18f, 0.10f);
@@ -540,7 +540,7 @@ namespace FlockFive
             if (_cam == null) _cam = GetComponent<Camera>();
             if (_cam == null) return;
 
-            const float want = WorldBuilder.PortraitAspect;
+            float want = DeviceFit.PlayAspect();
             _cam.aspect = want;
             float window = (float)Screen.width / Mathf.Max(1, Screen.height);
             if (Mathf.Abs(window - want) < 0.03f)

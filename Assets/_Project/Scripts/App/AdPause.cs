@@ -52,6 +52,9 @@ namespace FlockFive
             // Pop already restored scale/listener; a stolen pause depth would leave 0, so fix it.
             if (!GamePause.Paused && Time.timeScale == 0f) GamePause.SetBaseScale(GamePause.BaseScale);
             if (!GamePause.Paused) AudioListener.pause = false;
+            // b87: the ad is over (close, fail or watchdog), so a missing close cannot strand
+            // a latched reward; it applies now, once, with the game restored.
+            RewardedGrant.NoteAdOver();
             if (_grantDue || RewardedGrant.HasUnapplied)
             {
                 _grantDue = false;
