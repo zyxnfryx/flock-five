@@ -64,6 +64,7 @@ namespace FlockFive.Editor
             Suite("build85-look", Build85TestsLook.Run);
             Suite("build85-daily", Build85TestsDaily.Run);
             Suite("build87-sparkle", Build87SparkleTests.Run);
+            Suite("build88-wing", Build88WingTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

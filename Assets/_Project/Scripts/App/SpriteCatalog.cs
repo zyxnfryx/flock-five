@@ -1944,5 +1944,331 @@ namespace FlockFive
             tex.Apply();
             return Sprite.Create(tex, new Rect(0, 0, 8, 8), new Vector2(0.5f, 0.5f), ppu);
         }
+
+        // Far wing of a right-facing sheet: the head-side wing, which is the
+        // bird's left wing. flipX turns that into the right wing. Null when this
+        // pose has no separate raised far wing (rest, and flaps that do not
+        // clear the skull). Cached per sprite.
+        struct FarHit
+        {
+            public int Id;
+            public byte[] Mask;
+            public int W, H;
+            public bool Ready;
+        }
+
+        static FarHit[] _farHits;
+        static int _farN;
+        struct FarPair
+        {
+            public int Id;
+            public Sprite Far, Body;
+            public bool Ready;
+        }
+
+        static FarPair[] _farPairs;
+        static int _farPairN;
+
+        public static bool TryFarWingMask(Sprite sprite, out byte[] mask, out int width, out int height)
+        {
+            mask = null;
+            width = 0;
+            height = 0;
+            if (sprite == null) return false;
+            int id = sprite.GetInstanceID();
+            if (_farHits != null)
+            {
+                for (int i = 0; i < _farN; i++)
+                {
+                    if (_farHits[i].Id != id) continue;
+                    mask = _farHits[i].Mask;
+                    width = _farHits[i].W;
+                    height = _farHits[i].H;
+                    return mask != null;
+                }
+            }
+            var built = BuildFarWingMask(sprite, out int bw, out int bh);
+            if (_farHits == null) _farHits = new FarHit[8];
+            if (_farN >= _farHits.Length)
+            {
+                var grow = new FarHit[_farHits.Length * 2];
+                for (int i = 0; i < _farHits.Length; i++) grow[i] = _farHits[i];
+                _farHits = grow;
+            }
+            _farHits[_farN++] = new FarHit { Id = id, Mask = built, W = bw, H = bh, Ready = true };
+            mask = built;
+            width = bw;
+            height = bh;
+            return built != null;
+        }
+
+        // Punched body (near wing stays on it) and the far wing alone. Same
+        // rect, pivot and pixels-per-unit, so the two quads stack.
+        public static bool TrySplitFarWing(Sprite sprite, out Sprite far, out Sprite body)
+        {
+            far = null;
+            body = null;
+            if (sprite == null) return false;
+            int id = sprite.GetInstanceID();
+            if (_farPairs != null)
+            {
+                for (int i = 0; i < _farPairN; i++)
+                {
+                    if (_farPairs[i].Id != id) continue;
+                    far = _farPairs[i].Far;
+                    body = _farPairs[i].Body;
+                    return far != null;
+                }
+            }
+            Sprite farS = null;
+            Sprite bodyS = null;
+            if (TryFarWingMask(sprite, out var mask, out int w, out int h) && mask != null)
+                SliceFarWing(sprite, mask, w, h, out farS, out bodyS);
+            if (_farPairs == null) _farPairs = new FarPair[8];
+            if (_farPairN >= _farPairs.Length)
+            {
+                var grow = new FarPair[_farPairs.Length * 2];
+                for (int i = 0; i < _farPairs.Length; i++) grow[i] = _farPairs[i];
+                _farPairs = grow;
+            }
+            _farPairs[_farPairN++] = new FarPair { Id = id, Far = farS, Body = bodyS, Ready = true };
+            far = farS;
+            body = bodyS;
+            return farS != null;
+        }
+
+        static byte[] BuildFarWingMask(Sprite sprite, out int width, out int height)
+        {
+            width = 0;
+            height = 0;
+            var tex = sprite.texture;
+            if (tex == null || !tex.isReadable) return null;
+            var rect = sprite.rect;
+            int ox = Mathf.RoundToInt(rect.x);
+            int oy = Mathf.RoundToInt(rect.y);
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 16 || h < 16) return null;
+            Color32[] px;
+            try { px = tex.GetPixels32(); }
+            catch (UnityException) { return null; }
+            int tw = tex.width;
+            if (px == null || ox < 0 || oy < 0 || ox + w > tw || oy + h > tex.height) return null;
+            var op = new bool[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                int src = (oy + y) * tw + ox;
+                int dst = y * w;
+                for (int x = 0; x < w; x++)
+                    op[dst + x] = px[src + x].a > 28;
+            }
+            var dome = HeadDome(sprite);
+            float ppu = sprite.pixelsPerUnit > 1f ? sprite.pixelsPerUnit : 220f;
+            int domeX = Mathf.RoundToInt(dome.x * ppu + sprite.pivot.x - 0.5f);
+            int domeY = Mathf.RoundToInt(dome.y * ppu + sprite.pivot.y - 0.5f);
+            int above = Mathf.RoundToInt(0.55f * ppu);
+            var runs = new Run8[8];
+            int start = -1;
+            int rn = 0;
+            for (int y = h - 1; y >= 0; y--)
+            {
+                rn = BigRuns(op, w, y, runs);
+                if (rn >= 2) { start = y; break; }
+            }
+            if (start < 0 || start < domeY + above) return null;
+            int nearI = 0;
+            int farI = rn - 1;
+            if (runs[farI].A > domeX + (int)(0.15f * ppu)) return null;
+            var lab = new byte[w * h];
+            int far0 = runs[farI].A, far1 = runs[farI].B;
+            int near0 = runs[nearI].A, near1 = runs[nearI].B;
+            int seedTop = start;
+            int seedBot = start;
+            int farMaxX = far1;
+            for (int y = start; y >= 0; y--)
+            {
+                rn = BigRuns(op, w, y, runs);
+                if (rn < 2) break;
+                int fi = BestRun(runs, rn, far0, far1);
+                int ni = BestRun(runs, rn, near0, near1);
+                if (fi < 0 || ni < 0 || fi == ni) break;
+                if (runs[fi].A < runs[ni].A) break;
+                PaintRun(lab, op, w, y, runs[fi], 1);
+                PaintRun(lab, op, w, y, runs[ni], 2);
+                far0 = runs[fi].A;
+                far1 = runs[fi].B;
+                near0 = runs[ni].A;
+                near1 = runs[ni].B;
+                if (far1 > farMaxX) farMaxX = far1;
+                seedBot = y;
+            }
+            if (seedTop - seedBot < above) return null;
+            int yCut = (int)(h * 0.38f);
+            int xCut = farMaxX + 8;
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w;
+                bool low = y < yCut;
+                for (int x = 0; x < w; x++)
+                {
+                    int i = row + x;
+                    if (!op[i] || lab[i] != 0) continue;
+                    if (low || x > xCut) lab[i] = 2;
+                }
+            }
+            var q = new int[w * h];
+            int qt = 0;
+            for (int i = 0; i < lab.Length; i++)
+                if (lab[i] == 1 || lab[i] == 2) q[qt++] = i;
+            int qh = 0;
+            while (qh < qt)
+            {
+                int i = q[qh++];
+                byte v = lab[i];
+                int x = i % w;
+                int y = i / w;
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    int ny = y + dy;
+                    if ((uint)ny >= (uint)h) continue;
+                    int nrow = ny * w;
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        if (dx == 0 && dy == 0) continue;
+                        int nx = x + dx;
+                        if ((uint)nx >= (uint)w) continue;
+                        int j = nrow + nx;
+                        if (lab[j] != 0 || !op[j]) continue;
+                        lab[j] = v;
+                        q[qt++] = j;
+                    }
+                }
+            }
+            int farCount = 0;
+            int opaque = 0;
+            int minX = w, maxX = 0, maxY = 0;
+            long sumX = 0;
+            for (int i = 0; i < lab.Length; i++)
+            {
+                if (!op[i]) { lab[i] = 0; continue; }
+                opaque++;
+                if (lab[i] != 1) { lab[i] = 0; continue; }
+                farCount++;
+                int x = i % w;
+                int y = i / w;
+                sumX += x;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+            }
+            if (farCount < 8000 || farCount * 2 > opaque) return null;
+            if (maxX > domeX + 0.5f * ppu) return null;
+            if (maxY < domeY + above * 0.5f) return null;
+            if (sumX > (long)domeX * farCount) return null;
+            width = w;
+            height = h;
+            return lab;
+        }
+
+        struct Run8
+        {
+            public int A, B;
+        }
+
+        static int BigRuns(bool[] op, int w, int y, Run8[] into)
+        {
+            int n = 0;
+            int row = y * w;
+            int x = 0;
+            while (x < w)
+            {
+                while (x < w && !op[row + x]) x++;
+                if (x >= w) break;
+                int a = x;
+                int b = x;
+                while (x < w)
+                {
+                    if (op[row + x]) { b = x; x++; continue; }
+                    int g = x;
+                    while (g < w && !op[row + g] && g - x < 12) g++;
+                    if (g < w && op[row + g] && g - x < 12) { x = g; continue; }
+                    break;
+                }
+                x = b + 1;
+                if (b - a + 1 < 36) continue;
+                if (n < into.Length) into[n++] = new Run8 { A = a, B = b };
+                else into[into.Length - 1] = new Run8 { A = a, B = b };
+            }
+            return n;
+        }
+
+        static int BestRun(Run8[] runs, int n, int a, int b)
+        {
+            int best = -1;
+            int ov = 0;
+            for (int i = 0; i < n; i++)
+            {
+                int o = Mathf.Min(runs[i].B, b) - Mathf.Max(runs[i].A, a);
+                if (o > ov) { ov = o; best = i; }
+            }
+            return ov > 15 ? best : -1;
+        }
+
+        static void PaintRun(byte[] lab, bool[] op, int w, int y, Run8 run, byte v)
+        {
+            int row = y * w;
+            for (int x = run.A; x <= run.B; x++)
+                if (op[row + x]) lab[row + x] = v;
+        }
+
+        static void SliceFarWing(Sprite src, byte[] mask, int w, int h, out Sprite far, out Sprite body)
+        {
+            far = null;
+            body = null;
+            var tex = src.texture;
+            if (tex == null) return;
+            var rect = src.rect;
+            int ox = Mathf.RoundToInt(rect.x);
+            int oy = Mathf.RoundToInt(rect.y);
+            int tw = tex.width;
+            Color32[] px;
+            try { px = tex.GetPixels32(); }
+            catch (UnityException) { return; }
+            var farPx = new Color32[w * h];
+            var bodyPx = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                int srcRow = (oy + y) * tw + ox;
+                int dst = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    var c = px[srcRow + x];
+                    if (mask[dst + x] != 0) farPx[dst + x] = c;
+                    else bodyPx[dst + x] = c;
+                }
+            }
+            var pivot = new Vector2(
+                src.pivot.x / Mathf.Max(1f, rect.width),
+                src.pivot.y / Mathf.Max(1f, rect.height));
+            far = MakeSlice(src.name + "Far", farPx, w, h, pivot, src.pixelsPerUnit);
+            body = MakeSlice(src.name + "Body", bodyPx, w, h, pivot, src.pixelsPerUnit);
+        }
+
+        static Sprite MakeSlice(string name, Color32[] px, int w, int h, Vector2 pivot, float ppu)
+        {
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                name = name,
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            var spr = Sprite.Create(tex, new Rect(0f, 0f, w, h), pivot, ppu, 0, SpriteMeshType.FullRect);
+            spr.name = name;
+            spr.hideFlags = HideFlags.HideAndDontSave;
+            return spr;
+        }
     }
 }

@@ -1257,6 +1257,13 @@ namespace FlockFive
             if (spr == null || spr.texture == null) return default;
             var rest = SpriteCatalog.BirdFrame(col, 0f, false);
             var r = CatalogBirdRect(spr, rest, c, icon);
+            DrawSheet(spr, r, faceLeft);
+            return r;
+        }
+
+        static void DrawSheet(Sprite spr, Rect r, bool faceLeft)
+        {
+            if (spr == null || spr.texture == null || r.width < 2f) return;
             if (faceLeft)
             {
                 var m = GUI.matrix;
@@ -1266,7 +1273,6 @@ namespace FlockFive
             }
             else
                 GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
-            return r;
         }
 
         // Off the perch, wing frames. On the perch, folded wings. One path for
@@ -1278,14 +1284,39 @@ namespace FlockFive
             return DrawDressedBird(col, kit, c, icon, faceLeft, wings, clock, buttonSeat, glideSlot);
         }
 
-        // Bow sits behind the body. Crown sits in front. Neither path writes a garden kit.
+        static readonly int[] _kitPaint = new int[3];
+
+        // Bow sits behind the body. Crown sits in front. The far wing sits behind
+        // either topper. The near wing stays in the body sheet. KitPaintSequence
+        // is the same order the garden writes with KitDrawOrder.
         // buttonSeat is the five color buttons. Home and adopt birds leave it false.
         Rect DrawDressedBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool wings, float clock, bool buttonSeat = false, int glideSlot = -1)
         {
             if (buttonSeat) glideSlot = -1;
-            if (kit == 1) DrawAvatarKit(1, col, c, icon, faceLeft, wings, clock, buttonSeat, glideSlot);
-            var drawn = DrawCatalogBird(col, c, icon, faceLeft, wings, clock);
-            if (kit == 2) DrawAvatarKit(2, col, c, icon, faceLeft, wings, clock, buttonSeat, glideSlot);
+            float t = wings ? clock * AvatarFlapRate : 0f;
+            var spr = SpriteCatalog.BirdFrame(col, t, wings);
+            if (spr == null || spr.texture == null) return default;
+            var rest = SpriteCatalog.BirdFrame(col, 0f, false);
+            var drawn = CatalogBirdRect(spr, rest, c, icon);
+            var worn = kit == 1 ? BirdKit.Bow : kit == 2 ? BirdKit.Crown : BirdKit.Plain;
+            Sprite farSpr = null;
+            Sprite bodySpr = spr;
+            bool split = false;
+            if (worn != BirdKit.Plain && SpriteCatalog.TrySplitFarWing(spr, out var splitFar, out var splitBody))
+            {
+                farSpr = splitFar;
+                bodySpr = splitBody;
+                split = true;
+            }
+            int n = BirdIdle.KitPaintSequence(worn, split, _kitPaint);
+            for (int i = 0; i < n; i++)
+            {
+                int layer = _kitPaint[i];
+                if (layer == BirdIdle.KitLayerFar) DrawSheet(farSpr, drawn, faceLeft);
+                else if (layer == BirdIdle.KitLayerBody) DrawSheet(bodySpr, drawn, faceLeft);
+                else if (layer == BirdIdle.KitLayerTopper)
+                    DrawAvatarKit(kit, col, c, icon, faceLeft, wings, clock, buttonSeat, glideSlot);
+            }
             return drawn;
         }
 

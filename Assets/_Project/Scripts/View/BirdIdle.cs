@@ -6,7 +6,8 @@ namespace FlockFive
     /// <summary>
     /// Idle bird. The kit (bow or crown) is a sibling SpriteRenderer.
     /// A bow tucks behind the head. A crown sits on the dome, in front of the body
-    /// and under the face. Bare (Plain) draws no kit.
+    /// and under the face. The far wing draws behind that topper. The near wing
+    /// stays on the body. Bare (Plain) draws no kit.
     /// </summary>
     public sealed class BirdIdle : MonoBehaviour
     {
@@ -24,6 +25,10 @@ namespace FlockFive
         SpriteRenderer _sr;
         SpriteRenderer _face;
         SpriteRenderer _kit;
+        SpriteRenderer _far;
+        Sprite _farSprite;
+        Sprite _poseSprite;
+        bool _farOn;
         KitGlide _kitGlide;
         SpriteRenderer[] _glow;
         SpriteRenderer[] _kitGlow;
@@ -170,6 +175,7 @@ namespace FlockFive
         void HideDressing()
         {
             if (_kit != null && _kit.enabled) _kit.enabled = false;
+            if (_far != null && _far.enabled) _far.enabled = false;
             if (_face != null && _face.enabled) _face.enabled = false;
             _selectA = 0f;
             HideFx(_aura);
@@ -187,6 +193,7 @@ namespace FlockFive
             FadeSprite(_sr, a);
             FadeSprite(_face, a);
             FadeSprite(_kit, a);
+            FadeSprite(_far, a);
         }
 
         static void FadeSprite(SpriteRenderer sr, float a)
@@ -250,6 +257,7 @@ namespace FlockFive
             var mood = BirdMood.Of(Color);
             bool wings = false;
             float flapT = 0f;
+            bool kitOn = BirdDress.KitOn(show, Shrouded, Kit == BirdKit.Plain);
             if (show)
             {
                 if (_sr.flipX != FaceLeft) _sr.flipX = FaceLeft;
@@ -265,10 +273,20 @@ namespace FlockFive
                 float flap = wings ? FlapRate * mul : 0.06f;
                 flapT = (Time.time + _phase) * flap;
                 var frame = SpriteCatalog.BirdFrame(Color, flapT, wings);
+                _poseSprite = frame;
                 // Read before the assign. A sprite swap must not stick the body at 0
                 // (behind wood and leaves). Frozen flight keeps Fly; it does not drop to Perch.
                 int heldOrder = _sr.sortingOrder;
-                if (_sr.sprite != frame) _sr.sprite = frame;
+                Sprite draw = frame;
+                _farOn = false;
+                _farSprite = null;
+                if (kitOn && SpriteCatalog.TrySplitFarWing(frame, out var farSpr, out var punched))
+                {
+                    draw = punched;
+                    _farSprite = farSpr;
+                    _farOn = true;
+                }
+                if (_sr.sprite != draw) _sr.sprite = draw;
                 if (_sr.flipX != FaceLeft) _sr.flipX = FaceLeft;
                 if (!Frozen)
                 {
@@ -281,8 +299,8 @@ namespace FlockFive
                 else
                     FlockSort.Apply(_sr, heldOrder);
             }
-            // Draw order (back→front): tuck kit → body/flaps → head kit → face
-            bool kitOn = BirdDress.KitOn(show, Shrouded, Kit == BirdKit.Plain);
+            // Draw order (back→front): far wing → bow → body/near wing → crown → face.
+            // KitDrawOrder is the one writer. A bare bird draws the whole sheet.
             if (kitOn) EnsureKit();
             PlaceKit(kitOn, wings, flapT);
             PlaceFace(mood, BirdDress.FaceOn(show, Shrouded));
@@ -676,7 +694,7 @@ namespace FlockFive
             _bang.enabled = true;
             float pop = Mathf.Sin(Mathf.Clamp01(u / 0.28f) * Mathf.PI * 0.5f);
             float fade = u < 0.72f ? 1f : Mathf.Clamp01((1f - u) / 0.28f);
-            int frame = SpriteCatalog.PoseIndex(_sr != null ? _sr.sprite : null, Color, BirdSex.Neutral);
+            int frame = SpriteCatalog.PoseIndex(_poseSprite != null ? _poseSprite : (_sr != null ? _sr.sprite : null), Color, BirdSex.Neutral);
             float bird = transform.localScale.x;
             if (bird < 0f) bird = -bird;
             AlertAnchor(frame, FaceLeft, bird, Kit, Color, out float ax, out float ay, out float fit);
@@ -1212,6 +1230,78 @@ namespace FlockFive
             return ppu * (birdPx / texW);
         }
 
+        // Far wing of a kit bird. Right-facing art keeps the bird's left wing on
+        // the far side of the head; flipX makes that the right wing.
+        public enum WingSide { Left = 0, Right = 1 }
+
+        public static WingSide FarWingSide(bool faceLeft) =>
+            faceLeft ? WingSide.Right : WingSide.Left;
+
+        public const int KitLayerFar = 0;
+        public const int KitLayerBody = 1;
+        public const int KitLayerTopper = 2;
+
+        // Sorting orders for one worn topper. bodyOrder is the body and the near
+        // wing; that layer is not moved. The far wing is always behind the topper.
+        // A bow stays at body-1. A crown stays at body+1, under the face.
+        public static void KitDrawOrder(BirdKit worn, int bodyOrder, out int farWing, out int topper)
+        {
+            if (worn == BirdKit.Plain)
+            {
+                farWing = bodyOrder;
+                topper = bodyOrder;
+                return;
+            }
+            if (FlockKit.BehindBody(worn))
+            {
+                farWing = bodyOrder - 2;
+                topper = bodyOrder - 1;
+            }
+            else
+            {
+                farWing = bodyOrder - 1;
+                topper = bodyOrder + 1;
+            }
+        }
+
+        // Back to front. The body slot is the near wing. Far is skipped when this
+        // pose has no separate far wing. The topper is skipped when the bird is bare.
+        public static int KitPaintSequence(BirdKit worn, bool hasFarWing, int[] kinds)
+        {
+            if (kinds == null || kinds.Length < 3) return 0;
+            KitDrawOrder(worn, 0, out int farOrder, out int topOrder);
+            int n = 0;
+            if (hasFarWing && worn != BirdKit.Plain)
+            {
+                kinds[n] = KitLayerFar;
+                _paintOrd[n++] = farOrder;
+            }
+            kinds[n] = KitLayerBody;
+            _paintOrd[n++] = 0;
+            if (worn != BirdKit.Plain)
+            {
+                kinds[n] = KitLayerTopper;
+                _paintOrd[n++] = topOrder;
+            }
+            for (int i = 1; i < n; i++)
+            {
+                int ko = _paintOrd[i];
+                int kk = kinds[i];
+                int j = i;
+                while (j > 0 && _paintOrd[j - 1] > ko)
+                {
+                    _paintOrd[j] = _paintOrd[j - 1];
+                    kinds[j] = kinds[j - 1];
+                    j--;
+                }
+                _paintOrd[j] = ko;
+                kinds[j] = kk;
+            }
+            return n;
+        }
+
+        static readonly int[] _paintOrd = new int[3];
+
         // Garden accessory anchor. The crown base and the bow knot sit on
         // SpriteCatalog.HeadDome of the live body sprite (every color, every flap).
         // Scale follows HeadSpan, from fitBody when a raised wing clips the walk.
@@ -1515,13 +1605,19 @@ namespace FlockFive
             {
                 if (_kit != null && _kit.enabled) _kit.enabled = false;
                 _kitGlide.Ready = false;
+                HideFar();
                 return;
             }
-            if (_kit == null) return;
+            if (_kit == null)
+            {
+                HideFar();
+                return;
+            }
             if (_kit.enabled != on) _kit.enabled = on;
             if (!on)
             {
                 _kitGlide.Ready = false;
+                HideFar();
                 return;
             }
             SpriteCatalog.FlapPair(Color, BirdSex.Neutral, flapT, wings, out var body, out var next, out float phase);
@@ -1535,13 +1631,46 @@ namespace FlockFive
             var kitRot = Quaternion.Euler(0f, 0f, tiltZ);
             if (_kit.transform.localRotation != kitRot) _kit.transform.localRotation = kitRot;
             if (_kit.flipX != kitFlip) _kit.flipX = kitFlip;
-            // Tuck sits behind the body. Headwear sits in front, under the face.
+            // Far wing behind the topper. Near wing stays on the body.
             int bodyOrder = _sr != null ? _sr.sortingOrder : FlockSort.Perch;
-            int kitOrder = FlockKit.BehindBody(worn) ? bodyOrder - 1 : bodyOrder + 1;
+            KitDrawOrder(worn, bodyOrder, out int farOrder, out int kitOrder);
             FlockSort.Apply(_kit, kitOrder);
+            PlaceFarWing(farOrder);
             var kitScale = new Vector3(ks, ks, 1f);
             if (_kit.transform.localScale != kitScale) _kit.transform.localScale = kitScale;
             if (!Frozen && _kit.color != UnityEngine.Color.white) _kit.color = UnityEngine.Color.white;
+        }
+
+        void HideFar()
+        {
+            if (_far != null && _far.enabled) _far.enabled = false;
+        }
+
+        void PlaceFarWing(int order)
+        {
+            if (!_farOn || _farSprite == null)
+            {
+                HideFar();
+                return;
+            }
+            if (_far == null)
+            {
+                var go = new GameObject("FarWing");
+                go.transform.SetParent(transform, false);
+                go.transform.localPosition = Vector3.zero;
+                go.transform.localRotation = Quaternion.identity;
+                go.transform.localScale = Vector3.one;
+                _far = go.AddComponent<SpriteRenderer>();
+            }
+            if (_far.sprite != _farSprite) _far.sprite = _farSprite;
+            if (_far.flipX != FaceLeft) _far.flipX = FaceLeft;
+            if (_sr != null)
+            {
+                if (_far.sortingLayerID != _sr.sortingLayerID) _far.sortingLayerID = _sr.sortingLayerID;
+                if (_far.color != _sr.color) _far.color = _sr.color;
+            }
+            FlockSort.Apply(_far, order);
+            if (!_far.enabled) _far.enabled = true;
         }
 
         void BeatWings()
