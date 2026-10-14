@@ -697,6 +697,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-poker-feel"); } catch { }
                 StartCoroutine(ShotPokerFeel());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-peach-flutter"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-peach-flutter"); } catch { }
+                StartCoroutine(ShotPeachFlutter());
+            }
 #endif
         }
 
@@ -6350,6 +6355,12 @@ namespace FlockFive
                 _dailyShotQuiet = true;
                 try { System.IO.File.Delete("/tmp/flock-five-hand-qa"); } catch { }
                 StartCoroutine(ShotHandQa());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-peach-flutter"))
+            {
+                _dailyShotQuiet = true;
+                try { System.IO.File.Delete("/tmp/flock-five-peach-flutter"); } catch { }
+                StartCoroutine(ShotPeachFlutter());
             }
             if (System.IO.File.Exists("/tmp/flock-five-force-five-wilds"))
             {

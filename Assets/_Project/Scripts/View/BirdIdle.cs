@@ -22,6 +22,7 @@ namespace FlockFive
         public bool FaceLeft;
         public BirdColor Color;
         public BirdKit Kit;
+        public bool MoodOn = true;
         SpriteRenderer _sr;
         SpriteRenderer _face;
         SpriteRenderer _kit;
@@ -101,11 +102,64 @@ namespace FlockFive
 
         public Bird AsBird() => new Bird(Color, Kit);
 
+        // Neutral peach is recoloured gold and already has a painted eye. The Mood
+        // face is two white sclera that land on the neck once the bird fills the screen.
+        public void SuppressMood()
+        {
+            MoodOn = false;
+            var kids = GetComponentsInChildren<SpriteRenderer>(true);
+            for (int i = 0; i < kids.Length; i++)
+            {
+                if (kids[i] == null || kids[i].transform == transform) continue;
+                Object.Destroy(kids[i].gameObject);
+            }
+            _face = null;
+            _kit = null;
+            _far = null;
+            _farSprite = null;
+            _farOn = false;
+        }
+
         public void Flutter(float seconds)
         {
             Flapping = true;
             _flutterUntil = Time.time + Mathf.Max(0.12f, seconds);
             _nextWing = 0f;
+        }
+
+        // Sling owns position, scale, and rotation. This only cycles wing frames.
+        // Unscaled time so a hit-stop that freezes timeScale still flaps.
+        bool _flapDrive;
+        float _flapHz = 6f;
+        float _flapClock;
+        float _poseAccum;
+        int _poseIndex = 1;
+        int _wingPose;
+        Vector2 _flapAnchor;
+        bool _flapAnchored;
+
+        public int WingPose => _wingPose;
+        public bool FlapDriven => _flapDrive;
+
+        public void DriveFlap(float cyclesPerSec)
+        {
+            _flapHz = Mathf.Max(0.4f, cyclesPerSec);
+            if (_flapDrive) return;
+            _flapDrive = true;
+            enabled = true;
+            Flapping = true;
+            Frozen = true;
+            // BirdFrame step 1 is wings up. Open there instead of the tucked rest.
+            _flapClock = 1.5f / 16f;
+            _poseAccum = 0f;
+            _poseIndex = 1;
+            var up = SpriteCatalog.FlapPose(Color, 1);
+            if (up != null)
+            {
+                _flapAnchor = SpriteCatalog.CoreFromPivot(up);
+                _flapAnchored = true;
+            }
+            ApplyFlapFrame();
         }
 
         // Short celebratory outline. Fades on its own so a score hop never sticks.
@@ -204,8 +258,19 @@ namespace FlockFive
             sr.color = c;
         }
 
+        // Parent-space shift that keeps the body on the wings-up anchor.
+        // The sling writes the path position first; this does not stick across frames.
+        public Vector3 FlapBodyPull()
+        {
+            if (!_flapAnchored || _sr == null || _sr.sprite == null) return Vector3.zero;
+            var delta = _flapAnchor - SpriteCatalog.CoreFromPivot(_sr.sprite);
+            var s = transform.localScale;
+            return transform.localRotation * new Vector3(delta.x * s.x, delta.y * s.y, 0f);
+        }
+
         void EnsureFace()
         {
+            if (!MoodOn) return;
             if (_face != null)
             {
                 int faceHeld = _face.sortingOrder;
@@ -237,9 +302,43 @@ namespace FlockFive
             return d.sqrMagnitude < 0.0256f;
         }
 
+        void TickFlapDrive()
+        {
+            // Two open poses per cycle. Catch up at most one pose on a long frame.
+            // ShowClock follows the capture step so a slow editor frame does not skip the flap.
+            _poseAccum += ShowClock.Delta * _flapHz * 2f;
+            if (_poseAccum >= 1f)
+            {
+                _poseIndex += 1;
+                _poseAccum -= 1f;
+                if (_poseAccum > 1f) _poseAccum = 1f;
+            }
+            ApplyFlapFrame();
+            if (_flapAnchored) transform.localPosition += FlapBodyPull();
+        }
+
+        void ApplyFlapFrame()
+        {
+            if (_sr == null) _sr = GetComponent<SpriteRenderer>();
+            if (_sr == null) return;
+            _sr.flipX = FaceLeft;
+            // Wings up and wings mid. Skip the tucked rest. FlapPose keeps the
+            // garden BirdFrame on the 6-pose kit cycle.
+            bool mid = (_poseIndex & 1) == 0;
+            int pose = mid ? 2 : 1;
+            var spr = SpriteCatalog.FlapPose(Color, pose);
+            if (spr != null) _sr.sprite = spr;
+            _wingPose = pose;
+        }
+
         void LateUpdate()
         {
             if (!isActiveAndEnabled) return;
+            if (_flapDrive)
+            {
+                TickFlapDrive();
+                return;
+            }
             if (_flutterUntil > 0f && Time.time >= _flutterUntil)
             {
                 _flutterUntil = 0f;
@@ -1083,7 +1182,11 @@ namespace FlockFive
 
         void PlaceFace(BirdMood.Pose mood, bool on)
         {
-            if (_face == null) return;
+            if (!MoodOn || _face == null)
+            {
+                if (_face != null && _face.enabled) _face.enabled = false;
+                return;
+            }
             if (_face.enabled != on) _face.enabled = on;
             if (!on) return;
             if (Time.time >= _nextBlink)

@@ -432,7 +432,7 @@ namespace FlockFive
             }
             if (_rushing)
             {
-                _rushT += PlayClock.Delta;
+                _rushT += ShowClock.Delta;
                 if (_rushT >= _rushDur)
                 {
                     _rushing = false;

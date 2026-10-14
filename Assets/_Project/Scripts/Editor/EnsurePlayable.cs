@@ -333,7 +333,8 @@ namespace FlockFive.Editor
         [MenuItem("Flock Five/Play Slice")]
         public static void EnterPlay()
         {
-            ForcePortraitGameView();
+            if (File.Exists("/tmp/flock-five-peach-flutter")) ForceFlutterFrame();
+            else ForcePortraitGameView();
             if (EditorApplication.isPlaying)
             {
                 if (_enterQueued) return;
@@ -364,7 +365,8 @@ namespace FlockFive.Editor
                 EditorApplication.delayCall += WaitThenPlay;
                 return;
             }
-            ForcePortraitGameView();
+            if (File.Exists("/tmp/flock-five-peach-flutter")) ForceFlutterFrame();
+            else ForcePortraitGameView();
             _enterQueued = false;
             EditorApplication.isPaused = false;
             if (!EditorApplication.isPlaying)
@@ -406,7 +408,8 @@ namespace FlockFive.Editor
             "/tmp/flock-five-b88-streak",
             "/tmp/flock-five-wt-b88-pest",
             "/tmp/flock-five-b88-curtain",
-            "/tmp/flock-five-b88-poker-tap"
+            "/tmp/flock-five-b88-poker-tap",
+            "/tmp/flock-five-peach-flutter"
         };
 
         static bool AnyShotCmd()
@@ -423,8 +426,31 @@ namespace FlockFive.Editor
             app.StartCoroutine(method);
         }
 
+        static double _flutterT0 = -1;
+
+        static void WatchFlutter()
+        {
+            const string done = "/tmp/flock-peach-flutter-done";
+            bool armed = File.Exists("/tmp/flock-five-peach-flutter") || FlockFive.FlockFiveApp.EditorShotLive;
+            // A leftover done marker must not quit an ordinary compile.
+            if (File.Exists(done) && armed)
+            {
+                Debug.Log("Flock Five: peach flutter capture done");
+                EditorApplication.Exit(0);
+                return;
+            }
+            if (!armed) return;
+            if (_flutterT0 < 0) _flutterT0 = EditorApplication.timeSinceStartup;
+            if (EditorApplication.timeSinceStartup - _flutterT0 > 720)
+            {
+                Debug.LogError("Flock Five: peach flutter capture timed out");
+                EditorApplication.Exit(1);
+            }
+        }
+
         static void TickPlayCmd()
         {
+            WatchFlutter();
             if (File.Exists("/tmp/flock-five-unpause")
                 || AnyShotCmd()
                 || FlockFive.FlockFiveApp.EditorShotLive
@@ -434,6 +460,8 @@ namespace FlockFive.Editor
                 EditorApplication.QueuePlayerLoopUpdate();
                 try { if (File.Exists("/tmp/flock-five-unpause")) File.Delete("/tmp/flock-five-unpause"); } catch { }
             }
+            if (EditorApplication.isPlaying && FlockFive.FlockFiveApp.EditorShotLive)
+                EditorApplication.QueuePlayerLoopUpdate();
             if (AnyShotCmd())
             {
                 if (File.Exists("/tmp/flock-five-b88-curtain") && !File.Exists("/tmp/curtain-flag-seen"))
@@ -500,7 +528,11 @@ namespace FlockFive.Editor
             EnterPlay();
         }
 
-        static void ForcePortraitGameView()
+        static void ForceFlutterFrame() => ForceGameView(1170, 2532, "Flock Five Flutter");
+
+        static void ForcePortraitGameView() => ForceGameView(1080, 1920, "Flock Five iPhone");
+
+        static void ForceGameView(int width, int height, string label)
         {
             var asm = typeof(EditorWindow).Assembly;
             var gvType = asm.GetType("UnityEditor.GameView");
@@ -509,13 +541,17 @@ namespace FlockFive.Editor
             EditorWindow gv = null;
             var all = Resources.FindObjectsOfTypeAll(gvType);
             if (all != null && all.Length > 0) gv = all[0] as EditorWindow;
-            if (gv == null) gv = EditorWindow.GetWindow(gvType, false, "Game", true);
+            if (gv == null)
+            {
+                try { gv = EditorWindow.GetWindow(gvType, false, "Game", true); }
+                catch { return; }
+            }
             if (gv == null) return;
             gv.Focus();
 
             try
             {
-                int found = FindOrAddPortraitSize(asm);
+                int found = FindOrAddPortraitSize(asm, width, height, label);
                 if (found < 0)
                 {
                     Debug.LogWarning("Flock Five: no portrait Game view size.");
@@ -543,7 +579,7 @@ namespace FlockFive.Editor
             }
         }
 
-        static int FindOrAddPortraitSize(Assembly asm)
+        static int FindOrAddPortraitSize(Assembly asm, int width, int height, string label)
         {
             var sizesType = asm.GetType("UnityEditor.GameViewSizes");
             var sizeType = asm.GetType("UnityEditor.GameViewSize");
@@ -565,7 +601,7 @@ namespace FlockFive.Editor
                 var st = size.GetType();
                 int w = (int)st.GetProperty("width").GetValue(size, null);
                 int h = (int)st.GetProperty("height").GetValue(size, null);
-                if (w == 1080 && h == 1920) return i;
+                if (w == width && h == height) return i;
                 if (h > w && w >= 320)
                 {
                     fallback = i;
@@ -582,7 +618,7 @@ namespace FlockFive.Editor
                 object fixedRes = 1;
                 if (sizeTypeEnum != null)
                     fixedRes = System.Enum.ToObject(sizeTypeEnum, 1);
-                var custom = ctor.Invoke(new[] { fixedRes, 1080, 1920, "Flock Five iPhone" });
+                var custom = ctor.Invoke(new[] { fixedRes, width, height, label });
                 add.Invoke(group, new[] { custom });
                 var save = sizesType.GetMethod("SaveToHDD", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (save != null) save.Invoke(instance, null);
