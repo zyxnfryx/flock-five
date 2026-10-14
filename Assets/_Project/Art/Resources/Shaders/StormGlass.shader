@@ -49,6 +49,25 @@ Shader "FlockFive/StormGlass"
                 return c;
             }
 
+            // A residual droplet on the wet trail. Same lens as the bead, much smaller.
+            void TrailBead(float2 from, float2 rad, float2 at, float radMul, float body, float beadA, inout float a, inout float3 scene)
+            {
+                float2 local = from - at;
+                float2 bn = local / max(rad * radMul, float2(1e-5, 1e-5));
+                float br = length(bn);
+                float disc = smoothstep(1.08, 0.55, br) * (1.0 - body);
+                float ba = disc * beadA * 0.82;
+                if (ba <= a) return;
+                float reach = lerp(1.65, 2.15, saturate(br * br));
+                scene = SampleScene(_Bead.xy + at - local * reach);
+                scene *= 1.08;
+                float rim = smoothstep(0.78, 1.0, br);
+                scene = lerp(scene, scene * float3(0.90, 0.93, 0.97), rim);
+                float2 spec = bn - float2(-0.32, 0.34);
+                scene += exp(-dot(spec, spec) * 80.0) * 0.85 * disc;
+                a = ba;
+            }
+
             float4 Frag(Varyings input) : SV_Target0
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
@@ -71,8 +90,10 @@ Shader "FlockFive/StormGlass"
                 float rim = smoothstep(0.975, 1.0, r) * body;
                 scene = lerp(scene, scene * float3(0.90, 0.92, 0.95), rim * (1.0 - splat * 0.35));
 
-                float ring = smoothstep(0.55, 0.74, r) * smoothstep(1.02, 0.84, r) * splat;
-                scene += ring * float3(1.0, 0.98, 0.96) * 0.42;
+                float ring = smoothstep(0.48, 0.70, r) * smoothstep(1.04, 0.82, r) * splat;
+                scene += ring * float3(1.0, 0.98, 0.96) * 0.9;
+                float splashEdge = smoothstep(0.76, 0.98, r) * splat * body;
+                scene += splashEdge * 0.62;
 
                 float2 spec = n - float2(-0.30, 0.36);
                 float hot = exp(-dot(spec, spec) * 140.0);
@@ -86,15 +107,20 @@ Shader "FlockFive/StormGlass"
                 {
                     float along = dot(from, trail) / trailLen2;
                     float2 side = (from - trail * along) / rad;
-                    float halfW = lerp(0.22, 0.035, saturate(along));
-                    float streak = smoothstep(0.02, 0.10, along) * smoothstep(1.12, 0.62, along);
-                    streak *= smoothstep(halfW, halfW * 0.28, length(side));
-                    streak *= (1.0 - body) * _Bead.z * 0.38;
+                    float halfW = lerp(0.16, 0.028, saturate(along));
+                    float streak = smoothstep(0.02, 0.08, along) * smoothstep(1.08, 0.55, along);
+                    streak *= smoothstep(halfW, halfW * 0.25, length(side));
+                    streak *= (1.0 - body) * _Bead.z * 0.5;
                     if (streak > a)
                     {
-                        scene = SampleScene(pos) * float3(1.03, 1.05, 1.08);
+                        scene = SampleScene(pos) * float3(1.04, 1.06, 1.09);
                         a = streak;
                     }
+
+                    // Tiny beads riding the wet line, largest near the drop.
+                    TrailBead(from, rad, trail * 0.40, 0.34, body, _Bead.z, a, scene);
+                    TrailBead(from, rad, trail * 0.68, 0.26, body, _Bead.z, a, scene);
+                    TrailBead(from, rad, trail * 0.92, 0.18, body, _Bead.z, a, scene);
                 }
 
                 if (a < 0.003)
