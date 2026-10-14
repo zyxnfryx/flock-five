@@ -546,10 +546,20 @@ namespace FlockFive
             if (inset < 8f) inset = 8f;
             if (inset > full) inset = full;
             if (string.IsNullOrEmpty(text)) return inset;
+            // Keep the author's breaks. Widen the column before inventing a new wrap,
+            // so "Bees earn album cards." stays one row instead of spilling into the next.
+            if (KeepsAuthor(style, text, inset, font)) return inset;
+            if (KeepsAuthor(style, text, full, font)) return full;
             var fit = FitBanner(style, text, inset, font);
             if (fit.Lines >= 1 && fit.Lines <= BannerMaxLines && ShownFits(style, fit.Shown, inset, font))
                 return inset;
             return full;
+        }
+
+        static bool KeepsAuthor(GUIStyle style, string text, float maxW, int font)
+        {
+            if (string.IsNullOrEmpty(text)) return true;
+            return AuthoredBanner(style, text, maxW, font) != null;
         }
 
         public static bool ShownFits(GUIStyle style, string shown, float maxW, int font)
