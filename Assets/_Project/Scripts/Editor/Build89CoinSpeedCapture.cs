@@ -38,7 +38,13 @@ namespace FlockFive.Editor
                 foreach (var w in Resources.FindObjectsOfTypeAll(gv)) (w as EditorWindow)?.Repaint();
             if (_started) return;
             var app = Object.FindAnyObjectByType<FlockFive.FlockFiveApp>();
-            if (app == null) return;
+            if (app == null)
+            {
+                // Same bootstrap EnsurePlayable uses for its shot flags.
+                var go = new GameObject("FlockFiveApp");
+                Object.DontDestroyOnLoad(go);
+                app = go.AddComponent<FlockFive.FlockFiveApp>();
+            }
             _started = true;
             try { File.Delete(PumpFlag); } catch { }
             app.StartCoroutine(app.ShotWheelCoinSpeed());
