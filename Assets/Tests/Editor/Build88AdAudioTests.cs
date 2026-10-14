@@ -93,6 +93,8 @@ namespace FlockFive.Editor
                     && Mathf.Abs(MixDesk.MasterGain - 0.37f) < 0.001f;
                 Check("user-mute-preserved", muteDuring && muteHeld && sliderBack,
                     "during=" + muteDuring + " held=" + muteHeld + " back=" + AudioGuard.MusicScale.ToString("0.00"));
+
+                Check("bed-stays-silent-if-pause-stolen", BedHolds(out string bedDetail), bedDetail);
             }
             catch (System.Exception ex)
             {
@@ -160,6 +162,42 @@ namespace FlockFive.Editor
             bool skipHeld = Silent();
             Ads.SkipShow();
             check(kind + "-restored-after-skip", skipHeld && Back(0.64f, false), State());
+        }
+
+        static bool BedHolds(out string detail)
+        {
+            detail = "";
+            var prev = MixDesk.Live;
+            var go = new GameObject("b88-ad-stem");
+            var desk = go.AddComponent<MixDesk>();
+            desk.AttachForTests();
+            try
+            {
+                desk.PlantStemForTests(0.55f);
+                Arm(1f, false);
+                Ads.BeginShow();
+                desk.PlantStemForTests(0.55f);
+                AudioListener.pause = false;
+                desk.TickForTests();
+                bool zero = desk.StemVolumeForTests() < 0.001f && MixDesk.MasterGain == 0f;
+                Ads.HoldAdAudio();
+                bool paused = zero && AudioListener.pause && desk.StemVolumeForTests() < 0.001f;
+                Ads.EndShow();
+                bool back = paused
+                    && !Ads.IsShowing
+                    && Mathf.Abs(desk.StemVolumeForTests() - 0.55f) < 0.001f
+                    && Mathf.Abs(MixDesk.MasterGain - 1f) < 0.001f;
+                detail = "zero=" + zero + " paused=" + paused + " stem=" + desk.StemVolumeForTests().ToString("0.00");
+                return back;
+            }
+            finally
+            {
+                if (Ads.IsShowing) Ads.EndShow();
+                MixDesk.DetachForTests(desk);
+                Object.DestroyImmediate(go);
+                if (prev != null && prev != desk) prev.AttachForTests();
+                Quiet();
+            }
         }
 
         static void Quiet()

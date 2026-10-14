@@ -223,6 +223,26 @@ namespace FlockFive
             }
         }
 
+        public void PlantStemForTests(float volume)
+        {
+            AudioSource src = _stems != null && _stems.Length > 0 ? _stems[0] : null;
+            if (src == null) src = gameObject.AddComponent<AudioSource>();
+            src.playOnAwake = false;
+            src.loop = true;
+            src.spatialBlend = 0f;
+            src.volume = volume;
+            _stems = new AudioSource[] { src };
+            _stemBase = new float[] { volume };
+        }
+
+        public float StemVolumeForTests()
+        {
+            if (_stems == null || _stems.Length == 0 || _stems[0] == null) return -1f;
+            return _stems[0].volume;
+        }
+
+        public void TickForTests() => LateUpdate();
+
         public static void DetachForTests(MixDesk desk)
         {
             if (Live == desk) Live = null;
@@ -651,6 +671,14 @@ namespace FlockFive
         void LateUpdate()
         {
             TickFreezeDuck();
+            // GamePause returns before the bed is rewritten. An ad still has to
+            // zero the stems here, or a stolen listener pause lets the bed play.
+            if (Ads.IsShowing)
+            {
+                ApplyAdSilence();
+                if (GamePause.Paused) _bgWasPaused = true;
+                return;
+            }
             if (GamePause.Paused)
             {
                 _bgWasPaused = true;
