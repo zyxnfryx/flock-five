@@ -778,8 +778,7 @@ namespace FlockFive
 #if FF_ADS_DEV
                 LevelPlay.SetMetaData("is_test_suite", "enable");
 #endif
-                using (StartupTrace.Begin("LevelPlay.Init"))
-                    LevelPlay.Init(Ads.AppKey);
+                AdTestDevices.Resolve(this, InitLevelPlay);
             }
             catch (System.Exception e)
             {
@@ -793,6 +792,27 @@ namespace FlockFive
                 // binaries may already have changed the session. Put it back
                 // before the next frame plays. The async success callback
                 // reasserts again after the ad units load.
+                AudioGuard.Reassert();
+            }
+        }
+
+        // Runs once the advertising ID is known (or timed out), so an
+        // allowlisted test device can turn on test mode before init.
+        void InitLevelPlay(string adId)
+        {
+            try
+            {
+                AdTestDevices.Apply(adId);
+                using (StartupTrace.Begin("LevelPlay.Init"))
+                    LevelPlay.Init(Ads.AppKey);
+            }
+            catch (System.Exception e)
+            {
+                _initFailed = true;
+                Debug.LogWarning("LevelPlay init skipped: " + e.Message);
+            }
+            finally
+            {
                 AudioGuard.Reassert();
             }
         }
