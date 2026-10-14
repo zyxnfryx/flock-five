@@ -6202,13 +6202,35 @@ namespace FlockFive
             screen = default;
             if (PlayClock.Now < _resumeInputUntil) return false;
             if (LessonGuardUp()) return false;
+            // The finger wins over a synthesized mouse. On Android the mouse click
+            // can sit at a stale point while the touch is the poker button.
+            if (FreshTouchPress(out screen)) return true;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
                 screen = Mouse.current.position.ReadValue();
                 return true;
             }
+            return false;
+        }
+
+        static bool FreshTouchPress(out Vector2 screen)
+        {
+            screen = default;
             var touch = Touchscreen.current;
-            if (touch != null && touch.primaryTouch.press.wasPressedThisFrame)
+            if (touch == null) return false;
+            var touches = touch.touches;
+            for (int i = 0; i < touches.Count; i++)
+            {
+                var t = touches[i];
+                if (t == null || !t.press.wasPressedThisFrame) continue;
+                var phase = t.phase.ReadValue();
+                if (phase == UnityEngine.InputSystem.TouchPhase.Canceled
+                    || phase == UnityEngine.InputSystem.TouchPhase.None)
+                    continue;
+                screen = t.position.ReadValue();
+                return true;
+            }
+            if (touch.primaryTouch != null && touch.primaryTouch.press.wasPressedThisFrame)
             {
                 screen = touch.primaryTouch.position.ReadValue();
                 return true;
@@ -6751,11 +6773,11 @@ namespace FlockFive
             EnsureSplashRails();
             var r = _railRect[id];
             if (r.width < 2f || r.height < 2f) return r;
-            float pad = r.width * 0.06f;
-            float x0 = r.x - pad;
-            float y0 = r.y - pad;
-            float x1 = r.xMax + pad;
-            float y1 = r.yMax + Mathf.Min(pad, SplashRailGap() * 0.25f);
+            var hit = SplashPress.PadRail(r, SplashRailGap());
+            float x0 = hit.x;
+            float y0 = hit.y;
+            float x1 = hit.xMax;
+            float y1 = hit.yMax;
             if (id == RailDaily)
             {
                 DailyBonus.Boot();
@@ -9960,7 +9982,7 @@ namespace FlockFive
             vipGates.Inactive = !offerVip;
             vipGates.PopupGate = PopupBlocked(PopupKind.Vip);
             vipGates.StepGate = StepGateBlocks(SplashPress.PressHit(SplashPress.Id.Vip).Rect);
-            var vipView = StepHomePress(SplashPress.Id.Vip, !SplashPress.Blocks(vipGates));
+            var vipView = StepHomePress(SplashPress.Id.Vip, !SplashPress.Blocks(vipGates), vipGates.LessonOwn);
             bool noAdsHeld = vipView.Pressed;
             bool vipTap = vipView.Launch;
 
@@ -9982,7 +10004,7 @@ namespace FlockFive
             hiveGates.Hidden = !hiveDraw;
             hiveGates.Inactive = !SplashHiveShown();
             hiveGates.StepGate = StepGateBlocks(hiveHit);
-            var hiveView = StepHomePress(SplashPress.Id.Hive, !SplashPress.Blocks(hiveGates));
+            var hiveView = StepHomePress(SplashPress.Id.Hive, !SplashPress.Blocks(hiveGates), hiveGates.LessonOwn);
             StartupTrace.Lap("L.Hive");
             if (hiveView.Launch)
             {
@@ -10009,12 +10031,14 @@ namespace FlockFive
             // so the rail closes under the hive. Its hit is the sliding rect.
             bool pokerDraw = RailLive(RailPoker);
             var pokerR = SplashPokerRect();
-            SplashPress.Layout(SplashPress.Id.Poker, pokerR);
+            // Same padded rect the glove arms. The drawn icon stays the rail square.
+            var pokerTap = RailTapRect(RailPoker);
+            SplashPress.Layout(SplashPress.Id.Poker, pokerTap);
             var pokerGates = HomePressGates(RailPoker);
-            pokerGates.Consent = VeilBlocks(pokerR);
+            pokerGates.Consent = VeilBlocks(pokerTap);
             pokerGates.Hidden = !pokerDraw;
-            pokerGates.StepGate = StepGateBlocks(pokerR);
-            var pokerView = StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates));
+            pokerGates.StepGate = StepGateBlocks(pokerTap);
+            var pokerView = StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates), pokerGates.LessonOwn);
             StartupTrace.Lap("L.Poker");
             if (pokerView.Launch)
             {
@@ -10075,7 +10099,7 @@ namespace FlockFive
                 dailyGates.PopupGate = false;
                 dailyGates.ResumeSwallow = false;
             }
-            var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates));
+            var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates), dailyGates.LessonOwn);
 #if UNITY_EDITOR
             if (ShotKeepAwake && _homeSamples.Count > 0 && DbgDaily.Length < 4000)
                 DbgDaily += (Event.current != null ? Event.current.type.ToString() : "-") + "/f" + Time.frameCount + ":" + _homeSamples[0].Phase

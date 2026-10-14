@@ -226,6 +226,10 @@ namespace FlockFive
         enum TutorGloveAct { None, Reappear, Live, FadeOutOnTap, Hidden }
         int _gloveHidStep = -1;
         float _gloveHidAt;
+        // Step that started the fade, and a dismiss that landed while it ran.
+        // The fade must not arm a return after the lesson has already moved.
+        int _gloveFadeStep = -1;
+        bool _gloveFadeDismissed;
         const float GloveReturnSec = 0.9f;
         public static int GloveReturns;
         TutorGloveAct _gloveAct;
@@ -1083,7 +1087,9 @@ namespace FlockFive
                 _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
                 if (!RailGloveSettled(RailPoker, box)) return;
                 _gloveInward = true;
-                CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, false, GloveBelowDeg, box); // b86: from below, off the $ total
+                // Tap rect is the padded rail hit, the same rect the button uses, so a
+                // press on the icon fades the hand and opens poker together.
+                CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, false, GloveBelowDeg, RailTapRect(RailPoker)); // b86: from below, off the $ total
                 return;
             }
             if (_dailyIntroLive)
@@ -1271,6 +1277,7 @@ namespace FlockFive
         // None still fades if a draw is up, so a veil miss cannot leave a stuck hand.
         void GloveStartFadeOut()
         {
+            if (_gloveFadeDismissed) return;
             if (_gloveAct == TutorGloveAct.FadeOutOnTap || _gloveAct == TutorGloveAct.Hidden)
                 return;
             if (_gloveAlpha <= 0.03f)
@@ -1284,6 +1291,7 @@ namespace FlockFive
             }
             _gloveFadeFrom = _gloveAlpha;
             _gloveActT = 0f;
+            _gloveFadeStep = LiveCoachStep();
             _gloveAct = TutorGloveAct.FadeOutOnTap;
             _gloveHoldPose = true;
             _gloveHoldDip = _gloveDip;
@@ -1296,6 +1304,8 @@ namespace FlockFive
         // Pressed drops the pointer delivered on resume, so backgrounding is not a tap.
         void NoteGloveTap()
         {
+            // Dismiss already won this tap. Starting a fade now would bring the hand back.
+            if (_gloveFadeDismissed) return;
             if (!Pressed(out var screen)) return;
             if (_gloveAct != TutorGloveAct.Live && _gloveAct != TutorGloveAct.Reappear
                 && _gloveAlpha <= 0.03f && !_gloveVis)
@@ -1409,6 +1419,17 @@ namespace FlockFive
         void TickGloveAct(float dt)
         {
             if (dt < 0f) dt = 0f;
+            // The lesson moved. Drop the hand now, and do not arm the return timer.
+            if (_gloveFadeDismissed && _gloveAct != TutorGloveAct.None && _gloveAct != TutorGloveAct.Hidden)
+            {
+                _gloveAlpha = 0f;
+                _gloveAct = TutorGloveAct.Hidden;
+                _gloveVis = false;
+                _gloveHoldPose = false;
+                _gloveReady = false;
+                _gloveHidStep = -1;
+                return;
+            }
             if (_gloveAct == TutorGloveAct.FadeOutOnTap)
             {
                 _gloveActT += dt;
@@ -1420,7 +1441,7 @@ namespace FlockFive
                     _gloveVis = false;
                     _gloveHoldPose = false;
                     _gloveReady = false;
-                    _gloveHidStep = LiveCoachStep();
+                    _gloveHidStep = CoachPress.ReturnStep(_gloveFadeStep, LiveCoachStep(), _gloveFadeDismissed);
                     _gloveHidAt = AdPause.Unscaled;
                     return;
                 }
@@ -1433,7 +1454,7 @@ namespace FlockFive
                 // Build 85: a faded glove whose tap did not move the lesson on (the press was
                 // blocked or missed the control) comes back, so a forced step can never be
                 // left with its caption up and no hand. A step that advanced re-poses anyway.
-                if (_gloveHidStep >= 0 && LiveCoachStep() == _gloveHidStep && !Pressed(out _)
+                if (!_gloveFadeDismissed && _gloveHidStep >= 0 && LiveCoachStep() == _gloveHidStep && !Pressed(out _)
                     && AdPause.Unscaled - _gloveHidAt > GloveReturnSec)
                 {
                     _gloveHidStep = -1;
@@ -1551,6 +1572,8 @@ namespace FlockFive
             _gloveStepBranch = _cueBranch;
             _gloveStepFromLeft = fromLeft;
             _gloveStepApproach = approachDeg;
+            // A new pose owns the hand. The previous lesson's dismiss no longer holds it.
+            _gloveFadeDismissed = false;
         }
 
         void GloveBeginReappear(Vector2 aimGui, float s, float perchLift, bool fromLeft, float approachDeg)
@@ -4770,6 +4793,13 @@ namespace FlockFive
             });
             _lessonGuardUntil = r.GuardUntil;
             if (r.Consumed) MarkCoachAte();
+            // The step moved. A fade that starts or finishes after this must not bring the hand back.
+            // Alpha drops here so a repaint later in this same OnGUI cannot still paint the hand.
+            _gloveHidStep = -1;
+            _gloveFadeDismissed = true;
+            _gloveAlpha = 0f;
+            _gloveVis = false;
+            _gloveHoldPose = false;
         }
 
         // One application of CoachDismiss for a tap that is finishing a lesson.

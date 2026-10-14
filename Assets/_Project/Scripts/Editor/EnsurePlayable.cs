@@ -74,6 +74,7 @@ namespace FlockFive.Editor
             Suite("build88-streak", Build88StreakTests.Run);
             Suite("build88-pest", Build88PestTests.Run);
             Suite("build88-curtain", Build88CurtainTests.Run);
+            Suite("build88-poker-tap", Build88PokerTapTests.Run);
             Suite("sky", SkyCycleTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
@@ -404,7 +405,8 @@ namespace FlockFive.Editor
             "/tmp/flock-five-b88-caption",
             "/tmp/flock-five-b88-streak",
             "/tmp/flock-five-wt-b88-pest",
-            "/tmp/flock-five-b88-curtain"
+            "/tmp/flock-five-b88-curtain",
+            "/tmp/flock-five-b88-poker-tap"
         };
 
         static bool AnyShotCmd()
@@ -480,6 +482,7 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-b88-streak", "ShotKeepStreak");
                         TryStartShot(app, "/tmp/flock-five-wt-b88-pest", "ShotPestReset");
                         TryStartShot(app, "/tmp/flock-five-b88-curtain", "ShotLevelCurtain");
+                        TryStartShot(app, "/tmp/flock-five-b88-poker-tap", "ShotPokerTap");
                         TryStartShot(app, "/tmp/flock-five-poker-feel", "ShotPokerFeel");
                     }
                 }

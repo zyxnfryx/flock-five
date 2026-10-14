@@ -64,17 +64,46 @@ namespace FlockFive
             // A consent or ATT card that is actually on screen and covers this control.
             // A flow that is only waiting, or a card that misses the control, stays false.
             public bool Consent;
+            // This control is the live glove's own target. The coach fade, the dismiss
+            // guard, the step gate, the veil, and a ticking payout must not eat it.
+            public bool LessonOwn;
         }
 
         public static bool Blocks(Gates g)
         {
-            if (g.Paused || g.ResumeSwallow || g.ShowHolds || g.CoachAte || g.LessonGuard || g.StepGate)
+            // A pause, a real card, or a control that is not on screen still wins.
+            if (g.Paused || g.ShowHolds || g.HardModal) return true;
+            if (g.Hidden || g.WelcomeHold || g.Inactive) return true;
+            if (g.AdoptQueue || g.HomeTaken) return true;
+            if (g.LessonOwn) return false;
+            if (g.ResumeSwallow || g.CoachAte || g.LessonGuard || g.StepGate)
                 return true;
-            if (g.Hidden || g.WelcomeHold || g.Inactive || g.PopupGate)
-                return true;
-            if (g.HardModal || g.Consent) return true;
+            if (g.PopupGate || g.Consent) return true;
             if (g.SoftModal && !g.DailySoftOk) return true;
-            if (g.AdoptQueue || g.RailLesson || g.HomeTaken) return true;
+            if (g.RailLesson) return true;
+            return false;
+        }
+
+        // True when the mouse sample should be added. A Began/Tap finger is enough.
+        // A stale Held contact is not, once a new mouse click or IMGUI event arrives.
+        public static bool MouseStandsIn(bool touchBegan, int touchCount, bool mouseFresh, bool eventFresh)
+        {
+            if (touchBegan) return false;
+            if (touchCount > 0 && !mouseFresh && !eventFresh) return false;
+            return true;
+        }
+
+        // One touch contact, shared by the device and the editor tap test.
+        // Android often reports the first sample as Moved while the press bit is new.
+        // That sample is a Began, or the gesture never arms and the glove eats the tap.
+        public static bool ClassifyContact(bool canceled, bool ended, bool began, bool pressed, bool fresh, out Phase phase)
+        {
+            phase = Phase.Held;
+            if (canceled) { phase = Phase.Canceled; return true; }
+            if (ended && fresh) { phase = Phase.Tap; return true; }
+            if (ended) { phase = Phase.Ended; return true; }
+            if (began || (fresh && pressed)) { phase = Phase.Began; return true; }
+            if (pressed) { phase = Phase.Held; return true; }
             return false;
         }
 
@@ -114,6 +143,20 @@ namespace FlockFive
         {
             for (int i = 0; i < Count; i++)
                 Hits[i] = new Hit();
+        }
+
+        // The drawn rail square plus a finger of slop. Sides can grow. The
+        // vertical pad stops inside the gap so it cannot reach the next button.
+        public static Rect PadRail(Rect icon, float gap)
+        {
+            if (icon.width < 2f || icon.height < 2f) return icon;
+            float side = icon.width * 0.12f;
+            if (side < 16f) side = 16f;
+            float vertCap = gap > 1f ? gap * 0.40f : side;
+            float vert = side < vertCap ? side : vertCap;
+            float below = gap > 1f ? gap * 0.25f : vert;
+            if (below > vert) below = vert;
+            return Rect.MinMaxRect(icon.x - side, icon.y - vert, icon.xMax + side, icon.yMax + below);
         }
 
         public static Hit PressHit(Id id) => Hits[(int)id];
@@ -216,6 +259,14 @@ namespace FlockFive
 
             public View Apply(Hit hit, bool blocked, IList<Sample> samples, bool canBegin, bool pointerLive, int frame)
             {
+                return Apply(hit, blocked, samples, canBegin, pointerLive, frame, false);
+            }
+
+            // launchOnDown: the glove's own control opens on the press. The same tap
+            // that fades the hand also navigates, so a release that drifts (high-DPI
+            // Android) cannot leave the lesson up and the hand ready to re-arm.
+            public View Apply(Hit hit, bool blocked, IList<Sample> samples, bool canBegin, bool pointerLive, int frame, bool launchOnDown)
+            {
                 NoteFrame(frame);
                 var view = default(View);
                 if (hit == null)
@@ -269,10 +320,12 @@ namespace FlockFive
                     if (Claimed(s.TouchId) || Rejected(frame, s.TouchId)) continue;
                     if (!hit.Contains(s.Pos)) continue;
                     Claim(s.TouchId);
-                    if (s.Phase == Phase.Tap)
+                    if (s.Phase == Phase.Tap || launchOnDown)
                     {
                         view.Launch = true;
+                        view.Pressed = true;
                         view.Handled = true;
+                        Clear();
                         return view;
                     }
                     _touch = s.TouchId;
