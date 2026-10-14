@@ -38,6 +38,19 @@ namespace FlockFive
             bool hadLeaf = PlayerPrefs.HasKey(CoachLeafKey);
             int hiveGarden = PlayerPrefs.GetInt(CoachHiveGardenKey, 0);
             bool hadHive = PlayerPrefs.HasKey(CoachHiveGardenKey);
+            int bee = PlayerPrefs.GetInt(CoachBeeKey, 0);
+            bool hadBee = PlayerPrefs.HasKey(CoachBeeKey);
+            int sparrow = PlayerPrefs.GetInt(CoachSparrowKey, 0);
+            bool hadSparrow = PlayerPrefs.HasKey(CoachSparrowKey);
+            int hawk = PlayerPrefs.GetInt(CoachHawkKey, 0);
+            bool hadHawk = PlayerPrefs.HasKey(CoachHawkKey);
+            int ostrich = PlayerPrefs.GetInt(CoachOstrichKey, 0);
+            bool hadOstrich = PlayerPrefs.HasKey(CoachOstrichKey);
+            PlayerPrefs.SetInt(CoachBeeKey, 1);
+            PlayerPrefs.SetInt(CoachSparrowKey, 1);
+            PlayerPrefs.SetInt(CoachHawkKey, 1);
+            PlayerPrefs.SetInt(CoachOstrichKey, 1);
+            PlayerPrefs.Save();
             const string mp4 = "/Users/zfxgames/wkspaces/wingout/b88-sky-transition.mp4";
             const string frames = "/tmp/sky-frames";
             var phases = new StringBuilder();
@@ -67,6 +80,8 @@ namespace FlockFive
                 for (int f = 0; f < hold + glide; f++)
                 {
                     if (f == hold) PrepGardenShot(6);
+                    // After Update, before the frame is drawn, so a lesson glove cannot pop in.
+                    yield return null;
                     HoldGardenQuiet();
                     MuteShotAudio();
                     yield return new WaitForEndOfFrame();
@@ -107,6 +122,14 @@ namespace FlockFive
                 else PlayerPrefs.DeleteKey(CoachLeafKey);
                 if (hadHive) PlayerPrefs.SetInt(CoachHiveGardenKey, hiveGarden);
                 else PlayerPrefs.DeleteKey(CoachHiveGardenKey);
+                if (hadBee) PlayerPrefs.SetInt(CoachBeeKey, bee);
+                else PlayerPrefs.DeleteKey(CoachBeeKey);
+                if (hadSparrow) PlayerPrefs.SetInt(CoachSparrowKey, sparrow);
+                else PlayerPrefs.DeleteKey(CoachSparrowKey);
+                if (hadHawk) PlayerPrefs.SetInt(CoachHawkKey, hawk);
+                else PlayerPrefs.DeleteKey(CoachHawkKey);
+                if (hadOstrich) PlayerPrefs.SetInt(CoachOstrichKey, ostrich);
+                else PlayerPrefs.DeleteKey(CoachOstrichKey);
                 PlayerPrefs.Save();
                 EditorShotLive = false;
                 ShotKeepAwake = false;
