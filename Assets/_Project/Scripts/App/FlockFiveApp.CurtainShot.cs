@@ -126,28 +126,34 @@ namespace FlockFive
                 yield return new WaitForEndOfFrame();
 
                 Time.captureDeltaTime = 1f / 60f;
-                for (int i = 0; i < 3; i++)
-                {
-                    yield return null;
-                    MuteShotAudio();
-                    ParkHomeAvatar();
-                    _avatarCol = BirdColor.Ruby;
-                }
-
-                int lead = 12;
-                int tail = 72;
+                int lead = 8;
+                int play = 64;
+                int tail = 14;
                 int w = 0, h = 0;
+                bool armed = false;
                 bool pressed = false;
-                for (int f = 0; f < lead + tail; f++)
+                int total = lead + play + tail;
+                for (int f = 0; f < total; f++)
                 {
                     yield return null;
                     MuteShotAudio();
-                    if (!pressed && f >= lead)
+                    if (!armed && f >= lead)
                     {
-                        var flower = FlowerPlayRect();
-                        LevelCurtain.Aim(flower);
-                        PressLevelButton();
-                        pressed = true;
+                        // Pointer-down. The sheet builds on the home. Load waits
+                        // until the wash is closed, so the tear is what reveals the garden.
+                        LevelCurtain.Aim(FlowerPlayRect());
+                        LevelCurtain.Arm(AdPause.Unscaled);
+                        armed = true;
+                    }
+                    if (armed && !pressed)
+                    {
+                        LevelCurtain.Aim(FlowerPlayRect());
+                        float ageNow = LevelCurtain.VisualAge(AdPause.Unscaled);
+                        if (ageNow + 0.0001f >= LevelCurtain.Flood)
+                        {
+                            PressLevelButton();
+                            pressed = true;
+                        }
                     }
                     if (!pressed)
                     {
@@ -162,7 +168,7 @@ namespace FlockFive
                     File.WriteAllBytes(frames + "/f" + f.ToString("0000") + ".jpg", tex.EncodeToJPG(86));
                     Object.Destroy(tex);
                     float age = LevelCurtain.Armed ? LevelCurtain.VisualAge(AdPause.Unscaled) : -1f;
-                    string beat = age < 0f ? "home" : LevelCurtain.BeatName(age);
+                    string beat = !armed || age < 0f ? "home" : LevelCurtain.BeatName(age);
                     phases.Append(f.ToString("000")).Append(' ').Append(beat).Append(' ')
                         .Append(age.ToString("0.000")).Append(' ')
                         .Append(LevelCurtain.LoadStarted ? "load" : "idle").Append('\n');
@@ -181,7 +187,7 @@ namespace FlockFive
                 {
                     if (proc != null) proc.WaitForExit(120000);
                 }
-                File.WriteAllText("/tmp/flock-five-b88-curtain-done", "CURTAIN_CLIP " + w + "x" + h + " frames " + (lead + tail) + " wing " + (winged ? "1" : "0") + "\n");
+                File.WriteAllText("/tmp/flock-five-b88-curtain-done", "CURTAIN_CLIP " + w + "x" + h + " frames " + (lead + play + tail) + " wing " + (winged ? "1" : "0") + "\n");
                 UnityEngine.Debug.Log("CURTAIN_CLIP_DONE " + w + "x" + h + " wing " + winged);
             }
             finally

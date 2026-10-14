@@ -37,6 +37,10 @@ namespace FlockFive
         }
 
         static Glint[] _buf;
+        // One step per rendered frame while a capture is locked to captureDeltaTime.
+        // Wall time jumps when a screenshot encodes, and that was skipping the build.
+        static int _capFrame = -1;
+        static float _capClock;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() => Reset();
@@ -49,6 +53,8 @@ namespace FlockFive
             StartedAt = 0f;
             Source = default;
             PreviewNow = -1f;
+            _capFrame = -1;
+            _capClock = 0f;
         }
 
         public static void Clear() => Reset();
@@ -75,7 +81,24 @@ namespace FlockFive
 
         public static void MarkReady() => Ready = true;
 
-        public static float Clock(float now) => PreviewNow >= 0f ? PreviewNow : now;
+        // PreviewNow wins. A locked capture then advances one captureDeltaTime per
+        // frame, so a 1s tear is 60 frames even when encoding a shot is slow.
+        public static float Clock(float now)
+        {
+            if (PreviewNow >= 0f) return PreviewNow;
+            float step = Time.captureDeltaTime;
+            if (step > 0f)
+            {
+                int frame = Time.frameCount;
+                if (frame != _capFrame)
+                {
+                    _capClock = _capFrame < 0 ? now : _capClock + step;
+                    _capFrame = frame;
+                }
+                return _capClock;
+            }
+            return now;
+        }
 
         public static float VisualAge(float now)
         {
