@@ -110,6 +110,14 @@ namespace FlockFive
             st.Shrouded.Clear();
         }
 
+        // Streak after a roll. A fire with no limb on screen is a no-fire that
+        // leaves the streak where it was: the roll hit, so it is not a miss.
+        public static int StreakAfter(Result roll, int before, bool hasView)
+        {
+            if (!roll.Fired) return roll.Misses;
+            return hasView ? 0 : before;
+        }
+
         static Result Miss(int misses)
         {
             int next = misses + 1;

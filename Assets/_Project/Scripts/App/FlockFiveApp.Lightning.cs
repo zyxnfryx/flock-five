@@ -97,10 +97,10 @@ namespace FlockFive
             var view = roll.Fired ? ViewFor(roll.Index) : null;
             if (!roll.Fired || view == null)
             {
-                _fireMisses = roll.Fired ? before + 1 : roll.Misses;
+                _fireMisses = LightningFire.StreakAfter(roll, before, false);
                 return false;
             }
-            _fireMisses = 0;
+            _fireMisses = LightningFire.StreakAfter(roll, before, true);
             ApplyFire(roll.Index, view);
             aim = view.StrikePoint();
             return true;

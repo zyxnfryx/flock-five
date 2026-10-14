@@ -156,6 +156,14 @@ namespace FlockFive.Editor
             Check("always-on-showpiece", always && show,
                 "always=" + always + " show=" + show);
 
+            var hitRoll = new LightningFire.Result { Index = 3, Misses = 0, Fired = true };
+            var missRoll = new LightningFire.Result { Index = -1, Misses = 5, Fired = false };
+            Check("viewless-fire-keeps-streak",
+                LightningFire.StreakAfter(hitRoll, 4, false) == 4
+                && LightningFire.StreakAfter(hitRoll, 4, true) == 0
+                && LightningFire.StreakAfter(missRoll, 4, false) == 5,
+                "no view holds 4, view resets, miss climbs");
+
             string lineEnd = fail == 0 ? "ALL OK  " + pass : "FAILED  " + fail + "  passed " + pass;
             sb.AppendLine(lineEnd);
             File.WriteAllText(Out, sb.ToString());
