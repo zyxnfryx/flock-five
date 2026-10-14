@@ -10571,20 +10571,56 @@ namespace FlockFive
             return px;
         }
 
-        // Optical centre of the LEVEL disc's top face, as a fraction of the FlowerCap rect
-        // (disc) height. Measured on fx_play_flower.png down the centre column: the flat
-        // face runs 0.097..0.978 of the cap rect and the wood lip sits below it, so the
-        // face centre is 0.537, not the rect centre 0.5.
+        // Geometric centre of the LEVEL disc's flat top face, as a fraction of the FlowerCap
+        // rect (disc) height. Measured on fx_play_flower.png down the centre column: the
+        // face runs 0.097..0.978 of the cap rect and the wood lip sits below it.
         const float FaceMidFrac = 0.537f;
-        // Blank LEVEL's existing drop below the rect centre (was an inline 0.018f).
+        // The face tilts toward the player, so its near half reads bigger and the optical
+        // centre sits below the geometric one (Brandon's LEVEL 6 still: ink centred on the
+        // face still read high).
+        const float OpticalDrop = 0.018f;
+        // Blank LEVEL's layout drop below the rect centre (was an inline 0.018f). The ink
+        // centring below supersedes it for the final position.
         const float LevelAloneDrop = 0.018f;
+        // Safety bound on the ink-centring move, in disc heights.
+        const float InkNudgeMax = 0.06f;
+        // Fallback type metrics per em when the font has none (Unity's default Arial).
+        const float InkAscent = 0.905f;
+        const float InkCap = 0.716f;
+        const float InkDescent = 0.212f;
 
-        // Downward offset, in disc heights (so it scales with iPad), that moves text
-        // centred at rect centre + already * height onto the top-face centre. Never up.
-        static float FaceNudge(Rect disc, float already)
+        static GUIContent _lvInk;
+
+        static float InkTarget(Rect disc) => disc.y + disc.height * (FaceMidFrac + OpticalDrop);
+
+        // Baseline offset from a laid-out line's top, from the style's real font.
+        static float InkBaseline(GUIStyle st)
         {
-            float d = FaceMidFrac - 0.5f - already;
-            return d > 0f ? d * disc.height : 0f;
+            float fs = st.fontSize > 0 ? st.fontSize : 14f;
+            Font f = st.font != null ? st.font : (GUI.skin != null ? GUI.skin.font : null);
+            float asc = InkAscent * fs;
+            if (f != null && f.fontSize > 0 && f.ascent > 0)
+                asc = f.ascent * fs / f.fontSize;
+            return st.padding.top + asc;
+        }
+
+        static bool HasDescender(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == 'g' || c == 'j' || c == 'p' || c == 'q' || c == 'y' || c == ',') return true;
+            }
+            return false;
+        }
+
+        // Move that puts inkMid on the target, bounded either way.
+        static float InkNudge(Rect disc, float inkMid)
+        {
+            float d = InkTarget(disc) - inkMid;
+            float cap = disc.height * InkNudgeMax;
+            return d > cap ? cap : (d < -cap ? -cap : d);
         }
 
         static void DrawFlowerCaption(Rect disc, string ease, int number)
@@ -10641,8 +10677,14 @@ namespace FlockFive
                 quad ? 30 : (triple ? 26 : 30), lvHi);
             if (!hasEase)
             {
-                // Blank LEVEL already sits LevelAloneDrop below the rect centre.
-                lvR.y += FaceNudge(disc, LevelAloneDrop);
+                // One line, MiddleCenter: ink is cap top to baseline (no descenders).
+                if (_lvInk == null) _lvInk = new GUIContent();
+                _lvInk.text = level;
+                float lineH = lv.CalcSize(_lvInk).y;
+                float lineTop = lvR.center.y - lineH * 0.5f;
+                float baseY = lineTop + InkBaseline(lv);
+                float capY = baseY - InkCap * lv.fontSize;
+                lvR.y += InkNudge(disc, 0.5f * (capY + baseY));
                 StampBannerText(lvR, level, lv, 1f, true);
                 return;
             }
@@ -10668,9 +10710,21 @@ namespace FlockFive
                 textH = joke.CalcHeight(_easeContent, lineW);
             }
             float bottom = disc.yMax - 2f;
-            // The LEVEL+joke stack reads centred on the cap rect; move it, as one
-            // block, onto the top-face centre. A joke that fits never leaves the disc.
-            float nudge = FaceNudge(disc, 0f);
+            // Ink of the stack, from the rendered lines: LEVEL cap top (LowerCenter in
+            // lvR) to the joke's last baseline, or its descender when it has one.
+            // Moved as one block onto the face centre plus the optical drop. A joke that
+            // fits never leaves the disc.
+            if (_lvInk == null) _lvInk = new GUIContent();
+            _lvInk.text = level;
+            float lvLineH = lv.CalcSize(_lvInk).y;
+            float capTop = lvR.yMax - lv.padding.bottom - (lvLineH - lv.padding.vertical) + (InkBaseline(lv) - lv.padding.top) - InkCap * lv.fontSize;
+            bool wrapKeep = joke.wordWrap;
+            joke.wordWrap = false;
+            float jokeLineH = joke.CalcSize(_easeContent).y;
+            joke.wordWrap = wrapKeep;
+            float lastTop = jokeR.y + textH - jokeLineH;
+            float inkBottom = lastTop + InkBaseline(joke) + (HasDescender(ease) ? InkDescent * jokePx : 0f);
+            float nudge = InkNudge(disc, 0.5f * (capTop + inkBottom));
             float room = bottom - (jokeR.y + textH);
             if (nudge > room) nudge = room > 0f ? room : 0f;
             lvR.y += nudge;
