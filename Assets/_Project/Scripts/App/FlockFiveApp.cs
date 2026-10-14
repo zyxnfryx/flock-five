@@ -17013,8 +17013,11 @@ namespace FlockFive
             if (t > 0.4f && !(_albumTutorOn && _albumTutorStep == 3))
                 DrawFlipHint(hintTop, s, Mathf.Clamp01(t));
             bool upgradeHit = false;
-            if (t > 0.55f && !_hiveInspectClosing && !_hiveTutorOn && !(_albumTutorOn && _albumTutorStep == 3))
+            // Upgrade lives in the hive (album) only: never on the round popup or any other inspect.
+            if (UpgradeContext && t > 0.55f && !_hiveInspectClosing && !_hiveTutorOn && !(_albumTutorOn && _albumTutorStep == 3))
                 upgradeHit = DrawHiveUpgrade(ix, hintTop, s, Mathf.Clamp01(t));
+            else
+                _upgradeBtnR = default;
             if (_hiveTutorOn)
                 DrawHiveTutorGlove(big, s);
 
@@ -17038,11 +17041,9 @@ namespace FlockFive
 
             bool fullyOpen = !_hiveInspectClosing && u >= 1f;
             // A honeycomb is not the card. It squishes and smudges, and the flip waits.
-            bool honeyAte = fullyOpen && _hiveFlip < 0 && !_hiveTutorOn && PokeHoneycombs(big, ix);
-            // Card taps during the demo are swallowed so they neither flip nor dismiss.
-            if (_hiveTutorOn)
-                HitPad(big, out _);
-            else if (fullyOpen && !upgradeHit && !honeyAte && HitPad(big, out _) && !PageSwipeAte)
+            var cardTap = InspectCardTap(big, ix, fullyOpen && !upgradeHit);
+            bool honeyAte = cardTap == CardTap.Honey;
+            if (cardTap == CardTap.Card && !PageSwipeAte)
                 BeginHiveFlip(ix);
 
             // Tap dim outside card closes (after card/X/Back/upgrade so they win hit tests)
@@ -17193,40 +17194,28 @@ namespace FlockFive
             if (alpha < 0.04f || (uint)slot >= (uint)Hive.AlbumSlots) return false;
             if (!Hive.UpgradesUnlocked || Hive.CountOfSlot(slot) <= 0) return false;
             var pill = FlipHintRect(hintTop, s);
-            float btnH = Mathf.Max(44f, 48f * Mathf.Min(s, 1.35f));
-            float btnW = Mathf.Min(Screen.width * 0.72f, 420f * s);
-            float y = pill.yMax + 10f * s;
+            // b88 (Brandon): the game's own clay CTA (DrawPopupButton), not a thin outlined bar.
+            // Gold when affordable, wood when short, dimmed wood at max honey.
+            float btnH = Mathf.Max(60f, 72f * Mathf.Min(s, 1.35f));
+            float btnW = Mathf.Min(Screen.width * 0.80f, 460f * s);
+            float y = pill.yMax + 12f * s;
+            float edgeB = 20f * s;
+            if (y + btnH > Screen.height - edgeB) y = Screen.height - edgeB - btnH;
             var btn = new Rect((Screen.width - btnW) * 0.5f, y, btnW, btnH);
             _upgradeBtnR = btn;
             bool room = Hive.UpgradeRoom(slot);
             bool can = Hive.CanUpgrade(slot);
             string line = !room
                 ? "Max honey"
-                : "Upgrade  ·  " + Money.Format(Hive.UpgradeCost);
+                : "Upgrade  " + Money.Format(Hive.UpgradeCost);
             bool held;
             bool hit = HitPad(btn, out held);
-            float fade = alpha * (room ? 1f : 0.55f);
-            Color plate = can
-                ? new Color(0.18f, 0.12f, 0.05f, (held ? 0.96f : 0.88f) * fade)
-                : new Color(0.12f, 0.10f, 0.08f, 0.72f * fade);
-            GUI.color = plate;
-            GUI.DrawTexture(btn, Texture2D.whiteTexture);
-            GUI.color = can
-                ? new Color(1f, 0.82f, 0.28f, 0.95f * fade)
-                : new Color(0.70f, 0.64f, 0.50f, 0.55f * fade);
-            float edge = Mathf.Max(2f, 3f * s);
-            GUI.DrawTexture(new Rect(btn.x, btn.y, btn.width, edge), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(btn.x, btn.yMax - edge, btn.width, edge), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(btn.x, btn.y, edge, btn.height), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(btn.xMax - edge, btn.y, edge, btn.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            var keep = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, alpha * (room ? 1f : 0.6f));
+            var face = DrawPopupButton(btn, held && room, can ? PopupTint.Gold : PopupTint.Wood, can ? 1f : 0f);
             var st = GuiPool.Label(GuiSlot.FlipHint);
-            st.fontStyle = FontStyle.Bold;
-            st.alignment = TextAnchor.MiddleCenter;
-            st.wordWrap = false;
-            st.fontSize = FitFont(st, line, btn.width * 0.90f, btn.height * 0.70f, 16, Mathf.RoundToInt(28f * s));
-            Color ink = can ? new Color(1f, 0.96f, 0.82f, fade) : new Color(0.78f, 0.74f, 0.64f, fade * 0.9f);
-            StampOutlined(btn, line, st, ink, 1, 2);
+            DrawPopupWord(face, line, st, s);
+            GUI.color = keep;
             if (hit)
             {
                 if (room && Hive.TryUpgrade(slot))
@@ -17596,6 +17585,43 @@ namespace FlockFive
         }
 
         // True when a comb took the tap. The card underneath must not flip.
+        enum CardTap { None, Honey, Card }
+
+        // Upgrade shows only in the hive/garden album, not on the round popup.
+        bool UpgradeContext => _home == HomeFace.Hive && !_levelHive;
+
+        // The one tap path for every card inspect (album, round popup, tutor).
+        // Honeycombs on the back win first: squish + smudges, never a flip.
+        // Anything else on the card is a flip. Demo taps are swallowed.
+        CardTap InspectCardTap(Rect big, int ix, bool armed)
+        {
+            if (_hiveTutorOn)
+            {
+                HitPad(big, out _);
+                return CardTap.None;
+            }
+            // Combs are polled whenever the back is up and the card is still, even while
+            // another control is pressed, so a comb tap can never fall through to the flip.
+            bool combs = armed && _hiveFlip < 0;
+            if (combs && PokeHoneycombs(big, ix)) return CardTap.Honey;
+            if (armed && HitPad(big, out _) && !CombUnder(big, ix)) return CardTap.Card;
+            return CardTap.None;
+        }
+
+        // True when the press is on a honeycomb cell of the showing back (pad-free check).
+        bool CombUnder(Rect card, int ix)
+        {
+            var e = Event.current;
+            if (e == null || (uint)ix >= (uint)_hiveFaceBack.Length || !_hiveFaceBack[ix]) return false;
+            if (!BadgerSchedule.Enabled) return false;
+            int honey = Hive.HoneyOfSlot(ix);
+            if (honey <= 0) return false;
+            int n = CardText.HoneyBand(CardText.FaceOf(card), honey, true, _honeyHits);
+            for (int i = 0; i < n; i++)
+                if (_honeyHits[i].Contains(e.mousePosition)) return true;
+            return false;
+        }
+
         bool PokeHoneycombs(Rect card, int ix)
         {
             if ((uint)ix >= (uint)_hiveFaceBack.Length || !_hiveFaceBack[ix]) return false;
@@ -17760,12 +17786,22 @@ namespace FlockFive
                 if (!_levelHiveDrag) EaseHiveCarousel(count);
             }
 
+            // b88 (Brandon): few cards sit still, side by side and fully inside the panel.
+            // Only when more than fit (CollectedLayout.FitCount) does the carousel run.
+            var stageProbe = new Rect(box.x + 8f * s, titleR.yMax + 6f * s, box.width - 16f * s,
+                Mathf.Max(48f * s, box.yMax - 10f * s - (titleR.yMax + 6f * s)));
+            bool still = CollectedLayout.Static(stageProbe, count);
             float capH = 0f;
-            float dotsH = count > 1 ? 26f * s : 0f;
+            float dotsH = !still && count > 1 ? 26f * s : 0f;
             float stageTop = titleR.yMax + 6f * s;
             float stageBot = box.yMax - 10f * s - capH - dotsH;
             float stageH = Mathf.Max(48f * s, stageBot - stageTop);
             var stage = new Rect(box.x + 8f * s, stageTop, box.width - 16f * s, stageH);
+            if (still)
+            {
+                DrawCollectedStatic(stage, count, s);
+                return;
+            }
             float cardH = stage.height * 0.94f;
             float cardW = Mathf.Min(cardH / 1.35f, stage.width * 0.62f);
             cardH = cardW * 1.35f;
@@ -17776,8 +17812,11 @@ namespace FlockFive
 
             int centerIx = HiveCarousel.Nearest(shown, count);
 
-            GUI.BeginGroup(stage);
-            float cx = stage.width * 0.5f;
+            // Clip at the panel's inner edge, not the stage, and fade the last stretch.
+            // A sliding card fades under the edge instead of vanishing at a hard line.
+            var clip = new Rect(box.x + edge, stage.y, box.width - edge * 2f, stage.height);
+            GUI.BeginGroup(clip);
+            float cx = stage.center.x - clip.x;
             float cy = stage.height * 0.5f;
             Rect centerLocal = default;
             for (int pass = 0; pass < 2; pass++)
@@ -17787,31 +17826,25 @@ namespace FlockFive
                     bool center = i == centerIx;
                     if (center != (pass == 1)) continue;
                     float off = HiveWrap(i - shown, count);
-                    if (!center && Mathf.Abs(off) > 1.25f) continue;
                     float sc = Mathf.Lerp(1f, 0.72f, Mathf.Clamp01(Mathf.Abs(off)));
                     float w = cardW * sc;
                     float h = cardH * sc;
                     var r = new Rect(cx + off * stride - w * 0.5f, cy - h * 0.5f, w, h);
+                    // Cull only once fully past the clip (behind the fade), never mid-slide.
+                    if (!center && (r.xMax < 0f || r.x > clip.width)) continue;
                     if (center) centerLocal = r;
                     int slot = _levelBees[i].Slot;
                     if ((uint)slot < (uint)Hive.AlbumSlots)
                         DrawBeeAlbumCard(r, slot, s, false, false);
                 }
             }
+            CollectedLayout.DrawEdgeFades(new Rect(0f, 0f, clip.width, clip.height),
+                CollectedLayout.FadeW(clip), new Color(0.10f, 0.07f, 0.04f, 0.97f));
             bool tap = false;
             int dir = 0;
-            if (_levelHiveSwallow)
-            {
-                var swallow = Event.current;
-                bool released = swallow != null && swallow.type == EventType.MouseUp && swallow.button == 0;
-                bool up = Mouse.current == null || !Mouse.current.leftButton.isPressed;
-                if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed)
-                    up = false;
-                if (released || (swallow != null && swallow.type == EventType.Repaint && up))
-                    _levelHiveSwallow = false;
-            }
+            if (LevelHiveSwallowing()) { }
             else if (_hiveInspect < 0)
-                CarouselDrag(new Rect(0f, 0f, stage.width, stage.height), s, count, out tap, out dir);
+                CarouselDrag(new Rect(stage.x - clip.x, 0f, stage.width, stage.height), s, count, out tap, out dir);
             GUI.EndGroup();
 
             if (dir != 0)
@@ -17821,7 +17854,7 @@ namespace FlockFive
             }
             else if (tap)
             {
-                int side = HiveCarousel.TapDir(_levelHiveDrag0.x, stage.width, count);
+                int side = HiveCarousel.TapDir(_levelHiveDrag0.x - (stage.x - clip.x), stage.width, count);
                 if (side != 0)
                 {
                     _levelHivePick = (_levelHivePick + side + count) % count;
@@ -17830,8 +17863,8 @@ namespace FlockFive
                 else
                 {
                     var from = centerLocal;
-                    from.x += stage.x;
-                    from.y += stage.y;
+                    from.x += clip.x;
+                    from.y += clip.y;
                     OpenHiveInspect(_levelBees[centerIx].Slot, from);
                 }
             }
@@ -17869,6 +17902,41 @@ namespace FlockFive
                 string page = (centerIx + 1) + " / " + count;
                 float pageH = floor + 8f;
                 StampOutlined(new Rect(box.x, box.yMax - pageH - 6f * s, box.width, pageH), page, pageSt, new Color(1f, 0.94f, 0.72f), 1, 1);
+            }
+        }
+
+        // The press that opened the panel must lift before cards take taps.
+        bool LevelHiveSwallowing()
+        {
+            if (!_levelHiveSwallow) return false;
+            var swallow = Event.current;
+            bool released = swallow != null && swallow.type == EventType.MouseUp && swallow.button == 0;
+            bool up = Mouse.current == null || !Mouse.current.leftButton.isPressed;
+            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed)
+                up = false;
+            if (released || (swallow != null && swallow.type == EventType.Repaint && up))
+                _levelHiveSwallow = false;
+            return true;
+        }
+
+        // 1-3 cards (whatever CollectedLayout.FitCount allows): side by side, fully inside
+        // the panel, no scrolling. Tap a card to inspect it; inspect flips it and runs the
+        // honeycomb egg through the same InspectCardTap path as the album.
+        void DrawCollectedStatic(Rect stage, int count, float s)
+        {
+            bool swallowing = LevelHiveSwallowing();
+            for (int i = 0; i < count; i++)
+            {
+                var r = CollectedLayout.Slot(stage, i, count);
+                int slot = _levelBees[i].Slot;
+                if ((uint)slot >= (uint)Hive.AlbumSlots) continue;
+                DrawBeeAlbumCard(r, slot, s, false, false);
+                if (!swallowing && _hiveInspect < 0 && HitPad(r, out _))
+                {
+                    _levelHivePick = i;
+                    _levelHiveShown = i;
+                    OpenHiveInspect(slot, r);
+                }
             }
         }
 
