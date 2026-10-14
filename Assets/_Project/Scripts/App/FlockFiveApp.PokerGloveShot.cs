@@ -38,6 +38,7 @@ namespace FlockFive
                 PlayerPrefs.Save();
                 yield return ShotPokerGloveAt(1179, 2556, dir + "/b88-poker-glove-iphone.png", "iphone");
                 yield return ShotPokerGloveAt(1536, 2048, dir + "/b88-poker-glove-ipad.png", "ipad");
+                yield return ShotPokerGloveAt(1080, 2400, dir + "/b88-poker-glove-android.png", "android");
                 File.WriteAllText("/tmp/flock-five-b88-poker-glove-done", "OK\n");
             }
             finally

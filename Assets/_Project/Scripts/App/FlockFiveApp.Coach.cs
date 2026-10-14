@@ -3280,6 +3280,15 @@ namespace FlockFive
                         band.y = up >= minTop ? up : subj.yMax + gap;
                         moved = true;
                     }
+                    // b89 (Brandon): the hand itself, not just its tap target, stays off
+                    // the banner. Lift the band over the glove's drawn box when there
+                    // is room above; otherwise the glove is clipped at the band edge.
+                    var hand = GloveBodyFresh();
+                    if (hand.width >= 2f && band.Overlaps(hand))
+                    {
+                        float up = hand.yMin - band.height - gap;
+                        if (up >= minTop && band.y - up > 0.5f) { band.y = up; moved = true; }
+                    }
                     if (!moved) break;
                 }
                 if (_gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
@@ -3321,7 +3330,7 @@ namespace FlockFive
                 st.fontSize = keep;
                 st.wordWrap = wrap;
             }
-            float bh = th + px * 0.9f;
+            float bh = CaptionLayout.BannerBandHeight(th, px);
             if (s < 0.01f) s = 1f;
             float minTop = Mathf.Max(safe.yMin, TopHudBox(h, safe, 0f) + (56f * 2f + 4f) * s * 0.92f);
             float y = seat.y - (bh - seat.height) * 0.85f;
@@ -3456,6 +3465,9 @@ namespace FlockFive
             // Shared caption paint. Every lesson draws through here, so a reset
             // cuts the plate before a stale rect or a leftover alpha can flash.
             if (CoachResetHolds()) return;
+            // b89: the table style decides the plate. A snug spot is never drawn as
+            // a seat-filling box (the poker coins line was, after b88 widened its seat).
+            if (slack >= 0.999f && CaptionStyles.IsSnug(_capSpot)) slack = 0f;
             var st = CoachLineStyle();
             if (_coachContent == null) _coachContent = new GUIContent();
             CaptionTextRect(r, s, out var textR);
@@ -3504,8 +3516,9 @@ namespace FlockFive
                 int ring = BannerOutlinePx(bandPx);
                 float room = (inner - CaptionLayout.WidestRow(st, BannerText ?? text, bandPx)) * 0.5f;
                 if (room < ring) ring = Mathf.Max(2, Mathf.FloorToInt(Mathf.Max(0f, room)));
-                StampBannerText(new Rect(ix, band.y, inner, band.height), BannerText ?? text, st, fade, true, ring);
-                KeepCaptionOnTop(1, band, new Rect(ix, band.y, inner, band.height), BannerText ?? text, bandPx, fade, ring);
+                var words = new Rect(ix, band.y - CaptionLayout.BannerInkLift(bandPx), inner, band.height);
+                StampBannerText(words, BannerText ?? text, st, fade, true, ring);
+                KeepCaptionOnTop(1, band, words, BannerText ?? text, bandPx, fade, ring);
                 st.fontSize = keep;
                 st.wordWrap = false;
                 return;
@@ -3544,8 +3557,12 @@ namespace FlockFive
                 DrawCoachPanel(inner, fade, platePad, opaque);
                 if (CaptionLayout.WantsBeeIcon(text))
                     DrawCaptionBee(plate, snug.LineH, fade);
-                StampBannerText(drawText, _coachShown ?? text, st, fade, true);
-                KeepCaptionOnTop(2, plate, drawText, _coachShown ?? text, _coachSizedPx, fade, -1);
+                // Same optical lift as the banner: the ink sits even inside the plate,
+                // top and bottom, at every text size.
+                var inkText = drawText;
+                inkText.y -= CaptionLayout.BannerInkLift(_coachSizedPx);
+                StampBannerText(inkText, _coachShown ?? text, st, fade, true);
+                KeepCaptionOnTop(2, plate, inkText, _coachShown ?? text, _coachSizedPx, fade, -1);
                 return;
             }
             var plateBox = CaptionPlateBox(drawR, platePad, _coachSizedTextH, drawText.height, slack);
@@ -3916,18 +3933,83 @@ namespace FlockFive
             float widen = 1f + 0.07f * dip;
             float squash = 1f - 0.12f * dip;
             float sx = (mirror ? -widen : widen);
+            bool haveBox = RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 0f, out var drawn);
+            if (haveBox && alpha > 0.05f) { _gloveBody = drawn; _gloveBodyFrame = Time.frameCount; GloveBodyAlpha = alpha; }
             var prev = GUI.matrix;
             var fro = Matrix4x4.TRS(new Vector3(-pivot.x, -pivot.y, 0f), Quaternion.identity, Vector3.one);
             var scale = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(sx, squash, 1f));
             var rot = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 0f, ang), Vector3.one);
             var to = Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f), Quaternion.identity, Vector3.one);
-            GUI.matrix = to * rot * scale * fro * prev;
-            GUI.color = new Color(1f, 1f, 1f, alpha);
-            GUI.DrawTexture(rect, tex, ScaleMode.ScaleToFit, true);
-            GUI.matrix = prev;
-            GUI.color = Color.white;
-            if (RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 0f, out var drawn))
+            var m = to * rot * scale * fro * prev;
+            // b89 (Brandon): the caption reads on top of the glove. When the hand still
+            // reaches this frame's caption plate, it is cut at the plate edge, so it
+            // slides out from under the banner instead of lying across it.
+            if (!(haveBox && DrawGloveClipped(tex, rect, m, alpha, drawn, pivot)))
+            {
+                GUI.matrix = m;
+                GUI.color = new Color(1f, 1f, 1f, alpha);
+                GUI.DrawTexture(rect, tex, ScaleMode.ScaleToFit, true);
+                GUI.matrix = prev;
+                GUI.color = Color.white;
+            }
+            if (haveBox)
                 RepaintCaptionOver(drawn);
+        }
+
+        Rect _gloveBody;
+        int _gloveBodyFrame = -10;
+        public static float GloveBodyAlpha;
+        public static int GloveClips;
+
+        // Last drawn glove box, while that glove is still on screen.
+        Rect GloveBodyFresh()
+        {
+            return _gloveBodyFrame >= Time.frameCount - 2 ? _gloveBody : default;
+        }
+
+        static Material _gloveClipMat;
+        static readonly Vector3[] _gq = new Vector3[4];
+        static readonly Vector2[] _gu = new Vector2[4];
+
+        // The glove quad, cut to the side of the plate that holds the fingertip and
+        // drawn as a polygon. GUI.BeginClip does not hold under the glove's rotated
+        // matrix, so the cut is done on the quad itself. False: draw it normally.
+        bool DrawGloveClipped(Texture tex, Rect rect, Matrix4x4 m, float alpha, Rect gloveBox, Vector2 tip)
+        {
+            if (_capRepainting || _capTop.Kind == 0 || _capTop.Frame != Time.frameCount) return false;
+            if (!CaptionLayout.GloveHitsCaption(gloveBox, _capTop.Plate)) return false;
+            var keep = CaptionLayout.GloveKeepRect(_capTop.Plate, tip, Screen.width, Screen.height);
+            if (keep.width < 1f || keep.height < 1f) return false;
+            if (_gloveClipMat == null)
+            {
+                var sh = Shader.Find("UI/Default");
+                if (sh == null) sh = Shader.Find("Sprites/Default");
+                if (sh == null) return false;
+                _gloveClipMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+            }
+            if (Event.current == null || Event.current.type != EventType.Repaint) return true;
+            _gq[0] = m.MultiplyPoint3x4(new Vector3(rect.xMin, rect.yMin, 0f)); _gu[0] = new Vector2(0f, 1f);
+            _gq[1] = m.MultiplyPoint3x4(new Vector3(rect.xMax, rect.yMin, 0f)); _gu[1] = new Vector2(1f, 1f);
+            _gq[2] = m.MultiplyPoint3x4(new Vector3(rect.xMax, rect.yMax, 0f)); _gu[2] = new Vector2(1f, 0f);
+            _gq[3] = m.MultiplyPoint3x4(new Vector3(rect.xMin, rect.yMax, 0f)); _gu[3] = new Vector2(0f, 0f);
+            var poly = CaptionLayout.ClipQuadY(_gq, _gu, keep.yMin, keep.yMax);
+            GloveClips++;
+            if (poly.Count < 3) return true;
+            _gloveClipMat.mainTexture = tex;
+            _gloveClipMat.SetPass(0);
+            GL.PushMatrix();
+            GL.LoadPixelMatrix(0f, Screen.width, Screen.height, 0f);
+            GL.Begin(GL.TRIANGLES);
+            GL.Color(new Color(1f, 1f, 1f, alpha));
+            for (int i = 1; i + 1 < poly.Count; i++)
+            {
+                GL.TexCoord2(poly[0].z, poly[0].w); GL.Vertex3(poly[0].x, poly[0].y, 0f);
+                GL.TexCoord2(poly[i].z, poly[i].w); GL.Vertex3(poly[i].x, poly[i].y, 0f);
+                GL.TexCoord2(poly[i + 1].z, poly[i + 1].w); GL.Vertex3(poly[i + 1].x, poly[i + 1].y, 0f);
+            }
+            GL.End();
+            GL.PopMatrix();
+            return true;
         }
 
         public const float GloveScreenMargin = 6f;
@@ -5727,64 +5809,51 @@ namespace FlockFive
 
         Rect PokerIntroBox(float s)
         {
+            var r = AnchoredCaptionBox(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering, out _);
+            var disc = FlowerPlayRect();
+            float railW = Screen.width * 0.17f;
+            float maxW = Screen.width - railW * 2f;
+            if (r.width > maxW) { r.x += (r.width - maxW) * 0.5f; r.width = maxW; }
+            r.x = (Screen.width - r.width) * 0.5f;
+            if (disc.width > 2f) r.y = disc.yMin - r.height - 18f * s;
+            float floorY = TopHud() + (56f * 2f + 4f) * s + 64f * s;
+            // b89: the line sits under the balance row (pig and $ total), never on it.
+            var pig = PiggyRect(s);
+            if (pig.height > 2f)
+            {
+                var pad0 = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+                float under = pig.yMax + 6f + pad0.y;
+                if (under > floorY) floorY = under;
+            }
+            if (r.y < floorY) r.y = floorY;
             var button = SplashPokerRect();
             var aim = GloveTargetAt(button, PokerGloveU, PokerGloveV);
             var hand = PokerPointHand(aim, s);
-            var pig = PiggyRect(s);
             var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
-            // Disc-cover padding belongs on the LEVEL lettering. This line sits
-            // under the balance, so the plate is only the shared caption pad.
-            float padX = hang.x;
-            float padY = hang.y;
-            // A tall phone's 18*s gap pushed a two-line plate into the poker row.
-            float gap = 6f;
-            float railW = Screen.width * 0.17f;
-            if (railW < 8f) railW = 8f;
-            // Column between the left rail and the glove (and the button). The
-            // plate stays left of both, so a tall wrap does not cover the hand.
-            float right = Screen.width - railW;
-            if (hand.width > 2f && hand.xMin - gap < right) right = hand.xMin - gap;
-            if (button.width > 2f && button.xMin - gap < right) right = button.xMin - gap;
-            float plateW = right - railW;
-            if (plateW < 160f) plateW = 160f;
-            float seatW = plateW - padX * 2f;
-            if (seatW < 80f) seatW = 80f;
-            float ix = Mathf.Clamp(seatW * 0.055f, 10f * s, 18f * s);
-            float textW = Mathf.Max(48f, seatW - ix * 2f);
-            var fit = FitLessonText(PokerIntroLine, textW, 4096f, 12, PokerIntroFontHi(s), Screen.width, Screen.height);
-            // Same inner pad CaptionTextRect will apply, solved so paint does not
-            // grow the seat another line after this measures.
-            float seatH = fit.TextH + 4f;
-            for (int i = 0; i < 4; i++)
+            float padX = hang.x + (_anchorPad.x > 0f ? _anchorPad.x : 0f);
+            float padY = hang.y + (_anchorPad.y > 0f ? _anchorPad.y : 0f);
+            // Tall phones: the open sky between the glove/button row and the drawn disc
+            // fits the line at full width. Seat it there, not in a narrow column beside the hand.
+            if (disc.width > 2f)
             {
-                float iy = Mathf.Clamp(seatH * 0.10f, 6f * s, 14f * s);
-                float need = fit.TextH + iy * 2f;
-                if (need <= seatH + 0.5f) break;
-                seatH = need;
+                float discTop = FlowerDisc(disc, 0f).yMin;
+                float rowBottom = Mathf.Max(hand.height > 2f ? hand.yMax : 0f, button.height > 2f ? button.yMax : 0f);
+                // The snug plate pads with the shared BoxPad only (no disc-cover pad).
+                float gapY = 6f * s;
+                float belowY = rowBottom + gapY + hang.y;
+                float room = discTop - gapY - hang.y - belowY;
+                if (room >= r.height)
+                {
+                    // No rail buttons sit this low, so the line takes the screen width.
+                    float edge = Mathf.Max(8f, Screen.width * 0.06f) + hang.x;
+                    r.x = edge;
+                    r.width = Screen.width - edge * 2f;
+                    r.y = belowY + (room - r.height) * 0.5f;
+                    return r;
+                }
             }
-            float textTopMin = TopHud() + (56f * 2f + 4f) * s + 64f * s;
-            // The balance is centered on the pig. Start under that row.
-            if (pig.height > 2f)
-            {
-                float under = pig.yMax + gap + padY;
-                if (under > textTopMin) textTopMin = under;
-            }
-            float spanL = railW + padX;
-            float spanR = right - padX;
-            if (spanR < spanL + 80f) spanR = spanL + 80f;
-            float x = spanL + Mathf.Max(0f, (spanR - spanL - seatW) * 0.5f);
-            var r = new Rect(x, textTopMin, seatW, seatH);
-            r.height += PokerCaptionGrow(r, s);
-            return LiftPokerCaption(r, padX, padY, button, hand, textTopMin, gap, railW);
-        }
-
-        // How far PaintCoachCaption will grow this seat downward. Same fit the paint uses.
-        float PokerCaptionGrow(Rect r, float s)
-        {
-            CaptionTextRect(r, s, out var textR);
-            var fit = FitLessonText(PokerIntroLine, textR.width, textR.height, 12, PokerIntroFontHi(s), Screen.width, Screen.height);
-            float grow = fit.TextH - textR.height;
-            return grow > 1f ? grow : 0f;
+            // Never across the left rail (gift, VIP): narrow instead of sliding over it.
+            return LiftPokerCaption(r, padX, padY, button, hand, floorY, 18f * s, railW);
         }
 
         // Landed poker glove: fingertip on the aim, body to the left, finger pointing right.

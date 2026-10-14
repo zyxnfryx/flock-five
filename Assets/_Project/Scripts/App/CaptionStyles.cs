@@ -44,6 +44,10 @@ public static class CaptionStyles
 
     public static bool IsBanner(string spot) => spot != null && Banner.TryGetValue(spot, out var b) && b.On;
 
+    // b89: a spot the table marks snug (banner off) always paints the snug plate:
+    // the text plus the shared even pad, never a seat-sized box.
+    public static bool IsSnug(string spot) => spot != null && Banner.TryGetValue(spot, out var b) && !b.On;
+
     public static float Drop(string spot) => spot != null && Banner.TryGetValue(spot, out var b) ? b.Drop : 0f;
 
     // 0 in the table means the shared BannerAlpha. A positive ink is that spot only.

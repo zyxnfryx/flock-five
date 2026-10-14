@@ -89,11 +89,23 @@ namespace FlockFive
         IEnumerator GloveCaptionStill(string dir, string dev, string tag, string log)
         {
             MuteShotAudio();
+            // The glove fades in on its own cue: wait (up to 6 s) until it has been
+            // drawn at full strength for a few frames before taking the still.
+            float t = 0f; int seen = 0;
+            while (t < 6f && seen < 6)
+            {
+                _coachFade = 1f;
+                seen = GloveBodyFresh().width >= 2f && GloveBodyAlpha > 0.95f ? seen + 1 : 0;
+                t += AdPause.UnscaledDelta;
+                yield return null;
+            }
             yield return new WaitForEndOfFrame();
             bool hit = CaptionGloveHit >= Time.frameCount - 2;
+            var hand = GloveBodyFresh();
             File.AppendAllText(log, dev + " " + tag + " " + Screen.width + "x" + Screen.height
-                + " line " + (_cueLine ?? "") + " plate " + _capTop.Plate + " kind " + _capTop.Kind
-                + " gloveHit " + hit + " repaints " + CaptionRepaints + "\n");
+                + " line " + (_cueLine ?? "").Replace("\n", " ") + " plate " + _capTop.Plate + " kind " + _capTop.Kind
+                + " glove " + hand + " alpha " + GloveBodyAlpha.ToString("0.00") + " gloveDrawn " + (hand.width >= 2f) + " gloveOverPlate " + hit
+                + " banner " + BannerLast + " repaints " + CaptionRepaints + "\n");
             SaveFrame(dir + "/glove-caption-" + tag + "-" + dev + ".png");
         }
     }

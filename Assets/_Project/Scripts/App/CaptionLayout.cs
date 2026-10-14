@@ -183,6 +183,64 @@ namespace FlockFive
             return glove.Overlaps(caption);
         }
 
+        // b89 (Brandon): the dark padding inside a banner, above the first row's ink
+        // and below the last row's ink, is the same on top and bottom and the same
+        // fraction of the font on every device (a bigger font means a thicker band).
+        // CalcHeight's line box sits the ink low, so the text is lifted to centre it.
+        public const float BannerPadEm = 0.5f;
+        public const float BannerInkLiftEm = 0.09f;
+
+        public static float BannerBandHeight(float textH, int px)
+        {
+            return textH + 2f * BannerPadEm * px;
+        }
+
+        public static float BannerInkLift(int px)
+        {
+            return BannerInkLiftEm * px;
+        }
+
+        // b89: the screen part a glove may paint in when it reaches a caption plate:
+        // everything below the plate, or above it, whichever side holds the fingertip.
+        public static Rect GloveKeepRect(Rect plate, Vector2 tip, float screenW, float screenH)
+        {
+            if (plate.width < 1f || plate.height < 1f) return new Rect(0f, 0f, screenW, screenH);
+            if (tip.y >= plate.center.y)
+                return new Rect(0f, plate.yMax, screenW, Mathf.Max(0f, screenH - plate.yMax));
+            return new Rect(0f, 0f, screenW, Mathf.Max(0f, plate.yMin));
+        }
+
+        // b89: cut a screen quad (x, y with texture u, v) to the band yMin..yMax.
+        // Returns the clipped convex polygon as (x, y, u, v); fewer than 3 is empty.
+        public static System.Collections.Generic.List<Vector4> ClipQuadY(Vector3[] pts, Vector2[] uv, float yMin, float yMax)
+        {
+            var poly = new System.Collections.Generic.List<Vector4>(6);
+            for (int i = 0; i < pts.Length; i++) poly.Add(new Vector4(pts[i].x, pts[i].y, uv[i].x, uv[i].y));
+            poly = ClipEdge(poly, yMin, true);
+            poly = ClipEdge(poly, yMax, false);
+            return poly;
+        }
+
+        static System.Collections.Generic.List<Vector4> ClipEdge(System.Collections.Generic.List<Vector4> src, float y, bool keepAbove)
+        {
+            var dst = new System.Collections.Generic.List<Vector4>(src.Count + 2);
+            int n = src.Count;
+            for (int i = 0; i < n; i++)
+            {
+                var a = src[i];
+                var b = src[(i + 1) % n];
+                bool ina = keepAbove ? a.y >= y : a.y <= y;
+                bool inb = keepAbove ? b.y >= y : b.y <= y;
+                if (ina) dst.Add(a);
+                if (ina != inb)
+                {
+                    float t = (y - a.y) / (b.y - a.y);
+                    dst.Add(Vector4.Lerp(a, b, t));
+                }
+            }
+            return dst;
+        }
+
         public const string VipPitchLine = "Tap VIP anytime to drop ads.";
 
         public const string AlbumUpgradeLine = "Upgrade adds honey for 1000 coins.";
