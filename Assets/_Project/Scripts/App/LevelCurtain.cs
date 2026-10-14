@@ -671,11 +671,12 @@ namespace FlockFive
                     bloom = 0.9f;
                     soft = 0.5f;
                 }
-                else if (t < RevealEnd)
+                else if (t < RevealEnd + 0.05f)
                 {
                     // Reveal: fade, shrink and drift outward from the screen centre,
                     // the same rate everywhere, so no row or side clears first.
-                    float u = (t - RevealAt) / (RevealEnd - RevealAt);
+                    float u = Mathf.Clamp01((t - RevealAt - RevealJitter(pair)) / (RevealEnd - RevealAt - 0.05f));
+                    if (u >= 1f) return false;
                     float drift = 0.30f * u * u;
                     x = lx + (lx - cx) * drift;
                     y = ly + (ly - H * 0.5f) * drift;
@@ -689,6 +690,23 @@ namespace FlockFive
             }
             return y > -sz && y < H + sz && x > -sz && x < W + sz;
         }
+
+        // Painterly palette: gold, cream, peach, rose, plus a per-pair hue drift so the
+        // mask reads as brushed light, not flat tiles. Hashed by mirrored pair only.
+        static readonly Color Honey = new Color(1f, 0.80f, 0.46f, 1f);
+        static Color Tint(int pair)
+        {
+            float h = H01(pair, 17), d = H01(pair, 41);
+            Color a, b;
+            if (h < 0.30f) { a = LevelCurtain.BGold; b = Honey; }
+            else if (h < 0.55f) { a = LevelCurtain.BCream; b = LevelCurtain.BGold; }
+            else if (h < 0.80f) { a = LevelCurtain.BPeach; b = LevelCurtain.BCream; }
+            else { a = LevelCurtain.BRose; b = LevelCurtain.BPeach; }
+            return Color.Lerp(a, b, 0.35f * d);
+        }
+
+        // Per-pair reveal phase (+-0.05 s): sparkle-out, uncorrelated with row or side.
+        static float RevealJitter(int pair) => (H01(pair, 43) - 0.5f) * 0.10f;
 
         // Even mask base under the glints: uniform full-screen veil, so coverage does
         // not depend on where the glints sit. Ramps with the return, holds, clears.
@@ -754,7 +772,11 @@ namespace FlockFive
             LastWashRect = screen;
             if (veil > 0.005f)
             {
-                GUI.color = new Color(1f, 0.92f, 0.74f, veil);
+                // Base: warm cream, never pure white. Then a soft honey glaze in the
+                // same uniform rect, so the colour is layered but every row matches.
+                GUI.color = new Color(1f, 0.93f, 0.78f, veil * 0.85f);
+                GUI.DrawTexture(screen, Texture2D.whiteTexture, ScaleMode.StretchToFill, true);
+                GUI.color = new Color(1f, 0.82f, 0.55f, veil * 0.35f);
                 GUI.DrawTexture(screen, Texture2D.whiteTexture, ScaleMode.StretchToFill, true);
             }
             washA = veil;
@@ -766,9 +788,7 @@ namespace FlockFive
             for (int i = 0; i < n; i++)
             {
                 int pair = i >> 1;
-                float h4 = H01(pair, 17);
-                var c = h4 < 0.40f ? LevelCurtain.BGold : h4 < 0.62f ? LevelCurtain.BCream
-                    : h4 < 0.84f ? LevelCurtain.BPeach : LevelCurtain.BRose;
+                var c = Tint(pair);
                 if (t < 0.62f + Ghosts * GhostStep)
                 {
                     for (int g = Ghosts; g >= 1; g--)
@@ -786,8 +806,8 @@ namespace FlockFive
                 if (sf > 0.02f)
                 {
                     // Soft bokeh disc: the mask body. ~2 cells wide, so neighbours overlap.
-                    float bk = sz * StarBody * 2.1f;
-                    GUI.color = new Color(c.r, c.g * 0.96f, c.b * 0.88f, a * 0.55f * sf);
+                    float bk = sz * StarBody * 2.4f;
+                    GUI.color = new Color(c.r, c.g * 0.96f, c.b * 0.88f, a * 0.50f * sf);
                     GUI.DrawTexture(new Rect(x - bk * 0.5f, y - bk * 0.5f, bk, bk), glowTex, ScaleMode.StretchToFill, true);
                 }
                 SparkleFx.DrawDepthGlint(x, y, sz, a, bl, sf, c, star, glowTex);
