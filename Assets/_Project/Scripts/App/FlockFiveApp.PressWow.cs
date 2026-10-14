@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections;
 using UnityEngine;
 
@@ -224,10 +225,66 @@ namespace FlockFive
         // Waits for an idle, interactive home splash (30 s cap), settles 0.5 s, then
         // records 1 s idle, a 100 ms press, release (Load fires that frame) and 2.4 s on.
         // Time.captureFramerate = 60 steps the clock one 60 fps frame per capture.
-        IEnumerator ShotSplashPress()
+        // Device flags: /tmp/flock-five-press-shot (iPhone 1179x2556),
+        // /tmp/flock-five-press-shot-ipad (2048x2732), /tmp/flock-five-press-shot-android
+        // (1080x2400). Any mix may be set; they run in that order in one session.
+        static readonly string[] PressShotTags = { "iphone", "ipad", "android" };
+        static readonly string[] PressShotFlags = {
+            "/tmp/flock-five-press-shot", "/tmp/flock-five-press-shot-ipad", "/tmp/flock-five-press-shot-android" };
+        static readonly int[][] PressShotSizes = { new[] { 1179, 2556 }, new[] { 2048, 2732 }, new[] { 1080, 2400 } };
+
+        void TryStartPressShot()
+        {
+            if (PressShotLive) return;
+            var run = new List<int>();
+            for (int d = 0; d < PressShotFlags.Length; d++)
+            {
+                if (!System.IO.File.Exists(PressShotFlags[d])) continue;
+                try { System.IO.File.Delete(PressShotFlags[d]); } catch { }
+                run.Add(d);
+            }
+            if (run.Count == 0) return;
+            _dailyShotQuiet = true;
+            PressShotLive = true;
+            StartCoroutine(ShotSplashPressDevices(run));
+        }
+
+        IEnumerator ShotSplashPressDevices(List<int> run)
+        {
+            int keepW = Screen.width, keepH = Screen.height;
+            float? keepTest = DeviceFit.TestWindow;
+            for (int r = 0; r < run.Count; r++)
+            {
+                int d = run[r];
+                int w = PressShotSizes[d][0], h = PressShotSizes[d][1];
+                PressShotLive = true;
+                DeviceFit.TestWindow = w / (float)h;
+#if UNITY_EDITOR
+                if (EditorGameSize != null) EditorGameSize(w, h); else Screen.SetResolution(w, h, false);
+#else
+                Screen.SetResolution(w, h, false);
+#endif
+                yield return new WaitForSecondsRealtime(1.2f);
+                Debug.Log("FF_PRESS_SHOT_DEVICE " + PressShotTags[d] + " want=" + w + "x" + h
+                    + " got=" + Screen.width + "x" + Screen.height);
+                yield return ShotSplashPress(PressShotTags[d]);
+            }
+            DeviceFit.TestWindow = keepTest;
+#if UNITY_EDITOR
+            if (EditorGameSize != null) EditorGameSize(keepW, keepH); else Screen.SetResolution(keepW, keepH, false);
+#else
+            Screen.SetResolution(keepW, keepH, false);
+#endif
+            yield return new WaitForSecondsRealtime(0.4f);
+            Debug.Log("FF_PRESS_SHOT_ALL_DONE devices=" + run.Count);
+            PressShotLive = false;
+        }
+
+        IEnumerator ShotSplashPress(string tag)
         {
             const string dir = "/tmp/paradice";
-            string frames = dir + "/splash-press-60fps";
+            string pre = dir + "/splash-press-" + tag + "-";
+            string frames = pre + "60fps";
             PressShotLive = true;
             _dailyShotQuiet = true;
 #if UNITY_EDITOR
@@ -263,7 +320,6 @@ namespace FlockFive
                 if (Time.realtimeSinceStartup - t0 > 30f)
                 {
                     Debug.Log("FF_PRESS_SHOT_TIMEOUT blocker=" + (why ?? "settling") + " after=30s");
-                    PressShotLive = false;
                     yield break;
                 }
             }
@@ -277,7 +333,7 @@ namespace FlockFive
             for (int i = 0; i < 60; i++)
             {
                 yield return new WaitForEndOfFrame();
-                SavePressShotFrame(frames, f++, i == 30 ? dir + "/splash-press-0-idle.png" : null);
+                SavePressShotFrame(frames, f++, i == 30 ? pre + "0-idle.png" : null);
             }
             string late = PressShotBlocker();
             if (late != null) Debug.Log("FF_PRESS_SHOT_WARN blocker before press=" + late);
@@ -285,7 +341,7 @@ namespace FlockFive
             for (int i = 0; i < 6; i++)
             {
                 yield return new WaitForEndOfFrame();
-                SavePressShotFrame(frames, f++, i == 3 ? dir + "/splash-press-1-press.png" : null);
+                SavePressShotFrame(frames, f++, i == 3 ? pre + "1-press.png" : null);
             }
             bool armed = LevelCurtain.Armed;
             _pressShotHeld = false;
@@ -311,9 +367,9 @@ namespace FlockFive
                 if (k == 0)
                     Debug.Log("FF_PRESS_SHOT_PRESS armedOnHold=" + armed + " loadFired=" + LevelCurtain.LoadStarted
                         + " fired=" + (LevelCurtain.FiredAt >= 0f) + " splash=" + _splash + " shotFireLeft=" + _pressShotFire);
-                string still = k == 5 ? dir + "/splash-press-2-burst-peak.png"
-                    : k == 24 ? dir + "/splash-press-3-handoff.png"
-                    : k == 66 ? dir + "/splash-press-4-settle.png"
+                string still = k == 5 ? pre + "2-burst-peak.png"
+                    : k == 24 ? pre + "3-handoff.png"
+                    : k == 66 ? pre + "4-settle.png"
                     : null;
                 SavePressShotFrame(frames, f++, still);
                 lastAfterCapture = Time.realtimeSinceStartup;
@@ -331,7 +387,7 @@ namespace FlockFive
             Time.captureFramerate = keepRate;
             _pressShotHeld = false;
             _pressShotFire = false;
-            EncodeSmashVideo(frames, dir + "/splash-press-60fps.mp4", 60f);
+            EncodeSmashVideo(frames, pre + "60fps.mp4", 60f);
             yield return new WaitForSecondsRealtime(0.4f);
             LevelCurtain.Reset();
             ShowSplash();
@@ -339,8 +395,7 @@ namespace FlockFive
             if (hadNext) PlayerPrefs.SetInt("flockfive.next", keepNext);
             else PlayerPrefs.DeleteKey("flockfive.next");
             PlayerPrefs.Save();
-            Debug.Log("FF_PRESS_SHOT_DONE frames=" + f);
-            PressShotLive = false;
+            Debug.Log("FF_PRESS_SHOT_DONE device=" + tag + " frames=" + f);
         }
     }
 }

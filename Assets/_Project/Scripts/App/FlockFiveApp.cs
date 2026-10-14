@@ -614,12 +614,7 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
                 StartCoroutine(ShotHome());
             }
-            if (System.IO.File.Exists("/tmp/flock-five-press-shot"))
-            {
-                _dailyShotQuiet = true;
-                try { System.IO.File.Delete("/tmp/flock-five-press-shot"); } catch { }
-                StartCoroutine(ShotSplashPress());
-            }
+            TryStartPressShot();
             if (System.IO.File.Exists("/tmp/flock-five-gift-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-gift-shot"); } catch { }
@@ -6321,12 +6316,7 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
                 StartCoroutine(ShotHome());
             }
-            if (System.IO.File.Exists("/tmp/flock-five-press-shot"))
-            {
-                _dailyShotQuiet = true;
-                try { System.IO.File.Delete("/tmp/flock-five-press-shot"); } catch { }
-                StartCoroutine(ShotSplashPress());
-            }
+            TryStartPressShot();
             if (System.IO.File.Exists("/tmp/flock-five-badger-fight"))
                 EditorOpenBadgerFight();
             if (System.IO.File.Exists("/tmp/flock-five-poker-stamp"))
