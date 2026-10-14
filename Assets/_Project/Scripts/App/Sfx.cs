@@ -513,15 +513,29 @@ namespace FlockFive
         }
 
         static AudioClip _squish;
+        static float _squishAt = -1f;
+        public const string SquishPath = "Audio/Honey/sfx_honey_squish";
+        const float SquishSeat = 0.15f;      // Lead seat; Shot(Lead) would hold 0.55 s and mute bees/thunder
+        const float SquishRetrigger = 0.06f; // one squish per tap even when pads overlap
 
         // Honeycomb press. Lead, short, and not the page turn. Lazy so warm-up
-        // does not build it, and a test never has to play it.
+        // does not build it, and a test never has to play it. The authored clip
+        // (Resources/Audio/Honey/sfx_honey_squish) wins; MakeSquish is the fallback.
         public static void Squish()
         {
+            float now = Time.unscaledTime;
+            if (_squishAt >= 0f && now - _squishAt >= 0f && now - _squishAt < SquishRetrigger) return;
+            _squishAt = now;
             Ensure();
-            if (_squish == null) _squish = MakeSquish();
-            Shot(_squish, Random.Range(0.97f, 1.03f), 0.52f, MixLayer.Lead);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.14f, MixDesk.DuckChirp);
+            if (_squish == null)
+            {
+                _squish = Resources.Load<AudioClip>(SquishPath);
+                if (_squish == null) _squish = MakeSquish();
+            }
+            if (_squish == null) return;
+            float vol = SfxLibrary.Level(0.52f) * AudioGuard.SfxScale;
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(SquishSeat, MixDesk.DuckChirp);
+            PlayVoice(_squish, Random.Range(0.97f, 1.03f), vol);
         }
 
         public static void Crack() => Break();

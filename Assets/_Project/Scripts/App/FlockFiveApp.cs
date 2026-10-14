@@ -17610,8 +17610,9 @@ namespace FlockFive
                 if (!HitPad(_honeyHits[i], out _)) continue;
                 ate = true;
                 HoneyPoke.Place(AdPause.Unscaled, _honeyHits[i].center, _honeyHits[i].width * 0.42f);
-                Sfx.Squish();
             }
+            // Once per tap, not per pad hit (Squish also has a 60 ms retrigger guard).
+            if (ate) Sfx.Squish();
             return ate;
         }
 
