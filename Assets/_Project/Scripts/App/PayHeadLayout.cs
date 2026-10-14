@@ -11,14 +11,14 @@ namespace FlockFive
     // rows keep their height and the panel keeps its seat under the PAY TABLE tab.
     public static class PayHeadLayout
     {
-        public const float TitleShare = 0.56f;
-        public const float BetShare = 0.36f;
+        public const float TitleShare = 0.60f;
+        public const float BetShare = 0.34f;
         public const float TitleFill = 0.94f;
-        public const float BetFill = 0.92f;
+        public const float BetFill = 0.96f;
         public const float TitleWidth = 0.86f;
         public const float BetWidth = 0.70f;
         // The bet line stays visibly second: never above this share of the title px.
-        public const float BetToTitle = 0.80f;
+        public const float BetToTitle = 0.82f;
         public const int TitleMinPx = 24;
         public const int TitleMaxPx = 160;
         public const int BetMinPx = 16;
@@ -36,7 +36,7 @@ namespace FlockFive
         {
             var b = new Bands();
             float ruleY = paper.y + headH - rule;
-            float top = paper.y + rule;
+            float top = paper.y + rule; // polish 2: title takes the room, only a hairline above
             float room = Mathf.Max(1f, ruleY - top);
             float titleH = room * TitleShare / (TitleShare + BetShare);
             float betH = room - titleH;
