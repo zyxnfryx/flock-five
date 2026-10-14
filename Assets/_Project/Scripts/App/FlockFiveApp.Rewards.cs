@@ -120,16 +120,15 @@ namespace FlockFive
 
         void CloseDailyAfterReward()
         {
-            bool first = _dailyClaimFirst;
-            bool follow = _dailyClaimFollowUp;
-            _dailyClaimFollowUp = false;
-            _dailyOpen = false;
-            _dailyPopAt = -1f;
-            _dailyTutorSpin = false;
-            _dailyPhase = DailyWheelPhase.Ready;
-            _wheelPayMul = 1;
-            DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
-            if (follow) StartCoroutine(FinishDailyClaim(first));
+            // The doubled pay already launched the coins. Hold the card until they land.
+            if (_dailyOpen)
+            {
+                _dailyPayHold = true;
+                _dailyTutorSpin = false;
+                _wheelPayMul = 1;
+                return;
+            }
+            EndDailyPopup();
         }
     }
 }

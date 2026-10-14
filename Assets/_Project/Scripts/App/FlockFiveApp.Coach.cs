@@ -108,6 +108,8 @@ namespace FlockFive
         // the hit rect's centre, on the card fan itself.
         const float PokerGloveU = 0.56f;
         const float PokerGloveV = 0.58f;
+        // Right-rail button. The hand enters from the left and points right.
+        public const bool PokerGloveFromLeft = true;
 
         // Same point as GloveTarget. Callers that still say TopTouch share it.
         static Vector2 TopTouch(Rect r) => GloveTarget(r);
@@ -1086,10 +1088,15 @@ namespace FlockFive
                 LessonLine(PokerIntroLine);
                 _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
                 if (!RailGloveSettled(RailPoker, box)) return;
+                // Note the plate this frame, before the glove locks, so the perch
+                // does not re-seat when the caption paints a frame later.
+                var pokerText = PokerIntroBox(handS);
+                NoteTutorPlate(CoachPanelRect(pokerText));
                 _gloveInward = true;
-                // Tap rect is the padded rail hit, the same rect the button uses, so a
-                // press on the icon fades the hand and opens poker together.
-                CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, false, GloveBelowDeg, RailTapRect(RailPoker)); // b86: from below, off the $ total
+                // From the left, pointing right (facing stays in the shared helper). Tap rect is
+                // the padded rail hit the button uses, so a press on the icon fades the hand
+                // and opens poker together.
+                CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, PokerGloveFromLeft, float.NaN, RailTapRect(RailPoker));
                 return;
             }
             if (_dailyIntroLive)
@@ -5651,7 +5658,7 @@ namespace FlockFive
             // poker card, in the open sky between the coin row and the disc.
             var pr = PokerIntroBox(s);
             CapSpot("home.poker");
-            DrawSplashIntroLine(PokerIntroLine, pr, s, PokerIntroFontHi(s), true, _anchorPad, true);
+            DrawSplashIntroLine(PokerIntroLine, pr, s, PokerIntroFontHi(s), true, default, true);
             DrawTutorOverlay(s);
         }
 
@@ -5662,16 +5669,135 @@ namespace FlockFive
 
         Rect PokerIntroBox(float s)
         {
-            var r = AnchoredCaptionBox(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering, out _);
-            var disc = FlowerPlayRect();
+            var button = SplashPokerRect();
+            var aim = GloveTargetAt(button, PokerGloveU, PokerGloveV);
+            var hand = PokerPointHand(aim, s);
+            var pig = PiggyRect(s);
+            var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+            // Disc-cover padding belongs on the LEVEL lettering. This line sits
+            // under the balance, so the plate is only the shared caption pad.
+            float padX = hang.x;
+            float padY = hang.y;
+            // A tall phone's 18*s gap pushed a two-line plate into the poker row.
+            float gap = 6f;
             float railW = Screen.width * 0.17f;
-            float maxW = Screen.width - railW * 2f;
-            if (r.width > maxW) { r.x += (r.width - maxW) * 0.5f; r.width = maxW; }
-            r.x = (Screen.width - r.width) * 0.5f;
-            if (disc.width > 2f) r.y = disc.yMin - r.height - 18f * s;
-            float floorY = TopHud() + (56f * 2f + 4f) * s + 64f * s;
-            if (r.y < floorY) r.y = floorY;
-            return r;
+            if (railW < 8f) railW = 8f;
+            // Column between the left rail and the glove (and the button). The
+            // plate stays left of both, so a tall wrap does not cover the hand.
+            float right = Screen.width - railW;
+            if (hand.width > 2f && hand.xMin - gap < right) right = hand.xMin - gap;
+            if (button.width > 2f && button.xMin - gap < right) right = button.xMin - gap;
+            float plateW = right - railW;
+            if (plateW < 160f) plateW = 160f;
+            float seatW = plateW - padX * 2f;
+            if (seatW < 80f) seatW = 80f;
+            float ix = Mathf.Clamp(seatW * 0.055f, 10f * s, 18f * s);
+            float textW = Mathf.Max(48f, seatW - ix * 2f);
+            var fit = FitLessonText(PokerIntroLine, textW, 4096f, 12, PokerIntroFontHi(s), Screen.width, Screen.height);
+            // Same inner pad CaptionTextRect will apply, solved so paint does not
+            // grow the seat another line after this measures.
+            float seatH = fit.TextH + 4f;
+            for (int i = 0; i < 4; i++)
+            {
+                float iy = Mathf.Clamp(seatH * 0.10f, 6f * s, 14f * s);
+                float need = fit.TextH + iy * 2f;
+                if (need <= seatH + 0.5f) break;
+                seatH = need;
+            }
+            float textTopMin = TopHud() + (56f * 2f + 4f) * s + 64f * s;
+            // The balance is centered on the pig. Start under that row.
+            if (pig.height > 2f)
+            {
+                float under = pig.yMax + gap + padY;
+                if (under > textTopMin) textTopMin = under;
+            }
+            float spanL = railW + padX;
+            float spanR = right - padX;
+            if (spanR < spanL + 80f) spanR = spanL + 80f;
+            float x = spanL + Mathf.Max(0f, (spanR - spanL - seatW) * 0.5f);
+            var r = new Rect(x, textTopMin, seatW, seatH);
+            r.height += PokerCaptionGrow(r, s);
+            return LiftPokerCaption(r, padX, padY, button, hand, textTopMin, gap, railW);
+        }
+
+        // How far PaintCoachCaption will grow this seat downward. Same fit the paint uses.
+        float PokerCaptionGrow(Rect r, float s)
+        {
+            CaptionTextRect(r, s, out var textR);
+            var fit = FitLessonText(PokerIntroLine, textR.width, textR.height, 12, PokerIntroFontHi(s), Screen.width, Screen.height);
+            float grow = fit.TextH - textR.height;
+            return grow > 1f ? grow : 0f;
+        }
+
+        // Landed poker glove: fingertip on the aim, body to the left, finger pointing right.
+        public static Rect PokerPointHand(Vector2 aim, float s)
+        {
+            if (s < 0.2f) s = 0.2f;
+            return GloveBody(aim, ClampUpright(true), s, true);
+        }
+
+        // The poker line shares a row with the rail button. Lift the plate above
+        // that row and above the hand that reaches in from the left.
+        public static Rect LiftPokerCaption(Rect text, float padX, float padY, Rect button, Rect hand, float floorY, float gap, float minX = 8f)
+        {
+            if (text.width < 2f || text.height < 2f) return text;
+            if (padX < 0f) padX = 0f;
+            if (padY < 0f) padY = 0f;
+            if (gap < 0f) gap = 0f;
+            if (minX < 0f) minX = 0f;
+            var plate = new Rect(text.x - padX, text.y - padY, text.width + padX * 2f, text.height + padY * 2f);
+            bool shareBtn = button.width > 2f && button.height > 2f
+                && plate.yMax > button.yMin && button.yMax > plate.yMin;
+            bool hitHand = hand.width > 2f && hand.height > 2f && plate.Overlaps(hand);
+            if (!shareBtn && !hitHand) return text;
+            float top = float.PositiveInfinity;
+            if (shareBtn) top = button.yMin;
+            if (hand.height > 2f && hand.yMin < top) top = hand.yMin;
+            float y = top - gap - text.height - padY - 1f;
+            if (y > text.y) y = text.y;
+            if (y < floorY) y = floorY;
+            text.y = y;
+            // A floor under the coin row can pin the plate back onto the hand.
+            // Move it left only by the overlap, and never across the left rail.
+            // Width that is still on the hand is cut off the right edge.
+            var seated = new Rect(text.x - padX, text.y - padY, text.width + padX * 2f, text.height + padY * 2f);
+            float block = float.PositiveInfinity;
+            if (button.width > 2f && button.height > 2f && seated.Overlaps(button))
+                block = button.xMin;
+            if (hand.width > 2f && hand.height > 2f && seated.Overlaps(hand) && hand.xMin < block)
+                block = hand.xMin;
+            if (block < float.PositiveInfinity)
+            {
+                float plateRightMax = block - gap;
+                float plateLeft = text.x - padX;
+                float plateRight = text.x + text.width + padX;
+                if (plateRight > plateRightMax)
+                {
+                    float over = plateRight - plateRightMax;
+                    float room = plateLeft - minX;
+                    if (room < 0f) room = 0f;
+                    float shift = over < room ? over : room;
+                    text.x -= shift;
+                    float still = over - shift;
+                    if (still > 0.5f)
+                    {
+                        text.width -= still;
+                        if (text.width < 80f) text.width = 80f;
+                    }
+                }
+                plateLeft = text.x - padX;
+                if (plateLeft < minX)
+                {
+                    text.x += minX - plateLeft;
+                    float plateRightNow = text.x + text.width + padX;
+                    if (plateRightNow > plateRightMax)
+                    {
+                        text.width -= plateRightNow - plateRightMax;
+                        if (text.width < 80f) text.width = 80f;
+                    }
+                }
+            }
+            return text;
         }
 
         // Where a home step seats the shared measured plate (FitCaptionBox). The step names
@@ -6045,7 +6171,8 @@ namespace FlockFive
         // $10 tile. PlacePopupTutorCaption is the shared seat. The latch holds it.
         void DrawDailyClaimLine(float s)
         {
-            if (!_dailyIntroLive || !_dailyOpen || _dailyAskOpen) return;
+            // The pay and the exit own the screen. A full-alpha claim line would sit on the fade.
+            if (!_dailyIntroLive || !_dailyOpen || _dailyAskOpen || _dailyPayHold || _dailyCloseAt >= 0f) return;
             DailyLayout(s, out var card, out var flower, out var board, out float band);
             var frame = DailyFrameOuter(card, board, band);
             float x0 = Mathf.Min(frame.x, flower.x);
