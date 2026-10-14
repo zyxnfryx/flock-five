@@ -302,13 +302,14 @@ namespace FlockFive.Editor
         static void WatchFlutter()
         {
             const string done = "/tmp/flock-peach-flutter-done";
-            if (File.Exists(done))
+            bool armed = File.Exists("/tmp/flock-five-peach-flutter") || FlockFive.FlockFiveApp.EditorShotLive;
+            // A leftover done marker must not quit an ordinary compile.
+            if (File.Exists(done) && armed)
             {
                 Debug.Log("Flock Five: peach flutter capture done");
                 EditorApplication.Exit(0);
                 return;
             }
-            bool armed = File.Exists("/tmp/flock-five-peach-flutter") || FlockFive.FlockFiveApp.EditorShotLive;
             if (!armed) return;
             if (_flutterT0 < 0) _flutterT0 = EditorApplication.timeSinceStartup;
             if (EditorApplication.timeSinceStartup - _flutterT0 > 720)
