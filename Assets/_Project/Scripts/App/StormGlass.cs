@@ -328,8 +328,8 @@ namespace FlockFive
             float inv = 1f / dist;
             float back = b.Radius * 0.2f;
             float sr = b.Radius * 0.15f;
-            float lo = 4.2f * scale;
-            float hi = 7.6f * scale;
+            float lo = 6.0f * scale;
+            float hi = 10.5f * scale;
             if (sr < lo) sr = lo;
             if (sr > hi) sr = hi;
             float life = 0.62f + (b.Radius / (RadiusCap * scale)) * 0.28f;
@@ -392,7 +392,7 @@ namespace FlockFive
             {
                 a.Kind = Slide;
                 float term = Terminal(nr, scale);
-                float faster = prev * 1.2f;
+                float faster = prev * 1.35f;
                 if (faster < term * 0.45f) faster = term * 0.45f;
                 if (faster > term) faster = term;
                 if (faster < prev + 0.5f && term > prev + 0.5f)
@@ -446,7 +446,18 @@ namespace FlockFive
             bool allowCover = KeepOver(rng.Next01());
             for (int t = 0; t < SpawnTries; t++)
             {
-                float x = rng.Range(x0, x1);
+                // Most drops share a lane, so a fat bead runs down into the ones ahead.
+                float x;
+                if (rng.Next01() < 0.72f)
+                {
+                    int lane = (int)(rng.Next01() * 5f);
+                    if (lane > 4) lane = 4;
+                    float laneX = x0 + (x1 - x0) * ((lane + 0.5f) / 5f);
+                    x = laneX + rng.Range(-38f, 38f) * scale;
+                    if (x < x0) x = x0;
+                    else if (x > x1) x = x1;
+                }
+                else x = rng.Range(x0, x1);
                 float y = rng.Range(yLo, y1);
                 if (Over(x, y, blocks, blockCount) && !allowCover)
                     continue;
@@ -495,7 +506,7 @@ namespace FlockFive
             {
                 float ang = rng.Range(0f, 6.28318f);
                 float d = rad * rng.Range(0.85f, 1.45f);
-                float sr = rng.Range(4.2f, 7.2f) * scale;
+                float sr = rng.Range(5.5f, 9.0f) * scale;
                 AddSpeck(specks, ref speckN,
                     x + Mathf.Cos(ang) * d, y + Mathf.Sin(ang) * d,
                     sr, rng.Range(0.26f, 0.48f));
