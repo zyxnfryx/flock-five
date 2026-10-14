@@ -5514,18 +5514,30 @@ namespace FlockFive
             float padX = hang.x + (_anchorPad.x > 0f ? _anchorPad.x : 0f);
             float padY = hang.y + (_anchorPad.y > 0f ? _anchorPad.y : 0f);
             float gap = 18f * s;
+            // Paint fits the line into the inset and grows the box downward when
+            // the floor size needs another line. Count that hang before the seat,
+            // or the glove under the corner ends up inside the plate.
+            r.height += PokerCaptionGrow(r, s);
             float wide = r.width;
             r = LiftPokerCaption(r, padX, padY, button, hand, floorY, gap);
-            // A cut width was measured for the wide line. Refit so the extra
-            // wrap has height, then seat that box the same way.
             if (r.width < wide - 1f)
             {
                 var fit = FitCaptionBox(PokerIntroLine, r.width, PokerIntroFontHi(s), 16);
                 r.width = fit.width;
                 r.height = fit.height;
+                r.height += PokerCaptionGrow(r, s);
                 r = LiftPokerCaption(r, padX, padY, button, hand, floorY, gap);
             }
             return r;
+        }
+
+        // How far PaintCoachCaption will grow this seat downward. Same fit the paint uses.
+        float PokerCaptionGrow(Rect r, float s)
+        {
+            CaptionTextRect(r, s, out var textR);
+            var fit = FitLessonText(PokerIntroLine, textR.width, textR.height, 12, PokerIntroFontHi(s), Screen.width, Screen.height);
+            float grow = fit.TextH - textR.height;
+            return grow > 1f ? grow : 0f;
         }
 
         // Landed poker glove: fingertip on the aim, body to the left, finger pointing right.
