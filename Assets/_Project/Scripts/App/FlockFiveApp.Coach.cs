@@ -5513,7 +5513,19 @@ namespace FlockFive
             var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
             float padX = hang.x + (_anchorPad.x > 0f ? _anchorPad.x : 0f);
             float padY = hang.y + (_anchorPad.y > 0f ? _anchorPad.y : 0f);
-            return LiftPokerCaption(r, padX, padY, button, hand, floorY, 18f * s);
+            float gap = 18f * s;
+            float wide = r.width;
+            r = LiftPokerCaption(r, padX, padY, button, hand, floorY, gap);
+            // A cut width was measured for the wide line. Refit so the extra
+            // wrap has height, then seat that box the same way.
+            if (r.width < wide - 1f)
+            {
+                var fit = FitCaptionBox(PokerIntroLine, r.width, PokerIntroFontHi(s), 16);
+                r.width = fit.width;
+                r.height = fit.height;
+                r = LiftPokerCaption(r, padX, padY, button, hand, floorY, gap);
+            }
+            return r;
         }
 
         // Landed poker glove: fingertip on the aim, body to the left, finger pointing right.
@@ -5556,6 +5568,28 @@ namespace FlockFive
                 float nx = block - gap - text.width - padX;
                 if (nx < 8f) nx = 8f;
                 if (nx < text.x) text.x = nx;
+            }
+            // Sliding a near-screen-wide plate still leaves it on the hand.
+            // Cut the width so the right edge stops short of the hand.
+            var cut = new Rect(text.x - padX, text.y - padY, text.width + padX * 2f, text.height + padY * 2f);
+            float limit = float.PositiveInfinity;
+            if (button.width > 2f && button.height > 2f && cut.Overlaps(button))
+                limit = button.xMin;
+            if (hand.width > 2f && hand.height > 2f && cut.Overlaps(hand) && hand.xMin < limit)
+                limit = hand.xMin;
+            if (limit < float.PositiveInfinity)
+            {
+                float right = limit - gap;
+                float maxW = right - text.x - padX;
+                if (maxW < 80f) maxW = 80f;
+                if (text.width > maxW) text.width = maxW;
+                float plateRight = text.x + text.width + padX;
+                if (plateRight > right)
+                {
+                    text.x -= plateRight - right;
+                    float minX = 8f + padX;
+                    if (text.x < minX) text.x = minX;
+                }
             }
             return text;
         }

@@ -75,6 +75,11 @@ namespace FlockFive
             _dailyOpen = false;
             _dailyAskOpen = false;
             yield return WaitStudioCardDown("POKER_GLOVE_HOME " + tag);
+            // ShowSplash marks a glove the previous device already showed.
+            // Zero the coach so this size arms again.
+            PlayerPrefs.SetInt(CoachPokerKey, 0);
+            PlayerPrefs.Save();
+            _pokerIntroSaw = false;
             ArmPokerIntro();
             float gloveT0 = Time.realtimeSinceStartup;
             while ((!_pokerIntroLive || !_gloveVis) && Time.realtimeSinceStartup - gloveT0 < 8f)

@@ -54,6 +54,16 @@ namespace FlockFive.Editor
                     slid.x < pinned.x && !slidPlate.Overlaps(button) && !slidPlate.Overlaps(hand),
                     slidPlate.ToString());
 
+                // A screen-wide plate cannot slide off the hand. It narrows instead.
+                var wide = new Rect(40f, 560f, 900f, 120f);
+                var wideHand = new Rect(700f, 500f, 220f, 180f);
+                var wideBtn = new Rect(820f, 540f, 140f, 140f);
+                var cut = FlockFiveApp.LiftPokerCaption(wide, 20f, 16f, wideBtn, wideHand, 540f, 12f);
+                var cutPlate = new Rect(cut.x - 20f, cut.y - 16f, cut.width + 40f, cut.height + 32f);
+                Check("wide-plate-clears-the-hand",
+                    cut.width < wide.width && !cutPlate.Overlaps(wideHand) && !cutPlate.Overlaps(wideBtn),
+                    cutPlate.ToString());
+
                 string coach = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.Coach.cs"));
                 int spot = coach.IndexOf("if (_pokerIntroLive)");
                 int end = coach.IndexOf("if (_dailyIntroLive)", spot);
