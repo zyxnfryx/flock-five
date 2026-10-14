@@ -190,12 +190,44 @@ namespace FlockFive
             StartCoroutine(PanicFlee(false));
         }
 
-        // Restart aborted the scrap before PanicFlee. Let Visit destroy this sparrow.
+        // Restart aborted the scrap. Visit destroys the body on the next frame.
         // A flee already in the air (including the defeat tumble) stops on the next frame.
-        public void FinishEvict()
+        public void FinishEvict() => LeaveForReset();
+
+        // Perched visitor for the restart suite. The fly-in is the live path.
+        public static SparrowView Seat(int slot)
         {
-            if (_fleeing) _abort = true;
-            if (_evict && !_done && !_fleeing) _done = true;
+            var go = new GameObject("Sparrow");
+            var view = go.AddComponent<SparrowView>();
+            view.BlockingSlot = slot;
+            view.Settled = true;
+            Live = view;
+            return view;
+        }
+
+        // Hide and drop the perch now. In play mode Visit's finally destroys the
+        // body. An edit-mode suite has no coroutine, so the body goes immediately.
+        public static void DismissForReset()
+        {
+            var live = Live;
+            if (live == null) return;
+            live.LeaveForReset();
+            if (Application.isPlaying) return;
+            Live = null;
+            Object.DestroyImmediate(live.gameObject);
+        }
+
+        void LeaveForReset()
+        {
+            StopHit();
+            BlockingSlot = -1;
+            Settled = false;
+            _abort = true;
+            _evict = true;
+            _done = true;
+            if (_art != null) _art.enabled = false;
+            if (Application.isPlaying && gameObject.activeSelf)
+                gameObject.SetActive(false);
         }
 
         // Compat alias — collect dive-strikes call TakeHit.
@@ -440,7 +472,7 @@ namespace FlockFive
             if (_art != null) _art.flipX = dest.x < from.x;
             float t = 0f;
             const float outDur = 0.85f;
-            while (t < outDur)
+            while (t < outDur && !_abort)
             {
                 t += Time.deltaTime;
                 float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / outDur));
