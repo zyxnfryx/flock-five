@@ -446,7 +446,7 @@ namespace FlockFive
             int n = Mathf.CeilToInt(Rate * dur);
             var data = new float[n];
             float[] at = { 0.01f, 0.09f, 0.20f, 0.34f, 0.52f };
-            float[] freq = { 172f, 138f, 188f, 126f, 154f };
+            float[] freq = { 300f, 245f, 330f, 225f, 270f };
             for (int i = 0; i < n; i++)
             {
                 float t = i / (float)Rate;
@@ -457,12 +457,12 @@ namespace FlockFive
                     if (dt < 0f || dt > 0.26f) continue;
                     float e = Mathf.Exp(-dt * 12f);
                     float pop = Mathf.Sin(2f * Mathf.PI * freq[k] * dt);
-                    pop += 0.42f * Mathf.Sin(2f * Mathf.PI * freq[k] * 0.5f * dt);
+                    pop += 0.30f * Mathf.Sin(2f * Mathf.PI * freq[k] * 1.5f * dt);
                     s += pop * e * (k == 4 ? 0.65f : 1f);
                 }
                 data[i] = s * 0.36f;
             }
-            return ClipLp("wood-fire", data, 0.16f);
+            return ClipLp("wood-fire", data, 0.22f);
         }
 
         // Short low thump plus a band-limited crack. Not a gunshot.

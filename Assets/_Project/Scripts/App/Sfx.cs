@@ -122,7 +122,7 @@ namespace FlockFive
         }
 
         static bool LoneClipsWarm =>
-            _celebrate != null && _lullaby != null && _fwWhistle != null && _fwCrackle != null && _feederArrive != null;
+            _celebrate != null && _lullaby != null && _fwWhistle != null && _fwCrackle != null && _feederArrive != null && _woodFire != null;
 
         static void WarmLoneClip()
         {
@@ -130,7 +130,8 @@ namespace FlockFive
             if (_lullaby == null) { _lullaby = MakeLullaby(); return; }
             if (_fwWhistle == null) { _fwWhistle = MakeFwWhistle(); return; }
             if (_fwCrackle == null) { _fwCrackle = MakeFwCrackle(); return; }
-            if (_feederArrive == null) _feederArrive = MakeFeederArrive();
+            if (_feederArrive == null) { _feederArrive = MakeFeederArrive(); return; }
+            if (_woodFire == null) _woodFire = MakeWoodFire();
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
