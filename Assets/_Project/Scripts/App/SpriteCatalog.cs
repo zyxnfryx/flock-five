@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace FlockFive
@@ -17,6 +18,7 @@ namespace FlockFive
         static Sprite[] _kitUp;
         static Sprite[] _kitMid;
         static Sprite[] _feeders;
+        static readonly Dictionary<int, Vector2> _core = new Dictionary<int, Vector2>();
 
         public static Sprite GardenBg => Load(ref _bg, "Sprites/bg_garden", 96f);
         public static Sprite Branch => Load(ref _branch, "Sprites/branch", 140f);
@@ -393,6 +395,83 @@ namespace FlockFive
             _sparrowPlaceholder = false;
             _hawk = null;
             _hawkPlaceholder = false;
+            _core.Clear();
+        }
+
+        // Opaque-core centroid minus the pivot, in sprite units. Flap frames share a
+        // centre pivot but the body sits in a different place once the wings open.
+        public static Vector2 CoreFromPivot(Sprite sprite)
+        {
+            if (sprite == null) return Vector2.zero;
+            int id = sprite.GetInstanceID();
+            if (_core.TryGetValue(id, out var cached)) return cached;
+            var got = MeasureCore(sprite);
+            _core[id] = got;
+            return got;
+        }
+
+        static Vector2 MeasureCore(Sprite sprite)
+        {
+            var tex = sprite.texture;
+            if (tex == null || !tex.isReadable) return Vector2.zero;
+            var rect = sprite.rect;
+            int x0 = Mathf.RoundToInt(rect.x);
+            int y0 = Mathf.RoundToInt(rect.y);
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 8 || h < 8) return Vector2.zero;
+            Color[] pix;
+            try { pix = tex.GetPixels(x0, y0, w, h); }
+            catch (System.Exception) { return Vector2.zero; }
+            const int step = 8;
+            int cw = w / step;
+            int ch = h / step;
+            if (cw < 4 || ch < 4) return Vector2.zero;
+            var cur = new bool[cw * ch];
+            for (int y = 0; y < ch; y++)
+            {
+                int sy = y * step;
+                for (int x = 0; x < cw; x++)
+                    if (pix[sy * w + x * step].a > 0.22f) cur[y * cw + x] = true;
+            }
+            var nxt = new bool[cur.Length];
+            for (int n = 0; n < 4; n++)
+            {
+                int alive = 0;
+                for (int y = 1; y < ch - 1; y++)
+                {
+                    for (int x = 1; x < cw - 1; x++)
+                    {
+                        int i = y * cw + x;
+                        bool on = cur[i] && cur[i - 1] && cur[i + 1] && cur[i - cw] && cur[i + cw];
+                        nxt[i] = on;
+                        if (on) alive++;
+                    }
+                }
+                if (alive < 12) break;
+                var swap = cur;
+                cur = nxt;
+                nxt = swap;
+                System.Array.Clear(nxt, 0, nxt.Length);
+            }
+            double sx = 0, sy = 0;
+            int count = 0;
+            for (int y = 0; y < ch; y++)
+            {
+                for (int x = 0; x < cw; x++)
+                {
+                    if (!cur[y * cw + x]) continue;
+                    sx += x;
+                    sy += y;
+                    count++;
+                }
+            }
+            if (count < 8) return Vector2.zero;
+            float px = (float)(sx / count) * step;
+            float py = (float)(sy / count) * step;
+            float ppu = Mathf.Max(1f, sprite.pixelsPerUnit);
+            var pivot = sprite.pivot;
+            return new Vector2((px - pivot.x) / ppu, (py - pivot.y) / ppu);
         }
 
         public static Sprite Bird(BirdColor c) => Slot(ref _birds, (int)c, "Sprites/bird_" + Name(c), 280f);

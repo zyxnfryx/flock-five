@@ -207,10 +207,13 @@ namespace FlockFive
             // Impact. Flash and cracks sit behind the peach, then a ~60ms hit-stop.
             host.StartCoroutine(CrackFlash(hold, hit));
             float stop = 0f;
+            var plant = new Vector3(0f, 1.18f, 0.18f);
             while (stop < HitStop && peach != null)
             {
                 stop += Time.unscaledDeltaTime;
                 float j = 1f - stop / HitStop;
+                // Rewrite the path each frame. The flap drive offsets from it in LateUpdate.
+                peach.localPosition = plant;
                 peach.localScale = new Vector3(1.15f * Mathf.Lerp(1f, 1.16f, j), 1.15f * Mathf.Lerp(1f, 0.84f, j), 1f);
                 peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-4f, -9f, j));
                 yield return null;
@@ -263,6 +266,9 @@ namespace FlockFive
             var go = WorldBuilder.Sprite("BurstGhost", sr.sprite, peach.position, 1f, order, peach.parent);
             go.transform.localRotation = peach.localRotation;
             go.transform.localScale = peach.localScale;
+            var idle = peach.GetComponent<BirdIdle>();
+            if (idle != null && idle.FlapDriven)
+                go.transform.localPosition += idle.FlapBodyPull();
             var g = go.GetComponent<SpriteRenderer>();
             g.flipX = sr.flipX;
             var c = Color.white;
