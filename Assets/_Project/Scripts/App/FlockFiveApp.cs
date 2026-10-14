@@ -10604,6 +10604,78 @@ namespace FlockFive
             return st.padding.top + asc;
         }
 
+        // Real glyph ink of a line, measured, not modelled: TextGenerator lays out "H"
+        // with the style's own font, size and weight, and the quad gives the cap top
+        // and the baseline as offsets from the line top. IMGUI places glyphs the same
+        // way, so these hold for any font (the fixed em fractions did not). Cached.
+        static TextGenerator _inkGen;
+        static Font _inkFont;
+        static int _inkSize = -1;
+        static FontStyle _inkStyle;
+        static float _inkCapOff, _inkBaseOff;
+
+        static void InkOffsets(GUIStyle st, out float capOff, out float baseOff)
+        {
+            float fs = st.fontSize > 0 ? st.fontSize : 14f;
+            Font f = st.font != null ? st.font : (GUI.skin != null ? GUI.skin.font : null);
+            // Fallback: the em model.
+            baseOff = InkBaseline(st) - st.padding.top;
+            capOff = baseOff - InkCap * fs;
+            if (f == null) return;
+            int size = Mathf.RoundToInt(fs);
+            if (f == _inkFont && size == _inkSize && st.fontStyle == _inkStyle)
+            {
+                capOff = _inkCapOff;
+                baseOff = _inkBaseOff;
+                return;
+            }
+            if (_inkGen == null) _inkGen = new TextGenerator(8);
+            var set = new TextGenerationSettings
+            {
+                font = f,
+                fontSize = size,
+                fontStyle = st.fontStyle,
+                color = Color.white,
+                lineSpacing = 1f,
+                richText = false,
+                scaleFactor = 1f,
+                textAnchor = TextAnchor.UpperLeft,
+                alignByGeometry = false,
+                resizeTextForBestFit = false,
+                updateBounds = false,
+                horizontalOverflow = HorizontalWrapMode.Overflow,
+                verticalOverflow = VerticalWrapMode.Overflow,
+                generationExtents = new Vector2(4096f, 4096f),
+                pivot = new Vector2(0f, 1f),
+                generateOutOfBounds = true,
+            };
+            if (!_inkGen.Populate("H", set) || _inkGen.vertexCount < 4 || _inkGen.lineCount < 1) return;
+            var verts = _inkGen.verts;
+            float hi = float.MinValue, lo = float.MaxValue;
+            for (int i = 0; i < 4 && i < verts.Count; i++)
+            {
+                float y = verts[i].position.y;
+                if (y > hi) hi = y;
+                if (y < lo) lo = y;
+            }
+            float lineTop = _inkGen.lines[0].topY;
+            if (hi - lo < fs * 0.3f || hi - lo > fs * 1.2f) return; // junk probe: keep the model
+            capOff = lineTop - hi;
+            baseOff = lineTop - lo;
+            _inkFont = f;
+            _inkSize = size;
+            _inkStyle = st.fontStyle;
+            _inkCapOff = capOff;
+            _inkBaseOff = baseOff;
+        }
+
+        // Top of the first (index 0) or last (index = text length) laid-out line, where
+        // IMGUI itself puts it for this rect and alignment.
+        static float InkLineTop(GUIStyle st, Rect r, GUIContent c, int index)
+        {
+            return st.GetCursorPixelPosition(r, c, index).y;
+        }
+
         // Move that puts inkMid on the target. Down only (the stack reads high, never
         // lift it), bounded by InkNudgeMax.
         static float InkNudge(Rect disc, float inkMid)
@@ -10670,11 +10742,9 @@ namespace FlockFive
                 // One line, MiddleCenter: ink is cap top to baseline (no descenders).
                 if (_lvInk == null) _lvInk = new GUIContent();
                 _lvInk.text = level;
-                float lineH = lv.CalcSize(_lvInk).y;
-                float lineTop = lvR.center.y - lineH * 0.5f;
-                float baseY = lineTop + InkBaseline(lv);
-                float capY = baseY - InkCap * lv.fontSize;
-                lvR.y += InkNudge(disc, 0.5f * (capY + baseY));
+                InkOffsets(lv, out float capOff, out float baseOff);
+                float lineTop = InkLineTop(lv, lvR, _lvInk, 0);
+                lvR.y += InkNudge(disc, lineTop + 0.5f * (capOff + baseOff));
                 StampBannerText(lvR, level, lv, 1f, true);
                 return;
             }
@@ -10700,20 +10770,19 @@ namespace FlockFive
                 textH = joke.CalcHeight(_easeContent, lineW);
             }
             float bottom = disc.yMax - 2f;
-            // Ink of the stack, from the rendered lines: LEVEL cap top (LowerCenter in
-            // lvR) to the joke's last baseline, or its descender when it has one.
-            // Moved as one block onto the face centre plus the optical drop. A joke that
-            // fits never leaves the disc.
+            // Ink of the stack, measured where IMGUI lays the lines out: LEVEL cap top
+            // (first line top in lvR + measured cap offset) to the joke's last baseline
+            // (last line top in the joke rect + measured baseline). Descenders are left
+            // out, the same cap-to-baseline ink the blank LEVEL centres on. Moved as one
+            // block onto the face centre plus the optical drop. A joke that fits never
+            // leaves the disc.
             if (_lvInk == null) _lvInk = new GUIContent();
             _lvInk.text = level;
-            float lvLineH = lv.CalcSize(_lvInk).y;
-            float capTop = lvR.yMax - lv.padding.bottom - (lvLineH - lv.padding.vertical) + (InkBaseline(lv) - lv.padding.top) - InkCap * lv.fontSize;
-            bool wrapKeep = joke.wordWrap;
-            joke.wordWrap = false;
-            float jokeLineH = joke.CalcSize(_easeContent).y;
-            joke.wordWrap = wrapKeep;
-            float lastTop = jokeR.y + textH - jokeLineH;
-            float inkBottom = lastTop + InkBaseline(joke) + (CardText.HasDescender(ease) ? InkDescent * jokePx : 0f);
+            InkOffsets(lv, out float lvCapOff, out _);
+            float capTop = InkLineTop(lv, lvR, _lvInk, 0) + lvCapOff;
+            InkOffsets(joke, out _, out float jokeBaseOff);
+            var jokeProbe = new Rect(disc.center.x - lineW * 0.5f, jokeR.y, lineW, textH + 4f);
+            float inkBottom = InkLineTop(joke, jokeProbe, _easeContent, ease.Length) + jokeBaseOff;
             float nudge = InkNudge(disc, 0.5f * (capTop + inkBottom));
             float room = bottom - (jokeR.y + textH);
             if (nudge > room) nudge = room > 0f ? room : 0f;
