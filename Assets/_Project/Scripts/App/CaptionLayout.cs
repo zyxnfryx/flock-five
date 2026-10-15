@@ -234,6 +234,11 @@ namespace FlockFive
         // the tests both use.
         public const float GloveBannerGap = 4f;
 
+        // b94 (Brandon): a home-screen banner never sits flush against the FLOCK FIVE logo.
+        // The gap is a share of the screen height, so iPhone and iPad get the same look.
+        public const float LogoGapFrac = 0.025f;
+        public static float LogoGap(float screenH) => Mathf.Max(8f, screenH * LogoGapFrac);
+
         // True when the glove's drawn box and the banner share no pixel.
         public static bool GloveClearsBanner(Rect glove, Rect banner)
         {

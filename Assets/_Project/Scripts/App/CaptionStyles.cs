@@ -32,7 +32,7 @@ public static class CaptionStyles
         { "home.daily",     new Spot(false) },    // 'Tap Daily for your bonus!' (rail button)
         { "daily.claim",    new Spot(false) },    // Daily card claim step (inside the card)
         { "bee.garden",     new Spot(true) },     // 'You found a bee!' — high under the title, no icon
-        { "home.poker",     new Spot(false) },    // 'You earned coins! Tap poker to bet them.'
+        { "home.poker",     new Spot(true) },     // b94 (Brandon): 'You earned coins! Tap poker to bet them.' full-width banner over the Level box, off the avatar bird
         { "home.anchored",  new Spot(false) },    // other captions anchored to a small home element
         { "badger.lesson",  new Spot(false) },    // pinned badger lesson rule
         { "poker.table",    new Spot(false) },    // poker table lessons (would cover the cards)

@@ -185,6 +185,10 @@ namespace FlockFive
             var q = HomeGearNow();
             if (!HomeGear.Shown(q) || !HomeGear.AboveDimmer(q) || _settingsOpen) return;
             if (SettingsMotion.GearPassFor(q.Home, _settingsPhase) != SettingsMotion.GearPass.AboveDimmer) return;
+            // b94 (Brandon): one shared check. When an open modal veil blocks the gear's rect, the
+            // gear is not drawn either, so it is never visible but dead (Daily Bonus popup and any
+            // other veil). Where the tap works, nothing changes.
+            if (VeilBlocks(SettingsGearRect(Screen.width, Screen.height, Screen.safeArea))) return;
             DrawSettingsGear(0f, _gearHeld);
         }
 

@@ -39,6 +39,11 @@ namespace FlockFive.Editor
                     && src.IndexOf("GardenGlove(gui, dt, handS, FnPestTap())") > 0
                     && src.IndexOf("GardenGlove(_cueAimGui, PlayClock.Delta") > 0, "");
 
+                Check("home.daily keeps its snug style", CaptionStyles.IsSnug("home.daily") && CaptionStyles.IsSnug("daily.claim"), "");
+                string setSrc = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Settings.cs");
+                int paintGear = setSrc.IndexOf("void PaintHomeGear()");
+                Check("gear hidden when a veil blocks it", paintGear > 0 && setSrc.IndexOf("if (VeilBlocks(SettingsGearRect(", paintGear) > paintGear
+                    && setSrc.IndexOf("DrawSettingsGear(0f, _gearHeld)", paintGear) > setSrc.IndexOf("if (VeilBlocks(SettingsGearRect(", paintGear), "");
                 Check("ad.hand is a banner", CaptionStyles.IsBanner("ad.hand") && !CaptionStyles.IsSnug("ad.hand"), "");
                 int adAt = src.IndexOf("bool adHand = spot == \"ad.hand\"");
                 Check("ad.hand banner rides below Watch flower + glove", adAt > 0 && src.IndexOf("band.y = adFloor + gap", adAt) > adAt
@@ -91,6 +96,11 @@ namespace FlockFive.Editor
                                 }
                             }
                     }
+                    // Home banners keep a gap under the logo (share of screen height).
+                    float logoBottom = FlockFiveApp.TopHudBox(h, safe, 0f) + (56f * 2f + 4f) * s * 0.92f;
+                    var homeBand = FlockFiveApp.BannerRect("home.intro", "Tap your bird for a closer look.", w, h, safe, new Rect(w * 0.2f, 0f, w * 0.6f, 120f), 0f, false, s, out _);
+                    Check("home banner gap under logo " + tags[d], homeBand.y >= logoBottom + h * CaptionLayout.LogoGapFrac - 0.5f || homeBand.y >= logoBottom + 8f,
+                        "y " + homeBand.y + " logoBottom " + logoBottom + " gap " + CaptionLayout.LogoGap(h));
                     Check("glove clear of banner " + tags[d], bad == 0, "probes " + probes + " bad " + bad + " rows<=" + tallest);
                 }
             }

@@ -3346,6 +3346,7 @@ namespace FlockFive
             BannerText = string.IsNullOrEmpty(fitted.Shown) ? text : fitted.Shown;
             px = fitted.Font;
             float minTop = Mathf.Max(safe.yMin, TopHud() + (56f * 2f + 4f) * s * 0.92f);
+            if (spot != "coach.line" && spot != "bee.garden") minTop += CaptionLayout.LogoGap(screenH);
             float gap = 8f * s;
             // The bee banner stays high under the title. Sliding it under a subject
             // would drop it onto the hive and the glove.
@@ -3403,6 +3404,13 @@ namespace FlockFive
             }
             else if (bee && band.y < minTop)
                 band.y = minTop;
+            // b94: the coins line rides over the Level box (its old cover seat), so it never sits on
+            // the avatar bird. The poker button and its glove are up on the rail, well above it.
+            if (spot == "home.poker")
+            {
+                var lvl = FlowerPlayRect();
+                if (lvl.width > 2f) band.y = Mathf.Max(minTop, lvl.center.y - band.height * 0.5f);
+            }
             float drop = CaptionStyles.Drop(spot);
             if (drop > 0f)
                 CoverDown(ref band, AdoptVipBadgeRect(w, screenH, safe), drop * s, SplashWordBottom(screenH, safe, s));
@@ -3442,6 +3450,8 @@ namespace FlockFive
             float bh = CaptionLayout.BannerBandHeight(th, px);
             if (s < 0.01f) s = 1f;
             float minTop = Mathf.Max(safe.yMin, TopHudBox(h, safe, 0f) + (56f * 2f + 4f) * s * 0.92f);
+            // b94: home banners (everything but the garden and the bee callout) clear the logo.
+            if (spot != "coach.line" && spot != "bee.garden") minTop += CaptionLayout.LogoGap(h);
             float y = seat.y - (bh - seat.height) * 0.85f;
             if (y < minTop) y = minTop;
             // b86: while adopt is up, every banner starts under the title. Only a spot
