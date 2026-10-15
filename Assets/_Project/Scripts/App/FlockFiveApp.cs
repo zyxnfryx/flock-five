@@ -735,6 +735,7 @@ namespace FlockFive
         void ShowSplash()
         {
             AudioGuard.OnSceneOrPopupClosed();
+            ClearTransientFx();
             CloseHiveInspect();
             SeasonCrossfade.RetireLive();
             GardenLife.DetachHome();
@@ -847,6 +848,7 @@ namespace FlockFive
                 MixDesk.Live.SetSplash(false);
             }
             _board = LevelData.Open(index);
+            ResetHopTrail();
             _seed = _board.Clone();
             for (int i = 0; i < _bonusOn.Length; i++) _bonusOn[i] = false;
             ResetLightning();
@@ -3520,12 +3522,22 @@ namespace FlockFive
         {
             // Back to 1 in the background; SyncAutoResolveSpeed re-arms it from live state.
             if (paused) SetAutoResolveSpeed(1f);
-            if (paused) NoteAppBackground();
+            if (paused)
+            {
+                NoteAppBackground();
+                DailyReminder.OnAppBackground();
+            }
             else
             {
                 NoteAppResume();
+                DailyReminder.OnAppForeground();
                 ResumeDailyReminder();
             }
+        }
+
+        void OnApplicationQuit()
+        {
+            DailyReminder.OnAppQuit();
         }
 
         void OnApplicationFocus(bool focus)
@@ -3571,6 +3583,7 @@ namespace FlockFive
             TickUsaPlane(AdPause.UnscaledDelta);
             CoachAdvance();
             TickPopups();
+            TickPopupQueue();
             TickDailyBonus();
             if (_splash) return;
             if (_garden.Ostrich != null)
@@ -3772,6 +3785,8 @@ namespace FlockFive
             int kicked = KickCollects();
             SyncAll();
             CoachMoved(from, to, kicked);
+            _hopTrail.Note(from, to, run, kicked > 0 || _board.JustUnveiled);
+            DeadEndNudge();
             if (_locked.Count == 0)
                 yield return GardenFit.Tween(_garden, _board, false);
             if (gen != _motionGen) yield break;
@@ -3933,6 +3948,7 @@ namespace FlockFive
             }
             else if (pest)
                 PestPark.Hold(_board, branch);
+            ResetHopTrail();
 
             float haste = Mathf.Lerp(1f, 0.52f, Mathf.Clamp01((combo - 1) / 7f));
             float step = 0.192f * haste;
@@ -4573,6 +4589,7 @@ namespace FlockFive
         PestPark.Plan ResolveDisplaced(int branch, bool hawk)
         {
             if (_board == null) return default;
+            ResetHopTrail();
             return PestPark.Resolve(_board, branch, hawk);
         }
 
@@ -5021,24 +5038,10 @@ namespace FlockFive
                 _gardenScoring = false;
                 yield break;
             }
-            yield return Ads.Interstitial();
-            if (_restarting || _splash)
-            {
-                _gardenScoring = false;
-                yield break;
-            }
-            // Soft Go VIP only after a shown interstitial closed. The full card
-            // waits until the splash home, including when a badger fight is next.
-            if (Ads.TryConsumeVipSoft())
-            {
-                VipOffer.OpenSoft();
-                yield return WaitVipSoft();
-            }
-            if (_restarting || _splash)
-            {
-                _gardenScoring = false;
-                yield break;
-            }
+            // Build 89: no ad or Go VIP over the garden. PopupQueue runs them on home after
+            // the rewards popup closes and its coins land (TickPopupQueue).
+            _postStagePending = true;
+            _rewardTookDouble = false;
             // Badger flag first, then the unlock, with no yield between: a kill must not
             // unlock the next garden without the unpaid flag. DisplayNumber is still the
             // cleared level (RememberClear does not move Index). No-op while the switch is off.
@@ -5304,9 +5307,10 @@ namespace FlockFive
             // A strict solve has nothing left to join. A 4+1 with a legal hop is
             // not iced; the player finishes the five. A split with no hop can ice.
             if (_board.NextSolvedMerge(out _, out _)) return;
-            // Ice only when nothing can move. An open bonus limb counts, empty or not.
+            // Ice only when nothing real can move. An open bonus limb counts, empty or not.
             // A search that finds no win is not enough: stage 1 still has hops.
-            if (_board.HasHop() || _board.FindCollect() >= 0) return;
+            // Build 89: a hop that only takes back the last one is not a move.
+            if (_hopTrail.HasProgressHop(_board) || _board.FindCollect() >= 0) return;
             // FreezeOver aborts if _frozen is already set. It has to set that flag itself.
             StartCoroutine(FreezeOver());
         }
@@ -5461,6 +5465,7 @@ namespace FlockFive
                 yield return _garden.Ice.Shatter(_garden.Root);
             yield return FlyOffAll(flock);
             if (_seed != null) _board = _seed.Clone();
+            ResetHopTrail();
             PestReset.Apply(_board);
             BonusBranches.ApplyClaims(_board, _bonusOn);
             LightningStrike.ApplyBurns(_board, _offerBurned);
@@ -5698,8 +5703,6 @@ namespace FlockFive
             sr.transform.position += new Vector3(side * (gap + 0.08f), 0f, 0f);
         }
 
-        static readonly Color FlightSilhouette = new Color(0.04f, 0.03f, 0.05f, 1f);
-
         void FlightScale(SpriteRenderer sr, BranchView branch)
         {
             if (sr == null) return;
@@ -5741,7 +5744,6 @@ namespace FlockFive
         {
             if (sr == null) return;
             var idle = sr.GetComponent<BirdIdle>();
-            bool shroud = idle != null && idle.Shrouded;
             if (idle != null)
             {
                 idle.Sleeping = false;
@@ -5753,10 +5755,8 @@ namespace FlockFive
             sr.flipX = faceLeft;
             sr.enabled = true;
             sr.sortingOrder = FlockSort.Fly;
-            if (shroud)
-                sr.color = FlightSilhouette;
-            else if (idle != null)
-                idle.SetFade(1f); // body, face and kit together (a cut-off collect fade)
+            if (idle != null)
+                idle.ShowFlightLook(); // hidden birds keep the blacked-out look in flight
             else
             {
                 var c = sr.color;
@@ -5776,11 +5776,11 @@ namespace FlockFive
                 idle.Frozen = true;
                 idle.Flapping = true;
                 idle.Lift = 1f;
-                if (shroud) sr.color = FlightSilhouette;
+                idle.ShowFlightLook(); // same look every frame: hidden stays black
             }
             sr.enabled = true;
-            // Duck a silhouette back under the leaves only as it lands.
-            sr.sortingOrder = shroud && landU > 0.92f ? FlockSort.Shroud : FlockSort.Fly;
+            // Duck a hidden bird back under the leaves only as it lands.
+            sr.sortingOrder = shroud && landU > BirdDress.DuckAt ? FlockSort.Shroud : FlockSort.Fly;
         }
 
         bool LiveBird(SpriteRenderer b)
@@ -9673,11 +9673,39 @@ namespace FlockFive
             DrawStreakRewards(s);
         }
 
+        // Shared coin sprinkle timing (streak sign, daily wheel Collect / 2X). Seconds of
+        // real time after the pay starts; any hold before the pay (reward choice) is not here.
+        // Until b88 the flight stepped once per OnGUI event (Layout + Repaint, about 2x a
+        // frame), so 0.10 / 1.32 x RewardPace played as ~0.066 s / ~0.87 s. 73a237f stepped it
+        // once per frame, which doubled the on-screen time. These are the snappy values.
+        public const float CoinFlyStaggerSec = 0.045f * RewardPace;
+        public const float CoinFlyDurSec = 0.60f * RewardPace;
+        public const int CoinFlyMax = 12;
+        // A hitch frame (the Collect tap, an ad return) must not teleport coins mid-arc.
+        public const float CoinFlyMaxStep = 1f / 20f;
+
+        // Last coin lands this long after the pay starts, for n sprites.
+        public static float CoinFlySpanSec(int coins)
+        {
+            int n = Mathf.Clamp(coins, 0, CoinFlyMax);
+            return n <= 0 ? 0f : (n - 1) * CoinFlyStaggerSec + CoinFlyDurSec;
+        }
+
+        // Leaves the wheel moving (no dead ease-in after the tap), still settles into the pig.
+        // Half smoothstep, half ease-out quad: start speed 1, end speed 0.
+        public static float CoinFlyEase(float u)
+        {
+            u = Mathf.Clamp01(u);
+            float smooth = u * u * (3f - 2f * u);
+            float outQuad = 1f - (1f - u) * (1f - u);
+            return 0.5f * (smooth + outQuad);
+        }
+
         // Streak sign and daily claim. The purse already has the coins; each sprite
         // carries an even share, and the balance counts that share when it lands.
         void FlyCoinsToBalance(int coins)
         {
-            int n = Mathf.Clamp(coins, 0, 12);
+            int n = Mathf.Clamp(coins, 0, CoinFlyMax);
             if (n <= 0) return;
             int share = coins / n;
             int extra = coins - share * n;
@@ -9693,7 +9721,7 @@ namespace FlockFive
                     A = new Vector2(Screen.width * 0.5f + Random.Range(-70f, 70f), Screen.height * 0.30f + Random.Range(-24f, 36f)),
                     B = dest,
                     T = 0f,
-                    Delay = i * 0.10f * RewardPace,
+                    Delay = i * CoinFlyStaggerSec,
                     Spin = Random.Range(300f, 420f) * (Random.value < 0.5f ? -1f : 1f),
                     Worth = worth
                 });
@@ -9713,7 +9741,7 @@ namespace FlockFive
             // A second paint (daily pay, above the scrim) must not step the flight twice.
             bool step = _coinFlyFrame != Time.frameCount;
             _coinFlyFrame = Time.frameCount;
-            float dt = step ? AdPause.UnscaledDelta : 0f;
+            float dt = step ? Mathf.Min(AdPause.UnscaledDelta, CoinFlyMaxStep) : 0f;
             float size = 68f * DeviceFit.Ui();
             var dest = new Vector2(pig.x + pig.width * 0.5f, pig.y + pig.height * 0.42f);
             for (int i = _flies.Count - 1; i >= 0; i--)
@@ -9725,9 +9753,12 @@ namespace FlockFive
                     _flies[i] = f;
                     continue;
                 }
-                f.T += dt / (1.32f * RewardPace);
+                // Only the time past Delay flies, so the stagger stays even at any frame rate.
+                float run = Mathf.Min(dt, -f.Delay);
+                f.Delay = 0f;
+                f.T += run / CoinFlyDurSec;
                 float u = Mathf.Clamp01(f.T);
-                float k = u * u * (3f - 2f * u);
+                float k = CoinFlyEase(u);
                 var p = Vector2.Lerp(f.A, dest, k);
                 p.y -= Mathf.Sin(u * Mathf.PI) * 160f;
                 float sc = size * Mathf.Lerp(1.22f, 0.48f, k);
@@ -10274,6 +10305,8 @@ namespace FlockFive
             return DrawPopupButton(r, held, gold ? PopupTint.Gold : PopupTint.Wood, glow, shadow);
         }
 
+        internal static Rect LastPedestalFace;
+
         static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true)
         {
             if (r.width < 2f || r.height < 2f) return r;
@@ -10292,6 +10325,7 @@ namespace FlockFive
             if (square && bloom != null && bloom.texture != null && (tint == PopupTint.Gold || tint == PopupTint.Wood))
             {
                 DrawPedestalFace(visual, sunk, tint == PopupTint.Gold, bloom.texture, glow, shadow);
+                LastPedestalFace = visual; // b89: the drawn flower rect, for the face-shaped sheen
                 layoutLabel = FlowerDisc(r, 0f);
             }
             else
@@ -10993,7 +11027,22 @@ namespace FlockFive
             var prev = st.fontStyle;
             st.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
             int ring = outlinePx >= 0 ? outlinePx : BannerOutlinePx(st.fontSize);
-            StampOutlined(r, text, st, new Color(1f, 1f, 1f, alpha), 0, ring);
+            int gap = text.IndexOf("\n\n", System.StringComparison.Ordinal);
+            if (gap > 0 && gap + 2 < text.Length && text.IndexOf("\n\n", gap + 2, System.StringComparison.Ordinal) < 0)
+            {
+                // Two paragraphs, a shorter blank row between them (CaptionLayout.HeadlineGapKeep).
+                string head = text.Substring(0, gap);
+                string rest = text.Substring(gap + 2);
+                float h1 = st.CalcHeight(new GUIContent(head), r.width);
+                float h2 = st.CalcHeight(new GUIContent(rest), r.width);
+                float gh = CaptionLayout.BlankRowH(st) * CaptionLayout.HeadlineGapKeep;
+                float top = r.center.y - (h1 + gh + h2) * 0.5f;
+                var white = new Color(1f, 1f, 1f, alpha);
+                StampOutlined(new Rect(r.x, top, r.width, h1), head, st, white, 0, ring);
+                StampOutlined(new Rect(r.x, top + h1 + gh, r.width, h2), rest, st, white, 0, ring);
+            }
+            else
+                StampOutlined(r, text, st, new Color(1f, 1f, 1f, alpha), 0, ring);
             st.fontStyle = prev;
         }
 
@@ -13401,18 +13450,29 @@ namespace FlockFive
                 if (fitKey == int.MinValue) fitKey = -2;
                 bool fitMiss = fitKey != _payFitKey || rows > _payCashTx.Length;
                 if (fitMiss && rows <= _payCashTx.Length) _payFitKey = fitKey;
+                // b89: header fills its own band (PayHeadLayout), bigger bold title and a
+                // clear bet line; rows and the panel seat are unchanged.
+                var hb = PayHeadLayout.Layout(paper, headH, 2f * s);
                 if (fitMiss)
                 {
-                    head.fontSize = FitFont(head, headTx, paper.width * 0.80f, headH * 0.52f, 24, 44);
-                    sub.fontSize = Mathf.Max(16, head.fontSize - 6);
+                    head.fontSize = FitFont(head, headTx, hb.TitleMaxW, hb.TitleMaxH,
+                        PayHeadLayout.TitleMinPx, PayHeadLayout.TitleMaxPx);
+                    sub.fontSize = FitFont(sub, PokerBetText(), hb.BetMaxW, hb.BetMaxH,
+                        PayHeadLayout.BetMinPx, PayHeadLayout.BetCap(head.fontSize));
                 }
-                StampLight(new Rect(paper.x, paper.y + 2f * s, paper.width, headH * 0.58f), headTx, head,
-                    new Color(0.28f, 0.14f, 0.06f));
-                StampLight(new Rect(paper.x, paper.y + headH * 0.52f, paper.width, headH * 0.40f),
-                    PokerBetText(), sub, new Color(0.62f, 0.28f, 0.08f));
+                StampLight(hb.Title, headTx, head, new Color(0.28f, 0.14f, 0.06f));
+                StampLight(hb.Bet, PokerBetText(), sub, new Color(0.66f, 0.26f, 0.04f));
                 GUI.color = new Color(0.72f, 0.52f, 0.22f, 0.85f * u);
-                float ruleY = paper.y + headH - 2f * s;
+                float ruleY = hb.RuleY;
                 GUI.DrawTexture(new Rect(paper.x + 10f * s, ruleY, paper.width - 20f * s, 2f * s), Texture2D.whiteTexture);
+#if UNITY_EDITOR
+                _payHeadDbg = hb; _payHeadPanelDbg = panel; _payHeadTabDbg = tab;
+                _payHeadPxDbg = new Vector2Int(head.fontSize, sub.fontSize);
+                _payHeadTitleSzDbg = head.CalcSize(PokerGui(headTx));
+                _payHeadBetSzDbg = sub.CalcSize(PokerGui(PokerBetText()));
+                _payHeadRowsDbg = new Vector2(paper.y + headH + 2f * s, rowH);
+                _payHeadFloorDbg = floor;
+#endif
                 GUI.color = Color.white;
 
                 var nameSt = PokerBold(ref _payName, TextAnchor.MiddleLeft);
@@ -13423,18 +13483,43 @@ namespace FlockFive
                 midSt.clipping = TextClipping.Clip;
                 int body = Mathf.RoundToInt(Mathf.Clamp(rowH * 0.46f, 22f, 40f));
                 int jack = body + 4;
+                int floorPx = 11;
+                float barInset = 8f * s;
+                float rowW = paper.width - barInset * 2f;
+                var cols = PayHeadLayout.Columns(rowW);
+                // b89 follow-up: every payout shares ONE size, the largest at which the widest
+                // payout string fits the cash column (same for the multiplier column). No row
+                // is squeezed or drawn larger; the gold row differs by bar and ink only.
+                if (fitMiss || rows > _payCashTx.Length)
+                {
+                    for (int i = 0; i < rows && i < _payCashTx.Length; i++)
+                    {
+                        var rk = BirdPoker.PayTableRows[i];
+                        int mu = BirdPoker.Multiplier(rk);
+                        _payMultTx[i] = mu + "\u00d7";
+                        _payCashTx[i] = Money.Format((long)mu * BirdPoker.Bet);
+                        nameSt.fontSize = FitFont(nameSt, BirdPoker.RankLabel(rk), cols.NameW - 6f,
+                            rowH * PayHeadLayout.RowTextHeight, floorPx, rk == BirdPoker.PayTableRows[0] ? jack : body);
+                        _payNamePx[i] = nameSt.fontSize;
+                    }
+                    int cnt = Mathf.Min(rows, _payCashTx.Length);
+                    float fitH = rowH * PayHeadLayout.RowTextHeight;
+                    _payCashCommon = PayHeadLayout.CommonPx(_payCashTx, cnt,
+                        t => FitFont(numSt, t, cols.CashW - PayHeadLayout.CashMargin, fitH, floorPx, body));
+                    _payMultCommon = PayHeadLayout.CommonPx(_payMultTx, cnt,
+                        t => FitFont(midSt, t, cols.MultW - PayHeadLayout.MultMargin, fitH, floorPx, body));
+                }
+                numSt.fontSize = _payCashCommon;
+                midSt.fontSize = _payMultCommon;
                 float yRow = paper.y + headH + 2f * s;
                 for (int i = 0; i < rows; i++)
                 {
                     var rank = BirdPoker.PayTableRows[i];
-                    int mult = BirdPoker.Multiplier(rank);
-                    long payout = (long)mult * BirdPoker.Bet;
                     string name = BirdPoker.RankLabel(rank);
-                    float barInset = 8f * s;
-                    var row = new Rect(paper.x + barInset, yRow, paper.width - barInset * 2f, rowH);
+                    string multTx = _payMultTx[i];
+                    string cashTx = _payCashTx[i];
+                    var row = new Rect(paper.x + barInset, yRow, rowW, rowH);
 
-                    // Gold bar (and the bigger cap / warmer ink) on the top rank only (FIVE WILDS);
-                    // NATURAL FIVE and the rest take the plain alternating rows.
                     bool jackpot = PayRowGold(rank);
                     if (jackpot)
                     {
@@ -13451,44 +13536,30 @@ namespace FlockFive
                     var fill = jackpot
                         ? new Color(0.52f, 0.26f, 0.06f)
                         : new Color(0.30f, 0.15f, 0.06f);
-                    float textPad = row.width * 0.06f;
+                    float textPad = row.width * PayHeadLayout.RowTextPad;
                     var inner = new Rect(row.x + textPad, row.y, row.width - textPad * 2f, row.height);
-                    float nameW = inner.width * 0.50f;
-                    float multW = inner.width * 0.18f;
-                    float cashW = inner.width - nameW - multW;
-                    int cap = jackpot ? jack : body;
-                    int floorPx = 11;
-                    string multTx;
-                    string cashTx;
-                    if (fitMiss || i >= _payCashTx.Length)
-                    {
-                        nameSt.fontSize = FitFont(nameSt, name, nameW - 6f, row.height * 0.62f, floorPx, cap);
-                        multTx = mult + "×";
-                        cashTx = Money.Format(payout);
-                        midSt.fontSize = FitFont(midSt, multTx, multW - 4f, row.height * 0.62f, floorPx, cap);
-                        numSt.fontSize = FitFont(numSt, cashTx, cashW - 6f, row.height * 0.62f, floorPx, cap);
-                        if (i < _payCashTx.Length)
-                        {
-                            _payNamePx[i] = nameSt.fontSize;
-                            _payMidPx[i] = midSt.fontSize;
-                            _payCashPx[i] = numSt.fontSize;
-                            _payMultTx[i] = multTx;
-                            _payCashTx[i] = cashTx;
-                        }
-                    }
-                    else
-                    {
-                        nameSt.fontSize = _payNamePx[i];
-                        midSt.fontSize = _payMidPx[i];
-                        numSt.fontSize = _payCashPx[i];
-                        multTx = _payMultTx[i];
-                        cashTx = _payCashTx[i];
-                    }
+                    float nameW = cols.NameW;
+                    float multW = cols.MultW;
+                    float cashW = cols.CashW;
+                    nameSt.fontSize = _payNamePx[i];
                     StampLight(new Rect(inner.x, inner.y, nameW, inner.height), name, nameSt, fill);
                     StampLight(new Rect(inner.x + nameW, inner.y, multW, inner.height), multTx, midSt, fill);
                     StampLight(new Rect(inner.x + nameW + multW, inner.y, cashW, inner.height), cashTx, numSt, fill);
                     yRow += rowH;
                 }
+#if UNITY_EDITOR
+                {
+                    float widest = 0f, widestMult = 0f;
+                    for (int i = 0; i < rows; i++)
+                    {
+                        widest = Mathf.Max(widest, numSt.CalcSize(PokerGui(_payCashTx[i])).x);
+                        widestMult = Mathf.Max(widestMult, midSt.CalcSize(PokerGui(_payMultTx[i])).x);
+                    }
+                    _payCashDbg = new Vector4(_payCashCommon, widest, cols.CashW - PayHeadLayout.CashMargin, _payMultCommon);
+                    _payMultDbg = new Vector2(widestMult, cols.MultW - PayHeadLayout.MultMargin);
+                    _payCashTxDbg = string.Join(",", _payCashTx, 0, rows);
+                }
+#endif
             }
 
             DrawPokerPayJewel(tab, s);
@@ -13982,6 +14053,7 @@ namespace FlockFive
         static int _payJewelKey = int.MinValue;
         static int _payJewelPx;
         static int _payFitKey = int.MinValue;
+        static int _payCashCommon, _payMultCommon;
         static readonly int[] _payNamePx = new int[8];
         static readonly int[] _payMidPx = new int[8];
         static readonly int[] _payCashPx = new int[8];
@@ -18281,7 +18353,7 @@ namespace FlockFive
             if (_keepStreak) return "keep streak";
             if (_freezeOffer || _frozen)
             {
-                bool noMove = _board == null || (!_board.HasHop() && _board.FindCollect() < 0);
+                bool noMove = _board == null || (!_hopTrail.HasProgressHop(_board) && _board.FindCollect() < 0);
                 return noMove ? "stuck, no moves" : "stuck, no way to win";
             }
             return "gift sign tapped";
@@ -18292,12 +18364,20 @@ namespace FlockFive
             DismissAdHand();
             if (_gift == GiftFace.Movie || _gift == GiftFace.Wait) return;
             _gift = GiftFace.None;
+            AdRetry.Clear();
             _swallowTapsUntil = PlayClock.Now + 0.45f;
             _suppressGiftUntil = PlayClock.Now + 1f;
         }
 
         // The Watch ad stage. The flag marks the coroutine alive, so the interruption
         // check can tell a running stage from one that was cut off.
+        // One ad request at a time: a second Watch/Retry tap mid-request is ignored.
+        void StartWatchGift()
+        {
+            if (_watchGiftLive) return;
+            StartCoroutine(WatchGift());
+        }
+
         IEnumerator WatchGift()
         {
             _watchGiftLive = true;
@@ -18343,6 +18423,10 @@ namespace FlockFive
             if (!pay)
             {
                 _busy = false;
+                // Never a silent bounce back to Watch: say the ad was not ready.
+                if (AdRetry.ShouldOffer(false)) AdRetry.Offer();
+                AdLog.Add("gift card kept up after no grant (retry state "
+                    + (AdRetry.Active ? "on" : "off") + ", reason " + AdRetry.Reason + ")");
                 RaiseGiftCard();
                 yield break;
             }
@@ -18488,6 +18572,7 @@ namespace FlockFive
             {
                 if (Ads.IsLoading && !Ads.IsShowing && !Ads.MockRewarded)
                     DrawAdSpinner(s);
+                if (Ads.CanCancelWait) DrawAdWaitCancel(s);
                 return;
             }
 #if FF_ADS_DEV
@@ -18576,9 +18661,11 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(plate.xMax - 5f * s, plate.y + 2f * s, 3f * s, plate.height - 4f * s), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            string head = _freezeOffer
-                ? "No more moves, you're frozen!"
-                : "Watch AD for an extra branch";
+            string head = AdRetry.Active && !_keepStreak
+                ? AdRetry.CurrentLine
+                : (_freezeOffer
+                    ? "No more moves, you're frozen!"
+                    : "Watch AD for an extra branch");
             // Inset past the screw bases so the gift headline never sits under a bulb.
             // The freeze sign has no bulbs, so its line uses that same inset on every side.
             float insetX = Mathf.Max(12f * s, plate.width * 0.08f);
@@ -18665,7 +18752,7 @@ namespace FlockFive
                 }
                 if (contGo)
                 {
-                    StartCoroutine(WatchGift());
+                    StartWatchGift();
                     return;
                 }
                 return;
@@ -18684,7 +18771,7 @@ namespace FlockFive
                 };
             var watchSt = _giftWatch;
             watchSt.fontStyle = FontStyle.Bold;
-            string watchLab = "Watch";
+            string watchLab = AdRetry.Active ? AdRetry.CurrentLabel : "Watch";
             // Round cap is inset from FlowerDisc. Fit inside it, then leave the outline's pixels.
             int ink = 1;
             float capW = Mathf.Max(24f, disc.width * 0.58f - ink * 4f);
@@ -18710,7 +18797,7 @@ namespace FlockFive
             }
             if (watch)
             {
-                StartCoroutine(WatchGift());
+                StartWatchGift();
                 return;
             }
         }
@@ -19233,6 +19320,23 @@ namespace FlockFive
             if (body.Overlaps(botLeft)) return true;
             if (body.Overlaps(botRight)) return true;
             return false;
+        }
+
+        // b91: a stalled ad (shown, never closed) offers Cancel after Ads.CancelAfter seconds.
+        void DrawAdWaitCancel(float s)
+        {
+            float w = Mathf.Max(120f, 150f * s), h = Mathf.Max(40f, 44f * s);
+            var r = new Rect((Screen.width - w) * 0.5f, Screen.height * 0.56f, w, h);
+            bool held;
+            bool fire = HitPad(r, out held);
+            GUI.color = held ? new Color(0.55f, 0.36f, 0.12f, 0.95f) : new Color(0.28f, 0.12f, 0.04f, 0.88f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var st = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
+            st.fontSize = Mathf.Max(14, Mathf.RoundToInt(20f * s));
+            st.normal.textColor = new Color(1f, 0.97f, 0.90f);
+            GUI.Label(r, "Cancel", st);
+            if (fire) Ads.RequestCancelWait();
         }
 
         void DrawAdSpinner(float s)

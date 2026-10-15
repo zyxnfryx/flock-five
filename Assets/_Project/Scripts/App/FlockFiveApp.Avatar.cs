@@ -597,7 +597,7 @@ namespace FlockFive
             float safe = CaptionLayout.SafeTextWidth(Screen.width, Screen.height);
             float maxW = Mathf.Min(safe, Screen.width * 0.64f);
             if (maxW < 48f) maxW = 48f;
-            var fit = FitLessonText(line, maxW, 4096f, 12, Mathf.RoundToInt(32f * s), Screen.width, Screen.height);
+            var fit = FitLessonText(line, maxW, 4096f, 12, LessonFontHi(s), Screen.width, Screen.height);
             var hang = CaptionLayout.BoxPad(Screen.height);
             var snug = CaptionLayout.MeasureSnug(CoachLineStyle(), fit.Shown, fit.Font, hang.x, hang.y);
             float w = Mathf.Max(48f, snug.TextW);
@@ -698,7 +698,7 @@ namespace FlockFive
             // The arriving bird is the subject (its flight is kept under the band, see HomeWanderBounds).
             Rect subj = new Rect(bc.x - ic * 0.7f, bc.y - ic * 0.7f, ic * 1.4f, ic * 1.4f);
             // b86: the bird moves under the band (AdoptBirdCenter), so the band need not dodge it.
-            CapSpot("adopt.greet"); PaintCoachCaption(line, bubble, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+            CapSpot("adopt.greet"); PaintCoachCaption(line, bubble, s, 12, LessonFontHi(s), default, false, StandardCaptionSlack);
         }
 
         // Before DrawFlowerPlay. HitHomeFirst Uses the press so the LEVEL flower

@@ -311,7 +311,7 @@ namespace FlockFive
                 ActivateNative();
                 return;
             }
-            if (!GamePause.Paused)
+            if (AdAudioHold.MayUnpauseListener)
                 AudioListener.pause = false;
             ActivateNative();
         }
@@ -329,7 +329,7 @@ namespace FlockFive
             ReleaseReason("popup");
             if (!Ads.IsShowing) ReleaseReason("ad");
             AudioListener.volume = 1f;
-            if (!GamePause.Paused)
+            if (AdAudioHold.MayUnpauseListener)
                 AudioListener.pause = false;
         }
 

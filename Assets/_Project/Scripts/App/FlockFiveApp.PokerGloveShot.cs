@@ -38,6 +38,10 @@ namespace FlockFive
                 PlayerPrefs.Save();
                 yield return ShotPokerGloveAt(1179, 2556, dir + "/b88-poker-glove-iphone.png", "iphone");
                 yield return ShotPokerGloveAt(1536, 2048, dir + "/b88-poker-glove-ipad.png", "ipad");
+                yield return ShotPokerGloveAt(1080, 2400, dir + "/b88-poker-glove-android.png", "android");
+                yield return ShotPokerBetAt(1179, 2556, "iphone");
+                yield return ShotPokerBetAt(1536, 2048, "ipad");
+                yield return ShotPokerBetAt(1080, 2400, "android");
                 File.WriteAllText("/tmp/flock-five-b88-poker-glove-done", "OK\n");
             }
             finally
@@ -102,9 +106,47 @@ namespace FlockFive
                 + " fromLeft " + _gloveFromLeft + " ang " + _gloveShownAng.ToString("0")
                 + " aim " + aim + " hand " + hand + " plate " + plate
                 + " button " + box
-                + " clear " + (!plate.Overlaps(hand) && !plate.Overlaps(box));
+                + " clear " + (!plate.Overlaps(hand) && !plate.Overlaps(box)) + " dbg " + CapFontDbg;
             File.AppendAllText("/tmp/b88-poker-glove-shot.txt", line + "\n");
             UnityEngine.Debug.Log("[poker-glove] " + line);
+        }
+
+        // The poker table's "Pick your bet" caption, first-visit lesson, same device size.
+        IEnumerator ShotPokerBetAt(int w, int h, string tag)
+        {
+            if (EditorGameSize != null) EditorGameSize(w, h);
+            Screen.SetResolution(w, h, false);
+            yield return new WaitForSecondsRealtime(0.6f);
+            _shotGlovePin = false;
+            _pokerIntroLive = false;
+            _pokerIntro = false;
+            _gloveVis = false;
+            EditorShotLive = false;
+            PlayerPrefs.SetInt(CoachPokerPageKey, 0);
+            PlayerPrefs.SetInt(CoachPokerDealtKey, 0);
+            PlayerPrefs.Save();
+            _pokerPageOn = false;
+            _pokerPageStep = 0;
+            BirdPoker.Boot();
+            Purse.Boot();
+            _home = HomeFace.Poker;
+            float t0 = Time.realtimeSinceStartup;
+            while (!(_pokerPageOn && _gloveVis && _gloveAlpha > 0.9f) && Time.realtimeSinceStartup - t0 < 10f)
+            {
+                MuteShotAudio();
+                if (_home != HomeFace.Poker) _home = HomeFace.Poker;
+                yield return null;
+            }
+            yield return new WaitForSecondsRealtime(0.6f);
+            yield return new WaitForEndOfFrame();
+            MuteShotAudio();
+            SaveFrame("/Users/zfxgames/wkspaces/wingout/b89-poker-bet-" + tag + ".png");
+            File.AppendAllText("/tmp/b88-poker-glove-shot.txt", "BET " + tag + " pageOn " + _pokerPageOn + " glove " + _gloveVis
+                + " dbg " + CapFontDbg + " plate " + _tutorPlate + "\n");
+            EditorShotLive = true;
+            _pokerPageOn = false;
+            _pokerPageStep = -1;
+            _home = HomeFace.Splash;
         }
     }
 }

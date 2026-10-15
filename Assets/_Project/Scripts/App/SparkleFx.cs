@@ -445,6 +445,28 @@ namespace FlockFive
             return tex;
         }
 
+        // Drops every live burst bit (sparks, dust, honey, glow). Snow is the freeze page's own.
+        public static int ClearBits()
+        {
+            if (_bits == null) return 0;
+            int n = 0;
+            for (int i = 0; i < _bits.Length; i++)
+            {
+                if (_bits[i].On == 0 || _bits[i].Kind == Snow) continue;
+                _bits[i].On = 0;
+                n++;
+            }
+            return n;
+        }
+
+        public static int LiveBits()
+        {
+            if (_bits == null) return 0;
+            int n = 0;
+            for (int i = 0; i < _bits.Length; i++) if (_bits[i].On != 0 && _bits[i].Kind != Snow) n++;
+            return n;
+        }
+
         public static void Tick(float dt)
         {
             int f = Time.frameCount;
