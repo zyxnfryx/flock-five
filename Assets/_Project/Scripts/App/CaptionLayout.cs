@@ -448,7 +448,7 @@ namespace FlockFive
         {
             float s = screenH > 2f ? DeviceFit.UiH(screenH) : 1f;
             if (s < 1f) s = 1f;
-            float m = 12f * s;
+            float m = 8f * s;
             if (m < 18f) m = 18f;
             if (screenW > 2f && m > screenW * 0.2f) m = screenW * 0.2f;
             return m;

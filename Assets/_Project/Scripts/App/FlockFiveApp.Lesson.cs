@@ -21,8 +21,10 @@ namespace FlockFive
         {
             float s = DeviceFit.UiH(screenH);
             float plate = CaptionLayout.BoxPad(screenH).x;
-            float maxSeat = screenW - 16f - plate * 2f;
-            float want = Mathf.Min(screenW * 0.92f, 720f * s);
+            // b89: the plate hang may overlap the side margin a little, so a narrower phone
+            // (Android) wraps a caption the same way a taller one (iPhone) does.
+            float maxSeat = screenW - plate;
+            float want = Mathf.Min(screenW * 0.95f, 720f * s);
             if (want > maxSeat) want = maxSeat;
             if (want < 160f) want = Mathf.Min(Mathf.Max(48f, maxSeat), 160f);
             if (want < 48f) want = 48f;
