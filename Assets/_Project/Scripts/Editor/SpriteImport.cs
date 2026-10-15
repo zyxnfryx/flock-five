@@ -7,7 +7,7 @@ namespace FlockFive.Editor
     public sealed class SpriteImport : AssetPostprocessor
     {
         // Bump forces a reimport so the platform overrides land without hand-editing metas.
-        public override uint GetVersion() => 73;
+        public override uint GetVersion() => 74;
 
         void OnPreprocessTexture()
         {
@@ -213,18 +213,32 @@ namespace FlockFive.Editor
             {
                 s.loadType = AudioClipLoadType.Streaming;
                 s.compressionFormat = AudioCompressionFormat.Vorbis;
-                s.quality = 0.7f;
+                s.quality = 0.6f; // b92: music, mono, still transparent at this setting
             }
             else if (battle)
             {
                 s.loadType = AudioClipLoadType.CompressedInMemory;
                 s.compressionFormat = AudioCompressionFormat.Vorbis;
+                s.quality = 0.6f;
+            }
+            else if (assetPath.Contains("/Audio/Bed/"))
+            {
+                // b92: entrance/win/lose stingers (1.4 MB / 0.4 MB PCM): Vorbis, same load path.
+                s.loadType = AudioClipLoadType.DecompressOnLoad;
+                s.compressionFormat = AudioCompressionFormat.Vorbis;
                 s.quality = 0.7f;
             }
-            else
+            else if (assetPath.Contains("zfx_jingle"))
             {
                 s.loadType = AudioClipLoadType.DecompressOnLoad;
                 s.compressionFormat = AudioCompressionFormat.PCM;
+                s.quality = 1f;
+            }
+            else
+            {
+                // b92: short SFX (whoosh, snore, select, break): ADPCM, ~3.5:1, same load path.
+                s.loadType = AudioClipLoadType.DecompressOnLoad;
+                s.compressionFormat = AudioCompressionFormat.ADPCM;
                 s.quality = 1f;
             }
             s.sampleRateSetting = AudioSampleRateSetting.PreserveSampleRate;
