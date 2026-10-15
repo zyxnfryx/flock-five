@@ -128,7 +128,7 @@ namespace FlockFive
                 "Swipe to turn the page!\nOr tap a page number.",
                 "Tap a card to take\na closer look!",
                 "Tap to unlock your bonus!",
-                "Stuck? Tap the gift branch for a bonus spot.",
+                "Stuck? Tap the gift\nbranch for a bonus.",
                 CaptionLayout.AdoptGreetLine,
                 "Tap your bird for a closer look.",
                 "Welcome, VIP!",

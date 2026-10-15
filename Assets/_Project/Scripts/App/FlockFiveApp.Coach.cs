@@ -36,7 +36,7 @@ namespace FlockFive
         const string CoachOstrichKey = "flockfive.coach.ostrich";
         // Badger first-fight lesson stamp lives on BadgerCopy.CoachPref (PrefGuard).
         const string AdHandLine = "Tap to unlock your bonus!";
-        const string GiftStuckLine = "Stuck? Tap the gift branch for a bonus spot.";
+        const string GiftStuckLine = "Stuck? Tap the gift\nbranch for a bonus.";
         // How long the bonus-branch caption stays up. A reset restarts this whole
         // window so the landing frame cannot replay the 0.5s fade-out tail.
         const float GiftHintSeconds = 4.5f;
@@ -3269,6 +3269,35 @@ namespace FlockFive
             return fits;
         }
 
+        // b92: screen y (GUI, down) of the highest thing on the board: the top branch row, its
+        // standing birds, and the birds lifted off the selected branch. False off a garden.
+        int _boardTopFrame = -10; float _boardTopY;
+        bool BoardTopGui(out float y)
+        {
+            y = _boardTopY;
+            if (_boardTopFrame == Time.frameCount) return _boardTopY > 0f;
+            _boardTopFrame = Time.frameCount; _boardTopY = 0f; y = 0f;
+            var cam = _garden != null ? _garden.Cam : null;
+            var branches = _garden != null ? _garden.Branches : null;
+            if (cam == null || branches == null) return false;
+            float worldTop = float.NegativeInfinity;
+            for (int i = 0; i < branches.Length; i++)
+            {
+                var view = branches[i];
+                if (view == null || !view.gameObject.activeInHierarchy) continue;
+                var rs = view.GetComponentsInChildren<Renderer>();
+                for (int k = 0; k < rs.Length; k++)
+                    if (rs[k].enabled && rs[k].bounds.max.y > worldTop) worldTop = rs[k].bounds.max.y;
+                if (i == _sel) worldTop = Mathf.Max(worldTop, view.transform.position.y + LiftHead);
+            }
+            if (float.IsNegativeInfinity(worldTop)) return false;
+            var sp = cam.WorldToScreenPoint(new Vector3(cam.transform.position.x, worldTop, 0f));
+            if (sp.z < 0f) return false;
+            _boardTopY = Screen.height - sp.y;
+            y = _boardTopY;
+            return _boardTopY > 0f;
+        }
+
         // The live step's own control, known before its glove poses (home rail lessons).
         bool BandCoversStepTarget(Rect band)
         {
@@ -3319,6 +3348,13 @@ namespace FlockFive
                     // b89 (Brandon): the hand itself, not just its tap target, stays off
                     // the banner. Lift the band over the glove's drawn box when there
                     // is room above; otherwise the glove is clipped at the band edge.
+                    // b92 (Brandon): a garden banner also stays off the top branch row and the
+                    // birds lifted above it. Lift the band over that row when there is room above.
+                    if (spot == "coach.line" && BoardTopGui(out float rowTop) && band.yMax > rowTop - gap)
+                    {
+                        float up = rowTop - gap - band.height;
+                        if (up >= minTop && band.y - up > 0.5f) { band.y = up; moved = true; }
+                    }
                     var hand = GloveBodyFresh();
                     if (hand.width >= 2f && band.Overlaps(hand))
                     {
