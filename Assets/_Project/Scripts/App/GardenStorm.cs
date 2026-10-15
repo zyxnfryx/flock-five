@@ -964,6 +964,8 @@ namespace FlockFive
             float dt = Time.captureDeltaTime > 0f ? Time.captureDeltaTime : Time.unscaledDeltaTime;
             if (AdPause.Active || (GamePause.Paused && !(GamePause.TutorHold && !Ads.IsShowing)))
                 dt = 0f;
+            else if (PressRainbow.StageHeld())
+                dt = 0f; // the stage begins when the sparkle is gone: coach, pests, sky stand still
             else if (_drop > 0)
             {
                 _drop--;

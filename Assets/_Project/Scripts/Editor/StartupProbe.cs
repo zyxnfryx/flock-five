@@ -100,6 +100,9 @@ namespace FlockFive.Editor
                 _playAt = EditorApplication.timeSinceStartup;
             }
             Pump();
+            // The LEVEL press shot (/tmp/flock-five-press-shot) runs after the startup
+            // summary; keep play mode up until it logs DONE / TIMEOUT (240 s cap: up to three device runs).
+            if (FlockFiveApp.PressShotLive && EditorApplication.timeSinceStartup - _playAt < 240.0) return;
             bool done = File.Exists(Result);
             bool timedOut = EditorApplication.timeSinceStartup - _playAt > 22.0;
             if (done)
