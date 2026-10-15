@@ -90,6 +90,15 @@ namespace FlockFive
             if (tex == null) return dh * (220f / 300f);
             return dh * (tex.width / (float)Mathf.Max(1, tex.height));
         }
+        // b95 (Brandon): the angled glove's entry start used to sit 0.9 hand-heights beyond its
+        // rest, "a mile away". The whole start-to-target distance is cut by a third, on the same
+        // line, so the hand still comes in right to left from beneath the banner.
+        public const float GloveEntryScale = 0.67f;
+        public static Vector2 GloveEntryPoint(Vector2 rest, Vector2 aim, Vector2 away, float dh)
+        {
+            var far = rest + away * (dh * 0.9f);
+            return aim + (far - aim) * GloveEntryScale;
+        }
         // How far above the target the wind-up perch sits, in GUI pixels (y down).
         static float GloveRise(float s) => Mathf.Max(28f * s, GloveDh(s) * 0.34f);
         // Extra height of the apex above that perch, so the path rises before it falls.
@@ -1598,7 +1607,7 @@ namespace FlockFive
             {
                 float dh = GloveDh(s);
                 var safe = CoachSafeGui(8f * s);
-                var start = rest + away * (dh * 0.9f);
+                var start = GloveEntryPoint(rest, aimGui, away, dh);
                 float pad = dh * 0.42f;
                 float x0 = safe.xMin + pad;
                 float x1 = safe.xMax - pad;
@@ -2060,7 +2069,7 @@ namespace FlockFive
         {
             float dh = GloveDh(s);
             float area = 0f;
-            Vector2 from = angled ? perch + away * (dh * 0.9f) : perch;
+            Vector2 from = angled ? GloveEntryPoint(perch, aim, away, dh) : perch;
             for (int step = 0; step <= 4; step++)
             {
                 float u = step / 4f;
@@ -4666,7 +4675,7 @@ namespace FlockFive
                 SeatGlove(ref p, ref a, aim, s, ref m, dip, _gloveApproach);
                 UnionGlove(ref any, ref x0, ref y0, ref x1, ref y1, p, a, dh, dip, m);
             }
-            Vector2 start = angled ? rest + away * (dh * 0.9f) : rest;
+            Vector2 start = angled ? GloveEntryPoint(rest, aim, away, dh) : rest;
             for (int step = 0; step <= 4; step++)
                 Take(Vector2.Lerp(start, rest, step / 4f), ang, mirror, 0f);
             if (away.sqrMagnitude > 0.0001f || angled)

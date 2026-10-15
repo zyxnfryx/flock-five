@@ -125,6 +125,18 @@ namespace FlockFive.Editor
                         "grown " + grown.yMax.ToString("0") + " lb " + lb.ToString("0"));
                 }
 
+                // Glove entry: start-to-target distance is 67% of the old one, same line (right to left).
+                {
+                    var aim = new Vector2(300f, 900f);
+                    float dh = 220f;
+                    var rest = aim + new Vector2(1f, 0f) * 80f;
+                    var away = new Vector2(1f, 0f);
+                    var oldStart = rest + away * (dh * 0.9f);
+                    var ns = FlockFiveApp.GloveEntryPoint(rest, aim, away, dh);
+                    float ratio = (ns - aim).magnitude / (oldStart - aim).magnitude;
+                    Check("glove entry distance cut by a third", Mathf.Abs(ratio - 0.67f) < 0.01f && ns.x > aim.x && Mathf.Abs(ns.y - aim.y) < 0.01f, "ratio " + ratio.ToString("0.000"));
+                }
+
                 // Press burst: glints start on the upper half of the button ring (inverted U), centred.
                 {
                     float W = 1179f, H = 2556f;
