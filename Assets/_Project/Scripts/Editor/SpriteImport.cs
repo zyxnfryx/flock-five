@@ -7,7 +7,7 @@ namespace FlockFive.Editor
     public sealed class SpriteImport : AssetPostprocessor
     {
         // Bump forces a reimport so the platform overrides land without hand-editing metas.
-        public override uint GetVersion() => 74;
+        public override uint GetVersion() => 75;
 
         void OnPreprocessTexture()
         {
@@ -80,8 +80,7 @@ namespace FlockFive.Editor
                 && format == TextureImporterFormat.ASTC_6x6;
         }
 
-        // Season backgrounds and bird pose sheets: ASTC 6x6. Poker faces (type on
-        // the card) stay on 4x4 so the print does not blur at device size.
+        // Season backgrounds and bird pose sheets: ASTC 6x6. Poker faces: 6x6 since b92.
         public static bool TryCompressedFormat(string assetPath, out TextureImporterFormat format)
         {
             format = TextureImporterFormat.ASTC_6x6;
@@ -90,7 +89,8 @@ namespace FlockFive.Editor
             string name = slash >= 0 ? assetPath.Substring(slash + 1) : assetPath;
             if (name.StartsWith("fx_poker_face_"))
             {
-                format = TextureImporterFormat.ASTC_4x4;
+                // b92 item 3: poker faces 4x4 -> 6x6 (cartoon art, PSNR >43 dB vs source).
+                format = TextureImporterFormat.ASTC_6x6;
                 return true;
             }
             if (name.StartsWith("ostrich_"))
