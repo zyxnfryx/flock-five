@@ -107,6 +107,23 @@ namespace FlockFive
             return new Vector2(r.center.x + Mathf.Sin(a) * r.width * 0.5f, r.center.y - Mathf.Cos(a) * r.height * 0.5f);
         }
 
+        // b93: the LEVEL flower art (fx_play_flower, 1024x811) is drawn ScaleToFit in a SQUARE
+        // rect, so its opaque body spans x 0.028..0.971, y 0.133..0.867 of that square and is
+        // widest at y ~0.49. This is the flattened perspective oval that hugs that body's
+        // exterior edge (a hair outside it). Fractions of the rect, so every aspect scales alike.
+        public const float FlatRingRx = 0.490f;
+        public const float FlatRingRy = 0.385f;
+        public const float FlatRingCy = 0.490f;
+
+        // Point on the flat ring of a square art rect. ang is radians, 0 = 3 o'clock,
+        // +ang runs clockwise on screen (y down), so -PI/2 is the top of the button.
+        public static Vector2 OnFlatRing(Rect r, float ang)
+        {
+            return new Vector2(
+                r.center.x + Mathf.Cos(ang) * r.width * FlatRingRx,
+                r.y + r.height * FlatRingCy + Mathf.Sin(ang) * r.height * FlatRingRy);
+        }
+
         // Single point glint (badger eye, stamp flash): white core + sparkle sprite.
         // Core alone still reads if the sparkle sprite is missing.
         public static void DrawAt(Vector2 at, float size, float alpha)
