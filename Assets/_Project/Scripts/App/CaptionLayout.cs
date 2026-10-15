@@ -174,6 +174,97 @@ namespace FlockFive
         public const string CoachNowhereLine =
             "Nowhere to go yet.\nTry another branch.";
 
+        // b89: a glove box that touches the caption plate means the caption is
+        // repainted over the glove, so the words always read on top.
+        public static bool GloveHitsCaption(Rect glove, Rect caption)
+        {
+            if (glove.width < 1f || glove.height < 1f) return false;
+            if (caption.width < 1f || caption.height < 1f) return false;
+            return glove.Overlaps(caption);
+        }
+
+        // b89 (Brandon): the dark padding inside a banner, above the first row's ink
+        // and below the last row's ink, is the same on top and bottom and the same
+        // fraction of the font on every device (a bigger font means a thicker band).
+        // CalcHeight's line box sits the ink low, so the text is lifted to centre it.
+        public const float BannerPadEm = 0.5f;
+        public const float BannerInkLiftEm = 0.09f;
+
+        // b89 (Brandon): the blank row HeadlineGap puts between a headline and its body
+        // is kept at this fraction of a line. 1 is the old full blank line.
+        public const float HeadlineGapKeep = 0.28f;
+        static GUIContent _gapProbe;
+
+        // Pixels a measured "\n\n" text is shorter than the full blank row. Every measure
+        // of a gapped caption subtracts this, and StampBannerText draws the two
+        // paragraphs with the smaller gap, so plate and ink stay in step.
+        public static float GapCut(GUIStyle st, string text)
+        {
+            if (st == null || string.IsNullOrEmpty(text)) return 0f;
+            int n = 0;
+            int at = text.IndexOf("\n\n", System.StringComparison.Ordinal);
+            while (at >= 0) { n++; at = text.IndexOf("\n\n", at + 2, System.StringComparison.Ordinal); }
+            if (n == 0) return 0f;
+            return n * BlankRowH(st) * (1f - HeadlineGapKeep);
+        }
+
+        public static float BlankRowH(GUIStyle st)
+        {
+            if (_gapProbe == null) _gapProbe = new GUIContent("Mg");
+            return st.CalcSize(_gapProbe).y;
+        }
+
+        public static float BannerBandHeight(float textH, int px)
+        {
+            return textH + 2f * BannerPadEm * px;
+        }
+
+        public static float BannerInkLift(int px)
+        {
+            return BannerInkLiftEm * px;
+        }
+
+        // b89: the screen part a glove may paint in when it reaches a caption plate:
+        // everything below the plate, or above it, whichever side holds the fingertip.
+        public static Rect GloveKeepRect(Rect plate, Vector2 tip, float screenW, float screenH)
+        {
+            if (plate.width < 1f || plate.height < 1f) return new Rect(0f, 0f, screenW, screenH);
+            if (tip.y >= plate.center.y)
+                return new Rect(0f, plate.yMax, screenW, Mathf.Max(0f, screenH - plate.yMax));
+            return new Rect(0f, 0f, screenW, Mathf.Max(0f, plate.yMin));
+        }
+
+        // b89: cut a screen quad (x, y with texture u, v) to the band yMin..yMax.
+        // Returns the clipped convex polygon as (x, y, u, v); fewer than 3 is empty.
+        public static System.Collections.Generic.List<Vector4> ClipQuadY(Vector3[] pts, Vector2[] uv, float yMin, float yMax)
+        {
+            var poly = new System.Collections.Generic.List<Vector4>(6);
+            for (int i = 0; i < pts.Length; i++) poly.Add(new Vector4(pts[i].x, pts[i].y, uv[i].x, uv[i].y));
+            poly = ClipEdge(poly, yMin, true);
+            poly = ClipEdge(poly, yMax, false);
+            return poly;
+        }
+
+        static System.Collections.Generic.List<Vector4> ClipEdge(System.Collections.Generic.List<Vector4> src, float y, bool keepAbove)
+        {
+            var dst = new System.Collections.Generic.List<Vector4>(src.Count + 2);
+            int n = src.Count;
+            for (int i = 0; i < n; i++)
+            {
+                var a = src[i];
+                var b = src[(i + 1) % n];
+                bool ina = keepAbove ? a.y >= y : a.y <= y;
+                bool inb = keepAbove ? b.y >= y : b.y <= y;
+                if (ina) dst.Add(a);
+                if (ina != inb)
+                {
+                    float t = (y - a.y) / (b.y - a.y);
+                    dst.Add(Vector4.Lerp(a, b, t));
+                }
+            }
+            return dst;
+        }
+
         public const string VipPitchLine = "Tap VIP anytime to drop ads.";
 
         public const string AlbumUpgradeLine = "Upgrade adds honey for 1000 coins.";
@@ -261,11 +352,12 @@ namespace FlockFive
                 }
                 if (textW < 8f) textW = 8f;
                 Bind(style, text, plate.Font, true);
-                textH = _scratch.CalcHeight(_content, textW);
+                float cut = GapCut(_scratch, text);
+                textH = _scratch.CalcHeight(_content, textW) - cut;
                 int rows = 1;
                 for (int i = 0; i < text.Length; i++)
                     if (text[i] == '\n') rows++;
-                float stack = lineH * rows;
+                float stack = lineH * rows - cut;
                 if (textH < stack * 0.85f) textH = stack;
                 if (textH < lineH) textH = lineH;
             }
@@ -356,7 +448,7 @@ namespace FlockFive
         {
             float s = screenH > 2f ? DeviceFit.UiH(screenH) : 1f;
             if (s < 1f) s = 1f;
-            float m = 12f * s;
+            float m = 8f * s;
             if (m < 18f) m = 18f;
             if (screenW > 2f && m > screenW * 0.2f) m = screenW * 0.2f;
             return m;
@@ -466,7 +558,7 @@ namespace FlockFive
             {
                 shown = WrapAt(style, text, maxW, px);
                 Bind(style, shown, px, true);
-                textH = _scratch.CalcHeight(_content, maxW);
+                textH = _scratch.CalcHeight(_content, maxW) - GapCut(_scratch, shown);
                 if (textH < 1f) textH = 1f;
                 chosen = px;
                 bool wide = WidthsFit(style, shown.Split('\n'), maxW, px);
@@ -526,9 +618,32 @@ namespace FlockFive
         // line wraps into at most BannerMaxLines balanced rows and the plate grows.
         public const int BannerMaxLines = 3;
 
-        public static int BannerFont(float screenW, float screenH)
+        // b89 (Brandon): caption text is a fixed share of the screen height. DeviceFit.Ui
+        // eases the UI scale down on wide (tablet) screens, which shrank captions there.
+        // This is the factor that puts the caption back at the phone's share of the
+        // height. It is 1 wherever Ui is the plain height scale (phones), so they do not move.
+        public static float TextFit(float screenW, float screenH)
         {
             float ui = DeviceFit.Ui(screenW, screenH);
+            float flat = Mathf.Max(screenH / 720f, 1f);
+            if (ui < 0.01f) return 1f;
+            return Mathf.Max(1f, flat / ui) * RoomFit(screenW, screenH);
+        }
+
+        // b89 (Brandon): a wide screen (the iPad) has room a tall phone does not, so its
+        // caption type and plate grow up to this much more. Derived from the screen's own
+        // aspect (width / height): 1 at phone aspect (<= 0.5), the full boost at 0.75 (iPad).
+        public const float RoomBoost = 0.18f;
+        public static float RoomFit(float screenW, float screenH)
+        {
+            if (screenW < 2f || screenH < 2f) return 1f;
+            float wide = Mathf.Clamp01((screenW / screenH - 0.5f) / 0.25f);
+            return 1f + RoomBoost * wide;
+        }
+
+        public static int BannerFont(float screenW, float screenH)
+        {
+            float ui = DeviceFit.Ui(screenW, screenH) * TextFit(screenW, screenH);
             int px = Mathf.RoundToInt(44f * ui * 0.62f);
             if (px < 22) px = 22;
             return px;
@@ -627,7 +742,9 @@ namespace FlockFive
             float lineH = LineHeight(style, measure.Font);
             float stack = lineH * lines;
             Bind(style, shown, measure.Font, true);
-            float th = _scratch.CalcHeight(_content, maxW);
+            float cut = GapCut(_scratch, shown);
+            stack -= cut;
+            float th = _scratch.CalcHeight(_content, maxW) - cut;
             if (th < stack * 0.85f) th = stack;
             if (th > stack * 1.25f) th = stack;
             if (th < 1f) th = 1f;
