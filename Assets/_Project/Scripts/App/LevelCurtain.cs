@@ -509,28 +509,33 @@ namespace FlockFive
 
     // Release rainbow and transition mask. One overlay, its own clock (stamped by
     // LevelCurtain.Fire on the committed press, the same frame as Load; nothing waits on
-    // it), painted last by FlockFiveApp.OnGUI on every face.
-    //   0.00-0.35  launch: every glint leaves the button centre on the tap frame and
-    //              fans to the full width by 0.15 s, rising into a symmetric bow
-    //   0.35-0.60  exit: accelerating climb off the top, one-frame-spaced trails
-    //   0.64-1.22  return = depth, not travel: each glint appears at its own final cell
-    //              (stratified grid + stable jitter) and approaches the viewer in place,
-    //              tiny and dim to full size on a perspective curve (only a few % of a
-    //              cell of parallax). Start times are hash-staggered over 0.32 s, so no
-    //              row, column or side fills first. The veil only supports them.
-    //   1.22       coverage complete: every glint landed and the veil is at peak. The
-    //              clock is held here until a frame has painted that state.
-    //   1.27       swap: the held splash is dropped (the garden loaded on the tap)
-    //   1.32-1.77  fade out in place (shrink + fade, hash-staggered, no wipe)
-    //   1.82       sparkle gone: the stage begins (input and PlayClock resume)
+    // it), painted last by FlockFiveApp.OnGUI on every face. Brandon's sequence:
+    //   0.00-0.50  emission: the button, far in the background, spews glints
+    //              continuously (hash-staggered, not ordered by x); each flies up small
+    //              and far and out of the top (0.40 s flight)
+    //   0.44-1.36  first descent: each comes back down from the top, closer and larger
+    //              (perspective), onto its own cell of a stratified grid; the veil
+    //              follows the landed fraction. Emission is done by 0.50.
+    //   1.38       full coverage (all landed, veil at peak). The clock is held here until
+    //              a frame has painted it, then
+    //   1.43       swap: the held splash is dropped (the garden loaded on the tap)
+    //   1.48-2.28  second descent: the remaining glints fall to the bottom, fading, and
+    //              the veil fades with them, exposing the garden progressively. One
+    //              wave falls out of the covering glints, one finishes coming down from
+    //              the top and across the whole screen.
+    //   2.30       last sparkle gone: the stage begins (input and PlayClock resume)
     // Under capture (Time.captureDeltaTime) the clock counts frames.
     public static class PressRainbow
     {
         public const float LaunchEnd = 0.35f, FanTime = 0.15f;
-        public const float BackBegin = 0.64f, BackWindow = 0.32f, GrowTime = 0.26f;
-        public const float CoverAt = 1.22f, SwapAt = 1.27f, RevealAt = 1.32f, RevealEnd = 1.77f;
-        public const float Life = 1.82f;
-        const float FailsafeSecs = 3f;
+        public const float EmitWindow = 0.50f, RiseDur = 0.40f, DescGap = 0.04f, FallIn = 0.42f;
+        const float LandFrom = RiseDur + DescGap + FallIn; // 0.86: earliest landing
+        public const float CoverAt = EmitWindow + LandFrom + 0.02f; // 1.38
+        public const float SwapAt = CoverAt + 0.05f, RevealAt = CoverAt + 0.10f; // 1.43, 1.48
+        const float OutWindow = 0.25f, OutFall = 0.40f, L2Window = 0.25f, L2Fall = 0.55f;
+        public const float RevealEnd = RevealAt + 0.80f; // 2.28
+        public const float Life = RevealEnd + 0.02f;     // 2.30
+        const float FailsafeSecs = 3.5f;
         const float StageMargin = 0.03f;
         public const int Cols = 8; // even: four mirrored column pairs
         const int Ghosts = 4;
@@ -662,85 +667,6 @@ namespace FlockFive
         public static float RotOf(int key) => H01(key, 59) * 90f;
         static bool CoreOf(int key) => H01(key, 61) < 0.08f;
 
-        static bool At(int i, int n, int rows, float t, float W, float H, float ox, float oy, out float x, out float y,
-            out float sz, out float a, out float bloom, out float soft)
-        {
-            x = y = sz = a = bloom = soft = 0f;
-            if (t < 0f) return false;
-            int pair = i >> 1;
-            float hj = H01(pair, 7), hs = H01(pair, 11);
-            float hr = H01(pair, 19), hb = H01(pair, 23), hy = H01(pair, 29);
-            float D = Mathf.Sqrt(W * W + H * H);
-            float cx = W * 0.5f;
-            float tx = cx + SparkleFx.Lane(i, n, hj, W * 0.58f);
-            float far = D * (0.025f + 0.010f * hs); // visible body px
-            float lane01 = Mathf.Clamp01(Mathf.Abs(tx - cx) / (W * 0.58f));
-            float riseEnd = 0.54f + 0.06f * hr;
-            float backStart = BackBegin + BackWindow * H01(i, 81);
-            float arcY = oy - H * (0.08f + 0.04f * hy + 0.18f * (1f - lane01 * lane01));
-            float cell = W / Cols;
-            float landBody = cell * 0.95f * SizeK(i);
-            bool core = CoreOf(i);
-            if (t < LaunchEnd)
-            {
-                float q = Mathf.Clamp01(t / FanTime);
-                float fan = 1f - (1f - q) * (1f - q) * (1f - q);
-                float e = Mathf.Clamp01(t / LaunchEnd);
-                e = 1f - (1f - e) * (1f - e);
-                x = ox + (tx - ox) * fan;
-                y = oy + (arcY - oy) * e;
-                sz = far * (0.85f + 0.15f * e) / StarBody;
-                a = 1f;
-                bloom = 0.2f;
-            }
-            else if (t < riseEnd)
-            {
-                float r = (t - LaunchEnd) / (riseEnd - LaunchEnd);
-                float off = -far / StarBody;
-                x = tx;
-                y = Mathf.Min(arcY, arcY + (off - arcY) * (r * r * (0.4f + 0.6f * r)));
-                sz = far / StarBody;
-                a = 1f;
-                bloom = 0.25f;
-            }
-            else if (t < backStart) return false; // off screen until its own start
-            else
-            {
-                Cell(i, rows, W, H, out float lx, out float ly);
-                if (t < backStart + GrowTime)
-                {
-                    // Approach in place: no travel, only the perspective grow.
-                    SparkleFx.ApproachInPlace((t - backStart) / GrowTime, lx, ly, cx, H * 0.5f, cell,
-                        far * 0.35f, landBody, 0.06f, out var d);
-                    x = d.X; y = d.Y; sz = d.Scale / StarBody;
-                    a = d.Alpha; bloom = d.Bloom;
-                    soft = core ? 0.05f : d.Soft;
-                }
-                else if (t < RevealAt)
-                {
-                    x = lx; y = ly;
-                    sz = landBody / StarBody;
-                    a = 1f;
-                    bloom = core ? 1f : 0.9f;
-                    soft = core ? 0.05f : 0.5f;
-                }
-                else if (t < RevealEnd + 0.05f)
-                {
-                    // Fade out in place: shrink and fade, hash-staggered, no wipe.
-                    float u = Mathf.Clamp01((t - RevealAt - RevealJitter(pair)) / (RevealEnd - RevealAt - 0.05f));
-                    if (u >= 1f) return false;
-                    x = lx; y = ly;
-                    sz = landBody * (1f - 0.45f * u) / StarBody;
-                    float f = 1f - u;
-                    a = f * f * (3f - 2f * f);
-                    bloom = 0.9f;
-                    soft = 0.5f + 0.5f * u;
-                }
-                else return false;
-            }
-            return y > -sz && y < H + sz && x > -sz && x < W + sz;
-        }
-
         // Painterly palette: gold, cream, peach, rose, plus a per-pair hue drift so the
         // mask reads as brushed light, not flat tiles. Hashed by mirrored pair only.
         static readonly Color Honey = new Color(1f, 0.80f, 0.46f, 1f);
@@ -755,49 +681,80 @@ namespace FlockFive
             return Color.Lerp(a, b, 0.35f * d);
         }
 
-        // Per-pair reveal phase (+-0.05 s): sparkle-out, uncorrelated with row or side.
-        static float RevealJitter(int pair) => (H01(pair, 43) - 0.5f) * 0.10f;
-
-        // Layer-2 sparkle: comes in with the return, lands on its offset cell, reveals
-        // with everyone else. Same timing as layer 1.
-        static bool At2(int j, int rows, float t, float W, float H, out float x, out float y,
-            out float sz, out float a, out float bloom, out float soft, out int key)
+        // One glint's whole life, small and far to big and near:
+        //   emit at e (hashed in the 0.5 s window), fly up and off the top;
+        //   layer 1: fall back from the top onto its cell (first descent), hold, then
+        //            fall on to the bottom, fading (second descent);
+        //   layer 2: wait above, then fall the full height after the swap, fading.
+        // The landing column is the cell's, so the spread is uniform; nothing is
+        // ordered by x. Returns false when not drawn.
+        static bool Flight(int key, float lx, float ly, float body, bool layer2, float t, float W, float H,
+            float ox, float oy, out float x, out float y, out float sz, out float a, out float bloom, out float soft)
         {
             x = y = sz = a = bloom = soft = 0f;
-            Cell2(j, rows, W, H, out float lx, out float ly, out key);
-            int g = 5000 + j;
-            float backStart = BackBegin + BackWindow * H01(g, 81);
-            if (t < backStart || t >= RevealEnd + 0.05f) return false;
-            float cell = W / Cols;
-            float body = cell * 0.55f * SizeK(g);
+            float e = EmitWindow * H01(key, 91);
+            float age = t - e;
+            if (age < 0f) return false;
             float cx = W * 0.5f;
-            bool core = CoreOf(g);
-            if (t < backStart + GrowTime)
+            float D = Mathf.Sqrt(W * W + H * H);
+            float far = D * (0.020f + 0.008f * H01(key, 11)); // visible body px, far away
+            bool core = CoreOf(key);
+            SparkleFx.Depth d;
+            if (age < RiseDur)
             {
-                SparkleFx.ApproachInPlace((t - backStart) / GrowTime, lx, ly, cx, H * 0.5f, cell,
-                    body * 0.3f, body, 0.06f, out var d);
-                x = d.X; y = d.Y; sz = d.Scale / StarBody;
-                a = d.Alpha; bloom = d.Bloom;
-                soft = core ? 0.05f : 0.7f * d.Soft;
+                float r = age / RiseDur;
+                float tx = cx + (lx - cx) * 1.12f;
+                float fan = Mathf.Clamp01(age / 0.20f);
+                fan = 1f - (1f - fan) * (1f - fan) * (1f - fan);
+                x = ox + (tx - ox) * fan;
+                y = oy + (-0.10f * H - oy) * (0.25f * r + 0.75f * r * r);
+                sz = far * (1f - 0.35f * r) / StarBody;
+                a = Mathf.Clamp01(age / 0.03f);
+                bloom = 0.25f;
             }
-            else if (t < RevealAt)
+            else if (!layer2)
             {
-                x = lx; y = ly; sz = body / StarBody; a = 1f;
-                bloom = core ? 1f : 0.85f;
-                soft = core ? 0.05f : 0.35f;
+                float d0 = e + RiseDur + DescGap;
+                float so = RevealAt + OutWindow * H01(key, 85);
+                if (t < d0) return false;
+                if (t < d0 + FallIn)
+                {
+                    float w = (t - d0) / FallIn;
+                    SparkleFx.DescentAt(w, lx, -0.08f * H, ly, far * 0.8f, body, 0.65f, out d);
+                    x = d.X; y = d.Y; sz = d.Scale / StarBody;
+                    a = Mathf.Clamp01(0.3f + 2.5f * w); bloom = d.Bloom;
+                    soft = core ? 0.05f : d.Soft;
+                }
+                else if (t < so)
+                {
+                    x = lx; y = ly; sz = body / StarBody; a = 1f;
+                    bloom = core ? 1f : 0.9f;
+                    soft = core ? 0.05f : 0.5f;
+                }
+                else if (t < so + OutFall)
+                {
+                    float w = (t - so) / OutFall;
+                    SparkleFx.DescentAt(w, lx, ly, H + body, body, body * 1.15f, 1.8f, out d);
+                    x = d.X; y = d.Y; sz = d.Scale / StarBody;
+                    float f = 1f - w;
+                    a = f * f * (3f - 2f * f);
+                    bloom = 0.9f;
+                    soft = core ? 0.05f : 0.5f + 0.5f * w;
+                }
+                else return false;
             }
             else
             {
-                float u = Mathf.Clamp01((t - RevealAt - RevealJitter(key)) / (RevealEnd - RevealAt - 0.05f));
-                if (u >= 1f) return false;
-                x = lx; y = ly;
-                sz = body * (1f - 0.45f * u) / StarBody;
-                float f = 1f - u;
-                a = f * f * (3f - 2f * f);
-                bloom = 0.85f;
-                soft = 0.35f + 0.5f * u;
+                float s2 = RevealAt + L2Window * H01(key, 83);
+                if (t < s2 || t >= s2 + L2Fall) return false;
+                float w = (t - s2) / L2Fall;
+                SparkleFx.DescentAt(w, lx, -0.10f * H, 1.08f * H, far * 1.5f, body * 2f, 1.15f, out d);
+                x = d.X; y = d.Y; sz = d.Scale / StarBody;
+                float q = Mathf.Clamp01((w - 0.55f) / 0.45f);
+                a = Mathf.Clamp01(w * 8f) * (1f - q * q * (3f - 2f * q));
+                bloom = 0.5f + 0.4f * w;
+                soft = core ? 0.05f : 0.3f + 0.5f * w;
             }
-            key = g;
             return y > -sz && y < H + sz && x > -sz && x < W + sz;
         }
 
@@ -821,17 +778,17 @@ namespace FlockFive
         // not depend on where the glints sit. Ramps with the return, holds, clears.
         public static float VeilAt(float t)
         {
-            const float from = BackBegin + GrowTime * 0.8f;
-            if (t <= from || t >= RevealEnd - 0.08f) return 0f;
+            const float from = EmitWindow + LandFrom;
+            if (t <= from - 0.30f || t >= RevealEnd - 0.10f) return 0f;
             float k;
             if (t < CoverAt)
             {
-                // Supports the glints: alpha ramps with the covered fraction, behind it.
-                float f = Mathf.Clamp01((t - from) / (CoverAt - from));
+                // Supports the glints: alpha ramps with the landed fraction, behind it.
+                float f = Mathf.Clamp01((t - (from - 0.30f)) / (CoverAt - (from - 0.30f)));
                 k = f * f;
             }
             else if (t < RevealAt) k = 1f;
-            else { float u = 1f - (t - RevealAt) / (RevealEnd - 0.08f - RevealAt); u = Mathf.Clamp01(u); k = u * u * (3f - 2f * u); }
+            else { float u = 1f - (t - RevealAt) / (RevealEnd - 0.10f - RevealAt); u = Mathf.Clamp01(u); k = u * u * (3f - 2f * u); }
             return VeilPeak * k;
         }
 
@@ -905,46 +862,53 @@ namespace FlockFive
             }
             washA = veil;
 
-            int drawn = 0;
+            int drawn = 0, drawn1 = 0;
             LastMaxRectPx = 0f;
             LastXMin = float.MaxValue;
             LastXMax = float.MinValue;
-            for (int i = 0; i < n; i++)
+            int n2 = Layer2Count(rows);
+            for (int q = 0; q < n + n2; q++)
             {
-                int pair = i >> 1;
-                var c = Tint(pair);
-                if (t < 0.62f + Ghosts * GhostStep)
+                bool l2 = q >= n;
+                int key, mk;
+                float lx, ly, body;
+                if (!l2)
+                {
+                    key = q; mk = q >> 1;
+                    Cell(q, rows, W, H, out lx, out ly);
+                    body = cell * 0.95f * SizeK(key);
+                }
+                else
+                {
+                    int j = q - n;
+                    Cell2(j, rows, W, H, out lx, out ly, out mk);
+                    key = 5000 + j;
+                    body = cell * 0.55f * SizeK(key);
+                }
+                var c = Tint(mk);
+                if (t < 0.98f)
                 {
                     for (int g = Ghosts; g >= 1; g--)
                     {
                         float tg = t - g * GhostStep;
-                        if (tg >= 0.62f) continue;
-                        if (!At(i, n, rows, tg, W, H, ox, oy, out float gx, out float gy, out float gs, out float ga, out _, out _))
+                        if (!Flight(key, lx, ly, body, l2, tg, W, H, ox, oy, out float gx, out float gy, out float gs, out float ga, out float gb, out _))
                             continue;
+                        if (gb > 0.3f) continue; // streak the rise only
                         float k = 1f - g / (float)(Ghosts + 1);
                         SparkleFx.DrawDepthGlint(gx, gy, gs * (0.55f + 0.4f * k), ga * 0.55f * k, 0f, 0.3f, c, star, glowTex);
                     }
                 }
-                if (!At(i, n, rows, t, W, H, ox, oy, out float x, out float y, out float sz, out float a, out float bl, out float sf))
+                if (!Flight(key, lx, ly, body, l2, t, W, H, ox, oy, out float x, out float y, out float sz, out float a, out float bl, out float sf))
                     continue;
-                // Rotation only once it is heading for its cell (the launch stays upright).
-                PaintMaskGlint(x, y, sz, a, bl, sf, c, t >= 0.62f ? RotOf(i) : 0f, star, glowTex);
+                PaintMaskGlint(x, y, sz, a, bl, sf, c, RotOf(key), star, glowTex);
                 if (a > 0.1f && sz > LastMaxRectPx) LastMaxRectPx = sz;
                 if (x < LastXMin) LastXMin = x;
                 if (x > LastXMax) LastXMax = x;
                 drawn++;
-            }
-            int n2 = Layer2Count(rows);
-            for (int j = 0; j < n2; j++)
-            {
-                if (!At2(j, rows, t, W, H, out float x, out float y, out float sz, out float a, out float bl, out float sf, out int key))
-                    continue;
-                Cell2(j, rows, W, H, out _, out _, out int mk);
-                PaintMaskGlint(x, y, sz, a, bl, sf, Tint(mk), RotOf(key), star, glowTex);
-                drawn++;
+                if (!l2) drawn1++;
             }
             GUI.color = prev;
-            if (holding && drawn >= n + n2 && veil >= VeilPeak * 0.99f)
+            if (holding && drawn1 >= n && veil >= VeilPeak * 0.99f)
             {
                 _covered = true;
                 _shift += rawT - CoverAt; // clock resumes at CoverAt on the next frame
