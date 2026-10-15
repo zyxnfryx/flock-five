@@ -10325,7 +10325,7 @@ namespace FlockFive
                 GUI.color = Color.white;
                 GUI.DrawTexture(visual, tex, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
-                if (!held && motion.Pose.Sink <= 0.001f) DrawFlowerShimmer(visual, 0f);
+                if (!held && motion.Pose.Sink <= 0.001f) DrawFlowerShimmer(visual, 0f, 1f, false); // b95: no idle rim glints on LEVEL
                 if (!held && motion.Pose.Sink <= 0.001f) DrawLevelIdleLife(visual);
                 if (held) DrawDiscPress(visual, 0f);
                 if (held) DrawLevelPressOver(visual, AdPause.Unscaled - _levelPressAt);
@@ -12671,7 +12671,7 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        static void DrawFlowerShimmer(Rect rest, float sink, float gain = 1f)
+        static void DrawFlowerShimmer(Rect rest, float sink, float gain = 1f, bool glints = true)
         {
             if (!GuiPaint()) return;
             float t = AdPause.Unscaled;
@@ -12694,7 +12694,7 @@ namespace FlockFive
             GUI.DrawTexture(disc, glow, ScaleMode.ScaleToFit, true);
 
             float baseSz = rest.width * 0.10f;
-            for (int i = 0; i < FlowerGlints.Length; i++)
+            for (int i = 0; glints && i < FlowerGlints.Length; i++)
             {
                 float tw = Mathf.Sin(t * 2.05f + i * 1.13f);
                 tw = Mathf.Max(0f, tw);

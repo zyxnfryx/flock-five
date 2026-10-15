@@ -15,9 +15,9 @@ namespace FlockFive
         // same burst helpers and point tables.
         const string UsaPlaneDayKey = "flockfive.plane.day";
         public const float PlaneIdleDelay = 15f; // legacy
-        // b87: first home screen each day flies after 12s idle; later home screens that day after 30s.
-        public const float PlaneIdleFirst = 12f;
-        public const float PlaneIdleLater = 30f;
+        // b95: first appearance after 15s idle; every later one after 40s. Still once per home visit.
+        public const float PlaneIdleFirst = 15f; // b95 (Brandon): 15s before the first appearance
+        public const float PlaneIdleLater = 40f; // b95: 40s before every later appearance
         public const string PlaneFirstKey = "flockfive.plane.first";
         public static float PlaneIdleFor(bool flownBefore) => flownBefore ? PlaneIdleLater : PlaneIdleFirst;
         public const float PlaneCrossSeconds = 6.5f;

@@ -11,23 +11,7 @@ namespace FlockFive
         // Idle heartbeat period. Slow enough to read as breathing, not a blink.
         const float LevelBeat = 3.4f;
 
-        // Glints that orbit the clay petals (outside the disc, so the caption stays clean).
-        static readonly float[] LevelOrbitSpeed = { 0.52f, -0.41f, 0.67f };
-        static readonly float[] LevelOrbitPhase = { 0.3f, 2.4f, 4.4f };
-        static readonly Color[] LevelOrbitTint =
-        {
-            new Color(1f, 0.93f, 0.70f, 1f),
-            new Color(1f, 0.82f, 0.46f, 1f),
-            new Color(1f, 0.80f, 0.70f, 1f),
-        };
-
-        // Seats (radians, 0 = 3 o'clock, clockwise) on the flat ring. Five across the top arc
-        // (-PI..0), two low on the sides. Phases keep neighbours out of step.
-        static readonly float[] LevelRimAng = { -2.70f, -2.25f, -1.80f, -1.34f, -0.89f, -0.42f, 0.45f, 2.70f };
-        static readonly float[] LevelRimPh = { 0.4f, 1.9f, 3.3f, 4.6f, 0.9f, 2.6f, 5.2f, 3.8f };
-
-        // Idle life for the LEVEL flower: a soft double-beat swell in the halo, three
-        // comet glints orbiting the petals, and a rim catch-light once per beat.
+        // Idle life for the LEVEL flower: a soft double-beat swell in the halo only.
         // Layered on top of the shared halo/shimmer; scale stays 1 (no quiver).
         static void DrawLevelIdleLife(Rect visual)
         {
@@ -48,47 +32,8 @@ namespace FlockFive
                 SparkleFx.DrawGlow(c, w + pad * 2f, new Color(1f, 0.80f, 0.42f, 0.20f * beat));
             }
 
-            // Orbiting comets: head plus three fading echoes along the path.
-            for (int k = 0; k < LevelOrbitSpeed.Length; k++)
-            {
-                float tw = 0.55f + 0.45f * Mathf.Sin(t * 3.1f + k * 1.7f);
-                var tint = LevelOrbitTint[k];
-                float dir = LevelOrbitSpeed[k] < 0f ? -1f : 1f;
-                float head = t * LevelOrbitSpeed[k] + LevelOrbitPhase[k];
-                for (int j = 3; j >= 0; j--)
-                {
-                    float ang = head - dir * j * 0.11f;
-                    var p = SparkleFx.OnFlatRing(visual, ang);
-                    float fall = 1f - j * 0.26f;
-                    float sz = w * (0.050f + 0.030f * tw) * fall;
-                    float a = (0.42f + 0.40f * tw) * fall * fall;
-                    if (j == 0)
-                        SparkleFx.DrawGlow(p, sz * 2.4f, new Color(tint.r, tint.g, tint.b, 0.26f * a));
-                    SparkleFx.DrawAt(p, sz, a, tint);
-                }
-            }
-
-            // Fixed twinkle seats on the same flat ring, weighted to the top arc so the upper
-            // edge always has life (the comets alone leave it empty for long stretches).
-            for (int k = 0; k < LevelRimAng.Length; k++)
-            {
-                float twk = 0.5f + 0.5f * Mathf.Sin(t * (1.9f + 0.17f * k) + LevelRimPh[k]);
-                if (twk < 0.25f) continue;
-                var q = SparkleFx.OnFlatRing(visual, LevelRimAng[k]);
-                var rt = LevelOrbitTint[k % LevelOrbitTint.Length];
-                SparkleFx.DrawAt(q, w * (0.030f + 0.030f * twk), 0.30f + 0.55f * twk, rt);
-            }
-
-            // Catch-light: a star blooms on the upper-right rim mid-beat and fades.
-            float ping = (u - 0.52f) * LevelBeat;
-            if (ping > 0f && ping < 0.42f)
-            {
-                float g = ping < 0.10f ? ping / 0.10f : 1f - (ping - 0.10f) / 0.32f;
-                g = g * g * (3f - 2f * g);
-                var at = SparkleFx.OnFlatRing(visual, -0.95f);
-                SparkleFx.DrawGlow(at, w * 0.30f * g, new Color(1f, 0.92f, 0.66f, 0.35f * g));
-                SparkleFx.DrawAt(at, w * (0.10f + 0.12f * g), 0.95f * g, new Color(1f, 0.97f, 0.86f, 1f));
-            }
+            // b95 (Brandon): no idle comets, rim twinkles or catch-light. Only the heartbeat
+            // swell stays at rest; the press and release sparkle sequence is separate.
             GUI.color = Color.white;
         }
 

@@ -14,6 +14,9 @@ namespace FlockFive
         public const int Vip = 2;
         public const float ReleaseSeconds = 0.32f;
         public const float SheenPeriod = 1.40f; // b86: sweep about 2x faster
+        // b95 (Brandon): after each full glimmer the sheen rests before the next sweep.
+        // Every button on the shared SheenU (Go VIP, the pedestal, reward choice) gets the pause.
+        public const float SheenPauseSeconds = 2.0f;
         public const float SinkFrac = 0.055f;
 
         public struct Pose
@@ -66,7 +69,11 @@ namespace FlockFive
         {
             float period = SheenPeriod;
             if (period < 0.05f) period = 2.75f;
-            return Mathf.Repeat(time < 0f ? 0f : time / period, 1f);
+            float t = time < 0f ? 0f : time;
+            float phase = Mathf.Repeat(t, period + SheenPauseSeconds);
+            // The rest of the cycle is u 0, where the idle alpha envelope (OvalFade) is zero.
+            if (phase >= period) return 0f;
+            return phase / period;
         }
 
         public static Pose Rest() => new Pose { Sink = 0f, SquashX = 1f, SquashY = 1f };

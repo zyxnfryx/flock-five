@@ -995,7 +995,12 @@ namespace FlockFive
                 bars = chrome == 3 ? 2 : 1;
             }
             float stack = cardH + (flowerOn ? flowerSz - overlap : 0f) + barGap + barH * bars + (bars == 2 ? barGap : 0f);
-            var placed = PlacePopup(s, cardW, stack, 0.34f);
+            // b95 (Brandon): the popup used to recenter after the first spin, because the claim
+            // flower (chrome 0) gives way to the Collect / Watch bars (chrome 2, 3) and each
+            // stack height centered differently. The card is seated once, for the tallest stack
+            // any chrome can reach, so its top edge is the final position from the first frame.
+            float finalStack = Mathf.Max(stack, DailyTallestStack(s, cardW, band));
+            var placed = PlacePopup(s, cardW, finalStack, 0.34f);
             card = new Rect(placed.x, placed.y, cardW, cardH);
             board = new Rect(card.x + (cardW - boardW) * 0.5f, card.y + lip, boardW, boardH);
             flower = flowerOn
@@ -1020,6 +1025,35 @@ namespace FlockFive
                 collect = default;
                 watch = default;
             }
+        }
+
+        // Tallest stack (card, claim flower or bars) over every chrome 0..3. Chrome independent.
+        public static float DailyTallestStack(float s, float cardW, float band)
+        {
+            float boardW = cardW - band * 2f;
+            float best = 0f;
+            for (int c = 0; c <= 3; c++)
+            {
+                bool flowerOn = c == 0;
+                float flowerSz = flowerOn ? PopupButtonSize(s, cardW) : 0f;
+                float overlap = flowerOn ? PopupCtaOverlap(flowerSz, band + 8f * s) : 0f;
+                float reserve = flowerOn ? Mathf.Max(0f, overlap - band) : 0f;
+                DailyWheelBoard(s, boardW, reserve, out float boardH, out _, out _, out _);
+                float cardH = band + boardH + band;
+                float barH = 0f, barGap = 0f;
+                int bars = 0;
+                if (c == 2 || c == 3) { barH = PopupBarHeight(s, cardW); barGap = 10f * s; bars = c == 3 ? 2 : 1; }
+                float stack = cardH + (flowerOn ? flowerSz - overlap : 0f) + barGap + barH * bars + (bars == 2 ? barGap : 0f);
+                if (stack > best) best = stack;
+            }
+            return best;
+        }
+
+        // Audit hook: the card for one chrome.
+        public static Rect DailyAuditCard(float s, int chrome)
+        {
+            DailyLayout(s, chrome, out var card, out _, out _, out _, out _, out _);
+            return card;
         }
 
         static void DailyWheelBoard(float s, float boardW, float reserve, out float boardH, out float titleH, out float streakH, out float wheel)

@@ -199,7 +199,7 @@ namespace FlockFive.Editor
             Check("plane-idle-plus-5",
                 Mathf.Abs(FlockFiveApp.PlaneIdleDelay - (oldIdle + 5f)) < 0.001f
                 && FlockFiveApp.PlaneCrossSeconds == 6.5f
-                && FlockFiveApp.PlaneIdleFor(false) == 12f && FlockFiveApp.PlaneIdleFor(true) == 30f,
+                && FlockFiveApp.PlaneIdleFor(false) == 15f && FlockFiveApp.PlaneIdleFor(true) == 40f,
                 "idle=" + FlockFiveApp.PlaneIdleDelay.ToString("0.00")
                 + " was=" + oldIdle.ToString("0.00")
                 + " cross=" + FlockFiveApp.PlaneCrossSeconds.ToString("0.00"));
