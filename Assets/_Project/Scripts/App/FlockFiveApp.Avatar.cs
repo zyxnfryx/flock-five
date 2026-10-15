@@ -1852,8 +1852,30 @@ namespace FlockFive
             float world = AvatarBirdWorld();
             float birdPx = world > 0.001f ? icon / world : 0.01f;
             var seated = LimbBirdSeated(_limbCenter, branchPx, birdPx, true, HomeBranchAnchor());
+            // b103 (Brandon): the bird and its name tag never overlap the right rail (pig, hive, poker). The
+            // full three-slot column is the keep-out, so a hive that arrives later cannot land under the bird.
+            var col = SplashRailColumn(true, 3, s);
+            var anchor = PerchAnchor(seated, icon, true, 0f, 0f);
+            var birdBox = new Rect(anchor.x - icon * 0.5f, anchor.y - icon * 0.5f, icon, icon);
+            float shift = AvatarRailShift(birdBox, AvatarPlateRect(anchor, icon, s), col, 8f * s);
+            if (shift > 0f)
+            {
+                _limbCenter.x -= shift;
+                seated.x -= shift;
+            }
             for (int i = 0; i < _avatarPerches.Length; i++)
                 _avatarPerches[i] = seated;
+        }
+
+        // How far left the bird + tag must move so neither touches the rail column. 0 when already clear.
+        public static float AvatarRailShift(Rect bird, Rect plate, Rect column, float gap)
+        {
+            if (column.width < 2f || column.height < 2f) return 0f;
+            var keep = new Rect(column.x - gap, column.y - gap, column.width + gap * 2f, column.height + gap * 2f);
+            float xMax = Mathf.Max(bird.xMax, plate.xMax);
+            bool vert = (bird.yMax > keep.yMin && bird.yMin < keep.yMax) || (plate.yMax > keep.yMin && plate.yMin < keep.yMax);
+            if (!vert || xMax <= keep.xMin) return 0f;
+            return xMax - keep.xMin;
         }
 
         // Full-size rail stack, so a button that is still sliding in stays reserved.

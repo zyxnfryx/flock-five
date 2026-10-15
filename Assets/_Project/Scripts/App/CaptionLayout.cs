@@ -150,7 +150,7 @@ namespace FlockFive
 
         // Inspect back. The value sentence is exact. The two tap lines stay with it.
         public const string AlbumHoneyBlock =
-            "Honeycombs show the card's value based on rarity.\nTap to flip!\nTap outside to put back";
+            "Honeycombs show the card's value based on rarity.\n\nTap to flip!\nTap outside to put back";
 
         public const string LeafLine =
             "Leaves hide birds.\nCollect at a feeder.";
@@ -166,7 +166,11 @@ namespace FlockFive
             "Ostrich on a feeder!\nMatch three sets.";
 
         public const string BeePestLine =
-            "Bees on a branch!\nMove birds off it.";
+            "Bees on a branch!\nRemove birds to clear them.";
+
+        // b103 (Brandon): the "You found a bee! Tap the hive." banner rides this share of screen height
+        // lower than the shared top seat, so it clears the title row, the glove and the hive.
+        public const float BeeGardenDropFrac = 0.035f;
 
         public const string CoachPlaceLine =
             "Tap a matching or empty branch.";
@@ -780,6 +784,17 @@ namespace FlockFive
             string shown = AuthoredBanner(style, text, maxW, measure.Font);
             if (shown == null) shown = BalancedBanner(style, text, maxW, measure.Font, BannerMaxLines);
             if (string.IsNullOrEmpty(shown)) shown = text;
+            // b103: a sentence that cannot fit BannerMaxLines rows at the shared size (Brandon's exact
+            // bees-on-a-branch text on a phone) shrinks in small steps, to at most 60%, until every row fits.
+            // Only that one authored sentence uses this; every other caption keeps the shared size.
+            int floorPx = Mathf.Max(1, Mathf.RoundToInt(measure.Font * 0.6f));
+            while (text == BeePestLine && measure.Font > floorPx && !RowsAllFit(style, shown, maxW, measure.Font))
+            {
+                measure.Font -= 2;
+                shown = AuthoredBanner(style, text, maxW, measure.Font);
+                if (shown == null) shown = BalancedBanner(style, text, maxW, measure.Font, BannerMaxLines);
+                if (string.IsNullOrEmpty(shown)) shown = text;
+            }
             int lines = 1;
             for (int i = 0; i < shown.Length; i++)
                 if (shown[i] == '\n') lines++;
@@ -797,6 +812,14 @@ namespace FlockFive
             measure.TextH = th;
             measure.Lines = lines;
             return measure;
+        }
+
+        static bool RowsAllFit(GUIStyle style, string shown, float maxW, int font)
+        {
+            var parts = shown.Split('\n');
+            for (int i = 0; i < parts.Length; i++)
+                if (parts[i].Length > 0 && !LineFits(style, parts[i], maxW, font)) return false;
+            return true;
         }
 
         // Authored newlines, when every piece fits on one row. A blank row is not

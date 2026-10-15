@@ -58,9 +58,17 @@ namespace FlockFive
         }
 
         // Safe-area top-left plus the corner margin. Empty safe area is the screen corner.
-        static Vector2 SettingsGearOrigin(float h, Rect safe)
+        // b103 (Brandon): tablets get extra corner buffer so the gear clears the window-control dots.
+        // 0 on phones; eases in with Wide() like the other tablet caps.
+        public const float SettingsGearTabletInsetPt = 14f;
+        public static float SettingsGearTabletInset(float h, float window)
         {
-            float m = SettingsGearMargin(h);
+            return SettingsGearTabletInsetPt * SettingsGearPxPerPt(h) * DeviceFit.Wide(window);
+        }
+
+        static Vector2 SettingsGearOrigin(float w, float h, Rect safe)
+        {
+            float m = SettingsGearMargin(h) + SettingsGearTabletInset(h, DeviceFit.TestWindow ?? DeviceFit.WindowAspect(w, h));
             float safeTop = 0f;
             float x = m;
             if (safe.width >= 2f && safe.height >= 2f)
@@ -74,7 +82,7 @@ namespace FlockFive
 
         public static Rect SettingsGearDrawnRect(float w, float h, Rect safe)
         {
-            var o = SettingsGearOrigin(h, safe);
+            var o = SettingsGearOrigin(w, h, safe);
             float size = SettingsGearDrawnSize(h);
             return new Rect(o.x, o.y, size, size);
         }

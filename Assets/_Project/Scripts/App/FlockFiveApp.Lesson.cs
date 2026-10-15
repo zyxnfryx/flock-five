@@ -204,7 +204,7 @@ namespace FlockFive
 
         // Album lessons that point at a card. Step 1 is a grid sleeve, 2 is the
         // inspect front, 3 is the inspect back (honey icons).
-        public static LessonPose PoseLesson(int step, Rect focus, float screenW, float screenH, string line, int honey = -1)
+        public static LessonPose PoseLesson(int step, Rect focus, float screenW, float screenH, string line, int honey = -1, Rect avoid = default)
         {
             if (honey < 0) honey = step == 3 ? 5 : 0;
             bool inspect = step >= 2;
@@ -218,8 +218,21 @@ namespace FlockFive
             float seatW = LessonSeatWidth(screenW, focus.width);
             float seatH = LessonSeatHeight(line, screenW, screenH, seatW);
             float gap = hang.y + 10f;
+            // b103: the honeycomb sentence keeps clear air under the card as well as above the flip hint.
+            if (step == 3) gap += screenH * 0.012f;
             var seat = CoachSeat.PlaceCaption(screenW, screenH, focus, seatW, seatH, text, gap);
             var plate = new Rect(seat.x - hang.x, seat.y - hang.y, seat.width + hang.x * 2f, seat.height + hang.y * 2f);
+            bool popup = step == 1;
+            if (popup)
+            {
+                // b103 (Brandon): "Tap a card you have to enlarge it." is a snug centred popup mid-screen, clear of
+                // the target card, the glove (right to left) and the pager. The glove is placed first, then the seat.
+                float snugW = Mathf.Min(seatW, screenW * 0.78f);
+                float snugH = LessonSeatHeight(line, screenW, screenH, snugW);
+                ResolveLessonGlove(focus, default, default, text, s, screenW, screenH, null, 0, out _, out _, out var g1, step);
+                seat = TutorialPopupSeat(screenW, screenH, snugW, snugH, hang, focus, g1, avoid);
+                plate = new Rect(seat.x - hang.x, seat.y - hang.y, seat.width + hang.x * 2f, seat.height + hang.y * 2f);
+            }
             Rect[] cells = null;
             int cellN = 0;
             if (honeyOn && honey > 0 && icons.width > 2f)
@@ -227,7 +240,7 @@ namespace FlockFive
                 cells = new Rect[5];
                 cellN = CardText.HoneyCells(icons, honey, inspect, cells);
             }
-            ResolveLessonGlove(focus, icons, plate, text, s, screenW, screenH, cells, cellN, out var aim, out float approach, out var glove);
+            ResolveLessonGlove(focus, icons, plate, text, s, screenW, screenH, cells, cellN, out var aim, out float approach, out var glove, step);
             bool clear = !text.Hits(plate) && !text.Hits(glove);
             return new LessonPose
             {
@@ -243,6 +256,26 @@ namespace FlockFive
                 Clear = clear,
             };
         }
+
+        // Centred on the screen, then slid vertically to the nearest spot that clears every avoid rect.
+        public static Rect TutorialPopupSeat(float screenW, float screenH, float w, float h, Vector2 hang, Rect card, Rect glove, Rect pager)
+        {
+            float x = (screenW - w) * 0.5f;
+            float want = (screenH - h) * 0.5f;
+            float minY = hang.y + 4f, maxY = screenH - h - hang.y - 4f;
+            float best = Mathf.Clamp(want, minY, maxY);
+            float bestCost = float.MaxValue;
+            for (float y = minY; y <= maxY; y += 6f)
+            {
+                var plate = new Rect(x - hang.x, y - hang.y, w + hang.x * 2f, h + hang.y * 2f);
+                bool hit = Hits(plate, card) || Hits(plate, glove) || Hits(plate, pager);
+                float cost = Mathf.Abs(y - want) + (hit ? screenH * 10f : 0f);
+                if (cost < bestCost) { bestCost = cost; best = y; }
+            }
+            return new Rect(x, best, w, h);
+        }
+
+        static bool Hits(Rect a, Rect b) => b.width > 1f && b.height > 1f && a.Overlaps(b);
 
         public static float LessonSeatWidth(float screenW, float focusW)
         {
@@ -393,10 +426,44 @@ namespace FlockFive
         // Honey lesson: fingertip on a comb edge, hand from the side or from below.
         // Other lessons: below the focus, then above, then the side.
         static void ResolveLessonGlove(Rect focus, Rect honey, Rect plate, CoachSeat.FocusText text, float s,
-            float screenW, float screenH, Rect[] cells, int cellN, out Vector2 aim, out float approach, out Rect glove)
+            float screenW, float screenH, Rect[] cells, int cellN, out Vector2 aim, out float approach, out Rect glove, int step = 0)
         {
             if (cellN > 0 && cells != null && TryHoneyGlove(cells, cellN, plate, text, s, screenW, screenH, out aim, out approach, out glove))
                 return;
+            // b103: card-enlarge step comes in right to left (fingertip on the card's right side, hand off to
+            // the right). The card-flip step points at the empty lower area of the open card, under the text.
+            if (step == 1)
+            {
+                var sa = new[] { new Vector2(focus.xMax - 6f, focus.center.y), new Vector2(focus.xMax - 6f, focus.y + focus.height * 0.7f) };
+                for (int i = 0; i < sa.Length; i++)
+                {
+                    var g = GloveBody(sa[i], -90f, s, false);
+                    if (text.Hits(g) || CoachSeat.FocusText.Over(g, plate)) continue;
+                    if (g.xMax < 4f || g.yMax < 4f || g.xMin > screenW - 4f || g.yMin > screenH - 4f) continue;
+                    aim = sa[i]; approach = -90f; glove = g;
+                    return;
+                }
+            }
+            else if (step == 2 && focus.width > 2f)
+            {
+                // Card-flip step: fingertip in the empty open area low on the card, under the text (the bands are
+                // roomier than the ink, so the lower 40% of the flavor band counts as open). The hand comes in from
+                // the right. It may overlap the caption plate (the glove draws above captions) but never the title.
+                float ink = text.Title.yMax;
+                if (text.Body.width > 2f) ink = Mathf.Max(ink, text.Body.y + text.Body.height * 0.6f);
+                if (text.Flavor.width > 2f) ink = Mathf.Max(ink, text.Flavor.y + text.Flavor.height * 0.6f);
+                float low = focus.yMax - focus.height * 0.07f;
+                for (float y = low; y >= focus.y + focus.height * 0.55f; y -= focus.height * 0.03f)
+                {
+                    var at = new Vector2(focus.center.x, y);
+                    var g = GloveBody(at, -90f, s, false);
+                    if (CoachSeat.FocusText.Over(g, text.Title)) continue;
+                    if (g.yMin < ink - 0.3f * g.height) continue;
+                    if (g.xMax < 4f || g.yMax < 4f || g.xMin > screenW - 4f || g.yMin > screenH - 4f) continue;
+                    aim = at; approach = -90f; glove = g;
+                    return;
+                }
+            }
             bool haveHoney = honey.width > 2f && honey.height > 2f;
             var band = haveHoney ? honey : focus;
             float[] angs = { 0f, 180f, -90f, 90f };

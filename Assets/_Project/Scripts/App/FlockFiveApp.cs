@@ -246,6 +246,9 @@ namespace FlockFive
         float _hivePageTurn = 99f;
         readonly bool[] _hiveFaceBack = new bool[Hive.AlbumSlots];
         const int HivePageSize = 9;
+        static readonly Rect[] _honeyHits = new Rect[HoneyPoke.Cap];
+        int _honeyCellLast = -1;
+        Rect _albumBookR;
         int _hiveInspect = -1; // album slot (kind×finish), -1 = closed
         float _hiveInspectT; // 0..1 pull animation (open), also used for close
         bool _hiveInspectClosing;
@@ -265,7 +268,18 @@ namespace FlockFive
         bool _levelHiveDrag;
         bool _levelHiveSwallow;
         Rect _levelHiveRect;
-        const float HiveCarouselStep = 1.5f;
+        public const float HiveNeighborScale = 0.72f;
+        // b103: rest spacing so a neighbour never overlaps the centre card (half widths plus a small air gap).
+        public static float HiveRestStride(float cardW) => cardW * (0.5f + HiveNeighborScale * 0.5f + 0.06f);
+        // Where a release leaves the carousel: the card nearest the finger's final position.
+        public static float HiveReleasePos(float shown, float dragPx, float stride, int count)
+        {
+            if (count <= 1) return 0f;
+            float pos = shown - dragPx / Mathf.Max(1f, stride);
+            return Mathf.Repeat(pos, count);
+        }
+        public static int HiveReleasePick(float pos, int count) => count <= 1 ? 0 : ((Mathf.RoundToInt(pos) % count) + count) % count;
+        float _levelHiveStride;
         const string HiveTitle = "Collection";
         const string HiveSubtitle = "Find bees to earn cards.";
         const string HiveHowTo = "Tap a card to take a look, tap again to flip.";
@@ -6392,6 +6406,14 @@ namespace FlockFive
             TickHomeAvatar();
         }
 
+        // The glove is on Restart or Hive: let the real control run.
+        bool HudGloveTap(Vector2 screen, Rect restart, Rect hive, Vector2 gui)
+        {
+            if (restart.Contains(gui)) { Restart(); return true; }
+            OpenLevelHive();
+            return true;
+        }
+
         bool HitHud(Vector2 screen)
         {
             if (LessonTapBlocked()) return false;
@@ -6409,6 +6431,9 @@ namespace FlockFive
                 return true;
             }
             if (gui.y < top) return true;
+            // b103: while a garden lesson glove is up, Restart and Hive only count under the glove.
+            if (CueGloveOwnsHud() && (restart.Contains(gui) || (HiveReachable() && hive.Contains(gui))))
+                return !GloveTapHits(screen) ? true : HudGloveTap(screen, restart, hive, gui);
             if (restart.Contains(gui))
             {
                 Restart();
@@ -8845,6 +8870,7 @@ namespace FlockFive
         {
             if (r.width < 8f || alpha < 0.02f || age < 0f) return;
             if (!_stampRepaint) { _stampR = r; _stampMul = mul; _stampA = alpha; _stampAge = age; _stampSpark = sparkle; _stampThud = thud; _stampFrame = Time.frameCount; }
+            r = StreakBadge.Cap(r);
             mul = StreakTier.Display(mul);
             float land = RewardStampDur * RewardStampLandU();
             float waxAge;
@@ -16520,13 +16546,20 @@ namespace FlockFive
         // Compact header. The hive icon and "Collection" title ride the Back medal's row
         // (right of it), and the instruction text sits in one plate right under that row,
         // so the card grid gets the freed height. Returns the bottom of the text plate.
+        // b103 (Brandon): the header plate (hive icon + title) starts a clear gap right of the Back medal. The
+        // gap is measured to the PLATE edge, which hangs BoxPad.x past its content, so the two never touch.
+        public const float AlbumHeaderGapRef = 12f;
+        public static float AlbumHeaderGap(Rect back, float s) => Mathf.Max(AlbumHeaderGapRef * s, back.width * 0.12f);
+        public static float AlbumHeaderX(Rect back, float s, float screenH)
+            => back.xMax + AlbumHeaderGap(back, s) + CaptionLayout.BoxPad(screenH).x;
+
         float DrawAlbumHeader(float s, Rect back)
         {
             int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
             float left = Mathf.Max(16f * s, Screen.safeArea.xMin + 10f);
             float textRight = Screen.width - Mathf.Max(16f * s, Screen.width - Screen.safeArea.xMax + 12f);
             float hiveSize = Mathf.Clamp(back.height * 0.80f, 44f, 92f);
-            var hiveHead = new Rect(back.xMax + 12f * s, back.center.y - hiveSize * 0.5f, hiveSize, hiveSize);
+            var hiveHead = new Rect(AlbumHeaderX(back, s, Screen.height > 2f ? Screen.height : 720f), back.center.y - hiveSize * 0.5f, hiveSize, hiveSize);
             float textX = hiveHead.xMax + 12f * s;
             float textW = Mathf.Max(48f, textRight - textX);
             var titleSt = GuiPool.Label(GuiSlot.AlbumTitle);
@@ -16830,7 +16863,8 @@ namespace FlockFive
             if (_home != HomeFace.Hive) return;
             if (_albumTutorOn || AlbumTutorDone()) return;
             if (!AlbumPageSettled() || !TutorialGateClear()) return;
-            // An empty book still teaches: the glove points at the grid (AlbumEmptyLine).
+            // Empty book: the glove points at the middle sleeve and a release on it advances (NoteEmptyAlbumTap),
+            // so the lesson can never trap a player with zero cards.
             if (_hiveInspect >= 0)
             {
                 if (!AlbumInspectReady() || Hive.CountOfSlot(_hiveInspect) <= 0) return;
@@ -16951,7 +16985,7 @@ namespace FlockFive
             {
                 Rect focus = _albumTutorStep <= 1 ? _albumCardR : _albumInspectR;
                 string lesson = AlbumTutorLine();
-                var pose = PoseLesson(_albumTutorStep, focus, Screen.width, Screen.height, lesson, AlbumHoneyCount());
+                var pose = PoseLesson(_albumTutorStep, focus, Screen.width, Screen.height, lesson, AlbumHoneyCount(), _albumPagerOk ? _albumPagerR : default);
                 aim = pose.Aim;
                 approach = pose.Approach;
             }
@@ -17049,7 +17083,7 @@ namespace FlockFive
                 Rect focus = step <= 1 ? _albumCardR : _albumInspectR;
                 if (focus.width > 8f && focus.height > 8f)
                 {
-                    var pose = PoseLesson(step, focus, Screen.width, Screen.height, line, AlbumHoneyCount());
+                    var pose = PoseLesson(step, focus, Screen.width, Screen.height, line, AlbumHoneyCount(), _albumPagerOk ? _albumPagerR : default);
                     CapSpot("album.coach"); PaintCoachCaption(line, pose.Seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
                     return;
                 }
@@ -17063,7 +17097,11 @@ namespace FlockFive
             if (step < 0 && _upgradeBtnR.width > 8f)
                 y = _upgradeBtnR.y - h - 14f * s;
             else if (step >= AlbumStepPage && _albumPagerOk)
-                y = _albumPagerR.y - h - 18f * s;
+            {
+                // b103: the page caption rides the "Page N of M" strip under the numbers. It never covers the
+                // grid or the number row.
+                y = _albumBookR.width > 2f ? _albumBookR.y : _albumPagerR.yMax + 18f * s;
+            }
             else if ((step == 2 || step == 3) && _albumInspectOk)
                 y = _albumInspectR.y - h - 12f * s;
             else if (_albumCardOk)
@@ -17230,7 +17268,7 @@ namespace FlockFive
                 TurnHivePage(_hivePage + albumSwipeDir);
 
             // Page chips. The painted box is the hit, at least 48pt.
-            float tabY = pageBottom + 6f * s;
+            float tabY = grid.TabY;
             float tabGap = 8f;
             int shown = Mathf.Min(pages, 5);
             float vis = pagerHit;
@@ -17287,7 +17325,8 @@ namespace FlockFive
             ofSt.wordWrap = false;
             int bookHi = Mathf.Max(typeFloor + 4, Mathf.RoundToInt(24f * s));
             string ofBook = "Page " + (_hivePage + 1) + " of " + pages + "   ·   " + Hive.Found + " found";
-            var bookR = new Rect(16f * s, tabY + pagerHit + footGap, Screen.width - 32f * s, pagerLab);
+            var bookR = new Rect(16f * s, grid.BookY, Screen.width - 32f * s, pagerLab);
+            _albumBookR = bookR;
             ofSt.fontSize = FitFont(ofSt, ofBook, bookR.width * 0.92f, bookR.height * 0.86f, typeFloor, bookHi);
             DrawCoachPanel(bookR, 1f);
             StampReadable(bookR, ofBook, ofSt, AlbumInk);
@@ -17346,10 +17385,11 @@ namespace FlockFive
             if (tick && _hiveTutorOn && !Ads.IsShowing && !_hiveInspectClosing)
                 AdvanceHiveTutor(ix);
             DrawBeeAlbumCard(big, ix, s, true);
+            HoneyPoke.Draw(AdPause.Unscaled);
             if (t > 0.4f)
                 DrawFlipArrows(big, s, Mathf.Clamp01(t));
             float hintTop = big.yMax + 12f * s;
-            if (t > 0.4f && !(_albumTutorOn && _albumTutorStep == 3))
+            if (t > 0.4f && !_albumTutorOn)
                 DrawFlipHint(hintTop, s, Mathf.Clamp01(t));
             bool upgradeHit = false;
             if (t > 0.55f && !_hiveInspectClosing && !_hiveTutorOn && !(_albumTutorOn && _albumTutorStep == 3))
@@ -17376,10 +17416,13 @@ namespace FlockFive
             GUI.Label(xBtn, "X", xLab);
 
             bool fullyOpen = !_hiveInspectClosing && u >= 1f;
+            // b103 (Brandon): a honeycomb press, tap or drag is the smudge, never the flip. The comb
+            // pads take the press first, so the card pad below never sees it.
+            bool honeyAte = fullyOpen && _hiveFlip < 0 && !_hiveTutorOn && PokeHoneycombs(big, ix);
             // Card taps during the demo are swallowed so they neither flip nor dismiss.
             if (_hiveTutorOn)
                 HitPad(big, out _);
-            else if (fullyOpen && !upgradeHit && HitPad(big, out _) && !PageSwipeAte)
+            else if (fullyOpen && !upgradeHit && HitPad(big, out _) && !honeyAte && !PageSwipeAte)
                 BeginHiveFlip(ix);
 
             // Tap dim outside card closes (after card/X/Back/upgrade so they win hit tests)
@@ -17614,6 +17657,38 @@ namespace FlockFive
             BeeFlare.Draw(card, left, s, alpha);
         }
 
+        // True when a comb took the press. The card underneath must not flip.
+        bool PokeHoneycombs(Rect card, int ix)
+        {
+            if ((uint)ix >= (uint)_hiveFaceBack.Length || !_hiveFaceBack[ix]) return false;
+            if (!BadgerSchedule.Enabled) return false;
+            int honey = Hive.HoneyOfSlot(ix);
+            if (honey <= 0) return false;
+            var face = CardText.FaceOf(card);
+            int n = CardText.HoneyBand(face, honey, true, _honeyHits);
+            var e = Event.current;
+            bool ate = false;
+            for (int i = 0; i < n; i++)
+            {
+                bool fire = HitPad(_honeyHits[i], out bool held);
+                bool drag = e != null && e.type == EventType.MouseDrag && _honeyHits[i].Contains(e.mousePosition);
+                if (drag && _honeyCellLast != i)
+                {
+                    _honeyCellLast = i;
+                    ate = true;
+                    HoneyPoke.Place(AdPause.Unscaled, _honeyHits[i].center, _honeyHits[i].width * 0.42f);
+                    Sfx.CardBump();
+                }
+                if (held) ate = true;
+                if (!fire) continue;
+                ate = true;
+                _honeyCellLast = -1;
+                HoneyPoke.Place(AdPause.Unscaled, _honeyHits[i].center, _honeyHits[i].width * 0.42f);
+                Sfx.CardBump();
+            }
+            return ate;
+        }
+
         void BeginPutAwayInspect()
         {
             if (_hiveInspect < 0 || _hiveInspectClosing) return;
@@ -17653,6 +17728,7 @@ namespace FlockFive
             _hiveInspectT = 0f;
             _hiveFlip = -1;
             _hiveFlipT = 0f;
+            HoneyPoke.Clear();
         }
 
         void DrawFoilSheen(Rect face, BeeFinish finish, int slot, bool inspectView)
@@ -18029,15 +18105,7 @@ namespace FlockFive
             if (ev != null && ev.type == EventType.Repaint && Time.frameCount != _levelHiveFrame)
             {
                 _levelHiveFrame = Time.frameCount;
-                if (count > 1 && _hiveInspect < 0 && !_levelHiveDrag)
-                {
-                    _levelHiveAuto += AdPause.UnscaledDelta;
-                    if (_levelHiveAuto >= HiveCarouselStep)
-                    {
-                        _levelHiveAuto = 0f;
-                        _levelHivePick = (_levelHivePick + 1) % count;
-                    }
-                }
+                // b103 (Brandon): no auto-advance. The cards move only under the finger; release settles in place.
                 if (!_levelHiveDrag) EaseHiveCarousel(count);
             }
 
@@ -18050,7 +18118,8 @@ namespace FlockFive
             float cardH = stage.height * 0.94f;
             float cardW = Mathf.Min(cardH / 1.35f, stage.width * 0.62f);
             cardH = cardW * 1.35f;
-            float stride = cardW * 0.78f;
+            float stride = HiveRestStride(cardW);
+            _levelHiveStride = stride;
             float shown = _levelHiveShown;
             if (_levelHiveDrag && count > 1)
                 shown -= _levelHiveDragX / Mathf.Max(1f, stride);
@@ -18075,7 +18144,7 @@ namespace FlockFive
                     if (center != (pass == 1)) continue;
                     float off = HiveWrap(i - shown, count);
                     if (!center && Mathf.Abs(off) > 1.25f) continue;
-                    float sc = Mathf.Lerp(1f, 0.72f, Mathf.Clamp01(Mathf.Abs(off)));
+                    float sc = Mathf.Lerp(1f, HiveNeighborScale, Mathf.Clamp01(Mathf.Abs(off)));
                     float w = cardW * sc;
                     float h = cardH * sc;
                     var r = new Rect(cx + off * stride - w * 0.5f, cy - h * 0.5f, w, h);
@@ -18131,7 +18200,7 @@ namespace FlockFive
                         _levelHiveShown = i;
                         _levelHiveAuto = 0f;
                     }
-                    bool on = i == _levelHivePick;
+                    bool on = i == centerIx;
                     GUI.color = on
                         ? new Color(1f, 0.82f, 0.28f, 0.95f)
                         : new Color(1f, 0.94f, 0.72f, 0.35f);
@@ -18191,7 +18260,12 @@ namespace FlockFive
                         e.Use();
                         float slop = Mathf.Max(28f, 36f * s);
                         if (count > 1 && Mathf.Abs(dx) >= slop)
-                            dir = dx < 0f ? 1 : -1;
+                        {
+                            // Leave the cards where the finger left them; the ease settles on the nearest.
+                            float pos = HiveReleasePos(_levelHiveShown, dx, _levelHiveStride, count);
+                            _levelHiveShown = pos;
+                            _levelHivePick = HiveReleasePick(pos, count);
+                        }
                         else if (inside)
                             tap = true;
                     }
@@ -18303,6 +18377,7 @@ namespace FlockFive
                 _hiveFaceBack[slot] = false;
             _hiveFlip = -1;
             _hiveFlipT = 0f;
+            HoneyPoke.Clear();
             ClearHiveFresh(slot);
             if (_albumTutorOn && _albumTutorStep <= 1)
                 AdvanceAlbumTutor(2);
@@ -18663,7 +18738,7 @@ namespace FlockFive
         void DrawStreakCaution(Rect headR, float s, GUIStyle title)
         {
             int mul = _restartSavedMul >= 2 ? _restartSavedMul : 2;
-            float d = Mathf.Min(headR.width * 0.36f, 92f * s);
+            float d = Mathf.Min(headR.width * 0.36f, 92f * s) * DeviceFit.ControlK();
             var chip = new Rect(headR.center.x - d * 0.5f, headR.y, d, d);
             string numeral = MulChip(mul);
             var ink = StreakBadge.Colors(mul);
