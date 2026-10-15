@@ -18292,12 +18292,20 @@ namespace FlockFive
             DismissAdHand();
             if (_gift == GiftFace.Movie || _gift == GiftFace.Wait) return;
             _gift = GiftFace.None;
+            AdRetry.Clear();
             _swallowTapsUntil = PlayClock.Now + 0.45f;
             _suppressGiftUntil = PlayClock.Now + 1f;
         }
 
         // The Watch ad stage. The flag marks the coroutine alive, so the interruption
         // check can tell a running stage from one that was cut off.
+        // One ad request at a time: a second Watch/Retry tap mid-request is ignored.
+        void StartWatchGift()
+        {
+            if (_watchGiftLive) return;
+            StartCoroutine(WatchGift());
+        }
+
         IEnumerator WatchGift()
         {
             _watchGiftLive = true;
@@ -18343,6 +18351,10 @@ namespace FlockFive
             if (!pay)
             {
                 _busy = false;
+                // Never a silent bounce back to Watch: say the ad was not ready.
+                if (AdRetry.ShouldOffer(false)) AdRetry.Offer();
+                AdLog.Add("gift card kept up after no grant (retry state "
+                    + (AdRetry.Active ? "on" : "off") + ", reason " + AdRetry.Reason + ")");
                 RaiseGiftCard();
                 yield break;
             }
@@ -18576,9 +18588,11 @@ namespace FlockFive
             GUI.DrawTexture(new Rect(plate.xMax - 5f * s, plate.y + 2f * s, 3f * s, plate.height - 4f * s), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
-            string head = _freezeOffer
-                ? "No more moves, you're frozen!"
-                : "Watch AD for an extra branch";
+            string head = AdRetry.Active && !_keepStreak
+                ? AdRetry.Line
+                : (_freezeOffer
+                    ? "No more moves, you're frozen!"
+                    : "Watch AD for an extra branch");
             // Inset past the screw bases so the gift headline never sits under a bulb.
             // The freeze sign has no bulbs, so its line uses that same inset on every side.
             float insetX = Mathf.Max(12f * s, plate.width * 0.08f);
@@ -18665,7 +18679,7 @@ namespace FlockFive
                 }
                 if (contGo)
                 {
-                    StartCoroutine(WatchGift());
+                    StartWatchGift();
                     return;
                 }
                 return;
@@ -18684,7 +18698,7 @@ namespace FlockFive
                 };
             var watchSt = _giftWatch;
             watchSt.fontStyle = FontStyle.Bold;
-            string watchLab = "Watch";
+            string watchLab = AdRetry.Active ? AdRetry.ButtonLabel : "Watch";
             // Round cap is inset from FlowerDisc. Fit inside it, then leave the outline's pixels.
             int ink = 1;
             float capW = Mathf.Max(24f, disc.width * 0.58f - ink * 4f);
@@ -18710,7 +18724,7 @@ namespace FlockFive
             }
             if (watch)
             {
-                StartCoroutine(WatchGift());
+                StartWatchGift();
                 return;
             }
         }
