@@ -1081,7 +1081,19 @@ namespace FlockFive
                 float push = plate.yMax + gap - y0;
                 if (y0 < plate.yMax + gap && y1 > plate.yMin && push > need) need = push;
             }
-            if (aim.y < plate.yMin && need > 0f) need = 0f; // banner under the target: nothing to clear
+            if (aim.y < plate.yMin)
+            {
+                // Banner below the target: only a hand reaching down into it needs the tip lifted.
+                need = 0f;
+                for (int dip = 0; dip <= 1; dip++)
+                {
+                    GloveSpan(aim, deg, dh, dip, false, out float x0, out float y0, out float x1, out float y1);
+                    if (x1 < plate.xMin || x0 > plate.xMax) continue;
+                    float up = y1 - (plate.yMin - gap);
+                    if (up > 0f && up > need) need = up;
+                }
+                return new Vector2(aim.x, aim.y - need);
+            }
             return new Vector2(aim.x, aim.y + need);
         }
 
@@ -3422,6 +3434,20 @@ namespace FlockFive
         // b95 (Brandon): where a garden banner can ride at the bottom: below the lowest branch row
         // and above the restart and hive controls. Pure geometry, shared with the tests.
         // False when the band does not fit there; the lesson then keeps the top seat.
+        // b98 (Brandon): a garden lesson banner sits at the BOTTOM of the screen, under the lowest branch
+        // row. It may cover the restart / hive controls (they are not part of any lesson step), but never
+        // a bird row. False when even the very bottom would leave it over the lowest branch row.
+        public static bool GardenBottomSeat(float bandH, float rowBottom, float screenH, float safeBottom, float gap, out float y)
+        {
+            y = screenH - safeBottom - gap - bandH;
+            return y >= rowBottom + gap;
+        }
+
+        public static float GardenBannerY(float bandH, float rowBottom, Rect restart, Rect hive, float screenH, float safeBottom, float gap, float topY)
+        {
+            return GardenBottomSeat(bandH, rowBottom, screenH, safeBottom, gap, out float y) ? y : topY;
+        }
+
         public static bool BottomBannerSeat(float bandH, float rowBottom, Rect restart, Rect hive, float screenH, float safeBottom, float gap, out float y)
         {
             y = 0f;
@@ -3477,7 +3503,7 @@ namespace FlockFive
             {
                 HudLayout(out _, out _, out _, out var hudRestart, out var hudHive);
                 float inset = Mathf.Max(8f, safe.yMin + 4f);
-                if (BottomBannerSeat(band.height, rowBot, hudRestart, hudHive, screenH, inset, gap, out float by))
+                if (GardenBottomSeat(band.height, rowBot, screenH, inset, gap, out float by))
                 {
                     var test = new Rect(0f, by, w, band.height);
                     bool aimIn = _cueAimGui.sqrMagnitude > 1f && _cueAimGui.y > by - CaptionLayout.GloveReach(s) && _cueAimGui.y < test.yMax + CaptionLayout.GloveReach(s);

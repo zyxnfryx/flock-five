@@ -206,6 +206,34 @@ namespace FlockFive.Editor
                     }
                 }
 
+                // Level 1 target (b4's red tip bird, top visible row) on iPhone / tall iPhone / iPad / SE: the
+                // garden banner takes its seat (bottom when the lesson allows it), the glove comes in sideways
+                // from the right, and the fingertip must land INSIDE the target bird's rect (no nudge off it).
+                {
+                    var devs = new[] { new Vector2(1179f, 2556f), new Vector2(1290f, 2796f), new Vector2(1536f, 2048f), new Vector2(750f, 1334f) };
+                    string[] dtags = { "iphone", "tall-iphone", "ipad", "se" };
+                    for (int d = 0; d < devs.Length; d++)
+                    {
+                        float w = devs[d].x, h = devs[d].y;
+                        DeviceFit.TestWindow = w / h;
+                        float s = DeviceFit.Ui(w, h);
+                        var safe = new Rect(0f, h * 0.04f, w, h * 0.92f);
+                        float bandH = h * 0.12f;
+                        float rowBot = h * 0.727f;
+                        // Target bird: tip of the top-left visible limb, from the build 98 screenshot (fractions).
+                        var target = new Vector2(w * 0.33f, h * 0.39f);
+                        var birdRect = new Rect(target.x - w * 0.05f, target.y - h * 0.026f, w * 0.10f, h * 0.052f);
+                        CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
+                        float by = FlockFiveApp.GardenBannerY(bandH, rowBot, restart, hive, h, safe.yMin, 8f * s, h * 0.234f);
+                        var plate = new Rect(0f, by, w, bandH);
+                        var aim = FlockFiveApp.GardenSidewaysAim(target, plate, s, w, out float deg);
+                        var box = FlockFiveApp.GloveAuditBox(aim, deg, FlockFiveApp.GloveAuditDh(s), 0f);
+                        Check("level1 fingertip on the red bird, glove clear of banner " + dtags[d],
+                            birdRect.Contains(aim) && deg == -90f && CaptionLayout.GloveClearsBanner(box, plate) && plate.yMin > target.y,
+                            "banner y " + by.ToString("0") + " target y " + target.y.ToString("0") + " aim y " + aim.y.ToString("0") + " bird " + birdRect.yMin.ToString("0") + ".." + birdRect.yMax.ToString("0"));
+                    }
+                }
+
                 // Glove entry: start-to-target distance is 67% of the old one, same line (right to left).
                 {
                     var aim = new Vector2(300f, 900f);
