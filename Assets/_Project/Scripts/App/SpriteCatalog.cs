@@ -1012,8 +1012,21 @@ namespace FlockFive
             if (_letters == null) _letters = new Sprite[26];
             int i = c - 'A';
             if (_letters[i] == null)
-                _letters[i] = LoadNew("Sprites/fx_let_" + c, 150f);
+                _letters[i] = c == 'V' ? FinaleV() : LoadNew("Sprites/fx_let_" + c, 150f);
             return _letters[i];
+        }
+
+        // The only V: the current pointed, rounded finale glyph. The old Resources
+        // fx_let_V.png was an empty stub and is gone, so no path can fall back to it.
+        static Sprite FinaleV()
+        {
+            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            if (!tex.LoadImage(FinaleVBytes.Png)) return Glow;
+            var spr = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 200f);
+            spr.name = "FinaleV";
+            return spr;
         }
 
         public static Sprite Digit(int d)
