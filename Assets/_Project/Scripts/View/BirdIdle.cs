@@ -157,6 +157,18 @@ namespace FlockFive
         public int WingPose => _wingPose;
         public bool FlapDriven => _flapDrive;
 
+        // Steady wings: lock the driven bird on the wings-up pose (the anchor pose).
+        // No pose advance, no flap. Call after DriveFlap.
+        bool _wingHold;
+        public void HoldWing()
+        {
+            _wingHold = true;
+            SixPose = false;
+            _poseIndex = 1;
+            _poseAccum = 0f;
+            ApplyFlapFrame();
+        }
+
         public void DriveFlap(float cyclesPerSec)
         {
             _flapHz = Mathf.Max(0.4f, cyclesPerSec);
@@ -322,6 +334,13 @@ namespace FlockFive
         {
             // Two open poses per cycle. Catch up at most one pose on a long frame.
             // ShowClock follows the capture step so a slow editor frame does not skip the flap.
+            if (_wingHold)
+            {
+                _poseIndex = 1;
+                ApplyFlapFrame();
+                if (_flapAnchored) transform.localPosition += FlapBodyPull();
+                return;
+            }
             _poseAccum += Mathf.Min(ShowClock.Delta, 1f / 30f) * _flapHz * (SixPose ? 6f : 2f);
             if (_poseAccum >= 1f)
             {
