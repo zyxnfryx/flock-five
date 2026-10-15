@@ -387,6 +387,23 @@ namespace FlockFive
         // back and forth. CheckOver ices the first case on its own.
         bool DeadEndStuck() => _hopTrail.Stuck(_board);
 
+        // b104 (Brandon): the stuck gift hint armed on a SOLVED board (no progress hop and nothing to collect
+        // reads as "stuck") while a sparrow was arriving. One shared rule for every stuck hint (the general
+        // nudge and the Level 1 "Stuck? Tap the gift branch"): never while the board is solved, a pest is on
+        // stage or resolving, a scatter / branch-break plays, a collect runs, or any popup is up.
+        bool StuckHintAllowed()
+        {
+            if (_board == null) return false;
+            return StuckHintRule.Allowed(_board, new StuckHintRule.Live
+            {
+                Won = _won, Restarting = _restarting || _splash || _gardenScoring, Frozen = _frozen,
+                Paused = GamePause.Paused || _gift != GiftFace.None || _restartAsk != RestartAsk.None,
+                Modal = OpenModal() != ModalBlock.Id.None,
+                Collecting = _collecting || _collectDepth > 0, SolvedMerging = _solvedMerging, Fitting = GardenFit.Busy,
+                PestOnStage = PestOnStage(), PestResolving = _pestResolving, PestFinishing = _pestFinishing, Scatter = _scatterBusy,
+            });
+        }
+
         // Build 89. Stuck: the gift glove and glow point at the locked ad
         // branch again, whatever the once-per-install tutorial flag says. It
         // only points at an offer that is already there and never plays an ad.
@@ -394,6 +411,7 @@ namespace FlockFive
         void DeadEndNudge()
         {
             if (_coach || _won || _board == null) return;
+            if (!StuckHintAllowed()) { _deadEndNudged = false; return; }
             if (!DeadEndStuck())
             {
                 _deadEndNudged = false;
@@ -799,6 +817,17 @@ namespace FlockFive
             }
 
             CoachClearCue();
+            // b104: a hint already armed dies the moment the board is solved or a pest / popup takes the stage.
+            if (!_coach && PlayClock.Now < _coachGiftUntil && !StuckHintAllowed())
+            {
+                _coachGiftUntil = -1f;
+                _coachResumeFade = false;
+                _deadEndNudged = false;
+                CoachHideGlow();
+                _gloveReady = false;
+                _coachFade = 0f;
+                return;
+            }
             if (PlayClock.Now < _coachGiftUntil)
             {
                 int g = GiftBranch();

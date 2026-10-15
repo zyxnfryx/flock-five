@@ -2109,7 +2109,7 @@ namespace FlockFive
             var pressed = GUI.matrix;
             if (squish < 0.995f)
                 GUIUtility.ScaleAroundPivot(new Vector2(squish, squish * 0.94f), flower.center);
-            var disc = DrawPopupButton(flower, held, ready);
+            var disc = DrawPopupButton(flower, held, ready, 1f, true, false); // no release sparkle on Claim
             var labR = new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.56f);
             _dailyClaim.fontSize = _dailyClaimPx;
             int ink = Mathf.Clamp(Mathf.RoundToInt(_dailyClaimPx * 0.12f), 2, 6);
