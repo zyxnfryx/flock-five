@@ -239,6 +239,28 @@ namespace FlockFive.Editor
                         "fits " + ok1 + " y1 " + y1.ToString("0") + " y2 " + y2.ToString("0") + " flush " + flush.ToString("0") + " rowBot " + rowBot.ToString("0"));
                 }
 
+                // b101: the lesson banner seat is FIXED. It must not depend on the lowest-bird bound (which moves
+                // as birds lift and hop) or on where the glove aims; the top fallback is gone.
+                for (int d = 0; d < sizes.Length; d++)
+                {
+                    float w = sizes[d].x, h = sizes[d].y;
+                    DeviceFit.TestWindow = w / h;
+                    float s = DeviceFit.Ui(w, h);
+                    var safe = new Rect(0f, h * 0.04f, w, h * 0.92f);
+                    float inset = Mathf.Max(8f, safe.yMin + 4f);
+                    float refH = FlockFiveApp.GardenRefBandH(w, h, safe, s, 0f);
+                    CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var rs, out var hv);
+                    float y0 = FlockFiveApp.GardenBannerY(refH, h * 0.5f, rs, hv, h, inset, 8f * s, h * 0.234f);
+                    int flips = 0;
+                    for (float rb = h * 0.50f; rb <= h * 0.99f; rb += h * 0.01f)
+                        if (Mathf.Abs(FlockFiveApp.GardenBannerY(refH, rb, rs, hv, h, inset, 8f * s, h * 0.234f) - y0) > 0.01f) flips++;
+                    Check("garden banner seat never flips with the bird bound " + stags[d], flips == 0 && y0 > h * 0.5f, "flips " + flips + " y " + y0.ToString("0"));
+                    // The fixed seat never moves with the glove aim either.
+                    float ya = FlockFiveApp.GardenFixedSeatY(w, h, safe, s, 0f);
+                    float yb = FlockFiveApp.GardenFixedSeatY(w, h, safe, s, 0f);
+                    Check("garden banner fixed seat is stable " + stags[d], Mathf.Abs(ya - yb) < 0.001f && Mathf.Abs(ya - y0) < 0.01f, "y " + ya.ToString("0") + " vs " + y0.ToString("0"));
+                }
+
                 // Level 1 flow on the real Dawn Garden board: step 1 = branch 0 (RRR) onto branch 5 (lone red),
                 // step 2 = branch 4 (red tip) onto branch 5, which completes five reds.
                 {

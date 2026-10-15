@@ -3496,15 +3496,33 @@ namespace FlockFive
             return refH;
         }
 
+        // b101 (Brandon): the lesson banner seat is FIXED: lifted bottom seat, always. No top fallback and no
+        // dependence on the lowest bird (it moves as birds lift and hop) or on the glove aim (it changes per
+        // step). It may cover the lower rows or the restart spiral; the glove avoids it by pose.
+        // Computed from the tallest of the lesson banners and cached per screen layout.
+        static float _gardenSeatKey = float.NaN, _gardenSeatY;
+        public static float GardenFixedSeatY(float w, float h, Rect safe, float s, float own)
+        {
+            float key = w * 31f + h * 17f + safe.yMin * 7f + safe.height * 3f + s * 1009f;
+            if (key == _gardenSeatKey) return _gardenSeatY;
+            float inset = Mathf.Max(8f, safe.yMin + 4f);
+            float refH = GardenRefBandH(w, h, safe, s, 0f);
+            GardenBottomSeat(refH, 0f, h, inset, 8f * s, out float y);
+            _gardenSeatKey = key; _gardenSeatY = y;
+            return y;
+        }
+
+        // The rowBottom argument is kept for callers and tests, and ignored on purpose.
         public static bool GardenBottomSeat(float bandH, float rowBottom, float screenH, float safeBottom, float gap, out float y)
         {
             y = screenH - safeBottom - gap - screenH * CaptionLayout.GardenBannerLiftFrac - bandH;
-            return y >= rowBottom + gap;
+            return true;
         }
 
         public static float GardenBannerY(float bandH, float rowBottom, Rect restart, Rect hive, float screenH, float safeBottom, float gap, float topY)
         {
-            return GardenBottomSeat(bandH, rowBottom, screenH, safeBottom, gap, out float y) ? y : topY;
+            GardenBottomSeat(bandH, rowBottom, screenH, safeBottom, gap, out float y);
+            return y;
         }
 
         public static bool BottomBannerSeat(float bandH, float rowBottom, Rect restart, Rect hive, float screenH, float safeBottom, float gap, out float y)
@@ -3558,20 +3576,10 @@ namespace FlockFive
             // lowest branch row and over the restart / hive controls, when it fits there and the
             // glove target is not in it. Otherwise it keeps the top seat (rules below).
             bool bottomSeat = false;
-            if (spot == "coach.line" && IsGardenBottomLine(text) && BoardBottomGui(out float rowBot))
+            if (spot == "coach.line" && IsGardenBottomLine(text))
             {
-                HudLayout(out _, out _, out _, out var hudRestart, out var hudHive);
-                float inset = Mathf.Max(8f, safe.yMin + 4f);
-                // One seat for every garden lesson: the top edge comes from the tallest garden lesson banner,
-                // so "Tap a branch to pick up its top birds." and "Tap a matching or empty branch." (and the
-                // rest) share the same top Y.
-                float refH = GardenRefBandH(w, screenH, safe, s, band.height);
-                if (GardenBottomSeat(refH, rowBot, screenH, inset, gap, out float by))
-                {
-                    var test = new Rect(0f, by, w, refH);
-                    bool aimIn = _cueAimGui.sqrMagnitude > 1f && _cueAimGui.y > by - CaptionLayout.GloveReach(s) && _cueAimGui.y < test.yMax + CaptionLayout.GloveReach(s);
-                    if (!aimIn) { band.y = by; bottomSeat = true; }
-                }
+                band.y = GardenFixedSeatY(w, screenH, safe, s, band.height);
+                bottomSeat = true;
             }
             // b94 (Brandon): the Watch-ad caption is a full-width banner that rides below the Watch
             // flower and the glove, never above them over the card.
