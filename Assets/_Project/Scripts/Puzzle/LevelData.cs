@@ -152,6 +152,9 @@ namespace FlockFive
             return Prep(b);
         }
 
+        // Test hook: Garden 38 packed the same way Open packs a ladder level.
+        public static Board Open38Test() => Pack(Garden38Level.Make(), Garden38Level);
+
         public static int Count => All.Length;
         public static bool HasNext => All.Length > 0;
         const string PrefNext = "flockfive.next";
