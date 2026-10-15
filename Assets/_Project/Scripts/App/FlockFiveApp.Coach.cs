@@ -1048,6 +1048,21 @@ namespace FlockFive
         // toward upright (its tip is then the top of the sprite, so little reaches over the tip)
         // and the tip is only lowered by what is still needed, never a row.
         static readonly float[] GardenApproachDegs = { -45f, -30f, -15f, 0f };
+        // True when the level, sideways hand (points left in the left half, right in the right half)
+        // sits clear of the banner at the target, dip up or down.
+        public static bool GardenHorizontalClear(Vector2 aim, Rect plate, float s, float screenW)
+        {
+            bool mirror = aim.x >= screenW * 0.5f;
+            float ang = ClampUpright(mirror);
+            float dh = GloveDh(s);
+            for (int dip = 0; dip <= 1; dip++)
+            {
+                GloveSpan(aim, ang, dh, dip, mirror, out float x0, out float y0, out float x1, out float y1);
+                if (!CaptionLayout.GloveClearsBanner(new Rect(x0, y0, x1 - x0, y1 - y0), plate)) return false;
+            }
+            return true;
+        }
+
         public static Vector2 GardenAim(Vector2 aimGui, Rect plate, float s, out float approach)
         {
             float gap = CaptionLayout.GloveBannerGap * s;
@@ -1080,6 +1095,12 @@ namespace FlockFive
             }
             else
                 known = TutorCaptionPlate(out plate);
+            // b98 (Brandon): the standard tutorial approach is horizontal. A left-half target is met
+            // from the right (hand points left), a right-half target from the left (hand points
+            // right), level with the target, no rise. Only a spot where that hand would sit on the
+            // banner takes the custom approach below.
+            if (!known || GardenHorizontalClear(aimGui, plate, s, Screen.width))
+                return CoachGloveAt(aimGui, dt, s, 0f, false, float.NaN, default, tapHit);
             if (known && plate.yMin > aimGui.y)
                 return CoachGloveAt(aimGui, dt, s, float.NaN, false, -90f, default, tapHit); // from the right, pointing left
             float approach = GloveBelowDeg;

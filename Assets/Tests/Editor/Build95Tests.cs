@@ -148,6 +148,36 @@ namespace FlockFive.Editor
                         "drop " + drop.ToString("0") + " old " + oldDrop.ToString("0") + " row " + (h * 0.058f).ToString("0") + " deg " + deg + " clear " + clear);
                 }
 
+                // b98 standard approach: horizontal where it clears the banner, custom only where it fails.
+                for (int d = 0; d < sizes.Length; d++)
+                {
+                    float w = sizes[d].x, h = sizes[d].y;
+                    DeviceFit.TestWindow = w / h;
+                    float s = DeviceFit.Ui(w, h);
+                    var plate = new Rect(0f, h * 0.234f, w, h * 0.12f);
+                    int horiz = 0, custom = 0, bad = 0;
+                    for (float y = plate.yMax - 20f * s; y < h * 0.9f; y += h * 0.02f)
+                        for (int xi = 0; xi < 6; xi++)
+                        {
+                            var t = new Vector2(w * (0.10f + 0.80f * xi / 5f), y);
+                            if (FlockFiveApp.GardenHorizontalClear(t, plate, s, w))
+                            {
+                                horiz++;
+                                bool mirror = t.x >= w * 0.5f;
+                                var box = FlockFiveApp.GloveAuditBox(t, mirror ? 90f : -90f, FlockFiveApp.GloveAuditDh(s), 0f);
+                                if (!CaptionLayout.GloveClearsBanner(box, plate)) bad++;
+                            }
+                            else
+                            {
+                                custom++;
+                                var a2 = FlockFiveApp.GardenAim(t, plate, s, out float dg);
+                                var b2 = FlockFiveApp.GloveAuditBox(a2, dg, FlockFiveApp.GloveAuditDh(s), 0f);
+                                if (!CaptionLayout.GloveClearsBanner(b2, plate)) bad++;
+                            }
+                        }
+                    Check("garden glove: horizontal standard, custom only on conflict " + stags[d], bad == 0 && horiz > custom, "horiz " + horiz + " custom " + custom + " bad " + bad);
+                }
+
                 // Glove entry: start-to-target distance is 67% of the old one, same line (right to left).
                 {
                     var aim = new Vector2(300f, 900f);
