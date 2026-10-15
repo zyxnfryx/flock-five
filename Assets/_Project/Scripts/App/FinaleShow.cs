@@ -479,7 +479,7 @@ namespace FlockFive
 
             Sfx.FlockFlutter(1);
             t = 0f;
-            const float approach = 0.42f;
+            const float approach = CrashApproach;
             while (t < approach && peach != null)
             {
                 t += SlingClock.Dt;
@@ -516,7 +516,7 @@ namespace FlockFive
             int impactFrame = 0;
 
             t = 0f;
-            const float through = 0.62f;
+            const float through = CrashThrough;
             while (t < through && peach != null)
             {
                 t += SlingClock.Dt;
@@ -551,9 +551,19 @@ namespace FlockFive
                 yield return null;
             }
             if (peach != null) Object.Destroy(peach.gameObject);
-            yield return new WaitForSeconds(0.85f);
+            // Hold the old total: the extra flight time comes out of the tail.
+            yield return new WaitForSeconds(CrashTail);
         }
 
+        // One knob for the bird's crash-through length. 1 = build 101 (approach 0.42s,
+        // through 0.62s). 1.25 = 25% slower. Hit-stop, pull-back, eases and the
+        // fade (which starts at 62% of the exit) are unchanged, so the fade scales with it.
+        const float CrashSlow = 1.25f;
+        const float CrashApproach = 0.42f * CrashSlow;
+        const float CrashThrough = 0.62f * CrashSlow;
+        const float CrashTailOld = 0.85f;
+        // Tail shortens by exactly what the flight gained, so the finale ends when it did.
+        const float CrashTail = CrashTailOld - ((CrashApproach - 0.42f) + (CrashThrough - 0.62f));
 
         const float HitStop = 0.06f;
 
