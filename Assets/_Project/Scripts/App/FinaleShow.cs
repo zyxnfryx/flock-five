@@ -299,6 +299,7 @@ namespace FlockFive
                 || name.StartsWith("Burst")
                 || name.StartsWith("Boom")
                 || name.StartsWith("Petal")
+                || name.StartsWith("Feather")
                 || name == "Rocket"
                 || name == "Shine";
         }
@@ -398,10 +399,9 @@ namespace FlockFive
             var idle = peach.GetComponent<BirdIdle>();
             if (idle != null)
             {
-                idle.Frozen = true;
-                idle.Flapping = true;
-                idle.Lift = 0.2f;
-                idle.RestScale = Vector3.one * 0.5f;
+                idle.Lift = 0f;
+                idle.SuppressMood();
+                idle.DriveFlap(6.2f);
             }
             // Leave the lockup so the letter blast cannot drag her with it.
             if (hold != null && hold.parent != null)
@@ -410,7 +410,13 @@ namespace FlockFive
             var sr = peach.GetComponent<SpriteRenderer>();
             peach.localPosition = new Vector3(0f, 1.4f, 5.6f);
             peach.localScale = Vector3.one * 0.07f;
-            if (sr != null) sr.sortingOrder = 8;
+            peach.localRotation = Quaternion.identity;
+            if (sr != null)
+            {
+                sr.color = Color.white;
+                sr.flipX = false;
+                sr.sortingOrder = 8;
+            }
 
             float t = 0f;
             const float pull = 0.28f;
@@ -420,6 +426,8 @@ namespace FlockFive
                 float u = Smooth01(t / pull);
                 peach.localPosition = new Vector3(0f, 1.4f, Mathf.Lerp(5.6f, 6.8f, u));
                 peach.localScale = Vector3.one * Mathf.Lerp(0.07f, 0.05f, u);
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(0f, 11f, u));
+                if (idle != null) idle.DriveFlap(Mathf.Lerp(6.2f, 8f, u));
                 yield return null;
             }
 
@@ -432,41 +440,63 @@ namespace FlockFive
                 float k = Mathf.Pow(Mathf.Clamp01(t / approach), 2.4f);
                 peach.localPosition = new Vector3(0f, Mathf.Lerp(1.4f, 1.18f, k), Mathf.Lerp(6.8f, 0.18f, k));
                 peach.localScale = Vector3.one * Mathf.Lerp(0.05f, 1.15f, k);
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(11f, -4f, k));
                 if (sr != null) sr.sortingOrder = 8;
+                if (idle != null) idle.DriveFlap(Mathf.Lerp(9.2f, 11.5f, k));
                 yield return null;
             }
 
             Sfx.Break();
-            if (CamShake.Live != null) CamShake.Live.Punch(0.38f, 0.18f, 2.6f, 0.14f);
             if (sr != null) sr.sortingOrder = 72;
+            var hit = peach.position;
+            // Impact. Flash and cracks sit behind the peach, then a ~60ms hit-stop.
+            host.StartCoroutine(CrackFlash(hold, hit));
+            float stop = 0f;
+            var plant = new Vector3(0f, 1.18f, 0.18f);
+            if (idle != null) idle.DriveFlap(8.2f);
+            while (stop < HitStop && peach != null)
+            {
+                stop += ShowClock.Delta;
+                float j = 1f - stop / HitStop;
+                // Rewrite the path each frame. The flap drive offsets from it in LateUpdate.
+                peach.localPosition = plant;
+                peach.localScale = new Vector3(1.15f * Mathf.Lerp(1f, 1.16f, j), 1.15f * Mathf.Lerp(1f, 0.84f, j), 1f);
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-4f, -9f, j));
+                yield return null;
+            }
+            if (CamShake.Live != null) CamShake.Live.Punch(0.46f, 0.27f, 3.8f, 0.22f);
             host.StartCoroutine(Burst(hold, false));
-            host.StartCoroutine(ScatterOutro(hold, letters, crew));
+            host.StartCoroutine(ScatterOutro(hold, letters, crew, hit));
+            host.StartCoroutine(Shards(hold, hit));
+            if (hold != null) Wow.Shed(hit, BirdColor.Peach, hold);
 
             t = 0f;
             const float through = 0.62f;
-            var face = peach != null ? peach.Find("Mood") : null;
-            var faceSr = face != null ? face.GetComponent<SpriteRenderer>() : null;
+            float ghostAt = 0f;
             while (t < through && peach != null)
             {
                 t += Time.deltaTime;
                 float u = Mathf.Clamp01(t / through);
-                float k = 1f - (1f - u) * (1f - u);
-                peach.localPosition = new Vector3(0f, Mathf.Lerp(1.18f, 0.55f, k), Mathf.Lerp(0.18f, -8.4f, k));
-                peach.localScale = Vector3.one * Mathf.Lerp(1.15f, 5.4f, k);
+                float k = EaseOutCubic(u);
+                float sway = Mathf.Sin(u * Mathf.PI) * 0.36f;
+                peach.localPosition = new Vector3(sway, Mathf.Lerp(1.18f, 0.40f, k), Mathf.Lerp(0.18f, -8.4f, k));
+                peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-4f, 16f, k));
+                float s = Mathf.Lerp(1.15f, 5.5f, k);
+                peach.localScale = new Vector3(s * (1f + 0.05f * k), s * (1f - 0.03f * k), 1f);
                 int order = 72 + Mathf.RoundToInt(k * 20f);
                 if (sr != null)
                 {
                     sr.sortingOrder = order;
                     var c = sr.color;
-                    c.a = u > 0.62f ? 1f - Smooth01((u - 0.62f) / 0.38f) : 1f;
+                    c.a = u > 0.74f ? 1f - Smooth01((u - 0.74f) / 0.26f) : 1f;
                     sr.color = c;
                 }
-                if (faceSr != null)
+                if (idle != null) idle.DriveFlap(Mathf.Lerp(7.6f, 4.6f, Smooth01(u)));
+                ghostAt -= Time.deltaTime;
+                if (ghostAt <= 0f && u < 0.7f)
                 {
-                    faceSr.sortingOrder = order + 1;
-                    var c = faceSr.color;
-                    c.a = sr != null ? sr.color.a : 1f;
-                    faceSr.color = c;
+                    ghostAt = 0.07f;
+                    StampGhost(peach, sr, host);
                 }
                 yield return null;
             }
@@ -474,7 +504,151 @@ namespace FlockFive
             yield return new WaitForSeconds(0.85f);
         }
 
-        static IEnumerator ScatterOutro(Transform hold, Transform[] letters, Transform[] birds)
+
+        const float HitStop = 0.06f;
+
+        static void StampGhost(Transform peach, SpriteRenderer sr, MonoBehaviour host)
+        {
+            if (peach == null || sr == null || sr.sprite == null || peach.parent == null || host == null) return;
+            int order = Mathf.Max(1, sr.sortingOrder - 2);
+            var go = WorldBuilder.Sprite("BurstGhost", sr.sprite, peach.position, 1f, order, peach.parent);
+            go.transform.localRotation = peach.localRotation;
+            go.transform.localScale = peach.localScale;
+            var idle = peach.GetComponent<BirdIdle>();
+            if (idle != null && idle.FlapDriven)
+                go.transform.localPosition += idle.FlapBodyPull();
+            var g = go.GetComponent<SpriteRenderer>();
+            g.flipX = sr.flipX;
+            var c = Color.white;
+            c.a = 0.28f * sr.color.a;
+            g.color = c;
+            host.StartCoroutine(FadeGhost(g));
+        }
+
+        static IEnumerator FadeGhost(SpriteRenderer g)
+        {
+            const float life = 0.2f;
+            float t = 0f;
+            float a0 = g != null ? g.color.a : 0f;
+            var baseScale = g != null ? g.transform.localScale : Vector3.one;
+            while (t < life && g != null)
+            {
+                t += Time.deltaTime;
+                float u = Smooth01(t / life);
+                var c = g.color;
+                c.a = a0 * (1f - u);
+                g.color = c;
+                g.transform.localScale = baseScale * Mathf.Lerp(1f, 1.06f, u);
+                yield return null;
+            }
+            if (g != null) Object.Destroy(g.gameObject);
+        }
+
+        // Swept by SweepSparkles: names start with "Burst".
+        // Rays and the flash sit behind the peach (order 72). Their inner tips stay
+        // outside the body so a sparkle centre never lands on the neck.
+        static IEnumerator CrackFlash(Transform parent, Vector3 hit)
+        {
+            const int rays = 9;
+            const float bodyR = 1.2f;
+            var rs = new SpriteRenderer[rays + 1];
+            var len = new float[rays];
+            var peach = Wow.Of(BirdColor.Peach);
+            var gold = Wow.Of(BirdColor.Gold);
+            var flash = WorldBuilder.Sprite("BurstFlash", SpriteCatalog.Glow, hit, 0.8f, 60, parent);
+            rs[rays] = flash.GetComponent<SpriteRenderer>();
+            rs[rays].color = new Color(gold.r, gold.g, gold.b, 0.42f);
+            float sparkW = SpriteCatalog.Sparkle != null ? SpriteCatalog.Sparkle.bounds.size.x : 5.12f;
+            for (int i = 0; i < rays; i++)
+            {
+                float ang = i * 360f / rays + Random.Range(-14f, 14f);
+                var go = WorldBuilder.Sprite("BurstCrack", SpriteCatalog.Sparkle, hit, 0.1f, 64, parent);
+                go.transform.rotation = Quaternion.Euler(0f, 0f, ang);
+                rs[i] = go.GetComponent<SpriteRenderer>();
+                var tint = Color.Lerp(peach, gold, (i % 2) * 0.65f);
+                rs[i].color = new Color(tint.r, tint.g, tint.b, 1f);
+                len[i] = Random.Range(1.5f, 2.4f);
+            }
+            const float life = 0.24f;
+            float t = 0f;
+            while (t < life)
+            {
+                t += ShowClock.Delta;
+                float u = Mathf.Clamp01(t / life);
+                float grow = EaseOutCubic(Mathf.Clamp01(u / 0.35f));
+                float a = 1f - Smooth01(Mathf.Clamp01((u - 0.25f) / 0.75f));
+                for (int i = 0; i < rays; i++)
+                {
+                    if (rs[i] == null) continue;
+                    float scaleX = len[i] * grow * 0.195f;
+                    float half = sparkW * scaleX * 0.5f;
+                    var dir = rs[i].transform.right;
+                    rs[i].transform.position = hit + dir * (bodyR + half);
+                    rs[i].transform.localScale = new Vector3(scaleX, 0.028f * (1f - u * 0.55f), 1f);
+                    var c = rs[i].color; c.a = a; rs[i].color = c;
+                }
+                if (rs[rays] != null)
+                {
+                    rs[rays].transform.localScale = Vector3.one * Mathf.Lerp(1.5f, 4.8f, grow);
+                    var c = rs[rays].color; c.a = 0.42f * a * a; rs[rays].color = c;
+                }
+                yield return null;
+            }
+            for (int i = 0; i < rs.Length; i++)
+                if (rs[i] != null) Object.Destroy(rs[i].gameObject);
+        }
+
+        // Shard debris; names start with "Burst" so SweepSparkles clears any leftovers.
+        static IEnumerator Shards(Transform parent, Vector3 hit)
+        {
+            const int n = 14;
+            var rs = new SpriteRenderer[n];
+            var vel = new Vector3[n];
+            var spin = new float[n];
+            var peachTint = Wow.Of(BirdColor.Peach);
+            var goldTint = Wow.Of(BirdColor.Gold);
+            var tint = new[]
+            {
+                peachTint,
+                goldTint,
+                Color.Lerp(peachTint, goldTint, 0.45f)
+            };
+            for (int i = 0; i < n; i++)
+            {
+                float ang = (i / (float)n) * Mathf.PI * 2f + Random.Range(-0.2f, 0.2f);
+                var dir = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang) + 0.25f, 0f);
+                if (dir.sqrMagnitude < 0.01f) dir = Vector3.up;
+                dir.Normalize();
+                vel[i] = dir * Random.Range(4.5f, 8.5f);
+                spin[i] = Random.Range(-720f, 720f);
+                var go = WorldBuilder.Sprite("BurstShard", SpriteCatalog.Sparkle, hit + dir * 1.25f, 0.1f, 69, parent);
+                go.transform.localScale = new Vector3(Random.Range(0.05f, 0.1f), Random.Range(0.02f, 0.04f), 1f);
+                rs[i] = go.GetComponent<SpriteRenderer>();
+                rs[i].color = tint[i % tint.Length];
+            }
+            const float life = 0.9f;
+            float t = 0f;
+            while (t < life)
+            {
+                float dt = Time.deltaTime;
+                t += dt;
+                float a = 1f - Smooth01(Mathf.Clamp01((t / life - 0.35f) / 0.65f));
+                for (int i = 0; i < n; i++)
+                {
+                    if (rs[i] == null) continue;
+                    vel[i].y -= 9.5f * dt;
+                    vel[i] *= Mathf.Exp(-1.4f * dt);
+                    rs[i].transform.position += vel[i] * dt;
+                    rs[i].transform.Rotate(0f, 0f, spin[i] * dt);
+                    var c = rs[i].color; c.a = a; rs[i].color = c;
+                }
+                yield return null;
+            }
+            for (int i = 0; i < n; i++)
+                if (rs[i] != null) Object.Destroy(rs[i].gameObject);
+        }
+
+        static IEnumerator ScatterOutro(Transform hold, Transform[] letters, Transform[] birds, Vector3 hitWorld)
         {
             for (int i = 0; i < birds.Length; i++)
             {
@@ -499,14 +673,19 @@ namespace FlockFive
             {
                 if (letters[i] == null) continue;
                 rest[i] = letters[i].localScale;
-                var d = letters[i].localPosition;
+                // Pass 2: blow out radially from where the peach hit, nearest letters first.
+                var hitLocal = hold.InverseTransformPoint(hitWorld);
+                hitLocal.z = 0f;
+                var d = letters[i].localPosition - hitLocal;
                 d.z = 0f;
+                float far = d.magnitude;
                 if (d.sqrMagnitude < 0.05f) d = Vector3.up;
-                d.y += 0.45f;
+                d.y += 0.3f;
                 d.Normalize();
-                vel[i] = d * Random.Range(9.2f, 14.5f);
-                spin[i] = (letters[i].localPosition.x >= 0f ? 1f : -1f) * Random.Range(280f, 520f);
-                delay[i] = Mathf.Clamp01(letters[i].localPosition.magnitude / 4.4f) * 0.03f;
+                float near = 1f - Mathf.Clamp01(far / 4.6f);
+                vel[i] = d * Mathf.Lerp(9.0f, 15.5f, near) * Random.Range(0.92f, 1.08f);
+                spin[i] = (d.x >= 0f ? -1f : 1f) * Random.Range(300f, 560f);
+                delay[i] = Mathf.Clamp01(far / 4.6f) * 0.09f;
                 srs[i] = letters[i].GetComponentsInChildren<SpriteRenderer>(true);
                 baseA[i] = new float[srs[i].Length];
                 for (int k = 0; k < srs[i].Length; k++)
@@ -986,7 +1165,10 @@ namespace FlockFive
                 vel[i] = new Vector3(Mathf.Cos(ang), Mathf.Sin(ang), 0f) * Random.Range(vmin, vmax);
                 var go = WorldBuilder.Sprite("Burst", SpriteCatalog.Sparkle, origin, 0.04f, 36, parent);
                 rs[i] = go.GetComponent<SpriteRenderer>();
-                rs[i].color = new Color(1f, 0.96f, 0.82f, 0f);
+                // Pulse sparkles stay cream. The bust burst is peach so it cannot read as neck specks.
+                var rgb = gentle ? new Color(1f, 0.96f, 0.82f, 0f) : Wow.Of(BirdColor.Peach);
+                rgb.a = 0f;
+                rs[i].color = rgb;
             }
             float b = 0f;
             while (b < life)

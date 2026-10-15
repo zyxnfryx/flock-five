@@ -237,6 +237,9 @@ namespace FlockFive
         }
 
         public static void SetReadyOverride(int mode) => _readyOverride = mode;
+
+        // Drops a displayed-interstitial bit left by another suite. Does not touch VIP.
+        public static void ResetTransientForTests() => _intDisplayed = false;
         public static bool IsBusy => IsLoading || IsShowing;
         public static bool JustShown => _showDepth > 0 && _shownForeground < 0.75f;
         public static float ShownFor => _shownForeground;
@@ -259,10 +262,44 @@ namespace FlockFive
                 _shownForeground = 0f;
                 _settleLeft = -1f;
                 GamePause.Push();
-                AudioGuard.Hold("ad");
                 AdPause.Begin();
             }
             _showDepth++;
+            HoldAdAudio();
+        }
+
+        // One hold for every ShowAd. MasterGain is 0 while IsShowing, so the
+        // Settings slider and mute multiply back in on release. The listener
+        // pause stops one-shots already in flight. Reward callbacks must not
+        // release this; close, fail, and skip do, through EndShow / SkipShow.
+        public static void HoldAdAudio()
+        {
+            if (!IsShowing) return;
+            AudioGuard.Hold("ad");
+            if (!AudioListener.pause) AudioListener.pause = true;
+            if (MixDesk.Live != null) MixDesk.Live.ApplyAdSilence();
+        }
+
+        public static void Present(Action show)
+        {
+            BeginShow();
+            try
+            {
+                if (show != null) show();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("ad show failed: " + e.Message);
+                EndShow();
+                return;
+            }
+            HoldAdAudio();
+        }
+
+        // Player skipped, or the wait gave up. Same release as close and fail.
+        public static void SkipShow()
+        {
+            if (IsShowing) EndShow();
         }
 
         public static void EndShow()
@@ -326,6 +363,9 @@ namespace FlockFive
         public static void TickShowClock()
         {
             AdPause.Hold();
+            // The ad token times out in 10s. A show is longer than that, so the
+            // hold is refreshed every tick until close, fail, or skip.
+            if (IsShowing) HoldAdAudio();
             if (_showDepth > 0)
                 _shownForeground += ForegroundDt();
             if (_settleLeft < 0f) return;
@@ -683,9 +723,9 @@ namespace FlockFive
 #if FF_ADS_DEV
         internal static IEnumerator Simulate()
         {
-            BeginShow();
             try
             {
+                Present(() => { });
                 float t = 0f;
                 while (t < 2.15f)
                 {
@@ -778,8 +818,7 @@ namespace FlockFive
 #if FF_ADS_DEV
                 LevelPlay.SetMetaData("is_test_suite", "enable");
 #endif
-                using (StartupTrace.Begin("LevelPlay.Init"))
-                    LevelPlay.Init(Ads.AppKey);
+                AdTestDevices.Resolve(this, InitLevelPlay);
             }
             catch (System.Exception e)
             {
@@ -793,6 +832,27 @@ namespace FlockFive
                 // binaries may already have changed the session. Put it back
                 // before the next frame plays. The async success callback
                 // reasserts again after the ad units load.
+                AudioGuard.Reassert();
+            }
+        }
+
+        // Runs once the advertising ID is known (or timed out), so an
+        // allowlisted test device can turn on test mode before init.
+        void InitLevelPlay(string adId)
+        {
+            try
+            {
+                AdTestDevices.Apply(adId);
+                using (StartupTrace.Begin("LevelPlay.Init"))
+                    LevelPlay.Init(Ads.AppKey);
+            }
+            catch (System.Exception e)
+            {
+                _initFailed = true;
+                Debug.LogWarning("LevelPlay init skipped: " + e.Message);
+            }
+            finally
+            {
                 AudioGuard.Reassert();
             }
         }
@@ -869,10 +929,9 @@ namespace FlockFive
                 _shown = false;
                 _didReward = false;
                 Ads.LastGranted = false;
-                Ads.BeginShow();
                 showing = true;
                 AdLog.Add("gift ad show called");
-                _rv.ShowAd(Ads.ActivePlacement);
+                Ads.Present(() => _rv.ShowAd(Ads.ActivePlacement));
                 AfterSdk();
                 t = 0f;
                 while (_waiting && t < 180f)
@@ -978,10 +1037,9 @@ namespace FlockFive
                 Ads.NoteLoad(false);
                 loading = false;
                 _intWaiting = true;
-                Ads.BeginShow();
                 showing = true;
                 AdLog.Add("interstitial show called");
-                _int.ShowAd(Ads.PlacementClear);
+                Ads.Present(() => _int.ShowAd(Ads.PlacementClear));
                 AfterSdk();
                 t = 0f;
                 while (_intWaiting && t < 180f)

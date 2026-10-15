@@ -29,7 +29,8 @@ namespace FlockFive
         SplashPress.Gates HomePressGates(int rail)
         {
             HomeModals(out bool hard, out bool soft);
-            var glove = GloveGate.Resolve(ForcedGloveUp(), ForcedGloveTarget(), RailControl(rail));
+            var tapped = RailControl(rail);
+            bool own = CoachPress.OwnsTarget(ForcedGloveUp(), ForcedGloveTarget(), tapped, out var glove);
             return new SplashPress.Gates
             {
                 Paused = GamePause.Paused,
@@ -40,6 +41,7 @@ namespace FlockFive
                 HardModal = hard,
                 SoftModal = soft,
                 RailLesson = !HomeTapAllowed(rail) || !glove.AllowPress,
+                LessonOwn = own,
             };
         }
 
@@ -84,7 +86,7 @@ namespace FlockFive
             return !gate.Target.Contains(button.center);
         }
 
-        SplashPress.View StepHomePress(SplashPress.Id id, bool allow)
+        SplashPress.View StepHomePress(SplashPress.Id id, bool allow, bool ownTarget = false)
         {
             ReadHomePointers(_homeSamples, out bool live);
             var e = Event.current;
@@ -92,7 +94,7 @@ namespace FlockFive
             int button = e != null ? e.button : -1;
             bool canBegin = SplashPress.CanBegin(type, button, _homeSamples);
             var view = _homePress[(int)id].Apply(
-                SplashPress.PressHit(id), !allow, _homeSamples, canBegin, live, Time.frameCount);
+                SplashPress.PressHit(id), !allow, _homeSamples, canBegin, live, Time.frameCount, ownTarget);
             if (view.Handled) EatHomePointer();
             return view;
         }
@@ -124,10 +126,28 @@ namespace FlockFive
                 if (into.Count == 0 && ts.primaryTouch != null)
                     AddTouch(into, ts.primaryTouch, h);
             }
-            bool touch = into.Count > 0;
+            bool touchBegan = false;
+            for (int i = 0; i < into.Count; i++)
+            {
+                var ph = into[i].Phase;
+                if (ph == SplashPress.Phase.Began || ph == SplashPress.Phase.Tap)
+                    touchBegan = true;
+            }
             var mouse = Mouse.current;
             devices = ts != null || mouse != null;
-            if (touch) return;
+            // A finger that already began is the sample. A stale Held contact must
+            // not hide a new click: Android keeps a ghost touch while IMGUI delivers
+            // the real tap as a mouse event.
+            bool mouseFresh = false;
+            if (mouse != null)
+            {
+                var watch = mouse.leftButton;
+                mouseFresh = watch.wasPressedThisFrame || watch.wasReleasedThisFrame;
+            }
+            var evn = Event.current;
+            bool eventFresh = evn != null && evn.button == 0 &&
+                (evn.type == EventType.MouseDown || evn.type == EventType.MouseUp || evn.type == EventType.MouseDrag);
+            if (!SplashPress.MouseStandsIn(touchBegan, into.Count, mouseFresh, eventFresh)) return;
             if (mouse == null)
             {
                 SynthesizeMouse(into);
@@ -157,16 +177,16 @@ namespace FlockFive
         {
             if (t == null) return;
             var phase = t.phase.ReadValue();
-            if (phase == UnityEngine.InputSystem.TouchPhase.None) return;
+            if (!SplashPress.ClassifyContact(
+                phase == UnityEngine.InputSystem.TouchPhase.Canceled,
+                phase == UnityEngine.InputSystem.TouchPhase.Ended,
+                phase == UnityEngine.InputSystem.TouchPhase.Began,
+                t.press.isPressed,
+                t.press.wasPressedThisFrame,
+                out var kind))
+                return;
             var p = t.position.ReadValue();
             var pos = new Vector2(p.x, screenH - p.y);
-            SplashPress.Phase kind;
-            if (phase == UnityEngine.InputSystem.TouchPhase.Canceled) kind = SplashPress.Phase.Canceled;
-            else if (phase == UnityEngine.InputSystem.TouchPhase.Ended && t.press.wasPressedThisFrame) kind = SplashPress.Phase.Tap;
-            else if (phase == UnityEngine.InputSystem.TouchPhase.Ended) kind = SplashPress.Phase.Ended;
-            else if (phase == UnityEngine.InputSystem.TouchPhase.Began) kind = SplashPress.Phase.Began;
-            else if (t.press.isPressed) kind = SplashPress.Phase.Held;
-            else return;
             into.Add(SampleAt(t.touchId.ReadValue(), pos, kind));
         }
 

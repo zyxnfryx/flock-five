@@ -10,6 +10,8 @@ namespace FlockFive
         public const string PrivacyLabel = "Privacy Policy";
         public const string DoNotSellLabel = "Do Not Sell or Share My Personal Information";
         public const string AnimateLabel = BackgroundMotion.Label;
+        public const string SoundOnLabel = "Sound On";
+        public const string SoundOffLabel = "Sound Off";
         public const string PrivacyUrl = "https://zyxnfryx.github.io/zfx-legal/flock-five-privacy.html";
         public const float RowGap = 8f;
         // Inner buffer on each side of the wood, as a fraction of the card width.
@@ -22,14 +24,18 @@ namespace FlockFive
             public readonly Rect Toggle;
             public readonly Rect AnimateLabel;
             public readonly Rect AnimateToggle;
+            public readonly Rect SoundToggle;
+            public readonly Rect SoundSlider;
 
-            public Rows(Rect privacyLink, Rect label, Rect toggle, Rect animateLabel, Rect animateToggle)
+            public Rows(Rect privacyLink, Rect label, Rect toggle, Rect animateLabel, Rect animateToggle, Rect soundToggle, Rect soundSlider)
             {
                 PrivacyLink = privacyLink;
                 Label = label;
                 Toggle = toggle;
                 AnimateLabel = animateLabel;
                 AnimateToggle = animateToggle;
+                SoundToggle = soundToggle;
+                SoundSlider = soundSlider;
             }
         }
 
@@ -67,7 +73,9 @@ namespace FlockFive
                         MoveY(Body.Label, dy),
                         MoveY(Body.Toggle, dy),
                         MoveY(Body.AnimateLabel, dy),
-                        MoveY(Body.AnimateToggle, dy)));
+                        MoveY(Body.AnimateToggle, dy),
+                        MoveY(Body.SoundToggle, dy),
+                        MoveY(Body.SoundSlider, dy)));
             }
 
             static Rect MoveY(Rect r, float dy)
@@ -90,7 +98,7 @@ namespace FlockFive
             float gap = Mathf.Max(RowGap * s, cardW * 0.028f);
             float titleH = Mathf.Max(44f, 46f * s);
             var probe = Place(new Rect(0f, 0f, contentW, 8f), s, gap);
-            float bodyH = probe.AnimateLabel.yMax - probe.PrivacyLink.yMin;
+            float bodyH = probe.AnimateLabel.yMax - probe.SoundToggle.yMin;
             float xSz = Mathf.Max(44f, 42f * s);
             float xMargin = Mathf.Max(cardW * 0.035f, 12f * s);
             float titleGap = Mathf.Max(10f * s, 8f);
@@ -115,13 +123,30 @@ namespace FlockFive
             if (scale < 0.5f) scale = 0.5f;
             if (inner.width < 8f) inner.width = 8f;
             float gap = gapOverride >= 0f ? gapOverride : RowGap * scale;
+            // Sound sits on the first row: the words on the left, the slider half the row
+            // so the level is readable on a phone, not a short stub beside a wide button.
+            float soundH = Mathf.Max(52f, 48f * scale);
+            float soundGap = Mathf.Max(gap, 12f * scale);
+            float sliderW = Mathf.Max(88f, inner.width * 0.50f);
+            float toggleW = inner.width - sliderW - soundGap;
+            float minToggle = Mathf.Max(112f, 92f * scale);
+            if (toggleW < minToggle)
+            {
+                toggleW = Mathf.Min(minToggle, Mathf.Max(72f, inner.width * 0.48f));
+                sliderW = inner.width - toggleW - soundGap;
+            }
+            if (sliderW < 48f) sliderW = 48f;
+            if (toggleW + soundGap + sliderW > inner.width)
+                toggleW = Mathf.Max(48f, inner.width - soundGap - sliderW);
+            var soundToggle = new Rect(inner.x, inner.y, toggleW, soundH);
+            var soundSlider = new Rect(inner.xMax - sliderW, inner.y, sliderW, soundH);
             // Privacy and Do Not Sell share one row height and one left edge.
             float rowH = Mathf.Max(64f, 56f * scale);
             float linkH = rowH;
             float sw = Mathf.Max(44f, 44f * scale);
             if (sw > rowH) sw = rowH;
             if (sw > inner.width * 0.45f) sw = Mathf.Max(8f, inner.width * 0.45f);
-            var privacy = new Rect(inner.x, inner.y, inner.width, linkH);
+            var privacy = new Rect(inner.x, soundToggle.yMax + gap, inner.width, linkH);
             float y = privacy.yMax + gap;
             var toggle = new Rect(inner.xMax - sw, y + (rowH - sw) * 0.5f, sw, sw);
             float labelW = toggle.xMin - gap - inner.x;
@@ -130,7 +155,7 @@ namespace FlockFive
             float y2 = label.yMax + gap;
             var animateToggle = new Rect(inner.xMax - sw, y2 + (rowH - sw) * 0.5f, sw, sw);
             var animateLabel = new Rect(inner.x, y2, labelW, rowH);
-            return new Rows(privacy, label, toggle, animateLabel, animateToggle);
+            return new Rows(privacy, label, toggle, animateLabel, animateToggle, soundToggle, soundSlider);
         }
 
         // Same width rule as the other standard cards (88% of the glass, cap 600s).

@@ -215,7 +215,7 @@ namespace FlockFive
         {
             _scrap = false;
             // The wound's own EndScrap follows BeginAnger in the same call.
-            // A later EndScrap is restart releasing the perch.
+            // Restart does not come through here. PestReset sends the hawk off.
             if (_angerFresh)
             {
                 _angerFresh = false;
@@ -223,6 +223,47 @@ namespace FlockFive
             }
             Calm();
             if (_fleeing) _abort = true;
+        }
+
+        // Perched visitor for the restart suite. Hits is the wound already taken.
+        public static HawkView Seat(int slot, int hits)
+        {
+            var go = new GameObject("Hawk");
+            var view = go.AddComponent<HawkView>();
+            view.BlockingSlot = slot;
+            view.HitsTaken = Mathf.Clamp(hits, 0, HitsNeeded);
+            view.Settled = true;
+            if (hits > 0) view._angry = true;
+            Live = view;
+            return view;
+        }
+
+        // Hide and drop the perch now. In play mode Visit's finally destroys the
+        // body. An edit-mode suite has no coroutine, so the body goes immediately.
+        public static void DismissForReset()
+        {
+            var live = Live;
+            if (live == null) return;
+            live.LeaveForReset();
+            if (Application.isPlaying) return;
+            Live = null;
+            Object.DestroyImmediate(live.gameObject);
+        }
+
+        void LeaveForReset()
+        {
+            StopHit();
+            Calm();
+            HitsTaken = 0;
+            BlockingSlot = -1;
+            Settled = false;
+            _scrap = false;
+            _abort = true;
+            _evict = true;
+            _done = true;
+            if (_art != null) _art.enabled = false;
+            if (Application.isPlaying && gameObject.activeSelf)
+                gameObject.SetActive(false);
         }
 
         // Cosmetic return-pass only. Stage load and restart both call this.
@@ -513,7 +554,7 @@ namespace FlockFive
             if (_art != null) _art.flipX = dest.x < from.x;
             float t = 0f;
             const float outDur = 0.95f;
-            while (t < outDur)
+            while (t < outDur && !_abort)
             {
                 t += Time.deltaTime;
                 float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / outDur));

@@ -4,10 +4,24 @@ namespace FlockFive
 {
     public sealed class SkyCycle : MonoBehaviour
     {
-        // Dawn to last-light inside one garden. Load() rebuilds the sky at dawn.
+        // One day, chosen by level index. Six beats: dawn, morning, noon, dusk,
+        // moonrise, night. The next garden after night is dawn again.
+        // Load used to rebuild at dawn, so a night clear snapped back to day.
         public const float Duration = 66f;
+        public const int Beats = 6;
+        // Peak phase speed. Smoothstep peaks at 1.5x this. A beat (1/6) takes ~1.4s.
+        public const float PhasePerSecond = 0.12f;
         public static SkyCycle Instance { get; private set; }
         public static string Courtesy;
+
+        static bool _haveCarry;
+        static float _carryPhase;
+        static bool _parkNext;
+        static bool _queued;
+        static float _queuedTarget;
+
+        // Darkness at the six beats, and the same dawn again at 1 so the wrap meets.
+        static readonly float[] DarkKey = { 0.14f, 0.03f, 0.00f, 0.48f, 0.74f, 0.98f, 0.14f };
 
         Camera _cam;
         SpriteRenderer _veil;
@@ -29,17 +43,162 @@ namespace FlockFive
         float _easeT;
         float _savedDusk;
         bool _haveSaved;
+        bool _cycling;
+        bool _gliding;
+        float _parked;
+        float _levelPhase;
+        float _savedPhase;
+        float _glideFrom;
+        float _glideTo;
+        float _glideDur;
+        float _glideStart;
         Color _veilCol;
         Color _camCol;
         bool _veilOn;
         bool _camSet;
         bool _starsOff;
 
+        // 0 dawn … 5 night. Index is LevelData.Index (0 = Dawn Garden).
+        public static float PhaseForLevel(int index)
+        {
+            if (index < 0) index = 0;
+            return (index % Beats) / (float)Beats;
+        }
+
+        public static float NightPhase => PhaseForLevel(Beats - 1);
+
+        // Forward travel on the circle, in [0, 1). The same point stays put.
+        public static float ForwardDelta(float from, float to)
+        {
+            float d = Mathf.Repeat(to - from, 1f);
+            if (d > 0.9999f) d = 0f;
+            return d;
+        }
+
+        // Shared path. u = 0 is `from`, u = 1 is `to`, and every step walks forward.
+        public static float ForwardAt(float from, float to, float u)
+        {
+            u = Mathf.Clamp01(u);
+            float s = u * u * (3f - 2f * u);
+            return Mathf.Repeat(from + ForwardDelta(from, to) * s, 1f);
+        }
+
+        // How long the shared glide takes. Never faster than PhasePerSecond.
+        public static float GlideSeconds(float from, float to)
+        {
+            float d = ForwardDelta(from, to);
+            if (d < 0.0008f) return 0f;
+            float t = d / PhasePerSecond;
+            return t < 0.35f ? 0.35f : t;
+        }
+
+        // Veil, moon, and stars read this. Ends meet, so night can roll into dawn.
+        public static float Darkness(float phase)
+        {
+            phase = Mathf.Repeat(phase, 1f);
+            if (phase >= 1f) phase = 0f;
+            float span = 1f / Beats;
+            for (int i = 0; i < Beats; i++)
+            {
+                float a = i * span;
+                float b = (i + 1) * span;
+                if (phase > b && i < Beats - 1) continue;
+                float u = b <= a ? 1f : (phase - a) / (b - a);
+                if (u < 0f) u = 0f;
+                else if (u > 1f) u = 1f;
+                u = u * u * (3f - 2f * u);
+                return Mathf.Lerp(DarkKey[i], DarkKey[i + 1], u);
+            }
+            return DarkKey[0];
+        }
+
+        // Clock dusk (0 day … 1 night) onto the cycle, for a finale that starts
+        // before Present. Picks the closest phase so the darkness does not pop.
+        public static float PhaseForDarkness(float darkness)
+        {
+            darkness = Mathf.Clamp01(darkness);
+            float bestP = 0f;
+            float best = 999f;
+            for (int i = 0; i <= 128; i++)
+            {
+                float p = i / 128f;
+                if (p >= 1f) p = 0f;
+                float err = Mathf.Abs(Darkness(p) - darkness);
+                if (err < best)
+                {
+                    best = err;
+                    bestP = p;
+                }
+            }
+            return bestP;
+        }
+
+        public static float Phase
+        {
+            get
+            {
+                if (Instance == null) return 0f;
+                if (Instance._gliding || Instance._cycling) return Instance.PhaseNow;
+                return PhaseForDarkness(Dusk);
+            }
+        }
+
+        // Next Present parks on the level instead of gliding. The shot uses this
+        // so the night garden is already night before the transition starts.
+        public static void ParkNextPresent()
+        {
+            _parkNext = true;
+        }
+
+        public static void ResetForTest()
+        {
+            _haveCarry = false;
+            _carryPhase = 0f;
+            _parkNext = false;
+            _queued = false;
+            if (Instance == null) return;
+            Instance._gliding = false;
+            Instance._cycling = false;
+            Instance._haveSaved = false;
+            Instance._heldNight = false;
+            Instance._easing = false;
+            Instance._rushing = false;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            _haveCarry = false;
+            _carryPhase = 0f;
+            _parkNext = false;
+            _queued = false;
+            Instance = null;
+            Courtesy = null;
+        }
+
+        float PhaseNow
+        {
+            get
+            {
+                if (_gliding)
+                {
+                    float dur = _glideDur > 0.01f ? _glideDur : 0.01f;
+                    float u = (PlayClock.Now - _glideStart) / dur;
+                    if (u >= 1f) return _glideTo;
+                    if (u < 0f) u = 0f;
+                    return ForwardAt(_glideFrom, _glideTo, u);
+                }
+                return _parked;
+            }
+        }
+
         public static float Dusk
         {
             get
             {
                 if (Instance == null) return 0f;
+                if (Instance._gliding || Instance._cycling)
+                    return Darkness(Instance.PhaseNow);
                 if (Instance._easing)
                 {
                     float eu = Mathf.Clamp01(Instance._easeT / Mathf.Max(0.01f, Instance._easeDur));
@@ -75,35 +234,109 @@ namespace FlockFive
             return Mathf.SmoothStep(0f, 1f, v);
         }
 
-        // Instant night for the last combo. The clock dusk is remembered so the
-        // finale can ease back without a pop.
+        // Night for the last combo, on the shared forward path. The level phase
+        // is remembered so the finale can walk forward back to it without a pop.
         public static void SnapNight()
         {
             if (Instance == null) return;
             var s = Instance;
             if (!s._haveSaved)
             {
+                s._savedPhase = (s._cycling || s._gliding) ? s._levelPhase : PhaseForDarkness(Dusk);
                 s._savedDusk = s.ClockDusk();
                 s._haveSaved = true;
             }
-            s._rushing = false;
-            s._easing = false;
-            s._heldNight = true;
+            float from = (s._cycling || s._gliding) ? s.PhaseNow : s._savedPhase;
             s._welcomed = true;
+            s.Glide(from, NightPhase, GlideSeconds(from, NightPhase));
         }
 
         public static void EaseToSaved(float seconds)
         {
             if (Instance == null) return;
             var s = Instance;
-            s._easeFrom = Dusk;
-            s._easeTo = s._haveSaved ? s._savedDusk : s.ClockDusk();
-            s._easeDur = Mathf.Max(0.25f, seconds);
-            s._easeT = 0f;
-            s._easing = true;
+            float to = s._haveSaved ? s._savedPhase : s.PhaseNow;
+            float from = s._cycling || s._gliding ? s.PhaseNow : to;
+            s._haveSaved = false;
             s._heldNight = false;
             s._rushing = false;
-            s._haveSaved = false;
+            float dur = GlideSeconds(from, to);
+            if (seconds > dur) dur = seconds;
+            s.Glide(from, to, dur);
+        }
+
+        // Level index picks the sky. A cold load parks there (no dawn flash).
+        // A stage change glides forward from the phase the last sky left behind.
+        public static void Present(int levelIndex)
+        {
+            float target = PhaseForLevel(levelIndex);
+            _queued = false;
+            if (Instance == null)
+            {
+                _queuedTarget = target;
+                _queued = true;
+                return;
+            }
+            Instance.PresentNow(target);
+        }
+
+        // The garden disable path also remembers. Tests call this before destroy
+        // because an edit-mode object may not run OnDisable.
+        public static void Remember()
+        {
+            if (Instance == null) return;
+            if (!Instance._cycling && !Instance._gliding) return;
+            _carryPhase = Instance.PhaseNow;
+            _haveCarry = true;
+        }
+
+        void PresentNow(float target)
+        {
+            target = Mathf.Repeat(target, 1f);
+            _levelPhase = target;
+            bool park = _parkNext || !_haveCarry;
+            float from = _haveCarry ? _carryPhase : target;
+            _parkNext = false;
+            _haveCarry = false;
+            _haveSaved = false;
+            if (park)
+            {
+                Park(target);
+                return;
+            }
+            Glide(from, target, GlideSeconds(from, target));
+        }
+
+        void Glide(float from, float to, float seconds)
+        {
+            from = Mathf.Repeat(from, 1f);
+            to = Mathf.Repeat(to, 1f);
+            if (seconds <= 0.001f || ForwardDelta(from, to) < 0.0008f)
+            {
+                Park(to);
+                return;
+            }
+            _glideFrom = from;
+            _glideTo = to;
+            _glideDur = seconds;
+            _glideStart = PlayClock.Now;
+            _gliding = true;
+            _cycling = true;
+            _rushing = false;
+            _heldNight = false;
+            _easing = false;
+            ApplyLook();
+        }
+
+        void Park(float phase)
+        {
+            _parked = Mathf.Repeat(phase, 1f);
+            _cycling = true;
+            _gliding = false;
+            _rushing = false;
+            _heldNight = false;
+            _easing = false;
+            ApplyLook();
         }
 
         public static SkyCycle Attach(Transform root, Camera cam)
@@ -126,10 +359,19 @@ namespace FlockFive
             _heldNight = false;
             _easing = false;
             _haveSaved = false;
+            _gliding = false;
+            _cycling = false;
+            if (!_queued) return;
+            _queued = false;
+            PresentNow(_queuedTarget);
         }
 
         void OnDisable()
         {
+            // The garden is destroyed between stages (and on the way home).
+            // Keep the phase so the next Present walks forward instead of popping.
+            if (_cycling || _gliding)
+                Remember();
             if (Instance == this) Instance = null;
         }
 
@@ -171,6 +413,12 @@ namespace FlockFive
         void LateUpdate()
         {
             if (GamePause.Paused) return;
+            if (_gliding)
+            {
+                float dur = _glideDur > 0.01f ? _glideDur : 0.01f;
+                if ((PlayClock.Now - _glideStart) / dur >= 1f)
+                    Park(_glideTo);
+            }
             if (_easing)
             {
                 _easeT += PlayClock.Delta;
@@ -184,7 +432,7 @@ namespace FlockFive
             }
             if (_rushing)
             {
-                _rushT += PlayClock.Delta;
+                _rushT += ShowClock.Delta;
                 if (_rushT >= _rushDur)
                 {
                     _rushing = false;
@@ -192,6 +440,21 @@ namespace FlockFive
                 }
             }
 
+            ApplyLook();
+
+            if (!_welcomed && _moon != null && _moon.enabled && _moon.color.a > 0.55f)
+            {
+                _welcomed = true;
+                Courtesy = "The moon is visiting. Stay as long as you like.";
+                Sfx.Moonrise(); // MixDesk night swell, not a Lead arpeggio.
+            }
+
+        }
+
+        // Veil, moon, stars, and the camera clear. Park and Glide call this too,
+        // so the first frame is already this phase and not the brown camera clear.
+        void ApplyLook()
+        {
             float d = Dusk;
             float moonIn = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.16f, 0.55f, d));
             float y = Mathf.Lerp(2.15f, 5.12f, moonIn);
@@ -284,14 +547,6 @@ namespace FlockFive
                     _cam.backgroundColor = bg;
                 }
             }
-
-            if (!_welcomed && moonIn > 0.55f)
-            {
-                _welcomed = true;
-                Courtesy = "The moon is visiting. Stay as long as you like.";
-                Sfx.Moonrise(); // MixDesk night swell, not a Lead arpeggio.
-            }
-
         }
 
         static bool SameByte(Color a, Color b)

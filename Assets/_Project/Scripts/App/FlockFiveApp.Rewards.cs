@@ -48,7 +48,12 @@ namespace FlockFive
         bool ApplyKeepTicket(RewardedGrant.Ticket t)
         {
             if (!RewardEffects.Keep(t.Payload)) return false;
-            _restartAsk = RestartAsk.None;
+            // The popup stays up so the badge can seal. WatchKeepStreak closes it
+            // after the sweep. A grant with no card (late restore) just clears.
+            if (_restartAsk == RestartAsk.Keep)
+                BeginStreakHeal();
+            else
+                _restartAsk = RestartAsk.None;
             return true;
         }
 
@@ -115,16 +120,15 @@ namespace FlockFive
 
         void CloseDailyAfterReward()
         {
-            bool first = _dailyClaimFirst;
-            bool follow = _dailyClaimFollowUp;
-            _dailyClaimFollowUp = false;
-            _dailyOpen = false;
-            _dailyPopAt = -1f;
-            _dailyTutorSpin = false;
-            _dailyPhase = DailyWheelPhase.Ready;
-            _wheelPayMul = 1;
-            DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
-            if (follow) StartCoroutine(FinishDailyClaim(first));
+            // The doubled pay already launched the coins. Hold the card until they land.
+            if (_dailyOpen)
+            {
+                _dailyPayHold = true;
+                _dailyTutorSpin = false;
+                _wheelPayMul = 1;
+                return;
+            }
+            EndDailyPopup();
         }
     }
 }

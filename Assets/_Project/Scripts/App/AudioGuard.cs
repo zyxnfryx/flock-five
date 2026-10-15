@@ -25,11 +25,15 @@ namespace FlockFive
         // 0 = Ambient. 1 = SoloAmbient. Both honor the silent switch.
         public const int SessionSolo = 0;
 
-        // No settings screen writes these. They are the user mix Restore returns to.
+        // MusicVolume and SfxVolume stay at 1 unless a test says otherwise.
+        // Settings writes MasterVolume (the slider) and the shared mute.
+        // Restore returns to that mix. Nothing here writes AudioListener.volume.
         public static bool MusicEnabled = true;
         public static bool SfxEnabled = true;
         public static float MusicVolume = 1f;
         public static float SfxVolume = 1f;
+        // Settings slider, 0..1. Mute does not write this, so Sound On puts it back.
+        public static float MasterVolume = 1f;
 
         // Tests advance this instead of waiting out DuckTimeoutSec.
         public static Func<double> Clock;
@@ -59,7 +63,8 @@ namespace FlockFive
                 float user = MusicEnabled ? MusicVolume : 0f;
                 if (user < 0f) user = 0f;
                 if (user > 1f) user = 1f;
-                return user * TokenScale;
+                // MasterGain is the slider, times a duck, and 0 while an ad is up.
+                return user * MixDesk.MasterGain;
             }
         }
 
@@ -70,7 +75,7 @@ namespace FlockFive
                 float user = SfxEnabled ? SfxVolume : 0f;
                 if (user < 0f) user = 0f;
                 if (user > 1f) user = 1f;
-                return user * TokenScale;
+                return user * MixDesk.MasterGain;
             }
         }
 
@@ -83,6 +88,7 @@ namespace FlockFive
             SfxEnabled = true;
             MusicVolume = 1f;
             SfxVolume = 1f;
+            MasterVolume = 1f;
             Clock = null;
             ActivateCalls = 0;
         }
@@ -91,13 +97,15 @@ namespace FlockFive
         static void Boot()
         {
             LoadMuted();
+            LoadVolume();
             EnsureHost();
             InstallNative();
         }
 
-        // b87: one shared mute for the home speaker button and anything else that
-        // toggles audio. Muted silences all music and SFX and is persisted.
+        // One shared mute. The Settings sheet is the only control that writes it.
+        // Muted silences music and SFX. The slider level is left alone.
         public const string MuteKey = "flockfive.audio.muted";
+        public const string VolumeKey = "flockfive.audio.volume";
         public static bool Muted => !MusicEnabled && !SfxEnabled;
         public static event Action<bool> MutedChanged;
 
@@ -106,6 +114,14 @@ namespace FlockFive
             bool m = PlayerPrefs.GetInt(MuteKey, 0) == 1;
             MusicEnabled = !m;
             SfxEnabled = !m;
+        }
+
+        public static void LoadVolume()
+        {
+            float v = PlayerPrefs.GetFloat(VolumeKey, 1f);
+            if (v < 0f) v = 0f;
+            if (v > 1f) v = 1f;
+            MasterVolume = v;
         }
 
         public static void SetMuted(bool m, bool persist = true)
@@ -119,6 +135,18 @@ namespace FlockFive
 
         public static void ToggleMuted() => SetMuted(!Muted);
 
+        // Persist the slider. Does not touch the mute bit, and does not write
+        // AudioListener.volume. An ad duck or ad mute multiplies on top in MixDesk.
+        public static void SetMasterVolume(float v, bool persist = true)
+        {
+            if (v < 0f) v = 0f;
+            if (v > 1f) v = 1f;
+            MasterVolume = v;
+            if (!persist) return;
+            PlayerPrefs.SetFloat(VolumeKey, v);
+            PlayerPrefs.Save();
+        }
+
         public static void ResetForTests()
         {
             _n = 0;
@@ -127,6 +155,7 @@ namespace FlockFive
             SfxEnabled = true;
             MusicVolume = 1f;
             SfxVolume = 1f;
+            MasterVolume = 1f;
             Clock = null;
             ActivateCalls = 0;
         }
@@ -239,19 +268,49 @@ namespace FlockFive
 
         // Full undo. Clears every duck token, puts the bed back on the user
         // mix, unsticks the listener, and reactivates the game session.
+        // An ad that is still up keeps its token and the pause. The reward
+        // callback and a focus return both come through here, and neither
+        // may talk over the ad. Close, fail, and skip call this only after
+        // the show depth has already dropped.
         public static void Restore()
         {
+            if (Ads.IsShowing)
+            {
+                DropExcept("ad");
+                Ads.HoldAdAudio();
+                return;
+            }
             _n = 0;
             if (MixDesk.Live != null) MixDesk.Live.ResetToUser();
             GamePause.UnstickAudio();
             ActivateNative();
         }
 
+        static void DropExcept(string keep)
+        {
+            bool any = false;
+            for (int i = 0; i < _n; i++)
+            {
+                if (!_tok[i].Live || _tok[i].Reason == keep) continue;
+                var t = _tok[i];
+                t.Live = false;
+                _tok[i] = t;
+                any = true;
+            }
+            if (any) Compact();
+        }
+
         // Session and listener gain only. An ad that is still up keeps the
-        // pause GamePause pushed; the category still comes back to Ambient.
+        // pause; the category still comes back to Ambient.
         public static void Reassert()
         {
             AudioListener.volume = 1f;
+            if (Ads.IsShowing)
+            {
+                Ads.HoldAdAudio();
+                ActivateNative();
+                return;
+            }
             if (!GamePause.Paused)
                 AudioListener.pause = false;
             ActivateNative();

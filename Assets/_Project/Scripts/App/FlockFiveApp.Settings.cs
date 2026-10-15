@@ -87,89 +87,6 @@ namespace FlockFive
             return new Rect(drawn.x, drawn.y, hit, hit);
         }
 
-        // b87 home speaker: the gear's size and margin mirrored into the top-right
-        // corner, below the coin pill when the HUD claims that corner.
-        public static Rect HomeMuteRect(float w, float h, Rect safe, float hudBottom = 0f)
-        {
-            var g = SettingsGearRect(w, h, safe);
-            float right = safe.xMax;
-            float gx = g.x - safe.x;
-            var r = new Rect(right - gx - g.width, g.y, g.width, g.height);
-            if (hudBottom > r.y) r.y = hudBottom + gx * 0.5f;
-            return r;
-        }
-        bool _muteHeld;
-        float HomeMuteHudBottom() => 0f;
-
-        void PollHomeMute()
-        {
-            _muteHeld = false;
-            if (_settingsOpen) return;
-            var q = HomeGearNow();
-            if (!HomeGear.AcceptsTap(q)) return;
-            var r = HomeMuteRect(Screen.width, Screen.height, Screen.safeArea, HomeMuteHudBottom());
-            if (VeilBlocks(r)) return;
-            if (HitPad(r, out _muteHeld))
-            {
-                AudioGuard.ToggleMuted();
-                if (!AudioGuard.Muted) Sfx.CardTap();
-                _hitLock = 1;
-            }
-        }
-
-        void PaintHomeMute()
-        {
-            var q = HomeGearNow();
-            if (!HomeGear.Shown(q) || !HomeGear.AboveDimmer(q) || _settingsOpen) return;
-            var r = HomeMuteRect(Screen.width, Screen.height, Screen.safeArea, HomeMuteHudBottom());
-            DrawSpeakerIcon(r, AudioGuard.Muted, _muteHeld);
-        }
-
-        // Speaker glyph in the gear's cream-on-dark-outline look. Muted adds a slash.
-        void DrawSpeakerIcon(Rect hit, bool muted, bool held)
-        {
-            var g = SettingsGearDrawnRect(Screen.width, Screen.height, Screen.safeArea);
-            float sz = g.width * (held ? 0.92f : 1f);
-            var r = new Rect(hit.xMax - g.width + (g.width - sz) * 0.5f, hit.y + (g.width - sz) * 0.5f, sz, sz);
-            var ink = new Color(1f, 0.96f, 0.86f, 1f);
-            var line = new Color(0.16f, 0.10f, 0.06f, 0.95f);
-            var prev = GUI.color;
-            for (int pass = 0; pass < 2; pass++)
-            {
-                float o = pass == 0 ? Mathf.Max(2f, sz * 0.06f) : 0f;
-                GUI.color = pass == 0 ? line : ink;
-                var box = new Rect(r.x + sz * 0.12f - o, r.y + sz * 0.38f - o, sz * 0.18f + 2 * o, sz * 0.24f + 2 * o);
-                GUI.DrawTexture(box, Texture2D.whiteTexture);
-                for (int i = 0; i < 6; i++)
-                {
-                    float t = i / 5f;
-                    float hh = sz * (0.24f + 0.44f * t);
-                    float x = r.x + sz * (0.30f + 0.04f * i);
-                    GUI.DrawTexture(new Rect(x - o, r.y + (sz - hh) * 0.5f - o, sz * 0.045f + 2 * o, hh + 2 * o), Texture2D.whiteTexture);
-                }
-                if (!muted)
-                {
-                    for (int k = 0; k < 2; k++)
-                    {
-                        float hh = sz * (0.26f + 0.20f * k);
-                        float x = r.x + sz * (0.62f + 0.12f * k);
-                        GUI.DrawTexture(new Rect(x - o, r.y + (sz - hh) * 0.5f - o, sz * 0.05f + 2 * o, hh + 2 * o), Texture2D.whiteTexture);
-                    }
-                }
-                else
-                {
-                    var m = GUI.matrix;
-                    var c = new Vector2(r.x + sz * 0.72f, r.center.y);
-                    GUIUtility.RotateAroundPivot(45f, c);
-                    GUI.DrawTexture(new Rect(c.x - sz * 0.03f - o, c.y - sz * 0.18f - o, sz * 0.06f + 2 * o, sz * 0.36f + 2 * o), Texture2D.whiteTexture);
-                    GUIUtility.RotateAroundPivot(-90f, c);
-                    GUI.DrawTexture(new Rect(c.x - sz * 0.03f - o, c.y - sz * 0.18f - o, sz * 0.06f + 2 * o, sz * 0.36f + 2 * o), Texture2D.whiteTexture);
-                    GUI.matrix = m;
-                }
-            }
-            GUI.color = prev;
-        }
-
         HomeGearQuery HomeGearNow()
         {
             bool home = _splash && _home == HomeFace.Splash;
@@ -281,8 +198,8 @@ namespace FlockFive
             return r.width >= 2f && r.Contains(p);
         }
 
-        // Privacy link, then the Do Not Sell checkbox on the next row. The whole
-        // checkbox row is the hit. The card is a flat wood panel (no oval vignette).
+        // Sound On/Off and the master slider share the first row. Privacy, then
+        // the Do Not Sell checkbox. The card is a flat wood panel (no oval vignette).
         // The dim fades under the card. The cog is painted after both.
         void DrawSettingsSheet(float s)
         {
@@ -304,10 +221,15 @@ namespace FlockFive
             bool linkHeld = false;
             bool rowHeld = false;
             bool animHeld = false;
+            bool soundHeld = false;
+            bool slideHeld = false;
             bool xHeld = false;
             bool link = false;
             bool flip = false;
             bool flipAnim = false;
+            bool soundFlip = false;
+            bool slideCommit = false;
+            float slid = AudioGuard.MasterVolume;
             var hit = SettingsMotion.Hit.None;
             if (SettingsMotion.BlocksInput(_settingsPhase))
                 SwallowSettingsPointer();
@@ -317,6 +239,8 @@ namespace FlockFive
                 var screen = new Rect(0f, 0f, Screen.width, Screen.height);
                 bool gearFire = HitPad(gearHit, out gearHeld);
                 bool close = HitPad(CloseTapRect(frame.Close), out xHeld);
+                soundFlip = HitPad(rows.SoundToggle, out soundHeld);
+                slid = DragMaster(rows.SoundSlider, slid, s, out slideHeld, out slideCommit);
                 link = HitPad(rows.PrivacyLink, out linkHeld);
                 var rowHit = new Rect(rows.Label.x, rows.Label.y, rows.Toggle.xMax - rows.Label.x, rows.Label.height);
                 flip = HitPad(rowHit, out rowHeld);
@@ -340,6 +264,8 @@ namespace FlockFive
                 title.wordWrap = false;
                 title.fontSize = FitFont(title, "Settings", titleR.width * 0.9f, titleR.height * 0.8f, 16, Mathf.Max(22, Mathf.RoundToInt(32f * s)));
                 StampOutlined(titleR, "Settings", title, new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(3, Mathf.RoundToInt(title.fontSize * 0.12f)));
+
+                DrawSoundRow(rows.SoundToggle, rows.SoundSlider, soundHeld, slideHeld, s);
 
                 var linkSt = GuiPool.Label(GuiSlot.SettingsLink);
                 linkSt.fontStyle = FontStyle.Bold;
@@ -426,6 +352,15 @@ namespace FlockFive
                     BackgroundMotion.On = !animOn;
                     Sfx.CardTap();
                 }
+                if (slideCommit)
+                    AudioGuard.SetMasterVolume(slid, true);
+                else if (Mathf.Abs(slid - AudioGuard.MasterVolume) > 0.0005f)
+                    AudioGuard.SetMasterVolume(slid, false);
+                if (soundFlip)
+                {
+                    AudioGuard.ToggleMuted();
+                    if (!AudioGuard.Muted) Sfx.CardTap();
+                }
                 return;
             }
 
@@ -474,6 +409,113 @@ namespace FlockFive
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
             e.Use();
+        }
+
+        // Sound On / Sound Off beside the master slider. The knob stays on the
+        // saved level while muted, so turning sound back on restores it.
+        void DrawSoundRow(Rect toggle, Rect slider, bool heldToggle, bool heldSlide, float scale)
+        {
+            var tex = Texture2D.whiteTexture;
+            if (tex == null || toggle.width < 2f || slider.width < 2f) return;
+            bool muted = AudioGuard.Muted;
+            string label = muted ? SettingsSheet.SoundOffLabel : SettingsSheet.SoundOnLabel;
+
+            GUI.color = heldToggle ? new Color(0.95f, 0.78f, 0.32f, 1f) : new Color(0.55f, 0.34f, 0.12f, 1f);
+            GUI.DrawTexture(toggle, tex);
+            float inset = Mathf.Max(4f, toggle.height * 0.12f);
+            var face = new Rect(toggle.x + inset, toggle.y + inset, toggle.width - inset * 2f, toggle.height - inset * 2f);
+            GUI.color = muted ? new Color(0.24f, 0.14f, 0.07f, 1f) : new Color(0.99f, 0.97f, 0.90f, 1f);
+            GUI.DrawTexture(face, tex);
+
+            var st = GuiPool.Label(GuiSlot.SettingsSound);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
+            var ink = muted ? new Color(1f, 0.96f, 0.86f, 1f) : new Color(0.22f, 0.12f, 0.05f, 1f);
+            int hi = Mathf.Max(20, Mathf.RoundToInt(28f * scale));
+            st.fontSize = FitFont(st, label, face.width * 0.90f, face.height * 0.70f, 15, hi);
+            int rim = muted ? Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.10f)) : 0;
+            StampOutlined(face, label, st, ink, 0, rim);
+
+            float level = AudioGuard.MasterVolume;
+            MasterSliderGeom(slider, scale, level, out var track, out var knob, out var fill);
+            GUI.color = new Color(0.14f, 0.08f, 0.04f, 1f);
+            GUI.DrawTexture(track, tex);
+            GUI.color = muted ? new Color(0.42f, 0.30f, 0.16f, 1f) : new Color(0.93f, 0.74f, 0.26f, 1f);
+            GUI.DrawTexture(fill, tex);
+            GUI.color = new Color(0.28f, 0.16f, 0.06f, 1f);
+            GUI.DrawTexture(knob, tex);
+            float lip = Mathf.Max(3f, knob.width * 0.16f);
+            GUI.color = heldSlide ? new Color(1f, 0.88f, 0.48f, 1f) : new Color(1f, 0.97f, 0.88f, 1f);
+            GUI.DrawTexture(new Rect(knob.x + lip, knob.y + lip, knob.width - lip * 2f, knob.height - lip * 2f), tex);
+            GUI.color = Color.white;
+        }
+
+        // Track, fill, and knob. Paint and drag share this so the thumb sits under the finger.
+        static void MasterSliderGeom(Rect slider, float scale, float level, out Rect track, out Rect knob, out Rect fill)
+        {
+            if (scale < 0.5f) scale = 0.5f;
+            if (level < 0f) level = 0f;
+            if (level > 1f) level = 1f;
+            // Tall enough that the long half-row track reads as a control, not a hairline.
+            float trackH = Mathf.Clamp(slider.height * 0.46f, 16f, slider.height * 0.56f);
+            float side = Mathf.Max(6f, slider.height * 0.06f);
+            track = new Rect(slider.x + side, slider.center.y - trackH * 0.5f, Mathf.Max(8f, slider.width - side * 2f), trackH);
+            float knobW = Mathf.Clamp(track.height * 1.05f, 18f, track.height * 1.55f);
+            float travel = Mathf.Max(1f, track.width - knobW);
+            float kx = track.x + travel * level;
+            fill = new Rect(track.x, track.y, Mathf.Max(4f, kx - track.x + knobW * 0.5f), track.height);
+            if (fill.xMax > track.xMax) fill.width = track.xMax - fill.x;
+            float knobH = knobW * 1.35f;
+            knob = new Rect(kx, track.center.y - knobH * 0.5f, knobW, knobH);
+        }
+
+        // Drag inside the slider row. commit is the mouse-up that should persist.
+        static float DragMaster(Rect hit, float value, float scale, out bool held, out bool commit)
+        {
+            commit = false;
+            held = false;
+            if (hit.width < 2f) return value;
+            int id = GUIUtility.GetControlID("flockfive.master".GetHashCode(), FocusType.Passive, hit);
+            var e = Event.current;
+            if (e == null) return value;
+            bool hot = GUIUtility.hotControl == id;
+            var type = e.GetTypeForControl(id);
+            if (type == EventType.MouseDown && e.button == 0 && hit.Contains(e.mousePosition))
+            {
+                GUIUtility.hotControl = id;
+                e.Use();
+                held = true;
+                return SliderAt(hit, e.mousePosition.x, scale);
+            }
+            if (hot && (type == EventType.MouseDrag || type == EventType.MouseUp))
+            {
+                float v = SliderAt(hit, e.mousePosition.x, scale);
+                if (type == EventType.MouseUp)
+                {
+                    GUIUtility.hotControl = 0;
+                    commit = true;
+                }
+                else held = true;
+                e.Use();
+                return v;
+            }
+            held = hot;
+            return value;
+        }
+
+        // Level from the same knob-center travel MasterSliderGeom paints.
+        static float SliderAt(Rect hit, float x, float scale)
+        {
+            MasterSliderGeom(hit, scale, 0f, out _, out var lo, out _);
+            MasterSliderGeom(hit, scale, 1f, out _, out var hi, out _);
+            float left = lo.center.x;
+            float span = hi.center.x - left;
+            if (span < 1f) return 0f;
+            float u = (x - left) / span;
+            if (u < 0f) u = 0f;
+            if (u > 1f) u = 1f;
+            return u;
         }
 
         // Square box. Empty when off. The check is drawn by the caller when on.

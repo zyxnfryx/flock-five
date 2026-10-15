@@ -38,8 +38,7 @@ namespace FlockFive
 
             for (int i = 0; i < ox.Length; i++)
             {
-                float tw = 0.5f + 0.5f * Mathf.Sin(t * 2.2f + ph[i]);
-                tw = tw * tw;
+                float tw = Twinkle(t, ph[i]);
                 if (tw < 0.12f) continue;
                 float sz = baseSz * (1f + 0.35f * (i & 1));
                 float x = r.center.x + ox[i] * r.width - sz * 0.5f;
@@ -75,8 +74,7 @@ namespace FlockFive
 
             for (int i = 0; i < Rim.Length; i++)
             {
-                float tw = 0.5f + 0.5f * Mathf.Sin(t * 2.2f + RimPh[i]);
-                tw = tw * tw;
+                float tw = Twinkle(t, RimPh[i]);
                 if (tw < 0.12f) continue;
                 float sz = Mathf.Min(baseSz * (1f + 0.35f * (i & 1)), cap);
                 if (sz < 2f) continue;
@@ -117,12 +115,17 @@ namespace FlockFive
         }
 
         // tint colors the star. The core stays white so the point still glows.
-        public static void DrawAt(Vector2 at, float size, float alpha, Color tint)
+        // core false is the kit-bird halo: the sparkle sprite already has a bright heart,
+        // and a white box on the bow would read as a sticker.
+        public static void DrawAt(Vector2 at, float size, float alpha, Color tint, bool core = true)
         {
             if (alpha < 0.02f || size < 1f) return;
-            float core = size * 0.22f;
-            GUI.color = new Color(1f, 1f, 1f, alpha);
-            GUI.DrawTexture(new Rect(at.x - core * 0.5f, at.y - core * 0.5f, core, core), Texture2D.whiteTexture);
+            if (core)
+            {
+                float heart = size * 0.22f;
+                GUI.color = new Color(1f, 1f, 1f, alpha);
+                GUI.DrawTexture(new Rect(at.x - heart * 0.5f, at.y - heart * 0.5f, heart, heart), Texture2D.whiteTexture);
+            }
             var spr = SpriteCatalog.Sparkle;
             if (spr != null && spr.texture != null)
             {
@@ -130,6 +133,242 @@ namespace FlockFive
                 GUI.DrawTexture(new Rect(at.x - size * 0.5f, at.y - size * 0.5f, size, size), spr.texture, ScaleMode.ScaleToFit, true);
             }
             GUI.color = Color.white;
+        }
+
+        // Radians per second for badges, frames, and the other shared seats.
+        public const float TwinkleRate = 2.2f;
+
+        // 0..1. Same pulse DrawAround uses, so a capture can wait for a bright seat
+        // instead of guessing the sine.
+        public static float Twinkle(float time, float phase)
+        {
+            return Twinkle(time, phase, TwinkleRate);
+        }
+
+        public static float Twinkle(float time, float phase, float rate)
+        {
+            float s = Mathf.Sin(time * rate + phase);
+            float tw = 0.5f + 0.5f * s;
+            return tw * tw;
+        }
+
+        // Level button curtain. One clock for the home tear: sparkles build out of
+        // the button, wash the glass, then the sheet pulls apart from the center.
+        // A left-to-right wipe would shove every glint the same way. CurtainShiftX
+        // sends the left half left and the right half right, by the same distance.
+        public const float CurtainDuration = 1f;
+        public const float CurtainBuildEnd = 0.30f;
+        public const float CurtainWashEnd = 0.52f;
+
+        public static string CurtainPhase(float age)
+        {
+            if (age < CurtainBuildEnd) return "build";
+            if (age < CurtainWashEnd) return "wash";
+            return "part";
+        }
+
+        // 0 while the sheet is shut (build and wash). 1 when the two halves have left.
+        public static float CurtainOpen(float age)
+        {
+            if (age <= CurtainWashEnd) return 0f;
+            float span = CurtainDuration - CurtainWashEnd;
+            if (span < 0.05f) span = 0.05f;
+            float u = (age - CurtainWashEnd) / span;
+            if (u < 0f) u = 0f;
+            else if (u > 1f) u = 1f;
+            return u * u * (3f - 2f * u);
+        }
+
+        // Normalized GUI x, y grows down. open is CurtainOpen. The return is added to nx.
+        // Travel is just past half the screen so a full open clears both halves.
+        public static float CurtainShiftX(float nx, float open)
+        {
+            if (open <= 0f) return 0f;
+            if (open > 1f) open = 1f;
+            float side = nx < 0.5f ? -1f : 1f;
+            return side * open * 0.58f;
+        }
+
+        // One curtain glint. Glow under the shared sparkle so the wash is a sheet
+        // of stars, not a painted rect. Core stays off: the sprite already has a heart.
+        public static void DrawCurtainGlint(float x, float y, float size, float alpha, bool hot)
+        {
+            if (alpha < 0.03f || size < 1.5f) return;
+            var at = new Vector2(x, y);
+            var tint = hot
+                ? new Color(1f, 0.98f, 0.92f, 1f)
+                : new Color(1f, 0.84f, 0.28f, 1f);
+            // Wide haze under a tighter glow. The star sits in that light so the
+            // wash is a sheet of sparkles rather than a grid of stamps.
+            DrawGlow(at, size * 2.6f, new Color(1f, 0.62f, 0.16f, alpha * 0.22f));
+            DrawGlow(at, size * 1.55f, new Color(1f, 0.84f, 0.34f, alpha * 0.48f));
+            var spr = SpriteCatalog.Sparkle;
+            float star = hot ? size * 0.72f : size;
+            if (spr != null && spr.texture != null)
+                DrawAt(at, star, alpha, tint, false);
+            else
+                DrawAt(at, star, alpha, tint, true);
+        }
+
+        // Kit / adopted avatar. Seats are fractions of the drawn sheet from its
+        // center, for a bird facing right (beak toward +x). GUI y grows downward.
+        // The sheet is mostly empty: the rest pose sits in the middle, the
+        // wings-up flap sits high and toward the tail. Seats hug that opaque
+        // bird. The bow and the beak stay empty, and so does the name under
+        // the feet. ui is DeviceFit.Ui(), so an iPad eases the stars with the HUD.
+        public const int KitStarCount = 5;
+        // Sheet pixels at UI scale 1. Phone UI is ~3.5, so a star is large enough
+        // to read beside the bird without covering the bow.
+        public const float KitStarPx = 22f;
+        public const float KitStarBright = 0.55f;
+        // Slower than TwinkleRate. KitStarGate drops a seat; KitStarFloor is the
+        // dimmest a drawn star gets, so it still reads on the garden.
+        public const float KitTwinkleRate = 1.45f;
+        public const float KitStarFloor = 0.70f;
+        const float KitStarGate = 0.12f;
+        // Rest pose, bird facing right. Above the back (clear of the bow),
+        // beside the tail, under the tail, in front of the chest, low in front.
+        static readonly float[] PerchOx = { -0.36f, -0.32f, -0.38f, 0.22f, 0.40f };
+        static readonly float[] PerchOy = { -0.36f, 0.00f, 0.28f, 0.22f, 0.32f };
+        // Wings-up. Above the raised wing, beside the tail, under the tail,
+        // below the beak, and low in front. Closer than the rest pose because
+        // the flap sheet's bird sits higher in the square.
+        static readonly float[] FlyOx = { -0.32f, -0.36f, -0.34f, 0.28f, 0.40f };
+        static readonly float[] FlyOy = { -0.50f, 0.02f, 0.24f, 0.18f, 0.34f };
+        static readonly float[] KitPh = { 0.20f, 1.46f, 2.72f, 3.98f, 5.24f };
+        static readonly KitStar[] _kitStars = new KitStar[KitStarCount];
+
+        public struct KitStar
+        {
+            public float X, Y, Size, Alpha;
+            public byte On;
+        }
+
+        public static void DrawKitBird(Rect body, bool faceLeft, float ui, bool wings)
+        {
+            var e = Event.current;
+            if (e != null && e.type != EventType.Repaint) return;
+            int n = PlaceKitBird(body, faceLeft, ui, Screen.width, Screen.height, AdPause.Unscaled, wings, _kitStars);
+            if (n < 1) return;
+            var tint = new Color(1f, 0.98f, 0.90f, 1f);
+            for (int i = 0; i < KitStarCount; i++)
+            {
+                if (_kitStars[i].On == 0) continue;
+                DrawAt(new Vector2(_kitStars[i].X, _kitStars[i].Y), _kitStars[i].Size, _kitStars[i].Alpha, tint, false);
+            }
+        }
+
+        // Brightest star that would actually draw. 0 when every seat is dark,
+        // clipped, or sitting on the bow, beak or name.
+        public static float KitBirdPeak(Rect body, bool faceLeft, float ui, float screenW, float screenH, float time, bool wings)
+        {
+            if (PlaceKitBird(body, faceLeft, ui, screenW, screenH, time, wings, _kitStars) < 1) return 0f;
+            float peak = 0f;
+            for (int i = 0; i < KitStarCount; i++)
+                if (_kitStars[i].On != 0 && _kitStars[i].Alpha > peak) peak = _kitStars[i].Alpha;
+            return peak;
+        }
+
+        public static int PlaceKitBird(Rect body, bool faceLeft, float ui, float screenW, float screenH, float time, bool wings, KitStar[] into)
+        {
+            if (into == null || into.Length < KitStarCount) return 0;
+            for (int i = 0; i < KitStarCount; i++) into[i].On = 0;
+            if (ui < 0.25f) ui = 0.25f;
+            if (body.width < 4f || body.height < 4f || screenW < 8f || screenH < 8f) return 0;
+            float sign = faceLeft ? -1f : 1f;
+            float minSide = Mathf.Min(body.width, body.height);
+            var ox = wings ? FlyOx : PerchOx;
+            var oy = wings ? FlyOy : PerchOy;
+            int n = 0;
+            var c = body.center;
+            for (int i = 0; i < KitStarCount; i++)
+            {
+                float alpha = KitAlpha(time, i);
+                if (alpha <= 0f) continue;
+                // Even seats are KitStarPx * ui. Odd seats are a little larger.
+                float sz = KitStarPx * ui * (1f + 0.22f * (i & 1));
+                float cap = minSide * 0.30f;
+                if (sz > cap) sz = cap;
+                if (sz < 2f) continue;
+                float x = c.x + ox[i] * sign * body.width;
+                float y = c.y + oy[i] * body.height;
+                // Leave a star that would leave the screen. Dragging it inward
+                // parks the point on the bow or the name.
+                float half = sz * 0.5f;
+                if (x - half < 1f || y - half < 1f || x + half > screenW - 1f || y + half > screenH - 1f) continue;
+                if (CoversBody(body, faceLeft, wings, x, y, sz)) continue;
+                if (CoversHead(body, faceLeft, x, y, sz)) continue;
+                if (CoversPlate(body, wings, x, y, sz)) continue;
+                into[i].X = x;
+                into[i].Y = y;
+                into[i].Size = sz;
+                into[i].Alpha = alpha;
+                into[i].On = 1;
+                n++;
+            }
+            return n;
+        }
+
+        // 0 in the dark phase. Otherwise KitStarFloor..1 on KitTwinkleRate.
+        static float KitAlpha(float time, int index)
+        {
+            float raw = Twinkle(time, KitPh[index], KitTwinkleRate);
+            if (raw < KitStarGate) return 0f;
+            return KitStarFloor + (1f - KitStarFloor) * raw;
+        }
+
+        // Torso only. The sheet's empty padding is where the stars live, so the
+        // whole drawn square is not the bird.
+        static bool CoversBody(Rect body, bool faceLeft, bool wings, float x, float y, float sz)
+        {
+            if (wings)
+                return KitBox(body, faceLeft, -0.22f, -0.36f, 0.12f, 0.10f, x, y, sz * 0.20f);
+            return KitBox(body, faceLeft, -0.16f, -0.12f, 0.14f, 0.10f, x, y, sz * 0.20f);
+        }
+
+        // Bow loops on the skull, and the beak in front of them. Crown shares
+        // the skull seat. A star whose points meet either box is not drawn.
+        static bool CoversHead(Rect body, bool faceLeft, float x, float y, float sz)
+        {
+            if (KitBox(body, faceLeft, -0.20f, -0.52f, 0.22f, -0.14f, x, y, sz * 0.46f)) return true;
+            return KitBox(body, faceLeft, 0.08f, -0.14f, 0.42f, 0.02f, x, y, sz * 0.40f);
+        }
+
+        // Name plaque under the opaque feet. The flap sheet's feet sit higher
+        // in the square than the rest pose.
+        static bool CoversPlate(Rect body, bool wings, float x, float y, float sz)
+        {
+            float oy0 = wings ? 0.32f : 0.48f;
+            float oh = wings ? 0.24f : 0.30f;
+            float hw = wings ? 0.24f : 0.32f;
+            var c = body.center;
+            var plate = new Rect(c.x - hw * body.width, c.y + oy0 * body.height, hw * 2f * body.width, oh * body.height);
+            return DiscHits(plate, x, y, sz * 0.40f);
+        }
+
+        static bool KitBox(Rect body, bool faceLeft, float ox0, float oy0, float ox1, float oy1, float x, float y, float rad)
+        {
+            if (faceLeft)
+            {
+                float a = -ox1;
+                ox1 = -ox0;
+                ox0 = a;
+            }
+            var c = body.center;
+            return DiscHits(new Rect(
+                c.x + ox0 * body.width,
+                c.y + oy0 * body.height,
+                (ox1 - ox0) * body.width,
+                (oy1 - oy0) * body.height), x, y, rad);
+        }
+
+        static bool DiscHits(Rect r, float x, float y, float rad)
+        {
+            float cx = Mathf.Clamp(x, r.xMin, r.xMax);
+            float cy = Mathf.Clamp(y, r.yMin, r.yMax);
+            float dx = x - cx;
+            float dy = y - cy;
+            return dx * dx + dy * dy < rad * rad;
         }
 
         // Soft disc. SpriteCatalog.Glow is built once. No per-frame texture.

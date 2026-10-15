@@ -245,4 +245,48 @@ namespace FlockFive
             return new Rect(i * 24f, 8f, 16f, 16f);
         }
     }
+
+    // One decision for a coached home button. The app and the editor tap test
+    // both use it, so a lesson-side gate cannot eat the glove's own control.
+    public static class CoachPress
+    {
+        public struct Decision
+        {
+            public bool Open;
+            public bool Dismiss;
+            public bool Rearm;
+            public bool Blocked;
+        }
+
+        public static bool OwnsTarget(bool coachUp, HomeControl target, HomeControl tapped, out GlovePress glove)
+        {
+            glove = GloveGate.Resolve(coachUp, target, tapped);
+            return coachUp && glove.Navigate && glove.Advance
+                && tapped == target && target != HomeControl.None;
+        }
+
+        public static Decision Resolve(bool coachUp, HomeControl target, HomeControl tapped, SplashPress.Gates gates, bool beganInside)
+        {
+            bool own = OwnsTarget(coachUp, target, tapped, out var glove);
+            if (own) gates.LessonOwn = true;
+            bool blocked = SplashPress.Blocks(gates);
+            bool open = beganInside && !blocked && glove.AllowPress && glove.Navigate;
+            bool dismiss = open && own;
+            return new Decision
+            {
+                Open = open,
+                Dismiss = dismiss,
+                Rearm = coachUp && !dismiss,
+                Blocked = blocked,
+            };
+        }
+
+        // The faded hand returns only for the step that faded, and only when that
+        // step is still the lesson. A dismiss during the fade stays down.
+        public static int ReturnStep(int fadedStep, int liveStep, bool dismissed)
+        {
+            if (dismissed || fadedStep < 0 || liveStep != fadedStep) return -1;
+            return liveStep;
+        }
+    }
 }

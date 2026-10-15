@@ -959,7 +959,9 @@ namespace FlockFive
             int frame = Time.frameCount;
             if (frame == _frame) return;
             _frame = frame;
-            float dt = Time.unscaledDeltaTime;
+            // A screenshot frame's real unscaled step is the encode hitch. Honor the
+            // capture step so a recording plays the sky at that frame rate, not in a rush.
+            float dt = Time.captureDeltaTime > 0f ? Time.captureDeltaTime : Time.unscaledDeltaTime;
             if (AdPause.Active || (GamePause.Paused && !(GamePause.TutorHold && !Ads.IsShowing)))
                 dt = 0f;
             else if (_drop > 0)

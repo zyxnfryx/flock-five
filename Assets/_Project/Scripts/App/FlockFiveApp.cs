@@ -29,6 +29,8 @@ namespace FlockFive
         bool _keepStreak;
         enum RestartAsk { None, Sure, Keep }
         RestartAsk _restartAsk;
+        // Seconds into the kept-badge heal. Negative means the chip is still at risk.
+        float _streakHealAge = -1f;
         int _restartSavedMul;
         bool _restartAd;
         float _gardenStampAt = -1f;
@@ -45,6 +47,7 @@ namespace FlockFive
             public int Worth;
         }
         readonly System.Collections.Generic.List<CoinFly> _flies = new System.Collections.Generic.List<CoinFly>();
+        int _coinFlyFrame = -1;
         // Purse coins already saved. Hidden until that sprite lands, then the balance counts them.
         int _coinInFlight;
         // Displayed balance while a reward pay is ticking. -1 until the first draw.
@@ -695,6 +698,11 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-poker-feel"); } catch { }
                 StartCoroutine(ShotPokerFeel());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-peach-flutter"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-peach-flutter"); } catch { }
+                StartCoroutine(ShotPeachFlutter());
+            }
 #endif
         }
 
@@ -715,6 +723,7 @@ namespace FlockFive
                 if (!GatePopup(PopupKind.Streak, true)) return;
                 _restartSavedMul = StreakTier.Normalize(Purse.Streak);
                 _restartAsk = RestartAsk.Sure;
+                _streakHealAge = -1f;
                 _gift = GiftFace.None;
                 _freezeOffer = false;
                 Sfx.CardTap();
@@ -5445,9 +5454,6 @@ namespace FlockFive
             EndPest();
             _locked.Clear();
             HaltBreaks();
-            SparrowView.ClearFx();
-            if (HawkView.Live != null) HawkView.Live.EndScrap();
-            if (SparrowView.Live != null) SparrowView.Live.FinishEvict();
             // Own every visible bird before any yield, including ones already in the air
             // and silhouettes under bees or leaves, so a limb break or hop cannot hide them.
             var flock = ClaimFlock();
@@ -5455,7 +5461,7 @@ namespace FlockFive
                 yield return _garden.Ice.Shatter(_garden.Root);
             yield return FlyOffAll(flock);
             if (_seed != null) _board = _seed.Clone();
-            if (_board != null && _board.Ostrich != null) _board.Ostrich.Reset();
+            PestReset.Apply(_board);
             BonusBranches.ApplyClaims(_board, _bonusOn);
             LightningStrike.ApplyBurns(_board, _offerBurned);
             _census = BoardValidator.Counts(_board);
@@ -6202,13 +6208,35 @@ namespace FlockFive
             screen = default;
             if (PlayClock.Now < _resumeInputUntil) return false;
             if (LessonGuardUp()) return false;
+            // The finger wins over a synthesized mouse. On Android the mouse click
+            // can sit at a stale point while the touch is the poker button.
+            if (FreshTouchPress(out screen)) return true;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
                 screen = Mouse.current.position.ReadValue();
                 return true;
             }
+            return false;
+        }
+
+        static bool FreshTouchPress(out Vector2 screen)
+        {
+            screen = default;
             var touch = Touchscreen.current;
-            if (touch != null && touch.primaryTouch.press.wasPressedThisFrame)
+            if (touch == null) return false;
+            var touches = touch.touches;
+            for (int i = 0; i < touches.Count; i++)
+            {
+                var t = touches[i];
+                if (t == null || !t.press.wasPressedThisFrame) continue;
+                var phase = t.phase.ReadValue();
+                if (phase == UnityEngine.InputSystem.TouchPhase.Canceled
+                    || phase == UnityEngine.InputSystem.TouchPhase.None)
+                    continue;
+                screen = t.position.ReadValue();
+                return true;
+            }
+            if (touch.primaryTouch != null && touch.primaryTouch.press.wasPressedThisFrame)
             {
                 screen = touch.primaryTouch.position.ReadValue();
                 return true;
@@ -6221,7 +6249,7 @@ namespace FlockFive
         static float TopHud(float extra = 0f) => TopHudBox(Screen.height, Screen.safeArea, extra);
 
         // Screen-explicit so the album grid test uses the same top inset as play.
-        static float TopHudBox(float screenH, Rect safe, float extra)
+        public static float TopHudBox(float screenH, Rect safe, float extra)
         {
             float s = DeviceFit.UiH(screenH);
             float inset = (safe.width < 2f || safe.height < 2f)
@@ -6328,6 +6356,12 @@ namespace FlockFive
                 _dailyShotQuiet = true;
                 try { System.IO.File.Delete("/tmp/flock-five-hand-qa"); } catch { }
                 StartCoroutine(ShotHandQa());
+            }
+            if (System.IO.File.Exists("/tmp/flock-five-peach-flutter"))
+            {
+                _dailyShotQuiet = true;
+                try { System.IO.File.Delete("/tmp/flock-five-peach-flutter"); } catch { }
+                StartCoroutine(ShotPeachFlutter());
             }
             if (System.IO.File.Exists("/tmp/flock-five-force-five-wilds"))
             {
@@ -6535,13 +6569,18 @@ namespace FlockFive
         }
 
         // Original splash hive size — pig matches this, then both bump together.
-        static float SplashRailAnchor() =>
-            Mathf.Clamp(Screen.width * 0.11f, 52f, 108f);
+        static float SplashRailAnchor() => SplashRailAnchor(Screen.width);
+
+        public static float SplashRailAnchor(float screenW) =>
+            Mathf.Clamp(screenW * 0.11f, 52f, 108f);
 
         // One scale for pig, hive, poker, VIP, and the daily gift, about 15% over the previous rail.
         const float SplashRailScale = 1.15f;
 
-        static float SplashRailSize() => SplashRailAnchor() * 1.22f * SplashRailScale;
+        public static float SplashRailSize(float screenW) =>
+            SplashRailAnchor(screenW) * 1.22f * SplashRailScale;
+
+        static float SplashRailSize() => SplashRailSize(Screen.width);
 
         static float SplashRailGap() => Mathf.Max(24f, SplashRailSize() * 0.30f);
 
@@ -6746,11 +6785,11 @@ namespace FlockFive
             EnsureSplashRails();
             var r = _railRect[id];
             if (r.width < 2f || r.height < 2f) return r;
-            float pad = r.width * 0.06f;
-            float x0 = r.x - pad;
-            float y0 = r.y - pad;
-            float x1 = r.xMax + pad;
-            float y1 = r.yMax + Mathf.Min(pad, SplashRailGap() * 0.25f);
+            var hit = SplashPress.PadRail(r, SplashRailGap());
+            float x0 = hit.x;
+            float y0 = hit.y;
+            float x1 = hit.xMax;
+            float y1 = hit.yMax;
             if (id == RailDaily)
             {
                 DailyBonus.Boot();
@@ -8388,8 +8427,10 @@ namespace FlockFive
 
         // Icon edge from the rail size at rest (the piggy is the rail's size), so the poker
         // page, which has no rail, gets the exact home size.
-        static float CoinBalanceIcon(float s) =>
-            Mathf.Clamp(SplashRailSize() * 0.48f * 0.80f, 29f * s, 51f * s);
+        public static float CoinBalanceIcon(float screenW, float s) =>
+            Mathf.Clamp(SplashRailSize(screenW) * 0.48f * 0.80f, 29f * s, 51f * s);
+
+        static float CoinBalanceIcon(float s) => CoinBalanceIcon(Screen.width, s);
 
         void DrawCoinBalance(float s, float rightX, float centerY)
         {
@@ -8896,21 +8937,26 @@ namespace FlockFive
         // Top-left chip, about 1.7× the previous 81px disc (66..117). TopHud keeps it
         // under the notch / Dynamic Island. The cap stays clear of the feeders.
         // Glints stay inside this rect. The reward-stamp pop keeps its own rect.
-        Rect GardenStampRect(float s)
+        public static Rect GardenStampBox(float screenW, float screenH, Rect safe, float s)
         {
             float d = Mathf.Clamp(138f * s, 112f, 190f);
-            float x = Mathf.Max(10f * s, Screen.safeArea.xMin + 8f);
-            float y = TopHud() + 10f * s;
-            var safe = Screen.safeArea;
+            float x = Mathf.Max(10f * s, safe.xMin + 8f);
+            float y = TopHudBox(screenH, safe, 0f) + 10f * s;
             if (safe.width > 8f && safe.height > 8f)
             {
                 float maxX = safe.xMax - 6f;
                 if (x + d > maxX) x = Mathf.Max(safe.xMin + 4f, maxX - d);
-                float minY = Screen.height - safe.yMax + 4f;
+                float minY = screenH - safe.yMax + 4f;
                 if (y < minY) y = minY;
             }
+            if (x < 0f) x = 0f;
+            if (y < 0f) y = 0f;
+            if (x + d > screenW) x = Mathf.Max(0f, screenW - d);
             return new Rect(x, y, d, d);
         }
+
+        Rect GardenStampRect(float s) =>
+            GardenStampBox(Screen.width, Screen.height, Screen.safeArea, s);
 
         void DrawGardenStamp(float s)
         {
@@ -8965,6 +9011,7 @@ namespace FlockFive
                 {
                     Purse.BreakStreak();
                     _restartAsk = RestartAsk.Keep;
+                    _streakHealAge = -1f;
                     Sfx.CardTap();
                 }
                 return;
@@ -8975,9 +9022,14 @@ namespace FlockFive
             var watchR = new Rect(inner.xMax - bw, inner.yMax - bh, bw, bh);
             float xSz = Mathf.Max(40f, 42f * s);
             var xBtn = new Rect(card.xMax - xSz - 6f, card.y + 6f, xSz, xSz);
-            bool decline = HitPad(noThanks, out bool declineHeld);
-            bool watch = HitPad(watchR, out bool watchHeld);
-            bool close = HitPad(CloseTapRect(xBtn), out bool xHeld);
+            // The heal owns the card. A tap here would restart under the sweep.
+            bool healing = _streakHealAge >= 0f;
+            bool declineHeld = false;
+            bool watchHeld = false;
+            bool xHeld = false;
+            bool decline = !healing && HitPad(noThanks, out declineHeld);
+            bool watch = !healing && HitPad(watchR, out watchHeld);
+            bool close = !healing && HitPad(CloseTapRect(xBtn), out xHeld);
             DrawPopupButton(noThanks, declineHeld, PopupTint.Red);
             DrawPopupButton(watchR, watchHeld, PopupTint.Green);
             DrawPopupWord(noThanks, "No thanks", st, s);
@@ -8989,6 +9041,14 @@ namespace FlockFive
                 return;
             }
             if (decline || close) StartCoroutine(FinishRestart(false));
+#if UNITY_EDITOR
+            if (_streakShotVeil > 0.02f)
+            {
+                GUI.color = new Color(0.04f, 0.025f, 0.015f, 0.94f * _streakShotVeil);
+                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
+#endif
         }
 
         // White face, dark outline, about 60% of the drawn button. Hit rect stays the button.
@@ -9009,20 +9069,53 @@ namespace FlockFive
             if (_restartAd) yield break;
             _restartAd = true;
             int saved = _restartSavedMul;
+            // Rewarded returns after the ad has closed. The grant is inside that
+            // wait (or just after it, when ads are off). The heal plays on the
+            // badge that is still up, then the round snaps.
             yield return Ads.Rewarded(Ads.PlacementKeep, saved, false);
             _restartAd = false;
-            _restartAsk = RestartAsk.None;
+            bool kept = false;
             if (!Ads.Enabled)
             {
-                if (Ads.LastGranted) RewardEffects.Keep(saved);
+                if (Ads.LastGranted) kept = RewardEffects.Keep(saved);
             }
-            else if (RewardedGrant.Earned) RewardedGrant.Flush();
+            else if (RewardedGrant.Earned)
+            {
+                RewardedGrant.Flush();
+                kept = Purse.Streak >= 2;
+            }
+            if (kept)
+            {
+                BeginStreakHeal();
+                yield return HoldStreakHeal();
+            }
+            _streakHealAge = -1f;
+            _restartAsk = RestartAsk.None;
             yield return SnapRound();
+        }
+
+        void BeginStreakHeal()
+        {
+            if (_streakHealAge >= 0f) return;
+            _streakHealAge = 0f;
+        }
+
+        IEnumerator HoldStreakHeal()
+        {
+            while (_streakHealAge < StreakBadge.RestoreSeconds)
+            {
+                float dt = AdPause.UnscaledDelta;
+                if (dt <= 0f || dt > 0.05f) dt = Time.unscaledDeltaTime;
+                if (dt <= 0f || dt > 0.05f) dt = 0.016f;
+                _streakHealAge += dt;
+                yield return null;
+            }
         }
 
         IEnumerator FinishRestart(bool keep)
         {
             _restartAsk = RestartAsk.None;
+            _streakHealAge = -1f;
             if (keep && _restartSavedMul >= 2) Purse.SetStreak(_restartSavedMul);
             yield return SnapRound();
         }
@@ -9617,7 +9710,10 @@ namespace FlockFive
             var spr = SpriteCatalog.Coin;
             var tex = spr != null ? spr.texture : null;
             var glow = GlowTex();
-            float dt = AdPause.UnscaledDelta;
+            // A second paint (daily pay, above the scrim) must not step the flight twice.
+            bool step = _coinFlyFrame != Time.frameCount;
+            _coinFlyFrame = Time.frameCount;
+            float dt = step ? AdPause.UnscaledDelta : 0f;
             float size = 68f * DeviceFit.Ui();
             var dest = new Vector2(pig.x + pig.width * 0.5f, pig.y + pig.height * 0.42f);
             for (int i = _flies.Count - 1; i >= 0; i--)
@@ -9852,7 +9948,6 @@ namespace FlockFive
             // The sheet has to be laid out before gear and the rails ask the veil.
             PrepareSoftPrompt(modal || tutorUp);
             PollHomeGear();
-            PollHomeMute();
             DismissAvatarRename(s);
             // Rail steps hold until their own button. A miss does not skip poker or Daily,
             StartupTrace.Lap("L.Prep");
@@ -9902,7 +9997,7 @@ namespace FlockFive
             vipGates.Inactive = !offerVip;
             vipGates.PopupGate = PopupBlocked(PopupKind.Vip);
             vipGates.StepGate = StepGateBlocks(SplashPress.PressHit(SplashPress.Id.Vip).Rect);
-            var vipView = StepHomePress(SplashPress.Id.Vip, !SplashPress.Blocks(vipGates));
+            var vipView = StepHomePress(SplashPress.Id.Vip, !SplashPress.Blocks(vipGates), vipGates.LessonOwn);
             bool noAdsHeld = vipView.Pressed;
             bool vipTap = vipView.Launch;
 
@@ -9924,7 +10019,7 @@ namespace FlockFive
             hiveGates.Hidden = !hiveDraw;
             hiveGates.Inactive = !SplashHiveShown();
             hiveGates.StepGate = StepGateBlocks(hiveHit);
-            var hiveView = StepHomePress(SplashPress.Id.Hive, !SplashPress.Blocks(hiveGates));
+            var hiveView = StepHomePress(SplashPress.Id.Hive, !SplashPress.Blocks(hiveGates), hiveGates.LessonOwn);
             StartupTrace.Lap("L.Hive");
             if (hiveView.Launch)
             {
@@ -9951,12 +10046,14 @@ namespace FlockFive
             // so the rail closes under the hive. Its hit is the sliding rect.
             bool pokerDraw = RailLive(RailPoker);
             var pokerR = SplashPokerRect();
-            SplashPress.Layout(SplashPress.Id.Poker, pokerR);
+            // Same padded rect the glove arms. The drawn icon stays the rail square.
+            var pokerTap = RailTapRect(RailPoker);
+            SplashPress.Layout(SplashPress.Id.Poker, pokerTap);
             var pokerGates = HomePressGates(RailPoker);
-            pokerGates.Consent = VeilBlocks(pokerR);
+            pokerGates.Consent = VeilBlocks(pokerTap);
             pokerGates.Hidden = !pokerDraw;
-            pokerGates.StepGate = StepGateBlocks(pokerR);
-            var pokerView = StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates));
+            pokerGates.StepGate = StepGateBlocks(pokerTap);
+            var pokerView = StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates), pokerGates.LessonOwn);
             StartupTrace.Lap("L.Poker");
             if (pokerView.Launch)
             {
@@ -10017,7 +10114,7 @@ namespace FlockFive
                 dailyGates.PopupGate = false;
                 dailyGates.ResumeSwallow = false;
             }
-            var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates));
+            var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates), dailyGates.LessonOwn);
 #if UNITY_EDITOR
             if (ShotKeepAwake && _homeSamples.Count > 0 && DbgDaily.Length < 4000)
                 DbgDaily += (Event.current != null ? Event.current.type.ToString() : "-") + "/f" + Time.frameCount + ":" + _homeSamples[0].Phase
@@ -10062,13 +10159,12 @@ namespace FlockFive
             if (_dailyOpen) DrawDailyBonus(s);
             if (_dailyAskOpen) DrawDailyAsk(s);
             if (_welcomeOpen) DrawWelcome(s);
-            if (_dailyOpen) DrawDailyClaimLine(s);
+            if (_dailyOpen && !_dailyPayHold && _dailyCloseAt < 0f) DrawDailyClaimLine(s);
             StartupTrace.Lap("L.Daily2");
-            if (_welcomeGlove || (_dailyIntroLive && _dailyOpen && !_dailyAskOpen))
+            if (_welcomeGlove || (_dailyIntroLive && _dailyOpen && !_dailyAskOpen && !_dailyPayHold && _dailyCloseAt < 0f))
                 DrawTutorOverlay(s);
             if (_avatarRename) DrawAvatarRename(s);
             PaintHomeGear();
-            PaintHomeMute();
             StartupTrace.Lap("L.Gear");
             _hitLock = 0;
             if (_settingsOpen) DrawSettingsSheet(s);
@@ -10110,8 +10206,13 @@ namespace FlockFive
                 LevelCurtain.Aim(rest);
                 LevelCurtain.Arm(AdPause.Unscaled);
             }
+#if UNITY_EDITOR
+            else if (!held && !fired && LevelCurtain.Armed && !LevelCurtain.LoadStarted && !EditorShotLive)
+                LevelCurtain.Clear();
+#else
             else if (!held && !fired && LevelCurtain.Armed && !LevelCurtain.LoadStarted)
                 LevelCurtain.Clear();
+#endif
 
             var visual = PushButton.Visual(rest, motion.Pose);
             var flower = SpriteCatalog.PlayFlower;
@@ -10886,12 +10987,13 @@ namespace FlockFive
             return px;
         }
 
-        static void StampBannerText(Rect r, string text, GUIStyle st, float alpha, bool bold)
+        static void StampBannerText(Rect r, string text, GUIStyle st, float alpha, bool bold, int outlinePx = -1)
         {
             if (st == null || string.IsNullOrEmpty(text) || alpha < 0.04f) return;
             var prev = st.fontStyle;
             st.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
-            StampOutlined(r, text, st, new Color(1f, 1f, 1f, alpha), 0, BannerOutlinePx(st.fontSize));
+            int ring = outlinePx >= 0 ? outlinePx : BannerOutlinePx(st.fontSize);
+            StampOutlined(r, text, st, new Color(1f, 1f, 1f, alpha), 0, ring);
             st.fontStyle = prev;
         }
 
@@ -11057,7 +11159,7 @@ namespace FlockFive
 
         static void StampOutlined(Rect r, string text, GUIStyle st, Color fill, int whitePx, int blackPx, float minA = 0.04f)
         {
-            float a = Mathf.Clamp01(fill.a);
+            float a = Mathf.Clamp01(fill.a * _imGuiFade);
             if (a < minA) return;
             var body = RimContent(text);
             var seat = LockSeat(r);
@@ -11131,7 +11233,7 @@ namespace FlockFive
         }
 
         // Same yellow-navy letter family as the splash mark, with POKER as the third row.
-        float PokerTitleHeight(float s)
+        public static float PokerTitleHeight(float s)
         {
             float capSmall = 22f * s;
             float capPoker = 30f * s;
@@ -11801,6 +11903,9 @@ namespace FlockFive
             _avatarDrew = true;
             bool wings = BirdIdle.UseFlyingPose(onPerch, false);
             _avatarPlateR = DrawAvatarPlate(c, icon, SavedAvatarName(), s, _avatarCol, _avatarFaceLeft, wings, _avatarClock, true);
+            // Bow and crown keep a halo. Bare birds do not. Stars scale with DeviceFit.Ui().
+            if (SavedAvatarKit() != 0)
+                SparkleFx.DrawKitBird(drawn, _avatarFaceLeft, DeviceFit.Ui(), wings);
         }
 
         // Rails already took their taps. The play flower has not. A lesson click
@@ -12983,6 +13088,57 @@ namespace FlockFive
             DrawTutorOverlay(s);
         }
 
+        // Back medal, coin icon, wordmark, halo, and PAY TABLE tab.
+        public struct PokerChrome
+        {
+            public Rect Back;
+            public Rect Coins;
+            public Rect Title;
+            public Rect Halo;
+            public Rect PayTab;
+            public float Top;
+            public float Below;
+        }
+
+        public static Rect PokerPayTabBox(float w, Rect safe, float top, float s)
+        {
+            float tabW = Mathf.Clamp(211f * s, 178f, 264f);
+            float tabH = Mathf.Clamp(62f * s, 55f, 78f);
+            float right = w - Mathf.Max(6f, w - safe.xMax + 4f);
+            float tabY = top + 4f * s;
+            return new Rect(right - tabW, tabY, tabW, tabH);
+        }
+
+        public static PokerChrome LayoutPokerChrome(float w, float h, Rect safe, float s)
+        {
+            if (safe.width < 2f || safe.height < 2f)
+                safe = new Rect(0f, 0f, w, h);
+            float top = TopHudBox(h, safe, 0f);
+            var back = BackMedalBox(s, top, safe);
+            float right = w - Mathf.Max(12f, w - safe.xMax + 10f);
+            float icon = CoinBalanceIcon(w, s);
+            float cy = Mathf.Max(back.center.y, top + icon * 0.5f);
+            var coins = new Rect(right - icon, cy - icon * 0.5f, icon, icon);
+            float logoTop = top + back.height + 4f * s;
+            float logoH = PokerTitleHeight(s);
+            float markW = Mathf.Min(w * 0.50f, 240f * s);
+            float haloW = Mathf.Min(w * 0.82f, markW * 1.28f);
+            var halo = new Rect((w - haloW) * 0.5f, Mathf.Max(4f, logoTop - 8f * s), haloW, logoH + 14f * s);
+            float titleW = Mathf.Min(w * 0.62f, 280f * s);
+            var title = new Rect((w - titleW) * 0.5f, logoTop, titleW, logoH);
+            float below = logoTop + logoH;
+            return new PokerChrome
+            {
+                Back = back,
+                Coins = coins,
+                Title = title,
+                Halo = halo,
+                PayTab = PokerPayTabBox(w, safe, below, s),
+                Top = top,
+                Below = below
+            };
+        }
+
         void DrawPokerPage()
         {
             float s = DeviceFit.Ui();
@@ -12991,8 +13147,8 @@ namespace FlockFive
             ArmPokerPageTutor();
 
             var safe = Screen.safeArea;
-            float top = TopHud();
-            var back = BackMedalRect(s, top);
+            var chrome = LayoutPokerChrome(Screen.width, Screen.height, safe, s);
+            var back = chrome.Back;
             if (DrawBackMedal(back))
             {
                 if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn || _pokerShowPay)
@@ -13014,22 +13170,15 @@ namespace FlockFive
                 _pokerHover = -1;
                 _home = HomeFace.Splash;
             }
-            DrawPokerPurse(back, top, s);
+            DrawPokerPurse(chrome, s);
 
-            float logoTop = top + back.height + 4f * s;
-            float logoH = PokerTitleHeight(s);
-            float markW = Mathf.Min(Screen.width * 0.50f, 240f * s);
-            float haloW = Mathf.Min(Screen.width * 0.82f, markW * 1.28f);
-            var halo = new Rect(
-                (Screen.width - haloW) * 0.5f,
-                Mathf.Max(4f, logoTop - 8f * s),
-                haloW,
-                logoH + 14f * s);
+            float logoTop = chrome.Title.y;
+            var halo = chrome.Halo;
             EnsureHaloFlutters(ref _pokerFlutters, halo);
             DrawHaloBirds(ref _pokerFlutters, halo, s, true, HaloBirdIcon(s), ref _pokerHaloTick);
             DrawPokerTitleMark(logoTop, s);
             DrawHaloBirds(ref _pokerFlutters, halo, s, false, HaloBirdIcon(s), ref _pokerHaloTick);
-            float below = logoTop + logoH;
+            float below = chrome.Below;
 
             // Hit-test pay-table tab / dismiss early so overlay blocks cards & Deal.
             if (!_pokerStamp)
@@ -13048,7 +13197,7 @@ namespace FlockFive
             float btnSize = Mathf.Min(Screen.width * 0.46f, 200f * s);
             float botPad = Mathf.Max(12f, safe.yMin + 6f);
             float btnY = Screen.height - botPad - btnSize;
-            var payTab = PokerPayTabRect(below, s);
+            var payTab = chrome.PayTab;
             // Equal air between the wordmark and the bet/deal controls. Drop below the PAY TABLE chip when that still fits.
             float bandTop = below;
             float bandBot = btnY;
@@ -13153,14 +13302,8 @@ namespace FlockFive
         }
 
 
-        Rect PokerPayTabRect(float top, float s)
-        {
-            float tabW = Mathf.Clamp(211f * s, 178f, 264f);
-            float tabH = Mathf.Clamp(62f * s, 55f, 78f);
-            float right = Screen.width - Mathf.Max(6f, Screen.width - Screen.safeArea.xMax + 4f);
-            float tabY = top + 4f * s;
-            return new Rect(right - tabW, tabY, tabW, tabH);
-        }
+        Rect PokerPayTabRect(float top, float s) =>
+            PokerPayTabBox(Screen.width, Screen.safeArea, top, s);
 
         void TickPokerPayTable(float top, float s)
         {
@@ -13901,11 +14044,9 @@ namespace FlockFive
         // Same balance as home (shared DrawCoinBalance: size, font, icon), seated in the
         // top-right corner on the back-medal row. Build 60 drew it at the medal's height
         // (icon = back.height, type 0.86), bigger than home.
-        void DrawPokerPurse(Rect back, float top, float s)
+        void DrawPokerPurse(PokerChrome chrome, float s)
         {
-            float right = Screen.width - Mathf.Max(12f, Screen.width - Screen.safeArea.xMax + 10f);
-            float cy = Mathf.Max(back.center.y, top + CoinBalanceIcon(s) * 0.5f);
-            DrawCoinBalance(s, right, cy);
+            DrawCoinBalance(s, chrome.Coins.xMax, chrome.Coins.center.y);
         }
 
         const float DealGatherT = 0.32f;
@@ -18332,7 +18473,7 @@ namespace FlockFive
         void DrawStreakCaution(Rect headR, float s, GUIStyle title)
         {
             int mul = _restartSavedMul >= 2 ? _restartSavedMul : 2;
-            float d = Mathf.Min(headR.width * 0.30f, 78f * s);
+            float d = Mathf.Min(headR.width * 0.36f, 92f * s);
             var chip = new Rect(headR.center.x - d * 0.5f, headR.y, d, d);
             string numeral = MulChip(mul);
             var ink = StreakBadge.Colors(mul);
@@ -18342,12 +18483,12 @@ namespace FlockFive
             StreakBadge.NumeralFit(chip, out float fitW, out float fitH);
             int chipHi = Mathf.Max(16, Mathf.RoundToInt(fitH));
             title.fontSize = FitFont(title, numeral, fitW, fitH, 12, chipHi);
-            StreakBadge.Draw(chip, numeral, title, ink, 1f, 0.4f);
-            float g = d * 0.40f;
-            var tri = new Rect(chip.xMax - g * 0.55f, chip.y - g * 0.06f, g, g * 0.88f);
-            DrawCautionMark(tri);
-            title.fontSize = FitFont(title, "!", tri.width * 0.7f, tri.height * 0.55f, 12, Mathf.Max(14, Mathf.RoundToInt(g * 0.55f)));
-            StampOutlined(new Rect(tri.x, tri.y + tri.height * 0.18f, tri.width, tri.height * 0.62f), "!", title, Color.white, 0, 2);
+            float clock = AdPause.Unscaled;
+#if UNITY_EDITOR
+            if (_streakShotClock >= 0f) clock = _streakShotClock;
+#endif
+            var risk = _streakHealAge >= 0f ? StreakBadge.Restored(_streakHealAge) : StreakBadge.AtRisk(clock);
+            StreakBadge.Draw(chip, numeral, title, ink, 1f, 0.4f, risk);
             float titleH = Mathf.Max(28f * s, headR.height * 0.22f);
             var titleR = new Rect(headR.x, chip.yMax + 4f * s, headR.width, titleH);
             float bodyTop = titleR.yMax + 2f * s;
@@ -18924,6 +19065,33 @@ namespace FlockFive
             var safe = Screen.safeArea;
             float xSz = Mathf.Max(48f * s, 44f);
             return new Rect(Screen.width - Mathf.Max(14f, Screen.width - safe.xMax + 8f) - xSz, top, xSz, xSz);
+        }
+
+        // Daily Bonus close. The screen-corner seat sat above the wood. This one
+        // stays inside the card, and so does the 1.5× glyph.
+        public static Rect DailyCloseInFrame(Rect card, float scale)
+        {
+            if (scale < 1f) scale = 1f;
+            float sz = Mathf.Max(48f * scale, 44f);
+            float hang = sz * (CloseGlyphGrow - 1f) * 0.5f;
+            float pad = Mathf.Max(8f, 6f * scale);
+            float inset = hang + pad;
+            float x = card.xMax - inset - sz;
+            float y = card.y + inset;
+            if (x < card.x + pad) x = card.x + pad;
+            if (y < card.y + pad) y = card.y + pad;
+            if (x + sz > card.xMax - pad) x = card.xMax - pad - sz;
+            if (y + sz > card.yMax - pad) y = card.yMax - pad - sz;
+            if (x < card.x) x = card.x;
+            if (y < card.y) y = card.y;
+            return new Rect(x, y, sz, sz);
+        }
+
+        public static Rect CloseGlyphBox(Rect button)
+        {
+            float gw = button.width * CloseGlyphGrow;
+            float gh = button.height * CloseGlyphGrow;
+            return new Rect(button.center.x - gw * 0.5f, button.center.y - gh * 0.5f, gw, gh);
         }
 
         // Tap area at least MinTapPx on each side, centred on the drawn button.

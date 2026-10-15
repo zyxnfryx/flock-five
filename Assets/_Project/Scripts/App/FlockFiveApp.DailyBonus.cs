@@ -37,6 +37,13 @@ namespace FlockFive
         bool _dailyAskOpen;
         float _dailyPopAt = -1f;
         float _dailyAskAt = -1f;
+        // Pay stays up until the coins have landed and the balance has counted.
+        // Then the card eases out. -1 means the card is not on its exit beat.
+        bool _dailyPayHold;
+        float _dailyCloseAt = -1f;
+        public const float DailyCloseDur = 0.48f;
+        // Multiplies IMGUI stamp and frame alpha while the daily card exits.
+        static float _imGuiFade = 1f;
 #if UNITY_EDITOR
         bool _dailyShotQuiet;
 #endif
@@ -118,6 +125,7 @@ namespace FlockFive
             TickDailyOsRequest();
             DailyBonus.RefreshDay();
             TickDailyWheel();
+            TickDailyDismiss();
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive)
             {
@@ -354,11 +362,9 @@ namespace FlockFive
 #if UNITY_EDITOR
             if ((_dailyShotQuiet || EditorShotLive) && ShotDailyWheel == 0) return;
 #endif
-            float top = TopHud();
-            var xBtn = CornerCloseRect(s, top);
-
             int chrome = DailyChrome();
             DailyLayout(s, chrome, out var card, out var flower, out var board, out float band, out var collect, out var watch);
+            var xBtn = DailyCloseInFrame(card, s);
             bool flowerOn = chrome == 0 && flower.width > 2f;
             var disc = flowerOn ? FlowerDisc(flower, 0f) : flower;
             var claimHit = flowerOn ? FlowerHit(flower, s) : flower;
@@ -406,20 +412,27 @@ namespace FlockFive
             if (outside && swallow.Contains(Event.current.mousePosition)) outside = false;
 
             float t = AdPause.Unscaled;
+            bool closing = _dailyCloseAt >= 0f;
+            float closeT = closing ? DailyExitNow() - _dailyCloseAt : 0f;
+            float k = 1f;
+            float fade = 1f;
+            if (closing) DailyExitMotion(closeT, out k, out fade);
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
             var glow = GlowTex();
             // White LEVEL type still reads through a 0.72 scrim in the slot between
             // Collect and Watch Ad. Cover the home behind the daily popup.
-            ModalBlock.Paint(ModalBlock.Id.Daily, new Color(0.04f, 0.03f, 0.02f, 0.98f));
+            // The exit beat fades this same scrim with the card.
+            ModalBlock.Paint(ModalBlock.Id.Daily, new Color(0.04f, 0.03f, 0.02f, 0.98f * fade));
 
             // Build 86 (Brandon): the wheel appears fully assembled from frame 1. The scale pop
             // scaled the disc and rim, but the outlined labels, star and pointer snap to the
             // pixel grid outside that matrix, so they slid into place: it looked built piece by
             // piece. No per-piece motion now; the wheel art is baked during preload.
-            float k = 1f;
+            // The close beat is the shared exit: a small ease-in shrink plus a fade.
+            _imGuiFade = fade;
             var pivot = flowerOn ? DailyPivot(card, flower) : card.center;
             var prev = GUI.matrix;
-            if (k < 0.999f)
+            if (k < 0.999f || k > 1.001f)
                 GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
 
             DrawDailyFrame(card, board, band, s, breathe, glow);
@@ -432,21 +445,21 @@ namespace FlockFive
                 && _dailyPhase == DailyWheelPhase.Landed
                 && (DailyBonus.Landed || DailyBonus.ClaimedToday))
                 DrawWheelX2(wheelR, 0.48f, titleR);
-            GUI.matrix = prev;
-
             if (flowerOn)
-            {
-                if (k < 0.999f)
-                    GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
                 DrawDailyClaim(flower, claimHeld, s, t);
-                GUI.matrix = prev;
-            }
             if (chrome == 2 || chrome == 3)
                 DrawDailyBar(collect, collectHeld, PopupTint.Gold, DailyCollectLabel, s);
             if (chrome == 3 && _wheelPayMul < 2)
                 DrawDailyBar(watch, watchHeld, PopupTint.Green, DailyDoubleLabel, s);
-            DrawGiftCloseX(xBtn, xHeld, s);
+            if (!closing && !_dailyPayHold)
+                DrawGiftCloseX(xBtn, xHeld, s);
+            GUI.matrix = prev;
+            _imGuiFade = 1f;
             GUI.color = Color.white;
+            // Coins and the balance sit under the scrim unless they are painted again here.
+            DrawDailyPayOverScrim(s);
+
+            if (closing || _dailyPayHold) return;
 
             if (watchHit)
             {
@@ -472,6 +485,7 @@ namespace FlockFive
         // 0 claim flower, 1 wheel only, 2 collect bar, 3 collect plus the x2 ad.
         int DailyChrome()
         {
+            if (_dailyPayHold || _dailyCloseAt >= 0f) return 1;
             if (_dailyPhase == DailyWheelPhase.Spin) return 1;
             bool fresh = _dailyPhase == DailyWheelPhase.Landed && DailyBonus.Landed && !DailyBonus.Resolved;
             if (!fresh) return 0;
@@ -601,7 +615,7 @@ namespace FlockFive
 
         void ResolveDailyGrant(bool doubled)
         {
-            if (!_dailyOpen) return;
+            if (!_dailyOpen || _dailyPayHold || _dailyCloseAt >= 0f) return;
             if (_wheelPayMul >= 2) doubled = true;
             _wheelPayMul = 1;
             if (_dailyPhase == DailyWheelPhase.Spin)
@@ -611,23 +625,89 @@ namespace FlockFive
             }
             if (!DailyBonus.TryResolve(doubled, out int coins) || coins <= 0)
             {
-                _dailyOpen = false;
-                _dailyPopAt = -1f;
-                _dailyPhase = DailyWheelPhase.Ready;
+                EndDailyPopup();
                 return;
             }
-            Sfx.Clink();
-            Haptics.Play(Haptics.Tier.Medium);
+            BeginRewardPay(coins);
+            // The card stays. TickDailyDismiss eases it out after the pay.
+            _dailyPayHold = true;
+            _dailyTutorSpin = false;
+            // Edit-mode suites have no audio host. A clink must not skip the pay.
+            if (Application.isPlaying)
+            {
+                Sfx.Clink();
+                Haptics.Play(Haptics.Tier.Medium);
+            }
+        }
+
+        // Shared exit. closeT 0 is still fully open. The beat is ExitScale / ExitAlpha.
+        public static void DailyExitMotion(float closeT, out float scale, out float alpha)
+        {
+            float span = DailyCloseDur - 0.08f;
+            if (span < 0.05f) span = 0.05f;
+            float u = PopupMotion.Beat(closeT, 0.08f, span);
+            scale = PopupMotion.ExitScale(u);
+            alpha = PopupMotion.ExitAlpha(u);
+        }
+
+        static Color PopFade(Color c)
+        {
+            if (_imGuiFade < 0.999f) c.a *= _imGuiFade;
+            return c;
+        }
+
+        // Screenshot encode hitches Time.unscaledTime. A clip steps captureDeltaTime,
+        // so the exit beat follows PlayClock and stays one frame per captured frame.
+        float DailyExitNow()
+        {
+            if (Time.captureDeltaTime > 0f) return PlayClock.Now;
+            return AdPause.Unscaled;
+        }
+
+        void TickDailyDismiss()
+        {
+            if (!_dailyOpen) return;
+            if (_dailyPayHold)
+            {
+                if (RewardPayBusy()) return;
+                _dailyPayHold = false;
+                _dailyCloseAt = DailyExitNow();
+            }
+            if (_dailyCloseAt < 0f) return;
+            if (DailyExitNow() - _dailyCloseAt >= DailyCloseDur)
+                EndDailyPopup();
+        }
+
+        void EndDailyPopup()
+        {
             bool first = _dailyClaimFirst;
             bool follow = _dailyClaimFollowUp;
             _dailyClaimFollowUp = false;
             _dailyOpen = false;
             _dailyPopAt = -1f;
+            _dailyCloseAt = -1f;
+            _dailyPayHold = false;
             _dailyTutorSpin = false;
             _dailyPhase = DailyWheelPhase.Ready;
-            BeginRewardPay(coins);
+            _wheelPayMul = 1;
             DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
             if (follow) StartCoroutine(FinishDailyClaim(first));
+        }
+
+        // Pig, balance, and the coin flight, painted after the 0.98 scrim.
+        void DrawDailyPayOverScrim(float s)
+        {
+            if (!_dailyPayHold && _dailyCloseAt < 0f && !_rewardPayLive && _flies.Count == 0) return;
+            var pig = PiggyRect(s);
+            var prev = GUI.matrix;
+            var prevC = GUI.color;
+            GUI.matrix = Matrix4x4.identity;
+            GUI.color = Color.white;
+            DrawRailIcon(pig, SpriteCatalog.Piggy);
+            DrawCoinBalance(s, pig.x - 12f, pig.center.y);
+            DrawCoinFly(pig);
+            GUI.color = prevC;
+            GUI.matrix = prev;
         }
 
         void DrawDailyBar(Rect bar, bool held, PopupTint tint, string label, float s)
@@ -800,7 +880,7 @@ namespace FlockFive
 
         void DismissDaily()
         {
-            if (!_dailyOpen) return;
+            if (!_dailyOpen || _dailyPayHold || _dailyCloseAt >= 0f) return;
             // Leaving after the spin has been picked still pays 1x. The lesson
             // stays until Claim, so an X before the spin does not finish it.
             if (_dailyPhase == DailyWheelPhase.Spin || (DailyBonus.Landed && !DailyBonus.Resolved))
@@ -808,16 +888,8 @@ namespace FlockFive
                 ResolveDailyGrant(false);
                 return;
             }
-            _dailyOpen = false;
-            _dailyPopAt = -1f;
-            _dailyPhase = DailyWheelPhase.Ready;
-            _wheelPayMul = 1;
             Sfx.CardTap();
-            if (_dailyClaimFollowUp)
-            {
-                _dailyClaimFollowUp = false;
-                StartCoroutine(FinishDailyClaim(_dailyClaimFirst));
-            }
+            EndDailyPopup();
         }
 
         // Claim flower, same pad DrawDailyBonus hits. Not today's tile.
@@ -1008,47 +1080,47 @@ namespace FlockFive
         static void DrawDailyFrame(Rect card, Rect board, float band, float s, float breathe, Texture2D glow, bool flatGold = false)
         {
             float aura = card.width * (0.055f + 0.02f * breathe);
-            GUI.color = new Color(1f, 0.78f, 0.22f, 0.20f + 0.10f * breathe);
+            GUI.color = PopFade(new Color(1f, 0.78f, 0.22f, 0.20f + 0.10f * breathe));
             GUI.DrawTexture(new Rect(card.x - aura, card.y - aura * 0.55f, card.width + aura * 2f, card.height + aura), glow, ScaleMode.ScaleToFit, true);
 
             var wood = SpriteCatalog.Blanket != null ? SpriteCatalog.Blanket.texture : Texture2D.whiteTexture;
             if (!flatGold)
             {
                 float sh = 4f * s;
-                GUI.color = new Color(0.05f, 0.03f, 0.02f, 0.42f);
+                GUI.color = PopFade(new Color(0.05f, 0.03f, 0.02f, 0.42f));
                 // Right only. Shifting down drew a dark band along the bottom of the gold frame.
                 GUI.DrawTexture(new Rect(card.x + sh, card.y, card.width, card.height), wood, ScaleMode.StretchToFill, true);
             }
-            GUI.color = new Color(0.52f, 0.30f, 0.11f, 1f);
+            GUI.color = PopFade(new Color(0.52f, 0.30f, 0.11f, 1f));
             GUI.DrawTexture(card, wood, ScaleMode.StretchToFill, true);
 
             var outer = new Rect(board.x - band, board.y - band, board.width + band * 2f, board.height + band * 2f);
             if (flatGold)
             {
-                GUI.color = new Color(0.74f, 0.52f, 0.16f, 1f);
+                GUI.color = PopFade(new Color(0.74f, 0.52f, 0.16f, 1f));
                 GUI.DrawTexture(outer, Texture2D.whiteTexture);
             }
             else
             {
                 // Brass band. Bulb screw-lips sit on the outer edge of the pop-up, not this midline.
-                GUI.color = new Color(0.30f, 0.16f, 0.05f, 1f);
+                GUI.color = PopFade(new Color(0.30f, 0.16f, 0.05f, 1f));
                 GUI.DrawTexture(outer, Texture2D.whiteTexture);
-                GUI.color = new Color(0.74f, 0.52f, 0.16f, 1f);
+                GUI.color = PopFade(new Color(0.74f, 0.52f, 0.16f, 1f));
                 float face = 2f * s;
                 GUI.DrawTexture(new Rect(outer.x + face, outer.y + face, outer.width - face * 2f, outer.height - face * 2f), Texture2D.whiteTexture);
                 float edge = Mathf.Max(1f, 1.6f * s);
-                GUI.color = new Color(1f, 0.88f, 0.50f, 0.90f);
+                GUI.color = PopFade(new Color(1f, 0.88f, 0.50f, 0.90f));
                 GUI.DrawTexture(new Rect(outer.x + face, outer.y + face, outer.width - face * 2f, edge), Texture2D.whiteTexture);
                 GUI.DrawTexture(new Rect(outer.x + face, outer.y + face, edge, outer.height - face * 2f), Texture2D.whiteTexture);
-                GUI.color = new Color(0.18f, 0.09f, 0.03f, 0.92f);
+                GUI.color = PopFade(new Color(0.18f, 0.09f, 0.03f, 0.92f));
                 GUI.DrawTexture(new Rect(outer.x + face, outer.yMax - face - edge, outer.width - face * 2f, edge), Texture2D.whiteTexture);
                 GUI.DrawTexture(new Rect(outer.xMax - face - edge, outer.y + face, edge, outer.height - face * 2f), Texture2D.whiteTexture);
             }
 
-            GUI.color = new Color(0.09f, 0.05f, 0.025f, 1f);
+            GUI.color = PopFade(new Color(0.09f, 0.05f, 0.025f, 1f));
             GUI.DrawTexture(board, wood, ScaleMode.StretchToFill, true);
             DrawPopupInset(board, s, breathe);
-            GUI.color = new Color(0f, 0f, 0f, 0.50f);
+            GUI.color = PopFade(new Color(0f, 0f, 0f, 0.50f));
             float shade = 2f * s;
             GUI.DrawTexture(new Rect(board.x, board.y, board.width, shade), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(board.x, board.y, shade, board.height), Texture2D.whiteTexture);
@@ -1153,7 +1225,7 @@ namespace FlockFive
         // Thin gold line just inside the band. Shared-frame pop-ups keep it.
         static void DrawPopupInset(Rect board, float s, float breathe)
         {
-            GUI.color = new Color(1f, 0.78f, 0.22f, 0.50f + 0.16f * breathe);
+            GUI.color = PopFade(new Color(1f, 0.78f, 0.22f, 0.50f + 0.16f * breathe));
             float rim = Mathf.Max(2f, 2.5f * s);
             float line = Mathf.Max(1.5f, 2f * s);
             GUI.DrawTexture(new Rect(board.x + rim, board.y + rim, board.width - rim * 2f, line), Texture2D.whiteTexture);
@@ -1390,7 +1462,7 @@ namespace FlockFive
 
         static void DrawDailyCopy(Rect titleR, Rect streakR, Rect bonusR, float s, float breathe, Texture2D glow)
         {
-            GUI.color = new Color(1f, 0.72f, 0.16f, 0.26f + 0.12f * breathe);
+            GUI.color = PopFade(new Color(1f, 0.72f, 0.16f, 0.26f + 0.12f * breathe));
             GUI.DrawTexture(new Rect(titleR.x, titleR.y - 2f * s, titleR.width, titleR.height + 4f * s), glow, ScaleMode.ScaleToFit, true);
             GUI.color = Color.white;
             int titleHi = Mathf.Max(18, Mathf.RoundToInt(34f * s));
@@ -1419,6 +1491,7 @@ namespace FlockFive
         {
             if (wheel.width < 8f) return;
             EnsureWheelArt();
+            GUI.color = PopFade(Color.white);
             bool spinning = _dailyPhase == DailyWheelPhase.Spin;
             bool landed = _dailyPhase == DailyWheelPhase.Landed && (DailyBonus.Landed || DailyBonus.ClaimedToday);
             float angle = _dailyAngle;
@@ -1427,14 +1500,14 @@ namespace FlockFive
             {
                 // Ghosts trail the live disc so a frozen frame still reads as a spin.
                 GUIUtility.RotateAroundPivot(angle - 36f, wheel.center);
-                GUI.color = new Color(1f, 0.94f, 0.78f, 0.22f);
+                GUI.color = PopFade(new Color(1f, 0.94f, 0.78f, 0.22f));
                 GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
                 GUI.matrix = prev;
                 GUIUtility.RotateAroundPivot(angle - 18f, wheel.center);
-                GUI.color = new Color(1f, 0.96f, 0.86f, 0.42f);
+                GUI.color = PopFade(new Color(1f, 0.96f, 0.86f, 0.42f));
                 GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
                 GUI.matrix = prev;
-                GUI.color = Color.white;
+                GUI.color = PopFade(Color.white);
             }
             GUIUtility.RotateAroundPivot(angle, wheel.center);
             GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
@@ -1459,18 +1532,19 @@ namespace FlockFive
                 if (!jack) continue;
                 var starAt = wheel.center + DailyBonus.WedgeOffset(i, angle + DailyBonus.JackpotStarLean, wheel.width * 0.36f);
                 float tw = 0.55f + 0.45f * Mathf.Sin(AdPause.Unscaled * 3.2f);
-                SparkleFx.DrawAt(starAt, wheel.width * 0.05f, 0.40f + 0.45f * tw, DailyBonus.JackpotStar);
+                if (_imGuiFade > 0.98f)
+                    SparkleFx.DrawAt(starAt, wheel.width * 0.05f, 0.40f + 0.45f * tw, DailyBonus.JackpotStar);
             }
 
             if (landed && DailyBonus.SpinWedge >= 0)
             {
-                GUI.color = new Color(1f, 0.92f, 0.45f, 0.55f + 0.15f * breathe);
+                GUI.color = PopFade(new Color(1f, 0.92f, 0.45f, 0.55f + 0.15f * breathe));
                 GUI.DrawTexture(wheel, _wheelHi, ScaleMode.ScaleToFit, true);
-                GUI.color = Color.white;
+                GUI.color = PopFade(Color.white);
                 float aura = wheel.width * (0.04f + 0.015f * breathe);
-                GUI.color = new Color(1f, 0.84f, 0.28f, 0.22f + 0.10f * breathe);
+                GUI.color = PopFade(new Color(1f, 0.84f, 0.28f, 0.22f + 0.10f * breathe));
                 GUI.DrawTexture(new Rect(wheel.x - aura, wheel.y - aura, wheel.width + aura * 2f, wheel.height + aura * 2f), glow, ScaleMode.ScaleToFit, true);
-                GUI.color = Color.white;
+                GUI.color = PopFade(Color.white);
             }
 
             int payMul = _wheelPayMul < 1 ? 1 : _wheelPayMul;

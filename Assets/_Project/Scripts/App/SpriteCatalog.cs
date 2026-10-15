@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace FlockFive
@@ -24,6 +25,7 @@ namespace FlockFive
         static Sprite[] _flap4;
         static Sprite[] _flap5;
         static Sprite[] _feeders;
+        static readonly Dictionary<int, Vector2> _core = new Dictionary<int, Vector2>();
 
         public static Sprite GardenBg => Load(ref _bg, "Sprites/bg_garden", 96f);
 
@@ -1228,6 +1230,83 @@ namespace FlockFive
             _sparrowPlaceholder = false;
             _hawk = null;
             _hawkPlaceholder = false;
+            _core.Clear();
+        }
+
+        // Opaque-core centroid minus the pivot, in sprite units. Flap frames share a
+        // centre pivot but the body sits in a different place once the wings open.
+        public static Vector2 CoreFromPivot(Sprite sprite)
+        {
+            if (sprite == null) return Vector2.zero;
+            int id = sprite.GetInstanceID();
+            if (_core.TryGetValue(id, out var cached)) return cached;
+            var got = MeasureCore(sprite);
+            _core[id] = got;
+            return got;
+        }
+
+        static Vector2 MeasureCore(Sprite sprite)
+        {
+            var tex = sprite.texture;
+            if (tex == null || !tex.isReadable) return Vector2.zero;
+            var rect = sprite.rect;
+            int x0 = Mathf.RoundToInt(rect.x);
+            int y0 = Mathf.RoundToInt(rect.y);
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 8 || h < 8) return Vector2.zero;
+            Color[] pix;
+            try { pix = tex.GetPixels(x0, y0, w, h); }
+            catch (System.Exception) { return Vector2.zero; }
+            const int step = 8;
+            int cw = w / step;
+            int ch = h / step;
+            if (cw < 4 || ch < 4) return Vector2.zero;
+            var cur = new bool[cw * ch];
+            for (int y = 0; y < ch; y++)
+            {
+                int row = y * step;
+                for (int x = 0; x < cw; x++)
+                    if (pix[row * w + x * step].a > 0.22f) cur[y * cw + x] = true;
+            }
+            var nxt = new bool[cur.Length];
+            for (int n = 0; n < 4; n++)
+            {
+                int alive = 0;
+                for (int y = 1; y < ch - 1; y++)
+                {
+                    for (int x = 1; x < cw - 1; x++)
+                    {
+                        int i = y * cw + x;
+                        bool on = cur[i] && cur[i - 1] && cur[i + 1] && cur[i - cw] && cur[i + cw];
+                        nxt[i] = on;
+                        if (on) alive++;
+                    }
+                }
+                if (alive < 12) break;
+                var swap = cur;
+                cur = nxt;
+                nxt = swap;
+                System.Array.Clear(nxt, 0, nxt.Length);
+            }
+            double sumX = 0, sumY = 0;
+            int count = 0;
+            for (int y = 0; y < ch; y++)
+            {
+                for (int x = 0; x < cw; x++)
+                {
+                    if (!cur[y * cw + x]) continue;
+                    sumX += x;
+                    sumY += y;
+                    count++;
+                }
+            }
+            if (count < 8) return Vector2.zero;
+            float px = (float)(sumX / count) * step;
+            float py = (float)(sumY / count) * step;
+            float ppu = Mathf.Max(1f, sprite.pixelsPerUnit);
+            var pivot = sprite.pivot;
+            return new Vector2((px - pivot.x) / ppu, (py - pivot.y) / ppu);
         }
 
         // Path strings are built once. BirdFrame / Bird run for every bird every frame.
@@ -1321,6 +1400,24 @@ namespace FlockFive
             BirdFrame(c, t, flap, BirdSex.Neutral);
 
         static readonly System.Collections.Generic.HashSet<string> _missingFlap = new System.Collections.Generic.HashSet<string>();
+
+        // pose 0 rest, 1 wings up, 2 wings mid. Uses the same loaders as the garden
+        // (plain sheet, or the female sheet when a colour has no plain art).
+        public static Sprite FlapPose(BirdColor c, int pose) => FlapPose(c, pose, BirdSex.Neutral);
+
+        public static Sprite FlapPose(BirdColor c, int pose, BirdSex sex)
+        {
+            if (pose <= 0) return Bird(c, sex);
+            sex = PlainOr(c, sex);
+            LoadFlaps(c, sex, out var f1, out var f2, out _, out _);
+            // Missing mid prefers the up frame, then the rest pose.
+            if (pose == 2)
+                return f2 != null ? f2 : (f1 != null ? f1 : Bird(c, sex));
+            return f1 != null ? f1 : Bird(c, sex);
+        }
+
+        // Same 4-step the idle birds use: rest, wings up, wings mid, wings up.
+        public static int FlapStep(float t) => Mathf.FloorToInt(Mathf.Abs(t) * 16f) % 4;
 
         public static Sprite BirdFrame(BirdColor c, float t, bool flap, BirdSex sex)
         {
@@ -1913,6 +2010,11 @@ namespace FlockFive
                     Mathf.RoundToInt(rect.x),
                     Mathf.RoundToInt(rect.y),
                     w, h);
+                // Straight alpha with a black or white matte fringes when the bust
+                // zooms the bird. Un-premultiply only pixels that are actually stored
+                // premultiplied, then dilate the opaque colour into the matte.
+                UnpremultiplyFringe(pix);
+                SealFringe(pix, w, h);
                 for (int i = 0; i < pix.Length; i++)
                 {
                     var p = pix[i];
@@ -1932,7 +2034,69 @@ namespace FlockFive
             var pivot = new Vector2(
                 src.pivot.x / Mathf.Max(1f, rect.width),
                 src.pivot.y / Mathf.Max(1f, rect.height));
-            return Sprite.Create(tex, new Rect(0, 0, w, h), pivot, src.pixelsPerUnit);
+            return Sprite.Create(tex, new Rect(0, 0, w, h), pivot, src.pixelsPerUnit, 1, SpriteMeshType.Tight);
+        }
+
+        // Premultiplied fringe is dark RGB that never exceeds alpha. Straight-alpha
+        // art (rgb > a) is left alone so we don't blow the edge out to white.
+        static void UnpremultiplyFringe(Color[] pix)
+        {
+            for (int i = 0; i < pix.Length; i++)
+            {
+                var p = pix[i];
+                if (p.a < 0.04f || p.a > 0.65f) continue;
+                if (p.r > p.a + 0.02f || p.g > p.a + 0.02f || p.b > p.a + 0.02f) continue;
+                if (p.maxColorComponent > 0.4f) continue;
+                float a = Mathf.Max(0.04f, p.a);
+                pix[i] = new Color(
+                    Mathf.Clamp01(p.r / a),
+                    Mathf.Clamp01(p.g / a),
+                    Mathf.Clamp01(p.b / a),
+                    p.a);
+            }
+        }
+
+        // Copy opaque RGB into empty texels and into near-white partial alpha
+        // (the white matte that reads as specks once the bird is huge).
+        static void SealFringe(Color[] pix, int w, int h)
+        {
+            var src = new Color[pix.Length];
+            for (int pass = 0; pass < 4; pass++)
+            {
+                System.Array.Copy(pix, src, pix.Length);
+                for (int y = 0; y < h; y++)
+                {
+                    int row = y * w;
+                    for (int x = 0; x < w; x++)
+                    {
+                        int i = row + x;
+                        var p = src[i];
+                        bool empty = p.a < 0.08f;
+                        bool whiteMatte = p.a < 0.55f && p.r > 0.78f && p.g > 0.78f && p.b > 0.78f;
+                        if (!empty && !whiteMatte) continue;
+                        float bestA = -1f;
+                        Color best = p;
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            int yy = y + dy;
+                            if ((uint)yy >= (uint)h) continue;
+                            int nrow = yy * w;
+                            for (int dx = -1; dx <= 1; dx++)
+                            {
+                                if (dx == 0 && dy == 0) continue;
+                                int xx = x + dx;
+                                if ((uint)xx >= (uint)w) continue;
+                                var n = src[nrow + xx];
+                                if (n.a <= bestA) continue;
+                                bestA = n.a;
+                                best = n;
+                            }
+                        }
+                        if (bestA > p.a)
+                            pix[i] = new Color(best.r, best.g, best.b, p.a);
+                    }
+                }
+            }
         }
 
         static Sprite Fallback(float ppu)
@@ -1943,6 +2107,422 @@ namespace FlockFive
                 tex.SetPixel(x, y, Color.magenta);
             tex.Apply();
             return Sprite.Create(tex, new Rect(0, 0, 8, 8), new Vector2(0.5f, 0.5f), ppu);
+        }
+
+        // Far wing of a right-facing sheet: the head-side wing, which is the
+        // bird's left wing. flipX turns that into the right wing. Null when this
+        // pose has no separate raised far wing (rest, and flaps that do not
+        // clear the skull). Cached per sprite.
+        struct FarHit
+        {
+            public int Id;
+            public byte[] Mask;
+            public int W, H;
+            public bool Ready;
+        }
+
+        static FarHit[] _farHits;
+        static int _farN;
+        struct FarPair
+        {
+            public int Id;
+            public Sprite Far, Body;
+            public bool Ready;
+        }
+
+        static FarPair[] _farPairs;
+        static int _farPairN;
+
+        public static bool TryFarWingMask(Sprite sprite, out byte[] mask, out int width, out int height)
+        {
+            mask = null;
+            width = 0;
+            height = 0;
+            if (sprite == null) return false;
+            int id = sprite.GetInstanceID();
+            if (_farHits != null)
+            {
+                for (int i = 0; i < _farN; i++)
+                {
+                    if (_farHits[i].Id != id) continue;
+                    mask = _farHits[i].Mask;
+                    width = _farHits[i].W;
+                    height = _farHits[i].H;
+                    return mask != null;
+                }
+            }
+            var built = BuildFarWingMask(sprite, out int bw, out int bh);
+            if (_farHits == null) _farHits = new FarHit[8];
+            if (_farN >= _farHits.Length)
+            {
+                var grow = new FarHit[_farHits.Length * 2];
+                for (int i = 0; i < _farHits.Length; i++) grow[i] = _farHits[i];
+                _farHits = grow;
+            }
+            _farHits[_farN++] = new FarHit { Id = id, Mask = built, W = bw, H = bh, Ready = true };
+            mask = built;
+            width = bw;
+            height = bh;
+            return built != null;
+        }
+
+        // Punched body (near wing stays on it) and the far wing alone. Same
+        // rect, pivot and pixels-per-unit, so the two quads stack.
+        public static bool TrySplitFarWing(Sprite sprite, out Sprite far, out Sprite body)
+        {
+            far = null;
+            body = null;
+            if (sprite == null) return false;
+            int id = sprite.GetInstanceID();
+            if (_farPairs != null)
+            {
+                for (int i = 0; i < _farPairN; i++)
+                {
+                    if (_farPairs[i].Id != id) continue;
+                    far = _farPairs[i].Far;
+                    body = _farPairs[i].Body;
+                    return far != null;
+                }
+            }
+            Sprite farS = null;
+            Sprite bodyS = null;
+            if (TryFarWingMask(sprite, out var mask, out int w, out int h) && mask != null)
+                SliceFarWing(sprite, mask, w, h, out farS, out bodyS);
+            if (_farPairs == null) _farPairs = new FarPair[8];
+            if (_farPairN >= _farPairs.Length)
+            {
+                var grow = new FarPair[_farPairs.Length * 2];
+                for (int i = 0; i < _farPairs.Length; i++) grow[i] = _farPairs[i];
+                _farPairs = grow;
+            }
+            _farPairs[_farPairN++] = new FarPair { Id = id, Far = farS, Body = bodyS, Ready = true };
+            far = farS;
+            body = bodyS;
+            return farS != null;
+        }
+
+        static byte[] BuildFarWingMask(Sprite sprite, out int width, out int height)
+        {
+            width = 0;
+            height = 0;
+            var tex = sprite.texture;
+            if (tex == null || !tex.isReadable) return null;
+            var rect = sprite.rect;
+            int ox = Mathf.RoundToInt(rect.x);
+            int oy = Mathf.RoundToInt(rect.y);
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 16 || h < 16) return null;
+            Color32[] px;
+            try { px = tex.GetPixels32(); }
+            catch (UnityException) { return null; }
+            int tw = tex.width;
+            if (px == null || ox < 0 || oy < 0 || ox + w > tw || oy + h > tex.height) return null;
+            var op = new bool[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                int src = (oy + y) * tw + ox;
+                int dst = y * w;
+                for (int x = 0; x < w; x++)
+                    op[dst + x] = px[src + x].a > 28;
+            }
+            var dome = HeadDome(sprite);
+            float ppu = sprite.pixelsPerUnit > 1f ? sprite.pixelsPerUnit : 220f;
+            int domeX = Mathf.RoundToInt(dome.x * ppu + sprite.pivot.x - 0.5f);
+            int domeY = Mathf.RoundToInt(dome.y * ppu + sprite.pivot.y - 0.5f);
+            int above = Mathf.RoundToInt(0.55f * ppu);
+            var runs = new Run8[8];
+            int start = -1;
+            int rn = 0;
+            for (int y = h - 1; y >= 0; y--)
+            {
+                rn = BigRuns(op, w, y, runs);
+                if (rn >= 2) { start = y; break; }
+            }
+            if (start < 0 || start < domeY + above) return null;
+            int nearI = 0;
+            int farI = rn - 1;
+            if (runs[farI].A > domeX + (int)(0.15f * ppu)) return null;
+            var lab = new byte[w * h];
+            int far0 = runs[farI].A, far1 = runs[farI].B;
+            int near0 = runs[nearI].A, near1 = runs[nearI].B;
+            int seedTop = start;
+            int seedBot = start;
+            int farMaxX = far1;
+            for (int y = start; y >= 0; y--)
+            {
+                rn = BigRuns(op, w, y, runs);
+                if (rn < 2) break;
+                int fi = BestRun(runs, rn, far0, far1);
+                int ni = BestRun(runs, rn, near0, near1);
+                if (fi < 0 || ni < 0 || fi == ni) break;
+                if (runs[fi].A < runs[ni].A) break;
+                PaintRun(lab, op, w, y, runs[fi], 1);
+                PaintRun(lab, op, w, y, runs[ni], 2);
+                far0 = runs[fi].A;
+                far1 = runs[fi].B;
+                near0 = runs[ni].A;
+                near1 = runs[ni].B;
+                if (far1 > farMaxX) farMaxX = far1;
+                seedBot = y;
+            }
+            if (seedTop - seedBot < above) return null;
+            int yCut = (int)(h * 0.38f);
+            int xCut = farMaxX + 8;
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w;
+                bool low = y < yCut;
+                for (int x = 0; x < w; x++)
+                {
+                    int i = row + x;
+                    if (!op[i] || lab[i] != 0) continue;
+                    if (low || x > xCut) lab[i] = 2;
+                }
+            }
+            var q = new int[w * h];
+            int qt = 0;
+            for (int i = 0; i < lab.Length; i++)
+                if (lab[i] == 1 || lab[i] == 2) q[qt++] = i;
+            int qh = 0;
+            while (qh < qt)
+            {
+                int i = q[qh++];
+                byte v = lab[i];
+                int x = i % w;
+                int y = i / w;
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    int ny = y + dy;
+                    if ((uint)ny >= (uint)h) continue;
+                    int nrow = ny * w;
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        if (dx == 0 && dy == 0) continue;
+                        int nx = x + dx;
+                        if ((uint)nx >= (uint)w) continue;
+                        int j = nrow + nx;
+                        if (lab[j] != 0 || !op[j]) continue;
+                        lab[j] = v;
+                        q[qt++] = j;
+                    }
+                }
+            }
+            int farCount = 0;
+            int opaque = 0;
+            int minX = w, maxX = 0, maxY = 0;
+            long sumX = 0;
+            for (int i = 0; i < lab.Length; i++)
+            {
+                if (!op[i]) { lab[i] = 0; continue; }
+                opaque++;
+                if (lab[i] != 1) { lab[i] = 0; continue; }
+                farCount++;
+                int x = i % w;
+                int y = i / w;
+                sumX += x;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+            }
+            if (farCount < 8000 || farCount * 2 > opaque) return null;
+            if (maxX > domeX + 0.5f * ppu) return null;
+            if (maxY < domeY + above * 0.5f) return null;
+            if (sumX > (long)domeX * farCount) return null;
+            width = w;
+            height = h;
+            return lab;
+        }
+
+        struct Run8
+        {
+            public int A, B;
+        }
+
+        static int BigRuns(bool[] op, int w, int y, Run8[] into)
+        {
+            int n = 0;
+            int row = y * w;
+            int x = 0;
+            while (x < w)
+            {
+                while (x < w && !op[row + x]) x++;
+                if (x >= w) break;
+                int a = x;
+                int b = x;
+                while (x < w)
+                {
+                    if (op[row + x]) { b = x; x++; continue; }
+                    int g = x;
+                    while (g < w && !op[row + g] && g - x < 12) g++;
+                    if (g < w && op[row + g] && g - x < 12) { x = g; continue; }
+                    break;
+                }
+                x = b + 1;
+                if (b - a + 1 < 36) continue;
+                if (n < into.Length) into[n++] = new Run8 { A = a, B = b };
+                else into[into.Length - 1] = new Run8 { A = a, B = b };
+            }
+            return n;
+        }
+
+        static int BestRun(Run8[] runs, int n, int a, int b)
+        {
+            int best = -1;
+            int ov = 0;
+            for (int i = 0; i < n; i++)
+            {
+                int o = Mathf.Min(runs[i].B, b) - Mathf.Max(runs[i].A, a);
+                if (o > ov) { ov = o; best = i; }
+            }
+            return ov > 15 ? best : -1;
+        }
+
+        static void PaintRun(byte[] lab, bool[] op, int w, int y, Run8 run, byte v)
+        {
+            int row = y * w;
+            for (int x = run.A; x <= run.B; x++)
+                if (op[row + x]) lab[row + x] = v;
+        }
+
+        static void SliceFarWing(Sprite src, byte[] mask, int w, int h, out Sprite far, out Sprite body)
+        {
+            far = null;
+            body = null;
+            var tex = src.texture;
+            if (tex == null) return;
+            var rect = src.rect;
+            int ox = Mathf.RoundToInt(rect.x);
+            int oy = Mathf.RoundToInt(rect.y);
+            int tw = tex.width;
+            Color32[] px;
+            try { px = tex.GetPixels32(); }
+            catch (UnityException) { return; }
+            var farPx = new Color32[w * h];
+            var bodyPx = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                int srcRow = (oy + y) * tw + ox;
+                int dst = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    var c = px[srcRow + x];
+                    if (mask[dst + x] != 0) farPx[dst + x] = c;
+                    else bodyPx[dst + x] = c;
+                }
+            }
+            var pivot = new Vector2(
+                src.pivot.x / Mathf.Max(1f, rect.width),
+                src.pivot.y / Mathf.Max(1f, rect.height));
+            // One pixel of the cut lives on both slices, so bilinear filtering
+            // does not open a sky crack between the far wing and the body.
+            OverlapCut(farPx, bodyPx, mask, w, h);
+            BleedColor(farPx, w, h);
+            BleedColor(bodyPx, w, h);
+            far = MakeSlice(src.name + "Far", farPx, w, h, pivot, src.pixelsPerUnit);
+            body = MakeSlice(src.name + "Body", bodyPx, w, h, pivot, src.pixelsPerUnit);
+        }
+
+        static void OverlapCut(Color32[] farPx, Color32[] bodyPx, byte[] mask, int w, int h)
+        {
+            int n = w * h;
+            var ring = new byte[n];
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    int i = row + x;
+                    bool wing = mask[i] != 0;
+                    bool touch = false;
+                    for (int dy = -1; dy <= 1 && !touch; dy++)
+                    {
+                        int ny = y + dy;
+                        if ((uint)ny >= (uint)h) continue;
+                        int nrow = ny * w;
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            if (dx == 0 && dy == 0) continue;
+                            int nx = x + dx;
+                            if ((uint)nx >= (uint)w) continue;
+                            if ((mask[nrow + nx] != 0) != wing)
+                            {
+                                touch = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!touch) continue;
+                    if (wing) ring[i] = 2;
+                    else if (bodyPx[i].a > 28) ring[i] = 1;
+                }
+            }
+            for (int i = 0; i < n; i++)
+            {
+                if (ring[i] == 2) bodyPx[i] = farPx[i];
+                else if (ring[i] == 1) farPx[i] = bodyPx[i];
+            }
+        }
+
+        // Straight-alpha bleed. Transparent texels keep alpha 0 and borrow the
+        // neighbor color so a filtered edge does not turn black.
+        static void BleedColor(Color32[] px, int w, int h)
+        {
+            int n = w * h;
+            var src = new Color32[n];
+            for (int pass = 0; pass < 2; pass++)
+            {
+                for (int i = 0; i < n; i++) src[i] = px[i];
+                for (int y = 0; y < h; y++)
+                {
+                    int row = y * w;
+                    for (int x = 0; x < w; x++)
+                    {
+                        int i = row + x;
+                        if (src[i].a != 0) continue;
+                        int br = 0, bg = 0, bb = 0, bn = 0;
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            int ny = y + dy;
+                            if ((uint)ny >= (uint)h) continue;
+                            int nrow = ny * w;
+                            for (int dx = -1; dx <= 1; dx++)
+                            {
+                                if (dx == 0 && dy == 0) continue;
+                                int nx = x + dx;
+                                if ((uint)nx >= (uint)w) continue;
+                                var c = src[nrow + nx];
+                                if (c.a == 0) continue;
+                                br += c.r;
+                                bg += c.g;
+                                bb += c.b;
+                                bn++;
+                            }
+                        }
+                        if (bn == 0) continue;
+                        px[i] = new Color32((byte)(br / bn), (byte)(bg / bn), (byte)(bb / bn), 0);
+                    }
+                }
+            }
+        }
+
+        static Sprite MakeSlice(string name, Color32[] px, int w, int h, Vector2 pivot, float ppu)
+        {
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                name = name,
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            tex.SetPixels32(px);
+            // Tight, not a full-rect quad. The quad's diagonal cracks the sky
+            // between the raised wing and the head. Readable so the outline builds.
+            tex.Apply(false, false);
+            var spr = Sprite.Create(tex, new Rect(0f, 0f, w, h), pivot, ppu, 0, SpriteMeshType.Tight);
+            spr.name = name;
+            spr.hideFlags = HideFlags.HideAndDontSave;
+            return spr;
         }
     }
 }
