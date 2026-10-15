@@ -10296,7 +10296,7 @@ namespace FlockFive
             if (paint && motion.ReleasedEdge && (BadgerOwed() > 0 || !LevelCurtain.Armed))
             {
                 SparkleFx.DrawAround(rest, 0.95f, true, 0.12f);
-                PushButton.DrawSheen(rest, 0.55f, 1f, true);
+                PushButton.ReleaseFlash(rest, true); // LEVEL is always the flower pedestal
             }
             if (held && BadgerOwed() <= 0)
             {
@@ -10383,14 +10383,15 @@ namespace FlockFive
             bool paint = GuiPaint();
             var motion = PushButton.Sample(PushButton.Slot(r), held, AdPause.Unscaled, paint);
             var visual = PushButton.Visual(r, motion.Pose);
-            if (paint && motion.ReleasedEdge)
-            {
-                SparkleFx.DrawAround(visual, 0.95f, true, 0.14f);
-                PushButton.DrawSheen(visual, 0.55f, 1f, true);
-            }
             bool sunk = held || motion.Pose.Sink > 0.01f;
             bool square = r.width > 8f && r.height < r.width * 1.25f && r.width < r.height * 1.25f;
             var bloom = SpriteCatalog.PlayFlower;
+            if (paint && motion.ReleasedEdge)
+            {
+                SparkleFx.DrawAround(visual, 0.95f, true, 0.14f);
+                bool pedestal = square && bloom != null && bloom.texture != null && (tint == PopupTint.Gold || tint == PopupTint.Wood);
+                PushButton.ReleaseFlash(visual, pedestal);
+            }
             Rect layoutLabel;
             if (square && bloom != null && bloom.texture != null && (tint == PopupTint.Gold || tint == PopupTint.Wood))
             {

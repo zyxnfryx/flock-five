@@ -206,6 +206,18 @@ namespace FlockFive
             GUI.color = prev;
         }
 
+        // Release pop under a push button. The rect sheen is a square oval-clipped texture
+        // stretched over the whole button rect and painted BEFORE the art. A rounded plate
+        // covers it. A flower pedestal does not: its sprite is letterboxed (1024x811) inside the
+        // square rect and its silhouette is not an oval, so the cream band showed above, below
+        // and beside the pedestal as a white flash behind the squishing button. Pedestals skip
+        // the rect pop (the face sheen DrawFaceSheen is the one clipped to the real face).
+        public static void ReleaseFlash(Rect r, bool pedestal)
+        {
+            if (pedestal) return;
+            DrawSheen(r, 0.55f, 1f, true);
+        }
+
         // b89 (Brandon): the sheen hugs the disc rim. It used to live in a 0.47 inset ellipse
         // with a soft (1 - e^2) * 5 falloff, so its edge read about 5% of the face width inside
         // the rim, and the sweep started at -0.20, well left of the face, so the first visible
