@@ -3522,12 +3522,22 @@ namespace FlockFive
         {
             // Back to 1 in the background; SyncAutoResolveSpeed re-arms it from live state.
             if (paused) SetAutoResolveSpeed(1f);
-            if (paused) NoteAppBackground();
+            if (paused)
+            {
+                NoteAppBackground();
+                DailyReminder.OnAppBackground();
+            }
             else
             {
                 NoteAppResume();
+                DailyReminder.OnAppForeground();
                 ResumeDailyReminder();
             }
+        }
+
+        void OnApplicationQuit()
+        {
+            DailyReminder.OnAppQuit();
         }
 
         void OnApplicationFocus(bool focus)
