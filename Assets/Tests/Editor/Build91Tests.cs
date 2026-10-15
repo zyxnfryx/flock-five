@@ -70,7 +70,8 @@ namespace FlockFive.Editor
                     var c1 = new GameObject("c1"); c1.transform.SetParent(go.transform);
                     c1.AddComponent<SpriteRenderer>();
                     var a = SlingClock.Srs(go.transform);
-                    c1.AddComponent<SpriteRenderer>();
+                    var c2 = new GameObject("c2"); c2.transform.SetParent(go.transform);
+                    c2.AddComponent<SpriteRenderer>();
                     var b = SlingClock.Srs(go.transform);
                     Check("renderer lookup is cached", ReferenceEquals(a, b) && a.Length == 1, "len=" + a.Length);
                     SlingClock.Clear();
