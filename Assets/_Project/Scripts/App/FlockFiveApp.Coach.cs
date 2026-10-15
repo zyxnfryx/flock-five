@@ -3277,8 +3277,8 @@ namespace FlockFive
             y = _boardTopY;
             if (_boardTopFrame == Time.frameCount) return _boardTopY > 0f;
             _boardTopFrame = Time.frameCount; _boardTopY = 0f; y = 0f;
-            var cam = _garden != null ? _garden.Cam : null;
-            var branches = _garden != null ? _garden.Branches : null;
+            var cam = _garden.Cam;
+            var branches = _garden.Branches;
             if (cam == null || branches == null) return false;
             float worldTop = float.NegativeInfinity;
             for (int i = 0; i < branches.Length; i++)
