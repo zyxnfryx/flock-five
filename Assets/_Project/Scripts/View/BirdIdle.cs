@@ -19,6 +19,16 @@ namespace FlockFive
         public float FlapMul = 1f;
         public bool Sleeping;
         public bool Shrouded;
+        // Drawn as a black silhouette: shrouded, seated or in flight (see BirdDress.Silhouette).
+        bool Veiled => BirdDress.Silhouette(Shrouded);
+        // Flight look: opaque, and the same tint a seated bird of this state wears (hidden = the
+        // blacked-out silhouette with no kit or face, visible = full art). The far wing copies it.
+        public void ShowFlightLook()
+        {
+            if (_sr == null) _sr = GetComponent<SpriteRenderer>();
+            if (_sr != null) _sr.color = BodyTint(Veiled);
+            SetFade(1f);
+        }
         public bool FaceLeft;
         public BirdColor Color;
         public BirdKit Kit;
@@ -60,7 +70,9 @@ namespace FlockFive
         SpriteRenderer[] _zzzGlowSr;
         SpriteRenderer _bang;
         static Sprite _bangSpr;
-        static readonly UnityEngine.Color ShroudTint = new UnityEngine.Color(0.04f, 0.03f, 0.05f, 1f);
+        public static readonly UnityEngine.Color HiddenTint = new UnityEngine.Color(0.04f, 0.03f, 0.05f, 1f);
+        public static UnityEngine.Color BodyTint(bool shrouded) => shrouded ? HiddenTint : UnityEngine.Color.white;
+        static UnityEngine.Color ShroudTint => HiddenTint;
 
         void Awake()
         {
@@ -137,6 +149,10 @@ namespace FlockFive
         int _wingPose;
         Vector2 _flapAnchor;
         bool _flapAnchored;
+
+        // b91: finale sling uses the 4 existing flap sheets (3,1,4,2,4,1) instead of 2.
+        public bool SixPose;
+        static readonly int[] SixOrder = { 3, 1, 4, 2, 4, 1 };
 
         public int WingPose => _wingPose;
         public bool FlapDriven => _flapDrive;
@@ -306,7 +322,7 @@ namespace FlockFive
         {
             // Two open poses per cycle. Catch up at most one pose on a long frame.
             // ShowClock follows the capture step so a slow editor frame does not skip the flap.
-            _poseAccum += ShowClock.Delta * _flapHz * 2f;
+            _poseAccum += Mathf.Min(ShowClock.Delta, 1f / 30f) * _flapHz * (SixPose ? 6f : 2f);
             if (_poseAccum >= 1f)
             {
                 _poseIndex += 1;
@@ -326,7 +342,13 @@ namespace FlockFive
             // garden BirdFrame on the 6-pose kit cycle.
             bool mid = (_poseIndex & 1) == 0;
             int pose = mid ? 2 : 1;
-            var spr = SpriteCatalog.FlapPose(Color, pose);
+            Sprite spr;
+            if (SixPose)
+            {
+                pose = SixOrder[_poseIndex % SixOrder.Length];
+                spr = SpriteCatalog.BirdPose(Color, pose);
+            }
+            else spr = SpriteCatalog.FlapPose(Color, pose);
             if (spr != null) _sr.sprite = spr;
             _wingPose = pose;
         }
@@ -356,7 +378,7 @@ namespace FlockFive
             var mood = BirdMood.Of(Color);
             bool wings = false;
             float flapT = 0f;
-            bool kitOn = BirdDress.KitOn(show, Shrouded, Kit == BirdKit.Plain);
+            bool kitOn = BirdDress.KitOn(show, Veiled, Kit == BirdKit.Plain);
             if (show)
             {
                 if (_sr.flipX != FaceLeft) _sr.flipX = FaceLeft;
@@ -402,7 +424,7 @@ namespace FlockFive
             // KitDrawOrder is the one writer. A bare bird draws the whole sheet.
             if (kitOn) EnsureKit();
             PlaceKit(kitOn, wings, flapT);
-            PlaceFace(mood, BirdDress.FaceOn(show, Shrouded));
+            PlaceFace(mood, BirdDress.FaceOn(show, Veiled));
             // White silhouette only used to mean "selected". Selection is the colored
             // aura. A cheer (feeder clear, hawk wave, finale) is twinkles, including
             // while Frozen, and never that halo. Flight sets Lift with Frozen and stays dark.

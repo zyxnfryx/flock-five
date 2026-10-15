@@ -168,7 +168,7 @@ namespace FlockFive
                 case CoachStep.CoachPlace: return CaptionLayout.CoachPlaceLine;
                 case CoachStep.CoachSecondHop: return "Second guided hop (glove on the next branch).";
                 case CoachStep.CoachNowhere: return CaptionLayout.CoachNowhereLine;
-                case CoachStep.GiftStuck: return "Stuck? Tap the gift branch for a bonus spot.";
+                case CoachStep.GiftStuck: return "Stuck? Tap the gift\nbranch for a bonus.";
                 case CoachStep.Sparrow: return CaptionLayout.SparrowLine;
                 case CoachStep.Hawk: return CaptionLayout.HawkLine;
                 case CoachStep.Ostrich: return CaptionLayout.OstrichLine;

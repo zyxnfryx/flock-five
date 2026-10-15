@@ -72,13 +72,17 @@ namespace FlockFive.Editor
             Suite("build88-caption", Build88CaptionTests.Run);
             Suite("build88-glove", Build88GloveTests.Run);
             Suite("build88-streak", Build88StreakTests.Run);
+            Suite("build89-glove-caption", Build89GloveCaptionTests.Run);
             Suite("build88-pest", Build88PestTests.Run);
             Suite("build88-curtain", Build88CurtainTests.Run);
             Suite("build88-poker-tap", Build88PokerTapTests.Run);
             Suite("build88-banner", Build88BannerTests.Run);
             Suite("build88-dismiss", Build88DismissTests.Run);
             Suite("build88-poker-glove", Build88PokerGloveTests.Run);
+            Suite("build89-vippending", Build89VipPendingTests.Run);
             Suite("build88-adtest", Build88AdTestTests.Run);
+            Suite("build89-adhold", Build89AdHoldTests.Run);
+            Suite("build89-shadow", Build89ShadowBirdTests.Run);
             Suite("sky", SkyCycleTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
@@ -415,7 +419,12 @@ namespace FlockFive.Editor
             "/tmp/flock-five-b88-poker-tap",
             "/tmp/flock-five-peach-flutter",
             "/tmp/flock-five-b88-dismiss",
-            "/tmp/flock-five-b88-poker-glove"
+            "/tmp/flock-five-b88-poker-glove",
+            "/tmp/flock-five-b89-glove",
+            "/tmp/flock-five-b89-settings",
+            "/tmp/flock-five-b89-deadend",
+            "/tmp/flock-five-b89-popup",
+            "/tmp/flock-five-b89-payhead"
         };
 
         static bool AnyShotCmd()
@@ -518,8 +527,13 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-b88-curtain", "ShotLevelCurtain");
                         TryStartShot(app, "/tmp/flock-five-b88-poker-tap", "ShotPokerTap");
                         TryStartShot(app, "/tmp/flock-five-b88-dismiss", "ShotDailyDismiss");
+                        TryStartShot(app, "/tmp/flock-five-b89-glove", "ShotGloveCaption");
                         TryStartShot(app, "/tmp/flock-five-b88-poker-glove", "ShotPokerGlove");
+                        TryStartShot(app, "/tmp/flock-five-b89-settings", "ShotBuild89Settings");
+                        TryStartShot(app, "/tmp/flock-five-b89-deadend", "ShotDeadEndNudge");
                         TryStartShot(app, "/tmp/flock-five-poker-feel", "ShotPokerFeel");
+                        TryStartShot(app, "/tmp/flock-five-b89-popup", "ShotPopupExclusive");
+                        TryStartShot(app, "/tmp/flock-five-b89-payhead", "ShotPayHead");
                     }
                 }
             }

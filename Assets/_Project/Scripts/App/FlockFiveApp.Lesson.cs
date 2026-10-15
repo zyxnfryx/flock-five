@@ -21,8 +21,10 @@ namespace FlockFive
         {
             float s = DeviceFit.UiH(screenH);
             float plate = CaptionLayout.BoxPad(screenH).x;
-            float maxSeat = screenW - 16f - plate * 2f;
-            float want = Mathf.Min(screenW * 0.92f, 720f * s);
+            // b89: the plate hang may overlap the side margin a little, so a narrower phone
+            // (Android) wraps a caption the same way a taller one (iPhone) does.
+            float maxSeat = screenW - plate;
+            float want = Mathf.Min(screenW * 0.95f, 720f * s);
             if (want > maxSeat) want = maxSeat;
             if (want < 160f) want = Mathf.Min(Mathf.Max(48f, maxSeat), 160f);
             if (want < 48f) want = 48f;
@@ -46,9 +48,10 @@ namespace FlockFive
         public static int LessonCaptionFloor(float screenW, float screenH)
         {
             float h = screenH > 2f ? screenH : CaptionFloorPhoneH;
-            // b87: wide screens (iPad) ease the caption down with the shared device scale.
-            float tab = screenW > 2f && screenH > 2f ? DeviceFit.Ui(screenW, screenH) / Mathf.Max(screenH / 720f, 1f) : 1f;
-            int floor = Mathf.RoundToInt(CaptionFloorPhonePx * (h / CaptionFloorPhoneH) * tab);
+            // b89 (Brandon): the lesson type is a fixed share of the screen height. The b87
+            // tablet ease (Ui / flat scale) made iPad captions about 20% too small; phones
+            // have no ease (that ratio is 1), so they do not change.
+            int floor = Mathf.RoundToInt(CaptionFloorPhonePx * (h / CaptionFloorPhoneH) * CaptionLayout.RoomFit(screenW, screenH));
             if (floor < 1) floor = 1;
             int old = CaptionPx(CaptionFloorRef);
             if (floor < old) floor = old;
@@ -62,7 +65,7 @@ namespace FlockFive
             float seatW = LessonColumnWidth(screenW, screenH);
             float padX = Mathf.Clamp(seatW * 0.055f, 10f * s, 18f * s);
             float textW = Mathf.Max(48f, seatW - padX * 2f);
-            var fit = FitLessonText(text, textW, 4096f, 12, Mathf.RoundToInt(32f * s), screenW, screenH);
+            var fit = FitLessonText(text, textW, 4096f, 12, LessonFontHi(s), screenW, screenH);
             int lines = 1;
             string shown = fit.Shown ?? "";
             for (int i = 0; i < shown.Length; i++)
@@ -79,7 +82,7 @@ namespace FlockFive
         {
             LessonTextBox(screenW, screenH, out float textW, out float textH);
             float s = DeviceFit.UiH(screenH);
-            var fit = FitLessonText(text, textW, textH, 12, Mathf.RoundToInt(32f * s), screenW, screenH);
+            var fit = FitLessonText(text, textW, textH, 12, LessonFontHi(s), screenW, screenH);
             return fit.Font;
         }
 
@@ -91,7 +94,7 @@ namespace FlockFive
             float seatW = LessonColumnWidth(screenW, screenH);
             float padX = Mathf.Clamp(seatW * 0.055f, 10f * s, 18f * s);
             float textW = Mathf.Max(48f, seatW - padX * 2f);
-            var fit = FitLessonText(text, textW, 4096f, 12, Mathf.RoundToInt(32f * s), screenW, screenH);
+            var fit = FitLessonText(text, textW, 4096f, 12, LessonFontHi(s), screenW, screenH);
             var hang = CaptionLayout.BoxPad(screenH);
             return CaptionLayout.MeasureSnug(CoachCaptionStyle(), fit.Shown, fit.Font, hang.x, hang.y);
         }
@@ -125,7 +128,7 @@ namespace FlockFive
                 "Swipe to turn the page!\nOr tap a page number.",
                 "Tap a card to take\na closer look!",
                 "Tap to unlock your bonus!",
-                "Stuck? Tap the gift branch for a bonus spot.",
+                "Stuck? Tap the gift\nbranch for a bonus.",
                 CaptionLayout.AdoptGreetLine,
                 "Tap your bird for a closer look.",
                 "Welcome, VIP!",
@@ -255,7 +258,7 @@ namespace FlockFive
             float s = DeviceFit.UiH(screenH);
             float padX = Mathf.Clamp(seatW * 0.055f, 10f * s, 18f * s);
             float textW = Mathf.Max(48f, seatW - padX * 2f);
-            var fit = FitLessonText(line, textW, 4096f, 12, Mathf.RoundToInt(32f * s), screenW, screenH);
+            var fit = FitLessonText(line, textW, 4096f, 12, LessonFontHi(s), screenW, screenH);
             float padY = 14f * s;
             float seatH = fit.TextH + padY * 2f;
             padY = Mathf.Clamp(seatH * 0.10f, 6f * s, 14f * s);
