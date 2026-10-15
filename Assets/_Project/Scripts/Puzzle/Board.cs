@@ -221,6 +221,42 @@ namespace FlockFive
             return false;
         }
 
+        // True when the hop is the last hop played straight back: same limbs
+        // swapped, same run. A run of zero means there is no last hop.
+        public static bool IsUndo(int from, int to, int run, int lastFrom, int lastTo, int lastRun) =>
+            lastRun > 0 && from == lastTo && to == lastFrom && run == lastRun;
+
+        // Build 89. A legal hop that does more than take back the last hop.
+        // Taking it back still counts when the board it returns to offers a
+        // different hop, so a wrong turn with a way round is not a dead end.
+        // With no last hop (lastRun 0) this is HasHop.
+        public bool HasProgressHop(int lastFrom, int lastTo, int lastRun)
+        {
+            bool undo = false;
+            int n = Branches.Count;
+            for (int from = 0; from < n; from++)
+            {
+                for (int to = 0; to < n; to++)
+                {
+                    if (!CanMove(from, to, out int run)) continue;
+                    if (!IsUndo(from, to, run, lastFrom, lastTo, lastRun)) return true;
+                    undo = true;
+                }
+            }
+            if (!undo) return false;
+            var back = Clone();
+            if (!back.TryMove(lastTo, lastFrom, out _)) return false;
+            for (int from = 0; from < n; from++)
+            {
+                for (int to = 0; to < n; to++)
+                {
+                    if (from == lastFrom && to == lastTo) continue;
+                    if (back.CanMove(from, to, out _)) return true;
+                }
+            }
+            return false;
+        }
+
         public bool TryMove(int from, int to, out int run)
         {
             JustUnveiled = false;

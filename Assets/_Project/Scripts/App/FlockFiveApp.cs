@@ -847,6 +847,7 @@ namespace FlockFive
                 MixDesk.Live.SetSplash(false);
             }
             _board = LevelData.Open(index);
+            ResetHopTrail();
             _seed = _board.Clone();
             for (int i = 0; i < _bonusOn.Length; i++) _bonusOn[i] = false;
             ResetLightning();
@@ -3772,6 +3773,8 @@ namespace FlockFive
             int kicked = KickCollects();
             SyncAll();
             CoachMoved(from, to, kicked);
+            _hopTrail.Note(from, to, run, kicked > 0 || _board.JustUnveiled);
+            DeadEndNudge();
             if (_locked.Count == 0)
                 yield return GardenFit.Tween(_garden, _board, false);
             if (gen != _motionGen) yield break;
@@ -3933,6 +3936,7 @@ namespace FlockFive
             }
             else if (pest)
                 PestPark.Hold(_board, branch);
+            ResetHopTrail();
 
             float haste = Mathf.Lerp(1f, 0.52f, Mathf.Clamp01((combo - 1) / 7f));
             float step = 0.192f * haste;
@@ -4573,6 +4577,7 @@ namespace FlockFive
         PestPark.Plan ResolveDisplaced(int branch, bool hawk)
         {
             if (_board == null) return default;
+            ResetHopTrail();
             return PestPark.Resolve(_board, branch, hawk);
         }
 
@@ -5304,9 +5309,10 @@ namespace FlockFive
             // A strict solve has nothing left to join. A 4+1 with a legal hop is
             // not iced; the player finishes the five. A split with no hop can ice.
             if (_board.NextSolvedMerge(out _, out _)) return;
-            // Ice only when nothing can move. An open bonus limb counts, empty or not.
+            // Ice only when nothing real can move. An open bonus limb counts, empty or not.
             // A search that finds no win is not enough: stage 1 still has hops.
-            if (_board.HasHop() || _board.FindCollect() >= 0) return;
+            // Build 89: a hop that only takes back the last one is not a move.
+            if (_hopTrail.HasProgressHop(_board) || _board.FindCollect() >= 0) return;
             // FreezeOver aborts if _frozen is already set. It has to set that flag itself.
             StartCoroutine(FreezeOver());
         }
@@ -5461,6 +5467,7 @@ namespace FlockFive
                 yield return _garden.Ice.Shatter(_garden.Root);
             yield return FlyOffAll(flock);
             if (_seed != null) _board = _seed.Clone();
+            ResetHopTrail();
             PestReset.Apply(_board);
             BonusBranches.ApplyClaims(_board, _bonusOn);
             LightningStrike.ApplyBurns(_board, _offerBurned);
@@ -18281,7 +18288,7 @@ namespace FlockFive
             if (_keepStreak) return "keep streak";
             if (_freezeOffer || _frozen)
             {
-                bool noMove = _board == null || (!_board.HasHop() && _board.FindCollect() < 0);
+                bool noMove = _board == null || (!_hopTrail.HasProgressHop(_board) && _board.FindCollect() < 0);
                 return noMove ? "stuck, no moves" : "stuck, no way to win";
             }
             return "gift sign tapped";

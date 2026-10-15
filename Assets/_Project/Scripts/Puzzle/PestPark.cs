@@ -7,7 +7,8 @@ namespace FlockFive
     // seats them when the scrap ends, on the board as it is then. Sparrow,
     // hawk, and any later pest share this path.
     // A sparrow may drop a plain limb only when every bird still has a seat
-    // that is not a five-match, and one free seat remains. A hawk never
+    // that is not a five-match, one free seat remains, and GardenSolve still
+    // finds a win on the board it leaves. A hawk never
     // drops a limb. A bonus limb always grows back.
     public static class PestPark
     {
@@ -210,9 +211,13 @@ namespace FlockFive
                 b.Branches.Add(new BranchState());
             if (!Place(b, flock, allowFull: false, grow: false, out var homes)) return false;
             if (b.RemainingBirds > 0 && FreeSeats(b) < 1) return false;
+            bool breaks = !sourceOpen && !b.Branches[branch].IsBonus;
+            // Build 89. A free seat is not a way out. A snap only stands when the
+            // solver still finds a win, the same proof lightning needs.
+            if (breaks && !KeepsSolvable(b)) return false;
             plan = new Plan
             {
-                Break = !sourceOpen && !b.Branches[branch].IsBonus,
+                Break = breaks,
                 Spawn = spawns,
                 Homes = homes
             };
@@ -316,6 +321,13 @@ namespace FlockFive
             }
             return true;
         }
+
+        // Same rule as LightningStrike.KeepsSolvable. Unknown fails closed, so
+        // a search that runs out of nodes keeps the limb.
+        public const int SolveCap = 12000;
+
+        public static bool KeepsSolvable(Board after) =>
+            after != null && GardenSolve.Look(after, SolveCap) == GardenSolve.Outlook.Winnable;
 
         public static int FreeSeats(Board b)
         {
