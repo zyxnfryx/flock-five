@@ -735,6 +735,7 @@ namespace FlockFive
         void ShowSplash()
         {
             AudioGuard.OnSceneOrPopupClosed();
+            ClearTransientFx();
             CloseHiveInspect();
             SeasonCrossfade.RetireLive();
             GardenLife.DetachHome();
@@ -3572,6 +3573,7 @@ namespace FlockFive
             TickUsaPlane(AdPause.UnscaledDelta);
             CoachAdvance();
             TickPopups();
+            TickPopupQueue();
             TickDailyBonus();
             if (_splash) return;
             if (_garden.Ostrich != null)
@@ -5026,24 +5028,10 @@ namespace FlockFive
                 _gardenScoring = false;
                 yield break;
             }
-            yield return Ads.Interstitial();
-            if (_restarting || _splash)
-            {
-                _gardenScoring = false;
-                yield break;
-            }
-            // Soft Go VIP only after a shown interstitial closed. The full card
-            // waits until the splash home, including when a badger fight is next.
-            if (Ads.TryConsumeVipSoft())
-            {
-                VipOffer.OpenSoft();
-                yield return WaitVipSoft();
-            }
-            if (_restarting || _splash)
-            {
-                _gardenScoring = false;
-                yield break;
-            }
+            // Build 89: no ad or Go VIP over the garden. PopupQueue runs them on home after
+            // the rewards popup closes and its coins land (TickPopupQueue).
+            _postStagePending = true;
+            _rewardTookDouble = false;
             // Badger flag first, then the unlock, with no yield between: a kill must not
             // unlock the next garden without the unpaid flag. DisplayNumber is still the
             // cleared level (RememberClear does not move Index). No-op while the switch is off.

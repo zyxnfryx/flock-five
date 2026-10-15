@@ -175,9 +175,16 @@ namespace FlockFive
             }
 
             // Offer when not owned, the member thank-you card when owned.
-            public static void Show()
+            public static void Show(bool fromPlayer = true)
             {
                 if (_open || _welcome) return;
+                // Build 89: never on top of another popup, its coins, or an ad. An automatic
+                // open waits in PopupQueue; a player tap is simply refused.
+                if (_app != null && !_app.VipMayOpen())
+                {
+                    if (!fromPlayer) PopupQueue.RequestVip();
+                    return;
+                }
                 if (_app != null && !_app.GatePopup(PopupKind.Vip, true)) return;
                 _member = NoAds.Owned;
                 _open = true;
@@ -286,12 +293,12 @@ namespace FlockFive
                 // Go VIP from the soft ask. Splash home only, so a badger fight
                 // keeps the flag until the player is back on the plain splash.
                 if (FullRequested && NoAds.Owned) FullRequested = false;
-                if (FullRequested && !_open && !_welcome && _app != null
-                    && _app._splash && _app._home == HomeFace.Splash && !NoAds.Owned)
-                {
-                    Show();
-                    if (_open) FullRequested = false;
-                }
+                if (FullRequested) { FullRequested = false; PopupQueue.RequestVip(); }
+                if (NoAds.Owned) PopupQueue.DropVip();
+                if (PopupQueue.VipWanted && !_open && !_welcome && _app != null
+                    && _app._splash && _app._home == HomeFace.Splash
+                    && PopupQueue.TryReleaseVip(_app.VipMayOpen()))
+                    Show(false);
                 if (!NoAds.Owned)
                 {
                     VipWelcomeHoldsRail = false;

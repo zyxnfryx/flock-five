@@ -208,6 +208,8 @@ namespace FlockFive
         IEnumerator WatchRewardRepeat()
         {
             _rewardChoice = 1;
+            // Chosen ad: it stands in for this stage's interstitial.
+            _rewardTookDouble = true;
             _rewardAdT0 = AdPause.Unscaled;
             int amt = _rewardRepeatAmt;
             yield return Ads.Rewarded(Ads.PlacementRewardRepeat, amt, false);
