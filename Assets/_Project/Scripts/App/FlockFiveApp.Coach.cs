@@ -3526,9 +3526,15 @@ namespace FlockFive
             // button fully with the same air above and below. Without a restart rect the old lift applies.
             if (restart.width > 2f && restart.height > 2f)
                 return restart.center.y - bandH * 0.5f;
+            if (!_gardenSeatFallbackLogged)
+            {
+                _gardenSeatFallbackLogged = true;
+                Debug.LogWarning("[banner] garden seat fallback: no restart rect, using " + (CaptionLayout.GardenBannerLiftFrac * 100f).ToString("0.0") + "% lift");
+            }
             GardenBottomSeat(bandH, rowBottom, screenH, safeBottom, gap, out float y);
             return y;
         }
+        static bool _gardenSeatFallbackLogged;
 
         public static bool BottomBannerSeat(float bandH, float rowBottom, Rect restart, Rect hive, float screenH, float safeBottom, float gap, out float y)
         {
