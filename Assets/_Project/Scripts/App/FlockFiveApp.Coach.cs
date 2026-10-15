@@ -363,6 +363,41 @@ namespace FlockFive
             NoteLessonDismiss(CoachStep.CoachPlace);
         }
 
+        // Build 89. Last hops, so a take-back is not counted as a real move.
+        readonly HopTrail _hopTrail = new HopTrail();
+        // One gift nudge per stuck spell. A real move re-arms it.
+        bool _deadEndNudged;
+
+        void ResetHopTrail()
+        {
+            _hopTrail.Reset();
+            _deadEndNudged = false;
+        }
+
+        // True when the player has no real move, or keeps hopping one flock
+        // back and forth. CheckOver ices the first case on its own.
+        bool DeadEndStuck() => _hopTrail.Stuck(_board);
+
+        // Build 89. Stuck: the gift glove and glow point at the locked ad
+        // branch again, whatever the once-per-install tutorial flag says. It
+        // only points at an offer that is already there and never plays an ad.
+        // With no gift left, the ice card is the way out.
+        void DeadEndNudge()
+        {
+            if (_coach || _won || _board == null) return;
+            if (!DeadEndStuck())
+            {
+                _deadEndNudged = false;
+                return;
+            }
+            if (_deadEndNudged || PlayClock.Now < _coachGiftUntil) return;
+            if (GiftBranch() < 0) return;
+            _deadEndNudged = true;
+            _coachGiftUntil = PlayClock.Now + GiftHintSeconds;
+            _coachResumeFade = true;
+            Debug.Log("[deadend] gift nudge (" + (_hopTrail.BackAndForth ? "back and forth" : "no real move") + ")");
+        }
+
         int GiftBranch()
         {
             if (_board == null) return -1;
