@@ -10,6 +10,14 @@ namespace FlockFive
     {
         public const string Line = "Ad not ready.\nPlease try again.";
         public const string ButtonLabel = "Retry";
+        // b91: the player closed the ad early. Friendly, not an error.
+        public const string SkipLine = "Watch the whole ad\nto get your branch.";
+        public const string SkipButtonLabel = "Watch";
+
+        // True when the last request ended because the player left the ad early.
+        public static bool Skipped { get; private set; }
+        public static string CurrentLine => Skipped ? SkipLine : Line;
+        public static string CurrentLabel => Skipped ? SkipButtonLabel : ButtonLabel;
 
         public static bool Active { get; private set; }
         public static string Reason { get; private set; } = "";
@@ -19,13 +27,23 @@ namespace FlockFive
         public static void Begin()
         {
             Active = false;
+            Skipped = false;
             Reason = "";
+        }
+
+        // Closed early with no reward. Not a failure: no count, no error copy.
+        public static void NoteSkip()
+        {
+            Skipped = true;
+            Reason = "skipped (closed early)";
+            AdLog.Add("gift ad skipped by player (closed before reward); not counted as a failure");
         }
 
         // Every failed request lands here (Ads.DeliverFailedCallback). Visible in AdLog.
         public static void NoteFail(string reason)
         {
             Failures++;
+            Skipped = false;
             Reason = string.IsNullOrEmpty(reason) ? "unknown" : reason;
             AdLog.Add("gift ad request FAILED: " + Reason + " (failure #" + Failures + ", retry offered)");
         }
@@ -36,12 +54,14 @@ namespace FlockFive
         public static void Clear()
         {
             Active = false;
+            Skipped = false;
             Reason = "";
         }
 
         public static void ResetForTests()
         {
             Active = false;
+            Skipped = false;
             Reason = "";
             Failures = 0;
         }

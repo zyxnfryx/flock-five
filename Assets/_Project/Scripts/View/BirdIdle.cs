@@ -150,6 +150,10 @@ namespace FlockFive
         Vector2 _flapAnchor;
         bool _flapAnchored;
 
+        // b91: finale sling uses the 4 existing flap sheets (3,1,4,2,4,1) instead of 2.
+        public bool SixPose;
+        static readonly int[] SixOrder = { 3, 1, 4, 2, 4, 1 };
+
         public int WingPose => _wingPose;
         public bool FlapDriven => _flapDrive;
 
@@ -318,7 +322,7 @@ namespace FlockFive
         {
             // Two open poses per cycle. Catch up at most one pose on a long frame.
             // ShowClock follows the capture step so a slow editor frame does not skip the flap.
-            _poseAccum += ShowClock.Delta * _flapHz * 2f;
+            _poseAccum += Mathf.Min(ShowClock.Delta, 1f / 30f) * _flapHz * (SixPose ? 6f : 2f);
             if (_poseAccum >= 1f)
             {
                 _poseIndex += 1;
@@ -338,7 +342,13 @@ namespace FlockFive
             // garden BirdFrame on the 6-pose kit cycle.
             bool mid = (_poseIndex & 1) == 0;
             int pose = mid ? 2 : 1;
-            var spr = SpriteCatalog.FlapPose(Color, pose);
+            Sprite spr;
+            if (SixPose)
+            {
+                pose = SixOrder[_poseIndex % SixOrder.Length];
+                spr = SpriteCatalog.BirdPose(Color, pose);
+            }
+            else spr = SpriteCatalog.FlapPose(Color, pose);
             if (spr != null) _sr.sprite = spr;
             _wingPose = pose;
         }

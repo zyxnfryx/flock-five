@@ -247,6 +247,15 @@ namespace FlockFive
 
         // Steps the ad waits. Runs during GamePause (the show freezes PlayClock)
         // and drops a suspension spike so a resume cannot finish the wait.
+        // b91: a shown ad that never closes. Shorter stall limit, Cancel after CancelAfter.
+        public const float StallLimit = 45f;
+        public const float CancelAfter = 10f;
+        public static float ShowWaited { get; set; } = -1f;
+        public static bool CancelRequested { get; private set; }
+        public static bool CanCancelWait => ShowWaited >= CancelAfter;
+        public static void RequestCancelWait() { if (CanCancelWait) CancelRequested = true; }
+        public static void ClearCancelWait() { CancelRequested = false; ShowWaited = -1f; }
+
         internal static float ForegroundDt()
         {
             float dt = Time.unscaledDeltaTime;
@@ -940,15 +949,23 @@ namespace FlockFive
                 Ads.Present(() => _rv.ShowAd(Ads.ActivePlacement));
                 AfterSdk();
                 t = 0f;
-                while (_waiting && t < 180f)
+                Ads.ClearCancelWait();
+                while (_waiting && t < Ads.StallLimit && !Ads.CancelRequested)
                 {
                     t += Ads.ForegroundDt();
+                    Ads.ShowWaited = t;
                     yield return null;
                 }
-                if (_waiting) AdLog.Add("gift ad wait TIMED OUT after 180s; game resumed");
+                bool stalled = _waiting;
+                bool cancelled = stalled && Ads.CancelRequested;
+                Ads.ClearCancelWait();
+                if (stalled) AdLog.Add(cancelled ? "gift ad wait CANCELLED by player; game resumed"
+                    : "gift ad wait TIMED OUT after " + Ads.StallLimit + "s; game resumed");
                 // The reward callback grants. Close, resume, and this wait ending do not.
                 // A show that never appeared is a failure and pays nothing.
-                if (!RewardedGrant.Earned && !_shown) Ads.DeliverFailedCallback(_waiting ? "show never appeared (timeout)" : "show never appeared");
+                if (!RewardedGrant.Earned && !_shown) Ads.DeliverFailedCallback(stalled ? "show never appeared (timeout)" : "show never appeared");
+                else if (!RewardedGrant.Earned && stalled) Ads.DeliverFailedCallback(cancelled ? "stalled after show (cancelled by player)" : "stalled after show (timeout " + Ads.StallLimit + "s)");
+                else if (!RewardedGrant.Earned && _shown) AdRetry.NoteSkip();
                 Ads.LastEarned = RewardedGrant.Earned;
                 Ads.LastGranted = RewardedGrant.Earned;
                 _rv.LoadAd();
@@ -957,6 +974,7 @@ namespace FlockFive
             finally
             {
                 _waiting = false;
+                Ads.ClearCancelWait();
                 if (loading) Ads.NoteLoad(false);
                 if (showing) Ads.EndShow();
             }

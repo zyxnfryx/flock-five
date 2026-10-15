@@ -18572,6 +18572,7 @@ namespace FlockFive
             {
                 if (Ads.IsLoading && !Ads.IsShowing && !Ads.MockRewarded)
                     DrawAdSpinner(s);
+                if (Ads.CanCancelWait) DrawAdWaitCancel(s);
                 return;
             }
 #if FF_ADS_DEV
@@ -18661,7 +18662,7 @@ namespace FlockFive
             GUI.color = Color.white;
 
             string head = AdRetry.Active && !_keepStreak
-                ? AdRetry.Line
+                ? AdRetry.CurrentLine
                 : (_freezeOffer
                     ? "No more moves, you're frozen!"
                     : "Watch AD for an extra branch");
@@ -18770,7 +18771,7 @@ namespace FlockFive
                 };
             var watchSt = _giftWatch;
             watchSt.fontStyle = FontStyle.Bold;
-            string watchLab = AdRetry.Active ? AdRetry.ButtonLabel : "Watch";
+            string watchLab = AdRetry.Active ? AdRetry.CurrentLabel : "Watch";
             // Round cap is inset from FlowerDisc. Fit inside it, then leave the outline's pixels.
             int ink = 1;
             float capW = Mathf.Max(24f, disc.width * 0.58f - ink * 4f);
@@ -19319,6 +19320,23 @@ namespace FlockFive
             if (body.Overlaps(botLeft)) return true;
             if (body.Overlaps(botRight)) return true;
             return false;
+        }
+
+        // b91: a stalled ad (shown, never closed) offers Cancel after Ads.CancelAfter seconds.
+        void DrawAdWaitCancel(float s)
+        {
+            float w = Mathf.Max(120f, 150f * s), h = Mathf.Max(40f, 44f * s);
+            var r = new Rect((Screen.width - w) * 0.5f, Screen.height * 0.56f, w, h);
+            bool held;
+            bool fire = HitPad(r, out held);
+            GUI.color = held ? new Color(0.55f, 0.36f, 0.12f, 0.95f) : new Color(0.28f, 0.12f, 0.04f, 0.88f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var st = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
+            st.fontSize = Mathf.Max(14, Mathf.RoundToInt(20f * s));
+            st.normal.textColor = new Color(1f, 0.97f, 0.90f);
+            GUI.Label(r, "Cancel", st);
+            if (fire) Ads.RequestCancelWait();
         }
 
         void DrawAdSpinner(float s)

@@ -3,6 +3,49 @@ using UnityEngine;
 
 namespace FlockFive
 {
+    // b91: one shared helper for the last-bird sling. A spike-capped clock (no raw
+    // Time.deltaTime), a renderer cache filled before impact, and a sprite warm-up.
+    public static class SlingClock
+    {
+        public const float MaxStep = 1f / 30f;
+        // b90 was 2.4: ~70% of the growth landed in the last 4 frames.
+        public const float ApproachPow = 1.6f;
+
+        public static float Dt => Mathf.Min(ShowClock.Delta, MaxStep);
+
+        static readonly System.Collections.Generic.Dictionary<Transform, SpriteRenderer[]> _srs =
+            new System.Collections.Generic.Dictionary<Transform, SpriteRenderer[]>();
+
+        public static SpriteRenderer[] Srs(Transform t)
+        {
+            if (t == null) return new SpriteRenderer[0];
+            if (!_srs.TryGetValue(t, out var a) || a == null)
+            {
+                a = t.GetComponentsInChildren<SpriteRenderer>(true);
+                _srs[t] = a;
+            }
+            return a;
+        }
+
+        public static void Clear() { _srs.Clear(); }
+
+        // Touch every asset the impact uses so none loads on the impact frame.
+        public static void Prewarm(BirdColor c, Transform hold, Transform[] letters, Transform[] crew)
+        {
+            Clear();
+            for (int pose = 1; pose <= 4; pose++) SpriteCatalog.BirdPose(c, pose);
+            SpriteCatalog.FlapPose(c, 1);
+            SpriteCatalog.FlapPose(c, 2);
+            var _ = SpriteCatalog.Glow;
+            _ = SpriteCatalog.Sparkle;
+            _ = SpriteCatalog.Feather;
+            Wow.Of(c);
+            if (hold != null) Srs(hold);
+            if (letters != null) foreach (var l in letters) Srs(l);
+            if (crew != null) foreach (var b in crew) Srs(b);
+        }
+    }
+
     public static class FinaleShow
     {
         public static IEnumerator Play(WorldBuilder.Garden garden, MonoBehaviour host)
@@ -408,6 +451,9 @@ namespace FlockFive
                 peach.SetParent(hold.parent, true);
 
             var sr = peach.GetComponent<SpriteRenderer>();
+            // b91: warm everything the impact needs while the peach is still a dot.
+            if (idle != null) idle.SixPose = true;
+            SlingClock.Prewarm(BirdColor.Peach, hold, letters, crew);
             peach.localPosition = new Vector3(0f, 1.4f, 5.6f);
             peach.localScale = Vector3.one * 0.07f;
             peach.localRotation = Quaternion.identity;
@@ -422,7 +468,7 @@ namespace FlockFive
             const float pull = 0.28f;
             while (t < pull && peach != null)
             {
-                t += Time.deltaTime;
+                t += SlingClock.Dt;
                 float u = Smooth01(t / pull);
                 peach.localPosition = new Vector3(0f, 1.4f, Mathf.Lerp(5.6f, 6.8f, u));
                 peach.localScale = Vector3.one * Mathf.Lerp(0.07f, 0.05f, u);
@@ -433,11 +479,11 @@ namespace FlockFive
 
             Sfx.FlockFlutter(1);
             t = 0f;
-            const float approach = 0.36f;
+            const float approach = 0.42f;
             while (t < approach && peach != null)
             {
-                t += Time.deltaTime;
-                float k = Mathf.Pow(Mathf.Clamp01(t / approach), 2.4f);
+                t += SlingClock.Dt;
+                float k = Mathf.Pow(Mathf.Clamp01(t / approach), SlingClock.ApproachPow);
                 peach.localPosition = new Vector3(0f, Mathf.Lerp(1.4f, 1.18f, k), Mathf.Lerp(6.8f, 0.18f, k));
                 peach.localScale = Vector3.one * Mathf.Lerp(0.05f, 1.15f, k);
                 peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(11f, -4f, k));
@@ -464,18 +510,16 @@ namespace FlockFive
                 peach.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-4f, -9f, j));
                 yield return null;
             }
-            if (CamShake.Live != null) CamShake.Live.Punch(0.46f, 0.27f, 3.8f, 0.22f);
-            host.StartCoroutine(Burst(hold, false));
-            host.StartCoroutine(ScatterOutro(hold, letters, crew, hit));
-            host.StartCoroutine(Shards(hold, hit));
-            if (hold != null) Wow.Shed(hit, BirdColor.Peach, hold);
+            // b91: impact spawns spread over three frames (burst, then outro+shards, then feathers).
+            // The peach keeps moving every frame, so no single frame pays for all of it.
+            int impactFrame = 0;
 
             t = 0f;
             const float through = 0.62f;
             float ghostAt = 0f;
             while (t < through && peach != null)
             {
-                t += Time.deltaTime;
+                t += SlingClock.Dt;
                 float u = Mathf.Clamp01(t / through);
                 float k = EaseOutCubic(u);
                 float sway = Mathf.Sin(u * Mathf.PI) * 0.36f;
@@ -492,7 +536,22 @@ namespace FlockFive
                     sr.color = c;
                 }
                 if (idle != null) idle.DriveFlap(Mathf.Lerp(7.6f, 4.6f, Smooth01(u)));
-                ghostAt -= Time.deltaTime;
+                if (impactFrame == 0)
+                {
+                    if (CamShake.Live != null) CamShake.Live.Punch(0.46f, 0.27f, 3.8f, 0.22f);
+                    host.StartCoroutine(Burst(hold, false));
+                }
+                else if (impactFrame == 1)
+                {
+                    host.StartCoroutine(ScatterOutro(hold, letters, crew, hit));
+                    host.StartCoroutine(Shards(hold, hit));
+                }
+                else if (impactFrame == 2)
+                {
+                    if (hold != null) Wow.Shed(hit, BirdColor.Peach, hold);
+                }
+                impactFrame++;
+                ghostAt -= SlingClock.Dt;
                 if (ghostAt <= 0f && u < 0.7f)
                 {
                     ghostAt = 0.07f;
@@ -630,7 +689,7 @@ namespace FlockFive
             float t = 0f;
             while (t < life)
             {
-                float dt = Time.deltaTime;
+                float dt = SlingClock.Dt;
                 t += dt;
                 float a = 1f - Smooth01(Mathf.Clamp01((t / life - 0.35f) / 0.65f));
                 for (int i = 0; i < n; i++)
@@ -686,7 +745,7 @@ namespace FlockFive
                 vel[i] = d * Mathf.Lerp(9.0f, 15.5f, near) * Random.Range(0.92f, 1.08f);
                 spin[i] = (d.x >= 0f ? -1f : 1f) * Random.Range(300f, 560f);
                 delay[i] = Mathf.Clamp01(far / 4.6f) * 0.09f;
-                srs[i] = letters[i].GetComponentsInChildren<SpriteRenderer>(true);
+                srs[i] = SlingClock.Srs(letters[i]);
                 baseA[i] = new float[srs[i].Length];
                 for (int k = 0; k < srs[i].Length; k++)
                     baseA[i][k] = srs[i][k] != null ? srs[i][k].color.a : 0f;
@@ -702,14 +761,14 @@ namespace FlockFive
                 if (birds[i] == null) continue;
                 float side = birds[i].localPosition.x >= 0f ? 1f : -1f;
                 bVel[i] = new Vector3(side * Random.Range(5.2f, 8.4f), Random.Range(4.2f, 6.8f), 0f);
-                bSrs[i] = birds[i].GetComponentsInChildren<SpriteRenderer>(true);
+                bSrs[i] = SlingClock.Srs(birds[i]);
                 bA[i] = new float[bSrs[i].Length];
                 for (int k = 0; k < bSrs[i].Length; k++)
                     bA[i][k] = bSrs[i][k] != null ? bSrs[i][k].color.a : 0f;
                 bScale[i] = birds[i].localScale;
             }
 
-            var halo = hold.GetComponentsInChildren<SpriteRenderer>(true);
+            var halo = SlingClock.Srs(hold);
             var haloA = new float[halo.Length];
             var haloOk = new bool[halo.Length];
             for (int i = 0; i < halo.Length; i++)
@@ -724,8 +783,8 @@ namespace FlockFive
             float t = 0f;
             while (t < dur)
             {
-                t += Time.deltaTime;
-                float dt = Time.deltaTime;
+                t += SlingClock.Dt;
+                float dt = SlingClock.Dt;
                 for (int i = 0; i < n; i++)
                 {
                     if (letters[i] == null) continue;
@@ -1173,7 +1232,7 @@ namespace FlockFive
             float b = 0f;
             while (b < life)
             {
-                b += Time.deltaTime;
+                b += SlingClock.Dt;
                 float u = Mathf.Clamp01(b / life);
                 float fadeIn = Smooth01(Mathf.Clamp01(u / 0.22f));
                 float fadeOut = 1f - Smooth01(Mathf.Clamp01((u - 0.28f) / 0.72f));
@@ -1182,8 +1241,8 @@ namespace FlockFive
                 for (int i = 0; i < n; i++)
                 {
                     if (rs[i] == null) continue;
-                    rs[i].transform.position += vel[i] * Time.deltaTime;
-                    vel[i] *= FramePace.Damp(0.97f, Time.deltaTime);
+                    rs[i].transform.position += vel[i] * SlingClock.Dt;
+                    vel[i] *= FramePace.Damp(0.97f, SlingClock.Dt);
                     rs[i].transform.localScale = Vector3.one * sc;
                     var c = rs[i].color;
                     c.a = env;
