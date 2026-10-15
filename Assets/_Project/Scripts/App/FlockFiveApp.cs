@@ -10312,10 +10312,16 @@ namespace FlockFive
 #endif
 
             var visual = PushButton.Visual(rest, motion.Pose);
+            // b100: tell the curtain where the art is drawn so the release rainbow can put the
+            // button back over its rising glints (read after Arm, before the face is copied).
+            if (held && BadgerOwed() <= 0) LevelCurtain.Aim(rest, visual);
             var flower = SpriteCatalog.PlayFlower;
             var tex = flower != null ? flower.texture : null;
             if (tex != null)
             {
+                // b100 (Brandon): the sparkle arc is painted here, BEFORE the button art, so it
+                // flies up from behind the button's top curve instead of over its face.
+                if (paint && LevelCurtain.Armed) LevelCurtain.DrawBehind(AdPause.Unscaled);
                 float drop = held || motion.Pose.Sink > 0.01f ? 6f : 16f;
                 var shadow = new Rect(visual.x + 6f, visual.y + drop, visual.width, visual.height);
                 GUI.color = new Color(0.10f, 0.06f, 0.03f, held ? 0.22f : 0.40f);
