@@ -3507,7 +3507,8 @@ namespace FlockFive
             if (key == _gardenSeatKey) return _gardenSeatY;
             float inset = Mathf.Max(8f, safe.yMin + 4f);
             float refH = GardenRefBandH(w, h, safe, s, 0f);
-            GardenBottomSeat(refH, 0f, h, inset, 8f * s, out float y);
+            CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
+            float y = GardenBannerY(refH, 0f, restart, hive, h, inset, 8f * s, 0f);
             _gardenSeatKey = key; _gardenSeatY = y;
             return y;
         }
@@ -3521,9 +3522,19 @@ namespace FlockFive
 
         public static float GardenBannerY(float bandH, float rowBottom, Rect restart, Rect hive, float screenH, float safeBottom, float gap, float topY)
         {
+            // b102 (Brandon): the banner is centred on the garden restart button's own rect, so it covers the
+            // button fully with the same air above and below. Without a restart rect the old lift applies.
+            if (restart.width > 2f && restart.height > 2f)
+                return restart.center.y - bandH * 0.5f;
+            if (!_gardenSeatFallbackLogged)
+            {
+                _gardenSeatFallbackLogged = true;
+                Debug.LogWarning("[banner] garden seat fallback: no restart rect, using " + (CaptionLayout.GardenBannerLiftFrac * 100f).ToString("0.0") + "% lift");
+            }
             GardenBottomSeat(bandH, rowBottom, screenH, safeBottom, gap, out float y);
             return y;
         }
+        static bool _gardenSeatFallbackLogged;
 
         public static bool BottomBannerSeat(float bandH, float rowBottom, Rect restart, Rect hive, float screenH, float safeBottom, float gap, out float y)
         {
