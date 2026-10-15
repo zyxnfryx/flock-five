@@ -4,8 +4,8 @@ using UnityEngine;
 
 namespace FlockFive.Editor
 {
-    // Build 89. A restart flight (fly-off and fly-in) never draws a bird as a flat black
-    // silhouette. Hidden (shrouded) birds stay black only while seated.
+    // Build 89. QA rule B: a hidden (shrouded) bird stays blacked out through restart fly-off and
+    // fly-in, wearing exactly the seated look (one tint, no kit/face, far wing follows).
     public static class Build89ShadowBirdTests
     {
         const string Out = "/tmp/flock-five-b89-shadow-tests.txt";
@@ -23,41 +23,59 @@ namespace FlockFive.Editor
                 Debug.Log("[build89shadow] " + line);
             }
 
-            GameObject go = null;
             try
             {
-                Check("rule-seated-hidden-is-silhouette", BirdDress.Silhouette(true, false, false), "");
-                Check("rule-flying-hidden-has-art", !BirdDress.Silhouette(true, true, true), "");
-                Check("rule-visible-never-silhouette",
-                    !BirdDress.Silhouette(false, false, false) && !BirdDress.Silhouette(false, true, true), "");
+                Color hidden = BirdIdle.HiddenTint;
+                Check("rule-hidden-is-silhouette-in-every-pose",
+                    BirdDress.Silhouette(true) && !BirdDress.Silhouette(false), "");
+                Check("rule-one-tint", BirdIdle.BodyTint(true) == hidden && BirdIdle.BodyTint(false) == Color.white, "");
 
-                go = new GameObject("b89-bird");
-                var sr = go.AddComponent<SpriteRenderer>();
-                var idle = go.AddComponent<BirdIdle>();
-                idle.Bind(new Bird(BirdColor.Ruby, BirdKit.Bow), Vector3.zero);
-                idle.Shrouded = true;
-                sr.color = new Color(0.04f, 0.03f, 0.05f, 1f); // what a perched hidden bird left behind
-                idle.Frozen = true;
-                idle.Flapping = true;
-                idle.ShowFlightArt();
-                var c = sr.color;
-                Check("flight-art-not-black", c.r > 0.9f && c.g > 0.9f && c.b > 0.9f && c.a > 0.99f,
-                    "color " + c);
+                // Seated hidden bird vs the same bird in restart flight: identical tint on body
+                // and far wing, no kit, no face, opaque. A visible bird stays full art.
+                for (int pose = 0; pose < 2; pose++)
+                {
+                    bool hid = pose == 0;
+                    var g = new GameObject("b89-bird-" + pose);
+                    try
+                    {
+                        var sr = g.AddComponent<SpriteRenderer>();
+                        var idle = g.AddComponent<BirdIdle>();
+                        idle.Bind(new Bird(BirdColor.Ruby, BirdKit.Bow), Vector3.zero);
+                        idle.Shrouded = hid;
+                        sr.color = BirdIdle.BodyTint(hid); // what BranchView paints for a seated bird
+                        var seated = sr.color;
+                        idle.Frozen = true;
+                        idle.Flapping = true;
+                        idle.Lift = 1f;
+                        sr.color = Color.white;             // whatever a prior flight frame left
+                        idle.ShowFlightLook();
+                        var c = sr.color;
+                        string tag = hid ? "hidden" : "visible";
+                        Check("flight-silhouette-matches-seated-" + tag,
+                            c.a > 0.99f && Mathf.Approximately(c.r, seated.r) && Mathf.Approximately(c.g, seated.g)
+                            && Mathf.Approximately(c.b, seated.b),
+                            "seated " + seated + " flight " + c);
+                        Check("flight-no-half-art-" + tag,
+                            !hid || (c.r < 0.1f && c.g < 0.1f && c.b < 0.1f),
+                            "body " + c);
+                        Check("flight-kit-face-follow-silhouette-" + tag,
+                            BirdDress.KitOn(true, BirdDress.Silhouette(hid), false) == !hid
+                            && BirdDress.FaceOn(true, BirdDress.Silhouette(hid)) == !hid, "");
+                    }
+                    finally { Object.DestroyImmediate(g); }
+                }
 
-                // Every bird tint in the restart flight path must come from the shared art path.
+                // Flight code paths take the tint from the shared look, never their own colour.
                 string app = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");
                 int a = app.IndexOf("void ArmFlight");
                 int b = app.IndexOf("bool LiveBird", a);
                 string body = a >= 0 && b > a ? app.Substring(a, b - a) : "";
-                Check("flight-path-no-dark-tint",
-                    body.Length > 0 && body.IndexOf("Silhouette") < 0 && body.IndexOf("0.04f") < 0
-                    && body.IndexOf("ShowFlightArt") >= 0 && app.IndexOf("FlightSilhouette") < 0,
+                Check("flight-path-uses-shared-look",
+                    body.Length > 0 && body.IndexOf("ShowFlightLook") >= 0 && body.IndexOf("0.04f") < 0
+                    && body.IndexOf("Color.white") < 0 && app.IndexOf("FlightSilhouette") < 0,
                     "len " + body.Length);
             }
-            finally
-            {
-                if (go != null) Object.DestroyImmediate(go);
-            }
+            catch (System.Exception e) { Check("no-exception", false, e.Message); }
 
             Debug.Log(fail == 0
                 ? "build89shadow tests DONE " + pass + "/" + (pass + fail)

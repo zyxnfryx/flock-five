@@ -5751,7 +5751,7 @@ namespace FlockFive
             sr.enabled = true;
             sr.sortingOrder = FlockSort.Fly;
             if (idle != null)
-                idle.ShowFlightArt(); // full art for every flier, hidden birds included
+                idle.ShowFlightLook(); // hidden birds keep the blacked-out look in flight
             else
             {
                 var c = sr.color;
@@ -5771,10 +5771,10 @@ namespace FlockFive
                 idle.Frozen = true;
                 idle.Flapping = true;
                 idle.Lift = 1f;
-                idle.ShowFlightArt(); // full art in the air, hidden birds included
+                idle.ShowFlightLook(); // same look every frame: hidden stays black
             }
             sr.enabled = true;
-            // Duck a silhouette back under the leaves only as it lands.
+            // Duck a hidden bird back under the leaves only as it lands.
             sr.sortingOrder = shroud && landU > BirdDress.DuckAt ? FlockSort.Shroud : FlockSort.Fly;
         }
 

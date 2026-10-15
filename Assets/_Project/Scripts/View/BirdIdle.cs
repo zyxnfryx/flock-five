@@ -19,13 +19,14 @@ namespace FlockFive
         public float FlapMul = 1f;
         public bool Sleeping;
         public bool Shrouded;
-        // Drawn as a black silhouette: shrouded and not in flight (see BirdDress.Silhouette).
-        bool Veiled => BirdDress.Silhouette(Shrouded, Frozen, Flapping);
-        // Full-colour body, face and kit for a flier, whatever tint the perch left behind.
-        public void ShowFlightArt()
+        // Drawn as a black silhouette: shrouded, seated or in flight (see BirdDress.Silhouette).
+        bool Veiled => BirdDress.Silhouette(Shrouded);
+        // Flight look: opaque, and the same tint a seated bird of this state wears (hidden = the
+        // blacked-out silhouette with no kit or face, visible = full art). The far wing copies it.
+        public void ShowFlightLook()
         {
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
-            if (_sr != null) _sr.color = UnityEngine.Color.white;
+            if (_sr != null) _sr.color = BodyTint(Veiled);
             SetFade(1f);
         }
         public bool FaceLeft;
@@ -69,7 +70,9 @@ namespace FlockFive
         SpriteRenderer[] _zzzGlowSr;
         SpriteRenderer _bang;
         static Sprite _bangSpr;
-        static readonly UnityEngine.Color ShroudTint = new UnityEngine.Color(0.04f, 0.03f, 0.05f, 1f);
+        public static readonly UnityEngine.Color HiddenTint = new UnityEngine.Color(0.04f, 0.03f, 0.05f, 1f);
+        public static UnityEngine.Color BodyTint(bool shrouded) => shrouded ? HiddenTint : UnityEngine.Color.white;
+        static UnityEngine.Color ShroudTint => HiddenTint;
 
         void Awake()
         {
