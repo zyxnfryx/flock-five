@@ -10661,6 +10661,18 @@ namespace FlockFive
             return px;
         }
 
+        // b95: y (GUI) just under the LEVEL lettering, where the Easy line starts. A home banner
+        // that covers the face seats its top here: Easy and below are covered, LEVEL stays clear.
+        // Same maths as DrawFlowerCaption's stack.
+        public static Rect LevelDiscAudit(float w, float h, Rect safe) => FlowerDisc(SplashPress.LayoutLevel(w, h, safe).Rect, 0f);
+
+        public static float LevelLettersBottom(Rect disc)
+        {
+            float stackH = disc.height * 0.56f;
+            float stackY = disc.y + (disc.height - stackH) * 0.68f;
+            return stackY + stackH * 0.52f;
+        }
+
         static void DrawFlowerCaption(Rect disc, string ease, int number)
         {
             bool hasEase = !string.IsNullOrEmpty(ease);

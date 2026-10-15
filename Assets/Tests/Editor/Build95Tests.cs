@@ -91,6 +91,20 @@ namespace FlockFive.Editor
                     Check("bottom banner never touches row/restart/hive " + stags[d], bad == 0, "fit " + fit + " nofit " + noFit + " bad " + bad);
                 }
 
+                // Coins banner over the Level face: top edge just under LEVEL, so Easy is fully covered.
+                for (int d = 0; d < sizes.Length; d++)
+                {
+                    float w = sizes[d].x, h = sizes[d].y;
+                    DeviceFit.TestWindow = w / h;
+                    float s = DeviceFit.Ui(w, h);
+                    var safe = new Rect(0f, h * 0.04f, w, h * 0.92f);
+                    var disc = FlockFiveApp.LevelDiscAudit(w, h, safe);
+                    float lettersBottom = FlockFiveApp.LevelLettersBottom(disc);
+                    float y = FlockFiveApp.CoinsBannerY(w, h, safe, s, 0f, -1f);
+                    Check("coins banner top just under LEVEL, over Easy " + stags[d], y >= lettersBottom && y <= lettersBottom + 3f * s && y < disc.yMax - disc.height * 0.2f,
+                        "y " + y.ToString("0") + " lettersBottom " + lettersBottom.ToString("0") + " discBottom " + disc.yMax.ToString("0"));
+                }
+
                 // Press burst: glints start on the upper half of the button ring (inverted U), centred.
                 {
                     float W = 1179f, H = 2556f;

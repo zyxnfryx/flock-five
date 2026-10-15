@@ -3478,8 +3478,7 @@ namespace FlockFive
             // the avatar bird. The poker button and its glove are up on the rail, well above it.
             if (spot == "home.poker")
             {
-                var lvl = FlowerPlayRect();
-                if (lvl.width > 2f) band.y = Mathf.Max(minTop, lvl.center.y - band.height * 0.5f);
+                band.y = CoinsBannerY(w, screenH, safe, s, minTop, band.y);
             }
             float drop = CaptionStyles.Drop(spot);
             if (drop > 0f)
@@ -3489,6 +3488,15 @@ namespace FlockFive
             BannerSkip = "";
             BannerUses++;
             return true;
+        }
+
+        // b95 (Brandon): the home coins banner seats with its top edge just under "LEVEL N", so the
+        // Easy line and the rest of the face are fully covered and the lettering and avatar are not.
+        public static float CoinsBannerY(float w, float h, Rect safe, float s, float minTop, float fallback)
+        {
+            var lvl = SplashPress.LayoutLevel(w, h, safe).Rect;
+            if (lvl.width <= 2f) return fallback;
+            return Mathf.Max(minTop, LevelLettersBottom(FlowerDisc(lvl, 0f)) + 2f * s);
         }
 
         // Full-width banner rect for one caption spot. cover false is the shared seat
