@@ -19,6 +19,15 @@ namespace FlockFive
         public float FlapMul = 1f;
         public bool Sleeping;
         public bool Shrouded;
+        // Drawn as a black silhouette: shrouded and not in flight (see BirdDress.Silhouette).
+        bool Veiled => BirdDress.Silhouette(Shrouded, Frozen, Flapping);
+        // Full-colour body, face and kit for a flier, whatever tint the perch left behind.
+        public void ShowFlightArt()
+        {
+            if (_sr == null) _sr = GetComponent<SpriteRenderer>();
+            if (_sr != null) _sr.color = UnityEngine.Color.white;
+            SetFade(1f);
+        }
         public bool FaceLeft;
         public BirdColor Color;
         public BirdKit Kit;
@@ -356,7 +365,7 @@ namespace FlockFive
             var mood = BirdMood.Of(Color);
             bool wings = false;
             float flapT = 0f;
-            bool kitOn = BirdDress.KitOn(show, Shrouded, Kit == BirdKit.Plain);
+            bool kitOn = BirdDress.KitOn(show, Veiled, Kit == BirdKit.Plain);
             if (show)
             {
                 if (_sr.flipX != FaceLeft) _sr.flipX = FaceLeft;
@@ -402,7 +411,7 @@ namespace FlockFive
             // KitDrawOrder is the one writer. A bare bird draws the whole sheet.
             if (kitOn) EnsureKit();
             PlaceKit(kitOn, wings, flapT);
-            PlaceFace(mood, BirdDress.FaceOn(show, Shrouded));
+            PlaceFace(mood, BirdDress.FaceOn(show, Veiled));
             // White silhouette only used to mean "selected". Selection is the colored
             // aura. A cheer (feeder clear, hawk wave, finale) is twinkles, including
             // while Frozen, and never that halo. Flight sets Lift with Frozen and stays dark.

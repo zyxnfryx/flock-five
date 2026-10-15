@@ -20,6 +20,15 @@ namespace FlockFive
 
         public static bool FaceOn(bool bodyShown, bool shrouded) => bodyShown && !shrouded;
 
+        // A hidden (shrouded) bird is a black silhouette only while it sits. In a restart
+        // or collect flight (frozen + flapping) it is drawn with its full art, because a
+        // flat black flier reads as a missing-art "shadow bird". One rule for BirdIdle and
+        // FlockFiveApp flight.
+        public static bool Silhouette(bool shrouded, bool frozen, bool flapping) =>
+            shrouded && !(frozen && flapping);
+
+        public const float DuckAt = 0.92f; // a hidden flier drops under the leaves past this landing fraction
+
         // Zzz and the "!" belong to a seated bird. A frozen, lifted bird is a
         // restart or collect flight, so they stay off there.
         public static bool SeatFxOn(bool bodyShown, bool frozen, float lift) =>

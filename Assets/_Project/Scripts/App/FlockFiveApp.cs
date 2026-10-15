@@ -5698,8 +5698,6 @@ namespace FlockFive
             sr.transform.position += new Vector3(side * (gap + 0.08f), 0f, 0f);
         }
 
-        static readonly Color FlightSilhouette = new Color(0.04f, 0.03f, 0.05f, 1f);
-
         void FlightScale(SpriteRenderer sr, BranchView branch)
         {
             if (sr == null) return;
@@ -5741,7 +5739,6 @@ namespace FlockFive
         {
             if (sr == null) return;
             var idle = sr.GetComponent<BirdIdle>();
-            bool shroud = idle != null && idle.Shrouded;
             if (idle != null)
             {
                 idle.Sleeping = false;
@@ -5753,10 +5750,8 @@ namespace FlockFive
             sr.flipX = faceLeft;
             sr.enabled = true;
             sr.sortingOrder = FlockSort.Fly;
-            if (shroud)
-                sr.color = FlightSilhouette;
-            else if (idle != null)
-                idle.SetFade(1f); // body, face and kit together (a cut-off collect fade)
+            if (idle != null)
+                idle.ShowFlightArt(); // full art for every flier, hidden birds included
             else
             {
                 var c = sr.color;
@@ -5776,11 +5771,11 @@ namespace FlockFive
                 idle.Frozen = true;
                 idle.Flapping = true;
                 idle.Lift = 1f;
-                if (shroud) sr.color = FlightSilhouette;
+                idle.ShowFlightArt(); // full art in the air, hidden birds included
             }
             sr.enabled = true;
             // Duck a silhouette back under the leaves only as it lands.
-            sr.sortingOrder = shroud && landU > 0.92f ? FlockSort.Shroud : FlockSort.Fly;
+            sr.sortingOrder = shroud && landU > BirdDress.DuckAt ? FlockSort.Shroud : FlockSort.Fly;
         }
 
         bool LiveBird(SpriteRenderer b)
