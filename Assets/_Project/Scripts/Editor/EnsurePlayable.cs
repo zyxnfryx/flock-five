@@ -79,6 +79,7 @@ namespace FlockFive.Editor
             Suite("build88-banner", Build88BannerTests.Run);
             Suite("build88-dismiss", Build88DismissTests.Run);
             Suite("build88-poker-glove", Build88PokerGloveTests.Run);
+            Suite("build89-vippending", Build89VipPendingTests.Run);
             Suite("build88-adtest", Build88AdTestTests.Run);
             Suite("build89-adhold", Build89AdHoldTests.Run);
             Suite("sky", SkyCycleTests.Run);
