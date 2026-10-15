@@ -1080,7 +1080,7 @@ namespace FlockFive.Editor
                 bool lines = BadgerCopy.LessonCount == 3
                     && BadgerCopy.LessonAt(0).Contains("honeycomb")
                     && BadgerCopy.LessonAt(1).Contains("Freeze Spray")
-                    && BadgerCopy.LessonAt(2).Contains("don't care");
+                    && BadgerCopy.LessonAt(2).Contains("halve");
                 bool open1 = BadgerCopy.OpeningLine(1, true) == ""
                     && BadgerCopy.OpeningLine(2, false) == BadgerCopy.OpenLater;
                 BadgerCopy.MarkCoach();
