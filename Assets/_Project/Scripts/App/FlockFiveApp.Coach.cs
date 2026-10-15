@@ -3469,9 +3469,36 @@ namespace FlockFive
         // b98 (Brandon): a garden lesson banner sits at the BOTTOM of the screen, under the lowest branch
         // row. It may cover the restart / hive controls (they are not part of any lesson step), but never
         // a bird row. False when even the very bottom would leave it over the lowest branch row.
+        // b100 (Brandon): only these three lesson captions ride the lifted bottom seat: the first lesson,
+        // "Tap a matching or empty branch.", and the one after them ("Nowhere to go yet."). Every other
+        // garden caption (gift "Stuck?", leaves, pests, bees...) keeps its own seat.
+        public static readonly string[] GardenBottomLines =
+        {
+            CoachTap.Caption(CoachStep.CoachPickup), CaptionLayout.CoachPlaceLine, CaptionLayout.CoachNowhereLine,
+        };
+        public static bool IsGardenBottomLine(string text)
+        {
+            for (int i = 0; i < GardenBottomLines.Length; i++)
+                if (text == GardenBottomLines[i]) return true;
+            return false;
+        }
+
+        public static float GardenRefBandH(float w, float h, Rect safe, float s, float own)
+        {
+            float refH = own;
+            // The three garden-lesson banners that share the lifted bottom seat.
+            string[] lines = GardenBottomLines;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var r = BannerRect("coach.line", lines[i], w, h, safe, new Rect(0f, 0f, w, 10f), 0f, false, s, out _, false);
+                if (r.height > refH) refH = r.height;
+            }
+            return refH;
+        }
+
         public static bool GardenBottomSeat(float bandH, float rowBottom, float screenH, float safeBottom, float gap, out float y)
         {
-            y = screenH - safeBottom - gap - bandH;
+            y = screenH - safeBottom - gap - screenH * CaptionLayout.GardenBannerLiftFrac - bandH;
             return y >= rowBottom + gap;
         }
 
@@ -3531,13 +3558,17 @@ namespace FlockFive
             // lowest branch row and over the restart / hive controls, when it fits there and the
             // glove target is not in it. Otherwise it keeps the top seat (rules below).
             bool bottomSeat = false;
-            if (spot == "coach.line" && BoardBottomGui(out float rowBot))
+            if (spot == "coach.line" && IsGardenBottomLine(text) && BoardBottomGui(out float rowBot))
             {
                 HudLayout(out _, out _, out _, out var hudRestart, out var hudHive);
                 float inset = Mathf.Max(8f, safe.yMin + 4f);
-                if (GardenBottomSeat(band.height, rowBot, screenH, inset, gap, out float by))
+                // One seat for every garden lesson: the top edge comes from the tallest garden lesson banner,
+                // so "Tap a branch to pick up its top birds." and "Tap a matching or empty branch." (and the
+                // rest) share the same top Y.
+                float refH = GardenRefBandH(w, screenH, safe, s, band.height);
+                if (GardenBottomSeat(refH, rowBot, screenH, inset, gap, out float by))
                 {
-                    var test = new Rect(0f, by, w, band.height);
+                    var test = new Rect(0f, by, w, refH);
                     bool aimIn = _cueAimGui.sqrMagnitude > 1f && _cueAimGui.y > by - CaptionLayout.GloveReach(s) && _cueAimGui.y < test.yMax + CaptionLayout.GloveReach(s);
                     if (!aimIn) { band.y = by; bottomSeat = true; }
                 }

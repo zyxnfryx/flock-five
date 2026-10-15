@@ -234,6 +234,10 @@ namespace FlockFive
         // the tests both use.
         public const float GloveBannerGap = 4f;
 
+        // b100 (Brandon): the garden-lesson banner rides this share of screen height above the bottom
+        // safe edge (about one banner line), one constant for every garden lesson.
+        public const float GardenBannerLiftFrac = 0.045f;
+
         // Rough reach of a lesson hand around its fingertip, in px at UI scale s. Used to keep a
         // banner seat clear of the target the glove points at.
         public static float GloveReach(float s) => 120f * (s > 0.01f ? s : 1f);

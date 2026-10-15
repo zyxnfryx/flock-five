@@ -206,6 +206,39 @@ namespace FlockFive.Editor
                     }
                 }
 
+                // b100: both Level 1 lessons (and every garden lesson) share one bottom seat, lifted about
+                // 4.5% of height, clear of the lowest bird row; none overlaps the glove aim.
+                for (int d = 0; d < sizes.Length; d++)
+                {
+                    float w = sizes[d].x, h = sizes[d].y;
+                    DeviceFit.TestWindow = w / h;
+                    float s = DeviceFit.Ui(w, h);
+                    var safe = new Rect(0f, h * 0.04f, w, h * 0.92f);
+                    float inset = Mathf.Max(8f, safe.yMin + 4f);
+                    float rowBot = h * 0.727f;
+                    float ref1 = FlockFiveApp.GardenRefBandH(w, h, safe, s, 0f);
+                    float own1 = FlockFiveApp.BannerRect("coach.line", CoachTap.Caption(CoachStep.CoachPickup), w, h, safe, new Rect(0f, 0f, w, 10f), 0f, false, s, out _, false).height;
+                    float own2 = FlockFiveApp.BannerRect("coach.line", CaptionLayout.CoachPlaceLine, w, h, safe, new Rect(0f, 0f, w, 10f), 0f, false, s, out _, false).height;
+                    bool ok1 = FlockFiveApp.GardenBottomSeat(Mathf.Max(ref1, own1), rowBot, h, inset, 8f * s, out float y1);
+                    bool ok2 = FlockFiveApp.GardenBottomSeat(Mathf.Max(ref1, own2), rowBot, h, inset, 8f * s, out float y2);
+                    // Every other garden lesson line lands on the same Y as well.
+                    string[] others = FlockFiveApp.GardenBottomLines;
+                    bool sameAll = true;
+                    for (int o = 0; o < others.Length; o++)
+                    {
+                        float oh = FlockFiveApp.BannerRect("coach.line", others[o], w, h, safe, new Rect(0f, 0f, w, 10f), 0f, false, s, out _, false).height;
+                        FlockFiveApp.GardenBottomSeat(Mathf.Max(ref1, oh), rowBot, h, inset, 8f * s, out float yo);
+                        if (Mathf.Abs(yo - y1) > 0.01f) sameAll = false;
+                    }
+                    // Other garden captions (gift Stuck, leaves, pests...) are not on the bottom seat.
+                    sameAll = sameAll && !FlockFiveApp.IsGardenBottomLine("Stuck? Tap the gift\nbranch for a bonus.") && !FlockFiveApp.IsGardenBottomLine(CaptionLayout.LeafLine) && FlockFiveApp.IsGardenBottomLine(CaptionLayout.CoachPlaceLine);
+                    Check("garden banner: the three lesson lines share the seat " + stags[d], sameAll, "y1 " + y1.ToString("0"));
+                    float flush = h - inset - 8f * s - ref1;
+                    Check("garden banner: same seat for both Level 1 lessons, lifted " + stags[d],
+                        ok1 == ok2 && (!ok1 || (Mathf.Abs(y1 - y2) < 0.01f && y1 <= flush - h * CaptionLayout.GardenBannerLiftFrac + 0.5f && y1 >= rowBot)),
+                        "fits " + ok1 + " y1 " + y1.ToString("0") + " y2 " + y2.ToString("0") + " flush " + flush.ToString("0") + " rowBot " + rowBot.ToString("0"));
+                }
+
                 // Level 1 flow on the real Dawn Garden board: step 1 = branch 0 (RRR) onto branch 5 (lone red),
                 // step 2 = branch 4 (red tip) onto branch 5, which completes five reds.
                 {
