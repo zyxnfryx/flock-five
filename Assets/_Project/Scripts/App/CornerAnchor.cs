@@ -12,6 +12,11 @@ namespace FlockFive
         public const float InsetRef = 40f;
         // Air inside the safe area, above the home-indicator inset. Scaled by screen.
         public const float BottomMarginRef = 72f;
+        // b103 (Brandon): on tablets the buttons sit on a fixed small buffer above the bottom safe edge, not
+        // 72 ref px, so they never ride up into the lowest (ad) branch row. Phones are exactly as before.
+        public const float TabletBottomMarginRef = 18f;
+        public static float BottomMargin(float scale, float window)
+            => Mathf.Lerp(BottomMarginRef, TabletBottomMarginRef, DeviceFit.Wide(window)) * scale;
 
         public static void Garden(float screenW, float screenH, Rect safe,
             out float scale, out float top, out float bot, out Rect restart, out Rect hive)
@@ -26,7 +31,7 @@ namespace FlockFive
             top = 72f * scale + safeTop;
             float size = SizeRef * scale;
             float inset = InsetRef * scale;
-            float margin = BottomMarginRef * scale;
+            float margin = BottomMargin(scale, DeviceFit.TestWindow ?? (Application.isBatchMode ? DeviceFit.PhoneAspect : DeviceFit.WindowAspect(screenW, screenH)));
             // Whole icon inside the safe glass: bottom inset, then this margin.
             float y = screenH - safeBot - margin - size;
             if (y < safeTop) y = safeTop;

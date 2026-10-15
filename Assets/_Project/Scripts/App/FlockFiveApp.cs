@@ -8242,7 +8242,7 @@ namespace FlockFive
 
         static Rect BackMedalBox(float s, float top, Rect safe)
         {
-            float size = 101.2f * Mathf.Clamp(s, 1f, 1.35f);
+            float size = 101.2f * Mathf.Clamp(s, 1f, 1.35f) * DeviceFit.ControlK();
             if (size < 44f) size = 44f;
             float x = Mathf.Max(16f, safe.xMin + 10f);
             return new Rect(x, top, size, size);
@@ -9116,10 +9116,14 @@ namespace FlockFive
 #endif
         }
 
-        // White face, dark outline, about 60% of the drawn button. Hit rect stays the button.
+        // b103 (Brandon): popup button labels keep clear inner padding (10% each side, 22% top/bottom) so a
+        // word never touches the button's edge. One pair of constants for every two-button popup.
+        public const float PopupWordPadX = 0.10f;
+        public const float PopupWordPadY = 0.22f;
+        // White face, dark outline, inside that padding. Hit rect stays the button.
         static void DrawPopupWord(Rect btn, string word, GUIStyle st, float s)
         {
-            var lab = new Rect(btn.x + btn.width * 0.04f, btn.y + btn.height * 0.20f, btn.width * 0.92f, btn.height * 0.60f);
+            var lab = new Rect(btn.x + btn.width * PopupWordPadX, btn.y + btn.height * PopupWordPadY, btn.width * (1f - 2f * PopupWordPadX), btn.height * (1f - 2f * PopupWordPadY));
             int cap = Mathf.Max(18, Mathf.RoundToInt(34f * s));
             st.wordWrap = false;
             st.alignment = TextAnchor.MiddleCenter;
@@ -12042,9 +12046,7 @@ namespace FlockFive
             _avatarDrew = true;
             bool wings = BirdIdle.UseFlyingPose(onPerch, false);
             _avatarPlateR = DrawAvatarPlate(c, icon, SavedAvatarName(), s, _avatarCol, _avatarFaceLeft, wings, _avatarClock, true);
-            // Bow and crown keep a halo. Bare birds do not. Stars scale with DeviceFit.Ui().
-            if (SavedAvatarKit() != 0)
-                SparkleFx.DrawKitBird(drawn, _avatarFaceLeft, DeviceFit.Ui(), wings);
+            // b103 (Brandon): no ambient kit sparkle around the HOME avatar bird. The adopt scene keeps its stars.
         }
 
         // Rails already took their taps. The play flower has not. A lesson click
@@ -12958,11 +12960,11 @@ namespace FlockFive
         //   Back: the full standard box under the dealt row (PokerCaptionTop gap), centred; if
         //         BET/DEAL is close it rides up over the bottom of the (inert) cards, never shrinks.
         // Hold and Back are pinned (static, never moved by the glove); Bet keeps the latch.
-        enum PokerCapAnchor { BetBand, UnderPayTab, BelowCards }
+        enum PokerCapAnchor { BetBand, UnderPayTab, BelowCards, BottomSeat }
 
         static PokerCapAnchor PokerStepAnchor(string line) =>
             line == PokerHoldLine ? PokerCapAnchor.UnderPayTab
-            : line == PokerBackLine ? PokerCapAnchor.BelowCards
+            : line == PokerBackLine ? PokerCapAnchor.BottomSeat
             : PokerCapAnchor.BetBand;
 
         static bool PokerStepPinned(PokerCapAnchor a) => a != PokerCapAnchor.BetBand;
@@ -13017,6 +13019,16 @@ namespace FlockFive
                     y = PokerHoldCeiling(g) + plateH * 0.5f - boxH * 0.5f;
                     break;
                 }
+                case PokerCapAnchor.BottomSeat:
+                {
+                    // b103 (Brandon): the post-hand 'Tap the back button' plate rides the same lifted bottom seat as the
+                    // Level 1 lesson banners, off the middle (WIN text, cards). The glove points up at Back, top-left.
+                    float plateH = StandardPlateHeight(line, s);
+                    float plateTop = PokerBottomPlateTop(plateH, Screen.height, Screen.safeArea, s);
+                    boxH = h;
+                    y = plateTop + plateH * 0.5f - h * 0.5f;
+                    break;
+                }
                 case PokerCapAnchor.BelowCards:
                 {
                     float top = PokerCaptionTop(s, g.Row.yMax);
@@ -13062,6 +13074,14 @@ namespace FlockFive
         // Top of the hold band: under the PAY TABLE tab and the logo halo, PokerCapClearGap clear.
         static float PokerHoldCeiling(PokerCapGeo g) =>
             Mathf.Max(g.LogoClear, g.Tab.width > 2f ? g.Tab.yMax : 0f) + PokerCapClearGap * DeviceFit.Ui();
+
+        // Top of a bottom-seated poker plate: the garden lesson seat (lifted share of screen height above the bottom safe edge).
+        public static float PokerBottomPlateTop(float plateH, float screenH, Rect safe, float s)
+        {
+            float inset = Mathf.Max(8f, safe.yMin + 4f);
+            GardenBottomSeat(plateH, 0f, screenH, inset, 8f * s, out float y);
+            return y;
+        }
 
         // Standard caption for a poker page step; the anchor and pin come from PokerStepAnchor.
         void DrawPokerStandardLine(string line, float s)
@@ -13160,6 +13180,18 @@ namespace FlockFive
         // draw has landed, so only the back medal may take a tap. DEAL, bet +/-, the cards and
         // the pay table wait until Back. The stamp ceremony, an open pay table and a flying WIN
         // keep their own taps; while they run the step is hidden and DEAL is already busy.
+        // True while the first-visit poker lesson owns the page: bet, deal, hold/draw and the result animation.
+        // Back opens only at the final step (PokerBackGateLive). A player who cannot afford the minimum bet is never trapped.
+        public static bool PokerLessonHolds(bool splash, bool onPoker, bool backDone, bool backGateLive, bool broke)
+            => splash && onPoker && !backDone && !backGateLive && !broke;
+
+        // b103 (Brandon): in normal play too, a dealt hand cannot be abandoned: Back (and the pay table's close, which
+        // never leaves the page) waits until the hand resolves into the Drawn result.
+        public static bool PokerHandHoldsBack(BirdPoker.Phase phase) => phase == BirdPoker.Phase.Dealt;
+
+        bool PokerLessonHoldsBack()
+            => PokerLessonHolds(_splash, _home == HomeFace.Poker, PokerBackDone(), PokerBackGateLive(), Purse.Coins < BirdPoker.MinBet);
+
         bool PokerBackGateLive()
         {
             if (!_splash || _home != HomeFace.Poker || PokerBackDone()) return false;
@@ -13241,12 +13273,16 @@ namespace FlockFive
 
         public static Rect PokerPayTabBox(float w, Rect safe, float top, float s)
         {
-            float tabW = Mathf.Clamp(211f * s, 178f, 264f);
-            float tabH = Mathf.Clamp(62f * s, 55f, 78f);
+            float k = DeviceFit.ControlK();
+            float tabW = Mathf.Clamp(211f * s, 178f, 264f) * k;
+            float tabH = Mathf.Clamp(62f * s, 55f, 78f) * k;
             float right = w - Mathf.Max(6f, w - safe.xMax + 4f);
             float tabY = top + 4f * s;
             return new Rect(right - tabW, tabY, tabW, tabH);
         }
+
+        // DEAL / DRAW disc side. Phones unchanged; tablets take the shared control cap.
+        public static float PokerActSize(float w, float s) => Mathf.Min(w * 0.46f, 200f * s) * DeviceFit.ControlK();
 
         public static PokerChrome LayoutPokerChrome(float w, float h, Rect safe, float s)
         {
@@ -13288,7 +13324,10 @@ namespace FlockFive
             var safe = Screen.safeArea;
             var chrome = LayoutPokerChrome(Screen.width, Screen.height, safe, s);
             var back = chrome.Back;
-            if (DrawBackMedal(back))
+            bool backFire = DrawBackMedal(back);
+            // b103 (Brandon): the poker lesson forces the one hand. Back is dead until the result step (glove on it).
+            if (backFire && (PokerLessonHoldsBack() || PokerHandHoldsBack(BirdPoker.PhaseNow))) backFire = false;
+            if (backFire)
             {
                 if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn || _pokerShowPay)
                     MarkPokerBackDone();
@@ -13333,7 +13372,7 @@ namespace FlockFive
             float holdH = 32f * s;
             float rowW = BirdPoker.HandSize * cardW + (BirdPoker.HandSize - 1) * gap;
             float rowX = spanX + (spanW - rowW) * 0.5f;
-            float btnSize = Mathf.Min(Screen.width * 0.46f, 200f * s);
+            float btnSize = PokerActSize(Screen.width, s);
             float botPad = Mathf.Max(12f, safe.yMin + 6f);
             float btnY = Screen.height - botPad - btnSize;
             var payTab = chrome.PayTab;
@@ -13490,7 +13529,7 @@ namespace FlockFive
                 float panelW = Screen.width * 0.94f;
                 int rows = BirdPoker.PayTableRows.Length;
                 var safe = Screen.safeArea;
-                float btnSize = Mathf.Min(Screen.width * 0.46f, 200f * s);
+                float btnSize = PokerActSize(Screen.width, s);
                 float botPad = Mathf.Max(12f, safe.yMin + 6f);
                 float btnY = Screen.height - botPad - btnSize;
                 float panelTop = tab.yMax + 8f * s;
@@ -14701,7 +14740,7 @@ namespace FlockFive
             float mid = 1f - Mathf.Abs(t * 2f - 1f);
             // Idle row is centered under the logo. The dealt fan stays just above the deal disc.
             float sc = DeviceFit.Ui();
-            float btnSize = Mathf.Min(Screen.width * 0.46f, 200f * sc);
+            float btnSize = PokerActSize(Screen.width, sc);
             float botPad = Mathf.Max(12f, Screen.safeArea.yMin + 6f);
             float btnY = Screen.height - botPad - btnSize;
             float y = btnY - 8f * sc - cardH - mid * 12f + bump - PokerRowLiftPx();

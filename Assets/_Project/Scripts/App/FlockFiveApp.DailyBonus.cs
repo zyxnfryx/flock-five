@@ -1412,7 +1412,9 @@ namespace FlockFive
             return w * 0.5f - dip;
         }
 
-        public static Rect WheelWedgeLabelRect(Rect wheel, int wedge, float clockwiseDegrees) => WheelWedgeLabelRect(wheel, wedge, clockwiseDegrees, true);
+        public static Rect WheelWedgeLabelRect(Rect wheel, int wedge, float clockwiseDegrees) => WheelWedgeLabelRect(wheel, wedge, clockwiseDegrees, false);
+        // b103 (Brandon): the landed label used to be pulled inward (and shrunk) once the prize was awarded. Labels are
+        // now rigid before, during and after the award; pullTip stays only as an explicit opt-in nobody uses.
 
         // pullTip: only the LANDED wedge pulls its label inside the pointer tip. During a
         // spin every label keeps its fixed radius and size, so none jumps as it passes
@@ -1552,7 +1554,7 @@ namespace FlockFive
             for (int i = 0; i < DailyBonus.WedgeCount; i++)
             {
                 bool jack = i == DailyBonus.JackpotWedge;
-                var lab = WheelWedgeLabelRect(wheel, i, angle, landed);
+                var lab = WheelWedgeLabelRect(wheel, i, angle, false);
                 string text = Money.Format(DailyBonus.Prize(level, i));
                 // b86: one font size per label kind (fit once on the fixed box), so sizes are
                 // consistent and never change frame to frame while the disc turns.
@@ -2263,8 +2265,8 @@ namespace FlockFive
             EnsureAskStyles();
             int hi = Mathf.Max(14, Mathf.RoundToInt(18f * s));
             _dailyAskBodyPx = FitFontWrapped(_dailyAsk, DailyAskCopy, body.width, body.height * 0.92f, 11, hi);
-            int yes = FitFont(_dailyAskBtn, DailyAskYes, btn.width * 0.88f, btn.height * 0.62f, 12, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
-            int no = FitFont(_dailyAskBtn, DailyAskNo, btn.width * 0.88f, btn.height * 0.62f, 12, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
+            int yes = FitFont(_dailyAskBtn, DailyAskYes, btn.width * (1f - 2f * PopupWordPadX - 0.06f), btn.height * (1f - 2f * PopupWordPadY - 0.06f), 12, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
+            int no = FitFont(_dailyAskBtn, DailyAskNo, btn.width * (1f - 2f * PopupWordPadX - 0.06f), btn.height * (1f - 2f * PopupWordPadY - 0.06f), 12, Mathf.Max(16, Mathf.RoundToInt(22f * s)));
             _dailyAskYesPx = yes < no ? yes : no;
             _dailyAskNoPx = _dailyAskYesPx;
         }

@@ -913,11 +913,22 @@ namespace FlockFive
                 if (!CanOfferBonus(open)) return true;
                 if (nearBranch >= 0) OpenBonus(nearBranch);
                 CoachHideNow();
+                // b103 (Brandon): the honoured gift tap ends the hint for good. CoachHideNow re-arms the hint
+                // window (for a reset), so clear it AFTER, or the glove comes back once the offer closes.
+                ClearGiftHint(ref _coachGiftUntil, ref _coachResumeFade, ref _deadEndNudged);
                 return nearBranch >= 0;
             }
             if (HitBranch(world) == _cueBranch) return false;
             CoachNudge();
             return true;
+        }
+
+        // The gift tap was honoured: no hint window, no resume fade, and no stuck-nudge re-arm for this spell.
+        public static void ClearGiftHint(ref float giftUntil, ref bool resumeFade, ref bool nudged)
+        {
+            giftUntil = -1f;
+            resumeFade = false;
+            nudged = true;
         }
 
         bool NearGift(int i, Vector2 world)
@@ -3525,7 +3536,12 @@ namespace FlockFive
             // b102 (Brandon): the banner is centred on the garden restart button's own rect, so it covers the
             // button fully with the same air above and below. Without a restart rect the old lift applies.
             if (restart.width > 2f && restart.height > 2f)
-                return restart.center.y - bandH * 0.5f;
+            {
+                // Centred on the button, but never below the bottom safe edge (tablet buffer is small).
+                float yc = restart.center.y - bandH * 0.5f;
+                float yMax = screenH - safeBottom - gap - bandH;
+                return Mathf.Min(yc, yMax);
+            }
             if (!_gardenSeatFallbackLogged)
             {
                 _gardenSeatFallbackLogged = true;

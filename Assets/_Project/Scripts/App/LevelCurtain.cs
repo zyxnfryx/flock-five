@@ -623,13 +623,27 @@ namespace FlockFive
         static RenderTexture _face;
         static bool _covered;
         static float _shift, _fireReal;
+        // Free-running sparkle motion clock (seconds since Fire, never held by the swap gate).
+        public static float MotionClock, LiveT = -1f;
+        public static float EmitAt(int key) => EmitWindow * H01(key, 91);
+        public static float SettleAt(int key) => EmitAt(key) + RiseDur + DescGap + FallIn;
+        public const float DriftK = 0.16f; // max drift as a share of the star body
+        public static void HoldDrift(int key, float body, float mt, out float dx, out float dy, out float scale, out float bloomK)
+        {
+            float p1 = H01(key, 201) * 6.2832f, p2 = H01(key, 203) * 6.2832f, p3 = H01(key, 205) * 6.2832f;
+            float sp = 0.8f + 0.9f * H01(key, 207);
+            dx = Mathf.Sin(mt * 2.3f * sp + p1) * body * DriftK;
+            dy = Mathf.Cos(mt * 1.7f * sp + p2) * body * DriftK + Mathf.Sin(mt * 0.9f + p3) * body * 0.06f;
+            scale = 1f + 0.10f * Mathf.Sin(mt * 6.1f * sp + p3);
+            bloomK = 0.85f + 0.15f * Mathf.Sin(mt * 4.3f + p1);
+        }
         public static int SwapFrame = -1;
         public static float LastMaxRectPx, LastMaxBodyPx, LastXMin, LastXMax, LastVeil;
         public static Rect LastWashRect;
         public static int LastRows, LastN;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() { _at = -1f; _face = null; _btn = default; _ringRx = 0f; SwapFrame = -1; _covered = false; _shift = 0f; }
+        static void ResetStatics() { LiveT = -1f; _at = -1f; _face = null; _btn = default; _ringRx = 0f; SwapFrame = -1; _covered = false; _shift = 0f; }
 
         // The only writer of the start time. Takes ownership of the held face.
         public static void Fire(float now, Rect src, RenderTexture face) => Fire(now, src, face, default);
@@ -765,7 +779,7 @@ namespace FlockFive
         //   layer 2: wait above, then fall the full height after the swap, fading.
         // The landing column is the cell's, so the spread is uniform; nothing is
         // ordered by x. Returns false when not drawn.
-        static bool Flight(int key, float lx, float ly, float body, bool layer2, float t, float W, float H,
+        public static bool Flight(int key, float lx, float ly, float body, bool layer2, float t, float W, float H,
             float ox, float oy, out float x, out float y, out float sz, out float a, out float bloom, out float soft)
         {
             x = y = sz = a = bloom = soft = 0f;
@@ -812,8 +826,16 @@ namespace FlockFive
                 }
                 else if (t < so)
                 {
-                    x = lx; y = ly; sz = body / StarBody; a = 1f;
-                    bloom = core ? 1f : 0.9f;
+                    // b103 (Brandon): the covered hold is never a still frame. Every glint keeps drifting
+                    // and shimmering on the free-running motion clock (it does not stop when the swap
+                    // gate holds the sequence clock at full coverage).
+                    HoldDrift(key, body, MotionClock, out float hx, out float hy, out float hs, out float hb);
+                    // Eased in after landing and out before the fall so nothing pops.
+                    float tl = LiveT >= 0f ? LiveT : t; // un-held clock: the hold must not freeze the ease either
+                    float env = Mathf.Clamp01((tl - (d0 + FallIn)) / 0.15f) * Mathf.Clamp01((so - tl) / 0.12f);
+                    hx *= env; hy *= env; hs = 1f + (hs - 1f) * env; hb = 1f + (hb - 1f) * env;
+                    x = lx + hx; y = ly + hy; sz = body / StarBody * hs; a = 1f;
+                    bloom = (core ? 1f : 0.9f) * hb;
                     soft = core ? 0.05f : 0.5f;
                 }
                 else if (t < so + OutFall)
@@ -922,6 +944,8 @@ namespace FlockFive
             // Swap gate: the clock may not pass full coverage until a frame has actually
             // painted it (every glint landed, veil at peak). Until then it is held there.
             float rawT = t;
+            MotionClock = rawT + _shift;
+            LiveT = rawT;
             bool holding = !_covered && t >= CoverAt;
             if (holding) t = CoverAt;
             float W = Screen.width, H = Screen.height;

@@ -71,7 +71,7 @@ namespace FlockFive.Editor
                 string shot = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.Build87.cs"));
                 string fx = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/SparkleFx.cs"));
                 Check("adopt-draws-kit-stars", avatar.Contains("SparkleFx.DrawKitBird") && avatar.Contains("SavedAvatarKit() != 0"), "adopt path");
-                Check("home-draws-kit-stars", home.Contains("SparkleFx.DrawKitBird") && home.Contains("SavedAvatarKit() != 0"), "home path");
+                Check("home-has-no-kit-stars (b103)", !home.Contains("SparkleFx.DrawKitBird"), "home path");
                 Check("shot-waits-for-bright", shot.Contains("KitBirdPeak") && shot.Contains("KitStarBright"), "capture gate");
                 int drawAt = fx.IndexOf("void DrawKitBird");
                 int drawCall = drawAt >= 0 ? fx.IndexOf("DrawAt(", drawAt) : -1;

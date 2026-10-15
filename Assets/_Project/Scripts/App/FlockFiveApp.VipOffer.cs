@@ -944,16 +944,14 @@ namespace FlockFive
                 }
                 string price = NoAds.PriceLabel();
                 bool priced = !string.IsNullOrEmpty(price);
-                var verb = priced
-                    ? new Rect(disc.x, disc.y + disc.height * 0.14f, disc.width, disc.height * 0.32f)
-                    : new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.52f);
+                BuyLabelRects(disc, priced, out var verb, out var priceBox);
                 int hi = Mathf.Max(18, Mathf.RoundToInt(36f * s));
                 _buy.fontSize = FitFont(_buy, BuyLabel, verb.width * 0.78f, verb.height * 0.92f, 12, hi);
                 int ink = Mathf.Clamp(Mathf.RoundToInt(_buy.fontSize * 0.14f), 2, 7);
                 StampOutlined(verb, BuyLabel, _buy, cream, 0, ink);
                 if (priced)
                 {
-                    var priceR = new Rect(disc.x + disc.width * 0.06f, verb.yMax, disc.width * 0.88f, disc.height * 0.30f);
+                    var priceR = priceBox;
                     int phi = Mathf.Max(16, Mathf.RoundToInt(34f * s));
                     _buy.fontSize = FitFont(_buy, price, priceR.width * 0.96f, priceR.height * 0.92f, 12, phi);
                     int pink = Mathf.Clamp(Mathf.RoundToInt(_buy.fontSize * 0.16f), 2, 8);
@@ -962,6 +960,23 @@ namespace FlockFive
                 if (shineU >= 0f && shineU <= 1f) DrawVipShine(disc, shineU);
                 if (!sparkle) return;
                 DrawBuySparkle(disc);
+            }
+
+            // b103 (Brandon): the label block (verb, and the price under it) is centred on the disc's real centre.
+            // Priced: verb 0.32h + price 0.30h = 0.62h tall, so it starts 0.19h down. Unpriced: one 0.52h box, 0.24h down.
+            public static void BuyLabelRects(Rect disc, bool priced, out Rect verb, out Rect price)
+            {
+                if (priced)
+                {
+                    float top = disc.y + disc.height * 0.19f;
+                    verb = new Rect(disc.x, top, disc.width, disc.height * 0.32f);
+                    price = new Rect(disc.x + disc.width * 0.06f, verb.yMax, disc.width * 0.88f, disc.height * 0.30f);
+                }
+                else
+                {
+                    verb = new Rect(disc.x, disc.y + disc.height * 0.24f, disc.width, disc.height * 0.52f);
+                    price = default;
+                }
             }
 
             static void DrawBuySparkle(Rect disc)
