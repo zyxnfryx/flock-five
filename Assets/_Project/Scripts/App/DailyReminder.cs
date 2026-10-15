@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using UnityEngine;
 #if UNITY_IOS && !UNITY_EDITOR
 using Unity.Notifications.iOS;
@@ -10,7 +9,8 @@ using Unity.Notifications.Android;
 
 namespace FlockFive
 {
-    // Local reminder for the daily bonus. com.unity.mobile.notifications 2.4.x.
+    // Local reminder for the daily bonus. Fires only while the app is closed/backgrounded
+    // (see NotifyPlan, OnAppForeground/OnAppBackground/OnAppQuit). com.unity.mobile.notifications 2.4.x.
     // Editor and desktop builds compile the same methods with no native calls.
     // Nothing here requests permission. The OS prompt runs only from RequestOsNow,
     // after the player says yes on the in-game card (Accept) and the game is idle
@@ -28,7 +28,6 @@ namespace FlockFive
         const string PrefOsOwed = "flockfive.daily.osOwed";
         const string PrefNoteReady = "flockfive.daily.noteReady";
         const string PrefNoteKeep = "flockfive.daily.noteKeep";
-        const string ReadyBody = "Your daily coins are ready.";
         const string IosReady = "flockfive.daily.ready";
         const string IosKeep = "flockfive.daily.keep";
         const string ChannelId = "flockfive_daily";
@@ -62,12 +61,45 @@ namespace FlockFive
 #endif
         }
 
+        // The app is active from launch until OnAppBackground/OnAppQuit.
+        static bool _active = true;
+
+        // Records the latest streak state. While the app is active nothing may be
+        // pending, so this also clears any stale notification. The schedule itself is
+        // written only by OnAppBackground / OnAppQuit.
         public static void Reschedule(int streak, bool claimedToday, bool atRisk)
         {
             if (streak < 0) streak = 0;
             _armStreak = streak;
             _armClaimed = claimedToday;
             _armRisk = atRisk && streak >= 2;
+            if (_active) CancelAll();
+        }
+
+        // Launch / foreground: cancel pending, clear delivered.
+        public static void OnAppForeground()
+        {
+            _active = true;
+            CancelAll();
+        }
+
+        // Background / pause: schedule for the correct future time.
+        public static void OnAppBackground()
+        {
+            _active = false;
+            ScheduleNow();
+        }
+
+        // Quit: same as background.
+        public static void OnAppQuit()
+        {
+            _active = false;
+            ScheduleNow();
+        }
+
+        static void ScheduleNow()
+        {
+            CancelAll();
 #if UNITY_IOS && !UNITY_EDITOR
             if (!IosGranted()) return;
             ScheduleIos();
@@ -75,9 +107,29 @@ namespace FlockFive
             if (!AndroidGranted()) return;
             ScheduleAndroid();
 #else
-            // No notification assembly in the editor or on desktop. Read the armed
-            // reminder so those builds still compile the same fields.
-            Plan(out _, out _, out _);
+            NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk);
+#endif
+        }
+
+        static void CancelAll()
+        {
+#if UNITY_IOS && !UNITY_EDITOR
+            try
+            {
+                iOSNotificationCenter.RemoveAllScheduledNotifications();
+                iOSNotificationCenter.RemoveAllDeliveredNotifications();
+                iOSNotificationCenter.ApplicationBadge = 0;
+            }
+            catch (Exception) { }
+#elif UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                AndroidNotificationCenter.CancelAllScheduledNotifications();
+                AndroidNotificationCenter.CancelAllDisplayedNotifications();
+                PlayerPrefs.SetInt(PrefNoteReady, 0);
+                PlayerPrefs.SetInt(PrefNoteKeep, 0);
+            }
+            catch (Exception) { }
 #endif
         }
 
@@ -126,7 +178,7 @@ namespace FlockFive
             }
             catch (Exception) { }
 #endif
-            Reschedule(_armStreak, _armClaimed, _armRisk);
+            // Foreground: nothing may be pending. The schedule is written on background.
         }
 
         public static void Decline()
@@ -186,47 +238,16 @@ namespace FlockFive
                 bool granted = _iosAuth.Granted;
                 _iosAuth.Dispose();
                 _iosAuth = null;
-                if (granted) ScheduleIos();
+                if (granted && !_active) ScheduleIos();
             }
 #elif UNITY_ANDROID && !UNITY_EDITOR
             if (_androidAuth != null && _androidAuth.Status != PermissionStatus.RequestPending)
             {
                 bool granted = _androidAuth.Status == PermissionStatus.Allowed;
                 _androidAuth = null;
-                if (granted) ScheduleAndroid();
+                if (granted && !_active) ScheduleAndroid();
             }
 #endif
-        }
-
-        // After today's claim, both alerts are tomorrow (6pm coins, 8pm streak).
-        // If today's coins are still unclaimed, use the next 6pm that has not passed,
-        // and only keep the streak line when that evening is still today.
-        static void Plan(out DateTime coins, out DateTime keep, out bool doKeep)
-        {
-            if (_armClaimed)
-            {
-                coins = DayAt(1, 18);
-                keep = DayAt(1, 20);
-                doKeep = _armRisk;
-                return;
-            }
-            coins = NextFuture(18);
-            keep = NextFuture(20);
-            var now = DateTime.Now;
-            doKeep = _armRisk && keep.Year == now.Year && keep.Month == now.Month && keep.Day == now.Day;
-        }
-
-        static DateTime DayAt(int daysAhead, int hour)
-        {
-            var now = DateTime.Now;
-            return new DateTime(now.Year, now.Month, now.Day, hour, 0, 0, DateTimeKind.Local).AddDays(daysAhead);
-        }
-
-        static DateTime NextFuture(int hour)
-        {
-            var slot = DayAt(0, hour);
-            if (slot <= DateTime.Now) slot = slot.AddDays(1);
-            return slot;
         }
 
 #if UNITY_IOS && !UNITY_EDITOR
@@ -238,13 +259,8 @@ namespace FlockFive
                 iOSNotificationCenter.RemoveDeliveredNotification(IosReady);
                 iOSNotificationCenter.RemoveScheduledNotification(IosKeep);
                 iOSNotificationCenter.RemoveDeliveredNotification(IosKeep);
-                Plan(out var coinsAt, out var keepAt, out bool doKeep);
-                ScheduleIosAt(IosReady, "Daily bonus", ReadyBody, coinsAt);
-                if (doKeep)
-                {
-                    string keep = "Keep your " + _armStreak.ToString(CultureInfo.InvariantCulture) + " day streak!";
-                    ScheduleIosAt(IosKeep, "Daily bonus", keep, keepAt);
-                }
+                foreach (var e in NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk))
+                    ScheduleIosAt(e.Kind == NotifyPlan.Kind.Ready ? IosReady : IosKeep, "Daily bonus", e.Body, e.When);
             }
             catch (Exception) { }
         }
@@ -283,16 +299,11 @@ namespace FlockFive
                 AndroidNotificationCenter.RegisterNotificationChannel(channel);
                 CancelAndroid(PrefNoteReady);
                 CancelAndroid(PrefNoteKeep);
-                Plan(out var coinsAt, out var keepAt, out bool doKeep);
-                int ready = SendAndroid("Daily bonus", ReadyBody, coinsAt);
-                PlayerPrefs.SetInt(PrefNoteReady, ready + 1);
-                if (doKeep)
+                foreach (var e in NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk))
                 {
-                    string keep = "Keep your " + _armStreak.ToString(CultureInfo.InvariantCulture) + " day streak!";
-                    int id = SendAndroid("Daily bonus", keep, keepAt);
-                    PlayerPrefs.SetInt(PrefNoteKeep, id + 1);
+                    int id = SendAndroid("Daily bonus", e.Body, e.When);
+                    PlayerPrefs.SetInt(e.Kind == NotifyPlan.Kind.Ready ? PrefNoteReady : PrefNoteKeep, id + 1);
                 }
-                else PlayerPrefs.SetInt(PrefNoteKeep, 0);
                 PlayerPrefs.Save();
             }
             catch (Exception) { }
