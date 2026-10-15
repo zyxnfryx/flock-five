@@ -79,11 +79,12 @@ namespace FlockFive.Editor
                         if (rows > tallest) tallest = rows;
                         if (rows > 2) bad++;
                         // Fingertips from the banner's bottom edge down the screen, across the width.
-                        for (float y = rect.yMax; y < h - 8f; y += dh * 0.25f)
+                        // b95: from INSIDE the banner (target under it, the build 94 regression) downward.
+                        for (float y = rect.yMin + 2f; y < h - 8f; y += dh * 0.25f)
                             for (int xi = 0; xi < 6; xi++)
                             {
                                 float x = w * (0.08f + 0.84f * xi / 5f);
-                                var aim = CaptionLayout.AimBelowBanner(new Vector2(x, y), rect, above, CaptionLayout.GloveBannerGap * s, dh * 1.0f);
+                                var aim = CaptionLayout.AimBelowBanner(new Vector2(x, y), rect, above, CaptionLayout.GloveBannerGap * s, float.MaxValue);
                                 // Approach: the cuff sits below-right of the tip and slides to it.
                                 var perch = aim + new Vector2(0.7071f, 0.7071f) * (dh * 0.9f);
                                 for (int k = 0; k <= 8; k++)

@@ -66,6 +66,44 @@ namespace FlockFive.Editor
                 string app = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");
                 Check("level shimmer has no glints", app.IndexOf("DrawFlowerShimmer(visual, 0f, 1f, false)") > 0, "");
 
+                // Garden banner at the bottom: when it seats, it is under the lowest row and above the
+                // restart / hive controls, on iPhone, iPad and SE; when it does not fit it returns false.
+                var sizes = new[] { new Vector2(1179f, 2556f), new Vector2(1536f, 2048f), new Vector2(750f, 1334f) };
+                string[] stags = { "iphone", "ipad", "se" };
+                for (int d = 0; d < sizes.Length; d++)
+                {
+                    float w = sizes[d].x, h = sizes[d].y;
+                    DeviceFit.TestWindow = w / h;
+                    float s = DeviceFit.Ui(w, h);
+                    var safe = new Rect(0f, h * 0.04f, w, h * 0.92f);
+                    CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
+                    int fit = 0, noFit = 0, bad = 0;
+                    for (float rowFrac = 0.55f; rowFrac <= 0.90f; rowFrac += 0.05f)
+                        for (float bandH = 90f * s; bandH <= 260f * s; bandH += 40f * s)
+                        {
+                            float rowBottom = h * rowFrac;
+                            bool ok = FlockFiveApp.BottomBannerSeat(bandH, rowBottom, restart, hive, h, safe.yMin, 8f * s, out float y);
+                            if (!ok) { noFit++; continue; }
+                            fit++;
+                            var band = new Rect(0f, y, w, bandH);
+                            if (band.yMin < rowBottom || band.Overlaps(restart) || band.Overlaps(hive) || band.yMax > h) bad++;
+                        }
+                    Check("bottom banner never touches row/restart/hive " + stags[d], bad == 0, "fit " + fit + " nofit " + noFit + " bad " + bad);
+                }
+
+                // Press burst: glints start on the upper half of the button ring (inverted U), centred.
+                {
+                    float W = 1179f, H = 2556f;
+                    var src = new Rect(W * 0.14f, H * 0.62f, W * 0.72f, W * 0.72f);
+                    var buf = new LevelCurtain.Glint[LevelCurtain.Count * 2];
+                    int n = LevelCurtain.Fill(0.03f, W, H, src, buf);
+                    float ringCy = src.y + src.height * SparkleFx.FlatRingCy;
+                    float minX = 1e9f, maxX = -1e9f, maxY = -1e9f;
+                    for (int i = 0; i < n; i++) { minX = Mathf.Min(minX, buf[i].X); maxX = Mathf.Max(maxX, buf[i].X); maxY = Mathf.Max(maxY, buf[i].Y); }
+                    Check("burst starts on the top curve", n > 0 && maxY < ringCy && minX < src.center.x - src.width * 0.2f && maxX > src.center.x + src.width * 0.2f,
+                        "n " + n + " maxY " + maxY.ToString("0") + " ringCy " + ringCy.ToString("0") + " x " + minX.ToString("0") + ".." + maxX.ToString("0"));
+                }
+
                 // Plane: 15 s first, 40 s later.
                 Check("plane idle 15/40", FlockFiveApp.PlaneIdleFor(false) == 15f && FlockFiveApp.PlaneIdleFor(true) == 40f, "");
             }

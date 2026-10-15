@@ -1036,14 +1036,25 @@ namespace FlockFive
         bool GardenGlove(Vector2 aimGui, float dt, float s, System.Func<Vector2, bool> tapHit)
         {
             var aim = aimGui;
-            bool known = TutorCaptionPlate(out var plate);
+            // b95: the banner that was actually painted last frames wins over the seat estimate
+            // (build 94 used the snug-seat plate, which is not where the banner lands).
+            Rect plate;
+            bool known;
+            if (_tutorPlateOn && _tutorPlateFrame >= 0 && Time.frameCount - _tutorPlateFrame <= 3)
+            {
+                plate = PadPlate(_tutorPlate, s);
+                known = plate.width > 2f && plate.height > 2f;
+            }
+            else
+                known = TutorCaptionPlate(out plate);
             if (known && plate.yMin > aimGui.y)
-                return CoachGloveAt(aimGui, dt, s, float.NaN, false, float.NaN, default, tapHit);
+                return CoachGloveAt(aimGui, dt, s, float.NaN, false, -90f, default, tapHit); // from the right, pointing left
             float approach = GloveBelowDeg;
             if (known)
             {
                 float above = Mathf.Max(GloveAbove(GloveBelowDeg, s, false, 0f), GloveAbove(GloveBelowDeg, s, false, 1f));
-                aim = CaptionLayout.AimBelowBanner(aimGui, plate, above, CaptionLayout.GloveBannerGap * s, GloveDh(s) * 1.0f);
+                // No cap: a target hidden under the banner is pointed at from just below it.
+                aim = CaptionLayout.AimBelowBanner(aimGui, plate, above, CaptionLayout.GloveBannerGap * s, float.MaxValue);
             }
             return CoachGloveAt(aim, dt, s, float.NaN, false, approach, default, tapHit);
         }
@@ -3317,6 +3328,50 @@ namespace FlockFive
             return _boardTopY > 0f;
         }
 
+        // b95: screen y (GUI, down) of the lowest thing on the board: the bottom branch row and
+        // its birds. False off a garden.
+        int _boardBotFrame = -10; float _boardBotY;
+        bool BoardBottomGui(out float y)
+        {
+            y = _boardBotY;
+            if (_boardBotFrame == Time.frameCount) return _boardBotY > 0f;
+            _boardBotFrame = Time.frameCount; _boardBotY = 0f; y = 0f;
+            var cam = _garden.Cam;
+            var branches = _garden.Branches;
+            if (cam == null || branches == null) return false;
+            float worldLow = float.PositiveInfinity;
+            for (int i = 0; i < branches.Length; i++)
+            {
+                var view = branches[i];
+                if (view == null || !view.gameObject.activeInHierarchy) continue;
+                var rs = view.GetComponentsInChildren<Renderer>();
+                for (int k = 0; k < rs.Length; k++)
+                    if (rs[k].enabled && rs[k].bounds.min.y < worldLow) worldLow = rs[k].bounds.min.y;
+            }
+            if (float.IsPositiveInfinity(worldLow)) return false;
+            var sp = cam.WorldToScreenPoint(new Vector3(cam.transform.position.x, worldLow, 0f));
+            if (sp.z < 0f) return false;
+            _boardBotY = Screen.height - sp.y;
+            y = _boardBotY;
+            return _boardBotY > 0f;
+        }
+
+        // b95 (Brandon): where a garden banner can ride at the bottom: below the lowest branch row
+        // and above the restart and hive controls. Pure geometry, shared with the tests.
+        // False when the band does not fit there; the lesson then keeps the top seat.
+        public static bool BottomBannerSeat(float bandH, float rowBottom, Rect restart, Rect hive, float screenH, float safeBottom, float gap, out float y)
+        {
+            y = 0f;
+            float ceil = screenH - safeBottom;
+            if (restart.width > 2f && restart.yMin < ceil) ceil = restart.yMin;
+            if (hive.width > 2f && hive.yMin < ceil) ceil = hive.yMin;
+            ceil -= gap;
+            float floor = rowBottom + gap;
+            if (ceil - floor < bandH) return false;
+            y = ceil - bandH;
+            return true;
+        }
+
         // The live step's own control, known before its glove poses (home rail lessons).
         bool BandCoversStepTarget(Rect band)
         {
@@ -3351,6 +3406,21 @@ namespace FlockFive
             // The bee banner stays high under the title. Sliding it under a subject
             // would drop it onto the hive and the glove.
             bool bee = spot == "bee.garden";
+            // b95 (Brandon): a garden lesson banner rides at the BOTTOM, in the clear band under the
+            // lowest branch row and over the restart / hive controls, when it fits there and the
+            // glove target is not in it. Otherwise it keeps the top seat (rules below).
+            bool bottomSeat = false;
+            if (spot == "coach.line" && BoardBottomGui(out float rowBot))
+            {
+                HudLayout(out _, out _, out _, out var hudRestart, out var hudHive);
+                float inset = Mathf.Max(8f, safe.yMin + 4f);
+                if (BottomBannerSeat(band.height, rowBot, hudRestart, hudHive, screenH, inset, gap, out float by))
+                {
+                    var test = new Rect(0f, by, w, band.height);
+                    bool aimIn = _cueAimGui.sqrMagnitude > 1f && _cueAimGui.y > by - CaptionLayout.GloveReach(s) && _cueAimGui.y < test.yMax + CaptionLayout.GloveReach(s);
+                    if (!aimIn) { band.y = by; bottomSeat = true; }
+                }
+            }
             // b94 (Brandon): the Watch-ad caption is a full-width banner that rides below the Watch
             // flower and the glove, never above them over the card.
             bool adHand = spot == "ad.hand";
@@ -3365,7 +3435,7 @@ namespace FlockFive
                 if (adHandBox.width >= 2f && adHandBox.yMax > adFloor) adFloor = adHandBox.yMax;
                 if (band.y < adFloor + gap) band.y = adFloor + gap;
             }
-            if (!bee && !adHand)
+            if (!bee && !adHand && !bottomSeat)
             {
                 for (int pass = 0; pass < 2; pass++)
                 {

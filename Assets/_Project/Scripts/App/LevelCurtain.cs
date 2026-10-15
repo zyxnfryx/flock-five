@@ -376,11 +376,22 @@ namespace FlockFive
             // Glint size follows a phone-width reference, so a 3:4 tablet does not read
             // as a solid fill when the near wave arrives.
             float sizeRef = minSide < screenH * 0.5625f ? minSide : screenH * 0.5625f;
+            // b95 (Brandon): the burst leaves the TOP curve of the button, fanning up and over
+            // (an upside-down U), not from its middle or bottom. Normalized ring: centre, radii.
+            float rimRx = 0f, rimRy = 0f;
+            if (sourcePx.width > 2f && sourcePx.height > 2f)
+            {
+                rimRx = sourcePx.width * SparkleFx.FlatRingRx / screenW;
+                rimRy = sourcePx.height * SparkleFx.FlatRingRy / screenH;
+                oy = (sourcePx.y + sourcePx.height * SparkleFx.FlatRingCy) / screenH;
+                if (oy < 0.08f) oy = 0.08f;
+                else if (oy > 0.94f) oy = 0.94f;
+            }
             int n = 0;
             int cap = dst.Length;
             for (int i = 0; i < Count && n < cap; i++)
             {
-                if (!Place(i, age, ox, oy, minSide / screenW, minSide / screenH, out float nx, out float ny, out float alpha, out float sizeN, out bool hot, out float bloom, out float soft))
+                if (!Place(i, age, ox, oy, rimRx, rimRy, minSide / screenW, minSide / screenH, out float nx, out float ny, out float alpha, out float sizeN, out bool hot, out float bloom, out float soft))
                     continue;
                 var g = new Glint
                 {
@@ -409,7 +420,7 @@ namespace FlockFive
         public const float ScalePeak = 1.4f;
         public const float ZMax = 0.82f;
 
-        static bool Place(int i, float age, float ox, float oy, float sx, float sy,
+        static bool Place(int i, float age, float ox, float oy, float rimRx, float rimRy, float sx, float sy,
             out float nx, out float ny, out float alpha, out float sizeN, out bool hot, out float bloom, out float soft)
         {
             nx = ny = alpha = sizeN = bloom = soft = 0f;
@@ -421,7 +432,16 @@ namespace FlockFive
             float h4 = Hash(lane, 4);
             float h7 = Hash(lane, 7);
             float tx = 0.5f + SparkleFx.Lane(i, Count, h7, ArcHalfSpan);
-            if (!SparkleFx.DepthArcAt(age, 0.85f + 0.20f * h3, ox, oy, tx, ArcTop, ArcLand,
+            float gx = ox, gy = oy;
+            if (rimRx > 0f)
+            {
+                // Lane left/right of centre maps to a seat on the upper half of the ring.
+                float k = Mathf.Clamp((tx - 0.5f) / ArcHalfSpan, -1f, 1f);
+                float a = k * Mathf.PI * 0.46f;
+                gx = ox + Mathf.Sin(a) * rimRx;
+                gy = oy - Mathf.Cos(a) * rimRy;
+            }
+            if (!SparkleFx.DepthArcAt(age, 0.85f + 0.20f * h3, gx, gy, tx, ArcTop, ArcLand,
                     ScaleFar, ScalePeak, ZMax, out var p))
                 return false;
             nx = p.X;
@@ -461,7 +481,11 @@ namespace FlockFive
                 int lane = i >> 1;
                 float h3 = Hash(lane, 23), h4 = Hash(lane, 24), h7 = Hash(lane, 27);
                 float tx = W * 0.5f + SparkleFx.Lane(i, EmberCount, h7, W * 0.58f);
-                if (!SparkleFx.DepthArcAt(b, 0.74f + 0.08f * h3, at.x, at.y, tx,
+                float ek = Mathf.Clamp((tx - W * 0.5f) / (W * 0.58f), -1f, 1f);
+                float ea = ek * Mathf.PI * 0.46f;
+                float egx = at.x + Mathf.Sin(ea) * side * SparkleFx.FlatRingRx;
+                float egy = at.y - Mathf.Cos(ea) * side * SparkleFx.FlatRingRy;
+                if (!SparkleFx.DepthArcAt(b, 0.74f + 0.08f * h3, egx, egy, tx,
                         -0.22f * H, 1.25f * H, 0.5f, 1.2f, 0.84f, out var p))
                     continue;
                 var c = h4 < 0.50f ? BGold : h4 < 0.75f ? BPeach : h4 < 0.92f ? BCream : BRose;

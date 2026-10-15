@@ -234,6 +234,10 @@ namespace FlockFive
         // the tests both use.
         public const float GloveBannerGap = 4f;
 
+        // Rough reach of a lesson hand around its fingertip, in px at UI scale s. Used to keep a
+        // banner seat clear of the target the glove points at.
+        public static float GloveReach(float s) => 120f * (s > 0.01f ? s : 1f);
+
         // b94 (Brandon): a home-screen banner never sits flush against the FLOCK FIVE logo.
         // The gap is a share of the screen height, so iPhone and iPad get the same look.
         public const float LogoGapFrac = 0.025f;
