@@ -32,6 +32,10 @@ namespace FlockFive
         // Button the fountain leaves. Empty until Aim.
         public static Rect Source;
 
+        // b100: the flower art's drawn rect (sunk pose) on the frames before the held face
+        // is copied. The release rainbow uses it to put the button back over its glints.
+        public static Rect FaceVisual;
+
         // Shot clock. Negative uses the time the caller passes.
         public static float PreviewNow = -1f;
 
@@ -79,6 +83,8 @@ namespace FlockFive
             StartedAt = 0f;
             FiredAt = -1f;
             Source = default;
+            FaceVisual = default;
+            _behindFrame = -1;
             PreviewNow = -1f;
         }
 
@@ -99,6 +105,14 @@ namespace FlockFive
             if (button.width > 2f && button.height > 2f) Source = button;
         }
 
+        // Same, plus where the art is actually drawn this frame (sunk/squashed). Tracked
+        // until the held face is copied so the rainbow knows where the button sits in it.
+        public static void Aim(Rect button, Rect visual)
+        {
+            Aim(button);
+            if (HeldFace == null && visual.width > 2f && visual.height > 2f) FaceVisual = visual;
+        }
+
         // Committed press, immediately before Load. The test reads this flag.
         public static void BeginLoad()
         {
@@ -114,7 +128,7 @@ namespace FlockFive
         {
             if (!Armed) return;
             FiredAt = now;
-            PressRainbow.Fire(now, Source, HeldFace);
+            PressRainbow.Fire(now, Source, HeldFace, HeldFace != null ? FaceVisual : default);
             HeldFace = null; // the rainbow owns it now; it outlives the curtain
             if (now - StartedAt > Flood) StartedAt = now - Flood;
         }
@@ -210,7 +224,6 @@ namespace FlockFive
             float h = Screen.height;
             if (w < 2f || h < 2f) return;
             if (_buf == null || _buf.Length < Count * 2) _buf = new Glint[Count * 2];
-            int n = Fill(VisualAge(now), w, h, Source, _buf);
             float bloom = BloomAge(now);
             var spark = SpriteCatalog.Sparkle;
             Texture tex = spark != null ? spark.texture : null;
@@ -222,6 +235,39 @@ namespace FlockFive
             DrawBloomUnder(bloom, at, side, glowTex);
             bool rainbow = PressRainbow.Live();
             if (!rainbow) DrawWash(VisualAge(now), w, h, at, glowTex);
+            // b100: the arc is normally already painted behind the button (DrawBehind, from
+            // DrawFlowerPlay). Only faces with no LEVEL flower fall back to painting it here.
+            if (_behindFrame != Time.frameCount) PaintArc(now, w, h, tex, glowTex);
+            DrawBloomOver(bloom, at, side, tex, glowTex, !rainbow);
+            if (!rainbow) DrawEmbers(bloom, at, side, tex, glowTex);
+            GUI.color = prev;
+        }
+
+        static int _behindFrame = -1;
+
+        // b100 (Brandon): the sparkle arc leaves the TOP curve of the button and flies up
+        // from BEHIND it. DrawFlowerPlay calls this just before the flower art, so the art
+        // (and everything painted after it) sits over the glints. Paint only.
+        public static void DrawBehind(float now)
+        {
+            if (!Armed) return;
+            float w = Screen.width, h = Screen.height;
+            if (w < 2f || h < 2f) return;
+            var spark = SpriteCatalog.Sparkle;
+            Texture tex = spark != null ? spark.texture : null;
+            if (tex == null) tex = Dot();
+            var glow = SpriteCatalog.Glow;
+            Texture glowTex = glow != null && glow.texture != null ? glow.texture : tex;
+            var prev = GUI.color;
+            PaintArc(now, w, h, tex, glowTex);
+            GUI.color = prev;
+            _behindFrame = Time.frameCount;
+        }
+
+        static void PaintArc(float now, float w, float h, Texture tex, Texture glowTex)
+        {
+            if (_buf == null || _buf.Length < Count * 2) _buf = new Glint[Count * 2];
+            int n = Fill(VisualAge(now), w, h, Source, _buf);
             for (int i = 0; i < n; i++)
             {
                 float a = _buf[i].Alpha;
@@ -236,9 +282,6 @@ namespace FlockFive
                     : BGold;
                 SparkleFx.DrawDepthGlint(_buf[i].X, _buf[i].Y, sz, a, _buf[i].Bloom, _buf[i].Soft, c, tex, glowTex);
             }
-            DrawBloomOver(bloom, at, side, tex, glowTex, !rainbow);
-            if (!rainbow) DrawEmbers(bloom, at, side, tex, glowTex);
-            GUI.color = prev;
         }
 
         static void BloomSeat(float w, float h, out Vector2 at, out float side)
@@ -558,10 +601,10 @@ namespace FlockFive
         public const float EmitWindow = 0.50f, RiseDur = 0.40f, DescGap = 0.04f, FallIn = 0.42f;
         const float LandFrom = RiseDur + DescGap + FallIn; // 0.86: earliest landing
         public const float CoverAt = EmitWindow + LandFrom + 0.02f; // 1.38
-        public const float SwapAt = CoverAt + 0.05f, RevealAt = CoverAt + 0.10f; // 1.43, 1.48
-        const float OutWindow = 0.25f, OutFall = 0.40f, L2Window = 0.25f, L2Fall = 0.55f;
-        public const float RevealEnd = RevealAt + 0.80f; // 2.28
-        public const float Life = RevealEnd + 0.02f;     // 2.30
+        public const float SwapAt = CoverAt, RevealAt = CoverAt + 0.02f; // 1.38, 1.40 (was 1.43, 1.48)
+        const float OutWindow = 0.15f, OutFall = 0.40f, L2Window = 0.15f, L2Fall = 0.55f;
+        public const float RevealEnd = RevealAt + 0.80f; // 2.20
+        public const float Life = RevealEnd + 0.02f;     // 2.22
         const float FailsafeSecs = 3.5f;
         const float StageMargin = 0.03f;
         public const int Cols = 8; // even: four mirrored column pairs
@@ -575,6 +618,8 @@ namespace FlockFive
         static float _at = -1f;
         static int _atFrame;
         static Rect _src;
+        static Rect _btn;
+        static float _ringX, _ringY, _ringRx, _ringRy; // top-curve ring of the held button; Rx 0 = none
         static RenderTexture _face;
         static bool _covered;
         static float _shift, _fireReal;
@@ -584,12 +629,17 @@ namespace FlockFive
         public static int LastRows, LastN;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() { _at = -1f; _face = null; SwapFrame = -1; _covered = false; _shift = 0f; }
+        static void ResetStatics() { _at = -1f; _face = null; _btn = default; _ringRx = 0f; SwapFrame = -1; _covered = false; _shift = 0f; }
 
         // The only writer of the start time. Takes ownership of the held face.
-        public static void Fire(float now, Rect src, RenderTexture face)
+        public static void Fire(float now, Rect src, RenderTexture face) => Fire(now, src, face, default);
+
+        // btn: where the flower art sits inside the held face (b100). The rise glints
+        // leave its top curve and are painted under a re-draw of that art from the face.
+        public static void Fire(float now, Rect src, RenderTexture face, Rect btn)
         {
             DropFace();
+            _btn = face != null && btn.width > 2f && btn.height > 2f ? btn : default;
             _at = now;
             _atFrame = Time.frameCount;
             _src = src;
@@ -731,6 +781,14 @@ namespace FlockFive
             {
                 float r = age / RiseDur;
                 float tx = cx + (lx - cx) * 1.12f;
+                if (_ringRx > 0f)
+                {
+                    // b100: leave the TOP curve of the button (an upside-down U), not its middle.
+                    float k = Mathf.Clamp((lx - cx) / (W * 0.5f), -1f, 1f);
+                    float ra = k * Mathf.PI * 0.46f;
+                    ox = _ringX + Mathf.Sin(ra) * _ringRx;
+                    oy = _ringY - Mathf.Cos(ra) * _ringRy;
+                }
                 float fan = Mathf.Clamp01(age / 0.20f);
                 fan = 1f - (1f - fan) * (1f - fan) * (1f - fan);
                 x = ox + (tx - ox) * fan;
@@ -783,6 +841,31 @@ namespace FlockFive
                 soft = core ? 0.05f : 0.3f + 0.5f * w;
             }
             return y > -sz && y < H + sz && x > -sz && x < W + sz;
+        }
+
+        // Put the button back over the rising glints: the held face's own pixels (art,
+        // caption and all) re-drawn in thin strips that follow the flat ring, so the cap
+        // keeps the button's silhouette and the glints show only outside it.
+        static void PaintButtonCap(Rect screen)
+        {
+            if (_face == null || screen.width < 2f || screen.height < 2f) return;
+            const int Strips = 28;
+            float top = _ringY - _ringRy, bottom = _ringY + _ringRy;
+            float sh = (bottom - top) / Strips;
+            GUI.color = Color.white;
+            bool flip = SystemInfo.graphicsUVStartsAtTop;
+            for (int i = 0; i < Strips; i++)
+            {
+                float y0 = top + i * sh;
+                float yc = y0 + sh * 0.5f - _ringY;
+                float u = yc / _ringRy;
+                float hw = _ringRx * Mathf.Sqrt(Mathf.Max(0f, 1f - u * u)) + 1.5f;
+                var r = new Rect(_ringX - hw, y0, hw * 2f, sh + 0.75f);
+                float fx = (r.x - screen.x) / screen.width, fw = r.width / screen.width;
+                float fy = (r.y - screen.y) / screen.height, fh = r.height / screen.height;
+                var uv = flip ? new Rect(fx, fy + fh, fw, -fh) : new Rect(fx, 1f - fy - fh, fw, fh);
+                GUI.DrawTextureWithTexCoords(r, _face, uv, false);
+            }
         }
 
         // One mask glint: bokeh body, then the star rotated about its centre.
@@ -846,6 +929,7 @@ namespace FlockFive
             var prev = GUI.color;
             ScreenRect(W, H, out Rect screen);
 
+            bool faceShown = false;
             // Held splash face until the swap, so the world swap Load did on the tap
             // stays hidden until the mask is closed.
             if (t < SwapAt || !_covered && SwapFrame < 0 && t >= SwapAt)
@@ -855,6 +939,7 @@ namespace FlockFive
                     GUI.color = Color.white;
                     var uv = SystemInfo.graphicsUVStartsAtTop ? new Rect(0f, 1f, 1f, -1f) : new Rect(0f, 0f, 1f, 1f);
                     GUI.DrawTextureWithTexCoords(screen, _face, uv, false);
+                    faceShown = true;
                 }
             }
             else if (SwapFrame < 0 && _covered)
@@ -878,61 +963,86 @@ namespace FlockFive
             float veil = VeilAt(t);
             LastVeil = veil;
             LastWashRect = screen;
-            if (veil > 0.005f)
-            {
-                // Base: warm cream, never pure white. Then a soft honey glaze in the
-                // same uniform rect, so the colour is layered but every row matches.
-                GUI.color = new Color(1f, 0.93f, 0.78f, veil * 0.85f);
-                GUI.DrawTexture(screen, Texture2D.whiteTexture, ScaleMode.StretchToFill, true);
-                GUI.color = new Color(1f, 0.82f, 0.55f, veil * 0.35f);
-                GUI.DrawTexture(screen, Texture2D.whiteTexture, ScaleMode.StretchToFill, true);
-            }
             washA = veil;
+            _ringRx = 0f;
+            // Top-curve ring: the held art's rect when the face is held (the cap re-draws it),
+            // else the rest rect, so the origin is the top curve either way.
+            Rect ringSrc = _btn.width > 2f ? _btn : _src;
+            if (ringSrc.width > 2f && ringSrc.height > 2f)
+            {
+                _ringX = ringSrc.center.x;
+                _ringY = ringSrc.y + ringSrc.height * SparkleFx.FlatRingCy;
+                _ringRx = ringSrc.width * SparkleFx.FlatRingRx;
+                _ringRy = ringSrc.height * SparkleFx.FlatRingRy;
+            }
 
             int drawn = 0, drawn1 = 0;
             LastMaxRectPx = 0f;
             LastXMin = float.MaxValue;
             LastXMax = float.MinValue;
             int n2 = Layer2Count(rows);
-            for (int q = 0; q < n + n2; q++)
+            // b100: pass 0 paints the rising glints (they leave the button's top curve), then
+            // the button is put back over them from the held face, so they fly up from BEHIND
+            // it. The full-screen veil and every later glint (descent, hold, fall) go after,
+            // so the wash and the covering sparkle still sit on top of everything.
+            for (int pass = 0; pass < 2; pass++)
             {
-                bool l2 = q >= n;
-                int key, mk;
-                float lx, ly, body;
-                if (!l2)
+                if (pass == 1)
                 {
-                    key = q; mk = q >> 1;
-                    Cell(q, rows, W, H, out lx, out ly);
-                    body = cell * 0.95f * SizeK(key);
-                }
-                else
-                {
-                    int j = q - n;
-                    Cell2(j, rows, W, H, out lx, out ly, out mk);
-                    key = 5000 + j;
-                    body = cell * 0.55f * SizeK(key);
-                }
-                var c = Tint(mk);
-                if (t < 0.98f)
-                {
-                    for (int g = Ghosts; g >= 1; g--)
+                    if (veil > 0.005f)
                     {
-                        float tg = t - g * GhostStep;
-                        if (!Flight(key, lx, ly, body, l2, tg, W, H, ox, oy, out float gx, out float gy, out float gs, out float ga, out float gb, out _))
-                            continue;
-                        if (gb > 0.3f) continue; // streak the rise only
-                        float k = 1f - g / (float)(Ghosts + 1);
-                        SparkleFx.DrawDepthGlint(gx, gy, gs * (0.55f + 0.4f * k), ga * 0.55f * k, 0f, 0.3f, c, star, glowTex);
+                        // Base: warm cream, never pure white. Then a soft honey glaze in the
+                        // same uniform rect, so the colour is layered but every row matches.
+                        GUI.color = new Color(1f, 0.93f, 0.78f, veil * 0.85f);
+                        GUI.DrawTexture(screen, Texture2D.whiteTexture, ScaleMode.StretchToFill, true);
+                        GUI.color = new Color(1f, 0.82f, 0.55f, veil * 0.35f);
+                        GUI.DrawTexture(screen, Texture2D.whiteTexture, ScaleMode.StretchToFill, true);
                     }
                 }
-                if (!Flight(key, lx, ly, body, l2, t, W, H, ox, oy, out float x, out float y, out float sz, out float a, out float bl, out float sf))
-                    continue;
-                PaintMaskGlint(x, y, sz, a, bl, sf, c, RotOf(key), star, glowTex);
-                if (a > 0.1f && sz > LastMaxRectPx) LastMaxRectPx = sz;
-                if (x < LastXMin) LastXMin = x;
-                if (x > LastXMax) LastXMax = x;
-                drawn++;
-                if (!l2) drawn1++;
+                for (int q = 0; q < n + n2; q++)
+                {
+                    bool l2 = q >= n;
+                    int key, mk;
+                    float lx, ly, body;
+                    if (!l2)
+                    {
+                        key = q; mk = q >> 1;
+                        Cell(q, rows, W, H, out lx, out ly);
+                        body = cell * 0.95f * SizeK(key);
+                    }
+                    else
+                    {
+                        int j2 = q - n;
+                        Cell2(j2, rows, W, H, out lx, out ly, out mk);
+                        key = 5000 + j2;
+                        body = cell * 0.55f * SizeK(key);
+                    }
+                    float eAge = t - EmitWindow * H01(key, 91);
+                    bool rising = eAge >= 0f && eAge < RiseDur;
+                    if (rising != (pass == 0)) continue;
+                    var c = Tint(mk);
+                    if (pass == 0 && t < 0.98f)
+                    {
+                        for (int g = Ghosts; g >= 1; g--)
+                        {
+                            float tg = t - g * GhostStep;
+                            if (!Flight(key, lx, ly, body, l2, tg, W, H, ox, oy, out float gx, out float gy, out float gs, out float ga, out float gb, out _))
+                                continue;
+                            if (gb > 0.3f) continue; // streak the rise only
+                            float k = 1f - g / (float)(Ghosts + 1);
+                            SparkleFx.DrawDepthGlint(gx, gy, gs * (0.55f + 0.4f * k), ga * 0.55f * k, 0f, 0.3f, c, star, glowTex);
+                        }
+                    }
+                    if (!Flight(key, lx, ly, body, l2, t, W, H, ox, oy, out float x, out float y, out float sz, out float a, out float bl, out float sf))
+                        continue;
+                    PaintMaskGlint(x, y, sz, a, bl, sf, c, RotOf(key), star, glowTex);
+                    if (a > 0.1f && sz > LastMaxRectPx) LastMaxRectPx = sz;
+                    if (x < LastXMin) LastXMin = x;
+                    if (x > LastXMax) LastXMax = x;
+                    drawn++;
+                    if (!l2) drawn1++;
+                }
+                if (pass == 0 && faceShown && _btn.width > 2f) PaintButtonCap(screen);
             }
             GUI.color = prev;
             if (holding && drawn1 >= n && veil >= VeilPeak * 0.99f)
