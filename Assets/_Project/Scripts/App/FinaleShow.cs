@@ -445,8 +445,6 @@ namespace FlockFive
                 idle.Lift = 0f;
                 idle.SuppressMood();
                 idle.DriveFlap(6.2f);
-                // Steady crash: wings held open, no flapping from approach to exit.
-                idle.HoldWing();
             }
             // Leave the lockup so the letter blast cannot drag her with it.
             if (hold != null && hold.parent != null)
@@ -475,6 +473,7 @@ namespace FlockFive
                 float u = Smooth01(t / pull);
                 peach.localPosition = new Vector3(0f, 1.4f, Mathf.Lerp(5.6f, 6.8f, u));
                 peach.localScale = Vector3.one * Mathf.Lerp(0.07f, 0.05f, u);
+                if (idle != null) idle.DriveFlap(Mathf.Lerp(6.2f, 8f, u));
                 yield return null;
             }
 
@@ -487,6 +486,7 @@ namespace FlockFive
                 float k = Mathf.Pow(Mathf.Clamp01(t / approach), SlingClock.ApproachPow);
                 peach.localPosition = new Vector3(0f, Mathf.Lerp(1.4f, 1.18f, k), Mathf.Lerp(6.8f, 0.18f, k));
                 peach.localScale = Vector3.one * Mathf.Lerp(0.05f, 1.15f, k);
+                if (idle != null) idle.DriveFlap(Mathf.Lerp(9.2f, 11.5f, k));
                 if (sr != null) sr.sortingOrder = 8;
                 yield return null;
             }
@@ -496,6 +496,8 @@ namespace FlockFive
             var hit = peach.position;
             // Impact. Flash and cracks sit behind the peach, then a ~60ms hit-stop.
             host.StartCoroutine(CrackFlash(hold, hit));
+            // Flap up to contact, then stop on the next wings-up pose (no swap mid-freeze).
+            if (idle != null) idle.HoldWing();
             float stop = 0f;
             var plant = new Vector3(0f, 1.18f, 0.18f);
             while (stop < HitStop && peach != null)

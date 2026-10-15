@@ -157,16 +157,15 @@ namespace FlockFive
         public int WingPose => _wingPose;
         public bool FlapDriven => _flapDrive;
 
-        // Steady wings: lock the driven bird on the wings-up pose (the anchor pose).
-        // No pose advance, no flap. Call after DriveFlap.
+        // Steady wings: keep flapping until the cycle next shows the wings-up pose,
+        // then lock there for good. The freeze lands on a clean pose, never mid-swap.
         bool _wingHold;
+        bool _wingHoldPending;
         public void HoldWing()
         {
-            _wingHold = true;
-            SixPose = false;
-            _poseIndex = 1;
-            _poseAccum = 0f;
-            ApplyFlapFrame();
+            if (_wingHold) return;
+            if (!_flapDrive) { _wingHold = true; SixPose = false; _poseIndex = 1; ApplyFlapFrame(); return; }
+            _wingHoldPending = true;
         }
 
         public void DriveFlap(float cyclesPerSec)
@@ -336,7 +335,6 @@ namespace FlockFive
             // ShowClock follows the capture step so a slow editor frame does not skip the flap.
             if (_wingHold)
             {
-                _poseIndex = 1;
                 ApplyFlapFrame();
                 if (_flapAnchored) transform.localPosition += FlapBodyPull();
                 return;
@@ -349,6 +347,12 @@ namespace FlockFive
                 if (_poseAccum > 1f) _poseAccum = 1f;
             }
             ApplyFlapFrame();
+            if (_wingHoldPending && _wingPose == 1)
+            {
+                // Freeze on this wings-up frame: lock the index so no later frame advances.
+                _wingHold = true;
+                _wingHoldPending = false;
+            }
             if (_flapAnchored) transform.localPosition += FlapBodyPull();
         }
 
