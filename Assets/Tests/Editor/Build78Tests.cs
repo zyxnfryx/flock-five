@@ -143,12 +143,14 @@ namespace FlockFive.Editor
         {
             var inner = new Rect(24f, 80f, 360f, 400f);
             var rows = SettingsSheet.Place(inner, 1f);
-            float gap = rows.Toggle.yMin - rows.PrivacyLink.yMax;
+            // b89: Animate background now sits between Privacy and Do Not Sell.
+            float gap = rows.Toggle.yMin - rows.AnimateLabel.yMax;
             bool nextTo = rows.PrivacyLink.xMin == inner.xMin
                 && rows.Label.xMin == inner.xMin
                 && rows.Toggle.xMax <= inner.xMax + 0.5f
                 && rows.Toggle.xMin > rows.Label.xMax
-                && rows.Toggle.yMin >= rows.PrivacyLink.yMax
+                && rows.Toggle.yMin >= rows.AnimateLabel.yMax
+                && rows.AnimateLabel.yMin >= rows.PrivacyLink.yMax
                 && gap <= SettingsSheet.RowGap + rows.Toggle.height
                 && rows.Toggle.width >= 44f
                 && rows.PrivacyLink.width > 100f

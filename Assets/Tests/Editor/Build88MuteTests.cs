@@ -196,7 +196,7 @@ namespace FlockFive.Editor
                 && b.SoundSlider.xMax <= frame.Content.xMax + 0.5f
                 && b.SoundToggle.yMax <= b.PrivacyLink.y + 0.5f
                 && !b.SoundToggle.Overlaps(b.PrivacyLink)
-                && b.AnimateLabel.yMax <= frame.Content.yMax + 0.5f
+                && b.Label.yMax <= frame.Content.yMax + 0.5f
                 && frame.Card.yMax <= h + 0.5f
                 && frame.Card.yMin >= -0.5f;
             bool x = frame.Close.width >= 44f
