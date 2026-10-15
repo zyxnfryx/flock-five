@@ -54,6 +54,13 @@ namespace FlockFive.Editor
                 var above = CaptionLayout.GloveKeepRect(plate, new Vector2(800f, 200f), 1179f, 2556f);
                 Check("glove clip above plate", Mathf.Approximately(above.yMax, 400f), above.ToString());
                 Check("glove draw clips at plate", g.IndexOf("DrawGloveClipped(") >= 0 && g.IndexOf("DrawGloveClipped(") < g.IndexOf("GUI.DrawTexture("), "");
+                // b92: the clip and the word restamp are switched off, so the glove is never under a caption.
+                Check("b92 glove over captions", CaptionLayout.GloveOverCaptions, "");
+                int clipFn = src.IndexOf("bool DrawGloveClipped(");
+                Check("b92 clip gated off", clipFn > 0 && src.IndexOf("if (CaptionLayout.GloveOverCaptions) return false;", clipFn) > clipFn
+                    && src.IndexOf("if (CaptionLayout.GloveOverCaptions) return;", src.IndexOf("void RepaintCaptionOver(")) > 0, "");
+                int cnt = 0, at = 0; while ((at = src.IndexOf("DrawGloveAt(", at)) >= 0) { cnt++; at += 12; }
+                Check("b92 one glove draw path", cnt >= 1 && src.IndexOf("GUI.DrawTexture(rect, tex", glove) > glove, "");
                 var quad = new[] { new Vector3(0f, 600f, 0f), new Vector3(100f, 600f, 0f), new Vector3(100f, 800f, 0f), new Vector3(0f, 800f, 0f) };
                 var uvs = new[] { new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(1f, 0f), new Vector2(0f, 0f) };
                 var cut = CaptionLayout.ClipQuadY(quad, uvs, 700f, 2556f);

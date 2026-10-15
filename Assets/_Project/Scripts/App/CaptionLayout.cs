@@ -224,6 +224,11 @@ namespace FlockFive
             return BannerInkLiftEm * px;
         }
 
+        // b92 (Brandon QA): the tutorial glove always draws above every caption plate
+        // and banner. b89 cut the glove at the plate edge (GL clip) and restamped the
+        // words over it, which hid a glove that enters from the side under the band.
+        public const bool GloveOverCaptions = true;
+
         // b89: the screen part a glove may paint in when it reaches a caption plate:
         // everything below the plate, or above it, whichever side holds the fingertip.
         public static Rect GloveKeepRect(Rect plate, Vector2 tip, float screenW, float screenH)

@@ -3643,6 +3643,7 @@ namespace FlockFive
         // Called after a glove draw with that glove's screen box.
         void RepaintCaptionOver(Rect gloveBox)
         {
+            if (CaptionLayout.GloveOverCaptions) return; // b92: the glove stays on top, no word restamp
             if (_capRepainting || _capTop.Kind == 0 || _capTop.Frame != Time.frameCount) return;
             if (!CaptionLayout.GloveHitsCaption(gloveBox, _capTop.Plate)) return;
             CaptionGloveHit = Time.frameCount;
@@ -4013,6 +4014,7 @@ namespace FlockFive
         // matrix, so the cut is done on the quad itself. False: draw it normally.
         bool DrawGloveClipped(Texture tex, Rect rect, Matrix4x4 m, float alpha, Rect gloveBox, Vector2 tip)
         {
+            if (CaptionLayout.GloveOverCaptions) return false; // b92: never cut the glove at a plate
             if (_capRepainting || _capTop.Kind == 0 || _capTop.Frame != Time.frameCount) return false;
             if (!CaptionLayout.GloveHitsCaption(gloveBox, _capTop.Plate)) return false;
             var keep = CaptionLayout.GloveKeepRect(_capTop.Plate, tip, Screen.width, Screen.height);
