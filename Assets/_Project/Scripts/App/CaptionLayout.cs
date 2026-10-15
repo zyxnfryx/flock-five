@@ -229,6 +229,33 @@ namespace FlockFive
         // words over it, which hid a glove that enters from the side under the band.
         public const bool GloveOverCaptions = true;
 
+        // b94 (Brandon QA build 93): the glove travels in from the lower right, beneath the
+        // banner, and never draws across it. These two are the shared rule the runtime and
+        // the tests both use.
+        public const float GloveBannerGap = 4f;
+
+        // True when the glove's drawn box and the banner share no pixel.
+        public static bool GloveClearsBanner(Rect glove, Rect banner)
+        {
+            if (glove.width < 1f || glove.height < 1f) return true;
+            if (banner.width < 1f || banner.height < 1f) return true;
+            return !glove.Overlaps(banner);
+        }
+
+        // Fingertip y that keeps a hand reaching `above` px over the tip clear of a banner
+        // that sits over the target. A banner below the target, or none, leaves the aim alone.
+        // The drop is capped so the tip never leaves the thing it points at.
+        public static Vector2 AimBelowBanner(Vector2 aim, Rect banner, float above, float gap, float maxDrop)
+        {
+            if (banner.width < 1f || banner.height < 1f) return aim;
+            if (banner.yMin > aim.y) return aim; // banner is under the target: other rule
+            float need = banner.yMax + gap + above;
+            if (aim.y >= need) return aim;
+            float drop = need - aim.y;
+            if (drop > maxDrop) drop = maxDrop;
+            return new Vector2(aim.x, aim.y + drop);
+        }
+
         // b89: the screen part a glove may paint in when it reaches a caption plate:
         // everything below the plate, or above it, whichever side holds the fingertip.
         public static Rect GloveKeepRect(Rect plate, Vector2 tip, float screenW, float screenH)
@@ -621,7 +648,7 @@ namespace FlockFive
         // Banner type. One size for every banner: the size the adopt greet already
         // uses (the old shrink loop's start). Banners do not auto-shrink. A long
         // line wraps into at most BannerMaxLines balanced rows and the plate grows.
-        public const int BannerMaxLines = 3;
+        public const int BannerMaxLines = 2;
 
         // b89 (Brandon): caption text is a fixed share of the screen height. DeviceFit.Ui
         // eases the UI scale down on wide (tablet) screens, which shrank captions there.

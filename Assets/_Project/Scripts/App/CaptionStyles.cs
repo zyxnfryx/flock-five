@@ -39,7 +39,7 @@ public static class CaptionStyles
         { "album.coach",    new Spot(false) },    // album card (popup)
         { "offer.clearads", new Spot(false) },    // Clear Ads offer (popup)
         { "vip.welcome",    new Spot(false) },    // VIP welcome (popup)
-        { "ad.hand",        new Spot(false) },    // ad hand caption (anchored to the ad button)
+        { "ad.hand",        new Spot(true) },     // b94 (Brandon): Watch-ad "Tap to unlock your bonus!" is a full-width banner below the Watch button
     };
 
     public static bool IsBanner(string spot) => spot != null && Banner.TryGetValue(spot, out var b) && b.On;

@@ -273,6 +273,8 @@ namespace FlockFive
                 GamePause.Push();
                 AdPause.Begin();
             }
+            // A next stage inside the gap takes over the depth the gap was holding.
+            if (_stageGap > 0f && _showDepth > 0) { _stageGap = 0f; HoldAdAudio(); return; }
             _showDepth++;
             AdAudioHold.Acquire();
             HoldAdAudio();
@@ -312,12 +314,44 @@ namespace FlockFive
             if (IsShowing) EndShow();
         }
 
+        // b94 (Brandon, ad bonus branch): an ad can arrive in stages (interstitial then
+        // rewarded, or a rewarded unit that re-shows). A stage's close used to release the whole
+        // show, so the music came back between stages, was muted again by the next stage's show,
+        // and the later close found nothing left to restore. EndStage is the close of ONE stage:
+        // the last open stage keeps the pause, the mute and the hold for StageGapSeconds, and a
+        // BeginShow inside that gap just continues the same sequence. Only when the gap runs out
+        // with no new stage does the one final release run. Fail, timeout, skip and ForceClear
+        // still release immediately (EndShow / ForceClear).
+        public const float StageGapSeconds = 1.5f;
+        static float _stageGap;
+        public static int FinalReleases { get; private set; }
+        public static bool StageGapOpen => _stageGap > 0f;
+
+        public static void EndStage()
+        {
+            if (_showDepth == 0) return;
+            if (_showDepth > 1) { EndShow(); return; }
+            _stageGap = StageGapSeconds;
+        }
+
+        // Foreground seconds. Releases once when the gap runs out. Test and Tick both call it.
+        public static void AdvanceStageGap(float dt)
+        {
+            if (_stageGap <= 0f) return;
+            _stageGap -= dt;
+            if (_stageGap > 0f) return;
+            _stageGap = 0f;
+            EndShow();
+        }
+
         public static void EndShow()
         {
             if (_showDepth == 0) return;
+            _stageGap = 0f;
             _showDepth--;
             AdAudioHold.Release();
             if (_showDepth > 0) return;
+            FinalReleases++;
             GamePause.Pop();
             // Pop can put back a pause that was already true when the ad began.
             AudioGuard.Restore();
@@ -358,6 +392,7 @@ namespace FlockFive
         public static void ForceClear()
         {
             IsLoading = false;
+            _stageGap = 0f;
             while (_showDepth > 0) EndShow();
             AdAudioHold.ResetForTest();
         }
@@ -382,6 +417,8 @@ namespace FlockFive
             if (IsShowing) HoldAdAudio();
             if (_showDepth == 0) return;
             float dt = ForegroundDt();
+            AdvanceStageGap(dt);
+            if (_showDepth == 0) return;
             _shownForeground += dt;
             if (!AdAudioHold.Tick(dt)) return;
             AdLog.Add("ad close never arrived; safety release after " + AdAudioHold.Foreground.ToString("0") + "s");
@@ -393,6 +430,8 @@ namespace FlockFive
         static void ResetStatics()
         {
             _host = null;
+            _stageGap = 0f;
+            FinalReleases = 0;
             LastGranted = false;
             LastEarned = false;
             ActivePlacement = PlacementBonus;
@@ -976,7 +1015,7 @@ namespace FlockFive
                 _waiting = false;
                 Ads.ClearCancelWait();
                 if (loading) Ads.NoteLoad(false);
-                if (showing) Ads.EndShow();
+                if (showing) Ads.EndStage();
             }
         }
 
@@ -1079,7 +1118,7 @@ namespace FlockFive
             {
                 _intWaiting = false;
                 if (loading) Ads.NoteLoad(false);
-                if (showing) Ads.EndShow();
+                if (showing) Ads.EndStage();
             }
         }
 
@@ -1129,7 +1168,7 @@ namespace FlockFive
             Ads.DeliverInterstitialClosed();
             if (!_orphanInt) return;
             _orphanInt = false;
-            Ads.EndShow();
+            Ads.EndStage();
         }
 
         void OnIntLoadFail(LevelPlayAdError error)
@@ -1170,7 +1209,7 @@ namespace FlockFive
             _waiting = false;
             if (!_orphanRv) return;
             _orphanRv = false;
-            Ads.EndShow();
+            Ads.EndStage();
         }
 
         void OnLoadFail(LevelPlayAdError error)

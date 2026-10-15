@@ -1029,6 +1029,25 @@ namespace FlockFive
             return CoachGloveAt(aimGui, dt, s, float.NaN, false, GloveBelowDeg, tapRect);
         }
 
+        // b94 (Brandon QA build 93): every in-garden lesson glove (pick up, place, second
+        // hop, leaves, sparrow, hawk, bees) enters from the lower right at GloveBelowDeg,
+        // beneath the banner, and the fingertip is held low enough that the hand stays off
+        // the banner. A banner under the target keeps the old arc.
+        bool GardenGlove(Vector2 aimGui, float dt, float s, System.Func<Vector2, bool> tapHit)
+        {
+            var aim = aimGui;
+            bool known = TutorCaptionPlate(out var plate);
+            if (known && plate.yMin > aimGui.y)
+                return CoachGloveAt(aimGui, dt, s, float.NaN, false, float.NaN, default, tapHit);
+            float approach = GloveBelowDeg;
+            if (known)
+            {
+                float above = Mathf.Max(GloveAbove(GloveBelowDeg, s, false, 0f), GloveAbove(GloveBelowDeg, s, false, 1f));
+                aim = CaptionLayout.AimBelowBanner(aimGui, plate, above, CaptionLayout.GloveBannerGap * s, GloveDh(s) * 1.0f);
+            }
+            return CoachGloveAt(aim, dt, s, float.NaN, false, approach, default, tapHit);
+        }
+
         void CoachPlace()
         {
             if (CoachResetHolds())
@@ -1203,7 +1222,7 @@ namespace FlockFive
             ShowCoachGlow(glow, dx, dy);
 
             float s = DeviceFit.Ui();
-            if (CoachGloveAt(_cueAimGui, dt, s, float.NaN, false, float.NaN, default, FnCueTap()))
+            if (GardenGlove(_cueAimGui, dt, s, FnCueTap()))
             {
                 _coachGlowKick = 1f;
                 CoachSpawnRipple(_cueAimWorld);
@@ -3331,7 +3350,21 @@ namespace FlockFive
             // The bee banner stays high under the title. Sliding it under a subject
             // would drop it onto the hive and the glove.
             bool bee = spot == "bee.garden";
-            if (!bee)
+            // b94 (Brandon): the Watch-ad caption is a full-width banner that rides below the Watch
+            // flower and the glove, never above them over the card.
+            bool adHand = spot == "ad.hand";
+            Rect adAvoid = default;
+            if (adHand)
+            {
+                GiftCardLayout(s, out _, out var adFlower);
+                adAvoid = adFlower;
+                if (_gloveKeepOff.width > 2f) adAvoid = Rect.MinMaxRect(Mathf.Min(adAvoid.xMin, _gloveKeepOff.xMin), Mathf.Min(adAvoid.yMin, _gloveKeepOff.yMin), Mathf.Max(adAvoid.xMax, _gloveKeepOff.xMax), Mathf.Max(adAvoid.yMax, _gloveKeepOff.yMax));
+                var adHandBox = GloveBodyFresh();
+                float adFloor = adAvoid.yMax;
+                if (adHandBox.width >= 2f && adHandBox.yMax > adFloor) adFloor = adHandBox.yMax;
+                if (band.y < adFloor + gap) band.y = adFloor + gap;
+            }
+            if (!bee && !adHand)
             {
                 for (int pass = 0; pass < 2; pass++)
                 {
@@ -3354,6 +3387,9 @@ namespace FlockFive
                     {
                         float up = rowTop - gap - band.height;
                         if (up >= minTop && band.y - up > 0.5f) { band.y = up; moved = true; }
+                        // b94: no room to clear the row. Ride as high as the HUD allows so the
+                        // banner hides the fewest birds, and the glove comes in beneath it.
+                        else if (up < minTop && band.y - minTop > 0.5f) { band.y = minTop; moved = true; }
                     }
                     var hand = GloveBodyFresh();
                     if (hand.width >= 2f && band.Overlaps(hand))
@@ -3365,12 +3401,13 @@ namespace FlockFive
                 }
                 if (_gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
             }
-            else if (band.y < minTop)
+            else if (bee && band.y < minTop)
                 band.y = minTop;
             float drop = CaptionStyles.Drop(spot);
             if (drop > 0f)
                 CoverDown(ref band, AdoptVipBadgeRect(w, screenH, safe), drop * s, SplashWordBottom(screenH, safe, s));
             if (band.yMax > screenH) band.y = screenH - band.height;
+            if (adHand && band.Overlaps(adAvoid)) { SnugUses++; BannerSkip = "watch button"; return false; }
             BannerSkip = "";
             BannerUses++;
             return true;
@@ -4161,6 +4198,15 @@ namespace FlockFive
         }
 
         public static float GloveAuditDh(float s) => GloveDh(s);
+        // b94 audit hooks: the lesson glove's drawn box, and how far a hand reaches over its tip.
+        public static float GloveAuditBelowDeg => GloveBelowDeg;
+        public static Rect GloveAuditBox(Vector2 pivot, float ang, float dh, float dip)
+        {
+            GloveSpan(pivot, ang, dh, dip, false, out float x0, out float y0, out float x1, out float y1);
+            return new Rect(x0, y0, x1 - x0, y1 - y0);
+        }
+        public static float GloveAuditAbove(float s)
+            => Mathf.Max(GloveAbove(GloveBelowDeg, s, false, 0f), GloveAbove(GloveBelowDeg, s, false, 1f));
         public static float GloveAuditDw(float dh) => GloveDrawW(dh);
         public static Texture2D GloveAuditTexture() => CoachGloveCurl(0f);
         public static Vector2 GloveAuditTip()
@@ -6608,7 +6654,7 @@ namespace FlockFive
             // b87: the first leaves intro also shows the glove on the leafy branch
             // (it was caption + glow only, so a fresh stage never showed a hand).
             if (screen.z >= 0f)
-                CoachGloveAt(_cueAimGui, PlayClock.Delta, DeviceFit.Ui());
+                GardenGlove(_cueAimGui, PlayClock.Delta, DeviceFit.Ui(), null);
         }
 
         // Union of every leafy branch (wood, birds, and the leaf curtain), in GUI space.
@@ -6947,7 +6993,7 @@ namespace FlockFive
             _coachGlow.color = new Color(1f, 0.91f, 0.46f, a);
             float handS = DeviceFit.Ui();
             _glovePestKind = _pestCue;
-            if (CoachGloveAt(gui, dt, handS, float.NaN, false, float.NaN, default, FnPestTap()))
+            if (GardenGlove(gui, dt, handS, FnPestTap()))
             {
                 _coachGlowKick = 1f;
                 CoachSpawnRipple(world);
