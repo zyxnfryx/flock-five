@@ -13445,18 +13445,29 @@ namespace FlockFive
                 if (fitKey == int.MinValue) fitKey = -2;
                 bool fitMiss = fitKey != _payFitKey || rows > _payCashTx.Length;
                 if (fitMiss && rows <= _payCashTx.Length) _payFitKey = fitKey;
+                // b89: header fills its own band (PayHeadLayout), bigger bold title and a
+                // clear bet line; rows and the panel seat are unchanged.
+                var hb = PayHeadLayout.Layout(paper, headH, 2f * s);
                 if (fitMiss)
                 {
-                    head.fontSize = FitFont(head, headTx, paper.width * 0.80f, headH * 0.52f, 24, 44);
-                    sub.fontSize = Mathf.Max(16, head.fontSize - 6);
+                    head.fontSize = FitFont(head, headTx, hb.TitleMaxW, hb.TitleMaxH,
+                        PayHeadLayout.TitleMinPx, PayHeadLayout.TitleMaxPx);
+                    sub.fontSize = FitFont(sub, PokerBetText(), hb.BetMaxW, hb.BetMaxH,
+                        PayHeadLayout.BetMinPx, PayHeadLayout.BetCap(head.fontSize));
                 }
-                StampLight(new Rect(paper.x, paper.y + 2f * s, paper.width, headH * 0.58f), headTx, head,
-                    new Color(0.28f, 0.14f, 0.06f));
-                StampLight(new Rect(paper.x, paper.y + headH * 0.52f, paper.width, headH * 0.40f),
-                    PokerBetText(), sub, new Color(0.62f, 0.28f, 0.08f));
+                StampLight(hb.Title, headTx, head, new Color(0.28f, 0.14f, 0.06f));
+                StampLight(hb.Bet, PokerBetText(), sub, new Color(0.66f, 0.26f, 0.04f));
                 GUI.color = new Color(0.72f, 0.52f, 0.22f, 0.85f * u);
-                float ruleY = paper.y + headH - 2f * s;
+                float ruleY = hb.RuleY;
                 GUI.DrawTexture(new Rect(paper.x + 10f * s, ruleY, paper.width - 20f * s, 2f * s), Texture2D.whiteTexture);
+#if UNITY_EDITOR
+                _payHeadDbg = hb; _payHeadPanelDbg = panel; _payHeadTabDbg = tab;
+                _payHeadPxDbg = new Vector2Int(head.fontSize, sub.fontSize);
+                _payHeadTitleSzDbg = head.CalcSize(PokerGui(headTx));
+                _payHeadBetSzDbg = sub.CalcSize(PokerGui(PokerBetText()));
+                _payHeadRowsDbg = new Vector2(paper.y + headH + 2f * s, rowH);
+                _payHeadFloorDbg = floor;
+#endif
                 GUI.color = Color.white;
 
                 var nameSt = PokerBold(ref _payName, TextAnchor.MiddleLeft);
@@ -13467,18 +13478,43 @@ namespace FlockFive
                 midSt.clipping = TextClipping.Clip;
                 int body = Mathf.RoundToInt(Mathf.Clamp(rowH * 0.46f, 22f, 40f));
                 int jack = body + 4;
+                int floorPx = 11;
+                float barInset = 8f * s;
+                float rowW = paper.width - barInset * 2f;
+                var cols = PayHeadLayout.Columns(rowW);
+                // b89 follow-up: every payout shares ONE size, the largest at which the widest
+                // payout string fits the cash column (same for the multiplier column). No row
+                // is squeezed or drawn larger; the gold row differs by bar and ink only.
+                if (fitMiss || rows > _payCashTx.Length)
+                {
+                    for (int i = 0; i < rows && i < _payCashTx.Length; i++)
+                    {
+                        var rk = BirdPoker.PayTableRows[i];
+                        int mu = BirdPoker.Multiplier(rk);
+                        _payMultTx[i] = mu + "\u00d7";
+                        _payCashTx[i] = Money.Format((long)mu * BirdPoker.Bet);
+                        nameSt.fontSize = FitFont(nameSt, BirdPoker.RankLabel(rk), cols.NameW - 6f,
+                            rowH * PayHeadLayout.RowTextHeight, floorPx, rk == BirdPoker.PayTableRows[0] ? jack : body);
+                        _payNamePx[i] = nameSt.fontSize;
+                    }
+                    int cnt = Mathf.Min(rows, _payCashTx.Length);
+                    float fitH = rowH * PayHeadLayout.RowTextHeight;
+                    _payCashCommon = PayHeadLayout.CommonPx(_payCashTx, cnt,
+                        t => FitFont(numSt, t, cols.CashW - PayHeadLayout.CashMargin, fitH, floorPx, body));
+                    _payMultCommon = PayHeadLayout.CommonPx(_payMultTx, cnt,
+                        t => FitFont(midSt, t, cols.MultW - PayHeadLayout.MultMargin, fitH, floorPx, body));
+                }
+                numSt.fontSize = _payCashCommon;
+                midSt.fontSize = _payMultCommon;
                 float yRow = paper.y + headH + 2f * s;
                 for (int i = 0; i < rows; i++)
                 {
                     var rank = BirdPoker.PayTableRows[i];
-                    int mult = BirdPoker.Multiplier(rank);
-                    long payout = (long)mult * BirdPoker.Bet;
                     string name = BirdPoker.RankLabel(rank);
-                    float barInset = 8f * s;
-                    var row = new Rect(paper.x + barInset, yRow, paper.width - barInset * 2f, rowH);
+                    string multTx = _payMultTx[i];
+                    string cashTx = _payCashTx[i];
+                    var row = new Rect(paper.x + barInset, yRow, rowW, rowH);
 
-                    // Gold bar (and the bigger cap / warmer ink) on the top rank only (FIVE WILDS);
-                    // NATURAL FIVE and the rest take the plain alternating rows.
                     bool jackpot = PayRowGold(rank);
                     if (jackpot)
                     {
@@ -13495,44 +13531,30 @@ namespace FlockFive
                     var fill = jackpot
                         ? new Color(0.52f, 0.26f, 0.06f)
                         : new Color(0.30f, 0.15f, 0.06f);
-                    float textPad = row.width * 0.06f;
+                    float textPad = row.width * PayHeadLayout.RowTextPad;
                     var inner = new Rect(row.x + textPad, row.y, row.width - textPad * 2f, row.height);
-                    float nameW = inner.width * 0.50f;
-                    float multW = inner.width * 0.18f;
-                    float cashW = inner.width - nameW - multW;
-                    int cap = jackpot ? jack : body;
-                    int floorPx = 11;
-                    string multTx;
-                    string cashTx;
-                    if (fitMiss || i >= _payCashTx.Length)
-                    {
-                        nameSt.fontSize = FitFont(nameSt, name, nameW - 6f, row.height * 0.62f, floorPx, cap);
-                        multTx = mult + "×";
-                        cashTx = Money.Format(payout);
-                        midSt.fontSize = FitFont(midSt, multTx, multW - 4f, row.height * 0.62f, floorPx, cap);
-                        numSt.fontSize = FitFont(numSt, cashTx, cashW - 6f, row.height * 0.62f, floorPx, cap);
-                        if (i < _payCashTx.Length)
-                        {
-                            _payNamePx[i] = nameSt.fontSize;
-                            _payMidPx[i] = midSt.fontSize;
-                            _payCashPx[i] = numSt.fontSize;
-                            _payMultTx[i] = multTx;
-                            _payCashTx[i] = cashTx;
-                        }
-                    }
-                    else
-                    {
-                        nameSt.fontSize = _payNamePx[i];
-                        midSt.fontSize = _payMidPx[i];
-                        numSt.fontSize = _payCashPx[i];
-                        multTx = _payMultTx[i];
-                        cashTx = _payCashTx[i];
-                    }
+                    float nameW = cols.NameW;
+                    float multW = cols.MultW;
+                    float cashW = cols.CashW;
+                    nameSt.fontSize = _payNamePx[i];
                     StampLight(new Rect(inner.x, inner.y, nameW, inner.height), name, nameSt, fill);
                     StampLight(new Rect(inner.x + nameW, inner.y, multW, inner.height), multTx, midSt, fill);
                     StampLight(new Rect(inner.x + nameW + multW, inner.y, cashW, inner.height), cashTx, numSt, fill);
                     yRow += rowH;
                 }
+#if UNITY_EDITOR
+                {
+                    float widest = 0f, widestMult = 0f;
+                    for (int i = 0; i < rows; i++)
+                    {
+                        widest = Mathf.Max(widest, numSt.CalcSize(PokerGui(_payCashTx[i])).x);
+                        widestMult = Mathf.Max(widestMult, midSt.CalcSize(PokerGui(_payMultTx[i])).x);
+                    }
+                    _payCashDbg = new Vector4(_payCashCommon, widest, cols.CashW - PayHeadLayout.CashMargin, _payMultCommon);
+                    _payMultDbg = new Vector2(widestMult, cols.MultW - PayHeadLayout.MultMargin);
+                    _payCashTxDbg = string.Join(",", _payCashTx, 0, rows);
+                }
+#endif
             }
 
             DrawPokerPayJewel(tab, s);
@@ -14026,6 +14048,7 @@ namespace FlockFive
         static int _payJewelKey = int.MinValue;
         static int _payJewelPx;
         static int _payFitKey = int.MinValue;
+        static int _payCashCommon, _payMultCommon;
         static readonly int[] _payNamePx = new int[8];
         static readonly int[] _payMidPx = new int[8];
         static readonly int[] _payCashPx = new int[8];
