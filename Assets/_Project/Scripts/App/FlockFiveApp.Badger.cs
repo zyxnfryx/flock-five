@@ -1058,7 +1058,7 @@ namespace FlockFive
             if (power == BadgerPower.X2 || power == BadgerPower.X3)
             {
                 int mul = power == BadgerPower.X3 ? 3 : 2;
-                float d = Mathf.Min(comb.width, comb.height) * 0.42f;
+                float d = Mathf.Min(comb.width, comb.height) * 0.42f * DeviceFit.ControlK();
                 var seat = StreakBadge.TopRight(comb, d);
                 var st = BadgerStyle();
                 string text = mul >= 3 ? "x3" : "x2";

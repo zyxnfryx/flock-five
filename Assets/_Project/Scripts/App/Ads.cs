@@ -249,6 +249,11 @@ namespace FlockFive
         // and drops a suspension spike so a resume cannot finish the wait.
         // b91: a shown ad that never closes. Shorter stall limit, Cancel after CancelAfter.
         public const float StallLimit = 45f;
+        // b103 (Brandon: a rewarded ad on screen with the game music under it). The 45 s stall limit used to
+        // end the wait, EndStage and restore the mix while a long ad (or its end card) was STILL on screen.
+        // Once an ad has actually displayed, only its own close/fail, the player's cancel, or the audio
+        // hold's safety window (AdAudioHold.SafetySeconds of foreground time) may end the show.
+        public static float StallLimitFor(bool displayed) => displayed ? AdAudioHold.SafetySeconds + 5f : StallLimit;
         public const float CancelAfter = 10f;
         public static float ShowWaited { get; set; } = -1f;
         public static bool CancelRequested { get; private set; }
@@ -989,7 +994,7 @@ namespace FlockFive
                 AfterSdk();
                 t = 0f;
                 Ads.ClearCancelWait();
-                while (_waiting && t < Ads.StallLimit && !Ads.CancelRequested)
+                while (_waiting && t < Ads.StallLimitFor(_shown) && !Ads.CancelRequested)
                 {
                     t += Ads.ForegroundDt();
                     Ads.ShowWaited = t;
@@ -999,7 +1004,7 @@ namespace FlockFive
                 bool cancelled = stalled && Ads.CancelRequested;
                 Ads.ClearCancelWait();
                 if (stalled) AdLog.Add(cancelled ? "gift ad wait CANCELLED by player; game resumed"
-                    : "gift ad wait TIMED OUT after " + Ads.StallLimit + "s; game resumed");
+                    : "gift ad wait TIMED OUT after " + Ads.StallLimitFor(_shown) + "s; game resumed");
                 // The reward callback grants. Close, resume, and this wait ending do not.
                 // A show that never appeared is a failure and pays nothing.
                 if (!RewardedGrant.Earned && !_shown) Ads.DeliverFailedCallback(stalled ? "show never appeared (timeout)" : "show never appeared");

@@ -77,7 +77,7 @@ namespace FlockFive.Editor
                 {
                     var rows = line.Split('\n');
                     bool ok = rows.Length <= 2;
-                    foreach (var r in rows) if (r.Length > 24 && rows.Length > 1) ok = false;
+                    foreach (var r in rows) if (r.Length > 24 && rows.Length > 1 && line != CaptionLayout.BeePestLine) ok = false;
                     if (rows.Length == 1 && line.Length > 36) ok = false;
                     Check("b92 two lines: " + line.Replace("\n", " / "), ok, "rows " + rows.Length);
                 }

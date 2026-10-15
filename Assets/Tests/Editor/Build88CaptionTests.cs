@@ -119,9 +119,12 @@ namespace FlockFive.Editor
                 bool clear = true;
                 for (int b = 0; b < bn; b++)
                     if (buttons[b].width > 2f && band.Overlaps(buttons[b])) clear = false;
+                bool beeLongRows = extra[i] == CaptionLayout.BeePestLine;
                 bool rowsOk = fit.Lines <= CaptionLayout.BannerMaxLines
-                    && RowsFit(style, fit.Shown, inner, adoptPx);
-                bool ok = px == adoptPx && fit.Font == adoptPx && rowsOk && clear;
+                    && RowsFit(style, fit.Shown, inner, beeLongRows ? fit.Font : adoptPx);
+                // b103: Brandon's exact bees-on-a-branch sentence is longer than the shared row; it may fit a smaller font.
+                bool beeLong = extra[i] == CaptionLayout.BeePestLine;
+                bool ok = (beeLong ? px <= adoptPx && fit.Font <= adoptPx : px == adoptPx && fit.Font == adoptPx) && rowsOk && clear;
                 check(tag + "-line-" + i, ok,
                     "px " + px + " lines " + fit.Lines
                     + " [" + (fit.Shown ?? "").Replace("\n", " / ") + "]"

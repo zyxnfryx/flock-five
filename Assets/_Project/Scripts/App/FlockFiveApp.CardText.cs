@@ -63,6 +63,14 @@ namespace FlockFive
 
             // Shared honeycomb attributes: N hex tiles from HoneyOfFinish (2/3/5).
             // HoneyArt is the one juicy cell (cards, badger tiles, the meter).
+            // Honey cells DrawBack paints, in the face's space. Inspect hit tests these (b103 smudge).
+            public static int HoneyBand(Rect face, int honey, bool full, Rect[] into)
+            {
+                if (honey <= 0 || into == null) return 0;
+                Split(face, true, full ? Full : Mid, out _, out _, out var honeyR, out _, out _);
+                return HoneyCells(honeyR, honey, full, into);
+            }
+
             // Same cells DrawHoneyRow paints. Drips stay inside each rect.
             public static int HoneyCells(Rect zone, int honey, bool full, Rect[] into)
             {
@@ -816,7 +824,7 @@ namespace FlockFive
 
             public struct Grid
             {
-                public float S, CardW, CardH, CellW, CellH, Gap, Gx0, Gy0, ColH, ColY, PageBottom, PagerHit, PagerLab;
+                public float S, CardW, CardH, CellW, CellH, Gap, Gx0, Gy0, ColH, ColY, PageBottom, PagerHit, PagerLab, TabY, BookY, PagerGap, CardsBottom;
                 public Rect Sheet;
             }
 
@@ -832,23 +840,39 @@ namespace FlockFive
                 float pagerLab = Mathf.Max(36f, 30f * s);
                 float botInset = Mathf.Max(8f * s, safe.yMin + 4f);
                 float footGap = 22f;
-                float pageBottom = screenH - botInset - pagerHit - pagerLab - footGap - 16f - 6f * s;
+                // b103 (Brandon): the gap from the lowest card to the page-number row equals the gap from that row
+                // to the "Page N of M" line. pagerGap is that one number; the card slack under the last row is
+                // measured, so the visible space above matches the space below on every device.
+                float pagerGap = footGap;
                 float pageTop = hiveBottom + colH + colGap;
-                float pageH = pageBottom - pageTop;
-                if (pageH < 72f * s) pageH = 72f * s;
                 float pagePad = 10f * s;
                 float pageW = screenW - pagePad * 2f;
-                var sheet = new Rect(pagePad, pageTop, pageW, pageH);
                 float inner = 8f * s;
                 float gap = 10f * s;
-                float cellW = (sheet.width - inner * 2f - gap * 2f) / 3f;
-                float cellH = (sheet.height - inner * 2f - gap * 2f) / 3f;
-                if (cellW < 8f) cellW = 8f;
-                if (cellH < 8f) cellH = 8f;
-                float cardW = cellW - 6f * s;
-                float cardH = Mathf.Min(cellH - 6f * s, cardW * 1.35f);
-                if (cardW < 8f) cardW = 8f;
-                if (cardH < 8f) cardH = 8f;
+                float slack = 6f * s;
+                float pageBottom = 0f, cellW = 0f, cellH = 0f, cardW = 0f, cardH = 0f, pageH = 0f;
+                Rect sheet = default;
+                for (int pass = 0; pass < 4; pass++)
+                {
+                    pageBottom = screenH - botInset - 16f - pagerLab - pagerGap - pagerHit - pagerGap - (inner + slack * 0.5f);
+                    pageH = pageBottom - pageTop;
+                    if (pageH < 72f * s) pageH = 72f * s;
+                    sheet = new Rect(pagePad, pageTop, pageW, pageH);
+                    cellW = (sheet.width - inner * 2f - gap * 2f) / 3f;
+                    cellH = (sheet.height - inner * 2f - gap * 2f) / 3f;
+                    if (cellW < 8f) cellW = 8f;
+                    if (cellH < 8f) cellH = 8f;
+                    cardW = cellW - 6f * s;
+                    cardH = Mathf.Min(cellH - 6f * s, cardW * 1.35f);
+                    if (cardW < 8f) cardW = 8f;
+                    if (cardH < 8f) cardH = 8f;
+                    slack = cellH - cardH;
+                }
+                float gridHAll = 3f * cellH + 2f * gap;
+                float gy0 = sheet.y + (sheet.height - gridHAll) * 0.5f;
+                float cardsBottom = gy0 + gridHAll - slack * 0.5f;
+                float tabY = cardsBottom + pagerGap;
+                float bookY = tabY + pagerHit + pagerGap;
                 float gridW = 3f * cellW + 2f * gap;
                 float gridH = 3f * cellH + 2f * gap;
                 return new Grid
@@ -866,6 +890,10 @@ namespace FlockFive
                     PageBottom = pageBottom,
                     PagerHit = pagerHit,
                     PagerLab = pagerLab,
+                    TabY = tabY,
+                    BookY = bookY,
+                    PagerGap = pagerGap,
+                    CardsBottom = cardsBottom,
                     Sheet = sheet,
                 };
             }

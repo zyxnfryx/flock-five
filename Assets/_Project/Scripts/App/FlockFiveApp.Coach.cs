@@ -913,11 +913,22 @@ namespace FlockFive
                 if (!CanOfferBonus(open)) return true;
                 if (nearBranch >= 0) OpenBonus(nearBranch);
                 CoachHideNow();
+                // b103 (Brandon): the honoured gift tap ends the hint for good. CoachHideNow re-arms the hint
+                // window (for a reset), so clear it AFTER, or the glove comes back once the offer closes.
+                ClearGiftHint(ref _coachGiftUntil, ref _coachResumeFade, ref _deadEndNudged);
                 return nearBranch >= 0;
             }
             if (HitBranch(world) == _cueBranch) return false;
             CoachNudge();
             return true;
+        }
+
+        // The gift tap was honoured: no hint window, no resume fade, and no stuck-nudge re-arm for this spell.
+        public static void ClearGiftHint(ref float giftUntil, ref bool resumeFade, ref bool nudged)
+        {
+            giftUntil = -1f;
+            resumeFade = false;
+            nudged = true;
         }
 
         bool NearGift(int i, Vector2 world)
@@ -3475,6 +3486,7 @@ namespace FlockFive
         public static readonly string[] GardenBottomLines =
         {
             CoachTap.Caption(CoachStep.CoachPickup), CaptionLayout.CoachPlaceLine, CaptionLayout.CoachNowhereLine,
+            CaptionLayout.BeePestLine, // b103: bees-on-a-branch rides the same bottom seat
         };
         public static bool IsGardenBottomLine(string text)
         {
@@ -3525,7 +3537,12 @@ namespace FlockFive
             // b102 (Brandon): the banner is centred on the garden restart button's own rect, so it covers the
             // button fully with the same air above and below. Without a restart rect the old lift applies.
             if (restart.width > 2f && restart.height > 2f)
-                return restart.center.y - bandH * 0.5f;
+            {
+                // Centred on the button, but never below the bottom safe edge (tablet buffer is small).
+                float yc = restart.center.y - bandH * 0.5f;
+                float yMax = screenH - safeBottom - gap - bandH;
+                return Mathf.Min(yc, yMax);
+            }
             if (!_gardenSeatFallbackLogged)
             {
                 _gardenSeatFallbackLogged = true;
@@ -3643,8 +3660,8 @@ namespace FlockFive
                 }
                 if (_gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
             }
-            else if (bee && band.y < minTop)
-                band.y = minTop;
+            else if (bee && band.y < minTop + screenH * CaptionLayout.BeeGardenDropFrac)
+                band.y = minTop + screenH * CaptionLayout.BeeGardenDropFrac;
             // b94: the coins line rides over the Level box (its old cover seat), so it never sits on
             // the avatar bird. The poker button and its glove are up on the rail, well above it.
             if (spot == "home.poker")
@@ -3709,7 +3726,7 @@ namespace FlockFive
                 y = Mathf.Max(safe.yMin, (titleBottom > 8f ? titleBottom : h * 0.17f) + 4f * s);
             // Bee callout: high under the title / coin row, clear of the hive.
             if (spot == "bee.garden")
-                y = minTop;
+                y = minTop + h * CaptionLayout.BeeGardenDropFrac;
             var band = new Rect(0f, y, w, bh);
             Rect badge = default;
             if (cover && CaptionStyles.Drop(spot) > 0f)
@@ -5277,6 +5294,7 @@ namespace FlockFive
         const int GateBadgerLesson = 6;
         const int GateAlbumHoney = 7;
         const int GatePest = 8;
+        const int GateGlove = 9;
 
         struct StepGate
         {
@@ -5473,7 +5491,17 @@ namespace FlockFive
                 rule = CoachStep.Leaf;
                 have = true;
             }
-            if (!have) return false;
+            if (!have)
+            {
+                // b103: every other lesson. Only the glove's armed target takes taps.
+                if (GloveFocusLive() && _gloveTapRectOn)
+                {
+                    gate.Step = GateGlove;
+                    gate.Target = _gloveTapRect;
+                    return true;
+                }
+                return false;
+            }
             ApplyCoachRule(ref gate, rule);
             if (gate.Target.width < 2f || gate.Target.height < 2f)
             {
@@ -5482,6 +5510,23 @@ namespace FlockFive
             }
             return true;
         }
+
+        // b103 (Brandon): the global rule. A lesson glove is posed on a control this frame, so that
+        // control is the only thing that takes a tap (poker steps, rails, hive, ad hand, VIP pitch,
+        // adopt look, Level 1). Board lessons (_coach / gift) are gated by CoachReject and HitHud.
+        public static bool GloveFocusAllows(bool lessonLive, bool fresh, bool inside, bool exempt)
+            => !lessonLive || !fresh || inside || exempt;
+
+        bool GloveFocusLive()
+        {
+            if (Ads.IsShowing || GamePause.Paused) return false;
+            if (!GloveTargetFresh()) return false;
+            if (!TutorialStepActive() && !_adHand) return false;
+            return true;
+        }
+
+        // Level 1 / garden lessons: Restart and Hive do nothing unless the glove is on them.
+        bool CueGloveOwnsHud() => GloveTargetFresh() && !Ads.IsShowing && ((_coach && _cueHand) || _cueGift);
 
         // Finishes a gated step: the heal (stuck, no glove) and an any-tap step's press share it.
         void CompleteGatedStep(int step)
@@ -5531,7 +5576,21 @@ namespace FlockFive
                 e.Use();
                 return;
             }
-            if (!StepTapGate(out var gate)) return;
+            if (!StepTapGate(out var gate))
+            {
+                // Hand-armed (hit function) gloves: VIP pitch, adopt look, cue targets.
+                if (_gloveTapHit != null && GloveFocusLive())
+                {
+                    var p0 = e.mousePosition;
+                    bool inside = GloveTapHits(new Vector2(p0.x, Screen.height - p0.y));
+                    if (!GloveFocusAllows(true, true, inside, HomeGearExempt(p0)))
+                    {
+                        if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+                        e.Use();
+                    }
+                }
+                return;
+            }
             var kind = t == EventType.MouseDown ? GatePointer.Down : t == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
             if (gate.AnyTap)
             {

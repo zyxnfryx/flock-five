@@ -50,6 +50,13 @@ namespace FlockFive
         public static float UiH(float h) => Ui(Screen.height > 1 ? Screen.width * (h / Screen.height) : h * PhoneAspect, h);
 
         // Size of a control in px, capped to a share of the screen width.
+        // b103 (Brandon): one shared tablet cap for the big round controls (LEVEL disc, PAY TABLE tab, DEAL,
+        // back medal). Phones are exactly 1.0. At full tablet width controls are this share of their
+        // phone-proportioned size; it eases in with Wide() like Ui() does.
+        public const float TabletControlK = 0.75f;
+        public static float ControlK(float window) => Mathf.Lerp(1f, TabletControlK, Wide(window));
+        public static float ControlK() => ControlK(WindowAspect());
+
         public static float Cap(float px, float frac = MaxControlFrac) => Mathf.Min(px, Screen.width * frac);
     }
 }

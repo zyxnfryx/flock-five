@@ -183,6 +183,16 @@ namespace FlockFive
             return Disc();
         }
 
+        // b103 (Brandon): shared tablet cap for every multiplier badge. k is DeviceFit.ControlK()
+        // (1 on phones). Shrinks about the badge centre.
+        public static Rect Cap(Rect r, float k)
+        {
+            if (k >= 0.999f) return r;
+            float w = r.width * k, h = r.height * k;
+            return new Rect(r.center.x - w * 0.5f, r.center.y - h * 0.5f, w, h);
+        }
+        public static Rect Cap(Rect r) => Cap(r, DeviceFit.ControlK());
+
         // Top-right of the thing the multiplier modifies. Inset matches the reward stamp.
         public static Rect TopRight(Rect host, float diameter)
         {
