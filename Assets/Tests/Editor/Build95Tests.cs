@@ -105,6 +105,26 @@ namespace FlockFive.Editor
                         "y " + y.ToString("0") + " lettersBottom " + lettersBottom.ToString("0") + " discBottom " + disc.yMax.ToString("0"));
                 }
 
+                // Welcome card: a card ending inside the LEVEL word is lengthened to just under it
+                // (Easy stays exposed); a card well above or below is untouched.
+                for (int d = 0; d < sizes.Length; d++)
+                {
+                    float w = sizes[d].x, h = sizes[d].y;
+                    DeviceFit.TestWindow = w / h;
+                    float s = DeviceFit.Ui(w, h);
+                    var safe = new Rect(0f, h * 0.04f, w, h * 0.92f);
+                    var lvl = SplashPress.LayoutLevel(w, h, safe).Rect;
+                    var disc = FlockFiveApp.LevelDiscAudit(w, h, safe);
+                    float lb = FlockFiveApp.LevelLettersBottom(disc);
+                    float stackTop = disc.y + (disc.height - disc.height * 0.56f) * 0.68f;
+                    var short1 = new Rect(w * 0.05f, stackTop - 300f * s, w * 0.9f, 300f * s + 6f * s);
+                    var grown = FlockFiveApp.CoverLevelWord(short1, lvl, s);
+                    var far = new Rect(w * 0.05f, lvl.y - 500f * s, w * 0.9f, 200f * s);
+                    var same = FlockFiveApp.CoverLevelWord(far, lvl, s);
+                    Check("welcome card covers LEVEL word, not Easy " + stags[d], grown.yMax >= lb && grown.yMax <= lb + 3f * s && same.yMax == far.yMax && grown.yMin == short1.yMin,
+                        "grown " + grown.yMax.ToString("0") + " lb " + lb.ToString("0"));
+                }
+
                 // Press burst: glints start on the upper half of the button ring (inverted U), centred.
                 {
                     float W = 1179f, H = 2556f;

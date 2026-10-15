@@ -2315,6 +2315,21 @@ namespace FlockFive
             if (thanks) CloseWelcome();
         }
 
+        // b95 (Brandon): a popup whose bottom edge lands inside the Level button's "LEVEL N" band is
+        // lengthened to just under that word, so the lettering never peeks out below the card.
+        // The Easy line under it may stay exposed. Cards clear of the band are returned as is.
+        public static Rect CoverLevelWord(Rect card, Rect levelRect, float s)
+        {
+            if (levelRect.width <= 2f) return card;
+            var disc = FlowerDiscAudit(levelRect);
+            float wordBottom = LevelLettersBottom(disc) + 2f * s;
+            float wordTop = disc.y + (disc.height - disc.height * 0.56f) * 0.68f;
+            if (card.xMax < levelRect.xMin || card.xMin > levelRect.xMax) return card;
+            if (card.yMax <= wordTop - 4f * s || card.yMax >= wordBottom) return card;
+            card.height = wordBottom - card.y;
+            return card;
+        }
+
         static void WelcomeLayout(float s, out Rect card, out Rect title, out Rect amt, out Rect line, out Rect btn)
         {
             float w = StandardPopupWidth(s);
@@ -2323,6 +2338,8 @@ namespace FlockFive
             if (h > capH) h = capH;
             if (h < 220f * s && capH > 220f * s) h = 220f * s;
             card = PlacePopup(s, w, h, 0.42f);
+            card = CoverLevelWord(card, SplashPress.LayoutLevel(Screen.width, Screen.height, Screen.safeArea).Rect, s);
+            h = card.height;
             float band = Mathf.Max(10f, 12f * s);
             float pad = band + 16f * s;
             float btnH = PopupBarHeight(s, w);
