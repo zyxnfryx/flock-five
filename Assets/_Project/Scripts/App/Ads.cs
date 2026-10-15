@@ -620,6 +620,7 @@ namespace FlockFive
         {
             ActivePlacement = string.IsNullOrEmpty(placement) ? PlacementBonus : placement;
             AdLog.Add("gift ad requested (" + ActivePlacement + ")");
+            AdRetry.Begin();
             LastGranted = false;
             LastEarned = false;
             if (!Enabled)
@@ -637,7 +638,7 @@ namespace FlockFive
                 DeliverDisplayedCallback();
                 DeliverRewardedCallback();
 #else
-                DeliverFailedCallback();
+                DeliverFailedCallback("no ad host");
 #endif
                 LastEarned = RewardedGrant.Earned;
                 LastGranted = RewardedGrant.Earned;
@@ -698,9 +699,10 @@ namespace FlockFive
         }
 
         // No-fill or a display error. Pays nothing.
-        public static void DeliverFailedCallback()
+        public static void DeliverFailedCallback(string reason = null)
         {
             RewardedGrant.OnFailed();
+            AdRetry.NoteFail(reason);
             if (!RewardedGrant.Earned)
             {
                 LastEarned = false;
@@ -873,7 +875,7 @@ namespace FlockFive
                     Ads.DeliverDisplayedCallback();
                     Ads.DeliverRewardedCallback();
 #else
-                    Ads.DeliverFailedCallback();
+                    Ads.DeliverFailedCallback("no ad keys");
 #endif
                     yield break;
                 }
@@ -890,7 +892,7 @@ namespace FlockFive
                 if (!_inited)
                 {
                     AdLog.Add("gift ad unavailable (ads not ready)");
-                    Ads.DeliverFailedCallback();
+                    Ads.DeliverFailedCallback(_initFailed ? "sdk init failed" : "sdk init timed out (5s)");
                     yield break;
                 }
 
@@ -898,7 +900,7 @@ namespace FlockFive
                 if (_rv == null)
                 {
                     AdLog.Add("gift ad unavailable (no ad unit)");
-                    Ads.DeliverFailedCallback();
+                    Ads.DeliverFailedCallback("no ad unit");
                     yield break;
                 }
 
@@ -917,7 +919,7 @@ namespace FlockFive
                 if (!_rv.IsAdReady())
                 {
                     AdLog.Add("gift ad did not load");
-                    Ads.DeliverFailedCallback();
+                    Ads.DeliverFailedCallback("no fill / not loaded within 6s");
                     _rv.LoadAd();
                     AfterSdk();
                     yield break;
@@ -942,7 +944,7 @@ namespace FlockFive
                 if (_waiting) AdLog.Add("gift ad wait TIMED OUT after 180s; game resumed");
                 // The reward callback grants. Close, resume, and this wait ending do not.
                 // A show that never appeared is a failure and pays nothing.
-                if (!RewardedGrant.Earned && !_shown) Ads.DeliverFailedCallback();
+                if (!RewardedGrant.Earned && !_shown) Ads.DeliverFailedCallback(_waiting ? "show never appeared (timeout)" : "show never appeared");
                 Ads.LastEarned = RewardedGrant.Earned;
                 Ads.LastGranted = RewardedGrant.Earned;
                 _rv.LoadAd();
@@ -1151,7 +1153,8 @@ namespace FlockFive
 
         void OnLoadFail(LevelPlayAdError error)
         {
-            if (_waiting && !_shown) Ads.DeliverFailedCallback();
+            if (_waiting && !_shown) Ads.DeliverFailedCallback("load failed: " + ErrText(error));
+            else AdLog.Add("gift ad load failed (not waiting): " + ErrText(error));
             _waiting = false;
         }
 
@@ -1178,9 +1181,14 @@ namespace FlockFive
                 Ads.ForceClear();
         }
 
+        static string ErrText(LevelPlayAdError error)
+        {
+            try { return error == null ? "null" : error.ToString(); } catch { return "?"; }
+        }
+
         void OnDisplayFail(LevelPlayAdInfo info, LevelPlayAdError error)
         {
-            Ads.DeliverFailedCallback();
+            Ads.DeliverFailedCallback("display failed: " + ErrText(error));
             _waiting = false;
         }
 
