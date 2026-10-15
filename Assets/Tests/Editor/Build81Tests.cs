@@ -893,9 +893,9 @@ namespace FlockFive.Editor
                 }
             }
             int halfH = 1280;
-            int halfFloor = FlockFiveApp.LessonCaptionFloor(W, halfH);
+            int halfFloor = FlockFiveApp.LessonCaptionFloor(W * halfH / H, halfH);
             int halfWant = Mathf.Max(oldFloor, Mathf.RoundToInt(FlockFiveApp.CaptionFloorPhonePx * (halfH / FlockFiveApp.CaptionFloorPhoneH)));
-            int shortFloor = FlockFiveApp.LessonCaptionFloor(W, 720f);
+            int shortFloor = FlockFiveApp.LessonCaptionFloor(W * 720f / H, 720f);
             int shortWant = Mathf.Max(oldFloor, Mathf.RoundToInt(FlockFiveApp.CaptionFloorPhonePx * (720f / FlockFiveApp.CaptionFloorPhoneH)));
             var beeShown = FlockFiveApp.LessonCaptionShown(CaptionLayout.HiveGardenLine);
             bool emojiOk = beeShown.Contains("\U0001F41D")

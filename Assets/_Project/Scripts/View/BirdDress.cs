@@ -20,6 +20,15 @@ namespace FlockFive
 
         public static bool FaceOn(bool bodyShown, bool shrouded) => bodyShown && !shrouded;
 
+        // Build 89 RULE B (QA): a hidden (shrouded) bird stays blacked out in EVERY pose, seated,
+        // restart fly-off and fly-in alike. One tint, one rule, shared by BranchView (seated),
+        // BirdIdle (flap cycle, far wing, kit and face follow it) and FlockFiveApp flight.
+        // (The tint itself lives in BirdIdle.HiddenTint / BodyTint; this file stays engine-free.)
+
+        public static bool Silhouette(bool shrouded) => shrouded;
+
+        public const float DuckAt = 0.92f; // a hidden flier drops under the leaves past this landing fraction
+
         // Zzz and the "!" belong to a seated bird. A frozen, lifted bird is a
         // restart or collect flight, so they stay off there.
         public static bool SeatFxOn(bool bodyShown, bool frozen, float lift) =>

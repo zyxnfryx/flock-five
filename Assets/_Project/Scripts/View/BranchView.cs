@@ -189,7 +189,7 @@ namespace FlockFive
                     idle.Shrouded = hid;
                     bird.sprite = SpriteCatalog.Bird(state.Birds[i].Color);
                     FlockSort.Apply(bird, hid ? FlockSort.Shroud : FlockSort.Perch);
-                    bird.color = hid ? new Color(0.04f, 0.03f, 0.05f, 1f) : Color.white;
+                    bird.color = BirdIdle.BodyTint(hid);
                 }
                 else
                 {

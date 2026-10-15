@@ -154,8 +154,11 @@ namespace FlockFive.Editor
         {
             var inner = new Rect(24f, 80f, 360f, 500f);
             var rows = SettingsSheet.Place(inner, 1f);
-            bool under = rows.AnimateLabel.yMin >= rows.Label.yMax - 0.5f
-                && rows.AnimateToggle.yMin >= rows.Toggle.yMax - 0.5f
+            // b89: Animate background sits above Do Not Sell, under Privacy.
+            bool under = rows.Label.yMin >= rows.AnimateLabel.yMax - 0.5f
+                && rows.Toggle.yMin >= rows.AnimateToggle.yMax - 0.5f
+                && rows.AnimateLabel.yMin >= rows.PrivacyLink.yMax - 0.5f
+                && Mathf.Abs((rows.AnimateLabel.yMin - rows.PrivacyLink.yMax) - (rows.Label.yMin - rows.AnimateLabel.yMax)) < 0.5f
                 && !rows.AnimateLabel.Overlaps(rows.Label)
                 && !rows.AnimateLabel.Overlaps(rows.Toggle)
                 && !rows.AnimateToggle.Overlaps(rows.Toggle)
@@ -164,10 +167,10 @@ namespace FlockFive.Editor
                 && rows.AnimateLabel.xMin == rows.Label.xMin;
             var safe = new Rect(0f, 102f, W, H - 102f - 177f);
             var frame = SettingsSheet.Layout(W, H, safe, 220f);
-            bool inside = frame.Body.AnimateLabel.yMax <= frame.Content.yMax + 0.5f
+            bool inside = frame.Body.Label.yMax <= frame.Content.yMax + 0.5f
                 && frame.Body.AnimateToggle.xMax <= frame.Content.xMax + 0.5f
                 && frame.Card.yMax - frame.Content.yMax > 8f;
-            Check("animate-row-under-do-not-sell", under && inside && SettingsSheet.AnimateLabel == "Animate background",
+            Check("animate-row-above-do-not-sell", under && inside && SettingsSheet.AnimateLabel == "Animate background",
                 "w=" + rows.AnimateToggle.width.ToString("0.0") + " inside=" + inside);
 
             string ui = Read("Assets/_Project/Scripts/App/FlockFiveApp.Settings.cs");

@@ -2,9 +2,8 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // Settings card geometry. The privacy link and the Do Not Sell toggle share
-    // one column: the link is the row above, the switch sits on the right of the
-    // row under it. Pure, so editor tests can check they sit next to each other.
+    // Settings card geometry. Rows top to bottom: Sound, Privacy Policy,
+    // Animate background, Do Not Sell. All share one column and left edge. Pure, so editor tests can check they sit next to each other.
     public static class SettingsSheet
     {
         public const string PrivacyLabel = "Privacy Policy";
@@ -98,7 +97,7 @@ namespace FlockFive
             float gap = Mathf.Max(RowGap * s, cardW * 0.028f);
             float titleH = Mathf.Max(44f, 46f * s);
             var probe = Place(new Rect(0f, 0f, contentW, 8f), s, gap);
-            float bodyH = probe.AnimateLabel.yMax - probe.SoundToggle.yMin;
+            float bodyH = probe.Label.yMax - probe.SoundToggle.yMin;
             float xSz = Mathf.Max(44f, 42f * s);
             float xMargin = Mathf.Max(cardW * 0.035f, 12f * s);
             float titleGap = Mathf.Max(10f * s, 8f);
@@ -147,14 +146,16 @@ namespace FlockFive
             if (sw > rowH) sw = rowH;
             if (sw > inner.width * 0.45f) sw = Mathf.Max(8f, inner.width * 0.45f);
             var privacy = new Rect(inner.x, soundToggle.yMax + gap, inner.width, linkH);
+            // Order: Sound, Privacy Policy, Animate background, Do Not Sell.
+            // Same row height and gap between every row.
             float y = privacy.yMax + gap;
-            var toggle = new Rect(inner.xMax - sw, y + (rowH - sw) * 0.5f, sw, sw);
-            float labelW = toggle.xMin - gap - inner.x;
+            var animateToggle = new Rect(inner.xMax - sw, y + (rowH - sw) * 0.5f, sw, sw);
+            float labelW = animateToggle.xMin - gap - inner.x;
             if (labelW < 8f) labelW = 8f;
-            var label = new Rect(inner.x, y, labelW, rowH);
-            float y2 = label.yMax + gap;
-            var animateToggle = new Rect(inner.xMax - sw, y2 + (rowH - sw) * 0.5f, sw, sw);
-            var animateLabel = new Rect(inner.x, y2, labelW, rowH);
+            var animateLabel = new Rect(inner.x, y, labelW, rowH);
+            float y2 = animateLabel.yMax + gap;
+            var toggle = new Rect(inner.xMax - sw, y2 + (rowH - sw) * 0.5f, sw, sw);
+            var label = new Rect(inner.x, y2, labelW, rowH);
             return new Rows(privacy, label, toggle, animateLabel, animateToggle, soundToggle, soundSlider);
         }
 

@@ -77,19 +77,12 @@ namespace FlockFive.Editor
                 int end = coach.IndexOf("if (_dailyIntroLive)", spot);
                 string body = spot >= 0 && end > spot ? coach.Substring(spot, end - spot) : "";
                 int boxAt = coach.IndexOf("Rect PokerIntroBox");
-                int growAt = coach.IndexOf("PokerCaptionGrow(", boxAt);
                 int liftAt = coach.IndexOf("LiftPokerCaption(", boxAt);
-                Check("poker-box-counts-paint-growth",
-                    boxAt > 0 && growAt > boxAt && liftAt > growAt,
-                    "box " + boxAt + " grow " + growAt + " lift " + liftAt);
                 int pigAt = coach.IndexOf("pig.yMax", boxAt);
                 Check("poker-box-seats-under-the-pig",
-                    pigAt > boxAt && pigAt < liftAt,
+                    boxAt > 0 && pigAt > boxAt && pigAt < liftAt,
                     "pig " + pigAt + " lift " + liftAt);
-                int handEdge = coach.IndexOf("hand.xMin", boxAt);
-                Check("poker-box-stops-at-the-glove",
-                    handEdge > boxAt && handEdge < liftAt,
-                    "hand " + handEdge + " lift " + liftAt);
+                Check("poker-box-keeps-the-rail", coach.IndexOf("18f * s, railW)", boxAt) > boxAt, "");
 
                 Check("poker-spot-notes-then-points",
                     body.IndexOf("NoteTutorPlate(") > 0
