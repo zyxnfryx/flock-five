@@ -441,10 +441,35 @@ namespace FlockFive
             return ord < 0 || (ord & 1) == 0;
         }
 
+        // The first visible limb with a run of 2+ of one colour, and a limb holding exactly one bird of that
+        // colour to hop onto (Dawn Garden: branch 0, RRR, onto branch 5, the lone red).
+        public static bool Level1First(Board b, System.Func<int, bool> locked, System.Func<int, bool> giftLocked, out int from, out int to)
+        {
+            from = -1; to = -1;
+            if (b == null) return false;
+            for (int a = 0; a < b.Branches.Count; a++)
+            {
+                if (!b.CanPick(a) || locked(a) || giftLocked(a) || b.Branches[a].IsBonus) continue;
+                if (b.Branches[a].TipRun() < 2) continue;
+                for (int c = 0; c < b.Branches.Count; c++)
+                {
+                    if (c == a || locked(c) || giftLocked(c) || b.Branches[c].Birds.Count != 1) continue;
+                    if (!b.CanMove(a, c, out _)) continue;
+                    from = a; to = c; return true;
+                }
+                return false;
+            }
+            return false;
+        }
+
         bool CoachPick(out int from, out int to)
         {
             from = -1; to = -1;
             int fallFrom = -1, fallTo = -1;
+            // b98 (Brandon): Level 1 step 1 starts with the TOP branch's top birds (the three reds, top-left),
+            // then hops them onto the lone red. Step 2 (the generic pick below) then takes the red tip of the
+            // mixed limb onto that stack, which completes the red set. See Level1First.
+            if (_coachMoves == 0 && Level1First(_board, Locked, GiftLocked, out from, out to)) return true;
             // First lesson: a single bird hops onto a matching bird.
             if (_coachMoves == 0)
                 for (int a1 = 0; a1 < _board.Branches.Count; a1++)
@@ -1067,6 +1092,8 @@ namespace FlockFive
         // left, level with the target, never from below. If the sideways hand would sit on the
         // banner, the target is nudged lower on the same horizontal path (x never changes), by just
         // enough to clear the banner, dip up or down.
+        public static bool GardenFromRight(float aimX, float screenW) => aimX < screenW * 0.5f;
+
         public static Vector2 GardenSidewaysAim(Vector2 aim, Rect plate, float s, float screenW, out float deg)
         {
             deg = -90f;
@@ -1131,6 +1158,11 @@ namespace FlockFive
                 known = TutorCaptionPlate(out plate);
             // b98: always the sideways approach (right to left, hand pointing left), never from below.
             if (known) aim = GardenSidewaysAim(aimGui, plate, s, Screen.width, out _);
+            // Left-half target: in from the right, hand pointing left. A target at the right edge (Level 1
+            // step 2, branch 5) has no room on its right for the hand, so it is met from the left, pointing
+            // right (the mirrored default side approach), still level with the target. Never from below.
+            if (!GardenFromRight(aim.x, Screen.width))
+                return CoachGloveAt(aim, dt, s, 0f, false, float.NaN, default, tapHit);
             return CoachGloveAt(aim, dt, s, float.NaN, false, -90f, default, tapHit);
         }
 

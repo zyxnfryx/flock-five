@@ -206,6 +206,25 @@ namespace FlockFive.Editor
                     }
                 }
 
+                // Level 1 flow on the real Dawn Garden board: step 1 = branch 0 (RRR) onto branch 5 (lone red),
+                // step 2 = branch 4 (red tip) onto branch 5, which completes five reds.
+                {
+                    var l1 = LevelData.Open(0);
+                    bool got = FlockFiveApp.Level1First(l1, i => false, i => false, out int f1, out int t1);
+                    Check("level1 step 1 is branch 0 onto branch 5", got && f1 == 0 && t1 == 5, "from " + f1 + " to " + t1);
+                    bool moved = l1.TryMove(f1, t1, out int run1);
+                    int f2 = -1, t2 = -1;
+                    for (int a2 = 0; a2 < l1.Branches.Count && f2 < 0; a2++)
+                    {
+                        if (!l1.CanPick(a2)) continue;
+                        for (int b2 = 0; b2 < l1.Branches.Count; b2++)
+                            if (b2 != a2 && !l1.Branches[b2].Empty && l1.CanMove(a2, b2, out _)) { f2 = a2; t2 = b2; break; }
+                    }
+                    bool moved2 = f2 >= 0 && l1.TryMove(f2, t2, out _);
+                    Check("level1 step 2 is branch 4 onto branch 5, step 3 collects the reds", moved && run1 == 3 && f2 == 4 && t2 == 5 && moved2 && l1.FindCollect() == 5,
+                        "step2 " + f2 + "->" + t2 + " collect " + l1.FindCollect());
+                }
+
                 // Level 1 target (b4's red tip bird, top visible row) on iPhone / tall iPhone / iPad / SE: the
                 // garden banner takes its seat (bottom when the lesson allows it), the glove comes in sideways
                 // from the right, and the fingertip must land INSIDE the target bird's rect (no nudge off it).
@@ -221,14 +240,21 @@ namespace FlockFive.Editor
                         float bandH = h * 0.12f;
                         float rowBot = h * 0.727f;
                         // Target bird: tip of the top-left visible limb, from the build 98 screenshot (fractions).
-                        var target = new Vector2(w * 0.33f, h * 0.39f);
+                        var target = new Vector2(w * 0.24f, h * 0.277f); // tip bird of branch 0 (RRR), top-left row, behind the old top banner
                         var birdRect = new Rect(target.x - w * 0.05f, target.y - h * 0.026f, w * 0.10f, h * 0.052f);
                         CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
                         float by = FlockFiveApp.GardenBannerY(bandH, rowBot, restart, hive, h, safe.yMin, 8f * s, h * 0.234f);
                         var plate = new Rect(0f, by, w, bandH);
                         var aim = FlockFiveApp.GardenSidewaysAim(target, plate, s, w, out float deg);
                         var box = FlockFiveApp.GloveAuditBox(aim, deg, FlockFiveApp.GloveAuditDh(s), 0f);
-                        Check("level1 fingertip on the red bird, glove clear of banner " + dtags[d],
+                        // Step 2 destination: branch 5, the lone red, third limb of the right column (seat 0, right edge).
+                        var dest = new Vector2(w * 0.936f, h * 0.39f);
+                        var destRect = new Rect(dest.x - w * 0.05f, dest.y - h * 0.026f, w * 0.10f, h * 0.052f);
+                        var aim2 = FlockFiveApp.GardenSidewaysAim(dest, plate, s, w, out _);
+                        Check("level1 step2 fingertip on branch 5's red bird, side approach " + dtags[d],
+                            destRect.Contains(aim2) && !FlockFiveApp.GardenFromRight(dest.x, w) && plate.yMin > dest.y,
+                            "aim " + aim2.y.ToString("0") + " dest " + dest.y.ToString("0"));
+                        Check("level1 step1 fingertip on branch 0's top red bird, glove clear of banner " + dtags[d],
                             birdRect.Contains(aim) && deg == -90f && CaptionLayout.GloveClearsBanner(box, plate) && plate.yMin > target.y,
                             "banner y " + by.ToString("0") + " target y " + target.y.ToString("0") + " aim y " + aim.y.ToString("0") + " bird " + birdRect.yMin.ToString("0") + ".." + birdRect.yMax.ToString("0"));
                     }
