@@ -10,10 +10,10 @@ namespace FlockFive
         public const string CoachPref = "flockfive.coach.badger";
 
         // First-fight lesson. Static captions; the app aims the shared glove at each step.
-        // The column step breaks on purpose: line 1, then "Honey badger don't care."
-        // A width wrap that puts "Honey" on line 1 is wrong.
+        // The column step breaks on purpose: line 1, then the halving warning.
+        // A width wrap that puts "He" on line 1 is wrong.
         public const string LessonColumnTop = "Fill your column first.";
-        public const string LessonColumnBot = "Honey badger don't care.";
+        public const string LessonColumnBot = "He can halve your honey.";
         public static readonly string[] Lesson =
         {
             "Pick one honeycomb.\nHigher honey wins.",
@@ -51,7 +51,26 @@ namespace FlockFive
             "Tap this one.\nHe doesn't care.",
         };
         // Round start right after move 3 (power-ups unlock; tutorial free first use applies).
-        public const string PowersOpen = "Power-ups are open.\nYour first one is free.";
+        public const string PowersOpen = "x2, x3, Hot Sauce, Freeze Spray\nare open. Your first is free.";
+        // Arm banner (shared caption box) and the never-silent refusals.
+        public const string LockedTap = "Power-ups unlock\nafter your first 3 picks.";
+        public const string UsedTap = "Already used\nthis fight.";
+        public const string ArmedSub = "ON";
+        public static string ArmedLine(BadgerPower p)
+        {
+            string n = p == BadgerPower.X2 ? "x2" : p == BadgerPower.X3 ? "x3" : p == BadgerPower.HotSauce ? "Hot Sauce" : p == BadgerPower.FreezeSpray ? "Freeze Spray" : "";
+            if (n.Length == 0) return "";
+            return n + " armed -\ntap a comb.";
+        }
+        // Verdict line for a power-up that landed (below the Don't Care lines).
+        public static string PowerLine(BadgerPower p)
+        {
+            if (p == BadgerPower.X2) return "x2! Your honey\ncounts double.";
+            if (p == BadgerPower.X3) return "x3! Your honey\ncounts triple.";
+            if (p == BadgerPower.HotSauce) return "Hot Sauce! The badger\nskips this bite.";
+            if (p == BadgerPower.FreezeSpray) return "Freeze Spray! The badger\nskips two bites.";
+            return "";
+        }
         // Power-up button sub-label while the coach script holds them.
         public const string Locked = "LOCKED";
 
@@ -94,6 +113,7 @@ namespace FlockFive
         {
             if (r.DontCare && r.Destroyed != BadgerPower.None) return DontCareWasted;
             if (r.DontCare && r.Halved) return DontCareHalved;
+            if (r.Power != BadgerPower.None) return PowerLine(r.Power);
             if (r.PlayerGained > 0) return DontCare;
             if (r.BossGained > 0) return MineNow;
             return Tie;
@@ -132,6 +152,26 @@ namespace FlockFive
         public static bool NeedsLesson(int appearance)
         {
             return appearance <= 1 && !CoachDone();
+        }
+    }
+
+    public enum BadgerArmResult { Ignored = 0, Armed = 1, Disarmed = 2, Locked = 3, Used = 4, Short = 5 }
+
+    // One decision for a power button tap, pure so tests can drive it. Never silent:
+    // every refusal has a result the view turns into a shake, a sound and a line.
+    // sameFrameArm: this power was armed earlier in this very frame; a second press
+    // event for the same tap must not toggle it back off.
+    public static class BadgerArm
+    {
+        public static BadgerArmResult Decide(BadgerFight fight, bool pickStage, BadgerPower armed, BadgerPower p, bool sameFrameArm)
+        {
+            if (!pickStage || fight == null) return BadgerArmResult.Ignored;
+            if (armed == p)
+                return sameFrameArm ? BadgerArmResult.Ignored : BadgerArmResult.Disarmed;
+            if (fight.PowersLocked) return BadgerArmResult.Locked;
+            if (!fight.PowerReady(p)) return BadgerArmResult.Used;
+            if (!fight.CanAfford(p)) return BadgerArmResult.Short;
+            return BadgerArmResult.Armed;
         }
     }
 

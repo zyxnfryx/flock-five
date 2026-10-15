@@ -97,6 +97,7 @@ namespace FlockFive.Editor
                 CheckEnabledPlayable(Check);
                 CheckZeroCoinNoSoftLock(Check);
                 CheckTutorialFreeFirstUse(Check);
+                CheckPowerArmUx(Check);
             }
             finally
             {
@@ -818,6 +819,58 @@ namespace FlockFive.Editor
                 "short purse picks nothing; x2 pays and doubles; one use; price +50 per visit; freeze 600; 0 coins playable");
         }
 
+        // b104: tap each power-up through the arm decision, then play the tile and read the effect.
+        static void CheckPowerArmUx(System.Action<string, bool, string> Check)
+        {
+            var powers = new[] { BadgerPower.X2, BadgerPower.X3, BadgerPower.HotSauce, BadgerPower.FreezeSpray };
+            bool allArm = true, allEffect = true;
+            string detail = "";
+            foreach (var p in powers)
+            {
+                var f = new BadgerFight(2, 5, Fill(16, 3), Fill(16, 2));
+                f.BossPick();
+                SetCoins(1000);
+                var arm = BadgerArm.Decide(f, true, BadgerPower.None, p, false);
+                bool armed = arm == BadgerArmResult.Armed;
+                // Same-frame second press must not disarm; a later press does.
+                bool sameFrame = BadgerArm.Decide(f, true, p, p, true) == BadgerArmResult.Ignored;
+                bool toggle = BadgerArm.Decide(f, true, p, p, false) == BadgerArmResult.Disarmed;
+                bool played = f.PlayerPlay(0, p);
+                BadgerRound r;
+                bool resolved = f.Resolve(out r);
+                bool effect = resolved && r.Power == p
+                    && (p == BadgerPower.X2 ? r.PlayerFinal == 6 && r.PlayerGained == 4
+                        : p == BadgerPower.X3 ? r.PlayerFinal == 9 && r.PlayerGained == 7
+                        : r.BossFinal == 0 && r.BossGained == 0 && r.PlayerGained == 3)
+                    && (p != BadgerPower.FreezeSpray || f.BossSkipLeft == 1)
+                    && BadgerCopy.VerdictLine(r) == BadgerCopy.PowerLine(p)
+                    && !string.IsNullOrEmpty(BadgerCopy.ArmedLine(p));
+                bool used = BadgerArm.Decide(f, true, BadgerPower.None, p, false) == BadgerArmResult.Used;
+                allArm &= armed && sameFrame && toggle && played && used;
+                allEffect &= effect;
+                detail += p + ":" + (armed && sameFrame && toggle && played && used && effect ? "ok " : "BAD ");
+            }
+            var coach = new BadgerFight(1, 5, Fill(16, 3), Fill(16, 2), true);
+            coach.BossPick();
+            bool locked = BadgerArm.Decide(coach, true, BadgerPower.None, BadgerPower.X2, false) == BadgerArmResult.Locked;
+            var poor = new BadgerFight(2, 5, Fill(16, 3), Fill(16, 2));
+            poor.BossPick();
+            SetCoins(0);
+            bool shortPurse = BadgerArm.Decide(poor, true, BadgerPower.None, BadgerPower.X2, false) == BadgerArmResult.Short;
+            bool wrongStage = BadgerArm.Decide(poor, false, BadgerPower.None, BadgerPower.X2, false) == BadgerArmResult.Ignored;
+            bool names = BadgerCopy.PowersOpen.Contains("x2") && BadgerCopy.PowersOpen.Contains("x3")
+                && BadgerCopy.PowersOpen.Contains("Hot Sauce") && BadgerCopy.PowersOpen.Contains("Freeze Spray");
+            var swap = new BadgerFight(2, 5, Fill(16, 3), Fill(16, 2));
+            swap.BossPick();
+            SetCoins(1000);
+            bool oneAtATime = BadgerArm.Decide(swap, true, BadgerPower.X2, BadgerPower.X3, false) == BadgerArmResult.Armed
+                && BadgerArm.Decide(swap, true, BadgerPower.X2, BadgerPower.X2, false) == BadgerArmResult.Disarmed;
+            bool copy = BadgerCopy.LessonColumnBot.IndexOf("halve") >= 0 && BadgerCopy.LessonColumnBot.IndexOf("don't care") < 0
+                && BadgerCopy.ArmedSub == "ON" && BadgerCopy.ArmedLine(BadgerPower.X3) == "x3 armed -\ntap a comb.";
+            Check("power arm ux", allArm && allEffect && locked && shortPurse && wrongStage && names && oneAtATime && copy,
+                detail + "one=" + oneAtATime + " copy=" + copy + " locked=" + locked + " short=" + shortPurse + " names=" + names);
+        }
+
         static void CheckScriptedFight(System.Action<string, bool, string> Check)
         {
             SetCoins(0);
@@ -1027,7 +1080,7 @@ namespace FlockFive.Editor
                 bool lines = BadgerCopy.LessonCount == 3
                     && BadgerCopy.LessonAt(0).Contains("honeycomb")
                     && BadgerCopy.LessonAt(1).Contains("Freeze Spray")
-                    && BadgerCopy.LessonAt(2).Contains("don't care");
+                    && BadgerCopy.LessonAt(2).Contains("halve");
                 bool open1 = BadgerCopy.OpeningLine(1, true) == ""
                     && BadgerCopy.OpeningLine(2, false) == BadgerCopy.OpenLater;
                 BadgerCopy.MarkCoach();
