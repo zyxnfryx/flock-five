@@ -38,8 +38,39 @@ namespace FlockFive
             }
             // Kits are identity now: a bee over its own flock is not hiding anything.
             UnhideSameColorBees(b);
+            EnforceFullLeafLimbs(b, level);
             OfferGift(b);
             return b;
+        }
+
+        // Build 89 RULE A (QA): only a FULL limb (BranchState.Cap birds) may carry leaf cover.
+        // A limb with empty seats never shows leaves, so its birds are never half-covered. A
+        // leaf-locked limb cannot be hopped onto (Board hop rules), so a limb that starts full stays
+        // full until its leaf lifts. Authored short locks lose the lock (the tip bird is simply
+        // visible); no bird is added, so flock counts and feeder queues are untouched.
+        public static bool LeafRuleOn = true;      // test switch: false = the pre-b89 data
+        public static string LastLeafDrops = "";   // "limb3(4/5) limb7(3/5)" for the last Pack
+
+        static void EnforceFullLeafLimbs(Board b, Level level)
+        {
+            LastLeafDrops = "";
+            if (b == null || !LeafRuleOn) return;
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var br = b.Branches[i];
+                if (!br.TipLocked || br.Count >= BranchState.Cap) continue;
+                LastLeafDrops += (LastLeafDrops.Length > 0 ? " " : "") + "limb" + i + "(" + br.Count + "/" + BranchState.Cap + ")";
+                br.Shrouded[br.Count - 1] = false;
+            }
+        }
+
+        // The invariant, for tests and tools: every leaf-locked limb is a full limb.
+        public static bool LeafLockedLimbsAreFull(Board b)
+        {
+            if (b == null) return true;
+            for (int i = 0; i < b.Branches.Count; i++)
+                if (b.Branches[i].TipLocked && b.Branches[i].Count != BranchState.Cap) return false;
+            return true;
         }
 
         static void OfferGift(Board b)

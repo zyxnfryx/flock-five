@@ -62,15 +62,6 @@ namespace FlockFive
 
         public bool Locked => _on && !_lift;
 
-        // One rule for every limb and every level: a leaf lock covers the WHOLE limb
-        // (all BranchState.Cap seats, empty ones included) or nothing. Never just the
-        // occupied seats, which left a bare stretch that read as a limb waiting for a move.
-        public static int SeatsToCover(BranchState st) =>
-            st != null && st.TipLocked ? BranchState.Cap : 0;
-
-        public static bool IsPartial(BranchState st, int covered) =>
-            st != null && covered != 0 && covered != BranchState.Cap;
-
         // Restart parade owns the transforms. LateUpdate stays out until they settle.
         public void HoldMotion(bool on) => _hold = on;
 
