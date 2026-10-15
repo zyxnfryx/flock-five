@@ -111,6 +111,10 @@ namespace FlockFive
         // rect, so its opaque body spans x 0.028..0.971, y 0.133..0.867 of that square and is
         // widest at y ~0.49. This is the flattened perspective oval that hugs that body's
         // exterior edge (a hair outside it). Fractions of the rect, so every aspect scales alike.
+        // Padding assumption (MAGI review of PR #125): these three constants are measured from
+        // fx_play_flower with its transparent padding as authored (1024x811 centred in the square,
+        // about 13% empty above and below). If that art is re-exported with different padding or
+        // aspect, re-measure Rx/Ry/Cy; nothing else in the ring code depends on them.
         public const float FlatRingRx = 0.490f;
         public const float FlatRingRy = 0.385f;
         public const float FlatRingCy = 0.490f;
