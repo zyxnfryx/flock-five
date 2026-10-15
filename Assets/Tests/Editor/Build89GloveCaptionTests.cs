@@ -68,8 +68,23 @@ namespace FlockFive.Editor
                 Check("quad cut at plate edge", cut.Count == 4 && Mathf.Approximately(minY, 700f), cut.Count + " " + minY);
                 Check("banner lifts over glove body", src.IndexOf("GloveBodyFresh();") > 0, "");
 
+                // b92: every shared tutorial caption is at most two authored rows, and each row
+                // is short enough (about 21 chars) to hold one line at iPhone and Android width.
+                string[] shared = { CaptionLayout.HiveGardenLine, CaptionLayout.LeafLine, CaptionLayout.SparrowLine,
+                    CaptionLayout.HawkLine, CaptionLayout.OstrichLine, CaptionLayout.BeePestLine,
+                    CaptionLayout.CoachPlaceLine, CaptionLayout.CoachNowhereLine };
+                foreach (var line in shared)
+                {
+                    var rows = line.Split('\n');
+                    bool ok = rows.Length <= 2;
+                    foreach (var r in rows) if (r.Length > 24 && rows.Length > 1) ok = false;
+                    if (rows.Length == 1 && line.Length > 36) ok = false;
+                    Check("b92 two lines: " + line.Replace("\n", " / "), ok, "rows " + rows.Length);
+                }
+                Check("b92 banner clears top row", src.IndexOf("BoardTopGui(out float rowTop)") > 0, "");
+
                 // Style table is unchanged: the two coach spots still resolve through coach.line.
-                Check("place line text", CaptionLayout.CoachPlaceLine == "Tap a branch with the same color, or an empty one.", "");
+                Check("place line text", CaptionLayout.CoachPlaceLine == "Tap a matching or empty branch.", "");
             }
             catch (System.Exception ex)
             {

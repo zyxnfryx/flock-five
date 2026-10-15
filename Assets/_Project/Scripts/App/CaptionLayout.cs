@@ -143,33 +143,33 @@ namespace FlockFive
         // Garden bee lesson. Headline plus two short lines. Paint draws a bee
         // icon on the left of this plate. The emoji swap stays for fonts that have it.
         public const string HiveGardenLine =
-            "You found a bee!\nBees earn album cards.\nTap the hive.";
+            "You found a bee!\nTap the hive.";
 
         public const string HiveGardenEmojiLine =
-            "You found a bee! \U0001F41D\nBees earn album cards.\nTap the hive.";
+            "You found a bee! \U0001F41D\nTap the hive.";
 
         // Inspect back. The value sentence is exact. The two tap lines stay with it.
         public const string AlbumHoneyBlock =
             "Honeycombs show the card's value based on rarity.\nTap to flip!\nTap outside to put back";
 
         public const string LeafLine =
-            "Leaves hide these birds.\nCollect at a feeder to clear them.";
+            "Leaves hide birds.\nCollect at a feeder.";
 
         public const string SparrowLine =
-            "A sparrow blocks a feeder!\nMatch five birds there to chase it off.";
+            "Sparrow on a feeder!\nMatch five there.";
 
         public const string HawkLine =
-            "A hawk blocks a feeder!\nMatch five there twice.";
+            "Hawk on a feeder!\nMatch five twice.";
 
         // First ostrich garden. HeadlineGap inserts the blank line at paint time.
         public const string OstrichLine =
-            "An ostrich blocks feeders!\nMatch three sets to chase it off.";
+            "Ostrich on a feeder!\nMatch three sets.";
 
         public const string BeePestLine =
-            "Bees cover a branch!\nMove birds off to free a card.";
+            "Bees on a branch!\nMove birds off it.";
 
         public const string CoachPlaceLine =
-            "Tap a branch with the same color, or an empty one.";
+            "Tap a matching or empty branch.";
 
         public const string CoachNowhereLine =
             "Nowhere to go yet.\nTry another branch.";
