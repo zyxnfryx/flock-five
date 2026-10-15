@@ -14,6 +14,20 @@ namespace FlockFive
         public const int KeepHour = 20;
         // A reminder closer than this to "now" is never scheduled (it would fire almost at once).
         public const double MinLeadSeconds = 60.0;
+        // iOS (and Android) give no reliable "user closed the app" callback, so a schedule written
+        // on BACKGROUND is a guess that the app may be closed. To keep an ordinary app switch from
+        // ever producing a reminder, a background schedule must be at least this far out; anything
+        // closer rolls to the next day. A real QUIT signal only needs the small lead.
+        public const double BackgroundGraceSeconds = 2 * 3600.0;
+
+        // Why a schedule is being written. Quit = the OS told us the app is terminating (reliable
+        // when it arrives). Background = app left the foreground, may or may not be closed later.
+        public enum Signal { Background, Quit }
+
+        public static double LeadFor(Signal signal)
+        {
+            return signal == Signal.Quit ? MinLeadSeconds : BackgroundGraceSeconds;
+        }
 
         public enum Kind { Ready, Keep }
 
@@ -35,8 +49,9 @@ namespace FlockFive
         // Entries to schedule when the app leaves the foreground at `now`.
         // After today's claim both alerts are tomorrow (6pm coins, 8pm streak).
         // Unclaimed: next 6pm that has not passed; the streak line only if that evening is today.
-        public static List<Entry> Compute(DateTime now, int streak, bool claimedToday, bool atRisk)
+        public static List<Entry> Compute(DateTime now, int streak, bool claimedToday, bool atRisk, Signal signal = Signal.Background)
         {
+            double lead = LeadFor(signal);
             if (streak < 0) streak = 0;
             bool risk = atRisk && streak >= 2;
             DateTime coins, keep;
@@ -49,21 +64,21 @@ namespace FlockFive
             }
             else
             {
-                coins = NextFuture(now, ReadyHour);
-                keep = NextFuture(now, KeepHour);
+                coins = NextFuture(now, ReadyHour, lead);
+                keep = NextFuture(now, KeepHour, lead);
                 doKeep = risk && keep.Date == now.Date;
             }
             var list = new List<Entry> { new Entry(Kind.Ready, coins, ReadyBody) };
             if (doKeep) list.Add(new Entry(Kind.Keep, keep, KeepBody(streak)));
-            return Filter(list, now);
+            return Filter(list, now, lead);
         }
 
         // Drops anything in the past or inside the minimum lead.
-        public static List<Entry> Filter(List<Entry> entries, DateTime now)
+        public static List<Entry> Filter(List<Entry> entries, DateTime now, double leadSeconds = MinLeadSeconds)
         {
             var kept = new List<Entry>();
             for (int i = 0; i < entries.Count; i++)
-                if ((entries[i].When - now).TotalSeconds >= MinLeadSeconds) kept.Add(entries[i]);
+                if ((entries[i].When - now).TotalSeconds >= leadSeconds) kept.Add(entries[i]);
             return kept;
         }
 
@@ -72,15 +87,14 @@ namespace FlockFive
             return new DateTime(now.Year, now.Month, now.Day, hour, 0, 0, now.Kind).AddDays(daysAhead);
         }
 
-        static DateTime NextFuture(DateTime now, int hour)
+        static DateTime NextFuture(DateTime now, int hour, double lead)
         {
             var slot = DayAt(now, 0, hour);
-            if ((slot - now).TotalSeconds < MinLeadSeconds) slot = slot.AddDays(1);
+            if ((slot - now).TotalSeconds < lead) slot = slot.AddDays(1);
             return slot;
         }
 
-        // Lifecycle state machine shared by iOS and Android: true when pending/delivered
-        // reminders must be cleared (foreground/launch) and when a schedule may be written.
+        // Shared by iOS and Android: nothing may be pending while the app is open/foreground.
         public static bool MayScheduleOn(bool appActive) { return !appActive; }
     }
 }

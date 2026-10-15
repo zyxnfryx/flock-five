@@ -9,8 +9,10 @@ using Unity.Notifications.Android;
 
 namespace FlockFive
 {
-    // Local reminder for the daily bonus. Fires only while the app is closed/backgrounded
-    // (see NotifyPlan, OnAppForeground/OnAppBackground/OnAppQuit). com.unity.mobile.notifications 2.4.x.
+    // Local reminder for the daily bonus. Nothing is pending while the app is open (cancelled on
+    // launch/foreground). It is written on OnAppQuit (real terminate) or OnAppBackground (guess:
+    // iOS/Android cannot tell us the app was swiped away), with a 2h grace on the background path.
+    // See NotifyPlan for the limits. com.unity.mobile.notifications 2.4.x.
     // Editor and desktop builds compile the same methods with no native calls.
     // Nothing here requests permission. The OS prompt runs only from RequestOsNow,
     // after the player says yes on the in-game card (Accept) and the game is idle
@@ -63,6 +65,7 @@ namespace FlockFive
 
         // The app is active from launch until OnAppBackground/OnAppQuit.
         static bool _active = true;
+        static NotifyPlan.Signal _signal = NotifyPlan.Signal.Background;
 
         // Records the latest streak state. While the app is active nothing may be
         // pending, so this also clears any stale notification. The schedule itself is
@@ -87,18 +90,21 @@ namespace FlockFive
         public static void OnAppBackground()
         {
             _active = false;
-            ScheduleNow();
+            _signal = NotifyPlan.Signal.Background;
+            ScheduleNow(_signal);
         }
 
-        // Quit: same as background.
+        // Quit: the one genuine terminate signal; uses the short lead.
         public static void OnAppQuit()
         {
             _active = false;
-            ScheduleNow();
+            _signal = NotifyPlan.Signal.Quit;
+            ScheduleNow(_signal);
         }
 
-        static void ScheduleNow()
+        static void ScheduleNow(NotifyPlan.Signal signal)
         {
+            _signal = signal;
             CancelAll();
 #if UNITY_IOS && !UNITY_EDITOR
             if (!IosGranted()) return;
@@ -107,7 +113,7 @@ namespace FlockFive
             if (!AndroidGranted()) return;
             ScheduleAndroid();
 #else
-            NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk);
+            NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk, _signal);
 #endif
         }
 
@@ -259,7 +265,7 @@ namespace FlockFive
                 iOSNotificationCenter.RemoveDeliveredNotification(IosReady);
                 iOSNotificationCenter.RemoveScheduledNotification(IosKeep);
                 iOSNotificationCenter.RemoveDeliveredNotification(IosKeep);
-                foreach (var e in NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk))
+                foreach (var e in NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk, _signal))
                     ScheduleIosAt(e.Kind == NotifyPlan.Kind.Ready ? IosReady : IosKeep, "Daily bonus", e.Body, e.When);
             }
             catch (Exception) { }
@@ -299,7 +305,7 @@ namespace FlockFive
                 AndroidNotificationCenter.RegisterNotificationChannel(channel);
                 CancelAndroid(PrefNoteReady);
                 CancelAndroid(PrefNoteKeep);
-                foreach (var e in NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk))
+                foreach (var e in NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk, _signal))
                 {
                     int id = SendAndroid("Daily bonus", e.Body, e.When);
                     PlayerPrefs.SetInt(e.Kind == NotifyPlan.Kind.Ready ? PrefNoteReady : PrefNoteKeep, id + 1);
