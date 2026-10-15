@@ -1042,6 +1042,30 @@ namespace FlockFive
         // hop, leaves, sparrow, hawk, bees) enters from the lower right at GloveBelowDeg,
         // beneath the banner, and the fingertip is held low enough that the hand stays off
         // the banner. A banner under the target keeps the old arc.
+        // b95 (Level 1 review): the fingertip must stay on the branch it points at. Build 94 dropped
+        // the tip below the banner by the hand's full rotated box, which slid it a whole row down
+        // (the top row's red birds became the second row's purple ones). The hand now straightens
+        // toward upright (its tip is then the top of the sprite, so little reaches over the tip)
+        // and the tip is only lowered by what is still needed, never a row.
+        static readonly float[] GardenApproachDegs = { -45f, -30f, -15f, 0f };
+        public static Vector2 GardenAim(Vector2 aimGui, Rect plate, float s, out float approach)
+        {
+            float gap = CaptionLayout.GloveBannerGap * s;
+            approach = GloveBelowDeg;
+            var best = aimGui;
+            float bestDrop = float.MaxValue;
+            for (int i = 0; i < GardenApproachDegs.Length; i++)
+            {
+                float deg = GardenApproachDegs[i];
+                float above = Mathf.Max(GloveAbove(deg, s, false, 0f), GloveAbove(deg, s, false, 1f));
+                var a = CaptionLayout.AimBelowBanner(aimGui, plate, above, gap, float.MaxValue);
+                float drop = a.y - aimGui.y;
+                if (drop < bestDrop - 0.01f) { bestDrop = drop; best = a; approach = deg; }
+                if (drop <= 0.01f) break;
+            }
+            return best;
+        }
+
         bool GardenGlove(Vector2 aimGui, float dt, float s, System.Func<Vector2, bool> tapHit)
         {
             var aim = aimGui;
@@ -1060,11 +1084,7 @@ namespace FlockFive
                 return CoachGloveAt(aimGui, dt, s, float.NaN, false, -90f, default, tapHit); // from the right, pointing left
             float approach = GloveBelowDeg;
             if (known)
-            {
-                float above = Mathf.Max(GloveAbove(GloveBelowDeg, s, false, 0f), GloveAbove(GloveBelowDeg, s, false, 1f));
-                // No cap: a target hidden under the banner is pointed at from just below it.
-                aim = CaptionLayout.AimBelowBanner(aimGui, plate, above, CaptionLayout.GloveBannerGap * s, float.MaxValue);
-            }
+                aim = GardenAim(aimGui, plate, s, out approach);
             return CoachGloveAt(aim, dt, s, float.NaN, false, approach, default, tapHit);
         }
 

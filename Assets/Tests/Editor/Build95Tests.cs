@@ -125,6 +125,29 @@ namespace FlockFive.Editor
                         "grown " + grown.yMax.ToString("0") + " lb " + lb.ToString("0"));
                 }
 
+                // Level 1 review: the tutorial pickup target on the top row sits ~3% of screen height under
+                // the banner's bottom edge. The tip must stay on that row (drop well under a row pitch,
+                // 5.8% of height) and the hand must clear the banner, on every layout.
+                for (int d = 0; d < sizes.Length; d++)
+                {
+                    float w = sizes[d].x, h = sizes[d].y;
+                    DeviceFit.TestWindow = w / h;
+                    float s = DeviceFit.Ui(w, h);
+                    var safe = new Rect(0f, h * 0.04f, w, h * 0.92f);
+                    float dh = FlockFiveApp.GloveAuditDh(s);
+                    var plate = new Rect(0f, h * 0.234f, w, h * 0.12f);
+                    var target = new Vector2(w * 0.78f, plate.yMax + h * 0.03f);
+                    var aim = FlockFiveApp.GardenAim(target, plate, s, out float deg);
+                    float drop = aim.y - target.y;
+                    var box = FlockFiveApp.GloveAuditBox(aim, deg, dh, 0f);
+                    var box1 = FlockFiveApp.GloveAuditBox(aim, deg, dh, 1f);
+                    bool clear = CaptionLayout.GloveClearsBanner(box, plate) && CaptionLayout.GloveClearsBanner(box1, plate);
+                    float oldAbove = FlockFiveApp.GloveAuditAbove(s);
+                    float oldDrop = Mathf.Max(0f, plate.yMax + CaptionLayout.GloveBannerGap * s + oldAbove - target.y);
+                    Check("level1 top row: tip stays on its row, glove clear " + stags[d], drop <= h * 0.02f && clear,
+                        "drop " + drop.ToString("0") + " old " + oldDrop.ToString("0") + " row " + (h * 0.058f).ToString("0") + " deg " + deg + " clear " + clear);
+                }
+
                 // Glove entry: start-to-target distance is 67% of the old one, same line (right to left).
                 {
                     var aim = new Vector2(300f, 900f);
