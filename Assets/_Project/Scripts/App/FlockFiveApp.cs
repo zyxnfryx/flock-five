@@ -6191,7 +6191,7 @@ namespace FlockFive
         static void SwallowResumePointer()
         {
             // Also while the level transition covers the screen (held splash / mask).
-            if (PlayClock.Now >= _resumeInputUntil && !PressRainbow.Covering()) return;
+            if (PlayClock.Now >= _resumeInputUntil && !PressRainbow.StageHeld()) return;
             var e = Event.current;
             if (e == null) return;
             var t = e.type;
@@ -6206,7 +6206,7 @@ namespace FlockFive
             if (PlayClock.Now < _resumeInputUntil) return false;
             if (LessonGuardUp()) return false;
             // The garden is under the held splash / mask until the reveal: no blind moves.
-            if (PressRainbow.Covering()) return false;
+            if (PressRainbow.StageHeld()) return false;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
                 screen = Mouse.current.position.ReadValue();

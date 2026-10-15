@@ -513,19 +513,25 @@ namespace FlockFive
     //   0.00-0.35  launch: every glint leaves the button centre on the tap frame and
     //              fans to the full width by 0.15 s, rising into a symmetric bow
     //   0.35-0.60  exit: accelerating climb off the top, one-frame-spaced trails
-    //   0.64-1.02  return: back down the arc, each glint converging on its own cell of
-    //              a stratified grid over the whole screen (rows top to bottom, columns
-    //              mirrored about centre, one glint per cell, equal size per row)
-    //   1.02-1.12  full coverage hold. The held splash face is dropped at SwapAt: the
-    //              garden (already loaded on the tap) is now what is under the mask
-    //   1.12-1.57  reveal: glints fade, shrink and drift radially outward, evenly
-    // Under capture (Time.captureDeltaTime) the clock counts frames, so the captured
-    // video plays the real timing despite slow frame encodes.
+    //   0.64-1.22  return = depth, not travel: each glint appears at its own final cell
+    //              (stratified grid + stable jitter) and approaches the viewer in place,
+    //              tiny and dim to full size on a perspective curve (only a few % of a
+    //              cell of parallax). Start times are hash-staggered over 0.32 s, so no
+    //              row, column or side fills first. The veil only supports them.
+    //   1.22       coverage complete: every glint landed and the veil is at peak. The
+    //              clock is held here until a frame has painted that state.
+    //   1.27       swap: the held splash is dropped (the garden loaded on the tap)
+    //   1.32-1.77  fade out in place (shrink + fade, hash-staggered, no wipe)
+    //   1.82       sparkle gone: the stage begins (input and PlayClock resume)
+    // Under capture (Time.captureDeltaTime) the clock counts frames.
     public static class PressRainbow
     {
         public const float LaunchEnd = 0.35f, FanTime = 0.15f;
-        public const float CoverAt = 1.02f, SwapAt = 1.07f, RevealAt = 1.12f, RevealEnd = 1.57f;
-        public const float Life = 1.62f;
+        public const float BackBegin = 0.64f, BackWindow = 0.32f, GrowTime = 0.26f;
+        public const float CoverAt = 1.22f, SwapAt = 1.27f, RevealAt = 1.32f, RevealEnd = 1.77f;
+        public const float Life = 1.82f;
+        const float FailsafeSecs = 3f;
+        const float StageMargin = 0.03f;
         public const int Cols = 8; // even: four mirrored column pairs
         const int Ghosts = 4;
         const float GhostStep = 1f / 60f;
@@ -538,13 +544,15 @@ namespace FlockFive
         static int _atFrame;
         static Rect _src;
         static RenderTexture _face;
+        static bool _covered;
+        static float _shift, _fireReal;
         public static int SwapFrame = -1;
         public static float LastMaxRectPx, LastMaxBodyPx, LastXMin, LastXMax, LastVeil;
         public static Rect LastWashRect;
         public static int LastRows, LastN;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() { _at = -1f; _face = null; SwapFrame = -1; }
+        static void ResetStatics() { _at = -1f; _face = null; SwapFrame = -1; _covered = false; _shift = 0f; }
 
         // The only writer of the start time. Takes ownership of the held face.
         public static void Fire(float now, Rect src, RenderTexture face)
@@ -555,6 +563,9 @@ namespace FlockFive
             _src = src;
             _face = face;
             SwapFrame = -1;
+            _covered = false;
+            _shift = 0f;
+            _fireReal = Time.realtimeSinceStartup;
         }
 
         public static void Stop() { _at = -1f; DropFace(); }
@@ -570,15 +581,23 @@ namespace FlockFive
         public static float Age()
         {
             if (_at < 0f) return -1f;
-            if (Time.captureDeltaTime > 0f) return (Time.frameCount - _atFrame) * Time.captureDeltaTime;
-            return AdPause.Unscaled - _at;
+            if (Time.captureDeltaTime > 0f) return (Time.frameCount - _atFrame) * Time.captureDeltaTime - _shift;
+            return AdPause.Unscaled - _at - _shift;
         }
 
         public static bool Live() { float t = Age(); return t >= 0f && t < Life; }
 
-        // Fire (the tap, same frame as Load) until the reveal starts: the garden is
-        // hidden, so garden input is swallowed. Ends exactly at RevealAt.
-        public static bool Covering() { float t = Age(); return t >= 0f && t < RevealAt; }
+        // The stage is held from the tap until the sparkle is completely gone (Life plus
+        // a margin): garden input is swallowed and PlayClock stands still. One gate for
+        // both. Hard failsafe: after 3 s of real time it opens regardless (an ad, pause
+        // or background can freeze the sparkle clock, never the input).
+        public static bool StageHeld()
+        {
+            if (_at < 0f) return false;
+            if (Time.captureDeltaTime <= 0f && Time.realtimeSinceStartup - _fireReal > FailsafeSecs) return false;
+            float t = Age();
+            return t >= 0f && t < Life + StageMargin;
+        }
 
         static float H01(int i, int salt)
         {
@@ -657,7 +676,7 @@ namespace FlockFive
             float far = D * (0.025f + 0.010f * hs); // visible body px
             float lane01 = Mathf.Clamp01(Mathf.Abs(tx - cx) / (W * 0.58f));
             float riseEnd = 0.54f + 0.06f * hr;
-            float backStart = 0.64f + 0.04f * hb;
+            float backStart = BackBegin + BackWindow * H01(i, 81);
             float arcY = oy - H * (0.08f + 0.04f * hy + 0.18f * (1f - lane01 * lane01));
             float cell = W / Cols;
             float landBody = cell * 0.95f * SizeK(i);
@@ -684,24 +703,18 @@ namespace FlockFive
                 a = 1f;
                 bloom = 0.25f;
             }
-            else if (t < backStart) return false; // beat out of frame
+            else if (t < backStart) return false; // off screen until its own start
             else
             {
                 Cell(i, rows, W, H, out float lx, out float ly);
-                if (t < CoverAt)
+                if (t < backStart + GrowTime)
                 {
-                    // Back down the arc onto the cell: decelerating converge, growing on
-                    // a perspective curve to the cell size.
-                    float w = (t - backStart) / (CoverAt - backStart);
-                    float e = 1f - (1f - w) * (1f - w) * (1f - w);
-                    float startY = -0.10f * H;
-                    x = tx + (lx - tx) * e;
-                    y = startY + (ly - startY) * e;
-                    float pz = (1f / (1f - 0.8f * w) - 1f) / 4f;
-                    sz = (far + (landBody - far) * pz) / StarBody;
-                    a = 1f;
-                    bloom = 0.4f + 0.5f * w;
-                    soft = core ? 0.05f : 0.5f * w;
+                    // Approach in place: no travel, only the perspective grow.
+                    SparkleFx.ApproachInPlace((t - backStart) / GrowTime, lx, ly, cx, H * 0.5f, cell,
+                        far * 0.35f, landBody, 0.06f, out var d);
+                    x = d.X; y = d.Y; sz = d.Scale / StarBody;
+                    a = d.Alpha; bloom = d.Bloom;
+                    soft = core ? 0.05f : d.Soft;
                 }
                 else if (t < RevealAt)
                 {
@@ -713,13 +726,10 @@ namespace FlockFive
                 }
                 else if (t < RevealEnd + 0.05f)
                 {
-                    // Reveal: fade, shrink and drift outward from the screen centre,
-                    // the same rate everywhere, so no row or side clears first.
+                    // Fade out in place: shrink and fade, hash-staggered, no wipe.
                     float u = Mathf.Clamp01((t - RevealAt - RevealJitter(pair)) / (RevealEnd - RevealAt - 0.05f));
                     if (u >= 1f) return false;
-                    float drift = 0.30f * u * u;
-                    x = lx + (lx - cx) * drift;
-                    y = ly + (ly - H * 0.5f) * drift;
+                    x = lx; y = ly;
                     sz = landBody * (1f - 0.45f * u) / StarBody;
                     float f = 1f - u;
                     a = f * f * (3f - 2f * f);
@@ -756,24 +766,19 @@ namespace FlockFive
             x = y = sz = a = bloom = soft = 0f;
             Cell2(j, rows, W, H, out float lx, out float ly, out key);
             int g = 5000 + j;
-            float backStart = 0.66f + 0.04f * H01(g, 23);
+            float backStart = BackBegin + BackWindow * H01(g, 81);
             if (t < backStart || t >= RevealEnd + 0.05f) return false;
             float cell = W / Cols;
             float body = cell * 0.55f * SizeK(g);
             float cx = W * 0.5f;
             bool core = CoreOf(g);
-            if (t < CoverAt)
+            if (t < backStart + GrowTime)
             {
-                float w = (t - backStart) / (CoverAt - backStart);
-                float e = 1f - (1f - w) * (1f - w) * (1f - w);
-                float sx = lx + (lx - cx) * 0.15f * (1f - e); // slight inward converge
-                x = sx;
-                y = -0.08f * H + (ly + 0.08f * H) * e;
-                float pz = (1f / (1f - 0.8f * w) - 1f) / 4f;
-                sz = body * (0.25f + 0.75f * pz) / StarBody;
-                a = Mathf.Clamp01(w * 3f);
-                bloom = 0.5f + 0.5f * w;
-                soft = core ? 0.05f : 0.35f * w;
+                SparkleFx.ApproachInPlace((t - backStart) / GrowTime, lx, ly, cx, H * 0.5f, cell,
+                    body * 0.3f, body, 0.06f, out var d);
+                x = d.X; y = d.Y; sz = d.Scale / StarBody;
+                a = d.Alpha; bloom = d.Bloom;
+                soft = core ? 0.05f : 0.7f * d.Soft;
             }
             else if (t < RevealAt)
             {
@@ -785,9 +790,7 @@ namespace FlockFive
             {
                 float u = Mathf.Clamp01((t - RevealAt - RevealJitter(key)) / (RevealEnd - RevealAt - 0.05f));
                 if (u >= 1f) return false;
-                float drift = 0.30f * u * u;
-                x = lx + (lx - cx) * drift;
-                y = ly + (ly - H * 0.5f) * drift;
+                x = lx; y = ly;
                 sz = body * (1f - 0.45f * u) / StarBody;
                 float f = 1f - u;
                 a = f * f * (3f - 2f * f);
@@ -818,9 +821,15 @@ namespace FlockFive
         // not depend on where the glints sit. Ramps with the return, holds, clears.
         public static float VeilAt(float t)
         {
-            if (t <= 0.80f || t >= RevealEnd - 0.08f) return 0f;
+            const float from = BackBegin + GrowTime * 0.8f;
+            if (t <= from || t >= RevealEnd - 0.08f) return 0f;
             float k;
-            if (t < CoverAt) { float u = (t - 0.80f) / (CoverAt - 0.80f); k = u * u * (3f - 2f * u); }
+            if (t < CoverAt)
+            {
+                // Supports the glints: alpha ramps with the covered fraction, behind it.
+                float f = Mathf.Clamp01((t - from) / (CoverAt - from));
+                k = f * f;
+            }
             else if (t < RevealAt) k = 1f;
             else { float u = 1f - (t - RevealAt) / (RevealEnd - 0.08f - RevealAt); u = Mathf.Clamp01(u); k = u * u * (3f - 2f * u); }
             return VeilPeak * k;
@@ -839,6 +848,15 @@ namespace FlockFive
             t = Age();
             washA = 0f;
             if (t < 0f || t >= Life) { if (t >= Life) DropFace(); t = -1f; return 0; }
+            if (Time.captureDeltaTime <= 0f && Time.realtimeSinceStartup - _fireReal > FailsafeSecs)
+            {
+                Stop(); t = -1f; return 0; // failsafe: a frozen clock never strands the overlay
+            }
+            // Swap gate: the clock may not pass full coverage until a frame has actually
+            // painted it (every glint landed, veil at peak). Until then it is held there.
+            float rawT = t;
+            bool holding = !_covered && t >= CoverAt;
+            if (holding) t = CoverAt;
             float W = Screen.width, H = Screen.height;
             if (W < 2f || H < 2f) return 0;
             var prev = GUI.color;
@@ -846,7 +864,7 @@ namespace FlockFive
 
             // Held splash face until the swap, so the world swap Load did on the tap
             // stays hidden until the mask is closed.
-            if (t < SwapAt)
+            if (t < SwapAt || !_covered && SwapFrame < 0 && t >= SwapAt)
             {
                 if (_face != null)
                 {
@@ -855,7 +873,7 @@ namespace FlockFive
                     GUI.DrawTextureWithTexCoords(screen, _face, uv, false);
                 }
             }
-            else if (SwapFrame < 0)
+            else if (SwapFrame < 0 && _covered)
             {
                 SwapFrame = Time.frameCount;
                 DropFace();
@@ -926,6 +944,11 @@ namespace FlockFive
                 drawn++;
             }
             GUI.color = prev;
+            if (holding && drawn >= n + n2 && veil >= VeilPeak * 0.99f)
+            {
+                _covered = true;
+                _shift += rawT - CoverAt; // clock resumes at CoverAt on the next frame
+            }
             LastMaxBodyPx = LastMaxRectPx * StarBody;
             return drawn;
         }

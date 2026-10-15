@@ -143,6 +143,27 @@ namespace FlockFive
             public float X, Y, Scale, Alpha, Bloom, Soft;
         }
 
+        // Depth, not travel. A glint that sits at its own screen cell and approaches the
+        // viewer in place: w 0..1 is its approach. Size follows a perspective curve
+        // (~1/(1 - 0.8 w), normalised so w = 1 is full size), it starts tiny and dim,
+        // and drifts out from the screen centre by only parallax * cell as it nears.
+        // Returns visible body px in d.Scale; X/Y never move more than that parallax.
+        public static void ApproachInPlace(float w, float lx, float ly, float cx, float cy, float cell,
+            float bodyFar, float bodyNear, float parallax, out Depth d)
+        {
+            w = Mathf.Clamp01(w);
+            float pz = (1f / (1f - 0.8f * w) - 1f) / 4f;
+            float dx = lx - cx, dy = ly - cy;
+            float len = Mathf.Sqrt(dx * dx + dy * dy);
+            float k = len > 1f ? parallax * cell * (1f - pz) / len : 0f;
+            d.X = lx - dx * k;
+            d.Y = ly - dy * k;
+            d.Scale = bodyFar + (bodyNear - bodyFar) * pz;
+            d.Alpha = 0.15f + 0.85f * Smooth01(w * 1.6f);
+            d.Bloom = 0.4f + 0.5f * w;
+            d.Soft = 0.5f * w;
+        }
+
         // Fraction of life spent on the rise; the top of the arc is off screen.
         public const float ArcPeak = 0.42f;
 
