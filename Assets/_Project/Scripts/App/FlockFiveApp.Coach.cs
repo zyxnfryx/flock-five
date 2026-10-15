@@ -1063,6 +1063,28 @@ namespace FlockFive
             return true;
         }
 
+        // b98 (Brandon): garden lesson gloves ALWAYS come in sideways: from the right, hand pointing
+        // left, level with the target, never from below. If the sideways hand would sit on the
+        // banner, the target is nudged lower on the same horizontal path (x never changes), by just
+        // enough to clear the banner, dip up or down.
+        public static Vector2 GardenSidewaysAim(Vector2 aim, Rect plate, float s, float screenW, out float deg)
+        {
+            deg = -90f;
+            if (plate.width < 1f || plate.height < 1f) return aim;
+            float gap = CaptionLayout.GloveBannerGap * s;
+            float dh = GloveDh(s);
+            float need = 0f;
+            for (int dip = 0; dip <= 1; dip++)
+            {
+                GloveSpan(aim, deg, dh, dip, false, out float x0, out float y0, out float x1, out float y1);
+                if (x1 < plate.xMin || x0 > plate.xMax) continue;
+                float push = plate.yMax + gap - y0;
+                if (y0 < plate.yMax + gap && y1 > plate.yMin && push > need) need = push;
+            }
+            if (aim.y < plate.yMin && need > 0f) need = 0f; // banner under the target: nothing to clear
+            return new Vector2(aim.x, aim.y + need);
+        }
+
         public static Vector2 GardenAim(Vector2 aimGui, Rect plate, float s, out float approach)
         {
             float gap = CaptionLayout.GloveBannerGap * s;
@@ -1095,18 +1117,9 @@ namespace FlockFive
             }
             else
                 known = TutorCaptionPlate(out plate);
-            // b98 (Brandon): the standard tutorial approach is horizontal. A left-half target is met
-            // from the right (hand points left), a right-half target from the left (hand points
-            // right), level with the target, no rise. Only a spot where that hand would sit on the
-            // banner takes the custom approach below.
-            if (!known || GardenHorizontalClear(aimGui, plate, s, Screen.width))
-                return CoachGloveAt(aimGui, dt, s, 0f, false, float.NaN, default, tapHit);
-            if (known && plate.yMin > aimGui.y)
-                return CoachGloveAt(aimGui, dt, s, float.NaN, false, -90f, default, tapHit); // from the right, pointing left
-            float approach = GloveBelowDeg;
-            if (known)
-                aim = GardenAim(aimGui, plate, s, out approach);
-            return CoachGloveAt(aim, dt, s, float.NaN, false, approach, default, tapHit);
+            // b98: always the sideways approach (right to left, hand pointing left), never from below.
+            if (known) aim = GardenSidewaysAim(aimGui, plate, s, Screen.width, out _);
+            return CoachGloveAt(aim, dt, s, float.NaN, false, -90f, default, tapHit);
         }
 
         void CoachPlace()

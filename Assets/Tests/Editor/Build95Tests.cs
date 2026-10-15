@@ -178,6 +178,34 @@ namespace FlockFive.Editor
                     Check("garden glove: horizontal standard, custom only on conflict " + stags[d], bad == 0 && horiz > custom, "horiz " + horiz + " custom " + custom + " bad " + bad);
                 }
 
+                // Level 1 first pickup, real board: CoachPick takes branch 4 (red tip) to branch 5. Branch 4 is
+                // the top-left row, ~3% of height under the banner. Current code must take the horizontal
+                // standard approach for it (hand points left, enters from the right), never from below.
+                {
+                    var l1 = LevelData.Open(0);
+                    int from = -1;
+                    for (int a1 = 0; a1 < l1.Branches.Count && from < 0; a1++)
+                        if (l1.CanPick(a1) && l1.Branches[a1].TipRun() == 1)
+                            for (int b1 = 0; b1 < l1.Branches.Count; b1++)
+                                if (b1 != a1 && l1.Branches[b1].Birds.Count == 1 && l1.CanMove(a1, b1, out _)) { from = a1; break; }
+                    Check("level1 real board first pickup is branch 4", from == 4, "from " + from);
+                    for (int d = 0; d < sizes.Length; d++)
+                    {
+                        float w = sizes[d].x, h = sizes[d].y;
+                        DeviceFit.TestWindow = w / h;
+                        float s = DeviceFit.Ui(w, h);
+                        var plate = new Rect(0f, h * 0.234f, w, h * 0.12f);
+                        var target = new Vector2(w * 0.23f, plate.yMax + h * 0.03f);
+                        var aim = FlockFiveApp.GardenSidewaysAim(target, plate, s, w, out float deg);
+                        var box0 = FlockFiveApp.GloveAuditBox(aim, deg, FlockFiveApp.GloveAuditDh(s), 0f);
+                        var box1 = FlockFiveApp.GloveAuditBox(aim, deg, FlockFiveApp.GloveAuditDh(s), 1f);
+                        float drop = aim.y - target.y;
+                        Check("level1 first glove: sideways from the right, clear, short nudge " + stags[d],
+                            deg == -90f && CaptionLayout.GloveClearsBanner(box0, plate) && CaptionLayout.GloveClearsBanner(box1, plate) && drop >= 0f && drop <= h * 0.05f && aim.x == target.x,
+                            "deg " + deg + " drop " + drop.ToString("0") + " cap " + (h * 0.05f).ToString("0"));
+                    }
+                }
+
                 // Glove entry: start-to-target distance is 67% of the old one, same line (right to left).
                 {
                     var aim = new Vector2(300f, 900f);
