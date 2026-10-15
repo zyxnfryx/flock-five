@@ -263,6 +263,7 @@ namespace FlockFive
             "/tmp/flock-five-press-shot", "/tmp/flock-five-press-shot-ipad", "/tmp/flock-five-press-shot-android" };
         static readonly int[][] PressShotSizes = { new[] { 1179, 2556 }, new[] { 2048, 2732 }, new[] { 1080, 2400 } };
 
+#if UNITY_EDITOR
         void TryStartPressShot()
         {
             if (PressShotLive) return;
@@ -278,6 +279,10 @@ namespace FlockFive
             PressShotLive = true;
             StartCoroutine(ShotSplashPressDevices(run));
         }
+#else
+        void TryStartPressShot() { }
+#endif
+#if UNITY_EDITOR
 
         IEnumerator ShotSplashPressDevices(List<int> run)
         {
@@ -310,8 +315,10 @@ namespace FlockFive
             PressShotLive = false;
         }
 
+#endif
         static bool _shotCover, _shotSwap, _shotReveal, _shotGarden;
 
+#if UNITY_EDITOR
         IEnumerator ShotSplashPress(string tag)
         {
             const string dir = "/tmp/paradice";
@@ -456,5 +463,6 @@ namespace FlockFive
             PlayerPrefs.Save();
             Debug.Log("FF_PRESS_SHOT_DONE device=" + tag + " frames=" + f);
         }
+#endif
     }
 }
