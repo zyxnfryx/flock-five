@@ -120,7 +120,6 @@ namespace FlockFive.Editor
         {
             format = TextureImporterFormat.ASTC_6x6;
             if (string.IsNullOrEmpty(name) || !name.EndsWith(".png")) return false;
-            if (name == "fx_let_V.png") return false;            // empty stub file, nothing to compress
             if (NeedsCpuPixels("/" + name)) return false;
             string[] crisp =
             {
