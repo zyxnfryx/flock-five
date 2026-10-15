@@ -132,6 +132,129 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // Rainbow depth arc. Every particle leaves the button at the same moment, small
+        // and far (the far end of the rainbow). It rises and grows modestly, leaves past
+        // the top edge, then comes back down at the camera on a perspective curve,
+        // scale ~ 1/(1 - z), and washes past the viewer (the near end). tx is the
+        // particle's own landing column, so the spread is set by the caller's lanes,
+        // never by emission order or a sweep. Pure math, no state. Caller's units.
+        public struct Depth
+        {
+            public float X, Y, Scale, Alpha, Bloom, Soft;
+        }
+
+        // A fall at the camera. w 0..1 down the screen from (x, yFrom) to (x, yTo) along
+        // w^easePow (<1 settles as it lands, >1 accelerates away). Size follows the
+        // perspective curve ~1/(1 - 0.8 w), normalised so w = 1 is bodyTo: small and far
+        // at the top, large and near at the bottom. Returns visible body px in d.Scale;
+        // the caller owns alpha, and x never changes (columns stay where they are).
+        public static void DescentAt(float w, float x, float yFrom, float yTo, float bodyFrom, float bodyTo,
+            float easePow, out Depth d)
+        {
+            w = Mathf.Clamp01(w);
+            float pz = (1f / (1f - 0.8f * w) - 1f) / 4f;
+            d.X = x;
+            d.Y = yFrom + (yTo - yFrom) * Mathf.Pow(w, easePow);
+            d.Scale = bodyFrom + (bodyTo - bodyFrom) * pz;
+            d.Alpha = 1f;
+            d.Bloom = 0.4f + 0.5f * w;
+            d.Soft = 0.5f * w;
+        }
+
+        // Fraction of life spent on the rise; the top of the arc is off screen.
+        public const float ArcPeak = 0.42f;
+
+        public static bool DepthArcAt(float age, float life, float ox, float oy, float tx,
+            float yTop, float yLand, float scaleFar, float scalePeak, float zMax, out Depth d)
+        {
+            d = default(Depth);
+            if (age < 0f || life <= 0.001f) return false;
+            float u = age / life;
+            if (u >= 1f) return false;
+            float sx, w;
+            if (u < ArcPeak)
+            {
+                // Thrown up: ease-out rise, spreading and growing a little.
+                float r = u / ArcPeak;
+                float e = 1f - (1f - r) * (1f - r);
+                d.Y = oy + (yTop - oy) * e;
+                sx = 0.35f * e;
+                d.Scale = scaleFar + (scalePeak - scaleFar) * e;
+                w = 0f;
+            }
+            else
+            {
+                // Coming at the camera: ease-in fall, spread and scale on perspective.
+                w = (u - ArcPeak) / (1f - ArcPeak);
+                d.Y = yTop + (yLand - yTop) * w * w;
+                sx = 0.35f + 0.65f * w * Mathf.Sqrt(w);
+                d.Scale = scalePeak / (1f - zMax * w);
+            }
+            d.X = ox + (tx - ox) * sx;
+            float fin = age < 0.03f ? age / 0.03f : 1f;
+            d.Alpha = fin * (1f - Smooth01((w - 0.85f) / 0.15f));
+            d.Bloom = w;
+            d.Soft = Smooth01((w - 0.6f) / 0.4f);
+            return d.Alpha > 0.01f;
+        }
+
+        static float Smooth01(float x)
+        {
+            x = Mathf.Clamp01(x);
+            return x * x * (3f - 2f * x);
+        }
+
+        // Landing column offset for particle i of n, from the centre. Mirrored pairs
+        // (i, i ^ 1) sit the same distance either side; lanes are stratified so the
+        // columns cover [-halfSpan, halfSpan] evenly. jitter01 must hash the lane (i >> 1).
+        public static float Lane(int i, int n, float jitter01, float halfSpan)
+        {
+            int lanes = n / 2;
+            if (lanes < 1) lanes = 1;
+            float d = ((i >> 1) + 0.5f + (jitter01 - 0.5f) * 0.9f) / lanes * halfSpan;
+            return (i & 1) == 0 ? -d : d;
+        }
+
+        // One depth particle, painted in layers. As it nears (Bloom) the star warms to
+        // cream and a hot core lights; as it passes the lens (Soft) it defocuses: the
+        // glow widens and the hard star fades, so the near wave reads as soft light.
+        static readonly Color NearCream = new Color(1f, 0.97f, 0.88f, 1f);
+
+        public static void DrawDepth(Depth p, float baseSize, Color tint, float alpha)
+        {
+            var spr = SpriteCatalog.Sparkle;
+            var glow = SpriteCatalog.Glow;
+            DrawDepthGlint(p.X, p.Y, baseSize * p.Scale, p.Alpha * alpha, p.Bloom, p.Soft, tint,
+                spr != null ? spr.texture : null, glow != null ? glow.texture : null);
+        }
+
+        // Shared painter for depth glints (LevelCurtain fountain draws through this too).
+        public static void DrawDepthGlint(float x, float y, float sz, float a, float bloom, float soft,
+            Color tint, Texture star, Texture glowTex)
+        {
+            if (a < 0.02f || sz < 1f || star == null) return;
+            float bl = Mathf.Clamp01(bloom);
+            float sf = Mathf.Clamp01(soft);
+            if (glowTex != null)
+            {
+                float g = sz * (2.0f + 1.6f * sf);
+                GUI.color = new Color(tint.r, tint.g * 0.97f, tint.b * 0.85f, a * (0.16f + 0.26f * bl + 0.10f * sf));
+                GUI.DrawTexture(new Rect(x - g * 0.5f, y - g * 0.5f, g, g), glowTex, ScaleMode.ScaleToFit, true);
+            }
+            var c = Color.Lerp(tint, NearCream, 0.55f * bl);
+            float s2 = sz * (1f + 0.25f * sf);
+            GUI.color = new Color(c.r, c.g, c.b, a * (1f - 0.55f * sf));
+            GUI.DrawTexture(new Rect(x - s2 * 0.5f, y - s2 * 0.5f, s2, s2), star, ScaleMode.ScaleToFit, true);
+            float core = (bl - 0.35f) * (1f - sf);
+            if (core > 0.02f)
+            {
+                float k = sz * 0.42f;
+                GUI.color = new Color(1f, 0.99f, 0.94f, a * core * 1.2f);
+                GUI.DrawTexture(new Rect(x - k * 0.5f, y - k * 0.5f, k, k), star, ScaleMode.ScaleToFit, true);
+            }
+            GUI.color = Color.white;
+        }
+
         // Soft disc. SpriteCatalog.Glow is built once. No per-frame texture.
         public static void DrawGlow(Vector2 at, float size, Color tint)
         {

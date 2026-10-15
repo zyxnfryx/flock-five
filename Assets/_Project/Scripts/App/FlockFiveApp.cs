@@ -614,6 +614,7 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
                 StartCoroutine(ShotHome());
             }
+            TryStartPressShot();
             if (System.IO.File.Exists("/tmp/flock-five-gift-shot"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-gift-shot"); } catch { }
@@ -2391,7 +2392,8 @@ namespace FlockFive
         static void EncodeSmashVideo(string frames, string mp4, float fps, string wav = null)
         {
             string rate = fps.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-            string args = "-y -framerate " + rate + " -i \"" + frames + "/%04d.jpg\" ";
+            // libx264 + yuv420p needs even dimensions; iPhone 1179 wide made a 0-byte mp4.
+            string args = "-y -loglevel error -framerate " + rate + " -i \"" + frames + "/%04d.jpg\" -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" ";
             if (!string.IsNullOrEmpty(wav) && System.IO.File.Exists(wav))
                 args += "-i \"" + wav + "\" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -crf 23 -movflags +faststart \"" + mp4 + "\"";
             else
@@ -6188,7 +6190,8 @@ namespace FlockFive
         // once, for every IMGUI control, so a lesson cannot be tapped through.
         static void SwallowResumePointer()
         {
-            if (PlayClock.Now >= _resumeInputUntil) return;
+            // Also while the level transition covers the screen (held splash / mask).
+            if (PlayClock.Now >= _resumeInputUntil && !PressRainbow.StageHeld()) return;
             var e = Event.current;
             if (e == null) return;
             var t = e.type;
@@ -6202,6 +6205,8 @@ namespace FlockFive
             screen = default;
             if (PlayClock.Now < _resumeInputUntil) return false;
             if (LessonGuardUp()) return false;
+            // The garden is under the held splash / mask until the reveal: no blind moves.
+            if (PressRainbow.StageHeld()) return false;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
                 screen = Mouse.current.position.ReadValue();
@@ -6315,6 +6320,7 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-shot"); } catch { }
                 StartCoroutine(ShotHome());
             }
+            TryStartPressShot();
             if (System.IO.File.Exists("/tmp/flock-five-badger-fight"))
                 EditorOpenBadgerFight();
             if (System.IO.File.Exists("/tmp/flock-five-poker-stamp"))
@@ -6391,14 +6397,53 @@ namespace FlockFive
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
                 Event.current.Use();
-            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); return; }
+            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); PaintPressRainbow(); return; }
             var ev = Event.current != null ? Event.current.type : EventType.Ignore;
             var sp = StartupTrace.Begin(ev == EventType.Repaint ? "GUI.Repaint" : ev == EventType.Layout ? "GUI.Layout" : "GUI.Input");
             try { OnGUIBody(); }
             finally { sp.Dispose(); }
             DrawRewardChoiceTop();
             DrawWarmCover();
+            PaintPressRainbow();
             if (ev == EventType.Repaint) _guiEndTick = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+
+        // Release rainbow: one top-level paint, the very last thing every OnGUI does,
+        // whatever face is up (splash, garden, paused, reward). Own clock; nothing in
+        // Load / StartLevel touches it.
+        static int _rainbowLogN;
+        static bool _rainbowMaskLogged;
+        static void PaintPressRainbow()
+        {
+            if (!GuiPaint()) return;
+            var m = GUI.matrix;
+            GUI.matrix = Matrix4x4.identity;
+            int glints = PressRainbow.Draw(out float t, out float washA);
+            GUI.matrix = m;
+            bool launchFrame = t >= 0f && t < PressRainbow.LogEveryFrameUntil;
+            if (PressShotLive && launchFrame)
+                Debug.Log("FF_RAINBOW_LAUNCH t=" + t.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)
+                    + " glintsVisible=" + glints
+                    + " xMin=" + (glints > 0 ? PressRainbow.LastXMin : 0f).ToString("0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " xMax=" + (glints > 0 ? PressRainbow.LastXMax : 0f).ToString("0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " W=" + Screen.width + " frame=" + Time.frameCount);
+            if (PressShotLive && t >= PressRainbow.CoverAt && t < PressRainbow.RevealAt && !_rainbowMaskLogged)
+            {
+                _rainbowMaskLogged = true;
+                Debug.Log("FF_RAINBOW_MASK_DRAW coverageEst=" + (1f - (1f - PressRainbow.LastVeil) * 0.45f).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                    + " veil=" + PressRainbow.LastVeil.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                    + " grid=" + PressRainbow.Cols + "x" + PressRainbow.LastRows + " glints=" + glints
+                    + " heldFace=" + PressRainbow.HasFace + " frame=" + Time.frameCount);
+            }
+            if (t < 0f) _rainbowMaskLogged = false;
+            if (PressShotLive && t >= 0f && (_rainbowLogN++ % 10) == 0)
+                Debug.Log("FF_RAINBOW_DRAW t=" + t.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)
+                    + " glints=" + glints + " washA=" + washA.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                    + " maxGlintPx=" + PressRainbow.LastMaxBodyPx.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " maxGlintPctW=" + (100f * PressRainbow.LastMaxBodyPx / Mathf.Max(1f, Screen.width)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " washRect=" + (washA > 0f ? PressRainbow.LastWashRect.ToString() : "-")
+                    + " maxRectPx=" + PressRainbow.LastMaxRectPx.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " frame=" + Time.frameCount);
         }
 
         long _guiEndTick;
@@ -6529,9 +6574,29 @@ namespace FlockFive
         // Flood on top of whichever face is up. Load runs once, on the committed press.
         void FinishLevelCurtain()
         {
-            if (!LevelCurtain.Armed) return;
-            if (GuiPaint()) LevelCurtain.Draw(AdPause.Unscaled);
-            if (LevelCurtain.Finished(AdPause.Unscaled)) LevelCurtain.Clear();
+            bool paint = GuiPaint();
+            // Shared transition path: the frame the curtain arms, keep a GPU copy of
+            // the face so the mask can hide the world swap until full coverage.
+            if (LevelCurtain.TakeHoldRequest()) StartCoroutine(HoldCurtainFace());
+            if (LevelCurtain.Armed)
+            {
+                if (paint) LevelCurtain.Draw(AdPause.Unscaled);
+                if (LevelCurtain.Finished(AdPause.Unscaled)) LevelCurtain.Clear();
+            }
+        }
+
+        IEnumerator HoldCurtainFace()
+        {
+            yield return new WaitForEndOfFrame();
+            // Only a face captured before Load is worth holding (an arm and a load on the
+            // same frame already shows the new world).
+            if (!LevelCurtain.Armed || LevelCurtain.LoadStarted || LevelCurtain.HeldFace != null) yield break;
+            int w = Screen.width, h = Screen.height;
+            if (w < 2 || h < 2) yield break;
+            var rt = RenderTexture.GetTemporary(w, h, 0);
+            ScreenCapture.CaptureScreenshotIntoRenderTexture(rt);
+            if (!LevelCurtain.Armed || LevelCurtain.LoadStarted) { RenderTexture.ReleaseTemporary(rt); yield break; }
+            LevelCurtain.HeldFace = rt;
         }
 
         // Original splash hive size — pig matches this, then both bump together.
@@ -10096,10 +10161,11 @@ namespace FlockFive
             gates.StepGate = StepGateBlocks(rest);
             var view = StepHomePress(SplashPress.Id.Level, !SplashPress.Blocks(gates));
             StartupTrace.Lap("L.LevelGate");
-            bool held = view.Pressed;
-            bool fired = view.Launch;
+            bool held = view.Pressed || _pressShotHeld;
+            bool fired = view.Launch || TakePressShotFire();
             bool paint = GuiPaint();
             var motion = PushButton.Sample(PushButton.Level, held, AdPause.Unscaled, paint);
+            if (motion.PressedEdge) _levelPressAt = AdPause.Unscaled;
             if (paint && motion.ReleasedEdge && (BadgerOwed() > 0 || !LevelCurtain.Armed))
             {
                 SparkleFx.DrawAround(rest, 0.95f, true, 0.12f);
@@ -10122,18 +10188,22 @@ namespace FlockFive
                 var shadow = new Rect(visual.x + 6f, visual.y + drop, visual.width, visual.height);
                 GUI.color = new Color(0.10f, 0.06f, 0.03f, held ? 0.22f : 0.40f);
                 GUI.DrawTexture(shadow, tex, ScaleMode.ScaleToFit, true);
+                if (held) DrawLevelPressUnder(visual, AdPause.Unscaled - _levelPressAt);
                 if (!held && motion.Pose.Sink <= 0.001f) DrawFlowerHalo(visual, 0f);
                 GUI.color = Color.white;
                 GUI.DrawTexture(visual, tex, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
                 if (!held && motion.Pose.Sink <= 0.001f) DrawFlowerShimmer(visual, 0f);
+                if (!held && motion.Pose.Sink <= 0.001f) DrawLevelIdleLife(visual);
                 if (held) DrawDiscPress(visual, 0f);
+                if (held) DrawLevelPressOver(visual, AdPause.Unscaled - _levelPressAt);
             }
 
             DrawBadgerSitter(visual.y - rest.y);
             StartupTrace.Lap("L.Level");
             var disc = PushButton.Follow(FlowerDisc(rest, 0f), rest, visual, GuiPixels());
             DrawFlowerCaption(disc, ease, number);
+            NoteLevelDrawn(gates);
             return fired;
         }
 
