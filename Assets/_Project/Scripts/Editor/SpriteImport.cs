@@ -7,7 +7,7 @@ namespace FlockFive.Editor
     public sealed class SpriteImport : AssetPostprocessor
     {
         // Bump forces a reimport so the platform overrides land without hand-editing metas.
-        public override uint GetVersion() => 72;
+        public override uint GetVersion() => 73;
 
         void OnPreprocessTexture()
         {
@@ -106,9 +106,39 @@ namespace FlockFive.Editor
                 return true;
             }
             if (name.StartsWith("bg_")) return true;
-            if (!name.StartsWith("bird_")) return false;
-            return name.EndsWith("_1.png") || name.EndsWith("_2.png")
-                || name.EndsWith("_3.png") || name.EndsWith("_4.png");
+            if (name.StartsWith("bird_"))
+                return name.EndsWith("_1.png") || name.EndsWith("_2.png")
+                    || name.EndsWith("_3.png") || name.EndsWith("_4.png");
+            return TrySizeB92Format(name, out format);
+        }
+
+        // b92 size pass (item 1): every remaining sprite gets ASTC. Alpha-edge UI,
+        // logo, lettering, card/paper and hand art stay 4x4 (crisp); painted FX/props
+        // use 6x6. Sprites whose pixels are read on the CPU stay uncompressed.
+        // Revert this one method (and the version bump) to undo item 1.
+        public static bool TrySizeB92Format(string name, out TextureImporterFormat format)
+        {
+            format = TextureImporterFormat.ASTC_6x6;
+            if (string.IsNullOrEmpty(name) || !name.EndsWith(".png")) return false;
+            if (name == "fx_let_V.png") return false;            // empty stub file, nothing to compress
+            if (NeedsCpuPixels("/" + name)) return false;
+            string[] crisp =
+            {
+                "fx_logo", "fx_z.", "fx_let_", "fx_hand_", "fx_usa_", "fx_ad_", "fx_play_",
+                "fx_restart", "fx_padlock", "fx_card_", "fx_clipboard", "fx_joker", "fx_poker.",
+                "fx_coin", "fx_wax_seal", "fx_stamp_tool", "fx_chain", "fx_hawk", "fx_sparrow",
+                "settings_gear",
+            };
+            for (int i = 0; i < crisp.Length; i++)
+                if (name.StartsWith(crisp[i])) { format = TextureImporterFormat.ASTC_4x4; return true; }
+            return true;
+        }
+
+        // Batch entry: reimport under the policy above, verify every format, exit.
+        public static void VerifyBatch()
+        {
+            try { EnsureAndroidOpaqueAstc(); EditorApplication.Exit(0); }
+            catch (System.Exception e) { UnityEngine.Debug.LogError("SIZEB92 " + e); EditorApplication.Exit(1); }
         }
 
         public static void ApplyAndroidOpaqueAstc(TextureImporter imp)
