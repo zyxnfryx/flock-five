@@ -206,7 +206,7 @@ namespace FlockFive
             if (_leaves == null) _leaves = gameObject.GetComponent<LeafCover>();
             if (_leaves == null) _leaves = gameObject.AddComponent<LeafCover>();
             _leaves.TrunkDir = FromRight ? 1f : -1f;
-            _leaves.Cover(tipLocked, Seats, state.Count);
+            _leaves.Cover(tipLocked, Seats, LeafCover.SeatsToCover(state));
             if (lastHid >= 0)
                 _swarm.Cover(true, Seats, lastHid, state.Count);
             else
