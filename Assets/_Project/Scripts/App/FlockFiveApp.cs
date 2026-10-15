@@ -10993,7 +10993,22 @@ namespace FlockFive
             var prev = st.fontStyle;
             st.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
             int ring = outlinePx >= 0 ? outlinePx : BannerOutlinePx(st.fontSize);
-            StampOutlined(r, text, st, new Color(1f, 1f, 1f, alpha), 0, ring);
+            int gap = text.IndexOf("\n\n", System.StringComparison.Ordinal);
+            if (gap > 0 && gap + 2 < text.Length && text.IndexOf("\n\n", gap + 2, System.StringComparison.Ordinal) < 0)
+            {
+                // Two paragraphs, a shorter blank row between them (CaptionLayout.HeadlineGapKeep).
+                string head = text.Substring(0, gap);
+                string rest = text.Substring(gap + 2);
+                float h1 = st.CalcHeight(new GUIContent(head), r.width);
+                float h2 = st.CalcHeight(new GUIContent(rest), r.width);
+                float gh = CaptionLayout.BlankRowH(st) * CaptionLayout.HeadlineGapKeep;
+                float top = r.center.y - (h1 + gh + h2) * 0.5f;
+                var white = new Color(1f, 1f, 1f, alpha);
+                StampOutlined(new Rect(r.x, top, r.width, h1), head, st, white, 0, ring);
+                StampOutlined(new Rect(r.x, top + h1 + gh, r.width, h2), rest, st, white, 0, ring);
+            }
+            else
+                StampOutlined(r, text, st, new Color(1f, 1f, 1f, alpha), 0, ring);
             st.fontStyle = prev;
         }
 
