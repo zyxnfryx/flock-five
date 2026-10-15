@@ -10406,14 +10406,15 @@ namespace FlockFive
         // Square pop-up CTAs reuse the clay flower (DEAL / LEVEL / Watch).
         // Wide ones get a rounded plate in the same clay. Returns the label rect.
         // shadow is the dark slab under the face. Streak ask and welcome pass false.
-        static Rect DrawPopupButton(Rect r, bool held, bool gold, float glow = 1f, bool shadow = true)
+        static Rect DrawPopupButton(Rect r, bool held, bool gold, float glow = 1f, bool shadow = true, bool releaseFx = true)
         {
-            return DrawPopupButton(r, held, gold ? PopupTint.Gold : PopupTint.Wood, glow, shadow);
+            return DrawPopupButton(r, held, gold ? PopupTint.Gold : PopupTint.Wood, glow, shadow, releaseFx);
         }
 
         internal static Rect LastPedestalFace;
 
-        static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true)
+        // releaseFx false: no sparkle burst or flash when the finger lifts (the Daily Claim flower, Brandon b104).
+        static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true, bool releaseFx = true)
         {
             if (r.width < 2f || r.height < 2f) return r;
             bool paint = GuiPaint();
@@ -10422,7 +10423,7 @@ namespace FlockFive
             bool sunk = held || motion.Pose.Sink > 0.01f;
             bool square = r.width > 8f && r.height < r.width * 1.25f && r.width < r.height * 1.25f;
             var bloom = SpriteCatalog.PlayFlower;
-            if (paint && motion.ReleasedEdge)
+            if (paint && motion.ReleasedEdge && releaseFx)
             {
                 SparkleFx.DrawAround(visual, 0.95f, true, 0.14f);
                 bool pedestal = square && bloom != null && bloom.texture != null && (tint == PopupTint.Gold || tint == PopupTint.Wood);
