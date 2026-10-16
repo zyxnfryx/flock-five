@@ -22,6 +22,10 @@ namespace FlockFive
         public BeeAccessory Accessory;
         // Multiplies the accessory sprite. Alpha 0 (struct default) means white.
         public Color AccessoryTint;
+        // Face art theme (CardTheme.cs). Auto = hand assignment or the colour family.
+        public FaceTheme Theme;
+        // True: the flipped side shows Back instead of repeating Front (one-line cards keep the shared flavor).
+        public bool OwnBack;
         public BeeKind(string id, string name, string front, string back, Color tint)
         {
             Id = id;
@@ -32,6 +36,8 @@ namespace FlockFive
             Attrs = null;
             Accessory = BeeAccessory.None;
             AccessoryTint = Color.white;
+            Theme = FaceTheme.Auto;
+            OwnBack = false;
         }
     }
 
@@ -187,7 +193,7 @@ namespace FlockFive
                 "Briny and brief. Leaves a crunch; keeps the receipt.",
                 new Color(0.70f, 0.90f, 0.91f)),
             new BeeKind("coral", "Coral Reef",
-                "Builds the neighborhood.",
+                "Gated community.",
                 "Builds slowly, stings suddenly. Underwater HOA president.",
                 new Color(1.00f, 0.51f, 0.57f)),
             new BeeKind("tide", "Tide Pool",
@@ -379,9 +385,9 @@ namespace FlockFive
                 "Long tail, short patience. Wish upon a welt.",
                 new Color(0.72f, 0.84f, 1.00f)),
             new BeeKind("nova", "Nova Flash",
-                "Bright idea.",
-                "Burns fast, remembered longer. Don't stare.",
-                new Color(0.90f, 0.92f, 0.50f)) { Accessory = BeeAccessory.StarCrown },
+                "Supernova? Super-nova-vice.",
+                "Lights up the garden, then asks who cut the lights. Big star, big exit.",
+                new Color(0.90f, 0.92f, 0.50f)) { Accessory = BeeAccessory.StarCrown, Theme = FaceTheme.Supernova, OwnBack = true },
             new BeeKind("lunar", "Lunar Latch",
                 "Moonstruck.",
                 "Tides the garden. Sleep schedule: decorative.",

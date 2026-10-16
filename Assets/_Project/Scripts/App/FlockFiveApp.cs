@@ -238,6 +238,11 @@ namespace FlockFive
         readonly List<BeeVisit> _levelBees = new List<BeeVisit>();
         int _hiveFlip = -1;
         float _hiveFlipT;
+        // Collectible-card motion (phase 2): tilt, flip stage, capture pass.
+        Vector2 _cardTilt;
+        float _tiltBlend, _parAmt;
+        int _stageSlot = -1;
+        bool _cardCapture, _cardCaptureBack;
         int _hivePage;
         int _hivePageFrom;
         float _hivePageTurn = 99f;
@@ -6280,6 +6285,8 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            // Sensors and the card stage only live while an inspect is open (battery + memory).
+            if (CardTilt.Open && _hiveInspect < 0) { CardTilt.End(); CardStage.Release(); _stageSlot = -1; }
             if (GamePause.Paused)
             {
                 // Pose steps on PlayClock, so a suspension cannot skip the arc.
@@ -11060,11 +11067,15 @@ namespace FlockFive
             if (a < minA) return;
             var body = RimContent(text);
             var seat = LockSeat(r);
-            Paint(st, new Color(0.02f, 0.02f, 0.02f, a));
+            var ro = CardArt.RimOuter;
+            ro.a = a;
+            Paint(st, ro);
             Rim(seat, body, st, whitePx + blackPx);
             if (whitePx > 0)
             {
-                Paint(st, new Color(1f, 1f, 1f, a));
+                var ri = CardArt.RimInner;
+                ri.a = a;
+                Paint(st, ri);
                 Rim(seat, body, st, whitePx);
             }
             Paint(st, fill);
@@ -17003,6 +17014,19 @@ namespace FlockFive
             int ix = _hiveInspect;
             _albumInspectR = big;
             _albumInspectOk = big.width > 8f && big.height > 8f;
+            if (!CardTilt.Open) CardTilt.Begin();
+            CardTilt.Feed(big);
+            if (tick)
+            {
+                float cdt = AdPause.UnscaledDelta;
+                bool settled = !_hiveInspectClosing && u >= 1f;
+                CardTilt.Tick(cdt, big);
+                _tiltBlend = Mathf.MoveTowards(_tiltBlend, settled ? 1f : 0f, cdt * 5f);
+                _parAmt = _hiveFlip >= 0 ? 0f : Mathf.MoveTowards(_parAmt, 1f, cdt * 6f);
+                if (_hiveFlip < 0) _stageSlot = -1;
+                if (_stageSlot >= 0) CardQuality.Watchdog(cdt);
+            }
+            _cardTilt = CardTilt.Value * (_tiltBlend * _parAmt);
             if (tick && _hiveTutorOn && !Ads.IsShowing && !_hiveInspectClosing)
                 AdvanceHiveTutor(ix);
             DrawBeeAlbumCard(big, ix, s, true);
@@ -17013,8 +17037,11 @@ namespace FlockFive
             if (t > 0.4f && !(_albumTutorOn && _albumTutorStep == 3))
                 DrawFlipHint(hintTop, s, Mathf.Clamp01(t));
             bool upgradeHit = false;
-            if (t > 0.55f && !_hiveInspectClosing && !_hiveTutorOn && !(_albumTutorOn && _albumTutorStep == 3))
+            // Upgrade lives in the hive (album) only: never on the round popup or any other inspect.
+            if (UpgradeContext && t > 0.55f && !_hiveInspectClosing && !_hiveTutorOn && !(_albumTutorOn && _albumTutorStep == 3))
                 upgradeHit = DrawHiveUpgrade(ix, hintTop, s, Mathf.Clamp01(t));
+            else
+                _upgradeBtnR = default;
             if (_hiveTutorOn)
                 DrawHiveTutorGlove(big, s);
 
@@ -17038,12 +17065,11 @@ namespace FlockFive
 
             bool fullyOpen = !_hiveInspectClosing && u >= 1f;
             // A honeycomb is not the card. It squishes and smudges, and the flip waits.
-            bool honeyAte = fullyOpen && _hiveFlip < 0 && !_hiveTutorOn && PokeHoneycombs(big, ix);
-            // Card taps during the demo are swallowed so they neither flip nor dismiss.
-            if (_hiveTutorOn)
-                HitPad(big, out _);
-            else if (fullyOpen && !upgradeHit && !honeyAte && HitPad(big, out _) && !PageSwipeAte)
+            var cardTap = InspectCardTap(big, ix, fullyOpen && !upgradeHit);
+            bool honeyAte = cardTap == CardTap.Honey;
+            if (cardTap == CardTap.Card && !PageSwipeAte && !CardTilt.DragAte)
                 BeginHiveFlip(ix);
+            if (Event.current != null && Event.current.rawType == EventType.MouseUp) CardTilt.ClearDragAte();
 
             // Tap dim outside card closes (after card/X/Back/upgrade so they win hit tests)
             var full = new Rect(0f, 0f, Screen.width, Screen.height);
@@ -17193,52 +17219,283 @@ namespace FlockFive
             if (alpha < 0.04f || (uint)slot >= (uint)Hive.AlbumSlots) return false;
             if (!Hive.UpgradesUnlocked || Hive.CountOfSlot(slot) <= 0) return false;
             var pill = FlipHintRect(hintTop, s);
-            float btnH = Mathf.Max(44f, 48f * Mathf.Min(s, 1.35f));
-            float btnW = Mathf.Min(Screen.width * 0.72f, 420f * s);
-            float y = pill.yMax + 10f * s;
-            var btn = new Rect((Screen.width - btnW) * 0.5f, y, btnW, btnH);
-            _upgradeBtnR = btn;
+            // b88 (Brandon): the game's own clay CTA (DrawPopupButton), not a thin outlined bar.
+            // v2: fatter and narrower, width sized to the label, 55-65% of the old wide bar.
+            // v3: solid dark rim + light inner bevel, clear margins, and a locked MAXXED state.
+            float btnH = Mathf.Max(84f, 92f * Mathf.Min(s, 1.35f));
+            // 5 px at UI scale 1, scaled with the UI, plus a thin gold keyline outside so the rim
+            // reads against the dark scrim.
+            float rimW = Mathf.Round(5f * Mathf.Max(1f, s * 0.6f));
+            float keyW = Mathf.Max(2f, Mathf.Round(rimW * 0.3f));
             bool room = Hive.UpgradeRoom(slot);
-            bool can = Hive.CanUpgrade(slot);
-            string line = !room
-                ? "Max honey"
-                : "Upgrade  ·  " + Money.Format(Hive.UpgradeCost);
+            bool maxxed = !room;
+            bool can = room && Hive.CanUpgrade(slot);
+            string line = maxxed ? MaxxedWord : "Upgrade  " + Money.Format(Hive.UpgradeCost);
+            var measure = GuiPool.Label(GuiSlot.FlipHintMeasure);
+            measure.fontStyle = FontStyle.Bold;
+            measure.wordWrap = false;
+            measure.fontSize = Mathf.RoundToInt(btnH * 0.50f);
+            float labelW = measure.CalcSize(new GUIContent(line)).x + (maxxed ? btnH * 1.9f : 0f);
+            float wideW = Mathf.Min(Screen.width * 0.80f, 460f * s);
+            float btnW = Mathf.Clamp(labelW + btnH * 1.1f, wideW * 0.55f, wideW * 0.65f);
+            btnW = Mathf.Min(btnW, Screen.width * 0.86f - (rimW + keyW) * 2f);
+            // Margin: a clear gap under the hint pill and above the screen edge, rim included.
+            float gapTop = Mathf.Max(18f, 20f * s) + rimW + keyW;
+            float y = pill.yMax + gapTop;
+            float edgeB = Mathf.Max(24f, 28f * s) + rimW + keyW;
+            if (y + btnH > Screen.height - edgeB) y = Screen.height - edgeB - btnH;
+            float denyAge = _upDenyAt < 0f ? 99f : AdPause.Unscaled - _upDenyAt;
+            float shake = denyAge < UpDenyShake
+                ? Mathf.Sin(denyAge * 46f) * (1f - denyAge / UpDenyShake) * btnH * 0.07f
+                : 0f;
+            var btn = new Rect((Screen.width - btnW) * 0.5f + shake, y, btnW, btnH);
+            var outer = new Rect(btn.x - rimW, btn.y - rimW, btn.width + rimW * 2f, btn.height + rimW * 2f);
+            var key = new Rect(outer.x - keyW, outer.y - keyW, outer.width + keyW * 2f, outer.height + keyW * 2f);
+            _upgradeBtnR = outer;
             bool held;
-            bool hit = HitPad(btn, out held);
-            float fade = alpha * (room ? 1f : 0.55f);
-            Color plate = can
-                ? new Color(0.18f, 0.12f, 0.05f, (held ? 0.96f : 0.88f) * fade)
-                : new Color(0.12f, 0.10f, 0.08f, 0.72f * fade);
-            GUI.color = plate;
-            GUI.DrawTexture(btn, Texture2D.whiteTexture);
-            GUI.color = can
-                ? new Color(1f, 0.82f, 0.28f, 0.95f * fade)
-                : new Color(0.70f, 0.64f, 0.50f, 0.55f * fade);
-            float edge = Mathf.Max(2f, 3f * s);
-            GUI.DrawTexture(new Rect(btn.x, btn.y, btn.width, edge), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(btn.x, btn.yMax - edge, btn.width, edge), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(btn.x, btn.y, edge, btn.height), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(btn.xMax - edge, btn.y, edge, btn.height), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            var st = GuiPool.Label(GuiSlot.FlipHint);
-            st.fontStyle = FontStyle.Bold;
-            st.alignment = TextAnchor.MiddleCenter;
-            st.wordWrap = false;
-            st.fontSize = FitFont(st, line, btn.width * 0.90f, btn.height * 0.70f, 16, Mathf.RoundToInt(28f * s));
-            Color ink = can ? new Color(1f, 0.96f, 0.82f, fade) : new Color(0.78f, 0.74f, 0.64f, fade * 0.9f);
-            StampOutlined(btn, line, st, ink, 1, 2);
-            if (hit)
+            bool hit = HitPad(outer, out held);
+            bool pressed = held && !maxxed; // locked: no press pose
+            var keep = GUI.color;
+            bool paint = GuiPaint();
+            // Solid dark rim, same rounded clay plate tinted near-black brown.
+            if (paint)
             {
-                if (room && Hive.TryUpgrade(slot))
+                GUI.color = maxxed
+                    ? new Color(0.82f, 0.93f, 1f, alpha * 0.90f)      // icy keyline
+                    : new Color(0.96f, 0.78f, 0.32f, alpha * 0.85f);
+                DrawBevelPlate(PopupButtonTex(PopupTint.Wood, false), key, 28f);
+                GUI.color = maxxed ? new Color(0.10f, 0.16f, 0.26f, alpha) : new Color(0.16f, 0.08f, 0.03f, alpha);
+                DrawBevelPlate(PopupButtonTex(PopupTint.Wood, false), outer, 28f);
+            }
+            // v4: can't afford is warm brick clay (Red); MAXXED is a locked diamond plate.
+            Rect face;
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            if (maxxed)
+            {
+                if (paint) DrawDiamondPlate(btn, alpha);
+                face = btn;
+            }
+            else
+            {
+                // Brick: the Red clay warmed and softened toward terracotta so it reads
+                // "not now" rather than "error".
+                if (!can) GUI.color = new Color(0.92f, 0.80f, 0.70f, alpha);
+                face = DrawPopupButton(btn, pressed, can ? PopupTint.Gold : PopupTint.Red, can ? 1f : 0f, false);
+            }
+            // Light inner bevel along the top and a soft one down the sides.
+            if (paint)
+            {
+                float bev = Mathf.Max(2f, rimW * 0.5f);
+                float inset = btnH * 0.18f;
+                GUI.color = new Color(1f, 0.97f, 0.86f, alpha * (maxxed ? 0.60f : can ? 0.55f : 0.40f));
+                GUI.DrawTexture(new Rect(btn.x + inset, btn.y + bev, btn.width - inset * 2f, bev), Texture2D.whiteTexture);
+                GUI.color = new Color(1f, 0.97f, 0.86f, alpha * (maxxed ? 0.25f : 0.18f));
+                GUI.DrawTexture(new Rect(btn.x + bev, btn.y + inset, bev, btn.height - inset * 2f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(btn.xMax - bev * 2f, btn.y + inset, bev, btn.height - inset * 2f), Texture2D.whiteTexture);
+            }
+            var st = GuiPool.Label(GuiSlot.FlipHint);
+            st.wordWrap = false;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.fontStyle = FontStyle.Bold;
+            var lab = new Rect(face.x + face.width * 0.06f, face.y + face.height * 0.10f, face.width * 0.88f, face.height * 0.80f);
+            if (maxxed)
+            {
+                // MAXXED stays centered; the gem sits out in the left margin, centered between
+                // the plate's inner left edge and the word. A smaller twin balances the right.
+                float lk = btnH * 0.50f;
+                st.fontSize = FitFont(st, line, lab.width - lk * 2.6f, lab.height, 16, Mathf.RoundToInt(btnH * 0.50f));
+                float tw = st.CalcSize(new GUIContent(line)).x;
+                float textL = btn.center.x - tw * 0.5f;
+                float textR = btn.center.x + tw * 0.5f;
+                float inner = btnH * 0.22f;
+                float gx = (btn.x + inner + textL) * 0.5f;
+                float gx2 = (textR + btn.xMax - inner) * 0.5f;
+                float lk2 = lk * 0.80f;
+                if (paint)
+                {
+                    DrawDiamondGlyph(new Rect(gx - lk * 0.5f, btn.center.y - lk * 0.5f, lk, lk), alpha);
+                    DrawDiamondGlyph(new Rect(gx2 - lk2 * 0.5f, btn.center.y - lk2 * 0.5f, lk2, lk2), alpha * 0.85f);
+                }
+                StampOutlined(lab, line, st, new Color(1f, 1f, 1f, alpha), 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 2, 8));
+                if (paint) DrawDiamondTwinkles(btn, alpha);
+            }
+            else
+            {
+                st.fontSize = FitFont(st, line, lab.width, lab.height, 16, Mathf.RoundToInt(btnH * 0.50f));
+                StampOutlined(lab, line, st, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.14f), 2, 8));
+            }
+            GUI.color = keep;
+            // Locked at max: the tap is swallowed (no flip, no dismiss) but nothing is charged
+            // and nothing plays.
+            if (hit && !maxxed)
+            {
+                if (Hive.TryUpgrade(slot))
                 {
                     Sfx.CardBump();
                     Haptics.Play(Haptics.Tier.Light);
                     if (_upgradeTutorOn) FinishUpgradeTutor();
                 }
                 else
+                {
                     Sfx.Deny();
+                    // Retap restarts the shake + message; never stacks.
+                    _upDenyAt = AdPause.Unscaled;
+                    _upDenyShort = Mathf.Max(0, Hive.UpgradeCost - Purse.Coins);
+                }
             }
+            if (!maxxed && !can) DrawUpgradeShortfall(outer, s, alpha);
+            else _upDenyAt = -1f;
             return hit || held;
+        }
+
+        public const string MaxxedWord = "MAXXED";
+        const float UpDenyShake = 0.35f, UpDenyPop = 0.16f, UpDenyHold = 1.6f, UpDenyFade = 0.35f;
+        float _upDenyAt = -1f;
+        int _upDenyShort;
+
+        public static string ShortfallLine(int shortBy) => "Not enough cash yet! Need " + Money.Format(shortBy) + " more";
+
+        // Friendly red caption under the brick button after a denied tap: pops in,
+        // holds ~1.6 s, fades. Drawn on top; not a hit target.
+        void DrawUpgradeShortfall(Rect btn, float s, float alpha)
+        {
+            if (_upDenyAt < 0f || !GuiPaint()) return;
+            float age = AdPause.Unscaled - _upDenyAt;
+            float end = UpDenyHold + UpDenyFade;
+            if (age > end) { _upDenyAt = -1f; return; }
+            float a = age < UpDenyHold ? 1f : 1f - (age - UpDenyHold) / UpDenyFade;
+            float pop = Mathf.Clamp01(age / UpDenyPop);
+            float scale = Mathf.Lerp(0.82f, 1f, 1f - (1f - pop) * (1f - pop)) + Mathf.Sin(pop * Mathf.PI) * 0.05f;
+            a *= alpha * Mathf.Clamp01(age / (UpDenyPop * 0.6f));
+            string line = ShortfallLine(_upDenyShort);
+            var st = GuiPool.Label(GuiSlot.FlipHintMeasure);
+            st.fontStyle = FontStyle.Bold;
+            st.wordWrap = false;
+            st.alignment = TextAnchor.MiddleCenter;
+            int hi = Mathf.RoundToInt(btn.height * 0.36f);
+            float maxW = Screen.width * 0.90f;
+            st.fontSize = FitFont(st, line, maxW - 40f * s, hi * 1.3f, 14, hi);
+            var size = st.CalcSize(new GUIContent(line));
+            float w = (size.x + 36f * s) * scale, h = (size.y + 18f * s) * scale;
+            float y = btn.yMax + 10f * s;
+            if (y + h > Screen.height - 8f * s) y = btn.y - 10f * s - h;
+            var pill = new Rect(btn.center.x - w * 0.5f, y, w, h);
+            var keep = GUI.color;
+            GUI.color = new Color(0.30f, 0.06f, 0.04f, 0.92f * a);
+            DrawBevelPlate(PopupButtonTex(PopupTint.Red, false), pill, 28f);
+            GUI.color = new Color(0.12f, 0.02f, 0.01f, 0.55f * a);
+            GUI.DrawTexture(new Rect(pill.x + h * 0.3f, pill.y + 2f, pill.width - h * 0.6f, Mathf.Max(1f, s)), Texture2D.whiteTexture);
+            GUI.color = keep;
+            st.fontSize = Mathf.RoundToInt(st.fontSize * scale);
+            StampOutlined(pill, line, st, new Color(1f, 0.80f, 0.74f, a), 0, Mathf.Clamp(Mathf.RoundToInt(st.fontSize * 0.12f), 2, 6));
+        }
+
+        // ---- MAXXED diamond look (locked) ----
+        static Texture2D _diamondPlate;
+
+        // Icy faceted plate: white-to-pale-blue with diagonal facet bands, same 96 px /
+        // 28 px-radius rounded shape as the clay buttons so DrawBevelPlate slices it alike.
+        static Texture2D DiamondPlateTex()
+        {
+            if (_diamondPlate != null) return _diamondPlate;
+            const int n = 96;
+            const float rad = 28f;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
+            { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave, name = "PopupDiamond" };
+            var px = new Color32[n * n];
+            var top = new Color(0.97f, 0.99f, 1f);
+            var mid = new Color(0.74f, 0.87f, 0.98f);
+            var bot = new Color(0.46f, 0.64f, 0.86f);
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    float d = PopupSdf(x + 0.5f, y + 0.5f, n, n, rad);
+                    float a = Mathf.Clamp01(0.65f - d);
+                    if (a <= 0f) continue;
+                    float v = y / (float)(n - 1); // 0 bottom, 1 top
+                    Color c = v > 0.5f ? Color.Lerp(mid, top, (v - 0.5f) * 2f) : Color.Lerp(bot, mid, v * 2f);
+                    // Facets: alternating diagonal bands, gently lighter/darker.
+                    float f = Mathf.Repeat((x + y * 0.9f) / 22f, 1f);
+                    float g = Mathf.Repeat((x - y * 0.9f) / 30f, 1f);
+                    c = Color.Lerp(c, Color.white, (f < 0.5f ? 0.10f : 0f) + (g < 0.35f ? 0.06f : 0f));
+                    c = Color.Lerp(c, bot, f >= 0.5f && g >= 0.35f ? 0.08f : 0f);
+                    float rim = Mathf.Clamp01((d + 3f) / 3f);
+                    c = Color.Lerp(c, bot, rim * 0.45f);
+                    c.a = a;
+                    px[y * n + x] = (Color32)c;
+                }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _diamondPlate = tex;
+            return tex;
+        }
+
+        // Plate + a slow light sweep (the shared PushButton sheen at a third speed).
+        static void DrawDiamondPlate(Rect r, float alpha)
+        {
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            DrawBevelPlate(DiamondPlateTex(), r, 28f);
+            PushButton.DrawSheen(r, Mathf.Repeat(AdPause.Unscaled / 3.6f, 1f), 0.70f * alpha, false);
+            GUI.color = Color.white;
+        }
+
+        // Small cut-diamond glyph: a stepped crown over a pointed pavilion. The pavilion is
+        // the lower half of a 45-degree square, clipped by a group at the girdle line.
+        static void DrawDiamondGlyph(Rect r, float alpha)
+        {
+            var ink = new Color(0.90f, 0.97f, 1f, alpha);
+            var dark = new Color(0.10f, 0.16f, 0.26f, alpha);
+            float o = Mathf.Max(1.5f, r.width * 0.06f);
+            float girdle = r.y + r.height * 0.40f;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                float e = pass == 0 ? o : 0f;
+                GUI.color = pass == 0 ? dark : ink;
+                var grp = new Rect(r.x - e * 2f, girdle, r.width + e * 4f, r.height * 0.62f + e * 2f);
+                GUI.BeginGroup(grp);
+                var keep = GUI.matrix;
+                var c = new Vector2(grp.width * 0.5f, 0f);
+                float side = (r.width * 0.5f + e * 1.41f) * 1.41421f;
+                GUIUtility.RotateAroundPivot(45f, c);
+                GUI.DrawTexture(new Rect(c.x - side * 0.5f, c.y - side * 0.5f, side, side), Texture2D.whiteTexture);
+                GUI.matrix = keep;
+                GUI.EndGroup();
+                GUI.DrawTexture(new Rect(r.x + r.width * 0.20f - e, r.y + r.height * 0.12f - e, r.width * 0.60f + e * 2f, r.height * 0.14f + e), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(r.x - e, r.y + r.height * 0.24f, r.width + e * 2f, r.height * 0.16f + e * 0.5f), Texture2D.whiteTexture);
+            }
+            GUI.color = new Color(0.55f, 0.72f, 0.92f, alpha);
+            GUI.DrawTexture(new Rect(r.x + r.width * 0.04f, girdle - Mathf.Max(1f, r.height * 0.02f), r.width * 0.92f, Mathf.Max(1.5f, r.height * 0.05f)), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+
+        // Four-point star glints that bloom and fade on staggered timers.
+        static readonly Vector3[] DiamondGlints =
+        {
+            new Vector3(0.12f, 0.28f, 0.0f), new Vector3(0.86f, 0.24f, 0.37f),
+            new Vector3(0.70f, 0.78f, 0.63f), new Vector3(0.28f, 0.80f, 0.18f),
+            new Vector3(0.50f, 0.14f, 0.81f),
+        };
+
+        static void DrawDiamondTwinkles(Rect r, float alpha)
+        {
+            const float period = 2.2f;
+            float now = AdPause.Unscaled;
+            for (int i = 0; i < DiamondGlints.Length; i++)
+            {
+                var g = DiamondGlints[i];
+                float u = Mathf.Repeat(now / period + g.z, 1f);
+                if (u > 0.35f) continue;               // each glint is up ~35% of its cycle
+                float k = Mathf.Sin(u / 0.35f * Mathf.PI); // 0 -> 1 -> 0
+                float len = r.height * 0.30f * k;
+                float th = Mathf.Max(1.5f, r.height * 0.035f);
+                var c = new Vector2(r.x + r.width * g.x, r.y + r.height * g.y);
+                GUI.color = new Color(1f, 1f, 1f, alpha * 0.95f * k);
+                GUI.DrawTexture(new Rect(c.x - len * 0.5f, c.y - th * 0.5f, len, th), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(c.x - th * 0.5f, c.y - len * 0.5f, th, len), Texture2D.whiteTexture);
+                float dot = th * 2.2f;
+                GUI.DrawTexture(new Rect(c.x - dot * 0.5f, c.y - dot * 0.5f, dot, dot), Texture2D.whiteTexture);
+            }
+            GUI.color = Color.white;
         }
 
         void DrawFlipHint(float y, float s, float alpha)
@@ -17321,7 +17578,8 @@ namespace FlockFive
 
         void DrawFoilSheen(Rect face, BeeFinish finish, int slot, bool inspectView)
         {
-            float t = AdPause.Unscaled;
+            // Static tier (reduce motion, old GL): the foil keeps its look but holds still.
+            float t = CardQuality.Tier == CardTier.Static ? 0f : AdPause.Unscaled;
             float phase = slot * 0.37f;
             float amp = inspectView ? 1.15f : 1f;
 
@@ -17431,44 +17689,78 @@ namespace FlockFive
             BeeFinish finish = Hive.FinishOfSlot(i);
             int n = Hive.CountOf(kindIx, finish);
             bool owned = n > 0;
-            bool flipping = _hiveFlip == i;
-            float flipU = flipping ? Mathf.Clamp01(_hiveFlipT / 0.28f) : 0f;
-            float squash = flipping ? Mathf.Abs(Mathf.Cos(flipU * Mathf.PI)) : 1f;
+            // _cardCapture: the stage is grabbing a flat neutral face (no flip, no tilt, no sheen); see StageFlip.
+            bool capturing = _cardCapture && inspectView;
+            bool flipping = _hiveFlip == i && !capturing;
+            float flipU = flipping ? Mathf.Clamp01(_hiveFlipT / CardSlab.FlipSeconds) : 0f;
+            bool slab = flipping && inspectView && CardQuality.Tier != CardTier.Static;
+            float flipA = slab ? CardSlab.Angle(flipU) : flipU * Mathf.PI;
+            float squash = flipping ? Mathf.Abs(Mathf.Cos(flipA)) : 1f;
             // Sleeves always show the front; the back only lives in inspect.
             bool faceBack = inspectView && _hiveFaceBack[i];
-            bool showBack = inspectView && (flipping ? (flipU >= 0.5f ? !faceBack : faceBack) : faceBack);
+            bool showBack = inspectView && (capturing ? _cardCaptureBack : flipping ? (flipU >= 0.5f ? !faceBack : faceBack) : faceBack);
+
+            // Full tier: the real thick flip through the camera/RT stage. On any failure it demotes and the slab below draws instead.
+            if (slab && CardQuality.Tier == CardTier.Full && StageFlip(card, i, s, flipU, finish))
+                return;
+
+            // Tilt is live only on a settled, playing, still inspect card.
+            bool live = inspectView && !capturing && !flipping && CardTilt.Playing;
+            Vector2 tilt = live ? _cardTilt : Vector2.zero;
 
             float cx = card.center.x;
             float w = card.width * Mathf.Max(0.08f, squash);
             var r = new Rect(cx - w * 0.5f, card.y, w, card.height);
+            Rect wallR = default;
+            if (slab) CardSlab.Footprint(card, flipA, out r, out wallR);
 
             var kind = Hive.Roster[kindIx];
             Color wood = AlbumWood(kind.Tint, owned);
             GUI.color = new Color(0f, 0f, 0f, 0.35f);
-            GUI.DrawTexture(new Rect(r.x + 4f, r.y + 6f, r.width, r.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(r.x + 4f, r.y + 6f, r.width + wallR.width, r.height), Texture2D.whiteTexture);
             GUI.color = wood;
             GUI.DrawTexture(r, Texture2D.whiteTexture);
             GUI.color = Color.white;
+            if (wallR.width > 0.5f) CardSlab.DrawWall(wallR, 0.5f + 0.5f * Mathf.Sin(flipA));
 
             // Inner face — use the plate; type needs every pixel for 55+ reading.
             // FaceOf is the rect the thumbnail fit test measures.
             var face = CardText.FaceOf(r);
             Color faceFill = AlbumFace(kind.Tint, owned);
-            GUI.color = faceFill;
-            GUI.DrawTexture(face, Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            // Owned cards get the shared renderer: FaceTheme art + honey-wood/brass frame (CardArt).
+            // If the bake budget is spent this frame the flat plate stands in and the art lands next frame.
+            bool themed = owned && CardArt.DrawBase(r, face, kind, wood, inspectView, CardSlab.Parallax(tilt, CardSlab.DepthArt, card.width, false));
+            FaceStyle fstyle = default;
+            if (themed) fstyle = FaceThemes.Of(FaceThemes.Resolve(kind), kind.Tint);
+            else
+            {
+                GUI.color = faceFill;
+                GUI.DrawTexture(face, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
 
             // Foil sheen stays inside the face, including the rounded corners.
-            if (owned && finish != BeeFinish.Normal && squash > 0.2f)
+            if (owned && !capturing && squash > 0.2f && live && CardQuality.Tier != CardTier.Static)
+            {
+                // Live inspect: glare (and foil prism) follow the tilt only. Hold the phone still and nothing moves.
+                var local = new Rect(0f, 0f, face.width, face.height);
+                CardClip.Begin(face);
+                CardSlab.DrawPrism(local, finish, tilt, 1f);
+                CardSlab.DrawGlare(local, finish, tilt, 0.55f + 0.45f * Mathf.Min(1f, tilt.magnitude));
+                if (!themed) CardClip.Corners(local, faceFill, face.width * 0.06f);
+                CardClip.End();
+            }
+            else if (owned && finish != BeeFinish.Normal && squash > 0.2f && !capturing)
             {
                 var local = new Rect(0f, 0f, face.width, face.height);
                 CardClip.Begin(face);
                 DrawFoilSheen(local, finish, i, inspectView);
-                CardClip.Corners(local, faceFill, face.width * 0.06f);
+                if (!themed) CardClip.Corners(local, faceFill, face.width * 0.06f);
                 CardClip.End();
             }
 
             string flavor = HiveBackCopy(CardCopy.Shown(kind));
+            if (showBack) flavor = HiveBackCopy(CardCopy.BackOwn(kind));
             int honey = showBack && BadgerSchedule.Enabled ? Hive.HoneyOfSlot(i) : 0;
             if (!owned)
             {
@@ -17494,31 +17786,44 @@ namespace FlockFive
             }
             else
             {
+                // Front lettering rides at its own depth (whole pixels, same box size, so nothing re-wraps). The back stays put: combs hit-test on it.
+                var tOff = showBack ? Vector2.zero : CardSlab.Parallax(tilt, CardSlab.DepthText, card.width, true);
+                var tFace = new Rect(face.x + tOff.x, face.y + tOff.y, face.width, face.height);
+                if (themed) DrawThemedBackdrop(tFace, fstyle, showBack, honey, inspectView);
                 if (!showBack)
                 {
                     float beeShare = inspectView ? 0.24f : 0.38f;
                     float bh = face.height * beeShare;
                     var br = new Rect(face.center.x - bh * 0.5f, face.y + face.height * 0.03f, bh, bh);
-                    CardCritter.Draw(br, kind.Id, kind.Tint, 1f);
+                    var gOff = CardSlab.Parallax(tilt, CardSlab.DepthGlow, card.width, false);
+                    var bOff = CardSlab.Parallax(tilt, CardSlab.DepthBee, card.width, false);
+                    if (themed) CardArt.DrawGlow(new Rect(br.x + gOff.x - bh * 0.35f, br.y + gOff.y - bh * 0.30f, bh * 1.7f, bh * 1.6f), fstyle.Glow, 0.55f);
+                    CardCritter.Draw(new Rect(br.x + bOff.x, br.y + bOff.y, br.width, br.height), kind.Id, kind.Tint, 1f);
                 }
-                if (flipping && inspectView)
-                    DrawBakedFace(card, face, kind, flavor, finish, showBack, honey);
-                else if (!showBack)
+                if (themed) CardArt.UseInk(fstyle);
+                try
                 {
-                    var textFace = CardText.TextFaceOf(face, inspectView);
-                    CardText.DrawFront(textFace, kind.Name, flavor, inspectView, s);
-                    if (finish != BeeFinish.Normal)
+                    if (flipping && inspectView)
+                        DrawBakedFace(card, face, kind, flavor, finish, showBack, honey, themed, fstyle);
+                    else if (!showBack)
                     {
-                        CardText.DrawFinish(
-                            CardText.FinishOf(face, inspectView),
-                            FinishInk.Label(finish),
-                            inspectView,
-                            s,
-                            FinishInk.Tag(finish));
+                        var textFace = CardText.TextFaceOf(tFace, inspectView);
+                        CardText.DrawFront(textFace, kind.Name, flavor, inspectView, s);
+                        if (finish != BeeFinish.Normal)
+                        {
+                            var band = CardText.FinishOf(tFace, inspectView);
+                            CardArt.ResetInk();
+                            CardText.DrawFinish(band, FinishInk.Label(finish), inspectView, s, FinishInk.Tag(finish));
+                        }
                     }
+                    else
+                        CardText.DrawBack(face, kind.Name, flavor, honey, kind.Tint, finish, inspectView, s);
                 }
-                else
-                    CardText.DrawBack(face, kind.Name, flavor, honey, kind.Tint, finish, inspectView, s);
+                finally
+                {
+                    CardArt.ResetInk();
+                }
+                if (themed) CardArt.DrawJewel(r, finish, inspectView && !capturing && CardQuality.Tier != CardTier.Static ? AdPause.Unscaled : 0f, i);
                 if (!showBack && n > 1)
                 {
                     var cnt = GuiPool.Label(GuiSlot.AlbumCount);
@@ -17533,6 +17838,7 @@ namespace FlockFive
 
             if (!inspectView && owned && HiveCardFresh(i))
                 DrawNewPill(card, s);
+            if (capturing) return;
 
             // Owned sleeve opens inspect. A locked "?" re-shows the how-to and stays shut.
             if (tappable && !inspectView && !flipping && _hivePageTurn >= 0.55f && _hiveInspect < 0
@@ -17543,9 +17849,81 @@ namespace FlockFive
             }
         }
 
+        // Tier Full flip. First flip frame: draw the front and the back flat and neutral, grab each from the frame buffer, then the
+        // stage's opaque slab covers that same frame (the grabs never reach the screen). Later frames: stage only.
+        // Returns false when the stage could not run; the caller then draws the OnGUI slab flip.
+        bool StageFlip(Rect card, int i, float s, float flipU, BeeFinish finish)
+        {
+            if (!CardStage.Available) return false;
+            if (_stageSlot != i)
+            {
+                bool ok;
+                _cardCapture = true;
+                _hitLock++;
+                try
+                {
+                    _cardCaptureBack = false;
+                    DrawBeeAlbumCard(card, i, s, true, false);
+                    ok = CardStage.Grab(false, card);
+                    _cardCaptureBack = true;
+                    DrawBeeAlbumCard(card, i, s, true, false);
+                    ok &= CardStage.Grab(true, card);
+                }
+                finally
+                {
+                    _cardCapture = false;
+                    _hitLock--;
+                }
+                if (!ok) return false;
+                _stageSlot = i;
+            }
+            float angle = CardSlab.Angle(flipU);
+            CardSlab.Footprint(card, angle, out var face, out var wall);
+            float x0 = Mathf.Min(face.x, wall.width > 0.5f ? wall.x : face.x), x1 = Mathf.Max(face.xMax, wall.width > 0.5f ? wall.xMax : face.xMax);
+            GUI.color = new Color(0f, 0f, 0f, 0.35f);
+            GUI.DrawTexture(new Rect(x0 + 4f, face.y + 6f, x1 - x0, face.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var tiltNow = CardTilt.Playing ? CardTilt.Value * _tiltBlend : Vector2.zero;
+            return CardStage.DrawFlip(card, angle, _hiveFaceBack[i], tiltNow, finish, CardSlab.Lift(angle) - 1f);
+        }
+
+        // Night themes lay a soft dark scrim under the lettering (and the combs on the back) so cream-on-sky
+        // stays above 4.5:1; every themed card gets a glow behind the comb row.
+        void DrawThemedBackdrop(Rect face, in FaceStyle st, bool showBack, int honey, bool inspectView)
+        {
+            CardText.FaceBands(face, inspectView, showBack, showBack && honey > 0, out var titleR, out var flavorR);
+            if (st.Night)
+            {
+                float padX = face.width * 0.04f;
+                float top = titleR.y - face.height * 0.01f;
+                float bot = flavorR.y + flavorR.height * (showBack ? 1.0f : 0.62f);
+                CardArt.DrawScrim(new Rect(titleR.x - padX, top, titleR.width + padX * 2f, Mathf.Max(8f, bot - top)), 0.30f);
+            }
+            if (showBack && honey > 0)
+            {
+                int cells = CardText.HoneyBand(face, honey, inspectView, _honeyHits);
+                if (cells > 0)
+                {
+                    float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
+                    for (int c = 0; c < cells; c++)
+                    {
+                        var h = _honeyHits[c];
+                        if (h.x < x0) x0 = h.x;
+                        if (h.y < y0) y0 = h.y;
+                        if (h.xMax > x1) x1 = h.xMax;
+                        if (h.yMax > y1) y1 = h.yMax;
+                    }
+                    var zone = new Rect(x0, y0, x1 - x0, y1 - y0);
+                    if (st.Night)
+                        CardArt.DrawScrim(new Rect(zone.x - zone.width * 0.10f, zone.y - zone.height * 0.06f, zone.width * 1.20f, zone.height * 1.14f), 0.40f);
+                    CardArt.DrawGlow(new Rect(zone.x - zone.width * 0.14f, zone.y - zone.height * 0.18f, zone.width * 1.28f, zone.height * 1.36f), st.Glow, 0.55f);
+                }
+            }
+        }
+
         // Words are painted at the settled inspect size, then stretched. A live
         // label would rewrap as the card pinches through the flip.
-        void DrawBakedFace(Rect card, Rect face, BeeKind kind, string flavor, BeeFinish finish, bool showBack, int honey)
+        void DrawBakedFace(Rect card, Rect face, BeeKind kind, string flavor, BeeFinish finish, bool showBack, int honey, bool themed, FaceStyle fstyle)
         {
             Rect src = card;
             var settled = AlbumInspectRect(Screen.width, Screen.height);
@@ -17566,8 +17944,10 @@ namespace FlockFive
                 Full = true,
                 Back = showBack,
                 Honey = showBack && honey > 0,
-                Ink = new Color(0.16f, 0.07f, 0.02f, 1f),
+                Ink = themed ? fstyle.Ink : new Color(0.16f, 0.07f, 0.02f, 1f),
                 FinishInk = FinishInk.Tag(finish),
+                Themed = themed,
+                InkOuter = themed ? fstyle.InkOuter : default,
             });
             if (page.Tex != null)
                 GUI.DrawTexture(face, page.Tex, ScaleMode.StretchToFill, true);
@@ -17596,6 +17976,43 @@ namespace FlockFive
         }
 
         // True when a comb took the tap. The card underneath must not flip.
+        enum CardTap { None, Honey, Card }
+
+        // Upgrade shows only in the hive/garden album, not on the round popup.
+        bool UpgradeContext => _home == HomeFace.Hive && !_levelHive;
+
+        // The one tap path for every card inspect (album, round popup, tutor).
+        // Honeycombs on the back win first: squish + smudges, never a flip.
+        // Anything else on the card is a flip. Demo taps are swallowed.
+        CardTap InspectCardTap(Rect big, int ix, bool armed)
+        {
+            if (_hiveTutorOn)
+            {
+                HitPad(big, out _);
+                return CardTap.None;
+            }
+            // Combs are polled whenever the back is up and the card is still, even while
+            // another control is pressed, so a comb tap can never fall through to the flip.
+            bool combs = armed && _hiveFlip < 0;
+            if (combs && PokeHoneycombs(big, ix)) return CardTap.Honey;
+            if (armed && HitPad(big, out _) && !CombUnder(big, ix)) return CardTap.Card;
+            return CardTap.None;
+        }
+
+        // True when the press is on a honeycomb cell of the showing back (pad-free check).
+        bool CombUnder(Rect card, int ix)
+        {
+            var e = Event.current;
+            if (e == null || (uint)ix >= (uint)_hiveFaceBack.Length || !_hiveFaceBack[ix]) return false;
+            if (!BadgerSchedule.Enabled) return false;
+            int honey = Hive.HoneyOfSlot(ix);
+            if (honey <= 0) return false;
+            int n = CardText.HoneyBand(CardText.FaceOf(card), honey, true, _honeyHits);
+            for (int i = 0; i < n; i++)
+                if (_honeyHits[i].Contains(e.mousePosition)) return true;
+            return false;
+        }
+
         bool PokeHoneycombs(Rect card, int ix)
         {
             if ((uint)ix >= (uint)_hiveFaceBack.Length || !_hiveFaceBack[ix]) return false;
@@ -17760,12 +18177,22 @@ namespace FlockFive
                 if (!_levelHiveDrag) EaseHiveCarousel(count);
             }
 
+            // b88 (Brandon): few cards sit still, side by side and fully inside the panel.
+            // Only when more than fit (CollectedLayout.FitCount) does the carousel run.
+            var stageProbe = new Rect(box.x + 8f * s, titleR.yMax + 6f * s, box.width - 16f * s,
+                Mathf.Max(48f * s, box.yMax - 10f * s - (titleR.yMax + 6f * s)));
+            bool still = CollectedLayout.Static(stageProbe, count);
             float capH = 0f;
-            float dotsH = count > 1 ? 26f * s : 0f;
+            float dotsH = !still && count > 1 ? 26f * s : 0f;
             float stageTop = titleR.yMax + 6f * s;
             float stageBot = box.yMax - 10f * s - capH - dotsH;
             float stageH = Mathf.Max(48f * s, stageBot - stageTop);
             var stage = new Rect(box.x + 8f * s, stageTop, box.width - 16f * s, stageH);
+            if (still)
+            {
+                DrawCollectedStatic(stage, count, s);
+                return;
+            }
             float cardH = stage.height * 0.94f;
             float cardW = Mathf.Min(cardH / 1.35f, stage.width * 0.62f);
             cardH = cardW * 1.35f;
@@ -17776,8 +18203,11 @@ namespace FlockFive
 
             int centerIx = HiveCarousel.Nearest(shown, count);
 
-            GUI.BeginGroup(stage);
-            float cx = stage.width * 0.5f;
+            // Clip at the panel's inner edge, not the stage, and fade the last stretch.
+            // A sliding card fades under the edge instead of vanishing at a hard line.
+            var clip = new Rect(box.x + edge, stage.y, box.width - edge * 2f, stage.height);
+            GUI.BeginGroup(clip);
+            float cx = stage.center.x - clip.x;
             float cy = stage.height * 0.5f;
             Rect centerLocal = default;
             for (int pass = 0; pass < 2; pass++)
@@ -17787,31 +18217,25 @@ namespace FlockFive
                     bool center = i == centerIx;
                     if (center != (pass == 1)) continue;
                     float off = HiveWrap(i - shown, count);
-                    if (!center && Mathf.Abs(off) > 1.25f) continue;
                     float sc = Mathf.Lerp(1f, 0.72f, Mathf.Clamp01(Mathf.Abs(off)));
                     float w = cardW * sc;
                     float h = cardH * sc;
                     var r = new Rect(cx + off * stride - w * 0.5f, cy - h * 0.5f, w, h);
+                    // Cull only once fully past the clip (behind the fade), never mid-slide.
+                    if (!center && (r.xMax < 0f || r.x > clip.width)) continue;
                     if (center) centerLocal = r;
                     int slot = _levelBees[i].Slot;
                     if ((uint)slot < (uint)Hive.AlbumSlots)
                         DrawBeeAlbumCard(r, slot, s, false, false);
                 }
             }
+            CollectedLayout.DrawEdgeFades(new Rect(0f, 0f, clip.width, clip.height),
+                CollectedLayout.FadeW(clip), new Color(0.10f, 0.07f, 0.04f, 0.97f));
             bool tap = false;
             int dir = 0;
-            if (_levelHiveSwallow)
-            {
-                var swallow = Event.current;
-                bool released = swallow != null && swallow.type == EventType.MouseUp && swallow.button == 0;
-                bool up = Mouse.current == null || !Mouse.current.leftButton.isPressed;
-                if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed)
-                    up = false;
-                if (released || (swallow != null && swallow.type == EventType.Repaint && up))
-                    _levelHiveSwallow = false;
-            }
+            if (LevelHiveSwallowing()) { }
             else if (_hiveInspect < 0)
-                CarouselDrag(new Rect(0f, 0f, stage.width, stage.height), s, count, out tap, out dir);
+                CarouselDrag(new Rect(stage.x - clip.x, 0f, stage.width, stage.height), s, count, out tap, out dir);
             GUI.EndGroup();
 
             if (dir != 0)
@@ -17821,7 +18245,7 @@ namespace FlockFive
             }
             else if (tap)
             {
-                int side = HiveCarousel.TapDir(_levelHiveDrag0.x, stage.width, count);
+                int side = HiveCarousel.TapDir(_levelHiveDrag0.x - (stage.x - clip.x), stage.width, count);
                 if (side != 0)
                 {
                     _levelHivePick = (_levelHivePick + side + count) % count;
@@ -17830,8 +18254,8 @@ namespace FlockFive
                 else
                 {
                     var from = centerLocal;
-                    from.x += stage.x;
-                    from.y += stage.y;
+                    from.x += clip.x;
+                    from.y += clip.y;
                     OpenHiveInspect(_levelBees[centerIx].Slot, from);
                 }
             }
@@ -17869,6 +18293,41 @@ namespace FlockFive
                 string page = (centerIx + 1) + " / " + count;
                 float pageH = floor + 8f;
                 StampOutlined(new Rect(box.x, box.yMax - pageH - 6f * s, box.width, pageH), page, pageSt, new Color(1f, 0.94f, 0.72f), 1, 1);
+            }
+        }
+
+        // The press that opened the panel must lift before cards take taps.
+        bool LevelHiveSwallowing()
+        {
+            if (!_levelHiveSwallow) return false;
+            var swallow = Event.current;
+            bool released = swallow != null && swallow.type == EventType.MouseUp && swallow.button == 0;
+            bool up = Mouse.current == null || !Mouse.current.leftButton.isPressed;
+            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed)
+                up = false;
+            if (released || (swallow != null && swallow.type == EventType.Repaint && up))
+                _levelHiveSwallow = false;
+            return true;
+        }
+
+        // 1-3 cards (whatever CollectedLayout.FitCount allows): side by side, fully inside
+        // the panel, no scrolling. Tap a card to inspect it; inspect flips it and runs the
+        // honeycomb egg through the same InspectCardTap path as the album.
+        void DrawCollectedStatic(Rect stage, int count, float s)
+        {
+            bool swallowing = LevelHiveSwallowing();
+            for (int i = 0; i < count; i++)
+            {
+                var r = CollectedLayout.Slot(stage, i, count);
+                int slot = _levelBees[i].Slot;
+                if ((uint)slot >= (uint)Hive.AlbumSlots) continue;
+                DrawBeeAlbumCard(r, slot, s, false, false);
+                if (!swallowing && _hiveInspect < 0 && HitPad(r, out _))
+                {
+                    _levelHivePick = i;
+                    _levelHiveShown = i;
+                    OpenHiveInspect(slot, r);
+                }
             }
         }
 
