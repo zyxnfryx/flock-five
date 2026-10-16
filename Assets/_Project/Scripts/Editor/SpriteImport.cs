@@ -7,7 +7,7 @@ namespace FlockFive.Editor
     public sealed class SpriteImport : AssetPostprocessor
     {
         // Bump forces a reimport so the platform overrides land without hand-editing metas.
-        public override uint GetVersion() => 75;
+        public override uint GetVersion() => 76;
 
         void OnPreprocessTexture()
         {
@@ -232,7 +232,8 @@ namespace FlockFive.Editor
                 // b112: honey squish takes stay PCM / Decompress On Load (the short-SFX ADPCM default below rewrote them).
                 s.loadType = AudioClipLoadType.DecompressOnLoad;
                 s.compressionFormat = AudioCompressionFormat.PCM;
-                s.quality = 1f;
+                s.quality = 0.7f;
+                s.preloadAudioData = true;
             }
             else if (assetPath.Contains("zfx_jingle"))
             {
@@ -251,6 +252,14 @@ namespace FlockFive.Editor
             imp.defaultSampleSettings = s;
             imp.forceToMono = true;
             imp.loadInBackground = theme;
+            if (assetPath.Contains("/Audio/Squish/"))
+            {
+                imp.defaultSampleSettings = s;
+                imp.loadInBackground = false;
+                var sq = new SerializedObject(imp);
+                var nm = sq.FindProperty("m_Normalize");
+                if (nm != null) { nm.boolValue = false; sq.ApplyModifiedPropertiesWithoutUndo(); }
+            }
             if (assetPath.Contains("zfx_jingle"))
             {
                 // Studio card jingle: decompress on load, preloaded, stereo, not normalized.
