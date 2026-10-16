@@ -589,7 +589,7 @@ namespace FlockFive
                             continue;
                         }
                         float fall = _spd[i] * dt * Mathf.Lerp(0.18f, 1f, wet);
-                        float lean = (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * SeasonMotion.RainLean();
+                        float lean = (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * SeasonMotion.RainLean() * StormGlass.StreakLeanK;
                         float nx = _x[i] - lean * dt * wet;
                         float ny = _y[i] - fall;
                         if (ny < _floor || nx < left - Edge || nx > right + Edge)
