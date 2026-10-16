@@ -563,11 +563,11 @@ namespace FlockFive
                 Frame(out float left, out float right, out float bottom, out float top);
                 _floor = bottom - Edge;
                 float wet = _wet;
-                int want = RainDensity.Count(right - left, top - bottom);
-                if (want != _live)
+                int wantDrops = RainDensity.Count(right - left, top - bottom);
+                if (wantDrops != _live)
                 {
                     // Glass size changed (rotation, iPad split view). Spare quads collapse to a point.
-                    _live = want;
+                    _live = wantDrops;
                     _colQ = -1;
                 }
                 for (int i = _live; i < _x.Length; i++) PlaceDrop(i, _x[i], _y[i], false);
