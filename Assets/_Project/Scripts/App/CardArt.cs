@@ -672,6 +672,27 @@ namespace FlockFive
             return _ovalTex;
         }
 
+        static Texture2D _sheenTex;
+        static Texture2D SheenTex()
+        {
+            if (_sheenTex != null) return _sheenTex;
+            const int W = 64, H = 32;
+            var px = new Color32[W * H];
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    float u = (x + 0.5f) / W, v = (y + 0.5f) / H;
+                    float dx = u * 2f - 1f, dy = v * 2f - 1f;
+                    float mask = Mathf.Clamp01((1f - Mathf.Sqrt(dx * dx + dy * dy)) * 10f);
+                    float d = Mathf.Abs((u + (1f - v) * 0.45f) - 0.62f);   // diagonal band, lower-left to upper-right
+                    float band = Mathf.Clamp01(1f - d / 0.12f);
+                    band *= band * (3f - 2f * band);
+                    px[y * W + x] = new Color32(255, 255, 255, B(band * 0.85f * mask));
+                }
+            _sheenTex = Make(px, W, H, "CardSheen");
+            return _sheenTex;
+        }
+
         // Normal: amber. Holo: shifting prismatic. Inverse Rainbow: cycling rainbow. All get a specular glint.
         // `t` is seconds (0 on the static grid).
         public static void DrawJewel(Rect card, BeeFinish finish, float t, int slot)
@@ -687,20 +708,23 @@ namespace FlockFive
                 DrawGlow(new Rect(r.x - r.width * 0.30f, r.y - r.height * 0.9f, r.width * 1.6f, r.height * 2.8f), baseC, 0.45f);
             GUI.color = baseC;
             GUI.DrawTexture(r, oval, ScaleMode.StretchToFill, true);
-            if (finish != BeeFinish.Normal)
+            // Fixed diagonal sheen, clipped to the oval by its own alpha. It never travels, so it can't read as a second oval;
+            // Holo/Inverse tint it with the complementary hue and let it breathe.
             {
-                // second hue band slides across for the prismatic read
-                var c2 = finish == BeeFinish.Holo ? Hue(0.80f - 0.16f * Mathf.Sin(t * 1.1f + slot)) : Hue(t * 0.30f + 0.5f + slot * 0.07f);
-                c2.a = 0.62f;
-                float k = 0.5f + 0.5f * Mathf.Sin(t * 1.6f + slot);
-                var half = new Rect(r.x + r.width * (0.10f + 0.40f * k), r.y + r.height * 0.10f, r.width * 0.50f, r.height * 0.80f);
-                GUI.color = c2;
-                GUI.DrawTexture(half, oval, ScaleMode.StretchToFill, true);
+                Color sc = Color.white;
+                float breathe = 0.55f + 0.35f * Mathf.Sin(t * 1.8f + slot);
+                if (finish != BeeFinish.Normal)
+                {
+                    sc = finish == BeeFinish.Holo ? Hue(0.80f - 0.16f * Mathf.Sin(t * 1.1f + slot)) : Hue(t * 0.30f + 0.5f + slot * 0.07f);
+                    sc = Color.Lerp(sc, Color.white, 0.60f);
+                }
+                sc.a = finish == BeeFinish.Normal ? 0.45f : breathe;
+                GUI.color = sc;
+                GUI.DrawTexture(r, SheenTex(), ScaleMode.StretchToFill, true);
             }
-            // specular glint
-            float gk = Mathf.Sin(t * 2.2f + slot * 0.9f);
-            float gs = r.height * 1.3f * (0.85f + 0.15f * Mathf.Sin(t * 5f));
-            float gx = r.center.x - r.width * 0.18f + r.width * 0.16f * gk, gy = r.y + r.height * 0.30f;
+            // specular glint: fixed spot upper-left, twinkles in size only
+            float gs = r.height * 1.1f * (0.85f + 0.15f * Mathf.Sin(t * 4.5f + slot));
+            float gx = r.x + r.width * 0.30f, gy = r.y + r.height * 0.30f;
             GUI.color = new Color(1f, 1f, 0.96f, 0.95f);
             GUI.DrawTexture(new Rect(gx - gs * 0.5f, gy - gs * 0.5f, gs, gs), StarTex(), ScaleMode.StretchToFill, true);
             GUI.color = Color.white;
