@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using System.IO;
 using System.Reflection;
 using UnityEngine;
 
@@ -170,12 +171,15 @@ namespace FlockFive.Editor
                 coveredSpawns > 0 && clearSpawns * 2 > coveredSpawns * 3, // b116: calmer spawn rate (#149) compresses the ratio to ~1.95x; still clearly fewer under cover
                 "covered " + coveredSpawns + " clear " + clearSpawns);
 
+            // b117: a drop grows from nothing, spawns nearly round, and gathers into a round head.
             StormGlass.Shape(0f, 30f, out float rx0, out float ry0, out float splat0);
+            StormGlass.Shape(StormGlass.GrowDur, 30f, out float rxg, out float ryg, out float splatg);
             StormGlass.Shape(StormGlass.SplatDur, 30f, out float rx1, out float ry1, out float splat1);
             Check("gathers-from-a-splat",
-                splat0 > 0.9f && rx0 > ry0 * 1.6f && ry0 > 8f
+                rx0 == 0f && ry0 == 0f && splat0 > 0.9f
+                && rxg > 30f && rxg / ryg < 1.5f && splatg > 0.05f
                 && splat1 < 0.05f && Mathf.Abs(rx1 - ry1) < 0.2f && rx1 > 28f && rx1 < 32f,
-                "splat " + splat0.ToString("0.00") + " " + rx0.ToString("0.0") + "x" + ry0.ToString("0.0")
+                "t0 " + rx0.ToString("0.0") + " grown " + rxg.ToString("0.0") + "x" + ryg.ToString("0.0")
                 + " bead " + splat1.ToString("0.00") + " " + rx1.ToString("0.0"));
 
             beads[0] = new StormGlass.Bead
@@ -212,7 +216,7 @@ namespace FlockFive.Editor
             float trailSpawn = 1f;
             int trailSpeck = 0;
             int tn = 1;
-            for (int step = 0; step < 40; step++)
+            for (int step = 0; step < 90; step++)
                 tn = Step(beads, tn, 1f / 60f, true, 0f, blocks, 0, ref trailRng, ref trailSpawn, specks, ref trailSpeck);
             float speckLo = 99f;
             for (int i = 0; i < trailSpeck; i++)
@@ -333,7 +337,7 @@ namespace FlockFive.Editor
             float amid = StormGlass.Alpha(0.5f, 1.4f);
             float aEnd = StormGlass.Alpha(1.4f, 1.4f);
             float stickyMid = StormGlass.Alpha(2f, 4f, StormGlass.Sticky);
-            Check("alpha-holds-then-ends", a0 > 0.9f && amid > 0.9f && aEnd == 0f && stickyMid < 0.85f && stickyMid > 0.5f,
+            Check("alpha-holds-then-ends", a0 == 0f && amid > 0.9f && aEnd == 0f && stickyMid < 0.85f && stickyMid > 0.5f,
                 "0 " + a0.ToString("0.00") + " mid " + amid.ToString("0.00") + " end " + aEnd.ToString("0.00")
                 + " sticky " + stickyMid.ToString("0.00"));
 
@@ -463,6 +467,131 @@ namespace FlockFive.Editor
                 StormGlass.BlocksTaps == false && noPointer && (reqs == null || reqs.Length == 0)
                 && cols == 0 && cols2 == 0 && kids == 0,
                 "col " + cols + " col2 " + cols2 + " kids " + kids);
+
+            {
+                // b117: every new drop and speck fades in from zero alpha and zero size, no first-frame highlight.
+                float bA0 = StormGlass.Alpha(0f, 4f, StormGlass.Slide);
+                float bA1 = StormGlass.Alpha(0.02f, 4f, StormGlass.Slide);
+                float sA0 = StormGlass.SpeckAlpha(0f, 0.5f);
+                float sA1 = StormGlass.SpeckAlpha(0.01f, 0.5f);
+                float stA0 = StormGlass.Alpha(0f, 4f, StormGlass.Sticky);
+                bool full = StormGlass.Alpha(0.3f, 4f, StormGlass.Slide) > 0.99f && StormGlass.SpeckAlpha(0.25f, 1f) > 0.9f;
+                bool grows = StormGlass.SpeckRadius(0f, 10f) == 0f && StormGlass.SpeckRadius(StormGlass.SpeckGrow, 10f) > 9.99f
+                    && StormGlass.SpeckRadius(0.02f, 10f) < 1f;
+                // Every spawned bead and burst speck starts invisible.
+                var ar = new StormGlass.Rng { State = 4242u };
+                float asp = 0f; int an = 0, ask = 0;
+                float worst = 0f;
+                for (int step = 0; step < 1200; step++)
+                {
+                    an = Step(beads, an, 1f / 60f, true, 1f, blocks, 0, ref ar, ref asp, specks, ref ask);
+                    for (int i = 0; i < an; i++)
+                        if (beads[i].Age < 0.02f)
+                        {
+                            float va = StormGlass.Alpha(beads[i].Age, beads[i].Life, beads[i].Kind);
+                            if (va > worst) worst = va;
+                        }
+                    for (int i = 0; i < ask; i++)
+                        if (specks[i].Age < 0.01f)
+                        {
+                            float va = StormGlass.SpeckAlpha(specks[i].Age, specks[i].Life);
+                            if (va > worst) worst = va;
+                        }
+                }
+                Check("fade-in-from-zero-no-first-frame-dot",
+                    bA0 == 0f && stA0 == 0f && sA0 == 0f && bA1 < 0.05f && sA1 < 0.05f && full && grows && worst < 0.08f,
+                    "bead " + bA1.ToString("0.000") + " speck " + sA1.ToString("0.000") + " worstNew " + worst.ToString("0.000"));
+            }
+
+            {
+                // b117: at most BigCap slow big teardrops alive, down the screen sides, slower than a small bead.
+                int bigPeak = 0, bigSeen = 0, centre = 0;
+                float sc = StormGlass.ScaleFor(H);
+                for (int sd = 0; sd < 40; sd++)
+                {
+                    var br = new StormGlass.Rng { State = (uint)(sd * 7919 + 3) };
+                    float bs = 0f; int bn = 0, bk = 0;
+                    for (int step = 0; step < 1800; step++)
+                    {
+                        bn = Step(beads, bn, 1f / 60f, true, 1f, blocks, 0, ref br, ref bs, specks, ref bk);
+                        int c = StormGlass.CountBig(beads, bn, sc);
+                        if (c > bigPeak) bigPeak = c;
+                        for (int i = 0; i < bn; i++)
+                            if (beads[i].Age == 0f && StormGlass.IsBig(beads[i].Radius, sc))
+                            {
+                                bigSeen++;
+                                float u = (beads[i].X - 0f) / W;
+                                if (u > 0.30f && u < 0.70f) centre++;
+                            }
+                    }
+                }
+                float smallTerm = StormGlass.SlideTerm(12f, 1f);
+                float bigTerm = StormGlass.SlideTerm(60f, 1f);
+                var form = new StormGlass.Bead { Radius = 60f, Age = 1.2f, Life = 4f, Vy = -StormGlass.SlideTerm(60f, 1f), Kind = StormGlass.Slide };
+                StormGlass.Form(form, 1f, out float frx, out float fry, out _, out float tail);
+                var young = new StormGlass.Bead { Radius = 60f, Age = 0.05f, Life = 4f, Vy = -5f, Kind = StormGlass.Slide };
+                StormGlass.Form(young, 1f, out _, out _, out _, out float tailYoung);
+                bool stick = false, run = false;
+                for (int k = 0; k < 400; k++) { if (StormGlass.StickWindow(k * 0.05f, 1f)) stick = true; else run = true; }
+                Check("big-drops-capped-at-two-slow-teardrops-on-the-sides",
+                    StormGlass.BigCap == 2 && bigPeak <= 2 && bigSeen > 0 && centre == 0
+                    && bigTerm > smallTerm && bigTerm < StormGlass.Terminal(60f, 1f) * 0.5f
+                    && fry > frx && tail > young.Radius * 2f && tailYoung < tail * 0.5f && stick && run,
+                    "peak " + bigPeak + " seen " + bigSeen + " centre " + centre + " tail " + tail.ToString("0") + " young " + tailYoung.ToString("0"));
+            }
+
+            {
+                // b117: a solved level stops every rain effect at once and the next garden starts clean.
+                bool flags = StormGlass.Halted(true, false, false) && StormGlass.Halted(false, true, false)
+                    && StormGlass.Halted(false, false, true) && !StormGlass.Halted(false, false, false);
+                bool mul = StormGlass.HaltMul(0f) == 1f && StormGlass.HaltMul(StormGlass.HaltFade) == 0f
+                    && StormGlass.HaltMul(StormGlass.HaltFade * 0.5f) > 0.4f && StormGlass.HaltMul(StormGlass.HaltFade * 0.5f) < 0.6f;
+                // Rain in full swing, then the level is solved: wet 0 means nothing spawns, live drops age out or are cleared.
+                var hr = new StormGlass.Rng { State = 99u };
+                float hs = 0f; int hn = 0, hk = 0;
+                for (int step = 0; step < 900; step++)
+                    hn = Step(beads, hn, 1f / 60f, true, 1f, blocks, 0, ref hr, ref hs, specks, ref hk);
+                bool wasRaining = hn > 0 || hk > 0;
+                int newAfter = 0;
+                for (int step = 0; step < 60; step++)
+                {
+                    int nBefore = hn;
+                    hn = Step(beads, hn, 1f / 60f, true, 0f, blocks, 0, ref hr, ref hs, specks, ref hk);
+                    for (int i = 0; i < hn; i++) if (beads[i].Age == 0f) newAfter++;
+                    if (hn > nBefore) newAfter++;
+                }
+                // After the fade the pool is dropped for good (garden off), nothing white left behind.
+                hn = Step(beads, hn, 1f / 60f, false, 0f, blocks, 0, ref hr, ref hs, specks, ref hk);
+                bool cleared = StormGlass.Settled(hn, hk);
+                int junk = 0;
+                for (int i = 0; i < beads.Length; i++) if (beads[i].Life != 0f || beads[i].Radius != 0f) junk++;
+                for (int i = 0; i < specks.Length; i++) if (specks[i].Life != 0f || specks[i].Radius != 0f) junk++;
+                // Restart: the next garden rains again, from zero (new beads and specks start invisible, cap holds).
+                float rs = 0f; int rn = 0, rk = 0; float worst = 0f; int bigPeak2 = 0; bool again2 = false;
+                float sc2 = StormGlass.ScaleFor(H);
+                for (int step = 0; step < 1800; step++)
+                {
+                    rn = Step(beads, rn, 1f / 60f, true, 1f, blocks, 0, ref hr, ref rs, specks, ref rk);
+                    if (rn > 0) again2 = true;
+                    for (int i = 0; i < rn; i++)
+                        if (beads[i].Age < 0.02f)
+                        {
+                            float va = StormGlass.Alpha(beads[i].Age, beads[i].Life, beads[i].Kind);
+                            if (va > worst) worst = va;
+                        }
+                    int c = StormGlass.CountBig(beads, rn, sc2);
+                    if (c > bigPeak2) bigPeak2 = c;
+                }
+                string rig = File.ReadAllText("Assets/_Project/Scripts/App/StormGlassRig.cs");
+                string stormSrc = File.ReadAllText("Assets/_Project/Scripts/App/GardenStorm.cs");
+                bool wired = rig.Contains("RainHalted => _app != null && StormGlass.Halted(_app._won, _app._finaleHold, _app._gardenScoring)")
+                    && rig.Contains("if (_wasHalted)") && stormSrc.Contains("bool halted = FlockFiveApp.RainHalted;")
+                    && stormSrc.Contains("else if (_wasHalted) _wet = 0f;");
+                Check("solve-clears-rain-then-next-garden-starts-fresh",
+                    flags && mul && wasRaining && newAfter == 0 && cleared && junk == 0 && again2 && worst < 0.08f && bigPeak2 <= StormGlass.BigCap && wired,
+                    "raining " + wasRaining + " newAfter " + newAfter + " cleared " + cleared + " junk " + junk + " again " + again2
+                    + " worst " + worst.ToString("0.000") + " big " + bigPeak2);
+            }
 
             string end = fail == 0 ? "STORM_GLASS_OK " + pass : "STORM_GLASS_FAIL " + fail + " passed " + pass;
             Debug.Log("[storm-glass] " + end);

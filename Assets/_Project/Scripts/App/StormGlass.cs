@@ -30,6 +30,15 @@ namespace FlockFive
         public const float GapMax = 1.8f;
         public const float StickyCreep = 10f;
         public const int BurstSpecks = 2;
+        // b117 (Brandon): nothing appears at full alpha or full size. Beads and specks ease in from zero.
+        // Big drops are slow teardrops that run down the screen sides. Never more than BigCap alive at once.
+        public const int BigCap = 2;
+        public const float BigRadius = 36f; // reference px; scaled by the glass height like every radius
+        public const float BigSlow = 0.45f; // share of the normal terminal speed
+        public const float FadeIn = 0.24f;
+        public const float GrowDur = 0.22f;
+        public const float SpeckFadeIn = 0.20f;
+        public const float SpeckGrow = 0.18f;
 
         const int SpawnTries = 18;
         const float RefH = 2556f;
@@ -100,6 +109,13 @@ namespace FlockFive
         // True when no bead or speck is alive. Used by tests and the rig on exit.
         public static bool Settled(int count, int speckN) => count <= 0 && speckN <= 0;
 
+        // b117 (Brandon): a solved level (win, scoring, finale, the Double/Collect choice all sit under these flags)
+        // stops every rain-on-screen effect, and the next garden starts clean.
+        public const float HaltFade = 0.25f;
+        public static bool Halted(bool won, bool finaleHold, bool scoring) => won || finaleHold || scoring;
+        // 1 while raining, easing to 0 over HaltFade once the level is solved.
+        public static float HaltMul(float haltedFor) => 1f - Ease(haltedFor, HaltFade);
+
         public static bool Storming(bool garden, float wet) => garden && wet >= WetOn;
 
         // A roll under CoverKeep is the only way a drop lands on a bird or button.
@@ -119,25 +135,35 @@ namespace FlockFive
 
         public static float Alpha(float age, float life) => Alpha(age, life, Slide);
 
+        // 0 -> 1 over `dur`, smooth at both ends. Shared by alpha and size ramps.
+        public static float Ease(float age, float dur)
+        {
+            if (dur <= 0f) return 1f;
+            float u = age / dur;
+            if (u <= 0f) return 0f;
+            if (u >= 1f) return 1f;
+            return u * u * (3f - 2f * u);
+        }
+
         public static float Alpha(float age, float life, byte kind)
         {
             if (life <= 0f || age < 0f || age >= life) return 0f;
+            float inn = Ease(age, FadeIn);
             if (kind == Sticky)
             {
                 float u = age / life;
-                return 1f - u * u;
+                return inn * (1f - u * u);
             }
             float tail = (life - age) / 0.55f;
-            if (tail > 1f) return 1f;
+            if (tail > 1f) tail = 1f;
             if (tail < 0f) return 0f;
-            return tail;
+            return inn < tail ? inn : tail;
         }
 
         public static float SpeckAlpha(float age, float life)
         {
             if (life <= 0f || age < 0f || age >= life) return 0f;
-            float inn = age / 0.05f;
-            if (inn > 1f) inn = 1f;
+            float inn = Ease(age, SpeckFadeIn);
             float tail = (life - age) / (life * 0.72f);
             if (tail > 1f) tail = 1f;
             if (tail < 0f) tail = 0f;
@@ -145,7 +171,10 @@ namespace FlockFive
             return a * 0.92f;
         }
 
-        // Impact is a small flat splat. It gathers into a round bead.
+        // A speck grows from a point as it fades in.
+        public static float SpeckRadius(float age, float radius) => radius * Ease(age, SpeckGrow);
+
+        // Impact is a barely flattened round drop that grows from nothing, then gathers.
         public static void Shape(float age, float radius, out float rx, out float ry, out float splat)
         {
             float u = SplatDur <= 0f ? 1f : age / SplatDur;
@@ -153,11 +182,41 @@ namespace FlockFive
             else if (u > 1f) u = 1f;
             float k = u * u * (3f - 2f * u);
             splat = 1f - k;
-            float wide = 1f + 0.48f * splat;
-            float flat = 1f - 0.40f * splat;
-            float spread = 1f + 0.10f * splat;
-            rx = radius * wide * spread;
-            ry = radius * flat * spread;
+            float wide = 1f + 0.20f * splat;
+            float flat = 1f - 0.16f * splat;
+            float grow = Ease(age, GrowDur);
+            rx = radius * wide * grow;
+            ry = radius * flat * grow;
+        }
+
+        public static float ScaleFor(float areaH)
+        {
+            float scale = areaH / RefH;
+            if (scale < 0.65f) scale = 0.65f;
+            else if (scale > 1.4f) scale = 1.4f;
+            return scale;
+        }
+
+        // The one draw form for a bead: a round heavy head that stretches into a teardrop as it picks up
+        // speed, thins as it slides, and drags a tail up the glass. Pure, no allocation.
+        public static void Form(Bead b, float scale, out float rx, out float ry, out float splat, out float tailPx)
+        {
+            Shape(b.Age, b.Radius, out rx, out ry, out splat);
+            tailPx = 0f;
+            if (b.Kind != Slide) return;
+            float speed = b.Vy < 0f ? -b.Vy : b.Vy;
+            float term = SlideTerm(b.Radius, scale);
+            float sp = term > 0.01f ? speed / term : 0f;
+            if (sp > 1f) sp = 1f;
+            // A big drop pulls into its teardrop quickly.
+            bool big = IsBig(b.Radius, scale);
+            float elong = Ease(b.Age - SplatDur * 0.4f, big ? 0.45f : 0.8f);
+            float tear = elong * sp;
+            // Heavy round head, a little taller than wide, slimmer the longer it has run.
+            float thin = 1f - 0.16f * Ease(b.Age - 0.6f, 2.4f) * sp;
+            rx *= thin * (1f - 0.05f * tear);
+            ry *= thin * (1f + 0.10f * tear);
+            tailPx = b.Radius * (0.45f + (big ? 4.2f : 3.4f) * tear) * (1f - splat);
         }
 
         public static float ShownRadius(float age, float radius)
@@ -305,8 +364,33 @@ namespace FlockFive
             float side2 = Mathf.Sin(b.Phase * 0.41f + 1.3f) * wob * 0.7f * scale;
             b.Vx = b.Drift * scale + side + side2;
             b.Vy -= Accel(b.Radius, scale) * dt;
-            float term = Terminal(b.Radius, scale);
+            float term = SlideTerm(b.Radius, scale);
+            // Stick-slip: now and then the head catches on the glass, creeps, then lets go and speeds up again.
+            if (StickWindow(b.Phase, b.Drift))
+                b.Vy = Mathf.Lerp(b.Vy, -term * 0.10f, 1f - Mathf.Exp(-9f * dt));
             if (b.Vy < -term) b.Vy = -term;
+        }
+
+        // True for a short slice of each slide cycle. Pure so a test can pin it.
+        public static bool StickWindow(float phase, float seed) => Mathf.Sin(phase * 0.9f + seed * 0.37f) < -0.90f;
+
+        public static bool IsBig(float radiusPx, float scale) => radiusPx >= BigRadius * scale;
+
+        // Top speed of a sliding bead. A big drop is a slow drip, not a fast streak.
+        public static float SlideTerm(float radiusPx, float scale)
+        {
+            float t = Terminal(radiusPx, scale);
+            return IsBig(radiusPx, scale) ? t * BigSlow : t;
+        }
+
+        public static int CountBig(Bead[] beads, int n, float scale)
+        {
+            int c = 0;
+            if (beads == null) return 0;
+            if (n > beads.Length) n = beads.Length;
+            for (int i = 0; i < n; i++)
+                if (IsBig(beads[i].Radius, scale)) c++;
+            return c;
         }
 
         // Reference px/s. Bigger beads pull harder and top out faster.
@@ -369,7 +453,12 @@ namespace FlockFive
                         j++;
                         continue;
                     }
+                    // A merge that would make a third big drop stays just under the big size (it drips off).
+                    int others = CountBig(beads, n, scale)
+                        - (IsBig(beads[i].Radius, scale) ? 1 : 0) - (IsBig(beads[j].Radius, scale) ? 1 : 0);
                     Absorb(ref beads[i], beads[j], scale);
+                    if (others >= BigCap && IsBig(beads[i].Radius, scale))
+                        beads[i].Radius = BigRadius * scale * 0.97f;
                     n = DropAt(beads, n, j);
                 }
             }
@@ -409,7 +498,7 @@ namespace FlockFive
             else
             {
                 a.Kind = Slide;
-                float term = Terminal(nr, scale);
+                float term = SlideTerm(nr, scale);
                 float faster = prev * 1.35f;
                 if (faster < term * 0.45f) faster = term * 0.45f;
                 if (faster > term) faster = term;
@@ -449,6 +538,9 @@ namespace FlockFive
             if (roll < 0.36f) radRef = rng.Range(9f, 16f);
             else if (roll < 0.70f) radRef = rng.Range(28f, 52f);
             else radRef = rng.Range(60f, RadiusMax);
+            // Hard cap: at most BigCap slow teardrops alive. A fourth roll becomes a mid-size drop instead.
+            bool big = radRef >= BigRadius;
+            if (big && CountBig(beads, n, scale) >= BigCap) { radRef = rng.Range(20f, BigRadius - 2f); big = false; }
             byte kind = Slide;
             float life;
             if (radRef < 15.5f && rng.Next01() < 0.42f)
@@ -473,7 +565,14 @@ namespace FlockFive
                 // Two lanes in the clear column, so a fat bead runs into
                 // the one ahead instead of sliding down a bird.
                 float x;
-                if (rng.Next01() < 0.86f)
+                if (big)
+                {
+                    // Down a screen side: the outer 7-20% of the glass, left or right.
+                    float span = x1 - x0;
+                    float edge = rng.Range(0.07f, 0.20f) * span;
+                    x = rng.Next01() < 0.5f ? x0 + edge : x1 - edge;
+                }
+                else if (rng.Next01() < 0.86f)
                 {
                     int lane = (int)(rng.Next01() * 2f);
                     if (lane > 1) lane = 1;
