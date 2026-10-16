@@ -149,12 +149,14 @@ namespace FlockFive
             int blockN = _rig._blockN;
             var specks = _rig._specks;
             int speckN = _rig._speckN;
+            float formScale = StormGlass.ScaleFor(area.height);
             for (int i = 0; i < speckN && n < cap; i++)
             {
                 float a = StormGlass.SpeckAlpha(specks[i].Age, specks[i].Life);
                 a *= StormGlass.CoverMul(specks[i].X, specks[i].Y, blocks, blockN);
                 if (a < 0.02f) continue;
-                float r = specks[i].Radius;
+                float r = StormGlass.SpeckRadius(specks[i].Age, specks[i].Radius);
+                if (r < 0.5f) continue;
                 if (!Write(area, texW, texH, specks[i].X, specks[i].Y, r, r, a, SpeckFlag, 0f, 0f, 0f,
                         rects, beads, ref n))
                     break;
@@ -170,11 +172,12 @@ namespace FlockFive
                     float a = StormGlass.Alpha(src[i].Age, src[i].Life, src[i].Kind);
                     a *= StormGlass.CoverMul(src[i].X, src[i].Y, blocks, blockN);
                     if (a < 0.02f) continue;
-                    StormGlass.Shape(src[i].Age, src[i].Radius, out float prx, out float pry, out float splat);
+                    StormGlass.Form(src[i], formScale, out float prx, out float pry, out float splat, out float tailPx);
+                    if (prx < 0.5f || pry < 0.5f) continue;
                     if (!Write(area, texW, texH, src[i].X, src[i].Y, prx, pry, a, splat,
                             src[i].Kind == StormGlass.Slide ? src[i].Vx : 0f,
                             src[i].Kind == StormGlass.Slide ? src[i].Vy : 0f,
-                            src[i].Radius * 4.0f * (1f - splat),
+                            tailPx,
                             rects, beads, ref n))
                         break;
                 }

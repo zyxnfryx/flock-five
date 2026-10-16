@@ -97,9 +97,9 @@ Shader "FlockFive/StormGlass"
                 scene += lip * float3(0.78, 0.88, 0.98) * 0.5 * fade;
 
                 float ring = smoothstep(0.30, 0.55, r) * smoothstep(1.08, 0.70, r) * splat;
-                scene += ring * float3(1.0, 0.98, 0.96) * 0.9 * fade;
+                scene += ring * float3(1.0, 0.98, 0.96) * 0.55 * fade;
                 float splashEdge = smoothstep(0.72, 0.98, r) * splat * body;
-                scene += splashEdge * 0.45 * fade;
+                scene += splashEdge * 0.30 * fade;
 
                 float2 spec = n - float2(-0.30, 0.36);
                 float hot = exp(-dot(spec, spec) * 72.0);
@@ -116,17 +116,22 @@ Shader "FlockFive/StormGlass"
                     float along = dot(from, trail) / trailLen2;
                     float2 side = (from - trail * along) / rad;
                     // A thin sheen, not a white bar. Garden still shows through.
-                    float halfW = lerp(0.22, 0.06, saturate(along));
+                    // Teardrop: the tail leaves the round head nearly as wide as it, then narrows to a thread.
+                    float halfW = lerp(0.62, 0.05, pow(saturate(along), 0.55));
                     float streak = smoothstep(0.0, 0.05, along) * smoothstep(1.05, 0.32, along);
                     streak *= smoothstep(halfW, halfW * 0.22, length(side));
                     streak *= (1.0 - body) * _Bead.z;
                     if (streak > a)
                     {
-                        scene = SampleScene(pos) * float3(1.10, 1.14, 1.22);
-                        scene += float3(0.42, 0.55, 0.68) * 0.40;
+                        float3 sheen = SampleScene(pos) * float3(1.10, 1.14, 1.22);
+                        sheen += float3(0.42, 0.55, 0.68) * 0.40;
                         float core = smoothstep(halfW * 0.65, 0.0, length(side));
-                        scene += core * float3(0.85, 0.92, 1.0) * 0.22;
-                        a = streak * 0.68;
+                        sheen += core * float3(0.85, 0.92, 1.0) * 0.22;
+                        // Near the head the tail is liquid too: the same inverted lens, fading into the sheen.
+                        float liquid = smoothstep(0.55, 0.0, along);
+                        float3 lens = SampleScene(_Bead.xy - from * 1.35) * 1.08;
+                        scene = lerp(sheen, lens, liquid);
+                        a = streak * lerp(0.68, 0.92, liquid);
                     }
 
                     // Tiny beads riding the wet line, largest near the drop.
