@@ -88,6 +88,20 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.20f, MixDesk.DuckWhoosh);
         }
 
+        // b109: a finger pushed into jello. The card-bump bank pitched down and stepped per tap so no two
+        // neighbours match. Placeholder until a dedicated squish asset (Musical Producer) lands.
+        public static float LastSquishPitch;
+        public static void HoneySquish(int tapSerial)
+        {
+            Ensure();
+            WarmPokerClips();
+            int i = Next(_cardBump.Length, ref _lastCardBump);
+            float p = 0.74f + 0.045f * (tapSerial % 6) + Random.Range(-0.015f, 0.015f);
+            LastSquishPitch = p;
+            Shot(_cardBump[i], p, 0.92f, MixLayer.Lead, MixDesk.DuckWhoosh);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.24f, MixDesk.DuckWhoosh);
+        }
+
         public static void CardTap()
         {
             Ensure();

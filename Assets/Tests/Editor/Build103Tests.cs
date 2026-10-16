@@ -238,7 +238,11 @@ namespace FlockFive.Editor
                 HoneyPoke.Clear();
                 bool five = true;
                 for (int i = 0; i < HoneyPoke.Cap; i++) five &= HoneyPoke.Place(1f + i, new Vector2(5f, 5f), 20f);
-                Check("smudge cap and fade", five && !HoneyPoke.Place(9f, Vector2.zero, 20f) && HoneyPoke.Alpha(1f + HoneyPoke.FadeSec, 1f) < 0.001f, "");
+                bool recycled = HoneyPoke.Place(9f, Vector2.zero, 20f) && HoneyPoke.Placed == HoneyPoke.Cap; // b109: every tap lands, ring recycles
+                int first = HoneyPoke.At(0).Serial; // the oldest slot was just overwritten by the 11th tap
+                bool ages = Mathf.Approximately(HoneyPoke.AgeAlpha(HoneyPoke.Serial), 1f) && HoneyPoke.AgeAlpha(HoneyPoke.Serial - 5) > 0.4f && HoneyPoke.AgeAlpha(HoneyPoke.Serial - HoneyPoke.Cap) < 0.001f;
+                for (int i = 0; i < 25; i++) five &= HoneyPoke.Place(20f + i, new Vector2(i, i), 20f);
+                Check("smudge ring recycles and fades by taps", five && recycled && ages && first == HoneyPoke.Cap + 1 && HoneyPoke.Placed == HoneyPoke.Cap, "serial " + HoneyPoke.Serial);
                 HoneyPoke.Clear();
                 var card = new Rect(100f, 100f, 600f, 840f);
                 var cells = new Rect[5];

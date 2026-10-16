@@ -17682,15 +17682,15 @@ namespace FlockFive
                 {
                     _honeyCellLast = i;
                     ate = true;
-                    HoneyPoke.Place(AdPause.Unscaled, _honeyHits[i].center, _honeyHits[i].width * 0.42f);
-                    Sfx.CardBump();
+                    HoneyPoke.Place(AdPause.Unscaled, e.mousePosition, _honeyHits[i].width * 0.42f);
+                    Sfx.HoneySquish(HoneyPoke.Serial);
                 }
                 if (held) ate = true;
                 if (!fire) continue;
                 ate = true;
                 _honeyCellLast = -1;
-                HoneyPoke.Place(AdPause.Unscaled, _honeyHits[i].center, _honeyHits[i].width * 0.42f);
-                Sfx.CardBump();
+                HoneyPoke.Place(AdPause.Unscaled, e != null ? e.mousePosition : _honeyHits[i].center, _honeyHits[i].width * 0.42f);
+                Sfx.HoneySquish(HoneyPoke.Serial);
             }
             return ate;
         }
