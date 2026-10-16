@@ -817,8 +817,9 @@ namespace FlockFive.Editor
         static void CheckScriptedFight(System.Action<string, bool, string> Check)
         {
             SetCoins(0);
-            var load = BadgerLoadout.Preload(FakeAlbum, 6, 16);
-            var win = new BadgerFight(1, 9, load.Honeys(), Fill(16, 1));
+            // Engine check on an explicit weak grid (the fight does not care where honey comes from): 5,3,2,2,2 then eleven 1s.
+            var weak = new[] { 5, 3, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+            var win = new BadgerFight(1, 9, weak, Fill(16, 1));
             int rounds = 0;
             while (win.Result == BadgerResult.Playing && rounds < 20)
             {
