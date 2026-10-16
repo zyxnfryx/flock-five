@@ -199,8 +199,8 @@ namespace FlockFive.Editor
                 wn = Step(beads, wn, 1f / 60f, true, 0f, blocks, 0, ref wanderRng, ref wanderSpawn, specks, ref wanderSpeck);
                 if (wn < 1) break;
                 float dx = beads[0].X - prevX;
-                if (dx > 0.05f) right = true;
-                if (dx < -0.05f) left = true;
+                if (dx > 0.002f) right = true;
+                if (dx < -0.002f) left = true;
                 prevX = beads[0].X;
             }
             float drop = wn > 0 ? y0 - beads[0].Y : 0f;
@@ -591,6 +591,30 @@ namespace FlockFive.Editor
                     flags && mul && wasRaining && newAfter == 0 && cleared && junk == 0 && again2 && worst < 0.08f && bigPeak2 <= StormGlass.BigCap && wired,
                     "raining " + wasRaining + " newAfter " + newAfter + " cleared " + cleared + " junk " + junk + " again " + again2
                     + " worst " + worst.ToString("0.000") + " big " + bigPeak2);
+            }
+
+            {
+                // b120: nearly straight down. A full-life slide with the strongest wobble and drift wanders only a few px.
+                float scS = StormGlass.ScaleFor(H);
+                beads[0] = new StormGlass.Bead
+                {
+                    X = 500f, Y = 1900f, Radius = 24f, Age = 0.4f, Life = 4f,
+                    Vy = -20f, Phase = 0.4f, Wobble = 72f, Drift = StormGlass.DriftMax, Kind = StormGlass.Slide
+                };
+                var rS = new StormGlass.Rng { State = 5u };
+                float spS = 9f; int kS = 0, nS = 1;
+                float x0s = beads[0].X, maxDx = 0f, minY = beads[0].Y;
+                for (int step = 0; step < 220 && nS > 0; step++)
+                {
+                    nS = Step(beads, nS, 1f / 60f, true, 0f, blocks, 0, ref rS, ref spS, specks, ref kS);
+                    if (nS < 1) break;
+                    maxDx = Mathf.Max(maxDx, Mathf.Abs(beads[0].X - x0s));
+                    minY = Mathf.Min(minY, beads[0].Y);
+                }
+                float fallY = 1900f - minY;
+                Check("rain-falls-nearly-straight", maxDx <= StormGlass.MaxLateral * scS && fallY > maxDx * 3f
+                    && StormGlass.SwivelGain <= 0.12f && StormGlass.DriftMax <= 4f && StormGlass.StreakLeanK <= 0.4f,
+                    "maxDx " + maxDx.ToString("0.0") + " fall " + fallY.ToString("0.0") + " cap " + (StormGlass.MaxLateral * scS).ToString("0.0"));
             }
 
             string end = fail == 0 ? "STORM_GLASS_OK " + pass : "STORM_GLASS_FAIL " + fail + " passed " + pass;

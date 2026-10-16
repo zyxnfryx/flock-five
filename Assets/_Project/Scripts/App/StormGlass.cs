@@ -346,6 +346,14 @@ namespace FlockFive
             return n;
         }
 
+        // b120 (Brandon): rain falls nearly straight down. Only a tiny, realistic side swivel remains
+        // (was a 3.2x gain and +/-22 px/s drift, a wide meander). Streaks lean by StreakLeanK of their old slant.
+        public const float SwivelGain = 0.10f;
+        public const float DriftMax = 3f;
+        public const float StreakLeanK = 0.35f;
+        // Most a bead may wander sideways over a full slide, in px at scale 1.
+        public const float MaxLateral = 26f;
+
         static void StepMotion(ref Bead b, float dt, float scale)
         {
             float wob = b.Wobble;
@@ -360,8 +368,8 @@ namespace FlockFive
             // The phase rate stays high enough that a planted bead still
             // switches sides inside a short window. The gain is what makes
             // the wander a visible meander on a phone-height pane.
-            float side = Mathf.Sin(b.Phase) * wob * 3.2f * scale;
-            float side2 = Mathf.Sin(b.Phase * 0.41f + 1.3f) * wob * 0.7f * scale;
+            float side = Mathf.Sin(b.Phase) * wob * SwivelGain * scale;
+            float side2 = Mathf.Sin(b.Phase * 0.41f + 1.3f) * wob * SwivelGain * 0.25f * scale;
             b.Vx = b.Drift * scale + side + side2;
             b.Vy -= Accel(b.Radius, scale) * dt;
             float term = SlideTerm(b.Radius, scale);
@@ -590,7 +598,7 @@ namespace FlockFive
                     continue;
                 if (!ClearOf(x, y, rad, beads, n))
                     continue;
-                float drift = kind == Sticky ? rng.Range(-4f, 4f) : rng.Range(-22f, 22f);
+                float drift = kind == Sticky ? rng.Range(-4f, 4f) : rng.Range(-DriftMax, DriftMax);
                 float wobble = kind == Sticky ? rng.Range(4f, 10f) : rng.Range(32f, 72f);
                 float vy = kind == Sticky ? -StickyCreep : -rng.Range(4f, 12f);
                 beads[n] = new Bead
