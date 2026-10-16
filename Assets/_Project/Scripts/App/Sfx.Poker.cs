@@ -89,8 +89,9 @@ namespace FlockFive
         }
 
         // b109: a finger pushed into jello. Own bank (Audio/Squish, five takes; squish_release is kept out of the
-        // tap bank), own no-immediate-repeat history, small random pitch, quiet Lead gain, no duck. Falls back to
-        // the card-bump bank if the clips are missing.
+        // tap bank), own no-immediate-repeat history, small random pitch, quiet gain. Falls back to the card-bump
+        // bank if the clips are missing.
+        // Lead layer; DuckChirp (= 1, Bed not ducked); the Lead window still mutes Mid.
         public const float SquishGain = 0.60f;
         public const float SquishPitchLo = 0.96f, SquishPitchHi = 1.04f;
         static AudioClip[] _squish;

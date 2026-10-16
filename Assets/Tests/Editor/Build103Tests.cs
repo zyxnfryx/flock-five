@@ -254,9 +254,7 @@ namespace FlockFive.Editor
                     if (prevClip >= 0 && Sfx.LastSquishClip == prevClip && Sfx.SquishBankSize > 1) noRepeat = false;
                     prevClip = Sfx.LastSquishClip;
                 }
-                int clipBefore = Sfx.LastSquishClip; float pitchBefore = Sfx.LastSquishPitch;
                 Sfx.ResetSquishFrameForTest(); Sfx.HoneySquish(); Sfx.HoneySquish(); // second call in the same frame is dropped
-                bool oneFrame = Sfx.LastSquishClip != clipBefore || true; // frame guard checked via the pitch not re-rolling below
                 float pitchOnce = Sfx.LastSquishPitch; Sfx.HoneySquish();
                 Check("squish pitch bounds, round-robin, one per frame", pitchOk && noRepeat && Sfx.SquishBankSize >= 5 && Sfx.LastSquishPitch == pitchOnce,
                     "bank " + Sfx.SquishBankSize + " plays " + plays);
