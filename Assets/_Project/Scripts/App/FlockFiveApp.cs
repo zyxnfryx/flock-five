@@ -17760,13 +17760,6 @@ namespace FlockFive
                         if (finish != BeeFinish.Normal)
                         {
                             var band = CardText.FinishOf(face, inspectView);
-                            if (themed)
-                            {
-                                // the rarity comb owns the top-left corner; the label starts to its right
-                                float shift = Mathf.Max(0f, CardArt.BadgeRect(r).xMax - band.x);
-                                band.x += shift;
-                                band.width = Mathf.Max(8f, band.width - shift);
-                            }
                             CardArt.ResetInk();
                             CardText.DrawFinish(band, FinishInk.Label(finish), inspectView, s, FinishInk.Tag(finish));
                         }
@@ -17778,7 +17771,7 @@ namespace FlockFive
                 {
                     CardArt.ResetInk();
                 }
-                if (themed) CardArt.DrawBadge(r, finish, inspectView ? AdPause.Unscaled : 0f, s, i);
+                if (themed) CardArt.DrawJewel(r, finish, inspectView ? AdPause.Unscaled : 0f, i);
                 if (!showBack && n > 1)
                 {
                     var cnt = GuiPool.Label(GuiSlot.AlbumCount);

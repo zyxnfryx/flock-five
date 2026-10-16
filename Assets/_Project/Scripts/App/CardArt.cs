@@ -6,7 +6,7 @@ namespace FlockFive
     //   Face art  : FaceTheme painted procedurally into a small cached texture (CardTheme.cs holds the table).
     //   Frame art : honey-wood ring + brass bevel + hex-comb corners, cached per wood colour and size bucket.
     //   Ribbon    : bee-stripe nameplate ribbon behind the title.
-    //   Badge     : honeycomb rarity badge (Normal amber, Holo prismatic glow, Inverse rainbow cycle).
+    //   Badge     : bottom-centre oval rarity jewel (Normal amber, Holo prismatic, Inverse rainbow cycle).
     // Everything is cached Texture2D drawn with GUI.DrawTexture. Nothing here allocates per frame; bakes are
     // budgeted per frame and fall back to the old flat plate for a frame or two while they catch up.
     public static class CardArt
@@ -29,6 +29,9 @@ namespace FlockFive
         }
 
         // ---- frame geometry (fractions of the card rect; matches CardText.FaceOf) ----
+        public static readonly Color FrameWood = new Color(0.40f, 0.23f, 0.09f, 1f);   // shared honey-wood
+        public const float JewelA = 0.115f;     // bottom jewel bezel half-width / card width
+        public const float JewelFill = 0.78f;   // live fill size / bezel size
         public const float HexR = 0.085f;       // corner comb circumradius / card width
         public const float HexC = 0.060f;       // corner comb centre inset / card width
 
@@ -99,7 +102,7 @@ namespace FlockFive
             var theme = FaceThemes.Resolve(kind);
             var st = FaceThemes.Of(theme, kind.Tint);
             var fTex = FaceTex(theme, st, kind.Tint, Mathf.Min(b, 2));
-            var frTex = FrameTex(wood, b);
+            var frTex = FrameTex(FrameWood, b);   // one frame for every card and finish
             if (fTex == null || frTex == null) return false;
             GUI.color = Color.white;
             GUI.DrawTexture(face, fTex, ScaleMode.StretchToFill, false);
@@ -337,6 +340,7 @@ namespace FlockFive
             float lipW = Mathf.Max(1.5f, w * 0.006f);
             float R = HexR * w, C = HexC * w;
             float sc = w / 192f;
+            float jb = (h - 1 - fy1) * 0.78f, jcy = (h - 1) - (h - 1 - fy1) * 0.10f - jb;   // set into the bottom frame edge, rising a little into the face's empty bottom margin (clear of the text panel)
             Color brass = new Color(0.88f, 0.66f, 0.24f);
             for (int y = 0; y < h; y++)
             {
@@ -417,12 +421,6 @@ namespace FlockFive
                             if (tt < 0.12f) shade *= 0.6f;
                             sr = brass.r * shade; sg = brass.g * shade; sb = brass.b * shade;
                         }
-                        else if (k == 0)
-                        {
-                            // top-left socket: the live rarity badge sits here
-                            float g2 = Mathf.Clamp01(len / R);
-                            sr = 0.20f - 0.06f * g2; sg = 0.11f - 0.04f * g2; sb = 0.04f;
-                        }
                         else
                         {
                             float gx = (px0 + R * 0.25f) / R, gy = (py0 + R * 0.35f) / R;
@@ -437,6 +435,31 @@ namespace FlockFive
                             sr += gloss; sg += gloss; sb += gloss * 0.85f;
                         }
                         OverF(ref cr, ref cg, ref cb, ref ca, sr, sg, sb, cov);
+                    }
+                    // bottom-centre rarity jewel: brass bezel + dark socket (identical on every card; the live fill sits inside)
+                    {
+                        float jx = (x - (w - 1) * 0.5f) / (JewelA * w);
+                        float jy = (y - jcy) / jb;
+                        float jd = Mathf.Sqrt(jx * jx + jy * jy);
+                        if (jd < 1.08f)
+                        {
+                            float cov = Mathf.Clamp01((1f - jd) * jb + 0.5f);
+                            if (jd >= 1f) { cov = 0f; OverF(ref cr, ref cg, ref cb, ref ca, 0.10f, 0.05f, 0.02f, 0.40f * (1.08f - jd) / 0.08f); }
+                            else if (jd > JewelFill)
+                            {
+                                float t = (jd - JewelFill) / (1f - JewelFill);
+                                float lit = -jy;                                   // top of the bezel catches the light
+                                float shade = 1f + 0.45f * lit * (1f - Mathf.Abs(t - 0.5f) * 1.2f) + 0.10f * Mathf.Sin(Mathf.PI * t);
+                                if (t > 0.88f) shade *= 0.6f;
+                                shade = Mathf.Clamp(shade, 0.5f, 1.5f);
+                                OverF(ref cr, ref cg, ref cb, ref ca, brass.r * shade, brass.g * shade, brass.b * shade, 1f);
+                            }
+                            else
+                            {
+                                float g2 = Mathf.Clamp01(jd / JewelFill);
+                                OverF(ref cr, ref cg, ref cb, ref ca, 0.20f - 0.08f * g2, 0.11f - 0.05f * g2, 0.04f, 1f);
+                            }
+                        }
                     }
                     if (ca <= 0.002f) continue;
                     px[row + x] = new Color32(B(cr), B(cg), B(cb), B(ca));
@@ -615,51 +638,70 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        // ================= rarity badge =================
+        // ================= rarity jewel =================
 
-        // Corner comb geometry for a card rect (pointy-top hex, same centre the baked socket uses).
-        public static Rect BadgeRect(Rect card, float grow = 1.12f)
+        // The jewel lives in the bottom frame edge (the frame itself is identical for every card; only this fill varies).
+        // Geometry mirrors PaintFrame: centred on x, centred in the bottom ring, inside the ring so it never touches the face or text.
+        public static Rect JewelRect(Rect card, float fill = JewelFill)
         {
-            float cx = card.x + card.width * HexC, cy = card.y + card.width * HexC;
-            float hw = card.width * HexR * 0.8660254f * grow, hh = card.width * HexR * grow;
-            return new Rect(cx - hw, cy - hh, hw * 2f, hh * 2f);
+            float h = card.height;
+            float ringTop = card.y + h * 0.965f, ringBot = card.yMax;
+            float ring = ringBot - ringTop, jb = ring * 0.78f;
+            float cy = ringBot - ring * 0.10f - jb;
+            float hw = card.width * JewelA * fill, hh = jb * fill;
+            return new Rect(card.center.x - hw, cy - hh, hw * 2f, hh * 2f);
         }
 
-        // Normal: plain amber comb. Holo: glowing prismatic fill. Inverse Rainbow: rainbow-cycling fill.
-        // `t` is seconds (0 on the static grid). One comb, so it reads at any size.
-        public static void DrawBadge(Rect card, BeeFinish finish, float t, float s, int slot)
+        static Texture2D _ovalTex;
+        static Texture2D OvalTex()
         {
-            var r = BadgeRect(card);
-            if (r.width < 6f) return;
-            Color rim = HoneyRim.For(finish);
-            rim.a = 1f;
-            if (finish != BeeFinish.Normal)
-            {
-                var gl = Hue(finish == BeeFinish.Holo ? 0.55f + 0.08f * Mathf.Sin(t * 1.3f + slot) : t * 0.22f + slot * 0.05f);
-                DrawGlow(new Rect(r.x - r.width * 0.45f, r.y - r.height * 0.40f, r.width * 1.9f, r.height * 1.8f), gl, finish == BeeFinish.Holo ? 0.55f : 0.70f);
-            }
-            HoneyArt.DrawJuicyCell(r, rim, t, Mathf.Max(0.6f, s), slot, true, false, false);
-            if (finish != BeeFinish.Normal)
-            {
-                float inset = Mathf.Min(r.width, r.height) * 0.10f;
-                var inner = new Rect(r.x + inset, r.y + inset, r.width - inset * 2f, r.height - inset * 2f);
-                var m = HoneyArt.Mask();
-                if (m != null)
+            if (_ovalTex != null) return _ovalTex;
+            const int W = 64, H = 32;
+            var px = new Color32[W * H];
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++)
                 {
-                    var c = finish == BeeFinish.Holo
-                        ? Hue(0.52f + 0.10f * Mathf.Sin(t * 1.7f + slot))
-                        : Hue(t * 0.30f + slot * 0.07f);
-                    c.a = finish == BeeFinish.Holo ? 0.46f : 0.62f;
-                    GUI.color = c;
-                    GUI.DrawTexture(inner, m, ScaleMode.StretchToFill, true);
-                    GUI.color = Color.white;
+                    float dx = ((x + 0.5f) / W) * 2f - 1f, dy = ((y + 0.5f) / H) * 2f - 1f;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    float a = Mathf.Clamp01((1f - d) * 14f);
+                    // domed shading: lighter top-left, darker bottom rim
+                    float v = Mathf.Clamp01(0.86f + 0.20f * (-dy) - 0.14f * d * d);
+                    px[y * W + x] = new Color32(B(v), B(v), B(v), B(a));
                 }
+            _ovalTex = Make(px, W, H, "CardOval");
+            return _ovalTex;
+        }
+
+        // Normal: amber. Holo: shifting prismatic. Inverse Rainbow: cycling rainbow. All get a specular glint.
+        // `t` is seconds (0 on the static grid).
+        public static void DrawJewel(Rect card, BeeFinish finish, float t, int slot)
+        {
+            var r = JewelRect(card);
+            if (r.width < 4f) return;
+            var oval = OvalTex();
+            Color baseC;
+            if (finish == BeeFinish.Normal) baseC = new Color(1f, 0.70f, 0.16f);
+            else if (finish == BeeFinish.Holo) baseC = Hue(0.52f + 0.16f * Mathf.Sin(t * 1.1f + slot));
+            else baseC = Hue(t * 0.30f + slot * 0.07f);
+            if (finish != BeeFinish.Normal)
+                DrawGlow(new Rect(r.x - r.width * 0.30f, r.y - r.height * 0.9f, r.width * 1.6f, r.height * 2.8f), baseC, 0.45f);
+            GUI.color = baseC;
+            GUI.DrawTexture(r, oval, ScaleMode.StretchToFill, true);
+            if (finish != BeeFinish.Normal)
+            {
+                // second hue band slides across for the prismatic read
+                var c2 = finish == BeeFinish.Holo ? Hue(0.80f - 0.16f * Mathf.Sin(t * 1.1f + slot)) : Hue(t * 0.30f + 0.5f + slot * 0.07f);
+                c2.a = 0.62f;
+                float k = 0.5f + 0.5f * Mathf.Sin(t * 1.6f + slot);
+                var half = new Rect(r.x + r.width * (0.10f + 0.40f * k), r.y + r.height * 0.10f, r.width * 0.50f, r.height * 0.80f);
+                GUI.color = c2;
+                GUI.DrawTexture(half, oval, ScaleMode.StretchToFill, true);
             }
-            // sliding glint
-            float k = Mathf.Sin(t * 2.2f + slot * 0.9f);
-            float gs = r.width * 0.46f * (0.82f + 0.18f * Mathf.Sin(t * 5f));
-            float gx = r.center.x + r.width * 0.12f * k, gy = r.y + r.height * 0.30f;
-            GUI.color = new Color(1f, 1f, 0.96f, finish == BeeFinish.Normal ? 0.80f : 0.95f);
+            // specular glint
+            float gk = Mathf.Sin(t * 2.2f + slot * 0.9f);
+            float gs = r.height * 1.3f * (0.85f + 0.15f * Mathf.Sin(t * 5f));
+            float gx = r.center.x - r.width * 0.18f + r.width * 0.16f * gk, gy = r.y + r.height * 0.30f;
+            GUI.color = new Color(1f, 1f, 0.96f, 0.95f);
             GUI.DrawTexture(new Rect(gx - gs * 0.5f, gy - gs * 0.5f, gs, gs), StarTex(), ScaleMode.StretchToFill, true);
             GUI.color = Color.white;
         }
