@@ -200,7 +200,7 @@ namespace FlockFive.Editor
             var tint = new Color(0.88f, 0.90f, 0.55f, 1f);
             var wood = Color.Lerp(new Color(0.28f, 0.16f, 0.07f, 1f), tint, 0.35f);
             var face = Color.Lerp(new Color(0.98f, 0.92f, 0.72f, 1f), tint, 0.18f);
-            var rim = new Color(0.15f, 0.48f, 0.92f, 1f);
+            var rim = HoneyRim.For(BeeFinish.Holo);
             var ink = new Color(0.16f, 0.07f, 0.02f, 1f);
             var card = RoundedCard(w, h, wood, face, 22f, 46f);
             PixQuad(new Rect(0f, 0f, w, h), card, Color.white, 1f);

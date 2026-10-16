@@ -136,6 +136,7 @@ namespace FlockFive
             if (visit.Finish != BeeFinish.Normal)
                 tint = Color.Lerp(tint, Color.white, visit.Finish == BeeFinish.Holo ? 0.18f : 0.28f);
             sr.color = tint;
+            BeeAccessoryArt.Attach(sr, visit.Kind);
             float speedMul = Random.Range(0.8f, 1.2f);
             float phase = Random.Range(0f, Mathf.PI * 2f);
             float wobAmp = Random.Range(0.08f, 0.18f);

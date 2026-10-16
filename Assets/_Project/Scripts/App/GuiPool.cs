@@ -50,6 +50,7 @@ namespace FlockFive
         SettingsSound,
         PromptBody,
         PromptButton,
+        RarePill,
         Count
     }
 
@@ -66,6 +67,7 @@ namespace FlockFive
         FreezeContinue,
         FreezeBonus,
         WrapWords,
+        RarePill,
         Count
     }
 

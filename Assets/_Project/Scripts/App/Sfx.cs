@@ -139,6 +139,7 @@ namespace FlockFive
             _voices = null;
             _host = null;
             _v = 0;
+            _squish = null;
         }
 
         static bool VoicesAlive()

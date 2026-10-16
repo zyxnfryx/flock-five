@@ -31,7 +31,7 @@ namespace FlockFive
             {
                 var scale = full ? Full : Mid;
                 Split(face, false, scale, out var titleR, out var flavorR, out _, out _, out _);
-                var ink = new Color(0.16f, 0.07f, 0.02f, 1f);
+                var ink = CardArt.TextInk;
                 // Name first, then flavor under it. Flavor hi is capped to the title size so
                 // a tall inspect flavor band cannot outrank the name (shared for grid + inspect).
                 CopyArgs(full, false, out int titleFloor, out float titleLead, out int flavorFloor, out float flavorLead, out float flavorRatio);
@@ -51,14 +51,22 @@ namespace FlockFive
                 var scale = full ? Full : Mid;
                 bool showHoney = honey > 0;
                 Split(face, showHoney, scale, out var titleR, out var flavorR, out var honeyR, out _, out _);
-                var ink = new Color(0.16f, 0.07f, 0.02f, 1f);
+                var ink = CardArt.TextInk;
                 CopyArgs(full, true, out int titleFloor, out float titleLead, out int flavorFloor, out float flavorLead, out float flavorRatio);
                 int titlePx = DrawBlock(titleR, title, scale.Title, true, titleFloor, ink, titleLead);
                 int flavorHi = titlePx > 0
                     ? Mathf.Max(flavorFloor, Mathf.RoundToInt(titlePx * flavorRatio))
                     : 0;
-                DrawBlock(flavorR, flavor, scale.Flavor, false, flavorFloor, new Color(0.18f, 0.08f, 0.03f, 1f), flavorLead, flavorHi);
+                DrawBlock(flavorR, flavor, scale.Flavor, false, flavorFloor, CardArt.FlavorInk, flavorLead, flavorHi);
                 if (showHoney) DrawHoneyRow(honeyR, honey, tint, finish, full);
+            }
+
+            // Honey only. The flip bakes the words and leaves the drips live.
+            public static void DrawHoney(Rect face, int honey, Color tint, BeeFinish finish, bool full)
+            {
+                if (honey <= 0) return;
+                Split(face, true, full ? Full : Mid, out _, out _, out var honeyR, out _, out _);
+                DrawHoneyRow(honeyR, honey, tint, finish, full);
             }
 
             // Shared honeycomb attributes: N hex tiles from HoneyOfFinish (2/3/5).
@@ -110,9 +118,8 @@ namespace FlockFive
             {
                 if (!LayoutHoney(zone, honey, full, out float x, out float y, out float cellW, out float cellH, out float gap, out int n))
                     return;
-                Color rim = finish == BeeFinish.Holo ? new Color(0.15f, 0.48f, 0.92f, 1f)
-                    : finish == BeeFinish.InverseRainbow ? new Color(0.82f, 0.22f, 0.68f, 1f)
-                    : AlbumWood(tint, true);
+                Color rim = HoneyRim.For(finish);
+                rim.a = tint.a <= 0f ? 1f : tint.a;
                 // Drips hang from the hex tip and stay inside the honey zone.
                 // The full inspect stretches a drip on a 3s loop. The grid stays still.
                 float now = full ? AdPause.Unscaled : 0f;
@@ -276,6 +283,8 @@ namespace FlockFive
                     BlockStore(text, box, scale, title, floor, hiCap, leadKey, size, lines);
                 }
                 if (lines == null || lines.Length == 0 || size < 1) return 0;
+                if (title && CardArt.RibbonOn)
+                    CardArt.DrawRibbon(CardArt.RibbonFor(box, box.width / 0.84f, lines.Length * size * lead + InkOf(FitKind.Title, size) * 2f));
                 PaintOutlined(box, lines, size, title ? FitKind.Title : FitKind.Flavor, lead, ink, TextAnchor.UpperCenter);
                 return size;
             }
@@ -982,6 +991,14 @@ namespace FlockFive
             public static void CopyBands(Rect card, bool full, bool back, bool honey, out Rect title, out Rect flavor)
             {
                 var face = FaceOf(card);
+                FaceBands(face, full, back, honey, out title, out flavor);
+            }
+
+            // Title and flavor inside an already-inset face. The bake and the live
+            // draw share this so a stretched flip matches the settled lines.
+            public static void FaceBands(Rect face, bool full, bool back, bool honey,
+                out Rect title, out Rect flavor)
+            {
                 var host = back ? face : TextFaceOf(face, full);
                 Split(host, back && honey, full ? Full : Mid, out title, out flavor, out _, out _, out _);
             }

@@ -18,6 +18,14 @@ namespace FlockFive
         public Color Tint;
         // Optional labels for the card's middle row. Empty draws nothing.
         public string[] Attrs;
+        // Themed accessory drawn over the bee (BeeAccessoryArt). None draws nothing.
+        public BeeAccessory Accessory;
+        // Multiplies the accessory sprite. Alpha 0 (struct default) means white.
+        public Color AccessoryTint;
+        // Face art theme (CardTheme.cs). Auto = hand assignment or the colour family.
+        public FaceTheme Theme;
+        // True: the flipped side shows Back instead of repeating Front (one-line cards keep the shared flavor).
+        public bool OwnBack;
         public BeeKind(string id, string name, string front, string back, Color tint)
         {
             Id = id;
@@ -26,6 +34,10 @@ namespace FlockFive
             Back = back;
             Tint = tint;
             Attrs = null;
+            Accessory = BeeAccessory.None;
+            AccessoryTint = Color.white;
+            Theme = FaceTheme.Auto;
+            OwnBack = false;
         }
     }
 
@@ -57,15 +69,15 @@ namespace FlockFive
             new BeeKind("honey", "Honey Gold",
                 "Sweetest sting in the yard.",
                 "The gold standard of buzzness. Diversified in nectar futures.",
-                new Color(1.00f, 0.78f, 0.22f)),
+                new Color(1.00f, 0.78f, 0.24f)),
             new BeeKind("ginger", "Garden Ginger",
                 "Spicy little garden pest.",
                 "Root of all buzzness. Leaves a warm aftertaste and a welt.",
-                new Color(0.92f, 0.48f, 0.18f)),
+                new Color(1.00f, 0.50f, 0.14f)),
             new BeeKind("dusk", "Dusk Stripe",
                 "Works the late shift.",
                 "Night owl with a day job: pollen. Clock out at moonrise.",
-                new Color(0.42f, 0.26f, 0.12f)),
+                new Color(0.56f, 0.29f, 0.00f)),
             new BeeKind("clover", "Clover Nap",
                 "Lucky and sleepy.",
                 "Four leaves, zero alarms. Dreams in soft landings.",
@@ -73,35 +85,35 @@ namespace FlockFive
             new BeeKind("pollen", "Pollen Fog",
                 "Hard to see, easy to sneeze.",
                 "Allergy season's MVP. Comes with free congestion.",
-                new Color(0.96f, 0.88f, 0.52f)),
+                new Color(0.96f, 0.90f, 0.39f)),
             new BeeKind("moon", "Moon Dust",
                 "Lunar powered.",
                 "One small step for bee, one giant leap for buzzkind.",
-                new Color(0.72f, 0.78f, 0.92f)),
+                new Color(0.67f, 0.76f, 0.97f)),
             new BeeKind("rust", "Rust Belt",
                 "Industrial strength.",
                 "Still making honey in a tough hive market. Union dues: pollen.",
-                new Color(0.74f, 0.30f, 0.14f)),
+                new Color(0.76f, 0.29f, 0.00f)),
             new BeeKind("ink", "Ink Band",
                 "Writes its own buzz.",
                 "Black-and-yellow press. Extra! Extra! Read all about the comb!",
-                new Color(0.20f, 0.16f, 0.14f)),
+                new Color(0.22f, 0.18f, 0.21f)) { Accessory = BeeAccessory.BowTie },
             new BeeKind("amber", "Amber Nap",
                 "Preserved energy.",
                 "Stuck in a good way. Fossilized FOMO optional.",
-                new Color(0.95f, 0.62f, 0.16f)),
+                new Color(1.00f, 0.68f, 0.44f)),
             new BeeKind("thistle", "Thistle",
                 "Prickly but popular.",
                 "Handles rejection well — and spines. Soft hearts, hard edges.",
-                new Color(0.56f, 0.38f, 0.72f)),
+                new Color(0.53f, 0.36f, 0.72f)),
             new BeeKind("dew", "Dew Cap",
                 "Morning person.",
                 "Keeps it fresh. Literally. Condensation is a lifestyle.",
-                new Color(0.52f, 0.82f, 0.76f)),
+                new Color(0.57f, 0.89f, 0.79f)),
             new BeeKind("coal", "Coal Stripe",
                 "Old-school grind.",
                 "Burns the midnight pollen. Ashtrays not included.",
-                new Color(0.30f, 0.24f, 0.18f)),
+                new Color(0.24f, 0.25f, 0.26f)),
             // Batch A — Chief of Puns approved (12 Keep / 6 Punch up)
             new BeeKind("lavender", "Lavender Buzz",
                 "Soft purple, hard sting.",
@@ -110,11 +122,11 @@ namespace FlockFive
             new BeeKind("rose", "Rose Petal",
                 "Looks delicate. Isn't.",
                 "Thorn-adjacent and proud. Petals for days, patience for none.",
-                new Color(0.88f, 0.32f, 0.42f)),
+                new Color(0.87f, 0.37f, 0.52f)) { Accessory = BeeAccessory.Flower },
             new BeeKind("sunflower", "Sunflower Sid",
                 "Faces the light. Judging you.",
                 "Tall, bright, and emotionally available — to the sun only.",
-                new Color(0.98f, 0.82f, 0.18f)),
+                new Color(0.91f, 0.79f, 0.15f)),
             new BeeKind("lilac", "Lilac Lane",
                 "Spring's soft launch.",
                 "Seasonal drop. If you missed it, wait a year. Scalpers hate this bee.",
@@ -122,68 +134,68 @@ namespace FlockFive
             new BeeKind("frost", "Frost Tip",
                 "Cold open.",
                 "Nectar on ice. Warmth not included.",
-                new Color(0.78f, 0.90f, 0.96f)),
+                new Color(0.81f, 0.98f, 0.95f)),
             new BeeKind("storm", "Storm Cell",
                 "Pressure drop with wings.",
                 "Forecast: 100% chance of buzz. Pack a jacket; the hive's already loud.",
-                new Color(0.28f, 0.34f, 0.48f)),
+                new Color(0.27f, 0.35f, 0.52f)),
             new BeeKind("haze", "Haze Drift",
                 "Soft focus. Hard landing.",
                 "Visibility low, attitude lower. Golden hour on; comments off.",
-                new Color(0.72f, 0.68f, 0.58f)),
+                new Color(0.65f, 0.68f, 0.53f)) { Accessory = BeeAccessory.Shades },
             new BeeKind("drizzle", "Drizzle Dot",
                 "Light precipitation, heavy opinions.",
                 "Not a downpour — a persistent drip. Mild annoyance, chance of sting.",
-                new Color(0.55f, 0.70f, 0.88f)),
+                new Color(0.51f, 0.65f, 0.84f)),
             new BeeKind("mint", "Mint Sting",
                 "Fresh to death.",
                 "After-dinner bee. Clears the palate and the personal space.",
-                new Color(0.42f, 0.86f, 0.68f)),
+                new Color(0.41f, 0.86f, 0.70f)),
             new BeeKind("berry", "Berry Bomb",
                 "Sweet until it isn't.",
                 "Antioxidant with an agenda. Pair with yogurt; dodge the welt.",
-                new Color(0.72f, 0.18f, 0.38f)),
+                new Color(0.66f, 0.12f, 0.44f)),
             new BeeKind("caramel", "Caramel Comb",
                 "Sticky situation.",
                 "Slow drip, fast regret. Dessert first; dignity second.",
-                new Color(0.78f, 0.48f, 0.22f)),
+                new Color(0.88f, 0.48f, 0.15f)),
             new BeeKind("cocoa", "Cocoa Nib",
                 "Bitter-sweet buzz.",
                 "70% dark, 30% drama. Melts in the hive, not in your hand.",
-                new Color(0.42f, 0.26f, 0.18f)),
+                new Color(0.53f, 0.34f, 0.30f)) { Accessory = BeeAccessory.Beanie },
             new BeeKind("neon", "Neon Nectar",
                 "Glow-in-the-dark grind.",
                 "Night-shift nectar. Bright enough to pollinate after dark.",
-                new Color(0.22f, 0.95f, 0.55f)),
+                new Color(0.27f, 0.91f, 0.57f)),
             new BeeKind("velvet", "Velvet Hour",
                 "After-hours elegance.",
                 "Dress code: stripes. Playlist: buzz. Cover charge: one flower.",
-                new Color(0.48f, 0.18f, 0.42f)),
+                new Color(0.46f, 0.18f, 0.49f)),
             new BeeKind("metro", "Metro Swarm",
                 "Rush-hour wings.",
                 "Transfers at Clover. Standing room only in the comb.",
-                new Color(0.35f, 0.38f, 0.42f)),
+                new Color(0.37f, 0.43f, 0.49f)) { Accessory = BeeAccessory.Cap },
             new BeeKind("static", "Static Wing",
                 "Charged personality.",
                 "Shockingly social. Hair stands up; so does the hive.",
-                new Color(0.88f, 0.90f, 0.55f)),
+                new Color(0.83f, 0.92f, 0.53f)),
             new BeeKind("copper", "Copper Wing",
                 "Conducts business.",
                 "Good conductivity, better gossip. Wired for nectar futures.",
-                new Color(0.78f, 0.42f, 0.22f)),
+                new Color(0.80f, 0.42f, 0.44f)),
             new BeeKind("chrome", "Chrome Comb",
                 "Reflects poorly on rivals.",
                 "Polished finish, unfinished business. Mirror, mirror, who's the buzz?",
-                new Color(0.82f, 0.86f, 0.90f)),
+                new Color(0.81f, 0.87f, 0.88f)),
             // Batch B — CoP punch-ups (+24 → 54)
             new BeeKind("salt", "Salt Spray",
                 "Seasoned wings.",
                 "Briny and brief. Leaves a crunch; keeps the receipt.",
-                new Color(0.72f, 0.84f, 0.86f)),
+                new Color(0.70f, 0.90f, 0.91f)),
             new BeeKind("coral", "Coral Reef",
                 "Builds the neighborhood.",
                 "Builds slowly, stings suddenly. Underwater HOA president.",
-                new Color(1.00f, 0.48f, 0.52f)),
+                new Color(1.00f, 0.51f, 0.57f)),
             new BeeKind("tide", "Tide Pool",
                 "Comes and goes.",
                 "Schedule: moon. Attitude: wet. Lost flip-flops sold separately.",
@@ -191,39 +203,39 @@ namespace FlockFive
             new BeeKind("pearl", "Pearl Drop",
                 "Smooth operator.",
                 "Irritation optional, glow included. Worth the dive.",
-                new Color(0.92f, 0.94f, 0.98f)),
+                new Color(1.00f, 0.96f, 1.00f)),
             new BeeKind("jade", "Jade Sting",
                 "Lucky strike.",
                 "Cool to the touch, warm to the welt. Fortune favors the bold.",
-                new Color(0.28f, 0.62f, 0.42f)),
+                new Color(0.28f, 0.57f, 0.55f)),
             new BeeKind("ruby", "Ruby Wing",
                 "Hard shine.",
                 "Cut above the rest. Clarity: perfect. Patience: zero.",
-                new Color(0.82f, 0.12f, 0.22f)),
+                new Color(0.69f, 0.00f, 0.17f)),
             new BeeKind("onyx", "Onyx Shade",
                 "Dark mode bee.",
                 "Absorbs light and small talk. Formal wear for the hive.",
-                new Color(0.12f, 0.12f, 0.14f)),
+                new Color(0.16f, 0.15f, 0.20f)) { Accessory = BeeAccessory.TopHat },
             new BeeKind("topaz", "Topaz Gleam",
                 "Golden glance.",
                 "Warm stone, warmer sting. Jewelry with opinions.",
-                new Color(0.95f, 0.72f, 0.22f)),
+                new Color(0.93f, 0.70f, 0.17f)),
             new BeeKind("maple", "Maple Turn",
                 "Leaves early.",
                 "Turns early, sticks around. Syrup for the soul; leaf for the lawn.",
-                new Color(0.78f, 0.32f, 0.12f)),
+                new Color(0.78f, 0.16f, 0.00f)),
             new BeeKind("pine", "Pine Needle",
                 "Evergreen attitude.",
                 "Sharp year-round. Scent: forest. Handshake: poke.",
-                new Color(0.28f, 0.48f, 0.32f)),
+                new Color(0.31f, 0.50f, 0.40f)),
             new BeeKind("harvest", "Harvest Hum",
                 "Peak season.",
                 "Brings the basket. Shares the credit. Keeps the last apple.",
-                new Color(0.88f, 0.62f, 0.18f)),
+                new Color(0.93f, 0.62f, 0.00f)),
             new BeeKind("blizzard", "Blizzard Buzz",
                 "White-out wings.",
                 "Visibility: none. Vibes: many. Bundle up or buzz off.",
-                new Color(0.88f, 0.94f, 1.00f)),
+                new Color(0.91f, 1.00f, 1.00f)),
             new BeeKind("bass", "Bass Note",
                 "Low frequency.",
                 "Felt more than heard. Subwoofer of the garden.",
@@ -231,39 +243,39 @@ namespace FlockFive
             new BeeKind("treble", "Treble Hook",
                 "High and mighty.",
                 "Hits the high notes and your ear. Sheet music optional.",
-                new Color(0.95f, 0.90f, 0.55f)),
+                new Color(1.00f, 0.99f, 0.63f)) { Accessory = BeeAccessory.Headphones },
             new BeeKind("tempo", "Tempo Mark",
                 "On the beat.",
                 "Metronome with a mean streak. Don't rush the nectar.",
-                new Color(0.55f, 0.78f, 0.92f)),
+                new Color(0.61f, 0.82f, 0.93f)),
             new BeeKind("encore", "Encore Bee",
                 "One more song.",
                 "Crowd favorite. Always has another sting in the setlist.",
-                new Color(0.72f, 0.28f, 0.48f)),
+                new Color(0.63f, 0.30f, 0.61f)),
             new BeeKind("pretzel", "Pretzel Twist",
                 "Salted and sorted.",
                 "Tied in knots, still flying. Snack break, forever.",
-                new Color(0.72f, 0.48f, 0.28f)),
+                new Color(0.69f, 0.49f, 0.00f)),
             new BeeKind("pickle", "Pickle Jar",
                 "Brined personality.",
                 "Sour when it counts. Crunch included; lid optional.",
-                new Color(0.55f, 0.72f, 0.28f)),
+                new Color(0.57f, 0.68f, 0.27f)),
             new BeeKind("waffle", "Waffle Iron",
                 "Grid locked.",
                 "Breakfast architecture. Syrup optional; opinions required.",
-                new Color(0.92f, 0.72f, 0.32f)),
+                new Color(0.85f, 0.72f, 0.28f)),
             new BeeKind("chili", "Chili Flake",
                 "Heat check.",
                 "Scoville with wings. Glass of milk not included.",
-                new Color(0.90f, 0.22f, 0.12f)),
+                new Color(0.90f, 0.24f, 0.03f)),
             new BeeKind("fleece", "Fleece Cloud",
                 "Looks laundry-soft.",
                 "Looks hug-ready. Is not. Cozy until the sting.",
-                new Color(0.90f, 0.90f, 0.94f)),
+                new Color(0.90f, 0.92f, 1.00f)) { Accessory = BeeAccessory.Scarf },
             new BeeKind("marsh", "Marshmallow",
                 "Toasty temper.",
                 "Puffs up under pressure. Campfire credentialed.",
-                new Color(0.98f, 0.92f, 0.88f)),
+                new Color(1.00f, 0.88f, 1.00f)),
             new BeeKind("cotton", "Cotton Candy",
                 "Spun sugar.",
                 "Melts in the rain; sticks in the memory. Fairground royalty.",
@@ -271,47 +283,47 @@ namespace FlockFive
             new BeeKind("plush", "Plush Puff",
                 "Soft spoken.",
                 "Looks nap-ready. Answers in welts. Quiet hours optional.",
-                new Color(0.78f, 0.72f, 0.88f)),
+                new Color(0.87f, 0.76f, 0.94f)),
             new BeeKind("dialup", "Dial-Up Drone",
                 "Connecting…",
                 "Screeches in, stings late. Buffering is a lifestyle.",
-                new Color(0.55f, 0.48f, 0.42f)),
+                new Color(0.65f, 0.48f, 0.44f)),
             new BeeKind("popup", "Pop-Up Pest",
                 "Unskippable.",
                 "Closes one flower, opens three. Terms of service: pain.",
-                new Color(0.92f, 0.55f, 0.18f)),
+                new Color(0.86f, 0.56f, 0.14f)),
             new BeeKind("404", "Four-Oh-Four",
                 "Bee not found.",
                 "The comb you seek has moved. Try a different garden.",
-                new Color(0.35f, 0.38f, 0.42f)),
+                new Color(0.32f, 0.34f, 0.43f)) { Accessory = BeeAccessory.PixelShades },
             new BeeKind("leet", "Leet Mode",
                 "1337 buzz.",
                 "Speaks in numbers, stings in paragraphs. Elite optional.",
-                new Color(0.22f, 0.95f, 0.42f)),
+                new Color(0.24f, 1.00f, 0.37f)),
             new BeeKind("fine", "Still Fine",
                 "Everything's great.",
                 "Garden's on fire. Mood: unbothered. Sip continues.",
-                new Color(0.88f, 0.62f, 0.28f)),
+                new Color(0.94f, 0.60f, 0.40f)),
             new BeeKind("wow", "Much Buzz",
                 "Very sting. Wow.",
                 "Such pollen. Little patience. Amplify the garden.",
-                new Color(0.92f, 0.82f, 0.42f)),
+                new Color(0.86f, 0.83f, 0.40f)),
             new BeeKind("sus", "Kinda Sus",
                 "Kinda sus.",
                 "Wasn't me. Check the other feeder. Theories welcome — proof optional.",
-                new Color(0.55f, 0.22f, 0.28f)),
+                new Color(0.48f, 0.19f, 0.28f)),
             new BeeKind("distracted", "Distracted Wing",
                 "Looking elsewhere.",
                 "One flower on the arm. Better flower in frame. Classic.",
-                new Color(0.72f, 0.48f, 0.62f)),
+                new Color(0.58f, 0.35f, 0.56f)),
             new BeeKind("dramatic", "Side-Eye Snap",
                 "Turns. Stares.",
                 "Full side-eye in 0.2 seconds. Cue the strings.",
-                new Color(0.62f, 0.48f, 0.28f)),
+                new Color(0.77f, 0.62f, 0.00f)),
             new BeeKind("shadow", "Shadow Swarm",
                 "Come to the shade.",
                 "Big mood: mysterious. Bigger mood: sting first, monologue later.",
-                new Color(0.18f, 0.12f, 0.22f)),
+                new Color(0.20f, 0.12f, 0.23f)),
             new BeeKind("sorted", "Vibe Sort",
                 "Where you belong.",
                 "Labels optional; vibe's eternal. House rules: share nectar.",
@@ -319,7 +331,7 @@ namespace FlockFive
             new BeeKind("spaghetti", "Spaghetti Nest",
                 "All noodles, no chill.",
                 "Tangled in the comb. Sauce on the stripes. Still flying.",
-                new Color(0.88f, 0.78f, 0.42f)),
+                new Color(0.80f, 0.75f, 0.34f)) { Accessory = BeeAccessory.ChefHat },
             new BeeKind("left", "Offbeat Shark",
                 "Off-beat icon.",
                 "Wrong choreography, right legend. Keeps dancing anyway.",
@@ -327,23 +339,23 @@ namespace FlockFive
             new BeeKind("assist", "Hover Help",
                 "Need a hand?",
                 "Offers tips anyway. Nobody clicked yes. Still hovering.",
-                new Color(0.82f, 0.82f, 0.78f)),
+                new Color(0.83f, 0.80f, 0.82f)),
             new BeeKind("rick", "Link Trap",
                 "You know the link.",
                 "Promised a flower. Delivered a classic. Stings forever.",
-                new Color(0.42f, 0.55f, 0.88f)),
+                new Color(0.38f, 0.51f, 0.93f)),
             new BeeKind("phoenix", "Phoenix Pollen",
                 "Burns once. Buzzes twice.",
                 "Ash optional. Comeback mandatory. Hot take with wings.",
-                new Color(0.95f, 0.35f, 0.12f)),
+                new Color(1.00f, 0.33f, 0.20f)),
             new BeeKind("hydra", "Hydra Hum",
                 "Cut one, get two.",
                 "Problem multiplies. Patience does not. Bring a bigger jar.",
-                new Color(0.28f, 0.55f, 0.32f)),
+                new Color(0.27f, 0.58f, 0.18f)),
             new BeeKind("sphinx", "Sphinx Sting",
                 "Riddle first.",
                 "Answers cost nectar. Wrong answers cost welts.",
-                new Color(0.72f, 0.58f, 0.28f)),
+                new Color(0.20f, 0.80f, 1.00f)) { Accessory = BeeAccessory.Nemes },
             new BeeKind("kraken", "Kraken Grip",
                 "Deep issues.",
                 "Tentatively friendly. Absolutely clingy. Surface with snacks.",
@@ -351,19 +363,19 @@ namespace FlockFive
             new BeeKind("goal", "Goal Post",
                 "Posts up.",
                 "Moves the goal when you're close. Still counts it as a win.",
-                new Color(0.92f, 0.92f, 0.95f)),
+                new Color(0.91f, 0.87f, 1.00f)) { Accessory = BeeAccessory.Headband },
             new BeeKind("slam", "Slam Dunk",
                 "From downtown.",
                 "Hangs on the rim of the comb. Crowd goes mild.",
-                new Color(0.88f, 0.42f, 0.12f)),
+                new Color(0.89f, 0.37f, 0.00f)),
             new BeeKind("huddle", "Huddle Buzz",
                 "Break on three.",
                 "Strategy: sting. Backup strategy: also sting.",
-                new Color(0.22f, 0.48f, 0.28f)),
+                new Color(0.14f, 0.52f, 0.31f)),
             new BeeKind("relay", "Relay Wing",
                 "Passes the baton.",
                 "Drops it sometimes. Blames the flower. Keeps running.",
-                new Color(0.55f, 0.72f, 0.95f)),
+                new Color(0.50f, 0.75f, 0.96f)),
             new BeeKind("orbit", "Orbit Drop",
                 "Circles back.",
                 "Gravity optional. Attitude locked. Reentry is a vibe.",
@@ -371,47 +383,47 @@ namespace FlockFive
             new BeeKind("comet", "Comet Trail",
                 "Brief visit.",
                 "Long tail, short patience. Wish upon a welt.",
-                new Color(0.72f, 0.85f, 0.98f)),
+                new Color(0.72f, 0.84f, 1.00f)),
             new BeeKind("nova", "Nova Flash",
-                "Bright idea.",
-                "Burns fast, remembered longer. Don't stare.",
-                new Color(0.98f, 0.92f, 0.55f)),
+                "Supernova? Super-nova-vice.",
+                "Lights up the garden, then asks who cut the lights. Big star, big exit.",
+                new Color(0.90f, 0.92f, 0.50f)) { Accessory = BeeAccessory.StarCrown, Theme = FaceTheme.Supernova, OwnBack = true },
             new BeeKind("lunar", "Lunar Latch",
                 "Moonstruck.",
                 "Tides the garden. Sleep schedule: decorative.",
-                new Color(0.78f, 0.82f, 0.90f)),
+                new Color(0.75f, 0.79f, 0.89f)),
             new BeeKind("toast", "Toast Point",
                 "Golden both sides.",
                 "Butter optional. Opinions required. Crunch is character.",
-                new Color(0.82f, 0.62f, 0.35f)),
+                new Color(0.84f, 0.65f, 0.45f)),
             new BeeKind("noodle", "Noodle Loop",
                 "Loopy logic.",
                 "Tangled plans, straight sting. Extra sauce.",
-                new Color(0.95f, 0.82f, 0.48f)),
+                new Color(0.75f, 1.00f, 0.25f)) { Accessory = BeeAccessory.NoodleBowl },
             new BeeKind("soda", "Soda Fizz",
                 "Bubbly temper.",
                 "Opens loud. Goes flat if ignored. Ice optional.",
-                new Color(0.95f, 0.35f, 0.42f)),
+                new Color(1.00f, 0.31f, 0.52f)),
             new BeeKind("salsa", "Salsa Step",
                 "Hot move.",
                 "Two-step then sting. Chips not included.",
-                new Color(0.88f, 0.22f, 0.18f)),
+                new Color(0.90f, 0.08f, 0.24f)),
             new BeeKind("thunder", "Thunder Clap",
                 "Loud entrance.",
                 "Announces itself. Leaves a mark. Umbrella useless.",
-                new Color(0.35f, 0.35f, 0.48f)),
+                new Color(0.35f, 0.35f, 0.48f)) { Accessory = BeeAccessory.Bolt },
             new BeeKind("mirage", "Mirage Wing",
                 "Almost there.",
                 "Looks like nectar. Isn't. Heat shimmer with attitude.",
-                new Color(0.95f, 0.78f, 0.55f)),
+                new Color(0.98f, 0.76f, 0.69f)),
             new BeeKind("gust", "Gust Front",
                 "Blows in.",
                 "Rearranges the garden. Claims it was always like that.",
-                new Color(0.62f, 0.78f, 0.72f)),
+                new Color(0.64f, 0.77f, 0.71f)) { Accessory = BeeAccessory.ScarfSky },
             new BeeKind("horn", "Harbor Horn",
                 "Warning shot.",
                 "Heard before seen. Subtlety not installed.",
-                new Color(0.55f, 0.58f, 0.52f)),
+                new Color(0.62f, 0.53f, 0.62f)) { Accessory = BeeAccessory.SailorCap },
             new BeeKind("moth", "Moth Guest",
                 "Wrong party.",
                 "Came for the light. Stayed for the drama.",
@@ -423,7 +435,7 @@ namespace FlockFive
             new BeeKind("ant", "Ant Line",
                 "Single file.",
                 "Union of tiny steps. Picnic security detail.",
-                new Color(0.42f, 0.28f, 0.18f)),
+                new Color(0.36f, 0.22f, 0.00f)) { Accessory = BeeAccessory.HardHat },
             new BeeKind("snail", "Snail Mail",
                 "Eventually.",
                 "Delivery estimate: someday. Stamp optional; slime included.",
@@ -431,23 +443,23 @@ namespace FlockFive
             new BeeKind("yarn", "Yarn Ball",
                 "All tied up.",
                 "Hobby that stings. Knit one, purl one, welt one.",
-                new Color(0.92f, 0.48f, 0.62f)),
+                new Color(0.88f, 0.51f, 0.69f)),
             new BeeKind("glue", "Glue Stick",
                 "Sticks around.",
                 "Permanent until washed. Craft hour's enforcer.",
-                new Color(0.95f, 0.90f, 0.72f)),
+                new Color(1.00f, 0.86f, 0.54f)),
             new BeeKind("pixel", "Pixel Bead",
                 "Low-res legend.",
                 "Eight-bit heart, full-res sting. Zoom in for regret.",
-                new Color(0.42f, 0.85f, 0.55f)),
+                new Color(0.43f, 0.93f, 0.50f)),
             new BeeKind("stencil", "Stencil Bee",
                 "Paint inside the lines.",
                 "Then ignores the lines. Art is pain; pain is art.",
-                new Color(0.55f, 0.55f, 0.62f)),
+                new Color(0.57f, 0.59f, 0.67f)),
             new BeeKind("alley", "Alley Scout",
                 "Shortcut specialist.",
                 "Knows every dumpster flower. Tips in mystery.",
-                new Color(0.38f, 0.38f, 0.42f)),
+                new Color(0.43f, 0.40f, 0.48f)),
             new BeeKind("rooftop", "Rooftop Perch",
                 "Better view.",
                 "Elevator optional. Attitude penthouse. Pigeons jealous.",
@@ -740,23 +752,52 @@ namespace FlockFive
             return BeeFinish.InverseRainbow;
         }
 
+        // Moth Guest is a rare kind. Every other kind shares one weight.
+        public static int KindWeight(int kind)
+        {
+            if ((uint)kind >= (uint)Kinds) return 0;
+            return Roster[kind].Id == "moth" ? 1 : 8;
+        }
+
+        public static bool IsRareKind(int kind) => KindWeight(kind) == 1;
+
+        // roll is in [0, WeightSum). holesOnly skips kinds the album already has.
+        public static int KindAtWeight(int roll, bool holesOnly)
+        {
+            if (roll < 0) roll = 0;
+            Warm();
+            for (int k = 0; k < Kinds; k++)
+            {
+                if (holesOnly && CountOf(k) != 0) continue;
+                int w = KindWeight(k);
+                if (roll < w) return k;
+                roll -= w;
+            }
+            return 0;
+        }
+
+        public static int WeightSum(bool holesOnly)
+        {
+            Warm();
+            int n = 0;
+            for (int k = 0; k < Kinds; k++)
+            {
+                if (holesOnly && CountOf(k) != 0) continue;
+                n += KindWeight(k);
+            }
+            return n;
+        }
+
         static int PickKind()
         {
             // Prefer kinds with no copies of any finish (album holes).
             int holes = 0;
             for (int k = 0; k < Kinds; k++)
                 if (CountOf(k) == 0) holes++;
-            if (holes > 0 && Random.value < 0.74f)
-            {
-                int skip = Random.Range(0, holes);
-                for (int k = 0; k < Kinds; k++)
-                {
-                    if (CountOf(k) != 0) continue;
-                    if (skip == 0) return k;
-                    skip--;
-                }
-            }
-            return Random.Range(0, Kinds);
+            bool holePick = holes > 0 && Random.value < 0.74f;
+            int sum = WeightSum(holePick);
+            if (sum <= 0) return Random.Range(0, Mathf.Max(1, Kinds));
+            return KindAtWeight(Random.Range(0, sum), holePick);
         }
 
         static int CountFound()
@@ -837,6 +878,16 @@ namespace FlockFive
                 }
                 if (kind >= 0) _counts[SlotOf(kind, finish)] = n;
             }
+        }
+
+        // Card art only knows the kind id (CardCritter). None for unknown ids.
+        public static BeeAccessory AccessoryOf(string id, out Color tint)
+        {
+            tint = Color.white;
+            int k = IndexOf(id);
+            if (k < 0) return BeeAccessory.None;
+            if (Roster[k].AccessoryTint.a > 0f) tint = Roster[k].AccessoryTint;
+            return Roster[k].Accessory;
         }
 
         static int IndexOf(string id)
