@@ -242,7 +242,7 @@ namespace FlockFive.Editor
             check("draw-critter", app.Contains("CardCritter.Draw("), "critter");
             check("draw-bake", app.Contains("CardFaceBake.Build("), "bake");
             check("draw-finish", app.Contains("FinishInk.Tag(finish)") && app.Contains("FinishInk.Tag(col == 1"), "ink");
-            check("draw-poke", app.Contains("HoneyPoke.Place(") && app.Contains("Sfx.Squish()"), "poke");
+            check("draw-poke", app.Contains("HoneyPoke.Place(") && app.Contains("Sfx.HoneySquish()"), "poke");
             check("no-auto", !app.Contains("_levelHiveAuto") && !app.Contains("HiveCarouselStep"), "carousel");
             check("tap-dir", app.Contains("HiveCarousel.TapDir(") && app.Contains("i == centerIx"), "dots");
 
@@ -251,7 +251,7 @@ namespace FlockFive.Editor
             string body = squish >= 0 && next > squish ? voice.Substring(squish, next - squish) : "";
             check("squish-tone", body.Contains("150f") && body.Contains("68f") && body.Contains("1.5f")
                 && !body.Contains("Soft(") && !body.Contains("Hash("), "body");
-            check("squish-lead", sfx.Contains("Random.Range(0.97f, 1.03f)") && sfx.Contains("MarkLead(0.14f"), "lead");
+            // b114: the stack's Sfx.Squish was replaced by #142's HoneySquish (own bank, Lead via Shot); see Build103Tests.
             int warm = sfx.IndexOf("_warmOrder", System.StringComparison.Ordinal);
             int warmEnd = warm < 0 ? -1 : sfx.IndexOf("static int _warmBank", warm, System.StringComparison.Ordinal);
             string warmBody = warm >= 0 && warmEnd > warm ? sfx.Substring(warm, warmEnd - warm) : "";

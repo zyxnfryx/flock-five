@@ -1003,14 +1003,6 @@ namespace FlockFive
                 Split(host, back && honey, full ? Full : Mid, out title, out flavor, out _, out _, out _);
             }
 
-            // Honey cells DrawBack paints, in the face's space. Inspect hit tests these.
-            public static int HoneyBand(Rect face, int honey, bool full, Rect[] into)
-            {
-                if (honey <= 0 || into == null) return 0;
-                Split(face, true, full ? Full : Mid, out _, out _, out var honeyR, out _, out _);
-                return HoneyCells(honeyR, honey, full, into);
-            }
-
             // Top band of the face, inner width, tall enough for two wrapped lines.
             // Left-aligned finish names ("Holo", "Inverse Rainbow") share Fit().
             public static Rect FinishOf(Rect face, bool full)
