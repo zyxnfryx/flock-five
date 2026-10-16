@@ -84,8 +84,12 @@ namespace FlockFive.Editor
             var coach = FlockFiveApp.BannerRect("coach.line", Line, w, h, safe, seat, 0f, true, s, out _);
             var badger = FlockFiveApp.BannerRect("badger.caption", Line, w, h, safe, seat, 0f, true, s, out _);
             bool same = Near(intro, coach) && Near(intro, badger);
-            bool greetCovers = Covers(greet, badge);
-            bool othersClear = !Covers(intro, badge) && greet.y > intro.y + 4f;
+            // b118: every home banner now sits a visible gap under the drawn logo. On a short window the rail badge
+            // reaches up beside the logo, so the greet keeps the minimum gap and may clear the badge's top few px.
+            float gapTop = FlockFiveApp.LogoBottom(h, safe, s) + CaptionLayout.LogoGap(h);
+            bool squeeze = badge.yMin - 8f * s < gapTop;
+            bool greetCovers = Covers(greet, badge) || (squeeze && greet.xMin <= badge.xMin + 0.5f && greet.yMax >= badge.yMax - 0.5f && greet.yMin - badge.yMin < 16f * s);
+            bool othersClear = !Covers(intro, badge) && (greet.y > intro.y + 4f || squeeze);
             check(tag + "-banner-covers-badge",
                 greetCovers && badge.width > 8f && greet.width >= w - 0.5f,
                 "band " + greet + " badge " + badge);
