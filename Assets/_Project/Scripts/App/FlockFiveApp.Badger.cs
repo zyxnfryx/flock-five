@@ -125,8 +125,6 @@ namespace FlockFive
             _bgFlagDisplay = cleared > 0 ? cleared : 0;
             _bgSeed = Random.Range(1, int.MaxValue);
             _bgLoadout = BadgerLoadout.Preload(BadgerSchedule.Tiles);
-            // b123 fairness: a first visit with a thin album does not deal the player a grid of 1s.
-            _bgLoadout.FairStart(n);
             _bgFight = null;
             _bgStage = BadgerStage.Opening;
             _bgT = 0f;

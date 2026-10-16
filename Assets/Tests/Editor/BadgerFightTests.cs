@@ -168,8 +168,7 @@ namespace FlockFive.Editor
                     shape = false;
                     why = "visit " + visit + " " + bad;
                 }
-                if (!Rises(first)) climb = false;
-                int sum = Sum(first);
+                                int sum = Sum(first);
                 int fives = Count(first, 5);
                 if (visit > 1 && (sum <= prevSum || fives <= prevFive)) climb = false;
                 prevSum = sum;
@@ -181,10 +180,8 @@ namespace FlockFive.Editor
             var again = BadgerSchedule.BossTileMix(50, 4);
             bool stayed = Sum(hot) == Sum(later)
                 && Count(hot, 5) == Count(later, 5)
-                && Rises(later)
                 && Shape(later, out _)
                 && Same(later, again)
-                && Count(later, 1) == 2
                 && later.Length == BadgerSchedule.Tiles;
             var bagA = BadgerSchedule.BossTileMix(4, 1);
             var bagB = BadgerSchedule.BossTileMix(4, 2);
@@ -192,11 +189,10 @@ namespace FlockFive.Editor
             for (int face = 1; face <= 5; face++)
                 if (Count(bagA, face) != Count(bagB, face)) bag = false;
             var early = BadgerSchedule.BossTileMix(1, 5);
-            bool mixed = Count(early, 2) > 0 && Count(early, 3) > Count(early, 2)
-                && Count(early, 4) > Count(early, 3) && Count(early, 5) > Count(early, 4);
+            bool mixed = Count(early, 2) > 0 && Count(early, 3) > 0 && Count(early, 5) > 0 && Count(early, 1) == 0 && Count(early, 4) == 0;
 
-            Check("mix-shape", shape, why.Length == 0 ? "16 tiles, exactly two 1s, values 1-5" : why);
-            Check("mix-up", climb && mixed, "each visit through 7 is hotter and still rises");
+            Check("mix-shape", shape, why.Length == 0 ? "16 tiles, values 2/3/5 only" : why);
+            Check("mix-up", climb && mixed, "each visit through 7 is hotter (more 5s, higher sum)");
             Check("mix-stay", stayed && bag && stable, "visit 50 stays on the hot row; seed is stable");
         }
 
@@ -293,9 +289,9 @@ namespace FlockFive.Editor
             };
             var row = BadgerSchedule.ArrangeLoadout(owned, 5);
             bool order = row.Length == 5 && row[0] == 5 && row[1] == 3 && row[2] == 2
-                && row[3] == 1 && row[4] == 1;
+                && row[3] == 2 && row[4] == 2;
             var empty = BadgerSchedule.ArrangeLoadout(null, 4);
-            bool pads = empty.Length == 4 && empty[0] == 1 && empty[1] == 1 && empty[2] == 1 && empty[3] == 1;
+            bool pads = empty.Length == 4 && empty[0] == 2 && empty[1] == 2 && empty[2] == 2 && empty[3] == 2;
             var many = new int[20];
             for (int i = 0; i < many.Length; i++) many[i] = 2;
             many[4] = 5;
@@ -314,16 +310,16 @@ namespace FlockFive.Editor
                 for (int slot = 0; slot < live.Length; slot++)
                 {
                     int honey = live[slot];
-                    if (honey != 1 && honey != 2 && honey != 3 && honey != 5) legal = false;
+                    if (honey != 2 && honey != 3 && honey != 5) legal = false;
                     if (slot > 0 && honey > live[slot - 1]) sorted = false;
-                    if (honey == 1) seenPad = true;
+                    if (honey == 2) seenPad = true;
                     else if (seenPad) suffix = false;
                 }
             }
 
             Check("honey-finish", faces, "regular 2, foil 3, Inverse Rainbow 5");
-            Check("loadout", order && pads && trimmed, "best honey first, yard 1 pads, 16 best kept");
-            Check("loadout-album", sized && sorted && legal && suffix, "album tiles are 16, best first, 1s at the end");
+            Check("loadout", order && pads && trimmed, "best honey first, yard 2 pads, 16 best kept");
+            Check("loadout-album", sized && sorted && legal && suffix, "album tiles are 16, best first, yard 2s at the end");
         }
 
 
@@ -723,9 +719,9 @@ namespace FlockFive.Editor
             bool tiles = BadgerTile.Bee(0, BeeFinish.Normal).Honey == Hive.HoneyOfFinish(BeeFinish.Normal)
                 && BadgerTile.Bee(0, BeeFinish.Holo).Honey == Hive.HoneyOfFinish(BeeFinish.Holo)
                 && BadgerTile.Bee(0, BeeFinish.InverseRainbow).Honey == Hive.HoneyOfFinish(BeeFinish.InverseRainbow)
-                && BadgerTile.YardTile().Honey == 1 && BadgerTile.YardTile().Yard;
+                && BadgerTile.YardTile().Honey == 2 && BadgerTile.YardTile().Yard;
             bool label = Hive.HoneyLabel(BeeFinish.Holo) == "H" + Hive.HoneyOfFinish(BeeFinish.Holo);
-            Check("honey shared", table && tiles && label, "tiles and chip label both read Hive.HoneyOfFinish (2/3/5, yard 1)");
+            Check("honey shared", table && tiles && label, "tiles and chip label both read Hive.HoneyOfFinish (2/3/5, yard 2)");
         }
 
         static void CheckLoadoutPreload(System.Action<string, bool, string> Check)
@@ -735,16 +731,16 @@ namespace FlockFive.Editor
             bool best = honey.Length == 16 && honey[0] == 5 && honey[1] == 3
                 && honey[2] == 2 && honey[3] == 2 && honey[4] == 2;
             int yard = 0;
-            for (int i = 5; i < honey.Length; i++) if (honey[i] == 1 && load[i].Yard) yard++;
+            for (int i = 5; i < honey.Length; i++) if (honey[i] == 2 && load[i].Yard) yard++;
             bool pad = yard == 11 && load.BeeTiles == 5;
             var none = BadgerLoadout.Preload((k, f) => 0, 6, 16);
-            bool empty = none.BeeTiles == 0 && Sum(none.Honeys()) == 16;
+            bool empty = none.BeeTiles == 0 && Sum(none.Honeys()) == 32;
             var few = BadgerLoadout.Preload(FakeAlbum, 6, 3);
             bool cut = few.Length == 3 && few[0].Honey == 5 && few[1].Honey == 3 && few[2].Honey == 2;
             var live = BadgerSchedule.PlayerLoadout();
             bool real = live.Length == 16;
             Check("loadout preload", best && pad && empty && cut && real,
-                "best bees first (5,3,2,2,2), padded with eleven yard 1s, empty album all yard, cut to slot count");
+                "best bees first (5,3,2,2,2), padded with eleven yard 2s, empty album all yard, cut to slot count");
         }
 
         static void CheckLoadoutSwap(System.Action<string, bool, string> Check)
@@ -905,21 +901,14 @@ namespace FlockFive.Editor
                 why = "len";
                 return false;
             }
-            int ones = 0;
             for (int i = 0; i < tiles.Length; i++)
             {
                 int face = tiles[i];
-                if (face < 1 || face > 5)
+                if (face != 2 && face != 3 && face != 5)
                 {
                     why = "face " + face;
                     return false;
                 }
-                if (face == 1) ones++;
-            }
-            if (ones != 2)
-            {
-                why = "ones " + ones;
-                return false;
             }
             return true;
         }
