@@ -260,6 +260,15 @@ namespace FlockFive.Editor
                 float pitchOnce = Sfx.LastSquishPitch; Sfx.HoneySquish();
                 Check("squish pitch bounds, round-robin, one per frame", pitchOk && noRepeat && Sfx.SquishBankSize >= 5 && Sfx.LastSquishPitch == pitchOnce,
                     "bank " + Sfx.SquishBankSize + " plays " + plays);
+                // b109 playtest fix: the drag latch never swallows the next poke.
+                HoneyPoke.Clear();
+                bool dragThenRelease = HoneyPoke.DragInto(3) && !HoneyPoke.DragInto(3) && !HoneyPoke.Release(3) && HoneyPoke.LastCell == -1; // drag pokes once, release in same cell does not
+                bool nextTap = HoneyPoke.Release(3); // a plain tap right after pokes
+                HoneyPoke.DragInto(4); HoneyPoke.PressStart(); // drag left the cells, new press
+                bool afterStale = HoneyPoke.Release(4);
+                HoneyPoke.DragInto(5); HoneyPoke.Clear(); // card put away or restart while latched
+                bool afterClear = HoneyPoke.Release(5) && HoneyPoke.LastCell == -1;
+                Check("honey drag latch never swallows the next poke", dragThenRelease && nextTap && afterStale && afterClear, "");
                 HoneyPoke.Clear();
                 var card = new Rect(100f, 100f, 600f, 840f);
                 var cells = new Rect[5];
