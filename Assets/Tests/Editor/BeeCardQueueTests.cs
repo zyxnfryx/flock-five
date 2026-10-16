@@ -175,8 +175,8 @@ namespace FlockFive.Editor
                 if (!HoneyPoke.Place(now + i * 0.02f, new Vector2(8f + i, 12f), 20f))
                     filled = false;
             }
-            check("poke-five", filled && HoneyPoke.Placed == HoneyPoke.Cap, HoneyPoke.Placed.ToString());
-            check("poke-stops", !HoneyPoke.Place(now + 1f, new Vector2(3f, 3f), 20f), "cap holds");
+            check("poke-fill", filled && HoneyPoke.Placed == HoneyPoke.Cap, HoneyPoke.Placed.ToString());
+            check("poke-recycles", HoneyPoke.Place(now + 1f, new Vector2(3f, 3f), 20f) && HoneyPoke.Placed == HoneyPoke.Cap, "ring recycles (b109), every tap lands");
             float mid = HoneyPoke.Alpha(now + HoneyPoke.FadeSec * 0.5f, now);
             check("poke-fade", Mathf.Abs(HoneyPoke.Alpha(now, now) - 1f) < 0.001f
                 && Mathf.Abs(mid - 0.75f) < 0.001f
