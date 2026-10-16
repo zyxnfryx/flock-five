@@ -238,7 +238,35 @@ namespace FlockFive.Editor
                 HoneyPoke.Clear();
                 bool five = true;
                 for (int i = 0; i < HoneyPoke.Cap; i++) five &= HoneyPoke.Place(1f + i, new Vector2(5f, 5f), 20f);
-                Check("smudge cap and fade", five && !HoneyPoke.Place(9f, Vector2.zero, 20f) && HoneyPoke.Alpha(1f + HoneyPoke.FadeSec, 1f) < 0.001f, "");
+                bool recycled = HoneyPoke.Place(9f, Vector2.zero, 20f) && HoneyPoke.Placed == HoneyPoke.Cap; // b109: every tap lands, ring recycles
+                int first = HoneyPoke.At(0).Serial; // the oldest slot was just overwritten by the 11th tap
+                bool ages = Mathf.Approximately(HoneyPoke.AgeAlpha(HoneyPoke.Serial), 1f) && HoneyPoke.AgeAlpha(HoneyPoke.Serial - 5) > 0.4f && HoneyPoke.AgeAlpha(HoneyPoke.Serial - HoneyPoke.Cap) < 0.001f;
+                for (int i = 0; i < 25; i++) five &= HoneyPoke.Place(20f + i, new Vector2(i, i), 20f);
+                Check("smudge ring recycles and fades by taps", five && recycled && ages && first == HoneyPoke.Cap + 1 && HoneyPoke.Placed == HoneyPoke.Cap, "serial " + HoneyPoke.Serial);
+                // b109: squish bank. Own five-take bank, pitch inside 0.96-1.04, no clip twice in a row, one per frame.
+                bool pitchOk = true, noRepeat = true; int prevClip = -1, plays = 0;
+                for (int i = 0; i < 100; i++)
+                {
+                    Sfx.ResetSquishFrameForTest();
+                    Sfx.HoneySquish();
+                    plays++;
+                    pitchOk &= Sfx.LastSquishPitch >= Sfx.SquishPitchLo - 0.0001f && Sfx.LastSquishPitch <= Sfx.SquishPitchHi + 0.0001f;
+                    if (prevClip >= 0 && Sfx.LastSquishClip == prevClip && Sfx.SquishBankSize > 1) noRepeat = false;
+                    prevClip = Sfx.LastSquishClip;
+                }
+                Sfx.ResetSquishFrameForTest(); Sfx.HoneySquish(); Sfx.HoneySquish(); // second call in the same frame is dropped
+                float pitchOnce = Sfx.LastSquishPitch; Sfx.HoneySquish();
+                Check("squish pitch bounds, round-robin, one per frame", pitchOk && noRepeat && Sfx.SquishBankSize >= 5 && Sfx.LastSquishPitch == pitchOnce,
+                    "bank " + Sfx.SquishBankSize + " plays " + plays);
+                // b109 playtest fix: the drag latch never swallows the next poke.
+                HoneyPoke.Clear();
+                bool dragThenRelease = HoneyPoke.DragInto(3) && !HoneyPoke.DragInto(3) && !HoneyPoke.Release(3) && HoneyPoke.LastCell == -1; // drag pokes once, release in same cell does not
+                bool nextTap = HoneyPoke.Release(3); // a plain tap right after pokes
+                HoneyPoke.DragInto(4); HoneyPoke.PressStart(); // drag left the cells, new press
+                bool afterStale = HoneyPoke.Release(4);
+                HoneyPoke.DragInto(5); HoneyPoke.Clear(); // card put away or restart while latched
+                bool afterClear = HoneyPoke.Release(5) && HoneyPoke.LastCell == -1;
+                Check("honey drag latch never swallows the next poke", dragThenRelease && nextTap && afterStale && afterClear, "");
                 HoneyPoke.Clear();
                 var card = new Rect(100f, 100f, 600f, 840f);
                 var cells = new Rect[5];

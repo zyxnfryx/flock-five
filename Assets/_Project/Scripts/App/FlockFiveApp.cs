@@ -247,7 +247,6 @@ namespace FlockFive
         readonly bool[] _hiveFaceBack = new bool[Hive.AlbumSlots];
         const int HivePageSize = 9;
         static readonly Rect[] _honeyHits = new Rect[HoneyPoke.Cap];
-        int _honeyCellLast = -1;
         Rect _albumBookR;
         int _hiveInspect = -1; // album slot (kind×finish), -1 = closed
         float _hiveInspectT; // 0..1 pull animation (open), also used for close
@@ -17693,24 +17692,27 @@ namespace FlockFive
             int n = CardText.HoneyBand(face, honey, true, _honeyHits);
             var e = Event.current;
             bool ate = false;
+            if (e != null && e.type == EventType.MouseDown) HoneyPoke.PressStart();
             for (int i = 0; i < n; i++)
             {
                 bool fire = HitPad(_honeyHits[i], out bool held);
                 bool drag = e != null && e.type == EventType.MouseDrag && _honeyHits[i].Contains(e.mousePosition);
-                if (drag && _honeyCellLast != i)
+                if (drag && HoneyPoke.DragInto(i))
                 {
-                    _honeyCellLast = i;
                     ate = true;
-                    HoneyPoke.Place(AdPause.Unscaled, _honeyHits[i].center, _honeyHits[i].width * 0.42f);
-                    Sfx.CardBump();
+                    HoneyPoke.Place(AdPause.Unscaled, e.mousePosition, _honeyHits[i].width * 0.42f);
+                    Sfx.HoneySquish();
                 }
                 if (held) ate = true;
                 if (!fire) continue;
                 ate = true;
-                _honeyCellLast = -1;
-                HoneyPoke.Place(AdPause.Unscaled, _honeyHits[i].center, _honeyHits[i].width * 0.42f);
-                Sfx.CardBump();
+                // b109: a press that already squished this cell on the way in (drag) does not squish again on release.
+                if (!HoneyPoke.Release(i)) continue;
+                HoneyPoke.Place(AdPause.Unscaled, e != null ? e.mousePosition : _honeyHits[i].center, _honeyHits[i].width * 0.42f);
+                Sfx.HoneySquish();
             }
+            // A release anywhere ends the press: a drag that left every cell must not leave the latch set.
+            if (e != null && e.rawType == EventType.MouseUp) HoneyPoke.PressStart();
             return ate;
         }
 
