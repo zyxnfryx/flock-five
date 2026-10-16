@@ -18569,6 +18569,23 @@ namespace FlockFive
             return "gift sign tapped";
         }
 
+        public enum AdFailAction { KeepCard, GrantBranch, Close }
+
+        // What a request that ended with no grant does. Pure so the tests can pin it.
+        public static AdFailAction AdFailDecision(bool keepStreak, bool freeze, bool tutorial, bool skipped)
+        {
+            if (keepStreak || freeze || skipped) return AdFailAction.KeepCard;
+            return tutorial ? AdFailAction.GrantBranch : AdFailAction.Close;
+        }
+
+        // The gift card's X is always accepted, even while the ad-hand glove owns the screen.
+        bool GiftCloseExempt(Vector2 gui)
+        {
+            if (_gift != GiftFace.Card || _freezeOffer) return false;
+            var x = CloseTapRect(CornerCloseRect(DeviceFit.Ui(), TopHud()));
+            return x.width > 2f && x.Contains(gui);
+        }
+
         void CloseGift()
         {
             DismissAdHand();
@@ -18633,6 +18650,26 @@ namespace FlockFive
             if (!pay)
             {
                 _busy = false;
+                // b111 (Melchior/Brandon): no fill must never loop. Only the plain bonus gift is affected (the
+                // keep-streak and freeze cards keep their own choices). A player skip keeps the Watch card.
+                if (AdFailDecision(keep, freeze, tutorial, AdRetry.Skipped) == AdFailAction.GrantBranch)
+                {
+                    AdLog.Add("gift ad unavailable in the tutorial: granting the branch (" + AdRetry.Reason + ")");
+                    OpenRewardBranch(_giftBranch);
+                    FinishAdHandGoal();
+                    yield return PresentBranchReward();
+                    yield break;
+                }
+                if (AdFailDecision(keep, freeze, tutorial, AdRetry.Skipped) == AdFailAction.Close)
+                {
+                    AdLog.Add("gift ad unavailable: closing the offer (" + AdRetry.Reason + ")");
+                    _gift = GiftFace.None;
+                    AdRetry.Clear();
+                    DismissAdHand();
+                    _swallowTapsUntil = PlayClock.Now + 0.45f;
+                    _suppressGiftUntil = PlayClock.Now + 1f;
+                    yield break;
+                }
                 // Never a silent bounce back to Watch: say the ad was not ready.
                 if (AdRetry.ShouldOffer(false)) AdRetry.Offer();
                 AdLog.Add("gift card kept up after no grant (retry state "
@@ -19002,7 +19039,11 @@ namespace FlockFive
             if (!_freezeOffer) DrawGiftCloseX(xBtn, xHeld, s);
             if (_adHand)
             {
-                CapSpot("ad.hand"); DrawSplashIntroLine(AdHandLine, AdHandCaptionRect(s), s);
+                // b111: the unlock banner must not stay up while the card says "Ad not ready".
+                if (!(AdRetry.Active && !AdRetry.Skipped))
+                {
+                    CapSpot("ad.hand"); DrawSplashIntroLine(AdHandLine, AdHandCaptionRect(s), s);
+                }
                 DrawTutorOverlay(s);
             }
             if (watch)
