@@ -2110,10 +2110,23 @@ namespace FlockFive
             if (squish < 0.995f)
                 GUIUtility.ScaleAroundPivot(new Vector2(squish, squish * 0.94f), flower.center);
             var disc = DrawPopupButton(flower, held, ready, 1f, true, false); // no release sparkle on Claim
+            // b106 (Brandon): the label is drawn OUTSIDE the clunk scale matrix. Inside it the outlined label
+            // takes LabelAt's window-space path (matrix reset + unclip origin), so the rim copies and the fill
+            // could land on two different seats for a few frames ("Claimed" shown twice on press). The face
+            // keeps the squish; the label rect gets the same scale by hand and draws on the plain path.
+            GUI.matrix = pressed;
             var labR = new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.56f);
+            if (squish < 0.995f)
+            {
+                var c = flower.center;
+                float sx = squish, sy = squish * 0.94f;
+                labR = new Rect(c.x + (labR.x - c.x) * sx, c.y + (labR.y - c.y) * sy, labR.width * sx, labR.height * sy);
+            }
             _dailyClaim.fontSize = _dailyClaimPx;
             int ink = Mathf.Clamp(Mathf.RoundToInt(_dailyClaimPx * 0.12f), 2, 6);
             StampOutlined(labR, DailyVerb(), _dailyClaim, new Color(0.28f, 0.12f, 0.04f), 2, ink);
+            if (squish < 0.995f)
+                GUIUtility.ScaleAroundPivot(new Vector2(squish, squish * 0.94f), flower.center);
             if (!ready)
             {
                 GUI.matrix = pressed;
