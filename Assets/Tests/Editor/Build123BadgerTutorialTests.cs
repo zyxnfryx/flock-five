@@ -120,10 +120,32 @@ namespace FlockFive.Editor
             var f2 = new BadgerFight(2, 7, pl, bo, false);
             int bigIx = f2.BossPickFor(BadgerPower.HotSauce);
             int saveTile = f2.PowerStepPlayerTile(BadgerPower.HotSauce);
-            Check("power-step-block-vs-big-badger", bo[bigIx] == 5 && pl[saveTile] < 5 && f2.StepPower == BadgerPower.HotSauce, "boss " + bo[bigIx] + " you " + pl[saveTile]);
+            Check("power-step-block-vs-big-badger", bo[bigIx] == 5 && pl[saveTile] == 2 && f2.StepPower == BadgerPower.HotSauce, "boss " + bo[bigIx] + " you " + pl[saveTile]);
             f2.PlayerPick(saveTile);
             bool noSlam = !f2.TryDontCare(n => 0, out var sl) && !sl.Hit;
             Check("power-step-round-never-slammed", noSlam, "");
+
+            // Hot Sauce / Freeze: (a) caption explains replace + block, (b) glove on the button then the comb (shared table),
+            // (c) the icon flies to the weakest tile and swaps the number, (d) a result beat says the block worked.
+            bool blocks = true;
+            foreach (var pw in new[] { BadgerPower.HotSauce, BadgerPower.FreezeSpray })
+            {
+                string intro = BadgerCopy.PowerIntroLine(pw, false), armed = BadgerCopy.PowerArmedLine(pw), done = BadgerCopy.BlockWorkedLine(pw);
+                blocks &= intro.Contains("replaces") && intro.Contains("blocks") && armed.Contains("weakest")
+                    && done.Contains("badger scores nothing") && BadgerFight.IsBlock(pw);
+            }
+            Check("block-powers-caption-explains-replace-and-block", blocks, BadgerCopy.PowerIntroLine(BadgerPower.HotSauce, false));
+            var introR = CoachTap.Rule(CoachStep.BadgerPowerIntro); var armR = CoachTap.Rule(CoachStep.BadgerPowerArmed);
+            Check("block-powers-glove-on-button-then-comb-table", introR.Pointer == CoachPointer.Glove && introR.Advances(TapZone.Target)
+                && armR.Pointer == CoachPointer.Glove && armR.Advances(TapZone.Target) && armR.Ignores(TapZone.Back), "");
+            float p0 = BadgerPowerFly.Progress(0f), pm = BadgerPowerFly.Progress(0.6f), p1 = BadgerPowerFly.Progress(2f);
+            Check("block-power-fly-beat-timing", p0 == 0f && p1 == 1f && pm > 0f && pm < 1f && BadgerPowerFly.Progress(0.8f) > pm
+                && BadgerPowerFly.RevealExtra(BadgerPower.HotSauce) > 0.9f && BadgerPowerFly.RevealExtra(BadgerPower.FreezeSpray) > 0.9f
+                && BadgerPowerFly.RevealExtra(BadgerPower.X2) == 0f && BadgerPowerFly.SwapFrom < 1f, "");
+            // Result: with the block the badger's final honey is 0 and the player scores their tile; without it the badger scores.
+            BadgerFight.ApplyRound(2, 5, BadgerPower.HotSauce, out int pf, out int bf, out int pg, out int bg);
+            BadgerFight.ApplyRound(2, 5, BadgerPower.None, out int pf2, out int bf2, out int pg2, out int bg2);
+            Check("block-result-badger-does-not-score", bf == 0 && bg == 0 && pg == 2 && bg2 == 5, "with block you +" + pg + " badger +" + bg + "; without badger +" + bg2);
 
             // Source wiring.
             string badger = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
@@ -136,6 +158,8 @@ namespace FlockFive.Editor
                 && badger.Contains("BadgerContinueRect(L); // one rect"), "");
             Check("back-held-in-round4-bosswait", badger.Contains("bool BadgerGuidePending()") && badger.Contains("|| BadgerGuidePending())"), "");
             Check("badger-tap-presses-level", File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs").Contains("the badger on the pedestal is part of the pedestal"), "");
+            Check("block-beat-wired", badger.Contains("void DrawBadgerBlockBeat(") && badger.Contains("DrawBadgerPowerIcon(") && badger.Contains("BadgerCopy.BlockWorkedLine(_bgGuideRoundPower)")
+                && badger.Contains("BadgerPowerFly.RevealExtra(_bgGuideRoundPower)"), "");
             Check("no-bird-greet-over-badger", File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Avatar.cs").Contains("BadgerSitter.Visible(BadgerOwed()"), "");
             Check("guided-gate-in-shared-step-gate", coach.Contains("gate.Step = GateBadgerGuide;") && coach.Contains("void CoachArrowAt(Rect target, float s)")
                 && coach.Contains("GateBadgerLesson && BadgerLessonIgnores"), "");

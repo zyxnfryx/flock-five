@@ -337,7 +337,7 @@ namespace FlockFive
                     Sfx.CardBump();
                     break;
                 case BadgerStage.Reveal:
-                    if (_bgT < BadgerSlide + BadgerRevealHold) break;
+                    if (_bgT < BadgerSlide + BadgerRevealHold + BadgerPowerFly.RevealExtra(_bgGuideRoundPower)) break;
                     // Both picks are in: roll the Don't Care slam (spec 2b) before the compare.
                     if (_bgFight.TryDontCare(out var slam))
                     {
@@ -449,6 +449,9 @@ namespace FlockFive
             _bgDotT = 0f;
             _bgStage = BadgerStage.Verdict;
             _bgLine = BadgerVerdict(_bgRound);
+            // b123: the forced block round says the block worked.
+            if (_bgGuideRoundPower != BadgerPower.None && BadgerFight.IsBlock(_bgGuideRoundPower) && _bgRound.Power == _bgGuideRoundPower)
+                _bgLine = BadgerCopy.BlockWorkedLine(_bgGuideRoundPower);
             if (_bgRound.PlayerGained > 0 || _bgRound.BossGained > 0 || BadgerFight.IsBlock(_bgRound.Power))
                 Sfx.CardBump();
         }
@@ -1499,9 +1502,69 @@ namespace FlockFive
                     DrawBadgerGain(r, _bgRound.PlayerGained, _bgT);
                 if (_bgArmed != BadgerPower.None && GuiPaint())
                     DrawBadgerPowerBadge(r, _bgArmed);
+                DrawBadgerBlockBeat(r, s);
                 DrawBadgerLookArrows(r, s);
             }
 
+        }
+
+        // b123: Hot Sauce / Freeze demo on the forced round. The icon flies from its button to the weakest tile and
+        // replaces the number; it stays through the verdict (the boss tile already dims and splats).
+        void DrawBadgerBlockBeat(Rect tile, float s)
+        {
+            var p = _bgGuideRoundPower;
+            if (_bgFight == null || !_bgFight.CoachFight || p == BadgerPower.None || !BadgerFight.IsBlock(p) || !GuiPaint()) return;
+            if (_bgStage != BadgerStage.Reveal && _bgStage != BadgerStage.Verdict && _bgStage != BadgerStage.DontCare) return;
+            float t = _bgStage == BadgerStage.Reveal ? _bgT : 99f;
+            float f = BadgerPowerFly.Progress(t);
+            float side = Mathf.Min(tile.width, tile.height) * 0.62f;
+            if (f >= BadgerPowerFly.SwapFrom)
+            {
+                // the number is gone: a disc of the tile's honey colour, then the icon
+                float a = Mathf.Clamp01((f - BadgerPowerFly.SwapFrom) / (1f - BadgerPowerFly.SwapFrom));
+                var disc = new Rect(tile.center.x - side * 0.55f, tile.center.y - side * 0.55f, side * 1.1f, side * 1.1f);
+                GUI.color = new Color(0.98f, 0.78f, 0.28f, a);
+                DrawSolidRound(disc, disc.height * 0.5f, 0, a);
+                GUI.color = Color.white;
+            }
+            var L = BadgerLayout();
+            var from = BadgerPowerRect(L, (int)p - 1);
+            var pos = Vector2.Lerp(from.center, tile.center, f);
+            pos.y -= Mathf.Sin(f * Mathf.PI) * tile.height * 0.8f; // a short arc
+            float sz = Mathf.Lerp(from.height * 0.7f, side, f);
+            DrawBadgerPowerIcon(new Rect(pos.x - sz * 0.5f, pos.y - sz * 0.5f, sz, sz), p, 1f);
+        }
+
+        // Drawn icons (no art for these two): a flame for Hot Sauce, a snowflake for Freeze Spray.
+        static void DrawBadgerPowerIcon(Rect r, BadgerPower p, float a)
+        {
+            if (!GuiPaint() || r.width < 2f) return;
+            var prevC = GUI.color;
+            if (p == BadgerPower.HotSauce)
+            {
+                var c1 = new Rect(r.x + r.width * 0.12f, r.y + r.height * 0.30f, r.width * 0.76f, r.height * 0.66f);
+                var c2 = new Rect(r.x + r.width * 0.26f, r.y + r.height * 0.46f, r.width * 0.48f, r.height * 0.46f);
+                var c3 = new Rect(r.x + r.width * 0.38f, r.y + r.height * 0.62f, r.width * 0.24f, r.height * 0.28f);
+                var tip = new Rect(r.x + r.width * 0.34f, r.y + r.height * 0.06f, r.width * 0.32f, r.height * 0.44f);
+                GUI.color = new Color(0.85f, 0.12f, 0.06f, a); DrawSolidRound(c1, c1.height * 0.5f, 0, a);
+                GUI.color = new Color(0.85f, 0.12f, 0.06f, a); DrawSolidRound(tip, tip.height * 0.5f, 0, a);
+                GUI.color = new Color(1f, 0.55f, 0.10f, a); DrawSolidRound(c2, c2.height * 0.5f, 0, a);
+                GUI.color = new Color(1f, 0.90f, 0.35f, a); DrawSolidRound(c3, c3.height * 0.5f, 0, a);
+            }
+            else
+            {
+                var ctr = r.center;
+                float len = r.width * 0.46f, th = Mathf.Max(2f, r.width * 0.10f);
+                var m = GUI.matrix;
+                GUI.color = new Color(0.45f, 0.85f, 1f, a);
+                for (int k = 0; k < 3; k++)
+                {
+                    GUIUtility.RotateAroundPivot(60f * k, ctr);
+                    GUI.DrawTexture(new Rect(ctr.x - th * 0.5f, ctr.y - len, th, len * 2f), Texture2D.whiteTexture);
+                    GUI.matrix = m;
+                }
+            }
+            GUI.color = prevC;
         }
 
         // b123 look-at arrows (the glove stays for taps): the power badge on the tile, the power's visible effect, and the
@@ -1921,6 +1984,8 @@ namespace FlockFive
                 if (_bgPowerGuideOn && p == _bgGuidePower && BadgerPowerGuideStage() == 1) DrawBadgerGuideGlow(r);
                 bool fire = BadgerButton(r, BadgerPowerName(p), sub, k < 2, used || !inPick || guideBlocks, lit,
                     live && inPick && !used && !guideBlocks, ink, BadgerShakeX(BadgerPowerKey + (int)p, s));
+                if (BadgerFight.IsBlock(p) && GuiPaint())
+                    DrawBadgerPowerIcon(new Rect(r.x - r.height * 0.06f, r.y - r.height * 0.22f, r.height * 0.5f, r.height * 0.5f), p, used ? 0.5f : 1f);
                 if (fire) ClickBadgerPower(p);
             }
         }

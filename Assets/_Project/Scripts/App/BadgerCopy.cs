@@ -65,10 +65,17 @@ namespace FlockFive
             {
                 case BadgerPower.X2: return firstUnlock ? PowersOpen : "Tap x2.\nYour first one is free.";
                 case BadgerPower.X3: return "New: x3 triples your next tile.\nTap x3. Free this once.";
-                case BadgerPower.HotSauce: return "New: Hot Sauce. The badger\nscores nothing. Tap it. Free once.";
-                case BadgerPower.FreezeSpray: return "New: Freeze Spray holds him\nfor 2 rounds. Tap it. Free once.";
+                case BadgerPower.HotSauce: return "New: Hot Sauce replaces a tile's\nvalue and blocks the badger. Tap it.";
+                case BadgerPower.FreezeSpray: return "New: Freeze Spray replaces a tile's\nvalue and blocks him for 2 rounds.";
             }
             return "";
+        }
+
+        // Result beat for a block power's forced round: the badger did not score.
+        public static string BlockWorkedLine(BadgerPower p)
+        {
+            if (p == BadgerPower.FreezeSpray) return "Frozen! The badger scores nothing\nthis round or the next.";
+            return "Blocked! The badger scores nothing.\nYour tile wins.";
         }
 
         public static string PowerArmedLine(BadgerPower p)
@@ -77,8 +84,8 @@ namespace FlockFive
             {
                 case BadgerPower.X2: return X2Armed;
                 case BadgerPower.X3: return "x3 triples your next tile.\nTap the glowing comb.";
-                case BadgerPower.HotSauce: return "Hot Sauce burns his tile.\nTap the glowing comb.";
-                case BadgerPower.FreezeSpray: return "Freeze Spray stops him for 2 rounds.\nTap the glowing comb.";
+                case BadgerPower.HotSauce: return "It flies to your weakest comb.\nTap the glowing comb.";
+                case BadgerPower.FreezeSpray: return "It flies to your weakest comb.\nTap the glowing comb.";
             }
             return "";
         }
@@ -210,5 +217,24 @@ namespace FlockFive
             if (plan.TakeVisitor) Hive.TakeBossVisitor();
             return plan.Credit;
         }
+    }
+
+    // b123: the block power's visible beat. The icon flies from its button to the player's weakest tile and replaces the
+    // number there; the reveal holds long enough to watch it. Pure timing so tests can check it.
+    public static class BadgerPowerFly
+    {
+        public const float Start = 0.15f;
+        public const float Seconds = 0.90f;
+        public const float SwapFrom = 0.70f; // progress after which the icon has replaced the number
+
+        public static float Progress(float t)
+        {
+            float u = (t - Start) / Seconds;
+            if (u <= 0f) return 0f;
+            if (u >= 1f) return 1f;
+            return u * u * (3f - 2f * u);
+        }
+
+        public static float RevealExtra(BadgerPower p) => BadgerFight.IsBlock(p) ? Start + Seconds : 0f;
     }
 }

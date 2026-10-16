@@ -234,21 +234,17 @@ namespace FlockFive
         }
 
         // The comb the power step points at (call after the badger's pick). x2/x3: the player's highest-honey open comb.
-        // Blocks: the highest open comb that is still below the badger's tile (so the block is what saves the round);
-        // none below means the highest.
+        // Blocks: the player's WEAKEST open comb (the icon replaces its number; it loses without the block).
         public int PowerStepPlayerTile(BadgerPower power)
         {
-            int bossHoney = _bossPick >= 0 ? _boss[_bossPick] : int.MaxValue;
             bool block = IsBlock(power);
-            int best = -1, fallback = -1;
+            int best = -1;
             for (int i = 0; i < _player.Length; i++)
             {
                 if (!_playerOpen[i]) continue;
-                if (fallback < 0 || _player[i] > _player[fallback]) fallback = i;
-                if (block && _player[i] < bossHoney && (best < 0 || _player[i] > _player[best])) best = i;
+                if (best < 0 || (block ? _player[i] < _player[best] : _player[i] > _player[best])) best = i;
             }
-            if (!block) return fallback;
-            return best >= 0 ? best : fallback;
+            return best;
         }
 
         // False if the badger has not picked yet, or the tile is closed. No change then.
