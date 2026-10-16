@@ -299,7 +299,9 @@ namespace FlockFive
             {
                 case BadgerStage.BossWait:
                     if (_bgT < BadgerBossWait) break;
-                    int ix = _bgFight.BossPick();
+                    // b123: a forced power round scripts the badger's tile (low for x2/x3, high for the blocks).
+                    var stepPower = BadgerPowerGuideWanted() ? NextBadgerGuidePower() : BadgerPower.None;
+                    int ix = stepPower != BadgerPower.None ? _bgFight.BossPickFor(stepPower) : _bgFight.BossPick();
                     if (ix < 0)
                     {
                         BeginBadgerOutro();
@@ -327,7 +329,7 @@ namespace FlockFive
                         // The intro line stays up (it used to be overwritten by "Your pick").
                         _bgGuidePower = NextBadgerGuidePower();
                         _bgPowerGuideOn = true;
-                        _bgPowerTile = FirstOpenPlayerTile();
+                        _bgPowerTile = _bgFight.PowerStepPlayerTile(_bgGuidePower);
                         _bgLine = "";
                         _bgGuideAim = default;
                         ResetBadgerGlove();

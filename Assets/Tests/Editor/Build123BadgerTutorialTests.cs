@@ -106,9 +106,24 @@ namespace FlockFive.Editor
             Check("per-power-intro-and-armed-copy", pcopy && BadgerCopy.Armed == "ARMED", "");
             var fair = BadgerLoadout.Preload((k, f) => 0, 0, 16);
             fair.FairStart(1);
-            int ones = 0, sum = 0; foreach (var h in fair.Honeys()) { if (h <= 1) ones++; sum += h; }
+            bool only2 = true; foreach (var h in fair.Honeys()) only2 &= h == Hive.HoneyOfFinish(BeeFinish.Normal) && h == 2;
             var late = BadgerLoadout.Preload((k, f) => 0, 0, 16); late.FairStart(2);
-            Check("fair-first-grid-not-all-ones", ones <= 3 && sum >= 40 && late.Honeys()[0] == 1, "ones " + ones + " sum " + sum);
+            Check("fair-first-grid-finish-values-only", only2 && late.Honeys()[0] == 1 && Hive.HoneyOfFinish(BeeFinish.Holo) == 3 && Hive.HoneyOfFinish(BeeFinish.InverseRainbow) == 5, "");
+
+            // Forced power round: x2/x3 on the player's highest comb vs the badger's lowest; blocks vs the badger's highest.
+            var pl = new[] { 2, 3, 5, 2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 };
+            var bo = new[] { 1, 1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5 };
+            var f1 = new BadgerFight(2, 7, pl, bo, false);
+            int lowIx = f1.BossPickFor(BadgerPower.X3);
+            int hiTile = f1.PowerStepPlayerTile(BadgerPower.X3);
+            Check("power-step-x3-highest-comb-vs-low-badger", bo[lowIx] == 1 && pl[hiTile] == 5 && f1.StepPower == BadgerPower.X3, "boss " + bo[lowIx] + " you " + pl[hiTile]);
+            var f2 = new BadgerFight(2, 7, pl, bo, false);
+            int bigIx = f2.BossPickFor(BadgerPower.HotSauce);
+            int saveTile = f2.PowerStepPlayerTile(BadgerPower.HotSauce);
+            Check("power-step-block-vs-big-badger", bo[bigIx] == 5 && pl[saveTile] < 5 && f2.StepPower == BadgerPower.HotSauce, "boss " + bo[bigIx] + " you " + pl[saveTile]);
+            f2.PlayerPick(saveTile);
+            bool noSlam = !f2.TryDontCare(n => 0, out var sl) && !sl.Hit;
+            Check("power-step-round-never-slammed", noSlam, "");
 
             // Source wiring.
             string badger = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
