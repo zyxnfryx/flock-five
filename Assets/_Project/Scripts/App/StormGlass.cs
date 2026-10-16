@@ -7,8 +7,8 @@ namespace FlockFive
     // writes those slots, so a frame does not allocate.
     public static class StormGlass
     {
-        public const int BeadCap = 16;
-        public const int SpeckCap = 28;
+        public const int BeadCap = 6;
+        public const int SpeckCap = 10;
         public const int DrawCap = BeadCap + SpeckCap;
         public const int Cap = BeadCap;
         public const byte Slide = 0;
@@ -26,13 +26,14 @@ namespace FlockFive
         public const float SplatDur = 0.36f;
         public const float CoverKeep = 0.18f;
         public const float CoverFade = 0.32f;
-        public const float GapMin = 0.055f;
-        public const float GapMax = 0.12f;
+        public const float GapMin = 0.9f;
+        public const float GapMax = 1.8f;
         public const float StickyCreep = 10f;
+        public const int BurstSpecks = 2;
 
         const int SpawnTries = 18;
         const float RefH = 2556f;
-        const float TrailStep = 10f;
+        const float TrailStep = 24f;
         const float Touch = 0.92f;
 
         public struct Bead
@@ -86,6 +87,18 @@ namespace FlockFive
 
             public float Range(float a, float b) => a + (b - a) * Next01();
         }
+
+        // Pool reset: zero every slot so nothing stale can be drawn or reused.
+        public static void Clear(Bead[] beads, ref int count, Speck[] specks, ref int speckN)
+        {
+            if (beads != null) System.Array.Clear(beads, 0, beads.Length);
+            if (specks != null) System.Array.Clear(specks, 0, specks.Length);
+            count = 0;
+            speckN = 0;
+        }
+
+        // True when no bead or speck is alive. Used by tests and the rig on exit.
+        public static bool Settled(int count, int speckN) => count <= 0 && speckN <= 0;
 
         public static bool Storming(bool garden, float wet) => garden && wet >= WetOn;
 
@@ -186,7 +199,7 @@ namespace FlockFive
             if (!garden)
             {
                 spawnIn = 0.05f;
-                speckN = 0;
+                Clear(beads, ref count, specks, ref speckN);
                 return 0;
             }
             if (dt < 0f) dt = 0f;
@@ -212,6 +225,7 @@ namespace FlockFive
                     {
                         speckN--;
                         if (s < speckN) specks[s] = specks[speckN];
+                        specks[speckN] = default;
                         continue;
                     }
                     s++;
@@ -269,7 +283,7 @@ namespace FlockFive
             if (TrySpawn(beads, ref n, areaX, areaY, areaW, areaH, scale, blocks, blockCount, ref rng, specks, ref speckN))
                 spawnIn = rng.Range(GapMin, GapMax);
             else
-                spawnIn = 0.16f;
+                spawnIn = 0.4f;
             return n;
         }
 
@@ -335,8 +349,8 @@ namespace FlockFive
             float hi = 26f * scale;
             if (sr < lo) sr = lo;
             if (sr > hi) sr = hi;
-            float life = 1.15f + (b.Radius / (RadiusCap * scale)) * 0.7f;
-            if (life > 2.2f) life = 2.2f;
+            float life = 0.9f + (b.Radius / (RadiusCap * scale)) * 0.6f;
+            if (life > 1.5f) life = 1.5f;
             AddSpeck(specks, ref speckN, b.X - dx * inv * back, b.Y - dy * inv * back, sr, life);
         }
 
@@ -419,6 +433,7 @@ namespace FlockFive
         {
             n--;
             if (i < n) beads[i] = beads[n];
+            beads[n] = default;
             return n;
         }
 
@@ -515,14 +530,14 @@ namespace FlockFive
 
         static void Burst(Speck[] specks, ref int speckN, float x, float y, float rad, float scale, ref Rng rng)
         {
-            for (int k = 0; k < 4; k++)
+            for (int k = 0; k < BurstSpecks; k++)
             {
                 float ang = rng.Range(0f, 6.28318f);
                 float d = rad * rng.Range(0.9f, 1.35f);
-                float sr = rng.Range(9f, 16f) * scale;
+                float sr = rng.Range(7f, 11f) * scale;
                 AddSpeck(specks, ref speckN,
                     x + Mathf.Cos(ang) * d, y + Mathf.Sin(ang) * d,
-                    sr, rng.Range(0.40f, 0.75f));
+                    sr, rng.Range(0.35f, 0.60f));
             }
         }
 
@@ -531,27 +546,10 @@ namespace FlockFive
             if (specks == null || rad <= 0f || life <= 0f) return;
             int cap = specks.Length;
             if (cap > SpeckCap) cap = SpeckCap;
-            if (cap <= 0) return;
-            int i;
-            if (n < cap)
-            {
-                i = n;
-                n++;
-            }
-            else
-            {
-                i = 0;
-                float oldest = specks[0].Age;
-                int limit = n < cap ? n : cap;
-                for (int k = 1; k < limit; k++)
-                {
-                    if (specks[k].Age > oldest)
-                    {
-                        oldest = specks[k].Age;
-                        i = k;
-                    }
-                }
-            }
+            // A full pool skips the new speck. Overwriting the oldest popped it out mid-fade.
+            if (cap <= 0 || n >= cap) return;
+            int i = n;
+            n++;
             specks[i] = new Speck
             {
                 X = x,
@@ -560,6 +558,29 @@ namespace FlockFive
                 Age = 0f,
                 Life = life
             };
+        }
+    }
+
+    // Shared rain density. One per-area rate, so iPhone, iPad and Android read the
+    // same: a taller or wider glass gets more streaks, not a different look.
+    public static class RainDensity
+    {
+        // Streak quads per square world unit of visible glass.
+        public const float PerUnit2 = 0.20f;
+        public const int Min = 36;
+        public const int Max = 72;
+        // Before b105 fixed counts: 120 on phones and tablets, 156 on desktop.
+        public const int OldPhone = 120;
+        public const int OldDesk = 156;
+
+        public static int Count(float width, float height)
+        {
+            float a = width * height;
+            if (a < 0f) a = 0f;
+            int n = Mathf.RoundToInt(a * PerUnit2);
+            if (n < Min) n = Min;
+            else if (n > Max) n = Max;
+            return n;
         }
     }
 }

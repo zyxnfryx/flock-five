@@ -52,14 +52,14 @@ namespace FlockFive.Editor
             float radHi = 0f;
             int inside = 0;
             int outside = 0;
-            int seeds = 28;
+            int seeds = 60;
             for (int s = 0; s < seeds; s++)
             {
                 var rng = new StormGlass.Rng { State = (uint)(s * 9973 + 11) };
                 float spawn = 0f;
                 int n = 0;
                 int speckN = 0;
-                for (int step = 0; step < 200; step++)
+                for (int step = 0; step < 900; step++)
                 {
                     n = Step(beads, n, 1f / 60f, true, 1f, half, 1, ref rng, ref spawn, specks, ref speckN);
                     if (n > StormGlass.BeadCap || speckN > StormGlass.SpeckCap) overCap++;
@@ -85,12 +85,14 @@ namespace FlockFive.Editor
             }
             Check("caps-hold", overCap == 0 && peak <= StormGlass.BeadCap && speckPeak <= StormGlass.SpeckCap,
                 "peak " + peak + " specks " + speckPeak + " over " + overCap);
-            Check("pool-fills", peak >= 10 && speckPeak >= 8,
+            Check("calm-not-empty", peak >= 3 && peak <= StormGlass.BeadCap && speckPeak >= 2,
                 "beads " + peak + " specks " + speckPeak);
-            Check("spawns-many", spawned > 120, "spawned " + spawned);
+            float perMin = spawned / (seeds * 15f) * 60f;
+            Check("spawns-calm", spawned > 150 && perMin > 30f && perMin < 80f,
+                "spawned " + spawned + " per min " + perMin.ToString("0.0"));
             Check("sizes-vary", radLo < 16f && radHi > 55f && radHi <= StormGlass.RadiusMax + 0.01f,
                 "r " + radLo.ToString("0.0") + ".." + radHi.ToString("0.0"));
-            Check("some-stick", stickies > 8, "sticky " + stickies);
+            Check("some-stick", stickies > 5, "sticky " + stickies);
             Check("life-in-range", lifeBad == 0 && lifeLo >= StormGlass.LifeMin - 0.001f && lifeHi <= StormGlass.StickyLifeMax + 0.001f,
                 "bad " + lifeBad + " " + lifeLo.ToString("0.00") + ".." + lifeHi.ToString("0.00"));
             float inFrac = (inside + outside) > 0 ? (float)inside / (inside + outside) : 1f;
@@ -100,13 +102,13 @@ namespace FlockFive.Editor
             int birdIn = 0, birdOut = 0;
             float blockArea = 0f;
             for (int i = 0; i < 5; i++) blockArea += blocks[i].W * blocks[i].H;
-            for (int s = 0; s < 20; s++)
+            for (int s = 0; s < 60; s++)
             {
                 var rng = new StormGlass.Rng { State = (uint)(s * 1301 + 3) };
                 float spawn = 0f;
                 int n = 0;
                 int speckN = 0;
-                for (int step = 0; step < 160; step++)
+                for (int step = 0; step < 900; step++)
                 {
                     n = Step(beads, n, 1f / 60f, true, 1f, blocks, 5, ref rng, ref spawn, specks, ref speckN);
                     for (int i = 0; i < n; i++)
@@ -155,7 +157,7 @@ namespace FlockFive.Editor
             int coveredSpawns = 0;
             int clearSpawns = 0;
             var wall = new StormGlass.Block[] { new StormGlass.Block { X = 0f, Y = 0f, W = W, H = H } };
-            for (int step = 0; step < 240; step++)
+            for (int step = 0; step < 3600; step++)
             {
                 int was = wallN;
                 wallN = Step(beads, wallN, 1f / 60f, true, 1f, wall, 1, ref wallRng, ref wallSpawn, specks, ref wallSpeck);
@@ -215,7 +217,7 @@ namespace FlockFive.Editor
             float speckLo = 99f;
             for (int i = 0; i < trailSpeck; i++)
                 if (specks[i].Radius < speckLo) speckLo = specks[i].Radius;
-            Check("lays-a-wet-trail", tn == 1 && trailSpeck >= 4 && speckLo >= 16f,
+            Check("lays-a-wet-trail", tn == 1 && trailSpeck >= 2 && speckLo >= 16f,
                 "specks " + trailSpeck + " r " + speckLo.ToString("0.0"));
 
             beads[0] = new StormGlass.Bead
@@ -382,6 +384,56 @@ namespace FlockFive.Editor
             leftN = Step(beads, leftN, 0.016f, false, 1f, blocks, 5, ref leftRng, ref leftSpawn, specks, ref leftSpeck);
             Check("leave-garden-clears", leftN == 0 && leftSpeck == 0 && nA > 0,
                 "before " + nA + " after " + leftN + " specks " + leftSpeck);
+
+            // Nothing outlives its life: stop the storm and every bead and speck must be gone.
+            {
+                var cRng = new StormGlass.Rng { State = 123u };
+                float cSpawn = 0f;
+                int cn = 0, cs = 0;
+                int bMax = 0, sMax = 0, tail = 0;
+                for (int step = 0; step < 1200; step++)
+                {
+                    cn = Step(beads, cn, 1f / 60f, true, 1f, blocks, 5, ref cRng, ref cSpawn, specks, ref cs);
+                    if (cn > bMax) bMax = cn;
+                    if (cs > sMax) sMax = cs;
+                }
+                float maxLife = StormGlass.StickyLifeMax + 0.1f;
+                int offSteps = (int)(maxLife * 60f) + 2;
+                int liveAtEnd = -1;
+                for (int step = 0; step < offSteps; step++)
+                {
+                    cn = Step(beads, cn, 1f / 60f, true, 0f, blocks, 5, ref cRng, ref cSpawn, specks, ref cs);
+                    for (int i = 0; i < cn; i++)
+                        if (beads[i].Age >= beads[i].Life) tail++;
+                    for (int i = 0; i < cs; i++)
+                        if (specks[i].Age >= specks[i].Life) tail++;
+                }
+                liveAtEnd = cn + cs;
+                int junk = 0;
+                for (int i = cn; i < beads.Length; i++)
+                    if (beads[i].Life != 0f || beads[i].Radius != 0f) junk++;
+                for (int i = cs; i < specks.Length; i++)
+                    if (specks[i].Life != 0f || specks[i].Radius != 0f) junk++;
+                Check("nothing-outlives-its-life",
+                    liveAtEnd == 0 && tail == 0 && junk == 0 && StormGlass.Settled(cn, cs) && bMax > 0 && sMax > 0
+                    && StormGlass.Alpha(StormGlass.LifeMax, StormGlass.LifeMax) == 0f
+                    && StormGlass.SpeckAlpha(0.5f, 0.5f) == 0f,
+                    "alive " + liveAtEnd + " past-life " + tail + " stale " + junk + " peak " + bMax + "/" + sMax);
+            }
+
+            {
+                int phone = RainDensity.Count(9.8f, 21.2f);
+                int pad = RainDensity.Count(15.9f, 21.2f);
+                int tall = RainDensity.Count(9.4f, 22.5f);
+                float dPhone = phone / (9.8f * 21.2f);
+                float dPad = pad / (15.9f * 21.2f);
+                Check("rain-density-same-on-phone-pad-android",
+                    phone < RainDensity.OldPhone / 2 && pad <= RainDensity.Max && pad >= phone
+                    && Mathf.Abs(dPhone - dPad) < 0.03f && tall >= RainDensity.Min && tall <= RainDensity.Max,
+                    "iphone " + phone + " ipad " + pad + " android " + tall
+                    + " dens " + dPhone.ToString("0.000") + "/" + dPad.ToString("0.000")
+                    + " was " + RainDensity.OldPhone);
+            }
 
             bool noPointer = typeof(StormGlassRig).GetInterface("IPointerClickHandler") == null
                 && typeof(StormGlassRig).GetInterface("IPointerDownHandler") == null
