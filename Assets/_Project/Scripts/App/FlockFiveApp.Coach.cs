@@ -39,7 +39,7 @@ namespace FlockFive
         const string GiftStuckLine = "Stuck? Tap the gift\nbranch for a bonus.";
         // How long the bonus-branch caption stays up. A reset restarts this whole
         // window so the landing frame cannot replay the 0.5s fade-out tail.
-        const float GiftHintSeconds = 4.5f;
+        const float GiftHintSeconds = 0f; // b115: the "Stuck? Tap the gift branch" cue is removed (was 4.5 s)
         // Old clear CoachLineY rest under the hud, in reference pixels. Not the logo floor.
         // Gap under top chrome (back medal / logo row) for caption text boxes.
         // Build 64: a little more air so plates clear the gold Back.
@@ -799,38 +799,9 @@ namespace FlockFive
             }
 
             CoachClearCue();
-            if (PlayClock.Now < _coachGiftUntil)
-            {
-                int g = GiftBranch();
-                if (g < 0)
-                {
-                    CoachHideGlow();
-                    _gloveReady = false;
-                    _coachFade = 0f;
-                    _coachResumeFade = false;
-                    return;
-                }
-                float left = (_coachGiftUntil - PlayClock.Now) / 0.5f;
-                _cueHand = true;
-                _cueForce = true;
-                _cueGift = true;
-                _cueBranch = g;
-                // A reset resumes this hint from a fresh fade-in. The countdown is the
-                // exit only, and only after that fade-in has finished, so the landing
-                // frame cannot snap the plate back to a leftover tail.
-                if (_coachResumeFade)
-                {
-                    CueLine(GiftStuckLine);
-                    _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.35f);
-                    if (_coachFade >= 1f) _coachResumeFade = false;
-                }
-                else
-                {
-                    _coachFade = Mathf.Clamp01(Mathf.Min(1f, left));
-                    CueLine(GiftStuckLine);
-                }
-                return;
-            }
+            // b115 (Brandon): the "Stuck? Tap the gift branch" cue is gone. The only gift glove left is the one on the
+            // ad offer popup (ArmAdHand, first card only, flag persisted), so it never returns after the first use.
+            _coachGiftUntil = 0f;
 
             if (_locked.Count > 0)
             {
@@ -5517,6 +5488,9 @@ namespace FlockFive
         public static bool GloveFocusAllows(bool lessonLive, bool fresh, bool inside, bool exempt)
             => !lessonLive || !fresh || inside || exempt;
 
+        // The glove-focus gate (GateGlove) never swallows the gift card's X. Other lesson gates keep their own rules.
+        public static bool GateExemptsGiftClose(int step, bool onGiftX) => step == GateGlove && onGiftX;
+
         bool GloveFocusLive()
         {
             if (Ads.IsShowing || GamePause.Paused) return false;
@@ -5592,6 +5566,9 @@ namespace FlockFive
                 return;
             }
             var kind = t == EventType.MouseDown ? GatePointer.Down : t == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
+            // b115 (Brandon): the ad offer's X is never gated. The ad-hand glove arms a tap RECT (Watch), so the gate
+            // lands here and the hand-armed exemption above never ran: the X was eaten and the player was stuck.
+            if (GateExemptsGiftClose(gate.Step, GiftCloseExempt(e.mousePosition))) return;
             if (gate.AnyTap)
             {
                 if (HomeGearExempt(e.mousePosition)) return;
