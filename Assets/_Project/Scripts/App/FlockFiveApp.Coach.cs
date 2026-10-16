@@ -3655,7 +3655,7 @@ namespace FlockFive
             }
             float drop = CaptionStyles.Drop(spot);
             if (drop > 0f)
-                CoverDown(ref band, AdoptVipBadgeRect(w, screenH, safe), drop * s, SplashWordBottom(screenH, safe, s));
+                CoverDown(ref band, AdoptVipBadgeRect(w, screenH, safe), drop * s, SplashWordBottom(screenH, safe, s), MinLogoClear(screenH, safe, s));
             if (band.yMax > screenH) band.y = screenH - band.height;
             if (adHand && band.Overlaps(adAvoid)) { SnugUses++; BannerSkip = "watch button"; return false; }
             BannerSkip = "";
@@ -3717,7 +3717,7 @@ namespace FlockFive
             if (cover && CaptionStyles.Drop(spot) > 0f)
             {
                 badge = AdoptVipBadgeRect(w, h, safe);
-                CoverDown(ref band, badge, CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s));
+                CoverDown(ref band, badge, CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s), MinLogoClear(h, safe, s));
             }
             LiftOffMainButtons(ref band, w, h, safe, s, badge, (spot == "coach.line" || spot == "bee.garden") ? 0f : HomeBannerTop(h, safe, s));
             return band;
@@ -3800,7 +3800,7 @@ namespace FlockFive
 
         // Slide the band down over `badge`, then a pad past it. Grow only when a pure
         // move would uncover the top of the badge. Clear the wordmark when that still covers.
-        static void CoverDown(ref Rect band, Rect badge, float pad, float wordBottom)
+        static void CoverDown(ref Rect band, Rect badge, float pad, float wordBottom, float minBottom = 0f)
         {
             if (badge.width < 2f || badge.height < 2f) return;
             if (pad < 0f) pad = 0f;
@@ -3823,6 +3823,13 @@ namespace FlockFive
             }
             if (wordBottom > band.y && wordBottom <= top)
                 band.y = wordBottom;
+            // b118: on a short screen the rail badge reaches up beside the logo, so the full gap and the
+            // badge top cannot both hold. The banner then keeps at least the minimum visible gap.
+            else if (minBottom > band.y && wordBottom > top)
+            {
+                float shift = minBottom - band.y;
+                band.y += shift;
+            }
         }
 
         // b118 (Brandon): the DRAWN bottom of the FLOCK FIVE wordmark: two cap rows plus the letters'
@@ -3838,6 +3845,9 @@ namespace FlockFive
         {
             return LogoBottom(screenH, safe, s) + CaptionLayout.LogoGap(screenH);
         }
+
+        // The smallest visible gap a banner may keep under the drawn logo when the rail badge forces a squeeze.
+        public static float MinLogoClear(float screenH, Rect safe, float s) => LogoBottom(screenH, safe, s) + Mathf.Max(8f, 8f * s);
 
         static float SplashWordBottom(float screenH, Rect safe, float s)
         {

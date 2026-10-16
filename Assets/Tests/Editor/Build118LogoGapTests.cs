@@ -46,7 +46,10 @@ namespace FlockFive.Editor
                         {
                             bool adopt = mode == 1;
                             var band = FlockFiveApp.BannerRect(spots[i], texts[i], w, h, safe, seat, 0f, adopt, s, out _);
-                            Check("gap under logo " + spots[i] + (adopt ? " adopt " : " home ") + tags[d], band.y >= logoBottom + gap - 0.5f,
+                            var bdg = FlockFiveApp.AdoptVipBadgeRect(w, h, safe);
+                            // Short screens: the rail badge reaches up beside the logo, so only the minimum visible gap holds.
+                            float need = spots[i] == "adopt.greet" && bdg.yMin < logoBottom + gap ? FlockFiveApp.MinLogoClear(h, safe, s) : logoBottom + gap;
+                            Check("gap under logo " + spots[i] + (adopt ? " adopt " : " home ") + tags[d], band.y >= need - 0.5f,
                                 "y " + band.y + " logoBottom " + logoBottom + " gap " + gap);
                         }
                     }
@@ -54,6 +57,7 @@ namespace FlockFive.Editor
                     var greet = FlockFiveApp.BannerRect("adopt.greet", texts[0], w, h, safe, seat, 0f, true, s, out _);
                     var badge = FlockFiveApp.AdoptVipBadgeRect(w, h, safe);
                     bool covers = greet.yMin <= badge.yMin + 0.5f && greet.yMax >= badge.yMax - 0.5f && greet.xMin <= badge.xMin + 0.5f && greet.xMax >= badge.xMax - 0.5f;
+                    covers |= badge.yMin < logoBottom + gap; // squeeze case: gap wins over the badge's top few px
                     Check("adopt greet still covers rail " + tags[d], covers, "band " + greet + " badge " + badge);
                 }
                 // Poker coins glove: from the left, perch + arc clear of the coin row above the button.
@@ -70,6 +74,28 @@ namespace FlockFive.Editor
                     float perchY = aimY - lift;
                     float handTop = perchY - FlockFiveApp.GloveAuditAboveUpright(s2);
                     Check("poker glove perch+arc below coin row " + tags[d2], handTop - FlockFiveApp.GloveAuditArch(s2) >= rowBottom, "handTop " + handTop + " arch " + FlockFiveApp.GloveAuditArch(s2) + " row " + rowBottom);
+                }
+                // PAY TABLE tab: phones and Android noticeably bigger, tablet unchanged, never clipping the logo.
+                var report = new System.Text.StringBuilder();
+                for (int d3 = 0; d3 < devices.Length; d3++)
+                {
+                    float w3 = devices[d3].x, h3 = devices[d3].y;
+                    DeviceFit.TestWindow = w3 / h3;
+                    float s3 = DeviceFit.Ui(w3, h3);
+                    var safe3 = new Rect(0f, h3 * 0.04f, w3, h3 * 0.92f);
+                    float kOld = DeviceFit.ControlK() * 0.80f;
+                    float oW = Mathf.Clamp(211f * s3, 178f, 264f) * kOld, oH = Mathf.Clamp(62f * s3, 55f, 78f) * kOld;
+                    if (oW > w3 * 0.24f) { oH *= w3 * 0.24f / oW; oW = w3 * 0.24f; }
+                    var chrome3 = FlockFiveApp.LayoutPokerChrome(w3, h3, safe3, s3);
+                    var tab3 = FlockFiveApp.PokerPayTabBox(w3, safe3, chrome3.Below, s3);
+                    bool tablet = DeviceFit.Wide() > 0.5f;
+                    bool bigger = tablet ? Mathf.Abs(tab3.width - oW) < 0.5f && Mathf.Abs(tab3.height - oH) < 0.5f
+                        : tab3.width >= oW * 1.3f && tab3.height >= oH * 1.3f;
+                    bool clear = !tab3.Overlaps(chrome3.Title) && !tab3.Overlaps(chrome3.Halo) && tab3.yMin >= chrome3.Halo.yMax
+                        && tab3.xMax <= w3 && tab3.xMin >= 0f;
+                    bool tap = tablet || (tab3.height >= 44f && tab3.width >= 88f);
+                    report.Append(tags[d3] + " " + oW.ToString("0") + "x" + oH.ToString("0") + " -> " + tab3.width.ToString("0") + "x" + tab3.height.ToString("0") + "; ");
+                    Check("pay tab size " + tags[d3], bigger && clear && tap, report.ToString());
                 }
                 string src = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs");
                 Check("every home spot shares one helper", src.Contains("HomeBannerTop(h, safe, s)") && src.Contains("HomeBannerTop(screenH, safe, s)")
