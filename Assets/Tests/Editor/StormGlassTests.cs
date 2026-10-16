@@ -595,26 +595,26 @@ namespace FlockFive.Editor
 
             {
                 // b120: nearly straight down. A full-life slide with the strongest wobble and drift wanders only a few px.
-                float sc = StormGlass.ScaleFor(H);
+                float scS = StormGlass.ScaleFor(H);
                 beads[0] = new StormGlass.Bead
                 {
                     X = 500f, Y = 1900f, Radius = 24f, Age = 0.4f, Life = 4f,
                     Vy = -20f, Phase = 0.4f, Wobble = 72f, Drift = StormGlass.DriftMax, Kind = StormGlass.Slide
                 };
-                var sr = new StormGlass.Rng { State = 5u };
-                float ss = 9f; int sk = 0, sn = 1;
+                var rS = new StormGlass.Rng { State = 5u };
+                float spS = 9f; int kS = 0, nS = 1;
                 float x0s = beads[0].X, maxDx = 0f, minY = beads[0].Y;
-                for (int step = 0; step < 220 && sn > 0; step++)
+                for (int step = 0; step < 220 && nS > 0; step++)
                 {
-                    sn = Step(beads, sn, 1f / 60f, true, 0f, blocks, 0, ref sr, ref ss, specks, ref sk);
-                    if (sn < 1) break;
+                    nS = Step(beads, nS, 1f / 60f, true, 0f, blocks, 0, ref rS, ref spS, specks, ref kS);
+                    if (nS < 1) break;
                     maxDx = Mathf.Max(maxDx, Mathf.Abs(beads[0].X - x0s));
                     minY = Mathf.Min(minY, beads[0].Y);
                 }
                 float fallY = 1900f - minY;
-                Check("rain-falls-nearly-straight", maxDx <= StormGlass.MaxLateral * sc && fallY > maxDx * 3f
+                Check("rain-falls-nearly-straight", maxDx <= StormGlass.MaxLateral * scS && fallY > maxDx * 3f
                     && StormGlass.SwivelGain <= 0.12f && StormGlass.DriftMax <= 4f && StormGlass.StreakLeanK <= 0.4f,
-                    "maxDx " + maxDx.ToString("0.0") + " fall " + fallY.ToString("0.0") + " cap " + (StormGlass.MaxLateral * sc).ToString("0.0"));
+                    "maxDx " + maxDx.ToString("0.0") + " fall " + fallY.ToString("0.0") + " cap " + (StormGlass.MaxLateral * scS).ToString("0.0"));
             }
 
             string end = fail == 0 ? "STORM_GLASS_OK " + pass : "STORM_GLASS_FAIL " + fail + " passed " + pass;
