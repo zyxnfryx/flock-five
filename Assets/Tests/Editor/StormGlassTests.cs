@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using System.IO;
 using System.Reflection;
 using UnityEngine;
 
@@ -537,6 +538,59 @@ namespace FlockFive.Editor
                     && bigTerm > smallTerm && bigTerm < StormGlass.Terminal(60f, 1f) * 0.5f
                     && fry > frx && tail > young.Radius * 2f && tailYoung < tail * 0.5f && stick && run,
                     "peak " + bigPeak + " seen " + bigSeen + " centre " + centre + " tail " + tail.ToString("0") + " young " + tailYoung.ToString("0"));
+            }
+
+            {
+                // b117: a solved level stops every rain effect at once and the next garden starts clean.
+                bool flags = StormGlass.Halted(true, false, false) && StormGlass.Halted(false, true, false)
+                    && StormGlass.Halted(false, false, true) && !StormGlass.Halted(false, false, false);
+                bool mul = StormGlass.HaltMul(0f) == 1f && StormGlass.HaltMul(StormGlass.HaltFade) == 0f
+                    && StormGlass.HaltMul(StormGlass.HaltFade * 0.5f) > 0.4f && StormGlass.HaltMul(StormGlass.HaltFade * 0.5f) < 0.6f;
+                // Rain in full swing, then the level is solved: wet 0 means nothing spawns, live drops age out or are cleared.
+                var hr = new StormGlass.Rng { State = 99u };
+                float hs = 0f; int hn = 0, hk = 0;
+                for (int step = 0; step < 900; step++)
+                    hn = Step(beads, hn, 1f / 60f, true, 1f, blocks, 0, ref hr, ref hs, specks, ref hk);
+                bool wasRaining = hn > 0 || hk > 0;
+                int newAfter = 0;
+                for (int step = 0; step < 60; step++)
+                {
+                    int before = hn;
+                    hn = Step(beads, hn, 1f / 60f, true, 0f, blocks, 0, ref hr, ref hs, specks, ref hk);
+                    for (int i = 0; i < hn; i++) if (beads[i].Age == 0f) newAfter++;
+                    if (hn > before) newAfter++;
+                }
+                // After the fade the pool is dropped for good (garden off), nothing white left behind.
+                hn = Step(beads, hn, 1f / 60f, false, 0f, blocks, 0, ref hr, ref hs, specks, ref hk);
+                bool cleared = StormGlass.Settled(hn, hk);
+                int junk = 0;
+                for (int i = 0; i < beads.Length; i++) if (beads[i].Life != 0f || beads[i].Radius != 0f) junk++;
+                for (int i = 0; i < specks.Length; i++) if (specks[i].Life != 0f || specks[i].Radius != 0f) junk++;
+                // Restart: the next garden rains again, from zero (new beads and specks start invisible, cap holds).
+                float rs = 0f; int rn = 0, rk = 0; float worst = 0f; int bigPeak2 = 0; bool again2 = false;
+                float sc2 = StormGlass.ScaleFor(H);
+                for (int step = 0; step < 1800; step++)
+                {
+                    rn = Step(beads, rn, 1f / 60f, true, 1f, blocks, 0, ref hr, ref rs, specks, ref rk);
+                    if (rn > 0) again2 = true;
+                    for (int i = 0; i < rn; i++)
+                        if (beads[i].Age < 0.02f)
+                        {
+                            float va = StormGlass.Alpha(beads[i].Age, beads[i].Life, beads[i].Kind);
+                            if (va > worst) worst = va;
+                        }
+                    int c = StormGlass.CountBig(beads, rn, sc2);
+                    if (c > bigPeak2) bigPeak2 = c;
+                }
+                string rig = File.ReadAllText("Assets/_Project/Scripts/App/StormGlassRig.cs");
+                string stormSrc = File.ReadAllText("Assets/_Project/Scripts/App/GardenStorm.cs");
+                bool wired = rig.Contains("RainHalted => _app != null && StormGlass.Halted(_app._won, _app._finaleHold, _app._gardenScoring)")
+                    && rig.Contains("if (_wasHalted)") && stormSrc.Contains("bool halted = FlockFiveApp.RainHalted;")
+                    && stormSrc.Contains("else if (_wasHalted) _wet = 0f;");
+                Check("solve-clears-rain-then-next-garden-starts-fresh",
+                    flags && mul && wasRaining && newAfter == 0 && cleared && junk == 0 && again2 && worst < 0.08f && bigPeak2 <= StormGlass.BigCap && wired,
+                    "raining " + wasRaining + " newAfter " + newAfter + " cleared " + cleared + " junk " + junk + " again " + again2
+                    + " worst " + worst.ToString("0.000") + " big " + bigPeak2);
             }
 
             string end = fail == 0 ? "STORM_GLASS_OK " + pass : "STORM_GLASS_FAIL " + fail + " passed " + pass;

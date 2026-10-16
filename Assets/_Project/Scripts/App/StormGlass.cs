@@ -109,6 +109,13 @@ namespace FlockFive
         // True when no bead or speck is alive. Used by tests and the rig on exit.
         public static bool Settled(int count, int speckN) => count <= 0 && speckN <= 0;
 
+        // b117 (Brandon): a solved level (win, scoring, finale, the Double/Collect choice all sit under these flags)
+        // stops every rain-on-screen effect, and the next garden starts clean.
+        public const float HaltFade = 0.25f;
+        public static bool Halted(bool won, bool finaleHold, bool scoring) => won || finaleHold || scoring;
+        // 1 while raining, easing to 0 over HaltFade once the level is solved.
+        public static float HaltMul(float haltedFor) => 1f - Ease(haltedFor, HaltFade);
+
         public static bool Storming(bool garden, float wet) => garden && wet >= WetOn;
 
         // A roll under CoverKeep is the only way a drop lands on a bird or button.

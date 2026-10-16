@@ -12,6 +12,7 @@ namespace FlockFive
         // The storm clock survives garden rebuilds (every level load re-enables the component), so a run of short
         // levels still reaches the first storm. Resets only on a fresh launch.
         static float _sessionPlay;
+        bool _wasHalted;
         public static float SessionPlay => _sessionPlay;
         public static void ResetSessionClock() { _sessionPlay = 0f; }
         public const float StormLen = 75f;
@@ -476,7 +477,12 @@ namespace FlockFive
             _play += dt;
             _sessionPlay = _play;
             float want = WantStorm(_play) ? 1f : 0f;
-            _wet = Mathf.MoveTowards(_wet, want, dt / Fade);
+            // b117: a solved level (win, finale, Double/Collect) ends the rain streaks quickly; the clock keeps running.
+            bool halted = FlockFiveApp.RainHalted;
+            if (halted) want = 0f;
+            else if (_wasHalted) _wet = 0f; // next garden: the streaks fade in from zero again
+            _wasHalted = halted;
+            _wet = Mathf.MoveTowards(_wet, want, dt / (halted ? StormGlass.HaltFade : Fade));
             Wet = _wet;
 
             if (_rumbleIn >= 0f)
