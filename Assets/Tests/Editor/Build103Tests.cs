@@ -218,10 +218,11 @@ namespace FlockFive.Editor
             // Bees-on-a-branch caption: exact text, two lines max, bottom seat table; hive-garden banner lowered.
             {
                 string bee = CaptionLayout.BeePestLine.Replace("\n", " ");
+                bool exactTwo = CaptionLayout.BeePestLine == "Bees on a branch!\nRemove birds";
                 bool lines = true; string lineNote = "";
                 for (int d = 0; d < devs.Length; d++)
                     lines = lines && CaptionLayout.BeePestLine.Split('\n').Length <= 2; // banner fit to two rows per device: Build88CaptionTests line-5
-                Check("bees on a branch caption", bee == "Bees on a branch! Remove birds to clear them." && lines && FlockFiveApp.IsGardenBottomLine(CaptionLayout.BeePestLine)
+                Check("bees on a branch caption", bee == "Bees on a branch! Remove birds" && exactTwo && lines && FlockFiveApp.IsGardenBottomLine(CaptionLayout.BeePestLine)
                     && !FlockFiveApp.IsGardenBottomLine(CaptionLayout.HiveGardenLine), bee + " lines>2 " + lineNote + " bottomSeat " + FlockFiveApp.IsGardenBottomLine(CaptionLayout.BeePestLine));
                 Check("hive garden caption lowered", CaptionLayout.BeeGardenDropFrac >= 0.03f, CaptionLayout.BeeGardenDropFrac.ToString());
             }
