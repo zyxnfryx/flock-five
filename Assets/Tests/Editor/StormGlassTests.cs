@@ -555,10 +555,10 @@ namespace FlockFive.Editor
                 int newAfter = 0;
                 for (int step = 0; step < 60; step++)
                 {
-                    int before = hn;
+                    int nBefore = hn;
                     hn = Step(beads, hn, 1f / 60f, true, 0f, blocks, 0, ref hr, ref hs, specks, ref hk);
                     for (int i = 0; i < hn; i++) if (beads[i].Age == 0f) newAfter++;
-                    if (hn > before) newAfter++;
+                    if (hn > nBefore) newAfter++;
                 }
                 // After the fade the pool is dropped for good (garden off), nothing white left behind.
                 hn = Step(beads, hn, 1f / 60f, false, 0f, blocks, 0, ref hr, ref hs, specks, ref hk);
