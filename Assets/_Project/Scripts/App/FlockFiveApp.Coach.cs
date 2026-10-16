@@ -5583,7 +5583,7 @@ namespace FlockFive
                 {
                     var p0 = e.mousePosition;
                     bool inside = GloveTapHits(new Vector2(p0.x, Screen.height - p0.y));
-                    if (!GloveFocusAllows(true, true, inside, HomeGearExempt(p0)))
+                    if (!GloveFocusAllows(true, true, inside, HomeGearExempt(p0) || GiftCloseExempt(p0)))
                     {
                         if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
                         e.Use();
