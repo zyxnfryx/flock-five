@@ -249,7 +249,7 @@ namespace FlockFive.Editor
             int squish = voice.IndexOf("static AudioClip MakeSquish()", System.StringComparison.Ordinal);
             int next = squish < 0 ? -1 : voice.IndexOf("static AudioClip MakeBreak", squish, System.StringComparison.Ordinal);
             string body = squish >= 0 && next > squish ? voice.Substring(squish, next - squish) : "";
-            check("squish-tone", body.Contains("150f") && body.Contains("68f") && body.Contains("1.5f")
+            check("squish-tone", body.Contains("300f") && body.Contains("190f") && body.Contains("1.5f")
                 && !body.Contains("Soft(") && !body.Contains("Hash("), "body");
             // b114: the stack's Sfx.Squish was replaced by #142's HoneySquish (own bank, Lead via Shot); see Build103Tests.
             int warm = sfx.IndexOf("_warmOrder", System.StringComparison.Ordinal);

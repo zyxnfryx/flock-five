@@ -232,9 +232,9 @@ namespace FlockFive.Editor
             // Honeycomb smudge: the comb pad runs before the card flip pad, caps, fades; hits sit inside the card face.
             {
                 string app = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");
-                int poke = app.IndexOf("PokeHoneycombs(big, ix)", System.StringComparison.Ordinal);
+                int poke = app.IndexOf("InspectCardTap(big, ix", System.StringComparison.Ordinal); // b114: the card stack routes combs through InspectCardTap -> PokeHoneycombs
                 int flip = app.IndexOf("BeginHiveFlip(ix);", poke, System.StringComparison.Ordinal);
-                Check("smudge runs before flip and blocks it", poke > 0 && flip > poke && app.Contains("!honeyAte && !PageSwipeAte"), "");
+                Check("smudge runs before flip and blocks it", poke > 0 && flip > poke && app.Contains("cardTap == CardTap.Card && !PageSwipeAte") && app.Contains("combs && PokeHoneycombs(big, ix)"), "");
                 HoneyPoke.Clear();
                 bool five = true;
                 for (int i = 0; i < HoneyPoke.Cap; i++) five &= HoneyPoke.Place(1f + i, new Vector2(5f, 5f), 20f);
