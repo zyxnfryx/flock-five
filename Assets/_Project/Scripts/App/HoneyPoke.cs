@@ -29,7 +29,7 @@ namespace FlockFive
         public static int Placed => _placed;
         public static int Serial => _serial;
 
-        public static void Clear() { _placed = 0; _head = 0; }
+        public static void Clear() { _placed = 0; _head = 0; _serial = 0; }
 
         public static Smudge At(int i) => _sm[i];
 
