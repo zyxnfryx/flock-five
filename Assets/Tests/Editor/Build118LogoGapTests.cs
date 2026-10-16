@@ -56,6 +56,21 @@ namespace FlockFive.Editor
                     bool covers = greet.yMin <= badge.yMin + 0.5f && greet.yMax >= badge.yMax - 0.5f && greet.xMin <= badge.xMin + 0.5f && greet.xMax >= badge.xMax - 0.5f;
                     Check("adopt greet still covers rail " + tags[d], covers, "band " + greet + " badge " + badge);
                 }
+                // Poker coins glove: from the left, perch + arc clear of the coin row above the button.
+                Check("poker glove enters from the left", FlockFiveApp.PokerGloveFromLeft, "");
+                for (int d2 = 0; d2 < devices.Length; d2++)
+                {
+                    float w2 = devices[d2].x, h2 = devices[d2].y;
+                    DeviceFit.TestWindow = w2 / h2;
+                    float s2 = DeviceFit.Ui(w2, h2);
+                    float rail = FlockFiveApp.SplashRailSize(w2);
+                    float rowBottom = 300f * s2; // piggy bottom, any plausible seat
+                    float aimY = rowBottom + rail * 0.45f;
+                    float lift = FlockFiveApp.PokerGlovePerchLift(aimY, rowBottom, s2);
+                    float perchY = aimY - lift;
+                    float handTop = perchY - FlockFiveApp.GloveAuditAboveUpright(s2);
+                    Check("poker glove perch+arc below coin row " + tags[d2], handTop - FlockFiveApp.GloveAuditArch(s2) >= rowBottom, "handTop " + handTop + " arch " + FlockFiveApp.GloveAuditArch(s2) + " row " + rowBottom);
+                }
                 string src = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs");
                 Check("every home spot shares one helper", src.Contains("HomeBannerTop(h, safe, s)") && src.Contains("HomeBannerTop(screenH, safe, s)")
                     && src.Contains("return HomeBannerTop(screenH, safe, s);"), "");

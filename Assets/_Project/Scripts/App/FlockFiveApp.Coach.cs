@@ -116,7 +116,17 @@ namespace FlockFive
         // the coin dish fills the bottom, so the fingertip aims a touch right of and below
         // the hit rect's centre, on the card fan itself.
         const float PokerGloveU = 0.56f;
-        const float PokerGloveV = 0.58f;
+        const float PokerGloveV = 0.80f; // b118: low on the button (the coin dish), so the hand stays under the coin row
+        // b118 (Brandon): the coins line's hand rides in from the LEFT at a height where neither the hand nor its
+        // tap arc reaches the coin balance or the piggy above the poker button. Perch lift is how far the perch sits
+        // ABOVE the fingertip (negative = below). rowBottom is the lowest edge of the balance / piggy row.
+        public static float PokerGlovePerchLift(float aimY, float rowBottom, float s)
+        {
+            float above = Mathf.Max(GloveAbove(ClampUpright(true), s, true, 0f), GloveAbove(ClampUpright(true), s, true, 1f));
+            float perchY = rowBottom + 6f * s + above + GloveArch(s);
+            float lift = aimY - perchY;
+            return Mathf.Min(lift, GloveRise(s));
+        }
         // Right-rail button. The hand enters from the left and points right.
         public const bool PokerGloveFromLeft = true;
 
@@ -1250,7 +1260,11 @@ namespace FlockFive
                 // From the left, pointing right (facing stays in the shared helper). Tap rect is
                 // the padded rail hit the button uses, so a press on the icon fades the hand
                 // and opens poker together.
-                CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, PokerGloveFromLeft, float.NaN, RailTapRect(RailPoker));
+                var pokerAim = GloveTargetAt(box, PokerGloveU, PokerGloveV);
+                var pigRow = PiggyRect(handS);
+                float rowBottom = pigRow.width > 2f ? pigRow.yMax : float.NegativeInfinity;
+                float pokerLift = float.IsNegativeInfinity(rowBottom) ? float.NaN : PokerGlovePerchLift(pokerAim.y, rowBottom, handS);
+                CoachGloveAt(pokerAim, dt, handS, pokerLift, PokerGloveFromLeft, float.NaN, RailTapRect(RailPoker));
                 return;
             }
             if (_dailyIntroLive)
@@ -4466,6 +4480,9 @@ namespace FlockFive
             GloveSpan(pivot, ang, dh, dip, false, out float x0, out float y0, out float x1, out float y1);
             return new Rect(x0, y0, x1 - x0, y1 - y0);
         }
+        public static float GloveAuditAboveUpright(float s)
+            => Mathf.Max(GloveAbove(ClampUpright(true), s, true, 0f), GloveAbove(ClampUpright(true), s, true, 1f));
+        public static float GloveAuditArch(float s) => GloveArch(s);
         public static float GloveAuditAbove(float s)
             => Mathf.Max(GloveAbove(GloveBelowDeg, s, false, 0f), GloveAbove(GloveBelowDeg, s, false, 1f));
         public static float GloveAuditDw(float dh) => GloveDrawW(dh);
