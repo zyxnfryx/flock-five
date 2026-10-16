@@ -5517,6 +5517,9 @@ namespace FlockFive
         public static bool GloveFocusAllows(bool lessonLive, bool fresh, bool inside, bool exempt)
             => !lessonLive || !fresh || inside || exempt;
 
+        // The glove-focus gate (GateGlove) never swallows the gift card's X. Other lesson gates keep their own rules.
+        public static bool GateExemptsGiftClose(int step, bool onGiftX) => step == GateGlove && onGiftX;
+
         bool GloveFocusLive()
         {
             if (Ads.IsShowing || GamePause.Paused) return false;
@@ -5592,6 +5595,9 @@ namespace FlockFive
                 return;
             }
             var kind = t == EventType.MouseDown ? GatePointer.Down : t == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
+            // b115 (Brandon): the ad offer's X is never gated. The ad-hand glove arms a tap RECT (Watch), so the gate
+            // lands here and the hand-armed exemption above never ran: the X was eaten and the player was stuck.
+            if (GateExemptsGiftClose(gate.Step, GiftCloseExempt(e.mousePosition))) return;
             if (gate.AnyTap)
             {
                 if (HomeGearExempt(e.mousePosition)) return;
