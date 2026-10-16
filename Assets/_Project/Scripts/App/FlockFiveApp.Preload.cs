@@ -410,6 +410,9 @@ namespace FlockFive
         }
 
         public static bool WarmCoverLive => !_warmCoverOff;
+        // b112 (Brandon): while the studio card / loading cover is up the splash is not ready and not tappable.
+        // The shared input gate (SwallowResumePointer, Pressed) eats every press until the cover is gone.
+        public static bool StartupInputHeld => WarmCoverLive && !EditorShotLive;
         // The studio card is up (or still to come): splash music waits until it lifts.
         public static bool StudioCardHold => !_warmCoverOff && _warmCoverFadeT0 < 0f;
 

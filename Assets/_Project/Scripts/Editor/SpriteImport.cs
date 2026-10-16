@@ -227,6 +227,13 @@ namespace FlockFive.Editor
                 s.compressionFormat = AudioCompressionFormat.Vorbis;
                 s.quality = 0.7f;
             }
+            else if (assetPath.Contains("/Audio/Squish/"))
+            {
+                // b112: honey squish takes stay PCM / Decompress On Load (the short-SFX ADPCM default below rewrote them).
+                s.loadType = AudioClipLoadType.DecompressOnLoad;
+                s.compressionFormat = AudioCompressionFormat.PCM;
+                s.quality = 1f;
+            }
             else if (assetPath.Contains("zfx_jingle"))
             {
                 s.loadType = AudioClipLoadType.DecompressOnLoad;

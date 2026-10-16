@@ -6210,7 +6210,7 @@ namespace FlockFive
         static void SwallowResumePointer()
         {
             // Also while the level transition covers the screen (held splash / mask).
-            if (PlayClock.Now >= _resumeInputUntil && !PressRainbow.StageHeld()) return;
+            if (PlayClock.Now >= _resumeInputUntil && !PressRainbow.StageHeld() && !StartupInputHeld) return;
             var e = Event.current;
             if (e == null) return;
             var t = e.type;
@@ -6223,6 +6223,7 @@ namespace FlockFive
         {
             screen = default;
             if (PlayClock.Now < _resumeInputUntil) return false;
+            if (StartupInputHeld) return false;
             if (LessonGuardUp()) return false;
             // The finger wins over a synthesized mouse. On Android the mouse click
             // can sit at a stale point while the touch is the poker button.
