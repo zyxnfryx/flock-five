@@ -386,7 +386,7 @@ namespace FlockFive
                 new Color(0.72f, 0.84f, 1.00f)),
             new BeeKind("nova", "Nova Flash",
                 "Supernova? Super-nova-vice.",
-                "Lights up the garden, then asks who turned the lights off. Big star exit.",
+                "Lights up the garden, then asks who cut the lights. Big star, big exit.",
                 new Color(0.90f, 0.92f, 0.50f)) { Accessory = BeeAccessory.StarCrown, Theme = FaceTheme.Supernova, OwnBack = true },
             new BeeKind("lunar", "Lunar Latch",
                 "Moonstruck.",
