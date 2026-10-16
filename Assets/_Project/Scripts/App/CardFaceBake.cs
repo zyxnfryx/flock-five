@@ -19,6 +19,9 @@ namespace FlockFive
             public bool Honey;
             public Color Ink;
             public Color FinishInk;
+            // Themed card: nameplate ribbon under the title and a rim around the lettering (matches the live path).
+            public bool Themed;
+            public Color InkOuter;
         }
 
         public struct Page
@@ -54,7 +57,8 @@ namespace FlockFive
             string key = req.Width + "x" + req.Height
                 + (req.Full ? "F" : "M") + (req.Back ? "B" : "A") + (req.Honey ? "H" : "h")
                 + "|" + req.Title + "|" + req.Flavor + "|" + req.Finish
-                + "|" + ColorKey(req.Ink) + "|" + ColorKey(req.FinishInk);
+                + "|" + ColorKey(req.Ink) + "|" + ColorKey(req.FinishInk)
+                + (req.Themed ? "|T" + ColorKey(req.InkOuter) : "");
             for (int i = 0; i < Cache; i++)
             {
                 if (_key[i] != key || _tex[i] == null) continue;
@@ -79,6 +83,17 @@ namespace FlockFive
             var px = new Color32[req.Width * req.Height];
             var ink = req.Ink.a <= 0f ? new Color(0.16f, 0.07f, 0.02f, 1f) : req.Ink;
             var finishInk = req.FinishInk.a <= 0f ? FinishInk.Tag(BeeFinish.InverseRainbow) : req.FinishInk;
+            if (req.Themed)
+            {
+                float step = titleFit.LineStep > 1f ? titleFit.LineStep : titleFit.Size + 2f;
+                int n = titleFit.Lines != null ? titleFit.Lines.Length : 0;
+                if (n > 0)
+                    CardArt.BlitRibbon(px, req.Width, req.Height,
+                        CardArt.RibbonFor(titleR, titleR.width / 0.84f, n * step + titleFit.Outline * 2f));
+                var rim = req.InkOuter.a <= 0f ? new Color(0.12f, 0.03f, 0.16f, 1f) : req.InkOuter;
+                Rim(px, req.Width, req.Height, titleR, titleFit, rim);
+                Rim(px, req.Width, req.Height, flavorR, flavorFit, rim);
+            }
             Stamp(px, req.Width, req.Height, titleR, titleFit, ink);
             Stamp(px, req.Width, req.Height, flavorR, flavorFit, ink);
             if (!string.IsNullOrEmpty(req.Finish))
@@ -112,6 +127,23 @@ namespace FlockFive
             titleFit = FlockFiveApp.CardText.Fit(titleR, title ?? "", FlockFiveApp.CardText.FitKind.Title, titleFloor, titleLead, 0);
             int hi = titleFit.Size > 0 ? Mathf.Max(flavorFloor, Mathf.RoundToInt(titleFit.Size * flavorRatio)) : 0;
             flavorFit = FlockFiveApp.CardText.Fit(flavorR, flavor ?? "", FlockFiveApp.CardText.FitKind.Flavor, flavorFloor, flavorLead, hi);
+        }
+
+        // 8-way stroke under the fill. Lines use the same wrap and size as the live outlined label.
+        static readonly float[] _rx = { 1f, 0.7071f, 0f, -0.7071f, -1f, -0.7071f, 0f, 0.7071f };
+        static readonly float[] _ry = { 0f, 0.7071f, 1f, 0.7071f, 0f, -0.7071f, -1f, -0.7071f };
+
+        static void Rim(Color32[] px, int w, int h, Rect box, FlockFiveApp.CardText.Fitted fit, Color rim)
+        {
+            if (fit.Lines == null || fit.Lines.Length == 0 || fit.Size < 1) return;
+            float r = Mathf.Clamp(fit.Size * 0.075f, 1f, 5f);
+            for (int ring = 1; ring <= 2; ring++)
+                for (int k = 0; k < 8; k++)
+                {
+                    float rr = r * ring * 0.5f;
+                    var b = new Rect(box.x + _rx[k] * rr, box.y + _ry[k] * rr, box.width, box.height);
+                    Stamp(px, w, h, b, fit, rim);
+                }
         }
 
         static void Stamp(Color32[] px, int w, int h, Rect box, FlockFiveApp.CardText.Fitted fit, Color ink)

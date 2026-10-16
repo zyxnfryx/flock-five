@@ -11060,11 +11060,15 @@ namespace FlockFive
             if (a < minA) return;
             var body = RimContent(text);
             var seat = LockSeat(r);
-            Paint(st, new Color(0.02f, 0.02f, 0.02f, a));
+            var ro = CardArt.RimOuter;
+            ro.a = a;
+            Paint(st, ro);
             Rim(seat, body, st, whitePx + blackPx);
             if (whitePx > 0)
             {
-                Paint(st, new Color(1f, 1f, 1f, a));
+                var ri = CardArt.RimInner;
+                ri.a = a;
+                Paint(st, ri);
                 Rim(seat, body, st, whitePx);
             }
             Paint(st, fill);
@@ -17686,9 +17690,17 @@ namespace FlockFive
             // FaceOf is the rect the thumbnail fit test measures.
             var face = CardText.FaceOf(r);
             Color faceFill = AlbumFace(kind.Tint, owned);
-            GUI.color = faceFill;
-            GUI.DrawTexture(face, Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            // Owned cards get the shared renderer: FaceTheme art + honey-wood/brass frame (CardArt).
+            // If the bake budget is spent this frame the flat plate stands in and the art lands next frame.
+            bool themed = owned && CardArt.DrawBase(r, face, kind, wood, inspectView);
+            FaceStyle fstyle = default;
+            if (themed) fstyle = FaceThemes.Of(FaceThemes.Resolve(kind), kind.Tint);
+            else
+            {
+                GUI.color = faceFill;
+                GUI.DrawTexture(face, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
 
             // Foil sheen stays inside the face, including the rounded corners.
             if (owned && finish != BeeFinish.Normal && squash > 0.2f)
@@ -17696,11 +17708,12 @@ namespace FlockFive
                 var local = new Rect(0f, 0f, face.width, face.height);
                 CardClip.Begin(face);
                 DrawFoilSheen(local, finish, i, inspectView);
-                CardClip.Corners(local, faceFill, face.width * 0.06f);
+                if (!themed) CardClip.Corners(local, faceFill, face.width * 0.06f);
                 CardClip.End();
             }
 
             string flavor = HiveBackCopy(CardCopy.Shown(kind));
+            if (showBack) flavor = HiveBackCopy(CardCopy.BackOwn(kind));
             int honey = showBack && BadgerSchedule.Enabled ? Hive.HoneyOfSlot(i) : 0;
             if (!owned)
             {
@@ -17726,31 +17739,46 @@ namespace FlockFive
             }
             else
             {
+                if (themed) DrawThemedBackdrop(face, fstyle, showBack, honey, inspectView);
                 if (!showBack)
                 {
                     float beeShare = inspectView ? 0.24f : 0.38f;
                     float bh = face.height * beeShare;
                     var br = new Rect(face.center.x - bh * 0.5f, face.y + face.height * 0.03f, bh, bh);
+                    if (themed) CardArt.DrawGlow(new Rect(br.x - bh * 0.35f, br.y - bh * 0.30f, bh * 1.7f, bh * 1.6f), fstyle.Glow, 0.55f);
                     CardCritter.Draw(br, kind.Id, kind.Tint, 1f);
                 }
-                if (flipping && inspectView)
-                    DrawBakedFace(card, face, kind, flavor, finish, showBack, honey);
-                else if (!showBack)
+                if (themed) CardArt.UseInk(fstyle);
+                try
                 {
-                    var textFace = CardText.TextFaceOf(face, inspectView);
-                    CardText.DrawFront(textFace, kind.Name, flavor, inspectView, s);
-                    if (finish != BeeFinish.Normal)
+                    if (flipping && inspectView)
+                        DrawBakedFace(card, face, kind, flavor, finish, showBack, honey, themed, fstyle);
+                    else if (!showBack)
                     {
-                        CardText.DrawFinish(
-                            CardText.FinishOf(face, inspectView),
-                            FinishInk.Label(finish),
-                            inspectView,
-                            s,
-                            FinishInk.Tag(finish));
+                        var textFace = CardText.TextFaceOf(face, inspectView);
+                        CardText.DrawFront(textFace, kind.Name, flavor, inspectView, s);
+                        if (finish != BeeFinish.Normal)
+                        {
+                            var band = CardText.FinishOf(face, inspectView);
+                            if (themed)
+                            {
+                                // the rarity comb owns the top-left corner; the label starts to its right
+                                float shift = Mathf.Max(0f, CardArt.BadgeRect(r).xMax - band.x);
+                                band.x += shift;
+                                band.width = Mathf.Max(8f, band.width - shift);
+                            }
+                            CardArt.ResetInk();
+                            CardText.DrawFinish(band, FinishInk.Label(finish), inspectView, s, FinishInk.Tag(finish));
+                        }
                     }
+                    else
+                        CardText.DrawBack(face, kind.Name, flavor, honey, kind.Tint, finish, inspectView, s);
                 }
-                else
-                    CardText.DrawBack(face, kind.Name, flavor, honey, kind.Tint, finish, inspectView, s);
+                finally
+                {
+                    CardArt.ResetInk();
+                }
+                if (themed) CardArt.DrawBadge(r, finish, inspectView ? AdPause.Unscaled : 0f, s, i);
                 if (!showBack && n > 1)
                 {
                     var cnt = GuiPool.Label(GuiSlot.AlbumCount);
@@ -17775,9 +17803,43 @@ namespace FlockFive
             }
         }
 
+        // Night themes lay a soft dark scrim under the lettering (and the combs on the back) so cream-on-sky
+        // stays above 4.5:1; every themed card gets a glow behind the comb row.
+        void DrawThemedBackdrop(Rect face, in FaceStyle st, bool showBack, int honey, bool inspectView)
+        {
+            CardText.FaceBands(face, inspectView, showBack, showBack && honey > 0, out var titleR, out var flavorR);
+            if (st.Night)
+            {
+                float padX = face.width * 0.04f;
+                float top = titleR.y - face.height * 0.01f;
+                float bot = flavorR.y + flavorR.height * (showBack ? 1.0f : 0.62f);
+                CardArt.DrawScrim(new Rect(titleR.x - padX, top, titleR.width + padX * 2f, Mathf.Max(8f, bot - top)), 0.30f);
+            }
+            if (showBack && honey > 0)
+            {
+                int cells = CardText.HoneyBand(face, honey, inspectView, _honeyHits);
+                if (cells > 0)
+                {
+                    float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
+                    for (int c = 0; c < cells; c++)
+                    {
+                        var h = _honeyHits[c];
+                        if (h.x < x0) x0 = h.x;
+                        if (h.y < y0) y0 = h.y;
+                        if (h.xMax > x1) x1 = h.xMax;
+                        if (h.yMax > y1) y1 = h.yMax;
+                    }
+                    var zone = new Rect(x0, y0, x1 - x0, y1 - y0);
+                    if (st.Night)
+                        CardArt.DrawScrim(new Rect(zone.x - zone.width * 0.10f, zone.y - zone.height * 0.06f, zone.width * 1.20f, zone.height * 1.14f), 0.40f);
+                    CardArt.DrawGlow(new Rect(zone.x - zone.width * 0.14f, zone.y - zone.height * 0.18f, zone.width * 1.28f, zone.height * 1.36f), st.Glow, 0.55f);
+                }
+            }
+        }
+
         // Words are painted at the settled inspect size, then stretched. A live
         // label would rewrap as the card pinches through the flip.
-        void DrawBakedFace(Rect card, Rect face, BeeKind kind, string flavor, BeeFinish finish, bool showBack, int honey)
+        void DrawBakedFace(Rect card, Rect face, BeeKind kind, string flavor, BeeFinish finish, bool showBack, int honey, bool themed, FaceStyle fstyle)
         {
             Rect src = card;
             var settled = AlbumInspectRect(Screen.width, Screen.height);
@@ -17798,8 +17860,10 @@ namespace FlockFive
                 Full = true,
                 Back = showBack,
                 Honey = showBack && honey > 0,
-                Ink = new Color(0.16f, 0.07f, 0.02f, 1f),
+                Ink = themed ? fstyle.Ink : new Color(0.16f, 0.07f, 0.02f, 1f),
                 FinishInk = FinishInk.Tag(finish),
+                Themed = themed,
+                InkOuter = themed ? fstyle.InkOuter : default,
             });
             if (page.Tex != null)
                 GUI.DrawTexture(face, page.Tex, ScaleMode.StretchToFill, true);

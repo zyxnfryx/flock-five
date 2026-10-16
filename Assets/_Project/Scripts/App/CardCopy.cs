@@ -10,5 +10,10 @@ namespace FlockFive
             if (!string.IsNullOrEmpty(kind.Front)) return kind.Front;
             return kind.Back ?? "";
         }
+
+        // The flipped side. Cards that own a back line (BeeKind.OwnBack) say it there;
+        // every other card still repeats Shown on both faces.
+        public static string BackOwn(BeeKind kind) =>
+            kind.OwnBack && !string.IsNullOrEmpty(kind.Back) ? kind.Back : Shown(kind);
     }
 }
