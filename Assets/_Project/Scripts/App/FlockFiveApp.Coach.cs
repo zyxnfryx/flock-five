@@ -3566,7 +3566,7 @@ namespace FlockFive
             BannerText = string.IsNullOrEmpty(fitted.Shown) ? text : fitted.Shown;
             px = fitted.Font;
             float minTop = Mathf.Max(safe.yMin, TopHud() + (56f * 2f + 4f) * s * 0.92f);
-            if (spot != "coach.line" && spot != "bee.garden") minTop += CaptionLayout.LogoGap(screenH);
+            if (spot != "coach.line" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(screenH, safe, s));
             float gap = 8f * s;
             // The bee banner stays high under the title. Sliding it under a subject
             // would drop it onto the hive and the glove.
@@ -3687,14 +3687,14 @@ namespace FlockFive
             float bh = CaptionLayout.BannerBandHeight(th, px);
             if (s < 0.01f) s = 1f;
             float minTop = Mathf.Max(safe.yMin, TopHudBox(h, safe, 0f) + (56f * 2f + 4f) * s * 0.92f);
-            // b94: home banners (everything but the garden and the bee callout) clear the logo.
-            if (spot != "coach.line" && spot != "bee.garden") minTop += CaptionLayout.LogoGap(h);
+            // b94/b118: home banners (everything but the garden and the bee callout) clear the DRAWN logo plus a visible gap.
+            if (spot != "coach.line" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(h, safe, s));
             float y = seat.y - (bh - seat.height) * 0.85f;
             if (y < minTop) y = minTop;
             // b86: while adopt is up, every banner starts under the title. Only a spot
             // with Drop then moves down; the others keep this seat.
             if (adoptLive)
-                y = Mathf.Max(safe.yMin, (titleBottom > 8f ? titleBottom : h * 0.17f) + 4f * s);
+                y = Mathf.Max(safe.yMin, (titleBottom > 8f ? titleBottom : h * 0.17f) + 4f * s, spot == "bee.garden" ? 0f : HomeBannerTop(h, safe, s));
             // Bee callout: high under the title / coin row, clear of the hive.
             if (spot == "bee.garden")
                 y = minTop + h * CaptionLayout.BeeGardenDropFrac;
@@ -3705,7 +3705,7 @@ namespace FlockFive
                 badge = AdoptVipBadgeRect(w, h, safe);
                 CoverDown(ref band, badge, CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s));
             }
-            LiftOffMainButtons(ref band, w, h, safe, s, badge);
+            LiftOffMainButtons(ref band, w, h, safe, s, badge, (spot == "coach.line" || spot == "bee.garden") ? 0f : HomeBannerTop(h, safe, s));
             return band;
         }
 
@@ -3731,7 +3731,7 @@ namespace FlockFive
                 && band.yMax >= badge.yMax - 0.5f;
         }
 
-        static void LiftOffMainButtons(ref Rect band, float w, float h, Rect safe, float s, Rect mustCover)
+        static void LiftOffMainButtons(ref Rect band, float w, float h, Rect safe, float s, Rect mustCover, float floorY = 0f)
         {
             var buttons = new Rect[4];
             int n = FillMainButtons(w, h, safe, buttons);
@@ -3747,18 +3747,18 @@ namespace FlockFive
                 var btn = buttons[hit];
                 float above = btn.yMin - gap - band.height;
                 float below = btn.yMax + gap;
-                if (BannerPlaceClear(band, above, h, mustCover, buttons, n))
+                if (BannerPlaceClear(band, above, h, mustCover, buttons, n, floorY))
                     band.y = above;
-                else if (BannerPlaceClear(band, below, h, mustCover, buttons, n))
+                else if (BannerPlaceClear(band, below, h, mustCover, buttons, n, floorY))
                     band.y = below;
                 else
                     return;
             }
         }
 
-        static bool BannerPlaceClear(Rect band, float y, float h, Rect mustCover, Rect[] buttons, int n)
+        static bool BannerPlaceClear(Rect band, float y, float h, Rect mustCover, Rect[] buttons, int n, float floorY = 0f)
         {
-            if (y < 0f) return false;
+            if (y < 0f || y < floorY - 0.5f) return false;
             if (y + band.height > h + 0.5f) return false;
             var moved = band;
             moved.y = y;
@@ -3811,9 +3811,23 @@ namespace FlockFive
                 band.y = wordBottom;
         }
 
+        // b118 (Brandon): the DRAWN bottom of the FLOCK FIVE wordmark: two cap rows plus the letters'
+        // 11-layer extrusion that DrawSplashWord paints below the face. b94's estimate left the
+        // extrusion out, so banners sat flush against the visible logo. One number for every home banner.
+        public static float LogoBottom(float screenH, Rect safe, float s)
+        {
+            return TopHudBox(screenH, safe, 0f) + ((56f * 2f + 4f) + 11f * 1.25f) * s * SplashLogoScale;
+        }
+
+        // Highest y a home-screen banner may start: under the drawn logo plus the shared visible gap.
+        public static float HomeBannerTop(float screenH, Rect safe, float s)
+        {
+            return LogoBottom(screenH, safe, s) + CaptionLayout.LogoGap(screenH);
+        }
+
         static float SplashWordBottom(float screenH, Rect safe, float s)
         {
-            return TopHudBox(screenH, safe, 0f) + (56f * 2f + 4f) * s * SplashLogoScale;
+            return HomeBannerTop(screenH, safe, s);
         }
 
         void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default, bool opaque = false, float slack = 1f, bool topAlign = false)
