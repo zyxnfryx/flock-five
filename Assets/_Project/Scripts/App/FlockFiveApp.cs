@@ -10238,7 +10238,7 @@ namespace FlockFive
                 dailyGates.LessonGuard = false;
                 dailyGates.StepGate = false;
                 dailyGates.PopupGate = false;
-                dailyGates.ResumeSwallow = false;
+                dailyGates.ResumeSwallow = StartupInputHeld;
             }
             var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates), dailyGates.LessonOwn);
 #if UNITY_EDITOR

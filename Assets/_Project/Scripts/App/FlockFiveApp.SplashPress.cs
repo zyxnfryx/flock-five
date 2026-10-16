@@ -34,7 +34,7 @@ namespace FlockFive
             return new SplashPress.Gates
             {
                 Paused = GamePause.Paused,
-                ResumeSwallow = PlayClock.Now < _resumeInputUntil,
+                ResumeSwallow = PlayClock.Now < _resumeInputUntil || StartupInputHeld,
                 ShowHolds = BadgerShowHoldsTaps(),
                 CoachAte = CoachAteThisFrame(),
                 LessonGuard = LessonGuardUp(),
@@ -88,6 +88,8 @@ namespace FlockFive
 
         SplashPress.View StepHomePress(SplashPress.Id id, bool allow, bool ownTarget = false)
         {
+            // b112: the studio card / loading cover owns input; no home button (LEVEL included) sees a press.
+            if (StartupInputHeld) allow = false;
             ReadHomePointers(_homeSamples, out bool live);
             var e = Event.current;
             var type = e != null ? e.type : EventType.Ignore;

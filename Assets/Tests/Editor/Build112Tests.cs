@@ -25,6 +25,14 @@ namespace FlockFive.Editor
             Check("pointer swallow honors the hold", sw > 0 && app.IndexOf("StartupInputHeld", sw, 400, System.StringComparison.Ordinal) > 0, "");
             Check("Pressed refuses while held", pr > 0 && app.IndexOf("if (StartupInputHeld) return false;", pr, 400, System.StringComparison.Ordinal) > 0, "");
             Check("hold is on while studio card up", FlockFiveApp.StudioCardHold ? FlockFiveApp.StartupInputHeld || FlockFiveApp.EditorShotLive : true, "");
+            string sp = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.SplashPress.cs");
+            string st = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Settings.cs");
+            int plb = st.IndexOf("bool PressLevelButton()", System.StringComparison.Ordinal);
+            Check("PressLevelButton refuses while held", plb > 0 && st.IndexOf("if (StartupInputHeld) return false;", plb, 200, System.StringComparison.Ordinal) > 0, "");
+            Check("home gates carry the hold", sp.Contains("_resumeInputUntil || StartupInputHeld"), "");
+            int shp = sp.IndexOf("SplashPress.View StepHomePress", System.StringComparison.Ordinal);
+            Check("StepHomePress denies while held", shp > 0 && sp.IndexOf("if (StartupInputHeld) allow = false;", shp, 500, System.StringComparison.Ordinal) > 0, "");
+            Check("daily gate override keeps the hold", app.Contains("dailyGates.ResumeSwallow = StartupInputHeld;"), "");
             string imp = File.ReadAllText("Assets/_Project/Scripts/Editor/SpriteImport.cs");
             int sq = imp.IndexOf("\"/Audio/Squish/\"", System.StringComparison.Ordinal);
             Check("importer keeps squish PCM", sq > 0 && imp.IndexOf("AudioCompressionFormat.PCM", sq, 300, System.StringComparison.Ordinal) > 0, "");
