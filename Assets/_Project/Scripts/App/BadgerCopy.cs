@@ -12,12 +12,13 @@ namespace FlockFive
         // First-fight lesson. Static captions; the app aims the shared glove at each step.
         // The column step breaks on purpose: line 1, then "Honey badger don't care."
         // A width wrap that puts "Honey" on line 1 is wrong.
-        public const string LessonColumnTop = "Fill your column first.";
-        public const string LessonColumnBot = "Honey badger don't care.";
+        // b123: lessons 1-3 are look-at steps. Each ends "Tap to continue." so the one press-to-continue is named.
+        public const string LessonColumnTop = "Higher honey scores the difference.";
+        public const string LessonColumnBot = "First full column wins. Tap to continue.";
         public static readonly string[] Lesson =
         {
-            "Pick one honeycomb.\nHigher honey wins.",
-            "Hot Sauce stops one bite.\nFreeze Spray stops two.",
+            "Pick one honeycomb. Higher honey wins.\nTap to continue.",
+            "x2 and x3 boost a tile. Locked for 3 moves.\nTap to continue.",
             LessonColumnTop + "\n" + LessonColumnBot,
         };
 
@@ -48,10 +49,11 @@ namespace FlockFive
         {
             "Tap the glowing comb.\nHigher honey wins.",
             "Tap this one.\nThe badger bites back.",
-            "Tap this one.\nHe doesn't care.",
+            "Watch out: he can halve\nyour honey. Tap this one.",
         };
         // Round start right after move 3 (power-ups unlock; tutorial free first use applies).
-        public const string PowersOpen = "Power-ups are open.\nYour first one is free.";
+        public const string PowersOpen = "Power-ups are open. Tap x2.\nYour first one is free.";
+        public const string X2Armed = "x2 doubles your next tile.\nTap the glowing comb.";
         // Power-up button sub-label while the coach script holds them.
         public const string Locked = "LOCKED";
 
