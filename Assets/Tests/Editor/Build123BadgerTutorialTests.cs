@@ -130,8 +130,8 @@ namespace FlockFive.Editor
             bool blocks = true;
             foreach (var pw in new[] { BadgerPower.HotSauce, BadgerPower.FreezeSpray })
             {
-                string intro = BadgerCopy.PowerIntroLine(pw, false), armed = BadgerCopy.PowerArmedLine(pw), done = BadgerCopy.BlockWorkedLine(pw);
-                blocks &= intro.Contains("replaces") && intro.Contains("blocks") && armed.Contains("weakest")
+                string intro = BadgerCopy.PowerIntroLine(pw, false), armedLn = BadgerCopy.PowerArmedLine(pw), done = BadgerCopy.BlockWorkedLine(pw);
+                blocks &= intro.Contains("replaces") && intro.Contains("blocks") && armedLn.Contains("weakest")
                     && done.Contains("badger scores nothing") && BadgerFight.IsBlock(pw);
             }
             Check("block-powers-caption-explains-replace-and-block", blocks, BadgerCopy.PowerIntroLine(BadgerPower.HotSauce, false));
