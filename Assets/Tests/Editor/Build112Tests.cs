@@ -24,7 +24,7 @@ namespace FlockFive.Editor
             int pr = app.IndexOf("static bool Pressed(out Vector2 screen)", System.StringComparison.Ordinal);
             Check("pointer swallow honors the hold", sw > 0 && app.IndexOf("StartupInputHeld", sw, 400, System.StringComparison.Ordinal) > 0, "");
             Check("Pressed refuses while held", pr > 0 && app.IndexOf("if (StartupInputHeld) return false;", pr, 400, System.StringComparison.Ordinal) > 0, "");
-            Check("hold is on while studio card up", FlockFiveApp.StudioCardHold ? FlockFiveApp.StartupInputHeld || FlockFiveApp.EditorShotLive : true, "");
+            Check("hold is on while studio card up", FlockFiveApp.StudioCardHold ? FlockFiveApp.StartupInputHeld : true, "");
             string sp = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.SplashPress.cs");
             string st = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Settings.cs");
             int plb = st.IndexOf("bool PressLevelButton()", System.StringComparison.Ordinal);
