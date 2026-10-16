@@ -85,6 +85,7 @@ namespace FlockFive.Editor
             Suite("build88-adtest", Build88AdTestTests.Run);
             Suite("build89-adhold", Build89AdHoldTests.Run);
             Suite("build89-shadow", Build89ShadowBirdTests.Run);
+            Suite("storm-glass", StormGlassTests.Run);
             Suite("sky", SkyCycleTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
@@ -338,6 +339,12 @@ namespace FlockFive.Editor
             EnterPlay();
         }
 
+        public static void RunStormDropShot()
+        {
+            File.WriteAllText("/tmp/flock-five-storm-drops", "1");
+            EnterPlay();
+        }
+
         static bool _enterQueued;
 
         [MenuItem("Flock Five/Play Slice")]
@@ -427,6 +434,10 @@ namespace FlockFive.Editor
             "/tmp/flock-five-b89-deadend",
             "/tmp/flock-five-b89-popup",
             "/tmp/flock-five-b89-payhead"
+            EnterPlay();
+        }
+
+            "/tmp/flock-five-storm-drops"
         };
 
         static bool AnyShotCmd()
@@ -533,6 +544,10 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-b88-poker-glove", "ShotPokerGlove");
                         TryStartShot(app, "/tmp/flock-five-b89-settings", "ShotBuild89Settings");
                         TryStartShot(app, "/tmp/flock-five-b89-deadend", "ShotDeadEndNudge");
+            EnterPlay();
+        }
+
+                        TryStartShot(app, "/tmp/flock-five-storm-drops", "ShotStormDrops");
                         TryStartShot(app, "/tmp/flock-five-poker-feel", "ShotPokerFeel");
                         TryStartShot(app, "/tmp/flock-five-b89-popup", "ShotPopupExclusive");
                         TryStartShot(app, "/tmp/flock-five-b89-payhead", "ShotPayHead");
