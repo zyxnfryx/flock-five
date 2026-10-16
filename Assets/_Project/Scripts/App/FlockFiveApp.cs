@@ -10198,6 +10198,7 @@ namespace FlockFive
                 _pokerKeepHint = true;
                 _pokerHover = -1;
                 for (int i = 0; i < _pokerHoldSlide.Length; i++) _pokerHoldSlide[i] = 0f;
+                _pokerLessonHand = false; // each visit starts clean; BeginPokerDeal re-arms it for the first-ever hand
                 _pokerDealHint = PlayerPrefs.GetInt(CoachPokerPageKey, 0) != 0
                     && PlayerPrefs.GetInt(CoachPokerDealtKey, 0) == 0;
                 _pokerDealAimOk = false;
@@ -13218,19 +13219,30 @@ namespace FlockFive
         // keep their own taps; while they run the step is hidden and DEAL is already busy.
         // True while the first-visit poker lesson owns the page: bet, deal, hold/draw and the result animation.
         // Back opens only at the final step (PokerBackGateLive). A player who cannot afford the minimum bet is never trapped.
-        public static bool PokerLessonHolds(bool splash, bool onPoker, bool backDone, bool backGateLive, bool broke)
-            => splash && onPoker && !backDone && !backGateLive && !broke;
+        public static bool PokerLessonHolds(bool splash, bool onPoker, bool backDone, bool backGateLive, bool broke, bool lessonActive = true)
+            => splash && onPoker && !backDone && !backGateLive && !broke && lessonActive;
+
+        // b119 (Brandon): the first-hand tutorial flag is the ONLY thing that hides the bet controls and holds Back.
+        // Active from the armed lesson until Back, only in the visit that dealt the first-ever hand. A later visit
+        // (Back never tapped, app closed), a skipped lesson or a finished tutorial play with normal controls.
+        public static bool PokerLessonActive(bool pageArmed, bool dealtKeySet, bool lessonHandThisVisit, bool backDone)
+            => !backDone && pageArmed && (!dealtKeySet || lessonHandThisVisit);
+
+        bool _pokerLessonHand;
+
+        bool PokerLessonLive()
+            => PokerLessonActive(PlayerPrefs.GetInt(CoachPokerPageKey, 0) != 0, PlayerPrefs.GetInt(CoachPokerDealtKey, 0) != 0, _pokerLessonHand, PokerBackDone());
 
         // b103 (Brandon): in normal play too, a dealt hand cannot be abandoned: Back (and the pay table's close, which
         // never leaves the page) waits until the hand resolves into the Drawn result.
         public static bool PokerHandHoldsBack(BirdPoker.Phase phase) => phase == BirdPoker.Phase.Dealt;
 
         bool PokerLessonHoldsBack()
-            => PokerLessonHolds(_splash, _home == HomeFace.Poker, PokerBackDone(), PokerBackGateLive(), Purse.Coins < BirdPoker.MinBet);
+            => PokerLessonHolds(_splash, _home == HomeFace.Poker, PokerBackDone(), PokerBackGateLive(), Purse.Coins < BirdPoker.MinBet, PokerLessonLive());
 
         bool PokerBackGateLive()
         {
-            if (!_splash || _home != HomeFace.Poker || PokerBackDone()) return false;
+            if (!_splash || _home != HomeFace.Poker || PokerBackDone() || !PokerLessonLive()) return false;
 #if UNITY_EDITOR
             if (_pokerPlayrun || EditorShotLive) return false;
 #endif
@@ -14489,6 +14501,7 @@ namespace FlockFive
 #endif
             if (stampDealt)
             {
+                _pokerLessonHand = true;
                 PlayerPrefs.SetInt(CoachPokerDealtKey, 1);
                 PlayerPrefs.Save();
             }
