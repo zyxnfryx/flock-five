@@ -62,6 +62,8 @@ namespace FlockFive
         }
 
         const int BlockCap = 96;
+        // Splat slot value that tells the shader this is a residual speck: no hot glint.
+        const float SpeckFlag = -1f;
         static StormGlassRig _rig;
         static int _visible;
 
@@ -82,8 +84,7 @@ namespace FlockFive
             _rig = this;
             _rng.State = 0x5EED1u;
             _spawnIn = 0.05f;
-            _count = 0;
-            _speckN = 0;
+            StormGlass.Clear(_beads, ref _count, _specks, ref _speckN);
             _visible = 0;
             StormGlassFeature.Install();
         }
@@ -91,6 +92,7 @@ namespace FlockFive
         void OnDisable()
         {
             if (_rig == this) _rig = null;
+            StormGlass.Clear(_beads, ref _count, _specks, ref _speckN);
             _visible = 0;
             StormGlassFeature.Uninstall();
         }
@@ -153,7 +155,7 @@ namespace FlockFive
                 a *= StormGlass.CoverMul(specks[i].X, specks[i].Y, blocks, blockN);
                 if (a < 0.02f) continue;
                 float r = specks[i].Radius;
-                if (!Write(area, texW, texH, specks[i].X, specks[i].Y, r, r, a, 0f, 0f, 0f, 0f,
+                if (!Write(area, texW, texH, specks[i].X, specks[i].Y, r, r, a, SpeckFlag, 0f, 0f, 0f,
                         rects, beads, ref n))
                     break;
             }

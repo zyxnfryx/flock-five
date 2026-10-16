@@ -64,7 +64,7 @@ Shader "FlockFive/StormGlass"
                 float rim = smoothstep(0.78, 1.0, br);
                 scene = lerp(scene, scene * float3(0.90, 0.93, 0.97), rim);
                 float2 spec = bn - float2(-0.32, 0.34);
-                scene += exp(-dot(spec, spec) * 80.0) * 0.85 * disc;
+                scene += exp(-dot(spec, spec) * 80.0) * 0.3 * disc * beadA * beadA;
                 a = ba;
             }
 
@@ -78,6 +78,10 @@ Shader "FlockFive/StormGlass"
                 float r = length(n);
                 float body = smoothstep(1.015, 0.96, r);
                 float splat = saturate(_Bead.w);
+                // Specks arrive with w < 0. They get no glint, so a fading speck never leaves a white dot.
+                float glint = _Bead.w < -0.5 ? 0.0 : 1.0;
+                // Every highlight dies with the bead alpha, squared, so the last frames of a fade are plain glass.
+                float fade = _Bead.z * _Bead.z;
 
                 // One continuous inverted lens once the drop has gathered.
                 // At the impact the reach eases off so the splat reads flat,
@@ -90,18 +94,18 @@ Shader "FlockFive/StormGlass"
                 float rim = smoothstep(0.94, 1.0, r) * body;
                 scene = lerp(scene, scene * float3(0.86, 0.90, 0.96), rim * (1.0 - splat * 0.35));
                 float lip = smoothstep(0.93, 1.0, r) * body * (1.0 - splat);
-                scene += lip * float3(0.78, 0.88, 0.98) * 0.85;
+                scene += lip * float3(0.78, 0.88, 0.98) * 0.5 * fade;
 
                 float ring = smoothstep(0.30, 0.55, r) * smoothstep(1.08, 0.70, r) * splat;
-                scene += ring * float3(1.0, 0.98, 0.96) * 2.4;
+                scene += ring * float3(1.0, 0.98, 0.96) * 0.9 * fade;
                 float splashEdge = smoothstep(0.72, 0.98, r) * splat * body;
-                scene += splashEdge * 1.35;
+                scene += splashEdge * 0.45 * fade;
 
                 float2 spec = n - float2(-0.30, 0.36);
                 float hot = exp(-dot(spec, spec) * 72.0);
-                scene += hot * 2.05 * float3(1.0, 0.99, 0.96) * body * (1.0 - splat);
+                scene += hot * 0.9 * float3(1.0, 0.99, 0.96) * body * (1.0 - splat) * fade * glint;
                 float2 spec2 = n - float2(-0.08, 0.12);
-                scene += exp(-dot(spec2, spec2) * 200.0) * 0.65 * body * (1.0 - splat);
+                scene += exp(-dot(spec2, spec2) * 200.0) * 0.3 * body * (1.0 - splat) * fade * glint;
 
                 float a = _Bead.z * body;
 
@@ -133,7 +137,7 @@ Shader "FlockFive/StormGlass"
 
                 if (a < 0.003)
                     return float4(0, 0, 0, 0);
-                return float4(scene, a);
+                return float4(min(scene, float3(1.0, 1.0, 1.0)), a);
             }
             ENDHLSL
         }

@@ -18,8 +18,8 @@ namespace FlockFive
         public const float ClearLen = 90f;
         const float Fade = 2.1f;
         // One batched sheet. Phones use fewer quads; each is a little longer so the curtain stays full.
-        const int DropsDesk = 156;
-        const int DropsPhone = 120;
+        // b105 (Brandon): the curtain was far too dense. Count now comes from RainDensity (per glass area).
+        int _live;
         const float StreakW = 0.125f; // RainStreak width at scale 1
         const int Segs = 36;
         const int PathCap = 10;
@@ -260,12 +260,12 @@ namespace FlockFive
             BuildCue();
         }
 
-        static int DropCount() => Application.isMobilePlatform ? DropsPhone : DropsDesk;
-
+        
         // Streak quads share the sprite shader. unity_SpriteProps defaults to 0 on a mesh and flattens it.
         void BuildSheet(float left, float right, float bottom, float top)
         {
-            int n = DropCount();
+            int n = RainDensity.Max;
+            _live = RainDensity.Count(right - left, top - bottom);
             bool phone = Application.isMobilePlatform;
             float wide = phone ? 0.98f : 0.86f;
             float lenMul = phone ? 1.18f : 1.06f;
@@ -386,7 +386,7 @@ namespace FlockFive
             int n = _x.Length;
             for (int i = 0; i < n; i++)
             {
-                int a = Mathf.RoundToInt(wet * _amp[i] * 255f);
+                int a = i < _live ? Mathf.RoundToInt(wet * _amp[i] * 255f) : 0;
                 if (a < 0) a = 0;
                 else if (a > 255) a = 255;
                 var col = new Color32(r, g, b, (byte)a);
@@ -563,9 +563,17 @@ namespace FlockFive
                 Frame(out float left, out float right, out float bottom, out float top);
                 _floor = bottom - Edge;
                 float wet = _wet;
+                int want = RainDensity.Count(right - left, top - bottom);
+                if (want != _live)
+                {
+                    // Glass size changed (rotation, iPad split view). Spare quads collapse to a point.
+                    _live = want;
+                    _colQ = -1;
+                }
+                for (int i = _live; i < _x.Length; i++) PlaceDrop(i, _x[i], _y[i], false);
                 if (dt > 0.0001f)
                 {
-                    for (int i = 0; i < _x.Length; i++)
+                    for (int i = 0; i < _live; i++)
                     {
                         // Per-drop hold so the curtain doesn't reset as one sheet.
                         if (_phase[i] > 0f)
