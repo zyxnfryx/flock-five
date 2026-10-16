@@ -42,8 +42,87 @@ namespace FlockFive
             if (left < 0f) left = 0f;
             if (right + size > screenW) right = screenW - size;
             if (right < 0f) right = 0f;
+            // b105 (Brandon): the corner buttons must never sit on the bottom ad (gift) branch or its
+            // arrow sign. This is the base layout for every window, not a tablet path: phones and the
+            // ~0.56-aspect iPad compat window put the 72-ref-px margin right on the ad row.
+            float room = screenH - safeBot;
+            float adTop, adBot;
+            AdRowBand(screenW, screenH, out var signL, out var signR, out var branchL, out var branchR, out adTop, out adBot);
+            float pad = 4f * scale;
+            bool hits = Hits(restart0(left, y, size, pad), signL, signR, branchL, branchR)
+                || Hits(restart0(right, y, size, pad), signL, signR, branchL, branchR);
+            if (hits)
+            {
+                float below = adBot + 6f * scale;
+                float avail = room - below;
+                if (avail >= size * 0.6f)
+                {
+                    y = below;
+                    size = Mathf.Min(size, avail);
+                }
+                else
+                {
+                    y = Mathf.Max(0f, adTop - 6f * scale - size);
+                }
+                bot = screenH - y;
+                right = safe.xMax - inset - size;
+                if (right + size > screenW) right = screenW - size;
+                if (right < 0f) right = 0f;
+            }
             restart = new Rect(left, y, size, size);
             hive = new Rect(right, y, size, size);
+        }
+
+        static Rect restart0(float x, float y, float size, float pad)
+            => new Rect(x - pad, y - pad, size + pad * 2f, size + pad * 2f);
+
+        static bool Hits(Rect r, Rect a, Rect b, Rect c, Rect d)
+            => r.Overlaps(a) || r.Overlaps(b) || r.Overlaps(c) || r.Overlaps(d);
+
+        // Where the play camera puts world (wx, wy) in GUI space (y down), for a window of this size.
+        // Mirrors WorldBuilder.MakeCamera + PortraitLock.Apply: the 9:16 play rect is letter/pillar-boxed.
+        public static Vector2 WorldToGui(float screenW, float screenH, float wx, float wy)
+        {
+            float win = screenW / Mathf.Max(1f, screenH);
+            float want = DeviceFit.PlayAspect(win);
+            float px = 0f, py = 0f, pw = screenW, ph = screenH;
+            if (Mathf.Abs(win - want) >= 0.03f)
+            {
+                if (win > want) { pw = screenW * want / win; px = (screenW - pw) * 0.5f; }
+                else { ph = screenH * win / want; py = (screenH - ph) * 0.5f; }
+            }
+            float sx = px + pw * 0.5f + wx / (WorldBuilder.CamOrtho * want) * (pw * 0.5f);
+            float sy = py + ph * 0.5f - (wy - WorldBuilder.CamRestY) / WorldBuilder.CamOrtho * (ph * 0.5f);
+            return new Vector2(sx, sy);
+        }
+
+        static Rect GuiBox(float w, float h, float x0, float y0, float x1, float y1)
+        {
+            var a = WorldToGui(w, h, x0, y0);
+            var b = WorldToGui(w, h, x1, y1);
+            float xa = Mathf.Min(a.x, b.x), xb = Mathf.Max(a.x, b.x);
+            float ya = Mathf.Min(a.y, b.y), yb = Mathf.Max(a.y, b.y);
+            return new Rect(xa, ya, xb - xa, yb - ya);
+        }
+
+        // The bottom ad (gift) row in GUI space: both arrow signs and both branch bodies, conservative
+        // (sign 1126x530 @200 ppu x 0.26 at local (+-1.08, 0.48); wood 1280 @140 ppu x WoodScaleX).
+        public static void AdRowBand(float w, float h, out Rect signL, out Rect signR, out Rect branchL, out Rect branchR,
+            out float top, out float bottom)
+        {
+            float win = w / Mathf.Max(1f, h);
+            float want = DeviceFit.PlayAspect(win);
+            float woodHalf = WorldBuilder.WoodHalfOf(WorldBuilder.WoodScaleX);
+            float edge = WorldBuilder.CamOrtho * want - woodHalf + 0.18f;
+            float gy = WorldBuilder.GiftY;
+            const float signHalfW = 0.85f, signHalfH = 0.45f, signUp = 0.48f;
+            // Left limb: dir -1, sign sits on the inner side (+1.08). Right limb mirrors.
+            signL = GuiBox(w, h, -edge + 1.08f - signHalfW, gy + signUp + signHalfH, -edge + 1.08f + signHalfW, gy + signUp - signHalfH);
+            signR = GuiBox(w, h, edge - 1.08f - signHalfW, gy + signUp + signHalfH, edge - 1.08f + signHalfW, gy + signUp - signHalfH);
+            branchL = GuiBox(w, h, -edge - woodHalf, gy + 0.87f, -edge + woodHalf, gy - 0.95f);
+            branchR = GuiBox(w, h, edge - woodHalf, gy + 0.87f, edge + woodHalf, gy - 0.95f);
+            top = Mathf.Min(Mathf.Min(signL.yMin, signR.yMin), Mathf.Min(branchL.yMin, branchR.yMin));
+            bottom = Mathf.Max(Mathf.Max(signL.yMax, signR.yMax), Mathf.Max(branchL.yMax, branchR.yMax));
         }
 
         // Same T*R the garden OnGUI matrix applies: rotate around the screen

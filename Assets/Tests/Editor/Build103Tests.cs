@@ -32,7 +32,10 @@ namespace FlockFive.Editor
                 CornerAnchor.Garden(w, h, safe, out float sc, out _, out _, out var rs, out var hv);
                 float buffer = h - safe.yMin - rs.yMax;
                 float want = (phone ? CornerAnchor.BottomMarginRef : Mathf.Lerp(CornerAnchor.BottomMarginRef, CornerAnchor.TabletBottomMarginRef, DeviceFit.Wide(w / h))) * sc;
-                Check("restart bottom buffer " + tags[d], Mathf.Abs(buffer - want) < 0.5f && rs.yMax <= h - safe.yMin + 0.01f && hv.y == rs.y,
+                // b105: when the base buffer would sit on the bottom ad branch, the pair moves below it (Build105Tests).
+                CornerAnchor.AdRowBand(w, h, out _, out _, out _, out _, out float adTop105, out float adBot105);
+                bool moved105 = rs.yMin >= adBot105 - 0.5f || rs.yMax <= adTop105 + 0.5f;
+                Check("restart bottom buffer " + tags[d], (Mathf.Abs(buffer - want) < 0.5f || moved105) && rs.yMax <= h - safe.yMin + 0.01f && hv.y == rs.y,
                     "buffer " + buffer.ToString("0") + " want " + want.ToString("0") + " rest " + rs.yMin.ToString("0") + ".." + rs.yMax.ToString("0"));
                 // Banner still covers the restart button.
                 float refH = FlockFiveApp.GardenRefBandH(w, h, safe, s, 0f);
