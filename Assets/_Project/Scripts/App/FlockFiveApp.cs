@@ -13313,7 +13313,7 @@ namespace FlockFive
         // grows down and left from its seat under the logo halo, so the wordmark is never clipped.
         public const float PokerPayTabScale = 0.80f;       // tablet class (unchanged from b105)
         public const float PokerPayTabPhoneScale = 1.25f;  // phone / Android class
-        public const float PokerPayTabPhoneWidthFrac = 0.26f;
+        public const float PokerPayTabPhoneWidthFrac = 0.32f;
         public const float PokerPayTabTabletWidthFrac = 0.24f;
 
         public static float PokerPayTabClassScale(float window) => Mathf.Lerp(PokerPayTabPhoneScale, PokerPayTabScale, DeviceFit.Wide(window));

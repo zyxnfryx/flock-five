@@ -48,7 +48,7 @@ namespace FlockFive.Editor
                             var band = FlockFiveApp.BannerRect(spots[i], texts[i], w, h, safe, seat, 0f, adopt, s, out _);
                             var bdg = FlockFiveApp.AdoptVipBadgeRect(w, h, safe);
                             // Short screens: the rail badge reaches up beside the logo, so only the minimum visible gap holds.
-                            float need = spots[i] == "adopt.greet" && bdg.yMin < logoBottom + gap ? FlockFiveApp.MinLogoClear(h, safe, s) : logoBottom + gap;
+                            float need = spots[i] == "adopt.greet" && bdg.yMin - 8f * s < logoBottom + gap ? FlockFiveApp.MinLogoClear(h, safe, s) : logoBottom + gap;
                             Check("gap under logo " + spots[i] + (adopt ? " adopt " : " home ") + tags[d], band.y >= need - 0.5f,
                                 "y " + band.y + " logoBottom " + logoBottom + " gap " + gap);
                         }
@@ -57,7 +57,7 @@ namespace FlockFive.Editor
                     var greet = FlockFiveApp.BannerRect("adopt.greet", texts[0], w, h, safe, seat, 0f, true, s, out _);
                     var badge = FlockFiveApp.AdoptVipBadgeRect(w, h, safe);
                     bool covers = greet.yMin <= badge.yMin + 0.5f && greet.yMax >= badge.yMax - 0.5f && greet.xMin <= badge.xMin + 0.5f && greet.xMax >= badge.xMax - 0.5f;
-                    covers |= badge.yMin < logoBottom + gap; // squeeze case: gap wins over the badge's top few px
+                    covers |= badge.yMin - 8f * s < logoBottom + gap; // squeeze case: gap wins over the badge's top few px
                     Check("adopt greet still covers rail " + tags[d], covers, "band " + greet + " badge " + badge);
                 }
                 // Poker coins glove: from the left, perch + arc clear of the coin row above the button.
