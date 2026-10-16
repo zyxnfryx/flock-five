@@ -116,7 +116,17 @@ namespace FlockFive
         // the coin dish fills the bottom, so the fingertip aims a touch right of and below
         // the hit rect's centre, on the card fan itself.
         const float PokerGloveU = 0.56f;
-        const float PokerGloveV = 0.58f;
+        const float PokerGloveV = 0.80f; // b118: low on the button (the coin dish), so the hand stays under the coin row
+        // b118 (Brandon): the coins line's hand rides in from the LEFT at a height where neither the hand nor its
+        // tap arc reaches the coin balance or the piggy above the poker button. Perch lift is how far the perch sits
+        // ABOVE the fingertip (negative = below). rowBottom is the lowest edge of the balance / piggy row.
+        public static float PokerGlovePerchLift(float aimY, float rowBottom, float s)
+        {
+            float above = Mathf.Max(GloveAbove(ClampUpright(true), s, true, 0f), GloveAbove(ClampUpright(true), s, true, 1f));
+            float perchY = rowBottom + 6f * s + above + GloveArch(s);
+            float lift = aimY - perchY;
+            return Mathf.Min(lift, GloveRise(s));
+        }
         // Right-rail button. The hand enters from the left and points right.
         public const bool PokerGloveFromLeft = true;
 
@@ -1250,7 +1260,11 @@ namespace FlockFive
                 // From the left, pointing right (facing stays in the shared helper). Tap rect is
                 // the padded rail hit the button uses, so a press on the icon fades the hand
                 // and opens poker together.
-                CoachGloveAt(GloveTargetAt(box, PokerGloveU, PokerGloveV), dt, handS, float.NaN, PokerGloveFromLeft, float.NaN, RailTapRect(RailPoker));
+                var pokerAim = GloveTargetAt(box, PokerGloveU, PokerGloveV);
+                var pigRow = PiggyRect(handS);
+                float rowBottom = pigRow.width > 2f ? pigRow.yMax : float.NegativeInfinity;
+                float pokerLift = float.IsNegativeInfinity(rowBottom) ? float.NaN : PokerGlovePerchLift(pokerAim.y, rowBottom, handS);
+                CoachGloveAt(pokerAim, dt, handS, pokerLift, PokerGloveFromLeft, float.NaN, RailTapRect(RailPoker));
                 return;
             }
             if (_dailyIntroLive)
@@ -3566,7 +3580,7 @@ namespace FlockFive
             BannerText = string.IsNullOrEmpty(fitted.Shown) ? text : fitted.Shown;
             px = fitted.Font;
             float minTop = Mathf.Max(safe.yMin, TopHud() + (56f * 2f + 4f) * s * 0.92f);
-            if (spot != "coach.line" && spot != "bee.garden") minTop += CaptionLayout.LogoGap(screenH);
+            if (spot != "coach.line" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(screenH, safe, s));
             float gap = 8f * s;
             // The bee banner stays high under the title. Sliding it under a subject
             // would drop it onto the hive and the glove.
@@ -3641,7 +3655,7 @@ namespace FlockFive
             }
             float drop = CaptionStyles.Drop(spot);
             if (drop > 0f)
-                CoverDown(ref band, AdoptVipBadgeRect(w, screenH, safe), drop * s, SplashWordBottom(screenH, safe, s));
+                CoverDown(ref band, AdoptVipBadgeRect(w, screenH, safe), drop * s, SplashWordBottom(screenH, safe, s), MinLogoClear(screenH, safe, s));
             if (band.yMax > screenH) band.y = screenH - band.height;
             if (adHand && band.Overlaps(adAvoid)) { SnugUses++; BannerSkip = "watch button"; return false; }
             BannerSkip = "";
@@ -3687,14 +3701,14 @@ namespace FlockFive
             float bh = CaptionLayout.BannerBandHeight(th, px);
             if (s < 0.01f) s = 1f;
             float minTop = Mathf.Max(safe.yMin, TopHudBox(h, safe, 0f) + (56f * 2f + 4f) * s * 0.92f);
-            // b94: home banners (everything but the garden and the bee callout) clear the logo.
-            if (spot != "coach.line" && spot != "bee.garden") minTop += CaptionLayout.LogoGap(h);
+            // b94/b118: home banners (everything but the garden and the bee callout) clear the DRAWN logo plus a visible gap.
+            if (spot != "coach.line" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(h, safe, s));
             float y = seat.y - (bh - seat.height) * 0.85f;
             if (y < minTop) y = minTop;
             // b86: while adopt is up, every banner starts under the title. Only a spot
             // with Drop then moves down; the others keep this seat.
             if (adoptLive)
-                y = Mathf.Max(safe.yMin, (titleBottom > 8f ? titleBottom : h * 0.17f) + 4f * s);
+                y = Mathf.Max(safe.yMin, (titleBottom > 8f ? titleBottom : h * 0.17f) + 4f * s, spot == "bee.garden" ? 0f : HomeBannerTop(h, safe, s));
             // Bee callout: high under the title / coin row, clear of the hive.
             if (spot == "bee.garden")
                 y = minTop + h * CaptionLayout.BeeGardenDropFrac;
@@ -3703,9 +3717,9 @@ namespace FlockFive
             if (cover && CaptionStyles.Drop(spot) > 0f)
             {
                 badge = AdoptVipBadgeRect(w, h, safe);
-                CoverDown(ref band, badge, CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s));
+                CoverDown(ref band, badge, CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s), MinLogoClear(h, safe, s));
             }
-            LiftOffMainButtons(ref band, w, h, safe, s, badge);
+            LiftOffMainButtons(ref band, w, h, safe, s, badge, (spot == "coach.line" || spot == "bee.garden") ? 0f : HomeBannerTop(h, safe, s));
             return band;
         }
 
@@ -3731,7 +3745,7 @@ namespace FlockFive
                 && band.yMax >= badge.yMax - 0.5f;
         }
 
-        static void LiftOffMainButtons(ref Rect band, float w, float h, Rect safe, float s, Rect mustCover)
+        static void LiftOffMainButtons(ref Rect band, float w, float h, Rect safe, float s, Rect mustCover, float floorY = 0f)
         {
             var buttons = new Rect[4];
             int n = FillMainButtons(w, h, safe, buttons);
@@ -3747,18 +3761,18 @@ namespace FlockFive
                 var btn = buttons[hit];
                 float above = btn.yMin - gap - band.height;
                 float below = btn.yMax + gap;
-                if (BannerPlaceClear(band, above, h, mustCover, buttons, n))
+                if (BannerPlaceClear(band, above, h, mustCover, buttons, n, floorY))
                     band.y = above;
-                else if (BannerPlaceClear(band, below, h, mustCover, buttons, n))
+                else if (BannerPlaceClear(band, below, h, mustCover, buttons, n, floorY))
                     band.y = below;
                 else
                     return;
             }
         }
 
-        static bool BannerPlaceClear(Rect band, float y, float h, Rect mustCover, Rect[] buttons, int n)
+        static bool BannerPlaceClear(Rect band, float y, float h, Rect mustCover, Rect[] buttons, int n, float floorY = 0f)
         {
-            if (y < 0f) return false;
+            if (y < 0f || y < floorY - 0.5f) return false;
             if (y + band.height > h + 0.5f) return false;
             var moved = band;
             moved.y = y;
@@ -3786,7 +3800,7 @@ namespace FlockFive
 
         // Slide the band down over `badge`, then a pad past it. Grow only when a pure
         // move would uncover the top of the badge. Clear the wordmark when that still covers.
-        static void CoverDown(ref Rect band, Rect badge, float pad, float wordBottom)
+        static void CoverDown(ref Rect band, Rect badge, float pad, float wordBottom, float minBottom = 0f)
         {
             if (badge.width < 2f || badge.height < 2f) return;
             if (pad < 0f) pad = 0f;
@@ -3809,11 +3823,35 @@ namespace FlockFive
             }
             if (wordBottom > band.y && wordBottom <= top)
                 band.y = wordBottom;
+            // b118: on a short screen the rail badge reaches up beside the logo, so the full gap and the
+            // badge top cannot both hold. The banner then keeps at least the minimum visible gap.
+            else if (minBottom > band.y && wordBottom > top)
+            {
+                float shift = minBottom - band.y;
+                band.y += shift;
+            }
         }
+
+        // b118 (Brandon): the DRAWN bottom of the FLOCK FIVE wordmark: two cap rows plus the letters'
+        // 11-layer extrusion that DrawSplashWord paints below the face. b94's estimate left the
+        // extrusion out, so banners sat flush against the visible logo. One number for every home banner.
+        public static float LogoBottom(float screenH, Rect safe, float s)
+        {
+            return TopHudBox(screenH, safe, 0f) + ((56f * 2f + 4f) + 11f * 1.25f) * s * SplashLogoScale;
+        }
+
+        // Highest y a home-screen banner may start: under the drawn logo plus the shared visible gap.
+        public static float HomeBannerTop(float screenH, Rect safe, float s)
+        {
+            return LogoBottom(screenH, safe, s) + CaptionLayout.LogoGap(screenH);
+        }
+
+        // The smallest visible gap a banner may keep under the drawn logo when the rail badge forces a squeeze.
+        public static float MinLogoClear(float screenH, Rect safe, float s) => LogoBottom(screenH, safe, s) + Mathf.Max(8f, 8f * s);
 
         static float SplashWordBottom(float screenH, Rect safe, float s)
         {
-            return TopHudBox(screenH, safe, 0f) + (56f * 2f + 4f) * s * SplashLogoScale;
+            return HomeBannerTop(screenH, safe, s);
         }
 
         void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default, bool opaque = false, float slack = 1f, bool topAlign = false)
@@ -4452,6 +4490,9 @@ namespace FlockFive
             GloveSpan(pivot, ang, dh, dip, false, out float x0, out float y0, out float x1, out float y1);
             return new Rect(x0, y0, x1 - x0, y1 - y0);
         }
+        public static float GloveAuditAboveUpright(float s)
+            => Mathf.Max(GloveAbove(ClampUpright(true), s, true, 0f), GloveAbove(ClampUpright(true), s, true, 1f));
+        public static float GloveAuditArch(float s) => GloveArch(s);
         public static float GloveAuditAbove(float s)
             => Mathf.Max(GloveAbove(GloveBelowDeg, s, false, 0f), GloveAbove(GloveBelowDeg, s, false, 1f));
         public static float GloveAuditDw(float dh) => GloveDrawW(dh);
