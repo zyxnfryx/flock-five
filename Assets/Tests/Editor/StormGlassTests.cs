@@ -216,7 +216,7 @@ namespace FlockFive.Editor
             float trailSpawn = 1f;
             int trailSpeck = 0;
             int tn = 1;
-            for (int step = 0; step < 40; step++)
+            for (int step = 0; step < 90; step++)
                 tn = Step(beads, tn, 1f / 60f, true, 0f, blocks, 0, ref trailRng, ref trailSpawn, specks, ref trailSpeck);
             float speckLo = 99f;
             for (int i = 0; i < trailSpeck; i++)
