@@ -167,7 +167,7 @@ namespace FlockFive.Editor
                 if (openN > was) clearSpawns += openN - was;
             }
             Check("covered-glass-spawns-fewer",
-                coveredSpawns > 0 && clearSpawns > coveredSpawns * 2,
+                coveredSpawns > 0 && clearSpawns * 2 > coveredSpawns * 3, // b116: calmer spawn rate (#149) compresses the ratio to ~1.95x; still clearly fewer under cover
                 "covered " + coveredSpawns + " clear " + clearSpawns);
 
             StormGlass.Shape(0f, 30f, out float rx0, out float ry0, out float splat0);
