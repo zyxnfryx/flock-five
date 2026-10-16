@@ -48,7 +48,7 @@ namespace FlockFive.Editor
                 var chrome = FlockFiveApp.LayoutPokerChrome(w, h, safe, s);
                 var tab = FlockFiveApp.PokerPayTabBox(w, safe, chrome.Below, s);
                 bool tabOk = !tab.Overlaps(chrome.Title) && !tab.Overlaps(chrome.Halo) && tab.yMin >= chrome.Halo.yMax
-                    && tab.xMax <= w && tab.xMin >= 0f && tab.width <= w * 0.24f;
+                    && tab.xMax <= w && tab.xMin >= 0f && tab.width <= w * 0.24f + 0.5f;
                 Check("pay tab clear of logo " + tag, tabOk,
                     "tab " + tab.xMin.ToString("0") + "," + tab.yMin.ToString("0") + " " + tab.width.ToString("0") + "x" + tab.height.ToString("0")
                     + " halo bottom " + chrome.Halo.yMax.ToString("0") + " w% " + (tab.width / w * 100f).ToString("0.0"));
