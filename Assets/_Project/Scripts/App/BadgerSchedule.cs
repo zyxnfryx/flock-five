@@ -20,7 +20,8 @@ namespace FlockFive
         public const int Interval = 5;
         public const int Side = 4;
         public const int Tiles = Side * Side;
-        public const int YardHoney = 1;
+        // b123: honey is 2 / 3 / 5 by finish only (Hive.HoneyOfFinish). A yard slot is worth the regular-finish 2: no invented 1s.
+        public const int YardHoney = 2;
         public const int PlayerTargetStart = 10;
         public const int PlayerTargetCap = 18;
         public const int BadgerTargetFixed = 18;
@@ -32,21 +33,19 @@ namespace FlockFive
         // tests use the setter.
         public static bool Enabled { get; set; } = true;
 
-        // Counts of honey 2, 3, 4, 5 (fourteen tiles). Two 1s are added on top.
-        // Every row rises: more 3s than 2s, more 4s than 3s, more 5s than 4s.
-        // Each visit shifts one step hotter. The last row is the hottest mix
-        // that still rises. Later visits stay on it. That ceiling is the
-        // 16-tile grid, not a cap on which visit can show up.
-        static readonly int[,] Rise =
+        // b123: the badger's tiles use real honey values only, 2 / 3 / 5 (the finish values), sixteen tiles.
+        // Counts of 2, 3, 5 per visit. Each visit shifts one step hotter (fewer 2s, more 5s); later visits stay on the last row.
+        static readonly int[,] Mix =
         {
-            { 2, 3, 4, 5 },
-            { 1, 3, 4, 6 },
-            { 0, 3, 4, 7 },
-            { 0, 2, 4, 8 },
-            { 0, 1, 4, 9 },
-            { 0, 1, 3, 10 },
-            { 0, 1, 2, 11 },
+            { 6, 6, 4 },
+            { 5, 6, 5 },
+            { 4, 6, 6 },
+            { 3, 6, 7 },
+            { 2, 6, 8 },
+            { 1, 6, 9 },
+            { 0, 6, 10 },
         };
+        static readonly int[] MixFaces = { 2, 3, 5 };
 
         public static bool Due(int cleared)
         {
@@ -120,25 +119,19 @@ namespace FlockFive
             return Money.Format(PowerUpPrice(power, appearance));
         }
 
-        // Sixteen honey values. Same appearance and seed always return the same order.
+        // Sixteen honey values, 2 / 3 / 5 only. Same appearance and seed always return the same order.
         public static int[] BossTileMix(int appearance, int seed)
         {
             int row = appearance - 1;
-            int last = Rise.GetLength(0) - 1;
+            int last = Mix.GetLength(0) - 1;
             if (row < 0) row = 0;
             if (row > last) row = last;
 
             var tiles = new int[Tiles];
             int wrote = 0;
-            tiles[wrote++] = 1;
-            tiles[wrote++] = 1;
-            for (int col = 0; col < 4; col++)
-            {
-                int face = col + 2;
-                int count = Rise[row, col];
-                for (int k = 0; k < count; k++)
-                    tiles[wrote++] = face;
-            }
+            for (int col = 0; col < MixFaces.Length; col++)
+                for (int k = 0; k < Mix[row, col]; k++)
+                    tiles[wrote++] = MixFaces[col];
             Shuffle(tiles, seed);
             return tiles;
         }

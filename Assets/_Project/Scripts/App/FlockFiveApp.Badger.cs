@@ -83,6 +83,22 @@ namespace FlockFive
         bool _bgDuelEyeOn;
         // Coach fight, moves 1-3: the guided tile's rect this frame (glove aim + tap rect).
         Rect _bgGuideAim;
+        // b123: the guided comb's padded hit rect (glove tap rect + gate target, one rect so the gate never blinds).
+        Rect _bgGuideHit;
+        // b123: round-4 power step (x2 button, then the scripted comb). On only for the first-use x2 after move 3.
+        bool _bgPowerGuideOn;
+        BadgerPower _bgGuidePower;      // the power the round's forced step is about
+        BadgerPower _bgBlockBeat;       // Hot Sauce / Freeze Spray played this round (any fight): drives the fly beat
+        BadgerPower _bgGuideRoundPower; // set when that power's tile is played; drives the post-power arrows
+        BadgerHex _bgYouHex;            // the page's own comb grid, stored per frame: glove, gate, hit pad and paint share it
+        bool _bgYouHexOk;
+        Rect _bgYouSlotNow, _bgBossSlotNow; // arena tiles as painted this frame (arrow targets)
+        int _bgPowerTile = -1;
+        Rect _bgPowerBtn;
+        // b123: lesson taps that are eaten without advancing (back, power row, combs) and the step's start time.
+        readonly Rect[] _bgLessonIgnore = new Rect[12];
+        int _bgLessonIgnoreN;
+        float _bgLessonStepAt;
         int _bgLessonStep;
         Rect _bgLessonAim;
         Rect _bgLessonCap;
@@ -133,6 +149,12 @@ namespace FlockFive
             _bgLessonAim = default;
             _bgLessonCap = default;
             _bgCoachFight = false;
+            _bgYouHexOk = false;
+            _bgPowerGuideOn = false;
+            _bgGuidePower = BadgerPower.None;
+            _bgGuideRoundPower = BadgerPower.None;
+            _bgPowerTile = -1;
+            _bgGuideHit = default;
             _bgSlam = default;
             _bgSlamT = 0f;
             _bgSlamWord = -1;
@@ -228,9 +250,16 @@ namespace FlockFive
             _bgStage = BadgerStage.BossWait;
             _bgLine = BadgerCopy.RoundStartLine(_bgRoundN);
             // Coach fight: the round after move 3 announces the unlocked power-ups.
+            _bgPowerGuideOn = false;
+            _bgGuideRoundPower = BadgerPower.None;
+            _bgBlockBeat = BadgerPower.None;
             if (_bgFight != null && _bgFight.CoachFight
                 && _bgFight.RoundsResolved == BadgerTutorialScript.Moves && !_bgFight.PowersLocked)
+            {
                 _bgLine = BadgerCopy.PowersOpen;
+                // b123: move 3 has resolved. Only now is the lesson done; a quit or kill before this restarts it.
+                BadgerCopy.MarkCoach();
+            }
             _bgRoundN++;
         }
 
@@ -270,7 +299,9 @@ namespace FlockFive
             {
                 case BadgerStage.BossWait:
                     if (_bgT < BadgerBossWait) break;
-                    int ix = _bgFight.BossPick();
+                    // b123: a forced power round scripts the badger's tile (low for x2/x3, high for the blocks).
+                    var stepPower = BadgerPowerGuideWanted() ? NextBadgerGuidePower() : BadgerPower.None;
+                    int ix = stepPower != BadgerPower.None ? _bgFight.BossPickFor(stepPower) : _bgFight.BossPick();
                     if (ix < 0)
                     {
                         BeginBadgerOutro();
@@ -292,10 +323,21 @@ namespace FlockFive
                         // already has this step's rect.
                         RefreshBadgerGuideAim();
                     }
+                    else if (BadgerPowerGuideWanted())
+                    {
+                        // b123: the first free use of each power (x2, x3, Hot Sauce, Freeze Spray) is a forced step.
+                        // The intro line stays up (it used to be overwritten by "Your pick").
+                        _bgGuidePower = NextBadgerGuidePower();
+                        _bgPowerGuideOn = true;
+                        _bgPowerTile = _bgFight.PowerStepPlayerTile(_bgGuidePower);
+                        _bgLine = "";
+                        _bgGuideAim = default;
+                        ResetBadgerGlove();
+                    }
                     Sfx.CardBump();
                     break;
                 case BadgerStage.Reveal:
-                    if (_bgT < BadgerSlide + BadgerRevealHold) break;
+                    if (_bgT < BadgerSlide + BadgerRevealHold + BadgerPowerFly.RevealExtra(_bgBlockBeat)) break;
                     // Both picks are in: roll the Don't Care slam (spec 2b) before the compare.
                     if (_bgFight.TryDontCare(out var slam))
                     {
@@ -407,6 +449,9 @@ namespace FlockFive
             _bgDotT = 0f;
             _bgStage = BadgerStage.Verdict;
             _bgLine = BadgerVerdict(_bgRound);
+            // b123: the forced block round says the block worked.
+            if (_bgGuideRoundPower != BadgerPower.None && BadgerFight.IsBlock(_bgGuideRoundPower) && _bgRound.Power == _bgGuideRoundPower)
+                _bgLine = BadgerCopy.BlockWorkedLine(_bgGuideRoundPower);
             if (_bgRound.PlayerGained > 0 || _bgRound.BossGained > 0 || BadgerFight.IsBlock(_bgRound.Power))
                 Sfx.CardBump();
         }
@@ -468,6 +513,11 @@ namespace FlockFive
             _bgStage = BadgerStage.Over;
             _bgT = 0f;
             _bgLine = BadgerCopy.EndLine(won ? BadgerResult.PlayerWon : BadgerResult.BadgerWon);
+            // b123: say what happened and what it paid; a loss says how to try again.
+            int flag = _bgFlagDisplay > 0 ? _bgFlagDisplay : BadgerSave.Pending;
+            var plan = BadgerPay.Plan(won ? BadgerResult.PlayerWon : BadgerResult.BadgerWon, flag);
+            if (won && plan.Credit > 0) _bgLine += "\n+" + plan.Credit + " coins!";
+            else if (!won) _bgLine += "\nTap the Level button to try again.";
         }
 
         static string BadgerVerdict(BadgerRound r) => BadgerCopy.VerdictLine(r);
@@ -523,10 +573,12 @@ namespace FlockFive
         void ClickBadgerPower(BadgerPower p)
         {
             if (_bgStage != BadgerStage.YourPick || _bgFight == null) return;
-            if (_bgArmed == p)
+            // b123: the round-4 step takes x2 only (arm / disarm). Other powers wait for their own turn.
+            if (_bgPowerGuideOn && p != _bgGuidePower) return;
+            if (!BadgerFight.IsBlock(p) && _bgArmed == p)
             {
                 _bgArmed = BadgerPower.None;
-                _bgLine = BadgerCopy.YourPick;
+                if (!_bgPowerGuideOn) _bgLine = BadgerCopy.YourPick;
                 return;
             }
             if (!_bgFight.PowerReady(p) || _bgFight.PowersLocked) return;
@@ -536,8 +588,20 @@ namespace FlockFive
                 _bgLine = BadgerCopy.CoinsShort;
                 return;
             }
+            if (BadgerFight.IsBlock(p))
+            {
+                // b123: Hot Sauce / Freeze Spray assign themselves to the weakest open tile. No tile tap.
+                int weakest = _bgFight.PowerStepPlayerTile(p);
+                if (weakest < 0) return;
+                _bgArmed = p;
+                Sfx.CardTap();
+                ClickBadgerTile(weakest);
+                if (_bgStage != BadgerStage.Reveal) _bgArmed = BadgerPower.None; // the play was refused
+                return;
+            }
             _bgArmed = p;
             Sfx.CardTap();
+            if (_bgPowerGuideOn) return; // the guide caption owns the line
             _bgLine = BadgerFight.IsBlock(p)
                 ? BadgerPowerName(p) + " is ready. Now pick a tile."
                 : BadgerPowerName(p) + " is ready. Now pick the tile to boost.";
@@ -553,6 +617,9 @@ namespace FlockFive
                 _bgLine = BadgerCopy.CoinsShort;
                 return;
             }
+            _bgGuideRoundPower = _bgPowerGuideOn ? _bgGuidePower : BadgerPower.None;
+            _bgBlockBeat = BadgerFight.IsBlock(_bgArmed) ? _bgArmed : BadgerPower.None;
+            _bgPowerGuideOn = false;
             _bgPlayerIx = i;
             _bgPlayerAt = AdPause.Unscaled;
             _bgT = 0f;
@@ -569,6 +636,7 @@ namespace FlockFive
             _bgLessonLive = true;
             _bgCoachFight = true;
             _bgLessonStep = 0;
+            _bgLessonStepAt = AdPause.Unscaled;
             _bgStage = BadgerStage.Lesson;
             _bgT = 0f;
             _bgLine = "";
@@ -591,8 +659,42 @@ namespace FlockFive
         bool BadgerGuideLive()
         {
             return _splash && _home == HomeFace.Badger && _bgFight != null
-                && _bgStage == BadgerStage.YourPick && _bgFight.GuidedTile >= 0;
+                && _bgStage == BadgerStage.YourPick && (_bgFight.GuidedTile >= 0 || _bgPowerGuideOn);
         }
+
+        static readonly BadgerPower[] BadgerGuideOrder = { BadgerPower.X2, BadgerPower.X3, BadgerPower.HotSauce, BadgerPower.FreezeSpray };
+
+        // b123: the next power whose free first use has not been taken (coach fight only), else None.
+        BadgerPower NextBadgerGuidePower()
+        {
+            if (_bgFight == null || !_bgFight.CoachFight || _bgFight.PowersLocked) return BadgerPower.None;
+            int n = _bgAppearance < 1 ? 1 : _bgAppearance;
+            for (int i = 0; i < BadgerGuideOrder.Length; i++)
+            {
+                var p = BadgerGuideOrder[i];
+                if (BadgerSave.IsTutorialFirstUse(p, n) && _bgFight.PowerReady(p) && _bgFight.CanAfford(p)) return p;
+            }
+            return BadgerPower.None;
+        }
+
+        // Round 4 on: a free first use is waiting, there is a comb to play, and the contest is still going.
+        bool BadgerPowerGuideWanted()
+        {
+            if (_bgFight == null || !_bgFight.CoachFight || _bgFight.PowersLocked) return false;
+            if (_bgFight.RoundsResolved < BadgerTutorialScript.Moves) return false;
+            return NextBadgerGuidePower() != BadgerPower.None && FirstOpenPlayerTile() >= 0;
+        }
+
+        int FirstOpenPlayerTile()
+        {
+            if (_bgFight == null) return -1;
+            for (int i = 0; i < BadgerSchedule.Tiles; i++)
+                if (_bgFight.PlayerOpen(i)) return i;
+            return -1;
+        }
+
+        // 1 = tap the x2 button, 2 = x2 is armed, tap the glowing comb.
+        int BadgerPowerGuideStage() => !_bgPowerGuideOn ? 0 : (_bgArmed == _bgGuidePower ? 2 : 1);
 
         // Guided comb from the same hex fit the page paints. CoachPlace runs before
         // OnGUI, so the glove must not wait on the tile loop to store this rect.
@@ -600,8 +702,45 @@ namespace FlockFive
         {
             if (!BadgerGuideLive()) return;
             var L = BadgerLayout();
-            _bgGuideAim = BadgerHex.Fit(L.PlayerGrid, 4, 4).Draw(_bgFight.GuidedTile);
+            int tile = _bgPowerGuideOn ? _bgPowerTile : _bgFight.GuidedTile;
+            // b123: the page's own stored grid (same one HitPad and the paint use); a fresh fit only before the first paint.
+            var hex = _bgYouHexOk ? _bgYouHex : BadgerHex.Fit(L.PlayerGrid, 4, 4);
+            _bgGuideAim = hex.Draw(tile);
+            _bgGuideHit = hex.Hit(tile);
+            _bgPowerBtn = BadgerPowerRect(L, (int)_bgGuidePower - 1);
         }
+
+        // Same slot maths as DrawBadgerPowers, so the glove, the gate and the button agree.
+        static Rect BadgerPowerRect(BadgerRects L, int k)
+        {
+            float gap = 8f * L.S;
+            float w = (L.Power.width - gap * 3f) / 4f;
+            return new Rect(L.Power.x + k * (w + gap), L.Power.y, w, L.Power.height);
+        }
+
+        static Rect BadgerContinueRect(BadgerRects L)
+        {
+            float bw = Mathf.Min(L.Power.width * 0.72f, 420f * L.S);
+            return new Rect(L.Power.center.x - bw * 0.5f, L.Power.y, bw, L.Power.height);
+        }
+
+        // Result screen on the first (coach) fight: the glove sits on Continue.
+        bool BadgerResultLive()
+            => _splash && _home == HomeFace.Badger && _bgStage == BadgerStage.Over && _bgFight != null && _bgFight.CoachFight;
+
+        // Shared back-medal hold: the coach fight's locked-power stretch (and the round-4 step) cannot be quit.
+        bool BadgerCoachHoldsBack()
+            => _bgFight != null && _bgFight.CoachFight
+               && (_bgFight.PowersLocked || _bgPowerGuideOn || BadgerGuidePending())
+               && _bgStage != BadgerStage.Over && _bgStage != BadgerStage.Outro;
+
+        // b123: between move 3 and the forced power step (round 4's BossWait, Reveal, Verdict), and between each
+        // power's step, back stays held while a free first use is still waiting.
+        bool BadgerGuidePending()
+            => _bgFight != null && _bgFight.CoachFight && !_bgFight.PowersLocked
+               && _bgFight.RoundsResolved >= BadgerTutorialScript.Moves
+               && _bgFight.Result == BadgerResult.Playing
+               && NextBadgerGuidePower() != BadgerPower.None && FirstOpenPlayerTile() >= 0;
 
         void EndBadgerLesson()
         {
@@ -621,6 +760,7 @@ namespace FlockFive
             if (!_bgLessonLive) return;
             var step = CoachTap.BadgerLesson(_bgLessonStep);
             _bgLessonStep++;
+            _bgLessonStepAt = AdPause.Unscaled;
             ResetBadgerGlove();
             if (_bgLessonStep < BadgerCopy.LessonCount)
             {
@@ -628,7 +768,7 @@ namespace FlockFive
                 NoteLessonDismiss(step);
                 return;
             }
-            BadgerCopy.MarkCoach();
+            // b123: the coach stamp moved to NextBadgerRound (after move 3 resolves), so quitting mid-tutorial restarts it.
             EndBadgerLesson();
             BeginBadgerFight();
             NoteLessonDismiss(step);
@@ -648,27 +788,35 @@ namespace FlockFive
         {
             if (BadgerGuideLive())
             {
-                // Guided pick: same shared glove, aimed at the scripted tile. The tile's own
-                // HitPad takes the tap; NoteGloveTap fades the hand only on that tile.
+                // Guided pick / round-4 power step: same shared glove, aimed at the scripted control. The control's
+                // own hit rect takes the tap; NoteGloveTap fades the hand only on that rect.
                 RefreshBadgerGuideAim();
-                var tile = _bgGuideAim;
+                var tile = BadgerPowerGuideStage() == 1 ? _bgPowerBtn : _bgGuideAim;
+                var tap = BadgerPowerGuideStage() == 1 ? _bgPowerBtn : _bgGuideHit;
                 if (tile.width < 2f || tile.height < 2f) return;
                 _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-                CoachGloveAt(GloveTarget(tile), dt, s, float.NaN, false, float.NaN, tile);
+                CoachGloveAt(GloveTarget(tile), dt, s, float.NaN, false, float.NaN, tap);
+                return;
+            }
+            if (BadgerResultLive())
+            {
+                // Result: the glove is on Continue (the only control).
+                var cont = BadgerContinueRect(BadgerLayout());
+                _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+                CoachGloveAt(GloveTarget(cont), dt, s, float.NaN, false, float.NaN, cont);
                 return;
             }
             if (!_bgLessonLive || _bgStage != BadgerStage.Lesson) return;
             var aim = _bgLessonAim;
             if (aim.width < 2f || aim.height < 2f) return;
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-            // Pose the shared glove. Its return is the demo poke beat, not a player tap.
-            CoachGloveAt(GloveTarget(aim), dt, s, float.NaN, false, float.NaN, aim);
+            // b123: lessons 1-3 are look-at steps. The pointer is an ARROW (CoachArrowAt, painted with the caption),
+            // not a glove. A press on blank space or the glowed area continues; back, combs and the power row are eaten.
             var step = CoachTap.BadgerLesson(_bgLessonStep);
             if (CoachTap.AnyTap(step))
             {
                 // SwallowOffTargetTap owns the press. This covers a press that arrived
                 // only through the Input System, and the ate flag stops a second step.
-                if (!CoachAteThisFrame() && Pressed(out _))
+                if (!CoachAteThisFrame() && Pressed(out var scr) && !BadgerLessonIgnores(new Vector2(scr.x, Screen.height - scr.y)))
                 {
                     MarkCoachAte();
                     AdvanceBadgerLesson();
@@ -676,6 +824,44 @@ namespace FlockFive
             }
             else if (BadgerLessonTapNow(aim))
                 AdvanceBadgerLesson();
+        }
+
+        // True when a lesson press lands on something the step ignores (never advances, never toggles).
+        bool BadgerLessonIgnores(Vector2 gui)
+        {
+            for (int i = 0; i < _bgLessonIgnoreN; i++)
+                if (_bgLessonIgnore[i].Contains(gui)) return true;
+            return false;
+        }
+
+        // One rule per lesson step (CoachTap.Rule): which zones are eaten.
+        void RefreshBadgerLessonIgnore(BadgerRects L)
+        {
+            _bgLessonIgnoreN = FillBadgerLessonIgnore(L, _bgLessonStep, _bgLessonIgnore);
+        }
+
+        static int FillBadgerLessonIgnore(BadgerRects L, int step, Rect[] into)
+        {
+            int n = 0;
+            into[n++] = L.Back;
+            into[n++] = L.Coin;      // the coin cluster opens the shop
+            into[n++] = L.BossGrid;  // nothing there is played
+            if (step != 1)
+                into[n++] = L.Power;          // L1, L3: the whole power row
+            else
+                for (int k = 0; k < 4; k++) into[n++] = BadgerPowerRect(L, k); // L2: the buttons themselves do nothing
+            if (step != 0) into[n++] = L.PlayerGrid; // L2, L3: combs are not played
+            return n;
+        }
+
+        // Test hook: would a press at p on lesson `step` be eaten (true) or continue the lesson (false)?
+        public static bool BadgerLessonPressIgnored(int step, Rect back, Rect coin, Rect bossGrid, Rect power, Rect playerGrid, Vector2 p)
+        {
+            var L = new BadgerRects { S = 1f, Back = back, Coin = coin, BossGrid = bossGrid, Power = power, PlayerGrid = playerGrid };
+            var into = new Rect[12];
+            int n = FillBadgerLessonIgnore(L, step, into);
+            for (int i = 0; i < n; i++) if (into[i].Contains(p)) return true;
+            return false;
         }
 
         bool BadgerLessonTapNow(Rect aim)
@@ -696,6 +882,12 @@ namespace FlockFive
             else if (_bgLessonStep == 1) _bgLessonAim = L.Power;
             else _bgLessonAim = L.ColL;
             _bgLessonCap = DrawBadgerCoachLine(L, line);
+            RefreshBadgerLessonIgnore(L);
+            // Look-at arrow: the grid, the power row, then YOU / BADGER meters alternating on the last step.
+            Rect look = _bgLessonAim;
+            if (_bgLessonStep >= 2)
+                look = Mathf.Repeat(AdPause.Unscaled - _bgLessonStepAt, 3.2f) < 1.6f ? L.ColL : L.ColR;
+            CoachArrowAt(look, s);
             DrawTutorOverlay(s);
         }
 
@@ -712,7 +904,7 @@ namespace FlockFive
             float yEnd = screenH - Mathf.Max(8f * scale, have ? safe.yMin + 4f : 0f);
             float gap = 6f * scale;
             float room = Mathf.Max(100f, yEnd - y0 - gap * 4f);
-            float capH = room * 0.14f;
+            float capH = room * 0.18f;
             float capW = xR - xL;
             const float plateX = 18f;
             const float plateY = 12f;
@@ -722,6 +914,19 @@ namespace FlockFive
             roomH = capH - plateY * 2f;
             if (roomH < 8f) roomH = 8f;
             hi = Mathf.Max(18, Mathf.RoundToInt(34f * scale));
+        }
+
+        // b123: does this badger caption fit its band (no bottom clip) at this screen, through the shared caption fit?
+        public static bool BadgerCaptionFits(string line, float screenW, float screenH, Rect safe, out string detail)
+        {
+            BadgerCaptionLimits(screenW, screenH, safe, out float maxW, out float roomH, out float scale, out int hi);
+            var fit = MeasureCaptionBox(line, maxW, hi, 14);
+            CaptionTextRect(new Rect(0f, 0f, Mathf.Min(fit.width, maxW), Mathf.Min(fit.height, roomH)), scale, out var textR);
+            int lo = CaptionPx(12);
+            string shown = CaptionLayout.LockBreaks(CoachLineStyle(), line, textR.width, textR.height, lo, CaptionPx(hi), out int font);
+            bool ok = fit.height <= roomH + 0.5f && fit.width <= maxW + 0.5f && font >= lo;
+            detail = screenW + "x" + screenH + " box " + fit.width.ToString("0") + "x" + fit.height.ToString("0") + " room " + maxW.ToString("0") + "x" + roomH.ToString("0") + " font " + font;
+            return ok;
         }
 
         // Column lesson, as PaintCoachCaption will draw it at this screen. Shown keeps
@@ -783,7 +988,9 @@ namespace FlockFive
         {
             if (!BadgerGuideLive()) return;
             RefreshBadgerGuideAim();
-            string line = BadgerCopy.GuideLine(_bgFight.TutorialMove);
+            string line = _bgPowerGuideOn
+                ? (BadgerPowerGuideStage() == 2 ? BadgerCopy.PowerArmedLine(_bgGuidePower) : BadgerCopy.PowerIntroLine(_bgGuidePower, _bgFight != null && _bgFight.RoundsResolved == BadgerTutorialScript.Moves))
+                : BadgerCopy.GuideLine(_bgFight.TutorialMove);
             if (!string.IsNullOrEmpty(line)) DrawBadgerCoachLine(L, line);
             DrawTutorOverlay(L.S);
         }
@@ -836,7 +1043,7 @@ namespace FlockFive
             float yEnd = Screen.height - Mathf.Max(8f * s, haveSafe ? safe.yMin + 4f : 0f);
             float gap = 6f * s;
             float room = Mathf.Max(100f, yEnd - y0 - gap * 4f);
-            float capH = room * 0.14f;
+            float capH = room * 0.18f;
             float powH = room * 0.11f;
             // Middle stage band, between the badger tiles and the player tiles.
             // Height stays put so the opening hive and bee arcs keep their size.
@@ -969,8 +1176,11 @@ namespace FlockFive
             float a = dim ? 0.55f : 1f;
             bool two = !string.IsNullOrEmpty(sub);
             var tr = two ? new Rect(lab.x, lab.y, lab.width, lab.height * 0.58f) : lab;
-            st.fontSize = FitFont(st, title, tr.width * 0.92f, tr.height * 0.92f, 10, 72);
-            StampLight(tr, title, st, new Color(ink.r, ink.g, ink.b, a));
+            if (!string.IsNullOrEmpty(title)) // b123: a picture button passes no title; the caller paints the picture
+            {
+                st.fontSize = FitFont(st, title, tr.width * 0.92f, tr.height * 0.92f, 10, 72);
+                StampLight(tr, title, st, new Color(ink.r, ink.g, ink.b, a));
+            }
             if (two)
             {
                 var sr = new Rect(lab.x, lab.y + lab.height * 0.52f, lab.width, lab.height * 0.46f);
@@ -1136,8 +1346,9 @@ namespace FlockFive
             DrawHomeWash(0.58f);
 
             // Opening, PostOpen, and the lesson are not skippable via the medal.
+            // b123: and the whole locked-power stretch of the coach fight (Reveal / Verdict / BossWait between moves).
             if (_bgStage == BadgerStage.Opening || _bgStage == BadgerStage.PostOpen || _bgStage == BadgerStage.Lesson
-                || _bgStage == BadgerStage.DontCare || BadgerGuideLive())
+                || _bgStage == BadgerStage.DontCare || BadgerGuideLive() || BadgerCoachHoldsBack() || BadgerResultLive())
                 PaintBackMedal(L.Back, false);
             else if (DrawBackMedal(L.Back))
             {
@@ -1162,6 +1373,8 @@ namespace FlockFive
 
             var bossHex = BadgerHex.Fit(L.BossGrid, 4, 4);
             var youHex = BadgerHex.Fit(L.PlayerGrid, 4, 4);
+            _bgYouHex = youHex;
+            _bgYouHexOk = true;
             bool tilesLive = _bgStage == BadgerStage.YourPick;
 
             for (int i = 0; i < BadgerSchedule.Tiles; i++)
@@ -1173,6 +1386,8 @@ namespace FlockFive
             int tapped = -1;
             // Coach moves 1-3: only the glove's tile takes a tap; every other tile ignores it.
             int guide = _bgFight != null && tilesLive ? _bgFight.GuidedTile : -1;
+            // b123: round-4 step: no comb takes a tap until x2 is armed, then only the scripted comb.
+            if (guide < 0 && tilesLive && _bgPowerGuideOn) guide = _bgArmed == _bgGuidePower ? _bgPowerTile : -2;
             Rect guidePaint = default;
             bool guideBloom = false;
             for (int i = 0; i < BadgerSchedule.Tiles; i++)
@@ -1180,9 +1395,9 @@ namespace FlockFive
                 var t = _bgLoadout[i];
                 bool open = _bgFight == null || _bgFight.PlayerOpen(i);
                 var draw = youHex.Draw(i);
-                if (i == guide) _bgGuideAim = draw;
+                if (i == guide) { _bgGuideAim = draw; _bgGuideHit = youHex.Hit(i); }
                 bool held = false;
-                bool live = tilesLive && open && (guide < 0 || i == guide);
+                bool live = tilesLive && open && (guide == -1 || i == guide);
                 if (live && HitPad(youHex.Hit(i), out held)) tapped = i;
                 if (held) draw = Inset(draw, 0.03f);
                 draw.x += BadgerShakeX(i, s);
@@ -1221,6 +1436,7 @@ namespace FlockFive
             if (_bgStage != BadgerStage.DontCare) DrawBadgerCaption(L);
             DrawBadgerLesson(L);
             DrawBadgerGuide(L);
+            if (BadgerResultLive()) DrawTutorOverlay(s);
             if (tapped >= 0 && _bgStage != BadgerStage.Lesson) ClickBadgerTile(tapped);
         }
 
@@ -1279,6 +1495,7 @@ namespace FlockFive
                 bool block = _bgResolved && BadgerFight.IsBlock(_bgRound.Power);
                 int honey = _bgResolved ? _bgRound.BossFinal : _bgFight.BossHoney(_bgBossIx);
                 var r = LerpRect(bossHex.Draw(_bgBossIx), bossSlot, u);
+                _bgBossSlotNow = r;
                 if (block) r.x += Mathf.Sin(AdPause.Unscaled * 38f) * 5f * s * Mathf.Clamp01(1.2f - _bgT);
                 bool win = _bgResolved && _bgRound.BossGained > 0;
                 if (win) DrawBadgerWinGlow(r);
@@ -1293,14 +1510,100 @@ namespace FlockFive
                 var t = _bgLoadout[_bgPlayerIx];
                 int honey = _bgResolved ? _bgRound.PlayerFinal : _bgFight.PlayerHoney(_bgPlayerIx);
                 var r = LerpRect(youHex.Draw(_bgPlayerIx), youSlot, u);
+                _bgYouSlotNow = r;
                 if (_bgResolved && _bgRound.PlayerGained > 0) DrawBadgerWinGlow(r);
                 DrawBadgerTile(r, BadgerLook.Face, honey, BadgerTint(t), t.Finish, 1f, null);
                 if (_bgResolved && _bgStage == BadgerStage.Verdict && _bgRound.PlayerGained > 0)
                     DrawBadgerGain(r, _bgRound.PlayerGained, _bgT);
                 if (_bgArmed != BadgerPower.None && GuiPaint())
                     DrawBadgerPowerBadge(r, _bgArmed);
+                DrawBadgerBlockBeat(r, s);
+                DrawBadgerLookArrows(r, s);
             }
 
+        }
+
+        // b123: Hot Sauce / Freeze demo on the forced round. The icon flies from its button to the weakest tile and
+        // replaces the number; it stays through the verdict (the boss tile already dims and splats).
+        void DrawBadgerBlockBeat(Rect tile, float s)
+        {
+            var p = _bgBlockBeat;
+            if (_bgFight == null || p == BadgerPower.None || !BadgerFight.IsBlock(p) || !GuiPaint()) return;
+            if (_bgStage != BadgerStage.Reveal && _bgStage != BadgerStage.Verdict && _bgStage != BadgerStage.DontCare) return;
+            float t = _bgStage == BadgerStage.Reveal ? _bgT : 99f;
+            float f = BadgerPowerFly.Progress(t);
+            float side = Mathf.Min(tile.width, tile.height) * 0.62f;
+            if (f >= BadgerPowerFly.SwapFrom)
+            {
+                // the number is gone: a disc of the tile's honey colour, then the icon
+                float a = Mathf.Clamp01((f - BadgerPowerFly.SwapFrom) / (1f - BadgerPowerFly.SwapFrom));
+                var disc = new Rect(tile.center.x - side * 0.55f, tile.center.y - side * 0.55f, side * 1.1f, side * 1.1f);
+                GUI.color = new Color(0.98f, 0.78f, 0.28f, a);
+                DrawSolidRound(disc, disc.height * 0.5f, 0, a);
+                GUI.color = Color.white;
+            }
+            var L = BadgerLayout();
+            var from = BadgerPowerRect(L, (int)p - 1);
+            var pos = Vector2.Lerp(from.center, tile.center, f);
+            pos.y -= Mathf.Sin(f * Mathf.PI) * tile.height * 0.8f; // a short arc
+            float sz = Mathf.Lerp(from.height * 0.7f, side, f);
+            DrawBadgerPowerIcon(new Rect(pos.x - sz * 0.5f, pos.y - sz * 0.5f, sz, sz), p, 1f);
+        }
+
+        // PLACEHOLDER art (drawn shapes, no sprites yet): a hot sauce bottle and a freeze spray can, mild cartoon.
+        static void DrawBadgerPowerIcon(Rect r, BadgerPower p, float a)
+        {
+            if (!GuiPaint() || r.width < 2f) return;
+            var prevC = GUI.color;
+            var white = Texture2D.whiteTexture;
+            Rect F(float x, float y, float w, float h) => new Rect(r.x + r.width * x, r.y + r.height * y, r.width * w, r.height * h);
+            void Box(Rect q, Color c) { c.a *= a; GUI.color = c; GUI.DrawTexture(q, white); }
+            void Round(Rect q, Color c) { c.a *= a; GUI.color = c; DrawSolidRound(q, q.height * 0.5f, 0, a); }
+            var rim = new Color(0.12f, 0.06f, 0.03f, 1f);
+            if (p == BadgerPower.HotSauce)
+            {
+                // bottle: dark outline, red body, narrow neck, black cap, cream label with a chili dot
+                Round(F(0.17f, 0.36f, 0.66f, 0.62f), rim);
+                Box(F(0.36f, 0.14f, 0.28f, 0.34f), rim);
+                Round(F(0.21f, 0.40f, 0.58f, 0.54f), new Color(0.86f, 0.14f, 0.08f));
+                Box(F(0.40f, 0.18f, 0.20f, 0.30f), new Color(0.86f, 0.14f, 0.08f));
+                Box(F(0.38f, 0.04f, 0.24f, 0.16f), new Color(0.15f, 0.12f, 0.12f));
+                Box(F(0.27f, 0.54f, 0.46f, 0.26f), new Color(1f, 0.93f, 0.72f));
+                Round(F(0.43f, 0.60f, 0.14f, 0.14f), new Color(0.86f, 0.14f, 0.08f));
+            }
+            else
+            {
+                // spray can: dark outline, icy-blue body, silver shoulder, dark nozzle, little mist puffs
+                Box(F(0.24f, 0.26f, 0.52f, 0.70f), rim);
+                Box(F(0.28f, 0.30f, 0.44f, 0.62f), new Color(0.35f, 0.74f, 0.96f));
+                Box(F(0.28f, 0.30f, 0.44f, 0.12f), new Color(0.82f, 0.86f, 0.90f));
+                Box(F(0.40f, 0.14f, 0.20f, 0.14f), new Color(0.25f, 0.25f, 0.30f));
+                Box(F(0.28f, 0.52f, 0.44f, 0.22f), new Color(0.95f, 0.98f, 1f));
+                Round(F(0.62f, 0.08f, 0.16f, 0.16f), new Color(0.80f, 0.94f, 1f));
+                Round(F(0.76f, 0.02f, 0.14f, 0.14f), new Color(0.80f, 0.94f, 1f));
+                Round(F(0.80f, 0.20f, 0.12f, 0.12f), new Color(0.80f, 0.94f, 1f));
+            }
+            GUI.color = prevC;
+        }
+
+        // b123 look-at arrows (the glove stays for taps): the power badge on the tile, the power's visible effect, and the
+        // halved tile on move 3's verdict. Coach fight only; one arrow at a time.
+        void DrawBadgerLookArrows(Rect playerTile, float s)
+        {
+            if (_bgFight == null || !_bgFight.CoachFight || !GuiPaint()) return;
+            if (_bgStage == BadgerStage.Reveal && _bgGuideRoundPower != BadgerPower.None && _bgArmed != BadgerPower.None)
+            {
+                CoachArrowAt(playerTile, s); // look at the badge on the tile
+                return;
+            }
+            if (_bgStage != BadgerStage.Verdict || !_bgResolved) return;
+            if (_bgGuideRoundPower != BadgerPower.None)
+            {
+                // the effect: a boosted tile, or the badger's blocked tile
+                CoachArrowAt(BadgerFight.IsBlock(_bgGuideRoundPower) && _bgBossSlotNow.width > 2f ? _bgBossSlotNow : playerTile, s);
+                return;
+            }
+            if (_bgRound.Halved) CoachArrowAt(playerTile, s); // the halved tile
         }
 
         struct BadgerActorSpot
@@ -1673,8 +1976,7 @@ namespace FlockFive
             if (_bgStage == BadgerStage.Outro) return;
             if (_bgStage == BadgerStage.Over)
             {
-                float bw = Mathf.Min(L.Power.width * 0.72f, 420f * s);
-                var btn = new Rect(L.Power.center.x - bw * 0.5f, L.Power.y, bw, L.Power.height);
+                var btn = BadgerContinueRect(L); // one rect: the button, the glove and the gate
                 if (BadgerButton(btn, "Continue", null, true, false, false, true, Color.white, 0f))
                     LeaveBadger();
                 return;
@@ -1686,18 +1988,38 @@ namespace FlockFive
                 var p = (BadgerPower)(k + 1);
                 var r = new Rect(L.Power.x + k * (w + gap), L.Power.y, w, L.Power.height);
                 bool used = _bgFight != null && !_bgFight.PowerReady(p);
-                // Coach fight: visibly locked (dim, no hit) until move 3 has resolved.
-                bool locked = _bgFight != null && _bgFight.PowersLocked;
+                bool locked = BadgerPowerLockedShown();
                 bool inPick = _bgStage == BadgerStage.YourPick && !locked;
-                bool lit = _bgArmed == p && (inPick || _bgStage == BadgerStage.Reveal || _bgStage == BadgerStage.Verdict);
-                string sub = used ? "USED" : locked ? BadgerCopy.Locked : BadgerPowerPriceSub(p);
+                bool armedNow = _bgArmed == p && (_bgStage == BadgerStage.YourPick || _bgStage == BadgerStage.Reveal
+                    || _bgStage == BadgerStage.DontCare || _bgStage == BadgerStage.Verdict);
+                bool lit = armedNow;
+                // One state per button: LOCKED (moves 1-3, held through move 3's verdict), then FREE / price,
+                // ARMED while it is the chosen power (through the reveal), then USED. Never FREE -> LOCKED -> FREE.
+                string sub = armedNow ? BadgerCopy.Armed : used ? "USED" : locked ? BadgerCopy.Locked : BadgerPowerPriceSub(p);
                 Color ink = p == BadgerPower.HotSauce ? new Color(1f, 0.55f, 0.35f)
                     : p == BadgerPower.FreezeSpray ? new Color(0.45f, 0.85f, 1f)
                     : Color.white;
-                bool fire = BadgerButton(r, BadgerPowerName(p), sub, k < 2, used || !inPick, lit,
-                    live && inPick && !used, ink, BadgerShakeX(BadgerPowerKey + (int)p, s));
+                bool guideBlocks = _bgPowerGuideOn && p != _bgGuidePower;
+                if (_bgPowerGuideOn && p == _bgGuidePower && BadgerPowerGuideStage() == 1) DrawBadgerGuideGlow(r);
+                bool picture = BadgerFight.IsBlock(p);
+                bool fire = BadgerButton(r, picture ? "" : BadgerPowerName(p), sub, k < 2, used || !inPick || guideBlocks, lit,
+                    live && inPick && !used && !guideBlocks, ink, BadgerShakeX(BadgerPowerKey + (int)p, s));
+                if (picture && GuiPaint())
+                {
+                    float side = r.height * 0.58f;
+                    DrawBadgerPowerIcon(new Rect(r.center.x - side * 0.5f + BadgerShakeX(BadgerPowerKey + (int)p, s), r.y + r.height * 0.05f, side, side), p, used || !inPick ? 0.55f : 1f);
+                }
                 if (fire) ClickBadgerPower(p);
             }
+        }
+
+        // The coach fight's lock shows until move 3's verdict has played, so the labels never flip back and forth.
+        bool BadgerPowerLockedShown()
+        {
+            if (_bgFight == null) return false;
+            if (_bgFight.PowersLocked) return true;
+            return _bgFight.CoachFight && _bgFight.RoundsResolved == BadgerTutorialScript.Moves
+                && (_bgStage == BadgerStage.Reveal || _bgStage == BadgerStage.DontCare || _bgStage == BadgerStage.Verdict);
         }
 
         void DrawBadgerCaption(BadgerRects L)

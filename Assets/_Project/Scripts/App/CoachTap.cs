@@ -59,6 +59,44 @@ namespace FlockFive
         RestartSure = 36,
         RestartKeep = 37,
         Ostrich = 38,
+        // b123: badger power-up round (after move 3) and the result.
+        BadgerPowerIntro = 39,   // round 4 unlock: the x2 button arms it
+        BadgerPowerArmed = 40,   // x2 armed: the scripted comb resolves with x2
+        BadgerResult = 41,       // result: Continue
+    }
+
+    // b123 (Brandon): every step names ONE explicit press-to-continue, distinct from toggle taps.
+    // Advance = the taps that move the step. Toggle = taps that run their normal handler (arm / disarm a
+    // power) and never advance. Ignore = everything else, eaten by the shared gate.
+    [Flags]
+    public enum TapZone
+    {
+        None = 0,
+        Blank = 1,          // empty space (not a control)
+        Focus = 2,          // the glowed / pointed-at area (grid, power row, YOU meter)
+        Target = 4,         // the one control the glove is on (comb, power button, Continue)
+        PowerButton = 8,    // a power button
+        Back = 16,
+        Comb = 32,          // a comb that is not the target
+    }
+
+    // Glove = tap this. Arrow = look at this. None = nothing is shown.
+    public enum CoachPointer
+    {
+        None = 0,
+        Glove = 1,
+        Arrow = 2,
+    }
+
+    public struct TapRule
+    {
+        public TapZone Advance;
+        public TapZone Toggle;
+        public CoachPointer Pointer;
+        // Ignore is the rest: ~(Advance | Toggle).
+        public bool Advances(TapZone z) => (Advance & z) != 0;
+        public bool Toggles(TapZone z) => (Toggle & z) != 0 && (Advance & z) == 0;
+        public bool Ignores(TapZone z) => !Advances(z) && !Toggles(z);
     }
 
     public static class CoachTap
@@ -108,6 +146,9 @@ namespace FlockFive
                 case CoachStep.RestartSure:
                 case CoachStep.RestartKeep:
                 case CoachStep.Ostrich:
+                case CoachStep.BadgerPowerIntro:
+                case CoachStep.BadgerPowerArmed:
+                case CoachStep.BadgerResult:
                     return CoachTapKind.Required;
             }
             throw new ArgumentOutOfRangeException(nameof(step), step, "Classify this lesson step");
@@ -133,6 +174,47 @@ namespace FlockFive
             if (AnyTap(step)) return true;
             return onTarget;
         }
+
+        // The shared per-step tap rule. Badger steps are listed explicitly (spec: Advance vs toggle, Pointer type).
+        // Every other step derives from its kind: an informational step advances on a tap anywhere (Blank + Focus +
+        // Target), a required one only on its target, and the glove points at it.
+        public static TapRule Rule(CoachStep step)
+        {
+            switch (step)
+            {
+                // L1-L3: look-at steps. Tap blank space or the glowed area to continue; back, combs, other buttons ignored.
+                case CoachStep.BadgerPick:
+                    return new TapRule { Advance = TapZone.Blank | TapZone.Focus, Pointer = CoachPointer.Arrow };
+                case CoachStep.BadgerPowers:
+                    return new TapRule { Advance = TapZone.Blank | TapZone.Focus, Toggle = TapZone.PowerButton, Pointer = CoachPointer.Arrow };
+                case CoachStep.BadgerColumn:
+                    return new TapRule { Advance = TapZone.Blank | TapZone.Focus, Pointer = CoachPointer.Arrow };
+                // Moves 1-3: only the glowed comb.
+                case CoachStep.BadgerComb1:
+                case CoachStep.BadgerComb2:
+                case CoachStep.BadgerComb3:
+                    return new TapRule { Advance = TapZone.Target, Pointer = CoachPointer.Glove };
+                // Round 4: the x2 button arms it; re-tap disarms and the caption stays.
+                case CoachStep.BadgerPowerIntro:
+                    return new TapRule { Advance = TapZone.Target, Toggle = TapZone.Target, Pointer = CoachPointer.Glove };
+                case CoachStep.BadgerPowerArmed:
+                    return new TapRule { Advance = TapZone.Target, Toggle = TapZone.PowerButton, Pointer = CoachPointer.Glove };
+                case CoachStep.BadgerResult:
+                    return new TapRule { Advance = TapZone.Target, Pointer = CoachPointer.Glove };
+            }
+            switch (Kind(step))
+            {
+                case CoachTapKind.Informational:
+                    return new TapRule { Advance = TapZone.Blank | TapZone.Focus | TapZone.Target, Pointer = CoachPointer.Glove };
+                default:
+                    return new TapRule { Advance = TapZone.Target, Pointer = CoachPointer.Glove };
+            }
+        }
+
+        public static CoachPointer Pointer(CoachStep step) => Rule(step).Pointer;
+
+        // A toggle that is also the advance (x2 on the unlock round): it arms, the step moves on arming.
+        public static bool TogglesOnly(CoachStep step, TapZone z) => Rule(step).Toggles(z);
 
         public static CoachStep BadgerLesson(int index)
         {
@@ -197,6 +279,9 @@ namespace FlockFive
                 case CoachStep.VipPitch: return CaptionLayout.VipPitchLine;
                 case CoachStep.RestartSure: return "Are you sure you want to restart?";
                 case CoachStep.RestartKeep: return "Keep multiplier (Watch Ad / No thanks).";
+                case CoachStep.BadgerPowerIntro: return BadgerCopy.PowersOpen;
+                case CoachStep.BadgerPowerArmed: return BadgerCopy.X2Armed;
+                case CoachStep.BadgerResult: return BadgerCopy.Win;
             }
             return step.ToString();
         }

@@ -209,6 +209,51 @@ namespace FlockFive
             return ix;
         }
 
+        // b123: the forced power-up step. The scripted badger tile is LOW for x2/x3 (the boost visibly wins big); Hot Sauce /
+        // Freeze Spray keep a normal badger pick. That round never rolls Don't Care,
+        // so the slam cannot destroy the demonstration.
+        public BadgerPower StepPower { get; private set; }
+
+        public int BossPickFor(BadgerPower power)
+        {
+            if (Result != BadgerResult.Playing || _bossPick >= 0) return -1;
+            if (_bossLeft <= 0 || _playerLeft <= 0) return BossPick();
+            // Hot Sauce / Freeze Spray: the badger picks as normal (the item assigns itself to the player's weakest tile).
+            if (IsBlock(power))
+            {
+                int pick = BossPick();
+                if (pick >= 0) StepPower = power;
+                return pick;
+            }
+            bool high = false;
+            int best = -1;
+            for (int i = 0; i < _boss.Length; i++)
+            {
+                if (!_bossOpen[i]) continue;
+                if (best < 0 || (high ? _boss[i] > _boss[best] : _boss[i] < _boss[best])) best = i;
+            }
+            if (best < 0) return BossPick();
+            StepPower = power;
+            _bossOpen[best] = false;
+            _bossLeft--;
+            _bossPick = best;
+            return best;
+        }
+
+        // The comb the power step points at (call after the badger's pick). x2/x3: the player's highest-honey open comb.
+        // Blocks: the player's WEAKEST open comb, ties by first open (the item assigns itself there and replaces its number).
+        public int PowerStepPlayerTile(BadgerPower power)
+        {
+            bool block = IsBlock(power);
+            int best = -1;
+            for (int i = 0; i < _player.Length; i++)
+            {
+                if (!_playerOpen[i]) continue;
+                if (best < 0 || (block ? _player[i] < _player[best] : _player[i] > _player[best])) best = i;
+            }
+            return best;
+        }
+
         // False if the badger has not picked yet, or the tile is closed. No change then.
         public bool PlayerPick(int index)
         {
@@ -321,6 +366,7 @@ namespace FlockFive
                 if (bossGain > bRoom) { bossGain = bRoom; _tutorialCaps++; }
             }
             _roundsResolved++;
+            StepPower = BadgerPower.None;
             _dontCareLastHit = slam;
             _dontCareRolled = false;
             _dontCareHit = false;
@@ -373,6 +419,7 @@ namespace FlockFive
             if (_bossPick < 0 || _playerPick < 0) return false;
             if (_dontCareRolled) return false;
             _dontCareRolled = true;
+            if (StepPower != BadgerPower.None) return false; // b123: the forced power demo is never slammed
             if (!DontCareEligible(_roundsResolved, _dontCareLastHit)) return false;
             // Coach fight: no roll at all before the forced move (chance unchanged).
             if (DontCareCoachHold(_coachFight, _roundsResolved, _dontCareForceSpent)) return false;

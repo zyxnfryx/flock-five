@@ -10318,6 +10318,15 @@ namespace FlockFive
             FlowerPlayRect();
             var hit = SplashPress.PressHit(SplashPress.Id.Level);
             var rest = hit.Rect;
+            // b123: the badger on the pedestal is part of the pedestal. Tapping him presses LEVEL.
+            if (BadgerSitter.Visible(BadgerOwed(), _bgLeap.Live, BadgerShotHidden()))
+            {
+                BadgerSitterSpot(out var sFoot, out var sUnit);
+                float bw = 320f * sUnit, bh = 480f * sUnit;
+                var body = new Rect(sFoot.x - bw * 0.5f, sFoot.y - bh, bw, bh + 8f * sUnit);
+                float top = Mathf.Max(body.y, rest.y - rest.height * 0.25f);
+                hit.Rect = Rect.MinMaxRect(Mathf.Min(rest.xMin, body.xMin), top, Mathf.Max(rest.xMax, body.xMax), rest.yMax);
+            }
             var gates = HomePressGates(-1);
             gates.Consent = VeilBlocks(rest);
             gates.AdoptQueue = AdoptHoldsQueue();

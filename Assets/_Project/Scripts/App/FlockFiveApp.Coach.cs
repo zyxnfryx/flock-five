@@ -1210,7 +1210,7 @@ namespace FlockFive
                 CoachGloveAt(watchAim, dt, handS, float.NaN, false, float.NaN, GiftWatchTapRect(handS));
                 return;
             }
-            if ((_bgLessonLive || BadgerGuideLive()) && _splash && _home == HomeFace.Badger)
+            if ((_bgLessonLive || BadgerGuideLive() || BadgerResultLive()) && _splash && _home == HomeFace.Badger)
             {
                 float handS = DeviceFit.Ui();
                 PlaceBadgerLessonGlove(dt, handS);
@@ -1767,6 +1767,38 @@ namespace FlockFive
         // where it is. The next step fades in at the start of that step's arc.
         // perchLift replaces the shared rise. fromLeft keeps the hand on the left
         // when a nudge would flip it.
+        // b123: the shared LOOK-AT pointer (the glove stays reserved for taps). A small gold arrow with a dark rim
+        // bobs ~6 px just inside the top of the target and points down at it. Painted immediately (OnGUI).
+        void CoachArrowAt(Rect target, float s)
+        {
+            if (!GuiPaint() || target.width < 2f || target.height < 2f) return;
+            float k = Mathf.Clamp(s, 1f, 2f);
+            float bob = Mathf.Sin(AdPause.Unscaled * 5.5f) * 6f * k * 0.5f;
+            float len = 30f * k;
+            float th = 8f * k;
+            var tip = new Vector2(target.center.x, target.y + Mathf.Min(target.height * 0.35f, 60f * k) + bob);
+            var prevM = GUI.matrix;
+            var prevC = GUI.color;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                float grow = pass == 0 ? 4f * k : 0f;
+                GUI.color = pass == 0 ? new Color(0.10f, 0.06f, 0.02f, 0.92f) : new Color(1f, 0.86f, 0.30f, 1f);
+                CoachArrowBar(tip, 0f, len + grow * 0.5f, th + grow);
+                CoachArrowBar(tip, 42f, len * 0.5f + grow * 0.5f, th + grow);
+                CoachArrowBar(tip, -42f, len * 0.5f + grow * 0.5f, th + grow);
+            }
+            GUI.matrix = prevM;
+            GUI.color = prevC;
+        }
+
+        static void CoachArrowBar(Vector2 from, float angDeg, float length, float thick)
+        {
+            var m = GUI.matrix;
+            GUIUtility.RotateAroundPivot(angDeg, from);
+            GUI.DrawTexture(new Rect(from.x - thick * 0.5f, from.y - length, thick, length), Texture2D.whiteTexture);
+            GUI.matrix = m;
+        }
+
         bool CoachGloveAt(Vector2 aimGui, float dt, float s, float perchLift = float.NaN, bool fromLeft = false, float approachDeg = float.NaN, Rect tapRect = default, System.Func<Vector2, bool> tapHit = null)
         {
             if (CoachResetHolds())
@@ -5307,6 +5339,8 @@ namespace FlockFive
         const int GateAlbumHoney = 7;
         const int GatePest = 8;
         const int GateGlove = 9;
+        const int GateBadgerGuide = 10;
+        const int GateBadgerResult = 11;
 
         struct StepGate
         {
@@ -5322,6 +5356,7 @@ namespace FlockFive
         }
 
         float _gateBlindSince = -1f;
+        Rect _bgGateToggle;
         int _coachAteFrame = -1;
         // Unscaled. A lesson dismiss arms this. Board and HUD taps wait it out.
         static float _lessonGuardUntil;
@@ -5453,6 +5488,26 @@ namespace FlockFive
                 gate.Step = GateBadgerLesson;
                 rule = CoachTap.BadgerLesson(_bgLessonStep);
                 have = true;
+            }
+            else if (BadgerGuideLive())
+            {
+                // b123: moves 1-3 and the round-4 power step go through the one shared gate: only the glove's
+                // control advances; back, other combs and other buttons are eaten. x2 re-tap (toggle) passes.
+                RefreshBadgerGuideAim();
+                int stage = BadgerPowerGuideStage();
+                gate.Step = GateBadgerGuide;
+                gate.Target = stage == 1 ? _bgPowerBtn : _bgGuideHit;
+                _bgGateToggle = stage == 2 ? _bgPowerBtn : default;
+                if (gate.Target.width < 2f) return false;
+                return true;
+            }
+            else if (BadgerResultLive())
+            {
+                // b123: result screen. Only Continue advances; back and everything else is eaten.
+                gate.Step = GateBadgerResult;
+                gate.Target = BadgerContinueRect(BadgerLayout());
+                _bgGateToggle = default;
+                return gate.Target.width >= 2f;
             }
             else if (PestAnyTapLive(out rule))
             {
@@ -5610,9 +5665,17 @@ namespace FlockFive
             // b115 (Brandon): the ad offer's X is never gated. The ad-hand glove arms a tap RECT (Watch), so the gate
             // lands here and the hand-armed exemption above never ran: the X was eaten and the player was stuck.
             if (GateExemptsGiftClose(gate.Step, GiftCloseExempt(e.mousePosition))) return;
+            if (gate.Step == GateBadgerGuide && _bgGateToggle.width > 2f && _bgGateToggle.Contains(e.mousePosition)) return;
             if (gate.AnyTap)
             {
                 if (HomeGearExempt(e.mousePosition)) return;
+                // b123: lessons 1-3 ignore back, the power row and combs: eaten, no advance.
+                if (gate.Step == GateBadgerLesson && BadgerLessonIgnores(e.mousePosition))
+                {
+                    if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+                    e.Use();
+                    return;
+                }
                 if (TutorialHeal.GateAdvances(kind, true, e.button))
                 {
                     if (!gate.Pass) MarkCoachAte();

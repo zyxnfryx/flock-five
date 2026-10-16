@@ -12,12 +12,13 @@ namespace FlockFive
         // First-fight lesson. Static captions; the app aims the shared glove at each step.
         // The column step breaks on purpose: line 1, then "Honey badger don't care."
         // A width wrap that puts "Honey" on line 1 is wrong.
-        public const string LessonColumnTop = "Fill your column first.";
-        public const string LessonColumnBot = "Honey badger don't care.";
+        // b123: lessons 1-3 are look-at steps. Each ends "Tap to continue." so the one press-to-continue is named.
+        public const string LessonColumnTop = "Higher honey scores the difference.";
+        public const string LessonColumnBot = "First full column wins. Tap to continue.";
         public static readonly string[] Lesson =
         {
-            "Pick one honeycomb.\nHigher honey wins.",
-            "Hot Sauce stops one bite.\nFreeze Spray stops two.",
+            "Pick one honeycomb. Higher honey wins.\nTap to continue.",
+            "x2 and x3 boost a tile. Locked for 3 moves.\nTap to continue.",
             LessonColumnTop + "\n" + LessonColumnBot,
         };
 
@@ -48,12 +49,46 @@ namespace FlockFive
         {
             "Tap the glowing comb.\nHigher honey wins.",
             "Tap this one.\nThe badger bites back.",
-            "Tap this one.\nHe doesn't care.",
+            "Watch out: he can halve\nyour honey. Tap this one.",
         };
         // Round start right after move 3 (power-ups unlock; tutorial free first use applies).
-        public const string PowersOpen = "Power-ups are open.\nYour first one is free.";
+        public const string PowersOpen = "Power-ups are open. Tap x2.\nYour first one is free.";
+        public const string X2Armed = "x2 doubles your next tile.\nTap the glowing comb.";
         // Power-up button sub-label while the coach script holds them.
         public const string Locked = "LOCKED";
+        public const string Armed = "ARMED";
+
+        // b123: one forced step per power, on its free first use. x2 keeps the round-4 unlock line.
+        public static string PowerIntroLine(BadgerPower p, bool firstUnlock)
+        {
+            switch (p)
+            {
+                case BadgerPower.X2: return firstUnlock ? PowersOpen : "Tap x2.\nYour first one is free.";
+                case BadgerPower.X3: return "New: x3 triples your next tile.\nTap x3. Free this once.";
+                case BadgerPower.HotSauce: return "Hot Sauce replaces your weakest tile's\nvalue and blocks the badger. Tap it.";
+                case BadgerPower.FreezeSpray: return "Freeze replaces your weakest tile's value\nand blocks the badger for 2 rounds. Tap it.";
+            }
+            return "";
+        }
+
+        // Result beat for a block power's forced round: the badger did not score.
+        public static string BlockWorkedLine(BadgerPower p)
+        {
+            if (p == BadgerPower.FreezeSpray) return "Frozen! The badger scores nothing\nthis round or the next.";
+            return "Blocked! The badger scores nothing.\nYour tile wins.";
+        }
+
+        public static string PowerArmedLine(BadgerPower p)
+        {
+            switch (p)
+            {
+                case BadgerPower.X2: return X2Armed;
+                case BadgerPower.X3: return "x3 triples your next tile.\nTap the glowing comb.";
+                case BadgerPower.HotSauce: return "";
+                case BadgerPower.FreezeSpray: return ""; // no armed step: the item assigns itself on the tap
+            }
+            return "";
+        }
 
         // move is 1-based; "" outside the guided moves.
         public static string GuideLine(int move)
@@ -182,5 +217,24 @@ namespace FlockFive
             if (plan.TakeVisitor) Hive.TakeBossVisitor();
             return plan.Credit;
         }
+    }
+
+    // b123: the block power's visible beat. The icon flies from its button to the player's weakest tile and replaces the
+    // number there; the reveal holds long enough to watch it. Pure timing so tests can check it.
+    public static class BadgerPowerFly
+    {
+        public const float Start = 0.15f;
+        public const float Seconds = 0.90f;
+        public const float SwapFrom = 0.70f; // progress after which the icon has replaced the number
+
+        public static float Progress(float t)
+        {
+            float u = (t - Start) / Seconds;
+            if (u <= 0f) return 0f;
+            if (u >= 1f) return 1f;
+            return u * u * (3f - 2f * u);
+        }
+
+        public static float RevealExtra(BadgerPower p) => BadgerFight.IsBlock(p) ? Start + Seconds : 0f;
     }
 }
