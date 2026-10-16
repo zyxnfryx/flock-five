@@ -166,7 +166,7 @@ namespace FlockFive
             "Ostrich on a feeder!\nMatch three sets.";
 
         public const string BeePestLine =
-            "Bees on a branch!\nRemove birds to clear";
+            "Bees on a branch!\nRemove birds to clear.";
 
         // b103 (Brandon): the "You found a bee! Tap the hive." banner rides this share of screen height
         // lower than the shared top seat, so it clears the title row, the glove and the hive.
