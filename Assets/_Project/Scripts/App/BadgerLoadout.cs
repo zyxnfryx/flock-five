@@ -152,6 +152,21 @@ namespace FlockFive
             into.Sort(Better);
         }
 
+        // b123 fairness. A first visit with few bees would otherwise deal a grid of 1s while the badger holds up to 5s.
+        // Yard slots on appearance 1 get a fixed honey ladder (best slots first); owned bees are never touched.
+        public static readonly int[] StarterLadder = { 5, 5, 5, 4, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 1, 1 };
+
+        public void FairStart(int appearance)
+        {
+            if (appearance > 1) return;
+            for (int i = 0; i < _tiles.Length; i++)
+            {
+                if (!_tiles[i].Yard) continue;
+                int h = i < StarterLadder.Length ? StarterLadder[i] : 1;
+                _tiles[i].Honey = h < 1 ? 1 : h;
+            }
+        }
+
         public int[] Honeys()
         {
             var honey = new int[_tiles.Length];

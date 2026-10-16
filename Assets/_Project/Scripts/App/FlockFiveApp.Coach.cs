@@ -5340,6 +5340,7 @@ namespace FlockFive
         const int GatePest = 8;
         const int GateGlove = 9;
         const int GateBadgerGuide = 10;
+        const int GateBadgerResult = 11;
 
         struct StepGate
         {
@@ -5499,6 +5500,14 @@ namespace FlockFive
                 _bgGateToggle = stage == 2 ? _bgPowerBtn : default;
                 if (gate.Target.width < 2f) return false;
                 return true;
+            }
+            else if (BadgerResultLive())
+            {
+                // b123: result screen. Only Continue advances; back and everything else is eaten.
+                gate.Step = GateBadgerResult;
+                gate.Target = BadgerContinueRect(BadgerLayout());
+                _bgGateToggle = default;
+                return gate.Target.width >= 2f;
             }
             else if (PestAnyTapLive(out rule))
             {

@@ -56,6 +56,32 @@ namespace FlockFive
         public const string X2Armed = "x2 doubles your next tile.\nTap the glowing comb.";
         // Power-up button sub-label while the coach script holds them.
         public const string Locked = "LOCKED";
+        public const string Armed = "ARMED";
+
+        // b123: one forced step per power, on its free first use. x2 keeps the round-4 unlock line.
+        public static string PowerIntroLine(BadgerPower p, bool firstUnlock)
+        {
+            switch (p)
+            {
+                case BadgerPower.X2: return firstUnlock ? PowersOpen : "Tap x2.\nYour first one is free.";
+                case BadgerPower.X3: return "New: x3 triples your next tile.\nTap x3. Free this once.";
+                case BadgerPower.HotSauce: return "New: Hot Sauce. The badger\nscores nothing. Tap it. Free once.";
+                case BadgerPower.FreezeSpray: return "New: Freeze Spray holds him\nfor 2 rounds. Tap it. Free once.";
+            }
+            return "";
+        }
+
+        public static string PowerArmedLine(BadgerPower p)
+        {
+            switch (p)
+            {
+                case BadgerPower.X2: return X2Armed;
+                case BadgerPower.X3: return "x3 triples your next tile.\nTap the glowing comb.";
+                case BadgerPower.HotSauce: return "Hot Sauce burns his tile.\nTap the glowing comb.";
+                case BadgerPower.FreezeSpray: return "Freeze Spray stops him for 2 rounds.\nTap the glowing comb.";
+            }
+            return "";
+        }
 
         // move is 1-based; "" outside the guided moves.
         public static string GuideLine(int move)

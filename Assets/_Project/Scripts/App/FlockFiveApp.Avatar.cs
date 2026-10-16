@@ -617,7 +617,9 @@ namespace FlockFive
         // Greet until a LEVEL tap or the perch glove. Each sentence latches once.
         string AdoptCaptionLine()
         {
-            if (_adoptGreetDone || _avatarPose == AvatarPose.GlovePointing)
+            // b123: no "a bird followed you home" while the badger stands on the pedestal; go straight to the next line.
+            if (_adoptGreetDone || _avatarPose == AvatarPose.GlovePointing
+                || BadgerSitter.Visible(BadgerOwed(), _bgLeap.Live, BadgerShotHidden()))
                 return AdoptLookLine;
             return AdoptGreetLine;
         }
