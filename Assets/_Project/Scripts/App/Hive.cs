@@ -193,7 +193,7 @@ namespace FlockFive
                 "Briny and brief. Leaves a crunch; keeps the receipt.",
                 new Color(0.70f, 0.90f, 0.91f)),
             new BeeKind("coral", "Coral Reef",
-                "Builds the neighborhood.",
+                "Gated community.",
                 "Builds slowly, stings suddenly. Underwater HOA president.",
                 new Color(1.00f, 0.51f, 0.57f)),
             new BeeKind("tide", "Tide Pool",
