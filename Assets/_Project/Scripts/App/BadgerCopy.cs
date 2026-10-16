@@ -65,8 +65,8 @@ namespace FlockFive
             {
                 case BadgerPower.X2: return firstUnlock ? PowersOpen : "Tap x2.\nYour first one is free.";
                 case BadgerPower.X3: return "New: x3 triples your next tile.\nTap x3. Free this once.";
-                case BadgerPower.HotSauce: return "New: Hot Sauce replaces a tile's\nvalue and blocks the badger. Tap it.";
-                case BadgerPower.FreezeSpray: return "New: Freeze Spray replaces a tile's\nvalue and blocks him for 2 rounds.";
+                case BadgerPower.HotSauce: return "Hot Sauce replaces your weakest tile's\nvalue and blocks the badger. Tap it.";
+                case BadgerPower.FreezeSpray: return "Freeze replaces your weakest tile's value\nand blocks the badger for 2 rounds. Tap it.";
             }
             return "";
         }
@@ -84,8 +84,8 @@ namespace FlockFive
             {
                 case BadgerPower.X2: return X2Armed;
                 case BadgerPower.X3: return "x3 triples your next tile.\nTap the glowing comb.";
-                case BadgerPower.HotSauce: return "It flies to your weakest comb.\nTap the glowing comb.";
-                case BadgerPower.FreezeSpray: return "It flies to your weakest comb.\nTap the glowing comb.";
+                case BadgerPower.HotSauce: return "";
+                case BadgerPower.FreezeSpray: return ""; // no armed step: the item assigns itself on the tap
             }
             return "";
         }

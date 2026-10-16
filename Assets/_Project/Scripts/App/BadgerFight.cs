@@ -209,8 +209,8 @@ namespace FlockFive
             return ix;
         }
 
-        // b123: the forced power-up step. The scripted badger tile is LOW for x2/x3 (the boost visibly wins big)
-        // and HIGH for Hot Sauce / Freeze Spray (the block visibly saves the player). That round never rolls Don't Care,
+        // b123: the forced power-up step. The scripted badger tile is LOW for x2/x3 (the boost visibly wins big); Hot Sauce /
+        // Freeze Spray keep a normal badger pick. That round never rolls Don't Care,
         // so the slam cannot destroy the demonstration.
         public BadgerPower StepPower { get; private set; }
 
@@ -218,7 +218,14 @@ namespace FlockFive
         {
             if (Result != BadgerResult.Playing || _bossPick >= 0) return -1;
             if (_bossLeft <= 0 || _playerLeft <= 0) return BossPick();
-            bool high = IsBlock(power);
+            // Hot Sauce / Freeze Spray: the badger picks as normal (the item assigns itself to the player's weakest tile).
+            if (IsBlock(power))
+            {
+                int pick = BossPick();
+                if (pick >= 0) StepPower = power;
+                return pick;
+            }
+            bool high = false;
             int best = -1;
             for (int i = 0; i < _boss.Length; i++)
             {
@@ -234,7 +241,7 @@ namespace FlockFive
         }
 
         // The comb the power step points at (call after the badger's pick). x2/x3: the player's highest-honey open comb.
-        // Blocks: the player's WEAKEST open comb (the icon replaces its number; it loses without the block).
+        // Blocks: the player's WEAKEST open comb, ties by first open (the item assigns itself there and replaces its number).
         public int PowerStepPlayerTile(BadgerPower power)
         {
             bool block = IsBlock(power);

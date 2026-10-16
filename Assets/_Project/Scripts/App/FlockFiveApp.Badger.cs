@@ -88,6 +88,7 @@ namespace FlockFive
         // b123: round-4 power step (x2 button, then the scripted comb). On only for the first-use x2 after move 3.
         bool _bgPowerGuideOn;
         BadgerPower _bgGuidePower;      // the power the round's forced step is about
+        BadgerPower _bgBlockBeat;       // Hot Sauce / Freeze Spray played this round (any fight): drives the fly beat
         BadgerPower _bgGuideRoundPower; // set when that power's tile is played; drives the post-power arrows
         BadgerHex _bgYouHex;            // the page's own comb grid, stored per frame: glove, gate, hit pad and paint share it
         bool _bgYouHexOk;
@@ -253,6 +254,7 @@ namespace FlockFive
             // Coach fight: the round after move 3 announces the unlocked power-ups.
             _bgPowerGuideOn = false;
             _bgGuideRoundPower = BadgerPower.None;
+            _bgBlockBeat = BadgerPower.None;
             if (_bgFight != null && _bgFight.CoachFight
                 && _bgFight.RoundsResolved == BadgerTutorialScript.Moves && !_bgFight.PowersLocked)
             {
@@ -337,7 +339,7 @@ namespace FlockFive
                     Sfx.CardBump();
                     break;
                 case BadgerStage.Reveal:
-                    if (_bgT < BadgerSlide + BadgerRevealHold + BadgerPowerFly.RevealExtra(_bgGuideRoundPower)) break;
+                    if (_bgT < BadgerSlide + BadgerRevealHold + BadgerPowerFly.RevealExtra(_bgBlockBeat)) break;
                     // Both picks are in: roll the Don't Care slam (spec 2b) before the compare.
                     if (_bgFight.TryDontCare(out var slam))
                     {
@@ -575,7 +577,7 @@ namespace FlockFive
             if (_bgStage != BadgerStage.YourPick || _bgFight == null) return;
             // b123: the round-4 step takes x2 only (arm / disarm). Other powers wait for their own turn.
             if (_bgPowerGuideOn && p != _bgGuidePower) return;
-            if (_bgArmed == p)
+            if (!BadgerFight.IsBlock(p) && _bgArmed == p)
             {
                 _bgArmed = BadgerPower.None;
                 if (!_bgPowerGuideOn) _bgLine = BadgerCopy.YourPick;
@@ -586,6 +588,17 @@ namespace FlockFive
             {
                 BadgerShakeNow(BadgerPowerKey + (int)p);
                 _bgLine = BadgerCopy.CoinsShort;
+                return;
+            }
+            if (BadgerFight.IsBlock(p))
+            {
+                // b123: Hot Sauce / Freeze Spray assign themselves to the weakest open tile. No tile tap.
+                int weakest = _bgFight.PowerStepPlayerTile(p);
+                if (weakest < 0) return;
+                _bgArmed = p;
+                Sfx.CardTap();
+                ClickBadgerTile(weakest);
+                if (_bgStage != BadgerStage.Reveal) _bgArmed = BadgerPower.None; // the play was refused
                 return;
             }
             _bgArmed = p;
@@ -607,6 +620,7 @@ namespace FlockFive
                 return;
             }
             _bgGuideRoundPower = _bgPowerGuideOn ? _bgGuidePower : BadgerPower.None;
+            _bgBlockBeat = BadgerFight.IsBlock(_bgArmed) ? _bgArmed : BadgerPower.None;
             _bgPowerGuideOn = false;
             _bgPlayerIx = i;
             _bgPlayerAt = AdPause.Unscaled;
@@ -1164,8 +1178,11 @@ namespace FlockFive
             float a = dim ? 0.55f : 1f;
             bool two = !string.IsNullOrEmpty(sub);
             var tr = two ? new Rect(lab.x, lab.y, lab.width, lab.height * 0.58f) : lab;
-            st.fontSize = FitFont(st, title, tr.width * 0.92f, tr.height * 0.92f, 10, 72);
-            StampLight(tr, title, st, new Color(ink.r, ink.g, ink.b, a));
+            if (!string.IsNullOrEmpty(title)) // b123: a picture button passes no title; the caller paints the picture
+            {
+                st.fontSize = FitFont(st, title, tr.width * 0.92f, tr.height * 0.92f, 10, 72);
+                StampLight(tr, title, st, new Color(ink.r, ink.g, ink.b, a));
+            }
             if (two)
             {
                 var sr = new Rect(lab.x, lab.y + lab.height * 0.52f, lab.width, lab.height * 0.46f);
@@ -1512,8 +1529,8 @@ namespace FlockFive
         // replaces the number; it stays through the verdict (the boss tile already dims and splats).
         void DrawBadgerBlockBeat(Rect tile, float s)
         {
-            var p = _bgGuideRoundPower;
-            if (_bgFight == null || !_bgFight.CoachFight || p == BadgerPower.None || !BadgerFight.IsBlock(p) || !GuiPaint()) return;
+            var p = _bgBlockBeat;
+            if (_bgFight == null || p == BadgerPower.None || !BadgerFight.IsBlock(p) || !GuiPaint()) return;
             if (_bgStage != BadgerStage.Reveal && _bgStage != BadgerStage.Verdict && _bgStage != BadgerStage.DontCare) return;
             float t = _bgStage == BadgerStage.Reveal ? _bgT : 99f;
             float f = BadgerPowerFly.Progress(t);
@@ -1535,34 +1552,38 @@ namespace FlockFive
             DrawBadgerPowerIcon(new Rect(pos.x - sz * 0.5f, pos.y - sz * 0.5f, sz, sz), p, 1f);
         }
 
-        // Drawn icons (no art for these two): a flame for Hot Sauce, a snowflake for Freeze Spray.
+        // PLACEHOLDER art (drawn shapes, no sprites yet): a hot sauce bottle and a freeze spray can, mild cartoon.
         static void DrawBadgerPowerIcon(Rect r, BadgerPower p, float a)
         {
             if (!GuiPaint() || r.width < 2f) return;
             var prevC = GUI.color;
+            var white = Texture2D.whiteTexture;
+            Rect F(float x, float y, float w, float h) => new Rect(r.x + r.width * x, r.y + r.height * y, r.width * w, r.height * h);
+            void Box(Rect q, Color c) { c.a *= a; GUI.color = c; GUI.DrawTexture(q, white); }
+            void Round(Rect q, Color c) { c.a *= a; GUI.color = c; DrawSolidRound(q, q.height * 0.5f, 0, a); }
+            var rim = new Color(0.12f, 0.06f, 0.03f, 1f);
             if (p == BadgerPower.HotSauce)
             {
-                var c1 = new Rect(r.x + r.width * 0.12f, r.y + r.height * 0.30f, r.width * 0.76f, r.height * 0.66f);
-                var c2 = new Rect(r.x + r.width * 0.26f, r.y + r.height * 0.46f, r.width * 0.48f, r.height * 0.46f);
-                var c3 = new Rect(r.x + r.width * 0.38f, r.y + r.height * 0.62f, r.width * 0.24f, r.height * 0.28f);
-                var tip = new Rect(r.x + r.width * 0.34f, r.y + r.height * 0.06f, r.width * 0.32f, r.height * 0.44f);
-                GUI.color = new Color(0.85f, 0.12f, 0.06f, a); DrawSolidRound(c1, c1.height * 0.5f, 0, a);
-                GUI.color = new Color(0.85f, 0.12f, 0.06f, a); DrawSolidRound(tip, tip.height * 0.5f, 0, a);
-                GUI.color = new Color(1f, 0.55f, 0.10f, a); DrawSolidRound(c2, c2.height * 0.5f, 0, a);
-                GUI.color = new Color(1f, 0.90f, 0.35f, a); DrawSolidRound(c3, c3.height * 0.5f, 0, a);
+                // bottle: dark outline, red body, narrow neck, black cap, cream label with a chili dot
+                Round(F(0.17f, 0.36f, 0.66f, 0.62f), rim);
+                Box(F(0.36f, 0.14f, 0.28f, 0.34f), rim);
+                Round(F(0.21f, 0.40f, 0.58f, 0.54f), new Color(0.86f, 0.14f, 0.08f));
+                Box(F(0.40f, 0.18f, 0.20f, 0.30f), new Color(0.86f, 0.14f, 0.08f));
+                Box(F(0.38f, 0.04f, 0.24f, 0.16f), new Color(0.15f, 0.12f, 0.12f));
+                Box(F(0.27f, 0.54f, 0.46f, 0.26f), new Color(1f, 0.93f, 0.72f));
+                Round(F(0.43f, 0.60f, 0.14f, 0.14f), new Color(0.86f, 0.14f, 0.08f));
             }
             else
             {
-                var ctr = r.center;
-                float len = r.width * 0.46f, th = Mathf.Max(2f, r.width * 0.10f);
-                var m = GUI.matrix;
-                GUI.color = new Color(0.45f, 0.85f, 1f, a);
-                for (int k = 0; k < 3; k++)
-                {
-                    GUIUtility.RotateAroundPivot(60f * k, ctr);
-                    GUI.DrawTexture(new Rect(ctr.x - th * 0.5f, ctr.y - len, th, len * 2f), Texture2D.whiteTexture);
-                    GUI.matrix = m;
-                }
+                // spray can: dark outline, icy-blue body, silver shoulder, dark nozzle, little mist puffs
+                Box(F(0.24f, 0.26f, 0.52f, 0.70f), rim);
+                Box(F(0.28f, 0.30f, 0.44f, 0.62f), new Color(0.35f, 0.74f, 0.96f));
+                Box(F(0.28f, 0.30f, 0.44f, 0.12f), new Color(0.82f, 0.86f, 0.90f));
+                Box(F(0.40f, 0.14f, 0.20f, 0.14f), new Color(0.25f, 0.25f, 0.30f));
+                Box(F(0.28f, 0.52f, 0.44f, 0.22f), new Color(0.95f, 0.98f, 1f));
+                Round(F(0.62f, 0.08f, 0.16f, 0.16f), new Color(0.80f, 0.94f, 1f));
+                Round(F(0.76f, 0.02f, 0.14f, 0.14f), new Color(0.80f, 0.94f, 1f));
+                Round(F(0.80f, 0.20f, 0.12f, 0.12f), new Color(0.80f, 0.94f, 1f));
             }
             GUI.color = prevC;
         }
@@ -1982,10 +2003,14 @@ namespace FlockFive
                     : Color.white;
                 bool guideBlocks = _bgPowerGuideOn && p != _bgGuidePower;
                 if (_bgPowerGuideOn && p == _bgGuidePower && BadgerPowerGuideStage() == 1) DrawBadgerGuideGlow(r);
-                bool fire = BadgerButton(r, BadgerPowerName(p), sub, k < 2, used || !inPick || guideBlocks, lit,
+                bool picture = BadgerFight.IsBlock(p);
+                bool fire = BadgerButton(r, picture ? "" : BadgerPowerName(p), sub, k < 2, used || !inPick || guideBlocks, lit,
                     live && inPick && !used && !guideBlocks, ink, BadgerShakeX(BadgerPowerKey + (int)p, s));
-                if (BadgerFight.IsBlock(p) && GuiPaint())
-                    DrawBadgerPowerIcon(new Rect(r.x - r.height * 0.06f, r.y - r.height * 0.22f, r.height * 0.5f, r.height * 0.5f), p, used ? 0.5f : 1f);
+                if (picture && GuiPaint())
+                {
+                    float side = r.height * 0.58f;
+                    DrawBadgerPowerIcon(new Rect(r.center.x - side * 0.5f + BadgerShakeX(BadgerPowerKey + (int)p, s), r.y + r.height * 0.05f, side, side), p, used || !inPick ? 0.55f : 1f);
+                }
                 if (fire) ClickBadgerPower(p);
             }
         }

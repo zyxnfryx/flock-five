@@ -90,7 +90,8 @@ namespace FlockFive.Editor
             for (int i = 0; i < BadgerCopy.LessonCount; i++) lines.Add(BadgerCopy.LessonAt(i));
             for (int m = 1; m <= 3; m++) lines.Add(BadgerCopy.GuideLine(m));
             foreach (var pw in new[] { BadgerPower.X2, BadgerPower.X3, BadgerPower.HotSauce, BadgerPower.FreezeSpray })
-            { lines.Add(BadgerCopy.PowerIntroLine(pw, true)); lines.Add(BadgerCopy.PowerArmedLine(pw)); }
+            { lines.Add(BadgerCopy.PowerIntroLine(pw, true)); if (BadgerCopy.PowerArmedLine(pw).Length > 0) lines.Add(BadgerCopy.PowerArmedLine(pw)); }
+            lines.Add(BadgerCopy.BlockWorkedLine(BadgerPower.HotSauce)); lines.Add(BadgerCopy.BlockWorkedLine(BadgerPower.FreezeSpray));
             var sizes = new[] { new Vector2(320, 568), new Vector2(375, 667), new Vector2(390, 844), new Vector2(768, 1024), new Vector2(1024, 1366) };
             int clipped = 0; string firstBad = "";
             foreach (var sz in sizes)
@@ -102,7 +103,7 @@ namespace FlockFive.Editor
             // Powers: intro/armed copy for every power, one-per-step; fair first grid.
             bool pcopy = true;
             foreach (var pw in new[] { BadgerPower.X2, BadgerPower.X3, BadgerPower.HotSauce, BadgerPower.FreezeSpray })
-                pcopy &= BadgerCopy.PowerIntroLine(pw, false).Length > 0 && BadgerCopy.PowerArmedLine(pw).Length > 0;
+                pcopy &= BadgerCopy.PowerIntroLine(pw, false).Length > 0 && (BadgerFight.IsBlock(pw) || BadgerCopy.PowerArmedLine(pw).Length > 0);
             Check("per-power-intro-and-armed-copy", pcopy && BadgerCopy.Armed == "ARMED", "");
             var fair = BadgerLoadout.Preload((k, f) => 0, 0, 16);
             fair.FairStart(1);
@@ -120,7 +121,8 @@ namespace FlockFive.Editor
             var f2 = new BadgerFight(2, 7, pl, bo, false);
             int bigIx = f2.BossPickFor(BadgerPower.HotSauce);
             int saveTile = f2.PowerStepPlayerTile(BadgerPower.HotSauce);
-            Check("power-step-block-vs-big-badger", bo[bigIx] == 5 && pl[saveTile] == 2 && f2.StepPower == BadgerPower.HotSauce, "boss " + bo[bigIx] + " you " + pl[saveTile]);
+            // Blocks: a normal badger pick (not scripted big), item lands on the weakest open tile, ties by first open.
+            Check("power-step-block-weakest-tile-first-open", pl[saveTile] == 2 && saveTile == 0 && f2.StepPower == BadgerPower.HotSauce && bigIx >= 0, "boss " + bo[bigIx] + " tile " + saveTile);
             f2.PlayerPick(saveTile);
             bool noSlam = !f2.TryDontCare(n => 0, out var sl) && !sl.Hit;
             Check("power-step-round-never-slammed", noSlam, "");
@@ -131,7 +133,7 @@ namespace FlockFive.Editor
             foreach (var pw in new[] { BadgerPower.HotSauce, BadgerPower.FreezeSpray })
             {
                 string intro = BadgerCopy.PowerIntroLine(pw, false), armedLn = BadgerCopy.PowerArmedLine(pw), done = BadgerCopy.BlockWorkedLine(pw);
-                blocks &= intro.Contains("replaces") && intro.Contains("blocks") && armedLn.Contains("weakest")
+                blocks &= intro.Contains("replaces") && intro.Contains("blocks") && intro.Contains("weakest") && armedLn.Length == 0
                     && done.Contains("badger scores nothing") && BadgerFight.IsBlock(pw);
             }
             Check("block-powers-caption-explains-replace-and-block", blocks, BadgerCopy.PowerIntroLine(BadgerPower.HotSauce, false));
@@ -158,6 +160,8 @@ namespace FlockFive.Editor
                 && badger.Contains("BadgerContinueRect(L); // one rect"), "");
             Check("back-held-in-round4-bosswait", badger.Contains("bool BadgerGuidePending()") && badger.Contains("|| BadgerGuidePending())"), "");
             Check("badger-tap-presses-level", File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs").Contains("the badger on the pedestal is part of the pedestal"), "");
+            Check("block-auto-assign-no-tile-tap", badger.Contains("assign themselves to the weakest open tile") && badger.Contains("ClickBadgerTile(weakest)")
+                && badger.Contains("picture ? \"\" : BadgerPowerName(p)") && badger.Contains("PLACEHOLDER art"), "");
             Check("block-beat-wired", badger.Contains("void DrawBadgerBlockBeat(") && badger.Contains("DrawBadgerPowerIcon(") && badger.Contains("BadgerCopy.BlockWorkedLine(_bgGuideRoundPower)")
                 && badger.Contains("BadgerPowerFly.RevealExtra(_bgGuideRoundPower)"), "");
             Check("no-bird-greet-over-badger", File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Avatar.cs").Contains("BadgerSitter.Visible(BadgerOwed()"), "");
