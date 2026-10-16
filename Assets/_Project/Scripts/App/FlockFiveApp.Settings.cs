@@ -569,6 +569,7 @@ namespace FlockFive
         // Same path as the LEVEL flower: badger leap, otherwise the gate sting and Load.
         bool PressLevelButton()
         {
+            if (StartupInputHeld) return false; // b112: nothing starts while the studio card / cover is up
             if (TakeBadgerFlower())
             {
                 if (!LevelCurtain.LoadStarted) LevelCurtain.Clear();
