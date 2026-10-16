@@ -25,6 +25,9 @@ namespace FlockFive.Editor
             int ex = coach.IndexOf("GateExemptsGiftClose(gate.Step, GiftCloseExempt(e.mousePosition))", kind, System.StringComparison.Ordinal);
             int any = coach.IndexOf("if (gate.AnyTap)", kind, System.StringComparison.Ordinal);
             Check("exemption sits before the rect-gate eats the press", kind > 0 && ex > kind && ex < any, "");
+            Check("stuck gift cue never armed", !coach.Contains("_cueGift = true;") && coach.Contains("const float GiftHintSeconds = 0f;"), "");
+            string app = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");
+            Check("ad hand arms once and persists", coach.Contains("if (PlayerPrefs.GetInt(CoachAdHandKey, 0) != 0) return;") && app.Contains("if (_gift == GiftFace.Card) ArmAdHand();"), "");
         }
     }
 }
