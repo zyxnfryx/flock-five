@@ -13297,13 +13297,19 @@ namespace FlockFive
             public float Below;
         }
 
+        public const float PokerPayTabScale = 0.80f;
+
         public static Rect PokerPayTabBox(float w, Rect safe, float top, float s)
         {
-            float k = DeviceFit.ControlK();
+            // b105 (Brandon): base-layout scale for every window (phone, iPhone-compat window on iPad, tablet),
+            // so the tab is smaller than before and sits fully under the logo halo (halo ends top + 6 s).
+            float k = DeviceFit.ControlK() * PokerPayTabScale;
             float tabW = Mathf.Clamp(211f * s, 178f, 264f) * k;
             float tabH = Mathf.Clamp(62f * s, 55f, 78f) * k;
+            // Never more than a quarter of the window width (small phones), same aspect.
+            if (tabW > w * 0.24f) { tabH *= w * 0.24f / tabW; tabW = w * 0.24f; }
             float right = w - Mathf.Max(6f, w - safe.xMax + 4f);
-            float tabY = top + 4f * s;
+            float tabY = top + 8f * s;
             return new Rect(right - tabW, tabY, tabW, tabH);
         }
 
