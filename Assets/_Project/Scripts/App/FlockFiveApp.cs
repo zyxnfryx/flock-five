@@ -16562,12 +16562,12 @@ namespace FlockFive
         float DrawAlbumHeader(float s, Rect back)
         {
             int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
-            float left = Mathf.Max(16f * s, Screen.safeArea.xMin + 10f);
-            float textRight = Screen.width - Mathf.Max(16f * s, Screen.width - Screen.safeArea.xMax + 12f);
+            AlbumTextSpan(Screen.width, Screen.safeArea, s, out float left, out float textRight);
+            float titleRight = Screen.width - CornerAnchor.EdgeInsetRight(Screen.width, Screen.safeArea) - CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f).x;
             float hiveSize = Mathf.Clamp(back.height * 0.80f, 44f, 92f);
             var hiveHead = new Rect(AlbumHeaderX(back, s, Screen.height > 2f ? Screen.height : 720f), back.center.y - hiveSize * 0.5f, hiveSize, hiveSize);
             float textX = hiveHead.xMax + 12f * s;
-            float textW = Mathf.Max(48f, textRight - textX);
+            float textW = Mathf.Max(48f, titleRight - textX);
             var titleSt = GuiPool.Label(GuiSlot.AlbumTitle);
             titleSt.fontStyle = FontStyle.Bold;
             titleSt.alignment = TextAnchor.MiddleLeft;
@@ -16592,9 +16592,9 @@ namespace FlockFive
             float bodyY = Mathf.Max(hiveHead.yMax, CaptionBelowBack(s, TopHud()));
             var bodyR = new Rect(left, bodyY, bodyW, bodyH);
 
-            var titlePlate = new Rect(hiveHead.x, hiveHead.y, Mathf.Max(48f, textRight - hiveHead.x), hiveHead.height);
+            var titlePlate = new Rect(hiveHead.x, hiveHead.y, Mathf.Max(48f, titleRight - hiveHead.x), hiveHead.height);
             DrawCoachPanel(titlePlate, 1f);
-            DrawCoachPanel(bodyR, 1f);
+            DrawAlbumBanner(bodyR, true);
             DrawHiveButton(hiveHead, s);
             StampReadable(titleR, HiveTitle, titleSt, AlbumInk);
             GUI.color = new Color(1f, 0.84f, 0.38f, 0.92f);
@@ -16603,6 +16603,24 @@ namespace FlockFive
             GUI.color = Color.white;
             StampReadable(bodyR, body, bodySt, AlbumInk);
             return CoachPanelRect(bodyR).yMax + 4f * s;
+        }
+
+        // b108: shared text span for the Collection page banners. Same left inset as the Back medal, mirrored on
+        // the right. ShellBottom (CardText) measures the body with these same numbers.
+        public static void AlbumTextSpan(float screenW, Rect safe, float s, out float left, out float right)
+        {
+            if (safe.width < 2f) safe = new Rect(0f, 0f, screenW, 0f);
+            left = Mathf.Max(CornerAnchor.EdgeInset(safe), 16f * s);
+            right = screenW - Mathf.Max(CornerAnchor.EdgeInsetRight(screenW, safe), 16f * s);
+        }
+
+        // Full-width banner plate (display edge to display edge) behind a Collection line. hang: keep the shared
+        // plate pad above and below the text; the footer passes false and uses its own band height.
+        static void DrawAlbumBanner(Rect text, bool hang)
+        {
+            float padY = hang ? CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f).y : 0f;
+            var band = new Rect(0f, text.y - padY, Screen.width, text.height + padY * 2f);
+            DrawSolidRound(band, 2f, 0, 0.97f);
         }
 
         void NoteAlbumOpen()
@@ -17275,7 +17293,7 @@ namespace FlockFive
 
             // Page chips. The painted box is the hit, at least 48pt.
             float tabY = grid.TabY;
-            float tabGap = 8f;
+            float tabGap = Mathf.Max(8f, 12f * s);
             int shown = Mathf.Min(pages, 5);
             float vis = pagerHit;
             int first = 0;
@@ -17331,10 +17349,11 @@ namespace FlockFive
             ofSt.wordWrap = false;
             int bookHi = Mathf.Max(typeFloor + 4, Mathf.RoundToInt(24f * s));
             string ofBook = "Page " + (_hivePage + 1) + " of " + pages + "   ·   " + Hive.Found + " found";
-            var bookR = new Rect(16f * s, grid.BookY, Screen.width - 32f * s, pagerLab);
-            _albumBookR = bookR;
+            AlbumTextSpan(Screen.width, Screen.safeArea, s, out float bkL, out float bkR);
+            var bookR = new Rect(bkL, grid.BookY, bkR - bkL, pagerLab);
+            _albumBookR = new Rect(0f, bookR.y, Screen.width, bookR.height);
             ofSt.fontSize = FitFont(ofSt, ofBook, bookR.width * 0.92f, bookR.height * 0.86f, typeFloor, bookHi);
-            DrawCoachPanel(bookR, 1f);
+            DrawAlbumBanner(bookR, false);
             StampReadable(bookR, ofBook, ofSt, AlbumInk);
             _albumPagerR = new Rect(tabX0, tabY, tabsW, pagerHit);
             _albumPagerOk = shown > 0 && tabsW > 8f;

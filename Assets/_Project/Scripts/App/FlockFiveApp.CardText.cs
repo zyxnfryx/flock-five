@@ -838,12 +838,12 @@ namespace FlockFive
                 float colGap = 6f * s;
                 float pagerHit = Mathf.Max(48f, 56f * s);
                 float pagerLab = Mathf.Max(36f, 30f * s);
-                float botInset = Mathf.Max(8f * s, safe.yMin + 4f);
+                float botInset = Mathf.Max(14f * s, safe.yMin + 8f);
                 float footGap = 22f;
                 // b103 (Brandon): the gap from the lowest card to the page-number row equals the gap from that row
                 // to the "Page N of M" line. pagerGap is that one number; the card slack under the last row is
                 // measured, so the visible space above matches the space below on every device.
-                float pagerGap = footGap;
+                float pagerGap = Mathf.Max(footGap, 28f * s);
                 float pageTop = hiveBottom + colH + colGap;
                 float pagePad = 10f * s;
                 float pageW = screenW - pagePad * 2f;
@@ -908,8 +908,7 @@ namespace FlockFive
                 int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
                 float hiveSize = Mathf.Clamp(back.height * 0.80f, 44f, 92f);
                 float hiveHeadBottom = back.center.y + hiveSize * 0.5f;
-                float left = Mathf.Max(16f * s, safe.xMin + 10f);
-                float textRight = screenW - Mathf.Max(16f * s, screenW - safe.xMax + 12f);
+                AlbumTextSpan(screenW, safe, s, out float left, out float textRight);
                 float bodyW = Mathf.Max(48f, textRight - left);
                 int bodyPx = Mathf.Max(floor - 1, Mathf.RoundToInt(17f * s));
                 if (bodyPx < 15) bodyPx = 15;

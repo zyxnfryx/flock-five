@@ -18,6 +18,12 @@ namespace FlockFive
         public static float BottomMargin(float scale, float window)
             => Mathf.Lerp(BottomMarginRef, TabletBottomMarginRef, DeviceFit.Wide(window)) * scale;
 
+        // b108 (Brandon): the one edge inset the Back medal sits at (left). Every top-right chip and full-width
+        // banner on a page uses the mirror of it, so a right-hand pill is never flush with the display edge.
+        public static float EdgeInset(Rect safe) => Mathf.Max(16f, safe.xMin + 10f);
+        public static float EdgeInsetRight(float screenW, Rect safe)
+            => Mathf.Max(16f, (screenW - safe.xMax) + 10f);
+
         public static void Garden(float screenW, float screenH, Rect safe,
             out float scale, out float top, out float bot, out Rect restart, out Rect hive)
         {
