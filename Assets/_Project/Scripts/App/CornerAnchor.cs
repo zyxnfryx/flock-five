@@ -45,7 +45,8 @@ namespace FlockFive
             // b105 (Brandon): the corner buttons must never sit on the bottom ad (gift) branch or its
             // arrow sign. This is the base layout for every window, not a tablet path: phones and the
             // ~0.56-aspect iPad compat window put the 72-ref-px margin right on the ad row.
-            float room = screenH - safeBot;
+            // Leaves the lesson banner (centred on this rect, seated above the bottom safe edge) room to cover it.
+            float room = screenH - safeBot - (12f * scale + 8f);
             float adTop, adBot;
             AdRowBand(screenW, screenH, out var signL, out var signR, out var branchL, out var branchR, out adTop, out adBot);
             float pad = 4f * scale;

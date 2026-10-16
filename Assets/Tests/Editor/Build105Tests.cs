@@ -52,6 +52,16 @@ namespace FlockFive.Editor
                 Check("pay tab clear of logo " + tag, tabOk,
                     "tab " + tab.xMin.ToString("0") + "," + tab.yMin.ToString("0") + " " + tab.width.ToString("0") + "x" + tab.height.ToString("0")
                     + " halo bottom " + chrome.Halo.yMax.ToString("0") + " w% " + (tab.width / w * 100f).ToString("0.0"));
+                // Reminder popup (shared ask layout): equal air from the painted brass border left/right/bottom.
+                float cardW = Mathf.Min(w * 0.88f, 600f * s);
+                var card = new Rect((w - cardW) * 0.5f, h * 0.3f, cardW, 320f * s);
+                float bH = 56f * s * FlockFiveApp.AskButtonScale;
+                FlockFiveApp.AskButtonRects(card, s, bH, out var yes, out var no);
+                float band = FlockFiveApp.AskDrawnBand(card.width, s);
+                var inner = new Rect(card.x + band, card.y + band, card.width - band * 2f, card.height - band * 2f);
+                float pl = yes.xMin - inner.xMin, pr = inner.xMax - no.xMax, pb = inner.yMax - yes.yMax;
+                bool eq = Mathf.Abs(pl - pr) < 0.6f && Mathf.Abs(pl - pb) < 0.6f && pl >= 12f * s && yes.width > 20f && no.width > 20f;
+                Check("reminder buttons equal air " + tag, eq, "left " + pl.ToString("0.0") + " right " + pr.ToString("0.0") + " bottom " + pb.ToString("0.0") + " btn " + yes.width.ToString("0") + "x" + yes.height.ToString("0"));
             }
             DeviceFit.TestWindow = null;
             Debug.Log("[build105] " + (fail == 0 ? "ALL OK " + pass : "FAILED " + fail + " passed " + pass));

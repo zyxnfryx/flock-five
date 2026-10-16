@@ -2186,15 +2186,36 @@ namespace FlockFive
                 OfferWelcome();
         }
 
-        static void DailyAskLayout(float s, out Rect card, out Rect body, out Rect yesR, out Rect noR)
+        // b105 (Brandon): the brass band that DrawAskFrame paints, and one equal air gap inside it, so
+        // the buttons sit the same distance from the border on the left, right and bottom.
+        public static float AskDrawnBand(float cardW, float s) => Mathf.Clamp(cardW * 0.045f, 10f * s, 18f * s);
+        public static float AskInnerAir(float s) => 16f * s;
+        public static float AskButtonScale => 0.88f;
+
+        // Pure: the two buttons for a card, equal air to the painted border left, right and bottom.
+        public static void AskButtonRects(Rect card, float s, float btnH, out Rect yesR, out Rect noR)
+        {
+            float band = AskDrawnBand(card.width, s);
+            float air = AskInnerAir(s);
+            float edge = band + air;
+            float gap = 10f * s;
+            float btnW = (card.width - edge * 2f - gap) * 0.5f;
+            if (btnW < 8f) btnW = 8f;
+            float btnY = card.yMax - edge - btnH;
+            if (btnY < card.y + edge) btnY = card.y + edge;
+            yesR = new Rect(card.x + edge, btnY, btnW, btnH);
+            noR = new Rect(yesR.xMax + gap, btnY, btnW, btnH);
+        }
+
+        public static void DailyAskLayout(float s, out Rect card, out Rect body, out Rect yesR, out Rect noR)
         {
             EnsureAskStyles();
             float w = StandardPopupWidth(s);
-            float band = Mathf.Max(8f, 10f * s);
-            float pad = band + 12f * s;
+            float band = AskDrawnBand(w, s);
+            float pad = band + AskInnerAir(s);
             float innerW = w - pad * 2f;
             if (innerW < 40f) innerW = 40f;
-            float btnH = PopupBarHeight(s, w);
+            float btnH = PopupBarHeight(s, w) * AskButtonScale;
             float gap = 10f * s;
             int hi = Mathf.Max(14, Mathf.RoundToInt(18f * s));
             int lo = 11;
@@ -2213,12 +2234,8 @@ namespace FlockFive
             if (h > maxH) h = maxH;
             if (h < chrome + 28f * s) h = chrome + 28f * s;
             card = PlacePopup(s, w, h, 0.44f);
-            float btnW = (innerW - gap) * 0.5f;
-            if (btnW < 8f) btnW = 8f;
-            float btnY = card.yMax - pad - btnH;
-            if (btnY < card.y + pad) btnY = card.y + pad;
-            yesR = new Rect(card.x + pad, btnY, btnW, btnH);
-            noR = new Rect(yesR.xMax + gap, btnY, btnW, btnH);
+            AskButtonRects(card, s, btnH, out yesR, out noR);
+            float btnY = yesR.y;
             float bodyTop = card.y + pad;
             float bodyBot = btnY - 12f * s;
             if (bodyBot < bodyTop) bodyBot = bodyTop;
