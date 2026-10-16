@@ -1,0 +1,19 @@
+namespace FlockFive
+{
+    // One flavor line for both faces. The reverse groaner used to replace the
+    // face sentence on the flip, so the two sides did not say the same thing.
+    // BeeKind.Back stays in the roster for the fit suite. The card draws Shown.
+    public static class CardCopy
+    {
+        public static string Shown(BeeKind kind)
+        {
+            if (!string.IsNullOrEmpty(kind.Front)) return kind.Front;
+            return kind.Back ?? "";
+        }
+
+        // The flipped side. Cards that own a back line (BeeKind.OwnBack) say it there;
+        // every other card still repeats Shown on both faces.
+        public static string BackOwn(BeeKind kind) =>
+            kind.OwnBack && !string.IsNullOrEmpty(kind.Back) ? kind.Back : Shown(kind);
+    }
+}

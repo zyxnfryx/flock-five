@@ -311,6 +311,29 @@ namespace FlockFive
             return Clip("page-turn", data);
         }
 
+        static AudioClip MakeSquish()
+        {
+            // Fallback only (authored clip loads first). 150->68 Hz lost ~22 dB on phone
+            // speakers, so the body now drops 300->190 Hz in 0.15 s with a fifth at 0.30 and
+            // the octave (2x) at 0.22 to keep it audible on small drivers. No noise.
+            const float dur = 0.15f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            float phase = 0f, phaseF = 0f, phase2 = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float u = i / (float)(n - 1);
+                float f = Mathf.Lerp(300f, 190f, u);
+                phase += 2f * Mathf.PI * f / Rate;
+                phaseF += 2f * Mathf.PI * f * 1.5f / Rate;
+                phase2 += 2f * Mathf.PI * f * 2f / Rate;
+                float env = Mathf.Exp(-u * 5.5f) * Mathf.Sin(Mathf.Clamp01(u / 0.05f) * Mathf.PI * 0.5f);
+                float s = Mathf.Sin(phase) + 0.30f * Mathf.Sin(phaseF) + 0.22f * Mathf.Sin(phase2);
+                data[i] = s * env * 0.55f;
+            }
+            return Clip("squish", data);
+        }
+
         static AudioClip MakeBreak(int kind, int seed)
         {
             // Thick branch: three snappy splits, then a meaty pith CRUNCH.
