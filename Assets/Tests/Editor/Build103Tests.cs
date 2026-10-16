@@ -243,6 +243,23 @@ namespace FlockFive.Editor
                 bool ages = Mathf.Approximately(HoneyPoke.AgeAlpha(HoneyPoke.Serial), 1f) && HoneyPoke.AgeAlpha(HoneyPoke.Serial - 5) > 0.4f && HoneyPoke.AgeAlpha(HoneyPoke.Serial - HoneyPoke.Cap) < 0.001f;
                 for (int i = 0; i < 25; i++) five &= HoneyPoke.Place(20f + i, new Vector2(i, i), 20f);
                 Check("smudge ring recycles and fades by taps", five && recycled && ages && first == HoneyPoke.Cap + 1 && HoneyPoke.Placed == HoneyPoke.Cap, "serial " + HoneyPoke.Serial);
+                // b109: squish bank. Own five-take bank, pitch inside 0.96-1.04, no clip twice in a row, one per frame.
+                bool pitchOk = true, noRepeat = true; int prevClip = -1, plays = 0;
+                for (int i = 0; i < 100; i++)
+                {
+                    Sfx.ResetSquishFrameForTest();
+                    Sfx.HoneySquish();
+                    plays++;
+                    pitchOk &= Sfx.LastSquishPitch >= Sfx.SquishPitchLo - 0.0001f && Sfx.LastSquishPitch <= Sfx.SquishPitchHi + 0.0001f;
+                    if (prevClip >= 0 && Sfx.LastSquishClip == prevClip && Sfx.SquishBankSize > 1) noRepeat = false;
+                    prevClip = Sfx.LastSquishClip;
+                }
+                int clipBefore = Sfx.LastSquishClip; float pitchBefore = Sfx.LastSquishPitch;
+                Sfx.ResetSquishFrameForTest(); Sfx.HoneySquish(); Sfx.HoneySquish(); // second call in the same frame is dropped
+                bool oneFrame = Sfx.LastSquishClip != clipBefore || true; // frame guard checked via the pitch not re-rolling below
+                float pitchOnce = Sfx.LastSquishPitch; Sfx.HoneySquish();
+                Check("squish pitch bounds, round-robin, one per frame", pitchOk && noRepeat && Sfx.SquishBankSize >= 5 && Sfx.LastSquishPitch == pitchOnce,
+                    "bank " + Sfx.SquishBankSize + " plays " + plays);
                 HoneyPoke.Clear();
                 var card = new Rect(100f, 100f, 600f, 840f);
                 var cells = new Rect[5];

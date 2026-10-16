@@ -17683,14 +17683,16 @@ namespace FlockFive
                     _honeyCellLast = i;
                     ate = true;
                     HoneyPoke.Place(AdPause.Unscaled, e.mousePosition, _honeyHits[i].width * 0.42f);
-                    Sfx.HoneySquish(HoneyPoke.Serial);
+                    Sfx.HoneySquish();
                 }
                 if (held) ate = true;
                 if (!fire) continue;
                 ate = true;
+                // b109: a press that already squished this cell on the way in (drag) does not squish again on release.
+                if (_honeyCellLast == i) { _honeyCellLast = -1; continue; }
                 _honeyCellLast = -1;
                 HoneyPoke.Place(AdPause.Unscaled, e != null ? e.mousePosition : _honeyHits[i].center, _honeyHits[i].width * 0.42f);
-                Sfx.HoneySquish(HoneyPoke.Serial);
+                Sfx.HoneySquish();
             }
             return ate;
         }

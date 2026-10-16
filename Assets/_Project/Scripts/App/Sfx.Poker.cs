@@ -88,19 +88,49 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.20f, MixDesk.DuckWhoosh);
         }
 
-        // b109: a finger pushed into jello. The card-bump bank pitched down and stepped per tap so no two
-        // neighbours match. Placeholder until a dedicated squish asset (Musical Producer) lands.
+        // b109: a finger pushed into jello. Own bank (Audio/Squish, five takes; squish_release is kept out of the
+        // tap bank), own no-immediate-repeat history, small random pitch, quiet Lead gain, no duck. Falls back to
+        // the card-bump bank if the clips are missing.
+        public const float SquishGain = 0.60f;
+        public const float SquishPitchLo = 0.96f, SquishPitchHi = 1.04f;
+        static AudioClip[] _squish;
+        static int _lastSquish = -1;
+        static int _squishFrame = -1;
         public static float LastSquishPitch;
-        public static void HoneySquish(int tapSerial)
+        public static int LastSquishClip = -1;
+        public static int SquishBankSize => _squish != null ? _squish.Length : 0;
+
+        static AudioClip[] SquishBank()
         {
+            if (_squish != null && _squish.Length > 0) return _squish;
+            var all = Resources.LoadAll<AudioClip>("Audio/Squish");
+            var tap = new System.Collections.Generic.List<AudioClip>();
+            if (all != null)
+                for (int i = 0; i < all.Length; i++)
+                    if (all[i] != null && !all[i].name.Contains("release")) tap.Add(all[i]);
+            tap.Sort((x, y) => string.CompareOrdinal(x.name, y.name));
+            _squish = tap.Count > 0 ? tap.ToArray() : _cardBump;
+            return _squish;
+        }
+
+        // At most one per frame, so two paths firing on one event never stack.
+        public static void HoneySquish()
+        {
+            if (Time.frameCount == _squishFrame) return;
+            _squishFrame = Time.frameCount;
             Ensure();
             WarmPokerClips();
-            int i = Next(_cardBump.Length, ref _lastCardBump);
-            float p = 0.74f + 0.045f * (tapSerial % 6) + Random.Range(-0.015f, 0.015f);
+            var bank = SquishBank();
+            if (bank == null || bank.Length == 0) return;
+            int i = Next(bank.Length, ref _lastSquish);
+            float p = Random.Range(SquishPitchLo, SquishPitchHi);
             LastSquishPitch = p;
-            Shot(_cardBump[i], p, 0.92f, MixLayer.Lead, MixDesk.DuckWhoosh);
-            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.24f, MixDesk.DuckWhoosh);
+            LastSquishClip = i;
+            Shot(bank[i], p, SquishGain, MixLayer.Lead, MixDesk.DuckChirp);
         }
+
+        // Test hook: forget the frame guard so a loop of calls each plays.
+        public static void ResetSquishFrameForTest() { _squishFrame = -1; }
 
         public static void CardTap()
         {
