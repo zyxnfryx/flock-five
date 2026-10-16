@@ -27,6 +27,11 @@ namespace FlockFive.Editor
             foreach (var f in Directory.GetFiles("Assets/_Project/Scripts/App", "FlockFiveApp*.cs"))
                 { string src = File.ReadAllText(f); at = 0; while ((at = src.IndexOf("DrawPopupButton(", at, System.StringComparison.Ordinal)) >= 0) { int end = src.IndexOf(';', at); if (end > 0 && src.Substring(at, end - at).EndsWith(", false)") && src.Substring(at, end - at).Contains("1f, true, false")) named++; at++; } }
             Check("only the claim flower disables release fx", named == 1, "calls " + named);
+            // b106: the Claim label is drawn outside the clunk scale matrix (one seat for rim and fill).
+            int lab = daily.IndexOf("StampOutlined(labR, DailyVerb()", System.StringComparison.Ordinal);
+            int sq = daily.IndexOf("GUIUtility.ScaleAroundPivot(new Vector2(squish, squish * 0.94f), flower.center);", System.StringComparison.Ordinal);
+            int rs = daily.IndexOf("GUI.matrix = pressed;", daily.IndexOf("static void DrawDailyClaim", System.StringComparison.Ordinal), System.StringComparison.Ordinal);
+            Check("claim label drawn on the plain matrix", sq > 0 && lab > sq && rs > sq && rs < lab, "scale " + sq + " reset " + rs + " label " + lab);
             Check("wheel and prize effects untouched", daily.Contains("DrawDailyWheel(") && daily.Contains("SparkleFx.DrawAt(starAt"), "");
         }
     }
