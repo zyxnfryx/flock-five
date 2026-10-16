@@ -238,6 +238,11 @@ namespace FlockFive
         readonly List<BeeVisit> _levelBees = new List<BeeVisit>();
         int _hiveFlip = -1;
         float _hiveFlipT;
+        // Collectible-card motion (phase 2): tilt, flip stage, capture pass.
+        Vector2 _cardTilt;
+        float _tiltBlend, _parAmt;
+        int _stageSlot = -1;
+        bool _cardCapture, _cardCaptureBack;
         int _hivePage;
         int _hivePageFrom;
         float _hivePageTurn = 99f;
@@ -6280,6 +6285,8 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            // Sensors and the card stage only live while an inspect is open (battery + memory).
+            if (CardTilt.Open && _hiveInspect < 0) { CardTilt.End(); CardStage.Release(); _stageSlot = -1; }
             if (GamePause.Paused)
             {
                 // Pose steps on PlayClock, so a suspension cannot skip the arc.
@@ -17007,6 +17014,19 @@ namespace FlockFive
             int ix = _hiveInspect;
             _albumInspectR = big;
             _albumInspectOk = big.width > 8f && big.height > 8f;
+            if (!CardTilt.Open) CardTilt.Begin();
+            CardTilt.Feed(big);
+            if (tick)
+            {
+                float cdt = AdPause.UnscaledDelta;
+                bool settled = !_hiveInspectClosing && u >= 1f;
+                CardTilt.Tick(cdt, big);
+                _tiltBlend = Mathf.MoveTowards(_tiltBlend, settled ? 1f : 0f, cdt * 5f);
+                _parAmt = _hiveFlip >= 0 ? 0f : Mathf.MoveTowards(_parAmt, 1f, cdt * 6f);
+                if (_hiveFlip < 0) _stageSlot = -1;
+                if (_stageSlot >= 0) CardQuality.Watchdog(cdt);
+            }
+            _cardTilt = CardTilt.Value * (_tiltBlend * _parAmt);
             if (tick && _hiveTutorOn && !Ads.IsShowing && !_hiveInspectClosing)
                 AdvanceHiveTutor(ix);
             DrawBeeAlbumCard(big, ix, s, true);
@@ -17047,8 +17067,9 @@ namespace FlockFive
             // A honeycomb is not the card. It squishes and smudges, and the flip waits.
             var cardTap = InspectCardTap(big, ix, fullyOpen && !upgradeHit);
             bool honeyAte = cardTap == CardTap.Honey;
-            if (cardTap == CardTap.Card && !PageSwipeAte)
+            if (cardTap == CardTap.Card && !PageSwipeAte && !CardTilt.DragAte)
                 BeginHiveFlip(ix);
+            if (Event.current != null && Event.current.rawType == EventType.MouseUp) CardTilt.ClearDragAte();
 
             // Tap dim outside card closes (after card/X/Back/upgrade so they win hit tests)
             var full = new Rect(0f, 0f, Screen.width, Screen.height);
@@ -17557,7 +17578,8 @@ namespace FlockFive
 
         void DrawFoilSheen(Rect face, BeeFinish finish, int slot, bool inspectView)
         {
-            float t = AdPause.Unscaled;
+            // Static tier (reduce motion, old GL): the foil keeps its look but holds still.
+            float t = CardQuality.Tier == CardTier.Static ? 0f : AdPause.Unscaled;
             float phase = slot * 0.37f;
             float amp = inspectView ? 1.15f : 1f;
 
@@ -17667,24 +17689,39 @@ namespace FlockFive
             BeeFinish finish = Hive.FinishOfSlot(i);
             int n = Hive.CountOf(kindIx, finish);
             bool owned = n > 0;
-            bool flipping = _hiveFlip == i;
-            float flipU = flipping ? Mathf.Clamp01(_hiveFlipT / 0.28f) : 0f;
-            float squash = flipping ? Mathf.Abs(Mathf.Cos(flipU * Mathf.PI)) : 1f;
+            // _cardCapture: the stage is grabbing a flat neutral face (no flip, no tilt, no sheen); see StageFlip.
+            bool capturing = _cardCapture && inspectView;
+            bool flipping = _hiveFlip == i && !capturing;
+            float flipU = flipping ? Mathf.Clamp01(_hiveFlipT / CardSlab.FlipSeconds) : 0f;
+            bool slab = flipping && inspectView && CardQuality.Tier != CardTier.Static;
+            float flipA = slab ? CardSlab.Angle(flipU) : flipU * Mathf.PI;
+            float squash = flipping ? Mathf.Abs(Mathf.Cos(flipA)) : 1f;
             // Sleeves always show the front; the back only lives in inspect.
             bool faceBack = inspectView && _hiveFaceBack[i];
-            bool showBack = inspectView && (flipping ? (flipU >= 0.5f ? !faceBack : faceBack) : faceBack);
+            bool showBack = inspectView && (capturing ? _cardCaptureBack : flipping ? (flipU >= 0.5f ? !faceBack : faceBack) : faceBack);
+
+            // Full tier: the real thick flip through the camera/RT stage. On any failure it demotes and the slab below draws instead.
+            if (slab && CardQuality.Tier == CardTier.Full && StageFlip(card, i, s, flipU, finish))
+                return;
+
+            // Tilt is live only on a settled, playing, still inspect card.
+            bool live = inspectView && !capturing && !flipping && CardTilt.Playing;
+            Vector2 tilt = live ? _cardTilt : Vector2.zero;
 
             float cx = card.center.x;
             float w = card.width * Mathf.Max(0.08f, squash);
             var r = new Rect(cx - w * 0.5f, card.y, w, card.height);
+            Rect wallR = default;
+            if (slab) CardSlab.Footprint(card, flipA, out r, out wallR);
 
             var kind = Hive.Roster[kindIx];
             Color wood = AlbumWood(kind.Tint, owned);
             GUI.color = new Color(0f, 0f, 0f, 0.35f);
-            GUI.DrawTexture(new Rect(r.x + 4f, r.y + 6f, r.width, r.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(r.x + 4f, r.y + 6f, r.width + wallR.width, r.height), Texture2D.whiteTexture);
             GUI.color = wood;
             GUI.DrawTexture(r, Texture2D.whiteTexture);
             GUI.color = Color.white;
+            if (wallR.width > 0.5f) CardSlab.DrawWall(wallR, 0.5f + 0.5f * Mathf.Sin(flipA));
 
             // Inner face — use the plate; type needs every pixel for 55+ reading.
             // FaceOf is the rect the thumbnail fit test measures.
@@ -17692,7 +17729,7 @@ namespace FlockFive
             Color faceFill = AlbumFace(kind.Tint, owned);
             // Owned cards get the shared renderer: FaceTheme art + honey-wood/brass frame (CardArt).
             // If the bake budget is spent this frame the flat plate stands in and the art lands next frame.
-            bool themed = owned && CardArt.DrawBase(r, face, kind, wood, inspectView);
+            bool themed = owned && CardArt.DrawBase(r, face, kind, wood, inspectView, CardSlab.Parallax(tilt, CardSlab.DepthArt, card.width, false));
             FaceStyle fstyle = default;
             if (themed) fstyle = FaceThemes.Of(FaceThemes.Resolve(kind), kind.Tint);
             else
@@ -17703,7 +17740,17 @@ namespace FlockFive
             }
 
             // Foil sheen stays inside the face, including the rounded corners.
-            if (owned && finish != BeeFinish.Normal && squash > 0.2f)
+            if (owned && !capturing && squash > 0.2f && live && CardQuality.Tier != CardTier.Static)
+            {
+                // Live inspect: glare (and foil prism) follow the tilt only. Hold the phone still and nothing moves.
+                var local = new Rect(0f, 0f, face.width, face.height);
+                CardClip.Begin(face);
+                CardSlab.DrawPrism(local, finish, tilt, 1f);
+                CardSlab.DrawGlare(local, finish, tilt, 0.55f + 0.45f * Mathf.Min(1f, tilt.magnitude));
+                if (!themed) CardClip.Corners(local, faceFill, face.width * 0.06f);
+                CardClip.End();
+            }
+            else if (owned && finish != BeeFinish.Normal && squash > 0.2f && !capturing)
             {
                 var local = new Rect(0f, 0f, face.width, face.height);
                 CardClip.Begin(face);
@@ -17739,14 +17786,19 @@ namespace FlockFive
             }
             else
             {
-                if (themed) DrawThemedBackdrop(face, fstyle, showBack, honey, inspectView);
+                // Front lettering rides at its own depth (whole pixels, same box size, so nothing re-wraps). The back stays put: combs hit-test on it.
+                var tOff = showBack ? Vector2.zero : CardSlab.Parallax(tilt, CardSlab.DepthText, card.width, true);
+                var tFace = new Rect(face.x + tOff.x, face.y + tOff.y, face.width, face.height);
+                if (themed) DrawThemedBackdrop(tFace, fstyle, showBack, honey, inspectView);
                 if (!showBack)
                 {
                     float beeShare = inspectView ? 0.24f : 0.38f;
                     float bh = face.height * beeShare;
                     var br = new Rect(face.center.x - bh * 0.5f, face.y + face.height * 0.03f, bh, bh);
-                    if (themed) CardArt.DrawGlow(new Rect(br.x - bh * 0.35f, br.y - bh * 0.30f, bh * 1.7f, bh * 1.6f), fstyle.Glow, 0.55f);
-                    CardCritter.Draw(br, kind.Id, kind.Tint, 1f);
+                    var gOff = CardSlab.Parallax(tilt, CardSlab.DepthGlow, card.width, false);
+                    var bOff = CardSlab.Parallax(tilt, CardSlab.DepthBee, card.width, false);
+                    if (themed) CardArt.DrawGlow(new Rect(br.x + gOff.x - bh * 0.35f, br.y + gOff.y - bh * 0.30f, bh * 1.7f, bh * 1.6f), fstyle.Glow, 0.55f);
+                    CardCritter.Draw(new Rect(br.x + bOff.x, br.y + bOff.y, br.width, br.height), kind.Id, kind.Tint, 1f);
                 }
                 if (themed) CardArt.UseInk(fstyle);
                 try
@@ -17755,11 +17807,11 @@ namespace FlockFive
                         DrawBakedFace(card, face, kind, flavor, finish, showBack, honey, themed, fstyle);
                     else if (!showBack)
                     {
-                        var textFace = CardText.TextFaceOf(face, inspectView);
+                        var textFace = CardText.TextFaceOf(tFace, inspectView);
                         CardText.DrawFront(textFace, kind.Name, flavor, inspectView, s);
                         if (finish != BeeFinish.Normal)
                         {
-                            var band = CardText.FinishOf(face, inspectView);
+                            var band = CardText.FinishOf(tFace, inspectView);
                             CardArt.ResetInk();
                             CardText.DrawFinish(band, FinishInk.Label(finish), inspectView, s, FinishInk.Tag(finish));
                         }
@@ -17771,7 +17823,7 @@ namespace FlockFive
                 {
                     CardArt.ResetInk();
                 }
-                if (themed) CardArt.DrawJewel(r, finish, inspectView ? AdPause.Unscaled : 0f, i);
+                if (themed) CardArt.DrawJewel(r, finish, inspectView && !capturing && CardQuality.Tier != CardTier.Static ? AdPause.Unscaled : 0f, i);
                 if (!showBack && n > 1)
                 {
                     var cnt = GuiPool.Label(GuiSlot.AlbumCount);
@@ -17786,6 +17838,7 @@ namespace FlockFive
 
             if (!inspectView && owned && HiveCardFresh(i))
                 DrawNewPill(card, s);
+            if (capturing) return;
 
             // Owned sleeve opens inspect. A locked "?" re-shows the how-to and stays shut.
             if (tappable && !inspectView && !flipping && _hivePageTurn >= 0.55f && _hiveInspect < 0
@@ -17794,6 +17847,44 @@ namespace FlockFive
                 if (owned) OpenHiveInspect(i, card);
                 else _hiveHowToNudge = true;
             }
+        }
+
+        // Tier Full flip. First flip frame: draw the front and the back flat and neutral, grab each from the frame buffer, then the
+        // stage's opaque slab covers that same frame (the grabs never reach the screen). Later frames: stage only.
+        // Returns false when the stage could not run; the caller then draws the OnGUI slab flip.
+        bool StageFlip(Rect card, int i, float s, float flipU, BeeFinish finish)
+        {
+            if (!CardStage.Available) return false;
+            if (_stageSlot != i)
+            {
+                bool ok;
+                _cardCapture = true;
+                _hitLock++;
+                try
+                {
+                    _cardCaptureBack = false;
+                    DrawBeeAlbumCard(card, i, s, true, false);
+                    ok = CardStage.Grab(false, card);
+                    _cardCaptureBack = true;
+                    DrawBeeAlbumCard(card, i, s, true, false);
+                    ok &= CardStage.Grab(true, card);
+                }
+                finally
+                {
+                    _cardCapture = false;
+                    _hitLock--;
+                }
+                if (!ok) return false;
+                _stageSlot = i;
+            }
+            float angle = CardSlab.Angle(flipU);
+            CardSlab.Footprint(card, angle, out var face, out var wall);
+            float x0 = Mathf.Min(face.x, wall.width > 0.5f ? wall.x : face.x), x1 = Mathf.Max(face.xMax, wall.width > 0.5f ? wall.xMax : face.xMax);
+            GUI.color = new Color(0f, 0f, 0f, 0.35f);
+            GUI.DrawTexture(new Rect(x0 + 4f, face.y + 6f, x1 - x0, face.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var tiltNow = CardTilt.Playing ? CardTilt.Value * _tiltBlend : Vector2.zero;
+            return CardStage.DrawFlip(card, angle, _hiveFaceBack[i], tiltNow, finish, CardSlab.Lift(angle) - 1f);
         }
 
         // Night themes lay a soft dark scrim under the lettering (and the combs on the back) so cream-on-sky

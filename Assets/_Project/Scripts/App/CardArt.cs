@@ -96,7 +96,7 @@ namespace FlockFive
 
         // Paints face art + frame for an owned card. Returns false when the bake budget is spent
         // (the caller keeps the flat plate it already drew under this call).
-        public static bool DrawBase(Rect card, Rect face, BeeKind kind, Color wood, bool inspectView)
+        public static bool DrawBase(Rect card, Rect face, BeeKind kind, Color wood, bool inspectView, Vector2 artShift = default)
         {
             int b = BucketOf(card.width);
             var theme = FaceThemes.Resolve(kind);
@@ -105,7 +105,16 @@ namespace FlockFive
             var frTex = FrameTex(FrameWood, b);   // one frame for every card and finish
             if (fTex == null || frTex == null) return false;
             GUI.color = Color.white;
-            GUI.DrawTexture(face, fTex, ScaleMode.StretchToFill, false);
+            if (artShift.sqrMagnitude > 0.01f)
+            {
+                // Art sits behind the card plane: 2% overscan each side so a shift never shows a gap, clipped to the face.
+                float ox = face.width * 0.02f, oy = face.height * 0.02f;
+                GUI.BeginGroup(face);
+                GUI.DrawTexture(new Rect(-ox + artShift.x, -oy + artShift.y, face.width + ox * 2f, face.height + oy * 2f), fTex, ScaleMode.StretchToFill, false);
+                GUI.EndGroup();
+            }
+            else
+                GUI.DrawTexture(face, fTex, ScaleMode.StretchToFill, false);
             GUI.DrawTexture(card, frTex, ScaleMode.StretchToFill, true);
             return true;
         }
