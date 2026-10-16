@@ -163,7 +163,7 @@ namespace FlockFive.Editor
             Check("block-auto-assign-no-tile-tap", badger.Contains("assign themselves to the weakest open tile") && badger.Contains("ClickBadgerTile(weakest)")
                 && badger.Contains("picture ? \"\" : BadgerPowerName(p)") && badger.Contains("PLACEHOLDER art"), "");
             Check("block-beat-wired", badger.Contains("void DrawBadgerBlockBeat(") && badger.Contains("DrawBadgerPowerIcon(") && badger.Contains("BadgerCopy.BlockWorkedLine(_bgGuideRoundPower)")
-                && badger.Contains("BadgerPowerFly.RevealExtra(_bgGuideRoundPower)"), "");
+                && badger.Contains("BadgerPowerFly.RevealExtra(_bgBlockBeat)"), "");
             Check("no-bird-greet-over-badger", File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Avatar.cs").Contains("BadgerSitter.Visible(BadgerOwed()"), "");
             Check("guided-gate-in-shared-step-gate", coach.Contains("gate.Step = GateBadgerGuide;") && coach.Contains("void CoachArrowAt(Rect target, float s)")
                 && coach.Contains("GateBadgerLesson && BadgerLessonIgnores"), "");
