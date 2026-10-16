@@ -7,7 +7,13 @@ namespace FlockFive
     // bolts, then one delayed roll from the same clip pool.
     public sealed class GardenStorm : MonoBehaviour
     {
-        public const float FirstWait = 70f;
+        // b110 (Brandon): first storm after about 15 s of garden time (was 70 s, which short levels never reached).
+        public const float FirstWait = 15f;
+        // The storm clock survives garden rebuilds (every level load re-enables the component), so a run of short
+        // levels still reaches the first storm. Resets only on a fresh launch.
+        static float _sessionPlay;
+        public static float SessionPlay => _sessionPlay;
+        public static void ResetSessionClock() { _sessionPlay = 0f; }
         public const float StormLen = 75f;
         public const float ClearLen = 90f;
         const float Fade = 2.1f;
@@ -146,7 +152,7 @@ namespace FlockFive
         void OnEnable()
         {
             Instance = this;
-            _play = 0f;
+            _play = _sessionPlay;
             _rainSync = 0;
 #if UNITY_EDITOR
             if (System.IO.File.Exists("/tmp/flock-five-storm-now"))
@@ -468,6 +474,7 @@ namespace FlockFive
             if (dt > 0.0001f)
                 _step = _step <= 0f ? dt : _step + (dt - _step) * 0.2f;
             _play += dt;
+            _sessionPlay = _play;
             float want = WantStorm(_play) ? 1f : 0f;
             _wet = Mathf.MoveTowards(_wet, want, dt / Fade);
             Wet = _wet;
