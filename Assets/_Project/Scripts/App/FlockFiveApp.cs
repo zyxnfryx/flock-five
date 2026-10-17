@@ -450,6 +450,9 @@ namespace FlockFive
         static FlockFiveApp _app;
         static int _resumeNoteFrame = -1;
         static float _resumeInputUntil = -1f;
+        // b126: the three input gates (_swallowTapsUntil, _suppressGiftUntil, _resumeInputUntil) run on ad-free
+        // unscaled time. PlayClock stalls under any GamePause, so a pause leak froze them shut.
+        static float GateNow => AdPause.Unscaled;
 
         void OnEnable()
         {
@@ -492,7 +495,7 @@ namespace FlockFive
             {
                 if (_app != null)
                 {
-                    _resumeInputUntil = PlayClock.Now + 0.35f;
+                    _resumeInputUntil = GateNow + 0.35f;
                     _app.FreshTutorGlove();
                     // The suspend may have cut a step off. Settle it before the first tap lands.
                     _app.HealInterruptedTutorials();
@@ -3680,7 +3683,7 @@ namespace FlockFive
         {
             if (LessonTapBlocked()) return;
             if (_busy || _won || _board == null) return;
-            if (PlayClock.Now < _swallowTapsUntil) return;
+            if (GateNow < _swallowTapsUntil) return;
             if (AdPause.Unscaled < _nextTap) return;
             _nextTap = AdPause.Unscaled + 0.10f;
             if (CoachReject(world)) return;
@@ -3692,7 +3695,7 @@ namespace FlockFive
                 return;
             }
             // Bird and limb taps must not open a gift a moment later.
-            _suppressGiftUntil = PlayClock.Now + 1f;
+            _suppressGiftUntil = GateNow + 1f;
 
             int feeder = HitFeeder(world);
             if (feeder >= 0)
@@ -6224,7 +6227,7 @@ namespace FlockFive
         static void SwallowResumePointer()
         {
             // Also while the level transition covers the screen (held splash / mask).
-            if (PlayClock.Now >= _resumeInputUntil && !PressRainbow.StageHeld() && !StartupInputHeld) return;
+            if (GateNow >= _resumeInputUntil && !PressRainbow.StageHeld() && !StartupInputHeld) return;
             var e = Event.current;
             if (e == null) return;
             var t = e.type;
@@ -6236,7 +6239,7 @@ namespace FlockFive
         static bool Pressed(out Vector2 screen)
         {
             screen = default;
-            if (PlayClock.Now < _resumeInputUntil) return false;
+            if (GateNow < _resumeInputUntil) return false;
             if (StartupInputHeld) return false;
             if (LessonGuardUp()) return false;
             // The finger wins over a synthesized mouse. On Android the mouse click
@@ -19047,7 +19050,7 @@ namespace FlockFive
         {
             if (_sel >= 0 || _won) return false;
             if (_busy || _collecting || _locked.Count > 0) return false;
-            if (PlayClock.Now < _suppressGiftUntil) return false;
+            if (GateNow < _suppressGiftUntil) return false;
             if (_gift != GiftFace.None) return false;
             if (_board == null || (uint)branch >= (uint)_board.Branches.Count) return false;
             var st = _board.Branches[branch];
@@ -19195,8 +19198,8 @@ namespace FlockFive
             if (_gift == GiftFace.Movie || _gift == GiftFace.Wait) return;
             _gift = GiftFace.None;
             AdRetry.Clear();
-            _swallowTapsUntil = PlayClock.Now + 0.45f;
-            _suppressGiftUntil = PlayClock.Now + 1f;
+            _swallowTapsUntil = GateNow + 0.45f;
+            _suppressGiftUntil = GateNow + 1f;
         }
 
         // The Watch ad stage. The flag marks the coroutine alive, so the interruption
@@ -19219,6 +19222,16 @@ namespace FlockFive
             finally
             {
                 _watchGiftLive = false;
+                // b126: whatever way the stage ended, a Wait/Movie face with no coroutine behind it is a dead end
+                // (ad closed with no reward, callback lost). Close it and free the taps.
+                if (_gift == GiftFace.Wait || _gift == GiftFace.Movie)
+                {
+                    AdLog.Add("WatchGift ended on " + _gift + ": clearing the stage");
+                    _gift = GiftFace.None;
+                    _busy = false;
+                    _swallowTapsUntil = GateNow + 0.45f;
+                    _suppressGiftUntil = GateNow + 1f;
+                }
             }
         }
 
@@ -19269,8 +19282,8 @@ namespace FlockFive
                     _gift = GiftFace.None;
                     AdRetry.Clear();
                     DismissAdHand();
-                    _swallowTapsUntil = PlayClock.Now + 0.45f;
-                    _suppressGiftUntil = PlayClock.Now + 1f;
+                    _swallowTapsUntil = GateNow + 0.45f;
+                    _suppressGiftUntil = GateNow + 1f;
                     yield break;
                 }
                 // Never a silent bounce back to Watch: say the ad was not ready.
@@ -19420,8 +19433,8 @@ namespace FlockFive
         {
             if (_gift == GiftFace.Wait)
             {
-                if (Ads.IsLoading && !Ads.IsShowing && !Ads.MockRewarded)
-                    DrawAdSpinner(s);
+                // b126: spinner always; Cancel after 3 s when no ad is on screen (10 s while one is).
+                DrawAdSpinner(s);
                 if (Ads.CanCancelWait) DrawAdWaitCancel(s);
                 return;
             }
