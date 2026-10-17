@@ -63,6 +63,8 @@ namespace FlockFive
         BadgerPowerIntro = 39,   // round 4 unlock: the x2 button arms it
         BadgerPowerArmed = 40,   // x2 armed: the scripted comb resolves with x2
         BadgerResult = 41,       // result: Continue
+        // b127: Freeze demo, break-free round. The badger is still iced; the glowing comb is the only tap.
+        BadgerBreakFree = 42,
     }
 
     // b123 (Brandon): every step names ONE explicit press-to-continue, distinct from toggle taps.
@@ -149,6 +151,7 @@ namespace FlockFive
                 case CoachStep.BadgerPowerIntro:
                 case CoachStep.BadgerPowerArmed:
                 case CoachStep.BadgerResult:
+                case CoachStep.BadgerBreakFree:
                     return CoachTapKind.Required;
             }
             throw new ArgumentOutOfRangeException(nameof(step), step, "Classify this lesson step");
@@ -201,6 +204,10 @@ namespace FlockFive
                     return new TapRule { Advance = TapZone.Target, Toggle = TapZone.PowerButton, Pointer = CoachPointer.Glove };
                 case CoachStep.BadgerResult:
                     return new TapRule { Advance = TapZone.Target, Pointer = CoachPointer.Glove };
+                // b127: break-free beat. Only the glowing comb advances. The frozen Hot Sauce button runs its handler
+                // (one plain line, never advances); Back, the other powers, other combs and blank space are ignored.
+                case CoachStep.BadgerBreakFree:
+                    return new TapRule { Advance = TapZone.Target, Toggle = TapZone.PowerButton, Pointer = CoachPointer.Glove };
             }
             switch (Kind(step))
             {
@@ -282,6 +289,7 @@ namespace FlockFive
                 case CoachStep.BadgerPowerIntro: return BadgerCopy.PowersOpen;
                 case CoachStep.BadgerPowerArmed: return BadgerCopy.X2Armed;
                 case CoachStep.BadgerResult: return BadgerCopy.Win;
+                case CoachStep.BadgerBreakFree: return BadgerCopy.FreezeBreakFreeWait;
             }
             return step.ToString();
         }

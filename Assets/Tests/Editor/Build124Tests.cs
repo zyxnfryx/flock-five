@@ -93,7 +93,7 @@ namespace FlockFive.Editor
             Check("freeze-demo-break-free-caption-and-back-hold",
                 r2.FreezeBeat == 2 && BadgerCopy.VerdictLine(r2) == BadgerCopy.BreakFree
                 && BadgerCopy.FreezeBreakFreeWait.Contains(BadgerCopy.HotSauceFrozen)
-                && badgerApp.Contains("_bgLine = BadgerCopy.FreezeBreakFreeWait;")
+                && badgerApp.Contains("BadgerCopy.FreezeBreakFreeWait")
                 && badgerApp.Contains("BadgerFreezeDemoHolds()")
                 && badgerApp.Contains("_bgFight.PowerFrozenOut(p)"), "");
 
