@@ -170,6 +170,7 @@ namespace FlockFive.Editor
                 case CoachStep.BadgerPowerIntro:
                 case CoachStep.BadgerPowerArmed:
                 case CoachStep.BadgerResult:
+                case CoachStep.BadgerBreakFree:
                     return CoachTapKind.Required;
             }
             throw new System.ArgumentOutOfRangeException(nameof(step), step, "Classify this lesson step");

@@ -5544,7 +5544,7 @@ namespace FlockFive
                 int stage = BadgerPowerGuideStage();
                 gate.Step = GateBadgerGuide;
                 gate.Target = stage == 1 ? _bgPowerBtn : _bgGuideHit;
-                _bgGateToggle = stage == 2 ? _bgPowerBtn : default;
+                _bgGateToggle = BadgerGateToggleRect(stage);
                 if (gate.Target.width < 2f) return false;
                 return true;
             }

@@ -87,6 +87,10 @@ namespace FlockFive
         Rect _bgGuideHit;
         // b123: round-4 power step (x2 button, then the scripted comb). On only for the first-use x2 after move 3.
         bool _bgPowerGuideOn;
+        // b127: Freeze demo break-free step (CoachStep.BadgerBreakFree). Derived-safe: BadgerBreakFreeLive also needs BossFrozenNow.
+        bool _bgBreakFreeOn;
+        int _bgBreakTile = -1;
+        readonly BadgerFrozenUi _bgFrozenUi = new BadgerFrozenUi();
         BadgerPower _bgGuidePower;      // the power the round's forced step is about
         BadgerPower _bgBlockBeat;       // Hot Sauce / Freeze Spray played this round (any fight): drives the fly beat
         BadgerPower _bgGuideRoundPower; // set when that power's tile is played; drives the post-power arrows
@@ -151,6 +155,9 @@ namespace FlockFive
             _bgCoachFight = false;
             _bgYouHexOk = false;
             _bgPowerGuideOn = false;
+            _bgBreakFreeOn = false;
+            _bgBreakTile = -1;
+            _bgFrozenUi.Reset();
             _bgGuidePower = BadgerPower.None;
             _bgGuideRoundPower = BadgerPower.None;
             _bgPowerTile = -1;
@@ -172,6 +179,9 @@ namespace FlockFive
         // Quit mid-fight or Continue after Over. Win pays; lose / quit leaves the flag.
         void LeaveBadger()
         {
+            _bgBreakFreeOn = false;
+            _bgBreakTile = -1;
+            _bgFrozenUi.Reset();
             EndBadgerLesson();
             // 0.3 s fade, then the splash bed comes back. A result stinger rings out.
             if (MixDesk.Live != null) MixDesk.Live.SetBadger(false);
@@ -251,6 +261,7 @@ namespace FlockFive
             _bgLine = BadgerCopy.RoundStartLine(_bgRoundN);
             // Coach fight: the round after move 3 announces the unlocked power-ups.
             _bgPowerGuideOn = false;
+            _bgBreakFreeOn = false;
             _bgGuideRoundPower = BadgerPower.None;
             _bgBlockBeat = BadgerPower.None;
             if (_bgFight != null && _bgFight.CoachFight
@@ -326,7 +337,17 @@ namespace FlockFive
                     else if (_bgFight.CoachFight && _bgFight.BossFrozenNow)
                     {
                         // Freeze demo beat 2: the badger is still iced; he struggles and shatters free when this round resolves.
-                        _bgLine = BadgerCopy.FreezeBreakFreeWait;
+                        // b127: a real gated step. The glove sits on the first open comb and only that comb takes the tap.
+                        _bgBreakTile = FirstOpenPlayerTile();
+                        if (_bgBreakTile >= 0)
+                        {
+                            _bgBreakFreeOn = true;
+                            _bgLine = "";
+                            _bgGuideAim = default;
+                            ResetBadgerGlove();
+                            RefreshBadgerGuideAim();
+                        }
+                        else _bgLine = BadgerCopy.FreezeBreakFreeWait; // no comb to point at: never gate (no softlock)
                     }
                     else if (BadgerPowerGuideWanted())
                     {
@@ -580,6 +601,7 @@ namespace FlockFive
             if (_bgStage != BadgerStage.YourPick || _bgFight == null) return;
             // b123: the round-4 step takes x2 only (arm / disarm). Other powers wait for their own turn.
             if (_bgPowerGuideOn && p != _bgGuidePower) return;
+            if (BadgerBreakFreeLive() && p != BadgerPower.HotSauce) return;
             if (!BadgerFight.IsBlock(p) && _bgArmed == p)
             {
                 _bgArmed = BadgerPower.None;
@@ -588,9 +610,13 @@ namespace FlockFive
             }
             if (!_bgFight.PowerReady(p) || _bgFight.PowersLocked) return;
             // Hot Sauce is disabled while the badger is frozen (button is greyed); a tap does nothing but say why.
-            if (_bgFight.PowerFrozenOut(p))
+            // b127: shared deny sound only (no shake, squish or burst). The break-free step paints the line in its own
+            // caption box for a moment; every other round puts it on the shared caption.
+            var frozenLine = _bgFrozenUi.Tap(_bgFight, p, AdPause.Unscaled);
+            if (frozenLine != null)
             {
-                _bgLine = BadgerCopy.HotSauceFrozen;
+                Sfx.Deny();
+                if (!BadgerBreakFreeLive()) _bgLine = frozenLine;
                 return;
             }
             if (!_bgFight.CanAfford(p))
@@ -631,6 +657,7 @@ namespace FlockFive
             _bgGuideRoundPower = _bgPowerGuideOn ? _bgGuidePower : BadgerPower.None;
             _bgBlockBeat = BadgerFight.IsBlock(_bgArmed) ? _bgArmed : BadgerPower.None;
             _bgPowerGuideOn = false;
+            _bgBreakFreeOn = false;
             _bgPlayerIx = i;
             _bgPlayerAt = AdPause.Unscaled;
             _bgT = 0f;
@@ -670,7 +697,19 @@ namespace FlockFive
         bool BadgerGuideLive()
         {
             return _splash && _home == HomeFace.Badger && _bgFight != null
-                && _bgStage == BadgerStage.YourPick && (_bgFight.GuidedTile >= 0 || _bgPowerGuideOn);
+                && _bgStage == BadgerStage.YourPick && (_bgFight.GuidedTile >= 0 || _bgPowerGuideOn || BadgerBreakFreeLive());
+        }
+
+        // b127: the Freeze demo's break-free step. Needs the badger still iced, so it can never outlive the freeze.
+        bool BadgerBreakFreeLive()
+            => _bgBreakFreeOn && _bgBreakTile >= 0 && _bgFight != null && _bgFight.CoachFight
+               && _bgFight.BossFrozenNow && _bgFight.Result == BadgerResult.Playing;
+
+        // The one button that may run its handler during the break-free step (frozen Hot Sauce: says why, never advances).
+        Rect BadgerGateToggleRect(int stage)
+        {
+            if (BadgerBreakFreeLive()) return BadgerPowerRect(BadgerLayout(), (int)BadgerPower.HotSauce - 1);
+            return stage == 2 ? _bgPowerBtn : default;
         }
 
         static readonly BadgerPower[] BadgerGuideOrder = { BadgerPower.X2, BadgerPower.X3, BadgerPower.HotSauce, BadgerPower.FreezeSpray };
@@ -713,7 +752,7 @@ namespace FlockFive
         {
             if (!BadgerGuideLive()) return;
             var L = BadgerLayout();
-            int tile = _bgPowerGuideOn ? _bgPowerTile : _bgFight.GuidedTile;
+            int tile = BadgerBreakFreeLive() ? _bgBreakTile : _bgPowerGuideOn ? _bgPowerTile : _bgFight.GuidedTile;
             // b123: the page's own stored grid (same one HitPad and the paint use); a fresh fit only before the first paint.
             var hex = _bgYouHexOk ? _bgYouHex : BadgerHex.Fit(L.PlayerGrid, 4, 4);
             _bgGuideAim = hex.Draw(tile);
@@ -742,7 +781,7 @@ namespace FlockFive
         // Shared back-medal hold: the coach fight's locked-power stretch (and the round-4 step) cannot be quit.
         bool BadgerCoachHoldsBack()
             => _bgFight != null && _bgFight.CoachFight
-               && (_bgFight.PowersLocked || _bgPowerGuideOn || BadgerGuidePending() || BadgerFreezeDemoHolds())
+               && (_bgFight.PowersLocked || _bgPowerGuideOn || BadgerGuidePending() || BadgerFreezeDemoHolds() || BadgerBreakFreeLive())
                && _bgStage != BadgerStage.Over && _bgStage != BadgerStage.Outro;
 
         // Coach fight: the Freeze demo's break-free beat. From the frozen verdict through the break-free round's
@@ -1009,7 +1048,9 @@ namespace FlockFive
         {
             if (!BadgerGuideLive()) return;
             RefreshBadgerGuideAim();
-            string line = _bgPowerGuideOn
+            string line = BadgerBreakFreeLive()
+                ? (_bgFrozenUi.Toast(AdPause.Unscaled) ?? BadgerCopy.FreezeBreakFreeWait)
+                : _bgPowerGuideOn
                 ? (BadgerPowerGuideStage() == 2 ? BadgerCopy.PowerArmedLine(_bgGuidePower) : BadgerCopy.PowerIntroLine(_bgGuidePower, _bgFight != null && _bgFight.RoundsResolved == BadgerTutorialScript.Moves))
                 : BadgerCopy.GuideLine(_bgFight.TutorialMove);
             if (!string.IsNullOrEmpty(line)) DrawBadgerCoachLine(L, line);
@@ -1409,6 +1450,7 @@ namespace FlockFive
             int guide = _bgFight != null && tilesLive ? _bgFight.GuidedTile : -1;
             // b123: round-4 step: no comb takes a tap until x2 is armed, then only the scripted comb.
             if (guide < 0 && tilesLive && _bgPowerGuideOn) guide = _bgArmed == _bgGuidePower ? _bgPowerTile : -2;
+            if (guide < 0 && tilesLive && BadgerBreakFreeLive()) guide = _bgBreakTile;
             Rect guidePaint = default;
             bool guideBloom = false;
             for (int i = 0; i < BadgerSchedule.Tiles; i++)
@@ -2053,17 +2095,54 @@ namespace FlockFive
                 bool frozenOut = _bgFight != null && !used && _bgFight.PowerFrozenOut(p);
                 if (frozenOut && !armedNow) sub = BadgerCopy.HotSauceFrozenSub;
                 guideBlocks |= frozenOut;
+                // b127: break-free step: every power but the frozen Hot Sauce is inert.
+                bool breakFree = BadgerBreakFreeLive();
+                if (breakFree && p != BadgerPower.HotSauce) guideBlocks = true;
+                // Frozen Hot Sauce stays tappable (it says why); it is only drawn disabled.
+                bool hsTap = frozenOut && p == BadgerPower.HotSauce && inPick;
+                var rr = r;
+                if (p == BadgerPower.HotSauce)
+                {
+                    _bgFrozenUi.Observe(frozenOut, _bgFight != null && _bgFight.Result == BadgerResult.Playing);
+                    float pop = _bgFrozenUi.PopScale(AdPause.Unscaled, inPick);
+                    if (pop != 1f)
+                    {
+                        rr = new Rect(r.center.x - r.width * pop * 0.5f, r.center.y - r.height * pop * 0.5f, r.width * pop, r.height * pop);
+                        DrawBadgerGuideGlow(r);
+                    }
+                }
                 if (_bgPowerGuideOn && p == _bgGuidePower && BadgerPowerGuideStage() == 1) DrawBadgerGuideGlow(r);
                 bool picture = BadgerFight.IsBlock(p);
-                bool fire = BadgerButton(r, picture ? "" : BadgerPowerName(p), sub, k < 2, used || !inPick || guideBlocks, lit,
-                    live && inPick && !used && !guideBlocks, ink, BadgerShakeX(BadgerPowerKey + (int)p, s));
+                bool fire = BadgerButton(rr, picture ? "" : BadgerPowerName(p), sub, k < 2, used || !inPick || guideBlocks, lit,
+                    live && inPick && !used && (!guideBlocks || hsTap), ink, BadgerShakeX(BadgerPowerKey + (int)p, s));
                 if (picture && GuiPaint())
                 {
                     float side = r.height * 0.58f;
-                    DrawBadgerPowerIcon(new Rect(r.center.x - side * 0.5f + BadgerShakeX(BadgerPowerKey + (int)p, s), r.y + r.height * 0.05f, side, side), p, used || !inPick || frozenOut ? 0.55f : 1f);
+                    DrawBadgerPowerIcon(new Rect(rr.center.x - side * 0.5f + BadgerShakeX(BadgerPowerKey + (int)p, s), rr.y + rr.height * 0.05f, side, side), p, used || !inPick || frozenOut ? 0.55f : 1f);
                 }
+                if (frozenOut && p == BadgerPower.HotSauce) DrawBadgerIceBadge(rr);
                 if (fire) ClickBadgerPower(p);
             }
+        }
+
+        // b127: small ice badge (snowflake on an icy disc) on a frozen-out button, so it reads as locked, not broken.
+        void DrawBadgerIceBadge(Rect r)
+        {
+            if (!GuiPaint()) return;
+            float d = r.height * 0.34f;
+            var disc = new Rect(r.xMax - d * 0.85f, r.y - d * 0.15f, d, d);
+            GUI.color = new Color(0.45f, 0.85f, 1f, 0.95f);
+            GUI.DrawTexture(disc, GlowTex(), ScaleMode.StretchToFill, true);
+            GUI.color = Color.white;
+            var old = GUI.matrix;
+            float len = d * 0.30f, w = Mathf.Max(1.5f, d * 0.07f);
+            for (int a = 0; a < 3; a++)
+            {
+                GUI.matrix = old;
+                GUIUtility.RotateAroundPivot(a * 60f, disc.center);
+                GUI.DrawTexture(new Rect(disc.center.x - len, disc.center.y - w * 0.5f, len * 2f, w), Texture2D.whiteTexture);
+            }
+            GUI.matrix = old;
         }
 
         // The coach fight's lock shows until move 3's verdict has played, so the labels never flip back and forth.
