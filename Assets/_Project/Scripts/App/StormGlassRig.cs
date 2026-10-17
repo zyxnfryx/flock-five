@@ -284,6 +284,80 @@ namespace FlockFive
             return n;
         }
 
+        static Texture2D _paintHi;
+        static Texture2D _paintRim;
+        static readonly Live[] _paintLive = new Live[StormGlass.DrawCap];
+
+        static Texture2D MakeSoft(bool rim)
+        {
+            const int N = 64;
+            var px = new Color32[N * N];
+            float c = (N - 1) * 0.5f;
+            for (int y = 0; y < N; y++)
+            {
+                for (int x = 0; x < N; x++)
+                {
+                    float dx = (x - c) / c;
+                    float dy = (y - c) / c;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    float a;
+                    if (rim) a = Mathf.Clamp01(1f - Mathf.Abs(d - 0.86f) / 0.14f) * (d <= 1f ? 1f : 0f);
+                    else
+                    {
+                        // soft glint, brightest toward the upper left, fading to the edge
+                        float gx = (x - c * 0.6f) / c;
+                        float gy = (y - c * 1.4f) / c;
+                        float g = Mathf.Clamp01(1f - Mathf.Sqrt(gx * gx + gy * gy) / 0.7f);
+                        a = g * g * (d <= 1f ? 1f : 0f);
+                    }
+                    px[y * N + x] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(Mathf.Clamp01(a) * 255f));
+                }
+            }
+            var t = new Texture2D(N, N, TextureFormat.RGBA32, false);
+            t.hideFlags = HideFlags.HideAndDontSave;
+            t.wrapMode = TextureWrapMode.Clamp;
+            t.filterMode = FilterMode.Bilinear;
+            t.SetPixels32(px);
+            t.Apply(false, true);
+            return t;
+        }
+
+        // Droplets over the restart button and the hive. The lens pass is under IMGUI, so those two controls would hide
+        // the drops; this paints a soft highlight and rim with each drop's alpha and radius. DrawTexture only: no controls, no input.
+        public static void PaintOver(Rect restart, Rect hive)
+        {
+            if (Event.current == null || Event.current.type != EventType.Repaint) return;
+            if (_rig == null) return;
+            bool r0 = restart.width >= 1f && restart.height >= 1f;
+            bool r1 = hive.width >= 1f && hive.height >= 1f;
+            if (!r0 && !r1) return;
+            int n = CopyLive(_paintLive);
+            if (n <= 0) return;
+            if (_paintHi == null) _paintHi = MakeSoft(false);
+            if (_paintRim == null) _paintRim = MakeSoft(true);
+            float h = Screen.height;
+            var keep = GUI.color;
+            for (int i = 0; i < n; i++)
+            {
+                float gx = _paintLive[i].X;
+                float gy = h - _paintLive[i].Y;
+                float r = _paintLive[i].Radius;
+                float a = _paintLive[i].Alpha;
+                if (r < 1f) continue;
+                bool over = (r0 && Grow(restart, r).Contains(new Vector2(gx, gy)))
+                    || (r1 && Grow(hive, r).Contains(new Vector2(gx, gy)));
+                if (!over) continue;
+                var box = new Rect(gx - r, gy - r, r * 2f, r * 2f);
+                GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01(a * 0.5f));
+                GUI.DrawTexture(box, _paintHi, ScaleMode.StretchToFill, true);
+                GUI.color = new Color(0.85f, 0.92f, 1f, Mathf.Clamp01(a * 0.42f));
+                GUI.DrawTexture(box, _paintRim, ScaleMode.StretchToFill, true);
+            }
+            GUI.color = keep;
+        }
+
+        static Rect Grow(Rect r, float by) => new Rect(r.x - by, r.y - by, r.width + by * 2f, r.height + by * 2f);
+
         static int Gather(Camera cam, StormGlass.Block[] blocks)
         {
             int n = 0;
@@ -291,14 +365,10 @@ namespace FlockFive
             {
                 float h = Screen.height;
                 var safe = Screen.safeArea;
-                CornerAnchor.Garden(Screen.width, Screen.height, safe, out float scale, out _, out _, out var restart, out var hive);
+                CornerAnchor.Garden(Screen.width, Screen.height, safe, out float scale, out _, out _, out _, out _);
                 var pivot = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
-                restart = CornerAnchor.Shake(restart, CamShake.HudOffset, CamShake.HudTwist, pivot);
-                hive = CornerAnchor.Shake(hive, CamShake.HudOffset, CamShake.HudTwist, pivot);
                 var stamp = FlockFiveApp.GardenStampBox(Screen.width, Screen.height, safe, scale);
                 stamp = CornerAnchor.Shake(stamp, CamShake.HudOffset, CamShake.HudTwist, pivot);
-                Add(blocks, ref n, StormGlass.FromGui(restart, h));
-                Add(blocks, ref n, StormGlass.FromGui(hive, h));
                 Add(blocks, ref n, StormGlass.FromGui(stamp, h));
             }
             return FlockFiveApp.CopyGlassCritters(cam, blocks, n);
