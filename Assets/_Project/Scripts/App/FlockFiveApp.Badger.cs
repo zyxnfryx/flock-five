@@ -1477,7 +1477,7 @@ namespace FlockFive
             var youSlot = BadgerSlotTile(boxes.YouSlot);
             var bossSlot = BadgerSlotTile(boxes.BossSlot);
             bool tilesIn = _bgFight != null && (_bgBossIx >= 0 || _bgPlayerIx >= 0);
-            bool tie = _bgResolved && _bgRound.PlayerGained <= 0 && _bgRound.BossGained <= 0
+            bool tie = _bgResolved && _bgRound.PlayerGained <= 0 && _bgRound.BossGained <= 0 && !_bgRound.BossHeld
                 && (_bgStage == BadgerStage.Verdict || _bgStage == BadgerStage.Over);
 
             if (GuiPaint() && (tie || (_bgStage != BadgerStage.Opening && !tilesIn && _bgStage != BadgerStage.Over)))
@@ -1496,13 +1496,19 @@ namespace FlockFive
                 int honey = _bgResolved ? _bgRound.BossFinal : _bgFight.BossHoney(_bgBossIx);
                 var r = LerpRect(bossHex.Draw(_bgBossIx), bossSlot, u);
                 _bgBossSlotNow = r;
-                if (block) r.x += Mathf.Sin(AdPause.Unscaled * 38f) * 5f * s * Mathf.Clamp01(1.2f - _bgT);
+                BadgerFreezeLook(ref r, s, out float ice, out float shatterT);
+                if (block && _bgRound.Power != BadgerPower.FreezeSpray) r.x += Mathf.Sin(AdPause.Unscaled * 38f) * 5f * s * Mathf.Clamp01(1.2f - _bgT);
                 bool win = _bgResolved && _bgRound.BossGained > 0;
                 if (win) DrawBadgerWinGlow(r);
                 DrawBadgerTile(r, BadgerLook.Face, honey, BadgerHide, BeeFinish.Normal, block ? 0.55f : 1f, null);
                 if (win && _bgStage == BadgerStage.Verdict)
                     DrawBadgerGain(r, _bgRound.BossGained, _bgT);
                 if (block) DrawBadgerSplat(r);
+                if (GuiPaint())
+                {
+                    SparkleFx.DrawFrozen(r, ice, AdPause.Unscaled);
+                    SparkleFx.DrawShatter(r, shatterT);
+                }
             }
             if (_bgFight != null && _bgPlayerIx >= 0)
             {
@@ -1521,6 +1527,28 @@ namespace FlockFive
                 DrawBadgerLookArrows(r, s);
             }
 
+        }
+
+        // Freeze look for the badger's tile, shared with the tutorial Freeze demo (same SparkleFx helpers).
+        // Turn 1 (and the wait before his break-free turn): iced, small shiver held. Turn 2: struggle, then shatter.
+        void BadgerFreezeLook(ref Rect r, float s, out float ice, out float shatterT)
+        {
+            ice = 0f; shatterT = -1f;
+            if (_bgFight == null) return;
+            float now = AdPause.Unscaled;
+            if (_bgResolved && _bgRound.FreezeBeat == 2)
+            {
+                const float Struggle = 0.8f, Break = 0.55f;
+                if (_bgT < Struggle)
+                {
+                    var o = SparkleFx.Struggle(now, _bgT, 5f * s);
+                    r.x += o.x; r.y += o.y;
+                    ice = 1f;
+                }
+                else shatterT = (_bgT - Struggle) / Break;
+            }
+            else if (_bgResolved && _bgRound.FreezeBeat == 1) { ice = 1f; r.x += SparkleFx.Shiver(now, 2.2f * s); }
+            else if (!_bgResolved && _bgFight.BossFrozenNow) { ice = 1f; r.x += SparkleFx.Shiver(now, 2.2f * s); }
         }
 
         // b123: Hot Sauce / Freeze demo on the forced round. The icon flies from its button to the weakest tile and

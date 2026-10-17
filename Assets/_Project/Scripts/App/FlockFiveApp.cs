@@ -39,7 +39,6 @@ namespace FlockFive
         static float _waxBorn = -1f;
         int _collectDepth;
         bool _gardenScoring;
-        static float _claimClunk = -1f;
         struct CoinFly
         {
             public Vector2 A, B;
@@ -10422,14 +10421,15 @@ namespace FlockFive
         // Square pop-up CTAs reuse the clay flower (DEAL / LEVEL / Watch).
         // Wide ones get a rounded plate in the same clay. Returns the label rect.
         // shadow is the dark slab under the face. Streak ask and welcome pass false.
-        static Rect DrawPopupButton(Rect r, bool held, bool gold, float glow = 1f, bool shadow = true)
+        // burst false drops ONLY the release sparkle burst (the Daily button after it is claimed). Flash, sink and sound stay.
+        static Rect DrawPopupButton(Rect r, bool held, bool gold, float glow = 1f, bool shadow = true, bool burst = true)
         {
-            return DrawPopupButton(r, held, gold ? PopupTint.Gold : PopupTint.Wood, glow, shadow);
+            return DrawPopupButton(r, held, gold ? PopupTint.Gold : PopupTint.Wood, glow, shadow, burst);
         }
 
         internal static Rect LastPedestalFace;
 
-        static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true)
+        static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true, bool burst = true)
         {
             if (r.width < 2f || r.height < 2f) return r;
             bool paint = GuiPaint();
@@ -10440,7 +10440,7 @@ namespace FlockFive
             var bloom = SpriteCatalog.PlayFlower;
             if (paint && motion.ReleasedEdge)
             {
-                SparkleFx.DrawAround(visual, 0.95f, true, 0.14f);
+                if (burst) SparkleFx.DrawAround(visual, 0.95f, true, 0.14f);
                 bool pedestal = square && bloom != null && bloom.texture != null && (tint == PopupTint.Gold || tint == PopupTint.Wood);
                 PushButton.ReleaseFlash(visual, pedestal);
             }
@@ -13139,7 +13139,7 @@ namespace FlockFive
                 _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
             bool pin = PokerStepPinned(PokerStepAnchor(line));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
-            CapSpot("poker.table"); PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign);
+            CapSpot(line == PokerBackLine ? "poker.back" : "poker.table"); PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign);
         }
 
         // Above the cards: from ceilingY down to the top of the card reach (held cards and the
@@ -13295,7 +13295,11 @@ namespace FlockFive
             LessonLine(PokerBackLine);
             // Standard shared arc: the hand rides over the top and the fingertip comes straight
             // down onto the back button. Only a tap inside the back rect is a valid tap.
-            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, float.NaN, _pokerBackTap);
+            // b124: the hand rides in from the middle right, fully on screen, pointing left at Back.
+            _gloveEntryOverride = GloveMiddleRightEntry(CoachSafeGui(8f * handS));
+            _gloveEntryOverrideOn = true;
+            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, -90f, _pokerBackTap);
+            _gloveEntryOverrideOn = false;
             return true;
         }
 
@@ -15305,8 +15309,13 @@ namespace FlockFive
             if (_pokerMotion == PokerMotion.Deal)
                 return _pokerMotionT >= DealGatherT + DealRiffleT;
             if (PokerMotionBusy() || PokerWinFlying()) return true;
+            if (PokerFirstHandResultHoldsBetBar()) return true;
             return BirdPoker.PhaseNow == BirdPoker.Phase.Dealt;
         }
+
+        // b124: on the first hand the result caption owns the bet controls' seat until Back is tapped; the bar stays tucked away.
+        bool PokerFirstHandResultHoldsBetBar()
+            => _home == HomeFace.Poker && !PokerBackDone() && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn;
 
         bool DrawPokerDash(Rect betR, Rect actR, float s, bool busy, bool steppers, string act)
         {
@@ -15315,7 +15324,7 @@ namespace FlockFive
             var actBox = actR;
             DrawPokerBetBar(bet, s, busy, steppers);
             DrawPokerWinBanner(betR, actR, s);
-            if (string.IsNullOrEmpty(act)) return false;
+            if (string.IsNullOrEmpty(act) || PokerFirstHandResultHoldsBetBar()) return false; // the dealer button does not return
             bool fire = DrawFloralBtn(actBox, act, s, true);
             return fire;
         }

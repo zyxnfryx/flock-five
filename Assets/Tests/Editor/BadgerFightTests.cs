@@ -403,8 +403,8 @@ namespace FlockFive.Editor
             int freezeBossGain;
             BadgerFight.ApplyRound(2, 5, BadgerPower.HotSauce, out sauceFinal, out sauceBoss, out sauceGain, out sauceBossGain);
             BadgerFight.ApplyRound(2, 5, BadgerPower.FreezeSpray, out freezeFinal, out freezeBoss, out freezeGain, out freezeBossGain);
-            bool math = sauceFinal == 2 && sauceBoss == 0 && sauceGain == 2 && sauceBossGain == 0
-                && freezeFinal == 2 && freezeBoss == 0 && freezeGain == 2 && freezeBossGain == 0
+            bool math = sauceFinal == 0 && sauceBoss == 0 && sauceGain == 0 && sauceBossGain == 0
+                && freezeFinal == 0 && freezeBoss == 0 && freezeGain == 0 && freezeBossGain == 0
                 && BadgerFight.SkipTurnsOf(BadgerPower.HotSauce) == 1
                 && BadgerFight.SkipTurnsOf(BadgerPower.FreezeSpray) == 2
                 && BadgerFight.IsBlock(BadgerPower.HotSauce) && BadgerFight.IsBlock(BadgerPower.FreezeSpray)
@@ -426,8 +426,8 @@ namespace FlockFive.Editor
             BadgerRound sauceRound = default;
             bool resolved = bought && sauce.Resolve(out sauceRound);
             bool effect = picked && resolved && Purse.Coins == before - price
-                && sauceRound.BossFinal == 0 && sauceRound.BossGained == 0 && sauceRound.PlayerGained == 2
-                && sauce.PlayerScore == 2 && sauce.BossScore == 0 && sauce.BossSkipLeft == 0
+                && sauceRound.BossFinal == 0 && sauceRound.BossGained == 0 && sauceRound.PlayerGained == 0
+                && sauce.PlayerScore == 0 && sauce.BossScore == 0 && sauce.BossSkipLeft == 0
                 && !sauce.BossOpen(bossIx) && !sauce.PlayerOpen(0)
                 && !sauce.PowerReady(BadgerPower.HotSauce);
             bool second = sauce.BossPick() >= 0 && sauce.PlayerPick(1)
@@ -450,7 +450,7 @@ namespace FlockFive.Editor
             var fight = new BadgerFight(1, 22, Fill(16, 2), Fill(16, 5));
             BadgerRound r1;
             bool first = Play(fight, 2, BadgerPower.FreezeSpray, out r1)
-                && r1.BossFinal == 0 && r1.BossGained == 0 && r1.PlayerGained == 2
+                && r1.BossFinal == 0 && r1.BossGained == 0 && r1.PlayerGained == 0
                 && fight.BossScore == 0 && fight.BossSkipLeft == 1
                 && !fight.PowerReady(BadgerPower.FreezeSpray)
                 && Purse.Coins == before - price;
@@ -653,7 +653,7 @@ namespace FlockFive.Editor
             BadgerRound blockedRound;
             bool blocked = next && shorty.Resolve(out blockedRound)
                 && blockedRound.BossFinal == 0 && blockedRound.BossGained == 0
-                && blockedRound.PlayerGained == 2
+                && blockedRound.PlayerGained == 0
                 && !shorty.PowerReady(BadgerPower.HotSauce);
             bool third = shorty.BossPick() >= 0 && shorty.PlayerPick(2)
                 && !shorty.TryPower(BadgerPower.HotSauce) && Purse.Coins == 0;
@@ -804,7 +804,7 @@ namespace FlockFive.Editor
             BadgerRound b;
             bool fr = freeze.Resolve(out b);
             bool block = s1 && sr && f1 && fr && a.BossGained == 0 && b.BossGained == 0
-                && a.PlayerGained == 1 && b.PlayerGained == 1 && a.BossFinal == 0 && b.BossFinal == 0
+                && a.PlayerGained == 0 && b.PlayerGained == 0 && a.BossFinal == 0 && b.BossFinal == 0
                 && sauce.BossSkipLeft == 0 && freeze.BossSkipLeft == 1;
             SetCoins(0);
             var broke = new BadgerFight(1, 5, Fill(16, 4), Fill(16, 2));

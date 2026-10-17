@@ -27,6 +27,10 @@ namespace FlockFive
         public BadgerPower Destroyed;
         // No power-up this round: the player's final honey was halved for the compare.
         public bool Halved;
+        // Freeze Spray timeline for the badger this round: 0 none, 1 frozen (turn 1: no action),
+        // 2 breaking free (turn 2: his action is spent struggling, he scores 0). Hot Sauce is never a Freeze beat.
+        public int FreezeBeat;
+        public bool BossHeld { get { return FreezeBeat != 0 || BadgerFight.IsBlock(Power); } }
     }
 
     // One TryDontCare call. Eligible false: first move or the round right after a hit
@@ -68,6 +72,8 @@ namespace FlockFive
         BadgerPower _armed = BadgerPower.None;
         // Rounds left where the badger still scores 0 (from Freeze Spray leftover).
         int _bossSkipLeft;
+        // 1 while the pending skip came from Freeze Spray (so the break-free turn can be told from Hot Sauce).
+        int _freezeRounds;
 
         // "Honey Badger Don't Care" (spec 2b). This contest only; a retry is a new fight at 10%.
         public const int DontCareBaseChance = 10;
@@ -99,6 +105,8 @@ namespace FlockFive
         public int BossLeft => _bossLeft;
         public BadgerPower Armed => _armed;
         public int BossSkipLeft => _bossSkipLeft;
+        // The badger is still iced from a Freeze Spray (his break-free turn is next).
+        public bool BossFrozenNow => _bossSkipLeft > 0 && _freezeRounds > 0;
         public int DontCareChance => _dontCareChance;
         public bool DontCareLastHit => _dontCareLastHit;
         public int RoundsResolved => _roundsResolved;
@@ -341,12 +349,14 @@ namespace FlockFive
             // A slam already cleared _armed if it destroyed the power-up.
             BadgerPower power = _armed;
             bool pendingSkip = _bossSkipLeft > 0;
+            int freezeBeat = power == BadgerPower.FreezeSpray ? 1 : (pendingSkip && _freezeRounds > 0 ? 2 : 0);
             bool halve = _dontCareHalve;
             ApplyRound(playerHoney, bossHoney, power, pendingSkip, halve,
                 out int playerFinal, out int bossFinal, out int playerGain, out int bossGain);
             int skips = SkipTurnsOf(power);
             if (skips > 0) _bossSkipLeft = skips - 1;
             else if (pendingSkip) _bossSkipLeft--;
+            _freezeRounds = power == BadgerPower.FreezeSpray ? 1 : (_bossSkipLeft > 0 ? _freezeRounds : 0);
 
             int bossIndex = _bossPick;
             int playerIndex = _playerPick;
@@ -391,6 +401,7 @@ namespace FlockFive
             round.DontCare = slam;
             round.Destroyed = destroyed;
             round.Halved = halve;
+            round.FreezeBeat = freezeBeat;
             return true;
         }
 
@@ -497,7 +508,7 @@ namespace FlockFive
 
         // X2 and X3 scale the player's honey this round. Hot Sauce and Freeze
         // Spray share one knock-back path: the badger's honey counts as 0 so
-        // it scores nothing and its tile is already spent. SkipTurnsOf says
+        // it scores nothing and its tile is already spent; the player's replaced tile scores 0 too. SkipTurnsOf says
         // how many boss turns that lasts (1 for sauce, 2 for freeze).
         public static void ApplyRound(int playerHoney, int bossHoney, BadgerPower power,
             out int playerFinal, out int bossFinal, out int playerGain, out int bossGain)
@@ -520,7 +531,8 @@ namespace FlockFive
         public static void ApplyRound(int playerHoney, int bossHoney, BadgerPower power, bool forceSkip, bool halvePlayer,
             out int playerFinal, out int bossFinal, out int playerGain, out int bossGain)
         {
-            playerFinal = playerHoney * MultiplierOf(power);
+            // Hot Sauce / Freeze replace the player's tile: that tile scores 0 for the player (the badger is still blocked).
+            playerFinal = IsBlock(power) ? 0 : playerHoney * MultiplierOf(power);
             if (halvePlayer) playerFinal = HalveHoney(playerFinal);
             bossFinal = (forceSkip || IsBlock(power)) ? 0 : bossHoney;
             playerGain = 0;

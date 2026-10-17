@@ -35,6 +35,7 @@ public static class CaptionStyles
         { "home.poker",     new Spot(true) },     // b94 (Brandon): 'You earned coins! Tap poker to bet them.' full-width banner over the Level box, off the avatar bird
         { "home.anchored",  new Spot(false) },    // other captions anchored to a small home element
         { "badger.lesson",  new Spot(false) },    // pinned badger lesson rule
+        { "poker.back",     new Spot(true) },     // b124: first-hand 'Tap the back button' full-width banner over the bet controls' seat
         { "poker.table",    new Spot(false) },    // poker table lessons (would cover the cards)
         { "album.coach",    new Spot(false) },    // album card (popup)
         { "offer.clearads", new Spot(false) },    // Clear Ads offer (popup)

@@ -65,8 +65,8 @@ namespace FlockFive
             {
                 case BadgerPower.X2: return firstUnlock ? PowersOpen : "Tap x2.\nYour first one is free.";
                 case BadgerPower.X3: return "New: x3 triples your next tile.\nTap x3. Free this once.";
-                case BadgerPower.HotSauce: return "Hot Sauce replaces your weakest tile's\nvalue and blocks the badger. Tap it.";
-                case BadgerPower.FreezeSpray: return "Freeze replaces your weakest tile's value\nand blocks the badger for 2 rounds. Tap it.";
+                case BadgerPower.HotSauce: return "Hot Sauce replaces your weakest tile (it\nscores 0) and blocks the badger. Tap it.";
+                case BadgerPower.FreezeSpray: return "Freeze replaces your weakest tile (it scores 0)\nand blocks the badger for 2 rounds. Tap it.";
             }
             return "";
         }
@@ -74,8 +74,8 @@ namespace FlockFive
         // Result beat for a block power's forced round: the badger did not score.
         public static string BlockWorkedLine(BadgerPower p)
         {
-            if (p == BadgerPower.FreezeSpray) return "Frozen! The badger scores nothing\nthis round or the next.";
-            return "Blocked! The badger scores nothing.\nYour tile wins.";
+            if (p == BadgerPower.FreezeSpray) return "Frozen! The badger scores nothing this round,\nthen spends the next one breaking free.";
+            return "Blocked! The badger scores nothing.\nThe Hot Sauce tile scores 0.";
         }
 
         public static string PowerArmedLine(BadgerPower p)
@@ -125,12 +125,19 @@ namespace FlockFive
             return (roundIndex & 1) == 0 ? GoesFirst : HowMany;
         }
 
+        public const string BreakFree = "The badger spent his turn\nbreaking free!";
+        public const string FrozenSolid = "Frozen solid! He can't move.";
+        public const string BlockedBoth = "Blocked! The badger scores nothing.";
+
         public static string VerdictLine(BadgerRound r)
         {
             if (r.DontCare && r.Destroyed != BadgerPower.None) return DontCareWasted;
             if (r.DontCare && r.Halved) return DontCareHalved;
+            if (r.FreezeBeat == 2) return BreakFree;
             if (r.PlayerGained > 0) return DontCare;
             if (r.BossGained > 0) return MineNow;
+            if (r.FreezeBeat == 1) return FrozenSolid;
+            if (r.BossHeld) return BlockedBoth;
             return Tie;
         }
 

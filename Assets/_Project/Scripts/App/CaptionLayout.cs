@@ -252,6 +252,16 @@ namespace FlockFive
         public static float LogoGap(float screenH) => Mathf.Max(8f, screenH * LogoGapFrac);
 
         // True when the glove's drawn box and the banner share no pixel.
+        // b124: a full-width band that completely covers `cover` (a control's original seat), `pad` clear around it.
+        // Never thinner than `band` (the text's own height); anchored at the top of the cover, extended down over it.
+        public static Rect BandCovering(Rect band, Rect cover, float w, float pad)
+        {
+            if (cover.width < 2f || cover.height < 2f) return band;
+            float top = Mathf.Min(band.y, cover.y - pad);
+            float bottom = Mathf.Max(band.yMax, cover.yMax + pad);
+            return new Rect(0f, top, w, bottom - top);
+        }
+
         public static bool GloveClearsBanner(Rect glove, Rect banner)
         {
             if (glove.width < 1f || glove.height < 1f) return true;

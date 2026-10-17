@@ -214,6 +214,9 @@ namespace FlockFive
         bool _gloveVis;
         bool _gloveReady;
         Vector2 _gloveTip;
+        // b124: a caller may seat the angled glove's entry point (poker Back: middle right). Clamped to the safe rect.
+        Vector2 _gloveEntryOverride;
+        bool _gloveEntryOverrideOn;
         Vector2 _gloveVel;
         Vector2 _gloveAway;
         float _gloveAng;
@@ -1709,6 +1712,7 @@ namespace FlockFive
                 float y1 = safe.yMax - pad;
                 if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
                 if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
+                if (_gloveEntryOverrideOn) start = _gloveEntryOverride;
                 start.x = Mathf.Clamp(start.x, x0, x1);
                 start.y = Mathf.Clamp(start.y, y0, y1);
                 float below = _cueAimGui.y + 28f * s;
@@ -1716,7 +1720,7 @@ namespace FlockFive
                 _gloveTip = start;
             }
             else
-                _gloveTip = rest;
+                _gloveTip = GloveNearStart(rest, aimGui, s, ang, _gloveMirror);
             // Facing is the perch-to-aim line, locked before fade-in draws a pixel.
             float faceDh = GloveDh(s);
             float faceDw = GloveDrawW(faceDh);
@@ -1749,6 +1753,40 @@ namespace FlockFive
             _gloveStepApproach = approachDeg;
             // A new pose owns the hand. The previous lesson's dismiss no longer holds it.
             _gloveFadeDismissed = false;
+        }
+
+        // Middle of the right edge, fully inside the safe rect (the clamp in GloveLockPose keeps the whole hand on screen).
+        public static Vector2 GloveMiddleRightEntry(Rect safe) => new Vector2(safe.xMax, safe.center.y);
+
+        // Longest start-to-target run for a non-angled glove, in hand-heights. ClearGloveOfCaption's shove loop can push the
+        // perch outward without limit; this keeps the hand close to what it points at.
+        const float GloveNearStartHands = 1.6f;
+
+        // Pure: rest pulled in along the aim line to at most GloveNearStartHands * GloveDh, then clamped to the safe rect
+        // (same pad the angled start uses). Testable without a live app.
+        public static Vector2 GloveNearStartPoint(Vector2 rest, Vector2 aim, float s, Rect safe)
+        {
+            float dh = GloveDh(s);
+            float cap = GloveNearStartHands * dh;
+            var d = rest - aim;
+            float len = d.magnitude;
+            var p = rest;
+            if (len > cap && len > 0.0001f) p = aim + d * (cap / len);
+            float pad = dh * 0.42f;
+            float x0 = safe.xMin + pad, x1 = safe.xMax - pad, y0 = safe.yMin + pad, y1 = safe.yMax - pad;
+            if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
+            if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
+            p.x = Mathf.Clamp(p.x, x0, x1);
+            p.y = Mathf.Clamp(p.y, y0, y1);
+            return p;
+        }
+
+        // The non-angled glove's start: capped near the target, but never onto the adopt bird (GloveHitsAdoptBird stays the gate).
+        Vector2 GloveNearStart(Vector2 rest, Vector2 aim, float s, float ang, bool mirror)
+        {
+            var near = GloveNearStartPoint(rest, aim, s, CoachSafeGui(8f * s));
+            if (GloveHitsAdoptBird(near, ang, s, mirror) && !GloveHitsAdoptBird(rest, ang, s, mirror)) return rest;
+            return near;
         }
 
         void GloveBeginReappear(Vector2 aimGui, float s, float perchLift, bool fromLeft, float approachDeg)
@@ -3639,6 +3677,15 @@ namespace FlockFive
                 float adFloor = adAvoid.yMax;
                 if (adHandBox.width >= 2f && adHandBox.yMax > adFloor) adFloor = adHandBox.yMax;
                 if (band.y < adFloor + gap) band.y = adFloor + gap;
+            }
+            // b124: the first-hand result caption covers the bet controls' original seat, full width, bottom of the page.
+            bool pokerBack = spot == "poker.back";
+            if (pokerBack)
+            {
+                var g = _pokerCapGeo;
+                var cover = g.Bet.width > 2f && g.Act.width > 2f ? Rect.MinMaxRect(Mathf.Min(g.Bet.xMin, g.Act.xMin), Mathf.Min(g.Bet.yMin, g.Act.yMin), Mathf.Max(g.Bet.xMax, g.Act.xMax), Mathf.Max(g.Bet.yMax, g.Act.yMax)) : (g.Bet.width > 2f ? g.Bet : g.Act);
+                band = CaptionLayout.BandCovering(band, cover, w, 6f * s);
+                bottomSeat = true;
             }
             if (!bee && !adHand && !bottomSeat)
             {
