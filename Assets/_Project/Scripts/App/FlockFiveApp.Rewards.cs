@@ -111,8 +111,8 @@ namespace FlockFive
             BeginRewardPay(0, 2.45f);
             yield return WaitRewardPay();
             _gift = GiftFace.None;
-            _swallowTapsUntil = PlayClock.Now + 0.45f;
-            _suppressGiftUntil = PlayClock.Now + 1f;
+            _swallowTapsUntil = GateNow + 0.45f;
+            _suppressGiftUntil = GateNow + 1f;
             _busy = false;
             Conserve("bonus");
             CheckOver();
