@@ -6139,22 +6139,33 @@ namespace FlockFive
         int HitFeeder(Vector2 world)
         {
             if (_garden.Feeders == null) return -1;
-            float best = 1.35f * 1.35f;
+            // b110: 1.35 -> 1.0 around the mouth; the sprite canvas (3.76 square, opaque only to
+            // -1.47 below the pivot and +-1.216 wide) no longer counts, only the painted bulb.
+            // Nearest feeder wins an overlap (was: lowest slot index). A tap on a perched bird
+            // outside the painted bulb belongs to the branch.
+            float best = 1.0f * 1.0f;
             int idx = -1;
+            float bestC = float.MaxValue;
+            bool nearBird = NearPlayBird(world);
             for (int i = 0; i < _garden.Feeders.Length; i++)
             {
                 var f = _garden.Feeders[i];
                 if (f == null || f.Art == null || !f.Art.enabled) continue;
-                float d = ((Vector2)f.transform.position - world).sqrMagnitude;
+                var fp = (Vector2)f.transform.position;
+                float d = (fp - world).sqrMagnitude;
                 float dMouth = ((Vector2)f.Mouth - world).sqrMagnitude;
                 float m = Mathf.Min(d, dMouth);
-                if (f.Art.sprite != null)
+                float sc = Mathf.Abs(f.transform.lossyScale.x);
+                bool onBulb = f.Art.sprite != null
+                    && Mathf.Abs(world.x - fp.x) <= FeederRow.BulbHalf * sc / FeederView.Scale
+                    && world.y >= fp.y - 1.47f * sc / FeederView.Scale
+                    && world.y <= fp.y + 1.34f * sc / FeederView.Scale;
+                if (onBulb) m = 0f;
+                else if (nearBird) continue;
+                if (m < best || (m <= best && idx >= 0 && d < bestC))
                 {
-                    var b = f.Art.bounds;
-                    if (b.Contains(new Vector3(world.x, world.y, b.center.z)))
-                        m = 0f;
+                    best = m; idx = i; bestC = d;
                 }
-                if (m < best) { best = m; idx = i; }
             }
             return idx;
         }
@@ -19028,16 +19039,25 @@ namespace FlockFive
             return true;
         }
 
-        // Whole limb and sign. The sign BoxCollider2D does not receive the tap:
-        // it was shrunk to 72% of the sprite, the left sign is mirrored with a
-        // negative scale (2D physics drops that shape), and every miss refreshed
-        // the 1s gift lockout so a follow-up tap was swallowed too.
+        // Gift sign arbiter (b110 hit-box audit). One rule for every caller (HandleTap, CoachReject,
+        // CueGloveTap): BranchHit.Pick over the tight painted art of every playable limb AND every
+        // locked gift, so a gift only claims a tap that is closer to its own sign/wood than to a
+        // neighbour. The old test used the whole sprite canvas plus 0.36 and ran before HitBranch.
+        // The sign BoxCollider2D still does not receive the tap (72% shrink, negative X scale on the left).
         int HitGiftSign(Vector2 world)
         {
             if (_garden.Branches == null || _board == null) return -1;
             if (NearPlayBird(world)) return -1;
-            int best = -1;
-            float bestD = float.MaxValue;
+            int glove = _cueForce && _cueBranch >= 0 ? _cueBranch : -1;
+            int idx = BranchHit.Pick(world, BuildHitCands(), glove, out bool gift);
+            return gift ? idx : -1;
+        }
+
+        readonly List<BranchHit.Cand> _hitCands = new List<BranchHit.Cand>(16);
+
+        List<BranchHit.Cand> BuildHitCands()
+        {
+            _hitCands.Clear();
             for (int i = 0; i < _garden.Branches.Length; i++)
             {
                 var v = _garden.Branches[i];
@@ -19045,12 +19065,34 @@ namespace FlockFive
                 int idx = v.Index;
                 if ((uint)idx >= (uint)_board.Branches.Count) continue;
                 var st = _board.Branches[idx];
-                if (st == null || !st.IsBonus || st.Broken || !st.AdLocked) continue;
-                if (!BonusSpot(v, world)) continue;
-                float d = ((Vector2)v.transform.position - world).sqrMagnitude;
-                if (d < bestD) { bestD = d; best = idx; }
+                if (st == null || st.Broken) continue;
+                bool ad = st.IsBonus && st.AdLocked;
+                if (!ad && (st.AdLocked || st.IsFullMatch(out _))) continue;
+                var t = v.transform;
+                var ls = t.lossyScale;
+                var c = new BranchHit.Cand { Index = idx, Gift = ad };
+                c.Wood = BranchHit.WoodRect(t.position, v.FromRight, v.IsGift, Mathf.Abs(ls.x), Mathf.Abs(ls.y));
+                bool sign = ad && v.Sign != null && v.Sign.gameObject.activeInHierarchy;
+                var pads = new Vector2[BranchState.Cap + (sign ? 2 : 1)];
+                int n = 0;
+                pads[n++] = t.position;
+                for (int s = 0; s < BranchState.Cap; s++)
+                    pads[n++] = v.Seats[s] != null ? (Vector2)v.Seats[s].position : (Vector2)t.position;
+                if (sign)
+                {
+                    pads[n++] = v.Sign.position;
+                    var sr = v.Sign.GetComponent<SpriteRenderer>();
+                    if (sr != null && sr.enabled && sr.sprite != null)
+                    {
+                        var b = sr.bounds;   // negative X scale (left sign) is fine: bounds are world AABB
+                        c.HasSign = true;
+                        c.Sign = Rect.MinMaxRect(b.min.x, b.min.y, b.max.x, b.max.y);
+                    }
+                }
+                c.Pads = pads;
+                _hitCands.Add(c);
             }
-            return best;
+            return _hitCands;
         }
 
         // Same radius HitBranch uses to claim a bird, so a perch tap beside the
@@ -19075,25 +19117,6 @@ namespace FlockFive
                 }
             }
             return false;
-        }
-
-        static bool BonusSpot(BranchView v, Vector2 world)
-        {
-            if (SpriteHit(v.Wood, world, 0.36f)) return true;
-            if (v.Sign != null && v.Sign.gameObject.activeInHierarchy)
-            {
-                var sr = v.Sign.GetComponent<SpriteRenderer>();
-                if (SpriteHit(sr, world, 0.42f)) return true;
-            }
-            return false;
-        }
-
-        static bool SpriteHit(SpriteRenderer sr, Vector2 world, float pad)
-        {
-            if (sr == null || !sr.enabled || sr.sprite == null) return false;
-            var b = sr.bounds;
-            return world.x >= b.min.x - pad && world.x <= b.max.x + pad
-                && world.y >= b.min.y - pad && world.y <= b.max.y + pad;
         }
 
         void OpenGiftCard()
