@@ -161,7 +161,7 @@ namespace FlockFive.Editor
             Check("back-held-through-locked-power-stretch", badger.Contains("BadgerCoachHoldsBack()") && badger.Contains("_bgFight.PowersLocked || _bgPowerGuideOn"), "");
             Check("result-gated-and-back-inert-at-over", coach.Contains("gate.Step = GateBadgerResult;") && badger.Contains("BadgerCoachHoldsBack() || BadgerResultLive()")
                 && badger.Contains("BadgerContinueRect(L); // one rect"), "");
-            Check("back-held-in-round4-bosswait", badger.Contains("bool BadgerGuidePending()") && badger.Contains("|| BadgerGuidePending())"), "");
+            Check("back-held-in-round4-bosswait", badger.Contains("bool BadgerGuidePending()") && badger.Contains("|| BadgerGuidePending() || BadgerFreezeDemoHolds()"), "");
             Check("badger-tap-presses-level", File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs").Contains("the badger on the pedestal is part of the pedestal"), "");
             Check("block-auto-assign-no-tile-tap", badger.Contains("assign themselves to the weakest open tile") && badger.Contains("ClickBadgerTile(weakest)")
                 && badger.Contains("picture ? \"\" : BadgerPowerName(p)") && badger.Contains("PLACEHOLDER art"), "");

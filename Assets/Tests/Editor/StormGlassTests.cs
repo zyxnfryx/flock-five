@@ -756,8 +756,20 @@ namespace FlockFive.Editor
                 bool hiveFree = stamp.Contains(hive.center) || StormGlass.CoverMul(hc.x, hc.y, gatherBlocks, 1) >= 0.999f;
                 var prev = Event.current;
                 bool intact = true;
+                // Batchmode (no IMGUI) can read a hand-built Event's type back as Ignore, so the live-event half cannot run there.
+                // The structural guards above (source guard, covered-rect math) always run; only the Event round trip is skipped.
+                bool canSetEvent = false;
                 try
                 {
+                    var probe = new Event { type = EventType.MouseDown, mousePosition = Vector2.zero, button = 0 };
+                    Event.current = probe;
+                    canSetEvent = probe.type == EventType.MouseDown && Event.current != null && Event.current.type == EventType.MouseDown;
+                }
+                catch (System.Exception) { canSetEvent = false; }
+                finally { Event.current = prev; }
+                try
+                {
+                    if (canSetEvent)
                     foreach (var c in new[] { restart.center, hive.center })
                     {
                         var down = new Event { type = EventType.MouseDown, mousePosition = c, button = 0 };
@@ -773,7 +785,7 @@ namespace FlockFive.Editor
                 finally { Event.current = prev; }
                 Check("drops-do-not-consume-restart-hive-taps",
                     restartFree && hiveFree && intact && StormGlass.BlocksTaps == false,
-                    "restart-free " + restartFree + " hive-free " + hiveFree + " event-intact " + intact);
+                    "restart-free " + restartFree + " hive-free " + hiveFree + " event-intact " + (canSetEvent ? intact.ToString() : "SKIPPED (Event.current not settable in batchmode)"));
             }
 
             {
