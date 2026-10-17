@@ -6631,6 +6631,8 @@ namespace FlockFive
                 if (_hiveInspect >= 0 || _albumTutorOn)
                     CloseHiveInspect();
             }
+            // b125: storm drops also draw over the restart button and the hive (visual only, no controls).
+            StormGlassRig.PaintOver(restart, HiveReachable() ? hive : Rect.zero);
             if (quake) GUI.matrix = hudM;
             if (_levelHive) DrawLevelHive(s);
             if (_hiveInspect >= 0) DrawHiveInspect(s);

@@ -9,12 +9,12 @@ namespace FlockFive
     {
         // b110 (Brandon): first storm after about 15 s of garden time (was 70 s, which short levels never reached).
         public const float FirstWait = 15f;
-        // The storm clock survives garden rebuilds (every level load re-enables the component), so a run of short
-        // levels still reaches the first storm. Resets only on a fresh launch.
-        static float _sessionPlay;
+        // b125 (Brandon): all storm timing is garden-local. Each garden starts its own schedule from 0 on build and
+        // counts only real elapsed play (PlayClock.Delta: zero during pause, ads, and holds). Nothing static carries
+        // storm time from one garden to the next.
+        float _gardenPlay;
         bool _wasHalted;
-        public static float SessionPlay => _sessionPlay;
-        public static void ResetSessionClock() { _sessionPlay = 0f; }
+        public float GardenPlay => _gardenPlay;
         public const float StormLen = 75f;
         public const float ClearLen = 90f;
         const float Fade = 2.1f;
@@ -64,7 +64,6 @@ namespace FlockFive
         static readonly int SpriteColorId = Shader.PropertyToID("unity_SpriteColor");
         SpriteRenderer _veil;
         SpriteRenderer _flash;
-        float _play;
         float _wet;
         float _nextBoom;
         int _rainSync;
@@ -120,7 +119,7 @@ namespace FlockFive
         // Dev capture. The first storm is otherwise 70s out.
         public void JumpToStorm()
         {
-            _play = FirstWait + 4f;
+            _gardenPlay = FirstWait + 4f; // well past StartDelay + RampIn
             _wet = 1f;
             Wet = 1f;
             _nextBoom = 9f;
@@ -153,13 +152,14 @@ namespace FlockFive
         void OnEnable()
         {
             Instance = this;
-            _play = _sessionPlay;
+            _gardenPlay = 0f;
+            _wasHalted = false;
             _rainSync = 0;
 #if UNITY_EDITOR
             if (System.IO.File.Exists("/tmp/flock-five-storm-now"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-storm-now"); } catch { }
-                _play = FirstWait + 1.2f;
+                _gardenPlay = FirstWait + 1.2f;
             }
 #endif
             Wet = 0f;
@@ -474,15 +474,22 @@ namespace FlockFive
             float dt = PlayClock.Delta;
             if (dt > 0.0001f)
                 _step = _step <= 0f ? dt : _step + (dt - _step) * 0.2f;
-            _play += dt;
-            _sessionPlay = _play;
-            float want = WantStorm(_play) ? 1f : 0f;
+            _gardenPlay += dt;
+            float want = WantStorm(_gardenPlay) ? 1f : 0f;
             // b117: a solved level (win, finale, Double/Collect) ends the rain streaks quickly; the clock keeps running.
             bool halted = FlockFiveApp.RainHalted;
             if (halted) want = 0f;
-            else if (_wasHalted) _wet = 0f; // next garden: the streaks fade in from zero again
+            else if (_wasHalted)
+            {
+                // next garden: the streaks fade in from zero again, on a fresh garden clock
+                _wet = 0f;
+                _gardenPlay = 0f;
+                _nextBoom = 6.5f;
+            }
             _wasHalted = halted;
             _wet = Mathf.MoveTowards(_wet, want, dt / (halted ? StormGlass.HaltFade : Fade));
+            // b125: a clear-sky StartDelay, then rain, streaks, veil, droplets, and the MixDesk rain stem ease in together.
+            _wet = Mathf.Min(_wet, StormGlass.OnsetMul(_gardenPlay));
             Wet = _wet;
 
             if (_rumbleIn >= 0f)
@@ -871,7 +878,7 @@ namespace FlockFive
         void PaintCue()
         {
             if (_cue == null) return;
-            float left = Remain(_play);
+            float left = Remain(_gardenPlay);
             bool show = left > 0.05f && _wet > 0.12f;
             if (!show)
             {

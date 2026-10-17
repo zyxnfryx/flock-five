@@ -586,7 +586,7 @@ namespace FlockFive.Editor
                 string stormSrc = File.ReadAllText("Assets/_Project/Scripts/App/GardenStorm.cs");
                 bool wired = rig.Contains("RainHalted => _app != null && StormGlass.Halted(_app._won, _app._finaleHold, _app._gardenScoring)")
                     && rig.Contains("if (_wasHalted)") && stormSrc.Contains("bool halted = FlockFiveApp.RainHalted;")
-                    && stormSrc.Contains("else if (_wasHalted) _wet = 0f;");
+                    && stormSrc.Contains("else if (_wasHalted)") && stormSrc.Contains("_wet = 0f;\n                _gardenPlay = 0f;");
                 Check("solve-clears-rain-then-next-garden-starts-fresh",
                     flags && mul && wasRaining && newAfter == 0 && cleared && junk == 0 && again2 && worst < 0.08f && bigPeak2 <= StormGlass.BigCap && wired,
                     "raining " + wasRaining + " newAfter " + newAfter + " cleared " + cleared + " junk " + junk + " again " + again2
@@ -615,6 +615,127 @@ namespace FlockFive.Editor
                 Check("rain-falls-nearly-straight", maxDx <= StormGlass.MaxLateral * scS && fallY > maxDx * 3f
                     && StormGlass.SwivelGain <= 0.12f && StormGlass.DriftMax <= 4f && StormGlass.StreakLeanK <= 0.4f,
                     "maxDx " + maxDx.ToString("0.0") + " fall " + fallY.ToString("0.0") + " cap " + (StormGlass.MaxLateral * scS).ToString("0.0"));
+            }
+
+            {
+                // b125: clear sky for StartDelay, then one eased ramp. Every wet-driven effect is capped by it.
+                float o0 = StormGlass.OnsetMul(0f);
+                float o399 = StormGlass.OnsetMul(3.99f);
+                float oSd = StormGlass.OnsetMul(StormGlass.StartDelay);
+                float oEnd = StormGlass.OnsetMul(6.5f);
+                float oMid = StormGlass.OnsetMul(5.25f);
+                Check("onset-delay",
+                    o0 == 0f && o399 == 0f && oSd == 0f && oEnd == 1f && oMid > 0f && oMid < 1f
+                    && StormGlass.StartDelay == 4f && StormGlass.RampIn == 2.5f && GardenStorm.FirstWait == 15f,
+                    "0 " + o0 + " 3.99 " + o399 + " sd " + oSd + " 6.5 " + oEnd + " 5.25 " + oMid.ToString("0.000"));
+
+                float prev = -1f;
+                bool mono = true;
+                for (int i = 0; i <= 1200; i++)
+                {
+                    float v = StormGlass.OnsetMul(i * 0.01f);
+                    if (v < prev - 1e-6f || v < 0f || v > 1f) mono = false;
+                    prev = v;
+                }
+                Check("onset-monotonic", mono, "0..12 s");
+
+                string gs = File.ReadAllText("Assets/_Project/Scripts/App/GardenStorm.cs");
+                Check("onset-wired",
+                    gs.Contains("_wet = Mathf.Min(_wet, StormGlass.OnsetMul(_gardenPlay));")
+                    && gs.Contains("_gardenPlay = FirstWait + 4f;") && gs.Contains("_gardenPlay = 0f;")
+                    && gs.Contains("PlayClock.Delta") && gs.Contains("_gardenPlay += dt;"),
+                    "OnsetMul caps _wet from the garden clock");
+            }
+
+            {
+                // b125: the storm clock belongs to the garden. No static session clock; a new garden starts at 0.
+                string gs = File.ReadAllText("Assets/_Project/Scripts/App/GardenStorm.cs");
+                var flags = BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                bool noStatic = !gs.Contains("_sessionPlay") && !gs.Contains("ResetSessionClock") && !gs.Contains("SessionPlay")
+                    && typeof(GardenStorm).GetMethod("ResetSessionClock", flags) == null
+                    && typeof(GardenStorm).GetProperty("SessionPlay", flags) == null
+                    && typeof(GardenStorm).GetField("_sessionPlay", flags) == null;
+                var fld = typeof(GardenStorm).GetField("_gardenPlay", BindingFlags.Instance | BindingFlags.NonPublic);
+                var en = typeof(GardenStorm).GetMethod("OnEnable", BindingFlags.Instance | BindingFlags.NonPublic);
+                bool instField = fld != null && !fld.IsStatic;
+                float aRan = -1f, bStart = -1f;
+                if (instField && en != null)
+                {
+                    var ga = new GameObject("storm-garden-a");
+                    var gb = new GameObject("storm-garden-b");
+                    try
+                    {
+                        ga.SetActive(false);
+                        gb.SetActive(false);
+                        var a = ga.AddComponent<GardenStorm>();
+                        en.Invoke(a, null);
+                        fld.SetValue(a, 50f);
+                        aRan = (float)fld.GetValue(a);
+                        var b = gb.AddComponent<GardenStorm>();
+                        en.Invoke(b, null);
+                        bStart = (float)fld.GetValue(b);
+                    }
+                    finally
+                    {
+                        Object.DestroyImmediate(ga);
+                        Object.DestroyImmediate(gb);
+                    }
+                }
+                Check("garden-local-clock",
+                    noStatic && instField && aRan == 50f && bStart == 0f,
+                    "static-free " + noStatic + " A " + aRan + " B " + bStart);
+            }
+
+            {
+                // b125: drops draw over the restart button and hive. Gather no longer suppresses them there, and PaintOver is visual only.
+                string rig = File.ReadAllText("Assets/_Project/Scripts/App/StormGlassRig.cs");
+                int g0 = rig.IndexOf("static int Gather(");
+                int g1 = rig.IndexOf("internal static int AddHost(");
+                string gather = g0 >= 0 && g1 > g0 ? rig.Substring(g0, g1 - g0) : "";
+                int p0 = rig.IndexOf("public static void PaintOver(");
+                int p1 = rig.IndexOf("static Rect Grow(");
+                string paint = p0 >= 0 && p1 > p0 ? rig.Substring(p0, p1 - p0) : "";
+                string app = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");
+                bool gatherOk = gather.Length > 0 && !gather.Contains("out var restart") && !gather.Contains("FromGui(restart")
+                    && !gather.Contains("FromGui(hive") && gather.Contains("FromGui(stamp") && gather.Contains("CopyGlassCritters");
+                bool paintOk = paint.Length > 0 && paint.Contains("GUI.DrawTexture") && !paint.Contains("GUI.Button")
+                    && !paint.Contains("GUI.Box") && !paint.Contains("GUI.Label") && !paint.Contains("GUILayout")
+                    && !paint.Contains("GUI.Toggle") && !paint.Contains("GUI.TextField");
+                int hv = app.IndexOf("DrawHiveButton(hive, s, orbit: true, pop: true);");
+                int po = app.IndexOf("StormGlassRig.PaintOver(restart, HiveReachable() ? hive : Rect.zero);");
+                int mx = app.IndexOf("if (quake) GUI.matrix = hudM;", hv < 0 ? 0 : hv);
+                bool wiredApp = hv >= 0 && po > hv && mx > po;
+                Check("hud-not-blocked-for-drops",
+                    gatherOk && paintOk && wiredApp && StormGlass.BlocksTaps == false,
+                    "gather " + gatherOk + " paint " + paintOk + " wired " + wiredApp);
+            }
+
+            {
+                // b125: the storm never moves the sun. Dusk is real elapsed play through PlayClock; Wet only tints the veil.
+                string sky = File.ReadAllText("Assets/_Project/Scripts/App/SkyCycle.cs");
+                int d0 = sky.IndexOf("public static float Dusk");
+                int d1 = sky.IndexOf("public static void RushNight(");
+                string dusk = d0 >= 0 && d1 > d0 ? sky.Substring(d0, d1 - d0) : "";
+                var wetSet = typeof(GardenStorm).GetProperty("Wet", BindingFlags.Static | BindingFlags.Public).GetSetMethod(true);
+                float keepWet = GardenStorm.Wet;
+                float lo, mid, hi;
+                try
+                {
+                    wetSet.Invoke(null, new object[] { 0f });
+                    lo = SkyCycle.Dusk;
+                    wetSet.Invoke(null, new object[] { 0.5f });
+                    mid = SkyCycle.Dusk;
+                    wetSet.Invoke(null, new object[] { 1f });
+                    hi = SkyCycle.Dusk;
+                }
+                finally
+                {
+                    wetSet.Invoke(null, new object[] { keepWet });
+                }
+                Check("sky-dusk-ignores-wet",
+                    dusk.Length > 0 && dusk.Contains("PlayClock.Now") && !dusk.Contains("Wet") && !dusk.Contains("GardenStorm")
+                    && lo == mid && mid == hi,
+                    "dusk " + lo.ToString("0.000") + "/" + mid.ToString("0.000") + "/" + hi.ToString("0.000"));
             }
 
             string end = fail == 0 ? "STORM_GLASS_OK " + pass : "STORM_GLASS_FAIL " + fail + " passed " + pass;
