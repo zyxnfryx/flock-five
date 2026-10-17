@@ -50,15 +50,15 @@ namespace FlockFive.Editor
             Check("pointer-side-rule", BadgerFrozenUi.PointsLeft(100f, 800f) && !BadgerFrozenUi.PointsLeft(700f, 800f), "");
             Check("caption-from-shared-table", CoachTap.Caption(step) == BadgerCopy.FreezeBreakFreeWait, "");
             var cap = BadgerCopy.FreezeBreakFreeWait;
-            Check("caption-two-lines-max", cap.Split('\n').Length == 2, cap.Replace("\n", "/"));
+            Check("caption-two-lines-max", cap.Split('\n').Length == 2 && BadgerCopy.HotSauceFrozen.Split('\n').Length == 2, cap.Replace("\n", "/"));
             var sizes = new[] { new Vector2(320, 568), new Vector2(375, 667), new Vector2(390, 844), new Vector2(768, 1024), new Vector2(1024, 1366) };
             int clipped = 0; string firstBad = "";
             foreach (var sz in sizes)
                 foreach (var ln in new[] { cap, BadgerCopy.HotSauceFrozen })
-                    if (!FlockFiveApp.BadgerCaptionFits(ln, sz.x, sz.y, new Rect(0, 0, sz.x, sz.y), out string d))
+                    if (!FlockFiveApp.BadgerCaptionPaints(ln, sz.x, sz.y, new Rect(0, 0, sz.x, sz.y), out string d))
                     { clipped++; if (firstBad == "") firstBad = ln.Replace("\n", "/") + " @ " + d; }
             Check("caption-fits-se-to-ipad", clipped == 0, "clipped " + clipped + " " + firstBad);
-            Check("copy-plain-friendly", BadgerCopy.HotSauceFrozen == "Frozen badger. Hot Sauce is on hold." && BadgerCopy.HotSauceFrozenSub == "FROZEN", "");
+            Check("copy-plain-friendly", BadgerCopy.HotSauceFrozen == "Frozen badger.\nHot Sauce is on hold." && BadgerCopy.HotSauceFrozen.Replace("\n", " ") == "Frozen badger. Hot Sauce is on hold." && BadgerCopy.HotSauceFrozenSub == "FROZEN", "");
 
             // ---- gate: only the glowing comb (and the frozen Hot Sauce handler) takes a press ----
             var comb = new Rect(200, 340, 60, 52); var hot = new Rect(130, 520, 80, 70);

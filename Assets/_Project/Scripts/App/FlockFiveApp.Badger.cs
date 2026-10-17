@@ -989,6 +989,30 @@ namespace FlockFive
             return ok;
         }
 
+        // b127: the PAINTED result. DrawBadgerCoachLine clamps the box to the band and DrawSplashIntroLine refits the font
+        // inside it, so a caption paints cleanly when the refit font is >= the floor and the authored rows (never re-split) fit the
+        // band height at that font. Row width is not judged here: at the 14 px floor the long two-line lessons are wider than the inset text rect
+        // by design of the shared fit, so a width rule would fail every shipped lesson. Test support; unlike BadgerCaptionFits it does not judge the unclamped preference.
+        public static bool BadgerCaptionPaints(string line, float screenW, float screenH, Rect safe, out string detail)
+        {
+            BadgerCaptionLimits(screenW, screenH, safe, out float maxW, out float roomH, out float scale, out int hi);
+            var fit = MeasureCaptionBox(line, maxW, hi, 14);
+            var box = new Rect(0f, 0f, Mathf.Min(fit.width, maxW), Mathf.Min(fit.height, roomH));
+            CaptionTextRect(box, scale, out var textR);
+            int lo = CaptionPx(12);
+            var st = CoachLineStyle();
+            string shown = CaptionLayout.LockBreaks(st, line, textR.width, textR.height, lo, CaptionPx(hi), out int font);
+            string painted = line.IndexOf('\n') > 0 ? line : BalanceTwoLines(line);
+            st.fontSize = font;
+            st.wordWrap = false;
+            float rowsH = st.CalcSize(new GUIContent(painted)).y;
+            st.wordWrap = true;
+            bool heightOk = rowsH <= roomH + 0.5f;
+            detail = screenW + "x" + screenH + " box " + box.width.ToString("0") + "x" + box.height.ToString("0") + " room " + maxW.ToString("0") + "x" + roomH.ToString("0")
+                + " font " + font + " rows " + rowsH.ToString("0") + " [" + painted.Replace("\n", "/") + "]";
+            return font >= lo && heightOk;
+        }
+
         // Column lesson, as PaintCoachCaption will draw it at this screen. Shown keeps
         // the authored newline. TextW/TextH are the inner text rect.
         public static CoachCaptionPreview PreviewBadgerColumn(float screenW, float screenH, Rect safe)
