@@ -13314,9 +13314,28 @@ namespace FlockFive
             return true;
         }
 
+        // The Back hint (glove + caption) is live: the first-hand result is up, settled, and nothing else owns the page.
+        bool PokerBackHintLive()
+            => !PokerBackDone() && _home == HomeFace.Poker && !_pokerPageOn && !_pokerDealHint
+               && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn && !PokerMotionBusy() && !PokerPageTutorBlocked();
+
+        // b124 follow-up: while the first-hand result holds the bet bar away, Back must always be cued. When the
+        // glove hint is not live (win motion still running, stamp or pay table up) the cue is the bobbing arrow.
+        public static bool PokerBackCueShows(bool holdsBetBar, bool hintLive) => holdsBetBar && !hintLive;
+
+        // Bobbing arrow at Back, plus the shared Back caption once nothing else owns the caption seat.
+        void DrawPokerBackCue(float s, Rect back)
+        {
+            if (_pokerPageOn || _pokerDealHint) return;
+            CoachArrowAt(back, s);
+            if (!PokerPageTutorBlocked()) DrawPokerStandardLine(PokerBackLine, s);
+        }
+
         void DrawPokerBackHint(float s, Rect back, Rect row, float logoBottom)
         {
-            if (PokerBackDone() || _pokerPageOn || _pokerDealHint) return;
+            if (PokerBackDone()) return;
+            if (PokerBackCueShows(PokerFirstHandResultHoldsBetBar(), PokerBackHintLive())) DrawPokerBackCue(s, back);
+            if (_pokerPageOn || _pokerDealHint) return;
             if (BirdPoker.PhaseNow != BirdPoker.Phase.Drawn || PokerMotionBusy() || PokerPageTutorBlocked())
             {
                 _pokerBackAimOk = false;

@@ -323,6 +323,11 @@ namespace FlockFive
                         // already has this step's rect.
                         RefreshBadgerGuideAim();
                     }
+                    else if (_bgFight.CoachFight && _bgFight.BossFrozenNow)
+                    {
+                        // Freeze demo beat 2: the badger is still iced; he struggles and shatters free when this round resolves.
+                        _bgLine = BadgerCopy.FreezeBreakFreeWait;
+                    }
                     else if (BadgerPowerGuideWanted())
                     {
                         // b123: the first free use of each power (x2, x3, Hot Sauce, Freeze Spray) is a forced step.
@@ -582,6 +587,12 @@ namespace FlockFive
                 return;
             }
             if (!_bgFight.PowerReady(p) || _bgFight.PowersLocked) return;
+            // Hot Sauce is disabled while the badger is frozen (button is greyed); a tap does nothing but say why.
+            if (_bgFight.PowerFrozenOut(p))
+            {
+                _bgLine = BadgerCopy.HotSauceFrozen;
+                return;
+            }
             if (!_bgFight.CanAfford(p))
             {
                 BadgerShakeNow(BadgerPowerKey + (int)p);
@@ -672,7 +683,7 @@ namespace FlockFive
             for (int i = 0; i < BadgerGuideOrder.Length; i++)
             {
                 var p = BadgerGuideOrder[i];
-                if (BadgerSave.IsTutorialFirstUse(p, n) && _bgFight.PowerReady(p) && _bgFight.CanAfford(p)) return p;
+                if (BadgerSave.IsTutorialFirstUse(p, n) && _bgFight.PowerReady(p) && !_bgFight.PowerFrozenOut(p) && _bgFight.CanAfford(p)) return p;
             }
             return BadgerPower.None;
         }
@@ -731,8 +742,18 @@ namespace FlockFive
         // Shared back-medal hold: the coach fight's locked-power stretch (and the round-4 step) cannot be quit.
         bool BadgerCoachHoldsBack()
             => _bgFight != null && _bgFight.CoachFight
-               && (_bgFight.PowersLocked || _bgPowerGuideOn || BadgerGuidePending())
+               && (_bgFight.PowersLocked || _bgPowerGuideOn || BadgerGuidePending() || BadgerFreezeDemoHolds())
                && _bgStage != BadgerStage.Over && _bgStage != BadgerStage.Outro;
+
+        // Coach fight: the Freeze demo's break-free beat. From the frozen verdict through the break-free round's
+        // verdict, back stays held so the demo cannot be quit halfway. Ends on its own: BossFrozenNow clears at the
+        // break-free resolve and _bgResolved clears when the next round starts (never a softlock).
+        bool BadgerFreezeDemoHolds()
+        {
+            if (_bgFight == null || !_bgFight.CoachFight || _bgFight.Result != BadgerResult.Playing) return false;
+            if (_bgFight.BossFrozenNow) return true;
+            return _bgResolved && _bgRound.FreezeBeat == 2 && _bgStage == BadgerStage.Verdict;
+        }
 
         // b123: between move 3 and the forced power step (round 4's BossWait, Reveal, Verdict), and between each
         // power's step, back stays held while a free first use is still waiting.
@@ -2028,6 +2049,10 @@ namespace FlockFive
                     : p == BadgerPower.FreezeSpray ? new Color(0.45f, 0.85f, 1f)
                     : Color.white;
                 bool guideBlocks = _bgPowerGuideOn && p != _bgGuidePower;
+                // Hot Sauce is greyed (same dim as USED / not-your-turn) while the badger is frozen.
+                bool frozenOut = _bgFight != null && !used && _bgFight.PowerFrozenOut(p);
+                if (frozenOut && !armedNow) sub = BadgerCopy.HotSauceFrozenSub;
+                guideBlocks |= frozenOut;
                 if (_bgPowerGuideOn && p == _bgGuidePower && BadgerPowerGuideStage() == 1) DrawBadgerGuideGlow(r);
                 bool picture = BadgerFight.IsBlock(p);
                 bool fire = BadgerButton(r, picture ? "" : BadgerPowerName(p), sub, k < 2, used || !inPick || guideBlocks, lit,
@@ -2035,7 +2060,7 @@ namespace FlockFive
                 if (picture && GuiPaint())
                 {
                     float side = r.height * 0.58f;
-                    DrawBadgerPowerIcon(new Rect(r.center.x - side * 0.5f + BadgerShakeX(BadgerPowerKey + (int)p, s), r.y + r.height * 0.05f, side, side), p, used || !inPick ? 0.55f : 1f);
+                    DrawBadgerPowerIcon(new Rect(r.center.x - side * 0.5f + BadgerShakeX(BadgerPowerKey + (int)p, s), r.y + r.height * 0.05f, side, side), p, used || !inPick || frozenOut ? 0.55f : 1f);
                 }
                 if (fire) ClickBadgerPower(p);
             }

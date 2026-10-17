@@ -66,6 +66,42 @@ namespace FlockFive.Editor
             Check("hot-sauce-is-not-a-freeze-beat", sOk, "");
             Check("freeze-verdict-lines", BadgerCopy.VerdictLine(r1) == BadgerCopy.FrozenSolid && BadgerCopy.VerdictLine(r2) == BadgerCopy.BreakFree, "");
 
+            // PR 159 follow-up (1): Hot Sauce is disabled while the badger is frozen (both beats), allowed after.
+            SaveCoins(5000);
+            var ice = new BadgerFight(1, 31, Fill(16, 2), Fill(16, 5));
+            bool beat1 = ice.BossPick() >= 0 && ice.PlayerPick(0) && !ice.PowerFrozenOut(BadgerPower.HotSauce)
+                && ice.TryPower(BadgerPower.FreezeSpray)
+                && ice.PowerFrozenOut(BadgerPower.HotSauce) && !ice.TryPower(BadgerPower.HotSauce)
+                && !ice.PowerFrozenOut(BadgerPower.X2) && ice.Resolve(out var ib1) && ib1.FreezeBeat == 1;
+            Check("hot-sauce-disabled-on-frozen-beat", beat1, "");
+            int coinsBefore = Purse.Coins;
+            bool beat2 = ice.BossFrozenNow && ice.PowerFrozenOut(BadgerPower.HotSauce)
+                && ice.BossPick() >= 0 && ice.PlayerPick(1)
+                && !ice.TryPower(BadgerPower.HotSauce) && Purse.Coins == coinsBefore && ice.PowerReady(BadgerPower.HotSauce)
+                && ice.Resolve(out var ib2) && ib2.FreezeBeat == 2 && ib2.Power == BadgerPower.None;
+            Check("hot-sauce-refused-on-break-free-beat", beat2, "");
+            bool after = !ice.BossFrozenNow && !ice.PowerFrozenOut(BadgerPower.HotSauce)
+                && ice.BossPick() >= 0 && ice.PlayerPick(2) && ice.TryPower(BadgerPower.HotSauce)
+                && ice.Resolve(out var ib3) && ib3.Power == BadgerPower.HotSauce && ib3.FreezeBeat == 0;
+            Check("hot-sauce-allowed-after-freeze", after, "");
+            Check("freeze-still-two-turns-and-hot-sauce-one", t1 && t2 && t3 && sOk, "");
+            Check("honey-values-2-3-5", Hive.HoneyOfFinish(BeeFinish.Normal) == 2 && Hive.HoneyOfFinish(BeeFinish.Holo) == 3
+                && Hive.HoneyOfFinish(BeeFinish.InverseRainbow) == 5, "");
+
+            // (2) Freeze demo reaches the break-free beat: caption, back hold, and the shared dim/click wiring.
+            string badgerApp = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
+            Check("freeze-demo-break-free-caption-and-back-hold",
+                r2.FreezeBeat == 2 && BadgerCopy.VerdictLine(r2) == BadgerCopy.BreakFree
+                && BadgerCopy.FreezeBreakFreeWait.Contains(BadgerCopy.HotSauceFrozen)
+                && badgerApp.Contains("_bgLine = BadgerCopy.FreezeBreakFreeWait;")
+                && badgerApp.Contains("BadgerFreezeDemoHolds()")
+                && badgerApp.Contains("_bgFight.PowerFrozenOut(p)"), "");
+
+            // (3) poker Back cue only while the hint is not live.
+            Check("poker-back-cue-only-when-hint-not-live",
+                FlockFiveApp.PokerBackCueShows(true, false) && !FlockFiveApp.PokerBackCueShows(true, true)
+                && !FlockFiveApp.PokerBackCueShows(false, false) && !FlockFiveApp.PokerBackCueShows(false, true), "");
+
             // (4) glove near start, per device class.
             var devices = new[] { new Vector2(1170, 2532), new Vector2(2048, 2732), new Vector2(1080, 2400) };
             string[] names = { "iphone", "ipad", "android" };

@@ -72,7 +72,7 @@ namespace FlockFive
         BadgerPower _armed = BadgerPower.None;
         // Rounds left where the badger still scores 0 (from Freeze Spray leftover).
         int _bossSkipLeft;
-        // 1 while the pending skip came from Freeze Spray (so the break-free turn can be told from Hot Sauce).
+        // 1 while the pending skip came from Freeze Spray (Hot Sauce is refused while it is pending, so this never carries a Hot Sauce skip).
         int _freezeRounds;
 
         // "Honey Badger Don't Care" (spec 2b). This contest only; a retry is a new fight at 10%.
@@ -107,6 +107,10 @@ namespace FlockFive
         public int BossSkipLeft => _bossSkipLeft;
         // The badger is still iced from a Freeze Spray (his break-free turn is next).
         public bool BossFrozenNow => _bossSkipLeft > 0 && _freezeRounds > 0;
+        // Hot Sauce cannot thaw a frozen badger: refused while Freeze Spray is armed (the frozen turn) and while
+        // he is still iced (the break-free turn). Every other power is unaffected.
+        public bool PowerFrozenOut(BadgerPower power)
+            => power == BadgerPower.HotSauce && (_armed == BadgerPower.FreezeSpray || BossFrozenNow);
         public int DontCareChance => _dontCareChance;
         public bool DontCareLastHit => _dontCareLastHit;
         public int RoundsResolved => _roundsResolved;
@@ -321,6 +325,7 @@ namespace FlockFive
             if (_armed != BadgerPower.None) return false;
             if (PowersLocked) return false;
             if (Used(power)) return false;
+            if (PowerFrozenOut(power)) return false;
             if (BadgerSchedule.BasePrice(power) <= 0) return false;
             bool tutFree = BadgerSave.IsTutorialFirstUse(power, _appearance);
             int price = BadgerSchedule.PriceFor(power, _appearance, tutFree);

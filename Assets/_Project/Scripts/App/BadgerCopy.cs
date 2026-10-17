@@ -127,6 +127,11 @@ namespace FlockFive
 
         public const string BreakFree = "The badger spent his turn\nbreaking free!";
         public const string FrozenSolid = "Frozen solid! He can't move.";
+        // Hot Sauce is disabled while the badger is frozen (frozen turn and break-free turn).
+        public const string HotSauceFrozen = "Hot Sauce can't thaw a frozen badger.";
+        public const string HotSauceFrozenSub = "FROZEN";
+        // Coach fight: the round after the Freeze demo, before the player picks (the badger breaks free this round).
+        public const string FreezeBreakFreeWait = "Still frozen. Pick any comb.\n" + HotSauceFrozen;
         public const string BlockedBoth = "Blocked! The badger scores nothing.";
 
         public static string VerdictLine(BadgerRound r)
