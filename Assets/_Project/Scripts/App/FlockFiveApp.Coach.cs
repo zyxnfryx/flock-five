@@ -5857,7 +5857,42 @@ namespace FlockFive
         // Pause, an ad, or the resume swallow. A live lesson stays on its step.
         bool HoldLiveLesson()
         {
-            return GamePause.Paused || Ads.IsBusy || PlayClock.Now < _resumeInputUntil;
+            return GamePause.Paused || Ads.IsBusy || GateNow < _resumeInputUntil;
+        }
+
+        // b126: when the current ownerless ad hold began (real time), or -1.
+        float _orphanShowSince = -1f;
+        float _diagNext, _diagUntilSlow;
+
+        float OrphanShowFor()
+        {
+            bool orphan = Ads.IsShowing && !_watchGiftLive && !RewardedGrant.ProtectsTutorial
+                && !Ads.HostOwnsAd && !Ads.StageGapOpen;
+            if (!orphan) { _orphanShowSince = -1f; return 0f; }
+            float t = Time.unscaledTime;
+            if (_orphanShowSince < 0f) _orphanShowSince = t;
+            return t - _orphanShowSince;
+        }
+
+        // b126: one state line a second while a gift stage is up or the garden is paused. The first 30 s of
+        // an episode log every second, then every 10 s, so a long hang cannot flush the 60-line ring.
+        void DiagTick()
+        {
+            bool active = _gift != GiftFace.None || GamePause.Paused;
+            float t = Time.realtimeSinceStartup;
+            if (!active) { _diagUntilSlow = 0f; _diagNext = 0f; return; }
+            if (_diagUntilSlow <= 0f) _diagUntilSlow = t + 30f;
+            if (t < _diagNext) return;
+            _diagNext = t + (t < _diagUntilSlow ? 1f : 10f);
+            AdLog.Add("hang-diag gift=" + _gift + " busy=" + _busy + " watchLive=" + _watchGiftLive
+                + " paused=" + GamePause.Paused + " scale=" + Time.timeScale.ToString("0.##")
+                + " adPause=" + AdPause.Active + " adShowing=" + Ads.IsShowing + " audioHold=" + AdAudioHold.Count
+                + " gap=" + Ads.StageGapOpen + " showWaited=" + Ads.ShowWaited.ToString("0.0")
+                + " playClock=" + PlayClock.Now.ToString("0.0") + " gateNow=" + GateNow.ToString("0.0")
+                + " swallow=" + _swallowTapsUntil.ToString("0.0") + " suppress=" + _suppressGiftUntil.ToString("0.0")
+                + " resume=" + _resumeInputUntil.ToString("0.0")
+                + " stageHeld=" + PressRainbow.StageHeld() + " hitLock=" + _hitLock
+                + " adhandPref=" + PlayerPrefs.GetInt(CoachAdHandKey, 0));
         }
 
         // True while the WatchGift coroutine (the ad stage behind the Watch lesson) is alive.
@@ -5877,8 +5912,9 @@ namespace FlockFive
             RewardedGrant.UiBusy = true;
             try
             {
-            float now = PlayClock.Now;
+            float now = GateNow;
             HealBadgerShow();
+            DiagTick();
             // Step tap gate: how long it has held taps with no glove posed on its target.
             // A pause, an ad, or the resume swallow is not blind time.
             bool gateUp = StepTapGate(out var gate);
@@ -5902,7 +5938,8 @@ namespace FlockFive
                 ResumeGateLeft = _resumeInputUntil - now,
                 TapGateLeft = _swallowTapsUntil - now,
                 GiftGateLeft = _suppressGiftUntil - now,
-                StepGateBlind = _gateBlindSince < 0f ? 0f : now - _gateBlindSince
+                StepGateBlind = _gateBlindSince < 0f ? 0f : now - _gateBlindSince,
+                OrphanShowSeconds = OrphanShowFor()
             };
             var fix = TutorialHeal.Plan(snap);
             if (fix == TutorFix.None) return;
@@ -5945,6 +5982,20 @@ namespace FlockFive
             }
             if ((fix & TutorFix.ResetLeakedPause) != 0 && GamePause.Paused && !Ads.IsShowing && _tutorPause == 0)
                 GamePause.Reset();
+            if ((fix & TutorFix.ForceClearShow) != 0)
+            {
+                // b126: an ad hold nothing owns. Release the show, the audio hold and any stolen pause depth.
+                Ads.ForceClear();
+                if (_tutorPause == 0) GamePause.Reset();
+                _orphanShowSince = -1f;
+                if (_gift == GiftFace.Wait || _gift == GiftFace.Movie)
+                {
+                    _gift = GiftFace.None;
+                    _busy = false;
+                }
+                _swallowTapsUntil = now + 0.45f;
+                _suppressGiftUntil = now + 1f;
+            }
             if ((fix & TutorFix.FinishGatedStep) != 0)
             {
                 // Finish cleanly rather than hold taps behind a glove that cannot show.
