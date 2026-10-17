@@ -48,6 +48,31 @@ namespace FlockFive
             Debug.Log("[AdLog] " + what + " [" + ctx + "]");
         }
 
+        // b126: rate-limited line. One per key per `every` seconds (real time), so a per-frame
+        // caller cannot flood the 60-line ring.
+        static readonly System.Collections.Generic.Dictionary<string, float> _nextAt = new System.Collections.Generic.Dictionary<string, float>();
+        public static void AddLimited(string key, float every, string what)
+        {
+            float now = Time.realtimeSinceStartup;
+            lock (_nextAt)
+            {
+                if (_nextAt.TryGetValue(key, out var at) && now < at) return;
+                _nextAt[key] = now + every;
+            }
+            Add(what);
+        }
+
+        // b126: LevelPlay callbacks arrive on whatever thread the SDK picks.
+        public static void Callback(string name)
+        {
+            try
+            {
+                AdLog.Add("LP " + name + " thread=" + System.Threading.Thread.CurrentThread.ManagedThreadId
+                    + " showing=" + Ads.IsShowing + " paused=" + GamePause.Paused);
+            }
+            catch (System.Exception) { }
+        }
+
         // Main thread only.
         public static void Flush()
         {
@@ -93,12 +118,14 @@ namespace FlockFive
                 AudioListener.pause = true;
             }
             _depth++;
+            AdLog.Add("GamePause push depth=" + _depth);
         }
 
         public static void Pop()
         {
             if (_depth == 0) return;
             _depth--;
+            AdLog.Add("GamePause pop depth=" + _depth);
             if (_depth > 0) return;
             Time.timeScale = _scale;
             // b89: an ad still up keeps the listener paused whatever Push saved.
@@ -119,6 +146,7 @@ namespace FlockFive
         {
             if (_depth > 0)
             {
+                AdLog.Add("GamePause RESET from depth=" + _depth);
                 Time.timeScale = _scale;
                 AudioListener.pause = _audio || AdAudioHold.Held;
             }
@@ -255,9 +283,11 @@ namespace FlockFive
         // hold's safety window (AdAudioHold.SafetySeconds of foreground time) may end the show.
         public static float StallLimitFor(bool displayed) => displayed ? AdAudioHold.SafetySeconds + 5f : StallLimit;
         public const float CancelAfter = 10f;
+        // b126: the Wait face with no ad on screen offers Cancel this soon.
+        public const float CancelAfterIdle = 3f;
         public static float ShowWaited { get; set; } = -1f;
         public static bool CancelRequested { get; private set; }
-        public static bool CanCancelWait => ShowWaited >= CancelAfter;
+        public static bool CanCancelWait => ShowWaited >= (IsShowing ? CancelAfter : CancelAfterIdle);
         public static void RequestCancelWait() { if (CanCancelWait) CancelRequested = true; }
         public static void ClearCancelWait() { CancelRequested = false; ShowWaited = -1f; }
 
@@ -272,6 +302,7 @@ namespace FlockFive
 
         public static void BeginShow()
         {
+            AdLog.Add("BeginShow depth=" + _showDepth + " gap=" + _stageGap.ToString("0.0"));
             if (_showDepth == 0)
             {
                 _shownForeground = 0f;
@@ -331,9 +362,12 @@ namespace FlockFive
         static float _stageGap;
         public static int FinalReleases { get; private set; }
         public static bool StageGapOpen => _stageGap > 0f;
+        // b126: true while the host has any ad request or orphan show it still owns.
+        public static bool HostOwnsAd => _host != null && _host.OwnsAd;
 
         public static void EndStage()
         {
+            AdLog.Add("EndStage depth=" + _showDepth);
             if (_showDepth == 0) return;
             if (_showDepth > 1) { EndShow(); return; }
             _stageGap = StageGapSeconds;
@@ -352,6 +386,7 @@ namespace FlockFive
         public static void EndShow()
         {
             if (_showDepth == 0) return;
+            AdLog.Add("EndShow depth=" + _showDepth);
             _stageGap = 0f;
             _showDepth--;
             AdAudioHold.Release();
@@ -396,6 +431,8 @@ namespace FlockFive
         // Missed close, focus return, or a host that died mid-ad. Idempotent.
         public static void ForceClear()
         {
+            if (_showDepth > 0 || AdAudioHold.Held || _stageGap > 0f)
+                AdLog.Add("ForceClear depth=" + _showDepth + " hold=" + AdAudioHold.Count);
             IsLoading = false;
             _stageGap = 0f;
             while (_showDepth > 0) EndShow();
@@ -1026,6 +1063,7 @@ namespace FlockFive
 
         void OnInitOk(LevelPlayConfiguration config)
         {
+            AdLog.Callback("OnInitOk");
             _inited = true;
             _initFailed = false;
             try
@@ -1045,6 +1083,7 @@ namespace FlockFive
 
         void OnInitFail(LevelPlayInitError error)
         {
+            AdLog.Callback("OnInitFail");
             _initFailed = true;
             AfterSdk();
         }
@@ -1158,6 +1197,7 @@ namespace FlockFive
 
         void OnIntShown(LevelPlayAdInfo info)
         {
+            AdLog.Callback("OnIntShown");
             bool owned = _intWaiting;
             Ads.NoteInterstitialDisplayed();
             AdLog.Add("INTERSTITIAL ON SCREEN" + (owned ? "" : " (NOT requested by game!)"));
@@ -1168,6 +1208,7 @@ namespace FlockFive
 
         void OnIntClosed(LevelPlayAdInfo info)
         {
+            AdLog.Callback("OnIntClosed");
             AdLog.Add("interstitial closed");
             _intWaiting = false;
             Ads.DeliverInterstitialClosed();
@@ -1178,6 +1219,7 @@ namespace FlockFive
 
         void OnIntLoadFail(LevelPlayAdError error)
         {
+            AdLog.Callback("OnIntLoadFail");
             if (_intWaiting) AdLog.Add("interstitial load failed while waiting");
             bool waiting = _intWaiting;
             _intWaiting = false;
@@ -1186,6 +1228,7 @@ namespace FlockFive
 
         void OnIntDisplayFail(LevelPlayAdInfo info, LevelPlayAdError error)
         {
+            AdLog.Callback("OnIntDisplayFail");
             AdLog.Add("interstitial display failed");
             _intWaiting = false;
             Ads.DeliverInterstitialClosed();
@@ -1193,6 +1236,7 @@ namespace FlockFive
 
         void OnRvShown(LevelPlayAdInfo info)
         {
+            AdLog.Callback("OnRvShown");
             _shown = true;
             Ads.DeliverDisplayedCallback();
             bool owned = _waiting;
@@ -1204,12 +1248,14 @@ namespace FlockFive
 
         void OnRewarded(LevelPlayAdInfo info, LevelPlayReward reward)
         {
+            AdLog.Callback("OnRewarded");
             _didReward = true;
             Ads.DeliverRewardedCallback();
         }
 
         void OnClosed(LevelPlayAdInfo info)
         {
+            AdLog.Callback("OnClosed");
             Ads.DeliverClosedCallback();
             _waiting = false;
             if (!_orphanRv) return;
@@ -1219,6 +1265,7 @@ namespace FlockFive
 
         void OnLoadFail(LevelPlayAdError error)
         {
+            AdLog.Callback("OnLoadFail");
             if (_waiting && !_shown) Ads.DeliverFailedCallback("load failed: " + ErrText(error));
             else AdLog.Add("gift ad load failed (not waiting): " + ErrText(error));
             _waiting = false;
@@ -1227,6 +1274,8 @@ namespace FlockFive
         // One exit for a show the player left. The coroutine that called ShowAd
         // still writes LastGranted once. Orphan shows have no coroutine, so
         // they end here. A second call does not pop the pause again.
+        internal bool OwnsAd => _waiting || _intWaiting || _orphanRv || _orphanInt;
+
         internal void ReleaseAfterResume()
         {
             bool reward = _waiting;
@@ -1254,6 +1303,7 @@ namespace FlockFive
 
         void OnDisplayFail(LevelPlayAdInfo info, LevelPlayAdError error)
         {
+            AdLog.Callback("OnDisplayFail");
             Ads.DeliverFailedCallback("display failed: " + ErrText(error));
             _waiting = false;
         }

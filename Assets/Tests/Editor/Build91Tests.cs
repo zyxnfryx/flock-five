@@ -47,12 +47,33 @@ namespace FlockFive.Editor
                 // Stalled ad limits
                 Check("stall limit about 45s", Ads.StallLimit >= 40f && Ads.StallLimit <= 60f, Ads.StallLimit.ToString());
                 Check("cancel offered after about 10s", Ads.CancelAfter >= 8f && Ads.CancelAfter <= 12f && Ads.CancelAfter < Ads.StallLimit, Ads.CancelAfter.ToString());
-                Ads.ShowWaited = 3f;
+                // b126 rule: with an ad on screen Cancel waits CancelAfter (10 s); with no ad showing (Wait face only) it appears after CancelAfterIdle (3 s).
+                Check("idle cancel is 3s, shorter than the 10s shown-ad cancel", Ads.CancelAfterIdle == 3f && Ads.CancelAfterIdle < Ads.CancelAfter, Ads.CancelAfterIdle.ToString());
+                AdAudioHold.ResetForTest();
+                Ads.ClearCancelWait();
+                Check("test starts with no ad showing", !Ads.IsShowing, "");
+                Ads.ShowWaited = 2f;
                 Ads.RequestCancelWait();
-                Check("cancel ignored before 10s", !Ads.CanCancelWait && !Ads.CancelRequested, "");
-                Ads.ShowWaited = 11f;
+                Check("cancel ignored before 3s idle", !Ads.CanCancelWait && !Ads.CancelRequested, "");
+                Ads.ShowWaited = 4f;
                 Ads.RequestCancelWait();
-                Check("cancel accepted after 10s", Ads.CanCancelWait && Ads.CancelRequested, "");
+                Check("cancel accepted after 3s idle (no ad showing)", Ads.CanCancelWait && Ads.CancelRequested, "");
+                Ads.ClearCancelWait();
+                AdAudioHold.Acquire();
+                try
+                {
+                    Check("ad showing for the cancel checks", Ads.IsShowing, "");
+                    Ads.ShowWaited = 3f;
+                    Ads.RequestCancelWait();
+                    Check("cancel ignored before 10s", !Ads.CanCancelWait && !Ads.CancelRequested, "");
+                    Ads.ShowWaited = 9f;
+                    Ads.RequestCancelWait();
+                    Check("cancel still ignored at 9s while an ad is showing", !Ads.CanCancelWait && !Ads.CancelRequested, "");
+                    Ads.ShowWaited = 11f;
+                    Ads.RequestCancelWait();
+                    Check("cancel accepted after 10s", Ads.CanCancelWait && Ads.CancelRequested, "");
+                }
+                finally { AdAudioHold.ResetForTest(); }
                 Ads.ClearCancelWait();
                 Check("cancel state clears", !Ads.CanCancelWait && !Ads.CancelRequested, "");
                 AdRetry.ResetForTests();

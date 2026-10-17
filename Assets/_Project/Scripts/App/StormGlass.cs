@@ -40,6 +40,12 @@ namespace FlockFive
         public const float SpeckFadeIn = 0.20f;
         public const float SpeckGrow = 0.18f;
 
+        // b125 (Brandon): each garden opens on clear sky for StartDelay seconds of its own play, then the storm
+        // eases in over RampIn. OnsetMul caps GardenStorm's wetness, so every wet-driven effect eases in together.
+        public const float StartDelay = 4f;
+        public const float RampIn = 2.5f;
+        public static float OnsetMul(float gardenPlay) => Ease(gardenPlay - StartDelay, RampIn);
+
         const int SpawnTries = 18;
         const float RefH = 2556f;
         const float TrailStep = 24f;

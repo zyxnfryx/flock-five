@@ -214,6 +214,9 @@ namespace FlockFive
         bool _gloveVis;
         bool _gloveReady;
         Vector2 _gloveTip;
+        // b124: a caller may seat the angled glove's entry point (poker Back: middle right). Clamped to the safe rect.
+        Vector2 _gloveEntryOverride;
+        bool _gloveEntryOverrideOn;
         Vector2 _gloveVel;
         Vector2 _gloveAway;
         float _gloveAng;
@@ -1709,6 +1712,7 @@ namespace FlockFive
                 float y1 = safe.yMax - pad;
                 if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
                 if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
+                if (_gloveEntryOverrideOn) start = _gloveEntryOverride;
                 start.x = Mathf.Clamp(start.x, x0, x1);
                 start.y = Mathf.Clamp(start.y, y0, y1);
                 float below = _cueAimGui.y + 28f * s;
@@ -1716,7 +1720,7 @@ namespace FlockFive
                 _gloveTip = start;
             }
             else
-                _gloveTip = rest;
+                _gloveTip = GloveNearStart(rest, aimGui, s, ang, _gloveMirror);
             // Facing is the perch-to-aim line, locked before fade-in draws a pixel.
             float faceDh = GloveDh(s);
             float faceDw = GloveDrawW(faceDh);
@@ -1749,6 +1753,40 @@ namespace FlockFive
             _gloveStepApproach = approachDeg;
             // A new pose owns the hand. The previous lesson's dismiss no longer holds it.
             _gloveFadeDismissed = false;
+        }
+
+        // Middle of the right edge, fully inside the safe rect (the clamp in GloveLockPose keeps the whole hand on screen).
+        public static Vector2 GloveMiddleRightEntry(Rect safe) => new Vector2(safe.xMax, safe.center.y);
+
+        // Longest start-to-target run for a non-angled glove, in hand-heights. ClearGloveOfCaption's shove loop can push the
+        // perch outward without limit; this keeps the hand close to what it points at.
+        const float GloveNearStartHands = 1.6f;
+
+        // Pure: rest pulled in along the aim line to at most GloveNearStartHands * GloveDh, then clamped to the safe rect
+        // (same pad the angled start uses). Testable without a live app.
+        public static Vector2 GloveNearStartPoint(Vector2 rest, Vector2 aim, float s, Rect safe)
+        {
+            float dh = GloveDh(s);
+            float cap = GloveNearStartHands * dh;
+            var d = rest - aim;
+            float len = d.magnitude;
+            var p = rest;
+            if (len > cap && len > 0.0001f) p = aim + d * (cap / len);
+            float pad = dh * 0.42f;
+            float x0 = safe.xMin + pad, x1 = safe.xMax - pad, y0 = safe.yMin + pad, y1 = safe.yMax - pad;
+            if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
+            if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
+            p.x = Mathf.Clamp(p.x, x0, x1);
+            p.y = Mathf.Clamp(p.y, y0, y1);
+            return p;
+        }
+
+        // The non-angled glove's start: capped near the target, but never onto the adopt bird (GloveHitsAdoptBird stays the gate).
+        Vector2 GloveNearStart(Vector2 rest, Vector2 aim, float s, float ang, bool mirror)
+        {
+            var near = GloveNearStartPoint(rest, aim, s, CoachSafeGui(8f * s));
+            if (GloveHitsAdoptBird(near, ang, s, mirror) && !GloveHitsAdoptBird(rest, ang, s, mirror)) return rest;
+            return near;
         }
 
         void GloveBeginReappear(Vector2 aimGui, float s, float perchLift, bool fromLeft, float approachDeg)
@@ -3640,6 +3678,15 @@ namespace FlockFive
                 if (adHandBox.width >= 2f && adHandBox.yMax > adFloor) adFloor = adHandBox.yMax;
                 if (band.y < adFloor + gap) band.y = adFloor + gap;
             }
+            // b124: the first-hand result caption covers the bet controls' original seat, full width, bottom of the page.
+            bool pokerBack = spot == "poker.back";
+            if (pokerBack)
+            {
+                var g = _pokerCapGeo;
+                var cover = g.Bet.width > 2f && g.Act.width > 2f ? Rect.MinMaxRect(Mathf.Min(g.Bet.xMin, g.Act.xMin), Mathf.Min(g.Bet.yMin, g.Act.yMin), Mathf.Max(g.Bet.xMax, g.Act.xMax), Mathf.Max(g.Bet.yMax, g.Act.yMax)) : (g.Bet.width > 2f ? g.Bet : g.Act);
+                band = CaptionLayout.BandCovering(band, cover, w, 6f * s);
+                bottomSeat = true;
+            }
             if (!bee && !adHand && !bottomSeat)
             {
                 for (int pass = 0; pass < 2; pass++)
@@ -5497,7 +5544,7 @@ namespace FlockFive
                 int stage = BadgerPowerGuideStage();
                 gate.Step = GateBadgerGuide;
                 gate.Target = stage == 1 ? _bgPowerBtn : _bgGuideHit;
-                _bgGateToggle = stage == 2 ? _bgPowerBtn : default;
+                _bgGateToggle = BadgerGateToggleRect(stage);
                 if (gate.Target.width < 2f) return false;
                 return true;
             }
@@ -5810,7 +5857,42 @@ namespace FlockFive
         // Pause, an ad, or the resume swallow. A live lesson stays on its step.
         bool HoldLiveLesson()
         {
-            return GamePause.Paused || Ads.IsBusy || PlayClock.Now < _resumeInputUntil;
+            return GamePause.Paused || Ads.IsBusy || GateNow < _resumeInputUntil;
+        }
+
+        // b126: when the current ownerless ad hold began (real time), or -1.
+        float _orphanShowSince = -1f;
+        float _diagNext, _diagUntilSlow;
+
+        float OrphanShowFor()
+        {
+            bool orphan = Ads.IsShowing && !_watchGiftLive && !RewardedGrant.ProtectsTutorial
+                && !Ads.HostOwnsAd && !Ads.StageGapOpen;
+            if (!orphan) { _orphanShowSince = -1f; return 0f; }
+            float t = Time.unscaledTime;
+            if (_orphanShowSince < 0f) _orphanShowSince = t;
+            return t - _orphanShowSince;
+        }
+
+        // b126: one state line a second while a gift stage is up or the garden is paused. The first 30 s of
+        // an episode log every second, then every 10 s, so a long hang cannot flush the 60-line ring.
+        void DiagTick()
+        {
+            bool active = _gift != GiftFace.None || GamePause.Paused;
+            float t = Time.realtimeSinceStartup;
+            if (!active) { _diagUntilSlow = 0f; _diagNext = 0f; return; }
+            if (_diagUntilSlow <= 0f) _diagUntilSlow = t + 30f;
+            if (t < _diagNext) return;
+            _diagNext = t + (t < _diagUntilSlow ? 1f : 10f);
+            AdLog.Add("hang-diag gift=" + _gift + " busy=" + _busy + " watchLive=" + _watchGiftLive
+                + " paused=" + GamePause.Paused + " scale=" + Time.timeScale.ToString("0.##")
+                + " adPause=" + AdPause.Active + " adShowing=" + Ads.IsShowing + " audioHold=" + AdAudioHold.Count
+                + " gap=" + Ads.StageGapOpen + " showWaited=" + Ads.ShowWaited.ToString("0.0")
+                + " playClock=" + PlayClock.Now.ToString("0.0") + " gateNow=" + GateNow.ToString("0.0")
+                + " swallow=" + _swallowTapsUntil.ToString("0.0") + " suppress=" + _suppressGiftUntil.ToString("0.0")
+                + " resume=" + _resumeInputUntil.ToString("0.0")
+                + " stageHeld=" + PressRainbow.StageHeld() + " hitLock=" + _hitLock
+                + " adhandPref=" + PlayerPrefs.GetInt(CoachAdHandKey, 0));
         }
 
         // True while the WatchGift coroutine (the ad stage behind the Watch lesson) is alive.
@@ -5830,8 +5912,9 @@ namespace FlockFive
             RewardedGrant.UiBusy = true;
             try
             {
-            float now = PlayClock.Now;
+            float now = GateNow;
             HealBadgerShow();
+            DiagTick();
             // Step tap gate: how long it has held taps with no glove posed on its target.
             // A pause, an ad, or the resume swallow is not blind time.
             bool gateUp = StepTapGate(out var gate);
@@ -5855,7 +5938,8 @@ namespace FlockFive
                 ResumeGateLeft = _resumeInputUntil - now,
                 TapGateLeft = _swallowTapsUntil - now,
                 GiftGateLeft = _suppressGiftUntil - now,
-                StepGateBlind = _gateBlindSince < 0f ? 0f : now - _gateBlindSince
+                StepGateBlind = _gateBlindSince < 0f ? 0f : now - _gateBlindSince,
+                OrphanShowSeconds = OrphanShowFor()
             };
             var fix = TutorialHeal.Plan(snap);
             if (fix == TutorFix.None) return;
@@ -5898,6 +5982,20 @@ namespace FlockFive
             }
             if ((fix & TutorFix.ResetLeakedPause) != 0 && GamePause.Paused && !Ads.IsShowing && _tutorPause == 0)
                 GamePause.Reset();
+            if ((fix & TutorFix.ForceClearShow) != 0)
+            {
+                // b126: an ad hold nothing owns. Release the show, the audio hold and any stolen pause depth.
+                Ads.ForceClear();
+                if (_tutorPause == 0) GamePause.Reset();
+                _orphanShowSince = -1f;
+                if (_gift == GiftFace.Wait || _gift == GiftFace.Movie)
+                {
+                    _gift = GiftFace.None;
+                    _busy = false;
+                }
+                _swallowTapsUntil = now + 0.45f;
+                _suppressGiftUntil = now + 1f;
+            }
             if ((fix & TutorFix.FinishGatedStep) != 0)
             {
                 // Finish cleanly rather than hold taps behind a glove that cannot show.

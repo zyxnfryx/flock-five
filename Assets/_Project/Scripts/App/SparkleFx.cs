@@ -515,6 +515,91 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // ---- Freeze visuals (shared by the badger fight and the tutorial Freeze demo). Original mild cartoon art,
+        // drawn from rects + the shared glow/sparkle sprites. No textures built per frame. ----
+        public static readonly Color IceTint = new Color(0.55f, 0.84f, 1f, 1f);
+
+        // Small sideways shiver; held through the blocked beats. Amplitude is in px (scale it by the UI unit).
+        public static float Shiver(float time, float amp) { return Mathf.Sin(time * 38f) * amp; }
+
+        // Bigger two-way struggle for the break-free turn: ramps up over `age` seconds.
+        public static Vector2 Struggle(float time, float age, float amp)
+        {
+            float k = Mathf.Clamp01(age / 0.6f);
+            return new Vector2(Mathf.Sin(time * 31f) * amp * (0.4f + k), Mathf.Sin(time * 47f + 1f) * amp * 0.35f * k);
+        }
+
+        // Ice tint + frost overlay + icicles over r. strength 0..1 (fades the whole look).
+        public static void DrawFrozen(Rect r, float strength, float time)
+        {
+            if (strength < 0.02f || r.width < 4f || r.height < 4f) return;
+            var white = Texture2D.whiteTexture;
+            GUI.color = new Color(IceTint.r, IceTint.g, IceTint.b, 0.38f * strength);
+            GUI.DrawTexture(r, white);
+            // frost: a pale rim glow plus a few cold glints that twinkle
+            DrawGlow(r.center, Mathf.Max(r.width, r.height) * 1.15f, new Color(0.8f, 0.95f, 1f, 0.42f * strength));
+            GUI.color = new Color(1f, 1f, 1f, 0.55f * strength);
+            float edge = Mathf.Max(2f, r.height * 0.05f);
+            GUI.DrawTexture(new Rect(r.x, r.y, r.width, edge), white);
+            GUI.DrawTexture(new Rect(r.x, r.yMax - edge, r.width, edge), white);
+            GUI.DrawTexture(new Rect(r.x, r.y, edge, r.height), white);
+            GUI.DrawTexture(new Rect(r.xMax - edge, r.y, edge, r.height), white);
+            for (int i = 0; i < 3; i++)
+                DrawAt(new Vector2(r.x + r.width * (0.22f + 0.28f * i), r.y + r.height * (0.28f + 0.22f * ((i * 2) % 3))),
+                    r.height * 0.22f, strength * Twinkle(time, i * 1.7f), IceTint, false);
+            DrawIcicles(r, strength);
+            GUI.color = Color.white;
+        }
+
+        // Four cartoon icicles hanging off the top edge: stacked narrowing bars, darker outline under a pale body.
+        public static void DrawIcicles(Rect r, float strength)
+        {
+            if (strength < 0.02f) return;
+            var white = Texture2D.whiteTexture;
+            for (int i = 0; i < 4; i++)
+            {
+                float cx = r.x + r.width * (0.16f + 0.23f * i);
+                float len = r.height * (i % 2 == 0 ? 0.30f : 0.20f);
+                float w = r.width * 0.12f;
+                for (int k = 0; k < 4; k++)
+                {
+                    float f = k / 4f;
+                    float sw = w * (1f - f * 0.85f), y = r.y - r.height * 0.04f + len * f, h = len / 4f + 1f;
+                    GUI.color = new Color(0.30f, 0.55f, 0.78f, 0.9f * strength);
+                    GUI.DrawTexture(new Rect(cx - sw * 0.5f - 1.5f, y, sw + 3f, h), white);
+                    GUI.color = new Color(0.86f, 0.96f, 1f, 0.95f * strength);
+                    GUI.DrawTexture(new Rect(cx - sw * 0.5f, y, sw, h), white);
+                }
+            }
+            GUI.color = Color.white;
+        }
+
+        // Ice shatter: t 0..1. Shards fly out and fall while fading, with a few glints. Returns false once finished.
+        public static bool DrawShatter(Rect r, float t)
+        {
+            if (t >= 1f) return false;
+            if (t < 0f) return true;
+            var white = Texture2D.whiteTexture;
+            float a = 1f - t;
+            for (int i = 0; i < 10; i++)
+            {
+                float ang = i * 0.628f + 0.3f;
+                float sp = r.width * (0.35f + 0.12f * (i % 3));
+                var at = new Vector2(r.center.x + Mathf.Cos(ang) * sp * t, r.center.y + Mathf.Sin(ang) * sp * t + r.height * 0.9f * t * t);
+                float sz = r.width * (0.10f + 0.03f * (i % 3)) * (1f - 0.4f * t);
+                var prev = GUI.matrix;
+                GUIUtility.RotateAroundPivot(i * 37f + t * 260f, at);
+                GUI.color = new Color(IceTint.r, IceTint.g, IceTint.b, 0.9f * a);
+                GUI.DrawTexture(new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz, sz * 0.7f), white);
+                GUI.color = new Color(1f, 1f, 1f, 0.7f * a);
+                GUI.DrawTexture(new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz * 0.5f, sz * 0.25f), white);
+                GUI.matrix = prev;
+            }
+            DrawAt(r.center, r.height * (0.5f + t), a, IceTint, true);
+            GUI.color = Color.white;
+            return true;
+        }
+
         // Soft disc. SpriteCatalog.Glow is built once. No per-frame texture.
         public static void DrawGlow(Vector2 at, float size, Color tint)
         {
