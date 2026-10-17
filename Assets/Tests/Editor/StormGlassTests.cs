@@ -711,6 +711,72 @@ namespace FlockFive.Editor
             }
 
             {
+                // b125 tap-through: drops must never consume a tap over Restart or the hive.
+                string dir = "Assets/_Project/Scripts/App/";
+                string rig = File.ReadAllText(dir + "StormGlassRig.cs");
+                int p0 = rig.IndexOf("public static void PaintOver(");
+                int p1 = rig.IndexOf("static Rect Grow(");
+                string paint = p0 >= 0 && p1 > p0 ? rig.Substring(p0, p1 - p0) : "";
+                int g0 = rig.IndexOf("static int Gather(");
+                int g1 = rig.IndexOf("internal static int AddHost(");
+                string gather = g0 >= 0 && g1 > g0 ? rig.Substring(g0, g1 - g0) : "";
+                string[] banned =
+                {
+                    ".Use()", "GUI.Button", "GUI.RepeatButton", "GUI.Box", "GUI.Label", "GUI.Window", "GUI.ModalWindow",
+                    "GUI.DragWindow", "GUI.Toggle", "GUI.TextField", "GUI.SetNextControlName", "GUI.FocusControl",
+                    "GUIUtility.hotControl", "GUIUtility.GetControlID", "GUIUtility.keyboardControl", "GUILayout",
+                    "GUI.BeginGroup", "GUI.BeginScrollView", "GUI.depth", "Raycast", "Physics", "Collider", "OnMouse",
+                    "Input.", "EventSystem", "GraphicRaycaster", "CanvasGroup", "blocksRaycasts", "raycastTarget"
+                };
+                string hit = "";
+                foreach (var f in new[] { "StormGlassRig.cs", "StormGlass.cs", "StormGlassFeature.cs", "GardenStorm.cs" })
+                {
+                    string src = File.ReadAllText(dir + f);
+                    foreach (var b in banned)
+                        if (src.Contains(b)) hit += f + ":" + b + " ";
+                }
+                bool paintDrawOnly = paint.Length > 0 && paint.Contains("GUI.DrawTexture")
+                    && paint.Contains("EventType.Repaint") && !paint.Contains(".Use()") && !paint.Contains("Event.current.type =");
+                bool gatherNoHud = gather.Length > 0 && !gather.Contains("restart") && !gather.Contains("hive")
+                    && !gather.Contains("HitHud") && !gather.Contains("HudLayout");
+                Check("drops-source-guard-no-input-consumption", hit.Length == 0 && paintDrawOnly && gatherNoHud,
+                    "banned [" + hit + "] draw-only " + paintDrawOnly + " gather-clean " + gatherNoHud);
+
+                // Behavioral: Gather-style blocks (stamp only) leave Restart and Hive uncovered; PaintOver leaves a press untouched.
+                var safe = new Rect(0f, 102f, W, H - 180f);
+                float? keep = DeviceFit.TestWindow;
+                DeviceFit.TestWindow = W / H;
+                CornerAnchor.Garden(W, H, safe, out _, out _, out _, out var restart, out var hive);
+                var stamp = FlockFiveApp.GardenStampBox(W, H, safe, DeviceFit.Ui(W, H));
+                DeviceFit.TestWindow = keep;
+                var gatherBlocks = new[] { StormGlass.FromGui(stamp, H) };
+                var rc = new Vector2(restart.center.x, H - restart.center.y);
+                var hc = new Vector2(hive.center.x, H - hive.center.y);
+                bool restartFree = stamp.Contains(restart.center) || StormGlass.CoverMul(rc.x, rc.y, gatherBlocks, 1) >= 0.999f;
+                bool hiveFree = stamp.Contains(hive.center) || StormGlass.CoverMul(hc.x, hc.y, gatherBlocks, 1) >= 0.999f;
+                var prev = Event.current;
+                bool intact = true;
+                try
+                {
+                    foreach (var c in new[] { restart.center, hive.center })
+                    {
+                        var down = new Event { type = EventType.MouseDown, mousePosition = c, button = 0 };
+                        Event.current = down;
+                        StormGlassRig.PaintOver(restart, hive);
+                        intact &= down.type == EventType.MouseDown && !down.type.Equals(EventType.Used);
+                        var up = new Event { type = EventType.MouseUp, mousePosition = c, button = 0 };
+                        Event.current = up;
+                        StormGlassRig.PaintOver(restart, hive);
+                        intact &= up.type == EventType.MouseUp;
+                    }
+                }
+                finally { Event.current = prev; }
+                Check("drops-do-not-consume-restart-hive-taps",
+                    restartFree && hiveFree && intact && StormGlass.BlocksTaps == false,
+                    "restart-free " + restartFree + " hive-free " + hiveFree + " event-intact " + intact);
+            }
+
+            {
                 // b125: the storm never moves the sun. Dusk is real elapsed play through PlayClock; Wet only tints the veil.
                 string sky = File.ReadAllText("Assets/_Project/Scripts/App/SkyCycle.cs");
                 int d0 = sky.IndexOf("public static float Dusk");
