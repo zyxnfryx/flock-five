@@ -128,10 +128,13 @@ namespace FlockFive
         public const string BreakFree = "The badger spent his turn\nbreaking free!";
         public const string FrozenSolid = "Frozen solid! He can't move.";
         // Hot Sauce is disabled while the badger is frozen (frozen turn and break-free turn).
-        public const string HotSauceFrozen = "Hot Sauce can't thaw a frozen badger.";
+        // Two authored lines (same words) so the shared caption fit never splits at "Hot / Sauce".
+        public const string HotSauceFrozen = "Frozen badger.\nHot Sauce is on hold.";
+        // Same words on one row, for a caption that already carries its own first line.
+        const string HotSauceFrozenFlat = "Frozen badger. Hot Sauce is on hold.";
         public const string HotSauceFrozenSub = "FROZEN";
-        // Coach fight: the round after the Freeze demo, before the player picks (the badger breaks free this round).
-        public const string FreezeBreakFreeWait = "Still frozen. Pick any comb.\n" + HotSauceFrozen;
+        // Coach fight: the round after the Freeze demo is a gated step (CoachStep.BadgerBreakFree): two lines, glove on a comb.
+        public const string FreezeBreakFreeWait = "Still frozen. Tap the glowing comb.\n" + HotSauceFrozenFlat;
         public const string BlockedBoth = "Blocked! The badger scores nothing.";
 
         public static string VerdictLine(BadgerRound r)
