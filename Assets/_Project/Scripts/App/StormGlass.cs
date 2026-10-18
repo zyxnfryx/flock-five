@@ -203,11 +203,37 @@ namespace FlockFive
             return scale;
         }
 
+        // Teardrop silhouette. Mirrors the StormGlass shader. y runs -1 (belly) to +1 (point), up the glass.
+        public const float TearWide = 1.04f;
+        public const float TearLong = 1.2f;
+
+        // Width multiplier on the unit ellipse at y. 1 for a round splat, ~0 at the tip, widest low in the belly.
+        public static float TearK(float y, float splat)
+        {
+            if (y < -1f) y = -1f;
+            else if (y > 1f) y = 1f;
+            if (splat < 0f) splat = 0f;
+            else if (splat > 1f) splat = 1f;
+            float u = (1f - y) * 0.5f;
+            float tear = Mathf.Pow(u, 0.8f) * 1.3f + 0.04f;
+            return 1f + (tear - 1f) * (1f - splat);
+        }
+
+        // Half width of the drop at y in unit-ellipse space. Pointed top, round bottom.
+        public static float TearHalfWidth(float y, float splat)
+        {
+            if (y <= -1f || y >= 1f) return 0f;
+            return TearK(y, splat) * Mathf.Sqrt(1f - y * y);
+        }
+
         // The one draw form for a bead: a round heavy head that stretches into a teardrop as it picks up
         // speed, thins as it slides, and drags a tail up the glass. Pure, no allocation.
         public static void Form(Bead b, float scale, out float rx, out float ry, out float splat, out float tailPx)
         {
             Shape(b.Age, b.Radius, out rx, out ry, out splat);
+            // Teardrop: a gathered drop is a little taller and slimmer. The pointed top is cut in the shader.
+            rx *= 1f + (TearWide - 1f) * (1f - splat);
+            ry *= 1f + (TearLong - 1f) * (1f - splat);
             tailPx = 0f;
             if (b.Kind != Slide) return;
             float speed = b.Vy < 0f ? -b.Vy : b.Vy;
