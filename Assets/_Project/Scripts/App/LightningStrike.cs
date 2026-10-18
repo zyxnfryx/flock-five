@@ -1,15 +1,28 @@
 namespace FlockFive
 {
-    // Trial hard mode. Default OFF. The switch is PlayerPrefs PrefKey, falling
-    // back to RemoteDefault so a remote config can flip the same constant.
+    // Storm strike on an unused gift. b110 (Brandon): it is ON by default now, because
+    // nobody ever saw it. The switch is still PlayerPrefs PrefKey, falling back to
+    // RemoteDefault so a remote config can flip the same constant (an explicit 0 stays off).
     // A strike burns one UNUSED ad/gift branch. It never touches a normal limb,
     // and it never offers a restore. Force is the dev hook for a capture.
     public static class LightningStrike
     {
         public const string PrefKey = "flockfive.lightning";
-        public const bool RemoteDefault = false;
-        public const float Chance = 0.45f;
+        public const bool RemoteDefault = true;
+        // b110: was 0.45 (and the whole feature was off). One roll per storm window, at most one strike per garden.
+        public const float Chance = 0.60f;
         public const int MaxPerLevel = 1;
+        // The first strike a player ever gets is guaranteed (still needs a storm, an unused gift, and a
+        // solvable board). This pref counts strikes so the guarantee is spent once.
+        public const string StruckKey = "flockfive.lightning.struck";
+
+        public static bool FirstStrikeOwed => UnityEngine.PlayerPrefs.GetInt(StruckKey, 0) == 0;
+
+        public static void MarkStruck()
+        {
+            UnityEngine.PlayerPrefs.SetInt(StruckKey, 1);
+            UnityEngine.PlayerPrefs.Save();
+        }
 
         // One-shot. The capture sets this; the next TryPick consumes it.
         public static bool Force;
@@ -39,13 +52,15 @@ namespace FlockFive
 
         // -1 when this storm does not strike. Force still obeys the cap,
         // the target rules, and the solvability gate.
-        public static int TryPick(Board board, bool[] claimed, bool[] burned, bool storming, int already, float roll, bool force)
+        // owed is the one guaranteed first strike: it skips the dice only. Off, dry, capped,
+        // no target, and unsolvable all still win over it.
+        public static int TryPick(Board board, bool[] claimed, bool[] burned, bool storming, int already, float roll, bool force, bool owed = false)
         {
             if (already >= MaxPerLevel) return -1;
             if (!force)
             {
                 if (!Enabled || !storming) return -1;
-                if (!RollHits(roll)) return -1;
+                if (!owed && !RollHits(roll)) return -1;
             }
             int index = Target(board, claimed, burned);
             if (index < 0) return -1;

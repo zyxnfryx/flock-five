@@ -165,6 +165,11 @@ namespace FlockFive
         public const string OstrichLine =
             "Ostrich on a feeder!\nMatch three sets.";
 
+        // b110: PROPOSED copy, needs Brandon's approval. First lightning fire. Two lines, no invented mechanic:
+        // the bolt burns one unused gift branch for the rest of that level; nothing else is lost.
+        public const string FireLine =
+            "Lightning burned the gift!\nKeep going without it.";
+
         public const string BeePestLine =
             "Bees on a branch!\nRemove birds to clear.";
 

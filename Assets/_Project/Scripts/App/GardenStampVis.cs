@@ -31,7 +31,8 @@ namespace FlockFive
         Album = 1 << 20,
         Upgrade = 1 << 21,
         TutorPause = 1 << 22,
-        CoachCaption = 1 << 23
+        CoachCaption = 1 << 23,
+        Fire = 1 << 24
     }
 
     // Inputs for the garden xN chip. Pure (no Unity calls) so an editor test
