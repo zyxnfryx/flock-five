@@ -17,6 +17,7 @@ namespace FlockFive
 
         void ResetLightning()
         {
+            _fireArmed = false;
             for (int i = 0; i < _offerBurned.Length; i++) _offerBurned[i] = false;
             _lightningStrikes = 0;
             _lightningRolled = false;
@@ -36,11 +37,15 @@ namespace FlockFive
                 return;
             }
             if (_lightningRolled && !pending) return;
+            // b110: the first strike this player ever gets is guaranteed, and it waits for a calm stage
+            // (no coach, leaf, hive, or pest lesson up) so the tutorial can show. The wait does not use the roll.
+            bool owed = !pending && LightningStrike.FirstStrikeOwed;
+            if (owed && !PestStageFree()) return;
             bool force = LightningStrike.ConsumeForce();
             if (!force) _lightningRolled = true;
 
             int index = LightningStrike.TryPick(
-                _board, _bonusOn, _offerBurned, storming, _lightningStrikes, Random.value, force);
+                _board, _bonusOn, _offerBurned, storming, _lightningStrikes, Random.value, force, owed);
             if (index < 0) return;
             var view = ViewFor(index);
             if (view == null) return;
@@ -50,6 +55,8 @@ namespace FlockFive
             if ((uint)ord < (uint)_offerBurned.Length) _offerBurned[ord] = true;
             _lightningStrikes++;
             LightningStrike.NotePlay();
+            if (!force) LightningStrike.MarkStruck();
+            ArmFireLesson(view.transform.position);
             view.BeginScorch(_garden.Root);
             GardenStorm.StrikeAt(view.transform.position);
             RefreshBonusSigns();

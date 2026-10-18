@@ -113,6 +113,17 @@ namespace FlockFive
                 Drain(b);
         }
 
+        // Same, with the pecks logged for the view. See OstrichPest.AfterMove.
+        public static void AfterMove(Board b, List<PeckHit> log, out int finaleBranch)
+        {
+            finaleBranch = -1;
+            if (b == null) return;
+            if (b.Ostrich != null && b.Ostrich.Alive)
+                OstrichPest.AfterMove(b, log, out finaleBranch);
+            else
+                Drain(b);
+        }
+
         // The garden is clear only once a living ostrich has fled.
         public static bool Cleared(Board b) =>
             b != null && b.Won && (b.Ostrich == null || !b.Ostrich.Alive);

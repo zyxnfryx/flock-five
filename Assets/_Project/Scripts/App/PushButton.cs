@@ -213,6 +213,94 @@ namespace FlockFive
             GUI.color = prev;
         }
 
+        // b110 (Brandon): the gloss on a rounded-rect plate (Watch Ad 2X, diamond plate) was the oval
+        // above, so it did not follow the button's corners. This one is clipped to the rounded rect:
+        // cornerPx is the plate's corner radius in GUI points. Same band, slant and fade as DrawSheen.
+        static Texture2D _rband;
+        static Color32[] _rpx;
+        const int RectTexW = 128;
+
+        public static float RoundRectSdf(float x, float y, float w, float h, float rad)
+        {
+            float cx = Mathf.Abs(x - w * 0.5f) - (w * 0.5f - rad);
+            float cy = Mathf.Abs(y - h * 0.5f) - (h * 0.5f - rad);
+            float ox = Mathf.Max(cx, 0f);
+            float oy = Mathf.Max(cy, 0f);
+            return Mathf.Sqrt(ox * ox + oy * oy) + Mathf.Min(Mathf.Max(cx, cy), 0f) - rad;
+        }
+
+        // Sheen coverage 0..1 at (x, y) in GUI points inside a w x h plate, before the alpha envelope.
+        // y is measured from the bottom. 0 outside the rounded rect.
+        public static float RectSheenAt(float x, float y, float w, float h, float cornerPx, float u)
+        {
+            float rad = Mathf.Min(cornerPx, Mathf.Min(w, h) * 0.5f);
+            float d = RoundRectSdf(x, y, w, h, rad) + 1.5f;
+            float clip = Mathf.Clamp01(-d / 1.5f);
+            if (clip <= 0f) return 0f;
+            float t = x / w;
+            float along = t + (y / h - 0.5f) * (h / w) * 0.6f;
+            float center = Mathf.Lerp(-0.12f, 1.12f, Mathf.Clamp01(u));
+            float k = (along - center) / 0.10f;
+            return Mathf.Exp(-k * k * 3.4f) * clip;
+        }
+
+        public static void DrawRectSheen(Rect r, float u, float alpha, float cornerPx)
+        {
+            if (alpha < 0.02f || r.width < 8f || r.height < 8f) return;
+            int nx = RectTexW;
+            int ny = Mathf.Clamp(Mathf.RoundToInt(nx * r.height / r.width), 16, 128);
+            if (_rband == null || _rband.height != ny)
+            {
+                if (_rband != null) Object.Destroy(_rband);
+                _rband = new Texture2D(nx, ny, TextureFormat.RGBA32, false)
+                {
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp,
+                    hideFlags = HideFlags.HideAndDontSave,
+                    name = "PushButtonRectSheen"
+                };
+                _rpx = new Color32[nx * ny];
+            }
+            float aScale = alpha * OvalFade(u);
+            for (int j = 0; j < ny; j++)
+            {
+                float y = (j + 0.5f) / ny * r.height;
+                for (int i = 0; i < nx; i++)
+                {
+                    float c = RectSheenAt((i + 0.5f) / nx * r.width, y, r.width, r.height, cornerPx, u);
+                    byte a = (byte)Mathf.Clamp(c * aScale * 230f, 0f, 255f);
+                    _rpx[j * nx + i] = new Color32(255, 250, 228, a);
+                }
+            }
+            _rband.SetPixels32(_rpx);
+            _rband.Apply(false);
+            var prev = GUI.color;
+            GUI.color = Color.white;
+            GUI.DrawTexture(r, _rband, ScaleMode.StretchToFill, true);
+            GUI.color = prev;
+        }
+
+        // Pulsing buttons: one size value drives the plate AND its label, so the text breathes with the button.
+        // Fonts are integer-fitted, so scaling the label by resizing its rect made it step while the plate
+        // moved smoothly. Fit the label at rest size, then scale the whole label with the GUI matrix.
+        public static float PulseK(float time, float amp, float period) => 1f + amp * Mathf.Sin(time * Mathf.PI * 2f / period);
+
+        public static Rect Scaled(Rect r, float k) =>
+            new Rect(r.center.x - r.width * k * 0.5f, r.center.y - r.height * k * 0.5f, r.width * k, r.height * k);
+
+        // Rect scaled about a pivot (not its own center).
+        public static Rect ScaledAbout(Rect r, Vector2 pivot, float k) =>
+            new Rect(pivot.x + (r.x - pivot.x) * k, pivot.y + (r.y - pivot.y) * k, r.width * k, r.height * k);
+
+        public static Matrix4x4 BeginPulse(Vector2 pivot, float k)
+        {
+            var m = GUI.matrix;
+            if (Mathf.Abs(k - 1f) > 0.0001f) GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
+            return m;
+        }
+
+        public static void EndPulse(Matrix4x4 m) { GUI.matrix = m; }
+
         // Release pop under a push button. The rect sheen is a square oval-clipped texture
         // stretched over the whole button rect and painted BEFORE the art. A rounded plate
         // covers it. A flower pedestal does not: its sprite is letterboxed (1024x811) inside the

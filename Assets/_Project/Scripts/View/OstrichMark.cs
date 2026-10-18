@@ -8,14 +8,20 @@ namespace FlockFive
     // is carrying birds.
     public sealed class OstrichMark : MonoBehaviour
     {
-        public const int BodyOrder = 1;
-        public const int NeckOrder = 9;
+        // Build 110: the big body and the neck sit BEHIND the branch wood (order 2), the
+        // feeders (8) and every bird (12). Only the head comes forward, over its feeder
+        // and still under the flock. Background art (-20) and the life sheets (-12) stay below.
+        public const int BodyOrder = -3;
+        public const int NeckOrder = -2;
+        public const int CollarOrder = -1;
         public const int HeadOrder = 10;
         public const int NeckParts = 8;
-        public const float BodyDrop = 1.50f; // body high and close: the neck is not stretched
+        public const float BodyDrop = 3.20f; // big body sits well below the feeder row, neck rises to the head
         // Whole bird at 72%: it fits the screen width, legs included, and the 160px master
         // head is drawn at or under its native size on device.
-        public const float RigScale = 0.72f;
+        public const float RigScale = 0.90f; // head
+        // Build 110: the body is a large background figure (was 0.72, now 1.7 = 2.4x).
+        public const float BodyScale = 1.70f;
         // Half the visible width; the game camera when there is one, else the stills camera.
         public static float ViewHalfWidth()
         {
@@ -24,8 +30,8 @@ namespace FlockFive
             return 5.55f * 9f / 16f;
         }
         // Body width from the pivot (neck root) back to the tail, and in front of it, at RigScale.
-        public static float BodyBack => 527.5f / OstrichPaint.BodyPpu * RigScale;
-        public static float BodyFront => (566f - 527.5f) / OstrichPaint.BodyPpu * RigScale;
+        public static float BodyBack => 527.5f / OstrichPaint.BodyPpu * BodyScale;
+        public static float BodyFront => (566f - 527.5f) / OstrichPaint.BodyPpu * BodyScale;
         // Feeder sprites pivot at the glass. The port is the flower on the tray.
         public const float PortX = 0.16f;
         public const float PortY = -0.88f;
@@ -88,6 +94,38 @@ namespace FlockFive
             Tick(dt);
         }
 
+        // Scripted strike (see OstrichStrike). The app starts one per landed peck: the head
+        // winds up, lunges to the target bird's world position, holds, recoils and settles.
+        bool _strikeOn;
+        float _strikeT;
+        Vector3 _strikeTarget;
+        public bool Striking => _strikeOn;
+        public float StrikeTime => _strikeT;
+
+        public void BeginStrike(Vector3 target)
+        {
+            if (_gone) return;
+            _strikeOn = true;
+            _strikeT = 0f;
+            _strikeTarget = target;
+            _queued = OstrichAct.Idle;
+            Begin(OstrichAct.Peck);
+        }
+
+        // The app plays this peck itself; Sync must not queue a second generic Peck for it.
+        public void NotePecks(int peckIndex)
+        {
+            if (peckIndex > _shownPecks) _shownPecks = peckIndex;
+        }
+
+        void EndStrike()
+        {
+            _strikeOn = false;
+            _strikeT = 0f;
+            FlockSort.Apply(Head, HeadOrder);
+            if (_line != null) _line.sortingOrder = NeckOrder;
+        }
+
         public static OstrichMark Attach(Transform parent, int feeders)
         {
             var root = new GameObject("Ostrich").transform;
@@ -114,8 +152,8 @@ namespace FlockFive
             _collar.localPosition = new Vector3(0f, 0f, 0.01f);
             _collarSr = collarGo.AddComponent<SpriteRenderer>();
             _collarSr.sprite = OstrichPaint.Collar();
-            FlockSort.Apply(_collarSr, HeadOrder);
-            _body.localScale = new Vector3(RigScale, RigScale, 1f);
+            FlockSort.Apply(_collarSr, CollarOrder);
+            _body.localScale = new Vector3(BodyScale, BodyScale, 1f);
 
             _neck = new Transform[NeckParts];
             _neckSr = new SpriteRenderer[NeckParts];
@@ -176,6 +214,8 @@ namespace FlockFive
             var o = b.Ostrich;
             if (!o.Alive)
             {
+                // The strike beat finishes before the ostrich takes its hit and leaves.
+                if (_strikeOn) return;
                 if (_wasAlive)
                 {
                     _fleeAfterDaze = true;
@@ -274,6 +314,11 @@ namespace FlockFive
             if (dt < 0f) dt = 0f;
             _dt = dt;
             _blend = Mathf.Min(1f, _blend + dt / BlendSec);
+            if (_strikeOn)
+            {
+                _strikeT += dt;
+                if (_strikeT >= OstrichStrike.Total) EndStrike();
+            }
             if (_gone)
             {
                 Hide();
@@ -292,7 +337,7 @@ namespace FlockFive
                 _queued = OstrichAct.Idle;
                 Begin(next);
             }
-            float rate = _calm ? 7f : 12f;
+            float rate = _calm && !_strikeOn ? 7f : 12f;
             _frameT += dt * rate;
             int n = OstrichAnim.Count(_act);
             while (_frameT >= 1f)
@@ -463,7 +508,7 @@ namespace FlockFive
             float bodyX;
             if (flee) bodyX = Mathf.Lerp(bodyL, headX - 0.55f, (face + 1f) * 0.5f);
             else bodyX = Mathf.Lerp(bodyL, bodyR, (face + 1f) * 0.5f) + sway;
-            _body.localScale = new Vector3(RigScale * turn, RigScale, 1f);
+            _body.localScale = new Vector3(BodyScale * turn, BodyScale, 1f);
             _head.localScale = new Vector3(RigScale * turn, RigScale, 1f);
             float bodyY = headY - BodyDrop + sample.Bob;
             headX += face * (sample.Strike * 0.50f - sample.Wind * 0.42f);
@@ -481,6 +526,7 @@ namespace FlockFive
             PoseLeg(_legFront, _legFrontSr, OstrichPaint.FrontHip, brace - stride * swing, side);
 
             var headPos = new Vector3(headX, headY, 0f);
+            var restPos = headPos;
             Head.sprite = OstrichPaint.Head(_act, _frame);
             Head.flipX = side < 0f;
             // Follow-through: the head trails its target a touch, and its tilt trails the body.
@@ -492,12 +538,19 @@ namespace FlockFive
                 _tiltLag = Mathf.LerpAngle(_tiltLag, tilt, 1f - Mathf.Exp(-_dt * 14f));
             }
             headPos = _headLag;
+            if (_strikeOn)
+            {
+                // The strike owns the head: no lag, so the lunge reads as a lunge.
+                headPos = OstrichStrike.HeadAt(restPos, _strikeTarget, _strikeT);
+                _headLag = headPos;
+                FlockSort.Apply(Head, OstrichStrike.HeadOrder);
+            }
             _head.position = headPos;
             _head.localRotation = Quaternion.Euler(0f, 0f, _tiltLag);
 
             // Start inside the plumage and end inside the chin, so the tube
             // reads as one neck in every pose.
-            Vector3 neckA = _body.position + _body.rotation * new Vector3(-0.16f * face, -0.32f, 0f) * RigScale;
+            Vector3 neckA = _body.position + _body.rotation * new Vector3(-0.16f * face, -0.32f, 0f) * BodyScale;
             Vector3 neckB = headPos + _head.rotation * new Vector3(0f, 0.10f * RigScale, 0f);
             Vector3 ctrl = (neckA + neckB) * 0.5f;
             ctrl.x += (-sample.Wind * 0.90f + sample.Shake * 0.006f) * face * RigScale;
@@ -564,8 +617,8 @@ namespace FlockFive
             _line.sortingOrder = NeckOrder;
             _line.widthMultiplier = 1f;
             var curve = new AnimationCurve(
-                new Keyframe(0f, OstrichPaint.NeckWidth * 2.9f * RigScale),
-                new Keyframe(0.30f, OstrichPaint.NeckWidth * 2.45f * RigScale),
+                new Keyframe(0f, OstrichPaint.NeckWidth * 2.9f * BodyScale),
+                new Keyframe(0.30f, OstrichPaint.NeckWidth * 2.45f * (BodyScale + RigScale) * 0.5f),
                 new Keyframe(1f, OstrichPaint.NeckWidth * 2.30f * RigScale));
             _line.widthCurve = curve;
             var grad = new Gradient();
@@ -594,7 +647,8 @@ namespace FlockFive
         {
             EnsureLine();
             _line.enabled = true;
-            _line.sortingOrder = NeckOrder;
+            _line.sortingOrder = _strikeOn && Mathf.Abs(OstrichStrike.Reach(_strikeT)) > 0.02f
+                ? OstrichStrike.NeckOrder : NeckOrder;
             for (int i = 0; i < NeckSamples; i++)
             {
                 float t = i / (float)(NeckSamples - 1);

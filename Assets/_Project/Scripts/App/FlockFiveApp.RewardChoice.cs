@@ -158,31 +158,57 @@ namespace FlockFive
             bool secHit = hasAd && HitPad(lay.Secondary, out secHeld);
             var keep = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, a);
-            // b87: the 2X button reads as "Watch Ad": video icon, "WATCH AD" over a big 2X,
-            // a gentle breathe and the shared PushButton sheen at half speed.
-            var priR = lay.Primary;
-            if (hasAd && !priHeld)
-            {
-                float k = 1f + WatchAdPulse * Mathf.Sin(AdPause.Unscaled * Mathf.PI * 2f / WatchAdPulsePeriod);
-                priR = new Rect(priR.center.x - priR.width * k * 0.5f, priR.center.y - priR.height * k * 0.5f, priR.width * k, priR.height * k);
-            }
-            var face = DrawPopupButton(priR, priHeld, PopupTint.Green);
-            if (hasAd)
-            {
-                PushButton.DrawSheen(face, PushButton.SheenU(AdPause.Unscaled * 0.5f), 0.55f * a, false);
-                float ic = face.height * 0.58f;
-                var icR = new Rect(face.x + face.height * 0.24f, face.center.y - ic * 0.5f, ic, ic);
-                DrawPlayAdIcon(icR);
-                var txt = new Rect(icR.xMax + face.height * 0.08f, face.y, face.xMax - icR.xMax - face.height * 0.30f, face.height);
-                DrawWatchAdWords(txt, s);
-                var sf = DrawPopupButton(lay.Secondary, secHeld, PopupTint.Wood);
-                DrawPopupWord(sf, RewardCollectWord, _choiceWord, s);
-            }
-            else DrawPopupWord(face, RewardCollectWord, _choiceWord, s);
+            DrawOfferChoice(lay, hasAd, priHeld, secHeld, a, s, RewardCollectWord);
             GUI.color = keep;
             if (a < 0.5f) return;
             if (hasAd && priHit) StartCoroutine(WatchRewardRepeat());
             else if ((!hasAd && priHit) || secHit) _rewardChoice = 2;
+        }
+
+        // Shared Watch-Ad-2X / Collect choice painter. Used by the REWARD popup and the DAILY
+        // popup so both have the same buttons, icon+label group, pulse, sheen and popup style.
+        // Primary = green WATCH AD 2X (or lone green Collect when no ad); Secondary = wood Collect.
+        // Caller owns hit testing and alpha (GUI.color); `a` only scales the sheen.
+        void DrawOfferChoice(OfferButtonsLayout lay, bool hasAd, bool priHeld, bool secHeld, float a, float s, string collectWord)
+        {
+            if (_choiceWord == null)
+                _choiceWord = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
+            // b87: the 2X button reads as "Watch Ad": video icon, "WATCH AD" over a big 2X,
+            // a gentle breathe and the shared PushButton sheen at half speed.
+            var priR = lay.Primary;
+            float pk = 1f;
+            if (hasAd && !priHeld)
+            {
+                pk = PushButton.PulseK(AdPause.Unscaled, WatchAdPulse, WatchAdPulsePeriod);
+                priR = PushButton.Scaled(priR, pk);
+            }
+            var face = DrawPopupButton(priR, priHeld, PopupTint.Green);
+            if (hasAd)
+            {
+                // b110: gloss follows the rounded plate, not an oval.
+                PushButton.DrawRectSheen(LastPlateRect, PushButton.SheenU(AdPause.Unscaled * 0.5f), 0.55f * a, PopupCornerPx);
+                // b110: label is laid out and fitted at rest size, then scaled with the plate by the same pulse value.
+                var m0 = PushButton.BeginPulse(priR.center, pk);
+                face = PushButton.ScaledAbout(face, priR.center, 1f / pk);
+                // b111 (Brandon): icon + words are one group centered on the button, inside the same
+                // inner padding the Collect / Pay Double buttons use (DrawPopupWord).
+                float ic = face.height * 0.58f;
+                float gap = face.height * 0.08f;
+                float padX = face.width * PopupWordPadX;
+                float slotW = Mathf.Max(8f, face.width - 2f * padX - ic - gap);
+                var slotLab = new Rect(0f, face.y + face.height * PopupWordPadY * 0.5f, slotW, face.height * (1f - PopupWordPadY));
+                float textW = MeasureWatchAdWords(slotLab, s);
+                float groupW = ic + gap + textW;
+                float gx = face.center.x - groupW * 0.5f;
+                var icR = new Rect(gx, face.center.y - ic * 0.5f, ic, ic);
+                DrawPlayAdIcon(icR);
+                var txt = new Rect(icR.xMax + gap, slotLab.y, textW, slotLab.height);
+                DrawWatchAdWords(txt, s);
+                PushButton.EndPulse(m0);
+                var sf = DrawPopupButton(lay.Secondary, secHeld, PopupTint.Wood);
+                DrawPopupWord(sf, collectWord, _choiceWord, s);
+            }
+            else DrawPopupWord(face, collectWord, _choiceWord, s);
         }
 
         public const string WatchAdWord = "WATCH AD";
@@ -190,18 +216,37 @@ namespace FlockFive
         public const float WatchAdPulsePeriod = 1.6f;
         GUIStyle _watchSmall;
 
-        void DrawWatchAdWords(Rect r, float s)
+        // Fits both lines to the slot (same FitFont/outline rule as DrawPopupWord) and returns the widest line,
+        // so the icon + words group can be centered on the button.
+        float MeasureWatchAdWords(Rect slot, float s)
+        {
+            FitWatchAdWords(slot, s, out var top, out var big);
+            var c1 = new GUIContent(WatchAdWord);
+            var c2 = new GUIContent(RewardDoubleWord);
+            _watchSmall.fontSize = top.fontSize;
+            float w1 = _watchSmall.CalcSize(c1).x;
+            _choiceWord.fontSize = big.fontSize;
+            float w2 = _choiceWord.CalcSize(c2).x;
+            return Mathf.Min(slot.width, Mathf.Max(w1, w2));
+        }
+
+        void FitWatchAdWords(Rect r, float s, out Rect top, out Rect big)
         {
             if (_watchSmall == null)
                 _watchSmall = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
-            var top = new Rect(r.x, r.y + r.height * 0.12f, r.width, r.height * 0.30f);
-            var big = new Rect(r.x, r.y + r.height * 0.38f, r.width, r.height * 0.52f);
+            top = new Rect(r.x, r.y, r.width, r.height * 0.36f);
+            big = new Rect(r.x, r.y + r.height * 0.34f, r.width, r.height * 0.66f);
+            _watchSmall.wordWrap = false; _watchSmall.alignment = TextAnchor.MiddleCenter; _watchSmall.fontStyle = FontStyle.Bold;
             _watchSmall.fontSize = FitFont(_watchSmall, WatchAdWord, top.width, top.height, 9, Mathf.Max(12, Mathf.RoundToInt(18f * s)));
-            StampOutlined(top, WatchAdWord, _watchSmall, new Color(1f, 0.97f, 0.86f, 1f), 0, Mathf.Clamp(Mathf.RoundToInt(_watchSmall.fontSize * 0.14f), 1, 4));
-            _choiceWord.wordWrap = false;
-            _choiceWord.alignment = TextAnchor.MiddleCenter;
-            _choiceWord.fontStyle = FontStyle.Bold;
-            _choiceWord.fontSize = FitFont(_choiceWord, RewardDoubleWord, big.width, big.height, 14, Mathf.Max(18, Mathf.RoundToInt(38f * s)));
+            _choiceWord.wordWrap = false; _choiceWord.alignment = TextAnchor.MiddleCenter; _choiceWord.fontStyle = FontStyle.Bold;
+            _choiceWord.fontSize = FitFont(_choiceWord, RewardDoubleWord, big.width, big.height, 14, Mathf.Max(18, Mathf.RoundToInt(34f * s)));
+        }
+
+        // White fill, dark outline: same stamp as DrawPopupWord on Collect / Pay Double.
+        void DrawWatchAdWords(Rect r, float s)
+        {
+            FitWatchAdWords(r, s, out var top, out var big);
+            StampOutlined(top, WatchAdWord, _watchSmall, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(_watchSmall.fontSize * 0.16f), 2, 8));
             StampOutlined(big, RewardDoubleWord, _choiceWord, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(_choiceWord.fontSize * 0.16f), 2, 8));
         }
 

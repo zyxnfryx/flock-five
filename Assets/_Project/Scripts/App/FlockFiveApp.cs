@@ -3433,7 +3433,8 @@ namespace FlockFive
                     _garden.Feeders[i].Show(color, !_restarting);
                 }
             }
-            if (_garden.Ostrich != null) _garden.Ostrich.Sync(_board);
+            // The ostrich syncs once its staged fight is over, so it never takes a hit or leaves mid-strike.
+            if (_garden.Ostrich != null && !_ostrichFight) _garden.Ostrich.Sync(_board);
         }
 
         bool Locked(int i) => _locked.Contains(i);
@@ -3614,7 +3615,7 @@ namespace FlockFive
             TickDailyBonus();
             if (_splash) return;
             if (_garden.Ostrich != null)
-                _garden.Ostrich.SetCalm(_sel >= 0 || _locked.Count > 0);
+                _garden.Ostrich.SetCalm(_sel >= 0 || (_locked.Count > 0 && !_ostrichFight));
             TickLightning();
             if (ClearAdOfferUp()) return;
             if (_restartAsk != RestartAsk.None) return;
@@ -3806,7 +3807,12 @@ namespace FlockFive
             Unlock(from);
             Unlock(to);
             if (_board.Ostrich != null && _board.Ostrich.Alive)
-                GardenSolve.AfterMove(_board);
+            {
+                // The views catch up to the hop, then the ostrich's pecks are played, not teleported.
+                SyncAll();
+                yield return OstrichFight();
+                if (gen != _motionGen) yield break;
+            }
             SyncAll();
 
             int kicked = KickCollects();
@@ -9028,6 +9034,7 @@ namespace FlockFive
             if (_pestCue == PestCueSparrow) lesson |= GardenLesson.Sparrow;
             if (_pestCue == PestCueHawk) lesson |= GardenLesson.Hawk;
             if (_pestCue == PestCueBee) lesson |= GardenLesson.Bee;
+            if (_pestCue == PestCueFire) lesson |= GardenLesson.Fire;
             if (_leafIntro) lesson |= GardenLesson.Leaf;
             if (BadgerGuideLive()) lesson |= GardenLesson.BadgerGuide;
             if (_bgLessonLive) lesson |= GardenLesson.BadgerLesson;
@@ -10450,6 +10457,8 @@ namespace FlockFive
         }
 
         internal static Rect LastPedestalFace;
+        internal static Rect LastPlateRect; // b110: the drawn rounded plate, for the rounded-rect sheen
+        public const float PopupCornerPx = 28f;
 
         static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true, bool burst = true)
         {
@@ -10515,6 +10524,7 @@ namespace FlockFive
             }
             GUI.color = held ? new Color(0.86f, 0.86f, 0.86f, 1f) : Color.white;
             DrawBevelPlate(tex, face, 28f);
+            LastPlateRect = face;
             GUI.color = Color.white;
             float ix = face.width * 0.05f;
             float iy = face.height * 0.14f;
@@ -17924,7 +17934,7 @@ namespace FlockFive
         {
             GUI.color = new Color(1f, 1f, 1f, alpha);
             DrawBevelPlate(DiamondPlateTex(), r, 28f);
-            PushButton.DrawSheen(r, Mathf.Repeat(AdPause.Unscaled / 3.6f, 1f), 0.70f * alpha, false);
+            PushButton.DrawRectSheen(r, Mathf.Repeat(AdPause.Unscaled / 3.6f, 1f), 0.70f * alpha, PopupCornerPx);
             GUI.color = Color.white;
         }
 

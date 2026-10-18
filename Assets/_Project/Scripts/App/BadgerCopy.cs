@@ -133,6 +133,8 @@ namespace FlockFive
         // Same words on one row, for a caption that already carries its own first line.
         const string HotSauceFrozenFlat = "Frozen badger. Hot Sauce is on hold.";
         public const string HotSauceFrozenSub = "FROZEN";
+        // b110 NEW COPY (awaits Brandon): the same line for Freeze Spray (the Hot Sauce line names Hot Sauce).
+        public const string FreezeSprayFrozen = "Frozen badger.\nFreeze Spray is on hold.";
         // Coach fight: the round after the Freeze demo is a gated step (CoachStep.BadgerBreakFree): two lines, glove on a comb.
         public const string FreezeBreakFreeWait = "Still frozen. Tap the glowing comb.\n" + HotSauceFrozenFlat;
         public const string BlockedBoth = "Blocked! The badger scores nothing.";
@@ -172,6 +174,15 @@ namespace FlockFive
             PlayerPrefs.Save();
         }
 
+        // Tests only: read and restore the stamp through PrefGuard (it shares the checksum with the coins stamp).
+        public static int CoachStampForTest() => PrefGuard.GetInt(CoachPref, 0);
+
+        public static void SetCoachStampForTest(int v)
+        {
+            PrefGuard.SetInt(CoachPref, v);
+            PlayerPrefs.Save();
+        }
+
         // Clear the stamp in tests only.
         public static void ClearCoachForTest()
         {
@@ -183,6 +194,18 @@ namespace FlockFive
         {
             return appearance <= 1 && !CoachDone();
         }
+    }
+
+    // b110: fade the bottom badger caption paints with. The tutorial glove drives the shared fade (tutorial steps keep it);
+    // every other fight line (repeat fights, appearance 2+) paints at full strength through the same caption helper.
+    public static class BadgerCaptionFade
+    {
+        public static float For(bool coachDrivesFade, float coachFade)
+            => coachDrivesFade ? Mathf.Clamp01(coachFade) : 1f;
+
+        // Pure form of "is this a tutorial fight": any one tutorial signal keeps the glove-driven fade.
+        public static bool IsTutorial(bool lessonLive, bool coachFightFlag, bool fightIsCoach, bool lessonStage, bool guideLive, bool resultLive)
+            => lessonLive || coachFightFlag || fightIsCoach || lessonStage || guideLive || resultLive;
     }
 
     // What a finished (or quit) contest does to the flag, purse, and hive.

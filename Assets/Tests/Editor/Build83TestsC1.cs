@@ -225,10 +225,10 @@ namespace FlockFive.Editor
                 bool order = body.sortingOrder == OstrichMark.BodyOrder
                     && body.sortingOrder < 8
                     && neck.sortingOrder == OstrichMark.NeckOrder
-                    && neck.sortingOrder > 8
-                    && neck.sortingOrder < FlockSort.Perch
+                    && neck.sortingOrder < 2
+                    && neck.sortingOrder > body.sortingOrder
                     && mark.Head.sortingOrder == OstrichMark.HeadOrder
-                    && mark.Head.sortingOrder > neck.sortingOrder
+                    && mark.Head.sortingOrder > 8
                     && mark.Head.sortingOrder < FlockSort.Perch;
                 Check("behind-flock", order,
                     "body " + body.sortingOrder + " neck " + neck.sortingOrder + " head " + mark.Head.sortingOrder);

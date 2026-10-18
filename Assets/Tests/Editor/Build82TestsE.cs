@@ -200,10 +200,11 @@ namespace FlockFive.Editor
         static void CheckLightning(System.Action<string, bool, string> Check)
         {
             PlayerPrefs.DeleteKey(LightningStrike.PrefKey);
-            Check("lightning-default-off",
-                !LightningStrike.Enabled && !LightningStrike.RemoteDefault
+            // b110: on by default, chance 0.60 (was off, 0.45). An explicit pref 0 still turns it off.
+            Check("lightning-default-on",
+                LightningStrike.Enabled && LightningStrike.RemoteDefault
                 && LightningStrike.PrefKey == "flockfive.lightning"
-                && Mathf.Abs(LightningStrike.Chance - 0.45f) < 0.0001f
+                && Mathf.Abs(LightningStrike.Chance - 0.60f) < 0.0001f
                 && LightningStrike.MaxPerLevel == 1,
                 "enabled=" + LightningStrike.Enabled);
 
@@ -235,13 +236,13 @@ namespace FlockFive.Editor
 
             LightningStrike.Enabled = true;
             var win = EmptyGift();
-            int struck = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.44f, false);
-            int miss = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.45f, false);
+            int struck = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.59f, false);
+            int miss = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.60f, false);
             int dry = LightningStrike.TryPick(win, claimed, burned, false, 0, 0.1f, false);
             int capped = LightningStrike.TryPick(win, claimed, burned, true, 1, 0.1f, true);
             int forced = LightningStrike.TryPick(win, claimed, burned, false, 0, 0.9f, true);
             Check("chance-storm-cap-force",
-                LightningStrike.RollHits(0.44f) && !LightningStrike.RollHits(0.45f)
+                LightningStrike.RollHits(0.59f) && !LightningStrike.RollHits(0.60f)
                 && struck == 0 && miss < 0 && dry < 0 && capped < 0 && forced == 0,
                 "struck=" + struck + " miss=" + miss + " dry=" + dry + " cap=" + capped + " force=" + forced);
 

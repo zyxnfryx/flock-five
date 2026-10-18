@@ -55,6 +55,9 @@ namespace FlockFive
         public int PecksPerMove = DefaultPecks;
         // Feeder the head is blocking. -1 until a match names one.
         public int BlockSlot = -1;
+        // Limb whose full set landed the latest hit. -1 until a set bonks. The view
+        // strikes it when the last hit comes with no peck, so the fight is never skipped.
+        public int LastBonkBranch = -1;
 
         public bool Alive => Hits < HitsToFlee;
 
@@ -67,7 +70,19 @@ namespace FlockFive
             PeckIndex = 0;
             Bonked = 0;
             BlockSlot = -1;
+            LastBonkBranch = -1;
         }
+    }
+
+    // One peck, as the board saw it. Counts are the limb sizes just before the hop,
+    // so a view can check its own stacks still match before it animates the bird.
+    public struct PeckHit
+    {
+        public int From;
+        public int FromCount;
+        public int To;
+        public int ToCount;
+        public Bird Bird;
     }
 
     public static class OstrichPest
@@ -86,6 +101,7 @@ namespace FlockFive
             o.Hits++;
             if (branch < 64) o.Bonked |= 1UL << branch;
             if (slot >= 0) o.BlockSlot = slot;
+            o.LastBonkBranch = branch;
             if (!o.Alive) GardenSolve.Drain(b);
         }
 
@@ -110,19 +126,33 @@ namespace FlockFive
         }
 
         // TryMove already happened. Bonk that set, peck, bonk again.
-        public static void AfterMove(Board b)
+        public static void AfterMove(Board b) => AfterMove(b, null, out _);
+
+        // Same board math. Every landed peck is appended to log (may be null) so the
+        // view can play it. finaleBranch is >= 0 when the ostrich died in this call
+        // without a single peck: the view must still stage a strike on that set before
+        // the ostrich leaves. -1 otherwise.
+        public static void AfterMove(Board b, List<PeckHit> log, out int finaleBranch)
         {
+            finaleBranch = -1;
             if (b == null || b.Ostrich == null) return;
-            Settle(b);
             var o = b.Ostrich;
+            bool aliveBefore = o.Alive;
+            int logged = 0;
+            Settle(b);
             int n = o.PecksPerMove;
             if (n < 0) n = 0;
             for (int k = 0; k < n && o.Alive; k++)
             {
-                OstrichPeck.Scatter(b);
+                if (OstrichPeck.Scatter(b, out var hit))
+                {
+                    logged++;
+                    if (log != null) log.Add(hit);
+                }
                 Settle(b);
             }
             Settle(b);
+            if (aliveBefore && !o.Alive && logged == 0) finaleBranch = o.LastBonkBranch;
         }
     }
 
@@ -131,8 +161,11 @@ namespace FlockFive
         // One unhidden tip bird hops to another limb with room.
         // Never a full set, never a five-run. PeckIndex advances even when
         // nothing legal was found, so the next peck stays on the shared stream.
-        public static bool Scatter(Board b)
+        public static bool Scatter(Board b) => Scatter(b, out _);
+
+        public static bool Scatter(Board b, out PeckHit hit)
         {
+            hit = default;
             if (b == null || b.Ostrich == null || !b.Ostrich.Alive) return false;
             var o = b.Ostrich;
             var rng = new SplitMix64(o.PeckSeed, o.PeckIndex);
@@ -167,6 +200,8 @@ namespace FlockFive
                     var tb = b.Branches[dst[d]];
                     a.AlignShroud();
                     tb.AlignShroud();
+                    int fromCount = a.Count;
+                    int toCount = tb.Count;
                     tb.Birds.Add(bird);
                     tb.Shrouded.Add(false);
                     if (!tb.IsFullMatch(out _) && tb.TipRun() < 5)
@@ -175,6 +210,7 @@ namespace FlockFive
                         if (a.Shrouded.Count > a.Birds.Count)
                             a.Shrouded.RemoveAt(a.Shrouded.Count - 1);
                         if (a.RevealExposed() > 0) b.JustUnveiled = true;
+                        hit = new PeckHit { From = from, FromCount = fromCount, To = dst[d], ToCount = toCount, Bird = bird };
                         return true;
                     }
                     tb.Birds.RemoveAt(tb.Count - 1);

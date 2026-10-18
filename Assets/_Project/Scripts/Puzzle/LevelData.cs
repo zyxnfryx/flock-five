@@ -69,8 +69,11 @@ namespace FlockFive
             new Level { Number = 29, Id = "garden-29", Title = "Garden 29", Make = Garden28, Solo = true },
             new Level { Number = 30, Id = "garden-30", Title = "Garden 30", Make = Garden29, Solo = true },
             new Level { Number = 31, Id = "garden-31", Title = "Garden 31", Make = Garden31 },
+            // Build 110: garden 32 is where the backdrop turns to spring, so the ostrich no
+            // longer debuts again there. Same authored board and 3 feeders, no ostrich.
+            // Ostrich gardens on the ladder: 27. Next ostrich garden: 38 (Garden38Level, not wired yet).
             new Level { Number = 32, Id = "garden-32", Title = "Garden 32", Make = Garden32Ostrich, Solo = true,
-                Feeders = 3, Ostrich = true, PeckSeed = 832449 },
+                Feeders = 3, Ostrich = false, PeckSeed = 832449 },
             // Build 111: gardens 33-37 (LevelData.Ladder33.cs) and the ostrich's second garden, 38.
             // 36 is a honey badger garden (plain board). 38 is not a badger or season-change level.
             new Level { Number = 33, Id = "garden-33", Title = "Garden 33", Make = Garden33 },
@@ -283,6 +286,7 @@ namespace FlockFive
         {
             get
             {
+                if (Current != null && Current.Ostrich) return 0;
                 int n = DisplayNumber;
                 if (n <= 2) return 0;
                 if (n <= 6) return 1;
@@ -296,6 +300,7 @@ namespace FlockFive
         {
             get
             {
+                if (Current != null && Current.Ostrich) return 0;
                 return DisplayNumber <= 10 ? 0 : 1;
             }
         }

@@ -60,12 +60,9 @@ namespace FlockFive
         static int _dailyBonusPx = 12;
         static int _railDigitPx;
         static int _railDigitKey = int.MinValue;
-        // b129 countdown fits. Each is fitted once on the widest sample ("Ready in 24:00:00",
-        // "24:00:00"), so the per-second digits never refit; the keys clear on a Daily state change.
+        // b129 countdown fits. Each is fitted once on the widest sample ("Ready in 24:00:00"), so the per-second digits never refit; the keys clear on a Daily state change.
         static int _dailyCountPx = 10;
         static int _dailyClaimSmallPx = 14;
-        static int _railClockPx = 8;
-        static int _railClockKey = int.MinValue;
         static GUIStyle _dailyAsk;
         static GUIStyle _dailyAskBtn;
         static int _dailyAskFit = int.MinValue;
@@ -194,7 +191,6 @@ namespace FlockFive
             // Text caches key on string length only; "1 day streak" -> "2 day streak" must refit.
             _dailyFitKey = int.MinValue;
             _railDigitKey = int.MinValue;
-            _railClockKey = int.MinValue;
         }
 
         // The ONE place the 24h-window state change is applied to the UI. Called every frame
@@ -202,7 +198,7 @@ namespace FlockFive
         // medal badge, Daily button and reminder plan all flip the instant the countdown ends
         // (or the grace lapses). Cheap: RefreshDay does nothing until the wall-clock second
         // changes and returns true only on a state change; the per-second countdown text is
-        // read lazily from DailyBonus.CountdownLine/CountdownClock by the painters.
+        // read lazily from DailyBonus.CountdownLine by the card painter (the splash medal shows no timer).
         // The shown streak is DailyBonus.OfferStreak (the preview), never the saved streak.
         bool SyncDailyDay()
         {
@@ -287,27 +283,6 @@ namespace FlockFive
                 float cy = plate.yMax - plate.width * 0.22f;
                 DrawReadyBadge(cx, cy, plate.width);
             }
-
-            // Claimed: the time left on the coin's lower face, only when it is big enough to read.
-            if (icon == DailyBonusIconState.Flame && DailyBonus.CountdownActive && plate.width >= RailClockMinPx)
-                DrawRailClock(plate);
-        }
-
-        // Smallest medal width (px) that gets a countdown. Below it the flame alone shows.
-        const float RailClockMinPx = 56f;
-
-        static void DrawRailClock(Rect plate)
-        {
-            EnsureDailyStyles();
-            var box = new Rect(plate.x + plate.width * 0.10f, plate.y + plate.height * 0.66f, plate.width * 0.80f, plate.height * 0.22f);
-            int key = Mathf.RoundToInt(box.width) * 397 ^ Mathf.RoundToInt(box.height) * 17;
-            if (key != _railClockKey)
-            {
-                _railClockKey = key;
-                _railClockPx = FitFont(_dailyLine, "24:00:00", box.width, box.height * 0.92f, 6, 24);
-            }
-            _dailyLine.fontSize = _railClockPx;
-            StampOutlined(box, DailyBonus.CountdownClock, _dailyLine, new Color(1f, 0.97f, 0.86f), 1, 1);
         }
 
         // Where the flame art is drawn for a given plate. DrawDailyStreakFlame paints it and
@@ -461,10 +436,10 @@ namespace FlockFive
             bool watchHeld = false;
             bool collectHit = false;
             bool collectHeld = false;
-            if (chrome == 3 && !_dailyAdBusy)
+            if (chrome == 3 && _wheelPayMul < 2 && !_dailyAdBusy)
                 watchHit = HitPad(watch, out watchHeld);
             if ((chrome == 2 || chrome == 3) && !_dailyAdBusy)
-                collectHit = HitPad(collect, out collectHeld);
+                collectHit = HitPad(chrome == 3 && _wheelPayMul >= 2 ? watch : collect, out collectHeld);
             bool claim = false;
             bool claimHeld = false;
             if (flowerOn && _dailyPhase != DailyWheelPhase.Spin)
@@ -510,9 +485,15 @@ namespace FlockFive
             if (flowerOn)
                 DrawDailyClaim(flower, claimHeld, s, t);
             if (chrome == 2 || chrome == 3)
-                DrawDailyBar(collect, collectHeld, PopupTint.Gold, DailyCollectLabel, s);
-            if (chrome == 3 && _wheelPayMul < 2)
-                DrawDailyBar(watch, watchHeld, PopupTint.Green, DailyDoubleLabel, s);
+            {
+                // Same shared painter as the streak REWARD choice. After the ad doubled the pay only
+                // Collect remains, in the wide primary slot.
+                bool adOn = chrome == 3 && _wheelPayMul < 2;
+                var lay = new OfferButtonsLayout { HasSecondary = adOn };
+                if (adOn) { lay.Primary = watch; lay.Secondary = collect; }
+                else lay.Primary = chrome == 3 ? watch : collect;
+                DrawOfferChoice(lay, adOn, adOn ? watchHeld : collectHeld, collectHeld, fade, s, DailyCollectLabel);
+            }
             if (!closing && !_dailyPayHold)
                 DrawGiftCloseX(xBtn, xHeld, s);
             GUI.matrix = prev;
@@ -770,30 +751,6 @@ namespace FlockFive
             DrawCoinFly(pig);
             GUI.color = prevC;
             GUI.matrix = prev;
-        }
-
-        void DrawDailyBar(Rect bar, bool held, PopupTint tint, string label, float s)
-        {
-            if (bar.width < 8f || bar.height < 8f || string.IsNullOrEmpty(label)) return;
-            DrawPopupButton(bar, held, tint);
-            if (_dailyWatch == null)
-                _dailyWatch = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                    wordWrap = false
-                };
-            if (label == DailyDoubleLabel)
-            {
-                var seat = RewardStampRect(bar, 2);
-                float wordW = seat.xMin - bar.x - 6f;
-                if (wordW < bar.width * 0.4f) wordW = bar.width * 0.55f;
-                var word = new Rect(bar.x, bar.y, wordW, bar.height);
-                DrawPopupWord(word, "Watch Ad", _dailyWatch, s);
-                DrawWheelX2(bar, 0.48f);
-                return;
-            }
-            DrawPopupWord(bar, label, _dailyWatch, s);
         }
 
         // Ask card or welcome only after the claim coins, balance, and clink are done.
@@ -1054,11 +1011,11 @@ namespace FlockFive
             int bars = 0;
             if (chrome == 2 || chrome == 3)
             {
-                barH = PopupBarHeight(s, cardW);
                 barGap = 10f * s;
-                bars = chrome == 3 ? 2 : 1;
+                barH = DailyOfferStackH(s, chrome == 3);
+                bars = 1;
             }
-            float stack = cardH + (flowerOn ? flowerSz - overlap : 0f) + barGap + barH * bars + (bars == 2 ? barGap : 0f);
+            float stack = cardH + (flowerOn ? flowerSz - overlap : 0f) + barGap + barH;
             // b95 (Brandon): the popup used to recenter after the first spin, because the claim
             // flower (chrome 0) gives way to the Collect / Watch bars (chrome 2, 3) and each
             // stack height centered differently. The card is seated once, for the tallest stack
@@ -1070,25 +1027,24 @@ namespace FlockFive
             flower = flowerOn
                 ? new Rect(card.center.x - flowerSz * 0.5f, card.yMax - overlap, flowerSz, flowerSz)
                 : default;
-            float barW = cardW - band * 2f;
-            if (barW < 8f) barW = 8f;
-            float barX = card.x + (cardW - barW) * 0.5f;
-            float y = card.yMax + barGap;
-            if (chrome == 3)
+            // b110: Daily uses the shared offer layout (same as the streak REWARD choice):
+            // the wide primary (Watch Ad 2X, or lone Collect) with the smaller Collect beneath.
+            float y = card.yMax + 10f * s;
+            collect = default;
+            watch = default;
+            if (chrome == 2 || chrome == 3)
             {
-                collect = new Rect(barX, y, barW, barH);
-                watch = new Rect(barX, collect.yMax + barGap, barW, barH);
+                var lay = OfferButtons(card.center.x, y, cardW * 0.86f, s, chrome == 3);
+                if (chrome == 3) { watch = lay.Primary; collect = lay.Secondary; }
+                else collect = lay.Primary;
             }
-            else if (chrome == 2)
-            {
-                collect = new Rect(barX, y, barW, barH);
-                watch = default;
-            }
-            else
-            {
-                collect = default;
-                watch = default;
-            }
+        }
+
+        // Height of the shared offer buttons stack (primary, plus the secondary when `ad`).
+        public static float DailyOfferStackH(float s, bool ad)
+        {
+            var lay = OfferButtons(0f, 0f, 100f, s, ad);
+            return (ad ? lay.Secondary.yMax : lay.Primary.yMax);
         }
 
         // Tallest stack (card, claim flower or bars) over every chrome 0..3. Chrome independent.
@@ -1106,8 +1062,8 @@ namespace FlockFive
                 float cardH = band + boardH + band;
                 float barH = 0f, barGap = 0f;
                 int bars = 0;
-                if (c == 2 || c == 3) { barH = PopupBarHeight(s, cardW); barGap = 10f * s; bars = c == 3 ? 2 : 1; }
-                float stack = cardH + (flowerOn ? flowerSz - overlap : 0f) + barGap + barH * bars + (bars == 2 ? barGap : 0f);
+                if (c == 2 || c == 3) { barH = DailyOfferStackH(s, c == 3); barGap = 10f * s; bars = 1; }
+                float stack = cardH + (flowerOn ? flowerSz - overlap : 0f) + barGap + barH;
                 if (stack > best) best = stack;
             }
             return best;
