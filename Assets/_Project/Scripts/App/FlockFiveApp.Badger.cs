@@ -2189,7 +2189,16 @@ namespace FlockFive
             if (w > band.width) w = band.width;
             if (h > band.height) h = band.height;
             var seat = new Rect(band.center.x - w * 0.5f, band.center.y - h * 0.5f, w, h);
-            CapSpot("badger.caption"); PaintCoachCaption(_bgLine, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+            // b110: the shared caption paint multiplies its ink and plate by _coachFade, which only the tutorial glove
+            // ramps. On a repeat (non-tutorial) fight it sat at 0, so the bottom dialog painted nothing. Use a full
+            // fade there; the lesson, guided picks, and result keep the glove's fade. Restored so the coach state is untouched.
+            float keepFade = _coachFade;
+            _coachFade = BadgerCaptionFade.For(_bgLessonLive || BadgerGuideLive() || BadgerResultLive(), _coachFade);
+            try
+            {
+                CapSpot("badger.caption"); PaintCoachCaption(_bgLine, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+            }
+            finally { _coachFade = keepFade; }
         }
 
     }

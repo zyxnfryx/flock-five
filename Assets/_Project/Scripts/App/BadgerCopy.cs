@@ -185,6 +185,14 @@ namespace FlockFive
         }
     }
 
+    // b110: fade the bottom badger caption paints with. The tutorial glove drives the shared fade (tutorial steps keep it);
+    // every other fight line (repeat fights, appearance 2+) paints at full strength through the same caption helper.
+    public static class BadgerCaptionFade
+    {
+        public static float For(bool coachDrivesFade, float coachFade)
+            => coachDrivesFade ? Mathf.Clamp01(coachFade) : 1f;
+    }
+
     // What a finished (or quit) contest does to the flag, purse, and hive.
     // Pure plan: the app applies it. Tests check the numbers without Unity UI.
     public struct BadgerPayPlan
