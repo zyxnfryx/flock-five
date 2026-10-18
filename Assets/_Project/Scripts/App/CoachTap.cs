@@ -65,6 +65,8 @@ namespace FlockFive
         BadgerResult = 41,       // result: Continue
         // b127: Freeze demo, break-free round. The badger is still iced; the glowing comb is the only tap.
         BadgerBreakFree = 42,
+        // b110: first lightning fire on a gift branch. Informational: any tap continues.
+        Fire = 43,
     }
 
     // b123 (Brandon): every step names ONE explicit press-to-continue, distinct from toggle taps.
@@ -113,6 +115,7 @@ namespace FlockFive
                 case CoachStep.Sparrow:
                 case CoachStep.Hawk:
                 case CoachStep.Bee:
+                case CoachStep.Fire:
                 case CoachStep.Leaf:
                 case CoachStep.AlbumHoney:
                 case CoachStep.AlbumUpgrade:
@@ -262,6 +265,7 @@ namespace FlockFive
                 case CoachStep.Hawk: return CaptionLayout.HawkLine;
                 case CoachStep.Ostrich: return CaptionLayout.OstrichLine;
                 case CoachStep.Bee: return CaptionLayout.BeePestLine;
+                case CoachStep.Fire: return CaptionLayout.FireLine;
                 case CoachStep.Leaf: return CaptionLayout.LeafLine;
                 case CoachStep.HiveGarden: return CaptionLayout.HiveGardenLine;
                 case CoachStep.HiveHome: return "Tap the hive to see your bee collection.";

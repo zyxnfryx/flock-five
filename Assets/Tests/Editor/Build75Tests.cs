@@ -133,6 +133,7 @@ namespace FlockFive.Editor
                 case CoachStep.Sparrow:
                 case CoachStep.Hawk:
                 case CoachStep.Bee:
+                case CoachStep.Fire:
                 case CoachStep.Leaf:
                 case CoachStep.AlbumHoney:
                 case CoachStep.AlbumUpgrade:

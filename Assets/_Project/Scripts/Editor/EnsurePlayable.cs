@@ -89,6 +89,7 @@ namespace FlockFive.Editor
             Suite("storm-glass", StormGlassTests.Run);
             Suite("sky", SkyCycleTests.Run);
             Suite("bee-cards", BeeCardQueueTests.Run);
+            Suite("build110-lightning-fire", Build110LightningFireTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

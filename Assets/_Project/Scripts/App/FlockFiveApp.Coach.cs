@@ -76,6 +76,10 @@ namespace FlockFive
         const int PestCueHawk = 2;
         const int PestCueBee = 3;
         const int PestCueOstrich = 4;
+        // b110 (Brandon): the first lightning fire. Informational like the bee line: any tap dismisses it.
+        const int PestCueFire = 5;
+        const string CoachFireKey = "flockfive.coach.fire";
+        const string FireIntroLine = CaptionLayout.FireLine;
         const string CoachBeeKey = "flockfive.coach.bee";
         const string CoachHiveGardenKey = "flockfive.coach.hive.garden";
         const float PestCueSeconds = 4.5f;
@@ -569,7 +573,8 @@ namespace FlockFive
                 && _cueLine != SparrowIntroLine
                 && _cueLine != HawkIntroLine
                 && _cueLine != BeeIntroLine
-                && _cueLine != OstrichIntroLine)
+                && _cueLine != OstrichIntroLine
+                && _cueLine != FireIntroLine)
                 return true;
             if (_gloveAct == TutorGloveAct.FadeOutOnTap || _gloveAct == TutorGloveAct.Reappear)
                 return true;
@@ -584,7 +589,7 @@ namespace FlockFive
                 return true;
             if (_pestCue == 0 && !_coach && !_leafIntro && !_cueGift && !_hiveLevelLive && !_adHand
                 && PlayClock.Now >= _coachGiftUntil
-                && (SparrowDue() || HawkDue() || BeeDue()))
+                && (SparrowDue() || HawkDue() || BeeDue() || FireDue()))
                 return true;
             return false;
         }
@@ -5501,6 +5506,7 @@ namespace FlockFive
             if (_pestCue == PestCueOstrich) return CoachStep.Ostrich;
             if (_pestCue == PestCueHawk) return CoachStep.Hawk;
             if (_pestCue == PestCueBee) return CoachStep.Bee;
+            if (_pestCue == PestCueFire) return CoachStep.Fire;
             return CoachStep.Sparrow;
         }
 
@@ -7251,6 +7257,12 @@ namespace FlockFive
                 ApplyPestCue();
                 return true;
             }
+            if (_pestCue == PestCueFire && !PestCueAlive())
+            {
+                // The garden changed under the lesson. Not seen: it re-arms at the next strike.
+                PestIntroHide();
+                return false;
+            }
             if (_pestCue != 0)
             {
                 if (!PestCueAlive() || PlayClock.Now >= _pestCueUntil)
@@ -7262,6 +7274,11 @@ namespace FlockFive
                 return true;
             }
             if (PlayClock.Now < _pestNext) return false;
+            if (FireDue())
+            {
+                BeginPestCue(PestCueFire);
+                return true;
+            }
             if (OstrichDue())
             {
                 BeginPestCue(PestCueOstrich);
@@ -7330,6 +7347,7 @@ namespace FlockFive
             if (_pestCue == PestCueHawk) return HawkView.Live != null;
             if (_pestCue == PestCueBee) return BoardHasBees();
             if (_pestCue == PestCueOstrich) return OstrichDue() || (_garden.Ostrich != null && _garden.Ostrich.OnStage);
+            if (_pestCue == PestCueFire) return FireCueAlive();
             return false;
         }
 
@@ -7340,7 +7358,7 @@ namespace FlockFive
         {
             _pestHeld = 0f;
             _pestCue = kind;
-            _pestCueUntil = (kind == PestCueSparrow || kind == PestCueBee || kind == PestCueOstrich)
+            _pestCueUntil = (kind == PestCueSparrow || kind == PestCueBee || kind == PestCueOstrich || kind == PestCueFire)
                 ? float.PositiveInfinity
                 : PlayClock.Now + PestCueSeconds;
             // The bee lesson does not freeze the garden. The sparrow still does.
@@ -7378,6 +7396,7 @@ namespace FlockFive
             if (_pestCue == PestCueHawk) pestLine = HawkIntroLine;
             else if (_pestCue == PestCueBee) pestLine = BeeIntroLine;
             else if (_pestCue == PestCueOstrich) pestLine = OstrichIntroLine;
+            else if (_pestCue == PestCueFire) pestLine = FireIntroLine;
             CueLine(pestLine);
             _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
         }
@@ -7388,6 +7407,7 @@ namespace FlockFive
             if (_pestCue == PestCueSparrow) PlayerPrefs.SetInt(CoachSparrowKey, 1);
             else if (_pestCue == PestCueBee) PlayerPrefs.SetInt(CoachBeeKey, 1);
             else if (_pestCue == PestCueOstrich) PlayerPrefs.SetInt(CoachOstrichKey, 1);
+            else if (_pestCue == PestCueFire) { PlayerPrefs.SetInt(CoachFireKey, 1); _fireArmed = false; }
             else PlayerPrefs.SetInt(CoachHawkKey, 1);
             PlayerPrefs.Save();
             var step = PestCoachStep();
@@ -7505,6 +7525,17 @@ namespace FlockFive
             Transform body = null;
             int slot = _pestSlot;
             float perch = 0.35f;
+            if (_pestCue == PestCueFire)
+            {
+                // The scorched limb. The point is stored, so it holds while the limb falls away.
+                var camFire = _garden.Cam;
+                if (camFire == null || !_fireArmed) return false;
+                world = _fireAim;
+                var spFire = camFire.WorldToScreenPoint(world);
+                if (spFire.z < 0f) return false;
+                gui = new Vector2(spFire.x, Screen.height - spFire.y);
+                return true;
+            }
             if (_pestCue == PestCueSparrow && SparrowView.Live != null)
             {
                 body = SparrowView.Live.transform;

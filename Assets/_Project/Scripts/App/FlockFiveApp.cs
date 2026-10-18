@@ -9028,6 +9028,7 @@ namespace FlockFive
             if (_pestCue == PestCueSparrow) lesson |= GardenLesson.Sparrow;
             if (_pestCue == PestCueHawk) lesson |= GardenLesson.Hawk;
             if (_pestCue == PestCueBee) lesson |= GardenLesson.Bee;
+            if (_pestCue == PestCueFire) lesson |= GardenLesson.Fire;
             if (_leafIntro) lesson |= GardenLesson.Leaf;
             if (BadgerGuideLive()) lesson |= GardenLesson.BadgerGuide;
             if (_bgLessonLive) lesson |= GardenLesson.BadgerLesson;
