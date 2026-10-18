@@ -45,7 +45,7 @@ namespace FlockFive.Editor
             // and Garden 38. A limb with fewer birds shows NO leaves (TipLocked false).
             int lockedLimbs = 0, dropped = 0;
             string droppedLog = "";
-            for (int i = 0; i <= LevelData.Count; i++)
+            for (int i = 0; i < LevelData.Count; i++)
             {
                 int idx = i;
                 var level = idx < LevelData.Count ? LevelData.Peek(idx) : LevelData.Garden38Level;

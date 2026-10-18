@@ -17,7 +17,7 @@ namespace FlockFive.Editor
                 if (ok) pass++; else fail++;
                 Debug.Log("[build83d] " + (ok ? "PASS  " : "FAIL  ") + name + "  " + detail);
             }
-            Check("ladder-32", LevelData.Count == 32, "count " + LevelData.Count);
+            Check("ladder-32", LevelData.Count == 38, "count " + LevelData.Count);
             foreach (int n in new[] { 27, 32 })
             {
                 var lv = LevelData.Peek(n - 1);
@@ -44,7 +44,7 @@ namespace FlockFive.Editor
                 if (!ok) { stuck = "garden " + (i + 1); break; }
                 reached = i + 1;
             }
-            Check("playthrough-1-32", reached == 32, "reached " + reached + " " + stuck);
+            Check("playthrough-1-38", reached == 38, "reached " + reached + " " + stuck);
             LevelData.Open(0);
             Debug.Log(fail == 0 ? "build83d tests DONE " + pass + "/" + (pass + fail) : "build83d tests FAIL " + fail + " failed, " + pass + " passed");
         }

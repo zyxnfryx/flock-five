@@ -42,6 +42,12 @@ namespace FlockFive
             new Proof(28, "0>2 2>3 2>1 3>2", 0, 3, new[] { 6, 7, 6, 7 }),
             new Proof(29, "0>1", 0, 2, new[] { 3, 3, 4, 5, 5 }),
             new Proof(30, "1>2 1>0", 2, 1, new[] { 11, 9, 11 }),
+            // Build 111: generated gardens 33-37, proofs from TrapProbe.FindPlayed.
+            new Proof(33, "10>11 1>6 13>8 5>3 11>10 10>13 3>4 5>6 11>8 2>5 2>0", 11, 7, new[] { 14, 10 }),
+            new Proof(34, "12>13 7>9 5>6 10>11 0>2 4>3 4>5 5>4", 3, 0, new[] { 7, 6, 9, 12, 3, 12 }),
+            new Proof(35, "13>10 11>9 1>2 5>1 6>3 4>2 7>9 1>6 12>13 0>2 10>11 13>10 12>13 11>12 1>0 5>1", 3, 5, new[] { 0, 8, 5, 0, 10 }),
+            new Proof(36, "10>13 2>6 12>10 5>12 9>13 8>5 3>6", 3, 12, new[] { 5, 1, 10, 7, 14, 4 }),
+            new Proof(37, "3>5 1>3 2>1 10>12 8>10 8>9", 9, 8, new[] { 11, 3, 8, 12, 3, 8, 8 }),
         };
 
         static int IndexOf(int number)
@@ -177,7 +183,7 @@ namespace FlockFive
                 if (anyMix) mixing++;
                 if (anyMulti && !anyMix && nomix == null) nomix = "L" + lv.Number;
             }
-            Check("ladder-count", LevelData.Count == 32, "count " + LevelData.Count);
+            Check("ladder-count", LevelData.Count == 38, "count " + LevelData.Count);
             Check("ladder-kit-sets", bad == null, bad ?? "every garden: each color <= 3 sets, one set per kit");
             Check("ladder-winnable", lost == null, lost ?? "all gardens Winnable with and without the gift");
             Check("ladder-kits-mix", nomix == null && mixing == LevelData.Count, "gardens mixing kits within a color " + mixing + "/" + LevelData.Count);
@@ -262,7 +268,7 @@ namespace FlockFive
             var covered = new HashSet<int>();
             foreach (var pr in Proofs) covered.Add(pr.Level);
             bool all = true;
-            for (int n = 16; n <= 30; n++) if ((n < 18 || n > 25) && n != 27 && !covered.Contains(n)) all = false;
+            for (int n = 16; n <= 37; n++) if ((n < 18 || n > 25) && n != 27 && n != 31 && n != 32 && !covered.Contains(n)) all = false;
             Check("trap-coverage-16-29", all, covered.Count + " gardens");
         }
     }
