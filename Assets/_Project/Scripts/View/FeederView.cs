@@ -10,6 +10,8 @@ namespace FlockFive
         public SpriteRenderer Art;
         Vector3 _planted;
         Transform _cord;
+        SpriteRenderer _cordSr;
+        static readonly Color CordCol = new Color(0.20f, 0.13f, 0.08f, 1f);
         bool _held;
         bool _scoring;
         bool _departing;
@@ -59,12 +61,25 @@ namespace FlockFive
                 _cord = go.transform;
                 var sr = go.AddComponent<SpriteRenderer>();
                 sr.sprite = _px;
-                sr.color = new Color(0.20f, 0.13f, 0.08f, 1f);
+                sr.color = CordCol;
                 sr.sortingOrder = Art.sortingOrder - 1;
+                _cordSr = sr;
+                // b110: the cord is part of the feeder. It shows and hides with the art.
+                sr.enabled = Art.enabled;
                 go.layer = gameObject.layer;
             }
             _cord.localPosition = new Vector3(0f, hookY, 0.01f);
             _cord.localScale = new Vector3(0.05f / Scale, len, 1f);
+        }
+
+        // The one cord is a child of this feeder. It follows the art: hidden with it, faded with it.
+        void CordShow(bool on, float a = 1f)
+        {
+            if (_cordSr == null) return;
+            _cordSr.enabled = on;
+            var c = CordCol;
+            c.a = a;
+            _cordSr.color = c;
         }
 
         public void Show(BirdColor? color, bool glide = true)
@@ -76,6 +91,7 @@ namespace FlockFive
                 _color = null;
                 _arriving = false;
                 Art.enabled = false;
+                CordShow(false);
                 ClearGlints();
                 return;
             }
@@ -89,6 +105,7 @@ namespace FlockFive
             {
                 Art.enabled = true;
                 Art.color = Color.white;
+                CordShow(true);
                 return;
             }
             if (!glide || _scoring)
@@ -96,6 +113,7 @@ namespace FlockFive
                 _arriving = false;
                 Art.enabled = true;
                 Art.color = Color.white;
+                CordShow(true);
                 if (!_held && !_departing)
                 {
                     transform.position = _planted;
@@ -248,10 +266,12 @@ namespace FlockFive
                     var glow = Color.Lerp(Color.white, new Color(1f, 0.92f, 0.55f), burst * 0.85f);
                     glow.a = 1f - lift;
                     Art.color = glow;
+                    CordShow(true, glow.a);
                 }
                 yield return null;
             }
             if (Art != null) Art.enabled = false;
+            CordShow(false);
             transform.position = _planted;
             transform.localRotation = Quaternion.identity;
             transform.localScale = Vector3.one * Scale;
@@ -269,6 +289,7 @@ namespace FlockFive
             {
                 Art.enabled = true;
                 Art.color = Color.white;
+                CordShow(true);
             }
             var home = _planted;
             var from = home + new Vector3(0f, 3.1f, 0f);
@@ -377,7 +398,11 @@ namespace FlockFive
             transform.position = _planted;
             transform.localRotation = Quaternion.identity;
             transform.localScale = Vector3.one * Scale;
-            if (Art != null) Art.color = Color.white;
+            if (Art != null)
+            {
+                Art.color = Color.white;
+                CordShow(Art.enabled);
+            }
         }
 
         void LateUpdate() => Step(Time.deltaTime, Time.time);
