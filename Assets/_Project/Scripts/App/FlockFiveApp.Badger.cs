@@ -91,6 +91,7 @@ namespace FlockFive
         bool _bgBreakFreeOn;
         int _bgBreakTile = -1;
         readonly BadgerFrozenUi _bgFrozenUi = new BadgerFrozenUi();
+        readonly BadgerFrozenUi _bgFrozenUiFreeze = new BadgerFrozenUi(BadgerPower.FreezeSpray);
         BadgerPower _bgGuidePower;      // the power the round's forced step is about
         BadgerPower _bgBlockBeat;       // Hot Sauce / Freeze Spray played this round (any fight): drives the fly beat
         BadgerPower _bgGuideRoundPower; // set when that power's tile is played; drives the post-power arrows
@@ -158,6 +159,7 @@ namespace FlockFive
             _bgBreakFreeOn = false;
             _bgBreakTile = -1;
             _bgFrozenUi.Reset();
+            _bgFrozenUiFreeze.Reset();
             _bgGuidePower = BadgerPower.None;
             _bgGuideRoundPower = BadgerPower.None;
             _bgPowerTile = -1;
@@ -182,6 +184,7 @@ namespace FlockFive
             _bgBreakFreeOn = false;
             _bgBreakTile = -1;
             _bgFrozenUi.Reset();
+            _bgFrozenUiFreeze.Reset();
             EndBadgerLesson();
             // 0.3 s fade, then the splash bed comes back. A result stinger rings out.
             if (MixDesk.Live != null) MixDesk.Live.SetBadger(false);
@@ -601,24 +604,23 @@ namespace FlockFive
             if (_bgStage != BadgerStage.YourPick || _bgFight == null) return;
             // b123: the round-4 step takes x2 only (arm / disarm). Other powers wait for their own turn.
             if (_bgPowerGuideOn && p != _bgGuidePower) return;
-            if (BadgerBreakFreeLive() && p != BadgerPower.HotSauce) return;
+            if (BadgerBreakFreeLive() && p != BadgerPower.HotSauce && p != BadgerPower.FreezeSpray) return;
             if (!BadgerFight.IsBlock(p) && _bgArmed == p)
             {
                 _bgArmed = BadgerPower.None;
                 if (!_bgPowerGuideOn) _bgLine = BadgerCopy.YourPick;
                 return;
             }
-            if (!_bgFight.PowerReady(p) || _bgFight.PowersLocked) return;
-            // Hot Sauce is disabled while the badger is frozen (button is greyed); a tap does nothing but say why.
+            // Hot Sauce and Freeze Spray are disabled while the badger is frozen (button is greyed); a tap does nothing but say why.
+            // (Checked before PowerReady: a spent Freeze Spray still answers while he is frozen.)
+            if (_bgFight.PowersLocked) return;
+            if (BadgerFight.IsBlock(p)) { var ui = p == BadgerPower.FreezeSpray ? _bgFrozenUiFreeze : _bgFrozenUi;
+                var fl = ui.Tap(_bgFight, p, AdPause.Unscaled);
+                if (fl != null) { Sfx.Deny(); if (!BadgerBreakFreeLive()) _bgLine = fl; return; } }
+            if (!_bgFight.PowerReady(p)) return;
+            // (Hot Sauce / Freeze Spray frozen taps are answered above.)
             // b127: shared deny sound only (no shake, squish or burst). The break-free step paints the line in its own
             // caption box for a moment; every other round puts it on the shared caption.
-            var frozenLine = _bgFrozenUi.Tap(_bgFight, p, AdPause.Unscaled);
-            if (frozenLine != null)
-            {
-                Sfx.Deny();
-                if (!BadgerBreakFreeLive()) _bgLine = frozenLine;
-                return;
-            }
             if (!_bgFight.CanAfford(p))
             {
                 BadgerShakeNow(BadgerPowerKey + (int)p);
@@ -708,7 +710,13 @@ namespace FlockFive
         // The one button that may run its handler during the break-free step (frozen Hot Sauce: says why, never advances).
         Rect BadgerGateToggleRect(int stage)
         {
-            if (BadgerBreakFreeLive()) return BadgerPowerRect(BadgerLayout(), (int)BadgerPower.HotSauce - 1);
+            if (BadgerBreakFreeLive())
+            {
+                // Frozen Hot Sauce and frozen Freeze Spray sit side by side: one rect over both (b110).
+                var hs = BadgerPowerRect(BadgerLayout(), (int)BadgerPower.HotSauce - 1);
+                var fz = BadgerPowerRect(BadgerLayout(), (int)BadgerPower.FreezeSpray - 1);
+                return Rect.MinMaxRect(Mathf.Min(hs.xMin, fz.xMin), Mathf.Min(hs.yMin, fz.yMin), Mathf.Max(hs.xMax, fz.xMax), Mathf.Max(hs.yMax, fz.yMax));
+            }
             return stage == 2 ? _bgPowerBtn : default;
         }
 
@@ -1073,7 +1081,7 @@ namespace FlockFive
             if (!BadgerGuideLive()) return;
             RefreshBadgerGuideAim();
             string line = BadgerBreakFreeLive()
-                ? (_bgFrozenUi.Toast(AdPause.Unscaled) ?? BadgerCopy.FreezeBreakFreeWait)
+                ? (_bgFrozenUi.Toast(AdPause.Unscaled) ?? _bgFrozenUiFreeze.Toast(AdPause.Unscaled) ?? BadgerCopy.FreezeBreakFreeWait)
                 : _bgPowerGuideOn
                 ? (BadgerPowerGuideStage() == 2 ? BadgerCopy.PowerArmedLine(_bgGuidePower) : BadgerCopy.PowerIntroLine(_bgGuidePower, _bgFight != null && _bgFight.RoundsResolved == BadgerTutorialScript.Moves))
                 : BadgerCopy.GuideLine(_bgFight.TutorialMove);
@@ -2127,19 +2135,21 @@ namespace FlockFive
                     : Color.white;
                 bool guideBlocks = _bgPowerGuideOn && p != _bgGuidePower;
                 // Hot Sauce is greyed (same dim as USED / not-your-turn) while the badger is frozen.
-                bool frozenOut = _bgFight != null && !used && _bgFight.PowerFrozenOut(p);
+                bool frozenOut = _bgFight != null && (!used || p == BadgerPower.FreezeSpray) && _bgFight.PowerFrozenOut(p);
                 if (frozenOut && !armedNow) sub = BadgerCopy.HotSauceFrozenSub;
                 guideBlocks |= frozenOut;
                 // b127: break-free step: every power but the frozen Hot Sauce is inert.
                 bool breakFree = BadgerBreakFreeLive();
-                if (breakFree && p != BadgerPower.HotSauce) guideBlocks = true;
+                if (breakFree && p != BadgerPower.HotSauce && p != BadgerPower.FreezeSpray) guideBlocks = true;
                 // Frozen Hot Sauce stays tappable (it says why); it is only drawn disabled.
-                bool hsTap = frozenOut && p == BadgerPower.HotSauce && inPick;
+                bool hsTap = frozenOut && BadgerFight.IsBlock(p) && inPick;
                 var rr = r;
-                if (p == BadgerPower.HotSauce)
+                if (BadgerFight.IsBlock(p))
                 {
-                    _bgFrozenUi.Observe(frozenOut, _bgFight != null && _bgFight.Result == BadgerResult.Playing);
-                    float pop = _bgFrozenUi.PopScale(AdPause.Unscaled, inPick);
+                    var fui = p == BadgerPower.FreezeSpray ? _bgFrozenUiFreeze : _bgFrozenUi;
+                    fui.Observe(frozenOut, _bgFight != null && _bgFight.Result == BadgerResult.Playing);
+                    if (used && !frozenOut) fui.CancelPop(); // spent Freeze Spray returns to USED, no pop
+                    float pop = fui.PopScale(AdPause.Unscaled, inPick);
                     if (pop != 1f)
                     {
                         rr = new Rect(r.center.x - r.width * pop * 0.5f, r.center.y - r.height * pop * 0.5f, r.width * pop, r.height * pop);
@@ -2149,13 +2159,13 @@ namespace FlockFive
                 if (_bgPowerGuideOn && p == _bgGuidePower && BadgerPowerGuideStage() == 1) DrawBadgerGuideGlow(r);
                 bool picture = BadgerFight.IsBlock(p);
                 bool fire = BadgerButton(rr, picture ? "" : BadgerPowerName(p), sub, k < 2, used || !inPick || guideBlocks, lit,
-                    live && inPick && !used && (!guideBlocks || hsTap), ink, BadgerShakeX(BadgerPowerKey + (int)p, s));
+                    live && inPick && (hsTap || (!used && !guideBlocks)), ink, BadgerShakeX(BadgerPowerKey + (int)p, s));
                 if (picture && GuiPaint())
                 {
                     float side = r.height * 0.58f;
                     DrawBadgerPowerIcon(new Rect(rr.center.x - side * 0.5f + BadgerShakeX(BadgerPowerKey + (int)p, s), rr.y + rr.height * 0.05f, side, side), p, used || !inPick || frozenOut ? 0.55f : 1f);
                 }
-                if (frozenOut && p == BadgerPower.HotSauce) DrawBadgerIceBadge(rr);
+                if (frozenOut) DrawBadgerIceBadge(rr);
                 if (fire) ClickBadgerPower(p);
             }
         }
