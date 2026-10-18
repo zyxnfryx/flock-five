@@ -1,0 +1,8 @@
+F {'L': 36.5, 'R': 36.1, 'T': 36.0, 'B': 36.0, 'rimW': 6.0, 'shadowR': 16, 'shadowB': 16, 'marginL': 16, 'marginT': 24, 'size': (367, 556)}
+L {'L': 36.0, 'R': 36.0, 'T': 36.0, 'B': 36.0, 'rimW': 6.0, 'shadowR': 16, 'shadowB': 16, 'marginL': 16, 'marginT': 24, 'size': (354, 556)}
+O {'L': 43.7, 'R': 43.7, 'T': 40.4, 'B': 40.2, 'rimW': 7.1, 'shadowR': 16, 'shadowB': 16, 'marginL': 16, 'marginT': 16, 'size': (452, 556)}
+C {'L': 40.3, 'R': 47.3, 'T': 45.5, 'B': 45.5, 'rimW': 7.1, 'shadowR': 16, 'shadowB': 16, 'marginL': 16, 'marginT': 16, 'size': (459, 556)}
+K {'L': 37.0, 'R': 45.9, 'T': 36.0, 'B': 36.0, 'rimW': 7.1, 'shadowR': 16, 'shadowB': 16, 'marginL': 16, 'marginT': 24, 'size': (460, 556)}
+I {'L': 36.0, 'R': 36.0, 'T': 36.0, 'B': 36.0, 'rimW': 6.0, 'shadowR': 16, 'shadowB': 16, 'marginL': 16, 'marginT': 24, 'size': (272, 556)}
+V {'L': 17.5, 'R': 17.5, 'T': 35.0, 'B': 25.7, 'rimW': 6.7, 'shadowR': 16, 'shadowB': 16, 'marginL': 16, 'marginT': 24, 'size': (516, 556)}
+E {'L': 36.0, 'R': 37.0, 'T': 36.0, 'B': 36.0, 'rimW': 6.0, 'shadowR': 16, 'shadowB': 16, 'marginL': 16, 'marginT': 24, 'size': (372, 556)}
