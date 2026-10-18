@@ -212,6 +212,9 @@ namespace FlockFive
                 case CoachStep.BadgerBreakFree:
                     return new TapRule { Advance = TapZone.Target, Toggle = TapZone.PowerButton, Pointer = CoachPointer.Glove };
             }
+            // b113: the fire lesson is a look-at step. The arrow points at the burned branch; a tap anywhere continues.
+            if (step == CoachStep.Fire)
+                return new TapRule { Advance = TapZone.Blank | TapZone.Focus | TapZone.Target, Pointer = CoachPointer.Arrow };
             switch (Kind(step))
             {
                 case CoachTapKind.Informational:

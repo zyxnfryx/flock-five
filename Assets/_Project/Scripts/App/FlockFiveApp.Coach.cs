@@ -4712,6 +4712,7 @@ namespace FlockFive
             if (_restVis)
                 DrawRestGlove(s);
             DrawCoachGlove(s);
+            DrawFireArrow(s);
         }
 
         // Move a caption off a dialog. Above, then below, then a thin strip in the free gap.
@@ -7489,8 +7490,23 @@ namespace FlockFive
             return b.Contains(new Vector3(world.x, world.y, b.center.z));
         }
 
+        Vector2 _fireArrowGui;
+        bool _fireArrowOn;
+
+        // Painted with the tutorial overlay. The target is a tall box on the burned limb; CoachArrowAt tips its
+        // arrow at 35% of the box height below the top, so the tip lands just above the wood.
+        void DrawFireArrow(float s)
+        {
+            if (!_fireArrowOn || _pestCue != PestCueFire) return;
+            float k = Mathf.Clamp(s, 1f, 2f);
+            float h = 100f * k;
+            var target = new Rect(_fireArrowGui.x - 40f * k, _fireArrowGui.y - 0.35f * h - 16f * k, 80f * k, h);
+            CoachArrowAt(target, s);
+        }
+
         void PlacePestGlove(float dt)
         {
+            _fireArrowOn = false;
             // Halo only. Hole stays under the dim threshold so the rest of the garden still takes taps.
             _cueHolePx = 0f;
             if (!PestAim(out var gui, out var world))
@@ -7509,6 +7525,15 @@ namespace FlockFive
             _coachGlow.transform.localScale = new Vector3(2.3f * breathe, 2.3f * breathe, 1f);
             _coachGlow.color = new Color(1f, 0.91f, 0.46f, a);
             float handS = DeviceFit.Ui();
+            // b113: the fire lesson uses the shared look-at ARROW (CoachArrowAt), never the glove. The glove state
+            // stays hidden, so no hand is drawn and no focus-target tap leaks; any tap still just continues.
+            if (_pestCue == PestCueFire)
+            {
+                _gloveVis = false;
+                _fireArrowGui = gui;
+                _fireArrowOn = true;
+                return;
+            }
             _glovePestKind = _pestCue;
             if (GardenGlove(gui, dt, handS, FnPestTap()))
             {

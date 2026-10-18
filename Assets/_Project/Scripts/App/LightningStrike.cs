@@ -9,9 +9,39 @@ namespace FlockFive
     {
         public const string PrefKey = "flockfive.lightning";
         public const bool RemoteDefault = true;
-        // b110: was 0.45 (and the whole feature was off). One roll per storm window, at most one strike per garden.
-        public const float Chance = 0.60f;
         public const int MaxPerLevel = 1;
+        // b113 (Brandon): garden 1 (LevelData index 0) never gets lightning.
+        public const int MinGarden = 1;
+        public static bool GardenEligible(int garden) => garden >= MinGarden;
+
+        // b113 (Brandon): after a strike there is a cooldown, then the chance ramps garden by garden until the next
+        // one. since = eligible gardens entered since the last strike, counting the current one (the garden right
+        // after a strike is 1). since <= CooldownGardens: no strike. Then StartChance, +StepChance per garden, capped.
+        // Before the first strike ever the guarantee (FirstStrikeOwed) is what fires, not this curve.
+        public const int CooldownGardens = 3;
+        public const float StartChance = 0.15f;
+        public const float StepChance = 0.15f;
+        public const float CapChance = 0.90f;
+        public const string SinceKey = "flockfive.lightning.since";
+
+        public static float ChanceFor(int since)
+        {
+            if (since <= CooldownGardens) return 0f;
+            float c = StartChance + (since - CooldownGardens - 1) * StepChance;
+            return c > CapChance ? CapChance : c;
+        }
+
+        public static int Since => PrefGuard.GetInt(SinceKey, 0);
+
+        // One eligible garden entered. Persisted.
+        public static int NoteGarden()
+        {
+            int n = Since + 1;
+            if (n > 1000) n = 1000;
+            PrefGuard.SetInt(SinceKey, n);
+            UnityEngine.PlayerPrefs.Save();
+            return n;
+        }
         // The first strike a player ever gets is guaranteed (still needs a storm, an unused gift, and a
         // solvable board). This pref counts strikes so the guarantee is spent once.
         public const string StruckKey = "flockfive.lightning.struck";
@@ -21,6 +51,7 @@ namespace FlockFive
         public static void MarkStruck()
         {
             UnityEngine.PlayerPrefs.SetInt(StruckKey, 1);
+            PrefGuard.SetInt(SinceKey, 0); // the cooldown starts now
             UnityEngine.PlayerPrefs.Save();
         }
 
@@ -43,24 +74,25 @@ namespace FlockFive
             }
         }
 
-        public static bool RollHits(float unit)
+        public static bool RollHits(float unit, float chance)
         {
             if (unit < 0f) unit = 0f;
             if (unit > 1f) unit = 1f;
-            return unit < Chance;
+            return unit < chance;
         }
 
         // -1 when this storm does not strike. Force still obeys the cap,
         // the target rules, and the solvability gate.
         // owed is the one guaranteed first strike: it skips the dice only. Off, dry, capped,
         // no target, and unsolvable all still win over it.
-        public static int TryPick(Board board, bool[] claimed, bool[] burned, bool storming, int already, float roll, bool force, bool owed = false)
+        public static int TryPick(Board board, bool[] claimed, bool[] burned, bool storming, int already, float roll, bool force, bool owed = false, int garden = MinGarden, float chance = 1f)
         {
+            if (!GardenEligible(garden)) return -1; // never garden 1, not even forced
             if (already >= MaxPerLevel) return -1;
             if (!force)
             {
                 if (!Enabled || !storming) return -1;
-                if (!owed && !RollHits(roll)) return -1;
+                if (!owed && !RollHits(roll, chance)) return -1;
             }
             int index = Target(board, claimed, burned);
             if (index < 0) return -1;

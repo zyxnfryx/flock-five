@@ -871,7 +871,7 @@ namespace FlockFive
             ResetHopTrail();
             _seed = _board.Clone();
             for (int i = 0; i < _bonusOn.Length; i++) _bonusOn[i] = false;
-            ResetLightning();
+            ResetLightning(index);
             _giftBranch = -1;
             _census = BoardValidator.Counts(_board);
             CoachBegin(index);

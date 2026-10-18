@@ -71,14 +71,46 @@ namespace FlockFive.Editor
             LightningStrike.Enabled = false;
             Check("explicit-off-still-off", !LightningStrike.Enabled, "pref 0 wins over the default");
 
-            Check("chance-raised", Mathf.Abs(LightningStrike.Chance - 0.60f) < 0.0001f && LightningStrike.Chance > 0.45f,
-                "chance=" + LightningStrike.Chance);
             Check("still-capped-one-per-level", LightningStrike.MaxPerLevel == 1, "cap=" + LightningStrike.MaxPerLevel);
             int hits = 0;
             const int n = 1000;
             for (int i = 0; i < n; i++)
-                if (LightningStrike.RollHits((i + 0.5f) / n)) hits++;
-            Check("not-every-strike", hits == 600 && hits < n, "hits " + hits + "/" + n);
+                if (LightningStrike.RollHits((i + 0.5f) / n, 0.60f)) hits++;
+            Check("roll-against-chance", hits == 600 && hits < n, "hits " + hits + "/" + n);
+
+            // b113: cooldown 3 gardens, then 15% +15%/garden, cap 90%.
+            bool cool = true;
+            for (int since = 0; since <= LightningStrike.CooldownGardens; since++)
+                cool &= LightningStrike.ChanceFor(since) == 0f;
+            Check("cooldown-no-strikes", cool && LightningStrike.CooldownGardens == 3, "cooldown=" + LightningStrike.CooldownGardens);
+            float prev = 0f;
+            bool ramp = true;
+            for (int since = 4; since <= 12; since++)
+            {
+                float c = LightningStrike.ChanceFor(since);
+                ramp &= c > prev || (c == LightningStrike.CapChance && prev == LightningStrike.CapChance);
+                prev = c;
+            }
+            Check("ramp-progressive-then-capped",
+                ramp && Mathf.Abs(LightningStrike.ChanceFor(4) - 0.15f) < 0.0001f
+                && Mathf.Abs(LightningStrike.ChanceFor(5) - 0.30f) < 0.0001f
+                && Mathf.Abs(LightningStrike.ChanceFor(9) - 0.90f) < 0.0001f
+                && Mathf.Abs(LightningStrike.ChanceFor(50) - 0.90f) < 0.0001f,
+                "4=" + LightningStrike.ChanceFor(4) + " 9=" + LightningStrike.ChanceFor(9) + " 50=" + LightningStrike.ChanceFor(50));
+
+            bool hadSince = PlayerPrefs.HasKey(LightningStrike.SinceKey);
+            int sinceKeep = PlayerPrefs.GetInt(LightningStrike.SinceKey, 0);
+            PlayerPrefs.DeleteKey(LightningStrike.SinceKey);
+            LightningStrike.NoteGarden();
+            LightningStrike.NoteGarden();
+            bool counted = LightningStrike.Since == 2;
+            LightningStrike.MarkStruck();
+            bool reset = LightningStrike.Since == 0;
+            LightningStrike.NoteGarden();
+            bool restarts = LightningStrike.Since == 1 && LightningStrike.ChanceFor(LightningStrike.Since) == 0f;
+            Check("counter-persists-and-resets-on-strike", counted && reset && restarts, "counted=" + counted + " reset=" + reset + " restart=" + restarts);
+            if (hadSince) PlayerPrefs.SetInt(LightningStrike.SinceKey, sinceKeep);
+            else PlayerPrefs.DeleteKey(LightningStrike.SinceKey);
         }
 
         static void Guarantee(System.Action<string, bool, string> Check)
@@ -93,6 +125,16 @@ namespace FlockFive.Editor
             if (dice >= 0) bad++;
             if (owed != 0) bad++;
             Check("owed-skips-the-dice", bad == 0, "dice=" + dice + " owed=" + owed);
+
+            // b113: garden 1 (index 0) never strikes: not by dice, not owed, not forced. Garden 2 (index 1) is fine.
+            int g1Dice = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.0f, false, false, 0, 1f);
+            int g1Owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true, 0, 1f);
+            int g1Force = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.0f, true, true, 0, 1f);
+            int g2Owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true, 1, 0f);
+            Check("garden-1-never-strikes-garden-2-owed",
+                g1Dice < 0 && g1Owed < 0 && g1Force < 0 && g2Owed == 0
+                && !LightningStrike.GardenEligible(0) && LightningStrike.GardenEligible(1) && LightningStrike.MinGarden == 1,
+                "g1=" + g1Dice + "/" + g1Owed + "/" + g1Force + " g2owed=" + g2Owed);
 
             int dry = LightningStrike.TryPick(win, claimed, burned, false, 0, 0.0f, false, true);
             int capped = LightningStrike.TryPick(win, claimed, burned, true, 1, 0.0f, false, true);
@@ -125,9 +167,10 @@ namespace FlockFive.Editor
             bool kind = CoachTap.Kind(CoachStep.Fire) == CoachTapKind.Informational
                 && CoachTap.AnyTap(CoachStep.Fire)
                 && CoachTap.Advances(CoachStep.Fire, false)
-                && CoachTap.Rule(CoachStep.Fire).Pointer == CoachPointer.Glove
+                && CoachTap.Rule(CoachStep.Fire).Pointer == CoachPointer.Arrow
+                && CoachTap.Rule(CoachStep.Fire).Advances(TapZone.Blank)
                 && CoachTap.Caption(CoachStep.Fire) == CaptionLayout.FireLine;
-            Check("fire-step-is-informational-glove", kind, CoachTap.Kind(CoachStep.Fire).ToString());
+            Check("fire-step-is-informational-arrow", kind, CoachTap.Kind(CoachStep.Fire).ToString());
 
             Check("owed-once-seen-never-again",
                 FlockFiveApp.FireLessonOwed(false, true, 5f, 5f)
@@ -136,19 +179,28 @@ namespace FlockFive.Editor
                 && !FlockFiveApp.FireLessonOwed(false, true, 4.9f, 5f)
                 && FlockFiveApp.FireLessonDelay > 0.5f,
                 "delay=" + FlockFiveApp.FireLessonDelay);
+            // b113: the lesson can never arm on garden 1.
+            string fl = Read("Assets/_Project/Scripts/App/FlockFiveApp.FireLesson.cs");
+            Check("lesson-blocked-on-garden-1",
+                fl.IndexOf("GardenEligible(_lightningGarden)") >= 0 && fl.Split(new[] { "GardenEligible(_lightningGarden)" }, System.StringSplitOptions.None).Length >= 3,
+                "FireDue + FireCueAlive gated");
             Check("stamp-flag", (GardenLesson.Fire & GardenLesson.Bee) == 0, "own bit");
         }
 
         static void Caption(System.Action<string, bool, string> Check)
         {
             string line = CaptionLayout.FireLine;
-            Check("copy-is-approved-text",
-                line == "Lightning burned the branch\nWatch out for dangerous weather"
-                && CaptionLayout.FireEmojiLine == "Lightning burned the branch \U0001F525\nWatch out for dangerous weather",
+            Check("copy-is-exact-text",
+                line == "Lightning burned the branch!\nWatch out for dangerous weather"
+                && line.IndexOf('\uD83D') < 0 && line.IndexOf('\uD83D') < 0,
                 "[" + line.Replace("\n", " / ") + "]");
             int rows = line.Split('\n').Length;
-            int emojiRows = CaptionLayout.FireEmojiLine.Split('\n').Length;
-            Check("copy-two-lines-max", rows <= 2 && emojiRows <= 2 && rows <= CaptionLayout.BannerMaxLines, "rows=" + rows);
+            Check("copy-two-lines-max", rows == 2 && rows <= CaptionLayout.BannerMaxLines, "rows=" + rows);
+            string gapped = CaptionLayout.HeadlineGap(line);
+            Check("visible-gap-between-sentences", gapped == "Lightning burned the branch!\n\nWatch out for dangerous weather"
+                && CaptionLayout.IsFireLine(gapped) && CaptionLayout.IsFireLine(line), "[" + gapped.Replace("\n", "|") + "]");
+            string src = Read("Assets/_Project/Scripts/App/CaptionLayout.cs");
+            Check("emoji-swap-removed-for-fire", src.IndexOf("FireEmojiLine") < 0, "no FireEmojiLine");
             var faces = new[] { new Vector2(1179f, 2556f), new Vector2(750f, 1334f), new Vector2(1536f, 2048f) };
             for (int i = 0; i < faces.Length; i++)
             {
@@ -157,11 +209,14 @@ namespace FlockFive.Editor
                 int px = CaptionLayout.BannerFont(w, h);
                 var style = FlockFiveApp.CoachCaptionStyle();
                 float inner = CaptionLayout.BannerMeasureWidth(w, style, line, px);
+                bool padded = inner <= w * CaptionLayout.FireInsetFrac + 0.5f && CaptionLayout.FireInsetFrac < 0.9f;
                 var fit = CaptionLayout.FitBanner(style, line, inner, px);
                 // Like the bee line, a long row may shrink the font, never below 60%.
-                bool ok = fit.Lines >= 1 && fit.Lines <= CaptionLayout.BannerMaxLines
+                bool ok = padded && fit.Lines >= 1 && fit.Lines <= CaptionLayout.BannerMaxLines
                     && fit.Font >= Mathf.RoundToInt(px * 0.6f) - 1;
-                Check("copy-fits-" + (int)w + "x" + (int)h, ok, "lines " + fit.Lines + " font " + fit.Font + "/" + px
+                // Every painted row stays inside the padded column: side margin on both edges.
+                ok &= CaptionLayout.ShownFits(style, fit.Shown, inner, fit.Font);
+                Check("copy-fits-padded-" + (int)w + "x" + (int)h, ok, "lines " + fit.Lines + " font " + fit.Font + "/" + px
                     + " [" + (fit.Shown ?? "").Replace("\n", " / ") + "]");
             }
         }
@@ -183,6 +238,19 @@ namespace FlockFive.Editor
             Check("lesson-on-pest-cue-path",
                 coach.IndexOf("PestCueFire") >= 0 && coach.IndexOf("CoachFireKey") >= 0
                 && coach.IndexOf("CoachStep.Fire") >= 0 && coach.IndexOf("FireDue()") >= 0, "coach");
+            string branch = Read("Assets/_Project/Scripts/View/BranchView.cs");
+            Check("burn-timeline-lengthened",
+                Mathf.Abs(BranchView.ScorchSeconds - 1.5f) < 0.0001f && BranchView.ScorchSeconds >= 0.58f * 2f
+                && branch.IndexOf("AnimateFlames(t)") >= 0 && branch.IndexOf("while (t < ScorchSeconds)") >= 0
+                && branch.IndexOf("yield return BreakAway()") >= 0 && FlockFiveApp.FireLessonDelay < BranchView.ScorchSeconds,
+                "burn " + BranchView.ScorchSeconds + "s (was 0.58), lesson at " + FlockFiveApp.FireLessonDelay + "s");
+            Check("burned-branch-disabled-immediately",
+                Read("Assets/_Project/Scripts/App/LightningStrike.cs").IndexOf("st.Burned = true;\n            st.Broken = true") >= 0
+                || Read("Assets/_Project/Scripts/App/LightningStrike.cs").IndexOf("st.Broken = true;") >= 0, "Burn() marks Broken at the strike");
+            Check("fire-arrow-not-glove",
+                coach.IndexOf("DrawFireArrow(s)") >= 0 && coach.IndexOf("CoachArrowAt(target, s)") >= 0
+                && coach.IndexOf("if (_pestCue == PestCueFire)\n            {\n                _gloveVis = false;") >= 0,
+                "arrow wired, glove hidden for the fire cue");
             string strike = Read("Assets/_Project/Scripts/App/LightningStrike.cs");
             Check("target-rules-untouched",
                 strike.IndexOf("!st.AdLocked || st.Count > 0") >= 0 && strike.IndexOf("KeepsSolvable(board, index)") >= 0
