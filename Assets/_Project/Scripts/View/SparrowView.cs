@@ -33,7 +33,7 @@ namespace FlockFive
 
         public static IEnumerator Patrol(System.Func<bool> allow, System.Func<bool> armed, int visits, FeederView[] feeders, Transform parent)
         {
-            if (visits <= 0) yield break;
+            if (visits <= 0 || PestSchedule.OstrichGarden) yield break;
             while (armed != null && !armed())
             {
                 if (parent == null) yield break;
@@ -60,6 +60,7 @@ namespace FlockFive
 
         public static IEnumerator Visit(FeederView[] feeders, Transform parent)
         {
+            if (PestSchedule.OstrichGarden) yield break;
             if (PestSchedule.SolvedNow) yield break;
             if (parent == null || feeders == null) yield break;
             var picks = Enabled(feeders);

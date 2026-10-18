@@ -18,6 +18,8 @@ namespace FlockFive
         const byte Tumble = 6;
         const byte Cloud = 7;
         const byte Glint = 8;
+        const byte Blossom = 9;
+        const byte Butterfly = 10;
 
         sealed class Sheet
         {
@@ -33,6 +35,7 @@ namespace FlockFive
         }
 
         static Transform _homeRoot;
+        static GardenScene _seedScene = GardenScene.Summer;
         static readonly int SpritePropsId = Shader.PropertyToID("unity_SpriteProps");
         static readonly int SpriteColorId = Shader.PropertyToID("unity_SpriteColor");
 
@@ -95,7 +98,8 @@ namespace FlockFive
         void Build(GardenScene scene)
         {
             bool low = FoliageSway.LowPower;
-            _sheets = new Sheet[4];
+            _sheets = new Sheet[6];
+            _seedScene = scene;
             _sheetN = 0;
             var tune = SeasonMotion.For(scene);
             _drift = tune.Drift;
@@ -113,6 +117,8 @@ namespace FlockFive
             if (n.Seed > 0) AddSheet(SpriteCatalog.Glow, n.Seed, Seed, rng);
             if (n.Cloud > 0) AddSheet(SpriteCatalog.Glow, n.Cloud, Cloud, rng);
             if (n.Glint > 0) AddSheet(SpriteCatalog.Glow, n.Glint, Glint, rng);
+            if (n.Blossom > 0) AddSheet(SpriteCatalog.PetalPeach, n.Blossom, Blossom, rng);
+            if (n.Butterfly > 0) AddSheet(SpriteCatalog.PetalPeach, n.Butterfly, Butterfly, rng);
         }
 
         void AddSheet(Sprite spr, int n, byte kind, System.Random rng)
@@ -222,16 +228,17 @@ namespace FlockFive
             }
             else if (kind == Petal)
             {
-                sheet.HW[i] = Mathf.Lerp(0.07f, 0.12f, u);
+                // Build 110: cherry petals, about twice the old size, brighter, drifting right on a breeze.
+                sheet.HW[i] = Mathf.Lerp(0.13f, 0.22f, u);
                 sheet.HH[i] = sheet.HW[i] * 1.4f;
-                sheet.VY[i] = -(0.12f + 0.16f * (float)rng.NextDouble());
-                sheet.VX[i] = Mathf.Lerp(-0.18f, 0.18f, (float)rng.NextDouble());
-                sheet.Spin[i] = Mathf.Lerp(-0.8f, 0.8f, (float)rng.NextDouble());
+                sheet.VY[i] = -(0.22f + 0.22f * (float)rng.NextDouble());
+                sheet.VX[i] = Mathf.Lerp(0.04f, 0.30f, (float)rng.NextDouble());
+                sheet.Spin[i] = Mathf.Lerp(-1.2f, 1.2f, (float)rng.NextDouble());
                 bool peach = rng.NextDouble() > 0.55;
                 sheet.R[i] = 255;
-                sheet.G[i] = peach ? (byte)210 : (byte)170;
-                sheet.B[i] = peach ? (byte)190 : (byte)185;
-                sheet.A[i] = 150;
+                sheet.G[i] = peach ? (byte)205 : (byte)150;
+                sheet.B[i] = peach ? (byte)190 : (byte)175;
+                sheet.A[i] = 225;
             }
             else if (kind == Fly)
             {
@@ -272,9 +279,36 @@ namespace FlockFive
                 sheet.Y[i] = -4.2f;
                 sheet.Phase[i] = 5f;
             }
+            else if (kind == Blossom)
+            {
+                // Whole blossoms: larger, slower, wide flutter.
+                sheet.HW[i] = Mathf.Lerp(0.18f, 0.28f, u);
+                sheet.HH[i] = sheet.HW[i] * 1.2f;
+                sheet.VY[i] = -(0.14f + 0.14f * (float)rng.NextDouble());
+                sheet.VX[i] = Mathf.Lerp(0.02f, 0.22f, (float)rng.NextDouble());
+                sheet.Spin[i] = Mathf.Lerp(-0.7f, 0.7f, (float)rng.NextDouble());
+                sheet.R[i] = 255;
+                sheet.G[i] = 225;
+                sheet.B[i] = 220;
+                sheet.A[i] = 215;
+            }
+            else if (kind == Butterfly)
+            {
+                sheet.HW[i] = Mathf.Lerp(0.16f, 0.22f, u);
+                sheet.HH[i] = sheet.HW[i] * 0.9f;
+                sheet.VX[i] = Mathf.Lerp(-0.25f, 0.25f, (float)rng.NextDouble());
+                sheet.VY[i] = Mathf.Lerp(-0.05f, 0.05f, (float)rng.NextDouble());
+                sheet.Spin[i] = 8f + 3f * (float)rng.NextDouble(); // wing beats per ~2pi seconds
+                bool gold = rng.NextDouble() > 0.5;
+                sheet.R[i] = 255;
+                sheet.G[i] = gold ? (byte)214 : (byte)160;
+                sheet.B[i] = gold ? (byte)70 : (byte)95;
+                sheet.A[i] = 235;
+                sheet.Y[i] = Mathf.Lerp(-2.0f, 3.0f, (float)rng.NextDouble());
+            }
             else if (kind == Cloud)
             {
-                sheet.HW[i] = Mathf.Lerp(0.85f, 1.45f, u);
+                sheet.HW[i] = Mathf.Lerp(0.85f, 1.45f, u) * (_seedScene == GardenScene.Spring ? 1.25f : 1f);
                 sheet.HH[i] = Mathf.Lerp(0.22f, 0.38f, (float)rng.NextDouble());
                 sheet.VX[i] = 0.28f + 0.08f * (float)rng.NextDouble();
                 sheet.VY[i] = 0f;
@@ -282,7 +316,7 @@ namespace FlockFive
                 sheet.R[i] = 255;
                 sheet.G[i] = 250;
                 sheet.B[i] = 244;
-                sheet.A[i] = 52;
+                sheet.A[i] = (byte)(_seedScene == GardenScene.Spring ? 96 : 52);
                 sheet.X[i] = Mathf.Lerp(-3.4f, 3.4f, (float)rng.NextDouble());
                 sheet.Y[i] = Mathf.Lerp(3.6f, 7.4f, (float)rng.NextDouble());
             }
@@ -382,9 +416,20 @@ namespace FlockFive
                 else
                 {
                     float sway = Mathf.Sin(t * 0.7f * _drift + sheet.Phase[i]);
-                    x += (sheet.VX[i] * _drift + sway * (kind == Wisp ? 0.04f : 0.18f)) * dt;
+                    float flutter = kind == Wisp ? 0.04f : (kind == Petal || kind == Blossom ? 0.42f : 0.18f);
+                    x += (sheet.VX[i] * _drift + sway * flutter) * dt;
                     y += sheet.VY[i] * _drift * dt;
-                    if (kind == Fly || kind == Seed)
+                    if (kind == Butterfly)
+                    {
+                        // Lazy loops: drift on two slow sines, wrap at the screen edges.
+                        x += Mathf.Sin(t * 0.9f + sheet.Phase[i]) * 0.55f * dt;
+                        y += Mathf.Cos(t * 1.3f + sheet.Phase[i] * 1.7f) * 0.40f * dt;
+                        if (x < left) x = right;
+                        else if (x > right) x = left;
+                        if (y < bottom + 1.5f) y = bottom + 1.5f;
+                        else if (y > top - 3f) y = top - 3f;
+                    }
+                    else if (kind == Fly || kind == Seed)
                     {
                         y += Mathf.Sin(t * 0.45f * _drift + sheet.Phase[i]) * 0.12f * _drift * dt;
                         if (x < left) x = right;
@@ -437,9 +482,15 @@ namespace FlockFive
                 sheet.Cols[v] = sheet.Cols[v + 1] = sheet.Cols[v + 2] = sheet.Cols[v + 3] = col;
 
                 float ang = (t * sheet.Spin[i] + sheet.Phase[i]);
+                float hw = sheet.HW[i];
+                if (kind == Butterfly)
+                {
+                    // Wings: width beats between 15% and 100%; the body only tilts.
+                    hw *= 0.15f + 0.85f * Mathf.Abs(Mathf.Sin(ang));
+                    ang = 0.3f * Mathf.Sin(t * 1.3f + sheet.Phase[i]);
+                }
                 float cs = Mathf.Cos(ang);
                 float sn = Mathf.Sin(ang);
-                float hw = sheet.HW[i];
                 float hh = sheet.HH[i];
                 float drawY = y;
                 Put(sheet.Verts, v, x, drawY, -hw, -hh, cs, sn);

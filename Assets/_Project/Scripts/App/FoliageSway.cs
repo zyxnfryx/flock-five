@@ -39,6 +39,10 @@ namespace FlockFive
             }
         }
 
+        public const float SpringSwayBoost = 2.4f;
+        // Spring gets a steady breeze floor so the branch never rests between gusts.
+        public const float SpringGustFloor = 0.30f;
+
         static bool _lowReady;
         static bool _low;
 
@@ -148,6 +152,7 @@ namespace FlockFive
             if (u > 6.2f)
                 gust += Mathf.Sin((u - 6.2f) / 1.5f * Mathf.PI) * 0.9f;
             gust *= tune.Gust;
+            if (_scene == GardenScene.Spring && gust < SpringGustFloor) gust = SpringGustFloor;
             if (gust < 0f) gust = 0f;
             else if (gust > 1f) gust = 1f;
             _block.SetVector(P0, _p0);
@@ -188,8 +193,9 @@ namespace FlockFive
             {
                 Put(0, 0.00f, 0.98f, 0.040f, 0.52f, 0.78f, -0.42f, 0.70f, 0.3f);
                 Put(1, 1.00f, 0.80f, 0.032f, 0.22f, -0.70f, -0.30f, 0.70f, 1.1f);
-                if (!low) Put(2, 0.02f, 0.02f, 0.026f, 0.28f, 0.40f, 0.92f, 0.60f, 2.0f);
-                if (!low) Put(3, 0.98f, 0.04f, 0.026f, 0.26f, -0.45f, 0.90f, 0.60f, 2.6f);
+                // Build 110: the bottom grass sways on low-power phones too (same shader cost).
+                Put(2, 0.02f, 0.02f, 0.026f, 0.28f, 0.40f, 0.92f, 0.60f, 2.0f);
+                Put(3, 0.98f, 0.04f, 0.026f, 0.26f, -0.45f, 0.90f, 0.60f, 2.6f);
             }
             else
             {
@@ -199,6 +205,8 @@ namespace FlockFive
                 Put(1, 0.02f, 0.98f, 0.032f, 0.42f, 0.25f, -0.97f, 0.65f, 1.3f);
             }
             float sway = SeasonMotion.For(scene).Sway;
+            // Spring's blossom branch and grass were a degree or less. Read as still.
+            if (scene == GardenScene.Spring) sway *= SpringSwayBoost;
             _p0.z *= sway;
             _p1.z *= sway;
             _p2.z *= sway;

@@ -76,6 +76,7 @@ namespace FlockFive.Editor
             Suite("build94-glove-banner", Build94GloveBannerTests.Run);
             Suite("build89-glove-caption", Build89GloveCaptionTests.Run);
             Suite("build88-pest", Build88PestTests.Run);
+            Suite("build110-spring-ostrich", Build110SpringOstrichTests.Run);
             Suite("build88-curtain", Build88CurtainTests.Run);
             Suite("build88-poker-tap", Build88PokerTapTests.Run);
             Suite("build88-banner", Build88BannerTests.Run);

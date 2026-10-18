@@ -34,7 +34,15 @@ namespace FlockFive
         static float _pauseAt;
         static float _pauseDebt;
 
-        public static bool StageFull => _cap <= 0 || _spawned >= _cap;
+        // Brandon's rule, absolute: no sparrow and no hawk on any ostrich garden. True when
+        // the level in play is an ostrich stage or the watched board carries an ostrich
+        // (even one that already fled). Every spawn path asks: Patrol, Visit, TryReserve,
+        // MaySpawn, TimerOpens, the visit budget and the stage cap.
+        public static bool OstrichGarden =>
+            (LevelData.Current != null && LevelData.Current.Ostrich)
+            || (_watch != null && _watch.Ostrich != null);
+
+        public static bool StageFull => OstrichGarden || _cap <= 0 || _spawned >= _cap;
 
         // Leaf lesson (and any other tutorial that asks). While this is set, no
         // time-driven pest may arrive. The arrive wait and the cooldown both
@@ -65,6 +73,7 @@ namespace FlockFive
         {
             if (kind != PestKind.Sparrow && kind != PestKind.Hawk) return false;
             if (_tutorialPause) return false;
+            if (OstrichGarden || (board != null && board.Ostrich != null)) return false;
             return !IsBoardSolved(board, resolveBegun);
         }
 
@@ -144,7 +153,7 @@ namespace FlockFive
             _held = false;
             _readyAt = 0f;
             _collectsLeft = 0;
-            _cap = CapFor(displayLevel);
+            _cap = LevelData.Current != null && LevelData.Current.Ostrich ? 0 : CapFor(displayLevel);
             _watch = null;
             _resolveBegun = null;
             _tutorialPause = false;
@@ -165,6 +174,7 @@ namespace FlockFive
         public static bool TryReserve()
         {
             if (_tutorialPause) return false;
+            if (OstrichGarden) return false;
             if (SolvedNow) return false;
             if (_cap <= 0 || _spawned >= _cap) return false;
             if (Busy) return false;
