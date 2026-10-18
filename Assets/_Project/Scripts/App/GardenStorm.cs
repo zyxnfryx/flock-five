@@ -109,11 +109,33 @@ namespace FlockFive
         int _cueFrameH;
         float _cueTall;
 
-        public static GardenStorm Attach(Transform root)
+        // b110 (Brandon): the winter garden gets gentle snow, not rain. Same one-mesh sheet, different params.
+        // No thunder, no lightning, no veil, no cue bar, and Wet stays 0 so StormGlass, the sky veil and the
+        // MixDesk rain stem stay off. Every other scene is untouched.
+        bool _snow;
+        public static bool UsesSnow(GardenScene scene) => scene == GardenScene.Winter;
+        public bool IsSnow => _snow;
+        // Snow flake params (world units, per second). Slower and softer than rain.
+        public const float SnowSizeMin = 0.035f, SnowSizeMax = 0.115f;
+        public const float SnowSpeedMin = 0.9f, SnowSpeedMax = 2.4f;
+        public const float SnowDrift = 0.35f;
+        public const float SnowCountMul = 0.6f;
+
+        public static GardenStorm Attach(Transform root) => Attach(root, GardenScene.Summer);
+
+        public static GardenStorm Attach(Transform root, GardenScene scene)
         {
             var go = new GameObject("Storm");
             go.transform.SetParent(root, false);
-            return go.AddComponent<GardenStorm>();
+            var gs = go.AddComponent<GardenStorm>();
+            gs._snow = UsesSnow(scene);
+            return gs;
+        }
+
+        int FlakeCount(float w, float h)
+        {
+            int n = RainDensity.Count(w, h);
+            return _snow ? Mathf.Max(24, Mathf.RoundToInt(n * SnowCountMul)) : n;
         }
 
         // Dev capture. The first storm is otherwise 70s out.
@@ -266,7 +288,7 @@ namespace FlockFive
         void BuildSheet(float left, float right, float bottom, float top)
         {
             int n = RainDensity.Max;
-            _live = RainDensity.Count(right - left, top - bottom);
+            _live = FlakeCount(right - left, top - bottom);
             bool phone = Application.isMobilePlatform;
             float wide = phone ? 0.98f : 0.86f;
             float lenMul = phone ? 1.18f : 1.06f;
@@ -291,14 +313,25 @@ namespace FlockFive
                 _x[i] = Mathf.Lerp(left - Edge, right + Edge, (float)rng.NextDouble());
                 _y[i] = Mathf.Lerp(bottom - Edge, top + Edge, (float)rng.NextDouble());
                 float len = Mathf.Lerp(0.70f, 1.45f, (float)rng.NextDouble()) * lenMul;
-                _spd[i] = Mathf.Lerp(8.5f, 26.5f, (float)rng.NextDouble());
+                _spd[i] = _snow ? Mathf.Lerp(SnowSpeedMin, SnowSpeedMax, (float)rng.NextDouble())
+                                : Mathf.Lerp(8.5f, 26.5f, (float)rng.NextDouble());
                 _phase[i] = (float)rng.NextDouble() * 2.8f;
                 _amp[i] = Mathf.Lerp(0.34f, 0.76f, (i % 11) / 10f);
-                float ang = (9f + (float)rng.NextDouble() * 6f) * Mathf.Deg2Rad;
+                float ang = _snow ? 0f : (9f + (float)rng.NextDouble() * 6f) * Mathf.Deg2Rad;
                 _cos[i] = Mathf.Cos(ang);
                 _sin[i] = Mathf.Sin(ang);
-                _hw[i] = halfW;
-                _hh[i] = len * 0.5f;
+                if (_snow)
+                {
+                    // Round soft flakes in varied sizes (squares of the Glow sprite).
+                    float fs = Mathf.Lerp(SnowSizeMin, SnowSizeMax, (float)rng.NextDouble() * (float)rng.NextDouble() * 0.5f + 0.5f * (i % 7) / 6f);
+                    _hw[i] = fs;
+                    _hh[i] = fs;
+                }
+                else
+                {
+                    _hw[i] = halfW;
+                    _hh[i] = len * 0.5f;
+                }
                 int v = i * 4;
                 int t = i * 6;
                 tris[t] = v;
@@ -315,17 +348,18 @@ namespace FlockFive
                 PlaceDrop(i, _x[i], _y[i], true);
             }
 
-            var donor = WorldBuilder.Sprite("RainDonor", SpriteCatalog.RainStreak, new Vector3(0f, -40f, 0.4f), 1f, 15, transform);
+            var flakeSpr = _snow ? SpriteCatalog.Glow : SpriteCatalog.RainStreak;
+            var donor = WorldBuilder.Sprite("RainDonor", flakeSpr, new Vector3(0f, -40f, 0.4f), 1f, 15, transform);
             var donorSr = donor.GetComponent<SpriteRenderer>();
             if (donorSr.sharedMaterial != null)
                 _sheetMat = new Material(donorSr.sharedMaterial);
             Destroy(donor);
             if (_sheetMat == null) return;
-            _sheetMat.mainTexture = SpriteCatalog.RainStreak.texture;
+            _sheetMat.mainTexture = flakeSpr.texture;
             _sheetMat.SetVector(SpritePropsId, new Vector4(1f, 1f, -1f, 0f));
             _sheetMat.SetVector(SpriteColorId, new Vector4(1f, 1f, 1f, 1f));
 
-            _mesh = new Mesh { name = "RainSheet" };
+            _mesh = new Mesh { name = _snow ? "SnowSheet" : "RainSheet" };
             _mesh.MarkDynamic();
             _mesh.vertices = _verts;
             _mesh.uv = uvs;
@@ -383,7 +417,8 @@ namespace FlockFive
 
         void WriteColors(float wet)
         {
-            const byte r = 199, g = 219, b = 240;
+            byte r = 199, g = 219, b = 240;
+            if (_snow) { r = 250; g = 252; b = 255; }
             int n = _x.Length;
             for (int i = 0; i < n; i++)
             {
@@ -475,7 +510,7 @@ namespace FlockFive
             if (dt > 0.0001f)
                 _step = _step <= 0f ? dt : _step + (dt - _step) * 0.2f;
             _gardenPlay += dt;
-            float want = WantStorm(_gardenPlay) ? 1f : 0f;
+            float want = (_snow || WantStorm(_gardenPlay)) ? 1f : 0f;
             // b117: a solved level (win, finale, Double/Collect) ends the rain streaks quickly; the clock keeps running.
             bool halted = FlockFiveApp.RainHalted;
             if (halted) want = 0f;
@@ -490,7 +525,8 @@ namespace FlockFive
             _wet = Mathf.MoveTowards(_wet, want, dt / (halted ? StormGlass.HaltFade : Fade));
             // b125: a clear-sky StartDelay, then rain, streaks, veil, droplets, and the MixDesk rain stem ease in together.
             _wet = Mathf.Min(_wet, StormGlass.OnsetMul(_gardenPlay));
-            Wet = _wet;
+            // Snow is not wet weather: sky veil, glass beads and the rain stem read Wet.
+            Wet = _snow ? 0f : _wet;
 
             if (_rumbleIn >= 0f)
             {
@@ -501,7 +537,7 @@ namespace FlockFive
                     Sfx.ThunderRoll(_rumblePow);
                 }
             }
-            if (_wet > 0.45f)
+            if (!_snow && _wet > 0.45f)
             {
                 _nextBoom -= dt;
                 if (_nextBoom <= 0f)
@@ -517,7 +553,7 @@ namespace FlockFive
             }
 
             // Steady rain keeps one veil alpha. A strike opens it so the sky pulse reads.
-            float veilA = _wet > 0.001f ? 0.62f * _wet : 0f;
+            float veilA = (!_snow && _wet > 0.001f) ? 0.62f * _wet : 0f;
             if (_strikeDark > 0f)
             {
                 _strikeDark -= dt;
@@ -576,7 +612,7 @@ namespace FlockFive
                 Frame(out float left, out float right, out float bottom, out float top);
                 _floor = bottom - Edge;
                 float wet = _wet;
-                int wantDrops = RainDensity.Count(right - left, top - bottom);
+                int wantDrops = FlakeCount(right - left, top - bottom);
                 if (wantDrops != _live)
                 {
                     // Glass size changed (rotation, iPad split view). Spare quads collapse to a point.
@@ -596,15 +632,21 @@ namespace FlockFive
                             continue;
                         }
                         float fall = _spd[i] * dt * Mathf.Lerp(0.18f, 1f, wet);
-                        float lean = (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * SeasonMotion.RainLean() * StormGlass.StreakLeanK;
-                        float nx = _x[i] - lean * dt * wet;
+                        float nx;
+                        if (_snow)
+                            nx = _x[i] + Mathf.Sin(PlayClock.Now * 0.6f + i * 1.7f) * SnowDrift * dt * wet;
+                        else
+                        {
+                            float lean = (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * SeasonMotion.RainLean() * StormGlass.StreakLeanK;
+                            nx = _x[i] - lean * dt * wet;
+                        }
                         float ny = _y[i] - fall;
                         if (ny < _floor || nx < left - Edge || nx > right + Edge)
                         {
                             ny = Random.Range(top + 0.25f, top + Edge + 1.8f);
                             nx = Random.Range(left - 0.35f, right + Edge);
                             _phase[i] = Random.Range(0.05f, 1.35f);
-                            _spd[i] = Random.Range(8.5f, 26.5f);
+                            _spd[i] = _snow ? Random.Range(SnowSpeedMin, SnowSpeedMax) : Random.Range(8.5f, 26.5f);
                         }
                         _x[i] = nx;
                         _y[i] = ny;
@@ -879,7 +921,7 @@ namespace FlockFive
         {
             if (_cue == null) return;
             float left = Remain(_gardenPlay);
-            bool show = left > 0.05f && _wet > 0.12f;
+            bool show = !_snow && left > 0.05f && _wet > 0.12f;
             if (!show)
             {
                 if (_cueOn) HideCue();

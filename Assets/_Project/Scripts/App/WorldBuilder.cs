@@ -147,7 +147,7 @@ namespace FlockFive
             var bgSr = bg.GetComponent<SpriteRenderer>();
             FoliageSway.Apply(bgSr, scene);
             GardenLife.Attach(root, scene, cam);
-            GardenStorm.Attach(root);
+            GardenStorm.Attach(root, scene);
             if (reveal)
                 SeasonCrossfade.Begin(root, bgSr, oldSpr, cam, level, scene, prev);
 
