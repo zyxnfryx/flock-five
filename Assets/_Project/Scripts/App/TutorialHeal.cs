@@ -35,6 +35,9 @@ namespace FlockFive
         // The rewarded ad's lesson is waiting on its grant. Do not drop the glove.
         // A dead ad screen still closes (ClearWatchStage). Splash still drops the hand.
         public bool RewardInFlight;
+        // b126: seconds an ad has been up with no owner at all (no WatchGift, no reward ticket, no ad request live
+        // in the host). A real ad always has one of those; an orphan is a close that never released the hold.
+        public float OrphanShowSeconds;
     }
 
     [Flags]
@@ -54,7 +57,9 @@ namespace FlockFive
         // GamePause held with no owner left (no ad, no tutorial pause): reset.
         ResetLeakedPause = 32,
         // A step tap gate up with no glove on its target: the step is finished, taps freed.
-        FinishGatedStep = 64
+        FinishGatedStep = 64,
+        // b126: an ad hold with no owner for MaxOrphanShow seconds: Ads.ForceClear + GamePause.Reset.
+        ForceClearShow = 128
     }
 
     // One pointer event, as the step tap gate sees it.
@@ -64,6 +69,8 @@ namespace FlockFive
     {
         // The longest real gate is the 1 s gift lockout. Anything past this is stuck.
         public const float MaxGateSeconds = 2.5f;
+        // An ad hold nothing owns is released after this many seconds.
+        public const float MaxOrphanShow = 3f;
 
         public static TutorFix Plan(TutorSnapshot s)
         {
@@ -77,6 +84,8 @@ namespace FlockFive
                 fix |= TutorFix.ClampGates;
             if (s.HomeLessonLive && !s.Splash) fix |= TutorFix.DropHomeLessons;
             if (s.StepGateBlind > MaxGateSeconds) fix |= TutorFix.FinishGatedStep;
+            if (s.AdShowing && !s.WatchRunning && !s.RewardInFlight && s.OrphanShowSeconds > MaxOrphanShow)
+                fix |= TutorFix.ForceClearShow;
             // After the tutorial pause is accounted for, a pause with no owner is a leak.
             bool tutorHolds = s.TutorPause && (fix & TutorFix.ReleaseTutorPause) == 0;
             if (s.PauseHeld && !s.AdShowing && !tutorHolds) fix |= TutorFix.ResetLeakedPause;

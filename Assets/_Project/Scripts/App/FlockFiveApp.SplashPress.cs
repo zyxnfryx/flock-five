@@ -34,7 +34,7 @@ namespace FlockFive
             return new SplashPress.Gates
             {
                 Paused = GamePause.Paused,
-                ResumeSwallow = PlayClock.Now < _resumeInputUntil || StartupInputHeld,
+                ResumeSwallow = GateNow < _resumeInputUntil || StartupInputHeld,
                 ShowHolds = BadgerShowHoldsTaps(),
                 CoachAte = CoachAteThisFrame(),
                 LessonGuard = LessonGuardUp(),

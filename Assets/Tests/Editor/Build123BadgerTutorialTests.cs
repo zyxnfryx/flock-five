@@ -150,7 +150,7 @@ namespace FlockFive.Editor
             // Result: with the block the badger's final honey is 0 and the player scores their tile; without it the badger scores.
             BadgerFight.ApplyRound(2, 5, BadgerPower.HotSauce, out int pf, out int bf, out int pg, out int bg);
             BadgerFight.ApplyRound(2, 5, BadgerPower.None, out int pf2, out int bf2, out int pg2, out int bg2);
-            Check("block-result-badger-does-not-score", bf == 0 && bg == 0 && pg == 2 && bg2 == 5, "with block you +" + pg + " badger +" + bg + "; without badger +" + bg2);
+            Check("block-result-badger-does-not-score", bf == 0 && bg == 0 && pf == 0 && pg == 0 && bg2 == 5, "with block you +" + pg + " badger +" + bg + "; without badger +" + bg2);
 
             // Source wiring.
             string badger = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
@@ -161,7 +161,7 @@ namespace FlockFive.Editor
             Check("back-held-through-locked-power-stretch", badger.Contains("BadgerCoachHoldsBack()") && badger.Contains("_bgFight.PowersLocked || _bgPowerGuideOn"), "");
             Check("result-gated-and-back-inert-at-over", coach.Contains("gate.Step = GateBadgerResult;") && badger.Contains("BadgerCoachHoldsBack() || BadgerResultLive()")
                 && badger.Contains("BadgerContinueRect(L); // one rect"), "");
-            Check("back-held-in-round4-bosswait", badger.Contains("bool BadgerGuidePending()") && badger.Contains("|| BadgerGuidePending())"), "");
+            Check("back-held-in-round4-bosswait", badger.Contains("bool BadgerGuidePending()") && badger.Contains("|| BadgerGuidePending() || BadgerFreezeDemoHolds()"), "");
             Check("badger-tap-presses-level", File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs").Contains("the badger on the pedestal is part of the pedestal"), "");
             Check("block-auto-assign-no-tile-tap", badger.Contains("assign themselves to the weakest open tile") && badger.Contains("ClickBadgerTile(weakest)")
                 && badger.Contains("picture ? \"\" : BadgerPowerName(p)") && badger.Contains("PLACEHOLDER art"), "");

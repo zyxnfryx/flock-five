@@ -871,12 +871,14 @@ namespace FlockFive
         }
 
         // Claimed-state tap: the one cowbell clunk every time, nothing else (no second
-        // claim, no reward, no dismissal). The button gives a tiny squish.
+        // claim, no reward, no dismissal). b124: no squish and no sparkle burst on the claimed button.
         void ClunkClaimed()
         {
             SfxLibrary.Cowbell();
-            _claimClunk = AdPause.Unscaled;
         }
+
+        // The release sparkle burst belongs to the unclaimed Daily button only.
+        public static bool DailyClaimBursts(bool offerReady, bool claimedToday) => offerReady || !claimedToday;
 
         void DismissDaily()
         {
@@ -2094,22 +2096,8 @@ namespace FlockFive
         static void DrawDailyClaim(Rect flower, bool held, float s, float t)
         {
             bool ready = DailyBonus.OfferReady;
-            float squish = 1f;
-            if (_claimClunk >= 0f)
-            {
-                float age = AdPause.Unscaled - _claimClunk;
-                if (age >= 0f && age < 0.18f)
-                {
-                    float u = age / 0.18f;
-                    squish = u < 0.35f
-                        ? Mathf.Lerp(1f, 0.90f, u / 0.35f)
-                        : Mathf.Lerp(0.90f, 1f, (u - 0.35f) / 0.65f);
-                }
-            }
             var pressed = GUI.matrix;
-            if (squish < 0.995f)
-                GUIUtility.ScaleAroundPivot(new Vector2(squish, squish * 0.94f), flower.center);
-            var disc = DrawPopupButton(flower, held, ready);
+            var disc = DrawPopupButton(flower, held, ready, 1f, true, DailyClaimBursts(ready, DailyBonus.ClaimedToday));
             var labR = new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.56f);
             _dailyClaim.fontSize = _dailyClaimPx;
             int ink = Mathf.Clamp(Mathf.RoundToInt(_dailyClaimPx * 0.12f), 2, 6);

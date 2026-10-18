@@ -39,7 +39,6 @@ namespace FlockFive
         static float _waxBorn = -1f;
         int _collectDepth;
         bool _gardenScoring;
-        static float _claimClunk = -1f;
         struct CoinFly
         {
             public Vector2 A, B;
@@ -451,6 +450,9 @@ namespace FlockFive
         static FlockFiveApp _app;
         static int _resumeNoteFrame = -1;
         static float _resumeInputUntil = -1f;
+        // b126: the three input gates (_swallowTapsUntil, _suppressGiftUntil, _resumeInputUntil) run on ad-free
+        // unscaled time. PlayClock stalls under any GamePause, so a pause leak froze them shut.
+        static float GateNow => AdPause.Unscaled;
 
         void OnEnable()
         {
@@ -493,7 +495,7 @@ namespace FlockFive
             {
                 if (_app != null)
                 {
-                    _resumeInputUntil = PlayClock.Now + 0.35f;
+                    _resumeInputUntil = GateNow + 0.35f;
                     _app.FreshTutorGlove();
                     // The suspend may have cut a step off. Settle it before the first tap lands.
                     _app.HealInterruptedTutorials();
@@ -3681,7 +3683,7 @@ namespace FlockFive
         {
             if (LessonTapBlocked()) return;
             if (_busy || _won || _board == null) return;
-            if (PlayClock.Now < _swallowTapsUntil) return;
+            if (GateNow < _swallowTapsUntil) return;
             if (AdPause.Unscaled < _nextTap) return;
             _nextTap = AdPause.Unscaled + 0.10f;
             if (CoachReject(world)) return;
@@ -3693,7 +3695,7 @@ namespace FlockFive
                 return;
             }
             // Bird and limb taps must not open a gift a moment later.
-            _suppressGiftUntil = PlayClock.Now + 1f;
+            _suppressGiftUntil = GateNow + 1f;
 
             int feeder = HitFeeder(world);
             if (feeder >= 0)
@@ -6140,22 +6142,33 @@ namespace FlockFive
         int HitFeeder(Vector2 world)
         {
             if (_garden.Feeders == null) return -1;
-            float best = 1.35f * 1.35f;
+            // b110: 1.35 -> 1.0 around the mouth; the sprite canvas (3.76 square, opaque only to
+            // -1.47 below the pivot and +-1.216 wide) no longer counts, only the painted bulb.
+            // Nearest feeder wins an overlap (was: lowest slot index). A tap on a perched bird
+            // outside the painted bulb belongs to the branch.
+            float best = 1.0f * 1.0f;
             int idx = -1;
+            float bestC = float.MaxValue;
+            bool nearBird = NearPlayBird(world);
             for (int i = 0; i < _garden.Feeders.Length; i++)
             {
                 var f = _garden.Feeders[i];
                 if (f == null || f.Art == null || !f.Art.enabled) continue;
-                float d = ((Vector2)f.transform.position - world).sqrMagnitude;
+                var fp = (Vector2)f.transform.position;
+                float d = (fp - world).sqrMagnitude;
                 float dMouth = ((Vector2)f.Mouth - world).sqrMagnitude;
                 float m = Mathf.Min(d, dMouth);
-                if (f.Art.sprite != null)
+                float sc = Mathf.Abs(f.transform.lossyScale.x);
+                bool onBulb = f.Art.sprite != null
+                    && Mathf.Abs(world.x - fp.x) <= FeederRow.BulbHalf * sc / FeederView.Scale
+                    && world.y >= fp.y - 1.47f * sc / FeederView.Scale
+                    && world.y <= fp.y + 1.34f * sc / FeederView.Scale;
+                if (onBulb) m = 0f;
+                else if (nearBird) continue;
+                if (m < best || (m <= best && idx >= 0 && d < bestC))
                 {
-                    var b = f.Art.bounds;
-                    if (b.Contains(new Vector3(world.x, world.y, b.center.z)))
-                        m = 0f;
+                    best = m; idx = i; bestC = d;
                 }
-                if (m < best) { best = m; idx = i; }
             }
             return idx;
         }
@@ -6214,7 +6227,7 @@ namespace FlockFive
         static void SwallowResumePointer()
         {
             // Also while the level transition covers the screen (held splash / mask).
-            if (PlayClock.Now >= _resumeInputUntil && !PressRainbow.StageHeld() && !StartupInputHeld) return;
+            if (GateNow >= _resumeInputUntil && !PressRainbow.StageHeld() && !StartupInputHeld) return;
             var e = Event.current;
             if (e == null) return;
             var t = e.type;
@@ -6226,7 +6239,7 @@ namespace FlockFive
         static bool Pressed(out Vector2 screen)
         {
             screen = default;
-            if (PlayClock.Now < _resumeInputUntil) return false;
+            if (GateNow < _resumeInputUntil) return false;
             if (StartupInputHeld) return false;
             if (LessonGuardUp()) return false;
             // The finger wins over a synthesized mouse. On Android the mouse click
@@ -6621,6 +6634,8 @@ namespace FlockFive
                 if (_hiveInspect >= 0 || _albumTutorOn)
                     CloseHiveInspect();
             }
+            // b125: storm drops also draw over the restart button and the hive (visual only, no controls).
+            StormGlassRig.PaintOver(restart, HiveReachable() ? hive : Rect.zero);
             if (quake) GUI.matrix = hudM;
             if (_levelHive) DrawLevelHive(s);
             if (_hiveInspect >= 0) DrawHiveInspect(s);
@@ -10422,14 +10437,15 @@ namespace FlockFive
         // Square pop-up CTAs reuse the clay flower (DEAL / LEVEL / Watch).
         // Wide ones get a rounded plate in the same clay. Returns the label rect.
         // shadow is the dark slab under the face. Streak ask and welcome pass false.
-        static Rect DrawPopupButton(Rect r, bool held, bool gold, float glow = 1f, bool shadow = true)
+        // burst false drops ONLY the release sparkle burst (the Daily button after it is claimed). Flash, sink and sound stay.
+        static Rect DrawPopupButton(Rect r, bool held, bool gold, float glow = 1f, bool shadow = true, bool burst = true)
         {
-            return DrawPopupButton(r, held, gold ? PopupTint.Gold : PopupTint.Wood, glow, shadow);
+            return DrawPopupButton(r, held, gold ? PopupTint.Gold : PopupTint.Wood, glow, shadow, burst);
         }
 
         internal static Rect LastPedestalFace;
 
-        static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true)
+        static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true, bool burst = true)
         {
             if (r.width < 2f || r.height < 2f) return r;
             bool paint = GuiPaint();
@@ -10440,7 +10456,7 @@ namespace FlockFive
             var bloom = SpriteCatalog.PlayFlower;
             if (paint && motion.ReleasedEdge)
             {
-                SparkleFx.DrawAround(visual, 0.95f, true, 0.14f);
+                if (burst) SparkleFx.DrawAround(visual, 0.95f, true, 0.14f);
                 bool pedestal = square && bloom != null && bloom.texture != null && (tint == PopupTint.Gold || tint == PopupTint.Wood);
                 PushButton.ReleaseFlash(visual, pedestal);
             }
@@ -13139,7 +13155,7 @@ namespace FlockFive
                 _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
             bool pin = PokerStepPinned(PokerStepAnchor(line));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
-            CapSpot("poker.table"); PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign);
+            CapSpot(line == PokerBackLine ? "poker.back" : "poker.table"); PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign);
         }
 
         // Above the cards: from ceilingY down to the top of the card reach (held cards and the
@@ -13295,13 +13311,36 @@ namespace FlockFive
             LessonLine(PokerBackLine);
             // Standard shared arc: the hand rides over the top and the fingertip comes straight
             // down onto the back button. Only a tap inside the back rect is a valid tap.
-            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, float.NaN, _pokerBackTap);
+            // b124: the hand rides in from the middle right, fully on screen, pointing left at Back.
+            _gloveEntryOverride = GloveMiddleRightEntry(CoachSafeGui(8f * handS));
+            _gloveEntryOverrideOn = true;
+            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, -90f, _pokerBackTap);
+            _gloveEntryOverrideOn = false;
             return true;
+        }
+
+        // The Back hint (glove + caption) is live: the first-hand result is up, settled, and nothing else owns the page.
+        bool PokerBackHintLive()
+            => !PokerBackDone() && _home == HomeFace.Poker && !_pokerPageOn && !_pokerDealHint
+               && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn && !PokerMotionBusy() && !PokerPageTutorBlocked();
+
+        // b124 follow-up: while the first-hand result holds the bet bar away, Back must always be cued. When the
+        // glove hint is not live (win motion still running, stamp or pay table up) the cue is the bobbing arrow.
+        public static bool PokerBackCueShows(bool holdsBetBar, bool hintLive) => holdsBetBar && !hintLive;
+
+        // Bobbing arrow at Back, plus the shared Back caption once nothing else owns the caption seat.
+        void DrawPokerBackCue(float s, Rect back)
+        {
+            if (_pokerPageOn || _pokerDealHint) return;
+            CoachArrowAt(back, s);
+            if (!PokerPageTutorBlocked()) DrawPokerStandardLine(PokerBackLine, s);
         }
 
         void DrawPokerBackHint(float s, Rect back, Rect row, float logoBottom)
         {
-            if (PokerBackDone() || _pokerPageOn || _pokerDealHint) return;
+            if (PokerBackDone()) return;
+            if (PokerBackCueShows(PokerFirstHandResultHoldsBetBar(), PokerBackHintLive())) DrawPokerBackCue(s, back);
+            if (_pokerPageOn || _pokerDealHint) return;
             if (BirdPoker.PhaseNow != BirdPoker.Phase.Drawn || PokerMotionBusy() || PokerPageTutorBlocked())
             {
                 _pokerBackAimOk = false;
@@ -15305,8 +15344,13 @@ namespace FlockFive
             if (_pokerMotion == PokerMotion.Deal)
                 return _pokerMotionT >= DealGatherT + DealRiffleT;
             if (PokerMotionBusy() || PokerWinFlying()) return true;
+            if (PokerFirstHandResultHoldsBetBar()) return true;
             return BirdPoker.PhaseNow == BirdPoker.Phase.Dealt;
         }
+
+        // b124: on the first hand the result caption owns the bet controls' seat until Back is tapped; the bar stays tucked away.
+        bool PokerFirstHandResultHoldsBetBar()
+            => _home == HomeFace.Poker && !PokerBackDone() && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn;
 
         bool DrawPokerDash(Rect betR, Rect actR, float s, bool busy, bool steppers, string act)
         {
@@ -15315,7 +15359,7 @@ namespace FlockFive
             var actBox = actR;
             DrawPokerBetBar(bet, s, busy, steppers);
             DrawPokerWinBanner(betR, actR, s);
-            if (string.IsNullOrEmpty(act)) return false;
+            if (string.IsNullOrEmpty(act) || PokerFirstHandResultHoldsBetBar()) return false; // the dealer button does not return
             bool fire = DrawFloralBtn(actBox, act, s, true);
             return fire;
         }
@@ -19008,7 +19052,7 @@ namespace FlockFive
         {
             if (_sel >= 0 || _won) return false;
             if (_busy || _collecting || _locked.Count > 0) return false;
-            if (PlayClock.Now < _suppressGiftUntil) return false;
+            if (GateNow < _suppressGiftUntil) return false;
             if (_gift != GiftFace.None) return false;
             if (_board == null || (uint)branch >= (uint)_board.Branches.Count) return false;
             var st = _board.Branches[branch];
@@ -19019,16 +19063,25 @@ namespace FlockFive
             return true;
         }
 
-        // Whole limb and sign. The sign BoxCollider2D does not receive the tap:
-        // it was shrunk to 72% of the sprite, the left sign is mirrored with a
-        // negative scale (2D physics drops that shape), and every miss refreshed
-        // the 1s gift lockout so a follow-up tap was swallowed too.
+        // Gift sign arbiter (b110 hit-box audit). One rule for every caller (HandleTap, CoachReject,
+        // CueGloveTap): BranchHit.Pick over the tight painted art of every playable limb AND every
+        // locked gift, so a gift only claims a tap that is closer to its own sign/wood than to a
+        // neighbour. The old test used the whole sprite canvas plus 0.36 and ran before HitBranch.
+        // The sign BoxCollider2D still does not receive the tap (72% shrink, negative X scale on the left).
         int HitGiftSign(Vector2 world)
         {
             if (_garden.Branches == null || _board == null) return -1;
             if (NearPlayBird(world)) return -1;
-            int best = -1;
-            float bestD = float.MaxValue;
+            int glove = _cueForce && _cueBranch >= 0 ? _cueBranch : -1;
+            int idx = BranchHit.Pick(world, BuildHitCands(), glove, out bool gift);
+            return gift ? idx : -1;
+        }
+
+        readonly List<BranchHit.Cand> _hitCands = new List<BranchHit.Cand>(16);
+
+        List<BranchHit.Cand> BuildHitCands()
+        {
+            _hitCands.Clear();
             for (int i = 0; i < _garden.Branches.Length; i++)
             {
                 var v = _garden.Branches[i];
@@ -19036,12 +19089,34 @@ namespace FlockFive
                 int idx = v.Index;
                 if ((uint)idx >= (uint)_board.Branches.Count) continue;
                 var st = _board.Branches[idx];
-                if (st == null || !st.IsBonus || st.Broken || !st.AdLocked) continue;
-                if (!BonusSpot(v, world)) continue;
-                float d = ((Vector2)v.transform.position - world).sqrMagnitude;
-                if (d < bestD) { bestD = d; best = idx; }
+                if (st == null || st.Broken) continue;
+                bool ad = st.IsBonus && st.AdLocked;
+                if (!ad && (st.AdLocked || st.IsFullMatch(out _))) continue;
+                var t = v.transform;
+                var ls = t.lossyScale;
+                var c = new BranchHit.Cand { Index = idx, Gift = ad };
+                c.Wood = BranchHit.WoodRect(t.position, v.FromRight, v.IsGift, Mathf.Abs(ls.x), Mathf.Abs(ls.y));
+                bool sign = ad && v.Sign != null && v.Sign.gameObject.activeInHierarchy;
+                var pads = new Vector2[BranchState.Cap + (sign ? 2 : 1)];
+                int n = 0;
+                pads[n++] = t.position;
+                for (int s = 0; s < BranchState.Cap; s++)
+                    pads[n++] = v.Seats[s] != null ? (Vector2)v.Seats[s].position : (Vector2)t.position;
+                if (sign)
+                {
+                    pads[n++] = v.Sign.position;
+                    var sr = v.Sign.GetComponent<SpriteRenderer>();
+                    if (sr != null && sr.enabled && sr.sprite != null)
+                    {
+                        var b = sr.bounds;   // negative X scale (left sign) is fine: bounds are world AABB
+                        c.HasSign = true;
+                        c.Sign = Rect.MinMaxRect(b.min.x, b.min.y, b.max.x, b.max.y);
+                    }
+                }
+                c.Pads = pads;
+                _hitCands.Add(c);
             }
-            return best;
+            return _hitCands;
         }
 
         // Same radius HitBranch uses to claim a bird, so a perch tap beside the
@@ -19066,25 +19141,6 @@ namespace FlockFive
                 }
             }
             return false;
-        }
-
-        static bool BonusSpot(BranchView v, Vector2 world)
-        {
-            if (SpriteHit(v.Wood, world, 0.36f)) return true;
-            if (v.Sign != null && v.Sign.gameObject.activeInHierarchy)
-            {
-                var sr = v.Sign.GetComponent<SpriteRenderer>();
-                if (SpriteHit(sr, world, 0.42f)) return true;
-            }
-            return false;
-        }
-
-        static bool SpriteHit(SpriteRenderer sr, Vector2 world, float pad)
-        {
-            if (sr == null || !sr.enabled || sr.sprite == null) return false;
-            var b = sr.bounds;
-            return world.x >= b.min.x - pad && world.x <= b.max.x + pad
-                && world.y >= b.min.y - pad && world.y <= b.max.y + pad;
         }
 
         void OpenGiftCard()
@@ -19144,8 +19200,8 @@ namespace FlockFive
             if (_gift == GiftFace.Movie || _gift == GiftFace.Wait) return;
             _gift = GiftFace.None;
             AdRetry.Clear();
-            _swallowTapsUntil = PlayClock.Now + 0.45f;
-            _suppressGiftUntil = PlayClock.Now + 1f;
+            _swallowTapsUntil = GateNow + 0.45f;
+            _suppressGiftUntil = GateNow + 1f;
         }
 
         // The Watch ad stage. The flag marks the coroutine alive, so the interruption
@@ -19168,6 +19224,16 @@ namespace FlockFive
             finally
             {
                 _watchGiftLive = false;
+                // b126: whatever way the stage ended, a Wait/Movie face with no coroutine behind it is a dead end
+                // (ad closed with no reward, callback lost). Close it and free the taps.
+                if (_gift == GiftFace.Wait || _gift == GiftFace.Movie)
+                {
+                    AdLog.Add("WatchGift ended on " + _gift + ": clearing the stage");
+                    _gift = GiftFace.None;
+                    _busy = false;
+                    _swallowTapsUntil = GateNow + 0.45f;
+                    _suppressGiftUntil = GateNow + 1f;
+                }
             }
         }
 
@@ -19218,8 +19284,8 @@ namespace FlockFive
                     _gift = GiftFace.None;
                     AdRetry.Clear();
                     DismissAdHand();
-                    _swallowTapsUntil = PlayClock.Now + 0.45f;
-                    _suppressGiftUntil = PlayClock.Now + 1f;
+                    _swallowTapsUntil = GateNow + 0.45f;
+                    _suppressGiftUntil = GateNow + 1f;
                     yield break;
                 }
                 // Never a silent bounce back to Watch: say the ad was not ready.
@@ -19369,8 +19435,8 @@ namespace FlockFive
         {
             if (_gift == GiftFace.Wait)
             {
-                if (Ads.IsLoading && !Ads.IsShowing && !Ads.MockRewarded)
-                    DrawAdSpinner(s);
+                // b126: spinner always; Cancel after 3 s when no ad is on screen (10 s while one is).
+                DrawAdSpinner(s);
                 if (Ads.CanCancelWait) DrawAdWaitCancel(s);
                 return;
             }
