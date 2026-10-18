@@ -73,21 +73,26 @@ namespace FlockFive
             // longer debuts again there. Same authored board and 3 feeders, no ostrich.
             // Ostrich gardens on the ladder: 27. Next ostrich garden: 38 (Garden38Level, not wired yet).
             new Level { Number = 32, Id = "garden-32", Title = "Garden 32", Make = Garden32Ostrich, Solo = true,
-                Feeders = 3, Ostrich = false, PeckSeed = 832449 }
+                Feeders = 3, Ostrich = false, PeckSeed = 832449 },
+            // Build 111: gardens 33-37 (LevelData.Ladder33.cs) and the ostrich's second garden, 38.
+            // 36 is a honey badger garden (plain board). 38 is not a badger or season-change level.
+            new Level { Number = 33, Id = "garden-33", Title = "Garden 33", Make = Garden33 },
+            new Level { Number = 34, Id = "garden-34", Title = "Garden 34", Make = Garden34 },
+            new Level { Number = 35, Id = "garden-35", Title = "Garden 35", Make = Garden35 },
+            new Level { Number = 36, Id = "garden-36", Title = "Garden 36", Make = Garden36 },
+            new Level { Number = 37, Id = "garden-37", Title = "Garden 37", Make = Garden37 },
+            new Level { Number = 38, Id = "garden-38", Title = "Garden 38", Make = Garden38Ostrich, Solo = true,
+                Feeders = 3, Ostrich = true, PeckSeed = 879204 }
         };
 
-        // Garden 38 (ostrich + bees + leaf-lock) is authored now and joins the ladder when 33-37 land.
-        public static readonly Level Garden38Level = new Level
-        {
-            Number = 38, Id = "garden-38", Title = "Garden 38", Make = Garden38Ostrich, Solo = true,
-            Feeders = 3, Ostrich = true, PeckSeed = 941734
-        };
+        // Garden 38 (ostrich + bees + leaf-lock) is the ladder entry numbered 38.
+        public static Level Garden38Level => Peek(37);
 
         // Authored ostrich boards (ostrich-impl.txt), notation shared with the C# harness and
         // ostrich.py: limbs ' / ' trunk->tip; bird = [?=shrouded]Color(RGTVP)+Kit(NCB); '-' empty.
         public const string Garden27Spec = "VCVCTCRC / VCTBRCTB / GCTC / GCRCGCTB / GCTCGCRC / TCTCTB / TBVCRCVC | live=GTT queue=RV";
         public const string Garden32Spec = "RBVCTCRB / ?TCGC / VCGCGC / VCVCVC / RBTBRCTB / GCTCRCRB / TBRCRB / RCGCTC / ?TBRCTCTB / - | live=TTV queue=GRR";
-        public const string Garden38Spec = "TCRB / RCTBTBTC / RCTB / ?RBVCRB / ?RBVCVCTC / RBGCGC?TB / TCVCRCRC / RCTBTC / VCGCGCGC / - | live=TGV queue=RTR breeze";
+        public const string Garden38Spec = "TBRN / TBGCTB / GCGC / GCTBVC / VCRNVCVC?RN / ?TB?RNTNTN / TNTN / ?TNGCRNVC / - | live=TTG queue=VR breeze";
 
         static Board Garden27Ostrich() => ParseAuthored(Garden27Spec);
         static Board Garden32Ostrich() => ParseAuthored(Garden32Spec);
