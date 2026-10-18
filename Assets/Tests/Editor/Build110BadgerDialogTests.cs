@@ -10,6 +10,8 @@ namespace FlockFive.Editor
     {
         const string Out = "/tmp/flock-five-b110-tests.txt";
 
+        static int[] Fill(int n, int v) { var a = new int[n]; for (int i = 0; i < n; i++) a[i] = v; return a; }
+
         [MenuItem("Flock Five/Build 110 Badger Dialog Tests")]
         public static void Run()
         {
@@ -24,17 +26,24 @@ namespace FlockFive.Editor
                 Debug.Log("[build110] " + line);
             }
 
-            // Real PlayerPrefs are saved and restored so the run leaves the editor's coach stamp alone.
-            int keepCoach = PlayerPrefs.GetInt(BadgerCopy.CoachPref, 0);
-            try {
-            BadgerCopy.MarkCoach();
-            for (int app = 2; app <= 6; app++)
+            // The coach stamp is saved and restored through PrefGuard (shared checksum), never raw PlayerPrefs.
+            int keepCoach = BadgerCopy.CoachStampForTest();
+            try
             {
-                Check("a" + app + "-no-lesson", !BadgerCopy.NeedsLesson(app), "");
-                Check("a" + app + "-opening-line", BadgerCopy.OpeningLine(app, false) == BadgerCopy.OpenLater, "");
-                Check("a" + app + "-round-lines", BadgerCopy.RoundStartLine(0) == BadgerCopy.GoesFirst && BadgerCopy.RoundStartLine(1) == BadgerCopy.HowMany, "");
+                BadgerCopy.ClearCoachForTest();
+                Check("mark-coach-sets-stamp", !BadgerCopy.CoachDone() && BadgerCopy.NeedsLesson(1), "");
+                BadgerCopy.MarkCoach();
+                Check("mark-coach-done", BadgerCopy.CoachDone() && !BadgerCopy.NeedsLesson(1), "");
+                BadgerCopy.MarkCoach(); // already set: no-op, still done, stamp still valid
+                Check("mark-coach-noop-when-set", BadgerCopy.CoachDone() && BadgerCopy.CoachStampForTest() == 1, "");
+                for (int app = 2; app <= 6; app++)
+                {
+                    Check("a" + app + "-no-lesson", !BadgerCopy.NeedsLesson(app), "");
+                    Check("a" + app + "-opening-line", BadgerCopy.OpeningLine(app, false) == BadgerCopy.OpenLater, "");
+                    Check("a" + app + "-round-lines", BadgerCopy.RoundStartLine(0) == BadgerCopy.GoesFirst && BadgerCopy.RoundStartLine(1) == BadgerCopy.HowMany, "");
+                }
             }
-            } finally { PlayerPrefs.SetInt(BadgerCopy.CoachPref, keepCoach); PlayerPrefs.Save(); }
+            finally { BadgerCopy.SetCoachStampForTest(keepCoach); }
             Check("pick-line-exists", BadgerCopy.YourPick.Length > 0, "");
 
             // Every existing line a repeat fight can show paints inside the bottom band on small to large screens.
@@ -55,7 +64,8 @@ namespace FlockFive.Editor
 
             Check("fade-clamped", BadgerCaptionFade.For(true, -0.5f) == 0f && BadgerCaptionFade.For(true, 1.7f) == 1f, "");
 
-            // Caption band never overlaps the power row, at iPhone sizes (same helper BadgerLayout uses).
+            // Caption band never overlaps the power row, at iPhone sizes. BadgerLayout itself is an instance method that reads
+            // DeviceFit/TopHud/Screen (Unity runtime state), so the test drives the static helper it delegates to.
             int overlaps = 0; string bad = "";
             foreach (var sz in sizes)
             {
@@ -69,10 +79,17 @@ namespace FlockFive.Editor
             }
             Check("caption-band-clear-of-power-row", overlaps == 0, bad);
 
-            // Wiring (loose: names, not exact source lines): the shared helper is used, not gated on tutorial flags, and restores the coach fade.
-            string badger = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
-            Check("wiring-shared-helper-fade", badger.Contains("BadgerCaptionFade.For(") && badger.Contains("BadgerTutorialFight()") && badger.Contains("PaintCoachCaption(_bgLine"), "");
-            Check("wiring-caption-after-power-row", badger.IndexOf("DrawBadgerPowers(L,") < badger.IndexOf("DrawBadgerCaption(L);"), "");
+            // Fight type decides the fade: only a non-tutorial fight gets full fade.
+            Check("tutorial-signals", BadgerCaptionFade.IsTutorial(true, false, false, false, false, false)
+                && BadgerCaptionFade.IsTutorial(false, true, false, false, false, false)
+                && BadgerCaptionFade.IsTutorial(false, false, true, false, false, false)
+                && BadgerCaptionFade.IsTutorial(false, false, false, true, false, false)
+                && BadgerCaptionFade.IsTutorial(false, false, false, false, true, false)
+                && BadgerCaptionFade.IsTutorial(false, false, false, false, false, true), "");
+            Check("repeat-fight-not-tutorial", !BadgerCaptionFade.IsTutorial(false, false, false, false, false, false), "");
+            var repeat = new BadgerFight(2, 5, Fill(16, 2), Fill(16, 5), false);
+            var coach = new BadgerFight(1, 5, Fill(16, 2), Fill(16, 5), true);
+            Check("fight-flag", !repeat.CoachFight && coach.CoachFight, "");
 
             string end = fail == 0 ? "BUILD110_OK " + pass : "BUILD110_FAIL " + fail + " passed " + pass;
             sb.AppendLine(end);

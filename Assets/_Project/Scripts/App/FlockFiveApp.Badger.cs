@@ -2191,8 +2191,8 @@ namespace FlockFive
 
         // b110: true for the first-fight lesson and the whole coach fight (every stage). Those keep the glove-driven fade.
         bool BadgerTutorialFight()
-            => _bgLessonLive || _bgCoachFight || (_bgFight != null && _bgFight.CoachFight)
-               || _bgStage == BadgerStage.Lesson || BadgerGuideLive() || BadgerResultLive();
+            => BadgerCaptionFade.IsTutorial(_bgLessonLive, _bgCoachFight, _bgFight != null && _bgFight.CoachFight,
+                _bgStage == BadgerStage.Lesson, BadgerGuideLive(), BadgerResultLive());
 
         void DrawBadgerCaption(BadgerRects L)
         {

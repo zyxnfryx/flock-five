@@ -172,6 +172,15 @@ namespace FlockFive
             PlayerPrefs.Save();
         }
 
+        // Tests only: read and restore the stamp through PrefGuard (it shares the checksum with the coins stamp).
+        public static int CoachStampForTest() => PrefGuard.GetInt(CoachPref, 0);
+
+        public static void SetCoachStampForTest(int v)
+        {
+            PrefGuard.SetInt(CoachPref, v);
+            PlayerPrefs.Save();
+        }
+
         // Clear the stamp in tests only.
         public static void ClearCoachForTest()
         {
@@ -191,6 +200,10 @@ namespace FlockFive
     {
         public static float For(bool coachDrivesFade, float coachFade)
             => coachDrivesFade ? Mathf.Clamp01(coachFade) : 1f;
+
+        // Pure form of "is this a tutorial fight": any one tutorial signal keeps the glove-driven fade.
+        public static bool IsTutorial(bool lessonLive, bool coachFightFlag, bool fightIsCoach, bool lessonStage, bool guideLive, bool resultLive)
+            => lessonLive || coachFightFlag || fightIsCoach || lessonStage || guideLive || resultLive;
     }
 
     // What a finished (or quit) contest does to the flag, purse, and hive.
