@@ -158,6 +158,21 @@ namespace FlockFive
             bool secHit = hasAd && HitPad(lay.Secondary, out secHeld);
             var keep = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, a);
+            DrawOfferChoice(lay, hasAd, priHeld, secHeld, a, s, RewardCollectWord);
+            GUI.color = keep;
+            if (a < 0.5f) return;
+            if (hasAd && priHit) StartCoroutine(WatchRewardRepeat());
+            else if ((!hasAd && priHit) || secHit) _rewardChoice = 2;
+        }
+
+        // Shared Watch-Ad-2X / Collect choice painter. Used by the REWARD popup and the DAILY
+        // popup so both have the same buttons, icon+label group, pulse, sheen and popup style.
+        // Primary = green WATCH AD 2X (or lone green Collect when no ad); Secondary = wood Collect.
+        // Caller owns hit testing and alpha (GUI.color); `a` only scales the sheen.
+        void DrawOfferChoice(OfferButtonsLayout lay, bool hasAd, bool priHeld, bool secHeld, float a, float s, string collectWord)
+        {
+            if (_choiceWord == null)
+                _choiceWord = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
             // b87: the 2X button reads as "Watch Ad": video icon, "WATCH AD" over a big 2X,
             // a gentle breathe and the shared PushButton sheen at half speed.
             var priR = lay.Primary;
@@ -191,13 +206,9 @@ namespace FlockFive
                 DrawWatchAdWords(txt, s);
                 PushButton.EndPulse(m0);
                 var sf = DrawPopupButton(lay.Secondary, secHeld, PopupTint.Wood);
-                DrawPopupWord(sf, RewardCollectWord, _choiceWord, s);
+                DrawPopupWord(sf, collectWord, _choiceWord, s);
             }
-            else DrawPopupWord(face, RewardCollectWord, _choiceWord, s);
-            GUI.color = keep;
-            if (a < 0.5f) return;
-            if (hasAd && priHit) StartCoroutine(WatchRewardRepeat());
-            else if ((!hasAd && priHit) || secHit) _rewardChoice = 2;
+            else DrawPopupWord(face, collectWord, _choiceWord, s);
         }
 
         public const string WatchAdWord = "WATCH AD";

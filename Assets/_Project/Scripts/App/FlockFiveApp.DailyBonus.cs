@@ -436,10 +436,10 @@ namespace FlockFive
             bool watchHeld = false;
             bool collectHit = false;
             bool collectHeld = false;
-            if (chrome == 3 && !_dailyAdBusy)
+            if (chrome == 3 && _wheelPayMul < 2 && !_dailyAdBusy)
                 watchHit = HitPad(watch, out watchHeld);
             if ((chrome == 2 || chrome == 3) && !_dailyAdBusy)
-                collectHit = HitPad(collect, out collectHeld);
+                collectHit = HitPad(chrome == 3 && _wheelPayMul >= 2 ? watch : collect, out collectHeld);
             bool claim = false;
             bool claimHeld = false;
             if (flowerOn && _dailyPhase != DailyWheelPhase.Spin)
@@ -485,9 +485,15 @@ namespace FlockFive
             if (flowerOn)
                 DrawDailyClaim(flower, claimHeld, s, t);
             if (chrome == 2 || chrome == 3)
-                DrawDailyBar(collect, collectHeld, PopupTint.Gold, DailyCollectLabel, s);
-            if (chrome == 3 && _wheelPayMul < 2)
-                DrawDailyBar(watch, watchHeld, PopupTint.Green, DailyDoubleLabel, s);
+            {
+                // Same shared painter as the streak REWARD choice. After the ad doubled the pay only
+                // Collect remains, in the wide primary slot.
+                bool adOn = chrome == 3 && _wheelPayMul < 2;
+                var lay = new OfferButtonsLayout { HasSecondary = adOn };
+                if (adOn) { lay.Primary = watch; lay.Secondary = collect; }
+                else lay.Primary = chrome == 3 ? watch : collect;
+                DrawOfferChoice(lay, adOn, adOn ? watchHeld : collectHeld, collectHeld, fade, s, DailyCollectLabel);
+            }
             if (!closing && !_dailyPayHold)
                 DrawGiftCloseX(xBtn, xHeld, s);
             GUI.matrix = prev;
@@ -745,30 +751,6 @@ namespace FlockFive
             DrawCoinFly(pig);
             GUI.color = prevC;
             GUI.matrix = prev;
-        }
-
-        void DrawDailyBar(Rect bar, bool held, PopupTint tint, string label, float s)
-        {
-            if (bar.width < 8f || bar.height < 8f || string.IsNullOrEmpty(label)) return;
-            DrawPopupButton(bar, held, tint);
-            if (_dailyWatch == null)
-                _dailyWatch = new GUIStyle(GUI.skin.label)
-                {
-                    fontStyle = FontStyle.Bold,
-                    alignment = TextAnchor.MiddleCenter,
-                    wordWrap = false
-                };
-            if (label == DailyDoubleLabel)
-            {
-                var seat = RewardStampRect(bar, 2);
-                float wordW = seat.xMin - bar.x - 6f;
-                if (wordW < bar.width * 0.4f) wordW = bar.width * 0.55f;
-                var word = new Rect(bar.x, bar.y, wordW, bar.height);
-                DrawPopupWord(word, "Watch Ad", _dailyWatch, s);
-                DrawWheelX2(bar, 0.48f);
-                return;
-            }
-            DrawPopupWord(bar, label, _dailyWatch, s);
         }
 
         // Ask card or welcome only after the claim coins, balance, and clink are done.
@@ -1029,11 +1011,11 @@ namespace FlockFive
             int bars = 0;
             if (chrome == 2 || chrome == 3)
             {
-                barH = PopupBarHeight(s, cardW);
                 barGap = 10f * s;
-                bars = chrome == 3 ? 2 : 1;
+                barH = DailyOfferStackH(s, chrome == 3);
+                bars = 1;
             }
-            float stack = cardH + (flowerOn ? flowerSz - overlap : 0f) + barGap + barH * bars + (bars == 2 ? barGap : 0f);
+            float stack = cardH + (flowerOn ? flowerSz - overlap : 0f) + barGap + barH;
             // b95 (Brandon): the popup used to recenter after the first spin, because the claim
             // flower (chrome 0) gives way to the Collect / Watch bars (chrome 2, 3) and each
             // stack height centered differently. The card is seated once, for the tallest stack
@@ -1045,25 +1027,24 @@ namespace FlockFive
             flower = flowerOn
                 ? new Rect(card.center.x - flowerSz * 0.5f, card.yMax - overlap, flowerSz, flowerSz)
                 : default;
-            float barW = cardW - band * 2f;
-            if (barW < 8f) barW = 8f;
-            float barX = card.x + (cardW - barW) * 0.5f;
-            float y = card.yMax + barGap;
-            if (chrome == 3)
+            // b110: Daily uses the shared offer layout (same as the streak REWARD choice):
+            // the wide primary (Watch Ad 2X, or lone Collect) with the smaller Collect beneath.
+            float y = card.yMax + 10f * s;
+            collect = default;
+            watch = default;
+            if (chrome == 2 || chrome == 3)
             {
-                collect = new Rect(barX, y, barW, barH);
-                watch = new Rect(barX, collect.yMax + barGap, barW, barH);
+                var lay = OfferButtons(card.center.x, y, cardW * 0.86f, s, chrome == 3);
+                if (chrome == 3) { watch = lay.Primary; collect = lay.Secondary; }
+                else collect = lay.Primary;
             }
-            else if (chrome == 2)
-            {
-                collect = new Rect(barX, y, barW, barH);
-                watch = default;
-            }
-            else
-            {
-                collect = default;
-                watch = default;
-            }
+        }
+
+        // Height of the shared offer buttons stack (primary, plus the secondary when `ad`).
+        public static float DailyOfferStackH(float s, bool ad)
+        {
+            var lay = OfferButtons(0f, 0f, 100f, s, ad);
+            return (ad ? lay.Secondary.yMax : lay.Primary.yMax);
         }
 
         // Tallest stack (card, claim flower or bars) over every chrome 0..3. Chrome independent.
@@ -1081,8 +1062,8 @@ namespace FlockFive
                 float cardH = band + boardH + band;
                 float barH = 0f, barGap = 0f;
                 int bars = 0;
-                if (c == 2 || c == 3) { barH = PopupBarHeight(s, cardW); barGap = 10f * s; bars = c == 3 ? 2 : 1; }
-                float stack = cardH + (flowerOn ? flowerSz - overlap : 0f) + barGap + barH * bars + (bars == 2 ? barGap : 0f);
+                if (c == 2 || c == 3) { barH = DailyOfferStackH(s, c == 3); barGap = 10f * s; bars = 1; }
+                float stack = cardH + (flowerOn ? flowerSz - overlap : 0f) + barGap + barH;
                 if (stack > best) best = stack;
             }
             return best;
