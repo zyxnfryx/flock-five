@@ -142,8 +142,13 @@ namespace FlockFive.Editor
         static void Caption(System.Action<string, bool, string> Check)
         {
             string line = CaptionLayout.FireLine;
+            Check("copy-is-approved-text",
+                line == "Lightning burned the branch\nWatch out for dangerous weather"
+                && CaptionLayout.FireEmojiLine == "Lightning burned the branch \U0001F525\nWatch out for dangerous weather",
+                "[" + line.Replace("\n", " / ") + "]");
             int rows = line.Split('\n').Length;
-            Check("copy-two-lines-max", rows <= 2 && rows <= CaptionLayout.BannerMaxLines, "rows=" + rows);
+            int emojiRows = CaptionLayout.FireEmojiLine.Split('\n').Length;
+            Check("copy-two-lines-max", rows <= 2 && emojiRows <= 2 && rows <= CaptionLayout.BannerMaxLines, "rows=" + rows);
             var faces = new[] { new Vector2(1179f, 2556f), new Vector2(750f, 1334f), new Vector2(1536f, 2048f) };
             for (int i = 0; i < faces.Length; i++)
             {
@@ -153,7 +158,9 @@ namespace FlockFive.Editor
                 var style = FlockFiveApp.CoachCaptionStyle();
                 float inner = CaptionLayout.BannerMeasureWidth(w, style, line, px);
                 var fit = CaptionLayout.FitBanner(style, line, inner, px);
-                bool ok = fit.Lines >= 1 && fit.Lines <= CaptionLayout.BannerMaxLines;
+                // Like the bee line, a long row may shrink the font, never below 60%.
+                bool ok = fit.Lines >= 1 && fit.Lines <= CaptionLayout.BannerMaxLines
+                    && fit.Font >= Mathf.RoundToInt(px * 0.6f) - 1;
                 Check("copy-fits-" + (int)w + "x" + (int)h, ok, "lines " + fit.Lines + " font " + fit.Font + "/" + px
                     + " [" + (fit.Shown ?? "").Replace("\n", " / ") + "]");
             }
