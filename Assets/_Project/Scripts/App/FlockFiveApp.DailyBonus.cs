@@ -102,7 +102,7 @@ namespace FlockFive
             if (DailyShotSentinel()) _dailyShotQuiet = true;
 #endif
             DailyBonus.Boot();
-            DailyBonus.RefreshDay();
+            SyncDailyDay();
             DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun)
@@ -123,7 +123,7 @@ namespace FlockFive
         {
             DailyReminder.Tick();
             TickDailyOsRequest();
-            DailyBonus.RefreshDay();
+            SyncDailyDay();
             TickDailyWheel();
             TickDailyDismiss();
 #if UNITY_EDITOR
@@ -178,10 +178,31 @@ namespace FlockFive
             DailyReminder.RequestOsNow();
         }
 
+        // The ONE place the local-midnight rollover is applied to the UI. Called every frame
+        // (before the GamePause early return), on resume and on focus, so the streak line,
+        // medal badge, Daily button and reminder plan all flip the instant the day changes.
+        // The shown streak is DailyBonus.OfferStreak (the preview), never the saved streak.
+        bool SyncDailyDay()
+        {
+            if (!DailyBonus.RefreshDay()) return false;
+            // Text caches key on string length only; "1 day streak" -> "2 day streak" must refit.
+            _dailyFitKey = int.MinValue;
+            _railDigitKey = int.MinValue;
+            // An open card that was showing yesterday's landed wheel offers a fresh spin.
+            if (_dailyOpen && _dailyPhase != DailyWheelPhase.Spin && !_dailyPayHold
+                && _dailyCloseAt < 0f && !_dailyAdBusy)
+            {
+                _dailyPhase = DailyWheelPhase.Ready;
+                _dailyAngle = 0f;
+            }
+            DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
+            return true;
+        }
+
         void ResumeDailyReminder()
         {
             DailyBonus.Boot();
-            DailyBonus.RefreshDay();
+            SyncDailyDay();
             DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
         }
 
