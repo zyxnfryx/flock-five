@@ -1106,6 +1106,19 @@ namespace FlockFive
             public Rect ColL, ColR;
         }
 
+        const float BadgerCaptionFrac = 0.18f;
+        const float BadgerPowerFrac = 0.11f;
+
+        // b110: the power row, then the caption band under it. Pure so a test can check the two never overlap.
+        public static void BadgerBottomBands(float yPower, float xL, float xR, float room, float s, out Rect power, out Rect caption)
+        {
+            float gap = 6f * s;
+            float powH = room * BadgerPowerFrac;
+            float capH = room * BadgerCaptionFrac;
+            power = new Rect(xL, yPower, xR - xL, powH);
+            caption = new Rect(xL, yPower + powH + gap, xR - xL, capH);
+        }
+
         BadgerRects BadgerLayout()
         {
             var L = new BadgerRects();
@@ -1129,8 +1142,8 @@ namespace FlockFive
             float yEnd = Screen.height - Mathf.Max(8f * s, haveSafe ? safe.yMin + 4f : 0f);
             float gap = 6f * s;
             float room = Mathf.Max(100f, yEnd - y0 - gap * 4f);
-            float capH = room * 0.18f;
-            float powH = room * 0.11f;
+            float capH = room * BadgerCaptionFrac;
+            float powH = room * BadgerPowerFrac;
             // Middle stage band, between the badger tiles and the player tiles.
             // Height stays put so the opening hive and bee arcs keep their size.
             float arenaH = room * 0.16f;
@@ -1144,9 +1157,7 @@ namespace FlockFive
             y += arenaH + gap;
             L.PlayerGrid = new Rect(gx, y, gw, gridH);
             y += gridH + gap;
-            L.Power = new Rect(xL, y, xR - xL, powH);
-            y += powH + gap;
-            L.Caption = new Rect(xL, y, xR - xL, capH);
+            BadgerBottomBands(y, xL, xR, room, s, out L.Power, out L.Caption);
             float colH = L.PlayerGrid.yMax - L.BossGrid.y;
             L.ColL = new Rect(xL, L.BossGrid.y, colW, colH);
             L.ColR = new Rect(xR - colW, L.BossGrid.y, colW, colH);
@@ -2178,6 +2189,11 @@ namespace FlockFive
                 && (_bgStage == BadgerStage.Reveal || _bgStage == BadgerStage.DontCare || _bgStage == BadgerStage.Verdict);
         }
 
+        // b110: true for the first-fight lesson and the whole coach fight (every stage). Those keep the glove-driven fade.
+        bool BadgerTutorialFight()
+            => BadgerCaptionFade.IsTutorial(_bgLessonLive, _bgCoachFight, _bgFight != null && _bgFight.CoachFight,
+                _bgStage == BadgerStage.Lesson, BadgerGuideLive(), BadgerResultLive());
+
         void DrawBadgerCaption(BadgerRects L)
         {
             if (!GuiPaint() || string.IsNullOrEmpty(_bgLine)) return;
@@ -2189,7 +2205,16 @@ namespace FlockFive
             if (w > band.width) w = band.width;
             if (h > band.height) h = band.height;
             var seat = new Rect(band.center.x - w * 0.5f, band.center.y - h * 0.5f, w, h);
-            CapSpot("badger.caption"); PaintCoachCaption(_bgLine, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+            // b110: the shared caption paint multiplies its ink and plate by _coachFade, which only the tutorial glove
+            // ramps. On a repeat (non-tutorial) fight it sat at 0, so the bottom dialog painted nothing. Use a full
+            // fade there; every tutorial fight (lesson, coach fight, all its stages) keeps the glove's fade as before. Restored so the coach state is untouched.
+            float keepFade = _coachFade;
+            _coachFade = BadgerCaptionFade.For(BadgerTutorialFight(), _coachFade);
+            try
+            {
+                CapSpot("badger.caption"); PaintCoachCaption(_bgLine, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+            }
+            finally { _coachFade = keepFade; }
         }
 
     }
