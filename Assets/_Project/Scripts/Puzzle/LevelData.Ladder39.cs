@@ -265,24 +265,24 @@ namespace FlockFive
             return b;
         }
 
-        // CAND level=44 genseed=47898 solve=149/149 tangle=0 % proof=11>12 0>2 1>0 3>0 6>1 9>7 11>9 4>6 8>10 13>8 8>13 3>2 1>5 5>1 1>5 5>1 6>5 13>8|4>3|10,6,4,10 t=472s
+        // CAND level=44 genseed=46943 solve=493/493 tangle=25 % proof=13>7 2>1 9>13 13>8 5>13 12>11 7>9 0>6 1>5 2>6 9>7 5>1 4>5 3>0 13>3 2>13 6>4 3>6 8>12 6>5 12>8 13>1 10>13 12>10 10>11 4>2 5>6 0>5 12>13 9>12 1>0 3>5 0>1 7>12 9>8 2>4|9>12|13,9 t=1555s
         static Board Garden44()
         {
             var b = Eight(
+                Row(BirdColor.Violet, BirdColor.Ruby, BirdColor.Teal, BirdColor.Gold),
+                Row(BirdColor.Violet, BirdColor.Ruby),
+                Row(BirdColor.Violet, BirdColor.Gold, BirdColor.Ruby, BirdColor.Gold, BirdColor.Ruby),
+                Row(BirdColor.Violet, BirdColor.Teal, BirdColor.Violet, BirdColor.Violet, BirdColor.Teal),
+                Row(BirdColor.Violet, BirdColor.Gold, BirdColor.Violet),
+                Row(BirdColor.Teal, BirdColor.Teal, BirdColor.Violet, BirdColor.Ruby, BirdColor.Violet),
                 Row(BirdColor.Gold),
-                Row(BirdColor.Ruby, BirdColor.Violet, BirdColor.Violet, BirdColor.Teal, BirdColor.Violet),
-                Row(BirdColor.Gold, BirdColor.Gold),
-                Row(BirdColor.Ruby, BirdColor.Gold, BirdColor.Violet),
-                Row(BirdColor.Gold, BirdColor.Violet, BirdColor.Violet, BirdColor.Ruby, BirdColor.Teal),
-                Row(BirdColor.Violet, BirdColor.Violet, BirdColor.Ruby, BirdColor.Teal),
-                Row(BirdColor.Violet, BirdColor.Ruby, BirdColor.Violet, BirdColor.Teal, BirdColor.Teal),
                 new BranchState());
-            b.Live[0] = BirdColor.Violet;
-            b.Live[1] = BirdColor.Gold;
-            b.Queue.Add(BirdColor.Ruby);
+            b.Live[0] = BirdColor.Gold;
+            b.Live[1] = BirdColor.Ruby;
+            b.Queue.Add(BirdColor.Violet);
             b.Queue.Add(BirdColor.Teal);
             b.Queue.Add(BirdColor.Violet);
-            HideInner(b.Branches[4], 3);
+            HideInner(b.Branches[2], 2);
             return Prep(b);
         }
 
