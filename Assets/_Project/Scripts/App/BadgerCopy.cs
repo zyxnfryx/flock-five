@@ -133,6 +133,8 @@ namespace FlockFive
         // Same words on one row, for a caption that already carries its own first line.
         const string HotSauceFrozenFlat = "Frozen badger. Hot Sauce is on hold.";
         public const string HotSauceFrozenSub = "FROZEN";
+        // b110 NEW COPY (awaits Brandon): the same line for Freeze Spray (the Hot Sauce line names Hot Sauce).
+        public const string FreezeSprayFrozen = "Frozen badger.\nFreeze Spray is on hold.";
         // Coach fight: the round after the Freeze demo is a gated step (CoachStep.BadgerBreakFree): two lines, glove on a comb.
         public const string FreezeBreakFreeWait = "Still frozen. Tap the glowing comb.\n" + HotSauceFrozenFlat;
         public const string BlockedBoth = "Blocked! The badger scores nothing.";

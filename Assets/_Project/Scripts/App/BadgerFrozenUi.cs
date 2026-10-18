@@ -10,18 +10,28 @@ namespace FlockFive
         public const float ToastSeconds = 2.2f;
         public const float PopSeconds = 0.40f;
 
+        // b110: Hot Sauce and Freeze Spray each get their own instance (own pop and toast clocks, own line).
+        readonly BadgerPower _power;
+        public BadgerFrozenUi() : this(BadgerPower.HotSauce) { }
+        public BadgerFrozenUi(BadgerPower power) { _power = power; }
+
         bool _wasFrozen;
         bool _popPending;
         float _popAt = -1f;
         float _toastUntil = -1f;
 
-        // Hot Sauce is the only frozen-out power; used buttons keep their USED look.
+        // Hot Sauce and Freeze Spray are the frozen-out powers. A used Hot Sauce keeps its USED look. Freeze Spray is
+        // single-use, so it is always "used" while the badger is frozen: the frozen look wins for those two beats and
+        // it goes back to USED on thaw.
         public static bool Disabled(BadgerFight f, BadgerPower p, bool used)
-            => f != null && !used && f.Result == BadgerResult.Playing && f.PowerFrozenOut(p);
+            => f != null && (!used || p == BadgerPower.FreezeSpray) && f.Result == BadgerResult.Playing && f.PowerFrozenOut(p);
+
+        public static string LineFor(BadgerPower p)
+            => p == BadgerPower.FreezeSpray ? BadgerCopy.FreezeSprayFrozen : BadgerCopy.HotSauceFrozen;
 
         // Frozen turn and break-free turn, in the tutorial demo and every later fight.
         public static string TapLine(BadgerFight f, BadgerPower p)
-            => Disabled(f, p, false) ? BadgerCopy.HotSauceFrozen : null;
+            => Disabled(f, p, false) ? LineFor(p) : null;
 
         // The tap on a disabled button. Returns the line (null when the button is live) and arms the toast.
         public string Tap(BadgerFight f, BadgerPower p, float now)
@@ -32,7 +42,7 @@ namespace FlockFive
         }
 
         public bool ToastLive(float now) => now < _toastUntil;
-        public string Toast(float now) => ToastLive(now) ? BadgerCopy.HotSauceFrozen : null;
+        public string Toast(float now) => ToastLive(now) ? LineFor(_power) : null;
 
         // Call every draw with the live disabled state. A thaw queues the pop; it plays once the buttons are active
         // again (a pop during a reveal would be missed). A fight that ended clears everything.
@@ -53,6 +63,9 @@ namespace FlockFive
             return 1f + 0.18f * Mathf.Sin(Mathf.PI * age / PopSeconds);
         }
 
+        // Freeze Spray is spent once cast, so on thaw it returns to USED, not to a live button: no pop for it.
+        public void CancelPop() { _popPending = false; _popAt = -1f; }
+
         public bool Popping(float now) => _popAt >= 0f && now - _popAt < PopSeconds;
         public bool PopPending => _popPending;
         public bool WasFrozen => _wasFrozen;
@@ -70,6 +83,10 @@ namespace FlockFive
         // and never advances; Back, other powers, other combs and blank space are eaten.
         public static bool PressPasses(Vector2 p, Rect comb, Rect hotSauce)
             => (comb.width > 2f && comb.Contains(p)) || (hotSauce.width > 2f && hotSauce.Contains(p));
+
+        // b110: the step's gate also lets the frozen Freeze Spray button run its handler (says why, never advances).
+        public static bool PressPasses(Vector2 p, Rect comb, Rect hotSauce, Rect freeze)
+            => PressPasses(p, comb, hotSauce) || (freeze.width > 2f && freeze.Contains(p));
 
         // Same rule the shared glove uses (CoachAimAway): a target in the left half is met from the right and the
         // hand points left; the right half is met from the left and the hand points right.

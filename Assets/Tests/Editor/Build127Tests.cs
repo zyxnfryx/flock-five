@@ -133,8 +133,8 @@ namespace FlockFive.Editor
                 coach.Contains("_bgGateToggle = BadgerGateToggleRect(stage);") && badger.Contains("bool BadgerBreakFreeLive()")
                 && badger.Contains("|| BadgerFreezeDemoHolds() || BadgerBreakFreeLive())")
                 && badger.Contains("|| BadgerBreakFreeLive());") && badger.Contains("guide = _bgBreakTile;"), "");
-            Check("wiring-hot-sauce-ui", badger.Contains("DrawBadgerIceBadge(rr)") && badger.Contains("_bgFrozenUi.Tap(_bgFight, p, AdPause.Unscaled)")
-                && badger.Contains("Sfx.Deny();") && badger.Contains("_bgFrozenUi.Observe(frozenOut") && badger.Contains("_bgFrozenUi.Reset();"), "");
+            Check("wiring-hot-sauce-ui", badger.Contains("DrawBadgerIceBadge(rr)") && badger.Contains("ui.Tap(_bgFight, p, AdPause.Unscaled)")
+                && badger.Contains("Sfx.Deny();") && badger.Contains("fui.Observe(frozenOut") && badger.Contains("_bgFrozenUi.Reset();"), "");
 
             string end = fail == 0 ? "BUILD127_OK " + pass : "BUILD127_FAIL " + fail + " passed " + pass;
             sb.AppendLine(end);
