@@ -60,6 +60,12 @@ namespace FlockFive
         static int _dailyBonusPx = 12;
         static int _railDigitPx;
         static int _railDigitKey = int.MinValue;
+        // b129 countdown fits. Each is fitted once on the widest sample ("Ready in 24:00:00",
+        // "24:00:00"), so the per-second digits never refit; the keys clear on a Daily state change.
+        static int _dailyCountPx = 10;
+        static int _dailyClaimSmallPx = 14;
+        static int _railClockPx = 8;
+        static int _railClockKey = int.MinValue;
         static GUIStyle _dailyAsk;
         static GUIStyle _dailyAskBtn;
         static int _dailyAskFit = int.MinValue;
@@ -102,8 +108,8 @@ namespace FlockFive
             if (DailyShotSentinel()) _dailyShotQuiet = true;
 #endif
             DailyBonus.Boot();
-            DailyBonus.RefreshDay();
-            DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
+            SyncDailyDay();
+            RescheduleDailyReminder();
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun)
             {
@@ -123,7 +129,7 @@ namespace FlockFive
         {
             DailyReminder.Tick();
             TickDailyOsRequest();
-            DailyBonus.RefreshDay();
+            SyncDailyDay();
             TickDailyWheel();
             TickDailyDismiss();
 #if UNITY_EDITOR
@@ -178,11 +184,46 @@ namespace FlockFive
             DailyReminder.RequestOsNow();
         }
 
+        static void RescheduleDailyReminder()
+        {
+            DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk, DailyBonus.LastClaimUnix);
+        }
+
+        static void ClearDailyTextCaches()
+        {
+            // Text caches key on string length only; "1 day streak" -> "2 day streak" must refit.
+            _dailyFitKey = int.MinValue;
+            _railDigitKey = int.MinValue;
+            _railClockKey = int.MinValue;
+        }
+
+        // The ONE place the 24h-window state change is applied to the UI. Called every frame
+        // (before the GamePause early return), on resume and on focus, so the streak line,
+        // medal badge, Daily button and reminder plan all flip the instant the countdown ends
+        // (or the grace lapses). Cheap: RefreshDay does nothing until the wall-clock second
+        // changes and returns true only on a state change; the per-second countdown text is
+        // read lazily from DailyBonus.CountdownLine/CountdownClock by the painters.
+        // The shown streak is DailyBonus.OfferStreak (the preview), never the saved streak.
+        bool SyncDailyDay()
+        {
+            if (!DailyBonus.RefreshDay()) return false;
+            ClearDailyTextCaches();
+            // An open card that was showing yesterday's landed wheel offers a fresh spin.
+            if (_dailyOpen && _dailyPhase != DailyWheelPhase.Spin && !_dailyPayHold
+                && _dailyCloseAt < 0f && !_dailyAdBusy)
+            {
+                _dailyPhase = DailyWheelPhase.Ready;
+                _dailyAngle = 0f;
+            }
+            RescheduleDailyReminder();
+            return true;
+        }
+
         void ResumeDailyReminder()
         {
             DailyBonus.Boot();
-            DailyBonus.RefreshDay();
-            DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
+            SyncDailyDay();
+            RescheduleDailyReminder();
         }
 
         void OpenDailyCard()
@@ -246,6 +287,27 @@ namespace FlockFive
                 float cy = plate.yMax - plate.width * 0.22f;
                 DrawReadyBadge(cx, cy, plate.width);
             }
+
+            // Claimed: the time left on the coin's lower face, only when it is big enough to read.
+            if (icon == DailyBonusIconState.Flame && DailyBonus.CountdownActive && plate.width >= RailClockMinPx)
+                DrawRailClock(plate);
+        }
+
+        // Smallest medal width (px) that gets a countdown. Below it the flame alone shows.
+        const float RailClockMinPx = 56f;
+
+        static void DrawRailClock(Rect plate)
+        {
+            EnsureDailyStyles();
+            var box = new Rect(plate.x + plate.width * 0.10f, plate.y + plate.height * 0.66f, plate.width * 0.80f, plate.height * 0.22f);
+            int key = Mathf.RoundToInt(box.width) * 397 ^ Mathf.RoundToInt(box.height) * 17;
+            if (key != _railClockKey)
+            {
+                _railClockKey = key;
+                _railClockPx = FitFont(_dailyLine, "24:00:00", box.width, box.height * 0.92f, 6, 24);
+            }
+            _dailyLine.fontSize = _railClockPx;
+            StampOutlined(box, DailyBonus.CountdownClock, _dailyLine, new Color(1f, 0.97f, 0.86f), 1, 1);
         }
 
         // Where the flame art is drawn for a given plate. DrawDailyStreakFlame paints it and
@@ -552,7 +614,7 @@ namespace FlockFive
             _dailySpinAt = AdPause.Unscaled;
             _dailyAngle = 0f;
             Sfx.CardTap();
-            DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
+            RescheduleDailyReminder();
             if (tutorial) DismissDailyIntro();
         }
 
@@ -690,7 +752,7 @@ namespace FlockFive
             _dailyTutorSpin = false;
             _dailyPhase = DailyWheelPhase.Ready;
             _wheelPayMul = 1;
-            DailyReminder.Reschedule(DailyBonus.Streak, DailyBonus.ClaimedToday, DailyBonus.AtRisk);
+            RescheduleDailyReminder();
             if (follow) StartCoroutine(FinishDailyClaim(first));
         }
 
@@ -1496,6 +1558,12 @@ namespace FlockFive
             float claimW = disc.width > 2f ? disc.width * 0.72f : 80f;
             float claimH = disc.height > 2f ? disc.height * 0.52f : 40f;
             _dailyClaimPx = FitFont(_dailyClaim, "Claimed", claimW, claimH, 12, Mathf.Max(16, Mathf.RoundToInt(30f * s)));
+            // Claimed with a countdown: "Claimed" on top, "Ready in H:MM:SS" under it.
+            float smallH = disc.height > 2f ? disc.height * 0.30f : 28f;
+            _dailyClaimSmallPx = FitFont(_dailyClaim, "Claimed", claimW, smallH, 10, _dailyClaimPx);
+            float countW = disc.width > 2f ? disc.width * 0.80f : 90f;
+            float countH = disc.height > 2f ? disc.height * 0.17f : 16f;
+            _dailyCountPx = FitFont(_dailyLine, "Ready in 24:00:00", countW, countH, 8, Mathf.Max(10, Mathf.RoundToInt(16f * s)));
         }
 
         static void DrawDailyCopy(Rect titleR, Rect streakR, Rect bonusR, float s, float breathe, Texture2D glow)
@@ -2098,10 +2166,20 @@ namespace FlockFive
             bool ready = DailyBonus.OfferReady;
             var pressed = GUI.matrix;
             var disc = DrawPopupButton(flower, held, ready, 1f, true, DailyClaimBursts(ready, DailyBonus.ClaimedToday));
-            var labR = new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.56f);
-            _dailyClaim.fontSize = _dailyClaimPx;
-            int ink = Mathf.Clamp(Mathf.RoundToInt(_dailyClaimPx * 0.12f), 2, 6);
+            bool count = !ready && DailyBonus.CountdownActive;
+            var labR = count
+                ? new Rect(disc.x, disc.y + disc.height * 0.16f, disc.width, disc.height * 0.36f)
+                : new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.56f);
+            int verbPx = count ? _dailyClaimSmallPx : _dailyClaimPx;
+            _dailyClaim.fontSize = verbPx;
+            int ink = Mathf.Clamp(Mathf.RoundToInt(verbPx * 0.12f), 2, 6);
             StampOutlined(labR, DailyVerb(), _dailyClaim, new Color(0.28f, 0.12f, 0.04f), 2, ink);
+            if (count)
+            {
+                var cdR = new Rect(disc.x, disc.y + disc.height * 0.54f, disc.width, disc.height * 0.20f);
+                _dailyLine.fontSize = _dailyCountPx;
+                StampOutlined(cdR, DailyBonus.CountdownLine, _dailyLine, new Color(1f, 0.96f, 0.80f), 1, Mathf.Clamp(Mathf.RoundToInt(_dailyCountPx * 0.10f), 1, 3));
+            }
             if (!ready)
             {
                 GUI.matrix = pressed;

@@ -3563,7 +3563,11 @@ namespace FlockFive
 
         void OnApplicationFocus(bool focus)
         {
-            if (focus) NoteAppResume();
+            if (focus)
+            {
+                NoteAppResume();
+                SyncDailyDay();
+            }
             else NoteAppBackground();
         }
 
@@ -3594,6 +3598,8 @@ namespace FlockFive
                 SfxLibrary.CloseCombo();
             // Interrupted-tutorial check: cheap, and it only acts on a stuck state.
             if ((Time.frameCount & 7) == 0) HealInterruptedTutorials();
+            // The 24h Daily window must flip even while a pause holds the rest of the tick.
+            SyncDailyDay();
             if (GamePause.Paused)
             {
                 if (TutorialGuideLive() || _tutorPause != 0)

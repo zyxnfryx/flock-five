@@ -653,6 +653,7 @@ namespace FlockFive.Editor
                 {
                     "flockfive.login.day",
                     "flockfive.daily.last",
+                    "flockfive.daily.last24",
                     "flockfive.reward.pending"
                 };
                 string[] ints =
@@ -666,6 +667,7 @@ namespace FlockFive.Editor
                     "flockfive.daily.streak", "flockfive.daily.streak.x",
                     "flockfive.daily.pay", "flockfive.daily.pay.x",
                     "flockfive.daily.last.x",
+                    "flockfive.daily.last24.x",
                     "flockfive.reward.pending.x"
                 };
                 var list = new System.Collections.Generic.List<PrefSnap>();

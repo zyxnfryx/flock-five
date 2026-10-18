@@ -550,6 +550,7 @@ namespace FlockFive.Editor
                 {
                     "flockfive.login.day",
                     "flockfive.daily.last",
+                    "flockfive.daily.last24",
                     "flockfive.daily.reclaim"
                 };
                 string[] ints =
@@ -562,7 +563,8 @@ namespace FlockFive.Editor
                     "flockfive.instage",
                     "flockfive.daily.streak", "flockfive.daily.streak.x",
                     "flockfive.daily.pay", "flockfive.daily.pay.x",
-                    "flockfive.daily.last.x", "flockfive.daily.reclaim.x"
+                    "flockfive.daily.last.x",
+                    "flockfive.daily.last24.x", "flockfive.daily.reclaim.x"
                 };
                 var list = new List<PrefSnap>();
                 for (int i = 0; i < text.Length; i++) list.Add(Read(text[i], true));

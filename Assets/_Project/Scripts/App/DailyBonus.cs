@@ -13,9 +13,19 @@ namespace FlockFive
         Flame
     }
 
-    // Daily login coins. Local calendar day, not the stage-clear streak in Purse.
-    // A missed day (gap of 2+) offers day 1 again. The saved streak still counts
-    // past 5. The coin amount does not use that streak.
+    // Daily login coins. A 24-hour window from the last claim (b129, Brandon 2026-10-18),
+    // not the local calendar day and not the stage-clear streak in Purse.
+    //   Claimed: now is under 24h after the last claim. The card shows "Ready in H:MM:SS".
+    //   Ready:   now >= lastClaim + 24h. A claim 24h..48h after the last one (inclusive)
+    //            continues the streak (+1). Later than 48h offers day 1 again. This is the old
+    //            gap 1 vs gap 2+ rule with the window sliding with the claim.
+    //   Held:    now < lastClaim (the clock was set backwards). Nothing can be claimed.
+    // The last claim is saved as unix seconds (UTC) in flockfive.daily.last24 through PrefGuard
+    // (same checksum and tamper fallback as every other pref here), so time zone and DST
+    // changes never move the window. The old yyyymmdd pref (flockfive.daily.last) is migrated
+    // once, see MigratedClaim, and removed. The saved streak still counts past 5. The coin
+    // amount does not use that streak. Forward clock changes cannot be detected without a
+    // server clock; the window trusts the device clock exactly as the calendar rule did.
     //
     // The prize is one spin of an 8-wedge wheel. The base is
     // 100 + 100 * floor(highestLevel / 10), capped at BaseCap. Highest level is
@@ -26,11 +36,17 @@ namespace FlockFive
     // After it lands, a rewarded ad may double that spin once. A prize that is
     // not a multiple of 100 still offers the double; the doubled result rounds
     // up to a multiple of 100. A skip or a failed show pays the spin once.
-    // The once-per-day gate is the same day key as the claim (flockfive.daily.last).
+    // The once-per-window gate is the same timestamp as the claim (flockfive.daily.last24).
     // The tutorial spin does not offer the double.
     public static class DailyBonus
     {
+        // Legacy yyyymmdd local day (read once for migration, then deleted).
         const string PrefLast = "flockfive.daily.last";
+        // Unix seconds (UTC) of the last claim.
+        const string PrefLast24 = "flockfive.daily.last24";
+        public const long WindowSeconds = 24L * 3600L;
+        // Latest claim gap (from the last claim) that still continues the streak.
+        public const long GraceSeconds = 48L * 3600L;
         const string PrefStreak = "flockfive.daily.streak";
         const string PrefPay = "flockfive.daily.pay";
         const int StreakCap = 100000;
@@ -55,8 +71,8 @@ namespace FlockFive
 
         static bool _booted;
         static int _streak;
-        static int _last;
-        static int _seen;
+        static long _last;
+        static long _seen;
         static bool _continuing;
         static int _offerStreak = 1;
         static int _cycle;
@@ -67,7 +83,12 @@ namespace FlockFive
         static string _digits = "1";
         static string _streakLine = "1 day streak";
         static string _payLine = null;
-        static int _testToday;
+        static long _testNow;
+        static readonly char[] _cdBuf = new char[24];
+        static int _cdLineKey = -1;
+        static int _cdClockKey = -1;
+        static string _cdLine = "";
+        static string _cdClock = "";
         static int _spinWedge = -1;
         static int _spinCoins;
         static bool _landed;
@@ -103,7 +124,9 @@ namespace FlockFive
             _streakLine = "1 day streak";
             _payLine = PayFallback();
             _gate = Gate.Ready;
-            _testToday = 0;
+            _testNow = 0;
+            _cdLineKey = -1;
+            _cdClockKey = -1;
             _spinWedge = -1;
             _spinCoins = 0;
             _landed = false;
@@ -120,7 +143,74 @@ namespace FlockFive
         public static int Payout => _payout;
         public static int Bonus => 0;
         public static bool AtRisk => _atRisk;
+        // True while the 24h window from the last claim is open (name kept from the calendar rule).
         public static bool ClaimedToday => _booted && _gate == Gate.Claimed;
+        public static bool Held => _booted && _gate == Gate.Held;
+        // Unix seconds (UTC) of the last claim, 0 when none. DailyReminder plans from this.
+        public static long LastClaimUnix => _booted ? _last : 0L;
+        // Whole seconds until Ready while Claimed (as of the last RefreshDay), else 0.
+        public static int RemainingSeconds
+        {
+            get
+            {
+                if (!_booted || _gate != Gate.Claimed || _last <= 0) return 0;
+                long r = _last + WindowSeconds - _seen;
+                if (r < 0) return 0;
+                return r > WindowSeconds ? (int)WindowSeconds : (int)r;
+            }
+        }
+        public static bool CountdownActive => RemainingSeconds > 0;
+        // "Ready in H:MM:SS". Rebuilt only when the second changes; same string object otherwise.
+        public static string CountdownLine
+        {
+            get
+            {
+                int r = RemainingSeconds;
+                if (r == _cdLineKey) return _cdLine;
+                _cdLineKey = r;
+                const string pre = "Ready in ";
+                for (int i = 0; i < pre.Length; i++) _cdBuf[i] = pre[i];
+                int n = WriteClock(_cdBuf, pre.Length, r);
+                _cdLine = new string(_cdBuf, 0, n);
+                return _cdLine;
+            }
+        }
+        // "H:MM:SS" alone, for the small splash medal.
+        public static string CountdownClock
+        {
+            get
+            {
+                int r = RemainingSeconds;
+                if (r == _cdClockKey) return _cdClock;
+                _cdClockKey = r;
+                int n = WriteClock(_cdBuf, 0, r);
+                _cdClock = new string(_cdBuf, 0, n);
+                return _cdClock;
+            }
+        }
+        // Shared clock text. 3725 is "1:02:05", 86400 is "24:00:00". Negative is "0:00:00".
+        public static string FormatClock(long seconds)
+        {
+            int n = WriteClock(_cdBuf, 0, seconds);
+            return new string(_cdBuf, 0, n);
+        }
+        static int WriteClock(char[] b, int at, long sec)
+        {
+            if (sec < 0) sec = 0;
+            long h = sec / 3600;
+            if (h > 99) h = 99;
+            int m = (int)(sec / 60 % 60);
+            int s = (int)(sec % 60);
+            if (h >= 10) b[at++] = (char)('0' + (int)(h / 10));
+            b[at++] = (char)('0' + (int)(h % 10));
+            b[at++] = ':';
+            b[at++] = (char)('0' + m / 10);
+            b[at++] = (char)('0' + m % 10);
+            b[at++] = ':';
+            b[at++] = (char)('0' + s / 10);
+            b[at++] = (char)('0' + s % 10);
+            return at;
+        }
         public static int SpinWedge => _spinWedge;
         public static int SpinCoins => _spinCoins;
         public static bool Landed => _landed;
@@ -380,8 +470,24 @@ namespace FlockFive
             _streak = PrefGuard.GetInt(PrefStreak, 0);
             if (_streak < 0) _streak = 0;
             if (_streak > StreakCap) _streak = StreakCap;
-            _last = ReadStamp(PrefGuard.GetString(PrefLast, ""));
-            _seen = TodayStamp();
+            long now = NowSec();
+            _last = ReadClaim(PrefGuard.GetString(PrefLast24, ""));
+            if (_last <= 0 && PlayerPrefs.HasKey(PrefLast))
+            {
+                int old = ReadStamp(PrefGuard.GetString(PrefLast, ""));
+                if (old > 0)
+                {
+                    _last = MigratedClaim(old, now);
+                    PrefGuard.SetString(PrefLast24, WriteClaim(_last));
+                }
+            }
+            if (PlayerPrefs.HasKey(PrefLast))
+            {
+                PlayerPrefs.DeleteKey(PrefLast);
+                PlayerPrefs.DeleteKey(PrefLast + ".x");
+                PlayerPrefs.Save();
+            }
+            _seen = now;
             _spinWedge = -1;
             _spinCoins = 0;
             _landed = false;
@@ -390,12 +496,21 @@ namespace FlockFive
             Rebuild();
         }
 
+        // Re-reads the clock. Cheap: it does nothing until the wall-clock second changes. True
+        // only when the Daily STATE changed (Claimed to Ready, the grace lapsing so the offer
+        // drops to day 1, Held to anything, or back); the per-second countdown alone returns
+        // false and is read from RemainingSeconds. A spin that was started but never resolved
+        // keeps the gate Claimed until TryResolve pays it (a claim is never lost to the flip).
         public static bool RefreshDay()
         {
             if (!_booted) Boot();
-            int today = TodayStamp();
-            if (today == _seen) return false;
-            _seen = today;
+            long now = NowSec();
+            if (now == _seen) return false;
+            _seen = now;
+            Eval(now, out var gate, out bool cont, out int offer);
+            if (gate == _gate && cont == _continuing && offer == _offerStreak) return false;
+            if (!_pose && _gate == Gate.Claimed && gate != Gate.Claimed && _spinCoins >= 100 && !_resolved)
+                return false;
             if (!_pose)
             {
                 _spinWedge = -1;
@@ -408,8 +523,8 @@ namespace FlockFive
             return true;
         }
 
-        // Locks today and picks the wedge now. Does not pay. The wheel then
-        // animates to this wedge. A second call the same day fails.
+        // Locks the window and picks the wedge now. Does not pay. The wheel then
+        // animates to this wedge. A second call inside the window fails.
         public static bool TryBeginSpin(bool tutorial, out int wedge, out int coins, out bool firstEver)
         {
             wedge = 0;
@@ -419,14 +534,8 @@ namespace FlockFive
             if (!_booted) Boot();
             RefreshDay();
             if (_gate != Gate.Ready) return false;
-            int today = TodayStamp();
-            if (today != _seen)
-            {
-                _seen = today;
-                Rebuild();
-                if (_gate != Gate.Ready) return false;
-            }
-            if (_last >= today) return false;
+            long now = NowSec();
+            if (_last > 0 && now < _last + WindowSeconds) return false;
             wedge = RollWedge();
             coins = Prize(HighestLevel, wedge);
             if (coins <= 0) return false;
@@ -438,9 +547,10 @@ namespace FlockFive
             _tutorialSpin = tutorial;
             _payout = coins;
             _streak = _offerStreak;
-            _last = today;
+            _last = now;
+            _seen = now;
             PrefGuard.SetInt(PrefStreak, _streak);
-            PrefGuard.SetString(PrefLast, WriteStamp(_last));
+            PrefGuard.SetString(PrefLast24, WriteClaim(_last));
             PrefGuard.SetInt(PrefPay, coins);
             PlayerPrefs.Save();
             Rebuild();
@@ -497,47 +607,47 @@ namespace FlockFive
             return true;
         }
 
-        static void Rebuild()
+        // The one rule table. now and _last are unix seconds.
+        static void Eval(long now, out Gate gate, out bool cont, out int offer)
         {
-            int today = _seen;
-            _continuing = false;
+            cont = false;
+            int kept = _streak < 1 ? 1 : _streak;
             if (_last <= 0)
             {
-                _gate = Gate.Ready;
-                _offerStreak = 1;
+                gate = Gate.Ready;
+                offer = 1;
+                return;
             }
-            else if (_last > today)
+            if (now < _last)
             {
-                _gate = Gate.Held;
-                _offerStreak = _streak < 1 ? 1 : _streak;
+                gate = Gate.Held;
+                offer = kept;
+                return;
             }
-            else if (_last == today)
+            long elapsed = now - _last;
+            if (elapsed < WindowSeconds)
             {
-                _gate = Gate.Claimed;
-                _offerStreak = _streak < 1 ? 1 : _streak;
+                gate = Gate.Claimed;
+                offer = kept;
+                return;
+            }
+            gate = Gate.Ready;
+            if (elapsed <= GraceSeconds)
+            {
+                cont = true;
+                offer = _streak + 1;
+                if (offer < 1) offer = 1;
+                if (offer > StreakCap) offer = StreakCap;
             }
             else
-            {
-                int gap = DaysFrom(_last, today);
-                if (gap <= 0)
-                {
-                    _gate = Gate.Held;
-                    _offerStreak = _streak < 1 ? 1 : _streak;
-                }
-                else if (gap == 1)
-                {
-                    _gate = Gate.Ready;
-                    _continuing = true;
-                    _offerStreak = _streak + 1;
-                    if (_offerStreak < 1) _offerStreak = 1;
-                    if (_offerStreak > StreakCap) _offerStreak = StreakCap;
-                }
-                else
-                {
-                    _gate = Gate.Ready;
-                    _offerStreak = 1;
-                }
-            }
+                offer = 1;
+        }
+
+        static void Rebuild()
+        {
+            Eval(_seen, out _gate, out _continuing, out _offerStreak);
+            _cdLineKey = -1;
+            _cdClockKey = -1;
 
             int days = CycleDays > 0 ? CycleDays : 1;
             _cycle = (_offerStreak - 1) % days;
@@ -572,11 +682,10 @@ namespace FlockFive
             }
         }
 
-        static int TodayStamp()
+        static long NowSec()
         {
-            if (_testToday > 0) return _testToday;
-            var n = DateTime.Now;
-            return n.Year * 10000 + n.Month * 100 + n.Day;
+            if (_testNow > 0) return _testNow;
+            return DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         }
 
         // Doubled spin from a rewarded ad, including one that was saved while the
@@ -634,15 +743,31 @@ namespace FlockFive
             _gate = Gate.Claimed;
         }
 
+        // yyyymmdd view of the test clock (local noon of that day). 0 returns to the real clock.
         public static int TestToday
         {
-            get => _testToday;
-            set => _testToday = value;
+            get => 0;
+            set => _testNow = value > 0 ? NoonOf(value) : 0L;
         }
 
+        // Unix seconds (UTC) of the test clock. 0 is the real clock.
+        public static long TestNow
+        {
+            get => _testNow;
+            set => _testNow = value > 0 ? value : 0L;
+        }
+
+        // Day-stamp form kept for the older suites: the clock is local noon of `today` and a
+        // nonzero lastStamp is a claim at local noon of that day.
         public static void TestBegin(int today, int lastStamp, int streak)
         {
-            _testToday = today;
+            TestBeginAt(NoonOf(today), lastStamp > 0 ? NoonOf(lastStamp) : 0L, streak);
+        }
+
+        // Clock at nowUnix, last claim at lastUnix (0 = never), saved streak.
+        public static void TestBeginAt(long nowUnix, long lastUnix, int streak)
+        {
+            _testNow = nowUnix;
             _pose = false;
             _booted = false;
             _spinWedge = -1;
@@ -650,12 +775,14 @@ namespace FlockFive
             _landed = false;
             _resolved = false;
             _tutorialSpin = false;
-            if (lastStamp > 0)
-                PrefGuard.SetString(PrefLast, WriteStamp(lastStamp));
+            PlayerPrefs.DeleteKey(PrefLast);
+            PlayerPrefs.DeleteKey(PrefLast + ".x");
+            if (lastUnix > 0)
+                PrefGuard.SetString(PrefLast24, WriteClaim(lastUnix));
             else
             {
-                PlayerPrefs.DeleteKey(PrefLast);
-                PlayerPrefs.DeleteKey(PrefLast + ".x");
+                PlayerPrefs.DeleteKey(PrefLast24);
+                PlayerPrefs.DeleteKey(PrefLast24 + ".x");
             }
             if (streak < 0) streak = 0;
             if (streak > StreakCap) streak = StreakCap;
@@ -668,9 +795,26 @@ namespace FlockFive
             Boot();
         }
 
+        // Boots from whatever prefs are saved (including a legacy yyyymmdd pref) at nowUnix.
+        public static void TestBootAt(long nowUnix)
+        {
+            _testNow = nowUnix;
+            _pose = false;
+            _booted = false;
+            _spinWedge = -1;
+            _spinCoins = 0;
+            _landed = false;
+            _resolved = false;
+            _tutorialSpin = false;
+            Boot();
+        }
+
+        // The saved last-claim text, for migration checks.
+        public static string TestSavedClaim => PlayerPrefs.GetString(PrefLast24, "");
+
         public static void TestRelease()
         {
-            _testToday = 0;
+            _testNow = 0;
             _pose = false;
             _booted = false;
             _spinWedge = -1;
@@ -687,7 +831,7 @@ namespace FlockFive
             if (wedge < 0) wedge = 0;
             if (wedge >= WedgeCount) wedge = WedgeCount - 1;
             _pose = true;
-            _testToday = 20261010;
+            _testNow = NoonOf(20261010);
             _booted = true;
             _tutorialSpin = false;
             _resolved = false;
@@ -698,8 +842,8 @@ namespace FlockFive
             _payN = -1;
             _streak = 3;
             _offerStreak = 3;
-            _last = _testToday;
-            _seen = _testToday;
+            _last = _testNow - 3L * 3600L;
+            _seen = _testNow;
             _continuing = false;
             _cycle = 2;
             _atRisk = true;
@@ -726,7 +870,7 @@ namespace FlockFive
         {
             _pose = false;
             _oddCoins = 0;
-            _testToday = 0;
+            _testNow = 0;
             _booted = false;
             _spinWedge = -1;
             _spinCoins = 0;
@@ -762,14 +906,50 @@ namespace FlockFive
             }
         }
 
-        static string WriteStamp(int stamp) =>
-            stamp.ToString("00000000", CultureInfo.InvariantCulture);
-
-        static int DaysFrom(int from, int to)
+        static long ReadClaim(string v)
         {
-            var a = new DateTime(from / 10000, (from / 100) % 100, from % 100, 0, 0, 0, DateTimeKind.Unspecified);
-            var b = new DateTime(to / 10000, (to / 100) % 100, to % 100, 0, 0, 0, DateTimeKind.Unspecified);
-            return (int)(b - a).TotalDays;
+            if (string.IsNullOrEmpty(v) || v.Length > 12) return 0;
+            if (!long.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture, out long n)) return 0;
+            // 2000-01-01 .. 9999-12-31 in unix seconds. Anything else is a bad pref: no claim.
+            if (n < 946684800L || n > 253402300799L) return 0;
+            return n;
+        }
+
+        static string WriteClaim(long unix) => unix.ToString(CultureInfo.InvariantCulture);
+
+        // Migration of the old yyyymmdd local-day claim. The old pref cannot say what time of
+        // day it was claimed, so the claim is anchored at the END of that local day (the next
+        // local midnight), capped at now so a claim made today is not dated in the future.
+        //   Never early: the real claim was at or before that instant, so Ready (anchor + 24h)
+        //   is never earlier than the 24h after the real claim. Cost: someone who claimed in
+        //   the morning waits up to a day longer ONCE, on the day they update.
+        //   Streak never lost: the continue window (anchor+24h .. anchor+48h) starts the local
+        //   midnight after the next day and ends the midnight after that, so it covers the whole
+        //   old "next calendar day" and part of the day after (more generous than the old rule).
+        // A stamp dated after now (clock was moved back) becomes now: claimed now, streak kept.
+        public static long MigratedClaim(int stamp, long nowSec)
+        {
+            int y = stamp / 10000;
+            int m = (stamp / 100) % 100;
+            int d = stamp % 100;
+            long end;
+            try
+            {
+                var next = new DateTime(y, m, d, 0, 0, 0, DateTimeKind.Local).AddDays(1);
+                end = new DateTimeOffset(next).ToUnixTimeSeconds();
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return nowSec;
+            }
+            return end < nowSec ? end : nowSec;
+        }
+
+        // Local noon of a yyyymmdd day as unix seconds. Test support only.
+        public static long NoonOf(int stamp)
+        {
+            var dt = new DateTime(stamp / 10000, (stamp / 100) % 100, stamp % 100, 12, 0, 0, DateTimeKind.Local);
+            return new DateTimeOffset(dt).ToUnixTimeSeconds();
         }
     }
 }
