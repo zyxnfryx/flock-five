@@ -86,9 +86,7 @@ namespace FlockFive
         static long _testNow;
         static readonly char[] _cdBuf = new char[24];
         static int _cdLineKey = -1;
-        static int _cdClockKey = -1;
         static string _cdLine = "";
-        static string _cdClock = "";
         static int _spinWedge = -1;
         static int _spinCoins;
         static bool _landed;
@@ -126,7 +124,6 @@ namespace FlockFive
             _gate = Gate.Ready;
             _testNow = 0;
             _cdLineKey = -1;
-            _cdClockKey = -1;
             _spinWedge = -1;
             _spinCoins = 0;
             _landed = false;
@@ -173,19 +170,6 @@ namespace FlockFive
                 int n = WriteClock(_cdBuf, pre.Length, r);
                 _cdLine = new string(_cdBuf, 0, n);
                 return _cdLine;
-            }
-        }
-        // "H:MM:SS" alone, for the small splash medal.
-        public static string CountdownClock
-        {
-            get
-            {
-                int r = RemainingSeconds;
-                if (r == _cdClockKey) return _cdClock;
-                _cdClockKey = r;
-                int n = WriteClock(_cdBuf, 0, r);
-                _cdClock = new string(_cdBuf, 0, n);
-                return _cdClock;
             }
         }
         // Shared clock text. 3725 is "1:02:05", 86400 is "24:00:00". Negative is "0:00:00".
@@ -647,7 +631,6 @@ namespace FlockFive
         {
             Eval(_seen, out _gate, out _continuing, out _offerStreak);
             _cdLineKey = -1;
-            _cdClockKey = -1;
 
             int days = CycleDays > 0 ? CycleDays : 1;
             _cycle = (_offerStreak - 1) % days;

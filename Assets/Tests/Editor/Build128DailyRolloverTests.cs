@@ -90,14 +90,14 @@ namespace FlockFive.Editor
             DailyBonus.TestBeginAt(C + 24 * H - 1, C, 3);
             Check("under-24h-claimed-one-second-left", DailyBonus.ClaimedToday && !DailyBonus.OfferReady && !DailyBonus.Held
                 && DailyBonus.RemainingSeconds == 1 && DailyBonus.CountdownLine == "Ready in 0:00:01"
-                && DailyBonus.CountdownClock == "0:00:01" && DailyBonus.IconState == DailyBonusIconState.Flame
+                && DailyBonus.IconState == DailyBonusIconState.Flame
                 && DailyBonus.StreakLine == "3 day streak" && DailyBonus.OfferStreak == 3,
                 DailyBonus.CountdownLine + " " + DailyBonus.StreakLine);
             DailyBonus.TestBeginAt(C, C, 3);
             Check("just-claimed-shows-24-00-00", DailyBonus.ClaimedToday && DailyBonus.RemainingSeconds == 86400
                 && DailyBonus.CountdownLine == "Ready in 24:00:00", DailyBonus.CountdownLine);
             DailyBonus.TestBeginAt(C + 1, C, 3);
-            Check("one-second-in-23-59-59", DailyBonus.CountdownLine == "Ready in 23:59:59" && DailyBonus.CountdownClock == "23:59:59", DailyBonus.CountdownLine);
+            Check("one-second-in-23-59-59", DailyBonus.CountdownLine == "Ready in 23:59:59", DailyBonus.CountdownLine);
             DailyBonus.TestBeginAt(C + 14 * H + 54 * 60 + 57, C, 3);
             Check("mid-window-9-05-03", DailyBonus.CountdownLine == "Ready in 9:05:03", DailyBonus.CountdownLine);
 
@@ -293,9 +293,7 @@ namespace FlockFive.Editor
             DailyBonus.TestBeginAt(C + 100, C, 3);
             string a = DailyBonus.CountdownLine;
             string b = DailyBonus.CountdownLine;
-            string c1 = DailyBonus.CountdownClock;
-            string c2 = DailyBonus.CountdownClock;
-            Check("countdown-text-cached-within-a-second", ReferenceEquals(a, b) && ReferenceEquals(c1, c2), a);
+            Check("countdown-text-cached-within-a-second", ReferenceEquals(a, b), a);
             DailyBonus.TestNow = C + 101;
             DailyBonus.RefreshDay();
             Check("countdown-text-changes-with-the-second", DailyBonus.CountdownLine == "Ready in 23:58:19" && !ReferenceEquals(a, DailyBonus.CountdownLine), DailyBonus.CountdownLine);
@@ -351,10 +349,16 @@ namespace FlockFive.Editor
             string syncBody = syncDef < 0 || syncEnd < 0 ? "" : ui.Substring(syncDef, syncEnd - syncDef);
             Check("wiring-state-change-clears-caches-and-rearms-reminder",
                 syncBody.Contains("ClearDailyTextCaches();") && syncBody.Contains("RescheduleDailyReminder();")
-                && ui.Contains("DailyBonus.LastClaimUnix") && ui.Contains("_railClockKey = int.MinValue;"), "");
-            Check("wiring-countdown-painted-on-card-and-medal",
-                ui.Contains("DailyBonus.CountdownLine") && ui.Contains("DailyBonus.CountdownClock")
-                && ui.Contains("DailyBonus.CountdownActive"), "");
+                && ui.Contains("DailyBonus.LastClaimUnix"), "");
+            Check("wiring-countdown-painted-on-card-not-on-medal",
+                ui.Contains("DailyBonus.CountdownLine") && ui.Contains("DailyBonus.CountdownActive")
+                && !ui.Contains("CountdownClock") && !ui.Contains("DrawRailClock") && !ui.Contains("_railClockKey"), "");
+            int railDef = ui.IndexOf("void DrawDailyRail(");
+            int railEnd = railDef < 0 ? -1 : ui.IndexOf("static Rect DailyFlameRect", railDef);
+            string railBody = railDef < 0 || railEnd < 0 ? "" : ui.Substring(railDef, railEnd - railDef);
+            Check("wiring-medal-keeps-flame-and-ready-badge-no-countdown",
+                railBody.Length > 0 && railBody.Contains("DrawDailyStreakFlame(plate)") && railBody.Contains("DrawReadyBadge(")
+                && !railBody.Contains("Countdown") && !railBody.Contains("StampOutlined"), "");
             Check("wiring-tap-and-gate-behavior-unchanged",
                 ui.Contains("if (!DailyBonus.OfferReady && DailyBonus.ClaimedToday) ClunkClaimed();")
                 && ui.Contains("if (HomeStepRail() != RailDaily && !GatePopup(PopupKind.Daily, true)) return;"), "");

@@ -60,12 +60,9 @@ namespace FlockFive
         static int _dailyBonusPx = 12;
         static int _railDigitPx;
         static int _railDigitKey = int.MinValue;
-        // b129 countdown fits. Each is fitted once on the widest sample ("Ready in 24:00:00",
-        // "24:00:00"), so the per-second digits never refit; the keys clear on a Daily state change.
+        // b129 countdown fits. Each is fitted once on the widest sample ("Ready in 24:00:00"), so the per-second digits never refit; the keys clear on a Daily state change.
         static int _dailyCountPx = 10;
         static int _dailyClaimSmallPx = 14;
-        static int _railClockPx = 8;
-        static int _railClockKey = int.MinValue;
         static GUIStyle _dailyAsk;
         static GUIStyle _dailyAskBtn;
         static int _dailyAskFit = int.MinValue;
@@ -194,7 +191,6 @@ namespace FlockFive
             // Text caches key on string length only; "1 day streak" -> "2 day streak" must refit.
             _dailyFitKey = int.MinValue;
             _railDigitKey = int.MinValue;
-            _railClockKey = int.MinValue;
         }
 
         // The ONE place the 24h-window state change is applied to the UI. Called every frame
@@ -202,7 +198,7 @@ namespace FlockFive
         // medal badge, Daily button and reminder plan all flip the instant the countdown ends
         // (or the grace lapses). Cheap: RefreshDay does nothing until the wall-clock second
         // changes and returns true only on a state change; the per-second countdown text is
-        // read lazily from DailyBonus.CountdownLine/CountdownClock by the painters.
+        // read lazily from DailyBonus.CountdownLine by the card painter (the splash medal shows no timer).
         // The shown streak is DailyBonus.OfferStreak (the preview), never the saved streak.
         bool SyncDailyDay()
         {
@@ -287,27 +283,6 @@ namespace FlockFive
                 float cy = plate.yMax - plate.width * 0.22f;
                 DrawReadyBadge(cx, cy, plate.width);
             }
-
-            // Claimed: the time left on the coin's lower face, only when it is big enough to read.
-            if (icon == DailyBonusIconState.Flame && DailyBonus.CountdownActive && plate.width >= RailClockMinPx)
-                DrawRailClock(plate);
-        }
-
-        // Smallest medal width (px) that gets a countdown. Below it the flame alone shows.
-        const float RailClockMinPx = 56f;
-
-        static void DrawRailClock(Rect plate)
-        {
-            EnsureDailyStyles();
-            var box = new Rect(plate.x + plate.width * 0.10f, plate.y + plate.height * 0.66f, plate.width * 0.80f, plate.height * 0.22f);
-            int key = Mathf.RoundToInt(box.width) * 397 ^ Mathf.RoundToInt(box.height) * 17;
-            if (key != _railClockKey)
-            {
-                _railClockKey = key;
-                _railClockPx = FitFont(_dailyLine, "24:00:00", box.width, box.height * 0.92f, 6, 24);
-            }
-            _dailyLine.fontSize = _railClockPx;
-            StampOutlined(box, DailyBonus.CountdownClock, _dailyLine, new Color(1f, 0.97f, 0.86f), 1, 1);
         }
 
         // Where the flame art is drawn for a given plate. DrawDailyStreakFlame paints it and
