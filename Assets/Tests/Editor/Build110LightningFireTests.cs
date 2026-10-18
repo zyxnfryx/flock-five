@@ -120,8 +120,8 @@ namespace FlockFive.Editor
             var burned = new bool[2];
             var win = EmptyGift();
             int bad = 0;
-            int dice = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, false);
-            int owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true);
+            int dice = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, false, 1, 0.5f);
+            int owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true, 1, 0.5f);
             if (dice >= 0) bad++;
             if (owed != 0) bad++;
             Check("owed-skips-the-dice", bad == 0, "dice=" + dice + " owed=" + owed);
