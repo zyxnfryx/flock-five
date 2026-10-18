@@ -38,6 +38,7 @@ namespace FlockFive.Editor
         [MenuItem("Flock Five/Pest Schedule Tests")]
         public static void Run()
         {
+            LevelData.Open(0); // b110: PestSchedule.OstrichGarden reads LevelData.Current; start from a non-ostrich garden
             var sb = new StringBuilder();
             int pass = 0;
             int fail = 0;

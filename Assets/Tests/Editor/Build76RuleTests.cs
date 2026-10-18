@@ -11,6 +11,7 @@ namespace FlockFive.Editor
         [MenuItem("Flock Five/Build 76 Rule Tests")]
         public static void Run()
         {
+            LevelData.Open(0); // b110: PestSchedule.OstrichGarden reads LevelData.Current; start from a non-ostrich garden
             int pass = 0;
             int fail = 0;
             void Check(string name, bool ok, string detail)

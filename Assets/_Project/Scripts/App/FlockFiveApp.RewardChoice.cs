@@ -220,12 +220,10 @@ namespace FlockFive
         // so the icon + words group can be centered on the button.
         float MeasureWatchAdWords(Rect slot, float s)
         {
-            FitWatchAdWords(slot, s, out var top, out var big);
+            FitWatchAdWords(slot, s, out _, out _);
             var c1 = new GUIContent(WatchAdWord);
             var c2 = new GUIContent(RewardDoubleWord);
-            _watchSmall.fontSize = top.fontSize;
             float w1 = _watchSmall.CalcSize(c1).x;
-            _choiceWord.fontSize = big.fontSize;
             float w2 = _choiceWord.CalcSize(c2).x;
             return Mathf.Min(slot.width, Mathf.Max(w1, w2));
         }

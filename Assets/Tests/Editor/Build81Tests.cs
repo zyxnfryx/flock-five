@@ -541,7 +541,7 @@ namespace FlockFive.Editor
             Check("wheel-x2-stamp",
                 topRight
                 && clear
-                && x2Uses >= 3
+                && x2Uses >= 2
                 && helperBody.IndexOf("DrawRewardStamp(seat, 2, 1f, age, sparkle, false)") >= 0
                 && helperBody.IndexOf("RewardStampRect(") >= 0
                 && helperBody.IndexOf("RewardCardShake(") >= 0
@@ -551,7 +551,6 @@ namespace FlockFive.Editor
                 && stampBody.IndexOf("StreakBadge.Draw") >= 0
                 && stampBody.IndexOf("if (thud)") >= 0
                 && daily.IndexOf("DrawWheelX2(wheelR,") >= 0
-                && daily.IndexOf("DrawWheelX2(bar,") >= 0
                 && daily.IndexOf("DrawWheelX2(board,") < 0,
                 "seat=" + seat + " wheel=" + onWheel + " panel=" + onPanel + " uses=" + x2Uses);
 

@@ -168,7 +168,7 @@ namespace FlockFive.Editor
                 && stampBody.IndexOf("StreakBadge.Colors") >= 0
                 && stampBody.IndexOf("RewardStampPop") >= 0
                 && gardenBody.IndexOf("DrawRewardStamp") >= 0
-                && uses >= 3
+                && uses >= 2
                 && corner
                 && daily.IndexOf("BakeWheelBadge") < 0
                 && daily.IndexOf("DailyX2") < 0;

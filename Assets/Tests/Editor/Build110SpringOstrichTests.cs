@@ -83,7 +83,7 @@ namespace FlockFive.Editor
                 // --- ostrich schedule ---
                 var l32 = LevelData.Peek(31);
                 Check("garden-32-no-ostrich", l32.Number == 32 && !l32.Ostrich && l32.Feeders == 3, "ostrich " + l32.Ostrich);
-                Check("ostrich-ladder-27-only", LevelData.Peek(26).Ostrich && CountOstrich() == 1, "count " + CountOstrich());
+                Check("ostrich-ladder-27-only", LevelData.Peek(26).Ostrich && LevelData.Peek(37).Ostrich && CountOstrich() == 2, "count " + CountOstrich());
                 Check("next-ostrich-38-past-32", LevelData.Garden38Level.Ostrich && LevelData.Garden38Level.Number == 38
                     && LevelData.Garden38Level.Number > GardenSeason.SpringFrom, "");
                 Check("garden-38-not-badger-or-change",
