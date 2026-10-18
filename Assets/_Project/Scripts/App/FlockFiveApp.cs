@@ -10450,6 +10450,8 @@ namespace FlockFive
         }
 
         internal static Rect LastPedestalFace;
+        internal static Rect LastPlateRect; // b110: the drawn rounded plate, for the rounded-rect sheen
+        public const float PopupCornerPx = 28f;
 
         static Rect DrawPopupButton(Rect r, bool held, PopupTint tint, float glow = 1f, bool shadow = true, bool burst = true)
         {
@@ -10515,6 +10517,7 @@ namespace FlockFive
             }
             GUI.color = held ? new Color(0.86f, 0.86f, 0.86f, 1f) : Color.white;
             DrawBevelPlate(tex, face, 28f);
+            LastPlateRect = face;
             GUI.color = Color.white;
             float ix = face.width * 0.05f;
             float iy = face.height * 0.14f;
@@ -17924,7 +17927,7 @@ namespace FlockFive
         {
             GUI.color = new Color(1f, 1f, 1f, alpha);
             DrawBevelPlate(DiamondPlateTex(), r, 28f);
-            PushButton.DrawSheen(r, Mathf.Repeat(AdPause.Unscaled / 3.6f, 1f), 0.70f * alpha, false);
+            PushButton.DrawRectSheen(r, Mathf.Repeat(AdPause.Unscaled / 3.6f, 1f), 0.70f * alpha, PopupCornerPx);
             GUI.color = Color.white;
         }
 

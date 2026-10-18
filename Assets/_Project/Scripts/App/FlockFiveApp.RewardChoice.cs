@@ -161,20 +161,26 @@ namespace FlockFive
             // b87: the 2X button reads as "Watch Ad": video icon, "WATCH AD" over a big 2X,
             // a gentle breathe and the shared PushButton sheen at half speed.
             var priR = lay.Primary;
+            float pk = 1f;
             if (hasAd && !priHeld)
             {
-                float k = 1f + WatchAdPulse * Mathf.Sin(AdPause.Unscaled * Mathf.PI * 2f / WatchAdPulsePeriod);
-                priR = new Rect(priR.center.x - priR.width * k * 0.5f, priR.center.y - priR.height * k * 0.5f, priR.width * k, priR.height * k);
+                pk = PushButton.PulseK(AdPause.Unscaled, WatchAdPulse, WatchAdPulsePeriod);
+                priR = PushButton.Scaled(priR, pk);
             }
             var face = DrawPopupButton(priR, priHeld, PopupTint.Green);
             if (hasAd)
             {
-                PushButton.DrawSheen(face, PushButton.SheenU(AdPause.Unscaled * 0.5f), 0.55f * a, false);
+                // b110: gloss follows the rounded plate, not an oval.
+                PushButton.DrawRectSheen(LastPlateRect, PushButton.SheenU(AdPause.Unscaled * 0.5f), 0.55f * a, PopupCornerPx);
+                // b110: label is laid out and fitted at rest size, then scaled with the plate by the same pulse value.
+                var m0 = PushButton.BeginPulse(priR.center, pk);
+                face = PushButton.ScaledAbout(face, priR.center, 1f / pk);
                 float ic = face.height * 0.58f;
                 var icR = new Rect(face.x + face.height * 0.24f, face.center.y - ic * 0.5f, ic, ic);
                 DrawPlayAdIcon(icR);
                 var txt = new Rect(icR.xMax + face.height * 0.08f, face.y, face.xMax - icR.xMax - face.height * 0.30f, face.height);
                 DrawWatchAdWords(txt, s);
+                PushButton.EndPulse(m0);
                 var sf = DrawPopupButton(lay.Secondary, secHeld, PopupTint.Wood);
                 DrawPopupWord(sf, RewardCollectWord, _choiceWord, s);
             }
