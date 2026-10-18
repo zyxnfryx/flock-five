@@ -94,6 +94,38 @@ namespace FlockFive
             Tick(dt);
         }
 
+        // Scripted strike (see OstrichStrike). The app starts one per landed peck: the head
+        // winds up, lunges to the target bird's world position, holds, recoils and settles.
+        bool _strikeOn;
+        float _strikeT;
+        Vector3 _strikeTarget;
+        public bool Striking => _strikeOn;
+        public float StrikeTime => _strikeT;
+
+        public void BeginStrike(Vector3 target)
+        {
+            if (_gone) return;
+            _strikeOn = true;
+            _strikeT = 0f;
+            _strikeTarget = target;
+            _queued = OstrichAct.Idle;
+            Begin(OstrichAct.Peck);
+        }
+
+        // The app plays this peck itself; Sync must not queue a second generic Peck for it.
+        public void NotePecks(int peckIndex)
+        {
+            if (peckIndex > _shownPecks) _shownPecks = peckIndex;
+        }
+
+        void EndStrike()
+        {
+            _strikeOn = false;
+            _strikeT = 0f;
+            FlockSort.Apply(Head, HeadOrder);
+            if (_line != null) _line.sortingOrder = NeckOrder;
+        }
+
         public static OstrichMark Attach(Transform parent, int feeders)
         {
             var root = new GameObject("Ostrich").transform;
@@ -182,6 +214,8 @@ namespace FlockFive
             var o = b.Ostrich;
             if (!o.Alive)
             {
+                // The strike beat finishes before the ostrich takes its hit and leaves.
+                if (_strikeOn) return;
                 if (_wasAlive)
                 {
                     _fleeAfterDaze = true;
@@ -280,6 +314,11 @@ namespace FlockFive
             if (dt < 0f) dt = 0f;
             _dt = dt;
             _blend = Mathf.Min(1f, _blend + dt / BlendSec);
+            if (_strikeOn)
+            {
+                _strikeT += dt;
+                if (_strikeT >= OstrichStrike.Total) EndStrike();
+            }
             if (_gone)
             {
                 Hide();
@@ -298,7 +337,7 @@ namespace FlockFive
                 _queued = OstrichAct.Idle;
                 Begin(next);
             }
-            float rate = _calm ? 7f : 12f;
+            float rate = _calm && !_strikeOn ? 7f : 12f;
             _frameT += dt * rate;
             int n = OstrichAnim.Count(_act);
             while (_frameT >= 1f)
@@ -487,6 +526,7 @@ namespace FlockFive
             PoseLeg(_legFront, _legFrontSr, OstrichPaint.FrontHip, brace - stride * swing, side);
 
             var headPos = new Vector3(headX, headY, 0f);
+            var restPos = headPos;
             Head.sprite = OstrichPaint.Head(_act, _frame);
             Head.flipX = side < 0f;
             // Follow-through: the head trails its target a touch, and its tilt trails the body.
@@ -498,6 +538,13 @@ namespace FlockFive
                 _tiltLag = Mathf.LerpAngle(_tiltLag, tilt, 1f - Mathf.Exp(-_dt * 14f));
             }
             headPos = _headLag;
+            if (_strikeOn)
+            {
+                // The strike owns the head: no lag, so the lunge reads as a lunge.
+                headPos = OstrichStrike.HeadAt(restPos, _strikeTarget, _strikeT);
+                _headLag = headPos;
+                FlockSort.Apply(Head, OstrichStrike.HeadOrder);
+            }
             _head.position = headPos;
             _head.localRotation = Quaternion.Euler(0f, 0f, _tiltLag);
 
@@ -600,7 +647,8 @@ namespace FlockFive
         {
             EnsureLine();
             _line.enabled = true;
-            _line.sortingOrder = NeckOrder;
+            _line.sortingOrder = _strikeOn && Mathf.Abs(OstrichStrike.Reach(_strikeT)) > 0.02f
+                ? OstrichStrike.NeckOrder : NeckOrder;
             for (int i = 0; i < NeckSamples; i++)
             {
                 float t = i / (float)(NeckSamples - 1);

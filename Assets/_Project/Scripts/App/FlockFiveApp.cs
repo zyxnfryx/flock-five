@@ -3433,7 +3433,8 @@ namespace FlockFive
                     _garden.Feeders[i].Show(color, !_restarting);
                 }
             }
-            if (_garden.Ostrich != null) _garden.Ostrich.Sync(_board);
+            // The ostrich syncs once its staged fight is over, so it never takes a hit or leaves mid-strike.
+            if (_garden.Ostrich != null && !_ostrichFight) _garden.Ostrich.Sync(_board);
         }
 
         bool Locked(int i) => _locked.Contains(i);
@@ -3614,7 +3615,7 @@ namespace FlockFive
             TickDailyBonus();
             if (_splash) return;
             if (_garden.Ostrich != null)
-                _garden.Ostrich.SetCalm(_sel >= 0 || _locked.Count > 0);
+                _garden.Ostrich.SetCalm(_sel >= 0 || (_locked.Count > 0 && !_ostrichFight));
             TickLightning();
             if (ClearAdOfferUp()) return;
             if (_restartAsk != RestartAsk.None) return;
@@ -3806,7 +3807,12 @@ namespace FlockFive
             Unlock(from);
             Unlock(to);
             if (_board.Ostrich != null && _board.Ostrich.Alive)
-                GardenSolve.AfterMove(_board);
+            {
+                // The views catch up to the hop, then the ostrich's pecks are played, not teleported.
+                SyncAll();
+                yield return OstrichFight();
+                if (gen != _motionGen) yield break;
+            }
             SyncAll();
 
             int kicked = KickCollects();
