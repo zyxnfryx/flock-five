@@ -293,11 +293,20 @@ namespace FlockFive
         // Missing flag: an older save that already has a name is not prompted again.
         static bool AvatarNeedsName()
         {
-            int flag = PlayerPrefs.GetInt(AvatarNamedPref, -1);
-            if (flag == 1) return false;
-            if (flag == 0) return true;
-            return ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length == 0;
+            return NeedsNameFor(PlayerPrefs.GetInt(AvatarNamedPref, -1), PlayerPrefs.GetString(AvatarNamePref, ""));
         }
+
+        // Pure form of AvatarNeedsName so tests can cover it without touching PlayerPrefs.
+        public static bool NeedsNameFor(int namedFlag, string savedName)
+        {
+            if (namedFlag == 1) return false;
+            if (namedFlag == 0) return true;
+            return ClipAvatarName(savedName).Length == 0;
+        }
+
+        // The single shared check for the VIP rail button/badge: it stays out of the new-player
+        // intro (streak award, avatar reveal, banner) and appears once the name picker is done.
+        static bool VipRailNameGateOpen() => !AvatarNeedsName();
 
         static bool AvatarBowArt()
         {

@@ -6758,9 +6758,18 @@ namespace FlockFive
 
         // Build 58: owning VIP keeps the slot. The offer medallion becomes the diamond
         // badge (DrawNoAdsButton), so restore and reinstall show it too.
+        // Build 130: also waits for the name picker (VipRailNameGateOpen). Players who already
+        // have a name pass the gate at once. The Welcome hold (VipWelcomeHoldsRail) is separate
+        // and still applies on top of this.
         static float VipRailGoal()
         {
-            return (NoAds.Owned || LevelData.NextPlay >= 1) ? 1f : 0f;
+            return VipRailGoalFor(NoAds.Owned, LevelData.NextPlay, VipRailNameGateOpen());
+        }
+
+        public static float VipRailGoalFor(bool owned, int nextPlay, bool nameGateOpen)
+        {
+            if (!nameGateOpen) return 0f;
+            return (owned || nextPlay >= 1) ? 1f : 0f;
         }
 
         // Hidden through level 1. The lesson keeps it out of the stack until the
