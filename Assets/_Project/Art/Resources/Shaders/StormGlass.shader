@@ -79,7 +79,7 @@ Shader "FlockFive/StormGlass"
                 // Teardrop body (mirrors StormGlass.TearK): pointed top, round belly at the bottom.
                 // The impact splat stays a round disc; it gathers into the drop as splat -> 0.
                 float tearU = saturate((1.0 - n.y) * 0.5);
-                float tearK = lerp(1.0, pow(tearU, 0.8) * 1.3 + 0.04, 1.0 - splat);
+                float tearK = lerp(1.0, pow(tearU, 0.8) * 1.12 + 0.04, 1.0 - splat);
                 float2 nt = float2(n.x / tearK, n.y);
                 float r = length(nt);
                 float body = smoothstep(1.015, 0.96, r);

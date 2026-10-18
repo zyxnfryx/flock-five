@@ -204,8 +204,9 @@ namespace FlockFive
         }
 
         // Teardrop silhouette. Mirrors the StormGlass shader. y runs -1 (belly) to +1 (point), up the glass.
-        public const float TearWide = 1.04f;
+        public const float TearWide = 0.96f;
         public const float TearLong = 1.2f;
+        public const float TearStretch = 0.24f; // total slide stretch at full tear (was 0.10)
 
         // Width multiplier on the unit ellipse at y. 1 for a round splat, ~0 at the tip, widest low in the belly.
         public static float TearK(float y, float splat)
@@ -215,7 +216,7 @@ namespace FlockFive
             if (splat < 0f) splat = 0f;
             else if (splat > 1f) splat = 1f;
             float u = (1f - y) * 0.5f;
-            float tear = Mathf.Pow(u, 0.8f) * 1.3f + 0.04f;
+            float tear = Mathf.Pow(u, 0.8f) * 1.12f + 0.04f;
             return 1f + (tear - 1f) * (1f - splat);
         }
 
@@ -246,8 +247,10 @@ namespace FlockFive
             float tear = elong * sp;
             // Heavy round head, a little taller than wide, slimmer the longer it has run.
             float thin = 1f - 0.16f * Ease(b.Age - 0.6f, 2.4f) * sp;
-            rx *= thin * (1f - 0.05f * tear);
-            ry *= thin * (1f + 0.10f * tear);
+            rx *= thin * (1f - 0.08f * tear);
+            // Subtle stretch: width thins fully, but height only a little, so a running drop ends ~15% longer
+            // than the same drop at rest (it used to shrink slightly). Tied to the same tear/tail progress.
+            ry *= (1f - 0.06f * Ease(b.Age - 0.6f, 2.4f) * sp) * (1f + TearStretch * tear);
             tailPx = b.Radius * (0.45f + (big ? 4.2f : 3.4f) * tear) * (1f - splat);
         }
 

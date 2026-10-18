@@ -834,12 +834,20 @@ namespace FlockFive.Editor
                     && Mathf.Abs(StormGlass.TearHalfWidth(-0.5f, 1f) - Mathf.Sqrt(0.75f)) < 0.001f;
                 var gathered = new StormGlass.Bead { Radius = 20f, Age = 3f, Life = 6f, Kind = StormGlass.Sticky };
                 StormGlass.Form(gathered, 1f, out float grx, out float gry, out _, out _);
+                // Slide stretch: a running drop is longer and slimmer than the same drop just gathered, but only subtly.
+                float runV = -StormGlass.SlideTerm(20f, 1f);
+                var still = new StormGlass.Bead { Radius = 20f, Age = 3f, Life = 6f, Vy = 0f, Kind = StormGlass.Slide };
+                var run = new StormGlass.Bead { Radius = 20f, Age = 3f, Life = 6f, Vy = runV, Kind = StormGlass.Slide };
+                StormGlass.Form(still, 1f, out float srx, out float sry, out _, out _);
+                StormGlass.Form(run, 1f, out float rrx, out float rry, out _, out _);
+                float stretch = rry / sry;
+                bool subtle = stretch > 1.05f && stretch < 1.3f && rrx < srx && rry / rrx > sry / srx;
                 string shader = File.ReadAllText("Assets/_Project/Art/Resources/Shaders/StormGlass.shader");
                 bool wiredShader = shader.Contains("tearK") && shader.Contains("float r = length(nt);");
                 Check("storm-drops-are-teardrops-point-up",
-                    pointed && wAt < 0f && roundSplat && gry > grx * 1.12f && wiredShader,
+                    pointed && wAt < 0f && roundSplat && gry > grx * 1.12f && subtle && wiredShader,
                     "tip " + tip.ToString("0.00") + " belly " + belly.ToString("0.00") + " widest at " + wAt.ToString("0.00")
-                    + " tall/wide " + (gry / grx).ToString("0.00"));
+                    + " tall/wide " + (gry / grx).ToString("0.00") + " slide stretch " + stretch.ToString("0.00"));
             }
 
             string end = fail == 0 ? "STORM_GLASS_OK " + pass : "STORM_GLASS_FAIL " + fail + " passed " + pass;
