@@ -73,6 +73,34 @@ namespace FlockFive
             return Filter(list, now, lead);
         }
 
+        // b129: the Daily is a 24h window from the last claim (DailyBonus). Hours before the
+        // grace deadline (lastClaim + 48h) that the streak-at-risk reminder fires. Same 4h the
+        // old 8pm reminder had before midnight.
+        public const double KeepLeadSeconds = 4 * 3600.0;
+
+        // Entries when the app leaves the foreground at `now` (local) and the last claim was at
+        // lastClaimUnix (UTC seconds, 0 = never claimed).
+        //   Ready:  "Your daily coins are ready." at lastClaim + 24h (not a fixed 18:00).
+        //           If that moment is already past (or inside the lead) the Daily is open now, so
+        //           the old nudge is used: the next 18:00 that clears the lead.
+        //   Keep:   "Keep your N day streak!" KeepLeadSeconds before the grace deadline
+        //           (lastClaim + 48h), only while the streak is at risk.
+        // Absolute-time math (unix seconds), so a DST change never shifts either reminder.
+        public static List<Entry> ComputeWindow(DateTime now, long lastClaimUnix, int streak, bool atRisk, Signal signal = Signal.Background)
+        {
+            if (lastClaimUnix <= 0) return Compute(now, streak, false, atRisk, signal);
+            double lead = LeadFor(signal);
+            if (streak < 0) streak = 0;
+            bool risk = atRisk && streak >= 2;
+            DateTime readyAt = DateTimeOffset.FromUnixTimeSeconds(lastClaimUnix + DailyBonus.WindowSeconds).LocalDateTime;
+            DateTime deadline = DateTimeOffset.FromUnixTimeSeconds(lastClaimUnix + DailyBonus.GraceSeconds).LocalDateTime;
+            DateTime keep = deadline.AddSeconds(-KeepLeadSeconds);
+            DateTime coins = (readyAt - now).TotalSeconds >= lead ? readyAt : NextFuture(now, ReadyHour, lead);
+            var list = new List<Entry> { new Entry(Kind.Ready, coins, ReadyBody) };
+            if (risk) list.Add(new Entry(Kind.Keep, keep, KeepBody(streak)));
+            return Filter(list, now, lead);
+        }
+
         // Drops anything in the past or inside the minimum lead.
         public static List<Entry> Filter(List<Entry> entries, DateTime now, double leadSeconds = MinLeadSeconds)
         {

@@ -3598,7 +3598,7 @@ namespace FlockFive
                 SfxLibrary.CloseCombo();
             // Interrupted-tutorial check: cheap, and it only acts on a stuck state.
             if ((Time.frameCount & 7) == 0) HealInterruptedTutorials();
-            // Midnight must land even while a pause holds the rest of the tick.
+            // The 24h Daily window must flip even while a pause holds the rest of the tick.
             SyncDailyDay();
             if (GamePause.Paused)
             {

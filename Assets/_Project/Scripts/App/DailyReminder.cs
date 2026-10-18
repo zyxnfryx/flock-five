@@ -37,6 +37,7 @@ namespace FlockFive
         static int _armStreak;
         static bool _armRisk;
         static bool _armClaimed;
+        static long _armLast;
 
 #if UNITY_IOS && !UNITY_EDITOR
         static AuthorizationRequest _iosAuth;
@@ -51,6 +52,7 @@ namespace FlockFive
             _armStreak = 0;
             _armRisk = false;
             _armClaimed = false;
+            _armLast = 0;
 #if UNITY_IOS && !UNITY_EDITOR
             if (_iosAuth != null)
             {
@@ -70,8 +72,11 @@ namespace FlockFive
         // Records the latest streak state. While the app is active nothing may be
         // pending, so this also clears any stale notification. The schedule itself is
         // written only by OnAppBackground / OnAppQuit.
-        public static void Reschedule(int streak, bool claimedToday, bool atRisk)
+        // lastClaimUnix is DailyBonus.LastClaimUnix (0 = never). With it the coins reminder is
+        // lastClaim + 24h and the streak reminder trails the grace deadline (NotifyPlan.ComputeWindow).
+        public static void Reschedule(int streak, bool claimedToday, bool atRisk, long lastClaimUnix = 0)
         {
+            _armLast = lastClaimUnix;
             if (streak < 0) streak = 0;
             _armStreak = streak;
             _armClaimed = claimedToday;
@@ -113,8 +118,15 @@ namespace FlockFive
             if (!AndroidGranted()) return;
             ScheduleAndroid();
 #else
-            NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk, _signal);
+            PlanNow();
 #endif
+        }
+
+        static System.Collections.Generic.List<NotifyPlan.Entry> PlanNow()
+        {
+            return _armLast > 0
+                ? NotifyPlan.ComputeWindow(DateTime.Now, _armLast, _armStreak, _armRisk, _signal)
+                : NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk, _signal);
         }
 
         static void CancelAll()
@@ -265,7 +277,7 @@ namespace FlockFive
                 iOSNotificationCenter.RemoveDeliveredNotification(IosReady);
                 iOSNotificationCenter.RemoveScheduledNotification(IosKeep);
                 iOSNotificationCenter.RemoveDeliveredNotification(IosKeep);
-                foreach (var e in NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk, _signal))
+                foreach (var e in PlanNow())
                     ScheduleIosAt(e.Kind == NotifyPlan.Kind.Ready ? IosReady : IosKeep, "Daily bonus", e.Body, e.When);
             }
             catch (Exception) { }
@@ -278,8 +290,8 @@ namespace FlockFive
             trigger.Month = when.Month;
             trigger.Day = when.Day;
             trigger.Hour = when.Hour;
-            trigger.Minute = 0;
-            trigger.Second = 0;
+            trigger.Minute = when.Minute;
+            trigger.Second = when.Second;
             trigger.Repeats = false;
             var note = new iOSNotification(id);
             note.Title = title;
@@ -305,7 +317,7 @@ namespace FlockFive
                 AndroidNotificationCenter.RegisterNotificationChannel(channel);
                 CancelAndroid(PrefNoteReady);
                 CancelAndroid(PrefNoteKeep);
-                foreach (var e in NotifyPlan.Compute(DateTime.Now, _armStreak, _armClaimed, _armRisk, _signal))
+                foreach (var e in PlanNow())
                 {
                     int id = SendAndroid("Daily bonus", e.Body, e.When);
                     PlayerPrefs.SetInt(e.Kind == NotifyPlan.Kind.Ready ? PrefNoteReady : PrefNoteKeep, id + 1);

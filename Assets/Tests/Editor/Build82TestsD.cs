@@ -396,6 +396,7 @@ namespace FlockFive.Editor
                 {
                     "flockfive.login.day",
                     "flockfive.daily.last",
+                    "flockfive.daily.last24",
                     "flockfive.ads.lastany"
                 };
                 string[] ints =
@@ -409,6 +410,7 @@ namespace FlockFive.Editor
                     "flockfive.daily.streak", "flockfive.daily.streak.x",
                     "flockfive.daily.pay", "flockfive.daily.pay.x",
                     "flockfive.daily.last.x",
+                    "flockfive.daily.last24.x",
                     "flockfive.clear.double",
                     "flockfive.vip.soft",
                     "flockfive.session_clears"
