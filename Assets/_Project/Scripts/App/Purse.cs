@@ -5,9 +5,11 @@ using UnityEngine;
 namespace FlockFive
 {
     // Screen money. Under 10,000 is the full number with a thousands separator
-    // (1,000, 9,999). From 10,000, K drops a trailing .0 (10K, 11.6K).
-    // M and B keep one decimal under 10 and drop a trailing .0.
-    // Floors, so a label never reads higher than the amount.
+    // (1,000, 9,999). From 10,000, K, M and B ALWAYS carry exactly one decimal
+    // (10.0K, 11.6K, 123.4K, 1.0M, 25.0M, 250.0B) so the label keeps one width and
+    // the digits do not jiggle while a count-up rolls through values.
+    // Floors, so a label never reads higher than the amount: 999,999 is 999.9K, never
+    // 1000.0K, and the next coin reads 1.0M.
     // The glyph stays "$": the IMGUI font has no U+20A3, so that sign would be tofu.
     public static class Money
     {
@@ -30,35 +32,16 @@ namespace FlockFive
         {
             if (n < 0) return "-" + FormatFresh(n == long.MinValue ? long.MaxValue : -n);
             if (n < 10000L) return "$" + n.ToString("N0", CultureInfo.InvariantCulture);
-            if (n < 1000000L) return "$" + KText(n) + "K";
-            long unit = 1000000L;
-            string suffix = "M";
-            if (n >= 1000000000L)
-            {
-                unit = 1000000000L;
-                suffix = "B";
-            }
-            return "$" + Scaled(n, unit) + suffix;
+            if (n < 1000000L) return "$" + Scaled(n, 1000L) + "K";
+            if (n < 1000000000L) return "$" + Scaled(n, 1000000L) + "M";
+            return "$" + Scaled(n, 1000000000L) + "B";
         }
 
-        // Floored tenths. 10000 → 10, 11600 → 11.6, 12349 → 12.3.
-        static string KText(long n)
-        {
-            long tenths = n / 100L;
-            long whole = tenths / 10L;
-            long frac = tenths % 10L;
-            if (frac == 0L) return whole.ToString(CultureInfo.InvariantCulture);
-            return whole.ToString(CultureInfo.InvariantCulture) + "." + frac.ToString(CultureInfo.InvariantCulture);
-        }
-
+        // Floored tenths, always "whole.d". 10000 -> 10.0, 11600 -> 11.6, 12349 -> 12.3.
         static string Scaled(long n, long unit)
         {
-            long whole = n / unit;
-            if (whole >= 10L) return whole.ToString(CultureInfo.InvariantCulture);
-            long tenths = whole * 10L + (n % unit) * 10L / unit;
-            long frac = tenths % 10L;
-            if (frac == 0L) return (tenths / 10L).ToString(CultureInfo.InvariantCulture);
-            return (tenths / 10L).ToString(CultureInfo.InvariantCulture) + "." + frac.ToString(CultureInfo.InvariantCulture);
+            long tenths = n / (unit / 10L);
+            return (tenths / 10L).ToString(CultureInfo.InvariantCulture) + "." + (tenths % 10L).ToString(CultureInfo.InvariantCulture);
         }
     }
 
