@@ -36,12 +36,15 @@ namespace FlockFive
             public int Tumble;
             public int Cloud;
             public int Glint;
+            // Build 110 (spring): a second, peach blossom sheet and a few flapping butterflies.
+            public int Blossom;
+            public int Butterfly;
 
             public int Quads
             {
                 get
                 {
-                    return Snow + Leaf + Petal + Fly + Seed + Wisp + Tumble + Cloud + Glint;
+                    return Snow + Leaf + Petal + Fly + Seed + Wisp + Tumble + Cloud + Glint + Blossom + Butterfly;
                 }
             }
         }
@@ -77,7 +80,13 @@ namespace FlockFive
             var b = new Budget();
             if (scene == GardenScene.Winter) b.Snow = low ? 8 : 18;
             else if (scene == GardenScene.Fall) b.Leaf = low ? 3 : 6;
-            else if (scene == GardenScene.Spring) b.Petal = low ? 3 : 7;
+            else if (scene == GardenScene.Spring)
+            {
+                // Build 110: was 3/7 tiny faint petals, which read as no motion at all.
+                b.Petal = low ? 5 : 9;
+                b.Blossom = low ? 3 : 6;
+                b.Butterfly = low ? 2 : 3;
+            }
             else if (scene == GardenScene.Desert)
             {
                 b.Wisp = low ? 3 : 6;
@@ -105,6 +114,8 @@ namespace FlockFive
             b.Seed = Scale(b.Seed, t.Life, cap);
             b.Wisp = Scale(b.Wisp, t.Life, cap);
             b.Tumble = b.Tumble;
+            b.Blossom = Scale(b.Blossom, t.Life, cap);
+            b.Butterfly = Scale(b.Butterfly, t.Life, low ? 3 : 5);
             b.Cloud = Scale(b.Cloud, t.Cloud, low ? 4 : 6);
             b.Glint = Scale(b.Glint, t.Shimmer, low ? 4 : 8);
             return b;

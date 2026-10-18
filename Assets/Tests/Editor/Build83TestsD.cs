@@ -18,13 +18,16 @@ namespace FlockFive.Editor
                 Debug.Log("[build83d] " + (ok ? "PASS  " : "FAIL  ") + name + "  " + detail);
             }
             Check("ladder-32", LevelData.Count == 32, "count " + LevelData.Count);
-            foreach (int n in new[] { 27, 32 })
+            foreach (int n in new[] { 27 })
             {
                 var lv = LevelData.Peek(n - 1);
                 var b = LevelData.Open(n - 1);
                 Check("ostrich-" + n, lv.Number == n && lv.Ostrich && lv.Feeders == 3 && b.Live.Length == 3 && b.Ostrich != null
                     && BoardValidator.CheckKitSets(b).Ok, "live " + b.Live.Length + " peck " + lv.PeckSeed);
             }
+            // b110: 32 is the first spring garden and no longer an ostrich stage.
+            var l32 = LevelData.Peek(31);
+            Check("garden-32-spring-no-ostrich", l32.Number == 32 && !l32.Ostrich && l32.Feeders == 3, "");
             var b31 = LevelData.Open(30);
             Check("garden-31-badger-spring", LevelData.Peek(30).Number == 31 && !LevelData.Peek(30).Ostrich && b31.Live.Length == 2
                 && BoardValidator.CheckKitSets(b31).Ok, "");
