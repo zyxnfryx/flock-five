@@ -178,6 +178,7 @@ namespace FlockFive
                 {
                 ostrich = OstrichMark.Attach(root, feedersN);
                 ostrich.FeederArt = feeders;
+                ostrich.SetScene(scene);
             }
             var hive = HiveView.Attach(root);
             var ice = GardenIce.Attach(root, cam);
