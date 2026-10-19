@@ -83,7 +83,7 @@ namespace FlockFive.Editor
 
                 // --- textures: soft grass lip on top, fades to clear below; shadow soft-edged ---
                 var top = OstrichGround.LedgePixel(10, 0.05f);
-                var seam = OstrichGround.LedgePixel(10, 0.19f);
+                var seam = OstrichGround.LedgePixel(10, 0.125f);
                 var bot = OstrichGround.LedgePixel(10, 0.99f);
                 Check("ledge-top-opaque-green", top.a > 250 && top.g > top.r, "a " + top.a + " g " + top.g + " r " + top.r);
                 Check("ledge-seam-dark", seam.a > 250 && seam.g < top.g, "seam g " + seam.g);
