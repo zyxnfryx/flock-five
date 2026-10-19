@@ -111,6 +111,30 @@ namespace FlockFive.Editor
             GardenSolve.AfterMove(fin, null, out _);
             Check("third-hit-collects", !fin.Ostrich.Alive && fin.Branches[0].Broken, "");
 
+            // 5) precedence: a completing move hits and collects first; the ostrich does not attack that move
+            var pr = SetBoard(0, 5);
+            var plog = new System.Collections.Generic.List<PeckHit>();
+            GardenSolve.AfterMove(pr, plog, out _);
+            Check("completing-move-no-attack", pr.Ostrich.Hits == 1 && plog.Count == 0 && pr.Ostrich.PeckIndex == 0,
+                "hits " + pr.Ostrich.Hits + " pecks " + plog.Count + " idx " + pr.Ostrich.PeckIndex);
+            var pr3 = SetBoard(2, 5);
+            GardenSolve.AfterMove(pr3, null, out _);
+            Check("completing-move-collects-no-attack", !pr3.Ostrich.Alive && pr3.Branches[0].Broken && pr3.Ostrich.PeckIndex == 0, "");
+            var np = SetBoard(0, 4); // no completion: he does attack
+            var nlog = new System.Collections.Generic.List<PeckHit>();
+            GardenSolve.AfterMove(np, nlog, out _);
+            Check("non-completing-move-attacks", np.Ostrich.Hits == 0 && np.Ostrich.PeckIndex == 2, "idx " + np.Ostrich.PeckIndex);
+
+            // 6) a completed set stays tappable in an ostrich garden (also after ostrich turns); normal gardens unchanged
+            var tp = SetBoard(0, 5);
+            Check("full-set-tappable-ostrich", OstrichTurn.Tappable(tp, 0), "");
+            GardenSolve.AfterMove(tp, null, out _);
+            GardenSolve.AfterMove(tp, null, out _); // further turns
+            Check("full-set-tappable-after-turns", tp.Ostrich.Alive && !tp.Branches[0].Broken && OstrichTurn.Tappable(tp, 0), "");
+            var plain = SetBoard(0, 5); plain.Ostrich = null;
+            Check("full-set-not-tappable-plain", !OstrichTurn.Tappable(plain, 0) && OstrichTurn.Tappable(plain, 1), "");
+            var gone = SetBoard(2, 5); GardenSolve.AfterMove(gone, null, out _);
+            Check("collected-set-not-tappable", !OstrichTurn.Tappable(gone, 0), "");
             // --- relocation is animated, not instant ---
             var a = new Vector3(-2f, 1f, 0f);
             var c = new Vector3(3f, -1f, 0f);
@@ -137,6 +161,7 @@ namespace FlockFive.Editor
             string root = Path.GetDirectoryName(Application.dataPath);
             string app = File.ReadAllText(Path.Combine(root, "Assets/_Project/Scripts/App/FlockFiveApp.cs"));
             string fight = File.ReadAllText(Path.Combine(root, "Assets/_Project/Scripts/App/FlockFiveApp.OstrichFight.cs"));
+            Check("hit-test-uses-tappable", app.Split(new[] { "OstrichTurn.Tappable(" }, System.StringSplitOptions.None).Length - 1 >= 3, "");
             Check("tap-gated", app.Contains("if (_turnGate.Busy)") && app.Contains("TryBeginMove()"), "");
             Check("fight-after-resolve", app.Contains("while (MoveStillAnimating())") && app.Contains("_turnGate.TryBeginTurn(_turnTicket")
                 && app.Contains("yield return OstrichFight();"), "");

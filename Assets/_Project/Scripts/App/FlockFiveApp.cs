@@ -6264,7 +6264,7 @@ namespace FlockFive
                     var v = _garden.Branches[b];
                     if (v == null || !v.gameObject.activeInHierarchy) continue;
                     if (_board.Branches[v.Index].Broken || _board.Branches[v.Index].AdLocked) continue;
-                    if (_board.Branches[v.Index].IsFullMatch(out _)) continue;
+                    if (!OstrichTurn.Tappable(_board, v.Index)) continue;
                     for (int s = 0; s < BranchState.Cap; s++)
                     {
                         if (v.Birds[s] == null || !v.Birds[s].enabled) continue;
@@ -6283,7 +6283,7 @@ namespace FlockFive
                 var v = _garden.Branches[i];
                 if (v == null || !v.gameObject.activeInHierarchy) continue;
                 var st = _board.Branches[v.Index];
-                if (st.Broken || st.AdLocked || st.IsFullMatch(out _)) continue;
+                if (st.Broken || st.AdLocked || !OstrichTurn.Tappable(_board, v.Index)) continue;
                 float reach = st.Empty && sending ? 3.45f : pad;
                 float d = v.NearestPadSqr(world);
                 if (d < reach * reach && d < best) { best = d; idx = v.Index; }
@@ -6293,7 +6293,7 @@ namespace FlockFive
             {
                 var v = overlap[i].GetComponentInParent<BranchView>();
                 if (v == null || _board.Branches[v.Index].Broken || _board.Branches[v.Index].AdLocked) continue;
-                if (_board.Branches[v.Index].IsFullMatch(out _)) continue;
+                if (!OstrichTurn.Tappable(_board, v.Index)) continue;
                 float d = v.NearestPadSqr(world);
                 if (d < best) { best = d; idx = v.Index; }
             }

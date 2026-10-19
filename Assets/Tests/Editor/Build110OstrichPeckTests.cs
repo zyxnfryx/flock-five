@@ -107,12 +107,12 @@ namespace FlockFive.Editor
                 !two.Ostrich.Alive && l2.Count == 0 && fin2 >= 0 && fin2 == two.Ostrich.LastBonkBranch
                 && two.Branches[0].Broken && two.Branches[1].Broken,
                 "finale " + fin2 + " pecks " + l2.Count);
-            // Fresh ostrich, same two sets: it takes two hits, stays, and still pecks. Sets are not cleared.
+            // Fresh ostrich, same two sets: it takes two hits, stays, and (b116) does not peck on that move. Sets are not cleared.
             var fresh = TwoSets(0);
             var l3 = new List<PeckHit>();
             GardenSolve.AfterMove(fresh, l3, out int fin3);
             Check("two-sets-fresh-stays-and-pecks",
-                fresh.Ostrich.Alive && fresh.Ostrich.Hits == 2 && fin3 == -1 && l3.Count > 0
+                fresh.Ostrich.Alive && fresh.Ostrich.Hits == 2 && fin3 == -1 && l3.Count == 0 // b116: a completing move means no attack
                 && !fresh.Branches[0].Broken && !fresh.Branches[1].Broken,
                 "hits " + fresh.Ostrich.Hits + " pecks " + l3.Count);
             Check("finale-flag-only-without-peck", fin2 >= 0 && fin3 == -1, "");

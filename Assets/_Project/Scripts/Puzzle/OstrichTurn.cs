@@ -70,6 +70,18 @@ namespace FlockFive
         // A relocation never plays faster than this, however it is tuned elsewhere.
         public const float MinFlightSec = 0.45f;
 
+        // Hit-testing. A complete set is normally skipped (it is about to fly off), so a tap near it goes to the
+        // limb above. With a living ostrich the set STAYS on its limb, so it must stay tappable: otherwise the
+        // tap lands on the branch above and the set looks dead. Broken limbs are never tappable.
+        public static bool Tappable(Board b, int branch)
+        {
+            if (b == null || (uint)branch >= (uint)b.Branches.Count) return false;
+            var br = b.Branches[branch];
+            if (br == null || br.Broken) return false;
+            if (!br.IsFullMatch(out _)) return true;
+            return b.Ostrich != null && b.Ostrich.Alive;
+        }
+
         public static float FlightSec => Mathf.Max(MinFlightSec, FlockRedistribute.Duration(0));
 
         // Where the relocated bird is `t` seconds after the kick. Eased hop with an arc; the bird

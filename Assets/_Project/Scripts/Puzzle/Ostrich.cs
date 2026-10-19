@@ -172,9 +172,13 @@ namespace FlockFive
             var o = b.Ostrich;
             bool aliveBefore = o.Alive;
             int logged = 0;
+            int hitsBefore = o.Hits;
             Settle(b);
             int n = o.PecksPerMove;
             if (n < 0) n = 0;
+            // Precedence (Brandon): a move that completes a set scores and hits the ostrich first,
+            // and he does not attack on that move. His pecks only follow a move that landed no hit.
+            if (o.Hits > hitsBefore) n = 0;
             for (int k = 0; k < n && o.Alive; k++)
             {
                 if (OstrichPeck.Scatter(b, out var hit))
