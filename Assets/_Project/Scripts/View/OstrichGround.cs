@@ -36,6 +36,24 @@ namespace FlockFive
         public SpriteRenderer Shadow => _shadowSr;
         public bool Shown => _ledgeSr != null && _ledgeSr.enabled;
 
+        // Ledge tint per season (multiplies the grass/soil art). Summer is the reference.
+        public static Color SceneTint(GardenScene scene)
+        {
+            switch (scene)
+            {
+                case GardenScene.Desert: return new Color(1.00f, 0.88f, 0.62f, 1f);  // dry sand-grass
+                case GardenScene.Fall: return new Color(1.00f, 0.78f, 0.52f, 1f);    // amber leaf litter
+                case GardenScene.Winter: return new Color(0.86f, 0.94f, 1.00f, 1f);  // frosty
+                case GardenScene.Spring: return new Color(0.92f, 1.00f, 0.88f, 1f);  // fresh green
+                default: return Color.white;
+            }
+        }
+
+        public void SetScene(GardenScene scene)
+        {
+            if (_ledgeSr != null) _ledgeSr.color = SceneTint(scene);
+        }
+
         public static OstrichGround Attach(Transform parent)
         {
             var go = new GameObject("OstrichGround");

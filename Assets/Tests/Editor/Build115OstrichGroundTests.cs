@@ -138,6 +138,76 @@ namespace FlockFive.Editor
                     only &= lv.Number == 27 || lv.Number == 38 || lv.Number == 43;
                 }
                 Check("ostrich-gardens-covered", found >= 2 && only, "ostrich gardens: " + nums);
+
+                // --- b116: planted feet. Body y and the toe line stay fixed through every act and frame ---
+                var rootA = new GameObject("b116-anim");
+                try
+                {
+                    var m = OstrichMark.Attach(rootA.transform, 3);
+                    float aimY = WorldBuilder.FeederY - 0.05f;
+                    float wantFoot = OstrichMark.PlantedFootY(aimY);
+                    float worstBody = 0f, worstLeg = 0f, worstRot = 0f, worstShadow = 0f;
+                    string worstAt = "";
+                    var bodyT = rootA.transform.Find("Ostrich/Body");
+                    var legSrA = rootA.transform.Find("Ostrich/Body/LegFront").GetComponent<SpriteRenderer>();
+                    for (int a = 0; a <= (int)OstrichAct.Shake; a++)
+                    {
+                        var act = (OstrichAct)a;
+                        for (int f = 0; f < OstrichAnim.Count(act); f++)
+                        {
+                            m.Preview(act, f, FeederRow.X(1, 3), aimY, false);
+                            float footNow = bodyT.position.y - OstrichMark.FootBelowPivot * OstrichMark.BodyScale;
+                            float db = Mathf.Abs(footNow - wantFoot);
+                            if (db > worstBody) { worstBody = db; worstAt = act + "#" + f; }
+                            worstRot = Mathf.Max(worstRot, Mathf.Abs(Mathf.DeltaAngle(0f, bodyT.eulerAngles.z)));
+                            worstShadow = Mathf.Max(worstShadow, Mathf.Abs(m.Ground.Shadow.transform.position.y - (OstrichMark.GroundY(WorldBuilder.FeederY) - OstrichGround.ShadowDrop)));
+                            // Standing acts: the leg sprite itself stays on the toe line too (walk acts swing the legs).
+                            if (act != OstrichAct.Flee && act != OstrichAct.Strut && act != OstrichAct.Daze)
+                                worstLeg = Mathf.Max(worstLeg, Mathf.Abs(legSrA.bounds.min.y - OstrichMark.GroundY(WorldBuilder.FeederY)));
+                        }
+                    }
+                    Check("feet-y-fixed-all-acts", worstBody < 0.02f, "max drift " + worstBody + " at " + worstAt);
+                    Check("body-never-rocks", worstRot < 0.01f, "max rotation " + worstRot);
+                    Check("standing-legs-stay-on-ledge", worstLeg < 0.12f, "max leg-bottom drift " + worstLeg);
+                    Check("shadow-steady-y", worstShadow < 0.001f, "max " + worstShadow);
+                    // Idle breathing at a tiny amplitude.
+                    float lo = float.MaxValue, hi = float.MinValue;
+                    for (int f = 0; f < OstrichAnim.IdleFrames; f++)
+                    {
+                        m.Preview(OstrichAct.Idle, f, FeederRow.X(1, 3), aimY, false);
+                        lo = Mathf.Min(lo, bodyT.position.y); hi = Mathf.Max(hi, bodyT.position.y);
+                    }
+                    Check("idle-breath-tiny", hi - lo < 0.02f, "idle body travel " + (hi - lo));
+                    // Head still moves naturally (neck/head not frozen).
+                    m.Preview(OstrichAct.Peck, 0, FeederRow.X(1, 3), aimY, false);
+                    float hy0 = m.Head.transform.position.y;
+                    m.Preview(OstrichAct.Peck, 6, FeederRow.X(1, 3), aimY, false);
+                    Check("head-still-moves", Mathf.Abs(m.Head.transform.position.y - hy0) > 0.05f, "head dy " + (m.Head.transform.position.y - hy0));
+                }
+                finally { Object.DestroyImmediate(rootA); }
+
+                // --- b116: ledge + shadow + contact in every season/scene, tinted per season ---
+                foreach (GardenScene sc in System.Enum.GetValues(typeof(GardenScene)))
+                {
+                    var rs = new GameObject("b116-scene");
+                    try
+                    {
+                        var m = OstrichMark.Attach(rs.transform, 3);
+                        m.SetScene(sc);
+                        m.Preview(OstrichAct.Idle, 0, FeederRow.X(1, 3), WorldBuilder.FeederY - 0.05f, false);
+                        var gr = m.Ground;
+                        float foot = OstrichMark.GroundY(WorldBuilder.FeederY);
+                        var want = OstrichGround.SceneTint(sc);
+                        var got = gr.Ledge.color;
+                        bool tinted = Mathf.Abs(got.r - want.r) + Mathf.Abs(got.g - want.g) + Mathf.Abs(got.b - want.b) < 0.001f;
+                        bool differs = sc == GardenScene.Summer || Mathf.Abs(want.r - 1f) + Mathf.Abs(want.g - 1f) + Mathf.Abs(want.b - 1f) > 0.1f;
+                        Check("season-" + sc + "-ledge", gr.Shown && gr.Shadow.enabled && tinted && differs
+                            && Mathf.Abs(gr.Ledge.transform.position.y - OstrichGround.LedgeTop(foot)) < 0.001f
+                            && Mathf.Abs(gr.Shadow.transform.position.y - (foot - OstrichGround.ShadowDrop)) < 0.001f,
+                            "tint " + got);
+                    }
+                    finally { Object.DestroyImmediate(rs); }
+                }
             }
             finally { Object.DestroyImmediate(camGo); }
             Debug.Log(fail == 0 ? "build115-ground tests DONE " + pass + "/" + (pass + fail) : "build115-ground tests FAIL " + fail + " failed, " + pass + " passed");

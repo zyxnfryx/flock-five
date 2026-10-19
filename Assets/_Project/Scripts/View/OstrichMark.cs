@@ -30,6 +30,15 @@ namespace FlockFive
         // The feet stay where they were (BodyDrop is derived below), so the ground under him
         // does not move and the extra size goes up into the body, not down toward the HUD.
         public const float GrowFactor = 1.15f;
+        // b116: whole-body motion is nearly gone so he stands on the ledge instead of riding waves.
+        public const float BreathScale = 0.08f;   // body rise per unit of sample Bob (idle ~0.006 world units)
+        public const float BodyLeanScale = 0f;    // body never rocks about the neck root
+        public const float SwayScale = 0.1f;      // side-to-side body sway while strutting/dazed
+        // World y of the planted toe line for a body at aimY (before the tiny breathing rise).
+        public static float PlantedFootY(float aimY) => aimY + PortY - BodyDrop - FootBelowPivot * BodyScale;
+        // Scene the ledge is tinted for.
+        GardenScene _scene = GardenScene.Summer;
+        public void SetScene(GardenScene scene) { _scene = scene; if (_ground != null) _ground.SetScene(scene); }
         public const float BaseBodyScale = 1.70f;
         public const float BaseRigScale = 0.90f;
         public const float BaseBodyDrop = 3.20f;
@@ -189,6 +198,7 @@ namespace FlockFive
             FlockSort.Apply(_collarSr, CollarOrder);
             _body.localScale = new Vector3(BodyScale, BodyScale, 1f);
             _ground = OstrichGround.Attach(transform);
+            _ground.SetScene(_scene);
 
             _neck = new Transform[NeckParts];
             _neckSr = new SpriteRenderer[NeckParts];
@@ -526,8 +536,8 @@ namespace FlockFive
             float headY = aimY + PortY + sample.Bob * 0.35f;
             headY += sample.Wind * 0.18f - sample.Strike * 0.12f;
             float sway = 0f;
-            if (_act == OstrichAct.Strut) sway = Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.28f;
-            if (_act == OstrichAct.Daze) sway += Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.36f;
+            if (_act == OstrichAct.Strut) sway = Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.28f * SwayScale;
+            if (_act == OstrichAct.Daze) sway += Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.36f * SwayScale;
             // Face the side the head reaches to; keep the whole body (tail end) on screen.
             float half = ViewHalfWidth();
             // Turning is eased, not snapped: face swings through 0 over ~0.25s (hysteresis on the side).
@@ -545,7 +555,9 @@ namespace FlockFive
             else bodyX = Mathf.Lerp(bodyL, bodyR, (face + 1f) * 0.5f) + sway;
             _body.localScale = new Vector3(BodyScale * turn, BodyScale, 1f);
             _head.localScale = new Vector3(RigScale * turn, RigScale, 1f);
-            float bodyY = headY - BodyDrop + sample.Bob;
+            // b116: the body is planted. It no longer follows the head's bob/wind/strike or rocks with Lean,
+            // so the feet stay on the ledge; only a tiny breathing rise (BreathScale) moves it.
+            float bodyY = aimY + PortY - BodyDrop + sample.Bob * BreathScale;
             headX += face * (sample.Strike * 0.50f - sample.Wind * 0.42f);
 
             _bodySr.sprite = OstrichPaint.Body(_act, _frame);
@@ -553,11 +565,11 @@ namespace FlockFive
             if (_collarSr != null) { _collarSr.flipX = side < 0f; }
             _body.position = new Vector3(bodyX, bodyY, 0f);
             if (_ground != null) _ground.Place(FootX(bodyX, side, turn), GroundY(WorldBuilder.FeederY), turn);
-            _body.localRotation = Quaternion.Euler(0f, 0f, sample.Lean * face);
+            _body.localRotation = Quaternion.Euler(0f, 0f, sample.Lean * face * BodyLeanScale);
             // Stride from the timeline: legs swing in opposition around the hips.
             float stride = Mathf.Sin(sample.Step * Mathf.PI * 2f);
-            float swing = flee ? 26f : (_act == OstrichAct.Strut || _act == OstrichAct.Daze ? 14f : 3f);
-            float brace = -sample.Lean * 0.5f; // feet stay planted while the body leans
+            float swing = flee ? 26f : (_act == OstrichAct.Strut || _act == OstrichAct.Daze ? 14f : 0f);
+            float brace = -sample.Lean * BodyLeanScale * 0.5f; // feet stay planted while the body leans
             PoseLeg(_legBack, _legBackSr, OstrichPaint.BackHip, brace + stride * swing, side);
             PoseLeg(_legFront, _legFrontSr, OstrichPaint.FrontHip, brace - stride * swing, side);
 
