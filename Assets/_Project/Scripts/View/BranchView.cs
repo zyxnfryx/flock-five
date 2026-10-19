@@ -477,6 +477,7 @@ namespace FlockFive
         void OnDisable()
         {
             DropFly();
+            DropFlames();
             if (!_breaking) return;
             _breaking = false;
             transform.rotation = Quaternion.identity;
@@ -489,7 +490,14 @@ namespace FlockFive
             }
         }
 
-        // Char, a short burn, then the shared limb drop. Sync skips a breaking limb.
+        // b113 (Brandon): the burning phase was 0.58 s; it is now ScorchSeconds (1.5 s, about 2.6x) of charred wood with
+        // live flames, during which the branch is already unusable (Burn() marks it Broken the moment it is struck).
+        // Then the shared limb drop (BreakAway, 0.62 s). Total struck-to-gone: 0.58+0.62=1.2 s before, 1.5+0.62=2.12 s now.
+        public const float ScorchSeconds = 1.5f;
+        const int FlameN = 9;
+        SpriteRenderer[] _flames;
+
+        // Char, a burn with animated flames, then the shared limb drop. Sync skips a breaking limb.
         public void BeginScorch(Transform fxRoot)
         {
             _breaking = true;
@@ -498,24 +506,74 @@ namespace FlockFive
             var root = fxRoot != null ? fxRoot : transform.parent;
             StrikeFx.Play(root, transform.position);
             Sfx.Crackle();
+            BuildFlames();
             StartCoroutine(ScorchDrop());
+        }
+
+        void BuildFlames()
+        {
+            DropFlames();
+            _flames = new SpriteRenderer[FlameN];
+            for (int i = 0; i < FlameN; i++)
+            {
+                var go = WorldBuilder.Sprite("BurnFlame" + i, SpriteCatalog.Glow, transform.position, 0.4f, 16, transform);
+                _flames[i] = go.GetComponent<SpriteRenderer>();
+            }
+        }
+
+        void DropFlames()
+        {
+            if (_flames == null) return;
+            for (int i = 0; i < _flames.Length; i++)
+                if (_flames[i] != null) Object.Destroy(_flames[i].gameObject);
+            _flames = null;
+        }
+
+        // Looping flicker along the wood: each tongue rises, swells and fades, then restarts, for the whole burn.
+        void AnimateFlames(float t)
+        {
+            if (_flames == null) return;
+            float x0 = -0.9f, x1 = 0.9f, y = 0f;
+            if (Wood != null)
+            {
+                var b = Wood.bounds;
+                var lo = transform.InverseTransformPoint(new Vector3(b.min.x, b.center.y, transform.position.z));
+                var hi = transform.InverseTransformPoint(new Vector3(b.max.x, b.center.y, transform.position.z));
+                x0 = Mathf.Min(lo.x, hi.x);
+                x1 = Mathf.Max(lo.x, hi.x);
+                y = lo.y;
+            }
+            for (int i = 0; i < _flames.Length; i++)
+            {
+                var sr = _flames[i];
+                if (sr == null) continue;
+                float ph = Mathf.Repeat(t * 1.9f + i * 0.37f, 1f);
+                float fx = Mathf.Lerp(x0, x1, (i + 0.5f) / _flames.Length) + 0.08f * Mathf.Sin(t * 9f + i * 2.1f);
+                sr.transform.localPosition = new Vector3(fx, y + 0.05f + ph * 0.55f, 0f);
+                float sc = (0.30f + 0.26f * Mathf.Sin(ph * Mathf.PI)) * (0.9f + 0.1f * Mathf.Sin(t * 14f + i));
+                sr.transform.localScale = new Vector3(sc, sc * 1.35f, 1f);
+                float a = Mathf.Sin(ph * Mathf.PI) * 0.9f;
+                sr.color = Color.Lerp(new Color(1f, 0.85f, 0.25f, a), new Color(1f, 0.32f, 0.06f, a), ph);
+            }
         }
 
         IEnumerator ScorchDrop()
         {
             int act = _act;
             float t = 0f;
-            const float burn = 0.58f;
-            while (t < burn)
+            while (t < ScorchSeconds)
             {
                 if (act != _act)
                 {
+                    DropFlames();
                     _breaking = false;
                     yield break;
                 }
                 t += Time.deltaTime;
+                AnimateFlames(t);
                 yield return null;
             }
+            DropFlames();
             if (act != _act)
             {
                 _breaking = false;

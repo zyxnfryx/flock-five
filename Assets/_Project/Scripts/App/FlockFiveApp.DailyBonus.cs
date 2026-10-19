@@ -1342,7 +1342,7 @@ namespace FlockFive
             return Mathf.Max(8f, WheelHubInnerDiameter(wheelWidth) - WheelHubPadPx(wheelWidth) * 2f);
         }
 
-        // Full dollars. Money.Format turns 20000 into "$20K"; the hub keeps "$20,000".
+        // Full dollars. Money.Format turns 20000 into "$20.0K"; the hub keeps "$20,000".
         public static string WheelHubText(int coins)
         {
             if (coins < 0) coins = 0;

@@ -10,7 +10,7 @@ namespace FlockFive.Editor
     // Build 89 follow-up: every payout on the open pay table uses ONE font size, the largest
     // at which the widest real payout string fits the cash column (same for the multiplier
     // column), per device and per bet. Real strings: BirdPoker multipliers x bets through
-    // Money.Format, up to the longest ($250K, $62.5K, $25M, $250M).
+    // Money.Format, up to the longest ($250.0K, $62.5K, $25.0M, $250.0M).
     [InitializeOnLoad]
     static class Build89PayoutTests
     {

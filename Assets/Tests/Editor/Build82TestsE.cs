@@ -200,11 +200,10 @@ namespace FlockFive.Editor
         static void CheckLightning(System.Action<string, bool, string> Check)
         {
             PlayerPrefs.DeleteKey(LightningStrike.PrefKey);
-            // b110: on by default, chance 0.60 (was off, 0.45). An explicit pref 0 still turns it off.
+            // b110: on by default. b113: the flat 0.60 is replaced by a cooldown + ramp (see Build110LightningFireTests).
             Check("lightning-default-on",
                 LightningStrike.Enabled && LightningStrike.RemoteDefault
                 && LightningStrike.PrefKey == "flockfive.lightning"
-                && Mathf.Abs(LightningStrike.Chance - 0.60f) < 0.0001f
                 && LightningStrike.MaxPerLevel == 1,
                 "enabled=" + LightningStrike.Enabled);
 
@@ -236,13 +235,13 @@ namespace FlockFive.Editor
 
             LightningStrike.Enabled = true;
             var win = EmptyGift();
-            int struck = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.59f, false);
-            int miss = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.60f, false);
+            int struck = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.59f, false, false, 1, 0.60f);
+            int miss = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.60f, false, false, 1, 0.60f);
             int dry = LightningStrike.TryPick(win, claimed, burned, false, 0, 0.1f, false);
             int capped = LightningStrike.TryPick(win, claimed, burned, true, 1, 0.1f, true);
             int forced = LightningStrike.TryPick(win, claimed, burned, false, 0, 0.9f, true);
             Check("chance-storm-cap-force",
-                LightningStrike.RollHits(0.59f) && !LightningStrike.RollHits(0.60f)
+                LightningStrike.RollHits(0.59f, 0.60f) && !LightningStrike.RollHits(0.60f, 0.60f)
                 && struck == 0 && miss < 0 && dry < 0 && capped < 0 && forced == 0,
                 "struck=" + struck + " miss=" + miss + " dry=" + dry + " cap=" + capped + " force=" + forced);
 

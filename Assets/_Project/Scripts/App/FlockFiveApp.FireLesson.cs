@@ -6,8 +6,9 @@ namespace FlockFive
     // path (caption, glove, tap gate). The strike arms it; PestIntroAdvance shows it once the stage is calm.
     public sealed partial class FlockFiveApp
     {
-        // The limb is still burning and falling for about a second. The line waits for that.
-        public const float FireLessonDelay = 1.1f;
+        // b113: the limb now burns for BranchView.ScorchSeconds (1.5 s) before it falls. The line shows once the fire has
+        // taken hold (0.9 s), while the branch is still burning, so the arrow points at a branch that is on fire.
+        public const float FireLessonDelay = 0.9f;
 
         bool _fireArmed;
         Vector3 _fireAim;
@@ -29,9 +30,9 @@ namespace FlockFive
         {
             if (!FireLessonOwed(PlayerPrefs.GetInt(CoachFireKey, 0) != 0, _fireArmed, PlayClock.Now, _fireShowAt))
                 return false;
-            return _lightningStrikes > 0;
+            return _lightningStrikes > 0 && LightningStrike.GardenEligible(_lightningGarden);
         }
 
-        bool FireCueAlive() => _fireArmed && _lightningStrikes > 0 && !_won && _board != null;
+        bool FireCueAlive() => _fireArmed && LightningStrike.GardenEligible(_lightningGarden) && _lightningStrikes > 0 && !_won && _board != null;
     }
 }

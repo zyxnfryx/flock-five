@@ -12,11 +12,24 @@ namespace FlockFive
         readonly bool[] _offerBurned = new bool[WorldBuilder.GiftCount];
         int _lightningStrikes;
         bool _lightningRolled;
+        int _lightningGarden;
+        int _lightningCounted = -1;
+        float _lightningChance;
+        float _lightningRoll;
         bool _shot82e;
         bool _shot82eStill;
 
-        void ResetLightning()
+        // One dice roll per garden, against that garden's chance (cooldown, then a ramp; see LightningStrike).
+        void ResetLightning(int garden)
         {
+            _lightningGarden = garden;
+            if (LightningStrike.GardenEligible(garden) && garden != _lightningCounted)
+            {
+                _lightningCounted = garden;
+                LightningStrike.NoteGarden();
+            }
+            _lightningChance = LightningStrike.GardenEligible(garden) ? LightningStrike.ChanceFor(LightningStrike.Since) : 0f;
+            _lightningRoll = Random.value;
             _fireArmed = false;
             for (int i = 0; i < _offerBurned.Length; i++) _offerBurned[i] = false;
             _lightningStrikes = 0;
@@ -39,13 +52,14 @@ namespace FlockFive
             if (_lightningRolled && !pending) return;
             // b110: the first strike this player ever gets is guaranteed, and it waits for a calm stage
             // (no coach, leaf, hive, or pest lesson up) so the tutorial can show. The wait does not use the roll.
-            bool owed = !pending && LightningStrike.FirstStrikeOwed;
+            bool owed = !pending && LightningStrike.FirstStrikeOwed && LightningStrike.GardenEligible(_lightningGarden);
             if (owed && !PestStageFree()) return;
             bool force = LightningStrike.ConsumeForce();
             if (!force) _lightningRolled = true;
 
             int index = LightningStrike.TryPick(
-                _board, _bonusOn, _offerBurned, storming, _lightningStrikes, Random.value, force, owed);
+                _board, _bonusOn, _offerBurned, storming, _lightningStrikes, _lightningRoll, force, owed,
+                _lightningGarden, _lightningChance);
             if (index < 0) return;
             var view = ViewFor(index);
             if (view == null) return;
@@ -429,7 +443,7 @@ namespace FlockFive
             }
 
             SeasonReveal.Mark(1);
-            PrepGardenShot(0);
+            PrepGardenShot(1);
             yield return new WaitForSecondsRealtime(1.3f);
             if (GardenStorm.Instance != null) GardenStorm.Instance.JumpToStorm();
             int aim = LightningStrike.Target(_board, _bonusOn, _offerBurned);

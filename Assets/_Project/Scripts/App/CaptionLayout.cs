@@ -165,14 +165,17 @@ namespace FlockFive
         public const string OstrichLine =
             "Ostrich on a feeder!\nMatch three sets.";
 
-        // b110: first lightning fire, copy approved by Brandon. Two lines. The game font (LegacyRuntime) does not
-        // draw the flame, so FireLine is the plain text and FireEmojiLine is swapped in at paint time only when
-        // DrawsEmoji says the font can (same approach as the bee line).
+        // b113 (Brandon): exact copy, no emoji (the game font does not draw one). The "!" ends the headline, so
+        // HeadlineGap puts the shared visible gap between the two sentences at paint time. Two rows at most.
         public const string FireLine =
-            "Lightning burned the branch\nWatch out for dangerous weather";
+            "Lightning burned the branch!\nWatch out for dangerous weather";
 
-        public const string FireEmojiLine =
-            "Lightning burned the branch \U0001F525\nWatch out for dangerous weather";
+        // Side padding: the fire column is never wider than this share of the screen (8% each side), so the text
+        // is not flush with the edges. A long row shrinks the font (down to 60%) or wraps, it never widens past this.
+        public const float FireInsetFrac = 0.84f;
+
+        public static bool IsFireLine(string text) =>
+            text == FireLine || (text != null && text == HeadlineGap(FireLine));
 
         public const string BeePestLine =
             "Bees on a branch!\nRemove birds to clear.";
@@ -465,7 +468,6 @@ namespace FlockFive
         public static string LessonShown(string text, Font font)
         {
             if (text == HiveGardenLine && DrawsEmoji(font)) text = HiveGardenEmojiLine;
-            else if (text == FireLine && DrawsEmoji(font)) text = FireEmojiLine;
             return HeadlineGap(text);
         }
 
@@ -729,6 +731,7 @@ namespace FlockFive
             float inset = full * BannerInsetFrac;
             if (inset < 8f) inset = 8f;
             if (inset > full) inset = full;
+            if (IsFireLine(text)) return full * FireInsetFrac;
             if (string.IsNullOrEmpty(text)) return inset;
             // Keep the author's breaks. Widen the column before inventing a new wrap,
             // so "Bees earn album cards." stays one row instead of spilling into the next.
@@ -808,7 +811,7 @@ namespace FlockFive
             // bees-on-a-branch text on a phone) shrinks in small steps, to at most 60%, until every row fits.
             // Only that one authored sentence uses this; every other caption keeps the shared size.
             int floorPx = Mathf.Max(1, Mathf.RoundToInt(measure.Font * 0.6f));
-            while ((text == BeePestLine || text == FireLine) && measure.Font > floorPx && !RowsAllFit(style, shown, maxW, measure.Font))
+            while ((text == BeePestLine || IsFireLine(text)) && measure.Font > floorPx && !RowsAllFit(style, shown, maxW, measure.Font))
             {
                 measure.Font -= 2;
                 shown = AuthoredBanner(style, text, maxW, measure.Font);
