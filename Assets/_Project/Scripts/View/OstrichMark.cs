@@ -22,16 +22,32 @@ namespace FlockFive
         // way it faces so the face clears the glass instead of poking out of the bowl.
         public const float PeekX = 0.85f;
         public const float PeekY = 0.28f;
-        public const float BeakReach = 1.45f;
+        public const float BeakReach = 1.45f * GrowFactor;
         public const float PeekSlotTol = 0.3f;
         // Strike: the head goes over the flock once it has dropped this far below its peek spot.
         public const float PeekDrop = 0.35f;
-        public const float BodyDrop = 3.20f; // big body sits well below the feeder row, neck rises to the head
-        // Whole bird at 72%: it fits the screen width, legs included, and the 160px master
-        // head is drawn at or under its native size on device.
-        public const float RigScale = 0.90f; // head
-        // Build 110: the body is a large background figure (was 0.72, now 1.7 = 2.4x).
-        public const float BodyScale = 1.70f;
+        // b115 "a little bigger": one tunable grows the whole bird (head, body, legs) about 15%.
+        // The feet stay where they were (BodyDrop is derived below), so the ground under him
+        // does not move and the extra size goes up into the body, not down toward the HUD.
+        public const float GrowFactor = 1.15f;
+        public const float BaseBodyScale = 1.70f;
+        public const float BaseRigScale = 0.90f;
+        public const float BaseBodyDrop = 3.20f;
+        // Toe line below the body pivot (neck root), in body-sprite units at scale 1: hip drop plus
+        // the leg sprite below its own pivot (ostrich_leg_back/front, 140 PPU, toes ~2px above the edge).
+        public const float FootBelowPivot = 3.11f;
+        // Whole bird: fits the screen width, legs included; the 160px master head stays near its native size.
+        public const float RigScale = BaseRigScale * GrowFactor; // head
+        // Build 110: the body is a large background figure (was 0.72, now 1.7 = 2.4x); b115 x GrowFactor.
+        public const float BodyScale = BaseBodyScale * GrowFactor;
+        // Big body sits below the feeder row, neck rises to the head. Pre-grow it was 3.20; growing
+        // pulls the pivot up by the extra leg length so the toe line is unchanged.
+        public const float BodyDrop = BaseBodyDrop - FootBelowPivot * (BodyScale - BaseBodyScale);
+        // World y of his toe line for a feeder row at feederY (the head aims at feederY - 0.05).
+        public static float GroundY(float feederY) => feederY - 0.05f + PortY - BodyDrop - FootBelowPivot * BodyScale;
+        // World x of the middle of his planted feet for a body at bodyX facing side (+1/-1) with turn squash.
+        public static float FootX(float bodyX, float side, float turn)
+            => bodyX + (OstrichPaint.BackHip.x + OstrichPaint.FrontHip.x) * 0.5f * side * BodyScale * turn;
         // Half the visible width; the game camera when there is one, else the stills camera.
         public static float ViewHalfWidth()
         {
@@ -65,6 +81,8 @@ namespace FlockFive
         Transform _head;
         Transform[] _neck;
         SpriteRenderer _bodySr;
+        OstrichGround _ground;
+        public OstrichGround Ground => _ground;
         Transform _legBack, _legFront, _collar;
         SpriteRenderer _collarSr;
         SpriteRenderer _legBackSr, _legFrontSr;
@@ -170,6 +188,7 @@ namespace FlockFive
             _collarSr.sprite = OstrichPaint.Collar();
             FlockSort.Apply(_collarSr, CollarOrder);
             _body.localScale = new Vector3(BodyScale, BodyScale, 1f);
+            _ground = OstrichGround.Attach(transform);
 
             _neck = new Transform[NeckParts];
             _neckSr = new SpriteRenderer[NeckParts];
@@ -533,6 +552,7 @@ namespace FlockFive
             _bodySr.flipX = side < 0f;
             if (_collarSr != null) { _collarSr.flipX = side < 0f; }
             _body.position = new Vector3(bodyX, bodyY, 0f);
+            if (_ground != null) _ground.Place(FootX(bodyX, side, turn), GroundY(WorldBuilder.FeederY), turn);
             _body.localRotation = Quaternion.Euler(0f, 0f, sample.Lean * face);
             // Stride from the timeline: legs swing in opposition around the hips.
             float stride = Mathf.Sin(sample.Step * Mathf.PI * 2f);
@@ -736,6 +756,7 @@ namespace FlockFive
             if (_bodySr != null) _bodySr.enabled = true;
             if (_legBackSr != null) { _legBackSr.enabled = true; _legFrontSr.enabled = true; }
             if (_collarSr != null) _collarSr.enabled = true;
+            if (_ground != null) _ground.Show(true);
             if (Head != null) Head.enabled = true;
             if (_line != null) _line.enabled = true;
         }
@@ -746,6 +767,7 @@ namespace FlockFive
             if (_bodySr != null) _bodySr.enabled = false;
             if (_legBackSr != null) { _legBackSr.enabled = false; _legFrontSr.enabled = false; }
             if (_collarSr != null) _collarSr.enabled = false;
+            if (_ground != null) _ground.Show(false);
             if (Head != null) Head.enabled = false;
             if (_line != null) _line.enabled = false;
             if (_neckSr == null) return;
