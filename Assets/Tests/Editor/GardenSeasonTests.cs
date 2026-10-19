@@ -75,7 +75,7 @@ namespace FlockFive.Editor
             {
                 bool listed = list.Contains(n);
                 if (listed != GardenSeason.IsChangeLevel(n)) drift++;
-                if (GardenSeason.IsChangeLevel(n) && GardenSeason.IsBadgerLevel(n)) drift++;
+                if (GardenSeason.IsChangeLevel(n) && GardenSeason.IsBadgerLevel(n) && n != GardenSeason.SpringFrom) drift++;
             }
             Check("list-matches-forlevel", drift == 0, drift + " mismatches");
 
@@ -90,27 +90,31 @@ namespace FlockFive.Editor
                 && GardenSeason.ForLevel(15) == GardenScene.Desert
                 && GardenSeason.ForLevel(24) == GardenScene.Desert
                 && GardenSeason.ForLevel(25) == GardenScene.Winter
-                && GardenSeason.ForLevel(31) == GardenScene.Winter
+                && GardenSeason.ForLevel(30) == GardenScene.Winter
+                && GardenSeason.ForLevel(31) == GardenScene.Spring
                 && GardenSeason.ForLevel(32) == GardenScene.Spring
                 && GardenSeason.ForLevel(39) == GardenScene.Spring
                 && GardenSeason.ForLevel(40) == GardenScene.Summer
                 && GardenSeason.ForLevel(48) == GardenScene.Fall
                 && GardenSeason.ForLevel(56) == GardenScene.Fall
                 && GardenSeason.ForLevel(57) == GardenScene.Winter;
-            Check("fixed-seasons", fixedOk, "1-14 summer, 15-24 desert, 25-31 winter, 32-39 spring, 40 summer, 48 fall, 57 winter");
+            Check("fixed-seasons", fixedOk, "1-14 summer, 15-24 desert, 25-30 winter, 31-39 spring, 40 summer, 48 fall, 57 winter");
 
             int gapBad = 0;
-            for (int i = 4; i < list.Count; i++)
+            for (int i = 3; i < list.Count; i++)
             {
-                int gap = list[i] - list[i - 1];
-                if (gap < GardenSeason.RotateEvery || gap > GardenSeason.RotateEvery + 2) gapBad++;
+                int expect = 40 + 8 * (i - 3);
+                if (list[i] != expect && !(list[i] == expect + 1 && GardenSeason.IsBadgerLevel(expect))) gapBad++;
             }
-            Check("rotation-gaps", gapBad == 0, "every 8 (+1 off a badger garden)");
+            Check("rotation-gaps", gapBad == 0, "fixed grid 40+8k, +1 only off a badger garden");
+            Check("rotation-explicit", list.Contains(40) && list.Contains(48) && list.Contains(57) && !list.Contains(56)
+                && list.Contains(64) && list.Contains(72) && list.Contains(80) && list.Contains(88) && list.Contains(97) && !list.Contains(96),
+                "40 48 57 64 72 80 88 97");
 
             bool due = SeasonReveal.Due(15, false) && !SeasonReveal.Due(16, false) && !SeasonReveal.Due(14, false)
-                && !SeasonReveal.Due(15, true) && !SeasonReveal.Due(31, false)
-                && SeasonReveal.Due(25, false) && SeasonReveal.Due(32, false) && SeasonReveal.Due(40, false);
-            Check("reveal-due", due, "15, 25, 32, 40 once; 14, 16, 31 and a seen 15 never");
+                && !SeasonReveal.Due(15, true) && !SeasonReveal.Due(32, false)
+                && SeasonReveal.Due(25, false) && SeasonReveal.Due(31, false) && SeasonReveal.Due(40, false);
+            Check("reveal-due", due, "15, 25, 31, 40 once; 14, 16, 32 and a seen 15 never");
 
             float desertFade = SeasonReveal.FadeOf(GardenScene.Desert);
             float otherFade = SeasonReveal.FadeOf(GardenScene.Winter);

@@ -16,18 +16,18 @@ namespace FlockFive
     // Pure: no sprites, no prefs. SpriteCatalog.GardenBgFor turns the scene into art.
     //   1-14   summer (jungle)
     //   15-24  desert oasis
-    //   25-31  winter
-    //   32-39  spring (31 is a honey badger garden, so spring waits one)
-    //   40+    summer, fall, winter, spring, ... every 8 gardens. A change that would land
-    //          on a honey badger garden slides +1 (repeat until clean), and the next
-    //          8 counts from where it actually landed.
-    // Brandon's rule: a backdrop change never lands on a honey badger garden.
+    //   25-30  winter
+    //   31-39  spring (the one deliberate change on a honey badger garden, Brandon-approved)
+    //   40+    summer, fall, winter, spring, ... on a FIXED grid: change k is 40 + 8k. A change
+    //          that would land on a honey badger garden slides +1 only for that change; the
+    //          grid itself does not shift (40, 48, 57, 64, 72, 80, 88, 97, ...).
+    // Brandon's rule: from 40 on, a backdrop change never lands on a honey badger garden.
     // SeasonReveal plays that change once, the first time the garden is entered.
     public static class GardenSeason
     {
         public const int DesertFrom = 15;
         public const int WinterFrom = 25;
-        public const int SpringFrom = 32;
+        public const int SpringFrom = 31;
         public const int RotateFrom = 40;
         public const int RotateEvery = 8;
 
@@ -40,23 +40,14 @@ namespace FlockFive
             GardenScene.Spring,
         };
 
-        // Rotation change gardens, grown on demand. _changes[k] wears Rotation[k % 4].
-        static readonly List<int> _changes = new List<int> { RotateFrom };
-
         public static GardenScene ForLevel(int level)
         {
             if (level < DesertFrom) return GardenScene.Summer;
             if (level < WinterFrom) return GardenScene.Desert;
             if (level < SpringFrom) return GardenScene.Winter;
             if (level < RotateFrom) return GardenScene.Spring;
-            Grow(level);
             int k = 0;
-            for (int i = _changes.Count - 1; i >= 0; i--)
-            {
-                if (_changes[i] > level) continue;
-                k = i;
-                break;
-            }
+            while (ChangeAt(k + 1) <= level) k++;
             return Rotation[k % Rotation.Length];
         }
 
@@ -68,14 +59,12 @@ namespace FlockFive
             return BadgerSchedule.Due(level - 1);
         }
 
-        // Next rotation change after `from`: +8, then +1 while it lands on a badger garden.
-        public static int NextChange(int from)
+        // Rotation change number k (0 = RotateFrom): fixed grid RotateFrom + 8k, +1 when that
+        // lands on a badger garden. Never accumulates.
+        public static int ChangeAt(int k)
         {
-            int at = from + RotateEvery;
-            int guard = 0;
-            while (IsBadgerLevel(at) && guard++ < RotateEvery)
-                at++;
-            return at;
+            int at = RotateFrom + RotateEvery * k;
+            return IsBadgerLevel(at) ? at + 1 : at;
         }
 
         // Every garden where the backdrop changes, ascending, up to and including `maxLevel`.
@@ -86,9 +75,8 @@ namespace FlockFive
             if (maxLevel >= WinterFrom) list.Add(WinterFrom);
             if (maxLevel >= SpringFrom) list.Add(SpringFrom);
             if (maxLevel < RotateFrom) return list;
-            Grow(maxLevel);
-            for (int i = 0; i < _changes.Count && _changes[i] <= maxLevel; i++)
-                list.Add(_changes[i]);
+            for (int k = 0; ChangeAt(k) <= maxLevel; k++)
+                list.Add(ChangeAt(k));
             return list;
         }
 
@@ -105,15 +93,10 @@ namespace FlockFive
             var list = ChangeLevels(maxLevel);
             for (int i = 0; i < list.Count; i++)
             {
+                if (list[i] == SpringFrom) continue; // the one approved badger-garden change
                 if (IsBadgerLevel(list[i])) return list[i];
             }
             return 0;
-        }
-
-        static void Grow(int level)
-        {
-            while (_changes[_changes.Count - 1] <= level)
-                _changes.Add(NextChange(_changes[_changes.Count - 1]));
         }
     }
 }
