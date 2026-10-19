@@ -476,7 +476,12 @@ namespace FlockFive
             // until resume, and do not drop it if heal closes the gift.
             Ads.DeliverPause(true);
             // Leaving mid-lesson: settle anything already half-done before the suspend.
-            if (_app != null) _app.HealInterruptedTutorials();
+            if (_app != null)
+            {
+                // b131: the suspend is not blind time (the clock jumps on return and would finish the step).
+                _app._gateBlindSince = -1f;
+                _app.HealInterruptedTutorials();
+            }
         }
 
         public static void NoteAppResume()
@@ -496,6 +501,7 @@ namespace FlockFive
                 if (_app != null)
                 {
                     _resumeInputUntil = GateNow + 0.35f;
+                    _app._gateBlindSince = -1f;
                     _app.FreshTutorGlove();
                     // The suspend may have cut a step off. Settle it before the first tap lands.
                     _app.HealInterruptedTutorials();
@@ -6758,9 +6764,18 @@ namespace FlockFive
 
         // Build 58: owning VIP keeps the slot. The offer medallion becomes the diamond
         // badge (DrawNoAdsButton), so restore and reinstall show it too.
+        // Build 130: also waits for the name picker (VipRailNameGateOpen). Players who already
+        // have a name pass the gate at once. The Welcome hold (VipWelcomeHoldsRail) is separate
+        // and still applies on top of this.
         static float VipRailGoal()
         {
-            return (NoAds.Owned || LevelData.NextPlay >= 1) ? 1f : 0f;
+            return VipRailGoalFor(NoAds.Owned, LevelData.NextPlay, VipRailNameGateOpen());
+        }
+
+        public static float VipRailGoalFor(bool owned, int nextPlay, bool nameGateOpen)
+        {
+            if (!nameGateOpen) return 0f;
+            return (owned || nextPlay >= 1) ? 1f : 0f;
         }
 
         // Hidden through level 1. The lesson keeps it out of the stack until the
