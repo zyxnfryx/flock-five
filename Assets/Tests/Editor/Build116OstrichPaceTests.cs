@@ -101,8 +101,8 @@ namespace FlockFive.Editor
             // 3) completion deferred during the turn, processed after: settle after a bare board mutation picks it up
             var df = SetBoard(0, 4);
             df.Ostrich.PecksPerMove = 0; // keep the 4 in place; the point is the late completion
-            var fl = new System.Collections.Generic.List<PeckHit>();
-            GardenSolve.AfterMove(df, fl, out _); // turn with no set
+            var peckFl = new System.Collections.Generic.List<PeckHit>();
+            GardenSolve.AfterMove(df, peckFl, out _); // turn with no set
             df.Branches[0].Birds.Add(new Bird(BirdColor.Gold)); df.Branches[0].Shrouded.Add(false); // completes while the turn plays
             Check("deferred-set-pending", OstrichPest.HasPendingSet(df) && df.Ostrich.Hits == 0, "");
             OstrichPest.Settle(df);
