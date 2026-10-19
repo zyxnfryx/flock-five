@@ -93,6 +93,9 @@ namespace FlockFive.Editor
             Suite("build110-lightning-fire", Build110LightningFireTests.Run);
             Suite("build112-money", Build112MoneyFormatTests.Run);
             Suite("build89-payhead", Build89PayHeadTests.Run);
+            Suite("poker-back-caption-timing", PokerBackCaptionTimingTests.Run);
+            Suite("vip-name-gate", VipNameGateTests.Run);
+            Suite("pause-resume-tutorial", PauseResumeTutorialTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

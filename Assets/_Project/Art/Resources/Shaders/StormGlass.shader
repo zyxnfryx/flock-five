@@ -1,4 +1,4 @@
-// One bead on the screen glass. The quad and the color copy share pos01
+// One bead on the screen glass (a teardrop once gathered, point up). The quad and the color copy share pos01
 // (bottom-left, same as the sim). Inside the circle the sample is a
 // magnifying lens that crosses the center a little, so the garden behind the
 // drop is enlarged and slightly flipped. A thin rim and a glint sit on top.
@@ -75,9 +75,14 @@ Shader "FlockFive/StormGlass"
                 float2 rad = max(_Rad.xy, float2(1e-5, 1e-5));
                 float2 from = pos - _Bead.xy;
                 float2 n = from / rad;
-                float r = length(n);
-                float body = smoothstep(1.015, 0.96, r);
                 float splat = saturate(_Bead.w);
+                // Teardrop body (mirrors StormGlass.TearK): pointed top, round belly at the bottom.
+                // The impact splat stays a round disc; it gathers into the drop as splat -> 0.
+                float tearU = saturate((1.0 - n.y) * 0.5);
+                float tearK = lerp(1.0, pow(tearU, 0.8) * 1.12 + 0.04, 1.0 - splat);
+                float2 nt = float2(n.x / tearK, n.y);
+                float r = length(nt);
+                float body = smoothstep(1.015, 0.96, r);
                 // Specks arrive with w < 0. They get no glint, so a fading speck never leaves a white dot.
                 float glint = _Bead.w < -0.5 ? 0.0 : 1.0;
                 // Every highlight dies with the bead alpha, squared, so the last frames of a fade are plain glass.

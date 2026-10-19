@@ -5982,8 +5982,9 @@ namespace FlockFive
                     _hiveIntroLive = false;
                     _hiveIntroSaw = false;
                 }
-                NotePokerIntroLeft();
-                NoteDailyIntroLeft();
+                // b131: a heal reset must not stamp the lesson as done (only a real tap does).
+                NotePokerIntroLeft(false);
+                NoteDailyIntroLeft(false);
                 if (_bgLessonLive) EndBadgerLesson();
                 _gloveVis = false;
             }
@@ -6407,9 +6408,9 @@ namespace FlockFive
             NoteLessonDismiss(CoachStep.PokerIntro);
         }
 
-        void NotePokerIntroLeft()
+        void NotePokerIntroLeft(bool markSeen = true)
         {
-            if (_pokerIntroSaw) MarkPokerCoach();
+            if (markSeen && _pokerIntroSaw) MarkPokerCoach();
             _pokerIntro = false;
             _pokerIntroLive = false;
             _pokerIntroSaw = false;
@@ -6851,9 +6852,11 @@ namespace FlockFive
             NoteLessonDismiss(step);
         }
 
-        void NoteDailyIntroLeft()
+        // markSeen false: a heal reset (pause, focus) is not a completion. The pref stays 0 and the
+        // lesson re-arms at the next splash.
+        void NoteDailyIntroLeft(bool markSeen = true)
         {
-            if (_dailyIntroSaw) MarkDailyCoach();
+            if (markSeen && _dailyIntroSaw) MarkDailyCoach();
             _dailyIntro = false;
             _dailyIntroLive = false;
             _dailyIntroSaw = false;
@@ -6874,7 +6877,8 @@ namespace FlockFive
         {
             var band = SplashIntroBand(s);
             int hi = CaptionPx(Mathf.Max(18, Mathf.RoundToInt(34f * s)));
-            float maxW = band.width > 48f ? band.width : Mathf.Min(Screen.width * 0.72f, 420f * s);
+            // b131: never wider than the safe text width, so narrow iPhones keep the plate off the glass edge.
+            float maxW = AdoptResume.DailyCaptionMaxWidth(band.width > 48f ? band.width : Mathf.Min(Screen.width * 0.72f, 420f * s), Screen.width, Screen.height);
             // Floor 16 is in the key; the 32*s fallback height only matters on a miss.
             if (!CaptionFitHit(CapFitDaily, DailyIntroLine, maxW, hi, 16, out var size))
             {

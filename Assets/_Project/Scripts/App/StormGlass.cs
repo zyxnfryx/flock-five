@@ -203,11 +203,38 @@ namespace FlockFive
             return scale;
         }
 
+        // Teardrop silhouette. Mirrors the StormGlass shader. y runs -1 (belly) to +1 (point), up the glass.
+        public const float TearWide = 0.96f;
+        public const float TearLong = 1.2f;
+        public const float TearStretch = 0.24f; // total slide stretch at full tear (was 0.10)
+
+        // Width multiplier on the unit ellipse at y. 1 for a round splat, ~0 at the tip, widest low in the belly.
+        public static float TearK(float y, float splat)
+        {
+            if (y < -1f) y = -1f;
+            else if (y > 1f) y = 1f;
+            if (splat < 0f) splat = 0f;
+            else if (splat > 1f) splat = 1f;
+            float u = (1f - y) * 0.5f;
+            float tear = Mathf.Pow(u, 0.8f) * 1.12f + 0.04f;
+            return 1f + (tear - 1f) * (1f - splat);
+        }
+
+        // Half width of the drop at y in unit-ellipse space. Pointed top, round bottom.
+        public static float TearHalfWidth(float y, float splat)
+        {
+            if (y <= -1f || y >= 1f) return 0f;
+            return TearK(y, splat) * Mathf.Sqrt(1f - y * y);
+        }
+
         // The one draw form for a bead: a round heavy head that stretches into a teardrop as it picks up
         // speed, thins as it slides, and drags a tail up the glass. Pure, no allocation.
         public static void Form(Bead b, float scale, out float rx, out float ry, out float splat, out float tailPx)
         {
             Shape(b.Age, b.Radius, out rx, out ry, out splat);
+            // Teardrop: a gathered drop is a little taller and slimmer. The pointed top is cut in the shader.
+            rx *= 1f + (TearWide - 1f) * (1f - splat);
+            ry *= 1f + (TearLong - 1f) * (1f - splat);
             tailPx = 0f;
             if (b.Kind != Slide) return;
             float speed = b.Vy < 0f ? -b.Vy : b.Vy;
@@ -220,8 +247,10 @@ namespace FlockFive
             float tear = elong * sp;
             // Heavy round head, a little taller than wide, slimmer the longer it has run.
             float thin = 1f - 0.16f * Ease(b.Age - 0.6f, 2.4f) * sp;
-            rx *= thin * (1f - 0.05f * tear);
-            ry *= thin * (1f + 0.10f * tear);
+            rx *= thin * (1f - 0.08f * tear);
+            // Subtle stretch: width thins fully, but height only a little, so a running drop ends ~15% longer
+            // than the same drop at rest (it used to shrink slightly). Tied to the same tear/tail progress.
+            ry *= (1f - 0.06f * Ease(b.Age - 0.6f, 2.4f) * sp) * (1f + TearStretch * tear);
             tailPx = b.Radius * (0.45f + (big ? 4.2f : 3.4f) * tear) * (1f - splat);
         }
 

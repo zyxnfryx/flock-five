@@ -258,6 +258,8 @@ namespace FlockFive
         bool AvatarHomeOn()
         {
             if (_adoptLive) return false;
+            // b131: a resumed look step owns the bird until it is named, even before its turn comes.
+            if (_adoptStep == AdoptStep.Look) return false;
             if (LevelData.NextPlay < 1) return false;
             return AvatarAdopted();
         }
@@ -293,11 +295,20 @@ namespace FlockFive
         // Missing flag: an older save that already has a name is not prompted again.
         static bool AvatarNeedsName()
         {
-            int flag = PlayerPrefs.GetInt(AvatarNamedPref, -1);
-            if (flag == 1) return false;
-            if (flag == 0) return true;
-            return ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length == 0;
+            return NeedsNameFor(PlayerPrefs.GetInt(AvatarNamedPref, -1), PlayerPrefs.GetString(AvatarNamePref, ""));
         }
+
+        // Pure form of AvatarNeedsName so tests can cover it without touching PlayerPrefs.
+        public static bool NeedsNameFor(int namedFlag, string savedName)
+        {
+            if (namedFlag == 1) return false;
+            if (namedFlag == 0) return true;
+            return ClipAvatarName(savedName).Length == 0;
+        }
+
+        // The single shared check for the VIP rail button/badge: it stays out of the new-player
+        // intro (streak award, avatar reveal, banner) and appears once the name picker is done.
+        static bool VipRailNameGateOpen() => !AvatarNeedsName();
 
         static bool AvatarBowArt()
         {
@@ -388,6 +399,14 @@ namespace FlockFive
                 _birdSettledOnBranch = true;
                 return;
             }
+            var boot = AdoptResume.Plan(LevelData.NextPlay, AvatarAdopted(),
+                PlayerPrefs.GetInt(AvatarNamedPref, -1),
+                ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length > 0);
+            if (boot == AdoptBoot.ResumeLook)
+            {
+                ResumeAdoptLook();
+                return;
+            }
             if (AvatarAdopted())
             {
                 _birdSettledOnBranch = true;
@@ -395,6 +414,41 @@ namespace FlockFive
             }
             _adoptOwed = true;
             _birdSettledOnBranch = false;
+        }
+
+        // b131: a fresh process found a bird that was adopted but never named (the app was
+        // backgrounded mid-adoption and reclaimed). The scene is memory-only, so rebuild the look step:
+        // saved color and suggested name, bird on the wood, glove on it, name picker still required.
+        // AdoptHoldsQueue holds Daily, hive and poker until Done is pressed.
+        void ResumeAdoptLook()
+        {
+            var col = SavedAvatar();
+            int pick = (int)col;
+            if (pick < 0 || pick > 4) pick = 1;
+            _adoptOwed = true;
+            _adoptLive = false;
+            _adoptStep = AdoptStep.Look;
+            _adoptClock = 0f;
+            _adoptPick = pick;
+            _adoptCol = col;
+            _adoptName = SavedAvatarName();
+            _avatarCol = col;
+            _avatarPose = AvatarPose.GlovePointing;
+            _avatarLandGlove = false;
+            _avatarPerchHold = 0f;
+            _adoptGreetDone = true;
+            _adoptBirdR = default;
+            _birdSettledOnBranch = false;
+            _coachFade = 0f;
+            _gloveReady = false;
+            _gloveVis = false;
+            float s = DeviceFit.Ui();
+            var seed = HomeWanderBounds(s, HomeAvatarIcon(s)).center;
+            for (int i = 0; i < 5; i++)
+            {
+                _adoptHop[i] = 0f;
+                _adoptShown[i] = seed;
+            }
         }
 
         bool AdoptTurn()
@@ -424,7 +478,9 @@ namespace FlockFive
 #endif
             if (!AdoptTurn())
             {
-                if (_adoptLive && _adoptStep != AdoptStep.Settle)
+                // b131: a pause, an ad or the resume swallow holds the step (as Daily does), so the glove
+                // gate and the name picker stay up across a background trip.
+                if (_adoptLive && _adoptStep != AdoptStep.Settle && !HoldLiveLesson())
                 {
                     _adoptLive = false;
                     _gloveVis = false;
