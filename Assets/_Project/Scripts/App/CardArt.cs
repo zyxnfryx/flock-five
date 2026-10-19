@@ -681,11 +681,30 @@ namespace FlockFive
             return _ovalTex;
         }
 
-        static Texture2D _sheenTex;
-        static Texture2D SheenTex()
+        // Gentle glimmer: a soft diagonal band that drifts across the jewel oval, baked in a few frames
+        // (the oval mask is part of each frame, so the band is always clipped to the oval) and cross-faded.
+        public const int SheenFrames = 10;
+        public const float GlimmerPeriod = 3.4f;   // seconds per sweep+rest cycle (slow)
+        public const float GlimmerSweep = 0.45f;   // fraction of the cycle spent sweeping; the rest is calm
+        static readonly Texture2D[] _sheenTex = new Texture2D[SheenFrames];
+
+        // Band position 0..1 across the sweep, or -1 when resting / not animating. Pure, for tests.
+        public static float GlimmerPos(float t, int slot)
         {
-            if (_sheenTex != null) return _sheenTex;
+            if (t <= 0f) return -1f;
+            float cyc = Mathf.Repeat(t / GlimmerPeriod + slot * 0.37f, 1f);
+            return cyc < GlimmerSweep ? cyc / GlimmerSweep : -1f;
+        }
+
+        // The glimmer only runs while the game is in play: a live clock, not the static tier, no ad up, app focused.
+        public static bool GlimmerLive(float t) => t > 0f && CardQuality.Tier != CardTier.Static && !Ads.IsShowing && Application.isFocused;
+
+        static Texture2D SheenTex(int frame)
+        {
+            frame = Mathf.Clamp(frame, 0, SheenFrames - 1);
+            if (_sheenTex[frame] != null) return _sheenTex[frame];
             const int W = 64, H = 32;
+            float centre = Mathf.Lerp(0.05f, 1.19f, frame / (float)(SheenFrames - 1));
             var px = new Color32[W * H];
             for (int y = 0; y < H; y++)
                 for (int x = 0; x < W; x++)
@@ -693,13 +712,13 @@ namespace FlockFive
                     float u = (x + 0.5f) / W, v = (y + 0.5f) / H;
                     float dx = u * 2f - 1f, dy = v * 2f - 1f;
                     float mask = Mathf.Clamp01((1f - Mathf.Sqrt(dx * dx + dy * dy)) * 10f);
-                    float d = Mathf.Abs((u + (1f - v) * 0.45f) - 0.62f);   // diagonal band, lower-left to upper-right
+                    float d = Mathf.Abs((u + (1f - v) * 0.45f) - centre);   // diagonal band, lower-left to upper-right
                     float band = Mathf.Clamp01(1f - d / 0.12f);
                     band *= band * (3f - 2f * band);
                     px[y * W + x] = new Color32(255, 255, 255, B(band * 0.85f * mask));
                 }
-            _sheenTex = Make(px, W, H, "CardSheen");
-            return _sheenTex;
+            _sheenTex[frame] = Make(px, W, H, "CardSheen" + frame);
+            return _sheenTex[frame];
         }
 
         // Normal: amber. Holo: shifting prismatic. Inverse Rainbow: cycling rainbow. All get a specular glint.
@@ -717,19 +736,28 @@ namespace FlockFive
                 DrawGlow(new Rect(r.x - r.width * 0.30f, r.y - r.height * 0.9f, r.width * 1.6f, r.height * 2.8f), baseC, 0.45f);
             GUI.color = baseC;
             GUI.DrawTexture(r, oval, ScaleMode.StretchToFill, true);
-            // Fixed diagonal sheen, clipped to the oval by its own alpha. It never travels, so it can't read as a second oval;
-            // Holo/Inverse tint it with the complementary hue and let it breathe.
+            // Gentle glimmer sweep, only while the game is in play. Not in play (static grid, reduce motion, ad up,
+            // unfocused): no band at all, so there is never a frozen stripe on the jewel.
+            float gp = GlimmerLive(t) ? GlimmerPos(t, slot) : -1f;
+            if (gp >= 0f)
             {
                 Color sc = Color.white;
-                float breathe = 0.55f + 0.35f * Mathf.Sin(t * 1.8f + slot);
                 if (finish != BeeFinish.Normal)
                 {
                     sc = finish == BeeFinish.Holo ? Hue(0.80f - 0.16f * Mathf.Sin(t * 1.1f + slot)) : Hue(t * 0.30f + 0.5f + slot * 0.07f);
                     sc = Color.Lerp(sc, Color.white, 0.60f);
                 }
-                sc.a = finish == BeeFinish.Normal ? 0.45f : breathe;
-                GUI.color = sc;
-                GUI.DrawTexture(r, SheenTex(), ScaleMode.StretchToFill, true);
+                float fade = Mathf.Sin(gp * Mathf.PI);          // eases in and out at the ends of the sweep
+                sc.a = (finish == BeeFinish.Normal ? 0.45f : 0.60f) * fade;
+                float f = gp * (SheenFrames - 1);
+                int f0 = Mathf.Min((int)f, SheenFrames - 2);
+                float k = f - f0;
+                var a0 = sc; a0.a *= 1f - k;
+                var a1 = sc; a1.a *= k;
+                GUI.color = a0;
+                GUI.DrawTexture(r, SheenTex(f0), ScaleMode.StretchToFill, true);
+                GUI.color = a1;
+                GUI.DrawTexture(r, SheenTex(f0 + 1), ScaleMode.StretchToFill, true);
             }
             // specular glint: fixed spot upper-left, twinkles in size only
             float gs = r.height * 1.1f * (0.85f + 0.15f * Mathf.Sin(t * 4.5f + slot));

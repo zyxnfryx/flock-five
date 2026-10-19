@@ -89,8 +89,8 @@ namespace FlockFive
         }
 
         // b109: a finger pushed into jello. Own bank (Audio/Squish, five takes; squish_release is kept out of the
-        // tap bank), own no-immediate-repeat history, small random pitch, quiet gain. Falls back to the card-bump
-        // bank if the clips are missing.
+        // tap bank), own no-immediate-repeat history, small random pitch, quiet gain. Falls back to the single honey squish clip
+        // (then the synthesized squish) if the bank is missing; never to the card-bump knock.
         // Lead layer; DuckChirp (= 1, Bed not ducked); the Lead window still mutes Mid.
         public const float SquishGain = 0.60f;
         public const float SquishPitchLo = 0.96f, SquishPitchHi = 1.04f;
@@ -110,7 +110,10 @@ namespace FlockFive
                 for (int i = 0; i < all.Length; i++)
                     if (all[i] != null && !all[i].name.Contains("release")) tap.Add(all[i]);
             tap.Sort((x, y) => string.CompareOrdinal(x.name, y.name));
-            _squish = tap.Count > 0 ? tap.ToArray() : _cardBump;
+            if (tap.Count > 0) { _squish = tap.ToArray(); return _squish; }
+            // Never fall back to the card-bump knock: a honeycomb is wet. Use the single honey clip, else the synthesized squish.
+            var one = Resources.Load<AudioClip>("Audio/Honey/sfx_honey_squish");
+            _squish = new[] { one != null ? one : MakeSquish() };
             return _squish;
         }
 
