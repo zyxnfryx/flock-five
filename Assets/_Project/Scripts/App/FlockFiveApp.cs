@@ -3656,6 +3656,8 @@ namespace FlockFive
                 return;
             }
 #endif
+            // A tap skips the season scene (it does not eat the tap).
+            if (SeasonScene.Live && Pressed(out var seasonTap)) SeasonCrossfade.SkipLive();
             // Desert welcome only. Birds stay put; restart still works. Other seasons do not hold.
             if (SeasonReveal.HoldsPlay)
             {
@@ -5103,6 +5105,7 @@ namespace FlockFive
             int owed = BadgerSave.Pending;
             if (owed > 0)
             {
+                SeasonCrossfade.FinishLive();
                 yield return BadgerClearLeap();
                 if (_restarting || _splash)
                 {

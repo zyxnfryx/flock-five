@@ -97,11 +97,15 @@ namespace FlockFive
 
         // edge runs from -feather (fully shown) to 1+feather (gone).
         // Horizontal reveals from the left. Vertical reveals from the top.
-        public void SetWipe(float edge, float feather, bool horizontal)
+        public void SetWipe(float edge, float feather, bool horizontal) =>
+            SetWipe(edge, feather, horizontal ? SeasonScene.WipeFromSide : SeasonScene.WipeFromTop);
+
+        // mode: SeasonScene.WipeFromTop / FromSide / FromBottom / FromHorizon.
+        public void SetWipe(float edge, float feather, int mode)
         {
             _wipe.x = edge;
             _wipe.y = feather;
-            _wipe.z = horizontal ? 1f : 0f;
+            _wipe.z = mode;
             _wipe.w = 1f;
             if (_on) Push();
         }

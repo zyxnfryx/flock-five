@@ -99,6 +99,7 @@ namespace FlockFive.Editor
             Suite("coach-arrow-shape", CoachArrowShapeTests.Run);
             Suite("build115-ostrich-neck", Build115OstrichNeckTests.Run);
             Suite("build115-ostrich-ground", Build115OstrichGroundTests.Run);
+            Suite("season-scene", SeasonSceneTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

@@ -707,6 +707,17 @@ namespace FlockFive
             _host.StartCoroutine(DesertChing());
         }
 
+        // Season scene sting (1.0 s into the scene). CLEAN HOOK for Musical Producer's custom stings:
+        // set SeasonStingHook to a handler that plays its own clip and returns true; returning false
+        // (or leaving it null) falls back to the existing quiet lead whoosh from SeasonArrive.
+        public static System.Func<GardenScene, bool> SeasonStingHook;
+
+        public static void SeasonSting(GardenScene scene)
+        {
+            if (SeasonStingHook != null && SeasonStingHook(scene)) return;
+            SeasonArrive(false);
+        }
+
         static System.Collections.IEnumerator DesertChing()
         {
             yield return PlayClock.Wait(0.62f);
