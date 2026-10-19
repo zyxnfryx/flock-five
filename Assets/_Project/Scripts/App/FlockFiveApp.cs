@@ -3866,6 +3866,17 @@ namespace FlockFive
                     yield return OstrichFight();
                     if (gen != _motionGen) yield break;
                 }
+                else
+                {
+                    // The turn did not start. A completed set must still be counted and collected.
+                    GardenSolve.Drain(_board);
+                }
+                // A set the turn left unprocessed is processed now, never left sitting on its limb.
+                if (OstrichPest.HasPendingSet(_board))
+                {
+                    yield return OstrichFight();
+                    if (gen != _motionGen) yield break;
+                }
             }
             SyncAll();
 

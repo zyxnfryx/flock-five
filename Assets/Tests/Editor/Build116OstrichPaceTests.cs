@@ -83,6 +83,34 @@ namespace FlockFive.Editor
             GardenSolve.AfterMove(b, log, out _);
             Check("one-turn-at-most-pecks", log.Count <= 2 && b.Ostrich.PeckIndex == 2, "pecks " + log.Count + " idx " + b.Ostrich.PeckIndex);
 
+            // --- set completion is always detected, collected, counted ---
+            // 1) completed by the player's move, then the ostrich turn: counted as a hit, set stays (alive), pecks follow
+            var sc = SetBoard(0, 5);
+            var lg = new System.Collections.Generic.List<PeckHit>();
+            GardenSolve.AfterMove(sc, lg, out _);
+            Check("set-after-move-counts-hit", sc.Ostrich.Hits == 1 && (sc.Ostrich.Bonked & 1UL) != 0 && !HasPending(sc), "hits " + sc.Ostrich.Hits);
+            // 2) the stale-bonk bug: set bonked, player breaks it, completes it again on the same limb -> counts again
+            sc.Branches[0].Birds.RemoveAt(sc.Branches[0].Count - 1); sc.Branches[0].Shrouded.RemoveAt(sc.Branches[0].Shrouded.Count - 1);
+            OstrichPest.Settle(sc); // broken set forgets its bonk
+            Check("broken-set-forgets-bonk", (sc.Ostrich.Bonked & 1UL) == 0, "bonked " + sc.Ostrich.Bonked);
+            sc.Branches[0].Birds.Add(new Bird(BirdColor.Gold)); sc.Branches[0].Shrouded.Add(false);
+            Check("recompleted-set-is-pending", OstrichPest.HasPendingSet(sc), "");
+            GardenSolve.AfterMove(sc, lg, out _);
+            Check("recompleted-set-counts-hit", sc.Ostrich.Hits == 2 && !OstrichPest.HasPendingSet(sc), "hits " + sc.Ostrich.Hits);
+            // 3) completion deferred during the turn, processed after: settle after a bare board mutation picks it up
+            var df = SetBoard(0, 4);
+            df.Ostrich.PecksPerMove = 0; // keep the 4 in place; the point is the late completion
+            var fl = new System.Collections.Generic.List<PeckHit>();
+            GardenSolve.AfterMove(df, fl, out _); // turn with no set
+            df.Branches[0].Birds.Add(new Bird(BirdColor.Gold)); df.Branches[0].Shrouded.Add(false); // completes while the turn plays
+            Check("deferred-set-pending", OstrichPest.HasPendingSet(df) && df.Ostrich.Hits == 0, "");
+            OstrichPest.Settle(df);
+            Check("deferred-set-processed", df.Ostrich.Hits == 1 && !OstrichPest.HasPendingSet(df), "hits " + df.Ostrich.Hits);
+            // 4) the third hit collects the sets and the ostrich leaves
+            var fin = SetBoard(2, 5);
+            GardenSolve.AfterMove(fin, null, out _);
+            Check("third-hit-collects", !fin.Ostrich.Alive && fin.Branches[0].Broken, "");
+
             // --- relocation is animated, not instant ---
             var a = new Vector3(-2f, 1f, 0f);
             var c = new Vector3(3f, -1f, 0f);
@@ -112,11 +140,28 @@ namespace FlockFive.Editor
             Check("tap-gated", app.Contains("if (_turnGate.Busy)") && app.Contains("TryBeginMove()"), "");
             Check("fight-after-resolve", app.Contains("while (MoveStillAnimating())") && app.Contains("_turnGate.TryBeginTurn(_turnTicket")
                 && app.Contains("yield return OstrichFight();"), "");
+            Check("pending-set-processed", app.Contains("OstrichPest.HasPendingSet(_board)") && app.Contains("GardenSolve.Drain(_board);"), "");
             Check("gate-reset-on-restart", app.Split(new[] { "_turnGate.Reset();" }, System.StringSplitOptions.None).Length - 1 >= 2, "");
             Check("fight-serial-flights", fight.Contains("OstrichTurn.PeckGapSec") && fight.Contains("OstrichTurn.FlightSec")
                 && !fight.Contains("srcStack.Count != h.FromCount"), "");
 
             Debug.Log(fail == 0 ? "build116-pace tests DONE " + pass + "/" + (pass + fail) : "build116-pace tests FAIL " + fail + " failed, " + pass + " passed");
+        }
+
+        static bool HasPending(Board b) => OstrichPest.HasPendingSet(b);
+
+        // Limb 0: n gold (5 = complete). Limb 1: teal pair. Limb 2: empty room to peck into.
+        static Board SetBoard(int hits, int n)
+        {
+            var b = new Board();
+            b.SetFeeders(3);
+            b.Live[0] = BirdColor.Gold; b.Live[1] = BirdColor.Ruby; b.Live[2] = BirdColor.Teal;
+            var l0 = new BranchState(); var l1 = new BranchState();
+            for (int i = 0; i < n; i++) { l0.Birds.Add(new Bird(BirdColor.Gold)); l0.Shrouded.Add(false); }
+            for (int i = 0; i < 2; i++) { l1.Birds.Add(new Bird(BirdColor.Teal)); l1.Shrouded.Add(false); }
+            b.Branches.Add(l0); b.Branches.Add(l1); b.Branches.Add(new BranchState());
+            b.Ostrich = new OstrichState { PeckSeed = 3, PecksPerMove = 2, Hits = hits };
+            return b;
         }
     }
 }

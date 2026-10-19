@@ -87,6 +87,37 @@ namespace FlockFive
 
     public static class OstrichPest
     {
+        // Root cause of the "five in a row just sits there" report: Bonked remembers a limb forever. A
+        // bonked set stays on its limb while the ostrich lives; if the player breaks it up and later
+        // completes a set on that same limb, the stale bit made Bonk/Settle skip it: no hit, no collect.
+        // A limb that is no longer a full set forgets its bonk, so the next completion counts.
+        public static void ForgetBrokenSets(Board b)
+        {
+            var o = b?.Ostrich;
+            if (o == null || o.Bonked == 0) return;
+            for (int i = 0; i < b.Branches.Count && i < 64; i++)
+            {
+                if ((o.Bonked & (1UL << i)) == 0) continue;
+                var br = b.Branches[i];
+                if (br != null && !br.Broken && !br.IsFullMatch(out _)) o.Bonked &= ~(1UL << i);
+            }
+        }
+
+        // True when a living ostrich has a complete set that has not been counted yet.
+        public static bool HasPendingSet(Board b)
+        {
+            var o = b?.Ostrich;
+            if (o == null || !o.Alive) return false;
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var br = b.Branches[i];
+                if (br == null || br.Broken || !br.IsFullMatch(out _)) continue;
+                if (i < 64 && (o.Bonked & (1UL << i)) != 0) continue;
+                return true;
+            }
+            return false;
+        }
+
         // One completed set, any live feeder. The branch stays. The third hit
         // flees and the normal drain collects every ready set.
         public static void Bonk(Board b, int branch, int slot)
@@ -95,6 +126,7 @@ namespace FlockFive
             var o = b.Ostrich;
             if (o == null || !o.Alive) return;
             if ((uint)branch >= (uint)b.Branches.Count) return;
+            ForgetBrokenSets(b);
             if (branch < 64 && (o.Bonked & (1UL << branch)) != 0) return;
             var br = b.Branches[branch];
             if (br == null || br.Broken || !br.IsFullMatch(out _)) return;
@@ -110,6 +142,7 @@ namespace FlockFive
         {
             if (b == null) return;
             var o = b.Ostrich;
+            ForgetBrokenSets(b);
             if (o != null && o.Alive)
             {
                 for (int i = 0; i < b.Branches.Count && o.Alive; i++)
