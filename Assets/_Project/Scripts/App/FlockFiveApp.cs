@@ -19435,6 +19435,13 @@ namespace FlockFive
         IEnumerator WatchGiftBody()
         {
             bool keep = _keepStreak;
+            // A freeze continue with every gift spent would play an ad that opens nothing,
+            // thaw, re-freeze and re-offer forever (b116 L51). Leave the card on Retry.
+            if (!keep && (_frozen || _freezeOffer) && !BonusBranches.ContinueOffered(_board, _bonusOn))
+            {
+                AdLog.Add("freeze continue skipped: no gift branch left to open");
+                yield break;
+            }
             // Release has no mock movie. The grant is the reward callback, which
             // does not wait on GiftFace.Movie or GiftFace.Wait.
 #if FF_ADS_DEV
@@ -19724,7 +19731,9 @@ namespace FlockFive
             string head = AdRetry.Active && !_keepStreak
                 ? AdRetry.CurrentLine
                 : (_freezeOffer
-                    ? "No more moves, you're frozen!"
+                    ? (BonusBranches.ContinueOffered(_board, _bonusOn)
+                        ? "No more moves, you're frozen!"
+                        : "No more moves! Tap Retry to try again")
                     : "Watch AD for an extra branch");
             // Inset past the screw bases so the gift headline never sits under a bulb.
             // The freeze sign has no bulbs, so its line uses that same inset on every side.
@@ -19780,7 +19789,9 @@ namespace FlockFive
             if (_freezeOffer)
             {
                 bool retryReady = retryU > 0.62f;
-                bool contReady = contU > 0.62f;
+                // No gift left to open: Retry only. The continue ad would pay nothing (b116 L51).
+                bool contLive = BonusBranches.ContinueOffered(_board, _bonusOn);
+                bool contReady = contLive && contU > 0.62f;
                 var retryDisc = FlowerDisc(retryRest, 0f);
                 float pad = 8f * s;
                 var retryHit = new Rect(retryDisc.x - pad, retryDisc.y - pad * 0.35f, retryDisc.width + pad * 2f, retryDisc.height + pad * 0.7f);
@@ -19801,7 +19812,7 @@ namespace FlockFive
                 if (!contHeld && contU >= 1f)
                     pulse = 1f + 0.028f * Mathf.Sin(t * 2.5f);
                 float contPop = PopupMotion.PopScale(contU) * pulse;
-                if (contPop > 0.04f)
+                if (contLive && contPop > 0.04f)
                     DrawFreezeWatch(cont, contHeld, s, contPop);
                 if (GuiPaint()) SparkleFx.DrawDrift(frostA);
                 if (retry)
