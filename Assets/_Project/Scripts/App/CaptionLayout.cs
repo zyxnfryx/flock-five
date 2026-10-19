@@ -338,7 +338,7 @@ namespace FlockFive
 
         public const string VipPitchLine = "Tap VIP anytime to drop ads.";
 
-        public const string AlbumUpgradeLine = "Upgrade adds honey for 1000 coins.";
+        public const string AlbumUpgradeLine = "Your first upgrade is free!\nTap Upgrade.";
 
         public const string AdoptGreetLine = "Look, a bird followed you home!";
 

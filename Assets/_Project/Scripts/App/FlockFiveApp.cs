@@ -17095,6 +17095,8 @@ namespace FlockFive
             if (_hiveInspect < 0 || !AlbumInspectReady()) return;
             if (Hive.CountOfSlot(_hiveInspect) <= 0) return;
             if (!Hive.UpgradeRoom(_hiveInspect)) return;
+            // The lesson promises a free first upgrade; a player who already has one skips it.
+            if (!Hive.FreeUpgradeAvailable) return;
             BeginUpgradeTutor();
         }
 
@@ -17840,7 +17842,8 @@ namespace FlockFive
             bool room = Hive.UpgradeRoom(slot);
             bool maxxed = !room;
             bool can = room && Hive.CanUpgrade(slot);
-            string line = maxxed ? MaxxedWord : "Upgrade  " + Money.Format(Hive.UpgradeCost);
+            bool freeUp = Hive.FreeUpgradeAvailable; // #193: the first upgrade is free
+            string line = maxxed ? MaxxedWord : freeUp ? "Upgrade  FREE" : "Upgrade  " + Money.Format(Hive.UpgradeCost);
             var measure = GuiPool.Label(GuiSlot.FlipHintMeasure);
             measure.fontStyle = FontStyle.Bold;
             measure.wordWrap = false;
@@ -18469,14 +18472,7 @@ namespace FlockFive
                     CardArt.ResetInk();
                 }
                 if (themed) CardArt.DrawJewel(r, finish, inspectView && !capturing && CardQuality.Tier != CardTier.Static ? AdPause.Unscaled : 0f, i);
-                if (!showBack && n > 1)
-                {
-                    var cnt = GuiPool.Label(GuiSlot.AlbumCount);
-                    cnt.fontStyle = FontStyle.Bold;
-                    cnt.alignment = TextAnchor.UpperRight;
-                    cnt.fontSize = Mathf.Max(inspectView ? 22 : Mathf.RoundToInt(14f * s), Mathf.RoundToInt((inspectView ? 20f : 14f) * s));
-                    StampOutlined(new Rect(face.xMax - 56f * s, face.y + 4f * s, 52f * s, inspectView ? 32f * s : 20f * s), "×" + n, cnt, new Color(0.16f, 0.07f, 0.02f), inspectView ? 2 : 1, 1);
-                }
+                // #193: no xN count badge on the card.
                 if (Hive.IsRareKind(kindIx))
                     DrawRarePill(face, n, showBack, inspectView, s);
             }
