@@ -10492,7 +10492,7 @@ namespace FlockFive
             DrawBadgerSitter(visual.y - rest.y);
             StartupTrace.Lap("L.Level");
             var disc = PushButton.Follow(FlowerDisc(rest, 0f), rest, visual, GuiPixels());
-            DrawFlowerCaption(disc, ease, number);
+            DrawFlowerCaption(disc, ease, number, LevelInkCeiling(_avatarPlateR, disc, s));
             NoteLevelDrawn(gates);
             return fired;
         }
@@ -10840,7 +10840,7 @@ namespace FlockFive
             return stackY + stackH * 0.52f;
         }
 
-        static void DrawFlowerCaption(Rect disc, string ease, int number)
+        static void DrawFlowerCaption(Rect disc, string ease, int number, float inkCeiling = float.NegativeInfinity)
         {
             bool hasEase = !string.IsNullOrEmpty(ease);
             // LEVEL over joke as one field, biased down off the top rim.
@@ -10940,7 +10940,7 @@ namespace FlockFive
             int jokeLines = Mathf.Max(1, Mathf.RoundToInt((textH - joke.padding.vertical) / jokeLineH));
             float lvLineH = lv.lineHeight > 1f ? lv.lineHeight : lv.fontSize * InkLineFrac;
             float lift = LevelStackLift(disc, lvR.yMax, lv.padding.bottom, lvLineH, lv.fontSize,
-                y, joke.padding.top, jokeLineH, jokePx, jokeLines);
+                y, joke.padding.top, jokeLineH, jokePx, jokeLines, inkCeiling);
             lvR.y -= lift;
             y -= lift;
             StampBannerText(lvR, level, lv, 1f, true);
@@ -10958,7 +10958,22 @@ namespace FlockFive
         public const float InkCapFrac = 0.716f;
         public const float InkLineFrac = 1.149f;
         // The lift never moves the stack more than this share of the disc (up) or StackDropMaxFrac (down).
-        public const float StackLiftMaxFrac = 0.08f;
+        // b133.1: was 0.08, which stopped a wrapped (two-line) joke 15-24 px short of centre; the name
+        // plate ceiling below is now the real limit, this is only a sanity bound.
+        public const float StackLiftMaxFrac = 0.15f;
+        // b133.1 (Brandon): the raised ink never comes closer than this (x s) under the home bird's
+        // name plate. Same 8 x s gap the perch keeps elsewhere (PlaceHomeBranch, AvatarRailShift).
+        public const float PlateInkClearPt = 8f;
+
+        // GUI y the stack's ink top may not rise above: the live name plate's bottom plus the clear
+        // gap, when the plate sits over the disc. NegativeInfinity (no limit) when there is no plate.
+        public static float LevelInkCeiling(Rect plate, Rect disc, float s)
+        {
+            if (plate.width <= 2f || plate.height <= 2f) return float.NegativeInfinity;
+            if (plate.xMax <= disc.xMin || plate.xMin >= disc.xMax) return float.NegativeInfinity;
+            if (s < 1f) s = 1f;
+            return plate.yMax + PlateInkClearPt * s;
+        }
         public const float StackDropMaxFrac = 0.02f;
 
         // Ink box of the stacked LEVEL + joke, in GUI y: LEVEL cap top to the joke's last baseline.
@@ -10972,9 +10987,12 @@ namespace FlockFive
         }
 
         // How far (px, + is up) DrawFlowerCaption lifts the stack so its ink centre sits on the
-        // face centre (disc.y + FaceMidFrac * disc.height). Clamped to a small band of the disc.
+        // face centre (disc.y + FaceMidFrac * disc.height). Clamped to a band of the disc, then
+        // capped so the ink top stays at or below inkCeiling (name plate + gap): centre if there is
+        // room, otherwise rise only as far as the plate allows (and drop if it already crowds it).
         public static float LevelStackLift(Rect disc, float lvBottom, float lvPadBottom, float lvLineH, int lvPx,
-            float jokeTop, float jokePadTop, float jokeLineH, int jokePx, int jokeLines)
+            float jokeTop, float jokePadTop, float jokeLineH, int jokePx, int jokeLines,
+            float inkCeiling = float.NegativeInfinity)
         {
             if (disc.height < 1f) return 0f;
             LevelStackInk(lvBottom, lvPadBottom, lvLineH, lvPx, jokeTop, jokePadTop, jokeLineH, jokePx, jokeLines,
@@ -10984,6 +11002,7 @@ namespace FlockFive
             float down = disc.height * StackDropMaxFrac;
             if (lift > up) lift = up;
             if (lift < -down) lift = -down;
+            if (!float.IsNegativeInfinity(inkCeiling) && top - lift < inkCeiling) lift = top - inkCeiling;
             return lift;
         }
 
