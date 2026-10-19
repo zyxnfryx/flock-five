@@ -100,6 +100,7 @@ namespace FlockFive.Editor
             Suite("build115-ostrich-neck", Build115OstrichNeckTests.Run);
             Suite("build115-ostrich-ground", Build115OstrichGroundTests.Run);
             Suite("build116-ostrich-pace", Build116OstrichPaceTests.Run);
+            Suite("build117-pest-seat", Build117PestSeatTests.Run);
             Suite("build119-collection-banner", Build119CollectionBannerTests.Run);
             Suite("season-scene", SeasonSceneTests.Run);
             Suite("glove-travel", GloveTravelTests.Run);
