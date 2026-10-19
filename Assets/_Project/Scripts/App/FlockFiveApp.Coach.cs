@@ -101,7 +101,25 @@ namespace FlockFive
         public static Vector2 GloveEntryPoint(Vector2 rest, Vector2 aim, Vector2 away, float dh)
         {
             var far = rest + away * (dh * 0.9f);
-            return aim + (far - aim) * GloveEntryScale;
+            return GloveScaleTravel(aim + (far - aim) * GloveEntryScale, aim, dh);
+        }
+        // b125 (Brandon QA): tutorial gloves still began on the far side of the screen. THE shared tunable:
+        // every glove start (angled entry and the side/perch start) keeps this share of its previous
+        // start-to-target distance. 0.5 = half the travel. Raise toward 1 to lengthen, never above 1.
+        public const float GloveTravelScale = 0.5f;
+        // The start never sits closer to the fingertip target than this many hand-heights (the hand body
+        // trails away from the tip, so the palm stays off the target). Never lengthens a short start.
+        public const float GloveMinStartHands = 0.4f;
+        // Pure: pull `start` toward `aim` on the same line (so the side the glove enters from is kept).
+        public static Vector2 GloveScaleTravel(Vector2 start, Vector2 aim, float dh)
+        {
+            var d = start - aim;
+            float len = d.magnitude;
+            if (len < 0.0001f) return start;
+            float scale = Mathf.Clamp01(GloveTravelScale);
+            float floor = Mathf.Min(len, GloveMinStartHands * dh);
+            float target = Mathf.Max(len * scale, floor);
+            return aim + d * (target / len);
         }
         // How far above the target the wind-up perch sits, in GUI pixels (y down).
         static float GloveRise(float s) => Mathf.Max(28f * s, GloveDh(s) * 0.34f);
@@ -1802,6 +1820,7 @@ namespace FlockFive
             float len = d.magnitude;
             var p = rest;
             if (len > cap && len > 0.0001f) p = aim + d * (cap / len);
+            p = GloveScaleTravel(p, aim, dh);
             float pad = dh * 0.42f;
             float x0 = safe.xMin + pad, x1 = safe.xMax - pad, y0 = safe.yMin + pad, y1 = safe.yMax - pad;
             if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
@@ -1815,7 +1834,16 @@ namespace FlockFive
         Vector2 GloveNearStart(Vector2 rest, Vector2 aim, float s, float ang, bool mirror)
         {
             var near = GloveNearStartPoint(rest, aim, s, CoachSafeGui(8f * s));
-            if (GloveHitsAdoptBird(near, ang, s, mirror) && !GloveHitsAdoptBird(rest, ang, s, mirror)) return rest;
+            if (GloveHitsAdoptBird(near, ang, s, mirror) && !GloveHitsAdoptBird(rest, ang, s, mirror))
+            {
+                // Step back out along the same line only as far as needed to clear the bird (not all the way to rest).
+                for (int i = 1; i <= 6; i++)
+                {
+                    var q = Vector2.Lerp(near, rest, i / 6f);
+                    if (!GloveHitsAdoptBird(q, ang, s, mirror)) return q;
+                }
+                return rest;
+            }
             return near;
         }
 
