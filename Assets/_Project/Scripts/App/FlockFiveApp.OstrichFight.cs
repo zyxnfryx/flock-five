@@ -66,12 +66,20 @@ namespace FlockFive
                 if ((uint)h.From >= (uint)nb || (uint)h.To >= (uint)nb) continue;
                 var srcStack = stacks[h.From];
                 var to = stacks[h.To];
-                // A collect or sync moved things under us: leave this bird to SyncAll.
-                if (srcStack.Count != h.FromCount || to.Count != h.ToCount || srcStack.Count == 0) continue;
+                // Never teleport: if a stack drifted, still glide the bird that is on the limb's tip.
+                // Only an empty source limb is left to SyncAll.
+                if (srcStack.Count == 0) continue;
                 var sr = srcStack[srcStack.Count - 1];
                 if (sr == null) continue;
+                // One relocation at a time: the previous bird lands (plus a short beat) before the next
+                // wind-up, so the flock never lurches and no two flights overlap.
+                if (k > 0)
+                {
+                    float settleAt = lastLand + OstrichTurn.PeckGapSec;
+                    while (Time.time < settleAt) { if (gen != _motionGen) { ReleaseFight(held); yield break; } yield return null; }
+                }
                 if (landAt.TryGetValue(sr, out float until))
-                    while (Time.time < until) { if (gen != _motionGen) yield break; yield return null; }
+                    while (Time.time < until) { if (gen != _motionGen) { ReleaseFight(held); yield break; } yield return null; }
                 srcStack.RemoveAt(srcStack.Count - 1);
                 to.Add(sr);
                 var dstView = _garden.Branches[h.To];
@@ -93,7 +101,7 @@ namespace FlockFive
                 var dest = dstView.SeatWorld(h.ToCount)
                     + dstView.transform.TransformVector(new Vector3(0f, BranchView.RestLift, 0f));
                 StartCoroutine(StartleThenFly(sr, away, dest, dstView.FromRight, dstView, 0, true));
-                float flight = StartleSec + FlockRedistribute.Duration(0);
+                float flight = StartleSec + OstrichTurn.FlightSec;
                 landAt[sr] = Time.time + flight;
                 lastLand = Mathf.Max(lastLand, Time.time + flight);
                 while (mark.Striking)

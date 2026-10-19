@@ -771,6 +771,7 @@ namespace FlockFive
             _gardenScoring = false;
             _gardenStampAt = -1f;
             _collectDepth = 0;
+            _turnGate.Reset();
             GardenFit.ClearBusy();
             _leafIntro = false;
             PestSchedule.SetTutorialPause(false);
@@ -853,6 +854,7 @@ namespace FlockFive
             ClearComboShows();
             _collecting = false;
             _collectDepth = 0;
+            _turnGate.Reset();
             _gardenScoring = false;
             EndPest();
             _locked.Clear();
@@ -3763,6 +3765,13 @@ namespace FlockFive
             }
             if (_board.CanMove(_sel, hit, out _))
             {
+                // Ostrich gardens: one move at a time. While the last move and the ostrich's answer
+                // are playing, a second move is refused (the pick stays) so turns can never stack.
+                if (_turnGate.Busy)
+                {
+                    _garden.Branches[hit].Shake();
+                    return;
+                }
                 StartCoroutine(DoMove(_sel, hit));
                 return;
             }
@@ -3790,7 +3799,28 @@ namespace FlockFive
                 Sfx.Chirp(_board.Branches[hit].Tip.Value.Color);
         }
 
+        // Gate for the ostrich gardens (see OstrichTurnGate). Idle on every other garden.
+        readonly OstrichTurnGate _turnGate = new OstrichTurnGate();
+        int _turnTicket;
+
         IEnumerator DoMove(int from, int to)
+        {
+            bool gated = _board != null && _board.Ostrich != null && _board.Ostrich.Alive;
+            int ticket = 0;
+            if (gated)
+            {
+                ticket = _turnGate.TryBeginMove();
+                if (ticket == 0) yield break; // a move is already resolving: no banking
+                _turnTicket = ticket;
+            }
+            try { yield return DoMoveCore(from, to); }
+            finally { if (ticket != 0) _turnGate.End(ticket); }
+        }
+
+        // The player's move has fully resolved: hop landed, nothing else in the air.
+        bool MoveStillAnimating() => _collecting || _collectDepth > 0 || GardenFit.Busy;
+
+        IEnumerator DoMoveCore(int from, int to)
         {
             int gen = _motionGen;
             _garden.Branches[from].SetReady(false);
@@ -3817,9 +3847,25 @@ namespace FlockFive
             if (_board.Ostrich != null && _board.Ostrich.Alive)
             {
                 // The views catch up to the hop, then the ostrich's pecks are played, not teleported.
+                // He waits until the move is fully resolved, then takes exactly one turn.
                 SyncAll();
-                yield return OstrichFight();
-                if (gen != _motionGen) yield break;
+                while (MoveStillAnimating())
+                {
+                    if (gen != _motionGen) yield break;
+                    yield return null;
+                }
+                float beat = 0f;
+                while (beat < OstrichTurn.TurnDelaySec)
+                {
+                    if (gen != _motionGen) yield break;
+                    beat += Time.deltaTime;
+                    yield return null;
+                }
+                if (_turnGate.TryBeginTurn(_turnTicket, MoveStillAnimating()))
+                {
+                    yield return OstrichFight();
+                    if (gen != _motionGen) yield break;
+                }
             }
             SyncAll();
 
