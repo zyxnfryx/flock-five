@@ -39,10 +39,19 @@ namespace FlockFive
                 if (board.Branches[i].IsFullMatch(out var c)) fullBefore[i] = c;
 
             var log = new List<PeckHit>();
+            ulong bonkedBefore = board.Ostrich.Bonked;
+            int hitsBefore = board.Ostrich.Hits;
             GardenSolve.AfterMove(board, log, out int finale);
+            // Sets that landed a hit on this move, in limb order. Each one plays its own hit below.
+            var hitSets = new List<int>();
+            ulong newBits = board.Ostrich.Bonked & ~bonkedBefore;
+            for (int i = 0; i < nb && i < 64; i++)
+                if ((newBits & (1UL << i)) != 0) hitSets.Add(i);
             if (mark != null) mark.NotePecks(board.Ostrich.PeckIndex);
 
             bool died = !board.Ostrich.Alive;
+            // He stays put (no daze/flee from Sync) until the last hit has landed; then he exits.
+            if (died && mark != null) mark.HoldFlee = true;
             var held = new HashSet<int>();
             void Hold(int i)
             {
@@ -55,6 +64,7 @@ namespace FlockFive
                 for (int i = 0; i < nb; i++)
                     if (fullBefore[i].HasValue && board.Branches[i].Broken) Hold(i);
             Hold(finale);
+            for (int i = 0; i < hitSets.Count; i++) Hold(hitSets[i]);
 
             _ostrichFight = true;
             var landAt = new Dictionary<SpriteRenderer, float>();
@@ -111,44 +121,21 @@ namespace FlockFive
                 }
             }
 
-            // Last hit with no peck: strike the set that landed it before the ostrich leaves.
-            if (finale >= 0 && mark != null && finale < _garden.Branches.Length && _garden.Branches[finale] != null)
+            // Every completed set hits the ostrich: its birds fly up one after another, each lands an impact,
+            // then they fly back and reseat. The branch does not break here.
+            int hitNo = hitsBefore;
+            for (int k = 0; k < hitSets.Count && mark != null; k++)
             {
-                var fv = _garden.Branches[finale];
-                SpriteRenderer tip = null;
-                for (int s = BranchState.Cap - 1; s >= 0 && tip == null; s--)
-                    if (fv.Birds[s] != null && fv.Birds[s].enabled) tip = fv.Birds[s];
-                if (tip != null)
-                {
-                    SfxLibrary.Honk();
-                    mark.BeginStrike(tip.transform.position + Vector3.up * 0.05f);
-                    while (mark.Striking && mark.StrikeTime < OstrichStrike.Contact)
-                    {
-                        if (gen != _motionGen) { ReleaseFight(held); yield break; }
-                        yield return null;
-                    }
-                    var col = fullBefore[finale] ?? BirdColor.Ruby;
-                    Impact(tip.transform.position, col);
-                    var startle = new List<SpriteRenderer>();
-                    for (int s = 0; s < BranchState.Cap; s++)
-                        if (fv.Birds[s] != null && fv.Birds[s].enabled) startle.Add(fv.Birds[s]);
-                    Vector3 from0 = mark.Aim.position;
-                    int slot = SlotOf(liveBefore, col);
-                    for (int s = 0; s < startle.Count; s++)
-                    {
-                        var away = startle[s].transform.position - from0;
-                        away.z = 0f;
-                        if (away.sqrMagnitude < 1e-4f) away = Vector3.down;
-                        StartCoroutine(StartleThenFly(startle[s], away.normalized, FeederMouth(slot), fv.FromRight, null, s, true));
-                        lastLand = Mathf.Max(lastLand, Time.time + StartleSec + FlockRedistribute.Duration(s));
-                    }
-                    finale = -2; // handled
-                    while (mark.Striking)
-                    {
-                        if (gen != _motionGen) { ReleaseFight(held); yield break; }
-                        yield return null;
-                    }
-                }
+                hitNo++;
+                int bi = hitSets[k];
+                yield return OstrichHit(bi, hitNo, fullBefore[bi] ?? BirdColor.Ruby, gen);
+                if (gen != _motionGen) { if (mark != null) mark.HoldFlee = false; ReleaseFight(held); yield break; }
+            }
+            if (mark != null && died)
+            {
+                // Third hit: a staggering, flustered exit off screen with a feather puff. Branches break after.
+                yield return OstrichExit(mark, gen);
+                if (gen != _motionGen) { ReleaseFight(held); yield break; }
             }
 
             // The other cleared sets fly to their feeder rather than blinking out.
@@ -157,7 +144,6 @@ namespace FlockFive
                 for (int i = 0; i < nb; i++)
                 {
                     if (!fullBefore[i].HasValue || !board.Branches[i].Broken) continue;
-                    if (finale == -2 && i == board.Ostrich.LastBonkBranch) continue;
                     var v = i < _garden.Branches.Length ? _garden.Branches[i] : null;
                     if (v == null) continue;
                     int slot = SlotOf(liveBefore, fullBefore[i].Value);
@@ -182,8 +168,122 @@ namespace FlockFive
             ReleaseFight(held);
         }
 
+        // One hit. Birds of the set launch in order (OstrichHitTimeline), hop to the ostrich, impact, hold, then
+        // hop home to their own seats. Time-driven from one clock so the order is serial by construction.
+        IEnumerator OstrichHit(int bi, int hitNo, BirdColor col, int gen)
+        {
+            var mark = _garden.Ostrich;
+            var v = bi < _garden.Branches.Length ? _garden.Branches[bi] : null;
+            if (mark == null || v == null) yield break;
+            var birds = new List<SpriteRenderer>(BranchState.Cap);
+            for (int s = 0; s < BranchState.Cap; s++)
+                if (v.Birds[s] != null && v.Birds[s].enabled) birds.Add(v.Birds[s]);
+            int n = birds.Count;
+            if (n == 0) yield break;
+            var homes = new Vector3[n];
+            var idles = new BirdIdle[n];
+            for (int i = 0; i < n; i++)
+            {
+                homes[i] = birds[i].transform.position;
+                idles[i] = birds[i].GetComponent<BirdIdle>();
+                if (idles[i] != null)
+                {
+                    idles[i].Sleeping = false;
+                    idles[i].Frozen = true;
+                    idles[i].Flapping = true;
+                    idles[i].Lift = 0f;
+                }
+                birds[i].transform.SetParent(_garden.Root, true);
+                birds[i].sortingOrder = FlockSort.Fly;
+            }
+            var arrived = new bool[n];
+            bool reacted = false, swayed = false;
+            float total = OstrichHitTimeline.HitSec(n);
+            float t = 0f;
+            while (t < total)
+            {
+                if (gen != _motionGen) yield break;
+                t += Time.deltaTime;
+                Vector3 head = mark.Aim.position + Vector3.down * 0.1f;
+                for (int i = 0; i < n; i++)
+                {
+                    var tr = birds[i] != null ? birds[i].transform : null;
+                    if (tr == null) continue;
+                    var tgt = head + new Vector3((i - (n - 1) * 0.5f) * 0.14f, 0.06f * (i % 2), 0f);
+                    tr.position = OstrichHitTimeline.BirdAt(n, i, t, homes[i], tgt);
+                    float since = t - OstrichHitTimeline.ArriveAt(i);
+                    float sq = since >= 0f && since < 0.14f ? 1f + 0.28f * Mathf.Sin(since / 0.14f * Mathf.PI) : 1f;
+                    tr.localScale = new Vector3(BranchView.BirdScale.x * sq, BranchView.BirdScale.y / sq, 1f);
+                    if (!arrived[i] && t >= OstrichHitTimeline.ArriveAt(i))
+                    {
+                        arrived[i] = true;
+                        Impact(tr.position, col);
+                        if (i == n - 1) StartCoroutine(Wow.Burst(tr.position, col, _garden.Root, 2));
+                        if (!reacted)
+                        {
+                            reacted = true;
+                            mark.ShowHit(hitNo);
+                            SfxLibrary.Honk();
+                        }
+                    }
+                }
+                if (!swayed && t >= OstrichHitTimeline.LandAt(n, n - 1) - 0.1f) { swayed = true; v.LandSway(); }
+                yield return null;
+            }
+            for (int i = 0; i < n; i++)
+            {
+                if (birds[i] == null) continue;
+                birds[i].transform.position = homes[i];
+                birds[i].transform.localScale = BranchView.BirdScale;
+            }
+            float gap = 0f;
+            while (gap < OstrichHitTimeline.BetweenHitsSec)
+            {
+                if (gen != _motionGen) yield break;
+                gap += Time.deltaTime;
+                yield return null;
+            }
+        }
+
+        // The exit: stagger in place, then a hurried run off screen, feathers flying at both ends.
+        IEnumerator OstrichExit(OstrichMark mark, int gen)
+        {
+            mark.BeginExit();
+            SfxLibrary.Honk();
+            StartCoroutine(Wow.Burst(mark.Aim.position, BirdColor.Peach, _garden.Root, 3));
+            bool puffRun = false, puffMid = false;
+            float t = 0f;
+            int half = OstrichAnim.Count(OstrichAct.Flee) / 2;
+            while (mark.Exiting && t < OstrichHitTimeline.ExitTotalSec * 3f)
+            {
+                if (gen != _motionGen) yield break;
+                t += Time.deltaTime;
+                if (!puffRun && mark.Act == OstrichAct.Flee)
+                {
+                    puffRun = true;
+                    StartCoroutine(Wow.Burst(mark.Aim.position, BirdColor.Peach, _garden.Root, 3));
+                    Sfx.FlockFlutter(4);
+                }
+                if (puffRun && !puffMid && mark.Act == OstrichAct.Flee && mark.Frame >= half)
+                {
+                    puffMid = true;
+                    StartCoroutine(Wow.Burst(mark.Aim.position, BirdColor.Peach, _garden.Root, 2));
+                }
+                yield return null;
+            }
+            float beat = 0f;
+            while (beat < OstrichHitTimeline.BreakDelaySec)
+            {
+                if (gen != _motionGen) yield break;
+                beat += Time.deltaTime;
+                yield return null;
+            }
+        }
+
         void ReleaseFight(HashSet<int> held)
         {
+            var m = _garden != null ? _garden.Ostrich : null;
+            if (m != null) m.HoldFlee = false;
             foreach (int i in held) Unlock(i);
             _ostrichFight = false;
         }

@@ -105,4 +105,85 @@ namespace FlockFive
             return s;
         }
     }
+
+    // Timeline of one ostrich hit and of the exit. Pure math: the app plays it, the edit-mode suite checks it.
+    // One hit: the birds of the cleared set fly up to the ostrich ONE AFTER ANOTHER (staggered launches),
+    // each lands an impact, then they fly back and reseat on their branch (the branch does NOT break).
+    // Three hits, then the ostrich exits (stagger, flustered run off screen with a feather puff), and only
+    // then do the sets break and fly to their feeders.
+    public static class OstrichHitTimeline
+    {
+        public const float LaunchStagger = 0.14f;   // gap between one bird leaving and the next
+        public const float FlyUpSec = 0.40f;        // limb -> ostrich
+        public const float HoldSec = 0.16f;         // after the last impact, before they head home
+        public const float ReturnStagger = 0.08f;
+        public const float ReturnSec = 0.50f;       // ostrich -> own seat
+        public const float BetweenHitsSec = 0.25f;
+        public const float ArcUp = 1.1f;            // hop height of the flight up / back (world units)
+
+        // Exit: stagger in place, then run off screen. Puff at the start of the run and again mid-run.
+        public const float ExitStaggerSec = 0.85f;
+        public const float ExitRunSec = 1.30f;
+        public const float ExitPuffAtRun = 0.0f;
+        public const float ExitPuffMidRun = 0.5f;
+        public const float ExitTotalSec = ExitStaggerSec + ExitRunSec;
+        public const float BreakDelaySec = 0.20f;   // beat after he is gone, before the branches break
+
+        public static float LaunchAt(int bird) => bird * LaunchStagger;
+        public static float ArriveAt(int bird) => LaunchAt(bird) + FlyUpSec;
+        public static float LastArrive(int birds) => birds <= 0 ? 0f : ArriveAt(birds - 1);
+        public static float ReturnAt(int birds, int bird) => LastArrive(birds) + HoldSec + bird * ReturnStagger;
+        public static float LandAt(int birds, int bird) => ReturnAt(birds, bird) + ReturnSec;
+        public static float HitSec(int birds) => birds <= 0 ? 0f : LandAt(birds, birds - 1);
+        public static float HitStride(int birds) => HitSec(birds) + BetweenHitsSec;
+
+        // Bird position `t` seconds into one hit. home = its seat, target = the ostrich.
+        // Before launch: home. Up: eased hop to the target. Hold: on the target. Back: eased hop home.
+        public static Vector3 BirdAt(int birds, int bird, float t, Vector3 home, Vector3 target)
+        {
+            float a = LaunchAt(bird), arrive = ArriveAt(bird), ret = ReturnAt(birds, bird), land = LandAt(birds, bird);
+            if (t <= a) return home;
+            if (t < arrive) return Hop(home, target, (t - a) / FlyUpSec);
+            if (t <= ret) return target;
+            if (t < land) return Hop(target, home, (t - ret) / ReturnSec);
+            return home;
+        }
+
+        static Vector3 Hop(Vector3 from, Vector3 to, float u)
+        {
+            u = Mathf.Clamp01(u);
+            float e = u * u * (3f - 2f * u);
+            var p = Vector3.Lerp(from, to, e);
+            p.y += Mathf.Sin(u * Mathf.PI) * ArcUp;
+            return p;
+        }
+
+        public struct Beat
+        {
+            public int Hit;      // 0-based
+            public int Bird;
+            public float Launch, Arrive, Return, Land;   // absolute seconds from the start of the sequence
+        }
+
+        // Every bird of every hit, back to back. hits sets of `birds` birds each.
+        public static List<Beat> Plan(int hits, int birds, out float exitStart, out float breakAt)
+        {
+            var l = new List<Beat>();
+            float t0 = 0f;
+            for (int h = 0; h < hits; h++)
+            {
+                for (int i = 0; i < birds; i++)
+                    l.Add(new Beat
+                    {
+                        Hit = h, Bird = i,
+                        Launch = t0 + LaunchAt(i), Arrive = t0 + ArriveAt(i),
+                        Return = t0 + ReturnAt(birds, i), Land = t0 + LandAt(birds, i)
+                    });
+                t0 += HitStride(birds);
+            }
+            exitStart = t0;
+            breakAt = exitStart + ExitTotalSec + BreakDelaySec;
+            return l;
+        }
+    }
 }

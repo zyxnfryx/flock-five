@@ -174,6 +174,61 @@ namespace FlockFive.Editor
             bool second = OstrichPeck.Scatter(again, out _, movedList);
             Check("scatter-excludes-moved", first && !second, "first " + first + " second " + second);
 
+            // 8) hits are serial: birds fly up one after another, hit after hit, then the exit, then the branches break
+            var plan = OstrichHitTimeline.Plan(3, 5, out float exitStart, out float breakAt);
+            bool serialArrive = plan.Count == 15, serialLaunch = true, hitsOrdered = true;
+            for (int i = 1; i < plan.Count; i++)
+            {
+                serialArrive &= plan[i].Arrive > plan[i - 1].Arrive + 0.05f;       // never two impacts at once
+                serialLaunch &= plan[i].Launch > plan[i - 1].Launch;
+                if (plan[i].Hit != plan[i - 1].Hit)
+                    hitsOrdered &= plan[i].Launch >= plan[i - 1].Land && plan[i].Hit == plan[i - 1].Hit + 1;
+            }
+            Check("hit-birds-arrive-one-after-another", serialArrive && serialLaunch, "");
+            Check("hits-sequential-not-overlapping", hitsOrdered, "");
+            int hitCount = 0; foreach (var bt in plan) if (bt.Bird == 0) hitCount++;
+            Check("three-hits", hitCount == 3, "hits " + hitCount);
+            Check("exit-after-third-hit", exitStart >= plan[plan.Count - 1].Land, "exit " + exitStart + " last land " + plan[plan.Count - 1].Land);
+            Check("branches-break-after-exit", breakAt >= exitStart + OstrichHitTimeline.ExitTotalSec + OstrichHitTimeline.BreakDelaySec - 1e-4f
+                && OstrichHitTimeline.ExitTotalSec >= 1.5f, "break " + breakAt);
+            Check("return-after-last-impact", plan[0].Return >= plan[4].Arrive, "ret " + plan[0].Return + " last arrive " + plan[4].Arrive);
+            // positions: bird 0 is already up while bird 4 is still on its seat; continuous; seat -> ostrich -> seat
+            var home = new Vector3(-3f, -2f, 0f); var head = new Vector3(0.5f, 4f, 0f);
+            float tMid = OstrichHitTimeline.ArriveAt(0) - 0.05f;
+            Check("birds-staggered-in-air", (OstrichHitTimeline.BirdAt(5, 0, tMid, home, head) - home).magnitude > 0.5f
+                && (OstrichHitTimeline.BirdAt(5, 4, tMid, home, head) - home).sqrMagnitude < 1e-6f, "");
+            Check("hit-flight-endpoints",
+                (OstrichHitTimeline.BirdAt(5, 2, OstrichHitTimeline.ArriveAt(2), home, head) - head).sqrMagnitude < 1e-4f
+                && (OstrichHitTimeline.BirdAt(5, 2, OstrichHitTimeline.LandAt(5, 2), home, head) - home).sqrMagnitude < 1e-4f, "");
+            float hitMax = 0f; var hp = home; float hs = OstrichHitTimeline.HitSec(5);
+            for (float t = 1f / 120f; t <= hs; t += 1f / 120f)
+            {
+                var p = OstrichHitTimeline.BirdAt(5, 3, t, home, head);
+                hitMax = Mathf.Max(hitMax, (p - hp).magnitude); hp = p;
+            }
+            Check("hit-flight-no-teleport", hitMax < 0.45f, "max step " + hitMax.ToString("0.000"));
+            // board: three completing moves = three hits, one per move, no pecks, branches stay until the third
+            var tb = new Board();
+            tb.SetFeeders(3);
+            tb.Live[0] = BirdColor.Gold; tb.Live[1] = BirdColor.Ruby; tb.Live[2] = BirdColor.Teal;
+            var cols = new[] { BirdColor.Gold, BirdColor.Ruby, BirdColor.Teal };
+            for (int i = 0; i < 3; i++) tb.Branches.Add(new BranchState());
+            tb.Branches.Add(new BranchState());
+            tb.Ostrich = new OstrichState { PeckSeed = 9, PecksPerMove = 2 };
+            bool oneEach = true, staysUntil3 = true, noPecks = true;
+            for (int k = 0; k < 3; k++)
+            {
+                for (int i = 0; i < 5; i++) { tb.Branches[k].Birds.Add(new Bird(cols[k])); tb.Branches[k].Shrouded.Add(false); }
+                var kl = new System.Collections.Generic.List<PeckHit>();
+                GardenSolve.AfterMove(tb, kl, out _);
+                oneEach &= tb.Ostrich.Hits == k + 1;
+                noPecks &= kl.Count == 0;
+                if (k < 2) for (int j = 0; j <= k; j++) staysUntil3 &= !tb.Branches[j].Broken && tb.Branches[j].Count == 5;
+            }
+            bool allBroken = tb.Branches[0].Broken && tb.Branches[1].Broken && tb.Branches[2].Broken;
+            Check("three-completing-moves-three-hits", oneEach && noPecks, "hits " + tb.Ostrich.Hits);
+            Check("branches-intact-until-ostrich-leaves", staysUntil3 && !tb.Ostrich.Alive && allBroken, "");
+
             // --- relocation is animated, not instant ---
             var a = new Vector3(-2f, 1f, 0f);
             var c = new Vector3(3f, -1f, 0f);
@@ -201,6 +256,13 @@ namespace FlockFive.Editor
             string app = File.ReadAllText(Path.Combine(root, "Assets/_Project/Scripts/App/FlockFiveApp.cs"));
             string fight = File.ReadAllText(Path.Combine(root, "Assets/_Project/Scripts/App/FlockFiveApp.OstrichFight.cs"));
             Check("hit-test-uses-tappable", app.Split(new[] { "OstrichTurn.Tappable(" }, System.StringSplitOptions.None).Length - 1 >= 3, "");
+            string mk = File.ReadAllText(Path.Combine(root, "Assets/_Project/Scripts/View/OstrichMark.cs"));
+            int iHit = fight.IndexOf("yield return OstrichHit(", System.StringComparison.Ordinal);
+            int iExit = fight.IndexOf("yield return OstrichExit(", System.StringComparison.Ordinal);
+            int iBreak = fight.IndexOf("StartCoroutine(StartleThenFly(sr, Vector3.up", System.StringComparison.Ordinal);
+            Check("fight-order-hits-exit-break", iHit > 0 && iExit > iHit && iBreak > iExit, "" + iHit + "," + iExit + "," + iBreak);
+            Check("hit-feedback-wired", fight.Contains("Impact(tr.position, col)") && fight.Contains("mark.ShowHit(hitNo)")
+                && fight.Contains("mark.HoldFlee = true") && mk.Contains("public void BeginExit()") && mk.Contains("HoldFlee) return;"), "");
             Check("tap-gated", app.Contains("if (_turnGate.Busy)") && app.Contains("TryBeginMove()"), "");
             Check("fight-after-resolve", app.Contains("while (MoveStillAnimating())") && app.Contains("_turnGate.TryBeginTurn(_turnTicket")
                 && app.Contains("yield return OstrichFight();"), "");
