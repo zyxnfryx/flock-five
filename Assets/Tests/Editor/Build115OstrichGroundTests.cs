@@ -179,9 +179,9 @@ namespace FlockFive.Editor
                     }
                     Check("idle-breath-tiny", hi - lo < 0.02f, "idle body travel " + (hi - lo));
                     // Head still moves naturally (neck/head not frozen).
-                    m.Preview(OstrichAct.Peck, 0, FeederRow.X(1, 3), aimY, false);
+                    m.Preview(OstrichAct.Peck, 4, FeederRow.X(1, 3), aimY, false);
                     float hy0 = m.Head.transform.position.y;
-                    m.Preview(OstrichAct.Peck, 6, FeederRow.X(1, 3), aimY, false);
+                    m.Preview(OstrichAct.Peck, 7, FeederRow.X(1, 3), aimY, false);
                     Check("head-still-moves", Mathf.Abs(m.Head.transform.position.y - hy0) > 0.05f, "head dy " + (m.Head.transform.position.y - hy0));
                 }
                 finally { Object.DestroyImmediate(rootA); }
