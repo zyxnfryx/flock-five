@@ -1315,6 +1315,19 @@ namespace FlockFive
             return Contains(arena, m.BirdBox) && Contains(arena, m.BadgerBox);
         }
 
+        // b129 v4: the one badger-to-pick-comb gap, ~12 px at 390x844 (Ui 844/720), scaled with the layout.
+        public const float CombGapRef = 12f;
+        public const float CombGapRefUi = 844f / 720f;
+        public static float CombGap(float s) => CombGapRef * s / CombGapRefUi;
+
+        // Slide the comb left until its right edge is `gap` short of fighterLeft; never left of minX.
+        public static Rect ClearComb(Rect comb, float fighterLeft, float gap, float minX)
+        {
+            float over = comb.xMax + gap - fighterLeft;
+            if (over > 0f) comb.x = Mathf.Max(minX, comb.x - over);
+            return comb;
+        }
+
         // Keep every beat's drawn sprite left of ColR (the meter column). Shared by
         // rest, lunge, swipe, strike and outro so SE wide frames never cover Continue.
         public static float ClampFootX(float footX, float artW, float rightLimit)

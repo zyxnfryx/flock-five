@@ -2,29 +2,11 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // b129: badger polish (frozen look, battle size, garden-to-fight leap). Pure helpers so tests can pin them.
-    // The Legacy* switches exist only so the evidence harness can paint the old look beside the new one in one
-    // session; nothing in the game sets them.
+    // b129: badger polish (frozen look, garden-to-fight leap, comb gap). Pure helpers so tests can pin them.
+    // v4 (Brandon): the battle badger stays at scale 1.0; the battle-size knob, its per-device ceilings and the
+    // test-only Legacy* toggles are gone.
     public static class Badger129
     {
-        public static bool LegacyFrozen;
-        public static bool LegacyLeap;
-
-        // The one battle-screen badger scale. Battle draw path only (BadgerActorNow); the garden pest, the intros and
-        // the album never read it.
-        public const float BattleScaleDefault = 1f;
-        public static float BattleScale = BattleScaleDefault;
-        // v3 option: per-device ceiling on the knob. 0 = off (default, nothing changes). TabletAspect: w/h above this is
-        // treated as a tablet (iPad 0.75, iPhone 0.46).
-        public static float BattleScaleMaxTablet = 0f;
-        public static float BattleScaleMaxPhone = 0f;
-        public const float TabletAspect = 0.6f;
-        public static float BattleScaleFor(float screenW, float screenH)
-        {
-            float cap = screenH > 0f && screenW / screenH > TabletAspect ? BattleScaleMaxTablet : BattleScaleMaxPhone;
-            return cap > 0f ? Mathf.Min(BattleScale, cap) : BattleScale;
-        }
-
         // ---- the leap (garden to fight) ----
         // Same beats as BadgerLeap (hop 0.8, crouch 0.6, leap 1.2, wash 0.4 = 3.0 s). The leap beat now carries the
         // badger from the garden crouch to his fight mark (ease-out), the wash beat is the landing: a 3-frame squash,

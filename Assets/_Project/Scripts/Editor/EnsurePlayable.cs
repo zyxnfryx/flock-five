@@ -103,6 +103,7 @@ namespace FlockFive.Editor
             Suite("build119-collection-banner", Build119CollectionBannerTests.Run);
             Suite("season-scene", SeasonSceneTests.Run);
             Suite("glove-travel", GloveTravelTests.Run);
+            Suite("build129-badger-gap", Build129BadgerGapTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

@@ -167,7 +167,7 @@ namespace FlockFive
             var beat = BadgerLeap.BeatAt(t);
             var pose = BadgerAnim.Entrance(t);
             float unit = _bgLeapUnit;
-            if (!Badger129.LegacyLeap && beat >= BadgerLeapBeat.Leap)
+            if (beat >= BadgerLeapBeat.Leap)
             {
                 DrawBadgerLeapToMark(t);
                 SparkleFx.DrawBits();
@@ -205,14 +205,14 @@ namespace FlockFive
         }
 
         // b129: where and how the fight page will draw him on its first frame (Opening, wash-out): same layout,
-        // same rest mark, same battle scale, same pose. The leap lands exactly here so the cut has nothing to pop.
+        // same rest mark, same unit, same pose. The leap lands exactly here so the cut has nothing to pop.
         void BadgerFightMark(out Vector2 foot, out float unit, out BadgerSample pose)
         {
             var L = BadgerLayout();
             var box = BadgerArenaRects.Split(L.Arena);
             BadgerArtSize("badger_idle_b", 1f, out float aw, out float ah);
             var mark = BadgerFighterPlace.Rest(box, aw, ah);
-            unit = mark.Unit * Badger129.BattleScaleFor(Screen.width, Screen.height);
+            unit = mark.Unit;
             var beat = BadgerSwipe.Active(0f) ? BadgerDuelBeat.Swipe : BadgerDuelBeat.Idle;
             pose = BadgerAnim.Duel(beat, 0f, PlayClock.Now);
             BadgerArtSize(pose.Frame, unit, out float w, out _);

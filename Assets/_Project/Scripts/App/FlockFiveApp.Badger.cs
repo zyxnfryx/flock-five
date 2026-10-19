@@ -1109,7 +1109,7 @@ namespace FlockFive
         // ---- layout ----
 
 
-        struct BadgerRects
+        public struct BadgerRects
         {
             public float S;
             public Rect Back, Title, Need, Coin;
@@ -1132,25 +1132,30 @@ namespace FlockFive
 
         BadgerRects BadgerLayout()
         {
-            var L = new BadgerRects();
             float s = DeviceFit.Ui();
-            L.S = s;
             float top = TopHud();
-            L.Back = BackMedalRect(s, top);
-            var safe = Screen.safeArea;
+            return BadgerLayoutFor(Screen.width, Screen.height, Screen.safeArea, s, top, BackMedalRect(s, top));
+        }
+
+        // b129 v4: the fight-page layout as a pure function of the screen (BadgerLayout feeds it the live values).
+        public static BadgerRects BadgerLayoutFor(float screenW, float screenH, Rect safe, float s, float top, Rect back)
+        {
+            var L = new BadgerRects();
+            L.S = s;
+            L.Back = back;
             bool haveSafe = safe.width >= 2f && safe.height >= 2f;
             float xL = Mathf.Max(8f * s, haveSafe ? safe.xMin + 6f : 0f);
-            float xR = Mathf.Min(Screen.width - 8f * s, haveSafe ? safe.xMax - 6f : Screen.width);
+            float xR = Mathf.Min(screenW - 8f * s, haveSafe ? safe.xMax - 6f : screenW);
             float colW = Mathf.Clamp(58f * Mathf.Clamp(s, 1f, 1.35f), 64f, 96f);
             float icon = 40f * Mathf.Clamp(s, 1f, 1.35f);
             L.Coin = new Rect(xR - icon, top + 4f * s, icon, icon);
             float tx = L.Back.xMax + 8f * s;
-            float tw = Mathf.Max(80f, Screen.width * 0.62f - tx);
+            float tw = Mathf.Max(80f, screenW * 0.62f - tx);
             L.Title = new Rect(tx, top, tw, L.Back.height * 0.52f);
             L.Need = new Rect(tx, L.Title.yMax, tw, L.Back.height * 0.34f);
 
             float y0 = L.Back.yMax + 4f * s;
-            float yEnd = Screen.height - Mathf.Max(8f * s, haveSafe ? safe.yMin + 4f : 0f);
+            float yEnd = screenH - Mathf.Max(8f * s, haveSafe ? safe.yMin + 4f : 0f);
             float gap = 6f * s;
             float room = Mathf.Max(100f, yEnd - y0 - gap * 4f);
             float capH = room * BadgerCaptionFrac;
@@ -1566,6 +1571,43 @@ namespace FlockFive
             StampOutlined(r, text, st, fill, 1, Mathf.Max(2, st.fontSize / 10));
         }
 
+        // b129 v4 (Brandon): one shared gap between the badger and the honeycomb he picked. Measured from the
+        // fighter rect (the ice block rect when frozen) to the pick-comb hex. Both rest rects are taken here the
+        // way the page draws them (same unit, same right-HUD clamp); the comb steps left until the WIDER of the
+        // two clears it by the gap, so it does not jump when he freezes. It never steps past the VS box's left edge.
+        public struct BadgerGapRects
+        {
+            public Rect Comb, Fighter, Ice, ColR;
+            public float Gap;
+        }
+
+        public static BadgerGapRects BadgerPickComb(Rect arena, Rect colR, float s)
+        {
+            var idle = SpriteCatalog.BadgerArt("badger_idle_b");
+            var ice = SpriteCatalog.BadgerArt(Badger129.FrozenBlockArt);
+            return BadgerPickComb(arena, colR, s,
+                idle != null ? idle.rect.width : 480f, idle != null ? idle.rect.height : 640f,
+                ice != null ? ice.rect.width : 471f, ice != null ? ice.rect.height : 688f);
+        }
+
+        public static BadgerGapRects BadgerPickComb(Rect arena, Rect colR, float s, float idleW, float idleH, float iceW, float iceH)
+        {
+            var g = new BadgerGapRects { ColR = colR, Gap = BadgerFighterPlace.CombGap(s) };
+            var box = BadgerArenaRects.Split(arena);
+            var mark = BadgerFighterPlace.Rest(box, idleW, idleH);
+            float right = colR.x - 2f;
+            float unit = mark.Unit;
+            var foot = mark.Foot;
+            foot.x = BadgerFighterPlace.ClampFootX(foot.x, idleW * unit, right);
+            g.Fighter = SpriteAnim.Dest("badger_idle_b", idleW, idleH, foot, unit, 1f, 1f);
+            float iceUnit = idleH * unit * Badger129.FrozenBlockHeight / Mathf.Max(1f, iceH);
+            var iceFoot = mark.Foot;
+            iceFoot.x = BadgerFighterPlace.ClampFootX(iceFoot.x, iceW * iceUnit, right);
+            g.Ice = SpriteAnim.Dest(Badger129.FrozenBlockArt, iceW, iceH, iceFoot, iceUnit, 1f, 1f);
+            g.Comb = BadgerFighterPlace.ClearComb(BadgerSlotTile(box.BossSlot), Mathf.Min(g.Fighter.xMin, g.Ice.xMin), g.Gap, box.Middle.x);
+            return g;
+        }
+
         static Rect BadgerSlotTile(Rect slot)
         {
             float h = slot.height * 0.90f;
@@ -1584,7 +1626,7 @@ namespace FlockFive
             float s = L.S;
             var boxes = BadgerArenaRects.Split(L.Arena);
             var youSlot = BadgerSlotTile(boxes.YouSlot);
-            var bossSlot = BadgerSlotTile(boxes.BossSlot);
+            var bossSlot = BadgerPickComb(L.Arena, L.ColR, s).Comb; // b129 v4: clear of the fighter / ice block by the shared gap
             bool tilesIn = _bgFight != null && (_bgBossIx >= 0 || _bgPlayerIx >= 0);
             bool tie = _bgResolved && _bgRound.PlayerGained <= 0 && _bgRound.BossGained <= 0 && !_bgRound.BossHeld
                 && (_bgStage == BadgerStage.Verdict || _bgStage == BadgerStage.Over);
@@ -1615,8 +1657,7 @@ namespace FlockFive
                 if (block) DrawBadgerSplat(r);
                 if (GuiPaint())
                 {
-                    if (Badger129.LegacyFrozen) SparkleFx.DrawFrozen(r, ice, AdPause.Unscaled);
-                    else SparkleFx.DrawFrozenHex(r, ice, AdPause.Unscaled);
+                    SparkleFx.DrawFrozenHex(r, ice, AdPause.Unscaled);
                     SparkleFx.DrawShatter(r, shatterT);
                 }
             }
@@ -1778,7 +1819,7 @@ namespace FlockFive
             spot.Alpha = BadgerFighter.Alpha(_bgStage);
             BadgerArtSize("badger_idle_b", 1f, out float aw, out float ah);
             var mark = BadgerFighterPlace.Rest(box, aw, ah);
-            spot.Unit = mark.Unit * Badger129.BattleScaleFor(Screen.width, Screen.height); // b129: the one battle-size knob
+            spot.Unit = mark.Unit; // b129 v4: battle badger at 1.0
             spot.FaceLeft = mark.FaceLeft;
             float bh = box.BossFighter.height;
             var foot = mark.Foot;
@@ -1954,7 +1995,7 @@ namespace FlockFive
         bool DrawBadgerIceBlock(BadgerActorSpot spot, BadgerRects L, out Rect drawn)
         {
             drawn = default;
-            if (Badger129.LegacyFrozen || _bgFight == null) { _bgIceWas = false; return false; }
+            if (_bgFight == null) { _bgIceWas = false; return false; }
             float now = PlayClock.Now;
             var probe = new Rect(0f, 0f, 10f, 10f);
             BadgerFreezeLook(ref probe, L.S, out float ice, out float shatterT);
