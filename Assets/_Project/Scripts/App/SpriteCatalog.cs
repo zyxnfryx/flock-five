@@ -174,6 +174,19 @@ namespace FlockFive
         public static Sprite AdBulb => Load(ref _adBulb, "Sprites/fx_ad_bulb", 200f);
         public static Sprite AdCard => Load(ref _adCard, "Sprites/fx_ad_card", 200f);
         public static Sprite IceA => Load(ref _iceA, "Sprites/fx_ice_a", 96f);
+        // Badger power row: painted icons for the four flat rounded-square buttons (x2, x3, Hot Sauce, Freeze Spray).
+        static Sprite _powDouble, _powTriple, _powHot, _powFreeze;
+        public static Sprite PowerIcon(BadgerPower p)
+        {
+            switch (p)
+            {
+                case BadgerPower.X2: return Load(ref _powDouble, "Sprites/fx_power_double", 100f);
+                case BadgerPower.X3: return Load(ref _powTriple, "Sprites/fx_power_triple", 100f);
+                case BadgerPower.HotSauce: return Load(ref _powHot, "Sprites/fx_power_hotsauce", 100f);
+                case BadgerPower.FreezeSpray: return Load(ref _powFreeze, "Sprites/fx_power_freeze", 100f);
+                default: return null;
+            }
+        }
         public static Sprite IceB => Load(ref _iceB, "Sprites/fx_ice_b", 96f);
         public static Sprite IceShard => Load(ref _iceShard, "Sprites/fx_ice_shard", 200f);
         public static Sprite Restart => Load(ref _restart, "Sprites/fx_restart", 200f);

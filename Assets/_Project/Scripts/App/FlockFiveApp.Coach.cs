@@ -5499,6 +5499,7 @@ namespace FlockFive
 
         float _gateBlindSince = -1f;
         Rect _bgGateToggle;
+        Rect _bgGateFreeze; // b110: frozen Freeze Spray, its own rect (not a union with Hot Sauce)
         int _coachAteFrame = -1;
         // Unscaled. A lesson dismiss arms this. Board and HUD taps wait it out.
         static float _lessonGuardUntil;
@@ -5641,6 +5642,7 @@ namespace FlockFive
                 gate.Step = GateBadgerGuide;
                 gate.Target = stage == 1 ? _bgPowerBtn : _bgGuideHit;
                 _bgGateToggle = BadgerGateToggleRect(stage);
+                _bgGateFreeze = BadgerGateFreezeRect();
                 if (gate.Target.width < 2f) return false;
                 return true;
             }
@@ -5650,6 +5652,7 @@ namespace FlockFive
                 gate.Step = GateBadgerResult;
                 gate.Target = BadgerContinueRect(BadgerLayout());
                 _bgGateToggle = default;
+                _bgGateFreeze = default;
                 return gate.Target.width >= 2f;
             }
             else if (PestAnyTapLive(out rule))
@@ -5808,7 +5811,7 @@ namespace FlockFive
             // b115 (Brandon): the ad offer's X is never gated. The ad-hand glove arms a tap RECT (Watch), so the gate
             // lands here and the hand-armed exemption above never ran: the X was eaten and the player was stuck.
             if (GateExemptsGiftClose(gate.Step, GiftCloseExempt(e.mousePosition))) return;
-            if (gate.Step == GateBadgerGuide && _bgGateToggle.width > 2f && _bgGateToggle.Contains(e.mousePosition)) return;
+            if (gate.Step == GateBadgerGuide && BadgerFrozenUi.PressPasses(e.mousePosition, default, _bgGateToggle, _bgGateFreeze)) return;
             if (gate.AnyTap)
             {
                 if (HomeGearExempt(e.mousePosition)) return;

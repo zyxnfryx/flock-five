@@ -616,9 +616,17 @@ namespace FlockFive
             // Hot Sauce and Freeze Spray are disabled while the badger is frozen (button is greyed); a tap does nothing but say why.
             // (Checked before PowerReady: a spent Freeze Spray still answers while he is frozen.)
             if (_bgFight.PowersLocked) return;
-            if (BadgerFight.IsBlock(p)) { var ui = p == BadgerPower.FreezeSpray ? _bgFrozenUiFreeze : _bgFrozenUi;
+            if (BadgerFight.IsBlock(p))
+            {
+                var ui = p == BadgerPower.FreezeSpray ? _bgFrozenUiFreeze : _bgFrozenUi;
                 var fl = ui.Tap(_bgFight, p, AdPause.Unscaled);
-                if (fl != null) { Sfx.Deny(); if (!BadgerBreakFreeLive()) _bgLine = fl; return; } }
+                if (fl != null)
+                {
+                    Sfx.Deny();
+                    if (!BadgerBreakFreeLive()) _bgLine = fl;
+                    return;
+                }
+            }
             if (!_bgFight.PowerReady(p)) return;
             // (Hot Sauce / Freeze Spray frozen taps are answered above.)
             // b127: shared deny sound only (no shake, squish or burst). The break-free step paints the line in its own
@@ -709,17 +717,19 @@ namespace FlockFive
             => _bgBreakFreeOn && _bgBreakTile >= 0 && _bgFight != null && _bgFight.CoachFight
                && _bgFight.BossFrozenNow && _bgFight.Result == BadgerResult.Playing;
 
-        // The one button that may run its handler during the break-free step (frozen Hot Sauce: says why, never advances).
+        // The buttons that may run their handler during the break-free step: frozen Hot Sauce and frozen Freeze Spray
+        // (each says why, never advances). b110 nit: one rect each, never their union, so nothing between or beside
+        // them (x2 / x3) can slip through the gate. The gate tests both with BadgerFrozenUi.PressPasses.
         Rect BadgerGateToggleRect(int stage)
         {
-            if (BadgerBreakFreeLive())
-            {
-                // Frozen Hot Sauce and frozen Freeze Spray sit side by side: one rect over both (b110).
-                var hs = BadgerPowerRect(BadgerLayout(), (int)BadgerPower.HotSauce - 1);
-                var fz = BadgerPowerRect(BadgerLayout(), (int)BadgerPower.FreezeSpray - 1);
-                return Rect.MinMaxRect(Mathf.Min(hs.xMin, fz.xMin), Mathf.Min(hs.yMin, fz.yMin), Mathf.Max(hs.xMax, fz.xMax), Mathf.Max(hs.yMax, fz.yMax));
-            }
+            if (BadgerBreakFreeLive()) return BadgerPowerRect(BadgerLayout(), (int)BadgerPower.HotSauce - 1);
             return stage == 2 ? _bgPowerBtn : default;
+        }
+
+        Rect BadgerGateFreezeRect()
+        {
+            if (!BadgerBreakFreeLive()) return default;
+            return BadgerPowerRect(BadgerLayout(), (int)BadgerPower.FreezeSpray - 1);
         }
 
         static readonly BadgerPower[] BadgerGuideOrder = { BadgerPower.X2, BadgerPower.X3, BadgerPower.HotSauce, BadgerPower.FreezeSpray };
@@ -974,7 +984,7 @@ namespace FlockFive
             float yEnd = screenH - Mathf.Max(8f * scale, have ? safe.yMin + 4f : 0f);
             float gap = 6f * scale;
             float room = Mathf.Max(100f, yEnd - y0 - gap * 4f);
-            float capH = room * 0.18f;
+            float capH = room * BadgerCaptionFrac;
             float capW = xR - xL;
             const float plateX = 18f;
             const float plateY = 12f;
@@ -1112,12 +1122,15 @@ namespace FlockFive
         {
             public float S;
             public Rect Back, Title, Need, Coin;
-            public Rect BossGrid, Arena, PlayerGrid, Power, Caption;
+            public Rect BossGrid, Arena, PlayerGrid, Pick, Power, Caption;
             public Rect ColL, ColR;
         }
 
         const float BadgerCaptionFrac = 0.18f;
         const float BadgerPowerFrac = 0.11f;
+        // b128: the 'Your pick.' band just above the power row (CaptionStyles "badger.pick"). Taken from the two grids
+        // (0.045 each); the arena, the power row and the bottom caption band keep their size.
+        const float BadgerPickFrac = 0.09f;
 
         // b110: the power row, then the caption band under it. Pure so a test can check the two never overlap.
         public static void BadgerBottomBands(float yPower, float xL, float xR, float room, float s, out Rect power, out Rect caption)
@@ -1131,33 +1144,39 @@ namespace FlockFive
 
         BadgerRects BadgerLayout()
         {
-            var L = new BadgerRects();
             float s = DeviceFit.Ui();
-            L.S = s;
             float top = TopHud();
-            L.Back = BackMedalRect(s, top);
-            var safe = Screen.safeArea;
+            return BadgerLayoutAt(Screen.width, Screen.height, Screen.safeArea, s, top, BackMedalRect(s, top));
+        }
+
+        // Pure: the page bands for one screen. BadgerLayout feeds it the live screen; tests feed it a size.
+        static BadgerRects BadgerLayoutAt(float screenW, float screenH, Rect safe, float s, float top, Rect back)
+        {
+            var L = new BadgerRects();
+            L.S = s;
+            L.Back = back;
             bool haveSafe = safe.width >= 2f && safe.height >= 2f;
             float xL = Mathf.Max(8f * s, haveSafe ? safe.xMin + 6f : 0f);
-            float xR = Mathf.Min(Screen.width - 8f * s, haveSafe ? safe.xMax - 6f : Screen.width);
+            float xR = Mathf.Min(screenW - 8f * s, haveSafe ? safe.xMax - 6f : screenW);
             float colW = Mathf.Clamp(58f * Mathf.Clamp(s, 1f, 1.35f), 64f, 96f);
             float icon = 40f * Mathf.Clamp(s, 1f, 1.35f);
             L.Coin = new Rect(xR - icon, top + 4f * s, icon, icon);
             float tx = L.Back.xMax + 8f * s;
-            float tw = Mathf.Max(80f, Screen.width * 0.62f - tx);
+            float tw = Mathf.Max(80f, screenW * 0.62f - tx);
             L.Title = new Rect(tx, top, tw, L.Back.height * 0.52f);
             L.Need = new Rect(tx, L.Title.yMax, tw, L.Back.height * 0.34f);
 
             float y0 = L.Back.yMax + 4f * s;
-            float yEnd = Screen.height - Mathf.Max(8f * s, haveSafe ? safe.yMin + 4f : 0f);
+            float yEnd = screenH - Mathf.Max(8f * s, haveSafe ? safe.yMin + 4f : 0f);
             float gap = 6f * s;
             float room = Mathf.Max(100f, yEnd - y0 - gap * 4f);
             float capH = room * BadgerCaptionFrac;
             float powH = room * BadgerPowerFrac;
+            float pickH = room * BadgerPickFrac;
             // Middle stage band, between the badger tiles and the player tiles.
             // Height stays put so the opening hive and bee arcs keep their size.
             float arenaH = room * 0.16f;
-            float gridH = (room - capH - powH - arenaH) * 0.5f;
+            float gridH = (room - capH - powH - arenaH - pickH) * 0.5f;
             float gx = xL + colW + 10f * s;
             float gw = Mathf.Max(60f, xR - colW - 10f * s - gx);
             float y = y0;
@@ -1167,11 +1186,65 @@ namespace FlockFive
             y += arenaH + gap;
             L.PlayerGrid = new Rect(gx, y, gw, gridH);
             y += gridH + gap;
+            L.Pick = new Rect(xL, y, xR - xL, pickH);
+            y += pickH;
             BadgerBottomBands(y, xL, xR, room, s, out L.Power, out L.Caption);
             float colH = L.PlayerGrid.yMax - L.BossGrid.y;
             L.ColL = new Rect(xL, L.BossGrid.y, colW, colH);
             L.ColR = new Rect(xR - colW, L.BossGrid.y, colW, colH);
             return L;
+        }
+
+        // b128 test hook: the 'Your pick.' plate as DrawBadgerPickCaption paints it, and the rects it must stay clear of,
+        // at one screen size. fits: the authored rows (never re-wrapped, at most the table's MaxLines) at >= 11 pt.
+        public static Rect BadgerPickPlateAt(float screenW, float screenH, Rect safe, string line, out Rect bossGrid, out Rect arena,
+            out Rect playerGrid, out Rect power, out bool fits, out string detail)
+        {
+            float s = DeviceFit.Ui(screenW, screenH);
+            float top = TopHudBox(screenH, safe, 0f);
+            var L = BadgerLayoutAt(screenW, screenH, safe, s, top, BackMedalBox(s, top, safe));
+            bossGrid = L.BossGrid; arena = L.Arena; playerGrid = L.PlayerGrid; power = L.Power;
+            var plate = BadgerPickPlate(L, "badger.pick", line, out _, out int font);
+            int rows = string.IsNullOrEmpty(line) ? 0 : line.Split('\n').Length;
+            int max = CaptionStyles.MaxLines("badger.pick");
+            fits = font >= Mathf.RoundToInt(11f * s) && (max <= 0 || rows <= max);
+            detail = screenW + "x" + screenH + " plate " + plate + " band " + L.Pick + " font " + font + " (" + (font / Mathf.Max(0.01f, s)).ToString("0.0") + " pt) rows " + rows;
+            return plate;
+        }
+
+        // The plate for a CaptionStyles AbovePower spot: the authored rows (no re-wrap) at the table's TextPt, stepped
+        // down until rows plus a slim even pad fit inside the pick band, centred in it. So it never touches a grid, a
+        // fighter or the power row. text is the ink rect inside the plate.
+        static Rect BadgerPickPlate(BadgerRects L, string spot, string line, out Rect text, out int font)
+        {
+            float s = L.S > 0.01f ? L.S : 1f;
+            float inset = 2f * s;
+            var band = new Rect(L.Pick.x + inset, L.Pick.y + inset, L.Pick.width - inset * 2f, Mathf.Max(4f, L.Pick.height - inset * 2f));
+            var st = CoachLineStyle();
+            int keep = st.fontSize; bool wrap = st.wordWrap;
+            float pt = CaptionStyles.TextPt(spot) > 0f ? CaptionStyles.TextPt(spot) : 17f;
+            font = Mathf.Max(8, Mathf.RoundToInt(pt * s));
+            int lo = Mathf.Max(8, Mathf.RoundToInt(10f * s));
+            Vector2 size = Vector2.zero; float padX = 0f, padY = 0f;
+            var content = new GUIContent(line ?? "");
+            try
+            {
+                st.wordWrap = false;
+                for (; ; font--)
+                {
+                    st.fontSize = font;
+                    size = st.CalcSize(content);
+                    padY = Mathf.Max(3f * s, font * 0.30f);
+                    padX = Mathf.Max(10f * s, font * 0.80f);
+                    if ((size.y + padY * 2f <= band.height && size.x + padX * 2f <= band.width) || font <= lo) break;
+                }
+            }
+            finally { st.fontSize = keep; st.wordWrap = wrap; }
+            float w = Mathf.Min(band.width, size.x + padX * 2f);
+            float h = Mathf.Min(band.height, size.y + padY * 2f);
+            var plate = new Rect(band.center.x - w * 0.5f, band.center.y - h * 0.5f, w, h);
+            text = new Rect(plate.x + padX, plate.y + padY, Mathf.Max(4f, plate.width - padX * 2f), Mathf.Max(4f, plate.height - padY * 2f));
+            return plate;
         }
 
         // Pointy-top comb, odd rows shifted half a cell. Hit boxes tile with no overlap.
@@ -1686,39 +1759,15 @@ namespace FlockFive
             DrawBadgerPowerIcon(new Rect(pos.x - sz * 0.5f, pos.y - sz * 0.5f, sz, sz), p, 1f);
         }
 
-        // PLACEHOLDER art (drawn shapes, no sprites yet): a hot sauce bottle and a freeze spray can, mild cartoon.
-        static void DrawBadgerPowerIcon(Rect r, BadgerPower p, float a)
+        // b128: the painted power icons (Resources/Sprites/fx_power_*), aspect-fit in r. frozen paints them greyed.
+        static void DrawBadgerPowerIcon(Rect r, BadgerPower p, float a, bool frozen = false)
         {
             if (!GuiPaint() || r.width < 2f) return;
+            var spr = SpriteCatalog.PowerIcon(p);
+            if (spr == null || spr.texture == null) return;
             var prevC = GUI.color;
-            var white = Texture2D.whiteTexture;
-            Rect F(float x, float y, float w, float h) => new Rect(r.x + r.width * x, r.y + r.height * y, r.width * w, r.height * h);
-            void Box(Rect q, Color c) { c.a *= a; GUI.color = c; GUI.DrawTexture(q, white); }
-            void Round(Rect q, Color c) { c.a *= a; GUI.color = c; DrawSolidRound(q, q.height * 0.5f, 0, a); }
-            var rim = new Color(0.12f, 0.06f, 0.03f, 1f);
-            if (p == BadgerPower.HotSauce)
-            {
-                // bottle: dark outline, red body, narrow neck, black cap, cream label with a chili dot
-                Round(F(0.17f, 0.36f, 0.66f, 0.62f), rim);
-                Box(F(0.36f, 0.14f, 0.28f, 0.34f), rim);
-                Round(F(0.21f, 0.40f, 0.58f, 0.54f), new Color(0.86f, 0.14f, 0.08f));
-                Box(F(0.40f, 0.18f, 0.20f, 0.30f), new Color(0.86f, 0.14f, 0.08f));
-                Box(F(0.38f, 0.04f, 0.24f, 0.16f), new Color(0.15f, 0.12f, 0.12f));
-                Box(F(0.27f, 0.54f, 0.46f, 0.26f), new Color(1f, 0.93f, 0.72f));
-                Round(F(0.43f, 0.60f, 0.14f, 0.14f), new Color(0.86f, 0.14f, 0.08f));
-            }
-            else
-            {
-                // spray can: dark outline, icy-blue body, silver shoulder, dark nozzle, little mist puffs
-                Box(F(0.24f, 0.26f, 0.52f, 0.70f), rim);
-                Box(F(0.28f, 0.30f, 0.44f, 0.62f), new Color(0.35f, 0.74f, 0.96f));
-                Box(F(0.28f, 0.30f, 0.44f, 0.12f), new Color(0.82f, 0.86f, 0.90f));
-                Box(F(0.40f, 0.14f, 0.20f, 0.14f), new Color(0.25f, 0.25f, 0.30f));
-                Box(F(0.28f, 0.52f, 0.44f, 0.22f), new Color(0.95f, 0.98f, 1f));
-                Round(F(0.62f, 0.08f, 0.16f, 0.16f), new Color(0.80f, 0.94f, 1f));
-                Round(F(0.76f, 0.02f, 0.14f, 0.14f), new Color(0.80f, 0.94f, 1f));
-                Round(F(0.80f, 0.20f, 0.12f, 0.12f), new Color(0.80f, 0.94f, 1f));
-            }
+            GUI.color = frozen ? new Color(0.50f, 0.50f, 0.53f, 0.62f * a) : new Color(1f, 1f, 1f, a);
+            DrawSprite(r, spr, true);
             GUI.color = prevC;
         }
 
@@ -2159,37 +2208,127 @@ namespace FlockFive
                     }
                 }
                 if (_bgPowerGuideOn && p == _bgGuidePower && BadgerPowerGuideStage() == 1) DrawBadgerGuideGlow(r);
-                bool picture = BadgerFight.IsBlock(p);
-                bool fire = BadgerButton(rr, picture ? "" : BadgerPowerName(p), sub, k < 2, used || !inPick || guideBlocks, lit,
-                    live && inPick && (hsTap || (!used && !guideBlocks)), ink, BadgerShakeX(BadgerPowerKey + (int)p, s));
-                if (picture && GuiPaint())
-                {
-                    float side = r.height * 0.58f;
-                    DrawBadgerPowerIcon(new Rect(rr.center.x - side * 0.5f + BadgerShakeX(BadgerPowerKey + (int)p, s), rr.y + rr.height * 0.05f, side, side), p, used || !inPick || frozenOut ? 0.55f : 1f);
-                }
+                bool dim = used || !inPick || guideBlocks;
+                bool fire = BadgerPowerTile(rr, p, sub, dim, frozenOut && !armedNow, lit,
+                    live && inPick && (hsTap || (!used && !guideBlocks)), BadgerShakeX(BadgerPowerKey + (int)p, s));
                 if (frozenOut) DrawBadgerIceBadge(rr);
                 if (fire) ClickBadgerPower(p);
             }
         }
 
-        // b127: small ice badge (snowflake on an icy disc) on a frozen-out button, so it reads as locked, not broken.
+        // b128 (Brandon's flat rounded-square mock): the one helper for all four power buttons. Painted icon on top,
+        // then the name, then the price or state (FREE / $price, ARMED, USED, LOCKED, FROZEN). frozen = greyed face and
+        // icon; the caller adds the ice badge. The hit pad is the whole rect, as before.
+        bool BadgerPowerTile(Rect hit, BadgerPower p, string sub, bool dim, bool frozen, bool lit, bool live, float shakeX)
+        {
+            hit.x += shakeX;
+            bool held = false;
+            bool fire = live && HitPad(hit, out held);
+            if (!GuiPaint()) return fire;
+            if (lit)
+            {
+                float pad = hit.height * 0.18f;
+                GUI.color = new Color(1f, 0.88f, 0.36f, 0.75f);
+                GUI.DrawTexture(new Rect(hit.x - pad, hit.y - pad, hit.width + pad * 2f, hit.height + pad * 2f), GlowTex(), ScaleMode.StretchToFill, true);
+                GUI.color = Color.white;
+            }
+            var face = held ? Inset(hit, 0.03f) : hit;
+            BadgerPowerTileColors(frozen, out var edge, out var fill, out var shine, out var line);
+            float a = frozen ? 1f : dim ? 0.85f : 1f;
+            float rad = Mathf.Min(face.width, face.height) * 0.16f;
+            float bw = Mathf.Max(2f, face.height * 0.035f);
+            var white = Texture2D.whiteTexture;
+            var prev = GUI.color;
+            GUI.color = Color.white;
+            // soft drop shadow, dark rim, flat fill, lighter top half, thin cream inner line
+            GUI.DrawTexture(new Rect(face.x, face.y + bw, face.width, face.height), white, ScaleMode.StretchToFill, true, 0f, new Color(0f, 0f, 0f, 0.28f * a), 0f, rad);
+            GUI.DrawTexture(face, white, ScaleMode.StretchToFill, true, 0f, Fade(edge, a), 0f, rad);
+            var inner = new Rect(face.x + bw, face.y + bw, face.width - bw * 2f, face.height - bw * 2f);
+            float ir = Mathf.Max(1f, rad - bw);
+            GUI.DrawTexture(inner, white, ScaleMode.StretchToFill, true, 0f, Fade(fill, a), 0f, ir);
+            GUI.DrawTexture(new Rect(inner.x, inner.y, inner.width, inner.height * 0.5f), white, ScaleMode.StretchToFill, true, 0f, Fade(shine, a),
+                Vector4.zero, new Vector4(ir, ir, 0f, 0f));
+            var ln = new Rect(inner.x + bw * 0.9f, inner.y + bw * 0.9f, inner.width - bw * 1.8f, inner.height - bw * 1.8f);
+            GUI.DrawTexture(ln, white, ScaleMode.StretchToFill, true, 0f, Fade(line, a), Mathf.Max(1f, bw * 0.45f), Mathf.Max(1f, ir - bw * 0.9f));
+            GUI.color = prev;
+
+            // icon on top, then the name, then the price or state
+            var icon = new Rect(inner.x + inner.width * 0.12f, inner.y + inner.height * 0.07f, inner.width * 0.76f, inner.height * 0.50f);
+            DrawBadgerPowerIcon(icon, p, frozen ? 1f : dim ? 0.6f : 1f, frozen);
+            var st = BadgerStyle();
+            string name = BadgerPowerTileName(p);
+            float ta = dim && !frozen ? 0.6f : 1f;
+            var nr = new Rect(inner.x + inner.width * 0.05f, inner.y + inner.height * 0.57f, inner.width * 0.90f, inner.height * 0.18f);
+            st.fontSize = FitFont(st, name, nr.width, nr.height, 8, 48);
+            StampLight(nr, name, st, Fade(frozen ? new Color(0.86f, 0.86f, 0.88f) : BadgerPowerInk(p), ta));
+            if (!string.IsNullOrEmpty(sub))
+            {
+                var sr = new Rect(inner.x + inner.width * 0.05f, inner.y + inner.height * 0.75f, inner.width * 0.90f, inner.height * 0.20f);
+                st.fontSize = FitFont(st, sub, sr.width, sr.height, 8, 56);
+                StampLight(sr, sub, st, Fade(frozen ? new Color(0.88f, 0.88f, 0.90f) : Color.white, ta));
+            }
+            return fire;
+        }
+
+        static Color Fade(Color c, float a) { c.a *= a; return c; }
+
+        // Mock colours: warm orange-brown tile; frozen is the cool grey-brown tile.
+        static void BadgerPowerTileColors(bool frozen, out Color edge, out Color fill, out Color shine, out Color line)
+        {
+            if (frozen)
+            {
+                edge = new Color(0.24f, 0.20f, 0.18f, 1f);
+                fill = new Color(0.40f, 0.34f, 0.30f, 1f);
+                shine = new Color(0.47f, 0.41f, 0.37f, 1f);
+                line = new Color(0.78f, 0.72f, 0.64f, 0.55f);
+                return;
+            }
+            edge = new Color(0.30f, 0.15f, 0.06f, 1f);
+            fill = new Color(0.66f, 0.36f, 0.14f, 1f);
+            shine = new Color(0.78f, 0.46f, 0.21f, 1f);
+            line = new Color(0.98f, 0.84f, 0.58f, 0.70f);
+        }
+
+        static Color BadgerPowerInk(BadgerPower p)
+        {
+            if (p == BadgerPower.HotSauce) return new Color(1f, 0.45f, 0.30f);
+            if (p == BadgerPower.FreezeSpray) return new Color(0.45f, 0.85f, 1f);
+            return new Color(1f, 0.90f, 0.40f);
+        }
+
+        // Button names (the mock): short so all four fit one row on an SE.
+        public static string BadgerPowerTileName(BadgerPower p)
+        {
+            if (p == BadgerPower.X2) return "Double";
+            if (p == BadgerPower.X3) return "Triple";
+            if (p == BadgerPower.HotSauce) return "Hot Sauce";
+            if (p == BadgerPower.FreezeSpray) return "Freeze";
+            return "";
+        }
+
+        // b127/b128: ice badge (snowflake on an icy disc) at the top-right corner of a frozen-out button.
         void DrawBadgerIceBadge(Rect r)
         {
             if (!GuiPaint()) return;
-            float d = r.height * 0.34f;
-            var disc = new Rect(r.xMax - d * 0.85f, r.y - d * 0.15f, d, d);
-            GUI.color = new Color(0.45f, 0.85f, 1f, 0.95f);
-            GUI.DrawTexture(disc, GlowTex(), ScaleMode.StretchToFill, true);
+            float d = Mathf.Min(r.width, r.height) * 0.30f;
+            var disc = new Rect(r.xMax - d * 0.80f, r.y - d * 0.20f, d, d);
+            var white = Texture2D.whiteTexture;
+            var prev = GUI.color;
             GUI.color = Color.white;
+            GUI.DrawTexture(disc, white, ScaleMode.StretchToFill, true, 0f, new Color(0.95f, 0.98f, 1f, 1f), 0f, d * 0.5f);
+            float ring = Mathf.Max(1.5f, d * 0.09f);
+            var core = new Rect(disc.x + ring, disc.y + ring, d - ring * 2f, d - ring * 2f);
+            GUI.DrawTexture(core, white, ScaleMode.StretchToFill, true, 0f, new Color(0.36f, 0.72f, 0.97f, 1f), 0f, core.width * 0.5f);
             var old = GUI.matrix;
-            float len = d * 0.30f, w = Mathf.Max(1.5f, d * 0.07f);
-            for (int a = 0; a < 3; a++)
+            float len = d * 0.28f, w = Mathf.Max(1.5f, d * 0.07f);
+            for (int k = 0; k < 3; k++)
             {
                 GUI.matrix = old;
-                GUIUtility.RotateAroundPivot(a * 60f, disc.center);
-                GUI.DrawTexture(new Rect(disc.center.x - len, disc.center.y - w * 0.5f, len * 2f, w), Texture2D.whiteTexture);
+                GUIUtility.RotateAroundPivot(k * 60f, disc.center);
+                GUI.DrawTexture(new Rect(disc.center.x - len, disc.center.y - w * 0.5f, len * 2f, w), white);
             }
             GUI.matrix = old;
+            GUI.color = prev;
         }
 
         // The coach fight's lock shows until move 3's verdict has played, so the labels never flip back and forth.
@@ -2206,10 +2345,20 @@ namespace FlockFive
             => BadgerCaptionFade.IsTutorial(_bgLessonLive, _bgCoachFight, _bgFight != null && _bgFight.CoachFight,
                 _bgStage == BadgerStage.Lesson, BadgerGuideLive(), BadgerResultLive());
 
+        // b128: the caption spot for the current line. 'Your pick.' takes the table's AbovePower seat; the rest keep
+        // the shared badger.caption banner.
+        public static string BadgerCaptionSpot(string line) => line == BadgerCopy.YourPick ? "badger.pick" : "badger.caption";
+
         void DrawBadgerCaption(BadgerRects L)
         {
             if (!GuiPaint() || string.IsNullOrEmpty(_bgLine)) return;
             float s = L.S;
+            string spot = BadgerCaptionSpot(_bgLine);
+            if (CaptionStyles.AbovePower(spot))
+            {
+                DrawBadgerPickCaption(L, spot);
+                return;
+            }
             var gold = GoldCaption(_bgLine, Screen.width, Screen.height);
             float w = gold.PlateW;
             float h = gold.PlateH;
@@ -2227,6 +2376,29 @@ namespace FlockFive
                 CapSpot("badger.caption"); PaintCoachCaption(_bgLine, seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
             }
             finally { _coachFade = keepFade; }
+        }
+
+        // Snug plate in L.Pick through the shared pinned caption box (same paint as the lesson line).
+        // Shared dark caption plate (DrawSolidRound kind 0) and the shared banner ink, at the table entry's size and seat.
+        void DrawBadgerPickCaption(BadgerRects L, string spot)
+        {
+            var plate = BadgerPickPlate(L, spot, _bgLine, out var text, out int font);
+            float fade = BadgerCaptionFade.For(BadgerTutorialFight(), _coachFade);
+            if (fade < 0.02f) return;
+            NoteTutorPlate(plate);
+            DrawSolidRound(plate, Mathf.Min(plate.height * 0.30f, 14f * L.S), 0, fade * CaptionStyles.Ink(spot));
+            var st = CoachLineStyle();
+            int keep = st.fontSize; bool wrap = st.wordWrap; var align = st.alignment;
+            try
+            {
+                st.fontSize = font;
+                st.wordWrap = false;
+                st.alignment = TextAnchor.MiddleCenter;
+                var ink = text;
+                ink.y -= CaptionLayout.BannerInkLift(font);
+                StampBannerText(ink, _bgLine, st, fade, true);
+            }
+            finally { st.fontSize = keep; st.wordWrap = wrap; st.alignment = align; }
         }
 
     }

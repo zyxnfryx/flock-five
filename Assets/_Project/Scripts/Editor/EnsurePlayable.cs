@@ -103,6 +103,7 @@ namespace FlockFive.Editor
             Suite("build119-collection-banner", Build119CollectionBannerTests.Run);
             Suite("season-scene", SeasonSceneTests.Run);
             Suite("glove-travel", GloveTravelTests.Run);
+            Suite("build128-badger-power", Build128BadgerPowerTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 
@@ -450,7 +451,8 @@ namespace FlockFive.Editor
             "/tmp/flock-five-b89-deadend",
             "/tmp/flock-five-b89-popup",
             "/tmp/flock-five-b89-payhead",
-            "/tmp/flock-five-storm-drops"
+            "/tmp/flock-five-storm-drops",
+            "/tmp/flock-five-badger-power"
         };
 
         static bool AnyShotCmd()
@@ -561,6 +563,7 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-poker-feel", "ShotPokerFeel");
                         TryStartShot(app, "/tmp/flock-five-b89-popup", "ShotPopupExclusive");
                         TryStartShot(app, "/tmp/flock-five-b89-payhead", "ShotPayHead");
+                        TryStartShot(app, "/tmp/flock-five-badger-power", "ShotBadgerPower");
                     }
                 }
             }
