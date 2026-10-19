@@ -173,6 +173,8 @@ namespace FlockFive
             bool aliveBefore = o.Alive;
             int logged = 0;
             int hitsBefore = o.Hits;
+            // Birds relocated this turn, as (limb, seat). A bird that already hopped is never picked again.
+            var moved = new List<KeyValuePair<int, int>>();
             Settle(b);
             int n = o.PecksPerMove;
             if (n < 0) n = 0;
@@ -181,7 +183,7 @@ namespace FlockFive
             if (o.Hits > hitsBefore) n = 0;
             for (int k = 0; k < n && o.Alive; k++)
             {
-                if (OstrichPeck.Scatter(b, out var hit))
+                if (OstrichPeck.Scatter(b, out var hit, moved))
                 {
                     logged++;
                     if (log != null) log.Add(hit);
@@ -200,7 +202,11 @@ namespace FlockFive
         // nothing legal was found, so the next peck stays on the shared stream.
         public static bool Scatter(Board b) => Scatter(b, out _);
 
-        public static bool Scatter(Board b, out PeckHit hit)
+        public static bool Scatter(Board b, out PeckHit hit) => Scatter(b, out hit, null);
+
+        // moved: seats of birds already relocated this turn. Their tip is skipped, and a landing is
+        // recorded so the same bird cannot be picked again, even from its new limb.
+        public static bool Scatter(Board b, out PeckHit hit, List<KeyValuePair<int, int>> moved)
         {
             hit = default;
             if (b == null || b.Ostrich == null || !b.Ostrich.Alive) return false;
@@ -215,6 +221,7 @@ namespace FlockFive
                 if (br == null || br.Broken || br.AdLocked || br.Count == 0) continue;
                 if (br.TipLocked || br.IsShrouded(br.Count - 1)) continue;
                 if (br.IsFullMatch(out _)) continue;
+                if (moved != null && moved.Contains(new KeyValuePair<int, int>(i, br.Count - 1))) continue;
                 src.Add(i);
             }
             rng.Shuffle(src);
@@ -247,6 +254,7 @@ namespace FlockFive
                         if (a.Shrouded.Count > a.Birds.Count)
                             a.Shrouded.RemoveAt(a.Shrouded.Count - 1);
                         if (a.RevealExposed() > 0) b.JustUnveiled = true;
+                        if (moved != null) moved.Add(new KeyValuePair<int, int>(dst[d], toCount));
                         hit = new PeckHit { From = from, FromCount = fromCount, To = dst[d], ToCount = toCount, Bird = bird };
                         return true;
                     }

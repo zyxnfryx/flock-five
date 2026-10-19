@@ -135,6 +135,45 @@ namespace FlockFive.Editor
             Check("full-set-not-tappable-plain", !OstrichTurn.Tappable(plain, 0) && OstrichTurn.Tappable(plain, 1), "");
             var gone = SetBoard(2, 5); GardenSolve.AfterMove(gone, null, out _);
             Check("collected-set-not-tappable", !OstrichTurn.Tappable(gone, 0), "");
+            // 7) a bird relocated this turn is never relocated again in the same turn
+            int dup = 0, turns = 0;
+            for (int seed = 0; seed < 300; seed++)
+            {
+                var m = SetBoard(0, 3);
+                m.Branches[2].Birds.Add(new Bird(BirdColor.Ruby)); m.Branches[2].Shrouded.Add(false);
+                m.Ostrich.PeckSeed = seed; m.Ostrich.PecksPerMove = 3;
+                var ml = new System.Collections.Generic.List<PeckHit>();
+                OstrichPest.AfterMove(m, ml, out _);
+                turns++;
+                // replay: each hit's source seat must not be a seat an earlier hit landed on
+                var landed = new System.Collections.Generic.List<KeyValuePair<int, int>>();
+                foreach (var h in ml)
+                {
+                    if (landed.Contains(new KeyValuePair<int, int>(h.From, h.FromCount - 1))) dup++;
+                    landed.Add(new KeyValuePair<int, int>(h.To, h.ToCount));
+                }
+            }
+            Check("bird-not-moved-twice-per-turn", dup == 0 && turns == 300, "dups " + dup);
+            // forced case: one movable bird only; second peck must find nothing rather than move it again
+            var one = new Board();
+            one.SetFeeders(3);
+            one.Live[0] = BirdColor.Gold; one.Live[1] = BirdColor.Ruby; one.Live[2] = BirdColor.Teal;
+            var o0 = new BranchState(); o0.Birds.Add(new Bird(BirdColor.Gold)); o0.Shrouded.Add(false);
+            one.Branches.Add(o0); one.Branches.Add(new BranchState());
+            one.Ostrich = new OstrichState { PeckSeed = 5, PecksPerMove = 3 };
+            var olog = new System.Collections.Generic.List<PeckHit>();
+            OstrichPest.AfterMove(one, olog, out _);
+            Check("lone-bird-moves-once", olog.Count == 1, "pecks " + olog.Count);
+            var movedList = new System.Collections.Generic.List<KeyValuePair<int, int>>();
+            var again = new Board(); again.SetFeeders(3);
+            again.Live[0] = BirdColor.Gold; again.Live[1] = BirdColor.Ruby; again.Live[2] = BirdColor.Teal;
+            var a0 = new BranchState(); a0.Birds.Add(new Bird(BirdColor.Gold)); a0.Shrouded.Add(false);
+            again.Branches.Add(a0); again.Branches.Add(new BranchState());
+            again.Ostrich = new OstrichState { PeckSeed = 5, PecksPerMove = 3 };
+            bool first = OstrichPeck.Scatter(again, out _, movedList);
+            bool second = OstrichPeck.Scatter(again, out _, movedList);
+            Check("scatter-excludes-moved", first && !second, "first " + first + " second " + second);
+
             // --- relocation is animated, not instant ---
             var a = new Vector3(-2f, 1f, 0f);
             var c = new Vector3(3f, -1f, 0f);
