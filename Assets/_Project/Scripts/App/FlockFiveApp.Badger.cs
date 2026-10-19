@@ -1990,11 +1990,18 @@ namespace FlockFive
                 block.x = foot.x - block.width * 0.5f;
                 if (age < BadgerIceAnim.FreezeSeconds)
                 {
-                    // snapped into the hands-up pose, ice climbing feet to head
-                    var hands = SpriteCatalog.BadgerArt(BadgerIceAnim.HandsUpArt);
-                    if (hands != null)
-                        DrawBadgerArt(BadgerIceAnim.HandsUpArt, new Vector2(foot.x, block.yMax - BadgerIceAnim.FootAboveBlockBottomPx * unit), unit, spot.Alpha);
+                    // snapped into the hands-up pose (the standing art, ghosted above the ice line), ice climbing feet to head
                     float g = BadgerIceAnim.Grow(age);
+                    if (GuiPaint() && g < 0.999f)
+                    {
+                        var tr0 = spr.textureRect;
+                        float tw0 = spr.texture.width, th0 = spr.texture.height;
+                        var uvTop = new Rect(tr0.x / tw0, (tr0.y + tr0.height * g) / th0, tr0.width / tw0, tr0.height * (1f - g) / th0);
+                        var dTop = new Rect(block.x, block.y, block.width, block.height * (1f - g));
+                        GUI.color = new Color(1f, 1f, 1f, spot.Alpha * 0.72f);
+                        GUI.DrawTextureWithTexCoords(dTop, spr.texture, uvTop, true);
+                        GUI.color = Color.white;
+                    }
                     if (g > 0.01f && GuiPaint())
                     {
                         var tr = spr.textureRect;
@@ -2030,6 +2037,59 @@ namespace FlockFive
             finally { GUI.matrix = keep; GUI.color = Color.white; }
         }
         bool _bgIceWas;
+
+        static bool BadgerFrozenLine(string line)
+            => line == BadgerCopy.FreezeSprayFrozen || line == BadgerCopy.HotSauceFrozen;
+
+        static GUIStyle _bandCapStyle;
+        // Authored rows only ('/' or newline), centered in the band, font fit so the longest row and every row fit.
+        public static string[] BandCaptionRows(string text)
+        {
+            var raw = (text ?? "").Replace(" / ", "\n").Replace("/", "\n").Split('\n');
+            var rows = new System.Collections.Generic.List<string>();
+            foreach (var r in raw) { var t = r.Trim(); if (t.Length > 0) rows.Add(t); }
+            return rows.ToArray();
+        }
+        public static Rect BandCaptionLast;
+        void PaintBadgerBandCaption(string text, Rect band, float s, float fade)
+        {
+            var rows = BandCaptionRows(text);
+            if (rows.Length == 0) return;
+            if (_bandCapStyle == null)
+            {
+                _bandCapStyle = new GUIStyle(CoachLineStyle()) { wordWrap = false, alignment = TextAnchor.MiddleCenter, richText = false };
+                _bandCapStyle.padding = new RectOffset(0, 0, 0, 0); _bandCapStyle.margin = new RectOffset(0, 0, 0, 0);
+            }
+            var st = _bandCapStyle;
+            float padX = 14f * s, padY = 6f * s;
+            int px = Mathf.RoundToInt(32f * s);
+            float rowH = 0f, maxW = 0f;
+            var gc = new GUIContent();
+            for (; px > 10; px--)
+            {
+                st.fontSize = px; maxW = 0f;
+                foreach (var r in rows) { gc.text = r; maxW = Mathf.Max(maxW, st.CalcSize(gc).x); }
+                rowH = st.lineHeight * 1.05f;
+                if (maxW <= band.width - 2f * padX && rowH * rows.Length <= band.height - 2f * padY) break;
+            }
+            float h = rowH * rows.Length + 2f * padY;
+            var plate = new Rect(band.x, band.center.y - h * 0.5f, band.width, h);
+            BandCaptionLast = plate;
+            var keep = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, CaptionStyles.BannerAlpha * fade);
+            GUI.DrawTexture(plate, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                var rr = new Rect(plate.x, plate.y + padY + rowH * i, plate.width, rowH);
+                gc.text = rows[i];
+                st.normal.textColor = new Color(0f, 0f, 0f, 0.6f * fade);
+                GUI.Label(new Rect(rr.x + 2f * s, rr.y + 2f * s, rr.width, rr.height), gc, st);
+                st.normal.textColor = new Color(1f, 1f, 1f, fade);
+                GUI.Label(rr, gc, st);
+            }
+            GUI.color = keep;
+        }
         int _bgThawRound = -1;
 
         // Thaw: two wobbles while cracks spread, then the block shatters (chunks fall and fade) and he is back in his
@@ -2069,7 +2129,7 @@ namespace FlockFive
             string frame = SpriteCatalog.BadgerArt(spot.Frame) != null ? spot.Frame : "badger_idle_b";
             drawn = DrawBadgerArt(frame, f2, spot.Unit, spot.Alpha, 0f, spot.Sx, spot.Sy);
             GUI.matrix = Matrix4x4.identity * GUI.matrix;
-            if (GuiPaint()) SparkleFx.DrawShatter(block, BadgerIceAnim.ShatterT(b));
+            if (GuiPaint()) SparkleFx.DrawShatter(block, BadgerIceAnim.ShatterT(b), Badger129.ShatterIce);
             return true;
         }
 
@@ -2337,6 +2397,13 @@ namespace FlockFive
         {
             if (!GuiPaint() || string.IsNullOrEmpty(_bgLine)) return;
             float s = L.S;
+            // v2 (b116 bug): a frozen line paints in the BadgerBottomBands caption slot under the power row, hard-broken
+            // on its authored '/' rows, so the banner never lands across the arena and covers the fighters.
+            if (BadgerFrozenLine(_bgLine) && !BadgerTutorialFight())
+            {
+                PaintBadgerBandCaption(_bgLine, L.Caption, s, BadgerCaptionFade.For(false, _coachFade));
+                return;
+            }
             var gold = GoldCaption(_bgLine, Screen.width, Screen.height);
             float w = gold.PlateW;
             float h = gold.PlateH;

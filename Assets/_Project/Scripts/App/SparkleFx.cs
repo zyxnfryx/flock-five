@@ -637,7 +637,10 @@ namespace FlockFive
         }
 
         // Ice shatter: t 0..1. Shards fly out and fall while fading, with a few glints. Returns false once finished.
-        public static bool DrawShatter(Rect r, float t)
+        public static bool DrawShatter(Rect r, float t) => DrawShatter(r, t, IceTint);
+
+        // tint: the chunk colour (the badger thaw passes icy blue/white). Highlights stay white.
+        public static bool DrawShatter(Rect r, float t, Color tint)
         {
             if (t >= 1f) return false;
             if (t < 0f) return true;
@@ -651,13 +654,20 @@ namespace FlockFive
                 float sz = r.width * (0.10f + 0.03f * (i % 3)) * (1f - 0.4f * t);
                 var prev = GUI.matrix;
                 GUIUtility.RotateAroundPivot(i * 37f + t * 260f, at);
-                GUI.color = new Color(IceTint.r, IceTint.g, IceTint.b, 0.9f * a);
+                GUI.color = new Color(tint.r, tint.g, tint.b, 0.9f * a);
                 GUI.DrawTexture(new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz, sz * 0.7f), white);
                 GUI.color = new Color(1f, 1f, 1f, 0.7f * a);
                 GUI.DrawTexture(new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz * 0.5f, sz * 0.25f), white);
                 GUI.matrix = prev;
             }
-            DrawAt(r.center, r.height * (0.5f + t), a, IceTint, true);
+            // The default call keeps its gold-sparkle burst. A custom tint (the badger thaw's icy blue/white) bursts as a
+            // tinted soft glow, since the gold sparkle art multiplied by blue reads green.
+            if (tint == IceTint) DrawAt(r.center, r.height * (0.5f + t), a, tint, true);
+            else
+            {
+                DrawGlow(r.center, r.height * (0.9f + 0.8f * t), new Color(tint.r, tint.g, tint.b, 0.75f * a));
+                DrawGlow(r.center, r.height * (0.35f + 0.5f * t), new Color(1f, 1f, 1f, 0.6f * a));
+            }
             GUI.color = Color.white;
             return true;
         }

@@ -238,14 +238,16 @@ namespace FlockFive
             Add("hud.back", L.Back); Add("hud.title", L.Title); Add("hud.need", L.Need); Add("hud.coin", L.Coin);
             Add("score.meterL", L.ColL); Add("score.meterR", L.ColR);
             Add("score.bossGrid", L.BossGrid); Add("score.playerGrid", L.PlayerGrid);
-            Add("score.bossSlot", _bgBossSlotNow.width > 1f ? _bgBossSlotNow : BadgerSlotTile(boxes.BossSlot));
-            Add("score.youSlot", _bgYouSlotNow.width > 1f ? _bgYouSlotNow : BadgerSlotTile(boxes.YouSlot));
+            // v2: slot tiles straight from this frame's live layout (the cached painted rect went stale across resizes)
+            Add("score.bossSlot", BadgerSlotTile(boxes.BossSlot));
+            Add("score.youSlot", BadgerSlotTile(boxes.YouSlot));
             Add("power.row", L.Power);
             for (int k = 0; k < 4; k++) Add("power." + k, BadgerPowerRect(L, k));
             Add("caption.band", L.Caption);
             var sb = new StringBuilder();
             sb.Append(head).Append(" scale ").Append(Badger129.BattleScale.ToString("0.00", CultureInfo.InvariantCulture))
               .Append(" screen ").Append(Screen.width).Append('x').Append(Screen.height)
+              .Append(" bossSlotLive ").Append(R(BadgerSlotTile(boxes.BossSlot))).Append(" bossSlotPainted ").Append(R(_bgBossSlotNow))
               .Append(" frame ").Append(spot.Frame).Append(" art ").Append(R(art)).Append(" arena ").Append(R(L.Arena)).Append('\n');
             for (int i = 0; i < rects.Count; i++)
             {

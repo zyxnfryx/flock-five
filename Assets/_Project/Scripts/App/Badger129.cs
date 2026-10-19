@@ -48,15 +48,12 @@ namespace FlockFive
             return 1f - age / LandSquashSeconds;
         }
 
-        // The frame a few captures ago: a switch is blended over BlendSeconds so no pose pops.
-        public const float BlendSeconds = 0.05f;
-        public static float BlendShare(float t)
-        {
-            // 0 = still blending from the previous frame, 1 = settled
-            for (int i = 1; i <= 3; i++)
-                if (LeapFrame(t - BlendSeconds * i / 3f) != LeapFrame(t)) return (i - 1) / 3f + 0.25f;
-            return 1f;
-        }
+        // v2: one shared scale per frame. Every leap/landing frame is drawn so its trimmed art is the same on-screen
+        // height as his idle pose at that unit, so a frame swap changes only the pose, never his size.
+        public static readonly Color ShatterIce = new Color(0.78f, 0.92f, 1f, 1f); // icy blue-white chunks
+        public const string LeapScaleRef = "badger_idle_b";
+        public static float LeapUnit(float unit, float refArtH, float frameArtH)
+            => frameArtH < 1f ? unit : unit * refArtH / frameArtH;
 
         public static string LeapFrame(float t)
         {
@@ -70,7 +67,7 @@ namespace FlockFive
         // ---- frozen ----
         public const string FrozenBlockArt = "badger_frozen_block";
         // Block height as a share of the standing idle height (taller: the block clears his raised paws).
-        public const float FrozenBlockHeight = 1.18f;
+        public const float FrozenBlockHeight = 1.45f; // v2 art: badger body ~0.70 of the block, so he reads at fighter height
         // Frost rim inset from the hex outline, in screen pixels (spec 1-2 px).
         public const float FrostRimInsetPx = 1.5f;
         public const float FrostRimWidthPx = 1.6f;
@@ -80,9 +77,7 @@ namespace FlockFive
     // b129: the freeze and thaw beats on the fighter. Clocks on PlayClock (a capture step is honored).
     public static class BadgerIceAnim
     {
-        public const string HandsUpArt = "badger_handsup";
         // Hands-up badger's feet inside the block art, in block-art pixels above its bottom edge (icicles hang below).
-        public const float FootAboveBlockBottomPx = 133f;
 
         public const float SpraySeconds = 0.10f;
         public const float GrowFrom = 0.08f, GrowSeconds = 0.40f;

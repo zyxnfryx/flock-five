@@ -237,28 +237,32 @@ namespace FlockFive
                 foot.y -= Badger129.LeapArc(t) * Screen.height * 0.16f;
                 float u = Mathf.Lerp(_bgLeapUnit, toUnit, e) * (1f + Badger129.LeapSwell(t));
                 _bgFxFoot = foot;
-                float k0 = Badger129.BlendShare(t);
-                if (k0 < 1f) DrawBadgerArt(Badger129.LeapFrame(t - Badger129.BlendSeconds), foot, u, 1f - k0 * 0.7f);
-                DrawBadgerArt(Badger129.LeapFrame(t), foot, u, k0 < 1f ? 0.35f + 0.65f * k0 : 1f);
+                string lf = Badger129.LeapFrame(t);
+                DrawBadgerArt(lf, foot, LeapFrameUnit(lf, u), 1f);
                 return;
             }
             float k = Badger129.LandSquash(t);
             if (k > 0f)
             {
                 float a = Badger129.LandSquashAmount * k;
-                DrawBadgerArt("badger_crouch", to, toUnit, 1f, 0f, 1f + a, 1f - a);
+                DrawBadgerArt("badger_crouch", to, LeapFrameUnit("badger_crouch", toUnit), 1f, 0f, 1f + a, 1f - a);
                 if (_bgLeapLandDust < 0) { _bgLeapLandDust = 1; SparkleFx.DustPuff(to, 8); }
                 return;
             }
             _bgLeapLandDust = -1;
             _bgFxFoot = to;
-            // crouch eases into the fight pose over 4 frames (no width pop from the wide crouch art)
-            float since = t - BadgerLeap.BeatStart(BadgerLeapBeat.Wash) - Badger129.LandSquashSeconds;
-            float m = Mathf.Clamp01(since / (4f / 60f));
-            if (m < 1f) DrawBadgerArt("badger_crouch", to, toUnit, 1f - m);
-            DrawBadgerPose(restPose, to, toUnit, m < 1f ? 0.4f + 0.6f * m : 1f);
+            DrawBadgerPose(restPose, to, toUnit, 1f);
         }
         int _bgLeapLandDust = -1;
+
+        // v2: the shared per-frame scale (Badger129.LeapUnit) against the idle art, from the live sprite rects.
+        static float LeapFrameUnit(string frame, float unit)
+        {
+            var r = SpriteCatalog.BadgerArt(Badger129.LeapScaleRef);
+            var f = SpriteCatalog.BadgerArt(frame);
+            if (r == null || f == null) return unit;
+            return Badger129.LeapUnit(unit, r.rect.height, f.rect.height);
+        }
 
         // Dust when a hop lands and when the crouch catches the leap. Once per crossing.
         void StepBadgerLeapFx()
