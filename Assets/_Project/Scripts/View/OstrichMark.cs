@@ -22,16 +22,41 @@ namespace FlockFive
         // way it faces so the face clears the glass instead of poking out of the bowl.
         public const float PeekX = 0.85f;
         public const float PeekY = 0.28f;
-        public const float BeakReach = 1.45f;
+        public const float BeakReach = 1.45f * GrowFactor;
         public const float PeekSlotTol = 0.3f;
         // Strike: the head goes over the flock once it has dropped this far below its peek spot.
         public const float PeekDrop = 0.35f;
-        public const float BodyDrop = 3.20f; // big body sits well below the feeder row, neck rises to the head
-        // Whole bird at 72%: it fits the screen width, legs included, and the 160px master
-        // head is drawn at or under its native size on device.
-        public const float RigScale = 0.90f; // head
-        // Build 110: the body is a large background figure (was 0.72, now 1.7 = 2.4x).
-        public const float BodyScale = 1.70f;
+        // b115 "a little bigger": one tunable grows the whole bird (head, body, legs) about 15%.
+        // The feet stay where they were (BodyDrop is derived below), so the ground under him
+        // does not move and the extra size goes up into the body, not down toward the HUD.
+        public const float GrowFactor = 1.15f;
+        // b116: whole-body motion is nearly gone so he stands on the ledge instead of riding waves.
+        public const float BreathScale = 0.08f;   // body rise per unit of sample Bob (idle ~0.006 world units)
+        public const float BodyLeanScale = 0f;    // body never rocks about the neck root
+        public const float SwayScale = 0.1f;      // side-to-side body sway while strutting/dazed
+        // World y of the planted toe line for a body at aimY (before the tiny breathing rise).
+        public static float PlantedFootY(float aimY) => aimY + PortY - BodyDrop - FootBelowPivot * BodyScale;
+        // Scene the ledge is tinted for.
+        GardenScene _scene = GardenScene.Summer;
+        public void SetScene(GardenScene scene) { _scene = scene; if (_ground != null) _ground.SetScene(scene); }
+        public const float BaseBodyScale = 1.70f;
+        public const float BaseRigScale = 0.90f;
+        public const float BaseBodyDrop = 3.20f;
+        // Toe line below the body pivot (neck root), in body-sprite units at scale 1: hip drop plus
+        // the leg sprite below its own pivot (ostrich_leg_back/front, 140 PPU, toes ~2px above the edge).
+        public const float FootBelowPivot = 3.11f;
+        // Whole bird: fits the screen width, legs included; the 160px master head stays near its native size.
+        public const float RigScale = BaseRigScale * GrowFactor; // head
+        // Build 110: the body is a large background figure (was 0.72, now 1.7 = 2.4x); b115 x GrowFactor.
+        public const float BodyScale = BaseBodyScale * GrowFactor;
+        // Big body sits below the feeder row, neck rises to the head. Pre-grow it was 3.20; growing
+        // pulls the pivot up by the extra leg length so the toe line is unchanged.
+        public const float BodyDrop = BaseBodyDrop - FootBelowPivot * (BodyScale - BaseBodyScale);
+        // World y of his toe line for a feeder row at feederY (the head aims at feederY - 0.05).
+        public static float GroundY(float feederY) => feederY - 0.05f + PortY - BodyDrop - FootBelowPivot * BodyScale;
+        // World x of the middle of his planted feet for a body at bodyX facing side (+1/-1) with turn squash.
+        public static float FootX(float bodyX, float side, float turn)
+            => bodyX + (OstrichPaint.BackHip.x + OstrichPaint.FrontHip.x) * 0.5f * side * BodyScale * turn;
         // Half the visible width; the game camera when there is one, else the stills camera.
         public static float ViewHalfWidth()
         {
@@ -65,6 +90,8 @@ namespace FlockFive
         Transform _head;
         Transform[] _neck;
         SpriteRenderer _bodySr;
+        OstrichGround _ground;
+        public OstrichGround Ground => _ground;
         Transform _legBack, _legFront, _collar;
         SpriteRenderer _collarSr;
         SpriteRenderer _legBackSr, _legFrontSr;
@@ -170,6 +197,8 @@ namespace FlockFive
             _collarSr.sprite = OstrichPaint.Collar();
             FlockSort.Apply(_collarSr, CollarOrder);
             _body.localScale = new Vector3(BodyScale, BodyScale, 1f);
+            _ground = OstrichGround.Attach(transform);
+            _ground.SetScene(_scene);
 
             _neck = new Transform[NeckParts];
             _neckSr = new SpriteRenderer[NeckParts];
@@ -507,8 +536,8 @@ namespace FlockFive
             float headY = aimY + PortY + sample.Bob * 0.35f;
             headY += sample.Wind * 0.18f - sample.Strike * 0.12f;
             float sway = 0f;
-            if (_act == OstrichAct.Strut) sway = Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.28f;
-            if (_act == OstrichAct.Daze) sway += Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.36f;
+            if (_act == OstrichAct.Strut) sway = Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.28f * SwayScale;
+            if (_act == OstrichAct.Daze) sway += Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.36f * SwayScale;
             // Face the side the head reaches to; keep the whole body (tail end) on screen.
             float half = ViewHalfWidth();
             // Turning is eased, not snapped: face swings through 0 over ~0.25s (hysteresis on the side).
@@ -526,18 +555,21 @@ namespace FlockFive
             else bodyX = Mathf.Lerp(bodyL, bodyR, (face + 1f) * 0.5f) + sway;
             _body.localScale = new Vector3(BodyScale * turn, BodyScale, 1f);
             _head.localScale = new Vector3(RigScale * turn, RigScale, 1f);
-            float bodyY = headY - BodyDrop + sample.Bob;
+            // b116: the body is planted. It no longer follows the head's bob/wind/strike or rocks with Lean,
+            // so the feet stay on the ledge; only a tiny breathing rise (BreathScale) moves it.
+            float bodyY = aimY + PortY - BodyDrop + sample.Bob * BreathScale;
             headX += face * (sample.Strike * 0.50f - sample.Wind * 0.42f);
 
             _bodySr.sprite = OstrichPaint.Body(_act, _frame);
             _bodySr.flipX = side < 0f;
             if (_collarSr != null) { _collarSr.flipX = side < 0f; }
             _body.position = new Vector3(bodyX, bodyY, 0f);
-            _body.localRotation = Quaternion.Euler(0f, 0f, sample.Lean * face);
+            if (_ground != null) _ground.Place(FootX(bodyX, side, turn), GroundY(WorldBuilder.FeederY), turn);
+            _body.localRotation = Quaternion.Euler(0f, 0f, sample.Lean * face * BodyLeanScale);
             // Stride from the timeline: legs swing in opposition around the hips.
             float stride = Mathf.Sin(sample.Step * Mathf.PI * 2f);
-            float swing = flee ? 26f : (_act == OstrichAct.Strut || _act == OstrichAct.Daze ? 14f : 3f);
-            float brace = -sample.Lean * 0.5f; // feet stay planted while the body leans
+            float swing = flee ? 26f : (_act == OstrichAct.Strut || _act == OstrichAct.Daze ? 14f : 0f);
+            float brace = -sample.Lean * BodyLeanScale * 0.5f; // feet stay planted while the body leans
             PoseLeg(_legBack, _legBackSr, OstrichPaint.BackHip, brace + stride * swing, side);
             PoseLeg(_legFront, _legFrontSr, OstrichPaint.FrontHip, brace - stride * swing, side);
 
@@ -736,6 +768,7 @@ namespace FlockFive
             if (_bodySr != null) _bodySr.enabled = true;
             if (_legBackSr != null) { _legBackSr.enabled = true; _legFrontSr.enabled = true; }
             if (_collarSr != null) _collarSr.enabled = true;
+            if (_ground != null) _ground.Show(true);
             if (Head != null) Head.enabled = true;
             if (_line != null) _line.enabled = true;
         }
@@ -746,6 +779,7 @@ namespace FlockFive
             if (_bodySr != null) _bodySr.enabled = false;
             if (_legBackSr != null) { _legBackSr.enabled = false; _legFrontSr.enabled = false; }
             if (_collarSr != null) _collarSr.enabled = false;
+            if (_ground != null) _ground.Show(false);
             if (Head != null) Head.enabled = false;
             if (_line != null) _line.enabled = false;
             if (_neckSr == null) return;

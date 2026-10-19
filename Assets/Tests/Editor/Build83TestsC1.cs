@@ -166,7 +166,8 @@ namespace FlockFive.Editor
                 var c = StudioBirds.ToCard(new Vector2(StudioBirds.LogoOx, StudioBirds.LogoOy), r);
                 Check("birds-v5-logo-map", (c - r.position).magnitude < 0.01f, "logo origin maps to the card logo rect");
             }
-            Check("real-art-head-2x", span > 2.4f && span < 2.6f, "head x" + span.ToString("0.00") + " of the previous on-screen size");
+            // b115: the head is intentionally OstrichMark.GrowFactor (1.15x) bigger; the 2.4-2.6x band was for the pre-grow size.
+            Check("real-art-head-2x", span / OstrichMark.GrowFactor > 2.4f && span / OstrichMark.GrowFactor < 2.6f, "head x" + span.ToString("0.00") + " of the previous on-screen size");
         }
 
         static void CheckLesson(System.Action<string, bool, string> Check)
