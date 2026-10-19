@@ -31,6 +31,7 @@ namespace FlockFive
             public byte[] Kind;
             public byte[] R, G, B, A;
             public int N;
+            public bool Burst;
             public Material Mat;
         }
 
@@ -48,6 +49,16 @@ namespace FlockFive
         float _cloud = 1f;
         float _shimmer = 1f;
         bool _motion = true;
+        // Season scene burst (SeasonCrossfade drives these). _burstA scales the burst sheet's alpha,
+        // _energy scales ambient drift while the scene plays; both rest at 0 / 1.
+        float _burstA;
+        float _energy = 1f;
+        float _driftNow = 1f;
+        Sheet _burst;
+        // Winter ambient: only the occasional flake or two flutters by and flips around.
+        public const int SparseSnow = 3;
+        public const int SparseSnowLow = 2;
+        public const float SnowFlipHz = 2.3f;
 
         public static bool HomeLive => _homeRoot != null;
 
@@ -98,7 +109,7 @@ namespace FlockFive
         void Build(GardenScene scene)
         {
             bool low = FoliageSway.LowPower;
-            _sheets = new Sheet[6];
+            _sheets = new Sheet[7];
             _seedScene = scene;
             _sheetN = 0;
             var tune = SeasonMotion.For(scene);
@@ -108,7 +119,9 @@ namespace FlockFive
             SeasonMotion.Scene = scene;
             var n = SeasonMotion.Lively(scene, low);
             var rng = new System.Random(scene == GardenScene.Desert ? 29 : 17 + (int)scene * 3);
-            if (n.Snow > 0) AddSheet(SpriteCatalog.Glow, n.Snow, Snow, rng);
+            // Winter is sparse: a flake or two at a time, not a curtain (Brandon). Budget table untouched.
+            int snowN = scene == GardenScene.Winter ? Mathf.Min(n.Snow, low ? SparseSnowLow : SparseSnow) : n.Snow;
+            if (snowN > 0) AddSheet(SpriteCatalog.Glow, snowN, Snow, rng);
             if (n.Leaf > 0) AddSheet(SpriteCatalog.PetalPeach, n.Leaf, Leaf, rng);
             if (n.Petal > 0) AddSheet(SpriteCatalog.PetalPink, n.Petal, Petal, rng);
             if (n.Wisp > 0) AddSheet(SpriteCatalog.Glow, n.Wisp, Wisp, rng);
@@ -121,11 +134,65 @@ namespace FlockFive
             if (n.Butterfly > 0) AddSheet(SpriteCatalog.PetalPeach, n.Butterfly, Butterfly, rng);
         }
 
+        // Season scene entrance: one extra sheet of the season's own particles, alpha 0 until driven.
+        // Spring petals drift down and sideways, summer motes and glints rise, fall leaves tumble,
+        // winter snow falls (the same flutter-flake sheet as the ambient look, just more of it).
+        public void BeginBurst(GardenScene scene)
+        {
+            if (_burst != null || _sheets == null) return;
+            bool low = FoliageSway.LowPower;
+            int n = low ? SeasonScene.BurstCountLow : SeasonScene.BurstCount;
+            byte kind;
+            Sprite spr;
+            switch (scene)
+            {
+                case GardenScene.Spring: kind = Petal; spr = SpriteCatalog.PetalPink; break;
+                case GardenScene.Summer: kind = Seed; spr = SpriteCatalog.Glow; break;
+                case GardenScene.Fall: kind = Leaf; spr = SpriteCatalog.PetalPeach; break;
+                case GardenScene.Winter: kind = Snow; spr = SpriteCatalog.Glow; break;
+                default: return;
+            }
+            int before = _sheetN;
+            AddSheet(spr, n, kind, new System.Random(101 + (int)scene), scene, true);
+            if (_sheetN > before) _burst = _sheets[_sheetN - 1];
+            _burstA = 0f;
+        }
+
+        public void SetBurst(float alpha, float energy)
+        {
+            _burstA = alpha;
+            _energy = energy;
+            if (_burst != null && _burst.Rend != null) _burst.Rend.enabled = alpha > 0.003f;
+        }
+
+        public void EndBurst()
+        {
+            _burstA = 0f;
+            _energy = 1f;
+            if (_burst == null) return;
+            if (_burst.Rend != null) _burst.Rend.enabled = false;
+            if (_burst.Cols == null) return;
+            for (int i = 0; i < _burst.Cols.Length; i++)
+            {
+                var c = _burst.Cols[i];
+                c.a = 0;
+                _burst.Cols[i] = c;
+            }
+            if (_burst.Mesh != null)
+                _burst.Mesh.SetColors(_burst.Cols, 0, _burst.Cols.Length, MeshUpdateFlags.DontRecalculateBounds);
+        }
+
         void AddSheet(Sprite spr, int n, byte kind, System.Random rng)
+        {
+            AddSheet(spr, n, kind, rng, GardenScene.Desert, false);
+        }
+
+        void AddSheet(Sprite spr, int n, byte kind, System.Random rng, GardenScene burstScene, bool burst)
         {
             if (spr == null || n <= 0 || _sheetN >= _sheets.Length) return;
             var sheet = new Sheet();
             sheet.N = n;
+            sheet.Burst = burst;
             sheet.X = new float[n];
             sheet.Y = new float[n];
             sheet.VX = new float[n];
@@ -151,6 +218,7 @@ namespace FlockFive
                 sheet.X[i] = Mathf.Lerp(left, right, (float)rng.NextDouble());
                 sheet.Y[i] = Mathf.Lerp(bottom, top, (float)rng.NextDouble());
                 SeedSlot(sheet, i, rng);
+                if (burst) SeedBurst(sheet, i, burstScene, rng);
                 int v = i * 4;
                 int t = i * 6;
                 tris[t] = v;
@@ -203,11 +271,12 @@ namespace FlockFive
             float u = (float)rng.NextDouble();
             if (kind == Snow)
             {
-                sheet.HW[i] = Mathf.Lerp(0.035f, 0.07f, u);
+                // Fluttering flake: a bit bigger so the flip reads, slow fall, wide side flutter, tumbling spin.
+                sheet.HW[i] = Mathf.Lerp(0.06f, 0.10f, u);
                 sheet.HH[i] = sheet.HW[i];
                 sheet.VY[i] = -(0.28f + 0.45f * (float)rng.NextDouble());
                 sheet.VX[i] = Mathf.Lerp(-0.15f, 0.15f, (float)rng.NextDouble());
-                sheet.Spin[i] = Mathf.Lerp(-0.6f, 0.6f, (float)rng.NextDouble());
+                sheet.Spin[i] = Mathf.Lerp(-1.8f, 1.8f, (float)rng.NextDouble());
                 byte w = (byte)(210 + (int)(u * 40f));
                 sheet.R[i] = w;
                 sheet.G[i] = w;
@@ -348,6 +417,42 @@ namespace FlockFive
             }
         }
 
+        // Burst slots: season-specific motion while the scene plays.
+        static void SeedBurst(Sheet sheet, int i, GardenScene scene, System.Random rng)
+        {
+            sheet.A[i] = 235;
+            if (scene == GardenScene.Spring)
+            {
+                // Down and sideways on a breeze.
+                sheet.VX[i] = Mathf.Lerp(0.30f, 0.70f, (float)rng.NextDouble());
+                sheet.VY[i] = -(0.40f + 0.30f * (float)rng.NextDouble());
+            }
+            else if (scene == GardenScene.Summer)
+            {
+                // Warm gold light motes and sun glints that rise.
+                sheet.HW[i] = Mathf.Lerp(0.05f, 0.11f, (float)rng.NextDouble());
+                sheet.HH[i] = sheet.HW[i];
+                sheet.VX[i] = Mathf.Lerp(-0.10f, 0.10f, (float)rng.NextDouble());
+                sheet.VY[i] = 0.45f + 0.45f * (float)rng.NextDouble();
+                sheet.R[i] = 255;
+                sheet.G[i] = 226;
+                sheet.B[i] = 140;
+                sheet.A[i] = 210;
+            }
+            else if (scene == GardenScene.Fall)
+            {
+                // Leaves tumble: strong spin, side gusts.
+                sheet.VX[i] = Mathf.Lerp(-0.25f, 0.45f, (float)rng.NextDouble());
+                sheet.VY[i] = -(0.45f + 0.35f * (float)rng.NextDouble());
+                sheet.Spin[i] = Mathf.Lerp(-2.6f, 2.6f, (float)rng.NextDouble());
+            }
+            else if (scene == GardenScene.Winter)
+            {
+                // Same fluttering flakes as the ambient look, just more of them while the scene plays.
+                sheet.VY[i] = -(0.35f + 0.45f * (float)rng.NextDouble());
+            }
+        }
+
         void LateUpdate()
         {
             if (_sheetN == 0 || _sheets == null) return;
@@ -367,6 +472,7 @@ namespace FlockFive
             Frame(out float left, out float right, out float bottom, out float top);
             float dusk = SkyCycle.Dusk;
             if (_home && dusk < 0.62f) dusk = 0.62f;
+            _driftNow = _drift * _energy;
             float wet = 1f - GardenStorm.Wet * 0.85f;
             if (wet < 0.15f) wet = 0.15f;
             for (int s = 0; s < _sheetN; s++)
@@ -404,8 +510,8 @@ namespace FlockFive
                     }
                     else
                     {
-                        x += sheet.VX[i] * _drift * dt;
-                        y = -4.2f + Mathf.Sin(t * 2.2f * _drift + i) * 0.08f;
+                        x += sheet.VX[i] * _driftNow * dt;
+                        y = -4.2f + Mathf.Sin(t * 2.2f * _driftNow + i) * 0.08f;
                         if (x > right + 1.2f)
                         {
                             x = left - 1.6f;
@@ -415,10 +521,10 @@ namespace FlockFive
                 }
                 else
                 {
-                    float sway = Mathf.Sin(t * 0.7f * _drift + sheet.Phase[i]);
-                    float flutter = kind == Wisp ? 0.04f : (kind == Petal || kind == Blossom ? 0.42f : 0.18f);
-                    x += (sheet.VX[i] * _drift + sway * flutter) * dt;
-                    y += sheet.VY[i] * _drift * dt;
+                    float sway = Mathf.Sin(t * 0.7f * _driftNow + sheet.Phase[i]);
+                    float flutter = kind == Wisp ? 0.04f : (kind == Petal || kind == Blossom ? 0.42f : (kind == Snow ? 0.55f : 0.18f));
+                    x += (sheet.VX[i] * _driftNow + sway * flutter) * dt;
+                    y += sheet.VY[i] * _driftNow * dt;
                     if (kind == Butterfly)
                     {
                         // Lazy loops: drift on two slow sines, wrap at the screen edges.
@@ -431,7 +537,7 @@ namespace FlockFive
                     }
                     else if (kind == Fly || kind == Seed)
                     {
-                        y += Mathf.Sin(t * 0.45f * _drift + sheet.Phase[i]) * 0.12f * _drift * dt;
+                        y += Mathf.Sin(t * 0.45f * _driftNow + sheet.Phase[i]) * 0.12f * _driftNow * dt;
                         if (x < left) x = right;
                         else if (x > right) x = left;
                         if (y < bottom) y = top;
@@ -477,6 +583,11 @@ namespace FlockFive
                     else if (av > 255) av = 255;
                     a = (byte)av;
                 }
+                if (sheet.Burst)
+                {
+                    int bv = (int)(a * _burstA);
+                    a = (byte)(bv < 0 ? 0 : (bv > 255 ? 255 : bv));
+                }
                 var col = new Color32(sheet.R[i], sheet.G[i], sheet.B[i], a);
                 int v = i * 4;
                 sheet.Cols[v] = sheet.Cols[v + 1] = sheet.Cols[v + 2] = sheet.Cols[v + 3] = col;
@@ -488,6 +599,11 @@ namespace FlockFive
                     // Wings: width beats between 15% and 100%; the body only tilts.
                     hw *= 0.15f + 0.85f * Mathf.Abs(Mathf.Sin(ang));
                     ang = 0.3f * Mathf.Sin(t * 1.3f + sheet.Phase[i]);
+                }
+                if (kind == Snow)
+                {
+                    // Flip: the flake turns edge-on and back as it tumbles.
+                    hw *= 0.15f + 0.85f * Mathf.Abs(Mathf.Cos(t * SnowFlipHz + sheet.Phase[i] * 1.7f));
                 }
                 float cs = Mathf.Cos(ang);
                 float sn = Mathf.Sin(ang);

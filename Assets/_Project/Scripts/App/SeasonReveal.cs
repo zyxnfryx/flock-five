@@ -7,11 +7,14 @@ namespace FlockFive
     // One path for every backdrop change (desert, winter, spring, and the 40+ rotation).
     // Pure decisions live here. SeasonCrossfade plays them. A change is shown once,
     // the first time that garden is entered; a restart or a later visit does not replay it.
+    // The four seasons play the short SeasonScene (wipe, particles, birds, sting, small label).
+    // Desert keeps its own wipe and welcome line. The "Welcome to the <season>" banner is gone.
     public static class SeasonReveal
     {
-        public const float FadeSeconds = 1.8f;
+        public const float FadeSeconds = SeasonScene.WipeEnd;
         public const float DesertFadeSeconds = 2.5f;
-        public const float BannerSeconds = 2.05f;
+        // Season label window (1.6-2.5 s of the scene). Desert keeps its banner time below.
+        public const float BannerSeconds = SeasonScene.Duration - SeasonScene.SettleStart;
         public const float DesertBannerSeconds = 2.35f;
         const string PrefSeen = "flockfive.season.seen";
 
@@ -28,6 +31,8 @@ namespace FlockFive
         public static bool HoldsPlay { get; private set; }
 
         public static bool BannerLive { get; private set; }
+        // True for the small season label, false for the desert welcome plate.
+        public static bool BannerSmall { get; private set; }
         public static float BannerAlpha { get; private set; }
         public static string BannerLine { get; private set; }
 
@@ -53,10 +58,7 @@ namespace FlockFive
             switch (scene)
             {
                 case GardenScene.Desert: return "Welcome to the Desert";
-                case GardenScene.Winter: return "Welcome to the Winter";
-                case GardenScene.Spring: return "Welcome to the Spring";
-                case GardenScene.Fall: return "Welcome to the Fall";
-                default: return "Welcome to the Summer";
+                default: return SeasonScene.Label(scene);
             }
         }
 
@@ -88,6 +90,7 @@ namespace FlockFive
         {
             _owner = who;
             BannerLine = Banner(scene);
+            BannerSmall = scene != GardenScene.Desert;
             BannerAlpha = 0f;
             BannerLive = true;
             HoldsPlay = hold;
@@ -136,9 +139,10 @@ namespace FlockFive
         }
     }
 
-    // Crossfade, flourish, and the one caption. Birds and branches stay where they are.
+    // Crossfade, flourish, and the season scene. Branches stay where they are.
     // Desert holds play until the banner is gone so a level-15 lesson cannot start early.
-    // Any other season keeps play live and queues the banner behind a tutorial caption.
+    // The four seasons run SeasonScene's 2.5 s timeline and never hold play: a tap skips it,
+    // a tutorial cuts it, a badger action finishes it (FinishLive).
     public sealed class SeasonCrossfade : MonoBehaviour
     {
         static SeasonCrossfade _live;
@@ -153,7 +157,12 @@ namespace FlockFive
         float _bannerDur;
         float _bannerAt;
         bool _desert;
-        bool _horizontal;
+        int _mode;
+        GardenScene _scene;
+        SeasonClock _clock;
+        GardenLife _life;
+        BirdIdle[] _birds;
+        bool _ended;
         bool _shader;
         bool _retired;
         bool _holdLive;
@@ -177,6 +186,16 @@ namespace FlockFive
                 return;
             }
             SeasonReveal.Mark(level);
+            // Ostrich gardens never get a scene; none while a tutorial is up. The new painting
+            // simply shows (the reveal is spent). Desert is not a season scene and is unaffected.
+            bool ostrich = LevelData.Current != null && LevelData.Current.Ostrich;
+            var gate = SeasonScene.Gate(scene, ostrich, SeasonScene.TutorialLive);
+            if (gate == SeasonScene.Skip.Ostrich || gate == SeasonScene.Skip.Tutorial)
+            {
+                if (prev != GardenScene.Summer && oldSprite != null)
+                    SpriteCatalog.ReleaseHeld();
+                return;
+            }
             // Do not RetireLive here. The caller already did, before TakeHeldScene.
             // Retiring now would unload the painting this wipe is about to draw.
             var go = new GameObject("SeasonReveal");
@@ -186,13 +205,36 @@ namespace FlockFive
             fade.StartReveal(next, oldSprite, cam, scene, prev);
         }
 
+        // Tap skip: the scene ends now, painting and particles land in their final state.
+        public static void SkipLive()
+        {
+            if (_live != null && _live._clock != null) _live._clock.Skip();
+        }
+
+        // Badger actions call this first: the scene finishes (skips to its end state) before
+        // the leap or the contest opens, so the two never overlap.
+        public static void FinishLive()
+        {
+            if (_live == null || _live._clock == null) return;
+            _live._clock.Skip();
+            _live.TickSeason();
+        }
+
         void StartReveal(SpriteRenderer next, Sprite oldSprite, Camera cam, GardenScene scene, GardenScene prev)
         {
             _desert = scene == GardenScene.Desert;
+            _scene = scene;
             _fadeDur = SeasonReveal.FadeOf(scene);
             _bannerDur = SeasonReveal.BannerOf(scene);
             _bannerAt = _fadeDur * (_desert ? 0.38f : 0.28f);
-            _horizontal = _desert;
+            _mode = _desert ? SeasonScene.WipeFromSide : SeasonScene.WipeMode(scene);
+            if (!_desert)
+            {
+                _clock = new SeasonClock();
+                _life = transform.parent != null ? transform.parent.GetComponentInChildren<GardenLife>() : null;
+                if (_life != null) _life.BeginBurst(scene);
+                SeasonScene.Live = true;
+            }
             _shader = FoliageSway.ShaderReady;
             _holdLive = oldSprite != null && prev != GardenScene.Summer;
             bool differ = oldSprite != null && (next == null || oldSprite != next.sprite);
@@ -217,13 +259,19 @@ namespace FlockFive
                 _veil = veilGo.GetComponent<SpriteRenderer>();
                 _veil.color = new Color(1f, 1f, 1f, 0f);
             }
-            Sfx.SeasonArrive(_desert);
+            if (_desert) Sfx.SeasonArrive(true);
             SeasonReveal.Bind(this, scene, _desert);
         }
 
         void LateUpdate()
         {
             if (_retired) return;
+            if (_clock != null)
+            {
+                _clock.Tick(PlayClock.Delta, SeasonScene.TutorialLive);
+                TickSeason();
+                return;
+            }
             float dt = PlayClock.Delta;
             _t += dt;
             TickWipe();
@@ -244,17 +292,93 @@ namespace FlockFive
             }
         }
 
+        // One frame of the season scene, driven by the clock (also called by FinishLive).
+        void TickSeason()
+        {
+            if (_ended) return;
+            _t = _clock.T;
+            TickWipe();
+            if (_clock.TakeSting())
+            {
+                // Clean hook: Sfx.SeasonStingHook lets the Musical Producer's stings replace the whoosh.
+                Sfx.SeasonSting(_scene);
+                if (_scene == GardenScene.Spring) Sfx.Chirp();
+            }
+            if (_clock.TakeBirds()) CollectBirds();
+            TickBirds();
+            if (_life != null) _life.SetBurst(SeasonScene.Burst(_t), SeasonScene.Energy(_t));
+            SeasonReveal.SetBanner(SeasonScene.LabelAlpha(_t));
+            if (_t >= _fadeDur && _old != null)
+            {
+                _old.enabled = false;
+                if (_veil != null) _veil.enabled = false;
+            }
+            if (_clock.Done) EndScene();
+        }
+
+        void CollectBirds()
+        {
+            var root = transform.parent;
+            if (root == null) return;
+            _birds = root.GetComponentsInChildren<BirdIdle>(false);
+        }
+
+        void TickBirds()
+        {
+            if (_birds == null) return;
+            float phase = SeasonScene.BirdPhase(_t);
+            for (int i = 0; i < _birds.Length; i++)
+            {
+                var b = _birds[i];
+                if (b == null) continue;
+                if (!b.CanReact || phase < 0f)
+                {
+                    b.ClearReaction();
+                    continue;
+                }
+                // Neighbours start a hair apart; the last bird still lands at rest by 2.5 s.
+                float stagger = Mathf.Min(i * SeasonScene.BirdStagger, 0.3f);
+                float u = Mathf.Clamp01((phase - stagger) / (1f - stagger));
+                var pose = SeasonScene.BirdPose(_scene, u);
+                b.SetReaction(pose.Dx, pose.Dy, pose.Rot, pose.Sx, pose.Sy);
+            }
+        }
+
+        // Cleanup for every exit (finished, skipped, retired, destroyed). Idempotent.
+        void EndScene()
+        {
+            if (_ended) return;
+            _ended = true;
+            if (_birds != null)
+            {
+                for (int i = 0; i < _birds.Length; i++)
+                    if (_birds[i] != null) _birds[i].ClearReaction();
+                _birds = null;
+            }
+            if (_life != null) _life.EndBurst();
+            if (_old != null) _old.enabled = false;
+            if (_veil != null) _veil.enabled = false;
+            if (_clock != null)
+            {
+                SeasonScene.Live = false;
+                SeasonReveal.ClearIf(this);
+                if (_live == this) _live = null;
+                ReleaseHold();
+                enabled = false;
+            }
+        }
+
         void TickWipe()
         {
             float u = _fadeDur <= 0.01f ? 1f : Mathf.Clamp01(_t / _fadeDur);
-            float feather = _desert ? 0.18f : 0.13f;
+            float feather = _desert ? 0.18f : SeasonScene.WipeFeather;
             if (_old != null)
             {
                 if (_shader && _oldSway != null)
                 {
                     // Start just below 0 so the first frame is still the old painting.
                     float edge = Mathf.Lerp(-feather, 1f + feather, u);
-                    _oldSway.SetWipe(edge, feather, _horizontal);
+                    _oldSway.SetWipe(edge, feather, _mode);
                     if (_oldFit != null) _oldFit.Alpha = 1f;
                 }
                 else if (_oldFit != null)
@@ -266,7 +390,12 @@ namespace FlockFive
                 if (_desert)
                     _veil.color = new Color(0.96f, 0.70f, 0.40f, flourish * 0.16f);
                 else
-                    _veil.color = new Color(1f, 0.97f, 0.92f, flourish * 0.07f);
+                {
+                    // Season palette tint riding the wipe (spring blends pink to green).
+                    var tint = Color.Lerp(SeasonScene.PaletteB(_scene), SeasonScene.Palette(_scene), u);
+                    tint.a = flourish * SeasonScene.VeilStrength;
+                    _veil.color = tint;
+                }
             }
         }
 
@@ -306,6 +435,7 @@ namespace FlockFive
             if (_veil != null) _veil.enabled = false;
             SeasonReveal.ClearIf(this);
             ReleaseHold();
+            EndScene();
         }
 
         void ReleaseHold()
@@ -318,6 +448,8 @@ namespace FlockFive
         void OnDestroy()
         {
             if (_live == this) _live = null;
+            EndScene();
+            if (_clock != null) SeasonScene.Live = false;
             ReleaseHold();
             SeasonReveal.ClearIf(this);
         }

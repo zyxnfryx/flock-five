@@ -705,6 +705,9 @@ namespace FlockFive
             if (!up && !string.IsNullOrEmpty(_cueLine)) up = true;
             if (!up && CoachResetHolds() && ResumableCoachStep()) up = true;
             SeasonReveal.TutorUp = up;
+            // Global tutorial gate for the season scene: no scene starts, and a live one is cut,
+            // while any lesson or glove is up.
+            SeasonScene.TutorialLive = up || TutorialStepActive();
         }
 
         static GUIContent _seasonLine;
@@ -721,6 +724,11 @@ namespace FlockFive
             if (!SeasonReveal.HoldsPlay && CoachResetHolds()) return;
             string line = SeasonReveal.BannerLine;
             if (string.IsNullOrEmpty(line)) return;
+            if (SeasonReveal.BannerSmall)
+            {
+                DrawSeasonLabel(s, top, a, line);
+                return;
+            }
             StandardCaptionBox(s, out float w, out float h, out int lo, out int hi);
             lo = CaptionPx(lo);
             hi = CaptionPx(hi);
@@ -743,6 +751,23 @@ namespace FlockFive
             DrawCoachPanel(plate, a);
             StampBannerText(textR, line, st, a, true);
             st.wordWrap = wrap;
+        }
+
+        // Small season label for the season scene (Spring / Summer / Fall / Winter). Plain text,
+        // no plate, no big banner: it fades in and out over the last second of the scene.
+        void DrawSeasonLabel(float s, float top, float a, string line)
+        {
+            var st = CoachLineStyle();
+            int keepSize = st.fontSize;
+            bool keepWrap = st.wordWrap;
+            st.wordWrap = false;
+            st.fontSize = Mathf.RoundToInt(Mathf.Clamp(19f * s, 14f, 28f));
+            float w = Screen.width * 0.5f;
+            float h = st.fontSize * 1.7f;
+            var box = new Rect((Screen.width - w) * 0.5f, top + TutorCaptionGap * s, w, h);
+            StampBannerText(box, line, st, a * 0.92f, true);
+            st.fontSize = keepSize;
+            st.wordWrap = keepWrap;
         }
 
         // Which branch this frame's hint is about. Does not move _coachFrom while a hop

@@ -516,14 +516,36 @@ namespace FlockFive
             float look = Color == BirdColor.Teal ? Mathf.Sin(Time.time * 1.15f + _phase) * mood.Tilt : Mathf.Sin(Time.time * 5.1f + _phase) * mood.Tilt;
             float bob = Mathf.Sin(Time.time * mood.BobHz + _phase) * (fly ? mood.BobAmp * 3.2f : mood.BobAmp);
             float beat = Mathf.Sin(Time.time * 21f + _phase);
-            transform.localPosition = new Vector3(RestLocal.x, RestLocal.y + bob + _liftShown, RestLocal.z);
-            transform.localRotation = Quaternion.Euler(0f, 0f, look + mood.Lean);
+            transform.localPosition = new Vector3(RestLocal.x + _rxDx, RestLocal.y + bob + _liftShown + _rxDy, RestLocal.z);
+            transform.localRotation = Quaternion.Euler(0f, 0f, look + mood.Lean + _rxRot);
             float squash = fly ? mood.Squash : mood.Squash * 0.7f;
             transform.localScale = new Vector3(
-                RestScale.x * scale * (1f + beat * squash),
-                RestScale.y * scale * (1f - beat * squash * 0.8f),
+                RestScale.x * scale * (1f + beat * squash) * _rxSx,
+                RestScale.y * scale * (1f - beat * squash * 0.8f) * _rxSy,
                 1f);
         }
+
+        // Season scene reaction: an additive pose on the seated idle (position, tilt, scale).
+        // Only the plain seated branch reads it, so a sleeping, frozen, shrouded or flying
+        // bird ignores it. Always cleared by SeasonCrossfade when the scene ends.
+        float _rxDx, _rxDy, _rxRot, _rxSx = 1f, _rxSy = 1f;
+
+        public void SetReaction(float dx, float dy, float rotDeg, float sx, float sy)
+        {
+            _rxDx = dx;
+            _rxDy = dy;
+            _rxRot = FaceLeft ? -rotDeg : rotDeg;
+            _rxSx = sx;
+            _rxSy = sy;
+        }
+
+        public void ClearReaction()
+        {
+            _rxDx = _rxDy = _rxRot = 0f;
+            _rxSx = _rxSy = 1f;
+        }
+
+        public bool CanReact => isActiveAndEnabled && !Frozen && !Shrouded && !Sleeping;
 
         const float FlapRate = 1.25f;
 

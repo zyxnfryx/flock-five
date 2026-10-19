@@ -124,6 +124,8 @@ namespace FlockFive
         bool OpenBadgerFight(int cleared)
         {
             if (!BadgerSchedule.Enabled) return false;
+            // A season scene always finishes before any badger action starts.
+            SeasonCrossfade.FinishLive();
             int n = BadgerSchedule.Appearance(cleared);
             if (n < 1) n = 1;
             _bgAppearance = n;

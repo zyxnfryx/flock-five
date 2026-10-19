@@ -96,6 +96,7 @@ namespace FlockFive.Editor
             Suite("poker-back-caption-timing", PokerBackCaptionTimingTests.Run);
             Suite("vip-name-gate", VipNameGateTests.Run);
             Suite("pause-resume-tutorial", PauseResumeTutorialTests.Run);
+            Suite("season-scene", SeasonSceneTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

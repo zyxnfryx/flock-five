@@ -114,12 +114,18 @@ namespace FlockFive
         // MixDesk rain stem stay off. Every other scene is untouched.
         bool _snow;
         public static bool UsesSnow(GardenScene scene) => scene == GardenScene.Winter;
+        // Brandon: no thunder or lightning during snow. Every bolt entry point checks this.
+        public static bool ThunderAllowed(GardenScene scene) => !UsesSnow(scene);
         public bool IsSnow => _snow;
         // Snow flake params (world units, per second). Slower and softer than rain.
-        public const float SnowSizeMin = 0.035f, SnowSizeMax = 0.115f;
+        public const float SnowSizeMin = 0.06f, SnowSizeMax = 0.15f;
         public const float SnowSpeedMin = 0.9f, SnowSpeedMax = 2.4f;
         public const float SnowDrift = 0.35f;
-        public const float SnowCountMul = 0.6f;
+        // Brandon: winter is the occasional flake or two fluttering by and flipping over, not a curtain.
+        public const float SnowCountMul = 0.1f;
+        public const int SnowMinCount = 4;
+        public const float SnowFlipHz = 2.1f;
+        public const float SnowTumbleRad = 0.6f;
 
         public static GardenStorm Attach(Transform root) => Attach(root, GardenScene.Summer);
 
@@ -135,12 +141,13 @@ namespace FlockFive
         int FlakeCount(float w, float h)
         {
             int n = RainDensity.Count(w, h);
-            return _snow ? Mathf.Max(24, Mathf.RoundToInt(n * SnowCountMul)) : n;
+            return _snow ? Mathf.Max(SnowMinCount, Mathf.RoundToInt(n * SnowCountMul)) : n;
         }
 
         // Dev capture. The first storm is otherwise 70s out.
         public void JumpToStorm()
         {
+            if (_snow) return; // snow never storms
             _gardenPlay = FirstWait + 4f; // well past StartDelay + RampIn
             _wet = 1f;
             Wet = 1f;
@@ -158,6 +165,7 @@ namespace FlockFive
 
         void StrikeBranch(Vector3 world)
         {
+            if (_snow) return; // no lightning or thunder in winter
             _aimOn = true;
             _aimX = world.x;
             _aimY = world.y;
@@ -402,6 +410,15 @@ namespace FlockFive
             float hh = _hh[i];
             float c = _cos[i];
             float s = _sin[i];
+            if (_snow)
+            {
+                // Flutter and flip: the flake tumbles a little and turns edge-on and back.
+                float a = PlayClock.Now * SnowFlipHz + i * 1.3f;
+                hw *= 0.15f + 0.85f * Mathf.Abs(Mathf.Cos(a));
+                float rot = Mathf.Sin(a * 0.7f) * SnowTumbleRad;
+                c = Mathf.Cos(rot);
+                s = Mathf.Sin(rot);
+            }
             Put(v, cx, cy, -hw, -hh, c, s);
             Put(v + 1, cx, cy, hw, -hh, c, s);
             Put(v + 2, cx, cy, -hw, hh, c, s);
@@ -698,6 +715,7 @@ namespace FlockFive
 
         void Boom(float power, bool big)
         {
+            if (_snow) return;
             _skyAt = PlayClock.Now - 0.012f;
             _skyBig = big;
             _skyPow = big ? 1f : Mathf.Lerp(0.62f, 0.84f, Mathf.Clamp01(power));

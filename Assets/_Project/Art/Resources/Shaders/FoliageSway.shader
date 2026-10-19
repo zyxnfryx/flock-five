@@ -98,7 +98,11 @@ Shader "FlockFive/FoliageSway"
                 fixed4 col = tex2D(_MainTex, saturate(uv)) * i.color;
                 if (_Wipe.w > 0.5)
                 {
-                    float coord = _Wipe.z > 0.5 ? i.uv.x : (1.0 - i.uv.y);
+                    // z = mode: 0 from top, 1 from the left side, 2 from the bottom, 3 from the horizon (middle out).
+                    float coord = 1.0 - i.uv.y;
+                    if (_Wipe.z > 2.5) coord = abs(i.uv.y - 0.5) * 2.0;
+                    else if (_Wipe.z > 1.5) coord = i.uv.y;
+                    else if (_Wipe.z > 0.5) coord = i.uv.x;
                     col.a *= smoothstep(_Wipe.x - _Wipe.y, _Wipe.x + _Wipe.y, coord);
                 }
                 return col;

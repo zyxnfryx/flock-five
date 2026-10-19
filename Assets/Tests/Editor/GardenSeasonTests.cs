@@ -116,18 +116,19 @@ namespace FlockFive.Editor
             float otherFade = SeasonReveal.FadeOf(GardenScene.Winter);
             bool timing = desertFade > otherFade
                 && desertFade >= 2.2f && desertFade <= 3.2f
-                && otherFade >= 1.5f && otherFade <= 2f
+                && otherFade == SeasonScene.WipeEnd
                 && SeasonReveal.FadeOf(GardenScene.Summer) == otherFade
                 && SeasonReveal.BannerOf(GardenScene.Desert) >= 2f
-                && SeasonReveal.BannerOf(GardenScene.Spring) >= 1.8f && SeasonReveal.BannerOf(GardenScene.Spring) <= 2.5f;
-            Check("reveal-timing", timing, "desert wipe " + desertFade + "s, others " + otherFade + "s");
+                && SeasonReveal.BannerOf(GardenScene.Spring) == SeasonReveal.BannerSeconds
+                && SeasonReveal.BannerOf(GardenScene.Spring) <= SeasonScene.Duration - SeasonScene.SettleStart + 0.001f;
+            Check("reveal-timing", timing, "desert wipe " + desertFade + "s, seasons " + otherFade + "s wipe inside the 2.5s scene");
 
             bool words = SeasonReveal.Banner(GardenScene.Desert) == "Welcome to the Desert"
-                && SeasonReveal.Banner(GardenScene.Winter) == "Welcome to the Winter"
-                && SeasonReveal.Banner(GardenScene.Spring) == "Welcome to the Spring"
-                && SeasonReveal.Banner(GardenScene.Summer) == "Welcome to the Summer"
-                && SeasonReveal.Banner(GardenScene.Fall) == "Welcome to the Fall";
-            Check("reveal-banners", words, "Welcome to the Desert / Winter / Spring / Summer / Fall");
+                && SeasonReveal.Banner(GardenScene.Winter) == "Winter"
+                && SeasonReveal.Banner(GardenScene.Spring) == "Spring"
+                && SeasonReveal.Banner(GardenScene.Summer) == "Summer"
+                && SeasonReveal.Banner(GardenScene.Fall) == "Fall";
+            Check("reveal-banners", words, "Welcome to the Desert; seasons are a one-word label");
 
             bool blocks = SeasonReveal.BlocksIntros(GardenScene.Desert, true)
                 && !SeasonReveal.BlocksIntros(GardenScene.Desert, false)
