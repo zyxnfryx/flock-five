@@ -10708,9 +10708,12 @@ namespace FlockFive
 
         // Top of LEVEL on the pedestal. Higher of the blank and joke stacks,
         // matching DrawFlowerCaption, so the perch stays off the words either way.
-        static float FlowerLevelTop()
+        static float FlowerLevelTop() => FlowerLevelTop(FlowerPlayRect());
+
+        // b132: same maths for any LEVEL square, so the editor test can slide it.
+        static float FlowerLevelTop(Rect rest)
         {
-            var disc = FlowerDisc(FlowerPlayRect(), 0f);
+            var disc = FlowerDisc(rest, 0f);
             float aloneH = disc.height * 0.55f;
             float aloneY = disc.y + (disc.height - aloneH) * 0.5f + disc.height * 0.018f;
             float stackH = disc.height * 0.56f;

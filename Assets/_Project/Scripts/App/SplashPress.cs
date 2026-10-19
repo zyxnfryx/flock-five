@@ -185,6 +185,19 @@ namespace FlockFive
             return PressHit(Id.Level);
         }
 
+        // b132: extra bottom gap under the LEVEL square, 1.2% of the screen height, but never more
+        // than LevelRaiseMaxPx. Brandon asked for only a tiny bit: the cap keeps a notched iPhone
+        // (already 104 px up from the safe-area floor) and the tall screens from jumping by 24 to 31 px.
+        public const float LevelRaiseFrac = 0.012f;
+        public const float LevelRaiseMaxPx = 18f;
+
+        public static float LevelRaise(float h)
+        {
+            if (h <= 0f) return 0f;
+            float r = h * LevelRaiseFrac;
+            return r < LevelRaiseMaxPx ? r : LevelRaiseMaxPx;
+        }
+
         // The wood LEVEL flower. Same square the splash has always drawn and hit:
         // safe-area floor, then the smaller of 94% of the width and half the height.
         public static Rect LevelRect(float w, float h, Rect safe)
@@ -197,6 +210,11 @@ namespace FlockFive
             if (old < 14f) old = 14f;
             float pad = old - 28f * s;
             if (pad < clear) pad = clear;
+            // b132 (Brandon): the LEVEL button hugged the bottom. One shared, capped lift for the
+            // drawn square, the hit, the sink, the sparkles, the ring and every cover that
+            // reads this rect. The bird, limb and name tag stack off the same rect (see
+            // FlowerLevelTop), so the plate clearance is unchanged by it.
+            pad += LevelRaise(h);
             // b87: on wide screens the disc is capped so the side rails keep their columns.
             float win = DeviceFit.TestWindow ?? (Application.isBatchMode ? DeviceFit.PhoneAspect : w / Mathf.Max(1f, h));
             float size = w * (0.94f - 0.40f * DeviceFit.Wide(win)) * DeviceFit.ControlK(win);
