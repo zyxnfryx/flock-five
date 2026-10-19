@@ -283,8 +283,11 @@ namespace FlockFive
         public static int HiveReleasePick(float pos, int count) => count <= 1 ? 0 : ((Mathf.RoundToInt(pos) % count) + count) % count;
         float _levelHiveStride;
         const string HiveTitle = "Collection";
+        // b119 (Brandon): the banner is three short sentences on three lines. One-off exception to the usual
+        // two-line caption cap, this banner only. Explicit breaks, never word-wrapped; the font shrinks so the
+        // widest line fits the span (AlbumBodyPx).
         const string HiveSubtitle = "Find bees to earn cards.";
-        const string HiveHowTo = "Tap a card to take a look, tap again to flip.";
+        const string HiveHowTo = "Tap a card to take a look.\nTap again to flip.";
         const string HiveFlipSeenKey = "flockfive.hive.flip.seen";
         // First visit to the album. Same done-flag pattern as the other coach lessons.
         const string CoachHiveAlbumKey = "flockfive.coach.hivealbum";
@@ -16709,16 +16712,17 @@ namespace FlockFive
             var titleR = new Rect(textX, hiveHead.center.y - titleH * 0.5f, textW, titleH);
             titleSt.fontSize = FitFont(titleSt, HiveTitle, titleR.width, titleR.height * 0.9f, floor, titlePx);
 
-            // Two short lines, always. Content rects go to DrawCoachPanel (shared pad);
-            // do not pre-inflate or the plate overlaps the Back medal.
+            // Three short lines (Brandon's exception), no wrapping. Content rects go to DrawCoachPanel
+            // (shared pad); do not pre-inflate or the plate overlaps the Back medal.
             string body = HiveSubtitle + "\n" + HiveHowTo;
             var bodySt = GuiPool.Label(GuiSlot.AlbumBody);
             bodySt.fontStyle = FontStyle.Bold;
             bodySt.alignment = TextAnchor.UpperLeft;
-            bodySt.wordWrap = true;
+            bodySt.wordWrap = false;
             int bodyPx = Mathf.Max(floor - 1, Mathf.RoundToInt(17f * s));
             if (bodyPx < 15) bodyPx = 15;
             float bodyW = Mathf.Max(48f, textRight - left);
+            bodyPx = AlbumBodyPx(bodySt, body, bodyW, bodyPx);
             bodySt.fontSize = bodyPx;
             float bodyH = Mathf.Max(bodyPx + 6f, bodySt.CalcHeight(GuiPool.Text(GuiText.AlbumBody, body), bodyW) + 2f);
             float bodyY = Mathf.Max(hiveHead.yMax, CaptionBelowBack(s, TopHud()));
@@ -16735,6 +16739,27 @@ namespace FlockFive
             GUI.color = Color.white;
             StampReadable(bodyR, body, bodySt, AlbumInk);
             return CoachPanelRect(bodyR).yMax + 4f * s;
+        }
+
+        // b119: largest font (down from basePx) at which the widest explicit line of the Collection banner fits
+        // width on one line. ShellBottom (CardText) and DrawAlbumHeader both call this so they measure alike.
+        public static int AlbumBodyPx(GUIStyle st, string body, float width, int basePx)
+        {
+            bool prevWrap = st.wordWrap;
+            int prev = st.fontSize;
+            st.wordWrap = false;
+            int px = basePx;
+            while (px > 9)
+            {
+                st.fontSize = px;
+                float widest = 0f;
+                foreach (var line in body.Split('\n')) widest = Mathf.Max(widest, st.CalcSize(new GUIContent(line)).x);
+                if (widest <= width) break;
+                px--;
+            }
+            st.fontSize = prev;
+            st.wordWrap = prevWrap;
+            return px;
         }
 
         // b108: shared text span for the Collection page banners. Same left inset as the Back medal, mirrored on
