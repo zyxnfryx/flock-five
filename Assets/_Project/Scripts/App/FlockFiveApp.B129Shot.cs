@@ -81,6 +81,11 @@ namespace FlockFive
                     if (i == 2) SaveFrame(dir + "/size/size-130-ipad-1024x1366.png");
                     File.AppendAllText(log, Overlap("SIZE " + stag[i] + " ipad"));
                 }
+                // v3: the per-device clamp option (off by default) at 1.15 with a 1.10 tablet ceiling
+                Badger129.BattleScale = 1.15f; Badger129.BattleScaleMaxTablet = 1.10f;
+                for (float w = 0f; w < 0.7f; w += Kick()) { _bgLine = BadgerCopy.YourPick; yield return null; }
+                File.AppendAllText(log, Overlap("SIZE 115 ipad clampTablet1.10"));
+                Badger129.BattleScaleMaxTablet = 0f;
                 Badger129.BattleScale = Badger129.BattleScaleDefault;
 
                 // ---------- 3) transition ----------

@@ -642,6 +642,7 @@ namespace FlockFive
         // tint: the chunk colour (the badger thaw passes icy blue/white). Highlights stay white.
         public static bool DrawShatter(Rect r, float t, Color tint)
         {
+            bool custom = tint != IceTint;
             if (t >= 1f) return false;
             if (t < 0f) return true;
             var white = Texture2D.whiteTexture;
@@ -654,10 +655,21 @@ namespace FlockFive
                 float sz = r.width * (0.10f + 0.03f * (i % 3)) * (1f - 0.4f * t);
                 var prev = GUI.matrix;
                 GUIUtility.RotateAroundPivot(i * 37f + t * 260f, at);
-                GUI.color = new Color(tint.r, tint.g, tint.b, 0.9f * a);
-                GUI.DrawTexture(new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz, sz * 0.7f), white);
-                GUI.color = new Color(1f, 1f, 1f, 0.7f * a);
-                GUI.DrawTexture(new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz * 0.5f, sz * 0.25f), white);
+                var chunk = new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz, sz * 0.7f);
+                var hi = new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz * 0.5f, sz * 0.25f);
+                if (custom)
+                {
+                    // own light, added on top: never mixed with what is behind (no green cast on the jungle)
+                    DrawAdditive(chunk, white, new Color(tint.r, tint.g, tint.b, 0.9f * a));
+                    DrawAdditive(hi, white, new Color(1f, 1f, 1f, 0.7f * a));
+                }
+                else
+                {
+                    GUI.color = new Color(tint.r, tint.g, tint.b, 0.9f * a);
+                    GUI.DrawTexture(chunk, white);
+                    GUI.color = new Color(1f, 1f, 1f, 0.7f * a);
+                    GUI.DrawTexture(hi, white);
+                }
                 GUI.matrix = prev;
             }
             // The default call keeps its gold-sparkle burst. A custom tint (the badger thaw's icy blue/white) bursts as a
@@ -665,11 +677,37 @@ namespace FlockFive
             if (tint == IceTint) DrawAt(r.center, r.height * (0.5f + t), a, tint, true);
             else
             {
-                DrawGlow(r.center, r.height * (0.9f + 0.8f * t), new Color(tint.r, tint.g, tint.b, 0.75f * a));
-                DrawGlow(r.center, r.height * (0.35f + 0.5f * t), new Color(1f, 1f, 1f, 0.6f * a));
+                var glow = SpriteCatalog.Glow != null ? SpriteCatalog.Glow.texture : null;
+                if (glow != null)
+                {
+                    float g1 = r.height * (0.9f + 0.8f * t), g2 = r.height * (0.35f + 0.5f * t);
+                    DrawAdditive(new Rect(r.center.x - g1 * 0.5f, r.center.y - g1 * 0.5f, g1, g1), glow, new Color(tint.r, tint.g, tint.b, 0.75f * a));
+                    DrawAdditive(new Rect(r.center.x - g2 * 0.5f, r.center.y - g2 * 0.5f, g2, g2), glow, new Color(1f, 1f, 1f, 0.6f * a));
+                }
             }
             GUI.color = Color.white;
             return true;
+        }
+
+        // Additive blit (FlockFive/IceAdditive, Resources/Fx/fx_ice_additive.shader): the colour is added to the
+        // frame, so a light tint stays that tint on any background. Falls back to normal blending if the material is missing.
+        static Material _additive; static bool _additiveTried;
+        public static Material Additive()
+        {
+            if (_additiveTried) return _additive;
+            _additiveTried = true;
+            var sh = Resources.Load<Shader>("Fx/fx_ice_additive");
+            Material m = sh != null && sh.isSupported ? new Material(sh) { hideFlags = HideFlags.HideAndDontSave } : null;
+            _additive = m;
+            return _additive;
+        }
+        public static void DrawAdditive(Rect r, Texture tex, Color c)
+        {
+            if (Event.current == null || Event.current.type != EventType.Repaint || tex == null || c.a < 0.01f) return;
+            var m = Additive();
+            if (m == null) { GUI.color = c; GUI.DrawTexture(r, tex); GUI.color = Color.white; return; }
+            // neutral modulate for Graphics.DrawTexture is 0.5; the shader adds rgb * a
+            Graphics.DrawTexture(r, tex, new Rect(0f, 0f, 1f, 1f), 0, 0, 0, 0, new Color(c.r * 0.5f, c.g * 0.5f, c.b * 0.5f, c.a * 0.5f), m);
         }
 
         // Soft disc. SpriteCatalog.Glow is built once. No per-frame texture.

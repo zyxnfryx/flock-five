@@ -1778,7 +1778,7 @@ namespace FlockFive
             spot.Alpha = BadgerFighter.Alpha(_bgStage);
             BadgerArtSize("badger_idle_b", 1f, out float aw, out float ah);
             var mark = BadgerFighterPlace.Rest(box, aw, ah);
-            spot.Unit = mark.Unit * Badger129.BattleScale; // b129: the one battle-size knob
+            spot.Unit = mark.Unit * Badger129.BattleScaleFor(Screen.width, Screen.height); // b129: the one battle-size knob
             spot.FaceLeft = mark.FaceLeft;
             float bh = box.BossFighter.height;
             var foot = mark.Foot;
@@ -1990,29 +1990,27 @@ namespace FlockFive
                 block.x = foot.x - block.width * 0.5f;
                 if (age < BadgerIceAnim.FreezeSeconds)
                 {
-                    // snapped into the hands-up pose (the standing art, ghosted above the ice line), ice climbing feet to head
+                    // snapped into the hands-up pose (no-ice art at 100%), then the block revealed bottom-up through a clip
                     float g = BadgerIceAnim.Grow(age);
-                    if (GuiPaint() && g < 0.999f)
+                    if (GuiPaint())
                     {
-                        var tr0 = spr.textureRect;
-                        float tw0 = spr.texture.width, th0 = spr.texture.height;
-                        var uvTop = new Rect(tr0.x / tw0, (tr0.y + tr0.height * g) / th0, tr0.width / tw0, tr0.height * (1f - g) / th0);
-                        var dTop = new Rect(block.x, block.y, block.width, block.height * (1f - g));
-                        GUI.color = new Color(1f, 1f, 1f, spot.Alpha * 0.72f);
-                        GUI.DrawTextureWithTexCoords(dTop, spr.texture, uvTop, true);
-                        GUI.color = Color.white;
-                    }
-                    if (g > 0.01f && GuiPaint())
-                    {
-                        var tr = spr.textureRect;
-                        float tw = spr.texture.width, th = spr.texture.height;
-                        var uv = new Rect(tr.x / tw, tr.y / th, tr.width / tw, tr.height / th * g);
-                        var dst = new Rect(block.x, block.yMax - block.height * g, block.width, block.height * g);
-                        GUI.color = new Color(1f, 1f, 1f, spot.Alpha);
-                        GUI.DrawTextureWithTexCoords(dst, spr.texture, uv, true);
-                        GUI.color = Color.white;
-                        // frost line riding the top of the ice
-                        SparkleFx.DrawGlow(new Vector2(block.center.x, dst.y), block.width * 0.9f, new Color(0.85f, 0.97f, 1f, 0.55f * (1f - g * 0.6f)));
+                        var hands = SpriteCatalog.BadgerArt(BadgerIceAnim.HandsUpArt);
+                        if (hands != null)
+                        {
+                            float hu = unit * BadgerIceAnim.HandsUpScale;
+                            var hr = new Rect(block.x + BadgerIceAnim.HandsUpX * unit, block.y + BadgerIceAnim.HandsUpY * unit,
+                                hands.rect.width * hu, hands.rect.height * hu);
+                            DrawSpriteRect(hands, hr, spot.Alpha);
+                        }
+                        if (g > 0.001f)
+                        {
+                            var clip = new Rect(block.x - 4f, block.yMax - block.height * g, block.width + 8f, block.height * g + 4f);
+                            GUI.BeginClip(clip);
+                            DrawSpriteRect(spr, new Rect(block.x - clip.x, block.y - clip.y, block.width, block.height), spot.Alpha);
+                            GUI.EndClip();
+                            // frost line riding the top of the ice
+                            SparkleFx.DrawGlow(new Vector2(block.center.x, clip.y), block.width * 0.9f, new Color(0.85f, 0.97f, 1f, 0.55f * (1f - g * 0.6f)));
+                        }
                     }
                     float sp = BadgerIceAnim.SprayAlpha(age);
                     if (sp > 0.01f && GuiPaint())
@@ -2037,6 +2035,15 @@ namespace FlockFive
             finally { GUI.matrix = keep; GUI.color = Color.white; }
         }
         bool _bgIceWas;
+
+        static void DrawSpriteRect(Sprite sp, Rect r, float alpha)
+        {
+            var tr = sp.textureRect;
+            float tw = sp.texture.width, th = sp.texture.height;
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            GUI.DrawTextureWithTexCoords(r, sp.texture, new Rect(tr.x / tw, tr.y / th, tr.width / tw, tr.height / th), true);
+            GUI.color = Color.white;
+        }
 
         static bool BadgerFrozenLine(string line)
             => line == BadgerCopy.FreezeSprayFrozen || line == BadgerCopy.HotSauceFrozen;

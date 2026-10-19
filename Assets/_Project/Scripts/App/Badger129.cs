@@ -14,6 +14,16 @@ namespace FlockFive
         // the album never read it.
         public const float BattleScaleDefault = 1f;
         public static float BattleScale = BattleScaleDefault;
+        // v3 option: per-device ceiling on the knob. 0 = off (default, nothing changes). TabletAspect: w/h above this is
+        // treated as a tablet (iPad 0.75, iPhone 0.46).
+        public static float BattleScaleMaxTablet = 0f;
+        public static float BattleScaleMaxPhone = 0f;
+        public const float TabletAspect = 0.6f;
+        public static float BattleScaleFor(float screenW, float screenH)
+        {
+            float cap = screenH > 0f && screenW / screenH > TabletAspect ? BattleScaleMaxTablet : BattleScaleMaxPhone;
+            return cap > 0f ? Mathf.Min(BattleScale, cap) : BattleScale;
+        }
 
         // ---- the leap (garden to fight) ----
         // Same beats as BadgerLeap (hop 0.8, crouch 0.6, leap 1.2, wash 0.4 = 3.0 s). The leap beat now carries the
@@ -77,6 +87,12 @@ namespace FlockFive
     // b129: the freeze and thaw beats on the fighter. Clocks on PlayClock (a capture step is honored).
     public static class BadgerIceAnim
     {
+        // v3: the no-ice hands-up art, placed inside the block art (block-sprite px), measured from the fur bounds of
+        // both PNGs so he lines up with himself when the ice finishes.
+        public const string HandsUpArt = "badger_handsup_noice";
+        public const float HandsUpScale = 0.805f;
+        public const float HandsUpX = 57.0f;
+        public const float HandsUpY = 44.7f;
         // Hands-up badger's feet inside the block art, in block-art pixels above its bottom edge (icicles hang below).
 
         public const float SpraySeconds = 0.10f;
