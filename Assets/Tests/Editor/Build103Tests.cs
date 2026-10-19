@@ -234,15 +234,9 @@ namespace FlockFive.Editor
                 string app = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");
                 int poke = app.IndexOf("InspectCardTap(big, ix", System.StringComparison.Ordinal); // b114: the card stack routes combs through InspectCardTap -> PokeHoneycombs
                 int flip = app.IndexOf("BeginHiveFlip(ix);", poke, System.StringComparison.Ordinal);
-                Check("smudge runs before flip and blocks it", poke > 0 && flip > poke && app.Contains("cardTap == CardTap.Card && !PageSwipeAte") && app.Contains("combs && PokeHoneycombs(big, ix)"), "");
-                HoneyPoke.Clear();
-                bool five = true;
-                for (int i = 0; i < HoneyPoke.Cap; i++) five &= HoneyPoke.Place(1f + i, new Vector2(5f, 5f), 20f);
-                bool recycled = HoneyPoke.Place(9f, Vector2.zero, 20f) && HoneyPoke.Placed == HoneyPoke.Cap; // b109: every tap lands, ring recycles
-                int first = HoneyPoke.At(0).Serial; // the oldest slot was just overwritten by the 11th tap
-                bool ages = Mathf.Approximately(HoneyPoke.AgeAlpha(HoneyPoke.Serial), 1f) && HoneyPoke.AgeAlpha(HoneyPoke.Serial - 5) > 0.4f && HoneyPoke.AgeAlpha(HoneyPoke.Serial - HoneyPoke.Cap) < 0.001f;
-                for (int i = 0; i < 25; i++) five &= HoneyPoke.Place(20f + i, new Vector2(i, i), 20f);
-                Check("smudge ring recycles and fades by taps", five && recycled && ages && first == HoneyPoke.Cap + 1 && HoneyPoke.Placed == HoneyPoke.Cap, "serial " + HoneyPoke.Serial);
+                Check("honey poke runs before flip and blocks it", poke > 0 && flip > poke && app.Contains("cardTap == CardTap.Card && !PageSwipeAte") && app.Contains("combs && PokeHoneycombs(big, ix)"), "");
+                string poked = File.ReadAllText("Assets/_Project/Scripts/App/HoneyPoke.cs");
+                Check("honey tap leaves no smudge", !app.Contains("HoneyPoke.Place(") && !app.Contains("HoneyPoke.Draw(") && !poked.Contains("Smudge") && !poked.Contains("DrawTexture"), "");
                 // b109: squish bank. Own five-take bank, pitch inside 0.96-1.04, no clip twice in a row, one per frame.
                 bool pitchOk = true, noRepeat = true; int prevClip = -1, plays = 0;
                 for (int i = 0; i < 100; i++)

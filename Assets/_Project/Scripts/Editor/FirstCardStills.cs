@@ -68,7 +68,7 @@ namespace FlockFive.Editor
 
         static void SmudgeProof(Board b)
         {
-            Caption(b, "A honeycomb tap does not flip. Five smudges fade. Later taps still squish.");
+            Caption(b, "A honeycomb tap does not flip and leaves no marks. Taps squish.");
             var card = new Rect(145, 240, 460, 644);
             var kind = Find("amber");
             PaintCard(b, card, kind, false, false);
@@ -79,9 +79,6 @@ namespace FlockFive.Editor
                 int cx = 210 + i * 78;
                 int cy = 760;
                 Hex(b, cx, cy, 34, 40, rim);
-                float a = 1f - (i / 4f) * (i / 4f);
-                b.SmudgeAt(cx + (i - 2) * 4, cy - 4, 30 + (i % 3) * 3, new Color(0.36f, 0.16f, 0.04f, 0.90f * a));
-                b.SmudgeAt(cx + (i - 2) * 4 - 4, cy - 10, 12, new Color(1f, 0.84f, 0.40f, 0.62f * a));
             }
         }
 

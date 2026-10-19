@@ -17642,7 +17642,6 @@ namespace FlockFive
             if (tick && _hiveTutorOn && !Ads.IsShowing && !_hiveInspectClosing)
                 AdvanceHiveTutor(ix);
             DrawBeeAlbumCard(big, ix, s, true);
-            HoneyPoke.Draw(AdPause.Unscaled);
             if (t > 0.4f)
                 DrawFlipArrows(big, s, Mathf.Clamp01(t));
             float hintTop = big.yMax + 12f * s;
@@ -17676,7 +17675,7 @@ namespace FlockFive
             GUI.Label(xBtn, "X", xLab);
 
             bool fullyOpen = !_hiveInspectClosing && u >= 1f;
-            // A honeycomb is not the card. It squishes and smudges, and the flip waits.
+            // A honeycomb is not the card. It squishes (no marks left), and the flip waits.
             var cardTap = InspectCardTap(big, ix, fullyOpen && !upgradeHit);
             bool honeyAte = cardTap == CardTap.Honey;
             if (cardTap == CardTap.Card && !PageSwipeAte && !CardTilt.DragAte)
@@ -18166,7 +18165,6 @@ namespace FlockFive
                 if (drag && HoneyPoke.DragInto(i))
                 {
                     ate = true;
-                    HoneyPoke.Place(AdPause.Unscaled, e.mousePosition, _honeyHits[i].width * 0.42f);
                     Sfx.HoneySquish();
                 }
                 if (held) ate = true;
@@ -18174,7 +18172,6 @@ namespace FlockFive
                 ate = true;
                 // b109: a press that already squished this cell on the way in (drag) does not squish again on release.
                 if (!HoneyPoke.Release(i)) continue;
-                HoneyPoke.Place(AdPause.Unscaled, e != null ? e.mousePosition : _honeyHits[i].center, _honeyHits[i].width * 0.42f);
                 Sfx.HoneySquish();
             }
             // A release anywhere ends the press: a drag that left every cell must not leave the latch set.
@@ -18623,7 +18620,7 @@ namespace FlockFive
         bool UpgradeContext => _home == HomeFace.Hive && !_levelHive;
 
         // The one tap path for every card inspect (album, round popup, tutor).
-        // Honeycombs on the back win first: squish + smudges, never a flip.
+        // Honeycombs on the back win first: squish, never a flip.
         // Anything else on the card is a flip. Demo taps are swallowed.
         CardTap InspectCardTap(Rect big, int ix, bool armed)
         {

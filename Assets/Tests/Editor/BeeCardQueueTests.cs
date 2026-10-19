@@ -167,22 +167,19 @@ namespace FlockFive.Editor
 
         static void Poke(System.Action<string, bool, string> check)
         {
-            HoneyPoke.Clear();
-            const float now = 10f;
-            bool filled = true;
-            for (int i = 0; i < HoneyPoke.Cap; i++)
+            HoneyPoke.DragInto(2);
+            check("poke-latch", HoneyPoke.LastCell == 2 && !HoneyPoke.DragInto(2), HoneyPoke.LastCell.ToString());
+            // b-waffle-2: the jewel sheen is a gentle sweep, never a frozen band.
+            check("glimmer-off-static", CardArt.GlimmerPos(0f, 0) < 0f && CardArt.GlimmerPos(-1f, 3) < 0f, "t<=0 draws no sheen");
+            bool sweeps = false, rests = false, inRange = true;
+            for (int k = 0; k < 400; k++)
             {
-                if (!HoneyPoke.Place(now + i * 0.02f, new Vector2(8f + i, 12f), 20f))
-                    filled = false;
+                float gp = CardArt.GlimmerPos(0.5f + k * 0.05f, 2);
+                if (gp >= 0f) { sweeps = true; inRange &= gp <= 1f; } else rests = true;
             }
-            check("poke-fill", filled && HoneyPoke.Placed == HoneyPoke.Cap, HoneyPoke.Placed.ToString());
-            check("poke-recycles", HoneyPoke.Place(now + 1f, new Vector2(3f, 3f), 20f) && HoneyPoke.Placed == HoneyPoke.Cap, "ring recycles (b109), every tap lands");
-            float mid = HoneyPoke.Alpha(now + HoneyPoke.FadeSec * 0.5f, now);
-            check("poke-fade", Mathf.Abs(HoneyPoke.Alpha(now, now) - 1f) < 0.001f
-                && Mathf.Abs(mid - 0.75f) < 0.001f
-                && HoneyPoke.Alpha(now + HoneyPoke.FadeSec, now) == 0f, mid.ToString("0.00"));
+            check("glimmer-sweeps-and-rests", sweeps && rests && inRange && CardArt.GlimmerPeriod >= 2.5f, "slow sweep then calm");
             HoneyPoke.Clear();
-            check("poke-clear", HoneyPoke.Placed == 0, HoneyPoke.Placed.ToString());
+            check("poke-clear", HoneyPoke.LastCell == -1, HoneyPoke.LastCell.ToString());
         }
 
         static void Carousel(System.Action<string, bool, string> check)
@@ -242,7 +239,11 @@ namespace FlockFive.Editor
             check("draw-critter", app.Contains("CardCritter.Draw("), "critter");
             check("draw-bake", app.Contains("CardFaceBake.Build("), "bake");
             check("draw-finish", app.Contains("FinishInk.Tag(finish)") && app.Contains("FinishInk.Tag(col == 1"), "ink");
-            check("draw-poke", app.Contains("HoneyPoke.Place(") && app.Contains("Sfx.HoneySquish()"), "poke");
+            check("draw-poke", !app.Contains("HoneyPoke.Place(") && !app.Contains("HoneyPoke.Draw(") && app.Contains("Sfx.HoneySquish()"), "squish, no smudge");
+            string art = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/CardArt.cs"));
+            check("jewel-no-static-sheen", !art.Contains("Fixed diagonal sheen") && art.Contains("GlimmerLive(t)") && art.Contains("SheenTex(f0)"), "sheen only animated");
+            string pokerSfx = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/Sfx.Poker.cs"));
+            check("squish-never-knock", !pokerSfx.Contains(": _cardBump;") && pokerSfx.Contains("Audio/Honey/sfx_honey_squish"), "no card-bump fallback");
             check("no-auto", !app.Contains("_levelHiveAuto") && !app.Contains("HiveCarouselStep"), "carousel");
             check("tap-dir", app.Contains("HiveCarousel.TapDir(") && app.Contains("i == centerIx"), "dots");
 
