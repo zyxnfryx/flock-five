@@ -17,11 +17,12 @@ namespace FlockFive
     //   1-14   summer (jungle)
     //   15-24  desert oasis
     //   25-30  winter
-    //   31-39  spring (the one deliberate change on a honey badger garden, Brandon-approved)
-    //   40+    summer, fall, winter, spring, ... on a FIXED grid: change k is 40 + 8k. A change
-    //          that would land on a honey badger garden slides +1 only for that change; the
-    //          grid itself does not shift (40, 48, 57, 64, 72, 80, 88, 97, ...).
-    // Brandon's rule: from 40 on, a backdrop change never lands on a honey badger garden.
+    //   31-39  spring
+    //   40+    summer, fall, winter, spring, ... on a FIXED grid: change k is 40 + 8k
+    //          (40, 48, 56, 64, 72, 80, 88, 96, ...). A change may land on a honey badger
+    //          garden. It slides +1 (for that change only, the grid does not shift) when it
+    //          would land on an ostrich garden.
+    // Brandon's rule: a backdrop change never lands on an ostrich garden.
     // SeasonReveal plays that change once, the first time the garden is entered.
     public static class GardenSeason
     {
@@ -59,12 +60,20 @@ namespace FlockFive
             return BadgerSchedule.Due(level - 1);
         }
 
-        // Rotation change number k (0 = RotateFrom): fixed grid RotateFrom + 8k, +1 when that
-        // lands on a badger garden. Never accumulates.
+        // Ostrich garden: authored ostrich stages in the ladder (LevelData.Level.Ostrich).
+        // Past the authored ladder there are none yet.
+        public static bool IsOstrichLevel(int level)
+        {
+            return level >= 1 && level <= LevelData.Count && LevelData.Peek(level - 1).Ostrich;
+        }
+
+        // Rotation change number k (0 = RotateFrom): fixed grid RotateFrom + 8k, +1 (repeat)
+        // only while that lands on an ostrich garden. Never accumulates.
         public static int ChangeAt(int k)
         {
             int at = RotateFrom + RotateEvery * k;
-            return IsBadgerLevel(at) ? at + 1 : at;
+            while (IsOstrichLevel(at)) at++;
+            return at;
         }
 
         // Every garden where the backdrop changes, ascending, up to and including `maxLevel`.
@@ -86,15 +95,14 @@ namespace FlockFive
             return ForLevel(level) != ForLevel(level - 1);
         }
 
-        // Validator: no backdrop change (fixed ones and the 40+ rotation) may land on a
-        // badger garden. Returns the first offender or 0. GardenSeasonTests calls this.
-        public static int FirstBadgerClash(int maxLevel)
+        // Validator: no backdrop change (fixed ones and the 40+ rotation) may land on an
+        // ostrich garden. Returns the first offender or 0. GardenSeasonTests calls this.
+        public static int FirstOstrichClash(int maxLevel)
         {
             var list = ChangeLevels(maxLevel);
             for (int i = 0; i < list.Count; i++)
             {
-                if (list[i] == SpringFrom) continue; // the one approved badger-garden change
-                if (IsBadgerLevel(list[i])) return list[i];
+                if (IsOstrichLevel(list[i])) return list[i];
             }
             return 0;
         }

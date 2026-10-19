@@ -54,18 +54,18 @@ namespace FlockFive.Editor
                 else { fail++; Line("FAIL  " + name + "  " + detail); }
             }
 
-            int clash = GardenSeason.FirstBadgerClash(Horizon);
-            Check("no-badger-clash", clash == 0, clash == 0 ? "through " + Horizon : "change on badger garden " + clash);
+            int clash = GardenSeason.FirstOstrichClash(Horizon);
+            Check("no-ostrich-clash", clash == 0, clash == 0 ? "through " + Horizon : "change on ostrich garden " + clash);
 
             var list = GardenSeason.ChangeLevels(Horizon);
             int bad = 0;
             var listText = new StringBuilder();
             for (int i = 0; i < list.Count; i++)
             {
-                if (GardenSeason.IsBadgerLevel(list[i])) bad++;
+                if (GardenSeason.IsOstrichLevel(list[i])) bad++;
                 if (i < 24) listText.Append(list[i]).Append(' ').Append(GardenSeason.ForLevel(list[i])).Append(", ");
             }
-            Check("change-levels-clean", bad == 0, list.Count + " changes, " + bad + " on badger gardens");
+            Check("change-levels-clean", bad == 0, list.Count + " changes, " + bad + " on ostrich gardens");
             Line("      " + listText);
 
             // Every garden where the scene differs from the one before is in the list, and
@@ -75,7 +75,7 @@ namespace FlockFive.Editor
             {
                 bool listed = list.Contains(n);
                 if (listed != GardenSeason.IsChangeLevel(n)) drift++;
-                if (GardenSeason.IsChangeLevel(n) && GardenSeason.IsBadgerLevel(n) && n != GardenSeason.SpringFrom) drift++;
+                if (GardenSeason.IsChangeLevel(n) && GardenSeason.IsOstrichLevel(n)) drift++;
             }
             Check("list-matches-forlevel", drift == 0, drift + " mismatches");
 
@@ -96,20 +96,26 @@ namespace FlockFive.Editor
                 && GardenSeason.ForLevel(39) == GardenScene.Spring
                 && GardenSeason.ForLevel(40) == GardenScene.Summer
                 && GardenSeason.ForLevel(48) == GardenScene.Fall
-                && GardenSeason.ForLevel(56) == GardenScene.Fall
-                && GardenSeason.ForLevel(57) == GardenScene.Winter;
-            Check("fixed-seasons", fixedOk, "1-14 summer, 15-24 desert, 25-30 winter, 31-39 spring, 40 summer, 48 fall, 57 winter");
+                && GardenSeason.ForLevel(55) == GardenScene.Fall
+                && GardenSeason.ForLevel(56) == GardenScene.Winter;
+            Check("fixed-seasons", fixedOk, "1-14 summer, 15-24 desert, 25-30 winter, 31-39 spring, 40 summer, 48 fall, 56 winter");
 
             int gapBad = 0;
             for (int i = 3; i < list.Count; i++)
             {
                 int expect = 40 + 8 * (i - 3);
-                if (list[i] != expect && !(list[i] == expect + 1 && GardenSeason.IsBadgerLevel(expect))) gapBad++;
+                if (list[i] != expect && !(list[i] > expect && GardenSeason.IsOstrichLevel(list[i] - 1))) gapBad++;
             }
-            Check("rotation-gaps", gapBad == 0, "fixed grid 40+8k, +1 only off a badger garden");
-            Check("rotation-explicit", list.Contains(40) && list.Contains(48) && list.Contains(57) && !list.Contains(56)
-                && list.Contains(64) && list.Contains(72) && list.Contains(80) && list.Contains(88) && list.Contains(97) && !list.Contains(96),
-                "40 48 57 64 72 80 88 97");
+            Check("rotation-gaps", gapBad == 0, "fixed grid 40+8k, +1 only off an ostrich garden");
+            Check("rotation-explicit", list.Contains(40) && list.Contains(48) && list.Contains(56) && list.Contains(64)
+                && list.Contains(72) && list.Contains(80) && list.Contains(88) && list.Contains(96),
+                "40 48 56 64 72 80 88 96 (badger levels 56 and 96 stay)");
+
+            bool ostrichClean = !GardenSeason.IsChangeLevel(27) && !GardenSeason.IsChangeLevel(38) && GardenSeason.IsOstrichLevel(27)
+                && GardenSeason.IsOstrichLevel(38) && !GardenSeason.IsOstrichLevel(31) && !GardenSeason.IsOstrichLevel(32);
+            for (int n = 1; n <= LevelData.Count; n++)
+                if (LevelData.Peek(n - 1).Ostrich && GardenSeason.IsChangeLevel(n)) ostrichClean = false;
+            Check("no-season-change-on-ostrich", ostrichClean, "no ostrich garden in 1-" + LevelData.Count + " is a season change");
 
             bool due = SeasonReveal.Due(15, false) && !SeasonReveal.Due(16, false) && !SeasonReveal.Due(14, false)
                 && !SeasonReveal.Due(15, true) && !SeasonReveal.Due(32, false)
