@@ -134,7 +134,6 @@ namespace FlockFive.Editor
                 case CoachStep.Bee:
                 case CoachStep.Leaf:
                 case CoachStep.AlbumHoney:
-                case CoachStep.AlbumUpgrade:
                 case CoachStep.AdoptGreet:
                 case CoachStep.VipWelcome:
                     return CoachTapKind.Informational;
@@ -161,6 +160,7 @@ namespace FlockFive.Editor
                 case CoachStep.AlbumEmpty:
                 case CoachStep.AlbumFlip:
                 case CoachStep.AlbumPage:
+                case CoachStep.AlbumUpgrade:
                 case CoachStep.AdHand:
                 case CoachStep.AdoptLook:
                 case CoachStep.VipPitch:

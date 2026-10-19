@@ -47,6 +47,8 @@ namespace FlockFive
         const string PrefMigrated = "flockfive.hive.collected.mig";
         const string PrefLegacy = "flockfive.hive.collected.legacy";
         const string PrefUpgrades = "flockfive.hive.up.v1";
+        // Set once the first (free) card upgrade has been taken.
+        const string PrefFreeUpgrade = "flockfive.hive.up.free";
         const char Pair = ';';
         const char Kv = ':';
         public const int Finishes = 3;
@@ -526,13 +528,32 @@ namespace FlockFive
             BadgerSchedule.Enabled && BadgerCopy.CoachDone();
 
         public static bool CanUpgrade(int slot) =>
-            UpgradesUnlocked && UpgradeRoom(slot) && Purse.Coins >= UpgradeCost;
+            UpgradesUnlocked && UpgradeRoom(slot) && (FreeUpgradeAvailable || Purse.Coins >= UpgradeCost);
 
-        // Spends UpgradeCost and bumps the slot. False if maxed or broke.
+        // The first upgrade a player ever takes costs nothing, once. A player who already
+        // bought an upgrade before this shipped does not get one back.
+        public static bool FreeUpgradeAvailable
+        {
+            get
+            {
+                Warm();
+                if (PlayerPrefs.GetInt(PrefFreeUpgrade, 0) != 0) return false;
+                for (int i = 0; i < _upgrades.Length; i++)
+                    if (_upgrades[i] > 0) return false;
+                return true;
+            }
+        }
+
+        // Spends UpgradeCost and bumps the slot. The first upgrade ever is free.
+        // False if maxed or broke.
         public static bool TryUpgrade(int slot)
         {
             if (!UpgradesUnlocked || !UpgradeRoom(slot)) return false;
-            if (!Purse.TrySpend(UpgradeCost)) return false;
+            if (FreeUpgradeAvailable)
+            {
+                PlayerPrefs.SetInt(PrefFreeUpgrade, 1);
+            }
+            else if (!Purse.TrySpend(UpgradeCost)) return false;
             _upgrades[slot] = UpgradeOfSlot(slot) + 1;
             SaveUpgrades();
             return true;
@@ -639,7 +660,82 @@ namespace FlockFive
         static BeeVisit AddVisitor()
         {
             Warm();
-            return GrantVisitorAt(PickKind(), PickFinish());
+            ChooseNewestFirst(_counts, Kinds, PickFinish(), Random.Range, out int kind, out BeeFinish finish);
+            return GrantVisitorAt(kind, finish);
+        }
+
+        // Reward preference. The finish roll keeps its weights. Then, in order:
+        // (1) a bee the player has no card of yet (any finish) gets the rolled finish,
+        // (2) a bee that lacks the rolled finish,
+        // (3) a bee that lacks another finish (the roll moves to a finish still missing),
+        // (4) only when every bee has every finish, a plain duplicate of the roll.
+        // range(min, max) is an exclusive-max int roll. counts is kind-major, Finishes per kind.
+        public static void ChooseNewestFirst(int[] counts, int kinds, BeeFinish rolled,
+            System.Func<int, int, int> range, out int kind, out BeeFinish finish)
+        {
+            finish = rolled;
+            kind = 0;
+            int holes = 0;
+            for (int k = 0; k < kinds; k++)
+                if (KindTotal(counts, k) == 0) holes++;
+            if (holes > 0)
+            {
+                kind = NthKind(counts, kinds, range(0, holes), -1);
+                return;
+            }
+            int miss = 0;
+            for (int k = 0; k < kinds; k++)
+                if (counts[k * Finishes + (int)rolled] == 0) miss++;
+            if (miss > 0)
+            {
+                kind = NthKind(counts, kinds, range(0, miss), (int)rolled);
+                return;
+            }
+            // Rolled finish is owned for every bee. Move to a finish that still has a gap.
+            int bestMiss = 0;
+            for (int f = 0; f < Finishes; f++)
+            {
+                int m = 0;
+                for (int k = 0; k < kinds; k++)
+                    if (counts[k * Finishes + f] == 0) m++;
+                if (m > 0) bestMiss++;
+            }
+            if (bestMiss > 0)
+            {
+                int pickF = range(0, bestMiss);
+                for (int f = 0; f < Finishes; f++)
+                {
+                    int m = 0;
+                    for (int k = 0; k < kinds; k++)
+                        if (counts[k * Finishes + f] == 0) m++;
+                    if (m == 0) continue;
+                    if (pickF-- > 0) continue;
+                    finish = (BeeFinish)f;
+                    kind = NthKind(counts, kinds, range(0, m), f);
+                    return;
+                }
+            }
+            kind = range(0, kinds);
+        }
+
+        static int KindTotal(int[] counts, int k)
+        {
+            int n = 0;
+            for (int f = 0; f < Finishes; f++) n += counts[k * Finishes + f];
+            return n;
+        }
+
+        // nth kind with no copies at all (finish -1) or none of this finish.
+        static int NthKind(int[] counts, int kinds, int nth, int finish)
+        {
+            for (int k = 0; k < kinds; k++)
+            {
+                bool gap = finish < 0 ? KindTotal(counts, k) == 0 : counts[k * Finishes + finish] == 0;
+                if (!gap) continue;
+                if (nth == 0) return k;
+                nth--;
+            }
+            return 0;
         }
 
         // Shared grant / save / BeeVisit reveal fields for TakeVisitor,

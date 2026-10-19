@@ -16782,6 +16782,8 @@ namespace FlockFive
             if (_hiveInspect < 0 || !AlbumInspectReady()) return;
             if (Hive.CountOfSlot(_hiveInspect) <= 0) return;
             if (!Hive.UpgradeRoom(_hiveInspect)) return;
+            // The lesson promises a free first upgrade; a player who already has one skips it.
+            if (!Hive.FreeUpgradeAvailable) return;
             BeginUpgradeTutor();
         }
 
@@ -17498,20 +17500,21 @@ namespace FlockFive
             _upgradeBtnR = btn;
             bool room = Hive.UpgradeRoom(slot);
             bool can = Hive.CanUpgrade(slot);
+            bool free = Hive.FreeUpgradeAvailable;
             string line = !room
                 ? "Max honey"
-                : "Upgrade  ·  " + Money.Format(Hive.UpgradeCost);
+                : free ? "Upgrade  ·  FREE" : "Upgrade  ·  " + Money.Format(Hive.UpgradeCost);
             bool held;
             bool hit = HitPad(btn, out held);
             float fade = alpha * (room ? 1f : 0.55f);
             Color plate = can
                 ? new Color(0.18f, 0.12f, 0.05f, (held ? 0.96f : 0.88f) * fade)
-                : new Color(0.12f, 0.10f, 0.08f, 0.72f * fade);
+                : new Color(0.16f, 0.12f, 0.07f, 0.86f * fade);
             GUI.color = plate;
             GUI.DrawTexture(btn, Texture2D.whiteTexture);
             GUI.color = can
                 ? new Color(1f, 0.82f, 0.28f, 0.95f * fade)
-                : new Color(0.70f, 0.64f, 0.50f, 0.55f * fade);
+                : new Color(0.86f, 0.70f, 0.30f, 0.80f * fade);
             float edge = Mathf.Max(2f, 3f * s);
             GUI.DrawTexture(new Rect(btn.x, btn.y, btn.width, edge), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(btn.x, btn.yMax - edge, btn.width, edge), Texture2D.whiteTexture);
@@ -17523,7 +17526,7 @@ namespace FlockFive
             st.alignment = TextAnchor.MiddleCenter;
             st.wordWrap = false;
             st.fontSize = FitFont(st, line, btn.width * 0.90f, btn.height * 0.70f, 16, Mathf.RoundToInt(28f * s));
-            Color ink = can ? new Color(1f, 0.96f, 0.82f, fade) : new Color(0.78f, 0.74f, 0.64f, fade * 0.9f);
+            Color ink = can ? new Color(1f, 0.96f, 0.82f, fade) : new Color(0.92f, 0.86f, 0.72f, fade);
             StampOutlined(btn, line, st, ink, 1, 2);
             if (hit)
             {
@@ -17811,14 +17814,6 @@ namespace FlockFive
                 }
                 var textFace = CardText.TextFaceOf(face, inspectView);
                 CardText.DrawFront(textFace, kind.Name, kind.Front, inspectView, s);
-                if (n > 1)
-                {
-                    var cnt = GuiPool.Label(GuiSlot.AlbumCount);
-                    cnt.fontStyle = FontStyle.Bold;
-                    cnt.alignment = TextAnchor.UpperRight;
-                    cnt.fontSize = Mathf.Max(inspectView ? 22 : Mathf.RoundToInt(14f * s), Mathf.RoundToInt((inspectView ? 20f : 14f) * s));
-                    StampOutlined(new Rect(face.xMax - 56f * s, face.y + 4f * s, 52f * s, inspectView ? 32f * s : 20f * s), "×" + n, cnt, new Color(0.16f, 0.07f, 0.02f), inspectView ? 2 : 1, 1);
-                }
                 if (finish != BeeFinish.Normal)
                 {
                     string foil = finish == BeeFinish.Holo ? "Holo" : "Inverse Rainbow";
