@@ -98,18 +98,18 @@ namespace FlockFive
             new Level { Number = 50, Id = "garden-50", Title = "Garden 50", Make = Garden50 }
         };
 
-        // Garden 38 (ostrich + bees + leaf-lock) is the ladder entry numbered 38.
+        // Garden 38 (ostrich, no obstacles) is the ladder entry numbered 38.
         public static Level Garden38Level => Peek(37);
 
         // Authored ostrich boards (ostrich-impl.txt), notation shared with the C# harness and
         // ostrich.py: limbs ' / ' trunk->tip; bird = [?=shrouded]Color(RGTVP)+Kit(NCB); '-' empty.
         public const string Garden27Spec = "VCVCTCRC / VCTBRCTB / GCTC / GCRCGCTB / GCTCGCRC / TCTCTB / TBVCRCVC | live=GTT queue=RV";
         public const string Garden32Spec = "RBVCTCRB / ?TCGC / VCGCGC / VCVCVC / RBTBRCTB / GCTCRCRB / TBRCRB / RCGCTC / ?TBRCTCTB / - | live=TTV queue=GRR";
-        public const string Garden38Spec = "TBRN / TBGCTB / GCGC / GCTBVC / VCRNVCVC?RN / ?TB?RNTNTN / TNTN / ?TNGCRNVC / - | live=TTG queue=VR breeze";
+        public const string Garden38Spec = "TBRN / TBGCTB / GCGC / GCTBVC / VCRNVCVCRN / TBRNTNTN / TNTN / TNGCRNVC / - | live=TTG queue=VR";
 
         static Board Garden27Ostrich() => ParseAuthored(Garden27Spec);
         static Board Garden32Ostrich() => ParseAuthored(Garden32Spec);
-        public const string Garden43Spec = "GNRC / ?GCRBRNRC / GNRC / RNGC / ?RBRNRNRNGC / RBRCGNRCRB / RBGNGC / GCGN / - | live=RRG queue=RG";
+        public const string Garden43Spec = "GNRC / GCRBRNRC / GNRC / RNGC / RBRNRNRNGC / RBRCGNRCRB / RBGNGC / GCGN / - | live=RRG queue=RG";
         static Board Garden43Ostrich() => ParseAuthored(Garden43Spec);
         static Board Garden38Ostrich() => ParseAuthored(Garden38Spec);
 
