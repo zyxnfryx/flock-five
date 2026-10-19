@@ -128,7 +128,7 @@ namespace FlockFive.Editor
                 && app.Contains("!_ostrichFight) _garden.Ostrich.Sync"), "");
             Check("fight-uses-shared-flight", fight.Contains("PerchOne(") && fight.Contains("FlockRedistribute.Duration")
                 && fight.Contains("OstrichStrike.Contact") && fight.Contains("Wow.Burst") && fight.Contains("Sfx.Chirp"), "");
-            Check("mark-strike-gates-flee", mark.Contains("if (_strikeOn) return;") && mark.Contains("BeginStrike(Vector3"), "");
+            Check("mark-strike-gates-flee", mark.Contains("if (_strikeOn || HoldFlee) return;") && mark.Contains("BeginStrike(Vector3"), "");
 
             Debug.Log(fail == 0 ? "build110-peck tests DONE " + pass + "/" + (pass + fail) : "build110-peck tests FAIL " + fail + " failed, " + pass + " passed");
         }
