@@ -97,6 +97,7 @@ namespace FlockFive.Editor
             Suite("vip-name-gate", VipNameGateTests.Run);
             Suite("pause-resume-tutorial", PauseResumeTutorialTests.Run);
             Suite("coach-arrow-shape", CoachArrowShapeTests.Run);
+            Suite("build115-ostrich-neck", Build115OstrichNeckTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

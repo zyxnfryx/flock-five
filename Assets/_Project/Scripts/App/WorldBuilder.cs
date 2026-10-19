@@ -175,7 +175,10 @@ namespace FlockFive
                 feeders[i] = MakeFeeder(i, new Vector3(FeederRow.X(i, feedersN), FeederY, 0f), root);
             OstrichMark ostrich = null;
             if (curLv != null && curLv.Ostrich)
+                {
                 ostrich = OstrichMark.Attach(root, feedersN);
+                ostrich.FeederArt = feeders;
+            }
             var hive = HiveView.Attach(root);
             var ice = GardenIce.Attach(root, cam);
 
@@ -461,7 +464,7 @@ namespace FlockFive
 
         static FeederView MakeFeeder(int slot, Vector3 pos, Transform parent)
         {
-            var go = Sprite("Feeder" + slot, SpriteCatalog.Feeder(BirdColor.Ruby), pos, FeederView.Scale, 8, parent);
+            var go = Sprite("Feeder" + slot, SpriteCatalog.Feeder(BirdColor.Ruby), pos, FeederView.Scale, FeederView.BaseOrder, parent);
             var view = go.AddComponent<FeederView>();
             view.Slot = slot;
             view.Art = go.GetComponent<SpriteRenderer>();
