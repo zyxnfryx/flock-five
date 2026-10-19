@@ -450,7 +450,8 @@ namespace FlockFive.Editor
             "/tmp/flock-five-b89-deadend",
             "/tmp/flock-five-b89-popup",
             "/tmp/flock-five-b89-payhead",
-            "/tmp/flock-five-storm-drops"
+            "/tmp/flock-five-storm-drops",
+            "/tmp/flock-five-b129-badger"
         };
 
         static bool AnyShotCmd()
@@ -561,6 +562,7 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-poker-feel", "ShotPokerFeel");
                         TryStartShot(app, "/tmp/flock-five-b89-popup", "ShotPopupExclusive");
                         TryStartShot(app, "/tmp/flock-five-b89-payhead", "ShotPayHead");
+                        TryStartShot(app, "/tmp/flock-five-b129-badger", "ShotB129");
                     }
                 }
             }

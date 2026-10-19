@@ -551,6 +551,68 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // b129: ice on a honeycomb. Hugs the hex: the tint is the shared comb mask on the comb's own rect, the frost
+        // rim is the hex path inset FrostRimInsetPx, the glints sit inside, and the icicles hang off the two lower
+        // edges. No rectangle anywhere, nothing past the outline.
+        static readonly Vector2[] _hexRim = new Vector2[6];
+        public static void DrawFrozenHex(Rect hex, float strength, float time)
+        {
+            if (strength < 0.02f || hex.width < 4f || hex.height < 4f) return;
+            var mask = HoneyArt.Mask();
+            if (mask == null) return;
+            GUI.color = new Color(IceTint.r, IceTint.g, IceTint.b, 0.42f * strength);
+            GUI.DrawTexture(hex, mask, ScaleMode.StretchToFill, true);
+            // cooler core so the rim reads as an edge
+            var core = new Rect(hex.x + hex.width * 0.16f, hex.y + hex.height * 0.16f, hex.width * 0.68f, hex.height * 0.68f);
+            GUI.color = new Color(0.92f, 0.98f, 1f, 0.16f * strength);
+            GUI.DrawTexture(core, mask, ScaleMode.StretchToFill, true);
+            HoneyArt.HexPoints(hex, Badger129.FrostRimInsetPx + Badger129.FrostRimWidthPx * 0.5f, _hexRim);
+            var rim = new Color(1f, 1f, 1f, 0.85f * strength);
+            for (int i = 0; i < 6; i++) Segment(_hexRim[i], _hexRim[(i + 1) % 6], Badger129.FrostRimWidthPx, rim);
+            for (int i = 0; i < 3; i++)
+                DrawAt(new Vector2(hex.x + hex.width * (0.32f + 0.18f * i), hex.y + hex.height * (0.34f + 0.16f * ((i * 2) % 3))),
+                    hex.height * 0.20f, strength * Twinkle(time, i * 1.7f), IceTint, false);
+            HexIcicles(_hexRim, hex.height, strength);
+            GUI.color = Color.white;
+        }
+
+        // Three short icicles on each lower edge (corner 2 -> 3 -> 4), inside the outline's bottom tip.
+        static void HexIcicles(Vector2[] p, float h, float strength)
+        {
+            var white = Texture2D.whiteTexture;
+            for (int e = 0; e < 2; e++)
+            {
+                Vector2 a = p[2 + e], b = p[3 + e];
+                for (int k = 1; k <= 2; k++)
+                {
+                    float f = k / 3f;
+                    var at = Vector2.Lerp(a, b, f);
+                    float len = h * (k == 1 ? 0.10f : 0.07f);
+                    float w = h * 0.05f;
+                    for (int j = 0; j < 3; j++)
+                    {
+                        float g = j / 3f;
+                        float sw = w * (1f - g * 0.8f), y = at.y - len + len * g;
+                        GUI.color = new Color(0.86f, 0.96f, 1f, 0.9f * strength);
+                        GUI.DrawTexture(new Rect(at.x - sw * 0.5f, y, sw, len / 3f + 0.5f), white);
+                    }
+                }
+            }
+        }
+
+        // One straight frost stroke from a to b, w px wide.
+        public static void Segment(Vector2 a, Vector2 b, float w, Color c)
+        {
+            var d = b - a;
+            float len = d.magnitude;
+            if (len < 0.5f || c.a < 0.01f) return;
+            var keep = GUI.matrix;
+            GUIUtility.RotateAroundPivot(Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg, a);
+            GUI.color = c;
+            GUI.DrawTexture(new Rect(a.x, a.y - w * 0.5f, len, w), Texture2D.whiteTexture);
+            GUI.matrix = keep;
+        }
+
         // Four cartoon icicles hanging off the top edge: stacked narrowing bars, darker outline under a pale body.
         public static void DrawIcicles(Rect r, float strength)
         {

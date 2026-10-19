@@ -70,6 +70,36 @@ namespace FlockFive
             return _mask;
         }
 
+        // b129: the pointy-top hex that Mask() paints, as six GUI points (top, then clockwise), each edge moved
+        // `inset` px inward. The shared outline for anything that must hug a comb (frost rim, ice).
+        public static void HexPoints(Rect r, float inset, Vector2[] into)
+        {
+            if (into == null || into.Length < 6) return;
+            float cx = r.center.x, x0 = r.xMin, x1 = r.xMax, y0 = r.yMin, y1 = r.yMax, q = r.height * 0.25f;
+            var v = new Vector2[6];
+            v[0] = new Vector2(cx, y0); v[1] = new Vector2(x1, y0 + q); v[2] = new Vector2(x1, y1 - q);
+            v[3] = new Vector2(cx, y1); v[4] = new Vector2(x0, y1 - q); v[5] = new Vector2(x0, y0 + q);
+            if (inset <= 0f) { for (int i = 0; i < 6; i++) into[i] = v[i]; return; }
+            for (int i = 0; i < 6; i++)
+            {
+                // corner i sits on edges (i-1 -> i) and (i -> i+1); shift both edges inward and meet them
+                Vector2 a0 = v[(i + 5) % 6], a1 = v[i], b0 = v[i], b1 = v[(i + 1) % 6];
+                Vector2 na = InNormal(a0, a1), nb = InNormal(b0, b1);
+                Vector2 pa = a0 + na * inset, da = a1 - a0, pb = b0 + nb * inset, db = b1 - b0;
+                float den = da.x * db.y - da.y * db.x;
+                if (Mathf.Abs(den) < 1e-5f) { into[i] = v[i] + na * inset; continue; }
+                float t = ((pb.x - pa.x) * db.y - (pb.y - pa.y) * db.x) / den;
+                into[i] = pa + da * t;
+            }
+        }
+
+        // Clockwise on screen (y down): the inside is to the right of travel.
+        static Vector2 InNormal(Vector2 a, Vector2 b)
+        {
+            var d = (b - a).normalized;
+            return new Vector2(-d.y, d.x);
+        }
+
         public static Texture2D Fill()
         {
             Warm();

@@ -54,6 +54,20 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.42f, MixDesk.DuckWhoosh);
         }
 
+        // b129: ice crack and ice shatter for the badger thaw (the shared break clips).
+        public static void IceCrack() => PlayBreak("Audio/Break/break_01", 0.35f, 1.25f);
+        public static void IceShatter() => PlayBreak("Audio/Break/break_03", 0.55f, 1.10f);
+        static void PlayBreak(string path, float vol, float pitch)
+        {
+            if (!_clips.TryGetValue(path, out var clip) || clip == null)
+            {
+                clip = Resources.Load<AudioClip>(path);
+                if (clip == null) return;
+                _clips[path] = clip;
+            }
+            Sfx.PlayProc(clip, pitch, vol, MixLayer.Lead);
+        }
+
         public static void Play(string name, float volume = 0.5f, float pitchVariance = 0f)
         {
             if (string.IsNullOrEmpty(name)) return;

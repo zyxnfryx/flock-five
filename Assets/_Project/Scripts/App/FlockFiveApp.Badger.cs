@@ -183,6 +183,7 @@ namespace FlockFive
         // Quit mid-fight or Continue after Over. Win pays; lose / quit leaves the flag.
         void LeaveBadger()
         {
+            BadgerIceAnim.Reset(); _bgIceWas = false; _bgThawRound = -1;
             _bgBreakFreeOn = false;
             _bgBreakTile = -1;
             _bgFrozenUi.Reset();
@@ -1614,7 +1615,8 @@ namespace FlockFive
                 if (block) DrawBadgerSplat(r);
                 if (GuiPaint())
                 {
-                    SparkleFx.DrawFrozen(r, ice, AdPause.Unscaled);
+                    if (Badger129.LegacyFrozen) SparkleFx.DrawFrozen(r, ice, AdPause.Unscaled);
+                    else SparkleFx.DrawFrozenHex(r, ice, AdPause.Unscaled);
                     SparkleFx.DrawShatter(r, shatterT);
                 }
             }
@@ -1776,7 +1778,7 @@ namespace FlockFive
             spot.Alpha = BadgerFighter.Alpha(_bgStage);
             BadgerArtSize("badger_idle_b", 1f, out float aw, out float ah);
             var mark = BadgerFighterPlace.Rest(box, aw, ah);
-            spot.Unit = mark.Unit;
+            spot.Unit = mark.Unit * Badger129.BattleScale; // b129: the one battle-size knob
             spot.FaceLeft = mark.FaceLeft;
             float bh = box.BossFighter.height;
             var foot = mark.Foot;
@@ -1925,9 +1927,10 @@ namespace FlockFive
                 bool underOk = !string.IsNullOrEmpty(spot.Under) && spot.Under != spot.Frame
                     && SpriteCatalog.BadgerArt(spot.Under) != null;
                 SpriteAnim.Cover(ref fa, ref ua, frameOk, underOk);
-                if (underOk && ua > 0.02f)
+                if (DrawBadgerIceBlock(spot, L, out drawn)) { }
+                else if (underOk && ua > 0.02f)
                     DrawBadgerArt(spot.Under, spot.Foot, spot.Unit, spot.Alpha * ua, 0f, spot.Sx, spot.Sy);
-                if (frameOk && fa > 0.02f)
+                if (drawn.width < 1f && frameOk && fa > 0.02f)
                     drawn = DrawBadgerArt(spot.Frame, spot.Foot, spot.Unit, spot.Alpha * fa, 0f, spot.Sx, spot.Sy);
             }
             finally
@@ -1944,6 +1947,130 @@ namespace FlockFive
 
             if (spot.BirdInFront) DrawBadgerBird(spot, clock);
             DrawBadgerRoundHit(spot);
+        }
+
+        // b129: while he is iced the fighter is the tall ice block (standing, paws up), feet on his mark, with the same
+        // held shiver / break-free struggle the comb uses. False (draw the pose) when not frozen or the art is missing.
+        bool DrawBadgerIceBlock(BadgerActorSpot spot, BadgerRects L, out Rect drawn)
+        {
+            drawn = default;
+            if (Badger129.LegacyFrozen || _bgFight == null) { _bgIceWas = false; return false; }
+            float now = PlayClock.Now;
+            var probe = new Rect(0f, 0f, 10f, 10f);
+            BadgerFreezeLook(ref probe, L.S, out float ice, out float shatterT);
+            bool iced = ice >= 0.5f;
+            // Rising edge: the spray just landed. First frame of his break-free turn: the thaw.
+            if (iced && !_bgIceWas && !BadgerIceAnim.Thawing(now))
+            {
+                BadgerIceAnim.Freeze(now);
+                if (!_bgFight.CoachFight && _bgStage == BadgerStage.YourPick) _bgLine = BadgerCopy.FreezeSprayFrozen;
+            }
+            _bgIceWas = iced;
+            if (_bgResolved && _bgRound.FreezeBeat == 2 && _bgThawRound != _bgRoundN)
+            {
+                _bgThawRound = _bgRoundN;
+                BadgerIceAnim.Thaw(now);
+            }
+            bool thawing = BadgerIceAnim.Thawing(now);
+            if (!iced && !thawing) return false;
+            var spr = SpriteCatalog.BadgerArt(Badger129.FrozenBlockArt);
+            if (spr == null) return false;
+            float idleH = BadgerArtHeight("badger_idle_b", spot.Unit);
+            float unit = idleH * Badger129.FrozenBlockHeight / Mathf.Max(1f, spr.rect.height);
+            var foot = spot.Foot;
+            float w = spr.rect.width * unit;
+            foot.x = BadgerFighterPlace.ClampFootX(foot.x, w, L.ColR.x - 2f);
+            var block = SpriteAnim.Dest(Badger129.FrozenBlockArt, spr.rect.width, spr.rect.height, foot, unit, 1f, 1f);
+            var keep = GUI.matrix;
+            try
+            {
+                if (thawing) return DrawBadgerThaw(spot, L, spr, block, foot, unit, BadgerIceAnim.ThawAge(now), out drawn);
+                float age = BadgerIceAnim.FreezeAge(now);
+                if (age >= BadgerIceAnim.ShiverFrom) foot.x += SparkleFx.Shiver(now, 2.2f * L.S * (age < BadgerIceAnim.FreezeSeconds ? 1.6f : 1f));
+                block.x = foot.x - block.width * 0.5f;
+                if (age < BadgerIceAnim.FreezeSeconds)
+                {
+                    // snapped into the hands-up pose, ice climbing feet to head
+                    var hands = SpriteCatalog.BadgerArt(BadgerIceAnim.HandsUpArt);
+                    if (hands != null)
+                        DrawBadgerArt(BadgerIceAnim.HandsUpArt, new Vector2(foot.x, block.yMax - BadgerIceAnim.FootAboveBlockBottomPx * unit), unit, spot.Alpha);
+                    float g = BadgerIceAnim.Grow(age);
+                    if (g > 0.01f && GuiPaint())
+                    {
+                        var tr = spr.textureRect;
+                        float tw = spr.texture.width, th = spr.texture.height;
+                        var uv = new Rect(tr.x / tw, tr.y / th, tr.width / tw, tr.height / th * g);
+                        var dst = new Rect(block.x, block.yMax - block.height * g, block.width, block.height * g);
+                        GUI.color = new Color(1f, 1f, 1f, spot.Alpha);
+                        GUI.DrawTextureWithTexCoords(dst, spr.texture, uv, true);
+                        GUI.color = Color.white;
+                        // frost line riding the top of the ice
+                        SparkleFx.DrawGlow(new Vector2(block.center.x, dst.y), block.width * 0.9f, new Color(0.85f, 0.97f, 1f, 0.55f * (1f - g * 0.6f)));
+                    }
+                    float sp = BadgerIceAnim.SprayAlpha(age);
+                    if (sp > 0.01f && GuiPaint())
+                    {
+                        var chest = new Vector2(block.center.x, block.y + block.height * 0.45f);
+                        SparkleFx.DrawGlow(chest, block.width * (0.7f + 0.8f * (1f - sp)), new Color(0.45f, 0.75f, 1f, 0.75f * sp));
+                        for (int k = 0; k < 4; k++)
+                            SparkleFx.DrawAt(chest + new Vector2((k - 1.5f) * block.width * 0.18f, (k % 2 == 0 ? -1f : 1f) * block.height * 0.08f),
+                                block.width * 0.14f, sp, SparkleFx.IceTint, false);
+                    }
+                    if (age >= BadgerIceAnim.GlintAt && GuiPaint())
+                    {
+                        float ga = Mathf.Sin(Mathf.Clamp01((age - BadgerIceAnim.GlintAt) / (BadgerIceAnim.FreezeSeconds - BadgerIceAnim.GlintAt)) * Mathf.PI);
+                        SparkleFx.DrawAt(new Vector2(block.x + block.width * 0.78f, block.y + block.height * 0.16f), block.width * 0.42f, ga);
+                    }
+                    drawn = block;
+                    return true;
+                }
+                drawn = DrawBadgerArt(Badger129.FrozenBlockArt, foot, unit, spot.Alpha);
+                return true;
+            }
+            finally { GUI.matrix = keep; GUI.color = Color.white; }
+        }
+        bool _bgIceWas;
+        int _bgThawRound = -1;
+
+        // Thaw: two wobbles while cracks spread, then the block shatters (chunks fall and fade) and he is back in his
+        // normal stance with a shake-off and a small hop. Crack and shatter sounds from SfxLibrary.
+        bool DrawBadgerThaw(BadgerActorSpot spot, BadgerRects L, Sprite spr, Rect block, Vector2 foot, float unit, float b, out Rect drawn)
+        {
+            drawn = default;
+            if (b < BadgerIceAnim.WobbleSeconds)
+            {
+                if (b >= BadgerIceAnim.CrackFrom && !BadgerIceAnim.CrackPlayed) { BadgerIceAnim.CrackPlayed = true; SfxLibrary.IceCrack(); }
+                float deg = BadgerIceAnim.Wobble(b);
+                if (Mathf.Abs(deg) > 0.01f) GUIUtility.RotateAroundPivot(deg, foot);
+                drawn = DrawBadgerArt(Badger129.FrozenBlockArt, foot, unit, spot.Alpha);
+                float c = BadgerIceAnim.Crack(b);
+                if (c > 0.01f && GuiPaint())
+                {
+                    var o = new Vector2(block.center.x, block.y + block.height * 0.42f);
+                    for (int k = 0; k < 7; k++)
+                    {
+                        float ang = k * 0.9f + 0.4f;
+                        var dir = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang) * 1.4f);
+                        var mid = o + dir * block.width * 0.22f * c + new Vector2(dir.y, -dir.x) * block.width * 0.04f;
+                        var end = o + dir * block.width * 0.46f * c;
+                        var col = new Color(1f, 1f, 1f, 0.9f);
+                        SparkleFx.Segment(o, mid, Mathf.Max(1.5f, 2.2f * L.S), col);
+                        SparkleFx.Segment(mid, end, Mathf.Max(1.2f, 1.6f * L.S), col);
+                    }
+                }
+                return true;
+            }
+            if (!BadgerIceAnim.ShatterPlayed) { BadgerIceAnim.ShatterPlayed = true; SfxLibrary.IceShatter(); }
+            // back to his stance: the duel pose, a small hop and a shake-off
+            var f2 = spot.Foot;
+            f2.y -= BadgerIceAnim.Hop(b) * BadgerArtHeight("badger_idle_b", spot.Unit) * 0.10f;
+            float shake = BadgerIceAnim.ShakeOff(b);
+            if (Mathf.Abs(shake) > 0.01f) GUIUtility.RotateAroundPivot(shake, f2);
+            string frame = SpriteCatalog.BadgerArt(spot.Frame) != null ? spot.Frame : "badger_idle_b";
+            drawn = DrawBadgerArt(frame, f2, spot.Unit, spot.Alpha, 0f, spot.Sx, spot.Sy);
+            GUI.matrix = Matrix4x4.identity * GUI.matrix;
+            if (GuiPaint()) SparkleFx.DrawShatter(block, BadgerIceAnim.ShatterT(b));
+            return true;
         }
 
         // One wingbeat across the peck or the recoil. AvatarFlapRate is 1.25 and a
