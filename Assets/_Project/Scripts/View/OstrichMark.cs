@@ -147,6 +147,35 @@ namespace FlockFive
         }
 
         // The app plays this peck itself; Sync must not queue a second generic Peck for it.
+        // b116: the app plays the hits and the exit itself. While HoldFlee is set, Sync does not start the
+        // daze/flee on its own; the app calls BeginExit when the last hit has landed.
+        public bool HoldFlee { get; set; }
+        bool _exitFar;
+        public bool Exiting => _exitFar && !_gone;
+
+        // One hit lands: show the damage reaction now (not later, all at once).
+        public void ShowHit(int hit)
+        {
+            if (_gone) return;
+            if (hit > _shownHits) _shownHits = hit;
+            _queued = OstrichAct.Idle;
+            _returnChain = false;
+            Begin(hit >= 2 ? OstrichAct.Hit2 : OstrichAct.Hit1);
+        }
+
+        // Stagger (Daze), then a flustered run clear off screen (Flee), then gone.
+        public void BeginExit()
+        {
+            HoldFlee = false;
+            _exitFar = true;
+            _strikeOn = false;
+            _queued = OstrichAct.Idle;
+            _returnChain = false;
+            _wasAlive = false;
+            _fleeAfterDaze = true;
+            Begin(OstrichAct.Daze);
+        }
+
         public void NotePecks(int peckIndex)
         {
             if (peckIndex > _shownPecks) _shownPecks = peckIndex;
@@ -250,7 +279,7 @@ namespace FlockFive
             if (!o.Alive)
             {
                 // The strike beat finishes before the ostrich takes its hit and leaves.
-                if (_strikeOn) return;
+                if (_strikeOn || HoldFlee) return;
                 if (_wasAlive)
                 {
                     _fleeAfterDaze = true;
@@ -265,6 +294,7 @@ namespace FlockFive
             if (reset)
             {
                 _gone = false;
+                _exitFar = false;
                 Show();
                 _wasAlive = true;
                 _shownHits = 0;
@@ -312,6 +342,7 @@ namespace FlockFive
         {
             Show();
             _gone = false;
+            _exitFar = false;
             _act = act;
             _frame = frame;
             _calm = calm;
@@ -398,8 +429,12 @@ namespace FlockFive
             if (_act == OstrichAct.Flee)
             {
                 var flee = SmoothAt(_act, _frame + _frameT, false);
-                _drawX = Mathf.Lerp(_headX, _headX + 5.4f, flee.Flee);
+                // App-driven exit runs clear off screen with a hurried hop; the old tests path keeps 5.4.
+                float dist = _exitFar ? Mathf.Max(5.4f, ViewHalfWidth() - _headX + 5f) : 5.4f;
+                float run = _exitFar ? flee.Flee * flee.Flee * (3f - 2f * flee.Flee) : flee.Flee;
+                _drawX = Mathf.Lerp(_headX, _headX + dist, run);
                 _drawY = Mathf.Lerp(_headY, _headY + 0.35f, flee.Flee);
+                if (_exitFar) _drawY += Mathf.Abs(Mathf.Sin(flee.Flee * Mathf.PI * 6f)) * 0.35f * (1f - flee.Flee * 0.4f);
             }
             else
             {
