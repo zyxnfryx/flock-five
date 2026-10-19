@@ -6,6 +6,11 @@ namespace FlockFive
     public sealed class FeederView : MonoBehaviour
     {
         public const float Scale = 0.66f;
+        // Draw orders. The ostrich head sits between the two: in front of the other feeders,
+        // behind the one it peeks out from (b115), so its neck never reads as threaded through
+        // the brass base ring. Birds (12) stay above both.
+        public const int BaseOrder = 8;
+        public const int FrontOrder = 11;
         public int Slot;
         public SpriteRenderer Art;
         Vector3 _planted;
@@ -21,6 +26,13 @@ namespace FlockFive
         float _gust;
         float _spin;
         SpriteRenderer[] _glint;
+
+        // The one writer for this feeder's draw order (ring, glass and tray move together).
+        public void SetFront(bool front)
+        {
+            if (Art == null) return;
+            FlockSort.Apply(Art, front ? FrontOrder : BaseOrder);
+        }
 
         public bool InTransit => _departing || _arriving;
 
@@ -62,7 +74,7 @@ namespace FlockFive
                 var sr = go.AddComponent<SpriteRenderer>();
                 sr.sprite = _px;
                 sr.color = CordCol;
-                sr.sortingOrder = Art.sortingOrder - 1;
+                sr.sortingOrder = BaseOrder - 1;
                 _cordSr = sr;
                 // b110: the cord is part of the feeder. It shows and hides with the art.
                 sr.enabled = Art.enabled;

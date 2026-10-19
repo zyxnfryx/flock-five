@@ -16,6 +16,16 @@ namespace FlockFive
         public const int CollarOrder = -1;
         public const int HeadOrder = 10;
         public const int NeckParts = 8;
+        // b115: at rest the head peeks out from BEHIND its feeder, beside the glass. The feeder
+        // it peeks from is drawn one step above the head (FeederView.FrontOrder), so the ring and
+        // glass occlude the neck; other feeders stay under the head. The head is offset toward the
+        // way it faces so the face clears the glass instead of poking out of the bowl.
+        public const float PeekX = 0.85f;
+        public const float PeekY = 0.28f;
+        public const float BeakReach = 1.45f;
+        public const float PeekSlotTol = 0.3f;
+        // Strike: the head goes over the flock once it has dropped this far below its peek spot.
+        public const float PeekDrop = 0.35f;
         public const float BodyDrop = 3.20f; // big body sits well below the feeder row, neck rises to the head
         // Whole bird at 72%: it fits the screen width, legs included, and the 160px master
         // head is drawn at or under its native size on device.
@@ -37,7 +47,13 @@ namespace FlockFive
         public const float PortY = -0.88f;
 
         public int Feeders = 2;
+        // Set by the garden builder. The ostrich raises the feeder it peeks from; null is fine.
+        public FeederView[] FeederArt;
         public SpriteRenderer Head;
+        // Slot of the feeder the head is hiding behind right now, or -1.
+        public int PeekingSlot => _liftSlot;
+        float _peek;
+        int _liftSlot = -1;
         public bool Settled { get; private set; }
 
         public OstrichAct Act => _act;
@@ -525,6 +541,13 @@ namespace FlockFive
             PoseLeg(_legBack, _legBackSr, OstrichPaint.BackHip, brace + stride * swing, side);
             PoseLeg(_legFront, _legFrontSr, OstrichPaint.FrontHip, brace - stride * swing, side);
 
+            // b115: peek out from behind the feeder (not while fleeing or between feeders).
+            int slot = flee ? -1 : PeekSlot(aimX, Feeders);
+            float peekGoal = slot >= 0 ? 1f : 0f;
+            if (_snap || _dt <= 0f) _peek = peekGoal;
+            else _peek = Mathf.MoveTowards(_peek, peekGoal, _dt / 0.12f);
+            headX += PeekShift(face, headX, half, _peek);
+            headY += PeekY * _peek;
             var headPos = new Vector3(headX, headY, 0f);
             var restPos = headPos;
             Head.sprite = OstrichPaint.Head(_act, _frame);
@@ -543,8 +566,13 @@ namespace FlockFive
                 // The strike owns the head: no lag, so the lunge reads as a lunge.
                 headPos = OstrichStrike.HeadAt(restPos, _strikeTarget, _strikeT);
                 _headLag = headPos;
-                FlockSort.Apply(Head, OstrichStrike.HeadOrder);
             }
+            // The feeder rises over the head only once the head has settled beside it, so the
+            // order flip never happens while the face overlaps the glass.
+            LiftFeeder(slot >= 0 && _peek >= 0.95f ? slot : -1);
+            if (_strikeOn)
+                FlockSort.Apply(Head, _liftSlot >= 0
+                    ? RestHeadOrder(true, restPos.y - headPos.y) : OstrichStrike.HeadOrder);
             _head.position = headPos;
             _head.localRotation = Quaternion.Euler(0f, 0f, _tiltLag);
 
@@ -563,6 +591,46 @@ namespace FlockFive
             else _ctrlLag = Vector3.Lerp(_ctrlLag, ctrl, 1f - Mathf.Exp(-_dt * 11f));
             _snap = false;
             WriteNeck(neckA, _ctrlLag, neckB);
+        }
+
+        // Which feeder the head rests on: the one whose x matches the aim, else -1 (head between
+        // feeders, as in a pair with no block slot: it stays in front like before).
+        public static int PeekSlot(float aimX, int feeders)
+        {
+            int n = FeederRow.Clamp(feeders);
+            int best = -1;
+            float bd = PeekSlotTol;
+            for (int i = 0; i < n; i++)
+            {
+                float d = Mathf.Abs(FeederRow.X(i, n) - aimX);
+                if (d <= bd) { bd = d; best = i; }
+            }
+            return best;
+        }
+
+        // How far the peeking head sits sideways of its feeder (toward the facing), clamped so the
+        // beak stays on screen. face is the eased facing (-1..1); half is the view half width.
+        public static float PeekShift(float face, float headX, float half, float weight)
+        {
+            if (weight <= 0f) return 0f;
+            float dir = face < 0f ? -1f : 1f;
+            float room = dir > 0f ? half - 0.12f - BeakReach - headX : headX + half - 0.12f - BeakReach;
+            float dx = Mathf.Clamp(PeekX, 0f, Mathf.Max(0f, room));
+            return dir * dx * weight * Mathf.Min(1f, Mathf.Abs(face) * 2f);
+        }
+
+        // Head order while peeking. Behind the lifted feeder's order, so ring and glass cover it.
+        public static int RestHeadOrder(bool striking, float dropBelowPeek)
+        {
+            return striking && dropBelowPeek > PeekDrop ? OstrichStrike.HeadOrder : HeadOrder;
+        }
+
+        void LiftFeeder(int slot)
+        {
+            _liftSlot = slot;
+            if (FeederArt == null) return;
+            for (int i = 0; i < FeederArt.Length; i++)
+                if (FeederArt[i] != null) FeederArt[i].SetFront(i == slot);
         }
 
         static float Ease(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
@@ -674,6 +742,7 @@ namespace FlockFive
 
         void Hide()
         {
+            if (_liftSlot >= 0) LiftFeeder(-1);
             if (_bodySr != null) _bodySr.enabled = false;
             if (_legBackSr != null) { _legBackSr.enabled = false; _legFrontSr.enabled = false; }
             if (_collarSr != null) _collarSr.enabled = false;
