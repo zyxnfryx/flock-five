@@ -87,6 +87,37 @@ namespace FlockFive
 
     public static class OstrichPest
     {
+        // Root cause of the "five in a row just sits there" report: Bonked remembers a limb forever. A
+        // bonked set stays on its limb while the ostrich lives; if the player breaks it up and later
+        // completes a set on that same limb, the stale bit made Bonk/Settle skip it: no hit, no collect.
+        // A limb that is no longer a full set forgets its bonk, so the next completion counts.
+        public static void ForgetBrokenSets(Board b)
+        {
+            var o = b?.Ostrich;
+            if (o == null || o.Bonked == 0) return;
+            for (int i = 0; i < b.Branches.Count && i < 64; i++)
+            {
+                if ((o.Bonked & (1UL << i)) == 0) continue;
+                var br = b.Branches[i];
+                if (br != null && !br.Broken && !br.IsFullMatch(out _)) o.Bonked &= ~(1UL << i);
+            }
+        }
+
+        // True when a living ostrich has a complete set that has not been counted yet.
+        public static bool HasPendingSet(Board b)
+        {
+            var o = b?.Ostrich;
+            if (o == null || !o.Alive) return false;
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var br = b.Branches[i];
+                if (br == null || br.Broken || !br.IsFullMatch(out _)) continue;
+                if (i < 64 && (o.Bonked & (1UL << i)) != 0) continue;
+                return true;
+            }
+            return false;
+        }
+
         // One completed set, any live feeder. The branch stays. The third hit
         // flees and the normal drain collects every ready set.
         public static void Bonk(Board b, int branch, int slot)
@@ -95,6 +126,7 @@ namespace FlockFive
             var o = b.Ostrich;
             if (o == null || !o.Alive) return;
             if ((uint)branch >= (uint)b.Branches.Count) return;
+            ForgetBrokenSets(b);
             if (branch < 64 && (o.Bonked & (1UL << branch)) != 0) return;
             var br = b.Branches[branch];
             if (br == null || br.Broken || !br.IsFullMatch(out _)) return;
@@ -110,6 +142,7 @@ namespace FlockFive
         {
             if (b == null) return;
             var o = b.Ostrich;
+            ForgetBrokenSets(b);
             if (o != null && o.Alive)
             {
                 for (int i = 0; i < b.Branches.Count && o.Alive; i++)
@@ -139,12 +172,18 @@ namespace FlockFive
             var o = b.Ostrich;
             bool aliveBefore = o.Alive;
             int logged = 0;
+            int hitsBefore = o.Hits;
+            // Birds relocated this turn, as (limb, seat). A bird that already hopped is never picked again.
+            var moved = new List<KeyValuePair<int, int>>();
             Settle(b);
             int n = o.PecksPerMove;
             if (n < 0) n = 0;
+            // Precedence (Brandon): a move that completes a set scores and hits the ostrich first,
+            // and he does not attack on that move. His pecks only follow a move that landed no hit.
+            if (o.Hits > hitsBefore) n = 0;
             for (int k = 0; k < n && o.Alive; k++)
             {
-                if (OstrichPeck.Scatter(b, out var hit))
+                if (OstrichPeck.Scatter(b, out var hit, moved))
                 {
                     logged++;
                     if (log != null) log.Add(hit);
@@ -163,7 +202,11 @@ namespace FlockFive
         // nothing legal was found, so the next peck stays on the shared stream.
         public static bool Scatter(Board b) => Scatter(b, out _);
 
-        public static bool Scatter(Board b, out PeckHit hit)
+        public static bool Scatter(Board b, out PeckHit hit) => Scatter(b, out hit, null);
+
+        // moved: seats of birds already relocated this turn. Their tip is skipped, and a landing is
+        // recorded so the same bird cannot be picked again, even from its new limb.
+        public static bool Scatter(Board b, out PeckHit hit, List<KeyValuePair<int, int>> moved)
         {
             hit = default;
             if (b == null || b.Ostrich == null || !b.Ostrich.Alive) return false;
@@ -178,6 +221,7 @@ namespace FlockFive
                 if (br == null || br.Broken || br.AdLocked || br.Count == 0) continue;
                 if (br.TipLocked || br.IsShrouded(br.Count - 1)) continue;
                 if (br.IsFullMatch(out _)) continue;
+                if (moved != null && moved.Contains(new KeyValuePair<int, int>(i, br.Count - 1))) continue;
                 src.Add(i);
             }
             rng.Shuffle(src);
@@ -210,6 +254,7 @@ namespace FlockFive
                         if (a.Shrouded.Count > a.Birds.Count)
                             a.Shrouded.RemoveAt(a.Shrouded.Count - 1);
                         if (a.RevealExposed() > 0) b.JustUnveiled = true;
+                        if (moved != null) moved.Add(new KeyValuePair<int, int>(dst[d], toCount));
                         hit = new PeckHit { From = from, FromCount = fromCount, To = dst[d], ToCount = toCount, Bird = bird };
                         return true;
                     }
