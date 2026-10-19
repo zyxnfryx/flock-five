@@ -3652,6 +3652,7 @@ namespace FlockFive
             // Polled every unfrozen frame, so a check skipped under a tutorial freeze, a pest
             // scrap or a collect is never consumed: it runs the first frame the garden is idle.
             TrySolvedFinish();
+            TryKickIdle();
             if (!_busy && !_won && SkyCycle.Courtesy != null)
                 SkyCycle.Courtesy = null;
 #if UNITY_EDITOR
@@ -4778,6 +4779,28 @@ namespace FlockFive
             // A guided garden hop is the player's to make.
             if (_coach && _cueHand) return false;
             return SolvedRule.IsSolved(_board) || SolvedRule.SplitOnly(_board);
+        }
+
+        // A finished set on a live feeder with nothing in flight is picked up
+        // here if the hop and collect-tail kicks both missed it (CollectPoll).
+        float _kickIdleSince = -1f;
+
+        bool KickIdle()
+        {
+            if (_board == null || _won || _gardenScoring || _restarting || _splash || _frozen) return false;
+            if (GamePause.Paused || _gift != GiftFace.None || _restartAsk != RestartAsk.None) return false;
+            if (_solvedMerging || _collecting || _collectDepth > 0 || _locked.Count > 0 || GardenFit.Busy) return false;
+            if (_pestResolving || _pestFinishing || _scatterBusy) return false;
+            if (_coach && _cueHand) return false;
+            return true;
+        }
+
+        void TryKickIdle()
+        {
+            bool ready = CollectPoll.Ready(_board, KickIdle());
+            if (!CollectPoll.Step(ready, AdPause.Unscaled, ref _kickIdleSince)) return;
+            AdLog.Add("idle kick: a finished set was waiting on a live feeder");
+            KickCollects();
         }
 
         void TrySolvedFinish()

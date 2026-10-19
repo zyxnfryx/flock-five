@@ -239,26 +239,90 @@ namespace FlockFive
             };
         }
 
+        // Seat the flock together. The old rule asked Find for each bird in turn,
+        // and every landing shrank that limb's free space, so five birds came home
+        // spread over three or four limbs (build 115, levels 7-13). Now the limb
+        // that can take the longest run of the flock wins, the whole run lands
+        // there, and only the birds that do not fit go on to the next limb. A
+        // limb never takes the bird that would complete a five-match (see
+        // WouldFill), so a five-bird flock lands as 4 + 1, never 1+1+1+1+1.
+        // Ties keep the old preference: a limb of another color, then the same
+        // color, then an empty one, and more free space first.
         static bool Place(Board b, List<Bird> flock, bool allowFull, bool grow, out Home[] homes)
         {
             homes = new Home[flock.Count];
-            for (int i = 0; i < flock.Count; i++)
+            int at = 0;
+            while (at < flock.Count)
             {
-                int home = Find(b, flock[i], allowFull);
+                int home = -1;
+                int bestTake = 0;
+                int bestKind = -1;
+                int bestFree = -1;
+                for (int i = 0; i < b.Branches.Count; i++)
+                {
+                    var st = b.Branches[i];
+                    if (!IsOpenPerch(b, i, st)) continue;
+                    int take = RunFits(st, flock, at, allowFull);
+                    if (take <= 0) continue;
+                    int kind = Kind(st, flock[at]);
+                    bool better = take > bestTake
+                        || (take == bestTake && (kind > bestKind
+                            || (kind == bestKind && st.Free > bestFree)));
+                    if (!better) continue;
+                    home = i;
+                    bestTake = take;
+                    bestKind = kind;
+                    bestFree = st.Free;
+                }
                 if (home < 0 && grow)
                 {
                     b.Branches.Add(new BranchState());
                     home = b.Branches.Count - 1;
+                    bestTake = RunFits(b.Branches[home], flock, at, allowFull);
                 }
-                if (home < 0) return false;
-                var st = b.Branches[home];
-                int seat = st.Count;
-                st.Birds.Add(flock[i]);
-                st.Shrouded.Add(false);
-                st.AlignShroud();
-                homes[i] = new Home { Branch = home, Seat = seat, Bird = flock[i] };
+                if (home < 0 || bestTake <= 0) return false;
+                var dst = b.Branches[home];
+                for (int k = 0; k < bestTake; k++)
+                {
+                    int seat = dst.Count;
+                    dst.Birds.Add(flock[at + k]);
+                    dst.Shrouded.Add(false);
+                    dst.AlignShroud();
+                    homes[at + k] = new Home { Branch = home, Seat = seat, Bird = flock[at + k] };
+                }
+                at += bestTake;
             }
             return true;
+        }
+
+        // Same gate as Find: a bonus perch is the player's, a sleeping set and a
+        // full limb are not seats.
+        static bool IsOpenPerch(Board b, int i, BranchState st) =>
+            st != null && !st.Broken && !st.AdLocked && !st.IsBonus && st.Free > 0 && !b.IsSleeping(i);
+
+        // 2: occupied by another flock, 1: same flock, 0: empty.
+        static int Kind(BranchState st, Bird bird)
+        {
+            if (st.Count == 0) return 0;
+            return HoldsFlock(st, bird) ? 1 : 2;
+        }
+
+        // How many birds from flock[at..] land on this limb in a row, one at a
+        // time, before it is full or the next one would complete a five-match.
+        static int RunFits(BranchState st, List<Bird> flock, int at, bool allowFull)
+        {
+            var probe = st.Clone();
+            int n = 0;
+            while (at + n < flock.Count && probe.Free > 0)
+            {
+                var bird = flock[at + n];
+                if (!allowFull && WouldFill(probe, bird)) break;
+                probe.Birds.Add(bird);
+                probe.Shrouded.Add(false);
+                probe.AlignShroud();
+                n++;
+            }
+            return n;
         }
 
         // Occupied limbs of a different color first. Same color and empty limbs
