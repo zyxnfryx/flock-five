@@ -476,7 +476,12 @@ namespace FlockFive
             // until resume, and do not drop it if heal closes the gift.
             Ads.DeliverPause(true);
             // Leaving mid-lesson: settle anything already half-done before the suspend.
-            if (_app != null) _app.HealInterruptedTutorials();
+            if (_app != null)
+            {
+                // b131: the suspend is not blind time (the clock jumps on return and would finish the step).
+                _app._gateBlindSince = -1f;
+                _app.HealInterruptedTutorials();
+            }
         }
 
         public static void NoteAppResume()
@@ -496,6 +501,7 @@ namespace FlockFive
                 if (_app != null)
                 {
                     _resumeInputUntil = GateNow + 0.35f;
+                    _app._gateBlindSince = -1f;
                     _app.FreshTutorGlove();
                     // The suspend may have cut a step off. Settle it before the first tap lands.
                     _app.HealInterruptedTutorials();
