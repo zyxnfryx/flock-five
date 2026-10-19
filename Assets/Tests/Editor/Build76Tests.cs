@@ -144,6 +144,7 @@ namespace FlockFive.Editor
             if (old < 14f) old = 14f;
             float pad = old - 28f * s;
             if (pad < clear) pad = clear;
+            pad += SplashPress.LevelRaise(h);
             float size = w * 0.94f;
             float half = h * 0.50f;
             if (half < size) size = half;
