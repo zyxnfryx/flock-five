@@ -926,9 +926,10 @@ namespace FlockFive
                 int prev = st.fontSize;
                 var prevAlign = st.alignment;
                 bool prevWrap = st.wordWrap;
-                st.fontSize = bodyPx;
                 st.alignment = TextAnchor.UpperLeft;
-                st.wordWrap = true;
+                st.wordWrap = false;
+                bodyPx = AlbumBodyPx(st, body, bodyW, bodyPx);
+                st.fontSize = bodyPx;
                 float bodyH = Mathf.Max(bodyPx + 6f, st.CalcHeight(new GUIContent(body), bodyW) + 2f);
                 st.fontSize = prev;
                 st.alignment = prevAlign;
