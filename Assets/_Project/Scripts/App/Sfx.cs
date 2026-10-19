@@ -696,12 +696,18 @@ namespace FlockFive
 
         // Season arrive. Lead whoosh from the existing bank, under a feeder leave.
         // Desert adds one quiet Ching after the whoosh has left the seat. No new clip.
-        public static void SeasonArrive(bool rich)
+        public static void SeasonArrive(bool rich) => SeasonArrive(rich, rich ? 0.48f : 0.36f);
+
+        // Musical Producer review: the fallback sting whoosh was too quiet at 0.36; stings play at 0.55.
+        public const float SeasonStingGain = 0.55f;
+        // The spring chirp lands after the whoosh has left the seat (review: past 0.55 s).
+        public const float SeasonChirpDelay = 0.6f;
+
+        static void SeasonArrive(bool rich, float vol)
         {
             Ensure();
             if (_lifts == null || _lifts.Length == 0) return;
             int i = Next(_lifts.Length, ref _lastLift);
-            float vol = rich ? 0.48f : 0.36f;
             Shot(_lifts[i], Random.Range(0.97f, 1.01f), vol, MixLayer.Lead, MixDesk.DuckWhoosh);
             if (!rich || _host == null || _chings == null || _chings.Length == 0) return;
             _host.StartCoroutine(DesertChing());
@@ -715,7 +721,21 @@ namespace FlockFive
         public static void SeasonSting(GardenScene scene)
         {
             if (SeasonStingHook != null && SeasonStingHook(scene)) return;
-            SeasonArrive(false);
+            SeasonArrive(false, SeasonStingGain);
+        }
+
+        // Spring chirp (hum_sel_00 Ruby, pitch 1.0) held back past the whoosh.
+        public static void SpringChirpDelayed()
+        {
+            Ensure();
+            if (_host == null) { Chirp(); return; }
+            _host.StartCoroutine(SpringChirpAfter());
+        }
+
+        static System.Collections.IEnumerator SpringChirpAfter()
+        {
+            yield return PlayClock.Wait(SeasonChirpDelay);
+            Chirp();
         }
 
         static System.Collections.IEnumerator DesertChing()

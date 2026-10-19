@@ -302,7 +302,7 @@ namespace FlockFive
             {
                 // Clean hook: Sfx.SeasonStingHook lets the Musical Producer's stings replace the whoosh.
                 Sfx.SeasonSting(_scene);
-                if (_scene == GardenScene.Spring) Sfx.Chirp();
+                if (_scene == GardenScene.Spring) Sfx.SpringChirpDelayed();
             }
             if (_clock.TakeBirds()) CollectBirds();
             TickBirds();
