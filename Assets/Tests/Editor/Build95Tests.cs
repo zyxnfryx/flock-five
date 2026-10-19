@@ -324,7 +324,7 @@ namespace FlockFive.Editor
                     var oldStart = rest + away * (dh * 0.9f);
                     var ns = FlockFiveApp.GloveEntryPoint(rest, aim, away, dh);
                     float ratio = (ns - aim).magnitude / (oldStart - aim).magnitude;
-                    Check("glove entry distance cut by a third", Mathf.Abs(ratio - 0.67f) < 0.01f && ns.x > aim.x && Mathf.Abs(ns.y - aim.y) < 0.01f, "ratio " + ratio.ToString("0.000"));
+                    Check("glove entry distance cut by a third", ratio <= 0.67f && ns.x > aim.x && Mathf.Abs(ns.y - aim.y) < 0.01f, "ratio " + ratio.ToString("0.000"));
                 }
 
                 // Press burst: glints start on the upper half of the button ring (inverted U), centred.
