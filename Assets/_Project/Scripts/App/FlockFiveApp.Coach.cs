@@ -1810,36 +1810,72 @@ namespace FlockFive
         // where it is. The next step fades in at the start of that step's arc.
         // perchLift replaces the shared rise. fromLeft keeps the hand on the left
         // when a nudge would flip it.
-        // b123: the shared LOOK-AT pointer (the glove stays reserved for taps). A small gold arrow with a dark rim
-        // bobs ~6 px just inside the top of the target and points down at it. Painted immediately (OnGUI).
+        // b123: the shared LOOK-AT pointer (the glove stays reserved for taps). Brandon (b114): a SOLID marker, flat top and
+        // pointed bottom (map-pin / inverted-house), gold with a thin dark outline, gently hovering up and down on the
+        // point of interest. It always points down at the target (the callers pass the spot to look at); other angles
+        // would rotate the same shape via GUI.matrix. Painted immediately (OnGUI), so it never takes taps: the global
+        // tutorial gate still lets only the focus target accept them.
+        public const float CoachArrowWidth = 26f;     // flat top, px at UI scale 1
+        public const float CoachArrowHeight = 34f;    // flat top to tip
+        public const float CoachArrowShoulder = 16f;  // vertical run of the straight sides before the point starts
+        public const float CoachArrowBobPeriod = 1.2f; // seconds per full up-and-down hover
+        public const float CoachArrowBobAmp = 5f;     // +/- px at UI scale 1 (was ~3)
+
+        // Eased hover offset in px (positive = down). A sine hover: slows at both ends of the bob, ~1.2 s per cycle.
+        public static float CoachArrowBobOffset(float t, float k)
+        {
+            return Mathf.Sin(t * (2f * Mathf.PI / CoachArrowBobPeriod)) * CoachArrowBobAmp * k;
+        }
+
+        // Half width of the solid shape at 'down' px below the flat top (0 = top edge). Straight sides to the shoulder,
+        // then a straight taper to a point at CoachArrowHeight. 0 outside the shape.
+        public static float CoachArrowHalfWidth(float down, float k)
+        {
+            float h = CoachArrowHeight * k, sh = CoachArrowShoulder * k, hw = CoachArrowWidth * k * 0.5f;
+            if (down < 0f || down > h) return 0f;
+            if (down <= sh) return hw;
+            return hw * (h - down) / Mathf.Max(0.0001f, h - sh);
+        }
+
+        // The five corners (flat top left, top right, shoulder right, tip, shoulder left) for a given tip position.
+        public static Vector2[] CoachArrowPolygon(Vector2 tip, float k)
+        {
+            float h = CoachArrowHeight * k, sh = CoachArrowShoulder * k, hw = CoachArrowWidth * k * 0.5f;
+            return new[]
+            {
+                new Vector2(tip.x - hw, tip.y - h), new Vector2(tip.x + hw, tip.y - h),
+                new Vector2(tip.x + hw, tip.y - h + sh), tip, new Vector2(tip.x - hw, tip.y - h + sh),
+            };
+        }
+
         void CoachArrowAt(Rect target, float s)
         {
             if (!GuiPaint() || target.width < 2f || target.height < 2f) return;
             float k = Mathf.Clamp(s, 1f, 2f);
-            float bob = Mathf.Sin(AdPause.Unscaled * 5.5f) * 6f * k * 0.5f;
-            float len = 30f * k;
-            float th = 8f * k;
+            float bob = CoachArrowBobOffset(AdPause.Unscaled, k);
             var tip = new Vector2(target.center.x, target.y + Mathf.Min(target.height * 0.35f, 60f * k) + bob);
-            var prevM = GUI.matrix;
             var prevC = GUI.color;
-            for (int pass = 0; pass < 2; pass++)
-            {
-                float grow = pass == 0 ? 4f * k : 0f;
-                GUI.color = pass == 0 ? new Color(0.10f, 0.06f, 0.02f, 0.92f) : new Color(1f, 0.86f, 0.30f, 1f);
-                CoachArrowBar(tip, 0f, len + grow * 0.5f, th + grow);
-                CoachArrowBar(tip, 42f, len * 0.5f + grow * 0.5f, th + grow);
-                CoachArrowBar(tip, -42f, len * 0.5f + grow * 0.5f, th + grow);
-            }
-            GUI.matrix = prevM;
+            float rim = 2.5f * k;
+            GUI.color = new Color(0.10f, 0.06f, 0.02f, 0.92f);
+            CoachArrowFill(tip, k, rim);
+            GUI.color = new Color(1f, 0.86f, 0.30f, 1f);
+            CoachArrowFill(tip, k, 0f);
             GUI.color = prevC;
         }
 
-        static void CoachArrowBar(Vector2 from, float angDeg, float length, float thick)
+        // Solid fill as stacked 1 px strips (OnGUI has no triangles); grow pads the outline pass on every side.
+        static void CoachArrowFill(Vector2 tip, float k, float grow)
         {
-            var m = GUI.matrix;
-            GUIUtility.RotateAroundPivot(angDeg, from);
-            GUI.DrawTexture(new Rect(from.x - thick * 0.5f, from.y - length, thick, length), Texture2D.whiteTexture);
-            GUI.matrix = m;
+            float h = CoachArrowHeight * k;
+            float top = tip.y - h;
+            int rows = Mathf.CeilToInt(h + grow * 2f);
+            for (int i = 0; i < rows; i++)
+            {
+                float down = i - grow;
+                float hw = CoachArrowHalfWidth(Mathf.Clamp(down + 0.5f, 0f, h), k) + grow;
+                if (hw <= 0f) continue;
+                GUI.DrawTexture(new Rect(tip.x - hw, top + down, hw * 2f, 1.25f), Texture2D.whiteTexture);
+            }
         }
 
         bool CoachGloveAt(Vector2 aimGui, float dt, float s, float perchLift = float.NaN, bool fromLeft = false, float approachDeg = float.NaN, Rect tapRect = default, System.Func<Vector2, bool> tapHit = null)
