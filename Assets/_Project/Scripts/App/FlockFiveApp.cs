@@ -10770,7 +10770,8 @@ namespace FlockFive
         // matching DrawFlowerCaption, so the perch stays off the words either way.
         static float FlowerLevelTop() => FlowerLevelTop(FlowerPlayRect());
 
-        // b132: same maths for any LEVEL square, so the editor test can slide it.
+        // Same maths for any LEVEL square, so an editor test can pass one. b133: this is the
+        // rect top, not the ink; the centred stack's ink stays below it, so the perch is unchanged.
         static float FlowerLevelTop(Rect rest)
         {
             var disc = FlowerDisc(rest, 0f);
@@ -10891,9 +10892,12 @@ namespace FlockFive
                 lvR.width * (quad ? 0.98f : (triple ? 0.96f : 0.94f)),
                 lvR.height * (hasEase ? 0.95f : 0.80f),
                 quad ? 30 : (triple ? 26 : 30), lvHi);
-            StampBannerText(lvR, level, lv, 1f, true);
 
-            if (!hasEase) return;
+            if (!hasEase)
+            {
+                StampBannerText(lvR, level, lv, 1f, true);
+                return;
+            }
 
             // Shared size. Does not follow the 100+ LEVEL cap or the length of the line.
             float s = DeviceFit.Ui();
@@ -10927,8 +10931,60 @@ namespace FlockFive
                 if (y2 < y) y = y2;
             }
             if (y + bandH > bottom && bandH > textH) bandH = Mathf.Max(textH, bottom - y);
+
+            // b133 (Brandon): centre the LEVEL + joke ink on the disc's top face. The rects above
+            // are bottom-anchored, so a smaller LEVEL (3-4 digits) and the joke line left the ink
+            // sitting low on the face. One shared lift moves both lines together; the hit area,
+            // ring, sparkles, sink and the perch (FlowerLevelTop) do not read it.
+            float jokeLineH = joke.lineHeight > 1f ? joke.lineHeight : jokePx * InkLineFrac;
+            int jokeLines = Mathf.Max(1, Mathf.RoundToInt((textH - joke.padding.vertical) / jokeLineH));
+            float lvLineH = lv.lineHeight > 1f ? lv.lineHeight : lv.fontSize * InkLineFrac;
+            float lift = LevelStackLift(disc, lvR.yMax, lv.padding.bottom, lvLineH, lv.fontSize,
+                y, joke.padding.top, jokeLineH, jokePx, jokeLines);
+            lvR.y -= lift;
+            y -= lift;
+            StampBannerText(lvR, level, lv, 1f, true);
             var jokeDraw = new Rect(disc.center.x - lineW * 0.5f, y, lineW, bandH);
             StampBannerText(jokeDraw, ease, joke, 1f, false);
+        }
+
+        // b133: optical centre of the LEVEL disc's top face as a fraction of the disc (FlowerCap)
+        // height. From the traced face bbox in PushButton (FaceY0..FaceY1 of fx_play_flower, fitted
+        // into the LEVEL square): ((0.104 + 0.792 * 0.2525) - 0.10) / 0.38 = 0.537.
+        public const float FaceMidFrac = 0.537f;
+        // Default (LegacyRuntime / Arial) metrics as a fraction of the font size: baseline below the
+        // line top, cap height, and line height. Used only to find the ink box, never to size type.
+        public const float InkAscentFrac = 0.905f;
+        public const float InkCapFrac = 0.716f;
+        public const float InkLineFrac = 1.149f;
+        // The lift never moves the stack more than this share of the disc (up) or StackDropMaxFrac (down).
+        public const float StackLiftMaxFrac = 0.08f;
+        public const float StackDropMaxFrac = 0.02f;
+
+        // Ink box of the stacked LEVEL + joke, in GUI y: LEVEL cap top to the joke's last baseline.
+        // lvBottom is the LowerCenter LEVEL rect's yMax; jokeTop is the UpperCenter joke band's y.
+        public static void LevelStackInk(float lvBottom, float lvPadBottom, float lvLineH, int lvPx,
+            float jokeTop, float jokePadTop, float jokeLineH, int jokePx, int jokeLines,
+            out float inkTop, out float inkBottom)
+        {
+            inkTop = lvBottom - lvPadBottom - lvLineH + (InkAscentFrac - InkCapFrac) * lvPx;
+            inkBottom = jokeTop + jokePadTop + (Mathf.Max(1, jokeLines) - 1) * jokeLineH + InkAscentFrac * jokePx;
+        }
+
+        // How far (px, + is up) DrawFlowerCaption lifts the stack so its ink centre sits on the
+        // face centre (disc.y + FaceMidFrac * disc.height). Clamped to a small band of the disc.
+        public static float LevelStackLift(Rect disc, float lvBottom, float lvPadBottom, float lvLineH, int lvPx,
+            float jokeTop, float jokePadTop, float jokeLineH, int jokePx, int jokeLines)
+        {
+            if (disc.height < 1f) return 0f;
+            LevelStackInk(lvBottom, lvPadBottom, lvLineH, lvPx, jokeTop, jokePadTop, jokeLineH, jokePx, jokeLines,
+                out float top, out float bot);
+            float lift = (top + bot) * 0.5f - (disc.y + disc.height * FaceMidFrac);
+            float up = disc.height * StackLiftMaxFrac;
+            float down = disc.height * StackDropMaxFrac;
+            if (lift > up) lift = up;
+            if (lift < -down) lift = -down;
+            return lift;
         }
 
         static GUIStyle _fitScratch;
