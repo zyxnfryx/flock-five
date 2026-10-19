@@ -282,7 +282,7 @@ namespace FlockFive
 
         void ReleaseFight(HashSet<int> held)
         {
-            var m = _garden != null ? _garden.Ostrich : null;
+            var m = _garden.Ostrich;
             if (m != null) m.HoldFlee = false;
             foreach (int i in held) Unlock(i);
             _ostrichFight = false;
