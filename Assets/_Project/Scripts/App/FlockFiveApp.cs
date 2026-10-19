@@ -13359,12 +13359,20 @@ namespace FlockFive
         // glove hint is not live (win motion still running, stamp or pay table up) the cue is the bobbing arrow.
         public static bool PokerBackCueShows(bool holdsBetBar, bool hintLive) => holdsBetBar && !hintLive;
 
+        // The engine flips to Drawn the instant DRAW is tapped, but the draw animation (cards flipping in) is still
+        // running. The Back cue (arrow + caption banner) is a RESULT step: it waits until that motion has fully
+        // finished and the win fly-in is over. (Regression fix: the b124 cue keyed on phase alone and put the big
+        // bottom banner up mid-draw.)
+        public static bool PokerBackCueReady(bool drawn, bool motionBusy, bool winFlying, bool tutorBlocked)
+            => drawn && !motionBusy && !winFlying && !tutorBlocked;
+
         // Bobbing arrow at Back, plus the shared Back caption once nothing else owns the caption seat.
         void DrawPokerBackCue(float s, Rect back)
         {
             if (_pokerPageOn || _pokerDealHint) return;
+            if (!PokerBackCueReady(BirdPoker.PhaseNow == BirdPoker.Phase.Drawn, PokerMotionBusy(), PokerWinFlying(), PokerPageTutorBlocked())) return;
             CoachArrowAt(back, s);
-            if (!PokerPageTutorBlocked()) DrawPokerStandardLine(PokerBackLine, s);
+            DrawPokerStandardLine(PokerBackLine, s);
         }
 
         void DrawPokerBackHint(float s, Rect back, Rect row, float logoBottom)
