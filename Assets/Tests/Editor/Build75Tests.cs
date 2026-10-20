@@ -23,7 +23,7 @@ namespace FlockFive.Editor
 
             var all = CoachTap.All;
             // 43 = 0..42 after b127 added CoachStep.BadgerBreakFree (42). CoachTap.All is the enum, so also pin it to the enum.
-            Check("step-count", all != null && all.Length == 44 && all.Length == System.Enum.GetValues(typeof(CoachStep)).Length && System.Array.IndexOf(all, CoachStep.BadgerBreakFree) == 42, "n=" + (all == null ? 0 : all.Length));
+            Check("step-count", all != null && all.Length == 45 && all.Length == System.Enum.GetValues(typeof(CoachStep)).Length && System.Array.IndexOf(all, CoachStep.BadgerBreakFree) == 42, "n=" + (all == null ? 0 : all.Length));
             if (all != null)
             {
                 for (int i = 0; i < all.Length; i++)
@@ -173,6 +173,7 @@ namespace FlockFive.Editor
                 case CoachStep.BadgerPowerArmed:
                 case CoachStep.BadgerResult:
                 case CoachStep.BadgerBreakFree:
+                case CoachStep.BirdFeed:
                     return CoachTapKind.Required;
             }
             throw new System.ArgumentOutOfRangeException(nameof(step), step, "Classify this lesson step");

@@ -34,6 +34,18 @@ namespace FlockFive
         const string IosKeep = "flockfive.daily.keep";
         const string ChannelId = "flockfive_daily";
 
+        // Bird Care v1: extra "feed me" entries (local time, body), written with the daily ones on
+        // background/quit. Null or empty unless the remote flag, the opt-in and the audience rules
+        // all allow it (BirdCareNotify.Allowed). Cleared with everything else on foreground.
+        public static Func<System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<DateTime, string>>> CareEntries;
+        const string IosCare = "flockfive.care.feed";
+
+        static System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<DateTime, string>> CareNow()
+        {
+            try { return CareEntries != null ? CareEntries() : null; }
+            catch (Exception) { return null; }
+        }
+
         static int _armStreak;
         static bool _armRisk;
         static bool _armClaimed;
@@ -279,6 +291,10 @@ namespace FlockFive
                 iOSNotificationCenter.RemoveDeliveredNotification(IosKeep);
                 foreach (var e in PlanNow())
                     ScheduleIosAt(e.Kind == NotifyPlan.Kind.Ready ? IosReady : IosKeep, "Daily bonus", e.Body, e.When);
+                var care = CareNow();
+                if (care != null)
+                    for (int i = 0; i < care.Count; i++)
+                        ScheduleIosAt(IosCare + "." + i, "Flock Five", care[i].Value, care[i].Key);
             }
             catch (Exception) { }
         }
@@ -322,6 +338,10 @@ namespace FlockFive
                     int id = SendAndroid("Daily bonus", e.Body, e.When);
                     PlayerPrefs.SetInt(e.Kind == NotifyPlan.Kind.Ready ? PrefNoteReady : PrefNoteKeep, id + 1);
                 }
+                var care = CareNow();
+                if (care != null)
+                    for (int i = 0; i < care.Count; i++)
+                        SendAndroid("Flock Five", care[i].Value, care[i].Key);
                 PlayerPrefs.Save();
             }
             catch (Exception) { }

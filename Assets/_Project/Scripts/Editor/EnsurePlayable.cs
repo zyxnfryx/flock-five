@@ -103,6 +103,7 @@ namespace FlockFive.Editor
             Suite("build119-collection-banner", Build119CollectionBannerTests.Run);
             Suite("season-scene", SeasonSceneTests.Run);
             Suite("glove-travel", GloveTravelTests.Run);
+            Suite("bird-care", BirdCareTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 
@@ -450,6 +451,7 @@ namespace FlockFive.Editor
             "/tmp/flock-five-b89-deadend",
             "/tmp/flock-five-b89-popup",
             "/tmp/flock-five-b89-payhead",
+            "/tmp/flock-five-bird-care",
             "/tmp/flock-five-storm-drops"
         };
 
@@ -561,6 +563,7 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-poker-feel", "ShotPokerFeel");
                         TryStartShot(app, "/tmp/flock-five-b89-popup", "ShotPopupExclusive");
                         TryStartShot(app, "/tmp/flock-five-b89-payhead", "ShotPayHead");
+                        TryStartShot(app, "/tmp/flock-five-bird-care", "ShotBirdCare");
                     }
                 }
             }
