@@ -62,6 +62,11 @@ namespace FlockFive
         float _cheerUntil;
         float _alertFrom;
         float _alertUntil;
+        float _nopeX;
+        float _nopeY;
+        Coroutine _nopeCo;
+        SpriteRenderer _kitInk;
+        SpriteRenderer _kitRim;
         Transform[] _zzz;
         SpriteRenderer[] _zzzSr;
         Transform[] _zzzEdge;
@@ -98,6 +103,12 @@ namespace FlockFive
             _glowA = 0f;
             _kitGlide.Ready = false;
             _liftShown = 0f; // re-bound birds (e.g. after Restart) start seated, no pop
+            _nopeX = _nopeY = 0f;
+            if (_nopeCo != null)
+            {
+                StopCoroutine(_nopeCo);
+                _nopeCo = null;
+            }
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
             if (_sr != null) _sr.flipX = FaceLeft;
             EnsureFace();
@@ -127,6 +138,8 @@ namespace FlockFive
             }
             _face = null;
             _kit = null;
+            _kitInk = null;
+            _kitRim = null;
             _far = null;
             _farSprite = null;
             _farOn = false;
@@ -236,6 +249,37 @@ namespace FlockFive
             Lift = keep;
         }
 
+        // A refused drop. Shake plus a short hop, applied on the seated pose so a
+        // SetReady that clears Lift cannot cancel it. Not a flight.
+        public void Nope()
+        {
+            if (!isActiveAndEnabled || Shrouded || Sleeping) return;
+            if (_nopeCo != null) StopCoroutine(_nopeCo);
+            _nopeCo = StartCoroutine(NopeCo());
+        }
+
+        IEnumerator NopeCo()
+        {
+            const float dur = 0.38f;
+            float t = 0f;
+            while (t < dur)
+            {
+                if (Frozen || Shrouded)
+                {
+                    _nopeX = _nopeY = 0f;
+                    _nopeCo = null;
+                    yield break;
+                }
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                _nopeX = Mathf.Sin(u * Mathf.PI * 5f) * 0.07f * (1f - u);
+                _nopeY = Mathf.Sin(Mathf.Clamp01(u / 0.55f) * Mathf.PI) * 0.18f;
+                yield return null;
+            }
+            _nopeX = _nopeY = 0f;
+            _nopeCo = null;
+        }
+
         // Stage reset veil. The body and everything it wears hide together, in
         // this call, not on the next LateUpdate. enabled stays true, so LiveBird
         // and the fly-in math still count the bird. LateUpdate re-dresses it
@@ -256,6 +300,7 @@ namespace FlockFive
         void HideDressing()
         {
             if (_kit != null && _kit.enabled) _kit.enabled = false;
+            HideKitRim();
             if (_far != null && _far.enabled) _far.enabled = false;
             if (_face != null && _face.enabled) _face.enabled = false;
             _selectA = 0f;
@@ -319,13 +364,18 @@ namespace FlockFive
             return airborneFlap;
         }
 
-        // Feet on this bird's seat. Sleep droops into the bark. A lift, or a body
-        // that flight has carried off RestLocal, is not perched.
+        // Feet on this bird's seat. Sleep droops into the bark. Flight (Lift above
+        // HoverPerch) has left. A selection hover stays on this seat, in the rest pose.
         bool PerchHeld()
         {
             if (Sleeping) return true;
-            if (Lift > 0.05f || _liftShown > 0.05f) return false;
+            if (Lift > HoverPerch || _liftShown > HoverPerch) return false;
+            if (Lift >= SelectLift - 0.02f && Lift <= HoverPerch) return true;
+            if (Lift > 0.05f) return false;
+            if (_liftShown > 0.05f && _liftShown <= HoverPerch) return true;
             var d = transform.localPosition - RestLocal;
+            d.x -= _nopeX;
+            d.y -= _nopeY;
             return d.sqrMagnitude < 0.0256f;
         }
 
@@ -387,7 +437,7 @@ namespace FlockFive
             if (_flutterUntil > 0f && Time.time >= _flutterUntil)
             {
                 _flutterUntil = 0f;
-                if (Lift < 0.05f) Flapping = false;
+                if (Lift <= HoverPerch) Flapping = false;
             }
             if (_ruffle > 0f) _ruffle -= Time.deltaTime;
             // Shared visibility: a veiled body (forceRenderingOff) is hidden too.
@@ -396,7 +446,10 @@ namespace FlockFive
             // Shrouded birds stay a still silhouette on the perch. Off the perch,
             // including a frozen takeoff, the flying cycle is mandatory.
             bool onPerch = PerchHeld();
-            bool fly = !Sleeping && show && (Flapping || Lift > 0.05f || _ruffle > 0f || !onPerch)
+            // A cheer hop is a small toss under the selection band and still flaps.
+            // The selection hover itself does not: that read as the bird already flying.
+            bool smallToss = Lift > 0.05f && Lift < SelectLift - 0.02f;
+            bool fly = !Sleeping && show && (Flapping || Lift > HoverPerch || smallToss || _ruffle > 0f || !onPerch)
                 && (!Shrouded || (Frozen && Flapping) || !onPerch);
             var mood = BirdMood.Of(Color);
             bool wings = false;
@@ -407,7 +460,7 @@ namespace FlockFive
                 if (_sr.flipX != FaceLeft) _sr.flipX = FaceLeft;
                 // On the bark, a seated flutter or ruffle keeps the rest frame.
                 // Anywhere else, wing frames. A still rest pose is only a perched bird.
-                bool airborne = Frozen || _liftShown > 0.05f || (Flapping && _flutterUntil <= 0f);
+                bool airborne = Frozen || _liftShown > HoverPerch || smallToss || (Flapping && _flutterUntil <= 0f);
                 wings = UseFlyingPose(onPerch, fly && airborne);
                 // BirdFrame steps poses at t*16, so t = Time.time * FlapRate gives
                 // 16*FlapRate poses/sec (rest,_1,_2,_1 = 4 poses per wingbeat); with the _3/_4
@@ -451,7 +504,8 @@ namespace FlockFive
             // White silhouette only used to mean "selected". Selection is the colored
             // aura. A cheer (feeder clear, hawk wave, finale) is twinkles, including
             // while Frozen, and never that halo. Flight sets Lift with Frozen and stays dark.
-            bool selected = show && !Shrouded && !Sleeping && !Frozen && Lift >= 1f;
+            bool selected = show && !Shrouded && !Sleeping && !Frozen
+                && Lift >= SelectLift - 0.02f && Lift <= HoverPerch;
             bool cheering = show && !Shrouded && Time.time < _cheerUntil;
             PlaceSelect(selected);
             PlaceCheerFx(cheering);
@@ -516,7 +570,7 @@ namespace FlockFive
             float look = Color == BirdColor.Teal ? Mathf.Sin(Time.time * 1.15f + _phase) * mood.Tilt : Mathf.Sin(Time.time * 5.1f + _phase) * mood.Tilt;
             float bob = Mathf.Sin(Time.time * mood.BobHz + _phase) * (fly ? mood.BobAmp * 3.2f : mood.BobAmp);
             float beat = Mathf.Sin(Time.time * 21f + _phase);
-            transform.localPosition = new Vector3(RestLocal.x + _rxDx, RestLocal.y + bob + _liftShown + _rxDy, RestLocal.z);
+            transform.localPosition = new Vector3(RestLocal.x + _rxDx + _nopeX, RestLocal.y + bob + _liftShown + _rxDy + _nopeY, RestLocal.z);
             transform.localRotation = Quaternion.Euler(0f, 0f, look + mood.Lean + _rxRot);
             float squash = fly ? mood.Squash : mood.Squash * 0.7f;
             transform.localScale = new Vector3(
@@ -549,7 +603,7 @@ namespace FlockFive
 
         const float FlapRate = 1.25f;
 
-        // Selected run (BranchView.SetReady lifts tip birds to Lift 1.15) draws
+        // Selected run (BranchView.SetReady lifts tip birds to SelectLift) draws
         // PlaceSelect. The silhouette ring below is unused; celebrations do not call it.
         const int GlowRing = 16;           // copies per ring
         const float GlowSolidPx = 9.5f;    // inner ring radius, in body source px
@@ -1352,10 +1406,68 @@ namespace FlockFive
         {
             switch (worn)
             {
-                case BirdKit.Bow: return 1.82f;
-                case BirdKit.Crown: return 1.55f;
+                case BirdKit.Bow: return 1.90f;
+                case BirdKit.Crown: return 1.70f;
                 default: return 1.45f;
             }
+        }
+
+        // How far a worn kit's ink and rim sit outside the painted sprite.
+        // The painted width stays ShareOf; the rim is what reads at phone size.
+        public const float KitInkMul = 1.18f;
+        public const float KitRimMul = 1.08f;
+
+        // Selection hover, in the bird's local units. Under a row (RowGap 1.50)
+        // and under HoverPerch, so the rest pose stays and the bird still reads
+        // as sitting on its own branch.
+        public const float SelectLift = 0.28f;
+        public const float HoverPerch = 0.62f;
+
+        // Home splash only. Garden LateUpdate does not call this.
+        public const float SplashBreathHz = 1.35f;
+        public const float SplashBreathAmp = 0.025f;
+        public const float SplashNodDeg = 2.2f;
+        public const float SplashShimmerEvery = 6.4f;
+        public const float SplashShimmerDur = 0.20f;
+
+        // Slow breath, a nod a quarter-cycle later, and a short wing shimmer.
+        // scale is around the caller's foot point. nodDeg is a rotation, not a bob.
+        public static void SplashIdle(float time, float phase, out float scaleX, out float scaleY, out float nodDeg, out bool shimmer)
+        {
+            float s = Mathf.Sin((SplashBreathHz * Mathf.PI * 2f) * time + phase);
+            scaleX = 1f + s * SplashBreathAmp;
+            scaleY = 1f - s * SplashBreathAmp * 0.55f;
+            nodDeg = Mathf.Sin((SplashBreathHz * Mathf.PI * 2f) * time + phase + Mathf.PI * 0.5f) * SplashNodDeg;
+            float t = Mathf.Repeat(time + phase * 0.17f, SplashShimmerEvery);
+            shimmer = t < SplashShimmerDur;
+        }
+
+        // Opaque foot, sprite-local. Bottom center of the painted pixels.
+        public static bool TryFoot(Sprite sprite, out float localX, out float localY)
+        {
+            localX = 0f;
+            localY = 0f;
+            var box = SpriteCatalog.MeasureOpaque(sprite);
+            if (!box.Ok) return false;
+            localX = (box.Left + box.Right) * 0.5f;
+            localY = box.Bottom;
+            return true;
+        }
+
+        // GUI pixels for one sprite-local unit when the rest sheet is drawn `icon` wide.
+        public static float GuiUnit(float icon, Sprite rest)
+        {
+            float ppu = rest != null && rest.pixelsPerUnit > 1f ? rest.pixelsPerUnit : 220f;
+            float texW = rest != null && rest.rect.width > 1f ? rest.rect.width : 1024f;
+            return ppu * (icon / texW);
+        }
+
+        // Sprite-local point into GUI space. Y grows downward. `rest` is the sheet
+        // the icon width was measured on, so a flap frame shares the same unit.
+        public static Vector2 SpriteToGui(Vector2 center, float icon, Sprite rest, float localX, float localY)
+        {
+            float unit = GuiUnit(icon, rest);
+            return new Vector2(center.x + localX * unit, center.y - localY * unit);
         }
 
         // Local scale so the kit's opaque width is ShareOf(worn) skulls wide.
@@ -1774,18 +1886,21 @@ namespace FlockFive
             if (worn == BirdKit.Plain)
             {
                 if (_kit != null && _kit.enabled) _kit.enabled = false;
+                HideKitRim();
                 _kitGlide.Ready = false;
                 HideFar();
                 return;
             }
             if (_kit == null)
             {
+                HideKitRim();
                 HideFar();
                 return;
             }
             if (_kit.enabled != on) _kit.enabled = on;
             if (!on)
             {
+                HideKitRim();
                 _kitGlide.Ready = false;
                 HideFar();
                 return;
@@ -1809,6 +1924,69 @@ namespace FlockFive
             var kitScale = new Vector3(ks, ks, 1f);
             if (_kit.transform.localScale != kitScale) _kit.transform.localScale = kitScale;
             if (!Frozen && _kit.color != UnityEngine.Color.white) _kit.color = UnityEngine.Color.white;
+            PlaceKitRim(worn);
+        }
+
+        void HideKitRim()
+        {
+            if (_kitInk != null && _kitInk.enabled) _kitInk.enabled = false;
+            if (_kitRim != null && _kitRim.enabled) _kitRim.enabled = false;
+        }
+
+        void PlaceKitRim(BirdKit worn)
+        {
+            if (_kit == null) return;
+            EnsureKitRim();
+            UnityEngine.Color ink;
+            UnityEngine.Color rim;
+            if (worn == BirdKit.Bow)
+            {
+                ink = new UnityEngine.Color(0.16f, 0.02f, 0.05f, 1f);
+                rim = new UnityEngine.Color(1f, 0.86f, 0.90f, 1f);
+            }
+            else
+            {
+                ink = new UnityEngine.Color(0.10f, 0.06f, 0.02f, 1f);
+                rim = new UnityEngine.Color(1f, 0.96f, 0.72f, 1f);
+            }
+            var contact = SpriteCatalog.KitSeatPoint(_kit.sprite, worn);
+            bool flip = _kit.flipX;
+            SeatOutline(_kitInk, KitInkMul, ink, contact, flip, 0.02f);
+            SeatOutline(_kitRim, KitRimMul, rim, contact, flip, 0.01f);
+        }
+
+        void EnsureKitRim()
+        {
+            if (_kitInk != null && _kitRim != null) return;
+            var mat = Silhouette();
+            if (_kitInk == null) _kitInk = MakeKitRim("KitInk", mat);
+            if (_kitRim == null) _kitRim = MakeKitRim("KitRim", mat);
+        }
+
+        SpriteRenderer MakeKitRim(string name, Material mat)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(_kit.transform, false);
+            var sr = go.AddComponent<SpriteRenderer>();
+            if (mat != null) sr.sharedMaterial = mat;
+            sr.enabled = false;
+            return sr;
+        }
+
+        // Scale around the knot / crown base so a bigger silhouette stays seated.
+        void SeatOutline(SpriteRenderer sr, float mul, UnityEngine.Color tint, Vector2 contact, bool flip, float z)
+        {
+            if (sr == null) return;
+            sr.sprite = _kit.sprite;
+            sr.flipX = flip;
+            sr.color = tint;
+            if (_kit.sortingLayerID != sr.sortingLayerID) sr.sortingLayerID = _kit.sortingLayerID;
+            FlockSort.Apply(sr, _kit.sortingOrder);
+            float cx = flip ? -contact.x : contact.x;
+            sr.transform.localPosition = new Vector3(cx * (1f - mul), contact.y * (1f - mul), z);
+            sr.transform.localRotation = Quaternion.identity;
+            sr.transform.localScale = new Vector3(mul, mul, 1f);
+            if (!sr.enabled) sr.enabled = true;
         }
 
         void HideFar()

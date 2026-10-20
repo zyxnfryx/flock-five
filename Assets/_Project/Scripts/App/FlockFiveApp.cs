@@ -3763,7 +3763,7 @@ namespace FlockFive
             }
             if (Locked(_sel) || Locked(hit))
             {
-                _garden.Branches[hit].Shake();
+                RefuseDrop(hit);
                 return;
             }
             if (_board.CanMove(_sel, hit, out _))
@@ -3772,7 +3772,7 @@ namespace FlockFive
                 // are playing, a second move is refused (the pick stays) so turns can never stack.
                 if (_turnGate.Busy)
                 {
-                    _garden.Branches[hit].Shake();
+                    RefuseDrop(hit);
                     return;
                 }
                 StartCoroutine(DoMove(_sel, hit));
@@ -3786,9 +3786,20 @@ namespace FlockFive
                     if (_board.IsSleeping(hit)) Sfx.Sleep();
                     return;
                 }
+                // Same color, wrong kit: the drop does not land. The birds show it,
+                // then the new flock is the selection. Chirp takes the lead seat.
+                _garden.Branches[_sel].NopeFlock();
                 Select(hit);
                 return;
             }
+            RefuseDrop(hit);
+        }
+
+        // A drop that does not move and does not become a new selection.
+        // Deny is the one lead sound. The source birds hop; the target limb shakes.
+        void RefuseDrop(int hit)
+        {
+            if (_sel >= 0) _garden.Branches[_sel].NopeFlock();
             Sfx.Deny();
             _garden.Branches[hit].Shake();
         }
@@ -12267,12 +12278,47 @@ namespace FlockFive
                 float u = 1f - Mathf.Clamp01(_avatarPreenT / 0.72f);
                 preen = Mathf.Sin(u * Mathf.PI) * (_avatarFaceLeft ? 16f : -16f);
             }
+            var rest = SpriteCatalog.BirdFrame(_avatarCol, 0f, false);
+            Vector2 foot = new Vector2(c.x, c.y + icon * 0.31f);
+            float footX = 0f;
+            float footY = 0f;
+            bool haveFoot = rest != null && BirdIdle.TryFoot(rest, out footX, out footY);
+            if (haveFoot) foot = BirdIdle.SpriteToGui(c, icon, rest, footX, footY);
+            float sx = 1f;
+            float sy = 1f;
+            float nod = 0f;
+            bool shimmer = false;
+            var drawC = c;
+            bool wingFrame = false;
+            if (onPerch)
+            {
+                BirdIdle.SplashIdle(_avatarClock, (int)_avatarCol * 0.73f, out sx, out sy, out nod, out shimmer);
+                if (!SplashScaleOk(c, icon, rest, foot, ref sx, ref sy))
+                {
+                    sx = 1f;
+                    sy = 1f;
+                }
+                if (shimmer && haveFoot)
+                {
+                    var up = SpriteCatalog.FlapPose(_avatarCol, 1);
+                    if (up != null && BirdIdle.TryFoot(up, out float ux, out float uy))
+                    {
+                        var restFoot = BirdIdle.SpriteToGui(c, icon, rest, footX, footY);
+                        var upFoot = BirdIdle.SpriteToGui(c, icon, rest, ux, uy);
+                        drawC = c + (restFoot - upFoot);
+                        wingFrame = true;
+                    }
+                }
+            }
             var prevMat = GUI.matrix;
-            if (Mathf.Abs(preen) > 0.4f)
-                GUIUtility.RotateAroundPivot(preen, new Vector2(c.x, c.y + icon * 0.31f));
+            if (onPerch && (Mathf.Abs(sx - 1f) > 0.001f || Mathf.Abs(sy - 1f) > 0.001f))
+                GUIUtility.ScaleAroundPivot(new Vector2(sx, sy), foot);
+            float rot = nod + preen;
+            if (Mathf.Abs(rot) > 0.2f)
+                GUIUtility.RotateAroundPivot(rot, foot);
             var prev = GUI.color;
             GUI.color = Color.white;
-            var drawn = DrawAvatarBird(_avatarCol, SavedAvatarKit(), c, icon, _avatarFaceLeft, onPerch, _avatarClock, false, BirdIdle.KitSlotHome);
+            var drawn = DrawAvatarBird(_avatarCol, SavedAvatarKit(), drawC, icon, _avatarFaceLeft, onPerch, _avatarClock, false, BirdIdle.KitSlotHome, wingFrame);
             GUI.matrix = prevMat;
             GUI.color = prev;
             if (drawn.width <= 2f) return;
@@ -12281,6 +12327,58 @@ namespace FlockFive
             bool wings = BirdIdle.UseFlyingPose(onPerch, false);
             _avatarPlateR = DrawAvatarPlate(c, icon, SavedAvatarName(), s, _avatarCol, _avatarFaceLeft, wings, _avatarClock, true);
             // b103 (Brandon): no ambient kit sparkle around the HOME avatar bird. The adopt scene keeps its stars.
+        }
+
+        // Breath stays off the LEVEL disc and inside the safe area. Shrinks toward
+        // 1, then gives up the breath, rather than painting over the tap.
+        bool SplashScaleOk(Vector2 c, float icon, Sprite rest, Vector2 foot, ref float sx, ref float sy)
+        {
+            var body = new Rect(c.x - icon * 0.5f, c.y - icon * 0.5f, icon, icon);
+            if (rest != null)
+            {
+                var box = SpriteCatalog.MeasureOpaque(rest);
+                if (box.Ok)
+                {
+                    float unit = BirdIdle.GuiUnit(icon, rest);
+                    float x0 = c.x + box.Left * unit;
+                    float x1 = c.x + box.Right * unit;
+                    float y0 = c.y - box.Top * unit;
+                    float y1 = c.y - box.Bottom * unit;
+                    body = Rect.MinMaxRect(Mathf.Min(x0, x1), Mathf.Min(y0, y1), Mathf.Max(x0, x1), Mathf.Max(y0, y1));
+                }
+            }
+            var disc = FlowerPlayRect();
+            var sa = Screen.safeArea;
+            var safe = new Rect(sa.x, Screen.height - (sa.y + sa.height), sa.width, sa.height);
+            for (int i = 0; i < 6; i++)
+            {
+                if (ScaledClear(body, foot, sx, sy, disc, safe)) return true;
+                sx = Mathf.Lerp(sx, 1f, 0.5f);
+                sy = Mathf.Lerp(sy, 1f, 0.5f);
+            }
+            return ScaledClear(body, foot, 1f, 1f, disc, safe);
+        }
+
+        static bool ScaledClear(Rect body, Vector2 foot, float sx, float sy, Rect disc, Rect safe)
+        {
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            for (int i = 0; i < 4; i++)
+            {
+                float px = (i & 1) == 0 ? body.xMin : body.xMax;
+                float py = (i & 2) == 0 ? body.yMin : body.yMax;
+                float x = foot.x + (px - foot.x) * sx;
+                float y = foot.y + (py - foot.y) * sy;
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+            }
+            var box = Rect.MinMaxRect(minX, minY, maxX, maxY);
+            if (disc.width > 2f && box.Overlaps(disc)) return false;
+            if (safe.width > 2f && (box.xMin < safe.xMin - 1f || box.xMax > safe.xMax + 1f
+                || box.yMin < safe.yMin - 1f || box.yMax > safe.yMax + 1f))
+                return false;
+            return true;
         }
 
         // Rails already took their taps. The play flower has not. A lesson click
