@@ -75,15 +75,21 @@ namespace FlockFive
         int _frameH;
         float _frameTall;
         float _frL, _frR, _frB, _frT;
-        Transform[] _bolt;
-        SpriteRenderer[] _boltSr;
-        float[] _segMul;
+        // Real bolt mesh. Not RainStreak sprites and not the sprite shader:
+        // that shader's unity_SpriteProps bias draws a mesh at half size in
+        // the corner and fills the rest of the quad with the texture border.
+        Mesh _boltMesh;
+        MeshRenderer _boltMr;
+        Material _boltMat;
+        Vector3[] _boltV;
+        Color32[] _boltC;
+        int[] _boltI;
+        const int BoltQuads = 72;
+        int _boltQuads;
         float[] _px;
         float[] _py;
         int _pn;
         int _boltN;
-        int _boltHi;
-        int _boltQ = -1;
         bool _boltOn;
         float _boltAt;
         float _boltLife = 0.3f;
@@ -200,7 +206,6 @@ namespace FlockFive
             _colQ = -1;
             _frameW = -1;
             _boltOn = false;
-            _boltQ = -1;
             _rumbleIn = -1f;
             _step = 0f;
             _skyAt = -100f;
@@ -230,6 +235,8 @@ namespace FlockFive
         {
             if (_mesh != null) Destroy(_mesh);
             if (_sheetMat != null) Destroy(_sheetMat);
+            if (_boltMesh != null) Destroy(_boltMesh);
+            if (_boltMat != null) Destroy(_boltMat);
         }
 
         // Resume frame's unscaled step is the whole suspension. The app handler
@@ -274,20 +281,10 @@ namespace FlockFive
             BuildSheet(left, right, bottom, top);
             yield return null;
 
-            _bolt = new Transform[Segs];
-            _boltSr = new SpriteRenderer[Segs];
-            _segMul = new float[Segs];
             _px = new float[PathCap];
             _py = new float[PathCap];
-            for (int i = 0; i < Segs; i++)
-            {
-                var go = WorldBuilder.Sprite("Bolt" + i, SpriteCatalog.RainStreak, new Vector3(0f, -20f, 0.22f), 1f, 18, transform);
-                _bolt[i] = go.transform;
-                _boltSr[i] = go.GetComponent<SpriteRenderer>();
-                _boltSr[i].enabled = false;
-                _boltSr[i].color = new Color(0.94f, 0.97f, 1f, 0f);
-                if ((i & 7) == 7) yield return null;
-            }
+            EnsureBoltMesh();
+            yield return null;
             BuildCue();
         }
 
@@ -575,7 +572,8 @@ namespace FlockFive
             {
                 _strikeDark -= dt;
                 float u = Mathf.Clamp01(_strikeDark / 0.5f);
-                veilA = Mathf.Max(veilA, 0.78f * u);
+                // A near-black veil read as a black frame and swallowed the bolt.
+                veilA = Mathf.Max(veilA, 0.36f * u);
             }
             float sky = SkyFlash;
             if (sky > 0f) veilA *= 1f - 0.7f * sky;
@@ -753,6 +751,8 @@ namespace FlockFive
             }
             float shape = FlashShape(ft, _skyBig);
             float a = shape * _skyPow;
+            // Cap the plate. Alpha 1 was a solid white frame and hid the bolt.
+            if (a > 0.42f) a = 0.42f;
             if (a < 0.012f && ft > 0.14f)
             {
                 if (_flashLit) DimFlash();
@@ -782,7 +782,8 @@ namespace FlockFive
 
         void SpawnBolt(float power, bool big)
         {
-            if (_bolt == null) return;
+            EnsureBoltMesh();
+            if (_boltMesh == null) return;
             EndBolt();
             _boltOn = true;
             _boltAt = PlayClock.Now;
@@ -823,6 +824,7 @@ namespace FlockFive
                 float ox = x0 + side * Random.Range(1.1f, 2.0f);
                 Lay(ox, y0 - 0.35f, ox + Random.Range(-0.8f, 0.8f), y1 + 1.5f, 6, 0.6f, thick * 0.62f, false);
             }
+            CommitBolt();
             FadeBolt(0f);
         }
 
@@ -867,62 +869,118 @@ namespace FlockFive
             _pn++;
         }
 
+        void EnsureBoltMesh()
+        {
+            if (_boltMesh != null) return;
+            var sh = Resources.Load<Shader>("Shaders/Bolt");
+            if (sh == null) sh = Shader.Find("FlockFive/Bolt");
+            if (sh == null) return;
+            _boltMat = new Material(sh) { name = "Bolt" };
+            _boltMat.SetColor("_Tint", new Color(1f, 1f, 1f, 0f));
+            _boltV = new Vector3[BoltQuads * 4];
+            _boltC = new Color32[BoltQuads * 4];
+            _boltI = new int[BoltQuads * 6];
+            _boltMesh = new Mesh { name = "Bolt" };
+            _boltMesh.MarkDynamic();
+            var go = new GameObject("Bolt");
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one;
+            go.AddComponent<MeshFilter>().sharedMesh = _boltMesh;
+            _boltMr = go.AddComponent<MeshRenderer>();
+            _boltMr.sharedMaterial = _boltMat;
+            _boltMr.sortingOrder = 30;
+            _boltMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _boltMr.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            _boltMr.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+            _boltMr.enabled = false;
+        }
+
         void PlaceSeg(float x0, float y0, float x1, float y1, float thick)
         {
-            if (_bolt == null || _boltN >= _bolt.Length) return;
+            if (_boltV == null || _boltN >= Segs) return;
             if (LeanFrame() && _boltN >= 14) return;
             float dx = x1 - x0;
             float dy = y1 - y0;
             float len = Mathf.Sqrt(dx * dx + dy * dy);
-            if (len < 0.05f) return;
-            int i = _boltN;
-            var t = _bolt[i];
-            var sr = _boltSr[i];
-            if (t == null || sr == null) return;
-            _boltN = i + 1;
-            _boltHi = _boltN;
-            t.position = new Vector3((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, 0.22f);
-            t.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(dy, dx) * Mathf.Rad2Deg - 90f);
-            // RainStreak is 0.125 wide and 1 tall at scale 1.
-            t.localScale = new Vector3(thick * 8f, len * 1.08f, 1f);
-            sr.enabled = true;
-            _segMul[i] = thick >= 0.2f ? 1f : 0.8f;
+            if (len < 0.04f) return;
+            _boltN++;
+            // Wide cool glow, then a hot core. Both follow the jagged centerline.
+            AddBoltQuad(x0, y0, x1, y1, thick * 3.4f, new Color32(70, 150, 255, 255));
+            AddBoltQuad(x0, y0, x1, y1, thick * 1.15f, new Color32(255, 248, 220, 255));
+        }
+
+        void AddBoltQuad(float x0, float y0, float x1, float y1, float thick, Color32 col)
+        {
+            if (_boltQuads >= BoltQuads) return;
+            float dx = x1 - x0;
+            float dy = y1 - y0;
+            float len = Mathf.Sqrt(dx * dx + dy * dy);
+            if (len < 0.001f) return;
+            float nx = -dy / len * thick * 0.5f;
+            float ny = dx / len * thick * 0.5f;
+            // Overlap the joints so a sharp kink does not open a gap.
+            float ox = dx / len * thick * 0.35f;
+            float oy = dy / len * thick * 0.35f;
+            int v = _boltQuads * 4;
+            int t = _boltQuads * 6;
+            _boltV[v] = new Vector3(x0 - ox + nx, y0 - oy + ny, 0f);
+            _boltV[v + 1] = new Vector3(x0 - ox - nx, y0 - oy - ny, 0f);
+            _boltV[v + 2] = new Vector3(x1 + ox + nx, y1 + oy + ny, 0f);
+            _boltV[v + 3] = new Vector3(x1 + ox - nx, y1 + oy - ny, 0f);
+            _boltC[v] = _boltC[v + 1] = _boltC[v + 2] = _boltC[v + 3] = col;
+            _boltI[t] = v;
+            _boltI[t + 1] = v + 2;
+            _boltI[t + 2] = v + 1;
+            _boltI[t + 3] = v + 2;
+            _boltI[t + 4] = v + 3;
+            _boltI[t + 5] = v + 1;
+            _boltQuads++;
+        }
+
+        void CommitBolt()
+        {
+            if (_boltMesh == null) return;
+            _boltMesh.Clear();
+            if (_boltQuads <= 0) return;
+            int v = _boltQuads * 4;
+            int t = _boltQuads * 6;
+            var verts = new Vector3[v];
+            var cols = new Color32[v];
+            var tris = new int[t];
+            for (int i = 0; i < v; i++) { verts[i] = _boltV[i]; cols[i] = _boltC[i]; }
+            for (int i = 0; i < t; i++) tris[i] = _boltI[i];
+            _boltMesh.vertices = verts;
+            _boltMesh.colors32 = cols;
+            _boltMesh.triangles = tris;
+            _boltMesh.RecalculateBounds();
+            if (_boltMr != null) _boltMr.enabled = true;
         }
 
         void FadeBolt(float age)
         {
-            if (_boltSr == null) return;
+            if (_boltMat == null) return;
             float tail = _boltLife > 0.16f ? _boltLife - 0.10f : 0.16f;
             float hold = age < 0.10f ? 1f : 1f - (age - 0.10f) / tail;
             if (hold < 0f) hold = 0f;
-            // Same double peak as the screen flash, with a floor so the fork stays readable in the dip.
+            // Strike, a readable dip, then a short afterflash so the fork does not vanish in one frame.
             float shape = FlashShape(age + 0.012f, _skyBig);
-            float a = (age < 0.10f ? 0.34f + 0.66f * shape : hold) * _boltPow;
-            int q = (int)(a * 32f);
-            if (q == _boltQ) return;
-            _boltQ = q;
-            var core = new Color(0.95f, 0.97f, 1f, a);
-            var limb = new Color(0.70f, 0.84f, 1f, a * 0.86f);
-            int n = _boltHi;
-            for (int i = 0; i < n; i++)
-            {
-                var sr = _boltSr[i];
-                if (sr == null || !sr.enabled) continue;
-                sr.color = _segMul[i] > 0.9f ? core : limb;
-            }
+            float after = 0f;
+            if (age > 0.11f && age < 0.24f)
+                after = Mathf.Sin((age - 0.11f) / 0.13f * Mathf.PI) * 0.72f;
+            float a = Mathf.Max(age < 0.10f ? 0.40f + 0.60f * shape : hold, after) * _boltPow;
+            if (a > 1f) a = 1f;
+            _boltMat.SetColor("_Tint", new Color(a, a, a, 1f));
         }
 
         void EndBolt()
         {
             _boltOn = false;
-            _boltQ = -1;
-            if (_boltSr == null) return;
-            for (int i = 0; i < _boltHi; i++)
-            {
-                if (_boltSr[i] != null) _boltSr[i].enabled = false;
-            }
-            _boltHi = 0;
+            _boltQuads = 0;
             _boltN = 0;
+            if (_boltMat != null) _boltMat.SetColor("_Tint", new Color(0f, 0f, 0f, 0f));
+            if (_boltMr != null) _boltMr.enabled = false;
         }
 
         static float Remain(float play)

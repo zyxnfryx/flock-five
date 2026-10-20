@@ -41,6 +41,8 @@ namespace FlockFive
         BeeSwarm _swarm;
         LeafCover _leaves;
         SpriteRenderer _calm;
+        SpriteRenderer _glow;
+        bool _glowOn;
         readonly Transform[] _zz = new Transform[3];
         readonly SpriteRenderer[] _zzSr = new SpriteRenderer[3];
 
@@ -212,8 +214,9 @@ namespace FlockFive
             else
                 _swarm.Cover(false, Seats, -1, state.Count);
             ShowZzz(sleeping);
-            if (Wood != null && !sleeping) Wood.color = Color.white;
-            else if (Wood != null && sleeping) Wood.color = new Color(0.78f, 0.74f, 0.92f);
+            if (Wood != null && sleeping) Wood.color = SleepWood;
+            else if (Wood != null && LeavesOn) Wood.color = LockedWood;
+            else if (Wood != null) Wood.color = Color.white;
         }
 
         public void SetReady(bool on)
@@ -233,8 +236,8 @@ namespace FlockFive
                     continue;
                 }
                 bool tip = on && i >= _count - run && i < _count;
-                idle.Lift = tip ? 1.15f : 0f;
-                idle.Flapping = tip;
+                idle.Lift = tip ? BirdIdle.SelectLift : 0f;
+                idle.Flapping = false;
                 // Lift draws the selection aura. Skip the extra feathers when rain and a scrap
                 // are already filling the screen.
                 if (tip && !RainScrap())
@@ -268,11 +271,62 @@ namespace FlockFive
             return n;
         }
 
+        // The tip run that was offered. A refused drop shakes those birds.
+        public void NopeFlock()
+        {
+            int run = ReadyRun();
+            if (run <= 0) return;
+            for (int i = _count - run; i < _count; i++)
+            {
+                if (Birds[i] == null || !Birds[i].enabled) continue;
+                var idle = Birds[i].GetComponent<BirdIdle>();
+                if (idle == null || idle.Shrouded || idle.Sleeping) continue;
+                idle.Nope();
+            }
+        }
+
+        static readonly Color SleepWood = new Color(0.78f, 0.74f, 0.92f);
+        static readonly Color LockedWood = new Color(0.55f, 0.62f, 0.52f);
+        static readonly Color SelectWood = new Color(1f, 0.94f, 0.80f);
+
         public void Highlight(bool on)
         {
             if (Wood == null) return;
-            if (_sleeping) { Wood.color = new Color(0.78f, 0.74f, 0.92f); return; }
-            Wood.color = on ? new Color(1f, 0.82f, 0.15f) : Color.white;
+            if (_sleeping)
+            {
+                Wood.color = SleepWood;
+                SetGlow(false);
+                return;
+            }
+            if (on) Wood.color = SelectWood;
+            else if (LeavesOn) Wood.color = LockedWood;
+            else Wood.color = Color.white;
+            SetGlow(on);
+        }
+
+        void SetGlow(bool on)
+        {
+            _glowOn = on;
+            if (on) EnsureBranchGlow();
+            if (_glow != null) _glow.enabled = on;
+        }
+
+        void EnsureBranchGlow()
+        {
+            if (_glow != null) return;
+            var go = WorldBuilder.Sprite("BranchGlow", SpriteCatalog.Glow, transform.position, 1f, 3, transform);
+            go.transform.localPosition = new Vector3(0f, 0.12f, 0.02f);
+            go.transform.localScale = new Vector3(6.2f, 1.15f, 1f);
+            _glow = go.GetComponent<SpriteRenderer>();
+            _glow.color = new Color(1f, 0.85f, 0.4f, 0.28f);
+            _glow.enabled = _glowOn;
+        }
+
+        void PulseGlow()
+        {
+            if (!_glowOn || _glow == null) return;
+            float p = 0.22f + 0.16f * (0.5f + 0.5f * Mathf.Sin(Time.time * 3.2f));
+            _glow.color = new Color(1f, 0.85f, 0.4f, p);
         }
 
         void Awake()
@@ -375,6 +429,7 @@ namespace FlockFive
             }
             else ApplyIdle();
 
+            PulseGlow();
             if (!_sleeping)
             {
                 if (_calm != null) _calm.enabled = false;

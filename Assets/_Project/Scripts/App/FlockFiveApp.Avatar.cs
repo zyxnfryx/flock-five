@@ -1338,9 +1338,9 @@ namespace FlockFive
         // Off the perch, wing frames. On the perch, folded wings. One path for
         // the adopt bird, the home bird, the name-dialog portrait, and the finale
         // rule BirdIdle.UseFlyingPose already applies to garden birds.
-        Rect DrawAvatarBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool onPerch, float clock, bool buttonSeat = false, int glideSlot = -1)
+        Rect DrawAvatarBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool onPerch, float clock, bool buttonSeat = false, int glideSlot = -1, bool wingFrame = false)
         {
-            bool wings = BirdIdle.UseFlyingPose(onPerch, false);
+            bool wings = wingFrame || BirdIdle.UseFlyingPose(onPerch, false);
             return DrawDressedBird(col, kit, c, icon, faceLeft, wings, clock, buttonSeat, glideSlot);
         }
 
@@ -1440,8 +1440,36 @@ namespace FlockFive
                 GUIUtility.ScaleAroundPivot(new Vector2(-1f, 1f), r.center);
             if (Mathf.Abs(tilt) > 0.4f)
                 GUIUtility.RotateAroundPivot(tilt, r.center);
+            if (!buttonSeat)
+                DrawKitRim(r, spr, bow);
+            GUI.color = Color.white;
             GUI.DrawTexture(r, spr.texture, ScaleMode.ScaleToFit, true);
             GUI.matrix = m;
+        }
+
+        static readonly Vector2[] KitRimDir =
+        {
+            new Vector2(1f, 0f), new Vector2(-1f, 0f), new Vector2(0f, 1f), new Vector2(0f, -1f),
+            new Vector2(0.72f, 0.72f), new Vector2(-0.72f, 0.72f), new Vector2(0.72f, -0.72f), new Vector2(-0.72f, -0.72f)
+        };
+
+        // Offset copies of the painted kit. Ink outside, a light rim inside it.
+        static void DrawKitRim(Rect r, Sprite spr, bool bow)
+        {
+            var ink = bow ? new Color(0.16f, 0.02f, 0.05f, 1f) : new Color(0.10f, 0.06f, 0.02f, 1f);
+            var rim = bow ? new Color(1f, 0.86f, 0.90f, 1f) : new Color(1f, 0.96f, 0.72f, 1f);
+            StampKitRim(r, spr, ink, r.width * 0.045f);
+            StampKitRim(r, spr, rim, r.width * 0.022f);
+        }
+
+        static void StampKitRim(Rect r, Sprite spr, Color tint, float px)
+        {
+            GUI.color = tint;
+            for (int i = 0; i < KitRimDir.Length; i++)
+            {
+                var o = KitRimDir[i];
+                GUI.DrawTexture(new Rect(r.x + o.x * px, r.y + o.y * px, r.width, r.height), spr.texture, ScaleMode.ScaleToFit, true);
+            }
         }
 
         // Shared splash glove. CoachGloveAt arcs over the top and ClearGloveOfCaption
