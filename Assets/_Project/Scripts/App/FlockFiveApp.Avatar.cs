@@ -269,6 +269,7 @@ namespace FlockFive
         {
             if (_hiveIntroLive || _pokerIntroLive || _dailyIntroLive) return true;
             if (_welcomeOpen || _welcomeGlove || _dailyAskOpen) return true;
+            if (_careTutorLive) return true;
             return false;
         }
 

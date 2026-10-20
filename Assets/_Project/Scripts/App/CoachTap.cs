@@ -67,6 +67,8 @@ namespace FlockFive
         BadgerBreakFree = 42,
         // b110: first lightning fire on a gift branch. Informational: any tap continues.
         Fire = 43,
+        // Bird Care v1: first feed. The glove is on Feed; only Feed advances (shared gate).
+        BirdFeed = 44,
     }
 
     // b123 (Brandon): every step names ONE explicit press-to-continue, distinct from toggle taps.
@@ -155,6 +157,7 @@ namespace FlockFive
                 case CoachStep.BadgerPowerArmed:
                 case CoachStep.BadgerResult:
                 case CoachStep.BadgerBreakFree:
+                case CoachStep.BirdFeed:
                     return CoachTapKind.Required;
             }
             throw new ArgumentOutOfRangeException(nameof(step), step, "Classify this lesson step");
@@ -297,6 +300,7 @@ namespace FlockFive
                 case CoachStep.BadgerPowerArmed: return BadgerCopy.X2Armed;
                 case CoachStep.BadgerResult: return BadgerCopy.Win;
                 case CoachStep.BadgerBreakFree: return BadgerCopy.FreezeBreakFreeWait;
+                case CoachStep.BirdFeed: return FlockFiveApp.CareTutorLine("your bird");
             }
             return step.ToString();
         }

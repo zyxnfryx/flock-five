@@ -3558,6 +3558,7 @@ namespace FlockFive
             if (paused)
             {
                 NoteAppBackground();
+                NoteCareBackground();
                 DailyReminder.OnAppBackground();
             }
             else
@@ -3570,6 +3571,7 @@ namespace FlockFive
 
         void OnApplicationQuit()
         {
+            NoteCareBackground();
             DailyReminder.OnAppQuit();
         }
 
@@ -5149,6 +5151,7 @@ namespace FlockFive
             BadgerSave.SetIfDue(LevelData.DisplayNumber);
             LevelData.RememberClear();
             Purse.AwardClear();
+            CareEarnNectar();
             // Sparrow, hawk, and a plain clear all arrive here.
             // The homepage sign spends this clear and plays the coins.
             PlayClearReward();
@@ -10379,6 +10382,7 @@ namespace FlockFive
             // Bird and name plate before the flower, so a tap on either is Used
             // before the play button can arm or fire on release.
             HitHomeAvatar(s, tutorUp);
+            HitBirdCare(s);
             HitAdoptTutor(s);
             StartupTrace.Lap("L.Hits");
             // The greet's taps never get here: StepTapGate's any-tap step (GateAdoptGreet)
@@ -10387,6 +10391,7 @@ namespace FlockFive
             if (DrawFlowerPlay(s, ease, number))
                 PressLevelButton();
             DrawHomeAvatar(s);
+            DrawBirdCare(s);
             StartupTrace.Lap("L.Avatar");
             if (_adoptLive) DrawAdoptScene(s);
             StartupTrace.Lap("L.Adopt");
@@ -12192,6 +12197,7 @@ namespace FlockFive
                 float u = 1f - Mathf.Clamp01(_avatarPreenT / 0.72f);
                 preen = Mathf.Sin(u * Mathf.PI) * (_avatarFaceLeft ? 16f : -16f);
             }
+            preen += CareNapTilt(onPerch);
             var prevMat = GUI.matrix;
             if (Mathf.Abs(preen) > 0.4f)
                 GUIUtility.RotateAroundPivot(preen, new Vector2(c.x, c.y + icon * 0.31f));

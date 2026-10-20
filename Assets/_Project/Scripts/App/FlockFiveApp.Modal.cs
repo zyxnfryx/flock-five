@@ -54,6 +54,8 @@ namespace FlockFive
             if (_welcomeGlove && !_welcomeOpen) return (int)CoachStep.VipPitch;
             if (_adHand) return (int)CoachStep.AdHand;
             if (PokerBackGateLive()) return (int)CoachStep.PokerBack;
+            // Bird Care v1: the feeding lesson. Only the Feed button (the glove's target) gets through.
+            if (_careTutorLive) return (int)CoachStep.BirdFeed;
             return -1;
         }
 
