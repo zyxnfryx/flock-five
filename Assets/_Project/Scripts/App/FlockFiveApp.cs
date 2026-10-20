@@ -10492,7 +10492,7 @@ namespace FlockFive
             DrawBadgerSitter(visual.y - rest.y);
             StartupTrace.Lap("L.Level");
             var disc = PushButton.Follow(FlowerDisc(rest, 0f), rest, visual, GuiPixels());
-            DrawFlowerCaption(disc, ease, number);
+            DrawFlowerCaption(disc, ease, number, LevelInkCeiling(_avatarPlateR, disc, s));
             NoteLevelDrawn(gates);
             return fired;
         }
@@ -10770,7 +10770,8 @@ namespace FlockFive
         // matching DrawFlowerCaption, so the perch stays off the words either way.
         static float FlowerLevelTop() => FlowerLevelTop(FlowerPlayRect());
 
-        // b132: same maths for any LEVEL square, so the editor test can slide it.
+        // Same maths for any LEVEL square, so an editor test can pass one. b133: this is the
+        // rect top, not the ink; the centred stack's ink stays below it, so the perch is unchanged.
         static float FlowerLevelTop(Rect rest)
         {
             var disc = FlowerDisc(rest, 0f);
@@ -10839,7 +10840,7 @@ namespace FlockFive
             return stackY + stackH * 0.52f;
         }
 
-        static void DrawFlowerCaption(Rect disc, string ease, int number)
+        static void DrawFlowerCaption(Rect disc, string ease, int number, float inkCeiling = float.NegativeInfinity)
         {
             bool hasEase = !string.IsNullOrEmpty(ease);
             // LEVEL over joke as one field, biased down off the top rim.
@@ -10891,9 +10892,12 @@ namespace FlockFive
                 lvR.width * (quad ? 0.98f : (triple ? 0.96f : 0.94f)),
                 lvR.height * (hasEase ? 0.95f : 0.80f),
                 quad ? 30 : (triple ? 26 : 30), lvHi);
-            StampBannerText(lvR, level, lv, 1f, true);
 
-            if (!hasEase) return;
+            if (!hasEase)
+            {
+                StampBannerText(lvR, level, lv, 1f, true);
+                return;
+            }
 
             // Shared size. Does not follow the 100+ LEVEL cap or the length of the line.
             float s = DeviceFit.Ui();
@@ -10927,8 +10931,79 @@ namespace FlockFive
                 if (y2 < y) y = y2;
             }
             if (y + bandH > bottom && bandH > textH) bandH = Mathf.Max(textH, bottom - y);
+
+            // b133 (Brandon): centre the LEVEL + joke ink on the disc's top face. The rects above
+            // are bottom-anchored, so a smaller LEVEL (3-4 digits) and the joke line left the ink
+            // sitting low on the face. One shared lift moves both lines together; the hit area,
+            // ring, sparkles, sink and the perch (FlowerLevelTop) do not read it.
+            float jokeLineH = joke.lineHeight > 1f ? joke.lineHeight : jokePx * InkLineFrac;
+            int jokeLines = Mathf.Max(1, Mathf.RoundToInt((textH - joke.padding.vertical) / jokeLineH));
+            float lvLineH = lv.lineHeight > 1f ? lv.lineHeight : lv.fontSize * InkLineFrac;
+            float lift = LevelStackLift(disc, lvR.yMax, lv.padding.bottom, lvLineH, lv.fontSize,
+                y, joke.padding.top, jokeLineH, jokePx, jokeLines, inkCeiling);
+            lvR.y -= lift;
+            y -= lift;
+            StampBannerText(lvR, level, lv, 1f, true);
             var jokeDraw = new Rect(disc.center.x - lineW * 0.5f, y, lineW, bandH);
             StampBannerText(jokeDraw, ease, joke, 1f, false);
+        }
+
+        // b133: optical centre of the LEVEL disc's top face as a fraction of the disc (FlowerCap)
+        // height. From the traced face bbox in PushButton (FaceY0..FaceY1 of fx_play_flower, fitted
+        // into the LEVEL square): ((0.104 + 0.792 * 0.2525) - 0.10) / 0.38 = 0.537.
+        public const float FaceMidFrac = 0.537f;
+        // Default (LegacyRuntime / Arial) metrics as a fraction of the font size: baseline below the
+        // line top, cap height, and line height. Used only to find the ink box, never to size type.
+        public const float InkAscentFrac = 0.905f;
+        public const float InkCapFrac = 0.716f;
+        public const float InkLineFrac = 1.149f;
+        // The lift never moves the stack more than this share of the disc (up) or StackDropMaxFrac (down).
+        // b133.1: was 0.08, which stopped a wrapped (two-line) joke 15-24 px short of centre; the name
+        // plate ceiling below is now the real limit, this is only a sanity bound.
+        public const float StackLiftMaxFrac = 0.15f;
+        // b133.1 (Brandon): the raised ink never comes closer than this (x s) under the home bird's
+        // name plate. Same 8 x s gap the perch keeps elsewhere (PlaceHomeBranch, AvatarRailShift).
+        public const float PlateInkClearPt = 8f;
+
+        // GUI y the stack's ink top may not rise above: the live name plate's bottom plus the clear
+        // gap, when the plate sits over the disc. NegativeInfinity (no limit) when there is no plate.
+        public static float LevelInkCeiling(Rect plate, Rect disc, float s)
+        {
+            if (plate.width <= 2f || plate.height <= 2f) return float.NegativeInfinity;
+            if (plate.xMax <= disc.xMin || plate.xMin >= disc.xMax) return float.NegativeInfinity;
+            if (s < 1f) s = 1f;
+            return plate.yMax + PlateInkClearPt * s;
+        }
+        public const float StackDropMaxFrac = 0.02f;
+
+        // Ink box of the stacked LEVEL + joke, in GUI y: LEVEL cap top to the joke's last baseline.
+        // lvBottom is the LowerCenter LEVEL rect's yMax; jokeTop is the UpperCenter joke band's y.
+        public static void LevelStackInk(float lvBottom, float lvPadBottom, float lvLineH, int lvPx,
+            float jokeTop, float jokePadTop, float jokeLineH, int jokePx, int jokeLines,
+            out float inkTop, out float inkBottom)
+        {
+            inkTop = lvBottom - lvPadBottom - lvLineH + (InkAscentFrac - InkCapFrac) * lvPx;
+            inkBottom = jokeTop + jokePadTop + (Mathf.Max(1, jokeLines) - 1) * jokeLineH + InkAscentFrac * jokePx;
+        }
+
+        // How far (px, + is up) DrawFlowerCaption lifts the stack so its ink centre sits on the
+        // face centre (disc.y + FaceMidFrac * disc.height). Clamped to a band of the disc, then
+        // capped so the ink top stays at or below inkCeiling (name plate + gap): centre if there is
+        // room, otherwise rise only as far as the plate allows (and drop if it already crowds it).
+        public static float LevelStackLift(Rect disc, float lvBottom, float lvPadBottom, float lvLineH, int lvPx,
+            float jokeTop, float jokePadTop, float jokeLineH, int jokePx, int jokeLines,
+            float inkCeiling = float.NegativeInfinity)
+        {
+            if (disc.height < 1f) return 0f;
+            LevelStackInk(lvBottom, lvPadBottom, lvLineH, lvPx, jokeTop, jokePadTop, jokeLineH, jokePx, jokeLines,
+                out float top, out float bot);
+            float lift = (top + bot) * 0.5f - (disc.y + disc.height * FaceMidFrac);
+            float up = disc.height * StackLiftMaxFrac;
+            float down = disc.height * StackDropMaxFrac;
+            if (lift > up) lift = up;
+            if (lift < -down) lift = -down;
+            if (!float.IsNegativeInfinity(inkCeiling) && top - lift < inkCeiling) lift = top - inkCeiling;
+            return lift;
         }
 
         static GUIStyle _fitScratch;
@@ -19360,6 +19435,13 @@ namespace FlockFive
         IEnumerator WatchGiftBody()
         {
             bool keep = _keepStreak;
+            // A freeze continue with every gift spent would play an ad that opens nothing,
+            // thaw, re-freeze and re-offer forever (b116 L51). Leave the card on Retry.
+            if (!keep && (_frozen || _freezeOffer) && !BonusBranches.ContinueOffered(_board, _bonusOn))
+            {
+                AdLog.Add("freeze continue skipped: no gift branch left to open");
+                yield break;
+            }
             // Release has no mock movie. The grant is the reward callback, which
             // does not wait on GiftFace.Movie or GiftFace.Wait.
 #if FF_ADS_DEV
@@ -19649,7 +19731,9 @@ namespace FlockFive
             string head = AdRetry.Active && !_keepStreak
                 ? AdRetry.CurrentLine
                 : (_freezeOffer
-                    ? "No more moves, you're frozen!"
+                    ? (BonusBranches.ContinueOffered(_board, _bonusOn)
+                        ? "No more moves, you're frozen!"
+                        : "No more moves! Tap Retry to try again")
                     : "Watch AD for an extra branch");
             // Inset past the screw bases so the gift headline never sits under a bulb.
             // The freeze sign has no bulbs, so its line uses that same inset on every side.
@@ -19705,7 +19789,9 @@ namespace FlockFive
             if (_freezeOffer)
             {
                 bool retryReady = retryU > 0.62f;
-                bool contReady = contU > 0.62f;
+                // No gift left to open: Retry only. The continue ad would pay nothing (b116 L51).
+                bool contLive = BonusBranches.ContinueOffered(_board, _bonusOn);
+                bool contReady = contLive && contU > 0.62f;
                 var retryDisc = FlowerDisc(retryRest, 0f);
                 float pad = 8f * s;
                 var retryHit = new Rect(retryDisc.x - pad, retryDisc.y - pad * 0.35f, retryDisc.width + pad * 2f, retryDisc.height + pad * 0.7f);
@@ -19726,7 +19812,7 @@ namespace FlockFive
                 if (!contHeld && contU >= 1f)
                     pulse = 1f + 0.028f * Mathf.Sin(t * 2.5f);
                 float contPop = PopupMotion.PopScale(contU) * pulse;
-                if (contPop > 0.04f)
+                if (contLive && contPop > 0.04f)
                     DrawFreezeWatch(cont, contHeld, s, contPop);
                 if (GuiPaint()) SparkleFx.DrawDrift(frostA);
                 if (retry)
