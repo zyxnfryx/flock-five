@@ -85,6 +85,8 @@ namespace FlockFive.Editor
                     Check("badger-left-vs-coin-pill." + n, !Hit(bl, pill) && !Hit(L.ColR, pill), "plate " + R(bl) + " pill " + R(pill));
                     Check("you-counter-clear." + n, !Hit(you, L.Back) && !Hit(you, L.PlayerGrid) && !Hit(you, L.BossGrid) && Inside(L.ColL, you), "you " + R(you));
                     Check("badger-left-clear." + n, !Hit(bl, L.PlayerGrid) && !Hit(bl, L.BossGrid) && Inside(L.ColR, bl), "plate " + R(bl));
+                    float pillL = L.Coin.x - 8f * s - FlockFiveApp.BadgerCoinPillTextW(L.Coin.width);
+                    Check("title-vs-coin-pill." + n, L.Title.xMax <= pillL + 0.5f, "title " + R(L.Title) + " pill.x " + pillL.ToString("0", ci));
                     Check("coin-size-shared." + n, Mathf.Abs(L.Coin.width - FlockFiveApp.CoinBalanceIcon(d.W, s)) < 0.01f, "coin " + R(L.Coin));
 
                     // fighters: level, symmetric, bigger bird, clear of columns and pick combs

@@ -982,6 +982,9 @@ namespace FlockFive
             float sUi = DeviceFit.Ui(screenW, screenH);
             var L = BadgerLayoutFor(screenW, screenH, safe, sUi, top, BackMedalBox(sUi, top, safe));
             var seat = BadgerCaptionSeat(L.Caption, sUi);
+            // The painted plate hangs CaptionLayout.BoxPad outside the text box, so the box gets the seat minus that hang.
+            var hang = CaptionLayout.BoxPad(screenH > 2f ? screenH : 720f);
+            seat = new Rect(seat.x + hang.x, seat.y + hang.y, Mathf.Max(8f, seat.width - hang.x * 2f), Mathf.Max(8f, seat.height - hang.y * 2f));
             maxW = seat.width;
             if (maxW > screenW * 0.86f) maxW = screenW * 0.86f;
             if (maxW < 8f) maxW = 8f;
@@ -1065,6 +1068,7 @@ namespace FlockFive
             float boxH = fit.height;
             if (boxH > roomH) boxH = roomH;
             var band = BadgerCaptionSeat(L.Caption, s); // b130 (f): the one caption-band helper
+            band = new Rect(band.x + plateX, band.y + plateY, Mathf.Max(8f, band.width - plateX * 2f), Mathf.Max(8f, band.height - plateY * 2f));
             float x = band.center.x - boxW * 0.5f;
             float minX = band.x;
             float maxX = band.xMax - boxW;
@@ -1162,6 +1166,9 @@ namespace FlockFive
             L.Coin = new Rect(xR - icon, top + 4f * s, icon, icon);
             float tx = L.Back.xMax + 8f * s;
             float tw = Mathf.Max(80f, screenW * 0.62f - tx);
+            // b130 (e): the title stops short of the coin pill (icon + amount, the amount up to BadgerCoinPillTextW).
+            float pillLeft = L.Coin.x - 8f * s - BadgerCoinPillTextW(icon);
+            if (tx + tw > pillLeft - 6f * s) tw = Mathf.Max(60f, pillLeft - 6f * s - tx);
             L.Title = new Rect(tx, top, tw, L.Back.height * 0.52f);
             L.Need = new Rect(tx, L.Title.yMax, tw, L.Back.height * 0.34f);
 

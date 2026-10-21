@@ -32,6 +32,9 @@ namespace FlockFive
             return new Rect(band.x + padX, band.y + padY, w, h);
         }
 
+        // Room kept for the coin amount left of the icon ($99,999 at the shared CoinBalanceType size).
+        public static float BadgerCoinPillTextW(float icon) => icon * CoinBalanceType * 3.6f;
+
         // ---- (a/b/g) CoachArrow ----
         public const float CoachArrowSmall = 0.6f;
         public static float CoachArrowK(float s) => Mathf.Clamp(s, 1f, 2f) * CoachArrowSmall;
