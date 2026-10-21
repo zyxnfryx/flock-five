@@ -1129,8 +1129,8 @@ namespace FlockFive
             public Rect ColL, ColR;
         }
 
-        // b130 (f): 0.18 -> 0.26 so every lesson (floor font, wrapped rows, paragraph gap) fits its plate; taken from the grids.
-        const float BadgerCaptionFrac = 0.26f;
+        // b130 (f): 0.18 -> 0.27 so every lesson (floor font, wrapped rows, paragraph gap) fits its plate; taken from the grids.
+        const float BadgerCaptionFrac = 0.27f;
         const float BadgerPowerFrac = 0.11f;
         // b128: the 'Your pick.' band just above the power row (CaptionStyles "badger.pick"). Taken from the two grids
         // (0.045 each); the arena, the power row and the bottom caption band keep their size.
