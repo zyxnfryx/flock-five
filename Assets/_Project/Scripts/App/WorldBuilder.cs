@@ -132,7 +132,8 @@ namespace FlockFive
             if (reveal)
             {
                 prev = GardenSeason.ForLevel(level - 1);
-                oldSpr = prev == GardenScene.Summer ? SpriteCatalog.GardenBg : SpriteCatalog.TakeHeldScene(prev);
+                oldSpr = SpriteCatalog.TakeHeldScene(prev);
+                if (oldSpr == null && prev == GardenScene.Summer) oldSpr = SpriteCatalog.GardenBg;
             }
             var bg = Sprite("Bg", SpriteCatalog.GardenBgFor(scene), new Vector3(0f, -0.15f, 8f), 1f, -20, root);
             var fit = bg.AddComponent<BackgroundFitter>();

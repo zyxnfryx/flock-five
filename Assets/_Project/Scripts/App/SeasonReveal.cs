@@ -181,7 +181,7 @@ namespace FlockFive
             {
                 // WorldBuilder pins the outgoing painting before this. Do not keep it
                 // if the reveal is not going to run.
-                if (prev != GardenScene.Summer && oldSprite != null)
+                if (oldSprite != null && oldSprite != SpriteCatalog.GardenBg)
                     SpriteCatalog.ReleaseHeld();
                 return;
             }
@@ -192,7 +192,7 @@ namespace FlockFive
             var gate = SeasonScene.Gate(scene, ostrich, SeasonScene.TutorialLive);
             if (gate == SeasonScene.Skip.Ostrich || gate == SeasonScene.Skip.Tutorial)
             {
-                if (prev != GardenScene.Summer && oldSprite != null)
+                if (oldSprite != null && oldSprite != SpriteCatalog.GardenBg)
                     SpriteCatalog.ReleaseHeld();
                 return;
             }
@@ -236,7 +236,7 @@ namespace FlockFive
                 SeasonScene.Live = true;
             }
             _shader = FoliageSway.ShaderReady;
-            _holdLive = oldSprite != null && prev != GardenScene.Summer;
+            _holdLive = oldSprite != null && oldSprite != SpriteCatalog.GardenBg; // summer is a held sequoia painting too (Oct 2026)
             bool differ = oldSprite != null && (next == null || oldSprite != next.sprite);
             if (differ)
             {

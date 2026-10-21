@@ -44,6 +44,8 @@ namespace FlockFive
                 case GardenScene.Fall: return "Sprites/bg_fall";
                 case GardenScene.Winter: return "Sprites/bg_winter";
                 case GardenScene.Spring: return "Sprites/bg_spring";
+                // Oct 2026 (Brandon): summer gardens get their own giant-sequoia painting; the home wash keeps bg_garden.
+                case GardenScene.Summer: return "Sprites/bg_summer";
                 default: return null;
             }
         }
