@@ -98,9 +98,9 @@ namespace FlockFive.Editor
                     Check("avatars-vs-columns." + n, !Hit(m.BirdBox, L.ColL) && !Hit(m.BadgerBox, L.ColR) && !Hit(m.BirdBox, L.ColR) && !Hit(m.BadgerBox, L.ColL),
                         "bird " + R(m.BirdBox) + " badger " + R(m.BadgerBox));
                     var g2 = FlockFiveApp.BadgerPickComb(L.Arena, L.ColR, s);
-                    var youComb = FlockFiveApp.BadgerYouSlotComb(L.Arena, s);
+                    var youComb = g2.You;
                     Check("pick-combs-clear." + n, !Hit(youComb, m.BirdBox) && !Hit(g2.Comb, g2.Fighter) && !Hit(youComb, g2.Comb)
-                        && !Hit(youComb, L.ColL) && !Hit(g2.Comb, L.ColR), "you " + R(youComb) + " boss " + R(g2.Comb) + " bird " + R(m.BirdBox));
+                        && !Hit(youComb, L.ColL) && !Hit(g2.Comb, L.ColR) && youComb.width > 8f && Mathf.Abs(youComb.width - g2.Comb.width) < 0.5f, "you " + R(youComb) + " boss " + R(g2.Comb) + " bird " + R(m.BirdBox));
 
                     // (a/b/g) arrows
                     var tips = new Vector2[4];
@@ -114,7 +114,8 @@ namespace FlockFive.Editor
                             var ar = FlockFiveApp.CoachArrowRect(tips[i], s);
                             det += " " + R(ar);
                             ok &= !Hit(ar, m.BirdBox) && !Hit(ar, m.BadgerBox) && !Hit(ar, L.Back) && !Hit(ar, L.Coin);
-                            if (step == 0) ok &= ar.yMax <= L.PlayerGrid.y + 0.5f && !Hit(ar, youComb) && !Hit(ar, g2.Comb);
+                            // the pick combs are not painted during the lesson (no tiles picked); the arrows clear the fighters
+                            if (step == 0) ok &= ar.yMax <= L.PlayerGrid.y + 0.5f && ar.y >= L.Arena.y;
                             if (step == 1) ok &= ar.yMax <= L.Power.y + 0.5f && Mathf.Abs(tips[i].x - L.Power.center.x) < 0.5f;
                             if (step == 2) ok &= Inside(i == 0 ? L.ColL : L.ColR, ar) && !Hit(ar, i == 0 ? you : bl);
                         }

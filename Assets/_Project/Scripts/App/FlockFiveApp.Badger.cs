@@ -1650,7 +1650,7 @@ namespace FlockFive
         // two clears it by the gap, so it does not jump when he freezes. It never steps past the VS box's left edge.
         public struct BadgerGapRects
         {
-            public Rect Comb, Fighter, Ice, ColR;
+            public Rect Comb, Fighter, Ice, ColR, You;
             public float Gap;
         }
 
@@ -1678,19 +1678,23 @@ namespace FlockFive
             iceFoot.x = BadgerFighterPlace.ClampFootX(iceFoot.x, iceW * iceUnit, right);
             g.Ice = SpriteAnim.Dest(Badger129.FrozenBlockArt, iceW, iceH, iceFoot, iceUnit, 1f, 1f);
             g.Comb = BadgerFighterPlace.ClearComb(BadgerSlotTile(box.BossSlot), Mathf.Min(g.Fighter.xMin, g.Ice.xMin), g.Gap, box.Middle.x);
+            // b130: the player's comb mirrors it, clear of the (bigger, inset) bird by the same gap. If the two combs would
+            // meet in the middle, both shrink evenly (badger comb keeps its right edge, so its fighter gap holds).
+            var you = BadgerSlotTile(box.YouSlot);
+            float birdR = mark.BirdBox.xMax + g.Gap;
+            if (you.x < birdR) you.x = birdR;
+            if (you.xMax + g.Gap > g.Comb.x)
+            {
+                float avail = g.Comb.xMax - birdR;
+                float w = Mathf.Max(8f, (avail - g.Gap) * 0.5f);
+                float k = w / Mathf.Max(1f, g.Comb.width);
+                float h = g.Comb.height * k;
+                float cy = g.Comb.center.y;
+                g.Comb = new Rect(g.Comb.xMax - w, cy - h * 0.5f, w, h);
+                you = new Rect(birdR, cy - h * 0.5f, w, h);
+            }
+            g.You = you;
             return g;
-        }
-
-        // b130: the player's pick comb slides right until it clears the (bigger, inset) bird by the shared gap.
-        public static Rect BadgerYouSlotComb(Rect arena, float s)
-        {
-            var box = BadgerArenaRects.Split(arena);
-            var mark = BadgerFighterPlace.Rest(box, 480f, 640f);
-            var comb = BadgerSlotTile(box.YouSlot);
-            float gap = BadgerFighterPlace.CombGap(s);
-            float over = mark.BirdBox.xMax + gap - comb.x;
-            if (over > 0f) comb.x = Mathf.Min(box.Middle.center.x - comb.width, comb.x + over);
-            return comb;
         }
 
         static Rect BadgerSlotTile(Rect slot)
@@ -1710,8 +1714,9 @@ namespace FlockFive
         {
             float s = L.S;
             var boxes = BadgerArenaRects.Split(L.Arena);
-            var youSlot = BadgerYouSlotComb(L.Arena, s); // b130: mirrors the badger side, clear of the bigger bird
-            var bossSlot = BadgerPickComb(L.Arena, L.ColR, s).Comb; // b129 v4: clear of the fighter / ice block by the shared gap
+            var pair = BadgerPickComb(L.Arena, L.ColR, s);
+            var youSlot = pair.You;  // b130: mirrors the badger side, clear of the bigger bird
+            var bossSlot = pair.Comb; // b129 v4: clear of the fighter / ice block by the shared gap
             bool tilesIn = _bgFight != null && (_bgBossIx >= 0 || _bgPlayerIx >= 0);
             bool tie = _bgResolved && _bgRound.PlayerGained <= 0 && _bgRound.BossGained <= 0 && !_bgRound.BossHeld
                 && (_bgStage == BadgerStage.Verdict || _bgStage == BadgerStage.Over);
