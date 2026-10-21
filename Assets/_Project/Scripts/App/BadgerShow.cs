@@ -1281,6 +1281,8 @@ namespace FlockFive
 
         public const float BirdScale = 1.25f;
         public const float InFrac = 0.10f;
+        public const float FlapSpan = 1504f / 1024f;
+        public const float FlapVisL = 0.008f, FlapVisR = 0.753f, FlapVisT = 0.007f, FlapVisB = 0.767f;
 
         public static Mark Rest(BadgerArenaRects.Boxes box, float artW, float artH)
             => Rest(box, artW, artH, float.PositiveInfinity);
@@ -1311,12 +1313,18 @@ namespace FlockFive
             if (icon < 1f) icon = 1f;
             m.Icon = icon;
             m.FaceLeft = false;
-            float half = icon * 0.5f;
+            // The battle bird hovers on its flap sheet (bird_*_1..4, ~1.47x the rest frame), whose painted body fills only
+            // part of the drawn square: x 0.008..0.753, y 0.007..0.767. Place by that painted box, not the square, so the
+            // visible bird is the badger's mirror image about the pick-comb axis and its feet sit on his baseline.
+            float d = icon * FlapSpan;
             float axis = box.Middle.center.x;
-            float bx = 2f * axis - m.Foot.x;
-            if (bx < you.x + half) bx = you.x + half;
-            m.Bird = new Vector2(bx, m.Foot.y - half);
-            m.BirdBox = new Rect(m.Bird.x - half, m.Bird.y - half, icon, icon);
+            float visW = (FlapVisR - FlapVisL) * d, visH = (FlapVisB - FlapVisT) * d;
+            float visCx = 2f * axis - m.Foot.x;
+            if (visCx - visW * 0.5f < you.x) visCx = you.x + visW * 0.5f;
+            float cx = visCx - (FlapVisL + FlapVisR - 1f) * 0.5f * d;
+            float cy = m.Foot.y - (FlapVisB - 0.5f) * d;
+            m.Bird = new Vector2(cx, cy);
+            m.BirdBox = new Rect(visCx - visW * 0.5f, m.Foot.y - visH, visW, visH);
             return m;
         }
 

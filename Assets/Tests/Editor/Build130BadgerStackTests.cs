@@ -96,7 +96,7 @@ namespace FlockFive.Editor
                     Check("bird-1.25x." + n, m.Icon >= oldIcon * 1.24f || m.Icon >= box.YouFighter.height - 0.5f, "icon " + m.Icon.ToString("0", ci) + " old " + oldIcon.ToString("0", ci));
                     Check("bird-on-baseline." + n, Mathf.Abs(m.BirdBox.yMax - m.Foot.y) < 0.5f, "bird.yMax " + m.BirdBox.yMax.ToString("0", ci) + " foot.y " + m.Foot.y.ToString("0", ci));
                     float axis = box.Middle.center.x;
-                    float inL = axis - m.Bird.x, inR = m.Foot.x - axis;
+                    float inL = axis - m.BirdBox.center.x, inR = m.Foot.x - axis;
                     Check("fighters-mirror-axis." + n, Mathf.Abs(inL - inR) < 1f, "in " + inL.ToString("0.0", ci) + " / " + inR.ToString("0.0", ci));
                     Check("avatars-vs-columns." + n, !Hit(m.BirdBox, L.ColL) && !Hit(m.BadgerBox, L.ColR) && !Hit(m.BirdBox, L.ColR) && !Hit(m.BadgerBox, L.ColL),
                         "bird " + R(m.BirdBox) + " badger " + R(m.BadgerBox));

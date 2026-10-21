@@ -1962,7 +1962,7 @@ namespace FlockFive
             }
 
             foot.x += BadgerShakeX(BadgerBodyKey, L.S);
-            float minBird = L.ColL.xMax + icon * 0.5f + 2f; // b130: the bird never sits on the wider YOU column
+            float minBird = L.ColL.xMax + (mark.Bird.x - mark.BirdBox.x) + 2f; // b130: the painted bird never sits on the YOU column
             if (bird.x < minBird) bird.x = minBird;
 
             spot.Frame = pose.Frame;
@@ -1982,7 +1982,7 @@ namespace FlockFive
             spot.Foot = foot;
             spot.Bird = bird;
             spot.Icon = icon;
-            spot.BirdBox = new Rect(bird.x - icon * 0.5f, bird.y - icon * 0.5f, icon, icon);
+            spot.BirdBox = new Rect(mark.BirdBox.x + (bird.x - mark.Bird.x), mark.BirdBox.y + (bird.y - mark.Bird.y), mark.BirdBox.width, mark.BirdBox.height);
             BadgerSlam.EyeUv(spot.Frame, out float eu, out float ev);
             float ew = w * (spot.Sx > 0.05f ? spot.Sx : 1f);
             float eh = h * (spot.Sy > 0.05f ? spot.Sy : 1f);
