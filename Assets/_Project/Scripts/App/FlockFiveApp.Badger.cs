@@ -2593,11 +2593,10 @@ namespace FlockFive
                 PaintBadgerBandCaption(_bgLine, L.Caption, s, BadgerCaptionFade.For(false, _coachFade));
                 return;
             }
-            return BadgerLayoutAt(Screen.width, Screen.height, Screen.safeArea, s, top, BackMedalRect(s, top));
-        }
-
-        // Pure: the page bands for one screen. BadgerLayout feeds it the live screen; tests feed it a size.
-        static BadgerRects BadgerLayoutAt(float screenW, float screenH, Rect safe, float s, float top, Rect back)
+            string spot = BadgerCaptionSpot(_bgLine);
+            if (CaptionStyles.AbovePower(spot))
+            {
+                DrawBadgerPickCaption(L, spot);
                 return;
             }
             var gold = GoldCaption(_bgLine, Screen.width, Screen.height);
