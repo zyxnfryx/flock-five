@@ -1129,7 +1129,8 @@ namespace FlockFive
             public Rect ColL, ColR;
         }
 
-        const float BadgerCaptionFrac = 0.18f;
+        // b130 (f): 0.18 -> 0.26 so every lesson (floor font, wrapped rows, paragraph gap) fits its plate; taken from the grids.
+        const float BadgerCaptionFrac = 0.26f;
         const float BadgerPowerFrac = 0.11f;
         // b128: the 'Your pick.' band just above the power row (CaptionStyles "badger.pick"). Taken from the two grids
         // (0.045 each); the arena, the power row and the bottom caption band keep their size.
@@ -1189,7 +1190,7 @@ namespace FlockFive
             float pickH = room * BadgerPickFrac;
             // Middle stage band, between the badger tiles and the player tiles.
             // Height stays put so the opening hive and bee arcs keep their size.
-            float arenaH = room * 0.16f;
+            float arenaH = room * 0.15f;
             float gridH = (room - capH - powH - arenaH - pickH) * 0.5f;
             float gx = xL + colW + 10f * s;
             float gw = Mathf.Max(60f, xR - colW - 10f * s - gx);
