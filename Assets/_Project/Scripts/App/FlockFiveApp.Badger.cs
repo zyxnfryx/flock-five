@@ -548,6 +548,8 @@ namespace FlockFive
             // b123: say what happened and what it paid; a loss says how to try again.
             int flag = _bgFlagDisplay > 0 ? _bgFlagDisplay : BadgerSave.Pending;
             var plan = BadgerPay.Plan(won ? BadgerResult.PlayerWon : BadgerResult.BadgerWon, flag);
+            _bgWinCoins = won ? plan.Credit : 0;
+            _bgWinAt = AdPause.Unscaled;
             if (won && plan.Credit > 0) _bgLine += "\n+" + plan.Credit + " coins!";
             else if (!won) _bgLine += "\nTap the Level button to try again.";
         }
@@ -964,11 +966,10 @@ namespace FlockFive
             else _bgLessonAim = L.ColL;
             _bgLessonCap = DrawBadgerCoachLine(L, line);
             RefreshBadgerLessonIgnore(L);
-            // Look-at arrow: the grid, the power row, then YOU / BADGER meters alternating on the last step.
-            Rect look = _bgLessonAim;
-            if (_bgLessonStep >= 2)
-                look = Mathf.Repeat(AdPause.Unscaled - _bgLessonStepAt, 3.2f) < 1.6f ? L.ColL : L.ColR;
-            CoachArrowAt(look, s);
+            // b130 (a/b/g): small down-arrows through the one CoachArrow helper: two above the player grid, one over the
+            // whole power row, then one over each score column at the same time (clear of both fighters).
+            int nTips = BadgerCoachArrowTips(L, _bgLessonStep, BadgerSchedule.PlayerTarget(_bgAppearance), BadgerSchedule.BadgerTarget(_bgAppearance), _bgArrowTips);
+            for (int i = 0; i < nTips; i++) DrawCoachArrow(_bgArrowTips[i], s);
             DrawTutorOverlay(s);
         }
 
@@ -977,22 +978,14 @@ namespace FlockFive
         {
             scale = DeviceFit.UiH(screenH);
             float top = TopHudBox(screenH, safe, 0f);
-            var back = BackMedalBox(scale, top, safe);
-            bool have = safe.width >= 2f && safe.height >= 2f;
-            float xL = Mathf.Max(8f * scale, have ? safe.xMin + 6f : 0f);
-            float xR = Mathf.Min(screenW - 8f * scale, have ? safe.xMax - 6f : screenW);
-            float y0 = back.yMax + 4f * scale;
-            float yEnd = screenH - Mathf.Max(8f * scale, have ? safe.yMin + 4f : 0f);
-            float gap = 6f * scale;
-            float room = Mathf.Max(100f, yEnd - y0 - gap * 4f);
-            float capH = room * BadgerCaptionFrac;
-            float capW = xR - xL;
-            const float plateX = 18f;
-            const float plateY = 12f;
-            maxW = capW - plateX * 2f;
+            // b130 (f): the room is the shared caption seat inside the real layout's caption band.
+            float sUi = DeviceFit.Ui(screenW, screenH);
+            var L = BadgerLayoutFor(screenW, screenH, safe, sUi, top, BackMedalBox(sUi, top, safe));
+            var seat = BadgerCaptionSeat(L.Caption, sUi);
+            maxW = seat.width;
             if (maxW > screenW * 0.86f) maxW = screenW * 0.86f;
             if (maxW < 8f) maxW = 8f;
-            roomH = capH - plateY * 2f;
+            roomH = seat.height;
             if (roomH < 8f) roomH = 8f;
             hi = Mathf.Max(18, Mathf.RoundToInt(34f * scale));
         }
@@ -1071,15 +1064,15 @@ namespace FlockFive
             if (boxW > maxW) boxW = maxW;
             float boxH = fit.height;
             if (boxH > roomH) boxH = roomH;
-            float x = L.Caption.center.x - boxW * 0.5f;
-            float minX = L.Caption.x + plateX;
-            float maxX = L.Caption.xMax - plateX - boxW;
+            var band = BadgerCaptionSeat(L.Caption, s); // b130 (f): the one caption-band helper
+            float x = band.center.x - boxW * 0.5f;
+            float minX = band.x;
+            float maxX = band.xMax - boxW;
             if (maxX < minX) maxX = minX;
             if (x < minX) x = minX;
             if (x > maxX) x = maxX;
-            float yRoom = L.Caption.height - plateY * 2f;
-            float y = L.Caption.y + plateY + (yRoom - boxH) * 0.5f;
-            if (y < L.Caption.y + plateY) y = L.Caption.y + plateY;
+            float y = band.y + (band.height - boxH) * 0.5f;
+            if (y < band.y) y = band.y;
             var seat = new Rect(x, y, boxW, boxH);
             CapSpot("badger.lesson");
             DrawSplashIntroLine(line, seat, s, hi, pin: true);
@@ -1162,8 +1155,10 @@ namespace FlockFive
             bool haveSafe = safe.width >= 2f && safe.height >= 2f;
             float xL = Mathf.Max(8f * s, haveSafe ? safe.xMin + 6f : 0f);
             float xR = Mathf.Min(screenW - 8f * s, haveSafe ? safe.xMax - 6f : screenW);
-            float colW = Mathf.Clamp(58f * Mathf.Clamp(s, 1f, 1.35f), 64f, 96f);
-            float icon = 40f * Mathf.Clamp(s, 1f, 1.35f);
+            // b130 (h): double-thick two-lane score columns.
+            float colW = Mathf.Clamp(58f * Mathf.Clamp(s, 1f, 1.35f), 64f, 96f) * BadgerColumnWide;
+            // b130 (e): the garden HUD coin balance size (CoinBalanceIcon), drawn through DrawCoinBalance.
+            float icon = CoinBalanceIcon(screenW, s);
             L.Coin = new Rect(xR - icon, top + 4f * s, icon, icon);
             float tx = L.Back.xMax + 8f * s;
             float tw = Mathf.Max(80f, screenW * 0.62f - tx);
@@ -1171,9 +1166,12 @@ namespace FlockFive
             L.Need = new Rect(tx, L.Title.yMax, tw, L.Back.height * 0.34f);
 
             float y0 = L.Back.yMax + 4f * s;
-            float yEnd = screenH - Mathf.Max(8f * s, haveSafe ? safe.yMin + 4f : 0f);
+            // b130 (f): the caption band keeps a safe-area bottom margin (BadgerCaptionSafeMargin).
+            float yEnd = screenH - BadgerCaptionSafeMargin(screenH, safe, s);
             float gap = 6f * s;
-            float room = Mathf.Max(100f, yEnd - y0 - gap * 4f);
+            // b130 (c): the shared PowerRowGap between the bottom comb row band and the power row comes out of the room.
+            float rowGap = BadgerPowerRowGap(s);
+            float room = Mathf.Max(100f, yEnd - y0 - gap * 4f - rowGap);
             float capH = room * BadgerCaptionFrac;
             float powH = room * BadgerPowerFrac;
             float pickH = room * BadgerPickFrac;
@@ -1191,11 +1189,15 @@ namespace FlockFive
             L.PlayerGrid = new Rect(gx, y, gw, gridH);
             y += gridH + gap;
             L.Pick = new Rect(xL, y, xR - xL, pickH);
-            y += pickH;
+            y += pickH + rowGap;
             BadgerBottomBands(y, xL, xR, room, s, out L.Power, out L.Caption);
-            float colH = L.PlayerGrid.yMax - L.BossGrid.y;
-            L.ColL = new Rect(xL, L.BossGrid.y, colW, colH);
-            L.ColR = new Rect(xR - colW, L.BossGrid.y, colW, colH);
+            // Clamp the caption band to the safe bottom (never under the home indicator).
+            if (L.Caption.yMax > yEnd) L.Caption.height = Mathf.Max(8f, yEnd - L.Caption.y);
+            // b130 (e): the columns start under the coin pill row, so BADGER LEFT never meets the coin counter.
+            float colTop = Mathf.Max(L.BossGrid.y, L.Coin.yMax + 4f * s);
+            float colH = L.PlayerGrid.yMax - colTop;
+            L.ColL = new Rect(xL, colTop, colW, colH);
+            L.ColR = new Rect(xR - colW, colTop, colW, colH);
             return L;
         }
 
@@ -1385,7 +1387,7 @@ namespace FlockFive
             {
                 if (pulse > 1.001f)
                 {
-                    float top = col.yMax - target * unit;
+                    float top = col.yMax - BadgerMeter.Rows(target) * unit;
                     var pivot = new Vector2(col.center.x, (top + col.yMax) * 0.5f);
                     GUIUtility.ScaleAroundPivot(new Vector2(pulse, pulse), pivot);
                 }
@@ -1393,7 +1395,7 @@ namespace FlockFive
                 if (n < 0) n = 0;
                 for (int i = 0; i < target; i++)
                 {
-                    var seg = BadgerMeter.Comb(col, i, unit);
+                    var seg = BadgerMeter.Comb2(col, i, unit);
                     if (i < n)
                         HoneyArt.DrawJuicyCell(seg, BadgerGold, 0f, 1f, i, true, false, false);
                     else
@@ -1414,7 +1416,7 @@ namespace FlockFive
             else { _bgLeftR = left; _bgLeftAtR = tickAt; }
             float tick = BadgerMeter.Tick(tickAt < 0f ? -1f : now - tickAt);
             string who = side == 0 ? "YOU" : "BADGER";
-            var plate = BadgerMeter.EndPlate(col, target, unit);
+            var plate = BadgerMeter.EndPlate2(col, target, unit);
             float pop = 1f + 0.16f * tick;
             if (pop > 1.001f)
             {
@@ -1546,7 +1548,7 @@ namespace FlockFive
                 st.fontSize = FitFont(st, "HONEY BADGER", L.Title.width, L.Title.height, 12, 80);
                 StampOutlined(L.Title, "HONEY BADGER", st, BadgerGold, 0, 2);
             }
-            DrawCoinCluster(L.Coin, s, 0.86f);
+            DrawCoinBalance(s, L.Coin.xMax, L.Coin.center.y); // b130 (e): same helper and size as the garden HUD
 
             int meterMax = BadgerSchedule.BadgerTargetFixed;
             float meterUnit = BadgerMeter.Unit(L.ColL, meterMax);
@@ -1679,6 +1681,18 @@ namespace FlockFive
             return g;
         }
 
+        // b130: the player's pick comb slides right until it clears the (bigger, inset) bird by the shared gap.
+        public static Rect BadgerYouSlotComb(Rect arena, float s)
+        {
+            var box = BadgerArenaRects.Split(arena);
+            var mark = BadgerFighterPlace.Rest(box, 480f, 640f);
+            var comb = BadgerSlotTile(box.YouSlot);
+            float gap = BadgerFighterPlace.CombGap(s);
+            float over = mark.BirdBox.xMax + gap - comb.x;
+            if (over > 0f) comb.x = Mathf.Min(box.Middle.center.x - comb.width, comb.x + over);
+            return comb;
+        }
+
         static Rect BadgerSlotTile(Rect slot)
         {
             float h = slot.height * 0.90f;
@@ -1696,7 +1710,7 @@ namespace FlockFive
         {
             float s = L.S;
             var boxes = BadgerArenaRects.Split(L.Arena);
-            var youSlot = BadgerSlotTile(boxes.YouSlot);
+            var youSlot = BadgerYouSlotComb(L.Arena, s); // b130: mirrors the badger side, clear of the bigger bird
             var bossSlot = BadgerPickComb(L.Arena, L.ColR, s).Comb; // b129 v4: clear of the fighter / ice block by the shared gap
             bool tilesIn = _bgFight != null && (_bgBossIx >= 0 || _bgPlayerIx >= 0);
             bool tie = _bgResolved && _bgRound.PlayerGained <= 0 && _bgRound.BossGained <= 0 && !_bgRound.BossHeld
@@ -1930,7 +1944,7 @@ namespace FlockFive
             }
 
             foot.x += BadgerShakeX(BadgerBodyKey, L.S);
-            float minBird = L.ColL.x + icon * 0.45f;
+            float minBird = L.ColL.xMax + icon * 0.5f + 2f; // b130: the bird never sits on the wider YOU column
             if (bird.x < minBird) bird.x = minBird;
 
             spot.Frame = pose.Frame;
@@ -2586,11 +2600,13 @@ namespace FlockFive
         {
             if (!GuiPaint() || string.IsNullOrEmpty(_bgLine)) return;
             float s = L.S;
+            // b130 (j): the win is a victory banner (shared reward banner helper), not a floating gold caption.
+            if (BadgerWinBannerLive()) { DrawBadgerWinBanner(L); return; }
             // v2 (b116 bug): a frozen line paints in the BadgerBottomBands caption slot under the power row, hard-broken
             // on its authored '/' rows, so the banner never lands across the arena and covers the fighters.
             if (BadgerFrozenLine(_bgLine) && !BadgerTutorialFight())
             {
-                PaintBadgerBandCaption(_bgLine, L.Caption, s, BadgerCaptionFade.For(false, _coachFade));
+                PaintBadgerBandCaption(_bgLine, BadgerCaptionSeat(L.Caption, s), s, BadgerCaptionFade.For(false, _coachFade));
                 return;
             }
             string spot = BadgerCaptionSpot(_bgLine);
@@ -2602,7 +2618,7 @@ namespace FlockFive
             var gold = GoldCaption(_bgLine, Screen.width, Screen.height);
             float w = gold.PlateW;
             float h = gold.PlateH;
-            var band = L.Caption;
+            var band = BadgerCaptionSeat(L.Caption, s);
             if (w > band.width) w = band.width;
             if (h > band.height) h = band.height;
             var seat = new Rect(band.center.x - w * 0.5f, band.center.y - h * 0.5f, w, h);

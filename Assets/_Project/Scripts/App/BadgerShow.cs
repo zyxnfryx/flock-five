@@ -1279,16 +1279,20 @@ namespace FlockFive
             public Rect BadgerBox;
         }
 
+        public const float BirdScale = 1.25f;
+        public const float InFrac = 0.10f;
+
         public static Mark Rest(BadgerArenaRects.Boxes box, float artW, float artH)
         {
             var m = new Mark();
             var you = box.YouFighter;
             var boss = box.BossFighter;
-            float icon = Mathf.Min(you.width * 0.92f, you.height * 0.90f);
+            // b130 (d): the bird is ~1.25x and stands in toward the middle, level with the badger's body.
+            float icon = Mathf.Min(you.width * 0.92f * BirdScale, you.height * 0.90f);
             if (icon < 1f) icon = 1f;
             m.Icon = icon;
             m.FaceLeft = false;
-            m.Bird = you.center;
+            m.Bird = new Vector2(you.center.x + you.width * InFrac, you.center.y);
             m.BirdBox = new Rect(m.Bird.x - icon * 0.5f, m.Bird.y - icon * 0.5f, icon, icon);
 
             if (artW < 1f) artW = 480f;
@@ -1300,8 +1304,17 @@ namespace FlockFive
             if (m.Unit < 0.001f) m.Unit = 0.001f;
             float w = artW * m.Unit;
             float h = artH * m.Unit;
-            m.Foot = new Vector2(boss.center.x, boss.yMax);
+            // b130 (i): the badger steps in by the same amount, mirroring the bird.
+            m.Foot = new Vector2(boss.center.x - boss.width * InFrac, boss.yMax);
             m.BadgerBox = new Rect(m.Foot.x - w * 0.5f, m.Foot.y - h, w, h);
+            // Level: the bird's middle on the badger's body middle, kept inside the band.
+            float by = m.BadgerBox.center.y;
+            float half = icon * 0.5f;
+            by = Mathf.Clamp(by, you.y + half, you.yMax - half);
+            m.Bird.y = by;
+            float minX = you.x + half;
+            if (m.Bird.x < minX) m.Bird.x = minX;
+            m.BirdBox = new Rect(m.Bird.x - half, m.Bird.y - half, icon, icon);
             return m;
         }
 
@@ -1382,6 +1395,39 @@ namespace FlockFive
             float y = col.yMax - (index + 1) * unit + gap * 0.5f;
             float inset = col.width * 0.06f;
             return new Rect(col.x + inset, y, Mathf.Max(2f, col.width - inset * 2f), h);
+        }
+
+        // b130 (h): the column is two lanes wide. Comb i sits on row i/2 (bottom up), lane i%2 (left, right), so the
+        // stack is half as tall as the old single line. Same Unit as before: one row per two points.
+        public const int Lanes = 2;
+
+        public static int Rows(int target) => (Mathf.Max(1, target) + Lanes - 1) / Lanes;
+
+        public static Rect Comb2(Rect col, int index, float unit)
+        {
+            float gap = Mathf.Max(1f, unit * 0.12f);
+            float h = Mathf.Max(2f, unit - gap);
+            int row = index / Lanes, lane = index % Lanes;
+            float y = col.yMax - (row + 1) * unit + gap * 0.5f;
+            float inset = col.width * 0.05f;
+            float laneGap = Mathf.Max(1f, col.width * 0.04f);
+            float w = Mathf.Max(2f, (col.width - inset * 2f - laneGap) / Lanes);
+            return new Rect(col.x + inset + lane * (w + laneGap), y, w, h);
+        }
+
+        // The end plate on the top row of the two-lane stack.
+        public static Rect EndPlate2(Rect col, int target, float unit)
+        {
+            int n = target < 1 ? 1 : target;
+            var top = Comb2(col, (Rows(n) - 1) * Lanes, unit);
+            float h = top.height * 1.65f;
+            if (h < 52f) h = 52f;
+            float cap = col.width * 1.20f;
+            if (h > cap) h = cap;
+            float y = top.yMax - h * 0.78f;
+            if (y + h > col.yMax) y = col.yMax - h;
+            if (y < col.y) y = col.y;
+            return new Rect(col.x, y, col.width, h);
         }
 
         // Points still needed. Clamped so a full bar reads 0.
