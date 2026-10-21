@@ -136,6 +136,8 @@ namespace FlockFive.Editor
                     {
                         bool paints = FlockFiveApp.BadgerCaptionPaints(BadgerCopy.LessonAt(i), d.W, d.H, safe, out string det);
                         Check("lesson-caption-fits." + i + "." + n, paints, det);
+                        bool room = FlockFiveApp.BadgerLessonCaptionRoom(BadgerCopy.LessonAt(i), d.W, d.H, safe, out _, out _, out string det2);
+                        Check("lesson-caption-room." + i + "." + n, room, det2);
                     }
 
                     // (j) win banner clear of Continue and inside the screen

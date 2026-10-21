@@ -1013,6 +1013,7 @@ namespace FlockFive
         public static bool BadgerCaptionPaints(string line, float screenW, float screenH, Rect safe, out string detail)
         {
             BadgerCaptionLimits(screenW, screenH, safe, out float maxW, out float roomH, out float scale, out int hi);
+            hi = BadgerCaptionHi(line, maxW, roomH, scale, hi);
             var fit = MeasureCaptionBox(line, maxW, hi, 14);
             var box = new Rect(0f, 0f, Mathf.Min(fit.width, maxW), Mathf.Min(fit.height, roomH));
             CaptionTextRect(box, scale, out var textR);
@@ -1061,11 +1062,15 @@ namespace FlockFive
             var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
             float plateX = hang.x;
             float plateY = hang.y;
-            BadgerCaptionLimits(Screen.width, Screen.height, Screen.safeArea, out float maxW, out float roomH, out _, out int hi);
+            BadgerCaptionLimits(Screen.width, Screen.height, Screen.safeArea, out float maxW, out float roomH, out float capScale, out int hi);
+            hi = BadgerCaptionHi(line, maxW, roomH, capScale, hi); // b130 (f): authored rows fit the seat, never re-wrapped off the bottom
             var fit = FitCaptionBox(line, maxW, hi, 14);
             float boxW = fit.width;
             if (boxW > maxW) boxW = maxW;
             float boxH = fit.height;
+            // b130 (f): the plate is as tall as the lesson paint really needs (floor font, wrapped rows), within the room.
+            if (BadgerLessonCaptionRoom(line, Screen.width, Screen.height, Screen.safeArea, out float need, out _, out _) || need > boxH)
+                boxH = Mathf.Max(boxH, need);
             if (boxH > roomH) boxH = roomH;
             var band = BadgerCaptionSeat(L.Caption, s); // b130 (f): the one caption-band helper
             band = new Rect(band.x + plateX, band.y + plateY, Mathf.Max(8f, band.width - plateX * 2f), Mathf.Max(8f, band.height - plateY * 2f));

@@ -35,6 +35,45 @@ namespace FlockFive
         // Room kept for the coin amount left of the icon ($99,999 at the shared CoinBalanceType size).
         public static float BadgerCoinPillTextW(float icon) => icon * CoinBalanceType * 3.6f;
 
+        // b130 (f): the biggest caption font (<= hi) at which every authored row fits the text rect on one line and all rows
+        // fit its height, so the box never grows past the caption band and 'Tap to continue.' is never pushed off-screen.
+        public static int BadgerCaptionHi(string line, float maxW, float roomH, float scale, int hi)
+        {
+            if (string.IsNullOrEmpty(line)) return hi;
+            CaptionTextRect(new Rect(0f, 0f, maxW, roomH), scale, out var textR);
+            var st = CoachLineStyle();
+            int keep = st.fontSize; bool wrap = st.wordWrap;
+            var content = new GUIContent(line);
+            int lo = Mathf.Max(12, CaptionPx(12));
+            int f = hi;
+            try
+            {
+                st.wordWrap = false;
+                for (; f > lo; f--)
+                {
+                    st.fontSize = f;
+                    var size = st.CalcSize(content);
+                    if (size.x <= textR.width && size.y <= textR.height) break;
+                }
+            }
+            finally { st.fontSize = keep; st.wordWrap = wrap; }
+            return f;
+        }
+
+        // b130 (f) test hook: the lesson caption as PaintCoachCaption really sizes it (lesson floor font, wraps at the gold
+        // width, paragraph gap kept): the box height it needs vs the room the caption seat gives it.
+        public static bool BadgerLessonCaptionRoom(string line, float screenW, float screenH, Rect safe, out float need, out float have, out string detail)
+        {
+            BadgerCaptionLimits(screenW, screenH, safe, out float maxW, out float roomH, out float scale, out int hi);
+            CaptionTextRect(new Rect(0f, 0f, maxW, roomH), scale, out var textR);
+            float padH = roomH - textR.height;
+            var fit = FitLessonText(line, textR.width, 99999f, 12, hi, screenW, screenH);
+            need = fit.TextH + padH;
+            have = roomH;
+            detail = screenW + "x" + screenH + " need " + need.ToString("0") + " have " + have.ToString("0") + " font " + fit.Font + " [" + (fit.Shown ?? "").Replace("\n", "/") + "]";
+            return need <= have + 0.5f;
+        }
+
         // ---- (a/b/g) CoachArrow ----
         public const float CoachArrowSmall = 0.6f;
         public static float CoachArrowK(float s) => Mathf.Clamp(s, 1f, 2f) * CoachArrowSmall;
