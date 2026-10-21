@@ -39,6 +39,27 @@ namespace FlockFive
             }
         }
 
+        // Oct 2026 (Brandon): every season garden is a close giant-sequoia painting: trunks are thin slivers at
+        // the screen edges and the canopy is overhead. Its fringe sways (masks cover the canopy band, plus the
+        // ferns along the bottom in spring and summer). The home wash keeps bg_garden and its old pivots.
+        public static readonly string[] SequoiaArt = { "bg_summer", "bg_fall", "bg_winter", "bg_spring" };
+        public static bool IsSequoia(string texName)
+        {
+            if (string.IsNullOrEmpty(texName)) return false;
+            for (int i = 0; i < SequoiaArt.Length; i++) if (texName == SequoiaArt[i]) return true;
+            return false;
+        }
+
+        public static string MaskFor(string texName, GardenScene scene)
+        {
+            if (IsSequoia(texName)) return "SwayMasks/" + texName + "_sway";
+            return MaskPath(scene);
+        }
+
+        // How much of the shared wind reaches the paint (gust adds on top of the painting's own rhythm).
+        public const float WindSway = 0.85f;
+        bool _sequoia;
+
         public const float SpringSwayBoost = 2.4f;
         // Spring gets a steady breeze floor so the branch never rests between gusts.
         public const float SpringGustFloor = 0.30f;
@@ -84,8 +105,11 @@ namespace FlockFive
             SeasonMotion.Scene = scene;
             _phase = scene == GardenScene.Desert ? 0.4f : 1.7f + (int)scene * 0.6f;
             _wipe = new Vector4(-0.2f, 0.14f, 0f, 0f);
-            Fill(scene, LowPower);
-            string mp = MaskPath(scene);
+            var tex = _sr != null && _sr.sprite != null ? _sr.sprite.texture : null;
+            _sequoia = IsSequoia(tex != null ? tex.name : null);
+            Fill(scene, LowPower, _sequoia);
+            // Each painting carries its own mask (bg_summer vs the home bg_garden share the Summer tune).
+            string mp = tex != null ? MaskFor(tex.name, scene) : MaskPath(scene);
             _mask = mp != null ? Resources.Load<Texture2D>(mp) : null;
             if (_mask == null) _mask = Texture2D.whiteTexture;
             if (_block == null) _block = new MaterialPropertyBlock();
@@ -156,6 +180,8 @@ namespace FlockFive
             if (u > 6.2f)
                 gust += Mathf.Sin((u - 6.2f) / 1.5f * Mathf.PI) * 0.9f;
             gust *= tune.Gust;
+            // Shared wind: the canopy leans into the same gust that blows the leaves and slants the rain.
+            gust += SeasonMotion.Wind * WindSway;
             if (_scene == GardenScene.Spring && gust < SpringGustFloor) gust = SpringGustFloor;
             if (gust < 0f) gust = 0f;
             else if (gust > 1f) gust = 1f;
@@ -171,11 +197,21 @@ namespace FlockFive
             _sr.SetPropertyBlock(_block);
         }
 
-        void Fill(GardenScene scene, bool low)
+        void Fill(GardenScene scene, bool low, bool sequoia)
         {
             _p0 = _p1 = _p2 = _p3 = Vector4.zero;
             _a0 = _a1 = _a2 = _a3 = new Vector4(0f, 1f, 1f, 0f);
-            if (scene == GardenScene.Desert)
+            if (sequoia)
+            {
+                // Overhead canopy: hangs from the left and right trunks, plus the fringe across the top.
+                Put(0, 0.00f, 1.00f, 0.040f, 0.62f, 0.55f, -0.84f, 0.80f, 0.4f);
+                Put(1, 1.00f, 1.00f, 0.038f, 0.62f, -0.55f, -0.84f, 0.80f, 1.5f);
+                if (!low) Put(2, 0.50f, 1.04f, 0.026f, 0.40f, 0.00f, -1.00f, 0.55f, 2.3f);
+                // Spring and summer: the ferns along the bottom too.
+                if (scene == GardenScene.Spring || scene == GardenScene.Summer)
+                    Put(3, 0.50f, -0.02f, 0.024f, 0.55f, 0.00f, 1.00f, 0.70f, 2.9f);
+            }
+            else if (scene == GardenScene.Desert)
             {
                 // Palm enters from the top-left. Two short masks: the long fronds along
                 // the top, then the droop under the crown. The cactus and mesas sit outside.

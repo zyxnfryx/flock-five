@@ -30,6 +30,16 @@ namespace FlockFive
         const float Edge = 1.7f;
 
         public static GardenStorm Instance { get; private set; }
+        // Pre-rain gust (0..1), WindLead seconds ahead of Wet; published as SeasonMotion.StormGust.
+        float _gust;
+        public const float GustRise = 2.2f;
+        public static float GustTarget(float gardenPlay, bool snow, bool halted)
+        {
+            if (halted) return 0f;
+            float ahead = gardenPlay + SeasonMotion.WindLead;
+            float want = (snow || WantStorm(ahead)) ? 1f : 0f;
+            return Mathf.Min(want, StormGlass.OnsetMul(ahead));
+        }
         public static float Wet { get; private set; }
 
         // Same curve the flash sprite uses, so sky tints do not wait on script order.
@@ -151,6 +161,8 @@ namespace FlockFive
             _gardenPlay = FirstWait + 4f; // well past StartDelay + RampIn
             _wet = 1f;
             Wet = 1f;
+            _gust = 1f;
+            SeasonMotion.StormGust = 1f;
             _nextBoom = 9f;
             _wasDry = false;
         }
@@ -194,6 +206,8 @@ namespace FlockFive
 #endif
             Wet = 0f;
             _wet = 0f;
+            _gust = 0f;
+            SeasonMotion.StormGust = 0f;
             _nextBoom = 6.5f;
             _flashLit = false;
             _veilA = 0f;
@@ -220,6 +234,7 @@ namespace FlockFive
         {
             if (Instance == this) Instance = null;
             Wet = 0f;
+            SeasonMotion.StormGust = 0f;
             _skyAt = -100f;
             EndBolt();
             HideCue();
@@ -544,6 +559,10 @@ namespace FlockFive
             _wet = Mathf.Min(_wet, StormGlass.OnsetMul(_gardenPlay));
             // Snow is not wet weather: sky veil, glass beads and the rain stem read Wet.
             Wet = _snow ? 0f : _wet;
+            // Oct 2026 (Brandon): the wind picks up SeasonMotion.WindLead seconds BEFORE the rain, from the same
+            // schedule (WantStorm / OnsetMul read WindLead ahead), and stays with it. Winter drifts on the breeze cap.
+            _gust = Mathf.MoveTowards(_gust, GustTarget(_gardenPlay, _snow, halted), dt / GustRise);
+            SeasonMotion.StormGust = _gust;
 
             if (_rumbleIn >= 0f)
             {
@@ -654,7 +673,7 @@ namespace FlockFive
                             nx = _x[i] + Mathf.Sin(PlayClock.Now * 0.6f + i * 1.7f) * SnowDrift * dt * wet;
                         else
                         {
-                            float lean = (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * SeasonMotion.RainLean() * StormGlass.StreakLeanK;
+                            float lean = (1.15f + 0.9f * ((_spd[i] - 8.5f) / 18f)) * SeasonMotion.RainLeanWindy() * StormGlass.StreakLeanK;
                             nx = _x[i] - lean * dt * wet;
                         }
                         float ny = _y[i] - fall;

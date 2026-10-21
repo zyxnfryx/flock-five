@@ -20,6 +20,24 @@ namespace FlockFive
         const byte Glint = 8;
         const byte Blossom = 9;
         const byte Butterfly = 10;
+        // Oct 2026 (Brandon): leaves tumble along the ground on the shared wind, most of all as rain comes.
+        const byte Ground = 11;
+        const byte Streak = 12;
+
+        // Ground band (share of the frame height from the bottom) where ground leaves rest and skid.
+        public const float GroundBandLo = 0.035f;
+        public const float GroundBandHi = 0.30f;
+        // Wind push (world units / s at full wind) for falling leaves and for ground skids.
+        public const float FallWindPush = 2.4f;
+        public const float GroundSkid = 4.2f;
+        public const float GroundCreep = 0.22f;
+        public const float GroundGravity = 6f;
+        // A gust lifts a few ground leaves 0.3..0.8 units, then they drop back.
+        public const float LiftMin = 0.3f, LiftMax = 0.8f;
+        // Falling leaves stay readable in rain (they used to fade to 15%).
+        public const float LeafRainFloor = 1f;
+        // Falling leaves are born in the close canopy: this band under the top edge (world units).
+        public const float CanopyDepth = 1.6f;
 
         sealed class Sheet
         {
@@ -27,7 +45,7 @@ namespace FlockFive
             public MeshRenderer Rend;
             public Vector3[] Verts;
             public Color32[] Cols;
-            public float[] X, Y, VX, VY, Phase, Spin, HW, HH;
+            public float[] X, Y, VX, VY, Phase, Spin, HW, HH, Rest, Roll, Age;
             public byte[] Kind;
             public byte[] R, G, B, A;
             public int N;
@@ -54,6 +72,7 @@ namespace FlockFive
         float _burstA;
         float _energy = 1f;
         float _driftNow = 1f;
+        float _wind;
         Sheet _burst;
         // Winter ambient: only the occasional flake or two flutters by and flips around.
         public const int SparseSnow = 3;
@@ -109,7 +128,7 @@ namespace FlockFive
         void Build(GardenScene scene)
         {
             bool low = FoliageSway.LowPower;
-            _sheets = new Sheet[7];
+            _sheets = new Sheet[12];
             _seedScene = scene;
             _sheetN = 0;
             var tune = SeasonMotion.For(scene);
@@ -132,6 +151,34 @@ namespace FlockFive
             if (n.Glint > 0) AddSheet(SpriteCatalog.Glow, n.Glint, Glint, rng);
             if (n.Blossom > 0) AddSheet(SpriteCatalog.PetalPeach, n.Blossom, Blossom, rng);
             if (n.Butterfly > 0) AddSheet(SpriteCatalog.PetalPeach, n.Butterfly, Butterfly, rng);
+            // Ground leaves (winter: drifting snow puffs) and faint gust streaks across the ground band.
+            if (n.Ground > 0) AddSheet(GroundSprite(scene), n.Ground, Ground, rng);
+            if (n.Streak > 0) AddSheet(SpriteCatalog.Glow, n.Streak, Streak, rng);
+        }
+
+        static Sprite GroundSprite(GardenScene scene)
+        {
+            if (scene == GardenScene.Winter) return SpriteCatalog.Glow;
+            if (scene == GardenScene.Spring) return SpriteCatalog.PetalPink;
+            return SpriteCatalog.PetalPeach;
+        }
+
+        // Season colours for ground leaves: fall rust / amber / ochre, summer greens, spring pink and green,
+        // winter white snow puffs.
+        public static Color32 GroundTint(GardenScene scene, int pick)
+        {
+            pick = ((pick % 3) + 3) % 3;
+            switch (scene)
+            {
+                case GardenScene.Fall:
+                    return pick == 0 ? new Color32(214, 74, 34, 245) : pick == 1 ? new Color32(250, 168, 48, 245) : new Color32(240, 204, 86, 245);
+                case GardenScene.Spring:
+                    return pick == 0 ? new Color32(255, 170, 190, 230) : pick == 1 ? new Color32(150, 200, 110, 230) : new Color32(255, 214, 220, 230);
+                case GardenScene.Winter:
+                    return new Color32(236, 242, 255, 170);
+                default:
+                    return pick == 0 ? new Color32(96, 150, 70, 230) : pick == 1 ? new Color32(140, 170, 72, 230) : new Color32(170, 120, 60, 230);
+            }
         }
 
         // Season scene entrance: one extra sheet of the season's own particles, alpha 0 until driven.
@@ -201,6 +248,9 @@ namespace FlockFive
             sheet.Spin = new float[n];
             sheet.HW = new float[n];
             sheet.HH = new float[n];
+            sheet.Rest = new float[n];
+            sheet.Roll = new float[n];
+            sheet.Age = new float[n];
             sheet.Kind = new byte[n];
             sheet.R = new byte[n];
             sheet.G = new byte[n];
@@ -285,7 +335,8 @@ namespace FlockFive
             }
             else if (kind == Leaf)
             {
-                sheet.HW[i] = Mathf.Lerp(0.10f, 0.16f, u);
+                // Oct 2026: a touch bigger so the canopy leaves read against the close sequoia art.
+                sheet.HW[i] = Mathf.Lerp(0.14f, 0.22f, u);
                 sheet.HH[i] = sheet.HW[i] * 1.35f;
                 sheet.VY[i] = -(0.32f + 0.28f * (float)rng.NextDouble());
                 sheet.VX[i] = Mathf.Lerp(-0.12f, 0.20f, (float)rng.NextDouble());
@@ -347,6 +398,38 @@ namespace FlockFive
                 sheet.X[i] = -8f;
                 sheet.Y[i] = -4.2f;
                 sheet.Phase[i] = 5f;
+            }
+            else if (kind == Ground)
+            {
+                bool snow = _seedScene == GardenScene.Winter;
+                sheet.HW[i] = snow ? Mathf.Lerp(0.22f, 0.40f, u) : Mathf.Lerp(0.20f, 0.30f, u);
+                sheet.HH[i] = snow ? sheet.HW[i] * 0.30f : sheet.HW[i] * 0.62f;
+                sheet.VX[i] = 0f;
+                sheet.VY[i] = 0f;
+                // Per-leaf skid weight: some leaves catch the wind more.
+                sheet.Spin[i] = Mathf.Lerp(0.65f, 1.25f, (float)rng.NextDouble());
+                var c = GroundTint(_seedScene, rng.Next(3));
+                sheet.R[i] = c.r;
+                sheet.G[i] = c.g;
+                sheet.B[i] = c.b;
+                sheet.A[i] = c.a;
+                sheet.Roll[i] = (float)rng.NextDouble() * 6.28f;
+                sheet.Rest[i] = Mathf.Lerp(GroundBandLo, GroundBandHi, (float)rng.NextDouble()); // band share, set to world y on first step
+                sheet.Age[i] = -1f;
+            }
+            else if (kind == Streak)
+            {
+                sheet.HW[i] = Mathf.Lerp(0.9f, 1.6f, u);
+                sheet.HH[i] = Mathf.Lerp(0.03f, 0.05f, (float)rng.NextDouble());
+                sheet.VX[i] = -(4.0f + 2.0f * (float)rng.NextDouble());
+                sheet.VY[i] = 0f;
+                sheet.Spin[i] = 0f;
+                sheet.R[i] = 255;
+                sheet.G[i] = 255;
+                sheet.B[i] = 255;
+                sheet.A[i] = 64; // ~0.25
+                sheet.Rest[i] = Mathf.Lerp(GroundBandLo + 0.03f, GroundBandHi, (float)rng.NextDouble());
+                sheet.Age[i] = -1f;
             }
             else if (kind == Blossom)
             {
@@ -473,6 +556,10 @@ namespace FlockFive
             float dusk = SkyCycle.Dusk;
             if (_home && dusk < 0.62f) dusk = 0.62f;
             _driftNow = _drift * _energy;
+            // Shared wind (SeasonMotion.Wind): breeze, plus the pre-rain gust from GardenStorm.
+            SeasonMotion.TickWind(t);
+            _wind = SeasonMotion.Wind;
+            // Rain dims the glints and fireflies only. Falling and ground leaves stay readable (were ~15%).
             float wet = 1f - GardenStorm.Wet * 0.85f;
             if (wet < 0.15f) wet = 0.15f;
             for (int s = 0; s < _sheetN; s++)
@@ -501,6 +588,63 @@ namespace FlockFive
                     x += sheet.VX[i] * _shimmer * dt;
                     if (x > right + 0.4f) x = left - 0.4f;
                 }
+                else if (kind == Ground)
+                {
+                    float span = top - bottom;
+                    if (sheet.Age[i] < 0f)
+                    {
+                        sheet.Rest[i] = bottom + span * sheet.Rest[i];
+                        y = sheet.Rest[i];
+                        sheet.Age[i] = 0f;
+                    }
+                    float rest = sheet.Rest[i];
+                    float w = _wind;
+                    // Calm: short creeping hops to the left. Gust: skid right to left, harder with the wind.
+                    float hop = Mathf.Sin(t * 0.9f + sheet.Phase[i]);
+                    hop = hop > 0f ? hop * hop * hop * hop : 0f;
+                    float target = SeasonMotion.WindDir * sheet.Spin[i] * (GroundCreep * hop + GroundSkid * w * w);
+                    float vx = sheet.VX[i];
+                    vx += (target - vx) * Mathf.Min(1f, dt * 3f);
+                    x += vx * dt;
+                    // A strong gust lifts a few leaves (0.3..0.8 units) that drop back.
+                    float vy = sheet.VY[i];
+                    if (y <= rest + 0.001f && w > 0.55f && Mathf.Sin(t * 1.7f + sheet.Phase[i] * 3.1f) > 0.985f)
+                    {
+                        float h = Mathf.Lerp(LiftMin, LiftMax, Hash01(i, (int)(t * 2f))) * w;
+                        vy = Mathf.Sqrt(2f * GroundGravity * h);
+                    }
+                    vy -= GroundGravity * dt;
+                    y += vy * dt;
+                    if (y < rest) { y = rest; vy = 0f; }
+                    sheet.VY[i] = vy;
+                    sheet.VX[i] = vx;
+                    // Flip end over end while it moves.
+                    sheet.Roll[i] += Mathf.Abs(vx) * 3.2f * dt + (y > rest ? 6f * dt : 0f);
+                    if (x < left - 0.4f)
+                    {
+                        _wraps++;
+                        x = right + 0.2f + Hash01(i, _wraps) * 0.8f;
+                        y = rest;
+                        sheet.VY[i] = 0f;
+                    }
+                    else if (x > right + 1.2f) x = left;
+                }
+                else if (kind == Streak)
+                {
+                    if (sheet.Age[i] < 0f)
+                    {
+                        sheet.Rest[i] = bottom + (top - bottom) * sheet.Rest[i];
+                        sheet.Age[i] = 0f;
+                        x = Mathf.Lerp(left, right, Hash01(i, 7));
+                    }
+                    y = sheet.Rest[i] + Mathf.Sin(t * 1.3f + sheet.Phase[i]) * 0.12f;
+                    x += sheet.VX[i] * (0.4f + _wind) * dt;
+                    if (x < left - sheet.HW[i] - 0.4f)
+                    {
+                        _wraps++;
+                        x = right + sheet.HW[i] + Hash01(i, _wraps) * 2.5f;
+                    }
+                }
                 else if (kind == Tumble)
                 {
                     if (sheet.Phase[i] > 0f)
@@ -523,8 +667,12 @@ namespace FlockFive
                 {
                     float sway = Mathf.Sin(t * 0.7f * _driftNow + sheet.Phase[i]);
                     float flutter = kind == Wisp ? 0.04f : (kind == Petal || kind == Blossom ? 0.42f : (kind == Snow ? 0.55f : 0.18f));
-                    x += (sheet.VX[i] * _driftNow + sway * flutter) * dt;
-                    y += sheet.VY[i] * _driftNow * dt;
+                    bool falls = kind == Leaf || kind == Petal || kind == Blossom || kind == Snow;
+                    float push = falls ? SeasonMotion.WindDir * _wind * _wind * FallWindPush : 0f;
+                    float faster = falls ? 1f + 0.9f * _wind : 1f;
+                    x += (sheet.VX[i] * _driftNow + sway * flutter + push) * dt;
+                    y += sheet.VY[i] * _driftNow * faster * dt;
+                    sheet.Age[i] += dt;
                     if (kind == Butterfly)
                     {
                         // Lazy loops: drift on two slow sines, wrap at the screen edges.
@@ -543,11 +691,24 @@ namespace FlockFive
                         if (y < bottom) y = top;
                         else if (y > top) y = bottom;
                     }
-                    else if (y < bottom - 0.4f)
+                    else if (y < bottom - 0.4f || x < left - 0.6f)
                     {
-                        y = top + 0.3f;
                         _wraps++;
-                        x = Mathf.Lerp(left, right, Hash01(i, _wraps));
+                        if (kind == Leaf || kind == Petal || kind == Blossom)
+                        {
+                            // Born in the close canopy overhead, mostly toward the trunks at either side.
+                            float h = Hash01(i, _wraps);
+                            float side = h < 0.5f ? h * 2f * 0.38f : 1f - (h - 0.5f) * 2f * 0.38f;
+                            if (_wind > 0.35f) side = Mathf.Lerp(side, 0.55f + 0.45f * side, 0.5f); // gusts carry them in from the right
+                            x = Mathf.Lerp(left, right, side);
+                            y = top - 0.4f - Hash01(i + 31, _wraps) * CanopyDepth;
+                            sheet.Age[i] = 0f;
+                        }
+                        else
+                        {
+                            y = top + 0.3f;
+                            x = Mathf.Lerp(left, right, Hash01(i, _wraps));
+                        }
                     }
                     else if (x > right + 0.6f)
                         x = left - 0.4f;
@@ -576,6 +737,24 @@ namespace FlockFive
                 }
                 else if (kind == Tumble)
                     a = sheet.Phase[i] > 0f ? (byte)0 : (byte)(sheet.A[i] > 0 ? sheet.A[i] : 160);
+                else if (kind == Ground)
+                {
+                    // Winter snow puffs show mostly while the wind drifts them.
+                    float k = _seedScene == GardenScene.Winter ? 0.25f + 0.75f * _wind : 1f;
+                    a = (byte)Mathf.Clamp((int)(sheet.A[i] * k), 0, 255);
+                }
+                else if (kind == Streak)
+                {
+                    float k = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.5f, 0.9f, _wind));
+                    a = (byte)Mathf.Clamp((int)(sheet.A[i] * k), 0, 255);
+                }
+                else if (kind == Leaf || kind == Petal || kind == Blossom || kind == Snow)
+                {
+                    // Not dimmed by rain (LeafRainFloor); a newborn canopy leaf fades in over 0.5 s.
+                    float k = Mathf.Max(wet, LeafRainFloor) * Mathf.Clamp01(sheet.Age[i] < 0f ? 1f : (sheet.Age[i] + 0.02f) / 0.5f);
+                    int av = (int)(a * k);
+                    a = (byte)(av < 0 ? 0 : (av > 255 ? 255 : av));
+                }
                 else
                 {
                     int av = (int)(a * wet);
@@ -600,6 +779,15 @@ namespace FlockFive
                     hw *= 0.15f + 0.85f * Mathf.Abs(Mathf.Sin(ang));
                     ang = 0.3f * Mathf.Sin(t * 1.3f + sheet.Phase[i]);
                 }
+                if (kind == Ground)
+                {
+                    // End over end: the leaf turns edge-on as it rolls; a small tilt with the roll.
+                    float roll = sheet.Roll[i];
+                    if (_seedScene != GardenScene.Winter) hw *= 0.2f + 0.8f * Mathf.Abs(Mathf.Cos(roll));
+                    ang = sheet.Phase[i] + 0.35f * Mathf.Sin(roll);
+                }
+                else if (kind == Streak)
+                    ang = 0.06f; // leans with the rain
                 if (kind == Snow)
                 {
                     // Flip: the flake turns edge-on and back as it tumbles.

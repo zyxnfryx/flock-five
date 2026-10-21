@@ -136,7 +136,7 @@ namespace FlockFive.Editor
                 && !SeasonReveal.BlocksIntros(GardenScene.Summer, true);
             Check("reveal-blocks", blocks, "desert holds intros only while its reveal is playing");
 
-            string[] art = { "bg_fall", "bg_winter", "bg_spring" };
+            string[] art = { "bg_fall", "bg_winter", "bg_spring", "bg_summer" };
             for (int i = 0; i < art.Length; i++)
             {
                 var path = "Assets/_Project/Art/Resources/Sprites/" + art[i] + ".png";
