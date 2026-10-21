@@ -126,7 +126,7 @@ namespace FlockFive.Editor
                 "fx_logo", "fx_z.", "fx_let_", "fx_hand_", "fx_usa_", "fx_ad_", "fx_play_",
                 "fx_restart", "fx_padlock", "fx_card_", "fx_clipboard", "fx_joker", "fx_poker.",
                 "fx_coin", "fx_wax_seal", "fx_stamp_tool", "fx_chain", "fx_hawk", "fx_sparrow",
-                "settings_gear",
+                "settings_gear", "fx_power_",
             };
             for (int i = 0; i < crisp.Length; i++)
                 if (name.StartsWith(crisp[i])) { format = TextureImporterFormat.ASTC_4x4; return true; }
@@ -235,6 +235,14 @@ namespace FlockFive.Editor
                 s.quality = 0.7f;
                 s.preloadAudioData = true;
             }
+            else if (assetPath.Contains("/Audio/Ice/"))
+            {
+                // b129: badger thaw ice clips stay PCM / Decompress On Load (ADPCM hisses on these transients).
+                s.loadType = AudioClipLoadType.DecompressOnLoad;
+                s.compressionFormat = AudioCompressionFormat.PCM;
+                s.quality = 1f;
+                s.preloadAudioData = true;
+            }
             else if (assetPath.Contains("zfx_jingle"))
             {
                 s.loadType = AudioClipLoadType.DecompressOnLoad;
@@ -252,7 +260,7 @@ namespace FlockFive.Editor
             imp.defaultSampleSettings = s;
             imp.forceToMono = true;
             imp.loadInBackground = theme;
-            if (assetPath.Contains("/Audio/Squish/"))
+            if (assetPath.Contains("/Audio/Squish/") || assetPath.Contains("/Audio/Ice/"))
             {
                 imp.defaultSampleSettings = s;
                 imp.loadInBackground = false;
