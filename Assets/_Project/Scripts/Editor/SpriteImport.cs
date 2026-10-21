@@ -126,7 +126,7 @@ namespace FlockFive.Editor
                 "fx_logo", "fx_z.", "fx_let_", "fx_hand_", "fx_usa_", "fx_ad_", "fx_play_",
                 "fx_restart", "fx_padlock", "fx_card_", "fx_clipboard", "fx_joker", "fx_poker.",
                 "fx_coin", "fx_wax_seal", "fx_stamp_tool", "fx_chain", "fx_hawk", "fx_sparrow",
-                "settings_gear",
+                "settings_gear", "fx_power_",
             };
             for (int i = 0; i < crisp.Length; i++)
                 if (name.StartsWith(crisp[i])) { format = TextureImporterFormat.ASTC_4x4; return true; }

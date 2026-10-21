@@ -14,11 +14,20 @@ public static class CaptionStyles
         public readonly bool On;
         public readonly float Drop;
         public readonly float Ink;
-        public Spot(bool on, float drop = 0f, float ink = 0f)
+        // b128 (Brandon): AbovePower seats the caption in the badger page's own band just above the power row
+        // (clear of both grids and the fighters). MaxLines 0 means no cap; otherwise the line is authored to that many rows.
+        public readonly bool AbovePower;
+        public readonly int MaxLines;
+        // TextPt: the spot's own text size in UI points (times DeviceFit.Ui); 0 keeps the shared lesson size.
+        public readonly float TextPt;
+        public Spot(bool on, float drop = 0f, float ink = 0f, bool abovePower = false, int maxLines = 0, float textPt = 0f)
         {
             On = on;
             Drop = drop < 0f ? 0f : drop;
             Ink = ink < 0f ? 0f : (ink > 1f ? 1f : ink);
+            AbovePower = abovePower;
+            MaxLines = maxLines < 0 ? 0 : maxLines;
+            TextPt = textPt < 0f ? 0f : textPt;
         }
     }
 
@@ -35,6 +44,7 @@ public static class CaptionStyles
         { "home.poker",     new Spot(true) },     // b94 (Brandon): 'You earned coins! Tap poker to bet them.' full-width banner over the Level box, off the avatar bird
         { "home.anchored",  new Spot(false) },    // other captions anchored to a small home element
         { "badger.lesson",  new Spot(false) },    // pinned badger lesson rule
+        { "badger.pick",    new Spot(false, abovePower: true, maxLines: 2, textPt: 17f) }, // b128: 'Your pick. / Tap a power-up first.' snug, two lines, just above the power row (off the fighters)
         { "poker.back",     new Spot(true) },     // b124: first-hand 'Tap the back button' full-width banner over the bet controls' seat
         { "poker.table",    new Spot(false) },    // poker table lessons (would cover the cards)
         { "album.coach",    new Spot(false) },    // album card (popup)
@@ -48,6 +58,12 @@ public static class CaptionStyles
     // b89: a spot the table marks snug (banner off) always paints the snug plate:
     // the text plus the shared even pad, never a seat-sized box.
     public static bool IsSnug(string spot) => spot != null && Banner.TryGetValue(spot, out var b) && !b.On;
+
+    public static bool AbovePower(string spot) => spot != null && Banner.TryGetValue(spot, out var b) && b.AbovePower;
+
+    public static float TextPt(string spot) => spot != null && Banner.TryGetValue(spot, out var b) ? b.TextPt : 0f;
+
+    public static int MaxLines(string spot) => spot != null && Banner.TryGetValue(spot, out var b) ? b.MaxLines : 0;
 
     public static float Drop(string spot) => spot != null && Banner.TryGetValue(spot, out var b) ? b.Drop : 0f;
 
