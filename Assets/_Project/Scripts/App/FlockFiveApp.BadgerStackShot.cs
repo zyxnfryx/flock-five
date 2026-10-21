@@ -52,7 +52,7 @@ namespace FlockFive
                         for (float w = 0f; w < 1.0f; w += Kick()) { _coachFade = 1f; yield return null; }
                         yield return new WaitForEndOfFrame();
                         SaveFrame(dir + "/" + names[step] + "-" + T + ".png");
-                        File.AppendAllText(log, T + " " + names[step] + " stage " + _bgStage + " step " + _bgLessonStep + " screen " + Screen.width + "x" + Screen.height + "\n");
+                        File.AppendAllText(log, T + " " + names[step] + " stage " + _bgStage + " step " + _bgLessonStep + " screen " + Screen.width + "x" + Screen.height + " " + BadgerSpotLine() + "\n");
                     }
                     _bgLessonLive = false;
 
@@ -91,6 +91,14 @@ namespace FlockFive
             }
             EditorApplication.isPlaying = false;
             EditorApplication.Exit(0);
+        }
+
+        string BadgerSpotLine()
+        {
+            var L = BadgerLayout();
+            var sp = BadgerActorNow(L);
+            var box = BadgerArenaRects.Split(L.Arena);
+            return "arena " + L.Arena + " you " + box.YouFighter + " mid " + box.Middle.center.x + " bird " + sp.Bird + " icon " + sp.Icon + " birdBox " + sp.BirdBox + " foot " + sp.Foot + " colL " + L.ColL + " colR " + L.ColR + " frame " + sp.Frame;
         }
     }
 }
