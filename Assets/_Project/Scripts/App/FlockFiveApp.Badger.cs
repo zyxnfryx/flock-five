@@ -183,6 +183,7 @@ namespace FlockFive
         // Quit mid-fight or Continue after Over. Win pays; lose / quit leaves the flag.
         void LeaveBadger()
         {
+            BadgerIceAnim.Reset(); _bgIceWas = false; _bgThawRound = -1;
             _bgBreakFreeOn = false;
             _bgBreakTile = -1;
             _bgFrozenUi.Reset();
@@ -1118,7 +1119,7 @@ namespace FlockFive
         // ---- layout ----
 
 
-        struct BadgerRects
+        public struct BadgerRects
         {
             public float S;
             public Rect Back, Title, Need, Coin;
@@ -1146,11 +1147,14 @@ namespace FlockFive
         {
             float s = DeviceFit.Ui();
             float top = TopHud();
-            return BadgerLayoutAt(Screen.width, Screen.height, Screen.safeArea, s, top, BackMedalRect(s, top));
+            return BadgerLayoutFor(Screen.width, Screen.height, Screen.safeArea, s, top, BackMedalRect(s, top));
         }
 
-        // Pure: the page bands for one screen. BadgerLayout feeds it the live screen; tests feed it a size.
-        static BadgerRects BadgerLayoutAt(float screenW, float screenH, Rect safe, float s, float top, Rect back)
+        // #197 name kept as an alias of #198's public pure layout so both callers/tests resolve to one function.
+        static BadgerRects BadgerLayoutAt(float screenW, float screenH, Rect safe, float s, float top, Rect back) => BadgerLayoutFor(screenW, screenH, safe, s, top, back);
+
+        // b129 v4: the fight-page layout as a pure function of the screen (BadgerLayout feeds it the live values).
+        public static BadgerRects BadgerLayoutFor(float screenW, float screenH, Rect safe, float s, float top, Rect back)
         {
             var L = new BadgerRects();
             L.S = s;
@@ -1638,6 +1642,43 @@ namespace FlockFive
             StampOutlined(r, text, st, fill, 1, Mathf.Max(2, st.fontSize / 10));
         }
 
+        // b129 v4 (Brandon): one shared gap between the badger and the honeycomb he picked. Measured from the
+        // fighter rect (the ice block rect when frozen) to the pick-comb hex. Both rest rects are taken here the
+        // way the page draws them (same unit, same right-HUD clamp); the comb steps left until the WIDER of the
+        // two clears it by the gap, so it does not jump when he freezes. It never steps past the VS box's left edge.
+        public struct BadgerGapRects
+        {
+            public Rect Comb, Fighter, Ice, ColR;
+            public float Gap;
+        }
+
+        public static BadgerGapRects BadgerPickComb(Rect arena, Rect colR, float s)
+        {
+            var idle = SpriteCatalog.BadgerArt("badger_idle_b");
+            var ice = SpriteCatalog.BadgerArt(Badger129.FrozenBlockArt);
+            return BadgerPickComb(arena, colR, s,
+                idle != null ? idle.rect.width : 480f, idle != null ? idle.rect.height : 640f,
+                ice != null ? ice.rect.width : 471f, ice != null ? ice.rect.height : 688f);
+        }
+
+        public static BadgerGapRects BadgerPickComb(Rect arena, Rect colR, float s, float idleW, float idleH, float iceW, float iceH)
+        {
+            var g = new BadgerGapRects { ColR = colR, Gap = BadgerFighterPlace.CombGap(s) };
+            var box = BadgerArenaRects.Split(arena);
+            var mark = BadgerFighterPlace.Rest(box, idleW, idleH);
+            float right = colR.x - 2f;
+            float unit = mark.Unit;
+            var foot = mark.Foot;
+            foot.x = BadgerFighterPlace.ClampFootX(foot.x, idleW * unit, right);
+            g.Fighter = SpriteAnim.Dest("badger_idle_b", idleW, idleH, foot, unit, 1f, 1f);
+            float iceUnit = idleH * unit * Badger129.FrozenBlockHeight / Mathf.Max(1f, iceH);
+            var iceFoot = mark.Foot;
+            iceFoot.x = BadgerFighterPlace.ClampFootX(iceFoot.x, iceW * iceUnit, right);
+            g.Ice = SpriteAnim.Dest(Badger129.FrozenBlockArt, iceW, iceH, iceFoot, iceUnit, 1f, 1f);
+            g.Comb = BadgerFighterPlace.ClearComb(BadgerSlotTile(box.BossSlot), Mathf.Min(g.Fighter.xMin, g.Ice.xMin), g.Gap, box.Middle.x);
+            return g;
+        }
+
         static Rect BadgerSlotTile(Rect slot)
         {
             float h = slot.height * 0.90f;
@@ -1656,7 +1697,7 @@ namespace FlockFive
             float s = L.S;
             var boxes = BadgerArenaRects.Split(L.Arena);
             var youSlot = BadgerSlotTile(boxes.YouSlot);
-            var bossSlot = BadgerSlotTile(boxes.BossSlot);
+            var bossSlot = BadgerPickComb(L.Arena, L.ColR, s).Comb; // b129 v4: clear of the fighter / ice block by the shared gap
             bool tilesIn = _bgFight != null && (_bgBossIx >= 0 || _bgPlayerIx >= 0);
             bool tie = _bgResolved && _bgRound.PlayerGained <= 0 && _bgRound.BossGained <= 0 && !_bgRound.BossHeld
                 && (_bgStage == BadgerStage.Verdict || _bgStage == BadgerStage.Over);
@@ -1687,7 +1728,7 @@ namespace FlockFive
                 if (block) DrawBadgerSplat(r);
                 if (GuiPaint())
                 {
-                    SparkleFx.DrawFrozen(r, ice, AdPause.Unscaled);
+                    SparkleFx.DrawFrozenHex(r, ice, AdPause.Unscaled);
                     SparkleFx.DrawShatter(r, shatterT);
                 }
             }
@@ -1825,7 +1866,7 @@ namespace FlockFive
             spot.Alpha = BadgerFighter.Alpha(_bgStage);
             BadgerArtSize("badger_idle_b", 1f, out float aw, out float ah);
             var mark = BadgerFighterPlace.Rest(box, aw, ah);
-            spot.Unit = mark.Unit;
+            spot.Unit = mark.Unit; // b129 v4: battle badger at 1.0
             spot.FaceLeft = mark.FaceLeft;
             float bh = box.BossFighter.height;
             var foot = mark.Foot;
@@ -1974,9 +2015,10 @@ namespace FlockFive
                 bool underOk = !string.IsNullOrEmpty(spot.Under) && spot.Under != spot.Frame
                     && SpriteCatalog.BadgerArt(spot.Under) != null;
                 SpriteAnim.Cover(ref fa, ref ua, frameOk, underOk);
-                if (underOk && ua > 0.02f)
+                if (DrawBadgerIceBlock(spot, L, out drawn)) { }
+                else if (underOk && ua > 0.02f)
                     DrawBadgerArt(spot.Under, spot.Foot, spot.Unit, spot.Alpha * ua, 0f, spot.Sx, spot.Sy);
-                if (frameOk && fa > 0.02f)
+                if (drawn.width < 1f && frameOk && fa > 0.02f)
                     drawn = DrawBadgerArt(spot.Frame, spot.Foot, spot.Unit, spot.Alpha * fa, 0f, spot.Sx, spot.Sy);
             }
             finally
@@ -1993,6 +2035,197 @@ namespace FlockFive
 
             if (spot.BirdInFront) DrawBadgerBird(spot, clock);
             DrawBadgerRoundHit(spot);
+        }
+
+        // b129: while he is iced the fighter is the tall ice block (standing, paws up), feet on his mark, with the same
+        // held shiver / break-free struggle the comb uses. False (draw the pose) when not frozen or the art is missing.
+        bool DrawBadgerIceBlock(BadgerActorSpot spot, BadgerRects L, out Rect drawn)
+        {
+            drawn = default;
+            if (_bgFight == null) { _bgIceWas = false; return false; }
+            float now = PlayClock.Now;
+            var probe = new Rect(0f, 0f, 10f, 10f);
+            BadgerFreezeLook(ref probe, L.S, out float ice, out float shatterT);
+            bool iced = ice >= 0.5f;
+            // Rising edge: the spray just landed. First frame of his break-free turn: the thaw.
+            if (iced && !_bgIceWas && !BadgerIceAnim.Thawing(now))
+            {
+                BadgerIceAnim.Freeze(now);
+                if (!_bgFight.CoachFight && _bgStage == BadgerStage.YourPick) _bgLine = BadgerCopy.FreezeSprayFrozen;
+            }
+            _bgIceWas = iced;
+            if (_bgResolved && _bgRound.FreezeBeat == 2 && _bgThawRound != _bgRoundN)
+            {
+                _bgThawRound = _bgRoundN;
+                BadgerIceAnim.Thaw(now);
+            }
+            bool thawing = BadgerIceAnim.Thawing(now);
+            if (!iced && !thawing) return false;
+            var spr = SpriteCatalog.BadgerArt(Badger129.FrozenBlockArt);
+            if (spr == null) return false;
+            float idleH = BadgerArtHeight("badger_idle_b", spot.Unit);
+            float unit = idleH * Badger129.FrozenBlockHeight / Mathf.Max(1f, spr.rect.height);
+            var foot = spot.Foot;
+            float w = spr.rect.width * unit;
+            foot.x = BadgerFighterPlace.ClampFootX(foot.x, w, L.ColR.x - 2f);
+            var block = SpriteAnim.Dest(Badger129.FrozenBlockArt, spr.rect.width, spr.rect.height, foot, unit, 1f, 1f);
+            var keep = GUI.matrix;
+            try
+            {
+                if (thawing) return DrawBadgerThaw(spot, L, spr, block, foot, unit, BadgerIceAnim.ThawAge(now), out drawn);
+                float age = BadgerIceAnim.FreezeAge(now);
+                if (age >= BadgerIceAnim.ShiverFrom) foot.x += SparkleFx.Shiver(now, 2.2f * L.S * (age < BadgerIceAnim.FreezeSeconds ? 1.6f : 1f));
+                block.x = foot.x - block.width * 0.5f;
+                if (age < BadgerIceAnim.FreezeSeconds)
+                {
+                    // snapped into the hands-up pose (no-ice art at 100%), then the block revealed bottom-up through a clip
+                    float g = BadgerIceAnim.Grow(age);
+                    if (GuiPaint())
+                    {
+                        var hands = SpriteCatalog.BadgerArt(BadgerIceAnim.HandsUpArt);
+                        if (hands != null)
+                        {
+                            float hu = unit * BadgerIceAnim.HandsUpScale;
+                            var hr = new Rect(block.x + BadgerIceAnim.HandsUpX * unit, block.y + BadgerIceAnim.HandsUpY * unit,
+                                hands.rect.width * hu, hands.rect.height * hu);
+                            DrawSpriteRect(hands, hr, spot.Alpha);
+                        }
+                        if (g > 0.001f)
+                        {
+                            var clip = new Rect(block.x - 4f, block.yMax - block.height * g, block.width + 8f, block.height * g + 4f);
+                            GUI.BeginClip(clip);
+                            DrawSpriteRect(spr, new Rect(block.x - clip.x, block.y - clip.y, block.width, block.height), spot.Alpha);
+                            GUI.EndClip();
+                            // frost line riding the top of the ice
+                            SparkleFx.DrawGlow(new Vector2(block.center.x, clip.y), block.width * 0.9f, new Color(0.85f, 0.97f, 1f, 0.55f * (1f - g * 0.6f)));
+                        }
+                    }
+                    float sp = BadgerIceAnim.SprayAlpha(age);
+                    if (sp > 0.01f && GuiPaint())
+                    {
+                        var chest = new Vector2(block.center.x, block.y + block.height * 0.45f);
+                        SparkleFx.DrawGlow(chest, block.width * (0.7f + 0.8f * (1f - sp)), new Color(0.45f, 0.75f, 1f, 0.75f * sp));
+                        for (int k = 0; k < 4; k++)
+                            SparkleFx.DrawAt(chest + new Vector2((k - 1.5f) * block.width * 0.18f, (k % 2 == 0 ? -1f : 1f) * block.height * 0.08f),
+                                block.width * 0.14f, sp, SparkleFx.IceTint, false);
+                    }
+                    if (age >= BadgerIceAnim.GlintAt && GuiPaint())
+                    {
+                        float ga = Mathf.Sin(Mathf.Clamp01((age - BadgerIceAnim.GlintAt) / (BadgerIceAnim.FreezeSeconds - BadgerIceAnim.GlintAt)) * Mathf.PI);
+                        SparkleFx.DrawAt(new Vector2(block.x + block.width * 0.78f, block.y + block.height * 0.16f), block.width * 0.42f, ga);
+                    }
+                    drawn = block;
+                    return true;
+                }
+                drawn = DrawBadgerArt(Badger129.FrozenBlockArt, foot, unit, spot.Alpha);
+                return true;
+            }
+            finally { GUI.matrix = keep; GUI.color = Color.white; }
+        }
+        bool _bgIceWas;
+
+        static void DrawSpriteRect(Sprite sp, Rect r, float alpha)
+        {
+            var tr = sp.textureRect;
+            float tw = sp.texture.width, th = sp.texture.height;
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            GUI.DrawTextureWithTexCoords(r, sp.texture, new Rect(tr.x / tw, tr.y / th, tr.width / tw, tr.height / th), true);
+            GUI.color = Color.white;
+        }
+
+        static bool BadgerFrozenLine(string line)
+            => line == BadgerCopy.FreezeSprayFrozen || line == BadgerCopy.HotSauceFrozen;
+
+        static GUIStyle _bandCapStyle;
+        // Authored rows only ('/' or newline), centered in the band, font fit so the longest row and every row fit.
+        public static string[] BandCaptionRows(string text)
+        {
+            var raw = (text ?? "").Replace(" / ", "\n").Replace("/", "\n").Split('\n');
+            var rows = new System.Collections.Generic.List<string>();
+            foreach (var r in raw) { var t = r.Trim(); if (t.Length > 0) rows.Add(t); }
+            return rows.ToArray();
+        }
+        public static Rect BandCaptionLast;
+        void PaintBadgerBandCaption(string text, Rect band, float s, float fade)
+        {
+            var rows = BandCaptionRows(text);
+            if (rows.Length == 0) return;
+            if (_bandCapStyle == null)
+            {
+                _bandCapStyle = new GUIStyle(CoachLineStyle()) { wordWrap = false, alignment = TextAnchor.MiddleCenter, richText = false };
+                _bandCapStyle.padding = new RectOffset(0, 0, 0, 0); _bandCapStyle.margin = new RectOffset(0, 0, 0, 0);
+            }
+            var st = _bandCapStyle;
+            float padX = 14f * s, padY = 6f * s;
+            int px = Mathf.RoundToInt(32f * s);
+            float rowH = 0f, maxW = 0f;
+            var gc = new GUIContent();
+            for (; px > 10; px--)
+            {
+                st.fontSize = px; maxW = 0f;
+                foreach (var r in rows) { gc.text = r; maxW = Mathf.Max(maxW, st.CalcSize(gc).x); }
+                rowH = st.lineHeight * 1.05f;
+                if (maxW <= band.width - 2f * padX && rowH * rows.Length <= band.height - 2f * padY) break;
+            }
+            float h = rowH * rows.Length + 2f * padY;
+            var plate = new Rect(band.x, band.center.y - h * 0.5f, band.width, h);
+            BandCaptionLast = plate;
+            var keep = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, CaptionStyles.BannerAlpha * fade);
+            GUI.DrawTexture(plate, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                var rr = new Rect(plate.x, plate.y + padY + rowH * i, plate.width, rowH);
+                gc.text = rows[i];
+                st.normal.textColor = new Color(0f, 0f, 0f, 0.6f * fade);
+                GUI.Label(new Rect(rr.x + 2f * s, rr.y + 2f * s, rr.width, rr.height), gc, st);
+                st.normal.textColor = new Color(1f, 1f, 1f, fade);
+                GUI.Label(rr, gc, st);
+            }
+            GUI.color = keep;
+        }
+        int _bgThawRound = -1;
+
+        // Thaw: two wobbles while cracks spread, then the block shatters (chunks fall and fade) and he is back in his
+        // normal stance with a shake-off and a small hop. Crack and shatter sounds from SfxLibrary.
+        bool DrawBadgerThaw(BadgerActorSpot spot, BadgerRects L, Sprite spr, Rect block, Vector2 foot, float unit, float b, out Rect drawn)
+        {
+            drawn = default;
+            if (b < BadgerIceAnim.WobbleSeconds)
+            {
+                if (b >= BadgerIceAnim.CrackFrom && !BadgerIceAnim.CrackPlayed) { BadgerIceAnim.CrackPlayed = true; SfxLibrary.IceCrack(); }
+                float deg = BadgerIceAnim.Wobble(b);
+                if (Mathf.Abs(deg) > 0.01f) GUIUtility.RotateAroundPivot(deg, foot);
+                drawn = DrawBadgerArt(Badger129.FrozenBlockArt, foot, unit, spot.Alpha);
+                float c = BadgerIceAnim.Crack(b);
+                if (c > 0.01f && GuiPaint())
+                {
+                    var o = new Vector2(block.center.x, block.y + block.height * 0.42f);
+                    for (int k = 0; k < 7; k++)
+                    {
+                        float ang = k * 0.9f + 0.4f;
+                        var dir = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang) * 1.4f);
+                        var mid = o + dir * block.width * 0.22f * c + new Vector2(dir.y, -dir.x) * block.width * 0.04f;
+                        var end = o + dir * block.width * 0.46f * c;
+                        var col = new Color(1f, 1f, 1f, 0.9f);
+                        SparkleFx.Segment(o, mid, Mathf.Max(1.5f, 2.2f * L.S), col);
+                        SparkleFx.Segment(mid, end, Mathf.Max(1.2f, 1.6f * L.S), col);
+                    }
+                }
+                return true;
+            }
+            if (!BadgerIceAnim.ShatterPlayed) { BadgerIceAnim.ShatterPlayed = true; SfxLibrary.IceShatter(); }
+            // back to his stance: the duel pose, a small hop and a shake-off
+            var f2 = spot.Foot;
+            f2.y -= BadgerIceAnim.Hop(b) * BadgerArtHeight("badger_idle_b", spot.Unit) * 0.10f;
+            float shake = BadgerIceAnim.ShakeOff(b);
+            if (Mathf.Abs(shake) > 0.01f) GUIUtility.RotateAroundPivot(shake, f2);
+            string frame = SpriteCatalog.BadgerArt(spot.Frame) != null ? spot.Frame : "badger_idle_b";
+            drawn = DrawBadgerArt(frame, f2, spot.Unit, spot.Alpha, 0f, spot.Sx, spot.Sy);
+            GUI.matrix = Matrix4x4.identity * GUI.matrix;
+            if (GuiPaint()) SparkleFx.DrawShatter(block, BadgerIceAnim.ShatterT(b), Badger129.ShatterIce);
+            return true;
         }
 
         // One wingbeat across the peck or the recoil. AvatarFlapRate is 1.25 and a
@@ -2353,10 +2586,18 @@ namespace FlockFive
         {
             if (!GuiPaint() || string.IsNullOrEmpty(_bgLine)) return;
             float s = L.S;
-            string spot = BadgerCaptionSpot(_bgLine);
-            if (CaptionStyles.AbovePower(spot))
+            // v2 (b116 bug): a frozen line paints in the BadgerBottomBands caption slot under the power row, hard-broken
+            // on its authored '/' rows, so the banner never lands across the arena and covers the fighters.
+            if (BadgerFrozenLine(_bgLine) && !BadgerTutorialFight())
             {
-                DrawBadgerPickCaption(L, spot);
+                PaintBadgerBandCaption(_bgLine, L.Caption, s, BadgerCaptionFade.For(false, _coachFade));
+                return;
+            }
+            return BadgerLayoutAt(Screen.width, Screen.height, Screen.safeArea, s, top, BackMedalRect(s, top));
+        }
+
+        // Pure: the page bands for one screen. BadgerLayout feeds it the live screen; tests feed it a size.
+        static BadgerRects BadgerLayoutAt(float screenW, float screenH, Rect safe, float s, float top, Rect back)
                 return;
             }
             var gold = GoldCaption(_bgLine, Screen.width, Screen.height);

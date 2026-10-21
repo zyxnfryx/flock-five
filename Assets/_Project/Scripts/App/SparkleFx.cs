@@ -551,6 +551,68 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // b129: ice on a honeycomb. Hugs the hex: the tint is the shared comb mask on the comb's own rect, the frost
+        // rim is the hex path inset FrostRimInsetPx, the glints sit inside, and the icicles hang off the two lower
+        // edges. No rectangle anywhere, nothing past the outline.
+        static readonly Vector2[] _hexRim = new Vector2[6];
+        public static void DrawFrozenHex(Rect hex, float strength, float time)
+        {
+            if (strength < 0.02f || hex.width < 4f || hex.height < 4f) return;
+            var mask = HoneyArt.Mask();
+            if (mask == null) return;
+            GUI.color = new Color(IceTint.r, IceTint.g, IceTint.b, 0.42f * strength);
+            GUI.DrawTexture(hex, mask, ScaleMode.StretchToFill, true);
+            // cooler core so the rim reads as an edge
+            var core = new Rect(hex.x + hex.width * 0.16f, hex.y + hex.height * 0.16f, hex.width * 0.68f, hex.height * 0.68f);
+            GUI.color = new Color(0.92f, 0.98f, 1f, 0.16f * strength);
+            GUI.DrawTexture(core, mask, ScaleMode.StretchToFill, true);
+            HoneyArt.HexPoints(hex, Badger129.FrostRimInsetPx + Badger129.FrostRimWidthPx * 0.5f, _hexRim);
+            var rim = new Color(1f, 1f, 1f, 0.85f * strength);
+            for (int i = 0; i < 6; i++) Segment(_hexRim[i], _hexRim[(i + 1) % 6], Badger129.FrostRimWidthPx, rim);
+            for (int i = 0; i < 3; i++)
+                DrawAt(new Vector2(hex.x + hex.width * (0.32f + 0.18f * i), hex.y + hex.height * (0.34f + 0.16f * ((i * 2) % 3))),
+                    hex.height * 0.20f, strength * Twinkle(time, i * 1.7f), IceTint, false);
+            HexIcicles(_hexRim, hex.height, strength);
+            GUI.color = Color.white;
+        }
+
+        // Three short icicles on each lower edge (corner 2 -> 3 -> 4), inside the outline's bottom tip.
+        static void HexIcicles(Vector2[] p, float h, float strength)
+        {
+            var white = Texture2D.whiteTexture;
+            for (int e = 0; e < 2; e++)
+            {
+                Vector2 a = p[2 + e], b = p[3 + e];
+                for (int k = 1; k <= 2; k++)
+                {
+                    float f = k / 3f;
+                    var at = Vector2.Lerp(a, b, f);
+                    float len = h * (k == 1 ? 0.10f : 0.07f);
+                    float w = h * 0.05f;
+                    for (int j = 0; j < 3; j++)
+                    {
+                        float g = j / 3f;
+                        float sw = w * (1f - g * 0.8f), y = at.y - len + len * g;
+                        GUI.color = new Color(0.86f, 0.96f, 1f, 0.9f * strength);
+                        GUI.DrawTexture(new Rect(at.x - sw * 0.5f, y, sw, len / 3f + 0.5f), white);
+                    }
+                }
+            }
+        }
+
+        // One straight frost stroke from a to b, w px wide.
+        public static void Segment(Vector2 a, Vector2 b, float w, Color c)
+        {
+            var d = b - a;
+            float len = d.magnitude;
+            if (len < 0.5f || c.a < 0.01f) return;
+            var keep = GUI.matrix;
+            GUIUtility.RotateAroundPivot(Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg, a);
+            GUI.color = c;
+            GUI.DrawTexture(new Rect(a.x, a.y - w * 0.5f, len, w), Texture2D.whiteTexture);
+            GUI.matrix = keep;
+        }
+
         // Four cartoon icicles hanging off the top edge: stacked narrowing bars, darker outline under a pale body.
         public static void DrawIcicles(Rect r, float strength)
         {
@@ -575,8 +637,12 @@ namespace FlockFive
         }
 
         // Ice shatter: t 0..1. Shards fly out and fall while fading, with a few glints. Returns false once finished.
-        public static bool DrawShatter(Rect r, float t)
+        public static bool DrawShatter(Rect r, float t) => DrawShatter(r, t, IceTint);
+
+        // tint: the chunk colour (the badger thaw passes icy blue/white). Highlights stay white.
+        public static bool DrawShatter(Rect r, float t, Color tint)
         {
+            bool custom = tint != IceTint;
             if (t >= 1f) return false;
             if (t < 0f) return true;
             var white = Texture2D.whiteTexture;
@@ -589,15 +655,59 @@ namespace FlockFive
                 float sz = r.width * (0.10f + 0.03f * (i % 3)) * (1f - 0.4f * t);
                 var prev = GUI.matrix;
                 GUIUtility.RotateAroundPivot(i * 37f + t * 260f, at);
-                GUI.color = new Color(IceTint.r, IceTint.g, IceTint.b, 0.9f * a);
-                GUI.DrawTexture(new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz, sz * 0.7f), white);
-                GUI.color = new Color(1f, 1f, 1f, 0.7f * a);
-                GUI.DrawTexture(new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz * 0.5f, sz * 0.25f), white);
+                var chunk = new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz, sz * 0.7f);
+                var hi = new Rect(at.x - sz * 0.5f, at.y - sz * 0.35f, sz * 0.5f, sz * 0.25f);
+                if (custom)
+                {
+                    // own light, added on top: never mixed with what is behind (no green cast on the jungle)
+                    DrawAdditive(chunk, white, new Color(tint.r, tint.g, tint.b, 0.9f * a));
+                    DrawAdditive(hi, white, new Color(1f, 1f, 1f, 0.7f * a));
+                }
+                else
+                {
+                    GUI.color = new Color(tint.r, tint.g, tint.b, 0.9f * a);
+                    GUI.DrawTexture(chunk, white);
+                    GUI.color = new Color(1f, 1f, 1f, 0.7f * a);
+                    GUI.DrawTexture(hi, white);
+                }
                 GUI.matrix = prev;
             }
-            DrawAt(r.center, r.height * (0.5f + t), a, IceTint, true);
+            // The default call keeps its gold-sparkle burst. A custom tint (the badger thaw's icy blue/white) bursts as a
+            // tinted soft glow, since the gold sparkle art multiplied by blue reads green.
+            if (tint == IceTint) DrawAt(r.center, r.height * (0.5f + t), a, tint, true);
+            else
+            {
+                var glow = SpriteCatalog.Glow != null ? SpriteCatalog.Glow.texture : null;
+                if (glow != null)
+                {
+                    float g1 = r.height * (0.9f + 0.8f * t), g2 = r.height * (0.35f + 0.5f * t);
+                    DrawAdditive(new Rect(r.center.x - g1 * 0.5f, r.center.y - g1 * 0.5f, g1, g1), glow, new Color(tint.r, tint.g, tint.b, 0.75f * a));
+                    DrawAdditive(new Rect(r.center.x - g2 * 0.5f, r.center.y - g2 * 0.5f, g2, g2), glow, new Color(1f, 1f, 1f, 0.6f * a));
+                }
+            }
             GUI.color = Color.white;
             return true;
+        }
+
+        // Additive blit (FlockFive/IceAdditive, Resources/Fx/fx_ice_additive.shader): the colour is added to the
+        // frame, so a light tint stays that tint on any background. Falls back to normal blending if the material is missing.
+        static Material _additive; static bool _additiveTried;
+        public static Material Additive()
+        {
+            if (_additiveTried) return _additive;
+            _additiveTried = true;
+            var sh = Resources.Load<Shader>("Fx/fx_ice_additive");
+            Material m = sh != null && sh.isSupported ? new Material(sh) { hideFlags = HideFlags.HideAndDontSave } : null;
+            _additive = m;
+            return _additive;
+        }
+        public static void DrawAdditive(Rect r, Texture tex, Color c)
+        {
+            if (Event.current == null || Event.current.type != EventType.Repaint || tex == null || c.a < 0.01f) return;
+            var m = Additive();
+            if (m == null) { GUI.color = c; GUI.DrawTexture(r, tex); GUI.color = Color.white; return; }
+            // neutral modulate for Graphics.DrawTexture is 0.5; the shader adds rgb * a
+            Graphics.DrawTexture(r, tex, new Rect(0f, 0f, 1f, 1f), 0, 0, 0, 0, new Color(c.r * 0.5f, c.g * 0.5f, c.b * 0.5f, c.a * 0.5f), m);
         }
 
         // Soft disc. SpriteCatalog.Glow is built once. No per-frame texture.

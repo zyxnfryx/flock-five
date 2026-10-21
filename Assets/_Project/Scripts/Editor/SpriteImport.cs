@@ -235,6 +235,14 @@ namespace FlockFive.Editor
                 s.quality = 0.7f;
                 s.preloadAudioData = true;
             }
+            else if (assetPath.Contains("/Audio/Ice/"))
+            {
+                // b129: badger thaw ice clips stay PCM / Decompress On Load (ADPCM hisses on these transients).
+                s.loadType = AudioClipLoadType.DecompressOnLoad;
+                s.compressionFormat = AudioCompressionFormat.PCM;
+                s.quality = 1f;
+                s.preloadAudioData = true;
+            }
             else if (assetPath.Contains("zfx_jingle"))
             {
                 s.loadType = AudioClipLoadType.DecompressOnLoad;
@@ -252,7 +260,7 @@ namespace FlockFive.Editor
             imp.defaultSampleSettings = s;
             imp.forceToMono = true;
             imp.loadInBackground = theme;
-            if (assetPath.Contains("/Audio/Squish/"))
+            if (assetPath.Contains("/Audio/Squish/") || assetPath.Contains("/Audio/Ice/"))
             {
                 imp.defaultSampleSettings = s;
                 imp.loadInBackground = false;
