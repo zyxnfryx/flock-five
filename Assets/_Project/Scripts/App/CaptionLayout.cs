@@ -273,6 +273,18 @@ namespace FlockFive
             return new Rect(0f, top, w, bottom - top);
         }
 
+        // b134 (Brandon): the poker 'Tap the back button' step is the shared full-width banner at its own text
+        // height (never stretched into a panel). It sits centred on the held bet controls' seat, never above
+        // `floorY` (the bottom of the dealt cards plus air), and stays on screen.
+        public static Rect BannerOnSeat(Rect band, Rect seat, float w, float floorY, float screenH)
+        {
+            float h = band.height;
+            float y = seat.width >= 2f && seat.height >= 2f ? seat.center.y - h * 0.5f : band.y;
+            if (y < floorY) y = floorY;
+            if (y + h > screenH) y = screenH - h;
+            return new Rect(0f, y, w, h);
+        }
+
         // True when the glove's drawn box and the banner share no pixel.
         public static bool GloveClearsBanner(Rect glove, Rect banner)
         {

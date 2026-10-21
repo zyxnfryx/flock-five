@@ -3772,13 +3772,14 @@ namespace FlockFive
                 if (adHandBox.width >= 2f && adHandBox.yMax > adFloor) adFloor = adHandBox.yMax;
                 if (band.y < adFloor + gap) band.y = adFloor + gap;
             }
-            // b124: the first-hand result caption covers the bet controls' original seat, full width, bottom of the page.
+            // b124/b134: the first-hand result caption is the shared full-width banner on the bet controls' original seat, below the cards.
             bool pokerBack = spot == "poker.back";
             if (pokerBack)
             {
                 var g = _pokerCapGeo;
                 var cover = g.Bet.width > 2f && g.Act.width > 2f ? Rect.MinMaxRect(Mathf.Min(g.Bet.xMin, g.Act.xMin), Mathf.Min(g.Bet.yMin, g.Act.yMin), Mathf.Max(g.Bet.xMax, g.Act.xMax), Mathf.Max(g.Bet.yMax, g.Act.yMax)) : (g.Bet.width > 2f ? g.Bet : g.Act);
-                band = CaptionLayout.BandCovering(band, cover, w, 6f * s);
+                // b134 (Brandon): standard banner height, not a dim panel over the cards and WIN text.
+                band = CaptionLayout.BannerOnSeat(band, cover, w, g.Row.yMax + gap, screenH);
                 bottomSeat = true;
             }
             if (!bee && !adHand && !bottomSeat)

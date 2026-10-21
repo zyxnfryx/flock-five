@@ -124,11 +124,17 @@ namespace FlockFive.Editor
                 Check("glove-near-start-" + names[d], capped && keepsNear && onScreen, "cap " + cap + " got " + (p - aim).magnitude);
                 var entry = FlockFiveApp.GloveMiddleRightEntry(safe);
                 Check("poker-back-glove-entry-middle-right-" + names[d], Mathf.Approximately(entry.x, safe.xMax) && Mathf.Approximately(entry.y, safe.center.y), "");
-                // (5) banner covers the whole bet-control seat, full width.
+                // (5) b134: the Back banner is the standard full-width banner (its own text height), on the
+                // bet-control seat, below the dealt cards; never a tall panel over the cards / WIN text.
                 var seat = new Rect(w * 0.1f, h * 0.80f, w * 0.8f, h * 0.08f);
-                var band = CaptionLayout.BandCovering(new Rect(0, h * 0.78f, w, 50f * s), seat, w, 6f * s);
-                bool covers = band.x <= 0f && band.width >= w && band.y <= seat.y && band.yMax >= seat.yMax;
-                Check("poker-back-banner-covers-bet-seat-" + names[d], covers, band.ToString());
+                var text = new Rect(0, h * 0.55f, w, 50f * s);
+                float rowBottom = h * 0.62f;
+                var band = CaptionLayout.BannerOnSeat(text, seat, w, rowBottom + 8f * s, h);
+                bool banner = band.x <= 0f && band.width >= w && Mathf.Approximately(band.height, text.height)
+                    && band.y >= rowBottom && band.yMax <= h && Mathf.Abs(band.center.y - seat.center.y) < 0.5f;
+                Check("poker-back-banner-standard-height-below-cards-" + names[d], banner, band.ToString());
+                var tight = CaptionLayout.BannerOnSeat(text, new Rect(0, rowBottom - 40f, w, 30f), w, rowBottom + 8f * s, h);
+                Check("poker-back-banner-never-over-cards-" + names[d], tight.y >= rowBottom + 8f * s - 0.01f, tight.ToString());
             }
 
             // (5) source wiring.
@@ -137,6 +143,8 @@ namespace FlockFive.Editor
                 app.Contains("if (PokerFirstHandResultHoldsBetBar()) return true;")
                 && app.Contains("_home == HomeFace.Poker && !PokerBackDone() && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn"), "");
             Check("poker-back-uses-shared-banner-spot", CaptionStyles.IsBanner("poker.back") && app.Contains("\"poker.back\""), "");
+            string coach = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs");
+            Check("poker-back-banner-not-stretched-panel", coach.Contains("CaptionLayout.BannerOnSeat(band, cover") && !coach.Contains("CaptionLayout.BandCovering(band, cover"), "");
             Check("dealer-button-held-with-bar", app.Contains("|| PokerFirstHandResultHoldsBetBar()) return false;"), "");
 
             // (6) claimed Daily: no burst, no squish; unclaimed still bursts.
