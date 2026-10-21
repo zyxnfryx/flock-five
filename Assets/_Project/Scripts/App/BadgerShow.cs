@@ -1320,7 +1320,9 @@ namespace FlockFive
             float axis = box.Middle.center.x;
             float visW = (FlapVisR - FlapVisL) * d, visH = (FlapVisB - FlapVisT) * d;
             float visCx = 2f * axis - m.Foot.x;
-            if (visCx - visW * 0.5f < you.x) visCx = you.x + visW * 0.5f;
+            // Left limit mirrors the badger's right limit (the YOU column edge), so the bird may use the same margin.
+            float leftLimit = float.IsInfinity(rightLimit) ? you.x : 2f * axis - rightLimit;
+            if (visCx - visW * 0.5f < leftLimit) visCx = leftLimit + visW * 0.5f;
             float cx = visCx - (FlapVisL + FlapVisR - 1f) * 0.5f * d;
             float cy = m.Foot.y - (FlapVisB - 0.5f) * d;
             m.Bird = new Vector2(cx, cy);
