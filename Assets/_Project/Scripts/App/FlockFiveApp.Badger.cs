@@ -969,7 +969,7 @@ namespace FlockFive
             // b130 (a/b/g): small down-arrows through the one CoachArrow helper: two above the player grid, one over the
             // whole power row, then one over each score column at the same time (clear of both fighters).
             int nTips = BadgerCoachArrowTips(L, _bgLessonStep, BadgerSchedule.PlayerTarget(_bgAppearance), BadgerSchedule.BadgerTarget(_bgAppearance), _bgArrowTips);
-            for (int i = 0; i < nTips; i++) DrawCoachArrow(_bgArrowTips[i], s);
+            for (int i = 0; i < nTips; i++) DrawCoachArrow(_bgArrowTips[i], s, BadgerCoachArrowMul(_bgLessonStep));
             DrawTutorOverlay(s);
         }
 
@@ -1680,8 +1680,8 @@ namespace FlockFive
         {
             var g = new BadgerGapRects { ColR = colR, Gap = BadgerFighterPlace.CombGap(s) };
             var box = BadgerArenaRects.Split(arena);
-            var mark = BadgerFighterPlace.Rest(box, idleW, idleH);
             float right = colR.x - 2f;
+            var mark = BadgerFighterPlace.Rest(box, idleW, idleH, right);
             float unit = mark.Unit;
             var foot = mark.Foot;
             foot.x = BadgerFighterPlace.ClampFootX(foot.x, idleW * unit, right);
@@ -1897,7 +1897,7 @@ namespace FlockFive
             var pose = BadgerAnim.Duel(beat, age, now);
             spot.Alpha = BadgerFighter.Alpha(_bgStage);
             BadgerArtSize("badger_idle_b", 1f, out float aw, out float ah);
-            var mark = BadgerFighterPlace.Rest(box, aw, ah);
+            var mark = BadgerFighterPlace.Rest(box, aw, ah, L.ColR.x - 2f);
             spot.Unit = mark.Unit; // b129 v4: battle badger at 1.0
             spot.FaceLeft = mark.FaceLeft;
             float bh = box.BossFighter.height;

@@ -91,12 +91,13 @@ namespace FlockFive.Editor
 
                     // fighters: level, symmetric, bigger bird, clear of columns and pick combs
                     var box = BadgerArenaRects.Split(L.Arena);
-                    var m = BadgerFighterPlace.Rest(box, aw, ah);
+                    var m = BadgerFighterPlace.Rest(box, aw, ah, L.ColR.x - 2f);
                     float oldIcon = Mathf.Min(box.YouFighter.width * 0.92f, box.YouFighter.height * 0.90f);
-                    Check("bird-bigger." + n, m.Icon >= oldIcon * 1.1f || m.Icon >= box.YouFighter.height * 0.89f, "icon " + m.Icon.ToString("0", ci) + " old " + oldIcon.ToString("0", ci));
-                    Check("bird-level." + n, Mathf.Abs(m.Bird.y - m.BadgerBox.center.y) < m.Icon * 0.5f, "bird.y " + m.Bird.y.ToString("0", ci) + " badger.cy " + m.BadgerBox.center.y.ToString("0", ci));
-                    float inL = m.Bird.x - L.Arena.x, inR = L.Arena.xMax - m.Foot.x;
-                    Check("fighters-symmetric." + n, Mathf.Abs(inL - inR) < 2f, "in " + inL.ToString("0.0", ci) + " / " + inR.ToString("0.0", ci));
+                    Check("bird-1.25x." + n, m.Icon >= oldIcon * 1.24f || m.Icon >= box.YouFighter.height - 0.5f, "icon " + m.Icon.ToString("0", ci) + " old " + oldIcon.ToString("0", ci));
+                    Check("bird-on-baseline." + n, Mathf.Abs(m.BirdBox.yMax - m.Foot.y) < 0.5f, "bird.yMax " + m.BirdBox.yMax.ToString("0", ci) + " foot.y " + m.Foot.y.ToString("0", ci));
+                    float axis = box.Middle.center.x;
+                    float inL = axis - m.Bird.x, inR = m.Foot.x - axis;
+                    Check("fighters-mirror-axis." + n, Mathf.Abs(inL - inR) < 1f, "in " + inL.ToString("0.0", ci) + " / " + inR.ToString("0.0", ci));
                     Check("avatars-vs-columns." + n, !Hit(m.BirdBox, L.ColL) && !Hit(m.BadgerBox, L.ColR) && !Hit(m.BirdBox, L.ColR) && !Hit(m.BadgerBox, L.ColL),
                         "bird " + R(m.BirdBox) + " badger " + R(m.BadgerBox));
                     var g2 = FlockFiveApp.BadgerPickComb(L.Arena, L.ColR, s);
@@ -113,12 +114,12 @@ namespace FlockFive.Editor
                         string det = "";
                         for (int i = 0; i < k; i++)
                         {
-                            var ar = FlockFiveApp.CoachArrowRect(tips[i], s);
+                            var ar = FlockFiveApp.CoachArrowRect(tips[i], s, FlockFiveApp.BadgerCoachArrowMul(step));
                             det += " " + R(ar);
                             ok &= !Hit(ar, m.BirdBox) && !Hit(ar, m.BadgerBox) && !Hit(ar, L.Back) && !Hit(ar, L.Coin);
                             // the pick combs are not painted during the lesson (no tiles picked); the arrows clear the fighters
                             if (step == 0) ok &= ar.yMax <= L.PlayerGrid.y + 0.5f && ar.y >= L.Arena.y;
-                            if (step == 1) ok &= ar.yMax <= L.Power.y + 0.5f && Mathf.Abs(tips[i].x - L.Power.center.x) < 0.5f;
+                            if (step == 1) ok &= ar.yMax <= L.Power.y + 0.5f && Mathf.Abs(tips[i].x - FlockFiveApp.BadgerPowerPairCenterX(L)) < 0.5f;
                             if (step == 2) ok &= Inside(i == 0 ? L.ColL : L.ColR, ar) && !Hit(ar, i == 0 ? you : bl);
                         }
                         Check("arrows.step" + step + "." + n, ok, "bird " + R(m.BirdBox) + " badger " + R(m.BadgerBox) + det);

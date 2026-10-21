@@ -211,7 +211,7 @@ namespace FlockFive
             var L = BadgerLayout();
             var box = BadgerArenaRects.Split(L.Arena);
             BadgerArtSize("badger_idle_b", 1f, out float aw, out float ah);
-            var mark = BadgerFighterPlace.Rest(box, aw, ah);
+            var mark = BadgerFighterPlace.Rest(box, aw, ah, L.ColR.x - 2f);
             unit = mark.Unit;
             var beat = BadgerSwipe.Active(0f) ? BadgerDuelBeat.Swipe : BadgerDuelBeat.Idle;
             pose = BadgerAnim.Duel(beat, 0f, PlayClock.Now);

@@ -1283,18 +1283,16 @@ namespace FlockFive
         public const float InFrac = 0.10f;
 
         public static Mark Rest(BadgerArenaRects.Boxes box, float artW, float artH)
+            => Rest(box, artW, artH, float.PositiveInfinity);
+
+        // b130 v2 (d): the live rest mark. The badger is clamped left of the score column (rightLimit) exactly as it is
+        // drawn, then the bird mirrors him around the middle of the arena (the pick combs' axis): same distance from
+        // centre, feet on his baseline, 1.25x the old bird (no longer capped by the narrow bird box's height).
+        public static Mark Rest(BadgerArenaRects.Boxes box, float artW, float artH, float rightLimit)
         {
             var m = new Mark();
             var you = box.YouFighter;
             var boss = box.BossFighter;
-            // b130 (d): the bird is ~1.25x and stands in toward the middle, level with the badger's body.
-            float icon = Mathf.Min(you.width * 0.92f * BirdScale, you.height * 0.90f);
-            if (icon < 1f) icon = 1f;
-            m.Icon = icon;
-            m.FaceLeft = false;
-            m.Bird = new Vector2(you.center.x + you.width * InFrac, you.center.y);
-            m.BirdBox = new Rect(m.Bird.x - icon * 0.5f, m.Bird.y - icon * 0.5f, icon, icon);
-
             if (artW < 1f) artW = 480f;
             if (artH < 1f) artH = 640f;
             float fit = 0.96f;
@@ -1304,16 +1302,20 @@ namespace FlockFive
             if (m.Unit < 0.001f) m.Unit = 0.001f;
             float w = artW * m.Unit;
             float h = artH * m.Unit;
-            // b130 (i): the badger steps in by the same amount, mirroring the bird.
             m.Foot = new Vector2(boss.center.x - boss.width * InFrac, boss.yMax);
+            m.Foot.x = ClampFootX(m.Foot.x, w, rightLimit);
             m.BadgerBox = new Rect(m.Foot.x - w * 0.5f, m.Foot.y - h, w, h);
-            // Level: the bird's middle on the badger's body middle, kept inside the band.
-            float by = m.BadgerBox.center.y;
+
+            float icon = Mathf.Min(you.width * 0.92f, you.height * 0.90f) * BirdScale;
+            icon = Mathf.Min(icon, you.height);
+            if (icon < 1f) icon = 1f;
+            m.Icon = icon;
+            m.FaceLeft = false;
             float half = icon * 0.5f;
-            by = Mathf.Clamp(by, you.y + half, you.yMax - half);
-            m.Bird.y = by;
-            float minX = you.x + half;
-            if (m.Bird.x < minX) m.Bird.x = minX;
+            float axis = box.Middle.center.x;
+            float bx = 2f * axis - m.Foot.x;
+            if (bx < you.x + half) bx = you.x + half;
+            m.Bird = new Vector2(bx, m.Foot.y - half);
             m.BirdBox = new Rect(m.Bird.x - half, m.Bird.y - half, icon, icon);
             return m;
         }

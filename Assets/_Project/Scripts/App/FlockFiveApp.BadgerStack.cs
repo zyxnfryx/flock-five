@@ -77,20 +77,29 @@ namespace FlockFive
         // ---- (a/b/g) CoachArrow ----
         public const float CoachArrowSmall = 0.6f;
         public static float CoachArrowK(float s) => Mathf.Clamp(s, 1f, 2f) * CoachArrowSmall;
+        // b130 v2: the grid (step 0) and power-row (step 1) arrows are 1.5x; the score-column pair (step 2) stays small.
+        public const float CoachArrowBig = 1.5f;
+        public static float BadgerCoachArrowMul(int step) => step <= 1 ? CoachArrowBig : 1f;
+        public static Rect CoachArrowRect(Vector2 tip, float s, float mul) => CoachArrowRectK(tip, ArrowSm(s, mul));
 
         // Everything the arrow can paint over one bob cycle (outline included).
-        public static Rect CoachArrowRect(Vector2 tip, float s)
+        public static Rect CoachArrowRect(Vector2 tip, float s) => CoachArrowRectK(tip, ArrowSm(s, 1f));
+        static Rect CoachArrowRectK(Vector2 tip, float sm)
         {
-            float k = CoachArrowK(s);
+            float k = CoachArrowKRaw(sm);
             float w = CoachArrowWidth * k + 5f * k, h = CoachArrowHeight * k, amp = CoachArrowBobAmp * k, rim = 2.5f * k;
             return new Rect(tip.x - w * 0.5f, tip.y - h - amp - rim, w, h + amp * 2f + rim * 2f);
         }
 
         // Small down-arrow with the gentle shared bob; tip is the rest position of the point.
-        static void DrawCoachArrow(Vector2 tip, float s)
+        // s here may already carry the step multiplier (s * mul); the clamp applies to the layout scale only.
+        static float CoachArrowKRaw(float sm) => sm * CoachArrowSmall;
+        static float ArrowSm(float s, float mul) => Mathf.Clamp(s, 1f, 2f) * mul;
+        static void DrawCoachArrow(Vector2 tip, float s, float mul) => DrawCoachArrowK(tip, ArrowSm(s, mul));
+        static void DrawCoachArrowK(Vector2 tip, float sm)
         {
             if (!GuiPaint()) return;
-            float k = CoachArrowK(s);
+            float k = CoachArrowKRaw(sm);
             tip.y += CoachArrowBobOffset(AdPause.Unscaled, k);
             var prevC = GUI.color;
             GUI.color = new Color(0.10f, 0.06f, 0.02f, 0.92f);
@@ -104,10 +113,12 @@ namespace FlockFive
 
         // Lesson arrow tips. 0: two above the player grid. 1: one centred over the power row. 2: one over each score
         // column's end plate, both at once.
+        public static float BadgerPowerPairCenterX(BadgerRects L) => (BadgerPowerRect(L, 0).xMin + BadgerPowerRect(L, 1).xMax) * 0.5f;
+
         public static int BadgerCoachArrowTips(BadgerRects L, int step, int youTarget, int bossTarget, Vector2[] into)
         {
             float s = L.S > 0.01f ? L.S : 1f;
-            float k = CoachArrowK(s);
+            float k = CoachArrowKRaw(ArrowSm(s, BadgerCoachArrowMul(step)));
             float amp = CoachArrowBobAmp * k + 2.5f * k;
             float h = CoachArrowHeight * k;
             if (step <= 0)
@@ -119,7 +130,8 @@ namespace FlockFive
             }
             if (step == 1)
             {
-                into[0] = new Vector2(L.Power.center.x, L.Power.y - amp - 1f * s);
+                // ONE arrow centred over the Double + Triple pair (slots 0 and 1).
+                into[0] = new Vector2(BadgerPowerPairCenterX(L), L.Power.y - amp - 1f * s);
                 return 1;
             }
             int max = BadgerSchedule.BadgerTargetFixed;
