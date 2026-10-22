@@ -6540,7 +6540,10 @@ namespace FlockFive
             // b103: while a garden lesson glove is up, Restart and Hive only count under the glove.
             if (CueGloveOwnsHud() && (restart.Contains(gui) || (HiveReachable() && hive.Contains(gui))))
                 return !GloveTapHits(screen) ? true : HudGloveTap(screen, restart, hive, gui);
-            switch (HudClaim(gui, restart, hive, HiveReachable(), top))
+            var claim = HudClaim(gui, restart, hive, HiveReachable(), top);
+            // b131: the top of a feeder bulb reaches into the top-bar band. Outside Restart, a feeder tap wins.
+            if (claim == HudTap.TopBar && FeederUnder(screen)) return false;
+            switch (claim)
             {
                 case HudTap.Restart: Restart(); return true;
                 case HudTap.TopBar: return true;
@@ -6550,6 +6553,13 @@ namespace FlockFive
             // line (the old bottom-left Restart seat), which on b105 layouts covered the lower-left branch
             // above the ad row, so a send to it fell through as an empty tap and deselected.
             return false;
+        }
+
+        bool FeederUnder(Vector2 screen)
+        {
+            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
+            if (cam == null) return false;
+            return HitFeeder(cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f))) >= 0;
         }
 
         public enum HudTap { None, Restart, TopBar, Hive }
