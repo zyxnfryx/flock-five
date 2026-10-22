@@ -40,7 +40,7 @@ namespace FlockFive.Editor
                 bool clear = !rs.Overlaps(sl) && !rs.Overlaps(sr) && !rs.Overlaps(bl) && !rs.Overlaps(br)
                     && !hv.Overlaps(sl) && !hv.Overlaps(sr) && !hv.Overlaps(bl) && !hv.Overlaps(br);
                 bool inside = rs.yMin >= 0f && rs.yMax <= h - bot + 0.01f && hv.yMax <= h - bot + 0.01f
-                    && rs.xMin >= 0f && hv.xMax <= w + 0.01f && Mathf.Approximately(rs.y, hv.y) && rs.width >= 40f;
+                    && rs.xMin >= 0f && hv.xMax <= w + 0.01f && rs.width >= 40f;
                 Check("restart/hive clear of ad branch " + tag, clear && inside,
                     "restart " + rs.xMin.ToString("0") + "," + rs.yMin.ToString("0") + " " + rs.width.ToString("0") + "px; sign L y "
                     + sl.yMin.ToString("0") + ".." + sl.yMax.ToString("0") + " branch y " + bl.yMin.ToString("0") + ".." + bl.yMax.ToString("0"));

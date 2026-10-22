@@ -61,7 +61,8 @@ namespace FlockFive
         public const float CamRestY = -0.45f;
         public const float CamOrtho = 10.6f;
         // Tall phones: lift the rows so the flock sits mid-screen instead of low under a gap.
-        public static float RowY0 => 3.42f + 5.0f * (PortraitLock.TallFactor() - 1f);
+        public static float RowY0 => RowY0For(PortraitLock.TallFactor());
+        public static float RowY0For(float tall) => 3.42f + 5.0f * (tall - 1f);
         // Ring of the feeder art above the pivot (1024px @ 180 PPU × FeederView.Scale).
         // The painted rope above the ring may enter the island; the bulb must not.
         public const float FeederCrown = 1.34f;

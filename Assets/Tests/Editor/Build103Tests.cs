@@ -30,6 +30,7 @@ namespace FlockFive.Editor
                 var safe = new Rect(0f, bot, w, h - bot - h * 0.04f);
                 // Restart: phones keep the old 72-ref buffer; tablets sit on the small fixed buffer.
                 CornerAnchor.Garden(w, h, safe, out float sc, out _, out _, out var rs, out var hv);
+                rs = CornerAnchor.GardenBottomSeat(w, h, safe); // b131: banner seat (Restart itself moved to the top bar)
                 float buffer = h - safe.yMin - rs.yMax;
                 float want = (phone ? CornerAnchor.BottomMarginRef : Mathf.Lerp(CornerAnchor.BottomMarginRef, CornerAnchor.TabletBottomMarginRef, DeviceFit.Wide(w / h))) * sc;
                 // b105: when the base buffer would sit on the bottom ad branch, the pair moves below it (Build105Tests).

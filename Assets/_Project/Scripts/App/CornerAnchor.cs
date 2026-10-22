@@ -24,7 +24,49 @@ namespace FlockFive
         public static float EdgeInsetRight(float screenW, Rect safe)
             => Mathf.Max(16f, (screenW - safe.xMax) + 10f);
 
+        // b131 (Brandon): Restart sits in the top bar, never in the playfield, so it cannot steal a
+        // branch or perch tap. Its hit rect stays above PlayfieldTopGui (the highest reach of any
+        // branch, bird or perch-pad hit) and inside the safe area, right of the streak stamp seat.
         public static void Garden(float screenW, float screenH, Rect safe,
+            out float scale, out float top, out float bot, out Rect restart, out Rect hive)
+        {
+            GardenCore(screenW, screenH, safe, out scale, out top, out bot, out var seat, out hive);
+            restart = TopBarRestart(screenW, screenH, safe, scale, top);
+        }
+
+        // The old bottom-left restart seat. Garden lesson banners still centre on it (b102).
+        public static Rect GardenBottomSeat(float screenW, float screenH, Rect safe)
+        {
+            GardenCore(screenW, screenH, safe, out _, out _, out _, out var seat, out _);
+            return seat;
+        }
+
+        // HitBranch: nearest perch pad within 3.45 (empty branch while sending), birds within 1.05,
+        // plus Physics2D overlap 2.6 around branch colliders. Conservative top of all of it, in world y.
+        public const float BranchReachWorld = 3.45f + 0.6f;
+        public static float TallFor(float w, float h) => Mathf.Max(1f, WorldBuilder.PortraitAspect / Mathf.Max(0.05f, w / Mathf.Max(1f, h)));
+        public static float PlayfieldTopGui(float w, float h)
+            => WorldToGui(w, h, 0f, WorldBuilder.RowY0For(TallFor(w, h)) + BranchReachWorld).y;
+
+        // 44 pt minimum tap target, in px (Screen.dpi when known, else 1 px per pt).
+        public static float MinTapPx(float dpi) => 44f * (dpi > 1f ? dpi / 163f : 1f);
+
+        public static Rect TopBarRestart(float w, float h, Rect safe, float scale, float top)
+        {
+            if (safe.width < 2f || safe.height < 2f) safe = new Rect(0f, 0f, w, h);
+            float safeTop = Mathf.Max(0f, h - safe.yMax);
+            float pad = 6f * scale;
+            float limit = Mathf.Min(top, PlayfieldTopGui(w, h)) - pad;
+            float y = safeTop + pad;
+            float size = Mathf.Min(SizeRef * scale, limit - y);
+            size = Mathf.Max(size, MinTapPx(Screen.dpi));
+            var stamp = FlockFiveApp.GardenStampBox(w, h, safe, scale);
+            float x = stamp.xMax + pad;
+            if (x + size > safe.xMax - pad) x = Mathf.Max(safe.xMin + pad, safe.xMax - pad - size);
+            return new Rect(x, y, size, size);
+        }
+
+        static void GardenCore(float screenW, float screenH, Rect safe,
             out float scale, out float top, out float bot, out Rect restart, out Rect hive)
         {
             scale = DeviceFit.Ui(screenW, screenH);

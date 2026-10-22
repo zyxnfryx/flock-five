@@ -77,6 +77,7 @@ namespace FlockFive.Editor
                     float s = DeviceFit.Ui(w, h);
                     var safe = new Rect(0f, h * 0.04f, w, h * 0.92f);
                     CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
+                    restart = CornerAnchor.GardenBottomSeat(w, h, safe); // b131: banner seat (Restart itself moved to the top bar)
                     int fit = 0, noFit = 0, bad = 0;
                     for (float rowFrac = 0.55f; rowFrac <= 0.90f; rowFrac += 0.05f)
                         for (float bandH = 90f * s; bandH <= 260f * s; bandH += 40f * s)
@@ -250,6 +251,7 @@ namespace FlockFive.Editor
                     float inset = Mathf.Max(8f, safe.yMin + 4f);
                     float refH = FlockFiveApp.GardenRefBandH(w, h, safe, s, 0f);
                     CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var rs, out var hv);
+                    rs = CornerAnchor.GardenBottomSeat(w, h, safe); // b131: banner seat (Restart itself moved to the top bar)
                     float y0 = FlockFiveApp.GardenBannerY(refH, h * 0.5f, rs, hv, h, inset, 8f * s, h * 0.234f);
                     int flips = 0;
                     for (float rb = h * 0.50f; rb <= h * 0.99f; rb += h * 0.01f)
@@ -298,6 +300,7 @@ namespace FlockFive.Editor
                         var target = new Vector2(w * 0.24f, h * 0.277f); // tip bird of branch 0 (RRR), top-left row, behind the old top banner
                         var birdRect = new Rect(target.x - w * 0.05f, target.y - h * 0.026f, w * 0.10f, h * 0.052f);
                         CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
+                        restart = CornerAnchor.GardenBottomSeat(w, h, safe); // b131: banner seat (Restart itself moved to the top bar)
                         float by = FlockFiveApp.GardenBannerY(bandH, rowBot, restart, hive, h, safe.yMin, 8f * s, h * 0.234f);
                         var plate = new Rect(0f, by, w, bandH);
                         var aim = FlockFiveApp.GardenSidewaysAim(target, plate, s, w, out float deg);
