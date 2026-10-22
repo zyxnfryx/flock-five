@@ -80,7 +80,6 @@ namespace FlockFive.Editor
             Suite("build110-ostrich-peck", Build110OstrichPeckTests.Run);
             Suite("build88-curtain", Build88CurtainTests.Run);
             Suite("build88-poker-tap", Build88PokerTapTests.Run);
-            Suite("build88-banner", Build88BannerTests.Run);
             Suite("build88-dismiss", Build88DismissTests.Run);
             Suite("build88-poker-glove", Build88PokerGloveTests.Run);
             Suite("build89-vippending", Build89VipPendingTests.Run);

@@ -71,7 +71,7 @@ namespace FlockFive
             new Level { Number = 31, Id = "garden-31", Title = "Garden 31", Make = Garden31 },
             // Build 110: garden 32 is where the backdrop turns to spring, so the ostrich no
             // longer debuts again there. Same authored board and 3 feeders, no ostrich.
-            // Ostrich gardens on the ladder: 27. Next ostrich garden: 38 (Garden38Level, not wired yet).
+            // Ostrich gardens on the ladder: 27, 38 and 43.
             new Level { Number = 32, Id = "garden-32", Title = "Garden 32", Make = Garden32Ostrich, Solo = true,
                 Feeders = 3, Ostrich = false, PeckSeed = 832449 },
             // Build 111: gardens 33-37 (LevelData.Ladder33.cs) and the ostrich's second garden, 38.
