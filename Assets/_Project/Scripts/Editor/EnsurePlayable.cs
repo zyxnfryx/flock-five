@@ -91,6 +91,7 @@ namespace FlockFive.Editor
             Suite("sky", SkyCycleTests.Run);
             Suite("bee-cards", BeeCardQueueTests.Run);
             Suite("build110-lightning-fire", Build110LightningFireTests.Run);
+            Suite("build126-tap-cue", Build126TapCueTests.Run);
             Suite("build112-money", Build112MoneyFormatTests.Run);
             Suite("build89-payhead", Build89PayHeadTests.Run);
             Suite("poker-back-caption-timing", PokerBackCaptionTimingTests.Run);

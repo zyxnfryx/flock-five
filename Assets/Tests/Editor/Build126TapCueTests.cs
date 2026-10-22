@@ -6,7 +6,7 @@ namespace FlockFive.Editor
 {
     // b126: the tap-to-continue fingertip (mockup D). Every any-tap caption gets it, no target/claim caption does,
     // the cue never changes the caption box, and it sits on the box's bottom-right corner (part in, part out).
-    static class Build126TapCueTests
+    public static class Build126TapCueTests
     {
         [MenuItem("Flock Five/Build 126 Tap Cue Tests")]
         public static void Run()

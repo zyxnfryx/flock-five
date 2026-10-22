@@ -9,6 +9,10 @@ namespace FlockFive
     {
         const int N = 26;
         const float Dur = 2.4f;
+        // b126: every glowing bit (sparks, flame, embers) is dark by the time the branch falls
+        // (BranchView.ScorchSeconds after the strike). Smoke may drift on.
+        public const float GlowEnd = BranchView.ScorchSeconds - 0.05f;
+        const float GlowFade = 0.25f;
 
         struct Bit
         {
@@ -47,7 +51,7 @@ namespace FlockFive
                 bit.T = go.transform;
                 bit.Sr = sr;
                 bit.Kind = kind;
-                bit.Life = Random.Range(0.9f, 1.8f);
+                bit.Life = Random.Range(0.9f, GlowEnd);
                 float ang = Random.Range(0f, 6.28f);
                 if (kind == 0)
                 {
@@ -102,6 +106,7 @@ namespace FlockFive
                 float a = 1f - Mathf.Clamp01(life);
                 if (bit.Kind == 2) a *= 0.45f;
                 if (bit.Kind == 1) a *= 0.85f;
+                if (bit.Kind != 2) a *= Mathf.Clamp01((GlowEnd - _age) / GlowFade);
                 c.a = a < 0f ? 0f : a;
                 if (bit.Sr != null) bit.Sr.color = c;
                 _bits[i] = bit;
