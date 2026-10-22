@@ -136,7 +136,11 @@ namespace FlockFive
         //   (and its lightning caption), with a short first wait | 4+ unchanged.
         public enum StormStage { Clear = 0, RainOnly = 1, FirstStrike = 2, Normal = 3 }
         public const int FirstStrikeGarden = 3;
-        public const float FirstStrikeWait = 1f; // rain eases in right after StormGlass.StartDelay
+        public const float FirstStrikeWait = 1f;
+        // b126: garden 3 skips most of the clear-sky delay so rain and glass drops are on screen before the intro bolt.
+        public const float FirstStrikeOnset = 1.5f;
+        public static float OnsetDelayFor(int garden) => StageFor(garden) == StormStage.FirstStrike ? FirstStrikeOnset : StormGlass.StartDelay;
+        float _onsetDelay = StormGlass.StartDelay;
         public static StormStage StageFor(int garden)
         {
             if (garden <= 1) return StormStage.Clear;
@@ -159,6 +163,7 @@ namespace FlockFive
             gs._snow = UsesSnow(scene);
             gs._clear = garden > 0 && !StormAllowed(garden);
             gs._firstWait = garden > 0 ? FirstWaitFor(garden) : FirstWait;
+            gs._onsetDelay = garden > 0 ? OnsetDelayFor(garden) : StormGlass.StartDelay;
             return gs;
         }
 
@@ -567,7 +572,7 @@ namespace FlockFive
             _wasHalted = halted;
             _wet = Mathf.MoveTowards(_wet, want, dt / (halted ? StormGlass.HaltFade : Fade));
             // b125: a clear-sky StartDelay, then rain, streaks, veil, droplets, and the MixDesk rain stem ease in together.
-            _wet = Mathf.Min(_wet, StormGlass.OnsetMul(_gardenPlay));
+            _wet = Mathf.Min(_wet, StormGlass.OnsetMul(_gardenPlay, _onsetDelay));
             // Snow is not wet weather: sky veil, glass beads and the rain stem read Wet.
             Wet = _snow ? 0f : _wet;
 

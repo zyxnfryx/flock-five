@@ -35,7 +35,7 @@ namespace FlockFive.Editor
             for (float t = 0f; t < 30f && !won3; t += dt)
             {
                 won3 = t >= 2.0f; // cleared before the intro delay (worst case)
-                var pl = LightningStrike.Decide(2, struck, GardenStorm.WantStorm(t, GardenStorm.FirstWaitFor(3)), t, true, false, false, won3);
+                var pl = LightningStrike.Decide(2, struck, GardenStorm.WantStorm(t, GardenStorm.FirstWaitFor(3)), t, true, false, false, won3, 1f);
                 if (pl != LightningStrike.Plan.None) { p3 = pl; struck = true; }
             }
             int g4Strikes = 0, g4Intro = 0;
@@ -48,12 +48,24 @@ namespace FlockFive.Editor
             }
             Check("fast-garden-3-clear-no-strike-in-garden-4", p3 == LightningStrike.Plan.None && g4Strikes == 0 && g4Intro == 0,
                 "g3 " + p3 + " g4 strikes " + g4Strikes);
-            // Normal pace: the intro fires in garden 3 at IntroDelay, without any rain.
-            float at = -1f;
-            for (float t = 0f; t < 30f && at < 0f; t += dt)
-                if (LightningStrike.Decide(2, false, false, t, true, false, false, false) == LightningStrike.Plan.Intro) at = t;
-            Check("garden-3-intro-fires-early-dry", at >= LightningStrike.IntroDelay - 0.01f && at < LightningStrike.IntroDelay + 0.2f
-                && at < 9f, "at " + at.ToString("0.0") + "s");
+            // Normal pace: replay garden 3's real wet curve (GardenStorm Fade 2.1 s toward want, capped by the garden-3
+            // onset). The intro must land with rain on screen (Wet > 0.3, past StormGlass.WetOn so glass drops spawn)
+            // and before a fastest realistic 9-move clear: ~0.7 s per move (pick + place taps plus the hop) = ~6.3 s.
+            const float FastestNineMoveClear = 6.3f;
+            float at = -1f, wetAt = 0f, wet = 0f;
+            for (float t = 0f; t < 30f && at < 0f; t += 1f / 60f)
+            {
+                float want = GardenStorm.WantStorm(t, GardenStorm.FirstWaitFor(3)) ? 1f : 0f;
+                wet = Mathf.MoveTowards(wet, want, (1f / 60f) / 2.1f);
+                wet = Mathf.Min(wet, StormGlass.OnsetMul(t, GardenStorm.OnsetDelayFor(3)));
+                if (LightningStrike.Decide(2, false, wet > 0.45f, t, true, false, false, false, wet) == LightningStrike.Plan.Intro) { at = t; wetAt = wet; }
+            }
+            Check("garden-3-intro-lands-in-visible-rain", at >= LightningStrike.IntroDelay - 0.01f && wetAt > LightningStrike.IntroWet
+                && StormGlass.Storming(true, wetAt) && at < FastestNineMoveClear,
+                "at " + at.ToString("0.00") + "s wet " + wetAt.ToString("0.00") + " (glass drops from " + StormGlass.WetOn + ")");
+            Check("garden-3-dry-never-strikes", LightningStrike.Decide(2, false, false, 10f, true, false, false, false, 0f) == LightningStrike.Plan.None, "");
+            Check("onset-short-on-3-only", GardenStorm.OnsetDelayFor(3) < StormGlass.StartDelay && GardenStorm.OnsetDelayFor(2) == StormGlass.StartDelay
+                && GardenStorm.OnsetDelayFor(4) == StormGlass.StartDelay, "");
             // After the sparrow intro, garden 4 may roll normally (still never an owed intro).
             Check("garden-4-rolls-after-sparrow", LightningStrike.Decide(3, false, true, 60f, true, false, true, false) == LightningStrike.Plan.Roll
                 && LightningStrike.Decide(3, false, true, 60f, true, true, true, false) == LightningStrike.Plan.None, "");

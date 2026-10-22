@@ -15,10 +15,12 @@ namespace FlockFive
         public const int MinGarden = GardenStorm.FirstStrikeGarden - 1;
         public static bool GardenEligible(int index) => GardenStorm.StrikeAllowed(index + 1);
 
-        // b126 (Brandon): the intro strike belongs to garden 3 only. It fires IntroDelay seconds into the garden
-        // (no Wet requirement; garden 3 forces rain in fast), well before the 9-move minimum clear. It is never
-        // carried into another garden: from garden 4 on there is no owed strike, only the normal dice.
-        public const float IntroDelay = 2.5f;
+        // b126 (Brandon): the intro strike belongs to garden 3 only. One gate: at least IntroDelay seconds in AND
+        // visible rain (Wet > IntroWet; glass drops spawn from StormGlass.WetOn 0.22). Garden 3's short onset puts
+        // full rain on screen by then, still before a realistic fastest 9-move clear (~6.3 s). Never carried into
+        // another garden: from garden 4 on there is no owed strike, only the normal dice.
+        public const float IntroDelay = 5.0f;
+        public const float IntroWet = 0.3f;
         public static bool IntroOwed(int index, bool everStruck) =>
             !everStruck && GardenStorm.StageFor(index + 1) == GardenStorm.StormStage.FirstStrike;
 
@@ -31,12 +33,12 @@ namespace FlockFive
 
         // The one strike decision per tick (TickLightning and the tests both call it). calm = PestStageFree.
         public static Plan Decide(int index, bool everStruck, bool storming, float gardenPlay, bool calm,
-            bool pestLineUp, bool sparrowIntroDone, bool won)
+            bool pestLineUp, bool sparrowIntroDone, bool won, float wet = 0f)
         {
             if (won || !GardenEligible(index)) return Plan.None;
             if (Blocked(index, pestLineUp, sparrowIntroDone)) return Plan.None;
             if (IntroOwed(index, everStruck))
-                return calm && gardenPlay >= IntroDelay ? Plan.Intro : Plan.None;
+                return calm && gardenPlay >= IntroDelay && wet > IntroWet ? Plan.Intro : Plan.None;
             return storming ? Plan.Roll : Plan.None;
         }
 
