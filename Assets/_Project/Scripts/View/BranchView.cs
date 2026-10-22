@@ -494,7 +494,7 @@ namespace FlockFive
         // live flames, during which the branch is already unusable (Burn() marks it Broken the moment it is struck).
         // Then the shared limb drop (BreakAway, 0.62 s). Total struck-to-gone: 0.58+0.62=1.2 s before, 1.5+0.62=2.12 s now.
         public const float ScorchSeconds = 1.5f;
-        const int FlameN = 9;
+        const int FlameN = 14;
         SpriteRenderer[] _flames;
 
         // Char, a burn with animated flames, then the shared limb drop. Sync skips a breaking limb.
@@ -547,12 +547,12 @@ namespace FlockFive
             {
                 var sr = _flames[i];
                 if (sr == null) continue;
-                float ph = Mathf.Repeat(t * 1.9f + i * 0.37f, 1f);
+                float ph = Mathf.Repeat(t * 2.4f + i * 0.37f, 1f);
                 float fx = Mathf.Lerp(x0, x1, (i + 0.5f) / _flames.Length) + 0.08f * Mathf.Sin(t * 9f + i * 2.1f);
-                sr.transform.localPosition = new Vector3(fx, y + 0.05f + ph * 0.55f, 0f);
-                float sc = (0.30f + 0.26f * Mathf.Sin(ph * Mathf.PI)) * (0.9f + 0.1f * Mathf.Sin(t * 14f + i));
+                sr.transform.localPosition = new Vector3(fx, y + 0.05f + ph * 0.85f, 0f);
+                float sc = (0.42f + 0.36f * Mathf.Sin(ph * Mathf.PI)) * (0.85f + 0.15f * Mathf.Sin(t * 14f + i));
                 sr.transform.localScale = new Vector3(sc, sc * 1.35f, 1f);
-                float a = Mathf.Sin(ph * Mathf.PI) * 0.9f;
+                float a = Mathf.Sin(ph * Mathf.PI);
                 sr.color = Color.Lerp(new Color(1f, 0.85f, 0.25f, a), new Color(1f, 0.32f, 0.06f, a), ph);
             }
         }

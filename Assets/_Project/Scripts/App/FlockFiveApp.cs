@@ -11284,7 +11284,7 @@ namespace FlockFive
                 string rest = text.Substring(gap + 2);
                 float h1 = st.CalcHeight(new GUIContent(head), r.width);
                 float h2 = st.CalcHeight(new GUIContent(rest), r.width);
-                float gh = CaptionLayout.BlankRowH(st) * CaptionLayout.HeadlineGapKeep;
+                float gh = CaptionLayout.BlankRowH(st) * CaptionLayout.GapKeepFor(text);
                 float top = r.center.y - (h1 + gh + h2) * 0.5f;
                 var white = new Color(1f, 1f, 1f, alpha);
                 StampOutlined(new Rect(r.x, top, r.width, h1), head, st, white, 0, ring);

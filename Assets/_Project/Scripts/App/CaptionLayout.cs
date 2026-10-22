@@ -209,6 +209,9 @@ namespace FlockFive
         // b89 (Brandon): the blank row HeadlineGap puts between a headline and its body
         // is kept at this fraction of a line. 1 is the old full blank line.
         public const float HeadlineGapKeep = 0.28f;
+        // b126 (Brandon): the lightning caption read too snug; its headline gap keeps more of the blank row.
+        public const float FireGapKeep = 0.7f;
+        public static float GapKeepFor(string text) => IsFireLine(text) ? FireGapKeep : HeadlineGapKeep;
         static GUIContent _gapProbe;
 
         // Pixels a measured "\n\n" text is shorter than the full blank row. Every measure
@@ -221,7 +224,7 @@ namespace FlockFive
             int at = text.IndexOf("\n\n", System.StringComparison.Ordinal);
             while (at >= 0) { n++; at = text.IndexOf("\n\n", at + 2, System.StringComparison.Ordinal); }
             if (n == 0) return 0f;
-            return n * BlankRowH(st) * (1f - HeadlineGapKeep);
+            return n * BlankRowH(st) * (1f - GapKeepFor(text));
         }
 
         public static float BlankRowH(GUIStyle st)
