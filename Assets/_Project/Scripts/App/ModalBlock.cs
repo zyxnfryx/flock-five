@@ -108,7 +108,7 @@ namespace FlockFive
         public static bool BlocksPoint(Veil veil, Vector2 p)
         {
             if (!veil.Open) return false;
-            if (veil.PhoneArea.W >= 2f && veil.PhoneArea.H >= 2f && !veil.Screen.Contains(p))
+            if (veil.Screen.width >= 2f && veil.Screen.height >= 2f && !veil.Screen.Contains(p))
                 return false;
             if (HasCutout(veil.Cutout) && veil.Cutout.Contains(p)) return false;
             return true;
