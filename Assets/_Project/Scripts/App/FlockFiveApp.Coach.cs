@@ -3738,6 +3738,20 @@ namespace FlockFive
             // Shared seat first. The glove check uses this band, then a spot with Drop
             // lowers its own bottom over the VIP badge. Other spots never enter that step.
             band = BannerRect(spot, text, w, screenH, safe, seat, _pokerTitleBottom, _adoptLive, s, out px, false);
+            // iPad fix: the coins line seats from the poker button's laid-out rect and the
+            // landed glove pose only (no per-frame glove motion), so it holds still, keeps the
+            // banner style every frame (no flip to the snug box), and lines up with the glove.
+            if (spot == "home.poker")
+            {
+                var stP = CoachLineStyle();
+                var fitP = CaptionLayout.FitBanner(stP, text, CaptionLayout.BannerMeasureWidth(w, stP, text, px), px);
+                BannerText = string.IsNullOrEmpty(fitP.Shown) ? text : fitP.Shown;
+                px = fitP.Font;
+                band = PokerCoinsBand(band, w, screenH, safe, s);
+                BannerSkip = "";
+                BannerUses++;
+                return true;
+            }
             var st = CoachLineStyle();
             float maxW = CaptionLayout.BannerMeasureWidth(w, st, text, px);
             var fitted = CaptionLayout.FitBanner(st, text, maxW, px);
@@ -3834,6 +3848,26 @@ namespace FlockFive
             BannerSkip = "";
             BannerUses++;
             return true;
+        }
+
+        // Under the poker button and its landed glove, inside the safe area, off the main buttons.
+        Rect PokerCoinsBand(Rect band, float w, float h, Rect safe, float s)
+        {
+            float gap = 8f * s;
+            float safeTop = h - safe.yMax, safeBottom = h - safe.yMin; // safeArea is bottom-up
+            float minTop = Mathf.Max(safeTop, HomeBannerTop(h, safe, s));
+            var button = SplashPokerRect();
+            if (button.width > 2f)
+            {
+                var hand = PokerPointHand(GloveTargetAt(button, PokerGloveU, PokerGloveV), s);
+                float rowBottom = Mathf.Max(button.yMax, hand.height > 2f ? hand.yMax : 0f);
+                band.y = Mathf.Max(minTop, rowBottom + gap);
+            }
+            else band.y = CoinsBannerY(w, h, safe, s, minTop, band.y);
+            LiftOffMainButtons(ref band, w, h, safe, s, default, minTop);
+            if (band.yMax > safeBottom) band.y = safeBottom - band.height;
+            if (band.y < minTop) band.y = minTop;
+            return band;
         }
 
         // b95 (Brandon): the home coins banner seats with its top edge just under "LEVEL N", so the
