@@ -1514,12 +1514,53 @@ namespace FlockFive
             float claimW = disc.width > 2f ? disc.width * 0.72f : 80f;
             float claimH = disc.height > 2f ? disc.height * 0.52f : 40f;
             _dailyClaimPx = FitFont(_dailyClaim, "Claimed", claimW, claimH, 12, Mathf.Max(16, Mathf.RoundToInt(30f * s)));
-            // Claimed with a countdown: "Claimed" on top, "Ready in H:MM:SS" under it.
-            float smallH = disc.height > 2f ? disc.height * 0.30f : 28f;
-            _dailyClaimSmallPx = FitFont(_dailyClaim, "Claimed", claimW, smallH, 10, _dailyClaimPx);
-            float countW = disc.width > 2f ? disc.width * 0.80f : 90f;
-            float countH = disc.height > 2f ? disc.height * 0.17f : 16f;
-            _dailyCountPx = FitFont(_dailyLine, "Ready in 24:00:00", countW, countH, 8, Mathf.Max(10, Mathf.RoundToInt(16f * s)));
+            // Claimed with a countdown: "Claimed" on top, "Ready in H:MM:SS" under it (b134: bigger, bold, one line).
+            _dailyCount = DailyCountStyle(_dailyLine);
+            DailyClaimFit(_dailyClaim, _dailyCount, disc, s, out _dailyClaimSmallPx, out _dailyCountPx);
+        }
+
+        // b134 claimed-label-center. Same face centre as the LEVEL stack (#196 FaceMidFrac): the
+        // flower cap's top face sits a little below the cap rect's middle.
+        public const float ClaimFaceMidFrac = 0.537f;
+        public const float ClaimVerbHFrac = 0.34f;
+        public const float ClaimCountHFrac = 0.22f;
+        public const float ClaimGapFrac = 0.02f;
+        public const float ClaimVerbWFrac = 0.74f;
+        public const float ClaimCountWFrac = 0.86f;
+        public const string ClaimCountSample = "Ready in 24:00:00";
+        static GUIStyle _dailyCount;
+
+        // Bold, never wraps, never clips: the countdown shrinks to fit the width instead.
+        public static GUIStyle DailyCountStyle(GUIStyle proto)
+        {
+            var st = proto != null ? new GUIStyle(proto) : new GUIStyle();
+            st.wordWrap = false;
+            st.clipping = TextClipping.Overflow;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.fontStyle = FontStyle.Bold;
+            return st;
+        }
+
+        // Both lines as one stack, centred horizontally on the disc and vertically on the face mid.
+        public static void DailyClaimLabelRects(Rect disc, out Rect verbR, out Rect countR)
+        {
+            float vh = disc.height * ClaimVerbHFrac;
+            float ch = disc.height * ClaimCountHFrac;
+            float gap = disc.height * ClaimGapFrac;
+            float top = disc.y + disc.height * ClaimFaceMidFrac - (vh + gap + ch) * 0.5f;
+            float vw = disc.width * ClaimVerbWFrac;
+            float cw = disc.width * ClaimCountWFrac;
+            verbR = new Rect(disc.center.x - vw * 0.5f, top, vw, vh);
+            countR = new Rect(disc.center.x - cw * 0.5f, top + vh + gap, cw, ch);
+        }
+
+        // Font sizes fitted once per layout on the widest countdown, single line (wrap off).
+        public static void DailyClaimFit(GUIStyle verbStyle, GUIStyle countStyle, Rect disc, float s, out int verbPx, out int countPx)
+        {
+            DailyClaimLabelRects(disc, out var v, out var c);
+            var vs = new GUIStyle(verbStyle ?? new GUIStyle()) { wordWrap = false, fontStyle = FontStyle.Bold };
+            verbPx = FitFont(vs, "Claimed", Mathf.Max(8f, v.width), Mathf.Max(8f, v.height), 12, Mathf.Max(20, Mathf.RoundToInt(40f * s)));
+            countPx = FitFont(countStyle, ClaimCountSample, Mathf.Max(8f, c.width), Mathf.Max(8f, c.height), 9, Mathf.Max(14, Mathf.RoundToInt(26f * s)));
         }
 
         static void DrawDailyCopy(Rect titleR, Rect streakR, Rect bonusR, float s, float breathe, Texture2D glow)
@@ -2123,18 +2164,28 @@ namespace FlockFive
             var pressed = GUI.matrix;
             var disc = DrawPopupButton(flower, held, ready, 1f, true, DailyClaimBursts(ready, DailyBonus.ClaimedToday));
             bool count = !ready && DailyBonus.CountdownActive;
-            var labR = count
-                ? new Rect(disc.x, disc.y + disc.height * 0.16f, disc.width, disc.height * 0.36f)
-                : new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.56f);
-            int verbPx = count ? _dailyClaimSmallPx : _dailyClaimPx;
-            _dailyClaim.fontSize = verbPx;
-            int ink = Mathf.Clamp(Mathf.RoundToInt(verbPx * 0.12f), 2, 6);
-            StampOutlined(labR, DailyVerb(), _dailyClaim, new Color(0.28f, 0.12f, 0.04f), 2, ink);
             if (count)
             {
-                var cdR = new Rect(disc.x, disc.y + disc.height * 0.54f, disc.width, disc.height * 0.20f);
-                _dailyLine.fontSize = _dailyCountPx;
-                StampOutlined(cdR, DailyBonus.CountdownLine, _dailyLine, new Color(1f, 0.96f, 0.80f), 1, Mathf.Clamp(Mathf.RoundToInt(_dailyCountPx * 0.10f), 1, 3));
+                // b134: one centred stack on the top face, bold, heavy dark outline, timer on one line.
+                DailyClaimLabelRects(disc, out var verbR, out var cdR);
+                var verbSt = _dailyClaim.fontStyle;
+                bool verbWrap = _dailyClaim.wordWrap;
+                _dailyClaim.fontStyle = FontStyle.Bold;
+                _dailyClaim.wordWrap = false;
+                _dailyClaim.fontSize = _dailyClaimSmallPx;
+                StampOutlined(verbR, DailyVerb(), _dailyClaim, new Color(1f, 0.97f, 0.86f), 0, Mathf.Clamp(Mathf.RoundToInt(_dailyClaimSmallPx * 0.14f), 2, 7));
+                _dailyClaim.fontStyle = verbSt;
+                _dailyClaim.wordWrap = verbWrap;
+                if (_dailyCount == null) _dailyCount = DailyCountStyle(_dailyLine);
+                _dailyCount.fontSize = _dailyCountPx;
+                StampOutlined(cdR, DailyBonus.CountdownLine, _dailyCount, new Color(1f, 0.93f, 0.62f), 0, Mathf.Clamp(Mathf.RoundToInt(_dailyCountPx * 0.16f), 2, 5));
+            }
+            else
+            {
+                var labR = new Rect(disc.x, disc.y + disc.height * 0.22f, disc.width, disc.height * 0.56f);
+                _dailyClaim.fontSize = _dailyClaimPx;
+                int ink = Mathf.Clamp(Mathf.RoundToInt(_dailyClaimPx * 0.12f), 2, 6);
+                StampOutlined(labR, DailyVerb(), _dailyClaim, new Color(0.28f, 0.12f, 0.04f), 2, ink);
             }
             if (!ready)
             {
