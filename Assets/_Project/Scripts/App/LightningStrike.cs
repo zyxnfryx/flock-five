@@ -16,8 +16,8 @@ namespace FlockFive
         public static bool GardenEligible(int index) => GardenStorm.StrikeAllowed(index + 1);
 
         // b126 (Brandon): the intro strike belongs to garden 3 only. One gate: at least IntroDelay seconds in AND
-        // visible rain (Wet > IntroWet; glass drops spawn from StormGlass.WetOn 0.22). Garden 3's short onset puts
-        // full rain on screen by then, still before a realistic fastest 9-move clear (~6.3 s). Never carried into
+        // visible rain (Wet > IntroWet; glass drops spawn from StormGlass.WetOn 0.22). Garden 3's short onset has glass drops
+        // from ~2.3 s and rain at Wet ~0.58 when the 3 s gate opens, still before a realistic fastest 9-move clear (~6.3 s). Never carried into
         // another garden: from garden 4 on there is no owed strike, only the normal dice.
         public const float IntroDelay = 3.0f;
         public const float IntroWet = 0.3f;
