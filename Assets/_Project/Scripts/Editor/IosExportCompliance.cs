@@ -28,12 +28,19 @@ public static class IosExportCompliance
         plist.root.SetBoolean("UnityNotificationRequestAuthorizationOnAppLaunch", false);
         plist.root.SetBoolean("UnityNotificationRequestAuthorizationForRemoteNotificationsOnAppLaunch", false);
         AddSkAdNetworkIds(plist);
+        // Native iPad (not iPhone compatibility mode), portrait only.
+        plist.root.SetBoolean("UIRequiresFullScreen", true);
+        var ipadOrient = plist.root.CreateArray("UISupportedInterfaceOrientations~ipad");
+        ipadOrient.AddString("UIInterfaceOrientationPortrait");
         plist.WriteToFile(plistPath);
 
         var projPath = PBXProject.GetPBXProjectPath(path);
         var proj = new PBXProject();
         proj.ReadFromFile(projPath);
         proj.AddFrameworkToProject(proj.GetUnityFrameworkTargetGuid(), "AppTrackingTransparency.framework", true);
+        // iPhone + iPad. Overrides PlayerSettings targetDevice 0 (iPhone only).
+        proj.SetBuildProperty(proj.GetUnityMainTargetGuid(), "TARGETED_DEVICE_FAMILY", "1,2");
+        proj.SetBuildProperty(proj.GetUnityFrameworkTargetGuid(), "TARGETED_DEVICE_FAMILY", "1,2");
         proj.WriteToFile(projPath);
     }
 
