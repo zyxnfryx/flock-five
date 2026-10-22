@@ -8376,10 +8376,15 @@ namespace FlockFive
             x = new Rect(safe.xMax - inset - xs, back.center.y - xs * 0.5f, xs, xs);
         }
 
+        const float BackMedalMaxPt = 56f;
         static Rect BackMedalBox(float s, float top, Rect safe)
         {
             float size = 101.2f * Mathf.Clamp(s, 1f, 1.35f) * DeviceFit.ControlK();
-            if (size < 44f) size = 44f;
+            // iPad fix: cap the medal in points so it stops growing with the screen.
+            // Points from Screen.dpi (~163 dpi per 1x point); falls back to s if dpi is unknown.
+            float ptPx = Screen.dpi > 1f ? Screen.dpi / 163f : Mathf.Max(1f, s);
+            size = Mathf.Min(size, BackMedalMaxPt * ptPx);
+            size = Mathf.Max(size, 44f * ptPx, 44f);
             float x = Mathf.Max(16f, safe.xMin + 10f);
             return new Rect(x, top, size, size);
         }
@@ -13137,7 +13142,7 @@ namespace FlockFive
         // Page geometry the anchors read, refreshed by DrawPokerPage every pass.
         struct PokerCapGeo
         {
-            public Rect Row, Bet, Act, Tab;
+            public Rect Row, Bet, Act, Tab, Back;
             public float TitleBottom, LogoClear;
         }
         PokerCapGeo _pokerCapGeo;
@@ -13687,6 +13692,7 @@ namespace FlockFive
                 Bet = betR,
                 Act = actR,
                 Tab = payTab,
+                Back = back,
                 TitleBottom = below,
                 LogoClear = Mathf.Max(below, halo.yMax)
             };

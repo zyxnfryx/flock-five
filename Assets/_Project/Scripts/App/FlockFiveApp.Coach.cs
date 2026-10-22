@@ -3790,9 +3790,7 @@ namespace FlockFive
             bool pokerBack = spot == "poker.back";
             if (pokerBack)
             {
-                var g = _pokerCapGeo;
-                var cover = g.Bet.width > 2f && g.Act.width > 2f ? Rect.MinMaxRect(Mathf.Min(g.Bet.xMin, g.Act.xMin), Mathf.Min(g.Bet.yMin, g.Act.yMin), Mathf.Max(g.Bet.xMax, g.Act.xMax), Mathf.Max(g.Bet.yMax, g.Act.yMax)) : (g.Bet.width > 2f ? g.Bet : g.Act);
-                band = CaptionLayout.BandCovering(band, cover, w, 6f * s);
+                band = PokerBackBand(band, screenH, safe, s);
                 bottomSeat = true;
             }
             if (!bee && !adHand && !bottomSeat)
@@ -3848,6 +3846,21 @@ namespace FlockFive
             BannerSkip = "";
             BannerUses++;
             return true;
+        }
+
+        // iPad fix: 'Tap the back button' seats near the back medal (top-left): under the back
+        // medal, logo/halo and PAY TABLE tab, above the dealt row, inside the safe area.
+        Rect PokerBackBand(Rect band, float h, Rect safe, float s)
+        {
+            var g = _pokerCapGeo;
+            float gap = 8f * s;
+            float safeTop = h - safe.yMax, safeBottom = h - safe.yMin; // safeArea is bottom-up
+            float y = Mathf.Max(safeTop, g.Back.yMax, g.LogoClear, g.Tab.yMax) + gap;
+            if (g.Row.height > 2f && y + band.height > g.Row.yMin - gap)
+                y = Mathf.Max(Mathf.Max(safeTop, g.Back.yMax + gap), g.Row.yMin - gap - band.height);
+            if (y + band.height > safeBottom) y = safeBottom - band.height;
+            band.y = y;
+            return band;
         }
 
         // Under the poker button and its landed glove, inside the safe area, off the main buttons.
