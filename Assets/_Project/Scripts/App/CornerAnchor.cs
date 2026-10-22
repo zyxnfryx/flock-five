@@ -51,6 +51,13 @@ namespace FlockFive
         // 44 pt minimum tap target, in px (Screen.dpi when known, else 1 px per pt).
         public static float MinTapPx(float dpi) => 44f * (dpi > 1f ? dpi / 163f : 1f);
 
+        // Right edge of the widest feeder layout (3 feeders: Triple + BulbHalf), plus air, in world x.
+        // Every feeder count stays left of it, so Restart never moves between gardens.
+        public const float FeederRightWorld = FeederRow.Triple + FeederRow.BulbHalf + 0.12f;
+        public static float FeederRightGui(float w, float h) => WorldToGui(w, h, FeederRightWorld, 0f).x;
+
+        // Top-right gutter of the top bar: right of every feeder bulb, above every branch / bird /
+        // perch reach, inside the safe area.
         public static Rect TopBarRestart(float w, float h, Rect safe, float scale, float top)
         {
             if (safe.width < 2f || safe.height < 2f) safe = new Rect(0f, 0f, w, h);
@@ -58,12 +65,11 @@ namespace FlockFive
             float pad = 6f * scale;
             float limit = Mathf.Min(top, PlayfieldTopGui(w, h)) - pad;
             float y = safeTop + pad;
-            float size = Mathf.Min(SizeRef * scale, limit - y);
+            float left = FeederRightGui(w, h) + pad;
+            float right = Mathf.Min(safe.xMax, w) - pad;
+            float size = Mathf.Min(SizeRef * scale, Mathf.Min(limit - y, right - left));
             size = Mathf.Max(size, MinTapPx(Screen.dpi));
-            var stamp = FlockFiveApp.GardenStampBox(w, h, safe, scale);
-            float x = stamp.xMax + pad;
-            if (x + size > safe.xMax - pad) x = Mathf.Max(safe.xMin + pad, safe.xMax - pad - size);
-            return new Rect(x, y, size, size);
+            return new Rect(right - size, y, size, size);
         }
 
         static void GardenCore(float screenW, float screenH, Rect safe,

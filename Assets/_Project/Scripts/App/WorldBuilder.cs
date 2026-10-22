@@ -73,10 +73,21 @@ namespace FlockFive
         {
             get
             {
-                float legacy = 8.12f + CamOrtho * (PortraitLock.TallFactor() - 1f);
-                float safe = ScreenTop() - SafeTopWorld() - FeederSafeMargin - FeederCrown;
-                return Mathf.Min(legacy, safe);
+                float h = Mathf.Max(1f, PhoneArea.H);
+                var sa = PhoneArea.Safe;
+                float inset = sa.width < 2f || sa.height < 2f ? 0f : Mathf.Max(0f, h - sa.yMax) / h;
+                return FeederYFor(PortraitLock.TallFactor(), inset);
             }
+        }
+
+        // Same as FeederY for a given tall factor and top safe inset (fraction of the screen height).
+        public static float FeederYFor(float tall, float safeTopNorm)
+        {
+            float legacy = 8.12f + CamOrtho * (tall - 1f);
+            float top = CamRestY + CamOrtho * tall;
+            float inset = safeTopNorm > 0.40f ? 0f : Mathf.Max(0f, safeTopNorm) * (CamOrtho * tall * 2f);
+            float safe = top - inset - FeederSafeMargin - FeederCrown;
+            return Mathf.Min(legacy, safe);
         }
 
         // Highest a perched bird's crown may sit so it stays clear of the feeder tray.

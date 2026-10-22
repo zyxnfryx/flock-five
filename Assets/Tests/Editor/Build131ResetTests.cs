@@ -47,6 +47,63 @@ namespace FlockFive.Editor
                 Check("restart off playfield " + tag, offField && offAd && inSafe && bigEnough && offHive,
                     "restart " + rs.xMin.ToString("0") + "," + rs.yMin.ToString("0") + " " + rs.width.ToString("0") + "px yMax " + rs.yMax.ToString("0")
                     + " fieldTop " + field.ToString("0") + " hudTop " + hudTop.ToString("0"));
+
+                // Hit order (HitHud then HitBranch / HitFeeder), pure geometry at this size.
+                float tall = CornerAnchor.TallFor(w, h);
+                float topNorm = (h - safe.yMax) / h;
+                // A tap on Restart's centre reaches Restart.
+                Check("tap reaches restart " + tag, FlockFiveApp.HudClaim(rs.center, rs, hv, true, hudTop) == FlockFiveApp.HudTap.Restart, rs.center.ToString());
+                // Feeders, 2 and 3: Restart clear of every bulb, and a bulb tap is not Restart.
+                float fy = WorldBuilder.FeederYFor(tall, topNorm);
+                for (int count = 2; count <= 3; count++)
+                {
+                    bool fok = true; string fd = "";
+                    for (int i = 0; i < count; i++)
+                    {
+                        float fx = FeederRow.X(i, count);
+                        var a = CornerAnchor.WorldToGui(w, h, fx - FeederRow.BulbHalf, fy + 1.34f);
+                        var b = CornerAnchor.WorldToGui(w, h, fx + FeederRow.BulbHalf, fy - 1.47f);
+                        var bulb = Rect.MinMaxRect(a.x, a.y, b.x, b.y);
+                        if (bulb.Overlaps(rs) || FlockFiveApp.HudClaim(bulb.center, rs, hv, true, hudTop) == FlockFiveApp.HudTap.Restart)
+                        { fok = false; fd += " feeder" + i + " " + bulb; }
+                    }
+                    Check("restart clear of " + count + " feeders " + tag, fok, "restart " + rs + fd);
+                }
+                // Selected birds sent to the lower-left empty branch above the ad row, its right mirror,
+                // and both ad branches: the tap is not claimed by the HUD and the nearest branch wood is
+                // the target, within HitBranch's sending reach (3.25; 3.45 for an empty branch).
+                float limbX = WorldBuilder.EdgeX(null, 1f);
+                int low = WorldBuilder.Rows - 1;
+                float rowY = WorldBuilder.RowY0For(tall) - low * WorldBuilder.RowGap;
+                var woods = new System.Collections.Generic.List<Rect>();
+                var names = new System.Collections.Generic.List<string>();
+                for (int r = 0; r < WorldBuilder.Rows; r++)
+                {
+                    float y = WorldBuilder.RowY0For(tall) - r * WorldBuilder.RowGap;
+                    woods.Add(BranchHit.WoodRect(new Vector2(-limbX, y), false, false)); names.Add("L" + r);
+                    woods.Add(BranchHit.WoodRect(new Vector2(limbX, y), true, false)); names.Add("R" + r);
+                }
+                woods.Add(BranchHit.WoodRect(new Vector2(-limbX, WorldBuilder.GiftY), false, true)); names.Add("adL");
+                woods.Add(BranchHit.WoodRect(new Vector2(limbX, WorldBuilder.GiftY), true, true)); names.Add("adR");
+                string[] want = { "L" + low, "R" + low, "adL", "adR" };
+                foreach (var target in want)
+                {
+                    var wood = woods[names.IndexOf(target)];
+                    // Centre, outer (screen-edge) end, inner end, and a perch tap just above the wood.
+                    var taps = new[] { wood.center, new Vector2(Mathf.Lerp(wood.xMin, wood.xMax, target.EndsWith("R") || target == "adR" ? 0.85f : 0.15f), wood.center.y),
+                        new Vector2(Mathf.Lerp(wood.xMin, wood.xMax, target.EndsWith("R") || target == "adR" ? 0.15f : 0.85f), wood.center.y), new Vector2(wood.center.x, wood.center.y + 0.25f) };
+                    bool ok = true; string why = "";
+                    foreach (var p in taps)
+                    {
+                        var gui = CornerAnchor.WorldToGui(w, h, p.x, p.y);
+                        var claim = FlockFiveApp.HudClaim(gui, rs, hv, true, hudTop);
+                        int best = -1; float bd = float.MaxValue;
+                        for (int k = 0; k < woods.Count; k++) { float d = BranchHit.RectDist(woods[k], p); if (d < bd) { bd = d; best = k; } }
+                        if (claim != FlockFiveApp.HudTap.None || best < 0 || names[best] != target || bd > 3.25f)
+                        { ok = false; why += " tap " + p + " claim " + claim + " nearest " + (best >= 0 ? names[best] : "-") + " d " + bd.ToString("0.00"); }
+                    }
+                    Check("send reaches " + target + " " + tag, ok, why);
+                }
             }
             DeviceFit.TestWindow = null;
             Debug.Log("[build131] " + (fail == 0 ? "ALL OK " + pass : "FAILED " + fail + " passed " + pass));

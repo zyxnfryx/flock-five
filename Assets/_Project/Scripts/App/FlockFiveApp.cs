@@ -6536,22 +6536,31 @@ namespace FlockFive
                 CloseLevelHive();
                 return true;
             }
-            if (gui.y < top) return true;
+            // b131: Restart lives in the top bar (above top), so it is checked before the top-bar swallow.
             // b103: while a garden lesson glove is up, Restart and Hive only count under the glove.
             if (CueGloveOwnsHud() && (restart.Contains(gui) || (HiveReachable() && hive.Contains(gui))))
                 return !GloveTapHits(screen) ? true : HudGloveTap(screen, restart, hive, gui);
-            if (restart.Contains(gui))
+            switch (HudClaim(gui, restart, hive, HiveReachable(), top))
             {
-                Restart();
-                return true;
+                case HudTap.Restart: Restart(); return true;
+                case HudTap.TopBar: return true;
+                case HudTap.Hive: OpenLevelHive(); return true;
             }
-            if (HiveReachable() && hive.Contains(gui))
-            {
-                OpenLevelHive();
-                return true;
-            }
-            HudLayout(out _, out _, out float bot, out _, out _);
-            return gui.y > PhoneArea.H - bot - 8f;
+            // b131: no bottom-band swallow any more. It used to eat every tap below the corner-button
+            // line (the old bottom-left Restart seat), which on b105 layouts covered the lower-left branch
+            // above the ad row, so a send to it fell through as an empty tap and deselected.
+            return false;
+        }
+
+        public enum HudTap { None, Restart, TopBar, Hive }
+
+        // Order HitHud applies after the glove path. None means the tap goes on to the board.
+        public static HudTap HudClaim(Vector2 gui, Rect restart, Rect hive, bool hiveOn, float top)
+        {
+            if (restart.width > 2f && restart.Contains(gui)) return HudTap.Restart;
+            if (gui.y < top) return HudTap.TopBar;
+            if (hiveOn && hive.Contains(gui)) return HudTap.Hive;
+            return HudTap.None;
         }
 
         // Item 8 profiling: OnGUI by event, and the render tail to end of frame.
