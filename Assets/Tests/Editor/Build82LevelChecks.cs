@@ -48,6 +48,18 @@ namespace FlockFive
             new Proof(35, "13>10 11>9 1>2 5>1 6>3 4>2 7>9 1>6 12>13 0>2 10>11 13>10 12>13 11>12 1>0 5>1", 3, 5, new[] { 0, 8, 5, 0, 10 }),
             new Proof(36, "10>13 2>6 12>10 5>12 9>13 8>5 3>6", 3, 12, new[] { 5, 1, 10, 7, 14, 4 }),
             new Proof(37, "3>5 1>3 2>1 10>12 8>10 8>9", 9, 8, new[] { 11, 3, 8, 12, 3, 8, 8 }),
+            // Build 113: generated gardens 39-50 (43 ostrich exempt), proofs from TrapProbe.FindPlayed.
+            new Proof(39, "7>8 11>13 0>1", 4, 6, new[] { 10, 10, 1, 10, 6, 2, 14, 3, 11, 4 }),
+            new Proof(40, "2>4 6>2 3>5 12>10 11>9 11>12 10>12 4>2 2>4 4>2 2>4", 8, 11, new[] { 7, 12, 7, 11, 3, 9, 12, 9, 11, 6 }),
+            new Proof(41, "5>3 1>2 8>9 10>12 4>5 4>1", 3, 4, new[] { 9, 13, 9, 13, 9, 11 }),
+            new Proof(42, "7>10 6>7 1>0 1>7 4>1 10>8 0>3 8>10 6>4 10>8 8>10 10>8 6>2 2>6 2>4 2>6 2>7 7>2 2>7 7>2", 11, 7, new[] { 6, 14, 6, 1, 11, 4, 11 }),
+            new Proof(44, "13>7 2>1 9>13 13>8 5>13 12>11 7>9 0>6 1>5 2>6 9>7 5>1 4>5 3>0 13>3 2>13 6>4 3>6 8>12 6>5 12>8 13>1 10>13 12>10 10>11 4>2 5>6 0>5 12>13 9>12 1>0 3>5 0>1 7>12 9>8 2>4", 9, 12, new[] { 13, 9 }),
+            new Proof(45, "2>5 9>12 3>1 4>3 10>8 4>6 10>11 10>13 5>10 1>4 3>5 10>1 1>10 5>3 1>2", 8, 1, new[] { 14, 7, 10, 14 }),
+            new Proof(46, "12>10", 5, 1, new[] { 3, 9, 3, 8, 8 }),
+            new Proof(47, "3>6 12>13", 12, 11, new[] { 9, 11, 0, 4, 8, 0, 13, 5, 5, 11, 6, 0 }),
+            new Proof(48, "0>2 9>7 8>7 6>0 8>13 1>2 5>6 13>8 2>5 12>13 0>1 5>2 7>12 2>5 12>7 1>0", 1, 4, new[] { 5, 7, 10, 1, 14, 4, 14 }),
+            new Proof(49, "12>7 10>9 5>0 3>2 3>5 12>10 13>12", 6, 3, new[] { 11, 3, 12, 5, 8 }),
+            new Proof(50, "7>10 1>0 1>6 1>0", 1, 6, new[] { 4, 9, 4, 9, 13, 7, 7, 13 }),
         };
 
         static int IndexOf(int number)
@@ -183,7 +195,7 @@ namespace FlockFive
                 if (anyMix) mixing++;
                 if (anyMulti && !anyMix && nomix == null) nomix = "L" + lv.Number;
             }
-            Check("ladder-count", LevelData.Count == 38, "count " + LevelData.Count);
+            Check("ladder-count", LevelData.Count == 50, "count " + LevelData.Count);
             Check("ladder-kit-sets", bad == null, bad ?? "every garden: each color <= 3 sets, one set per kit");
             Check("ladder-winnable", lost == null, lost ?? "all gardens Winnable with and without the gift");
             Check("ladder-kits-mix", nomix == null && mixing == LevelData.Count, "gardens mixing kits within a color " + mixing + "/" + LevelData.Count);
@@ -268,7 +280,7 @@ namespace FlockFive
             var covered = new HashSet<int>();
             foreach (var pr in Proofs) covered.Add(pr.Level);
             bool all = true;
-            for (int n = 16; n <= 37; n++) if ((n < 18 || n > 25) && n != 27 && n != 31 && n != 32 && !covered.Contains(n)) all = false;
+            for (int n = 16; n <= 50; n++) if ((n < 18 || n > 25) && n != 27 && n != 31 && n != 32 && n != 38 && n != 43 && !covered.Contains(n)) all = false;
             Check("trap-coverage-16-29", all, covered.Count + " gardens");
         }
     }

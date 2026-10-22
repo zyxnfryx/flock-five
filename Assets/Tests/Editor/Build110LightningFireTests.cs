@@ -120,21 +120,29 @@ namespace FlockFive.Editor
             var burned = new bool[2];
             var win = EmptyGift();
             int bad = 0;
-            int dice = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, false, 1, 0.5f);
-            int owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true, 1, 0.5f);
+            // b126: the owed intro strike is garden 3's (index 2). A losing roll misses on the dice; owed skips them.
+            int dice = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, false, 2, 0.5f);
+            int owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true, 2, 0.5f);
             if (dice >= 0) bad++;
             if (owed != 0) bad++;
-            Check("owed-skips-the-dice", bad == 0, "dice=" + dice + " owed=" + owed);
+            // ...and Decide only hands out an owed (Intro) plan on garden 3, behind the 3 s + Wet > 0.3 gate.
+            var g3 = LightningStrike.Decide(2, false, false, LightningStrike.IntroDelay, true, false, false, false, 0.58f);
+            var g3Early = LightningStrike.Decide(2, false, true, LightningStrike.IntroDelay - 0.1f, true, false, false, false, 1f);
+            var g4 = LightningStrike.Decide(3, false, true, 60f, true, false, true, false, 1f);
+            if (g3 != LightningStrike.Plan.Intro || g3Early != LightningStrike.Plan.None || g4 != LightningStrike.Plan.Roll) bad++;
+            Check("owed-skips-the-dice", bad == 0, "dice=" + dice + " owed=" + owed + " g3=" + g3 + " g3early=" + g3Early + " g4=" + g4);
 
             // b113: garden 1 (index 0) never strikes: not by dice, not owed, not forced. Garden 2 (index 1) is fine.
             int g1Dice = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.0f, false, false, 0, 1f);
             int g1Owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true, 0, 1f);
             int g1Force = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.0f, true, true, 0, 1f);
             int g2Owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true, 1, 0f);
-            Check("garden-1-never-strikes-garden-2-owed",
-                g1Dice < 0 && g1Owed < 0 && g1Force < 0 && g2Owed == 0
-                && !LightningStrike.GardenEligible(0) && LightningStrike.GardenEligible(1) && LightningStrike.MinGarden == 1,
-                "g1=" + g1Dice + "/" + g1Owed + "/" + g1Force + " g2owed=" + g2Owed);
+            int g3Owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true, 2, 0f);
+            Check("gardens-1-2-never-strike-garden-3-owed",
+                g1Dice < 0 && g1Owed < 0 && g1Force < 0 && g2Owed < 0 && g3Owed == 0
+                && !LightningStrike.GardenEligible(0) && !LightningStrike.GardenEligible(1) && LightningStrike.GardenEligible(2)
+                && LightningStrike.MinGarden == 2,
+                "g1=" + g1Dice + "/" + g1Owed + "/" + g1Force + " g2owed=" + g2Owed + " g3owed=" + g3Owed);
 
             int dry = LightningStrike.TryPick(win, claimed, burned, false, 0, 0.0f, false, true);
             int capped = LightningStrike.TryPick(win, claimed, burned, true, 1, 0.0f, false, true);

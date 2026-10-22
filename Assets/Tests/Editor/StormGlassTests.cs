@@ -641,7 +641,7 @@ namespace FlockFive.Editor
 
                 string gs = File.ReadAllText("Assets/_Project/Scripts/App/GardenStorm.cs");
                 Check("onset-wired",
-                    gs.Contains("_wet = Mathf.Min(_wet, StormGlass.OnsetMul(_gardenPlay));")
+                    gs.Contains("_wet = Mathf.Min(_wet, StormGlass.OnsetMul(_gardenPlay, _onsetDelay));")
                     && gs.Contains("_gardenPlay = FirstWait + 4f;") && gs.Contains("_gardenPlay = 0f;")
                     && gs.Contains("PlayClock.Delta") && gs.Contains("_gardenPlay += dt;"),
                     "OnsetMul caps _wet from the garden clock");
