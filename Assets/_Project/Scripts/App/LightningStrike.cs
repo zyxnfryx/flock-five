@@ -10,9 +10,10 @@ namespace FlockFive
         public const string PrefKey = "flockfive.lightning";
         public const bool RemoteDefault = true;
         public const int MaxPerLevel = 1;
-        // b113 (Brandon): garden 1 (LevelData index 0) never gets lightning.
-        public const int MinGarden = 1;
-        public static bool GardenEligible(int garden) => garden >= MinGarden;
+        // b126 (Brandon): staged by GardenStorm.StageFor. Callers pass the 0-based LevelData INDEX; the stage is
+        // keyed by garden number (index + 1). First strike on garden 3 (index 2); gardens 1-2 never strike.
+        public const int MinGarden = GardenStorm.FirstStrikeGarden - 1;
+        public static bool GardenEligible(int index) => GardenStorm.StrikeAllowed(index + 1);
 
         // b113 (Brandon): after a strike there is a cooldown, then the chance ramps garden by garden until the next
         // one. since = eligible gardens entered since the last strike, counting the current one (the garden right

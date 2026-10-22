@@ -131,10 +131,12 @@ namespace FlockFive.Editor
             int g1Owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true, 0, 1f);
             int g1Force = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.0f, true, true, 0, 1f);
             int g2Owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true, 1, 0f);
-            Check("garden-1-never-strikes-garden-2-owed",
-                g1Dice < 0 && g1Owed < 0 && g1Force < 0 && g2Owed == 0
-                && !LightningStrike.GardenEligible(0) && LightningStrike.GardenEligible(1) && LightningStrike.MinGarden == 1,
-                "g1=" + g1Dice + "/" + g1Owed + "/" + g1Force + " g2owed=" + g2Owed);
+            int g3Owed = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.99f, false, true, 2, 0f);
+            Check("gardens-1-2-never-strike-garden-3-owed",
+                g1Dice < 0 && g1Owed < 0 && g1Force < 0 && g2Owed < 0 && g3Owed == 0
+                && !LightningStrike.GardenEligible(0) && !LightningStrike.GardenEligible(1) && LightningStrike.GardenEligible(2)
+                && LightningStrike.MinGarden == 2,
+                "g1=" + g1Dice + "/" + g1Owed + "/" + g1Force + " g2owed=" + g2Owed + " g3owed=" + g3Owed);
 
             int dry = LightningStrike.TryPick(win, claimed, burned, false, 0, 0.0f, false, true);
             int capped = LightningStrike.TryPick(win, claimed, burned, true, 1, 0.0f, false, true);

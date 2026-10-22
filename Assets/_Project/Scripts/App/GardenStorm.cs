@@ -131,8 +131,23 @@ namespace FlockFive
 
         public static GardenStorm Attach(Transform root, GardenScene scene) => Attach(root, scene, 0);
 
-        // Brandon: garden 1 is always clear weather for new players. No rain, no storm, no thunder.
-        public static bool StormAllowed(int garden) => garden != 1;
+        // b126 (Brandon): the storm intro is staged by garden NUMBER (1-based, LevelData.DisplayNumber). One helper.
+        //   1 clear (no rain, storm, thunder) | 2 rain only, no strike | 3 rain + the guaranteed first strike
+        //   (and its lightning caption), with a short first wait | 4+ unchanged.
+        public enum StormStage { Clear = 0, RainOnly = 1, FirstStrike = 2, Normal = 3 }
+        public const int FirstStrikeGarden = 3;
+        public const float FirstStrikeWait = 6f;
+        public static StormStage StageFor(int garden)
+        {
+            if (garden <= 1) return StormStage.Clear;
+            if (garden < FirstStrikeGarden) return StormStage.RainOnly;
+            if (garden == FirstStrikeGarden) return StormStage.FirstStrike;
+            return StormStage.Normal;
+        }
+        public static bool StormAllowed(int garden) => StageFor(garden) != StormStage.Clear;
+        public static bool StrikeAllowed(int garden) => StageFor(garden) >= StormStage.FirstStrike;
+        public static float FirstWaitFor(int garden) => StageFor(garden) == StormStage.FirstStrike ? FirstStrikeWait : FirstWait;
+        float _firstWait = FirstWait;
         bool _clear;
         public bool IsClear => _clear;
 
@@ -142,7 +157,8 @@ namespace FlockFive
             go.transform.SetParent(root, false);
             var gs = go.AddComponent<GardenStorm>();
             gs._snow = UsesSnow(scene);
-            gs._clear = !StormAllowed(garden);
+            gs._clear = garden > 0 && !StormAllowed(garden);
+            gs._firstWait = garden > 0 ? FirstWaitFor(garden) : FirstWait;
             return gs;
         }
 
@@ -520,10 +536,12 @@ namespace FlockFive
             top = _frT;
         }
 
-        static bool WantStorm(float play)
+        static bool WantStorm(float play) => WantStorm(play, FirstWait);
+
+        public static bool WantStorm(float play, float firstWait)
         {
-            if (play < FirstWait) return false;
-            float u = play - FirstWait;
+            if (play < firstWait) return false;
+            float u = play - firstWait;
             float cycle = StormLen + ClearLen;
             return (u % cycle) < StormLen;
         }
@@ -535,7 +553,7 @@ namespace FlockFive
             if (dt > 0.0001f)
                 _step = _step <= 0f ? dt : _step + (dt - _step) * 0.2f;
             _gardenPlay += dt;
-            float want = !_clear && (_snow || WantStorm(_gardenPlay)) ? 1f : 0f;
+            float want = !_clear && (_snow || WantStorm(_gardenPlay, _firstWait)) ? 1f : 0f;
             // b117: a solved level (win, finale, Double/Collect) ends the rain streaks quickly; the clock keeps running.
             bool halted = FlockFiveApp.RainHalted;
             if (halted) want = 0f;

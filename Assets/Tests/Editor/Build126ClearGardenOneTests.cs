@@ -19,7 +19,19 @@ namespace FlockFive.Editor
 
             Check("garden-1-no-storm", !GardenStorm.StormAllowed(1), "");
             Check("garden-2-storms", GardenStorm.StormAllowed(2), "");
-            Check("garden-1-no-lightning", !LightningStrike.GardenEligible(1), "");
+            Check("garden-1-no-lightning", !LightningStrike.GardenEligible(0), "index 0");
+            Check("stages", GardenStorm.StageFor(1) == GardenStorm.StormStage.Clear && GardenStorm.StageFor(2) == GardenStorm.StormStage.RainOnly
+                && GardenStorm.StageFor(3) == GardenStorm.StormStage.FirstStrike && GardenStorm.StageFor(4) == GardenStorm.StormStage.Normal
+                && GardenStorm.StageFor(40) == GardenStorm.StormStage.Normal, "1 clear, 2 rain, 3 first strike, 4+ normal");
+            Check("garden-2-rain-no-strike", GardenStorm.StormAllowed(2) && !LightningStrike.GardenEligible(1), "");
+            Check("garden-3-first-strike", LightningStrike.GardenEligible(2) && GardenStorm.FirstWaitFor(3) < GardenStorm.FirstWait
+                && GardenStorm.WantStorm(GardenStorm.FirstStrikeWait + 0.1f, GardenStorm.FirstWaitFor(3)), "wait " + GardenStorm.FirstWaitFor(3) + "s");
+            Check("garden-4-unchanged", GardenStorm.FirstWaitFor(4) == GardenStorm.FirstWait && LightningStrike.GardenEligible(3), "");
+            // Brandon: the first strike and the sparrow's first visit never share a garden.
+            int firstSparrow = 0;
+            for (int g = 1; g <= 20 && firstSparrow == 0; g++) if (PestSchedule.CapFor(g) > 0) firstSparrow = g;
+            Check("first-strike-not-first-sparrow", firstSparrow == 4 && firstSparrow != GardenStorm.FirstStrikeGarden,
+                "strike " + GardenStorm.FirstStrikeGarden + " sparrow " + firstSparrow);
 
             // Run a garden-1 storm sheet well past FirstWait and through a full storm window.
             var root = new GameObject("clear-g1-root");
