@@ -82,20 +82,35 @@ namespace FlockFive
             new Level { Number = 36, Id = "garden-36", Title = "Garden 36", Make = Garden36 },
             new Level { Number = 37, Id = "garden-37", Title = "Garden 37", Make = Garden37 },
             new Level { Number = 38, Id = "garden-38", Title = "Garden 38", Make = Garden38Ostrich, Solo = true,
-                Feeders = 3, Ostrich = true, PeckSeed = 879204 }
+                Feeders = 3, Ostrich = true, PeckSeed = 879204 },
+            new Level { Number = 39, Id = "garden-39", Title = "Garden 39", Make = Garden39 },
+            new Level { Number = 40, Id = "garden-40", Title = "Garden 40", Make = Garden40 },
+            new Level { Number = 41, Id = "garden-41", Title = "Garden 41", Make = Garden41 },
+            new Level { Number = 42, Id = "garden-42", Title = "Garden 42", Make = Garden42 },
+            new Level { Number = 43, Id = "garden-43", Title = "Garden 43", Make = Garden43Ostrich, Solo = true,
+                Feeders = 3, Ostrich = true, PeckSeed = 304115 },
+            new Level { Number = 44, Id = "garden-44", Title = "Garden 44", Make = Garden44 },
+            new Level { Number = 45, Id = "garden-45", Title = "Garden 45", Make = Garden45 },
+            new Level { Number = 46, Id = "garden-46", Title = "Garden 46", Make = Garden46 },
+            new Level { Number = 47, Id = "garden-47", Title = "Garden 47", Make = Garden47 },
+            new Level { Number = 48, Id = "garden-48", Title = "Garden 48", Make = Garden48 },
+            new Level { Number = 49, Id = "garden-49", Title = "Garden 49", Make = Garden49 },
+            new Level { Number = 50, Id = "garden-50", Title = "Garden 50", Make = Garden50 }
         };
 
-        // Garden 38 (ostrich + bees + leaf-lock) is the ladder entry numbered 38.
+        // Garden 38 (ostrich, no obstacles) is the ladder entry numbered 38.
         public static Level Garden38Level => Peek(37);
 
         // Authored ostrich boards (ostrich-impl.txt), notation shared with the C# harness and
         // ostrich.py: limbs ' / ' trunk->tip; bird = [?=shrouded]Color(RGTVP)+Kit(NCB); '-' empty.
         public const string Garden27Spec = "VCVCTCRC / VCTBRCTB / GCTC / GCRCGCTB / GCTCGCRC / TCTCTB / TBVCRCVC | live=GTT queue=RV";
         public const string Garden32Spec = "RBVCTCRB / ?TCGC / VCGCGC / VCVCVC / RBTBRCTB / GCTCRCRB / TBRCRB / RCGCTC / ?TBRCTCTB / - | live=TTV queue=GRR";
-        public const string Garden38Spec = "TBRN / TBGCTB / GCGC / GCTBVC / VCRNVCVC?RN / ?TB?RNTNTN / TNTN / ?TNGCRNVC / - | live=TTG queue=VR breeze";
+        public const string Garden38Spec = "TBRN / TBGCTB / GCGC / GCTBVC / VCRNVCVCRN / TBRNTNTN / TNTN / TNGCRNVC / - | live=TTG queue=VR";
 
         static Board Garden27Ostrich() => ParseAuthored(Garden27Spec);
         static Board Garden32Ostrich() => ParseAuthored(Garden32Spec);
+        public const string Garden43Spec = "GNRC / GCRBRNRC / GNRC / RNGC / RBRNRNRNGC / RBRCGNRCRB / RBGNGC / GCGN / - | live=RRG queue=RG";
+        static Board Garden43Ostrich() => ParseAuthored(Garden43Spec);
         static Board Garden38Ostrich() => ParseAuthored(Garden38Spec);
 
         public static Board ParseAuthored(string spec)
