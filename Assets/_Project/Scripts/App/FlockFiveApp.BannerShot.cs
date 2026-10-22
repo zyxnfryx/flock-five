@@ -78,15 +78,15 @@ namespace FlockFive
 
         void LogBannerShot(string tag)
         {
-            var safe = Screen.safeArea;
-            var badge = AdoptVipBadgeRect(Screen.width, Screen.height, safe);
+            var safe = PhoneArea.Safe;
+            var badge = AdoptVipBadgeRect(PhoneArea.W, PhoneArea.H, safe);
             var live = SplashNoAdsRect();
             var ribbon = live.width > 2f ? SplashNoAdsRibbon(live) : default;
             bool covers = _bannerLast.xMin <= badge.xMin + 0.5f
                 && _bannerLast.yMin <= badge.yMin + 0.5f
                 && _bannerLast.xMax >= badge.xMax - 0.5f
                 && _bannerLast.yMax >= badge.yMax - 0.5f;
-            string line = tag + " " + Screen.width + "x" + Screen.height
+            string line = tag + " " + PhoneArea.W + "x" + PhoneArea.H
                 + " band " + _bannerLast + " badge " + badge
                 + " live " + live + " ribbon " + ribbon
                 + " covers " + covers + " owned " + NoAds.Owned;

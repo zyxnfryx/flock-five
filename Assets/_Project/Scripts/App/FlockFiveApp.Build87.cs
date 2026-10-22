@@ -254,7 +254,7 @@ namespace FlockFive
         void LogBirdRect(string logPath, string tag, Rect r, bool faceLeft, bool wings)
         {
             float peak = r.width > 2f
-                ? SparkleFx.KitBirdPeak(r, faceLeft, DeviceFit.Ui(), Screen.width, Screen.height, AdPause.Unscaled, wings)
+                ? SparkleFx.KitBirdPeak(r, faceLeft, DeviceFit.Ui(), PhoneArea.W, PhoneArea.H, AdPause.Unscaled, wings)
                 : 0f;
             File.AppendAllText(logPath, "RECT " + tag
                 + " x=" + r.x.ToString("0.0")
@@ -262,7 +262,7 @@ namespace FlockFive
                 + " w=" + r.width.ToString("0.0")
                 + " h=" + r.height.ToString("0.0")
                 + " face=" + (faceLeft ? 1 : 0)
-                + " screen=" + Screen.width + "x" + Screen.height
+                + " screen=" + PhoneArea.W + "x" + PhoneArea.H
                 + " peak=" + peak.ToString("0.00")
                 + "\n");
         }
@@ -290,7 +290,7 @@ namespace FlockFive
                 MuteShotAudio();
                 var r = _adoptBirdR;
                 float peak = r.width > 2f
-                    ? SparkleFx.KitBirdPeak(r, _avatarFaceLeft, DeviceFit.Ui(), Screen.width, Screen.height, AdPause.Unscaled, true)
+                    ? SparkleFx.KitBirdPeak(r, _avatarFaceLeft, DeviceFit.Ui(), PhoneArea.W, PhoneArea.H, AdPause.Unscaled, true)
                     : 0f;
                 if (peak >= SparkleFx.KitStarBright)
                 {
@@ -319,7 +319,7 @@ namespace FlockFive
                     && Mathf.Abs(r.center.x - perch.x) < r.width
                     && Mathf.Abs(r.center.y - perch.y) < r.height;
                 float peak = seated
-                    ? SparkleFx.KitBirdPeak(r, _avatarFaceLeft, DeviceFit.Ui(), Screen.width, Screen.height, AdPause.Unscaled, false)
+                    ? SparkleFx.KitBirdPeak(r, _avatarFaceLeft, DeviceFit.Ui(), PhoneArea.W, PhoneArea.H, AdPause.Unscaled, false)
                     : 0f;
                 // Seat after the read. ShotSeatAvatar keeps the home bird down for the
                 // paint that follows. The rect stays the one the last paint stored.

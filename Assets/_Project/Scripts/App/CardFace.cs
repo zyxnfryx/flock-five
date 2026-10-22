@@ -85,7 +85,7 @@ namespace FlockFive
             float y0 = card.center.y - colH * 0.5f;
             float x = left ? card.x - sz - 8f * s : card.xMax + 8f * s;
             if (x < 6f) x = 6f;
-            if (x + sz > Screen.width - 6f) x = Screen.width - 6f - sz;
+            if (x + sz > PhoneArea.W - 6f) x = PhoneArea.W - 6f - sz;
             // Default art faces right. Left column already looks in; right column flips.
             bool mirror = faceInward && !left;
             float t = AdPause.Unscaled;

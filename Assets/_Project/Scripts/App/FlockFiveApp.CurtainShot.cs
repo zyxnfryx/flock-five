@@ -247,7 +247,7 @@ namespace FlockFive
             _avatarCol = BirdColor.Ruby;
             _avatarFaceLeft = false;
             _avatarClock = 0.115f;
-            _avatarPos = new Vector2(Screen.width * 0.50f, Screen.height * 0.40f);
+            _avatarPos = new Vector2(PhoneArea.W * 0.50f, PhoneArea.H * 0.40f);
         }
     }
 }

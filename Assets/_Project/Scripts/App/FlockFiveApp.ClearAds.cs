@@ -150,7 +150,7 @@ namespace FlockFive
             bool show = _clearOffer;
 #endif
             if (!show) return;
-            var lay = LayoutClearOffer(Screen.width, Screen.height);
+            var lay = LayoutClearOffer(PhoneArea.W, PhoneArea.H);
             ModalBlock.Paint(ModalBlock.Id.ClearDouble, new Color(0.05f, 0.04f, 0.03f, 0.58f));
 
             bool watchHit = false;
@@ -162,7 +162,7 @@ namespace FlockFive
             {
                 watchHit = HitPad(lay.Watch, out watchHeld);
                 skipHit = HitPad(lay.Skip, out skipHeld);
-                outside = HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
+                outside = HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
             }
             PaintOfferCaption(ClearDoubleLine, lay.Caption, s);
             EnsureOfferWord();

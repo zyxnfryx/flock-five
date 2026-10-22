@@ -102,7 +102,7 @@ namespace FlockFive
             yield return new WaitForEndOfFrame();
             bool hit = CaptionGloveHit >= Time.frameCount - 2;
             var hand = GloveBodyFresh();
-            File.AppendAllText(log, dev + " " + tag + " " + Screen.width + "x" + Screen.height
+            File.AppendAllText(log, dev + " " + tag + " " + PhoneArea.W + "x" + PhoneArea.H
                 + " line " + (_cueLine ?? "").Replace("\n", " ") + " plate " + _capTop.Plate + " kind " + _capTop.Kind
                 + " glove " + hand + " alpha " + GloveBodyAlpha.ToString("0.00") + " gloveDrawn " + (hand.width >= 2f) + " gloveOverPlate " + hit
                 + " banner " + BannerLast + " repaints " + CaptionRepaints + "\n");

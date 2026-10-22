@@ -30,7 +30,7 @@ namespace FlockFive
             {
                 int w = Mathf.RoundToInt(card.width), h = Mathf.RoundToInt(card.height);
                 if (w < 16 || h < 16 || w > 2048 || h > 2900) return false;
-                float x = Mathf.Clamp(card.x, 0f, Screen.width - w), y = Mathf.Clamp(Screen.height - card.yMax, 0f, Screen.height - h);
+                float x = Mathf.Clamp(card.x, 0f, PhoneArea.W - w), y = Mathf.Clamp(PhoneArea.H - card.yMax, 0f, PhoneArea.H - h);
                 ref var tex = ref (back ? ref _texB : ref _texA);
                 if (tex == null || tex.width != w || tex.height != h)
                 {

@@ -68,7 +68,7 @@ namespace FlockFive
         public const float FeederCrown = 1.34f;
         public const float FeederSafeMargin = 0.48f;
         // Same drop from the glass on a phone with no inset. Notch / island
-        // pushes the bulb below Screen.safeArea, re-read every call.
+        // pushes the bulb below PhoneArea.Safe, re-read every call.
         public static float FeederY
         {
             get
@@ -86,8 +86,8 @@ namespace FlockFive
 
         public static float SafeTopWorld()
         {
-            float h = Mathf.Max(1f, Screen.height);
-            var safe = Screen.safeArea;
+            float h = Mathf.Max(1f, PhoneArea.H);
+            var safe = PhoneArea.Safe;
             // Before the OS reports insets, safeArea can be empty or the full glass.
             if (safe.width < 2f || safe.height < 2f) return 0f;
             float inset = Mathf.Max(0f, h - safe.yMax) / h;
@@ -550,7 +550,14 @@ namespace FlockFive
 
             float want = DeviceFit.PlayAspect();
             _cam.aspect = want;
-            float window = (float)Screen.width / Mathf.Max(1, Screen.height);
+            // iPad pillarbox: the play camera renders into the centered phone-aspect area.
+            PhoneArea.BindCamera(_cam);
+            if (PhoneArea.Pillar)
+            {
+                if (_bleed != null) _bleed.enabled = false;
+                return;
+            }
+            float window = (float)PhoneArea.W / Mathf.Max(1, PhoneArea.H);
             if (Mathf.Abs(window - want) < 0.03f)
             {
                 _cam.rect = new Rect(0f, 0f, 1f, 1f);
@@ -599,7 +606,7 @@ namespace FlockFive
 
         public static float TallFactor()
         {
-            float window = (float)Screen.width / Mathf.Max(1, Screen.height);
+            float window = (float)PhoneArea.W / Mathf.Max(1, PhoneArea.H);
             return Mathf.Max(1f, WorldBuilder.PortraitAspect / Mathf.Max(0.05f, window));
         }
     }

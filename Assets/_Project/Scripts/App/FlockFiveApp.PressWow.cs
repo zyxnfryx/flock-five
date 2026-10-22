@@ -245,7 +245,7 @@ namespace FlockFive
 
         IEnumerator ShotSplashPressDevices(List<int> run)
         {
-            int keepW = Screen.width, keepH = Screen.height;
+            int keepW = PhoneArea.W, keepH = PhoneArea.H;
             float? keepTest = DeviceFit.TestWindow;
             for (int r = 0; r < run.Count; r++)
             {
@@ -260,7 +260,7 @@ namespace FlockFive
 #endif
                 yield return new WaitForSecondsRealtime(1.2f);
                 Debug.Log("FF_PRESS_SHOT_DEVICE " + PressShotTags[d] + " want=" + w + "x" + h
-                    + " got=" + Screen.width + "x" + Screen.height);
+                    + " got=" + PhoneArea.W + "x" + PhoneArea.H);
                 yield return ShotSplashPress(PressShotTags[d]);
             }
             DeviceFit.TestWindow = keepTest;

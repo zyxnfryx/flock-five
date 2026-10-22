@@ -139,7 +139,7 @@ namespace FlockFive
         void Mirror()
         {
             float size = _restSize > 0.01f ? _restSize : 8.2f;
-            float ppu = Screen.height / (2f * size);
+            float ppu = PhoneArea.H / (2f * size);
             var d = transform.localPosition - _rest;
             HudOffset = new Vector2(-d.x * ppu, d.y * ppu);
             HudTwist = transform.localEulerAngles.z;

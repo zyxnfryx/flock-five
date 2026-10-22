@@ -74,7 +74,7 @@ namespace FlockFive
                     }
                     MuteShotAudio();
                     yield return new WaitForEndOfFrame();
-                    string line = names[s] + " " + Screen.width + "x" + Screen.height + " hop " + f + "<->" + t
+                    string line = names[s] + " " + PhoneArea.W + "x" + PhoneArea.H + " hop " + f + "<->" + t
                         + " rev " + _hopTrail.Reversals + " gift " + GiftBranch()
                         + " giftLeft " + (_coachGiftUntil - PlayClock.Now).ToString("0.00")
                         + " cue " + (_cueLine ?? "") + " glove " + _gloveVis + " fade " + _coachFade.ToString("0.00");

@@ -52,7 +52,7 @@ namespace FlockFive
                         for (float w = 0f; w < 1.0f; w += Kick()) { _coachFade = 1f; yield return null; }
                         yield return new WaitForEndOfFrame();
                         SaveFrame(dir + "/" + names[step] + "-" + T + ".png");
-                        File.AppendAllText(log, T + " " + names[step] + " stage " + _bgStage + " step " + _bgLessonStep + " screen " + Screen.width + "x" + Screen.height + " " + BadgerSpotLine() + "\n");
+                        File.AppendAllText(log, T + " " + names[step] + " stage " + _bgStage + " step " + _bgLessonStep + " screen " + PhoneArea.W + "x" + PhoneArea.H + " " + BadgerSpotLine() + "\n");
                     }
                     _bgLessonLive = false;
 

@@ -37,7 +37,7 @@ namespace FlockFive
                 + " gates[paused=" + g.Paused + " swallow=" + g.ResumeSwallow + " show=" + g.ShowHolds + " ate=" + g.CoachAte
                 + " guard=" + g.LessonGuard + " hard=" + g.HardModal + " soft=" + g.SoftModal + " railLesson=" + g.RailLesson
                 + "] stepGate=" + StepGateBlocks(SplashDailyTapRect()) + " step=" + HomeStepRail() + " phase=" + _dailyPhase
-                + " samples=" + _homeSamples.Count + (_homeSamples.Count > 0 ? "@" + _homeSamples[0].Pos + _homeSamples[0].Phase : "") + " scr=" + Screen.width + "x" + Screen.height + " gloveAct=" + _gloveAct + " tsPhase=" + (Touchscreen.current != null ? Touchscreen.current.primaryTouch.phase.ReadValue().ToString() : "none") + " tap=" + SplashDailyTapRect() + " ads=" + Ads.IsBusy + " pause=" + GamePause.Paused + " ts=" + Time.timeScale;
+                + " samples=" + _homeSamples.Count + (_homeSamples.Count > 0 ? "@" + _homeSamples[0].Pos + _homeSamples[0].Phase : "") + " scr=" + PhoneArea.W + "x" + PhoneArea.H + " gloveAct=" + _gloveAct + " tsPhase=" + (Touchscreen.current != null ? Touchscreen.current.primaryTouch.phase.ReadValue().ToString() : "none") + " tap=" + SplashDailyTapRect() + " ads=" + Ads.IsBusy + " pause=" + GamePause.Paused + " ts=" + Time.timeScale;
         }
 
         Touchscreen _greetTs;
@@ -45,7 +45,7 @@ namespace FlockFive
         IEnumerator GreetTap()
         {
             _greetTs = InputSystem.AddDevice<Touchscreen>();
-            var p = new Vector2(Screen.width * 0.5f, Screen.height * 0.35f);
+            var p = new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.35f);
             InputSystem.QueueStateEvent(_greetTs, new TouchState { touchId = 2, phase = UnityEngine.InputSystem.TouchPhase.Began, position = p });
             yield return null; yield return null;
             InputSystem.QueueStateEvent(_greetTs, new TouchState { touchId = 2, phase = UnityEngine.InputSystem.TouchPhase.Ended, position = p });
@@ -112,7 +112,7 @@ namespace FlockFive
             yield return new WaitForSecondsRealtime(0.6f); yield return new WaitForEndOfFrame(); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/b85-caption-daily-rail.png");
             Log("glove up after " + t.ToString("0.0") + "s: " + DailyDiag());
             var r = SplashDailyTapRect();
-            var p = new Vector2(r.center.x, Screen.height - r.center.y);
+            var p = new Vector2(r.center.x, PhoneArea.H - r.center.y);
             InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus; InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
             var ts = InputSystem.AddDevice<Touchscreen>(); ts.MakeCurrent();
             for (int i = 0; i < 10; i++) { yield return new WaitForEndOfFrame(); System.IO.Directory.CreateDirectory("/Users/zfxgames/wkspaces/birdshot/gb/b85/prepress"); SaveFrame("/Users/zfxgames/wkspaces/birdshot/gb/b85/prepress/f" + i.ToString("00") + ".png"); }

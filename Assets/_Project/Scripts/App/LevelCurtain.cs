@@ -220,8 +220,8 @@ namespace FlockFive
 
         static void DrawInner(float now)
         {
-            float w = Screen.width;
-            float h = Screen.height;
+            float w = PhoneArea.W;
+            float h = PhoneArea.H;
             if (w < 2f || h < 2f) return;
             if (_buf == null || _buf.Length < Count * 2) _buf = new Glint[Count * 2];
             float bloom = BloomAge(now);
@@ -251,7 +251,7 @@ namespace FlockFive
         public static void DrawBehind(float now)
         {
             if (!Armed) return;
-            float w = Screen.width, h = Screen.height;
+            float w = PhoneArea.W, h = PhoneArea.H;
             if (w < 2f || h < 2f) return;
             var spark = SpriteCatalog.Sparkle;
             Texture tex = spark != null ? spark.texture : null;
@@ -374,7 +374,7 @@ namespace FlockFive
             // Release wave: every glint leaves the flower on this frame, on its own
             // landing column across the full width (mirrored, stratified lanes), up past
             // the top edge and back down at the camera.
-            float W = Screen.width, H = Screen.height;
+            float W = PhoneArea.W, H = PhoneArea.H;
             for (int i = 0; shell && i < ShellCount; i++)
             {
                 int lane = i >> 1;
@@ -518,7 +518,7 @@ namespace FlockFive
         static void DrawEmbers(float b, Vector2 at, float side, Texture tex, Texture glowTex)
         {
             if (b < 0f || b > BloomLife) return;
-            float W = Screen.width, H = Screen.height;
+            float W = PhoneArea.W, H = PhoneArea.H;
             for (int i = 0; i < EmberCount; i++)
             {
                 int lane = i >> 1;
@@ -948,7 +948,7 @@ namespace FlockFive
             LiveT = rawT;
             bool holding = !_covered && t >= CoverAt;
             if (holding) t = CoverAt;
-            float W = Screen.width, H = Screen.height;
+            float W = PhoneArea.W, H = PhoneArea.H;
             if (W < 2f || H < 2f) return 0;
             var prev = GUI.color;
             ScreenRect(W, H, out Rect screen);

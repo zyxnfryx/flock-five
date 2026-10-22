@@ -519,6 +519,7 @@ namespace FlockFive
 
         void Start()
         {
+            KeepAwake();
             AdLog.Context = () => _splash ? "splash screen"
                 : _board == null ? "no garden"
                 : "garden " + LevelData.DisplayNumber + (_board.Won ? ", cleared" : ", MID-STAGE");
@@ -1893,7 +1894,7 @@ namespace FlockFive
             BirdIdle best = null;
             int bestRank = 0;
             float bestD = 1e12f;
-            var mid = new Vector2(Screen.width * 0.5f, Screen.height * 0.42f);
+            var mid = new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.42f);
             for (int i = 0; i < birds.Length; i++)
             {
                 var b = birds[i];
@@ -1908,7 +1909,7 @@ namespace FlockFive
                 if (rank == 2 && (kit == null || !kit.enabled)) continue;
                 var c = cam.WorldToScreenPoint(sr.bounds.center);
                 if (c.z < 0f) continue;
-                if (c.x < 80f || c.y < 80f || c.x > Screen.width - 80f || c.y > Screen.height - 80f) continue;
+                if (c.x < 80f || c.y < 80f || c.x > PhoneArea.W - 80f || c.y > PhoneArea.H - 80f) continue;
                 float d = (new Vector2(c.x, c.y) - mid).sqrMagnitude;
                 if (rank > bestRank || (rank == bestRank && d < bestD))
                 {
@@ -1930,7 +1931,7 @@ namespace FlockFive
             float x1 = top.x > bot.x ? top.x : bot.x;
             float yHi = top.y > bot.y ? top.y : bot.y;
             float yLo = top.y < bot.y ? top.y : bot.y;
-            gui = new Rect(x0, Screen.height - yHi, Mathf.Max(8f, x1 - x0), Mathf.Max(8f, yHi - yLo));
+            gui = new Rect(x0, PhoneArea.H - yHi, Mathf.Max(8f, x1 - x0), Mathf.Max(8f, yHi - yLo));
             return gui.width > 8f && gui.height > 8f;
         }
 
@@ -2001,8 +2002,8 @@ namespace FlockFive
             var srcPx = src.GetPixels32();
             int w = src.width;
             int h = src.height;
-            float sx = w / Mathf.Max(1f, Screen.width);
-            float sy = h / Mathf.Max(1f, Screen.height);
+            float sx = w / Mathf.Max(1f, PhoneArea.W);
+            float sy = h / Mathf.Max(1f, PhoneArea.H);
             float side = Mathf.Max(gui.width * sx, gui.height * sy) * (1f + pad);
             float cx = gui.center.x * sx;
             float cy = h - gui.center.y * sy;
@@ -2178,7 +2179,7 @@ namespace FlockFive
             if (tex == null) yield break;
             try
             {
-                var gear = SettingsGearDrawnRect(Screen.width, Screen.height, Screen.safeArea);
+                var gear = SettingsGearDrawnRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
                 WriteCrop(tex, gear, 512, 0.40f, path);
             }
             finally
@@ -2308,7 +2309,7 @@ namespace FlockFive
             _hiveInspectClosing = false;
             _hiveFaceBack[ix] = false;
             _hiveFlip = -1;
-            _hiveInspectFrom = new Rect(Screen.width * 0.35f, Screen.height * 0.42f, Screen.width * 0.22f, Screen.height * 0.18f);
+            _hiveInspectFrom = new Rect(PhoneArea.W * 0.35f, PhoneArea.H * 0.42f, PhoneArea.W * 0.22f, PhoneArea.H * 0.18f);
             yield return new WaitForSecondsRealtime(0.45f);
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(dir + "/hive-inspect-front.png");
@@ -3551,8 +3552,12 @@ namespace FlockFive
             }
         }
 
+        // Keep the screen on while the app is open (iOS and Android).
+        static void KeepAwake() => Screen.sleepTimeout = SleepTimeout.NeverSleep;
+
         void OnApplicationPause(bool paused)
         {
+            if (!paused) KeepAwake();
             // Back to 1 in the background; SyncAutoResolveSpeed re-arms it from live state.
             if (paused) SetAutoResolveSpeed(1f);
             if (paused)
@@ -3575,6 +3580,7 @@ namespace FlockFive
 
         void OnApplicationFocus(bool focus)
         {
+            if (focus) KeepAwake();
             if (focus)
             {
                 NoteAppResume();
@@ -4883,7 +4889,7 @@ namespace FlockFive
         bool GardenStampHit(Vector2 screen)
         {
             if (_gardenStampAt < 0f || _gardenStampRect.width < 8f) return false;
-            float gy = Screen.height - screen.y;
+            float gy = PhoneArea.H - screen.y;
             return _gardenStampRect.Contains(new Vector2(screen.x, gy));
         }
 
@@ -6330,7 +6336,7 @@ namespace FlockFive
             if (PressRainbow.StageHeld()) return false;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
-                screen = Mouse.current.position.ReadValue();
+                screen = PhoneArea.In(Mouse.current.position.ReadValue());
                 return true;
             }
             return false;
@@ -6350,12 +6356,12 @@ namespace FlockFive
                 if (phase == UnityEngine.InputSystem.TouchPhase.Canceled
                     || phase == UnityEngine.InputSystem.TouchPhase.None)
                     continue;
-                screen = t.position.ReadValue();
+                screen = PhoneArea.In(t.position.ReadValue());
                 return true;
             }
             if (touch.primaryTouch != null && touch.primaryTouch.press.wasPressedThisFrame)
             {
-                screen = touch.primaryTouch.position.ReadValue();
+                screen = PhoneArea.In(touch.primaryTouch.position.ReadValue());
                 return true;
             }
             return false;
@@ -6363,7 +6369,7 @@ namespace FlockFive
 
         // Below the notch / Dynamic Island. Safe area is read every pass, so a
         // rotation or a late inset still clears the island.
-        static float TopHud(float extra = 0f) => TopHudBox(Screen.height, Screen.safeArea, extra);
+        static float TopHud(float extra = 0f) => TopHudBox(PhoneArea.H, PhoneArea.Safe, extra);
 
         // Screen-explicit so the album grid test uses the same top inset as play.
         public static float TopHudBox(float screenH, Rect safe, float extra)
@@ -6377,8 +6383,8 @@ namespace FlockFive
 
         static void HudLayout(out float scale, out float top, out float bot, out Rect restart, out Rect hive)
         {
-            var safe = Screen.safeArea;
-            CornerAnchor.Garden(Screen.width, Screen.height, safe, out scale, out top, out bot, out restart, out hive);
+            var safe = PhoneArea.Safe;
+            CornerAnchor.Garden(PhoneArea.W, PhoneArea.H, safe, out scale, out top, out bot, out restart, out hive);
         }
 
         // Hits and the world hive. The OnGUI buttons stay unshaken inside the
@@ -6386,7 +6392,7 @@ namespace FlockFive
         static void HudShaken(out Rect restart, out Rect hive)
         {
             HudLayout(out _, out _, out _, out restart, out hive);
-            var pivot = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+            var pivot = new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.5f);
             restart = CornerAnchor.Shake(restart, CamShake.HudOffset, CamShake.HudTwist, pivot);
             hive = CornerAnchor.Shake(hive, CamShake.HudOffset, CamShake.HudTwist, pivot);
         }
@@ -6519,7 +6525,7 @@ namespace FlockFive
             if (LessonTapBlocked()) return false;
             HudShaken(out var restart, out var hive);
             HudLayout(out _, out float top, out _, out _, out _);
-            float gy = Screen.height - screen.y;
+            float gy = PhoneArea.H - screen.y;
             var gui = new Vector2(screen.x, gy);
             if (_hiveInspect >= 0)
                 return true;
@@ -6545,13 +6551,16 @@ namespace FlockFive
                 return true;
             }
             HudLayout(out _, out _, out float bot, out _, out _);
-            return gui.y > Screen.height - bot - 8f;
+            return gui.y > PhoneArea.H - bot - 8f;
         }
 
         // Item 8 profiling: OnGUI by event, and the render tail to end of frame.
         public static bool ShotNoGui; // editor clips: background only
         void OnGUI()
         {
+            // iPad pillarbox: garden bars + play image, then the GUI runs in the phone area.
+            PhoneArea.BeginGui();
+            if (PhoneArea.Pillar) GUI.depth = 1; // under the Ads consent prompt, as before
             if (ShotNoGui) return;
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
@@ -6576,7 +6585,7 @@ namespace FlockFive
         {
             if (!GuiPaint()) return;
             var m = GUI.matrix;
-            GUI.matrix = Matrix4x4.identity;
+            GUI.matrix = PhoneArea.GuiBase;
             int glints = PressRainbow.Draw(out float t, out float washA);
             GUI.matrix = m;
             bool launchFrame = t >= 0f && t < PressRainbow.LogEveryFrameUntil;
@@ -6585,7 +6594,7 @@ namespace FlockFive
                     + " glintsVisible=" + glints
                     + " xMin=" + (glints > 0 ? PressRainbow.LastXMin : 0f).ToString("0", System.Globalization.CultureInfo.InvariantCulture)
                     + " xMax=" + (glints > 0 ? PressRainbow.LastXMax : 0f).ToString("0", System.Globalization.CultureInfo.InvariantCulture)
-                    + " W=" + Screen.width + " frame=" + Time.frameCount);
+                    + " W=" + PhoneArea.W + " frame=" + Time.frameCount);
             if (PressShotLive && t >= PressRainbow.CoverAt && t < PressRainbow.RevealAt && !_rainbowMaskLogged)
             {
                 _rainbowMaskLogged = true;
@@ -6599,7 +6608,7 @@ namespace FlockFive
                 Debug.Log("FF_RAINBOW_DRAW t=" + t.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)
                     + " glints=" + glints + " washA=" + washA.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
                     + " maxGlintPx=" + PressRainbow.LastMaxBodyPx.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
-                    + " maxGlintPctW=" + (100f * PressRainbow.LastMaxBodyPx / Mathf.Max(1f, Screen.width)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " maxGlintPctW=" + (100f * PressRainbow.LastMaxBodyPx / Mathf.Max(1f, PhoneArea.W)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
                     + " washRect=" + (washA > 0f ? PressRainbow.LastWashRect.ToString() : "-")
                     + " maxRectPx=" + PressRainbow.LastMaxRectPx.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
                     + " frame=" + Time.frameCount);
@@ -6698,7 +6707,7 @@ namespace FlockFive
             bool quake = CamShake.HudOffset.sqrMagnitude > 0.01f || Mathf.Abs(CamShake.HudTwist) > 0.001f;
             if (quake)
             {
-                GUIUtility.RotateAroundPivot(CamShake.HudTwist, new Vector2(Screen.width * 0.5f, Screen.height * 0.5f));
+                GUIUtility.RotateAroundPivot(CamShake.HudTwist, new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.5f));
                 GUI.matrix = Matrix4x4.Translate(new Vector3(CamShake.HudOffset.x, CamShake.HudOffset.y, 0f)) * GUI.matrix;
             }
             DrawGardenStamp(s);
@@ -6752,7 +6761,7 @@ namespace FlockFive
             // Only a face captured before Load is worth holding (an arm and a load on the
             // same frame already shows the new world).
             if (!LevelCurtain.Armed || LevelCurtain.LoadStarted || LevelCurtain.HeldFace != null) yield break;
-            int w = Screen.width, h = Screen.height;
+            int w = PhoneArea.W, h = PhoneArea.H;
             if (w < 2 || h < 2) yield break;
             var rt = RenderTexture.GetTemporary(w, h, 0);
             ScreenCapture.CaptureScreenshotIntoRenderTexture(rt);
@@ -6761,7 +6770,7 @@ namespace FlockFive
         }
 
         // Original splash hive size — pig matches this, then both bump together.
-        static float SplashRailAnchor() => SplashRailAnchor(Screen.width);
+        static float SplashRailAnchor() => SplashRailAnchor(PhoneArea.W);
 
         public static float SplashRailAnchor(float screenW) =>
             Mathf.Clamp(screenW * 0.11f, 52f, 108f);
@@ -6772,7 +6781,7 @@ namespace FlockFive
         public static float SplashRailSize(float screenW) =>
             SplashRailAnchor(screenW) * 1.22f * SplashRailScale;
 
-        static float SplashRailSize() => SplashRailSize(Screen.width);
+        static float SplashRailSize() => SplashRailSize(PhoneArea.W);
 
         static float SplashRailGap() => Mathf.Max(24f, SplashRailSize() * 0.30f);
 
@@ -7338,10 +7347,10 @@ namespace FlockFive
             // Tight neighborhood around the skep (bottom right). The old lap grew
             // until twelve icons fit and the red/yellow paths reached screen center.
             Vector2 c = hive.center;
-            float leftLim = Mathf.Max(c.x - hive.width * 0.62f, Screen.width * 0.62f);
-            float rightLim = Screen.width - 4f;
+            float leftLim = Mathf.Max(c.x - hive.width * 0.62f, PhoneArea.W * 0.62f);
+            float rightLim = PhoneArea.W - 4f;
             float topLim = Mathf.Max(4f, hive.y - hive.height * 0.45f);
-            float botLim = Mathf.Min(Screen.height - 4f, hive.yMax + hive.height * 0.15f);
+            float botLim = Mathf.Min(PhoneArea.H - 4f, hive.yMax + hive.height * 0.15f);
             float rx = Mathf.Min(hive.width * 0.36f, Mathf.Max(8f, Mathf.Min(c.x - leftLim, rightLim - c.x)));
             float ry = Mathf.Min(hive.height * 0.32f, Mathf.Max(8f, Mathf.Min(c.y - topLim, botLim - c.y)));
             float icon = Mathf.Clamp(hive.width * 0.19f, 8f * s, hive.width * 0.20f);
@@ -8360,15 +8369,15 @@ namespace FlockFive
         }
 
         // Shared disc for every screen that leaves. About 15% over the old 88pt, never under 44.
-        static Rect BackMedalRect(float s, float top) => BackMedalBox(s, top, Screen.safeArea);
+        static Rect BackMedalRect(float s, float top) => BackMedalBox(s, top, PhoneArea.Safe);
 
         public const float InspectInsetRef = 12f;
 
         public static void InspectCorners(float s, Rect safe, out Rect back, out Rect x)
         {
-            if (safe.width < 2f) safe = new Rect(0f, 0f, Screen.width, Screen.height);
+            if (safe.width < 2f) safe = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
             float inset = Mathf.Max(10f, InspectInsetRef * s);
-            float safeTop = Screen.height - safe.yMax;
+            float safeTop = PhoneArea.H - safe.yMax;
             if (safeTop < 0f) safeTop = 0f;
             float size = Mathf.Max(44f, 84f * Mathf.Clamp(s, 1f, 1.35f));
             back = new Rect(safe.xMin + inset, safeTop + inset, size, size);
@@ -8381,8 +8390,9 @@ namespace FlockFive
         {
             float size = 101.2f * Mathf.Clamp(s, 1f, 1.35f) * DeviceFit.ControlK();
             // iPad fix: cap the medal in points so it stops growing with the screen.
-            // Points from Screen.dpi (~163 dpi per 1x point); falls back to s if dpi is unknown.
-            float ptPx = Screen.dpi > 1f ? Screen.dpi / 163f : Mathf.Max(1f, s);
+            // Points from Screen.dpi: 1x point is ~163 dpi on iPhone, ~132 dpi on iPad (pillar mode).
+            // Falls back to s if dpi is unknown.
+            float ptPx = Screen.dpi > 1f ? Screen.dpi / (PhoneArea.Pillar ? 132f : 163f) : Mathf.Max(1f, s);
             size = Mathf.Min(size, BackMedalMaxPt * ptPx);
             size = Mathf.Max(size, 44f * ptPx, 44f);
             float x = Mathf.Max(16f, safe.xMin + 10f);
@@ -8636,7 +8646,7 @@ namespace FlockFive
         public static float CoinBalanceIcon(float screenW, float s) =>
             Mathf.Clamp(SplashRailSize(screenW) * 0.48f * 0.80f, 29f * s, 51f * s);
 
-        static float CoinBalanceIcon(float s) => CoinBalanceIcon(Screen.width, s);
+        static float CoinBalanceIcon(float s) => CoinBalanceIcon(PhoneArea.W, s);
 
         void DrawCoinBalance(float s, float rightX, float centerY)
         {
@@ -8665,7 +8675,7 @@ namespace FlockFive
             var st = _coinClusterStyle;
             var content = _coinClusterContent;
             content.text = coins;
-            float leftLimit = Mathf.Max(8f, Screen.safeArea.xMin + 8f);
+            float leftLimit = Mathf.Max(8f, PhoneArea.Safe.xMin + 8f);
             float maxW = Mathf.Max(36f, iconR.x - 8f * s - leftLimit);
             int key = coins.GetHashCode() ^ (coins.Length * 104729) ^ (Mathf.RoundToInt(maxW) * 17) ^ (Mathf.RoundToInt(iconR.height * typeScale) * 131);
             if (key != _coinKey || _coinPx < 14)
@@ -9164,7 +9174,7 @@ namespace FlockFive
         }
 
         Rect GardenStampRect(float s) =>
-            GardenStampBox(Screen.width, Screen.height, Screen.safeArea, s);
+            GardenStampBox(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
 
         void DrawGardenStamp(float s)
         {
@@ -9186,7 +9196,7 @@ namespace FlockFive
             float w = StandardPopupWidth(s);
             bool sure = _restartAsk == RestartAsk.Sure;
             float h = sure ? Mathf.Max(220f * s, w * 0.46f) : Mathf.Max(300f * s, w * 0.58f);
-            float capH = Screen.height * 0.62f;
+            float capH = PhoneArea.H * 0.62f;
             if (h > capH) h = capH;
             var card = PlacePopup(s, w, h, 0.42f);
             float band = Mathf.Clamp(w * 0.045f, 10f * s, 18f * s);
@@ -9253,7 +9263,7 @@ namespace FlockFive
             if (_streakShotVeil > 0.02f)
             {
                 GUI.color = new Color(0.04f, 0.025f, 0.015f, 0.94f * _streakShotVeil);
-                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), Texture2D.whiteTexture);
                 GUI.color = Color.white;
             }
 #endif
@@ -9393,10 +9403,10 @@ namespace FlockFive
             // Read safe area every pass so a late inset still keeps the card clear.
             float titleBottom = TopHud() + (56f * 2f + 4f) * s;
             float gap = 10f * s;
-            var safe = Screen.safeArea;
+            var safe = PhoneArea.Safe;
             bool safeOk = safe.width > 2f && safe.height > 2f;
             float safeL = safeOk ? safe.xMin : 0f;
-            float safeR = safeOk ? safe.xMax : Screen.width;
+            float safeR = safeOk ? safe.xMax : PhoneArea.W;
             float leftLimit = safeL + gap;
             float rightLimit = safeR - gap;
             if (rightLimit - leftLimit < 120f * s)
@@ -9405,14 +9415,14 @@ namespace FlockFive
                 rightLimit = Mathf.Max(leftLimit + 120f * s, safeR - 4f);
             }
             var playBloom = FlowerPlayRect();
-            float botPad = Screen.height - playBloom.yMax;
+            float botPad = PhoneArea.H - playBloom.yMax;
             float flowerTop = playBloom.y;
             float topLimit = titleBottom + gap;
-            float botLimit = Mathf.Min(Screen.height - botPad - 6f, flowerTop + playBloom.height * 0.06f);
+            float botLimit = Mathf.Min(PhoneArea.H - botPad - 6f, flowerTop + playBloom.height * 0.06f);
             // b87 iPad: keep the card AND its 2X / Collect buttons off the LEVEL disc.
             botLimit -= DeviceFit.Wide() * RewardButtonsReserve * s;
             if (botLimit < topLimit + 88f * s)
-                botLimit = Mathf.Min(Screen.height - botPad - 6f, topLimit + 88f * s);
+                botLimit = Mathf.Min(PhoneArea.H - botPad - 6f, topLimit + 88f * s);
             float faceW = Mathf.Max(120f * s, rightLimit - leftLimit) / maxPop;
             float faceH = Mathf.Max(72f * s, botLimit - topLimit) / maxPop;
 
@@ -9688,7 +9698,7 @@ namespace FlockFive
         }
 
         // Left inset shared by garden HUD text and the poker win banner.
-        static float HudTextLeft(float s) => Mathf.Max(16f * s, Screen.safeArea.xMin + 12f * s);
+        static float HudTextLeft(float s) => Mathf.Max(16f * s, PhoneArea.Safe.xMin + 12f * s);
 
         void DrawRemainingBirds(float s)
         {
@@ -9930,7 +9940,7 @@ namespace FlockFive
                 if (i < extra) worth += 1;
                 _flies.Add(new CoinFly
                 {
-                    A = new Vector2(Screen.width * 0.5f + Random.Range(-70f, 70f), Screen.height * 0.30f + Random.Range(-24f, 36f)),
+                    A = new Vector2(PhoneArea.W * 0.5f + Random.Range(-70f, 70f), PhoneArea.H * 0.30f + Random.Range(-24f, 36f)),
                     B = dest,
                     T = 0f,
                     Delay = i * CoinFlyStaggerSec,
@@ -10011,21 +10021,21 @@ namespace FlockFive
             {
                 var bg = SpriteCatalog.GardenBg;
                 if (bg != null && bg.texture != null)
-                    GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), bg.texture, ScaleMode.ScaleAndCrop);
+                    GUI.DrawTexture(new Rect(0, 0, PhoneArea.W, PhoneArea.H), bg.texture, ScaleMode.ScaleAndCrop);
             }
             GUI.color = new Color(0.10f, 0.09f, 0.08f, a);
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, 0, PhoneArea.W, PhoneArea.H), Texture2D.whiteTexture);
             GUI.color = Color.white;
         }
 
         static Rect HomeRailRect(bool right, float size)
         {
-            var safe = Screen.safeArea;
+            var safe = PhoneArea.Safe;
             // Brandon: drop the whole rail so the $ row clears the logo.
-            float y = Screen.height * 0.335f;
+            float y = PhoneArea.H * 0.335f;
             if (right)
             {
-                float x = Mathf.Min(Screen.width, safe.xMax) - 20f - size;
+                float x = Mathf.Min(PhoneArea.W, safe.xMax) - 20f - size;
                 return new Rect(x, y, size, size);
             }
             float lx = Mathf.Max(20f, safe.xMin + 12f);
@@ -11428,7 +11438,7 @@ namespace FlockFive
             int font = st != null ? st.fontSize : 0;
             try
             {
-                GUI.matrix = Matrix4x4.identity;
+                GUI.matrix = PhoneArea.GuiBase;
                 Vector2 origin = Vector2.zero;
                 if (Event.current != null && TryUnclip(Vector2.zero, out Vector2 win0))
                     origin = win0;
@@ -11531,7 +11541,7 @@ namespace FlockFive
         {
             float top = TopHud();
             float fit = s * SplashLogoScale;
-            float maxW = Screen.width * 0.72f * SplashLogoScale;
+            float maxW = PhoneArea.W * 0.72f * SplashLogoScale;
             float capH = 56f * fit;
             float rowGap = 4f * fit;
             float tracking = -0.055f;
@@ -11550,7 +11560,7 @@ namespace FlockFive
 
         float DrawPokerTitleMark(float top, float s)
         {
-            float maxW = Mathf.Min(Screen.width * 0.62f, 280f * s);
+            float maxW = Mathf.Min(PhoneArea.W * 0.62f, 280f * s);
             float capSmall = 22f * s;
             float capPoker = 30f * s;
             float gap = 1.5f * s;
@@ -11595,7 +11605,7 @@ namespace FlockFive
             float scale = Mathf.Min(1f, maxW / Mathf.Max(1f, total));
             float h = capH * scale;
             float tw = total * scale;
-            float x = (Screen.width - tw) * 0.5f;
+            float x = (PhoneArea.W - tw) * 0.5f;
 
             // Fallback: Bold stamp if letter art missing.
             if (!any)
@@ -11733,13 +11743,13 @@ namespace FlockFive
             float capH = 56f * ui;
             float rowGap = 4f * ui;
             float titleH = capH * 2f + rowGap;
-            float padX = Screen.width * 0.18f; // tighter logo halo
+            float padX = PhoneArea.W * 0.18f; // tighter logo halo
             float padY = 16f * ui;
             float x = padX;
             float y = Mathf.Max(4f, top - padY * 0.35f);
-            float w = Screen.width - padX * 2f;
+            float w = PhoneArea.W - padX * 2f;
             float haloH = titleH + padY;
-            float mid = Screen.width * 0.5f;
+            float mid = PhoneArea.W * 0.5f;
             x = mid + (x - mid) * SplashLogoScale;
             y = top + (y - top) * SplashLogoScale;
             w *= SplashLogoScale;
@@ -11919,7 +11929,7 @@ namespace FlockFive
             _awayOn = false;
             if (_avatarPerchIx >= 0 && _avatarPerchIx < _avatarPerches.Length)
                 _avatarPos = _avatarPerches[_avatarPerchIx];
-            _avatarFaceLeft = _avatarPos.x >= Screen.width * 0.5f;
+            _avatarFaceLeft = _avatarPos.x >= PhoneArea.W * 0.5f;
         }
 
         void TrackGlideTarget()
@@ -11983,22 +11993,22 @@ namespace FlockFive
             // Same flap reach as HomeWanderBounds, so the drawn quad stays on screen.
             float reach = icon * 0.5f * HomeFlapFit;
             float minX = reach + 4f;
-            float maxX = Screen.width - reach - 4f;
+            float maxX = PhoneArea.W - reach - 4f;
             if (maxX < minX)
             {
-                float mid = Screen.width * 0.5f;
+                float mid = PhoneArea.W * 0.5f;
                 minX = mid;
                 maxX = mid;
             }
             if (lap.x < minX) lap.x = minX;
             if (lap.x > maxX) lap.x = maxX;
             float minY = CaptionFloorY(s) + reach;
-            float maxY = Screen.height - reach - 8f;
+            float maxY = PhoneArea.H - reach - 8f;
             if (maxY < minY)
             {
                 float mid = (minY + maxY) * 0.5f;
                 if (mid < reach) mid = reach;
-                if (mid > Screen.height - reach) mid = Screen.height - reach;
+                if (mid > PhoneArea.H - reach) mid = PhoneArea.H - reach;
                 minY = mid;
                 maxY = mid;
             }
@@ -12047,7 +12057,7 @@ namespace FlockFive
             float s = DeviceFit.Ui();
             var box = HomeWanderBounds(s, icon);
             var from = _avatarDrew ? _avatarPos : new Vector2(box.xMin, box.center.y);
-            if (from.x < 0f || from.y < 0f || from.x > Screen.width || from.y > Screen.height)
+            if (from.x < 0f || from.y < 0f || from.x > PhoneArea.W || from.y > PhoneArea.H)
                 from = new Vector2(box.xMin, box.center.y);
             _avatarCrossFrom = from;
             _avatarCrossTo = home;
@@ -12181,7 +12191,7 @@ namespace FlockFive
             // Rest pose: no bob, no hover. PerchAnchor is the one shared seat.
             c = PerchAnchor(_avatarPos, icon, onPerch, _avatarHappy, icon * 0.16f);
             if (onPerch)
-                _avatarFaceLeft = c.x >= Screen.width * 0.5f;
+                _avatarFaceLeft = c.x >= PhoneArea.W * 0.5f;
             return true;
         }
 
@@ -12261,7 +12271,7 @@ namespace FlockFive
         // The LEVEL square, and the shared hit the press and the launch both use.
         static Rect FlowerPlayRect()
         {
-            return SplashPress.LayoutLevel(Screen.width, Screen.height, Screen.safeArea).Rect;
+            return SplashPress.LayoutLevel(PhoneArea.W, PhoneArea.H, PhoneArea.Safe).Rect;
         }
 
         void AvatarGap(float s, float icon, out float top, out float bot, out float left, out float right)
@@ -12357,7 +12367,7 @@ namespace FlockFive
                 var vip = SplashNoAdsRect();
                 if (vip.width > 2f) return vip.center;
             }
-            return new Vector2(Screen.width * 0.5f, Screen.height * 0.45f);
+            return new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.45f);
         }
 
         bool HomeGloveBox(float s, out Rect box)
@@ -12408,7 +12418,7 @@ namespace FlockFive
         Vector2 AvatarClearPoint(float s, float icon, int blocks, Vector2 look)
         {
             AvatarGap(s, icon, out float top, out float bot, out float left, out float right);
-            bool wantLeft = look.x >= Screen.width * 0.5f;
+            bool wantLeft = look.x >= PhoneArea.W * 0.5f;
             float side = wantLeft ? left : right;
             float other = wantLeft ? right : left;
             float mid = (top + bot) * 0.5f;
@@ -12422,9 +12432,9 @@ namespace FlockFive
             if (TryAvatarSpot(new Vector2(other, bot), icon, blocks, pad, s, true, out spot)) return spot;
             float reach = icon * 0.5f + pad + 2f;
             float minX = icon * 0.5f;
-            float maxX = Mathf.Max(minX, Screen.width - minX);
+            float maxX = Mathf.Max(minX, PhoneArea.W - minX);
             float minY = minX;
-            float maxY = Mathf.Max(minY, Screen.height - minY);
+            float maxY = Mathf.Max(minY, PhoneArea.H - minY);
             for (int i = 0; i < blocks; i++)
             {
                 var b = _avatarBlock[i];
@@ -12472,9 +12482,9 @@ namespace FlockFive
             spot = default;
             float reach = icon * 0.5f + pad + 2f;
             float minX = icon * 0.5f;
-            float maxX = Mathf.Max(minX, Screen.width - minX);
+            float maxX = Mathf.Max(minX, PhoneArea.W - minX);
             float minY = icon * 0.5f;
-            float maxY = Mathf.Max(minY, Screen.height - minY);
+            float maxY = Mathf.Max(minY, PhoneArea.H - minY);
             float xWant = Mathf.Clamp(side, minX, maxX);
             float xOther = Mathf.Clamp(other, minX, maxX);
             float xMid = Mathf.Clamp(midX, minX, maxX);
@@ -12915,8 +12925,8 @@ namespace FlockFive
         // Card row centers on the screen. Safe-area insets apply only when left and right match.
         static void PokerRowSpan(out float x, out float width)
         {
-            float sw = Mathf.Max(1f, Screen.width);
-            var safe = Screen.safeArea;
+            float sw = Mathf.Max(1f, PhoneArea.W);
+            var safe = PhoneArea.Safe;
             float left = 0f, right = 0f;
             if (safe.width > 8f && safe.height > 8f)
             {
@@ -13151,7 +13161,7 @@ namespace FlockFive
         // Set once per line and screen size.
         Rect PokerCaptionSeat(string line, float s, out bool topAlign)
         {
-            if (_pokerCapFor == line && _pokerCapScreenW == Screen.width && _pokerCapScreenH == Screen.height)
+            if (_pokerCapFor == line && _pokerCapScreenW == PhoneArea.W && _pokerCapScreenH == PhoneArea.H)
             {
                 topAlign = _pokerCapTop;
                 return _pokerCapSeat;
@@ -13160,7 +13170,7 @@ namespace FlockFive
             const float plateY = 12f;      // CoachPanelRect's vertical pad, per side
             var g = _pokerCapGeo;
             float reach = PokerBandAboveCards(s, g.Row, 0f).y;
-            float x = (Screen.width - w) * 0.5f;
+            float x = (PhoneArea.W - w) * 0.5f;
             float y;
             float boxH;
             topAlign = false;
@@ -13188,7 +13198,7 @@ namespace FlockFive
                     // b103 (Brandon): the post-hand 'Tap the back button' plate rides the same lifted bottom seat as the
                     // Level 1 lesson banners, off the middle (WIN text, cards). The glove points up at Back, top-left.
                     float plateH = StandardPlateHeight(line, s);
-                    float plateTop = PokerBottomPlateTop(plateH, Screen.height, Screen.safeArea, s);
+                    float plateTop = PokerBottomPlateTop(plateH, PhoneArea.H, PhoneArea.Safe, s);
                     boxH = h;
                     y = plateTop + plateH * 0.5f - h * 0.5f;
                     break;
@@ -13228,8 +13238,8 @@ namespace FlockFive
                 }
             }
             _pokerCapFor = line;
-            _pokerCapScreenW = Screen.width;
-            _pokerCapScreenH = Screen.height;
+            _pokerCapScreenW = PhoneArea.W;
+            _pokerCapScreenH = PhoneArea.H;
             _pokerCapTop = topAlign;
             _pokerCapSeat = new Rect(x, y, w, boxH);
             return _pokerCapSeat;
@@ -13547,8 +13557,8 @@ namespace FlockFive
             BirdPoker.Boot();
             ArmPokerPageTutor();
 
-            var safe = Screen.safeArea;
-            var chrome = LayoutPokerChrome(Screen.width, Screen.height, safe, s);
+            var safe = PhoneArea.Safe;
+            var chrome = LayoutPokerChrome(PhoneArea.W, PhoneArea.H, safe, s);
             var back = chrome.Back;
             bool backFire = DrawBackMedal(back);
             // b103 (Brandon): the poker lesson forces the one hand. Back is dead until the result step (glove on it).
@@ -13592,15 +13602,15 @@ namespace FlockFive
             PokerRowSpan(out float spanX, out float spanW);
             float side = 12f * s;
             float maxRow = Mathf.Max(8f, spanW - side * 2f);
-            float cardW = Mathf.Min(Screen.width * 0.205f, 138f * s);
+            float cardW = Mathf.Min(PhoneArea.W * 0.205f, 138f * s);
             cardW = Mathf.Min(cardW, (maxRow - (BirdPoker.HandSize - 1) * gap) / BirdPoker.HandSize);
             float cardH = cardW * 1.42f;
             float holdH = 32f * s;
             float rowW = BirdPoker.HandSize * cardW + (BirdPoker.HandSize - 1) * gap;
             float rowX = spanX + (spanW - rowW) * 0.5f;
-            float btnSize = PokerActSize(Screen.width, s);
+            float btnSize = PokerActSize(PhoneArea.W, s);
             float botPad = Mathf.Max(12f, safe.yMin + 6f);
-            float btnY = Screen.height - botPad - btnSize;
+            float btnY = PhoneArea.H - botPad - btnSize;
             var payTab = chrome.PayTab;
             // Equal air between the wordmark and the bet/deal controls. Drop below the PAY TABLE chip when that still fits.
             float bandTop = below;
@@ -13655,7 +13665,7 @@ namespace FlockFive
                 DrawPokerFanHand(rowBox, cardW, cardH, s, true);
             }
 
-            float actX = Screen.width - Mathf.Max(10f, Screen.width - safe.xMax + 8f) - btnSize;
+            float actX = PhoneArea.W - Mathf.Max(10f, PhoneArea.W - safe.xMax + 8f) - btnSize;
             var actR = new Rect(actX, btnY, btnSize, btnSize);
             float clusterL = Mathf.Max(12f, safe.xMin + 10f);
             var betR = new Rect(clusterL, btnY, Mathf.Max(80f, actR.x - 10f * s - clusterL), btnSize);
@@ -13708,7 +13718,7 @@ namespace FlockFive
 
 
         Rect PokerPayTabRect(float top, float s) =>
-            PokerPayTabBox(Screen.width, Screen.safeArea, top, s);
+            PokerPayTabBox(PhoneArea.W, PhoneArea.Safe, top, s);
 
         void TickPokerPayTable(float top, float s)
         {
@@ -13727,7 +13737,7 @@ namespace FlockFive
             else if (_pokerPayOpen && _pokerPayAnim > 0.55f)
             {
                 // Full-screen dismiss (tab already handled above).
-                var outside = new Rect(0f, 0f, Screen.width, Screen.height);
+                var outside = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
                 if (HitPad(outside, out _))
                 {
                     _pokerPayOpen = false;
@@ -13753,12 +13763,12 @@ namespace FlockFive
             var tab = PokerPayTabRect(top, s);
             if (u > 0.01f)
             {
-                float panelW = Screen.width * 0.94f;
+                float panelW = PhoneArea.W * 0.94f;
                 int rows = BirdPoker.PayTableRows.Length;
-                var safe = Screen.safeArea;
-                float btnSize = PokerActSize(Screen.width, s);
+                var safe = PhoneArea.Safe;
+                float btnSize = PokerActSize(PhoneArea.W, s);
                 float botPad = Mathf.Max(12f, safe.yMin + 6f);
-                float btnY = Screen.height - botPad - btnSize;
+                float btnY = PhoneArea.H - botPad - btnSize;
                 float panelTop = tab.yMax + 8f * s;
                 float floor = btnY - 12f * s;
                 float avail = Mathf.Max(320f, floor - panelTop);
@@ -13776,7 +13786,7 @@ namespace FlockFive
                     headH = Mathf.Clamp(panelH * 0.12f, 34f * s, headH);
                     rowH = (panelH - headH - pad * 2f) / rows;
                 }
-                float cx = Screen.width * 0.5f;
+                float cx = PhoneArea.W * 0.5f;
                 float ease = 1f - Mathf.Pow(1f - u, 2.4f);
                 float y = Mathf.Lerp(panelTop - 24f * s, panelTop, ease);
                 var panel = new Rect(cx - panelW * 0.5f, y, panelW, panelH * Mathf.Lerp(0.92f, 1f, ease));
@@ -14204,18 +14214,18 @@ namespace FlockFive
             GUI.color = _pokerBingo
                 ? new Color(0.28f, 0.14f, 0.02f, veil)
                 : new Color(0.04f, 0.03f, 0.02f, veil);
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, 0, PhoneArea.W, PhoneArea.H), Texture2D.whiteTexture);
             GUI.color = Color.white;
 
             // Clipboard slam onto the table
             var clipSpr = SpriteCatalog.Clipboard;
             var clipTex = clipSpr != null ? clipSpr.texture : null;
-            float boardW = Mathf.Min(Screen.width * 0.88f, 520f * s);
+            float boardW = Mathf.Min(PhoneArea.W * 0.88f, 520f * s);
             float aspect = clipTex != null
                 ? clipTex.height / Mathf.Max(1f, (float)clipTex.width)
                 : 1.33f;
             float boardH = boardW * aspect;
-            float maxH = Screen.height * 0.78f;
+            float maxH = PhoneArea.H * 0.78f;
             if (boardH > maxH)
             {
                 boardH = maxH;
@@ -14223,13 +14233,13 @@ namespace FlockFive
             }
             float slamU = Mathf.Clamp01(t / 0.38f);
             float ease = 1f - Mathf.Pow(1f - slamU, 3f);
-            float yOff = Mathf.Lerp(-Screen.height * 0.55f, 0f, ease);
+            float yOff = Mathf.Lerp(-PhoneArea.H * 0.55f, 0f, ease);
             // Impact squash
             float squash = slamU >= 1f && t < 0.55f
                 ? 1f + 0.06f * Mathf.Sin((t - 0.38f) / 0.17f * Mathf.PI)
                 : 1f;
-            float cx = Screen.width * 0.5f;
-            float cy = Screen.height * 0.48f + yOff;
+            float cx = PhoneArea.W * 0.5f;
+            float cy = PhoneArea.H * 0.48f + yOff;
             var board = new Rect(cx - boardW * 0.5f, cy - boardH * 0.5f * squash, boardW, boardH * squash);
             var paper = DrawPokerClipboard(board, s, clipTex);
 
@@ -14326,7 +14336,7 @@ namespace FlockFive
                 string hintTx = _pokerBingo
                     ? "FULLCARD  " + Money.Format(BirdPoker.FullcardPrize) + "   ·   lifetime " + BirdPoker.FullcardCount
                     : "tap to continue";
-                StampOutlined(new Rect(0f, board.yMax + 12f * s, Screen.width, 24f * s), hintTx, hint, new Color(1f, 0.92f, 0.7f), 1, 1);
+                StampOutlined(new Rect(0f, board.yMax + 12f * s, PhoneArea.W, 24f * s), hintTx, hint, new Color(1f, 0.92f, 0.7f), 1, 1);
             }
             GUI.matrix = prevGui;
         }
@@ -14471,7 +14481,7 @@ namespace FlockFive
         const float PokerFanHandAspect = 0.80f;
         // Raise only the card row (and everything seated on it) by ~5% of screen height.
         const float PokerRowLiftFrac = 0.05f;
-        static float PokerRowLiftPx() => Screen.height * PokerRowLiftFrac;
+        static float PokerRowLiftPx() => PhoneArea.H * PokerRowLiftFrac;
 
         // Wrist on the hand canvas (where the forearm meets the palm): sway pivot.
         const float PokerFanWristU = 0.33f;
@@ -14586,7 +14596,7 @@ namespace FlockFive
             float top = Mathf.Min(betR.y, actR.y);
             float y = top - h - 8f * s;
             if (y < 8f) y = 8f;
-            StampLight(new Rect(0f, y, Screen.width, h), PokerDealGate.BrokeHint, st,
+            StampLight(new Rect(0f, y, PhoneArea.W, h), PokerDealGate.BrokeHint, st,
                 new Color(0.94f, 0.12f, 0.14f, 1f));
         }
 
@@ -14968,9 +14978,9 @@ namespace FlockFive
             float mid = 1f - Mathf.Abs(t * 2f - 1f);
             // Idle row is centered under the logo. The dealt fan stays just above the deal disc.
             float sc = DeviceFit.Ui();
-            float btnSize = PokerActSize(Screen.width, sc);
-            float botPad = Mathf.Max(12f, Screen.safeArea.yMin + 6f);
-            float btnY = Screen.height - botPad - btnSize;
+            float btnSize = PokerActSize(PhoneArea.W, sc);
+            float botPad = Mathf.Max(12f, PhoneArea.Safe.yMin + 6f);
+            float btnY = PhoneArea.H - botPad - btnSize;
             float y = btnY - 8f * sc - cardH - mid * 12f + bump - PokerRowLiftPx();
             if (y < 0f) y = 0f;
             return new Rect(x, y, cardW, cardH);
@@ -15377,7 +15387,7 @@ namespace FlockFive
         static void DrawPokerPalm(Rect dest, bool sleeveTail, float armFade = 0f)
         {
             if (sleeveTail)
-                DrawSpriteTail(dest, SpriteCatalog.HandPalm, Screen.height + dest.width * 0.25f + 40f);
+                DrawSpriteTail(dest, SpriteCatalog.HandPalm, PhoneArea.H + dest.width * 0.25f + 40f);
             DrawSpriteBand(dest, SpriteCatalog.HandPalm, PokerFanPinchV, 1f, armFade);
         }
 
@@ -15601,7 +15611,7 @@ namespace FlockFive
             return PokerBold(ref _pokerWinCenter, TextAnchor.MiddleCenter);
         }
 
-        static float PokerWinHeroH(float s) => Mathf.Min(Screen.width * 0.26f, 190f * s);
+        static float PokerWinHeroH(float s) => Mathf.Min(PhoneArea.W * 0.26f, 190f * s);
 
         // Resting banner: 1.75x the pre-fanfare height (1.4 * 1.25). FitFont's hi is
         // height * WinRestFontFrac, so the landed word is ~25% larger. Left edge is
@@ -15620,7 +15630,7 @@ namespace FlockFive
             var safe = PokerSafeGui();
             float h = Mathf.Clamp(42f * s, 36f, 56f) * WinRestGrow;
             float x = HudTextLeft(s);
-            float w = Mathf.Min(safe.xMax - 12f - x, Screen.width * 0.92f);
+            float w = Mathf.Min(safe.xMax - 12f - x, PhoneArea.W * 0.92f);
             if (w < 8f) w = 8f;
             float top = Mathf.Min(betR.y, actR.y);
             float y = top - h - 10f * s;
@@ -15638,12 +15648,12 @@ namespace FlockFive
             return new Rect(x, y, w, h);
         }
 
-        // Screen.safeArea in GUI coordinates (top-left origin).
+        // PhoneArea.Safe in GUI coordinates (top-left origin).
         static Rect PokerSafeGui()
         {
-            var a = Screen.safeArea;
-            if (a.width < 8f || a.height < 8f) return new Rect(0f, 0f, Screen.width, Screen.height);
-            return new Rect(a.x, Screen.height - a.yMax, a.width, a.height);
+            var a = PhoneArea.Safe;
+            if (a.width < 8f || a.height < 8f) return new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
+            return new Rect(a.x, PhoneArea.H - a.yMax, a.width, a.height);
         }
 
         // Largest scale the hero word reaches: EaseOutBack punch peak (~1.116) plus hold wobble.
@@ -15652,8 +15662,8 @@ namespace FlockFive
         // FitFont walks sizes; cache per payout text so the fanfare never refits every frame.
         void FitPokerWinFonts(string text, Rect rest, float heroH)
         {
-            int sw = Screen.width;
-            int sh = Screen.height;
+            int sw = PhoneArea.W;
+            int sh = PhoneArea.H;
             int rh = Mathf.RoundToInt(rest.height);
             int hh = Mathf.RoundToInt(heroH);
             if (text == _pokerWinFitText && sw == _pokerWinFitW && sh == _pokerWinFitH
@@ -15710,7 +15720,7 @@ namespace FlockFive
             var rst = PokerWinStyle(TextAnchor.MiddleLeft);
             rst.fontSize = _pokerWinRestFont;
             float restW = rst.CalcSize(content).x;
-            g.HeroC = new Vector2(PokerSafeGui().center.x, Screen.height * 0.47f);
+            g.HeroC = new Vector2(PokerSafeGui().center.x, PhoneArea.H * 0.47f);
             g.RestC = new Vector2(rest.x + restW * 0.5f, rest.center.y);
             g.RestK = _pokerWinRestFont / (float)Mathf.Max(1, _pokerWinHeroFont);
             return g;
@@ -15796,7 +15806,7 @@ namespace FlockFive
             var st = PokerBold(ref _pokerRankSt, TextAnchor.MiddleCenter);
             float heroH = PokerWinHeroH(s);
             var safe = PokerSafeGui();
-            int sw = Screen.width, sh = Screen.height;
+            int sw = PhoneArea.W, sh = PhoneArea.H;
             if (title != _pokerRankFitText || sw != _pokerRankFitW || sh != _pokerRankFitH)
             {
                 _pokerRankFitText = title;
@@ -16476,7 +16486,7 @@ namespace FlockFive
             float y = fan.y - cap - 28f * s;
             if (y < 44f * s) y = 44f * s;
             var fill = new Color(0.94f, 0.12f, 0.14f, 1f);
-            StampLight(new Rect(0f, y, Screen.width, cap), "TAP A CARD TO KEEP", st, fill);
+            StampLight(new Rect(0f, y, PhoneArea.W, cap), "TAP A CARD TO KEEP", st, fill);
         }
 
         static void DrawPokerKeptMark(Rect r, float s)
@@ -16763,10 +16773,10 @@ namespace FlockFive
         float DrawAlbumHeader(float s, Rect back)
         {
             int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
-            AlbumTextSpan(Screen.width, Screen.safeArea, s, out float left, out float textRight);
-            float titleRight = Screen.width - CornerAnchor.EdgeInsetRight(Screen.width, Screen.safeArea) - CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f).x;
+            AlbumTextSpan(PhoneArea.W, PhoneArea.Safe, s, out float left, out float textRight);
+            float titleRight = PhoneArea.W - CornerAnchor.EdgeInsetRight(PhoneArea.W, PhoneArea.Safe) - CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f).x;
             float hiveSize = Mathf.Clamp(back.height * 0.80f, 44f, 92f);
-            var hiveHead = new Rect(AlbumHeaderX(back, s, Screen.height > 2f ? Screen.height : 720f), back.center.y - hiveSize * 0.5f, hiveSize, hiveSize);
+            var hiveHead = new Rect(AlbumHeaderX(back, s, PhoneArea.H > 2f ? PhoneArea.H : 720f), back.center.y - hiveSize * 0.5f, hiveSize, hiveSize);
             float textX = hiveHead.xMax + 12f * s;
             float textW = Mathf.Max(48f, titleRight - textX);
             var titleSt = GuiPool.Label(GuiSlot.AlbumTitle);
@@ -16841,8 +16851,8 @@ namespace FlockFive
         // plate pad above and below the text; the footer passes false and uses its own band height.
         static void DrawAlbumBanner(Rect text, bool hang)
         {
-            float padY = hang ? CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f).y : 0f;
-            var band = new Rect(0f, text.y - padY, Screen.width, text.height + padY * 2f);
+            float padY = hang ? CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f).y : 0f;
+            var band = new Rect(0f, text.y - padY, PhoneArea.W, text.height + padY * 2f);
             DrawSolidRound(band, 2f, 0, 0.97f);
         }
 
@@ -17234,7 +17244,7 @@ namespace FlockFive
             {
                 Rect focus = _albumTutorStep <= 1 ? _albumCardR : _albumInspectR;
                 string lesson = AlbumTutorLine();
-                var pose = PoseLesson(_albumTutorStep, focus, Screen.width, Screen.height, lesson, AlbumHoneyCount(), _albumPagerOk ? _albumPagerR : default);
+                var pose = PoseLesson(_albumTutorStep, focus, PhoneArea.W, PhoneArea.H, lesson, AlbumHoneyCount(), _albumPagerOk ? _albumPagerR : default);
                 aim = pose.Aim;
                 approach = pose.Approach;
             }
@@ -17332,7 +17342,7 @@ namespace FlockFive
                 Rect focus = step <= 1 ? _albumCardR : _albumInspectR;
                 if (focus.width > 8f && focus.height > 8f)
                 {
-                    var pose = PoseLesson(step, focus, Screen.width, Screen.height, line, AlbumHoneyCount(), _albumPagerOk ? _albumPagerR : default);
+                    var pose = PoseLesson(step, focus, PhoneArea.W, PhoneArea.H, line, AlbumHoneyCount(), _albumPagerOk ? _albumPagerR : default);
                     CapSpot("album.coach"); PaintCoachCaption(line, pose.Seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
                     return;
                 }
@@ -17356,9 +17366,9 @@ namespace FlockFive
             else if (_albumCardOk)
                 y = _albumCardR.y - h - 16f * s;
             if (y < minY) y = minY;
-            float maxY = Screen.height - h - 8f;
+            float maxY = PhoneArea.H - h - 8f;
             if (y > maxY) y = maxY;
-            var seat = new Rect((Screen.width - w) * 0.5f, y, w, h);
+            var seat = new Rect((PhoneArea.W - w) * 0.5f, y, w, h);
             CapSpot("album.coach"); PaintCoachCaption(line, seat, s, 12, Mathf.RoundToInt(28f * s), default, false, StandardCaptionSlack);
         }
 
@@ -17386,8 +17396,8 @@ namespace FlockFive
             }
 
             float textBottom = DrawAlbumHeader(s, back);
-            float tallyW = Mathf.Min(Screen.width - 32f * s, 460f * s);
-            var tallyAnchor = new Rect((Screen.width - tallyW) * 0.5f, textBottom + 4f * s, tallyW, 8f);
+            float tallyW = Mathf.Min(PhoneArea.W - 32f * s, 460f * s);
+            var tallyAnchor = new Rect((PhoneArea.W - tallyW) * 0.5f, textBottom + 4f * s, tallyW, 8f);
             float hiveBottom = DrawHiveTally(tallyAnchor, s);
             int pages = Mathf.Max(1, (Hive.AlbumSlots + HivePageSize - 1) / HivePageSize);
             _hivePage = Mathf.Clamp(_hivePage, 0, pages - 1);
@@ -17400,14 +17410,14 @@ namespace FlockFive
             // Card size comes from the same GridOf the thumbnail fit test measures.
             int typeFloor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
             const float footGap = 22f;
-            var grid = CardText.GridOf(Screen.width, Screen.height, Screen.safeArea, hiveBottom);
+            var grid = CardText.GridOf(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, hiveBottom);
             float colH = grid.ColH;
             float pagerHit = grid.PagerHit;
             float pagerLab = grid.PagerLab;
             float pageBottom = grid.PageBottom;
             var sheet = grid.Sheet;
             // Same strip WatchPageSwipe tracks; the album step's tap gate lets a swipe start here.
-            _albumSwipeR = new Rect(0f, sheet.y, Screen.width, sheet.height);
+            _albumSwipeR = new Rect(0f, sheet.y, PhoneArea.W, sheet.height);
 
             // Binder spine shadow + clear sheet
             GUI.color = new Color(0.08f, 0.06f, 0.04f, 0.62f);
@@ -17525,7 +17535,7 @@ namespace FlockFive
             if (pages > shown)
                 first = Mathf.Clamp(_hivePage - shown / 2, 0, pages - shown);
             float tabsW = shown * pagerHit + (shown - 1) * tabGap;
-            float tabX0 = (Screen.width - tabsW) * 0.5f;
+            float tabX0 = (PhoneArea.W - tabsW) * 0.5f;
             var tabLab = GuiPool.Label(GuiSlot.PageTab);
             tabLab.fontStyle = FontStyle.Bold;
             tabLab.alignment = TextAnchor.MiddleCenter;
@@ -17574,9 +17584,9 @@ namespace FlockFive
             ofSt.wordWrap = false;
             int bookHi = Mathf.Max(typeFloor + 4, Mathf.RoundToInt(24f * s));
             string ofBook = "Page " + (_hivePage + 1) + " of " + pages + "   ·   " + Hive.Found + " found";
-            AlbumTextSpan(Screen.width, Screen.safeArea, s, out float bkL, out float bkR);
+            AlbumTextSpan(PhoneArea.W, PhoneArea.Safe, s, out float bkL, out float bkR);
             var bookR = new Rect(bkL, grid.BookY, bkR - bkL, pagerLab);
-            _albumBookR = new Rect(0f, bookR.y, Screen.width, bookR.height);
+            _albumBookR = new Rect(0f, bookR.y, PhoneArea.W, bookR.height);
             ofSt.fontSize = FitFont(ofSt, ofBook, bookR.width * 0.92f, bookR.height * 0.86f, typeFloor, bookHi);
             DrawAlbumBanner(bookR, false);
             StampReadable(bookR, ofBook, ofSt, AlbumInk);
@@ -17621,7 +17631,7 @@ namespace FlockFive
 
             // Large portrait card ~1:1.4, the same rect the card-fit suite measures.
             // The honey caption sits in the strip under the card. Do not shrink it.
-            var to = AlbumInspectRect(Screen.width, Screen.height);
+            var to = AlbumInspectRect(PhoneArea.W, PhoneArea.H);
             var from = _hiveInspectFrom;
             var big = new Rect(
                 Mathf.Lerp(from.x, to.x, t),
@@ -17665,7 +17675,7 @@ namespace FlockFive
             // Shared Back medallion, painted above the dim. Same control as Poker and the album.
             // b87 (Brandon): Back and X tucked into the top corners at one inset from the
             // safe edges, on a shared centre line, so the card title stays clear.
-            var safe = Screen.safeArea;
+            var safe = PhoneArea.Safe;
             InspectCorners(s, safe, out var back, out var xBtn);
             bool backHit = DrawBackMedal(back);
             bool xHeld;
@@ -17689,7 +17699,7 @@ namespace FlockFive
             if (Event.current != null && Event.current.rawType == EventType.MouseUp) CardTilt.ClearDragAte();
 
             // Tap dim outside card closes (after card/X/Back/upgrade so they win hit tests)
-            var full = new Rect(0f, 0f, Screen.width, Screen.height);
+            var full = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
             bool outside = !upgradeHit && !_hiveInspectClosing && u > 0.85f && HitPad(full, out _);
             if ((outside || xHit || backHit) && !_hiveInspectClosing)
                 BeginPutAwayInspect();
@@ -17794,7 +17804,7 @@ namespace FlockFive
             float fade = _hiveTutorStep >= 4 ? 1f - Mathf.Clamp01(_hiveTutorT / 0.45f) : 1f;
             if (fade < 0.02f) return;
             var aim = GloveTarget(card);
-            bool mirror = aim.x >= Screen.width * 0.5f;
+            bool mirror = aim.x >= PhoneArea.W * 0.5f;
             float ang = ClampUpright(mirror);
             var away = new Vector2(mirror ? -1f : 1f, 0f);
             var rest = aim + away * (GloveDh(s) * 0.85f) + new Vector2(0f, -GloveRise(s));
@@ -17820,11 +17830,11 @@ namespace FlockFive
             measure.alignment = TextAnchor.MiddleCenter;
             measure.wordWrap = false;
             measure.fontSize = hintHi;
-            float hintW = Mathf.Min(Screen.width * 0.92f, measure.CalcSize(GuiPool.Text(GuiText.FlipHint, wider)).x + 48f * s);
+            float hintW = Mathf.Min(PhoneArea.W * 0.92f, measure.CalcSize(GuiPool.Text(GuiText.FlipHint, wider)).x + 48f * s);
             float hintH = hintHi * 2.45f;
-            var pill = new Rect((Screen.width - hintW) * 0.5f, y, hintW, hintH);
+            var pill = new Rect((PhoneArea.W - hintW) * 0.5f, y, hintW, hintH);
             float edge = 28f * s;
-            if (pill.yMax > Screen.height - edge) pill.y = Screen.height - edge - pill.height;
+            if (pill.yMax > PhoneArea.H - edge) pill.y = PhoneArea.H - edge - pill.height;
             return pill;
         }
 
@@ -17854,19 +17864,19 @@ namespace FlockFive
             measure.wordWrap = false;
             measure.fontSize = Mathf.RoundToInt(btnH * 0.50f);
             float labelW = measure.CalcSize(new GUIContent(line)).x + (maxxed ? btnH * 1.9f : 0f);
-            float wideW = Mathf.Min(Screen.width * 0.80f, 460f * s);
+            float wideW = Mathf.Min(PhoneArea.W * 0.80f, 460f * s);
             float btnW = Mathf.Clamp(labelW + btnH * 1.1f, wideW * 0.55f, wideW * 0.65f);
-            btnW = Mathf.Min(btnW, Screen.width * 0.86f - (rimW + keyW) * 2f);
+            btnW = Mathf.Min(btnW, PhoneArea.W * 0.86f - (rimW + keyW) * 2f);
             // Margin: a clear gap under the hint pill and above the screen edge, rim included.
             float gapTop = Mathf.Max(18f, 20f * s) + rimW + keyW;
             float y = pill.yMax + gapTop;
             float edgeB = Mathf.Max(24f, 28f * s) + rimW + keyW;
-            if (y + btnH > Screen.height - edgeB) y = Screen.height - edgeB - btnH;
+            if (y + btnH > PhoneArea.H - edgeB) y = PhoneArea.H - edgeB - btnH;
             float denyAge = _upDenyAt < 0f ? 99f : AdPause.Unscaled - _upDenyAt;
             float shake = denyAge < UpDenyShake
                 ? Mathf.Sin(denyAge * 46f) * (1f - denyAge / UpDenyShake) * btnH * 0.07f
                 : 0f;
-            var btn = new Rect((Screen.width - btnW) * 0.5f + shake, y, btnW, btnH);
+            var btn = new Rect((PhoneArea.W - btnW) * 0.5f + shake, y, btnW, btnH);
             var outer = new Rect(btn.x - rimW, btn.y - rimW, btn.width + rimW * 2f, btn.height + rimW * 2f);
             var key = new Rect(outer.x - keyW, outer.y - keyW, outer.width + keyW * 2f, outer.height + keyW * 2f);
             _upgradeBtnR = outer;
@@ -17991,12 +18001,12 @@ namespace FlockFive
             st.wordWrap = false;
             st.alignment = TextAnchor.MiddleCenter;
             int hi = Mathf.RoundToInt(btn.height * 0.36f);
-            float maxW = Screen.width * 0.90f;
+            float maxW = PhoneArea.W * 0.90f;
             st.fontSize = FitFont(st, line, maxW - 40f * s, hi * 1.3f, 14, hi);
             var size = st.CalcSize(new GUIContent(line));
             float w = (size.x + 36f * s) * scale, h = (size.y + 18f * s) * scale;
             float y = btn.yMax + 10f * s;
-            if (y + h > Screen.height - 8f * s) y = btn.y - 10f * s - h;
+            if (y + h > PhoneArea.H - 8f * s) y = btn.y - 10f * s - h;
             var pill = new Rect(btn.center.x - w * 0.5f, y, w, h);
             var keep = GUI.color;
             GUI.color = new Color(0.30f, 0.06f, 0.04f, 0.92f * a);
@@ -18570,7 +18580,7 @@ namespace FlockFive
         void DrawBakedFace(Rect card, Rect face, BeeKind kind, string flavor, BeeFinish finish, bool showBack, int honey, bool themed, FaceStyle fstyle)
         {
             Rect src = card;
-            var settled = AlbumInspectRect(Screen.width, Screen.height);
+            var settled = AlbumInspectRect(PhoneArea.W, PhoneArea.H);
             if (settled.width > src.width + 1f && settled.height > 8f)
                 src = settled;
             var full = CardText.FaceOf(src);
@@ -18742,12 +18752,12 @@ namespace FlockFive
             int count = _levelBees.Count;
             bool cards = count > 0;
             int floor = Mathf.RoundToInt(14f * s);
-            float boxW = Mathf.Min(Screen.width - 24f * s, 560f * s);
+            float boxW = Mathf.Min(PhoneArea.W - 24f * s, 560f * s);
             float boxH = cards
-                ? Mathf.Min(Screen.height * 0.72f, 560f * s)
-                : Mathf.Min(Screen.height * 0.30f, 200f * s);
+                ? Mathf.Min(PhoneArea.H * 0.72f, 560f * s)
+                : Mathf.Min(PhoneArea.H * 0.30f, 200f * s);
             float y = TopHud() + 6f * s;
-            var box = new Rect((Screen.width - boxW) * 0.5f, y, boxW, boxH);
+            var box = new Rect((PhoneArea.W - boxW) * 0.5f, y, boxW, boxH);
             _levelHiveRect = box;
 
             GUI.color = new Color(0.10f, 0.07f, 0.04f, 0.94f);
@@ -19584,7 +19594,7 @@ namespace FlockFive
                 return;
             }
 
-            var safe = Screen.safeArea;
+            var safe = PhoneArea.Safe;
             float top = TopHud();
             var xBtn = CornerCloseRect(s, top);
             bool xHeld = false;
@@ -19616,7 +19626,7 @@ namespace FlockFive
                 contU = PopupMotion.Beat(age, 0.30f, 0.34f);
                 frostA = PopupMotion.EnterAlpha(signU);
                 SparkleFx.Tick(AdPause.UnscaledDelta);
-                SparkleFx.DriftSnow(new Rect(0f, 0f, Screen.width, Screen.height), FoliageSway.LowPower ? 3 : 6);
+                SparkleFx.DriftSnow(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), FoliageSway.LowPower ? 3 : 6);
                 DrawFrostVignette(s, frostA);
             }
 
@@ -19812,7 +19822,7 @@ namespace FlockFive
             float retrySz = PopupButtonSize(s, cardW);
             float overlap = retrySz * 0.36f;
             float contH = Mathf.Max(74f * s, PopupBarHeight(s, cardW) * 1.9f);
-            float contW = Mathf.Min(cardW * 0.98f, Screen.width - 20f * s);
+            float contW = Mathf.Min(cardW * 0.98f, PhoneArea.W - 20f * s);
             if (contW < 8f) contW = 8f;
             float gap = 12f * s;
             float stack = cardH + retrySz - overlap + gap + contH;
@@ -19839,9 +19849,9 @@ namespace FlockFive
             }
             float cardY = botLimit - stack;
             if (cardY < topLimit) cardY = topLimit;
-            card = new Rect((Screen.width - cardW) * 0.5f, cardY, cardW, cardH);
-            retry = new Rect((Screen.width - retrySz) * 0.5f, card.yMax - overlap, retrySz, retrySz);
-            cont = new Rect((Screen.width - contW) * 0.5f, retry.yMax + gap, contW, contH);
+            card = new Rect((PhoneArea.W - cardW) * 0.5f, cardY, cardW, cardH);
+            retry = new Rect((PhoneArea.W - retrySz) * 0.5f, card.yMax - overlap, retrySz, retrySz);
+            cont = new Rect((PhoneArea.W - contW) * 0.5f, retry.yMax + gap, contW, contH);
             if (cont.yMax > botLimit)
             {
                 float shift = cont.yMax - botLimit;
@@ -20009,8 +20019,8 @@ namespace FlockFive
             if (alpha < 0.02f) return;
             var glow = GlowTex();
             if (glow == null) return;
-            float w = Screen.width;
-            float h = Screen.height;
+            float w = PhoneArea.W;
+            float h = PhoneArea.H;
             float d = Mathf.Max(w, h) * 0.62f;
             GUI.color = new Color(0.68f, 0.88f, 1f, 0.18f * alpha);
             GUI.DrawTexture(new Rect(-d * 0.32f, -d * 0.34f, d, d), glow, ScaleMode.ScaleToFit, true);
@@ -20061,8 +20071,8 @@ namespace FlockFive
             float stackH = cardH + flowerSz - overlap;
             var placed = PlacePopup(s, cardW, stackH, 0.32f);
             card = new Rect(placed.x, placed.y, cardW, cardH);
-            flower = new Rect((Screen.width - flowerSz) * 0.5f, card.yMax - overlap, flowerSz, flowerSz);
-            float bot = Screen.height - Mathf.Max(8f, Screen.safeArea.yMin + 6f);
+            flower = new Rect((PhoneArea.W - flowerSz) * 0.5f, card.yMax - overlap, flowerSz, flowerSz);
+            float bot = PhoneArea.H - Mathf.Max(8f, PhoneArea.Safe.yMin + 6f);
             if (flower.yMax > bot)
             {
                 float shift = flower.yMax - bot;
@@ -20115,15 +20125,15 @@ namespace FlockFive
         static float MinTapPx()
         {
             float dpi = Screen.dpi;
-            float pt = dpi > 1f ? Mathf.Max(1f, dpi / 150f) : Mathf.Max(1f, Screen.height / 720f);
+            float pt = dpi > 1f ? Mathf.Max(1f, dpi / 150f) : Mathf.Max(1f, PhoneArea.H / 720f);
             return 44f * pt;
         }
 
         static Rect CornerCloseRect(float s, float top)
         {
-            var safe = Screen.safeArea;
+            var safe = PhoneArea.Safe;
             float xSz = Mathf.Max(48f * s, 44f);
-            return new Rect(Screen.width - Mathf.Max(14f, Screen.width - safe.xMax + 8f) - xSz, top, xSz, xSz);
+            return new Rect(PhoneArea.W - Mathf.Max(14f, PhoneArea.W - safe.xMax + 8f) - xSz, top, xSz, xSz);
         }
 
         // Daily Bonus close. The screen-corner seat sat above the wood. This one
@@ -20321,7 +20331,7 @@ namespace FlockFive
         void DrawAdWaitCancel(float s)
         {
             float w = Mathf.Max(120f, 150f * s), h = Mathf.Max(40f, 44f * s);
-            var r = new Rect((Screen.width - w) * 0.5f, Screen.height * 0.56f, w, h);
+            var r = new Rect((PhoneArea.W - w) * 0.5f, PhoneArea.H * 0.56f, w, h);
             bool held;
             bool fire = HitPad(r, out held);
             GUI.color = held ? new Color(0.55f, 0.36f, 0.12f, 0.95f) : new Color(0.28f, 0.12f, 0.04f, 0.88f);
@@ -20338,7 +20348,7 @@ namespace FlockFive
         {
             if (Texture2D.whiteTexture == null) return;
             float radius = Mathf.Max(16f, 14f * s);
-            var c = new Vector2(Screen.width * 0.5f, Screen.height * 0.46f);
+            var c = new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.46f);
             const int n = 8;
             float phase = AdPause.Unscaled * 8f;
             for (int i = 0; i < n; i++)
@@ -20405,9 +20415,9 @@ namespace FlockFive
             st.fontStyle = FontStyle.Bold;
             st.alignment = TextAnchor.MiddleCenter;
             st.wordWrap = false;
-            float w = Screen.width * 0.92f;
+            float w = PhoneArea.W * 0.92f;
             float h = 120f * s;
-            var r = new Rect((Screen.width - w) * 0.5f, Screen.height * 0.34f, w, h);
+            var r = new Rect((PhoneArea.W - w) * 0.5f, PhoneArea.H * 0.34f, w, h);
             st.fontSize = FitFont(st, lab, r.width * 0.92f, r.height * 0.82f, 42, 92);
             var glow = GlowTex();
             GUI.color = new Color(1f, 0.78f, 0.22f, (0.32f + 0.22f * breathe) * pop);
@@ -20422,7 +20432,7 @@ namespace FlockFive
         }
 
         static void DrawGiftConfetti(float u, float s) =>
-            DrawGiftConfetti(u, s, new Vector2(Screen.width * 0.5f, Screen.height * 0.40f));
+            DrawGiftConfetti(u, s, new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.40f));
 
         static void DrawGiftConfetti(float u, float s, Vector2 origin)
         {
@@ -20447,7 +20457,7 @@ namespace FlockFive
                 h2 = h2 - Mathf.Floor(h2);
                 float ang = hbit * Mathf.PI * 2f + i * 0.21f;
                 float side = (i % 3) - 1f;
-                float ox = origin.x + side * Screen.width * 0.16f;
+                float ox = origin.x + side * PhoneArea.W * 0.16f;
                 float oy = origin.y - (i % 5) * 8f * s;
                 float speed = (110f + 170f * hbit) * s;
                 float grav = 220f * pop * pop * s;

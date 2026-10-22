@@ -89,12 +89,12 @@ namespace FlockFive
         static float VipCardWidth(float s, bool withButton)
         {
             float baseW = StandardPopupWidth(s);
-            float insetL = Mathf.Max(12f * s, Screen.safeArea.xMin + 8f);
-            float insetR = Mathf.Max(12f * s, Screen.width - Screen.safeArea.xMax + 8f);
-            float span = Mathf.Max(8f, Screen.width - insetL - insetR);
+            float insetL = Mathf.Max(12f * s, PhoneArea.Safe.xMin + 8f);
+            float insetR = Mathf.Max(12f * s, PhoneArea.W - PhoneArea.Safe.xMax + 8f);
+            float span = Mathf.Max(8f, PhoneArea.W - insetL - insetR);
             float w = baseW * VipCardGrow;
             float slabFit = span / AdCardSlabFrac;
-            float edgeFit = Screen.width - 8f;
+            float edgeFit = PhoneArea.W - 8f;
             if (w > slabFit) w = slabFit;
             if (w > edgeFit) w = edgeFit;
             if (w < baseW) w = baseW;
@@ -113,8 +113,8 @@ namespace FlockFive
             float statusH = Mathf.Max(28f, 22f * s);
             float linkH = Mathf.Max(48f, 40f * s);
             float linkW = StandardPopupWidth(s);
-            float bottom = Screen.height - Mathf.Max(6f, Screen.safeArea.yMin);
-            link = new Rect((Screen.width - linkW) * 0.5f, bottom - linkH - 4f * s, linkW, linkH);
+            float bottom = PhoneArea.H - Mathf.Max(6f, PhoneArea.Safe.yMin);
+            link = new Rect((PhoneArea.W - linkW) * 0.5f, bottom - linkH - 4f * s, linkW, linkH);
             status = new Rect(link.x, link.y - 4f * s - statusH, link.width, statusH);
         }
 
@@ -148,19 +148,19 @@ namespace FlockFive
             }
             float cardW = VipCardWidth(s, withButton);
             float cardH = cardW * (AdCardArtH / AdCardArtW);
-            float insetL = Mathf.Max(12f * s, Screen.safeArea.xMin + 8f);
-            float insetR = Mathf.Max(12f * s, Screen.width - Screen.safeArea.xMax + 8f);
-            float cx = insetL + Mathf.Max(8f, Screen.width - insetL - insetR) * 0.5f;
+            float insetL = Mathf.Max(12f * s, PhoneArea.Safe.xMin + 8f);
+            float insetR = Mathf.Max(12f * s, PhoneArea.W - PhoneArea.Safe.xMax + 8f);
+            float cx = insetL + Mathf.Max(8f, PhoneArea.W - insetL - insetR) * 0.5f;
             float flowerSz = withButton ? PopupButtonSize(s, cardW) : 0f;
             float overlap = withButton ? PopupCtaOverlap(flowerSz, 0f) : 0f;
             float crestUp = withButton ? 0f : VipCrestOverhang(cardH);
             float stackH = crestUp + cardH + flowerSz - overlap;
-            var placed = PlacePopup(s, Mathf.Min(cardW, Screen.width), stackH, withButton ? 0.32f : 0.36f);
+            var placed = PlacePopup(s, Mathf.Min(cardW, PhoneArea.W), stackH, withButton ? 0.32f : 0.36f);
             card = new Rect(cx - cardW * 0.5f, placed.y + crestUp, cardW, cardH);
             flower = withButton
                 ? new Rect(cx - flowerSz * 0.5f, card.yMax - overlap, flowerSz, flowerSz)
                 : new Rect(cx, card.yMax, 0f, 0f);
-            float bot = Screen.height - Mathf.Max(8f, Screen.safeArea.yMin + 6f);
+            float bot = PhoneArea.H - Mathf.Max(8f, PhoneArea.Safe.yMin + 6f);
             float low = Mathf.Max(card.yMax, flower.yMax);
             if (low > bot)
             {
@@ -199,12 +199,12 @@ namespace FlockFive
             float top = x.yMax + 4f * s;
             float ceiling = status.y - 12f * s;
             float room = Mathf.Max(80f, ceiling - top);
-            float insetL = Mathf.Max(12f * s, Screen.safeArea.xMin + 8f);
-            float insetR = Mathf.Max(12f * s, Screen.width - Screen.safeArea.xMax + 8f);
-            float span = Mathf.Max(8f, Screen.width - insetL - insetR);
+            float insetL = Mathf.Max(12f * s, PhoneArea.Safe.xMin + 8f);
+            float insetR = Mathf.Max(12f * s, PhoneArea.W - PhoneArea.Safe.xMax + 8f);
+            float span = Mathf.Max(8f, PhoneArea.W - insetL - insetR);
             // The card rect includes the orchid overhang; the visible frame is AdCardSlabFrac.
-            float cardW = Mathf.Min(Screen.width * VipOfferWidth, span) / AdCardSlabFrac;
-            cardW = Mathf.Min(cardW, Screen.width - 8f);
+            float cardW = Mathf.Min(PhoneArea.W * VipOfferWidth, span) / AdCardSlabFrac;
+            cardW = Mathf.Min(cardW, PhoneArea.W - 8f);
             float natH = 0f, fs = 0f, below = 0f;
             for (int i = 0; i < 40; i++)
             {
@@ -217,7 +217,7 @@ namespace FlockFive
             }
             float cardH = Mathf.Clamp(room - below, natH, natH * VipOfferTallMax);
             float y = top + Mathf.Max(0f, room - (cardH + below)) * 0.5f;
-            float cx = Mathf.Clamp(insetL + span * 0.5f, cardW * 0.5f + 4f, Screen.width - cardW * 0.5f - 4f);
+            float cx = Mathf.Clamp(insetL + span * 0.5f, cardW * 0.5f + 4f, PhoneArea.W - cardW * 0.5f - 4f);
             card = new Rect(cx - cardW * 0.5f, y, cardW, cardH);
             flower = new Rect(cx - fs * 0.5f, card.yMax - PopupCtaOverlap(fs, 0f), fs, fs);
         }

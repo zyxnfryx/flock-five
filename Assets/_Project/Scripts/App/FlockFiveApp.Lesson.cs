@@ -670,7 +670,7 @@ namespace FlockFive
                 if (_hiveInspect != ix)
                 {
                     _hiveInspect = ix;
-                    _hiveInspectFrom = AlbumInspectRect(Screen.width > 2f ? Screen.width : 1179f, Screen.height > 2f ? Screen.height : 2556f);
+                    _hiveInspectFrom = AlbumInspectRect(PhoneArea.W > 2f ? PhoneArea.W : 1179f, PhoneArea.H > 2f ? PhoneArea.H : 2556f);
                 }
                 _hiveInspectT = 1f;
                 _hiveInspectClosing = false;

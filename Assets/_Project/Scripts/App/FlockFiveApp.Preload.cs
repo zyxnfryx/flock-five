@@ -141,7 +141,7 @@ namespace FlockFive
             StudioJingle();
             if (!_birdsWarm) { _birdsWarm = true; StudioBirds.Warm(); }
             float t = StudioClock(since);
-            float W = Screen.width, H = Screen.height;
+            float W = PhoneArea.W, H = PhoneArea.H;
             var keep = GUI.color;
             var dark = WarmCoverColor; dark.a = a;
             GUI.color = dark;
@@ -405,7 +405,7 @@ namespace FlockFive
             var c = WarmCoverColor;
             c.a = a;
             GUI.color = c;
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), Texture2D.whiteTexture);
             GUI.color = keep;
         }
 

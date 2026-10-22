@@ -37,7 +37,7 @@ namespace FlockFive
                 if (EditorGameSize != null) EditorGameSize(w, h);
                 yield return new WaitForSecondsRealtime(1.0f);
                 MuteShotAudio();
-                Debug.Log("B89SHOT sized " + Screen.width + "x" + Screen.height);
+                Debug.Log("B89SHOT sized " + PhoneArea.W + "x" + PhoneArea.H);
                 ShowSplash();
                 float t = 0f;
                 while (t < 0.8f)
@@ -53,7 +53,7 @@ namespace FlockFive
                 MuteShotAudio();
                 Debug.Log("B89SHOT saving");
                 SaveFrame(dir + "/b89-settings-order-" + tag + ".png");
-                File.WriteAllText("/tmp/flock-five-b89-settings-done", tag + " " + Screen.width + "x" + Screen.height + "\n");
+                File.WriteAllText("/tmp/flock-five-b89-settings-done", tag + " " + PhoneArea.W + "x" + PhoneArea.H + "\n");
             }
             finally
             {

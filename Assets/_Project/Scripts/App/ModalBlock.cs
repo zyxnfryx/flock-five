@@ -108,7 +108,7 @@ namespace FlockFive
         public static bool BlocksPoint(Veil veil, Vector2 p)
         {
             if (!veil.Open) return false;
-            if (veil.Screen.width >= 2f && veil.Screen.height >= 2f && !veil.Screen.Contains(p))
+            if (veil.PhoneArea.W >= 2f && veil.PhoneArea.H >= 2f && !veil.Screen.Contains(p))
                 return false;
             if (HasCutout(veil.Cutout) && veil.Cutout.Contains(p)) return false;
             return true;
@@ -134,7 +134,7 @@ namespace FlockFive
             if (tint.a < 0.004f || Texture2D.whiteTexture == null) return;
             var screen = veil.Screen;
             if (screen.width < 2f || screen.height < 2f)
-                screen = new Rect(0f, 0f, Screen.width, Screen.height);
+                screen = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
             var prev = GUI.color;
             GUI.color = tint;
             GUI.DrawTexture(screen, Texture2D.whiteTexture);
@@ -143,8 +143,8 @@ namespace FlockFive
 
         public static void Paint(Id id, Color tint)
         {
-            float w = Screen.width > 2f ? Screen.width : 2f;
-            float h = Screen.height > 2f ? Screen.height : 2f;
+            float w = PhoneArea.W > 2f ? PhoneArea.W : 2f;
+            float h = PhoneArea.H > 2f ? PhoneArea.H : 2f;
             DrawUnder(Raise(id, w, h), tint);
             GUI.color = Color.white;
         }

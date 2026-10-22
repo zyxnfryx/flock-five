@@ -39,14 +39,14 @@ namespace FlockFive
             float min = CaptionFloorY(s);
             float y = belowY + 8f * s;
             if (y < min) y = min;
-            float maxY = Screen.height - h - 8f;
+            float maxY = PhoneArea.H - h - 8f;
             if (y > maxY) y = maxY > min ? maxY : min;
             if (y < min) y = min;
             if (w < 8f) w = 8f;
             if (h < 8f) h = 8f;
-            float x = (Screen.width - w) * 0.5f;
-            float left = Mathf.Max(8f, Screen.safeArea.xMin + 6f);
-            float right = Screen.width - Mathf.Max(8f, Screen.width - Screen.safeArea.xMax + 6f) - w;
+            float x = (PhoneArea.W - w) * 0.5f;
+            float left = Mathf.Max(8f, PhoneArea.Safe.xMin + 6f);
+            float right = PhoneArea.W - Mathf.Max(8f, PhoneArea.W - PhoneArea.Safe.xMax + 6f) - w;
             if (right < left) right = left;
             if (x < left) x = left;
             if (x > right) x = right;
@@ -58,11 +58,11 @@ namespace FlockFive
         // cap 600 reference pixels, floor 240. Safe-area aware.
         static float StandardPopupWidth(float s)
         {
-            float insetL = Mathf.Max(12f * s, Screen.safeArea.xMin + 8f);
-            float insetR = Mathf.Max(12f * s, Screen.width - Screen.safeArea.xMax + 8f);
-            float span = Screen.width - insetL - insetR;
+            float insetL = Mathf.Max(12f * s, PhoneArea.Safe.xMin + 8f);
+            float insetR = Mathf.Max(12f * s, PhoneArea.W - PhoneArea.Safe.xMax + 8f);
+            float span = PhoneArea.W - insetL - insetR;
             if (span < 8f) span = 8f;
-            float cardW = Mathf.Min(span, Mathf.Min(Screen.width * 0.88f, 600f * s));
+            float cardW = Mathf.Min(span, Mathf.Min(PhoneArea.W * 0.88f, 600f * s));
             float floor = 240f;
             if (floor > span) floor = span;
             if (cardW < floor) cardW = floor;
@@ -75,11 +75,11 @@ namespace FlockFive
         {
             if (s < 1f) s = 1f;
             float sz = cardW * 0.62f;
-            float cap = Screen.width * 0.58f;
+            float cap = PhoneArea.W * 0.58f;
             if (sz > cap) sz = cap;
             float floor = 120f * s;
             if (sz < floor) sz = floor;
-            float span = Screen.width - 24f;
+            float span = PhoneArea.W - 24f;
             if (span < 8f) span = 8f;
             if (sz > span) sz = span;
             if (sz < 8f) sz = 8f;
@@ -129,11 +129,11 @@ namespace FlockFive
         // Card origin in the safe band. bias is 0 at the top of that band, 1 at the bottom.
         static Rect PlacePopup(float s, float w, float h, float bias)
         {
-            float insetL = Mathf.Max(12f * s, Screen.safeArea.xMin + 8f);
-            float insetR = Mathf.Max(12f * s, Screen.width - Screen.safeArea.xMax + 8f);
+            float insetL = Mathf.Max(12f * s, PhoneArea.Safe.xMin + 8f);
+            float insetR = Mathf.Max(12f * s, PhoneArea.W - PhoneArea.Safe.xMax + 8f);
             float top = TopHud() + 4f * s;
-            float bot = Screen.height - Mathf.Max(8f, Screen.safeArea.yMin + 4f);
-            float span = Screen.width - insetL - insetR;
+            float bot = PhoneArea.H - Mathf.Max(8f, PhoneArea.Safe.yMin + 4f);
+            float span = PhoneArea.W - insetL - insetR;
             if (span < 8f) span = 8f;
             if (w > span) w = span;
             if (w < 8f) w = 8f;
@@ -154,12 +154,12 @@ namespace FlockFive
         {
             if (w < 8f) w = 8f;
             if (h < 8f) h = 8f;
-            float inset = Mathf.Max(8f * s, Screen.width - Screen.safeArea.xMax + 6f);
-            float x = Screen.width - inset - w;
-            float left = Mathf.Max(8f, Screen.safeArea.xMin + 6f);
+            float inset = Mathf.Max(8f * s, PhoneArea.W - PhoneArea.Safe.xMax + 6f);
+            float x = PhoneArea.W - inset - w;
+            float left = Mathf.Max(8f, PhoneArea.Safe.xMin + 6f);
             if (x < left) x = left;
             float y = top;
-            float bot = Screen.height - h - Mathf.Max(8f, Screen.safeArea.yMin + 4f);
+            float bot = PhoneArea.H - h - Mathf.Max(8f, PhoneArea.Safe.yMin + 4f);
             if (y > bot) y = bot;
             if (y < 8f) y = 8f;
             return new Rect(x, y, w, h);
@@ -171,7 +171,7 @@ namespace FlockFive
 
         static float HomeAvatarIcon(float s)
         {
-            float h = Screen.height > 2f ? Screen.height : s * 720f;
+            float h = PhoneArea.H > 2f ? PhoneArea.H : s * 720f;
             return HomeAvatarBirdPx(h);
         }
 

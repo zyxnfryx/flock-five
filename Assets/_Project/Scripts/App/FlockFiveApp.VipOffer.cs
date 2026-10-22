@@ -258,7 +258,7 @@ namespace FlockFive
                     return;
                 }
                 if (_app == null) return;
-                var lay = LayoutVipSoft(Screen.width, Screen.height);
+                var lay = LayoutVipSoft(PhoneArea.W, PhoneArea.H);
                 ModalBlock.Paint(ModalBlock.Id.VipSoft, new Color(0.05f, 0.04f, 0.03f, 0.58f));
                 bool goHit = false;
                 bool goHeld = false;
@@ -269,7 +269,7 @@ namespace FlockFive
                 {
                     goHit = HitPad(lay.Go, out goHeld);
                     skipHit = HitPad(lay.Skip, out skipHeld);
-                    outside = HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
+                    outside = HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
                 }
                 _app.PaintOfferCaption(VipSoftLine, lay.Caption, s);
                 EnsureOfferWord();
@@ -414,7 +414,7 @@ namespace FlockFive
                 else body = Union(body, flower);
                 var swallow = new Rect(body.x - 12f, body.y - 12f, body.width + 24f, body.height + 24f);
                 bool onCard = HitPad(swallow, out _);
-                bool outside = HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
+                bool outside = HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
                 if (outside && (swallow.Contains(Event.current.mousePosition) || link.Contains(Event.current.mousePosition)))
                     outside = false;
 
@@ -693,7 +693,7 @@ namespace FlockFive
                 float a = Mathf.Clamp01(1f - Mathf.Abs(age - half) / half);
                 a = PopupMotion.Smooth(a);
                 if (a < 0.04f) return;
-                Vector2 from = _anchored ? _anchor : new Vector2(Screen.width * 0.82f, TopHud() + 40f * s);
+                Vector2 from = _anchored ? _anchor : new Vector2(PhoneArea.W * 0.82f, TopHud() + 40f * s);
                 float d = Mathf.Lerp(80f * s, 280f * s, EaseOutCubic(age / dur));
                 GUI.color = new Color(1f, 0.78f, 0.28f, 0.55f * a);
                 GUI.DrawTexture(new Rect(from.x - d * 0.5f, from.y - d * 0.5f, d, d), glow, ScaleMode.ScaleToFit, true);
@@ -708,7 +708,7 @@ namespace FlockFive
                 if (fade < 0.04f) return;
                 var tex = VipCrownTex();
                 if (tex == null) return;
-                Vector2 from = _anchored ? _anchor : new Vector2(Screen.width * 0.82f, TopHud() + 36f * s);
+                Vector2 from = _anchored ? _anchor : new Vector2(PhoneArea.W * 0.82f, TopHud() + 36f * s);
                 // To the card centre, where the burst fires and the card grows from.
                 Vector2 to = card.center;
                 // Ease in-out: lifts off gently, glides, and slows into the card spot.
@@ -735,7 +735,7 @@ namespace FlockFive
                     if (f > 0.01f)
                     {
                         GUI.color = new Color(1f, 0.93f, 0.70f, 0.30f * f * flash);
-                        GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+                        GUI.DrawTexture(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), Texture2D.whiteTexture);
                         var bloom = GlowTex();
                         if (bloom != null)
                         {
@@ -1101,7 +1101,7 @@ namespace FlockFive
                     VipWelcomeHoldsRail = false;
                     return;
                 }
-                bool tap = HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
+                bool tap = HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
 
                 if (!_welFanfare && age >= WelPopStart)
                 {
@@ -1113,10 +1113,10 @@ namespace FlockFive
                 float dimA = 0.66f * PopupMotion.Smooth(age / 0.25f) * (1f - PopupMotion.Smooth(PopupMotion.Beat(exitU, 0.35f, 0.65f)));
                 ModalBlock.Paint(ModalBlock.Id.Vip, new Color(0.04f, 0.03f, 0.02f, dimA));
 
-                float d = Mathf.Min(Screen.width * 0.36f, Screen.height * 0.19f);
+                float d = Mathf.Min(PhoneArea.W * 0.36f, PhoneArea.H * 0.19f);
                 float floorY = SplashTitleHalo().yMax + 12f * s;
-                float cy = Mathf.Max(Screen.height * 0.38f, floorY + d * 0.5f);
-                var rest = new Rect(Screen.width * 0.5f - d * 0.5f, cy - d * 0.5f, d, d);
+                float cy = Mathf.Max(PhoneArea.H * 0.38f, floorY + d * 0.5f);
+                var rest = new Rect(PhoneArea.W * 0.5f - d * 0.5f, cy - d * 0.5f, d, d);
                 Rect home = _app != null ? _app.SplashNoAdsRect() : default;
                 bool canFly = home.width > 4f;
 
@@ -1162,10 +1162,10 @@ namespace FlockFive
                     * (1f - PopupMotion.Smooth(PopupMotion.Beat(exitU, 0f, 0.35f)));
                 if (capA > 0.02f && _app != null)
                 {
-                    float w = Mathf.Min(StandardPopupWidth(s) * 0.78f, Screen.width - 32f * s);
+                    float w = Mathf.Min(StandardPopupWidth(s) * 0.78f, PhoneArea.W - 32f * s);
                     float h = Mathf.Max(56f, 60f * s);
                     float y = rest.yMax + d * 0.36f + 16f * s;
-                    _app.PaintWelcomeCaption(WelcomeLine, new Rect((Screen.width - w) * 0.5f, y, w, h), s, capA);
+                    _app.PaintWelcomeCaption(WelcomeLine, new Rect((PhoneArea.W - w) * 0.5f, y, w, h), s, capA);
                 }
 
                 if (tap && age >= WelSkipAfter && _welExitAt < 0f && CoachTap.AnyTap(CoachStep.VipWelcome))

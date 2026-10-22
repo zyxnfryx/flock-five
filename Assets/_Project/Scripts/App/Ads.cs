@@ -1361,6 +1361,7 @@ namespace FlockFive
 
         void OnGUI()
         {
+            GUI.matrix = PhoneArea.GuiBase;
             AdConsent.DrawPrompt();
 #if FF_ADS_DEV
             DrawDevLog();
@@ -1416,10 +1417,10 @@ namespace FlockFive
         void DrawDevLog()
         {
             if (!_showLog) return;
-            float s = Screen.width / 400f;
+            float s = PhoneArea.W / 400f;
             var old = GUI.matrix;
-            GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1f));
-            float w = 400f, h = Screen.height / s;
+            GUI.matrix = PhoneArea.GuiBase * Matrix4x4.Scale(new Vector3(s, s, 1f));
+            float w = 400f, h = PhoneArea.H / s;
             GUI.color = new Color(0f, 0f, 0f, 0.92f);
             GUI.DrawTexture(new Rect(0, 0, w, h), Texture2D.whiteTexture);
             GUI.color = Color.white;

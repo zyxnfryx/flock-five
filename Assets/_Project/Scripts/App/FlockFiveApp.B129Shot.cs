@@ -112,9 +112,9 @@ namespace FlockFive
                 fighter = SpriteAnim.Dest(spot.Frame, spr.rect.width, spr.rect.height, spot.Foot, spot.Unit, spot.Sx, spot.Sy);
             }
             var comb = _bgBossSlotNow;
-            float k = 390f / Screen.width;
+            float k = 390f / PhoneArea.W;
             var ci = CultureInfo.InvariantCulture;
-            return tag + " screen " + Screen.width + "x" + Screen.height + " frame " + spot.Frame
+            return tag + " screen " + PhoneArea.W + "x" + PhoneArea.H + " frame " + spot.Frame
                 + " fighter " + R(fighter) + " comb " + R(comb) + " colR " + R(L.ColR)
                 + " combGapPx " + (fighter.xMin - comb.xMax).ToString("0.0", ci)
                 + " combGapPt390 " + ((fighter.xMin - comb.xMax) * k).ToString("0.0", ci)
