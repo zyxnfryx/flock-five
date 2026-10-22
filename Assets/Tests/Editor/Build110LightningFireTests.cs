@@ -199,6 +199,8 @@ namespace FlockFive.Editor
             string gapped = CaptionLayout.HeadlineGap(line);
             Check("visible-gap-between-sentences", gapped == "Lightning burned the branch!\n\nWatch out for dangerous weather"
                 && CaptionLayout.IsFireLine(gapped) && CaptionLayout.IsFireLine(line), "[" + gapped.Replace("\n", "|") + "]");
+            Check("fire-caption-roomier-gap", CaptionLayout.GapKeepFor(gapped) > CaptionLayout.HeadlineGapKeep
+                && Mathf.Abs(CaptionLayout.GapKeepFor("One.\n\nTwo.") - CaptionLayout.HeadlineGapKeep) < 1e-5f, "keep " + CaptionLayout.FireGapKeep);
             string src = Read("Assets/_Project/Scripts/App/CaptionLayout.cs");
             Check("emoji-swap-removed-for-fire", src.IndexOf("FireEmojiLine") < 0, "no FireEmojiLine");
             var faces = new[] { new Vector2(1179f, 2556f), new Vector2(750f, 1334f), new Vector2(1536f, 2048f) };
