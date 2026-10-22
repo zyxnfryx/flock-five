@@ -1279,18 +1279,22 @@ namespace FlockFive
             public Rect BadgerBox;
         }
 
+        public const float BirdScale = 1.25f;
+        public const float InFrac = 0.10f;
+        public const float FlapSpan = 1504f / 1024f;
+        public const float FlapVisL = 0.008f, FlapVisR = 0.753f, FlapVisT = 0.007f, FlapVisB = 0.767f;
+
         public static Mark Rest(BadgerArenaRects.Boxes box, float artW, float artH)
+            => Rest(box, artW, artH, float.PositiveInfinity);
+
+        // b130 v2 (d): the live rest mark. The badger is clamped left of the score column (rightLimit) exactly as it is
+        // drawn, then the bird mirrors him around the middle of the arena (the pick combs' axis): same distance from
+        // centre, feet on his baseline, 1.25x the old bird (no longer capped by the narrow bird box's height).
+        public static Mark Rest(BadgerArenaRects.Boxes box, float artW, float artH, float rightLimit)
         {
             var m = new Mark();
             var you = box.YouFighter;
             var boss = box.BossFighter;
-            float icon = Mathf.Min(you.width * 0.92f, you.height * 0.90f);
-            if (icon < 1f) icon = 1f;
-            m.Icon = icon;
-            m.FaceLeft = false;
-            m.Bird = you.center;
-            m.BirdBox = new Rect(m.Bird.x - icon * 0.5f, m.Bird.y - icon * 0.5f, icon, icon);
-
             if (artW < 1f) artW = 480f;
             if (artH < 1f) artH = 640f;
             float fit = 0.96f;
@@ -1300,8 +1304,29 @@ namespace FlockFive
             if (m.Unit < 0.001f) m.Unit = 0.001f;
             float w = artW * m.Unit;
             float h = artH * m.Unit;
-            m.Foot = new Vector2(boss.center.x, boss.yMax);
+            m.Foot = new Vector2(boss.center.x - boss.width * InFrac, boss.yMax);
+            m.Foot.x = ClampFootX(m.Foot.x, w, rightLimit);
             m.BadgerBox = new Rect(m.Foot.x - w * 0.5f, m.Foot.y - h, w, h);
+
+            float icon = Mathf.Min(you.width * 0.92f, you.height * 0.90f) * BirdScale;
+            icon = Mathf.Min(icon, you.height);
+            if (icon < 1f) icon = 1f;
+            m.Icon = icon;
+            m.FaceLeft = false;
+            // The battle bird hovers on its flap sheet (bird_*_1..4, ~1.47x the rest frame), whose painted body fills only
+            // part of the drawn square: x 0.008..0.753, y 0.007..0.767. Place by that painted box, not the square, so the
+            // visible bird is the badger's mirror image about the pick-comb axis and its feet sit on his baseline.
+            float d = icon * FlapSpan;
+            float axis = box.Middle.center.x;
+            float visW = (FlapVisR - FlapVisL) * d, visH = (FlapVisB - FlapVisT) * d;
+            float visCx = 2f * axis - m.Foot.x;
+            // Left limit mirrors the badger's right limit (the YOU column edge), so the bird may use the same margin.
+            float leftLimit = float.IsInfinity(rightLimit) ? you.x : 2f * axis - rightLimit;
+            if (visCx - visW * 0.5f < leftLimit) visCx = leftLimit + visW * 0.5f;
+            float cx = visCx - (FlapVisL + FlapVisR - 1f) * 0.5f * d;
+            float cy = m.Foot.y - (FlapVisB - 0.5f) * d;
+            m.Bird = new Vector2(cx, cy);
+            m.BirdBox = new Rect(visCx - visW * 0.5f, m.Foot.y - visH, visW, visH);
             return m;
         }
 
@@ -1313,6 +1338,19 @@ namespace FlockFive
             if (m.BirdBox.width < arena.height * 0.35f) return false;
             if (m.BadgerBox.height < arena.height * 0.55f) return false;
             return Contains(arena, m.BirdBox) && Contains(arena, m.BadgerBox);
+        }
+
+        // b129 v4: the one badger-to-pick-comb gap, ~12 px at 390x844 (Ui 844/720), scaled with the layout.
+        public const float CombGapRef = 12f;
+        public const float CombGapRefUi = 844f / 720f;
+        public static float CombGap(float s) => CombGapRef * s / CombGapRefUi;
+
+        // Slide the comb left until its right edge is `gap` short of fighterLeft; never left of minX.
+        public static Rect ClearComb(Rect comb, float fighterLeft, float gap, float minX)
+        {
+            float over = comb.xMax + gap - fighterLeft;
+            if (over > 0f) comb.x = Mathf.Max(minX, comb.x - over);
+            return comb;
         }
 
         // Keep every beat's drawn sprite left of ColR (the meter column). Shared by
@@ -1369,6 +1407,39 @@ namespace FlockFive
             float y = col.yMax - (index + 1) * unit + gap * 0.5f;
             float inset = col.width * 0.06f;
             return new Rect(col.x + inset, y, Mathf.Max(2f, col.width - inset * 2f), h);
+        }
+
+        // b130 (h): the column is two lanes wide. Comb i sits on row i/2 (bottom up), lane i%2 (left, right), so the
+        // stack is half as tall as the old single line. Same Unit as before: one row per two points.
+        public const int Lanes = 2;
+
+        public static int Rows(int target) => (Mathf.Max(1, target) + Lanes - 1) / Lanes;
+
+        public static Rect Comb2(Rect col, int index, float unit)
+        {
+            float gap = Mathf.Max(1f, unit * 0.12f);
+            float h = Mathf.Max(2f, unit - gap);
+            int row = index / Lanes, lane = index % Lanes;
+            float y = col.yMax - (row + 1) * unit + gap * 0.5f;
+            float inset = col.width * 0.05f;
+            float laneGap = Mathf.Max(1f, col.width * 0.04f);
+            float w = Mathf.Max(2f, (col.width - inset * 2f - laneGap) / Lanes);
+            return new Rect(col.x + inset + lane * (w + laneGap), y, w, h);
+        }
+
+        // The end plate on the top row of the two-lane stack.
+        public static Rect EndPlate2(Rect col, int target, float unit)
+        {
+            int n = target < 1 ? 1 : target;
+            var top = Comb2(col, (Rows(n) - 1) * Lanes, unit);
+            float h = top.height * 1.65f;
+            if (h < 52f) h = 52f;
+            float cap = col.width * 1.20f;
+            if (h > cap) h = cap;
+            float y = top.yMax - h * 0.78f;
+            if (y + h > col.yMax) y = col.yMax - h;
+            if (y < col.y) y = col.y;
+            return new Rect(col.x, y, col.width, h);
         }
 
         // Points still needed. Clamped so a full bar reads 0.

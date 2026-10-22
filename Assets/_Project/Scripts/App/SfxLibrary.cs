@@ -54,6 +54,33 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.42f, MixDesk.DuckWhoosh);
         }
 
+        // b129: ice crack and ice shatter for the badger thaw (the shared break clips).
+        // v3: Musical Producer's original ice clips, each a no-repeat bank. Crack: Mid one-shot 0.35. Shatter: Lead 0.55.
+        public static readonly string[] IceCrackBank = { "Audio/Ice/ice_crack_00", "Audio/Ice/ice_crack_01", "Audio/Ice/ice_crack_02" };
+        public static readonly string[] IceShatterBank = { "Audio/Ice/ice_shatter_00", "Audio/Ice/ice_shatter_01", "Audio/Ice/ice_shatter_02" };
+        static int _iceCrackLast = -1, _iceShatterLast = -1;
+        public static void IceCrack() => PlayBreak(IceCrackBank[NextNoRepeat(IceCrackBank.Length, ref _iceCrackLast)], 0.35f, 1.0f, MixLayer.Mid);
+        public static void IceShatter() => PlayBreak(IceShatterBank[NextNoRepeat(IceShatterBank.Length, ref _iceShatterLast)], 0.55f, 1.0f, MixLayer.Lead);
+        // Any variant but the last one played.
+        public static int NextNoRepeat(int n, ref int last)
+        {
+            if (n <= 1) { last = 0; return 0; }
+            int i = UnityEngine.Random.Range(0, n - 1);
+            if (i >= last && last >= 0) i++;
+            last = i;
+            return i;
+        }
+        static void PlayBreak(string path, float vol, float pitch, MixLayer layer)
+        {
+            if (!_clips.TryGetValue(path, out var clip) || clip == null)
+            {
+                clip = Resources.Load<AudioClip>(path);
+                if (clip == null) return;
+                _clips[path] = clip;
+            }
+            Sfx.PlayProc(clip, pitch, vol, layer);
+        }
+
         public static void Play(string name, float volume = 0.5f, float pitchVariance = 0f)
         {
             if (string.IsNullOrEmpty(name)) return;

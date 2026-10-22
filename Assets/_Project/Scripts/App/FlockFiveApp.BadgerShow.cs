@@ -58,6 +58,8 @@ namespace FlockFive
         // Every badger, hive, bee, and splat frame. Size is art px times `unit`.
         // SpriteAnim plants the opaque foot on `foot` so idle_a / idle_b and the leap
         // frames do not pop. Missing art draws nothing.
+        internal static Rect ShotBadgerDest;
+        internal static string ShotBadgerArt = "";
         static Rect DrawBadgerArt(string name, Vector2 foot, float unit, float alpha, float degrees = 0f, float sx = 1f, float sy = 1f)
         {
             var spr = SpriteCatalog.BadgerArt(name);
@@ -66,6 +68,8 @@ namespace FlockFive
             if (sy < 0.05f) sy = 1f;
             var r = spr.rect;
             var dest = SpriteAnim.Dest(name, r.width, r.height, foot, unit, sx, sy);
+            if (name.StartsWith("badger_") && dest.width * dest.height > ShotBadgerDest.width * ShotBadgerDest.height)
+            { ShotBadgerDest = dest; ShotBadgerArt = name; } // evidence harness probe (largest badger drawn this frame)
             if (!GuiPaint() || alpha < 0.01f) return dest;
             var keep = GUI.matrix;
             if (Mathf.Abs(degrees) > 0.01f)
@@ -163,6 +167,12 @@ namespace FlockFive
             var beat = BadgerLeap.BeatAt(t);
             var pose = BadgerAnim.Entrance(t);
             float unit = _bgLeapUnit;
+            if (beat >= BadgerLeapBeat.Leap)
+            {
+                DrawBadgerLeapToMark(t);
+                SparkleFx.DrawBits();
+                return;
+            }
             if (beat <= BadgerLeapBeat.Crouch)
             {
                 var foot = Vector2.Lerp(_bgLeapFrom, _bgLeapTo, BadgerLeap.HopTravel(t));
@@ -192,6 +202,66 @@ namespace FlockFive
             }
             DrawBadgerWash(BadgerLeap.WashAlpha(t));
             SparkleFx.DrawBits();
+        }
+
+        // b129: where and how the fight page will draw him on its first frame (Opening, wash-out): same layout,
+        // same rest mark, same unit, same pose. The leap lands exactly here so the cut has nothing to pop.
+        void BadgerFightMark(out Vector2 foot, out float unit, out BadgerSample pose)
+        {
+            var L = BadgerLayout();
+            var box = BadgerArenaRects.Split(L.Arena);
+            BadgerArtSize("badger_idle_b", 1f, out float aw, out float ah);
+            var mark = BadgerFighterPlace.Rest(box, aw, ah, L.ColR.x - 2f);
+            unit = mark.Unit;
+            var beat = BadgerSwipe.Active(0f) ? BadgerDuelBeat.Swipe : BadgerDuelBeat.Idle;
+            pose = BadgerAnim.Duel(beat, 0f, PlayClock.Now);
+            BadgerArtSize(pose.Frame, unit, out float w, out _);
+            float wide = w * (pose.ScaleX > 1f ? pose.ScaleX : 1f);
+            foot = mark.Foot;
+            foot.x = BadgerFighterPlace.ClampFootX(foot.x, wide, L.ColR.x - 2f);
+        }
+
+        // b129 leap beat + landing beat. Ease-out arc from the crouch spot to his fight mark, a toward-camera swell
+        // mid-air, a 3-frame squash on touchdown, then the fight pose held on the mark while the honey wash
+        // crossfades in BEHIND him (he is drawn over it), so the fight page's wash-out picks him up in place.
+        void DrawBadgerLeapToMark(float t)
+        {
+            BadgerFightMark(out var to, out float toUnit, out var restPose);
+            var from = _bgLeapTo;
+            float e = Badger129.LeapTravel(t);
+            var beat = BadgerLeap.BeatAt(t);
+            DrawBadgerWash(BadgerLeap.WashAlpha(t));
+            if (beat == BadgerLeapBeat.Leap)
+            {
+                var foot = Vector2.Lerp(from, to, e);
+                foot.y -= Badger129.LeapArc(t) * Screen.height * 0.16f;
+                float u = Mathf.Lerp(_bgLeapUnit, toUnit, e) * (1f + Badger129.LeapSwell(t));
+                _bgFxFoot = foot;
+                string lf = Badger129.LeapFrame(t);
+                DrawBadgerArt(lf, foot, LeapFrameUnit(lf, u), 1f);
+                return;
+            }
+            float k = Badger129.LandSquash(t);
+            if (k > 0f)
+            {
+                float a = Badger129.LandSquashAmount * k;
+                DrawBadgerArt("badger_crouch", to, LeapFrameUnit("badger_crouch", toUnit), 1f, 0f, 1f + a, 1f - a);
+                if (_bgLeapLandDust < 0) { _bgLeapLandDust = 1; SparkleFx.DustPuff(to, 8); }
+                return;
+            }
+            _bgLeapLandDust = -1;
+            _bgFxFoot = to;
+            DrawBadgerPose(restPose, to, toUnit, 1f);
+        }
+        int _bgLeapLandDust = -1;
+
+        // v2: the shared per-frame scale (Badger129.LeapUnit) against the idle art, from the live sprite rects.
+        static float LeapFrameUnit(string frame, float unit)
+        {
+            var r = SpriteCatalog.BadgerArt(Badger129.LeapScaleRef);
+            var f = SpriteCatalog.BadgerArt(frame);
+            if (r == null || f == null) return unit;
+            return Badger129.LeapUnit(unit, r.rect.height, f.rect.height);
         }
 
         // Dust when a hop lands and when the crouch catches the leap. Once per crossing.

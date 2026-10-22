@@ -289,10 +289,12 @@ namespace FlockFive.Editor
             var box = BadgerArenaRects.Split(arena);
             var mark = BadgerFighterPlace.Rest(box, 480f, 640f);
             bool read = BadgerFighterPlace.Readable(mark, arena);
+            // b130 (d/i): the 1.25x bird and the badger both step in toward the middle, so each body is centred in its own
+            // box (not wholly inside it) and stays on its own side of the VS box.
             bool birdInYou = mark.BirdBox.xMin >= box.YouFighter.xMin - 0.5f
-                && mark.BirdBox.xMax <= box.YouFighter.xMax + 0.5f;
-            bool badgerInBoss = mark.BadgerBox.xMin >= box.BossFighter.xMin - 0.5f
-                && mark.BadgerBox.xMax <= box.BossFighter.xMax + 0.5f
+                && box.YouFighter.Contains(new Vector2(mark.Bird.x, box.YouFighter.center.y)) && mark.BirdBox.xMax <= box.Middle.xMin;
+            bool badgerInBoss = box.BossFighter.Contains(new Vector2(mark.Foot.x, box.BossFighter.center.y))
+                && mark.BadgerBox.xMin >= box.Middle.xMax && mark.BadgerBox.xMax <= box.BossFighter.xMax + 0.5f
                 && mark.BadgerBox.height > box.BossFighter.height * 0.5f;
             bool face = !mark.FaceLeft && mark.Bird.x < box.Middle.center.x && mark.Foot.x > box.Middle.center.x;
 
