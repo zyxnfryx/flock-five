@@ -44,7 +44,7 @@ namespace FlockFive
             if (_restarting || _won || _busy || _board == null) return;
             bool storming = GardenStorm.Wet > 0.45f;
             bool pending = LightningStrike.Force;
-            // b126: one decision (LightningStrike.Decide). The garden-3 intro strike waits for visible rain (Wet > 0.3, >= 5 s);
+            // b126: one decision (LightningStrike.Decide). The garden-3 intro strike waits for visible rain (Wet > 0.3, >= 3 s);
             // it is never owed past garden 3. Pest lines and the unseen sparrow intro block every strike.
             float play = GardenStorm.Instance != null ? GardenStorm.Instance.GardenPlay : 0f;
             bool sparrowDone = PlayerPrefs.GetInt(CoachSparrowKey, 0) != 0;

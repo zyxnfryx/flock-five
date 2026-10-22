@@ -19,7 +19,7 @@ namespace FlockFive
         // visible rain (Wet > IntroWet; glass drops spawn from StormGlass.WetOn 0.22). Garden 3's short onset puts
         // full rain on screen by then, still before a realistic fastest 9-move clear (~6.3 s). Never carried into
         // another garden: from garden 4 on there is no owed strike, only the normal dice.
-        public const float IntroDelay = 5.0f;
+        public const float IntroDelay = 3.0f;
         public const float IntroWet = 0.3f;
         public static bool IntroOwed(int index, bool everStruck) =>
             !everStruck && GardenStorm.StageFor(index + 1) == GardenStorm.StormStage.FirstStrike;
