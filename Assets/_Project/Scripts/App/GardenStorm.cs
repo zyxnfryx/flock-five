@@ -136,7 +136,7 @@ namespace FlockFive
         //   (and its lightning caption), with a short first wait | 4+ unchanged.
         public enum StormStage { Clear = 0, RainOnly = 1, FirstStrike = 2, Normal = 3 }
         public const int FirstStrikeGarden = 3;
-        public const float FirstStrikeWait = 6f;
+        public const float FirstStrikeWait = 1f; // rain eases in right after StormGlass.StartDelay
         public static StormStage StageFor(int garden)
         {
             if (garden <= 1) return StormStage.Clear;

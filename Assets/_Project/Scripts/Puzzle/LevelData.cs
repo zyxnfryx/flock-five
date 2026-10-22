@@ -288,7 +288,7 @@ namespace FlockFive
             {
                 if (Current != null && Current.Ostrich) return 0;
                 int n = DisplayNumber;
-                if (n <= 3) return 0; // b126: sparrow first on garden 4 (garden 3 is the first lightning strike)
+                if (n < PestSchedule.FirstSparrowGarden) return 0; // b126: sparrow first on garden 4 (garden 3 is the first lightning strike)
                 if (n <= 6) return 1;
                 if (n <= 10) return 2;
                 if (n <= 13) return 2;

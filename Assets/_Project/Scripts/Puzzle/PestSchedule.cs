@@ -17,6 +17,8 @@ namespace FlockFive
         public const int CollectsBetween = 2;
 
         // Matches SparrowVisits + HawkVisits so the hawk lesson slot stays.
+        // b126: the sparrow is first introduced on this garden (garden 3 is the first lightning strike).
+        public const int FirstSparrowGarden = 4;
         public const int CapQuiet = 0;   // levels 1-3
         public const int CapEarly = 1;   // 4-6
         public const int CapMid = 2;     // 7-10
@@ -163,7 +165,7 @@ namespace FlockFive
 
         public static int CapFor(int displayLevel)
         {
-            if (displayLevel <= 3) return CapQuiet;
+            if (displayLevel < FirstSparrowGarden) return CapQuiet;
             if (displayLevel <= 6) return CapEarly;
             if (displayLevel <= 10) return CapMid;
             if (displayLevel <= 13) return CapHawk;

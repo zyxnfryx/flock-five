@@ -44,22 +44,26 @@ namespace FlockFive
             if (_restarting || _won || _busy || _board == null) return;
             bool storming = GardenStorm.Wet > 0.45f;
             bool pending = LightningStrike.Force;
-            if (!storming && !pending)
+            // b126: one decision (LightningStrike.Decide). The garden-3 intro strike ignores Wet and fires early;
+            // it is never owed past garden 3. Pest lines and the unseen sparrow intro block every strike.
+            float play = GardenStorm.Instance != null ? GardenStorm.Instance.GardenPlay : 0f;
+            bool sparrowDone = PlayerPrefs.GetInt(CoachSparrowKey, 0) != 0;
+            var plan = LightningStrike.Decide(_lightningGarden, !LightningStrike.FirstStrikeOwed, storming, play,
+                PestStageFree(), _pestCue != 0, sparrowDone, _won);
+            if (!pending)
             {
-                _lightningRolled = false;
-                return;
+                if (plan == LightningStrike.Plan.None) { if (!storming) _lightningRolled = false; return; }
+                if (plan == LightningStrike.Plan.Roll && _lightningRolled) return;
             }
-            if (_lightningRolled && !pending) return;
-            // b110: the first strike this player ever gets is guaranteed, and it waits for a calm stage
-            // (no coach, leaf, hive, or pest lesson up) so the tutorial can show. The wait does not use the roll.
-            bool owed = !pending && LightningStrike.FirstStrikeOwed && LightningStrike.GardenEligible(_lightningGarden);
-            if (owed && !PestStageFree()) return;
+            bool owed = plan == LightningStrike.Plan.Intro;
             bool force = LightningStrike.ConsumeForce();
-            if (!force) _lightningRolled = true;
+            if (!force && !owed) _lightningRolled = true;
 
             int index = LightningStrike.TryPick(
-                _board, _bonusOn, _offerBurned, storming, _lightningStrikes, _lightningRoll, force, owed,
+                _board, _bonusOn, _offerBurned, storming || owed, _lightningStrikes, _lightningRoll, force, owed,
                 _lightningGarden, _lightningChance);
+            // The intro is garden 3's alone: no target or no proof of solvability drops it for good.
+            if (owed && index < 0) LightningStrike.MarkStruck();
             if (index < 0) return;
             var view = ViewFor(index);
             if (view == null) return;

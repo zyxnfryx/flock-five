@@ -5,7 +5,7 @@ using UnityEngine;
 namespace FlockFive.Editor
 {
     // Brandon: garden 1 is always clear weather. No rain, no storm, no lightning, ever.
-    static class Build126ClearGardenOneTests
+    public static class Build126ClearGardenOneTests
     {
         [MenuItem("Flock Five/Build 126 Clear Garden 1 Tests")]
         public static void Run()
@@ -28,6 +28,37 @@ namespace FlockFive.Editor
                 && GardenStorm.WantStorm(GardenStorm.FirstStrikeWait + 0.1f, GardenStorm.FirstWaitFor(3)), "wait " + GardenStorm.FirstWaitFor(3) + "s");
             Check("garden-4-unchanged", GardenStorm.FirstWaitFor(4) == GardenStorm.FirstWait && LightningStrike.GardenEligible(3), "");
             // Brandon: the first strike and the sparrow's first visit never share a garden.
+            // Behaviour (Brandon): simulate the ticks. A fast garden-3 clear never pushes the intro into garden 4.
+            const float dt = 0.1f;
+            bool struck = false, won3 = false;
+            LightningStrike.Plan p3 = LightningStrike.Plan.None;
+            for (float t = 0f; t < 30f && !won3; t += dt)
+            {
+                won3 = t >= 2.0f; // cleared before the intro delay (worst case)
+                var pl = LightningStrike.Decide(2, struck, GardenStorm.WantStorm(t, GardenStorm.FirstWaitFor(3)), t, true, false, false, won3);
+                if (pl != LightningStrike.Plan.None) { p3 = pl; struck = true; }
+            }
+            int g4Strikes = 0, g4Intro = 0;
+            for (float t = 0f; t < 600f; t += dt)
+            {
+                bool lineUp = t > 20f && t < 30f; // sparrow lesson line up
+                var pl = LightningStrike.Decide(3, struck, GardenStorm.WantStorm(t, GardenStorm.FirstWaitFor(4)), t, true, lineUp, false, false);
+                if (pl == LightningStrike.Plan.Intro) g4Intro++;
+                if (pl != LightningStrike.Plan.None) g4Strikes++;
+            }
+            Check("fast-garden-3-clear-no-strike-in-garden-4", p3 == LightningStrike.Plan.None && g4Strikes == 0 && g4Intro == 0,
+                "g3 " + p3 + " g4 strikes " + g4Strikes);
+            // Normal pace: the intro fires in garden 3 at IntroDelay, without any rain.
+            float at = -1f;
+            for (float t = 0f; t < 30f && at < 0f; t += dt)
+                if (LightningStrike.Decide(2, false, false, t, true, false, false, false) == LightningStrike.Plan.Intro) at = t;
+            Check("garden-3-intro-fires-early-dry", at >= LightningStrike.IntroDelay - 0.01f && at < LightningStrike.IntroDelay + 0.2f
+                && at < 9f, "at " + at.ToString("0.0") + "s");
+            // After the sparrow intro, garden 4 may roll normally (still never an owed intro).
+            Check("garden-4-rolls-after-sparrow", LightningStrike.Decide(3, false, true, 60f, true, false, true, false) == LightningStrike.Plan.Roll
+                && LightningStrike.Decide(3, false, true, 60f, true, true, true, false) == LightningStrike.Plan.None, "");
+            Check("pest-line-blocks-any-garden", LightningStrike.Decide(9, true, true, 60f, true, true, true, false) == LightningStrike.Plan.None, "");
+
             int firstSparrow = 0;
             for (int g = 1; g <= 20 && firstSparrow == 0; g++) if (PestSchedule.CapFor(g) > 0) firstSparrow = g;
             Check("first-strike-not-first-sparrow", firstSparrow == 4 && firstSparrow != GardenStorm.FirstStrikeGarden,
