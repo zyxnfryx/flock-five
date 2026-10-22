@@ -45,6 +45,8 @@ namespace FlockFive
         public const float StartDelay = 4f;
         public const float RampIn = 2.5f;
         public static float OnsetMul(float gardenPlay) => Ease(gardenPlay - StartDelay, RampIn);
+        // b126: same ramp from a per-garden clear delay (GardenStorm.OnsetDelayFor; garden 3 is shorter).
+        public static float OnsetMul(float gardenPlay, float startDelay) => Ease(gardenPlay - startDelay, RampIn);
 
         const int SpawnTries = 18;
         const float RefH = 2556f;
