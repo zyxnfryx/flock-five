@@ -129,12 +129,20 @@ namespace FlockFive
 
         public static GardenStorm Attach(Transform root) => Attach(root, GardenScene.Summer);
 
-        public static GardenStorm Attach(Transform root, GardenScene scene)
+        public static GardenStorm Attach(Transform root, GardenScene scene) => Attach(root, scene, 0);
+
+        // Brandon: garden 1 is always clear weather for new players. No rain, no storm, no thunder.
+        public static bool StormAllowed(int garden) => garden != 1;
+        bool _clear;
+        public bool IsClear => _clear;
+
+        public static GardenStorm Attach(Transform root, GardenScene scene, int garden)
         {
             var go = new GameObject("Storm");
             go.transform.SetParent(root, false);
             var gs = go.AddComponent<GardenStorm>();
             gs._snow = UsesSnow(scene);
+            gs._clear = !StormAllowed(garden);
             return gs;
         }
 
@@ -147,7 +155,7 @@ namespace FlockFive
         // Dev capture. The first storm is otherwise 70s out.
         public void JumpToStorm()
         {
-            if (_snow) return; // snow never storms
+            if (_snow || _clear) return; // snow never storms; garden 1 stays clear
             _gardenPlay = FirstWait + 4f; // well past StartDelay + RampIn
             _wet = 1f;
             Wet = 1f;
@@ -527,7 +535,7 @@ namespace FlockFive
             if (dt > 0.0001f)
                 _step = _step <= 0f ? dt : _step + (dt - _step) * 0.2f;
             _gardenPlay += dt;
-            float want = (_snow || WantStorm(_gardenPlay)) ? 1f : 0f;
+            float want = !_clear && (_snow || WantStorm(_gardenPlay)) ? 1f : 0f;
             // b117: a solved level (win, finale, Double/Collect) ends the rain streaks quickly; the clock keeps running.
             bool halted = FlockFiveApp.RainHalted;
             if (halted) want = 0f;
