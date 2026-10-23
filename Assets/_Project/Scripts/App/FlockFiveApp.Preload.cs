@@ -36,7 +36,7 @@ namespace FlockFive
         const int WarmCoverDelayFrames = 2;
         const double WarmCoverBudgetMs = 40.0; // dark screen only, nothing animates
         const float WarmCoverMaxSec = 6.0f;
-        const float WarmCoverFadeSec = 0.25f;
+        public const float WarmCoverFadeSec = 0.25f;
         static readonly Color WarmCoverColor = new Color(0.12156863f, 0.12156863f, 0.1254902f, 1f);
         static float _warmCoverT0 = -1f;
         static float _warmCoverFadeT0 = -1f;
@@ -415,6 +415,56 @@ namespace FlockFive
         public static bool StartupInputHeld => WarmCoverLive; // editor shots set _warmCoverOff, so no editor-only term here (EditorShotLive is #if UNITY_EDITOR)
         // The studio card is up (or still to come): splash music waits until it lifts.
         public static bool StudioCardHold => !_warmCoverOff && _warmCoverFadeT0 < 0f;
+
+        // Whole warm cover, including the 0.25s fade. Editor shots and edit-mode tests are not the card.
+        public static bool StudioCardOwnsScreen
+        {
+            get
+            {
+#if UNITY_EDITOR
+                if (!Application.isPlaying || EditorShotLive) return false;
+#endif
+                return WarmCoverLive;
+            }
+        }
+
+        StudioCardShield _studioShield;
+
+        void SyncStudioShield()
+        {
+            bool up = StudioCardOwnsScreen;
+            if (_studioShield == null)
+            {
+                if (!up) return;
+                _studioShield = StudioCardShield.Ensure(transform);
+            }
+            _studioShield.SetBlocking(up);
+        }
+
+        // IMGUI presses never reach the home under the card. Layout and Repaint still run so the card draws.
+        static void EatStudioCardPointer()
+        {
+            if (!StudioCardOwnsScreen) return;
+            var e = Event.current;
+            if (e == null) return;
+            switch (e.type)
+            {
+                case EventType.MouseDown:
+                case EventType.MouseUp:
+                case EventType.MouseDrag:
+                case EventType.MouseMove:
+                case EventType.ScrollWheel:
+                case EventType.TouchDown:
+                case EventType.TouchUp:
+                case EventType.TouchMove:
+                case EventType.KeyDown:
+                case EventType.KeyUp:
+                case EventType.ContextClick:
+                    if (e.type == EventType.MouseUp) GUIUtility.hotControl = 0;
+                    e.Use();
+                    break;
+            }
+        }
 
         static readonly string[] _preloadBadgerArt =
         {

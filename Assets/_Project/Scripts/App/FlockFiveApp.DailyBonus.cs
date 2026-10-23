@@ -798,6 +798,15 @@ namespace FlockFive
             return PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0;
         }
 
+        void RememberWelcome()
+        {
+            if (PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0) return;
+            PlayerPrefs.SetInt(WelcomePendingKey, 1);
+            PlayerPrefs.Save();
+        }
+
+        bool WelcomeHomeVisible() => _splash && _home == HomeFace.Splash;
+
         void OfferWelcome()
         {
             if (PlayerPrefs.GetInt(WelcomeBonusKey, 0) != 0) return;
@@ -805,14 +814,15 @@ namespace FlockFive
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive) return;
 #endif
-            if (!GatePopup(PopupKind.Welcome, false)) return;
-            if (RewardLessonHold() || AdoptHoldsQueue() || _dailyAskOpen)
+            var act = WelcomeAward.Decide(
+                false, false, false,
+                GatePopup(PopupKind.Welcome, false),
+                RewardLessonHold() || AdoptHoldsQueue() || _dailyAskOpen,
+                ForegroundGate.Focused, ForegroundGate.Paused,
+                WelcomeHomeVisible(), StudioCardOwnsScreen);
+            if (act != WelcomeAward.Act.Grant)
             {
-                if (PlayerPrefs.GetInt(WelcomePendingKey, 0) == 0)
-                {
-                    PlayerPrefs.SetInt(WelcomePendingKey, 1);
-                    PlayerPrefs.Save();
-                }
+                if (act == WelcomeAward.Act.Defer) RememberWelcome();
                 return;
             }
             PlayerPrefs.SetInt(WelcomeBonusKey, 1);
@@ -828,24 +838,35 @@ namespace FlockFive
 
         IEnumerator OpenWelcomeWhenPaid()
         {
-            yield return WaitRewardPay();
-            if (_restarting)
+            yield return WaitRewardPay(false, true);
+            while (!WelcomeAward.MayPresent(ForegroundGate.Focused, ForegroundGate.Paused, WelcomeHomeVisible(), StudioCardOwnsScreen))
             {
-                _welcomeQueued = false;
-                yield break;
+                if (WelcomePayAborted()) yield break;
+                yield return null;
             }
-#if UNITY_EDITOR
-            if (_dailyShotQuiet || EditorShotLive)
-            {
-                _welcomeQueued = false;
-                yield break;
-            }
-#endif
+            if (WelcomePayAborted()) yield break;
             _welcomeQueued = false;
             if (!GatePopup(PopupKind.Welcome, false)) yield break;
             _welcomeOpen = true;
             _welcomeAt = AdPause.Unscaled;
             _welcomeGlove = false;
+        }
+
+        bool WelcomePayAborted()
+        {
+            if (_restarting)
+            {
+                _welcomeQueued = false;
+                return true;
+            }
+#if UNITY_EDITOR
+            if (_dailyShotQuiet || EditorShotLive)
+            {
+                _welcomeQueued = false;
+                return true;
+            }
+#endif
+            return false;
         }
 
         // Ask card remembered while a lesson owned the screen.
@@ -861,6 +882,12 @@ namespace FlockFive
         // Coins are credited once, inside OfferWelcome, before the card opens.
         void OpenDeferredWelcome()
         {
+            if (!WelcomeAward.MayPresent(ForegroundGate.Focused, ForegroundGate.Paused, WelcomeHomeVisible(), StudioCardOwnsScreen))
+            {
+                if (PlayerPrefs.GetInt(WelcomeBonusKey, 0) == 0) RememberWelcome();
+                else _popupDefer |= (int)PopupKind.Welcome;
+                return;
+            }
             if (PlayerPrefs.GetInt(WelcomeBonusKey, 0) != 0)
             {
                 if (!GatePopup(PopupKind.Welcome, false)) return;

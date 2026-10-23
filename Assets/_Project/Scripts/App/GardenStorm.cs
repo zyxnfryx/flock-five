@@ -265,6 +265,7 @@ namespace FlockFive
         // drops that frame once. Rain still rebuilds from the foreground state.
         void OnApplicationPause(bool paused)
         {
+            ForegroundGate.NotePause(paused);
             if (paused) FlockFiveApp.NoteAppBackground();
             else FlockFiveApp.NoteAppResume();
             if (!paused && _rainSync == 0) _rainSync = 1;
@@ -272,6 +273,7 @@ namespace FlockFive
 
         void OnApplicationFocus(bool focus)
         {
+            ForegroundGate.NoteFocus(focus);
             if (focus) FlockFiveApp.NoteAppResume();
             else FlockFiveApp.NoteAppBackground();
             if (focus && _rainSync == 0) _rainSync = 1;

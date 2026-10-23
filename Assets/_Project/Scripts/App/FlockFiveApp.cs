@@ -3553,6 +3553,7 @@ namespace FlockFive
 
         void OnApplicationPause(bool paused)
         {
+            ForegroundGate.NotePause(paused);
             // Back to 1 in the background; SyncAutoResolveSpeed re-arms it from live state.
             if (paused) SetAutoResolveSpeed(1f);
             if (paused)
@@ -3575,6 +3576,7 @@ namespace FlockFive
 
         void OnApplicationFocus(bool focus)
         {
+            ForegroundGate.NoteFocus(focus);
             if (focus)
             {
                 NoteAppResume();
@@ -3612,18 +3614,23 @@ namespace FlockFive
             if ((Time.frameCount & 7) == 0) HealInterruptedTutorials();
             // The 24h Daily window must flip even while a pause holds the rest of the tick.
             SyncDailyDay();
+            SyncStudioShield();
             if (GamePause.Paused)
             {
                 if (TutorialGuideLive() || _tutorPause != 0)
                     TickPausedTutorial();
                 return;
             }
-            RewardedGrant.Flush();
-            TickUsaPlane(AdPause.UnscaledDelta);
-            CoachAdvance();
-            TickPopups();
-            TickPopupQueue();
-            TickDailyBonus();
+            // Studio card owns the screen. No gameplay, popups, or awards behind it.
+            if (!StudioCardOwnsScreen)
+            {
+                RewardedGrant.Flush();
+                TickUsaPlane(AdPause.UnscaledDelta);
+                CoachAdvance();
+                TickPopups();
+                TickPopupQueue();
+                TickDailyBonus();
+            }
             if (_splash) return;
             if (_garden.Ostrich != null)
                 _garden.Ostrich.SetCalm(_sel >= 0 || (_locked.Count > 0 && !_ostrichFight));
@@ -6552,10 +6559,10 @@ namespace FlockFive
         public static bool ShotNoGui; // editor clips: background only
         void OnGUI()
         {
+            SyncStudioShield();
             if (ShotNoGui) return;
-            // Item 8: the warm cover eats taps until the home is shown.
-            if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
-                Event.current.Use();
+            // Studio card, fade included: no pointer reaches the home drawn underneath.
+            EatStudioCardPointer();
             if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); PaintPressRainbow(); return; }
             var ev = Event.current != null ? Event.current.type : EventType.Ignore;
             var sp = StartupTrace.Begin(ev == EventType.Repaint ? "GUI.Repaint" : ev == EventType.Layout ? "GUI.Layout" : "GUI.Input");
@@ -9843,11 +9850,17 @@ namespace FlockFive
 
         // One wait. Callers fade or open the next segment only after this returns.
         // gapAfter adds RewardGap, the named breath before the next home lesson.
-        IEnumerator WaitRewardPay(bool gapAfter = false)
+        IEnumerator WaitRewardPay(bool gapAfter = false, bool holdWhileAway = false)
         {
             float guard = 0f;
             while (RewardPayBusy() && guard < 45f)
             {
+                // A backgrounded welcome must not burn the timeout and drop its blips.
+                if (holdWhileAway && WelcomeAward.HoldCoinPlay(ForegroundGate.AllowsCoinAudio, StudioCardOwnsScreen))
+                {
+                    yield return null;
+                    continue;
+                }
                 guard += PlayClock.Delta;
                 yield return null;
             }
@@ -9949,6 +9962,8 @@ namespace FlockFive
             bool step = _coinFlyFrame != Time.frameCount;
             _coinFlyFrame = Time.frameCount;
             float dt = step ? Mathf.Min(AdPause.UnscaledDelta, CoinFlyMaxStep) : 0f;
+            bool holdCoins = WelcomeAward.HoldCoinPlay(ForegroundGate.AllowsCoinAudio, StudioCardOwnsScreen);
+            if (holdCoins) dt = 0f;
             float size = 68f * DeviceFit.Ui();
             var dest = new Vector2(pig.x + pig.width * 0.5f, pig.y + pig.height * 0.42f);
             for (int i = _flies.Count - 1; i >= 0; i--)
@@ -9986,6 +10001,11 @@ namespace FlockFive
                 }
                 if (u >= 1f)
                 {
+                    if (holdCoins)
+                    {
+                        _flies[i] = f;
+                        continue;
+                    }
                     Sfx.Clink();
                     _pigBurst = 1f;
                     _coinInFlight -= f.Worth;

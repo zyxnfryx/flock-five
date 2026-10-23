@@ -577,6 +577,7 @@ namespace FlockFive
 
         public static void Clink()
         {
+            if (!ForegroundGate.AllowsCoinAudio) return;
             Ensure();
             if (_clinks == null || _clinks.Length == 0) return;
             int i = Next(_clinks.Length, ref _lastClink);
