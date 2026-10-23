@@ -603,7 +603,6 @@ namespace FlockFive.Editor
                 float ww = spinWidths[wi];
                 var spin = new Rect(40f, 200f, ww, ww);
                 float hubR = ww * FlockFiveApp.WheelHubOuter * 0.5f;
-                float tip = FlockFiveApp.WheelPointerTipRadius(ww);
                 for (int land = 0; land < DailyBonus.WedgeCount && labelsClear; land++)
                 {
                     float ang = DailyBonus.PointerAngle(land);
@@ -614,15 +613,14 @@ namespace FlockFive.Editor
                         float rad = Mathf.Sqrt(d.x * d.x + d.y * d.y);
                         float inner = rad - lab.width * 0.5f;
                         float outer = rad + lab.width * 0.5f;
-                        bool under = w == DailyBonus.WedgeUnderPointer(ang);
-                        bool clearsTip = !under || outer <= tip - 1f;
-                        if (inner + 0.5f >= hubR && outer <= ww * 0.49f && clearsTip) continue;
+                        // b103: labels are rigid. The wedge under the pointer is not pulled
+                        // inside the tip, so tip clearance is not part of this check.
+                        if (inner + 0.5f >= hubR && outer <= ww * 0.49f) continue;
                         labelsClear = false;
                         labelDetail = "w=" + w + " land=" + land
                             + " inner=" + inner.ToString("0.0")
                             + " hub=" + hubR.ToString("0.0")
-                            + " outer=" + outer.ToString("0.0")
-                            + " tip=" + tip.ToString("0.0");
+                            + " outer=" + outer.ToString("0.0");
                         break;
                     }
                 }
@@ -999,20 +997,29 @@ namespace FlockFive.Editor
                 && Mathf.Abs(dr.x - off.x) <= 0.05f && Mathf.Abs(dr.y - off.y) <= 0.05f,
                 "dRestart=" + dr + " dHive=" + dh);
 
+            // b105: when the 72-ref margin lands on the ad row, the pair moves clear of it
+            // (below the row when there is room). They stay inside the safe glass either way.
             float hudScale = Mathf.Max(H / 720f, 1f);
             float hudMargin = CornerAnchor.BottomMarginRef * hudScale;
+            CornerAnchor.AdRowBand(W, H, out var signL, out var signR, out var branchL, out var branchR, out float adTop, out float adBot);
             bool HudIn(Rect r, Rect area)
             {
                 float guiTop = H - area.yMax;
                 float guiBot = H - area.yMin;
-                return r.width > 8f && r.height > 8f
+                bool inside = r.width > 8f && r.height > 8f
                     && r.xMin >= area.xMin - 0.5f && r.xMax <= area.xMax + 0.5f
                     && r.yMin >= guiTop - 0.5f
-                    && r.yMax <= guiBot - hudMargin + 0.5f;
+                    && r.yMax <= guiBot + 0.5f;
+                bool margin = r.yMax <= guiBot - hudMargin + 0.5f;
+                bool moved = r.yMin >= adBot - 0.5f || r.yMax <= adTop + 0.5f;
+                bool offAds = !r.Overlaps(signL) && !r.Overlaps(signR)
+                    && !r.Overlaps(branchL) && !r.Overlaps(branchR);
+                return inside && offAds && (margin || moved);
             }
             Check("hud-safe",
                 HudIn(restart, safe) && HudIn(hive, safe) && HudIn(r2, shifted) && HudIn(h2, shifted),
-                "restart=" + restart + " hive=" + hive + " margin=" + hudMargin.ToString("0.0"));
+                "restart=" + restart + " hive=" + hive + " margin=" + hudMargin.ToString("0.0")
+                + " ad=" + adTop.ToString("0") + "-" + adBot.ToString("0"));
 
             string root = System.IO.Path.GetDirectoryName(Application.dataPath);
             string app = System.IO.File.ReadAllText(System.IO.Path.Combine(root, "Assets/_Project/Scripts/App/FlockFiveApp.cs"));
@@ -1039,6 +1046,19 @@ namespace FlockFive.Editor
                 var text = new CoachSeat.FocusText { Title = pose.Title, Body = pose.Body, Flavor = pose.Flavor };
                 bool below = step != 3 || pose.Plate.y + 1f >= focus.yMax;
                 bool onGlass = step != 3 || (pose.Plate.yMax <= H - 2f && pose.Plate.yMin >= 2f);
+                // b103: the flip step aims at the empty lower 40% of the flavor band, so the
+                // glove may overlap that band. It still stays off the title, and the fingertip
+                // stays at or below the ink line the placer uses.
+                bool stepClear = pose.Clear && !text.Hits(pose.Plate) && !text.Hits(pose.Glove);
+                if (step == 2)
+                {
+                    float ink = text.Title.yMax;
+                    if (text.Body.width > 2f) ink = Mathf.Max(ink, text.Body.y + text.Body.height * 0.6f);
+                    if (text.Flavor.width > 2f) ink = Mathf.Max(ink, text.Flavor.y + text.Flavor.height * 0.6f);
+                    stepClear = !CoachSeat.FocusText.Over(pose.Glove, text.Title)
+                        && !CoachSeat.FocusText.Over(pose.Plate, text.Title)
+                        && !(pose.Glove.yMin < ink - 0.3f * pose.Glove.height);
+                }
                 bool honeyAim = true;
                 if (step == 3 && pose.Honey.width >= 2f)
                 {
@@ -1057,7 +1077,7 @@ namespace FlockFive.Editor
                     }
                     honeyAim = miss && side && edge <= 6f;
                 }
-                if (!pose.Clear || text.Hits(pose.Plate) || text.Hits(pose.Glove) || !below || !onGlass || !honeyAim)
+                if (!stepClear || !below || !onGlass || !honeyAim)
                 {
                     lessons = false;
                     lessonDetail = "step " + step

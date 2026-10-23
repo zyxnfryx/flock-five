@@ -231,7 +231,25 @@ namespace FlockFive.Editor
             bool order = begin >= 0 && load > begin;
             string app = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.cs"));
             int flower = app.IndexOf("bool DrawFlowerPlay(");
-            string flowerBody = flower >= 0 ? app.Substring(flower, Mathf.Min(1600, app.Length - flower)) : "";
+            // b123 grew the preamble (the badger on the pedestal joins the LEVEL hit) past the
+            // old 1600-character window. Arm still has to live in this method.
+            string flowerBody = "";
+            if (flower >= 0)
+            {
+                int depth = 0;
+                int close = flower;
+                bool sawBrace = false;
+                for (int i = flower; i < app.Length; i++)
+                {
+                    if (app[i] == '{') { depth++; sawBrace = true; }
+                    else if (app[i] == '}')
+                    {
+                        depth--;
+                        if (sawBrace && depth == 0) { close = i; break; }
+                    }
+                }
+                flowerBody = app.Substring(flower, close - flower);
+            }
             bool arm = flowerBody.IndexOf("LevelCurtain.Arm") >= 0;
             LevelCurtain.Reset();
             Check("level-curtain",

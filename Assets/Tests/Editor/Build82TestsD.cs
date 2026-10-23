@@ -317,10 +317,13 @@ namespace FlockFive.Editor
             string stored = Slice(bonus, "public static bool PayStoredDouble(", "public static void TestDropMemory");
             bool rounds = resolve.IndexOf("RoundUp100") >= 0 && stored.IndexOf("RoundUp100") >= 0;
 
-            // b83 10d: the mid-clear offer is gone (2X lives in the home REWARD popup).
+            // b89: one popup queue. The mid-clear offer is not yielded. Interstitial, then
+            // the VIP soft consume, live in RunPostStage — not in FlockFiveApp.cs.
+            string queue = File.ReadAllText(Path.Combine(root, "_Project/Scripts/App/FlockFiveApp.PopupQueue.cs"));
             int offerAt = app.IndexOf("yield return OfferClearDouble();");
-            int adAt = app.IndexOf("yield return Ads.Interstitial();");
-            int softAt = app.IndexOf("Ads.TryConsumeVipSoft()", adAt < 0 ? 0 : adAt);
+            if (offerAt < 0) offerAt = queue.IndexOf("yield return OfferClearDouble();");
+            int adAt = queue.IndexOf("yield return Ads.Interstitial();");
+            int softAt = adAt < 0 ? -1 : queue.IndexOf("Ads.TryConsumeVipSoft()", adAt);
             bool order = offerAt < 0 && adAt >= 0 && softAt > adAt;
 
             string closed = Slice(ads, "public static void DeliverInterstitialClosed()", "public static void DeliverDisplayedCallback");

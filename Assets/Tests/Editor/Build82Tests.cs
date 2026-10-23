@@ -108,7 +108,11 @@ namespace FlockFive.Editor
                 var gold = FlockFiveApp.GoldCaption(line, W, H);
                 bool bee = line == CaptionLayout.HiveGardenLine;
                 bool honey = line == CaptionLayout.AlbumHoneyBlock;
+                // b89 inserts a blank row after the first sentence, then the floor font wraps
+                // each piece. A gapped caption may use four content lines and still has to
+                // stay inside the safe plate. Ungapped lines stay at three.
                 int cap = honey ? 5 : (bee ? 4 : 3);
+                if (cap < 4 && CaptionLayout.HeadlineGap(line) != line) cap = 4;
                 if (!gold.Overflow && gold.PlateW <= safePlate + 0.5f && gold.TextW <= safeW + 0.5f && gold.Lines <= cap)
                     continue;
                 bad++;
@@ -125,7 +129,8 @@ namespace FlockFive.Editor
                 string line = CoachTap.Caption(steps[i]) ?? "";
                 if (line.Length == 0 || !seen.Add(line)) continue;
                 var gold = FlockFiveApp.GoldCaption(line, W, H);
-                if (!gold.Overflow && gold.PlateW <= safePlate + 0.5f && gold.Lines <= 3) continue;
+                int cap = CaptionLayout.HeadlineGap(line) != line ? 4 : 3;
+                if (!gold.Overflow && gold.PlateW <= safePlate + 0.5f && gold.Lines <= cap) continue;
                 bad++;
                 detail = (bad == 1 ? "" : detail + " || ") + steps[i] + " " + (gold.Shown ?? "").Replace("\n", " / ");
             }

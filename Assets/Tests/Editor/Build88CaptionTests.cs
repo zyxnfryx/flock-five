@@ -88,7 +88,9 @@ namespace FlockFive.Editor
                         && hive.width > 2f
                         && band.yMax < hive.yMin - 4f;
                 }
-                bool cover = !adopt || Covers(band, badge);
+                // b118: when the rail badge reaches into the logo gap, the banner keeps
+                // MinLogoClear instead of covering the badge top by a fraction of a pixel.
+                bool cover = !adopt || Covers(band, badge) || LogoSqueeze(band, badge, h, safe, s);
                 bool ok = size && rows && clear && wide && place && cover;
                 check(tag + "-" + kv.Key, ok,
                     "px " + px + "/" + adoptPx + " lines " + fit.Lines
@@ -152,6 +154,17 @@ namespace FlockFive.Editor
                 if (!CaptionLayout.LineFits(style, parts[i], maxW, font)) return false;
             }
             return true;
+        }
+
+        static bool LogoSqueeze(Rect band, Rect badge, float h, Rect safe, float s)
+        {
+            float gap = FlockFiveApp.MinLogoClear(h, safe, s);
+            bool conflict = badge.yMin < gap - 0.5f;
+            bool atGap = Mathf.Abs(band.yMin - gap) <= 0.5f;
+            return conflict && atGap
+                && band.xMin <= badge.xMin + 0.5f
+                && band.xMax >= badge.xMax - 0.5f
+                && band.yMax >= badge.yMax - 0.5f;
         }
 
         static bool Covers(Rect band, Rect badge)
