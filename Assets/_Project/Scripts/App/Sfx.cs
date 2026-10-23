@@ -262,7 +262,7 @@ namespace FlockFive
             a.PlayOneShot(clip, vol);
         }
 
-        static void Shot(AudioClip clip, float pitch, float vol, MixLayer layer, float leadDuck = MixDesk.DuckChirp)
+        static void Shot(AudioClip clip, float pitch, float vol, MixLayer layer, float leadDuck = MixDesk.DuckChirp, bool throughLead = false)
         {
             if (clip == null) return;
             LastShots++;
@@ -277,7 +277,7 @@ namespace FlockFive
             }
             else if (layer == MixLayer.Mid)
             {
-                if (MixDesk.Live != null && !MixDesk.Live.AllowMid) return;
+                if (!throughLead && MixDesk.Live != null && !MixDesk.Live.AllowMid) return;
             }
             else if (layer == MixLayer.Bed)
             {
@@ -428,12 +428,12 @@ namespace FlockFive
             PlayFlap(vol, pitch, layer);
         }
 
-        static void PlayFlap(float vol, float pitch, MixLayer layer)
+        static void PlayFlap(float vol, float pitch, MixLayer layer, bool throughLead = false)
         {
             Ensure();
             if (_flaps == null || _flaps.Length == 0) return;
             int i = Next(_flaps.Length, ref _lastFlap);
-            Shot(_flaps[i], pitch, vol, layer, MixDesk.DuckWhoosh);
+            Shot(_flaps[i], pitch, vol, layer, MixDesk.DuckWhoosh, throughLead);
         }
 
         public static void Flaps(int n) => FlockFlutter(n);

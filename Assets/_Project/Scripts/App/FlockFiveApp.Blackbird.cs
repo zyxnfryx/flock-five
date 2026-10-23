@@ -13,10 +13,15 @@ namespace FlockFive
         {
             if (_board == null || _board.Blackbird == null)
             {
-                if (MixDesk.Live != null) MixDesk.Live.SetBlackbirdBed(BlackbirdCue.Bed.Calm);
+                EndBlackbirdIntro();
+                RestoreBlackbirdCalm();
                 return;
             }
-            if (_garden.Root == null) return;
+            if (_garden.Root == null)
+            {
+                EndBlackbirdIntro();
+                return;
+            }
             StubBlackbirdPerch();
             if (_garden.Blackbird == null)
                 _garden.Blackbird = BlackbirdMark.Attach(_garden.Root);
@@ -32,8 +37,28 @@ namespace FlockFive
                 mark.SetRattled(false);
                 mark.Shown(false);
             }
-            if (_bbIntro != null) StopCoroutine(_bbIntro);
+            EndBlackbirdIntro();
             _bbIntro = StartCoroutine(BlackbirdIntro());
+        }
+
+        // Leave, restart, or a new visit. The croak has not been played yet if
+        // this lands inside the 2.5s cut (or the drop before it).
+        void EndBlackbirdIntro()
+        {
+            _bbGen++;
+            if (_bbIntro == null) return;
+            StopCoroutine(_bbIntro);
+            _bbIntro = null;
+        }
+
+        void RestoreBlackbirdCalm()
+        {
+            if (MixDesk.Live == null) return;
+            var next = BlackbirdCue.BedAfterInterrupt(MixDesk.Live.BlackbirdBed);
+            if (next == BlackbirdCue.Bed.Calm && MixDesk.Live.BlackbirdBed != BlackbirdCue.Bed.Calm)
+                MixDesk.Live.SetBlackbirdBed(BlackbirdCue.Bed.Calm);
+            else if (_board == null || _board.Blackbird == null)
+                MixDesk.Live.SetBlackbirdBed(BlackbirdCue.Bed.Calm);
         }
 
         Transform PerchSeat()
@@ -96,7 +121,9 @@ namespace FlockFive
             }
             if (gen != _bbGen) yield break;
             if (mark != null) mark.Sit(PerchSeat());
-            Sfx.BlackbirdTaunt();
+            bool leadHot = MixDesk.Live != null && MixDesk.Live.LeadHot;
+            if (BlackbirdCue.PlayTaunt(leadHot))
+                Sfx.BlackbirdTaunt();
             t = 0f;
             while (t < BlackbirdCue.TauntSec)
             {
@@ -104,7 +131,7 @@ namespace FlockFive
                 t += AdPause.UnscaledDelta;
                 yield return null;
             }
-            _bbIntro = null;
+            if (gen == _bbGen) _bbIntro = null;
         }
 
 #if UNITY_EDITOR
@@ -190,37 +217,45 @@ namespace FlockFive
 
         IEnumerator BlackbirdFlee(int motionGen)
         {
-            var mark = _garden.Blackbird;
-            Vector3 home = mark != null ? mark.transform.position : Vector3.zero;
-            if (_garden.Root != null) BlackbirdPerch.Sparks(_garden.Root, home);
-            float half = 4.2f;
-            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
-            if (cam != null && cam.orthographic) half = cam.orthographicSize * cam.aspect;
-            var perch = new BlackbirdRival.Point { X = home.x, Y = home.y };
-            float t = 0f;
-            const float bolt = 0.7f;
-            while (t < bolt)
+            try
             {
-                if (motionGen != _motionGen) yield break;
-                t += AdPause.UnscaledDelta;
-                float u = Mathf.Clamp01(t / bolt);
-                if (mark != null)
+                var mark = _garden.Blackbird;
+                Vector3 home = mark != null ? mark.transform.position : Vector3.zero;
+                if (_garden.Root != null) BlackbirdPerch.Sparks(_garden.Root, home);
+                float half = 4.2f;
+                var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
+                if (cam != null && cam.orthographic) half = cam.orthographicSize * cam.aspect;
+                var perch = new BlackbirdRival.Point { X = home.x, Y = home.y };
+                float t = 0f;
+                const float bolt = 0.7f;
+                while (t < bolt)
                 {
-                    var p = BlackbirdRival.Flight.Bolt(perch, u, half);
-                    mark.transform.position = new Vector3(p.X, p.Y, 0f);
+                    if (motionGen != _motionGen) yield break;
+                    t += AdPause.UnscaledDelta;
+                    float u = Mathf.Clamp01(t / bolt);
+                    if (mark != null)
+                    {
+                        var p = BlackbirdRival.Flight.Bolt(perch, u, half);
+                        mark.transform.position = new Vector3(p.X, p.Y, 0f);
+                    }
+                    yield return null;
                 }
-                yield return null;
-            }
-            if (mark != null) mark.Hide();
-            t = 0f;
-            while (t < BlackbirdCue.SilenceSec)
-            {
+                if (mark != null) mark.Hide();
+                t = 0f;
+                while (t < BlackbirdCue.SilenceSec)
+                {
+                    if (motionGen != _motionGen) yield break;
+                    t += AdPause.UnscaledDelta;
+                    yield return null;
+                }
                 if (motionGen != _motionGen) yield break;
-                t += AdPause.UnscaledDelta;
-                yield return null;
+                if (MixDesk.Live != null) MixDesk.Live.SetBlackbirdBed(BlackbirdCue.Bed.Calm);
             }
-            if (motionGen != _motionGen) yield break;
-            if (MixDesk.Live != null) MixDesk.Live.SetBlackbirdBed(BlackbirdCue.Bed.Calm);
+            finally
+            {
+                // Restart or a leave stops this routine before the calm handoff.
+                RestoreBlackbirdCalm();
+            }
         }
     }
 }

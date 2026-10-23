@@ -14,6 +14,11 @@ namespace FlockFive
         // Same D-major porch tune as the calm bed, shorter beat. Not a second melody.
         public const float CalmBpm = 84f;
         public const float RushBpm = 116f;
+        // Stem fade when the porch tune ramps between calm and rush. Not baked into the loop.
+        public const float BedCrossfadeSec = 0.4f;
+        // Real chook, played as recorded. Level is the shot gain; pitch stays at 1.
+        public const float TauntLevel = 0.6f;
+        public const float TauntPitchMax = 1.04f;
         public const int RattleAt = 3;
         public const int FleeAt = 4;
         public const int CalmEvery = 3;
@@ -38,6 +43,29 @@ namespace FlockFive
             if (fled) return Bed.Silence;
             if (flocksDone >= RattleAt) return Bed.Rush;
             return Bed.Calm;
+        }
+
+        // The croak is lead. A hop already on the lead seat skips it.
+        public static bool PlayTaunt(bool leadHot) => !leadHot;
+
+        // Wing tell stays while a crunch (lead) is still ringing.
+        public static bool HearTell(bool leadHot) => leadHot ? true : true;
+
+        public static bool HoldTaps(bool introRunning) => introRunning;
+
+        // An interrupted flee is still on silence. Hand the porch tune back.
+        public static Bed BedAfterInterrupt(Bed bed) => bed == Bed.Silence ? Bed.Calm : bed;
+
+        // Where the calm loop is when the rush (or the silence after it) gives it back.
+        // elapsed is how long the calm clip was parked, so the tune does not jump to bar 0.
+        public static float ResumeCalm(float leftAt, float elapsed, float length)
+        {
+            if (length <= 0.01f) return 0f;
+            if (leftAt < 0f) leftAt = 0f;
+            if (elapsed < 0f) elapsed = 0f;
+            float t = (leftAt + elapsed) % length;
+            if (t < 0f) t += length;
+            return t;
         }
     }
 
