@@ -5,9 +5,11 @@ namespace FlockFive
 {
     public sealed partial class FlockFiveApp
     {
-        // Home-screen flyby. Once per calendar day, after PlaneIdleDelay quiet
-        // seconds (was 10). Drawn after the wordmark, and the rail sits below
-        // it, so the banner is never hidden behind FLOCK FIVE.
+        // Home-screen flyby. At most once per local calendar day, on the first
+        // eligible home idle (PlaneIdleFirst quiet seconds). The day is written
+        // only when that flight starts, so a later visit, restart, or scene
+        // reload the same day does not fly again. Drawn after the wordmark, and
+        // the rail sits below it, so the banner is never hidden behind FLOCK FIVE.
         // The crossing stays PlaneCrossSeconds. Shells are white, blue, white,
         // blue, white, blue, then one red heart. The heart is last. Every
         // launch is before the plane leaves, and the heart bursts while the
@@ -15,9 +17,11 @@ namespace FlockFive
         // same burst helpers and point tables.
         const string UsaPlaneDayKey = "flockfive.plane.day";
         public const float PlaneIdleDelay = 15f; // legacy
-        // b95: first appearance after 15s idle; every later one after 40s. Still once per home visit.
-        public const float PlaneIdleFirst = 15f; // b95 (Brandon): 15s before the first appearance
-        public const float PlaneIdleLater = 40f; // b95: 40s before every later appearance
+        // The one flight of a day waits PlaneIdleFirst. PlaneIdleLater is the old
+        // same-day repeat wait; those repeats no longer fly. PlaneIdleFor stays
+        // so the two wait lengths can still be read.
+        public const float PlaneIdleFirst = 15f; // quiet seconds before the day's flight
+        public const float PlaneIdleLater = 40f; // legacy same-day repeat wait, no longer scheduled
         public const string PlaneFirstKey = "flockfive.plane.first";
         public static float PlaneIdleFor(bool flownBefore) => flownBefore ? PlaneIdleLater : PlaneIdleFirst;
         public const float PlaneCrossSeconds = 6.5f;
@@ -44,6 +48,7 @@ namespace FlockFive
         static int _usaDoneStamp = -2;
         float _usaIdle;
         bool _usaVisitFlown;
+        int _usaVisitStamp = -1;
         float _usaU = -1f;
         float _fwClock = -1f;
         float _fwDuck;
@@ -65,16 +70,16 @@ namespace FlockFive
             if (stamp != _usaTodayStamp)
             {
                 _usaTodayStamp = stamp;
-                _usaToday = n.Year.ToString("0000") + "-" + n.Month.ToString("00") + "-" + n.Day.ToString("00");
+                _usaToday = UsaPlaneDay.Stamp(n);
             }
             return _usaToday;
         }
 
         bool UsaFlownToday()
         {
-            UsaToday();
+            string today = UsaToday();
             if (_usaDoneStamp == _usaTodayStamp) return true;
-            if (PlayerPrefs.GetString(UsaPlaneDayKey, "") != UsaToday()) return false;
+            if (!UsaPlaneDay.AlreadyFlown(PlayerPrefs.GetString(UsaPlaneDayKey, ""), today)) return false;
             _usaDoneStamp = _usaTodayStamp;
             return true;
         }
@@ -154,17 +159,27 @@ namespace FlockFive
                 _usaVisitFlown = false; // left the home screen: the next home screen is a new visit
                 return;
             }
+            // A home session that stays up past midnight may fly again on the new local date.
+            UsaToday();
+            if (_usaVisitStamp != _usaTodayStamp)
+            {
+                _usaVisitStamp = _usaTodayStamp;
+                _usaVisitFlown = false;
+            }
             if (_usaForce)
             {
                 _usaForce = false;
                 BeginUsaPlane();
                 return;
             }
+            if (UsaFlownToday())
+            {
+                _usaIdle = 0f;
+                return;
+            }
             _usaIdle += dt;
             if (_usaVisitFlown) return;
-            // b87: first home screen of the day flies after 12s idle; later home screens
-            // that day after 30s. The day key resets it each calendar day.
-            if (_usaIdle < PlaneIdleFor(UsaFlownToday())) return;
+            if (_usaIdle < PlaneIdleFor(false)) return;
             _usaIdle = 0f;
             _usaVisitFlown = true;
             BeginUsaPlane();
@@ -179,10 +194,13 @@ namespace FlockFive
             _fwPop = 0;
             _fwCancel = 0;
             _fwPlaneLeft = false;
-            string day = UsaToday();
-            PlayerPrefs.SetString(UsaPlaneDayKey, day);
+            string today = UsaToday();
+            if (UsaPlaneDay.TryBegin(PlayerPrefs.GetString(UsaPlaneDayKey, ""), today, true, out string record))
+            {
+                PlayerPrefs.SetString(UsaPlaneDayKey, record);
+                _usaDoneStamp = _usaTodayStamp;
+            }
             PlayerPrefs.SetInt(PlaneFirstKey, 1);
-            _usaDoneStamp = _usaTodayStamp;
             PlayerPrefs.Save();
             Sfx.PlaneBegin();
         }
