@@ -269,7 +269,9 @@ namespace FlockFive
             {
                 // The blackbird is the visit. An ostrich authored on that garden steps aside.
                 b.Ostrich = null;
-                BlackbirdRival.Dress(b, BlackbirdSchedule.Notch(DisplayNumber));
+                BlackbirdRival.Dress(b, BlackbirdSchedule.Notch(DisplayNumber),
+                    BlackbirdSchedule.CalmEveryFor(DisplayNumber),
+                    BlackbirdSchedule.RattleEveryFor(DisplayNumber));
             }
             return b;
         }

@@ -29,6 +29,7 @@ namespace FlockFive.Editor
 
             CheckPerch(check);
             CheckCadence(check);
+            CheckGentle(check);
             CheckPriority(check);
             CheckHandsOff(check);
             CheckThresholds(check);
@@ -86,6 +87,30 @@ namespace FlockFive.Editor
             check("cadence-third", a3.Moved && a3.Why == "sorted" && a3.From == 0 && a3.To == 1
                 && b.Branches[0].Count < before && b.Blackbird.PlayerMoves == 3,
                 a3.Why + " " + a3.From + ">" + a3.To);
+        }
+
+        static void CheckGentle(CheckDelegate check)
+        {
+            var b = PullBoard();
+            b.Blackbird.CalmEvery = BlackbirdSchedule.GentleCalm;
+            b.Blackbird.RattleEvery = BlackbirdSchedule.GentleRattle;
+            var a1 = BlackbirdRival.Commit(b);
+            var a2 = BlackbirdRival.Commit(b);
+            var a3 = BlackbirdRival.Commit(b);
+            int before = b.Branches[0].Count;
+            var a4 = BlackbirdRival.Commit(b);
+            check("ramp-every-4", !a1.Moved && !a2.Moved && !a3.Moved && a4.Moved && b.Branches[0].Count < before,
+                "m4 " + a4.Moved + " from " + a4.From);
+
+            var rattled = PullBoard();
+            rattled.Blackbird.CalmEvery = BlackbirdSchedule.GentleCalm;
+            rattled.Blackbird.RattleEvery = BlackbirdSchedule.GentleRattle;
+            rattled.Blackbird.ColorMask = 31;
+            var r1 = BlackbirdRival.Commit(rattled);
+            var r2 = BlackbirdRival.Commit(rattled);
+            var r3 = BlackbirdRival.Commit(rattled);
+            check("ramp-rattled-every-3", !r1.Moved && !r2.Moved && r3.Moved && !rattled.Blackbird.Fled,
+                "m3 " + r3.Moved);
         }
 
         static void CheckPriority(CheckDelegate check)
@@ -206,36 +231,28 @@ namespace FlockFive.Editor
 
         static void CheckSchedule(CheckDelegate check)
         {
-            var saved = BlackbirdSchedule.Visit;
-            bool returns = BlackbirdSchedule.Returns;
-            try
+            int[] want = { 13, 24, 35, 47, 58, 69, 82 };
+            bool list = BlackbirdSchedule.Visit.First == want[0] && BlackbirdSchedule.Visit.Every == 11;
+            var got = new StringBuilder();
+            for (int k = 0; k < want.Length; k++)
             {
-                int first = saved.First;
-                int every = saved.Every < 1 ? 1 : saved.Every;
-                BlackbirdSchedule.Returns = false;
-                bool off = !BlackbirdSchedule.Due(first + every) && BlackbirdSchedule.Due(first)
-                    && BlackbirdSchedule.Notch(first) == 0 && !BlackbirdSchedule.Due(first + 1);
-                BlackbirdSchedule.Returns = true;
-                int offGrid = every <= 1 ? first - 1 : first + 1;
-                bool on = BlackbirdSchedule.Due(first + every) && BlackbirdSchedule.Notch(first + every) == 1
-                    && BlackbirdSchedule.Due(first + 2 * every) && BlackbirdSchedule.Notch(first + 2 * every) == 2
-                    && BlackbirdSchedule.Due(first + 3 * every) && BlackbirdSchedule.Notch(first + 3 * every) == 3
-                    && BlackbirdSchedule.Due(first + 4 * every) && BlackbirdSchedule.Notch(first + 4 * every) == 4
-                    && !BlackbirdSchedule.Due(offGrid);
-                // A different debut moves every visit with it. The literals above are offsets, not a garden.
-                var shifted = saved;
-                shifted.First = first + 5;
-                BlackbirdSchedule.Visit = shifted;
-                bool moved = BlackbirdSchedule.Due(shifted.First)
-                    && !BlackbirdSchedule.Due(first)
-                    && BlackbirdSchedule.Notch(shifted.First + every) == 1;
-                check("schedule", off && on && moved, "off " + off + " on " + on + " moved " + moved);
+                int at = BlackbirdSchedule.VisitAt(k);
+                if (k > 0) got.Append(',');
+                got.Append(at);
+                if (at != want[k] || !BlackbirdSchedule.Due(at)) list = false;
             }
-            finally
-            {
-                BlackbirdSchedule.Visit = saved;
-                BlackbirdSchedule.Returns = returns;
-            }
+            bool slides = !BlackbirdSchedule.Due(46) && !BlackbirdSchedule.Due(57)
+                && !BlackbirdSchedule.Due(80) && !BlackbirdSchedule.Due(81)
+                && BlackbirdSchedule.Blocked(46) && BlackbirdSchedule.Blocked(80) && BlackbirdSchedule.Blocked(81)
+                && BlackbirdSchedule.Blocked(54) && BlackbirdSchedule.Blocked(65) && BlackbirdSchedule.Blocked(76)
+                && !BlackbirdSchedule.Blocked(82);
+            bool smart = BlackbirdSchedule.Notch(13) == 0 && BlackbirdSchedule.Notch(24) == 0
+                && BlackbirdSchedule.Notch(35) == 1 && BlackbirdSchedule.Notch(47) == 2
+                && BlackbirdSchedule.CalmEveryFor(13) == 4 && BlackbirdSchedule.RattleEveryFor(13) == 3
+                && BlackbirdSchedule.CalmEveryFor(24) == 3 && BlackbirdSchedule.RattleEveryFor(24) == 2;
+            bool clear = !BlackbirdSchedule.Blocked(13) && !BlackbirdSchedule.Blocked(24)
+                && !BlackbirdSchedule.Blocked(35) && !BlackbirdSchedule.Blocked(47);
+            check("schedule", list && slides && smart && clear, got.ToString());
         }
 
         static void CheckFlight(CheckDelegate check)
@@ -307,31 +324,80 @@ namespace FlockFive.Editor
 
         static void CheckConfiguredGarden(CheckDelegate check)
         {
-            int first = BlackbirdSchedule.Visit.First;
-            bool keep = BlackbirdSchedule.Returns;
-            BlackbirdSchedule.Returns = false;
+            int first = BlackbirdSchedule.VisitAt(0);
             int index;
             bool found = LevelData.TryIndex(first, out index);
             var board = found ? LevelData.Open(index) : new Board();
-            BlackbirdSchedule.Returns = keep;
             int shown = LevelData.Current != null ? LevelData.Current.Number : -1;
             int perch = board.Blackbird != null ? board.Blackbird.Perch : -1;
             int spare = board.Blackbird != null ? board.Blackbird.Spare : -1;
             bool shape = found && shown == first && board.Blackbird != null && board.Blackbird.Notch == 0
+                && board.Blackbird.CalmEvery == BlackbirdSchedule.CalmEveryFor(first)
+                && board.Blackbird.RattleEvery == BlackbirdSchedule.RattleEveryFor(first)
                 && perch >= 0 && spare >= 0
                 && board.Branches[perch].RivalPerch && board.Branches[perch].SeatCap == 1
                 && board.Branches[spare].IsSpare && board.Branches[spare].Empty
                 && board.Ostrich == null;
             check("visit-shape", shape,
-                "garden " + shown + " spare " + spare + " perch " + perch + " limbs " + board.Branches.Count);
+                "garden " + shown + " every " + (board.Blackbird != null ? board.Blackbird.CalmEvery : 0)
+                + " spare " + spare + " perch " + perch);
 
             if (!shape) return;
-            var locked = board.Clone();
-            locked.Branches[locked.Blackbird.Spare].AdLocked = true;
-            var report = GardenSolve.Search(locked, 40000);
-            Debug.Log("[blackbird] garden " + first + " " + report.Outlook + " moves " + report.Moves + " nodes " + report.Nodes);
-            check("visit-winnable", report.Outlook == GardenSolve.Outlook.Winnable,
-                report.Outlook + " garden " + first);
+            // Garden 13 opens with 62 legal hops. The shared search dives thousands of
+            // plies before it returns, so this witness is a short clear played through
+            // AfterMove. His gentle reply (every 4th move, notch 0) is inside that transition.
+            const string line = "11>9,4>2,2>12,2>4,3>12,4>3,4>1,8>13,9>10,7>6,10>9,11>5,11>13,10>2,6>7,7>11,9>2,5>0,0>10";
+            int replies = PlayWitness(board, line, perch);
+            bool won = first == 13
+                && replies == 2
+                && GardenSolve.Cleared(board)
+                && board.Blackbird.PlayerMoves == 19
+                && board.Blackbird.Notch == 0
+                && board.Blackbird.CalmEvery == BlackbirdSchedule.GentleCalm
+                && board.Branches[perch].Count == 0
+                && board.Branches[spare].IsSpare;
+            check("visit-winnable", won,
+                "garden " + first + " replies " + replies + " moves " + board.Blackbird.PlayerMoves
+                + " cleared " + GardenSolve.Cleared(board));
+        }
+
+        // Plays from>to hops through the solver transition. Returns how many of
+        // those transitions his policy changed, or -1 when a hop was illegal
+        // or a bird landed on his perch.
+        static int PlayWitness(Board board, string line, int perch)
+        {
+            int replies = 0;
+            string[] parts = line.Split(',');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                int gt = parts[i].IndexOf('>');
+                if (gt <= 0) return -1;
+                int from = int.Parse(parts[i].Substring(0, gt));
+                int to = int.Parse(parts[i].Substring(gt + 1));
+                if (!board.TryMove(from, to, out _)) return -1;
+                var ghost = board.Clone();
+                GardenSolve.Drain(ghost);
+                GardenSolve.AfterMove(board);
+                if (Limbs(ghost) != Limbs(board)) replies++;
+                if (board.Branches[perch].Count != 0) return -1;
+            }
+            return replies;
+        }
+
+        static string Limbs(Board b)
+        {
+            var sb = new StringBuilder();
+            for (int i = 0; i < b.Branches.Count; i++)
+            {
+                var br = b.Branches[i];
+                sb.Append('|');
+                if (br.Broken) { sb.Append('X'); continue; }
+                for (int k = 0; k < br.Count; k++)
+                    sb.Append((int)br.Birds[k].Color);
+            }
+            sb.Append('Q');
+            for (int i = 0; i < b.Queue.Count; i++) sb.Append((int)b.Queue[i]);
+            return sb.ToString();
         }
 
         // Gold x3 onto gold x1, plus a teal that keeps a second color on the board.
