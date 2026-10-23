@@ -284,6 +284,18 @@ namespace FlockFive.Editor
                 && BlackbirdCue.SilenceSec > 0f
                 && BlackbirdCue.RushBpm > BlackbirdCue.CalmBpm,
                 "cut " + BlackbirdCue.IntroCutSec + " rush " + BlackbirdCue.RushBpm);
+
+            float resumed = BlackbirdCue.ResumeCalm(4.25f, 1.5f, 16f);
+            bool mix = resumed > 5.7f && resumed < 5.8f
+                && BlackbirdCue.BedCrossfadeSec >= 0.3f && BlackbirdCue.BedCrossfadeSec <= 0.5f
+                && BlackbirdCue.PlayTaunt(false) && !BlackbirdCue.PlayTaunt(true)
+                && BlackbirdCue.HearTell(true)
+                && BlackbirdCue.HoldTaps(true) && !BlackbirdCue.HoldTaps(false)
+                && BlackbirdCue.BedAfterInterrupt(BlackbirdCue.Bed.Silence) == BlackbirdCue.Bed.Calm
+                && BlackbirdCue.BedAfterInterrupt(BlackbirdCue.Bed.Rush) == BlackbirdCue.Bed.Rush
+                && BlackbirdCue.TauntLevel > 0.5f && BlackbirdCue.TauntLevel < 0.7f
+                && BlackbirdCue.TauntPitchMax <= 1.04f;
+            check("mix", mix, "resume " + resumed + " fade " + BlackbirdCue.BedCrossfadeSec);
         }
 
         static void CheckFold(CheckDelegate check)

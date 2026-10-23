@@ -75,10 +75,19 @@ namespace FlockFive
         const float Bpm = 84f;
         const float Beat = 60f / Bpm;
         // Blackbird: one occupant. Cut and silence zero the tune. Rush swaps in
-        // the same porch motif at BlackbirdCue.RushBpm, then the calm clip returns.
+        // the same porch motif at BlackbirdCue.RushBpm, then the calm clip returns
+        // from the playhead where it left, not from bar 0. Stem 1 only carries
+        // the outgoing clip during the ramp crossfade.
         AudioClip _calmBed;
         AudioClip _rushBed;
         BlackbirdCue.Bed _bbBed;
+        float _bbIn = 1f;
+        float _bbOut;
+        float _calmPlayhead;
+        float _calmLeftUnscaled = -1f;
+        bool _calmParked;
+
+        public BlackbirdCue.Bed BlackbirdBed => _bbBed;
         const int NBars = 16;
         const int SplashBars = 10;
         const int TeaseBar = 5;
@@ -722,12 +731,25 @@ namespace FlockFive
             // One garden occupant: the soft porch theme. Dawn/mid/last stay
             // loaded as fallbacks but silent so two tunes never sit together.
             // Blackbird cut/silence take the tune (and the combo fifth) to 0.
-            // Rush is the same motif, already swapped onto stem 0. Not a second loop.
+            // Rush is the same motif on stem 0. Stem 1 holds the outgoing clip
+            // only while the ramp crossfades (BedCrossfadeSec), then it stops.
             bool tuneOn = _bbBed == BlackbirdCue.Bed.Calm || _bbBed == BlackbirdCue.Bed.Rush;
-            float tune = tuneOn ? 1f : 0f;
+            if (!tuneOn)
+            {
+                _bbIn = 0f;
+                _bbOut = 0f;
+            }
+            else
+            {
+                float step = AdPause.UnscaledDelta / BlackbirdCue.BedCrossfadeSec;
+                if (step < 0f) step = 0f;
+                _bbIn = Mathf.MoveTowards(_bbIn, 1f, step);
+                _bbOut = Mathf.MoveTowards(_bbOut, 0f, step);
+            }
+            if (_bbOut <= 0.001f) StopBlackbirdOutgoing();
             float comboMul = _bbBed == BlackbirdCue.Bed.Calm ? 1f : 0f;
-            SetStem(0, cap * duck * gardenMix * tune);
-            SetStem(1, 0f);
+            SetStem(0, cap * duck * gardenMix * _bbIn);
+            SetStem(1, cap * duck * gardenMix * _bbOut);
             SetStem(2, 0f);
             SetStem(3, ComboGain() * ComboCap * duck * gardenMix * comboMul);
             float splashVol = _splashMix * SplashCap * duck * others;
@@ -739,16 +761,102 @@ namespace FlockFive
 
         // App calls this when the visit changes phase. Rush is the same D-major
         // porch line as dawn, at a shorter beat, and it replaces stem 0.
+        // Calm comes back on the playhead it left. The ramp crossfades the stem
+        // over BedCrossfadeSec. Cut and silence drop the level immediately.
         public void SetBlackbirdBed(BlackbirdCue.Bed bed)
         {
+            var prev = _bbBed;
             _bbBed = bed;
-            if (_stems == null || _stems.Length == 0) return;
-            if (_calmBed == null && _stems[0] != null) _calmBed = _stems[0].clip;
-            bool rush = bed == BlackbirdCue.Bed.Rush;
-            var want = rush ? RushBed() : _calmBed;
-            if (want == null || _stems[0] == null) return;
-            _stems[0].pitch = 1f;
-            if (_stems[0].clip != want) SwapClip(0, want, true);
+            if (bed == prev) return;
+            if (_stems == null || _stems.Length == 0 || _stems[0] == null)
+            {
+                if (bed == BlackbirdCue.Bed.Cut || bed == BlackbirdCue.Bed.Silence)
+                {
+                    _bbIn = 0f;
+                    _bbOut = 0f;
+                }
+                return;
+            }
+            if (_calmBed == null) _calmBed = _stems[0].clip;
+            if (bed == BlackbirdCue.Bed.Cut || bed == BlackbirdCue.Bed.Silence)
+            {
+                if (prev == BlackbirdCue.Bed.Rush)
+                    AdoptBlackbirdClip(_calmBed, true, false);
+                _bbIn = 0f;
+                _bbOut = 0f;
+                StopBlackbirdOutgoing();
+                return;
+            }
+            if (bed == BlackbirdCue.Bed.Rush)
+            {
+                AdoptBlackbirdClip(RushBed(), false, true);
+                return;
+            }
+            if (prev == BlackbirdCue.Bed.Rush)
+            {
+                AdoptBlackbirdClip(_calmBed, true, true);
+                return;
+            }
+            // Cut or silence lifting back to calm. The clip is already the porch
+            // tune and its playhead was never rewound. Volume slews back up.
+        }
+
+        void AdoptBlackbirdClip(AudioClip want, bool resumeCalm, bool crossfade)
+        {
+            var a = _stems[0];
+            if (want == null || a == null) return;
+            float outTime = a.time;
+            AudioClip outgoing = a.clip;
+            bool leavingCalm = _calmBed != null && outgoing == _calmBed;
+            if (leavingCalm)
+            {
+                _calmPlayhead = outTime;
+                _calmLeftUnscaled = AdPause.Unscaled;
+                _calmParked = true;
+            }
+            if (crossfade && outgoing != null && outgoing != want && _stems.Length > 1 && _stems[1] != null && a.isPlaying)
+            {
+                var b = _stems[1];
+                b.loop = true;
+                b.pitch = 1f;
+                b.Stop();
+                b.clip = outgoing;
+                b.time = outTime;
+                b.Play();
+                _bbOut = _bbIn > 0.02f ? _bbIn : 1f;
+            }
+            else
+                StopBlackbirdOutgoing();
+            float t = 0f;
+            if (resumeCalm) t = TakeCalmResume(want);
+            a.loop = true;
+            a.pitch = 1f;
+            a.Stop();
+            a.clip = want;
+            a.time = t;
+            a.Play();
+            if (crossfade) _bbIn = 0f;
+        }
+
+        float TakeCalmResume(AudioClip want)
+        {
+            float length = want != null ? want.length : 0f;
+            float elapsed = _calmParked && _calmLeftUnscaled >= 0f ? AdPause.Unscaled - _calmLeftUnscaled : 0f;
+            _calmParked = false;
+            return BlackbirdCue.ResumeCalm(_calmPlayhead, elapsed, length);
+        }
+
+        void StopBlackbirdOutgoing()
+        {
+            _bbOut = 0f;
+            if (_stems == null || _stems.Length < 2 || _stems[1] == null) return;
+            var b = _stems[1];
+            if (b.isPlaying) b.Stop();
+            if (_calmBed != null && b.clip != _calmBed)
+            {
+                b.clip = _calmBed;
+                b.time = 0f;
+            }
         }
 
         AudioClip RushBed()
@@ -770,16 +878,17 @@ namespace FlockFive
                 float tBar = bar * 4f * beat;
                 bool pay = bar >= 5;
                 float g = pay ? 0.28f : 0.18f;
-                PlacePizz(bus, 38f, tBar, -0.18f, g);
-                PlacePizz(bus, 45f, tBar + 2f * beat, 0.16f, g * 0.92f);
-                if (pay) PlacePizz(bus, 50f, tBar + 3f * beat, 0.22f, g * 0.55f);
+                PlaceWrap(bus, Pizz(38f), tBar, -0.18f, g);
+                PlaceWrap(bus, Pizz(45f), tBar + 2f * beat, 0.16f, g * 0.92f);
+                if (pay) PlaceWrap(bus, Pizz(50f), tBar + 3f * beat, 0.22f, g * 0.55f);
             }
-            MixNotesBeat(bus, FirstFour, 0.38f, -0.08f, beat, 5f * 4f);
-            ApplyFades(bus);
+            MixNotesWrap(bus, FirstFour, 0.38f, -0.08f, beat, 5f * 4f);
+            // No edge fade. A baked dip would return every loop (~16.5s at 116 BPM).
+            // The ramp fades stem volume instead, over BedCrossfadeSec.
             return PeakClip("blackbird-rush", bus, 0.40f);
         }
 
-        static void MixNotesBeat(float[] bus, Note[] notes, float gain, float pan, float beat, float phraseBeat)
+        static void MixNotesWrap(float[] bus, Note[] notes, float gain, float pan, float beat, float phraseBeat)
         {
             if (notes == null) return;
             for (int i = 0; i < notes.Length; i++)
@@ -787,7 +896,26 @@ namespace FlockFive
                 var nt = notes[i];
                 int len = UnityEngine.Mathf.RoundToInt(nt.Dur * beat * Rate);
                 if (len < 8) continue;
-                Place(bus, Flute(len, nt.Midi), (phraseBeat + nt.Start) * beat, pan, gain);
+                PlaceWrap(bus, Flute(len, nt.Midi), (phraseBeat + nt.Start) * beat, pan, gain);
+            }
+        }
+
+        static void PlaceWrap(float[] stereo, float[] mono, float t0, float pan, float gain)
+        {
+            int frames = stereo.Length / 2;
+            if (frames <= 0 || mono == null) return;
+            int i0 = Mathf.RoundToInt(t0 * Rate);
+            float p = 0.5f * (pan + 1f);
+            float gl = Mathf.Cos(p * Mathf.PI * 0.5f) * gain;
+            float gr = Mathf.Sin(p * Mathf.PI * 0.5f) * gain;
+            for (int i = 0; i < mono.Length; i++)
+            {
+                int f = i0 + i;
+                f %= frames;
+                if (f < 0) f += frames;
+                int o = f * 2;
+                stereo[o] += mono[i] * gl;
+                stereo[o + 1] += mono[i] * gr;
             }
         }
 

@@ -3714,7 +3714,7 @@ namespace FlockFive
         void HandleTap(Vector2 world)
         {
             if (LessonTapBlocked()) return;
-            if (_busy || _won || _board == null || _blackbirdHold) return;
+            if (_busy || _won || _board == null || _blackbirdHold || BlackbirdCue.HoldTaps(_bbIntro != null)) return;
             if (GateNow < _swallowTapsUntil) return;
             if (AdPause.Unscaled < _nextTap) return;
             _nextTap = AdPause.Unscaled + 0.10f;
