@@ -23,6 +23,13 @@ namespace FlockFive
 
         public static int Every(int flocksDone) => flocksDone >= RattleAt ? RattleEvery : CalmEvery;
 
+        public static int Every(BlackbirdState bb, int flocksDone)
+        {
+            int calm = bb != null && bb.CalmEvery > 0 ? bb.CalmEvery : CalmEvery;
+            int rattle = bb != null && bb.RattleEvery > 0 ? bb.RattleEvery : RattleEvery;
+            return flocksDone >= RattleAt ? rattle : calm;
+        }
+
         // Intro holds the cut. After he bolts, silence, then the caller returns to calm.
         // Three flocks done and he is still here: the faster loop. Otherwise the porch tune.
         public static Bed BedFor(bool intro, bool fled, int flocksDone)
@@ -34,9 +41,10 @@ namespace FlockFive
         }
     }
 
-    // One value: first garden, then a return every Every gardens after it.
-    // Each return is one notch smarter. Returns stay off so only the first
-    // visit is required until that switch is turned on.
+    // One value: first garden, then a return every Every gardens after the
+    // garden he actually landed on. A landing that is a badger, an ostrich,
+    // or a season change slides +1 until it is clear. Smarts stay off until
+    // SmartFrom. The trap-free ramp (through RampThrough) uses the gentle cadence.
     public static class BlackbirdSchedule
     {
         public struct Cadence
@@ -45,26 +53,83 @@ namespace FlockFive
             public int Every;
         }
 
-        // Change Visit to move him. First is the debut garden. Every is the
-        // gap between visits. Default debut stays here until the earlier
-        // garden is chosen.
-        public static Cadence Visit = new Cadence { First = 44, Every = 13 };
+        public static Cadence Visit = new Cadence { First = 13, Every = 11 };
 
-        public static bool Returns;
+        // First visit that is allowed a smarter pull. Earlier visits stay at notch 0.
+        public const int SmartFrom = 35;
+        // Gardens 1-15 are the trap-free ramp. He answers less often there.
+        public const int RampThrough = 15;
+        public const int GentleCalm = 4;
+        public const int GentleRattle = 3;
+        // Last authored ostrich. Past the ladder the same 11-garden spacing continues.
+        public const int LastPlacedOstrich = 43;
+        public const int UnplacedOstrichEvery = 11;
+
+        public static int CalmEveryFor(int garden) =>
+            garden <= RampThrough ? GentleCalm : BlackbirdCue.CalmEvery;
+
+        public static int RattleEveryFor(int garden) =>
+            garden <= RampThrough ? GentleRattle : BlackbirdCue.RattleEvery;
+
+        public static int VisitAt(int k)
+        {
+            if (k < 0) k = 0;
+            int at = Slide(Visit.First);
+            int every = Gap();
+            for (int i = 0; i < k; i++)
+                at = Slide(at + every);
+            return at;
+        }
 
         public static bool Due(int garden)
         {
-            int first = Visit.First;
-            int every = Gap();
-            if (garden == first) return true;
-            if (!Returns || garden < first) return false;
-            return (garden - first) % every == 0;
+            if (garden < Visit.First) return false;
+            for (int k = 0; k < 64; k++)
+            {
+                int at = VisitAt(k);
+                if (at == garden) return true;
+                if (at > garden) return false;
+            }
+            return false;
         }
 
+        // 0 through the visit before SmartFrom. The visit on SmartFrom is notch 1.
         public static int Notch(int garden)
         {
-            if (!Due(garden)) return 0;
-            return (garden - Visit.First) / Gap();
+            if (!Due(garden) || garden < SmartFrom) return 0;
+            int n = 0;
+            for (int k = 0; k < 64; k++)
+            {
+                int at = VisitAt(k);
+                if (at > garden) break;
+                if (at >= SmartFrom) n++;
+            }
+            return n;
+        }
+
+        // Badger, ostrich, or a backdrop change. Same +1 slide seasons use for an ostrich,
+        // also stepping off a badger or a season change. Authored flags win inside the ladder.
+        // Past it, ostriches continue every 11 gardens from the last placed one.
+        public static bool Blocked(int level)
+        {
+            if (level < 1) return false;
+            if (GardenSeason.IsBadgerLevel(level)) return true;
+            if (GardenSeason.IsChangeLevel(level)) return true;
+            if (GardenSeason.IsOstrichLevel(level)) return true;
+            if (level <= LevelData.Count) return false;
+            int every = UnplacedOstrichEvery < 1 ? 1 : UnplacedOstrichEvery;
+            return level > LastPlacedOstrich && (level - LastPlacedOstrich) % every == 0;
+        }
+
+        static int Slide(int at)
+        {
+            int guard = 0;
+            while (Blocked(at) && guard < 12)
+            {
+                at++;
+                guard++;
+            }
+            return at;
         }
 
         static int Gap()
@@ -77,6 +142,8 @@ namespace FlockFive
     public sealed class BlackbirdState
     {
         public int Notch;
+        public int CalmEvery;
+        public int RattleEvery;
         public int PlayerMoves;
         public int Spare = -1;
         public int Perch = -1;
@@ -153,7 +220,7 @@ namespace FlockFive
         {
             if (bb == null || bb.Fled || movesAfter < 1) return false;
             if (flocksDone >= BlackbirdCue.FleeAt) return !bb.LastDitchPlayed;
-            return movesAfter % BlackbirdCue.Every(flocksDone) == 0;
+            return movesAfter % BlackbirdCue.Every(bb, flocksDone) == 0;
         }
 
         public static BlackbirdChoice Choose(Board b) => Choose(b, b != null && b.Blackbird != null ? b.Blackbird.Notch : 0);
@@ -223,9 +290,11 @@ namespace FlockFive
             return answer;
         }
 
-        public static void Dress(Board b, int notch)
+        public static void Dress(Board b, int notch, int calmEvery = 0, int rattleEvery = 0)
         {
             if (b == null || b.Blackbird != null) return;
+            if (calmEvery < 1) calmEvery = BlackbirdCue.CalmEvery;
+            if (rattleEvery < 1) rattleEvery = BlackbirdCue.RattleEvery;
             int spare = b.Branches.Count;
             b.Branches.Add(new BranchState { IsSpare = true });
             int perch = b.Branches.Count;
@@ -236,6 +305,8 @@ namespace FlockFive
             b.Blackbird = new BlackbirdState
             {
                 Notch = notch < 0 ? 0 : notch,
+                CalmEvery = calmEvery,
+                RattleEvery = rattleEvery,
                 Spare = spare,
                 Perch = perch,
                 ColorMask = mask

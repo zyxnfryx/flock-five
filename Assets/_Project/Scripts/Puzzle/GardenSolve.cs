@@ -210,8 +210,10 @@ namespace FlockFive
             if (b.Blackbird != null)
             {
                 var bb = b.Blackbird;
-                // Mod 6 keeps both the calm (every 3) and rattled (every 2) phases.
-                Mix(100 + (bb.PlayerMoves % 6));
+                // 12 covers calm 3, rattled 2, and the ramp's 4 and 3.
+                Mix(100 + (bb.PlayerMoves % 12));
+                Mix(400 + bb.CalmEvery);
+                Mix(500 + bb.RattleEvery);
                 Mix(bb.Fled ? 111 : 110);
                 Mix(bb.LastDitchPlayed ? 113 : 112);
                 Mix(120 + bb.Notch);
@@ -329,7 +331,8 @@ namespace FlockFive
             if (b.Blackbird != null)
             {
                 var bb = b.Blackbird;
-                sb.Append('#').Append(bb.PlayerMoves % 6).Append(',').Append(bb.Fled ? 1 : 0);
+                sb.Append('#').Append(bb.PlayerMoves % 12).Append(',').Append(bb.Fled ? 1 : 0);
+                sb.Append(",c").Append(bb.CalmEvery).Append(",r").Append(bb.RattleEvery);
                 sb.Append(',').Append(b.LastHopFrom).Append('>').Append(b.LastHopTo);
                 sb.Append(',').Append(bb.Notch);
             }
