@@ -238,14 +238,14 @@ namespace FlockFive.Editor
             {
                 int depth = 0;
                 int close = flower;
-                bool started = false;
+                bool sawBrace = false;
                 for (int i = flower; i < app.Length; i++)
                 {
-                    if (app[i] == '{') { depth++; started = true; }
+                    if (app[i] == '{') { depth++; sawBrace = true; }
                     else if (app[i] == '}')
                     {
                         depth--;
-                        if (started && depth == 0) { close = i; break; }
+                        if (sawBrace && depth == 0) { close = i; break; }
                     }
                 }
                 flowerBody = app.Substring(flower, close - flower);

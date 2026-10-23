@@ -620,8 +620,7 @@ namespace FlockFive.Editor
                         labelDetail = "w=" + w + " land=" + land
                             + " inner=" + inner.ToString("0.0")
                             + " hub=" + hubR.ToString("0.0")
-                            + " outer=" + outer.ToString("0.0")
-                            + " tip=" + tip.ToString("0.0");
+                            + " outer=" + outer.ToString("0.0");
                         break;
                     }
                 }
