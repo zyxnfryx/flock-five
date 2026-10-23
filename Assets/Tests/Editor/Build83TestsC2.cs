@@ -5,7 +5,8 @@ using UnityEngine;
 
 namespace FlockFive.Editor
 {
-    // Build 83 pass c2. Level curtain is the b88 tear (build/wash/part), glove never presses and labels stay on the cap (9).
+    // Build 83 pass c2. The curtain is the rainbow fountain (burst/apex/fall/reveal) with a
+    // translucent veil. Glove never presses and labels stay on the cap (9).
     // Kit seat on the skull (6) is covered by Build81Tests kit-on-dome via BirdIdle.KitTouch.
     static class Build83TestsC2
     {
@@ -35,11 +36,17 @@ namespace FlockFive.Editor
             float left = SparkleFx.CurtainShiftX(0.22f, 0.55f);
             float right = SparkleFx.CurtainShiftX(0.78f, 0.55f);
             bool tear = left < -0.15f && right > 0.15f && Mathf.Abs(left + right) < 0.04f;
-            Check("curtain-wash-covers", wash > 0.80f && wash > build + 0.25f,
-                "wash " + wash.ToString("0.00") + " build " + build.ToString("0.00"));
+            // Glints never sheet the glass. The veil peaks under alpha 0.4 and is off at Flood.
+            float veil = LevelCurtain.WashLevel(LevelCurtain.WashPeak);
+            Check("curtain-wash-covers",
+                veil > 0.98f && LevelCurtain.WashBase * veil < 0.40f
+                && LevelCurtain.WashLevel(LevelCurtain.Flood) < 0.001f
+                && wash < 0.25f && build > 0.01f && build < 0.25f,
+                "veil " + veil.ToString("0.00") + " wash " + wash.ToString("0.00") + " build " + build.ToString("0.00"));
             Check("curtain-tear-sides", tear, "L " + left.ToString("0.00") + " R " + right.ToString("0.00"));
-            Check("curtain-beats", LevelCurtain.BeatName(0.1f) == "build" && LevelCurtain.BeatName(LevelCurtain.Flood) == "wash"
-                && LevelCurtain.BeatName(0.75f) == "part", "build/wash/part");
+            Check("curtain-beats", LevelCurtain.BeatName(0.1f) == "burst" && LevelCurtain.BeatName(LevelCurtain.Flood) == "apex"
+                && LevelCurtain.BeatName(0.60f) == "fall" && LevelCurtain.BeatName(0.75f) == "reveal",
+                "burst/apex/fall/reveal");
             int end = LevelCurtain.Fill(1.6f, W, H, src, buf);
             Check("curtain-clears", end < LevelCurtain.Count / 6, "glints left at 1.6s " + end);
             Check("curtain-duration", LevelCurtain.Duration >= 0.8f && LevelCurtain.Duration <= 1.2f, "dur " + LevelCurtain.Duration);
