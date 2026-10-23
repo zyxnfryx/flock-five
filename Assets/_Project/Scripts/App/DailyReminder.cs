@@ -20,14 +20,14 @@ namespace FlockFive
     // until that permission is already granted.
     public static class DailyReminder
     {
-        const string PrefAsked = "flockfive.daily.asked";
-        const string PrefYes = "flockfive.daily.askYes";
-        const string PrefAsks = "flockfive.daily.askN";
+        public const string AskedKey = "flockfive.daily.asked";
+        public const string YesKey = "flockfive.daily.askYes";
+        public const string AsksKey = "flockfive.daily.askN";
         // Build 52: "yes" on the in-game card no longer opens the OS dialog right away. It only
         // records that the dialog is owed. The game asks for it (RequestOsNow) once the
         // reward audio and animation are done, so the Apple/Android sheet cannot cut off the
         // welcome bonus coin sound. Stored in PlayerPrefs so a quit before then still asks later.
-        const string PrefOsOwed = "flockfive.daily.osOwed";
+        public const string OsOwedKey = "flockfive.daily.osOwed";
         const string PrefNoteReady = "flockfive.daily.noteReady";
         const string PrefNoteKeep = "flockfive.daily.noteKeep";
         const string IosReady = "flockfive.daily.ready";
@@ -38,6 +38,9 @@ namespace FlockFive
         static bool _armRisk;
         static bool _armClaimed;
         static long _armLast;
+        // The in-game card and the OS notification sheet share one session. Either one
+        // already asked, so the card does not also appear later in this launch.
+        static bool _permissionAskedThisSession;
 
 #if UNITY_IOS && !UNITY_EDITOR
         static AuthorizationRequest _iosAuth;
@@ -53,6 +56,7 @@ namespace FlockFive
             _armRisk = false;
             _armClaimed = false;
             _armLast = 0;
+            _permissionAskedThisSession = false;
 #if UNITY_IOS && !UNITY_EDITOR
             if (_iosAuth != null)
             {
@@ -151,35 +155,54 @@ namespace FlockFive
 #endif
         }
 
-        // In-game "want a reminder?" card. Two answers total. Yes is the only
-        // path that constructs an authorization request. Not now spends one ask.
+        // True after any notification-permission ask this launch: the streak card,
+        // or the OS sheet from RequestOsNow. The card must not open again beside one.
+        public static bool PermissionAskedThisSession => _permissionAskedThisSession;
+
+        public static void NotePermissionAsked() => _permissionAskedThisSession = true;
+
+        public static void ResetSessionForTest() => _permissionAskedThisSession = false;
+
+        // In-game "want a reminder?" card. One ask, ever. Yes and Not now both stick.
+        // Showing the card sticks too (MarkShown), so a quit before the tap still counts.
+        // Yes is the only path that owes the OS dialog. That dialog is the only
+        // notification permission request in the project (AuthorizationRequest /
+        // PermissionRequest). Ad consent and ATT are a different prompt.
         public static bool PromptDue()
         {
+            if (_permissionAskedThisSession) return false;
             if (OsGranted()) return false;
-            if (PlayerPrefs.GetInt(PrefYes, 0) != 0) return false;
-            if (PlayerPrefs.GetInt(PrefAsked, 0) != 0) return false;
-            return PlayerPrefs.GetInt(PrefAsks, 0) < 2;
+            if (PlayerPrefs.GetInt(YesKey, 0) != 0) return false;
+            if (PlayerPrefs.GetInt(AskedKey, 0) != 0) return false;
+            if (PlayerPrefs.GetInt(OsOwedKey, 0) != 0) return false;
+            return PlayerPrefs.GetInt(AsksKey, 0) < 1;
+        }
+
+        // The card is on screen. Persist it now, before the player answers.
+        public static void MarkShown()
+        {
+            StickAsked();
+            PlayerPrefs.Save();
         }
 
         public static void Accept()
         {
-            if (PlayerPrefs.GetInt(PrefAsks, 0) < 2)
-                PlayerPrefs.SetInt(PrefAsks, PlayerPrefs.GetInt(PrefAsks, 0) + 1);
-            PlayerPrefs.SetInt(PrefYes, 1);
-            PlayerPrefs.SetInt(PrefAsked, 1);
-            PlayerPrefs.SetInt(PrefOsOwed, 1);
+            StickAsked();
+            PlayerPrefs.SetInt(YesKey, 1);
+            PlayerPrefs.SetInt(OsOwedKey, 1);
             PlayerPrefs.Save();
         }
 
         // True after the player said yes and before the OS dialog has been shown.
-        public static bool OsRequestOwed => PlayerPrefs.GetInt(PrefOsOwed, 0) != 0;
+        public static bool OsRequestOwed => PlayerPrefs.GetInt(OsOwedKey, 0) != 0;
 
         // Shows the OS permission dialog now. The caller (FlockFiveApp.TickDailyOsRequest)
         // only calls this when the game is idle after a reward.
         public static void RequestOsNow()
         {
-            if (PlayerPrefs.GetInt(PrefOsOwed, 0) == 0) return;
-            PlayerPrefs.SetInt(PrefOsOwed, 0);
+            if (PlayerPrefs.GetInt(OsOwedKey, 0) == 0) return;
+            NotePermissionAsked();
+            PlayerPrefs.SetInt(OsOwedKey, 0);
             PlayerPrefs.Save();
 #if UNITY_IOS && !UNITY_EDITOR
             try
@@ -201,9 +224,19 @@ namespace FlockFive
 
         public static void Decline()
         {
-            int n = PlayerPrefs.GetInt(PrefAsks, 0);
-            if (n < 2) PlayerPrefs.SetInt(PrefAsks, n + 1);
+            StickAsked();
             PlayerPrefs.Save();
+        }
+
+        // Either answer, or the card being shown, is the one ask. A later claim
+        // must not bring the card back. AsksKey stays at least 1 so a build that
+        // already counted one "Not now" (and never set AskedKey) does not ask again.
+        static void StickAsked()
+        {
+            NotePermissionAsked();
+            if (PlayerPrefs.GetInt(AsksKey, 0) < 1)
+                PlayerPrefs.SetInt(AsksKey, 1);
+            PlayerPrefs.SetInt(AskedKey, 1);
         }
 
         static bool OsGranted()

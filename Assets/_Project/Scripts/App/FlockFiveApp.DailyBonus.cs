@@ -551,6 +551,7 @@ namespace FlockFive
             {
                 TickWheelClicks(_dailyAngle, _dailySpinTo);
                 _dailyAngle = _dailySpinTo;
+                // Stays in Spin while coin audio is held, so the next frame lands once.
                 LandDailyWheel();
                 return;
             }
@@ -599,8 +600,15 @@ namespace FlockFive
             if (tutorial) DismissDailyIntro();
         }
 
+        // Coin fly holds a coin that has already arrived and plays its clink on a
+        // later frame. The wheel has one landing clink. Clink returns immediately
+        // while coin audio is held, so finishing the land on that frame would drop
+        // the sound for good. Leave the phase on Spin and land on the next frame.
+        public static bool HoldDailyWheelClink(bool allowsCoinAudio) => !allowsCoinAudio;
+
         void LandDailyWheel()
         {
+            if (HoldDailyWheelClink(ForegroundGate.AllowsCoinAudio)) return;
             _dailyPhase = DailyWheelPhase.Landed;
             _dailyAngle = _dailySpinTo;
             DailyBonus.MarkLanded();
@@ -764,6 +772,7 @@ namespace FlockFive
                 {
                     _dailyAskOpen = true;
                     _dailyAskAt = AdPause.Unscaled;
+                    DailyReminder.MarkShown();
                 }
                 NoteWelcomeClaim(firstEver);
                 yield break;
