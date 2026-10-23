@@ -107,6 +107,8 @@ namespace FlockFive.Editor
             Suite("build128-badger-power", Build128BadgerPowerTests.Run);
             Suite("build129-badger-gap", Build129BadgerGapTests.Run);
             Suite("build130-badger-stack", Build130BadgerStackTests.Run);
+            Suite("welcome-studio-gate", WelcomeStudioGateTests.Run);
+            Suite("streak-ask-once", StreakAskOnceTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 
