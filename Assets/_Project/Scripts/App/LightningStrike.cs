@@ -10,9 +10,37 @@ namespace FlockFive
         public const string PrefKey = "flockfive.lightning";
         public const bool RemoteDefault = true;
         public const int MaxPerLevel = 1;
-        // b113 (Brandon): garden 1 (LevelData index 0) never gets lightning.
-        public const int MinGarden = 1;
-        public static bool GardenEligible(int garden) => garden >= MinGarden;
+        // b126 (Brandon): staged by GardenStorm.StageFor. Callers pass the 0-based LevelData INDEX; the stage is
+        // keyed by garden number (index + 1). First strike on garden 3 (index 2); gardens 1-2 never strike.
+        public const int MinGarden = GardenStorm.FirstStrikeGarden - 1;
+        public static bool GardenEligible(int index) => GardenStorm.StrikeAllowed(index + 1);
+
+        // b126 (Brandon): the intro strike belongs to garden 3 only. One gate: at least IntroDelay seconds in AND
+        // visible rain (Wet > IntroWet; glass drops spawn from StormGlass.WetOn 0.22). Garden 3's short onset has glass drops
+        // from ~2.3 s and rain at Wet ~0.58 when the 3 s gate opens, still before a realistic fastest 9-move clear (~6.3 s). Never carried into
+        // another garden: from garden 4 on there is no owed strike, only the normal dice.
+        public const float IntroDelay = 3.0f;
+        public const float IntroWet = 0.3f;
+        public static bool IntroOwed(int index, bool everStruck) =>
+            !everStruck && GardenStorm.StageFor(index + 1) == GardenStorm.StormStage.FirstStrike;
+
+        // No strike while a pest/sparrow lesson line is up, and none on the sparrow's first garden until its
+        // intro has been seen (so the first lightning and the sparrow intro never share a garden).
+        public static bool Blocked(int index, bool pestLineUp, bool sparrowIntroDone) =>
+            pestLineUp || (index + 1 == PestSchedule.FirstSparrowGarden && !sparrowIntroDone);
+
+        public enum Plan { None = 0, Intro = 1, Roll = 2 }
+
+        // The one strike decision per tick (TickLightning and the tests both call it). calm = PestStageFree.
+        public static Plan Decide(int index, bool everStruck, bool storming, float gardenPlay, bool calm,
+            bool pestLineUp, bool sparrowIntroDone, bool won, float wet = 0f)
+        {
+            if (won || !GardenEligible(index)) return Plan.None;
+            if (Blocked(index, pestLineUp, sparrowIntroDone)) return Plan.None;
+            if (IntroOwed(index, everStruck))
+                return calm && gardenPlay >= IntroDelay && wet > IntroWet ? Plan.Intro : Plan.None;
+            return storming ? Plan.Roll : Plan.None;
+        }
 
         // b113 (Brandon): after a strike there is a cooldown, then the chance ramps garden by garden until the next
         // one. since = eligible gardens entered since the last strike, counting the current one (the garden right

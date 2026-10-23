@@ -7,8 +7,12 @@ namespace FlockFive
     // shake stay on GardenStorm. The limb drop stays on BranchView.BreakAway.
     public sealed class StrikeFx : MonoBehaviour
     {
-        const int N = 18;
-        const float Dur = 1.85f;
+        const int N = 26;
+        const float Dur = 2.4f;
+        // b126: every glowing bit (sparks, flame, embers) is dark by the time the branch falls
+        // (BranchView.ScorchSeconds after the strike). Smoke may drift on.
+        public const float GlowEnd = BranchView.ScorchSeconds - 0.05f;
+        const float GlowFade = 0.25f;
 
         struct Bit
         {
@@ -35,11 +39,11 @@ namespace FlockFive
             _bits = new Bit[N];
             for (int i = 0; i < N; i++)
             {
-                byte kind = i < 6 ? (byte)0 : i < 11 ? (byte)1 : i < 14 ? (byte)2 : (byte)3;
+                byte kind = i < 7 ? (byte)0 : i < 15 ? (byte)1 : i < 18 ? (byte)2 : (byte)3;
                 float scale = kind == 2 ? Random.Range(0.42f, 0.7f)
-                    : kind == 1 ? Random.Range(0.22f, 0.4f)
+                    : kind == 1 ? Random.Range(0.32f, 0.56f)
                     : kind == 0 ? Random.Range(0.08f, 0.16f)
-                    : Random.Range(0.1f, 0.18f);
+                    : Random.Range(0.14f, 0.24f);
                 int order = kind == 0 ? 19 : kind == 2 ? 12 : 15;
                 var go = WorldBuilder.Sprite("Ember" + i, SpriteCatalog.Glow, at, scale, order, transform);
                 var sr = go.GetComponent<SpriteRenderer>();
@@ -47,7 +51,7 @@ namespace FlockFive
                 bit.T = go.transform;
                 bit.Sr = sr;
                 bit.Kind = kind;
-                bit.Life = Random.Range(0.7f, 1.3f);
+                bit.Life = Random.Range(0.9f, GlowEnd);
                 float ang = Random.Range(0f, 6.28f);
                 if (kind == 0)
                 {
@@ -102,6 +106,7 @@ namespace FlockFive
                 float a = 1f - Mathf.Clamp01(life);
                 if (bit.Kind == 2) a *= 0.45f;
                 if (bit.Kind == 1) a *= 0.85f;
+                if (bit.Kind != 2) a *= Mathf.Clamp01((GlowEnd - _age) / GlowFade);
                 c.a = a < 0f ? 0f : a;
                 if (bit.Sr != null) bit.Sr.color = c;
                 _bits[i] = bit;

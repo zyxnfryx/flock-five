@@ -80,7 +80,6 @@ namespace FlockFive.Editor
             Suite("build110-ostrich-peck", Build110OstrichPeckTests.Run);
             Suite("build88-curtain", Build88CurtainTests.Run);
             Suite("build88-poker-tap", Build88PokerTapTests.Run);
-            Suite("build88-banner", Build88BannerTests.Run);
             Suite("build88-dismiss", Build88DismissTests.Run);
             Suite("build88-poker-glove", Build88PokerGloveTests.Run);
             Suite("build89-vippending", Build89VipPendingTests.Run);
@@ -91,6 +90,8 @@ namespace FlockFive.Editor
             Suite("sky", SkyCycleTests.Run);
             Suite("bee-cards", BeeCardQueueTests.Run);
             Suite("build110-lightning-fire", Build110LightningFireTests.Run);
+            Suite("build126-tap-cue", Build126TapCueTests.Run);
+            Suite("build126-clear-garden-1", Build126ClearGardenOneTests.Run);
             Suite("build112-money", Build112MoneyFormatTests.Run);
             Suite("build89-payhead", Build89PayHeadTests.Run);
             Suite("poker-back-caption-timing", PokerBackCaptionTimingTests.Run);

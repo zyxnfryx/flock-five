@@ -4203,6 +4203,7 @@ namespace FlockFive
         }
 
         CaptionPaint _capTop;
+        public static int TapCueFrame = -1;
         bool _capRepainting;
         public static int CaptionRepaints;
         public static int CaptionGloveHit = -1;
@@ -4210,6 +4211,8 @@ namespace FlockFive
         void KeepCaptionOnTop(int kind, Rect plate, Rect text, string shown, int px, float fade, int ring)
         {
             if (_capRepainting) return;
+            // b126: the one tap-to-continue cue. Drawn on top of the finished plate; the plate is never resized for it.
+            if (TapCue.ForCaption(shown)) { TapCue.DrawAt(plate, px, fade, PlayClock.Now); TapCueFrame = Time.frameCount; }
             _capTop = new CaptionPaint { Frame = Time.frameCount, Kind = kind, Plate = plate, Text = text, Shown = shown, Px = px, Ring = ring, Fade = fade };
         }
 

@@ -141,9 +141,9 @@ namespace FlockFive.Editor
                 "blocked mid-scene, allowed once Done, none = allowed");
 
             // Every scene finishes inside its own 2.5 s, which is shorter than any badger action's first beat,
-            // and a season change never sits on a badger garden anyway (grid rule).
+            // and a badger action waits for the scene above. A season change never sits on an ostrich garden (grid rule).
             Check("scene-shorter-than-3s", SeasonScene.Duration <= 2.5f, "");
-            Check("grid-has-no-badger-change", GardenSeason.FirstBadgerClash(220) == 0, "season grid untouched");
+            Check("grid-has-no-ostrich-change", GardenSeason.FirstOstrichClash(220) == 0, "no season change on an ostrich garden");
         }
 
         static void Birds(Action<string, bool, string> Check)

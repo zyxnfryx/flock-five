@@ -129,12 +129,41 @@ namespace FlockFive
 
         public static GardenStorm Attach(Transform root) => Attach(root, GardenScene.Summer);
 
-        public static GardenStorm Attach(Transform root, GardenScene scene)
+        public static GardenStorm Attach(Transform root, GardenScene scene) => Attach(root, scene, 0);
+
+        // b126 (Brandon): the storm intro is staged by garden NUMBER (1-based, LevelData.DisplayNumber). One helper.
+        //   1 clear (no rain, storm, thunder) | 2 rain only, no strike | 3 rain + the guaranteed first strike
+        //   (and its lightning caption), with a short first wait | 4+ unchanged.
+        public enum StormStage { Clear = 0, RainOnly = 1, FirstStrike = 2, Normal = 3 }
+        public const int FirstStrikeGarden = 3;
+        public const float FirstStrikeWait = 1f;
+        // b126: garden 3 skips most of the clear-sky delay so rain and glass drops are on screen before the intro bolt.
+        public const float FirstStrikeOnset = 1.5f;
+        public static float OnsetDelayFor(int garden) => StageFor(garden) == StormStage.FirstStrike ? FirstStrikeOnset : StormGlass.StartDelay;
+        float _onsetDelay = StormGlass.StartDelay;
+        public static StormStage StageFor(int garden)
+        {
+            if (garden <= 1) return StormStage.Clear;
+            if (garden < FirstStrikeGarden) return StormStage.RainOnly;
+            if (garden == FirstStrikeGarden) return StormStage.FirstStrike;
+            return StormStage.Normal;
+        }
+        public static bool StormAllowed(int garden) => StageFor(garden) != StormStage.Clear;
+        public static bool StrikeAllowed(int garden) => StageFor(garden) >= StormStage.FirstStrike;
+        public static float FirstWaitFor(int garden) => StageFor(garden) == StormStage.FirstStrike ? FirstStrikeWait : FirstWait;
+        float _firstWait = FirstWait;
+        bool _clear;
+        public bool IsClear => _clear;
+
+        public static GardenStorm Attach(Transform root, GardenScene scene, int garden)
         {
             var go = new GameObject("Storm");
             go.transform.SetParent(root, false);
             var gs = go.AddComponent<GardenStorm>();
             gs._snow = UsesSnow(scene);
+            gs._clear = garden > 0 && !StormAllowed(garden);
+            gs._firstWait = garden > 0 ? FirstWaitFor(garden) : FirstWait;
+            gs._onsetDelay = garden > 0 ? OnsetDelayFor(garden) : StormGlass.StartDelay;
             return gs;
         }
 
@@ -147,7 +176,7 @@ namespace FlockFive
         // Dev capture. The first storm is otherwise 70s out.
         public void JumpToStorm()
         {
-            if (_snow) return; // snow never storms
+            if (_snow || _clear) return; // snow never storms; garden 1 stays clear
             _gardenPlay = FirstWait + 4f; // well past StartDelay + RampIn
             _wet = 1f;
             Wet = 1f;
@@ -512,10 +541,12 @@ namespace FlockFive
             top = _frT;
         }
 
-        static bool WantStorm(float play)
+        static bool WantStorm(float play) => WantStorm(play, FirstWait);
+
+        public static bool WantStorm(float play, float firstWait)
         {
-            if (play < FirstWait) return false;
-            float u = play - FirstWait;
+            if (play < firstWait) return false;
+            float u = play - firstWait;
             float cycle = StormLen + ClearLen;
             return (u % cycle) < StormLen;
         }
@@ -527,7 +558,7 @@ namespace FlockFive
             if (dt > 0.0001f)
                 _step = _step <= 0f ? dt : _step + (dt - _step) * 0.2f;
             _gardenPlay += dt;
-            float want = (_snow || WantStorm(_gardenPlay)) ? 1f : 0f;
+            float want = !_clear && (_snow || WantStorm(_gardenPlay, _firstWait)) ? 1f : 0f;
             // b117: a solved level (win, finale, Double/Collect) ends the rain streaks quickly; the clock keeps running.
             bool halted = FlockFiveApp.RainHalted;
             if (halted) want = 0f;
@@ -541,7 +572,7 @@ namespace FlockFive
             _wasHalted = halted;
             _wet = Mathf.MoveTowards(_wet, want, dt / (halted ? StormGlass.HaltFade : Fade));
             // b125: a clear-sky StartDelay, then rain, streaks, veil, droplets, and the MixDesk rain stem ease in together.
-            _wet = Mathf.Min(_wet, StormGlass.OnsetMul(_gardenPlay));
+            _wet = Mathf.Min(_wet, StormGlass.OnsetMul(_gardenPlay, _onsetDelay));
             // Snow is not wet weather: sky veil, glass beads and the rain stem read Wet.
             Wet = _snow ? 0f : _wet;
 

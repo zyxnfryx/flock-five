@@ -235,8 +235,9 @@ namespace FlockFive.Editor
 
             LightningStrike.Enabled = true;
             var win = EmptyGift();
-            int struck = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.59f, false, false, 1, 0.60f);
-            int miss = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.60f, false, false, 1, 0.60f);
+            // b126: the normal dice roll lives from garden 4 (index 3); gardens 1-2 never strike, 3 is the intro.
+            int struck = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.59f, false, false, 3, 0.60f);
+            int miss = LightningStrike.TryPick(win, claimed, burned, true, 0, 0.60f, false, false, 3, 0.60f);
             int dry = LightningStrike.TryPick(win, claimed, burned, false, 0, 0.1f, false);
             int capped = LightningStrike.TryPick(win, claimed, burned, true, 1, 0.1f, true);
             int forced = LightningStrike.TryPick(win, claimed, burned, false, 0, 0.9f, true);
