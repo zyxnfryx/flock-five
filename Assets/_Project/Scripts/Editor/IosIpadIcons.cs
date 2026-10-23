@@ -425,7 +425,8 @@ public static class IosIpadIcons
         byte[] deflated;
         using (var raw = new MemoryStream())
         {
-            using (var deflate = new DeflateStream(raw, CompressionLevel.Optimal, true))
+            // UnityEngine.CompressionLevel is also in scope; the BCL enum is the one DeflateStream takes.
+            using (var deflate = new DeflateStream(raw, System.IO.Compression.CompressionLevel.Optimal, true))
                 deflate.Write(data, 0, data.Length);
             deflated = raw.ToArray();
         }
