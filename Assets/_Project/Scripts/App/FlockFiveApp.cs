@@ -559,10 +559,10 @@ namespace FlockFive
 #endif
             }
 #if UNITY_EDITOR
-            if (System.IO.File.Exists("/tmp/flock-five-garden-44"))
+            if (System.IO.File.Exists("/tmp/flock-five-blackbird"))
             {
-                try { System.IO.File.Delete("/tmp/flock-five-garden-44"); } catch { }
-                Load(43);
+                try { System.IO.File.Delete("/tmp/flock-five-blackbird"); } catch { }
+                EditorOpenBlackbird();
             }
             if (System.IO.File.Exists("/tmp/flock-five-b79-stills"))
             {

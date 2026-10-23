@@ -187,7 +187,7 @@ namespace FlockFive
             for (int i = 0; i < feedersN; i++)
                 feeders[i] = MakeFeeder(i, new Vector3(FeederRow.X(i, feedersN), FeederY, 0f), root);
             OstrichMark ostrich = null;
-            if (curLv != null && curLv.Ostrich)
+            if (curLv != null && curLv.Ostrich && !BlackbirdSchedule.Due(LevelData.DisplayNumber))
                 {
                 ostrich = OstrichMark.Attach(root, feedersN);
                 ostrich.FeederArt = feeders;

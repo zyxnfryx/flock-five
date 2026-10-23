@@ -34,25 +34,44 @@ namespace FlockFive
         }
     }
 
-    // First visit is garden 44. Later visits sit every 13 gardens and each one
-    // is a notch smarter. Returns stay behind Returns so only 44 is required.
+    // One value: first garden, then a return every Every gardens after it.
+    // Each return is one notch smarter. Returns stay off so only the first
+    // visit is required until that switch is turned on.
     public static class BlackbirdSchedule
     {
-        public const int FirstGarden = 44;
-        public const int Every = 13;
-        public static readonly int[] ReturnGardens = { 57, 70, 83, 96 };
+        public struct Cadence
+        {
+            public int First;
+            public int Every;
+        }
+
+        // Change Visit to move him. First is the debut garden. Every is the
+        // gap between visits. Default debut stays here until the earlier
+        // garden is chosen.
+        public static Cadence Visit = new Cadence { First = 44, Every = 13 };
 
         public static bool Returns;
 
         public static bool Due(int garden)
         {
-            if (garden == FirstGarden) return true;
-            if (!Returns || garden < FirstGarden) return false;
-            return (garden - FirstGarden) % Every == 0;
+            int first = Visit.First;
+            int every = Gap();
+            if (garden == first) return true;
+            if (!Returns || garden < first) return false;
+            return (garden - first) % every == 0;
         }
 
-        public static int Notch(int garden) =>
-            Due(garden) ? (garden - FirstGarden) / Every : 0;
+        public static int Notch(int garden)
+        {
+            if (!Due(garden)) return 0;
+            return (garden - Visit.First) / Gap();
+        }
+
+        static int Gap()
+        {
+            int every = Visit.Every;
+            return every < 1 ? 1 : every;
+        }
     }
 
     public sealed class BlackbirdState

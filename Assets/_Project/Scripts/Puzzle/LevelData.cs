@@ -89,7 +89,7 @@ namespace FlockFive
             new Level { Number = 42, Id = "garden-42", Title = "Garden 42", Make = Garden42 },
             new Level { Number = 43, Id = "garden-43", Title = "Garden 43", Make = Garden43Ostrich, Solo = true,
                 Feeders = 3, Ostrich = true, PeckSeed = 304115 },
-            new Level { Number = 44, Id = "garden-44", Title = "Blackbird", Make = Garden44 },
+            new Level { Number = 44, Id = "garden-44", Title = "Garden 44", Make = Garden44 },
             new Level { Number = 45, Id = "garden-45", Title = "Garden 45", Make = Garden45 },
             new Level { Number = 46, Id = "garden-46", Title = "Garden 46", Make = Garden46 },
             new Level { Number = 47, Id = "garden-47", Title = "Garden 47", Make = Garden47 },
@@ -264,10 +264,26 @@ namespace FlockFive
             if (DisplayNumber == 16)
                 InsertEmptyLimb(b);
             ApplyAuthored(b, Current);
-            // Garden 44, and later visits when BlackbirdSchedule.Returns is on.
+            // Debut and later visits come from BlackbirdSchedule.Visit.
             if (BlackbirdSchedule.Due(DisplayNumber))
+            {
+                // The blackbird is the visit. An ostrich authored on that garden steps aside.
+                b.Ostrich = null;
                 BlackbirdRival.Dress(b, BlackbirdSchedule.Notch(DisplayNumber));
+            }
             return b;
+        }
+
+        public static bool TryIndex(int number, out int index)
+        {
+            for (int i = 0; i < All.Length; i++)
+            {
+                if (All[i] == null || All[i].Number != number) continue;
+                index = i;
+                return true;
+            }
+            index = 0;
+            return false;
         }
 
         // Feeders and the ostrich come from the level, after Pack has copied the maker.

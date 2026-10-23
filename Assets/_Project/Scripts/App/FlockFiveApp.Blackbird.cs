@@ -108,7 +108,12 @@ namespace FlockFive
         }
 
 #if UNITY_EDITOR
-        public void EditorOpenGarden44() => Load(43);
+        public void EditorOpenBlackbird()
+        {
+            int index;
+            if (!LevelData.TryIndex(BlackbirdSchedule.Visit.First, out index)) index = 0;
+            Load(index);
+        }
 #endif
 
         IEnumerator BlackbirdAnswer(int motionGen)

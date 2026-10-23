@@ -6,8 +6,8 @@ using UnityEngine;
 
 namespace FlockFive.Editor
 {
-    // Blackbird on garden 44. Move priority, cadence, rattled and flee
-    // thresholds, hands-off limbs, and solver winnability. No scene.
+    // Blackbird visit. Move priority, cadence, rattled and flee thresholds,
+    // hands-off limbs, and solver winnability of whatever garden Visit names. No scene.
     public static class BlackbirdFightTests
     {
         const string Out = "/tmp/flock-five-blackbird-tests.txt";
@@ -37,7 +37,7 @@ namespace FlockFive.Editor
             CheckBed(check);
             CheckFold(check);
             CheckSeeds(check);
-            CheckGarden44(check);
+            CheckConfiguredGarden(check);
 
             string tail = fail == 0 ? "BLACKBIRD OK " + pass : "BLACKBIRD FAIL " + fail + " / " + (pass + fail);
             sb.AppendLine(tail);
@@ -46,14 +46,14 @@ namespace FlockFive.Editor
             if (fail > 0) throw new System.Exception(tail);
         }
 
-        [MenuItem("Flock Five/Open Garden 44 (Blackbird)")]
-        public static void OpenGarden44()
+        [MenuItem("Flock Five/Open Blackbird Garden")]
+        public static void OpenBlackbirdGarden()
         {
-            File.WriteAllText("/tmp/flock-five-garden-44", "44");
+            File.WriteAllText("/tmp/flock-five-blackbird", BlackbirdSchedule.Visit.First.ToString());
             if (EditorApplication.isPlaying)
             {
                 var app = Object.FindAnyObjectByType<FlockFiveApp>();
-                if (app != null) app.EditorOpenGarden44();
+                if (app != null) app.EditorOpenBlackbird();
                 return;
             }
             EditorApplication.isPlaying = true;
@@ -206,19 +206,36 @@ namespace FlockFive.Editor
 
         static void CheckSchedule(CheckDelegate check)
         {
+            var saved = BlackbirdSchedule.Visit;
             bool returns = BlackbirdSchedule.Returns;
-            BlackbirdSchedule.Returns = false;
-            bool off = !BlackbirdSchedule.Due(57) && !BlackbirdSchedule.Due(70)
-                && BlackbirdSchedule.Due(44) && BlackbirdSchedule.Notch(44) == 0
-                && !BlackbirdSchedule.Due(45);
-            BlackbirdSchedule.Returns = true;
-            bool on = BlackbirdSchedule.Due(57) && BlackbirdSchedule.Notch(57) == 1
-                && BlackbirdSchedule.Due(70) && BlackbirdSchedule.Notch(70) == 2
-                && BlackbirdSchedule.Due(83) && BlackbirdSchedule.Notch(83) == 3
-                && BlackbirdSchedule.Due(96) && BlackbirdSchedule.Notch(96) == 4
-                && !BlackbirdSchedule.Due(58);
-            BlackbirdSchedule.Returns = returns;
-            check("schedule", off && on, "off " + off + " on " + on);
+            try
+            {
+                int first = saved.First;
+                int every = saved.Every < 1 ? 1 : saved.Every;
+                BlackbirdSchedule.Returns = false;
+                bool off = !BlackbirdSchedule.Due(first + every) && BlackbirdSchedule.Due(first)
+                    && BlackbirdSchedule.Notch(first) == 0 && !BlackbirdSchedule.Due(first + 1);
+                BlackbirdSchedule.Returns = true;
+                int offGrid = every <= 1 ? first - 1 : first + 1;
+                bool on = BlackbirdSchedule.Due(first + every) && BlackbirdSchedule.Notch(first + every) == 1
+                    && BlackbirdSchedule.Due(first + 2 * every) && BlackbirdSchedule.Notch(first + 2 * every) == 2
+                    && BlackbirdSchedule.Due(first + 3 * every) && BlackbirdSchedule.Notch(first + 3 * every) == 3
+                    && BlackbirdSchedule.Due(first + 4 * every) && BlackbirdSchedule.Notch(first + 4 * every) == 4
+                    && !BlackbirdSchedule.Due(offGrid);
+                // A different debut moves every visit with it. The literals above are offsets, not a garden.
+                var shifted = saved;
+                shifted.First = first + 5;
+                BlackbirdSchedule.Visit = shifted;
+                bool moved = BlackbirdSchedule.Due(shifted.First)
+                    && !BlackbirdSchedule.Due(first)
+                    && BlackbirdSchedule.Notch(shifted.First + every) == 1;
+                check("schedule", off && on && moved, "off " + off + " on " + on + " moved " + moved);
+            }
+            finally
+            {
+                BlackbirdSchedule.Visit = saved;
+                BlackbirdSchedule.Returns = returns;
+            }
         }
 
         static void CheckFlight(CheckDelegate check)
@@ -288,27 +305,33 @@ namespace FlockFive.Editor
                 canonReport.Outlook + " moves " + canonReport.Moves);
         }
 
-        static void CheckGarden44(CheckDelegate check)
+        static void CheckConfiguredGarden(CheckDelegate check)
         {
+            int first = BlackbirdSchedule.Visit.First;
             bool keep = BlackbirdSchedule.Returns;
             BlackbirdSchedule.Returns = false;
-            var board = LevelData.Open(43);
+            int index;
+            bool found = LevelData.TryIndex(first, out index);
+            var board = found ? LevelData.Open(index) : new Board();
             BlackbirdSchedule.Returns = keep;
+            int shown = LevelData.Current != null ? LevelData.Current.Number : -1;
             int perch = board.Blackbird != null ? board.Blackbird.Perch : -1;
             int spare = board.Blackbird != null ? board.Blackbird.Spare : -1;
-            bool shape = board.Blackbird != null && board.Blackbird.Notch == 0
+            bool shape = found && shown == first && board.Blackbird != null && board.Blackbird.Notch == 0
                 && perch >= 0 && spare >= 0
                 && board.Branches[perch].RivalPerch && board.Branches[perch].SeatCap == 1
                 && board.Branches[spare].IsSpare && board.Branches[spare].Empty
-                && Colors(board) == 5;
-            check("garden-44-shape", shape,
-                "colors " + Colors(board) + " spare " + spare + " perch " + perch + " limbs " + board.Branches.Count);
+                && board.Ostrich == null;
+            check("visit-shape", shape,
+                "garden " + shown + " spare " + spare + " perch " + perch + " limbs " + board.Branches.Count);
 
+            if (!shape) return;
             var locked = board.Clone();
             locked.Branches[locked.Blackbird.Spare].AdLocked = true;
-            var report = GardenSolve.Search(locked, 20000);
-            Debug.Log("[blackbird] garden44 " + report.Outlook + " moves " + report.Moves + " nodes " + report.Nodes);
-            check("garden-44-winnable", report.Outlook == GardenSolve.Outlook.Winnable, report.Outlook.ToString());
+            var report = GardenSolve.Search(locked, 40000);
+            Debug.Log("[blackbird] garden " + first + " " + report.Outlook + " moves " + report.Moves + " nodes " + report.Nodes);
+            check("visit-winnable", report.Outlook == GardenSolve.Outlook.Winnable,
+                report.Outlook + " garden " + first);
         }
 
         // Gold x3 onto gold x1, plus a teal that keeps a second color on the board.
