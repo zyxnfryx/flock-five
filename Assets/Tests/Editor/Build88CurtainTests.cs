@@ -4,8 +4,9 @@ using UnityEngine;
 
 namespace FlockFive.Editor
 {
-    // Level button curtain. Sparkles build, wash the glass, then part from the
-    // center. About one second. The reveal is a tear, not a left-to-right wipe.
+    // Level button curtain. PressRainbow: burst, apex, fall, reveal. The wash is a
+    // translucent veil, never an opaque glint sheet. About one second.
+    // SparkleFx still carries the old tear helpers; the live path does not use them.
     public static class Build88CurtainTests
     {
         const string Out = "/tmp/flock-five-b88-curtain-tests.txt";
@@ -29,11 +30,11 @@ namespace FlockFive.Editor
                 var src = new Rect(390f, 1800f, 400f, 400f);
                 var buf = new LevelCurtain.Glint[LevelCurtain.Count];
                 Check("phases",
-                    LevelCurtain.BeatName(0.05f) == "build"
-                    && LevelCurtain.BeatName(0.20f) == "build"
-                    && LevelCurtain.BeatName(LevelCurtain.Flood) == "wash"
-                    && LevelCurtain.BeatName(LevelCurtain.WashEnd + 0.02f) == "part"
-                    && LevelCurtain.BeatName(0.90f) == "part",
+                    LevelCurtain.BeatName(0.05f) == "burst"
+                    && LevelCurtain.BeatName(0.20f) == "burst"
+                    && LevelCurtain.BeatName(LevelCurtain.Flood) == "apex"
+                    && LevelCurtain.BeatName(0.55f) == "fall"
+                    && LevelCurtain.BeatName(0.90f) == "reveal",
                     LevelCurtain.BeatName(0.05f) + "/" + LevelCurtain.BeatName(LevelCurtain.Flood) + "/" + LevelCurtain.BeatName(0.90f));
                 bool order = LevelCurtain.BuildEnd < LevelCurtain.Flood
                     && LevelCurtain.Flood < LevelCurtain.WashEnd
@@ -46,20 +47,25 @@ namespace FlockFive.Editor
                 Check("about-one-second",
                     LevelCurtain.Duration >= 0.90f && LevelCurtain.Duration <= 1.10f,
                     "dur " + LevelCurtain.Duration.ToString("0.00"));
+                // Duration still comes from SparkleFx. Beat names are the fountain's
+                // (burst/apex/fall/reveal); CurtainPhase is the retired tear.
                 Check("helper-owns-phase",
-                    LevelCurtain.BeatName(0.10f) == SparkleFx.CurtainPhase(0.10f)
+                    LevelCurtain.BeatName(LevelCurtain.Flood) == "apex"
                     && Mathf.Abs(LevelCurtain.Duration - SparkleFx.CurtainDuration) < 0.001f,
-                    "shared SparkleFx clock");
-                float keptStep = Time.captureDeltaTime;
-                Time.captureDeltaTime = 1f / 60f;
-                LevelCurtain.Reset();
-                float locked = LevelCurtain.Clock(3f);
-                float again = LevelCurtain.Clock(9f);
-                Time.captureDeltaTime = keptStep;
-                LevelCurtain.Reset();
+                    "shared duration, apex at flood");
+                // Shots pin PreviewNow. Clock does not latch on captureDeltaTime.
+                float keptPreview = LevelCurtain.PreviewNow;
+                LevelCurtain.PreviewNow = 3f;
+                float locked = LevelCurtain.Clock(9f);
+                float again = LevelCurtain.Clock(0.2f);
+                LevelCurtain.PreviewNow = -1f;
+                float live = LevelCurtain.Clock(4f);
+                LevelCurtain.PreviewNow = keptPreview;
                 Check("capture-clock-holds-the-frame",
-                    Mathf.Abs(locked - 3f) < 0.001f && Mathf.Abs(again - locked) < 0.001f,
-                    "locked " + locked.ToString("0.000") + " again " + again.ToString("0.000"));
+                    Mathf.Abs(locked - 3f) < 0.001f && Mathf.Abs(again - 3f) < 0.001f
+                    && Mathf.Abs(live - 4f) < 0.001f,
+                    "pinned " + locked.ToString("0.000") + "/" + again.ToString("0.000")
+                    + " live " + live.ToString("0.000"));
 
                 float shut = SparkleFx.CurtainOpen(LevelCurtain.WashEnd);
                 float mid = SparkleFx.CurtainOpen(0.76f);
@@ -82,18 +88,27 @@ namespace FlockFive.Editor
 
                 float build = Cover(0.12f, src, buf);
                 float wash = Cover(LevelCurtain.Flood, src, buf);
-                Check("build-not-yet-full", build > 0.04f && build < 0.62f, "cover " + build.ToString("0.00"));
-                Check("wash-covers-glass", wash > 0.85f, "cover " + wash.ToString("0.00"));
+                // The early arc is a handful of glints, not a sheet. Zero coverage fails;
+                // a quarter of the glass fails too.
+                Check("build-not-yet-full", build > 0.015f && build < 0.25f, "cover " + build.ToString("0.00"));
+                // The veil, not the glints, covers the glass. It is off at the apex hold
+                // (Flood), peaks translucent, and the glint field stays sparse.
+                float veil = LevelCurtain.WashLevel(LevelCurtain.WashPeak);
+                Check("wash-covers-glass",
+                    veil > 0.98f && LevelCurtain.WashBase * veil < 0.40f
+                    && LevelCurtain.WashLevel(LevelCurtain.Flood) < 0.001f
+                    && LevelCurtain.WashLevel(LevelCurtain.Duration) < 0.001f
+                    && wash < 0.25f,
+                    "veil " + veil.ToString("0.00") + " glint " + wash.ToString("0.00"));
 
-                float early = 0.66f;
-                float later = 0.80f;
-                bool earlyTear = Tear(early, src, buf, out float eMid, out float eWid, out bool eWipe, out string eWhy);
-                bool laterTear = Tear(later, src, buf, out float lMid, out float lWid, out bool lWipe, out string lWhy);
-                Check("part-is-center-out",
-                    earlyTear && laterTear && !eWipe && !lWipe
-                    && Mathf.Abs(eMid - 0.5f) < 0.08f && Mathf.Abs(lMid - 0.5f) < 0.08f
-                    && lWid > eWid + 0.08f,
-                    "early " + eWhy + " later " + lWhy);
+                // Was part-is-center-out: the fountain does not tear a hole. The veil
+                // peaks, then fades out through the reveal.
+                float laterVeil = LevelCurtain.WashLevel(0.90f);
+                Check("reveal-fades-veil",
+                    veil > 0.98f && laterVeil < veil - 0.20f
+                    && LevelCurtain.WashLevel(LevelCurtain.Duration) < 0.001f
+                    && LevelCurtain.WashLevel(LevelCurtain.Flood) < 0.001f,
+                    "peak " + veil.ToString("0.00") + " later " + laterVeil.ToString("0.00"));
 
                 int end = LevelCurtain.Fill(LevelCurtain.Duration + 0.2f, W, H, src, buf);
                 Check("part-clears", end < 8, "left " + end);
@@ -121,11 +136,13 @@ namespace FlockFive.Editor
                 string curtain = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/LevelCurtain.cs"));
                 string fx = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/SparkleFx.cs"));
                 Check("draws-through-helper",
-                    curtain.Contains("SparkleFx.DrawCurtainGlint")
-                    && curtain.Contains("SparkleFx.CurtainShiftX")
-                    && fx.Contains("DrawCurtainGlint")
-                    && !curtain.Contains("GUI.DrawTexture"),
-                    "shared draw");
+                    curtain.Contains("SparkleFx.DrawDepthGlint")
+                    && curtain.Contains("SparkleFx.DepthArcAt")
+                    && curtain.Contains("GUI.DrawTexture")
+                    && !curtain.Contains("SparkleFx.DrawCurtainGlint")
+                    && !curtain.Contains("SparkleFx.CurtainShiftX")
+                    && fx.Contains("DrawDepthGlint"),
+                    "depth arc and veil");
             }
             catch (System.Exception ex)
             {
@@ -163,53 +180,6 @@ namespace FlockFive.Editor
             return on / (float)(GX * GY);
         }
 
-        // Clear band around the middle, widening. A wipe clears from one edge
-        // and leaves the other edge covered.
-        static bool Tear(float age, Rect src, LevelCurtain.Glint[] buf,
-            out float mid, out float width, out bool wipe, out string why)
-        {
-            const int C = 24;
-            int n = LevelCurtain.Fill(age, W, H, src, buf);
-            var hit = new bool[C];
-            for (int i = 0; i < n; i++)
-            {
-                float r = buf[i].Size * 0.5f;
-                int a = Mathf.FloorToInt((buf[i].X - r) / W * C);
-                int b = Mathf.FloorToInt((buf[i].X + r) / W * C);
-                if (a < 0) a = 0;
-                if (b >= C) b = C - 1;
-                for (int c = a; c <= b; c++) hit[c] = true;
-            }
-            int clearL = -1, clearR = -1;
-            for (int c = 0; c < C; c++)
-            {
-                if (hit[c]) continue;
-                if (clearL < 0) clearL = c;
-                clearR = c;
-            }
-            // The center hole is the clear run that contains the middle column,
-            // not a clear margin past an off-screen half.
-            int midC = C / 2;
-            int holeL = midC, holeR = midC;
-            if (!hit[midC])
-            {
-                while (holeL > 0 && !hit[holeL - 1]) holeL--;
-                while (holeR < C - 1 && !hit[holeR + 1]) holeR++;
-            }
-            mid = (holeL + holeR + 1) * 0.5f / C;
-            width = (holeR - holeL + 1) / (float)C;
-            bool leftOn = hit[0] || hit[1];
-            bool rightOn = hit[C - 1] || hit[C - 2];
-            bool centerOff = !hit[midC] && !hit[midC - 1];
-            wipe = (!hit[0] && !hit[1] && !hit[2] && hit[C - 1] && hit[C - 2])
-                || (hit[0] && hit[1] && !hit[C - 1] && !hit[C - 2] && !hit[C - 3]);
-            bool ok = centerOff && leftOn && rightOn && holeL > 0 && holeR < C - 1;
-            why = "mid " + mid.ToString("0.00") + " wid " + width.ToString("0.00")
-                + " L" + (leftOn ? 1 : 0) + " R" + (rightOn ? 1 : 0)
-                + " hole " + holeL + "-" + holeR + " n " + n
-                + " span " + clearL + "-" + clearR;
-            return ok;
-        }
     }
 }
 #endif

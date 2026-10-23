@@ -1027,13 +1027,16 @@ namespace FlockFive
         }
 
         // Gold. Adds one leaf tip; each collect breezes.
+        // b89 keeps a leaf only on a full limb, so the bow that used to lead limb 2
+        // sits on this one. A four-bird leaf was stripped on open, and with it went
+        // the hidden trap (0>2 stopped being Tangled). Five birds lets the tip crown stay a leaf.
         static Board Garden28()
         {
             var b = new Board();
             b.Branches.Add(SoloRow(BirdColor.Gold, "BBNC"));
             b.Branches.Add(SoloRow(BirdColor.Gold, "NNC"));
-            b.Branches.Add(SoloRow(BirdColor.Gold, "BCNN"));
-            b.Branches.Add(SoloRow(BirdColor.Gold, "CBBC"));
+            b.Branches.Add(SoloRow(BirdColor.Gold, "CNN"));
+            b.Branches.Add(SoloRow(BirdColor.Gold, "CBBBC"));
             b.Live[0] = BirdColor.Gold;
             b.Live[1] = BirdColor.Gold;
             b.Queue.Add(BirdColor.Gold);
