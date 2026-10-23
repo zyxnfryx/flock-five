@@ -110,7 +110,11 @@ namespace FlockFive
             if (b.Ostrich != null && b.Ostrich.Alive)
                 OstrichPest.AfterMove(b);
             else
+            {
                 Drain(b);
+                // His reply is part of the transition, same as a peck.
+                BlackbirdRival.Commit(b);
+            }
         }
 
         // Same, with the pecks logged for the view. See OstrichPest.AfterMove.
@@ -121,7 +125,10 @@ namespace FlockFive
             if (b.Ostrich != null && b.Ostrich.Alive)
                 OstrichPest.AfterMove(b, log, out finaleBranch);
             else
+            {
                 Drain(b);
+                BlackbirdRival.Commit(b);
+            }
         }
 
         // The garden is clear only once a living ostrich has fled.
@@ -199,6 +206,17 @@ namespace FlockFive
                 Mix((int)(o.Bonked >> 32));
                 // Peck index drops out of the key once the bird has fled.
                 Mix(o.Alive ? 80 + (o.PeckIndex & 0xffff) : 79);
+            }
+            if (b.Blackbird != null)
+            {
+                var bb = b.Blackbird;
+                // Mod 6 keeps both the calm (every 3) and rattled (every 2) phases.
+                Mix(100 + (bb.PlayerMoves % 6));
+                Mix(bb.Fled ? 111 : 110);
+                Mix(bb.LastDitchPlayed ? 113 : 112);
+                Mix(120 + bb.Notch);
+                Mix(2000 + b.LastHopFrom);
+                Mix(3000 + b.LastHopTo);
             }
             return new Stamp { A = a, B = h };
         }
@@ -307,6 +325,13 @@ namespace FlockFive
                 var o = b.Ostrich;
                 sb.Append('#').Append(o.Hits).Append(',').Append(o.Bonked).Append(',');
                 sb.Append(o.Alive ? o.PeckIndex : -1);
+            }
+            if (b.Blackbird != null)
+            {
+                var bb = b.Blackbird;
+                sb.Append('#').Append(bb.PlayerMoves % 6).Append(',').Append(bb.Fled ? 1 : 0);
+                sb.Append(',').Append(b.LastHopFrom).Append('>').Append(b.LastHopTo);
+                sb.Append(',').Append(bb.Notch);
             }
             return sb.ToString();
         }

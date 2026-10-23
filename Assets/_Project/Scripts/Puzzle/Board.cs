@@ -14,9 +14,15 @@ namespace FlockFive
         // Bottom gift limb. A pest may snap it, but it always comes back,
         // unless lightning burned the offer.
         public bool IsBonus;
+        // Blackbird's extra empty. He never hops to or from it. The player may.
+        public bool IsSpare;
+        // His seat. One perch, no puzzle birds. Neither of them hops it.
+        public bool RivalPerch;
+        // 5 everywhere except the rival perch, which is a cap-1 stub.
+        public int SeatCap = Cap;
 
         public int Count => Birds.Count;
-        public int Free => Cap - Count;
+        public int Free => SeatCap - Count;
         public bool Empty => Count == 0;
         public Bird? Tip => Count == 0 ? (Bird?)null : Birds[Count - 1];
 
@@ -88,7 +94,16 @@ namespace FlockFive
 
         public BranchState Clone()
         {
-            var b = new BranchState { Broken = Broken, AdLocked = AdLocked, Burned = Burned, IsBonus = IsBonus };
+            var b = new BranchState
+            {
+                Broken = Broken,
+                AdLocked = AdLocked,
+                Burned = Burned,
+                IsBonus = IsBonus,
+                IsSpare = IsSpare,
+                RivalPerch = RivalPerch,
+                SeatCap = SeatCap < 1 ? Cap : SeatCap
+            };
             b.Birds.AddRange(Birds);
             b.Shrouded.AddRange(Shrouded);
             return b;
@@ -103,6 +118,11 @@ namespace FlockFive
         public BirdColor?[] Live = new BirdColor?[2];
         // Null when this stage has no ostrich. Cloned with the board.
         public OstrichState Ostrich;
+        // Null on every garden except a blackbird visit. Cloned with the board.
+        public BlackbirdState Blackbird;
+        // Limbs of the player's latest hop. His "last-moved bird" reads the destination.
+        public int LastHopFrom = -1;
+        public int LastHopTo = -1;
         public readonly List<BirdColor> Queue = new List<BirdColor>();
         // Flock a pest knocked off a limb and has not seated yet. No branch is
         // reserved for them. They still count, so a win or a stuck check is not
@@ -118,6 +138,9 @@ namespace FlockFive
                 n.Branches.Add(Branches[i].Clone());
             n.Live = Live != null ? (BirdColor?[])Live.Clone() : new BirdColor?[2];
             n.Ostrich = Ostrich != null ? Ostrich.Clone() : null;
+            n.Blackbird = Blackbird != null ? Blackbird.Clone() : null;
+            n.LastHopFrom = LastHopFrom;
+            n.LastHopTo = LastHopTo;
             n.Queue.AddRange(Queue);
             n.Displaced.AddRange(Displaced);
             n.BreezeOnCollect = BreezeOnCollect;
@@ -174,7 +197,7 @@ namespace FlockFive
         {
             if ((uint)i >= (uint)Branches.Count) return false;
             var a = Branches[i];
-            if (a.Broken || a.Empty || a.AdLocked || a.TipLocked) return false;
+            if (a.Broken || a.Empty || a.AdLocked || a.TipLocked || a.RivalPerch) return false;
             if (a.IsFullMatch(out _)) return false;
             return true;
         }
@@ -196,6 +219,7 @@ namespace FlockFive
             var b = Branches[to];
             // A locked gift is not a perch. An open bonus limb is, even when empty.
             if (a.Broken || b.Broken || a.AdLocked || b.AdLocked || a.Empty) return false;
+            if (a.RivalPerch || b.RivalPerch) return false;
             if (a.IsFullMatch(out _)) return false;
             // Leaf-locked limb: unusable until a feeder collect breeze lifts the tip.
             if (a.TipLocked || b.TipLocked) return false;
@@ -261,6 +285,8 @@ namespace FlockFive
         {
             JustUnveiled = false;
             if (!CanMove(from, to, out run)) return false;
+            LastHopFrom = from;
+            LastHopTo = to;
             var a = Branches[from];
             var b = Branches[to];
             a.AlignShroud();

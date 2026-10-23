@@ -116,6 +116,7 @@ namespace FlockFive
             public BranchView[] Branches;
             public FeederView[] Feeders;
             public OstrichMark Ostrich;
+            public BlackbirdMark Blackbird;
             public HiveView Hive;
             public Camera Cam;
             public GardenIce Ice;

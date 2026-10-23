@@ -74,6 +74,11 @@ namespace FlockFive
         const float ComboIn = 0.35f;
         const float Bpm = 84f;
         const float Beat = 60f / Bpm;
+        // Blackbird: one occupant. Cut and silence zero the tune. Rush swaps in
+        // the same porch motif at BlackbirdCue.RushBpm, then the calm clip returns.
+        AudioClip _calmBed;
+        AudioClip _rushBed;
+        BlackbirdCue.Bed _bbBed;
         const int NBars = 16;
         const int SplashBars = 10;
         const int TeaseBar = 5;
@@ -356,6 +361,7 @@ namespace FlockFive
             for (int i = 0; i < _stems.Length; i++)
                 if (_stems[i] == null) _stems[i] = null;
             SwapClip(0, garden, true);
+            _calmBed = garden;
             SwapClip(1, garden, false);
             SwapClip(2, garden, false);
             SwapClip(3, combo, true);
@@ -715,14 +721,74 @@ namespace FlockFive
             TickSplashWelcome();
             // One garden occupant: the soft porch theme. Dawn/mid/last stay
             // loaded as fallbacks but silent so two tunes never sit together.
-            SetStem(0, cap * duck * gardenMix);
+            // Blackbird cut/silence take the tune (and the combo fifth) to 0.
+            // Rush is the same motif, already swapped onto stem 0. Not a second loop.
+            bool tuneOn = _bbBed == BlackbirdCue.Bed.Calm || _bbBed == BlackbirdCue.Bed.Rush;
+            float tune = tuneOn ? 1f : 0f;
+            float comboMul = _bbBed == BlackbirdCue.Bed.Calm ? 1f : 0f;
+            SetStem(0, cap * duck * gardenMix * tune);
             SetStem(1, 0f);
             SetStem(2, 0f);
-            SetStem(3, ComboGain() * ComboCap * duck * gardenMix);
+            SetStem(3, ComboGain() * ComboCap * duck * gardenMix * comboMul);
             float splashVol = _splashMix * SplashCap * duck * others;
             SetStem(4, _splashLoopOn ? splashVol : 0f);
             // Non-melodic place air. Not a fourth flute bed.
-            SetStem(5, GardenStorm.Wet * RainCap * duck * gardenMix);
+            float rainMul = _bbBed == BlackbirdCue.Bed.Silence ? 0f : 1f;
+            SetStem(5, GardenStorm.Wet * RainCap * duck * gardenMix * rainMul);
+        }
+
+        // App calls this when the visit changes phase. Rush is the same D-major
+        // porch line as dawn, at a shorter beat, and it replaces stem 0.
+        public void SetBlackbirdBed(BlackbirdCue.Bed bed)
+        {
+            _bbBed = bed;
+            if (_stems == null || _stems.Length == 0) return;
+            if (_calmBed == null && _stems[0] != null) _calmBed = _stems[0].clip;
+            bool rush = bed == BlackbirdCue.Bed.Rush;
+            var want = rush ? RushBed() : _calmBed;
+            if (want == null || _stems[0] == null) return;
+            _stems[0].pitch = 1f;
+            if (_stems[0].clip != want) SwapClip(0, want, true);
+        }
+
+        AudioClip RushBed()
+        {
+            if (_rushBed == null) _rushBed = MakeBlackbirdRush();
+            return _rushBed;
+        }
+
+        // Dawn's pizz walk (38 / 45, payoff 50) and the same FirstFour flute,
+        // squeezed onto a shorter beat. One flute, no pad, no second tune.
+        static AudioClip MakeBlackbirdRush()
+        {
+            float beat = 60f / BlackbirdCue.RushBpm;
+            const int bars = 8;
+            int n = UnityEngine.Mathf.RoundToInt(bars * 4f * beat * Rate);
+            var bus = new float[n * 2];
+            for (int bar = 0; bar < bars; bar++)
+            {
+                float tBar = bar * 4f * beat;
+                bool pay = bar >= 5;
+                float g = pay ? 0.28f : 0.18f;
+                PlacePizz(bus, 38f, tBar, -0.18f, g);
+                PlacePizz(bus, 45f, tBar + 2f * beat, 0.16f, g * 0.92f);
+                if (pay) PlacePizz(bus, 50f, tBar + 3f * beat, 0.22f, g * 0.55f);
+            }
+            MixNotesBeat(bus, FirstFour, 0.38f, -0.08f, beat, 5f * 4f);
+            ApplyFades(bus);
+            return PeakClip("blackbird-rush", bus, 0.40f);
+        }
+
+        static void MixNotesBeat(float[] bus, Note[] notes, float gain, float pan, float beat, float phraseBeat)
+        {
+            if (notes == null) return;
+            for (int i = 0; i < notes.Length; i++)
+            {
+                var nt = notes[i];
+                int len = UnityEngine.Mathf.RoundToInt(nt.Dur * beat * Rate);
+                if (len < 8) continue;
+                Place(bus, Flute(len, nt.Midi), (phraseBeat + nt.Start) * beat, pan, gain);
+            }
         }
 
         void TickSplashWelcome()

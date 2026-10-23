@@ -89,7 +89,7 @@ namespace FlockFive
             new Level { Number = 42, Id = "garden-42", Title = "Garden 42", Make = Garden42 },
             new Level { Number = 43, Id = "garden-43", Title = "Garden 43", Make = Garden43Ostrich, Solo = true,
                 Feeders = 3, Ostrich = true, PeckSeed = 304115 },
-            new Level { Number = 44, Id = "garden-44", Title = "Garden 44", Make = Garden44 },
+            new Level { Number = 44, Id = "garden-44", Title = "Blackbird", Make = Garden44 },
             new Level { Number = 45, Id = "garden-45", Title = "Garden 45", Make = Garden45 },
             new Level { Number = 46, Id = "garden-46", Title = "Garden 46", Make = Garden46 },
             new Level { Number = 47, Id = "garden-47", Title = "Garden 47", Make = Garden47 },
@@ -264,6 +264,9 @@ namespace FlockFive
             if (DisplayNumber == 16)
                 InsertEmptyLimb(b);
             ApplyAuthored(b, Current);
+            // Garden 44, and later visits when BlackbirdSchedule.Returns is on.
+            if (BlackbirdSchedule.Due(DisplayNumber))
+                BlackbirdRival.Dress(b, BlackbirdSchedule.Notch(DisplayNumber));
             return b;
         }
 
@@ -302,6 +305,7 @@ namespace FlockFive
             get
             {
                 if (Current != null && Current.Ostrich) return 0;
+                if (BlackbirdSchedule.Due(DisplayNumber)) return 0;
                 int n = DisplayNumber;
                 if (n < PestSchedule.FirstSparrowGarden) return 0; // b126: sparrow first on garden 4 (garden 3 is the first lightning strike)
                 if (n <= 6) return 1;
@@ -316,6 +320,7 @@ namespace FlockFive
             get
             {
                 if (Current != null && Current.Ostrich) return 0;
+                if (BlackbirdSchedule.Due(DisplayNumber)) return 0;
                 return DisplayNumber <= 10 ? 0 : 1;
             }
         }
