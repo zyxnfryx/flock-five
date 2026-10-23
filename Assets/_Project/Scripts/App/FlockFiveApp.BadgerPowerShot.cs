@@ -47,7 +47,7 @@ namespace FlockFive
                     { w += AdPause.UnscaledDelta; yield return null; }
                     yield return new WaitForSecondsRealtime(0.8f);
                     yield return new WaitForEndOfFrame();
-                    File.AppendAllText(log, tag[d] + " " + Screen.width + "x" + Screen.height + " stage " + _bgStage + " line " + (_bgLine ?? "").Replace("\n", "/") + " waited " + w.ToString("0.0") + "\n");
+                    File.AppendAllText(log, tag[d] + " " + PhoneArea.W + "x" + PhoneArea.H + " stage " + _bgStage + " line " + (_bgLine ?? "").Replace("\n", "/") + " waited " + w.ToString("0.0") + "\n");
                     SaveFrame(dir + "/badger-pick-" + tag[d] + ".png");
 
                     // Frozen beat: the badger iced (as after a Freeze Spray), same 'Your pick.' turn.

@@ -91,7 +91,7 @@ namespace FlockFive
             float rowsEnd = _payHeadRowsDbg.x + _payHeadRowsDbg.y * BirdPoker.PayTableRows.Length;
             bool titleFits = _payHeadTitleSzDbg.x <= b.Title.width && _payHeadTitleSzDbg.y <= b.Title.height + 1f;
             bool betFits = _payHeadBetSzDbg.x <= b.Bet.width && _payHeadBetSzDbg.y <= b.Bet.height + 1f;
-            string line = tag + " " + Screen.width + "x" + Screen.height
+            string line = tag + " " + PhoneArea.W + "x" + PhoneArea.H
                 + " titlePx " + _payHeadPxDbg.x + " betPx " + _payHeadPxDbg.y
                 + " title " + b.Title + " tsz " + _payHeadTitleSzDbg
                 + " bet " + b.Bet + " bsz " + _payHeadBetSzDbg

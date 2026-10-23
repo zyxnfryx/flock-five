@@ -155,7 +155,7 @@ namespace FlockFive
 
         void LogCaptionShot(string tag)
         {
-            string line = tag + " " + Screen.width + "x" + Screen.height
+            string line = tag + " " + PhoneArea.W + "x" + PhoneArea.H
                 + " band " + _bannerLast
                 + " last " + BannerLast
                 + " skip " + BannerSkip

@@ -151,7 +151,7 @@ namespace FlockFive
                     if (f == lead)
                     {
                         var r = RailTapRect(RailPoker);
-                        var p = new Vector2(r.center.x, Screen.height - r.center.y);
+                        var p = new Vector2(r.center.x, PhoneArea.H - r.center.y);
                         // Leave the event queued. The next player-loop update delivers
                         // it; an update from this coroutine would clear the press first.
                         InputSystem.QueueStateEvent(ts, new TouchState
@@ -165,7 +165,7 @@ namespace FlockFive
                     if (f == lead + 4)
                     {
                         var r = RailTapRect(RailPoker);
-                        var p = new Vector2(r.center.x, Screen.height - r.center.y);
+                        var p = new Vector2(r.center.x, PhoneArea.H - r.center.y);
                         InputSystem.QueueStateEvent(ts, new TouchState
                         {
                             touchId = 1,

@@ -445,7 +445,7 @@ namespace FlockFive
             if (flowerOn && _dailyPhase != DailyWheelPhase.Spin)
                 claim = HitPad(claimHit, out claimHeld);
             HitPad(swallow, out _);
-            bool outside = HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
+            bool outside = HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
             if (outside && swallow.Contains(Event.current.mousePosition)) outside = false;
 
             float t = AdPause.Unscaled;
@@ -744,7 +744,7 @@ namespace FlockFive
             var pig = PiggyRect(s);
             var prev = GUI.matrix;
             var prevC = GUI.color;
-            GUI.matrix = Matrix4x4.identity;
+            GUI.matrix = PhoneArea.GuiBase;
             GUI.color = Color.white;
             DrawRailIcon(pig, SpriteCatalog.Piggy);
             DrawCoinBalance(s, pig.x - 12f, pig.center.y);
@@ -1492,7 +1492,7 @@ namespace FlockFive
 
         static void EnsureDailyFit(float s, Rect titleR, Rect streakR, Rect disc, float wheel)
         {
-            int key = Screen.width * 73856093 ^ Screen.height * 19349663
+            int key = PhoneArea.W * 73856093 ^ PhoneArea.H * 19349663
                 ^ Mathf.RoundToInt(titleR.width) * 83492791
                 ^ Mathf.RoundToInt(disc.width) * 50331653
                 ^ Mathf.RoundToInt(wheel) * 2718281
@@ -2170,7 +2170,7 @@ namespace FlockFive
             DailyAskLayout(s, out var card, out var body, out var yesR, out var noR);
             bool yes = HitPad(yesR, out bool yesHeld);
             bool no = HitPad(noR, out bool noHeld);
-            HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
+            HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
 
             float t = AdPause.Unscaled;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
@@ -2242,7 +2242,7 @@ namespace FlockFive
             int hi = Mathf.Max(14, Mathf.RoundToInt(18f * s));
             int lo = 11;
             float textH = 28f * s;
-            float maxH = Screen.height * 0.48f;
+            float maxH = PhoneArea.H * 0.48f;
             float chrome = pad * 2f + 12f * s + btnH;
             for (int fs = hi; fs >= lo; fs--)
             {
@@ -2295,7 +2295,7 @@ namespace FlockFive
 
         static void EnsureAskFit(float s, Rect body, Rect btn)
         {
-            int key = Screen.width * 19349663 ^ Screen.height * 83492791
+            int key = PhoneArea.W * 19349663 ^ PhoneArea.H * 83492791
                 ^ Mathf.RoundToInt(body.width) * 17
                 ^ Mathf.RoundToInt(body.height)
                 ^ Mathf.RoundToInt(btn.width);
@@ -2326,7 +2326,7 @@ namespace FlockFive
 #endif
             WelcomeLayout(s, out var card, out var titleR, out var amtR, out var lineR, out var btn);
             bool thanks = HitPad(btn, out bool held);
-            HitPad(new Rect(0f, 0f, Screen.width, Screen.height), out _);
+            HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
 
             float t = AdPause.Unscaled;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
@@ -2375,11 +2375,11 @@ namespace FlockFive
         {
             float w = StandardPopupWidth(s);
             float h = Mathf.Max(248f * s, w * 0.50f);
-            float capH = Mathf.Min(Screen.height * 0.58f, 360f * s);
+            float capH = Mathf.Min(PhoneArea.H * 0.58f, 360f * s);
             if (h > capH) h = capH;
             if (h < 220f * s && capH > 220f * s) h = 220f * s;
             card = PlacePopup(s, w, h, 0.42f);
-            card = CoverLevelWord(card, SplashPress.LayoutLevel(Screen.width, Screen.height, Screen.safeArea).Rect, s);
+            card = CoverLevelWord(card, SplashPress.LayoutLevel(PhoneArea.W, PhoneArea.H, PhoneArea.Safe).Rect, s);
             h = card.height;
             float band = Mathf.Max(10f, 12f * s);
             float pad = band + 16f * s;
@@ -2399,7 +2399,7 @@ namespace FlockFive
 
         static void EnsureWelcomeFit(float s, Rect title, Rect amt, Rect line, Rect btn)
         {
-            int key = Screen.width * 83492791 ^ Screen.height * 19349663
+            int key = PhoneArea.W * 83492791 ^ PhoneArea.H * 19349663
                 ^ Mathf.RoundToInt(line.width) * 13
                 ^ Mathf.RoundToInt(line.height)
                 ^ Mathf.RoundToInt(btn.width);

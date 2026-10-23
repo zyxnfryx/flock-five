@@ -24,7 +24,55 @@ namespace FlockFive
         public static float EdgeInsetRight(float screenW, Rect safe)
             => Mathf.Max(16f, (screenW - safe.xMax) + 10f);
 
+        // b131 (Brandon): Restart sits in the top bar, never in the playfield, so it cannot steal a
+        // branch or perch tap. Its hit rect stays above PlayfieldTopGui (the highest reach of any
+        // branch, bird or perch-pad hit) and inside the safe area, right of the streak stamp seat.
         public static void Garden(float screenW, float screenH, Rect safe,
+            out float scale, out float top, out float bot, out Rect restart, out Rect hive)
+        {
+            GardenCore(screenW, screenH, safe, out scale, out top, out bot, out var seat, out hive);
+            restart = TopBarRestart(screenW, screenH, safe, scale, top);
+        }
+
+        // The old bottom-left restart seat. Garden lesson banners still centre on it (b102).
+        public static Rect GardenBottomSeat(float screenW, float screenH, Rect safe)
+        {
+            GardenCore(screenW, screenH, safe, out _, out _, out _, out var seat, out _);
+            return seat;
+        }
+
+        // HitBranch: nearest perch pad within 3.45 (empty branch while sending), birds within 1.05,
+        // plus Physics2D overlap 2.6 around branch colliders. Conservative top of all of it, in world y.
+        public const float BranchReachWorld = 3.45f + 0.6f;
+        public static float TallFor(float w, float h) => Mathf.Max(1f, WorldBuilder.PortraitAspect / Mathf.Max(0.05f, w / Mathf.Max(1f, h)));
+        public static float PlayfieldTopGui(float w, float h)
+            => WorldToGui(w, h, 0f, WorldBuilder.RowY0For(TallFor(w, h)) + BranchReachWorld).y;
+
+        // 44 pt minimum tap target, in px (Screen.dpi when known, else 1 px per pt).
+        public static float MinTapPx(float dpi) => 44f * (dpi > 1f ? dpi / 163f : 1f);
+
+        // Right edge of the widest feeder layout (3 feeders: Triple + BulbHalf), plus air, in world x.
+        // Every feeder count stays left of it, so Restart never moves between gardens.
+        public const float FeederRightWorld = FeederRow.Triple + FeederRow.BulbHalf + 0.12f;
+        public static float FeederRightGui(float w, float h) => WorldToGui(w, h, FeederRightWorld, 0f).x;
+
+        // Top-right gutter of the top bar: right of every feeder bulb, above every branch / bird /
+        // perch reach, inside the safe area.
+        public static Rect TopBarRestart(float w, float h, Rect safe, float scale, float top)
+        {
+            if (safe.width < 2f || safe.height < 2f) safe = new Rect(0f, 0f, w, h);
+            float safeTop = Mathf.Max(0f, h - safe.yMax);
+            float pad = 6f * scale;
+            float limit = Mathf.Min(top, PlayfieldTopGui(w, h)) - pad;
+            float y = safeTop + pad;
+            float left = FeederRightGui(w, h) + pad;
+            float right = Mathf.Min(safe.xMax, w) - pad;
+            float size = Mathf.Min(SizeRef * scale, Mathf.Min(limit - y, right - left));
+            size = Mathf.Max(size, MinTapPx(Screen.dpi));
+            return new Rect(right - size, y, size, size);
+        }
+
+        static void GardenCore(float screenW, float screenH, Rect safe,
             out float scale, out float top, out float bot, out Rect restart, out Rect hive)
         {
             scale = DeviceFit.Ui(screenW, screenH);

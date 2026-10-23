@@ -41,7 +41,7 @@ namespace FlockFive
         {
             if (cam == null) return;
             float sx = hiveGui.center.x;
-            float sy = Screen.height - hiveGui.center.y;
+            float sy = PhoneArea.H - hiveGui.center.y;
             // Ortho cams need distance-from-camera as z, not world z=0 (that parks on the lens).
             float depth = Mathf.Abs(cam.transform.position.z);
             if (depth < 0.01f) depth = 10f;

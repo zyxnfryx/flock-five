@@ -118,7 +118,7 @@ namespace FlockFive
         static void ReadHomePointers(List<SplashPress.Sample> into, out bool devices)
         {
             into.Clear();
-            float h = Screen.height;
+            float h = PhoneArea.H;
             var ts = Touchscreen.current;
             if (ts != null)
             {
@@ -161,7 +161,7 @@ namespace FlockFive
                 SynthesizeMouse(into);
                 return;
             }
-            var m = mouse.position.ReadValue();
+            var m = PhoneArea.In(mouse.position.ReadValue());
             var pos = new Vector2(m.x, h - m.y);
             var ev = Event.current;
             if (ev != null && ev.button == 0 &&
@@ -187,7 +187,7 @@ namespace FlockFive
                 t.press.wasPressedThisFrame,
                 out var kind))
                 return;
-            var p = t.position.ReadValue();
+            var p = PhoneArea.In(t.position.ReadValue());
             var pos = new Vector2(p.x, screenH - p.y);
             into.Add(SampleAt(t.touchId.ReadValue(), pos, kind));
         }

@@ -131,7 +131,7 @@ namespace FlockFive
             _gearHeld = false;
             if (_settingsOpen) return;
             var q = HomeGearNow();
-            var r = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
+            var r = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             if (!HomeGear.AcceptsTap(q) || VeilBlocks(r))
             {
                 if (HomeGear.Shown(q) || VeilBlocks(r)) SwallowGearTap(r);
@@ -196,7 +196,7 @@ namespace FlockFive
             // b94 (Brandon): one shared check. When an open modal veil blocks the gear's rect, the
             // gear is not drawn either, so it is never visible but dead (Daily Bonus popup and any
             // other veil). Where the tap works, nothing changes.
-            if (VeilBlocks(SettingsGearRect(Screen.width, Screen.height, Screen.safeArea))) return;
+            if (VeilBlocks(SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe))) return;
             DrawSettingsGear(0f, _gearHeld);
         }
 
@@ -206,7 +206,7 @@ namespace FlockFive
             if (_settingsOpen) return false;
             var q = HomeGearNow();
             if (!HomeGear.AcceptsTap(q)) return false;
-            var r = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
+            var r = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             return r.width >= 2f && r.Contains(p);
         }
 
@@ -218,7 +218,7 @@ namespace FlockFive
             _hitLock = 0;
             if (s < 0.5f) s = 0.5f;
             float age = SettingsMotion.Age(AdPause.Unscaled, _settingsAt);
-            var frame = SettingsSheet.Layout(Screen.width, Screen.height, Screen.safeArea, TopHud());
+            var frame = SettingsSheet.Layout(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, TopHud());
             float pad = Mathf.Max(16f, 12f * s);
             float travel = SettingsMotion.DropTravel(frame.Card.yMax, pad);
             float dy = SettingsMotion.PanelOffset(_settingsPhase, age, travel);
@@ -247,8 +247,8 @@ namespace FlockFive
                 SwallowSettingsPointer();
             else
             {
-                var gearHit = SettingsGearRect(Screen.width, Screen.height, Screen.safeArea);
-                var screen = new Rect(0f, 0f, Screen.width, Screen.height);
+                var gearHit = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                var screen = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
                 bool gearFire = HitPad(gearHit, out gearHeld);
                 bool close = HitPad(CloseTapRect(frame.Close), out xHeld);
                 soundFlip = HitPad(rows.SoundToggle, out soundHeld);
@@ -394,7 +394,7 @@ namespace FlockFive
             if (!HomeGear.Shown(q) || !HomeGear.AboveDimmer(q)) return;
             var tex = GearIcon.Texture();
             if (tex == null) return;
-            var drawn = SettingsGearDrawnRect(Screen.width, Screen.height, Screen.safeArea);
+            var drawn = SettingsGearDrawnRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             var draw = drawn;
             if (held)
             {
@@ -629,7 +629,7 @@ namespace FlockFive
         {
             bool onHome = _splash && _home == HomeFace.Splash && !_settingsOpen;
             _homePrompt = AdConsent.LayoutHome(
-                Screen.width, Screen.height, Screen.safeArea,
+                PhoneArea.W, PhoneArea.H, PhoneArea.Safe,
                 onHome, coachOrModal || !onHome, LevelData.NextPlay);
         }
 
@@ -672,8 +672,8 @@ namespace FlockFive
                 else AdConsent.DeclineGdpr();
                 Sfx.CardTap();
             }
-            float sw = Screen.width > 2f ? Screen.width : 2f;
-            float sh = Screen.height > 2f ? Screen.height : 2f;
+            float sw = PhoneArea.W > 2f ? PhoneArea.W : 2f;
+            float sh = PhoneArea.H > 2f ? PhoneArea.H : 2f;
             ModalBlock.SwallowRest(ModalBlock.Raise(sheet, sw, sh));
         }
 

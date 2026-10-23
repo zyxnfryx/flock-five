@@ -28,13 +28,44 @@ public static class IosExportCompliance
         plist.root.SetBoolean("UnityNotificationRequestAuthorizationOnAppLaunch", false);
         plist.root.SetBoolean("UnityNotificationRequestAuthorizationForRemoteNotificationsOnAppLaunch", false);
         AddSkAdNetworkIds(plist);
+        // Native iPad (not iPhone compatibility mode), portrait only.
+        plist.root.SetBoolean("UIRequiresFullScreen", true);
+        var ipadOrient = plist.root.CreateArray("UISupportedInterfaceOrientations~ipad");
+        ipadOrient.AddString("UIInterfaceOrientationPortrait");
+        // iPad launch screen: garden painting in the side bars (dimmed) and a centered 9:16 garden,
+        // matching the in-game pillarbox (PhoneArea). iPhone keeps Unity's launch screen.
+        plist.root.SetString("UILaunchStoryboardName~ipad", IpadLaunchName);
         plist.WriteToFile(plistPath);
 
         var projPath = PBXProject.GetPBXProjectPath(path);
         var proj = new PBXProject();
         proj.ReadFromFile(projPath);
         proj.AddFrameworkToProject(proj.GetUnityFrameworkTargetGuid(), "AppTrackingTransparency.framework", true);
+        // iPhone + iPad. Overrides PlayerSettings targetDevice 0 (iPhone only).
+        proj.SetBuildProperty(proj.GetUnityMainTargetGuid(), "TARGETED_DEVICE_FAMILY", "1,2");
+        proj.SetBuildProperty(proj.GetUnityFrameworkTargetGuid(), "TARGETED_DEVICE_FAMILY", "1,2");
+        AddIpadLaunch(proj, path);
         proj.WriteToFile(projPath);
+    }
+
+    const string IpadLaunchName = "FlockFiveLaunch-iPad";
+    const string LaunchStoryboardSrc = "Assets/_Project/Scripts/Editor/iOS/FlockFiveLaunch-iPad.storyboard";
+    const string LaunchImageSrc = "Assets/_Project/Art/Resources/Sprites/bg_garden.png";
+    const string LaunchImageName = "FlockFiveLaunchGarden.png";
+
+    static void AddIpadLaunch(PBXProject proj, string path)
+    {
+        string main = proj.GetUnityMainTargetGuid();
+        CopyIn(proj, main, path, LaunchStoryboardSrc, IpadLaunchName + ".storyboard");
+        CopyIn(proj, main, path, LaunchImageSrc, LaunchImageName);
+    }
+
+    static void CopyIn(PBXProject proj, string target, string path, string src, string name)
+    {
+        File.Copy(src, Path.Combine(path, name), true);
+        string guid = proj.FindFileGuidByProjectPath(name);
+        if (string.IsNullOrEmpty(guid)) guid = proj.AddFile(name, name, PBXSourceTree.Source);
+        proj.AddFileToBuild(target, guid);
     }
 
     // IronSource plus Unity Ads is the 82-id set in this folder. LevelPlay's

@@ -61,21 +61,33 @@ namespace FlockFive
         public const float CamRestY = -0.45f;
         public const float CamOrtho = 10.6f;
         // Tall phones: lift the rows so the flock sits mid-screen instead of low under a gap.
-        public static float RowY0 => 3.42f + 5.0f * (PortraitLock.TallFactor() - 1f);
+        public static float RowY0 => RowY0For(PortraitLock.TallFactor());
+        public static float RowY0For(float tall) => 3.42f + 5.0f * (tall - 1f);
         // Ring of the feeder art above the pivot (1024px @ 180 PPU × FeederView.Scale).
         // The painted rope above the ring may enter the island; the bulb must not.
         public const float FeederCrown = 1.34f;
         public const float FeederSafeMargin = 0.48f;
         // Same drop from the glass on a phone with no inset. Notch / island
-        // pushes the bulb below Screen.safeArea, re-read every call.
+        // pushes the bulb below PhoneArea.Safe, re-read every call.
         public static float FeederY
         {
             get
             {
-                float legacy = 8.12f + CamOrtho * (PortraitLock.TallFactor() - 1f);
-                float safe = ScreenTop() - SafeTopWorld() - FeederSafeMargin - FeederCrown;
-                return Mathf.Min(legacy, safe);
+                float h = Mathf.Max(1f, PhoneArea.H);
+                var sa = PhoneArea.Safe;
+                float inset = sa.width < 2f || sa.height < 2f ? 0f : Mathf.Max(0f, h - sa.yMax) / h;
+                return FeederYFor(PortraitLock.TallFactor(), inset);
             }
+        }
+
+        // Same as FeederY for a given tall factor and top safe inset (fraction of the screen height).
+        public static float FeederYFor(float tall, float safeTopNorm)
+        {
+            float legacy = 8.12f + CamOrtho * (tall - 1f);
+            float top = CamRestY + CamOrtho * tall;
+            float inset = safeTopNorm > 0.40f ? 0f : Mathf.Max(0f, safeTopNorm) * (CamOrtho * tall * 2f);
+            float safe = top - inset - FeederSafeMargin - FeederCrown;
+            return Mathf.Min(legacy, safe);
         }
 
         // Highest a perched bird's crown may sit so it stays clear of the feeder tray.
@@ -85,8 +97,8 @@ namespace FlockFive
 
         public static float SafeTopWorld()
         {
-            float h = Mathf.Max(1f, Screen.height);
-            var safe = Screen.safeArea;
+            float h = Mathf.Max(1f, PhoneArea.H);
+            var safe = PhoneArea.Safe;
             // Before the OS reports insets, safeArea can be empty or the full glass.
             if (safe.width < 2f || safe.height < 2f) return 0f;
             float inset = Mathf.Max(0f, h - safe.yMax) / h;
@@ -549,7 +561,14 @@ namespace FlockFive
 
             float want = DeviceFit.PlayAspect();
             _cam.aspect = want;
-            float window = (float)Screen.width / Mathf.Max(1, Screen.height);
+            // iPad pillarbox: the play camera renders into the centered phone-aspect area.
+            PhoneArea.BindCamera(_cam);
+            if (PhoneArea.Pillar)
+            {
+                if (_bleed != null) _bleed.enabled = false;
+                return;
+            }
+            float window = (float)PhoneArea.W / Mathf.Max(1, PhoneArea.H);
             if (Mathf.Abs(window - want) < 0.03f)
             {
                 _cam.rect = new Rect(0f, 0f, 1f, 1f);
@@ -598,7 +617,7 @@ namespace FlockFive
 
         public static float TallFactor()
         {
-            float window = (float)Screen.width / Mathf.Max(1, Screen.height);
+            float window = (float)PhoneArea.W / Mathf.Max(1, PhoneArea.H);
             return Mathf.Max(1f, WorldBuilder.PortraitAspect / Mathf.Max(0.05f, window));
         }
     }

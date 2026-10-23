@@ -198,10 +198,10 @@ namespace FlockFive
             if (cam != null)
             {
                 float dist = Mathf.Max(0.01f, Mathf.Abs(cam.transform.position.z));
-                float sy = Mathf.Max(0f, Screen.height - guiFromTop);
-                return cam.ScreenToWorldPoint(new Vector3(Screen.width * 0.5f, sy, dist)).y;
+                float sy = Mathf.Max(0f, PhoneArea.H - guiFromTop);
+                return cam.ScreenToWorldPoint(new Vector3(PhoneArea.W * 0.5f, sy, dist)).y;
             }
-            float t = Screen.height > 1f ? guiFromTop / Screen.height : 0f;
+            float t = PhoneArea.H > 1f ? guiFromTop / PhoneArea.H : 0f;
             return camY + halfH - t * halfH * 2f;
         }
 
@@ -210,9 +210,9 @@ namespace FlockFive
             if (cam != null)
             {
                 float dist = Mathf.Max(0.01f, Mathf.Abs(cam.transform.position.z));
-                return cam.ScreenToWorldPoint(new Vector3(screenX, Screen.height * 0.5f, dist)).x;
+                return cam.ScreenToWorldPoint(new Vector3(screenX, PhoneArea.H * 0.5f, dist)).x;
             }
-            float t = Screen.width > 1f ? screenX / Screen.width : 0.5f;
+            float t = PhoneArea.W > 1f ? screenX / PhoneArea.W : 0.5f;
             return camX - halfW + t * halfW * 2f;
         }
 
@@ -239,10 +239,10 @@ namespace FlockFive
         void ComboSafe(Transform root, out float x0, out float x1, out float y0, out float y1)
         {
             ComboCam(out var cam, out float camX, out float camY, out float halfW, out float halfH);
-            var safe = Screen.safeArea;
+            var safe = PhoneArea.Safe;
             bool ok = safe.width > 2f && safe.height > 2f;
             float left = ok ? safe.xMin : 0f;
-            float right = ok ? safe.xMax : Screen.width;
+            float right = ok ? safe.xMax : PhoneArea.W;
             x0 = ComboWorldX(cam, camX, halfW, left) + 0.16f;
             x1 = ComboWorldX(cam, camX, halfW, right) - 0.16f;
             if (x1 - x0 < 1.2f)

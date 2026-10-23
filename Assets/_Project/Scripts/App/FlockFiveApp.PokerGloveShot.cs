@@ -101,7 +101,7 @@ namespace FlockFive
             var aim = GloveTargetAt(box, PokerGloveU, PokerGloveV);
             var hand = PokerPointHand(aim, DeviceFit.Ui());
             var plate = _tutorPlate;
-            string line = tag + " " + Screen.width + "x" + Screen.height
+            string line = tag + " " + PhoneArea.W + "x" + PhoneArea.H
                 + " live " + _pokerIntroLive + " glove " + _gloveVis
                 + " fromLeft " + _gloveFromLeft + " ang " + _gloveShownAng.ToString("0")
                 + " aim " + aim + " hand " + hand + " plate " + plate

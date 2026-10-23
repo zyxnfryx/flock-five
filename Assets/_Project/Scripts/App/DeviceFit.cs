@@ -22,7 +22,7 @@ namespace FlockFive
         {
             if (TestWindow.HasValue) return TestWindow.Value;
             if (Application.isBatchMode) return PhoneAspect;
-            return WindowAspect(Screen.width, Screen.height);
+            return WindowAspect(PhoneArea.W, PhoneArea.H);
         }
 
         // Play camera aspect: phones stay 9:16 (tall phones letterbox as before).
@@ -45,9 +45,9 @@ namespace FlockFive
             float win = TestWindow ?? (Application.isBatchMode ? PhoneAspect : WindowAspect(w, h));
             return s * Mathf.Lerp(1f, TabletUi, Wide(win));
         }
-        public static float Ui() => Ui(Screen.width, Screen.height);
+        public static float Ui() => Ui(PhoneArea.W, PhoneArea.H);
         // Same, for callers that only carry the height (uses the live width).
-        public static float UiH(float h) => Ui(Screen.height > 1 ? Screen.width * (h / Screen.height) : h * PhoneAspect, h);
+        public static float UiH(float h) => Ui(PhoneArea.H > 1 ? PhoneArea.W * (h / PhoneArea.H) : h * PhoneAspect, h);
 
         // Size of a control in px, capped to a share of the screen width.
         // b103 (Brandon): one shared tablet cap for the big round controls (LEVEL disc, PAY TABLE tab, DEAL,
@@ -57,6 +57,6 @@ namespace FlockFive
         public static float ControlK(float window) => Mathf.Lerp(1f, TabletControlK, Wide(window));
         public static float ControlK() => ControlK(WindowAspect());
 
-        public static float Cap(float px, float frac = MaxControlFrac) => Mathf.Min(px, Screen.width * frac);
+        public static float Cap(float px, float frac = MaxControlFrac) => Mathf.Min(px, PhoneArea.W * frac);
     }
 }

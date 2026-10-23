@@ -107,7 +107,7 @@ namespace FlockFive
             var keep = GUI.color;
             GUI.color = c;
             var f = _rewardFace;
-            float W = Screen.width, H = Screen.height;
+            float W = PhoneArea.W, H = PhoneArea.H;
             var tex = Texture2D.whiteTexture;
             GUI.DrawTexture(new Rect(0f, 0f, W, Mathf.Max(0f, f.y)), tex);
             GUI.DrawTexture(new Rect(0f, f.yMax, W, Mathf.Max(0f, H - f.yMax)), tex);
@@ -137,7 +137,7 @@ namespace FlockFive
                 _rewardHasAd = RewardAdNow() && _rewardRepeatAmt > 0 ? 1 : 0;
             }
             bool hasAd = _rewardHasAd == 1;
-            var lay = LayoutRewardChoice(_rewardFace, Screen.width, Screen.height, hasAd);
+            var lay = LayoutRewardChoice(_rewardFace, PhoneArea.W, PhoneArea.H, hasAd);
             if (_choiceWord == null)
                 _choiceWord = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
 

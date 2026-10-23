@@ -899,7 +899,7 @@ namespace FlockFive
             {
                 // SwallowOffTargetTap owns the press. This covers a press that arrived
                 // only through the Input System, and the ate flag stops a second step.
-                if (!CoachAteThisFrame() && Pressed(out var scr) && !BadgerLessonIgnores(new Vector2(scr.x, Screen.height - scr.y)))
+                if (!CoachAteThisFrame() && Pressed(out var scr) && !BadgerLessonIgnores(new Vector2(scr.x, PhoneArea.H - scr.y)))
                 {
                     MarkCoachAte();
                     AdvanceBadgerLesson();
@@ -950,7 +950,7 @@ namespace FlockFive
         bool BadgerLessonTapNow(Rect aim)
         {
             if (!Pressed(out var screen)) return false;
-            var gui = new Vector2(screen.x, Screen.height - screen.y);
+            var gui = new Vector2(screen.x, PhoneArea.H - screen.y);
             return aim.Contains(gui);
         }
 
@@ -1059,17 +1059,17 @@ namespace FlockFive
         Rect DrawBadgerCoachLine(BadgerRects L, string line)
         {
             float s = L.S;
-            var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+            var hang = CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f);
             float plateX = hang.x;
             float plateY = hang.y;
-            BadgerCaptionLimits(Screen.width, Screen.height, Screen.safeArea, out float maxW, out float roomH, out float capScale, out int hi);
+            BadgerCaptionLimits(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, out float maxW, out float roomH, out float capScale, out int hi);
             hi = BadgerCaptionHi(line, maxW, roomH, capScale, hi); // b130 (f): authored rows fit the seat, never re-wrapped off the bottom
             var fit = FitCaptionBox(line, maxW, hi, 14);
             float boxW = fit.width;
             if (boxW > maxW) boxW = maxW;
             float boxH = fit.height;
             // b130 (f): the plate is as tall as the lesson paint really needs (floor font, wrapped rows), within the room.
-            if (BadgerLessonCaptionRoom(line, Screen.width, Screen.height, Screen.safeArea, out float need, out _, out _) || need > boxH)
+            if (BadgerLessonCaptionRoom(line, PhoneArea.W, PhoneArea.H, PhoneArea.Safe, out float need, out _, out _) || need > boxH)
                 boxH = Mathf.Max(boxH, need);
             if (boxH > roomH) boxH = roomH;
             var band = BadgerCaptionSeat(L.Caption, s); // b130 (f): the one caption-band helper
@@ -1150,7 +1150,7 @@ namespace FlockFive
         {
             float s = DeviceFit.Ui();
             float top = TopHud();
-            return BadgerLayoutFor(Screen.width, Screen.height, Screen.safeArea, s, top, BackMedalRect(s, top));
+            return BadgerLayoutFor(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s, top, BackMedalRect(s, top));
         }
 
         // #197 name kept as an alias of #198's public pure layout so both callers/tests resolve to one function.
@@ -2633,7 +2633,7 @@ namespace FlockFive
                 DrawBadgerPickCaption(L, spot);
                 return;
             }
-            var gold = GoldCaption(_bgLine, Screen.width, Screen.height);
+            var gold = GoldCaption(_bgLine, PhoneArea.W, PhoneArea.H);
             float w = gold.PlateW;
             float h = gold.PlateH;
             var band = BadgerCaptionSeat(L.Caption, s);

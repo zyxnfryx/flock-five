@@ -269,7 +269,7 @@ namespace FlockFive
         {
             var e = Event.current;
             if (e != null && e.type != EventType.Repaint) return;
-            int n = PlaceKitBird(body, faceLeft, ui, Screen.width, Screen.height, AdPause.Unscaled, wings, _kitStars);
+            int n = PlaceKitBird(body, faceLeft, ui, PhoneArea.W, PhoneArea.H, AdPause.Unscaled, wings, _kitStars);
             if (n < 1) return;
             var tint = new Color(1f, 0.98f, 0.90f, 1f);
             for (int i = 0; i < KitStarCount; i++)

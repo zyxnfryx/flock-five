@@ -178,7 +178,7 @@ namespace FlockFive
             float fade = Mathf.Clamp01(age / 0.25f);
             // Dim the board, leaving Continue bright.
             var c = new Color(0f, 0f, 0f, 0.55f * fade);
-            float W = Screen.width, H = Screen.height;
+            float W = PhoneArea.W, H = PhoneArea.H;
             DrawRewardDim(new Rect(0f, 0f, W, cont.y), c);
             DrawRewardDim(new Rect(0f, cont.yMax, W, H - cont.yMax), c);
             DrawRewardDim(new Rect(0f, cont.y, cont.x, cont.height), c);

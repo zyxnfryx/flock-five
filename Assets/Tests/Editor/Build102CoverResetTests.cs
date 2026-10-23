@@ -29,6 +29,7 @@ namespace FlockFive.Editor
                 float bot = d == 4 ? 0f : (w > h * 0.7f ? h * 0.02f : h * 0.04f);
                 var safe = new Rect(0f, bot, w, h - bot - h * 0.04f);
                 CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var rs, out var hv);
+                rs = CornerAnchor.GardenBottomSeat(w, h, safe); // b131: banner seat (Restart itself moved to the top bar)
                 float refH = FlockFiveApp.GardenRefBandH(w, h, safe, s, 0f);
                 float y = FlockFiveApp.GardenFixedSeatY(w, h, safe, s, 0f);
                 var band = new Rect(0f, y, w, refH);

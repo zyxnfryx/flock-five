@@ -109,7 +109,7 @@ namespace FlockFive
             var c = BadgerWashTint;
             c.a = Mathf.Clamp01(a);
             GUI.color = c;
-            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), Texture2D.whiteTexture);
             GUI.color = Color.white;
         }
 
@@ -140,11 +140,11 @@ namespace FlockFive
         // Fresh clear: hops in from the right and lands in the garden.
         void AimBadgerLeapGarden()
         {
-            float h = Screen.height;
+            float h = PhoneArea.H;
             _bgLeapUnit = h * 0.24f / 620f;
             float y = h * 0.80f;
-            _bgLeapTo = new Vector2(Screen.width * 0.60f, y);
-            _bgLeapFrom = new Vector2(Screen.width + 420f * _bgLeapUnit, y);
+            _bgLeapTo = new Vector2(PhoneArea.W * 0.60f, y);
+            _bgLeapFrom = new Vector2(PhoneArea.W + 420f * _bgLeapUnit, y);
         }
 
         // Flower tap: hops down off the bloom, in front of the flower.
@@ -153,7 +153,7 @@ namespace FlockFive
             BadgerSitterSpot(out var foot, out var unit);
             _bgLeapUnit = unit;
             _bgLeapFrom = foot;
-            _bgLeapTo = new Vector2(Screen.width * 0.5f, foot.y + FlowerPlayRect().height * 0.34f);
+            _bgLeapTo = new Vector2(PhoneArea.W * 0.5f, foot.y + FlowerPlayRect().height * 0.34f);
         }
 
         // Drawn last, over the garden or the splash, while the leap is live.
@@ -176,7 +176,7 @@ namespace FlockFive
             if (beat <= BadgerLeapBeat.Crouch)
             {
                 var foot = Vector2.Lerp(_bgLeapFrom, _bgLeapTo, BadgerLeap.HopTravel(t));
-                foot.y -= BadgerLeap.HopLift(t) * Screen.height * 0.06f;
+                foot.y -= BadgerLeap.HopLift(t) * PhoneArea.H * 0.06f;
                 _bgFxFoot = foot;
                 DrawBadgerPose(pose, foot, unit, 1f);
             }
@@ -188,13 +188,13 @@ namespace FlockFive
                 var last = SpriteCatalog.BadgerArt(BadgerLeap.LeapFrames[BadgerLeap.LeapFrames.Length - 1]);
                 float lw = last != null ? last.rect.width : 977f;
                 float lh = last != null ? last.rect.height : 669f;
-                float fill = Mathf.Max(Screen.width * 1.30f / lw, Screen.height * 0.55f / lh);
+                float fill = Mathf.Max(PhoneArea.W * 1.30f / lw, PhoneArea.H * 0.55f / lh);
                 float u = Mathf.Lerp(unit, Mathf.Max(unit, fill), g);
                 float h0 = BadgerArtHeight(pose.Frame, unit);
                 var c0 = new Vector2(_bgLeapTo.x, _bgLeapTo.y - h0 * 0.5f);
-                var c1 = new Vector2(Screen.width * 0.5f, Screen.height * 0.48f);
+                var c1 = new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.48f);
                 var c = Vector2.Lerp(c0, c1, g);
-                c.y -= Mathf.Sin(g * Mathf.PI) * Screen.height * 0.08f;
+                c.y -= Mathf.Sin(g * Mathf.PI) * PhoneArea.H * 0.08f;
                 float h = BadgerArtHeight(pose.Frame, u);
                 var foot = new Vector2(c.x, c.y + h * 0.5f);
                 _bgFxFoot = foot;
@@ -234,7 +234,7 @@ namespace FlockFive
             if (beat == BadgerLeapBeat.Leap)
             {
                 var foot = Vector2.Lerp(from, to, e);
-                foot.y -= Badger129.LeapArc(t) * Screen.height * 0.16f;
+                foot.y -= Badger129.LeapArc(t) * PhoneArea.H * 0.16f;
                 float u = Mathf.Lerp(_bgLeapUnit, toUnit, e) * (1f + Badger129.LeapSwell(t));
                 _bgFxFoot = foot;
                 string lf = Badger129.LeapFrame(t);
@@ -273,7 +273,7 @@ namespace FlockFive
             _bgLeapEmitT = t;
             if (before < 0f || t <= before) return;
             var foot = Vector2.Lerp(_bgLeapFrom, _bgLeapTo, BadgerLeap.HopTravel(t));
-            foot.y -= BadgerLeap.HopLift(t) * Screen.height * 0.06f;
+            foot.y -= BadgerLeap.HopLift(t) * PhoneArea.H * 0.06f;
             var was = BadgerLeap.BeatAt(before);
             var now = BadgerLeap.BeatAt(t);
             if (was == BadgerLeapBeat.Hop && now != BadgerLeapBeat.Hop)
@@ -572,7 +572,7 @@ namespace FlockFive
             {
                 _bgSlamWord = w;
                 Sfx.CardBump();
-                var safe = DontCareSlamRects.SafeGui(Screen.width, Screen.height, Screen.safeArea);
+                var safe = DontCareSlamRects.SafeGui(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
                 var band = DontCareSlamRects.WordSlot(safe, w);
                 SparkleFx.SlamBurst(band.center);
             }
@@ -619,7 +619,7 @@ namespace FlockFive
         static void DrawBadgerSpeedLines(Vector2 center, float strength, float t, float maxRadius)
         {
             if (!GuiPaint() || strength < 0.02f) return;
-            float diag = Mathf.Sqrt(Screen.width * (float)Screen.width + Screen.height * (float)Screen.height);
+            float diag = Mathf.Sqrt(PhoneArea.W * (float)PhoneArea.W + PhoneArea.H * (float)PhoneArea.H);
             float reach = maxRadius > 1f ? maxRadius : diag;
             float thick = Mathf.Max(2f, reach * 0.012f);
             var keep = GUI.matrix;
@@ -661,7 +661,7 @@ namespace FlockFive
             if (wash > 0.01f)
             {
                 GUI.color = new Color(0.05f, 0.04f, 0.03f, wash);
-                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), Texture2D.whiteTexture);
                 GUI.color = Color.white;
             }
 
@@ -674,12 +674,12 @@ namespace FlockFive
             if (g > 0f)
             {
                 float tw = 0.85f + 0.15f * Mathf.Sin(t * 40f);
-                DrawBadgerGlint(eye, Screen.height * 0.035f * tw, g);
+                DrawBadgerGlint(eye, PhoneArea.H * 0.035f * tw, g);
             }
 
             int n = BadgerSlam.ShownCount(t);
             if (n < 1) return;
-            var safe = DontCareSlamRects.SafeGui(Screen.width, Screen.height, Screen.safeArea);
+            var safe = DontCareSlamRects.SafeGui(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             for (int i = 0; i < n; i++)
             {
                 if (!BadgerSlam.WordOn(t, i)) continue;

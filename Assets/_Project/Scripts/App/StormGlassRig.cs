@@ -109,7 +109,7 @@ namespace FlockFive
         void LateUpdate()
         {
             var cam = Camera.main;
-            if (cam == null || Screen.width < 2 || Screen.height < 2)
+            if (cam == null || PhoneArea.W < 2 || PhoneArea.H < 2)
             {
                 _visible = 0;
                 return;
@@ -335,7 +335,7 @@ namespace FlockFive
             if (n <= 0) return;
             if (_paintHi == null) _paintHi = MakeSoft(false);
             if (_paintRim == null) _paintRim = MakeSoft(true);
-            float h = Screen.height;
+            float h = PhoneArea.H;
             var keep = GUI.color;
             for (int i = 0; i < n; i++)
             {
@@ -363,11 +363,11 @@ namespace FlockFive
             int n = 0;
             if (FlockFiveApp.GardenOpen)
             {
-                float h = Screen.height;
-                var safe = Screen.safeArea;
-                CornerAnchor.Garden(Screen.width, Screen.height, safe, out float scale, out _, out _, out _, out _);
-                var pivot = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
-                var stamp = FlockFiveApp.GardenStampBox(Screen.width, Screen.height, safe, scale);
+                float h = PhoneArea.H;
+                var safe = PhoneArea.Safe;
+                CornerAnchor.Garden(PhoneArea.W, PhoneArea.H, safe, out float scale, out _, out _, out _, out _);
+                var pivot = new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.5f);
+                var stamp = FlockFiveApp.GardenStampBox(PhoneArea.W, PhoneArea.H, safe, scale);
                 stamp = CornerAnchor.Shake(stamp, CamShake.HudOffset, CamShake.HudTwist, pivot);
                 Add(blocks, ref n, StormGlass.FromGui(stamp, h));
             }

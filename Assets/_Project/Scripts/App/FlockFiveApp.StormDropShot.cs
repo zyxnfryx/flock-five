@@ -202,8 +202,8 @@ namespace FlockFive
 
         static void SaveCloseup(Texture2D tex, StormGlassRig.Live bead, string path)
         {
-            float sx = tex.width / Mathf.Max(1f, Screen.width);
-            float sy = tex.height / Mathf.Max(1f, Screen.height);
+            float sx = tex.width / Mathf.Max(1f, PhoneArea.W);
+            float sy = tex.height / Mathf.Max(1f, PhoneArea.H);
             int cx = Mathf.RoundToInt(bead.X * sx);
             int cy = Mathf.RoundToInt(bead.Y * sy);
             int rad = Mathf.Max(8, Mathf.RoundToInt(bead.Radius * sy));

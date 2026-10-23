@@ -84,8 +84,8 @@ namespace FlockFive
 
         ModalBlock.Veil ActiveVeil()
         {
-            float w = Screen.width > 2f ? Screen.width : 2f;
-            float h = Screen.height > 2f ? Screen.height : 2f;
+            float w = PhoneArea.W > 2f ? PhoneArea.W : 2f;
+            float h = PhoneArea.H > 2f ? PhoneArea.H : 2f;
             var popup = OpenModal();
             if (popup != ModalBlock.Id.None)
                 return ModalBlock.Raise(popup, w, h);
@@ -116,7 +116,7 @@ namespace FlockFive
         {
             var veil = ActiveVeil();
             if (!veil.Open) return false;
-            var gui = new Vector2(screen.x, Screen.height - screen.y);
+            var gui = new Vector2(screen.x, PhoneArea.H - screen.y);
             if (veil.Owner == ModalBlock.Id.Lesson && LessonTargetHit(screen, gui))
                 return false;
             return ModalBlock.BlocksPoint(veil, gui);

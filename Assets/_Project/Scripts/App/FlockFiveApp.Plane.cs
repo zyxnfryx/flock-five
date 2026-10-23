@@ -349,7 +349,7 @@ namespace FlockFive
             float banW = banH * SpriteAspect(banner, 3.4f);
             float gap = 8f * s;
             float total = planeW + gap + banW;
-            float left = Mathf.Lerp(Screen.width + 12f, -total - 12f, u);
+            float left = Mathf.Lerp(PhoneArea.W + 12f, -total - 12f, u);
             float titleH = (56f * 2f + 4f) * SplashLogoScale * s;
             float y = TopHud() + titleH + 16f * s + bob;
             if (plane != null)
@@ -515,8 +515,8 @@ namespace FlockFive
         void DrawSkyFireworks(float s)
         {
             if (_fwClock < 0f) return;
-            float w = Screen.width;
-            float h = Screen.height;
+            float w = PhoneArea.W;
+            float h = PhoneArea.H;
             if (w < 8f || h < 8f) return;
             EnsureFwTables();
             float unit = Mathf.Min(w, h) * 0.0112f;
@@ -633,7 +633,7 @@ namespace FlockFive
             float life = 1f - t / RoundLife;
             float fade = life * life;
             var at = new Vector2(x, y);
-            float rad = Screen.height * 0.072f;
+            float rad = PhoneArea.H * 0.072f;
             if (rad < 64f) rad = 64f;
             if (rad > 180f) rad = 180f;
             DrawFwFlash(t, 0.26f, at, rad * 1.15f, tint, 1f);
@@ -641,7 +641,7 @@ namespace FlockFive
             if (sc > 3f) sc = 3f;
             float hang = t - 0.10f;
             if (hang < 0f) hang = 0f;
-            float grav = hang * hang * Screen.height * 0.085f;
+            float grav = hang * hang * PhoneArea.H * 0.085f;
             const float expand = 0.24f;
             // SE keeps the round shape and drops every other spark plus the extra glint.
             int step = FoliageSway.LowPower ? 2 : 1;

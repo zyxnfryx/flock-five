@@ -357,13 +357,13 @@ namespace FlockFive
 
         void AvatarChannel(float s, out float left, out float right)
         {
-            float L = Mathf.Max(16f * s, Screen.safeArea.xMin + 10f);
-            float safeRight = Mathf.Max(0f, Screen.width - Screen.safeArea.xMax);
-            float R = Screen.width - Mathf.Max(16f * s, safeRight + 10f);
+            float L = Mathf.Max(16f * s, PhoneArea.Safe.xMin + 10f);
+            float safeRight = Mathf.Max(0f, PhoneArea.W - PhoneArea.Safe.xMax);
+            float R = PhoneArea.W - Mathf.Max(16f * s, safeRight + 10f);
             void Eat(Rect r)
             {
                 if (r.width < 2f || r.height < 2f) return;
-                if (r.center.x < Screen.width * 0.5f)
+                if (r.center.x < PhoneArea.W * 0.5f)
                     L = Mathf.Max(L, r.xMax + 8f * s);
                 else
                     R = Mathf.Min(R, r.xMin - 8f * s);
@@ -560,7 +560,7 @@ namespace FlockFive
                 _adoptShown[pick] = perch;
                 _avatarPos = perch;
                 _avatarPerchIx = HomeBranchAnchor();
-                _avatarFaceLeft = perch.x >= Screen.width * 0.5f;
+                _avatarFaceLeft = perch.x >= PhoneArea.W * 0.5f;
                 if (_avatarPose == AvatarPose.Perched && _avatarLandGlove)
                 {
                     _avatarPerchHold -= dt;
@@ -613,7 +613,7 @@ namespace FlockFive
             _avatarGliding = false;
             _avatarHold = false;
             _avatarTutor = false;
-            _avatarFaceLeft = _avatarPos.x >= Screen.width * 0.5f;
+            _avatarFaceLeft = _avatarPos.x >= PhoneArea.W * 0.5f;
             _avatarHappy = 0f;
             _avatarFlapT = 0f;
             _avatarPreenT = 0f;
@@ -650,14 +650,14 @@ namespace FlockFive
             // Item 11b: across the top, centered on the screen right under the title
             // (the shared HomeTopCaptionY), snug plate, at most two short lines.
             string line = AdoptCaptionLine();
-            float safe = CaptionLayout.SafeTextWidth(Screen.width, Screen.height);
-            float maxW = Mathf.Min(safe, Screen.width * 0.64f);
+            float safe = CaptionLayout.SafeTextWidth(PhoneArea.W, PhoneArea.H);
+            float maxW = Mathf.Min(safe, PhoneArea.W * 0.64f);
             if (maxW < 48f) maxW = 48f;
-            var fit = FitLessonText(line, maxW, 4096f, 12, LessonFontHi(s), Screen.width, Screen.height);
-            var hang = CaptionLayout.BoxPad(Screen.height);
+            var fit = FitLessonText(line, maxW, 4096f, 12, LessonFontHi(s), PhoneArea.W, PhoneArea.H);
+            var hang = CaptionLayout.BoxPad(PhoneArea.H);
             var snug = CaptionLayout.MeasureSnug(CoachLineStyle(), fit.Shown, fit.Font, hang.x, hang.y);
             float w = Mathf.Max(48f, snug.TextW);
-            var text = new Rect(Screen.width * 0.5f - w * 0.5f, HomeTopCaptionY(s) + hang.y, w, Mathf.Max(24f, snug.TextH));
+            var text = new Rect(PhoneArea.W * 0.5f - w * 0.5f, HomeTopCaptionY(s) + hang.y, w, Mathf.Max(24f, snug.TextH));
             return SeatAroundText(text, s);
         }
 
@@ -788,7 +788,7 @@ namespace FlockFive
             if (_adoptLive && _bannerLastFrame >= Time.frameCount - 2 && _bannerLast.width > 2f)
             {
                 float under = _bannerLast.yMax + icon * 0.62f + 6f * s;
-                if (c.y < under) { c.y = Mathf.Min(under, Screen.height - icon); onPerch = false; }
+                if (c.y < under) { c.y = Mathf.Min(under, PhoneArea.H - icon); onPerch = false; }
             }
             return c;
         }
@@ -808,7 +808,7 @@ namespace FlockFive
             float pad = HomeBirdHitPad * s;
             var c = AdoptBirdCenter(i, drawIcon, s, out bool onPerch);
             bird = new Rect(c.x - drawIcon * 0.5f - pad, c.y - drawIcon * 0.5f - pad, drawIcon + pad * 2f, drawIcon + pad * 2f);
-            bool faceLeft = c.x >= Screen.width * 0.5f;
+            bool faceLeft = c.x >= PhoneArea.W * 0.5f;
             bool wings = BirdIdle.UseFlyingPose(onPerch, false);
             float clock = _adoptClock + i * 0.17f;
             plate = NameTagRect(c, drawIcon, s, _adoptCol, _adoptName, faceLeft, wings, clock, false);
@@ -838,7 +838,7 @@ namespace FlockFive
             // In the air, face the way it is moving. On the wood, face center.
             // Right half faces left. DrawAvatarBird does the shared flip.
             bool traveling = _avatarPose == AvatarPose.Flying || _avatarPose == AvatarPose.Landing;
-            bool faceLeft = traveling ? _avatarFaceLeft : c.x >= Screen.width * 0.5f;
+            bool faceLeft = traveling ? _avatarFaceLeft : c.x >= PhoneArea.W * 0.5f;
             var prev = GUI.color;
             GUI.color = Color.white;
             float clock = _adoptClock + i * 0.17f;
@@ -976,8 +976,8 @@ namespace FlockFive
             float botLimit = flower.yMin - 8f * s;
             AvatarChannel(s, out float chanL, out float chanR);
             float bleed = SplashRailSize() * 0.55f;
-            float edgeL = Mathf.Max(8f, Screen.safeArea.xMin + 4f);
-            float edgeR = Mathf.Min(Screen.width - 8f, Screen.safeArea.xMax - 4f);
+            float edgeL = Mathf.Max(8f, PhoneArea.Safe.xMin + 4f);
+            float edgeR = Mathf.Min(PhoneArea.W - 8f, PhoneArea.Safe.xMax - 4f);
             float left = Mathf.Max(edgeL, chanL - bleed);
             float right = Mathf.Min(edgeR, chanR + bleed);
             if (right < left + 120f)
@@ -1467,7 +1467,7 @@ namespace FlockFive
             if (!_adoptLive || _avatarPose != AvatarPose.GlovePointing) return false;
             if (!AdoptLookRects(HomeAvatarIcon(DeviceFit.Ui()), out var bird, out var plate))
                 return false;
-            var gui = new Vector2(screen.x, Screen.height - screen.y);
+            var gui = new Vector2(screen.x, PhoneArea.H - screen.y);
             if (bird.Contains(gui)) return true;
             return plate.width > 2f && plate.Contains(gui);
         }
@@ -1758,25 +1758,25 @@ namespace FlockFive
             right -= extra;
             if (_adoptLive)
             {
-                float under = AdoptCaptionRect(s).yMax + CaptionLayout.BoxPad(Screen.height).y + half;
+                float under = AdoptCaptionRect(s).yMax + CaptionLayout.BoxPad(PhoneArea.H).y + half;
                 // b86: the banner is taller than the old plate; fly under its real band.
                 if (_bannerLastFrame >= Time.frameCount - 2 && _bannerLast.width > 2f)
                     under = Mathf.Max(under, _bannerLast.yMax + half);
                 if (under > top) top = under;
             }
             float minX = reach;
-            float maxX = Screen.width - reach;
+            float maxX = PhoneArea.W - reach;
             float minY = reach;
-            float maxY = Screen.height - reach;
+            float maxY = PhoneArea.H - reach;
             if (maxX < minX)
             {
-                float mid = Screen.width * 0.5f;
+                float mid = PhoneArea.W * 0.5f;
                 minX = mid;
                 maxX = mid;
             }
             if (maxY < minY)
             {
-                float mid = Screen.height * 0.5f;
+                float mid = PhoneArea.H * 0.5f;
                 minY = mid;
                 maxY = mid;
             }
@@ -1806,7 +1806,7 @@ namespace FlockFive
             float spanY = bot - top;
             if (spanX < 0f) spanX = 0f;
             if (spanY < 0f) spanY = 0f;
-            float capX = Screen.width * 0.58f;
+            float capX = PhoneArea.W * 0.58f;
             if (spanX > capX) spanX = capX;
             spanX *= 0.84f;
             spanY *= 0.84f;
@@ -1861,7 +1861,7 @@ namespace FlockFive
             _awayOn = false;
             _avatarGliding = false;
             _avatarPose = AvatarPose.Perched;
-            _avatarFaceLeft = _avatarPos.x >= Screen.width * 0.5f;
+            _avatarFaceLeft = _avatarPos.x >= PhoneArea.W * 0.5f;
             if (!_avatarLandGlove) return;
             _avatarPerchHold = 0.18f;
         }
@@ -1874,7 +1874,7 @@ namespace FlockFive
         void PlaceHomeBranch(float s)
         {
             WoodWorld(out float worldW, out float worldH);
-            float h = Screen.height > 2f ? Screen.height : s * 720f;
+            float h = PhoneArea.H > 2f ? PhoneArea.H : s * 720f;
             float ppu = h / (WorldBuilder.CamOrtho * 2f);
             if (ppu < 1f) ppu = 1f;
 
@@ -1897,7 +1897,7 @@ namespace FlockFive
             if (y < cap) y = cap;
 
             var mounted = PlaceRight(s, visW, visH, y);
-            float inset = Mathf.Max(8f * s, Screen.width - Screen.safeArea.xMax + 6f);
+            float inset = Mathf.Max(8f * s, PhoneArea.W - PhoneArea.Safe.xMax + 6f);
             mounted.x += inset + 14f * s;
 
             _limbCenter = new Vector2(mounted.x - probe.x, mounted.y - probe.y);
@@ -2037,17 +2037,17 @@ namespace FlockFive
             if (!_limbOn) return;
             float s = DeviceFit.Ui();
             var rail = SplashRailColumn(true, 3, s);
-            float cut = rail.width > 2f ? rail.xMin : Screen.width;
+            float cut = rail.width > 2f ? rail.xMin : PhoneArea.W;
             if (edgeRoot)
-                DrawHomeLimbs(cut, Screen.width + 24f);
+                DrawHomeLimbs(cut, PhoneArea.W + 24f);
             else
                 DrawHomeLimbs(0f, cut);
         }
 
         void DrawHomeLimbs(float x0, float x1)
         {
-            if (!_limbOn || Screen.height < 2f || x1 < x0 + 2f) return;
-            var clip = new Rect(x0, 0f, x1 - x0, Screen.height);
+            if (!_limbOn || PhoneArea.H < 2f || x1 < x0 + 2f) return;
+            var clip = new Rect(x0, 0f, x1 - x0, PhoneArea.H);
             GUI.BeginGroup(clip);
             DrawHomeTwig(new Vector2(_limbCenter.x - x0, _limbCenter.y), _limbW, _limbH);
             GUI.EndGroup();

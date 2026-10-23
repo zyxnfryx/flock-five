@@ -509,11 +509,11 @@ namespace FlockFive
         }
 
         // Play-camera letterbox is not the screen. Bleed height × window aspect
-        // is the glass, home indicator included. Never Screen.safeArea.
+        // is the glass, home indicator included. Never PhoneArea.Safe.
         static void FullFrame(out float left, out float right, out float bottom, out float top)
         {
             float halfH = WorldBuilder.CamOrtho * PortraitLock.TallFactor();
-            float aspect = Screen.height > 1 ? (float)Screen.width / Screen.height : WorldBuilder.PortraitAspect;
+            float aspect = PhoneArea.H > 1 ? (float)PhoneArea.W / PhoneArea.H : WorldBuilder.PortraitAspect;
             if (aspect < 0.2f) aspect = WorldBuilder.PortraitAspect;
             float halfW = halfH * aspect;
             left = -halfW;
@@ -526,8 +526,8 @@ namespace FlockFive
         void Frame(out float left, out float right, out float bottom, out float top)
         {
             float tall = PortraitLock.TallFactor();
-            int w = Screen.width;
-            int h = Screen.height;
+            int w = PhoneArea.W;
+            int h = PhoneArea.H;
             if (w != _frameW || h != _frameH || tall != _frameTall)
             {
                 FullFrame(out _frL, out _frR, out _frB, out _frT);

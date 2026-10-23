@@ -102,7 +102,7 @@ namespace FlockFive
             ShotRewardAd = -1;
             PrepGardenShot(4);
             yield return new WaitForSecondsRealtime(2.5f);
-            float W = Screen.width, H = Screen.height;
+            float W = PhoneArea.W, H = PhoneArea.H;
             LevelCurtain.Reset();
             LevelCurtain.Aim(new Rect(W * 0.5f - W * 0.17f, H * 0.80f, W * 0.34f, W * 0.34f));
             LevelCurtain.Arm(0f);

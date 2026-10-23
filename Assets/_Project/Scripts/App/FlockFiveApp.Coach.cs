@@ -754,7 +754,7 @@ namespace FlockFive
             bool wrap = st.wordWrap;
             st.wordWrap = false;
             st.fontSize = FitFont(st, line, w * 0.88f, h * 0.72f, lo, hi);
-            var box = new Rect((Screen.width - w) * 0.5f, top + TutorCaptionGap * s, w, h);
+            var box = new Rect((PhoneArea.W - w) * 0.5f, top + TutorCaptionGap * s, w, h);
             float padX = Mathf.Clamp(w * 0.055f, 10f * s, 18f * s);
             float padY = Mathf.Clamp(h * 0.10f, 6f * s, 14f * s);
             var textR = new Rect(
@@ -780,9 +780,9 @@ namespace FlockFive
             bool keepWrap = st.wordWrap;
             st.wordWrap = false;
             st.fontSize = Mathf.RoundToInt(Mathf.Clamp(19f * s, 14f, 28f));
-            float w = Screen.width * 0.5f;
+            float w = PhoneArea.W * 0.5f;
             float h = st.fontSize * 1.7f;
-            var box = new Rect((Screen.width - w) * 0.5f, top + TutorCaptionGap * s, w, h);
+            var box = new Rect((PhoneArea.W - w) * 0.5f, top + TutorCaptionGap * s, w, h);
             StampBannerText(box, line, st, a * 0.92f, true);
             st.fontSize = keepSize;
             st.wordWrap = keepWrap;
@@ -1200,11 +1200,11 @@ namespace FlockFive
             else
                 known = TutorCaptionPlate(out plate);
             // b98: always the sideways approach (right to left, hand pointing left), never from below.
-            if (known) aim = GardenSidewaysAim(aimGui, plate, s, Screen.width, out _);
+            if (known) aim = GardenSidewaysAim(aimGui, plate, s, PhoneArea.W, out _);
             // Left-half target: in from the right, hand pointing left. A target at the right edge (Level 1
             // step 2, branch 5) has no room on its right for the hand, so it is met from the left, pointing
             // right (the mirrored default side approach), still level with the target. Never from below.
-            if (!GardenFromRight(aim.x, Screen.width))
+            if (!GardenFromRight(aim.x, PhoneArea.W))
                 return CoachGloveAt(aim, dt, s, 0f, false, float.NaN, default, tapHit);
             return CoachGloveAt(aim, dt, s, float.NaN, false, -90f, default, tapHit);
         }
@@ -1376,13 +1376,13 @@ namespace FlockFive
             CoachFocus(view, out var aim, out var glow, out float dx, out float dy);
             var cam = _garden.Cam;
             float span = cam.orthographicSize * 2f;
-            float ppu = span > 0.01f ? Screen.height / span : 60f;
+            float ppu = span > 0.01f ? PhoneArea.H / span : 60f;
             _cueHolePx = 0.5f * Mathf.Sqrt(dx * dx + dy * dy) * ppu * 1.06f;
             _cueAimWorld = aim;
             var screen = cam.WorldToScreenPoint(aim);
-            _cueAimGui = new Vector2(screen.x, Screen.height - screen.y);
+            _cueAimGui = new Vector2(screen.x, PhoneArea.H - screen.y);
             var holeScreen = cam.WorldToScreenPoint(glow);
-            _cueHoleGui = new Vector2(holeScreen.x, Screen.height - holeScreen.y);
+            _cueHoleGui = new Vector2(holeScreen.x, PhoneArea.H - holeScreen.y);
 
             ShowCoachGlow(glow, dx, dy);
 
@@ -1550,7 +1550,7 @@ namespace FlockFive
             if (age < 0 || age > 1) return false;
             if (_gloveTapHit != null) return _gloveTapHit(screen);
             if (!_gloveTapRectOn) return false;
-            return _gloveTapRect.Contains(new Vector2(screen.x, Screen.height - screen.y));
+            return _gloveTapRect.Contains(new Vector2(screen.x, PhoneArea.H - screen.y));
         }
 
         // Called from the live pose only. An early hide does not refresh it, so the
@@ -1600,7 +1600,7 @@ namespace FlockFive
             var box = SplashNoAdsRect();
             if (box.width < 12f) box = SplashRailSeat(RailVip);
             if (box.width < 2f) return false;
-            return VipContains(box, new Vector2(screen.x, Screen.height - screen.y));
+            return VipContains(box, new Vector2(screen.x, PhoneArea.H - screen.y));
         }
 
         // Branch or gift limb. Reads the cue still showing this frame.
@@ -1707,8 +1707,8 @@ namespace FlockFive
         {
             if (float.IsNaN(aim.x) || float.IsNaN(aim.y)) return false;
             if (aim.sqrMagnitude < 1f) return false;
-            if (aim.x < -80f || aim.x > Screen.width + 80f) return false;
-            if (aim.y < -80f || aim.y > Screen.height + 80f) return false;
+            if (aim.x < -80f || aim.x > PhoneArea.W + 80f) return false;
+            if (aim.y < -80f || aim.y > PhoneArea.H + 80f) return false;
             if (!string.IsNullOrEmpty(_gloveStepLine) && string.IsNullOrEmpty(_cueLine))
                 return false;
             return true;
@@ -1773,7 +1773,7 @@ namespace FlockFive
             float faceDh = GloveDh(s);
             float faceDw = GloveDrawW(faceDh);
             Vector2 facePerch = _gloveTip;
-            CommitApproachFace(ref facePerch, aimGui, faceDh, faceDw, Screen.width, Screen.height, _gloveMirror,
+            CommitApproachFace(ref facePerch, aimGui, faceDh, faceDw, PhoneArea.W, PhoneArea.H, _gloveMirror,
                 out float faceAng, out bool faceMirror);
             _gloveTip = facePerch;
             _gloveShown = facePerch;
@@ -2094,7 +2094,7 @@ namespace FlockFive
             CoachAimAway(_cueAimGui, s, out away, out float side, _glovePerchLift, _gloveFromLeft);
             float lift = float.IsNaN(_glovePerchLift) ? GloveRise(s) : _glovePerchLift;
             rest = _cueAimGui + away * side + new Vector2(0f, -lift);
-            mirror = _gloveFromLeft || _cueAimGui.x >= Screen.width * 0.5f;
+            mirror = _gloveFromLeft || _cueAimGui.x >= PhoneArea.W * 0.5f;
             ang = ClampUpright(mirror);
         }
 
@@ -2105,7 +2105,7 @@ namespace FlockFive
         void CoachAimAway(Vector2 aim, float s, out Vector2 away, out float gap,
             float perchLift = float.NaN, bool fromLeft = false)
         {
-            bool fromRight = !fromLeft && aim.x < Screen.width * 0.5f;
+            bool fromRight = !fromLeft && aim.x < PhoneArea.W * 0.5f;
             away = new Vector2(fromRight ? 1f : -1f, 0f);
             bool mirror = !fromRight;
             float ang = ClampUpright(mirror);
@@ -2161,7 +2161,7 @@ namespace FlockFive
             if (cam == null || !cam.orthographic) return Mathf.Max(gap, 72f * s);
             float span = cam.orthographicSize * 2f;
             if (span < 0.01f) return Mathf.Max(gap, 72f * s);
-            return Mathf.Max(gap, LiftHalfW * (Screen.height / span) + 16f * s);
+            return Mathf.Max(gap, LiftHalfW * (PhoneArea.H / span) + 16f * s);
         }
 
         bool GloveHitsBirds(Vector2 pivot, float ang, float s, bool mirror = false)
@@ -2236,8 +2236,8 @@ namespace FlockFive
             float pad = 4f * s;
             float gx0 = (a.x < c.x ? a.x : c.x) - pad;
             float gx1 = (a.x > c.x ? a.x : c.x) + pad;
-            float gy0 = Screen.height - (a.y > c.y ? a.y : c.y) - pad;
-            float gy1 = Screen.height - (a.y < c.y ? a.y : c.y) + pad;
+            float gy0 = PhoneArea.H - (a.y > c.y ? a.y : c.y) - pad;
+            float gy1 = PhoneArea.H - (a.y < c.y ? a.y : c.y) + pad;
             float dh = GloveDh(s);
             var rect = GloveRect(pivot, dh, mirror);
             if (!RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 6f * s, out var box)) return false;
@@ -2402,7 +2402,7 @@ namespace FlockFive
                 {
                     dir = new Vector2(-away.x, 0f);
                     if (dir.sqrMagnitude < 0.25f)
-                        dir = new Vector2(aim.x < Screen.width * 0.5f ? -1f : 1f, 0f);
+                        dir = new Vector2(aim.x < PhoneArea.W * 0.5f ? -1f : 1f, 0f);
                     dir.Normalize();
                     hand = dir.x < 0f;
                     handAng = ClampUpright(hand);
@@ -2538,7 +2538,7 @@ namespace FlockFive
 
         static void StandardCaptionBox(float s, out float w, out float h, out int lo, out int hi)
         {
-            w = LessonColumnWidth(Screen.width, Screen.height);
+            w = LessonColumnWidth(PhoneArea.W, PhoneArea.H);
             h = Mathf.Max(128f * s, 108f);
             lo = 18;
             hi = Mathf.RoundToInt(32f * s);
@@ -2642,10 +2642,10 @@ namespace FlockFive
         // Safe area in GUI space, inset so the outline does not sit on the notch.
         static Rect CoachSafeGui(float margin)
         {
-            var a = Screen.safeArea;
+            var a = PhoneArea.Safe;
             Rect safe = (a.width < 8f || a.height < 8f)
-                ? new Rect(0f, 0f, Screen.width, Screen.height)
-                : new Rect(a.x, Screen.height - a.yMax, a.width, a.height);
+                ? new Rect(0f, 0f, PhoneArea.W, PhoneArea.H)
+                : new Rect(a.x, PhoneArea.H - a.yMax, a.width, a.height);
             float m = Mathf.Max(0f, margin);
             if (safe.width <= m * 2f + 8f || safe.height <= m * 2f + 8f)
                 return safe;
@@ -2784,8 +2784,8 @@ namespace FlockFive
             // including the texture corners, so the garden outside the limb falls off
             // without a second rectangle to seam against.
             var c = _cueHoleGui;
-            float sw = Screen.width;
-            float sh = Screen.height;
+            float sw = PhoneArea.W;
+            float sh = PhoneArea.H;
             float reach = Mathf.Max(
                 Mathf.Max(c.magnitude, Vector2.Distance(c, new Vector2(sw, 0f))),
                 Mathf.Max(Vector2.Distance(c, new Vector2(0f, sh)), Vector2.Distance(c, new Vector2(sw, sh))));
@@ -2819,7 +2819,7 @@ namespace FlockFive
         static float CaptionBelowBack(float s, float top)
         {
             var back = BackMedalRect(s, top);
-            float platePadY = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f).y;
+            float platePadY = CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f).y;
             return back.yMax + TutorCaptionGap * s + platePadY;
         }
 
@@ -2830,7 +2830,7 @@ namespace FlockFive
         // The text box r is untouched, so the font a lesson fits stays the same.
         static Rect CoachPanelRect(Rect r, Vector2 extra)
         {
-            var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+            var hang = CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f);
             float padX = hang.x + (extra.x > 0f ? extra.x : 0f);
             float padY = hang.y + (extra.y > 0f ? extra.y : 0f);
             return new Rect(r.x - padX, r.y - padY, r.width + padX * 2f, r.height + padY * 2f);
@@ -3002,9 +3002,9 @@ namespace FlockFive
         Rect BeeGardenPlate(float s)
         {
             string line = string.IsNullOrEmpty(_cueLine) ? HiveIntroLine : _cueLine;
-            float w = Screen.width > 2f ? Screen.width : 1179f;
-            float h = Screen.height > 2f ? Screen.height : 2556f;
-            var safe = Screen.safeArea;
+            float w = PhoneArea.W > 2f ? PhoneArea.W : 1179f;
+            float h = PhoneArea.H > 2f ? PhoneArea.H : 2556f;
+            var safe = PhoneArea.Safe;
             if (safe.width < 2f || safe.height < 2f) safe = new Rect(0f, 0f, w, h);
             return BannerRect("bee.garden", line, w, h, safe, new Rect(0f, 0f, w, 64f), 0f, false, s, out _);
         }
@@ -3038,7 +3038,7 @@ namespace FlockFive
             // A parade must not latch a plate against birds that are off the perch.
             if (CoachResetHolds())
             {
-                float x = placeX >= 0f ? placeX : (Screen.width - w) * 0.5f;
+                float x = placeX >= 0f ? placeX : (PhoneArea.W - w) * 0.5f;
                 float y = placeY >= 0f ? placeY : top;
                 return new Rect(x, y, w, h);
             }
@@ -3054,12 +3054,12 @@ namespace FlockFive
             bool gift = false;
             if (placeY >= 0f)
             {
-                restX = placeX >= 0f ? placeX : (Screen.width - w) * 0.5f;
+                restX = placeX >= 0f ? placeX : (PhoneArea.W - w) * 0.5f;
                 restY = placeY;
             }
             else
             {
-                restX = (Screen.width - w) * 0.5f;
+                restX = (PhoneArea.W - w) * 0.5f;
                 restY = top + TutorCaptionGap * s;
                 if (text == GiftStuckLine)
                 {
@@ -3069,7 +3069,7 @@ namespace FlockFive
                     Rect low = PlaceCaption(s, w, h, underLogo);
                     restX = low.x;
                     restY = low.y + GiftCaptionDrop * s;
-                    float limit = Screen.height - h - 8f;
+                    float limit = PhoneArea.H - h - 8f;
                     if (restY > limit) restY = limit;
                 }
             }
@@ -3111,7 +3111,7 @@ namespace FlockFive
             if (!panel.Overlaps(zone)) return seat;
             HudLayout(out float hs, out float top, out float bot, out _, out _);
             float floor = top + TutorCaptionGap * hs;
-            float limit = Screen.height - bot - 8f * hs;
+            float limit = PhoneArea.H - bot - 8f * hs;
             float hangTop = seat.y - panel.y;
             float hangBot = panel.yMax - seat.yMax;
             var below = seat;
@@ -3121,7 +3121,7 @@ namespace FlockFive
             bool BelowOk() => below.y >= floor - 0.5f && below.y + seat.height <= limit + 0.5f;
             bool AboveOk() => above.y >= floor - 0.5f && above.y + seat.height <= zone.yMin - 2f
                 && above.y + seat.height <= limit + 0.5f;
-            bool high = zone.center.y < Screen.height * 0.55f;
+            bool high = zone.center.y < PhoneArea.H * 0.55f;
             if (high && BelowOk()) return below;
             if (!high && AboveOk()) return above;
             if (BelowOk()) return below;
@@ -3151,7 +3151,7 @@ namespace FlockFive
             if (!panel.Overlaps(zone)) return seat;
             float padY = seat.y - panel.y;
             float want = zone.yMax + 4f + padY;
-            float cap = Screen.height - seat.height - 8f;
+            float cap = PhoneArea.H - seat.height - 8f;
             if (want > cap) want = cap;
             if (want < 8f) want = 8f;
             if (want <= seat.y) return seat;
@@ -3191,7 +3191,7 @@ namespace FlockFive
             float y = _cueAimGui.y + 32f * s + gap;
             if (GloveArcRect(s, false, out var sweep) && sweep.yMax + gap > y)
                 y = sweep.yMax + gap;
-            float bot = Screen.height - preferred.height - 8f;
+            float bot = PhoneArea.H - preferred.height - 8f;
             if (y > bot) y = bot;
             if (y < 8f) y = 8f;
             var seat = preferred;
@@ -3201,10 +3201,10 @@ namespace FlockFive
 
         bool TutorTargetLow()
         {
-            float h = Screen.height;
+            float h = PhoneArea.H;
             if (h < 2f) return false;
             if (_gloveAct == TutorGloveAct.None && !_glovePosing && !_gloveLockOn) return false;
-            if (_cueAimGui.x < -40f || _cueAimGui.x > Screen.width + 40f) return false;
+            if (_cueAimGui.x < -40f || _cueAimGui.x > PhoneArea.W + 40f) return false;
             if (_cueAimGui.y < 0f || _cueAimGui.y > h + 40f) return false;
             return _cueAimGui.y > h * TutorAimLow;
         }
@@ -3264,21 +3264,21 @@ namespace FlockFive
             float y = block - gap - h;
             if (y < minY) y = minY;
             if (y < 4f) y = 4f;
-            float bot = Screen.height - h - 8f;
+            float bot = PhoneArea.H - h - 8f;
             if (y > bot) y = bot;
 
             var seat = preferred;
             seat.y = y;
             if (!TutorCaptionBlocked(seat, s)) return seat;
 
-            float leftX = Mathf.Max(8f, Screen.safeArea.xMin + 6f);
-            float rightX = Screen.width - preferred.width - Mathf.Max(8f, Screen.width - Screen.safeArea.xMax + 6f);
+            float leftX = Mathf.Max(8f, PhoneArea.Safe.xMin + 6f);
+            float rightX = PhoneArea.W - preferred.width - Mathf.Max(8f, PhoneArea.W - PhoneArea.Safe.xMax + 6f);
             if (rightX < leftX) rightX = leftX;
             var left = seat;
             left.x = leftX;
             var right = seat;
             right.x = rightX;
-            bool aimRight = _cueAimGui.x >= Screen.width * 0.5f;
+            bool aimRight = _cueAimGui.x >= PhoneArea.W * 0.5f;
             if (aimRight && !TutorCaptionBlocked(left, s)) return left;
             if (!aimRight && !TutorCaptionBlocked(right, s)) return right;
             if (!TutorCaptionBlocked(left, s)) return left;
@@ -3332,7 +3332,7 @@ namespace FlockFive
                 if (!giftDrop || cand.y <= preferred.y + 0.5f) return cand;
                 float kept = cand.y;
                 cand.y += GiftCaptionDrop * s;
-                float cap = Screen.height - cand.height - 8f;
+                float cap = PhoneArea.H - cand.height - 8f;
                 if (cand.y > cap) cand.y = cap;
                 if (cand.y < 8f) cand.y = 8f;
                 if (HitsGlove(cand) || HitsGarden(cand, out _) || Blocked(cand))
@@ -3391,10 +3391,10 @@ namespace FlockFive
                 var left = new Rect(leftX, preferred.y, preferred.width, preferred.height);
                 var right = new Rect(rightX, preferred.y, preferred.width, preferred.height);
                 bool leftOk = leftX >= 4f && ClearOfBoth(left);
-                bool rightOk = right.xMax <= Screen.width - 4f && ClearOfBoth(right);
+                bool rightOk = right.xMax <= PhoneArea.W - 4f && ClearOfBoth(right);
                 if (leftOk || rightOk)
                 {
-                    bool wantLeft = _cueAimGui.x >= Screen.width * 0.5f;
+                    bool wantLeft = _cueAimGui.x >= PhoneArea.W * 0.5f;
                     if (wantLeft && leftOk) return left;
                     if (!wantLeft && rightOk) return right;
                     if (leftOk) return left;
@@ -3405,7 +3405,7 @@ namespace FlockFive
                     gloveClear = left;
                     foundGloveClear = true;
                 }
-                if (!rightOk && right.xMax <= Screen.width - 4f && !HitsGlove(right) && !Blocked(right) && !foundGloveClear)
+                if (!rightOk && right.xMax <= PhoneArea.W - 4f && !HitsGlove(right) && !Blocked(right) && !foundGloveClear)
                 {
                     gloveClear = right;
                     foundGloveClear = true;
@@ -3497,7 +3497,7 @@ namespace FlockFive
         static Rect CaptionPlateBox(Rect r, Vector2 platePad, float textH, float textBoxH, float slack)
         {
             if (slack >= 0.999f || textH <= 1f) return r;
-            float pad = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f).y + (platePad.y > 0f ? platePad.y : 0f);
+            float pad = CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f).y + (platePad.y > 0f ? platePad.y : 0f);
             float plateH = r.height + pad * 2f;
             float inkH = textH;  // an overflowing line keeps the full box
             float slackH = Mathf.Max(0f, plateH - inkH) * Mathf.Clamp01(slack);
@@ -3590,7 +3590,7 @@ namespace FlockFive
             if (float.IsNegativeInfinity(worldTop)) return false;
             var sp = cam.WorldToScreenPoint(new Vector3(cam.transform.position.x, worldTop, 0f));
             if (sp.z < 0f) return false;
-            _boardTopY = Screen.height - sp.y;
+            _boardTopY = PhoneArea.H - sp.y;
             y = _boardTopY;
             return _boardTopY > 0f;
         }
@@ -3618,7 +3618,7 @@ namespace FlockFive
             if (float.IsPositiveInfinity(worldLow)) return false;
             var sp = cam.WorldToScreenPoint(new Vector3(cam.transform.position.x, worldLow, 0f));
             if (sp.z < 0f) return false;
-            _boardBotY = Screen.height - sp.y;
+            _boardBotY = PhoneArea.H - sp.y;
             y = _boardBotY;
             return _boardBotY > 0f;
         }
@@ -3668,7 +3668,8 @@ namespace FlockFive
             if (key == _gardenSeatKey) return _gardenSeatY;
             float inset = Mathf.Max(8f, safe.yMin + 4f);
             float refH = GardenRefBandH(w, h, safe, s, 0f);
-            CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
+            CornerAnchor.Garden(w, h, safe, out _, out _, out _, out _, out var hive);
+            var restart = CornerAnchor.GardenBottomSeat(w, h, safe); // b102 banner seat, not the moved button
             float y = GardenBannerY(refH, 0f, restart, hive, h, inset, 8f * s, 0f);
             _gardenSeatKey = key; _gardenSeatY = y;
             return y;
@@ -3732,12 +3733,26 @@ namespace FlockFive
             // The adopt scene is a home lesson, not a card: its captions take the banner.
             bool popup = om != ModalBlock.Id.None && om != ModalBlock.Id.Adopt && om != ModalBlock.Id.Streak;
             if (!_capNoGate && (popup || CaptionLayout.WantsBeeIcon(text))) { SnugUses++; BannerSkip = popup ? "popup " + OpenModal() : "bee"; return false; }
-            float w = Screen.width;
-            float screenH = Screen.height;
-            var safe = Screen.safeArea;
+            float w = PhoneArea.W;
+            float screenH = PhoneArea.H;
+            var safe = PhoneArea.Safe;
             // Shared seat first. The glove check uses this band, then a spot with Drop
             // lowers its own bottom over the VIP badge. Other spots never enter that step.
             band = BannerRect(spot, text, w, screenH, safe, seat, _pokerTitleBottom, _adoptLive, s, out px, false);
+            // iPad fix: the coins line seats from the poker button's laid-out rect and the
+            // landed glove pose only (no per-frame glove motion), so it holds still, keeps the
+            // banner style every frame (no flip to the snug box), and lines up with the glove.
+            if (spot == "home.poker")
+            {
+                var stP = CoachLineStyle();
+                var fitP = CaptionLayout.FitBanner(stP, text, CaptionLayout.BannerMeasureWidth(w, stP, text, px), px);
+                BannerText = string.IsNullOrEmpty(fitP.Shown) ? text : fitP.Shown;
+                px = fitP.Font;
+                band = PokerCoinsBand(band, w, screenH, safe, s);
+                BannerSkip = "";
+                BannerUses++;
+                return true;
+            }
             var st = CoachLineStyle();
             float maxW = CaptionLayout.BannerMeasureWidth(w, st, text, px);
             var fitted = CaptionLayout.FitBanner(st, text, maxW, px);
@@ -3776,9 +3791,7 @@ namespace FlockFive
             bool pokerBack = spot == "poker.back";
             if (pokerBack)
             {
-                var g = _pokerCapGeo;
-                var cover = g.Bet.width > 2f && g.Act.width > 2f ? Rect.MinMaxRect(Mathf.Min(g.Bet.xMin, g.Act.xMin), Mathf.Min(g.Bet.yMin, g.Act.yMin), Mathf.Max(g.Bet.xMax, g.Act.xMax), Mathf.Max(g.Bet.yMax, g.Act.yMax)) : (g.Bet.width > 2f ? g.Bet : g.Act);
-                band = CaptionLayout.BandCovering(band, cover, w, 6f * s);
+                band = PokerBackBand(band, screenH, safe, s);
                 bottomSeat = true;
             }
             if (!bee && !adHand && !bottomSeat)
@@ -3820,12 +3833,6 @@ namespace FlockFive
             }
             else if (bee && band.y < minTop + screenH * CaptionLayout.BeeGardenDropFrac)
                 band.y = minTop + screenH * CaptionLayout.BeeGardenDropFrac;
-            // b94: the coins line rides over the Level box (its old cover seat), so it never sits on
-            // the avatar bird. The poker button and its glove are up on the rail, well above it.
-            if (spot == "home.poker")
-            {
-                band.y = CoinsBannerY(w, screenH, safe, s, minTop, band.y);
-            }
             float drop = CaptionStyles.Drop(spot);
             if (drop > 0f)
                 CoverDown(ref band, AdoptVipBadgeRect(w, screenH, safe), drop * s, SplashWordBottom(screenH, safe, s), MinLogoClear(screenH, safe, s));
@@ -3834,6 +3841,41 @@ namespace FlockFive
             BannerSkip = "";
             BannerUses++;
             return true;
+        }
+
+        // iPad fix: 'Tap the back button' seats near the back medal (top-left): under the back
+        // medal, logo/halo and PAY TABLE tab, above the dealt row, inside the safe area.
+        Rect PokerBackBand(Rect band, float h, Rect safe, float s)
+        {
+            var g = _pokerCapGeo;
+            float gap = 8f * s;
+            float safeTop = h - safe.yMax, safeBottom = h - safe.yMin; // safeArea is bottom-up
+            float y = Mathf.Max(safeTop, g.Back.yMax, g.LogoClear, g.Tab.yMax) + gap;
+            if (g.Row.height > 2f && y + band.height > g.Row.yMin - gap)
+                y = Mathf.Max(Mathf.Max(safeTop, g.Back.yMax + gap), g.Row.yMin - gap - band.height);
+            if (y + band.height > safeBottom) y = safeBottom - band.height;
+            band.y = y;
+            return band;
+        }
+
+        // Under the poker button and its landed glove, inside the safe area, off the main buttons.
+        Rect PokerCoinsBand(Rect band, float w, float h, Rect safe, float s)
+        {
+            float gap = 8f * s;
+            float safeTop = h - safe.yMax, safeBottom = h - safe.yMin; // safeArea is bottom-up
+            float minTop = Mathf.Max(safeTop, HomeBannerTop(h, safe, s));
+            var button = SplashPokerRect();
+            if (button.width > 2f)
+            {
+                var hand = PokerPointHand(GloveTargetAt(button, PokerGloveU, PokerGloveV), s);
+                float rowBottom = Mathf.Max(button.yMax, hand.height > 2f ? hand.yMax : 0f);
+                band.y = Mathf.Max(minTop, rowBottom + gap);
+            }
+            else band.y = CoinsBannerY(w, h, safe, s, minTop, band.y);
+            LiftOffMainButtons(ref band, w, h, safe, s, default, minTop);
+            if (band.yMax > safeBottom) band.y = safeBottom - band.height;
+            if (band.y < minTop) band.y = minTop;
+            return band;
         }
 
         // b95 (Brandon): the home coins banner seats with its top edge just under "LEVEL N", so the
@@ -4042,7 +4084,7 @@ namespace FlockFive
             {
                 // Floor is the daily-line size. FitFloor wraps extra lines there
                 // instead of shrinking further. Authored newlines stay.
-                var fit = FitLessonText(text, textR.width, textR.height, lo, hi, Screen.width, Screen.height);
+                var fit = FitLessonText(text, textR.width, textR.height, lo, hi, PhoneArea.W, PhoneArea.H);
                 _coachSizedPx = fit.Font;
                 CapFontDbg = "font " + fit.Font + " hi " + hi + " textR " + textR + " r " + r + " fitH " + fit.TextH + " s " + s;
                 _coachSizedTextH = fit.TextH;
@@ -4093,7 +4135,7 @@ namespace FlockFive
             }
             if (slack < 0.999f && _coachSizedTextH > 1f)
             {
-                var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+                var hang = CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f);
                 float hangX = hang.x + (platePad.x > 0f ? platePad.x : 0f);
                 float hangY = hang.y + (platePad.y > 0f ? platePad.y : 0f);
                 var snug = CaptionLayout.MeasureSnug(st, _coachShown ?? text, _coachSizedPx, hangX, hangY);
@@ -4337,8 +4379,8 @@ namespace FlockFive
             if (a.z < 0f && c.z < 0f) return false;
             float x0 = (a.x < c.x ? a.x : c.x) - pad;
             float x1 = (a.x > c.x ? a.x : c.x) + pad;
-            float y0 = Screen.height - (a.y > c.y ? a.y : c.y) - pad;
-            float y1 = Screen.height - (a.y < c.y ? a.y : c.y) + pad;
+            float y0 = PhoneArea.H - (a.y > c.y ? a.y : c.y) - pad;
+            float y1 = PhoneArea.H - (a.y < c.y ? a.y : c.y) + pad;
             box = new Rect(x0, y0, Mathf.Max(0f, x1 - x0), Mathf.Max(0f, y1 - y0));
             return box.width > 1f && box.height > 1f;
         }
@@ -4456,8 +4498,8 @@ namespace FlockFive
             if (a.z < 0f && b.z < 0f) return false;
             float gx0 = (a.x < b.x ? a.x : b.x) - pad;
             float gx1 = (a.x > b.x ? a.x : b.x) + pad;
-            float gy0 = Screen.height - (a.y > b.y ? a.y : b.y) - pad;
-            float gy1 = Screen.height - (a.y < b.y ? a.y : b.y) + pad;
+            float gy0 = PhoneArea.H - (a.y > b.y ? a.y : b.y) - pad;
+            float gy1 = PhoneArea.H - (a.y < b.y ? a.y : b.y) + pad;
             box = new Rect(gx0, gy0, Mathf.Max(0f, gx1 - gx0), Mathf.Max(0f, gy1 - gy0));
             return true;
         }
@@ -4495,7 +4537,7 @@ namespace FlockFive
             float dw = dh * (tex.width / (float)tex.height);
             // b88: a locked approach does not flip to fit the glass. An unlocked
             // rest pose may still pull an off-glass pivot inside, without a new aim.
-            DrawnGlovePose(ref pivot, ref ang, ref mirror, dw, dh, Screen.width, Screen.height, _gloveFaceOn);
+            DrawnGlovePose(ref pivot, ref ang, ref mirror, dw, dh, PhoneArea.W, PhoneArea.H, _gloveFaceOn);
             var rect = new Rect(
                 pivot.x - _gloveTipU * dw,
                 pivot.y - (1f - _gloveTipV) * dh,
@@ -4551,7 +4593,7 @@ namespace FlockFive
             if (CaptionLayout.GloveOverCaptions) return false; // b92: never cut the glove at a plate
             if (_capRepainting || _capTop.Kind == 0 || _capTop.Frame != Time.frameCount) return false;
             if (!CaptionLayout.GloveHitsCaption(gloveBox, _capTop.Plate)) return false;
-            var keep = CaptionLayout.GloveKeepRect(_capTop.Plate, tip, Screen.width, Screen.height);
+            var keep = CaptionLayout.GloveKeepRect(_capTop.Plate, tip, PhoneArea.W, PhoneArea.H);
             if (keep.width < 1f || keep.height < 1f) return false;
             if (_gloveClipMat == null)
             {
@@ -4571,7 +4613,7 @@ namespace FlockFive
             _gloveClipMat.mainTexture = tex;
             _gloveClipMat.SetPass(0);
             GL.PushMatrix();
-            GL.LoadPixelMatrix(0f, Screen.width, Screen.height, 0f);
+            GL.LoadPixelMatrix(0f, PhoneArea.W, PhoneArea.H, 0f);
             GL.Begin(GL.TRIANGLES);
             GL.Color(new Color(1f, 1f, 1f, alpha));
             for (int i = 1; i + 1 < poly.Count; i++)
@@ -4735,7 +4777,7 @@ namespace FlockFive
             }
             var sp = cam.WorldToScreenPoint(focus);
             if (sp.z < 0f) return false;
-            gui = new Vector2(sp.x, Screen.height - sp.y);
+            gui = new Vector2(sp.x, PhoneArea.H - sp.y);
             return true;
         }
 
@@ -4759,7 +4801,7 @@ namespace FlockFive
             }
             var sp = cam.WorldToScreenPoint(focus);
             if (sp.z < 0f) return false;
-            gui = new Vector2(sp.x, Screen.height - sp.y);
+            gui = new Vector2(sp.x, PhoneArea.H - sp.y);
             return true;
         }
 
@@ -4819,7 +4861,7 @@ namespace FlockFive
                 return line;
             }
             float below = dialog.yMax + gap;
-            if (below + line.height <= Screen.height - 4f)
+            if (below + line.height <= PhoneArea.H - 4f)
             {
                 line.y = below;
                 return line;
@@ -4831,7 +4873,7 @@ namespace FlockFive
                 line.height = Mathf.Max(28f * s, room - 4f);
                 return line;
             }
-            float roomB = Screen.height - 4f - below;
+            float roomB = PhoneArea.H - 4f - below;
             if (roomB > 28f * s)
             {
                 line.y = below;
@@ -4849,7 +4891,7 @@ namespace FlockFive
             const float plateY = 12f;
             float words = FlowerLevelTop() - plateY;
             float wide = platform.width * 0.75f;
-            float low = Screen.height * 0.72f;
+            float low = PhoneArea.H * 0.72f;
             for (int i = 0; i < _blockN; i++)
             {
                 float w = _blocks[i].X1 - _blocks[i].X0;
@@ -4879,7 +4921,7 @@ namespace FlockFive
                 if (_blocks == null || _blockN >= _blocks.Length) GrowBlocks();
                 if (_blocks != null && _blockN < _blocks.Length)
                 {
-                    var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+                    var hang = CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f);
                     float px = hang.x;
                     float py = hang.y;
                     _blocks[_blockN].X0 = obstacle.xMin - px;
@@ -4929,7 +4971,7 @@ namespace FlockFive
             if (innerR < 4f) innerR = 4f;
             if (innerR < innerL) innerR = innerL;
             // The hand sits on the aim's side. Try the open side first.
-            bool gloveOnRight = _cueAimGui.x >= Screen.width * 0.5f;
+            bool gloveOnRight = _cueAimGui.x >= PhoneArea.W * 0.5f;
             float prefer = gloveOnRight ? innerL : innerR;
             float other = gloveOnRight ? innerR : innerL;
             if (Mathf.Abs(prefer - want.x) > 1f && SeekOpenCaption(want, prefer, s, out found))
@@ -4948,7 +4990,7 @@ namespace FlockFive
         {
             placed = want;
             float minY = CaptionFloorY(s);
-            float maxY = Screen.height - want.height - 4f;
+            float maxY = PhoneArea.H - want.height - 4f;
             if (maxY < minY) return false;
             for (float y = minY; y <= maxY; y += 6f)
             {
@@ -4975,7 +5017,7 @@ namespace FlockFive
             float above = sweep.yMin - gap - want.height;
             float below = sweep.yMax + gap;
             if (above >= 4f) parked.y = above;
-            else if (below + want.height <= Screen.height - 4f) parked.y = below;
+            else if (below + want.height <= PhoneArea.H - 4f) parked.y = below;
             bool overX = parked.xMax > sweep.xMin - gap && parked.x < sweep.xMax + gap;
             bool overY = parked.yMax > sweep.yMin - gap && parked.y < sweep.yMax + gap;
             float leftOf = sweep.xMin - gap - want.width;
@@ -5128,7 +5170,7 @@ namespace FlockFive
         bool CaptionSeat(Rect candidate, float s, out Rect placed, bool pin = false)
         {
             placed = candidate;
-            if (candidate.y < 2f || candidate.yMax > Screen.height - 2f) return false;
+            if (candidate.y < 2f || candidate.yMax > PhoneArea.H - 2f) return false;
             if (BlocksHit(candidate)) return false;
             if (pin) return true;
             var seated = SeatSplashCaption(candidate, s);
@@ -5201,7 +5243,7 @@ namespace FlockFive
             if (right - left < 80f * s)
             {
                 left = 8f;
-                right = Screen.width - 8f;
+                right = PhoneArea.W - 8f;
             }
             float span = right - left;
             if (caption.width > span) caption.width = Mathf.Max(80f * s, span);
@@ -5584,7 +5626,7 @@ namespace FlockFive
             gate.AnyTap = any;
             gate.Pass = any && !CoachTap.Consumes(step);
             if (!any) return;
-            gate.Target = new Rect(0f, 0f, Mathf.Max(2f, Screen.width), Mathf.Max(2f, Screen.height));
+            gate.Target = new Rect(0f, 0f, Mathf.Max(2f, PhoneArea.W), Mathf.Max(2f, PhoneArea.H));
         }
 
         bool BadgerLessonGateLive()
@@ -5801,7 +5843,7 @@ namespace FlockFive
                 if (_gloveTapHit != null && GloveFocusLive())
                 {
                     var p0 = e.mousePosition;
-                    bool inside = GloveTapHits(new Vector2(p0.x, Screen.height - p0.y));
+                    bool inside = GloveTapHits(new Vector2(p0.x, PhoneArea.H - p0.y));
                     if (!GloveFocusAllows(true, true, inside, HomeGearExempt(p0) || GiftCloseExempt(p0)))
                     {
                         if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
@@ -6183,7 +6225,7 @@ namespace FlockFive
             if (_hiveLevelLive)
             {
                 HudLayout(out _, out _, out _, out _, out var hive);
-                var gui = new Vector2(screen.x, Screen.height - screen.y);
+                var gui = new Vector2(screen.x, PhoneArea.H - screen.y);
                 if (hive.Contains(gui)) OpenLevelHive();
             }
         }
@@ -6236,8 +6278,8 @@ namespace FlockFive
             // Build 83 item 11b: home captions sit across the top, right under the title/HUD row.
             if (y + h > y1) y = Mathf.Max(8f, y1 - h);
 
-            float left = Mathf.Max(18f * s, Screen.safeArea.xMin + 12f);
-            float right = Screen.width - Mathf.Max(18f * s, Screen.width - Screen.safeArea.xMax + 12f);
+            float left = Mathf.Max(18f * s, PhoneArea.Safe.xMin + 12f);
+            float right = PhoneArea.W - Mathf.Max(18f * s, PhoneArea.W - PhoneArea.Safe.xMax + 12f);
             float pad = 12f * s;
             void Eat(Rect obstacle, bool fromLeft)
             {
@@ -6258,11 +6300,11 @@ namespace FlockFive
             Eat(SplashPokerRect(), false);
 
             float span = right - left;
-            float w = Mathf.Min(span, Screen.width * 0.58f);
+            float w = Mathf.Min(span, PhoneArea.W * 0.58f);
             if (w < 96f * s)
             {
-                w = Mathf.Min(Screen.width * 0.62f, Screen.width - 36f * s);
-                left = (Screen.width - w) * 0.5f;
+                w = Mathf.Min(PhoneArea.W * 0.62f, PhoneArea.W - 36f * s);
+                left = (PhoneArea.W - w) * 0.5f;
             }
             else left += (span - w) * 0.5f;
             return new Rect(left, y, w, h);
@@ -6433,7 +6475,7 @@ namespace FlockFive
         static Rect AdHandCaptionRect(float s)
         {
             GiftCardLayout(s, out _, out var flower);
-            float w = Mathf.Min(StandardPopupWidth(s), Screen.width - 24f);
+            float w = Mathf.Min(StandardPopupWidth(s), PhoneArea.W - 24f);
             float h = 56f * s;
             float below = flower.yMax;
             return PlacePopupTutorCaption(s, w, h, below, flower);
@@ -6526,24 +6568,24 @@ namespace FlockFive
         // Poker intro caption: bigger than the standard line and seated over the LEVEL
         // button, so the player's eye (and tap) goes to Poker instead. Same shared
         // caption box; this only picks the size (PokerIntroFontHi) and the seat.
-        int PokerIntroFontHi(float s) => Mathf.Max(24, Mathf.RoundToInt(46f * s * CaptionLayout.TextFit(Screen.width, Screen.height)));
-        static int LessonFontHi(float s) => Mathf.RoundToInt(32f * s * CaptionLayout.TextFit(Screen.width, Screen.height));
+        int PokerIntroFontHi(float s) => Mathf.Max(24, Mathf.RoundToInt(46f * s * CaptionLayout.TextFit(PhoneArea.W, PhoneArea.H)));
+        static int LessonFontHi(float s) => Mathf.RoundToInt(32f * s * CaptionLayout.TextFit(PhoneArea.W, PhoneArea.H));
 
         Rect PokerIntroBox(float s)
         {
             var r = AnchoredCaptionBox(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering, out _);
             var disc = FlowerPlayRect();
-            float railW = Screen.width * 0.17f;
-            float maxW = Screen.width - railW * 2f;
+            float railW = PhoneArea.W * 0.17f;
+            float maxW = PhoneArea.W - railW * 2f;
             if (r.width > maxW) { r.x += (r.width - maxW) * 0.5f; r.width = maxW; }
-            r.x = (Screen.width - r.width) * 0.5f;
+            r.x = (PhoneArea.W - r.width) * 0.5f;
             if (disc.width > 2f) r.y = disc.yMin - r.height - 18f * s;
             float floorY = TopHud() + (56f * 2f + 4f) * s + 64f * s;
             // b89: the line sits under the balance row (pig and $ total), never on it.
             var pig = PiggyRect(s);
             if (pig.height > 2f)
             {
-                var pad0 = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+                var pad0 = CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f);
                 float under = pig.yMax + 6f + pad0.y;
                 if (under > floorY) floorY = under;
             }
@@ -6551,7 +6593,7 @@ namespace FlockFive
             var button = SplashPokerRect();
             var aim = GloveTargetAt(button, PokerGloveU, PokerGloveV);
             var hand = PokerPointHand(aim, s);
-            var hang = CaptionLayout.BoxPad(Screen.height > 2f ? Screen.height : 720f);
+            var hang = CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f);
             float padX = hang.x + (_anchorPad.x > 0f ? _anchorPad.x : 0f);
             float padY = hang.y + (_anchorPad.y > 0f ? _anchorPad.y : 0f);
             // Tall phones: the open sky between the glove/button row and the drawn disc
@@ -6567,9 +6609,9 @@ namespace FlockFive
                 if (room >= r.height)
                 {
                     // No rail buttons sit this low, so the line takes the screen width.
-                    float edge = Mathf.Max(8f, Screen.width * 0.06f) + hang.x;
+                    float edge = Mathf.Max(8f, PhoneArea.W * 0.06f) + hang.x;
                     r.x = edge;
-                    r.width = Screen.width - edge * 2f;
+                    r.width = PhoneArea.W - edge * 2f;
                     r.y = belowY + (room - r.height) * 0.5f;
                     return r;
                 }
@@ -6698,7 +6740,7 @@ namespace FlockFive
             // Cheap key (no joke lookup per frame): the next level index decides the label.
             int next = LevelData.NextPlay;
             bool same = _anchorLine == line && _anchorKind == anchor
-                && _anchorScreenW == Screen.width && _anchorScreenH == Screen.height
+                && _anchorScreenW == PhoneArea.W && _anchorScreenH == PhoneArea.H
                 && _anchorNext == next;
 #if UNITY_EDITOR
             same = same && ReferenceEquals(_anchorShotEase, _shotEase) && _anchorShotNumber == _shotLevelNumber;
@@ -6709,8 +6751,8 @@ namespace FlockFive
                 return _anchorSeat;
             }
             HomeFlowerLabel(out string ease, out int number);
-            float maxW = Mathf.Min(Screen.width - 48f * s, Screen.width * 0.86f);
-            if (maxW < 80f * s) maxW = Mathf.Min(Screen.width * 0.62f, Screen.width - 36f * s);
+            float maxW = Mathf.Min(PhoneArea.W - 48f * s, PhoneArea.W * 0.86f);
+            if (maxW < 80f * s) maxW = Mathf.Min(PhoneArea.W * 0.62f, PhoneArea.W - 36f * s);
             if (maxW < 8f) maxW = 8f;
             var fit = FitCaptionBox(line, maxW, PokerIntroFontHi(s), 16);
             float w = fit.width;
@@ -6729,7 +6771,7 @@ namespace FlockFive
                 float grow = plate.height * (CoverPlateGrow - 1f) * 0.5f;
                 float padY = Mathf.Max(grow, (ink.height + m * 2f - plate.height) * 0.5f);
                 float padX = Mathf.Max(grow, (ink.width + m * 2f - plate.width) * 0.5f);
-                float roomX = (Screen.width - 8f - plate.width) * 0.5f;
+                float roomX = (PhoneArea.W - 8f - plate.width) * 0.5f;
                 if (padX > roomX) padX = roomX > 0f ? roomX : 0f;
                 platePad = new Vector2(padX, padY);
                 float cx = ink.width > 1f ? ink.center.x : play.center.x;
@@ -6740,8 +6782,8 @@ namespace FlockFive
                 float ex = plate.width * 0.5f - w * 0.5f + padX;
                 float ey = plate.height * 0.5f - h * 0.5f + padY;
                 if (x - ex < 4f) x = 4f + ex;
-                if (x + w + ex > Screen.width - 4f) x = Screen.width - 4f - ex - w;
-                if (y + h + ey > Screen.height - 4f) y = Screen.height - 4f - ey - h;
+                if (x + w + ex > PhoneArea.W - 4f) x = PhoneArea.W - 4f - ex - w;
+                if (y + h + ey > PhoneArea.H - 4f) y = PhoneArea.H - 4f - ey - h;
                 if (y - ey < 4f) y = 4f + ey;
                 r = new Rect(x, y, w, h);
             }
@@ -6750,14 +6792,14 @@ namespace FlockFive
                 float x = play.center.x - w * 0.5f;
                 float y = play.center.y - h * 0.5f;
                 if (x < 4f) x = 4f;
-                if (x + w > Screen.width - 4f) x = Screen.width - 4f - w;
+                if (x + w > PhoneArea.W - 4f) x = PhoneArea.W - 4f - w;
                 r = PlaceCaption(s, w, h, y - 8f * s);
                 r.x = x;
             }
             _anchorLine = line;
             _anchorKind = anchor;
-            _anchorScreenW = Screen.width;
-            _anchorScreenH = Screen.height;
+            _anchorScreenW = PhoneArea.W;
+            _anchorScreenH = PhoneArea.H;
             _anchorNext = next;
 #if UNITY_EDITOR
             _anchorShotEase = _shotEase;
@@ -6973,7 +7015,7 @@ namespace FlockFive
             var band = SplashIntroBand(s);
             int hi = CaptionPx(Mathf.Max(18, Mathf.RoundToInt(34f * s)));
             // b131: never wider than the safe text width, so narrow iPhones keep the plate off the glass edge.
-            float maxW = AdoptResume.DailyCaptionMaxWidth(band.width > 48f ? band.width : Mathf.Min(Screen.width * 0.72f, 420f * s), Screen.width, Screen.height);
+            float maxW = AdoptResume.DailyCaptionMaxWidth(band.width > 48f ? band.width : Mathf.Min(PhoneArea.W * 0.72f, 420f * s), PhoneArea.W, PhoneArea.H);
             // Floor 16 is in the key; the 32*s fallback height only matters on a miss.
             if (!CaptionFitHit(CapFitDaily, DailyIntroLine, maxW, hi, 16, out var size))
             {
@@ -7091,7 +7133,7 @@ namespace FlockFive
         bool NoteLeafTap(Vector2 screen)
         {
             if (!LeafCaptionLive()) return false;
-            var gui = new Vector2(screen.x, Screen.height - screen.y);
+            var gui = new Vector2(screen.x, PhoneArea.H - screen.y);
             if (RestartGui(gui)) return false;
             return FinishLessonTap(CoachStep.Leaf, false, false, DismissLeafIntro);
         }
@@ -7251,7 +7293,7 @@ namespace FlockFive
             _cueAimWorld = aim;
             var screen = cam.WorldToScreenPoint(aim);
             if (screen.z >= 0f)
-                _cueAimGui = new Vector2(screen.x, Screen.height - screen.y);
+                _cueAimGui = new Vector2(screen.x, PhoneArea.H - screen.y);
             NoteLeafKeep(cam);
             ShowCoachGlow(glow, dx, dy);
             // b87: the first leaves intro also shows the glove on the leafy branch
@@ -7525,7 +7567,7 @@ namespace FlockFive
             var step = PestCoachStep();
             if (CoachTap.AnyTap(step))
             {
-                var gui = new Vector2(screen.x, Screen.height - screen.y);
+                var gui = new Vector2(screen.x, PhoneArea.H - screen.y);
                 if (RestartGui(gui)) return false;
                 return FinishLessonTap(step, false, false, DismissPestIntro);
             }
@@ -7657,7 +7699,7 @@ namespace FlockFive
                 world = _fireAim;
                 var spFire = camFire.WorldToScreenPoint(world);
                 if (spFire.z < 0f) return false;
-                gui = new Vector2(spFire.x, Screen.height - spFire.y);
+                gui = new Vector2(spFire.x, PhoneArea.H - spFire.y);
                 return true;
             }
             if (_pestCue == PestCueSparrow && SparrowView.Live != null)
@@ -7683,7 +7725,7 @@ namespace FlockFive
                 if (camBee == null) return false;
                 var spBee = camBee.WorldToScreenPoint(world);
                 if (spBee.z < 0f) return false;
-                gui = new Vector2(spBee.x, Screen.height - spBee.y);
+                gui = new Vector2(spBee.x, PhoneArea.H - spBee.y);
                 return true;
             }
             if (body != null)
@@ -7705,7 +7747,7 @@ namespace FlockFive
             if (cam == null) return false;
             var sp = cam.WorldToScreenPoint(world);
             if (sp.z < 0f) return false;
-            gui = new Vector2(sp.x, Screen.height - sp.y);
+            gui = new Vector2(sp.x, PhoneArea.H - sp.y);
             return true;
         }
 
@@ -7726,8 +7768,8 @@ namespace FlockFive
             if (a.z < 0f && c.z < 0f) return;
             float x0 = (a.x < c.x ? a.x : c.x) - pad;
             float x1 = (a.x > c.x ? a.x : c.x) + pad;
-            float y0 = Screen.height - (a.y > c.y ? a.y : c.y) - pad;
-            float y1 = Screen.height - (a.y < c.y ? a.y : c.y) + pad;
+            float y0 = PhoneArea.H - (a.y > c.y ? a.y : c.y) - pad;
+            float y1 = PhoneArea.H - (a.y < c.y ? a.y : c.y) + pad;
             _blocks[_blockN].X0 = x0;
             _blocks[_blockN].Y0 = y0;
             _blocks[_blockN].X1 = x1;
@@ -7750,9 +7792,9 @@ namespace FlockFive
                 var c = cam.WorldToScreenPoint(new Vector3(0f, lane.Min, 0f));
                 if (a.z < 0f && c.z < 0f) continue;
                 _blocks[_blockN].X0 = 0f;
-                _blocks[_blockN].Y0 = Screen.height - Mathf.Max(a.y, c.y) - pad;
-                _blocks[_blockN].X1 = Screen.width;
-                _blocks[_blockN].Y1 = Screen.height - Mathf.Min(a.y, c.y) + pad;
+                _blocks[_blockN].Y0 = PhoneArea.H - Mathf.Max(a.y, c.y) - pad;
+                _blocks[_blockN].X1 = PhoneArea.W;
+                _blocks[_blockN].Y1 = PhoneArea.H - Mathf.Min(a.y, c.y) + pad;
                 _blockN++;
             }
         }
