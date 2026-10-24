@@ -96,6 +96,7 @@ namespace FlockFive.Editor
             Suite("build89-payhead", Build89PayHeadTests.Run);
             Suite("poker-back-caption-timing", PokerBackCaptionTimingTests.Run);
             Suite("vip-name-gate", VipNameGateTests.Run);
+            Suite("name-card-layout", NameCardLayoutTests.Run);
             Suite("pause-resume-tutorial", PauseResumeTutorialTests.Run);
             Suite("coach-arrow-shape", CoachArrowShapeTests.Run);
             Suite("build115-ostrich-neck", Build115OstrichNeckTests.Run);

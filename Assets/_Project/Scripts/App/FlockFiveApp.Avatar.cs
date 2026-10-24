@@ -967,6 +967,95 @@ namespace FlockFive
             return "None";
         }
 
+        // Painted name plate. Edge gutters and the inner block the plate hangs around.
+        // Phone and tablet share this. The caller passes the area the GUI is laid out
+        // in (PhoneArea on device: the full glass on a phone, the centered 9:16 pillar on iPad).
+        public struct AvatarNameSpan
+        {
+            public float EdgeL, EdgeR, InnerX, InnerW, PadX;
+            public float PlateX => InnerX - PadX;
+            public float PlateR => InnerX + InnerW + PadX;
+        }
+
+        // Side gutters for the painted plate. Same inset PlacePopup uses for a card:
+        // 12 reference pixels times the UI scale, or the safe-area side inset when that
+        // is larger. A missing safe rect does not invent an inset the width of the glass.
+        public static void AvatarNameEdges(float screenW, float safeXMin, float safeXMax, float s, out float edgeL, out float edgeR)
+        {
+            if (screenW < 8f) screenW = 8f;
+            if (s < 0.01f) s = 0.01f;
+            float safeL = safeXMin;
+            float safeR = screenW - safeXMax;
+            if (safeXMax - safeXMin < screenW * 0.5f)
+            {
+                safeL = 0f;
+                safeR = 0f;
+            }
+            if (safeL < 0f) safeL = 0f;
+            if (safeR < 0f) safeR = 0f;
+            float insetL = Mathf.Max(12f * s, safeL + 8f);
+            float insetR = Mathf.Max(12f * s, safeR + 8f);
+            float cap = screenW * 0.18f;
+            if (insetL > cap) insetL = cap;
+            if (insetR > cap) insetR = cap;
+            edgeL = insetL;
+            edgeR = screenW - insetR;
+            if (edgeR < edgeL + 80f)
+            {
+                float g = screenW * 0.04f;
+                if (g < 4f) g = 4f;
+                if (g > screenW * 0.2f) g = screenW * 0.2f;
+                edgeL = g;
+                edgeR = screenW - g;
+            }
+        }
+
+        // One coach hang, applied once. channel is the rail gap after the name-card bleed.
+        // preferredInner is the content width before the hang (StandardPopupWidth).
+        // The plate stays inside the gutters. A collapsed channel opens to those gutters.
+        public static AvatarNameSpan FitAvatarNameCard(
+            float screenW, float safeXMin, float safeXMax, float s,
+            float channelL, float channelR, float preferredInner, float padX)
+        {
+            AvatarNameEdges(screenW, safeXMin, safeXMax, s, out float edgeL, out float edgeR);
+            if (padX < 0f) padX = 0f;
+            var span = new AvatarNameSpan { EdgeL = edgeL, EdgeR = edgeR, PadX = padX };
+            float left = Mathf.Max(edgeL, channelL);
+            float right = Mathf.Min(edgeR, channelR);
+            if (right < left + 120f)
+            {
+                left = edgeL;
+                right = edgeR;
+            }
+            float width = right - left;
+            if (width < 8f) width = 8f;
+            float glass = edgeR - edgeL;
+            float room = glass - padX * 2f;
+            float innerW = preferredInner > 8f ? preferredInner : 8f;
+            if (innerW > width) innerW = width;
+            if (room >= 8f)
+            {
+                if (innerW > room) innerW = room;
+                float x = left + (width - innerW) * 0.5f;
+                float minX = edgeL + padX;
+                float maxX = edgeR - padX - innerW;
+                if (x < minX) x = minX;
+                if (x > maxX) x = maxX;
+                span.InnerX = x;
+                span.InnerW = innerW;
+            }
+            else
+            {
+                span.InnerX = edgeL;
+                span.InnerW = Mathf.Max(8f, glass);
+            }
+            return span;
+        }
+
+        // The hang CoachPanelRect paints. Build 81 replaced the fixed 18×12 with BoxPad.
+        static Vector2 AvatarNameHang() =>
+            CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f);
+
         void AvatarRenameLayout(float s, out Rect line, out Rect field, out Rect done)
         {
             // Plate top is the logo halo's bottom plus a margin. Wider and lower
@@ -976,16 +1065,6 @@ namespace FlockFive
             float botLimit = flower.yMin - 8f * s;
             AvatarChannel(s, out float chanL, out float chanR);
             float bleed = SplashRailSize() * 0.55f;
-            float edgeL = Mathf.Max(8f, PhoneArea.Safe.xMin + 4f);
-            float edgeR = Mathf.Min(PhoneArea.W - 8f, PhoneArea.Safe.xMax - 4f);
-            float left = Mathf.Max(edgeL, chanL - bleed);
-            float right = Mathf.Min(edgeR, chanR + bleed);
-            if (right < left + 120f)
-            {
-                left = edgeL;
-                right = edgeR;
-            }
-            float width = Mathf.Max(80f, right - left);
             int kits = AvatarKitChoices();
             float gap = 10f * s;
             float lineH = 36f * s;
@@ -994,13 +1073,13 @@ namespace FlockFive
             float kitH = kits > 0 ? 48f * s : 0f;
             float rowH = 46f * s;
             float pad = 12f * s;
-            float innerW = Mathf.Min(width, StandardPopupWidth(s));
+            var hang = AvatarNameHang();
             float innerH = pad + lineH + gap + rowH + gap + swH;
             if (kits > 0) innerH += gap + kitH;
             innerH += pad;
-            // CoachPanelRect paints 12px above the inner block.
-            float top = minTop + 12f;
-            float bot = botLimit - 12f;
+            // Reserve the real plate hang, so the painted card clears the wordmark and the flower.
+            float top = minTop + hang.y;
+            float bot = botLimit - hang.y;
             float room = bot - top;
             if (innerH > room && room > 80f * s)
             {
@@ -1015,14 +1094,11 @@ namespace FlockFive
                 if (kits > 0) innerH += gap + kitH;
                 innerH += pad;
             }
-            float span = edgeR - edgeL;
-            float maxInner = span - 36f;
-            if (maxInner < 80f) maxInner = Mathf.Max(40f, span - 8f);
-            innerW = Mathf.Min(innerW, maxInner);
-            float x = left + (width - innerW) * 0.5f;
-            // CoachPanelRect paints 18px past the inner block. Keep that plate on screen.
-            if (x - 18f < edgeL) x += edgeL - (x - 18f);
-            if (x + innerW + 18f > edgeR) x -= (x + innerW + 18f) - edgeR;
+            var fit = FitAvatarNameCard(
+                PhoneArea.W, PhoneArea.Safe.xMin, PhoneArea.Safe.xMax, s,
+                chanL - bleed, chanR + bleed, StandardPopupWidth(s), hang.x);
+            float x = fit.InnerX;
+            float innerW = fit.InnerW;
             float y = top + Mathf.Max(0f, (room - innerH) * 0.22f);
             if (y + innerH > bot) y = Mathf.Max(top, bot - innerH);
             float x0 = Mathf.Round(x);
@@ -1077,11 +1153,14 @@ namespace FlockFive
             bool cue = AvatarNeedsName();
             string prompt = cue ? AdoptNameLine : AvatarRenameLine;
             AvatarRenameLayout(s, out var line, out var field, out var done);
+            // Inverse of CoachPanelRect. Subtracting the old fixed 18×12 and then
+            // drawing applied BoxPad a second time, so the plate ran off both sides.
+            var hang = AvatarNameHang();
             var content = new Rect(
-                _avatarRenameR.x + 18f,
-                _avatarRenameR.y + 12f,
-                _avatarRenameR.width - 36f,
-                _avatarRenameR.height - 24f);
+                _avatarRenameR.x + hang.x,
+                _avatarRenameR.y + hang.y,
+                Mathf.Max(2f, _avatarRenameR.width - hang.x * 2f),
+                Mathf.Max(2f, _avatarRenameR.height - hang.y * 2f));
             NoteTutorPlate(_avatarRenameR);
             DrawCoachPanel(content, 1f);
             var st = CoachLineStyle();
