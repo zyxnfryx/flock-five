@@ -829,6 +829,8 @@ namespace FlockFive
 
         void Load(int index)
         {
+            // The LEVEL 1 home glove is once per save, cleared the first time a garden opens.
+            MarkHomePlayCue();
             AudioGuard.OnSceneOrPopupClosed();
             // Before the garden (and its season banner) is built. A solved board
             // that is still browsing the inspect does not come through here.
@@ -10435,6 +10437,8 @@ namespace FlockFive
             if (_dailyOpen && !_dailyPayHold && _dailyCloseAt < 0f) DrawDailyClaimLine(s);
             StartupTrace.Lap("L.Daily2");
             if (_welcomeGlove || (_dailyIntroLive && _dailyOpen && !_dailyAskOpen && !_dailyPayHold && _dailyCloseAt < 0f))
+                DrawTutorOverlay(s);
+            if (HomePlayCueLive())
                 DrawTutorOverlay(s);
             if (_avatarRename) DrawAvatarRename(s);
             PaintHomeGear();
