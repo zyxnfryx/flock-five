@@ -9648,7 +9648,7 @@ namespace FlockFive
                 string amt = Money.Format(shown);
                 float punch = 1f + 0.08f * Mathf.Sin(Mathf.Clamp01((roll - 0.85f) / 0.15f) * Mathf.PI);
                 var prevM = GUI.matrix;
-                GUIUtility.ScaleAroundPivot(new Vector2(punch, punch), hero.center);
+                PhoneArea.ScaleAround(new Vector2(punch, punch), hero.center);
                 float glowPad = 10f * s * scale;
                 GUI.color = new Color(1f, 0.78f, 0.18f, (0.22f + 0.28f * roll) * heroA);
                 GUI.DrawTexture(new Rect(hero.x - glowPad, hero.y - glowPad * 0.35f, hero.width + glowPad * 2f, hero.height + glowPad), glow, ScaleMode.ScaleToFit, true);
@@ -11465,7 +11465,7 @@ namespace FlockFive
                 if (st != null && sc > 0.05f && Mathf.Abs(sc - 1f) > 0.02f)
                     st.fontSize = Mathf.Max(1, Mathf.RoundToInt(font * sc));
                 if (Mathf.Abs(seat.Degrees) > 0.05f)
-                    GUIUtility.RotateAroundPivot(seat.Degrees, new Vector2(seat.ScreenX - origin.x, seat.ScreenY - origin.y));
+                    PhoneArea.RotateAround(seat.Degrees, new Vector2(seat.ScreenX - origin.x, seat.ScreenY - origin.y));
                 GUI.Label(new Rect(wx - origin.x, wy - origin.y, seat.ScreenW, seat.ScreenH), text, st);
             }
             finally
