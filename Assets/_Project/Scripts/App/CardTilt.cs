@@ -15,7 +15,22 @@ namespace FlockFive
         const float DragFullCards = 0.35f;        // finger travel (in card widths) for full tilt
         const float SpringHz = 10f;               // critically damped return after release
         const float SwayAfter = 1.5f;             // idle seconds before the slow sway
-        const float TapSlop = 14f;                // px of travel that turns a tap into a drag
+        // b-iPad (Brandon 2026-10-29): the old slop was 14 raw px of summed path. On a 264 ppi
+        // iPad that is ~8 pt and finger jitter alone sums past it, so taps stopped flipping.
+        // Now: straight-line distance from the press point, in physical points.
+        public const float TapSlopPt = 11f;       // points from the press point that make a drag
+        public const float TapMaxSec = 0.35f;     // a short press that stays near its origin is a tap
+        public static float TapSlopPx(float dpi) => TapSlopPt * (dpi > 1f ? dpi / 163f : 1f);
+        // Pure rule (tests): is this press a drag?
+        public static bool IsDrag(Vector2 fromPress, float heldSec, float dpi)
+        {
+            float slop = TapSlopPx(dpi);
+            float d = fromPress.magnitude;
+            if (d > slop * 2f) return true;               // clearly moved
+            if (d > slop && heldSec >= TapMaxSec) return true; // slow deliberate tilt
+            return false;
+        }
+        static Vector2 _pressAt; static float _pressT;
 
         // Axis signs differ between iOS and Android sensor frames; flip here after the device pass.
         public static float SignAttX = 1f, SignAttY = -1f, SignAccX = -1f, SignAccY = 1f;
@@ -157,7 +172,7 @@ namespace FlockFive
             switch (e.rawType)
             {
                 case EventType.MouseDown:
-                    if (card.Contains(e.mousePosition)) { _pressed = true; _travel = 0f; DragAte = false; _lastPos = e.mousePosition; _dragVel = Vector2.zero; }
+                    if (card.Contains(e.mousePosition)) { _pressed = true; _travel = 0f; DragAte = false; _lastPos = e.mousePosition; _pressAt = e.mousePosition; _pressT = Time.unscaledTime; _dragVel = Vector2.zero; }
                     break;
                 case EventType.MouseDrag:
                     if (_pressed)
@@ -165,7 +180,7 @@ namespace FlockFive
                         var d = e.mousePosition - _lastPos;
                         _lastPos = e.mousePosition;
                         _travel += d.magnitude;
-                        if (_travel > TapSlop) DragAte = true;
+                        if (IsDrag(e.mousePosition - _pressAt, Time.unscaledTime - _pressT, Screen.dpi)) DragAte = true;
                         float s = 1f / Mathf.Max(40f, card.width * DragFullCards);
                         // Screen y grows downward; finger dragging up tips the top edge away.
                         _drag += new Vector2(d.x * s, -d.y * s);
@@ -173,6 +188,8 @@ namespace FlockFive
                     }
                     break;
                 case EventType.MouseUp:
+                    // Short release near the press point is a tap even if it brushed the slop.
+                    if (_pressed && Time.unscaledTime - _pressT < TapMaxSec && !IsDrag(e.mousePosition - _pressAt, Time.unscaledTime - _pressT, Screen.dpi)) DragAte = false;
                     _pressed = false;
                     break;
             }
