@@ -133,7 +133,7 @@ namespace FlockFive
             }
             tex.SetPixels(px);
             tex.Apply(false, true);
-            _sprite = Sprite.Create(tex, new Rect(0f, 0f, w, h), new Vector2(0.55f, 0.15f), 140f);
+            _sprite = UnityEngine.Sprite.Create(tex, new Rect(0f, 0f, w, h), new Vector2(0.55f, 0.15f), 140f);
             _sprite.name = "blackbird";
             return _sprite;
         }

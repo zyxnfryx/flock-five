@@ -48,8 +48,8 @@ namespace FlockFive
         // The croak is lead. A hop already on the lead seat skips it.
         public static bool PlayTaunt(bool leadHot) => !leadHot;
 
-        // Wing tell stays while a crunch (lead) is still ringing.
-        public static bool HearTell(bool leadHot) => leadHot ? true : true;
+        // Wing tell is skipped while a crunch (lead) is still ringing.
+        public static bool HearTell(bool leadHot) => !leadHot;
 
         public static bool HoldTaps(bool introRunning) => introRunning;
 

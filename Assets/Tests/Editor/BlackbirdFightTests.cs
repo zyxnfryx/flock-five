@@ -289,7 +289,7 @@ namespace FlockFive.Editor
             bool mix = resumed > 5.7f && resumed < 5.8f
                 && BlackbirdCue.BedCrossfadeSec >= 0.3f && BlackbirdCue.BedCrossfadeSec <= 0.5f
                 && BlackbirdCue.PlayTaunt(false) && !BlackbirdCue.PlayTaunt(true)
-                && BlackbirdCue.HearTell(true)
+                && !BlackbirdCue.HearTell(true) && BlackbirdCue.HearTell(false)
                 && BlackbirdCue.HoldTaps(true) && !BlackbirdCue.HoldTaps(false)
                 && BlackbirdCue.BedAfterInterrupt(BlackbirdCue.Bed.Silence) == BlackbirdCue.Bed.Calm
                 && BlackbirdCue.BedAfterInterrupt(BlackbirdCue.Bed.Rush) == BlackbirdCue.Bed.Rush

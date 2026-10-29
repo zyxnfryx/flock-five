@@ -16,12 +16,12 @@ namespace FlockFive
             Shot(_bbTaunt, pitch, BlackbirdCue.TauntLevel, MixLayer.Lead, MixDesk.DuckWhoosh);
         }
 
-        // The 0.5s tell is a wing from the flap bank. Mid, and it still plays
+        // The 0.5s tell is a wing from the flap bank, on Mid. It is skipped
         // while a branch crunch holds the lead seat.
         public static void BlackbirdTell()
         {
-            if (!BlackbirdCue.HearTell(true)) return;
-            PlayFlap(0.34f, 1f, MixLayer.Mid, BlackbirdCue.HearTell(true));
+            if (!BlackbirdCue.HearTell(MixDesk.Live != null && MixDesk.Live.LeadHot)) return;
+            PlayFlap(0.34f, 1f, MixLayer.Mid);
         }
     }
 }
