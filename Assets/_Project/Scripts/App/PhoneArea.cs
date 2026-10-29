@@ -49,6 +49,26 @@ namespace FlockFive
         // Base GUI matrix: identity on phones, a pure x translation in pillar mode.
         public static Matrix4x4 GuiBase => Pillar ? Matrix4x4.Translate(new Vector3(OffX, 0f, 0f)) : Matrix4x4.identity;
 
+        // GUIUtility.RotateAroundPivot / ScaleAroundPivot pre-multiply a pivot given in
+        // raw screen pixels, ignoring GuiBase. In pillar mode (iPad) that pivots every
+        // rotation OffX px to the left of the intended point, so a turning wheel and its
+        // labels orbit off-center. These post-multiply in the caller's GUI space instead,
+        // so the pivot is the point the caller means on every device.
+        public static Matrix4x4 RotateAboutLocal(Matrix4x4 m, float degrees, Vector2 pivot)
+        {
+            var p = new Vector3(pivot.x, pivot.y, 0f);
+            return m * Matrix4x4.Translate(p) * Matrix4x4.Rotate(Quaternion.Euler(0f, 0f, degrees)) * Matrix4x4.Translate(-p);
+        }
+
+        public static Matrix4x4 ScaleAboutLocal(Matrix4x4 m, Vector2 scale, Vector2 pivot)
+        {
+            var p = new Vector3(pivot.x, pivot.y, 0f);
+            return m * Matrix4x4.Translate(p) * Matrix4x4.Scale(new Vector3(scale.x, scale.y, 1f)) * Matrix4x4.Translate(-p);
+        }
+
+        public static void RotateAround(float degrees, Vector2 pivot) => GUI.matrix = RotateAboutLocal(GUI.matrix, degrees, pivot);
+        public static void ScaleAround(Vector2 scale, Vector2 pivot) => GUI.matrix = ScaleAboutLocal(GUI.matrix, scale, pivot);
+
         static RenderTexture _rt;
         public static RenderTexture Target
         {

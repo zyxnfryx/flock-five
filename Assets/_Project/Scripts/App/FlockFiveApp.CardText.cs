@@ -396,8 +396,9 @@ namespace FlockFive
             {
                 if (back)
                 {
-                    titleFloor = full ? 20 : 12;
-                    titleLead = full ? 1.10f : 1.1f;
+                    // Inspect: same title args as the front, so the banner name fits identically.
+                    if (full) TitleFitArgs(full, out titleFloor, out titleLead);
+                    else { titleFloor = 12; titleLead = 1.1f; }
                     flavorFloor = full ? 15 : 11;
                 }
                 else
@@ -1000,8 +1001,22 @@ namespace FlockFive
             public static void FaceBands(Rect face, bool full, bool back, bool honey,
                 out Rect title, out Rect flavor)
             {
-                var host = back ? face : TextFaceOf(face, full);
-                Split(host, back && honey, full ? Full : Mid, out title, out flavor, out _, out _, out _);
+                // Brandon (iPad, 2026-10-29): the name banner must be the same size and seat on
+                // both faces. The back used to split the whole face (a taller title band, so a
+                // huge two-line name); now both faces take the front's title band, and the back
+                // flavor starts under it in the back's own layout.
+                var scale = full ? Full : Mid;
+                if (!full)
+                {
+                    // Grid thumbs keep their own back split: the honey row needs the room there.
+                    Split(back ? face : TextFaceOf(face, full), back && honey, scale, out title, out flavor, out _, out _, out _);
+                    return;
+                }
+                Split(TextFaceOf(face, full), false, scale, out title, out var frontFlavor, out _, out _, out _);
+                if (!back) { flavor = frontFlavor; return; }
+                Split(face, honey, scale, out _, out flavor, out _, out _, out _);
+                float top = Mathf.Max(flavor.y, title.yMax + face.height * 0.03f);
+                flavor = new Rect(flavor.x, top, flavor.width, Mathf.Max(8f, flavor.yMax - top));
             }
 
             // Top band of the face, inner width, tall enough for two wrapped lines.

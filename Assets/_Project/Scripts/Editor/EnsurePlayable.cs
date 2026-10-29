@@ -110,6 +110,8 @@ namespace FlockFive.Editor
             Suite("build130-badger-stack", Build130BadgerStackTests.Run);
             Suite("build131-reset", Build131ResetTests.Run);
             Suite("usa-plane-day", UsaPlaneDayTests.Run);
+            Suite("daily-wheel-pillar", DailyWheelPillarTests.Run);
+            Suite("card-viewer-tap-banner", CardViewerTapBannerTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 

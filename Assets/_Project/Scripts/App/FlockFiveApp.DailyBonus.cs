@@ -470,7 +470,7 @@ namespace FlockFive
             var pivot = flowerOn ? DailyPivot(card, flower) : card.center;
             var prev = GUI.matrix;
             if (k < 0.999f || k > 1.001f)
-                GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
+                PhoneArea.ScaleAround(new Vector2(k, k), pivot);
 
             DrawDailyFrame(card, board, band, s, breathe, glow);
             EnsureDailyStyles();
@@ -1271,7 +1271,7 @@ namespace FlockFive
             bool move = openK < 0.9995f || openK > 1.0005f;
             var prev = GUI.matrix;
             if (move)
-                GUIUtility.ScaleAroundPivot(new Vector2(openK, openK), pivot);
+                PhoneArea.ScaleAround(new Vector2(openK, openK), pivot);
             StampOutlined(seat, text, st, fill, whitePx, dark, minA);
             if (move) GUI.matrix = prev;
         }
@@ -1561,17 +1561,17 @@ namespace FlockFive
             if (spinning)
             {
                 // Ghosts trail the live disc so a frozen frame still reads as a spin.
-                GUIUtility.RotateAroundPivot(angle - 36f, wheel.center);
+                PhoneArea.RotateAround(angle - 36f, wheel.center);
                 GUI.color = PopFade(new Color(1f, 0.94f, 0.78f, 0.22f));
                 GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
                 GUI.matrix = prev;
-                GUIUtility.RotateAroundPivot(angle - 18f, wheel.center);
+                PhoneArea.RotateAround(angle - 18f, wheel.center);
                 GUI.color = PopFade(new Color(1f, 0.96f, 0.86f, 0.42f));
                 GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
                 GUI.matrix = prev;
                 GUI.color = PopFade(Color.white);
             }
-            GUIUtility.RotateAroundPivot(angle, wheel.center);
+            PhoneArea.RotateAround(angle, wheel.center);
             GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
             GUI.matrix = prev;
 
@@ -1588,7 +1588,7 @@ namespace FlockFive
                 _dailyTile.fontSize = WheelLabelPx(text, jack, fixedLab);
                 _dailyTile.fontStyle = FontStyle.Bold;
                 var hold = GUI.matrix;
-                GUIUtility.RotateAroundPivot(DailyBonus.WedgeLabelDegrees(i, angle), lab.center);
+                PhoneArea.RotateAround(DailyBonus.WedgeLabelDegrees(i, angle), lab.center);
                 StampOutlined(lab, text, _dailyTile, new Color(1f, 0.97f, 0.88f), jack ? 2 : 1, jack ? 3 : 1);
                 GUI.matrix = hold;
                 if (!jack) continue;
@@ -1693,7 +1693,7 @@ namespace FlockFive
                 ? 0f
                 : DailyBonus.PointerFlick(AdPause.Unscaled - _wheelFlickAt, _wheelFlickSign);
             var prev = GUI.matrix;
-            GUIUtility.RotateAroundPivot(flick, pivot);
+            PhoneArea.RotateAround(flick, pivot);
             GUI.DrawTexture(pointer, _wheelPointer, ScaleMode.ScaleToFit, true);
             GUI.matrix = prev;
 #if UNITY_EDITOR
@@ -2153,7 +2153,7 @@ namespace FlockFive
             float sz = disc.width * 0.28f * pulse;
             var sr = new Rect(disc.xMax - sz * 0.72f, disc.y - sz * 0.12f, sz, sz);
             var prev = GUI.matrix;
-            GUIUtility.RotateAroundPivot(t * 40f, sr.center);
+            PhoneArea.RotateAround(t * 40f, sr.center);
             GUI.color = new Color(1f, 0.96f, 0.75f, 0.92f);
             GUI.DrawTexture(sr, tex, ScaleMode.ScaleToFit, true);
             GUI.matrix = prev;
@@ -2180,7 +2180,7 @@ namespace FlockFive
             float k = DailyPop(_dailyAskAt);
             var prev = GUI.matrix;
             if (k < 0.999f)
-                GUIUtility.ScaleAroundPivot(new Vector2(k, k), card.center);
+                PhoneArea.ScaleAround(new Vector2(k, k), card.center);
             DrawAskFrame(card, s, breathe, glow);
             EnsureAskStyles();
             EnsureAskFit(s, body, yesR);
@@ -2336,7 +2336,7 @@ namespace FlockFive
             float k = DailyPop(_welcomeAt);
             var prev = GUI.matrix;
             if (k < 0.999f)
-                GUIUtility.ScaleAroundPivot(new Vector2(k, k), card.center);
+                PhoneArea.ScaleAround(new Vector2(k, k), card.center);
             float band = Mathf.Clamp(card.width * 0.045f, 12f * s, 22f * s);
             var board = new Rect(card.x + band, card.y + band, card.width - band * 2f, card.height - band * 2f);
             DrawDailyFrame(card, board, band, s, breathe, glow, true);
