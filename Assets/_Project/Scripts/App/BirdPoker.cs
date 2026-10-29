@@ -20,6 +20,19 @@ namespace FlockFive
         public const int FullcardPrize = 1000000;
         const string PrefPunch = "flockfive.poker.punch.v1";
         const string PrefFull = "flockfive.poker.fullcard.v1";
+        // b119 trophy board: every five-of-a-kind hit (count, first day, ever natural).
+        // FULLCARD never clears punch.v1, so this record is lifetime too.
+        public const string PrefFives = "flockfive.poker.fives.v1";
+        public const int FiveDayEarlier = -1; // migrated from punch.v1: date unknown
+
+        public struct FiveRecord
+        {
+            public int Count;
+            public int FirstDay; // local days since 1970-01-01; FiveDayEarlier when migrated
+            public bool Natural;
+        }
+
+        static FiveRecord[] _fives;
 
         static bool[] _punched;
         static bool _punchReady;
@@ -358,6 +371,9 @@ namespace FlockFive
             LastFullcardPay = 0;
             if (IsFiveKind(LastRank))
             {
+                int fiveKind;
+                if (ResolveFiveKind(Hand, out fiveKind))
+                    RecordFive(fiveKind, LastRank == Rank.NaturalFive);
                 int kind;
                 LastPunchFresh = TryPunch(Hand, out kind);
                 if (LastPunchFresh)
@@ -543,6 +559,129 @@ namespace FlockFive
             PrefGuard.SetString(PrefPunch, sb.ToString());
             PlayerPrefs.Save();
         }
+
+        // ---- b119 Five of a Kind trophy board record ----
+        public static int TodayDay() => (System.DateTime.Now.Date - new System.DateTime(1970, 1, 1)).Days;
+
+        public static string DayLabel(int day)
+        {
+            if (day < 0) return "earlier";
+            return new System.DateTime(1970, 1, 1).AddDays(day).ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        // "id:count:firstDay:nat;..." only hit slots are written.
+        public static string EncodeFives(FiveRecord[] rec)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < rec.Length; i++)
+            {
+                if (rec[i].Count <= 0) continue;
+                if (sb.Length > 0) sb.Append(';');
+                sb.Append(i).Append(':').Append(rec[i].Count).Append(':').Append(rec[i].FirstDay).Append(':').Append(rec[i].Natural ? 1 : 0);
+            }
+            return sb.ToString();
+        }
+
+        public static FiveRecord[] DecodeFives(string raw)
+        {
+            var rec = new FiveRecord[PunchKinds];
+            if (string.IsNullOrEmpty(raw)) return rec;
+            var parts = raw.Split(';');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                var f = parts[i].Split(':');
+                if (f.Length < 4) continue;
+                int k, n, d, nat;
+                if (!int.TryParse(f[0], out k) || (uint)k >= (uint)rec.Length) continue;
+                if (!int.TryParse(f[1], out n) || n <= 0) continue;
+                if (!int.TryParse(f[2], out d)) d = FiveDayEarlier;
+                int.TryParse(f[3], out nat);
+                rec[k] = new FiveRecord { Count = n, FirstDay = d < 0 ? FiveDayEarlier : d, Natural = nat == 1 };
+            }
+            return rec;
+        }
+
+        // Existing players: every punch.v1 slot becomes count 1, date "earlier". Nothing else is invented.
+        public static FiveRecord[] MigrateFromPunches(bool[] punched)
+        {
+            var rec = new FiveRecord[PunchKinds];
+            if (punched == null) return rec;
+            for (int i = 0; i < rec.Length && i < punched.Length; i++)
+                if (punched[i]) rec[i] = new FiveRecord { Count = 1, FirstDay = FiveDayEarlier, Natural = false };
+            return rec;
+        }
+
+        public static void ApplyFive(FiveRecord[] rec, int kind, bool natural, int day)
+        {
+            if (rec == null || (uint)kind >= (uint)rec.Length) return;
+            var r = rec[kind];
+            if (r.Count <= 0) r.FirstDay = day;
+            r.Count++;
+            r.Natural |= natural;
+            rec[kind] = r;
+        }
+
+        static void WarmFives()
+        {
+            if (_fives != null && _fives.Length == PunchKinds) return;
+            if (PlayerPrefs.HasKey(PrefFives))
+            {
+                _fives = DecodeFives(PrefGuard.GetString(PrefFives, ""));
+            }
+            else
+            {
+                WarmPunch();
+                _fives = MigrateFromPunches(_punched);
+                SaveFives();
+            }
+            // Never show fewer than the punch card: a punch with no record row is credited too.
+            WarmPunch();
+            for (int i = 0; i < _fives.Length && i < _punched.Length; i++)
+                if (_punched[i] && _fives[i].Count <= 0)
+                    _fives[i] = new FiveRecord { Count = 1, FirstDay = FiveDayEarlier };
+        }
+
+        static void SaveFives()
+        {
+            PrefGuard.SetString(PrefFives, EncodeFives(_fives));
+            PlayerPrefs.Save();
+        }
+
+        static void RecordFive(int kind, bool natural)
+        {
+            WarmFives();
+            ApplyFive(_fives, kind, natural, TodayDay());
+            SaveFives();
+        }
+
+        public static FiveRecord Five(int kind)
+        {
+            WarmFives();
+            return (uint)kind < (uint)_fives.Length ? _fives[kind] : default(FiveRecord);
+        }
+
+        public static int FivesFound()
+        {
+            WarmFives();
+            int n = 0;
+            for (int i = 0; i < _fives.Length; i++) if (_fives[i].Count > 0) n++;
+            return n;
+        }
+
+        public static int FivesHits()
+        {
+            WarmFives();
+            int n = 0;
+            for (int i = 0; i < _fives.Length; i++) n += Mathf.Max(0, _fives[i].Count);
+            return n;
+        }
+
+#if UNITY_EDITOR
+        // Tests / stills: drop the in-memory record so the next read reloads (or re-migrates).
+        public static void ReloadFivesForTests() { _fives = null; _punchReady = false; _punched = null; }
+        public static void SetFivesForShot(FiveRecord[] rec) { _fives = rec; SaveFives(); }
+        public static bool ResolveFiveKindForTests(Card[] hand, out int kind) => ResolveFiveKind(hand, out kind);
+#endif
 
         static void SaveFullcard()
         {

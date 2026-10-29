@@ -33,6 +33,7 @@ namespace FlockFive
             if (_clearReward) return ModalBlock.Id.ClearReward;
             if (_hiveInspect >= 0) return ModalBlock.Id.Inspect;
             if (_pokerPayOpen) return ModalBlock.Id.PokerPay;
+            if (_fivesOpen) return ModalBlock.Id.PokerFives;
             if (_adoptLive && _adoptStep != AdoptStep.Look) return ModalBlock.Id.Adopt;
             return ModalBlock.Id.None;
         }

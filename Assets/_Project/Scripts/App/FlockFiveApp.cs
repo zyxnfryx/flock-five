@@ -673,6 +673,10 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-poker-faces"); } catch { }
                 StartCoroutine(ShotPokerFaces());
             }
+            if (System.IO.File.Exists("/tmp/flock-five-b119-fives"))
+            {
+                StartCoroutine(ShotFives()); // b119: ShotFives reads the dir and deletes the flag
+            }
             if (System.IO.File.Exists("/tmp/flock-five-poker-stamp"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-poker-stamp"); } catch { }
@@ -2229,6 +2233,7 @@ namespace FlockFive
             _home = HomeFace.Splash;
             _splash = true;
             _pokerPayOpen = false;
+            _fivesOpen = false; _fivesAnim = 0f;
             _pokerPayAnim = 0f;
             int keep = PlayerPrefs.GetInt("flockfive.next", 0);
             PlayerPrefs.SetInt("flockfive.next", 0);
@@ -2820,6 +2825,7 @@ namespace FlockFive
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
+            _fivesOpen = false; _fivesAnim = 0f;
             _pokerPayAnim = 0f;
             _pokerFan = false;
             _pokerMotion = PokerMotion.None;
@@ -2920,6 +2926,7 @@ namespace FlockFive
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
+            _fivesOpen = false; _fivesAnim = 0f;
             _pokerPayAnim = 0f;
             _pokerFan = false;
             _pokerMotion = PokerMotion.None;
@@ -3129,6 +3136,7 @@ namespace FlockFive
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
+            _fivesOpen = false; _fivesAnim = 0f;
             _pokerPayAnim = 0f;
             _pokerFan = false;
             _pokerMotion = PokerMotion.None;
@@ -3288,6 +3296,7 @@ namespace FlockFive
             _home = HomeFace.Poker;
             _splash = true;
             _pokerPayOpen = false;
+            _fivesOpen = false; _fivesAnim = 0f;
             _pokerPayAnim = 0f;
             BirdPoker.Boot();
             Purse.Boot();
@@ -13009,7 +13018,7 @@ namespace FlockFive
 #if UNITY_EDITOR
             if (_pokerPlayrun || EditorShotLive) return true;
 #endif
-            if (_pokerStamp || _pokerPayOpen) return true;
+            if (_pokerStamp || _pokerPayOpen || _fivesOpen) return true;
             if (_pokerWinT >= 0f && _pokerWinT < WinDoneAt) return true;
             return false;
         }
@@ -13404,7 +13413,7 @@ namespace FlockFive
 #endif
             if (_pokerPageOn || _pokerDealHint) return false;
             if (BirdPoker.PhaseNow != BirdPoker.Phase.Drawn || PokerMotionBusy()) return false;
-            if (_pokerStamp || _pokerPayOpen || PokerWinFlying()) return false;
+            if (_pokerStamp || _pokerPayOpen || _fivesOpen || PokerWinFlying()) return false;
             return true;
         }
 
@@ -13596,6 +13605,7 @@ namespace FlockFive
                 _pokerDash = 0f;
                 _pokerStamp = false;
                 _pokerPayOpen = false;
+            _fivesOpen = false; _fivesAnim = 0f;
                 _pokerPayAnim = 0f;
                 _pokerKeepHint = false;
                 _pokerDealHint = false;
@@ -13614,8 +13624,10 @@ namespace FlockFive
             float below = chrome.Below;
 
             // Hit-test pay-table tab / dismiss early so overlay blocks cards & Deal.
-            if (!_pokerStamp)
+            if (!_pokerStamp && !_fivesOpen)
                 TickPokerPayTable(below, s);
+            if (!_pokerStamp)
+                TickPokerFives(PokerPayTabRect(below, s), s);
 
             float gap = 2f * s;
             PokerRowSpan(out float spanX, out float spanW);
@@ -13653,7 +13665,7 @@ namespace FlockFive
             }
             var rowBox = new Rect(rowX, rowY, rowW, cardH);
             _pokerRowBottom = rowBox.yMax;
-            bool payBlockedEarly = _pokerPayOpen || _pokerPayAnim > 0.35f;
+            bool payBlockedEarly = _pokerPayOpen || _pokerPayAnim > 0.35f || _fivesOpen || _fivesAnim > 0.35f;
             bool canHold = !PokerMotionBusy() && !payBlockedEarly && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt;
             bool hideCards = _pokerPayAnim > 0.18f;
             HitPokerCards(canHold, rowBox, rowX, rowY, cardW, cardH, gap);
@@ -13689,7 +13701,7 @@ namespace FlockFive
             float clusterL = Mathf.Max(12f, safe.xMin + 10f);
             var betR = new Rect(clusterL, btnY, Mathf.Max(80f, actR.x - 10f * s - clusterL), btnSize);
 
-            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f;
+            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f || _fivesOpen || _fivesAnim > 0.35f;
             if (GuiPaint()) TickPokerWin();
             bool winFlying = PokerWinFlying();
             bool busy = PokerMotionBusy() || _pokerStamp || payBlocked || winFlying;
@@ -13732,7 +13744,12 @@ namespace FlockFive
 
             // Stamp ceremony above everything; else pay-table overlay / jewel tab on top.
             if (_pokerStamp) DrawPokerStampCeremony(s);
-            else DrawPokerPayTable(below, s);
+            else
+            {
+                DrawPokerFivesChip(PokerPayTabRect(below, s), s);
+                DrawPokerPayTable(below, s);
+                DrawPokerFivesBoard(s);
+            }
         }
 
 
@@ -13760,6 +13777,7 @@ namespace FlockFive
                 if (HitPad(outside, out _))
                 {
                     _pokerPayOpen = false;
+            _fivesOpen = false; _fivesAnim = 0f;
                     Sfx.Chirp(BirdColor.Gold);
                 }
             }
@@ -13998,6 +14016,7 @@ namespace FlockFive
         void BeginPokerStamp(int kind)
         {
             _pokerPayOpen = false;
+            _fivesOpen = false; _fivesAnim = 0f;
             _pokerPayAnim = 0f;
             _pokerStamp = true;
             _pokerStampT = 0f;
@@ -14563,7 +14582,7 @@ namespace FlockFive
         // lock here, then deals. Coins under the bet step down inside SyncBet.
         void OnPokerDealPressed()
         {
-            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f;
+            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f || _fivesOpen || _fivesAnim > 0.35f;
             var tap = PokerDealGate.Tap(new PokerDealGate.Snap
             {
                 Phase = BirdPoker.PhaseNow,
@@ -14744,6 +14763,7 @@ namespace FlockFive
             _splash = true;
             _home = HomeFace.Poker;
             _pokerPayOpen = false;
+            _fivesOpen = false; _fivesAnim = 0f;
             _pokerPayAnim = 0f;
             BirdPoker.Boot();
             Purse.Boot();

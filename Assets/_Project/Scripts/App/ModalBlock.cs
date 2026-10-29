@@ -33,6 +33,7 @@ namespace FlockFive
             Inspect,
             PokerPay,
             Lesson,
+            PokerFives, // b119 Five of a Kind board
         }
 
         public struct Veil
