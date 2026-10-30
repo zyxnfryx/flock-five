@@ -38,7 +38,7 @@ namespace FlockFive
     public static class BadgerPolish
     {
         public const int DesperateChanceAdd = 20;
-        public const float DesperatePitch = 1.03f;
+        public const float DesperatePitch = 1.02f;
         public const float RiffPitch = BossBeat.PitchCap;
 
         // Open pupil on badger_idle_b, top-left shares of that frame. The tell glint
@@ -145,8 +145,9 @@ namespace FlockFive
 
         public static bool HasTwist(int appearance, BadgerTwist kind) => TwistOf(appearance) == kind;
 
-        // Desperate tightens the loop. A faster-riff visit sits at the pitch cap.
+        // Desperate lifts the loop to DesperatePitch. A faster-riff visit sits at the pitch cap.
         // The two never stack past PitchCap, and smug visits without that twist stay at 1.
+        // This is the target. MixDesk slews the heard pitch after the entrance cue.
         public static float LoopPitch(BadgerMood mood, BadgerTwist twist)
         {
             float p = 1f;

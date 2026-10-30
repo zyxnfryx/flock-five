@@ -52,15 +52,26 @@ namespace FlockFive
         float _badgerMix;
         float _badgerFade = 1f;
         float _badgerFadeTarget = 1f;
-        // Loop tempo. 1 at rest. Desperate and the faster-riff twist raise it, never past BossBeat.PitchCap.
+        // Loop pitch and tempo. 1 at rest. Desperate and the faster-riff twist raise it, never past BossBeat.PitchCap.
+        // Heard pitch slews. It does not step on the frame the target changes.
         float _badgerPitch = 1f;
+        float _badgerPitchFrom = 1f;
+        float _badgerPitchTo = 1f;
+        float _badgerPitchSlew = 1f;
         bool _bgCueLive;
+        // dspTime when the entrance cue hands the seat to the loop. Pitch stays at 1 until then.
+        double _bgHandoffDsp = -1;
         bool _bgWasPaused;
         float _bgHandBackAt = -1f;
         const float BadgerCap = 0.40f;
         // Stingers play once at the bed's cap, not ducked: they ARE the moment.
         const float BadgerStingCap = 0.40f;
         const float BadgerFadeSeconds = 0.30f;
+        // Heard pitch arrives over this span (inside 0.3–0.5 s). A faster-riff visit
+        // must not jump +68 cents on the frame the loop takes the seat.
+        public const float BadgerPitchSlewSeconds = 0.40f;
+        // Final-blow stop. Loop, cue and sting reach 0, then Stop. Inside 5–10 ms.
+        public const float BadgerCutRampSeconds = 0.008f;
         const float BadgerBarSeconds = 1.6f;   // 150 BPM, 4/4
         const int BadgerLoopStem = 6;
         const int BadgerCueStem = 7;
@@ -421,37 +432,40 @@ namespace FlockFive
             if (loop == null) return;
             if (_bgEntranceClip == null || cue == null)
             {
+                _bgHandoffDsp = -1;
+                RestLoopPitch(loop);
                 loop.timeSamples = 0;
                 loop.Play();
                 return;
             }
             double t0 = AudioSettings.dspTime + 0.03;
+            double handoff = t0 + _bgEntranceClip.samples / (double)_bgEntranceClip.frequency;
             cue.clip = _bgEntranceClip;
             cue.timeSamples = 0;
             cue.volume = BadgerCap * BedDuck;
             cue.PlayScheduled(t0);
+            RestLoopPitch(loop);
             loop.timeSamples = BadgerBarSamples(loop.clip);
-            loop.PlayScheduled(t0 + _bgEntranceClip.samples / (double)_bgEntranceClip.frequency);
+            loop.PlayScheduled(handoff);
+            _bgHandoffDsp = handoff;
             _bgCueLive = true;
         }
 
-        // The contest is up. Normally the entrance already owns the seat (no-op). Without a
-        // leap (editor drop file, missing cue) the loop starts here with a short fade-in.
-        // Hard cut for the final blow. The loop and the cue stop now. The seat stays
-        // claimed so the garden does not rush back during the beat of silence.
-        // The win stinger is a later BadgerResult call, not this one.
+        // Hard cut for the final blow. Loop, cue and sting ramp to 0 over a few
+        // milliseconds, then stop. The seat stays claimed so the garden does not rush
+        // back during the beat of silence. The win stinger is a later BadgerResult call.
+        // Returns on this frame so the sharp hit can fire beside the cut.
         public void BadgerCut()
         {
-            StopBadgerSources();
-            if (_stems != null && _stems.Length > BadgerStingStem && _stems[BadgerStingStem] != null)
-                _stems[BadgerStingStem].Stop();
             _badger = true;
             _badgerMix = 1f;
             _badgerFade = 0f;
             _badgerFadeTarget = 0f;
             _bgCueLive = false;
+            _bgHandoffDsp = -1;
             _bgHandBackAt = -1f;
             _badgerPitch = 1f;
+            RampBadgerVoicesThenStop();
         }
 
         // Loop only. Cue and stingers stay at pitch 1. Clamped to the producer cap.
@@ -462,6 +476,8 @@ namespace FlockFive
 
         public float BadgerPitch => _badgerPitch;
 
+        // The contest is up. Normally the entrance already owns the seat (no-op). Without a
+        // leap (editor drop file, missing cue) the loop starts here with a short fade-in.
         public void BadgerBattle()
         {
             if (!BadgerReady) return;
@@ -472,6 +488,8 @@ namespace FlockFive
             _bgHandBackAt = -1f;
             _badgerFade = 0f;
             _badgerFadeTarget = 1f;
+            _bgHandoffDsp = -1;
+            RestLoopPitch(loop);
             loop.timeSamples = 0;
             loop.Play();
         }
@@ -520,6 +538,121 @@ namespace FlockFive
             if (loop != null) loop.Stop();
             if (cue != null) cue.Stop();
             _bgCueLive = false;
+            _bgHandoffDsp = -1;
+            RestLoopPitch(loop);
+        }
+
+        // Target the loop may chase. While the entrance cue still owns the seat, stay at 1
+        // so bar 1 (inside the cue) and the loop share a tempo.
+        public static float PitchTarget(float requested, bool cueLive, bool badgerOn)
+        {
+            if (!badgerOn || cueLive) return 1f;
+            return BossBeat.ClampPitch(requested);
+        }
+
+        // u is 0 when the target changes and 1 when the slew finishes. Never a one-frame snap.
+        public static float SlewPitch(float from, float to, float u)
+        {
+            if (u <= 0f) return from;
+            if (u >= 1f) return to;
+            return Mathf.Lerp(from, to, u);
+        }
+
+        // 1 at the start of a final-blow cut, 0 once BadgerCutRampSeconds has elapsed.
+        public static float CutGain(float elapsed)
+        {
+            float dur = BadgerCutRampSeconds;
+            if (dur <= 0f) return 0f;
+            if (elapsed <= 0f) return 1f;
+            if (elapsed >= dur) return 0f;
+            return 1f - elapsed / dur;
+        }
+
+        void RestLoopPitch(AudioSource loop)
+        {
+            _badgerPitchFrom = 1f;
+            _badgerPitchTo = 1f;
+            _badgerPitchSlew = 1f;
+            if (loop != null) loop.pitch = 1f;
+        }
+
+        AudioSource BadgerStem(int i)
+        {
+            if (_stems == null || i < 0 || i >= _stems.Length) return null;
+            return _stems[i];
+        }
+
+        // Linear gain to 0, then Stop. A paused listener is already silent, so it does not spin.
+        // The wait is a few milliseconds and returns before the caller plays the sharp hit.
+        void RampBadgerVoicesThenStop()
+        {
+            var loop = BadgerStem(BadgerLoopStem);
+            var cue = BadgerStem(BadgerCueStem);
+            var sting = BadgerStem(BadgerStingStem);
+            float lv = loop != null ? loop.volume : 0f;
+            float cv = cue != null ? cue.volume : 0f;
+            float sv = sting != null ? sting.volume : 0f;
+            bool live = (loop != null && loop.isPlaying) || (cue != null && cue.isPlaying) || (sting != null && sting.isPlaying);
+            if (live && !AudioListener.pause)
+            {
+                float t0 = Time.realtimeSinceStartup;
+                float dur = BadgerCutRampSeconds;
+                int guard = 0;
+                while (Time.realtimeSinceStartup - t0 < dur && guard++ < 100000)
+                {
+                    float g = CutGain(Time.realtimeSinceStartup - t0);
+                    if (loop != null) loop.volume = lv * g;
+                    if (cue != null) cue.volume = cv * g;
+                    if (sting != null) sting.volume = sv * g;
+                }
+            }
+            SilenceStem(loop);
+            SilenceStem(cue);
+            SilenceStem(sting);
+            _bgCueLive = false;
+            RestLoopPitch(loop);
+        }
+
+        static void SilenceStem(AudioSource s)
+        {
+            if (s == null) return;
+            s.volume = 0f;
+            s.Stop();
+        }
+
+        bool CueOwnsPitch(AudioSource cue)
+        {
+            // Scheduled handoff is the clock. isPlaying covers a cue that is still speaking
+            // if dspTime was stolen by a listener pause. Either one keeps the loop at 1.
+            if (_bgHandoffDsp > 0 && AudioSettings.dspTime < _bgHandoffDsp) return true;
+            return _bgCueLive && cue != null && cue.isPlaying;
+        }
+
+        void ApplyLoopPitch(AudioSource loopSrc, AudioSource cue, float dt)
+        {
+            if (loopSrc == null) return;
+            float want = PitchTarget(_badgerPitch, CueOwnsPitch(cue), _badger);
+            float heard = loopSrc.pitch;
+            if (Mathf.Abs(heard - want) <= 0.0001f)
+            {
+                _badgerPitchFrom = want;
+                _badgerPitchTo = want;
+                _badgerPitchSlew = 1f;
+                return;
+            }
+            if (_badgerPitchSlew >= 1f || Mathf.Abs(_badgerPitchTo - want) > 0.0001f)
+            {
+                _badgerPitchFrom = heard;
+                _badgerPitchTo = want;
+                _badgerPitchSlew = 0f;
+            }
+            float step = dt;
+            if (step < 0f) step = 0f;
+            if (step > 0.05f) step = 0.05f;
+            float dur = BadgerPitchSlewSeconds;
+            _badgerPitchSlew += dur <= 0f ? 1f : step / dur;
+            if (_badgerPitchSlew > 1f) _badgerPitchSlew = 1f;
+            loopSrc.pitch = SlewPitch(_badgerPitchFrom, _badgerPitchTo, _badgerPitchSlew);
         }
 
         // GamePause (AudioListener.pause) freezes the sources but not dspTime, so a loop still
@@ -534,7 +667,9 @@ namespace FlockFive
             if (left <= 0.02) return;
             loop.Stop();
             loop.timeSamples = BadgerBarSamples(loop.clip);
-            loop.PlayScheduled(AudioSettings.dspTime + left);
+            double at = AudioSettings.dspTime + left;
+            loop.PlayScheduled(at);
+            _bgHandoffDsp = at;
         }
 
         // Returns the share of the place seat the badger holds (0..1) and drives its stems.
@@ -551,19 +686,15 @@ namespace FlockFive
             _badgerMix = Mathf.MoveTowards(_badgerMix, want, dt / BadgerFadeSeconds);
             _badgerFade = Mathf.MoveTowards(_badgerFade, _badgerFadeTarget, dt / BadgerFadeSeconds);
             var cue = _stems[BadgerCueStem];
+            var loopSrc = _stems[BadgerLoopStem];
             if (_bgCueLive && cue != null && !cue.isPlaying && cue.timeSamples == 0
-                && _bgEntranceClip != null && _stems[BadgerLoopStem] != null && _stems[BadgerLoopStem].isPlaying)
+                && _bgEntranceClip != null && loopSrc != null && loopSrc.isPlaying)
                 _bgCueLive = false;
             // On: badger stems at full (no fade on the first hop). Off: they ride the 0.3 s ramp down.
             float level = _badger ? 1f : _badgerMix;
             SetStem(BadgerLoopStem, level * _badgerFade * BadgerCap * duck);
             SetStem(BadgerCueStem, level * BadgerCap * duck);
-            var loopSrc = _stems[BadgerLoopStem];
-            if (loopSrc != null)
-            {
-                float p = _badger ? BossBeat.ClampPitch(_badgerPitch) : 1f;
-                if (Mathf.Abs(loopSrc.pitch - p) > 0.0001f) loopSrc.pitch = p;
-            }
+            ApplyLoopPitch(loopSrc, cue, dt);
             if (!_badger && _badgerMix <= 0f) StopBadgerSources();
             return _badgerMix;
         }

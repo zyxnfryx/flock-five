@@ -298,7 +298,25 @@ namespace FlockFive
                 data[i] = (tone * body + tick * 0.25f);
             }
             PeakUnder(data, 0.82f);
-            return Bake("sharp-hit", data, 0.22f);
+            var clip = Bake("sharp-hit", data, 0.22f);
+            // 4 ms linear tail on the baked clip. The lowpass would leave a step
+            // at the last sample; the thock has to end at zero.
+            FadeClipTail(clip, 0.004f);
+            return clip;
+        }
+
+        static void FadeClipTail(AudioClip clip, float seconds)
+        {
+            if (clip == null || seconds <= 0f) return;
+            int n = clip.samples * clip.channels;
+            if (n < 2) return;
+            var data = new float[n];
+            clip.GetData(data, 0);
+            int tail = Mathf.RoundToInt(seconds * clip.frequency);
+            if (tail < 1) tail = 1;
+            for (int i = 0; i < tail && i < n; i++)
+                data[n - 1 - i] *= i / (float)tail;
+            clip.SetData(data, 0);
         }
 
         static AudioClip MakeTick()

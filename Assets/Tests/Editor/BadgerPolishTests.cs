@@ -101,12 +101,34 @@ namespace FlockFive.Editor
         [Test]
         public void MusicTightensWithoutPassingThePitchCap()
         {
+            Assert.That(BadgerPolish.DesperatePitch, Is.EqualTo(1.02f).Within(0.0001f));
+            Assert.That(BadgerPolish.DesperatePitch, Is.LessThan(BossBeat.PitchCap));
             Assert.That(BadgerPolish.LoopPitch(BadgerMood.Smug, BadgerTwist.StrongerTiles), Is.EqualTo(1f).Within(0.0001f));
             Assert.That(BadgerPolish.LoopPitch(BadgerMood.Desperate, BadgerTwist.NewTaunt), Is.EqualTo(BadgerPolish.DesperatePitch).Within(0.0001f));
+            Assert.That(BadgerPolish.LoopPitch(BadgerMood.Desperate, BadgerTwist.NewTaunt), Is.LessThan(BossBeat.PitchCap));
             Assert.That(BadgerPolish.LoopPitch(BadgerMood.Smug, BadgerTwist.FasterRiff), Is.EqualTo(1.04f).Within(0.0001f));
             float both = BadgerPolish.LoopPitch(BadgerMood.Desperate, BadgerTwist.FasterRiff);
             Assert.That(both, Is.EqualTo(BossBeat.PitchCap).Within(0.0001f));
             Assert.That(both, Is.LessThanOrEqualTo(BossBeat.PitchCap));
+        }
+
+        [Test]
+        public void LoopPitchSlewsAfterTheCueAndTheCutRamps()
+        {
+            Assert.That(MixDesk.BadgerPitchSlewSeconds, Is.GreaterThanOrEqualTo(0.30f).And.LessThanOrEqualTo(0.50f));
+            Assert.That(MixDesk.BadgerCutRampSeconds, Is.GreaterThanOrEqualTo(0.005f).And.LessThanOrEqualTo(0.010f));
+            float riff = BadgerPolish.LoopPitch(BadgerMood.Smug, BadgerTwist.FasterRiff);
+            // Entrance cue still speaking: the loop stays at 1. No +68 cent step onto the riff.
+            Assert.That(MixDesk.PitchTarget(riff, true, true), Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(MixDesk.SlewPitch(1f, riff, 0f), Is.EqualTo(1f).Within(0.0001f));
+            float mid = MixDesk.SlewPitch(1f, riff, 0.5f);
+            Assert.That(mid, Is.GreaterThan(1f));
+            Assert.That(mid, Is.LessThan(riff));
+            Assert.That(MixDesk.PitchTarget(riff, false, true), Is.EqualTo(riff).Within(0.0001f));
+            Assert.That(MixDesk.SlewPitch(1f, riff, 1f), Is.EqualTo(riff).Within(0.0001f));
+            Assert.That(MixDesk.CutGain(0f), Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(MixDesk.CutGain(MixDesk.BadgerCutRampSeconds * 0.5f), Is.EqualTo(0.5f).Within(0.0001f));
+            Assert.That(MixDesk.CutGain(MixDesk.BadgerCutRampSeconds), Is.EqualTo(0f).Within(0.0001f));
         }
 
         [Test]
@@ -263,6 +285,21 @@ namespace FlockFive.Editor
             Assert.That(clip, Is.Not.Null);
             Assert.That(clip.length, Is.GreaterThan(0.05f).And.LessThan(0.20f));
             Assert.That(clip.name, Is.EqualTo("sharp-hit"));
+            var data = new float[clip.samples * clip.channels];
+            clip.GetData(data, 0);
+            Assert.That(data.Length, Is.GreaterThan(8));
+            float peak = 0f;
+            for (int i = 0; i < data.Length; i++)
+            {
+                float a = Mathf.Abs(data[i]);
+                if (a > peak) peak = a;
+            }
+            Assert.That(peak, Is.GreaterThan(0.2f));
+            // 4 ms linear tail. The last sample sits on zero.
+            int tail = Mathf.RoundToInt(0.004f * clip.frequency);
+            Assert.That(tail / (float)clip.frequency, Is.GreaterThanOrEqualTo(0.003f).And.LessThanOrEqualTo(0.005f));
+            Assert.That(Mathf.Abs(data[data.Length - 1]), Is.LessThan(0.0001f));
+            Assert.That(Mathf.Abs(data[data.Length - 1]), Is.LessThan(peak * 0.01f));
         }
 
         static int[] Grid(int honey)
