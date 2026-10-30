@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System;
+using System.IO;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -129,6 +130,78 @@ namespace FlockFive.Editor
             Assert.That(MixDesk.CutGain(0f), Is.EqualTo(1f).Within(0.0001f));
             Assert.That(MixDesk.CutGain(MixDesk.BadgerCutRampSeconds * 0.5f), Is.EqualTo(0.5f).Within(0.0001f));
             Assert.That(MixDesk.CutGain(MixDesk.BadgerCutRampSeconds), Is.EqualTo(0f).Within(0.0001f));
+        }
+
+        [Test]
+        public void CutRampsAcrossTicksThenStops()
+        {
+            bool paused = AudioListener.pause;
+            float listen = AudioListener.volume;
+            AudioListener.pause = false;
+            AudioListener.volume = 0f;
+            var go = new GameObject("badger-cut-ramp");
+            var desk = go.AddComponent<MixDesk>();
+            desk.AttachForTests();
+            AudioClip clip = null;
+            try
+            {
+                desk.PlantBadgerVoicesForTests(out var loop, out var cue, out var sting);
+                clip = loop.clip;
+                Assert.That(loop.isPlaying && cue.isPlaying && sting.isPlaying, Is.True, "probe voices did not start");
+                float full = loop.volume;
+
+                float t0 = Time.realtimeSinceStartup;
+                desk.BadgerCut();
+                float waited = Time.realtimeSinceStartup - t0;
+                Assert.That(waited, Is.LessThan(MixDesk.BadgerCutRampSeconds * 0.5f), "cut blocked the frame");
+                Assert.That(desk.BadgerOnForTests, Is.True);
+                Assert.That(loop.isPlaying && cue.isPlaying && sting.isPlaying, Is.True, "cut stopped the voices on the same call");
+                Assert.That(loop.volume, Is.EqualTo(full).Within(0.0001f));
+                Assert.That(cue.volume, Is.EqualTo(full).Within(0.0001f));
+                Assert.That(sting.volume, Is.EqualTo(full).Within(0.0001f));
+
+                // A tick with no clock must not finish the ramp or spin.
+                float held = desk.TickBadgerForTests(0f);
+                Assert.That(held, Is.EqualTo(1f).Within(0.0001f));
+                Assert.That(desk.BadgerOnForTests, Is.True);
+                Assert.That(loop.isPlaying && cue.isPlaying && sting.isPlaying, Is.True);
+
+                float step = MixDesk.BadgerCutRampSeconds * 0.5f;
+                float g = MixDesk.CutGain(step);
+                float mid = desk.TickBadgerForTests(step);
+                Assert.That(g, Is.GreaterThan(0f));
+                Assert.That(mid, Is.EqualTo(1f).Within(0.0001f));
+                Assert.That(desk.BadgerOnForTests, Is.True);
+                Assert.That(loop.isPlaying && cue.isPlaying && sting.isPlaying, Is.True);
+                Assert.That(loop.volume, Is.EqualTo(full * g).Within(0.0001f));
+                Assert.That(cue.volume, Is.EqualTo(full * g).Within(0.0001f));
+                Assert.That(sting.volume, Is.EqualTo(full * g).Within(0.0001f));
+
+                desk.TickBadgerForTests(MixDesk.BadgerCutRampSeconds);
+                Assert.That(desk.BadgerOnForTests, Is.True);
+                Assert.That(loop.isPlaying, Is.False);
+                Assert.That(cue.isPlaying, Is.False);
+                Assert.That(sting.isPlaying, Is.False);
+                Assert.That(loop.volume, Is.EqualTo(0f).Within(0.0001f));
+                Assert.That(cue.volume, Is.EqualTo(0f).Within(0.0001f));
+                Assert.That(sting.volume, Is.EqualTo(0f).Within(0.0001f));
+
+                // Sharp hit stays on the cut frame, immediately after the cut returns.
+                string app = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
+                int at = app.IndexOf("MixDesk.Live.BadgerCut()", StringComparison.Ordinal);
+                int hit = at < 0 ? -1 : app.IndexOf("SfxLibrary.SharpHit()", at, StringComparison.Ordinal);
+                Assert.That(at, Is.GreaterThan(0));
+                Assert.That(hit, Is.GreaterThan(at));
+                Assert.That(hit - at, Is.LessThan(120));
+            }
+            finally
+            {
+                MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+                if (clip != null) UnityEngine.Object.DestroyImmediate(clip);
+                AudioListener.pause = paused;
+                AudioListener.volume = listen;
+            }
         }
 
         [Test]

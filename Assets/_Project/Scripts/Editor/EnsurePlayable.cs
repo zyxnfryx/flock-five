@@ -114,6 +114,22 @@ namespace FlockFive.Editor
             Debug.Log("EDITOR_SUITES_DONE");
         }
 
+        // Badger editor suites for this branch. Skips the ostrich suites in RunEditorTests.
+        public static void RunBadgerPolishGate()
+        {
+            Suite("badger", BadgerFightTests.Run);
+            Suite("badger-show", BadgerShowTests.Run);
+            Suite("build75", Build75Tests.Run);
+            Suite("build110", Build110BadgerDialogTests.Run);
+            Suite("build110ff", Build110FreezeFrozenTests.Run);
+            Suite("build123", Build123BadgerTutorialTests.Run);
+            Suite("build127", Build127Tests.Run);
+            Suite("build128", Build128BadgerPowerTests.Run);
+            Suite("build129", Build129BadgerGapTests.Run);
+            Suite("build130", Build130BadgerStackTests.Run);
+            Debug.Log("BADGER_POLISH_GATE_DONE");
+        }
+
         // One suite throwing used to skip every suite after it.
         static void Suite(string name, System.Action run)
         {

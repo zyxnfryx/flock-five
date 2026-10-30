@@ -63,6 +63,11 @@ namespace FlockFive
         double _bgHandoffDsp = -1;
         bool _bgWasPaused;
         float _bgHandBackAt = -1f;
+        // Elapsed seconds since the final-blow cut. Negative means the voices are not ramping.
+        float _bgCutT = -1f;
+        float _bgCutLv, _bgCutCv, _bgCutSv;
+        // Edit-mode tests feed TickBadger a dt. Negative uses the real unscaled delta.
+        float _badgerDt = -1f;
         const float BadgerCap = 0.40f;
         // Stingers play once at the bed's cap, not ducked: they ARE the moment.
         const float BadgerStingCap = 0.40f;
@@ -70,7 +75,8 @@ namespace FlockFive
         // Heard pitch arrives over this span (inside 0.3–0.5 s). A faster-riff visit
         // must not jump +68 cents on the frame the loop takes the seat.
         public const float BadgerPitchSlewSeconds = 0.40f;
-        // Final-blow stop. Loop, cue and sting reach 0, then Stop. Inside 5–10 ms.
+        // Final-blow stop. Loop, cue and sting reach 0 over the next one or two
+        // TickBadger ticks, then Stop. The frame does not wait on the ramp.
         public const float BadgerCutRampSeconds = 0.008f;
         const float BadgerBarSeconds = 1.6f;   // 150 BPM, 4/4
         const int BadgerLoopStem = 6;
@@ -255,6 +261,50 @@ namespace FlockFive
         }
 
         public void TickForTests() => LateUpdate();
+
+        public bool BadgerOnForTests => _badger;
+
+        // Drive the badger seat with a chosen dt. Edit mode does not advance unscaled time.
+        public float TickBadgerForTests(float dt)
+        {
+            _badgerDt = dt < 0f ? 0f : dt;
+            try { return TickBadger(1f); }
+            finally { _badgerDt = -1f; }
+        }
+
+        // Three probe voices on the badger stems, already playing. Listener stays muted by the caller.
+        public void PlantBadgerVoicesForTests(out AudioSource loop, out AudioSource cue, out AudioSource sting)
+        {
+            if (_stems == null || _stems.Length < 9)
+            {
+                var old = _stems;
+                _stems = new AudioSource[9];
+                if (old != null)
+                    for (int i = 0; i < old.Length && i < 9; i++)
+                        _stems[i] = old[i];
+            }
+            var clip = AudioClip.Create("badger-cut-probe", 22050, 1, 22050, false);
+            clip.SetData(new float[22050], 0);
+            loop = PlantBadgerVoice(BadgerLoopStem, clip, true);
+            cue = PlantBadgerVoice(BadgerCueStem, clip, false);
+            sting = PlantBadgerVoice(BadgerStingStem, clip, false);
+        }
+
+        AudioSource PlantBadgerVoice(int i, AudioClip clip, bool loop)
+        {
+            var s = _stems[i];
+            if (s == null) s = gameObject.AddComponent<AudioSource>();
+            s.playOnAwake = false;
+            s.loop = loop;
+            s.spatialBlend = 0f;
+            s.clip = clip;
+            s.volume = 0.4f;
+            s.ignoreListenerPause = true;
+            if (s.isPlaying) s.Stop();
+            s.Play();
+            _stems[i] = s;
+            return s;
+        }
 
         public static void DetachForTests(MixDesk desk)
         {
@@ -451,8 +501,8 @@ namespace FlockFive
             _bgCueLive = true;
         }
 
-        // Hard cut for the final blow. Loop, cue and sting ramp to 0 over a few
-        // milliseconds, then stop. The seat stays claimed so the garden does not rush
+        // Hard cut for the final blow. Loop, cue and sting ramp to 0 over the next
+        // one or two ticks, then stop. The seat stays claimed so the garden does not rush
         // back during the beat of silence. The win stinger is a later BadgerResult call.
         // Returns on this frame so the sharp hit can fire beside the cut.
         public void BadgerCut()
@@ -465,7 +515,7 @@ namespace FlockFive
             _bgHandoffDsp = -1;
             _bgHandBackAt = -1f;
             _badgerPitch = 1f;
-            RampBadgerVoicesThenStop();
+            BeginBadgerCutRamp();
         }
 
         // Loop only. Cue and stingers stay at pitch 1. Clamped to the producer cap.
@@ -499,6 +549,9 @@ namespace FlockFive
         // when the clip is missing so the caller keeps its old one-shot (fanfare / Deny).
         public bool BadgerResult(bool won)
         {
+            // The win stinger follows the cut by a beat. If a ramp is still open, finish it
+            // before this Play, or the next tick would Stop the new stinger.
+            if (_bgCutT >= 0f) FinishBadgerCut();
             var clip = won ? _bgWinClip : _bgLoseClip;
             if (!BadgerReady || clip == null) return false;
             _badgerFadeTarget = 0f;
@@ -532,6 +585,7 @@ namespace FlockFive
 
         void StopBadgerSources()
         {
+            _bgCutT = -1f;
             if (_stems == null || _stems.Length <= BadgerCueStem) return;
             var loop = _stems[BadgerLoopStem];
             var cue = _stems[BadgerCueStem];
@@ -582,30 +636,53 @@ namespace FlockFive
             return _stems[i];
         }
 
-        // Linear gain to 0, then Stop. A paused listener is already silent, so it does not spin.
-        // The wait is a few milliseconds and returns before the caller plays the sharp hit.
-        void RampBadgerVoicesThenStop()
+        // Arm the ramp and return. Voices that are already silent stop now. Live voices
+        // keep playing at their current gain until TickBadger walks CutGain down to 0.
+        void BeginBadgerCutRamp()
         {
             var loop = BadgerStem(BadgerLoopStem);
             var cue = BadgerStem(BadgerCueStem);
             var sting = BadgerStem(BadgerStingStem);
-            float lv = loop != null ? loop.volume : 0f;
-            float cv = cue != null ? cue.volume : 0f;
-            float sv = sting != null ? sting.volume : 0f;
+            _bgCutLv = loop != null ? loop.volume : 0f;
+            _bgCutCv = cue != null ? cue.volume : 0f;
+            _bgCutSv = sting != null ? sting.volume : 0f;
             bool live = (loop != null && loop.isPlaying) || (cue != null && cue.isPlaying) || (sting != null && sting.isPlaying);
-            if (live && !AudioListener.pause)
+            RestLoopPitch(loop);
+            if (!live)
             {
-                float t0 = Time.realtimeSinceStartup;
-                float dur = BadgerCutRampSeconds;
-                int guard = 0;
-                while (Time.realtimeSinceStartup - t0 < dur && guard++ < 100000)
-                {
-                    float g = CutGain(Time.realtimeSinceStartup - t0);
-                    if (loop != null) loop.volume = lv * g;
-                    if (cue != null) cue.volume = cv * g;
-                    if (sting != null) sting.volume = sv * g;
-                }
+                FinishBadgerCut();
+                return;
             }
+            _bgCutT = 0f;
+        }
+
+        // One tick of the cut. A 16 ms frame finishes the 8 ms ramp; a shorter tick holds
+        // the voices at CutGain so the mixer can read it. Never spins.
+        void AdvanceBadgerCut(float dt)
+        {
+            if (_bgCutT < 0f) return;
+            if (dt < 0f) dt = 0f;
+            _bgCutT += dt;
+            float g = CutGain(_bgCutT);
+            if (g > 0f)
+            {
+                var loop = BadgerStem(BadgerLoopStem);
+                var cue = BadgerStem(BadgerCueStem);
+                var sting = BadgerStem(BadgerStingStem);
+                if (loop != null) loop.volume = _bgCutLv * g;
+                if (cue != null) cue.volume = _bgCutCv * g;
+                if (sting != null) sting.volume = _bgCutSv * g;
+                return;
+            }
+            FinishBadgerCut();
+        }
+
+        void FinishBadgerCut()
+        {
+            _bgCutT = -1f;
+            var loop = BadgerStem(BadgerLoopStem);
+            var cue = BadgerStem(BadgerCueStem);
+            var sting = BadgerStem(BadgerStingStem);
             SilenceStem(loop);
             SilenceStem(cue);
             SilenceStem(sting);
@@ -681,7 +758,8 @@ namespace FlockFive
                 _bgHandBackAt = -1f;
                 _badger = false;
             }
-            float dt = AdPause.UnscaledDelta;
+            float dt = _badgerDt >= 0f ? _badgerDt : AdPause.UnscaledDelta;
+            if (dt < 0f) dt = 0f;
             float want = _badger ? 1f : 0f;
             _badgerMix = Mathf.MoveTowards(_badgerMix, want, dt / BadgerFadeSeconds);
             _badgerFade = Mathf.MoveTowards(_badgerFade, _badgerFadeTarget, dt / BadgerFadeSeconds);
@@ -690,12 +768,19 @@ namespace FlockFive
             if (_bgCueLive && cue != null && !cue.isPlaying && cue.timeSamples == 0
                 && _bgEntranceClip != null && loopSrc != null && loopSrc.isPlaying)
                 _bgCueLive = false;
-            // On: badger stems at full (no fade on the first hop). Off: they ride the 0.3 s ramp down.
-            float level = _badger ? 1f : _badgerMix;
-            SetStem(BadgerLoopStem, level * _badgerFade * BadgerCap * duck);
-            SetStem(BadgerCueStem, level * BadgerCap * duck);
+            // The cut owns loop, cue and sting until it reaches 0. SetStem would snap the
+            // loop (fade is already 0) and put the cue back to full.
+            bool cutting = _bgCutT >= 0f;
+            if (cutting) AdvanceBadgerCut(dt);
+            else
+            {
+                // On: badger stems at full (no fade on the first hop). Off: they ride the 0.3 s ramp down.
+                float level = _badger ? 1f : _badgerMix;
+                SetStem(BadgerLoopStem, level * _badgerFade * BadgerCap * duck);
+                SetStem(BadgerCueStem, level * BadgerCap * duck);
+            }
             ApplyLoopPitch(loopSrc, cue, dt);
-            if (!_badger && _badgerMix <= 0f) StopBadgerSources();
+            if (!_badger && _badgerMix <= 0f && _bgCutT < 0f) StopBadgerSources();
             return _badgerMix;
         }
 
