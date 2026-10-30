@@ -33,6 +33,9 @@ namespace FlockFive
         float _bgSlamT;
         int _bgSlamWord = -1;
         float _bgSlamStartedAt;
+        // Tell clock. Runs in SlamTell, then the slam clock starts at the leftover.
+        float _bgTellT;
+        bool _bgTellOn;
         int _bgPendValue;
 #if UNITY_EDITOR
         // Editor shots hide the sitter unless this is set (debug override).
@@ -343,8 +346,12 @@ namespace FlockFive
             }
             // A slam left behind (page gone) or stuck past its end finishes now; the zoom is
             // derived from the stage, so the contest is back at 1:1 the same frame.
-            if (DontCareSlamLive && (!(_splash && _home == HomeFace.Badger)
-                || BadgerSlam.Stuck(true, PlayClock.Now - _bgSlamStartedAt)))
+            bool onBadgerPage = _splash && _home == HomeFace.Badger;
+            bool slamStuck = DontCareSlamLive && (!onBadgerPage
+                || BadgerSlam.Stuck(true, PlayClock.Now - _bgSlamStartedAt));
+            bool tellStuck = _bgStage == BadgerStage.SlamTell && (!onBadgerPage
+                || (PlayClock.Now - _bgSlamStartedAt) > BossBeat.TellSeconds + TutorialHeal.MaxGateSeconds);
+            if (slamStuck || tellStuck)
             {
                 AdLog.Add("badger heal: slam finished");
                 FinishDontCareSlam();
@@ -400,7 +407,7 @@ namespace FlockFive
             _bgT = 0f;
             _bgStage = BadgerStage.PostOpen;
             // Appearance 1 with the lesson pending: lesson owns the box (no opening line).
-            _bgLine = BadgerCopy.OpeningLine(_bgAppearance, BadgerCopy.NeedsLesson(_bgAppearance));
+            _bgLine = BadgerCopy.OpeningForVisit(_bgAppearance, BadgerCopy.NeedsLesson(_bgAppearance));
         }
 
         // 0 = empty cell, 0..1 flipping, 1 = final face. Outside the opening every tile is final.
@@ -548,17 +555,32 @@ namespace FlockFive
 
         // ---- "Honey Badger Don't Care" slam (spec 2b) ----
 
-        // THE slam beat. Starts the clock after a TryDontCare hit; TickBadger steps it and
-        // resolves the round once BadgerSlam.Done. The fight already holds the effect (power-up
-        // stripped, or this round's honey halved); the show reveals it at BadgerSlam.NastyAt.
-        void PlayDontCareSlam(BadgerDontCare slam)
+        // THE slam beat. A TryDontCare hit starts the shared tell first (BossBeat, ~0.5 s,
+        // the same glint and paw twitch every time). The slam clock starts when the tell
+        // ends. The fight already holds the effect (power-up stripped, or this round's honey
+        // halved); the show reveals it at BadgerSlam.NastyAt.
+        void PlaySlamTell(BadgerDontCare slam)
         {
             _bgSlam = slam;
+            _bgTellT = 0f;
+            _bgTellOn = true;
             _bgSlamT = 0f;
             _bgSlamWord = -1;
             _bgSlamStartedAt = PlayClock.Now;
-            _bgStage = BadgerStage.DontCare;
+            _bgStage = BadgerStage.SlamTell;
             _bgLine = "";
+        }
+
+        void StepSlamTell(float dt)
+        {
+            _bgTellT += dt;
+            if (!BossBeat.TellDone(_bgTellT)) return;
+            float leftover = _bgTellT - BossBeat.TellSeconds;
+            _bgTellOn = false;
+            _bgSlamT = leftover > 0f ? leftover : 0f;
+            _bgSlamWord = -1;
+            _bgSlamStartedAt = PlayClock.Now;
+            _bgStage = BadgerStage.DontCare;
         }
 
         // Each word is a CardBump thud (Lead, shorter than the 0.40 s gap). The badger
@@ -594,7 +616,8 @@ namespace FlockFive
         // leaving DontCare is what puts the contest back at 1:1.
         void FinishDontCareSlam()
         {
-            if (_bgStage != BadgerStage.DontCare) return;
+            if (_bgStage != BadgerStage.DontCare && _bgStage != BadgerStage.SlamTell) return;
+            _bgTellOn = false;
             _bgSlamT = BadgerSlam.Duration;
             ApplyDontCareNasty();
             if (_bgFight != null) ResolveBadgerRound();

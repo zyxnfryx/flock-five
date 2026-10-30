@@ -52,6 +52,8 @@ namespace FlockFive
         float _badgerMix;
         float _badgerFade = 1f;
         float _badgerFadeTarget = 1f;
+        // Loop tempo. 1 at rest. Desperate and the faster-riff twist raise it, never past BossBeat.PitchCap.
+        float _badgerPitch = 1f;
         bool _bgCueLive;
         bool _bgWasPaused;
         float _bgHandBackAt = -1f;
@@ -435,6 +437,31 @@ namespace FlockFive
 
         // The contest is up. Normally the entrance already owns the seat (no-op). Without a
         // leap (editor drop file, missing cue) the loop starts here with a short fade-in.
+        // Hard cut for the final blow. The loop and the cue stop now. The seat stays
+        // claimed so the garden does not rush back during the beat of silence.
+        // The win stinger is a later BadgerResult call, not this one.
+        public void BadgerCut()
+        {
+            StopBadgerSources();
+            if (_stems != null && _stems.Length > BadgerStingStem && _stems[BadgerStingStem] != null)
+                _stems[BadgerStingStem].Stop();
+            _badger = true;
+            _badgerMix = 1f;
+            _badgerFade = 0f;
+            _badgerFadeTarget = 0f;
+            _bgCueLive = false;
+            _bgHandBackAt = -1f;
+            _badgerPitch = 1f;
+        }
+
+        // Loop only. Cue and stingers stay at pitch 1. Clamped to the producer cap.
+        public void SetBadgerPitch(float pitch)
+        {
+            _badgerPitch = BossBeat.ClampPitch(pitch);
+        }
+
+        public float BadgerPitch => _badgerPitch;
+
         public void BadgerBattle()
         {
             if (!BadgerReady) return;
@@ -531,6 +558,12 @@ namespace FlockFive
             float level = _badger ? 1f : _badgerMix;
             SetStem(BadgerLoopStem, level * _badgerFade * BadgerCap * duck);
             SetStem(BadgerCueStem, level * BadgerCap * duck);
+            var loopSrc = _stems[BadgerLoopStem];
+            if (loopSrc != null)
+            {
+                float p = _badger ? BossBeat.ClampPitch(_badgerPitch) : 1f;
+                if (Mathf.Abs(loopSrc.pitch - p) > 0.0001f) loopSrc.pitch = p;
+            }
             if (!_badger && _badgerMix <= 0f) StopBadgerSources();
             return _badgerMix;
         }

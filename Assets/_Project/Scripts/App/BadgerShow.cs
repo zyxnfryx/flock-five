@@ -7,7 +7,7 @@ namespace FlockFive
     // draw in every stage; nothing here fades the badger out with the hive.
     public enum BadgerStage
     {
-        PostOpen, BossWait, YourPick, Reveal, Verdict, Outro, Over, Opening, Lesson, DontCare
+        PostOpen, BossWait, YourPick, Reveal, Verdict, Outro, Over, Opening, Lesson, DontCare, SlamTell
     }
 
     // Honey badger contest, Phase 4: the timelines for the leap, the hive swipe and bee
@@ -1105,6 +1105,7 @@ namespace FlockFive
                 case BadgerStage.Opening:
                 case BadgerStage.Lesson:
                 case BadgerStage.DontCare:
+                case BadgerStage.SlamTell:
                     return true;
                 default:
                     return false;

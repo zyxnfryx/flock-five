@@ -54,6 +54,20 @@ namespace FlockFive
             if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.42f, MixDesk.DuckWhoosh);
         }
 
+        // Final-blow thock. Dry wood, short attack, no noise floor, pitch locked at 1.
+        // Lead, so the bed (already cut) and any mid decoration wait.
+        public const float SharpHitVolume = 0.70f;
+
+        public static AudioClip SharpHitClip() => Clip("sharp-hit");
+
+        public static void SharpHit()
+        {
+            var clip = SharpHitClip();
+            if (clip == null) return;
+            Sfx.PlayProc(clip, 1f, SharpHitVolume, MixLayer.Lead);
+            if (MixDesk.Live != null) MixDesk.Live.MarkLead(0.28f, MixDesk.DuckBreak);
+        }
+
         // b129: ice crack and ice shatter for the badger thaw (the shared break clips).
         // v3: Musical Producer's original ice clips, each a no-repeat bank. Crack: Mid one-shot 0.35. Shatter: Lead 0.55.
         public static readonly string[] IceCrackBank = { "Audio/Ice/ice_crack_00", "Audio/Ice/ice_crack_01", "Audio/Ice/ice_crack_02" };
@@ -148,7 +162,7 @@ namespace FlockFive
 
         // The named clips, warmed one per splash frame so the first fanfare, badger
         // sting, tick or cowbell is not synthesized on the frame it should sound.
-        static readonly string[] _warmNames = { "badger", "fanfare", "tick", "sting", "cowbell" };
+        static readonly string[] _warmNames = { "badger", "fanfare", "tick", "sting", "cowbell", "sharp-hit" };
         static int _warmNext;
 
         public static bool WarmDone => _warmNext >= _warmNames.Length;
@@ -169,6 +183,7 @@ namespace FlockFive
             else if (name == "tick") clip = MakeTick();
             else if (name == "sting") clip = MakeSting();
             else if (name == "honk") clip = MakeHonk();
+            else if (name == "sharp-hit") clip = MakeSharpHit();
             else return null;
             _clips[name] = clip;
             return clip;
@@ -261,6 +276,29 @@ namespace FlockFive
                 data[n - 1 - i] *= i / (float)tail;
             PeakUnder(data, 0.80f);
             return Bake("badger", data, 0.35f);
+        }
+
+        // Final-blow hit. A hollow wood thock: D3 body, a short fifth, and a 6 ms
+        // mid tick that dies before it can whistle. Under ~700 Hz after the attack.
+        // Bake low-passes the sum. Not a gunshot and not a second melody.
+        static AudioClip MakeSharpHit()
+        {
+            const float dur = 0.12f;
+            int n = Mathf.CeilToInt(Rate * dur);
+            var data = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float u = t / 0.004f;
+                float atk = u >= 1f ? 1f : u * u * (3f - 2f * u);
+                float body = atk * Mathf.Exp(-t * 28f);
+                float w = 2f * Mathf.PI * 146.83f * t;
+                float tone = Mathf.Sin(w) + 0.35f * Mathf.Sin(2f * Mathf.PI * 220f * t) * Mathf.Exp(-t * 36f);
+                float tick = t < 0.008f ? Mathf.Sin(2f * Mathf.PI * 520f * t) * Mathf.Exp(-t * 280f) : 0f;
+                data[i] = (tone * body + tick * 0.25f);
+            }
+            PeakUnder(data, 0.82f);
+            return Bake("sharp-hit", data, 0.22f);
         }
 
         static AudioClip MakeTick()
