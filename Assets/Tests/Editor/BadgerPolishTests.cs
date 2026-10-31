@@ -185,7 +185,7 @@ namespace FlockFive.Editor
                 Assert.That(blit.Dest.width, Is.EqualTo(padded.width).Within(0.01f), pose);
                 Assert.That(blit.Dest.height, Is.EqualTo(padded.height).Within(0.01f), pose);
                 Assert.That(blit.Layered, Is.True);
-                Assert.That(blit.HaloAlpha, Is.EqualTo(0.50f).Within(0.0001f));
+                Assert.That(blit.HaloAlpha, Is.EqualTo(0.75f).Within(0.0001f));
                 Assert.That(blit.BodyTint.r, Is.EqualTo(BadgerWearArt.BodyTint(BadgerWear.Scuffed).r).Within(0.0001f));
             }
         }
@@ -617,9 +617,9 @@ namespace FlockFive.Editor
             }
 
             Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Fresh), Is.EqualTo(0f).Within(0.0001f));
-            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Scuffed), Is.EqualTo(0.50f).Within(0.0001f));
-            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Bruised), Is.EqualTo(0.70f).Within(0.0001f));
-            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Wrecked), Is.EqualTo(0.90f).Within(0.0001f));
+            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Scuffed), Is.EqualTo(0.75f).Within(0.0001f));
+            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Bruised), Is.EqualTo(0.85f).Within(0.0001f));
+            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Wrecked), Is.EqualTo(1f).Within(0.0001f));
 
             Assert.That(BadgerWearArt.PunchSeconds, Is.EqualTo(0.12f).Within(0.0001f));
             Assert.That(BadgerWearArt.PunchPeak, Is.EqualTo(1.08f).Within(0.0001f));
@@ -737,6 +737,102 @@ namespace FlockFive.Editor
             {
                 DeviceFit.TestWindow = keep;
             }
+        }
+
+        [Test]
+        public void WearFlashIsOneFrameOfTheBlowFlash()
+        {
+            float full = BadgerPolish.BlowFlash(0f);
+            Assert.That(full, Is.EqualTo(BossBeat.FlashAlpha(0f)).Within(0.0001f));
+            Assert.That(full, Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(BadgerPolish.WearFlashScale, Is.EqualTo(0.60f).Within(0.0001f));
+            Assert.That(BadgerPolish.WearFlashAlpha(7, 7), Is.EqualTo(full * 0.60f).Within(0.0001f));
+            Assert.That(BadgerPolish.WearFlashAlpha(8, 7), Is.EqualTo(0f).Within(0.0001f));
+            Assert.That(BadgerPolish.WearFlashAlpha(7, -1), Is.EqualTo(0f).Within(0.0001f));
+            Assert.That(BadgerPolish.WearFlashAlpha(0, 0), Is.EqualTo(0.60f).Within(0.0001f));
+
+            string polish = File.ReadAllText("Assets/_Project/Scripts/App/BadgerPolish.cs");
+            int at = polish.IndexOf("float WearFlashAlpha", StringComparison.Ordinal);
+            Assert.That(at, Is.GreaterThan(0));
+            int blow = polish.IndexOf("BlowFlash(0f)", at, StringComparison.Ordinal);
+            Assert.That(blow, Is.GreaterThan(at));
+
+            string duel = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
+            Assert.That(duel.Contains("BadgerPolish.WearFlashAlpha(Time.frameCount, _bgWearFlashFrame)"), Is.True);
+            Assert.That(duel.Contains("new Color(1f, 1f, 1f, a)"), Is.True);
+            Assert.That(duel.Contains("new Color(1f, 1f, 1f, blit.HaloAlpha * alpha)"), Is.True);
+            string stills = File.ReadAllText("Assets/_Project/Scripts/Editor/BadgerPolishStills.cs");
+            Assert.That(stills.Contains("new Color(1f, 1f, 1f, blit.HaloAlpha)"), Is.True);
+            Assert.That(BadgerPolish.YellowStreak(1f, 1f, 1f), Is.False, "white flash and white halo are not a yellow streak");
+        }
+
+        [Test]
+        public void RestPoseMatchesAcrossScreenSizes()
+        {
+            var sizes = new[]
+            {
+                new Vector2(402f, 874f),
+                new Vector2(820f, 1180f),
+                new Vector2(412f, 915f),
+            };
+            var wears = new[] { BadgerWear.Fresh, BadgerWear.Scuffed, BadgerWear.Bruised, BadgerWear.Wrecked };
+            float[] times = { 0.1f, 0.7f, 1.3f, 1.9f };
+            for (int t = 0; t < times.Length; t++)
+            {
+                for (int w = 0; w < wears.Length; w++)
+                {
+                    string a = BadgerWearArt.RestPose(times[t], wears[w], sizes[0].x, sizes[0].y);
+                    for (int s = 1; s < sizes.Length; s++)
+                    {
+                        string b = BadgerWearArt.RestPose(times[t], wears[w], sizes[s].x, sizes[s].y);
+                        Assert.That(b, Is.EqualTo(a), wears[w] + " t=" + times[t] + " size " + sizes[s].x);
+                    }
+                    if (wears[w] == BadgerWear.Wrecked)
+                        Assert.That(a, Is.EqualTo("badger_crouch"));
+                    else if (Mathf.Abs(times[t] - 0.7f) < 0.001f || Mathf.Abs(times[t] - 1.9f) < 0.001f)
+                        Assert.That(a, Is.EqualTo("badger_idle_b"), "t=" + times[t]);
+                    else
+                        Assert.That(a, Is.EqualTo("badger_idle_a"), "t=" + times[t]);
+                }
+            }
+
+            Assert.That(BadgerPoseClock.Hitch, Is.LessThan(0.5f));
+            Assert.That(BadgerPoseClock.Hitch, Is.EqualTo(0.10f).Within(0.0001f));
+            Assert.That(BadgerPoseClock.StepOf(0.40f), Is.EqualTo(BadgerPoseClock.Hitch).Within(0.000001f));
+            Assert.That(BadgerPoseClock.StepOf(0.80f), Is.EqualTo(BadgerPoseClock.StepOf(0.40f)).Within(0.000001f));
+            Assert.That(BadgerPoseClock.StepOf(0.016f), Is.EqualTo(0.016f).Within(0.000001f));
+            Assert.That(BadgerPoseClock.StepOf(0.05f), Is.EqualTo(0.05f).Within(0.000001f));
+            Assert.That(BadgerPoseClock.StepOf(-0.2f), Is.EqualTo(0f).Within(0.000001f));
+
+            string duel = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
+            Assert.That(duel.Contains("BadgerPoseClock.Now"), Is.True);
+            Assert.That(duel.Contains("BadgerPoseClock.Reset(0.75f)"), Is.True);
+            Assert.That(duel.Contains("BadgerWearArt.RestPose"), Is.True);
+            Assert.That(duel.Contains("TickBadger(AdPause.UnscaledDelta)"), Is.True);
+            Assert.That(duel.Contains("_bgTickFrame != Time.frameCount"), Is.True);
+            Assert.That(duel.Contains("BadgerWearArt.BodyTint"), Is.False);
+            string art = File.ReadAllText("Assets/_Project/Scripts/App/BadgerWearArt.cs");
+            int rest = art.IndexOf("string RestPose(", StringComparison.Ordinal);
+            int next = art.IndexOf("public static float PunchScale", rest, StringComparison.Ordinal);
+            Assert.That(rest, Is.GreaterThan(0));
+            Assert.That(next, Is.GreaterThan(rest));
+            string body = art.Substring(rest, next - rest);
+            Assert.That(body.Contains("Screen.width"), Is.False);
+        }
+
+        [Test]
+        public void GreyBodyAndYellowStreakRules()
+        {
+            Assert.That(BadgerPolish.GreySatMax, Is.EqualTo(0.15f).Within(0.0001f));
+            Assert.That(BadgerPolish.GreyValueMin, Is.EqualTo(0.25f).Within(0.0001f));
+            Assert.That(BadgerPolish.GreyBody(0.5f, 0.5f, 0.5f), Is.True);
+            Assert.That(BadgerPolish.GreyBody(0.2f, 0.2f, 0.2f), Is.False, "value at 0.20 is not above 0.25");
+            Assert.That(BadgerPolish.GreyBody(1f, 0f, 0f), Is.False);
+            Assert.That(BadgerPolish.GreyBody(0.25f, 0.25f, 0.25f), Is.False, "value must be above 0.25");
+            Assert.That(BadgerPolish.YellowStreak(1f, 1f, 1f), Is.False);
+            Assert.That(BadgerPolish.YellowStreak(1f, 0.92f, 0.05f), Is.True);
+            Assert.That(BadgerPolish.YellowHueMin * 360f, Is.EqualTo(45f).Within(0.01f));
+            Assert.That(BadgerPolish.YellowHueMax * 360f, Is.EqualTo(70f).Within(0.01f));
         }
 
         static int[] Grid(int honey)

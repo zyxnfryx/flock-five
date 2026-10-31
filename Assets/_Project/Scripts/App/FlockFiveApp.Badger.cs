@@ -119,6 +119,9 @@ namespace FlockFive
         bool _bgPunchInit;
         BadgerWear _bgPunchWear;
         float _bgPunchAt;
+        int _bgWearFlashFrame = -1;
+        bool _bgWearFlashPending;
+        int _bgTickFrame = -1;
         static int FightPaintSerial;
         static int FightBadgerSerial;
         static int FightTokenSerial;
@@ -184,6 +187,11 @@ namespace FlockFive
             _bgTokenLive = false;
             _bgLeanInit = false;
             _bgPunchInit = false;
+            _bgWearFlashFrame = -1;
+            _bgWearFlashPending = false;
+            // Opening runs about 5.9s and the standing rest stills span about 0.53s.
+            // 0.75s puts that whole span in one idle_b half (just after 6.6s).
+            BadgerPoseClock.Reset(0.75f);
             _bgPowerGuideOn = false;
             _bgBreakFreeOn = false;
             _bgBreakTile = -1;
@@ -1629,7 +1637,13 @@ namespace FlockFive
                 _home = HomeFace.Splash;
                 return;
             }
-            if (Event.current.type == EventType.Layout) TickBadger(AdPause.UnscaledDelta);
+            // One tick per frame. A second Layout pass (narrow widths reflow) must
+            // not add UnscaledDelta again.
+            if (Event.current.type == EventType.Layout && _bgTickFrame != Time.frameCount)
+            {
+                _bgTickFrame = Time.frameCount;
+                TickBadger(AdPause.UnscaledDelta);
+            }
             if (GuiPaint())
             {
                 FightPaintSerial = 0;
@@ -2030,19 +2044,26 @@ namespace FlockFive
             var spot = new BadgerActorSpot();
             var box = BadgerArenaRects.Split(L.Arena);
             BadgerDuelPose(out var beat, out float age);
-            float now = PlayClock.Now;
+            float now = BadgerPoseClock.Now;
             var pose = BadgerAnim.Duel(beat, age, now);
             var wearNow = BadgerWearNow();
             // Wrecked idle drops into the crouch so the later hits read lower. The tell
             // stays on the idle face so the glint hits the same pupil every time.
-            if (beat == BadgerDuelBeat.Idle && wearNow == BadgerWear.Wrecked
+            // RestPose ignores screen size. The breathe index is the pose clock only.
+            if (beat == BadgerDuelBeat.Idle
                 && _bgStage != BadgerStage.Opening && _bgStage != BadgerStage.DontCare
                 && _bgStage != BadgerStage.SlamTell)
             {
-                pose.Frame = "badger_crouch";
-                pose.Under = null;
-                pose.UnderAlpha = 0f;
-                pose.FrameAlpha = 1f;
+                string rest = BadgerWearArt.RestPose(now, wearNow, Mathf.Max(2f, PhoneArea.W), Mathf.Max(2f, PhoneArea.H));
+                if (rest == "badger_crouch")
+                {
+                    pose.Frame = rest;
+                    pose.Under = null;
+                    pose.UnderAlpha = 0f;
+                    pose.FrameAlpha = 1f;
+                }
+                else if (pose.Frame == "badger_idle_a" || pose.Frame == "badger_idle_b")
+                    pose.Frame = rest;
             }
             spot.Alpha = BadgerFighter.Alpha(_bgStage);
             BadgerArtSize("badger_idle_b", 1f, out float aw, out float ah);
@@ -2172,7 +2193,7 @@ namespace FlockFive
         float MoodLean(BadgerMood mood)
         {
             float target = BadgerPolish.EarsBack(mood);
-            float now = PlayClock.Now;
+            float now = BadgerPoseClock.Now;
             if (!_bgLeanInit)
             {
                 _bgLeanInit = true;
@@ -2195,18 +2216,24 @@ namespace FlockFive
         // Scale punch on a wear-stage change. The opening sample is already at rest.
         float WearPunch(BadgerWear wear)
         {
-            float now = PlayClock.Now;
+            float now = BadgerPoseClock.Now;
             if (!_bgPunchInit)
             {
                 _bgPunchInit = true;
                 _bgPunchWear = wear;
                 _bgPunchAt = now - BadgerWearArt.PunchSeconds - 0.05f;
+                _bgWearFlashFrame = -1;
+                _bgWearFlashPending = false;
                 return 1f;
             }
             if (wear != _bgPunchWear)
             {
                 _bgPunchWear = wear;
                 _bgPunchAt = now;
+                // The repaint claims the frame. Stamping Time.frameCount here
+                // misses the draw when this runs after OnGUI.
+                _bgWearFlashFrame = -1;
+                _bgWearFlashPending = true;
             }
             return BadgerWearArt.PunchScale(now - _bgPunchAt);
         }
@@ -2398,11 +2425,19 @@ namespace FlockFive
             return true;
         }
 
-        // Full-screen white on the winning hit. BossBeat owns the fade.
+        // Full-screen white. The winning hit uses BlowFlash. A wear-stage start
+        // uses the same helper for one frame at 60%. No yellow in this path.
         void DrawBadgerBlowFlash()
         {
-            if (!_bgBlow || !GuiPaint()) return;
-            float a = BadgerPolish.BlowFlash(_bgBlowT);
+            if (!GuiPaint()) return;
+            if (_bgWearFlashPending)
+            {
+                _bgWearFlashPending = false;
+                _bgWearFlashFrame = Time.frameCount;
+            }
+            float a = _bgBlow ? BadgerPolish.BlowFlash(_bgBlowT) : 0f;
+            float wear = BadgerPolish.WearFlashAlpha(Time.frameCount, _bgWearFlashFrame);
+            if (wear > a) a = wear;
             if (a < 0.02f) return;
             var prev = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, a);

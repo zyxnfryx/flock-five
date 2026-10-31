@@ -113,13 +113,25 @@ namespace FlockFive
             return c;
         }
 
+        // Fresh is invisible. Later stages step 0.75, 0.85, then solid.
         public static float HaloAlpha(BadgerWear wear)
         {
             int i = (int)wear;
             if (i <= 0) return 0f;
-            if (i == 1) return 0.50f;
-            if (i == 2) return 0.70f;
-            return 0.90f;
+            if (i == 1) return 0.75f;
+            if (i == 2) return 0.85f;
+            return 1f;
+        }
+
+        // Idle breathe, or the wrecked crouch. screenW and screenH are on the
+        // signature so a layout size cannot hide inside the frame index.
+        // They are not read. Odd steps of BadgerSitter.BreatheSeconds are idle_b.
+        public static string RestPose(float time, BadgerWear wear, float screenW, float screenH)
+        {
+            _ = screenW;
+            _ = screenH;
+            if (wear == BadgerWear.Wrecked) return "badger_crouch";
+            return BadgerAnim.Idle(time).Frame;
         }
 
         // 1 -> peak -> 1 over PunchSeconds. Age 0 and anything past the window sit at 1.

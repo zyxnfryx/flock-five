@@ -215,6 +215,55 @@ namespace FlockFive
             return BossBeat.FlashAlpha(t);
         }
 
+        // One rendered frame at the start of a wear stage. 60% of the same
+        // white hit flash the final blow uses. Not a second flash curve.
+        public const float WearFlashScale = 0.60f;
+
+        public static float WearFlashAlpha(int frame, int stampFrame)
+        {
+            if (stampFrame < 0 || frame != stampFrame) return 0f;
+            return BlowFlash(0f) * WearFlashScale;
+        }
+
+        // Body-pixel grey: HSV saturation below GreySatMax and value above GreyValueMin.
+        public const float GreySatMax = 0.15f;
+        public const float GreyValueMin = 0.25f;
+        // Yellow streak check: hue 45°–70°, saturation and value at least these.
+        public const float YellowHueMin = 45f / 360f;
+        public const float YellowHueMax = 70f / 360f;
+        public const float YellowSatMin = 0.35f;
+        public const float YellowValueMin = 0.45f;
+
+        public static void RgbToHsv(float r, float g, float b, out float h, out float s, out float v)
+        {
+            float max = r > g ? r : g;
+            if (b > max) max = b;
+            float min = r < g ? r : g;
+            if (b < min) min = b;
+            v = max;
+            float d = max - min;
+            s = max <= 0.0001f ? 0f : d / max;
+            h = 0f;
+            if (d <= 0.0001f) return;
+            if (max == r) h = (g - b) / d + (g < b ? 6f : 0f);
+            else if (max == g) h = (b - r) / d + 2f;
+            else h = (r - g) / d + 4f;
+            h /= 6f;
+            if (h < 0f) h += 1f;
+        }
+
+        public static bool GreyBody(float r, float g, float b)
+        {
+            RgbToHsv(r, g, b, out _, out float s, out float v);
+            return s < GreySatMax && v > GreyValueMin;
+        }
+
+        public static bool YellowStreak(float r, float g, float b)
+        {
+            RgbToHsv(r, g, b, out float h, out float s, out float v);
+            return h >= YellowHueMin && h <= YellowHueMax && s >= YellowSatMin && v >= YellowValueMin;
+        }
+
         public static bool FanfareDue(float before, float after)
             => BlowAt(before) != BadgerBlowPhase.Fanfare && BlowAt(after) == BadgerBlowPhase.Fanfare;
 
