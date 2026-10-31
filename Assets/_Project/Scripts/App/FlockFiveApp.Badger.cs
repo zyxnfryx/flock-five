@@ -2058,9 +2058,14 @@ namespace FlockFive
             spot.Sy = pose.ScaleY;
             spot.Degrees = pose.Degrees + hitLean;
             var moodNow = BadgerMoodNow();
-            BadgerPolish.WearScale(wearNow, out float wx, out float wy);
-            spot.Sx *= wx;
-            spot.Sy *= wy;
+            // One scale for every wear stage. Crouch art is 1.15x per feature;
+            // the shared helper brings the head back in line with idle. No per-stage squash.
+            float feat = BadgerWearArt.FeatureScale(spot.Frame);
+            if (feat > 0.01f)
+            {
+                spot.Sx /= feat;
+                spot.Sy /= feat;
+            }
             spot.Degrees += BadgerPolish.EarsBack(moodNow);
             if (_bgStage == BadgerStage.SlamTell)
                 spot.Degrees += BossBeat.PawTwitch(_bgTellT);
@@ -2223,8 +2228,10 @@ namespace FlockFive
             GUI.color = prev;
         }
 
-        // One blit of the v4_final stage PNG (halo already inside). Returns false when
+        // One blit of the v4_1 stage PNG (halo already inside). Returns false when
         // the sprite is missing so the caller can fall back to the old bruise discs.
+        // Full-screen centre, scale and feet live in BadgerWearArt.Layout; this blit
+        // pads the fight body the stills painter pads with the same PaintWear.
         static bool PaintWear(Rect body, string frame, BadgerWear wear, float alpha)
         {
             if (alpha < 0.01f) return false;

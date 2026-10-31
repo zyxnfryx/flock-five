@@ -27,7 +27,7 @@ namespace FlockFive.Editor
         {
             AudioListener.volume = 0f;
             AudioListener.pause = true;
-            const string dir = "/Users/zfxgames/wkspaces/badger_job/stills";
+            const string dir = "/Users/zfxgames/wkspaces/badger_job_v41/stills";
             Directory.CreateDirectory(dir);
             var stages = new[] { BadgerWear.Fresh, BadgerWear.Scuffed, BadgerWear.Bruised, BadgerWear.Wrecked };
             var sizes = new[]
@@ -131,16 +131,13 @@ namespace FlockFive.Editor
             b.Fill(sky, new Color(0.62f, 0.78f, 0.86f, 1f));
             b.Fill(new Rect(0f, b.H * 0.62f, b.W, b.H * 0.38f), new Color(0.42f, 0.58f, 0.28f, 1f));
 
-            var tex = Load(shot.Frame);
-            if (tex == null) tex = Load("badger_idle_b");
             float deg = BadgerPolish.EarsBack(shot.Mood);
             if (shot.TellT >= 0f) deg += BossBeat.PawTwitch(shot.TellT);
-            BadgerPolish.WearScale(shot.Wear, out float sx, out float sy);
-            float footX = b.W * 0.56f;
-            float footY = b.H * 0.70f;
-            float aspect = tex != null && tex.height > 0 ? tex.width / (float)tex.height : 0.7f;
-            float baseH = b.H * 0.46f;
-            var drawn = b.BlitFoot(tex, shot.Frame, footX, footY, baseH * aspect * sx, baseH * sy, deg, shot.Mood, shot.Wear);
+            // Shared placement: body-bbox centre at W/2, one scale, feet locked. No per-stage squash.
+            var layout = BadgerWearArt.Layout(shot.Frame, b.W, b.H);
+            var drawn = b.BlitWear(shot.Frame, layout, deg, shot.Mood, shot.Wear);
+            float footX = layout.BodyCenterX;
+            float footY = layout.FeetY;
 
             if (shot.TellT >= 0f)
             {
@@ -277,41 +274,28 @@ namespace FlockFive.Editor
                 _px[i] = src.a >= 250 ? src : Over(_px[i], src);
             }
 
-            // Plants the opaque foot. Wear art comes through BadgerWearArt.PaintWear,
-            // the same helper DrawBadgerWear uses, then the whole sprite leans.
-            public Rect BlitFoot(Texture2D tex, string frame, float footX, float footY, float dw, float dh, float deg, BadgerMood mood, BadgerWear wear)
+            // Wear art comes through BadgerWearArt.Layout + PaintWear, the same
+            // helper DrawBadgerWear uses. The whole sprite then leans about the feet.
+            public Rect BlitWear(string frame, BadgerWearArt.WearLayout layout, float deg, BadgerMood mood, BadgerWear wear)
             {
-                if (tex == null || dw < 2f || dh < 2f) return default;
-                int sw = tex.width;
-                int sh = tex.height;
-                var unpadded = SpriteAnim.Dest(frame, sw, sh, new Vector2(footX, footY), 1f, dw / Mathf.Max(1f, sw), dh / Mathf.Max(1f, sh));
-                var blit = BadgerWearArt.PaintWear(frame, unpadded, sw, sh, wear);
-                if (blit.Dest.x < 0f)
-                {
-                    float shift = -blit.Dest.x;
-                    footX += shift;
-                    unpadded.x += shift;
-                    blit = BadgerWearArt.PaintWear(frame, unpadded, sw, sh, wear);
-                }
-                Texture2D draw = tex;
-                Rect dest = unpadded;
+                if (!layout.Ok || layout.Dest.width < 2f || layout.Dest.height < 2f) return default;
+                var unpadded = layout.Unpadded;
+                var blit = BadgerWearArt.PaintWear(frame, unpadded, layout.SrcW, layout.SrcH, wear);
+                Rect dest = blit.Dest.width > 2f ? blit.Dest : layout.Dest;
+                Texture2D draw = null;
                 if (!string.IsNullOrEmpty(blit.Sprite) && blit.StagePng)
+                    draw = Load(blit.Sprite);
+                if (draw == null)
                 {
-                    var wearTex = Load(blit.Sprite);
-                    if (wearTex != null)
-                    {
-                        draw = wearTex;
-                        dest = blit.Dest;
-                    }
-                }
-                if (draw == tex)
-                {
+                    var tex = Load(frame);
+                    if (tex == null) tex = Load("badger_idle_b");
+                    if (tex == null) return default;
                     var src = tex.GetPixels32();
-                    PaintWearFallback(src, sw, sh, mood, wear);
-                    BlitRotated(src, sw, sh, unpadded, footX, footY, deg);
+                    PaintWearFallback(src, tex.width, tex.height, mood, wear);
+                    BlitRotated(src, tex.width, tex.height, unpadded, layout.BodyCenterX, layout.FeetY, deg);
                     return unpadded;
                 }
-                BlitRotated(draw.GetPixels32(), draw.width, draw.height, dest, footX, footY, deg);
+                BlitRotated(draw.GetPixels32(), draw.width, draw.height, dest, layout.BodyCenterX, layout.FeetY, deg);
                 return unpadded;
             }
 

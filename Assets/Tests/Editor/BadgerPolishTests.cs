@@ -487,6 +487,87 @@ namespace FlockFive.Editor
             Assert.That(Mathf.Abs(data[data.Length - 1]), Is.LessThan(peak * 0.01f));
         }
 
+        [Test]
+        public void WearPlacementIsCenteredOnOneScaleWithMargin()
+        {
+            var wears = new[] { BadgerWear.Fresh, BadgerWear.Scuffed, BadgerWear.Bruised, BadgerWear.Wrecked };
+            for (int i = 0; i < wears.Length; i++)
+            {
+                BadgerPolish.WearScale(wears[i], out float sx, out float sy);
+                Assert.That(sx, Is.EqualTo(1f).Within(0.0001f), wears[i].ToString());
+                Assert.That(sy, Is.EqualTo(1f).Within(0.0001f), wears[i].ToString());
+            }
+            Assert.That(BadgerWearArt.FeatureScale("badger_crouch"), Is.EqualTo(BadgerWearArt.CrouchFeature).Within(0.0001f));
+            Assert.That(BadgerWearArt.FeatureScale("badger_idle_b"), Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(BadgerWearArt.SideMarginPx, Is.GreaterThanOrEqualTo(20f));
+
+            var sizes = new[]
+            {
+                new Vector2(402f, 874f),
+                new Vector2(820f, 1180f),
+                new Vector2(412f, 915f),
+            };
+            for (int s = 0; s < sizes.Length; s++)
+            {
+                float w = sizes[s].x;
+                float h = sizes[s].y;
+                float device = BadgerWearArt.DeviceScale(w, h);
+                var stand = BadgerWearArt.Layout("badger_idle_b", w, h);
+                var crouch = BadgerWearArt.Layout("badger_crouch", w, h);
+                Assert.That(stand.Ok, Is.True);
+                Assert.That(crouch.Ok, Is.True);
+                Assert.That(stand.DeviceScale, Is.EqualTo(device).Within(0.0001f));
+                Assert.That(crouch.DeviceScale, Is.EqualTo(device).Within(0.0001f), "one scale at " + w);
+                Assert.That(stand.Scale, Is.EqualTo(device).Within(0.0001f));
+                Assert.That(crouch.Scale * BadgerWearArt.CrouchFeature, Is.EqualTo(device).Within(0.001f));
+                Assert.That(stand.BodyCenterX, Is.EqualTo(w * 0.5f).Within(1.5f), "idle centre " + w);
+                Assert.That(crouch.BodyCenterX, Is.EqualTo(w * 0.5f).Within(1.5f), "crouch centre " + w);
+                Assert.That(crouch.FeetY, Is.EqualTo(stand.FeetY).Within(1.5f), "feet " + w);
+
+                Rect placed = default;
+                float bodyW = -1f;
+                for (int i = 0; i < wears.Length; i++)
+                {
+                    var blit = BadgerWearArt.PaintWear("badger_idle_b", stand.Unpadded, stand.SrcW, stand.SrcH, wears[i]);
+                    Assert.That(blit.Sprite, Is.EqualTo("badger_idle_b_wear_" + BadgerWearArt.Token(wears[i])));
+                    if (i == 0)
+                    {
+                        placed = blit.Dest;
+                        bodyW = stand.BodyWidth;
+                    }
+                    else
+                    {
+                        Assert.That(blit.Dest.x, Is.EqualTo(placed.x).Within(0.01f), wears[i].ToString());
+                        Assert.That(blit.Dest.y, Is.EqualTo(placed.y).Within(0.01f), wears[i].ToString());
+                        Assert.That(blit.Dest.width, Is.EqualTo(placed.width).Within(0.01f), wears[i].ToString());
+                        Assert.That(blit.Dest.height, Is.EqualTo(placed.height).Within(0.01f), wears[i].ToString());
+                        Assert.That(stand.BodyWidth, Is.EqualTo(bodyW).Within(0.01f));
+                        Assert.That(stand.BodyCenterX, Is.EqualTo(BadgerWearArt.Layout("badger_idle_b", w, h).BodyCenterX).Within(0.01f));
+                        Assert.That(stand.FeetY, Is.EqualTo(BadgerWearArt.Layout("badger_idle_b", w, h).FeetY).Within(0.01f));
+                    }
+                    var again = BadgerWearArt.Layout("badger_crouch", w, h);
+                    Assert.That(again.Scale, Is.EqualTo(crouch.Scale).Within(0.0001f), "crouch scale " + wears[i]);
+                    Assert.That(again.BodyCenterX, Is.EqualTo(crouch.BodyCenterX).Within(0.01f));
+                    Assert.That(again.FeetY, Is.EqualTo(crouch.FeetY).Within(0.01f));
+                }
+
+                if (Mathf.Abs(w - 402f) > 0.5f) continue;
+                Assert.That(stand.ContentLeft, Is.GreaterThanOrEqualTo(18f), "idle left");
+                Assert.That(w - stand.ContentRight, Is.GreaterThanOrEqualTo(18f), "idle right " + stand.ContentRight);
+                Assert.That(crouch.ContentLeft, Is.GreaterThanOrEqualTo(18f), "crouch left");
+                Assert.That(w - crouch.ContentRight, Is.GreaterThanOrEqualTo(18f), "crouch right " + crouch.ContentRight);
+            }
+
+            string duel = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
+            string stills = File.ReadAllText("Assets/_Project/Scripts/Editor/BadgerPolishStills.cs");
+            Assert.That(duel.Contains("BadgerWearArt.FeatureScale"), Is.True);
+            Assert.That(duel.Contains("BadgerWearArt.PaintWear"), Is.True);
+            Assert.That(stills.Contains("BadgerWearArt.Layout"), Is.True);
+            Assert.That(stills.Contains("BadgerWearArt.PaintWear"), Is.True);
+            Assert.That(stills.Contains("WearScale"), Is.False);
+            Assert.That(stills.Contains("0.56f"), Is.False);
+        }
+
         static int[] Grid(int honey)
         {
             var tiles = new int[BadgerSchedule.Tiles];

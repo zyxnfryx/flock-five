@@ -104,15 +104,14 @@ namespace FlockFive
             return 0f;
         }
 
-        // Wider and shorter as the hits add up. 1,1 when fresh.
+        // v4_1: one scale for every wear stage. The old per-stage squash (wider
+        // and shorter as the hits added up) shifted the body and thickened the rim.
+        // Head size is BadgerWearArt.FeatureScale, not a wear step.
         public static void WearScale(BadgerWear wear, out float sx, out float sy)
         {
-            float k = 0f;
-            if (wear == BadgerWear.Scuffed) k = 0.03f;
-            else if (wear == BadgerWear.Bruised) k = 0.06f;
-            else if (wear == BadgerWear.Wrecked) k = 0.10f;
-            sx = 1f + k;
-            sy = 1f - k;
+            sx = 1f;
+            sy = 1f;
+            if (wear < BadgerWear.Fresh) sx = 1f;
         }
 
         // Extra lean on the hit itself, growing with the wear already on him.
