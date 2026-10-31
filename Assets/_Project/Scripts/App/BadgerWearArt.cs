@@ -852,9 +852,14 @@ namespace FlockFive
             return n;
         }
 
-        // Three honey smears. Same anchors on scuffed, bruised and wrecked, so they
-        // follow the pose. Width is screen pixels. Fresh draws none. No red.
+        // Honey smears. Scuffed has three. Bruised and wrecked keep those three and
+        // add two wider ones (3-4 px), so five in all. Anchors follow the pose.
+        // Width is screen pixels. Fresh draws none. No red.
         public const int HoneyStreakCount = 3;
+        public const int ScuffedStreakCount = 3;
+        public const int BruisedStreakCount = 5;
+        // 820 wide (iPad) standing poses: the middle streak sits 12 px left.
+        public const float Standing820MidShiftPx = -12f;
         public static readonly Color32 HoneyInk = new Color32(236, 186, 24, 255);
 
         public readonly struct HoneyMark
@@ -880,7 +885,24 @@ namespace FlockFive
             new HoneyMark(0.42f, 0.38f, -34f, 22f, 2),
             new HoneyMark(0.60f, 0.50f, 22f, 26f, 3),
             new HoneyMark(0.46f, 0.62f, -8f, 18f, 2),
+            // Bruised and up.
+            new HoneyMark(0.70f, 0.30f, 38f, 20f, 4),
+            new HoneyMark(0.55f, 0.76f, -24f, 18f, 3),
         };
+
+        public static int HoneyStreaksFor(BadgerWear wear)
+        {
+            if ((int)wear >= (int)BadgerWear.Bruised) return BruisedStreakCount;
+            if ((int)wear >= (int)BadgerWear.Scuffed) return ScuffedStreakCount;
+            return 0;
+        }
+
+        public static bool IsStandingPose(string frame)
+            => !string.IsNullOrEmpty(frame) && frame.StartsWith("badger_idle", StringComparison.Ordinal);
+
+        // Screen-pixel x shift for the middle streak (index 1).
+        public static float MidStreakShiftPx(string frame, float screenW)
+            => IsStandingPose(frame) && Mathf.RoundToInt(screenW) == 820 ? Standing820MidShiftPx : 0f;
 
         public static bool HoneyMarksOn(BadgerWear wear) => (int)wear >= (int)BadgerWear.Scuffed;
 
@@ -889,6 +911,80 @@ namespace FlockFive
             if (index < 0) index = 0;
             if (index >= HoneyMarks.Length) index = HoneyMarks.Length - 1;
             return HoneyMarks[index];
+        }
+
+        // Bandage cross on the head, bruised and up. Original art: two crossed
+        // cream gauze strips with a tan edge and a darker pad dot. No red.
+        public static bool BandageOn(BadgerWear wear) => (int)wear >= (int)BadgerWear.Bruised;
+        public static readonly Color32 BandageGauze = new Color32(244, 236, 214, 255);
+        public static readonly Color32 BandageEdge = new Color32(196, 176, 140, 255);
+        public static readonly Color32 BandagePad = new Color32(222, 206, 172, 255);
+
+        static readonly Dictionary<string, Vector2> _headUv = new Dictionary<string, Vector2>();
+
+        // Head anchor in unpadded UV: centroid of the fresh silhouette in its top 22%.
+        public static Vector2 HeadUv(string frame)
+        {
+            if (string.IsNullOrEmpty(frame)) return new Vector2(0.5f, 0.15f);
+            if (_headUv.TryGetValue(frame, out var hit)) return hit;
+            var uv = new Vector2(0.5f, 0.15f);
+            if (TryArt(StageKey(frame, BadgerWear.Fresh), out var px, out int w, out int h))
+            {
+                int srcW = w - PadW, srcH = h - PadTop;
+                int top = -1;
+                for (int y = 0; y < srcH && top < 0; y++)
+                    for (int x = 0; x < srcW; x++)
+                        if (px[(h - 1 - (PadTop + y)) * w + PadX + x].a > 200) { top = y; break; }
+                if (top >= 0)
+                {
+                    int bottom = top + Mathf.RoundToInt(srcH * 0.22f);
+                    double sx = 0, sy = 0; int n = 0;
+                    for (int y = top; y < Mathf.Min(srcH, bottom); y++)
+                        for (int x = 0; x < srcW; x++)
+                            if (px[(h - 1 - (PadTop + y)) * w + PadX + x].a > 200) { sx += x; sy += y; n++; }
+                    if (n > 0) uv = new Vector2((float)(sx / n) / srcW, (float)(sy / n) / srcH);
+                }
+            }
+            _headUv[frame] = uv;
+            return uv;
+        }
+
+        // y grows down. plot gets each pixel and its colour. Returns pixels accepted.
+        public static int StampBandage(string frame, Rect unpadded, float pivotX, float pivotY, float deg,
+            BadgerWear wear, Action<int, int, Color32> plot, Func<int, int, bool> allow)
+        {
+            if (!BandageOn(wear) || plot == null || unpadded.width < 8f || unpadded.height < 8f) return 0;
+            var uv = HeadUv(frame);
+            float lx = unpadded.x + uv.x * unpadded.width;
+            float ly = unpadded.y + uv.y * unpadded.height;
+            float rad = deg * Mathf.Deg2Rad;
+            float c = Mathf.Cos(rad), s = Mathf.Sin(rad);
+            float cx = pivotX + (lx - pivotX) * c - (ly - pivotY) * s;
+            float cy = pivotY + (lx - pivotX) * s + (ly - pivotY) * c;
+            float arm = Mathf.Max(5f, unpadded.width * 0.075f);
+            float half = Mathf.Max(2f, unpadded.width * 0.022f);
+            float tilt = (deg - 12f) * Mathf.Deg2Rad;
+            float tc = Mathf.Cos(tilt), ts = Mathf.Sin(tilt);
+            int r = Mathf.CeilToInt(arm + half + 1f);
+            int n = 0;
+            for (int y = Mathf.FloorToInt(cy - r); y <= Mathf.CeilToInt(cy + r); y++)
+            for (int x = Mathf.FloorToInt(cx - r); x <= Mathf.CeilToInt(cx + r); x++)
+            {
+                float dx = x + 0.5f - cx, dy = y + 0.5f - cy;
+                float a = Mathf.Abs(dx * tc + dy * ts);
+                float b = Mathf.Abs(-dx * ts + dy * tc);
+                bool inH = a <= arm && b <= half;
+                bool inV = b <= arm && a <= half;
+                if (!inH && !inV) continue;
+                if (allow != null && !allow(x, y)) continue;
+                Color32 col = BandageGauze;
+                float edge = inH && inV ? 99f : inH ? Mathf.Min(half - b, arm - a) : Mathf.Min(half - a, arm - b);
+                if (edge < 1f) col = BandageEdge;
+                else if (a < half * 0.6f && b < half * 0.6f) col = BandagePad;
+                plot(x, y, col);
+                n++;
+            }
+            return n;
         }
 
         public static bool HoneyMarkPixel(Color32 p)
@@ -909,17 +1005,18 @@ namespace FlockFive
         // y grows down for the plot (the stills board and GUI). allow drops pixels
         // outside the fresh silhouette. Returns pixels accepted.
         public static int StampHoney(Rect unpadded, float pivotX, float pivotY, float deg, BadgerWear wear,
-            Action<int, int> plot, Func<int, int, bool> allow)
+            Action<int, int> plot, Func<int, int, bool> allow, float midShiftPx = 0f)
         {
             if (!HoneyMarksOn(wear) || plot == null || unpadded.width < 2f || unpadded.height < 2f) return 0;
             float rad = deg * Mathf.Deg2Rad;
             float c = Mathf.Cos(rad);
             float s = Mathf.Sin(rad);
             int n = 0;
-            for (int i = 0; i < HoneyMarks.Length; i++)
+            int count = Mathf.Min(HoneyMarks.Length, HoneyStreaksFor(wear));
+            for (int i = 0; i < count; i++)
             {
                 var mark = HoneyMarks[i];
-                float lx = unpadded.x + mark.U * unpadded.width;
+                float lx = unpadded.x + mark.U * unpadded.width + (i == 1 ? midShiftPx : 0f);
                 float ly = unpadded.y + mark.V * unpadded.height;
                 float dx = lx - pivotX;
                 float dy = ly - pivotY;
@@ -939,7 +1036,7 @@ namespace FlockFive
                     : (Mathf.Abs(dirY) < 0.001f ? 0f : Mathf.Abs(dirX / dirY));
                 int width = mark.WidthPx;
                 if (width < 2) width = 2;
-                if (width > 3) width = 3;
+                if (width > 4) width = 4;
                 // Length is tuned for the 1x body (~230 px). On the small duel
                 // fighter the same pixel length would overlap the three marks.
                 float lenPx = mark.LengthPx;
@@ -1168,23 +1265,33 @@ namespace FlockFive
         // Screen-space honey overlay for the unpadded body. Cached per pose and size.
         // Scuffed, bruised and wrecked share it. y in the texture matches GUI (top-down plot).
         public static Texture2D HoneyTexture(string frame, int tw, int th)
+            => HoneyTexture(frame, tw, th, BadgerWear.Scuffed, 0f);
+
+        public static Texture2D HoneyTexture(string frame, int tw, int th, BadgerWear wear, float screenW)
         {
             if (tw < 2 || th < 2 || string.IsNullOrEmpty(frame)) return null;
-            string key = frame + "@" + tw + "x" + th;
+            float shift = MidStreakShiftPx(frame, screenW);
+            string key = frame + "@" + tw + "x" + th + "#" + HoneyStreaksFor(wear) + (BandageOn(wear) ? "b" : "") + shift;
             if (_honeyTex.TryGetValue(key, out var cached) && cached != null) return cached;
             var px = new Color32[tw * th];
             var rect = new Rect(0f, 0f, tw, th);
-            StampHoney(rect, tw * 0.5f, th * 0.5f, 0f, BadgerWear.Scuffed,
+            Func<int, int, bool> inside = (x, y) =>
+            {
+                if ((uint)x >= (uint)tw || (uint)y >= (uint)th) return false;
+                return FreshCovers(frame, (x + 0.5f) / tw, (y + 0.5f) / th);
+            };
+            StampHoney(rect, tw * 0.5f, th * 0.5f, 0f, wear,
                 (x, y) =>
                 {
                     if ((uint)x >= (uint)tw || (uint)y >= (uint)th) return;
                     px[(th - 1 - y) * tw + x] = HoneyInk;
-                },
-                (x, y) =>
+                }, inside, shift);
+            StampBandage(frame, rect, tw * 0.5f, th * 0.5f, 0f, wear,
+                (x, y, col) =>
                 {
-                    if ((uint)x >= (uint)tw || (uint)y >= (uint)th) return false;
-                    return FreshCovers(frame, (x + 0.5f) / tw, (y + 0.5f) / th);
-                });
+                    if ((uint)x >= (uint)tw || (uint)y >= (uint)th) return;
+                    px[(th - 1 - y) * tw + x] = col;
+                }, inside);
             var tex = new Texture2D(tw, th, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Point;
             tex.wrapMode = TextureWrapMode.Clamp;

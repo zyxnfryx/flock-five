@@ -455,10 +455,7 @@ namespace FlockFive.Editor
                     UnityEngine.Object.DestroyImmediate(tex);
                 }
                 var ink = (Color)BadgerWearArt.HoneyInk;
-                BadgerWearArt.StampHoney(unpadded, footX, footY, deg, wear, (x, y) =>
-                {
-                    Plot(x, y, ink);
-                }, (x, y) =>
+                System.Func<int, int, bool> inside = (x, y) =>
                 {
                     if (fresh == null) return true;
                     float rad = -deg * Mathf.Deg2Rad;
@@ -474,7 +471,15 @@ namespace FlockFive.Editor
                     int sx = Mathf.Clamp(Mathf.RoundToInt(u * (fw - 1)), 0, fw - 1);
                     int sy = Mathf.Clamp(Mathf.RoundToInt(v * (fh - 1)), 0, fh - 1);
                     return fresh[(fh - 1 - sy) * fw + sx].a > 200;
-                });
+                };
+                BadgerWearArt.StampHoney(unpadded, footX, footY, deg, wear, (x, y) =>
+                {
+                    Plot(x, y, ink);
+                }, inside, BadgerWearArt.MidStreakShiftPx(frame, W));
+                BadgerWearArt.StampBandage(frame, unpadded, footX, footY, deg, wear, (x, y, col) =>
+                {
+                    Plot(x, y, (Color)col);
+                }, inside);
             }
 
             void BlitNamed(string name, Rect dest, float footX, float footY, float deg, Color mul)

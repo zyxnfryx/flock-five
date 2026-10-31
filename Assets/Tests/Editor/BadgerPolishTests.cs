@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
 using UnityEngine;
@@ -917,6 +918,58 @@ namespace FlockFive.Editor
         }
 
         [Test]
+        public void BandageCrossOnBruisedAndWreckedOnly()
+        {
+            Assert.That(BadgerWearArt.BandageOn(BadgerWear.Fresh), Is.False);
+            Assert.That(BadgerWearArt.BandageOn(BadgerWear.Scuffed), Is.False);
+            Assert.That(BadgerWearArt.BandageOn(BadgerWear.Bruised), Is.True);
+            Assert.That(BadgerWearArt.BandageOn(BadgerWear.Wrecked), Is.True);
+            foreach (var c in new[] { BadgerWearArt.BandageGauze, BadgerWearArt.BandageEdge, BadgerWearArt.BandagePad })
+            {
+                Assert.That(c.r - c.b, Is.LessThan(80), "no red");
+                Assert.That(BadgerWearArt.HoneyMarkPixel(c), Is.False, "bandage is not a honey streak");
+            }
+            foreach (var pose in new[] { "badger_idle_b", "badger_crouch" })
+            {
+                var uv = BadgerWearArt.HeadUv(pose);
+                Assert.That(uv.y, Is.LessThan(0.35f), pose + " head near top");
+                Assert.That(BadgerWearArt.FreshCovers(pose, uv.x, uv.y), Is.True, pose + " head on body");
+                var layout = BadgerWearArt.Layout(pose, 820f, 1180f);
+                int scuffed = BadgerWearArt.StampBandage(pose, layout.Unpadded, layout.BodyCenterX, layout.FeetY, 0f,
+                    BadgerWear.Scuffed, (x, y, c) => { }, (x, y) => true);
+                int bruised = BadgerWearArt.StampBandage(pose, layout.Unpadded, layout.BodyCenterX, layout.FeetY, 0f,
+                    BadgerWear.Bruised, (x, y, c) => { }, (x, y) => true);
+                Assert.That(scuffed, Is.EqualTo(0));
+                Assert.That(bruised, Is.GreaterThan(40));
+            }
+        }
+
+        [Test]
+        public void Standing820MiddleStreakShiftsTwelveLeft()
+        {
+            Assert.That(BadgerWearArt.MidStreakShiftPx("badger_idle_b", 820f), Is.EqualTo(-12f));
+            Assert.That(BadgerWearArt.MidStreakShiftPx("badger_idle_a", 820f), Is.EqualTo(-12f));
+            Assert.That(BadgerWearArt.MidStreakShiftPx("badger_crouch", 820f), Is.EqualTo(0f));
+            Assert.That(BadgerWearArt.MidStreakShiftPx("badger_idle_b", 402f), Is.EqualTo(0f));
+            Assert.That(BadgerWearArt.MidStreakShiftPx("badger_idle_b", 412f), Is.EqualTo(0f));
+            var layout = BadgerWearArt.Layout("badger_idle_b", 820f, 1180f);
+            float a = MidX(layout, 0f), b = MidX(layout, -12f);
+            Assert.That(b - a, Is.EqualTo(-12f).Within(1.01f));
+        }
+
+        static float MidX(BadgerWearArt.WearLayout layout, float shift)
+        {
+            // Mean x of the middle streak: pixels not in a stamp whose middle streak is parked far right.
+            double sum = 0; int n = 0;
+            var same = new HashSet<long>();
+            BadgerWearArt.StampHoney(layout.Unpadded, layout.BodyCenterX, layout.FeetY, 0f, BadgerWear.Scuffed,
+                (x, y) => same.Add(((long)x << 32) | (uint)y), (x, y) => true, 60f);
+            BadgerWearArt.StampHoney(layout.Unpadded, layout.BodyCenterX, layout.FeetY, 0f, BadgerWear.Scuffed,
+                (x, y) => { if (!same.Contains(((long)x << 32) | (uint)y)) { sum += x; n++; } }, (x, y) => true, shift);
+            return n > 0 ? (float)(sum / n) : float.NaN;
+        }
+
+        [Test]
         public void HoneyStreaksSitInsideFreshOnScuffedAndAbove()
         {
             Assert.That(BadgerWearArt.HoneyStreakCount, Is.EqualTo(3));
@@ -924,12 +977,16 @@ namespace FlockFive.Editor
             Assert.That(BadgerWearArt.HoneyMarksOn(BadgerWear.Scuffed), Is.True);
             Assert.That(BadgerWearArt.HoneyMarksOn(BadgerWear.Bruised), Is.True);
             Assert.That(BadgerWearArt.HoneyMarksOn(BadgerWear.Wrecked), Is.True);
-            var widths = new[] { 2, 3, 2 };
-            for (int i = 0; i < 3; i++)
+            Assert.That(BadgerWearArt.HoneyStreaksFor(BadgerWear.Fresh), Is.EqualTo(0));
+            Assert.That(BadgerWearArt.HoneyStreaksFor(BadgerWear.Scuffed), Is.EqualTo(3));
+            Assert.That(BadgerWearArt.HoneyStreaksFor(BadgerWear.Bruised), Is.EqualTo(5));
+            Assert.That(BadgerWearArt.HoneyStreaksFor(BadgerWear.Wrecked), Is.EqualTo(5));
+            var widths = new[] { 2, 3, 2, 4, 3 };
+            for (int i = 0; i < 5; i++)
             {
                 var mark = BadgerWearArt.HoneyMarkAt(i);
                 Assert.That(mark.WidthPx, Is.EqualTo(widths[i]), "streak " + i);
-                Assert.That(mark.WidthPx, Is.GreaterThanOrEqualTo(2).And.LessThanOrEqualTo(3));
+                if (i >= 3) Assert.That(mark.WidthPx, Is.GreaterThanOrEqualTo(3).And.LessThanOrEqualTo(4));
                 Assert.That(BadgerWearArt.FreshCovers("badger_idle_b", mark.U, mark.V), Is.True, "idle anchor " + i);
                 Assert.That(BadgerWearArt.FreshCovers("badger_crouch", mark.U, mark.V), Is.True, "crouch anchor " + i);
             }
@@ -953,6 +1010,7 @@ namespace FlockFive.Editor
                         (x, y) => { }, (x, y) => true);
                     Assert.That(freshN, Is.EqualTo(0), poses[p] + " fresh");
                     int first = -1;
+                    int firstBruised = -1;
                     for (int w = 0; w < wears.Length; w++)
                     {
                         var buf = new Color32[sw * sh];
@@ -969,12 +1027,14 @@ namespace FlockFive.Editor
                                 return BadgerWearArt.FreshCovers(poses[p], u, v);
                             });
                         Assert.That(n, Is.GreaterThan(20), poses[p] + " " + wears[w] + " " + sizes[s].x);
-                        if (first < 0) first = n;
-                        else Assert.That(n, Is.EqualTo(first), "same three marks");
+                        if (wears[w] == BadgerWear.Scuffed) first = n;
+                        else if (firstBruised < 0) { firstBruised = n; Assert.That(n, Is.GreaterThan(first), "bruised adds marks"); }
+                        else Assert.That(n, Is.EqualTo(firstBruised), "wrecked keeps bruised marks");
                         var measured = BadgerWearArt.MeasureStreaks(buf, sw, sh);
-                        Assert.That(measured.Count, Is.EqualTo(3), poses[p] + " " + sizes[s].x + " count " + measured.Count);
+                        int want = BadgerWearArt.HoneyStreaksFor(wears[w]);
+                        Assert.That(measured.Count, Is.EqualTo(want), poses[p] + " " + sizes[s].x + " " + wears[w] + " count " + measured.Count);
                         for (int i = 0; i < measured.Widths.Length; i++)
-                            Assert.That(measured.Widths[i], Is.GreaterThanOrEqualTo(2).And.LessThanOrEqualTo(3),
+                            Assert.That(measured.Widths[i], Is.GreaterThanOrEqualTo(2).And.LessThanOrEqualTo(4),
                                 poses[p] + " width " + measured.Widths[i]);
                     }
                 }

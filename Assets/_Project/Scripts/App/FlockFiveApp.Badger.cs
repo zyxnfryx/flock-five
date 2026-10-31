@@ -2422,7 +2422,7 @@ namespace FlockFive
             if (BlitWearLayer(blit.HaloBack, blit.Dest, halo, true)) any = true;
             if (BlitWearLayer(blit.Sprite, blit.Dest, tint, false)) any = true;
             if (BadgerWearArt.HoneyMarksOn(wear))
-                DrawHoneyMarks(body, frame, alpha);
+                DrawHoneyMarks(body, frame, wear, alpha);
             if (BlitWearLayer(blit.HaloFront, blit.Dest, halo, true)) any = true;
             return any;
         }
@@ -2453,12 +2453,12 @@ namespace FlockFive
             return true;
         }
 
-        static void DrawHoneyMarks(Rect body, string frame, float alpha)
+        static void DrawHoneyMarks(Rect body, string frame, BadgerWear wear, float alpha)
         {
             if (alpha < 0.01f || body.width < 4f || body.height < 4f) return;
             int tw = Mathf.Max(2, Mathf.RoundToInt(body.width));
             int th = Mathf.Max(2, Mathf.RoundToInt(body.height));
-            var tex = BadgerWearArt.HoneyTexture(frame, tw, th);
+            var tex = BadgerWearArt.HoneyTexture(frame, tw, th, wear, PhoneArea.W);
             if (tex == null) return;
             var prev = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, alpha);
