@@ -1954,6 +1954,25 @@ namespace FlockFive
             public float Alpha;
         }
 
+        // Resting duel foot. Body-bbox centre X is BadgerWearArt.ScreenMidX (the same
+        // mid the stills aim at). Foot Y is the boss-box foot passed in, unchanged.
+        // The column clamp still runs; it does not get a new limit.
+        public static void DuelRestPlant(string frame, float screenW, float unit, float sx, float artW, float bossFootY, float rightLimit,
+            out float footX, out float footY, out float bodyCenterX)
+        {
+            if (artW < 1f) artW = 438f;
+            if (unit < 0.0001f) unit = 0.0001f;
+            float drawSx = sx > 0.05f ? sx : 1f;
+            float drawnW = artW * unit * drawSx;
+            float frac = BadgerWearArt.BodyFrac(frame);
+            float cx = SpriteAnim.FootCx(frame);
+            float planted = BadgerWearArt.FootXForBodyMid(screenW, frac, cx, drawnW);
+            float wide = artW * unit * (drawSx > 1f ? drawSx : 1f);
+            footX = BadgerFighterPlace.ClampFootX(planted, wide, rightLimit);
+            footY = bossFootY;
+            bodyCenterX = BadgerWearArt.BodyCenterAt(footX, frac, cx, drawnW);
+        }
+
         // Where the one badger and the hummingbird stand this frame. Rest marks come
         // from BadgerFighterPlace. The slam camera pivots on Eye.
         BadgerActorSpot BadgerActorNow(BadgerRects L)
@@ -2070,11 +2089,16 @@ namespace FlockFive
             if (_bgStage == BadgerStage.SlamTell)
                 spot.Degrees += BossBeat.PawTwitch(_bgTellT);
             BadgerArtSize(spot.Frame, spot.Unit, out float w, out float h);
-            // Stay left of ColR on every beat (SE wide crouch/leap/shrug frames).
-            // Squash widens the sprite; keep that width inside the column too.
+            // Sideways only: body-bbox centre X is the screen mid. Foot Y is the
+            // boss-box baseline (animations may lift it). Bird, combs and the
+            // column clamp stay where they were.
             float wide = w * (spot.Sx > 1f ? spot.Sx : 1f);
             float rightLimit = L.ColR.x - 2f;
-            foot.x = BadgerFighterPlace.ClampFootX(foot.x, wide, rightLimit);
+            float animDx = foot.x - mark.Foot.x;
+            float artW = spot.Unit > 0.0001f ? w / spot.Unit : w;
+            DuelRestPlant(spot.Frame, Mathf.Max(2f, PhoneArea.W), spot.Unit, spot.Sx, artW, mark.Foot.y, rightLimit,
+                out float plantX, out _, out _);
+            foot.x = BadgerFighterPlace.ClampFootX(plantX + animDx, wide, rightLimit);
 
             spot.Foot = foot;
             spot.Bird = bird;
@@ -2230,8 +2254,8 @@ namespace FlockFive
 
         // One blit of the v4_1 stage PNG (halo already inside). Returns false when
         // the sprite is missing so the caller can fall back to the old bruise discs.
-        // Full-screen centre, scale and feet live in BadgerWearArt.Layout; this blit
-        // pads the fight body the stills painter pads with the same PaintWear.
+        // Body-bbox centre X is BadgerWearArt.ScreenMidX (DuelRestPlant). Foot Y
+        // stays the boss-box foot. This blit pads that fight body the way the stills pad.
         static bool PaintWear(Rect body, string frame, BadgerWear wear, float alpha)
         {
             if (alpha < 0.01f) return false;

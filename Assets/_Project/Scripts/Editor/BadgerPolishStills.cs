@@ -23,6 +23,20 @@ namespace FlockFive.Editor
             public string Line;
         }
 
+        // Real duel page, four wear stages, three sizes. Launch with graphics, not -batchmode:
+        // -executeMethod FlockFive.Editor.BadgerPolishStills.SaveFight
+        public static void SaveFight()
+        {
+            AudioListener.volume = 0f;
+            AudioListener.pause = true;
+            const string dir = "/Users/zfxgames/wkspaces/badger_job_fight";
+            Directory.CreateDirectory(Path.Combine(dir, "stills"));
+            File.WriteAllText("/tmp/ff-badger-fight-dir", dir);
+            File.WriteAllText("/tmp/ff-badger-fight-shot", "1");
+            Build79Stills.SetGameView(402, 874);
+            EditorApplication.isPlaying = true;
+        }
+
         public static void SaveWear()
         {
             AudioListener.volume = 0f;

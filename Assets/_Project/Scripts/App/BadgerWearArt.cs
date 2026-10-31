@@ -211,8 +211,63 @@ namespace FlockFive
             }
         }
 
-        // Full-screen placement. Body-bbox centre x is the screen mid. Feet y is
+        // Screen X of the body-bbox centre. The duel drawer and Layout both call this.
+        // 402 -> 201, 820 -> 410, 412 -> 206.
+        public static float ScreenMidX(float screenW)
+        {
+            if (screenW < 2f) screenW = 2f;
+            return screenW * 0.5f;
+        }
+
+        // Body-bbox centre as a fraction of the unpadded sprite width.
+        public static float BodyFrac(string frame)
+        {
+            if (!TryBox(frame, out var box)) return 0.5f;
+            float srcW = box.W - PadW;
+            if (srcW < 1f) return 0.5f;
+            return ((box.BodyL + box.BodyR) * 0.5f - PadX) / srcW;
+        }
+
+        // Opaque-foot anchor X so the body-bbox centre lands on ScreenMidX.
+        // drawnW is the unpadded sprite width in screen px.
+        public static float FootXForBodyMid(float screenW, float bodyFrac, float footCx, float drawnW)
+        {
+            return ScreenMidX(screenW) - (bodyFrac - footCx) * drawnW;
+        }
+
+        public static float BodyCenterAt(float footX, float bodyFrac, float footCx, float drawnW)
+        {
+            return footX + (bodyFrac - footCx) * drawnW;
+        }
+
+        // Content and body edges of a placed unpadded sprite, in the same space as `unpadded`.
+        public static void PlacedEdges(string frame, Rect unpadded, float srcW, float srcH,
+            out float bodyL, out float bodyR, out float bodyCx, out float contentL, out float contentR, out float bodyBottom)
+        {
+            bodyL = unpadded.x;
+            bodyR = unpadded.xMax;
+            bodyCx = unpadded.center.x;
+            contentL = bodyL;
+            contentR = bodyR;
+            bodyBottom = unpadded.yMax;
+            if (!TryBox(frame, out var box)) return;
+            if (srcW < 1f) srcW = 1f;
+            if (srcH < 1f) srcH = 1f;
+            float ux = unpadded.width / srcW;
+            float uy = unpadded.height / srcH;
+            float x0 = unpadded.x - PadX * ux;
+            float y0 = unpadded.y - PadTop * uy;
+            bodyL = x0 + box.BodyL * ux;
+            bodyR = x0 + box.BodyR * ux;
+            bodyCx = (bodyL + bodyR) * 0.5f;
+            contentL = x0 + box.ContentL * ux;
+            contentR = x0 + box.ContentR * ux;
+            bodyBottom = y0 + box.BodyB * uy;
+        }
+
+        // Full-screen placement. Body-bbox centre x is ScreenMidX. Feet y is
         // H * 0.70. The same call for every wear stage: stage does not move or scale him.
+        // x0 stays pixel-rounded, so the 1px content asymmetry at 402 is unchanged.
         public static WearLayout Layout(string frame, float screenW, float screenH)
         {
             if (!TryBox(frame, out var box))
@@ -228,7 +283,7 @@ namespace FlockFive
             if (srcW < 1f) srcW = 1f;
             if (srcH < 1f) srcH = 1f;
             float bx = (box.BodyL + box.BodyR) * 0.5f;
-            float x0 = Mathf.Round(screenW * 0.5f - bx * kk);
+            float x0 = Mathf.Round(ScreenMidX(screenW) - bx * kk);
             float y0 = Mathf.Round(screenH * FeetFrac - box.BodyB * kk);
             var dest = new Rect(x0, y0, box.W * kk, box.H * kk);
             var unpadded = new Rect(x0 + PadX * kk, y0 + PadTop * kk, srcW * kk, srcH * kk);

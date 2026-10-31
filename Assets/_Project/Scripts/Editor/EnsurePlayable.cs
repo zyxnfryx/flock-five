@@ -477,7 +477,8 @@ namespace FlockFive.Editor
             "/tmp/flock-five-storm-drops",
             "/tmp/flock-five-badger-power",
             "/tmp/flock-five-b129-badger",
-            "/tmp/ff-badger-stack-shot"
+            "/tmp/ff-badger-stack-shot",
+            "/tmp/ff-badger-fight-shot"
         };
 
         static bool AnyShotCmd()
@@ -591,6 +592,7 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-badger-power", "ShotBadgerPower");
                         TryStartShot(app, "/tmp/flock-five-b129-badger", "ShotB129");
                         TryStartShot(app, "/tmp/ff-badger-stack-shot", "ShotBadgerStack");
+                        TryStartShot(app, "/tmp/ff-badger-fight-shot", "ShotBadgerFight");
                     }
                 }
             }

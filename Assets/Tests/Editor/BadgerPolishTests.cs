@@ -566,6 +566,74 @@ namespace FlockFive.Editor
             Assert.That(stills.Contains("BadgerWearArt.PaintWear"), Is.True);
             Assert.That(stills.Contains("WearScale"), Is.False);
             Assert.That(stills.Contains("0.56f"), Is.False);
+            string art = File.ReadAllText("Assets/_Project/Scripts/App/BadgerWearArt.cs");
+            Assert.That(art.Contains("ScreenMidX(screenW)"), Is.True, "stills Layout and the duel share ScreenMidX");
+            Assert.That(duel.Contains("DuelRestPlant"), Is.True);
+        }
+
+        [Test]
+        public void DuelBodyCentreIsScreenMidAndFootStaysOnBossBox()
+        {
+            Assert.That(BadgerWearArt.ScreenMidX(402f), Is.EqualTo(201f).Within(0.001f));
+            Assert.That(BadgerWearArt.ScreenMidX(820f), Is.EqualTo(410f).Within(0.001f));
+            Assert.That(BadgerWearArt.ScreenMidX(412f), Is.EqualTo(206f).Within(0.001f));
+
+            var idleSpr = SpriteCatalog.BadgerArt("badger_idle_b");
+            float idleW = idleSpr != null ? idleSpr.rect.width : 438f;
+            float idleH = idleSpr != null ? idleSpr.rect.height : 640f;
+            var sizes = new[]
+            {
+                new Vector2(402f, 874f),
+                new Vector2(820f, 1180f),
+                new Vector2(412f, 915f),
+            };
+            var frames = new[] { "badger_idle_a", "badger_idle_b", "badger_crouch" };
+            float? keep = DeviceFit.TestWindow;
+            try
+            {
+                for (int s = 0; s < sizes.Length; s++)
+                {
+                    float w = sizes[s].x;
+                    float h = sizes[s].y;
+                    DeviceFit.TestWindow = w / h;
+                    float ui = DeviceFit.Ui(w, h);
+                    var safe = new Rect(0f, 0f, w, h);
+                    float top = FlockFiveApp.TopHudBox(h, safe, 0f);
+                    float medal = 101.2f * Mathf.Clamp(ui, 1f, 1.35f) * DeviceFit.ControlK();
+                    float ptPx = Mathf.Max(1f, ui);
+                    medal = Mathf.Min(medal, 56f * ptPx);
+                    medal = Mathf.Max(medal, 44f);
+                    var back = new Rect(Mathf.Max(16f, safe.xMin + 10f), top, medal, medal);
+                    var L = FlockFiveApp.BadgerLayoutFor(w, h, safe, ui, top, back);
+                    var box = BadgerArenaRects.Split(L.Arena);
+                    var mark = BadgerFighterPlace.Rest(box, idleW, idleH, L.ColR.x - 2f);
+                    Assert.That(mark.Foot.y, Is.EqualTo(box.BossFighter.yMax).Within(0.01f), "boss foot " + w);
+
+                    var stand = BadgerWearArt.Layout("badger_idle_b", w, h);
+                    Assert.That(stand.BodyCenterX, Is.EqualTo(BadgerWearArt.ScreenMidX(w)).Within(0.51f), "still aim " + w);
+
+                    for (int f = 0; f < frames.Length; f++)
+                    {
+                        string frame = frames[f];
+                        var spr = SpriteCatalog.BadgerArt(frame);
+                        float artW = spr != null ? spr.rect.width : (frame == "badger_crouch" ? 803f : idleW);
+                        float sx = 1f / BadgerWearArt.FeatureScale(frame);
+                        FlockFiveApp.DuelRestPlant(frame, w, mark.Unit, sx, artW, mark.Foot.y, L.ColR.x - 2f,
+                            out float footX, out float footY, out float bodyX);
+                        Assert.That(bodyX, Is.EqualTo(w * 0.5f).Within(0.05f), frame + " centre " + w + " got " + bodyX);
+                        Assert.That(footY, Is.EqualTo(mark.Foot.y).Within(0.001f), frame + " foot y " + w);
+                        Assert.That(footY, Is.EqualTo(box.BossFighter.yMax).Within(0.01f), frame + " boss foot " + w);
+                        float frac = BadgerWearArt.BodyFrac(frame);
+                        float cx = SpriteAnim.FootCx(frame);
+                        float drawnW = artW * mark.Unit * sx;
+                        Assert.That(BadgerWearArt.BodyCenterAt(footX, frac, cx, drawnW), Is.EqualTo(bodyX).Within(0.001f));
+                    }
+                }
+            }
+            finally
+            {
+                DeviceFit.TestWindow = keep;
+            }
         }
 
         static int[] Grid(int honey)

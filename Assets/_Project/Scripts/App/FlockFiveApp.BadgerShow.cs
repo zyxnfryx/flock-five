@@ -219,9 +219,13 @@ namespace FlockFive
             var beat = BadgerSwipe.Active(0f) ? BadgerDuelBeat.Swipe : BadgerDuelBeat.Idle;
             pose = BadgerAnim.Duel(beat, 0f, PlayClock.Now);
             BadgerArtSize(pose.Frame, unit, out float w, out _);
-            float wide = w * (pose.ScaleX > 1f ? pose.ScaleX : 1f);
-            foot = mark.Foot;
-            foot.x = BadgerFighterPlace.ClampFootX(foot.x, wide, L.ColR.x - 2f);
+            float sx = pose.ScaleX;
+            float feat = BadgerWearArt.FeatureScale(pose.Frame);
+            if (feat > 0.01f) sx /= feat;
+            float artW = unit > 0.0001f ? w / unit : w;
+            DuelRestPlant(pose.Frame, Mathf.Max(2f, PhoneArea.W), unit, sx, artW, mark.Foot.y, L.ColR.x - 2f,
+                out float fx, out float fy, out _);
+            foot = new Vector2(fx, fy);
         }
 
         // b129 leap beat + landing beat. Ease-out arc from the crouch spot to his fight mark, a toward-camera swell
