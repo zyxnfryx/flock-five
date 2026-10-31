@@ -72,9 +72,9 @@ namespace FlockFive.Editor
             var yellow820 = new int[stages.Length];
             var sb = new StringBuilder();
             sb.Append("{\n");
-            sb.Append("  \"note\": \"1x stills from BadgerPolishStills.SaveWear. Pose is badger_idle_b, or badger_crouch when wrecked. Smug lean is 0. Body pixels are source-sprite alpha above 200. grey_share is the fraction of those pixels with HSV saturation < 0.15 and value > 0.25. yellow_px counts HSV hue in [45, 70] degrees, saturation >= 0.35 and value >= 0.45. body_luma is Rec.709 (0.2126 R + 0.7152 G + 0.0722 B, 0-255) and skips honey-gold pixels. The halo multiply is white.\",\n");
+            sb.Append("  \"note\": \"1x stills from BadgerPolishStills.SaveWear. Pose is badger_idle_b, or badger_crouch when wrecked. Smug lean is 0. Body pixels are source-sprite alpha above 200. grey_share is the fraction of those pixels with HSV saturation < 0.15 and value > 0.25. yellow_px counts HSV hue in [45, 70] degrees, saturation >= 0.35 and value >= 0.45, including the three honey marks on scuffed and above. body_luma is Rec.709 (0.2126 R + 0.7152 G + 0.0722 B, 0-255) and skips honey-gold pixels. Halo dashes are closed by BadgerWearArt.SolidHalo and RGB is multiplied by HaloRgbMul (1.25, clamped).\",\n");
             sb.Append("  \"grey_rule\": \"fraction of badger body pixels (source alpha above 200) with HSV saturation < 0.15 and value > 0.25\",\n");
-            sb.Append("  \"yellow_rule\": \"body pixels with HSV hue in [45, 70] degrees, saturation >= 0.35 and value >= 0.45\",\n");
+            sb.Append("  \"yellow_rule\": \"body pixels with HSV hue in [45, 70] degrees, saturation >= 0.35 and value >= 0.45; the three honey marks on scuffed+ count, the white flash does not\",\n");
             sb.Append("  \"stills\": [\n");
             int n = 0;
             bool first = true;
@@ -102,6 +102,8 @@ namespace FlockFive.Editor
                     float deg = BadgerPolish.EaseLean(0f, BadgerPolish.EarsBack(shot.Mood), BadgerPolish.LeanEaseSeconds);
                     board.MeasureBody(blit.Sprite, dest, layout.BodyCenterX, layout.FeetY, deg,
                         out int bodyN, out int greyN, out int yellowN, out int lumaN, out float luma);
+                    var ring = board.MeasureHalo(frame, wear, dest);
+                    var streaks = board.MeasureStreaks();
                     string name = sizes[s].x + "x" + sizes[s].y + "-wear-" + BadgerWearArt.Token(wear) + ".png";
                     string path = Path.Combine(dir, name);
                     File.WriteAllBytes(path, board.Png());
@@ -134,7 +136,12 @@ namespace FlockFive.Editor
                     sb.Append("      \"body_n\": ").Append(bodyN).Append(",\n");
                     sb.Append("      \"grey_n\": ").Append(greyN).Append(",\n");
                     sb.Append("      \"grey_share\": ").Append(greyShare).Append(",\n");
-                    sb.Append("      \"yellow_px\": ").Append(yellowN).Append("\n");
+                    sb.Append("      \"yellow_px\": ").Append(yellowN).Append(",\n");
+                    sb.Append("      \"halo_rgb_mul\": ").Append(BadgerWearArt.HaloRgbMul.ToString("0.00", ci)).Append(",\n");
+                    sb.Append("      \"halo_thickness_px\": ").Append(ring.MinThickness).Append(",\n");
+                    sb.Append("      \"halo_gap_count\": ").Append(ring.GapCount).Append(",\n");
+                    sb.Append("      \"streak_count\": ").Append(streaks.Count).Append(",\n");
+                    sb.Append("      \"streak_widths_px\": ").Append(WidthJson(streaks.Widths)).Append("\n");
                     sb.Append("    }");
                     Debug.Log("[badger-still] " + path + " pose " + frame + " luma " + luma.ToString("0.00", ci));
                     n++;
@@ -143,7 +150,7 @@ namespace FlockFive.Editor
             sb.Append("\n  ],\n");
             sb.Append("  \"grey_share_820\": {\n");
             sb.Append("    \"rule\": \"fraction of badger body pixels (source alpha above 200) with HSV saturation < 0.15 and value > 0.25\",\n");
-            sb.Append("    \"yellow_rule\": \"body pixels with HSV hue in [45, 70] degrees, saturation >= 0.35 and value >= 0.45\",\n");
+            sb.Append("    \"yellow_rule\": \"body pixels with HSV hue in [45, 70] degrees, saturation >= 0.35 and value >= 0.45; the three honey marks on scuffed+ count\",\n");
             for (int i = 0; i < stages.Length; i++)
             {
                 string g = grey820Have[i] ? grey820[i].ToString("0.0000", ci) : "null";
@@ -156,6 +163,20 @@ namespace FlockFive.Editor
             File.WriteAllText(Path.Combine(dir, "layout.json"), sb.ToString(), new UTF8Encoding(false));
             Debug.Log("BADGER_WEAR_STILLS_DONE " + n);
             EditorApplication.Exit(0);
+        }
+
+        static string WidthJson(int[] widths)
+        {
+            if (widths == null || widths.Length == 0) return "[]";
+            var sb = new StringBuilder();
+            sb.Append("[");
+            for (int i = 0; i < widths.Length; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                sb.Append(widths[i]);
+            }
+            sb.Append("]");
+            return sb.ToString();
         }
 
         static string TintHex(Color c)
@@ -394,12 +415,66 @@ namespace FlockFive.Editor
                     return unpadded;
                 }
                 var halo = new Color(1f, 1f, 1f, blit.HaloAlpha);
-                BlitNamed(blit.HaloBack, dest, layout.BodyCenterX, layout.FeetY, deg, halo);
+                BlitHalo(blit.HaloBack, dest, layout.BodyCenterX, layout.FeetY, deg, halo);
                 var body = blit.BodyTint;
                 body.a = 1f;
                 BlitNamed(blit.Sprite, dest, layout.BodyCenterX, layout.FeetY, deg, body);
-                BlitNamed(blit.HaloFront, dest, layout.BodyCenterX, layout.FeetY, deg, halo);
+                StampHoney(frame, wear, unpadded, dest, layout.BodyCenterX, layout.FeetY, deg);
+                BlitHalo(blit.HaloFront, dest, layout.BodyCenterX, layout.FeetY, deg, halo);
                 return unpadded;
+            }
+
+            void BlitHalo(string name, Rect dest, float footX, float footY, float deg, Color mul)
+            {
+                if (mul.a < 0.01f || string.IsNullOrEmpty(name)) return;
+                var tex = Load(name);
+                if (tex == null) return;
+                try
+                {
+                    float scale = dest.width / Mathf.Max(1, tex.width);
+                    var solid = BadgerWearArt.SolidHalo(tex.GetPixels32(), tex.width, tex.height, scale);
+                    BlitRotated(solid, tex.width, tex.height, dest, footX, footY, deg, mul);
+                }
+                finally
+                {
+                    UnityEngine.Object.DestroyImmediate(tex);
+                }
+            }
+
+            void StampHoney(string frame, BadgerWear wear, Rect unpadded, Rect dest, float footX, float footY, float deg)
+            {
+                if (!BadgerWearArt.HoneyMarksOn(wear)) return;
+                Color32[] fresh = null;
+                int fw = 0, fh = 0;
+                var tex = Load(BadgerWearArt.StageKey(frame, BadgerWear.Fresh));
+                if (tex != null)
+                {
+                    fresh = tex.GetPixels32();
+                    fw = tex.width;
+                    fh = tex.height;
+                    UnityEngine.Object.DestroyImmediate(tex);
+                }
+                var ink = (Color)BadgerWearArt.HoneyInk;
+                BadgerWearArt.StampHoney(unpadded, footX, footY, deg, wear, (x, y) =>
+                {
+                    Plot(x, y, ink);
+                }, (x, y) =>
+                {
+                    if (fresh == null) return true;
+                    float rad = -deg * Mathf.Deg2Rad;
+                    float c = Mathf.Cos(rad);
+                    float s = Mathf.Sin(rad);
+                    float dx = x - footX;
+                    float dy = y - footY;
+                    float ux = footX + dx * c - dy * s;
+                    float uy = footY + dx * s + dy * c;
+                    float u = (ux - dest.x) / dest.width;
+                    float v = (uy - dest.y) / dest.height;
+                    if (u < 0f || v < 0f || u > 1f || v > 1f) return false;
+                    int sx = Mathf.Clamp(Mathf.RoundToInt(u * (fw - 1)), 0, fw - 1);
+                    int sy = Mathf.Clamp(Mathf.RoundToInt(v * (fh - 1)), 0, fh - 1);
+                    return fresh[(fh - 1 - sy) * fw + sx].a > 200;
+                });
             }
 
             void BlitNamed(string name, Rect dest, float footX, float footY, float deg, Color mul)
@@ -587,6 +662,52 @@ namespace FlockFive.Editor
                 finally
                 {
                     Object.DestroyImmediate(tex);
+                }
+            }
+
+            public BadgerWearArt.RingMeasure MeasureHalo(string frame, BadgerWear wear, Rect dest)
+            {
+                var empty = new BadgerWearArt.RingMeasure();
+                if (BadgerWearArt.HaloAlpha(wear) <= 0.001f || dest.width < 2f) return empty;
+                Color32[] back = SolidLayer(BadgerWearArt.HaloBack(frame, wear), dest.width, out int w, out int h, out float scale);
+                Color32[] front = SolidLayer(BadgerWearArt.HaloFront(frame, wear), dest.width, out int w2, out int h2, out _);
+                if (back == null && front == null) return empty;
+                if (back != null && front != null && w == w2 && h == h2)
+                {
+                    for (int i = 0; i < back.Length; i++)
+                        if (front[i].a > back[i].a) back[i] = front[i];
+                    var both = BadgerWearArt.MeasureScreen(back, w, h, scale);
+                    var one = BadgerWearArt.MeasureScreen(front, w, h, scale);
+                    // A layer that is already one piece has gap 0. The union is the ring.
+                    if (one.GapCount > both.GapCount) both.GapCount = one.GapCount;
+                    return both;
+                }
+                var only = back ?? front;
+                int ow = back != null ? w : w2;
+                int oh = back != null ? h : h2;
+                return BadgerWearArt.MeasureScreen(only, ow, oh, scale);
+            }
+
+            public BadgerWearArt.StreakMeasure MeasureStreaks()
+                => BadgerWearArt.MeasureStreaks(_px, W, H);
+
+            static Color32[] SolidLayer(string name, float destW, out int w, out int h, out float scale)
+            {
+                w = 0;
+                h = 0;
+                scale = 1f;
+                var tex = Load(name);
+                if (tex == null) return null;
+                try
+                {
+                    w = tex.width;
+                    h = tex.height;
+                    scale = destW / Mathf.Max(1, w);
+                    return BadgerWearArt.SolidHalo(tex.GetPixels32(), w, h, scale);
+                }
+                finally
+                {
+                    UnityEngine.Object.DestroyImmediate(tex);
                 }
             }
 

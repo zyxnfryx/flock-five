@@ -124,6 +124,7 @@ namespace FlockFive
         int _bgTickFrame = -1;
         static int FightPaintSerial;
         static int FightBadgerSerial;
+        static int FightFlashSerial;
         static int FightTokenSerial;
         int _bgPowerTile = -1;
         Rect _bgPowerBtn;
@@ -1621,7 +1622,18 @@ namespace FlockFive
                     if (zoomDraw) GUI.matrix = keep;
                 }
                 if (slam && paint) DrawDontCareSlam(pivot, zoom);
+                // Badger, then the wear flash, then the pick token. The number stays
+                // above the white wash. Zoom is pushed again so a slam token still scales.
                 if (paint) DrawBadgerBlowFlash();
+                if (zoomDraw) PushBadgerZoom(zoom, pivot);
+                try
+                {
+                    DrawBadgerPickToken();
+                }
+                finally
+                {
+                    if (zoomDraw) GUI.matrix = keep;
+                }
                 if (paint && !_bgLeap.Live) SparkleFx.DrawBits();
             }
             finally
@@ -1648,6 +1660,7 @@ namespace FlockFive
             {
                 FightPaintSerial = 0;
                 FightBadgerSerial = 0;
+                FightFlashSerial = 0;
                 FightTokenSerial = 0;
             }
             var L = BadgerLayout();
@@ -1735,7 +1748,6 @@ namespace FlockFive
             var hive = DrawBadgerOpeningHive(L);
             if (_bgWashOut > 0f) DrawBadgerWash(_bgWashOut / BadgerLeap.WashOutSeconds);
             DrawBadgerFighters(L);
-            DrawBadgerPickToken();
             if (_bgStage == BadgerStage.Opening)
                 DrawBadgerClaws(hive, _bgWashOut > 0f ? 0f : _bgOpenT);
             if (_bgStage == BadgerStage.DontCare && BadgerSlam.ShowNasty(_bgSlamT))
@@ -2407,26 +2419,56 @@ namespace FlockFive
             tint.a = alpha;
             var halo = new Color(1f, 1f, 1f, blit.HaloAlpha * alpha);
             bool any = false;
-            if (BlitWearLayer(blit.HaloBack, blit.Dest, halo)) any = true;
-            if (BlitWearLayer(blit.Sprite, blit.Dest, tint)) any = true;
-            if (BlitWearLayer(blit.HaloFront, blit.Dest, halo)) any = true;
+            if (BlitWearLayer(blit.HaloBack, blit.Dest, halo, true)) any = true;
+            if (BlitWearLayer(blit.Sprite, blit.Dest, tint, false)) any = true;
+            if (BadgerWearArt.HoneyMarksOn(wear))
+                DrawHoneyMarks(body, frame, alpha);
+            if (BlitWearLayer(blit.HaloFront, blit.Dest, halo, true)) any = true;
             return any;
         }
 
-        static bool BlitWearLayer(string name, Rect dest, Color color)
+        // Brightness is baked by BadgerWearArt.SolidHalo (HaloRgbMul). The multiply
+        // here is white so the ring is not brightened twice. Point sampled.
+        static bool BlitWearLayer(string name, Rect dest, Color color, bool halo)
         {
             if (color.a < 0.01f || string.IsNullOrEmpty(name) || dest.width < 4f) return false;
+            if (halo && BadgerWearArt.HaloSolid)
+            {
+                var solid = BadgerWearArt.SolidHaloTexture(name, dest.width, dest.height);
+                if (solid != null)
+                {
+                    var prev = GUI.color;
+                    GUI.color = new Color(1f, 1f, 1f, color.a);
+                    GUI.DrawTexture(dest, solid);
+                    GUI.color = prev;
+                    return true;
+                }
+            }
             var spr = SpriteCatalog.BadgerArt(name);
             if (spr == null || spr.texture == null) return false;
-            var prev = GUI.color;
+            var keep = GUI.color;
             GUI.color = color;
             DrawSprite(dest, spr, false);
-            GUI.color = prev;
+            GUI.color = keep;
             return true;
+        }
+
+        static void DrawHoneyMarks(Rect body, string frame, float alpha)
+        {
+            if (alpha < 0.01f || body.width < 4f || body.height < 4f) return;
+            int tw = Mathf.Max(2, Mathf.RoundToInt(body.width));
+            int th = Mathf.Max(2, Mathf.RoundToInt(body.height));
+            var tex = BadgerWearArt.HoneyTexture(frame, tw, th);
+            if (tex == null) return;
+            var prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            GUI.DrawTexture(body, tex);
+            GUI.color = prev;
         }
 
         // Full-screen white. The winning hit uses BlowFlash. A wear-stage start
         // uses the same helper for one frame at 60%. No yellow in this path.
+        // The pick token is drawn after this, so the number is not washed out.
         void DrawBadgerBlowFlash()
         {
             if (!GuiPaint()) return;
@@ -2439,6 +2481,7 @@ namespace FlockFive
             float wear = BadgerPolish.WearFlashAlpha(Time.frameCount, _bgWearFlashFrame);
             if (wear > a) a = wear;
             if (a < 0.02f) return;
+            FightFlashSerial = ++FightPaintSerial;
             var prev = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, a);
             GUI.DrawTexture(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), Texture2D.whiteTexture);

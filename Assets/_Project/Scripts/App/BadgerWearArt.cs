@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 namespace FlockFive
@@ -439,5 +441,767 @@ namespace FlockFive
             if (layers[0] == layers[2]) return false;
             return true;
         }
+
+        // Scuffed and above. The halo art is a dashed arc. SolidHalo closes those
+        // dashes and thickens the stroke so it stays at least HaloMinScreenPx on
+        // screen, then Brighten multiplies RGB by HaloRgbMul (clamped). One path
+        // for the duel drawer and the stills painter.
+        public const float HaloRgbMul = 1.25f;
+        public const int HaloMinScreenPx = 2;
+        public const bool HaloSolid = true;
+        public const float HaloLinkPx = 24f;
+
+        public static int HaloStrokePx(float screenScale)
+        {
+            if (screenScale < 0.05f) screenScale = 0.05f;
+            // One pixel over the minimum so nearest sampling still measures >= 2.
+            int px = Mathf.CeilToInt((HaloMinScreenPx + 1f) / screenScale);
+            if (px < 3) px = 3;
+            // The in-fight fighter is much smaller than the 1x still. The cap has
+            // to stay above (min+1)/scale or the ring drops under 2 px on screen.
+            if (px > 64) px = 64;
+            return px;
+        }
+
+        public static Color32 Brighten(Color32 p)
+        {
+            p.r = MulChannel(p.r);
+            p.g = MulChannel(p.g);
+            p.b = MulChannel(p.b);
+            return p;
+        }
+
+        static byte MulChannel(byte c)
+        {
+            int v = Mathf.RoundToInt(c * HaloRgbMul);
+            if (v < 0) v = 0;
+            if (v > 255) v = 255;
+            return (byte)v;
+        }
+
+        public struct RingMeasure
+        {
+            public int Components;
+            public int GapCount;
+            public int MinThickness;
+            public int P10Thickness;
+            public int Ink;
+        }
+
+        // Closes dashes whose edges are within HaloLinkPx, strokes the gap at
+        // HaloStrokePx(screenScale), then brightens. Same buffer order as the input.
+        public static Color32[] SolidHalo(Color32[] src, int w, int h, float screenScale)
+        {
+            if (src == null || w < 2 || h < 2 || src.Length < w * h) return src;
+            int n = w * h;
+            var ink = new bool[n];
+            int count = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (src[i].a >= 24)
+                {
+                    ink[i] = true;
+                    count++;
+                }
+            }
+            var dst = new Color32[n];
+            if (count < 8)
+            {
+                for (int i = 0; i < n; i++)
+                    if (ink[i]) dst[i] = Brighten(WithAlpha(src[i], 255));
+                return dst;
+            }
+
+            var compOf = new int[n];
+            for (int i = 0; i < n; i++) compOf[i] = -1;
+            var comps = new List<List<int>>();
+            var stack = new int[count];
+            for (int i = 0; i < n; i++)
+            {
+                if (!ink[i] || compOf[i] >= 0) continue;
+                int id = comps.Count;
+                var pts = new List<int>();
+                int sp = 0;
+                stack[sp++] = i;
+                compOf[i] = id;
+                while (sp > 0)
+                {
+                    int p = stack[--sp];
+                    pts.Add(p);
+                    int x = p % w;
+                    int y = p / w;
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        int yy = y + dy;
+                        if ((uint)yy >= (uint)h) continue;
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            if (dx == 0 && dy == 0) continue;
+                            int xx = x + dx;
+                            if ((uint)xx >= (uint)w) continue;
+                            int j = yy * w + xx;
+                            if (!ink[j] || compOf[j] >= 0) continue;
+                            compOf[j] = id;
+                            stack[sp++] = j;
+                        }
+                    }
+                }
+                comps.Add(pts);
+            }
+
+            for (int i = 0; i < n; i++)
+                if (ink[i]) dst[i] = WithAlpha(src[i], 255);
+
+            int stroke = HaloStrokePx(screenScale);
+            float link = HaloLinkPx;
+            var cents = new Vector2[comps.Count];
+            var avg = new Color32[comps.Count];
+            for (int c = 0; c < comps.Count; c++)
+            {
+                long sx = 0, sy = 0, sr = 0, sg = 0, sb = 0;
+                var pts = comps[c];
+                for (int k = 0; k < pts.Count; k++)
+                {
+                    int p = pts[k];
+                    sx += p % w;
+                    sy += p / w;
+                    sr += src[p].r;
+                    sg += src[p].g;
+                    sb += src[p].b;
+                }
+                float inv = 1f / Mathf.Max(1, pts.Count);
+                cents[c] = new Vector2(sx * inv, sy * inv);
+                avg[c] = new Color32((byte)(sr * inv), (byte)(sg * inv), (byte)(sb * inv), 255);
+            }
+
+            for (int a = 0; a < comps.Count; a++)
+            {
+                for (int b = a + 1; b < comps.Count; b++)
+                {
+                    float cd = Vector2.Distance(cents[a], cents[b]);
+                    if (cd > 160f) continue;
+                    if (SurfaceDistance(comps[a], comps[b], w, link) > link) continue;
+                    var col = new Color32(
+                        (byte)((avg[a].r + avg[b].r) >> 1),
+                        (byte)((avg[a].g + avg[b].g) >> 1),
+                        (byte)((avg[a].b + avg[b].b) >> 1),
+                        255);
+                    Stroke(dst, w, h, cents[a], cents[b], stroke, col);
+                }
+            }
+
+            // One pixel of growth so a 1px joint between back and front survives scale.
+            Dilate1(dst, w, h);
+            for (int i = 0; i < n; i++)
+                if (dst[i].a > 0) dst[i] = Brighten(dst[i]);
+            return dst;
+        }
+
+        static Color32 WithAlpha(Color32 p, byte a)
+        {
+            p.a = a;
+            return p;
+        }
+
+        static float SurfaceDistance(List<int> a, List<int> b, int w, float limit)
+        {
+            var small = a.Count <= b.Count ? a : b;
+            var large = small == a ? b : a;
+            const int cell = 8;
+            var buckets = new Dictionary<long, List<int>>(large.Count / 4 + 1);
+            for (int i = 0; i < large.Count; i++)
+            {
+                int p = large[i];
+                long key = ((long)((p % w) / cell) << 32) | (uint)((p / w) / cell);
+                if (!buckets.TryGetValue(key, out var list))
+                {
+                    list = new List<int>(4);
+                    buckets[key] = list;
+                }
+                list.Add(p);
+            }
+            float best2 = (limit + 8f) * (limit + 8f);
+            int reach = Mathf.CeilToInt(limit / cell) + 1;
+            float limit2 = limit * limit;
+            for (int i = 0; i < small.Count; i++)
+            {
+                int p = small[i];
+                int x = p % w;
+                int y = p / w;
+                int cx = x / cell;
+                int cy = y / cell;
+                for (int oy = -reach; oy <= reach; oy++)
+                {
+                    for (int ox = -reach; ox <= reach; ox++)
+                    {
+                        long key = ((long)(cx + ox) << 32) | (uint)(cy + oy);
+                        if (!buckets.TryGetValue(key, out var list)) continue;
+                        for (int k = 0; k < list.Count; k++)
+                        {
+                            int q = list[k];
+                            int dx = x - q % w;
+                            int dy = y - q / w;
+                            float d2 = dx * dx + dy * dy;
+                            if (d2 < best2) best2 = d2;
+                        }
+                    }
+                }
+                if (best2 <= limit2) return Mathf.Sqrt(best2);
+            }
+            return Mathf.Sqrt(best2);
+        }
+
+        static void Stroke(Color32[] dst, int w, int h, Vector2 a, Vector2 b, int width, Color32 col)
+        {
+            float rad = Mathf.Max(1f, width * 0.5f);
+            int x0 = Mathf.Clamp(Mathf.FloorToInt(Mathf.Min(a.x, b.x) - rad - 1f), 0, w - 1);
+            int x1 = Mathf.Clamp(Mathf.CeilToInt(Mathf.Max(a.x, b.x) + rad + 1f), 0, w - 1);
+            int y0 = Mathf.Clamp(Mathf.FloorToInt(Mathf.Min(a.y, b.y) - rad - 1f), 0, h - 1);
+            int y1 = Mathf.Clamp(Mathf.CeilToInt(Mathf.Max(a.y, b.y) + rad + 1f), 0, h - 1);
+            float dx = b.x - a.x;
+            float dy = b.y - a.y;
+            float len2 = dx * dx + dy * dy;
+            if (len2 < 0.01f) len2 = 0.01f;
+            float r2 = rad * rad;
+            for (int y = y0; y <= y1; y++)
+            {
+                int row = y * w;
+                for (int x = x0; x <= x1; x++)
+                {
+                    if (dst[row + x].a > 0) continue;
+                    float t = ((x - a.x) * dx + (y - a.y) * dy) / len2;
+                    if (t < 0f) t = 0f;
+                    else if (t > 1f) t = 1f;
+                    float px = a.x + t * dx;
+                    float py = a.y + t * dy;
+                    float ex = x - px;
+                    float ey = y - py;
+                    if (ex * ex + ey * ey <= r2) dst[row + x] = col;
+                }
+            }
+        }
+
+        static void Dilate1(Color32[] dst, int w, int h)
+        {
+            var grow = new List<int>();
+            var cols = new List<Color32>();
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    if (dst[row + x].a > 0) continue;
+                    Color32 hit = default;
+                    bool found = false;
+                    for (int dy = -1; dy <= 1 && !found; dy++)
+                    {
+                        int yy = y + dy;
+                        if ((uint)yy >= (uint)h) continue;
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            if (dx == 0 && dy == 0) continue;
+                            int xx = x + dx;
+                            if ((uint)xx >= (uint)w) continue;
+                            var p = dst[yy * w + xx];
+                            if (p.a == 0) continue;
+                            hit = p;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) continue;
+                    grow.Add(row + x);
+                    cols.Add(hit);
+                }
+            }
+            for (int i = 0; i < grow.Count; i++) dst[grow[i]] = cols[i];
+        }
+
+        // Nearest downsample, then ring thickness along the ellipse normal.
+        // GapCount is extra connected components (0 means one solid piece).
+        public static RingMeasure MeasureScreen(Color32[] px, int w, int h, float scale)
+        {
+            var m = new RingMeasure();
+            if (px == null || w < 2 || h < 2 || scale < 0.02f) return m;
+            int sw = Mathf.Max(1, Mathf.RoundToInt(w * scale));
+            int sh = Mathf.Max(1, Mathf.RoundToInt(h * scale));
+            var sm = new bool[sw * sh];
+            int ink = 0;
+            for (int y = 0; y < sh; y++)
+            {
+                int sy = Mathf.Clamp(Mathf.RoundToInt(y / scale), 0, h - 1);
+                int row = y * sw;
+                for (int x = 0; x < sw; x++)
+                {
+                    int sx = Mathf.Clamp(Mathf.RoundToInt(x / scale), 0, w - 1);
+                    if (px[sy * w + sx].a < 24) continue;
+                    sm[row + x] = true;
+                    ink++;
+                }
+            }
+            m.Ink = ink;
+            if (ink < 4) return m;
+            m.Components = CountComponents(sm, sw, sh);
+            m.GapCount = Mathf.Max(0, m.Components - 1);
+            int minX = sw, minY = sh, maxX = 0, maxY = 0;
+            for (int y = 0; y < sh; y++)
+            {
+                int row = y * sw;
+                for (int x = 0; x < sw; x++)
+                {
+                    if (!sm[row + x]) continue;
+                    if (x < minX) minX = x;
+                    if (y < minY) minY = y;
+                    if (x > maxX) maxX = x;
+                    if (y > maxY) maxY = y;
+                }
+            }
+            float cx = (minX + maxX) * 0.5f;
+            float cy = (minY + maxY) * 0.5f;
+            float rx = Mathf.Max(1f, (maxX - minX) * 0.5f);
+            float ry = Mathf.Max(1f, (maxY - minY) * 0.5f);
+            // Stars pull the box out past the ring. The ray has to reach the stroke,
+            // or a tip nick inside a short window is counted as the thickness.
+            int reach = Mathf.CeilToInt(Mathf.Max(rx, ry)) + 4;
+            var thick = new List<int>(180);
+            for (int deg = 0; deg < 360; deg += 2)
+            {
+                float t = deg * Mathf.Deg2Rad;
+                float ct = Mathf.Cos(t);
+                float st = Mathf.Sin(t);
+                float ex = cx + rx * ct;
+                float ey = cy + ry * st;
+                float nx = ry * ct;
+                float ny = rx * st;
+                float ln = Mathf.Sqrt(nx * nx + ny * ny);
+                if (ln < 0.001f) continue;
+                nx /= ln;
+                ny /= ln;
+                int run = 0, best = 0;
+                for (int s = -reach; s <= reach; s++)
+                {
+                    int x = Mathf.RoundToInt(ex + nx * s);
+                    int y = Mathf.RoundToInt(ey + ny * s);
+                    bool hit = (uint)x < (uint)sw && (uint)y < (uint)sh && sm[y * sw + x];
+                    if (hit)
+                    {
+                        run++;
+                        if (run > best) best = run;
+                    }
+                    else run = 0;
+                }
+                if (best >= 1) thick.Add(best);
+            }
+            if (thick.Count == 0) return m;
+            // One angle can nick a star on the box and read 1 even though the
+            // ring on either side is thick. The ring thickness is the lowest
+            // 3-angle median, so a single tip does not count as the stroke.
+            int robust = int.MaxValue;
+            for (int i = 0; i < thick.Count; i++)
+            {
+                int a = thick[(i + thick.Count - 1) % thick.Count];
+                int b = thick[i];
+                int c = thick[(i + 1) % thick.Count];
+                int hi = a > b ? a : b;
+                if (c > hi) hi = c;
+                int lo = a < b ? a : b;
+                if (c < lo) lo = c;
+                int med = a + b + c - hi - lo;
+                if (med < robust) robust = med;
+            }
+            thick.Sort();
+            m.MinThickness = robust;
+            m.P10Thickness = thick[Mathf.Clamp(thick.Count / 10, 0, thick.Count - 1)];
+            return m;
+        }
+
+        static int CountComponents(bool[] sm, int sw, int sh)
+        {
+            var seen = new bool[sm.Length];
+            int n = 0;
+            var stack = new int[sm.Length];
+            for (int i = 0; i < sm.Length; i++)
+            {
+                if (!sm[i] || seen[i]) continue;
+                n++;
+                int sp = 0;
+                stack[sp++] = i;
+                seen[i] = true;
+                while (sp > 0)
+                {
+                    int p = stack[--sp];
+                    int x = p % sw;
+                    int y = p / sw;
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        int yy = y + dy;
+                        if ((uint)yy >= (uint)sh) continue;
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            if (dx == 0 && dy == 0) continue;
+                            int xx = x + dx;
+                            if ((uint)xx >= (uint)sw) continue;
+                            int j = yy * sw + xx;
+                            if (!sm[j] || seen[j]) continue;
+                            seen[j] = true;
+                            stack[sp++] = j;
+                        }
+                    }
+                }
+            }
+            return n;
+        }
+
+        // Three honey smears. Same anchors on scuffed, bruised and wrecked, so they
+        // follow the pose. Width is screen pixels. Fresh draws none. No red.
+        public const int HoneyStreakCount = 3;
+        public static readonly Color32 HoneyInk = new Color32(236, 186, 24, 255);
+
+        public readonly struct HoneyMark
+        {
+            public readonly float U;
+            public readonly float V;
+            public readonly float AngleDeg;
+            public readonly float LengthPx;
+            public readonly int WidthPx;
+
+            public HoneyMark(float u, float v, float angleDeg, float lengthPx, int widthPx)
+            {
+                U = u;
+                V = v;
+                AngleDeg = angleDeg;
+                LengthPx = lengthPx;
+                WidthPx = widthPx;
+            }
+        }
+
+        static readonly HoneyMark[] HoneyMarks =
+        {
+            new HoneyMark(0.42f, 0.38f, -34f, 22f, 2),
+            new HoneyMark(0.60f, 0.50f, 22f, 26f, 3),
+            new HoneyMark(0.46f, 0.62f, -8f, 18f, 2),
+        };
+
+        public static bool HoneyMarksOn(BadgerWear wear) => (int)wear >= (int)BadgerWear.Scuffed;
+
+        public static HoneyMark HoneyMarkAt(int index)
+        {
+            if (index < 0) index = 0;
+            if (index >= HoneyMarks.Length) index = HoneyMarks.Length - 1;
+            return HoneyMarks[index];
+        }
+
+        public static bool HoneyMarkPixel(Color32 p)
+        {
+            if (p.a < 200) return false;
+            if (p.b > 40) return false;
+            if (p.r < 210 || p.g < 150) return false;
+            if (p.r > p.g + 70) return false;
+            return BadgerPolish.YellowStreak(p.r / 255f, p.g / 255f, p.b / 255f);
+        }
+
+        public struct StreakMeasure
+        {
+            public int Count;
+            public int[] Widths;
+        }
+
+        // y grows down for the plot (the stills board and GUI). allow drops pixels
+        // outside the fresh silhouette. Returns pixels accepted.
+        public static int StampHoney(Rect unpadded, float pivotX, float pivotY, float deg, BadgerWear wear,
+            Action<int, int> plot, Func<int, int, bool> allow)
+        {
+            if (!HoneyMarksOn(wear) || plot == null || unpadded.width < 2f || unpadded.height < 2f) return 0;
+            float rad = deg * Mathf.Deg2Rad;
+            float c = Mathf.Cos(rad);
+            float s = Mathf.Sin(rad);
+            int n = 0;
+            for (int i = 0; i < HoneyMarks.Length; i++)
+            {
+                var mark = HoneyMarks[i];
+                float lx = unpadded.x + mark.U * unpadded.width;
+                float ly = unpadded.y + mark.V * unpadded.height;
+                float dx = lx - pivotX;
+                float dy = ly - pivotY;
+                float cx = pivotX + dx * c - dy * s;
+                float cy = pivotY + dx * s + dy * c;
+                float ang = (mark.AngleDeg + deg) * Mathf.Deg2Rad;
+                float dirX = Mathf.Cos(ang);
+                float dirY = Mathf.Sin(ang);
+                // Step the long axis by one pixel and stamp the width on the short
+                // axis, so every station is exactly 2 or 3 px. A diagonal floor()
+                // stair leaves some stations 1 px wide.
+                bool horiz = Mathf.Abs(dirX) >= Mathf.Abs(dirY);
+                int stepX = dirX >= 0f ? 1 : -1;
+                int stepY = dirY >= 0f ? 1 : -1;
+                float slope = horiz
+                    ? (Mathf.Abs(dirX) < 0.001f ? 0f : Mathf.Abs(dirY / dirX))
+                    : (Mathf.Abs(dirY) < 0.001f ? 0f : Mathf.Abs(dirX / dirY));
+                int width = mark.WidthPx;
+                if (width < 2) width = 2;
+                if (width > 3) width = 3;
+                // Length is tuned for the 1x body (~230 px). On the small duel
+                // fighter the same pixel length would overlap the three marks.
+                float lenPx = mark.LengthPx;
+                if (unpadded.width < 160f)
+                    lenPx *= Mathf.Max(0.22f, unpadded.width / 230f);
+                int len = Mathf.Max(width + 1, Mathf.RoundToInt(lenPx));
+                int mid = (width - 1) / 2;
+                int gx = 0, gy = 0;
+                float acc = 0f;
+                int sumX = 0, sumY = 0;
+                for (int t = 0; t < len; t++)
+                {
+                    sumX += gx;
+                    sumY += gy;
+                    if (horiz)
+                    {
+                        gx += stepX;
+                        acc += slope;
+                        if (acc >= 0.5f) { gy += stepY; acc -= 1f; }
+                    }
+                    else
+                    {
+                        gy += stepY;
+                        acc += slope;
+                        if (acc >= 0.5f) { gx += stepX; acc -= 1f; }
+                    }
+                }
+                int shiftX = Mathf.RoundToInt(cx - sumX / (float)len);
+                int shiftY = Mathf.RoundToInt(cy - sumY / (float)len);
+                gx = 0;
+                gy = 0;
+                acc = 0f;
+                for (int t = 0; t < len; t++)
+                {
+                    int ix = gx + shiftX;
+                    int iy = gy + shiftY;
+                    for (int k = 0; k < width; k++)
+                    {
+                        int off = k - mid;
+                        int x = horiz ? ix : ix + off;
+                        int y = horiz ? iy + off : iy;
+                        if (allow != null && !allow(x, y)) continue;
+                        plot(x, y);
+                        n++;
+                    }
+                    if (horiz)
+                    {
+                        gx += stepX;
+                        acc += slope;
+                        if (acc >= 0.5f) { gy += stepY; acc -= 1f; }
+                    }
+                    else
+                    {
+                        gy += stepY;
+                        acc += slope;
+                        if (acc >= 0.5f) { gx += stepX; acc -= 1f; }
+                    }
+                }
+            }
+            return n;
+        }
+
+        public static StreakMeasure MeasureStreaks(Color32[] px, int w, int h)
+        {
+            var m = new StreakMeasure { Widths = new int[0] };
+            if (px == null || w < 2 || h < 2 || px.Length < w * h) return m;
+            var ink = new bool[w * h];
+            for (int i = 0; i < ink.Length; i++) ink[i] = HoneyMarkPixel(px[i]);
+            var widths = new List<int>();
+            var seen = new bool[ink.Length];
+            var stack = new int[ink.Length];
+            for (int i = 0; i < ink.Length; i++)
+            {
+                if (!ink[i] || seen[i]) continue;
+                int sp = 0;
+                stack[sp++] = i;
+                seen[i] = true;
+                var pts = new List<int>();
+                while (sp > 0)
+                {
+                    int p = stack[--sp];
+                    pts.Add(p);
+                    int x = p % w;
+                    int y = p / w;
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        int yy = y + dy;
+                        if ((uint)yy >= (uint)h) continue;
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            if (dx == 0 && dy == 0) continue;
+                            int xx = x + dx;
+                            if ((uint)xx >= (uint)w) continue;
+                            int j = yy * w + xx;
+                            if (!ink[j] || seen[j]) continue;
+                            seen[j] = true;
+                            stack[sp++] = j;
+                        }
+                    }
+                }
+                if (pts.Count < 4) continue;
+                widths.Add(StreakWidth(pts, w));
+            }
+            m.Count = widths.Count;
+            m.Widths = widths.ToArray();
+            return m;
+        }
+
+        // Median station along the long screen axis. The mark is stamped 2 or 3
+        // pixels on the short axis, so that station width is the on-screen width.
+        // A rotated minor-axis bin splits those pixels and reports 1.
+        static int StreakWidth(List<int> pts, int w)
+        {
+            float mx = 0f, my = 0f;
+            for (int i = 0; i < pts.Count; i++)
+            {
+                mx += pts[i] % w;
+                my += pts[i] / w;
+            }
+            mx /= pts.Count;
+            my /= pts.Count;
+            float cxx = 0f, cyy = 0f;
+            for (int i = 0; i < pts.Count; i++)
+            {
+                float dx = pts[i] % w - mx;
+                float dy = pts[i] / w - my;
+                cxx += dx * dx;
+                cyy += dy * dy;
+            }
+            bool alongX = cxx >= cyy;
+            var lo = new Dictionary<int, int>();
+            var hi = new Dictionary<int, int>();
+            for (int i = 0; i < pts.Count; i++)
+            {
+                int x = pts[i] % w;
+                int y = pts[i] / w;
+                int key = alongX ? x : y;
+                int val = alongX ? y : x;
+                if (!lo.TryGetValue(key, out int a))
+                {
+                    lo[key] = val;
+                    hi[key] = val;
+                }
+                else
+                {
+                    if (val < a) lo[key] = val;
+                    if (val > hi[key]) hi[key] = val;
+                }
+            }
+            var widths = new List<int>(lo.Count);
+            foreach (var kv in lo)
+                widths.Add(hi[kv.Key] - kv.Value + 1);
+            if (widths.Count == 0) return 1;
+            widths.Sort();
+            return Mathf.Max(1, widths[widths.Count / 2]);
+        }
+
+        // True when the unpadded UV sits on the fresh pose's opaque body.
+        public static bool FreshCovers(string frame, float u, float v)
+        {
+            if (!TryArt(StageKey(frame, BadgerWear.Fresh), out var px, out int w, out int h)) return true;
+            if (u < 0f || v < 0f || u > 1f || v > 1f) return false;
+            int srcW = w - PadW;
+            int srcH = h - PadTop;
+            if (srcW < 2 || srcH < 2) return false;
+            int x = Mathf.RoundToInt(PadX + u * srcW);
+            int yTop = Mathf.RoundToInt(PadTop + v * srcH);
+            if ((uint)x >= (uint)w || (uint)yTop >= (uint)h) return false;
+            return px[(h - 1 - yTop) * w + x].a > 200;
+        }
+
+        public static bool TryArt(string name, out Color32[] px, out int w, out int h)
+        {
+            px = null;
+            w = 0;
+            h = 0;
+            if (string.IsNullOrEmpty(name)) return false;
+            if (_art.TryGetValue(name, out var img) && img.Px != null)
+            {
+                px = img.Px;
+                w = img.W;
+                h = img.H;
+                return true;
+            }
+            string path = Path.Combine(Application.dataPath, "_Project/Art/Resources/Sprites/Badger", name + ".png");
+            if (!File.Exists(path)) return false;
+            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            try
+            {
+                if (!tex.LoadImage(File.ReadAllBytes(path))) return false;
+                img = new ArtImg { Px = tex.GetPixels32(), W = tex.width, H = tex.height };
+            }
+            finally
+            {
+                if (tex != null)
+                {
+                    if (Application.isPlaying) UnityEngine.Object.Destroy(tex);
+                    else UnityEngine.Object.DestroyImmediate(tex);
+                }
+            }
+            _art[name] = img;
+            px = img.Px;
+            w = img.W;
+            h = img.H;
+            return px != null;
+        }
+
+        public static Texture2D SolidHaloTexture(string name, float destW, float destH)
+        {
+            if (string.IsNullOrEmpty(name) || destW < 2f || destH < 2f) return null;
+            if (!TryArt(name, out var px, out int w, out int h)) return null;
+            float scale = destW / Mathf.Max(1, w);
+            int stroke = HaloStrokePx(scale);
+            string key = name + "@" + stroke;
+            if (_haloTex.TryGetValue(key, out var cached) && cached != null) return cached;
+            var solid = SolidHalo(px, w, h, scale);
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Point;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.SetPixels32(solid);
+            tex.Apply(false, false);
+            _haloTex[key] = tex;
+            return tex;
+        }
+
+        // Screen-space honey overlay for the unpadded body. Cached per pose and size.
+        // Scuffed, bruised and wrecked share it. y in the texture matches GUI (top-down plot).
+        public static Texture2D HoneyTexture(string frame, int tw, int th)
+        {
+            if (tw < 2 || th < 2 || string.IsNullOrEmpty(frame)) return null;
+            string key = frame + "@" + tw + "x" + th;
+            if (_honeyTex.TryGetValue(key, out var cached) && cached != null) return cached;
+            var px = new Color32[tw * th];
+            var rect = new Rect(0f, 0f, tw, th);
+            StampHoney(rect, tw * 0.5f, th * 0.5f, 0f, BadgerWear.Scuffed,
+                (x, y) =>
+                {
+                    if ((uint)x >= (uint)tw || (uint)y >= (uint)th) return;
+                    px[(th - 1 - y) * tw + x] = HoneyInk;
+                },
+                (x, y) =>
+                {
+                    if ((uint)x >= (uint)tw || (uint)y >= (uint)th) return false;
+                    return FreshCovers(frame, (x + 0.5f) / tw, (y + 0.5f) / th);
+                });
+            var tex = new Texture2D(tw, th, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Point;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.SetPixels32(px);
+            tex.Apply(false, false);
+            _honeyTex[key] = tex;
+            return tex;
+        }
+
+        sealed class ArtImg
+        {
+            public Color32[] Px;
+            public int W, H;
+        }
+
+        static readonly Dictionary<string, ArtImg> _art = new Dictionary<string, ArtImg>();
+        static readonly Dictionary<string, Texture2D> _haloTex = new Dictionary<string, Texture2D>();
+        static readonly Dictionary<string, Texture2D> _honeyTex = new Dictionary<string, Texture2D>();
     }
 }

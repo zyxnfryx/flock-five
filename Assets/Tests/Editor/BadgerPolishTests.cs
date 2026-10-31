@@ -580,10 +580,18 @@ namespace FlockFive.Editor
             string art = File.ReadAllText("Assets/_Project/Scripts/App/BadgerWearArt.cs");
             Assert.That(art.Contains("ScreenMidX(screenW)"), Is.True, "stills Layout and the duel share ScreenMidX");
             Assert.That(duel.Contains("DuelRestPlant"), Is.True);
-            int fighters = duel.IndexOf("DrawBadgerFighters(L);", StringComparison.Ordinal);
-            int token = duel.IndexOf("DrawBadgerPickToken();", StringComparison.Ordinal);
-            Assert.That(fighters, Is.GreaterThanOrEqualTo(0));
-            Assert.That(token, Is.GreaterThan(fighters), "pick token paints after the badger");
+            int page = duel.IndexOf("void DrawBadgerPage()", StringComparison.Ordinal);
+            int bodyCall = duel.IndexOf("DrawBadgerPageBody();", page, StringComparison.Ordinal);
+            int flashCall = duel.IndexOf("DrawBadgerBlowFlash();", bodyCall, StringComparison.Ordinal);
+            int tokenCall = duel.IndexOf("DrawBadgerPickToken();", flashCall, StringComparison.Ordinal);
+            Assert.That(bodyCall, Is.GreaterThan(page));
+            Assert.That(flashCall, Is.GreaterThan(bodyCall), "flash paints after the badger page");
+            Assert.That(tokenCall, Is.GreaterThan(flashCall), "pick token paints after the flash");
+            int bodyFn = duel.IndexOf("void DrawBadgerPageBody()", StringComparison.Ordinal);
+            int bodyEnd = duel.IndexOf("void DrawBadgerGain", bodyFn, StringComparison.Ordinal);
+            string bodySrc = duel.Substring(bodyFn, bodyEnd - bodyFn);
+            Assert.That(bodySrc.Contains("DrawBadgerFighters(L);"), Is.True, "badger paints in the page body");
+            Assert.That(bodySrc.Contains("DrawBadgerPickToken();"), Is.False, "token is not under the flash");
         }
 
         [Test]
@@ -831,8 +839,172 @@ namespace FlockFive.Editor
             Assert.That(BadgerPolish.GreyBody(0.25f, 0.25f, 0.25f), Is.False, "value must be above 0.25");
             Assert.That(BadgerPolish.YellowStreak(1f, 1f, 1f), Is.False);
             Assert.That(BadgerPolish.YellowStreak(1f, 0.92f, 0.05f), Is.True);
+            Assert.That(BadgerPolish.YellowStreak(0.9f, 0.12f, 0.1f), Is.False, "red is not a honey mark");
+            var honey = BadgerWearArt.HoneyInk;
+            Assert.That(BadgerPolish.YellowStreak(honey.r / 255f, honey.g / 255f, honey.b / 255f), Is.True, "honey marks count as yellow");
+            Assert.That(BadgerWearArt.HoneyMarkPixel(honey), Is.True);
+            Assert.That(BadgerWearArt.HoneyMarkPixel(new Color32(250, 189, 46, 255)), Is.False, "token gold is not a honey streak");
             Assert.That(BadgerPolish.YellowHueMin * 360f, Is.EqualTo(45f).Within(0.01f));
             Assert.That(BadgerPolish.YellowHueMax * 360f, Is.EqualTo(70f).Within(0.01f));
+        }
+
+        [Test]
+        public void HaloRingIsSolidThickAndBrighter()
+        {
+            Assert.That(BadgerWearArt.HaloRgbMul, Is.EqualTo(1.25f).Within(0.0001f));
+            Assert.That(BadgerWearArt.HaloMinScreenPx, Is.EqualTo(2));
+            Assert.That(BadgerWearArt.HaloSolid, Is.True);
+            Assert.That(BadgerWearArt.HaloStrokePx(0.5f), Is.GreaterThanOrEqualTo(BadgerWearArt.HaloMinScreenPx));
+            Assert.That(BadgerWearArt.HaloStrokePx(0.08f), Is.GreaterThanOrEqualTo(36), "small duel fighter still gets a 2 px ring");
+            var mid = BadgerWearArt.Brighten(new Color32(137, 119, 67, 255));
+            Assert.That(mid.r, Is.EqualTo((byte)171));
+            Assert.That(mid.g, Is.EqualTo((byte)149));
+            Assert.That(mid.b, Is.EqualTo((byte)84));
+            Assert.That(BadgerWearArt.Brighten(new Color32(240, 230, 220, 255)).r, Is.EqualTo((byte)255));
+
+            var dash = new Color32[80 * 40];
+            void Blob(int cx, int cy)
+            {
+                for (int y = cy - 2; y <= cy + 2; y++)
+                    for (int x = cx - 4; x <= cx + 4; x++)
+                        if ((uint)x < 80u && (uint)y < 40u)
+                            dash[y * 80 + x] = new Color32(140, 120, 60, 255);
+            }
+            Blob(10, 20);
+            Blob(28, 20);
+            Blob(46, 20);
+            Blob(64, 20);
+            var joined = BadgerWearArt.SolidHalo(dash, 80, 40, 0.5f);
+            var joinedM = BadgerWearArt.MeasureScreen(joined, 80, 40, 0.5f);
+            Assert.That(joinedM.GapCount, Is.EqualTo(0), "gaps " + joinedM.GapCount + " comps " + joinedM.Components);
+            Assert.That(joinedM.MinThickness, Is.GreaterThanOrEqualTo(BadgerWearArt.HaloMinScreenPx), "thick " + joinedM.MinThickness);
+            bool brighter = false;
+            for (int i = 0; i < joined.Length; i++)
+                if (joined[i].a > 0 && joined[i].r > 150) brighter = true;
+            Assert.That(brighter, Is.True, "stroke is brighter than the source dashes");
+
+            Assert.That(BadgerWearArt.TryArt("halo_back_idle_b_scuffed", out var back, out int bw, out int bh), Is.True);
+            Assert.That(BadgerWearArt.TryArt("halo_front_idle_b_scuffed", out var front, out int fw, out int fh), Is.True);
+            var scales = new[] { 0.5263f, 0.8481f, 0.5408f };
+            for (int s = 0; s < scales.Length; s++)
+            {
+                var sb = BadgerWearArt.SolidHalo(back, bw, bh, scales[s]);
+                var sf = BadgerWearArt.SolidHalo(front, fw, fh, scales[s]);
+                var mb = BadgerWearArt.MeasureScreen(sb, bw, bh, scales[s]);
+                var mf = BadgerWearArt.MeasureScreen(sf, fw, fh, scales[s]);
+                Assert.That(mb.GapCount, Is.EqualTo(0), "back gaps at " + scales[s] + " comps " + mb.Components);
+                Assert.That(mf.GapCount, Is.EqualTo(0), "front gaps at " + scales[s] + " comps " + mf.Components);
+                Assert.That(mb.MinThickness, Is.GreaterThanOrEqualTo(2), "back thick " + mb.MinThickness + " p10 " + mb.P10Thickness);
+                Assert.That(mf.MinThickness, Is.GreaterThanOrEqualTo(2), "front thick " + mf.MinThickness + " p10 " + mf.P10Thickness);
+            }
+
+            float crouch = BadgerWearArt.DeviceScale(820f, 1180f) / BadgerWearArt.CrouchFeature;
+            Assert.That(BadgerWearArt.TryArt("halo_back_crouch_scuffed", out var cb, out int cw, out int ch), Is.True);
+            Assert.That(BadgerWearArt.TryArt("halo_front_crouch_scuffed", out var cf, out int cfw, out int cfh), Is.True);
+            var crouchBack = BadgerWearArt.MeasureScreen(BadgerWearArt.SolidHalo(cb, cw, ch, crouch), cw, ch, crouch);
+            var crouchFront = BadgerWearArt.MeasureScreen(BadgerWearArt.SolidHalo(cf, cfw, cfh, crouch), cfw, cfh, crouch);
+            Assert.That(crouchBack.GapCount, Is.EqualTo(0), "crouch back comps " + crouchBack.Components);
+            Assert.That(crouchFront.GapCount, Is.EqualTo(0), "crouch front comps " + crouchFront.Components);
+            Assert.That(crouchBack.MinThickness, Is.GreaterThanOrEqualTo(2), "crouch back thick " + crouchBack.MinThickness + " p10 " + crouchBack.P10Thickness);
+            Assert.That(crouchFront.MinThickness, Is.GreaterThanOrEqualTo(2), "crouch front thick " + crouchFront.MinThickness + " p10 " + crouchFront.P10Thickness);
+
+            string duel = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
+            string stills = File.ReadAllText("Assets/_Project/Scripts/Editor/BadgerPolishStills.cs");
+            Assert.That(duel.Contains("BadgerWearArt.SolidHaloTexture"), Is.True);
+            Assert.That(duel.Contains("BadgerWearArt.HaloSolid"), Is.True);
+            Assert.That(stills.Contains("BadgerWearArt.SolidHalo"), Is.True);
+            Assert.That(duel.Contains("new Color(1f, 1f, 1f, blit.HaloAlpha * alpha)"), Is.True, "halo alpha stays a white multiply; brightness is baked");
+        }
+
+        [Test]
+        public void HoneyStreaksSitInsideFreshOnScuffedAndAbove()
+        {
+            Assert.That(BadgerWearArt.HoneyStreakCount, Is.EqualTo(3));
+            Assert.That(BadgerWearArt.HoneyMarksOn(BadgerWear.Fresh), Is.False);
+            Assert.That(BadgerWearArt.HoneyMarksOn(BadgerWear.Scuffed), Is.True);
+            Assert.That(BadgerWearArt.HoneyMarksOn(BadgerWear.Bruised), Is.True);
+            Assert.That(BadgerWearArt.HoneyMarksOn(BadgerWear.Wrecked), Is.True);
+            var widths = new[] { 2, 3, 2 };
+            for (int i = 0; i < 3; i++)
+            {
+                var mark = BadgerWearArt.HoneyMarkAt(i);
+                Assert.That(mark.WidthPx, Is.EqualTo(widths[i]), "streak " + i);
+                Assert.That(mark.WidthPx, Is.GreaterThanOrEqualTo(2).And.LessThanOrEqualTo(3));
+                Assert.That(BadgerWearArt.FreshCovers("badger_idle_b", mark.U, mark.V), Is.True, "idle anchor " + i);
+                Assert.That(BadgerWearArt.FreshCovers("badger_crouch", mark.U, mark.V), Is.True, "crouch anchor " + i);
+            }
+            var ink = BadgerWearArt.HoneyInk;
+            Assert.That(ink.r, Is.GreaterThan(ink.b));
+            Assert.That(ink.g, Is.GreaterThan((byte)140));
+            Assert.That(ink.b, Is.LessThan((byte)40));
+            Assert.That(BadgerPolish.YellowStreak(ink.r / 255f, ink.g / 255f, ink.b / 255f), Is.True);
+
+            var sizes = new[] { new Vector2(402f, 874f), new Vector2(820f, 1180f), new Vector2(412f, 915f) };
+            var poses = new[] { "badger_idle_b", "badger_crouch" };
+            var wears = new[] { BadgerWear.Scuffed, BadgerWear.Bruised, BadgerWear.Wrecked };
+            for (int s = 0; s < sizes.Length; s++)
+            {
+                for (int p = 0; p < poses.Length; p++)
+                {
+                    var layout = BadgerWearArt.Layout(poses[p], sizes[s].x, sizes[s].y);
+                    int sw = (int)sizes[s].x;
+                    int sh = (int)sizes[s].y;
+                    int freshN = BadgerWearArt.StampHoney(layout.Unpadded, layout.BodyCenterX, layout.FeetY, 0f, BadgerWear.Fresh,
+                        (x, y) => { }, (x, y) => true);
+                    Assert.That(freshN, Is.EqualTo(0), poses[p] + " fresh");
+                    int first = -1;
+                    for (int w = 0; w < wears.Length; w++)
+                    {
+                        var buf = new Color32[sw * sh];
+                        int n = BadgerWearArt.StampHoney(layout.Unpadded, layout.BodyCenterX, layout.FeetY, 0f, wears[w],
+                            (x, y) =>
+                            {
+                                if ((uint)x >= (uint)sw || (uint)y >= (uint)sh) return;
+                                buf[y * sw + x] = BadgerWearArt.HoneyInk;
+                            },
+                            (x, y) =>
+                            {
+                                float u = (x + 0.5f - layout.Unpadded.x) / layout.Unpadded.width;
+                                float v = (y + 0.5f - layout.Unpadded.y) / layout.Unpadded.height;
+                                return BadgerWearArt.FreshCovers(poses[p], u, v);
+                            });
+                        Assert.That(n, Is.GreaterThan(20), poses[p] + " " + wears[w] + " " + sizes[s].x);
+                        if (first < 0) first = n;
+                        else Assert.That(n, Is.EqualTo(first), "same three marks");
+                        var measured = BadgerWearArt.MeasureStreaks(buf, sw, sh);
+                        Assert.That(measured.Count, Is.EqualTo(3), poses[p] + " " + sizes[s].x + " count " + measured.Count);
+                        for (int i = 0; i < measured.Widths.Length; i++)
+                            Assert.That(measured.Widths[i], Is.GreaterThanOrEqualTo(2).And.LessThanOrEqualTo(3),
+                                poses[p] + " width " + measured.Widths[i]);
+                    }
+                }
+            }
+
+            string duel = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
+            string stills = File.ReadAllText("Assets/_Project/Scripts/Editor/BadgerPolishStills.cs");
+            Assert.That(duel.Contains("BadgerWearArt.HoneyTexture"), Is.True);
+            Assert.That(duel.Contains("DrawHoneyMarks"), Is.True);
+            Assert.That(stills.Contains("BadgerWearArt.StampHoney"), Is.True);
+        }
+
+        [Test]
+        public void PickTokenDrawsAfterTheWearFlash()
+        {
+            string duel = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
+            int page = duel.IndexOf("void DrawBadgerPage()", StringComparison.Ordinal);
+            int bodyCall = duel.IndexOf("DrawBadgerPageBody();", page, StringComparison.Ordinal);
+            int flashCall = duel.IndexOf("DrawBadgerBlowFlash();", bodyCall, StringComparison.Ordinal);
+            int tokenCall = duel.IndexOf("DrawBadgerPickToken();", flashCall, StringComparison.Ordinal);
+            Assert.That(bodyCall, Is.GreaterThan(0));
+            Assert.That(flashCall, Is.GreaterThan(bodyCall));
+            Assert.That(tokenCall, Is.GreaterThan(flashCall));
+            int flashFn = duel.IndexOf("void DrawBadgerBlowFlash()", StringComparison.Ordinal);
+            int next = duel.IndexOf("bool DrawBadgerIceBlock", flashFn, StringComparison.Ordinal);
+            string flashBody = duel.Substring(flashFn, next - flashFn);
+            Assert.That(flashBody.Contains("FightFlashSerial = ++FightPaintSerial"), Is.True);
+            int tokenFn = duel.IndexOf("void DrawBadgerPickToken()", StringComparison.Ordinal);
+            Assert.That(duel.IndexOf("FightTokenSerial = ++FightPaintSerial", tokenFn, StringComparison.Ordinal), Is.GreaterThan(tokenFn));
+            Assert.That(flashFn, Is.LessThan(tokenFn).Or.GreaterThan(0));
         }
 
         static int[] Grid(int honey)

@@ -330,16 +330,19 @@ namespace FlockFive
             float haloA = BadgerWearArt.HaloAlpha(want);
             string tintHex = TintHex(tint);
             var wearDest = BadgerWearArt.PaintWear(spot.Frame, drawn, srcW, srcH, want).Dest;
-            int meanN = 0, opaqueOverlap = 0, goldPx = 0, lumaN = 0, bodyN = 0, greyN = 0, yellowN = 0;
+            int meanN = 0, opaqueOverlap = 0, goldPx = 0, lumaN = 0, bodyN = 0, greyN = 0, yellowN = 0, tokenDark = 0;
             float meanR = 0f, meanG = 0f, meanB = 0f, luma = 0f;
             string tokenPixels = "no_overlap";
             string measureProblem = "";
+            int haloThick = 0, haloGaps = 0, streakCount = 0;
+            string streakWidths = "[]";
             try
             {
                 MeasureBodyAndToken(path, spot, want, drawn, wearDest, bodyL, bodyR, bodyCx,
                     out meanN, out meanR, out meanG, out meanB,
                     out opaqueOverlap, out goldPx, out tokenPixels, out lumaN, out luma,
-                    out bodyN, out greyN, out yellowN);
+                    out bodyN, out greyN, out yellowN, out tokenDark);
+                MeasureHaloStreaks(path, spot.Frame, want, wearDest, out haloThick, out haloGaps, out streakCount, out streakWidths);
             }
             catch (System.Exception ex)
             {
@@ -359,6 +362,8 @@ namespace FlockFive
                 dB = meanB - freshMean[sizeIx].b * 255f;
             }
             bool tokenAfter = FightTokenSerial > FightBadgerSerial && FightBadgerSerial > 0;
+            bool tokenAfterFlash = !flash || (FightFlashSerial > FightBadgerSerial && FightTokenSerial > FightFlashSerial);
+            bool tokenLegible = !flash || tokenDark >= 8;
             string problems = "";
             if (Mathf.Abs(screenCx - screenW * 0.5f) > 0.6f)
                 problems += " body centre " + screenCx.ToString("0.00", ci) + " vs screen mid " + (screenW * 0.5f).ToString("0.00", ci) + ";";
@@ -376,6 +381,10 @@ namespace FlockFive
                 problems += " punch " + spot.Punch.ToString("0.000", ci) + ";";
             if (!tokenAfter)
                 problems += " token serial " + FightTokenSerial + " after badger " + FightBadgerSerial + ";";
+            if (flash && !tokenAfterFlash)
+                problems += " token serial " + FightTokenSerial + " flash " + FightFlashSerial + " badger " + FightBadgerSerial + ";";
+            if (flash && !tokenLegible)
+                problems += " token number dark px " + tokenDark + ";";
             if (tokenPixels == "under")
                 problems += " token pixels under badger where they overlap;";
             if (meanN < 4)
@@ -436,9 +445,18 @@ namespace FlockFive
                 + "      \"grey_n\": " + greyN + ",\n"
                 + "      \"grey_share\": " + greyShare + ",\n"
                 + "      \"yellow_px\": " + yellowN + ",\n"
+                + "      \"halo_rgb_mul\": " + BadgerWearArt.HaloRgbMul.ToString("0.00", ci) + ",\n"
+                + "      \"halo_thickness_px\": " + haloThick + ",\n"
+                + "      \"halo_gap_count\": " + haloGaps + ",\n"
+                + "      \"streak_count\": " + streakCount + ",\n"
+                + "      \"streak_widths_px\": " + streakWidths + ",\n"
                 + "      \"flash\": " + (flash ? "true" : "false") + ",\n"
                 + "      \"token_after_badger\": " + (tokenAfter ? "true" : "false") + ",\n"
+                + "      \"token_after_flash\": " + (tokenAfterFlash ? "true" : "false") + ",\n"
+                + "      \"token_number_legible\": " + (tokenLegible ? "true" : "false") + ",\n"
+                + "      \"token_dark_px\": " + tokenDark + ",\n"
                 + "      \"badger_paint\": " + FightBadgerSerial + ",\n"
+                + "      \"flash_paint\": " + FightFlashSerial + ",\n"
                 + "      \"token_paint\": " + FightTokenSerial + ",\n"
                 + "      \"token_opaque_overlap\": " + opaqueOverlap + ",\n"
                 + "      \"token_gold_px\": " + goldPx + ",\n"
@@ -591,13 +609,96 @@ namespace FlockFive
         }
 
         // Chest mean of opaque body pixels, full-body Rec.709 luma, and whether honey pixels sit on the body.
+        static void MeasureHaloStreaks(string shotPath, string frame, BadgerWear wear, Rect wearDest,
+            out int haloThick, out int haloGaps, out int streakCount, out string streakWidths)
+        {
+            haloThick = 0;
+            haloGaps = 0;
+            streakCount = 0;
+            streakWidths = "[]";
+            if (BadgerWearArt.HaloAlpha(wear) > 0.001f && wearDest.width > 2f)
+            {
+                if (BadgerWearArt.TryArt(BadgerWearArt.HaloBack(frame, wear), out var back, out int w, out int h))
+                {
+                    float scale = wearDest.width / Mathf.Max(1, w);
+                    var sb = BadgerWearArt.SolidHalo(back, w, h, scale);
+                    Color32[] union = sb;
+                    if (BadgerWearArt.TryArt(BadgerWearArt.HaloFront(frame, wear), out var front, out int fw, out int fh)
+                        && fw == w && fh == h)
+                    {
+                        var sf = BadgerWearArt.SolidHalo(front, fw, fh, scale);
+                        for (int i = 0; i < sb.Length; i++)
+                            if (sf[i].a > sb[i].a) sb[i] = sf[i];
+                        var frontM = BadgerWearArt.MeasureScreen(sf, fw, fh, scale);
+                        var both = BadgerWearArt.MeasureScreen(sb, w, h, scale);
+                        haloThick = both.MinThickness;
+                        haloGaps = both.GapCount;
+                        if (frontM.GapCount > haloGaps) haloGaps = frontM.GapCount;
+                    }
+                    else
+                    {
+                        var m = BadgerWearArt.MeasureScreen(union, w, h, scale);
+                        haloThick = m.MinThickness;
+                        haloGaps = m.GapCount;
+                    }
+                }
+            }
+            if (string.IsNullOrEmpty(shotPath) || !File.Exists(shotPath)) return;
+            Texture2D shot = null;
+            try
+            {
+                shot = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                if (!shot.LoadImage(File.ReadAllBytes(shotPath))) return;
+                var px = shot.GetPixels32();
+                int sw = shot.width;
+                int sh = shot.height;
+                // Honeycomb gold matches a loose yellow test. Count marks only
+                // inside the wear rect, where the three strokes are stamped.
+                float fitX = sw / Mathf.Max(1f, Screen.width);
+                float fitY = sh / Mathf.Max(1f, Screen.height);
+                float x0 = wearDest.x - 8f;
+                float x1 = wearDest.xMax + 8f;
+                float y0 = wearDest.y - 8f;
+                float y1 = wearDest.yMax + 8f;
+                for (int row = 0; row < sh; row++)
+                {
+                    float gy = (sh - 1 - row) / fitY;
+                    int rowAt = row * sw;
+                    for (int col = 0; col < sw; col++)
+                    {
+                        float gx = col / fitX - PhoneArea.OffX;
+                        if (gx < x0 || gx > x1 || gy < y0 || gy > y1)
+                            px[rowAt + col] = default;
+                    }
+                }
+                var sm = BadgerWearArt.MeasureStreaks(px, sw, sh);
+                streakCount = sm.Count;
+                var sbw = new System.Text.StringBuilder();
+                sbw.Append("[");
+                if (sm.Widths != null)
+                {
+                    for (int i = 0; i < sm.Widths.Length; i++)
+                    {
+                        if (i > 0) sbw.Append(", ");
+                        sbw.Append(sm.Widths[i]);
+                    }
+                }
+                sbw.Append("]");
+                streakWidths = sbw.ToString();
+            }
+            finally
+            {
+                if (shot != null) UnityEngine.Object.Destroy(shot);
+            }
+        }
+
         static string Grey820Section(float[] grey, bool[] have, int[] yellow, string[] stages)
         {
             var ci = CultureInfo.InvariantCulture;
             var sb = new System.Text.StringBuilder();
             sb.Append("  \"grey_share_820\": {\n");
             sb.Append("    \"rule\": \"fraction of badger body pixels (drawn body alpha above 200) with HSV saturation < 0.15 and value > 0.25\",\n");
-            sb.Append("    \"yellow_rule\": \"body pixels with HSV hue in [45, 70] degrees, saturation >= 0.35 and value >= 0.45\",\n");
+            sb.Append("    \"yellow_rule\": \"body pixels with HSV hue in [45, 70] degrees, saturation >= 0.35 and value >= 0.45; the three honey marks on scuffed+ count, the white flash does not\",\n");
             for (int i = 0; i < stages.Length; i++)
             {
                 string g = have != null && i < have.Length && have[i] ? grey[i].ToString("0.0000", ci) : "null";
@@ -615,12 +716,13 @@ namespace FlockFive
             float bodyL, float bodyR, float bodyCx,
             out int meanN, out float meanR, out float meanG, out float meanB,
             out int opaqueOverlap, out int goldPx, out string tokenPixels, out int lumaN, out float luma,
-            out int bodyN, out int greyN, out int yellowN)
+            out int bodyN, out int greyN, out int yellowN, out int tokenDark)
         {
             meanN = 0;
             meanR = meanG = meanB = 0f;
             opaqueOverlap = 0;
             goldPx = 0;
+            tokenDark = 0;
             tokenPixels = "no_overlap";
             lumaN = 0;
             luma = 0f;
@@ -732,9 +834,13 @@ namespace FlockFive
                     {
                         for (int x = x0; x < x1; x++)
                         {
+                            var p = At(x + 0.5f, y + 0.5f);
+                            int mx = p.r > p.g ? p.r : p.g;
+                            if (p.b > mx) mx = p.b;
+                            if (mx < 90) tokenDark++;
                             if (!Covered(x + 0.5f, y + 0.5f, 40)) continue;
                             opaqueOverlap++;
-                            if (HoneyGold(At(x + 0.5f, y + 0.5f))) goldPx++;
+                            if (HoneyGold(p)) goldPx++;
                         }
                     }
                 }
