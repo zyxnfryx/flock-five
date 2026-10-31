@@ -67,8 +67,8 @@ namespace FlockFive
 
         public static readonly string[] CompositeOrder = { "halo_back", "body", "halo_front" };
 
-        // Body tint walks toward this brown. No red.
-        public static readonly Color TintToward = new Color(58f / 255f, 42f / 255f, 32f / 255f, 1f);
+        // Body tint walks toward this near-black brown. No red. Body sprite only.
+        public static readonly Color TintToward = new Color(14f / 255f, 10f / 255f, 8f / 255f, 1f);
 
         public const float PunchSeconds = 0.12f;
         public const float PunchPeak = 1.08f;
@@ -95,14 +95,14 @@ namespace FlockFive
             }
         }
 
-        // 0, 10, 20, 30 percent. Fresh is untouched.
+        // 0, 12, 24, 36 percent. Fresh is untouched.
         public static float TintAmount(BadgerWear wear)
         {
             int i = (int)wear;
             if (i <= 0) return 0f;
-            if (i == 1) return 0.10f;
-            if (i == 2) return 0.20f;
-            return 0.30f;
+            if (i == 1) return 0.12f;
+            if (i == 2) return 0.24f;
+            return 0.36f;
         }
 
         // Multiply colour for the badger body only. Halo and UI stay out of this.
@@ -117,9 +117,9 @@ namespace FlockFive
         {
             int i = (int)wear;
             if (i <= 0) return 0f;
-            if (i == 1) return 0.35f;
-            if (i == 2) return 0.60f;
-            return 0.85f;
+            if (i == 1) return 0.50f;
+            if (i == 2) return 0.70f;
+            return 0.90f;
         }
 
         // 1 -> peak -> 1 over PunchSeconds. Age 0 and anything past the window sit at 1.

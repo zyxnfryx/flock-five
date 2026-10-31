@@ -185,7 +185,7 @@ namespace FlockFive.Editor
                 Assert.That(blit.Dest.width, Is.EqualTo(padded.width).Within(0.01f), pose);
                 Assert.That(blit.Dest.height, Is.EqualTo(padded.height).Within(0.01f), pose);
                 Assert.That(blit.Layered, Is.True);
-                Assert.That(blit.HaloAlpha, Is.EqualTo(0.35f).Within(0.0001f));
+                Assert.That(blit.HaloAlpha, Is.EqualTo(0.50f).Within(0.0001f));
                 Assert.That(blit.BodyTint.r, Is.EqualTo(BadgerWearArt.BodyTint(BadgerWear.Scuffed).r).Within(0.0001f));
             }
         }
@@ -590,9 +590,9 @@ namespace FlockFive.Editor
         public void WearTintHaloPunchAndLeanEase()
         {
             Assert.That(BadgerWearArt.TintAmount(BadgerWear.Fresh), Is.EqualTo(0f).Within(0.0001f));
-            Assert.That(BadgerWearArt.TintAmount(BadgerWear.Scuffed), Is.EqualTo(0.10f).Within(0.0001f));
-            Assert.That(BadgerWearArt.TintAmount(BadgerWear.Bruised), Is.EqualTo(0.20f).Within(0.0001f));
-            Assert.That(BadgerWearArt.TintAmount(BadgerWear.Wrecked), Is.EqualTo(0.30f).Within(0.0001f));
+            Assert.That(BadgerWearArt.TintAmount(BadgerWear.Scuffed), Is.EqualTo(0.12f).Within(0.0001f));
+            Assert.That(BadgerWearArt.TintAmount(BadgerWear.Bruised), Is.EqualTo(0.24f).Within(0.0001f));
+            Assert.That(BadgerWearArt.TintAmount(BadgerWear.Wrecked), Is.EqualTo(0.36f).Within(0.0001f));
 
             var fresh = BadgerWearArt.BodyTint(BadgerWear.Fresh);
             Assert.That(fresh.r, Is.EqualTo(1f).Within(0.0001f));
@@ -600,11 +600,11 @@ namespace FlockFive.Editor
             Assert.That(fresh.b, Is.EqualTo(1f).Within(0.0001f));
 
             var toward = BadgerWearArt.TintToward;
-            Assert.That(toward.r * 255f, Is.EqualTo(58f).Within(0.01f));
-            Assert.That(toward.g * 255f, Is.EqualTo(42f).Within(0.01f));
-            Assert.That(toward.b * 255f, Is.EqualTo(32f).Within(0.01f));
+            Assert.That(toward.r * 255f, Is.EqualTo(14f).Within(0.01f));
+            Assert.That(toward.g * 255f, Is.EqualTo(10f).Within(0.01f));
+            Assert.That(toward.b * 255f, Is.EqualTo(8f).Within(0.01f));
             var wears = new[] { BadgerWear.Scuffed, BadgerWear.Bruised, BadgerWear.Wrecked };
-            var amounts = new[] { 0.10f, 0.20f, 0.30f };
+            var amounts = new[] { 0.12f, 0.24f, 0.36f };
             for (int i = 0; i < wears.Length; i++)
             {
                 var tint = BadgerWearArt.BodyTint(wears[i]);
@@ -617,9 +617,9 @@ namespace FlockFive.Editor
             }
 
             Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Fresh), Is.EqualTo(0f).Within(0.0001f));
-            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Scuffed), Is.EqualTo(0.35f).Within(0.0001f));
-            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Bruised), Is.EqualTo(0.60f).Within(0.0001f));
-            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Wrecked), Is.EqualTo(0.85f).Within(0.0001f));
+            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Scuffed), Is.EqualTo(0.50f).Within(0.0001f));
+            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Bruised), Is.EqualTo(0.70f).Within(0.0001f));
+            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Wrecked), Is.EqualTo(0.90f).Within(0.0001f));
 
             Assert.That(BadgerWearArt.PunchSeconds, Is.EqualTo(0.12f).Within(0.0001f));
             Assert.That(BadgerWearArt.PunchPeak, Is.EqualTo(1.08f).Within(0.0001f));

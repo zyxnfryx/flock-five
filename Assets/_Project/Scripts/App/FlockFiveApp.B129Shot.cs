@@ -142,7 +142,7 @@ namespace FlockFive
             string log = Path.Combine(dir, "stills.log");
             File.WriteAllText(log, "");
             var json = new System.Text.StringBuilder();
-            json.Append("{\n  \"note\": \"Body centre, margins, foot and overlaps are the live duel layout on the captured frame (BadgerActorNow + SpriteAnim + BadgerWearArt.PlacedEdges). Screen X adds the pillar offset. Foot Y is the planted opaque foot. Boss foot Y is the boss-box bottom. Overlap px is the horizontal overlap when the rects also overlap vertically. Tint and halo alpha come from BadgerWearArt. Body mean is a chest patch of opaque body pixels. Token order is the paint serial (token after badger) plus a honey-pixel check where the token covers opaque body.\",\n  \"stills\": [\n");
+            json.Append("{\n  \"note\": \"Body centre, margins, foot and overlaps are the live duel layout on the captured frame (BadgerActorNow + SpriteAnim + BadgerWearArt.PlacedEdges). Screen X adds the pillar offset. Foot Y is the planted opaque foot. Boss foot Y is the boss-box bottom. Overlap px is the horizontal overlap when the rects also overlap vertically. Tint and halo alpha come from BadgerWearArt. Body mean is a chest patch of opaque body pixels. body_luma is the Rec.709 mean (0.2126 R + 0.7152 G + 0.0722 B, 0-255) of screenshot pixels whose drawn body alpha is above 200, skipping honey-gold token pixels. body_luma_vs_prev is that mean minus the previous stage at the same size (null on fresh). Wrecked uses the crouch pose, so that step mixes pose and tint. same_pose repeats the tint on one sprite with no scene and no halo. Token order is the paint serial (token after badger) plus a honey-pixel check where the token covers opaque body.\",\n  \"stills\": [\n");
             int[][] res = { new[] { 402, 874 }, new[] { 820, 1180 }, new[] { 412, 915 } };
             string[] stages = { "fresh", "scuffed", "bruised", "wrecked" };
             bool wasOn = BadgerSchedule.Enabled;
@@ -150,6 +150,8 @@ namespace FlockFive
             bool first = true;
             var freshMean = new Color[res.Length];
             var freshHave = new bool[res.Length];
+            var prevLuma = new float[res.Length];
+            var prevHave = new bool[res.Length];
             try
             {
                 File.AppendAllText(log, "START\n");
@@ -199,7 +201,7 @@ namespace FlockFive
                         string name = res[d][0] + "x" + res[d][1] + "-fight-" + stages[i] + ".png";
                         string path = Path.Combine(stillDir, name);
                         SaveFrame(path);
-                        string entry = FightMeasureEntry(path, name, stages[i], want, res[d][0], res[d][1], d, freshMean, freshHave);
+                        string entry = FightMeasureEntry(path, name, stages[i], want, res[d][0], res[d][1], d, freshMean, freshHave, prevLuma, prevHave);
                         if (!first) json.Append(",\n");
                         first = false;
                         json.Append(entry);
@@ -209,7 +211,14 @@ namespace FlockFive
                     }
                     LeaveBadger();
                 }
-                json.Append("\n  ]\n}\n");
+                json.Append("\n  ],\n");
+                try { json.Append(SamePoseSection()); }
+                catch (System.Exception ex)
+                {
+                    json.Append("  \"same_pose_error\": \"" + ex.GetType().Name + "\"\n");
+                    File.AppendAllText(log, "SAME_POSE " + ex.Message + "\n");
+                }
+                json.Append("}\n");
                 File.WriteAllText(Path.Combine(dir, "measured.json"), json.ToString());
                 File.WriteAllText(Path.Combine(dir, "done"), "OK\n");
                 File.AppendAllText(log, "DONE\n");
@@ -256,7 +265,7 @@ namespace FlockFive
             return w;
         }
 
-        string FightMeasureEntry(string path, string file, string stage, BadgerWear want, int reqW, int reqH, int sizeIx, Color[] freshMean, bool[] freshHave)
+        string FightMeasureEntry(string path, string file, string stage, BadgerWear want, int reqW, int reqH, int sizeIx, Color[] freshMean, bool[] freshHave, float[] prevLuma, bool[] prevHave)
         {
             var ci = CultureInfo.InvariantCulture;
             var L = BadgerLayout();
@@ -297,15 +306,15 @@ namespace FlockFive
             float haloA = BadgerWearArt.HaloAlpha(want);
             string tintHex = TintHex(tint);
             var wearDest = BadgerWearArt.PaintWear(spot.Frame, drawn, srcW, srcH, want).Dest;
-            int meanN = 0, opaqueOverlap = 0, goldPx = 0;
-            float meanR = 0f, meanG = 0f, meanB = 0f;
+            int meanN = 0, opaqueOverlap = 0, goldPx = 0, lumaN = 0;
+            float meanR = 0f, meanG = 0f, meanB = 0f, luma = 0f;
             string tokenPixels = "no_overlap";
             string measureProblem = "";
             try
             {
                 MeasureBodyAndToken(path, spot, want, drawn, wearDest, bodyL, bodyR, bodyCx,
                     out meanN, out meanR, out meanG, out meanB,
-                    out opaqueOverlap, out goldPx, out tokenPixels);
+                    out opaqueOverlap, out goldPx, out tokenPixels, out lumaN, out luma);
             }
             catch (System.Exception ex)
             {
@@ -346,8 +355,17 @@ namespace FlockFive
                 problems += " token pixels under badger where they overlap;";
             if (meanN < 4)
                 problems += " body mean samples " + meanN + ";";
+            if (lumaN < 8)
+                problems += " body luma samples " + lumaN + ";";
             problems += measureProblem;
             string F(float v) => v.ToString("0.00", ci);
+            string lumaVs = "null";
+            if (lumaN > 0 && prevLuma != null && prevHave != null && sizeIx >= 0 && sizeIx < prevLuma.Length)
+            {
+                if (prevHave[sizeIx]) lumaVs = F(luma - prevLuma[sizeIx]);
+                prevLuma[sizeIx] = luma;
+                prevHave[sizeIx] = true;
+            }
             return "    {\n"
                 + "      \"file\": \"" + file + "\",\n"
                 + "      \"size\": \"" + reqW + "x" + reqH + "\",\n"
@@ -374,6 +392,9 @@ namespace FlockFive
                 + "      \"body_mean\": [" + F(meanR) + ", " + F(meanG) + ", " + F(meanB) + "],\n"
                 + "      \"body_mean_n\": " + meanN + ",\n"
                 + "      \"body_mean_vs_fresh\": [" + F(dR) + ", " + F(dG) + ", " + F(dB) + "],\n"
+                + "      \"body_luma\": " + F(luma) + ",\n"
+                + "      \"body_luma_n\": " + lumaN + ",\n"
+                + "      \"body_luma_vs_prev\": " + lumaVs + ",\n"
                 + "      \"token_after_badger\": " + (tokenAfter ? "true" : "false") + ",\n"
                 + "      \"badger_paint\": " + FightBadgerSerial + ",\n"
                 + "      \"token_paint\": " + FightTokenSerial + ",\n"
@@ -414,17 +435,132 @@ namespace FlockFive
             uy = pivot.y + dx * s + dy * c;
         }
 
-        // Chest mean of opaque body pixels, and whether honey pixels sit on the body where the token overlaps it.
+        // Offline Rec.709 of one sprite after each stage tint. Alpha above 200. No halo.
+        static string SamePoseSection()
+        {
+            var ci = CultureInfo.InvariantCulture;
+            var wears = new[] { BadgerWear.Fresh, BadgerWear.Scuffed, BadgerWear.Bruised, BadgerWear.Wrecked };
+            string TintSprite(string file)
+            {
+                string path = Path.Combine(Application.dataPath, "_Project/Art/Resources/Sprites/Badger/" + file + ".png");
+                Color32[] px = null;
+                Texture2D tex = null;
+                try
+                {
+                    if (File.Exists(path))
+                    {
+                        tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                        if (tex.LoadImage(File.ReadAllBytes(path))) px = tex.GetPixels32();
+                    }
+                }
+                finally { if (tex != null) UnityEngine.Object.Destroy(tex); }
+                var sb = new System.Text.StringBuilder();
+                sb.Append("{\n      \"sprite\": \"").Append(file).Append("\",\n      \"stages\": [\n");
+                float prev = 0f;
+                bool have = false;
+                for (int i = 0; i < wears.Length; i++)
+                {
+                    var tint = BadgerWearArt.BodyTint(wears[i]);
+                    double sum = 0;
+                    int n = 0;
+                    if (px != null)
+                    {
+                        for (int p = 0; p < px.Length; p++)
+                        {
+                            if (px[p].a <= 200) continue;
+                            float r = px[p].r * tint.r;
+                            float g = px[p].g * tint.g;
+                            float b = px[p].b * tint.b;
+                            sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                            n++;
+                        }
+                    }
+                    float luma = n > 0 ? (float)(sum / n) : 0f;
+                    string delta = have && n > 0 ? (luma - prev).ToString("0.00", ci) : "null";
+                    if (n > 0) { prev = luma; have = true; }
+                    if (i > 0) sb.Append(",\n");
+                    sb.Append("        {\"stage\": \"").Append(BadgerWearArt.Token(wears[i]))
+                        .Append("\", \"tint_pct\": ").Append((BadgerWearArt.TintAmount(wears[i]) * 100f).ToString("0.00", ci))
+                        .Append(", \"tint_hex\": \"").Append(TintHex(tint))
+                        .Append("\", \"luma\": ").Append(luma.ToString("0.00", ci))
+                        .Append(", \"n\": ").Append(n)
+                        .Append(", \"delta_prev\": ").Append(delta).Append("}");
+                }
+                sb.Append("\n      ]\n    }");
+                return sb.ToString();
+            }
+            string OwnWear(string pose)
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.Append("{\n      \"pose\": \"").Append(pose).Append("\",\n      \"stages\": [\n");
+                float prev = 0f;
+                bool have = false;
+                for (int i = 0; i < wears.Length; i++)
+                {
+                    string file = BadgerWearArt.StageKey(pose, wears[i]);
+                    string path = Path.Combine(Application.dataPath, "_Project/Art/Resources/Sprites/Badger/" + file + ".png");
+                    var tint = BadgerWearArt.BodyTint(wears[i]);
+                    double sum = 0;
+                    int n = 0;
+                    Texture2D tex = null;
+                    try
+                    {
+                        if (File.Exists(path))
+                        {
+                            tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                            if (tex.LoadImage(File.ReadAllBytes(path)))
+                            {
+                                var px = tex.GetPixels32();
+                                for (int p = 0; p < px.Length; p++)
+                                {
+                                    if (px[p].a <= 200) continue;
+                                    float r = px[p].r * tint.r;
+                                    float g = px[p].g * tint.g;
+                                    float b = px[p].b * tint.b;
+                                    sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                                    n++;
+                                }
+                            }
+                        }
+                    }
+                    finally { if (tex != null) UnityEngine.Object.Destroy(tex); }
+                    float luma = n > 0 ? (float)(sum / n) : 0f;
+                    string delta = have && n > 0 ? (luma - prev).ToString("0.00", ci) : "null";
+                    if (n > 0) { prev = luma; have = true; }
+                    if (i > 0) sb.Append(",\n");
+                    sb.Append("        {\"stage\": \"").Append(BadgerWearArt.Token(wears[i]))
+                        .Append("\", \"sprite\": \"").Append(file)
+                        .Append("\", \"tint_pct\": ").Append((BadgerWearArt.TintAmount(wears[i]) * 100f).ToString("0.00", ci))
+                        .Append(", \"luma\": ").Append(luma.ToString("0.00", ci))
+                        .Append(", \"n\": ").Append(n)
+                        .Append(", \"delta_prev\": ").Append(delta).Append("}");
+                }
+                sb.Append("\n      ]\n    }");
+                return sb.ToString();
+            }
+            return "  \"same_pose\": {\n"
+                + "    \"note\": \"Rec.709 mean on 0-255 of pixels with alpha above 200, multiplied by BadgerWearArt.BodyTint. No halo and no scene. tint_only is one fresh sprite at every strength. idle_b_wear is each standing wear PNG with its own tint, so the wrecked step is not the crouch.\",\n"
+                + "    \"alpha_min\": 200,\n"
+                + "    \"formula\": \"0.2126 R + 0.7152 G + 0.0722 B\",\n"
+                + "    \"tint_only_idle_b\": " + TintSprite("badger_idle_b_wear_fresh") + ",\n"
+                + "    \"tint_only_crouch\": " + TintSprite("badger_crouch_wear_fresh") + ",\n"
+                + "    \"idle_b_wear\": " + OwnWear("badger_idle_b") + "\n"
+                + "  }\n";
+        }
+
+        // Chest mean of opaque body pixels, full-body Rec.709 luma, and whether honey pixels sit on the body.
         void MeasureBodyAndToken(string path, BadgerActorSpot spot, BadgerWear want, Rect drawn, Rect wearDest,
             float bodyL, float bodyR, float bodyCx,
             out int meanN, out float meanR, out float meanG, out float meanB,
-            out int opaqueOverlap, out int goldPx, out string tokenPixels)
+            out int opaqueOverlap, out int goldPx, out string tokenPixels, out int lumaN, out float luma)
         {
             meanN = 0;
             meanR = meanG = meanB = 0f;
             opaqueOverlap = 0;
             goldPx = 0;
             tokenPixels = "no_overlap";
+            lumaN = 0;
+            luma = 0f;
             if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
             string key = BadgerWearArt.StageKey(spot.Frame, want);
             string bodyPath = Path.Combine(Application.dataPath, "_Project/Art/Resources/Sprites/Badger/" + key + ".png");
@@ -457,7 +593,7 @@ namespace FlockFive
                     int top = Mathf.Clamp(Mathf.RoundToInt(gy * sy), 0, sh - 1);
                     return spx[(sh - 1 - top) * sw + x];
                 }
-                bool Opaque(float gx, float gy)
+                bool Covered(float gx, float gy, int minA)
                 {
                     if (bpx == null || wearDest.width < 2f || wearDest.height < 2f) return false;
                     UnrotateGui(gx, gy, spot.Foot, spot.Degrees, out float ux, out float uy);
@@ -466,7 +602,7 @@ namespace FlockFive
                     float v = (uy - wearDest.y) / wearDest.height;
                     int tx = Mathf.Clamp(Mathf.FloorToInt(u * bw), 0, bw - 1);
                     int top = Mathf.Clamp(Mathf.FloorToInt(v * bh), 0, bh - 1);
-                    return bpx[(bh - 1 - top) * bw + tx].a > 40;
+                    return bpx[(bh - 1 - top) * bw + tx].a > minA;
                 }
 
                 float chestY = Mathf.Lerp(drawn.y, spot.Foot.y, 0.42f);
@@ -478,7 +614,7 @@ namespace FlockFive
                         float gx = bodyCx + dx;
                         float gy = chestY + dy;
                         if (gx < bodyL || gx > bodyR) continue;
-                        if (!Opaque(gx, gy)) continue;
+                        if (!Covered(gx, gy, 40)) continue;
                         var p = At(gx, gy);
                         if (p.g > p.r + 12) continue;
                         if (HoneyGold(p)) continue;
@@ -495,6 +631,27 @@ namespace FlockFive
                     meanB = sumB / (float)meanN;
                 }
 
+                // One sample per screenshot pixel. GUI y matches At(): row 0 of GetPixels32 is the bottom.
+                double sumY = 0;
+                if (bpx != null && sw > 0 && sh > 0)
+                {
+                    for (int row = 0; row < sh; row++)
+                    {
+                        float gy = (sh - 1 - row) / sy;
+                        int rowAt = row * sw;
+                        for (int col = 0; col < sw; col++)
+                        {
+                            float gx = col / sx - PhoneArea.OffX;
+                            if (!Covered(gx, gy, 200)) continue;
+                            var p = spx[rowAt + col];
+                            if (HoneyGold(p)) continue;
+                            sumY += 0.2126 * p.r + 0.7152 * p.g + 0.0722 * p.b;
+                            lumaN++;
+                        }
+                    }
+                }
+                if (lumaN > 0) luma = (float)(sumY / lumaN);
+
                 if (_bgTokenLive && _bgTokenRect.width > 2f)
                 {
                     int x0 = Mathf.FloorToInt(_bgTokenRect.xMin);
@@ -505,7 +662,7 @@ namespace FlockFive
                     {
                         for (int x = x0; x < x1; x++)
                         {
-                            if (!Opaque(x + 0.5f, y + 0.5f)) continue;
+                            if (!Covered(x + 0.5f, y + 0.5f, 40)) continue;
                             opaqueOverlap++;
                             if (HoneyGold(At(x + 0.5f, y + 0.5f))) goldPx++;
                         }
