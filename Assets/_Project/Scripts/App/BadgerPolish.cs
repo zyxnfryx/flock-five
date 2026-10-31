@@ -104,6 +104,25 @@ namespace FlockFive
             return 0f;
         }
 
+        // The live lean eases toward EarsBack over this long. It does not snap.
+        public const float LeanEaseSeconds = 0.18f;
+
+        // Quadratic ease-out. 0 at the start, 1 at the end, past the halfway point at mid time.
+        public static float EaseOut01(float u)
+        {
+            if (u <= 0f) return 0f;
+            if (u >= 1f) return 1f;
+            float k = 1f - u;
+            return 1f - k * k;
+        }
+
+        public static float EaseLean(float fromDeg, float toDeg, float age)
+        {
+            float dur = LeanEaseSeconds;
+            float u = dur <= 0.0001f ? 1f : age / dur;
+            return UnityEngine.Mathf.Lerp(fromDeg, toDeg, EaseOut01(u));
+        }
+
         // v4_1: one scale for every wear stage. The old per-stage squash (wider
         // and shorter as the hits added up) shifted the body and thickened the rim.
         // Head size is BadgerWearArt.FeatureScale, not a wear step.

@@ -178,18 +178,22 @@ namespace FlockFive.Editor
 
                 var blit = BadgerWearArt.PaintWear(pose, unpadded, srcW, srcH, BadgerWear.Scuffed);
                 Assert.That(blit.Sprite, Is.EqualTo(pose + "_wear_scuffed"));
+                Assert.That(blit.HaloBack, Is.EqualTo(BadgerWearArt.HaloBack(pose, BadgerWear.Scuffed)));
+                Assert.That(blit.HaloFront, Is.EqualTo(BadgerWearArt.HaloFront(pose, BadgerWear.Scuffed)));
                 Assert.That(blit.Dest.x, Is.EqualTo(padded.x).Within(0.01f), pose);
                 Assert.That(blit.Dest.y, Is.EqualTo(padded.y).Within(0.01f), pose);
                 Assert.That(blit.Dest.width, Is.EqualTo(padded.width).Within(0.01f), pose);
                 Assert.That(blit.Dest.height, Is.EqualTo(padded.height).Within(0.01f), pose);
-                Assert.That(blit.StagePng, Is.True);
+                Assert.That(blit.Layered, Is.True);
+                Assert.That(blit.HaloAlpha, Is.EqualTo(0.35f).Within(0.0001f));
+                Assert.That(blit.BodyTint.r, Is.EqualTo(BadgerWearArt.BodyTint(BadgerWear.Scuffed).r).Within(0.0001f));
             }
         }
 
         [Test]
-        public void WearDrawOrderIsStagePngWithoutASecondHalo()
+        public void WearDrawOrderIsBodyBetweenHaloLayers()
         {
-            Assert.That(BadgerWearArt.UseStagePngs, Is.True);
+            Assert.That(BadgerWearArt.UseStagePngs, Is.False);
             Assert.That(BadgerWearArt.CompositeOrder, Is.EqualTo(new[] { "halo_back", "body", "halo_front" }));
             var layers = new System.Collections.Generic.List<string>();
             var wears = new[] { BadgerWear.Fresh, BadgerWear.Scuffed, BadgerWear.Bruised, BadgerWear.Wrecked };
@@ -197,18 +201,25 @@ namespace FlockFive.Editor
             {
                 for (int w = 0; w < wears.Length; w++)
                 {
-                    BadgerWearArt.FillDrawList(BadgerWearArt.Poses[p], wears[w], layers);
-                    Assert.That(BadgerWearArt.DrawListIsSafe(layers), Is.True, BadgerWearArt.Poses[p] + " " + wears[w]);
-                    Assert.That(layers.Count, Is.EqualTo(1));
-                    Assert.That(layers[0], Is.EqualTo(BadgerWearArt.StageKey(BadgerWearArt.Poses[p], wears[w])));
-                    Assert.That(layers[0].Contains("halo_"), Is.False);
+                    string pose = BadgerWearArt.Poses[p];
+                    BadgerWearArt.FillDrawList(pose, wears[w], layers);
+                    Assert.That(BadgerWearArt.DrawListIsSafe(layers), Is.True, pose + " " + wears[w]);
+                    Assert.That(layers.Count, Is.EqualTo(3));
+                    Assert.That(layers[0], Is.EqualTo(BadgerWearArt.HaloBack(pose, wears[w])));
+                    Assert.That(layers[1], Is.EqualTo(BadgerWearArt.StageKey(pose, wears[w])));
+                    Assert.That(layers[2], Is.EqualTo(BadgerWearArt.HaloFront(pose, wears[w])));
                 }
             }
             layers.Clear();
+            layers.Add("halo_front_idle_a_scuffed");
+            layers.Add("badger_idle_a_wear_scuffed");
+            layers.Add("halo_back_idle_a_scuffed");
+            Assert.That(BadgerWearArt.DrawListIsSafe(layers), Is.False, "reversed halo would paint the back on top");
+            layers.Clear();
             layers.Add("halo_back_idle_a_scuffed");
             layers.Add("badger_idle_a_wear_scuffed");
-            layers.Add("halo_front_idle_a_scuffed");
-            Assert.That(BadgerWearArt.DrawListIsSafe(layers), Is.False, "stage PNG plus halo files is a double halo");
+            layers.Add("badger_idle_a_wear_scuffed");
+            Assert.That(BadgerWearArt.DrawListIsSafe(layers), Is.False, "two bodies is a double draw");
         }
 
         [Test]
@@ -569,6 +580,98 @@ namespace FlockFive.Editor
             string art = File.ReadAllText("Assets/_Project/Scripts/App/BadgerWearArt.cs");
             Assert.That(art.Contains("ScreenMidX(screenW)"), Is.True, "stills Layout and the duel share ScreenMidX");
             Assert.That(duel.Contains("DuelRestPlant"), Is.True);
+            int fighters = duel.IndexOf("DrawBadgerFighters(L);", StringComparison.Ordinal);
+            int token = duel.IndexOf("DrawBadgerPickToken();", StringComparison.Ordinal);
+            Assert.That(fighters, Is.GreaterThanOrEqualTo(0));
+            Assert.That(token, Is.GreaterThan(fighters), "pick token paints after the badger");
+        }
+
+        [Test]
+        public void WearTintHaloPunchAndLeanEase()
+        {
+            Assert.That(BadgerWearArt.TintAmount(BadgerWear.Fresh), Is.EqualTo(0f).Within(0.0001f));
+            Assert.That(BadgerWearArt.TintAmount(BadgerWear.Scuffed), Is.EqualTo(0.10f).Within(0.0001f));
+            Assert.That(BadgerWearArt.TintAmount(BadgerWear.Bruised), Is.EqualTo(0.20f).Within(0.0001f));
+            Assert.That(BadgerWearArt.TintAmount(BadgerWear.Wrecked), Is.EqualTo(0.30f).Within(0.0001f));
+
+            var fresh = BadgerWearArt.BodyTint(BadgerWear.Fresh);
+            Assert.That(fresh.r, Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(fresh.g, Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(fresh.b, Is.EqualTo(1f).Within(0.0001f));
+
+            var toward = BadgerWearArt.TintToward;
+            Assert.That(toward.r * 255f, Is.EqualTo(58f).Within(0.01f));
+            Assert.That(toward.g * 255f, Is.EqualTo(42f).Within(0.01f));
+            Assert.That(toward.b * 255f, Is.EqualTo(32f).Within(0.01f));
+            var wears = new[] { BadgerWear.Scuffed, BadgerWear.Bruised, BadgerWear.Wrecked };
+            var amounts = new[] { 0.10f, 0.20f, 0.30f };
+            for (int i = 0; i < wears.Length; i++)
+            {
+                var tint = BadgerWearArt.BodyTint(wears[i]);
+                var expect = Color.Lerp(Color.white, toward, amounts[i]);
+                Assert.That(tint.r, Is.EqualTo(expect.r).Within(0.0001f), wears[i].ToString());
+                Assert.That(tint.g, Is.EqualTo(expect.g).Within(0.0001f), wears[i].ToString());
+                Assert.That(tint.b, Is.EqualTo(expect.b).Within(0.0001f), wears[i].ToString());
+                Assert.That(tint.r - tint.g, Is.LessThan(0.05f), "tint stays brown");
+                Assert.That(tint.g, Is.GreaterThan(tint.b));
+            }
+
+            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Fresh), Is.EqualTo(0f).Within(0.0001f));
+            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Scuffed), Is.EqualTo(0.35f).Within(0.0001f));
+            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Bruised), Is.EqualTo(0.60f).Within(0.0001f));
+            Assert.That(BadgerWearArt.HaloAlpha(BadgerWear.Wrecked), Is.EqualTo(0.85f).Within(0.0001f));
+
+            Assert.That(BadgerWearArt.PunchSeconds, Is.EqualTo(0.12f).Within(0.0001f));
+            Assert.That(BadgerWearArt.PunchPeak, Is.EqualTo(1.08f).Within(0.0001f));
+            Assert.That(BadgerWearArt.PunchScale(0f), Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(BadgerWearArt.PunchScale(0.03f), Is.EqualTo(1.04f).Within(0.0001f));
+            Assert.That(BadgerWearArt.PunchScale(0.06f), Is.EqualTo(1.08f).Within(0.0001f));
+            Assert.That(BadgerWearArt.PunchScale(0.09f), Is.EqualTo(1.04f).Within(0.0001f));
+            Assert.That(BadgerWearArt.PunchScale(0.12f), Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(BadgerWearArt.PunchScale(0.2f), Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(BadgerWearArt.PunchScale(-0.1f), Is.EqualTo(1f).Within(0.0001f));
+
+            var planted = new Rect(80f, 40f, 40f, 60f);
+            float pivotX = planted.center.x;
+            float footY = planted.yMax;
+            var grown = BadgerWearArt.ScaleAbout(planted, pivotX, footY, BadgerWearArt.PunchPeak);
+            Assert.That(grown.center.x, Is.EqualTo(pivotX).Within(0.001f));
+            Assert.That(grown.yMax, Is.EqualTo(footY).Within(0.001f));
+            Assert.That(grown.width, Is.EqualTo(planted.width * 1.08f).Within(0.001f));
+            var rest = BadgerWearArt.ScaleAbout(planted, pivotX, footY, 1f);
+            Assert.That(rest.x, Is.EqualTo(planted.x).Within(0.001f));
+            Assert.That(rest.yMax, Is.EqualTo(footY).Within(0.001f));
+
+            Assert.That(BadgerPolish.LeanEaseSeconds, Is.EqualTo(0.18f).Within(0.0001f));
+            Assert.That(BadgerPolish.EaseOut01(0f), Is.EqualTo(0f).Within(0.0001f));
+            Assert.That(BadgerPolish.EaseOut01(1f), Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(BadgerPolish.EaseOut01(0.5f), Is.EqualTo(0.75f).Within(0.0001f));
+            Assert.That(BadgerPolish.EaseLean(0f, 6f, 0f), Is.EqualTo(0f).Within(0.0001f));
+            Assert.That(BadgerPolish.EaseLean(0f, 6f, 0.09f), Is.EqualTo(4.5f).Within(0.0001f));
+            Assert.That(BadgerPolish.EaseLean(0f, 6f, 0.18f), Is.EqualTo(6f).Within(0.0001f));
+            Assert.That(BadgerPolish.EaseLean(6f, 11f, 0.18f), Is.EqualTo(11f).Within(0.0001f));
+            Assert.That(BadgerPolish.EaseLean(2f, 11f, 0.3f), Is.EqualTo(11f).Within(0.0001f));
+
+            const string art = "Assets/_Project/Art/Resources/Sprites/Badger";
+            int missing = 0;
+            for (int p = 0; p < BadgerWearArt.Poses.Length; p++)
+            {
+                for (int w = 0; w < wears.Length; w++)
+                {
+                    string back = art + "/" + BadgerWearArt.HaloBack(BadgerWearArt.Poses[p], wears[w]) + ".png";
+                    string front = art + "/" + BadgerWearArt.HaloFront(BadgerWearArt.Poses[p], wears[w]) + ".png";
+                    if (!File.Exists(back) || !File.Exists(front)) missing++;
+                }
+            }
+            Assert.That(missing, Is.EqualTo(0), "halo layers for scuffed, bruised, wrecked");
+
+            string duel = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
+            Assert.That(duel.Contains("BadgerWearArt.BodyTint"), Is.False);
+            Assert.That(duel.Contains("blit.BodyTint"), Is.True);
+            Assert.That(duel.Contains("blit.HaloAlpha"), Is.True);
+            Assert.That(duel.Contains("BadgerWearArt.PunchPivot"), Is.True);
+            Assert.That(duel.Contains("MoodLean("), Is.True);
+            Assert.That(duel.Contains("BadgerPolish.EaseLean"), Is.True);
         }
 
         [Test]

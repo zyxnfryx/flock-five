@@ -142,17 +142,20 @@ namespace FlockFive
             string log = Path.Combine(dir, "stills.log");
             File.WriteAllText(log, "");
             var json = new System.Text.StringBuilder();
-            json.Append("{\n  \"note\": \"Body centre, margins, foot and overlaps are the live duel layout on the captured frame (BadgerActorNow + SpriteAnim + BadgerWearArt.PlacedEdges). Screen X adds the pillar offset. Foot Y is the planted opaque foot. Boss foot Y is the boss-box bottom. Overlap px is the horizontal overlap when the rects also overlap vertically.\",\n  \"stills\": [\n");
+            json.Append("{\n  \"note\": \"Body centre, margins, foot and overlaps are the live duel layout on the captured frame (BadgerActorNow + SpriteAnim + BadgerWearArt.PlacedEdges). Screen X adds the pillar offset. Foot Y is the planted opaque foot. Boss foot Y is the boss-box bottom. Overlap px is the horizontal overlap when the rects also overlap vertically. Tint and halo alpha come from BadgerWearArt. Body mean is a chest patch of opaque body pixels. Token order is the paint serial (token after badger) plus a honey-pixel check where the token covers opaque body.\",\n  \"stills\": [\n");
             int[][] res = { new[] { 402, 874 }, new[] { 820, 1180 }, new[] { 412, 915 } };
             string[] stages = { "fresh", "scuffed", "bruised", "wrecked" };
             bool wasOn = BadgerSchedule.Enabled;
             BadgerSchedule.Enabled = true;
             bool first = true;
+            var freshMean = new Color[res.Length];
+            var freshHave = new bool[res.Length];
             try
             {
                 File.AppendAllText(log, "START\n");
                 for (int d = 0; d < res.Length; d++)
                 {
+                    File.AppendAllText(log, "SIZE " + res[d][0] + "x" + res[d][1] + "\n");
                     if (EditorGameSize != null) EditorGameSize(res[d][0], res[d][1]);
                     yield return new WaitForSecondsRealtime(1.2f);
                     yield return OpenRepeatFight(log);
@@ -169,12 +172,34 @@ namespace FlockFive
                     {
                         SetBadgerScore(scores[i]);
                         var want = BadgerPolish.WearOf(scores[i], target);
-                        for (float w = 0f; w < 0.4f; w += Kick()) yield return null;
+                        // Stamp the wear change, then wait out the 0.12s punch and the 0.18s lean.
+                        // Scale 1 at age 0 is the start of the punch, so the clock has to pass the window.
+                        BadgerActorNow(BadgerLayout());
+                        float waited = 0f;
+                        while (waited < 0.22f)
+                        {
+                            waited += Kick();
+                            yield return null;
+                        }
+                        float extra = 0f;
+                        while (extra < 0.40f)
+                        {
+                            var probe = BadgerActorNow(BadgerLayout());
+                            float now = PlayClock.Now;
+                            float punchAge = _bgPunchInit ? now - _bgPunchAt : 0f;
+                            float leanAge = _bgLeanInit ? now - _bgLeanAt : 0f;
+                            if (punchAge >= BadgerWearArt.PunchSeconds - 0.001f
+                                && leanAge >= BadgerPolish.LeanEaseSeconds - 0.001f
+                                && probe.Punch <= 1.001f)
+                                break;
+                            extra += Kick();
+                            yield return null;
+                        }
                         yield return new WaitForEndOfFrame();
                         string name = res[d][0] + "x" + res[d][1] + "-fight-" + stages[i] + ".png";
                         string path = Path.Combine(stillDir, name);
                         SaveFrame(path);
-                        string entry = FightMeasureEntry(name, stages[i], want, res[d][0], res[d][1]);
+                        string entry = FightMeasureEntry(path, name, stages[i], want, res[d][0], res[d][1], d, freshMean, freshHave);
                         if (!first) json.Append(",\n");
                         first = false;
                         json.Append(entry);
@@ -231,7 +256,7 @@ namespace FlockFive
             return w;
         }
 
-        string FightMeasureEntry(string file, string stage, BadgerWear want, int reqW, int reqH)
+        string FightMeasureEntry(string path, string file, string stage, BadgerWear want, int reqW, int reqH, int sizeIx, Color[] freshMean, bool[] freshHave)
         {
             var ci = CultureInfo.InvariantCulture;
             var L = BadgerLayout();
@@ -267,6 +292,39 @@ namespace FlockFive
             float rotX = spot.Foot.x + dx * Mathf.Cos(rad) - dy * Mathf.Sin(rad);
             float lean = rotX - bodyCx;
             float footDelta = spot.Foot.y - box.BossFighter.yMax;
+            var tint = BadgerWearArt.BodyTint(want);
+            float tintPct = BadgerWearArt.TintAmount(want) * 100f;
+            float haloA = BadgerWearArt.HaloAlpha(want);
+            string tintHex = TintHex(tint);
+            var wearDest = BadgerWearArt.PaintWear(spot.Frame, drawn, srcW, srcH, want).Dest;
+            int meanN = 0, opaqueOverlap = 0, goldPx = 0;
+            float meanR = 0f, meanG = 0f, meanB = 0f;
+            string tokenPixels = "no_overlap";
+            string measureProblem = "";
+            try
+            {
+                MeasureBodyAndToken(path, spot, want, drawn, wearDest, bodyL, bodyR, bodyCx,
+                    out meanN, out meanR, out meanG, out meanB,
+                    out opaqueOverlap, out goldPx, out tokenPixels);
+            }
+            catch (System.Exception ex)
+            {
+                measureProblem = " measure " + ex.GetType().Name + ";";
+            }
+            if (stage == "fresh" && meanN > 0 && sizeIx >= 0 && sizeIx < freshMean.Length && !freshHave[sizeIx])
+            {
+                freshMean[sizeIx] = new Color(meanR / 255f, meanG / 255f, meanB / 255f, 1f);
+                freshHave[sizeIx] = true;
+            }
+            float dR = 0f, dG = 0f, dB = 0f;
+            bool haveFresh = sizeIx >= 0 && sizeIx < freshHave.Length && freshHave[sizeIx];
+            if (haveFresh && meanN > 0 && stage != "fresh")
+            {
+                dR = meanR - freshMean[sizeIx].r * 255f;
+                dG = meanG - freshMean[sizeIx].g * 255f;
+                dB = meanB - freshMean[sizeIx].b * 255f;
+            }
+            bool tokenAfter = FightTokenSerial > FightBadgerSerial && FightBadgerSerial > 0;
             string problems = "";
             if (Mathf.Abs(screenCx - screenW * 0.5f) > 0.6f)
                 problems += " body centre " + screenCx.ToString("0.00", ci) + " vs screen mid " + (screenW * 0.5f).ToString("0.00", ci) + ";";
@@ -280,6 +338,15 @@ namespace FlockFive
                 problems += " mood lean " + spot.Degrees.ToString("0.0", ci) + " deg shifts body centre " + lean.ToString("0.0", ci) + " px;";
             if (!eyeIn)
                 problems += " eye " + eyeX.ToString("0.0", ci) + "," + eyeY.ToString("0.0", ci) + " outside body;";
+            if (spot.Punch > 1.01f)
+                problems += " punch " + spot.Punch.ToString("0.000", ci) + ";";
+            if (!tokenAfter)
+                problems += " token serial " + FightTokenSerial + " after badger " + FightBadgerSerial + ";";
+            if (tokenPixels == "under")
+                problems += " token pixels under badger where they overlap;";
+            if (meanN < 4)
+                problems += " body mean samples " + meanN + ";";
+            problems += measureProblem;
             string F(float v) => v.ToString("0.00", ci);
             return "    {\n"
                 + "      \"file\": \"" + file + "\",\n"
@@ -300,6 +367,19 @@ namespace FlockFive
                 + "      \"lean_deg\": " + F(spot.Degrees) + ",\n"
                 + "      \"lean_shift_x\": " + F(lean) + ",\n"
                 + "      \"eye_in_body\": " + (eyeIn ? "true" : "false") + ",\n"
+                + "      \"tint_pct\": " + F(tintPct) + ",\n"
+                + "      \"tint_hex\": \"" + tintHex + "\",\n"
+                + "      \"halo_alpha\": " + F(haloA) + ",\n"
+                + "      \"punch_scale\": " + spot.Punch.ToString("0.000", ci) + ",\n"
+                + "      \"body_mean\": [" + F(meanR) + ", " + F(meanG) + ", " + F(meanB) + "],\n"
+                + "      \"body_mean_n\": " + meanN + ",\n"
+                + "      \"body_mean_vs_fresh\": [" + F(dR) + ", " + F(dG) + ", " + F(dB) + "],\n"
+                + "      \"token_after_badger\": " + (tokenAfter ? "true" : "false") + ",\n"
+                + "      \"badger_paint\": " + FightBadgerSerial + ",\n"
+                + "      \"token_paint\": " + FightTokenSerial + ",\n"
+                + "      \"token_opaque_overlap\": " + opaqueOverlap + ",\n"
+                + "      \"token_gold_px\": " + goldPx + ",\n"
+                + "      \"token_pixel_on_top\": \"" + tokenPixels + "\",\n"
                 + "      \"overlaps\": [\n"
                 + "        {\"element\": \"bird\", \"overlap_px\": " + F(bird) + "},\n"
                 + "        {\"element\": \"boss_comb\", \"overlap_px\": " + F(boss) + "},\n"
@@ -309,6 +389,137 @@ namespace FlockFive
                 + "      ],\n"
                 + "      \"problems\": \"" + problems.Trim() + "\"\n"
                 + "    }";
+        }
+
+        static string TintHex(Color c)
+        {
+            int r = Mathf.Clamp(Mathf.RoundToInt(c.r * 255f), 0, 255);
+            int g = Mathf.Clamp(Mathf.RoundToInt(c.g * 255f), 0, 255);
+            int b = Mathf.Clamp(Mathf.RoundToInt(c.b * 255f), 0, 255);
+            return "#" + r.ToString("X2") + g.ToString("X2") + b.ToString("X2");
+        }
+
+        static bool HoneyGold(Color32 p)
+            => p.r > 170 && p.g > 110 && p.b < 150 && p.r > p.b + 25;
+
+        // Undo GUIUtility.RotateAroundPivot so a screenshot point lands on the unrotated sprite.
+        static void UnrotateGui(float gx, float gy, Vector2 pivot, float deg, out float ux, out float uy)
+        {
+            float rad = -deg * Mathf.Deg2Rad;
+            float c = Mathf.Cos(rad);
+            float s = Mathf.Sin(rad);
+            float dx = gx - pivot.x;
+            float dy = gy - pivot.y;
+            ux = pivot.x + dx * c - dy * s;
+            uy = pivot.y + dx * s + dy * c;
+        }
+
+        // Chest mean of opaque body pixels, and whether honey pixels sit on the body where the token overlaps it.
+        void MeasureBodyAndToken(string path, BadgerActorSpot spot, BadgerWear want, Rect drawn, Rect wearDest,
+            float bodyL, float bodyR, float bodyCx,
+            out int meanN, out float meanR, out float meanG, out float meanB,
+            out int opaqueOverlap, out int goldPx, out string tokenPixels)
+        {
+            meanN = 0;
+            meanR = meanG = meanB = 0f;
+            opaqueOverlap = 0;
+            goldPx = 0;
+            tokenPixels = "no_overlap";
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+            string key = BadgerWearArt.StageKey(spot.Frame, want);
+            string bodyPath = Path.Combine(Application.dataPath, "_Project/Art/Resources/Sprites/Badger/" + key + ".png");
+            Texture2D shot = null;
+            Texture2D body = null;
+            try
+            {
+                shot = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                if (!shot.LoadImage(File.ReadAllBytes(path))) return;
+                var spx = shot.GetPixels32();
+                int sw = shot.width;
+                int sh = shot.height;
+                Color32[] bpx = null;
+                int bw = 0, bh = 0;
+                if (File.Exists(bodyPath))
+                {
+                    body = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                    if (body.LoadImage(File.ReadAllBytes(bodyPath)))
+                    {
+                        bpx = body.GetPixels32();
+                        bw = body.width;
+                        bh = body.height;
+                    }
+                }
+                float sx = sw / Mathf.Max(1f, Screen.width);
+                float sy = sh / Mathf.Max(1f, Screen.height);
+                Color32 At(float gx, float gy)
+                {
+                    int x = Mathf.Clamp(Mathf.RoundToInt((gx + PhoneArea.OffX) * sx), 0, sw - 1);
+                    int top = Mathf.Clamp(Mathf.RoundToInt(gy * sy), 0, sh - 1);
+                    return spx[(sh - 1 - top) * sw + x];
+                }
+                bool Opaque(float gx, float gy)
+                {
+                    if (bpx == null || wearDest.width < 2f || wearDest.height < 2f) return false;
+                    UnrotateGui(gx, gy, spot.Foot, spot.Degrees, out float ux, out float uy);
+                    if (ux < wearDest.x || uy < wearDest.y || ux >= wearDest.xMax || uy >= wearDest.yMax) return false;
+                    float u = (ux - wearDest.x) / wearDest.width;
+                    float v = (uy - wearDest.y) / wearDest.height;
+                    int tx = Mathf.Clamp(Mathf.FloorToInt(u * bw), 0, bw - 1);
+                    int top = Mathf.Clamp(Mathf.FloorToInt(v * bh), 0, bh - 1);
+                    return bpx[(bh - 1 - top) * bw + tx].a > 40;
+                }
+
+                float chestY = Mathf.Lerp(drawn.y, spot.Foot.y, 0.42f);
+                int sumR = 0, sumG = 0, sumB = 0;
+                for (int dy = -4; dy <= 4; dy++)
+                {
+                    for (int dx = -3; dx <= 3; dx++)
+                    {
+                        float gx = bodyCx + dx;
+                        float gy = chestY + dy;
+                        if (gx < bodyL || gx > bodyR) continue;
+                        if (!Opaque(gx, gy)) continue;
+                        var p = At(gx, gy);
+                        if (p.g > p.r + 12) continue;
+                        if (HoneyGold(p)) continue;
+                        sumR += p.r;
+                        sumG += p.g;
+                        sumB += p.b;
+                        meanN++;
+                    }
+                }
+                if (meanN > 0)
+                {
+                    meanR = sumR / (float)meanN;
+                    meanG = sumG / (float)meanN;
+                    meanB = sumB / (float)meanN;
+                }
+
+                if (_bgTokenLive && _bgTokenRect.width > 2f)
+                {
+                    int x0 = Mathf.FloorToInt(_bgTokenRect.xMin);
+                    int y0 = Mathf.FloorToInt(_bgTokenRect.yMin);
+                    int x1 = Mathf.CeilToInt(_bgTokenRect.xMax);
+                    int y1 = Mathf.CeilToInt(_bgTokenRect.yMax);
+                    for (int y = y0; y < y1; y++)
+                    {
+                        for (int x = x0; x < x1; x++)
+                        {
+                            if (!Opaque(x + 0.5f, y + 0.5f)) continue;
+                            opaqueOverlap++;
+                            if (HoneyGold(At(x + 0.5f, y + 0.5f))) goldPx++;
+                        }
+                    }
+                }
+                if (opaqueOverlap < 4) tokenPixels = "no_overlap";
+                else if (goldPx >= 4) tokenPixels = "on_top";
+                else tokenPixels = "under";
+            }
+            finally
+            {
+                if (shot != null) UnityEngine.Object.Destroy(shot);
+                if (body != null) UnityEngine.Object.Destroy(body);
+            }
         }
     }
 }

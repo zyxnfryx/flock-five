@@ -29,7 +29,13 @@ namespace FlockFive.Editor
         {
             AudioListener.volume = 0f;
             AudioListener.pause = true;
-            const string dir = "/Users/zfxgames/wkspaces/badger_job_fight";
+            string dir = "/Users/zfxgames/wkspaces/badger_job_fight";
+            try
+            {
+                var existing = File.ReadAllText("/tmp/ff-badger-fight-dir").Trim();
+                if (existing.Length > 0) dir = existing;
+            }
+            catch { }
             Directory.CreateDirectory(Path.Combine(dir, "stills"));
             File.WriteAllText("/tmp/ff-badger-fight-dir", dir);
             File.WriteAllText("/tmp/ff-badger-fight-shot", "1");
@@ -145,7 +151,7 @@ namespace FlockFive.Editor
             b.Fill(sky, new Color(0.62f, 0.78f, 0.86f, 1f));
             b.Fill(new Rect(0f, b.H * 0.62f, b.W, b.H * 0.38f), new Color(0.42f, 0.58f, 0.28f, 1f));
 
-            float deg = BadgerPolish.EarsBack(shot.Mood);
+            float deg = BadgerPolish.EaseLean(0f, BadgerPolish.EarsBack(shot.Mood), BadgerPolish.LeanEaseSeconds);
             if (shot.TellT >= 0f) deg += BossBeat.PawTwitch(shot.TellT);
             // Shared placement: body-bbox centre at W/2, one scale, feet locked. No per-stage squash.
             var layout = BadgerWearArt.Layout(shot.Frame, b.W, b.H);
@@ -289,31 +295,42 @@ namespace FlockFive.Editor
             }
 
             // Wear art comes through BadgerWearArt.Layout + PaintWear, the same
-            // helper DrawBadgerWear uses. The whole sprite then leans about the feet.
+            // helper DrawBadgerWear uses. Halo back, tinted body, halo front.
+            // The whole sprite then leans about the feet.
             public Rect BlitWear(string frame, BadgerWearArt.WearLayout layout, float deg, BadgerMood mood, BadgerWear wear)
             {
                 if (!layout.Ok || layout.Dest.width < 2f || layout.Dest.height < 2f) return default;
                 var unpadded = layout.Unpadded;
                 var blit = BadgerWearArt.PaintWear(frame, unpadded, layout.SrcW, layout.SrcH, wear);
                 Rect dest = blit.Dest.width > 2f ? blit.Dest : layout.Dest;
-                Texture2D draw = null;
-                if (!string.IsNullOrEmpty(blit.Sprite) && blit.StagePng)
-                    draw = Load(blit.Sprite);
-                if (draw == null)
+                if (!blit.Layered || string.IsNullOrEmpty(blit.Sprite) || Load(blit.Sprite) == null)
                 {
                     var tex = Load(frame);
                     if (tex == null) tex = Load("badger_idle_b");
                     if (tex == null) return default;
                     var src = tex.GetPixels32();
                     PaintWearFallback(src, tex.width, tex.height, mood, wear);
-                    BlitRotated(src, tex.width, tex.height, unpadded, layout.BodyCenterX, layout.FeetY, deg);
+                    BlitRotated(src, tex.width, tex.height, unpadded, layout.BodyCenterX, layout.FeetY, deg, Color.white);
                     return unpadded;
                 }
-                BlitRotated(draw.GetPixels32(), draw.width, draw.height, dest, layout.BodyCenterX, layout.FeetY, deg);
+                var halo = new Color(1f, 1f, 1f, blit.HaloAlpha);
+                BlitNamed(blit.HaloBack, dest, layout.BodyCenterX, layout.FeetY, deg, halo);
+                var body = blit.BodyTint;
+                body.a = 1f;
+                BlitNamed(blit.Sprite, dest, layout.BodyCenterX, layout.FeetY, deg, body);
+                BlitNamed(blit.HaloFront, dest, layout.BodyCenterX, layout.FeetY, deg, halo);
                 return unpadded;
             }
 
-            void BlitRotated(Color32[] src, int sw, int sh, Rect dest, float footX, float footY, float deg)
+            void BlitNamed(string name, Rect dest, float footX, float footY, float deg, Color mul)
+            {
+                if (mul.a < 0.01f || string.IsNullOrEmpty(name)) return;
+                var tex = Load(name);
+                if (tex == null) return;
+                BlitRotated(tex.GetPixels32(), tex.width, tex.height, dest, footX, footY, deg, mul);
+            }
+
+            void BlitRotated(Color32[] src, int sw, int sh, Rect dest, float footX, float footY, float deg, Color mul)
             {
                 if (src == null || sw < 2 || sh < 2 || dest.width < 2f || dest.height < 2f) return;
                 float left = dest.x;
@@ -342,6 +359,11 @@ namespace FlockFive.Editor
                         int sx = Mathf.Clamp(Mathf.RoundToInt(su * (sw - 1)), 0, sw - 1);
                         int sy = Mathf.Clamp(Mathf.RoundToInt(sv * (sh - 1)), 0, sh - 1);
                         var p = src[(sh - 1 - sy) * sw + sx];
+                        if (p.a < 8) continue;
+                        p.r = (byte)Mathf.Clamp(Mathf.RoundToInt(p.r * mul.r), 0, 255);
+                        p.g = (byte)Mathf.Clamp(Mathf.RoundToInt(p.g * mul.g), 0, 255);
+                        p.b = (byte)Mathf.Clamp(Mathf.RoundToInt(p.b * mul.b), 0, 255);
+                        p.a = (byte)Mathf.Clamp(Mathf.RoundToInt(p.a * mul.a), 0, 255);
                         if (p.a < 8) continue;
                         _px[row + x] = p.a >= 250 ? p : Over(_px[row + x], p);
                     }

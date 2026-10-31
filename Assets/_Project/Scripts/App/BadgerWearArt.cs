@@ -4,8 +4,11 @@ using UnityEngine;
 namespace FlockFive
 {
     // v4_1 wear sprites. One helper for the duel drawer and the stills painter.
-    // Stage PNGs already composite halo_back, body, halo_front. Never blit the
-    // halo files on top of those (double halo). Padding is +70 left/right, +110 top.
+    // The stage files used to bake halo_back + body + halo_front. Those PNGs are
+    // body-only now. Halo files draw as their own layers (back, body, front) so
+    // the body can darken without tinting the halo, and the halo has its own alpha.
+    // Never blit a baked composite and the halo files together (double halo).
+    // Padding is +70 left/right, +110 top.
     // Placement: one device scale for every wear stage, crouch art divided by its
     // 1.15 feature scale, body-bbox centre on the screen mid, feet locked.
     public static class BadgerWearArt
@@ -58,23 +61,89 @@ namespace FlockFive
 
         public static readonly string[] Tokens = { "fresh", "scuffed", "bruised", "wrecked" };
 
-        // Stage PNGs already include the halo. Layers stay off.
-        public const bool UseStagePngs = true;
+        // Wear PNGs are the body. Halo layers are separate files. Keep this false:
+        // drawing a baked stage PNG plus the halo files would double the halo.
+        public const bool UseStagePngs = false;
 
         public static readonly string[] CompositeOrder = { "halo_back", "body", "halo_front" };
+
+        // Body tint walks toward this brown. No red.
+        public static readonly Color TintToward = new Color(58f / 255f, 42f / 255f, 32f / 255f, 1f);
+
+        public const float PunchSeconds = 0.12f;
+        public const float PunchPeak = 1.08f;
 
         public readonly struct Blit
         {
             public readonly string Sprite;
+            public readonly string HaloBack;
+            public readonly string HaloFront;
             public readonly Rect Dest;
-            public readonly bool StagePng;
+            public readonly Color BodyTint;
+            public readonly float HaloAlpha;
+            public readonly bool Layered;
 
-            public Blit(string sprite, Rect dest, bool stagePng)
+            public Blit(string sprite, string haloBack, string haloFront, Rect dest, Color bodyTint, float haloAlpha, bool layered)
             {
                 Sprite = sprite;
+                HaloBack = haloBack;
+                HaloFront = haloFront;
                 Dest = dest;
-                StagePng = stagePng;
+                BodyTint = bodyTint;
+                HaloAlpha = haloAlpha;
+                Layered = layered;
             }
+        }
+
+        // 0, 10, 20, 30 percent. Fresh is untouched.
+        public static float TintAmount(BadgerWear wear)
+        {
+            int i = (int)wear;
+            if (i <= 0) return 0f;
+            if (i == 1) return 0.10f;
+            if (i == 2) return 0.20f;
+            return 0.30f;
+        }
+
+        // Multiply colour for the badger body only. Halo and UI stay out of this.
+        public static Color BodyTint(BadgerWear wear)
+        {
+            var c = Color.Lerp(Color.white, TintToward, TintAmount(wear));
+            c.a = 1f;
+            return c;
+        }
+
+        public static float HaloAlpha(BadgerWear wear)
+        {
+            int i = (int)wear;
+            if (i <= 0) return 0f;
+            if (i == 1) return 0.35f;
+            if (i == 2) return 0.60f;
+            return 0.85f;
+        }
+
+        // 1 -> peak -> 1 over PunchSeconds. Age 0 and anything past the window sit at 1.
+        public static float PunchScale(float age)
+        {
+            if (age < 0f || age >= PunchSeconds) return 1f;
+            float u = age / PunchSeconds;
+            float tri = u <= 0.5f ? u * 2f : (1f - u) * 2f;
+            return Mathf.Lerp(1f, PunchPeak, tri);
+        }
+
+        // Scale pivot: body-bbox centre X, planted foot Y. Centre X stays put.
+        // Foot Y stays put. At rest the scale is 1, so the plant does not move.
+        public static Vector2 PunchPivot(float bodyCenterX, float footY)
+            => new Vector2(bodyCenterX, footY);
+
+        public static Rect ScaleAbout(Rect r, float pivotX, float pivotY, float scale)
+        {
+            if (scale == 1f) return r;
+            return new Rect(
+                pivotX + (r.x - pivotX) * scale,
+                pivotY + (r.y - pivotY) * scale,
+                r.width * scale,
+                r.height * scale);
         }
 
         public static string Token(BadgerWear wear)
@@ -316,12 +385,22 @@ namespace FlockFive
         }
 
         // Shared wear blit. DrawBadgerWear and the stills PaintWear both call this.
+        // One body sprite plus the two halo layers. Same dest for every layer.
         public static Blit PaintWear(string frame, Rect unpaddedBody, float srcW, float srcH, BadgerWear wear)
         {
+            var tint = BodyTint(wear);
+            float haloA = HaloAlpha(wear);
             string key = StageKey(frame, wear);
             if (string.IsNullOrEmpty(key) || unpaddedBody.width < 1f || unpaddedBody.height < 1f)
-                return new Blit("", unpaddedBody, UseStagePngs);
-            return new Blit(key, PaddedDest(unpaddedBody, srcW, srcH), UseStagePngs);
+                return new Blit("", "", "", unpaddedBody, tint, haloA, false);
+            return new Blit(
+                key,
+                HaloBack(frame, wear),
+                HaloFront(frame, wear),
+                PaddedDest(unpaddedBody, srcW, srcH),
+                tint,
+                haloA,
+                true);
         }
 
         public static void FillDrawList(string frame, BadgerWear wear, List<string> dst)
@@ -329,33 +408,24 @@ namespace FlockFive
             if (dst == null) return;
             dst.Clear();
             if (!IsPose(frame)) return;
-            if (UseStagePngs)
-            {
-                dst.Add(StageKey(frame, wear));
-                return;
-            }
+            // Body file no longer contains the halo, so the three layers are not a double.
             dst.Add(HaloBack(frame, wear));
             dst.Add(StageKey(frame, wear));
             dst.Add(HaloFront(frame, wear));
         }
 
+        // Safe means one body with halo_back before it and halo_front after it.
+        // A second body, a reversed halo, or a short list would hide a layer or stack two.
         public static bool DrawListIsSafe(List<string> layers)
         {
-            if (layers == null || layers.Count == 0) return false;
-            bool stage = false;
-            bool halo = false;
-            for (int i = 0; i < layers.Count; i++)
-            {
-                string n = layers[i];
-                if (string.IsNullOrEmpty(n)) continue;
-                if (n.Contains("_wear_")) stage = true;
-                if (n.StartsWith("halo_")) halo = true;
-            }
-            if (stage && halo) return false;
-            if (UseStagePngs) return stage && !halo && layers.Count == 1;
-            if (!halo || layers.Count < 3) return false;
-            return layers[0].StartsWith("halo_back_")
-                && layers[layers.Count - 1].StartsWith("halo_front_");
+            if (layers == null || layers.Count != 3) return false;
+            if (string.IsNullOrEmpty(layers[0]) || string.IsNullOrEmpty(layers[1]) || string.IsNullOrEmpty(layers[2]))
+                return false;
+            if (!layers[0].StartsWith("halo_back_")) return false;
+            if (!layers[2].StartsWith("halo_front_")) return false;
+            if (!layers[1].Contains("_wear_") || layers[1].StartsWith("halo_")) return false;
+            if (layers[0] == layers[2]) return false;
+            return true;
         }
     }
 }
