@@ -2145,6 +2145,8 @@ namespace FlockFive
                     DrawBadgerArt(spot.Under, spot.Foot, spot.Unit, spot.Alpha * ua, 0f, spot.Sx, spot.Sy);
                 if (drawn.width < 1f && frameOk && fa > 0.02f)
                     drawn = DrawBadgerArt(spot.Frame, spot.Foot, spot.Unit, spot.Alpha * fa, 0f, spot.Sx, spot.Sy);
+                if (!iced && drawn.width > 1f)
+                    DrawBadgerWear(drawn, spot.Frame, BadgerMoodNow(), BadgerWearNow(), spot.Alpha);
             }
             finally
             {
@@ -2162,7 +2164,6 @@ namespace FlockFive
                 _bgDuelEye = new Vector2(
                     drawn.x + drawn.width * eu,
                     drawn.y + drawn.height * ev);
-                if (!iced) DrawBadgerWear(drawn, BadgerMoodNow(), BadgerWearNow());
             }
 
             if (_bgStage == BadgerStage.SlamTell)
@@ -2175,21 +2176,24 @@ namespace FlockFive
             DrawBadgerRoundHit(spot);
         }
 
-        // Sweat, pinned ears, and cartoon bruises. No red. Shares come from BadgerPolish
-        // so a still and the page mark the same spots.
-        void DrawBadgerWear(Rect body, BadgerMood mood, BadgerWear wear)
+        // Wear-stage art through BadgerWearArt.PaintWear (same helper the stills use).
+        // Mood still paints sweat and pinned ears on the unpadded body.
+        void DrawBadgerWear(Rect body, string frame, BadgerMood mood, BadgerWear wear, float alpha)
         {
             if (!GuiPaint() || body.width < 4f || body.height < 4f) return;
-            int n = BadgerPolish.BruiseCount(wear);
             var prev = GUI.color;
-            for (int i = 0; i < n; i++)
+            if (!PaintWear(body, frame, wear, alpha))
             {
-                BadgerPolish.BruiseUv(i, out float u, out float v, out float rad);
-                float rx = body.width * rad;
-                float ry = body.height * rad * 0.75f;
-                var at = new Vector2(body.x + body.width * u, body.y + body.height * v);
-                GUI.color = new Color(0.45f, 0.32f, 0.55f, 0.72f);
-                GUI.DrawTexture(new Rect(at.x - rx, at.y - ry, rx * 2f, ry * 2f), Texture2D.whiteTexture);
+                int n = BadgerPolish.BruiseCount(wear);
+                for (int i = 0; i < n; i++)
+                {
+                    BadgerPolish.BruiseUv(i, out float u, out float v, out float rad);
+                    float rx = body.width * rad;
+                    float ry = body.height * rad * 0.75f;
+                    var at = new Vector2(body.x + body.width * u, body.y + body.height * v);
+                    GUI.color = new Color(0.45f, 0.32f, 0.55f, 0.72f);
+                    GUI.DrawTexture(new Rect(at.x - rx, at.y - ry, rx * 2f, ry * 2f), Texture2D.whiteTexture);
+                }
             }
             if (BadgerPolish.EarsBack(mood) > 0.5f)
             {
@@ -2217,6 +2221,23 @@ namespace FlockFive
                 }
             }
             GUI.color = prev;
+        }
+
+        // One blit of the v4_final stage PNG (halo already inside). Returns false when
+        // the sprite is missing so the caller can fall back to the old bruise discs.
+        static bool PaintWear(Rect body, string frame, BadgerWear wear, float alpha)
+        {
+            if (alpha < 0.01f) return false;
+            var baseSpr = SpriteCatalog.BadgerArt(frame);
+            float srcW = baseSpr != null ? baseSpr.rect.width : body.width;
+            float srcH = baseSpr != null ? baseSpr.rect.height : body.height;
+            var blit = BadgerWearArt.PaintWear(frame, body, srcW, srcH, wear);
+            if (string.IsNullOrEmpty(blit.Sprite) || blit.Dest.width < 4f) return false;
+            var spr = SpriteCatalog.BadgerArt(blit.Sprite);
+            if (spr == null || spr.texture == null) return false;
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            DrawSprite(blit.Dest, spr, false);
+            return true;
         }
 
         // Full-screen white on the winning hit. BossBeat owns the fade.

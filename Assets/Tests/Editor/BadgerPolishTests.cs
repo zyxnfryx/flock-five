@@ -100,6 +100,118 @@ namespace FlockFive.Editor
         }
 
         [Test]
+        public void WearStagesMapOntoTheNinePoses()
+        {
+            Assert.That(BadgerWearArt.Poses.Length, Is.EqualTo(9));
+            Assert.That(BadgerWearArt.Tokens, Is.EqualTo(new[] { "fresh", "scuffed", "bruised", "wrecked" }));
+            Assert.That(BadgerWearArt.Token(BadgerWear.Fresh), Is.EqualTo("fresh"));
+            Assert.That(BadgerWearArt.Token(BadgerWear.Scuffed), Is.EqualTo("scuffed"));
+            Assert.That(BadgerWearArt.Token(BadgerWear.Bruised), Is.EqualTo("bruised"));
+            Assert.That(BadgerWearArt.Token(BadgerWear.Wrecked), Is.EqualTo("wrecked"));
+
+            const int target = 10;
+            Assert.That(BadgerWearArt.StageKey("badger_idle_b", BadgerPolish.WearOf(0, target)), Is.EqualTo("badger_idle_b_wear_fresh"));
+            Assert.That(BadgerWearArt.StageKey("badger_idle_b", BadgerPolish.WearOf(2, target)), Is.EqualTo("badger_idle_b_wear_scuffed"));
+            Assert.That(BadgerWearArt.StageKey("badger_idle_b", BadgerPolish.WearOf(5, target)), Is.EqualTo("badger_idle_b_wear_bruised"));
+            Assert.That(BadgerWearArt.StageKey("badger_crouch", BadgerPolish.WearOf(8, target)), Is.EqualTo("badger_crouch_wear_wrecked"));
+            Assert.That(BadgerWearArt.StageKey("hive_idle", BadgerWear.Wrecked), Is.EqualTo(""));
+
+            const string art = "Assets/_Project/Art/Resources/Sprites/Badger";
+            var wears = new[] { BadgerWear.Fresh, BadgerWear.Scuffed, BadgerWear.Bruised, BadgerWear.Wrecked };
+            int missing = 0;
+            var miss = new System.Text.StringBuilder();
+            for (int p = 0; p < BadgerWearArt.Poses.Length; p++)
+            {
+                for (int w = 0; w < wears.Length; w++)
+                {
+                    string key = BadgerWearArt.StageKey(BadgerWearArt.Poses[p], wears[w]);
+                    string path = art + "/" + key + ".png";
+                    if (File.Exists(path)) continue;
+                    missing++;
+                    miss.Append(key).Append(' ');
+                }
+            }
+            Assert.That(missing, Is.EqualTo(0), miss.ToString());
+
+            string duel = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Badger.cs");
+            string stills = File.ReadAllText("Assets/_Project/Scripts/Editor/BadgerPolishStills.cs");
+            Assert.That(duel.Contains("BadgerWearArt.PaintWear"), Is.True);
+            Assert.That(stills.Contains("BadgerWearArt.PaintWear"), Is.True);
+            Assert.That(duel.Contains("static bool PaintWear("), Is.True);
+        }
+
+        [Test]
+        public void PaddedDestKeepsTheUnpaddedBodyPlanted()
+        {
+            Assert.That(BadgerWearArt.PadX, Is.EqualTo(70));
+            Assert.That(BadgerWearArt.PadTop, Is.EqualTo(110));
+            var sizes = new[]
+            {
+                new Vector2(363f, 634f),
+                new Vector2(438f, 640f),
+                new Vector2(803f, 604f),
+                new Vector2(645f, 599f),
+                new Vector2(608f, 600f),
+                new Vector2(668f, 602f),
+                new Vector2(736f, 614f),
+                new Vector2(977f, 669f),
+                new Vector2(618f, 654f),
+            };
+            var foot = new Vector2(400f, 900f);
+            for (int i = 0; i < BadgerWearArt.Poses.Length; i++)
+            {
+                string pose = BadgerWearArt.Poses[i];
+                float srcW = sizes[i].x;
+                float srcH = sizes[i].y;
+                var unpadded = SpriteAnim.Dest(pose, srcW, srcH, foot, 1f, 1f, 1f);
+                var planted = SpriteAnim.Planted(pose, srcW, srcH, foot, 1f);
+                Assert.That(Vector2.Distance(planted, foot), Is.LessThan(0.6f), pose);
+
+                var padded = BadgerWearArt.PaddedDest(unpadded, srcW, srcH);
+                Assert.That(padded.width, Is.EqualTo(srcW + BadgerWearArt.PadW).Within(0.01f), pose);
+                Assert.That(padded.height, Is.EqualTo(srcH + BadgerWearArt.PadTop).Within(0.01f), pose);
+                var body = BadgerWearArt.BodyOfPadded(padded, srcW, srcH);
+                Assert.That(body.x, Is.EqualTo(unpadded.x).Within(0.01f), pose);
+                Assert.That(body.y, Is.EqualTo(unpadded.y).Within(0.01f), pose);
+                Assert.That(body.width, Is.EqualTo(unpadded.width).Within(0.01f), pose);
+                Assert.That(body.height, Is.EqualTo(unpadded.height).Within(0.01f), pose);
+
+                var blit = BadgerWearArt.PaintWear(pose, unpadded, srcW, srcH, BadgerWear.Scuffed);
+                Assert.That(blit.Sprite, Is.EqualTo(pose + "_wear_scuffed"));
+                Assert.That(blit.Dest.x, Is.EqualTo(padded.x).Within(0.01f), pose);
+                Assert.That(blit.Dest.y, Is.EqualTo(padded.y).Within(0.01f), pose);
+                Assert.That(blit.Dest.width, Is.EqualTo(padded.width).Within(0.01f), pose);
+                Assert.That(blit.Dest.height, Is.EqualTo(padded.height).Within(0.01f), pose);
+                Assert.That(blit.StagePng, Is.True);
+            }
+        }
+
+        [Test]
+        public void WearDrawOrderIsStagePngWithoutASecondHalo()
+        {
+            Assert.That(BadgerWearArt.UseStagePngs, Is.True);
+            Assert.That(BadgerWearArt.CompositeOrder, Is.EqualTo(new[] { "halo_back", "body", "halo_front" }));
+            var layers = new System.Collections.Generic.List<string>();
+            var wears = new[] { BadgerWear.Fresh, BadgerWear.Scuffed, BadgerWear.Bruised, BadgerWear.Wrecked };
+            for (int p = 0; p < BadgerWearArt.Poses.Length; p++)
+            {
+                for (int w = 0; w < wears.Length; w++)
+                {
+                    BadgerWearArt.FillDrawList(BadgerWearArt.Poses[p], wears[w], layers);
+                    Assert.That(BadgerWearArt.DrawListIsSafe(layers), Is.True, BadgerWearArt.Poses[p] + " " + wears[w]);
+                    Assert.That(layers.Count, Is.EqualTo(1));
+                    Assert.That(layers[0], Is.EqualTo(BadgerWearArt.StageKey(BadgerWearArt.Poses[p], wears[w])));
+                    Assert.That(layers[0].Contains("halo_"), Is.False);
+                }
+            }
+            layers.Clear();
+            layers.Add("halo_back_idle_a_scuffed");
+            layers.Add("badger_idle_a_wear_scuffed");
+            layers.Add("halo_front_idle_a_scuffed");
+            Assert.That(BadgerWearArt.DrawListIsSafe(layers), Is.False, "stage PNG plus halo files is a double halo");
+        }
+
+        [Test]
         public void MusicTightensWithoutPassingThePitchCap()
         {
             Assert.That(BadgerPolish.DesperatePitch, Is.EqualTo(1.02f).Within(0.0001f));

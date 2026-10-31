@@ -23,6 +23,49 @@ namespace FlockFive.Editor
             public string Line;
         }
 
+        public static void SaveWear()
+        {
+            AudioListener.volume = 0f;
+            AudioListener.pause = true;
+            const string dir = "/Users/zfxgames/wkspaces/badger_job/stills";
+            Directory.CreateDirectory(dir);
+            var stages = new[] { BadgerWear.Fresh, BadgerWear.Scuffed, BadgerWear.Bruised, BadgerWear.Wrecked };
+            var sizes = new[]
+            {
+                new Vector2Int(402, 874),
+                new Vector2Int(820, 1180),
+                new Vector2Int(412, 915),
+            };
+            int n = 0;
+            for (int s = 0; s < sizes.Length; s++)
+            {
+                for (int i = 0; i < stages.Length; i++)
+                {
+                    var wear = stages[i];
+                    string frame = wear == BadgerWear.Wrecked ? "badger_crouch" : "badger_idle_b";
+                    var shot = new Shot
+                    {
+                        Name = "wear-" + BadgerWearArt.Token(wear),
+                        Frame = frame,
+                        Mood = BadgerMood.Smug,
+                        Wear = wear,
+                        TellT = -1f,
+                        BlowT = -1f,
+                        Line = "",
+                    };
+                    var board = new Board(sizes[s].x, sizes[s].y);
+                    Paint(board, shot);
+                    string name = sizes[s].x + "x" + sizes[s].y + "-wear-" + BadgerWearArt.Token(wear) + ".png";
+                    string path = Path.Combine(dir, name);
+                    File.WriteAllBytes(path, board.Png());
+                    Debug.Log("[badger-still] " + path);
+                    n++;
+                }
+            }
+            Debug.Log("BADGER_WEAR_STILLS_DONE " + n);
+            EditorApplication.Exit(0);
+        }
+
         public static void Save()
         {
             AudioListener.volume = 0f;
@@ -234,28 +277,55 @@ namespace FlockFive.Editor
                 _px[i] = src.a >= 250 ? src : Over(_px[i], src);
             }
 
-            // Plants the opaque foot. Wear marks are painted in sprite space first,
-            // using the same shares as the live page, then the whole sprite leans.
+            // Plants the opaque foot. Wear art comes through BadgerWearArt.PaintWear,
+            // the same helper DrawBadgerWear uses, then the whole sprite leans.
             public Rect BlitFoot(Texture2D tex, string frame, float footX, float footY, float dw, float dh, float deg, BadgerMood mood, BadgerWear wear)
             {
                 if (tex == null || dw < 2f || dh < 2f) return default;
                 int sw = tex.width;
                 int sh = tex.height;
-                var src = tex.GetPixels32();
-                PaintWear(src, sw, sh, mood, wear);
-                FootOf(frame, out float cx, out float bottom);
-                float destW = dw;
-                float destH = dh;
-                float left = footX - destW * cx;
-                float top = footY - destH * bottom;
-                int x0 = Mathf.FloorToInt(Mathf.Min(left, footX) - destW);
-                int y0 = Mathf.FloorToInt(Mathf.Min(top, footY) - destH);
-                int x1 = Mathf.CeilToInt(Mathf.Max(left + destW, footX) + destW);
-                int y1 = Mathf.CeilToInt(Mathf.Max(top + destH, footY) + destH);
-                x0 = Mathf.Clamp(x0, 0, W);
-                y0 = Mathf.Clamp(y0, 0, H);
-                x1 = Mathf.Clamp(x1, 0, W);
-                y1 = Mathf.Clamp(y1, 0, H);
+                var unpadded = SpriteAnim.Dest(frame, sw, sh, new Vector2(footX, footY), 1f, dw / Mathf.Max(1f, sw), dh / Mathf.Max(1f, sh));
+                var blit = BadgerWearArt.PaintWear(frame, unpadded, sw, sh, wear);
+                if (blit.Dest.x < 0f)
+                {
+                    float shift = -blit.Dest.x;
+                    footX += shift;
+                    unpadded.x += shift;
+                    blit = BadgerWearArt.PaintWear(frame, unpadded, sw, sh, wear);
+                }
+                Texture2D draw = tex;
+                Rect dest = unpadded;
+                if (!string.IsNullOrEmpty(blit.Sprite) && blit.StagePng)
+                {
+                    var wearTex = Load(blit.Sprite);
+                    if (wearTex != null)
+                    {
+                        draw = wearTex;
+                        dest = blit.Dest;
+                    }
+                }
+                if (draw == tex)
+                {
+                    var src = tex.GetPixels32();
+                    PaintWearFallback(src, sw, sh, mood, wear);
+                    BlitRotated(src, sw, sh, unpadded, footX, footY, deg);
+                    return unpadded;
+                }
+                BlitRotated(draw.GetPixels32(), draw.width, draw.height, dest, footX, footY, deg);
+                return unpadded;
+            }
+
+            void BlitRotated(Color32[] src, int sw, int sh, Rect dest, float footX, float footY, float deg)
+            {
+                if (src == null || sw < 2 || sh < 2 || dest.width < 2f || dest.height < 2f) return;
+                float left = dest.x;
+                float top = dest.y;
+                float destW = dest.width;
+                float destH = dest.height;
+                int x0 = Mathf.Clamp(Mathf.FloorToInt(Mathf.Min(left, footX) - destW), 0, W);
+                int y0 = Mathf.Clamp(Mathf.FloorToInt(Mathf.Min(top, footY) - destH), 0, H);
+                int x1 = Mathf.Clamp(Mathf.CeilToInt(Mathf.Max(left + destW, footX) + destW), 0, W);
+                int y1 = Mathf.Clamp(Mathf.CeilToInt(Mathf.Max(top + destH, footY) + destH), 0, H);
                 float rad = -deg * Mathf.Deg2Rad;
                 float c = Mathf.Cos(rad);
                 float s = Mathf.Sin(rad);
@@ -278,10 +348,9 @@ namespace FlockFive.Editor
                         _px[row + x] = p.a >= 250 ? p : Over(_px[row + x], p);
                     }
                 }
-                return new Rect(left, top, destW, destH);
             }
 
-            static void PaintWear(Color32[] src, int sw, int sh, BadgerMood mood, BadgerWear wear)
+            static void PaintWearFallback(Color32[] src, int sw, int sh, BadgerMood mood, BadgerWear wear)
             {
                 int n = BadgerPolish.BruiseCount(wear);
                 var bruise = new Color(0.45f, 0.32f, 0.55f, 0.72f);
@@ -331,14 +400,6 @@ namespace FlockFive.Editor
                         src[i] = ink.a >= 250 ? ink : Over(src[i], ink);
                     }
                 }
-            }
-
-            static void FootOf(string frame, out float cx, out float bottom)
-            {
-                if (frame == "badger_crouch") { cx = 345f / 803f; bottom = 598f / 604f; return; }
-                if (frame == "badger_shrug") { cx = 399f / 618f; bottom = 648f / 654f; return; }
-                cx = 352.5f / 438f;
-                bottom = 634f / 640f;
             }
 
             public void Blit(Texture2D tex, int dx, int dy, int dw, int dh)
