@@ -10,11 +10,19 @@ namespace FlockFive.Editor
     {
         public static void Capture()
         {
+            ShotPrefsGuard.Begin(); // a play session writes the real PlayerPrefs; put them back after
             AudioListener.volume = 0f;
             AudioListener.pause = true;
-            Build79Stills.SetGameView(1170, 2532);
+            var sz = FlockFiveApp.Pr221Size(); // FF_PR221_SIZE="W H tag", default 1170x2532
+            Build79Stills.SetGameView(sz.x, sz.y);
             File.WriteAllText("/tmp/flock-five-pr221", "1");
             EditorApplication.isPlaying = true;
+        }
+
+        // Badger tutorial copy + caption-fit suite (not in RunEditorTests), sandboxed like RunEditorTests.
+        public static void CheckBadgerTutorial()
+        {
+            using (TestPrefsSandbox.Begin()) Build123BadgerTutorialTests.Run();
         }
     }
 }

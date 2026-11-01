@@ -12,6 +12,13 @@ namespace FlockFive
         // b119 / PR 221 evidence: the repainted spring garden, a burning branch mid-strike (bolt, then flame tongues),
         // and the frozen-badger captions. Drop /tmp/flock-five-pr221 and enter play mode (Pr221Stills.Capture).
         // Frames go to /tmp/ff-pr221-stills. Player prefs it touches are put back.
+        public static Vector2Int Pr221Size() { var a = Pr221Arg(); return new Vector2Int(int.Parse(a[0]), int.Parse(a[1])); }
+        static string[] Pr221Arg()
+        {
+            var a = (System.Environment.GetEnvironmentVariable("FF_PR221_SIZE") ?? "").Split(' ');
+            return a.Length >= 2 ? new[] { a[0], a[1], a.Length > 2 ? a[2] : "" } : new[] { "1170", "2532", "" };
+        }
+
         public IEnumerator ShotPr221()
         {
             ShotKeepAwake = true;
@@ -22,7 +29,8 @@ namespace FlockFive
             EditorShotLive = true;
             EditorApplication.isPaused = false;
             Application.runInBackground = true;
-            const string dir = "/tmp/ff-pr221-stills";
+            string tag = Pr221Arg()[2];
+            string dir = "/tmp/ff-pr221-stills" + (tag == "" ? "" : "/" + tag);
             Directory.CreateDirectory(dir);
             string log = dir + "/log.txt";
             File.WriteAllText(log, "");
@@ -36,7 +44,7 @@ namespace FlockFive
             try
             {
                 LightningStrike.Enabled = false; // only our own strike
-                if (EditorGameSize != null) EditorGameSize(1170, 2532);
+                if (EditorGameSize != null) EditorGameSize(Pr221Size().x, Pr221Size().y);
                 yield return new WaitForSecondsRealtime(0.8f);
 
                 // 1) spring garden
