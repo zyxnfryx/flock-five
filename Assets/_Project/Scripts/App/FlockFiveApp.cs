@@ -3612,6 +3612,7 @@ namespace FlockFive
             MaybeSmokeLaunch();
             PollHomeAtt();
             TickSettingsMotion();
+            ClearFivesOffPoker();
             // Bonus signs fade on the shared stage-clear state (limb stays; see GiftWant).
             GiftWant.StageClear = _won && !_splash;
             // Before the pause return and the speed sync: a solved board sends
