@@ -17,6 +17,13 @@ namespace FlockFive.Editor
         // One batch entry for the edit-mode suites. Unity -executeMethod FlockFive.Editor.EnsurePlayable.RunEditorTests
         public static void RunEditorTests()
         {
+            // Suites write PlayerPrefs; keep the real prefs untouched (snapshot + restore).
+            using (TestPrefsSandbox.Begin())
+                RunEditorSuites();
+        }
+
+        static void RunEditorSuites()
+        {
             Suite("board", BoardLayoutTests.Run);
             Suite("badger", BadgerFightTests.Run);
             Suite("badger-show", BadgerShowTests.Run);
