@@ -7,8 +7,9 @@ namespace FlockFive
     // branch the step wants, and one gloved hand. The hand points sideways. A
     // target on the left half is a right hand from the right, pointing left. A
     // target on the right half mirrors the sprite into a left hand from the left,
-    // pointing right. The cuff sits off to that side and above the target. The
-    // tap lifts, arcs over the top, and the fingertip descends onto the target.
+    // pointing right. Pickup and place pin that hand on the limb's hit rect
+    // (the same wood box BranchHit tests) so it does not rest in the column gap.
+    // Other lessons still perch off to the side, lift, and descend onto the target.
     // A required step fades the hand only on its own target. An informational
     // step (CoachTap) advances on a tap anywhere and eats that tap. It stays hidden
     // until the next step's start pose is locked, then fades in on that arc.
@@ -25,6 +26,8 @@ namespace FlockFive
     public sealed partial class FlockFiveApp
     {
         const string CoachKey = "flockfive.coach.done";
+        // Fresh home only. Set the first time a garden is entered, so LEVEL 1 is not cued again.
+        const string HomePlayCueKey = "flockfive.coach.homeplay";
         const string CoachGiftKey = "flockfive.coach.gift";
         const string CoachAdHandKey = "flockfive.coach.adhand";
         const string CoachHiveKey = "flockfive.coach.hive";
@@ -239,6 +242,9 @@ namespace FlockFive
         // b124: a caller may seat the angled glove's entry point (poker Back: middle right). Clamped to the safe rect.
         Vector2 _gloveEntryOverride;
         bool _gloveEntryOverrideOn;
+        // Garden pickup/place: the limb rect BranchHit tests. The hand is pinned on it.
+        bool _branchHitOn;
+        Rect _branchHitGui;
         Vector2 _gloveVel;
         Vector2 _gloveAway;
         float _gloveAng;
@@ -1015,16 +1021,11 @@ namespace FlockFive
         void CoachFocus(BranchView view, out Vector3 aim, out Vector3 glow, out float dx, out float dy)
         {
             Vector3 wood = view.transform.position;
-            Vector3 focus = wood + Vector3.up * 0.4f;
+            // Pickup and place: the hit-test wood center, not the inner tip bird.
+            // A sideways hand on that tip hangs in the gap between the columns.
+            Vector3 focus = BranchWoodCenter(view);
             var st = _board.Branches[_cueBranch];
-            int run = st.TipRun();
             if (_leafIntro && st.TipLocked && st.Count > 0)
-            {
-                int tip = st.Count - 1;
-                if (!TipBody(view, tip, out focus))
-                    focus = SeatOrWood(view, tip, wood);
-            }
-            else if (!_cueGift && st.Count > 0 && run > 0)
             {
                 int tip = st.Count - 1;
                 if (!TipBody(view, tip, out focus))
@@ -1187,6 +1188,14 @@ namespace FlockFive
 
         bool GardenGlove(Vector2 aimGui, float dt, float s, System.Func<Vector2, bool> tapHit)
         {
+            // Branch lessons: keep the drawn hand on the wood the tap test uses.
+            // The old perch stepped the fingertip off the inner bird into the column gap.
+            if (_branchHitOn && _branchHitGui.width > 4f && _branchHitGui.height > 4f)
+            {
+                var hit = _branchHitGui;
+                _branchHitOn = false;
+                return PosePinnedGlove(hit, dt, s, default, tapHit);
+            }
             var aim = aimGui;
             // b95: the banner that was actually painted last frames wins over the seat estimate
             // (build 94 used the snug-seat plate, which is not where the banner lands).
@@ -1209,6 +1218,74 @@ namespace FlockFive
             return CoachGloveAt(aim, dt, s, float.NaN, false, -90f, default, tapHit);
         }
 
+        // Fingertip stays on `hit` for the whole cycle. The entry perch is the aim,
+        // so the hand does not step off into the gap between pokes.
+        bool PosePinnedGlove(Rect hit, float dt, float s, Rect tapRect, System.Func<Vector2, bool> tapHit)
+        {
+            var aim = SeatBranchGlove(hit, PhoneArea.W, GloveDh(s));
+            _gloveEntryOverride = aim;
+            _gloveEntryOverrideOn = true;
+            bool pointLeft = GardenFromRight(hit.center.x, PhoneArea.W);
+            bool fired = pointLeft
+                ? CoachGloveAt(aim, dt, s, float.NaN, false, -90f, tapRect, tapHit)
+                : CoachGloveAt(aim, dt, s, 0f, false, float.NaN, tapRect, tapHit);
+            _gloveEntryOverrideOn = false;
+            return fired;
+        }
+
+        // Fresh save, still on LEVEL 1, garden not entered yet.
+        public static bool HomePlayCueDue(int seen, int nextPlay, int coachDone)
+        {
+            if (seen != 0) return false;
+            if (nextPlay > 0) return false;
+            if (coachDone != 0) return false;
+            return true;
+        }
+
+        bool HomePlayCueLive()
+        {
+            if (!_splash || _home != HomeFace.Splash) return false;
+#if UNITY_EDITOR
+            if (EditorShotLive || _dailyShotQuiet || _pokerPlayrun) return false;
+#endif
+            if (GamePause.Paused || _settingsOpen) return false;
+            if (_adoptLive || _welcomeOpen || _welcomeGlove || _dailyOpen || _dailyAskOpen) return false;
+            if (_hiveIntroLive || _pokerIntroLive || _dailyIntroLive) return false;
+            if (VipOffer.IsOpen) return false;
+            // Consent / ATT sits above LEVEL and needs its own taps. The cue waits.
+            if (_homePrompt.Kind != AdConsent.Sheet.None) return false;
+            var level = FlowerPlayRect();
+            if (level.width < 8f || AdConsent.BlocksControl(level)) return false;
+            return HomePlayCueDue(
+                PlayerPrefs.GetInt(HomePlayCueKey, 0),
+                LevelData.NextPlay,
+                PlayerPrefs.GetInt(CoachKey, 0));
+        }
+
+        void MarkHomePlayCue()
+        {
+#if UNITY_EDITOR
+            // Capture stills call Load without being a player's first garden.
+            if (EditorShotLive) return;
+#endif
+            if (PlayerPrefs.GetInt(HomePlayCueKey, 0) != 0) return;
+            PlayerPrefs.SetInt(HomePlayCueKey, 1);
+            PlayerPrefs.Save();
+        }
+
+        void PlaceHomePlayGlove(float dt)
+        {
+            float s = DeviceFit.Ui();
+            var box = FlowerPlayRect();
+            if (box.width < 8f || box.height < 8f)
+            {
+                _gloveVis = false;
+                return;
+            }
+            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.35f);
+            PosePinnedGlove(box, dt, s, box, null);
+        }
+
         void CoachPlace()
         {
             if (CoachResetHolds())
@@ -1218,6 +1295,7 @@ namespace FlockFive
                 return;
             }
             _gloveKeepOff = default;
+            _branchHitOn = false;
             _gloveInward = false;
             _glovePoseFrame = Time.frameCount;
             float dt = PlayClock.Delta;
@@ -1237,6 +1315,11 @@ namespace FlockFive
             // The welcome flag can no longer be raised (the VIP button glove was removed in
             // build 51). Drop it if a stale value is somehow set so no gate waits on it.
             _welcomeGlove = false;
+            if (HomePlayCueLive())
+            {
+                PlaceHomePlayGlove(dt);
+                return;
+            }
             if (_adHand)
             {
                 if (_gift != GiftFace.Card)
@@ -1381,6 +1464,11 @@ namespace FlockFive
             _cueAimWorld = aim;
             var screen = cam.WorldToScreenPoint(aim);
             _cueAimGui = new Vector2(screen.x, PhoneArea.H - screen.y);
+            if (!_cueGift && BranchWoodGui(view, cam, out var hitGui))
+            {
+                _branchHitGui = hitGui;
+                _branchHitOn = true;
+            }
             var holeScreen = cam.WorldToScreenPoint(glow);
             _cueHoleGui = new Vector2(holeScreen.x, PhoneArea.H - holeScreen.y);
 
@@ -1748,6 +1836,10 @@ namespace FlockFive
             _gloveAng = ang;
             _gloveAngVel = 0f;
             _gloveVel = Vector2.zero;
+            // A pinned lesson sets the entry on the aim itself. The "start below the
+            // target" nudge is for a travel perch (poker Back), and would drop a
+            // pinned fingertip off its rect.
+            bool pinned = _gloveEntryOverrideOn && (_gloveEntryOverride - aimGui).sqrMagnitude < 4f;
             if (angled)
             {
                 float dh = GloveDh(s);
@@ -1761,12 +1853,20 @@ namespace FlockFive
                 if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
                 if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
                 if (_gloveEntryOverrideOn) start = _gloveEntryOverride;
-                start.x = Mathf.Clamp(start.x, x0, x1);
-                start.y = Mathf.Clamp(start.y, y0, y1);
-                float below = _cueAimGui.y + 28f * s;
-                if (start.y < below) start.y = Mathf.Min(y1, below);
+                // The pad keeps a travel perch on screen. Applied to a fingertip that
+                // is already the aim, it shoves the tip inward and CommitApproachFace
+                // then aims the hand down the column gap.
+                if (!pinned)
+                {
+                    start.x = Mathf.Clamp(start.x, x0, x1);
+                    start.y = Mathf.Clamp(start.y, y0, y1);
+                    float below = _cueAimGui.y + 28f * s;
+                    if (start.y < below) start.y = Mathf.Min(y1, below);
+                }
                 _gloveTip = start;
             }
+            else if (pinned)
+                _gloveTip = _gloveEntryOverride;
             else
                 _gloveTip = GloveNearStart(rest, aimGui, s, ang, _gloveMirror);
             // Facing is the perch-to-aim line, locked before fade-in draws a pixel.
@@ -4708,6 +4808,36 @@ namespace FlockFive
             GloveSpan(pivot, ang, dh, dip, false, out float x0, out float y0, out float x1, out float y1);
             return new Rect(x0, y0, x1 - x0, y1 - y0);
         }
+
+        // Drawn glove AABB. mirror matches the sideways hand (right column points right).
+        public static Rect GloveBox(Vector2 pivot, float ang, float dh, bool mirror)
+        {
+            GloveSpan(pivot, ang, dh, 0f, mirror, out float x0, out float y0, out float x1, out float y1);
+            return new Rect(x0, y0, x1 - x0, y1 - y0);
+        }
+
+        // Fingertip that puts the drawn hand's center on `hit`. The tip stays inside the rect.
+        public static Vector2 SeatOnHit(Rect hit, float ang, float dh, bool mirror)
+        {
+            var box = GloveBox(Vector2.zero, ang, dh, mirror);
+            var pivot = new Vector2(hit.center.x - box.center.x, hit.center.y - box.center.y);
+            if (hit.width >= 2f) pivot.x = Mathf.Clamp(pivot.x, hit.xMin, hit.xMax);
+            if (hit.height >= 2f) pivot.y = Mathf.Clamp(pivot.y, hit.yMin, hit.yMax);
+            return pivot;
+        }
+
+        // Sideways garden hand, centered on the focus rect. Left half points left.
+        public static Vector2 SeatBranchGlove(Rect hit, float screenW, float dh)
+        {
+            bool pointLeft = GardenFromRight(hit.center.x, screenW);
+            return SeatOnHit(hit, pointLeft ? -90f : 90f, dh, !pointLeft);
+        }
+
+        public static float BranchGloveAng(Rect hit, float screenW)
+            => GardenFromRight(hit.center.x, screenW) ? -90f : 90f;
+
+        public static bool BranchGloveMirror(Rect hit, float screenW)
+            => !GardenFromRight(hit.center.x, screenW);
         public static float GloveAuditAboveUpright(float s)
             => Mathf.Max(GloveAbove(ClampUpright(true), s, true, 0f), GloveAbove(ClampUpright(true), s, true, 1f));
         public static float GloveAuditArch(float s) => GloveArch(s);
@@ -4755,7 +4885,35 @@ namespace FlockFive
             DrawGloveAt(_restShown, _restAng, GloveDh(s), EaseOutCubic(_coachFade), TapDip(_glovePhase), _restMirror);
         }
 
-        // Perch the tap hand uses, in GUI space. Matches the lesson focus, not the gift sign.
+        // Center of the wood rect BranchHit.Pick tests for this limb.
+        static Vector3 BranchWoodCenter(BranchView view)
+        {
+            var ls = view.transform.lossyScale;
+            var wood = BranchHit.WoodRect(view.transform.position, view.FromRight, view.IsGift,
+                Mathf.Abs(ls.x), Mathf.Abs(ls.y));
+            return new Vector3(wood.center.x, wood.center.y, view.transform.position.z);
+        }
+
+        // That same rect in GUI space (y down), via the play camera.
+        static bool BranchWoodGui(BranchView view, Camera cam, out Rect gui)
+        {
+            gui = default;
+            if (view == null || cam == null) return false;
+            var ls = view.transform.lossyScale;
+            var wood = BranchHit.WoodRect(view.transform.position, view.FromRight, view.IsGift,
+                Mathf.Abs(ls.x), Mathf.Abs(ls.y));
+            var a = cam.WorldToScreenPoint(new Vector3(wood.xMin, wood.yMax, 0f));
+            var b = cam.WorldToScreenPoint(new Vector3(wood.xMax, wood.yMin, 0f));
+            if (a.z < 0f || b.z < 0f) return false;
+            float x0 = a.x < b.x ? a.x : b.x;
+            float x1 = a.x > b.x ? a.x : b.x;
+            float y0 = PhoneArea.H - (a.y > b.y ? a.y : b.y);
+            float y1 = PhoneArea.H - (a.y < b.y ? a.y : b.y);
+            gui = Rect.MinMaxRect(x0, y0, x1, y1);
+            return gui.width > 4f && gui.height > 4f;
+        }
+
+        // Perch the tap hand uses, in GUI space. The hit-rect center, not the inner tip.
         bool CoachBranchAim(int branch, out Vector2 gui)
         {
             gui = default;
@@ -4766,15 +4924,7 @@ namespace FlockFive
             if ((uint)branch >= (uint)_board.Branches.Count) return false;
             var view = branches[branch];
             if (view == null) return false;
-            Vector3 focus = view.transform.position + Vector3.up * 0.4f;
-            var st = _board.Branches[branch];
-            int run = st.TipRun();
-            if (st.Count > 0 && run > 0)
-            {
-                int tip = st.Count - 1;
-                if (!TipBody(view, tip, out focus))
-                    focus = SeatOrWood(view, tip, view.transform.position);
-            }
+            var focus = BranchWoodCenter(view);
             var sp = cam.WorldToScreenPoint(focus);
             if (sp.z < 0f) return false;
             gui = new Vector2(sp.x, PhoneArea.H - sp.y);
@@ -5751,6 +5901,13 @@ namespace FlockFive
             }
             if (!have)
             {
+                // Fresh home: the glove is on LEVEL 1. Only that puck takes a tap.
+                if (HomePlayCueLive())
+                {
+                    gate.Step = GateGlove;
+                    gate.Target = FlowerPlayRect();
+                    return gate.Target.width >= 2f && gate.Target.height >= 2f;
+                }
                 // b103: every other lesson. Only the glove's armed target takes taps.
                 if (GloveFocusLive() && _gloveTapRectOn)
                 {
