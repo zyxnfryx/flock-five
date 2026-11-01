@@ -584,6 +584,9 @@ namespace FlockFive
             _bgSlamT = leftover > 0f ? leftover : 0f;
             _bgSlamWord = -1;
             _bgSlamStartedAt = PlayClock.Now;
+            // b119 (#220 + #221): the tell always plays first; entering DontCare re-arms the cancel beat so a
+            // cancelled boost visibly shatters before the round resolves.
+            _bgCancelT = 0f;
             _bgStage = BadgerStage.DontCare;
         }
 

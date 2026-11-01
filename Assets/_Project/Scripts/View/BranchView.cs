@@ -494,7 +494,7 @@ namespace FlockFive
         // live flames, during which the branch is already unusable (Burn() marks it Broken the moment it is struck).
         // Then the shared limb drop (BreakAway, 0.62 s). Total struck-to-gone: 0.58+0.62=1.2 s before, 1.5+0.62=2.12 s now.
         public const float ScorchSeconds = 1.5f;
-        const int FlameN = 14;
+        const int FlameN = 24; // v2: two overlapping rows (back row odd, front row even) for a dense wall
         SpriteRenderer[] _flames;
 
         // Char, a burn with animated flames, then the shared limb drop. Sync skips a breaking limb.
@@ -507,6 +507,7 @@ namespace FlockFive
             StrikeFx.Play(root, transform.position);
             Sfx.Crackle();
             BuildFlames();
+            BuildFlameGlow();
             StartCoroutine(ScorchDrop());
         }
 
@@ -516,20 +517,44 @@ namespace FlockFive
             _flames = new SpriteRenderer[FlameN];
             for (int i = 0; i < FlameN; i++)
             {
-                var go = WorldBuilder.Sprite("BurnFlame" + i, SpriteCatalog.Glow, transform.position, 0.4f, 16, transform);
+                var go = WorldBuilder.Sprite("BurnFlame" + i, SpriteCatalog.FlameTongue, transform.position, 0.4f, 16 + (i & 1), transform);
                 _flames[i] = go.GetComponent<SpriteRenderer>();
             }
         }
 
+        // v2 (mockup A): warm glow pooled along the burning limb, under the tongues.
+        SpriteRenderer _flameGlow;
+        void BuildFlameGlow()
+        {
+            if (_flameGlow != null) Object.Destroy(_flameGlow.gameObject);
+            var go = WorldBuilder.Sprite("BurnGlow", SpriteCatalog.Glow, transform.position, 1f, 15, transform);
+            _flameGlow = go.GetComponent<SpriteRenderer>();
+        }
+
         void DropFlames()
         {
+            if (_flameGlow != null) { Object.Destroy(_flameGlow.gameObject); _flameGlow = null; }
             if (_flames == null) return;
             for (int i = 0; i < _flames.Length; i++)
                 if (_flames[i] != null) Object.Destroy(_flames[i].gameObject);
             _flames = null;
         }
 
-        // Looping flicker along the wood: each tongue rises, swells and fades, then restarts, for the whole burn.
+        // b119 (Brandon picked Flames A): flame tongues rooted on the wood replace the rising round glows. Each tongue
+        // stands on the branch (pivot at its base), flickers in height and leans, taller toward the middle of the limb.
+        public static Vector3 FlameTongueScale(int i, int n, float t)
+        {
+            float u = (i + 0.5f) / n;
+            float mid = Mathf.Pow(Mathf.Sin(u * Mathf.PI), 0.7f);
+            float flick = 0.78f + 0.22f * Mathf.Sin(t * 13f + i * 1.9f) + 0.08f * Mathf.Sin(t * 29f + i * 0.7f);
+            float grow = Mathf.Clamp01(t / 0.18f);
+            float fade = Mathf.Clamp01((ScorchSeconds - t) / 0.25f);
+            float h = (0.55f + 0.6f * mid) * flick * grow * fade;
+            if ((i & 1) == 1) h *= 1.12f; // back row a little taller, peeking between the front tongues
+            float w = 1.25f + 0.18f * Mathf.Sin(i * 2.3f);
+            return new Vector3(w, h, 1f);
+        }
+
         void AnimateFlames(float t)
         {
             if (_flames == null) return;
@@ -543,17 +568,27 @@ namespace FlockFive
                 x1 = Mathf.Max(lo.x, hi.x);
                 y = lo.y;
             }
-            for (int i = 0; i < _flames.Length; i++)
+            int n = _flames.Length;
+            for (int i = 0; i < n; i++)
             {
                 var sr = _flames[i];
                 if (sr == null) continue;
-                float ph = Mathf.Repeat(t * 2.4f + i * 0.37f, 1f);
-                float fx = Mathf.Lerp(x0, x1, (i + 0.5f) / _flames.Length) + 0.08f * Mathf.Sin(t * 9f + i * 2.1f);
-                sr.transform.localPosition = new Vector3(fx, y + 0.05f + ph * 0.85f, 0f);
-                float sc = (0.42f + 0.36f * Mathf.Sin(ph * Mathf.PI)) * (0.85f + 0.15f * Mathf.Sin(t * 14f + i));
-                sr.transform.localScale = new Vector3(sc, sc * 1.35f, 1f);
-                float a = Mathf.Sin(ph * Mathf.PI);
-                sr.color = Color.Lerp(new Color(1f, 0.85f, 0.25f, a), new Color(1f, 0.32f, 0.06f, a), ph);
+                bool back = (i & 1) == 1;
+                float fx = Mathf.Lerp(x0, x1, (i + 0.5f) / n) + 0.03f * Mathf.Sin(i * 3.7f);
+                sr.transform.localPosition = new Vector3(fx, y - (back ? 0f : 0.04f), 0f);
+                sr.transform.localScale = FlameTongueScale(i, n, t);
+                sr.transform.localRotation = Quaternion.Euler(0f, 0f, 8f * Mathf.Sin(t * 5f + i * 1.3f) - 4f);
+                sr.color = back ? new Color(1f, 0.7f, 0.55f, 0.9f) : new Color(1f, 1f, 1f, 0.97f);
+            }
+            if (_flameGlow != null)
+            {
+                float grow = Mathf.Clamp01(t / 0.18f), fade = Mathf.Clamp01((ScorchSeconds - t) / 0.25f);
+                float pulse = 0.85f + 0.15f * Mathf.Sin(t * 11f);
+                var gs = _flameGlow.sprite != null ? _flameGlow.sprite.bounds.size : Vector3.one;
+                float span = Mathf.Max(0.4f, x1 - x0) * 1.15f;
+                _flameGlow.transform.localPosition = new Vector3((x0 + x1) * 0.5f, y + 0.12f, 0f);
+                _flameGlow.transform.localScale = new Vector3(span / Mathf.Max(0.01f, gs.x), 0.75f * pulse / Mathf.Max(0.01f, gs.y), 1f);
+                _flameGlow.color = new Color(1f, 0.55f, 0.15f, 0.55f * grow * fade * pulse);
             }
         }
 

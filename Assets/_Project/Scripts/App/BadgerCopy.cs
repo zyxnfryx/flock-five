@@ -44,6 +44,8 @@ namespace FlockFive
         public static readonly string[] DontCareWords = { "Honey", "Badger", "Don't", "Care" };
         // Caption after the slam resolves. Short, mild, original.
         public const string DontCareWasted = "Don't care.\nYour power-up did nothing.";
+        // b119: a cancelled power-up that leaves the two tiles level says so plainly.
+        public static string CancelTieLine(int player, int boss) => player + " vs " + boss + " \u2014 tie.\nYour power-up was cancelled.";
         public const string DontCareHalved = "Don't care.\nHalf your honey this round.";
 
         public static int DontCareWordCount => DontCareWords.Length;
@@ -70,7 +72,7 @@ namespace FlockFive
                 case BadgerPower.X2: return firstUnlock ? PowersOpen : "Tap x2.\nYour first one is free.";
                 case BadgerPower.X3: return "New: x3 triples your next tile.\nTap x3. Free this once.";
                 case BadgerPower.HotSauce: return "Hot Sauce replaces your weakest tile (it\nscores 0) and blocks the badger. Tap it.";
-                case BadgerPower.FreezeSpray: return "Freeze replaces your weakest tile (it scores 0)\nand blocks the badger for 2 rounds. Tap it.";
+                case BadgerPower.FreezeSpray: return "Freeze replaces your weakest tile (it scores 0)\nand blocks the badger: for 2 rounds he picks\nbut scores nothing. Tap it.";
             }
             return "";
         }
@@ -78,7 +80,7 @@ namespace FlockFive
         // Result beat for a block power's forced round: the badger did not score.
         public static string BlockWorkedLine(BadgerPower p)
         {
-            if (p == BadgerPower.FreezeSpray) return "Frozen! The badger scores nothing this round,\nthen spends the next one breaking free.";
+            if (p == BadgerPower.FreezeSpray) return "Frozen! He picks, but the badger scores nothing\nthis round and the next.";
             return "Blocked! The badger scores nothing.\nThe Hot Sauce tile scores 0.";
         }
 
@@ -169,8 +171,10 @@ namespace FlockFive
             return Spoken(line, mood);
         }
 
-        public const string BreakFree = "The badger spent his turn\nbreaking free!";
-        public const string FrozenSolid = "Frozen solid! He can't move.";
+        // b119 (Brandon): a frozen badger still picks; his pick just scores 0. The copy says so (was "can't move" /
+        // "spent his turn breaking free", which contradicted the tile he visibly picks).
+        public const string BreakFree = "Still thawing out!\nHis pick scores 0.";
+        public const string FrozenSolid = "Frozen! His pick scores 0.";
         // Hot Sauce is disabled while the badger is frozen (frozen turn and break-free turn).
         // Two authored lines (same words) so the shared caption fit never splits at "Hot / Sauce".
         public const string HotSauceFrozen = "Frozen badger.\nHot Sauce is on hold.";
@@ -183,12 +187,47 @@ namespace FlockFive
         public const string FreezeBreakFreeWait = "Still frozen. Tap the glowing comb.\n" + HotSauceFrozenFlat;
         public const string BlockedBoth = "Blocked! The badger scores nothing.";
 
-        public static string VerdictLine(BadgerRound r)
+        // b119 (Brandon): a won round no longer always says "Honey badger don't care." These rotate with no
+        // back-to-back repeat (BadgerWinLines); the signature line shows at most once per fight, only after
+        // SignatureMinWins earlier wins, on a SignatureChance roll.
+        public static readonly string[] WinLines =
         {
-            if (r.DontCare && r.Destroyed != BadgerPower.None) return DontCareWasted;
+            "Lucky.",
+            "That one stung.",
+            "Hmph.",
+            "Enjoy it while it lasts.",
+            "Badger's just warming up.",
+        };
+        // b119 (Brandon): the "power is ready" hint is a small pill in the pick band above the power row
+        // (never over the player's comb), two authored rows, and it fades out on its own.
+        public const string ReadyTail = " is ready.";
+        public static string ReadyLine(string powerName, bool block)
+            => powerName + ReadyTail + (block ? "\nNow pick a tile." : "\nTap a tile to boost.");
+        public static bool IsReadyLine(string line)
+            => !string.IsNullOrEmpty(line) && line.IndexOf(ReadyTail + "\n", System.StringComparison.Ordinal) > 0;
+        public const float ReadyHold = 1.5f;
+        public const float ReadyFade = 0.35f;
+        // 1 while held, then a fade to 0 at ReadyHold + ReadyFade.
+        public static float ReadyAlpha(float age)
+        {
+            if (age < ReadyHold) return 1f;
+            float u = (age - ReadyHold) / ReadyFade;
+            return u >= 1f ? 0f : 1f - u;
+        }
+
+        public const int SignatureMinWins = 2;
+        public const int SignatureChance = 25;
+
+        public static string VerdictLine(BadgerRound r) => VerdictLine(r, null);
+
+        // pool null (tests, old callers): a won round gets the first pool line.
+        public static string VerdictLine(BadgerRound r, BadgerWinLines pool)
+        {
+            if (r.DontCare && r.Destroyed != BadgerPower.None)
+                return r.PlayerFinal == r.BossFinal ? CancelTieLine(r.PlayerFinal, r.BossFinal) : DontCareWasted;
             if (r.DontCare && r.Halved) return DontCareHalved;
             if (r.FreezeBeat == 2) return BreakFree;
-            if (r.PlayerGained > 0) return DontCare;
+            if (r.PlayerGained > 0) return pool != null ? pool.Next() : WinLines[0];
             if (r.BossGained > 0) return MineNow;
             if (r.FreezeBeat == 1) return FrozenSolid;
             if (r.BossHeld) return BlockedBoth;
@@ -318,5 +357,48 @@ namespace FlockFive
         }
 
         public static float RevealExtra(BadgerPower p) => BadgerFight.IsBlock(p) ? Start + Seconds : 0f;
+    }
+
+    // b119: one fight's won-round lines. New per fight (BeginBadgerFight).
+    public sealed class BadgerWinLines
+    {
+        readonly System.Func<int, int> _next;
+        int _last = -1;
+        int _wins;
+        bool _signatureUsed;
+
+        public BadgerWinLines(System.Func<int, int> next) { _next = next; }
+
+        public bool SignatureUsed => _signatureUsed;
+        public int Wins => _wins;
+
+        public string Next()
+        {
+            int priorWins = _wins;
+            _wins++;
+            if (!_signatureUsed && priorWins >= BadgerCopy.SignatureMinWins && Roll(100) < BadgerCopy.SignatureChance)
+            {
+                _signatureUsed = true;
+                _last = -1;
+                return BadgerCopy.DontCare;
+            }
+            int n = BadgerCopy.WinLines.Length;
+            int i;
+            if (_last < 0) i = Roll(n);
+            else
+            {
+                i = Roll(n - 1);
+                if (i >= _last) i++;
+            }
+            _last = i;
+            return BadgerCopy.WinLines[i];
+        }
+
+        int Roll(int n)
+        {
+            if (n <= 1) return 0;
+            int v = _next != null ? _next(n) : 0;
+            return v < 0 ? 0 : v >= n ? n - 1 : v;
+        }
     }
 }

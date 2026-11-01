@@ -31,3 +31,5 @@ for n in ['bg_garden','bg_oasis','bg_winter','bg_fall','bg_spring']:
 s=Image.new('RGB',(270*5,480))
 for k,i in enumerate(sheet): s.paste(i,(270*k,0))
 s.save('sheet2.png')
+# b119 (Brandon picked Spring A): bg_spring repainted with more trees. Its mask = the corner rule above (bottom band from y>0.85)
+# top: (green&S>0.25|pink) y<0.24 x<0.45, right sprig; trees: (green&S>0.36|pink) 0.44<y<0.80 full width; low: (green&S>0.45|pink) y>0.86; blobs>=600px.

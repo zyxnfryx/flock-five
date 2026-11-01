@@ -118,6 +118,7 @@ namespace FlockFive.Editor
             Suite("build131-reset", Build131ResetTests.Run);
             Suite("usa-plane-day", UsaPlaneDayTests.Run);
             Suite("build119-fives", Build119FivesBoardTests.Run);
+            Suite("build119-playtest", Build119PlaytestTests.Run);
             Debug.Log("EDITOR_SUITES_DONE");
         }
 
@@ -485,7 +486,8 @@ namespace FlockFive.Editor
             "/tmp/flock-five-badger-power",
             "/tmp/flock-five-b129-badger",
             "/tmp/ff-badger-stack-shot",
-            "/tmp/ff-badger-fight-shot"
+            "/tmp/ff-badger-fight-shot",
+            "/tmp/flock-five-pr221"
         };
 
         static bool AnyShotCmd()
@@ -600,6 +602,7 @@ namespace FlockFive.Editor
                         TryStartShot(app, "/tmp/flock-five-b129-badger", "ShotB129");
                         TryStartShot(app, "/tmp/ff-badger-stack-shot", "ShotBadgerStack");
                         TryStartShot(app, "/tmp/ff-badger-fight-shot", "ShotBadgerFight");
+                        TryStartShot(app, "/tmp/flock-five-pr221", "ShotPr221");
                     }
                 }
             }

@@ -49,7 +49,8 @@ namespace FlockFive.Editor
             // Every existing line a repeat fight can show paints inside the bottom band on small to large screens.
             var lines = new[] { BadgerCopy.OpenLater, BadgerCopy.GoesFirst, BadgerCopy.HowMany, BadgerCopy.YourPick, BadgerCopy.Tie,
                 BadgerCopy.DontCare, BadgerCopy.MineNow, BadgerCopy.CoinsShort, BadgerCopy.Win, BadgerCopy.Lose,
-                BadgerCopy.DontCareWasted, BadgerCopy.DontCareHalved, BadgerCopy.BreakFree, BadgerCopy.FrozenSolid, BadgerCopy.BlockedBoth };
+                BadgerCopy.DontCareWasted, BadgerCopy.DontCareHalved, BadgerCopy.BreakFree, BadgerCopy.FrozenSolid, BadgerCopy.BlockedBoth, BadgerCopy.CancelTieLine(5, 5) };
+            lines = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(lines, BadgerCopy.WinLines));
             var sizes = new[] { new Vector2(375, 667), new Vector2(390, 844), new Vector2(430, 932) };
             int clipped = 0; string firstBad = "";
             foreach (var sz in sizes)

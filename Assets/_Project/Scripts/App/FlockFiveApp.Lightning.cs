@@ -74,11 +74,25 @@ namespace FlockFive
             _lightningStrikes++;
             LightningStrike.NotePlay();
             if (!force) LightningStrike.MarkStruck();
+            // b119 (Brandon): the bolt lands first, on the middle of the wood, then the limb ignites
+            // GardenStorm.IgniteDelay later, so the strike reads as the cause of the fire.
+            var aim = LightningStrike.AimPoint(view.transform.position, view.Wood != null, view.Wood != null ? view.Wood.bounds : default);
             ArmFireLesson(view.transform.position);
-            view.BeginScorch(_garden.Root);
-            GardenStorm.StrikeAt(view.transform.position);
+            GardenStorm.StrikeAt(aim);
+            StartCoroutine(IgniteAfterBolt(view, _garden.Root));
             RefreshBonusSigns();
             if (_shot82e) MuteShotAudio();
+        }
+
+        IEnumerator IgniteAfterBolt(BranchView view, Transform root)
+        {
+            float t = 0f;
+            while (t < GardenStorm.IgniteDelay)
+            {
+                yield return null;
+                t += Time.deltaTime;
+            }
+            if (view != null) view.BeginScorch(root);
         }
 
         BranchView ViewFor(int index)

@@ -295,6 +295,7 @@ namespace FlockFive
 
         void BeginBadgerFight()
         {
+            _bgWinLines = new BadgerWinLines(new System.Random(_bgSeed ^ 0x5b119).Next);
             _bgFight = new BadgerFight(_bgAppearance, _bgSeed, _bgLoadout.Honeys(),
                 BadgerPolish.BossTiles(_bgAppearance, _bgSeed), _bgCoachFight);
             SyncBadgerBed();
@@ -437,6 +438,13 @@ namespace FlockFive
                 case BadgerStage.DontCare:
                     StepDontCareSlam(dt);
                     if (!BadgerSlam.Done(_bgSlamT)) break;
+                    // b119: a cancelled power-up shatters, then a short pause, before the compare.
+                    if (_bgSlam.Destroyed != BadgerPower.None && !BadgerCancelBeat.Done(_bgCancelT))
+                    {
+                        if (_bgCancelT <= 0f) Sfx.CardBump();
+                        _bgCancelT += dt;
+                        break;
+                    }
                     FinishDontCareSlam();
                     break;
                 case BadgerStage.Verdict:
@@ -453,7 +461,13 @@ namespace FlockFive
                         SparkleFx.HoneySplash(_bgFxBird, 12);
                         SparkleFx.StreakSparks(_bgFxBird, 6);
                     }
-                    if (_bgT < BadgerVerdictHold || BadgerDotsBusy()) break;
+                    if (BadgerDotsBusy()) break;
+                    if (_bgT < BadgerCancelBeat.VerdictHold(BadgerCancelBeat.Cancelled(_bgRound), BadgerVerdictHold))
+                    {
+                        // b119: the cancel/tie hold is tap-skippable only after its tap lock.
+                        if (!(BadgerCancelBeat.Cancelled(_bgRound) && BadgerCancelBeat.TapSkips(_bgT) && _bgT >= BadgerVerdictHold
+                            && Pressed(out _))) break;
+                    }
                     if (_bgFight.Result != BadgerResult.Playing) BeginBadgerOutro();
                     else NextBadgerRound();
                     break;
@@ -652,7 +666,9 @@ namespace FlockFive
             else if (!won) _bgLine += "\nTap the Level button to try again.";
         }
 
-        static string BadgerVerdict(BadgerRound r) => BadgerCopy.VerdictLine(r);
+        BadgerWinLines _bgWinLines;
+        float _bgCancelT;
+        string BadgerVerdict(BadgerRound r) => BadgerCopy.VerdictLine(r, _bgWinLines);
 
         static string BadgerPowerName(BadgerPower p)
         {
@@ -752,9 +768,8 @@ namespace FlockFive
             _bgArmed = p;
             Sfx.CardTap();
             if (_bgPowerGuideOn) return; // the guide caption owns the line
-            _bgLine = BadgerFight.IsBlock(p)
-                ? BadgerPowerName(p) + " is ready. Now pick a tile."
-                : BadgerPowerName(p) + " is ready. Now pick the tile to boost.";
+            _bgLine = BadgerCopy.ReadyLine(BadgerPowerName(p), BadgerFight.IsBlock(p));
+            _bgReadyAt = PlayClock.Now;
         }
 
         void ClickBadgerTile(int i)
@@ -1943,8 +1958,8 @@ namespace FlockFive
                 }
                 else shatterT = (_bgT - Struggle) / Break;
             }
-            else if (_bgResolved && _bgRound.FreezeBeat == 1) { ice = 1f; r.x += SparkleFx.Shiver(now, 2.2f * s); }
-            else if (!_bgResolved && _bgFight.BossFrozenNow) { ice = 1f; r.x += SparkleFx.Shiver(now, 2.2f * s); }
+            else if (_bgResolved && _bgRound.FreezeBeat == 1) { ice = 1f; r.x += SparkleFx.IceShiver(now, 2.2f * s); }
+            else if (!_bgResolved && _bgFight.BossFrozenNow) { ice = 1f; r.x += SparkleFx.IceShiver(now, 2.2f * s); }
         }
 
         // b123: Hot Sauce / Freeze demo on the forced round. The icon flies from its button to the weakest tile and
@@ -2525,7 +2540,8 @@ namespace FlockFive
             {
                 if (thawing) return DrawBadgerThaw(spot, L, spr, block, foot, unit, BadgerIceAnim.ThawAge(now), out drawn);
                 float age = BadgerIceAnim.FreezeAge(now);
-                if (age >= BadgerIceAnim.ShiverFrom) foot.x += SparkleFx.Shiver(now, 2.2f * L.S * (age < BadgerIceAnim.FreezeSeconds ? 1.6f : 1f));
+                if (age >= BadgerIceAnim.ShiverFrom)
+                    foot.x += age < BadgerIceAnim.FreezeSeconds ? SparkleFx.Shiver(now, 2.2f * L.S * 1.6f) : SparkleFx.IceShiver(now, 2.2f * L.S);
                 block.x = foot.x - block.width * 0.5f;
                 if (age < BadgerIceAnim.FreezeSeconds)
                 {
@@ -2583,6 +2599,8 @@ namespace FlockFive
             GUI.DrawTextureWithTexCoords(r, sp.texture, new Rect(tr.x / tw, tr.y / th, tr.width / tw, tr.height / th), true);
             GUI.color = Color.white;
         }
+
+        public static bool BadgerFrozenVerdict(string line) => line == BadgerCopy.FrozenSolid || line == BadgerCopy.BreakFree;
 
         static bool BadgerFrozenLine(string line)
             => line == BadgerCopy.FreezeSprayFrozen || line == BadgerCopy.HotSauceFrozen;
@@ -2893,17 +2911,53 @@ namespace FlockFive
                 }
                 if (_bgPowerGuideOn && p == _bgGuidePower && BadgerPowerGuideStage() == 1) DrawBadgerGuideGlow(r);
                 bool dim = used || !inPick || guideBlocks;
+                // b119: USED is its own look (greyscale, ~45%, slashed), distinct from the not-your-turn dim.
+                bool spent = used && !armedNow && !frozenOut;
                 bool fire = BadgerPowerTile(rr, p, sub, dim, frozenOut && !armedNow, lit,
-                    live && inPick && (hsTap || (!used && !guideBlocks)), BadgerShakeX(BadgerPowerKey + (int)p, s));
+                    live && inPick && (hsTap || (!used && !guideBlocks)), BadgerShakeX(BadgerPowerKey + (int)p, s), spent);
                 if (frozenOut) DrawBadgerIceBadge(rr);
+                if (_bgStage == BadgerStage.DontCare && p == _bgSlam.Destroyed && BadgerSlam.Done(_bgSlamT)
+                    && BadgerCancelBeat.Shattering(_bgCancelT))
+                    DrawBadgerShatter(rr, BadgerCancelBeat.ShatterU(_bgCancelT));
                 if (fire) ClickBadgerPower(p);
             }
+        }
+
+        // b119: the cancelled power-up breaks apart: a white crack flash, then amber shards fly out and fade.
+        void DrawBadgerShatter(Rect r, float u)
+        {
+            if (!GuiPaint()) return;
+            var keep = GUI.matrix;
+            var prev = GUI.color;
+            try
+            {
+                var white = Texture2D.whiteTexture;
+                float flash = u < 0.25f ? 1f - u / 0.25f : 0f;
+                if (flash > 0f)
+                {
+                    GUI.color = new Color(1f, 1f, 1f, 0.75f * flash);
+                    GUI.DrawTexture(r, white, ScaleMode.StretchToFill, true, 0f, GUI.color, 0f, Mathf.Min(r.width, r.height) * 0.16f);
+                }
+                float a = 1f - u;
+                float sz = Mathf.Min(r.width, r.height) * 0.22f;
+                for (int i = 0; i < BadgerCancelBeat.Shards; i++)
+                {
+                    float ang = (i / (float)BadgerCancelBeat.Shards) * Mathf.PI * 2f + 0.4f;
+                    float dist = r.width * (0.1f + 0.75f * u);
+                    var c = new Vector2(r.center.x + Mathf.Cos(ang) * dist, r.center.y + Mathf.Sin(ang) * dist * 0.8f + u * u * r.height * 0.6f);
+                    GUI.matrix = keep;
+                    GUIUtility.RotateAroundPivot(ang * Mathf.Rad2Deg + u * 220f, c);
+                    var shard = new Rect(c.x - sz * 0.5f, c.y - sz * 0.3f, sz * (0.6f + 0.1f * (i % 3)), sz * 0.6f);
+                    GUI.DrawTexture(shard, white, ScaleMode.StretchToFill, true, 0f, new Color(1f, 0.78f, 0.3f, a), 0f, 1f);
+                }
+            }
+            finally { GUI.matrix = keep; GUI.color = prev; }
         }
 
         // b128 (Brandon's flat rounded-square mock): the one helper for all four power buttons. Painted icon on top,
         // then the name, then the price or state (FREE / $price, ARMED, USED, LOCKED, FROZEN). frozen = greyed face and
         // icon; the caller adds the ice badge. The hit pad is the whole rect, as before.
-        bool BadgerPowerTile(Rect hit, BadgerPower p, string sub, bool dim, bool frozen, bool lit, bool live, float shakeX)
+        bool BadgerPowerTile(Rect hit, BadgerPower p, string sub, bool dim, bool frozen, bool lit, bool live, float shakeX, bool spent = false)
         {
             hit.x += shakeX;
             bool held = false;
@@ -2918,7 +2972,8 @@ namespace FlockFive
             }
             var face = held ? Inset(hit, 0.03f) : hit;
             BadgerPowerTileColors(frozen, out var edge, out var fill, out var shine, out var line);
-            float a = frozen ? 1f : dim ? 0.85f : 1f;
+            if (spent) BadgerPowerSpentColors(out edge, out fill, out shine, out line);
+            float a = spent ? BadgerUsedLook.PlateAlpha : frozen ? 1f : dim ? 0.85f : 1f;
             float rad = Mathf.Min(face.width, face.height) * 0.16f;
             float bw = Mathf.Max(2f, face.height * 0.035f);
             var white = Texture2D.whiteTexture;
@@ -2938,20 +2993,47 @@ namespace FlockFive
 
             // icon on top, then the name, then the price or state
             var icon = new Rect(inner.x + inner.width * 0.12f, inner.y + inner.height * 0.07f, inner.width * 0.76f, inner.height * 0.50f);
-            DrawBadgerPowerIcon(icon, p, frozen ? 1f : dim ? 0.6f : 1f, frozen);
+            // Spent: the frozen (greyscale) icon path at the used alpha.
+            DrawBadgerPowerIcon(icon, p, spent ? BadgerUsedLook.IconAlpha : frozen ? 1f : dim ? 0.6f : 1f, frozen || spent);
             var st = BadgerStyle();
             string name = BadgerPowerTileName(p);
-            float ta = dim && !frozen ? 0.6f : 1f;
+            float ta = spent ? BadgerUsedLook.TextAlpha : dim && !frozen ? 0.6f : 1f;
             var nr = new Rect(inner.x + inner.width * 0.05f, inner.y + inner.height * 0.57f, inner.width * 0.90f, inner.height * 0.18f);
             st.fontSize = FitFont(st, name, nr.width, nr.height, 8, 48);
-            StampLight(nr, name, st, Fade(frozen ? new Color(0.86f, 0.86f, 0.88f) : BadgerPowerInk(p), ta));
+            StampLight(nr, name, st, Fade(frozen || spent ? new Color(0.86f, 0.86f, 0.88f) : BadgerPowerInk(p), ta));
             if (!string.IsNullOrEmpty(sub))
             {
                 var sr = new Rect(inner.x + inner.width * 0.05f, inner.y + inner.height * 0.75f, inner.width * 0.90f, inner.height * 0.20f);
                 st.fontSize = FitFont(st, sub, sr.width, sr.height, 8, 56);
                 StampLight(sr, sub, st, Fade(frozen ? new Color(0.88f, 0.88f, 0.90f) : Color.white, ta));
             }
+            if (spent) DrawBadgerUsedSlash(icon, Mathf.Max(2f, face.height * 0.05f));
             return fire;
+        }
+
+        // b119: one pale diagonal slash across the spent icon.
+        static void DrawBadgerUsedSlash(Rect icon, float w)
+        {
+            if (Event.current == null || Event.current.type != EventType.Repaint) return;
+            var keep = GUI.matrix;
+            try
+            {
+                var c = icon.center;
+                float len = Mathf.Sqrt(icon.width * icon.width + icon.height * icon.height) * 0.8f;
+                GUIUtility.RotateAroundPivot(-35f, c);
+                GUI.DrawTexture(new Rect(c.x - len * 0.5f, c.y - w * 0.5f, len, w), Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0f,
+                    new Color(0.92f, 0.92f, 0.92f, BadgerUsedLook.SlashAlpha), 0f, w * 0.5f);
+            }
+            finally { GUI.matrix = keep; }
+        }
+
+        // Neutral greys for a spent power-up (no orange), so it cannot read as available.
+        static void BadgerPowerSpentColors(out Color edge, out Color fill, out Color shine, out Color line)
+        {
+            edge = new Color(0.16f, 0.16f, 0.16f, 1f);
+            fill = new Color(0.33f, 0.33f, 0.33f, 1f);
+            shine = new Color(0.39f, 0.39f, 0.39f, 1f);
+            line = new Color(0.62f, 0.62f, 0.62f, 0.45f);
         }
 
         static Color Fade(Color c, float a) { c.a *= a; return c; }
@@ -3031,7 +3113,9 @@ namespace FlockFive
 
         // b128: the caption spot for the current line. 'Your pick.' takes the table's AbovePower seat; the rest keep
         // the shared badger.caption banner.
-        public static string BadgerCaptionSpot(string line) => line == BadgerCopy.YourPick ? "badger.pick" : "badger.caption";
+        public static string BadgerCaptionSpot(string line)
+            => line == BadgerCopy.YourPick || BadgerCopy.IsReadyLine(line) ? "badger.pick" : "badger.caption";
+        float _bgReadyAt = -9f;
 
         void DrawBadgerCaption(BadgerRects L)
         {
@@ -3041,7 +3125,9 @@ namespace FlockFive
             if (BadgerWinBannerLive()) { DrawBadgerWinBanner(L); return; }
             // v2 (b116 bug): a frozen line paints in the BadgerBottomBands caption slot under the power row, hard-broken
             // on its authored '/' rows, so the banner never lands across the arena and covers the fighters.
-            if (BadgerFrozenLine(_bgLine) && !BadgerTutorialFight())
+            // b119 (PR 221): the frozen / thawing verdicts ("His pick scores 0.") took the gold banner, which sat over the
+            // honeycomb and the 5-tiles on phones. They paint in the same clear band under the power row.
+            if ((BadgerFrozenLine(_bgLine) && !BadgerTutorialFight()) || BadgerFrozenVerdict(_bgLine))
             {
                 PaintBadgerBandCaption(_bgLine, BadgerCaptionSeat(L.Caption, s), s, BadgerCaptionFade.For(false, _coachFade));
                 return;
@@ -3049,7 +3135,13 @@ namespace FlockFive
             string spot = BadgerCaptionSpot(_bgLine);
             if (CaptionStyles.AbovePower(spot))
             {
-                DrawBadgerPickCaption(L, spot);
+                float pill = 1f;
+                if (BadgerCopy.IsReadyLine(_bgLine))
+                {
+                    pill = BadgerCopy.ReadyAlpha(PlayClock.Now - _bgReadyAt);
+                    if (pill <= 0f) { _bgLine = ""; return; }
+                }
+                DrawBadgerPickCaption(L, spot, pill);
                 return;
             }
             var gold = GoldCaption(_bgLine, PhoneArea.W, PhoneArea.H);
@@ -3073,10 +3165,10 @@ namespace FlockFive
 
         // Snug plate in L.Pick through the shared pinned caption box (same paint as the lesson line).
         // Shared dark caption plate (DrawSolidRound kind 0) and the shared banner ink, at the table entry's size and seat.
-        void DrawBadgerPickCaption(BadgerRects L, string spot)
+        void DrawBadgerPickCaption(BadgerRects L, string spot, float alpha = 1f)
         {
             var plate = BadgerPickPlate(L, spot, _bgLine, out var text, out int font);
-            float fade = BadgerCaptionFade.For(BadgerTutorialFight(), _coachFade);
+            float fade = BadgerCaptionFade.For(BadgerTutorialFight(), _coachFade) * alpha;
             if (fade < 0.02f) return;
             NoteTutorPlate(plate);
             DrawSolidRound(plate, Mathf.Min(plate.height * 0.30f, 14f * L.S), 0, fade * CaptionStyles.Ink(spot));

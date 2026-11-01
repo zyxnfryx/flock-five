@@ -184,6 +184,26 @@ namespace FlockFive
             _wasDry = false;
         }
 
+        // b119 (Brandon): the aimed strike on a gift branch is bigger and lingers so it is noticed:
+        // ~0.7 s life (was 0.46), a thicker trunk, and a white impact flash where it lands. The branch
+        // ignites IgniteDelay after the bolt (FlockFiveApp.IgniteAfterBolt).
+        public const float AimedBoltLife = 0.7f;
+        public const float AimedBoltThick = 0.5f;
+        public const float BigBoltThick = 0.36f;
+        public const float IgniteDelay = 0.15f;
+        public const float ImpactSeconds = 0.42f;
+        public const float ImpactScale = 2.6f;
+
+        public static float BoltLifeFor(bool big, bool aimed) => aimed ? AimedBoltLife : big ? 0.46f : 0.28f;
+        public static float BoltThickFor(bool big, bool aimed) => aimed ? AimedBoltThick : big ? BigBoltThick : 0.22f;
+        // Impact flash alpha: instant pop, short hold, then a fade to 0 at ImpactSeconds.
+        public static float ImpactAlpha(float age)
+        {
+            if (age < 0f || age >= ImpactSeconds) return 0f;
+            if (age < 0.08f) return 1f;
+            return 1f - (age - 0.08f) / (ImpactSeconds - 0.08f);
+        }
+
         // Showcase bolt. Branching fork, a brief darker sky, a light shake.
         // The fire and the falling limb are StrikeFx and BranchView.
         public static void StrikeAt(Vector3 world)
@@ -298,6 +318,11 @@ namespace FlockFive
             _flash = flashGo.GetComponent<SpriteRenderer>();
             _flash.color = new Color(0.82f, 0.88f, 1f, 0f);
             _flash.enabled = false;
+
+            var impactGo = WorldBuilder.Sprite("BoltImpact", SpriteCatalog.Glow, new Vector3(0f, -20f, 0.2f), ImpactScale, 20, transform);
+            _impact = impactGo.GetComponent<SpriteRenderer>();
+            _impact.color = new Color(1f, 0.98f, 0.9f, 0f);
+            _impact.enabled = false;
 
             FullFrame(out float left, out float right, out float bottom, out float top);
             BuildSheet(left, right, bottom, top);
@@ -714,6 +739,7 @@ namespace FlockFive
             }
 
             PaintFlash();
+            PaintImpact();
             if (_boltOn)
             {
                 float age = PlayClock.Now - _boltAt;
@@ -817,7 +843,8 @@ namespace FlockFive
             EndBolt();
             _boltOn = true;
             _boltAt = PlayClock.Now;
-            _boltLife = big ? 0.46f : 0.28f;
+            bool aimed = _aimOn;
+            _boltLife = BoltLifeFor(big, aimed);
             _boltPow = big ? 1f : Mathf.Clamp01(power);
             Frame(out float left, out float right, out float bottom, out float top);
             float x0 = Random.Range(left * 0.62f, right * 0.62f);
@@ -836,7 +863,8 @@ namespace FlockFive
                 x1 = x0 + Random.Range(-1.8f, 1.8f);
                 y1 = Mathf.Lerp(bottom + 2.6f, bottom + 0.55f, Mathf.Clamp01(power));
             }
-            float thick = big ? 0.36f : 0.22f;
+            float thick = BoltThickFor(big, aimed);
+            if (aimed) StartImpact(x1, y1);
             Lay(x0, y0, x1, y1, big ? 8 : 6, big ? 0.9f : 0.55f, thick, true);
             int forks = big ? (LeanFrame() ? 2 : 4) : (LeanFrame() ? 1 : 2);
             for (int f = 0; f < forks; f++)
@@ -941,6 +969,28 @@ namespace FlockFive
                 if (sr == null || !sr.enabled) continue;
                 sr.color = _segMul[i] > 0.9f ? core : limb;
             }
+        }
+
+        SpriteRenderer _impact;
+        float _impactAt = -9f;
+
+        void StartImpact(float x, float y)
+        {
+            if (_impact == null) return;
+            _impact.transform.position = new Vector3(x, y, 0.2f);
+            _impactAt = PlayClock.Now;
+            _impact.enabled = true;
+            PaintImpact();
+        }
+
+        void PaintImpact()
+        {
+            if (_impact == null || !_impact.enabled) return;
+            float a = ImpactAlpha(PlayClock.Now - _impactAt);
+            if (a <= 0f) { _impact.enabled = false; return; }
+            var c = _impact.color;
+            c.a = a;
+            _impact.color = c;
         }
 
         void EndBolt()
