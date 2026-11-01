@@ -13647,7 +13647,7 @@ namespace FlockFive
             float bandTop = below;
             float bandBot = btnY;
             float rowY = bandTop + Mathf.Max(0f, bandBot - bandTop - cardH) * 0.5f - PokerRowLiftPx();
-            float clearTab = payTab.yMax + 8f * s;
+            float clearTab = PokerFivesIconBox(payTab, s).yMax + 8f * s;
             if (rowY < clearTab && clearTab + cardH <= bandBot - 8f * s)
                 rowY = clearTab;
             float maxY = bandBot - cardH - 8f * s;
@@ -13664,6 +13664,7 @@ namespace FlockFive
                 MaybePokerHandAd();
             }
             var rowBox = new Rect(rowX, rowY, rowW, cardH);
+            _pokerRowLast = rowBox;
             _pokerRowBottom = rowBox.yMax;
             bool payBlockedEarly = _pokerPayOpen || _pokerPayAnim > 0.35f || _fivesOpen || _fivesAnim > 0.35f;
             bool canHold = !PokerMotionBusy() && !payBlockedEarly && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt;

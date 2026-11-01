@@ -118,12 +118,36 @@ namespace FlockFive.Editor
                 && !FlockFiveApp.FivesChipTappable(BirdPoker.Phase.Idle, true, false, false)
                 && !FlockFiveApp.FivesChipTappable(BirdPoker.Phase.Idle, false, true, false)
                 && !FlockFiveApp.FivesChipTappable(BirdPoker.Phase.Idle, false, false, true), "");
-            Check("chip label", FlockFiveApp.FivesChipLabel(6) == "★ FIVES 6/16", FlockFiveApp.FivesChipLabel(6));
+            Check("badge label found/16", FlockFiveApp.FivesBadgeLabel(6) == "6/16" && FlockFiveApp.FivesBadgeLabel(16) == "16/16", FlockFiveApp.FivesBadgeLabel(6));
 
-            // 8. Chip sits left of PAY TABLE, same row; board fits each device.
+            // 8. Option A: trophy icon directly under PAY TABLE, right edges aligned, 44pt square hit rect,
+            //    inside the safe area on iPhone 18 Pro / iPad A16 (pillar) / Samsung S25.
             var tab = new Rect(300f, 120f, 86f, 24f);
-            var chip = FlockFiveApp.PokerFivesChipBox(tab, 1f);
-            Check("chip left of PAY TABLE, same row and size", chip.xMax < tab.x && Mathf.Approximately(chip.y, tab.y) && Mathf.Approximately(chip.width, tab.width), chip.ToString());
+            var chip = FlockFiveApp.PokerFivesIconBox(tab, 1f);
+            Check("icon under PAY TABLE, right-aligned, 44pt hit rect",
+                chip.y >= tab.yMax && chip.y - tab.yMax <= 8f && Mathf.Approximately(chip.xMax, tab.xMax)
+                && Mathf.Approximately(chip.width, 44f) && Mathf.Approximately(chip.height, 44f), chip.ToString());
+            var c2 = FlockFiveApp.PokerFivesIconBox(tab, 2f);
+            Check("icon hit rect scales with s (44pt)", Mathf.Approximately(c2.width, 88f) && Mathf.Approximately(c2.xMax, tab.xMax), c2.ToString());
+            {
+                var devs = new[] { new Vector4(402f, 874f, 0f, 0f), new Vector4(820f, 1180f, 0f, 0f), new Vector4(360f, 780f, 0f, 0f), new Vector4(402f, 874f, 59f, 34f) };
+                bool safeOk = true; string sd = "";
+                foreach (var dv in devs)
+                {
+                    var safe = new Rect(0f, dv.z, dv.x, dv.y - dv.z - dv.w);
+                    var pt = FlockFiveApp.PokerPayTabBox(dv.x, safe, safe.y + 120f, 1f);
+                    var ic = FlockFiveApp.PokerFivesIconBox(pt, 1f);
+                    bool ok = ic.xMin >= safe.xMin && ic.xMax <= safe.xMax && ic.yMin >= pt.yMax && ic.yMax <= safe.yMax
+                        && Mathf.Approximately(ic.xMax, pt.xMax) && !ic.Overlaps(pt);
+                    sd += dv.x + "x" + dv.y + (ok ? " ok " : " BAD ") + ic + "; ";
+                    safeOk &= ok;
+                }
+                Check("icon inside safe area, clear of PAY TABLE, each device", safeOk, sd);
+            }
+            string fb = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.FivesBoard.cs");
+            Check("no ★ FIVES chip left (Option A)", !fb.Contains("★ FIVES") && !fb.Contains("PokerFivesChipBox"), "");
+            string appRow = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");
+            Check("card row clears the trophy icon", appRow.Contains("float clearTab = PokerFivesIconBox(payTab, s).yMax + 8f * s;"), "");
             var sizes = new[] { new Vector2(402f, 874f), new Vector2(820f, 1180f), new Vector2(360f, 780f) };
             bool fits = true; string fd = "";
             foreach (var z in sizes)

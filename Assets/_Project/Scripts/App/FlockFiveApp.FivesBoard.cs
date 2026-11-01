@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // b119 (Brandon): "Five of a Kind" trophy board. A ★ FIVES n/16 chip left of the PAY TABLE
+    // b119 (Brandon): "Five of a Kind" trophy board. A trophy medallion (found/16 pill) under the PAY TABLE
     // tab opens a board of every five-of-a-kind slot: 5 colors × 3 looks + FIVE WILDS.
     // Unhit = dark silhouette + "?"; hit = full card, ×count · first date, ★ if ever natural.
     // Record lives in BirdPoker (flockfive.poker.fives.v1). FULLCARD never clears punch.v1,
@@ -14,15 +14,16 @@ namespace FlockFive
         bool _fivesChipHeld;
         GUIStyle _fivesChipSt, _fivesTitleSt, _fivesSubSt, _fivesCapSt, _fivesQSt;
 
-        public const string FivesChipPrefix = "★ FIVES ";
+        // b119 Option A (Brandon): a round trophy medallion with a found/16 pill, directly under PAY TABLE,
+        // right edges aligned. 44pt tap target, no button chrome.
+        public const float FivesIconPt = 44f;
 
-        public static string FivesChipLabel(int found) => FivesChipPrefix + found + "/" + BirdPoker.PunchKinds;
+        public static string FivesBadgeLabel(int found) => found + "/" + BirdPoker.PunchKinds;
 
-        // Same size as the PAY TABLE tab, sitting just left of it.
-        public static Rect PokerFivesChipBox(Rect payTab, float s)
+        public static Rect PokerFivesIconBox(Rect payTab, float s)
         {
-            float w = payTab.width;
-            return new Rect(payTab.x - 8f * s - w, payTab.y, w, payTab.height);
+            float d = FivesIconPt * s;
+            return new Rect(payTab.xMax - d, payTab.yMax + 6f * s, d, d);
         }
 
         // No hand in play: idle (fresh or showing a settled result), nothing animating, no overlay.
@@ -48,7 +49,7 @@ namespace FlockFive
                 }
                 return;
             }
-            var chip = PokerFivesChipBox(payTab, s);
+            var chip = PokerFivesIconBox(payTab, s);
             if (!FivesChipLive()) { _fivesChipHeld = false; return; }
             if (HitPad(chip, out bool held))
             {
@@ -61,25 +62,126 @@ namespace FlockFive
         void DrawPokerFivesChip(Rect payTab, float s)
         {
             if (!GuiPaint()) return;
-            var tab = PokerFivesChipBox(payTab, s);
+            var box = PokerFivesIconBox(payTab, s);
+            _fivesIconLast = box; _fivesPayLast = payTab;
             bool live = FivesChipLive() || _fivesOpen;
-            float sink = _fivesChipHeld ? 2f : 0f;
-            var chip = new Rect(tab.x, tab.y + sink, tab.width, tab.height - sink);
             float a = live ? 1f : 0.55f;
-            GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.45f * a);
-            GUI.DrawTexture(new Rect(chip.x + 2f, chip.y + 3f, chip.width, chip.height), Texture2D.whiteTexture);
-            GUI.color = new Color(0.78f, 0.58f, 0.18f, 0.92f * a);
-            GUI.DrawTexture(chip, Texture2D.whiteTexture);
-            GUI.color = new Color(0.62f, 0.12f, 0.16f, 0.96f * a);
-            GUI.DrawTexture(new Rect(chip.x + 3f * s, chip.y + 3f * s, chip.width - 6f * s, chip.height - 6f * s), Texture2D.whiteTexture);
-            GUI.color = new Color(0.88f, 0.28f, 0.32f, 0.55f * a);
-            GUI.DrawTexture(new Rect(chip.x + 5f * s, chip.y + 4f * s, chip.width - 10f * s, chip.height * 0.38f), Texture2D.whiteTexture);
-            GUI.color = Color.white;
+            float sink = _fivesChipHeld ? 2f * s : 0f;
+            float md = box.width * 0.90f;
+            var disc = new Rect(box.x, box.y + sink, md, md);
+            GUI.color = new Color(0.05f, 0.03f, 0.01f, 0.45f * a);
+            GUI.DrawTexture(new Rect(disc.x + 1.5f * s, disc.y + 2.5f * s, md, md), FivesMedalTex(), ScaleMode.StretchToFill, true);
+            GUI.color = new Color(1f, 1f, 1f, a);
+            GUI.DrawTexture(disc, FivesMedalTex(), ScaleMode.StretchToFill, true);
+            float ph = box.height * 0.36f, pw = box.width * 0.70f;
+            var pill = new Rect(box.xMax - pw, box.yMax - ph + sink * 0.5f, pw, ph);
+            GUI.DrawTexture(pill, FivesPillTex(), ScaleMode.StretchToFill, true);
             if (_fivesChipSt == null)
-                _fivesChipSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false, clipping = TextClipping.Clip };
-            string lab = FivesChipLabel(BirdPoker.FivesFound());
-            _fivesChipSt.fontSize = FitFont(_fivesChipSt, lab, chip.width * 0.90f, chip.height * 0.72f, 10, 26);
-            StampLight(chip, lab, _fivesChipSt, new Color(1f, 0.94f, 0.72f, a));
+                _fivesChipSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false, clipping = TextClipping.Overflow };
+            string lab = FivesBadgeLabel(BirdPoker.FivesFound());
+            _fivesChipSt.fontSize = FitFont(_fivesChipSt, lab, pw * 0.78f, ph * 0.70f, 6, 40);
+            _fivesChipSt.normal.textColor = new Color(1f, 0.95f, 0.80f, a);
+            GUI.Label(pill, lab, _fivesChipSt);
+            GUI.color = Color.white;
+        }
+
+        static Texture2D _fivesMedalTex, _fivesPillTex;
+        Rect _fivesIconLast, _fivesPayLast, _pokerRowLast;
+
+        static float FivesAA(float d, float px) => Mathf.Clamp01(0.5f - d / px);
+
+        static Color FivesOver(Color dst, Color src, float k)
+        {
+            k *= src.a;
+            return new Color(Mathf.Lerp(dst.r, src.r, k), Mathf.Lerp(dst.g, src.g, k), Mathf.Lerp(dst.b, src.b, k), dst.a + (1f - dst.a) * k);
+        }
+
+        // Dark-wood medallion, gold rim, gold cup, cream star. CPU painted once.
+        static Texture2D FivesMedalTex()
+        {
+            if (_fivesMedalTex != null) return _fivesMedalTex;
+            const int N = 192;
+            var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            var px = new Color[N * N];
+            float pix = 2f / N;
+            var gold = new Color(0.93f, 0.72f, 0.24f, 1f);
+            var goldDk = new Color(0.62f, 0.42f, 0.10f, 1f);
+            var goldHi = new Color(1f, 0.90f, 0.55f, 1f);
+            var cream = new Color(1f, 0.96f, 0.84f, 1f);
+            for (int y = 0; y < N; y++)
+            for (int x = 0; x < N; x++)
+            {
+                float u = (x + 0.5f) / N * 2f - 1f, v = (y + 0.5f) / N * 2f - 1f;
+                float r = Mathf.Sqrt(u * u + v * v);
+                var c = new Color(0, 0, 0, 0);
+                // gold rim
+                float rimK = FivesAA(r - 0.98f, pix);
+                float lit = Mathf.Clamp01(0.5f + 0.5f * (v * 0.7f - u * 0.3f));
+                c = FivesOver(c, Color.Lerp(goldDk, goldHi, lit), rimK);
+                // wood face
+                float faceK = FivesAA(r - 0.82f, pix);
+                float grain = 0.5f + 0.5f * Mathf.Sin((v + 0.08f * Mathf.Sin(u * 7f)) * 46f);
+                var wood = Color.Lerp(new Color(0.20f, 0.11f, 0.05f, 1f), new Color(0.33f, 0.19f, 0.09f, 1f), grain * 0.6f + (1f - r) * 0.4f);
+                c = FivesOver(c, wood, faceK);
+                // inner gold hairline
+                float lineK = FivesAA(Mathf.Abs(r - 0.82f) - 0.018f, pix);
+                c = FivesOver(c, gold, lineK * 0.9f);
+                // cup bowl: v 0.00..0.52, half-width 0.40 at top tapering round to bottom
+                float bowlTop = 0.52f, bowlBot = -0.06f;
+                float tv = Mathf.Clamp01((v - bowlBot) / (bowlTop - bowlBot));
+                float hw = 0.40f * Mathf.Sqrt(Mathf.Clamp01(1f - (1f - tv) * (1f - tv)));
+                float bowl = Mathf.Max(Mathf.Abs(u) - hw, Mathf.Max(v - bowlTop, bowlBot - v));
+                // handles: rings either side
+                float hr = Mathf.Abs(Mathf.Sqrt((Mathf.Abs(u) - 0.40f) * (Mathf.Abs(u) - 0.40f) + (v - 0.30f) * (v - 0.30f)) - 0.13f) - 0.035f;
+                float handle = Mathf.Abs(u) > 0.36f ? hr : 9f;
+                float stem = Mathf.Max(Mathf.Abs(u) - 0.06f, Mathf.Max(v - -0.04f, -0.30f - v));
+                float plinth = Mathf.Max(Mathf.Abs(u) - 0.17f, Mathf.Max(v - -0.30f, -0.38f - v));
+                float foot = Mathf.Max(Mathf.Abs(u) - 0.27f, Mathf.Max(v - -0.40f, -0.50f - v));
+                float cup = Mathf.Min(Mathf.Min(bowl, handle), Mathf.Min(stem, Mathf.Min(plinth, foot)));
+                float cupK = FivesAA(cup, pix);
+                float shade = Mathf.Clamp01(0.55f - u * 0.9f + v * 0.25f);
+                c = FivesOver(c, Color.Lerp(goldDk, goldHi, shade), cupK);
+                // star on the bowl
+                float sx = u, sy = v - 0.25f;
+                float ang = Mathf.Atan2(sy, sx) - Mathf.PI * 0.5f;
+                float seg = Mathf.PI * 2f / 5f;
+                float m = Mathf.Repeat(ang + seg * 0.5f, seg) - seg * 0.5f;
+                float ro = 0.20f, ri = 0.085f;
+                float lim = Mathf.Lerp(ro, ri, Mathf.Abs(m) / (seg * 0.5f));
+                float sr = Mathf.Sqrt(sx * sx + sy * sy);
+                c = FivesOver(c, cream, FivesAA(sr - lim, pix) * cupK);
+                px[y * N + x] = c;
+            }
+            t.SetPixels(px);
+            t.Apply(false, true);
+            t.hideFlags = HideFlags.HideAndDontSave;
+            return _fivesMedalTex = t;
+        }
+
+        // Red pill, gold border.
+        static Texture2D FivesPillTex()
+        {
+            if (_fivesPillTex != null) return _fivesPillTex;
+            const int W = 160, H = 82;
+            var t = new Texture2D(W, H, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            var px = new Color[W * H];
+            float rad = H * 0.5f - 1f;
+            for (int y = 0; y < H; y++)
+            for (int x = 0; x < W; x++)
+            {
+                float cx = Mathf.Clamp(x + 0.5f, rad + 1f, W - rad - 1f);
+                float d = Mathf.Sqrt((x + 0.5f - cx) * (x + 0.5f - cx) + (y + 0.5f - H * 0.5f) * (y + 0.5f - H * 0.5f)) - rad;
+                var c = new Color(0, 0, 0, 0);
+                c = FivesOver(c, new Color(0.95f, 0.75f, 0.28f, 1f), FivesAA(d, 1.5f));
+                float inner = d + 7f;
+                var red = Color.Lerp(new Color(0.55f, 0.08f, 0.10f, 1f), new Color(0.80f, 0.16f, 0.18f, 1f), (float)y / H);
+                c = FivesOver(c, red, FivesAA(inner, 1.5f));
+                px[y * W + x] = c;
+            }
+            t.SetPixels(px);
+            t.Apply(false, true);
+            t.hideFlags = HideFlags.HideAndDontSave;
+            return _fivesPillTex = t;
         }
 
         // Board geometry, shared by the draw and the editor stills log.
