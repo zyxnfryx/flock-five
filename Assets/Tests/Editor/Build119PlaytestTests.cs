@@ -112,6 +112,22 @@ namespace FlockFive.Editor
             var cancelLose = new BadgerRound { DontCare = true, Destroyed = BadgerPower.X2, PlayerFinal = 3, BossFinal = 5, BossGained = 5 };
             Check("cancel-lose-line", BadgerCopy.VerdictLine(cancelLose) == BadgerCopy.DontCareWasted, "");
             Check("cancel-stage-wired", app4.IndexOf("BadgerCancelBeat.Done(_bgCancelT)") > 0 && app4.IndexOf("DrawBadgerShatter(rr") > 0, "");
+            {
+                // #220 + #221: the slam plays the SlamTell first, then enters DontCare with the cancel beat re-armed,
+                // and DontCare holds a cancelled boost (shatter + pause) before the round resolves.
+                string show = Src("Assets/_Project/Scripts/App/FlockFiveApp.BadgerShow.cs");
+                int play = show.IndexOf("void PlaySlamTell("), step = show.IndexOf("void StepSlamTell("), next = show.IndexOf("void StepDontCareSlam(");
+                string playBody = play > 0 && step > play ? show.Substring(play, step - play) : "";
+                string stepBody = step > 0 && next > step ? show.Substring(step, next - step) : "";
+                int arm = stepBody.IndexOf("_bgCancelT = 0f;"), enter = stepBody.IndexOf("_bgStage = BadgerStage.DontCare;");
+                bool tellFirst = playBody.Contains("_bgStage = BadgerStage.SlamTell;") && !playBody.Contains("BadgerStage.DontCare");
+                bool cancelSeen = app4.IndexOf("case BadgerStage.SlamTell:") > 0 && app4.IndexOf("StepSlamTell(dt)") > 0
+                    && app4.IndexOf("_bgSlam.Destroyed != BadgerPower.None && !BadgerCancelBeat.Done(_bgCancelT)") > app4.IndexOf("case BadgerStage.DontCare:");
+                Check("slam-tell-then-dontcare-cancel", tellFirst && arm > 0 && enter > arm && cancelSeen,
+                    "tellFirst " + tellFirst + " arm " + arm + " enter " + enter + " cancelSeen " + cancelSeen);
+                // Cancel beat actually runs: Destroyed boost keeps DontCare open past the slam until the beat is done.
+                Check("cancel-holds-dontcare", !BadgerCancelBeat.Done(0f) && BadgerCancelBeat.Done(BadgerCancelBeat.Duration + 0.01f), "");
+            }
             Check("cancel-under-heal", BadgerCancelBeat.Duration < TutorialHeal.MaxGateSeconds, "");
 
             // (8) USED look.

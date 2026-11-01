@@ -147,7 +147,7 @@ namespace FlockFive
             _rng = new Random(seed);
             _slamRng = new Random(unchecked(seed * 486187739 + 0x5EED));
             if (playerTiles == null) playerTiles = BadgerSchedule.PlayerLoadout(BadgerSchedule.Tiles);
-            if (bossTiles == null) bossTiles = BadgerSchedule.BossTileMix(_appearance, seed);
+            if (bossTiles == null) bossTiles = BadgerPolish.BossTiles(_appearance, seed);
             _player = Copy(playerTiles);
             _boss = Copy(bossTiles);
             _playerOpen = AllOpen(_player.Length);
@@ -423,15 +423,22 @@ namespace FlockFive
         // `next(100)` must return 0..99 (System.Random.Next shape); tests inject it.
         // Not eligible (no roll, chance unchanged): first move of the fight, the round right
         // after a hit, before both picks, a second call this round, or a decided contest.
-        // Miss: chance +5. Hit: chance back to 10, then for this round only either the armed
-        // power-up is destroyed (coins stay spent, its used flag stays set, no multiply /
-        // block / Freeze carry) or, with no power-up, the player's honey is halved for the
-        // compare. Totals already scored are never touched.
+        // Miss: stored chance +5. Hit: stored chance back to 10, then for this round only
+        // either the armed power-up is destroyed (coins stay spent, its used flag stays set,
+        // no multiply / block / Freeze carry) or, with no power-up, the player's honey is
+        // halved for the compare. Totals already scored are never touched.
+        // Desperate (player already near the target) rolls against stored chance + BadgerPolish
+        // bump. The bump is not stored.
         public bool TryDontCare(Func<int, int> next, out BadgerDontCare slam)
         {
             slam = default;
-            slam.ChanceBefore = _dontCareChance;
-            slam.ChanceAfter = _dontCareChance;
+            int stored = _dontCareChance;
+            // Desperate fights roll against a higher chance. The stored chance still
+            // steps by DontCareStep, so a miss is +5 from the stored number, not from the bump.
+            var mood = BadgerPolish.Mood(PlayerScore, PlayerTarget, false);
+            int face = BadgerPolish.SlamChance(stored, mood);
+            slam.ChanceBefore = stored;
+            slam.ChanceAfter = stored;
             if (Result != BadgerResult.Playing) return false;
             if (_bossPick < 0 || _playerPick < 0) return false;
             if (_dontCareRolled) return false;
@@ -441,6 +448,7 @@ namespace FlockFive
             // Coach fight: no roll at all before the forced move (chance unchanged).
             if (DontCareCoachHold(_coachFight, _roundsResolved, _dontCareForceSpent)) return false;
             slam.Eligible = true;
+            slam.ChanceBefore = face;
             if (DontCareForced(_coachFight, _roundsResolved, _dontCareLastHit, _dontCareForceSpent))
             {
                 // Tutorial force: no roll is drawn; the hit resets the chance like any hit.
@@ -453,9 +461,9 @@ namespace FlockFive
                 if (roll < 0) roll = 0;
                 if (roll > 99) roll = 99;
                 slam.Roll = roll;
-                slam.Hit = roll < _dontCareChance;
+                slam.Hit = roll < face;
             }
-            _dontCareChance = DontCareChanceAfter(_dontCareChance, slam.Hit);
+            _dontCareChance = DontCareChanceAfter(stored, slam.Hit);
             slam.ChanceAfter = _dontCareChance;
             if (!slam.Hit) return false;
             // Any hit in the coach fight means the player has seen the slam: no force after it.
