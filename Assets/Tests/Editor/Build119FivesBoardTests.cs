@@ -161,11 +161,11 @@ namespace FlockFive.Editor
                     var pt = FlockFiveApp.PokerPayTabBox(dv.x, safe, safe.y + 90f, 1f);
                     var ic = FlockFiveApp.PokerFivesIconBox(pt, 1f, dv.x);
                     float rPay = dv.x - pt.xMax, rIcon = dv.x - ic.xMax, top = pt.y - safe.yMin, mid = ic.y - pt.yMax;
-                    bool ok = Mathf.Abs(rPay - rIcon) < 0.01f && Mathf.Abs(rPay - mid) < 0.01f && rPay > 0f && rPay <= 12f;
+                    bool ok = Mathf.Abs(rPay - rIcon) < 0.01f && Mathf.Abs(rPay + FlockFiveApp.FivesIconExtraGap - mid) < 0.01f && rPay > 0f && rPay <= 12f;
                     ud += dv.x + "x" + dv.y + " right " + rPay + "/" + rIcon + " gap " + mid + " (top " + top + ")" + (ok ? " ok; " : " BAD; ");
                     uni &= ok;
                 }
-                Check("uniform padding: icon right inset = PAY TABLE's, PAY->icon gap = right inset (snug)", uni, ud);
+                Check("uniform padding: icon right inset = PAY TABLE's, PAY->icon gap = right inset + smidge", uni, ud);
             }
             string fb = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.FivesBoard.cs");
             Check("no ★ FIVES chip left (Option A)", !fb.Contains("★ FIVES") && !fb.Contains("PokerFivesChipBox"), "");
