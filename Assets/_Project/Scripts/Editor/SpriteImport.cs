@@ -52,6 +52,14 @@ namespace FlockFive.Editor
             if (assetPath.Contains("fx_vine")) imp.spritePivot = new Vector2(0.5f, 0.94f);
             else if (assetPath.Contains("fx_leaf")) imp.spritePivot = new Vector2(0.5f, 0.08f);
             else imp.spritePivot = new Vector2(0.5f, 0.5f);
+            if (assetPath.Contains("/Sprites/Badger/") && assetPath.Contains("_wear_"))
+            {
+                // leap_3 padded is 1117 wide; 1024 would shrink the canvas and the foot would jump.
+                imp.maxTextureSize = 2048;
+                SetPlatformMax(imp, "iPhone", 2048);
+                SetPlatformMax(imp, "Android", 2048);
+                SetPlatformMax(imp, "Standalone", 2048);
+            }
             if (TryCompressedFormat(assetPath, out var format))
             {
                 ApplyPlatformAstc(imp, "iPhone", format);
@@ -143,6 +151,13 @@ namespace FlockFive.Editor
         public static void ApplyAndroidOpaqueAstc(TextureImporter imp)
         {
             ApplyPlatformAstc(imp, "Android", TextureImporterFormat.ASTC_6x6);
+        }
+
+        static void SetPlatformMax(TextureImporter imp, string platform, int max)
+        {
+            var settings = imp.GetPlatformTextureSettings(platform);
+            settings.maxTextureSize = max;
+            imp.SetPlatformTextureSettings(settings);
         }
 
         public static void ApplyPlatformAstc(TextureImporter imp, string platform, TextureImporterFormat format)

@@ -71,6 +71,10 @@ namespace FlockFive
         float _bgLeftAtL = -1f;
         float _bgLeftAtR = -1f;
         string _bgLine = "";
+        // Final blow. Flash, one beat of silence, then the win fanfare.
+        bool _bgBlow;
+        float _bgBlowT;
+        bool _bgBlowSung;
         readonly string[] _bgPrice = new string[5];
         int _bgFlagDisplay;
         int _bgRoundN;
@@ -98,6 +102,30 @@ namespace FlockFive
         BadgerHex _bgYouHex;            // the page's own comb grid, stored per frame: glove, gate, hit pad and paint share it
         bool _bgYouHexOk;
         Rect _bgYouSlotNow, _bgBossSlotNow; // arena tiles as painted this frame (arrow targets)
+        // Boss pick-token, painted after the badger. The rect is the same one the arena computed.
+        bool _bgTokenLive;
+        Rect _bgTokenRect;
+        int _bgTokenHoney;
+        bool _bgTokenBlock;
+        bool _bgTokenWin;
+        float _bgTokenIce;
+        float _bgTokenShatter;
+        // Mood lean eases. Wear punch fires on a stage change. Both start settled.
+        bool _bgLeanInit;
+        float _bgLeanFrom;
+        float _bgLeanTo;
+        float _bgLeanAt;
+        BadgerMood _bgLeanMood;
+        bool _bgPunchInit;
+        BadgerWear _bgPunchWear;
+        float _bgPunchAt;
+        int _bgWearFlashFrame = -1;
+        bool _bgWearFlashPending;
+        int _bgTickFrame = -1;
+        static int FightPaintSerial;
+        static int FightBadgerSerial;
+        static int FightFlashSerial;
+        static int FightTokenSerial;
         int _bgPowerTile = -1;
         Rect _bgPowerBtn;
         // b123: lesson taps that are eaten without advancing (back, power row, combs) and the step's start time.
@@ -157,6 +185,14 @@ namespace FlockFive
             _bgLessonCap = default;
             _bgCoachFight = false;
             _bgYouHexOk = false;
+            _bgTokenLive = false;
+            _bgLeanInit = false;
+            _bgPunchInit = false;
+            _bgWearFlashFrame = -1;
+            _bgWearFlashPending = false;
+            // Opening runs about 5.9s and the standing rest stills span about 0.53s.
+            // 0.75s puts that whole span in one idle_b half (just after 6.6s).
+            BadgerPoseClock.Reset(0.75f);
             _bgPowerGuideOn = false;
             _bgBreakFreeOn = false;
             _bgBreakTile = -1;
@@ -169,6 +205,11 @@ namespace FlockFive
             _bgSlam = default;
             _bgSlamT = 0f;
             _bgSlamWord = -1;
+            _bgTellT = 0f;
+            _bgTellOn = false;
+            _bgBlow = false;
+            _bgBlowT = 0f;
+            _bgBlowSung = false;
             _bgLine = "";
             RefreshBadgerPrices();
             _splash = true;
@@ -176,7 +217,12 @@ namespace FlockFive
             // Phase 4: hive swipe + bee fill, PostOpen pause, then the badger leads.
             BeginBadgerOpening();
             // Battle bed: a no-op when the leap's entrance cue already owns the seat.
-            if (MixDesk.Live != null) MixDesk.Live.BadgerBattle();
+            // A faster-riff visit starts the loop at the pitch cap. Smug otherwise stays at 1.
+            if (MixDesk.Live != null)
+            {
+                MixDesk.Live.SetBadgerPitch(BadgerPolish.LoopPitch(BadgerMood.Smug, BadgerPolish.TwistOf(_bgAppearance)));
+                MixDesk.Live.BadgerBattle();
+            }
             return true;
         }
 
@@ -208,6 +254,11 @@ namespace FlockFive
             _bgSlam = default;
             _bgSlamT = 0f;
             _bgSlamWord = -1;
+            _bgTellT = 0f;
+            _bgTellOn = false;
+            _bgBlow = false;
+            _bgBlowT = 0f;
+            _bgBlowSung = false;
             if (_bgLeap.Live) _bgLeap.Release();
 #if UNITY_EDITOR
             if (_bgSwitchHeld)
@@ -245,7 +296,8 @@ namespace FlockFive
         void BeginBadgerFight()
         {
             _bgFight = new BadgerFight(_bgAppearance, _bgSeed, _bgLoadout.Honeys(),
-                BadgerSchedule.BossTileMix(_bgAppearance, _bgSeed), _bgCoachFight);
+                BadgerPolish.BossTiles(_bgAppearance, _bgSeed), _bgCoachFight);
+            SyncBadgerBed();
             _bgShownPlayer = 0;
             _bgShownBoss = 0;
             _bgLeftL = -1;
@@ -264,7 +316,8 @@ namespace FlockFive
             _bgResolved = false;
             _bgT = 0f;
             _bgStage = BadgerStage.BossWait;
-            _bgLine = BadgerCopy.RoundStartLine(_bgRoundN);
+            bool newTaunt = BadgerPolish.HasTwist(_bgAppearance, BadgerTwist.NewTaunt);
+            _bgLine = BadgerCopy.RoundLine(_bgRoundN, BadgerMoodNow(), newTaunt);
             // Coach fight: the round after move 3 announces the unlocked power-ups.
             _bgPowerGuideOn = false;
             _bgBreakFreeOn = false;
@@ -373,10 +426,13 @@ namespace FlockFive
                     // Both picks are in: roll the Don't Care slam (spec 2b) before the compare.
                     if (_bgFight.TryDontCare(out var slam))
                     {
-                        PlayDontCareSlam(slam);
+                        PlaySlamTell(slam);
                         break;
                     }
                     ResolveBadgerRound();
+                    break;
+                case BadgerStage.SlamTell:
+                    StepSlamTell(dt);
                     break;
                 case BadgerStage.DontCare:
                     StepDontCareSlam(dt);
@@ -402,6 +458,20 @@ namespace FlockFive
                     else NextBadgerRound();
                     break;
                 case BadgerStage.Outro:
+                    if (_bgBlow)
+                    {
+                        float before = _bgBlowT;
+                        _bgBlowT += dt;
+                        if (!_bgBlowSung && BadgerPolish.FanfareDue(before, _bgBlowT))
+                        {
+                            _bgBlowSung = true;
+                            var at = _bgFxBird.sqrMagnitude > 4f ? _bgFxBird : _bgFxFoot;
+                            SparkleFx.Celebrate(at);
+                            bool stung = MixDesk.Live != null && MixDesk.Live.BadgerResult(true);
+                            if (!stung) SfxLibrary.Play("fanfare", 0.40f);
+                        }
+                        if (_bgBlowT < BadgerPolish.BlowDuration) break;
+                    }
                     if (_bgT < BadgerOutro.Duration) break;
                     ShowBadgerResult();
                     break;
@@ -480,12 +550,36 @@ namespace FlockFive
             _bgT = 0f;
             _bgDotT = 0f;
             _bgStage = BadgerStage.Verdict;
-            _bgLine = BadgerVerdict(_bgRound);
+            _bgLine = BadgerCopy.Spoken(BadgerVerdict(_bgRound), BadgerMoodNow());
             // b123: the forced block round says the block worked.
             if (_bgGuideRoundPower != BadgerPower.None && BadgerFight.IsBlock(_bgGuideRoundPower) && _bgRound.Power == _bgGuideRoundPower)
                 _bgLine = BadgerCopy.BlockWorkedLine(_bgGuideRoundPower);
             if (_bgRound.PlayerGained > 0 || _bgRound.BossGained > 0 || BadgerFight.IsBlock(_bgRound.Power))
                 Sfx.CardBump();
+            if (_bgFight.Result == BadgerResult.Playing) SyncBadgerBed();
+        }
+
+        // Bed tempo follows the arc and this visit's twist. Smug with no faster riff stays at 1.
+        void SyncBadgerBed()
+        {
+            if (MixDesk.Live == null || _bgFight == null) return;
+            var mood = BadgerPolish.Mood(_bgFight.PlayerScore, _bgFight.PlayerTarget, false);
+            var twist = BadgerPolish.TwistOf(_bgFight.Appearance);
+            MixDesk.Live.SetBadgerPitch(BadgerPolish.LoopPitch(mood, twist));
+        }
+
+        BadgerMood BadgerMoodNow()
+        {
+            if (_bgFight == null) return BadgerMood.Smug;
+            bool give = _bgBlow || (_bgFight.Result == BadgerResult.PlayerWon
+                && (_bgStage == BadgerStage.Outro || _bgStage == BadgerStage.Over));
+            return BadgerPolish.Mood(_bgFight.PlayerScore, _bgFight.PlayerTarget, give);
+        }
+
+        BadgerWear BadgerWearNow()
+        {
+            if (_bgFight == null) return BadgerWear.Fresh;
+            return BadgerPolish.WearOf(_bgFight.PlayerScore, _bgFight.PlayerTarget);
         }
 
         bool BadgerDotsBusy()
@@ -526,17 +620,21 @@ namespace FlockFive
             _bgLine = "";
             _bgShownPlayer = _bgFight != null ? Mathf.Min(_bgFight.PlayerScore, _bgFight.PlayerTarget) : 0;
             _bgShownBoss = _bgFight != null ? Mathf.Min(_bgFight.BossScore, _bgFight.BadgerTarget) : 0;
-            bool stung = MixDesk.Live != null && MixDesk.Live.BadgerResult(won);
             if (won)
             {
-                var at = _bgFxBird.sqrMagnitude > 4f ? _bgFxBird : _bgFxFoot;
-                SparkleFx.Celebrate(at);
+                // Final blow: cut the loop now, one sharp hit, white flash, one beat of
+                // silence, then the win fanfare. "I give!" holds the caption through it.
+                _bgBlow = true;
+                _bgBlowT = 0f;
+                _bgBlowSung = false;
+                _bgLine = BadgerCopy.GiveUp;
+                if (MixDesk.Live != null) MixDesk.Live.BadgerCut();
+                SfxLibrary.SharpHit();
+                return;
             }
-            if (!stung)
-            {
-                if (won) SfxLibrary.Play("fanfare", 0.40f);
-                else Sfx.Deny();
-            }
+            _bgBlow = false;
+            bool stung = MixDesk.Live != null && MixDesk.Live.BadgerResult(false);
+            if (!stung) Sfx.Deny();
         }
 
         void ShowBadgerResult()
@@ -1524,6 +1622,18 @@ namespace FlockFive
                     if (zoomDraw) GUI.matrix = keep;
                 }
                 if (slam && paint) DrawDontCareSlam(pivot, zoom);
+                // Badger, then the wear flash, then the pick token. The number stays
+                // above the white wash. Zoom is pushed again so a slam token still scales.
+                if (paint) DrawBadgerBlowFlash();
+                if (zoomDraw) PushBadgerZoom(zoom, pivot);
+                try
+                {
+                    DrawBadgerPickToken();
+                }
+                finally
+                {
+                    if (zoomDraw) GUI.matrix = keep;
+                }
                 if (paint && !_bgLeap.Live) SparkleFx.DrawBits();
             }
             finally
@@ -1539,7 +1649,20 @@ namespace FlockFive
                 _home = HomeFace.Splash;
                 return;
             }
-            if (Event.current.type == EventType.Layout) TickBadger(AdPause.UnscaledDelta);
+            // One tick per frame. A second Layout pass (narrow widths reflow) must
+            // not add UnscaledDelta again.
+            if (Event.current.type == EventType.Layout && _bgTickFrame != Time.frameCount)
+            {
+                _bgTickFrame = Time.frameCount;
+                TickBadger(AdPause.UnscaledDelta);
+            }
+            if (GuiPaint())
+            {
+                FightPaintSerial = 0;
+                FightBadgerSerial = 0;
+                FightFlashSerial = 0;
+                FightTokenSerial = 0;
+            }
             var L = BadgerLayout();
             float s = L.S;
             DrawHomeWash(0.58f);
@@ -1547,7 +1670,8 @@ namespace FlockFive
             // Opening, PostOpen, and the lesson are not skippable via the medal.
             // b123: and the whole locked-power stretch of the coach fight (Reveal / Verdict / BossWait between moves).
             if (_bgStage == BadgerStage.Opening || _bgStage == BadgerStage.PostOpen || _bgStage == BadgerStage.Lesson
-                || _bgStage == BadgerStage.DontCare || BadgerGuideLive() || BadgerCoachHoldsBack() || BadgerResultLive())
+                || _bgStage == BadgerStage.DontCare || _bgStage == BadgerStage.SlamTell
+                || BadgerGuideLive() || BadgerCoachHoldsBack() || BadgerResultLive())
                 PaintBackMedal(L.Back, false);
             else if (DrawBackMedal(L.Back))
             {
@@ -1753,17 +1877,16 @@ namespace FlockFive
                 BadgerFreezeLook(ref r, s, out float ice, out float shatterT);
                 if (block && _bgRound.Power != BadgerPower.FreezeSpray) r.x += Mathf.Sin(AdPause.Unscaled * 38f) * 5f * s * Mathf.Clamp01(1.2f - _bgT);
                 bool win = _bgResolved && _bgRound.BossGained > 0;
-                if (win) DrawBadgerWinGlow(r);
-                DrawBadgerTile(r, BadgerLook.Face, honey, BadgerHide, BeeFinish.Normal, block ? 0.55f : 1f, null);
-                if (win && _bgStage == BadgerStage.Verdict)
-                    DrawBadgerGain(r, _bgRound.BossGained, _bgT);
-                if (block) DrawBadgerSplat(r);
-                if (GuiPaint())
-                {
-                    SparkleFx.DrawFrozenHex(r, ice, AdPause.Unscaled);
-                    SparkleFx.DrawShatter(r, shatterT);
-                }
+                // Same rect as before. Painted later, after the badger, so the hex sits on top.
+                _bgTokenLive = true;
+                _bgTokenRect = r;
+                _bgTokenHoney = honey;
+                _bgTokenBlock = block;
+                _bgTokenWin = win;
+                _bgTokenIce = ice;
+                _bgTokenShatter = shatterT;
             }
+            else _bgTokenLive = false;
             if (_bgFight != null && _bgPlayerIx >= 0)
             {
                 float u = Mathf.SmoothStep(0f, 1f, (AdPause.Unscaled - _bgPlayerAt) / BadgerSlide);
@@ -1781,6 +1904,25 @@ namespace FlockFive
                 DrawBadgerLookArrows(r, s);
             }
 
+        }
+
+        // The boss pick-token. Position was computed in DrawBadgerArena. This only
+        // changes when it is painted: after the badger, so the hex covers him.
+        void DrawBadgerPickToken()
+        {
+            if (!_bgTokenLive || _bgFight == null) return;
+            var r = _bgTokenRect;
+            if (_bgTokenWin) DrawBadgerWinGlow(r);
+            DrawBadgerTile(r, BadgerLook.Face, _bgTokenHoney, BadgerHide, BeeFinish.Normal, _bgTokenBlock ? 0.55f : 1f, null);
+            if (_bgTokenWin && _bgStage == BadgerStage.Verdict)
+                DrawBadgerGain(r, _bgRound.BossGained, _bgT);
+            if (_bgTokenBlock) DrawBadgerSplat(r);
+            if (GuiPaint())
+            {
+                SparkleFx.DrawFrozenHex(r, _bgTokenIce, AdPause.Unscaled);
+                SparkleFx.DrawShatter(r, _bgTokenShatter);
+                FightTokenSerial = ++FightPaintSerial;
+            }
         }
 
         // Freeze look for the badger's tile, shared with the tutorial Freeze demo (same SparkleFx helpers).
@@ -1884,6 +2026,27 @@ namespace FlockFive
             public bool BirdInFront;
             public Rect BirdBox;
             public float Alpha;
+            public float BodyCenterX;
+            public float Punch;
+        }
+
+        // Resting duel foot. Body-bbox centre X is BadgerWearArt.ScreenMidX (the same
+        // mid the stills aim at). Foot Y is the boss-box foot passed in, unchanged.
+        // The column clamp still runs; it does not get a new limit.
+        public static void DuelRestPlant(string frame, float screenW, float unit, float sx, float artW, float bossFootY, float rightLimit,
+            out float footX, out float footY, out float bodyCenterX)
+        {
+            if (artW < 1f) artW = 438f;
+            if (unit < 0.0001f) unit = 0.0001f;
+            float drawSx = sx > 0.05f ? sx : 1f;
+            float drawnW = artW * unit * drawSx;
+            float frac = BadgerWearArt.BodyFrac(frame);
+            float cx = SpriteAnim.FootCx(frame);
+            float planted = BadgerWearArt.FootXForBodyMid(screenW, frac, cx, drawnW);
+            float wide = artW * unit * (drawSx > 1f ? drawSx : 1f);
+            footX = BadgerFighterPlace.ClampFootX(planted, wide, rightLimit);
+            footY = bossFootY;
+            bodyCenterX = BadgerWearArt.BodyCenterAt(footX, frac, cx, drawnW);
         }
 
         // Where the one badger and the hummingbird stand this frame. Rest marks come
@@ -1893,8 +2056,27 @@ namespace FlockFive
             var spot = new BadgerActorSpot();
             var box = BadgerArenaRects.Split(L.Arena);
             BadgerDuelPose(out var beat, out float age);
-            float now = PlayClock.Now;
+            float now = BadgerPoseClock.Now;
             var pose = BadgerAnim.Duel(beat, age, now);
+            var wearNow = BadgerWearNow();
+            // Wrecked idle drops into the crouch so the later hits read lower. The tell
+            // stays on the idle face so the glint hits the same pupil every time.
+            // RestPose ignores screen size. The breathe index is the pose clock only.
+            if (beat == BadgerDuelBeat.Idle
+                && _bgStage != BadgerStage.Opening && _bgStage != BadgerStage.DontCare
+                && _bgStage != BadgerStage.SlamTell)
+            {
+                string rest = BadgerWearArt.RestPose(now, wearNow, Mathf.Max(2f, PhoneArea.W), Mathf.Max(2f, PhoneArea.H));
+                if (rest == "badger_crouch")
+                {
+                    pose.Frame = rest;
+                    pose.Under = null;
+                    pose.UnderAlpha = 0f;
+                    pose.FrameAlpha = 1f;
+                }
+                else if (pose.Frame == "badger_idle_a" || pose.Frame == "badger_idle_b")
+                    pose.Frame = rest;
+            }
             spot.Alpha = BadgerFighter.Alpha(_bgStage);
             BadgerArtSize("badger_idle_b", 1f, out float aw, out float ah);
             var mark = BadgerFighterPlace.Rest(box, aw, ah, L.ColR.x - 2f);
@@ -1910,6 +2092,7 @@ namespace FlockFive
             if (reach < 4f) reach = box.BossFighter.width * 0.35f;
 
             var act = BadgerRoundAct.Kind.None;
+            float hitLean = 0f;
             if (_bgResolved && _bgStage == BadgerStage.Verdict)
                 act = BadgerRoundAct.Of(_bgRound.PlayerGained, _bgRound.BossGained);
             bool endBeat = (_bgStage == BadgerStage.Outro || _bgStage == BadgerStage.Over)
@@ -1952,6 +2135,10 @@ namespace FlockFive
                 bird.y -= Mathf.Sin(peck * Mathf.PI) * icon * 0.10f;
                 spot.BirdDegrees = 12f * peck;
                 spot.BirdInFront = peck > 0.08f;
+                // The badger leans off the peck. Later wear leans further.
+                // Applied after the pose copy so the pose degrees do not wipe it.
+                hitLean = BadgerPolish.HitLean(wearNow, peck);
+                foot.x += hitLean * 0.35f;
             }
             else if (beat == BadgerDuelBeat.Swipe)
             {
@@ -1971,13 +2158,30 @@ namespace FlockFive
             spot.UnderAlpha = pose.UnderAlpha;
             spot.Sx = pose.ScaleX;
             spot.Sy = pose.ScaleY;
-            spot.Degrees = pose.Degrees;
+            spot.Degrees = pose.Degrees + hitLean;
+            var moodNow = BadgerMoodNow();
+            // One scale for every wear stage. Crouch art is 1.15x per feature;
+            // the shared helper brings the head back in line with idle. No per-stage squash.
+            float feat = BadgerWearArt.FeatureScale(spot.Frame);
+            if (feat > 0.01f)
+            {
+                spot.Sx /= feat;
+                spot.Sy /= feat;
+            }
+            spot.Degrees += MoodLean(moodNow);
+            if (_bgStage == BadgerStage.SlamTell)
+                spot.Degrees += BossBeat.PawTwitch(_bgTellT);
             BadgerArtSize(spot.Frame, spot.Unit, out float w, out float h);
-            // Stay left of ColR on every beat (SE wide crouch/leap/shrug frames).
-            // Squash widens the sprite; keep that width inside the column too.
+            // Sideways only: body-bbox centre X is the screen mid. Foot Y is the
+            // boss-box baseline (animations may lift it). Bird, combs and the
+            // column clamp stay where they were.
             float wide = w * (spot.Sx > 1f ? spot.Sx : 1f);
             float rightLimit = L.ColR.x - 2f;
-            foot.x = BadgerFighterPlace.ClampFootX(foot.x, wide, rightLimit);
+            float animDx = foot.x - mark.Foot.x;
+            float artW = spot.Unit > 0.0001f ? w / spot.Unit : w;
+            DuelRestPlant(spot.Frame, Mathf.Max(2f, PhoneArea.W), spot.Unit, spot.Sx, artW, mark.Foot.y, rightLimit,
+                out float plantX, out _, out _);
+            foot.x = BadgerFighterPlace.ClampFootX(plantX + animDx, wide, rightLimit);
 
             spot.Foot = foot;
             spot.Bird = bird;
@@ -1989,7 +2193,61 @@ namespace FlockFive
             spot.Eye = new Vector2(
                 foot.x - ew * 0.5f + ew * eu,
                 foot.y - eh + eh * ev);
+            float frac = BadgerWearArt.BodyFrac(spot.Frame);
+            float footCx = SpriteAnim.FootCx(spot.Frame);
+            spot.BodyCenterX = BadgerWearArt.BodyCenterAt(foot.x, frac, footCx, ew);
+            spot.Punch = WearPunch(wearNow);
             return spot;
+        }
+
+        // Ease the mood lean. The first sample takes the current mood so a new
+        // fight does not sweep in from a stale angle. Later changes ease out.
+        float MoodLean(BadgerMood mood)
+        {
+            float target = BadgerPolish.EarsBack(mood);
+            float now = BadgerPoseClock.Now;
+            if (!_bgLeanInit)
+            {
+                _bgLeanInit = true;
+                _bgLeanFrom = target;
+                _bgLeanTo = target;
+                _bgLeanAt = now;
+                _bgLeanMood = mood;
+                return target;
+            }
+            if (mood != _bgLeanMood)
+            {
+                _bgLeanFrom = BadgerPolish.EaseLean(_bgLeanFrom, _bgLeanTo, now - _bgLeanAt);
+                _bgLeanTo = target;
+                _bgLeanAt = now;
+                _bgLeanMood = mood;
+            }
+            return BadgerPolish.EaseLean(_bgLeanFrom, _bgLeanTo, now - _bgLeanAt);
+        }
+
+        // Scale punch on a wear-stage change. The opening sample is already at rest.
+        float WearPunch(BadgerWear wear)
+        {
+            float now = BadgerPoseClock.Now;
+            if (!_bgPunchInit)
+            {
+                _bgPunchInit = true;
+                _bgPunchWear = wear;
+                _bgPunchAt = now - BadgerWearArt.PunchSeconds - 0.05f;
+                _bgWearFlashFrame = -1;
+                _bgWearFlashPending = false;
+                return 1f;
+            }
+            if (wear != _bgPunchWear)
+            {
+                _bgPunchWear = wear;
+                _bgPunchAt = now;
+                // The repaint claims the frame. Stamping Time.frameCount here
+                // misses the draw when this runs after OnGUI.
+                _bgWearFlashFrame = -1;
+                _bgWearFlashPending = true;
+            }
+            return BadgerWearArt.PunchScale(now - _bgPunchAt);
         }
 
         // Page-zoom pivot. The shrug has its own eye for the glint; the camera stays
@@ -2037,36 +2295,197 @@ namespace FlockFive
 
             var keep = GUI.matrix;
             var drawn = new Rect();
+            bool iced = false;
             try
             {
+                // Scale first, then lean, so the punch grows from the foot and the
+                // unrotated body centre stays on screen mid. At rest punch is 1.
+                float punch = spot.Punch;
+                Vector2 rotPivot = spot.Foot;
+                if (punch > 1.0005f)
+                {
+                    var pivot = BadgerWearArt.PunchPivot(spot.BodyCenterX, spot.Foot.y);
+                    GUIUtility.ScaleAroundPivot(new Vector2(punch, punch), pivot);
+                    rotPivot = new Vector2(
+                        spot.BodyCenterX + (spot.Foot.x - spot.BodyCenterX) * punch,
+                        spot.Foot.y);
+                }
                 if (Mathf.Abs(spot.Degrees) > 0.01f)
-                    GUIUtility.RotateAroundPivot(spot.Degrees, spot.Foot);
+                    GUIUtility.RotateAroundPivot(spot.Degrees, rotPivot);
                 float fa = spot.FrameAlpha;
                 float ua = spot.UnderAlpha;
                 bool frameOk = !string.IsNullOrEmpty(spot.Frame) && SpriteCatalog.BadgerArt(spot.Frame) != null;
                 bool underOk = !string.IsNullOrEmpty(spot.Under) && spot.Under != spot.Frame
                     && SpriteCatalog.BadgerArt(spot.Under) != null;
                 SpriteAnim.Cover(ref fa, ref ua, frameOk, underOk);
-                if (DrawBadgerIceBlock(spot, L, out drawn)) { }
+                if (DrawBadgerIceBlock(spot, L, out drawn)) iced = drawn.width > 1f;
                 else if (underOk && ua > 0.02f)
                     DrawBadgerArt(spot.Under, spot.Foot, spot.Unit, spot.Alpha * ua, 0f, spot.Sx, spot.Sy);
                 if (drawn.width < 1f && frameOk && fa > 0.02f)
                     drawn = DrawBadgerArt(spot.Frame, spot.Foot, spot.Unit, spot.Alpha * fa, 0f, spot.Sx, spot.Sy);
+                if (!iced && drawn.width > 1f)
+                    DrawBadgerWear(drawn, spot.Frame, BadgerMoodNow(), BadgerWearNow(), spot.Alpha);
             }
             finally
             {
                 GUI.matrix = keep;
             }
+            if (GuiPaint()) FightBadgerSerial = ++FightPaintSerial;
             if (drawn.width > 1f)
             {
-                BadgerSlam.EyeUv(spot.Frame, out float eu, out float ev);
+                float eu, ev;
+                if (_bgStage == BadgerStage.SlamTell)
+                {
+                    eu = BadgerPolish.TellEyeU;
+                    ev = BadgerPolish.TellEyeV;
+                }
+                else BadgerSlam.EyeUv(spot.Frame, out eu, out ev);
                 _bgDuelEye = new Vector2(
                     drawn.x + drawn.width * eu,
                     drawn.y + drawn.height * ev);
             }
 
+            if (_bgStage == BadgerStage.SlamTell)
+            {
+                float g = BossBeat.Glint(_bgTellT);
+                if (g > 0.02f) DrawBadgerGlint(_bgDuelEye, PhoneArea.H * 0.04f, g);
+            }
+
             if (spot.BirdInFront) DrawBadgerBird(spot, clock);
             DrawBadgerRoundHit(spot);
+        }
+
+        // Wear-stage art through BadgerWearArt.PaintWear (same helper the stills use).
+        // Mood still paints sweat and pinned ears on the unpadded body.
+        void DrawBadgerWear(Rect body, string frame, BadgerMood mood, BadgerWear wear, float alpha)
+        {
+            if (!GuiPaint() || body.width < 4f || body.height < 4f) return;
+            var prev = GUI.color;
+            if (!PaintWear(body, frame, wear, alpha))
+            {
+                int n = BadgerPolish.BruiseCount(wear);
+                for (int i = 0; i < n; i++)
+                {
+                    BadgerPolish.BruiseUv(i, out float u, out float v, out float rad);
+                    float rx = body.width * rad;
+                    float ry = body.height * rad * 0.75f;
+                    var at = new Vector2(body.x + body.width * u, body.y + body.height * v);
+                    GUI.color = new Color(0.45f, 0.32f, 0.55f, 0.72f);
+                    GUI.DrawTexture(new Rect(at.x - rx, at.y - ry, rx * 2f, ry * 2f), Texture2D.whiteTexture);
+                }
+            }
+            if (BadgerPolish.EarsBack(mood) > 0.5f)
+            {
+                GUI.color = new Color(0.22f, 0.14f, 0.10f, 0.80f);
+                for (int i = 0; i < 2; i++)
+                {
+                    BadgerPolish.EarUv(i, out float u, out float v);
+                    float rx = body.width * 0.035f;
+                    float ry = body.height * 0.028f;
+                    var at = new Vector2(body.x + body.width * u, body.y + body.height * v);
+                    GUI.DrawTexture(new Rect(at.x - rx, at.y - ry, rx * 2f, ry * 2f), Texture2D.whiteTexture);
+                }
+            }
+            if (BadgerPolish.Sweat(mood))
+            {
+                GUI.color = new Color(0.75f, 0.90f, 0.98f, 0.90f);
+                for (int i = 0; i < 2; i++)
+                {
+                    BadgerPolish.SweatUv(i, out float u, out float v);
+                    float drop = 1f + 0.15f * Mathf.Sin(PlayClock.Now * 3f + i);
+                    float rx = body.width * 0.018f;
+                    float ry = body.height * 0.032f * drop;
+                    var at = new Vector2(body.x + body.width * u, body.y + body.height * v);
+                    GUI.DrawTexture(new Rect(at.x - rx, at.y - ry * 0.2f, rx * 2f, ry), Texture2D.whiteTexture);
+                }
+            }
+            GUI.color = prev;
+        }
+
+        // Body plus halo layers from BadgerWearArt.PaintWear (same helper the stills use).
+        // The body tint does not touch the halo. Returns false when the body sprite
+        // is missing so the caller can fall back to the old bruise discs.
+        // Body-bbox centre X is BadgerWearArt.ScreenMidX (DuelRestPlant). Foot Y
+        // stays the boss-box foot. This blit pads that fight body the way the stills pad.
+        static bool PaintWear(Rect body, string frame, BadgerWear wear, float alpha)
+        {
+            if (alpha < 0.01f) return false;
+            var baseSpr = SpriteCatalog.BadgerArt(frame);
+            float srcW = baseSpr != null ? baseSpr.rect.width : body.width;
+            float srcH = baseSpr != null ? baseSpr.rect.height : body.height;
+            var blit = BadgerWearArt.PaintWear(frame, body, srcW, srcH, wear);
+            if (!blit.Layered || string.IsNullOrEmpty(blit.Sprite) || blit.Dest.width < 4f) return false;
+            var tint = blit.BodyTint;
+            tint.a = alpha;
+            var halo = new Color(1f, 1f, 1f, blit.HaloAlpha * alpha);
+            bool any = false;
+            if (BlitWearLayer(blit.HaloBack, blit.Dest, halo, true)) any = true;
+            if (BlitWearLayer(blit.Sprite, blit.Dest, tint, false)) any = true;
+            if (BadgerWearArt.HoneyMarksOn(wear))
+                DrawHoneyMarks(body, frame, wear, alpha);
+            if (BlitWearLayer(blit.HaloFront, blit.Dest, halo, true)) any = true;
+            return any;
+        }
+
+        // Brightness is baked by BadgerWearArt.SolidHalo (HaloRgbMul). The multiply
+        // here is white so the ring is not brightened twice. Point sampled.
+        static bool BlitWearLayer(string name, Rect dest, Color color, bool halo)
+        {
+            if (color.a < 0.01f || string.IsNullOrEmpty(name) || dest.width < 4f) return false;
+            if (halo && BadgerWearArt.HaloSolid)
+            {
+                var solid = BadgerWearArt.SolidHaloTexture(name, dest.width, dest.height);
+                if (solid != null)
+                {
+                    var prev = GUI.color;
+                    GUI.color = new Color(1f, 1f, 1f, color.a);
+                    GUI.DrawTexture(dest, solid);
+                    GUI.color = prev;
+                    return true;
+                }
+            }
+            var spr = SpriteCatalog.BadgerArt(name);
+            if (spr == null || spr.texture == null) return false;
+            var keep = GUI.color;
+            GUI.color = color;
+            DrawSprite(dest, spr, false);
+            GUI.color = keep;
+            return true;
+        }
+
+        static void DrawHoneyMarks(Rect body, string frame, BadgerWear wear, float alpha)
+        {
+            if (alpha < 0.01f || body.width < 4f || body.height < 4f) return;
+            int tw = Mathf.Max(2, Mathf.RoundToInt(body.width));
+            int th = Mathf.Max(2, Mathf.RoundToInt(body.height));
+            var tex = BadgerWearArt.HoneyTexture(frame, tw, th, wear, PhoneArea.W);
+            if (tex == null) return;
+            var prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            GUI.DrawTexture(body, tex);
+            GUI.color = prev;
+        }
+
+        // Full-screen white. The winning hit uses BlowFlash. A wear-stage start
+        // uses the same helper for one frame at 60%. No yellow in this path.
+        // The pick token is drawn after this, so the number is not washed out.
+        void DrawBadgerBlowFlash()
+        {
+            if (!GuiPaint()) return;
+            if (_bgWearFlashPending)
+            {
+                _bgWearFlashPending = false;
+                _bgWearFlashFrame = Time.frameCount;
+            }
+            float a = _bgBlow ? BadgerPolish.BlowFlash(_bgBlowT) : 0f;
+            float wear = BadgerPolish.WearFlashAlpha(Time.frameCount, _bgWearFlashFrame);
+            if (wear > a) a = wear;
+            if (a < 0.02f) return;
+            FightFlashSerial = ++FightPaintSerial;
+            var prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, a);
+            GUI.DrawTexture(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), Texture2D.whiteTexture);
+            GUI.color = prev;
         }
 
         // b129: while he is iced the fighter is the tall ice block (standing, paws up), feet on his mark, with the same

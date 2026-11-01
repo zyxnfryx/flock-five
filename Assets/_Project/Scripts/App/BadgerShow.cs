@@ -7,7 +7,7 @@ namespace FlockFive
     // draw in every stage; nothing here fades the badger out with the hive.
     public enum BadgerStage
     {
-        PostOpen, BossWait, YourPick, Reveal, Verdict, Outro, Over, Opening, Lesson, DontCare
+        PostOpen, BossWait, YourPick, Reveal, Verdict, Outro, Over, Opening, Lesson, DontCare, SlamTell
     }
 
     // Honey badger contest, Phase 4: the timelines for the leap, the hive swipe and bee
@@ -456,6 +456,8 @@ namespace FlockFive
         public const float Leap2From = 0.62f;
         public const float Leap2To = 0.82f;
 
+        // Even steps of BreatheSeconds are idle_a, odd steps are idle_b.
+        // The index is floor(time / step) only. Screen size is not an input.
         public static BadgerSample Idle(float now)
         {
             float step = BadgerSitter.BreatheSeconds;
@@ -757,6 +759,62 @@ namespace FlockFive
         {
             u = Mathf.Clamp01(u);
             return u * u * (3f - 2f * u);
+        }
+    }
+
+    // Duel pose clock. Same ceiling as TickBadger: a frame longer than 0.1s
+    // adds 0.1s, on every screen size. A 0.4s encode and a 0.8s encode used
+    // to take different paths (kept vs dropped at 0.5s) and crossed a
+    // different idle half. A new fight starts the clock at Reset.
+    public static class BadgerPoseClock
+    {
+        public const float Step = 1f / 60f;
+        public const float Hitch = 0.10f;
+
+        static float _now;
+        static int _frame = -1;
+
+        public static float Now
+        {
+            get
+            {
+                Tick();
+                return _now;
+            }
+        }
+
+        public static float StepOf(float dt)
+        {
+            if (dt < 0f) dt = 0f;
+            if (dt > Hitch) return Hitch;
+            return dt;
+        }
+
+        // Fight open. The breathe phase starts here, not at editor launch
+        // and not at the previous screen size.
+        public static void Reset(float time)
+        {
+            _now = time < 0f ? 0f : time;
+            _frame = Time.frameCount;
+        }
+
+        public static void StepForTest(float unscaledDt)
+        {
+            _now += StepOf(unscaledDt);
+            _frame = Time.frameCount;
+        }
+
+        static void Tick()
+        {
+            int frame = Time.frameCount;
+            if (frame == _frame) return;
+            _frame = frame;
+            float dt = Time.captureDeltaTime > 0f ? Time.captureDeltaTime : Time.unscaledDeltaTime;
+            if (AdPause.Active || (GamePause.Paused && !(GamePause.TutorHold && !Ads.IsShowing)))
+                dt = 0f;
+            else if (PressRainbow.StageHeld())
+                dt = 0f;
+            _now += StepOf(dt);
         }
     }
 
@@ -1105,6 +1163,7 @@ namespace FlockFive
                 case BadgerStage.Opening:
                 case BadgerStage.Lesson:
                 case BadgerStage.DontCare:
+                case BadgerStage.SlamTell:
                     return true;
                 default:
                     return false;

@@ -50,6 +50,14 @@ namespace FlockFive
 
         public static bool HasFoot(string name) => !string.IsNullOrEmpty(name) && _feet.ContainsKey(name);
 
+        // Opaque-foot centre as a fraction of width. Unknown frames stay at 0.5.
+        public static float FootCx(string name)
+        {
+            if (!string.IsNullOrEmpty(name) && _feet.TryGetValue(name, out var foot))
+                return foot.Cx;
+            return 0.5f;
+        }
+
         // Louder layer stays at full cover. A missing sprite holds the one that loaded
         // at 1 so the swap never shows a blank frame.
         public static void Cover(ref float frameAlpha, ref float underAlpha, bool frameReady, bool underReady)

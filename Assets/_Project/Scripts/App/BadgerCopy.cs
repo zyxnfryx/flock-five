@@ -32,6 +32,10 @@ namespace FlockFive
         public const string Win = "Fine. Take the yard.";
         public const string Lose = "Yard's still mine.";
         public const string YourPick = "Your pick.\nTap a power-up first.";
+        // Surrender beat. Painted through the shared caption (CaptionLayout), not a new text box.
+        public const string GiveUp = "I give!";
+        // The one new line a NewTaunt visit adds. Other visits keep the old lines.
+        public const string TwistTaunt = "Still here.\nStill don't care.";
 
         // Honey theft beat: boss scored at least this much honey in the round.
         public const int TheftHoney = 4;
@@ -123,6 +127,46 @@ namespace FlockFive
         public static string RoundStartLine(int roundIndex)
         {
             return (roundIndex & 1) == 0 ? GoesFirst : HowMany;
+        }
+
+        // Appearance whose twist is a new taunt speaks TwistTaunt as the opening.
+        // Everyone else keeps OpeningLine. The lesson still owns appearance 1.
+        public static string OpeningForVisit(int appearance, bool lessonPending)
+        {
+            if (lessonPending && appearance <= 1) return "";
+            if (BadgerPolish.HasTwist(appearance, BadgerTwist.NewTaunt) && appearance > 1)
+                return TwistTaunt;
+            return OpeningLine(appearance, lessonPending);
+        }
+
+        // Rattled and desperate cut the known taunts down. Smug and surrender keep the line.
+        // Instruction lines that are not in the map pass through unchanged.
+        public static string Spoken(string line, BadgerMood mood)
+        {
+            if (mood != BadgerMood.Rattled && mood != BadgerMood.Desperate) return line ?? "";
+            return ShortTaunt(line);
+        }
+
+        public static string ShortTaunt(string line)
+        {
+            if (line == GoesFirst) return "I go first.";
+            if (line == HowMany) return "How many?";
+            if (line == MineNow) return "Mine.";
+            if (line == DontCare) return "Don't care.";
+            if (line == Tie) return "Nothing.";
+            if (line == OpenLater) return "Hive's mine.";
+            if (line == TwistTaunt) return "Still here.";
+            if (line == DontCareWasted) return "Don't care.";
+            if (line == DontCareHalved) return "Half honey.";
+            return line ?? "";
+        }
+
+        // Round banner. A NewTaunt visit swaps one round (index 3, 7, ...) for the new line.
+        public static string RoundLine(int roundIndex, BadgerMood mood, bool newTaunt)
+        {
+            string line = RoundStartLine(roundIndex);
+            if (newTaunt && (roundIndex % 4) == 3) line = TwistTaunt;
+            return Spoken(line, mood);
         }
 
         public const string BreakFree = "The badger spent his turn\nbreaking free!";
