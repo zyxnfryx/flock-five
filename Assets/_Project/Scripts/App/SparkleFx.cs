@@ -522,6 +522,19 @@ namespace FlockFive
         // Small sideways shiver; held through the blocked beats. Amplitude is in px (scale it by the UI unit).
         public static float Shiver(float time, float amp) { return Mathf.Sin(time * 38f) * amp; }
 
+        // b119 (Brandon: "why is he shaking"): the frozen badger no longer buzzes non-stop. A deliberate ice shiver:
+        // a short shudder of IceShiverBurst seconds every IceShiverPeriod seconds, eased in and out, still between.
+        public const float IceShiverPeriod = 1.9f;
+        public const float IceShiverBurst = 0.32f;
+        public static float IceShiver(float time, float amp)
+        {
+            float ph = time % IceShiverPeriod;
+            if (ph < 0f) ph += IceShiverPeriod;
+            if (ph >= IceShiverBurst) return 0f;
+            float env = Mathf.Sin(ph / IceShiverBurst * Mathf.PI);
+            return Mathf.Sin(ph * 70f) * amp * env;
+        }
+
         // Bigger two-way struggle for the break-free turn: ramps up over `age` seconds.
         public static Vector2 Struggle(float time, float age, float amp)
         {

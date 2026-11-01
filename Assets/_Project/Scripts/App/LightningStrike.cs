@@ -83,6 +83,13 @@ namespace FlockFive
             UnityEngine.PlayerPrefs.Save();
         }
 
+        // b119: the bolt aims at the middle of the burning wood, not the branch pivot (which sits at the trunk end).
+        public static UnityEngine.Vector3 AimPoint(UnityEngine.Vector3 pivot, bool hasWood, UnityEngine.Bounds wood)
+        {
+            if (!hasWood || wood.size.sqrMagnitude < 0.0001f) return pivot;
+            return new UnityEngine.Vector3(wood.center.x, wood.center.y, pivot.z);
+        }
+
         // One-shot. The capture sets this; the next TryPick consumes it.
         public static bool Force;
 

@@ -35,7 +35,6 @@ namespace FlockFive
         bool _restartAd;
         float _gardenStampAt = -1f;
         Rect _gardenStampRect;
-        float _stampPulse = -1f;
         static float _waxBorn = -1f;
         int _collectDepth;
         bool _gardenScoring;
@@ -3687,11 +3686,9 @@ namespace FlockFive
             if (EatGardenLessonTap(screen)) return;
             if (LessonTapBlocked()) return;
             if (VeilDrops(screen)) return;
-            if (GardenStampHit(screen))
-            {
-                _stampPulse = AdPause.Unscaled;
-                return;
-            }
+            // b119 (Brandon): the stamp no longer wobbles when poked. It still eats the tap so the
+            // press cannot fall through onto a branch under it.
+            if (GardenStampHit(screen)) return;
             if (HitHud(screen)) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
@@ -9032,12 +9029,6 @@ namespace FlockFive
             else
                 waxAge = age - land;
             float pop = RewardStampPop(age);
-            if (_stampPulse >= 0f)
-            {
-                float since = AdPause.Unscaled - _stampPulse;
-                if (since >= 0f && since < 0.22f)
-                    pop *= 1f + 0.08f * Mathf.Sin(since / 0.22f * Mathf.PI);
-            }
             var ink = StreakBadge.Colors(mul);
             if (_rewardStampStyle == null)
             {

@@ -42,6 +42,9 @@ namespace FlockFive
             Owned = true;
             PlayerPrefs.SetInt(Pref, 1);
             PlayerPrefs.Save();
+            // b119: a grant wipes any stale store note (a late success after a timeout must not
+            // sit next to a store error). Restore paths post "Restored" after this.
+            if (!string.IsNullOrEmpty(RestoreNote)) NoteRestore(null);
         }
 
         // Store requests while PurchasePending is Active are dropped (no double asks).

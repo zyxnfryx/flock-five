@@ -120,7 +120,9 @@ namespace FlockFive
             switch (o)
             {
                 case Outcome.Deferred: return "Waiting for approval";
-                case Outcome.TimedOut: return "The store didn't answer. Try again";
+                // b119 (Brandon): no store-timeout note. The timeout just frees the buttons;
+                // a late StoreKit answer (already-owned / restore sheet) still grants via ProcessPurchase.
+                case Outcome.TimedOut: return null;
                 case Outcome.Failed: return k == Kind.Restore ? "Couldn't restore" : "Purchase didn't go through";
                 default: return null;
             }

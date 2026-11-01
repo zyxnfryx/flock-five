@@ -136,12 +136,18 @@ namespace FlockFive.Editor
             NoAdsStoreEvents.Tick();
             Check("timeout-60s-returns-normal",
                 holds && Idle() && !NoAds.Owned && PurchasePending.Last == O.TimedOut
-                && NoAds.RestoreNote == "The store didn't answer. Try again",
+                && string.IsNullOrEmpty(NoAds.RestoreNote),
                 "holds59=" + holds + " last=" + PurchasePending.Last + " note=" + NoAds.RestoreNote);
             Check("timeout-is-about-60s", System.Math.Abs(PurchasePending.TimeoutSeconds - 60.0) < 0.01, "" + PurchasePending.TimeoutSeconds);
 
             // A failure that lands after the timeout must not reopen anything.
             NoAdsStoreEvents.Failed(NoAds.ProductId, PurchaseFailureReason.UserCancelled);
+            // b119: a late grant after the timeout clears any note.
+            NoAdsStoreEvents.Failed(NoAds.ProductId, PurchaseFailureReason.PaymentDeclined); // posts a note
+            bool hadNote = !string.IsNullOrEmpty(NoAds.RestoreNote);
+            NoAds.Grant();
+            Check("b119-grant-clears-note", hadNote && string.IsNullOrEmpty(NoAds.RestoreNote), "note=" + NoAds.RestoreNote);
+            NoAds.SetOwnedForTest(false);
             Check("timeout-late-cancel-ignored", Idle() && PurchasePending.Last == O.TimedOut, "last=" + PurchasePending.Last);
 
             Fresh();

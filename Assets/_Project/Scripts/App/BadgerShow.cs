@@ -794,6 +794,35 @@ namespace FlockFive
         }
     }
 
+    // b119 (Brandon): when the slam cancels an armed power-up the round no longer snaps straight to the compare.
+    // After the slam: the power-up shatters (ShatterSeconds), a short pause, then the compare/tie caption holds at
+    // least TieHoldSeconds. Taps are ignored for the first TapLockSeconds of a beat; after that a tap ends the hold.
+    // b119 (Brandon): the USED power-up look. Distinct from the not-your-turn dim (plate 0.85, icon/text 0.6, orange).
+    public static class BadgerUsedLook
+    {
+        public const float PlateAlpha = 0.45f;
+        public const float IconAlpha = 0.72f; // x the frozen grey tint 0.62 = ~45% on screen
+        public const float TextAlpha = 0.5f;
+        public const float SlashAlpha = 0.85f;
+    }
+
+    public static class BadgerCancelBeat
+    {
+        public const float ShatterSeconds = 0.6f;
+        public const float PauseSeconds = 0.4f;
+        public const float TieHoldSeconds = 1.8f;
+        public const float TapLockSeconds = 0.8f;
+        public const int Shards = 7;
+
+        public static float Duration => ShatterSeconds + PauseSeconds;
+        public static bool Done(float t) => t >= Duration;
+        public static bool Shattering(float t) => t >= 0f && t < ShatterSeconds;
+        public static float ShatterU(float t) => t <= 0f ? 0f : t >= ShatterSeconds ? 1f : t / ShatterSeconds;
+        public static bool TapSkips(float beatAge) => beatAge >= TapLockSeconds;
+        public static float VerdictHold(bool cancelled, float normal) => cancelled && normal < TieHoldSeconds ? TieHoldSeconds : normal;
+        public static bool Cancelled(BadgerRound r) => r.DontCare && r.Destroyed != BadgerPower.None;
+    }
+
     public enum BadgerSlamBeat { Words = 0, Speed = 1, ZoomIn = 2, Nasty = 3, ZoomOut = 4, Done = 5 }
 
     // "Honey Badger Don't Care" critical-hit beat (spec 2b), about 2.9 s:

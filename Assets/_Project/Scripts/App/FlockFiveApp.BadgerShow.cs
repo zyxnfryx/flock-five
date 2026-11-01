@@ -557,6 +557,7 @@ namespace FlockFive
             _bgSlamT = 0f;
             _bgSlamWord = -1;
             _bgSlamStartedAt = PlayClock.Now;
+            _bgCancelT = 0f;
             _bgStage = BadgerStage.DontCare;
             _bgLine = "";
         }
