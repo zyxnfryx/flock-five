@@ -20,11 +20,25 @@ namespace FlockFive
 
         public static string FivesBadgeLabel(int found) => found + "/" + BirdPoker.PunchKinds;
 
-        public static Rect PokerFivesIconBox(Rect payTab, float s)
+        // Medallion centred at the top of the 44pt box; found/16 pill centred under it, overlapping the bottom rim.
+        public static void FivesIconParts(Rect box, out Rect disc, out Rect pill)
+        {
+            float md = box.width * 0.80f;
+            disc = new Rect(box.center.x - md * 0.5f, box.y, md, md);
+            float ph = box.height * 0.36f, pw = box.width * 0.70f;
+            pill = new Rect(box.center.x - pw * 0.5f, Mathf.Min(disc.yMax - ph * 0.40f, box.yMax - ph), pw, ph);
+        }
+
+        // Uniform padding (Brandon): same right inset as PAY TABLE, and the gap PAY TABLE -> icon equals
+        // PAY TABLE's own gap from the top of the safe area.
+        public static Rect PokerFivesIconBox(Rect payTab, float s, float safeTop)
         {
             float d = FivesIconPt * s;
-            return new Rect(payTab.xMax - d, payTab.yMax + 6f * s, d, d);
+            float gap = Mathf.Max(0f, payTab.y - safeTop);
+            return new Rect(payTab.xMax - d, payTab.yMax + gap, d, d);
         }
+
+        public static Rect PokerFivesIconBox(Rect payTab, float s) => PokerFivesIconBox(payTab, s, PhoneArea.Safe.yMin);
 
         // No hand in play: idle (fresh or showing a settled result), nothing animating, no overlay.
         public static bool FivesChipTappable(BirdPoker.Phase phase, bool motionBusy, bool stamp, bool payOpen)
@@ -67,14 +81,15 @@ namespace FlockFive
             bool live = FivesChipLive() || _fivesOpen;
             float a = live ? 1f : 0.55f;
             float sink = _fivesChipHeld ? 2f * s : 0f;
-            float md = box.width * 0.90f;
-            var disc = new Rect(box.x, box.y + sink, md, md);
+            FivesIconParts(box, out var discR, out var pillR);
+            float md = discR.width;
+            var disc = new Rect(discR.x, discR.y + sink, md, md);
             GUI.color = new Color(0.05f, 0.03f, 0.01f, 0.45f * a);
             GUI.DrawTexture(new Rect(disc.x + 1.5f * s, disc.y + 2.5f * s, md, md), FivesMedalTex(), ScaleMode.StretchToFill, true);
             GUI.color = new Color(1f, 1f, 1f, a);
             GUI.DrawTexture(disc, FivesMedalTex(), ScaleMode.StretchToFill, true);
-            float ph = box.height * 0.36f, pw = box.width * 0.70f;
-            var pill = new Rect(box.xMax - pw, box.yMax - ph + sink * 0.5f, pw, ph);
+            float ph = pillR.height, pw = pillR.width;
+            var pill = new Rect(pillR.x, pillR.y + sink, pw, ph);
             GUI.DrawTexture(pill, FivesPillTex(), ScaleMode.StretchToFill, true);
             if (_fivesChipSt == null)
                 _fivesChipSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false, clipping = TextClipping.Overflow };

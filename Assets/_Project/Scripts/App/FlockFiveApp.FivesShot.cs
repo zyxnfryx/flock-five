@@ -78,7 +78,7 @@ namespace FlockFive
                     for (float w = 0f; w < 1.4f; w += Kick()) yield return null;
                     yield return new WaitForEndOfFrame();
                     SaveFrame(dir + "/entry-" + tag[d] + ".png");
-                    File.AppendAllText(log, tag[d] + " entry screen " + PhoneArea.W + "x" + PhoneArea.H + " phase " + BirdPoker.PhaseNow + " chipLive " + FivesChipLive() + " pay " + _fivesPayLast + " icon " + _fivesIconLast + " row " + _pokerRowLast + " safe " + PhoneArea.Safe + "\n");
+                    File.AppendAllText(log, tag[d] + " entry screen " + PhoneArea.W + "x" + PhoneArea.H + " phase " + BirdPoker.PhaseNow + " chipLive " + FivesChipLive() + " pay " + _fivesPayLast + " icon " + _fivesIconLast + " row " + _pokerRowLast + " safe " + PhoneArea.Safe + " payRightInset " + (PhoneArea.W - _fivesPayLast.xMax) + " iconRightInset " + (PhoneArea.W - _fivesIconLast.xMax) + " payTopGap " + (_fivesPayLast.y - PhoneArea.Safe.yMin) + " payToIconGap " + (_fivesIconLast.y - _fivesPayLast.yMax) + " iconToRowGap " + (_pokerRowLast.y - _fivesIconLast.yMax) + "\n");
                     _fivesOpen = true;
                     for (float w = 0f; w < 0.9f; w += Kick()) yield return null;
                     yield return new WaitForEndOfFrame();

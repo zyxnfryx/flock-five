@@ -123,11 +123,11 @@ namespace FlockFive.Editor
             // 8. Option A: trophy icon directly under PAY TABLE, right edges aligned, 44pt square hit rect,
             //    inside the safe area on iPhone 18 Pro / iPad A16 (pillar) / Samsung S25.
             var tab = new Rect(300f, 120f, 86f, 24f);
-            var chip = FlockFiveApp.PokerFivesIconBox(tab, 1f);
+            var chip = FlockFiveApp.PokerFivesIconBox(tab, 1f, 40f);
             Check("icon under PAY TABLE, right-aligned, 44pt hit rect",
-                chip.y >= tab.yMax && chip.y - tab.yMax <= 8f && Mathf.Approximately(chip.xMax, tab.xMax)
+                chip.y >= tab.yMax && Mathf.Approximately(chip.xMax, tab.xMax)
                 && Mathf.Approximately(chip.width, 44f) && Mathf.Approximately(chip.height, 44f), chip.ToString());
-            var c2 = FlockFiveApp.PokerFivesIconBox(tab, 2f);
+            var c2 = FlockFiveApp.PokerFivesIconBox(tab, 2f, 40f);
             Check("icon hit rect scales with s (44pt)", Mathf.Approximately(c2.width, 88f) && Mathf.Approximately(c2.xMax, tab.xMax), c2.ToString());
             {
                 var devs = new[] { new Vector4(402f, 874f, 0f, 0f), new Vector4(820f, 1180f, 0f, 0f), new Vector4(360f, 780f, 0f, 0f), new Vector4(402f, 874f, 59f, 34f) };
@@ -136,13 +136,36 @@ namespace FlockFive.Editor
                 {
                     var safe = new Rect(0f, dv.z, dv.x, dv.y - dv.z - dv.w);
                     var pt = FlockFiveApp.PokerPayTabBox(dv.x, safe, safe.y + 120f, 1f);
-                    var ic = FlockFiveApp.PokerFivesIconBox(pt, 1f);
+                    var ic = FlockFiveApp.PokerFivesIconBox(pt, 1f, safe.yMin);
                     bool ok = ic.xMin >= safe.xMin && ic.xMax <= safe.xMax && ic.yMin >= pt.yMax && ic.yMax <= safe.yMax
                         && Mathf.Approximately(ic.xMax, pt.xMax) && !ic.Overlaps(pt);
                     sd += dv.x + "x" + dv.y + (ok ? " ok " : " BAD ") + ic + "; ";
                     safeOk &= ok;
                 }
                 Check("icon inside safe area, clear of PAY TABLE, each device", safeOk, sd);
+            }
+            {
+                FlockFiveApp.FivesIconParts(chip, out var disc, out var pill);
+                bool centred = Mathf.Abs(pill.center.x - disc.center.x) < 0.01f && Mathf.Abs(disc.center.x - chip.center.x) < 0.01f;
+                bool under = pill.y > disc.center.y && pill.y < disc.yMax && pill.yMax > disc.yMax;
+                bool inside = pill.xMin >= chip.xMin && pill.xMax <= chip.xMax && pill.yMax <= chip.yMax + 0.01f && disc.xMin >= chip.xMin && disc.xMax <= chip.xMax;
+                Check("pill centred under medallion, overlapping bottom rim, inside 44pt box", centred && under && inside, "disc " + disc + " pill " + pill);
+            }
+            {
+                // Uniform padding on iPhone 18 Pro / iPad A16 (pillar area) / Samsung S25, real point sizes and safe insets.
+                var devs2 = new[] { new Vector4(402f, 874f, 62f, 34f), new Vector4(664f, 1180f, 24f, 20f), new Vector4(360f, 780f, 32f, 16f) };
+                bool uni = true; string ud = "";
+                foreach (var dv in devs2)
+                {
+                    var safe = new Rect(0f, dv.z, dv.x, dv.y - dv.z - dv.w);
+                    var pt = FlockFiveApp.PokerPayTabBox(dv.x, safe, safe.y + 90f, 1f);
+                    var ic = FlockFiveApp.PokerFivesIconBox(pt, 1f, safe.yMin);
+                    float rPay = dv.x - pt.xMax, rIcon = dv.x - ic.xMax, top = pt.y - safe.yMin, mid = ic.y - pt.yMax;
+                    bool ok = Mathf.Abs(rPay - rIcon) < 0.01f && Mathf.Abs(top - mid) < 0.01f;
+                    ud += dv.x + "x" + dv.y + " right " + rPay + "/" + rIcon + " gap " + top + "/" + mid + (ok ? " ok; " : " BAD; ");
+                    uni &= ok;
+                }
+                Check("uniform padding: icon right inset = PAY TABLE's, PAY->icon gap = PAY top gap", uni, ud);
             }
             string fb = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.FivesBoard.cs");
             Check("no ★ FIVES chip left (Option A)", !fb.Contains("★ FIVES") && !fb.Contains("PokerFivesChipBox"), "");
