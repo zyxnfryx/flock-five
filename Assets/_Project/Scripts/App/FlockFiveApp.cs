@@ -13536,12 +13536,16 @@ namespace FlockFive
             return new Vector2(tabW, tabH);
         }
 
+        // b119 spacing (Brandon): "a little spacing" between the FLOCK FIVE POKER logo and the PAY TABLE + trophy
+        // cluster. The cluster drops further below the logo (was 8pt); right inset and PAY->trophy gap stay equal.
+        public const float PokerPayTabLogoGap = 20f;
+
         public static Rect PokerPayTabBox(float w, Rect safe, float top, float s)
         {
             var size = PokerPayTabSize(w, s, DeviceFit.WindowAspect());
             float tabW = size.x, tabH = size.y;
             float right = w - Mathf.Max(6f, w - safe.xMax + 4f);
-            float tabY = top + 8f * s;
+            float tabY = top + PokerPayTabLogoGap * s;
             return new Rect(right - tabW, tabY, tabW, tabH);
         }
 

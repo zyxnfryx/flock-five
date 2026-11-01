@@ -11,6 +11,7 @@ namespace FlockFive.Editor
     {
         public static void Capture()
         {
+            ShotPrefsGuard.Begin(); // a play session writes the real PlayerPrefs; put them back after
             AudioListener.volume = 0f;
             AudioListener.pause = true;
             Build79Stills.SetGameView(1206, 2622);

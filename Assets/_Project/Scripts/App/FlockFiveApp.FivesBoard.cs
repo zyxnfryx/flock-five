@@ -31,11 +31,14 @@ namespace FlockFive
 
         // Uniform padding (Brandon): same right inset as PAY TABLE, and the gap PAY TABLE -> icon equals
         // PAY TABLE's own gap from the top of the safe area.
+        // b119 Keep (Brandon): trophy "nudged down a smidge away from the pay table button" (~14-16px on device).
+        public const float FivesIconExtraGap = 2.5f;
+
         public static Rect PokerFivesIconBox(Rect payTab, float s, float screenW)
         {
             float d = FivesIconPt * s;
             // Snug, uniform padding: PAY->icon gap equals PAY TABLE's right inset.
-            float gap = Mathf.Max(0f, screenW - payTab.xMax);
+            float gap = Mathf.Max(0f, screenW - payTab.xMax) + FivesIconExtraGap * s;
             return new Rect(payTab.xMax - d, payTab.yMax + gap, d, d);
         }
 
