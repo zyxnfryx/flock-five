@@ -68,7 +68,7 @@ namespace FlockFive
                 case BadgerPower.X2: return firstUnlock ? PowersOpen : "Tap x2.\nYour first one is free.";
                 case BadgerPower.X3: return "New: x3 triples your next tile.\nTap x3. Free this once.";
                 case BadgerPower.HotSauce: return "Hot Sauce replaces your weakest tile (it\nscores 0) and blocks the badger. Tap it.";
-                case BadgerPower.FreezeSpray: return "Freeze replaces your weakest tile (it scores 0)\nand blocks the badger for 2 rounds. Tap it.";
+                case BadgerPower.FreezeSpray: return "Freeze replaces your weakest tile (it scores 0)\nand blocks the badger: for 2 rounds he picks\nbut scores nothing. Tap it.";
             }
             return "";
         }
@@ -76,7 +76,7 @@ namespace FlockFive
         // Result beat for a block power's forced round: the badger did not score.
         public static string BlockWorkedLine(BadgerPower p)
         {
-            if (p == BadgerPower.FreezeSpray) return "Frozen! The badger scores nothing this round,\nthen spends the next one breaking free.";
+            if (p == BadgerPower.FreezeSpray) return "Frozen! He picks, but the badger scores nothing\nthis round and the next.";
             return "Blocked! The badger scores nothing.\nThe Hot Sauce tile scores 0.";
         }
 
@@ -127,8 +127,10 @@ namespace FlockFive
             return (roundIndex & 1) == 0 ? GoesFirst : HowMany;
         }
 
-        public const string BreakFree = "The badger spent his turn\nbreaking free!";
-        public const string FrozenSolid = "Frozen solid! He can't move.";
+        // b119 (Brandon): a frozen badger still picks; his pick just scores 0. The copy says so (was "can't move" /
+        // "spent his turn breaking free", which contradicted the tile he visibly picks).
+        public const string BreakFree = "Still thawing out!\nHis pick scores 0.";
+        public const string FrozenSolid = "Frozen! His pick scores 0.";
         // Hot Sauce is disabled while the badger is frozen (frozen turn and break-free turn).
         // Two authored lines (same words) so the shared caption fit never splits at "Hot / Sauce".
         public const string HotSauceFrozen = "Frozen badger.\nHot Sauce is on hold.";

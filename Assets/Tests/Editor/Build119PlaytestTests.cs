@@ -129,6 +129,35 @@ namespace FlockFive.Editor
             Check("ice-shiver-bursts", still > moving * 2 && moving > 0, "still " + still + " moving " + moving);
             Check("ice-shiver-wired", app4.IndexOf("SparkleFx.IceShiver(now, 2.2f * s)") > 0 && app4.IndexOf("SparkleFx.Shiver(now, 2.2f * s)") < 0, "");
 
+            // b119 follow-up (Brandon's picks): frozen copy matches the rule, flame tongues, Spring A art.
+            Check("frozen-copy-rule", BadgerCopy.FrozenSolid.Contains("scores 0") && BadgerCopy.BreakFree.Contains("scores 0")
+                && !BadgerCopy.FrozenSolid.Contains("can't move") && !BadgerCopy.BreakFree.Contains("spent his turn"), BadgerCopy.FrozenSolid + " | " + BadgerCopy.BreakFree.Replace("\n", "/"));
+            // Fit: both lines are in Build110BadgerDialogTests' bottom-band list (small to large screens).
+            var tongue = SpriteCatalog.FlameTongue;
+            Check("flame-tongue-sprite", tongue != null && tongue.texture.height > tongue.texture.width && tongue.pivot.y < 0.5f
+                && Mathf.Abs(tongue.pivot.x - tongue.rect.width * 0.5f) < 0.6f, tongue == null ? "null" : tongue.pivot.ToString());
+            if (tongue != null)
+            {
+                var tx = tongue.texture;
+                Color core = tx.GetPixel(tx.width / 2, tx.height / 5), tip = tx.GetPixel(tx.width / 2, tx.height - 2), edge = tx.GetPixel(1, tx.height / 5);
+                Check("flame-tongue-colours", core.a > 0.9f && core.g > 0.7f && edge.a < 0.2f && tip.a < 0.5f, core + " " + tip + " " + edge);
+            }
+            string branch = Src("Assets/_Project/Scripts/View/BranchView.cs");
+            string build = branch.Substring(System.Math.Max(0, branch.IndexOf("void BuildFlames(")), 600);
+            Check("flames-use-tongues", build.Contains("SpriteCatalog.FlameTongue") && !build.Contains("SpriteCatalog.Glow"), "");
+            var s0 = BranchView.FlameTongueScale(7, 14, 0f);
+            var s1 = BranchView.FlameTongueScale(7, 14, 0.6f);
+            var sEdge = BranchView.FlameTongueScale(0, 14, 0.6f);
+            var sEnd = BranchView.FlameTongueScale(7, 14, BranchView.ScorchSeconds);
+            Check("flame-tongue-grow-fade", s0.y == 0f && s1.y > 0.4f && sEdge.y < s1.y && sEnd.y == 0f, s1 + " " + sEdge);
+            var bg = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Art/Resources/Sprites/bg_spring.png");
+            var bgImp = AssetImporter.GetAtPath("Assets/_Project/Art/Resources/Sprites/bg_spring.png") as TextureImporter;
+            int bw = 0, bh = 0;
+            if (bgImp != null) bgImp.GetSourceTextureWidthAndHeight(out bw, out bh);
+            Check("spring-a-size", bw == 1080 && bh == 1920, bw + "x" + bh);
+            var mask = Resources.Load<Texture2D>("SwayMasks/bg_spring_sway");
+            Check("spring-sway-mask", mask != null, "");
+
             sb.AppendLine("pass " + pass + " fail " + fail);
             File.WriteAllText(Out, sb.ToString());
             Debug.Log("[build119-playtest] pass " + pass + " fail " + fail);
