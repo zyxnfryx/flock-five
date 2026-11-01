@@ -26,6 +26,7 @@ namespace FlockFive.Editor
         {
             Suite("board", BoardLayoutTests.Run);
             Suite("badger", BadgerFightTests.Run);
+            Suite("blackbird", BlackbirdFightTests.Run);
             Suite("badger-show", BadgerShowTests.Run);
             Suite("garden-season", GardenSeasonTests.Run);
             Suite("card-fit", CardTextFitTests.Run);

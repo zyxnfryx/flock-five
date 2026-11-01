@@ -110,7 +110,11 @@ namespace FlockFive
             if (b.Ostrich != null && b.Ostrich.Alive)
                 OstrichPest.AfterMove(b);
             else
+            {
                 Drain(b);
+                // His reply is part of the transition, same as a peck.
+                BlackbirdRival.Commit(b);
+            }
         }
 
         // Same, with the pecks logged for the view. See OstrichPest.AfterMove.
@@ -121,7 +125,10 @@ namespace FlockFive
             if (b.Ostrich != null && b.Ostrich.Alive)
                 OstrichPest.AfterMove(b, log, out finaleBranch);
             else
+            {
                 Drain(b);
+                BlackbirdRival.Commit(b);
+            }
         }
 
         // The garden is clear only once a living ostrich has fled.
@@ -199,6 +206,19 @@ namespace FlockFive
                 Mix((int)(o.Bonked >> 32));
                 // Peck index drops out of the key once the bird has fled.
                 Mix(o.Alive ? 80 + (o.PeckIndex & 0xffff) : 79);
+            }
+            if (b.Blackbird != null)
+            {
+                var bb = b.Blackbird;
+                // 12 covers calm 3, rattled 2, and the ramp's 4 and 3.
+                Mix(100 + (bb.PlayerMoves % 12));
+                Mix(400 + bb.CalmEvery);
+                Mix(500 + bb.RattleEvery);
+                Mix(bb.Fled ? 111 : 110);
+                Mix(bb.LastDitchPlayed ? 113 : 112);
+                Mix(120 + bb.Notch);
+                Mix(2000 + b.LastHopFrom);
+                Mix(3000 + b.LastHopTo);
             }
             return new Stamp { A = a, B = h };
         }
@@ -307,6 +327,14 @@ namespace FlockFive
                 var o = b.Ostrich;
                 sb.Append('#').Append(o.Hits).Append(',').Append(o.Bonked).Append(',');
                 sb.Append(o.Alive ? o.PeckIndex : -1);
+            }
+            if (b.Blackbird != null)
+            {
+                var bb = b.Blackbird;
+                sb.Append('#').Append(bb.PlayerMoves % 12).Append(',').Append(bb.Fled ? 1 : 0);
+                sb.Append(",c").Append(bb.CalmEvery).Append(",r").Append(bb.RattleEvery);
+                sb.Append(',').Append(b.LastHopFrom).Append('>').Append(b.LastHopTo);
+                sb.Append(',').Append(bb.Notch);
             }
             return sb.ToString();
         }

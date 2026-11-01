@@ -558,6 +558,11 @@ namespace FlockFive
 #endif
             }
 #if UNITY_EDITOR
+            if (System.IO.File.Exists("/tmp/flock-five-blackbird"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-blackbird"); } catch { }
+                EditorOpenBlackbird();
+            }
             if (System.IO.File.Exists("/tmp/flock-five-b79-stills"))
             {
                 try { System.IO.File.Delete("/tmp/flock-five-b79-stills"); } catch { }
@@ -906,6 +911,7 @@ namespace FlockFive
             RewardedGrant.Flush();
             StartCoroutine(GardenFit.Tween(_garden, _board, true));
             Sfx.GardenWake();
+            BeginBlackbirdVisit();
             StopPests();
             PestSchedule.BeginStage(LevelData.DisplayNumber);
             PestSchedule.SetTutorialPause(_leafIntro);
@@ -3714,7 +3720,7 @@ namespace FlockFive
         void HandleTap(Vector2 world)
         {
             if (LessonTapBlocked()) return;
-            if (_busy || _won || _board == null) return;
+            if (_busy || _won || _board == null || _blackbirdHold || BlackbirdCue.HoldTaps(_bbIntro != null)) return;
             if (GateNow < _swallowTapsUntil) return;
             if (AdPause.Unscaled < _nextTap) return;
             _nextTap = AdPause.Unscaled + 0.10f;
@@ -3895,7 +3901,26 @@ namespace FlockFive
             }
             SyncAll();
 
+            bool bb = _board.Blackbird != null && !_board.Blackbird.Fled;
+            if (bb) _blackbirdHold = true;
             int kicked = KickCollects();
+            if (bb)
+            {
+                while (MoveStillAnimating())
+                {
+                    if (gen != _motionGen) { _blackbirdHold = false; yield break; }
+                    yield return null;
+                }
+                yield return BlackbirdAnswer(gen);
+                if (gen != _motionGen) { _blackbirdHold = false; yield break; }
+                _blackbirdHold = false;
+                int more = KickCollects();
+                if (more == 0)
+                {
+                    if (TryScoreGarden()) yield return WaitGardenScore();
+                    else CheckOver();
+                }
+            }
             SyncAll();
             CoachMoved(from, to, kicked);
             _hopTrail.Note(from, to, run, kicked > 0 || _board.JustUnveiled);
@@ -4218,6 +4243,8 @@ namespace FlockFive
             if (!_gardenScoring && _locked.Count == 0)
                 yield return GardenFit.Tween(_garden, _board, false);
             if (gen != _motionGen || more != 0) yield break;
+            // A blackbird reply still owes this move. Scoring waits until he has acted.
+            if (_blackbirdHold) yield break;
             if (TryScoreGarden())
                 yield return WaitGardenScore();
             if (gen != _motionGen) yield break;
@@ -5612,6 +5639,7 @@ namespace FlockFive
             StillBirds(false);
             _busy = false;
             ArmGardenStamp();
+            BeginBlackbirdVisit();
         }
 
         void RefreshBonusSigns()

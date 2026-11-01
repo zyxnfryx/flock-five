@@ -76,6 +76,15 @@ Yamaha RBX (FreePats FingerBass YR, CC0). Drums: MuldjordKit (Lars Muldjord /
 FreePats, CC-BY-4.0). Cowbell original. C# `MakeSplash` is fallback only.
 Sole splash bed occupant. Chirps stay real hummingbirds.
 
+Blackbird taunt (`Audio/Blackbird/chook`, `Sfx.BlackbirdTaunt`) is one real
+common blackbird (Turdus merula) alarm chook, about 0.4s. Source: Sadiquecat,
+“Black bird 1”, Freesound 737204, recorded 2024-05-24 at Bouriège, France
+(Zoom H2n). [Page](https://freesound.org/people/Sadiquecat/sounds/737204/).
+License: CC0 1.0. Trimmed to a single alarm phrase, highpassed at 180 Hz and
+rolled off above 7.5 kHz. Playback pitch is 1 (never above 1.04) and the shot
+level is 0.6. Not synthesized, and not an xeno-canto recording. The wing tell
+is the existing flap bank (`Sfx.PlayFlap`), not a second call.
+
 Gate activate (`Sfx.GateGo`) is an original chevron-lock + watery vortex whoosh
 for the splash flower. Inspired by the *gesture* of a Stargate kawoosh, not a
 copy of any recording.
