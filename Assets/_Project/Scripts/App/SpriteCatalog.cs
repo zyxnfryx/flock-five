@@ -1135,7 +1135,8 @@ namespace FlockFive
             get
             {
                 if (_flameTongue != null) return _flameTongue;
-                const int w = 48, h = 128;
+                // v2 (PR 221, mockup A): a fat-bellied tongue, so neighbours overlap into one wall of fire.
+                const int w = 64, h = 128;
                 var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
                 tex.filterMode = FilterMode.Bilinear;
                 tex.wrapMode = TextureWrapMode.Clamp;
@@ -1143,17 +1144,18 @@ namespace FlockFive
                 for (int y = 0; y < h; y++)
                 {
                     float v = y / (float)(h - 1);
-                    // half-width: round belly near the base, long tapering tip
-                    float hw = 0.5f * Mathf.Pow(1f - v, 0.85f) * (0.55f + 0.45f * Mathf.Sin(Mathf.Min(1f, (v + 0.12f) * 1.6f) * Mathf.PI * 0.5f));
-                    float lean = 0.06f * v * v;
+                    // half-width: wide round belly low down, then a curved taper to a point
+                    float belly = Mathf.SmoothStep(0.55f, 1f, Mathf.Clamp01((v + 0.06f) / 0.3f));
+                    float hw = 0.46f * belly * Mathf.Pow(1f - v, 0.75f);
+                    float lean = 0.07f * v * v;
                     for (int x = 0; x < w; x++)
                     {
                         float u = (x + 0.5f) / w - 0.5f - lean;
                         float d = hw > 0.001f ? Mathf.Abs(u) / hw : 2f;
-                        float a = Mathf.Clamp01((1f - d) * 6f) * Mathf.Clamp01(v * 14f + 0.3f);
-                        Color c = d < 0.42f && v < 0.62f ? new Color(1f, 0.88f, 0.38f)
-                            : d < 0.72f && v < 0.85f ? new Color(1f, 0.52f, 0.1f)
-                            : new Color(0.8f, 0.17f, 0.05f);
+                        float a = Mathf.Clamp01((1f - d) * 5f) * Mathf.Clamp01(v * 14f + 0.3f);
+                        Color c = d < 0.45f && v < 0.55f ? new Color(1f, 0.9f, 0.42f)
+                            : d < 0.78f && v < 0.82f ? new Color(1f, 0.55f, 0.12f)
+                            : new Color(0.85f, 0.2f, 0.05f);
                         px[y * w + x] = new Color32((byte)(c.r * 255), (byte)(c.g * 255), (byte)(c.b * 255), (byte)(a * 255));
                     }
                 }

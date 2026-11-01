@@ -2181,6 +2181,8 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        public static bool BadgerFrozenVerdict(string line) => line == BadgerCopy.FrozenSolid || line == BadgerCopy.BreakFree;
+
         static bool BadgerFrozenLine(string line)
             => line == BadgerCopy.FreezeSprayFrozen || line == BadgerCopy.HotSauceFrozen;
 
@@ -2704,7 +2706,9 @@ namespace FlockFive
             if (BadgerWinBannerLive()) { DrawBadgerWinBanner(L); return; }
             // v2 (b116 bug): a frozen line paints in the BadgerBottomBands caption slot under the power row, hard-broken
             // on its authored '/' rows, so the banner never lands across the arena and covers the fighters.
-            if (BadgerFrozenLine(_bgLine) && !BadgerTutorialFight())
+            // b119 (PR 221): the frozen / thawing verdicts ("His pick scores 0.") took the gold banner, which sat over the
+            // honeycomb and the 5-tiles on phones. They paint in the same clear band under the power row.
+            if ((BadgerFrozenLine(_bgLine) && !BadgerTutorialFight()) || BadgerFrozenVerdict(_bgLine))
             {
                 PaintBadgerBandCaption(_bgLine, BadgerCaptionSeat(L.Caption, s), s, BadgerCaptionFade.For(false, _coachFade));
                 return;

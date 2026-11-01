@@ -150,6 +150,13 @@ namespace FlockFive.Editor
             var sEdge = BranchView.FlameTongueScale(0, 14, 0.6f);
             var sEnd = BranchView.FlameTongueScale(7, 14, BranchView.ScorchSeconds);
             Check("flame-tongue-grow-fade", s0.y == 0f && s1.y > 0.4f && sEdge.y < s1.y && sEnd.y == 0f, s1 + " " + sEdge);
+            // v2: dense wall (overlapping tongues), warm base glow, frozen verdicts in the clear band under the power row.
+            var sw0 = BranchView.FlameTongueScale(10, 24, 0.6f);
+            float tongueW = tongue != null ? tongue.bounds.size.x * sw0.x : 0f;
+            Check("flames-dense-wall", branch.Contains("FlameN = 24") && tongueW > 2.0f / 24f * 2.5f, "tongue w " + tongueW);
+            Check("flames-base-glow", branch.Contains("BuildFlameGlow()") && branch.Contains("SpriteCatalog.Glow, transform.position, 1f, 15"), "");
+            Check("frozen-verdict-in-band", FlockFiveApp.BadgerFrozenVerdict(BadgerCopy.FrozenSolid) && FlockFiveApp.BadgerFrozenVerdict(BadgerCopy.BreakFree)
+                && !FlockFiveApp.BadgerFrozenVerdict(BadgerCopy.YourPick), "");
             var bg = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/_Project/Art/Resources/Sprites/bg_spring.png");
             var bgImp = AssetImporter.GetAtPath("Assets/_Project/Art/Resources/Sprites/bg_spring.png") as TextureImporter;
             int bw = 0, bh = 0;
