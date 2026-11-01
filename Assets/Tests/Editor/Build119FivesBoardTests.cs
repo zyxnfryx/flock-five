@@ -123,11 +123,11 @@ namespace FlockFive.Editor
             // 8. Option A: trophy icon directly under PAY TABLE, right edges aligned, 44pt square hit rect,
             //    inside the safe area on iPhone 18 Pro / iPad A16 (pillar) / Samsung S25.
             var tab = new Rect(300f, 120f, 86f, 24f);
-            var chip = FlockFiveApp.PokerFivesIconBox(tab, 1f, 40f);
+            var chip = FlockFiveApp.PokerFivesIconBox(tab, 1f, 392f);
             Check("icon under PAY TABLE, right-aligned, 44pt hit rect",
                 chip.y >= tab.yMax && Mathf.Approximately(chip.xMax, tab.xMax)
                 && Mathf.Approximately(chip.width, 44f) && Mathf.Approximately(chip.height, 44f), chip.ToString());
-            var c2 = FlockFiveApp.PokerFivesIconBox(tab, 2f, 40f);
+            var c2 = FlockFiveApp.PokerFivesIconBox(tab, 2f, 392f);
             Check("icon hit rect scales with s (44pt)", Mathf.Approximately(c2.width, 88f) && Mathf.Approximately(c2.xMax, tab.xMax), c2.ToString());
             {
                 var devs = new[] { new Vector4(402f, 874f, 0f, 0f), new Vector4(820f, 1180f, 0f, 0f), new Vector4(360f, 780f, 0f, 0f), new Vector4(402f, 874f, 59f, 34f) };
@@ -136,7 +136,7 @@ namespace FlockFive.Editor
                 {
                     var safe = new Rect(0f, dv.z, dv.x, dv.y - dv.z - dv.w);
                     var pt = FlockFiveApp.PokerPayTabBox(dv.x, safe, safe.y + 120f, 1f);
-                    var ic = FlockFiveApp.PokerFivesIconBox(pt, 1f, safe.yMin);
+                    var ic = FlockFiveApp.PokerFivesIconBox(pt, 1f, dv.x);
                     bool ok = ic.xMin >= safe.xMin && ic.xMax <= safe.xMax && ic.yMin >= pt.yMax && ic.yMax <= safe.yMax
                         && Mathf.Approximately(ic.xMax, pt.xMax) && !ic.Overlaps(pt);
                     sd += dv.x + "x" + dv.y + (ok ? " ok " : " BAD ") + ic + "; ";
@@ -159,13 +159,13 @@ namespace FlockFive.Editor
                 {
                     var safe = new Rect(0f, dv.z, dv.x, dv.y - dv.z - dv.w);
                     var pt = FlockFiveApp.PokerPayTabBox(dv.x, safe, safe.y + 90f, 1f);
-                    var ic = FlockFiveApp.PokerFivesIconBox(pt, 1f, safe.yMin);
+                    var ic = FlockFiveApp.PokerFivesIconBox(pt, 1f, dv.x);
                     float rPay = dv.x - pt.xMax, rIcon = dv.x - ic.xMax, top = pt.y - safe.yMin, mid = ic.y - pt.yMax;
-                    bool ok = Mathf.Abs(rPay - rIcon) < 0.01f && Mathf.Abs(top - mid) < 0.01f;
-                    ud += dv.x + "x" + dv.y + " right " + rPay + "/" + rIcon + " gap " + top + "/" + mid + (ok ? " ok; " : " BAD; ");
+                    bool ok = Mathf.Abs(rPay - rIcon) < 0.01f && Mathf.Abs(rPay - mid) < 0.01f && rPay > 0f && rPay <= 12f;
+                    ud += dv.x + "x" + dv.y + " right " + rPay + "/" + rIcon + " gap " + mid + " (top " + top + ")" + (ok ? " ok; " : " BAD; ");
                     uni &= ok;
                 }
-                Check("uniform padding: icon right inset = PAY TABLE's, PAY->icon gap = PAY top gap", uni, ud);
+                Check("uniform padding: icon right inset = PAY TABLE's, PAY->icon gap = right inset (snug)", uni, ud);
             }
             string fb = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.FivesBoard.cs");
             Check("no ★ FIVES chip left (Option A)", !fb.Contains("★ FIVES") && !fb.Contains("PokerFivesChipBox"), "");

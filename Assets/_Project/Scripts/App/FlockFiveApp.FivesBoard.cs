@@ -31,14 +31,15 @@ namespace FlockFive
 
         // Uniform padding (Brandon): same right inset as PAY TABLE, and the gap PAY TABLE -> icon equals
         // PAY TABLE's own gap from the top of the safe area.
-        public static Rect PokerFivesIconBox(Rect payTab, float s, float safeTop)
+        public static Rect PokerFivesIconBox(Rect payTab, float s, float screenW)
         {
             float d = FivesIconPt * s;
-            float gap = Mathf.Max(0f, payTab.y - safeTop);
+            // Snug, uniform padding: PAY->icon gap equals PAY TABLE's right inset.
+            float gap = Mathf.Max(0f, screenW - payTab.xMax);
             return new Rect(payTab.xMax - d, payTab.yMax + gap, d, d);
         }
 
-        public static Rect PokerFivesIconBox(Rect payTab, float s) => PokerFivesIconBox(payTab, s, PhoneArea.Safe.yMin);
+        public static Rect PokerFivesIconBox(Rect payTab, float s) => PokerFivesIconBox(payTab, s, PhoneArea.W);
 
         // No hand in play: idle (fresh or showing a settled result), nothing animating, no overlay.
         public static bool FivesChipTappable(BirdPoker.Phase phase, bool motionBusy, bool stamp, bool payOpen)
