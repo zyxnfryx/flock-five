@@ -19849,6 +19849,10 @@ namespace FlockFive
             HudLayout(out _, out _, out _, out var restart, out var hive);
             float topLimit = TopHud() + 6f * s;
             float botLimit = Mathf.Min(restart.y, hive.y) - 12f * s;
+            // b120: on iPhone the HUD rects can come back in the pillarboxed iPad frame, so botLimit collapsed
+            // to topLimit+48 and the whole stack (Watch Ad to Continue) stuck under the notch. Fall back to the
+            // phone area so the card centers on the iced board on every aspect.
+            if (botLimit < topLimit + PhoneArea.H * 0.4f) botLimit = PhoneArea.H * 0.86f;
             if (botLimit < topLimit + 48f) botLimit = topLimit + 48f;
             float room = botLimit - topLimit;
 
@@ -19882,7 +19886,8 @@ namespace FlockFive
                     stack = cardH + retrySz - overlap + gap + contH;
                 }
             }
-            float cardY = botLimit - stack;
+            // b120: centered on the board between the HUD rows, not bottom-pinned.
+            float cardY = topLimit + Mathf.Max(0f, (room - stack) * 0.5f);
             if (cardY < topLimit) cardY = topLimit;
             card = new Rect((PhoneArea.W - cardW) * 0.5f, cardY, cardW, cardH);
             retry = new Rect((PhoneArea.W - retrySz) * 0.5f, card.yMax - overlap, retrySz, retrySz);
