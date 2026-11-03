@@ -28,6 +28,31 @@ namespace FlockFive
             return _formatText;
         }
 
+        // b120: short labels between tight buttons. $999, $1K, $2.5K, $10K, $1M (one trimmed decimal).
+        public static string Compact(long n)
+        {
+            if (n < 0) return "-" + Compact(n == long.MinValue ? long.MaxValue : -n);
+            if (n < 1000L) return "$" + n.ToString(CultureInfo.InvariantCulture);
+            // Round to one decimal; a value that rounds to 1000 of a unit rolls into the next ($999,999 -> $1M).
+            string[] u = { "K", "M", "B", "T" };
+            double v = n / 1000.0;
+            int i = 0;
+            while (true)
+            {
+                // One decimal under 100 of a unit, whole numbers from 100 up; round first, then roll over.
+                double r = v < 99.95
+                    ? System.Math.Round(v * 10.0, System.MidpointRounding.AwayFromZero) / 10.0
+                    : System.Math.Round(v, System.MidpointRounding.AwayFromZero);
+                if (r < 1000.0 || i == u.Length - 1) { v = r; break; }
+                v /= 1000.0; i++;
+            }
+            if (v >= 1000.0) return "$999T+";
+            string t = v >= 100.0 || v % 1.0 == 0.0
+                ? System.Math.Round(v).ToString("0", CultureInfo.InvariantCulture)
+                : v.ToString("0.#", CultureInfo.InvariantCulture);
+            return "$" + t + u[i];
+        }
+
         static string FormatFresh(long n)
         {
             if (n < 0) return "-" + FormatFresh(n == long.MinValue ? long.MaxValue : -n);
