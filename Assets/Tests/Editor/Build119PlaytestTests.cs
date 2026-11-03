@@ -128,6 +128,16 @@ namespace FlockFive.Editor
                 // Cancel beat actually runs: Destroyed boost keeps DontCare open past the slam until the beat is done.
                 Check("cancel-holds-dontcare", !BadgerCancelBeat.Done(0f) && BadgerCancelBeat.Done(BadgerCancelBeat.Duration + 0.01f), "");
             }
+            // Hardening: the fives board closes on any screen change away from poker (central, per frame).
+            Check("fives-closes-off-poker", FlockFiveApp.FivesMayStayOpen(true, true) && !FlockFiveApp.FivesMayStayOpen(true, false)
+                && !FlockFiveApp.FivesMayStayOpen(false, true) && !FlockFiveApp.FivesMayStayOpen(false, false), "");
+            {
+                string appMain = Src(App + "FlockFiveApp.cs");
+                int body = appMain.IndexOf("void UpdateBody()");
+                int call = appMain.IndexOf("ClearFivesOffPoker();", body > 0 ? body : 0);
+                int pause = appMain.IndexOf("if (GamePause.Paused)", body > 0 ? body : 0);
+                Check("fives-clear-wired", body > 0 && call > body && call < pause, "body " + body + " call " + call + " pause " + pause);
+            }
             Check("cancel-under-heal", BadgerCancelBeat.Duration < TutorialHeal.MaxGateSeconds, "");
 
             // (8) USED look.

@@ -52,6 +52,18 @@ namespace FlockFive
             FivesChipTappable(BirdPoker.PhaseNow, PokerMotionBusy(), _pokerStamp, _pokerPayOpen || _pokerPayAnim > 0.05f)
             && !PokerWinFlying();
 
+        // b119 hardening: the board belongs to the poker page. Any screen away from it
+        // (Splash, Hive, Badger, or a level) closes it so a stale PokerFives modal can't linger.
+        public static bool FivesMayStayOpen(bool splash, bool onPoker) => splash && onPoker;
+
+        // Called once per frame from UpdateBody: the one place every screen change passes through.
+        void ClearFivesOffPoker()
+        {
+            if (!_fivesOpen && _fivesAnim <= 0f) return;
+            if (FivesMayStayOpen(_splash, _home == HomeFace.Poker)) return;
+            _fivesOpen = false; _fivesAnim = 0f; _fivesChipHeld = false;
+        }
+
         // Hit-test before cards / DEAL so the open board swallows taps.
         void TickPokerFives(Rect payTab, float s)
         {
