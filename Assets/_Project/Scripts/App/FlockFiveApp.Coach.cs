@@ -87,7 +87,7 @@ namespace FlockFive
         const float PestCueGap = 1.05f;
         // About 20% under the old 118px lesson hand.
         const float GlovePx = 94.4f;
-        static float GloveDh(float s) => GlovePx * s;
+        public static float GloveDh(float s) => GlovePx * s;
         static float GloveDrawW(float dh)
         {
             var tex = CoachGloveTex();
@@ -1765,7 +1765,9 @@ namespace FlockFive
                 start.y = Mathf.Clamp(start.y, y0, y1);
                 float below = _cueAimGui.y + 28f * s;
                 if (start.y < below) start.y = Mathf.Min(y1, below);
-                _gloveTip = start;
+                // b120: an entry override (poker Back: middle right) used to seat the hand a whole screen
+                // away, so it travelled across the phone. Every angled start is now held snug to its target.
+                _gloveTip = AngledStartSnug(start, aimGui, s, safe);
             }
             else
                 _gloveTip = GloveNearStart(rest, aimGui, s, ang, _gloveMirror);
@@ -1805,6 +1807,10 @@ namespace FlockFive
 
         // Middle of the right edge, fully inside the safe rect (the clamp in GloveLockPose keeps the whole hand on screen).
         public static Vector2 GloveMiddleRightEntry(Rect safe) => new Vector2(safe.xMax, safe.center.y);
+
+        // b120: angled starts obey the same near-start cap as plain gloves (GloveNearStartHands, 0.5x travel).
+        public static Vector2 AngledStartSnug(Vector2 start, Vector2 aim, float s, Rect safe)
+            => GloveNearStartPoint(start, aim, s, safe);
 
         // Longest start-to-target run for a non-angled glove, in hand-heights. ClearGloveOfCaption's shove loop can push the
         // perch outward without limit; this keeps the hand close to what it points at.
