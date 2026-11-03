@@ -33,6 +33,7 @@ namespace FlockFive.Editor
             Suite("poker-flush", PokerFlushTests.Run);
             Suite("heal", TutorialHealTests.Run);
             Suite("reset-guard", CoachResetGuardTests.Run);
+            Suite("ad-clock-skew", AdClockSkewTests.Run);
             Suite("poker-bet", PokerBetTests.Run);
             Suite("discard-anim", PokerDiscardAnimTests.Run);
             Suite("pest", PestScheduleTests.Run);
