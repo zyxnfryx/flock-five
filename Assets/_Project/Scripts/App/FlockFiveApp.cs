@@ -14485,7 +14485,7 @@ namespace FlockFive
             if (bet != _pokerBetSeen || _pokerBetText == null)
             {
                 _pokerBetSeen = bet;
-                _pokerBetText = "BET " + Money.Format(bet);
+                _pokerBetText = "BET " + Money.Compact(bet);
             }
             return _pokerBetText;
         }
@@ -16683,11 +16683,13 @@ namespace FlockFive
             var plus = new Rect(amount.xMax + gap, minus.y, side, side);
             if (plus.xMax > slot.xMax)
                 plus.x = slot.xMax - plus.width;
+            // b120: the label lives strictly between - and +; shrink to fit instead of running under +.
+            amount.width = Mathf.Max(8f, plus.x - gap - amount.x);
             _pokerMinusR = minus;
             _pokerPlusR = plus;
 
             var led = PokerBold(ref _pokerLed, TextAnchor.MiddleCenter);
-            led.fontSize = type;
+            led.fontSize = FitFont(led, PokerBetText(), amount.width, amount.height, 8, type);
             StampLight(amount, PokerBetText(), led, PokerLabelGold);
 
             bool live = steppers && !busy;

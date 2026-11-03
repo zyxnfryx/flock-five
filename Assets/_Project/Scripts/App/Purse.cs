@@ -28,6 +28,19 @@ namespace FlockFive
             return _formatText;
         }
 
+        // b120: short labels between tight buttons. $999, $1K, $2.5K, $10K, $1M (one trimmed decimal).
+        public static string Compact(long n)
+        {
+            if (n < 0) return "-" + Compact(n == long.MinValue ? long.MaxValue : -n);
+            if (n < 1000L) return "$" + n.ToString(CultureInfo.InvariantCulture);
+            long d = n < 1000000L ? 1000L : n < 1000000000L ? 1000000L : 1000000000L;
+            string u = d == 1000L ? "K" : d == 1000000L ? "M" : "B";
+            long tenths = n * 10L / d;
+            string t = (tenths / 10L).ToString(CultureInfo.InvariantCulture);
+            if (tenths % 10L != 0 && tenths < 1000L) t += "." + (tenths % 10L).ToString(CultureInfo.InvariantCulture);
+            return "$" + t + u;
+        }
+
         static string FormatFresh(long n)
         {
             if (n < 0) return "-" + FormatFresh(n == long.MinValue ? long.MaxValue : -n);

@@ -34,6 +34,7 @@ namespace FlockFive.Editor
             Suite("heal", TutorialHealTests.Run);
             Suite("reset-guard", CoachResetGuardTests.Run);
             Suite("poker-bet", PokerBetTests.Run);
+            Suite("money-compact", MoneyCompactTests.Run);
             Suite("discard-anim", PokerDiscardAnimTests.Run);
             Suite("pest", PestScheduleTests.Run);
             Suite("honey-drip", HoneyDripTests.Run);
