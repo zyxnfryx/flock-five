@@ -33,12 +33,21 @@ namespace FlockFive
         {
             if (n < 0) return "-" + Compact(n == long.MinValue ? long.MaxValue : -n);
             if (n < 1000L) return "$" + n.ToString(CultureInfo.InvariantCulture);
-            long d = n < 1000000L ? 1000L : n < 1000000000L ? 1000000L : 1000000000L;
-            string u = d == 1000L ? "K" : d == 1000000L ? "M" : "B";
-            long tenths = n * 10L / d;
-            string t = (tenths / 10L).ToString(CultureInfo.InvariantCulture);
-            if (tenths % 10L != 0 && tenths < 1000L) t += "." + (tenths % 10L).ToString(CultureInfo.InvariantCulture);
-            return "$" + t + u;
+            // Round to one decimal; a value that rounds to 1000 of a unit rolls into the next ($999,999 -> $1M).
+            string[] u = { "K", "M", "B", "T" };
+            double v = n / 1000.0;
+            int i = 0;
+            while (true)
+            {
+                double r = System.Math.Round(v * 10.0, System.MidpointRounding.AwayFromZero) / 10.0;
+                if (r < 1000.0 || i == u.Length - 1) { v = r; break; }
+                v /= 1000.0; i++;
+            }
+            if (v >= 1000.0) return "$999T+";
+            string t = v >= 100.0 || v % 1.0 == 0.0
+                ? System.Math.Round(v).ToString("0", CultureInfo.InvariantCulture)
+                : v.ToString("0.#", CultureInfo.InvariantCulture);
+            return "$" + t + u[i];
         }
 
         static string FormatFresh(long n)
