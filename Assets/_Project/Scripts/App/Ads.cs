@@ -574,7 +574,9 @@ namespace FlockFive
 
         public static bool Cooling(double now, double lastAnyAd)
         {
-            return lastAnyAd > 0 && now - lastAnyAd < InterstitialCooldownSec;
+            // b120: a saved last-ad stamp in the future (device clock was set ahead, then corrected)
+            // used to read as cooling forever on that one phone. A future stamp is ignored.
+            return lastAnyAd > 0 && now >= lastAnyAd && now - lastAnyAd < InterstitialCooldownSec;
         }
 
         // Shared interstitial gate. VIP suppresses interstitials only.
