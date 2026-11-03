@@ -19850,6 +19850,10 @@ namespace FlockFive
             HudLayout(out _, out _, out _, out var restart, out var hive);
             float topLimit = TopHud() + 6f * s;
             float botLimit = Mathf.Min(restart.y, hive.y) - 12f * s;
+            // b120: restart moved to the top bar, so Min(restart.y, hive.y) is near the top on every device and
+            // botLimit collapsed to topLimit+48: the stack (Watch Ad to Continue) stuck under the notch. Fall back
+            // to 0.86H, still clear of the hive (bottom rail) gap, and center the card on the iced board.
+            if (botLimit < topLimit + PhoneArea.H * 0.4f) botLimit = Mathf.Min(PhoneArea.H * 0.86f, hive.y - 12f * s);
             if (botLimit < topLimit + 48f) botLimit = topLimit + 48f;
             float room = botLimit - topLimit;
 
@@ -19883,7 +19887,8 @@ namespace FlockFive
                     stack = cardH + retrySz - overlap + gap + contH;
                 }
             }
-            float cardY = botLimit - stack;
+            // b120: centered on the board between the HUD rows, not bottom-pinned.
+            float cardY = topLimit + Mathf.Max(0f, (room - stack) * 0.5f);
             if (cardY < topLimit) cardY = topLimit;
             card = new Rect((PhoneArea.W - cardW) * 0.5f, cardY, cardW, cardH);
             retry = new Rect((PhoneArea.W - retrySz) * 0.5f, card.yMax - overlap, retrySz, retrySz);
