@@ -39,7 +39,10 @@ namespace FlockFive
             int i = 0;
             while (true)
             {
-                double r = System.Math.Round(v * 10.0, System.MidpointRounding.AwayFromZero) / 10.0;
+                // One decimal under 100 of a unit, whole numbers from 100 up; round first, then roll over.
+                double r = v < 99.95
+                    ? System.Math.Round(v * 10.0, System.MidpointRounding.AwayFromZero) / 10.0
+                    : System.Math.Round(v, System.MidpointRounding.AwayFromZero);
                 if (r < 1000.0 || i == u.Length - 1) { v = r; break; }
                 v /= 1000.0; i++;
             }
