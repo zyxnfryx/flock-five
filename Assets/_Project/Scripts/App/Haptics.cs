@@ -120,8 +120,10 @@ namespace FlockFive
             int t = _pending;
             _pending = 0;
             if (!CanPlay((Tier)t)) return;
+#if UNITY_IOS || UNITY_ANDROID
             try { Handheld.Vibrate(); }
             catch (System.Exception) { }
+#endif
             _next = AdPause.Unscaled + Gap;
             _held = t;
         }
