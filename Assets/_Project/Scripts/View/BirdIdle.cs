@@ -1084,6 +1084,10 @@ namespace FlockFive
             return map.Lo != null;
         }
 
+        // Selection outline: a warm-white glow just larger than the bird (body ~1.6 units), behind the bird.
+        public const float SelectRimScale = 2.05f;
+        public static float SelectRimAlpha(float selectA, float pulse) => Mathf.Clamp01(selectA) * (0.62f + 0.18f * Mathf.Clamp01(pulse));
+
         void PlaceSelect(bool on)
         {
             _selectA = Mathf.MoveTowards(_selectA, on ? 1f : 0f, 8f * Time.deltaTime);
@@ -1107,6 +1111,17 @@ namespace FlockFive
             halo.sortingOrder = order - 3;
             halo.sortingLayerID = layer;
             halo.enabled = true;
+            // b120: the colour-matched halo alone read as no highlight on a bright sky (a red bird on a red halo).
+            // A warm-white outline glow sits right behind the bird, strong enough to read on any backdrop.
+            var rim = _aura[9];
+            rim.sprite = SpriteCatalog.Glow;
+            rim.color = new Color(1f, 0.97f, 0.80f, SelectRimAlpha(_selectA, pulse));
+            rim.transform.localPosition = new Vector3(0f, 0.42f, 0f);
+            rim.transform.localRotation = Quaternion.identity;
+            rim.transform.localScale = Vector3.one * SelectRimScale;
+            rim.sortingOrder = order - 1;
+            rim.sortingLayerID = layer;
+            rim.enabled = true;
             float spin = Time.time * 70f + _phase * 20f;
             for (int i = 0; i < 5; i++)
             {
@@ -1179,11 +1194,11 @@ namespace FlockFive
         void EnsureAura()
         {
             if (_aura != null) return;
-            _aura = new SpriteRenderer[9];
+            _aura = new SpriteRenderer[10];
             for (int i = 0; i < _aura.Length; i++)
             {
-                var spr = i >= 6 ? SpriteCatalog.Sparkle : SpriteCatalog.Glow;
-                var go = WorldBuilder.Sprite(i == 0 ? "Aura" : "AuraBit", spr, transform.position, 0.2f, 11, transform);
+                var spr = i >= 6 && i < 9 ? SpriteCatalog.Sparkle : SpriteCatalog.Glow;
+                var go = WorldBuilder.Sprite(i == 0 ? "Aura" : i == 9 ? "AuraRim" : "AuraBit", spr, transform.position, 0.2f, 11, transform);
                 go.transform.localRotation = Quaternion.identity;
                 var sr = go.GetComponent<SpriteRenderer>();
                 sr.enabled = false;
