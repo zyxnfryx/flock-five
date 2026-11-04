@@ -8674,6 +8674,16 @@ namespace FlockFive
 
         static float CoinBalanceIcon(float s) => CoinBalanceIcon(PhoneArea.W, s);
 
+        // The home coin pill (amount + coin icon) as drawn by DrawStreakRewards: right edge 12px left of the pig.
+        Rect CoinPillRect(Rect pig, float s) => CoinPillRect(pig, CoinBalanceIcon(s));
+        public static Rect CoinPillRect(Rect pig, float icon)
+        {
+            if (pig.width < 2f || pig.height < 2f) return default;
+            float right = pig.x - 12f;
+            float w = icon + BadgerCoinPillTextW(icon);
+            return new Rect(right - w, pig.center.y - icon * 0.5f, w, icon);
+        }
+
         void DrawCoinBalance(float s, float rightX, float centerY)
         {
             float icon = CoinBalanceIcon(s);
@@ -10277,7 +10287,15 @@ namespace FlockFive
             // Pig above hive: hit-test before the album so taps don't open it.
             // The offer card swallows the rail so a dismiss tap cannot oink.
             var pigR = PiggyRect(s);
-            if (!modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR) && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
+            // b120: the coin pill beside the pig looked tappable and did nothing. It is the pig's balance, so a tap on
+            // it pokes the pig too (same gates as the pig itself).
+            // Both pads claim their IMGUI control id every event (no short-circuit), so later ids never shift.
+            var pillR = CoinPillRect(pigR, s);
+            bool pigAllowed = !modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR);
+            bool pigHit = pigAllowed && HitPad(pigR, out _);
+            bool pillHit = pigAllowed && pillR.width > 2f && !VeilBlocks(pillR) && HitPad(pillR, out _);
+            if ((pigHit || pillHit)
+                && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
                 TryPigPoke();
 
             // Hive lesson hides that slot. The packer closes it; poker slides up under the pig.

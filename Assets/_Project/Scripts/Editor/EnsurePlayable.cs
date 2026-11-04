@@ -138,6 +138,7 @@ namespace FlockFive.Editor
             Suite("build128", Build128BadgerPowerTests.Run);
             Suite("build129", Build129BadgerGapTests.Run);
             Suite("build130", Build130BadgerStackTests.Run);
+            Suite("coin-pill-tap", CoinPillTapTests.Run);
             Debug.Log("BADGER_POLISH_GATE_DONE");
         }
 
