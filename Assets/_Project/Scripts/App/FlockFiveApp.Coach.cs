@@ -1809,6 +1809,20 @@ namespace FlockFive
         public static Vector2 GloveMiddleRightEntry(Rect safe) => new Vector2(safe.xMax, safe.center.y);
 
         // b120: angled starts obey the same near-start cap as plain gloves (GloveNearStartHands, 0.5x travel).
+        // Pure: re-seat a locked glove on the target's live screen spot. The start moves by the same offset, so the
+        // travel (start to aim) keeps its length and direction and its settled end is always the live target.
+        public static void GloveReanchor(ref Vector2 lockAim, ref Vector2 tip, Vector2 live)
+        {
+            if (float.IsNaN(live.x) || float.IsNaN(live.y)) return;
+            var d = live - lockAim;
+            if (d.sqrMagnitude < 0.0001f) return;
+            lockAim = live;
+            tip += d;
+        }
+
+        // The garden is mid hop or mid refit: branch screen spots are not final yet.
+        bool GloveTargetUnsettled() => _busy || GardenFit.Busy;
+
         public static Vector2 AngledStartSnug(Vector2 start, Vector2 aim, float s, Rect safe)
             => GloveNearStartPoint(start, aim, s, safe);
 
@@ -1946,8 +1960,24 @@ namespace FlockFive
                 return false;
             }
             _gloveClaimFrame = Time.frameCount;
-            bool same = GloveSameStep(aimGui, s, fromLeft, approachDeg);
+            // b120 (Level 1 step 3): the hand sat top-left on a stale aim, about 210px off its branch, and only bobbed.
+            // While the board is still settling (a hop or the refit tween) the target has no final screen spot, so the
+            // first-run coach glove stays hidden until it resolves.
+            if (_coach && GloveTargetUnsettled())
+            {
+                _gloveVis = false;
+                return false;
+            }
             bool ready = GloveStepReady(aimGui);
+            // Then it is anchored every frame to the target's live screen spot: the lock aim and the arc start move
+            // together, so the hand still starts, travels and settles on the branch.
+            if (_coach && ready && _gloveLockOn && !_glovePosing)
+            {
+                var before = _gloveLockAim;
+                GloveReanchor(ref _gloveLockAim, ref _gloveTip, aimGui);
+                _gloveStepAim += _gloveLockAim - before;
+            }
+            bool same = GloveSameStep(aimGui, s, fromLeft, approachDeg);
             if (_gloveAct == TutorGloveAct.FadeOutOnTap)
             {
                 // Caption may sit on a resolved next aim. The drawn hand stays put.
